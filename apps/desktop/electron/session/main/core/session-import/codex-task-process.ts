@@ -1,6 +1,8 @@
 import { fork } from '@gugu/core/local/childProcess';
 import type { CodexTaskScan, CodexTaskSourceRow } from '@shared/core/session-import/codex-tasks';
 import { desktopWorkerPath } from '../../worker-manifest';
+import { log } from '@main/lib/logger';
+import { importError } from '@shared/core/session-import/import-error-code';
 
 function validScan(value: unknown): value is CodexTaskScan {
   if (!value || typeof value !== 'object') return false;
@@ -37,8 +39,11 @@ function run<T>(request: { sourceRoot: string; verify?: CodexTaskSourceRow[] }, 
     child.on('message', message => { reply = message; });
     child.once('close', code => {
       signal.removeEventListener('abort', abort);
-      if (failure) reject(failure);
-      else if (code !== 0 || !validate(reply)) reject(new Error('无法读取本机 ChatGPT 会话，请稍后重试'));
+      if (signal.aborted) reject(signal.reason);
+      else if (failure || code !== 0 || !validate(reply)) {
+        log.warn('[codex-task-import] Source worker failed', { sourceRoot: request.sourceRoot, error: failure, exitCode: code });
+        reject(importError('codex-import-source-unreadable'));
+      }
       else resolve(reply);
     });
     child.send(request, error => { if (error) { failure = error; child.kill('SIGKILL'); } });

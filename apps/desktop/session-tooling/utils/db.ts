@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type Database from 'better-sqlite3';
+import Database from 'better-sqlite3';
 import { openPhysicalDatabase } from '@main/db/physical-connection';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { applyMigrations, bundledMigrations, initializeDatabase } from '@main/db/initialize';
@@ -57,33 +57,16 @@ export async function openFixture(
   // Create a temp file so each test gets an isolated writable copy.
   const tmpPath = path.join(os.tmpdir(), `emdash-test-${name}-${crypto.randomUUID()}.db`);
 
-  if (name === 'empty') {
-    // Start from scratch — create an empty database and apply all migrations.
-    const sqlite = openPhysicalDatabase(tmpPath);
-    sqlite.pragma('journal_mode = WAL');
-    sqlite.pragma('busy_timeout = 5000');
-    await migrate(sqlite);
-    return {
-      db: drizzle(sqlite, { schema }),
-      sqlite,
-      close: () => {
-        sqlite.close();
-        for (const suffix of ['', '-wal', '-shm']) {
-          fs.rmSync(`${tmpPath}${suffix}`, { force: true });
-        }
-      },
-    };
-  }
-
-  // Copy the committed fixture to the temp path, then open the copy.
-  const fixturePath = path.join(fixturesDir, `${name}.db`);
-  fs.copyFileSync(fixturePath, tmpPath);
+  // 'empty' through a tag starts from no file at all; 'empty' at head starts from the migrated template;
+  // a named fixture starts from a copy of the committed .db. Either way the runner below migrates what is pending.
+  if (name === 'empty' && !options.through) fs.writeFileSync(tmpPath, await migratedEmptyTemplate());
+  else if (name !== 'empty') fs.copyFileSync(path.join(fixturesDir, `${name}.db`), tmpPath);
 
   const sqlite = openPhysicalDatabase(tmpPath);
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('busy_timeout = 5000');
 
-  // Apply any migrations newer than what the fixture already has.
+  // Apply any migrations newer than what the file already has.
   // This is the same runner the production app uses.
   await migrate(sqlite);
 
@@ -97,4 +80,21 @@ export async function openFixture(
       }
     },
   };
+}
+
+// @@@migrated-template — the head schema is migrated once per test file, in memory, and each openFixture('empty')
+// writes those bytes to its own file. initializeDatabase still runs on every copy (nothing pending, so it only
+// registers functions and ensures the search and file indexes). Replaying all migrations per call was ~1.4k
+// replays per session-main-db run, 132 s of its ~350 s CPU. Kept in memory so a killed worker leaves no file.
+let emptyTemplate: Promise<Buffer> | undefined;
+function migratedEmptyTemplate(): Promise<Buffer> {
+  return (emptyTemplate ??= (async () => {
+    const sqlite = new Database(':memory:');
+    try {
+      await initializeDatabase(sqlite);
+      return sqlite.serialize();
+    } finally {
+      sqlite.close();
+    }
+  })());
 }

@@ -5,7 +5,6 @@ import { once } from 'node:events';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { openFixture } from '@tooling/utils/db';
 import type { AppDb } from '@main/db/client';
-import { runTurnTextBackfill } from '@main/db/turn-text-backfill-work';
 import { pullAgentInbox, resetAgentInboxReaderStateForTests, type AgentInboxReaderDeps, type AgentInboxUnreadRow } from '@gugu/core/local/agent/agentInboxReader';
 import { memoryGroupRulesLedger } from '@gugu/core/local/agent/groupRulesDelivery';
 
@@ -43,7 +42,7 @@ it('admits inbox exactly once while a separate search-index writer holds the WAL
     const Database = require(workerData.native);
     const connection = new Database(workerData.database);
     connection.exec('BEGIN IMMEDIATE');
-    connection.prepare("INSERT INTO turn_text_rows(session_id,seq,item_id,role,text) VALUES ('s',0,'historical','user','historical search')").run();
+    connection.prepare("INSERT INTO turn_text_rows(session_id,turn_id,item_id,role,text) VALUES ('s','t','historical','user','historical search')").run();
     parentPort.postMessage('locked');
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150);
     connection.exec('COMMIT');
@@ -71,20 +70,4 @@ it('admits inbox exactly once while a separate search-index writer holds the WAL
   expect(deps.markRead).not.toHaveBeenCalled();
   await expect(pullAgentInbox(AGENT, deps)).resolves.toMatchObject({ injected: 0 });
   expect(lifeStore.unaccepted('s')).toHaveLength(1);
-});
-
-it('admits an inbox row between committed batches while the real backfill is still incomplete', async () => {
-  const insert = fixture.sqlite.prepare('INSERT INTO session_turns(id,session_id,seq,turn_id,data) VALUES (?,\'s\',?,?,?)');
-  fixture.sqlite.transaction(() => {
-    for (let n = 0; n < 401; n++) insert.run(`turn:${n}`, n, `t:${n}`, JSON.stringify({ id: `t:${n}`, items: [{ kind: 'message', id: `m:${n}`, role: 'user', text: 'historical searchable' }] }));
-  })();
-  fixture.sqlite.exec("DELETE FROM turn_text_rows; DELETE FROM kv WHERE key IN ('turn_text_backfilled','turn_text_backfill_cursor')");
-  const backfill = runTurnTextBackfill(fixture.sqlite, () => {});
-  try {
-    await new Promise<void>(resolve => setImmediate(resolve));
-    expect(fixture.sqlite.prepare("SELECT value FROM kv WHERE key='turn_text_backfilled'").get()).toBeUndefined();
-    enqueuePending({ sessionId: 's', text: 'during backfill', kind: 'inbox-batch', sources: [{ row, agentUserId: AGENT }] });
-    expect(lifeStore.unaccepted('s')).toEqual([expect.objectContaining({ state: 'queued' })]);
-  } finally { await backfill; }
-  expect(fixture.sqlite.prepare('SELECT count(*) n FROM turn_text_rows').get()).toEqual({ n: 401 });
 });

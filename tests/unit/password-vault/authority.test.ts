@@ -13,7 +13,6 @@ import type { CredentialUseSettlement } from '../../../apps/desktop/electron/ses
 const LOGIN = { values: [{ kind: 'account' }, { kind: 'password' }], elsewhere: false } as const
 
 
-vi.mock('@gugu/core/shared/passwordBeta', () => ({ PASSWORD_BETA_ENABLED: true }))
 
 const vaults: LocalPasswordVault[] = [], roots: string[] = []
 afterEach(async () => {

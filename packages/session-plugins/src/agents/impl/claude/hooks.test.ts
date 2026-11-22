@@ -229,6 +229,15 @@ describe('claude hook installation (#6448)', () => {
     }
   });
 
+  it('a prompt reports both the turn start and the session id the running process really has', () => {
+    expect(byKey('UserPromptSubmit')).toEqual([
+      { hookKey: 'UserPromptSubmit', command: makeStdinHookCommand('start') },
+      { hookKey: 'UserPromptSubmit', command: makeStdinHookCommand('session') },
+    ]);
+    expect(parse('session', { hook_event_name: 'UserPromptSubmit', session_id: 'child-minted-by-fork' }))
+      .toEqual({ kind: 'session', providerSessionId: 'child-minted-by-fork' });
+  });
+
   it('the new keys exist at the 2.1.69 floor, so only StopFailure carries a version gate', () => {
     expect(claudeHookSpecs().filter((spec) => spec.sinceVersion).map((spec) => spec.hookKey)).toEqual(['StopFailure']);
   });
@@ -236,7 +245,7 @@ describe('claude hook installation (#6448)', () => {
   it('the descriptor declares every edge the hooks report', () => {
     const hooks = claude.capabilities.hooks;
     expect(hooks.kind !== 'none' && [...hooks.supportedEvents].sort()).toEqual(
-      ['error', 'notification', 'start', 'stop', 'wait', 'wait_resolved'],
+      ['error', 'notification', 'session', 'start', 'stop', 'wait', 'wait_resolved'],
     );
   });
 });

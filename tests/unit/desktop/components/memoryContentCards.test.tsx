@@ -10,7 +10,8 @@ const reads = vi.hoisted(() => ({ notes: [] as MemoryEntry[], go: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/components/markdown/Markdown', () => ({ Markdown: ({ content }: { content: string }) => content }))
 vi.mock('../../../../apps/desktop/src/components/Avatar', () => ({ Avatar: () => null }))
 vi.mock('../../../../apps/desktop/src/store/auth', async (original) => ({ ...await original<object>(), useAuth: () => ({ user: null }) }))
-vi.mock('../../../../apps/desktop/src/mobile/assistant/usePhoneRead', () => ({ machineKey: () => 'memory', usePhoneRead: (key: string) => ({ state: 'ok', reload: vi.fn(), data: key?.startsWith('memory-counts') ? { voice: 0, files: 0 } : { notes: reads.notes } }) }))
+// The memory cards are derived from the panel snapshot (replica `assistantPanel`): here, read.
+vi.mock('../../../../apps/desktop/src/components/assistant/assistant-panel-reads', async (original) => ({ ...await original<object>(), useAssistantPanelCollection: () => ({ state: 'value', value: { notes: reads.notes, index: null }, stale: false, error: null }) }))
 vi.mock('../../../../apps/desktop/src/mobile/assistant/PhoneMachineView', () => ({ PhoneMachineView: ({ children }: { children: () => ReactNode }) => children(), ReadView: ({ read, children }: { read: { data: unknown }; children: (data: unknown) => ReactNode }) => children(read.data) }))
 vi.mock('../../../../apps/desktop/src/mobile/assistant/PhoneHealth', () => ({ PhoneHealth: () => null }))
 import { PhoneMemory } from '../../../../apps/desktop/src/mobile/assistant/PhoneMemory'

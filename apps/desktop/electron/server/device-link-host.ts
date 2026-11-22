@@ -15,6 +15,8 @@ import {
   createDeviceRpcRequestHandler,
   type DeviceRpcHandlers,
 } from '@gugu/core/cloud/deviceRpcResponder'
+import { createDeviceRpcReplyEnvelope, parseDeviceRpcRequest } from '@gugu/core/cloud/deviceRpcProtocol'
+import { encodeDataFrame } from '../session/main/core/pty/attach/attach-protocol'
 import { SESSION_HOST_FRAME_EVENT, SESSION_HOST_RPC } from '@shared/lib/ipc/session-host-device-frames'
 
 // 终端的输入(桌面 → 机器:`{t:'invoke', channel:'pty.sendInput'}`)与输出(机器 → 桌面:`{t:'event', channel:'pty:data.<id>'}`)。
@@ -49,6 +51,27 @@ export function isTunnelUse(envelope: unknown): boolean {
 
 export type DeviceLinkSession = { handle(message: unknown): void; dispose(): void }
 
+/**
+ * A request answered with a stream of bytes (only a device link can carry them: `D` frames beside its messages). It names its
+ * stream in `payload.stream`; each `write` resolves when the line takes more. Its reply follows its last piece on the same
+ * ordered line, so a reader holding the reply holds every byte. `<type>.cancel` with `{ stream }` (or the link closing) stops it.
+ *
+ * @@@stream-credit - draining the socket is not enough: ssh's channel window and the TCP buffers between here and the reader
+ * hold megabytes, and every message on the link waits behind what is queued. So the reader acknowledges what it holds
+ * (`<type>.ack` `{ stream, received, window }`) and no more than `window` bytes past it are ever on their way: the line
+ * stays full (the reader sizes it at about two seconds of its rate) while a message waits about that long at most.
+ */
+/** Before the reader has said how fast it takes them: about one second of a fast line. */
+export const STREAM_FIRST_WINDOW_BYTES = 1024 * 1024
+export const STREAM_MIN_WINDOW_BYTES = 256 * 1024
+export const STREAM_MAX_WINDOW_BYTES = 32 * 1024 * 1024
+
+export type DeviceLinkStream = (payload: unknown, context: {
+  userId: string
+  write(offset: number, bytes: Uint8Array): Promise<void>
+  signal: AbortSignal
+}) => Promise<unknown>
+
 export function createDeviceLinkHost(options: {
   /** 这个账号自己的用户 id(server 的账号进程由 GUGU_SERVER_ACCOUNT 指定)。 */
   userId: () => string | null
@@ -57,8 +80,9 @@ export function createDeviceLinkHost(options: {
   warn?: (message: string) => void
   /** 这条连接上有人在用(终端的输入与输出,见 isTunnelUse;应答不算,它跟着请求来):心跳据此报「隧道最近一次有流量」。 */
   onActivity?: () => void
-}): (send: (message: unknown) => void) => DeviceLinkSession {
-  return (send) => {
+  streams?: Record<string, DeviceLinkStream>
+}): (send: (message: unknown) => void, sendData: (frame: Buffer) => Promise<void>) => DeviceLinkSession {
+  return (send, sendData) => {
     const userId = options.userId()
     if (!userId) throw new Error('这个账号还没登录,不接设备连接')
     const host = options.createHandlers()
@@ -67,6 +91,33 @@ export function createDeviceLinkHost(options: {
       handlers: host.handlers,
     })
     let open = true
+    const running = new Map<string, { controller: AbortController; acked: number; window: number; wake: (() => void) | null }>()
+    const stream = (type: string, handler: DeviceLinkStream, request: { request_id: string; payload: unknown }) => {
+      const id = (request.payload as { stream?: unknown } | null)?.stream
+      if (typeof id !== 'string' || !id || running.has(id)) {
+        return publish(createDeviceRpcReplyEnvelope(type, request.request_id, { error: { code: 'invalid_request', message: 'a stream needs its own id' } }))
+      }
+      const controller = new AbortController()
+      const start = (request.payload as { offset?: unknown }).offset
+      const state = { controller, acked: typeof start === 'number' ? start : 0, window: STREAM_FIRST_WINDOW_BYTES, wake: null as (() => void) | null }
+      running.set(id, state)
+      controller.signal.addEventListener('abort', () => state.wake?.(), { once: true })
+      const write = async (offset: number, bytes: Uint8Array) => {
+        while (open && !controller.signal.aborted && offset + bytes.byteLength - state.acked > state.window) {
+          await new Promise<void>((resolve) => { state.wake = resolve })
+          state.wake = null
+        }
+        if (!open || controller.signal.aborted) throw new Error('stream stopped')
+        await sendData(encodeDataFrame(id, offset, bytes))
+      }
+      void handler(request.payload, { userId, write, signal: controller.signal }).then(
+        (result) => ({ result }),
+        (error: unknown) => ({ error: { code: controller.signal.aborted ? 'cancelled' : 'stream_failed', message: error instanceof Error ? error.message : String(error) } }),
+      ).then((response) => {
+        running.delete(id)
+        publish(createDeviceRpcReplyEnvelope(type, request.request_id, response))
+      })
+    }
     const publish = (payload: unknown) => {
       if (open) send(asBroadcast(payload))
     }
@@ -80,11 +131,29 @@ export function createDeviceLinkHost(options: {
         const inner = (message as { payload?: unknown }).payload
         if (!inner || typeof inner !== 'object') return
         if (isTunnelUse(inner)) options.onActivity?.()
+        const request = parseDeviceRpcRequest(inner)
+        if (request && options.streams) {
+          const handler = options.streams[request.type]
+          if (handler) return stream(request.type, handler, request)
+          const [base, verb] = [request.type.slice(0, request.type.lastIndexOf('.')), request.type.slice(request.type.lastIndexOf('.') + 1)]
+          if ((verb === 'cancel' || verb === 'ack') && options.streams[base]) {
+            const payload = (request.payload ?? {}) as { stream?: unknown; received?: unknown; window?: unknown }
+            const state = typeof payload.stream === 'string' ? running.get(payload.stream) : undefined
+            if (!state) return
+            if (verb === 'cancel') return void state.controller.abort()
+            if (typeof payload.received === 'number' && payload.received > state.acked) state.acked = payload.received
+            if (typeof payload.window === 'number' && payload.window >= STREAM_MIN_WINDOW_BYTES && payload.window <= STREAM_MAX_WINDOW_BYTES) state.window = payload.window
+            state.wake?.()
+            return
+          }
+        }
         void handleRequest(asBroadcast({ ...(inner as Record<string, unknown>), user_id: userId }), publish, publishEvent)
       },
       dispose() {
         if (!open) return
         open = false
+        for (const state of running.values()) state.controller.abort()
+        running.clear()
         host.dispose()
       },
     }

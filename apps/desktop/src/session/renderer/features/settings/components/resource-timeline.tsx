@@ -77,7 +77,6 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
     seenTick.current = tick;
     void resourceHistory.refresh(range);
   }, [tick, range]);
-  useEffect(() => { if (historyReading.state === 'error') log.error({ error: historyReading.error }, 'resource history request failed'); }, [historyReading]);
   const shownError = error || (historyReading.state === 'error' ? messageForUser(historyReading.error) : '');
   const action = async (kind: 'export' | 'clear') => {
     try {
@@ -140,7 +139,7 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
   return <section className="space-y-5 text-xs" aria-label={t('resourceMonitor.timeline')}>
     <ResourceSamplingStatus />
     <div className="grid grid-cols-3 gap-3">
-      {pageTiles.map((tile) => <div key={tile.key} className="space-y-1 rounded-md border border-border px-3 py-3">
+      {pageTiles.map((tile) => <div key={tile.key} className="gg-settings-surface space-y-1 px-3 py-3">
         <div className="text-foreground-muted">{tile.label}</div>
         <div className="text-lg font-medium text-foreground tabular-nums">{tile.value}</div>
         <div className="text-foreground-muted">{tile.note}</div>
@@ -148,7 +147,7 @@ export const ResourceTimeline = observer(function ResourceTimeline({ compact = f
     </div>
     {snapshot?.page?.countersUnavailable && live && <p className="text-foreground-muted">{t(snapshot.page.countersUnavailable === 'off' ? 'resourceMonitor.countersOff' : snapshot.page.countersUnavailable === 'no-window' ? 'resourceMonitor.countersNoWindow' : 'resourceMonitor.countersFailed')}</p>}
     <div className="grid grid-cols-2 gap-3">
-      {tiles.map((tile) => <div key={tile.key} className="space-y-1 rounded-md border border-border px-3 py-3">
+      {tiles.map((tile) => <div key={tile.key} className="gg-settings-surface space-y-1 px-3 py-3">
         <div className="text-foreground-muted">{tile.label}</div>
         <div className="text-lg font-medium text-foreground tabular-nums">{tile.value}</div>
         <div className="text-foreground-muted tabular-nums">{tile.note}</div>

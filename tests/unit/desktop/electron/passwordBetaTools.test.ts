@@ -21,9 +21,9 @@ describe('Beta password MCP boundary', () => {
     registerPasswordBetaTools({} as McpServer, context, work => work, lifetime)
     return lifetime
   }
-  it('registers no password entry in a production build', async () => {
+  it('registers the password tools in a production build too', async () => {
     await register('production')
-    expect(handlers.size).toBe(0)
+    expect([...handlers.keys()].sort()).toEqual(['password_credentials', 'password_fill', 'password_save'])
   })
   it('returns pending without starting the login; keeps the grant lifetime after the request', async () => {
     const lifetime = await register('beta')

@@ -226,6 +226,9 @@ export function readClaudeRecord(entry: Record<string, unknown>): ClaudeRecord {
   const message = entry.type === 'user' || entry.type === 'assistant' ? asRecord(entry.message) : null
   if (!message) return record
   if (entry.type === 'assistant') {
+    // Claude Code's own answer to its own meta line ("No response requested." after a resume's "Continue from where you
+    // left off."): no model said it, and it ends nothing. Its other synthetic lines are API errors, read below.
+    if (message.model === '<synthetic>' && entry.isApiErrorMessage !== true) return record
     record.messageId = nonEmptyString(message.id) ?? null
     record.items = readItems(message.content, 'assistant', false)
     record.end = readStopReason(message.stop_reason)

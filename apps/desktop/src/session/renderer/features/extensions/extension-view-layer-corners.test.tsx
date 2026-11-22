@@ -7,7 +7,6 @@ import { ExtensionPage } from './extension-view-layer';
 import { pageCorners } from './page-corners';
 
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { browser: { focusHost: async () => ({ success: true }) }, extensions: { activate: async () => ({ success: true, data: { partition: 'test', entryUrl: 'about:blank' } }) } } }));
-vi.mock('./installed-extensions-store', () => ({ installedExtensionsStore: { manifestFor: () => undefined } }));
 vi.mock('./extension-surface-store', () => ({ extensionSurfaceStore: { setWebContentsId() {}, forgetShared() {} } }));
 vi.mock('./app-settings-page', () => ({ AppSettingsPage: () => null }));
 

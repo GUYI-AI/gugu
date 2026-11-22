@@ -1,17 +1,21 @@
 import { messageForUser } from '@/lib/userFacingError';
 import type { MessageItem } from '@gugu/core/shared/types/chat'
-import { reaction } from 'mobx'
 import { observer } from 'mobx-react-lite'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft, MoreHorizontal, X } from '@/lib/icons'
 import { useAuth } from '../../store/auth'
+import { useOnChange } from '../../hooks/useOnChange'
 import { declaredMenuCommands, declaredToolbarCommands, runExtensionCommand } from '../../session/renderer/features/extensions/extension-commands'
 import { extensionSurfaceStore, extensionTabTitle } from '../../session/renderer/features/extensions/extension-surface-store'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { useInstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
 import type { AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import { displayNameOf, openerAhead, openerChoice } from '../../session/shared/extensions/file-openers'
-import { installPackageOf, packageKey, sharedPackagesOf, subscribeSharedPackages, type SharedPackage } from '../extensionBundle/sharedPackages'
+import { installPackageOf, packageKey, type SharedPackage } from '../extensionBundle/sharedPackages'
+import { sharedAppPackages } from '../extensionBundle/packageReplicas'
+import { useReplica } from '../../lib/replica'
+import { Unknown } from '../ui/Unknown'
+import { marketOffers } from './marketOffers'
 import { parseExtensionTabKind, type ExtensionManifest } from '../../session/shared/extensions/manifest'
 import type { ExtensionOrigin } from '../../session/shared/extensions/upgrade'
 import { availableInstallOffers, type AppInstallOffer, type MarketOffer } from '../extensionBundle/installOffers'
@@ -33,6 +37,7 @@ import { FileHostMark } from './FileHostMark'
 import { openFileStorageSettings, useFileHost } from '../../lib/fileHost'
 import { AppErrorDetails, AppErrorMark } from './AppErrorMark'
 import { appsHere } from './appsHere'
+import { HERE_HOST } from './hereHost'
 import { MessageFilePreview } from '../chat/MessageFilePreview'
 import { useChatFolderName } from '../chat/chatFolderName'
 import { AppPeekSlot } from './AppPeekSlot'
@@ -65,12 +70,12 @@ interface Offer {
  * ranks (`openerAhead`), over this chat's shared packages and then the market's Apps (one shared in the chat is the
  * group's own: the market's copy of the same App is not offered beside it). An installed App is only offered if newer.
  */
-function offerFor(typedName: string, shared: ReadonlyMap<string, SharedPackage>, market: readonly MarketOffer[], installed: ExtensionManifest[], all: readonly ExtensionManifest[], origins: Readonly<Record<string, ExtensionOrigin>>): Offer | null {
+function offerFor(typedName: string, shared: readonly SharedPackage[], market: readonly MarketOffer[] | null, installed: ExtensionManifest[], all: readonly ExtensionManifest[], origins: Readonly<Record<string, ExtensionOrigin>>, locale: string): Offer | null {
   const offers = availableInstallOffers(shared, market, all, origins)
   const best = openerAhead(typedName, installed, offers.map(offer => offer.manifest), 'chat')
   if (!best) return null
   const offer = offers.find(candidate => candidate.manifest.id === best.extensionId)
-  return offer ? { appName: appNameOf(best), from: offer.from } : null
+  return offer ? { appName: appNameOf(best, locale), from: offer.from } : null
 }
 
 /** How many toolbar entries fit beside the title in a slot at its narrowest (360); the rest fold into the menu. */
@@ -115,6 +120,8 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   const resourceChat = chat?.kind === 'topic' ? chat.source_chat_id ?? undefined : chat?.id
   const desktop = platform.kind === 'electron'
   const { user } = useAuth()
+  const installedReading = useInstalledApps(HERE_HOST)
+  const installed = installedReading.state === 'value' ? installedReading.value : null
   const pane = chatPaneOf(chatId, tabId)
   // 「返回」 goes to the tab whose page opened this one (owner 10-24): its own history, else the page it was opened from.
   // Opened straight from the conversation has none (that is the conversation beside it).
@@ -123,83 +130,45 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   // On the phone no strip brings a tab back: at its first page, leaving it closes it, which shows its 上一页.
   const back = () => (pane?.navigationOf(tabId)?.index ?? 0) > 0 || (backIsPanel && !mobile) ? pane?.go(tabId, -1) : closeChatTab(chatId, tabId)
   const close = () => closeChatTab(chatId, tabId)
-  const [offer, setOffer] = useState<Offer | null>(null)
   const [installingOffer, setInstallingOffer] = useState(false)
   /** Why the offered App did not install, said under the offer: E-05's `refusedLine`, or that it failed. */
   const [offerFailed, setOfferFailed] = useState<string | null>(null)
-  /** The market's Apps for this device, from its cached index (`unreadable`: the market could not be read). */
-  const [market, setMarket] = useState<readonly MarketOffer[] | 'unreadable' | null>(null)
   /** Under an offer the file's raw content is folded away until asked for: the App to install first, not a screen of JSON. */
   const [rawShown, setRawShown] = useState(false)
-  /** This chat's newest shared package of each App (摩擦单 F15): the one shared read (`sharedPackagesOf`). */
-  const [shared, setShared] = useState<{ chatId: string; packages: ReadonlyMap<string, SharedPackage> } | null>(null)
-  const [sharedCue, setSharedCue] = useState(0)
   /** The App's error spelled out under the header, when the person asked (摩擦单 F63). */
   const [errorShown, setErrorShown] = useState(false)
-
-  useEffect(() => {
-    if (!appsHere || !user?.id) return undefined
-    let live = true
-    sharedPackagesOf(chatId, user.id).then(
-      (packages) => live && setShared({ chatId, packages }),
-      () => live && setShared({ chatId, packages: new Map() }),
-    )
-    return () => {
-      live = false
-    }
-  }, [chatId, user?.id, sharedCue])
-
-  // The data file can be in the group before its App's card: the card goes out once the App passed its check (摩擦单 F15,
-  // L5 S1 — ~2 s). When that card arrives the chat's list is read again, and a file already open gets its offer then.
-  useEffect(() => subscribeSharedPackages((changed) => { if (changed === chatId) setSharedCue((cue) => cue + 1) }), [chatId])
-
-  // Read the index in hand (161 10-15), never refresh it for a file: main's cache on the desktop, the phone's own.
+  // 摩擦单 F15: the file can be in the group before its App's card; the card's arrival reads the chat again (ExtensionForwardHost).
+  const sharedReading = useReplica(sharedAppPackages, appsHere && user?.id ? [chatId] : null)
+  const shared = sharedReading.state === 'value' ? sharedReading.value : null
   const typedName = item.kind ? item.typedName ?? null : null
-  useEffect(() => {
-    setMarket(null)
-    if (!appsHere || !typedName) return undefined
-    let live = true
-    appsHere.marketOffers().then(
-      (answer) => live && setMarket(answer.success && answer.data ? answer.data : 'unreadable'),
-      () => live && setMarket('unreadable'),
-    )
-    return () => {
-      live = false
-    }
-  }, [typedName])
-
-  // Offer an App ahead of anything installed (`openerAhead`): shared here first (F15), else the market's (161 10-15).
-  useEffect(() => {
-    const fromMarket = Array.isArray(market) ? market : []
-    setOfferFailed(null)
-    if (!appsHere || !typedName || !shared || shared.chatId !== chatId) {
-      setOffer(null)
-      return undefined
-    }
-    return reaction(
-      () => ({ installed: enabledApps(), all: installedExtensionsStore.manifests.slice(), origins: installedExtensionsStore.origins }),
-      ({ installed, all, origins }) => setOffer(offerFor(typedName, shared.packages, fromMarket, installed, all, origins)),
-      { fireImmediately: true },
-    )
-  }, [typedName, market, chatId, shared])
+  const marketReading = useReplica(marketOffers, appsHere && typedName ? [] : null)
+  // The market unreadable (null): offered from what is shared in this chat only.
+  const market = marketReading.state === 'value' ? marketReading.value : null
+  const marketKnown = marketReading.state !== 'unknown'
+  // Decided once all three are known.
+  const offer = useMemo(() => appsHere && typedName && shared && marketKnown && installed
+    ? offerFor(typedName, shared, market, enabledApps(installed), installed.manifests, installed.origins, installed.locale) : null,
+  [typedName, shared, market, marketKnown, installed])
+  useEffect(() => setOfferFailed(null), [typedName, chatId])
   useEffect(() => setRawShown(false), [item.itemId, chatId])
-  /** A file opened before this chat's packages were read: held back for that moment, so an offer is not preceded by its raw JSON. */
-  const offerUnknown = appsHere !== null && !!item.kind && !!item.itemId && (!shared || shared.chatId !== chatId)
+  // Held back until its offer is decided (❌ raw JSON then an offer); a failed read decides "no offer" (❌ held back for good).
+  const offerUnknown = appsHere !== null && !!item.kind && !!item.itemId
+    && (sharedReading.state === 'unknown' || installedReading.state === 'unknown' || (!!typedName && marketReading.state === 'unknown'))
   /** The open file's raw page folds under an offer for it (not under one for a file nobody here opens). */
   const offerFolds = offer !== null && !rawShown
 
   // An App installed while a file of its kind is open here takes that file over, in place — from the offer above or from
   // a card in the chat alike (摩擦单 F15, L5 S1): the same tab, now in that App.
-  useEffect(() => {
+  // Only a change of the Apps that are on decides it (❌ the list as the tab opens: the person may have picked another App).
+  const enabledHere = installed ? enabledApps(installed).map((manifest) => `${manifest.id}@${manifest.version}`).join(' ') : null
+  useOnChange(enabledHere, (before) => {
     const typed = item.typedName
-    if (!appsHere || !typed || !item.itemId) return undefined
-    return reaction(enabledApps, (manifests) => {
-      const choice = openerChoice(typed, manifests, 'chat', rememberedOpener)
-      if (choice.kind === 'one' && choice.candidate.tabKind !== item.kind) {
-        replacePanelItem(chatId, tabId, { kind: choice.candidate.tabKind, itemId: item.itemId, typedName: typed, title: displayNameOf(item.fileName ?? item.title, choice.candidate.suffix), fileName: item.fileName })
-      }
-    })
-  }, [chatId, tabId, item])
+    if (!appsHere || !typed || !item.itemId || !installed || before === null) return
+    const choice = openerChoice(typed, enabledApps(installed), 'chat', (key) => rememberedOpener(installed, key))
+    if (choice.kind === 'one' && choice.candidate.tabKind !== item.kind) {
+      replacePanelItem(chatId, tabId, { kind: choice.candidate.tabKind, itemId: item.itemId, typedName: typed, title: displayNameOf(item.fileName ?? item.title, choice.candidate.suffix), fileName: item.fileName })
+    }
+  })
 
   // On the phone the tab is a whole page (#6815): its way out is the top-left back, and the back key is that back.
   useBackLayer(back, mobile)
@@ -229,8 +198,6 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
         setOfferFailed(refusedLine(result.data))
         return
       }
-      if (!result.data?.installed) return
-      setOffer(null)
     } catch (error) {
       log.error({ error }, 'the App offered for a file did not install')
       setOfferFailed(messageForUser(error))
@@ -245,31 +212,29 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
   // or someone else sent it — a bar under the header says so, never in the way, and one click asks the person.
   const shownApp = kind ? parseExtensionTabKind(kind)?.extensionId ?? null : null
   // #7050 左栏「退出」了这里开着的 App:它的这一枚跟着关掉。
-  useEffect(() => {
-    if (!shownApp) return undefined
-    return reaction(
-      () => installedExtensionsStore.quit.includes(shownApp),
-      (quit) => { if (quit) closeChatTab(chatId, tabId) },
-    )
-  }, [shownApp, chatId, tabId])
-  const sharedHere = shownApp && shared && shared.chatId === chatId ? shared.packages.get(shownApp) : undefined
-  const shownVersion = shownApp ? installedExtensionsStore.manifestFor(shownApp)?.version : undefined
+  // Only the turn to quit closes it (❌ quit as it opens: main takes the quit back when its page is asked for).
+  const shownQuit = shownApp && installed ? installed.quit.includes(shownApp) : null
+  useOnChange(shownQuit, (before) => { if (shownQuit === true && before === false) closeChatTab(chatId, tabId) })
+  const sharedHere = shownApp && shared ? shared.find((pkg) => pkg.appId === shownApp) : undefined
+  const shownVersion = shownApp && installed ? installed.manifestFor(shownApp)?.version : undefined
   const update =
-    appsHere && shownApp && sharedHere
-      ? groupUpdateFor(shownVersion === undefined ? null : { version: shownVersion, origin: installedExtensionsStore.origins[shownApp] }, sharedHere)
+    appsHere && shownApp && sharedHere && installed
+      ? groupUpdateFor(shownVersion === undefined ? null : { version: shownVersion, origin: installed.origins[shownApp] }, sharedHere)
       : null
-  /** The package an update without a click was refused for: the bar is for that one. */
-  const [held, setHeld] = useState<string | null>(null)
+  /** What the update without a click came to, for which package (`installed` false: refused — the bar asks the person). */
+  const [held, setHeld] = useState<{ key: string; installed: boolean } | null>(null)
   const updateKey = update ? packageKey(update.card) : null
   useEffect(() => {
     if (!update || !updateKey) return undefined
     let live = true
-    void updateUnasked(installPackageOf(update.card)).then((installed) => live && !installed && setHeld(updateKey))
+    void updateUnasked(installPackageOf(update.card)).then((installed) => live && setHeld({ key: updateKey, installed }))
     return () => {
       live = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- updateKey is the package's identity
   }, [updateKey])
+  /** The bar's place is held from the first frame an update is known (PLAN-REVIEW §3: it never pushes the page down later). */
+  const updateAsk = update && held?.key === updateKey ? (held.installed ? null : 'ask') : update ? 'deciding' : null
   const [updating, setUpdating] = useState(false)
   /** Why the bar's update did not go in, said under it: E-05's `refusedLine`, or that it failed. */
   const [updateFailed, setUpdateFailed] = useState<string | null>(null)
@@ -324,7 +289,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
       if (panelFull(chatId, tabId)) setPanelFull(chatId, tabId, false)
     }
   }, [peekingSession, tabbed, mobile, chatId, tabId])
-  const heading = extensionTabTitle(shown, isFolderItem(item) ? folderName : kind ? installedExtensionsStore.tabTitle(kind) ?? item.title : item.title, item.itemId && !installedExtensionsStore.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined)
+  const heading = extensionTabTitle(shown, isFolderItem(item) ? folderName : kind ? installed?.tabTitle(kind) ?? item.title : item.title, item.itemId && installed && !installed.isChatFile(item.kind, item.fileName) ? { name: item.title, path: item.fileName ?? item.title } : undefined)
   const badge = shown.badge
   const hasBadge = badge !== null && badge !== ''
   const fileHost = useFileHost(item.itemId && !isFolderItem(item) ? item.itemId : null)
@@ -393,7 +358,12 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
         {marks}
       </PaneHeader>}
       {appError && errorShown ? <AppErrorDetails error={appError} testId="group-app-slot-error-details" onReload={() => void reloadAppPage(null, slot, item.fileName ?? undefined)} /> : null}
-      {update && held === updateKey ? (
+      {update && updateAsk === 'deciding' ? (
+        <div className="flex items-center gap-2 border-b border-[var(--border)] !px-3 !py-1 text-[length:var(--font-caption)]" data-testid="group-app-slot-update-deciding">
+          <Unknown className="h-[var(--control-h-sm)] w-48" />
+        </div>
+      ) : null}
+      {update && updateAsk === 'ask' ? (
         <div
           className="flex items-center gap-2 border-b border-[var(--border)] !px-3 !py-1 text-[length:var(--font-caption)] text-[var(--text-secondary)]"
           data-testid="group-app-slot-update"
@@ -405,7 +375,7 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
           </Button>
         </div>
       ) : null}
-      {update && held === updateKey && updateFailed ? (
+      {update && updateAsk === 'ask' && updateFailed ? (
         <div className="border-b border-[var(--border)] !px-3 !py-1 text-[length:var(--font-caption)] text-[var(--text-error)]" data-testid="group-app-slot-update-failed">
           {t('chatArea.openWith.installFailed')}<br />{updateFailed}
         </div>

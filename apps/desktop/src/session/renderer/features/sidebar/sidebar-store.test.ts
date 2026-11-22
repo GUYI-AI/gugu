@@ -8,6 +8,8 @@ import { SidebarStore } from './sidebar-store';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import { THIS_COMPUTER, sidebarOf } from './mirror-account-projects.testing';
 import { AccountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
+import { followRendererSession } from '@/lib/replica';
+import { thisDeviceId } from '@/store/thisDevice';
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
 
 type SidebarProjectManager = ConstructorParameters<typeof SidebarStore>[0];
@@ -562,9 +564,11 @@ describe('SidebarStore: 别的机器上的会话归到那台机器的项目下',
         machineOf: (id) => store.machines?.machineOf(id) ?? null,
         connected: (deviceId) => store.machines?.connected?.(deviceId) === true,
       });
+      // This computer is the replica `thisDeviceId`'s, for the account signed in.
+      followRendererSession('SIGNED_IN', 'tester');
+      thisDeviceId.set([], THIS_COMPUTER);
       runInAction(() => {
         accounts.list = projects;
-        accounts.localDeviceId = THIS_COMPUTER;
         accounts.status = 'ready';
       });
       store.machines = { ...machines, connected: () => true };
@@ -858,10 +862,11 @@ describe('SidebarStore keeps what the user folded folded', () => {
     } finally { sessionRegistry.release(page); }
   });
 
-  it('a blob written by the old desktop sidebar (section folds, 项目 | 对话 layout and page) still restores; those fields are ignored (#2548)', () => {
+  it('a blob written by the old desktop sidebar (section folds, 项目 | 对话 layout and page, sessionSortBy) still restores; those fields are ignored (#2548)', () => {
     const restored = twoProjects();
     restored.restoreSnapshot({
       expandedProjectIds: ['project-a'],
+      sessionSortBy: 'updated-at',
       pinnedCollapsed: true,
       projectsCollapsed: true,
       sessionsCollapsed: true,
@@ -877,7 +882,6 @@ describe('SidebarStore keeps what the user folded folded', () => {
       'idleExpandedProjectIds',
       'projectOrder',
       'sessionOrderByProject',
-      'sessionSortBy',
     ]);
   });
 });

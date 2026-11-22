@@ -43,7 +43,7 @@ const file = {
 const md = { render: vi.fn((_element: Element, _text: string, _options: unknown) => {}) }
 const context = { chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, file: { chat: 'chat-1', id: 'plan' }, locale: 'en', capabilities: ['files:read', 'files:write'] }
 let contextChanged = (_ctx: typeof context) => {}
-const menu = fakeSharedMenu()
+const menu = fakeSharedMenu({ more: 'More' })
 const gugu = {
   showContextMenu: menu.showContextMenu,
   linkTo: vi.fn(async ({ file }: { file: { id: string } }) => `gugu-file://${file.id}`),
@@ -108,8 +108,8 @@ describe('workspace App: the preview is gugu.markdown()', () => {
     const renamed = { ...pending, name: 'renamed.md', detailsPending: false, createdBy: { ...entry.createdBy, name: 'Current creator' } }
     gugu.files.list.mockResolvedValueOnce([renamed])
     document.getElementById('more')!.click()
-    await vi.waitFor(() => expect(menu.labels()).toContain('Rename'))
-    await menu.pick('Rename')
+    await vi.waitFor(() => expect(menu.labels('More')).toContain('Rename'))
+    await menu.pick('More', 'Rename')
     const input = document.querySelector<HTMLInputElement>('#doc-title .rename-input')!
     input.value = renamed.name
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))

@@ -3,7 +3,7 @@ import { commitPreparedChatAttachment, prepareChatAttachment } from '../../../..
 import { i18n } from '../../../../apps/desktop/src/i18n'
 const f = vi.hoisted(() => ({ plan: vi.fn(), commit: vi.fn(), begin: vi.fn(), keep: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererAccessToken: () => 'published-test-token', observeRendererSession: () => () => {} }))
-vi.mock('@gugu/core/cloud/attachmentsApi', () => ({ planAttachmentUpload: f.plan, commitAttachment: f.commit,
+vi.mock('@gugu/core/cloud/attachmentsApi', () => ({ drawImagePreviews: () => {}, planAttachmentUpload: f.plan, commitAttachment: f.commit,
   declareAttachment: async (endpoint: unknown, file: { bytes: Blob; contentType: string }, scope: unknown, signal?: AbortSignal) => {
     const plan = await f.plan(endpoint, { size: file.bytes.size, contentType: file.contentType }, scope, signal)
     return { staging_key: plan.staging_key, sha256: 'sha', size_bytes: file.bytes.size, plan }
@@ -55,7 +55,7 @@ describe('project composer attachments use the group-file publisher', () => {
     expect(n.invoke).toHaveBeenLastCalledWith('attachments:declare', { file: { name: 'selected.pdf', path: '/project/actual.pdf', size: 3, contentType: 'application/pdf' }, chatId: 'group', as: 'owner', messageId: 'message' })
     expect(f.plan).not.toHaveBeenCalled(); expect(f.begin).not.toHaveBeenCalled()
     expect(f.commit).toHaveBeenCalledWith(endpoint, { ...args, staging_key: 'staging', sha256: 'sha', size_bytes: 3 })
-    expect(f.keep, 'the renderer retains its own display copy').toHaveBeenCalledWith(selected, 'sha')
+    expect(f.keep, 'the main process knows where these bytes are: the renderer copies nothing').not.toHaveBeenCalled()
   })
   it('publishes an image as it does any other file of a project chat', async () => {
     const n = native(), image = new File(['png'], 'shot.png', { type: 'image/png' })

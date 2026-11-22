@@ -747,12 +747,17 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
 .mk-back:hover {
   color: var(--foreground);
 }
+/* 头部照 App Store:图标在左、名字三行紧挨在右;要点和按钮在下面占满整行。 */
 .mk-dh {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 48px;
-  align-items: start;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 24px;
+  align-items: center;
   margin-top: 24px;
+}
+.mk-dh > .mk-facts,
+.mk-dh .mk-acts {
+  grid-column: 1 / -1;
 }
 .mk-dh-main {
   min-width: 0;
@@ -844,20 +849,12 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   color: var(--foreground);
 }
 
-/* ── 产品页:下面两栏 ───────────────────────────────────────────────── */
+/* ── 产品页:下面一栏 ───────────────────────────────────────────────── */
 .mk-dbody {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 56px;
-  align-items: start;
-  margin-top: 40px;
-}
-.mk-dmain,
-.mk-dside {
   display: flex;
   flex-direction: column;
   gap: 32px;
-  min-width: 0;
+  margin-top: 40px;
 }
 .mk-dsec > h3,
 .mk-sec-h h3 {
@@ -1086,86 +1083,6 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   color: var(--foreground-passive);
 }
 
-/* ── 产品页:右栏 ─────────────────────────────────────────────────────── */
-/* 审核那张卡(照 Google Play 右栏顶上的「内容分级」卡):一个图标、一句话、代码在哪。 */
-.mk-review {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-}
-.mk-review > svg {
-  flex: none;
-  color: var(--foreground);
-}
-.mk-review > div {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.mk-review b {
-  font-size: var(--font-title);
-  line-height: 22px;
-  font-weight: 500;
-}
-.mk-review-k {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  font-size: var(--font-caption);
-  color: var(--foreground-muted);
-}
-.mk-side-links {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
-}
-.mk-side-links .mk-note {
-  margin: 0;
-}
-.mk-similar {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.mk-similar-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin: 0 -8px;
-  padding: 8px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: default;
-}
-.mk-similar-row:hover {
-  background: var(--color-row-hover);
-}
-.mk-similar-tx {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.mk-similar-tx > * {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.mk-similar-tx b {
-  font-weight: 500;
-}
-.mk-similar-tx span,
-.mk-similar-tx i {
-  font-size: var(--font-caption);
-  font-style: normal;
-  color: var(--foreground-muted);
-}
 .mk-mono {
   font-family: ui-monospace, Menlo, monospace;
   font-size: var(--font-caption);
@@ -1210,12 +1127,7 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
 }
 
 /* ── 窄:放在最后,压过上面同级的版面规则 ───────────────────────────────── */
-/* 两栏放不下:右栏落到正文下面(照 Google Play 窄屏)。 */
 @container (max-width: 860px) {
-  .mk-dbody {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 40px;
-  }
   .mk-lockups {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1256,7 +1168,7 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
     min-height: 0;
   }
   .mk-dh {
-    gap: 20px;
+    column-gap: 16px;
   }
   .mk-dh-title {
     font-size: 28px;
@@ -1352,13 +1264,15 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   outline-offset: -4px;
 }
 
-/* Desktop marketplace */
+/* Desktop marketplace. The header sits in the window's top band, edge to edge (the Apps view): its end leaves the window
+   controls their room (`--titlebar-controls-width`, the same reserve as the tab strip's, titlebar-actions). */
 .mk-market-header {
   position: sticky;
   z-index: 2;
   top: 0;
   margin-bottom: 18px;
   padding-block: 12px;
+  padding-inline-end: var(--titlebar-controls-width, 0px);
   background: var(--background);
 }
 .mk-market-actions {
@@ -1388,6 +1302,10 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   overflow: visible;
   border: none;
   background: transparent;
+}
+/* 开头那一排紧贴页头(页头自己留了 18px),❌ 再空一截。 */
+.mk-market-categories:first-child {
+  margin-top: 0;
 }
 .mk-market-categories [data-slot='toggle-group-item'] {
   min-height: 32px;
@@ -1548,5 +1466,40 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   }
   .mk-market-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── 「应用」里点开一个 App:清单收到左边,它的市场页在右边(照 Obsidian 的插件浏览);窄了只放市场页 ── */
+.mk-browse[data-browsing] {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+  /* The page's end space is its own: in the grid it would push the stuck list up at the bottom of the page. */
+  padding-bottom: 0;
+}
+.mk-browse[data-browsing] > .mk-browse-page {
+  padding-bottom: 56px;
+}
+.mk-browse[data-browsing] > .mk-browse-list {
+  /* 清单自己一栏:卡片按这一栏的宽度排成一列(上面的容器查询),和右边的页分开滚。它钉在起点不动,高度正好到滚动区
+     底边(use-browse-list 量出起点和高度);滚到头也不带动外面那层,❌ 一边滚、另一边跟着走。 */
+  container-type: inline-size;
+  position: sticky;
+  top: var(--mk-browse-top, 0);
+  height: var(--mk-browse-height, auto);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 4px 24px 0;
+}
+.mk-market-card[aria-current] {
+  background: var(--selected);
+}
+@container (width < 900px) {
+  .mk-browse[data-browsing] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mk-browse[data-browsing] > .mk-browse-list {
+    display: none;
   }
 }

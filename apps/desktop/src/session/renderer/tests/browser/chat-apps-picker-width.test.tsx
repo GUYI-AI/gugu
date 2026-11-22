@@ -1,6 +1,5 @@
 import { useRef } from 'react';
-import { runInAction } from 'mobx';
-import { afterEach, beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { i18n } from '@/i18n';
 import { rendererLogger } from '@/lib/log';
@@ -8,7 +7,7 @@ import { createReactHarness, renderWithAppProviders } from '../../../../../../..
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
 import { ChatAppsPicker } from '@/components/chat/ChatAppsPicker';
 import { Popover } from '@/components/ui/Popover';
-import { installedExtensionsStore } from '../../features/extensions/installed-extensions-store';
+import { installedExtensions, type InstalledExtensionsList } from '../../features/extensions/installed-extensions';
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../shared/extensions/manifest';
 import '@/i18n/registerMessagingCatalog';
 import '@/styles/tokens.css';
@@ -16,17 +15,17 @@ import '@/styles/tokens.css';
 let harness: ReturnType<typeof createReactHarness>;
 let viewport: { width: number; height: number };
 let language: string;
-let manifests: typeof installedExtensionsStore.manifests;
-let disabled: typeof installedExtensionsStore.disabled;
+// This device's Apps are the desktop's (the picker lists the ones installed here).
+vi.mock('@/components/appSlot/hereHost', () => ({ HERE_HOST: 'local' }));
+const nothingInstalled = { extensions: [], invalid: [], disabled: [] } as unknown as InstalledExtensionsList;
 beforeEach(async () => {
   viewport = { width: innerWidth, height: innerHeight }; language = i18n.language;
-  manifests = installedExtensionsStore.manifests; disabled = installedExtensionsStore.disabled;
   await page.viewport(1000, 700); await i18n.changeLanguage('en-US');
   harness = createReactHarness();
 });
 afterEach(async () => {
   harness.cleanup();
-  runInAction(() => { installedExtensionsStore.manifests = manifests; installedExtensionsStore.disabled = disabled; });
+  installedExtensions.set(['local'], nothingInstalled);
   await i18n.changeLanguage(language); await page.viewport(viewport.width, viewport.height);
 });
 
@@ -39,10 +38,11 @@ function Picker() {
 }
 
 async function measure(name: string) {
-  runInAction(() => {
-    installedExtensionsStore.manifests = [parseExtensionManifest({ id: 'width-app', name, version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: name }] } })];
-    installedExtensionsStore.disabled = [];
-  });
+  installedExtensions.set(['local'], {
+    extensions: [parseExtensionManifest({ id: 'width-app', name, version: '1.0.0', apiVersion: EXTENSION_API_VERSION, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'main', title: name }] } })],
+    invalid: [],
+    disabled: [],
+  } as never);
   await renderWithAppProviders(harness, <Picker />);
   await until('the actual Apps picker and row are laid out', () => (document.querySelector('[data-app-id="width-app"]')?.getBoundingClientRect().width ?? 0) > 0);
   expect(document.querySelectorAll('[data-slot="popover-popup"]')).toHaveLength(1);

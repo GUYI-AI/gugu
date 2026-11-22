@@ -43,6 +43,17 @@ describe('ProviderAccountRegistry', () => {
     expect((await fixture.registry.getAccount('harness:codex', 'native'))?.meta?.harnessConnection?.nativeOAuth).toBeUndefined();
   });
 
+  it('relocates a secret: the row points at the new ref, the old secret goes, a missing account changes nothing', async () => {
+    await upsert('mail', 'one', 'old');
+    const previous = (await fixture.registry.getAccount('mail', 'one'))!.credentialRef;
+    fixture.secretStore.secrets.set('vault:c1', 'old');
+    await fixture.registry.relocateSecret('mail', 'one', 'vault:c1');
+    expect((await fixture.registry.getAccount('mail', 'one'))?.credentialRef).toBe('vault:c1');
+    expect(fixture.secretStore.secrets.has(previous)).toBe(false);
+    await expect(fixture.registry.resolveSecret('mail', 'one')).resolves.toBe('old');
+    await expect(fixture.registry.relocateSecret('mail', 'gone', 'vault:c2')).rejects.toThrow('no longer exists');
+  });
+
   it('notifies only after durable account mutations and removes an unsubscribed observer', async () => {
     const snapshots: Promise<unknown>[] = [];
     const listener = vi.fn(() => { snapshots.push(fixture.registry.listAccounts('mail')); });

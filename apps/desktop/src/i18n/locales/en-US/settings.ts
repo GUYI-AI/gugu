@@ -159,7 +159,6 @@ export default {
     "occupationRequired": "If you choose Other, describe your occupation",
     "occupationReadFailed": "Could not read your occupation. Check your network and try again.",
     "occupationUnreadable": "Could not read your occupation. Reopen Settings later.",
-    "occupationNote": "Only you and your Gugu can see this.",
     "occupationUnset": "Not set",
     "intro": "Your avatar, name and bio are what others see of you in Gugu.",
     "avatar": "Avatar",
@@ -512,7 +511,6 @@ export default {
       "provisionFailed": "Could not set it up: ",
       "provisionFailedShort": "Setup failed",
       "wakeFailed": "Could not connect: ",
-      "stateFailed": "Could not read Gugu's status: ",
       "or": ", or ",
       "cancelProvision": "cancel",
       "steps": {
@@ -557,7 +555,6 @@ export default {
       "refused": "Gugu server on {{name}} refused the connection.",
       "notSignedIn": "{{name}} is not signed in. Re-add it in Settings → Devices.",
       "notInstalled": "Gugu server is not installed on {{name}}. Re-add it in Settings → Devices.",
-      "dismiss": "Dismiss"
     },
     "approveServer": {
       "title": "Approve machine",
@@ -619,6 +616,7 @@ export default {
         "next": "Then open the link it prints and click “Allow”. The code expires in 15 minutes.",
         "wgetToggle": "No curl? Use wget",
         "curlToggle": "Use curl",
+        "limitCheckFailed": "Couldn’t check the machine limit just now; checking again.",
         "waiting": "Waiting for the machine…",
         "appeared": "{{name}} added"
       },
@@ -821,8 +819,6 @@ export default {
     },
     "current": "This device",
     "empty": {
-      "none": "No machines signed in to Gugu yet",
-      "title": "Only this computer so far",
       "hint": "Add a server or another computer to run agents on it."
     },
     "filter": {
@@ -841,6 +837,7 @@ export default {
     },
     "lastSeen": "Last online {{time}}",
     "listFailed": "Could not load devices. Check your network.",
+    "sshListFailed": "Could not read which machines this computer reaches over SSH.",
     "loading": "Loading devices...",
     "loginState": {
       "reconnecting": "Reconnecting",
@@ -1011,7 +1008,6 @@ export default {
     "submitting": "Submitting...",
     "thanks": {
       "done": "Done",
-      "illustrationAlt": "Gugu hugging the report you just sent, saying thank you",
       "title": "Thank you for the report"
     },
     "title": "Report a problem",
@@ -1027,10 +1023,9 @@ export default {
   "fileStorage": {
     "temporaryRetentionHint": "Project files stay on the machine. When someone opens one, a copy is uploaded to the cloud for a while. This is how long that copy stays.",
     "settingsTitle": "Settings",
-    "kept": "Images and files marked “Temporary”",
-    "keptHint": "How long files marked “Temporary”, and images sent from a phone in project groups, stay in the cloud before they are deleted. Files marked “Keep” are not deleted on a schedule; when a large unopened one is removed is shown beside “Kept” above. Applies to files sent from now on.",
-    "keptDiffer": "Images are currently kept {{images}} and temporary files {{temporary}}; changing this setting aligns them.",
-    "dashboard": {"title": "Cloud usage", "total": "You uploaded {{count}} files to the cloud", "files_one": "{{count}} file", "files_other": "{{count}} files", "classes": {"temporary": "Temporary", "image": "Images", "kept": "Kept"}, "keptRuleLabel": "How kept files are kept", "keptRule": "Kept files are not deleted on a schedule. A file or image over {{size}} that nobody has opened for {{days}} days is deleted from the cloud; copies on your machines are not affected. Files in project groups are not affected by this rule. Files marked “Temporary”, and images sent from a phone in project groups, are deleted after the period set below.", "keptRuleNoExpiry": "Kept files are not deleted from the cloud. Files marked “Temporary”, and images sent from a phone in project groups, are deleted after the period set below.", "clean": "Delete from cloud…", "cleanTitle": "Delete these files from the cloud?", "cleanNote": "Only the cloud copy is deleted. Files on your machines stay. People in the group will no longer be able to open these files. This cannot be undone.", "confirmClean": "Delete {{size}}", "cancel": "Cancel", "soonTitle": "Expiring soon", "columns": {"name": "Name", "group": "Group", "size": "Size", "expires": "Deleted in"}, "daysLeft_one": "{{count}} day", "daysLeft_other": "{{count}} days", "today": "Today", "showAll": "Show all {{count}}", "showLess": "Show fewer", "machinesTitle": "On your machines", "machinesNote": "Stored on your machines, not in the cloud", "machineHint": "{{count}} project files totaling {{size}}; {{copies}} uploaded to the cloud while others open them.", "machineHintNone": "{{count}} project files totaling {{size}}, with none uploaded to the cloud."},
+    "kept": "Files marked “Temporary”",
+    "keptHint": "How long files marked “Temporary” stay in the cloud before they are deleted. Files marked “Keep” are not deleted on a schedule; when a large unopened one is removed is shown beside “Kept” above. Applies to files sent from now on.",
+    "dashboard": {"title": "Cloud usage", "total": "You uploaded {{count}} files to the cloud", "files_one": "{{count}} file", "files_other": "{{count}} files", "classes": {"temporary": "Temporary", "kept": "Kept"}, "keptRuleLabel": "How kept files are kept", "keptRule": "Kept files are not deleted on a schedule. A file over {{size}} that nobody has opened for {{days}} days is deleted from the cloud; copies on your machines are not affected, and an image keeps its preview. Files marked “Temporary” are deleted after the period set below.", "keptRuleNoExpiry": "Kept files are not deleted from the cloud. Files marked “Temporary” are deleted after the period set below.", "clean": "Delete from cloud…", "cleanTitle": "Delete these files from the cloud?", "cleanNote": "Only the cloud copy is deleted. Files on your machines stay. People in the group will no longer be able to open these files. This cannot be undone.", "confirmClean": "Delete {{size}}", "cancel": "Cancel", "soonTitle": "Expiring soon", "columns": {"name": "Name", "group": "Group", "size": "Size", "expires": "Deleted in"}, "daysLeft_one": "{{count}} day", "daysLeft_other": "{{count}} days", "today": "Today", "showAll": "Show all {{count}}", "showLess": "Show fewer", "machinesTitle": "On your machines", "machinesNote": "Stored on your machines, not in the cloud", "machineHint": "{{count}} project files totaling {{size}}; {{copies}} uploaded to the cloud while others open them.", "machineHintNone": "{{count}} project files totaling {{size}}, with none uploaded to the cloud."},
     "title": "File storage",
     "entryHint": "How project groups on your machines keep images and other files, and for how long; next to ordinary groups.",
     "projectTitle": "Project groups",
@@ -1039,7 +1034,7 @@ export default {
     "filesMachine": "On the machine",
     "filesCloud": "Upload to the cloud",
     "filesMachineHint": "Files stay on the computer you sent them from. When someone opens one, a copy is uploaded to the cloud for a while. While that computer is offline, the file cannot be opened.",
-    "filesCloudHint": "Every file sent is stored in the cloud and kept, as in ordinary groups; images are no longer deleted either.",
+    "filesCloudHint": "Every file sent is stored in the cloud, as in ordinary groups.",
     "temporaryRetention": "Cloud copy when others open a file",
     "ordinaryTitle": "Ordinary groups",
     "ordinary": "Files and images are uploaded to the cloud when sent and kept as shown beside “Kept” above. Nothing to adjust here.",
@@ -1092,7 +1087,7 @@ export default {
     "expiresOn_one": "Valid through {{date}} ({{days}} day left)",
     "expiresOn_other": "Valid through {{date}} ({{days}} days left)",
     "invalidNumber": "The membership data is invalid. Refresh and try again.",
-    "invalidTier": "The membership tier is not recognized. Refresh and try again.",
+    "invalidTier": "Could not read membership information. Update the app and try again.",
     "noDiscountNote": "Quarterly and yearly prices are calculated from the monthly price without a discount.",
     "nonExpiringBalance_one": "{{credits}} non-expiring credit",
     "nonExpiringBalance_other": "{{credits}} non-expiring credits",
@@ -1328,6 +1323,8 @@ export default {
     "agentCount_other": "{{count}} Agents",
     "noMatches": "No matching passwords",
     "empty": "No saved passwords",
+    "retry": "Retry",
+    "requestHandled": "This save request was already handled or has expired.",
     "addTitle": "Add password",
     "requestSave": "{{agent}} asks you to save this password. The values it provided are filled in. Check or complete them, then click Add.",
     "requestEdit": "{{agent}} asks you to update this password. The values it provided are filled in. Check or complete them, then click Save.",
@@ -1385,7 +1382,6 @@ export default {
     "notMe": "Not me",
     "joinRefused": "Another device declined to let this computer use your passwords",
     "joinAsk": "Allow this computer to use your passwords on another device",
-    "close": "Close",
     "refusedHint": "If this was a mistake, request again.",
     "askAgain": "Request again",
     "joinCompare": "When the digits on both devices match, click Allow on the other device.",

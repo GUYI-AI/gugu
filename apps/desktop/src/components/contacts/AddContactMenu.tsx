@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { InviteFriendsMenuItem, ReferralSharePreview } from '../referralPreview/ReferralPreview'
 import { useTranslation } from 'react-i18next'
 import { ListChecks, UserPlus, Users } from '@/lib/icons'
@@ -107,16 +107,28 @@ export function ContactsHeaderActions({
   onEnterSelectionMode: () => void
   onSelectAddFriend: (mode: 'contact' | 'group') => void
 }) {
+  // 「多选」和「完成」是两颗钮,切换时旧的那颗卸掉 —— 键盘焦点在它上面的话会掉到 body。换过去之后接到新的那颗上。
+  const toggle = useRef<HTMLButtonElement>(null)
+  const hadFocus = useRef(false)
+  useLayoutEffect(() => {
+    if (hadFocus.current) toggle.current?.focus()
+    hadFocus.current = false
+  }, [selectionMode])
+  const keepFocus = (run: () => void) => (event: { currentTarget: Element }) => {
+    hadFocus.current = document.activeElement === event.currentTarget
+    run()
+  }
   if (selectionMode) {
     return (
       <Button
+        ref={toggle}
         variant="ghost"
         size="sm"
         className="text-[var(--primary)]"
         title={labels.selectModeDone}
         aria-label={labels.selectModeDone}
         data-testid={AUTOMATION_TEST_IDS.contactsSelectModeDoneButton}
-        onClick={onFinishSelectionMode}
+        onClick={keepFocus(onFinishSelectionMode)}
       >
         {labels.selectModeDone}
       </Button>
@@ -125,10 +137,11 @@ export function ContactsHeaderActions({
   return (
     <>
       <UiIconButton
+        ref={toggle}
         title={labels.selectMode}
         aria-label={labels.selectMode}
         data-testid={AUTOMATION_TEST_IDS.contactsSelectModeButton}
-        onClick={onEnterSelectionMode}
+        onClick={keepFocus(onEnterSelectionMode)}
       >
         <ListChecks />
       </UiIconButton>

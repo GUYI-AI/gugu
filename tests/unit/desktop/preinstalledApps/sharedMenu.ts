@@ -2,9 +2,12 @@
 // for the id picked, or null when the menu closes without one. This fake keeps the menu the App last opened and lets a
 // test read it and pick from it as a person would, by labels (a submenu row's label, then a row inside it).
 import { vi } from 'vitest'
+import { contentMenuLayout, type ContentMenuItem } from '../../../../apps/desktop/src/session/shared/content-context-menu'
+import { appContextMenuOf } from '../../../../apps/desktop/src/session/shared/extensions/app-context-menu'
 
 export type SharedItem = {
-  type?: 'separator'; id?: string; label?: string; enabled?: boolean; checked?: boolean; danger?: boolean; title?: string; person?: string; items?: SharedItem[]
+  type?: 'separator'; id?: string; label?: string; enabled?: boolean; checked?: boolean; danger?: boolean; title?: string; person?: string
+  program?: string; fold?: true; alone?: string; hotkey?: string; items?: SharedItem[]
 }
 type Open = { x: number; y: number; items: SharedItem[]; resolve: (id: string | null) => void }
 
@@ -13,12 +16,22 @@ const named = (item: SharedItem, label: string) => item.type !== 'separator' && 
 
 const task = () => new Promise<void>((done) => setTimeout(done, 0))
 
-export function fakeSharedMenu() {
+/**
+ * The menu as the desktop host draws it from the App's rows: through the bridge (appContextMenuOf), laid out by the
+ * host's menu rule (contentMenuLayout), the 更多 rows behind one row named `more` (MenuFold: in place when only one).
+ */
+export function hostMenu(items: SharedItem[], more = '更多'): SharedItem[] {
+  const laid = contentMenuLayout(appContextMenuOf({ x: 0, y: 0, items }).items)
+  const folded = laid.more as ContentMenuItem[]
+  return [...laid.top, ...(folded.length > 1 ? [{ id: '__more', label: more, items: folded }] : folded)] as SharedItem[]
+}
+
+export function fakeSharedMenu({ more = '更多' }: { more?: string } = {}) {
   let open: Open | null = null
   const showContextMenu = vi.fn(({ x, y, items }: { x: number; y: number; items: SharedItem[] }) => {
     // A new menu takes the place of the open one, which answers nothing (the host's pending request is resolved null).
     open?.resolve(null)
-    return new Promise<string | null>((resolve) => { open = { x, y, items, resolve } })
+    return new Promise<string | null>((resolve) => { open = { x, y, items: hostMenu(items, more), resolve } })
   })
   const level = (path: string[]) => {
     if (!open) throw new Error('no shared menu is open')

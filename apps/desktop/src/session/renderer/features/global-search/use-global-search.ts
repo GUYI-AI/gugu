@@ -3,7 +3,7 @@ import { chatActor } from '@renderer/lib/chat/actor-identity'
 import { chatDisplayName } from '@renderer/lib/chat/chat-name'
 import { readChatSummary, resolveChatId } from '@/lib/chatSummariesBridge'
 import { translateSessionMessage } from '../../localization/locale-store'
-import { useQuery } from '@tanstack/react-query'
+import { refreshFailure, replica, useReplica, valueOf } from '@/lib/replica'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
@@ -17,7 +17,6 @@ import { renderMentionTokens } from '@renderer/lib/chat/render-mention-tokens'
 import { rankPaletteMatches } from '../command-palette/palette-rank'
 import type { SearchChip, SearchFacet, SearchKind } from './search-session'
 import { localMessageQueries } from '@/lib/messageIngest'
-import { platform } from '@/platform'
 import { useNetworkOnline } from '@/hooks/useNetworkOnline'
 
 /** One page per source: the counts beside the filters are these rows, shown as "100+" when a source returns a full page. */
@@ -26,7 +25,7 @@ export const SEARCH_LIMIT = 100
 type MessageRow = { id: string; chat_id: string; sender_user_id: string | null; sender_name: string; content_type: string; content: string | null; created_at: string; file_item_id: string | null }
 
 export type SearchHit =
-  | { kind: 'message'; id: string; group: string; chatId: string; messageId: string; senderId: string | null; sender: string | null; text: string; at: string; file: boolean }
+  | { kind: 'message'; id: string; group: string; chatId: string; messageId: string; senderId: string | null; sender: string | null; text: string; at: string; file: boolean; fileName: string | null }
   | { kind: 'task'; id: string; group: string; taskId: string; projectId: string; title: string; itemId: string; role: 'user' | 'assistant'; text: string; at: string; activity?: boolean }
 
 export interface SearchView {
@@ -36,15 +35,63 @@ export interface SearchView {
   scopes: SearchChip[]
   /** A typed in: / from: that matches nothing. */
   unresolved: string | null
-  hits: SearchHit[]
-  counts: Record<SearchFacet, number>
+  /** null: a source the search asks has not answered yet (❌ an empty list or a 0 in the meantime). */
+  hits: SearchHit[] | null
+  counts: Record<SearchFacet, number> | null
   capped: boolean
   /** With an in: chip: how many hits the same words have in every other conversation (null: not counted yet). */
   elsewhere: { count: number; capped: boolean } | null
   loading: boolean
   error: Error | null
   taskIndex?: TaskTurnIndexStatus
+  /** Hits and counts are the previous words' while these words' are on their way. */
+  stale: boolean
 }
+
+const messageSearch = replica({
+  name: 'messageSearch',
+  scope: 'account',
+  read: async (_owner, query: string, chatId: string | null, _clears: string): Promise<MessageRow[]> => {
+    const { data, error } = await chatDb.rpc('message_search_as', { p_chat_id: chatId, p_query: query, p_limit: SEARCH_LIMIT })
+    if (error) throw new Error(error.message)
+    return data as MessageRow[]
+  },
+  fresh: 5_000,
+  keep: 30_000,
+})
+
+/** Answers offline, never waits for the network. */
+const storedMessageSearch = replica({
+  name: 'storedMessageSearch',
+  scope: 'account',
+  read: async (owner, query: string, chatId: string, from: string | null, _clears: string): Promise<MessageRow[]> => {
+    const search = localMessageQueries().search
+    if (!search) throw new Error('This device keeps no message text index to search.')
+    const rows = await search(owner, chatId, query, SEARCH_LIMIT, from ?? undefined)
+    return rows.map(row => ({ id: row.id, chat_id: row.chat_id, sender_user_id: row.sender_user_id,
+      sender_name: '', content_type: row.content_type, content: row.content, created_at: row.created_at, file_item_id: row.file_item_id ?? null }))
+  },
+  networkMode: 'always',
+  fresh: 5_000,
+  keep: 30_000,
+})
+
+const taskTurnSearch = replica({
+  name: 'taskTurnSearch',
+  scope: 'account',
+  // This computer's own index: answers offline.
+  networkMode: 'always',
+  read: async (_owner, query: string, _clears: string): Promise<{ hits: TaskTurnHit[]; index: TaskTurnIndexStatus }> => {
+    const [index, hits] = await Promise.all([
+      rpc.search.taskTurnIndexStatus(),
+      rpc.search.taskTurns({ query, limit: SEARCH_LIMIT }),
+    ])
+    return { index, hits }
+  },
+  fresh: 5_000,
+  keep: 30_000,
+  refreshEvery: (value) => value?.index.state === 'preparing' ? 2_000 : false,
+})
 
 /** Which quick-filter kinds a message is: a picture or video, any other file, a link, or one that @-mentions `me`. */
 export function messageKinds(row: Pick<MessageRow, 'content_type' | 'content' | 'file_item_id'>, me: string | null): Set<SearchKind> {
@@ -118,67 +165,47 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
   const kinds = scopes.flatMap((chip) => chip.kind === 'type' ? [chip.type] : [])
   // A quick filter (a sender or a kind of message) is a search on its own: no words means every message, newest first.
   const runnable = (!!query || !!from || kinds.length > 0) && !unresolved
-  // Online, one conversation is searched in the cloud like every other scope. Offline on desktop, the messages
-  // stored on this device answer instead. Phase two removes the platform seam when the phone uses SQLite too.
-  const localScope = !!inChat && !online && platform.localMessages === 'sqlite'
-  // A clear changes what may be read, including fresh query-cache entries and
-  // responses already in flight. Hiding keeps the same history and cache key.
+  // Online, one conversation is searched in the cloud like every other scope. Offline, the messages stored on this
+  // device answer instead where the store indexes their text (the desktop's SQLite FTS; the phone's store does not).
+  const localScope = !!inChat && !online && !!localMessageQueries().search
   const boundaries = useMemo(() => [...summaries].flatMap(([id, chat]) => chat.historyClearedAt
     ? [[id, chat.historyClearedAt] as const] : []).sort(([left], [right]) => left.localeCompare(right)), [summaries])
-  const historyKey = [me, ...(boundaries.length ? [boundaries] : [])]
+  // Part of every search's arguments: a clear (here, another window, another device) is a new search, ❌ the cached
+  // answer or one already on its way. Hiding a chat keeps the same history and the same search.
+  const clears = JSON.stringify(boundaries)
 
-  const searchChats = (chatId: string | null) => ({
-    queryKey: ['global-search-messages', query, chatId, ...historyKey],
-    queryFn: async () => {
-      const { data, error } = await chatDb.rpc('message_search_as', { p_chat_id: chatId, p_query: query, p_limit: SEARCH_LIMIT })
-      if (error) throw new Error(error.message)
-      return data as MessageRow[]
-    },
-    staleTime: 5_000,
-  })
-  const searchStored = (chatId: string) => ({
-    queryKey: ['global-search-messages', query, chatId, from?.userId ?? null, me, ...historyKey],
-    queryFn: async (): Promise<MessageRow[]> => {
-      const store = localMessageQueries()
-      if (!store || !me) throw new Error('Sign in to search messages stored on this device.')
-      const rows = await store.search(me, chatId, query, SEARCH_LIMIT, from?.userId)
-      return rows.map(row => ({ id: row.id, chat_id: row.chat_id, sender_user_id: row.sender_user_id,
-        sender_name: '', content_type: row.content_type, content: row.content, created_at: row.created_at, file_item_id: row.file_item_id ?? null }))
-    },
-    networkMode: 'always' as const,
-    retry: false,
-    staleTime: 5_000,
-  })
-  const messages = useQuery({ ...(localScope ? searchStored(inChat.chatId) : searchChats(inChat?.chatId ?? null)), enabled: runnable && !inTask })
+  const messagesApply = runnable && !inTask
+  const turnsApply = runnable && !!query && tasks && !inChat && !from && kinds.length === 0
+  const cloud = useReplica(messageSearch, messagesApply && !localScope ? [query, inChat ? inChat.chatId : null, clears] : null, { keepPrevious: true })
+  const stored = useReplica(storedMessageSearch, messagesApply && localScope ? [query, inChat.chatId, from ? from.userId : null, clears] : null, { keepPrevious: true })
+  const messages = localScope ? stored : cloud
   // The same words everywhere, for the line that says how many more the in: chip is hiding (the unscoped search).
-  const everywhere = useQuery({ ...searchChats(null), enabled: runnable && !!query && !!inChat })
+  const everywhere = useReplica(messageSearch, runnable && query && inChat ? [query, null, clears] : null, { keepPrevious: true })
+  const turns = useReplica(taskTurnSearch, turnsApply ? [query, clears] : null, { keepPrevious: true })
+  const storedRows = stored.state === 'value' ? stored.value : null
   useEffect(() => {
-    if (!localScope) return
-    const ids = [...new Set((messages.data ?? []).flatMap(row => row.sender_user_id && !identities[row.sender_user_id] ? [row.sender_user_id] : []))]
+    if (!storedRows) return
+    const ids = [...new Set(storedRows.flatMap(row => row.sender_user_id && !identities[row.sender_user_id] ? [row.sender_user_id] : []))]
     if (ids.length) readIdentityDirectoryBridge()?.ensure(ids)
-  }, [identities, localScope, messages.data])
+  }, [identities, storedRows])
   const shownRow = (row: MessageRow) => row.content_type !== 'system' && (!from || row.sender_user_id === from.userId)
     && (kinds.length === 0 || kinds.every((kind) => messageKinds(row, me).has(kind)))
-  const turns = useQuery({
-    queryKey: ['global-search-task-turns', query, ...historyKey],
-    queryFn: async (): Promise<{ hits: TaskTurnHit[]; index: TaskTurnIndexStatus }> => {
-      const [index, hits] = await Promise.all([
-        rpc.search.taskTurnIndexStatus(),
-        rpc.search.taskTurns({ query, limit: SEARCH_LIMIT }),
-      ])
-      return { index, hits }
-    },
-    enabled: runnable && !!query && tasks && !inChat && !from && kinds.length === 0,
-    staleTime: 5_000,
-    refetchInterval: (q) => q.state.data?.index.state === 'preparing' ? 2_000 : false,
-  })
 
-  const messageHits: SearchHit[] = inTask ? [] : (messages.data ?? [])
+  // Messages that cannot be asked now are said (❌ placeholders for ever): no account to search for, or the cloud offline.
+  const unasked = !messagesApply ? null : messageSearch.key(query, null, clears) === null ? 'globalSearch.signedOut' as const
+    : !localScope && !online && messages.state === 'unknown' ? 'globalSearch.offline' as const : null
+  const applied = [...(messagesApply ? [messages] : []), ...(turnsApply ? [turns] : [])]
+  const pending = applied.some((reading) => reading.state === 'unknown')
+  // A reading held from the previous words while these words' are on their way (`keepPrevious`).
+  const stale = applied.some((reading) => reading.state === 'value' && reading.previous)
+  const messageRows = (messagesApply ? valueOf(messages) : undefined) ?? []
+  const turnHits = (turnsApply ? valueOf(turns)?.hits : undefined) ?? []
+  const messageHits: SearchHit[] = messageRows
     .filter(shownRow)
-    .map((row) => ({ kind: 'message', id: `m:${row.id}`, group: row.chat_id, chatId: row.chat_id, messageId: row.id, senderId: row.sender_user_id,
+    .map((row) => { const fileName = parseAttachmentContent(row.content)?.fileName ?? null; return { kind: 'message', id: `m:${row.id}`, group: row.chat_id, chatId: row.chat_id, messageId: row.id, senderId: row.sender_user_id,
       sender: row.sender_user_id === null ? null : localScope ? identities[row.sender_user_id]?.display_name ?? row.sender_name : row.sender_name,
-      text: excerpt(parseAttachmentContent(row.content)?.fileName ?? renderMentionTokens(row.content ?? ''), query), at: row.created_at, file: row.file_item_id !== null }))
-  const taskHits: SearchHit[] = !tasks || inChat || from || kinds.length > 0 || !query ? [] : (turns.data?.hits ?? [])
+      text: excerpt(fileName ?? renderMentionTokens(row.content ?? ''), query), at: row.created_at, file: row.file_item_id !== null, fileName } })
+  const taskHits: SearchHit[] = turnHits
     .filter((hit) => !inTask || hit.sessionId === inTask.taskId)
     .map((hit) => {
       const activity = activityPreviewLabel(hit.activity, { actor: chatActor, viewerId: me ?? undefined, chatName: chatDisplayName,
@@ -197,15 +224,20 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
     file: messageHits.filter((hit) => hit.kind === 'message' && hit.file).length,
   }
   const shown = facet === 'all' ? all : all.filter((hit) => facet === 'task' ? hit.kind === 'task' : hit.kind === 'message' && (facet === 'message' || hit.file))
+  // Only results with rows are held: an empty one held would say 「nothing found」 for words not searched yet.
+  const known = !runnable || (!pending && !(stale && all.length === 0))
   return {
-    query, scopes, unresolved, hits: runnable ? shown : [], counts: runnable ? counts : { all: 0, message: 0, task: 0, file: 0 },
-    capped: (messages.data?.length ?? 0) >= SEARCH_LIMIT || (turns.data?.hits.length ?? 0) >= SEARCH_LIMIT,
-    elsewhere: runnable && query && inChat && everywhere.data ? {
-      count: everywhere.data.filter((row) => row.chat_id !== inChat.chatId && shownRow(row)).length,
-      capped: everywhere.data.length >= SEARCH_LIMIT,
+    query, scopes, unresolved,
+    hits: !runnable ? [] : known ? shown : null,
+    counts: !runnable ? { all: 0, message: 0, task: 0, file: 0 } : known ? counts : null,
+    capped: messageRows.length >= SEARCH_LIMIT || turnHits.length >= SEARCH_LIMIT,
+    elsewhere: runnable && query && inChat && everywhere.state === 'value' ? {
+      count: everywhere.value.filter((row) => row.chat_id !== inChat.chatId && shownRow(row)).length,
+      capped: everywhere.value.length >= SEARCH_LIMIT,
     } : null,
-    loading: runnable && (messages.isFetching || turns.isFetching || text !== typed),
-    error: (messages.error as Error | null) ?? (everywhere.error as Error | null) ?? (turns.error as Error | null),
-    taskIndex: runnable && query && tasks && !inChat && !from && kinds.length === 0 ? turns.data?.index : undefined,
+    loading: (runnable && (pending || stale)) || text !== typed,
+    error: unasked ? new Error(translateSessionMessage(unasked)) : (messagesApply ? refreshFailure(messages) : null) ?? refreshFailure(everywhere) ?? (turnsApply ? refreshFailure(turns) : null),
+    taskIndex: turnsApply && turns.state === 'value' ? turns.value.index : undefined,
+    stale: runnable && known && stale,
   }
 }

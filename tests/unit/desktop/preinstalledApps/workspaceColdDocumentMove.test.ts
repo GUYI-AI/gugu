@@ -11,7 +11,7 @@ const folder = { ...file, id: 'docs', name: 'docs', displayName: 'docs', type: '
 const entries = [file, folder]
 const context = { tabId: 'file-context', file: { chat: 'chat', id: file.id }, chat: { id: 'chat', kind: 'group', name: 'Files', groupId: null }, workspace: { id: 'working-copy', sessionId: 'task' }, locale: 'en-US', capabilities: ['files:read', 'files:write'] }
 let changed: (ctx: Record<string, unknown>) => Promise<void>
-const menu = fakeSharedMenu()
+const menu = fakeSharedMenu({ more: 'More' })
 const gugu = {
   linkTo: async () => 'gugu-file://readme',
   getContext: async () => context, markdown: async () => ({ render: () => document.createDocumentFragment() }),
@@ -26,8 +26,8 @@ const gugu = {
 const el = (id: string) => document.getElementById(id)!
 async function moveFromToolbar() {
   el('more').click()
-  expect(menu.labels(), 'the actual file toolbar offers Move').toContain('Move to…')
-  await menu.pick('Move to…')
+  expect(menu.labels('More'), 'the actual file toolbar offers Move').toContain('Move to…')
+  await menu.pick('More', 'Move to…')
 }
 beforeAll(async () => {
   document.body.innerHTML = new DOMParser().parseFromString(readFileSync(resolve('apps/desktop/preinstalled-apps/workspace/index.html'), 'utf8'), 'text/html').body.innerHTML

@@ -102,6 +102,7 @@
 :where(gugu-icon):not(:defined) { visibility: hidden; }
 :where(gugu-file-mark) { display: inline-block; flex: none; width: var(--em-icon-sm); height: var(--em-icon-sm); vertical-align: -3px; color: inherit; }
 :where(gugu-file-mark):not(:defined) { visibility: hidden; }
+:where(gugu-file-mark[folder]) { color: var(--em-file-mute); }
 /* ── 按钮 ──────────────────────────────────────────────────────────────────────────────── */
 /* 默认 = 咕咕 Button 的 secondary：强一档的 hairline 框、透明底；悬停叠 --hover，按下叠 --press。
    排版照浏览器自己的按钮（inline-block、文字按 text-align 放；不折行：中文按钮在 App 自己的 flex 条里会被逐字折开），高度由上下内距凑成一行字时的控件高：

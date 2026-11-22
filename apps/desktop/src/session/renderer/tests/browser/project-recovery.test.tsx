@@ -13,7 +13,7 @@ import '@renderer/index.css';
 const state = vi.hoisted(() => ({ recover: vi.fn(), clean: vi.fn(), pick: vi.fn() }));
 const rows = [{ id: 'paper', chatId: 'paper-group', name: '论文伴读', path: '/missing/paper' as CanonicalPath }, { id: 'weekly', chatId: 'weekly-group', name: '周报整理', path: '/missing/weekly' as CanonicalPath }];
 vi.mock('@/lib/projectRecovery', () => ({
-  useUnavailableProjects: () => ({ projects: rows, refetch: async () => ({ data: rows }) }),
+  readUnavailableProjects: async () => rows,
   recoverUnavailableProject: state.recover, archiveUnavailableProjects: state.clean,
   projectRecoveryMessage: () => '恢复记录不完整，请联系维护者核对。',
 }));

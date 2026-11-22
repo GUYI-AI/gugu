@@ -12,7 +12,7 @@ import { FILE_PILL_CLASS } from './filePills'
  */
 export function MentionPill({ href, title, file, icon, mention, unavailable, onClick, children, rest }: {
   href: string
-  title: string
+  title?: string
   file?: string
   /** The kind's line mark, drawn where a file's mark goes (LinkPill's marks). */
   icon?: ReactNode
@@ -26,7 +26,7 @@ export function MentionPill({ href, title, file, icon, mention, unavailable, onC
   return (
     <a {...rest} data-pane-opener="" className={`gg-md-mention ${FILE_PILL_CLASS}`} data-mention-kind={mention ? 'file' : 'link'} data-unavailable={unavailable ? 'true' : undefined}
       href={href} title={title} onClick={onClick}>
-      {file !== undefined ? <span className="gg-md-mention-icon" aria-hidden="true"><FileMark name={fileLabelParts(file).name} size={12} /></span>
+      {file !== undefined ? <span className="gg-md-mention-icon" aria-hidden="true"><FileMark name={fileLabelParts(file).name} size={12} ink /></span>
         : icon ? <span className="gg-md-mention-icon" aria-hidden="true">{icon}</span> : null}
       <span className="gg-md-mention-label">{name}</span>
       {place ? <span className="gg-md-mention-place">{place}</span> : null}

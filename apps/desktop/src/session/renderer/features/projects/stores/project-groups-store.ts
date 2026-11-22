@@ -1,14 +1,12 @@
 import { comparer, observable, reaction, runInAction } from 'mobx';
 import type { ProjectGroupBinding } from '@shared/core/projects/project-groups';
-import { projectGroupBindingChangedChannel } from '@shared/core/projects/projectEvents';
-import { events, onMachineEvent, rpcOn } from '@renderer/lib/ipc';
-import { onEachMachine } from '@renderer/lib/machine-clients';
-import { machineRegistry } from '@renderer/lib/machine-routing';
-import { log } from '@renderer/utils/logger';
+import { onAccountChange } from '@/lib/replica';
+import { machineRegistry, type MachineListSource } from '@renderer/lib/machine-routing';
 import { publishProjectGroupChats } from './project-group-chats-bridge';
+import { projectGroupBindings } from './project-group-bindings';
 
 /**
- * 每个本地项目绑的项目群(这台电脑 + 每台连着的机器各自回答),#7341 第二步。
+ * 每个本地项目绑的项目群(这台电脑 + 每台连着的机器各自回答,读的是 replica `projectGroupBindings`),#7341 第二步。
  * 群操作(绑定 / 解绑 / 建群)和聊天页上哪些群是项目群读它;有哪些项目、一个本地项目归哪个项目群一律读 accountProjectsStore,
  * ❌ 在这里再答一遍(两份答案在发布落到账号之前会不一样)。
  *
@@ -48,21 +46,39 @@ export class ProjectGroupsStore {
     this.syncedMachines = syncedMachines;
     this.projectRows = projectRows;
     if (!this.stop) {
-      void this.refresh(null);
-      // 连上(且项目清单同步过)的机器各读一次;之后再连上一次就再读一次。
-      const offHosts = reaction(
-        () => this.syncedMachines().join('\u0000'),
-        (joined) => {
-          for (const deviceId of joined ? joined.split('\u0000') : []) void this.refresh(deviceId);
-        },
-        { fireImmediately: true }
-      );
-      // 哪台机器上的绑定变了(并进来、撤销、agent 挂的):在那台机器上订,就重读那一台。
+      // 那台机器答了(读到、它那边的绑定变了推过来重读):整份换上。读着、读失败的那一下不动(读失败 replica 自己记)。
+      const offAnswers = projectGroupBindings.subscribe([], ({ args: [machine], reading, fetching }) => {
+        if (!fetching && reading.state === 'value' && reading.error === null) this.applyBindings(machine, reading.value);
+      });
+      // 这台电脑与连上(且项目清单同步过)的机器:各读一次,并订着它那边的绑定变化(replica 的 watch,哪台机器上的绑定变了
+      // 就重读那一台);断开就放手,再连上一次就再读一次。
       // 账号上的项目不在这里重读:绑定要等那台机器发布到账号才进 list_my_projects,它自己订着那一下(accountProjectsStore.start)。
-      const offLocal = events.on(projectGroupBindingChangedChannel, () => void this.refresh(null));
-      const offMachines = onEachMachine((deviceId) =>
-        onMachineEvent(deviceId, projectGroupBindingChangedChannel, () => void this.refresh(deviceId))
+      const followed = new Map<string | null, () => void>();
+      const follow = (machine: string | null) => {
+        followed.set(machine, projectGroupBindings.hold(machine));
+        // What is held now (another reader read it), then the read: its answer lands through offAnswers.
+        const reading = projectGroupBindings.peek(machine);
+        if (reading.state === 'value') this.applyBindings(machine, reading.value);
+      };
+      const followAll = (machines: readonly (string | null)[]) => {
+        for (const [machine, release] of [...followed]) {
+          if (machines.includes(machine)) continue;
+          release();
+          followed.delete(machine);
+        }
+        for (const machine of machines) if (!followed.has(machine)) follow(machine);
+      };
+      const offHosts = reaction(
+        () => [null, ...this.syncedMachines()],
+        followAll,
+        { fireImmediately: true, equals: comparer.structural }
       );
+      // 换了账号:按那个账号重新读、重新订。
+      const offAccount = onAccountChange(() => {
+        const machines = [...followed.keys()];
+        followAll([]);
+        followAll(machines);
+      });
       // 只有项目页确实有行的群才从聊天页拿掉;绑定还在但项目已隐藏的群仍在聊天页。
       const offPublish = reaction(
         () => {
@@ -82,8 +98,9 @@ export class ProjectGroupsStore {
       );
       this.stop = () => {
         offHosts();
-        offLocal();
-        offMachines();
+        offAccount();
+        offAnswers();
+        followAll([]);
         offPublish();
       };
     }
@@ -95,29 +112,22 @@ export class ProjectGroupsStore {
   }
 
   /** 这台机器上的绑定整份换成这一份(那台机器此刻的回答,或没连着时账号上记着的那份)。 */
-  applyBindings(machine: string | null, bindings: readonly ProjectGroupBinding[]): void {
+  applyBindings(machine: string | null, bindings: readonly ProjectGroupBinding[], from: MachineListSource = 'machine'): void {
     runInAction(() => {
       for (const projectId of [...this.byProject.keys()]) {
         if ((machineRegistry.machineOf(projectId) ?? null) === machine) this.byProject.delete(projectId);
       }
       for (const binding of bindings) {
-        if (machine) machineRegistry.register(machine, [binding.projectId]);
+        if (machine && from === 'machine') machineRegistry.register(machine, [binding.projectId]);
+        else if (machine) machineRegistry.propose(machine, [binding.projectId]);
         this.byProject.set(binding.projectId, binding.chatId);
       }
     });
   }
 
+  /** 现在就再读这台机器的(答了由 start 订着的那一下换上);读失败 replica 自己记。 */
   async refresh(machine: string | null): Promise<void> {
-    try {
-      const result = await rpcOn(machine).projects.listProjectGroupBindings();
-      if (!result.success) {
-        log.warn('[project-groups] 读不到这台机器上的项目群绑定', { machine, error: result.error });
-        return;
-      }
-      this.applyBindings(machine, result.data);
-    } catch (error) {
-      log.warn('[project-groups] 读项目群绑定失败', { machine, error: String(error) });
-    }
+    await projectGroupBindings.reread(machine).catch(() => undefined);
   }
 }
 

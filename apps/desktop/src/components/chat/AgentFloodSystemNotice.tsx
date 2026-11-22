@@ -12,7 +12,7 @@
 // fail-loud:台账读不到 / 撤回失败,都把错误显示在这条消息底下 —— ❌ 不静默吞,
 // 否则用户点了一下什么都没发生,而档位其实没还原。
 import { Button } from '../ui/Button'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { topicService } from '../../lib/topics'
 import { agentFloodAdjustment } from '../../lib/agentFloodAdjustments'
@@ -59,17 +59,17 @@ export function AgentFloodSystemNotice({ messageId, content, onUndone }: AgentFl
   const loadError = reading.state === 'error'
   const [undoError, setUndoError] = useState<{ messageId: string } | null>(null)
   // 原因进日志、不进文案:用户拿内部失败描述做不了任何事(user-copy-leak 闸的判据)。
-  useEffect(() => { if (reading.state === 'error') floodLog.error({ error: reading.error, messageId }, 'agent flood ledger read failed') }, [reading, messageId])
 
   const undo = useCallback(async () => {
     if (!adjustment || busy) return
     setBusy(true)
     setUndoError(null)
+    const entry = agentFloodAdjustment.at(messageId)
     try {
       await topicService.undoAgentFloodAdjustment(adjustment.id)
       // RPC 返回即代表台账那行真的落了 undone_at(它在同一个事务里改的),所以这不是乐观更新;
       // 失败会从 await 抛出来,走下面的 catch,按钮保持原样。
-      agentFloodAdjustment.set([messageId], (prev) => (prev ? { ...prev, undone_at: new Date().toISOString() } : prev))
+      entry.set((prev) => (prev ? { ...prev, undone_at: new Date().toISOString() } : prev))
       onUndone?.()
     } catch (err) {
       floodLog.error({ error: err, messageId }, 'agent flood undo failed')

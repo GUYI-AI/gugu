@@ -11,7 +11,6 @@ import { useAnnotateActions } from './useAnnotateActions'
 import { AnnotateToolbar } from './AnnotateToolbar'
 import { AnnotateNotes } from './AnnotateNotes'
 import { AnnotateDoneMenu } from './AnnotateDoneMenu'
-import { annotationItem } from './annotateSource'
 import './annotate.css'
 
 export default function AnnotateEditor({ item, imageBounds, mobile, onCancel, onDone }: { item: ImageViewerItem; imageBounds?: () => DOMRectReadOnly | undefined; mobile: boolean; onCancel: () => void; onDone: () => void }) {
@@ -20,7 +19,7 @@ export default function AnnotateEditor({ item, imageBounds, mobile, onCancel, on
   useEffect(() => {
     let disposed = false
     setReady(null); setError(null)
-    void Promise.all([loadAnnotationImage(item), annotationItem(item)]).then(([image, source]) => { if (!disposed) setReady({ image, item: source }) }, failure => { if (!disposed) setError(messageForUser(failure)) })
+    void loadAnnotationImage(item).then((image) => { if (!disposed) setReady({ image, item }) }, failure => { if (!disposed) setError(messageForUser(failure)) })
     return () => { disposed = true }
   }, [item, attempt])
   return ready ? <AnnotationCanvas item={ready.item} image={ready.image} imageBounds={imageBounds} mobile={mobile} onCancel={onCancel} onDone={onDone} />

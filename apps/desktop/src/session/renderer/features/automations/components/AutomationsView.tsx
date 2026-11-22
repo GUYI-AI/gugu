@@ -33,6 +33,9 @@ import { AutomationsList } from './AutomationsList';
 import { AutomationTemplatesEmptyState } from './AutomationTemplatesEmptyState';
 import { CreateAutomationView } from './CreateAutomationView';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { refreshFailure } from '@/lib/replica';
+import { Unknown } from '@/components/ui/Unknown';
 
 /**
  * #6264「已安排」是分机器的(owner:「整个资源库或者其他的都是分设备的」):页头一个机器选择器,默认本机;
@@ -77,7 +80,7 @@ function AutomationsViewBody() {
     getCommands: () => [{ id: 'app.find', hideFromPalette: true, execute: () => searchRef.current?.focus() }],
   });
 
-  const { automations, toggleEnabled, destroy } = useAutomations();
+  const { automations, retry, toggleEnabled, destroy } = useAutomations();
   const host = useAutomationsHost();
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(0);
@@ -90,28 +93,26 @@ function AutomationsViewBody() {
   const { translate } = useSessionMessages();
   const templates = useMemo(() => buildBuiltinAutomationCatalog(translate), [translate]);
 
-  const automationData = automations.data;
+  const automationData = automations.state === 'value' ? automations.value : null;
   const effectiveAutomations = useMemo(
-    () => (automationData ?? []).filter((a) => a.name.toLowerCase().includes(search.toLowerCase())),
+    () => automationData?.filter((a) => a.name.toLowerCase().includes(search.toLowerCase())) ?? null,
     [automationData, search]
   );
   const pageSize = 25;
-  const lastPage = Math.max(0, Math.ceil(effectiveAutomations.length / pageSize) - 1);
+  const lastPage = effectiveAutomations ? Math.max(0, Math.ceil(effectiveAutomations.length / pageSize) - 1) : 0;
   const currentPage = Math.min(page, lastPage);
-  if (page !== currentPage) setPage(currentPage);
-  const pageAutomations = effectiveAutomations.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
-  const hasLoadedAutomations = automationData !== undefined;
+  if (effectiveAutomations && page !== currentPage) setPage(currentPage);
+  const pageAutomations = effectiveAutomations?.slice(currentPage * pageSize, (currentPage + 1) * pageSize) ?? null;
+  const readError = refreshFailure(automations);
   // 看的是别的机器、它此刻给不出东西:说一句人话;离线时照旧画上次读到的、只读。
   const notice = deviceScopeNotice(
-    { remote: host.remote, error: automations.error, hasData: hasLoadedAutomations, now: Date.now(), cloud: remoteHostsStore.cloudScope(host.remote?.deviceId) },
+    { remote: host.remote, error: readError, hasData: automationData !== null, now: Date.now(), cloud: remoteHostsStore.cloudScope(host.remote?.deviceId) },
     translate
   );
   const readOnly = !!notice?.readOnly;
-  const isEmpty = automationData !== undefined && automationData.length === 0;
-  const hasSearchResults = effectiveAutomations.length > 0;
 
   const liveAutomation = params.automationId
-    ? (automations.data?.find((a) => a.id === params.automationId) ?? null)
+    ? (automationData?.find((a) => a.id === params.automationId) ?? null)
     : null;
 
   function closeSheet() {
@@ -169,14 +170,25 @@ function AutomationsViewBody() {
                 createPending={readOnly}
                 onNewAutomation={() => openCreateSheet()}
               />
-              {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void automations.refetch()} />}
+              {notice && <DeviceScopeNoticeLine notice={notice} onRetry={retry} />}
             </DeviceScopeProvider>
-            {notice && !hasLoadedAutomations ? null : isEmpty ? (
+            {!notice ? <RefreshFailed reading={automations} /> : null}
+            {effectiveAutomations === null || pageAutomations === null ? (
+              automations.state === 'unknown' && !notice ? (
+                <div className="flex flex-col gap-1" aria-busy="true">
+                  {Array.from({ length: 3 }, (_, index) => (
+                    <div key={index} className="px-4 py-3">
+                      <Unknown className="h-[3lh] w-full" />
+                    </div>
+                  ))}
+                </div>
+              ) : null
+            ) : automationData?.length === 0 ? (
               <AutomationTemplatesEmptyState
                 templates={templates}
                 onSelectTemplate={openCreateSheet}
               />
-            ) : hasSearchResults ? (
+            ) : effectiveAutomations.length > 0 ? (
               <>
                 <AutomationsList
                   automations={pageAutomations}
@@ -209,11 +221,11 @@ function AutomationsViewBody() {
                   </Pagination>
                 )}
               </>
-            ) : hasLoadedAutomations ? (
+            ) : (
               <div className="py-8 text-sm text-foreground-muted">
                 {translate('automations.searchEmpty')}
               </div>
-            ) : null}
+            )}
           </div>
         </div>
       </div>

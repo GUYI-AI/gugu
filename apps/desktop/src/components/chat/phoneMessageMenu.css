@@ -20,7 +20,8 @@
   pointer-events: none;
 }
 /* 整屏这一层(连同 Base UI 包在外面的定位器)只让子块接点按:点到空处落到遮罩上 = 菜单外,收起。 */
-.gg-menu-positioner:has(> .gg-phone-menu) { pointer-events: none; }
+/* The positioner follows this menu's own backdrop (Menu.tsx renders them as siblings); no :has(): WebView < 105 drops it. */
+.gg-phone-menu-scrim + .gg-menu-positioner { pointer-events: none; }
 /* 收起时浮层本身也走 150ms,Base UI 等它放完才卸载,子块的退场动画才看得见。 */
 .gg-phone-menu[data-ending-style] { animation: gg-phone-menu-hold 150ms both; }
 .gg-phone-menu > * { position: absolute; pointer-events: auto; }

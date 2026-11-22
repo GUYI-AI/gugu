@@ -6,6 +6,7 @@ import { cx } from '@session-ui/styles/utilities/cx';
 import * as React from 'react';
 import type { FixedDataSlotProps } from '../fixed-data-slot';
 import * as styles from './popover.css';
+import { OpenLayer } from '../open-layer';
 
 function PopoverRoot({ ...props }: FixedDataSlotProps<PopoverPrimitive.Root.Props>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
@@ -39,6 +40,7 @@ function PopoverContent({
         anchor={anchor}
         className={styles.positioner}
       >
+        <OpenLayer />
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cx('surface-elevated', styles.popupContent, className)}

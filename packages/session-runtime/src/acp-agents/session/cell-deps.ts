@@ -67,10 +67,10 @@ export interface SessionCellDeps {
   providerId: string;
   acpSessionId: string;
   /**
-   * 这条会话跑的是咕咕平台模型(宿主签了平台凭据)。那时被鉴权拒说的是平台那一侧,
+   * 这条会话的凭据由宿主提供(咕咕平台票,或模型连接里用户自己的 key)。那时被鉴权拒说的是那份凭据,
    * ❌ 说成「这家在这台机器上的登录已失效」(#6264)。
    */
-  platformCredentials?: boolean;
+  hostCredentials?: boolean;
   billingRoute?: 'own' | 'platform' | 'unknown';
   agent?: AcpAgentApi;
   /** Provider-declared live setting contract. Missing declarations are an explicit runtime error. */

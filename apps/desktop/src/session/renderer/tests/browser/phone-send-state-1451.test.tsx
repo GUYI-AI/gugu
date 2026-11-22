@@ -5,7 +5,9 @@ import { messageUnitDef } from '@session-chat/components/rows/message/message.de
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, expect, it, vi } from 'vitest'
 import { cdp, page, userEvent } from 'vitest/browser'
-import { openSessionInputStorage, SessionInputOutbox } from '@/lib/sessionInputOutbox'
+import { openOutboxStorage } from '@/lib/outbox/storage'
+import { enqueueSessionInput } from '@/lib/outbox/kinds/sessionInput'
+import { installSessionInputOutbox } from '../../../../../../../tests/helpers/sessionInputOutbox'
 import { ChatComposer, MessageProvider, type PromptEditorRef } from '@gugu/session-ui/react/components'
 import { ThemeProvider } from '@gugu/session-ui/react/primitives'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
@@ -56,16 +58,18 @@ it('a touch begun on pending Send cannot activate Stop after the outbox commits'
   await page.viewport(390, 844)
   const api = createRef<PromptEditorRef>()
   const accountId = crypto.randomUUID()
-  const storage = await openSessionInputStorage()
+  const storage = openOutboxStorage()
   let releaseWrite!: () => void
   const writeGate = new Promise<void>(resolve => { releaseWrite = resolve })
-  const outbox = new SessionInputOutbox(accountId, {
+  // The real outbox over the real table, its disk write held open: the composer commits only once it is durable.
+  const installed = installSessionInputOutbox({ accountId, send: vi.fn(), storage: {
     ...storage,
-    put: async row => { await writeGate; await storage.put(row) },
-  }, vi.fn(), () => true)
+    write: async (...args) => { await writeGate; await storage.write(...args) },
+  } })
+  const listed = () => installed.outbox.items()
   const submit = vi.fn(async (text: string) => {
     api.current!.clear()
-    await outbox.enqueue({ deviceId: 'host', sessionId: 'task', text, queued: true, sendQueue: { order: 1 } })
+    await enqueueSessionInput({ deviceId: 'host', sessionId: 'task', text, queued: true, sendQueue: { order: 1 } })
   })
   const stop = vi.fn()
   host = document.body.appendChild(document.createElement('div'))
@@ -98,13 +102,13 @@ it('a touch begun on pending Send cannot activate Stop after the outbox commits'
     await touchEnd()
     await expect.element(send).toBeDisabled()
     expect(submit).toHaveBeenCalledExactlyOnceWith('queue this follow-up')
-    expect(await outbox.list()).toHaveLength(0)
+    expect(listed()).toHaveLength(0)
     expect(stopButton.query()).toBeNull()
 
     await touchStart(send.element())
     releaseWrite()
     await expect.element(stopButton).toBeEnabled()
-    expect((await outbox.list()).map(row => row.text)).toEqual(['queue this follow-up'])
+    expect(listed().map(row => (row.payload as { text: string }).text)).toEqual(['queue this follow-up'])
     await touchEnd()
     expect(stop).not.toHaveBeenCalled()
 
@@ -128,7 +132,9 @@ it('a touch begun on pending Send cannot activate Stop after the outbox commits'
   } finally {
     releaseWrite()
     await Promise.allSettled(submit.mock.results.map(result => result.value))
-    for (const row of await outbox.list()) await storage.remove(accountId, row.id)
+    const ids = listed().map(row => row.id)
+    installed.dispose()
+    await storage.write(accountId, [], ids)
   }
 })
 

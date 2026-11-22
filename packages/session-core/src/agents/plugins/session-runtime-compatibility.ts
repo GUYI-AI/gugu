@@ -1,5 +1,5 @@
 import semver from 'semver';
-import { resolveCommandPath, versionLineOf, withProbeSwitches } from '../../host-dependencies/runtime';
+import { resolveCommandPath, versionProbeArgs, versionTextOf, withProbeSwitches } from '../../host-dependencies/runtime';
 import type { IExecutionContext } from '../../exec';
 // ⚠️ 直接从无 `node:` 导入的那个模块取,❌ 走 `../../exec` 的 barrel:本文件在 web 构建里(#6390)。
 import {
@@ -189,11 +189,12 @@ function parseRuntimeVersion(output: string, versionLine?: RegExp): string | nul
   // 标点后必须终端,是为了不把 "1.0.82.3" 这类四段版本误配成前三段。
   const versionPattern = /(?:^|\s)v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)(?=$|\s|[.,;)](?:$|\s))/gm;
   const versionsIn = (text: string) => [...text.matchAll(versionPattern)].map((match) => match[1]);
-  // 这一家自己那一行(`versionLineOf`:包装器的 banner 里也会有版本号);认不出就照旧读法。
-  const own = versionLineOf(output, versionLine);
-  if (own !== null) {
-    const inOwn = versionsIn(own);
-    if (inOwn.length === 1) return inOwn[0];
+  // 声明了自己那一行就只认那一行(`versionTextOf`):认不出 = 没读到,由调用方把原文报出来。
+  const text = versionTextOf(output, versionLine);
+  if (text === null) return null;
+  if (versionLine) {
+    const inOwn = versionsIn(text);
+    return inOwn.length === 1 ? inOwn[0] : null;
   }
   const matches = versionsIn(output);
   if (matches.length === 1) return matches[0];
@@ -251,6 +252,21 @@ function rememberVersionReading(context: IExecutionContext, key: string, reading
   const perContext = runtimeVersionReadings.get(context) ?? new Map<string, RuntimeVersionReading>();
   perContext.set(key, reading);
   runtimeVersionReadings.set(context, perContext);
+}
+
+/**
+ * Would session start accept this harness version on every surface the descriptor declares? The same per-requirement
+ * check session start applies (`runtimeSatisfied`), over each harness requirement; interpreter requirements
+ * (`runtime: 'node'`) read node, not the harness, so they are not this version's to meet. Nothing declared ⇒ true, as
+ * session start lets it through. null when the version is not readable semver.
+ */
+export function harnessVersionSupported(
+  descriptor: Pick<SessionBundleDescriptor, 'runtimeCompatibility'> | undefined,
+  version: string | null,
+): boolean | null {
+  if (!version || !semver.valid(version)) return null;
+  return Object.values(descriptor?.runtimeCompatibility ?? {}).flat()
+    .every((requirement) => requirement.runtime === 'node' || runtimeSatisfied(version, requirement));
 }
 
 /** 装新版 / 改了选择 ⇒ 之前判定兼容的版本全部作废(WeakMap 没有 clear,换一张新的)。 */
@@ -406,7 +422,7 @@ export async function resolveSessionRuntimeCompatible(input: {
   // 与真因隔着三层的话(2026-09-18 Windows 真机实撞,codex 的 Code/TUI 会话因此一条都开不起来)。
   // ⇒ 包壳这件事**只有一个属主**:执行上下文自己的 `planDirectSpawn`(见 exec/windows-launcher.ts),
   // 它同时产出 argv 与那组必须一起带上的 spawn 开关。这里递原始路径,让它去包。
-  const probeArgs = [...requirement.versionArgs];
+  const probeArgs = await versionProbeArgs(probeExecutable, requirement.versionArgs, input.executionContext);
   // 这次探测也是一次「跑它」:带上这一家声明的关自更新开关(#6186)。
   const probeEnv = withProbeSwitches(
     input.executionContext,

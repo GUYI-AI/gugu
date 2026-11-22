@@ -5,7 +5,7 @@ import { publishChatSummaries } from '@/lib/chatSummariesBridge'
 import { ChatTabMenuItems, chatTabHasActions } from '@/session/renderer/features/chats/chat-tab-menu-items'
 import { openInfoTab } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
 
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { openableApps: [{ extensionId: 'board', name: 'Board' }] } }))
+vi.mock('@renderer/features/extensions/installed-extensions', () => ({ LOCAL_HOST: 'local', useInstalledApps: () => ({ state: 'value', value: { appsIn: () => [{ extensionId: 'board', name: 'Board' }] }, stale: false, error: null }) }))
 vi.mock('@renderer/features/chats/chat-tabs/chat-layouts', () => ({ openInfoTab: vi.fn() }))
 vi.mock('@/components/chat/ChatDetailsMenuItems', () => ({ ChatDetailsMenuItems: ({ onOpenInfo }: { onOpenInfo: () => void }) => createNode('button', { onClick: onOpenInfo }, 'Chat info') }))
 let ui: ReturnType<typeof createReactHarness>

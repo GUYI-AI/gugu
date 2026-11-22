@@ -3,7 +3,7 @@ import './catalog'
 import './product-tour.css'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { saveProductTourState, useRememberProductTourState, type ProductTourState, type TourStepId } from '../../lib/productTour'
+import { rememberProductTourState, saveProductTourState, type ProductTourState, type TourStepId } from '../../lib/productTour'
 import { rendererLogger } from '../../lib/log'
 import { setProductTourOnScreen } from '../../lib/sidebarChatsBridge'
 import { TourBubble } from './TourBubble'
@@ -45,7 +45,6 @@ export function ProductTour({ userId, steps, start, onDone }: {
   onDone: () => void
 }) {
   const { t } = useTranslation('productTour')
-  const remember = useRememberProductTourState(userId)
   const [tourSteps, setTourSteps] = useState(steps)
   const [index, setIndex] = useState(() => Math.max(0, steps.indexOf(start)))
   const [ended, setEnded] = useState(false)
@@ -69,7 +68,7 @@ export function ProductTour({ userId, steps, start, onDone }: {
 
   // 进度先在界面上走,再串行存到账号:存是为了换设备接着看,❌ 锁住下一步。
   const persist = (state: ProductTourState) => {
-    remember(state)
+    rememberProductTourState(state)
     saveTail.current = saveTail.current.catch(() => undefined).then(() => saveProductTourState(userId, state)).catch((cause) => {
       log.error({ error: String(cause) }, 'save product tour progress failed')
       setError(messageForUser(cause))

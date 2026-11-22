@@ -141,4 +141,16 @@ public class PrivateFileSinkTest {
         assertArrayEquals(new String[] { sink.id }, root.list());
         assertArrayEquals(new byte[] { 8 }, Files.readAllBytes(new File(collision, "preserve").toPath()));
     }
+
+    /** Direct upload §2.5: the claimed sha of other bytes of the same size is integrity_failed (fileResolver.ts isFileIntegrityError). */
+    @Test public void bytesThatAreNotTheirShaFailIntegrityAndPublishNothing() throws Exception {
+        File root = temporary.newFolder();
+        byte[] claimed = binary(64), served = binary(64);
+        served[0] ^= 1;
+        PrivateFileSink sink = new PrivateFileSink(root, "file.bin", served.length, sha(claimed));
+        sink.write(served);
+        try { sink.commit(); fail("forged bytes must not publish"); }
+        catch (IOException expected) { assertTrue(expected.getMessage().startsWith("integrity_failed")); }
+        assertArrayEquals(new String[0], root.list());
+    }
 }

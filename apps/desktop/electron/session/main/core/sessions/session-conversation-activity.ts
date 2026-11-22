@@ -1,13 +1,14 @@
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import { personalConversationPreview } from '@gugu/session-core/session-record/personal-conversation';
 import type { PreviewActivity } from '@gugu/session-core/session-record/preview-activity';
 import { activityPreviewSources } from '@gugu/session-chat-ui/activity-preview';
 export { personalConversationMessages } from '@gugu/session-core/session-record/personal-conversation';
 import { db, type AppDb } from '@main/db/client';
-import { kv, sessionTurns } from '@main/db/schema';
+import { kv } from '@main/db/schema';
 
-type Activity = { text: string; at: string; turnSeq: number } & PreviewActivity;
+/** `turnId`: the committed turn the preview came from (kept from before turn ids were recorded: absent). */
+type Activity = { text: string; at: string; turnId?: string } & PreviewActivity;
 type ActivityDb = Pick<AppDb, 'select' | 'insert'>;
 const keyFor = (sessionId: string) => `native-conversation-activity:${sessionId}`;
 
@@ -16,15 +17,10 @@ export function nativeConversationActivity(sessionId: string, source: ActivityDb
   if (!row) return null;
   const value = JSON.parse(row.value) as Activity | null;
   if (value === null) return null;
-  if (typeof value.text !== 'string' || typeof value.at !== 'string' || !Number.isFinite(Date.parse(value.at)) || !Number.isInteger(value.turnSeq)) throw new Error(`Invalid native conversation activity: ${sessionId}`);
-  if (value.activityVersion !== 1 || value.activity === undefined) {
-    // Old cached text has no fold ownership. Rebuild only its recorded turn from the journal;
-    // a missing journal cannot establish that this is an ordinary owner reply.
-    const stored = source.select({ data: sessionTurns.data }).from(sessionTurns)
-      .where(and(eq(sessionTurns.sessionId, sessionId), eq(sessionTurns.seq, value.turnSeq))).get();
-    const preview = stored ? personalConversationPreview(JSON.parse(stored.data) as TranscriptTurn, activityPreviewSources) : null;
-    return preview ? { ...preview, at: new Date(preview.at).toISOString(), turnSeq: value.turnSeq } : null;
-  }
+  if (typeof value.text !== 'string' || typeof value.at !== 'string' || !Number.isFinite(Date.parse(value.at))
+    || (value.turnId !== undefined && typeof value.turnId !== 'string')) throw new Error(`Invalid native conversation activity: ${sessionId}`);
+  // Cached text from before fold ownership was recorded says nothing of whose reply it is: the next turn writes it again.
+  if (value.activityVersion !== 1 || value.activity === undefined) return null;
   return value;
 }
 
@@ -32,7 +28,7 @@ export function nativeConversationActivity(sessionId: string, source: ActivityDb
 export function noteNativeConversationActivity(sessionId: string, turn: TranscriptTurn, source: ActivityDb): boolean {
   const preview = personalConversationPreview(turn, activityPreviewSources);
   if (!preview) return false;
-  const latest: Activity = { ...preview, at: new Date(preview.at).toISOString(), turnSeq: turn.seq };
+  const latest: Activity = { ...preview, at: new Date(preview.at).toISOString(), turnId: turn.id };
   const before = nativeConversationActivity(sessionId, source);
   if (before && (before.at > latest.at || JSON.stringify(before) === JSON.stringify(latest))) return false;
   source.insert(kv).values({ key: keyFor(sessionId), value: JSON.stringify(latest), updatedAt: Date.now() })
@@ -40,9 +36,10 @@ export function noteNativeConversationActivity(sessionId: string, turn: Transcri
   return true;
 }
 
-export function truncateNativeConversationActivity(sessionId: string, fromSeq: number, source: ActivityDb, removed: ReadonlySet<number> = new Set()): boolean {
+/** A revert removed everything from `from` (epoch ms) on: a preview of a message at or after it goes. */
+export function truncateNativeConversationActivity(sessionId: string, from: number, source: ActivityDb): boolean {
   const current = nativeConversationActivity(sessionId, source);
-  if (!current || (current.turnSeq < fromSeq && !removed.has(current.turnSeq))) return false;
+  if (!current || Date.parse(current.at) < from) return false;
   source.insert(kv).values({ key: keyFor(sessionId), value: 'null', updatedAt: Date.now() })
     .onConflictDoUpdate({ target: kv.key, set: { value: 'null', updatedAt: Date.now() } }).run();
   return true;

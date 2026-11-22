@@ -6,6 +6,8 @@ import { SidebarStore } from '@renderer/features/sidebar/sidebar-store';
 import { groupInviteAccess } from '@/lib/groupMemberPermissions';
 import { ProjectGroupsStore, projectGroupsStore } from './project-groups-store';
 import { AccountProjectsStore } from './account-projects-store';
+import { followRendererSession } from '@/lib/replica';
+import { thisDeviceId } from '@/store/thisDevice';
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
 
 vi.mock('@renderer/lib/ipc', () => ({
@@ -28,9 +30,11 @@ function sidebarWith(projects: ProjectManager['projects'], list: AccountProject[
   const accounts = new AccountProjectsStore();
   const sidebar = new SidebarStore({ projects } as unknown as ProjectManager, accounts);
   accounts.attach({ projects, machineOf: (id) => sidebar.machines?.machineOf(id) ?? null, connected: () => false });
+  // This computer is the replica `thisDeviceId`'s, for the account signed in.
+  followRendererSession('SIGNED_IN', 'tester');
+  thisDeviceId.set([], 'this-computer');
   runInAction(() => {
     accounts.list = list;
-    accounts.localDeviceId = 'this-computer';
     accounts.status = 'ready';
   });
   return sidebar;

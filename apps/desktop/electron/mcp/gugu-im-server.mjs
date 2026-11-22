@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
+import { egress, EgressError, egressErrorText } from '@gugu/core/shared/egress'
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
@@ -20,7 +21,7 @@ import { findRosterNameHits } from '../../../../packages/core/src/shared/rosterN
 import { findMentionSpans } from '../../../../packages/core/src/shared/mentionToken.mjs'
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
-import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey } from '@gugu/core/shared/fileResolver'
+import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey, isFileIntegrityError } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { matchIdPrefix, uuidPrefixRange } from '../../../../packages/core/src/shared/idPrefix'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
@@ -28,7 +29,7 @@ import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, retryableAttachmentError, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, retryableAttachmentError, sendFileAsOwner, shareAttachment, withUploadedAttachment } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
@@ -267,13 +268,8 @@ function decodeImArgs(args) {
  */
 async function fullMessageId(deps, id, chatId = null, chatLabel = chatId) {
   // A stored message id is opaque text (`turn-failure:batch:<hash>`): only the start of a UUID is a prefix.
-  const range = typeof id === 'string' ? uuidPrefixRange(id) : null
-  if (!range) return id
-  // Read as the owner, kept only where this agent may read (can_read_message), so neither a match nor a candidate leaks.
-  const read = await deps.restGet(`messages?id=gte.${range.lo}&id=lte.${range.hi}${chatId ? `&chat_id=eq.${enc(chatId)}` : ''}`
-    + '&select=id,content,created_at&order=created_at.desc&limit=11')
-  const visible = await Promise.all(read.map((row) => agentCanSee(deps, row)))
-  const rows = read.filter((_row, index) => visible[index])
+  if (typeof id !== 'string' || !uuidPrefixRange(id)) return id
+  const rows = await messagesAs(deps, id, { chatId })
   return matchIdPrefix({
     kind: 'msg', id, rows, keyOf: (row) => row.id, noun: 'messages',
     describe: (row) => `${JSON.stringify(String(row.content ?? '').slice(0, 40))}, ${row.created_at}`,
@@ -347,11 +343,11 @@ function restHeaders(context, accessToken, profile, extra = {}) {
   }
   return h
 }
-export async function restGet(context, path, profile = 'chat', fetchImpl = fetch) {
+export async function restGet(context, path, profile = 'chat', fetchImpl = egress.fetch) {
   const accessToken = await context.getAccessToken()
   let res
   try {
-    res = await fetchImpl(`${context.supabaseUrl}/rest/v1/${path}`, {
+    res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/${path}`, {
       headers: restHeaders(context, accessToken, profile),
     })
   } catch (error) {
@@ -359,9 +355,6 @@ export async function restGet(context, path, profile = 'chat', fetchImpl = fetch
     const status = Number(error?.status)
     if (Number.isInteger(status) && status >= 400 && status <= 599) {
       throw new RpcHttpError(status, { accessToken })
-    }
-    if (error instanceof TypeError || error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-      throw new RpcTransportError()
     }
     throw error
   }
@@ -371,9 +364,9 @@ export async function restGet(context, path, profile = 'chat', fetchImpl = fetch
   }
   return res.json()
 }
-async function restInsert(context, table, row, profile = 'chat', fetchImpl = fetch) {
+async function restInsert(context, table, row, profile = 'chat', fetchImpl = egress.fetch) {
   const accessToken = await context.getAccessToken()
-  const res = await fetchImpl(`${context.supabaseUrl}/rest/v1/${table}`, {
+  const res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/${table}`, {
     method: 'POST',
     headers: restHeaders(context, accessToken, profile, { Prefer: 'return=minimal' }),
     body: JSON.stringify(row),
@@ -395,7 +388,7 @@ export function restWriteError(what, status, body) {
  * 归档 agent 照收、只给它记 refusal;从来不是成员的 id 才拒,带 hint recipient_not_member、details 列出这些 id。
  * 发送者自己没权限仍是 RLS 的 42501,不会走到这里。把这种拒绝还原成给 agent 看得懂的一句,其余原样抛。
  */
-function recipientRefusal(error, chatId) {
+async function recipientRefusal(error, chatId, deps) {
   // 附件走 attachments 函数:同一个拒绝变成 HTTP 400 { error: 'recipient_not_member', details } (gugu-supabase#242),
   // 悄悄话的变成 400 invalid、原文照带。
   const viaAttachments = error instanceof AttachmentsError
@@ -405,11 +398,20 @@ function recipientRefusal(error, chatId) {
   const notMember = error?.hint === 'recipient_not_member' || (viaAttachments && error.code === 'recipient_not_member')
   if (!notMember && !whisper) return error
   const ids = whisper ? [whisper[1]] : String(error.details ?? '').split(',').map((id) => id.trim()).filter(Boolean)
-  return new Error(`Recipients are not members of chat ${chatId}: ${ids.join(', ')}. Look up current members with message_members and send again.`)
+  return new Error(`Recipients are not members of chat ${chatId}: ${ids.join(', ')}. ${await addressableMembers(chatId, deps)}`)
 }
-async function restPatch(context, path, body, profile = 'chat', fetchImpl = fetch, returning = false) {
+/** Who a refused send can go to instead, so the agent corrects the address from the refusal itself rather than guessing. */
+async function addressableMembers(chatId, deps) {
+  const ids = (await memberRowsOfMyChat(chatId, deps)).map((row) => String(row.user_id)).filter((id) => id !== deps.context.agentId)
+  const names = new Map((await restGetInBatches(ids, (batch) =>
+    deps.restGet(`users?id=in.(${batch.map(enc).join(',')})&select=id,display_name`, 'identity'))).map((user) => [user.id, user.display_name]))
+  const shown = ids.slice(0, 30).map((id) => names.get(id) ? `${names.get(id)} (aid:${id})` : `aid:${id}`)
+  const more = ids.length > shown.length ? ` and ${ids.length - shown.length} more (message_members lists them all)` : ''
+  return `Members you can address: ${shown.join(', ') || 'none besides you'}${more}. Send again to one of these addresses.`
+}
+async function restPatch(context, path, body, profile = 'chat', fetchImpl = egress.fetch, returning = false) {
   const accessToken = await context.getAccessToken()
-  const res = await fetchImpl(`${context.supabaseUrl}/rest/v1/${path}`, {
+  const res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/${path}`, {
     method: 'PATCH',
     headers: restHeaders(context, accessToken, profile, { Prefer: returning ? 'return=representation' : 'return=minimal' }),
     body: JSON.stringify(body),
@@ -417,21 +419,13 @@ async function restPatch(context, path, body, profile = 'chat', fetchImpl = fetc
   if (!res.ok) throw new Error(`PATCH ${path} → ${res.status} ${await res.text()}`)
   return returning ? res.json() : undefined
 }
-export async function restRpc(context, name, body, profile = 'chat', fetchImpl = fetch) {
+export async function restRpc(context, name, body, profile = 'chat', fetchImpl = egress.fetch) {
   const accessToken = await context.getAccessToken()
-  let res
-  try {
-    res = await fetchImpl(`${context.supabaseUrl}/rest/v1/rpc/${name}`, {
-      method: 'POST',
-      headers: restHeaders(context, accessToken, profile),
-      body: JSON.stringify(body || {}),
-    })
-  } catch (error) {
-    if (error instanceof TypeError || error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-      throw new RpcTransportError()
-    }
-    throw error
-  }
+  const res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: restHeaders(context, accessToken, profile),
+    body: JSON.stringify(body || {}),
+  })
   if (!res.ok) {
     const detail = rpcErrorDetail(await res.text().catch(() => ''))
     throw new RpcHttpError(res.status, { accessToken, detail })
@@ -442,8 +436,23 @@ export async function restRpc(context, name, body, profile = 'chat', fetchImpl =
   return t ? JSON.parse(t) : null
 }
 
+/**
+ * The request never got an answer (the egress says why: dns, connect, proxy, proxy-auth, tls, timeout, reset). What the
+ * runtime said about it means nothing to an agent or the person reading the task, so the error says what is wrong in
+ * their terms and what to do (`egressErrorText`); the egress already logged the cause.
+ */
 export class RpcTransportError extends Error {
-  constructor() { super('command RPC transport failed') }
+  constructor(kind = 'connect') { super(egressErrorText(kind)); this.kind = kind }
+}
+
+/** Every REST primitive below sends through here, so a request that got no answer reads the same from each of them. */
+async function cloudRequest(fetchImpl, url, init) {
+  try {
+    return await fetchImpl(url, init)
+  } catch (error) {
+    if (error instanceof EgressError) throw new RpcTransportError(error.kind)
+    throw error
+  }
 }
 
 export class RpcHttpError extends Error {
@@ -542,7 +551,7 @@ function createSessionState() {
 
 function createDeps(context, injected = {}, state = createSessionState()) {
   // Its answers tune this process's `serverNow()` (`@@@server-clock`): message `created_at` is the database's clock.
-  const fetchImpl = withServerClock(injected.fetch ?? fetch)
+  const fetchImpl = withServerClock(injected.fetch ?? egress.fetch)
   return {
     restGet: (path, profile) => restGet(context, path, profile, fetchImpl),
     restInsert: (table, row, profile) => restInsert(context, table, row, profile, fetchImpl),
@@ -666,7 +675,7 @@ async function sendOwnerNotification(args, deps, target, recipients, file) {
   const receipt = await deps.context.runHostAction({ action: 'owner-notify', request_id: requestId,
     agent_user_id: deps.context.agentId, text: args.text ?? '', ...(file ? { file } : {}) })
   if (receipt?.status !== 'sent' || receipt.message_id !== requestId || typeof receipt.session_id !== 'string'
-    || !receipt.session_id || !Number.isSafeInteger(receipt.seq) || receipt.seq < 0) throw new Error('The native session did not confirm the owner notification commit')
+    || !receipt.session_id) throw new Error('The native session did not confirm the owner notification commit')
   return JSON.stringify({ ...receipt, delivery: 'owner-native' })
 }
 function normalizeRecipientInput(v) {
@@ -920,13 +929,14 @@ export async function extensionCheckScopeOf(context, { chatId, itemId }, injecte
 }
 
 /**
- * 这条消息 agent 自己看不看得见 —— 库里的 chat.can_read_message 按 agent 本人判(与 message_history 同一条
- * chat.message_visible_to:悄悄话只给发信人与收件人、成员的入群时间界)。主人令牌按 id 直读会放行主人看得见的一切,
- * 读到之后必须过这一道;❌ 在这里另写一份悄悄话规则。
+ * The one read of messages by id: chat.messages_by_id_as, as the agent — the rule message_history reads by (membership,
+ * history floor, whisper parties). A whisper to the agent reads; one only its owner may see does not. `id` is a full id
+ * or a short id (the function spans its UUIDs). `as` is someone else only for the owner-friend DM (#84). ❌ 别按主人令牌直读 messages。
  */
-async function agentCanSee(deps, message, readerId = deps.context.agentId) {
-  return (await deps.restRpc('can_read_message', { p_message_id: message.id, p_user_id: readerId })) === true
+async function messagesAs(deps, id, { chatId = null, as = deps.context.agentId } = {}) {
+  return (await deps.restRpc('messages_by_id_as', { p_as: as, p_id: id, p_chat_id: chatId })) ?? []
 }
+const messageAs = async (deps, id, options) => (await messagesAs(deps, id, options))[0] ?? null
 
 /**
  * #6646 app_install { source_message_id }: the host reads the message, and only for a chat this agent is in — the agent
@@ -935,32 +945,24 @@ async function agentCanSee(deps, message, readerId = deps.context.agentId) {
 export async function extensionAttachmentOf(context, messageId, injected = {}) {
   const deps = createDeps(context, injected)
   messageId = await fullMessageId(deps, messageId)
-  const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,file_item_id,file_version,file_blob_id`)
-  if (!message || !(await agentCanSee(deps, message))) throw new Error(`app_install: there is no message ${messageId} you can read`)
-  // The message was just read as the owner, so the owner is in that chat and its member list is never empty; an empty
-  // read is a failed read, which memberRowsOfMyChat says loudly instead of calling it "not in the chat".
-  const members = await memberRowsOfMyChat(message.chat_id, deps)
-  if (!members.some((row) => String(row.user_id) === context.agentId)) {
-    throw new Error(`app_install: you are not in the chat of message ${messageId}`)
-  }
+  const message = await messageAs(deps, messageId)
+  if (!message) throw new Error(`app_install: there is no message ${messageId} you can read`)
   const attachment = parseAttachmentContent(message.content, message)
   if (!attachment || resolveAttachmentMimeType(attachment.fileName, attachment.mimeType) !== EXTENSION_ARCHIVE_MIME) {
     throw new Error(`app_install: message ${messageId} has no .guguext attachment`)
   }
   if (attachment.source.kind === 'gone') throw new Error(`app_install: the package of message ${messageId} was deleted from the group folder`)
-  // The message itself (#7290), old cards and new: the install reads it as the owner — its publisher is its sender (owner
-  // 10-17), its bytes from attachments/urls — never from here, never a URL.
-  return { message_id: String(message.id) }
+  // The message itself (#7290), old cards and new: the install reads it again as this agent — its publisher is its sender
+  // (owner 10-17), its bytes from the resolver — never from here, never a URL.
+  return { message_id: String(message.id), reader: context.agentId }
 }
 
-/** Registry identity is authoritative; the owner JWT still passes the original agent visibility check. */
+/** Registry identity is authoritative; its message is read as the agent. */
 async function readableWidgetOf(deps, widgetId) {
   const [origin] = await deps.restRpc('widget_origin', { p_widget_id: widgetId })
   if (!origin || origin.is_retracted) return null
-  const [message] = await deps.restGet(`messages?id=eq.${enc(origin.origin_message_id)}&select=id,chat_id,content,content_type,sender_user_id,retracted_at,deleted_for_user_ids`)
-  if (!message || message.content_type !== 'widget'
-    || message.retracted_at || message.deleted_for_user_ids?.includes(deps.context.agentId)
-    || !(await agentCanSee(deps, message))) return null
+  const message = await messageAs(deps, origin.origin_message_id)
+  if (!message || message.content_type !== 'widget' || message.retracted_at || message.deleted_for_me) return null
   const spec = parseWidgetMessage(message.content)
   if (!spec) return null
   const widget = { id: origin.widget_id, message_id: message.id, chat_id: message.chat_id,
@@ -979,9 +981,9 @@ export async function widgetCheckScopeOf(context, target, injected = {}) {
   // registered under its body's wid (new sends) or its own id (history); widget_origin must name this very message, so a
   // forged historical wid cannot point the check at another widget.
   let widgetId = messageId === undefined ? id : undefined
-  if (messageId !== undefined) {
-    const [row] = await deps.restGet(`messages?id=eq.${enc(id)}&select=content`)
-    for (const candidate of new Set([parseWidgetMessage(row?.content)?.wid, id].filter(Boolean))) {
+  const message = messageId === undefined ? null : await messageAs(deps, id)
+  if (message) {
+    for (const candidate of new Set([parseWidgetMessage(message.content)?.wid, id].filter(Boolean))) {
       const [origin] = await deps.restRpc('widget_origin', { p_widget_id: candidate })
       if (origin?.origin_message_id === id) { widgetId = candidate; break }
     }
@@ -989,22 +991,16 @@ export async function widgetCheckScopeOf(context, target, injected = {}) {
   const found = widgetId ? await readableWidgetOf(deps, widgetId) : null
   if (found && messageId !== undefined && found.message.id !== id) throw unreadable()
   if (!found) {
-    // Explain a reference-message id only after checking that agent's access;
-    // never recover a widget identity from untrusted historical body.wid.
-    const [message] = await deps.restGet(`messages?id=eq.${enc(id)}&select=id,chat_id,content`)
-    if (message && await agentCanSee(deps, message)) {
-      const members = await memberRowsOfMyChat(message.chat_id, deps)
-      if (members.some(row => String(row.user_id) === context.agentId)
-        && messageReferenceBlocks(message.content ?? '').blocks.some(block => block.target.kind === 'widget')) {
-        throw new Error('app_check: this message is a widget reference; pass its widget_id')
-      }
+    // A message the agent reads that only references a widget is explained; a widget identity is never recovered from
+    // its untrusted historical body.wid.
+    const named = messageId === undefined ? await messageAs(deps, id) : message
+    if (named && messageReferenceBlocks(named.content ?? '').blocks.some(block => block.target.kind === 'widget')) {
+      throw new Error('app_check: this message is a widget reference; pass its widget_id')
     }
     throw unreadable()
   }
-  const { widget, message } = found
-  const members = await memberRowsOfMyChat(widget.chat_id, deps)
-  if (!members.some((row) => String(row.user_id) === context.agentId)) throw unreadable()
-  const height = parseWidgetMessage(message.content)?.height
+  const { widget } = found
+  const height = parseWidgetMessage(found.message.content)?.height
   return {
     tabKind: `${widget.app}.${widget.view}`, chatId: String(widget.chat_id),
     widget: { id: String(widget.id), originMessageId: String(widget.message_id), messageId: String(widget.message_id), senderId: widget.created_by ?? null, text: widget.text, data: widget.data ?? {}, ...(height === undefined ? {} : { height }) },
@@ -1028,8 +1024,8 @@ async function assertReadableMessageReferences(deps, content) {
   for (const { target } of messageReferenceBlocks(content).blocks) {
     const id = target.kind === 'widget' ? target.widgetId : target.messageId
     const message = target.kind === 'widget' ? (await readableWidgetOf(deps, id))?.message
-      : (await deps.restGet(`messages?id=eq.${enc(id)}&chat_id=eq.${enc(target.chatId)}&select=id`))[0]
-    if (!message || (target.kind === 'message' && !(await agentCanSee(deps, message)))) {
+      : await messageAs(deps, id, { chatId: target.chatId })
+    if (!message) {
       throw new Error(`message_send: cannot reference ${id}: not readable by you`)
     }
   }
@@ -1662,7 +1658,7 @@ async function handleMessage(args, deps) {
         fileReceipt = await sendFileMessage(args, deps, { chatId, messageId: row.id, toUserIds: row.to_user_ids, replyToMessageId,
           isWhisper, threadRootId: sessionThread, caption: row.content })
       } else {
-        await postCommandMessageRow(deps, row).catch((error) => { throw recipientRefusal(error, chatId) })
+        await postCommandMessageRow(deps, row).catch(async (error) => { throw await recipientRefusal(error, chatId, deps) })
       }
       sentKind = kind
     }
@@ -2316,7 +2312,7 @@ async function documentUploadBytes(args) {
 
 // gugu_file:send-file-as-owner = 字节经 attachments/upload 直传 OSS,再由 attachments/share 以 owner 名义发出;send-file 走声明路径
 // (消息带文件索引先提交,字节随后,和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
-async function uploadForSend(args, deps, requestId) {
+async function uploadForSend(args, deps, requestId, send) {
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
   const bytes = await uploadBlob('message_send_as_owner', args, contentType)
@@ -2324,8 +2320,8 @@ async function uploadForSend(args, deps, requestId) {
   // Bind the permit to this send and its bytes. A separate send of the same file has its own message request ID.
   const sha = await fileSha256(String(args.file_path))
   const request_id = await contentRequestId('send', requestId, deps.context.agentId, String(args.friend_user_id), sha, String(bytes.size))
-  return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType },
-    { chat_id: null, as: deps.context.agentId, request_id }) }
+  return withUploadedAttachment(endpoint, { bytes, name: fileName, contentType, sha256: sha },
+    { chat_id: null, as: deps.context.agentId, request_id }, (stagingKey) => send({ endpoint, fileName, contentType, stagingKey }))
 }
 
 /**
@@ -2409,10 +2405,10 @@ async function commitWithReplay(commit) {
 async function handleOwnerFile(args, deps) {
   const friendUserId = friendUserIdArg(args.friend_user_id)
   const request_id = randomUUID()
-  const { endpoint, fileName, contentType, stagingKey } = await uploadForSend(args, deps, request_id)
   // 库里那一半照 send_friend_message_as_owner 的规矩(gugu-supabase send_friend_file_as_owner):发送者是主人,记下是这个 agent 代发。
-  const send = { staging_key: stagingKey, friend_user_id: friendUserId, agent_user_id: deps.context.agentId, request_id, file_name: fileName, content_type: contentType, ...(args.caption ? { caption: args.caption } : {}) }
-  const result = await commitWithReplay(() => sendFileAsOwner(endpoint, send))
+  const result = await uploadForSend(args, deps, request_id, ({ endpoint, fileName, contentType, stagingKey }) => commitWithReplay(() => sendFileAsOwner(endpoint, {
+    staging_key: stagingKey, friend_user_id: friendUserId, agent_user_id: deps.context.agentId, request_id, file_name: fileName, content_type: contentType, ...(args.caption ? { caption: args.caption } : {}),
+  })))
   if (typeof result.message_id !== 'string' || result.sent_by_agent !== true) {
     throw new Error('message_send_as_owner: the server did not confirm the send')
   }
@@ -2420,28 +2416,24 @@ async function handleOwnerFile(args, deps) {
 }
 
 /**
- * 以谁的身份读这条消息的附件:agent 自己看得见就是它(零额外读取);看不见、而这是主人与好友的私聊(#84)
+ * 以谁的身份读这条消息的附件:agent 自己读得到就是它;读不到、而主人读得到、且这是主人与好友的私聊(#84)
  * 就按主人 —— 与读历史同一个人,看不看得见、签名链接两处都按他。都不成立回 null。
  */
-async function attachmentReaderOf(deps, message) {
-  if (await agentCanSee(deps, message)) return deps.context.agentId
-  if (!(await ownerFriendOfDm(deps, message.chat_id))) return null
+async function attachmentReaderOf(deps, messageId) {
+  if (await messageAs(deps, messageId)) return deps.context.agentId
   const ownerUserId = await currentAuthUserId(deps)
-  return (await agentCanSee(deps, message, ownerUserId)) ? ownerUserId : null
+  const message = await messageAs(deps, messageId, { as: ownerUserId })
+  return message && await ownerFriendOfDm(deps, message.chat_id) ? ownerUserId : null
 }
 
 /** message_download_file 的三种来源,各自变成 resolver 的一个 FileRef 和读者:消息、session 附件、群文件夹的那一版。 */
 async function downloadSourceOf(args, deps) {
   if (args.source_message_id) {
     const messageId = String(args.source_message_id)
-    const [message] = await deps.restGet(`messages?id=eq.${enc(messageId)}&select=id,chat_id,content,content_type,file_item_id,file_version,file_blob_id`)
-    const reader = message ? await attachmentReaderOf(deps, message) : null
+    const reader = await attachmentReaderOf(deps, messageId)
     if (!reader) throw new Error(`message_download_file: there is no message ${messageId} you can read`)
-    const attachment = message.content_type === 'attachment' ? parseAttachmentContent(message.content, message) : null
-    if (!attachment) throw new Error(`message_download_file: message ${messageId} has no attachment`)
-    if (attachment.source.kind === 'gone') throw new Error(`message_download_file: the file of message ${messageId} was deleted from the group folder`)
-    const item = attachment.source.kind === 'item' ? { itemId: attachment.source.itemId, version: attachment.source.version } : null
-    return { ref: { message_id: messageId }, reader, name: attachment.fileName, item, echo: { source_message_id: `msg:${messageId}` } }
+    // What the message holds — a folder version, a whisper's own bytes, an old object, or nothing — the resolver reads as this reader.
+    return { ref: { message_id: messageId }, reader, item: null, label: `the file of message ${messageId}`, gone: `message_download_file: message ${messageId} has no attachment, or its file was deleted`, echo: { source_message_id: `msg:${messageId}` } }
   }
   if (args.source_attachment_id) {
     const id = String(args.source_attachment_id)
@@ -2480,13 +2472,18 @@ async function downloadFile(args, deps) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
         file = await deps.resolveFile(source.ref, source.reader, { progress })
       }
-      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.name ?? 'this file').message}`)
-      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.name ?? 'this file'} did not complete; ask them to send it again`)
+      if (file.status === 'pending') throw new Error(`message_download_file: ${new AttachmentUploadPendingError(source.label ?? 'this file').message}`)
+      if (file.status === 'failed') throw new Error(`message_download_file: its sender's upload of ${source.label ?? 'this file'} did not complete; ask them to send it again`)
+      if (file.status === 'gone' && source.gone) throw new Error(source.gone)
       if (file.status !== 'ready') throw new Error(`message_download_file: this file is no longer readable (${file.status})`)
       const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
       if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
       const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
-      const saved = await saveToFileStore(file, home, source.name ?? file.revision.file_name)
+      const saved = await saveToFileStore(file, home, file.revision.file_name).catch((error) => {
+        // §2.5: the bytes are not the ones their sha names (the uploader's claim). Nothing was saved.
+        if (isFileIntegrityError(error)) throw new Error(`message_download_file: integrity_failed — the bytes of ${file.revision.file_name} do not match their SHA-256; nothing was saved`)
+        throw error
+      })
       return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
     })()
     // Registered before any caller's wait, so it runs first: a failure a caller is waiting for goes to that caller; one
@@ -2564,7 +2561,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
     throw new Error(`message_send: file_path as the next version of ${args.file} needs the version you started from: gugu-file://${folderFile.itemId}?v=<n>`)
   }
   // #2383 收件人合不合格由库判(与文字消息同一条规则);被拒时 recipientRefusal 说清是谁。
-  const refused = (error) => { throw recipientRefusal(error, chatId) }
+  const refused = async (error) => { throw await recipientRefusal(error, chatId, deps) }
   const said = String(caption ?? '').trim()
   const meta = { to_user_ids: toUserIds ?? [], thread_root_id: threadRootId, ...(replyToMessageId ? { reply_to_message_id: replyToMessageId } : {}), ...(said ? { caption: said } : {}) }
   let message
@@ -2589,7 +2586,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
     folderFile ? { itemId: folderFile.itemId, expectedVersion: folderFile.version } : undefined).catch(async (error) => {
     const reason = String(error?.message ?? error)
     if (folderFile && /File revision conflict/.test(reason)) await replacementTarget(args, deps, chatId, folderFile)
-    refused(error)
+    await refused(error)
   }))) {
     fileName = resolveUploadName(args)
   } else {
@@ -2625,7 +2622,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       }
       await deps.attachments.drop(messageId)
       if (folderFile && error.code === 'version_conflict') await replacementTarget(args, deps, chatId, folderFile)
-      refused(error)
+      await refused(error)
     }
     if (message?.id) await uploaded.catch((error) => {
       const mismatch = error instanceof AttachmentsError && error.code === 'upload_mismatch'
@@ -3212,7 +3209,7 @@ export function createGuguImServer(getContext, deps = {}) {
           ? { runHostAction: (action) => current.runHostAction(action, signal) }
           : {}),
       }
-      const fetchImpl = deps.fetch ?? fetch
+      const fetchImpl = deps.fetch ?? egress.fetch
       const out = await dispatchTool(context, def.name, toolArgs, {
         ...deps,
         fetch: (input, init) => fetchImpl(input, { ...init, signal }),

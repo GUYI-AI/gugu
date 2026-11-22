@@ -16,10 +16,10 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 // 同一张卡片,两种摆法(variant):
 // - inline:长在「添加一台机器」那一块、卸载确认页里 —— callout(一条色线 + 密度底,见 ./callout),
 //   上下文(装到哪台机器)页面上已经写着,卡片里 ❌ 再说一遍;
-// - floating:浮在远端终端 / 远端浏览器上 —— 照 Zed 的 RemoteConnectionModal
+// - floating:在横幅位上(连接提问)、浮在远端浏览器上 —— 照 Zed 的 RemoteConnectionModal
 //   (zed-industries/zed crates/remote_connection/src/remote_connection.rs):
-//   顶上一行「哪台机器」,中间一条输入带,底下一行状态 + 按钮;形状与咕咕的命令面板同一套
-//   (浮层 --radius-xl + 唯一那档 lift,分段只靠 hairline)。浮层上 ❌ 墨色粗竖线、❌ 卡片外另挂一颗说明胶囊。
+//   「哪台机器」、一条输入带、一行状态 + 按钮,平铺不画分隔线(外壳归调用处,见 SshPromptFrame)。
+//   ❌ 墨色粗竖线、❌ 卡片外另挂一颗说明胶囊。
 // 标题前 ❌ 摆钥匙 / 盾牌图标 —— 标题那句话已经说清在问什么。
 
 const text = 'text-[length:var(--font-body)] leading-[1.5]'
@@ -330,9 +330,9 @@ function SshPromptBody({
 }
 
 /**
- * floating 卡片的骨架(Zed RemoteConnectionModal 的三段):哪台机器 / 问题本身 / 状态 + 按钮。
- * 只画内容分段;浮层本身(圆角、lift、底色、定位)归调用处的浮卡(会话页 RemoteFloatingCard)。
- * 直连终端「指纹变了」那张拒绝卡片也用它,两张卡片长成一家。
+ * floating 的骨架(Zed RemoteConnectionModal 的三段):哪台机器 / 问题本身 / 状态 + 按钮。
+ * 平铺:❌ 分隔线、❌ 自带内边距 —— 外壳归调用处(横幅位 = lib/notices 的常驻那一条,它的标题就是机器名,不再给 context;
+ * 远端浏览器上的 RemoteFloatingCard)。两处长成同一个样子:一句话 + 一行按钮。
  */
 export function SshPromptFrame({
   context,
@@ -359,22 +359,22 @@ export function SshPromptFrame({
   const Tag = as
   return (
     <Tag
-      className="flex flex-col"
+      className="flex flex-col gap-2"
       data-testid={testId}
       onSubmit={onSubmit}
       onKeyDown={onKeyDown}
       role={role}
     >
       {context && (
-        <div className="flex min-w-0 items-center gap-2 border-b border-[var(--border)] px-4 py-2" data-testid="ssh-prompt-context">
+        <div className="flex min-w-0 items-center gap-2" data-testid="ssh-prompt-context">
           <Server aria-hidden className="size-3.5 shrink-0 text-[var(--faint-fg)]" />
           <span className={cn(text, 'max-w-[60%] shrink-0 truncate font-[var(--font-weight-medium)] text-[var(--fg)]')}>{context.name}</span>
           {context.detail && <span className={cn(caption, 'min-w-0 truncate text-[var(--muted-fg)]')}>{context.detail}</span>}
         </div>
       )}
-      <div className="flex flex-col gap-2 px-4 py-3">{children}</div>
+      <div className="flex flex-col gap-2">{children}</div>
       {(status || actions) && (
-        <div className="flex min-h-[calc(var(--control-h-sm)+16px)] items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-2">
+        <div className="flex min-h-[var(--control-h-sm)] items-center justify-between gap-3">
           <div className={cn(caption, 'min-w-0 flex-1 text-[var(--faint-fg)]')}>{status}</div>
           {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
         </div>

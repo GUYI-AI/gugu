@@ -46,7 +46,8 @@ function collect(source: SessionRecordSource) {
   const entries: RecordEntry[] = [];
   const resets: string[] = [];
   disposers.push(() => source.stop());
-  const started = source.start({ onEntries: (batch) => entries.push(...batch), onReset: (reason) => resets.push(reason) });
+  // A reset means the source reads the record again from the start: what came before it no longer holds.
+  const started = source.start({ onEntries: (batch) => entries.push(...batch), onReset: (reason) => { resets.push(reason); entries.length = 0; } });
   return { entries, resets, started };
 }
 

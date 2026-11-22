@@ -1,55 +1,51 @@
-/* WorkBuddy model settings. Keep the palette local to this page and its dialog. */
-div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-settings-page); }
-.gg-settings-detail div.gg-settings-page.gg-model-page { gap: 16px; }
-.gg-model-page [data-session-settings-section='auxiliary-models'] { background: transparent; }
+/* Model settings: each group (title, note, rows) is one settings card — its content starts in the group label,
+   so the section itself carries the card surface shared by every settings page. */
+.gg-settings-detail div.gg-settings-page.gg-model-page { gap: var(--settings-group-gap); }
 .gg-settings-detail .gg-model-page section.gg-settings-group {
   gap: 0;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-surface);
   background: var(--card);
+  box-shadow: var(--shadow-lift);
   overflow: hidden;
 }
 .gg-settings-detail .gg-model-page .gg-settings-group > .gg-section-label {
-  padding: 16px 20px 0;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 22px;
+  padding: var(--spacing-md) var(--spacing-lg) 0;
 }
 .gg-settings-detail .gg-model-page .gg-settings-group > .gg-settings-note {
-  padding: 0 20px 16px;
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--model-settings-description);
+  padding: var(--spacing-xs) var(--spacing-lg) var(--spacing-md);
 }
 .gg-settings-detail .gg-model-page section.gg-settings-group > div.gg-settings-card {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: 16px 20px;
+  padding: var(--spacing-lg);
   border: 0;
   border-radius: 0;
+  background: none;
+  box-shadow: none;
   overflow: visible;
   position: relative;
 }
 .gg-model-page .gg-settings-card::before {
   content: '';
   position: absolute;
-  left: 20px;
-  right: 20px;
-  top: -8px;
-  border-top: 1px solid var(--model-settings-separator);
+  left: var(--spacing-lg);
+  right: var(--spacing-lg);
+  top: 0;
+  border-top: 1px solid var(--border-color);
 }
 .gg-model-page .gg-model-rows { display: flex; flex-direction: column; gap: 24px; }
-.gg-settings-detail .gg-model-page div.gg-settings-row,
-.gg-settings-detail .gg-model-page div.gg-settings-row + div.gg-settings-row {
+.gg-settings-detail .gg-model-page section div.gg-settings-row,
+.gg-settings-detail .gg-model-page section div.gg-settings-row + div.gg-settings-row {
   min-height: 28px;
   padding: 0;
   border: 0;
+  background: none;
   column-gap: 12px;
 }
 .gg-model-page .gg-settings-row-body { flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; }
 .gg-model-page .gg-settings-row-title { font-size: 14px; font-weight: 500; line-height: 22px; }
-.gg-model-page .gg-settings-row-description { font-size: 14px; line-height: 22px; color: var(--model-settings-source); }
 .gg-model-page .gg-settings-row-leading { width: 20px; height: 20px; }
 .gg-model-page .gg-settings-row-leading > svg,
 .gg-model-page .gg-settings-row-leading > img { width: 20px; height: 20px; }
@@ -62,10 +58,10 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 .gg-model-page .gg-auxiliary-models .gg-settings-row-title { font-weight: 400; }
 .gg-auxiliary-model-select { width: 355px; max-width: 100%; height: 32px; }
 .gg-model-dialog { border-radius: 12px; }
-.gg-model-dialog .gg-model-provider-link { color: var(--model-settings-description); }
+.gg-model-dialog .gg-model-provider-link { color: var(--text-secondary); }
 .gg-model-dialog [data-slot='dialog-title'] { font-size: 16px; font-weight: 500; }
 .gg-model-dialog .subscription-connection-form { gap: 20px; }
-.gg-model-dialog label { font-size: 14px; line-height: 24px; color: var(--model-settings-description); gap: 12px; }
+.gg-model-dialog label { font-size: 14px; line-height: 24px; color: var(--text-secondary); gap: 12px; }
 .gg-model-dialog input,
 .gg-model-dialog [data-testid='custom-model-provider'],
 .gg-model-dialog [data-slot='select-trigger'] { min-height: 32px; height: 32px; }
@@ -77,39 +73,54 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 }
 
 .gg-settings-detail .gg-model-page [data-platform-models] > .gg-section-label { padding: 0; }
-.gg-provided-model-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border: 0; border-radius: 0; text-align: left; cursor: pointer; }
+.gg-provided-model-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: var(--spacing-md) var(--spacing-lg); border: 0; border-radius: 0; text-align: left; cursor: pointer; }
 .gg-model-card-title { display: block; color: var(--text-primary); font-size: 14px; font-weight: 500; line-height: 22px; }
-.gg-model-card-description { display: block; font-size: 14px; font-weight: 400; line-height: 22px; color: var(--model-settings-description); }
+.gg-model-card-description { display: block; font-size: var(--font-caption); font-weight: 400; line-height: var(--lh-caption); color: var(--muted-fg); }
 .gg-settings-detail .gg-model-page section.gg-settings-group > div.gg-settings-card:empty,
 .gg-settings-detail .gg-model-page section[data-platform-models][data-expanded='false'] > div.gg-settings-card { display: none; }
 
 .gg-model-page .gg-model-icon-button svg { width: 18px; height: 18px; }
 
-.gg-model-page .gg-coding-provider { display: flex; flex-direction: column; gap: 20px; }
+/* A provider takes the Coding Plan card's columns (below) for its account rows. */
+.gg-model-page .gg-coding-provider { display: grid; grid-template-columns: subgrid; gap: 20px 12px; }
 .gg-model-page .gg-coding-provider-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 500; line-height: 22px; }
 .gg-model-page .gg-coding-provider-title > :first-child { width: 20px; height: 20px; }
 .gg-model-page .gg-coding-provider .gg-settings-row-title { font-weight: 400; }
 
 .gg-model-page .gg-model-name { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: inherit; cursor: text; text-align: left; }
-.gg-model-page .gg-model-name svg { opacity: 0; color: var(--model-settings-source); }
+.gg-model-page .gg-model-name svg { opacity: 0; color: var(--muted-fg); }
 .gg-model-page .gg-model-subscription-row:hover .gg-model-name svg,
 .gg-model-page .gg-model-name:focus-visible:not([data-pointer-focus]) svg { opacity: 1; }
 
-/* Account columns share one width; SettingsRow's general 60% control cap would wrap the two windows. */
-.gg-model-page .gg-coding-provider { overflow-x: auto; }
-.gg-model-page .gg-model-subscription-row { min-width: 560px; }
-.gg-model-page .gg-model-subscription-row div.gg-settings-row { grid-template-columns: minmax(112px, 1fr) auto; }
-.gg-model-page .gg-model-subscription-row .gg-settings-row-body { flex-wrap: nowrap; }
+/* One column template for the Coding Plan card: name | 5-hour window | weekly window | actions. Account rows take their
+   columns from it (subgrid), so columns line up across rows and providers, each as wide as its widest content. */
+.gg-settings-detail .gg-model-page section[data-testid='settings-coding-plans'] > div.gg-settings-card {
+  display: grid;
+  grid-template-columns: minmax(112px, 1fr) max-content max-content minmax(min-content, max-content);
+  column-gap: 12px;
+}
+.gg-model-page [data-testid='settings-coding-plans'] > .gg-settings-card > *,
+.gg-model-page .gg-coding-provider > * { grid-column: 1 / -1; }
+.gg-model-page .gg-model-subscription-row,
+.gg-model-page .gg-model-subscription-row div.gg-settings-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; }
+.gg-model-page .gg-model-subscription-row .gg-settings-row-control { display: grid; grid-template-columns: subgrid; grid-column: 2 / -1; }
+.gg-model-page .gg-model-subscription-controls,
+.gg-model-page .gg-model-subscription-usage > .gg-model-quota { display: contents; }
+.gg-model-page .gg-model-subscription-usage { display: grid; grid-template-columns: subgrid; grid-column: 1 / 3; align-items: center; }
+/* Beside a quota, the account's state sits under its name; without one, it and sign-in take the quota's columns. */
+.gg-model-page .gg-model-subscription-row .gg-settings-row-body { grid-column: 1; flex-direction: column; align-items: flex-start; gap: 0; }
+.gg-model-page .gg-model-subscription-usage-state { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-title { width: 100%; }
-.gg-model-page .gg-model-subscription-row .gg-model-name { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.gg-model-page .gg-model-subscription-row .gg-model-name { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; justify-content: flex-start; }
 .gg-model-page .gg-model-subscription-row .gg-model-name svg { flex-shrink: 0; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-title > input { width: 100%; max-width: 160px; }
-.gg-model-page .gg-model-subscription-controls { display: grid; grid-template-columns: 328px 56px 28px; align-items: center; gap: 12px; }
-.gg-model-page .gg-model-subscription-usage { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.gg-model-page .gg-model-subscription-usage > .gg-model-quota { display: grid; width: 328px; grid-template-columns: repeat(2, 156px); gap: 16px; }
-.gg-model-page .gg-model-subscription-usage .gg-model-quota-window { display: grid; grid-template-columns: 36px 44px 60px; gap: 8px; }
+.gg-model-page .gg-model-subscription-usage .gg-model-quota-window { display: grid; grid-template-columns: repeat(3, max-content); align-items: center; gap: 8px; }
 .gg-model-page .gg-model-subscription-usage [data-window-minutes='300'] { grid-column: 1; }
 .gg-model-page .gg-model-subscription-usage [data-window-minutes='10080'] { grid-column: 2; }
+/* Beside a quota, sign-in joins current/switch and delete: one line when the card has room, else current/switch and
+   delete wrap under it. */
+.gg-model-page .gg-model-subscription-actions { grid-column: 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
+.gg-model-page .gg-model-subscription-state { display: flex; align-items: center; gap: 12px; }
 .gg-model-page .gg-model-subscription-status { display: flex; width: 56px; align-items: center; justify-content: center; white-space: nowrap; }
 .gg-model-page .gg-model-subscription-status > * { width: 100%; flex-shrink: 0; text-align: center; white-space: nowrap; }
 .gg-model-page .gg-model-subscription-remove { display: flex; width: 28px; min-height: 28px; align-items: center; justify-content: center; }

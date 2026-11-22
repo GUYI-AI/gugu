@@ -86,6 +86,17 @@ describe('hermes state.db 记录源', () => {
     expect(recordProjection(entries)).toMatchSnapshot();
   });
 
+  it('Hermes 的时间是浮点秒;记录里的时间一律是整毫秒(清空历史的分界线按整数比较)', async () => {
+    const fixture = await loadFixture();
+    // 对照：样本时间确实带小数。
+    expect(Number.isInteger(fixture.session.ended_at * 1000)).toBe(false);
+    const { path } = await stageDb(fixture, fixture.messages, true);
+    const { entries, started } = collect(createHermesSqliteSource({ harness: 'hermes', providerSessionId: fixture.session.id, roots: [path] }));
+    await started;
+    expect(entries.length).toBeGreaterThan(0);
+    expect(entries.flatMap((entry) => (entry.at === undefined || Number.isInteger(entry.at) ? [] : [entry.at]))).toEqual([]);
+  });
+
   it('按候选库依次找有这个会话的那一份;都没有就响亮地失败', async () => {
     const fixture = await loadFixture();
     const { path } = await stageDb(fixture, fixture.messages, true);

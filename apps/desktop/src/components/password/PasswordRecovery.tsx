@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { PasswordSnapshot } from '@gugu/core/shared/passwordBetaProtocol'
-import { usePasswordSnapshot } from '@/lib/passwordBetaNotifications'
+import { usePasswordVault } from '@/lib/passwordBetaNotifications'
 import { Button } from '../ui/Button'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { Sheet } from '../ui/Sheet'
 import { SettingsGroup, SettingsNote, SettingsRow } from '../settings/SettingsPrimitives'
 import { Confirm, RecoveryCodeSheet } from './passwordSheets'
@@ -34,7 +35,7 @@ export function RecoveryOffer({ snapshot }: { snapshot?: PasswordSnapshot }) {
 /** Settings → 账户: the recovery code belongs to the account, not to one device. Shown once a password is synced here. */
 export function PasswordRecoveryGroup() {
   const { t } = useTranslation('settings')
-  const snapshot = usePasswordSnapshot()
+  const { snapshot, failure, retry } = usePasswordVault()
   const { busy, error, run } = usePasswordCommand()
   const [asking, setAsking] = useState<'regenerate' | 'drop'>()
   const [shown, setShown] = useState<{ code: string; fresh: boolean }>()
@@ -43,7 +44,10 @@ export function PasswordRecoveryGroup() {
   const create = async (fresh: boolean) => { const reply = await run({ type: 'sync-recovery-create' }); setAsking(undefined); if (reply?.recoveryCode) setShown({ code: reply.recoveryCode, fresh }) }
   const set = sync.recovery === 'set'
   return <>
-    <SettingsGroup title={t('passwords.recoveryGroup')} footer={error ? <SettingsNote tone="danger" role="alert">{error}</SettingsNote> : undefined}>
+    <SettingsGroup title={t('passwords.recoveryGroup')} footer={error || failure ? <>
+      {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
+      <RefreshFailed error={failure} onRetry={retry} />
+    </> : undefined}>
       <SettingsRow title={t('passwords.recoveryCode')} description={t(set ? 'passwords.recoverySet' : 'passwords.recoveryUnset')}
         control={set
           ? <div className="flex gap-1"><Button variant="ghost" size="sm" disabled={busy} onClick={() => setAsking('regenerate')}>{t('passwords.regenerate')}</Button>

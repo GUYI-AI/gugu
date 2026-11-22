@@ -1,5 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearViewState } from '../../../../apps/desktop/src/lib/viewStateTable'
+import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
+import { installedExtensions, type InstalledExtensionsList } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { act } from 'react'
 import { toJS } from 'mobx'
 import { createReactHarness } from '../../../support/testHarness'
@@ -23,20 +26,27 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } },
 }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), appInChat: vi.fn(async () => ({ success: true, data: { files: [] } })), setOpenWithDefault: vi.fn() },
 }))
-vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  sharedPackagesOf: async () => new Map(),
-  subscribeSharedPackages: () => () => {},
+vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()),
+  chatPackageCards: async () => (await import('./chatTabsHarness')).sharedCards.answer(),
 }))
 
 let harness: ReturnType<typeof createReactHarness>
 const originalCheckVisibility = HTMLElement.prototype.checkVisibility
 beforeEach(() => {
+  // Signed in, as the harness's person (user-1): the group's shared packages are read for an account.
+  followRendererSession('SIGNED_IN', 'user-1')
   harness = createReactHarness()
   HTMLElement.prototype.checkVisibility = () => false
+  // What is installed here is read (as main tells it at start): nothing.
+  installedExtensions.set(['local'], { extensions: [], invalid: [] } as unknown as InstalledExtensionsList)
   rpc.mockClear(); local.mockReset().mockResolvedValue(null)
 })
+// Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
+// the setup above, whose closing of tabs is itself remembered).
+beforeEach(() => { clearViewState({ conversation: '', panel: 'tab-placement' }) })
 afterEach(() => {
   harness.cleanup()
   HTMLElement.prototype.checkVisibility = originalCheckVisibility
@@ -66,8 +76,8 @@ describe('a file opened in a group\'s panel is kept for 最近打开, once', () 
     askFile('g-note', detailOf('g-note', 'F1'))
     expect(shownItem('g-note')?.itemId).toBe('F1')
     await vi.waitFor(() => expect(rpc.mock.calls).toEqual([['workspace_note_open', { p_item_id: 'F1' }]]))
-    // The person goes to another chat and comes back: the panel shows F1 again from what it remembered.
-    harness.cleanup()
+    // The person goes to another chat and comes back (the app still running: what it read is kept): F1 again, remembered.
+    harness.cleanup({ keepReads: true })
     harness = createReactHarness()
     await harness.render(chatTabs({ chatId: 'g-note' }))
     expect(shownItem('g-note')?.itemId).toBe('F1')
@@ -112,4 +122,9 @@ describe('files.openWith for another chat\'s file goes to the chat shell', () =>
       window.removeEventListener(APP_OPEN_WITH_EVENT, listen)
     }
   })
+})
+
+it('the shared-package mock is live (signed in): a file waits for this chat\'s packages, then is drawn', async () => {
+  const { expectSharedPackagesLive } = await import('./chatTabsHarness')
+  await expectSharedPackagesLive((node) => harness.render(node))
 })

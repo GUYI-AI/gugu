@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-// 通讯录 agent 节点(分组页的导图,AgentMindMap @@@map-node-memo)的重渲染范围:一个 agent 变了只重画那一个节点;
+// 通讯录 agent 节点(分组页的 agent 家族,AgentFamilies @@@map-node-memo)的重渲染范围:一个 agent 变了只重画那一个节点;
 // 设备表心跳不重画任何一个。从前改一个名字整列每行都重画(100 个 agent = 每次 100 行),n 个 agent 各推一次就是 O(n²)。
 import { createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +9,7 @@ import { ContactsPanel } from '../../../../apps/desktop/src/components/ContactsP
 import { DevicesContext, type DevicesContextValue } from '../../../../apps/desktop/src/store/devicesContext'
 import { clickElement, contact, createNode, createReactHarness, device, renderWithAppProviders } from '../../../support/testHarness'
 
-// 每个导图节点每次渲染都按自己的名字问一次显示名(useShownAgentName):按名字数这一问,就是数节点渲染了几次。
+// 每个 agent 节点每次渲染都按自己的名字问一次显示名(useShownAgentName):按名字数这一问,就是数节点渲染了几次。
 const rowRenders = vi.hoisted(() => new Map<string, number>())
 vi.mock('../../../../apps/desktop/src/hooks/useShownAgentName', async (importOriginal) => {
   const original = await importOriginal<typeof import('../../../../apps/desktop/src/hooks/useShownAgentName')>()
@@ -34,7 +34,7 @@ const devicesStore = (devices: Device[]): DevicesContextValue => ({
 })
 const agents = ['a', 'b', 'c'].map((id) => contact({ id, type: 'agent', display_name: `Agent ${id}`, owner_user_id: 'owner-1', device_id: 'laptop' }))
 
-// 像用户一样在左栏点开这台设备的分组:右边铺开它的导图。
+// 像用户一样在左栏点开这台设备的分组:右边铺开它的 agent。
 async function openDeviceSection() {
   const navs = [...harness.container.querySelectorAll<HTMLElement>('[data-testid="contacts-section-nav"]')]
   await clickElement(navs.find((nav) => !['unknown', 'people', 'groups'].includes(nav.dataset.sectionKey!))!)

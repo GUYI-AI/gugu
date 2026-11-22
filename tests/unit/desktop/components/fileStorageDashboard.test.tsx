@@ -15,7 +15,8 @@ const file = (name: string, days: number, bytes: number, chat = 'g1') =>
   ({ chat_id: chat, expires_at: new Date(Date.now() + days * DAY - 60_000).toISOString(), bytes, class: 'temporary', item_id: name, file_name: name })
 const overview = {
   total_bytes: 6 * 1024 * 1024, count: 9, expiring_7d_bytes: 2000,
-  classes: { temporary: { bytes: 3 * 1024 * 1024, count: 7 }, image: { bytes: 2 * 1024 * 1024, count: 1 }, kept: { bytes: 1024 * 1024, count: 1 } },
+  // The server still answers an empty image class, for released clients.
+  classes: { temporary: { bytes: 3 * 1024 * 1024, count: 7 }, image: { bytes: 0, count: 0 }, kept: { bytes: 3 * 1024 * 1024, count: 2 } },
   groups: [{ chat_id: 'g1', name: 'Design', project: false, bytes: 3000, count: 3 }, { chat_id: 'g2', name: 'Alpha', project: false, bytes: 3000, count: 3 }],
   expiring: [file('f.pdf', 1, 600), file('b.zip', 2, 900, 'g2'), file('c.txt', 3, 100), file('d.md', 4, 700), file('e.png', 5, 300), file('a.key', 6, 800), file('g.csv', 7, 200)],
   machines: [{ device_id: 'd1', label: 'Studio Mac', files: 4, bytes: 5000, temporary_copy_bytes: 0 }],
@@ -35,12 +36,12 @@ describe('the 「文件存储与读取」 dashboard (owner 10-28 design): the ca
 
   it('one bar split by class, with each class\'s numbers on the line below it; no charts', async () => {
     await ready()
-    // Widths out of 1000 in proportion to bytes (3 : 2 : 1), a 2-unit gap between segments.
+    // Widths out of 1000 in proportion to bytes (3 : 3), a 2-unit gap between segments.
     expect([...document.querySelectorAll('[data-testid^="file-storage-bar-"]')].map((bar) => [bar.getAttribute('data-testid'), Math.round(Number(bar.getAttribute('width')))]))
-      .toEqual([['file-storage-bar-temporary', 499], ['file-storage-bar-image', 331], ['file-storage-bar-kept', 166]])
+      .toEqual([['file-storage-bar-temporary', 499], ['file-storage-bar-kept', 499]])
     expect($('file-storage-legend-temporary')!.textContent).toContain('3 MB')
     expect($('file-storage-legend-temporary')!.textContent).toContain('"count":7')
-    expect($('file-storage-legend-kept')!.textContent).toContain('1 MB')
+    expect($('file-storage-legend-kept')!.textContent).toContain('3 MB')
     expect($('file-storage-total')!.textContent).toBe('6 MB')
     expect(document.querySelector('canvas, svg[data-chart]')).toBeNull()
     expect($('file-storage-machine')!.textContent).toContain('Studio Mac')
@@ -70,12 +71,10 @@ describe('the 「文件存储与读取」 dashboard (owner 10-28 design): the ca
     await vi.waitFor(() => expect($('file-storage-clean-confirm')).not.toBeNull())
     expect(f.mark).not.toHaveBeenCalled()
     expect(($('file-storage-clean-temporary') as HTMLInputElement).checked).toBe(true)
-    expect(($('file-storage-clean-image') as HTMLInputElement).checked).toBe(false)
+    expect($('file-storage-clean-image')).toBeNull()
     expect($('file-storage-clean-go')!.textContent).toContain('3 MB')
-    await act(async () => { $('file-storage-clean-image')!.click() })
-    expect($('file-storage-clean-go')!.textContent).toContain('5 MB')
     await act(async () => { $('file-storage-clean-go')!.click() })
-    expect(f.mark).toHaveBeenCalledWith([{ class: 'temporary' }, { class: 'image' }], 'release')
+    expect(f.mark).toHaveBeenCalledWith([{ class: 'temporary' }], 'release')
     await vi.waitFor(() => expect(f.overview).toHaveBeenCalledTimes(2))
   })
 

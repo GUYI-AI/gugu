@@ -1,4 +1,5 @@
 import { Expand } from '@/lib/icons'
+import { useRef } from 'react';
 import type React from 'react';
 import { Button } from '@renderer/lib/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
@@ -7,14 +8,16 @@ import { cn } from '@renderer/utils/utils';
 interface MermaidDiagramPreviewProps {
   svg: string;
   compact?: boolean;
-  onExpand: () => void;
+  /** `drawn`: the diagram's `<svg>` on the page, where the viewer opens from and closes back to. */
+  onExpand: (drawn: HTMLElement | null) => void;
 }
 
 export function MermaidDiagramPreview({ svg, compact, onExpand }: MermaidDiagramPreviewProps) {
+  const drawing = useRef<HTMLDivElement>(null);
   const expandFromInteraction = (event: React.SyntheticEvent) => {
     event.preventDefault();
     event.stopPropagation();
-    onExpand();
+    onExpand(drawing.current?.querySelector<HTMLElement>('svg') ?? null);
   };
 
   const handlePreviewKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -45,6 +48,7 @@ export function MermaidDiagramPreview({ svg, compact, onExpand }: MermaidDiagram
         </TooltipContent>
       </Tooltip>
       <div
+        ref={drawing}
         role="button"
         tabIndex={0}
         aria-label="Expand Mermaid diagram preview"

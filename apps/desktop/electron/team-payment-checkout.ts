@@ -6,7 +6,7 @@ interface Dependencies {
   auth(): Promise<Auth | null>
   url(): string
   anonKey(): string
-  fetch: typeof fetch
+  fetch: typeof globalThis.fetch
   open(input: { url: string; parameters: Record<string, string>; closed(): void }): OpenedPayment
   report(error: unknown): void
 }

@@ -29,7 +29,11 @@ vi.mock('../../../../apps/desktop/src/mobile/ios-host/iosHostRuntime', () => ({
   useIOSHostRuntimeSnapshot: () => useSyncExternalStore(
     (changed: () => void) => { native.listeners.add(changed); return () => native.listeners.delete(changed) }, () => native.snapshot),
 }))
-vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneInstallation', () => ({ readPhoneInstallation: native.androidInstallation }))
+vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneInstallation', async () => {
+  // On iOS the host binding names the installation: the Android installation read must never run.
+  const { replica } = await import('../../../../apps/desktop/src/lib/replica')
+  return { readPhoneInstallation: native.androidInstallation, phoneInstallation: replica({ name: 'phoneInstallation', scope: 'account', read: (owner: string) => native.androidInstallation(owner) }) }
+})
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime', () => ({
   usePhoneDevice: native.androidHost, stopPhoneAgentHost: native.androidHost, restartPhoneAgentHost: native.androidHost,
   enablePhoneAgentHost: native.androidHost,

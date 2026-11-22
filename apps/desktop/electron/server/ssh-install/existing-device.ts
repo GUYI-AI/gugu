@@ -3,13 +3,13 @@ import { createGuguSupabaseClient } from '@gugu/core/cloud/supabase'
 import type { ExistingDeviceLookup } from './existing-account'
 
 /** The released install-id is the server's cloud machine_id, not a hardware ID. */
-export function cloudExistingDevice(getAuth: () => Promise<RuntimeAuth | null>, tier: string, requestFetch?: typeof fetch): ExistingDeviceLookup {
+export function cloudExistingDevice(getAuth: () => Promise<RuntimeAuth | null>, tier: string, requestFetch?: typeof globalThis.fetch): ExistingDeviceLookup {
   return async ({ userId, machineId, signal }) => {
     signal.throwIfAborted()
     const auth = await getAuth()
     if (!auth?.accessToken || auth.userId !== userId) throw new Error('The desktop account changed or is no longer authenticated while reading the existing device')
     const client = createGuguSupabaseClient({ schema: 'identity', accessToken: async () => auth.accessToken,
-      ...(requestFetch ? { fetch: requestFetch } : {}) })
+      ...(requestFetch ? { wrapFetch: () => requestFetch } : {}) })
     const { data, error } = await client.from('gugu_devices')
       .select('device_id,user_id,machine_id,tier')
       .eq('user_id', userId).eq('machine_id', machineId).eq('tier', tier).limit(2).abortSignal(signal)

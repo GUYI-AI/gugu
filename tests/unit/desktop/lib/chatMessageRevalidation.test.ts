@@ -58,9 +58,12 @@ const { queryResults, queryCalls, chatDbMock } = vi.hoisted(() => {
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({
   chatDb: chatDbMock,
 }))
+import { clearMessageWindows } from '../../../../apps/desktop/src/lib/messageWindows'
+import { initializeMessages } from '../../../../apps/desktop/src/lib/messageIngest'
 import {
   applyMessageWindowRevalidation,
   applyMessageOverlays,
+  invalidateReactions,
   loadMessageOverlays,
   loadMessageAgentWakes,
   revalidateMessageWindow,
@@ -73,11 +76,23 @@ describe('chatMessageRevalidation', () => {
     queryResults.clear()
     queryCalls.length = 0
     vi.clearAllMocks()
+    clearMessageWindows('viewer')
+    initializeMessages('viewer')
+  })
+  it('a reaction read begun before a change of that message does not speak for its reactions', async () => {
+    const stale = deferred<QueryResult>()
+    setResults('message_reactions', stale.promise as unknown as QueryResult, { data: [], error: null })
+    const early = loadMessageOverlays([{ id: 'm1', chat_id: 'chat-1' }], 'viewer')
+    invalidateReactions(['m1'])
+    const late = await loadMessageOverlays([{ id: 'm1', chat_id: 'chat-1' }], 'viewer')
+    stale.resolve({ data: [{ message_id: 'm1', user_id: 'viewer', emoji: '👍' }], error: null })
+    expect((await early).get('m1')).not.toHaveProperty('reactions')
+    expect(late.get('m1')!.reactions).toEqual([])
   })
   it('starts deliveries while reactions are still pending', async () => {
     const reactions = deferred<QueryResult>()
     queryResults.set('message_reactions', [reactions.promise])
-    const reading = loadMessageOverlays(['m1'], 'viewer')
+    const reading = loadMessageOverlays([{ id: 'm1', chat_id: 'chat-1' }], 'viewer')
     await Promise.resolve()
     expect(queryCalls.map((call) => call.table)).toEqual(['message_reactions', 'message_deliveries', 'message_agent_delivery_blocks'])
     reactions.resolve({ data: [], error: null })
@@ -101,7 +116,7 @@ describe('chatMessageRevalidation', () => {
       ],
       error: null,
     })
-    const overlays = await loadMessageOverlays(['m1', 'm2', 'm3'], 'viewer')
+    const overlays = await loadMessageOverlays(['m1', 'm2', 'm3'].map(id => ({ id, chat_id: 'chat-1' })), 'viewer')
     expect(overlays.get('m1')).toEqual({
       reactions: [{ emoji: '👍', count: 2, my_reaction: true }],
       delivered: true,
@@ -148,7 +163,7 @@ describe('chatMessageRevalidation', () => {
   })
   it('retains terminal refusals per recipient without inventing read receipts or suppressing active recipients', async () => {
     setResults('message_agent_delivery_blocks', { data: [{ message_id: 'm1', agent_user_id: 'archived', reason: 'agent_archived' }], error: null })
-    const overlay = (await loadMessageOverlays(['m1'], 'viewer')).get('m1')!
+    const overlay = (await loadMessageOverlays([{ id: 'm1', chat_id: 'chat-1' }], 'viewer')).get('m1')!
     expect(overlay.delivery_blocks).toEqual([{ agent_user_id: 'archived', reason: 'agent_archived' }])
     expect(overlay.readers).toEqual([]); expect(overlay.delivered).toBe(false); expect(overlay.delivery_status).toBeNull()
   })

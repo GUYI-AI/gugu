@@ -1,0 +1,8 @@
+/* 手机上来源横排放不下时右端渐隐,压住下一个标签,看得出还能横滑。 */
+.gg-picker-sources-strip { mask-image: linear-gradient(to right, var(--color-white) calc(100% - 40px), transparent); }
+/* 支持滚动驱动时:只在还能往右滑时渐隐,滑到头消失;放得下时时间线不生效,不渐隐(不挂监听)。旧 WebView(无滚动时间线)留上面那条常驻渐隐。 */
+@property --gg-picker-fade { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@keyframes gg-picker-fade-end { from { --gg-picker-fade: 40px; } to { --gg-picker-fade: 0px; } }
+@supports (animation-timeline: scroll()) {
+  .gg-picker-sources-strip { mask-image: linear-gradient(to right, var(--color-white) calc(100% - var(--gg-picker-fade)), transparent); animation: gg-picker-fade-end linear both; animation-timeline: scroll(self inline); }
+}

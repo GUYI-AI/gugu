@@ -2,14 +2,13 @@ import { openAsBlob } from 'node:fs'
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { attachmentSha256, declareAttachment, type AttachmentsEndpoint, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
 import { createDeclaredUploads, type DeclaredUploadProgress } from '@gugu/core/cloud/declaredUploads'
-import { storeBytes, storedCopy } from '@gugu/core/local/files/fileSnapshots'
+import { localCopy, recordFileOrigin, storeBytes } from '@gugu/core/local/files/fileSnapshots'
 import type { SelectedProjectFile } from './projectFilePublication'
 
 export type AttachmentDeclareRequest = { file: SelectedProjectFile; chatId: string; as: string; messageId: string }
 export interface AttachmentUploadIpc {
   invoke(channel: 'attachments:declare', request: AttachmentDeclareRequest): Promise<DeclaredAttachment>
   invoke(channel: 'attachments:drop' | 'attachments:retry', request: { messageId: string }): Promise<void>
-  invoke(channel: 'attachments:resume'): Promise<void>
 }
 export type AttachmentProgressEvent = DeclaredUploadProgress & { messageId: string; done?: boolean }
 export function createAttachmentUploadHost(deps: {
@@ -34,7 +33,7 @@ export function createAttachmentUploadHost(deps: {
           return (await fresh.endpoint()).token
         } }
       },
-      copyOf: sha => storedCopy(account.home, sha), warn: deps.warn,
+      copyOf: sha => localCopy(account.home, sha, true), warn: deps.warn,
       progress: (messageId, progress) => {
         if (current?.id !== account.id) return
         const previous = latest.get(messageId)
@@ -54,19 +53,20 @@ export function createAttachmentUploadHost(deps: {
       const host = await runtime()
       if (!host) throw new Error('Attachment uploader is not signed in')
       const { file } = request
-      const bytes = file.data ? new Blob([file.data], { type: file.contentType }) : await openAsBlob(await requireAgentFileAccess(file.path), { type: file.contentType })
+      const path = file.data ? null : await requireAgentFileAccess(file.path)
+      const bytes = path ? await openAsBlob(path, { type: file.contentType }) : new Blob([file.data!], { type: file.contentType })
       if (bytes.size !== file.size) throw new Error('Attachment file size changed')
       const sha256 = await attachmentSha256(bytes)
-      await storeBytes(host.home, sha256, file.name, bytes)
+      // A file on this disk is uploaded from where it is, not copied; a pasted one has no other home, so the store keeps it.
+      if (path) await recordFileOrigin(host.home, sha256, path)
+      else await storeBytes(host.home, sha256, file.name, bytes)
       const account = await deps.account()
       if (account?.id !== host.id) throw new Error('Attachment upload account changed')
-      const copy = await storedCopy(host.home, sha256)
-      if (!copy) throw new Error('Attachment stored bytes changed')
-      const declared = await declareAttachment(await account.endpoint(), { bytes: copy, contentType: file.contentType },
+      // These very bytes go up: a file-backed Blob refuses to read once its file changes (`ORIGINAL_CHANGED`).
+      const copy = bytes
+      const declared = await declareAttachment(await account.endpoint(), { bytes: copy, contentType: file.contentType, sha256 },
         { chat_id: request.chatId, as: request.as, request_id: request.messageId })
-      // Upload the immutable stored original, never a source path the sender may change after declaring it.
       if (current !== host) throw new Error('Attachment upload account changed')
-      if (declared.sha256 !== sha256) throw new Error('Attachment stored bytes changed')
       const uploaded = host.queue.begin({ messageId: request.messageId, chatId: request.chatId, as: request.as, pendingKey: declared.staging_key, sha256,
         name: file.name, contentType: file.contentType, size: file.size }, copy, declared.plan ?? null)
       // A caller may fail its commit before awaiting this attempt; the queue still owns its retries.

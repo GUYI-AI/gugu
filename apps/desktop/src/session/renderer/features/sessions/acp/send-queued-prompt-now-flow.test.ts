@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getAppSettingValueSnapshot: vi.fn(),
   setAppSettingsValueInCache: vi.fn(),
-  updateAppSettingsRequest: vi.fn(() => Promise.resolve()),
+  updateAppSettingsRequest: vi.fn((_key: string, _value: unknown) => Promise.resolve()),
   showModal: vi.fn(),
   platform: { kind: 'electron' },
   device: { confirmBeforeCancelAndSend: true },
@@ -14,6 +14,7 @@ vi.mock('@renderer/features/settings/app-settings-client', () => ({
   setAppSettingsValueInCache: mocks.setAppSettingsValueInCache,
   updateAppSettingsRequest: mocks.updateAppSettingsRequest,
   invalidateAppSettingsKey: vi.fn(),
+  writeAppSetting: (key: string, value: unknown) => mocks.updateAppSettingsRequest(key, value),
 }));
 vi.mock('@/platform', () => ({ platform: mocks.platform }));
 vi.mock('@/lib/devicePreferences', () => ({

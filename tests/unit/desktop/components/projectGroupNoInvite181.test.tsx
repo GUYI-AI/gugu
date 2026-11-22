@@ -8,17 +8,23 @@ import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automation
 import { createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
 
 const projectGroups = new Set<string>()
+// The member picker reads the contacts again when it opens (contactRelations): answered as the context holds them, and the
+// IM library they are filed in is not opened here.
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({
+  ...await original<object>(), openedImRepository: async () => ({ putIdentities: async () => undefined }),
+}))
 vi.mock('../../../../apps/desktop/src/session/renderer/features/projects/stores/project-groups-store', () => ({
   projectGroupsStore: { projectOfChat: (chatId: string) => (projectGroups.has(chatId) ? 'project-1' : undefined) },
 }))
 vi.mock('../../../../apps/desktop/src/components/chat/GroupAgentFloodSettings', () => ({ GroupAgentFloodSettings: () => null }))
 
+const { contactsService } = await import('../../../../apps/desktop/src/lib/contacts')
 const { isProjectGroupChat } = await import('../../../../apps/desktop/src/lib/groupMemberPermissions')
 const { GroupSettingsManagePage } = await import('../../../../apps/desktop/src/components/chat/GroupSettingsManagePage')
 const { AddGroupMembers } = await import('../../../../apps/desktop/src/components/chat/AddGroupMembers')
 
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { harness = createReactHarness(); projectGroups.clear() })
+beforeEach(() => { harness = createReactHarness(); projectGroups.clear(); vi.spyOn(contactsService, 'getContacts').mockResolvedValue([]) })
 afterEach(() => { harness.cleanup() })
 
 const settings = {

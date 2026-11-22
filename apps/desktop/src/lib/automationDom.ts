@@ -45,7 +45,6 @@ export const AUTOMATION_TEST_IDS = {
   chatDrawerProfileMenu: 'chat-drawer-profile-menu',
   chatListPlusButton: 'chat-list-plus-button',
   chatListPane: 'chat-list-pane',
-  chatListPaneResizeHandle: 'chat-list-pane-resize-handle',
   chatListSearchInput: 'chat-list-search-input',
   contactsSearchInput: 'contacts-search-input',
   contactsSelectModeButton: 'contacts-select-mode-button',

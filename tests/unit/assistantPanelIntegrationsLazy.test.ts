@@ -1,6 +1,7 @@
 import { expect,it,vi } from 'vitest'
 import type { AssistantPanelFiles } from '@gugu/core/cloud/assistantPanelFiles'
 import { readAssistantPanelIntegrations } from '../../apps/desktop/src/components/assistant/assistant-panel-integrations'
+
 it('reads public category and aliases from the lightweight catalog without fetching details', async () => {
   const body = vi.fn()
   const catalog = { categoryId: 'work', aliases: ['Feishu', '飞书'] }
@@ -66,43 +67,8 @@ it('uses built-in localized copy and icons without downloading bodies',async()=>
  expect(result.items[0]!.description).toBe('Work on GitHub issues and PRs')
  expect(body).not.toHaveBeenCalled()
 })
-it('fills optional descriptions one by one with four workers and ignores a broken description',async()=>{
- const {enrichAssistantPanelIntegrations}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
- const rows=Array.from({length:9},(_,i)=>({resource_key:`catalog:p${i}`,data:{providerId:`p${i}`,displayName:`App ${i}`}}))
- let active=0,peak=0
- const body=vi.fn(async(row:typeof rows[number])=>{active++;peak=Math.max(peak,active);await new Promise(resolve=>setTimeout(resolve,1));active--;if(row.data.providerId==='p0')throw Error('unreadable');return new TextEncoder().encode(JSON.stringify({version:1,en:{id:row.data.providerId,name:row.data.providerId,description:`Description ${row.data.providerId}`,auth:{methods:[]}}}))})
- const panel={collection:async()=>rows,snapshot:async()=>({application:[]}),body} as unknown as AssistantPanelFiles
- const items=(await readAssistantPanelIntegrations(panel,'en-US')).items,updated=vi.fn()
- expect(body).not.toHaveBeenCalled()
- await enrichAssistantPanelIntegrations(panel,items,'en-US',updated)
- expect(peak).toBe(4)
- expect(updated).toHaveBeenCalledTimes(8)
- expect(updated).not.toHaveBeenCalledWith('p0',expect.anything())
- expect(updated).toHaveBeenCalledWith('p8',{name:'App 8',description:'Description p8'})
- expect(items).toHaveLength(9)
-})
 
-it('fills a legacy catalog name even when its description is already present',async()=>{
- const {enrichAssistantPanelIntegrations}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
- const rows=[{resource_key:'catalog:custom-mail',data:{providerId:'custom-mail',description:'Saved description'}}]
- const body=vi.fn(async()=>new TextEncoder().encode(JSON.stringify({version:1,'zh-CN':{id:'custom-mail',name:'公司邮箱',auth:{methods:[]}}})))
- const panel={collection:async()=>rows,snapshot:async()=>({application:[]}),body} as unknown as AssistantPanelFiles
- const items=(await readAssistantPanelIntegrations(panel,'zh-CN')).items,updated=vi.fn()
- expect(body).not.toHaveBeenCalled()
- await enrichAssistantPanelIntegrations(panel,items,'zh-CN',updated)
- expect(body).toHaveBeenCalledTimes(1)
- expect(updated).toHaveBeenCalledWith('custom-mail',{name:'公司邮箱',description:'Saved description'})
-})
 
-it('treats a malformed unknown description as only that entry being unreadable',async()=>{
- const {enrichAssistantPanelIntegrations}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
- const rows=[{resource_key:'catalog:custom',data:{providerId:'custom',displayName:'Company app'}}]
- const panel={collection:async()=>rows,snapshot:async()=>({application:[]}),body:async()=>new TextEncoder().encode(JSON.stringify({version:1,en:{id:'custom',name:'Company app',description:{bad:true},auth:{methods:[]}}}))} as unknown as AssistantPanelFiles
- const items=(await readAssistantPanelIntegrations(panel,'en-US')).items,updated=vi.fn()
- await enrichAssistantPanelIntegrations(panel,items,'en-US',updated)
- expect(updated).not.toHaveBeenCalled()
- expect(items[0]!.name).toBe('Company app')
-})
 
 it('renders built-in localized names and descriptions even if every first body download fails',async () => {
  const rows=['feishu','dingtalk','wecom','tencent-docs','tencent-meeting','dida'].map(id=>({resource_key:`catalog:${id}`,data:{providerId:id,displayName:id}}))
@@ -114,42 +80,25 @@ it('renders built-in localized names and descriptions even if every first body d
  const en=await readAssistantPanelIntegrations(panel,'en-US')
  expect(en.items.map(item=>item.name)).toEqual(['Feishu','DingTalk','WeCom','Tencent Docs','Tencent Meeting','Dida365'])
  expect(en.items.every(item=>!!item.description)).toBe(true)
- const {enrichAssistantPanelIntegrations}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
- await enrichAssistantPanelIntegrations(panel,zh.items,'zh-CN',vi.fn())
  expect(body).not.toHaveBeenCalled()
 })
 
-it('keeps an unknown catalog display name and never uses its id as a name after enrichment fails',async()=>{
+it('keeps an unknown catalog display name and never uses its id as a name',async()=>{
  const rows=[{resource_key:'catalog:custom',data:{providerId:'custom',displayName:'Company app'}},{resource_key:'catalog:unnamed',data:{providerId:'unnamed',displayName:'unnamed'}}]
  const panel={collection:async()=>rows,snapshot:async()=>({application:[]}),body:async()=>{throw new TypeError('download unavailable')}} as unknown as AssistantPanelFiles
  const result=await readAssistantPanelIntegrations(panel,'zh-CN')
  expect(result.items.map(item=>item.name)).toEqual(['Company app','应用'])
- const {enrichAssistantPanelIntegrations}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
- const updated=vi.fn()
- await enrichAssistantPanelIntegrations(panel,result.items,'zh-CN',updated)
- expect(updated).not.toHaveBeenCalled()
  expect(result.items.every(item=>item.name!==item.id)).toBe(true)
 })
 
 
-it('shares selected metadata reads and invalidates only a changed content version or locale',async () => {
- const {readAssistantPanelIntegration,cachedAssistantPanelIntegration}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
- let version='one'
- const collection=vi.fn(async()=>[{resource_key:'catalog:custom',body_sha256:version,data:{providerId:'custom'}}])
+it('reads a selected entry from its current catalog body for the locale asked (sharing and keeping are the detail replica\'s)',async () => {
+ const {readAssistantPanelIntegration}=await import('../../apps/desktop/src/components/assistant/assistant-panel-integrations')
+ const collection=vi.fn(async()=>[{resource_key:'catalog:custom',body_sha256:'one',data:{providerId:'custom'}}])
  const body=vi.fn(async()=>new TextEncoder().encode(JSON.stringify({version:1,en:{id:'custom',name:'Company app',auth:{methods:[]}},'zh-CN':{id:'custom',name:'公司应用',auth:{methods:[]}}})))
  const panel={collection,body} as unknown as AssistantPanelFiles
- await Promise.all([readAssistantPanelIntegration(panel,'custom','en-US','one'),readAssistantPanelIntegration(panel,'custom','en-US','one')])
- expect(body).toHaveBeenCalledTimes(1)
- expect(cachedAssistantPanelIntegration(panel,'custom','en-US','one')?.name).toBe('Company app')
- const reads=collection.mock.calls.length
- await readAssistantPanelIntegration(panel,'custom','en-US','one')
- expect(collection).toHaveBeenCalledTimes(reads)
- version='two'
- expect(cachedAssistantPanelIntegration(panel,'custom','en-US','two')).toBeUndefined()
- await readAssistantPanelIntegration(panel,'custom','en-US','two')
- await readAssistantPanelIntegration(panel,'custom','zh-CN','two')
- expect(body).toHaveBeenCalledTimes(3)
- expect(cachedAssistantPanelIntegration({...panel} as AssistantPanelFiles,'custom','en-US','two')).toBeUndefined()
+ expect((await readAssistantPanelIntegration(panel,'custom','en-US')).name).toBe('Company app')
+ expect((await readAssistantPanelIntegration(panel,'custom','zh-CN')).name).toBe('公司应用')
 })
 
 
@@ -179,8 +128,8 @@ it('reads a valid published catalog after a collection publication error without
  expect(await readAssistantPanelIntegration(panel,'custom','en-US')).toMatchObject({name:'Company app'})
  expect(body).toHaveBeenCalledOnce()
  row.body_sha256='v2';Object.assign(row,{stale_at:'2026-10-27'})
- await expect(readAssistantPanelIntegration(panel,'custom','en-US','v2')).rejects.toMatchObject({code:'stale'})
+ await expect(readAssistantPanelIntegration(panel,'custom','en-US')).rejects.toMatchObject({code:'stale'})
  Object.assign(row,{stale_at:null});snapshot.application.push({domain:'integrations',resourceKey:'catalog:custom',status:'failed'})
- await expect(readAssistantPanelIntegration(panel,'custom','en-US','v2')).rejects.toMatchObject({code:'application-failed'})
+ await expect(readAssistantPanelIntegration(panel,'custom','en-US')).rejects.toMatchObject({code:'application-failed'})
  expect(body).toHaveBeenCalledOnce()
 })

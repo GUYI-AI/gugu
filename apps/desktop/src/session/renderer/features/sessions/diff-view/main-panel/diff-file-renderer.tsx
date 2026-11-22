@@ -21,7 +21,6 @@ import { getLanguageFromPath } from '@renderer/utils/languageUtils';
 import { HEAD_REF, STAGED_REF } from '@shared/core/git/types';
 import type { ActiveFile } from '@shared/view-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 
 interface DiffFileRendererProps {
   tab: DiffTabResource;
@@ -245,15 +244,10 @@ const DiffContentPreview = observer(function DiffContentPreview({
     return <HtmlContentRenderer filePath={tab.path} rawContent={content} />;
   }
 
-  const resolveImage = async (src: string): Promise<string | null> => {
-    const imagePath = resolveWorkspaceResourcePath({
-      workspacePath,
-      containingFilePath: tab.path,
-      resourcePath: src,
-    });
-    if (!imagePath) return null;
-    const result = await workspaceRpc(projectId).files.readImage(projectId, workspaceId, imagePath);
-    return result.success && result.data?.success ? result.data.dataUrl : null;
+  const workspaceImages = {
+    projectId,
+    workspaceId,
+    pathOf: (src: string) => resolveWorkspaceResourcePath({ workspacePath, containingFilePath: tab.path, resourcePath: src }),
   };
 
   const openWorkspaceLink = (href: string): boolean => {
@@ -274,7 +268,7 @@ const DiffContentPreview = observer(function DiffContentPreview({
         density="comfortable"
         frontmatter
         className="w-full max-w-3xl px-8 py-8"
-        resolveImage={resolveImage}
+        workspaceImages={workspaceImages}
         onOpenLink={openWorkspaceLink}
       />
     </div>

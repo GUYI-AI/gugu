@@ -346,7 +346,33 @@ function validateBaseline(value: ReturnType<typeof JSON.parse>) {
   if (!spinners || typeof spinners !== 'object' || Object.values(spinners).some((n) => !isCount(n) || n === 0)) {
     throw new Error('invalid scripts/checks/ui-visual-spec-baseline.json: handRotatedSpinners')
   }
-  return { ...counts, geometry, assistantUiGeometry, offLadder, spinners }
+  const settingsBoxes = value?.settingsSelfDrawnBoxes
+  if (!isCount(settingsBoxes)) {
+    throw new Error('invalid scripts/checks/ui-visual-spec-baseline.json: settingsSelfDrawnBoxes')
+  }
+  return { ...counts, geometry, assistantUiGeometry, offLadder, spinners, settingsBoxes }
+}
+
+// @@@settings-one-surface (owner 2026-11-22, variant B) — 设置页的块只有一种:SettingsGroup 的卡片,
+// 分组之外的块(用量小卡、表格、资源监视器、快捷键)挂 `gg-settings-surface`,同一份声明。
+// 这里记的是「设置页自己又画了一个框」的源码痕迹,只减不增:
+//   · TSX:<div>/<section> 的 className 同时有 rounded-* 和 border / bg-*(Tailwind 自绘盒子)
+//   · CSS:同一条规则里既有非 0 的 border 又有 border-radius(样式表自绘盒子;控件也算在内,是现存的债)
+// 新的块请用 SettingsGroup 或 gg-settings-surface,❌ 别往基线里加。
+const SETTINGS_BOX_ROOTS = ['components/settings', 'components/usage', 'session/renderer/features/settings']
+const SETTINGS_TSX_BOX = /<(?:div|section)\b[^>]*\bclassName="(?=[^"]*(?<=["\s])rounded-)(?=[^"]*(?<=["\s])(?:border|bg-[^\s"]+)(?=[\s"]))[^"]*"/g
+const SETTINGS_CSS_BOX = /\{[^{}]*?(?:^|[;{\s])border\s*:\s*(?!0|none)[^;{}]*;[^{}]*?border-radius\s*:[^{}]*\}|\{[^{}]*?border-radius\s*:[^;{}]*;[^{}]*?(?:^|[;{\s])border\s*:\s*(?!0|none)[^{}]*\}/g
+function settingsSelfDrawnBoxes(rendererRoot: string): number {
+  let count = 0
+  for (const rel of SETTINGS_BOX_ROOTS) {
+    for (const file of sourceFiles(path.join(rendererRoot, rel))) {
+      if (/\.(?:test|stories)\.tsx?$/.test(file)) continue
+      const ext = path.extname(file)
+      if (ext === '.tsx') count += (readFileSync(file, 'utf8').match(SETTINGS_TSX_BOX) ?? []).length
+      else if (ext === '.css') count += (readFileSync(file, 'utf8').match(SETTINGS_CSS_BOX) ?? []).length
+    }
+  }
+  return count
 }
 
 // 旧字阶写死字号的债,按范围各记一本(范围名与 baseline 的键一一对应)。
@@ -461,6 +487,7 @@ export function inspect(root: string = repoRoot) {
       sessionChatUi: offLadderFontSizeLiterals(sessionChatUiFiles),
       assistantUi: offLadderFontSizeLiterals(assistantUiFiles),
     },
+    settingsSelfDrawnBoxes: settingsSelfDrawnBoxes(absoluteRendererRoot),
     mobileShellReferences: mobileShellReferences(sessionFiles),
     handRotatedSpinners: handRotatedSpinners([
       ...sourceFiles(absoluteRendererRoot),
@@ -509,6 +536,15 @@ export function run(output: Output = console): number {
           'off-ladder (11/13/15/17) font-size literals —— 换成 --font-caption/--font-body/--font-title/--font-prose',
         ) && passed
     }
+
+    passed =
+      compareCount(
+        'settings pages',
+        result.settingsSelfDrawnBoxes,
+        baseline.settingsBoxes,
+        output,
+        'self-drawn boxes —— 用 SettingsGroup 或 gg-settings-surface(@@@settings-one-surface)',
+      ) && passed
 
     for (const file of new Set([...Object.keys(result.handRotatedSpinners), ...Object.keys(baseline.spinners)])) {
       const actual = result.handRotatedSpinners[file] ?? 0
@@ -568,6 +604,7 @@ export function run(output: Output = console): number {
       `banned type hits=${result.bannedTypeHits.length}; ` +
       `pointer focus rings=${result.pointerFocusRings.length}; ` +
       `off-ladder literals ${OFF_LADDER_SCOPES.map((key) => `${key}=${result.offLadderFontSizeLiterals[key]}`).join(' ')}; ` +
+      `settings self-drawn boxes=${result.settingsSelfDrawnBoxes}; ` +
       `hand-rotated spinners=${Object.values(result.handRotatedSpinners).reduce((sum, n) => sum + n, 0)}; ` +
       `${result.scannedFiles.sessionRenderer + result.scannedFiles.mainRenderer + result.scannedFiles.sessionUi + result.scannedFiles.sessionChatUi} files scanned ` +
       `(main=${result.scannedFiles.mainRenderer} session=${result.scannedFiles.sessionRenderer} ` +

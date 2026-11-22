@@ -20,13 +20,16 @@ describe.skipIf(process.platform === 'win32')('real fixture subprocess ownership
     const parentInfo = path.join(temporary, 'parent.json');
     const writer = path.join(temporary, 'writer.cjs'), entry = path.join(temporary, 'main.cjs');
     fs.mkdirSync(profile);
+    // Each fact file is written whole and renamed into place: a reader polling for it never sees it half written.
     fs.writeFileSync(writer, `const fs = require('node:fs');
-fs.writeFileSync(${JSON.stringify(ready)}, JSON.stringify({pid:process.pid,parent:process.ppid}));
+fs.writeFileSync(${JSON.stringify(ready + '.part')}, JSON.stringify({pid:process.pid,parent:process.ppid}));
+fs.renameSync(${JSON.stringify(ready + '.part')}, ${JSON.stringify(ready)});
 setInterval(() => fs.appendFileSync(${JSON.stringify(path.join(profile, 'active-writes'))}, 'x'), 20);
 `);
     fs.writeFileSync(entry, `const fs = require('node:fs'), {spawn} = require('node:child_process');
 const child = spawn(process.execPath, [${JSON.stringify(writer)}], {stdio:'ignore'});
-fs.writeFileSync(${JSON.stringify(parentInfo)}, JSON.stringify({pid:process.pid,child:child.pid}));
+fs.writeFileSync(${JSON.stringify(parentInfo + '.part')}, JSON.stringify({pid:process.pid,child:child.pid}));
+fs.renameSync(${JSON.stringify(parentInfo + '.part')}, ${JSON.stringify(parentInfo)});
 process.stderr.write('REAL_ELECTRON_FIXTURE_FAILURE=' + JSON.stringify({phase:'first-paint',message:'Pipeline timed out'}) + '\\n');
 setInterval(() => {}, 1000);
 `);
@@ -38,12 +41,15 @@ setInterval(() => {}, 1000);
     const result = fixture.result.catch(error => error).finally(() => { completed = true; });
     let pids: number[] = [];
     try {
-      const child = await awaitFact('the real grandchild has started writing in the isolated profile', () => {
-        if (fs.existsSync(ready)) return JSON.parse(fs.readFileSync(ready, 'utf8')) as {pid:number;parent:number};
+      // The grandchild can start writing before its parent has recorded it: wait for both.
+      const { child, parent } = await awaitFact('the real grandchild has started writing in the isolated profile', () => {
+        if (fs.existsSync(ready) && fs.existsSync(parentInfo)) return {
+          child: JSON.parse(fs.readFileSync(ready, 'utf8')) as {pid:number;parent:number},
+          parent: JSON.parse(fs.readFileSync(parentInfo, 'utf8')) as {pid:number;child:number},
+        };
         if (completed) throw new Error('fixture exited before creating its grandchild');
         return undefined;
       });
-      const parent = JSON.parse(fs.readFileSync(parentInfo, 'utf8')) as {pid:number;child:number};
       pids = [parent.pid, child.pid];
       expect(child.parent).toBe(parent.pid);
       expect(parent.child).toBe(child.pid);

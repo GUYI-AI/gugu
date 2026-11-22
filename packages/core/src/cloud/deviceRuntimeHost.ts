@@ -269,7 +269,8 @@ function deviceRuntimeOwnerFile(env: NodeJS.ProcessEnv): string {
   return join(stateDir(env), 'device-runtime-owner.json')
 }
 
-async function readDeviceRuntimeOwner(env: NodeJS.ProcessEnv): Promise<string | null> {
+/** The account this machine's device runtime last ran for; null before it ever ran. */
+export async function readDeviceRuntimeOwner(env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
   const path = deviceRuntimeOwnerFile(env)
   let raw: string
   try {
@@ -467,7 +468,7 @@ export function createDeviceRuntimeHostLoop(
     return (state: AgentRuntimeStateWrite) => publishRuntimeState(async () => {
       const recent = await recentActionsForAgent(state.agentUserId)
       if (generation !== lifecycleGeneration || stopped) throw new Error('device runtime was stopped before state publication')
-      return { ...state, ...presenceFields(publishedStatusOf(agentStatusOf(state.agentUserId))),
+      return { ...state, ...presenceFields(publishedStatusOf(agentStatusOf(state.agentUserId), lastInteractedAtOf(state.agentUserId))),
         ...(recent ? { recentActions: recent.actions, lastActionAt: recent.lastActionAt } : {}) }
     }, report)
   }
@@ -1393,7 +1394,7 @@ export function createDeviceRuntimeHostLoop(
             publishedActivity.delete(agentUserId)
           } else {
             publishedActivity.set(agentUserId, { activityStatus: presence.activityStatus, reading: presence.status,
-              runtimeKind: presence.runtimeKind, runtimeLabel: presence.runtimeLabel })
+              lastInteractedAt: presence.lastInteractedAt, runtimeKind: presence.runtimeKind, runtimeLabel: presence.runtimeLabel })
             publishedRecentActions.set(agentUserId, { key: recentActionsKey({ actions: presence.recentActions, lastActionAt: presence.lastActionAt }), publishedAt: nowMs() })
           }
         }
@@ -1422,11 +1423,17 @@ export function createDeviceRuntimeHostLoop(
     return options.runtimeBridge?.agentStatus?.(agentUserId) ?? null
   }
 
-  function presenceFields(published: PublishedAgentStatus): Pick<AgentRuntimeStateWrite, 'activityStatus' | 'agentStatus' | 'agentStatusDetail'> {
+  /** 这个 agent 绑的会话最后一次有动静的时刻:与读数同一个来源(宿主按 agent 的流)。 */
+  function lastInteractedAtOf(agentUserId: string): string | null {
+    return options.runtimeBridge?.lastInteractedAt?.(agentUserId) ?? null
+  }
+
+  function presenceFields(published: PublishedAgentStatus): Pick<AgentRuntimeStateWrite, 'activityStatus' | 'agentStatus' | 'agentStatusDetail' | 'lastInteractedAt'> {
     return {
       activityStatus: published.activityStatus,
       agentStatus: published.reading?.status ?? null,
       agentStatusDetail: published.reading?.detail ?? null,
+      lastInteractedAt: published.lastInteractedAt,
     }
   }
 
@@ -1450,7 +1457,7 @@ export function createDeviceRuntimeHostLoop(
       // 纯浪费(而且它正好落在 owner 抱怨资源负载的那条路上)。
       // #4008 鉴权也在这道闸之后才取:没有要写的东西就不该去碰鉴权,否则空闲期每 2 秒问一次令牌。
       const somethingChanged = agentUserIds.some(
-        (id) => !samePublishedStatus(publishedActivity.get(id), publishedStatusOf(agentStatusOf(id))),
+        (id) => !samePublishedStatus(publishedActivity.get(id), publishedStatusOf(agentStatusOf(id), lastInteractedAtOf(id))),
       ) || agentUserIds.some(recentActionsChanged) || [...publishedActivity.keys()].some((id) => !agentUserIds.includes(id))
       if (!somethingChanged) return
       const auth = await readWorkAuth()
@@ -1463,6 +1470,7 @@ export function createDeviceRuntimeHostLoop(
         agentUserIds,
         published: publishedActivity,
         statusOf: agentStatusOf,
+        lastInteractedAtOf,
         report: async (agentUserId, published) => {
           return reportRuntimeState({
             agentUserId,

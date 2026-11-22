@@ -7,7 +7,9 @@ import { vars } from '@session-chat/styles/theme.css';
 import { CONVERSATION_FOOTER_H } from './conversation-body';
 
 export const conversationRoot = style({ position: 'relative', color: vars.fgBody });
-export const conversationHeader = style({ display: 'flex', alignItems: 'center', gap: 8, paddingBottom: 6, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', fontFamily: vars.fontSans, fontSize: vars.typeChromeTinyFontSize, lineHeight: '18px' });
+export const conversationHeader = style({ display: 'flex', flexWrap: 'wrap', alignItems: 'center', alignContent: 'flex-start', columnGap: 8, rowGap: 0, paddingBottom: 6, boxSizing: 'border-box', minWidth: 0, overflow: 'hidden', fontFamily: vars.fontSans, fontSize: vars.typeChromeTinyFontSize, lineHeight: '18px' });
+/** Ends the name's line when the head wraps (conversationHeaderLayout().wrap): the process row and reference go below. */
+export const conversationHeadBreak = style({ flexBasis: '100%', height: 0 });
 export const conversationName = style({ fontWeight: 650, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', flexShrink: 0 });
 export const senderNameLink = style({ border: 0, padding: 0, background: 'transparent', color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit', lineHeight: 'inherit', textAlign: 'inherit', cursor: 'pointer', selectors: { '&:hover': { textDecoration: 'underline' }, '&:focus-visible:not([data-pointer-focus])': { textDecoration: 'underline', outlineOffset: 2 } } });
 export const conversationReference = style({ position: 'relative', display: 'inline-flex', width: 18, height: 18, flexShrink: 0, color: vars.fgMuted });

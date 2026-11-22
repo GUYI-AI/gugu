@@ -174,7 +174,7 @@ export function createAccountRevisionRuntime(
 
     const lastRevision = page.operations[page.operations.length - 1]!.revision
     const accepted = await ingestMessages(accountId, () => messageRevisionWrites(accountId, page.operations, lastRevision))
-    const arrived = accepted ? storedMessages(accepted) : undefined
+    const arrived = storedMessages(accepted)
     if (!active || generation !== runGeneration) return cursor
     const committed: Array<() => void> = []
     await repository.transaction((transaction) => {

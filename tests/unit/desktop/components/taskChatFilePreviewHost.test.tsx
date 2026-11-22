@@ -11,7 +11,7 @@ import { NATIVE_BACK_EVENT } from '../../../../apps/desktop/src/components/ui/sh
 vi.mock('@/platform', () => ({ platform: { kind: 'electron', capabilities: { readingZoomMemory: true } } }))
 vi.mock('@/lib/attachmentBytes', () => ({
   attachmentBytes: async () => ({ status: 'ready', blob: new Blob(['original text']) }),
-  sourceKeyOf: () => 'session-file', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),
+  sourceKeyOf: () => 'session-file', attachmentPreview: vi.fn(), localAttachmentUrl: async () => null, openAttachmentInSystemApp: vi.fn(),
 }))
 function Conversation({ mobile }: { mobile: boolean }) {
   const [draft] = useState('unfinished task draft')
@@ -19,7 +19,7 @@ function Conversation({ mobile }: { mobile: boolean }) {
   return <>
     <textarea defaultValue={draft} aria-label="task draft" />
     <button onClick={() => preview.open({ kind: 'file', fileName: 'notes.txt', mimeType: 'text/plain', sizeBytes: 13, source: { kind: 'attachment', attachmentId: 'file-id' } })}>Open file</button>
-    {preview.panel}
+    {preview.beside(null)}
   </>
 }
 let ui: ReturnType<typeof createReactHarness>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import { agentSteersActiveAcpTurn } from '@shared/core/agents/agent-payload';
-import { buildAgentMetadataList } from './agent-payload-builder';
+import { buildAgentMetadataList, toAgentInstallationStatus } from './agent-payload-builder';
 
 /**
  * 直通判据(spec: harness-auth-surface):payload 的 auth 就是插件声明的那一份。
@@ -52,5 +52,28 @@ describe('the declared acp injection timing reaches the renderer payload', () =>
     expect(steers('codex')).toBe(true);
     // acp 没声明注入档位 ⇒ 插不了(阴控:判据不是恒真)。
     expect(steers('mimocode')).toBe(false);
+  });
+});
+
+/** First run reuses the copy in use only when session start would accept it. */
+describe('whether session start accepts the copy in use reaches the installation status', () => {
+  const status = (id: string, version: string | null) =>
+    toAgentInstallationStatus(id, { id, status: 'available', version } as Parameters<typeof toAgentInstallationStatus>[1], undefined);
+  it('reads the declared codex and claude requirements against the copy in use', () => {
+    expect(status('codex', '0.160.0').versionSupported).toBe(true);
+    expect(status('codex', '0.145.0').versionSupported).toBe(false);
+    expect(status('codex', null).versionSupported).toBeNull();
+    expect(status('claude', '2.1.69').versionSupported).toBe(true);
+    expect(status('claude', '2.1.0').versionSupported).toBe(false);
+    // Negative control: a harness that declares nothing is let through, as session start does.
+    expect(status('cursor', '1.0.0').versionSupported).toBe(true);
+  });
+  it('judges the copy the person selected, not whichever is first on PATH', () => {
+    const copy = (realpath: string, version: string) => ({ id: realpath, realpath, pathEntry: realpath, isActive: false, manageable: false,
+      provenance: { kind: 'path', confidence: 'inferred' }, status: 'available', version });
+    const hostDep = { used: { kind: 'pinned', realpath: '/opt/old/codex' }, installations: [copy('/usr/bin/codex', '0.160.0'), copy('/opt/old/codex', '0.145.0')] };
+    const reading = toAgentInstallationStatus('codex', { id: 'codex', status: 'available', version: '0.160.0' } as Parameters<typeof toAgentInstallationStatus>[1],
+      hostDep as unknown as Parameters<typeof toAgentInstallationStatus>[2]);
+    expect(reading).toMatchObject({ version: '0.145.0', versionSupported: false });
   });
 });

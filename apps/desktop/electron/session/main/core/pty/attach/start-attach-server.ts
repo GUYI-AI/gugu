@@ -9,7 +9,7 @@ import { SERVER_UPDATE_CONTROL_RPCS } from '@gugu/core/cloud/serverMachineHealth
 import { AGENT_HOME_CALL, HOST_RESUME_CALL, OPEN_EXTERNAL_CALL } from './attach-protocol';
 
 /**
- * #6264 这台机器上的程序要「打开网页」:装上助手脚本(`$BROWSER` / xdg-open),之后起的 agent 与终端都带上;
+ * #6264 会话里的程序要「打开网页」:装上助手脚本(`$BROWSER`),之后起的会话进程都带上(server-browser-env.ts);
  * 脚本经这个套接字把网址交回来(remote-open-external.ts)。装不上只少了这一样,响亮记一笔、不挡别的。
  */
 function installBrowserHelpers(): void {

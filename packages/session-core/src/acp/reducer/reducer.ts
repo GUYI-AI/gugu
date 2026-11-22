@@ -19,7 +19,7 @@ import { foldItem, finalizeItems, type FoldEvent } from './item-fold';
 import { projectSubagentProgress } from './subagent-progress';
 import { findSubagentStep, foldSubagentStep, patchSubagentStep } from './subagent-steps';
 import type { NormalizedEvent } from './normalized-event';
-import { findEntityOwner } from './entity-owner';
+import { committedSlotsWith, findEntityOwner } from './entity-owner';
 import { withReferencedTerminals } from '../models/terminals';
 
 type SynthesizedSegmentKind = 'message:user' | 'message:assistant' | 'thinking';
@@ -59,7 +59,11 @@ export interface ParserState {
 
 export type ReducerInput =
   | { kind: 'user_boundary'; at: number }
-  | { kind: 'event'; event: NormalizedEvent; at: number }
+  /**
+   * `turnKey` (a record's events): a turn this event opens is `${sessionId}:${turnKey}`, the record line's own identity
+   * instead of a count of the turns before it. `opens`: the record says this event starts a turn (a person's prompt).
+   */
+  | { kind: 'event'; event: NormalizedEvent; at: number; turnKey?: string; opens?: boolean }
   | { kind: 'replay_start'; at: number }
   | { kind: 'replay_end'; at: number; outcome?: TranscriptTurnOutcome }
   | { kind: 'turn_end'; at: number; outcome?: TranscriptTurnOutcome; foreground?: TranscriptTurn['foreground'] }
@@ -144,9 +148,10 @@ function openTurn(
   deps: ReducerDeps,
   initiator: TranscriptTurnInitiator,
   startedAt: number | undefined,
-  trigger?: TranscriptTurnTrigger
+  trigger?: TranscriptTurnTrigger,
+  turnKey?: string
 ): TranscriptSlice {
-  const id = makeTurnId(deps.sessionId, nextTurnIndex(t, deps.turnIndexBase));
+  const id = turnKey !== undefined ? `${deps.sessionId}:${turnKey}` : makeTurnId(deps.sessionId, nextTurnIndex(t, deps.turnIndexBase));
   const turn: TranscriptTurn = {
     id,
     ...(deps.newTurnReference ? { referenceId: deps.newTurnReference() } : {}),
@@ -470,7 +475,7 @@ function reduceSubagentStream(
   const inner = stream.event;
   const active = s.transcript.active;
   const launch = active && findToolCallNode(active.items, owner.toolCallId) ? active
-    : s.transcript.committed.find((turn) => findToolCallNode(turn.items, owner.toolCallId));
+    : oldestCommittedWith(s.transcript.committed, owner.toolCallId);
 
   if (inner.kind === 'agent_state') {
     const ids = { toolCallId: owner.toolCallId, agentId: owner.agentId, subagentSessionId: stream.subagentSessionId };
@@ -619,6 +624,12 @@ function patchToolCallInTurns(
     return items === turn.items ? turn : { ...turn, items };
   });
   return hit ? next : null;
+}
+
+/** The oldest committed turn holding this call, by id rather than by walking every committed turn. */
+function oldestCommittedWith(committed: readonly TranscriptTurn[], toolCallId: string): TranscriptTurn | undefined {
+  const slot = committedSlotsWith(committed, toolCallId)[0];
+  return slot === undefined ? undefined : committed[slot];
 }
 
 function findToolCallNodeInTurns(
@@ -877,7 +888,7 @@ function assertTranscriptInvariants(transcript: TranscriptSlice): void {
  * All state changes return a new ParserState; no mutation occurs.
  */
 export function reduce(s: ParserState, input: ReducerInput, deps: ReducerDeps): ParserState {
-  return projectSubagentProgress(reduceState(s, input, deps));
+  return projectSubagentProgress(reduceState(s, input, deps), s);
 }
 
 function reduceState(s: ParserState, input: ReducerInput, deps: ReducerDeps): ParserState {
@@ -1079,11 +1090,11 @@ function reduceState(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
   // there is nothing truthful to stamp — see TranscriptTurn.startedAt.
   const openedAt = s.replaying ? undefined : input.at;
 
-  // OPEN boundary: a new user message starts a new turn.
+  // OPEN boundary: a new user message starts a new turn; in a record, the line the record says starts one.
   if (event.kind === 'message' && event.role === 'user' && event.steering !== true) {
-    if (isNewUserMessage(t.active, event, segment)) {
+    if (input.opens || isNewUserMessage(t.active, event, segment)) {
       t = closeActive(t, input.at, undefined, openedAt);
-      t = openTurn(t, deps, 'user', s.replaying ? undefined : event.sentAt ?? openedAt, event.trigger);
+      t = openTurn(t, deps, 'user', s.replaying ? undefined : event.sentAt ?? openedAt, event.trigger, input.turnKey);
       segment = initialSegment();
     }
   }
@@ -1158,7 +1169,7 @@ function reduceState(s: ParserState, input: ReducerInput, deps: ReducerDeps): Pa
 
   // Lazy open: agent-initiated content with no active turn.
   if (!t.active) {
-    t = openTurn(t, deps, 'agent', openedAt, { kind: 'agent' });
+    t = openTurn(t, deps, 'agent', openedAt, { kind: 'agent' }, input.turnKey);
     segment = initialSegment();
   }
 

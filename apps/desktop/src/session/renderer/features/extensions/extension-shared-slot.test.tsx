@@ -30,6 +30,8 @@ describe('ExtensionSharedSlot: the App page goes where the page on screen asks',
     const dom = new JSDOM('<div id="root"></div>');
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
+    // The App page sits on a track cut, which measures its row.
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
     root = createRoot(dom.window.document.getElementById('root')!);
   });
   afterEach(() => {

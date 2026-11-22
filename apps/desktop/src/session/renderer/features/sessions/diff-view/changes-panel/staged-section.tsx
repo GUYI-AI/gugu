@@ -1,7 +1,7 @@
 import type { GitChange } from '@gugu/session-core/git';
 import { Minus } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notices';
 import { activeDiffResource } from '@renderer/features/sessions/diff-view/pane-selectors';
 import {
   useSessionViewContext,
@@ -81,7 +81,7 @@ export const StagedSection = observer(function StagedSection() {
     const paths = [...changesView.stagedSelection];
     void git.unstageFiles(paths).then((result) => {
       if (!result.success) {
-        toast.error(vcsFailureText('unstage', result.error, translate, 'changes.unstageFailed'));
+        notify({ title: vcsFailureText('unstage', result.error, translate, 'changes.unstageFailed'), tier: 'error' });
         return;
       }
       changesView.removeStagedSelection(paths);
@@ -91,7 +91,7 @@ export const StagedSection = observer(function StagedSection() {
   const handleUnstageAll = () => {
     void git.unstageAllFiles().then((result) => {
       if (!result.success) {
-        toast.error(vcsFailureText('unstage', result.error, translate, 'changes.unstageFailed'));
+        notify({ title: vcsFailureText('unstage', result.error, translate, 'changes.unstageFailed'), tier: 'error' });
       }
     });
   };

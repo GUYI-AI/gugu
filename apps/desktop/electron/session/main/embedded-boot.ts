@@ -43,18 +43,18 @@ import {
   pruneSessionSnapshots,
   sessionSnapshotDir,
 } from './core/extensions/extension-session-snapshot'
-// 装完之后重新读登录 shell PATH 的注入口 —— 实现(hydrateLoginShellPath)住宿主,理由见
-// utils/userEnv.ts 的 setLoginShellPathRehydrator 注释:那个模块有模块级状态,跨 bundle
+// 每次检测前重新读用户当前 PATH 的注入口 —— 实现(refreshUserPath)住宿主,理由见
+// utils/userEnv.ts 的 setUserPathRefresher 注释:那个模块有模块级状态,跨 bundle
 // import 只会拿到复制品。
 import { encryptedAppSecretsStore } from '@main/core/secrets/encrypted-app-secrets-store'
 import { interruptTuiTurn } from '@main/core/sessions/interrupt-tui-turn'
-import { resolveSystemProxy } from '@main/utils/systemProxyEnv'
-export { setLoginShellPathRehydrator } from './utils/userEnv'
+import { resolveSystemProxy } from '../../egress/harness-proxy'
+export { setUserPathRefresher } from './utils/userEnv'
 // #5873 同一个属主的另一半:整份登录 shell 环境的快照。PATH 早就在补,而 key / 代理
 // 一直没人送 —— 终端腿靠 `-il` 自己 source 到,TUI 腿(`zsh -c`)与聊天腿(裸 spawn)读不到。
 export { setLoginShellEnvProvider } from './utils/userEnv'
 // #6264 这条终端会话是不是跑在咕咕平台模型上:平台令牌的持有表住宿主,由宿主注入(同上,❌ 相对 import)。
-export { setPlatformCredentialsProbe } from './core/agent-config/auth-expiry-from-turns'
+export { setHostCredentialsProbe } from './core/agent-config/auth-expiry-from-turns'
 // @@@5301 会话页 agent 系统通知的正文注入口。会话页 ❌ 不 import 宿主的语言 store
 // (它有模块级状态,跨界只会拿到复制品) —— 由宿主把当下语言的两句文案推进来。
 export { setSessionAgentNotificationCopy } from './core/agent-hooks/notification-copy'
@@ -108,7 +108,7 @@ import {
 import { rpcRouter } from '@main/rpc' // ← the complete router, every controller
 import { initializeDatabase } from '@main/db/initialize'
 import { stopTaskTurnSearch } from '@main/core/search/task-turn-search'
-import { startTurnTextBackfillWorker, stopTurnTextBackfillWorker, type SearchBackfillLogger } from '@main/db/turn-text-backfill-runner'
+import { indexSessionsInBackground, type SessionIndexLogger } from '@main/core/session-index/background'
 import { migrateProjectKind } from '@main/core/projects/operations/migrate-project-kind'
 import { copyClaudeHistoryForMovedFolders, migrateCanonicalPaths, migrateSessionOutputPaths } from '@main/core/projects/operations/migrate-canonical-paths'
 import { loadHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots'
@@ -252,7 +252,6 @@ import { readAcpSessionSummaries } from '@main/core/acp/session-summary-reader'
 import { flushLogWrites, setLogFileOwner } from '@main/lib/file-logger'
 import { setSessionMessageOutboxReady } from '@main/core/sessions/session-message-router'
 import { sessionProcess } from '@main/core/sessions/session-process'
-import { ptyRecordResumeSet, startPtyRecordSync } from '@main/core/sessions/pty-record-sync'
 export { sessionProcess }
 // #7341 第二步 项目跨设备:`projects.*` 的项目群四件事由宿主接上实现(对照 / 登录态 / 云端都在宿主那边);
 // 宿主那份对照的唯一写口每写一次就经这里让渲染层重读。
@@ -289,6 +288,7 @@ export { setNativeHistoryProviderResolver } from '@main/core/agents/codex-native
 // session_list_models 只剩 harness 自家模型(与改动前逐字节相同)。
 export {
   setPlatformModelCatalogResolver,
+  setPlatformModelGate,
   type PlatformCatalogModel,
   type PlatformModelCatalogQuery,
   type PlatformModelCatalogResolver,
@@ -369,6 +369,7 @@ export {
 } from '@main/core/extensions/extension-bridge-relay'
 import { reconcileResourceSampler, stopResourceSampler } from '@main/core/resource-monitor/resource-sampler'
 import { ensureAgentDependenciesProbed, localDependencyManager } from '@main/core/dependencies/dependency-managers'
+import { warmBundledMise } from '@main/core/dependencies/mise-installer'
 import { ensureAgentInstalled } from '@main/core/agents/ensure-agent-installed'
 import { projectManager } from '@main/core/projects/project-manager'
 import { runtimeManager } from '@main/core/runtime/runtime-manager'
@@ -458,8 +459,8 @@ export async function bootEmdashModule(ipcMain: IpcMain, discovery?: Pick<Sessio
 }
 
 /** Host service readiness, rather than module initialization, starts the optional index work. */
-export function startSessionpageSearchBackfill(logger: SearchBackfillLogger): void {
-  startTurnTextBackfillWorker(logger)
+export function startSessionpageSearchBackfill(logger: SessionIndexLogger): void {
+  void indexSessionsInBackground(logger).catch(error => logger.error({ error: String(error) }, 'Session index failed'))
 }
 
 async function maybeStartDevWsHost(): Promise<HostIpc | null> {
@@ -559,6 +560,15 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // 那次 tmux 后台清扫落定(改名改到一半被它看见会收掉后台)。段 2 失败不拦启动:不写 .done、下次重试,失败项响亮记下。
   await backupBeforeTaskToSession(sqlite, resolveDatabasePath())
   await backupBeforeSessionNaming(sqlite, resolveDatabasePath())
+  // The turns only the old turn table holds go into the session journals before a migration drops that table. A
+  // failure stops the start here, loudly, before the drop: the next start tries again.
+  try {
+    const { exportStoredTurnsToJournals } = await import('./core/sessions/session-journal-export')
+    await exportStoredTurnsToJournals(sqlite, app.getPath('userData'))
+  } catch (error) {
+    log.error('sessionJournal: export failed; the database is not migrated until it succeeds', { error: String(error) })
+    throw error
+  }
   await initializeDatabase()
   const { migrateCustomModelConnections, dropRemovedConnectionKeys } = await import('./core/agents/custom-models')
   migrateCustomModelConnections()
@@ -627,7 +637,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // renamed above, and every reader of a name below (search backfill first) needs the projection.
   await loadTaskNames()
   await loadAcpForkHandshakes()
-  // #6892 起任何 agent / worker 之前问一次系统代理,只补给 agent 与安装器(utils/systemProxyEnv.ts)。
+  // #6892 起任何 agent / worker 之前问一次系统代理,只补给 agent 与安装器(egress/harness-proxy.ts)。
   log.info('[session-host] system proxy for agent processes', await resolveSystemProxy((url) => electronSession.defaultSession.resolveProxy(url)))
 
   // @@@5080 收残之前先问一句:这份数据目录现在还有别的活宿主在用吗?
@@ -642,7 +652,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   const dataDir = app.getPath('userData')
   const occupancy = dataDirHeldByAnotherHost(dataDir)
   // Terminal records to read once at boot; the persisted facts are read here, before the sweep settles their status.
-  let ptyRecordResume: string[] = []
   let updateInterrupted: string[] = []
   let lastExit: ReturnType<typeof takeLastExit> = { reason: 'unclean', at: null }
   let presenceReconciliation = Promise.resolve()
@@ -666,7 +675,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
       log.error('[session-host] 无法读取 tmux 会话清单，保留原会话状态', { error: String(error) })
       return null
     })
-    ptyRecordResume = ptyRecordResumeSet()
     if (tmuxSessionNames !== null) {
       lastExit = takeLastExit(dataDir)
       updateInterrupted = await sessionBootTasks.run('status-sweep', '', () => agentStatusWriter.settleAfterRestart(tmuxSessionNames, lastExit.reason)) ?? []
@@ -740,7 +748,6 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   await promptLibraryService.initialize()
   // 写入者先于任何事件来源就位:它订 hook 总线,births / 收残 / 回收都经它(spec agent-status-writer)。
   agentStatusWriter.initialize()
-  stopPtyRecordSync = startPtyRecordSync(ptyRecordResume)
   installSessionsGoneFeed()
   onSessionsGone((scope) => {
     agentStatusWriter.forget(scope)
@@ -812,7 +819,11 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
 
   // --- Post-registration reconcilers (index.ts:185-215). Fire-and-forget. ---
   void reconcileResourceSampler()
-  const discover = () => ensureAgentDependenciesProbed(localDependencyManager)
+  const discover = () => {
+    // Optional startup work, like the inventory: the first agent install should not pay mise's first launch.
+    void warmBundledMise()
+    return ensureAgentDependenciesProbed(localDependencyManager)
+  }
   const discovery = options.scheduleDiscovery ? options.scheduleDiscovery(discover) : discover()
   discovery.catch((e: unknown) => {
     log.error('Failed to probe dependencies:', e)
@@ -834,10 +845,8 @@ let stopActivityCollector: (() => void) | null = null
  * `before-quit` rather than letting the session backend register its own preventDefault quit handler.
  */
 let disposeEmdashModulePromise: Promise<void> | null = null
-let stopPtyRecordSync: () => void = () => {}
 
 async function disposeEmdashModuleOnce(): Promise<void> {
-  stopTurnTextBackfillWorker()
   stopTaskTurnSearch()
   const failures: unknown[] = []
   const runPhase = async (phase: string, action: () => void | Promise<void>): Promise<void> => {
@@ -858,7 +867,6 @@ async function disposeEmdashModuleOnce(): Promise<void> {
   await runPhase('automations', () => automationsService.stop())
   await runPhase('extension-programs', stopAllExtensionPrograms)
   await runPhase('agent-hooks', () => agentHookService.dispose())
-  await runPhase('pty-record-sync', () => stopPtyRecordSync())
   await runPhase('agent-status', () => agentStatusWriter.dispose())
   await runPhase('resource-sampler', stopResourceSampler)
   await runPhase('pr-sync', () => prSyncScheduler.dispose())

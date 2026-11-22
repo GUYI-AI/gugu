@@ -23,10 +23,12 @@ import {
   SessionRecordForkDivergedError,
   asRecord,
   boundaryEntry,
+  deliverInSlices,
   emitJsonLines,
   parseJson,
   parseTimestamp,
   pollInterval,
+  readSlices,
   warnOf,
   type RecordSourceWarn,
   type SessionRecordSourceOptions,
@@ -35,12 +37,13 @@ import {
   toolKindTable
 } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
-import { ClaudeBranches } from './claude-branches';
+import { claudeLine } from './claude-branches';
+import { hasEvent, initialTree, keepNode, markTurn, type RecordFork, type RecordNode, type TreeState } from './record-tree';
 import { withSubagentSources } from './subagent-sources';
 
 
 /** 续读点里那份 claude 自己的数据。形状或读法变了就升版本号,老存档一律作废重读。 */
-const CLAUDE_RESUME_VERSION = 6;
+const CLAUDE_RESUME_VERSION = 7;
 type Launch = { name: string; input: unknown };
 type ClaudeResumeData = {
   version: number;
@@ -53,6 +56,9 @@ type ClaudeResumeData = {
   childRoots: Record<string, string[]>;
   /** Includes earlier files in a continuation chain, not just the live tail. */
   consumedFiles?: Array<[string, number]>;
+  /** The conversation tree's forks and newest line (`record-tree.ts`). */
+  forks?: RecordFork[];
+  leaf?: string | null;
 };
 
 /** 分叉扫描的候选上限。超了就报出去 —— ❌ 不许静默截断后当作"没有分叉"。 */
@@ -82,6 +88,8 @@ export function createClaudeJsonlSource(
 /** The decoder state a fill read notes before each line (`RecordEntry.state`) and a fill from there restores. */
 type ClaudeFillState = Pick<ClaudeResumeData, 'lastUuid' | 'launches' | 'childRoots'>;
 
+/** Entries per delivery while releasing the initial read, so one delivery stays short. */
+
 class ClaudeJsonlSource implements SessionRecordSource {
   private readonly warn: RecordSourceWarn;
   private launches: Record<string, Launch> = {};
@@ -92,13 +100,15 @@ class ClaudeJsonlSource implements SessionRecordSource {
   private reader: TailReader | null = null;
   private seenUuids = new Set<string>();
   /**
-   * Branches a revert abandoned (`claude-branches.ts`). A read of existing lines (whole, or from a resume point)
-   * decodes as always but holds its entries until it ends, then hands on only those not on an abandoned branch.
-   * A live tail that sees a rewind happen keeps the old branch until the next such read.
+   * The conversation tree (`record-tree.ts`): a line on a branch a rewind abandoned makes no entries. A read of existing
+   * lines (whole, or from a resume point) holds its entries until it ends; one that finds a fork it did not know reads the
+   * whole record again knowing it, and so does a live tail that sees a rewind happen.
    */
-  private branches = new ClaudeBranches();
+  private tree: TreeState = initialTree();
+  private knownForks: RecordFork[] = [];
+  private marks = new Set<string>();
+  private again: Promise<void> | null = null;
   private held: RecordEntry[][] | null = null;
-  private readonly lineOf = new WeakMap<RecordEntry, string>();
   /** 定位出来的那份主文件（分叉链的头）。续读点靠它判「还是不是同一条会话」。 */
   private primaryPath: string | null = null;
   /** 链条当前的末端记录。分叉串联只认它，所以要显式跟着走，❌ 别指望从 Set 里"最后一个"捞。 */
@@ -133,6 +143,51 @@ class ClaudeJsonlSource implements SessionRecordSource {
     this.events = events;
     const path = await resolveSessionFile(this.locator, this.nativeChild);
     this.primaryPath = path;
+    this.openReader(path, events);
+    this.resetTree();
+    this.held = [];
+    const resumed = this.options?.readMode !== 'snapshot' && resume ? await this.resumeRead(path, resume) : false;
+    if (!resumed || this.tree.fresh) {
+      // 要过存档、却没能续上(或续读里冒出一个够到续读点之前的分叉)⇒ **必须**显式告诉上层「你手里装回去的那份作废」。
+      // 不说的话:上层带着存档里的去重表,把整份重读的内容一条不剩地当成重复丢掉,
+      // 屏幕上就留下一份**过期且永远不会再更新**的历史 —— 不报错、看不出来。
+      if (resume) events.onReset('source_replaced');
+      await this.readWhole(path, events);
+    }
+    await this.releaseHeld(events);
+    if (this.stopped) return;
+    if (this.options?.readMode === 'snapshot') {
+      if (!this.nativeChild && this.options.parentLineage && this.inherited === 0) throw new SessionRecordForkDivergedError();
+    } else this.reader!.start();
+  }
+
+  /** The whole record, held; again if the read found a fork it did not know (its earlier lines were held as kept). */
+  private async readWhole(path: string, events: SessionRecordSourceEvents): Promise<void> {
+    for (;;) {
+      if (this.tree.fresh) this.knownForks = this.tree.forks;
+      this.openReader(path, events);
+      this.resetTree();
+      this.held = [];
+      await this.fullRead(path);
+      if (!this.tree.fresh || this.stopped) return;
+    }
+  }
+
+  private resetTree(): void {
+    this.tree = initialTree(this.knownForks);
+    this.marks = new Set();
+  }
+
+  /** A live tail met a fork: what was handed out is wrong, so read the record again knowing it. */
+  private async readAgain(events: SessionRecordSourceEvents): Promise<void> {
+    this.knownForks = this.tree.forks;
+    this.reader?.stop();
+    events.onReset('source_replaced');
+    await this.start(events);
+  }
+
+  private openReader(path: string, events: SessionRecordSourceEvents): void {
+    this.reader?.stop();
     this.reader = new TailReader(
       path,
       pollInterval(this.options),
@@ -148,28 +203,14 @@ class ClaudeJsonlSource implements SessionRecordSource {
           this.anchors = new Set();
           this.consumedFiles.clear();
           this.consumedBytes = 0;
+          this.knownForks = [];
+          this.resetTree();
           events.onReset(reason);
         }
       },
       this.warn,
       this.options?.fill
     );
-    this.branches = new ClaudeBranches();
-    this.held = [];
-    const resumed = this.options?.readMode !== 'snapshot' && resume ? await this.resumeRead(path, resume) : false;
-    if (!resumed) {
-      this.branches = new ClaudeBranches();
-      this.held = [];
-      // 要过存档、却没能续上 ⇒ **必须**显式告诉上层「你手里装回去的那份作废」。
-      // 不说的话:上层带着存档里的去重表,把整份重读的内容一条不剩地当成重复丢掉,
-      // 屏幕上就留下一份**过期且永远不会再更新**的历史 —— 不报错、看不出来。
-      if (resume) events.onReset('source_replaced');
-      await this.fullRead(path);
-    }
-    this.releaseHeld(events);
-    if (this.options?.readMode === 'snapshot') {
-      if (!this.nativeChild && this.options.parentLineage && this.inherited === 0) throw new SessionRecordForkDivergedError();
-    } else this.reader.start();
   }
 
   /**
@@ -199,6 +240,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
     this.childRoots = data.childRoots;
     this.seenUuids = new Set(data.seenUuids);
     this.lastUuid = data.lastUuid;
+    this.knownForks = data.forks ?? [];
+    this.tree = { ...initialTree(this.knownForks), leaf: data.leaf ?? null };
     const ok = await this.reader!.resumeFrom(data.tail, (lines, offsets) => this.emitLines(lines, offsets));
     if (!ok) {
       // 尾读器判定续不上（inode 换了 / 文件变短 / 读不到）。把刚装回去的去重表清掉，
@@ -232,6 +275,8 @@ class ClaudeJsonlSource implements SessionRecordSource {
       launches: this.launches,
       childRoots: this.childRoots,
       consumedFiles: [...this.consumedFiles],
+      forks: this.tree.forks,
+      leaf: this.tree.leaf,
     };
     return {
       data,
@@ -240,7 +285,9 @@ class ClaudeJsonlSource implements SessionRecordSource {
   }
 
   async catchUp(): Promise<void> {
-    if (this.options?.readMode !== 'snapshot') await this.reader?.catchUp();
+    if (this.options?.readMode === 'snapshot') return;
+    await this.reader?.catchUp();
+    await this.again;
   }
 
   /**
@@ -336,24 +383,28 @@ class ClaudeJsonlSource implements SessionRecordSource {
       offsets && path ? (entries, index) => locateImages(entries, lines[index], offsets[index], path) : undefined,
       // Positions are places in the primary record (`startingAt`); a continuation file's lines have none.
       path === this.primaryPath ? offsets : undefined);
+    if (!this.held && this.tree.fresh && !this.again) {
+      this.again = this.readAgain(events).catch((error: unknown) => this.warn('重读失败', { path, error: (error as Error).message }))
+        .finally(() => { this.again = null; });
+    }
   }
 
   private decodeLine(record: Record<string, unknown>): RecordEntry[] {
-    const revertsOwn = this.branches.see(record);
+    // A uuid already read (a continuation file copies its ancestors' lines) is not a new tree line.
+    const fresh = typeof record.uuid === 'string' && !this.seenUuids.has(record.uuid);
+    const line = fresh ? claudeLine(record, this.marks) : null;
+    const kept = line?.node ? keepNode(this.tree, line.node) : true;
     const entries = this.decodeRecord(record);
-    if (revertsOwn) return [];
-    if (typeof record.uuid === 'string') for (const entry of entries) this.lineOf.set(entry, record.uuid);
-    return entries;
+    if (!kept || line?.own) return [];
+    return line?.node ? markTurn(withRevertPoint(entries, line.node), line.node) : entries;
   }
 
-  private releaseHeld(events: SessionRecordSourceEvents): void {
+  /** The whole record is held until its branches are known; it reaches the timeline in slices (see `readSlices`). */
+  private async releaseHeld(events: SessionRecordSourceEvents): Promise<void> {
     const held = this.held ?? [];
     this.held = null;
-    const { abandoned } = this.branches;
-    for (const batch of held) {
-      const kept = abandoned.size ? batch.filter(entry => !abandoned.has(this.lineOf.get(entry) ?? '')) : batch;
-      if (kept.length) events.onEntries(kept);
-    }
+    const pause = readSlices();
+    for (const batch of held) await deliverInSlices(batch, (slice) => events.onEntries(slice), () => this.stopped, pause);
   }
 
   private decodeRecord(record: Record<string, unknown>): RecordEntry[] {
@@ -687,4 +738,15 @@ function replyOf(content: unknown): { outputText?: string } {
   if (!Array.isArray(content)) return {};
   const text = content.map((part) => asRecord(part)?.text).filter((part): part is string => typeof part === 'string').join('\n');
   return text ? { outputText: text } : {};
+}
+
+/**
+ * A prompt read back carries the point a revert steps back to, as its live receipt did (`_meta.guguRevert`):
+ * claude-agent-acp reverts to before a prompt by its uuid, files included. The first prompt has no earlier entry to go
+ * back to, so it has none.
+ */
+function withRevertPoint(entries: RecordEntry[], node: RecordNode): RecordEntry[] {
+  if (node.kind !== 'prompt' || node.parent === null) return entries;
+  return entries.map((entry) => hasEvent(entry) && entry.event.kind === 'message' && entry.event.role === 'user'
+    ? { ...entry, event: { ...entry.event, revertAnchor: node.id, revertFiles: true as const } } : entry);
 }

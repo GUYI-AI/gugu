@@ -108,6 +108,27 @@ describe('error-outlet guard (#4942)', () => {
     ).toBe(true);
   });
 
+  it('does not count a temporary node:events.once subscription as lifetime ownership', () => {
+    const result = analyze('socket.ts', `import net from 'node:net';
+      import { once as eventOnce } from 'node:events';
+      const socket = net.connect(1234);
+      await eventOnce(socket, 'connect');`);
+    expect(result.emitterSites).toHaveLength(1);
+    expect(result.outlets).toBe(0);
+    expect(result.violation).toBe(true);
+    expect(analyze('socket.ts', `import net from 'node:net';
+      import { once } from './unrelated'; const socket = net.connect(1234); once(socket, 'connect');`).violation).toBe(true);
+  });
+
+  it('transfers an untouched raw emitter from an exported factory, but still guards internal use', () => {
+    expect(analyze('factory.ts', `import WebSocket from 'ws';
+      export function create(url) { return new WebSocket(url); }`).emitterSites).toHaveLength(0);
+    expect(analyze('factory.ts', `import WebSocket from 'ws';
+      export function create(url) { const socket = new WebSocket(url); socket.send('start'); return socket; }`).violation).toBe(true);
+    expect(analyze('local.ts', `import WebSocket from 'ws';
+      function create(url) { return new WebSocket(url); } create(url);`).violation).toBe(true);
+  });
+
   it('扫描面:测试与 fixture 明确排除,产品代码明确纳入', () => {
     // 这条钉的是那个有意的取舍本身 —— 排除是写下来的决定,不是某天悄悄漂移的结果。
     expect(isScannedFile('apps/desktop/electron/main.ts')).toBe(true);

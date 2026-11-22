@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, utimes } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { sanitizeRemoteFileName } from '../../apps/desktop/electron/remoteFileOpen'
+import { cleanupStaleRemoteFileDirectories, sanitizeRemoteFileName } from '../../apps/desktop/electron/remoteFileOpen'
+import { createFileSink } from '@gugu/core/local/files/fileSnapshots'
 import { createNativeFileHost } from '../../apps/desktop/electron/nativeFileHost'
 import { stageFileHandle } from '@gugu/core/shared/fileResolver'
 import { verifiedFileHandle } from '../support/verifiedFileHandle'
@@ -24,7 +25,7 @@ const bytes = (text: string) => new TextEncoder().encode(text)
 
 // The former whole-array IPC protections now exercise the actual bounded native sink and opaque token handoff.
 async function openVerifiedOriginal(input: { bytes: Uint8Array; filename: string }, dependencies: { tempRoot: string; openPath(path: string): Promise<string>; maxBytes?: number }) {
-  const host = createNativeFileHost({ root: dependencies.tempRoot, owner: async () => 'owner', alive: () => true, local: async () => null, ssh: async () => null, published: () => {}, ...dependencies })
+  const host = createNativeFileHost({ root: dependencies.tempRoot, owner: async () => 'owner', alive: () => true, local: async () => null, ssh: async () => null, published: () => {}, serve: async () => { throw new Error('not served here') }, ...dependencies })
   const file = await verifiedFileHandle(input.bytes)
   const id = await stageFileHandle(file, input.filename, command => host.stage(1, command))
   await host.open(1, id)
@@ -85,4 +86,20 @@ describe('system-app handoff of attachment bytes', () => {
     expect(name.endsWith(extension)).toBe(true)
   })
 
+  it('removes a killed run\'s read sinks on the next start, keeps this run\'s and the published files', async () => {
+    const tempRoot = await testRoot()
+    const published = await openVerifiedOriginal({ bytes: bytes('kept'), filename: 'a.txt' }, { tempRoot, openPath: async () => '' })
+    // A read held when the last run was killed: its sink was never let go.
+    const orphan = await createFileSink(tempRoot, 4)
+    await orphan.write(bytes('gone')); await orphan.commit()
+    const orphanDirectory = join(orphan.path(), '..')
+    const started = Date.now() - 1000
+    await utimes(orphanDirectory, new Date(started - 60_000), new Date(started - 60_000))
+    const live = await createFileSink(tempRoot, 4)
+    await live.write(bytes('here')); await live.commit()
+    await cleanupStaleRemoteFileDirectories(tempRoot, started, undefined, started)
+    expect((await readdir(tempRoot)).filter((name) => name.startsWith('read-'))).toEqual([basename(join(live.path(), '..'))])
+    expect(await readFile(live.path(), 'utf8')).toBe('here')
+    expect(await readFile(published.path, 'utf8')).toBe('kept')
+  })
 })

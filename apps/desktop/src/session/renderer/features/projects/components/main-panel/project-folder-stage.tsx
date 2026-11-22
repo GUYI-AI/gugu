@@ -259,8 +259,9 @@ export function useProjectFolderStage(projectId: string, { floating = false, onC
 
   // 托盘上的机器选择器:上面是有这个项目文件夹的机器(淡色字 = 那台上的文件夹),分隔线下是还没有的,点了先在那台上挑文件夹、挂上就选中它。
   const choiceOf = (deviceId: string | null) => (deviceId ? remoteChoice(deviceId, translate) : localMachineChoice('local', thisComputer.label));
-  const folderOn = (key: string) => folders.folders?.find((folder) => scopeKey(folder.deviceId) === key && folder.kind === 'root')
-    ?? folders.folders?.find((folder) => scopeKey(folder.deviceId) === key);
+  const realFolders = folders.folders?.filter((folder) => !folder.placeholder);
+  const folderOn = (key: string) => realFolders?.find((folder) => scopeKey(folder.deviceId) === key && folder.kind === 'root')
+    ?? realFolders?.find((folder) => scopeKey(folder.deviceId) === key);
   const withFolder = new Set(projectMachines.map((machine) => scopeKey(machine.id)));
   const runMachinePicker = (
     <MachinePicker

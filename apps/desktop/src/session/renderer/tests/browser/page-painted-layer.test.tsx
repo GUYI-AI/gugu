@@ -10,7 +10,6 @@ import { until } from '../../../../../../../tests/support/awaitCondition'
 // A tab's page is zoomed by the host (zoom B): not what is measured here.
 vi.mock('@/components/preview/file-content-zoom', async original => ({ ...(await original<object>()), bindAppPageZoom: () => () => {} }))
 vi.mock('@/store/theme', async original => ({ ...(await original<object>()), useTheme: () => ({ theme: 'light' }) }))
-vi.mock('@renderer/features/extensions/installed-extensions-store', async original => ({ ...(await original<object>()), installedExtensionsStore: { manifestFor: () => undefined } }))
 
 let harness: ReturnType<typeof createReactHarness>, slot: HTMLElement
 afterEach(() => {

@@ -2,7 +2,7 @@ import type { GitChange, GitChangeStatus } from '@gugu/session-core/git';
 import { SquareArrowRight, SquareDot, SquareMinus, SquarePlus, SquareX } from '@/lib/icons'
 import { forwardRef, useMemo, type ButtonHTMLAttributes } from 'react';
 import { splitPath } from '@renderer/features/sessions/utils';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { FileMark } from '@gugu/session-ui/file-mark';
 import { Checkbox } from '@renderer/lib/ui/checkbox';
 import { formatDiffLineCount } from '@renderer/utils/format-diff-line-count';
 import { cn } from '@renderer/utils/utils';
@@ -11,8 +11,11 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 
 import { STATE_LAYERS } from '@renderer/lib/ui/state-layers';
 
+/** One row on the Review page. A status is what git adds; a folder without git has none. */
+export type ChangeRow = Pick<GitChange, 'path' | 'additions' | 'deletions'> & { status?: GitChangeStatus };
+
 interface ChangesListItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  change: GitChange;
+  change: ChangeRow;
   rootPath?: string;
   isSelected?: boolean;
   isActive?: boolean;
@@ -50,7 +53,7 @@ export const ChangesListItem = forwardRef<HTMLButtonElement, ChangesListItemProp
         {...props}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <FileIcon filename={filename} size={12} />
+          <FileMark name={filename} size={16} className="shrink-0" />
           <span className="flex min-w-0 flex-1 items-baseline gap-1.5">
             <span className="max-w-full shrink-0 truncate text-sm">{filename}</span>
             {directory && (
@@ -72,7 +75,7 @@ export const ChangesListItem = forwardRef<HTMLButtonElement, ChangesListItemProp
 );
 
 interface ChangeStatusAffordanceProps {
-  change: GitChange;
+  change: ChangeRow;
   filename: string;
   isSelected?: boolean;
   onToggleSelect?: (path: string) => void;
@@ -94,7 +97,7 @@ export function ChangeStatusAffordance({
           })}
     >
       <DiffLineStats additions={change.additions} deletions={change.deletions} />
-      <span className="relative flex size-4 items-center justify-center">
+      {(change.status || onToggleSelect) && <span className="relative flex size-4 items-center justify-center">
         <span
           className={cn(
             'transition-opacity',
@@ -102,7 +105,7 @@ export function ChangeStatusAffordance({
             isSelected && 'opacity-0'
           )}
         >
-          <GitChangeStatusIcon status={change.status} className="size-4" />
+          {change.status && <GitChangeStatusIcon status={change.status} className="size-4" />}
         </span>
         {onToggleSelect && (
           <span
@@ -123,7 +126,7 @@ export function ChangeStatusAffordance({
             />
           </span>
         )}
-      </span>
+      </span>}
     </div>
   );
 }

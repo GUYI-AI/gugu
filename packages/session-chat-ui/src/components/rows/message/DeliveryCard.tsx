@@ -225,17 +225,22 @@ export function estimateDelivery(item: ChatMessage, ctx: MeasureCtx, vars: Deliv
 
 /**
  * 渠道一段，加上两格送法事实：App 代发、悄悄话（#6835）。手机与桌面同一张卡、同一句。
- * App 代发写它的名字（宿主按装着的 App、界面语言给）；这台没装就写 id。信封里留的是 id，详情里照样看得到。
+ * App 代发写它的名字;这台没装就写 id;还不知道就先不写这一段(lib/app-name.ts)。
  */
-type Namers = { appName: (appId: string) => string | null; chatName: (chatId: string) => string | null };
+type Namers = { appName: (appId: string) => string | null | undefined; chatName: (chatId: string) => string | null };
 
 function routeLabel(facts: DeliveryReadFacts, translate: ChatTranslator, { appName, chatName }: Namers): string {
   return [
-    facts.viaApp ? translate('transcript.deliveryViaApp', { app: appName(facts.viaApp) ?? facts.viaApp }) : null,
+    facts.viaApp ? viaAppLabel(appName(facts.viaApp), facts.viaApp, translate) : null,
     facts.whisperTo ? translate('transcript.deliveryWhisper') : null,
     // An App's own delivery: naming the App above is the whole channel.
     facts.viaApp && isAppRoute(facts.route) ? null : channelLabel(facts, translate, chatName),
   ].filter(Boolean).join(translate('metadata.separator'));
+}
+
+export function viaAppLabel(name: string | null | undefined, appId: string, translate: ChatTranslator): string | null {
+  if (name === undefined) return null;
+  return translate('transcript.deliveryViaApp', { app: name === null ? appId : name });
 }
 
 function channelLabel(facts: DeliveryReadFacts, translate: ChatTranslator, chatName: Namers['chatName']): string {

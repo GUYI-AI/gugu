@@ -65,7 +65,6 @@ export type MessagePreviewPayload = {
 export type MessagePreviewProjection = Pick<MessagePreviewPayload, 'running' | 'now' | 'ended' | 'entries' | 'error' | 'activityVersion'>;
 
 export const MESSAGE_PREVIEW_MAX_ENTRIES = 6;
-export const MESSAGE_PREVIEW_MAX_BYTES = 32 * 1024;
 const previewStateSchema = z.enum(['reading', 'searching', 'editing', 'executing', 'thinking', 'running', 'messaging']);
 const previewActivity = { activityVersion: z.literal(1).optional(), activity: previewActivitySourceSchema.nullable().optional() };
 /** Private worker projection: no transcript, tool arguments, output or thinking crosses this boundary. */
@@ -80,22 +79,6 @@ export const messagePreviewProjectionSchema = z.object({
 });
 /** 原话只留尾部 70 字(卡片一行约 23 个汉字,约 3 行)。 */
 export const MESSAGE_PREVIEW_TEXT_LIMIT = 70;
-
-/** Join already-projected archive/live windows, retaining the latest input and the live status. */
-export function mergeMessagePreviews(archive: MessagePreviewProjection, active: MessagePreviewProjection): MessagePreviewProjection {
-  const entries: MessagePreviewEntry[] = [];
-  for (const entry of [...archive.entries, ...active.entries]) {
-    const last = entries.at(-1);
-    if (entry.kind === 'tool' && last?.kind === 'tool' && last.state === entry.state) last.count += entry.count;
-    else entries.push({ ...entry });
-  }
-  const lastPrompt = entries.findLastIndex(entry => entry.kind === 'prompt');
-  let windowed = entries.slice(-MESSAGE_PREVIEW_MAX_ENTRIES);
-  if (lastPrompt >= 0 && lastPrompt < entries.length - MESSAGE_PREVIEW_MAX_ENTRIES) {
-    windowed = [entries[lastPrompt]!, ...entries.slice(lastPrompt + 1).slice(-(MESSAGE_PREVIEW_MAX_ENTRIES - 1))];
-  }
-  return { ...active, entries: windowed };
-}
 
 function deliveryMessageIdsOf(text: string): string[] {
   return (readDeliveryEnvelope(text)?.segments ?? []).flatMap((segment) =>

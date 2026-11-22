@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DeviceRpcHandlerContext } from '@gugu/core/cloud/deviceRpcResponder';
-import { MESSAGE_PREVIEW_RPC, projectMessagePreview, type MessagePreviewPayload } from '@gugu/session-core/session-record/message-preview';
+import { MESSAGE_PREVIEW_RPC, type MessagePreviewPayload } from '@gugu/session-core/session-record/message-preview';
 
 const state = vi.hoisted(() => ({
   runtime: 'pty',
-  nativeRecord: vi.fn(),
   subscribe: vi.fn(),
   unsubscribe: vi.fn(),
   snapshot: vi.fn(),
@@ -13,8 +12,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock('./service', () => ({
   readSessionRow: () => ({ runtime: state.runtime }),
-  nativeRecord: (...args: unknown[]) => state.nativeRecord(...args), nativeToolImage: vi.fn(), nativeAttachment: vi.fn(),
-  compactNativeRecord: (...args: unknown[]) => state.nativeRecord(...args),
+  nativeAttachment: vi.fn(),
   subscribe: (...args: unknown[]) => state.subscribe(...args),
   subscribePreview: (...args: unknown[]) => state.subscribe(...args),
   unsubscribe: (...args: unknown[]) => state.unsubscribe(...args),
@@ -81,7 +79,6 @@ describe('MessagePreview 宿主', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     state.runtime = 'pty';
-    state.nativeRecord.mockReset();
     state.subscribe = vi.fn(async (_input: unknown, emit: () => void) => {
       state.emit = emit;
       return { ok: true, value: { subscriptionId: 'x' } };
@@ -91,30 +88,10 @@ describe('MessagePreview 宿主', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('native previews keep the active turn after stored turns even when their sequence spaces differ', async () => {
+  it('an ACP session previews from its timeline like every other session', async () => {
     state.runtime = 'acp';
-    const committed = { ...turns('207974', 'Earlier reply')[0]!, seq: 41, outcome: { kind: 'error', reason: 'prompt_failed' } };
-    const activeTurn = { id: 'active', seq: 1, initiator: 'user', items: [
-      { kind: 'message', id: 'active:input', seq: 0, role: 'user', text: envelope('207974').replace('msg:1', 'msg:2') },
-      { kind: 'thinking', id: 'active:thinking', seq: 1, segmentId: 's', text: 'private', status: 'thinking', startedAt: 1 },
-    ] };
-    state.nativeRecord.mockResolvedValue({ ok: true, value: { turns: [committed], activePreview: projectMessagePreview([activeTurn as never]) } });
-    expect(await readSessionPreview('conv-1', 2)).toMatchObject({ ok: true, value: {
-      running: true, now: 'thinking', ended: null,
-      entries: [{ kind: 'prompt', messageId: 'msg:1' }, { kind: 'text', text: 'Earlier reply' }, { kind: 'prompt', messageId: 'msg:2' }],
-    } });
-    expect(state.nativeRecord).toHaveBeenCalledExactlyOnceWith({ conversationId: 'conv-1', limit: 2 });
-    expect(committed.seq).toBe(41);
-    expect(activeTurn.seq).toBe(1);
-    expect(state.snapshot).not.toHaveBeenCalled();
-  });
-
-  it('native record errors remain errors without showing an older provider snapshot', async () => {
-    state.runtime = 'acp';
-    const failure = { ok: false, error: { code: 'timeline_failed', message: 'native history read failed' } };
-    state.nativeRecord.mockResolvedValue(failure);
-    expect(await readSessionPreview('conv-1')).toEqual(failure);
-    expect(state.snapshot).not.toHaveBeenCalled();
+    expect(await readSessionPreview('conv-1', 2)).toMatchObject({ ok: true, value: { entries: expect.arrayContaining([expect.objectContaining({ kind: 'prompt', messageId: 'msg:1' })]) } });
+    expect(state.snapshot).toHaveBeenCalledExactlyOnceWith({ conversationId: 'conv-1', limit: 2 });
   });
 
   it('订阅:复用时间线服务的订阅,推到本群的预览 topic,内容是投影不是原文', async () => {

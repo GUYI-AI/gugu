@@ -1,4 +1,4 @@
-import { versionLineOf } from './probe';
+import { versionTextOf } from './probe';
 import type { ProbeResult } from './types';
 
 export interface HarnessRuntimeIdentity {
@@ -12,11 +12,9 @@ export interface HarnessRuntimeIdentity {
 export function parseHarnessRuntimeVersion(probe: ProbeResult, versionLine?: RegExp): string | null {
   if (probe.exitCode !== 0 || probe.timedOut) return null;
   const printed = `${probe.stdout}\n${probe.stderr}`;
-  // 它自己那一行(`versionLineOf`:包装器的 banner 在前面);认不出就照旧取第一行。
-  const firstLine = versionLineOf(printed, versionLine) ?? printed
-    .split('\n')
-    .map((line) => line.trim())
-    .find(Boolean);
+  // 声明了自己那一行就只认那一行(`versionTextOf`,认不出 = 没读到);没声明取第一行。
+  const text = versionTextOf(printed, versionLine);
+  const firstLine = versionLine ? text : text?.split('\n').map((line) => line.trim()).find(Boolean);
   if (!firstLine) return null;
   const match = firstLine.match(/(?:^|\s)v?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)(?=$|\s)/);
   // 那一行里没有版本号就是没读到,❌ 拿原文冒充版本。

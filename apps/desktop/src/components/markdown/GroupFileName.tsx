@@ -1,6 +1,6 @@
-import { reaction } from 'mobx'
-import { useEffect, useState } from 'react'
 import { displayNameOf } from '@shared/extensions/file-openers'
+import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
+import { HERE_HOST } from '../appSlot/hereHost'
 import { chatClaimantHere } from './chatClaimant'
 
 /**
@@ -11,18 +11,9 @@ import { chatClaimantHere } from './chatClaimant'
  * list is — so two people may read one message differently.
  */
 export function GroupFileName({ name }: { name: string }) {
-  const [shown, setShown] = useState<string | null>(null)
-  useEffect(
-    () =>
-      reaction(
-        () => {
-          const claim = chatClaimantHere(name)
-          return claim ? displayNameOf(name, claim.suffix) : null
-        },
-        setShown,
-        { fireImmediately: true },
-      ),
-    [name],
-  )
+  const installed = useInstalledApps(HERE_HOST)
+  // Not known yet (or unreadable): the words as written — the message's own text, not a guess at a claim.
+  const claim = installed.state === 'value' ? chatClaimantHere(installed.value, name) : null
+  const shown = claim ? displayNameOf(name, claim.suffix) : null
   return shown !== null && shown !== name ? <span title={name}>{shown}</span> : <>{name}</>
 }

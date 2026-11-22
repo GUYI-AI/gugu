@@ -71,6 +71,8 @@ import { SessionHistorySectionBox } from './session-history-section-box';
 import type { SessionHistorySourceFilter, SessionHistoryStatusFilter, SessionHistoryViewParams } from './session-history-import-part';
 import { useSessionHistoryDirectories } from './use-session-history';
 import { LegacyDmArchiveButton } from '@/components/legacy-dm-history/LegacyDmHistoryEntry';
+import { Illustration } from '@/components/ui/Illustration';
+import { PaneEmptyState } from '@/components/ui/PaneEmptyState';
 
 // spec session-page「会话历史」(#6083)。形状照 设计同事 2026-09-23 给的参照(「直接 copy 这套会话历史」):
 //   标题行(右侧一个动作)→ 搜索 + 一个分组筛选菜单 + 机器筛选 → 一项目一节(节头:文件夹图标、名字、
@@ -725,10 +727,13 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
                 {translate('sessionImport.loading')}
               </div>
             ) : sections.length === 0 && failed.length === 0 ? (
-              <div className="p-8 text-center" data-testid="session-history-empty">
-                <p className="text-sm text-foreground-muted">
-                  {filtered ? translate('sessionImport.emptyNoMatch') : translate('sessionHistory.emptyNone')}
-                </p>
+              <div className={filtered ? 'p-8 text-center' : 'px-8 pb-8 pt-16 text-center'} data-testid="session-history-empty">
+                {filtered ? (
+                  <p className="text-sm text-foreground-muted">{translate('sessionImport.emptyNoMatch')}</p>
+                ) : (
+                  <PaneEmptyState art={<Illustration name="no-tasks" className="w-[156px]" />}
+                    caption={translate('sessionHistory.emptyNone')} hint={translate('sessionHistory.emptyNoneHint')} />
+                )}
                 {isIndexing && (
                   <p className="mt-1 text-xs leading-relaxed text-foreground-tertiary-muted">
                     {translate('sessionImport.emptyHintIndexing')}

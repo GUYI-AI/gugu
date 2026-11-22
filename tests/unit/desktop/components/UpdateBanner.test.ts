@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act } from 'react'
-import { createElement } from 'react'
+import { createElement, Fragment } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
@@ -20,12 +20,17 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { capabilities: { appUpdates: true }, downloadUpdate, installUpdate, updateState },
 }))
 const { UpdateBanner } = await import('../../../../apps/desktop/src/components/UpdateBanner')
+const { NoticeHost } = await import('../../../../apps/desktop/src/components/NoticeHost')
+// The floating (phone) card is a persistent notice: it draws in the one banner slot.
+const floating = () => createElement(Fragment, null, createElement(NoticeHost), createElement(UpdateBanner))
 let harness: ReturnType<typeof createReactHarness>
-const banner = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.updateBanner}"]`)
+const bannerId = `[data-testid="${AUTOMATION_TEST_IDS.updateBanner}"]`
+const banner = () => harness.container.querySelector(bannerId)?.closest('.gugu-notice-card') ?? null
+const content = () => banner()?.querySelector(bannerId) ?? null
 const downloadBtn = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.updateDownloadButton}"]`) as HTMLButtonElement | null
 const installBtn = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.updateInstallButton}"]`) as HTMLButtonElement | null
 const retryBtn = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.updateRetryButton}"]`) as HTMLButtonElement | null
-const phase = () => banner()?.getAttribute('data-phase')
+const phase = () => content()?.getAttribute('data-phase')
 async function fire(name: string, detail?: unknown) {
   await act(async () => { window.dispatchEvent(new CustomEvent(name, detail ? { detail: { revision: ++hostRevision, ...detail as object } } : undefined)) })
 }
@@ -201,11 +206,11 @@ describe('#1342 replacement download and installation state', () => {
 })
 describe('#1578 UpdateBanner (user-choice update prompt)', () => {
   it('renders nothing until an update event arrives', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     expect(banner()).toBeNull()
   })
   it('on update-available offers 更新/稍后 (NOT auto-downloading) with the version', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'available', updateInfo: { version: '0.2.8' } })
     expect(banner()).not.toBeNull()
     expect(banner()?.textContent).toContain('发现新版本 v0.2.8')
@@ -214,11 +219,11 @@ describe('#1578 UpdateBanner (user-choice update prompt)', () => {
     expect(downloadUpdate).not.toHaveBeenCalled() // 不静默后台下载
   })
   it('clicking 更新 triggers downloadUpdate and moves to a downloading notice', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'available' })
     await act(async () => { downloadBtn()!.click() })
     expect(downloadUpdate).toHaveBeenCalledTimes(1)
-    expect(banner()?.getAttribute('data-phase')).toBe('downloading')
+    expect(phase()).toBe('downloading')
     expect(banner()?.textContent).toContain('下载新版本中')
     expect(downloadBtn()).toBeNull()
     expect(installBtn()).toBeNull()
@@ -226,10 +231,10 @@ describe('#1578 UpdateBanner (user-choice update prompt)', () => {
   // @@@1961 下载阶段显示进度条 + 百分比(此前只有静态「下载新版本中…」,大包/慢网看着像卡死)。
   it('shows a download progress bar with live percent while downloading', async () => {
     const bar = () => harness.container.querySelector('[data-testid="update-download-progress-bar"]') as HTMLElement | null
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'available' })
     await act(async () => { downloadBtn()!.click() })
-    expect(banner()?.getAttribute('data-phase')).toBe('downloading')
+    expect(phase()).toBe('downloading')
     expect(bar()).not.toBeNull()
     expect(banner()?.textContent).toContain('准备下载…')
     expect(bar()!.style.width).toBe('0%')
@@ -241,7 +246,7 @@ describe('#1578 UpdateBanner (user-choice update prompt)', () => {
     expect(bar()!.style.width).toBe('88%')
   })
   it('on update-downloaded shows 立即重启更新 and installs on click', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'downloaded' })
     expect(banner()?.textContent).toContain('新版本已就绪')
     const btn = installBtn()
@@ -250,23 +255,23 @@ describe('#1578 UpdateBanner (user-choice update prompt)', () => {
     expect(installUpdate).toHaveBeenCalledTimes(1)
   })
   it.each(['not-available', 'error'])('stays silent on %s (auto-check must not nag)', async (status) => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status })
     expect(banner()).toBeNull()
   })
   it('a repeat update-available while downloading does NOT bounce back to the choice buttons', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'available' })
     await act(async () => { downloadBtn()!.click() })
-    expect(banner()?.getAttribute('data-phase')).toBe('downloading')
+    expect(phase()).toBe('downloading')
     await fire(UI_EVENTS.updateStatus, { status: 'available' }) // 第二次 check 命中
-    expect(banner()?.getAttribute('data-phase')).toBe('downloading')
+    expect(phase()).toBe('downloading')
     expect(downloadBtn()).toBeNull()
   })
   it('a dismissed available notice still re-surfaces when the update becomes ready', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'available' })
-    const close = banner()?.querySelector('button[aria-label="关闭"]') as HTMLButtonElement
+    const close = banner()?.querySelector('[data-notice-close]') as HTMLButtonElement
     await act(async () => { close.click() })
     expect(banner()).toBeNull()
     await fire(UI_EVENTS.updateStatus, { status: 'downloaded' })
@@ -276,9 +281,9 @@ describe('#1578 UpdateBanner (user-choice update prompt)', () => {
 })
 describe('#663 UpdateBanner manual-install (mac dmg 半自动路径)', () => {
   it('on downloaded-manual shows drag-to-install guidance with NO restart button', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'downloaded-manual' })
-    expect(banner()?.getAttribute('data-phase')).toBe('manual-install')
+    expect(phase()).toBe('manual-install')
     expect(banner()?.textContent).toContain('安装包已打开')
     expect(banner()?.textContent).toContain('应用程序')
     expect(installBtn()).toBeNull()   // 系统接管安装,无 quitAndInstall 按钮
@@ -287,15 +292,15 @@ describe('#663 UpdateBanner manual-install (mac dmg 半自动路径)', () => {
 })
 describe('#2126 更新失败 fail-loud(显原因 + 重试,不静默 revert 循环)+ manual-install 抗打回', () => {
   async function toDownloading() {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await fire(UI_EVENTS.updateStatus, { status: 'available' })
     await act(async () => { downloadBtn()!.click() })
-    expect(banner()?.getAttribute('data-phase')).toBe('downloading')
+    expect(phase()).toBe('downloading')
   }
   it('下载中失败 → 显式「更新失败」态 + 人话原因 + 重试按钮(❌ 静默回到「可更新」)', async () => {
     await toDownloading()
     await fire(UI_EVENTS.updateStatus, { status: 'error', message: 'HttpError: 404 Not Found' })
-    expect(banner()?.getAttribute('data-phase')).toBe('failed')
+    expect(phase()).toBe('failed')
     expect(banner()?.textContent).toContain('更新失败')
     // @@@4891 原来拿字面「404」当「显了原因」的记号。状态码已按 owner 拍板移进日志,
     expect(banner()?.textContent).toContain('安装包尚未就绪')
@@ -306,10 +311,10 @@ describe('#2126 更新失败 fail-loud(显原因 + 重试,不静默 revert 循�
   it('点「重试」→ 重新下载(回 downloading + 再调 downloadUpdate),不自动循环', async () => {
     await toDownloading()
     await fire(UI_EVENTS.updateStatus, { status: 'error', message: 'boom' })
-    expect(banner()?.getAttribute('data-phase')).toBe('failed')
+    expect(phase()).toBe('failed')
     downloadUpdate.mockClear()
     await act(async () => { retryBtn()!.click() })
-    expect(banner()?.getAttribute('data-phase')).toBe('downloading')
+    expect(phase()).toBe('downloading')
     expect(downloadUpdate).toHaveBeenCalledTimes(1)
   })
   // @@@2127 §2(019f64ea 复审揪出):failed 不在 available 状态保护列表 → 后台周期 check 命中 available
@@ -331,7 +336,7 @@ describe('#2126 更新失败 fail-loud(显原因 + 重试,不静默 revert 循�
 describe('#5837 挂载时向宿主问状态(不靠"正好接到过那条事件")', () => {
   it('包早就下好了 → 一条事件都没有,横幅照样出来,而且是「立即重启更新」', async () => {
     updateState.mockResolvedValue({ revision: 0, status: 'downloaded', updateInfo: { version: '0.2.46-beta.4.1' } })
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await act(async () => { await Promise.resolve() })
     expect(phase()).toBe('ready')
     expect(installBtn()).not.toBeNull()
@@ -339,21 +344,21 @@ describe('#5837 挂载时向宿主问状态(不靠"正好接到过那条事件")
   })
 
   it('宿主说什么都没有 → 照旧不弹(❌ 不能问一次就自己冒出来)', async () => {
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await act(async () => { await Promise.resolve() })
     expect(banner()).toBeNull()
   })
 
   it('宿主答不上来(web/移动端没有更新这件事)→ 不炸、不弹', async () => {
     updateState.mockRejectedValue(new Error('Updates unavailable'))
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await act(async () => { await Promise.resolve() })
     expect(banner()).toBeNull()
   })
 
   it('dmg 半自动那条路也问得到(安装包已打开,无重启按钮)', async () => {
     updateState.mockResolvedValue({ revision: 0, status: 'downloaded-manual', updateInfo: null })
-    await harness.render(createElement(UpdateBanner))
+    await harness.render(floating())
     await act(async () => { await Promise.resolve() })
     expect(phase()).toBe('manual-install')
     expect(installBtn()).toBeNull()

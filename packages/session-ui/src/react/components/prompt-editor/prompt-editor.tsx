@@ -53,21 +53,23 @@ import type {
   RenderMentionIcon,
 } from './types';
 import * as styles from './prompt-editor.css';
+import { FileMark } from '../../../file-mark';
 
 function mentionToPopupItem(item: MentionItem, renderMentionIcon?: RenderMentionIcon): ComboboxPopupItem {
   if (item.disabled) return { id: item.id, label: item.name ?? item.label, disabled: true };
   const name = item.name ?? item.label;
-  const icon = item.icon ?? renderMentionIcon?.({ id: item.id, label: item.label, name, kind: item.kind, role: item.role, engine: item.engine });
+  const isFile = item.kind === 'file';
+  const icon = item.icon ?? renderMentionIcon?.({ id: item.id, label: item.label, name, kind: item.kind, role: item.role, engine: item.engine })
+    ?? (isFile ? <FileMark name={name} size={14} /> : undefined);
   const agentTitle = item.role === 'agent' ? item.description?.trim() ?? '' : '';
   const isStackedAgent = item.role === 'agent' && agentTitle.length > 0;
-  const isFile = item.kind === 'file';
   const filePath = isFile ? compactMentionPath(item.label) : undefined;
   return {
     id: item.id,
     label: isStackedAgent ? agentTitle : name,
     labelContent: item.optionLabel,
-    // File rows already show a stable path tail; an initial avatar adds no
-    // information and makes same-name files look like duplicates.
+    // A file row draws its family mark; an initial avatar would add no
+    // information and make same-name files look like duplicates.
     avatarLabel: icon || isFile ? undefined : firstInitial(name),
     icon,
     description: isFile

@@ -1,3 +1,4 @@
+import { egress } from '../shared/egress'
 import type { AgentType } from '../agentTypes'
 
 // @@@owned-agent-rest - provision an agent identity owned by the current human via the identity-schema
@@ -26,7 +27,7 @@ export async function provisionOwnedAgent(
   input: ProvisionOwnedAgentInput
 ): Promise<ProvisionedOwnedAgent> {
   const base = input.supabaseUrl.replace(/\/$/, '')
-  const doFetch = input.fetchImpl ?? fetch
+  const doFetch = input.fetchImpl ?? egress.fetch
   const response = await doFetch(`${base}/rest/v1/rpc/create_owned_agent`, {
     method: 'POST',
     headers: {
@@ -112,7 +113,7 @@ export async function provisionSessionpageAgentOneTrip(
   input: ProvisionSessionpageAgentOneTripInput
 ): Promise<ProvisionedSessionpageAgentOneTrip> {
   const base = input.supabaseUrl.replace(/\/$/, '')
-  const doFetch = input.fetchImpl ?? fetch
+  const doFetch = input.fetchImpl ?? egress.fetch
   const response = await doFetch(`${base}/rest/v1/rpc/provision_taskpage_agent`, {
     method: 'POST',
     headers: {

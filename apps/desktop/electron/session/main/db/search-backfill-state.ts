@@ -8,10 +8,9 @@ export function parseSearchBackfillProgress(value: unknown): SearchBackfillProgr
   return p && ['running', 'complete', 'failed'].includes(p.state) && Number.isSafeInteger(p.done) && Number.isSafeInteger(p.total)
     && p.done >= 0 && p.total >= p.done ? { state: p.state, done: p.done, total: p.total } : null;
 }
+/** Ready once every session is in the session index (core/session-index). */
 export function taskTurnIndexStatus(connection: Database.Database): TaskTurnIndexStatus {
-  const values = connection.prepare("SELECT key,value FROM kv WHERE key IN ('fts_version','turn_text_backfilled')").all() as { key: string; value: string }[];
-  const version = values.find(row => row.key === 'fts_version')?.value;
-  const complete = values.find(row => row.key === 'turn_text_backfilled')?.value;
-  if (version && version === complete) return { state: 'ready' };
+  const pending = connection.prepare("SELECT EXISTS (SELECT 1 FROM sessions s WHERE NOT EXISTS (SELECT 1 FROM kv WHERE kv.key = 'session-index:' || s.id)) AS n").get() as { n: number };
+  if (!pending.n) return { state: 'ready' };
   return { state: current?.state === 'failed' ? 'failed' : 'preparing', ...(current ? { done: current.done, total: current.total } : {}) };
 }

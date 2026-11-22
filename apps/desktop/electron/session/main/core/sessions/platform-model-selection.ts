@@ -74,6 +74,15 @@ export async function sessionPlatformModel(
   return record ? record.platformModel : undefined;
 }
 
+/**
+ * A derived session (a fork, a spawned child, an extension task, a fork the engine opened itself)
+ * runs on its source's model decision. A source with no record passes the fallback on: nothing is written.
+ */
+export async function inheritSessionPlatformModel(sessionId: string, sourceSessionId: string): Promise<void> {
+  const inherited = await sessionPlatformModel(sourceSessionId);
+  if (inherited !== undefined) await recordSessionPlatformModel(sessionId, inherited);
+}
+
 /** Selected-page model decisions, in one KV query; a missing key stays distinct from explicit harness/null. */
 export async function sessionPlatformModels(sessionIds: readonly string[]): Promise<Map<string, SessionPlatformModel | undefined>> {
   const records = await platformModelKV.getMany(sessionIds);

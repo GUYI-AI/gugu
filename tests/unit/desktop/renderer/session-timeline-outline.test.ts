@@ -22,7 +22,7 @@ const envelope = (overrides: Partial<Parameters<typeof renderDeliveryEnvelope>[0
 
 /** What the machine's query hands `outlineOfMessages`: the message items only, in turn then item order. */
 const rowsOf = (turns: readonly TranscriptTurn[]): OutlineMessageRow[] => turns.flatMap(one => one.items.flatMap(item => item.kind === 'message'
-  ? [{ seq: one.seq, turnId: one.id, referenceId: one.referenceId ?? null, initiator: one.initiator, itemId: item.id, role: item.role, text: item.text }] : []));
+  ? [{ turnId: one.id, referenceId: one.referenceId ?? null, initiator: one.initiator, itemId: item.id, role: item.role, text: item.text }] : []));
 
 const transcript: TranscriptTurn[] = [
   turn(0, 'user', [msg('s:turn:s0:u', 'user', '  typed ask  '), tool('s:turn:s0:t'), msg('s:turn:s0:a', 'assistant', 'first reply'), msg('s:turn:s0:b', 'assistant', 'later')]),
@@ -86,6 +86,6 @@ describe('the rail reads the same entries off an outline as off the turns', () =
 
   it('lists no turn that has nothing a rail could show', () => {
     const outline = outlineOfMessages(rowsOf(transcript));
-    expect(outline.map(one => one.seq)).toEqual([0, 1, 2, 5, 6, 7, 8, 11]);
+    expect(outline.map(one => one.id)).toEqual([0, 1, 2, 5, 6, 7, 8, 11].map(seq => `s:turn:s${seq}`));
   });
 });

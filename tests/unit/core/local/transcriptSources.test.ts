@@ -109,7 +109,7 @@ describe('路径围栏挡得住符号链接逃逸', () => {
     const options = { nativeHomes: { 'claude-code': [configDir], codex: [] } }
     await expect(readLocalTranscript(legit, 'claude-code', options)).resolves.toBeTruthy()
     await expect(readLocalTranscript(escape, 'claude-code', options)).rejects.toThrow(
-      /不在允许的扫描目录内/,
+      /transcript-outside-roots/,
     )
   })
 })

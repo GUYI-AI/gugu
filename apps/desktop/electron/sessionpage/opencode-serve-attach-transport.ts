@@ -3,7 +3,8 @@
 // serve 拓扑:gugu 持一个 `opencode serve`(推理在这里跑,吃 OPENCODE_CONFIG_CONTENT),用户看的 pty 里
 // 跑 `opencode attach <url> --session <id>` 只渲染。本文件是那台 serve 的 HTTP/SSE 客户端与进程生命周期,
 // 不碰 pty、不猜 keystroke。就绪判据、投递收据、杀树都在这里(spec opencode-serve-attach-readiness)。
-import http from 'node:http'
+import type http from 'node:http'
+import { loopbackRequest } from '@gugu/core/local/loopback'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:net'
 import { stat } from 'node:fs/promises'
@@ -146,7 +147,7 @@ function eventErrorMessage(ev: OpencodeEvent): string {
 /** Single GET returning the HTTP status code, or rejecting on transport error / timeout. */
 export function httpGetStatus(url: string, timeoutMs = 5_000): Promise<number> {
   return new Promise((resolve, reject) => {
-    const req = http.request(url, { method: 'GET', timeout: timeoutMs }, (res) => {
+    const req = loopbackRequest(url, { method: 'GET', timeout: timeoutMs }, (res) => {
       res.resume()
       resolve(res.statusCode ?? 0)
     })
@@ -695,7 +696,7 @@ export class OpencodeServeSession {
   }
 
   private connectEventStream(): void {
-    const req = http.request(`${this.url}/event`, { method: 'GET' }, (res) => {
+    const req = loopbackRequest(`${this.url}/event`, { method: 'GET' }, (res) => {
       res.setEncoding('utf8')
       let buffer = ''
       res.on('data', (chunk: string) => {
@@ -927,7 +928,7 @@ export class OpencodeServeSession {
       const headers = body === undefined
         ? undefined
         : { 'content-type': 'application/json', 'content-length': String(payload.length) }
-      const req = http.request(
+      const req = loopbackRequest(
         `${this.url}${path}`,
         {
           method,

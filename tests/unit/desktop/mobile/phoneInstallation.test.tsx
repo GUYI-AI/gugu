@@ -2,6 +2,7 @@
 import { act, createElement, Fragment } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, deferred, waitForCondition } from '../../../support/testHarness'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 
 const mocks = vi.hoisted(() => ({
   owner: '', kind: 'capacitor', available: true, phoneDevice: true, failBinding: false,
@@ -17,7 +18,7 @@ vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({
   getRendererSession: () => ({ user: { id: mocks.owner } }), observeRendererSession: () => () => {},
 }))
 vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({
-  useMyAssistant: () => ({ agentId: null, provisionDeviceId: null, loading: false, error: null }),
+  useMyAssistant: () => ({ state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }),
 }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn(), warn: vi.fn() }) }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
@@ -70,9 +71,11 @@ function expectNoPhoneEffects() {
   expect(mocks.grants).not.toHaveBeenCalled()
   expect(mocks.stopped).not.toHaveBeenCalled()
 }
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks(); values.clear()
   mocks.owner = crypto.randomUUID(); mocks.kind = 'capacitor'; mocks.available = true; mocks.phoneDevice = true; mocks.failBinding = false
+  // The installation is the signed-in account's (phoneInstallation replica): the renderer signs this owner in.
+  await freshReplicaAccount(mocks.owner)
   mocks.start.mockImplementation(() => mocks.cleanup)
   mocks.grants.mockResolvedValue(undefined); mocks.stopped.mockResolvedValue(undefined)
   mocks.deviceInfo.mockReset().mockResolvedValue({ install_key: NATIVE_KEY, registration_id: 'verified-registration' })
@@ -186,7 +189,7 @@ describe('native installation verification gates the actual phone effect roots',
     mocks.deviceInfo.mockReturnValueOnce(previous.promise).mockReturnValueOnce(current.promise)
     const harness = await render()
     const previousOwner = mocks.owner
-    mocks.owner = crypto.randomUUID(); choose()
+    mocks.owner = crypto.randomUUID(); (await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', mocks.owner); choose()
     await harness.render(app(mocks.owner))
     await act(async () => previous.resolve({ install_key: 'stale-native-key' }))
     expectNoPhoneEffects()
@@ -214,7 +217,7 @@ describe('native installation verification gates the actual phone effect roots',
     const tree = () => createElement(PhoneInstallationContext.Provider, { value: previousOwner }, roots())
     await harness.render(tree())
     expect(mocks.start).toHaveBeenCalledOnce()
-    mocks.owner = crypto.randomUUID(); choose()
+    mocks.owner = crypto.randomUUID(); (await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', mocks.owner); choose()
     await harness.render(tree())
     expect(mocks.cleanup).toHaveBeenCalledOnce()
     expect(mocks.start).toHaveBeenCalledOnce()

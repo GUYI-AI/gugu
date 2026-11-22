@@ -21,12 +21,12 @@ import type { AgentType } from '@gugu/core/agentTypes'
 import { platformWireProtocol } from '@gugu/session-plugins/agents/platform-protocols'
 import { edgeFunctionError } from './edgeFunctionError'
 import { identityDb, dataClient } from './supabase'
-import { PLATFORM_MODELS_CHANGED_EVENT } from '@/session/shared/core/agents/platform-model'
+import { PLATFORM_MODELS_CHANGED_EVENT, parsePlatformCreditMultipliers, parsePlatformReasoningEfforts } from '@/session/shared/core/agents/platform-model'
 import { chatService } from './chat'
-import type { SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
+import type { SessionpageSessionCreateModels, SessionpageSessionView } from '@gugu/session-core/session-record/contract'
 import { rpcOn } from '@/session/renderer/lib/ipc'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
-import { fetchCreateModels } from '@/components/session-watch/sessionpage-rpc'
+import { fetchCreateModels, fetchPhoneCreateModels } from '@/components/session-watch/sessionpage-rpc'
 
 export interface PlatformCatalogModel {
   id: string
@@ -37,8 +37,13 @@ export interface PlatformCatalogModel {
   requiresMembership: boolean
   /** 目录 `hidden`(#7056):他在设置「模型」页关掉了这一条。只认 true,旧服务端不带 ⇒ false。 */
   hidden: boolean
+  /** What a model menu shows and the effort picker intersects (#6447). */
   creditMultiplier?: number | null
+  /** Per protocol (`credit_multipliers`): the multiplier the composer shows for the protocol an engine speaks. */
+  creditMultipliers?: Partial<Record<ModelAccessProtocol, number>>
   contextWindow?: number | null
+  /** The reasoning levels this model accepts (#6447); null = the catalog does not say. */
+  reasoningEfforts?: string[] | null
 }
 
 export interface AgentModelSelectionState {
@@ -83,7 +88,9 @@ export async function fetchPlatformModelCatalog(): Promise<PlatformCatalogModel[
           requiresMembership: row.requires_membership === true,
           hidden: row.hidden === true,
           creditMultiplier: typeof row.credit_multiplier === 'number' ? row.credit_multiplier : null,
+          creditMultipliers: parsePlatformCreditMultipliers(row.credit_multipliers),
           contextWindow: typeof row.context_window === 'number' ? row.context_window : null,
+          reasoningEfforts: parsePlatformReasoningEfforts(row.reasoning_efforts),
         }]
       : []
   })
@@ -173,11 +180,20 @@ export async function setAgentModelSelection(
   }
 }
 
-/** 目录与订阅凭据都问 Agent 实际所在设备；控制端本机账号不能冒充远端凭据。 */
-export async function fetchAgentHarnessModels(deviceId: string, harness: string, isLocal: boolean): Promise<SessionpageSessionCreateModels> {
-  if (!isLocal) return fetchCreateModels(deviceId, harness, 'general', null)
-  const result = await rpcOn(null).sessionTimeline.sessionCreateModels({ harness, sessionView: 'general' })
+/** Which way a machine's create-model catalog is asked: this computer's runtime, another computer, or a phone task host. */
+export type SessionCreateVia = 'local' | 'machine' | 'phone'
+
+/** 一台机器上某个 harness 能跑哪些模型:目录与订阅凭据都问那台实际所在的设备。`sessionView` null = 那台按自己的「终端」开关定。 */
+export async function fetchSessionCreateModels(deviceId: string, harness: string, sessionView: SessionpageSessionView | null, model: string | null, via: SessionCreateVia): Promise<SessionpageSessionCreateModels> {
+  if (via === 'machine') return fetchCreateModels(deviceId, harness, sessionView, model)
+  if (via === 'phone') return fetchPhoneCreateModels(deviceId, harness, sessionView, model)
+  const result = await rpcOn(null).sessionTimeline.sessionCreateModels({ harness, ...(sessionView ? { sessionView } : {}), ...(model ? { model } : {}) })
   if (!result.ok) throw new Error(result.error.message)
   return result.value
+}
+
+/** An agent's own harness catalog on its device (the agent model pane, the assistant server setup). */
+export function fetchAgentHarnessModels(deviceId: string, harness: string, isLocal: boolean): Promise<SessionpageSessionCreateModels> {
+  return fetchSessionCreateModels(deviceId, harness, 'general', null, isLocal ? 'local' : 'machine')
 }
 

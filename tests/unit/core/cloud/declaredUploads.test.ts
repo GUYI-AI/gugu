@@ -7,7 +7,7 @@ const server = vi.hoisted(() => ({ plan: vi.fn(), store: vi.fn(), finish: vi.fn(
 const progress = vi.hoisted(() => ({ set: vi.fn(), fail: vi.fn() }))
 const copies = vi.hoisted(() => new Map<string, Blob>())
 const refuse = (status: number, error: string) => Object.assign(new Error(error), { status, error })
-import { createDeclaredUploads } from '@gugu/core/cloud/declaredUploads'
+import { createDeclaredUploads, ORIGINAL_CHANGED } from '@gugu/core/cloud/declaredUploads'
 import { AttachmentsError, contentRequestId } from '@gugu/core/cloud/attachmentsApi'
 const endpoint = async () => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token: 't',
   fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -299,6 +299,23 @@ describe('attachment bytes go up behind their message', () => {
     expect(server.store).toHaveBeenCalledExactlyOnceWith('https://bucket.test/pending/message-3', expect.any(Blob), expect.any(Function))
   }, 15_000)
 
+  // The file uploaded changed or went away before its bytes were up: the upload ends, saying so; no retry can fix it.
+  it('an original that changed fails its upload for good with that reason, during the upload and when resuming it', async () => {
+    const seen: unknown[] = []
+    queue.dispose()
+    queue = createDeclaredUploads({ endpoint, progress: (id, value) => { if (value?.failed) seen.push({ id, ...value }) },
+      copyOf: async () => { throw Object.assign(new Error('changed'), { code: ORIGINAL_CHANGED }) } })
+    server.store.mockRejectedValue(new DOMException('The blob could not be read', 'NotReadableError'))
+    await beginAttachmentUpload(task('message-6'), new Blob(['bytes']), plan('pending/message-6')).catch(() => undefined)
+    expect(seen).toEqual([expect.objectContaining({ id: 'message-6', failed: true, final: true, reason: ORIGINAL_CHANGED })])
+    expect(server.store).toHaveBeenCalledOnce()
+    server.pending.mockResolvedValue({ uploads: [pending('message-7', 'b'.repeat(64))] })
+    await resumeAttachmentUploads()
+    expect(seen.at(-1)).toEqual(expect.objectContaining({ id: 'message-7', failed: true, final: true, reason: ORIGINAL_CHANGED }))
+    await resumeAttachmentUploads()
+    expect(seen.filter(row => (row as { id: string }).id === 'message-7')).toHaveLength(1)
+  })
+
   it('replays a lost rollover response after a restart with the same successor ID and original declaration', async () => {
     const id = '11111111-1111-4111-8111-111111111111'
     const key = `staging/owner/${id}`
@@ -377,6 +394,52 @@ describe('attachment bytes go up behind their message', () => {
     await queue.resume()
     expect(server.store).toHaveBeenCalledOnce()
     expect(progress.fail).toHaveBeenCalledExactlyOnceWith('message-1', undefined)
+  })
+
+  it('an error the queue does not recognise is not a verdict: the upload waits and tries again, at most one plan per round', async () => {
+    vi.useFakeTimers()
+    try {
+      copies.set('a'.repeat(64), new Blob(['bytes']))
+      server.pending.mockResolvedValue({ uploads: [pending('message-1', 'a'.repeat(64))] })
+      server.plan.mockImplementation(() => plan('pending/message-1'))
+      // A headless server that cannot make the request at all throws a plain Error, not a refusal.
+      server.store.mockRejectedValue(new Error('net.request is unavailable'))
+      // Finish settles only bytes that reached storage.
+      let stored = false
+      server.finish.mockImplementation(async () => { if (!stored) throw refuse(409, 'upload_missing'); return {} })
+      const failed = beginAttachmentUpload(task(), new Blob(['bytes']), plan('pending/message-1')).catch(error => error)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect((await failed).message).toBe('net.request is unavailable')
+      expect(progress.fail).toHaveBeenLastCalledWith('message-1', expect.any(Function))
+      const stores = server.store.mock.calls.length, planned = server.plan.mock.calls.length
+      await vi.advanceTimersByTimeAsync(5_100)
+      expect(server.pending).toHaveBeenCalledOnce()
+      expect(server.store.mock.calls.length).toBeGreaterThan(stores)
+      // A round reuses a live permit; it asks for at most one plan, never one per attempt.
+      expect(server.plan.mock.calls.length - planned).toBeLessThanOrEqual(1)
+      server.store.mockImplementation(async () => { stored = true })
+      await vi.advanceTimersByTimeAsync(10_100)
+      expect(progress.set).toHaveBeenLastCalledWith('message-1')
+    } finally { vi.useRealTimers() }
+  })
+
+  it('a local copy that cannot be read on resume is asked for again, not given up on', async () => {
+    vi.useFakeTimers()
+    try {
+      server.pending.mockResolvedValue({ uploads: [pending('message-1', 'a'.repeat(64))] })
+      let reads = 0
+      queue.dispose()
+      queue = createDeclaredUploads({ endpoint, copyOf: async sha => { if (++reads === 1) throw new Error('EBUSY: resource busy'); return copies.get(sha) ?? null },
+        progress: (id, value) => { if (value?.failed) progress.fail(id); else if (value) progress.set(id, value); else progress.set(id) } })
+      copies.set('a'.repeat(64), new Blob(['bytes']))
+      server.plan.mockImplementation(() => plan('pending/message-1'))
+      await resumeAttachmentUploads().catch(() => undefined)
+      expect(server.store).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(5_100)
+      expect(server.pending).toHaveBeenCalledTimes(2)
+      expect(server.store).toHaveBeenCalledOnce()
+      expect(progress.set).toHaveBeenLastCalledWith('message-1')
+    } finally { vi.useRealTimers() }
   })
 
   it('a message discarded unsent stops its upload', async () => {

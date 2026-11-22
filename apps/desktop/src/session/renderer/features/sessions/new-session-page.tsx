@@ -3,11 +3,14 @@ import type { ViewDefinition } from '@renderer/app/view-registry';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react';
-import { getGitRepositoryStore } from '@renderer/features/projects/stores/project-selectors';
+import { useReplica } from '@/lib/replica';
+import { asMounted, getGitRepositoryStore, getProjectStore } from '@renderer/features/projects/stores/project-selectors';
 import { useCreateSessionCallback } from '@renderer/features/sessions/create-session-modal/use-create-session-callback';
 import { useCreateSessionState } from '@renderer/features/sessions/create-session-modal/use-create-session-state';
-import { useProjectGitContext } from '@renderer/features/sessions/create-session-modal/use-project-git-context';
-import { useSessionSettings } from '@renderer/features/sessions/hooks/useSessionSettings';
+import { useSessionSettings, type NewTaskSettings } from '@renderer/features/sessions/hooks/useSessionSettings';
+import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { messageForUser } from '@/lib/userFacingError';
 import { SessionField } from '@renderer/features/sessions/session-config/session-field';
 import type { ComposerVerbLook, InitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
 import { useInitialSessionState } from '@renderer/features/sessions/session-config/initial-session-section';
@@ -22,10 +25,7 @@ import { useWakeCloudOnInput } from '@renderer/features/remote-hosts/use-wake-cl
 import { machineLibraryHost } from '@renderer/features/library/library-host';
 import { ComposerTray } from './composer-tray';
 import { useRemoteInstallBeforeCreate } from './remote-install-before-create';
-import {
-  ImplicitSessionHomeProjectError,
-  ensureImplicitSessionHomeProjectId
-} from './implicit-session-home-project';
+import { implicitSessionHome } from './implicit-session-home-project';
 import {
   sessionComposerFrameClassName,
   sessionComposerDockBandClassName,
@@ -33,6 +33,9 @@ import {
 } from './session-composer-styles';
 import { CreateDeliveryError } from './create-session-modal/create-delivery-error';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from './composer-drafts';
+import { Illustration } from '@/components/ui/Illustration';
+import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/cn';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
@@ -44,14 +47,24 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 
 // Exported so the project home and the chat's task dispatch reuse this exact createSession input and submission path;
 // the context tray controls are shared too (composer-context-tray.tsx). 新建页在这份共享 composer 上加标题。
-export const NewSessionComposer = observer(function NewSessionComposer({
+export const NewSessionComposer = observer(function NewSessionComposer(props: Omit<NewSessionComposerProps, 'sessionSettings'>) {
+  const { settings, reload } = useSessionSettings();
+  // The composer seeds its state once: its place is held until these are read (❌ factory defaults a late value cannot change).
+  if (settings.state === 'error') return <div className={sessionComposerFrameClassName}><ReadFailedLine message={messageForUser(settings.error)} onRetry={reload} /></div>;
+  if (settings.state === 'unknown') return <div className={sessionComposerFrameClassName}><Unknown className="h-[7.5rem] w-full" /></div>;
+  return <NewSessionComposerReady {...props} sessionSettings={settings.value} />;
+});
+
+type NewSessionComposerProps = Parameters<typeof NewSessionComposerReady>[0];
+
+const NewSessionComposerReady = observer(function NewSessionComposerReady({
+  sessionSettings,
   projectId,
   blockReason,
   blocked = false,
   isContextPending,
   birthChatId,
   taskChatId,
-  openAfterCreate,
   onSessionCreated,
   machine = null,
   draftKey,
@@ -74,10 +87,8 @@ export const NewSessionComposer = observer(function NewSessionComposer({
   isContextPending?: boolean;
   /** 建出来的 agent 一出生就进这个群(对话里派任务、选了「进群」)。 */
   birthChatId?: string;
-  /** gugu-dev#181 派任务:首句落成这个对话里的一张任务卡(见 useCreateSessionCallback)。 */
+  /** gugu-dev#181 派任务:首句落成这个对话里的一张任务卡,人留在原处;没有 = 建完打开它(见 useCreateSessionCallback)。 */
   taskChatId?: string;
-  /** false = 建完人留在原处、当场起它(见 useCreateSessionCallback);缺省 = 导航过去。 */
-  openAfterCreate?: boolean;
   onSessionCreated?: (result: { projectId: string; sessionId: string }) => void;
   /**
    * #6264 所选机器是另一台(一套工作台:项目就是那台机器上的项目,建会话走同一条路);
@@ -104,19 +115,16 @@ export const NewSessionComposer = observer(function NewSessionComposer({
    * 任务在那边按同一条路建。能按 = 有内容、选中了智能体;`blocked` / `blockReason` 照旧挡。
    */
   sendWithoutProject?: (input: InitialSessionState) => void;
+  sessionSettings: NewTaskSettings;
 }) {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
-  const { defaultBranch, isUnborn, currentBranch, repositoryWorkspaceId } =
-    useProjectGitContext(projectId);
+  const repositoryWorkspaceId = (projectId ? asMounted(getProjectStore(projectId)) : undefined)?.data.repositoryWorkspaceId ?? null;
   // Repository store warms lazily; touching it keeps parity with the project home / modal.
   if (projectId) void getGitRepositoryStore(projectId);
 
   const state = useCreateSessionState(
     projectId,
-    defaultBranch,
-    isUnborn,
-    currentBranch,
     workspaceId ?? repositoryWorkspaceId,
     undefined,
     null,
@@ -124,7 +132,7 @@ export const NewSessionComposer = observer(function NewSessionComposer({
     // runInProjectDir: 会话直接跑在项目目录,不额外开 worktree(owner 定调:session 就是 task)。
     { requireGeneratedName: true, runInProjectDir: true }
   );
-  const { autoApproveByDefault, includeIssueContextByDefault } = useSessionSettings();
+  const { autoApproveByDefault, includeIssueContextByDefault } = sessionSettings;
   const draft = useMemo(() => draftKey ? composerDrafts.forKey(draftKey) : undefined, [draftKey]);
   const initialSession = useInitialSessionState(
     projectId,
@@ -154,7 +162,6 @@ export const NewSessionComposer = observer(function NewSessionComposer({
     },
     birthChatId,
     taskChatId,
-    openAfterCreate,
     beforeCreate: remoteInstall.beforeCreate,
   });
   // 「这一轮带了内容」把附件一并算上:只有附件、没有文字也是一条真首轮(#4325)。
@@ -187,7 +194,6 @@ export const NewSessionComposer = observer(function NewSessionComposer({
         workspaceConfig={state.workspaceConfig}
         initialSession={initialSession}
         projectId={projectId}
-        isUnborn={isUnborn}
         hasPR={false}
         includeIssueContextByDefault={includeIssueContextByDefault}
       >
@@ -232,37 +238,11 @@ export const NewSessionPage = observer(function NewSessionPage({
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  const [implicitProjectId, setImplicitProjectId] = useState<string | undefined>(undefined);
-  const [implicitProjectFailure, setImplicitProjectFailure] = useState<unknown>(null);
-
-  // An unselected project is a real first-class state, not an alias for projects[0]. Prepare the
-  // hidden app-owned execution context in the background while keeping the composer editable.
-  //
-  // 失败原因只以**未本地化的原始值**存进 state（稳定语义码或原始 Error），文案在渲染时才映射 ——
-  // 存成品句子的话，切换语言后这条已经显示出来的提示会停在旧语言上。
-  useEffect(() => {
-    let cancelled = false;
-    void ensureImplicitSessionHomeProjectId()
-      .then((projectId) => {
-        if (cancelled) return;
-        if (!projectId) {
-          setImplicitProjectFailure(new ImplicitSessionHomeProjectError('unavailable'));
-          return;
-        }
-        setImplicitProjectId(projectId);
-        setImplicitProjectFailure(null);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setImplicitProjectFailure(error);
-      });
-    return () => {
-    cancelled = true;
-    };
-  }, []);
-
-  const implicitProjectError = implicitProjectFailure
-    ? describeImplicitProjectFailure(implicitProjectFailure, translate)
+  // An unselected project is a real first-class state, not an alias for projects[0].
+  const implicitProject = useReplica(implicitSessionHome, []);
+  const implicitProjectId = implicitProject.state === 'value' ? implicitProject.value : undefined;
+  const implicitProjectError = implicitProject.state === 'error'
+    ? describeImplicitProjectFailure(implicitProject.error, translate)
     : null;
 
   const effectiveProjectId = selectedId ?? implicitProjectId;
@@ -290,9 +270,7 @@ export const NewSessionPage = observer(function NewSessionPage({
       <div className="flex min-h-0 flex-1 items-center justify-center px-4">
         {/* 去掉入场滑入(不解释状态变化,只是每次开页都要看的表演)与 `text-xl font-semibold`
             (`.gg-type-page-title` 现在真有定义 20/28/600,别写两遍)。规格 §2 */}
-        <h1 className="gg-type-page-title">
-          {translate('task.newTask')}
-        </h1>
+        <NewTaskHero />
       </div>
       <div className={sessionComposerDockBandClassName}>
         <div className={sessionComposerDockedWidthClassName}>
@@ -339,3 +317,33 @@ export const newSessionView = {
   MainPanel: NewSessionMainPanel,
   transientParams: ['agentId', 'deviceId'],
 } satisfies ViewDefinition<NewSessionViewParams>;
+
+// 新任务页的大空白:一张墨线插画 + 一句说明 + 三个起手句(owner 11-22 定:就这三条,前提是产品确实能做到 ——
+// 三条都是本机 Codex / Claude 在任意项目或任务工作区里就能做的事)。点一下 = 把那句话放进下面的输入框(与 App 页
+// 「对 agent 说」同一条路:composerDrafts),不直接发;输入框里有字了起手句就收起,不和用户自己写的话抢位置。
+const STARTERS = [
+  ['task.starterExplain', 'task.starterExplainPrompt'],
+  ['task.starterFixTest', 'task.starterFixTestPrompt'],
+  ['task.starterSummarize', 'task.starterSummarizePrompt'],
+] as const;
+
+const NewTaskHero = observer(function NewTaskHero() {
+  const { translate } = useSessionMessages();
+  const typed = composerDrafts.get(NEW_SESSION_DRAFT_KEY).trim().length > 0;
+  return (
+    <div className="flex flex-col items-center gap-2 text-center" data-testid="new-task-hero">
+      <Illustration name="new-task" className="w-[112px]" />
+      {/* `.gg-type-page-title` 是 20/28/600 的页面标题,别再写一遍字号。 */}
+      <h1 className="gg-type-page-title mt-3">{translate('task.newTask')}</h1>
+      <p className="m-0 text-[length:var(--font-body)] text-[var(--text-secondary)]">{translate('task.newTaskHint')}</p>
+      <div className={cn('mt-3 flex flex-wrap justify-center gap-2', typed && 'invisible')} aria-hidden={typed || undefined}>
+        {STARTERS.map(([label, prompt]) => (
+          <Button key={label} variant="secondary" size="sm" className="rounded-[var(--radius-capsule)]" data-testid="new-task-starter"
+            onClick={() => composerDrafts.set(NEW_SESSION_DRAFT_KEY, translate(prompt))}>
+            {translate(label)}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+});

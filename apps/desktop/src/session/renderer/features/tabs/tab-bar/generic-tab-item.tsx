@@ -21,6 +21,8 @@ export interface GenericTabItemProps {
   ctx: TabViewContext;
   /** Plain visible text; used as the default tooltip base and rename commit basis. */
   label: string;
+  /** Drawn instead of the label while it is not known yet (a placeholder the size of a title, ❌ a raw id). */
+  unknownLabel?: ReactNode;
   /** Tooltip base when different from label (e.g. full file path). */
   tooltip?: string;
   /** Leading icon slot (file icon, agent icon, spinner). */
@@ -39,6 +41,8 @@ export interface GenericTabItemProps {
   renameValue?: string;
   /** Max character length enforced on the rename input. */
   renameMaxLength?: number;
+  /** Double-clicking the conversation's title (standalone or as the workspace's first tab) starts inline rename; a click keeps selecting it. */
+  renameOnDoubleClick?: boolean;
   closeDisabled?: boolean;
 }
 
@@ -57,6 +61,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   host,
   ctx,
   label,
+  unknownLabel,
   tooltip,
   preSlot,
   hint,
@@ -66,6 +71,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   kindCommands,
   renameValue,
   renameMaxLength,
+  renameOnDoubleClick,
   closeDisabled,
 }: GenericTabItemProps) {
   const { translate } = useSessionMessages();
@@ -134,6 +140,7 @@ export const GenericTabItem = observer(function GenericTabItem({
           el?.focus();
           el?.select();
         }}
+        aria-label={translate('task.renameNameLabel')}
         defaultValue={renameValue ?? label}
         maxLength={renameMaxLength}
         className="h-6 max-w-30 min-w-0 rounded bg-background-1 px-1.5 text-sm text-foreground ring-1 ring-foreground/20 outline-none"
@@ -142,8 +149,12 @@ export const GenericTabItem = observer(function GenericTabItem({
         onBlur={(e) => commit(e.target.value)}
         onKeyDown={(e) => {
           e.stopPropagation();
-          if (e.key === 'Enter') commit(e.currentTarget.value);
-          else if (e.key === 'Escape') {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit(e.currentTarget.value);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
             committedRef.current = true;
             setIsEditing(false);
           }
@@ -154,7 +165,8 @@ export const GenericTabItem = observer(function GenericTabItem({
   if (workspaceRole === 'title') {
     return (
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
-        <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title="">
+        <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title=""
+          onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}>
           {preSlot}
           {editableTitle ?? <span className="truncate" title={tooltip ?? label}>{label}</span>}
           {statusSlot}
@@ -169,6 +181,7 @@ export const GenericTabItem = observer(function GenericTabItem({
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
         <TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
           preSlot={preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={select}
+          onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}
           onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }} />
       </TabContextMenu>
     </TabSlot>;
@@ -200,7 +213,7 @@ export const GenericTabItem = observer(function GenericTabItem({
           title={fullTitle}
           hasError={hasError}
           preSlot={preSlot}
-          labelSlot={editableTitle}
+          labelSlot={editableTitle ?? unknownLabel}
           markSlot={markSlot}
           statusSlot={statusSlot}
           actionSlot={fillButton}

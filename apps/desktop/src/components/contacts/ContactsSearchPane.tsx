@@ -4,7 +4,6 @@ import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/cont
 import { useHotkey } from '@tanstack/react-hotkeys'
 import { COMMANDS, getEffectiveHotkey, getHotkeyRegistration, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts'
 import { Search } from '@/lib/icons'
-import { cn } from '@/lib/cn'
 import { recentChatActivity, searchContacts } from '@/lib/contactSearch'
 import { normalizeMentionKey } from '@/lib/mentionMatch'
 import { useShellTabIs } from '@/lib/shellTab'
@@ -13,12 +12,14 @@ import { useChatsWhile } from '../../store/chatContext'
 import { ListRow } from '../ui/ListRow'
 import { SearchField } from '../ui/SearchField'
 import { SectionLabel } from '../ui/SectionLabel'
+import { Illustration } from '../ui/Illustration'
 import { PaneEmptyState } from '../ui/PaneEmptyState'
+import { Button } from '../ui/Button'
 import type { ContactsSection } from './contactsSections'
 import { buildAgentForest, flattenForest, useAgentParents, type AgentTreeNode } from './contactsAgentTree'
 import { SearchHitRow, SearchMap, type Hit } from './ContactsSearchHits'
 import { ContactsPageFrame } from './ContactsPageFrame'
-import { ROW_GRID } from './ContactsSectionPane'
+import { ContactsGrid } from './ContactsGrid'
 
 // 通讯录桌面的搜索:框在左栏顶上,结果铺在右边大区域(ContactsPageFrame,与分组页同一副页头 + 抽屉)。
 // 结果按分组分节(本机 / 各设备 / 咕咕云 / 个人 / 群组,与左栏同一份分组),命中的字满墨。设备分组里命中的 agent 画回
@@ -26,7 +27,7 @@ import { ROW_GRID } from './ContactsSectionPane'
 // 回车打开;点开 = 切到那一组、选中、开抽屉(由调用方 onOpen* 做)。
 // ⌘F 在通讯录上就是这个框(同自动化页 / 会话历史:「当前视图内查找」= 聚焦自己的搜索框),❌ 第二套页内查找。
 
-export function useDesktopContactSearch({ enabled, query, onQuery, sections, people, agents, groups, pick, onOpenContact, onOpenGroup, onLookupNumber }: {
+export function useDesktopContactSearch({ enabled, query, onQuery, sections, people, agents, groups, pick, onOpenContact, onOpenGroup, onSearchEveryone }: {
   /** 只有桌面:手机首页的框是 ContactSearch(HeaderSearch),❌ 在这里再挂一个 ⌘F。 */
   enabled: boolean
   query: string
@@ -39,7 +40,7 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
   pick?: { ids: ReadonlySet<string>; can: (contact: ContactUser) => boolean; onToggle: (contact: ContactUser) => void }
   onOpenContact: (contact: ContactUser, sectionKey: string) => void
   onOpenGroup: (group: ContactGroupChat, sectionKey: string) => void
-  onLookupNumber: (number: string) => void
+  onSearchEveryone: (number: string) => void
 }): { field: ReactNode; pane: ReactNode | null } {
   const { t } = useTranslation('contacts')
   const onScreen = useShellTabIs('contacts')
@@ -50,8 +51,8 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
   const recentAt = useMemo(() => recentChatActivity(chats), [chats])
   const result = useMemo(() => (enabled ? searchContacts(query, { people, agents, groups, recentAt }) : null), [enabled, query, people, agents, groups, recentAt])
   const parents = useAgentParents()
-  // 命中按左栏的分组排。设备分组:先是导图里的 agent(家族图按出现次序、各家族先序,再是单个 agent 的头像格 ——
-  // 与 AgentMindMap 画的次序一致,键盘走的就是屏上的次序),再是群;其余分组保持搜索排好的次序。
+  // 命中按左栏的分组排。设备分组:先是家族里的 agent(家族按出现次序、各家族先序,再是单个 agent ——
+  // 与 AgentFamilies 画的次序一致,键盘走的就是屏上的次序),再是群;其余分组保持搜索排好的次序。
   const bySection = useMemo(() => {
     if (!result) return []
     const sectionOf = new Map<string, ContactsSection>()
@@ -87,7 +88,7 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing) return
     if (event.key === 'Escape' && searching) { event.preventDefault(); onQuery(''); return }
-    if (lookup && event.key === 'Enter') { event.preventDefault(); onLookupNumber(lookup); return }
+    if (lookup && event.key === 'Enter') { event.preventDefault(); onSearchEveryone(lookup); return }
     if (rows.length === 0) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
@@ -108,6 +109,7 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
   const field = (
     <div className="shrink-0 !px-3 !pb-2">
       <SearchField
+        variant="nav"
         ref={input}
         data-testid={AUTOMATION_TEST_IDS.contactsSearchInput}
         value={query}
@@ -129,23 +131,25 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
           {forest.length > 0 ? (
             <SearchMap forest={forest} hits={hits} current={rows[current]} pick={pick} onOpen={open} onOpenContact={(c) => { onQuery(''); onOpenContact(c, section.key) }} />
           ) : null}
-          <div className={ROW_GRID}>
+          <ContactsGrid>
             {hits.filter((row) => section.kind !== 'device' || row.kind === 'group').map((row) => (
               <SearchHitRow key={row.hit.item.id} row={row} picked={row.kind === 'contact' && pick?.can(row.hit.item) ? pick.ids.has(row.hit.item.id) : undefined} active={row === rows[current]} onOpen={() => open(row)} />
             ))}
-          </div>
+          </ContactsGrid>
         </section>
       ))}
       {rows.length === 0 ? (
         lookup ? (
-          <div className={cn(ROW_GRID, '!mt-4')}>
-            <ListRow role="button" tabIndex={0} selected onClick={() => onLookupNumber(lookup)}
+          <ContactsGrid className="!mt-4">
+            <ListRow role="button" tabIndex={0} selected onClick={() => onSearchEveryone(lookup)}
               leading={<div className="grid size-[var(--avatar-sm)] shrink-0 place-items-center text-[var(--muted-fg)]"><Search size={16} /></div>}
               title={t('panel.lookupGuguNumber', { number: lookup })} />
-          </div>
+          </ContactsGrid>
         ) : (
-          <div className="grid min-h-[50%] place-items-center">
-            <PaneEmptyState icon={<Search size={26} color="var(--text-tertiary)" />} caption={t('searchPane.empty', { query: query.trim() })} />
+          <div className="grid min-h-[60%] place-items-center">
+            <PaneEmptyState art={<Illustration name="no-match" className="w-[96px]" />} caption={t('searchPane.empty', { query: query.trim() })}
+              hint={t('searchPane.emptyHint')}
+              action={<Button variant="secondary" size="sm" data-testid="contacts-search-everyone" onClick={() => onSearchEveryone(query.trim())}><Search size={15} aria-hidden />{t('searchPane.searchEveryone')}</Button>} />
           </div>
         )
       ) : null}

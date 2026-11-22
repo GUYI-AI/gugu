@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { serverMachineNotices, serverSupportsConfirmedRestart } from '@gugu/core/cloud/serverMachineHealth'
-import { X } from '../lib/icons'
 import { readServerVersionSwitchBusyAgents, restartServerVersionNow, retryServerVersionMatch } from '../lib/serverVersionRetry'
 import type { SshLinkFailure } from '../lib/sshLink'
 import { pickSshLinkNotice, type SshLinkNotice } from '../lib/sshLinkNotice'
@@ -11,7 +10,6 @@ import {
   requestSshServerUpgrade,
   signInSshMachine,
   sshReinstallCommand,
-  subscribeSshLinkProblems,
   subscribeSshSignInPrompts,
   subscribeSshUpgradeEvents,
 } from '../lib/sshLinkChannel'
@@ -19,18 +17,20 @@ import type { SshPrompt } from '../session/shared/ssh-prompt'
 import { useDevicesStore } from '../store/devicesContext'
 import { canRestartServerUpdate } from '../lib/deviceRowModel'
 import { useSessionMessages } from '../session/renderer/localization/use-session-messages'
-import { IconButton } from './ui/IconButton'
 import { SshPromptCard, SshPromptFrame } from './settings/addServer/SshPromptCard'
 import { Button } from './ui/Button'
 import { InlineAction } from './settings/addServer/InlineAction'
 import { CommandBlock } from './settings/addServer/CommandBlock'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
+import { Server } from '@/lib/icons'
 import { useToast } from './toastContext'
+import { useNotice, type Notice } from '@/lib/notices'
 import { messageForUser } from '@/lib/userFacingError'
+import { useSshLinkProblems } from '../hooks/useSshLinkProblems'
 
 // #6264 远程 SSH 的机器:这台电脑与它之间只走 SSH(product spec「两种连法，处处能用」)。
-// 连不上时 ❌ 退回咕咕云,各个模块照常报「问不到」;「怎么修」只在这一处说 —— 一张浮在窗口顶部中间的卡片
-// (与远端终端上那张 SSH 提问卡片同一副浮层),照 VS Code Remote-SSH 连接要密码时在窗口顶上问:
+// 连不上时 ❌ 退回咕咕云,各个模块照常报「问不到」;「怎么修」只在这一处说 —— 横幅位上的一条常驻提示
+// (卡里是与远端终端上那张 SSH 提问卡片同一副内容):
 //  · 要人回答(密码 / 口令 / 新主机指纹)才连得上:❌ 自己出面;人在用到那台机器的地方点了「登录」,提问浮在这张卡片里;
 //  · 版本太旧:这台电脑当场替它更新(照 VS Code Remote-SSH),卡片说「正在更新」,升完自动连上、卡片收起;
 //    没更新成就说没成,句子里一段「重试」;老到没法自动更新的,给出在那台机器上重装的那一行命令;
@@ -44,14 +44,13 @@ export function SshLinkSignIn() {
   const { translate } = useSessionMessages()
   const { devices } = useDevicesStore()
   const { toast } = useToast()
-  const [problems, setProblems] = useState<ReadonlyMap<string, SshLinkFailure>>(() => new Map())
+  const problems = useSshLinkProblems()
   const [dismissed, setDismissed] = useState<ReadonlyMap<string, SshLinkFailure>>(() => new Map())
   const [signingIn, setSigningIn] = useState<string | null>(null)
   const [prompt, setPrompt] = useState<{ deviceId: string; prompt: SshPrompt } | null>(null)
   const [answered, setAnswered] = useState(false)
   const [confirmRestart, setConfirmRestart] = useState<{ deviceId: string; busyAgents?: number | null } | null>(null)
 
-  useEffect(() => subscribeSshLinkProblems(setProblems), [])
   useEffect(() => subscribeSshUpgradeEvents(event => {
     if (event.phase !== 'unconfirmed') return
     toast(t('devices.update.restartUnconfirmed', {
@@ -88,7 +87,11 @@ export function SshLinkSignIn() {
     ? { deviceId: signingMachine.device_id, name: signingMachine.label, reason: 'signInRequired' }
     : (notice ?? (tunnelWaiting ? { deviceId: tunnelWaiting.device_id, name: tunnelWaiting.label, reason: 'waitingIdle' } : null))
   if (confirmRestart && (shown?.reason !== 'waitingIdle' || shown.deviceId !== confirmRestart.deviceId)) setConfirmRestart(null)
-  if (!shown) return null
+  useNotice('ssh-link', shown && card(shown))
+  return null
+
+  // The card for the machine shown: one persistent notice (the banner slot), its controls kept in this component's state.
+  function card(shown: SshLinkNotice): Omit<Notice, 'key'> {
   const tunnelUpdate = !notice ? tunnelWaiting?.capabilities.server_update : undefined
   const confirmableUpdate = tunnelUpdate?.state === 'ready' && tunnelWaiting
     && canRestartServerUpdate(tunnelUpdate, tunnelWaiting.capabilities) ? tunnelUpdate : null
@@ -128,16 +131,18 @@ export function SshLinkSignIn() {
   const canSignIn = shown.reason === 'signInRequired' || shown.reason === 'hostKeyChanged'
   const reinstall = shown.reason === 'outdated' ? sshReinstallCommand(shown.deviceId) : null
 
-  return (
-    <div
-      className={`pointer-events-none fixed inset-x-0 top-[calc(var(--titlebar-actions-lane)+8px)] z-[var(--z-toast)] flex justify-center px-4`}
-      data-testid="ssh-link-sign-in"
-    >
-      <div className="pointer-events-auto w-full max-w-[440px] overflow-hidden rounded-[var(--radius-xl)] bg-[var(--bg-elevated)] text-foreground shadow-lift">
+  // 关闭钮:在提问就是取消这次提问;在连就只收起「连接中」(有提问来会再出现);其余 = 这台这种原因不再出现(waitingIdle 即「稍后」)。
+  const close = () => {
+    if (activePrompt) answerSshSignInPrompt({ deviceId: shown.deviceId, promptId: activePrompt.id, value: null })
+    else if (signingIn) setSigningIn(null)
+    else dismiss()
+  }
+  // 机器名是这条横幅的标题(带服务器图标),下面平铺那一句和按钮 —— ❌ 横幅里再套一张卡。
+  return { ongoing: true, onDismiss: close, title: shown.name, icon: <Server size={16} />, description: (
+      <div data-testid="ssh-link-sign-in">
         {shown.reason === 'waitingIdle' && !activePrompt ? (
           // 版本对不上、那台机器在等 agent 空闲:与 SSH 提问同一副卡(机器名一行 + 一句 + 底行按钮),「现在」先当面确认一次。
           <SshPromptFrame
-            context={{ name: shown.name }}
             testId={confirmRestart?.deviceId === shown.deviceId ? 'ssh-link-update-confirm' : 'ssh-link-update-ask'}
             actions={
               confirmRestart?.deviceId === shown.deviceId ? (
@@ -166,7 +171,6 @@ export function SshLinkSignIn() {
             prompt={activePrompt}
             pending={answered}
             variant="floating"
-            context={{ name: shown.name }}
             cancellable
             onAnswer={(value, extra) => {
               if (value !== null) setAnswered(true)
@@ -179,8 +183,8 @@ export function SshLinkSignIn() {
             }}
           />
         ) : (
-          <div className="flex items-start gap-2 px-4 py-3">
-            <p className="min-w-0 flex-1 text-[length:var(--font-body)] leading-[1.5]">
+          <div>
+            <p className="m-0 min-w-0 flex-1 text-[length:var(--font-body)] leading-[1.5]">
               {signingIn || shown.reason === 'updating' ? (
                 <span className="inline-flex items-center gap-2 text-muted-foreground" data-testid="ssh-link-busy">
                   <LoadingIndicator size="inline" />
@@ -213,14 +217,9 @@ export function SshLinkSignIn() {
                 </>
               )}
             </p>
-            {!signingIn ? (
-              <IconButton aria-label={t('devices.link.dismiss')} size="sm" onClick={dismiss}>
-                <X />
-              </IconButton>
-            ) : null}
           </div>
         )}
       </div>
-    </div>
-  )
+    ) }
+  }
 }

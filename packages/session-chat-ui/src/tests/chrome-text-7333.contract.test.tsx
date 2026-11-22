@@ -10,7 +10,6 @@
 import { ROW_H } from '@session-chat/components/engine/row-metrics'
 import { mermaidError, mermaidPlaceholder } from '@session-chat/components/rows/markdown/mermaid/mermaid.css'
 import { FILE_ROW } from '@gugu/session-shared/file-row'
-import { FILE_MARKS } from '@gugu/session-shared/file-marks'
 import { messageUnitDef } from '@session-chat/components/rows/message/message.def'
 import { toolUnitDef } from '@session-chat/components/rows/tools/tool/tool.def'
 import { DETAIL_PAD_Y } from '@session-chat/components/rows/turn-outcome/turn-outcome.css'
@@ -20,7 +19,6 @@ import { turnOutcomeDetailId } from '@session-chat/state/flatten'
 import { describe, expect, it } from 'vitest'
 import { makeContractCtx, renderAndMeasureUnit } from './contract'
 
-const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML
 
 const COMPACT = { size: 14, leading: 20 } as const
 const CAPTION = { size: 12, leading: 18 } as const
@@ -154,14 +152,14 @@ describe('the small marks in the caption tier (#7333 chrome)', () => {
       readSlot(read, 'name', name, box)
       readSlot(read, 'type', row.querySelector('.gg-file-row-detail'), box)
       if (name) { read.cut = name.scrollWidth > name.clientWidth ? 1 : 0; read.nameWeight = Number(getComputedStyle(name).fontWeight) }
-      read.pdfGlyph = row.querySelector('.gg-file-row-icon svg')?.innerHTML === drawn(FILE_MARKS.pdf.glyph) ? 1 : 0
+      read.pdfGlyph = row.querySelector('.gg-file-row-icon svg')?.getAttribute('data-file-icon') === 'pdf' ? 1 : 0
       return read
     })
     const read = reading.inspected
     expect(read.chip, 'the attachment row did not render').toBe(1)
     expectTier(read, 'name', { size: FILE_ROW.nameSize, leading: FILE_ROW.nameLine })
     expect(read.nameWeight).toBe(600)
-    expect(read.pdfGlyph, 'the row draws the pdf family glyph from the shared table').toBe(1)
+    expect(read.pdfGlyph, 'the row draws the pdf icon from the shared set').toBe(1)
     expectTier(read, 'type', { size: FILE_ROW.detailSize, leading: FILE_ROW.detailLine })
     expect(read.chipHeight).toBe(FILE_ROW.height)
     expect(read.chipWidth, 'the row is fixed-width, not as wide as its name').toBe(FILE_ROW.width)

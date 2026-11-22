@@ -55,6 +55,7 @@ const vm = {
   lastInstallError: null,
   lastUpdateError: null,
   lastInstallSucceededAt: null,
+  statusFailure: null as Error | null,
   installingMethod: undefined,
   installingRegistry: undefined,
   updatingMethod: undefined,
@@ -72,7 +73,7 @@ const vm = {
 
 vi.mock('@renderer/lib/stores/use-agent-installation-statuses', () => ({
   useAgentInstallationStatus: () => vm,
-  useInstallSourceVersions: () => ({ data: undefined, isPending: false }),
+  useInstallSourceVersions: () => ({ state: 'value', value: undefined, stale: false, error: null }),
 }))
 
 const { InstallSection } = await import('@renderer/features/settings/agents-page/InstallSection')
@@ -98,6 +99,7 @@ beforeEach(() => {
 afterEach(() => {
   root.unmount()
   host.remove()
+  vm.statusFailure = null
   installations.length = 0
   setUsedCalls.length = 0
 })
@@ -244,4 +246,11 @@ it('面板开着时把咕咕那份卸掉:「在用」落回本机找到的,不�
 
   // 重绘是异步的 —— 用会重试的断言等它落定。
   await until('source falls back to the local copy', () => page.getByRole('combobox', { name: 'Source', exact: true }).query()?.textContent?.includes('Installed on this computer') === true)
+})
+
+it('读到过的安装情况再读没成:照旧画着,旁边说一句、带重试(❌ 上次的当成现在的)', async () => {
+  vm.statusFailure = new Error('machine gone')
+  mount()
+  await until('the failure is said', () => host.querySelector('[data-refresh-failed]') != null)
+  expect(host.querySelector('[data-refresh-failed] button')).not.toBeNull()
 })

@@ -11,7 +11,12 @@ import { LoginPage } from '../../../apps/desktop/src/pages/LoginPage'
 import { authService } from '../../../apps/desktop/src/lib/auth'
 import { clickElement, contact, createReactHarness, renderWithAppProviders, typeInto } from '../../support/testHarness'
 
+import { contactsService } from '../../../apps/desktop/src/lib/contacts'
 vi.mock('../../../apps/desktop/src/lib/chat', () => import('../../support/contactsChatServiceTestDouble'))
+// The contacts read files the identities in the account's IM library: none is opened in this test.
+vi.mock('../../../apps/desktop/src/lib/imRepository', async (original) => ({
+  ...await original<object>(), openedImRepository: async () => ({ putIdentities: async () => undefined }),
+}))
 vi.mock('../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../support/agentDisplayStatusTestDouble'))
 vi.mock('../../../apps/desktop/src/lib/auth', () => ({ authService: { requestLoginOtp: vi.fn(), verifyLoginOtp: vi.fn() } }))
 // The IME contract uses real fields and submission; browser-only brand animation is covered in native-window acceptance.
@@ -36,7 +41,7 @@ it('contact search keeps its filtered results and query while dismissing an Ente
   function Page() {
     const [query, setQuery] = useState('')
     return <ContactSearch query={query} onQuery={setQuery} mobile head={button => <header>{button}</header>}
-      people={providers.contacts.contacts} agents={[]} groups={[]} onOpenContact={vi.fn()} onOpenGroup={vi.fn()} onLookupNumber={vi.fn()}><div>Browse</div></ContactSearch>
+      people={providers.contacts.contacts} agents={[]} groups={[]} onOpenContact={vi.fn()} onOpenGroup={vi.fn()} onSearchEveryone={vi.fn()}><div>Browse</div></ContactSearch>
   }
   await renderWithAppProviders(h, <Owner><Page /></Owner>, { ...providers, shellTab: 'contacts' })
   await clickElement(h.container.querySelector('[data-header-search-open]')!)
@@ -48,6 +53,8 @@ it('contact search keeps its filtered results and query while dismissing an Ente
 })
 it('group creation still selects a searched member with Enter and creates the selected group', async () => {
   const create = vi.fn().mockResolvedValue('new-group'), created = vi.fn()
+  // The picker reads the contacts again when it opens: answered as the context holds them.
+  vi.spyOn(contactsService, 'getContacts').mockResolvedValue(providers.contacts.contacts)
   await renderWithAppProviders(h, <Owner><CreateGroupChatForm onClose={vi.fn()} onCreated={created} /></Owner>, { ...providers, chat: { chats: [], createGroupChat: create } })
   const input = h.container.querySelector<HTMLInputElement>('input[type=search]')!
   await typeInto(input, 'Alice'); await enter(input)

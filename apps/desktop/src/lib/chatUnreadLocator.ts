@@ -61,7 +61,8 @@ export async function markChatsReadAndRefresh(deps: {
       if (seq === undefined || manuallyUnread.has(chatId) || Number(row.message_seq) > seq) return
       const rootId = typeof row.thread_root_id === 'string' ? row.thread_root_id : null
       try {
-        await intent.run(chatId, () => writeRead(cloudReadTarget(chatId, rootId, seq)))
+        // The list is read again from the server below: wait for its answer (the write itself retries if it failed).
+        await intent.run(chatId, () => writeRead(cloudReadTarget(chatId, rootId, seq), { answered: true }))
       } catch (err) {
         failedChatIds.add(chatId)
         failure ??= err

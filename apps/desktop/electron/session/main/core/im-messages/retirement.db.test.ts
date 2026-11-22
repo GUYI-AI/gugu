@@ -119,7 +119,7 @@ describe('permanent native IM retirement', () => {
     expect(store.windows(B, ['chat'], 10)).toHaveLength(1)
   })
   it('upgrades the previous installed schema without changing existing rows or migration receipts', async () => {
-    fixture = await openFixture('empty', { through: '0053_personal_conversation_history' })
+    fixture = await openFixture('empty', { through: '0055_drop_session_turns' })
     const sql = fixture.sqlite
     sql.prepare("INSERT INTO im_messages(account_id,id,chat_id,seq,created_at,content_type,content,is_whisper,to_user_ids,rest) VALUES(?,?,?,1,'2026-11-02T00:00:00Z','text','kept',0,'[]','{}')").run(A,'kept','chat')
     sql.prepare('INSERT INTO im_message_accounts VALUES(?,?)').run(A,'19')
@@ -132,7 +132,7 @@ describe('permanent native IM retirement', () => {
     expect(createImMessageStore(sql).throughRevision(A)).toBe('19')
     await initializeDatabase(sql)
     expect(sql.prepare('SELECT * FROM __drizzle_migrations').all()).toHaveLength(oldLedger.length+1)
-    expect(bundledMigrations().at(-1)?.tag).toBe('0054_retired_message_accounts')
+    expect(bundledMigrations().at(-1)?.tag).toBe('0056_retired_message_accounts')
     expect(sql.pragma('foreign_key_check')).toEqual([])
   })
   it('refuses an unmigrated connection instead of silently disabling the permanent fence', async () => {

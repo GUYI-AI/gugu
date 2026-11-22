@@ -228,11 +228,13 @@ describe('a summary this reader cannot see past is caught up to once', () => {
   // row): the refresh brings nothing newer, and the same summary must not refresh the line again.
   it('refreshes once for a newer summary, however often the source line repeats it', async () => {
     const first = message({ id: 't1', chat_id: 'topic-1', seq: 1, created_at: '2026-09-18T00:00:00.000Z' })
-    listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: first.created_at })])
+    // The open line's chat row makes this reader a member; the topic summary agrees (a disagreement is a revocation
+    // in the message store, which drops the line).
+    listTopicsOfChat.mockResolvedValue([topic({ is_participant: true, last_message_at: first.created_at })])
     getMessages.mockResolvedValue([first])
     await openSplit(true)
     const reads = getMessages.mock.calls.length
-    listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: '2026-09-18T00:05:00.000Z' })])
+    listTopicsOfChat.mockResolvedValue([topic({ is_participant: true, last_message_at: '2026-09-18T00:05:00.000Z' })])
     for (let i = 0; i < 3; i++) {
       await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
       await act(async () => { await vi.dynamicImportSettled() })
@@ -245,11 +247,11 @@ describe('#6010 摘要参与人数随来源线的失效通知更新', () => {
   it('非参与者也重读人数；加入、退出不依赖话题新消息，其他来源线不影响它', async () => {
     listTopicsOfChat.mockResolvedValue([topic({ participant_count: 1, is_participant: false })])
     await mount()
-    expect(surface?.anchorsByMessageId.get('msg-1')?.[0]?.participant_count).toBe(1)
+    expect(surface?.anchorsByMessageId?.get('msg-1')?.[0]?.participant_count).toBe(1)
     for (const count of [2, 1]) {
       listTopicsOfChat.mockResolvedValue([topic({ participant_count: count, is_participant: false })])
       await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
-      expect(surface?.anchorsByMessageId.get('msg-1')?.[0]?.participant_count).toBe(count)
+      expect(surface?.anchorsByMessageId?.get('msg-1')?.[0]?.participant_count).toBe(count)
       expect(surface?.topics[0]?.is_participant).toBe(false)
     }
     expect(listTopicsOfChat).toHaveBeenCalledTimes(3)

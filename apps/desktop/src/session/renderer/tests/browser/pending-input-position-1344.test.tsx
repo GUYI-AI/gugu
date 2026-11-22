@@ -15,8 +15,11 @@ import type { LifeView } from '@shared/core/sessions/session-life';
 import { i18n } from '@/i18n';
 import { registerSessionLocaleResources } from '@renderer/localization/locale-store';
 import { nativeComposerAppearance, nativeChatAppearance } from '@renderer/lib/chat/native-chat-appearance.css';
-import { SessionInputOutbox, openSessionInputStorage, type SessionInput } from '@/lib/sessionInputOutbox';
-import { state as outboxState, changed, releaseQueuedSessionInput, subscribeSessionInputs } from '@/lib/sessionInputOutboxBridge';
+import type { SessionInput } from '@/lib/sessionInput';
+import { openOutboxStorage } from '@/lib/outbox/storage';
+import type { OutboxStorage } from '@/lib/outbox/core';
+import { installSessionInputOutbox } from '../../../../../../../tests/helpers/sessionInputOutbox';
+import { state as outboxState, releaseQueuedSessionInput, retrySessionInputs, subscribeSessionInputs } from '@/lib/outbox/kinds/sessionInput';
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue';
 import { isTranscriptDelivery } from '@/lib/pendingSessionDeliveries';
 import { sessionLifeView } from '@renderer/features/sessions/stores/session-life-views';
@@ -46,6 +49,7 @@ Object.defineProperty(window, 'electronAPI', { configurable: true, value: {
   eventSend() {}, getPathForFile: () => '',
 } });
 const { AcpChatStore } = await import('@renderer/features/sessions/acp/acp-chat-store');
+const { hostTimeline } = await import('@renderer/features/sessions/acp/acp-chat-store.test-host');
 
 function replica<T>(initial: T) {
   const box = observable.box(initial, { deep: false });
@@ -77,7 +81,11 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
   const received: SessionInput[] = [];
   let life: LifeView = { sessionId, version: 1, kind: 'ready', stage: null, hold: null, failure: null,
     lastExit: null, nativeSession: null, pending: { count: 0, items: [] } };
+  // The page's committed turns are the session's timeline, as this computer's host serves and pushes it.
+  const timeline = hostTimeline();
   hostRpc.eventOn.mockImplementation((channel: string, cb: (data: unknown) => void) => {
+    const followed = timeline.eventOn(channel, cb);
+    if (followed) return followed;
     const set = events.get(channel) ?? new Set(); events.set(channel, set); set.add(cb); return () => { set.delete(cb); };
   });
   hostRpc.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
@@ -89,7 +97,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
       return new Promise(resolve => held.push({ input, accept: () => resolve({ ok: true, value: { accepted: 'queued', clientMessageId: request.clientMessageId } }) }));
     }
     if (channel === 'integrations.list') return [];
-    return [];
+    return timeline.invoke(channel) ?? [];
   });
 
   const busy = name.startsWith('B-');
@@ -117,38 +125,36 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
   cleanup.push(() => store.dispose());
   const internals = store as unknown as { session: unknown; _subscribeLiveSession(session: unknown): void; _drawLifeHead(view: LifeView | null): void };
   runInAction(() => { internals.session = session; store.historyLoading = false; });
+  const opening = store as unknown as { _historyGeneration: number; _openHistory(generation: number): Promise<void> };
+  await opening._openHistory(opening._historyGeneration);
   internals._subscribeLiveSession(session);
 
   let current = true;
   const own = outboxState();
-  const durable = await openSessionInputStorage();
+  const durable = openOutboxStorage();
   let releasePersistence!: () => void;
   const persistenceGate = new Promise<void>(resolve => { releasePersistence = resolve; });
   if (name !== 'B-durable-first-frame') releasePersistence();
-  const storage = { ...durable, put: async (input: SessionInput) => { await persistenceGate; await durable.put(input); } };
+  // The real outbox over the real IndexedDB table; a gated disk shows nothing is drawn before it is durable.
+  const storage: OutboxStorage = { ...durable, write: async (...args) => { await persistenceGate; await durable.write(...args); } };
   const accountId = `frames-account-${crypto.randomUUID()}`;
-  let refresh: Promise<void> = Promise.resolve();
-  let refreshRevision = 0;
-  const publishRows = (persisted?: readonly SessionInput[]) => {
-    const revision = ++refreshRevision;
-    refresh = (async () => { const rows = persisted ?? await queue.list(); if (!current || revision !== refreshRevision) return; own.rows = rows; changed(); })();
-  };
-  const queue = new SessionInputOutbox(accountId, storage, async input => {
+  const installed = installSessionInputOutbox({ accountId, storage, valid: () => current, send: async input => {
     received.push(input);
     // Transport boundary only: held composer entries must never reach this callback.
     const result = await rpcOn(input.deviceId).sessionTimeline.sessionSend({ conversationId: input.sessionId,
       text: input.text, clientMessageId: input.id });
     if (!result.ok) throw new Error(result.error.message);
     if (result.value.clientMessageId !== input.id) throw new Error('Unexpected host input receipt');
-  }, () => current, publishRows);
-  own.accountId = accountId; own.queue = Promise.resolve(queue); own.rows = []; own.valid = () => current;
+  } });
+  /** What used to be a flush: everything waiting goes now. */
+  const kick = async () => { await retrySessionInputs(); await new Promise(resolve => setTimeout(resolve, 0)); };
   cleanup.push(async () => {
     current = false;
     releasePersistence();
     for (const pending of held.splice(0)) pending.accept();
-    await queue.flush();
-    for (const row of await queue.list()) await storage.remove(accountId, row.id);
-    own.rows = []; own.queue = null; own.valid = () => false; changed();
+    const ids = installed.outbox.items().map(item => item.id);
+    installed.dispose();
+    await durable.write(accountId, [], ids);
   });
   // Exact production bootstrap observation wiring, without _open (runtime/network bootstrap is outside this component fixture).
   cleanup.push(reaction(() => [sessionLifeView(sessionId), store.transcriptRevision, store.historyLoading] as const,
@@ -253,7 +259,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
       releasePersistence();
     }
     await until('production outbox persists the input', () => own.rows.some(row => row.sessionId === sessionId));
-    q = own.rows[0]; await refresh;
+    q = own.rows[0];
     if (!busy) await until('ordinary input reaches host RPC', () => received.length === 1);
     await paint('sender-enqueued');
   }
@@ -297,6 +303,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
     await send(); await lifeRow('accepted'); await accept();
     await nativeQ('previous-same', 'previous-same:user');
     historyTurns = [{ ...session.activeTurn.current()!, endedAt: Date.now(), outcome: { kind: 'done' } }];
+    timeline.show(historyTurns);
     eventLabel = 'first-turn-commit-inject';
     session.activeTurn.set(null); session.sessionState.set(readyState);
     await until('first real input is committed history', () => store.chatState.transcript.state.committedTurns.some(turn => turn.id === firstSame.id));
@@ -304,7 +311,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
     life = { ...life, version: life.version + 1, pending: { count: 0, items: [] } };
     for (const [channel, listeners] of events) if (channel.includes('life')) for (const listener of listeners) listener(life);
     await paint('first-input-released');
-    await queue.flush();
+    await kick();
     trace.length = 0; received.length = 0; q = undefined; qStarted = false;
     phase = 'second-same-text-input'; nativeUserId = 'native-Q-user';
   }
@@ -326,7 +333,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
     for (const [channel, listeners] of events) if (channel.includes('life')) for (const listener of listeners) listener(life);
     await paint('unrelated-life-ready');
     if (name === 'B-life-first' || name === 'B-durable-first-frame') await activeA();
-    await queue.flush(true); await paint('automatic-retry-does-not-send');
+    await kick(); await paint('automatic-retry-does-not-send');
     const heldFrames = trace.slice(queuedFramesStart);
     expect(heldFrames.every(frame => frame.bodyQ === 0 && frame.queueQ === 1)).toBe(true);
     expect(heldFrames.every(frame => (frame.band as Array<{ rect: { y: number } }>)[0].rect.y === firstQueueRect.y)).toBe(true);
@@ -410,6 +417,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
       sentNow = true;
     }
     historyTurns = [{ ...foreground, outcome: { kind: 'done' }, endedAt: Date.now() }];
+    timeline.show(historyTurns);
     session.activeTurn.set(null); session.sessionState.set(readyState);
     await until('foreground completion is in real history', () => store.chatState.transcript.state.committedTurns.some(turn => turn.id === foreground.id));
     if (!sentNow) await releaseQueuedSessionInput(sessionId, historyTurns);

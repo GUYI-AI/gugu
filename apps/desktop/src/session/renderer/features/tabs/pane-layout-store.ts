@@ -154,6 +154,19 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   private readonly _chatToolLayout = observable.box<PopulatedChatToolLayout | undefined>(undefined);
   private readonly _chatToolDisposer?: () => void;
   private readonly _chatWorkspaceHosts = observable.box(0);
+  /**
+   * @@@leaving-panes — panes the chat workspace stopped showing that are still on screen: the view moves their cell to
+   * nothing and says when it is there (`panesLanded`). Until then they are shown — live, ❌ a picture of them.
+   */
+  private readonly _leavingPaneIds = observable.set<string>();
+  /**
+   * @@@closing-pane — a pane whose last tab was closed while a view moves the root cut: it stays, inert and out of the
+   * strip, while its cell goes to nothing, and `close` (the tab's real removal, and with it the pane's) runs when the view
+   * lands (`panesLanded`) or anything else changes the panes first. Its page is live to the end, ❌ a picture of it.
+   */
+  private readonly _closing = observable.box<{ paneId: string; close: () => void } | null>(null, { deep: false });
+  /** Views that move the root cut on a track (PaneTreeView, wide): only they say when a pane is off the screen. */
+  private readonly _motionHosts = observable.box(0);
   private _lastPersistentActivePaneId: string;
   private readonly _lastPersistentActiveTabIds = new Map<string, string | undefined>();
 
@@ -202,6 +215,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       chatWorkspaceMode: computed,
       chatWorkspacePanes: computed,
       chatWorkspaceSinglePaneId: computed,
+      panesLanded: action,
+      closingPaneId: computed,
+      attachMotion: action,
       chatWorkspaceConversationPresentation: computed,
       showChatWorkspaceConversation: action,
       attachChatWorkspace: action,
@@ -364,7 +380,48 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
   isPaneShown(paneId: string): boolean {
     const single = this.chatWorkspaceSinglePaneId;
-    return single ? single === paneId : !this.narrow || this.activePaneId === paneId;
+    return single ? single === paneId || this._leavingPaneIds.has(paneId) : !this.narrow || this.activePaneId === paneId;
+  }
+
+  /** The view's cells came to rest: panes leaving the screen are off it. */
+  panesLanded(): void {
+    this._leavingPaneIds.clear();
+    this._finishClosing();
+  }
+
+  /** The pane going off the screen after its last tab closed (@@@closing-pane). */
+  get closingPaneId(): string | undefined {
+    return this._closing.get()?.paneId;
+  }
+
+  attachMotion(): () => void {
+    this._motionHosts.set(this._motionHosts.get() + 1);
+    return action(() => {
+      this._motionHosts.set(this._motionHosts.get() - 1);
+      this._finishClosing();
+    });
+  }
+
+  private _finishClosing(): void {
+    const closing = this._closing.get();
+    this._closing.set(null);
+    closing?.close();
+  }
+
+  /** Closing `tabId` closes its pane: a child of the root cut a view moves goes off it first. */
+  private _closesPane(paneId: string, tabId: string, close: () => void): boolean {
+    this._finishClosing();
+    const group = this.groups.find((candidate) => candidate.paneId === paneId);
+    const root = this.layout;
+    const onRoot = root.type === 'split' && root.children.some((child) => child.type === 'pane' && child.paneId === paneId);
+    if (!group || !onRoot || !this._motionHosts.get() || this.narrow || this.chatWorkspaceSinglePaneId) return false;
+    if (this.groups.length <= 1 || group.pane.tabOrder.length !== 1 || group.pane.tabOrder[0] !== tabId) return false;
+    this._closing.set({ paneId, close });
+    if (this.activePaneId === paneId) {
+      const next = neighbourInOrder(this.layout, paneId, 'after') ?? neighbourInOrder(this.layout, paneId, 'before');
+      if (next) this.activePaneId = next;
+    }
+    return true;
   }
 
   attachChatWorkspace(): () => void {
@@ -381,9 +438,19 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       (tabId) => { if (tabId) this._selectChatWorkspaceTab(tabId, false); },
       { fireImmediately: true }
     );
+    // Hiding the other page (hidden, full) takes it off the screen; switching the one page on screen (full) is a page swap.
+    const stopLeaving = reaction(
+      () => this.chatWorkspaceSinglePaneId,
+      (single, was) => {
+        this._leavingPaneIds.clear();
+        if (single && !was && !this.narrow) for (const { paneId } of this.groups) if (paneId !== single) this._leavingPaneIds.add(paneId);
+      }
+    );
     this._focusChatWorkspacePage();
     return action(() => {
       stop();
+      stopLeaving();
+      this._leavingPaneIds.clear();
       this._chatWorkspaceHosts.set(this._chatWorkspaceHosts.get() - 1);
     });
   }
@@ -488,11 +555,12 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   /** The one strip, left to right: the main pane's tabs, the side pane's right after the pinned one (side in front first). */
   get stripTabIds(): string[] {
     const main = this.mainGroup.pane;
-    const side = this.sideGroup?.pane;
+    const closing = this.closingPaneId;
+    const side = this.sideGroup && this.sideGroup.paneId !== closing ? this.sideGroup.pane : undefined;
     const sideTabs = side ? [side.resolvedActiveTabId!, ...side.tabOrder.filter((id) => id !== side.resolvedActiveTabId)] : [];
     const order = main.tabOrder.flatMap((id) => id === main.resolvedActiveTabId ? [id, ...sideTabs] : [id]);
     const pair = this.pair;
-    if (!pair) return order;
+    if (!pair || closing === this.sideGroup?.paneId) return order;
     return order.filter((id) => id !== pair.side).flatMap((id) => id === pair.pinned ? [id, pair.side] : [id]);
   }
 
@@ -623,6 +691,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
    * Splitting is the user choosing to split again (clears 拆开).
    */
   splitPane(paneId: string, edge: PaneEdge, tabId?: string): boolean {
+    this._finishClosing();
     if (this.splitBlocked(paneId, tabId, edge) !== null) return false;
     const moving = tabId ?? this.focusedPane.resolvedActiveTabId!;
     const pane = this.groups.find((group) => group.paneId === paneId)!.pane;
@@ -689,6 +758,18 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       const leaving = (['pinned', 'side'] as const).filter((role) => displaced[role] !== pinned && displaced[role] !== side);
       if (entering.length === 1 && leaving.length === 1) this._displaced.set(entering[0], { tabId: displaced[leaving[0]], role: leaving[0] });
     }
+  }
+
+  /**
+   * A tab turned into another kind of page where it stands (the 「+」 page into a folder, a link to a file, Back): a page
+   * arriving there, so on screen in the pair it comes at its own width (@@@seat-side) — ❌ the width the page before it
+   * had, dragged or declared (owner 11-22: a folder opened from the 「+」 page came at the 「+」 page's width). Another
+   * page of the same kind (a chat's members, then its announcement) is still that page: a dragged width stays.
+   */
+  private _kindChanged(tabId: string): void {
+    this._sideShares.delete(tabId);
+    const pair = this._shownPair;
+    if (pair && (tabId === pair.side || tabId === pair.pinned)) this._seatShown();
   }
 
   /** A tab left for good: hand its record on; if it was on screen in the pair, bring back what it pushed out. */
@@ -789,6 +870,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   }
 
   closePane(paneId: string): void {
+    if (this._closing.get()?.paneId !== paneId) this._finishClosing();
     if (this.groups.length <= 1) return;
 
     const index = this.groups.findIndex((g) => g.paneId === paneId);
@@ -823,6 +905,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
    * Dropping the side among the tabs separates it; within the strip = reorder.
    */
   handleDragEnd(draggedTabId: string, overId: string): void {
+    this._finishClosing();
     const fromGroup = this._groupOf(draggedTabId);
     if (!fromGroup) return;
 
@@ -944,8 +1027,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
   /**
    * @@@seat-side - the one place the pair's cut gets its shares: every way a page comes to the side (opened, pushed out
-   * and back, its tab brought to the front, a tool group dropped on an edge, a restart, the divider let go or
-   * double-clicked) ends here, so no path can give a page another page's width (pane-side-width.test.ts walks each one).
+   * and back, its tab brought to the front, its tab turned into it in place, a tool group dropped on an edge, a restart,
+   * the divider let go or double-clicked) ends here, so no path can give a page another page's width
+   * (pane-side-width.test.ts walks each one).
    * Left as it is (the same object) when it is already there.
    */
   private _seatSide(pinned: string, side: string, extent = this._pairExtent()): void {
@@ -1005,6 +1089,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
    * otherwise a tab in the strip. Already open = that tab is shown, never a second one.
    */
   private _openFrom(kind: string, state: unknown, config: TabOpenOptions): string | undefined {
+    this._finishClosing();
     const panes = [...this.groups, ...this.windowPanes.values()];
     const source = typeof config.from === 'string'
       ? panes.find((group) => group.pane.entries.has(config.from!))
@@ -1263,6 +1348,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       layoutOpener: (kind, args, config) => this.open(kind, args, config),
       isViewActive: () => this._isViewActiveBox.get() && this.isPaneShown(paneId),
       layoutSplitter: {
+        closesPane: action((tabId: string, close: () => void) => this._closesPane(paneId, tabId, close)),
         tabClosing: (entry) => {
           const pair = this.pair;
           const paired = pair && (entry.tabId === pair.pinned || entry.tabId === pair.side);
@@ -1270,6 +1356,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
         },
         // Closing the pinned page = the side fills (closing the side closes its pane): 关掉一页 ≠ 拆开.
         tabRemoved: (tabId, wasActive, after) => this._tabRemoved(paneId, tabId, wasActive, after),
+        kindChanged: action((tabId: string) => this._kindChanged(tabId)),
         // Selecting a tab is explicit focus movement; opening a page uses _openFrom instead.
         activating: (tabId) => {
           if (this._selectChatWorkspaceTab(tabId)) return true;

@@ -107,6 +107,8 @@ describe('catalog_*: 渐进披露 (#6614)', () => {
       ...SCHEDULE_TOOL_DEFS.map((def) => def.name),
       ...EXTENSION_TOOL_DEFS.map((def) => def.name),
       'guide_read', 'catalog_list', 'catalog_call', 'app_search', 'widget_send', 'widget_get',
+      // The person's saved logins, on every tier: in the catalog.
+      'password_credentials', 'password_fill', 'password_save',
     ]
     for (const name of listed) expect(GUGU_LISTED_TOOLS.has(name), name).toBe(true)
     for (const name of catalog) expect(GUGU_LISTED_TOOLS.has(name), name).toBe(false)

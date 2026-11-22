@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react'
 import type { PasswordSyncRequest, PasswordSyncView, PasswordUiCommand, PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
-import { publishPasswordSnapshot } from '@/lib/passwordBetaNotifications'
+import { passwordVault } from '@/lib/passwordBetaNotifications'
 import { i18n } from '@/i18n'
 import '@/i18n/registerSettingsCatalog'
 
@@ -14,7 +14,6 @@ export const passwordErrorText = (code: string) => i18n.t(`passwords.errors.${ER
 export const promptedRequests = (sync?: PasswordSyncView): PasswordSyncRequest[] =>
   sync?.state === 'ready' ? sync.requests.filter(request => request.stage !== 'elsewhere') : []
 /** This device waits for another one to let it use the passwords. */
-export const waitingToJoin = (sync?: PasswordSyncView) => sync?.state === 'joining' || sync?.state === 'blocked'
 
 type Reply = Extract<PasswordUiReply, { ok: true }>
 /** One vault command with its busy flag and error line; the reply's snapshot reaches every surface. */
@@ -24,12 +23,15 @@ export function usePasswordCommand() {
   const run = useCallback(async (command: PasswordUiCommand): Promise<Reply | undefined> => {
     setBusy(true)
     try {
+      // Bound before the vault answers: a reply that lands after the account changed is not put into the next one.
+      const vault = passwordVault.at()
       const reply = await window.passwordVaultBeta?.invoke(command)
       if (!reply?.ok) { setError(passwordErrorText(reply?.code ?? '')); return undefined }
-      publishPasswordSnapshot(reply.snapshot); setError('')
+      vault.set(reply.snapshot); setError('')
       return reply
     } catch { setError(passwordErrorText('')); return undefined }
     finally { setBusy(false) }
   }, [])
-  return { busy, error, run, clear: () => setError('') }
+  const clear = useCallback(() => setError(''), [])
+  return { busy, error, run, clear }
 }

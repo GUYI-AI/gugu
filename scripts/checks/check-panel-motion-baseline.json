@@ -1,0 +1,55 @@
+{
+  "_doc": "check-panel-motion.mjs: what is not on PanelTrack yet, each with its reason. Only shrinks.",
+  "layoutTransitions": {
+    "apps/desktop/src/components/assistant-ui/elements/surfaces.tsx": {
+      "count": 2,
+      "reason": "in-panel disclosure height and the tool-row width reveal (I2): motion inside a row, not a panel"
+    },
+    "apps/desktop/src/components/ui/Collapse.tsx": {
+      "count": 1,
+      "reason": "in-panel disclosure (grid-template-rows); vertical disclosures are out of scope (owner 11-21)"
+    },
+    "apps/desktop/src/session/app-runtime/ui/ui.css": {
+      "count": 1,
+      "reason": "a native progress bar's value width: the browser lays it out, it cannot be a transform"
+    },
+    "apps/desktop/src/session/renderer/features/assistant/voice-notes/voice-notes.css": {
+      "count": 1,
+      "reason": "voice level meter bars (3 px wide) easing their height: a leaf inside the recording bar, shared with the phone"
+    },
+    "apps/desktop/src/session/renderer/features/automations/components/CreateAutomationView.tsx": {
+      "count": 1,
+      "reason": "in-panel disclosure height; vertical disclosures are out of scope (owner 11-21)"
+    },
+    "apps/desktop/src/session/renderer/features/sessions/session-config/session-view-control.tsx": {
+      "count": 1,
+      "reason": "label swap max-width inside a control (I3): motion inside a row, not a panel"
+    },
+    "apps/desktop/src/session/renderer/features/sidebar/inner-sidebar-parts.tsx": {
+      "count": 1,
+      "reason": "head-row button reveal width (I3): motion inside a row, not a panel"
+    },
+    "apps/desktop/src/session/renderer/lib/ui/assistant-ui/surfaces.tsx": {
+      "count": 2,
+      "reason": "in-panel disclosure height and the tool-row width reveal (I2): motion inside a row, not a panel"
+    },
+    "apps/desktop/src/styles/tokens.css": {
+      "count": 1,
+      "reason": "a native progress bar's value width: the browser lays it out, it cannot be a transform"
+    }
+  },
+  "motionImporters": {
+    "apps/desktop/src/components/chat/MessageBubble.tsx": "a reaction chip's pop (scale), not a panel",
+    "apps/desktop/src/components/chat/RightPanel.tsx": "phone page push; phone is out of scope (owner 11-21)",
+    "apps/desktop/src/components/chat/groupSettingsUi.tsx": "settings sub-page swap inside its panel (x / opacity, I1), not a panel's size",
+    "apps/desktop/src/main.tsx": "MotionConfig reducedMotion=\"user\" for the window, no animation",
+    "apps/desktop/src/mobile/phoneChatMotion.ts": "phone page push; phone is out of scope (owner 11-21)",
+    "apps/desktop/src/pages/LoginPage.tsx": "login page motion, not a panel",
+    "apps/desktop/src/session/renderer/embedded.tsx": "MotionConfig reducedMotion=\"user\" for the session page, no animation",
+    "apps/desktop/src/session/renderer/lib/drop-highlight.tsx": "drop-target highlight following its target, an overlay out of the flow, not a panel",
+    "apps/desktop/src/session/renderer/lib/layout/layout-provider.tsx": "motion values the track publishes (edges, progress), no animation",
+    "apps/desktop/src/session/renderer/lib/layout/panel-resize-handle.tsx": "motion values for the handles' offsets, no animation",
+    "apps/desktop/src/session/renderer/lib/layout/panel-track.ts": "the track itself",
+    "apps/desktop/src/session/renderer/lib/ui/animated-height.tsx": "in-panel disclosure height; vertical disclosures are out of scope (owner 11-21)"
+  }
+}

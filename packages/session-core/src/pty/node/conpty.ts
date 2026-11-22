@@ -22,7 +22,7 @@ export const CONPTY_SPAWN_OPTIONS = { useConptyDll: true } as const;
 /**
  * @@@conpty-worker-release (#6629) — 自带 conpty.dll 这条分支的另一笔账。
  *
- * node-pty 1.1.0 为每个 pty 起一个 worker_thread,把 conout 管道转进宿主这边的输出 socket。
+ * node-pty(1.1.0 起,1.2.0-beta.18 这段未变)为每个 pty 起一个 worker_thread,把 conout 管道转进宿主这边的输出 socket。
  * 在 useConptyDll 分支上,它只在「kill 之后又来一次输出」时才终止这个 worker(microsoft/node-pty#977),
  * 进程自己退出时从不终止。留下的 worker 只剩一个监听中的命名管道,每个 ~10 MB 提交;
  * owner 在役实例跑 23 h 攒了 102 个(活着的 ConPTY 只有 6 个)。

@@ -10,16 +10,27 @@ import type {
 import { chatDb } from './supabase'
 import { ingestMessages, readMessagePage } from './messageIngest'
 
-/** Server patches apply to canonical local rows, never a view window written back into storage. */
-export async function persistMessagePatches(userId: string, ids: string[], patch: (row: MessageItem) => MessageItem): Promise<void> {
-  for (let i = 0; i < ids.length; i += 64) {
-    const page = await readMessagePage(userId, { ids: ids.slice(i, i + 64), limit: 64 })
-    if (page?.rows.length) await ingestMessages(userId, { writes: page.rows.map(row => ({ type: 'put', message: patch(row) })), revisions: [] })
-  }
+/** Server overlay facts land on the stored rows inside the store's write queue, merged by the store's own rules. */
+export async function persistMessagePatches(userId: string, patches: { chatId: string; id: string; fields: Partial<MessageItem> }[]): Promise<void> {
+  if (patches.length) await ingestMessages(userId, { writes: patches.map(patch => ({ type: 'patch', ...patch })), revisions: [] })
+}
+
+// @@@reaction-read-order - reactions are last-writer-wins and a change only invalidates (the revision names the message,
+// not the new value). A read that began before the latest change of a message cannot speak for that message's reactions:
+// its answer may predate the change (a removed 👍 would come back). The read started for that change lands it instead.
+// Reads go to the primary database, so a read begun after the change sees it.
+let reactionClock = 0
+let reactionReads = 0
+const reactionChangedAt = new Map<string, number>()
+
+/** A reaction of these messages changed (a revision, or this device's own toggle): earlier reads no longer speak for them. */
+export function invalidateReactions(messageIds: readonly string[]): void {
+  for (const id of messageIds) reactionChangedAt.set(id, ++reactionClock)
 }
 
 export interface MessageOverlay {
-  reactions: ReactionGroup[]
+  /** Absent: a newer read owns this message's reactions (@@@reaction-read-order). */
+  reactions?: ReactionGroup[]
   delivered: boolean
   delivery_status: MessageDeliveryStatus | null
   // @@@per-message-read (#598) - recipient user_ids with a 'read' delivery row for this message (any agent,
@@ -112,9 +123,9 @@ export async function loadMessageAgentWakes(messageIds: string[]): Promise<Map<s
 }
 
 /** Overlay facts patch the stored rows where they arrive. */
-export async function loadMessageOverlays(messageIds: string[], userId: string): Promise<Map<string, MessageOverlay>> {
-  const overlays = await fetchMessageOverlays(messageIds, userId)
-  await persistMessagePatches(userId, messageIds, row => ({ ...row, ...overlays.get(row.id) }))
+export async function loadMessageOverlays(messages: readonly Pick<MessageItem, 'id' | 'chat_id'>[], userId: string): Promise<Map<string, MessageOverlay>> {
+  const overlays = await fetchMessageOverlays(messages.map(message => message.id), userId)
+  await persistMessagePatches(userId, messages.map(message => ({ chatId: message.chat_id, id: message.id, fields: { ...overlays.get(message.id) } })))
   return overlays
 }
 
@@ -123,6 +134,19 @@ async function fetchMessageOverlays(
   userId: string
 ): Promise<Map<string, MessageOverlay>> {
   if (messageIds.length === 0) return new Map()
+  const startedAt = reactionClock
+  reactionReads += 1
+  try {
+    const overlays = await readMessageOverlays(messageIds, userId)
+    for (const [id, overlay] of overlays) if ((reactionChangedAt.get(id) ?? 0) > startedAt) delete overlay.reactions
+    return overlays
+  } finally {
+    // With no read in flight no start can predate a recorded change; the table only ever spans live reads.
+    if (--reactionReads === 0) reactionChangedAt.clear()
+  }
+}
+
+async function readMessageOverlays(messageIds: string[], userId: string): Promise<Map<string, MessageOverlay>> {
   const [reactions, deliveries, blocks] = await Promise.all([
     fetchOverlayRows<MessageOverlayRows['reactions'][number]>(
       'message_reactions', 'message_id, user_id, emoji', messageIds,
@@ -235,10 +259,7 @@ async function loadWindowBodyMutations(
 }
 
 export async function applyMessageOverlays(items: MessageItem[], userId: string): Promise<MessageItem[]> {
-  const overlays = await loadMessageOverlays(
-    items.map((m) => m.id),
-    userId
-  )
+  const overlays = await loadMessageOverlays(items, userId)
   return items.map((m) => ({
     ...m,
     ...(overlays.get(m.id) ?? { reactions: [], delivered: false, delivery_status: null, readers: [] }),

@@ -24,12 +24,11 @@ import { getHostIpc } from '@main/lib/host-ipc';
 import { appScope } from '@main/app/app-scope';
 import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context';
 import { setProviderSessionId } from '@main/core/sessions/set-session-id';
-import { withStoredTurns, storedRevertBoundary, truncateStoredHistory } from '@main/core/sessions/session-turn-store';
-import { connectWindowCommitHost } from '../../session-timeline/window-commit-host';
-import { prepareWindowCommitStorage } from '../../session-timeline/window-projection-production';
+import { committedTurnsObserved, forgetRevertedTurns, observeCommittedTurn } from '@main/core/sessions/committed-turn-observer';
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
 import { publishNativeMessagePreviewChanged } from '../../session-timeline/native-preview-events';
 import { createHistoryReverter } from './history-revert';
+import { journalCommittedTurn, revertJournal } from '@main/core/sessions/session-journal';
 import { connectNativePromptPreparation } from './native-prompt-preparation';
 import { applyStartToAuthExpiry, applyTurnToAuthExpiry, type AuthExpiryWriter } from '@main/core/agent-config/auth-expiry-from-turns';
 import { clearProviderSessionMissing, markProviderSessionMissing } from '@main/core/sessions/mark-provider-session-missing';
@@ -63,7 +62,9 @@ import { log } from '@main/lib/logger';
 import { pushIdleCompactionSetting } from '../idle-compaction-setting';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
+import { harnessWorkerHost } from '@main/harness-worker-host';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
+import { withSessionBrowserEnv } from '../../pty/server-browser-env';
 import { cancelExtensionSessionCalls } from '@main/core/extensions/extension-program-access';
 
 export { mergeTrustedSessionMeta, stripUntrustedSessionAuthority } from './session-meta';
@@ -247,6 +248,7 @@ const acpWorker = lazyWorker(
       name: 'acp',
       contract: acpRuntimeApiContract,
       entry: desktopWorkerPath('acp'),
+      host: harnessWorkerHost,
       scope: acpRuntimeScope,
       env: {
         ...process.env,
@@ -278,15 +280,16 @@ const acpWorker = lazyWorker(
           },
         })
       );
-      // #5381 会话历史落盘。运行时那份 transcript 只活在内存里,进程一走就没了,而重放能不能
-      // 把它补回来取决于 provider —— 所以历史在这里落进库,界面重开时直接读库。
-      // 写失败**不许**冒到运行时:那会把一次写盘失败升级成会话起不来,而丢一条历史远没有那么严重。
-      const committed = await connectWindowCommitHost(handle.client.turnCommitted.handle(undefined), event => {
-        // #6264 Keep authentication authority independent of bounded history publication.
-        void applyTurnToAuthExpiry(event, authExpiryWriter);
-      }, handle.connection, prepareWindowCommitStorage);
-      handle.scope.add(() => committed.close());
-      const conversationPreviews = openNativeConversationPreviews(sessionId => withStoredTurns(sessionId, async () => undefined));
+      // A committed turn: what it means beyond the history (`observeCommittedTurn`), and the journal for what no record
+      // holds. A failure here never reaches the runtime: a lost side effect must not stop the session.
+      handle.scope.add(await handle.client.turnCommitted.subscribe(undefined, {
+        onEvent: event => {
+          void observeCommittedTurn(event).catch(error => log.error('Committed turn: its effects failed', { sessionId: event.sessionId, error }));
+          void applyTurnToAuthExpiry(event, authExpiryWriter);
+          journalCommittedTurn(event);
+        },
+      }));
+      const conversationPreviews = openNativeConversationPreviews(committedTurnsObserved);
       handle.scope.add(await handle.client.messagePreviewChanged.subscribe(undefined, {
         onEvent: ({ sessionId }) => publishNativeMessagePreviewChanged(sessionId),
       }));
@@ -304,7 +307,6 @@ const acpWorker = lazyWorker(
       handle.scope.add(
         handle.onRestarted(() => {
           void pushIdleCompactionSetting(handle.client as AcpRuntimeProcessClient);
-          committed.invalidate();
           conversationPreviews.reset();
           publishNativeMessagePreviewChanged();
           // A restarted worker has no surviving adapter processes or session records.
@@ -496,7 +498,8 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     },
     firstTurn: injection.firstTurn,
     mcpServers: injection.mcpServers,
-    capabilitySpawnEnv: injection.spawnEnv,
+    // #6264 咕咕 server 上:这条会话的 agent 打开网页,推给正看着它的桌面(server-browser-env.ts;桌面版上是空的)。
+    capabilitySpawnEnv: withSessionBrowserEnv(input.input.sessionId, injection.spawnEnv),
     capabilitySpawnArgs: injection.spawnArgs,
     sessionPrompt: injection.sessionPrompt,
     sessionMeta: injection.sessionMeta,
@@ -715,9 +718,13 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
       return client.cancelTurn(input, meta);
     },
     revertSession: createHistoryReverter({
-      boundary: storedRevertBoundary,
+      // The session-timeline service reads the host's runtime: loaded when a revert asks, ❌ at host load.
+      boundary: async (sessionId, anchor) => (await import('../../session-timeline/service')).revertPointStartedAt(sessionId, anchor),
       revert: client.revertSession,
-      truncate: truncateStoredHistory,
+      truncate: async (sessionId, from, anchor) => {
+        await revertJournal(sessionId, anchor, from);
+        if (from !== null) forgetRevertedTurns(sessionId, from);
+      },
       finish: (sessionId) => detachedClient.finishHistoryRevert({ sessionId }),
     }),
     adapterProvenance: (input) => detachedClient.adapterProvenance(input),
@@ -772,7 +779,7 @@ export async function callSessionStart<T extends { success: boolean }>(
 ): Promise<T> {
   try {
     const result = await start();
-    if (!result.success) await applyStartToAuthExpiry({ providerId, sessionId, platformCredentials: credentialInjected,
+    if (!result.success) await applyStartToAuthExpiry({ providerId, sessionId, hostCredentials: credentialInjected,
       failure: 'error' in result ? result.error : undefined }, authExpiryWriter);
     if (credentialInjected && !result.success) {
       await releaseEmdashPlatformSession(sessionId);

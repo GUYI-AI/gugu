@@ -72,18 +72,6 @@ describe('overlay anchors (2a)', () => {
     expect(positioner().style.transform).toBe('translate(120px, 240px)')
   })
 
-  it('popover positioner opts out of the window drag region', async () => {
-    const { button } = buttonAt({ x: 10, y: 10 })
-    await harness.render(createElement(Popover.Root, { open: true },
-      createElement(Popover.Portal, null,
-        createElement(Popover.Positioner, { anchor: button },
-          createElement(Popover.Popup, null, 'card')))))
-    await settle()
-    const node = document.querySelector('[data-slot="popover-positioner"]')
-    expect(node?.classList.contains('window-no-drag-region')).toBe(true)
-    button.remove()
-  })
-
   it.each([
     ['更多', '.gg-menu-positioner'],
     ['表情回应', '[data-slot="popover-positioner"]:has([role="toolbar"][aria-label="快速回应"])'],

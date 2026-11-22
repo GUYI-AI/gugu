@@ -143,7 +143,11 @@ describe('#7290 a card by its message: the publisher is its sender, never the ma
   });
   const reads = (row: PackageMessageRow | null, readable = true): PackageReads & { asked: unknown[] } => {
     const asked: unknown[] = [];
-    return { asked, message: async () => row, open: async (source) => (asked.push(source), readable ? verifiedFileHandle(new Uint8Array([7])) : null) };
+    return {
+      asked,
+      message: async (_id, reader) => (asked.push(['message', reader]), row),
+      open: async (source, reader) => (asked.push([source, reader]), readable ? verifiedFileHandle(new Uint8Array([7])) : null),
+    };
   };
 
   it('a new card in the folder: its item and version, published by its sender', () => {
@@ -171,7 +175,11 @@ describe('#7290 a card by its message: the publisher is its sender, never the ma
     const found = await resolveAttachmentPackage({ messageId: 'm1' }, some);
     expect(found.publisher).toBe(ALICE); expect(found.file).toMatchObject({ purpose: 'file' });
     expect(await found.file.read(0, 1)).toEqual(new Uint8Array([7])); await found.file.dispose();
-    expect(some.asked).toEqual([{ kind: 'item', itemId: ITEM, version: 2 }]);
+    expect(some.asked).toEqual([['message', undefined], [{ kind: 'item', itemId: ITEM, version: 2 }, undefined]]);
+    // An agent's install reads the message and its bytes as that agent, both.
+    const asAgent = reads(card());
+    await (await resolveAttachmentPackage({ messageId: 'm1', reader: 'agent-1' }, asAgent)).file.dispose();
+    expect(asAgent.asked).toEqual([['message', 'agent-1'], [{ kind: 'item', itemId: ITEM, version: 2 }, 'agent-1']]);
     await expect(resolveAttachmentPackage({ messageId: 'm1' }, reads(null))).rejects.toThrow(/no message m1 you can read/);
     await expect(resolveAttachmentPackage({ messageId: 'm1' }, reads(card(), false))).rejects.toThrow(/no longer there/);
   });

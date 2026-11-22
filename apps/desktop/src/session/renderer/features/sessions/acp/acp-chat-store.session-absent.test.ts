@@ -13,14 +13,14 @@ import { setLocalePreference } from '@/i18n';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { reaction, runInAction } from 'mobx';
 import { WireError } from '@gugu/session-wire';
-import type { SessionInput } from '@/lib/sessionInputOutbox';
+import type { SessionInput } from '@/lib/sessionInput';
 import { installAcpChatStoreHost } from './acp-chat-store.test-host';
 
 const custody = vi.fn(async (..._args: unknown[]) => {});
 vi.mock('./queue-native-input', () => ({ sendThroughCustody: custody, canQueueNativeInput: () => false }));
 const reorderLocal = vi.fn(async (_sessionId: string, _ids: readonly string[]) => {});
-vi.mock('@/lib/sessionInputOutboxBridge', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@/lib/sessionInputOutboxBridge')>(),
+vi.mock('@/lib/outbox/kinds/sessionInput', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/outbox/kinds/sessionInput')>(),
   reorderQueuedSessionInputs: reorderLocal,
 }));
 
@@ -43,6 +43,13 @@ function makeStore(): InstanceType<StoreCtor> {
   seq += 1;
   const store = new AcpChatStore(`conv-3500-${seq}`, 'proj-1');
   // 这就是被测场景本身：会话对象不在。
+  store.session = null;
+  return store;
+}
+/** Only a side chat reconciles its history with its runtime; every other session draws its timeline. */
+function makeSideChat(): InstanceType<StoreCtor> {
+  seq += 1;
+  const store = new AcpChatStore(`conv-3500-${seq}`, 'proj-1', { id: `side-3500-${seq}`, forkFromProviderSessionId: 'native-parent' });
   store.session = null;
   return store;
 }
@@ -143,7 +150,7 @@ describe('#3507 会话不在时的其余副作用', () => {
   });
 
   it('history refresh fails loudly while still releasing its retained frame', async () => {
-    const store = makeStore();
+    const store = makeSideChat();
     await (
       store as unknown as {
         _refreshHistory: () => Promise<void>;
@@ -155,7 +162,7 @@ describe('#3507 会话不在时的其余副作用', () => {
   // A lost link is not a failed reconciliation: the turn stays on screen, the transcript says the connection
   // is down (reconcileAwaitingLink), and the same reconciliation runs again on the next connection.
   it('waits for the connection instead of toasting a disconnected history refresh', async () => {
-    const store = makeStore();
+    const store = makeSideChat();
     const whenConnected = vi.fn(() => new Promise<number>(() => {}));
     store.session = { getHistory: async () => { throw new WireError('DISCONNECTED', 'Wire transport disconnected'); }, whenConnected } as never;
     const before = toasts.length;
@@ -166,10 +173,11 @@ describe('#3507 会话不在时的其余副作用', () => {
   });
 
   it('history reconciliation does not erase a newer active turn', async () => {
-    const store = makeStore();
+    const store = makeSideChat();
     const oldTurn = {
       id: 'old-turn',
       seq: 0,
+      startedAt: 1,
       initiator: 'user' as const,
       items: [{ kind: 'message' as const, id: 'old-user', seq: 0, role: 'user' as const, text: 'old' }],
       outcome: { kind: 'done' as const, reason: 'end_turn' as const },
@@ -177,6 +185,7 @@ describe('#3507 会话不在时的其余副作用', () => {
     const newTurn = {
       id: 'new-turn',
       seq: 1,
+      startedAt: 2,
       initiator: 'user' as const,
       items: [{ kind: 'message' as const, id: 'new-user', seq: 0, role: 'user' as const, text: 'new' }],
     };

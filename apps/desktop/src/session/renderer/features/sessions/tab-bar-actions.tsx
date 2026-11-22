@@ -6,7 +6,10 @@ import { observer } from 'mobx-react-lite';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { useState } from 'react';
 import { TabKindMark } from '@renderer/features/extensions/extension-mark';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { retryOf, type Reading, valueOf } from '@/lib/replica';
+import { messageForUser } from '@/lib/userFacingError';
+import { Unknown } from '@/components/ui/Unknown';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
 import {
   useSessionViewContext,
@@ -72,14 +75,17 @@ const TaskAddItems = observer(function TaskAddItems() {
   const { translate } = useSessionMessages();
   const sessionView = useWorkspaceViewModel();
   const { projectId, sessionId } = useSessionViewContext();
-  const { data: agents } = useAgents();
+  // Unknown (undefined) is not evidence the provider cannot fork: startSideSession checks again (canStartSideSession).
+  const agents = valueOf(useAgents());
   const canSideSession = canStartSideSession(projectId, sessionId, agents);
   const terminalEnabled = terminalShown(useTerminalEnabled());
   const openTab = (kind: string) => sessionView.paneLayout.openBeside(kind, {});
-  const folder = installedExtensionsStore.enabledTabContributions.find((entry) => entry.kind === WORKSPACE_APP_KIND);
+  const installed = useInstalledApps(LOCAL_HOST);
+  const apps = installed.state === 'value' ? installed.value : null;
+  const folder = apps?.enabledTabContributions.find((entry) => entry.kind === WORKSPACE_APP_KIND);
   return (
     <>
-      {folder && <FolderMenuItem label={installedExtensionsStore.tabTitle(folder.kind) ?? folder.title} onOpen={() => openTab(folder.kind)} />}
+      {!apps ? <NotReadMenuItem reading={installed} /> : folder && <FolderMenuItem label={apps.tabTitle(folder.kind) ?? folder.title} onOpen={() => openTab(folder.kind)} />}
       {getSessionWorkspaceActionOrder(projectId, terminalEnabled).map((actionId) =>
         renderWorkspaceActionMenuItem(actionId, translate, {
           blocked: sessionWorkspaceActionBlocked(projectId, actionId) !== null,
@@ -110,6 +116,12 @@ function OpenAddMenuCommand({ onOpen }: { onOpen: () => void }) {
 const ChatAddItems = observer(function ChatAddItems({ chatId }: { chatId: string }) {
   return <FolderMenuItem label={useChatFolderName()} onOpen={() => openPanelItem(chatId, folderItem())} />;
 });
+
+function NotReadMenuItem({ reading }: { reading: Reading<unknown> }) {
+  const { translate } = useSessionMessages();
+  if (reading.state !== 'error') return <DropdownMenuItem disabled><Unknown className="w-24" /></DropdownMenuItem>;
+  return <DropdownMenuItem data-read-failed="" onClick={retryOf(reading)}>{messageForUser(reading.error)} · {translate('extensions.retry')}</DropdownMenuItem>;
+}
 
 /** One built-in folder entry; its context supplies the name and the page to open. */
 function FolderMenuItem({ label, onOpen }: { label: string; onOpen: () => void }) {

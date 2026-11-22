@@ -496,9 +496,13 @@ export function runBrowserPageCommand(browserId: string, command: BrowserPageCom
     case 'stop':
       page.runtime.stop();
       return true;
-    case 'focus':
-      webContents.focus();
+    case 'focus': {
+      const host = page.runtime.host;
+      // Hand focus to the page only inside the already focused window. On macOS,
+      // webContents.focus() can activate the app while a tab is opened in the background.
+      if (host && !host.isDestroyed() && host.isFocused()) webContents.focus();
       return true;
+    }
   }
 }
 

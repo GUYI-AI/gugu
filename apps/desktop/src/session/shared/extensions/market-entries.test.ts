@@ -95,7 +95,7 @@ describe('App API prompt contract', () => {
     const readers = [
       'apps/desktop/src/session/renderer/features/extensions/panel/app-version-history.tsx',
       'apps/desktop/src/session/renderer/features/extensions/panel/app-lifecycle.ts',
-      'apps/desktop/src/session/renderer/features/extensions/panel/app-market-content.tsx',
+      'apps/desktop/src/session/renderer/features/extensions/panel/market-detail-extension-devices.tsx',
       'apps/desktop/src/session/renderer/features/extensions/panel/app-product-page.tsx',
       'apps/desktop/src/components/appSlot/phoneMarket.ts',
       'apps/desktop/src/components/extensionBundle/ExtensionBundleCard.tsx',

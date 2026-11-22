@@ -1,7 +1,7 @@
 import { Globe, Server } from '@/lib/icons'
-import { PaneEmptyStateAction, type WorkspacePanelAction } from '../sessions/pane-empty-state';
+import { useShortcutTitle, type WorkspacePanelAction } from '../sessions/pane-empty-state';
+import { START_TILE_GRID, StartTile } from './browser-workspace-start-page';
 import * as styles from './browser-start-page.css';
-import { Button } from '@renderer/lib/ui/button';
 import type { ProjectsTranslate } from '@renderer/localization/messages-projects';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
@@ -15,34 +15,22 @@ export function BrowserStartPage({
   onOpenUrl: (url: string) => void;
 }) {
   const { translate } = useSessionMessages();
+  const shortcutTitle = useShortcutTitle();
   const localUrls = devServerUrls.filter(isLocalUrl);
   const order = ['review', 'terminal', 'files', 'side-session', 'browser', 'ports'];
-  const tools = actions.filter((action) => action.section !== 'extensions')
-    .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  const apps = actions.filter((action) => action.section === 'extensions');
+  const tiles = [...actions.filter((action) => action.section !== 'extensions')
+    .sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)), ...actions.filter((action) => action.section === 'extensions')];
 
   return (
     <div className={styles.startPage}>
       <div className={styles.content}>
-        {tools.length > 0 && <section className={styles.section}>
-          <h2 className={styles.heading}>{translate('browser.tools')}</h2>
-          <div className={styles.tools}>
-            {tools.map((entry) => <PaneEmptyStateAction key={entry.id}
-              className={styles.tool} icon={entry.icon} label={entry.id === 'browser' ? translate('browser.newPage') : entry.label}
-              shortcutSettingsKey={entry.shortcutSettingsKey} disabled={entry.disabled}
-              title={entry.title} onClick={entry.onClick} />)}
-          </div>
-        </section>}
-        {apps.length > 0 && <section className={styles.section}>
-          <h2 className={styles.heading}>{translate('extensions.appsSection')}</h2>
-          <div className={styles.apps}>
-            {apps.map((entry) => <Button key={entry.id} variant="ghost" className={styles.app}
-              disabled={entry.disabled} title={entry.title ?? entry.label} onClick={entry.onClick}>
-              <span className={styles.appIcon}>{entry.icon}</span>
-              <span className="w-full truncate text-center">{entry.label}</span>
-            </Button>)}
-          </div>
-        </section>}
+        {tiles.length > 0 && <div className={START_TILE_GRID}>
+          {tiles.map((entry) => {
+            const label = entry.id === 'browser' ? translate('browser.newPage') : entry.label;
+            return <StartTile key={entry.id} icon={entry.icon} label={label} disabled={entry.disabled}
+              title={shortcutTitle(entry.title ?? label, entry.shortcutSettingsKey)} onClick={entry.onClick} />;
+          })}
+        </div>}
         {localUrls.length > 0 && (
           <>
             <div className="flex items-center justify-between">

@@ -1,23 +1,23 @@
 import type { GitChange } from '@gugu/session-core/git';
 import { GrowingList } from '@gugu/session-ui/react/growing-list';
 import { cn } from '@renderer/utils/utils';
-import { ChangesListItem } from './changes-list-item';
+import { ChangesListItem, type ChangeRow } from './changes-list-item';
 
-export interface VirtualizedChangesListProps {
-  changes: GitChange[];
+export interface VirtualizedChangesListProps<T extends ChangeRow = GitChange> {
+  changes: T[];
   rootPath?: string;
-  onSelectChange?: (change: GitChange) => void;
-  onDoubleClickChange?: (change: GitChange) => void;
+  onSelectChange?: (change: T) => void;
+  onDoubleClickChange?: (change: T) => void;
   isSelected?: (path: string) => boolean;
   onToggleSelect?: (path: string) => void;
-  onPrefetch?: (change: GitChange) => void;
+  onPrefetch?: (change: T) => void;
   activePath?: string;
   className?: string;
 }
 
 const ITEM_HEIGHT = 28;
 
-export function VirtualizedChangesList({
+export function VirtualizedChangesList<T extends ChangeRow>({
   changes,
   rootPath,
   onSelectChange,
@@ -27,7 +27,7 @@ export function VirtualizedChangesList({
   onPrefetch,
   activePath,
   className,
-}: VirtualizedChangesListProps) {
+}: VirtualizedChangesListProps<T>) {
   return (
     <GrowingList
       className={cn('h-full overflow-y-auto overflow-x-hidden py-2 px-1', className)}

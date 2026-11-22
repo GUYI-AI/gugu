@@ -35,7 +35,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { runInAction } from 'mobx';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import { installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
+import { host as timeline, installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
 
 vi.mock('@renderer/lib/acp/runtime-client', () => ({
   getAcpRuntimeClient: async () => ({}),
@@ -53,10 +53,9 @@ vi.mock('@renderer/lib/hooks/use-toast', () => ({
 type StoreModule = typeof import('./acp-chat-store');
 type StoreCtor = StoreModule['AcpChatStore'];
 type Store = InstanceType<StoreCtor>;
-const storedHistory = vi.fn(async () => ({ turns: [] as TranscriptTurn[], originTurnIds: [] as string[], nextCursor: null }));
 const turn = (id: string): TranscriptTurn => ({ id, seq: 0, initiator: 'user', items: [] }) as unknown as TranscriptTurn;
 
-installAcpChatStoreHost((channel: string) => channel === 'sessions.getStoredHistory' ? storedHistory() : Promise.resolve([]));
+installAcpChatStoreHost();
 const { AcpChatStore }: StoreModule = await import('./acp-chat-store');
 
 const readyState = {
@@ -144,8 +143,8 @@ const endings: Array<[string, (session: Session) => void]> = [
 beforeEach(() => {
   toasts.length = 0;
   custody.mockClear();
-  storedHistory.mockReset();
-  storedHistory.mockResolvedValue({ turns: [], originTurnIds: [], nextCursor: null });
+  timeline.show([]);
+  timeline.reads.length = 0;
 });
 
 describe.each(endings)('after %s', (_name, end) => {
@@ -358,11 +357,11 @@ describe('#7327 the runtime process restarted', () => {
     } finally { vi.useRealTimers(); }
   });
 
-  it('discards a running frame on Gone and reads the recovered stored history', async () => {
+  it('discards a running frame on Gone and reads the recovered history from the timeline', async () => {
     const { store, session, boot } = attachedStore();
     store.chatState.transcript.activeTurn.set(turn('stale-frame'));
     store.chatState.session.setGenerating(true);
-    storedHistory.mockResolvedValue({ turns: [turn('recovered')], originTurnIds: [], nextCursor: null });
+    timeline.show([turn('recovered')]);
     expect(store.chatState.transcript.state.activeTurnSnapshot?.id).toBe('stale-frame');
     expect(store.chatState.session.state.generating).toBe(true);
 
@@ -372,7 +371,7 @@ describe('#7327 the runtime process restarted', () => {
     expect(store.chatState.transcript.state.activeTurnSnapshot).toBeNull();
     expect(store.chatState.session.state.generating).toBe(false);
     await vi.waitFor(() => expect(store.chatState.transcript.state.committedTurns.map((item) => item.id)).toEqual(['recovered']));
-    expect(storedHistory).toHaveBeenCalledTimes(1);
+    expect(timeline.reads.filter((read) => read === 'sessionTimeline.sessionSnapshot')).toHaveLength(1);
     expect(boot).not.toHaveBeenCalled();
     store.dispose();
   });
@@ -385,7 +384,7 @@ describe('#7327 the runtime process restarted', () => {
 
     expect(store.session).toBeNull();
     expect(store.chatState.transcript.state.activeTurnSnapshot?.id).toBe('retained-frame');
-    expect(storedHistory).not.toHaveBeenCalled();
+    expect(timeline.reads).toEqual([]);
     store.dispose();
   });
 });

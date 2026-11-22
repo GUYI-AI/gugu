@@ -30,6 +30,7 @@ describe('GitHubDeviceFlowService', () => {
   it('registers a device-flow account in the registry', async () => {
     const service = new GitHubDeviceFlowService({
       accountStore: fixture.registry,
+      tokens: fixture.vault,
       identityClient: { getAuthenticatedUser },
       events: { emit },
       createDeviceAuth: () => async () => ({ token: 'gho_device' }),
@@ -53,6 +54,7 @@ describe('GitHubDeviceFlowService', () => {
     getAuthenticatedUser = vi.fn(async () => null);
     const service = new GitHubDeviceFlowService({
       accountStore: fixture.registry,
+      tokens: fixture.vault,
       identityClient: { getAuthenticatedUser },
       events: { emit },
       createDeviceAuth: () => async () => ({ token: 'gho_device' }),

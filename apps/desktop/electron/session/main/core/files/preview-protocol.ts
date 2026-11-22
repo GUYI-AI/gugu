@@ -13,16 +13,19 @@
  * 围栏本身是纯函数,住在 `@shared/preview/preview-url`,主进程与渲染层读同一份、单测直接打它。
  */
 
-import { protocol, type Session } from 'electron';
+import { protocol, session, type Session } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
 import type { IFileSystem } from '@gugu/session-core/files';
 import { REMOTE_WORKSPACE_MAX_FILE_BYTES } from '@gugu/session-core/session-record/contract';
 import { events } from '@main/lib/events';
+import { claimBeforeRequest } from '@main/core/shared/before-request';
 import { log } from '@main/lib/logger';
 import { previewHolderOfflineChannel, remotePreviewReadChannel, remotePreviewReadResultChannel } from '@shared/events/appEvents';
-import { answerBesideDocument, chatFolderPreviewCsp, unavailableAnswer, type ChatFolderPreviewCopy, type PreviewAnswer } from '@shared/preview/chat-folder-preview';
+import { answerBesideDocument, byteRange, chatFolderPreviewCsp, unavailableAnswer, type ChatFolderPreviewCopy, type PreviewAnswer } from '@shared/preview/chat-folder-preview';
 import {
+  CLOUD_OBJECT_HOST,
   PREVIEW_SCHEME,
+  signedUrlOfCloudObject,
   previewRootFor,
   previewUrl,
   resolvePreviewRequest,
@@ -31,6 +34,8 @@ import {
 import { remotePageRoot } from '@shared/preview/remote-page-url';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 import { resolveWorkspace } from '../projects/utils';
+import { egress, EgressError } from '@gugu/core/shared/egress';
+import { changedOnItsMachine, workspaceFileRange } from './machine-file-streams';
 import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, type RemoteChunk } from './remote-preview-read';
 
 /**
@@ -39,7 +44,7 @@ import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, ty
  */
 type PreviewSource =
   | { kind: 'local'; projectId: string; workspaceId: string }
-  | { kind: 'remote'; projectId: string; workspaceId: string }
+  | { kind: 'remote'; projectId: string; workspaceId: string; machine?: StreamMachine }
   /**
    * A document in a chat's folder: its page's relative URLs name the files beside it in that folder, read as the
    * signed-in person (in the cloud, or fetched from the machine that keeps them). The root is the document's own folder.
@@ -106,7 +111,138 @@ type DocumentPreviewRegistration = {
   failureCopy?: never;
 };
 
-const registry = new Map<string, PreviewRegistration | DocumentPreviewRegistration>();
+/**
+ * This machine's bytes of one file (its file store, an original it sent, a file it holds for a chat), already checked
+ * against their sha by whoever registered them: `gugu-preview://<id>/<sha>`. The address names the sha and nothing of where
+ * the bytes lie; only the renderer that was authorized for them gets the id. A `<video>` reads it in ranges; a renderer
+ * that wants a Blob fetches it. Bytes that stop matching (the original changed) fail the response, never another file.
+ */
+type BytesPreviewRegistration = {
+  source: { kind: 'bytes' };
+  surface: 'pane';
+  sha256: string;
+  contentType: string;
+  file: ServedBytes;
+  failureCopy?: never;
+};
+
+/** What a bytes registration serves: a size and reads within it. */
+export interface ServedBytes {
+  size: number;
+  read(offset: number, length: number): Promise<Uint8Array>;
+}
+
+const registry = new Map<string, PreviewRegistration | DocumentPreviewRegistration | BytesPreviewRegistration>();
+
+export function createBytesPreview(sha256: string, contentType: string, file: ServedBytes): { url: string; previewId: string } {
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('A bytes preview is named by its sha');
+  const previewId = newPreviewId();
+  registry.set(previewId, { source: { kind: 'bytes' }, surface: 'pane', sha256, contentType: contentType || 'application/octet-stream', file });
+  return { url: `${PREVIEW_SCHEME}://${previewId}/${sha256}`, previewId };
+}
+
+/** The renderer's own origin, as main loads it (main.ts: the dev server, or `gugu-app://app`); never a request's Origin. */
+export function rendererOrigin(): string {
+  const dev = process.env.VITE_DEV_SERVER_URL;
+  return dev ? new URL(dev).origin : 'gugu-app://app';
+}
+
+/** One read of a bytes registration's file while it streams. */
+const BYTES_READ = 1024 * 1024;
+
+function serveBytes(registration: BytesPreviewRegistration, pathname: string, range: string | null): Response {
+  if (pathname !== `/${registration.sha256}`) return notFound('not this file');
+  const { file } = registration;
+  const wanted = byteRange(range, file.size);
+  if (wanted === 'unsatisfiable') return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${file.size}`, 'Access-Control-Allow-Origin': rendererOrigin() } });
+  const start = wanted?.start ?? 0;
+  const end = wanted?.end ?? file.size - 1;
+  let offset = start;
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (offset > end) return controller.close();
+      const piece = await file.read(offset, Math.min(BYTES_READ, end - offset + 1));
+      if (piece.byteLength === 0) throw new Error('File ended before its size');
+      controller.enqueue(piece);
+      offset += piece.byteLength;
+    },
+  });
+  return new Response(file.size === 0 ? null : body, {
+    status: wanted ? 206 : 200,
+    headers: {
+      'Content-Type': registration.contentType,
+      'Content-Length': String(end - start + 1),
+      'Accept-Ranges': 'bytes',
+      // Readable cross-origin by the renderer alone — never by a page previewed on this scheme, which is untrusted content.
+      'Access-Control-Allow-Origin': rendererOrigin(),
+      'Cache-Control': 'no-store',
+      ...(wanted ? { 'Content-Range': `bytes ${start}-${end}/${file.size}` } : {}),
+    },
+  });
+}
+
+/**
+ * What an object answer passes on to the renderer: the store's own status, length, range, type, validators and caching
+ * (its `Cache-Control`, immutable for a signed object, goes through as it is, not a `no-store` of our own).
+ */
+const OBJECT_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified', 'cache-control'];
+
+/**
+ * A cloud object for the renderer (`cloudObjectUrl`): main fetches the signed address through its egress (Node's HTTP/1.1,
+ * a connection per concurrent request, the route and roots Chromium would use) and streams
+ * the answer back as it is, `Range` passed through, so the renderer's reader sees exactly what the store said (a 206 and
+ * its range, an expired signature's 403). A transport failure is said as one, never as some other file.
+ */
+async function serveCloudObject(url: URL, range: string | null, signal?: AbortSignal): Promise<Response> {
+  const signed = signedUrlOfCloudObject(url);
+  if (!signed) return notFound('not a cloud object address');
+  let answer: Response;
+  try {
+    answer = await egress.fetch(signed, { headers: range ? { Range: range } : {}, signal });
+  } catch (error) {
+    // No answer at all (the proxy refused, the route is one egress cannot take, TLS, no connection): said as that.
+    const kind = error instanceof EgressError ? error.kind : 'error';
+    log.warn('Cloud object request failed', { host: new URL(signed).host, kind });
+    return new Response(null, { status: 502, headers: { 'X-Gugu-Object-Failure': kind, 'Access-Control-Allow-Origin': rendererOrigin() } });
+  }
+  const headers: Record<string, string> = { 'Access-Control-Allow-Origin': rendererOrigin(), 'Access-Control-Expose-Headers': 'Content-Range' };
+  for (const name of OBJECT_HEADERS) { const value = answer.headers.get(name); if (value !== null) headers[name] = value; }
+  return new Response(answer.body && inPieces(answer.body), { status: answer.status, headers });
+}
+
+/**
+ * The renderer gets an object's bytes in pieces of up to `BYTES_READ`, as it gets this machine's bytes (`serveBytes`), with
+ * a few read ahead. Electron hands every piece of a handler's body to the renderer as its own write; the network's own
+ * pieces are small, and passed on one by one a 200 MB object reached the renderer at ~28 MB/s against ~68 MB/s read in
+ * main. A piece goes out as soon as the network has nothing more ready (`PIECE_WAIT_MS`): a reader's first bytes are not
+ * held back for a full piece.
+ */
+const PIECE_WAIT_MS = 4;
+function inPieces(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  let next: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      const parts: Uint8Array[] = [];
+      let size = 0;
+      while (size < BYTES_READ) {
+        const read = next ?? reader.read();
+        next = undefined;
+        const ready = size ? await Promise.race([read, new Promise<null>((resolve) => setTimeout(resolve, PIECE_WAIT_MS, null))]) : await read;
+        if (ready === null) { next = read; void read.catch(() => undefined); break; }
+        if (ready.done) break;
+        parts.push(ready.value); size += ready.value.byteLength;
+      }
+      if (!size) return controller.close();
+      if (parts.length === 1) return controller.enqueue(parts[0]!);
+      const piece = new Uint8Array(size);
+      let at = 0;
+      for (const part of parts) { piece.set(part, at); at += part.byteLength; }
+      controller.enqueue(piece);
+    },
+    cancel: (reason) => reader.cancel(reason),
+  }, { highWaterMark: 4 });
+}
 
 export function createDocumentPreview(documentHtml: string): { url: string; previewId: string } {
   const previewId = newPreviewId();
@@ -181,10 +317,14 @@ export async function createPreview(
  *  · `pane`:「文件」页签的 HTML 预览,带 `documentPath`(+ 编辑器正文),返回那份文档的地址;
  *  · `browser`:「浏览器」页签,不带文档 —— 页签按 `remote-page-url.ts` 自己把 `file:` 地址排进来。
  */
+/** The machine a remote preview's files are on, and its workspace as that machine names it (`@@@machine-file-stream`). */
+export type StreamMachine = { deviceId: string; projectId: string; workspaceId: string };
+
 export function createRemotePreview(input: {
   /** 那台机器上的项目与工作区(渲染层按项目所在机器把读块请求路由过去)。 */
   projectId: string;
   workspaceId: string;
+  machine?: StreamMachine;
   root: string;
   surface: PreviewSurface;
   documentPath?: string;
@@ -201,7 +341,7 @@ export function createRemotePreview(input: {
     if (!url) return null;
   }
   registry.set(previewId, {
-    source: { kind: 'remote', projectId: input.projectId, workspaceId: input.workspaceId },
+    source: { kind: 'remote', projectId: input.projectId, workspaceId: input.workspaceId, ...(input.machine ? { machine: input.machine } : {}) },
     surface: input.surface,
     root,
     documentPath: input.surface === 'pane' ? input.documentPath : undefined,
@@ -224,7 +364,7 @@ function newPreviewId(): string {
 /** 编辑器里的正文变了。下一次取这份文档就发新的。 */
 export function setPreviewDocument(previewId: string, documentHtml: string): void {
   const registration = registry.get(previewId);
-  if (registration) {
+  if (registration && !('file' in registration)) {
     registration.documentHtml = documentHtml;
     if ('root' in registration) {
       registration.assets = new Map();
@@ -291,6 +431,22 @@ function assetHash(bytes: Uint8Array): string {
 export function setupPreviewProtocol(): void {
   if (protocol.isProtocolHandled(PREVIEW_SCHEME)) return;
   protocol.handle(PREVIEW_SCHEME, (request) => handlePreviewRequest(request, 'pane'));
+  claimBeforeRequest(session.defaultSession, 'preview-protocol (sha addresses)', (details, callback) => {
+    callback(bytesRequestRefused(details.url, details.frame?.origin) ? { cancel: true } : {});
+  });
+}
+
+/**
+ * A sha address is read by the renderer alone. Pages previewed on this same scheme are untrusted content, and the
+ * handler cannot tell who asks: Electron runs no CORS check on a protocol handler's response and passes it no `Origin`
+ * or `Referer`. The asking frame, as the browser knows it, can: anything but the renderer's own origin is refused.
+ */
+export function bytesRequestRefused(url: string, frameOrigin: string | undefined): boolean {
+  if (!url.startsWith(`${PREVIEW_SCHEME}://`)) return false;
+  const host = new URL(url).hostname;
+  if (host === CLOUD_OBJECT_HOST) return frameOrigin !== rendererOrigin();
+  const registration = registry.get(host);
+  return !!registration && 'file' in registration && frameOrigin !== rendererOrigin();
 }
 
 /**
@@ -313,7 +469,7 @@ export async function handlePreviewRequest(request: Request, surface: PreviewSur
   try {
     const parsed = new URL(request.url);
     url = parsed;
-    response = await withDeadline(servePreviewRequest(parsed, surface, request.headers.get('range')), PREVIEW_REQUEST_DEADLINE_MS, () =>
+    response = await withDeadline(servePreviewRequest(parsed, surface, request.headers.get('range'), request.signal), PREVIEW_REQUEST_DEADLINE_MS, () =>
       failurePage(registry.get(parsed.hostname)?.failureCopy, 'unavailable', 504, 'timeout')
     );
   } catch (error) {
@@ -397,11 +553,13 @@ function failurePage(
   );
 }
 
-async function servePreviewRequest(url: URL, surface: PreviewSurface, range: string | null = null): Promise<Response> {
+async function servePreviewRequest(url: URL, surface: PreviewSurface, range: string | null = null, signal?: AbortSignal): Promise<Response> {
+  if (url.hostname === CLOUD_OBJECT_HOST && surface === 'pane') return serveCloudObject(url, range, signal);
   const registration = registry.get(url.hostname);
   if (!registration || registration.surface !== surface) {
     return failurePage(undefined, 'unavailable', 404, 'unknown_preview');
   }
+  if ('file' in registration) return serveBytes(registration, url.pathname, range);
 
   if (!('root' in registration)) {
     return url.pathname === '/index.html'
@@ -475,7 +633,7 @@ async function readPreviewBytes(
   const source = registration.source;
   if (source.kind === 'remote') {
     const result = await readRemotePreviewBytes(
-      (chunk) => readRemoteChunk(source.projectId, source.workspaceId, chunk, signal),
+      remotePieces(source, signal),
       resolved,
       REMOTE_PREVIEW_MAX_BYTES,
       signal
@@ -558,6 +716,29 @@ const REMOTE_PREVIEW_MAX_BYTES = REMOTE_WORKSPACE_MAX_FILE_BYTES;
 
 /** 一块多久没回话就算这一块取不到(远程 SSH 的机器首次接上设备连接要握手,留足那一次)。 */
 export const REMOTE_CHUNK_TIMEOUT_MS = 20_000;
+
+/**
+ * A remote resource's pieces: the first through the machine's channel (it anchors the version), the rest from one stream
+ * over that machine's device link (`@@@machine-file-stream`) when one reaches it. A linked machine streams or fails.
+ */
+function remotePieces(source: { projectId: string; workspaceId: string; machine?: StreamMachine }, signal?: AbortSignal) {
+  let version: { size: number; etag: string } | null = null;
+  let linked: boolean | null = null;
+  return async (chunk: { path: string; offset: number; length: number }): Promise<RemoteChunk> => {
+    const machine = source.machine;
+    if (chunk.offset > 0 && version && machine && linked !== false) {
+      const range = await workspaceFileRange(machine.deviceId, { projectId: machine.projectId, workspaceId: machine.workspaceId }, { ...chunk, ...version })
+        .catch((error: unknown) => { throw Object.assign(new Error('remote read failed'), { code: changedOnItsMachine(error) ? 'content_changed' : 'unreadable', cause: error }); });
+      if (range) { linked = true; return range; }
+      if (linked) throw Object.assign(new Error('remote read failed'), { code: 'unreadable' });
+      linked = false;
+    }
+    // @@@cloud-only-chunks - a machine no device link reaches: its pieces go one call each through its channel.
+    const read = await readRemoteChunk(source.projectId, source.workspaceId, chunk, signal);
+    if (chunk.offset === 0) version = read.etag ? { size: read.size, etag: read.etag } : null;
+    return read;
+  };
+}
 
 /**
  * 问渲染层要一块:渲染层手里有到那台机器的连接(会话页宿主协议,远程 SSH 走 SSH、远程隧道走咕咕云),

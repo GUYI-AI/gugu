@@ -7,12 +7,6 @@ import type { HostTurnEnd, HostTurnEnds } from '@gugu/session-core/session-recor
 const prefix = 'pty-engine-ends:';
 type Record = { providerSessionId: string; ends: HostTurnEnd[] };
 const watchers = new Map<string, Set<() => void>>();
-const engineEnds = new Set<(sessionId: string) => void>();
-
-export function onPtyEngineEnd(ended: (sessionId: string) => void): () => void {
-  engineEnds.add(ended);
-  return () => { engineEnds.delete(ended); };
-}
 
 export function readPtyTurnEnds(sessionId: string, providerSessionId: string): readonly HostTurnEnd[] {
   const value = db.select({ value: kv.value }).from(kv).where(eq(kv.key, prefix + sessionId)).get()?.value;
@@ -35,7 +29,7 @@ export function recordPtyEngineEnd(sessionId: string, cutoff: number, observedOn
   db.insert(kv).values({ key: prefix + sessionId, value: JSON.stringify(record), updatedAt: cutoff })
     .onConflictDoUpdate({ target: kv.key, set: { value: JSON.stringify(record), updatedAt: cutoff } }).run();
   // A reader failing cannot undo this durable boundary or prevent the host from settling its status.
-  for (const changed of [...(watchers.get(sessionId) ?? []), ...[...engineEnds].map(ended => () => ended(sessionId))]) {
+  for (const changed of [...(watchers.get(sessionId) ?? [])]) {
     try { changed(); }
     catch (error) { log.error('PTY engine end observer failed', { sessionId, error: String(error) }); }
   }

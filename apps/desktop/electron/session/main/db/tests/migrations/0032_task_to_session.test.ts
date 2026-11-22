@@ -106,12 +106,11 @@ describe('0032 task → session', () => {
     ]);
   });
 
-  it('重建会话表不连带删掉消息和回合', async () => {
+  it('重建会话表不连带删掉消息', async () => {
     handle = openAt0031();
     handle.sqlite.exec(SEED);
     await initializeDatabase(handle.sqlite);
     expect(rows(handle.sqlite, 'SELECT id FROM messages ORDER BY id')).toEqual([{ id: 'M1' }, { id: 'M2' }]);
-    expect(rows(handle.sqlite, 'SELECT id FROM session_turns')).toEqual([{ id: 'C-first:0' }]);
     expect(handle.sqlite.pragma('foreign_key_check')).toEqual([]);
   });
 

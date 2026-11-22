@@ -15,7 +15,9 @@ vi.mock('@main/db/client', () => ({
 }));
 
 import { enqueuePending } from './session-pending';
-import { openSessionInputStorage, SessionInputOutbox } from '../../../../../src/lib/sessionInputOutbox';
+import { enqueueSessionInput, retrySessionInputs, state } from '../../../../../src/lib/outbox/kinds/sessionInput';
+import { openOutboxStorage } from '../../../../../src/lib/outbox/storage';
+import { installSessionInputOutbox, settle, type InstalledSessionInputs } from '../../../../../../../tests/helpers/sessionInputOutbox';
 
 describe('custody chain: sender outbox → host session_pending', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -28,31 +30,34 @@ describe('custody chain: sender outbox → host session_pending', () => {
       INSERT INTO sessions (id, project_id, workspace_id, title, runtime) VALUES ('s', 'p', 'root', 'T', 'acp');
     `);
   });
-  afterEach(() => { fixture.close(); mocks.db = undefined; });
+  let installed: InstalledSessionInputs | undefined;
+  afterEach(() => { installed?.dispose(); installed = undefined; fixture.close(); mocks.db = undefined; });
 
   const hostRows = () => (fixture.sqlite.prepare("SELECT message_id FROM session_pending WHERE session_id = 's' ORDER BY seq").all() as { message_id: string }[]).map(row => row.message_id);
 
   it('host acceptance empties the outbox in the same step; a lost reply is retried into the same single host row', async () => {
     let loseReply = true;
-    const outbox = new SessionInputOutbox('owner', await openSessionInputStorage(new IDBFactory()), async input => {
+    // The real outbox (IndexedDB) with the session-input kind; the transport hands the input to the real session_pending.
+    installed = installSessionInputOutbox({ storage: openOutboxStorage(new IDBFactory()), send: async input => {
       enqueuePending({ sessionId: input.sessionId, messageId: input.id, text: input.text, kind: 'session-direct' });
       if (loseReply) { loseReply = false; throw new Error('reply lost on the way back'); }
-    }, () => true);
+    } });
+    const outboxIds = () => state().rows.map(row => row.id);
 
-    const input = await outbox.enqueue({ deviceId: null, sessionId: 's', text: 'hello' });
-    await outbox.flush();
-    // The host has it, but the sender never heard back: it still holds its copy (sending, retry).
+    const input = await enqueueSessionInput({ deviceId: null, sessionId: 's', text: 'hello' });
+    await settle();
+    // The host has it, but the sender never heard back: it still holds its copy (waiting to send it again).
     expect(hostRows()).toEqual([input.id]);
-    expect((await outbox.list()).map(row => row.id)).toEqual([input.id]);
+    expect(outboxIds()).toEqual([input.id]);
 
-    await outbox.flush();
+    await retrySessionInputs(); await settle();
     expect(hostRows()).toEqual([input.id]);
-    expect(await outbox.list()).toEqual([]);
+    expect(outboxIds()).toEqual([]);
 
-    const second = await outbox.enqueue({ deviceId: null, sessionId: 's', text: 'hello' });
-    await outbox.flush();
+    const second = await enqueueSessionInput({ deviceId: null, sessionId: 's', text: 'hello' });
+    await settle();
     // Same words, a new id: a second message, never merged into the first.
     expect(hostRows()).toEqual([input.id, second.id]);
-    expect(await outbox.list()).toEqual([]);
+    expect(outboxIds()).toEqual([]);
   });
 });

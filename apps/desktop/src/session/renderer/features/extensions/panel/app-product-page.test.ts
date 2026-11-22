@@ -6,7 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: {} }, events: { on: () => () => {} } }));
+// Each render is another host (`remote:<n>`): the page reads its listing and history through that host's API.
+const apis = vi.hoisted(() => new Map<string, unknown>());
+vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: {} }, rpcOn: (id: string) => ({ extensions: apis.get(id) }), events: { on: () => () => {} }, onMachineEvent: () => () => {} }));
+let hosts = 0;
 
 const { AppProductPage } = await import('./app-product-page');
 
@@ -32,7 +35,9 @@ const pomodoro = {
   contributes: { tabs: [], mcpServers: [{ name: 'pomodoro', command: 'node', args: ['mcp/server.mjs'] }], instructions: 'pomodoro__log(minutes): log a focus block.' },
 } as never;
 
-async function render(props: Record<string, unknown>, act_?: (document: Document) => Promise<void>) {
+async function render({ api = listingOf(null), ...props }: Record<string, unknown>, act_?: (document: Document) => Promise<void>) {
+  const device = `product-${++hosts}`;
+  apis.set(device, api);
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
   for (const key of ['window', 'document', 'HTMLElement', 'Element', 'Node', 'navigator', 'getComputedStyle'] as const) {
     vi.stubGlobal(key, key === 'getComputedStyle' ? dom.window.getComputedStyle.bind(dom.window) : dom.window[key]);
@@ -45,7 +50,7 @@ async function render(props: Record<string, unknown>, act_?: (document: Document
         lifecycle: null,
         locale: 'en',
         translate,
-        api: listingOf(null) as never,
+        hostKey: `remote:${device}`,
         onBack: () => undefined,
         onLifecycle: () => undefined,
         onInstallVersion: () => undefined,
@@ -53,6 +58,8 @@ async function render(props: Record<string, unknown>, act_?: (document: Document
       } as never)
     );
   });
+  // The listing and the history are replicas: their answers land after a task boundary (react-query's notify), ❌ a clock.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   const document = dom.window.document;
   const text = document.body.textContent ?? '';
   if (act_) await act_(document);
@@ -114,16 +121,45 @@ describe('App 的产品页 (#7059)', () => {
     });
   });
 
+  it('history read before, a refresh that fails is said with a retry, the versions read staying', async () => {
+    let fail = false;
+    const entry = { publishedAt: '2026-10-24T00:00:00Z', releaseNotes: 'A release', compat: null, yanked: null, version: '2.0.0' };
+    const api = { ...listingOf(null), marketHistory: vi.fn(async () => (fail ? { success: false, error: 'machine unreachable' } : { success: true, data: [entry] })) };
+    const { marketVersionHistory } = await import('../market-replicas');
+    const { queryClient } = await import('@/lib/replica');
+    const defaults = queryClient.getDefaultOptions();
+    // The model reads a transient failure again (3 more tries) before saying it: no wait between tries here.
+    queryClient.setDefaultOptions({ ...defaults, queries: { ...defaults.queries, retryDelay: 0 } });
+    apis.set('product-refresh', api);
+    try {
+      await render({ api, hostKey: 'remote:product-refresh' }, async (document) => {
+        const toggle = document.querySelector('[data-testid="app-product-news"] button[aria-expanded]')!;
+        await act(async () => void toggle.dispatchEvent(new document.defaultView!.MouseEvent('click', { bubbles: true })));
+        const failure = () => document.querySelector('[data-testid="app-product-news"] [role="alert"]');
+        expect(failure()).toBeNull();
+        fail = true;
+        await act(async () => { await marketVersionHistory.refresh('remote:product-refresh', 'pomodoro-log').catch(() => undefined); });
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+        // Said where the history is, with its own 「读取」 again; the versions read before stay drawn.
+        expect(failure()).not.toBeNull();
+        expect(failure()!.parentElement!.querySelector('button')).not.toBeNull();
+        expect(document.querySelector('[data-testid="extension-history-pomodoro-log-2.0.0"]')).not.toBeNull();
+      });
+    } finally {
+      queryClient.setDefaultOptions(defaults);
+    }
+  });
+
   it('「给 agent 工具」那句带上要跑的命令,与同意框同一句', async () => {
     expect((await render({})).text).toContain('node mcp/server.mjs');
   });
 
-  it('市场有来源时显示「查看源码」,仓、提交和目录只在悬停提示里;没有来源记录的旧版本不写', async () => {
+  it('市场有来源时发布方后面跟「查看源码」,仓、提交和目录只在悬停提示里;没有来源记录的旧版本不写', async () => {
     const source = { repo: 'shuxueshuxue/promo-skills', path: '.', commit: '6f46446' + 'a'.repeat(33) };
     const subject = (cloud: unknown) => ({ subject: { manifest: pomodoro, installRef: { extensionId: 'pomodoro-log', version: '1.2.0' }, cloud } });
     for (const path of ['.', 'app']) {
       const page = await render(subject({ source: { ...source, path } }), async (document) => {
-        const button = document.querySelector('[data-testid="app-product-review"] button')!;
+        const button = document.querySelector('.mk-dh-by button')!;
         expect(button.textContent).toBe('extensions.viewSource');
         expect(button.getAttribute('title')).toBe(`shuxueshuxue/promo-skills @ 6f46446${path === '.' ? '' : ': app'}`);
         expect(button.classList.contains('mk-mono')).toBe(false);

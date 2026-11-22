@@ -7,11 +7,12 @@ import { createFileDownloadSession } from '../../../../packages/core/src/cloud/f
 import { setCoreLoggerFactory } from '../../../../packages/core/src/log'
 import type { FileRevision } from '../../../../packages/core/src/shared/fileResolver'
 
-it('uses real HTTP bytes for timeout, direct-first file/thumbnail reads and a recovered CDN', async () => {
-  const original = new Uint8Array(600_000).fill(71), thumbnail = new TextEncoder().encode('transformed thumbnail')
+it('uses real HTTP bytes for timeout, direct-first file/preview reads and a recovered CDN', async () => {
+  const original = new Uint8Array(600_000).fill(71), thumbnail = new TextEncoder().encode('stored preview')
   const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex')
   const revision: FileRevision = { source: 'managed-object', item_id: 'fixture', version: 1, chat_id: 'chat',
-    file_name: 'fixture.png', content_type: 'image/png', size_bytes: original.length, sha256: sha(original) }
+    file_name: 'fixture.png', content_type: 'image/png', size_bytes: original.length, sha256: sha(original),
+    preview: { sha256: sha(thumbnail), size_bytes: thumbnail.length, content_type: 'image/webp' } }
   const context = { ref: { item_id: 'fixture' }, actor: { accountId: 'account', actorId: 'reader' } }
   const counts = { cdn: 0, originFile: 0, originThumbnail: 0, abandonedCdn: 0 }
   const signing: Record<string, unknown>[] = [], expires = new Map<string, string>()
@@ -30,8 +31,9 @@ it('uses real HTTP bytes for timeout, direct-first file/thumbnail reads and a re
       const id = body.request_id as string
       if (!expires.has(id)) expires.set(id, new Date(Date.now() + 60_000).toISOString())
       const host = body.origin ? 'origin.fixture.invalid' : 'cdn.fixture.invalid'
-      res.end(JSON.stringify({ ...revision, status: 'ready', url: `https://${host}/file?signature=fixture`,
-        thumb_url: `https://${host}/thumb?signature=fixture`, origin_available: !body.origin,
+      const shown = body.preview === true
+      res.end(JSON.stringify({ ...revision, status: 'ready', url: `https://${host}/${shown ? 'thumb' : 'file'}?signature=fixture`,
+        ...(shown ? { sha256: sha(thumbnail), size_bytes: thumbnail.length } : {}), origin_available: !body.origin,
         download_id: id, expires_at: expires.get(id) }))
       return
     }
@@ -61,7 +63,7 @@ it('uses real HTTP bytes for timeout, direct-first file/thumbnail reads and a re
       } }
     },
   })
-  const full = vi.fn(async () => { throw new Error('Thumbnail must not read original') })
+  const full = vi.fn(async () => { throw new Error('A preview must not read the original') })
   let clock: ReturnType<typeof vi.spyOn> | undefined
   const read = async () => {
     const file = await cloud.managed(revision, context)
@@ -80,7 +82,7 @@ it('uses real HTTP bytes for timeout, direct-first file/thumbnail reads and a re
     signing.length = 0
     const preview = await cloud.preview!(revision, context, full) as Blob
     expect(sha(new Uint8Array(await preview.arrayBuffer()))).toBe(sha(thumbnail))
-    expect(signing).toEqual([expect.objectContaining({ origin: true })])
+    expect(signing).toEqual([expect.objectContaining({ origin: true, preview: true })])
     expect(counts).toMatchObject({ cdn: 1, originFile: 2, originThumbnail: 1 }); expect(full).not.toHaveBeenCalled()
     healthy = true
     const recoveredAt = Date.now() + 600_000

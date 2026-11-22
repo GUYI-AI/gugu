@@ -10,10 +10,8 @@ import { until } from '../../../../tests/support/awaitCondition'
 import { fileChangeSummaryUnitDef } from '../components/rows/file-change-summary/file-change-summary.def'
 import type { FileChangeSummaryItem } from '../model'
 import { makeContractCtx, renderAndMeasureUnit } from './contract'
-import { FILE_MARKS } from '@gugu/session-shared/file-marks'
+import { fileIconColor } from '@gugu/session-shared/file-marks'
 import { mountRecordedFileDiff, type RecordedDiffAnnotationSlot } from '../components/rows/tools/diff/recorded-file-diff'
-/** A glyph as the browser serialises it once drawn (`<path/>` reads back as `<path></path>`). */
-const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML
 const item: FileChangeSummaryItem = {
   kind: 'file-change-summary',
   id: 't:file-changes',
@@ -123,14 +121,14 @@ it('renders all recorded hunks for the selected file and reports missing patch t
   }
 })
 
-// The output card's file tile, by each file's family: a sheet and a script, ❌ the same grey document twice.
-describe('an Edited row draws its file as a tile of its family', () => {
-  it('a sheet and a script each get their own family\'s glyph and colour', async () => {
+// The output card's file tile, by each file's icon: a sheet and a script, ❌ the same grey document twice.
+describe('an Edited row draws its file as a tile of its icon', () => {
+  it('a sheet and a script each get their own icon and colour', async () => {
     const files = ['/w/预算.xlsx', '/w/run.py'].map((path, i) => ({ ...item.files[i]!, path }))
     const reading = await renderAndMeasureUnit(fileChangeSummaryUnitDef, { ...item, files }, makeContractCtx({ width: 420, isCollapsed: () => true }), (host) => {
       const tiles = [...host.querySelectorAll<HTMLElement>('.gg-file-tile')]
-      const sheet = tiles[0]?.style.getPropertyValue('--gg-file-tile') === FILE_MARKS.sheet.color && tiles[0].querySelector('svg')!.innerHTML === drawn(FILE_MARKS.sheet.glyph)
-      const code = tiles[1]?.style.getPropertyValue('--gg-file-tile') === FILE_MARKS.code.color && tiles[1].querySelector('svg')!.innerHTML === drawn(FILE_MARKS.code.glyph)
+      const sheet = tiles[0]?.style.getPropertyValue('--gg-file-tile') === fileIconColor('sheet') && tiles[0].querySelector('svg')!.getAttribute('data-file-icon') === 'sheet'
+      const code = tiles[1]?.style.getPropertyValue('--gg-file-tile') === fileIconColor('py') && tiles[1].querySelector('svg')!.getAttribute('data-file-icon') === 'py'
       return { tiles: tiles.length, sheet: sheet ? 1 : 0, code: code ? 1 : 0 }
     })
     expect(reading.dom).toBe(reading.computed)

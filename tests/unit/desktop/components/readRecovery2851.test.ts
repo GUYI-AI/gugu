@@ -1,11 +1,13 @@
 // @vitest-environment jsdom
-import { act } from 'react'
+import { act, useMemo } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createNode, createReactHarness } from '../../../support/testHarness'
 import { queryClient, replica, useReplica } from '@/lib/replica'
 import { HtmlPreviewFrame, type HtmlPreviewRegistration } from '@/components/preview/HtmlPreviewFrame'
 import { VersionHistorySection } from '@/session/renderer/features/extensions/panel/app-version-history'
-import { useVersionHistory } from '@/session/renderer/features/extensions/panel/use-version-history'
+import { marketVersionHistory } from '@/session/renderer/features/extensions/market-replicas'
+import { remoteHostKey } from '@/session/renderer/features/extensions/extensions-api'
+import { routeMachine } from '@/session/renderer/lib/ipc'
 import { SettingValue } from '@/session/renderer/features/settings/components/SettingControls'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 
@@ -20,11 +22,16 @@ const settled = async (check: () => void) => vi.waitFor(async () => { await act(
 const registration = (): Extract<HtmlPreviewRegistration, { ok: true }> => ({ ok: true, url: 'about:blank', update: async () => 'about:blank', release: vi.fn() })
 
 describe('HTML registration read recovery', () => {
+  // The registration is tried again after 1 s, 2 s, 4 s: run those waits at once.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }) })
+  afterEach(() => { vi.useRealTimers() })
+  const waitsPass = () => act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
   it('retries silently and shows the actual preview after a transient refusal', async () => {
     let finish!: (value: HtmlPreviewRegistration) => void
     const register = vi.fn(async (): Promise<HtmlPreviewRegistration> => new Promise(resolve => { finish = resolve }))
       .mockResolvedValueOnce({ ok: false, message: 'Temporary registration failure' })
     await harness.render(createNode(HtmlPreviewFrame, { fileName: 'notes.html', rawContent: '<p>notes</p>', register, onLink: vi.fn() }))
+    await waitsPass()
     await settled(() => expect(register).toHaveBeenCalledTimes(2))
     expect(harness.container.querySelector('[role="alert"]')).toBeNull()
     await act(async () => finish(registration()))
@@ -35,6 +42,7 @@ describe('HTML registration read recovery', () => {
   it('shows the last reason after bounded retries and re-registers from the fallback control', async () => {
     const register = vi.fn(async (): Promise<HtmlPreviewRegistration> => ({ ok: false, message: 'The preview host is unavailable' }))
     await harness.render(createNode(HtmlPreviewFrame, { fileName: 'notes.html', rawContent: '<p>notes</p>', register, onLink: vi.fn() }))
+    await waitsPass()
     await settled(() => expect(harness.container.querySelector('[role="alert"]')?.textContent).toBe('The preview host is unavailable'))
     expect(register).toHaveBeenCalledTimes(4)
     register.mockResolvedValue(registration())
@@ -55,13 +63,21 @@ describe('HTML registration read recovery', () => {
   })
 })
 
-type HistoryApi = Parameters<typeof useVersionHistory>[0]
+type HistoryApi = { marketHistory: (args: { extensionId: string }) => Promise<unknown> }
+// Each api is its own machine (the history is read per host): a new api is a new source, as a new machine would be.
+let routed = 0
+function hostOf(api: HistoryApi): string {
+  const deviceId = `history-host-${++routed}`
+  routeMachine(deviceId, { extensions: api } as never)
+  return remoteHostKey(deviceId)
+}
 let refreshHistory: () => void
 function History({ api }: { api: HistoryApi }) {
-  const history = useVersionHistory(api, 'sample-app')
-  refreshHistory = history.retry
-  return createNode(VersionHistorySection, { state: history.state, extensionId: 'sample-app', installedVersion: undefined,
-    offeredVersion: null, locale: 'en-US', translate: translateSessionMessage, onReadAgain: history.retry, onOpenExternal: vi.fn() })
+  const hostKey = useMemo(() => hostOf(api), [api])
+  const history = useReplica(marketVersionHistory, [hostKey, 'sample-app'])
+  refreshHistory = () => void marketVersionHistory.refresh(hostKey, 'sample-app')
+  return createNode(VersionHistorySection, { reading: history, extensionId: 'sample-app', installedVersion: undefined,
+    offeredVersion: null, locale: 'en-US', translate: translateSessionMessage, onOpenExternal: vi.fn() })
 }
 
 describe('App version history read recovery', () => {
@@ -103,10 +119,11 @@ describe('App version history read recovery', () => {
 
 it('uses replica read recovery without replacing a stored setting or changing unrelated defaults', async () => {
   const read = vi.fn().mockRejectedValueOnce(new Error('Temporary IPC failure')).mockResolvedValue('stored browser profile')
-  const model = replica({ name: 'read-recovery-2851', scope: 'device', read })
+  // The browser settings key recovers this way (`appSettingsModel.retry`): the retry is the model's, ❌ a surface's.
+  const model = replica({ name: 'read-recovery-2851', scope: 'device', read, retry: 3 })
   function BrowserSetting() {
-    const reading = useReplica(model, [], { retry: 3 })
-    return createNode(SettingValue, { reading, onReadAgain: () => { void model.refresh() }, children: (value: unknown) => createNode('span', null, String(value)) })
+    const reading = useReplica(model, [])
+    return createNode(SettingValue, { reading, children: (value: unknown) => createNode('span', null, String(value)) })
   }
   await harness.render(createNode(BrowserSetting))
   await settled(() => expect(harness.container.textContent).toBe('stored browser profile'))
