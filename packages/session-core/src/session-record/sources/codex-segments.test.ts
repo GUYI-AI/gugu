@@ -63,6 +63,19 @@ describe('Codex history_base segments', () => {
     expect(said(read.entries)).toEqual(['question keep-原始', 'keep-原始', 'question keep-first', 'keep-first', 'question discard-first', 'discard-first']);
   });
 
+  it("a fork's own rollout, plainly named, shows its parent up to the fork point, then its own turns", async () => {
+    const { root } = await stage(1);
+    const parent = '019ed98d-0000-7000-8000-000000000003', fork = '019ed98e-0000-7000-8000-000000000004';
+    const folder = join(root, '2026', '06', '21');
+    await mkdir(folder, { recursive: true });
+    const kept = [line('session_meta', { id: parent }), ...turn('before-fork')];
+    await writeFile(join(folder, `rollout-2026-06-21T07-03-21-${parent}.jsonl`), encoded([...kept, ...turn('parent-later')]));
+    await writeFile(join(folder, `rollout-2026-06-21T08-03-21-${fork}.jsonl`), encoded([line('session_meta', { id: fork, forked_from_id: parent,
+      history_base: { thread_id: parent, end_ordinal_exclusive: kept.length, end_byte_offset: Buffer.byteLength(encoded(kept)) } }), ...turn('forked')]));
+    const { entries } = await start({ harness: 'codex', providerSessionId: fork, roots: [root] });
+    expect(said(entries)).toEqual(['question before-fork', 'before-fork', 'question forked', 'forked']);
+  });
+
   it('reads two successive reverts by per-file byte cutoffs, never treating the logical ordinal as a local line number', async () => {
     const { locator, second } = await stage();
     expect(await resolveRolloutFile(locator, false)).toBe(second);

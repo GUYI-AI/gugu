@@ -48,7 +48,8 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
   lineage.add(locator.providerSessionId);
   const root = createJsonlTailSource<Ordinals>(locator, options, {
     name: 'codex',
-    resumeVersion: 10,
+    // 11: a fork reads its parent's prefix (history_base in a plainly named rollout); state saved before that never did.
+    resumeVersion: 11,
     resolve: () => resolveRolloutFile(locator, options?.readMode === 'snapshot'),
     continuesElsewhere: true,
     prefixes: (path) => rolloutPrefixes(locator, path),
@@ -268,11 +269,17 @@ async function rolloutPrefixes(locator: SessionRecordLocator, tail: string): Pro
   }
 }
 
-/** Only the first record is metadata. Never scan the rollout looking for a history_base. */
+/**
+ * Only the first record is metadata. Never scan the rollout looking for a history_base. A segment
+ * (`-<thread>_<segment>.jsonl`) continues its thread; a fork's own rollout, plainly named, continues its parent
+ * (`forked_from_id`, history_base up to the fork point).
+ */
 async function historyBase(path: string): Promise<{ threadId: string; endByteOffset: number } | null> {
-  // Original rollouts (including legacy archives) are complete files. Only segment names carry continuation metadata.
-  if (!basename(path).includes('_')) return null;
-  if (path.endsWith('.zst')) throw new Error('Compressed Codex history segments are not supported');
+  if (path.endsWith('.zst')) {
+    // Archives are read whole, unopened here; a compressed segment cannot be.
+    if (basename(path).includes('_')) throw new Error('Compressed Codex history segments are not supported');
+    return null;
+  }
   const source = await openWindowByteSource(path);
   try {
     // Match the inventory's metadata-head bound; base_instructions can make this first line much larger than a page.
