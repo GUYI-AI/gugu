@@ -40,7 +40,17 @@ export function useNoticeComposerBottom(active: boolean): number | undefined {
       const value = readNoticeComposerBottom(anchors)
       setBottom((previous) => previous === value ? previous : value)
     }
-    const resize = new ResizeObserver(read)
+    // Only a height can move the composer's top: a pane narrowing or widening (every frame of a panel's move) is no reason
+    // to read, ❌ a forced layout per frame. A box that rewraps changes its own height, and is observed too.
+    const heights = new WeakMap<Element, number>()
+    const resize = new ResizeObserver((entries) => {
+      let moved = false
+      for (const { target, contentRect } of entries) {
+        if (heights.get(target) !== contentRect.height) moved = true
+        heights.set(target, contentRect.height)
+      }
+      if (moved) read()
+    })
     const scan = () => {
       anchors = [...document.querySelectorAll(ANCHORS)]
       const next = new Set<Element>()
@@ -54,6 +64,8 @@ export function useNoticeComposerBottom(active: boolean): number | undefined {
     const schedule = (again: boolean) => { rescan ||= again; if (!frame) frame = requestAnimationFrame(() => { frame = 0; const scanNow = rescan; rescan = false; if (scanNow) scan(); else read() }) }
     const reread = () => schedule(false)
     const containsComposer = (node: Node) => node instanceof Element && (node.matches(ANCHORS) || node.querySelector(ANCHORS) !== null)
+    // A scroll moves the composer only if the box scrolled holds it (❌ the transcript beside it, which scrolls as it rewraps).
+    const scrolled = (event: Event) => { if (event.target === document || (event.target instanceof Node && containsComposer(event.target))) reread() }
     const mutations = new MutationObserver((records) => {
       // Streaming transcript rows and Sonner's own style updates do not change the anchor.
       if (records.some((record) => record.type === 'attributes'
@@ -62,14 +74,14 @@ export function useNoticeComposerBottom(active: boolean): number | undefined {
     })
     mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'hidden', 'data-state'] })
     window.addEventListener('resize', reread)
-    document.addEventListener('scroll', reread, true)
+    document.addEventListener('scroll', scrolled, true)
     scan()
     return () => {
       if (frame) cancelAnimationFrame(frame)
       resize.disconnect()
       mutations.disconnect()
       window.removeEventListener('resize', reread)
-      document.removeEventListener('scroll', reread, true)
+      document.removeEventListener('scroll', scrolled, true)
     }
   }, [active])
   return bottom
