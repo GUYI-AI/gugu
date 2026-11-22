@@ -627,12 +627,13 @@ describe('a cloud object for the renderer, fetched by main', () => {
   it('forwards the range to the signed address and passes the store\'s answer through as it is', async () => {
     const url = cloudObjectUrl(signed);
     expect(url.startsWith('gugu-preview://object/')).toBe(true);
-    objects.answer = async () => new Response('2345', { status: 206, headers: { 'content-range': 'bytes 2-5/10', 'content-length': '4', 'content-type': 'video/mp4', 'x-oss-request-id': 'kept-out' } });
+    objects.answer = async () => new Response('2345', { status: 206, headers: { 'content-range': 'bytes 2-5/10', 'content-length': '4', 'content-type': 'video/mp4', 'cache-control': 'public, max-age=31536000, immutable', 'x-oss-request-id': 'kept-out' } });
     const part = await handlePreviewRequest(new Request(url, { headers: { Range: 'bytes=2-5' } }), 'pane');
     expect(objects.asked).toEqual([{ url: signed, range: 'bytes=2-5' }]);
     expect(part.status).toBe(206);
     expect(part.headers.get('content-range')).toBe('bytes 2-5/10');
     expect(part.headers.get('content-type')).toBe('video/mp4');
+    expect(part.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
     expect(part.headers.get('x-oss-request-id')).toBeNull();
     expect(part.headers.get('access-control-allow-origin')).toBe('gugu-app://app');
     expect(part.headers.get('access-control-expose-headers')).toBe('Content-Range');

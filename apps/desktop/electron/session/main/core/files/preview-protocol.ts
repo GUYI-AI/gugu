@@ -180,8 +180,12 @@ function serveBytes(registration: BytesPreviewRegistration, pathname: string, ra
   });
 }
 
-/** What an object answer passes on to the renderer: the store's own status, length, range and type. */
-const OBJECT_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
+/**
+ * What an object answer passes on to the renderer: the store's own status, length, range, type, validators and caching.
+ * A `<video>` keeps what it has buffered across a seek only for an answer it may cache: the store's `Cache-Control`
+ * (immutable) goes through as it is, not a `no-store` of our own.
+ */
+const OBJECT_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified', 'cache-control'];
 
 /**
  * A cloud object for the renderer (`cloudObjectUrl`): main fetches the signed address through its egress (Node's HTTP/1.1,
@@ -201,7 +205,7 @@ async function serveCloudObject(url: URL, range: string | null, signal?: AbortSi
     log.warn('Cloud object request failed', { host: new URL(signed).host, kind });
     return new Response(null, { status: 502, headers: { 'X-Gugu-Object-Failure': kind, 'Access-Control-Allow-Origin': rendererOrigin() } });
   }
-  const headers: Record<string, string> = { 'Access-Control-Allow-Origin': rendererOrigin(), 'Access-Control-Expose-Headers': 'Content-Range', 'Cache-Control': 'no-store' };
+  const headers: Record<string, string> = { 'Access-Control-Allow-Origin': rendererOrigin(), 'Access-Control-Expose-Headers': 'Content-Range' };
   for (const name of OBJECT_HEADERS) { const value = answer.headers.get(name); if (value !== null) headers[name] = value; }
   return new Response(answer.body && inPieces(answer.body), { status: answer.status, headers });
 }
