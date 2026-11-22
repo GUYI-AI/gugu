@@ -9,44 +9,8 @@ import { IconButton } from '../ui/IconButton'
 import { Popover } from '../ui/Popover'
 import { Sheet } from '../ui/Sheet'
 import { menuSurfaceClassName } from '../ui/Menu'
-import { appsHere } from '../appSlot/appsHere'
 import { HERE_HOST } from '../appSlot/hereHost'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import { replica, useReplicas } from '../../lib/replica'
-import { Unknown } from '../ui/Unknown'
-
-/**
- * The Apps this chat can open: those with a page of their own, and those with a file in this chat's folder they open —
- * an agent's group game is the second kind and opens on its file, as its card's 「Open」 (5-minute game ①). An App that only
- * opens files and has none here would open nothing, so it is not listed.
- */
-// Whether this chat's folder has a file the App opens: one reading per chat and App.
-const chatAppHasFiles = replica({
-  name: 'chatAppHasFiles',
-  scope: 'account',
-  networkMode: 'always',
-  read: async (_owner: string, chatId: string, extensionId: string) => {
-    const files = await appsHere?.groupFilesOpenedBy({ chatId, extensionId })
-    return !!files?.success && (files.data?.length ?? 0) > 0
-  },
-})
-
-/**
- * The Apps to list, and whether some file-only App is not answered yet (its row is a placeholder, ❌「无应用」). A task has no
- * chat folder (`chatId` null): only Apps with a page of their own.
- */
-function useChatApps(chatId: string | null, installed: InstalledApps) {
-  const all = installed.chatOpenableApps
-  const fileOnly = chatId ? all.filter((app) => !installed.mainTabOf(app.extensionId)) : []
-  const readings = useReplicas(chatAppHasFiles, fileOnly.map((app) => [chatId!, app.extensionId] as [string, string]))
-  const hasFiles = new Map(fileOnly.map((app, index) => [app.extensionId, readings[index]!]))
-  const apps = all.filter((app) => {
-    if (installed.mainTabOf(app.extensionId)) return true
-    const reading = hasFiles.get(app.extensionId)
-    return reading?.state === 'value' && reading.value
-  })
-  return { apps, pending: readings.some((reading) => reading.state === 'unknown') }
-}
 
 /** The one Apps button of a chat's or a task's header (`size`/`labeled` follow the header's density). */
 export function AppsButton({ labeled, ...props }: Omit<ComponentProps<typeof Button>, 'children'> & { labeled?: boolean }) {
@@ -83,7 +47,8 @@ export function ChatAppsPicker({ chatId, onOpen, mobile, anchor, onClose }: {
 
 function ChatAppRows({ chatId, installed, onOpen, onClose }: { chatId: string | null; installed: InstalledApps; onOpen: (app: RailApp) => void; onClose: () => void }) {
   const { t } = useTranslation('messaging')
-  const { apps, pending } = useChatApps(chatId, installed)
+  // A task has no chat folder (`chatId` null): only Apps with a page of their own.
+  const apps = installed.appsIn(chatId ? 'chat' : 'page')
   return (
     <>
       {apps.map((app) => (
@@ -93,8 +58,7 @@ function ChatAppRows({ chatId, installed, onOpen, onClose }: { chatId: string | 
             </Button>
           </div>
       ))}
-      {pending ? <div className="px-2 py-2"><Unknown className="w-32" /></div>
-        : apps.length === 0 && <p className="px-2 py-3 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t('header.noApps')}</p>}
+      {apps.length === 0 && <p className="px-2 py-3 text-[length:var(--font-caption)] text-[var(--text-secondary)]">{t('header.noApps')}</p>}
     </>
   )
 }

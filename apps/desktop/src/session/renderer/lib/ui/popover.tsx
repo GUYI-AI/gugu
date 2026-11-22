@@ -2,7 +2,7 @@
 
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import * as React from 'react';
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives';
+import { useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
 import { noteOverlayRequest } from '@/lib/localRendererDiagnostics';
 
@@ -39,6 +39,7 @@ function PopoverContent({
         anchor={anchor}
         className="isolate z-50"
       >
+        <OpenLayer />
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(

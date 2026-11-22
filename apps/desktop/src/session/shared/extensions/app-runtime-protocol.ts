@@ -659,6 +659,9 @@ export interface AppOpenWithDetail {
     | { kind: 'none' };
 }
 
+/** An App opened in a chat other than as a page of its own (`appInChat`): the file it names there, or its files there. */
+export type AppInChat = { open: AppOpenWithDetail } | { files: { itemId: string; name: string; displayName: string }[] };
+
 /** One image of a chat the viewer can page to: the version its bytes are read at. */
 export interface ViewedImage { itemId: string; version: number; name: string; contentType: string }
 

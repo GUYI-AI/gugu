@@ -128,7 +128,7 @@ function PanelIcon({ item }: { item: PanelItem }) {
   const apps = installed.state === 'value' ? installed.value : null;
   const extensionId = item.kind && (installed.state === 'unknown' || !showsFile(item, apps)) ? parseExtensionTabKind(item.kind)?.extensionId : undefined;
   if (extensionId && installed.state === 'unknown') return <Unknown className="size-4 shrink-0" />;
-  const app = extensionId && apps ? apps.openableApps.find((candidate) => candidate.extensionId === extensionId) : undefined;
+  const app = extensionId && apps ? apps.appsIn('page').find((candidate) => candidate.extensionId === extensionId) : undefined;
   return app ? <RailAppIcon app={app} className="size-4" /> : <AppFileMark kind={item.kind} fileName={item.fileName ?? item.title} context="chat" size={14} />;
 }
 
