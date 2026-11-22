@@ -832,7 +832,7 @@ describe('SessionCell prompts', () => {
 
   it('咕咕拒了这一轮的票:按原因结算,claude 那句不进转录也不进详情', async () => {
     const agent = new FakeAcpAgent();
-    const { cell } = makeCell(agent, { platformCredentials: true });
+    const { cell } = makeCell(agent, { hostCredentials: true });
     agent.prompt = vi.fn(async () => {
       cell.noteCredentialRefusal('gugu-models:membership-required');
       cell.push({ kind: 'message', role: 'assistant', messageId: null, text: APIKEY_HELPER_TEXT });
@@ -846,7 +846,7 @@ describe('SessionCell prompts', () => {
 
   it('咕咕拒了票、这一家却报成正常结束:同样按原因结算', async () => {
     const agent = new FakeAcpAgent();
-    const { cell } = makeCell(agent, { platformCredentials: true });
+    const { cell } = makeCell(agent, { hostCredentials: true });
     agent.prompt = vi.fn(async () => {
       cell.noteCredentialRefusal('gugu-models:signed-out');
       cell.push({ kind: 'message', role: 'assistant', messageId: null, text: APIKEY_HELPER_TEXT });
@@ -860,7 +860,7 @@ describe('SessionCell prompts', () => {
 
   it('上一轮被拒、这一轮正常:这一轮的结算不带上一轮的原因,回复照常进转录', async () => {
     const agent = new FakeAcpAgent();
-    const { cell } = makeCell(agent, { platformCredentials: true });
+    const { cell } = makeCell(agent, { hostCredentials: true });
     agent.prompt = vi.fn(async () => {
       cell.noteCredentialRefusal('gugu-models:membership-required');
       throw new Error('Internal error');
@@ -879,7 +879,7 @@ describe('SessionCell prompts', () => {
 
   it('同一轮里后来签出来了(宿主递 null 撤掉):后面的回复照常进转录、照常结束', async () => {
     const agent = new FakeAcpAgent();
-    const { cell } = makeCell(agent, { platformCredentials: true });
+    const { cell } = makeCell(agent, { hostCredentials: true });
     agent.prompt = vi.fn(async () => {
       cell.noteCredentialRefusal('gugu-models:service-unavailable');
       cell.noteCredentialRefusal(null);
@@ -907,7 +907,7 @@ describe('SessionCell prompts', () => {
 
   it('不在回合里递进来的原因不收(还在起的会话没有这一轮)', async () => {
     const agent = new FakeAcpAgent();
-    const { cell } = makeCell(agent, { platformCredentials: true });
+    const { cell } = makeCell(agent, { hostCredentials: true });
     cell.noteCredentialRefusal('gugu-models:membership-required');
     agent.prompt = vi.fn(async () => {
       cell.push({ kind: 'message', role: 'assistant', messageId: null, text: 'fine' });
