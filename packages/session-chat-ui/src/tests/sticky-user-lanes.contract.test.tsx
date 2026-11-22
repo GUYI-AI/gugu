@@ -366,10 +366,13 @@ describe('sticky user lanes', () => {
     await stuckAfter('c-user');
     expect(t.pinTop('c-user'), 'the inserted c takes over').toBeCloseTo(PIN_LINE, 0);
   });
-  it('in the agent conversation, a delivered bubble ends the lane before it instead of sliding under its stuck copy', async () => {
+  it('in the agent conversation, a delivered bubble ends the lane before it: the stuck copy neither slides under it nor leaves before it arrives', async () => {
     const delivered = longTurn('b', 1, 150);
     delivered.items[0] = { kind: 'message', id: 'b-user', seq: 0, role: 'user',
       text: '<gugu_delivery route="chat" msg="msg:b" from="小王" from_id="user:wang"><![CDATA[来自群里的一条消息]]></gugu_delivery>' } as TranscriptTurn['items'][number];
+    // A long reply after it, so the delivered bubble can be scrolled all the way up to the stuck copy.
+    delivered.items.push({ kind: 'message', id: 'b-final', seq: 151, role: 'assistant',
+      text: Array.from({ length: 12 }, (_, i) => `b reply ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') } as TranscriptTurn['items'][number]);
     const theme = buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true });
     const t = await mount([longTurn('a', 0, 150), delivered], undefined, theme);
     // 投进来的那条不是钉顶单元,在对话布局里画成右侧一个气泡:按它那一行找。
@@ -380,12 +383,20 @@ describe('sticky user lanes', () => {
     t.view.scrollToItem('b-user', { align: 'start', offset: -120 });
     await until('the delivered bubble is below the pin line', () => ({ top: rowTop(), scrollTop: t.scrollEl.scrollTop }), value => value.top !== null && value.top < 260 && value.top > 80);
     const st = t.scrollEl.scrollTop;
-    // MBP 验收 10-28:前一条打字消息的钉顶副本一直盖着投进来的那条。
-    for (let i = 0; i < 40; i++) {
-      t.scrollEl.scrollTop = st + i * 6;
-      const a = t.pinBottom('a-user');
-      if (a !== null) expect(a, `step ${i}`).toBeLessThanOrEqual(deliveredRow()!.getBoundingClientRect().top + 1);
+    // MBP 验收 10-28:前一条打字消息的钉顶副本一直盖着投进来的那条。owner 11-22:它又在投进来那条的名字行碰到它时就被推走,
+    // 气泡还隔着名字行和行距。被推走的那一刻,两个气泡之间只剩钉顶的留白。
+    let pushed = false;
+    for (let i = 0; i < 160 && !pushed; i++) {
+      t.scrollEl.scrollTop = st + i * 2;
+      const a = t.pinBottom('a-user'), bubble = t.card('b-user')!.getBoundingClientRect().top;
+      if (a !== null) expect(a, `step ${i}`).toBeLessThanOrEqual(bubble - PIN_SUMMARY_GAP + 1);
+      else {
+        pushed = true;
+        expect(t.summary('a-user')!.getBoundingClientRect().bottom, `step ${i}: pushed off by the bubble, not by the name above it`)
+          .toBeCloseTo(bubble - PIN_SUMMARY_GAP, 0);
+      }
     }
+    expect(pushed, 'the delivered bubble pushed the stuck copy off').toBe(true);
   });
 
   // #2629: the reader's own message that came in as a delivery (a task started from a chat message) is drawn below its

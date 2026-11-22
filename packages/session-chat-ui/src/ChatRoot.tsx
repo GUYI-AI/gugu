@@ -69,7 +69,7 @@ import { createTweenRegistry } from './components/engine/tween-registry';
 import { createActivityGeometry } from './components/engine/activity-geometry';
 import { SEGMENTERS, UNIT_REGISTRY } from './components/engine/unit-registry';
 import { CONVERSATION_PREVIEW_MAX_H } from './components/engine/row-metrics';
-import { PinnedUserSummary, pinSummary } from './components/rows/message/PinnedUserSummary';
+import { cardTop, PinnedUserSummary, pinSummary } from './components/rows/message/PinnedUserSummary';
 import type { MessageVars } from './components/rows/message/metrics';
 import { UnitRow } from './components/engine/UnitRow';
 import { conversationBubbleKey, latestConversationBubbleId } from './components/rows/message/conversation-body';
@@ -1251,10 +1251,24 @@ export function ChatRoot(props: ChatRootProps) {
     { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) }
   );
 
-  /** Lane height of an anchor: up to the next anchor (or delivered bubble, see `pinEnds`), or to the end of the content. */
+  /** Each lane end's card top below its row's top, laid out once per message like `pinAnchorGeometry`. */
+  const pinEndCardTops = mapArray(pinEnds, index => {
+    const message = createMemo(() => units().at(index)?.data);
+    return [index, createMemo(() => {
+      const data = message();
+      return data ? (untrack(() => units().at(index)?.gapBefore) ?? 0) + cardTop(data as ChatMessage, measureContext()) : 0;
+    })] as const;
+  });
+  const pinEndCardTop = createMemo(() => new Map(pinEndCardTops().map(([index, top]) => [index, top()])));
+
+  /**
+   * Lane height of an anchor: up to the card of the next anchor (or delivered bubble, see `pinEnds`), or to the end of
+   * the content. Not the next row's top: above its card are its gap and a delivered message's sender line, and a
+   * summary pushed off there left while the next bubble was still that far below it.
+   */
   function laneHeight(idx: number): number {
     const next = pinEnds().find((end) => end > idx);
-    return Math.max(virt.size(idx), (next !== undefined ? virt.top(next) : virt.total()) - virt.top(idx));
+    return Math.max(virt.size(idx), (next !== undefined ? virt.top(next) + pinEndCardTop().get(next)! : virt.total()) - virt.top(idx));
   }
 
   /** The anchor whose lane covers the viewport top (its row is the stuck one), or -1. */

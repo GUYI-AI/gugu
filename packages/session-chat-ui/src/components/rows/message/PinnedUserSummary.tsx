@@ -26,10 +26,9 @@ export function pinSummary(item: ChatMessage, ctx: MeasureCtx, baseVars: Message
   const text = body || (item.attachments ?? []).map(attachment => attachment.name).join(', ');
   // The summary rests behind the last `height` px of the bubble it repeats, in the bubble's own box (ChatRoot @@@pin-cover).
   const bubble = conversation ? userBubbleBox(item, conversationContext(ctx, item), conversationVars(item, baseVars)) : userBubbleBox(item, ctx, baseVars);
-  // `bubble.bottom` is counted from the top of the message card; a delivered message draws more above that card — its
-  // sender's name in the agent conversation, the delivery card's padding and source line elsewhere. Without it the
-  // summary rested that much above its bubble: over the attachment's name and the bubble's top edge (#2629).
-  const above = conversation ? conversationBubbleTop(item, ctx) : item.role === 'user' && item.guguDelivery ? deliveryBodyTop(item, ctx, DELIVERY_VARS) : 0;
+  // `bubble.bottom` is counted from the top of the message card. Without what is drawn above that card the summary
+  // rested that much above its bubble: over the attachment's name and the bubble's top edge (#2629).
+  const above = cardTop(item, ctx);
   const lineHeight = ctx.theme.fonts.body.lineHeight;
   const lines = summaryLineCount(text, ctx.theme.fonts.body.font, userInnerWidth(bubble.width, vars), lineHeight, ctx.measureEpoch ?? 0);
   // Never taller than the bubble it rests behind: a cite pill is one cut line in the bubble but its whole label here.
@@ -38,6 +37,17 @@ export function pinSummary(item: ChatMessage, ctx: MeasureCtx, baseVars: Message
   // More lines than the summary shows: its last shown line fades out.
   const clipped = lines > shown;
   return { text, vars, conversation, height, shown, clipped, rest: Math.max(0, above + bubble.bottom - height), width: bubble.width, bare: !bubble.drawn };
+}
+
+/**
+ * How far below the top of its row (after the row's gap) a message's card starts: a delivered message draws more above
+ * it — its sender's name in the agent conversation, the delivery card's padding and source line elsewhere. A summary
+ * rests behind its own bubble by it, and the lane before a message ends there (ChatRoot laneHeight): a summary is pushed
+ * off by the next bubble, not by the name above it.
+ */
+export function cardTop(item: ChatMessage, ctx: MeasureCtx): number {
+  if (ctx.theme.layout?.agentConversation) return conversationBubbleTop(item, ctx);
+  return item.role === 'user' && item.guguDelivery ? deliveryBodyTop(item, ctx, DELIVERY_VARS) : 0;
 }
 
 // @@@summary-lines-once — the list asks for every anchor's summary each time it is rebuilt (an older page lands, a
