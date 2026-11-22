@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import type { PasswordSyncRequest } from '@gugu/core/shared/passwordBetaProtocol'
 import { usePasswordVault, useOpenPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
-import { LiveNotice } from '@/components/LiveNotice'
+import { useNotice } from '@/lib/notices'
 import { Button } from '../ui/Button'
 import { RefreshFailed } from '../ui/RefreshFailed'
 import { Sheet } from '../ui/Sheet'
@@ -35,6 +35,21 @@ export function PasswordDeviceHost() {
   const joining = sync?.state === 'joining' || sync?.state === 'blocked' || sync?.state === 'refused' ? sync : undefined
   const putAside = (deviceId: string) => { clear(); setAside(previous => new Set([...previous, deviceId])) }
   const stale = <RefreshFailed error={failure} onRetry={retry} />
+  // A freshly signed-in device is usually still in the first-run guide; the one banner slot is mounted above it.
+  useNotice('password-join', joining && !cardClosed ? {
+    title: t(joining.state === 'refused' ? 'passwords.joinRefused' : 'passwords.joinAsk'), ongoing: true, onDismiss: () => setCardClosed(true),
+    description: <div data-testid="password-join-card" className="flex flex-col items-start gap-2">
+      {joining.state === 'refused'
+        ? <><div>{t('passwords.refusedHint')}</div>
+          {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
+          <Button size="sm" disabled={busy} data-testid="password-join-again" onClick={() => { void run({ type: 'sync-ask-again' }) }}>{t('passwords.askAgain')}</Button></>
+        : joining.state === 'joining' && joining.code
+          ? <><Code value={joining.code} /><div>{t('passwords.joinCompare')}</div></>
+          : <div>{t('passwords.joinOpenOther')}</div>}
+      {stale}
+      {joining.recovery && <Button variant="ghost" size="sm" onClick={() => { clear(); setRecovering(true) }}>{t('passwords.useRecoveryInstead')}</Button>}
+    </div>,
+  } : null)
   return <>
     {request && <Sheet onClose={() => putAside(request.deviceId)} desktopWidth="380px" mobileFitContent ariaLabel={t('passwords.deviceRequestLabel')} testId="password-device-prompt" zIndex="var(--z-settings-modal)">
       <div className="flex flex-col gap-3 px-5 pb-5 pt-6" data-stage={request.stage}>
@@ -55,20 +70,6 @@ export function PasswordDeviceHost() {
           onClick={() => { void run({ type: 'sync-reject', deviceId: request.deviceId }) }}>{t(request.stage === 'mismatch' ? 'passwords.deny' : 'passwords.notMe')}</Button>
       </div>
     </Sheet>}
-    {/* A freshly signed-in device is usually still in the first-run guide; the one notice outlet is mounted above it. */}
-    {joining && !cardClosed && <LiveNotice noticeKey="password-join" title={t(joining.state === 'refused' ? 'passwords.joinRefused' : 'passwords.joinAsk')}
-      ongoing onDismiss={() => setCardClosed(true)}
-      description={<div role="status" data-testid="password-join-card" className="flex flex-col items-start gap-2">
-        {joining.state === 'refused'
-          ? <><div>{t('passwords.refusedHint')}</div>
-            {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
-            <Button size="sm" disabled={busy} data-testid="password-join-again" onClick={() => { void run({ type: 'sync-ask-again' }) }}>{t('passwords.askAgain')}</Button></>
-          : joining.state === 'joining' && joining.code
-            ? <><Code value={joining.code} /><div>{t('passwords.joinCompare')}</div></>
-            : <div>{t('passwords.joinOpenOther')}</div>}
-        {stale}
-        {joining.recovery && <Button variant="ghost" size="sm" onClick={() => { clear(); setRecovering(true) }}>{t('passwords.useRecoveryInstead')}</Button>}
-      </div>} />}
     {recovering && <RecoverSheet busy={busy} error={error} onClose={() => setRecovering(false)}
       onSubmit={async code => { const reply = await run({ type: 'sync-recover', code }); if (reply?.recoveryCode) { setRecovering(false); setNewCode(reply.recoveryCode) } }} />}
     {newCode && <RecoveryCodeSheet code={newCode} fresh onClose={() => setNewCode(undefined)} />}

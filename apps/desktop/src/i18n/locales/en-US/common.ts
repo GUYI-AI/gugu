@@ -123,6 +123,11 @@ export default {
     "minutesAgo_one": "{{count}} minute ago",
     "minutesAgo_other": "{{count}} minutes ago"
   },
+  "notice": {
+    "previous": "Previous notice",
+    "next": "Next notice",
+    "position": "Notice {{index}} of {{total}}"
+  },
   "toast": {
     "dismiss": "Dismiss"
   },

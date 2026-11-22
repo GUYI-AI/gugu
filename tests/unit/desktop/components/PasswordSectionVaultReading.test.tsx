@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PasswordItem, PasswordSaveDraft, PasswordSnapshot, PasswordUiCommand, PasswordUiReply } from '../../../../packages/core/src/shared/passwordBetaProtocol'
 import { requestPasswordFill } from '../../../../packages/core/src/shared/passwordBetaProtocol'
 import { createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
-vi.mock('@/components/LiveNotice', () => import('../../../support/inlineLiveNotice'))
 
 
 const item = (id: string, name: string): PasswordItem => ({
@@ -105,7 +104,8 @@ describe('the device prompt over a kept vault', () => {
     const joining: PasswordSnapshot = { ...snapshotOf(), sync: { state: 'joining', code: '123456' } }
     let fail = false
     const vault = fakeVault(async () => (fail ? { ok: false, code: 'SYSTEM_STORAGE_UNAVAILABLE' } : { ok: true, snapshot: joining }))
-    await render(createNode(PasswordDeviceHost))
+    const { NoticeBannerSlot } = await import('../../../../apps/desktop/src/components/NoticeHost')
+    await render(createNode('div', {}, createNode(NoticeBannerSlot), createNode(PasswordDeviceHost)))
     await waitForCondition(() => document.querySelector('[data-testid="password-join-card"]') !== null, 'join card not drawn')
     expect(document.querySelector('[data-testid="password-join-card"] [data-refresh-failed]')).toBeNull()
     fail = true

@@ -10,11 +10,11 @@
 //   downloading(宿主状态值 'downloading',百分比也在里面) → 「下载新版本中…」(由 update-downloaded 收尾)
 //   manual-install(downloaded-manual) → 「安装包已打开」+拖装指引,无重启按钮(系统接管)
 // 静默下载失败也回到 available(用户点一次走手动路径,那条路失败会显式报错)。
-// not-available/error 不弹(自动 check 不打扰)。桌面栏底、手机提示栈里的常驻卡，克制不阻断。
+// not-available/error 不弹(自动 check 不打扰)。桌面栏底、手机横幅位上的常驻提示，克制不阻断。
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, CheckCircle2, AlertTriangle } from '@/lib/icons'
-import { LiveNotice } from '@/components/LiveNotice'
+import { useNotice } from '../lib/notices'
 import { UI_EVENTS } from '../lib/uiEvents'
 import { platform } from '../platform'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
@@ -150,8 +150,7 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
   }, [phase, failReason])
 
   // web/不支持更新的平台不渲染(事件也不会来，双保险)。
-  if (!platform.capabilities.appUpdates) return null
-  if (phase === 'idle' || (placement === 'floating' && dismissed)) return null
+  const visible = platform.capabilities.appUpdates && phase !== 'idle'
 
   const ready = phase === 'ready'
   const downloading = phase === 'downloading'
@@ -191,31 +190,11 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
           ? t('shell.update.downloadingDescription')
           : t('shell.update.availableDescription')
 
-  if (placement === 'rail') {
-    const label = downloading
-      ? `${title}${percent === null ? '' : ` ${Math.round(percent)}%`}`
-      : installing === 'checking'
-        ? t('about.checking', { ns: 'settings' })
-        : installing === 'restarting'
-          ? t('shell.update.restarting')
-          : ready ? t('shell.update.restartNow') : failed ? t('shell.update.retry') : manualInstall ? title : t('shell.update.download')
-    return (
-      <UpdateRailButton
-        label={label}
-        description={failed ? failReasonText : manualInstall ? sub : phase === 'available' && version ? title : ''}
-        progress={downloading ? percent : undefined}
-        busy={downloading || installing !== false}
-        failed={failed}
-        onClick={manualInstall ? undefined : ready ? install : startDownload}
-      />
-    )
-  }
-
-  // 手机上是提示栈里的一张常驻卡(桌面在栏底,见上);关闭钮与「稍后」都只收起这一次。
-  return (
-    <LiveNotice noticeKey="app-update" title={title} ongoing onDismiss={() => setDismissed(true)}
-    icon={ failed ? <AlertTriangle size={16} /> : ready || manualInstall ? <CheckCircle2 size={16} /> : <Download size={16} />}
-    description={<div data-testid={AUTOMATION_TEST_IDS.updateBanner} data-phase={phase} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+  // 手机上是横幅位上的一条常驻提示(桌面在栏底,见下);关闭钮与「稍后」都只收起这一次。
+  useNotice('app-update', placement === 'floating' && visible && !dismissed ? {
+    title, ongoing: true, onDismiss: () => setDismissed(true),
+    icon: failed ? <AlertTriangle size={16} /> : ready || manualInstall ? <CheckCircle2 size={16} /> : <Download size={16} />,
+    description: <div data-testid={AUTOMATION_TEST_IDS.updateBanner} data-phase={phase} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div>{sub}</div>
 
       {/* @@@1961 downloading：进度条 + 百分比。percent=null(尚无进度事件)→「准备下载…」不确定态。 */}
@@ -277,8 +256,30 @@ export function UpdateBanner({ placement = 'floating' }: { placement?: 'floating
           </button>
         </div>
       )}
-    </div>} />
-  )
+    </div>,
+  } : null)
+
+  if (!visible) return null
+  if (placement === 'rail') {
+    const label = downloading
+      ? `${title}${percent === null ? '' : ` ${Math.round(percent)}%`}`
+      : installing === 'checking'
+        ? t('about.checking', { ns: 'settings' })
+        : installing === 'restarting'
+          ? t('shell.update.restarting')
+          : ready ? t('shell.update.restartNow') : failed ? t('shell.update.retry') : manualInstall ? title : t('shell.update.download')
+    return (
+      <UpdateRailButton
+        label={label}
+        description={failed ? failReasonText : manualInstall ? sub : phase === 'available' && version ? title : ''}
+        progress={downloading ? percent : undefined}
+        busy={downloading || installing !== false}
+        failed={failed}
+        onClick={manualInstall ? undefined : ready ? install : startDownload}
+      />
+    )
+  }
+  return null
 }
 
 function primaryBtnStyle(busy: boolean): React.CSSProperties {

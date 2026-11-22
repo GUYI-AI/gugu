@@ -8,7 +8,7 @@ import { readAssistantShellBridge } from '../../lib/assistantShellBridge'
 import type { VoiceNoteWindowRequest } from '../../session/shared/extensions/voice-note-session'
 import { Button } from '../ui/Button'
 import { Mic } from '../../lib/icons'
-import { LiveNotice } from '@/components/LiveNotice'
+import { useNotice } from '@/lib/notices'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { openAssistantEntry } from '../../lib/assistantEntry'
 import { useDevicePreferences } from '../../lib/devicePreferences'
@@ -60,7 +60,7 @@ function clock(iso: string | null): string {
 
 /**
  * #7199 会议提醒:这台电脑日历里有会快开始时(前 1 分钟,开始后 5 分钟内),
- * 提示栈里一张常驻卡「会议即将开始 · 开始录音」;窗口不在前台时再发一条系统通知。点「开始录音」= 打开助理 App 开录,
+ * 横幅位上一条常驻提示「会议即将开始 · 开始录音」;窗口不在前台时再发一条系统通知。点「开始录音」= 打开助理 App 开录,
  * 录下的这条带着这场会的名字交给助理。日历读的是「设备 → 这台电脑能做的事」里连上的那一份,没连上就不提醒。
  * 只在有个人助理时看(录下的要交给它整理)。
  */
@@ -114,26 +114,26 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
     else setFailed(true)
   }
 
-  // 一张常驻提示:标题 +「会议 · HH:mm - HH:mm」,「开始录音」,关闭钮收起。没有个人助理了(退出登录、云电脑没了)也收起。
-  if (!meeting || !enabled) return null
-  return (
-    <LiveNotice noticeKey="meeting-reminder" title={meeting.title || t('meeting.heading')} ongoing onDismiss={() => setMeeting(null)}
-      description={<div data-testid="meeting-reminder" className="flex flex-col items-start gap-2">
-        <span>{[t('meeting.heading'), [clock(meeting.start), clock(meeting.end)].filter(Boolean).join(' - ')].join(metadataSeparator())}</span>
-        {failed ? <span className="text-[var(--danger-fg)]">{t('meeting.error')}</span> : null}
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={starting || recording}
-          title={recording ? t('meeting.recording') : undefined}
-          onClick={() => void start(meeting)}
-          data-testid="meeting-reminder-start"
-        >
-          <span className="inline-flex items-center gap-1 [&>svg]:h-4 [&>svg]:w-4">
-            <Mic />
-            {recording ? t('meeting.recording') : t('meeting.startRecording')}
-          </span>
-        </Button>
-      </div>} />
-  )
+  // 一条常驻提示(横幅位):标题 +「会议 · HH:mm - HH:mm」,「开始录音」,关闭钮收起。没有个人助理了(退出登录、云电脑没了)也收起。
+  useNotice('meeting-reminder', meeting && enabled ? {
+    title: meeting.title || t('meeting.heading'), ongoing: true, onDismiss: () => setMeeting(null),
+    description: <div data-testid="meeting-reminder" className="flex flex-col items-start gap-2">
+      <span>{[t('meeting.heading'), [clock(meeting.start), clock(meeting.end)].filter(Boolean).join(' - ')].join(metadataSeparator())}</span>
+      {failed ? <span className="text-[var(--danger-fg)]">{t('meeting.error')}</span> : null}
+      <Button
+        variant="primary"
+        size="sm"
+        disabled={starting || recording}
+        title={recording ? t('meeting.recording') : undefined}
+        onClick={() => void start(meeting)}
+        data-testid="meeting-reminder-start"
+      >
+        <span className="inline-flex items-center gap-1 [&>svg]:h-4 [&>svg]:w-4">
+          <Mic />
+          {recording ? t('meeting.recording') : t('meeting.startRecording')}
+        </span>
+      </Button>
+    </div>,
+  } : null)
+  return null
 }

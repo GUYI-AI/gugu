@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { NoticeHost } from '@/components/NoticeHost'
+import { NoticeBannerSlot, NoticeHost } from '@/components/NoticeHost'
 import { notify, dismissNotice } from '@/lib/notices'
 import { readThemePreference, writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { clickElement, createReactHarness } from '../../../../../../../tests/support/testHarness'
@@ -24,7 +24,7 @@ it.each(['light', 'dark'] as const)('paints the real notice lower outline and sa
       </div>
     </div>
   </>)
-  await act(async () => { notify({ key: 'card-edge', title: '群文件存储空间已满（1.00 GB / 1.00 GB），暂时无法上传新文件。', tier: 'warning', ongoing: true, action: { label: '管理文件', onClick() {} } }) })
+  await act(async () => { notify({ key: 'card-edge', title: '群文件存储空间已满（1.00 GB / 1.00 GB），暂时无法上传新文件。', tier: 'warning', duration: 60_000, action: { label: '管理文件', onClick() {} } }) })
   const card = () => document.querySelector<HTMLElement>('[data-sonner-toast]')!
   const composer = document.querySelector<HTMLElement>('[data-slot="composer"]')!
   await until('card settles at the approved 8px gap', () => !!card() && Math.abs(composer.getBoundingClientRect().top - card().getBoundingClientRect().bottom - 8) < 0.01)
@@ -50,26 +50,47 @@ it.each(['light', 'dark'] as const)('paints the real notice lower outline and sa
   expect(composer.getBoundingClientRect().top - box.bottom).toBeCloseTo(8, 2)
 })
 
-it('keeps a panel close button clickable under every persistent notice: the stack only grows from the bottom edge', async () => {
+it('persistent notices take the one banner slot on top of the content column: one shown, the page and its close button below it, a dialog over it', async () => {
   await page.viewport(1000, 700)
   previousTheme = readThemePreference()
   harness = createReactHarness()
-  const closed = vi.fn()
-  // A settings-sized panel: its close button sits in its own top edge, like every sheet and dialog.
+  const pageClosed = vi.fn(), dialogClosed = vi.fn()
   await harness.render(<><NoticeHost />
-    <div role="dialog" style={{ position: 'fixed', inset: '32px 0', zIndex: 'var(--z-settings)', background: 'var(--bg-primary)' }}>
-      <button type="button" aria-label="Close settings" onClick={closed} style={{ position: 'absolute', top: 16, right: 16, width: 32, height: 32 }} />
+    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
+      <NoticeBannerSlot />
+      <div style={{ flex: 1, position: 'relative' }}>
+        <header style={{ height: 40, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '0 12px' }}>
+          <button type="button" aria-label="Close page" onClick={pageClosed} style={{ width: 28, height: 28 }} />
+        </header>
+        <div data-slot="composer" style={{ position: 'absolute', left: 24, right: 24, bottom: 8, height: 110 }} />
+      </div>
     </div>
   </>)
   await act(async () => {
     notify({ key: 'first-install-card', title: '咕咕 支持一键数据导入啦', description: '快速带入你的记忆、项目规则和工作习惯', ongoing: true, action: { label: '导入', onClick() {} } })
     notify({ key: 'card-edge', title: '群文件存储空间已满,暂时无法上传新文件。', tier: 'warning', ongoing: true, action: { label: '管理文件', onClick() {} } })
   })
-  await until('both notices are mounted', () => document.querySelectorAll('[data-sonner-toast]').length === 2)
-  // One list, one corner: no notice opened a second position.
-  expect(document.querySelectorAll('[data-sonner-toaster]')).toHaveLength(1)
-  const close = document.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.getBoundingClientRect()
-  expect(document.elementFromPoint(close.left + close.width / 2, close.top + close.height / 2)?.getAttribute('aria-label')).toBe('Close settings')
+  const banners = () => document.querySelectorAll<HTMLElement>('.gugu-notice-banner')
+  expect(banners()).toHaveLength(1)
+  expect(banners()[0]!.textContent).toContain('2/2')
+  expect(document.querySelector('[data-sonner-toast]')).toBeNull()
+  // In the flow: the page (its header and close button) starts below the banner, nothing overlaps.
+  const close = () => document.querySelector<HTMLButtonElement>('[aria-label="Close page"]')!
+  expect(close().getBoundingClientRect().top).toBeGreaterThanOrEqual(banners()[0]!.getBoundingClientRect().bottom)
+  await clickElement(close())
+  expect(pageClosed).toHaveBeenCalledOnce()
+  // Paging shows the other one in the same place.
+  await clickElement(banners()[0]!.querySelector<HTMLButtonElement>('.gugu-notice-banner-pager button')!)
+  expect(banners()[0]!.textContent).toContain('1/2')
+  // A settings-style dialog opens over the page: the banner is under it, its close button is reachable.
+  await harness.render(<><NoticeHost />
+    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}><NoticeBannerSlot /><div style={{ flex: 1 }} /></div>
+    <div role="dialog" style={{ position: 'fixed', inset: '32px 0', zIndex: 'var(--z-settings)', background: 'var(--bg-primary)' }}>
+      <button type="button" aria-label="Close settings" onClick={dialogClosed} style={{ position: 'absolute', top: 16, right: 16, width: 32, height: 32 }} />
+    </div>
+  </>)
+  const settingsClose = document.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!.getBoundingClientRect()
+  expect(document.elementFromPoint(settingsClose.left + settingsClose.width / 2, settingsClose.top + settingsClose.height / 2)?.getAttribute('aria-label')).toBe('Close settings')
   await clickElement(document.querySelector<HTMLButtonElement>('[aria-label="Close settings"]')!)
-  expect(closed).toHaveBeenCalledOnce()
+  expect(dialogClosed).toHaveBeenCalledOnce()
 })

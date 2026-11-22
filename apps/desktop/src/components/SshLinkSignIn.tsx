@@ -23,12 +23,12 @@ import { InlineAction } from './settings/addServer/InlineAction'
 import { CommandBlock } from './settings/addServer/CommandBlock'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { useToast } from './toastContext'
-import { LiveNotice } from '@/components/LiveNotice'
+import { useNotice, type Notice } from '@/lib/notices'
 import { messageForUser } from '@/lib/userFacingError'
 import { useSshLinkProblems } from '../hooks/useSshLinkProblems'
 
 // #6264 远程 SSH 的机器:这台电脑与它之间只走 SSH(product spec「两种连法，处处能用」)。
-// 连不上时 ❌ 退回咕咕云,各个模块照常报「问不到」;「怎么修」只在这一处说 —— 提示栈里的一张常驻卡
+// 连不上时 ❌ 退回咕咕云,各个模块照常报「问不到」;「怎么修」只在这一处说 —— 横幅位上的一条常驻提示
 // (卡里是与远端终端上那张 SSH 提问卡片同一副内容):
 //  · 要人回答(密码 / 口令 / 新主机指纹)才连得上:❌ 自己出面;人在用到那台机器的地方点了「登录」,提问浮在这张卡片里;
 //  · 版本太旧:这台电脑当场替它更新(照 VS Code Remote-SSH),卡片说「正在更新」,升完自动连上、卡片收起;
@@ -86,7 +86,11 @@ export function SshLinkSignIn() {
     ? { deviceId: signingMachine.device_id, name: signingMachine.label, reason: 'signInRequired' }
     : (notice ?? (tunnelWaiting ? { deviceId: tunnelWaiting.device_id, name: tunnelWaiting.label, reason: 'waitingIdle' } : null))
   if (confirmRestart && (shown?.reason !== 'waitingIdle' || shown.deviceId !== confirmRestart.deviceId)) setConfirmRestart(null)
-  if (!shown) return null
+  useNotice('ssh-link', shown && card(shown))
+  return null
+
+  // The card for the machine shown: one persistent notice (the banner slot), its controls kept in this component's state.
+  function card(shown: SshLinkNotice): Omit<Notice, 'key'> {
   const tunnelUpdate = !notice ? tunnelWaiting?.capabilities.server_update : undefined
   const confirmableUpdate = tunnelUpdate?.state === 'ready' && tunnelWaiting
     && canRestartServerUpdate(tunnelUpdate, tunnelWaiting.capabilities) ? tunnelUpdate : null
@@ -132,8 +136,7 @@ export function SshLinkSignIn() {
     else if (signingIn) setSigningIn(null)
     else dismiss()
   }
-  return (
-    <LiveNotice noticeKey="ssh-link" ongoing onDismiss={close} description={
+  return { ongoing: true, onDismiss: close, description: (
       <div data-testid="ssh-link-sign-in">
         {shown.reason === 'waitingIdle' && !activePrompt ? (
           // 版本对不上、那台机器在等 agent 空闲:与 SSH 提问同一副卡(机器名一行 + 一句 + 底行按钮),「现在」先当面确认一次。
@@ -217,6 +220,6 @@ export function SshLinkSignIn() {
           </div>
         )}
       </div>
-    } />
-  )
+    ) }
+  }
 }

@@ -123,6 +123,11 @@ export default {
     "minutesAgo_one": "{{count}} 分钟前",
     "minutesAgo_other": "{{count}} 分钟前"
   },
+  "notice": {
+    "previous": "上一条提示",
+    "next": "下一条提示",
+    "position": "第 {{index}} 条，共 {{total}} 条提示"
+  },
   "toast": {
     "dismiss": "关闭提示"
   },

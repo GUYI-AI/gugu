@@ -4,7 +4,7 @@ import { page } from 'vitest/browser';
 import type { PasswordBetaUi, PasswordSnapshot, PasswordSyncView } from '@gugu/core/shared/passwordBetaProtocol';
 import { PasswordSection } from '@/components/settings/PasswordSection';
 import { PasswordDeviceHost } from '@/components/password/PasswordDeviceHost';
-import { NoticeHost } from '@/components/NoticeHost';
+import { NoticeBannerSlot } from '@/components/NoticeHost';
 import { Pane, PaneHeader } from '@/components/ui/Pane';
 import { followRendererSession, queryClient } from '@/lib/replica';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
@@ -49,15 +49,15 @@ afterEach(() => {
   delete document.documentElement.dataset.theme;
 });
 async function mount(corner = false) {
-  await harness.render(<><NoticeHost /><Frame>{corner && <PasswordDeviceHost />}</Frame></>);
+  await harness.render(<><NoticeBannerSlot /><Frame>{corner && <PasswordDeviceHost />}</Frame></>);
   await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="password-unlock-settings"]')).not.toBeNull());
   return harness.container.querySelector<HTMLElement>('[data-testid="password-unlock-settings"]')!;
 }
 async function push(next: PasswordSnapshot) {
   await act(async () => { current = next; for (const listener of listeners) listener(); });
 }
-// The join card is a notice in the one NoticeHost: its sonner item (title + content + close), not the one leaving.
-const joinCard = () => [...document.querySelectorAll('[data-sonner-toast]')].find(toast => toast.getAttribute('data-removed') !== 'true' && toast.querySelector('[data-testid="password-join-card"]')) ?? null;
+// The join card is a persistent notice: the banner (title + content + close) in the one banner slot.
+const joinCard = () => document.querySelector('[data-testid="password-join-card"]')?.closest('.gugu-notice-banner') ?? null;
 const button = (scope: ParentNode, name: string) => [...scope.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent?.trim() === name)!;
 async function capture(name: string) {
   if (import.meta.env.VITE_OWNER_CAPTURE_PHASE) await page.screenshot({ element: document.body,
@@ -82,7 +82,7 @@ it.each(['light', 'dark'])('uses the full-page entry and grouped code while reta
   expect(box.top - heading.bottom).toBeLessThanOrEqual(140);
   await capture(`joining-${theme}`);
   await vi.waitFor(() => expect(joinCard()).not.toBeNull());
-  await page.elementLocator(joinCard()!.querySelector<HTMLButtonElement>('[data-close-button]')!).click();
+  await page.elementLocator(joinCard()!.querySelector<HTMLButtonElement>('[data-notice-close]')!).click();
   await vi.waitFor(() => expect(joinCard()).toBeNull());
   expect(harness.container.querySelector('[data-testid="password-unlock-settings"]')).not.toBeNull();
 });

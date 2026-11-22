@@ -32,3 +32,64 @@
 .gugu-notices-above-composer[data-sonner-toaster][data-y-position='bottom'] {
   clip-path: inset(-100vh -100vw -8px -100vw);
 }
+
+/* 常驻的横幅位(NoticeBannerSlot):页面最上面一行、占文档流,一次一条。外观同提示条一套 token。 */
+.gugu-notice-banner-slot {
+  flex: none;
+  padding: 8px 12px 0;
+}
+.gugu-notice-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 8px 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--card);
+  color: var(--text-primary);
+  font-size: var(--font-body);
+  line-height: var(--lh-body);
+}
+.gugu-notice-banner-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
+  background: var(--muted);
+  color: var(--text-secondary);
+}
+.gugu-notice-banner[data-tier='error'] .gugu-notice-banner-icon,
+.gugu-notice-banner[data-tier='warning'] .gugu-notice-banner-icon {
+  color: var(--danger-fg);
+}
+.gugu-notice-banner-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 8px;
+}
+.gugu-notice-banner-title {
+  font-weight: var(--font-weight-medium);
+}
+.gugu-notice-banner-description {
+  min-width: 0;
+  color: var(--text-secondary);
+}
+/* 带控件的内容(进度行、提问、验证码)另起一行占满宽度。 */
+.gugu-notice-banner-description:has(button, input, [role='progressbar']) {
+  flex-basis: 100%;
+}
+.gugu-notice-banner-pager {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-secondary);
+  font-size: var(--font-caption);
+  font-variant-numeric: tabular-nums;
+}

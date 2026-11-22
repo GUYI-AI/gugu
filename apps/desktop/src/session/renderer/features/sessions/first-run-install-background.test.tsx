@@ -3,6 +3,7 @@ import React, { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { FirstRunInstallProvider } from '@/components/firstRun/FirstRunInstallProvider';
+import { NoticeBannerSlot } from '@/components/NoticeHost';
 import { useFirstRunInstaller } from '@/components/firstRun/first-run-install-context';
 
 const f = vi.hoisted(() => ({ install: vi.fn(), status: vi.fn() }));
@@ -11,7 +12,6 @@ vi.mock('@renderer/lib/stores/use-agent-installation-statuses', () => ({
   useAgentInstallationStatuses: () => ({ installAsync: f.install }), useAgentInstallProgress: () => null,
 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
-vi.mock('@/components/LiveNotice', () => import('../../../../../../../tests/support/inlineLiveNotice'));
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { agents: { getAgentInstallationStatus: f.status, cancelInstall: vi.fn() } } }));
 
 function Flow() {
@@ -31,7 +31,7 @@ describe('managed installations survive leaving the selection step (#7582)', () 
   it('tracks both concurrent installs independently after continuing', async () => {
     const codex = deferred(), claude = deferred();
     f.install.mockImplementation(({ id }) => id === 'codex' ? codex.promise : claude.promise);
-    await act(async () => root.render(<FirstRunInstallProvider><Flow /></FirstRunInstallProvider>));
+    await act(async () => root.render(<><NoticeBannerSlot /><FirstRunInstallProvider><Flow /></FirstRunInstallProvider></>));
     await act(async () => host.querySelector('button')!.click());
     expect(host.textContent).toContain('Next setup step');
     expect(f.install.mock.calls.map(([x]) => x)).toEqual([{ id: 'codex', method: 'mise' }, { id: 'claude', method: 'mise' }]);
@@ -45,7 +45,7 @@ describe('managed installations survive leaving the selection step (#7582)', () 
   it('does not report an external installed copy as a successful managed install', async () => {
     f.install.mockResolvedValue({ success: true });
     f.status.mockResolvedValue({ used: { kind: 'auto' }, installations: [{ provenance: { ours: false, kind: 'path' }, status: 'available' }] });
-    await act(async () => root.render(<FirstRunInstallProvider><Flow /></FirstRunInstallProvider>));
+    await act(async () => root.render(<><NoticeBannerSlot /><FirstRunInstallProvider><Flow /></FirstRunInstallProvider></>));
     await act(async () => host.querySelector('button')!.click());
     expect(host.querySelectorAll('[role="alert"]')).toHaveLength(2);
     expect(host.textContent).not.toContain('firstRun.harnessInstalled');
@@ -57,7 +57,7 @@ describe('managed installations survive leaving the selection step (#7582)', () 
       const queue = useFirstRunInstaller();
       return <><button data-k="a" onClick={() => queue(['codex'])}>Continue</button><button data-k="b" onClick={() => queue(['codex', 'claude'])}>Continue again</button></>;
     }
-    await act(async () => root.render(<FirstRunInstallProvider><BackAndForth /></FirstRunInstallProvider>));
+    await act(async () => root.render(<><NoticeBannerSlot /><FirstRunInstallProvider><BackAndForth /></FirstRunInstallProvider></>));
     await act(async () => host.querySelector<HTMLButtonElement>('[data-k="a"]')!.click());
     await act(async () => host.querySelector<HTMLButtonElement>('[data-k="b"]')!.click());
     expect(f.install.mock.calls.map(([x]) => x.id)).toEqual(['codex', 'claude']);

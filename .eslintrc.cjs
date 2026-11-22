@@ -99,7 +99,7 @@ const rendererImportGates = [
 // One notice host, one position, one outlet: only lib/notices and NoticeHost talk to sonner.
 const noticeOutletGate = {
   name: 'sonner',
-  message: 'Notices go through lib/notices (notify / dismissNotice / LiveNotice).'
+  message: 'Notices go through lib/notices (notify / dismissNotice / useNotice).'
 }
 
 module.exports = {

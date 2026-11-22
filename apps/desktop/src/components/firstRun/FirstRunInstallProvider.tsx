@@ -8,7 +8,7 @@ import { getAgentInstallErrorPresentation } from '@renderer/features/settings/ag
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { rpc } from '@renderer/lib/ipc'
 import { Button } from '../ui/Button'
-import { LiveNotice } from '@/components/LiveNotice'
+import { useNotice } from '@/lib/notices'
 import { FirstRunInstallContext } from './first-run-install-context'
 
 type InstallTask = { id: FirstRunHarness; state: 'installing' | 'done' | 'failed'; error?: string }
@@ -50,18 +50,15 @@ export function FirstRunInstallProvider({ children, showNotification = true }: {
     }
   }
 
-  return (
-    <FirstRunInstallContext.Provider value={start}>
-      {children}
-      {showNotification && tasks.length > 0 && !hidden ? (
-        <LiveNotice noticeKey="first-run-install" title={t('firstRun.backgroundInstall')} ongoing onDismiss={() => setHidden(true)}
-          description={<div data-testid="first-run-install-notification">
-            {tasks.map((task) => <InstallTaskRow key={task.id} task={task} onRetry={() => start([task.id])}
-              onCancel={() => { void rpc.agents.cancelInstall(task.id).catch((error: unknown) => update({ ...task, error: messageForUser(error) })) }} />)}
-          </div>} />
-      ) : null}
-    </FirstRunInstallContext.Provider>
-  )
+  useNotice('first-run-install', showNotification && tasks.length > 0 && !hidden ? {
+    title: t('firstRun.backgroundInstall'), ongoing: true, onDismiss: () => setHidden(true),
+    description: <div data-testid="first-run-install-notification">
+      {tasks.map((task) => <InstallTaskRow key={task.id} task={task} onRetry={() => start([task.id])}
+        onCancel={() => { void rpc.agents.cancelInstall(task.id).catch((error: unknown) => update({ ...task, error: messageForUser(error) })) }} />)}
+    </div>,
+  } : null)
+
+  return <FirstRunInstallContext.Provider value={start}>{children}</FirstRunInstallContext.Provider>
 }
 
 function InstallTaskRow({ task, onRetry, onCancel }: { task: InstallTask; onRetry: () => void; onCancel: () => void }) {
