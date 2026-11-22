@@ -35,6 +35,9 @@ export function previewSchemePrivilege() {
       standard: true,
       secure: true,
       supportFetchAPI: true,
+      // The renderer (gugu-app://) reads this machine's bytes of a sha here as a Blob (createBytesPreview). A cross-origin
+      // read still needs the response's own Access-Control-Allow-Origin, and each address is an unguessable id.
+      corsEnabled: true,
       // 视频要按字节范围取才能拖进度条;没有它,预览里的 <video> 只能从头播。
       stream: true,
     },
