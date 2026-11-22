@@ -19,6 +19,23 @@ export function isBuildTagWindowName(frameName: string): boolean {
   return frameName.startsWith(`${BUILD_TAG_WINDOW_NAME}:`);
 }
 
+/**
+ * 宿主自己画、却必须浮在原生网页视图之上的浮层(内容右键菜单)画进的那一层:一扇窗一层,名字同角标一样每次新开都换。
+ * 契约见 electron/host-layer.ts。
+ */
+export const HOST_LAYER_WINDOW_NAME = `${AUX_WINDOW_NAME_PREFIX}host-layer`;
+
+export function hostLayerWindowName(): string {
+  return `${HOST_LAYER_WINDOW_NAME}:${crypto.randomUUID()}`;
+}
+
+/** The host renderer shows or hides its window's layer (invoke with a boolean). */
+export const HOST_LAYER_SHOW = 'host-layer:show';
+
+export function isHostLayerWindowName(frameName: string): boolean {
+  return frameName.startsWith(`${HOST_LAYER_WINDOW_NAME}:`);
+}
+
 export function isAuxWindowRequest(url: string, frameName: string): boolean {
   return (url === 'about:blank' || url === '') && frameName.startsWith(AUX_WINDOW_NAME_PREFIX);
 }
