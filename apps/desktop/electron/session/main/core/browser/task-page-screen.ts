@@ -17,7 +17,7 @@ const screens = new ExtensionProjections(() => {});
 /** The projection principal of a task's page: gugu's own, not an App's. */
 const TASK_PAGE = 'gugu:task-page';
 
-type Open = { id: string; viewers: number; page: TaskPageScreenTarget; close(): Promise<void> };
+type Open = { id: string; viewers: number; page: TaskPageScreenTarget; close(): Promise<void>; closing?: Promise<void> };
 const open = new Map<string, Promise<Open>>();
 
 type CdpInput = { method: 'Input.dispatchMouseEvent' | 'Input.dispatchKeyEvent' | 'Input.insertText'; params: Record<string, unknown> };
@@ -124,7 +124,7 @@ async function openScreen(sessionId: string, page: TaskPageScreenTarget): Promis
  */
 export async function connectTaskPageScreen(sessionId: string, page: () => Promise<TaskPageScreenTarget | null>,
   send: (packet: ProjectionHostPacket) => void, state: (state: TaskPageState) => void = () => {}, presentation = false,
-): Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void }> {
+): Promise<{ receive(packet: unknown): Promise<void>; control(control: TaskPageControl): Promise<TaskPageControlResult>; close(): void | Promise<void> }> {
   let entry = open.get(sessionId);
   if (!entry) {
     const target = await page();
@@ -134,6 +134,11 @@ export async function connectTaskPageScreen(sessionId: string, page: () => Promi
     void entry.catch(() => { if (open.get(sessionId) === entry) open.delete(sessionId); });
   }
   const screen = await entry;
+  // A detached viewer can still be releasing input and stopping its capture on this page.
+  if (screen.closing) {
+    await screen.closing;
+    return connectTaskPageScreen(sessionId, page, send, state, presentation);
+  }
   let viewer: ReturnType<ExtensionProjections['connect']>;
   try {
     viewer = screens.connect({ extensionId: TASK_PAGE, sessionId }, screen.id, { transport: 'device', presentation, send, onClose: () => () => {} });
@@ -144,6 +149,7 @@ export async function connectTaskPageScreen(sessionId: string, page: () => Promi
   }
   screen.viewers += 1;
   let closed = false;
+  let closing: Promise<void> | undefined;
   // The toolbar there: where the page is, its title, whether it is loading, whether it can go back or forward.
   const report = () => state(screen.page.state());
   screen.page.on('state', report);
@@ -152,15 +158,17 @@ export async function connectTaskPageScreen(sessionId: string, page: () => Promi
     receive: viewer.receive,
     control: (control) => screen.page.control(control),
     close() {
-      if (closed) return;
+      if (closed) return closing;
       closed = true;
       screen.page.off('state', report);
       viewer.close();
       screen.viewers -= 1;
       if (screen.viewers === 0 && open.get(sessionId) === entry) {
-        open.delete(sessionId);
-        void screen.close().catch(() => {});
+        closing = screen.closing = screen.close().catch(() => {}).finally(() => {
+          if (open.get(sessionId) === entry) open.delete(sessionId);
+        });
       }
+      return closing;
     },
   };
 }

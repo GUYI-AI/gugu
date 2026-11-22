@@ -252,7 +252,7 @@ export async function watchStandalonePage(input: { browserId: string; watchId: s
           () => current() && contents.get(input.browserId) === page);
       },
     };
-  });
+  }, owner === undefined ? undefined : `${owner}:${input.browserId}`);
 }
 
 export async function closeStandalonePage(browserId: string) {

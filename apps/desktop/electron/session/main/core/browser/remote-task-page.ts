@@ -15,7 +15,8 @@ import type { StandaloneMenuPoint } from './standalone-context-menu';
 type TaskPageViewer = Awaited<ReturnType<typeof watchRemoteProjection>> & {
   contextMenu?(sender: number, point: StandaloneMenuPoint, current: () => boolean): Promise<boolean>;
 };
-const watches = new Map<string, Promise<TaskPageViewer>>();
+type Watch = { viewer: Promise<TaskPageViewer>; menuScope?: { binding: string } };
+const watches = new Map<string, Watch>();
 
 export async function watchRemoteTaskPage(args: { watchId: string; deviceId: string; sessionId: string }): Promise<{ success: true }> {
   return watchTaskPageConnection(args.watchId, () => watchRemoteProjection(args.deviceId, { session: args.sessionId, page: true, presentation: 1 },
@@ -24,18 +25,20 @@ export async function watchRemoteTaskPage(args: { watchId: string; deviceId: str
 }
 
 /** Local and remote task pages share the same acknowledged picture/input transport. */
-export async function watchTaskPageConnection(watchId: string, connect: () => Promise<TaskPageViewer>): Promise<{ success: true }> {
+export async function watchTaskPageConnection(watchId: string, connect: () => Promise<TaskPageViewer>, menuBinding?: string): Promise<{ success: true }> {
   if (typeof watchId !== 'string' || !watchId || watchId.length > 128) throw new Error('A task page watch needs an id');
-  // A reset reuses the watch id. Its last viewer drops the source synchronously in close(), so
-  // finish that handoff before connect() can look up the previous (now closed) screen resource.
   const previous = watches.get(watchId);
-  const watching = (async () => {
-    const viewer = await previous?.catch(() => undefined);
-    viewer?.close();
+  // The menu may take focus and cause a reset. Keep it bound to the same tab and owner across that reset.
+  const menuScope = menuBinding === undefined ? undefined
+    : previous?.menuScope?.binding === menuBinding ? previous.menuScope : { binding: menuBinding };
+  const viewer = (async () => {
+    const old = await previous?.viewer.catch(() => undefined);
+    await old?.close();
     return connect();
   })();
+  const watching = { viewer, menuScope };
   watches.set(watchId, watching);
-  try { await watching; }
+  try { await viewer; }
   catch (error) { if (watches.get(watchId) === watching) watches.delete(watchId); throw error; }
   return { success: true };
 }
@@ -44,7 +47,7 @@ export async function watchTaskPageConnection(watchId: string, connect: () => Pr
 export async function sendRemoteTaskPage(args: { watchId: string; packet: unknown }): Promise<ProjectionInputOutcome> {
   const watching = watches.get(args.watchId);
   if (!watching) throw new Error('This task page is not watched');
-  const viewer = await watching;
+  const viewer = await watching.viewer;
   try {
     await viewer.receive(args.packet);
     return { status: 'applied' };
@@ -61,22 +64,25 @@ export async function sendRemoteTaskPage(args: { watchId: string; packet: unknow
 export async function controlRemoteTaskPage(args: { watchId: string; control: TaskPageControl }): Promise<{ success: true; inspection?: Exclude<TaskPageControlResult, void> }> {
   const watching = watches.get(args.watchId);
   if (!watching) throw new Error('This task page is not watched');
-  const inspection = await (await watching).control(args.control);
+  const inspection = await (await watching.viewer).control(args.control);
   return { success: true, ...(inspection ? { inspection } : {}) };
 }
 
 export async function showWatchedBrowserContextMenu(sender: number, args: { watchId: string; point: StandaloneMenuPoint }): Promise<boolean> {
   const watching = watches.get(args.watchId);
   if (!watching) return false;
-  const current = () => watches.get(args.watchId) === watching;
-  const viewer = await watching;
-  return current() && (await viewer.contextMenu?.(sender, args.point, current) ?? false);
+  const current = () => {
+    const active = watches.get(args.watchId);
+    return active === watching || (watching.menuScope !== undefined && active?.menuScope === watching.menuScope);
+  };
+  const viewer = await watching.viewer;
+  return watches.get(args.watchId) === watching && (await viewer.contextMenu?.(sender, args.point, current) ?? false);
 }
 
 export function unwatchRemoteTaskPage(watchId: string): boolean {
   const watching = watches.get(watchId);
   if (!watching) return false;
   watches.delete(watchId);
-  void watching.then((viewer) => viewer.close(), () => undefined);
+  void watching.viewer.then(viewer => viewer.close()).catch(() => undefined);
   return true;
 }
