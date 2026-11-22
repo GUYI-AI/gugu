@@ -77,7 +77,7 @@ describe('first run uses a copy already on this computer when it is new enough',
   function One() { const queue = useFirstRunInstaller(); return <button onClick={() => queue(['codex'])}>Continue</button>; }
   it('does not install when session start would accept the local copy', async () => {
     f.list.mockResolvedValue([copy('installed', '0.160.0', true)]);
-    await act(async () => root.render(<FirstRunInstallProvider><One /></FirstRunInstallProvider>));
+    await act(async () => root.render(<><NoticeBannerSlot /><FirstRunInstallProvider><One /></FirstRunInstallProvider></>));
     await act(async () => host.querySelector('button')!.click());
     expect(f.probe).toHaveBeenCalledWith('codex');
     expect(f.install).not.toHaveBeenCalled();
@@ -92,7 +92,7 @@ describe('first run uses a copy already on this computer when it is new enough',
   ] as const)('installs its own copy without asking when the local one is %s, and says why', async (_label, statuses, reason) => {
     f.install.mockReturnValue(new Promise(() => {}));
     f.list.mockResolvedValue(statuses);
-    await act(async () => root.render(<FirstRunInstallProvider><One /></FirstRunInstallProvider>));
+    await act(async () => root.render(<><NoticeBannerSlot /><FirstRunInstallProvider><One /></FirstRunInstallProvider></>));
     await act(async () => host.querySelector('button')!.click());
     expect(f.install.mock.calls.map(([x]) => x)).toEqual([{ id: 'codex', method: 'mise' }]);
     expect(host.querySelector('[data-testid="install-progress-heading"]')?.textContent).toBe(reason);
