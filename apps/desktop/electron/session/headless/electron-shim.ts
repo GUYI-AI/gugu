@@ -273,8 +273,12 @@ function createSessionStub() {
     setPermissionRequestHandler: (_handler: unknown): void => {},
     setPermissionCheckHandler: (_handler: unknown): void => {},
     webRequest: {
+      // No web page loads headless, so these hooks never fire; main still installs them (the preview protocol at boot).
+      onBeforeRequest: (_filterOrListener?: unknown, _listener?: unknown): void => {},
       onBeforeSendHeaders: (_filterOrListener?: unknown, _listener?: unknown): void => {},
-      onHeadersReceived: (_filterOrListener?: unknown, _listener?: unknown): void => {}
+      onHeadersReceived: (_filterOrListener?: unknown, _listener?: unknown): void => {},
+      onCompleted: (_filterOrListener?: unknown, _listener?: unknown): void => {},
+      onErrorOccurred: (_filterOrListener?: unknown, _listener?: unknown): void => {}
     },
     getAllExtensions: (): never[] => [],
     loadExtension: async (_path: string, _options?: unknown): Promise<never> => {
