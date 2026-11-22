@@ -277,9 +277,9 @@ export type ChatCommands = {
   onOutputMenu?: (arg: { output: OpenedOutput; itemId: string; anchor: HTMLElement; fromFileChange?: boolean }) => void;
 
   /**
-   * Called when the user clicks a Mermaid diagram block preview.
+   * Called when the user clicks a Mermaid diagram block preview. `thumb`: the block's drawn `<svg>`, when drawn.
    */
-  onViewMermaid?: (arg: { chart: string; blockId: string; source: 'mermaid-block' }) => void;
+  onViewMermaid?: (arg: { chart: string; blockId: string; source: 'mermaid-block'; thumb?: HTMLElement | null }) => void;
 
   /**
    * Called when the user clicks a resolved @-mention chip in the transcript.

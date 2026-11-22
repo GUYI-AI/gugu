@@ -8,8 +8,7 @@
  *
  * The container is fixed at a 21:9 aspect ratio (height pre-computed in
  * mermaid.def.tsx from the measured width). On click the host's
- * onViewMermaid command is fired, allowing the application to open a
- * full-size diagram viewer.
+ * onViewMermaid command is fired, so the application opens its viewer.
  */
 
 import { useCaches } from '@session-chat/components/contexts/CachesContext';
@@ -69,6 +68,7 @@ export function Mermaid(props: MermaidProps) {
       chart: props.rawBlock.source,
       blockId: props.block.id,
       source: 'mermaid-block',
+      thumb: (e.currentTarget as HTMLElement).querySelector<HTMLElement>('svg'),
     });
   }
 
