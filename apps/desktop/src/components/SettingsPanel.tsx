@@ -237,7 +237,7 @@ export function SettingsPanel({
   // 顶层应用模态：Sheet portals 到 document.body，脱离 MainLayout 内 Sidebar/ChatListPanel
   // 的 stacking context，否则被它们内部的 fixed 高 z 弹窗盖住(#1182)。
   // --z-settings：高于所有工作区弹窗(modal/menu/banner/popover 全段)，
-  // 低于 --z-overlay(图片预览) 与 --z-toast——设置内弹出的 toast/图片仍要可见。
+  // 低于 --z-overlay(图片预览)与提示条那一层——设置内弹出的提示 / 图片仍要可见。
   return (
     <Sheet
       onClose={() => onClose?.()}
