@@ -22,6 +22,7 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { spawn } from '@gugu/core/local/childProcess'
 import {
+  encodeFrame,
   encodeJsonFrame,
   FRAME,
   FrameDecoder,
@@ -157,6 +158,10 @@ export function createSshLinkManager(options: {
       return { child: null as unknown as ChildProcessWithoutNullStreams, ready: failed, open: false, protocol: null }
     }
     const child = (options.spawnSsh ?? systemSpawn)(args)
+    // @@@win32-ssh-wake - Windows' own OpenSSH (System32) relays nothing back until its stdin has carried something:
+    // with an idle stdin pipe the remote's ready mark never arrives and the link times out. An empty link frame goes
+    // first; the server's link drops every frame but messages, so it is a no-op there (every server version).
+    child.stdin.write(encodeFrame(FRAME.link))
     let stderr = ''
     let preamble: Buffer | null = Buffer.alloc(0)
     const decoder = new FrameDecoder()
