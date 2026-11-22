@@ -34,7 +34,7 @@ it('keeps the real notice stack above visible composers as they grow, split, res
   await page.viewport(1200, 800)
   harness = createReactHarness()
   await harness.render(<Layout />)
-  await act(async () => { notify({ key: 'clearance', title: 'Please retry this operation.', tier: 'error', ongoing: true, action: { label: 'Retry', onClick() {} } }) })
+  await act(async () => { notify({ key: 'clearance', title: 'Please retry this operation.', tier: 'error', duration: 600_000, action: { label: 'Retry', onClick() {} } }) })
   await until('notice subscribes', () => !!card())
   // Upstream enter/exit/swipe animations cross the origin even when the settled
   // card is correctly positioned. Its clipped area must not intercept input.
@@ -62,7 +62,7 @@ it('keeps the real notice stack above visible composers as they grow, split, res
 
   await act(async () => dismissNotice('clearance'))
   await assertInputClear()
-  await act(async () => { notify({ key: 'clearance', title: 'Please retry this operation.', tier: 'error', ongoing: true }) })
+  await act(async () => { notify({ key: 'clearance', title: 'Please retry this operation.', tier: 'error', duration: 600_000 }) })
   await until('new notice appears above the split', () => !!card() && Math.abs(gap() - 8) < 1)
 
   await harness.render(<Layout hidden />)
@@ -83,7 +83,7 @@ it('follows a retained surface shown or hidden by its inline style, box unchange
       <div data-slot="composer" style={{ position: 'absolute', left: 200, right: 20, bottom: 200, height: 120 }} />
     </div>
   </>)
-  await act(async () => { notify({ key: 'clearance', title: 'Please retry this operation.', tier: 'error', ongoing: true }) })
+  await act(async () => { notify({ key: 'clearance', title: 'Please retry this operation.', tier: 'error', duration: 600_000 }) })
   await until('notice subscribes', () => !!card())
   const surface = document.querySelector<HTMLElement>('[data-testid="surface"]')!
   const inner = surface.querySelector<HTMLElement>('[data-slot="composer"]')!
@@ -102,7 +102,7 @@ it('does not re-read the composers for inline writes that neither show nor hide 
   await page.viewport(1200, 800)
   harness = createReactHarness()
   await harness.render(<Layout />)
-  await act(async () => { notify({ key: 'clearance', title: 'Please retry this operation.', tier: 'error', ongoing: true }) })
+  await act(async () => { notify({ key: 'clearance', title: 'Please retry this operation.', tier: 'error', duration: 600_000 }) })
   await until('notice is 8px above the composer', () => !!card() && Math.abs(gap() - 8) < 1)
   const ancestor = composer().parentElement!
   const query = vi.spyOn(document, 'querySelectorAll')

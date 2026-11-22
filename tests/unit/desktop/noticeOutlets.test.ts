@@ -28,7 +28,9 @@ describe('notice outlets', () => {
   it('only the host layers the toast strip: --z-toast and sonner DOM belong to it, --z-banner no longer exists', () => {
     expect(matching(/--z-toast\b/), guide).toEqual(['apps/desktop/src/components/notice-host.css', 'apps/desktop/src/styles/tokens.css']);
     expect(matching(/--z-banner\b/), guide).toEqual([]);
-    expect(matching(/data-sonner-|<Toaster\b/), guide).toEqual(['apps/desktop/src/components/NoticeHost.tsx', 'apps/desktop/src/components/notice-host.css']);
+    // The embedded browser page reads where a toast is (a native view must not paint over it): a reader, not a drawer.
+    expect(matching(/data-sonner-|<Toaster\b/), guide).toEqual(['apps/desktop/src/components/NoticeHost.tsx', 'apps/desktop/src/components/notice-host.css',
+      'apps/desktop/src/session/renderer/features/browser/browser-page-occlusion.ts']);
   });
 
   it('the banner slot is mounted once per document: the main layout, and the session page when it is its own document', () => {
