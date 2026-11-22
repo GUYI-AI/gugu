@@ -3,8 +3,7 @@ import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
 import { OPENED_FILE_MAX_BYTES, REMOTE_WORKSPACE_CHUNK_BYTES } from '@gugu/session-core/session-record/contract';
 import { EDITOR_CONFIRM_FILE_BYTES } from '@renderer/lib/editor/file-size-limits';
 import { getFileKind } from '@renderer/lib/editor/fileKind';
-import { rpc } from '@renderer/lib/ipc';
-import { machineCodec } from '@renderer/lib/machine-routing';
+import { machineFileReader } from './machine-file-reader';
 import { workspaceBackend, workspaceRpc } from './workspace-backend';
 
 /** As long as the chunks on the line at once may take to come through: the machine's link waits behind them, its heartbeats too. */
@@ -41,44 +40,33 @@ export async function readWorkspaceBytes(projectId: string, workspaceId: string,
   const ahead = Math.max(1, Math.min(MOST_AHEAD, Math.floor(first.bytes.length / Math.max(1, first.ms) * LINE_BUDGET_MS / REMOTE_WORKSPACE_CHUNK_BYTES)));
   if (first.bytes.length === 0 && size > 0) throw new Error('The file changed while it was read');
   const parts: BlobPart[] = [first.bytes.slice().buffer];
+  let from = first.bytes.length;
   const machine = workspaceBackend(projectId).machine;
-  if (machine.kind === 'remote' && await streamRest(machine.deviceId, projectId, workspaceId, path, first, parts)) return parts;
-  // @@@cloud-only-chunks - a machine no device link reaches has only its cloud channel, where stream frames do not
-  // travel: its chunks stay one call each. They go when stream frames travel there too, or when no such machine is left.
+  if (machine.kind === 'remote' && from < size) {
+    // A linked machine: the rest from one stream (`@@@machine-file-reader`); a machine no link reaches answers its first
+    // range by its channel, and the rest are asked below, several at a time (`@@@cloud-only-chunks`).
+    const reader = machineFileReader(machine.deviceId, projectId, workspaceId, (at, offset) => chunkReader(projectId, workspaceId, at)(offset));
+    reader.anchor(path, first);
+    do {
+      const chunk = await reader.read(path, from, REMOTE_WORKSPACE_CHUNK_BYTES);
+      if (chunk.size !== size || chunk.bytes.length !== Math.min(REMOTE_WORKSPACE_CHUNK_BYTES, size - from)) throw new Error('The file changed while it was read');
+      parts.push(chunk.bytes.slice().buffer);
+      from += chunk.bytes.length;
+    } while (from < size && reader.linked);
+  }
   const offsets: number[] = [];
-  for (let offset = first.bytes.length; offset < size; offset += REMOTE_WORKSPACE_CHUNK_BYTES) offsets.push(offset);
+  for (let offset = from; offset < size; offset += REMOTE_WORKSPACE_CHUNK_BYTES) offsets.push(offset);
+  const base = parts.length;
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(ahead, offsets.length) }, async () => {
     while (next < offsets.length) {
       const k = next++, offset = offsets[k]!;
       const chunk = await read(offset);
       if (chunk.size !== size || chunk.bytes.length !== Math.min(REMOTE_WORKSPACE_CHUNK_BYTES, size - offset)) throw new Error('The file changed while it was read');
-      parts[k + 1] = chunk.bytes.slice().buffer;
+      parts[base + k] = chunk.bytes.slice().buffer;
     }
   }));
   return parts;
-}
-
-/**
- * The rest of a file on another machine after its first chunk, from one stream over that machine's device link
- * (`workspace.files.readStreamed`, main's `@@@machine-file-stream`), of the version the first chunk read. false = no
- * device link reaches that machine (its chunks go through its channel); a linked machine streams or fails loudly.
- */
-async function streamRest(deviceId: string, projectId: string, workspaceId: string, path: string, first: FirstChunk, parts: BlobPart[]): Promise<boolean> {
-  const there = machineCodec(deviceId).outbound({ projectId, workspaceId });
-  for (let offset = first.bytes.length; offset < first.size;) {
-    const result = await rpc.workspace.files.readStreamed(deviceId, there.projectId, there.workspaceId, { path, offset, length: REMOTE_WORKSPACE_CHUNK_BYTES, size: first.size, etag: first.etag });
-    if (!result.success) throw new Error(result.error.type === 'content_changed' ? 'The file changed while it was read' : result.error.message);
-    if (!result.data.linked) {
-      if (offset !== first.bytes.length) throw new Error('The connection to this machine was lost while the file was read');
-      return false;
-    }
-    const bytes = base64ToBytes(result.data.data);
-    if (bytes.length === 0) throw new Error('The file changed while it was read');
-    parts.push(bytes.slice().buffer);
-    offset += bytes.length;
-  }
-  return true;
 }
 
 const isTextRead = (path: string) => ['text', 'markdown', 'html', 'csv'].includes(getFileKind(path));
