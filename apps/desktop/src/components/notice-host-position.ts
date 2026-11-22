@@ -6,18 +6,23 @@ const ANCHORS = '[data-slot="composer"], [data-phone-shell] [data-phone-tabbar]'
 // Product spacing: the notice stack ends 8px above every visible composer or phone bar.
 const COMPOSER_GAP = 8
 
-export function readNoticeComposerBottom(anchors: Iterable<Element> = document.querySelectorAll(ANCHORS)): number | undefined {
+/** Where the strip sits: `bottom` = its gap from the viewport bottom, `center` = the x it is centred on. */
+export type NoticeAnchor = { bottom: number; center: number }
+
+/** One rule (desktop and phone): the strip is centred on the composer (or phone bar) it sits 8px above. */
+export function readNoticeComposerAnchor(anchors: Iterable<Element> = document.querySelectorAll(ANCHORS)): NoticeAnchor | undefined {
   let top = window.innerHeight
-  let visible = false
+  let center: number | undefined
   for (const composer of anchors) {
     // Retained task/chat surfaces keep their layout while content-visibility hides them.
     if (!isElementVisible(composer, { opacity: true })) continue
     const rect = composer.getBoundingClientRect()
     if (rect.width <= 0 || rect.height <= 0 || rect.right <= 0 || rect.left >= window.innerWidth || rect.bottom <= 0 || rect.top >= window.innerHeight) continue
-    visible = true
-    top = Math.min(top, rect.top)
+    if (center !== undefined && rect.top >= top) continue
+    top = rect.top
+    center = Math.round(rect.left + rect.width / 2)
   }
-  return visible ? window.innerHeight - top + COMPOSER_GAP : undefined
+  return center === undefined ? undefined : { bottom: window.innerHeight - top + COMPOSER_GAP, center }
 }
 
 // Inline style only matters here when it hides or shows a box in place (a retained surface: content-visibility,
@@ -27,8 +32,8 @@ const hidingStyle = (style: string | null) => style?.match(/(?:content-)?visibil
 const showsOrHides = (record: MutationRecord) => hidingStyle(record.oldValue) !== hidingStyle((record.target as Element).getAttribute('style'))
 
 /** The single outlet follows actual composer/navigation geometry, including retained/split surfaces. */
-export function useNoticeComposerBottom(active: boolean): number | undefined {
-  const [bottom, setBottom] = useState<number>()
+export function useNoticeComposerAnchor(active: boolean): NoticeAnchor | undefined {
+  const [anchor, setAnchor] = useState<NoticeAnchor>()
   useLayoutEffect(() => {
     if (!active) return
     let frame = 0
@@ -38,8 +43,8 @@ export function useNoticeComposerBottom(active: boolean): number | undefined {
     // (the mutation filter below). A resize or scroll re-reads the anchors already found: ❌ a whole-document query there. A
     // fold resizes the page every frame, and that query grew with every mounted message row (~116k nodes at 120 rows).
     const read = () => {
-      const value = readNoticeComposerBottom(anchors)
-      setBottom((previous) => previous === value ? previous : value)
+      const value = readNoticeComposerAnchor(anchors)
+      setAnchor((previous) => previous?.bottom === value?.bottom && previous?.center === value?.center ? previous : value)
     }
     // Only a height can move the composer's top: a pane narrowing or widening (every frame of a panel's move) is no reason
     // to read, ❌ a forced layout per frame. A box that rewraps changes its own height, and is observed too.
@@ -85,5 +90,5 @@ export function useNoticeComposerBottom(active: boolean): number | undefined {
       document.removeEventListener('scroll', scrolled, true)
     }
   }, [active])
-  return bottom
+  return anchor
 }

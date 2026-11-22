@@ -1,16 +1,12 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
-import type { NativeSessionRecord } from '@gugu/session-core/session-record/contract'
 import {
   clearTimelineCache,
   forgetInMemoryTimelines,
   hydrateCachedTimeline,
   readCachedTimeline,
   writeCachedTimeline,
-  readCachedNativeRecord,
-  writeCachedNativeRecord,
-  hydrateCachedNativeRecord,
 } from '@/components/session-watch/timeline-cache'
 import { readCachedSessionList, writeCachedSessionList } from '@/session/shared/remote-sessions/session-list-cache'
 import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store'
@@ -25,8 +21,6 @@ import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-
  */
 const KEY = { deviceId: 'd1', sessionId: 'c1' }
 
-const nativeRecord = (epoch: number, turns: TranscriptTurn[]): NativeSessionRecord => ({ turns, originTurnIds: [],
-  latestStoredSeq: turns.at(-1)?.seq ?? -1, hasNewer: false, nextCursor: null, activeTurn: null, nativeOwnerNotificationEpoch: epoch })
 
 function turn(id: string, text: string): TranscriptTurn {
   return {
@@ -50,39 +44,6 @@ function timelineOf(turns: TranscriptTurn[], extra: Partial<ReturnType<typeof em
 describe('手机端本地留存', () => {
   beforeEach(async () => {
     await clearTimelineCache()
-  })
-
-  it('overwrites deleted native notifications with an empty new epoch for offline reentry and cold starts', async () => {
-    const { getAgentWatchStore } = await import('@/session/shared/remote-sessions/local-store')
-    const store = await getAgentWatchStore()
-    writeCachedNativeRecord(KEY, nativeRecord(0, [turn('deleted-notification', 'Review')]))
-    await vi.waitFor(async () => expect((await store.read('timeline', 'native:d1:c1'))?.head).toMatchObject({ nativeOwnerNotificationEpoch: 0 }))
-    const empty = nativeRecord(1, [])
-    writeCachedNativeRecord(KEY, empty)
-    expect(readCachedNativeRecord(KEY)).toEqual(empty)
-    await vi.waitFor(async () => expect(await store.read('timeline', 'native:d1:c1')).toMatchObject({ head: { nativeOwnerNotificationEpoch: 1 }, chunks: [] }))
-    // The deleted notification's chunk is gone from the store too, not just unnamed.
-    expect(await store.read('timeline', 'native:d1:c1#0')).toBeNull()
-    forgetInMemoryTimelines()
-    expect(readCachedNativeRecord(KEY)).toBeNull()
-    expect(await hydrateCachedNativeRecord(KEY)).toEqual(empty)
-  })
-
-  it('does not resurrect an old persisted notification when its hydration finishes after a live empty epoch', async () => {
-    const { getAgentWatchStore } = await import('@/session/shared/remote-sessions/local-store')
-    const store = await getAgentWatchStore()
-    const old = nativeRecord(0, [turn('deleted-notification', 'Review')])
-    let finish!: (row: never) => void
-    const pendingRead = vi.spyOn(store, 'read').mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
-    try {
-      const pending = hydrateCachedNativeRecord(KEY)
-      await vi.waitFor(() => expect(pendingRead).toHaveBeenCalled())
-      const empty = nativeRecord(1, [])
-      writeCachedNativeRecord(KEY, empty)
-      finish({ key: 'native:d1:c1', savedAt: 1, record: old } as never)
-      expect(await pending).toEqual(empty)
-      expect(readCachedNativeRecord(KEY)).toEqual(empty)
-    } finally { pendingRead.mockRestore() }
   })
 
   it('存了就能读回来:游标与轮次原样,进页第一帧就有内容', () => {

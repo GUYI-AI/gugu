@@ -18,12 +18,12 @@ vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 // The matcher runs on a thread of its own in the app (task-turn-search-worker.test.ts); here it reads the fixture.
 vi.mock('./task-turn-search', () => ({ searchTaskTurnMatches: async (query: string, limit?: number, offset?: number) => matchTaskTurns(fixtureRef.current!.sqlite, query, limit, offset) }));
 
-const { backfillTurnText, initializeDatabase } = await import('@main/db/initialize');
+const { initializeDatabase } = await import('@main/db/initialize');
 const { searchService } = await import('./search-service');
 const { matchTaskTurns } = await import('./task-turn-matches');
 const { textCondition } = await import('./text-condition');
 const { searchController } = await import('./controller');
-const { persistCommittedTurn, truncateStoredHistory, withStoredTurns, appendRecordTurnNow } = await import('../sessions/session-turn-store');
+const { writeSessionIndex, updateSessionIndex } = await import('../session-index/session-index');
 const { resolveConversationMessageReference } = await import('../../../../../../../packages/session-chat-ui/src/state/conversation-messages');
 const { messageQuoteLink } = await import('@gugu/core/shared/ui/messageQuote');
 
@@ -33,7 +33,7 @@ function turn(id: string, items: TranscriptTurn['items'], seq = 0): TranscriptTu
 const said = (id: string, role: 'user' | 'assistant', text: string) => ({ kind: 'message', id, seq: 0, role, text }) as Extract<TranscriptTurn['items'][number], { kind: 'message' }>;
 
 const fixture = () => fixtureRef.current!;
-const indexed = () => fixture().sqlite.prepare('SELECT session_id, seq, role, text FROM turn_text_rows ORDER BY session_id, seq, id').all();
+const indexed = () => fixture().sqlite.prepare('SELECT session_id, turn_id, role, text FROM turn_text_rows ORDER BY session_id, id').all();
 const matches = (query: string) => matchTaskTurns(fixture().sqlite, query);
 const found = (query: string) => matches(query).map((hit) => hit.excerpt);
 
@@ -59,7 +59,7 @@ describe('textCondition', () => {
   });
 });
 
-describe('task content search (turn_text, fed by session_turns triggers)', () => {
+describe('task content search (turn_text, written from each session timeline)', () => {
   beforeEach(async () => {
     fixtureRef.current = await openFixture('empty');
     fixture().sqlite.exec(`
@@ -78,116 +78,81 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
     fixtureRef.current = undefined;
   });
 
-  it('searches already indexed local content during backfill while reporting its preparation state', async () => {
-    await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: turn('t0', [said('u', 'user', 'available after indexing')]) });
+  it('searches what is indexed while the rest of the sessions are being read, and says so', async () => {
+    writeSessionIndex('s1', [turn('t0', [said('u', 'user', 'available after indexing')])]);
     searchService.initialize();
     expect(searchController.commandPalette({ query: 'Task' }).length).toBeGreaterThan(0);
     expect(searchController.taskTurnIndexStatus().state).toBe('preparing');
     expect(await searchController.taskTurns({ query: 'indexing' })).toHaveLength(1);
-    await backfillTurnText(fixture().sqlite);
+    writeSessionIndex('s2', []);
+    writeSessionIndex('s-ssh', []);
     expect(searchController.taskTurnIndexStatus().state).toBe('ready');
-    expect(await searchController.taskTurns({ query: 'indexing' })).toHaveLength(1);
   });
 
-  it('clears search by original message time even when an old turn was indexed after deletion', async () => {
+  it('clears search by original message time', async () => {
     const at = Date.parse('2026-11-14T00:00:00Z');
-    const value = turn('late-indexed', [
+    writeSessionIndex('s1', [turn('late-indexed', [
       { ...said('old', 'user', 'privacy searchable old'), at: at + 5000, _meta: { guguPublicationAt: new Date(at - 1000).toISOString() } },
       { ...said('new', 'assistant', 'privacy searchable new'), at: at + 1000 },
-    ]);
-    await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: value });
+    ])]);
     vi.spyOn(await import('../sessions/native-publication-host'), 'nativeConversationHistoryFloor').mockResolvedValue('2026-11-14T00:00:00.000501Z');
     const hits = await searchService.searchTaskTurns('privacy searchable');
-    expect(hits.map(hit => hit.itemId)).toHaveLength(1);
-    expect(hits[0].excerpt).toBe('privacy searchable new');
+    expect(hits.map(hit => hit.excerpt)).toEqual(['privacy searchable new']);
     expect(found('privacy searchable')).toHaveLength(2);
   });
 
-  it('continues beyond cleared matches to find another conversation without clearing its index', async () => {
+  it('continues beyond cleared matches to find another conversation', async () => {
     const at = Date.parse('2026-11-14T00:00:00Z');
-    await persistCommittedTurn({ sessionId: 's2', source: 'live', turn: turn('retained', [{ ...said('keep', 'user', 'sharedsearch retained'), at: at - 1000 }]) });
-    for (let index = 0; index < 4; index++) await persistCommittedTurn({ sessionId: 's1', source: 'live',
-      turn: turn(`cleared-${index}`, [{ ...said(`old-${index}`, 'user', 'sharedsearch cleared'), at: at - 1000 }]) });
+    writeSessionIndex('s2', [turn('retained', [{ ...said('keep', 'user', 'sharedsearch retained'), at: at - 1000 }])]);
+    writeSessionIndex('s1', Array.from({ length: 4 }, (_, index) => turn(`cleared-${index}`, [{ ...said(`old-${index}`, 'user', 'sharedsearch cleared'), at: at - 1000 }])));
     vi.spyOn(await import('../sessions/native-publication-host'), 'nativeConversationHistoryFloor').mockImplementation(async id => id === 's1' ? '2026-11-14T00:00:00Z' : null);
     const hits = await searchService.searchTaskTurns('sharedsearch', 2);
     expect(hits.map(hit => [hit.sessionId, hit.excerpt])).toEqual([['s2', 'sharedsearch retained']]);
   });
 
-  it('indexes only what the person and the agent said, from every live turn', async () => {
-    await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: turn('t0', [
+  it('indexes only what the person and the agent said', async () => {
+    writeSessionIndex('s1', [turn('t0', [
       said('u', 'user', '请帮我修复登录页面的 crash'),
       { kind: 'thinking', id: 'th', seq: 1, text: 'secret plan about deployment' } as TranscriptTurn['items'][number],
       said('a', 'assistant', 'The deployment script is fixed.'),
-    ]) });
+    ])]);
     expect(indexed()).toEqual([
-      { session_id: 's1', seq: 0, role: 'user', text: '请帮我修复登录页面的 crash' },
-      { session_id: 's1', seq: 0, role: 'assistant', text: 'The deployment script is fixed.' },
+      { session_id: 's1', turn_id: 't0', role: 'user', text: '请帮我修复登录页面的 crash' },
+      { session_id: 's1', turn_id: 't0', role: 'assistant', text: 'The deployment script is fixed.' },
     ]);
     expect(found('登录')).toEqual(['请帮我修复登录页面的 crash']);
     expect(found('deployment')).toEqual(['The deployment script is fixed.']);
     expect(found('secret')).toEqual([]);
     const [hit] = await searchService.searchTaskTurns('crash');
-    expect(hit).toMatchObject({ sessionId: 's1', title: 'Task one', role: 'user', archived: false });
-    const stored = JSON.parse((fixture().sqlite.prepare('SELECT data FROM session_turns').get() as { data: string }).data) as TranscriptTurn;
-    expect(hit!.itemId).toBe(stored.items[0]!.id);
+    expect(hit).toMatchObject({ sessionId: 's1', title: 'Task one', role: 'user', archived: false, itemId: 'u' });
   });
 
   describe('a hit reveals the message it came from', () => {
-    const sourced = (id: string, itemId: string, text: string) => ({ ...turn(id, [said(itemId, 'user', text)]), referenceId: 'source:real-turn' });
-    /** What the task's reveal does with a hit: its one link, resolved against the transcript on screen. */
     const reveal = (query: string, transcript: TranscriptTurn) => {
       const [hit] = matches(query);
       return resolveConversationMessageReference([transcript], messageQuoteLink({ kind: 'session', sessionId: 's1', itemId: hit!.itemId }), 's1');
     };
-    const insertStored = (seq: number, data: unknown) => fixture().sqlite.prepare(
-      'INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES (?, ?, ?, ?, ?)',
-    ).run(`s1:${seq}`, 's1', seq, 't', JSON.stringify(data));
 
-    it('a live turn persisted through the store, on its runtime ids and on what was stored', async () => {
-      const live = sourced('s1:turn:12', 's1:turn:12:message:0', 'renumbered on the way to disk');
-      await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: live });
-      const stored = JSON.parse((fixture().sqlite.prepare('SELECT data FROM session_turns').get() as { data: string }).data) as TranscriptTurn;
-      expect(stored.items[0]!.id).toBe('s1:turn:s0:message:0');
-      expect(matches('renumbered')[0]!.itemId).toBe('source:real-turn:message:0');
-      expect(reveal('renumbered', live)).toBe('s1:turn:12:message:0');
-      expect(reveal('renumbered', stored)).toBe('s1:turn:s0:message:0');
-    });
-
-    it('a turn stored far down the history, written by the trigger and rewritten by a revision', () => {
-      const stored = sourced('s1:turn:s90', 's1:turn:s90:message:0', 'ninety turns back');
-      insertStored(90, stored);
-      expect(reveal('ninety', stored)).toBe('s1:turn:s90:message:0');
-      expect(reveal('ninety', sourced('s1:turn:12', 's1:turn:12:message:0', 'ninety turns back'))).toBe('s1:turn:12:message:0');
-      fixture().sqlite.prepare('UPDATE session_turns SET data = ? WHERE seq = 90').run(JSON.stringify(sourced('s1:turn:s90', 's1:turn:s90:message:0', 'revised, still ninety')));
-      expect(matches('revised')[0]!.itemId).toBe('source:real-turn:message:0');
-    });
-
-    it('a turn from before referenceId keeps its stored id, which is what the reveal compares', () => {
-      const old = turn('s1:turn:s3', [said('s1:turn:s3:message:0', 'user', 'older than references')]);
-      insertStored(3, old);
-      expect(reveal('older than', old)).toBe('s1:turn:s3:message:0');
+    it('a turn with a durable source is found under it, whichever copy of the turn is on screen', () => {
+      const recorded = { ...turn('s1:node-7', [said('s1:node-7:message:0', 'user', 'found by its source')]), referenceId: 'source:real-turn' };
+      writeSessionIndex('s1', [recorded]);
+      expect(matches('found by')[0]!.itemId).toBe('source:real-turn:message:0');
+      expect(reveal('found by', recorded)).toBe('s1:node-7:message:0');
+      const runtime = { ...turn('runtime-3', [said('runtime-3:message:0', 'user', 'found by its source')]), referenceId: 'source:real-turn' };
+      expect(reveal('found by', runtime)).toBe('runtime-3:message:0');
     });
 
     it('a numeric turn id has no durable source: searchable, never a guessed anchor', () => {
       const old = turn('s1:turn:5', [said('s1:turn:5:message:0', 'user', 'restarted counter')]);
-      insertStored(5, old);
+      writeSessionIndex('s1', [old]);
       expect(matches('restarted')[0]!.itemId).toBe('s1:turn:5:message:0');
       expect(reveal('restarted', old)).toBeNull();
     });
-
-    it('turns indexed by an older version are rebuilt with their source identity', async () => {
-      const stored = sourced('s1:turn:s90', 's1:turn:s90:message:0', 'indexed long ago');
-      insertStored(90, stored);
-      fixture().sqlite.exec("UPDATE turn_text_rows SET item_id = 's1:turn:s90:message:0'; UPDATE kv SET value = '7' WHERE key = 'fts_version'");
-      await initializeDatabase(fixture().sqlite);
-      await backfillTurnText(fixture().sqlite);
-      expect(reveal('long ago', stored)).toBe('s1:turn:s90:message:0');
-    });
   });
 
-  it('retains activity source metadata and the original anchor without copying delivery text into that metadata', async () => {
+  it('retains activity source metadata and the original anchor without copying delivery text into that metadata', () => {
     const text = '<gugu_delivery route="chat" from="Worker" from_id="user:worker" from_type="agent"><![CDATA[private folded body]]></gugu_delivery>';
-    await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: { ...turn('t0', [said('t0:u', 'user', text)]), referenceId: 'source' } });
+    writeSessionIndex('s1', [{ ...turn('t0', [said('t0:u', 'user', text)]), referenceId: 'source' }]);
     const [hit] = matches('folded');
     expect(hit!.activity).toMatchObject({ kind: 'received', facts: [{ fromType: 'agent', fromId: 'user:worker' }] });
     expect(JSON.stringify(hit!.activity)).not.toContain('private folded body');
@@ -197,61 +162,35 @@ describe('task content search (turn_text, fed by session_turns triggers)', () =>
   it('indexes what a delivery said, not its envelope, and never the silence marker', async () => {
     const { buildSystemNoticeEnvelope } = await import('@gugu/core/local/agent/deliveryEnvelope');
     const delivered = buildSystemNoticeEnvelope({ messageId: '0b1e7c1a-0000-4000-8000-000000000001', content: '主人把你改名为小橘', at: '2026-10-31T10:00:00Z' });
-    await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: turn('t0', [said('u', 'user', delivered), said('a', 'assistant', '[NO_REPLY]')]) });
-    expect(indexed()).toEqual([{ session_id: 's1', seq: 0, role: 'user', text: '主人把你改名为小橘' }]);
+    writeSessionIndex('s1', [turn('t0', [said('u', 'user', delivered), said('a', 'assistant', '[NO_REPLY]')])]);
+    expect(indexed()).toEqual([{ session_id: 's1', turn_id: 't0', role: 'user', text: '主人把你改名为小橘' }]);
     expect(found('小橘')).toEqual(['主人把你改名为小橘']);
     expect(found('gugu_delivery')).toEqual([]);
     expect(found('NO_REPLY')).toEqual([]);
   });
 
-  it('follows a revision, a record append, a truncation and a session delete', async () => {
-    await persistCommittedTurn({ sessionId: 's1', source: 'live', turn: turn('t0', [said('a', 'assistant', 'first draft answer')]) });
-    await persistCommittedTurn({ sessionId: 's1', source: 'revision', turn: turn('t0', [said('a', 'assistant', 'final revised answer')]) });
+  it('follows a changed turn, a removed one and a session delete', () => {
+    writeSessionIndex('s1', [turn('t0', [said('a', 'assistant', 'first draft answer')]), turn('t1', [said('r', 'assistant', 'from the native record')])]);
+    updateSessionIndex('s1', [turn('t0', [said('a', 'assistant', 'final revised answer')])], []);
     expect(found('draft')).toEqual([]);
     expect(found('revised')).toEqual(['final revised answer']);
-
-    await withStoredTurns('s1', () => appendRecordTurnNow('s1', turn('t1', [said('r', 'assistant', 'from the native record')], 1)));
-    expect(found('native record')).toEqual(['from the native record']);
-
-    await truncateStoredHistory('s1', 1);
+    updateSessionIndex('s1', [], ['t1']);
     expect(found('native')).toEqual([]);
-    expect(found('revised')).toEqual(['final revised answer']);
-
     fixture().sqlite.exec("DELETE FROM sessions WHERE id = 's1'");
     expect(indexed()).toEqual([]);
     expect(found('revised')).toEqual([]);
   });
 
-  it('keeps sessions of retired remote workspaces out and returns the newest first', async () => {
-    fixture().sqlite.exec(`INSERT INTO session_turns (id, session_id, seq, turn_id, data, created_at) VALUES
-      ('s1:0', 's1', 0, 't', '{"items":[{"kind":"message","id":"x","role":"user","text":"older alpha"}]}', '2026-10-01 00:00:00'),
-      ('s2:0', 's2', 0, 't', '{"items":[{"kind":"message","id":"y","role":"assistant","text":"newer alpha"}]}', '2026-10-02 00:00:00'),
-      ('s-ssh:0', 's-ssh', 0, 't', '{"items":[{"kind":"message","id":"z","role":"user","text":"remote alpha"}]}', '2026-10-03 00:00:00')`);
+  it('keeps sessions of retired remote workspaces out and returns the newest first, by when the turn started', () => {
+    writeSessionIndex('s1', [{ ...turn('t', [said('x', 'user', 'older alpha')]), startedAt: 1 }]);
+    writeSessionIndex('s2', [{ ...turn('t', [said('y', 'assistant', 'newer alpha')]), startedAt: 2 }]);
+    writeSessionIndex('s-ssh', [{ ...turn('t', [said('z', 'user', 'remote alpha')]), startedAt: 3 }]);
     expect(found('alpha')).toEqual(['newer alpha', 'older alpha']);
+    expect(matches('alpha')[0]!.at).toBe(new Date(2).toISOString());
   });
 
-  it('ranks every match on the index alone, so a word found in thousands of long turns cannot hold the window', () => {
-    fixture().sqlite.exec(`INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES
-      ('s1:0', 's1', 0, 't', '{"items":[{"kind":"message","id":"a","role":"user","text":"alpha one"},{"kind":"message","id":"b","role":"assistant","text":"alpha two"}]}'),
-      ('s2:0', 's2', 0, 't', '{"items":[{"kind":"message","id":"c","role":"user","text":"alpha three"}]}')`);
-    const prepare = vi.spyOn(fixture().sqlite, 'prepare');
-    const hits = matches('al');
-    expect(hits.map((hit) => hit.excerpt)).toEqual(['alpha three', 'alpha two', 'alpha one']);
-    expect(hits.map((hit) => [hit.at, hit.activity])).toEqual([[expect.any(String), null], [expect.any(String), { kind: 'sent', id: 'b', addresses: null }], [expect.any(String), null]]);
-    const ranking = String(prepare.mock.calls.find(([sql]) => String(sql).includes('hit AS MATERIALIZED'))![0]);
-    prepare.mockRestore();
-    // Reading a turn's created_at or data means walking its whole record; the ranking reaches turns only through their index.
-    const plan = (fixture().sqlite.prepare(`EXPLAIN QUERY PLAN ${ranking}`).all('%al%', 30, 0) as { detail: string }[]).map((row) => row.detail);
-    expect(plan.filter((step) => /\bt\b/.test(step))).toEqual(['SEARCH t USING COVERING INDEX idx_session_turns_session_seq (session_id=? AND seq=?)']);
-  });
-
-  it('backfills turns stored before the index existed', async () => {
-    fixture().sqlite.exec(`INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES
-      ('s1:0', 's1', 0, 't', '{"items":[{"kind":"message","id":"x","role":"user","text":"历史里的数据库迁移"}]}'),
-      ('s1:1', 's1', 1, 't', 'not json')`);
-    fixture().sqlite.exec("DELETE FROM turn_text_rows; UPDATE kv SET value = '5' WHERE key = 'fts_version'");
-    await initializeDatabase(fixture().sqlite);
-    await backfillTurnText(fixture().sqlite);
+  it('matches pieces shorter than a trigram, and only whole runs', () => {
+    writeSessionIndex('s1', [turn('t', [said('x', 'user', '历史里的数据库迁移')])]);
     expect(found('数据库迁移')).toEqual(['历史里的数据库迁移']);
     expect(found('数据迁移')).toEqual([]);
     expect(found('迁移')).toEqual(['历史里的数据库迁移']);

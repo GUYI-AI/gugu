@@ -30,6 +30,10 @@ export function createQwenJsonlSource(locator: SessionRecordLocator, options?: S
       typeof raw.uuid === 'string'
         ? { id: raw.uuid, parentId: typeof raw.parentUuid === 'string' ? raw.parentUuid : null, raw }
         : null,
+    // 人说的话开一轮，也是 `/rewind` 另起一支的地方(通知、定时任务是 qwen 替人塞的，不算)。
+    // The ACP rewind (`qwenRevert`) writes no prompt: its `system/rewind` line hangs off the line before the prompt it drops.
+    kind: (node) => node.raw.type === 'user' && node.raw.provenance === 'real_user' ? 'prompt'
+      : node.raw.type === 'system' && node.raw.subtype === 'rewind' ? 'rewind' : 'line',
     decode
   });
 }
@@ -73,11 +77,12 @@ function decode(node: TreeNode): RecordEntry[] {
     // 人说的话才进时间线;通知、定时任务这些是 qwen 替人塞的(`provenance: system`)。
     if (record.provenance !== 'real_user') return [];
     const blocks = parts.flatMap((part) => userBlock(asRecord(part)));
-    return blocks.map((block, index) => ({
-      key: key(index),
-      ...stamp,
-      event: messageEvent('user', block, key(0))
-    }));
+    // A prompt rewinds by the promptId its lines carry, files included, the point `qwenRevert` gets live.
+    const point = typeof record.promptId === 'string' && record.promptId ? record.promptId : null;
+    return blocks.map((block, index) => {
+      const event = messageEvent('user', block, key(0));
+      return { key: key(index), ...stamp, event: point && event.kind === 'message' ? { ...event, revertAnchor: point, revertFiles: true as const } : event };
+    });
   }
 
   if (record.type === 'assistant') {

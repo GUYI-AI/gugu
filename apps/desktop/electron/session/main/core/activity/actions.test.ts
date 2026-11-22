@@ -1,9 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ journal: { list: vi.fn(), get: vi.fn(), turnRevertedAfter: vi.fn() }, recordHistoryPage: vi.fn(),
-  store: { readStoredTurn: vi.fn(), readStoredTurns: vi.fn() } }));
+const mocks = vi.hoisted(() => ({ journal: { list: vi.fn(), get: vi.fn() }, recordHistoryPage: vi.fn(), recordTurns: vi.fn() }));
 vi.mock('./collector', () => ({ activityJournal: () => mocks.journal }));
-vi.mock('@main/core/session-timeline/service', () => ({ recordHistoryPage: mocks.recordHistoryPage }));
-vi.mock('@main/core/sessions/session-turn-store', () => mocks.store);
+vi.mock('@main/core/session-timeline/service', () => ({ recordHistoryPage: mocks.recordHistoryPage, recordTurns: mocks.recordTurns }));
 import { runActivityAction } from './actions';
 beforeEach(() => vi.clearAllMocks());
 
@@ -40,14 +38,21 @@ describe('activity metadata and on-demand context have separate read paths', () 
     mocks.recordHistoryPage.mockResolvedValue({ ok: false, error: { code: 'session_not_found' } });
     expect(await runActivityAction({ action: 'activity_context', event_id: 'e2' })).toMatchObject({ context_available: false, reason: { code: 'session_not_found' } });
   });
-  it('reads a turn event only from the stored history that numbered it, never from the provider record', async () => {
-    mocks.journal.get.mockReturnValue({ event_id: 'e3', kind: 'session.turn_recorded', session_id: 's1', turn_seq: 7 });
-    mocks.journal.turnRevertedAfter.mockReturnValue(false);
-    mocks.store.readStoredTurn.mockResolvedValue({ id: 's1:turn:s7', seq: 7, items: [] });
-    mocks.store.readStoredTurns.mockResolvedValue({ turns: [], originTurnIds: [], nextCursor: null });
+  it('reads a turn event as the turn of the record that has the key the agent numbered in it', async () => {
+    mocks.journal.get.mockReturnValue({ event_id: 'e3', kind: 'session.turn_recorded', session_id: 's1', object_id: 's1:turn:7', related_object_id: 'tool:call-2' });
+    mocks.recordTurns.mockResolvedValue([
+      { id: 'r1', seq: 0, items: [{ kind: 'message', id: 'r1:message:m1', role: 'user', text: 'first' }] },
+      { id: 'r2', seq: 1, items: [{ kind: 'execute-tool-call', id: 'r2:tool', toolCallId: 'call-2' }] },
+    ]);
     expect(await runActivityAction({ action: 'activity_context', event_id: 'e3' }))
-      .toMatchObject({ scope: 'event_turn', event_anchored: true, source: 'stored_history', context: [{ id: 's1:turn:s7' }] });
-    expect(mocks.store.readStoredTurn).toHaveBeenCalledWith('s1', 7);
+      .toMatchObject({ scope: 'event_turn', event_anchored: true, has_older: true, next_before_seq: 1, context: [{ id: 'r2' }] });
     expect(mocks.recordHistoryPage).not.toHaveBeenCalled();
+  });
+  it('reads a turn event whose turn the record no longer has (a revert) as the latest turns, unanchored', async () => {
+    mocks.journal.get.mockReturnValue({ event_id: 'e4', kind: 'session.turn_recorded', session_id: 's1', related_object_id: 'tool:gone' });
+    mocks.recordTurns.mockResolvedValue([{ id: 'r1', seq: 0, items: [] }]);
+    mocks.recordHistoryPage.mockResolvedValue({ ok: true, value: { hasOlder: false, turns: [{ id: 'r1', seq: 0, items: [] }] } });
+    expect(await runActivityAction({ action: 'activity_context', event_id: 'e4' }))
+      .toMatchObject({ event_anchored: false, scope: 'latest_four_turns', context: [{ id: 'r1' }] });
   });
 });

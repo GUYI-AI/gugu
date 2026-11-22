@@ -5,9 +5,6 @@ export type {
   SessionCreateAttachmentDraftRequest, SessionCreateAttachmentDraftResult, SessionAdmitCreatedAttachmentsRequest,
   RegisteredCreationAttachments, ResolvedCreationAttachment,
 } from './creation-attachment-protocol';
-import type { TimelineWindowFields, WindowBodyRef, WindowBodyResult, WindowCursor } from './window-cache/types';
-export type { TimelineWindowFields, WindowBodyRef, WindowBodyOwner, WindowBodyResult, WindowCursor, PendingLongRecord, BodyChunkDescriptor, SourceFragment } from './window-cache/types';
-export { BODY_CHUNK_BYTES, BODY_TEXT_BYTES } from './window-cache/types';
 import type { TerminalState } from '../acp/models/terminals';
 import type { PermissionSubject } from '../acp/models/permissions';
 /**
@@ -62,7 +59,8 @@ import type { InstallationReading } from '../host-dependencies/runtime/types';
  * 读侧认得的**记录格式**(一族共用一个解码器),不是 provider id:opencode 这一格也装着 mimocode。
  * provider → 格式那张表在宿主的 `locate.ts`。
  */
-export type SessionRecordHarness = 'claude' | 'codex' | 'opencode' | 'copilot' | 'hermes' | 'qwen' | 'pi' | 'codebuddy';
+export type SessionRecordHarness = 'claude' | 'codex' | 'opencode' | 'copilot' | 'hermes' | 'qwen' | 'pi' | 'codebuddy' | 'gugu';
+// `gugu`: gugu's own journal of a session (`sources/gugu-journal.ts`), for what no agent record holds.
 
 
 /**
@@ -166,8 +164,13 @@ export type RecordBoundary = { messageId?: string } & (
  * （不进时间线，只关掉当前这一轮）。❌ 不许一条同时是两者 —— 那样"这条要不要去重"没有答案。
  */
 export type RecordEntry =
-  | { key: string; at?: number; position?: number; state?: unknown; event: NormalizedEvent; boundary?: never; imageOrigins?: readonly (RecordImageRef | null)[] }
-  | { key: string; at?: number; position?: number; state?: unknown; boundary: RecordBoundary; event?: never; imageOrigins?: never };
+  | { key: string; at?: number; position?: number; state?: unknown; turn?: string; committed?: never; recorded?: never; event: NormalizedEvent; boundary?: never; imageOrigins?: readonly (RecordImageRef | null)[] }
+  | { key: string; at?: number; position?: number; state?: unknown; turn?: never; committed?: never; recorded?: never; boundary: RecordBoundary; event?: never; imageOrigins?: never }
+  | { key: string; at?: number; position?: never; state?: never; turn?: never; committed: TranscriptTurn; recorded?: true; event?: never; boundary?: never; imageOrigins?: never };
+// `committed`: a whole turn the record holds already folded (gugu's journal); it goes beside the folded turns, not
+// through the reducer. `recorded`: the agent's record has that turn too; only its outcome counts (`withJournalTurns`).
+// `turn`: this entry is the person's message that starts a turn; the record line's tree id (`record-tree.ts`), which
+// is also the turn's id. A turn a record opens otherwise takes the key of the entry that opened it.
 // `position`: where the record line (or row) that produced the entry starts, as `SessionRecordSource.startingAt` takes it.
 // `state` (a fill read only): the source's decoder state before that line, so a read started there decodes as this one.
 
@@ -390,7 +393,7 @@ export const TIMELINE_SUBAGENT_TEXT = 8192;
 export const TIMELINE_SUBAGENT_STEPS = 200;
 
 /** 整份快照：从最新往回取 `limit` 轮。 */
-export type TimelineSnapshot = TimelineWindowFields & {
+export type TimelineSnapshot = {
   cursor: RecordCursor;
   turns: TranscriptTurn[];
   settlements: Settlement[];
@@ -434,7 +437,7 @@ export type TurnPatch = Omit<TranscriptTurn, 'items'> & {
  * 增量。以**条目**为单位替换（见 `TurnPatch`）：每一批带的是变过的条目，不是整轮。
  * `removedTurnIds` 给分叉/回滚用。
  */
-export type TimelineBatch = TimelineWindowFields & {
+export type TimelineBatch = {
   /**
    * 这一批是从哪个序号接上的（= 收批人应有的当前 seq）。
    *
@@ -470,7 +473,7 @@ export type TimelineAfterResult =
  * 带 `epoch`：翻页途中宿主换过代（记录被分叉、整份重读）时，这一批与手里那份不是同一条
  * 时间线，拼进去就是「少了中间的那一份」。❌ 不静默丢弃，也 ❌ 不静默合并 —— 交给客户端判。
  */
-export type TimelineOlderResult = TimelineWindowFields & {
+export type TimelineOlderResult = {
   epoch: string;
   turns: TranscriptTurn[];
   /** 这一批之前还有没有更早的。 */
@@ -548,6 +551,8 @@ export interface SessionTimeline {
   syncQueuedPrompts(prompts: readonly Pick<QueuedPrompt, 'id' | 'text' | 'queueEdit' | 'clientMessageId'>[]): void;
   syncLiveReply(reply: SessionLiveReply | null): void;
   syncTerminals(terminals: readonly TerminalState[]): void;
+  /** The runtime's turn in progress (null when none): shown in place of the record's copy of it (`runtime-turn.ts`). */
+  syncActiveTurn(turn: TranscriptTurn | null): void;
 
   /** 一个 item 已由 provider 侧了结（超时、取消）时由宿主调用。终态，❌ 不能再答。 */
   cancelSettlement(itemId: string): void;
@@ -569,6 +574,7 @@ export interface SessionTimeline {
   /**
    * 交出此刻的存档，供宿主存盘、下次开这条会话时直接装回来。
    * 返回 null = 这条时间线存不了（记录源不支持续读）——那只是慢，不是错。
+   * Only the fold thread takes one (the session's checkpoint), so it has no size budget.
    */
   archive?(): Promise<TimelineArchive | null>;
   /** A fill only: hand out settled turns as the record streams, so a long record never sits on one heap. */
@@ -761,10 +767,6 @@ export type SessionpageSessionSummary = {
   nativeUnreadKeys?: string[];
   /** Only deliberate owner notifications contribute a numeric notification badge. */
   nativeOwnerNotificationUnreadCount?: number;
-  /** Last committed notification sequence; -1 when none remains, absent on older hosts. */
-  nativeOwnerNotificationSeq?: number;
-  /** Increases when history is reverted, so reused sequences cannot retain an old notification cursor. */
-  nativeOwnerNotificationEpoch?: number;
   nativeUnreadAliases?: Record<string, string>;
   conversationId: string;
   /**
@@ -1244,11 +1246,7 @@ export type SessionpageSessionsListResult = {
  */
 export type SessionpageSessionSnapshotRequest = { conversationId: string; limit?: number; trim?: boolean };
 export type SessionpageSessionAfterRequest = { conversationId: string; cursor: RecordCursor; trim?: boolean };
-export type SessionpageSessionOlderRequest = { conversationId: string; limit?: number; trim?: boolean } &
-  ({ beforeTurnId: string; cursor?: WindowCursor } | { beforeTurnId?: never; cursor: WindowCursor });
-/** Offsets and lengths are decoded UTF-8 bytes, never raw JSON or JavaScript character offsets. */
-export type SessionpageSessionBodyReadRequest = { conversationId: string; bodyRef: WindowBodyRef; offset: number; maxBytes: number };
-export type SessionpageSessionBodyReadResult = WindowBodyResult;
+export type SessionpageSessionOlderRequest = { conversationId: string; beforeTurnId: string; limit?: number; trim?: boolean };
 /**
  * 手机点开一张附件卡(#7193):agent 用 `session_open_in_tab` 打开给人看的那份文件,从那台机器上按块现读
  * (不经云,与时间线同一条线)。只读这条会话**真的打开过**的文件 —— 机器拿它自己的记录核对。
@@ -1350,16 +1348,6 @@ export type SessionpageSessionEvent = {
   result: TimelineAfterResult;
 };
 
-/** Terminal desktop-window read failure; emitted separately from timeline/reset pushes. */
-export type SessionpageSessionWindowStatusEvent = {
-  conversationId: string;
-  /** Fresh per subscription generation; clients also reject stale local generation callbacks. */
-  subscriptionId: string;
-  state: 'failed';
-  /** Same error fields as the window setup RPC; this status does not request recovery. */
-  error: { code: string; message: string };
-};
-
 /**
  * 整台机器的会话列表推送(事件 `session-list:push`,topic = subscriptionId)。
  *
@@ -1389,23 +1377,5 @@ export type SessionpageQueueAction =
   | { kind: 'delete'; id: string }
   | { kind: 'reorder'; ids: string[] }
   | { kind: 'send-now'; id: string; steers: boolean };
-
-/** ACP clients read the same durable commits and live turn as the desktop task page. */
-export type NativeSessionRecord = {
-  nativeOwnerNotificationEpoch?: number;
-  latestStoredSeq: number;
-  hasNewer: boolean;
-  turns: TranscriptTurn[];
-  originTurnIds: string[];
-  nextCursor: number | null;
-  activeTurn: TranscriptTurn | null;
-  /**
-   * Aligned with `turns`: how many times the host rewrote each one. A reader that keeps turns compares it with what it
-   * holds (`revisions`). Hosts from before it send nothing, and such a reader falls back to reading the pages again.
-   */
-  turnRevisions?: number[];
-  /** Asked for with `revisionsFrom`: every stored row from that sequence on, oldest first, as `[seq, revision]`. */
-  revisions?: Array<[seq: number, revision: number]>;
-};
 
 export * from './attachment-upload-contract';

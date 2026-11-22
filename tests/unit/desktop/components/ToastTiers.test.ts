@@ -18,7 +18,7 @@ vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => n
 
 import { ToastProvider } from '../../../../apps/desktop/src/components/Toast'
 import { ToastContext, type ToastType } from '../../../../apps/desktop/src/components/toastContext'
-import { dismissNotice, notify } from '../../../../apps/desktop/src/lib/notices'
+import { persistentNotices, dismissNotice, notify, useNotice } from '../../../../apps/desktop/src/lib/notices'
 import { TOAST_DWELL_MS } from '../../../../apps/desktop/src/lib/toastTiers'
 import { createReactHarness } from '../../../support/testHarness'
 
@@ -85,11 +85,11 @@ describe('提示的档位与停留(全 app 一份,#4891 / #137)', () => {
   })
 })
 
-describe('同 key 是同一条:原地更新,不叠', () => {
+describe('同 key 是同一条:原地更新,不叠(转瞬的提示条)', () => {
   it('同 key 活着时是同一个 sonner id(原地更新);不给 key 就是一次性的新提示', () => {
-    notify({ key: 'machine:d1', title: '正在重新连接 Mac 1', ongoing: true, waiting: true, tier: 'info' })
-    notify({ key: 'machine:d1', title: '连不上 Mac 1', ongoing: true, tier: 'info' })
-    const [first, second] = sonner.info.mock.calls.map((call) => (call[1] as Options).id)
+    notify({ key: 'machine:d1', title: '正在重新连接 Mac 1', tier: 'error' })
+    notify({ key: 'machine:d1', title: '连不上 Mac 1', tier: 'error' })
+    const [first, second] = sonner.error.mock.calls.map((call) => (call[1] as Options).id)
     expect(first).toMatch(/^machine:d1#/)
     expect(second).toBe(first)
     notify({ title: 'one-off', tier: 'info' })
@@ -97,31 +97,16 @@ describe('同 key 是同一条:原地更新,不叠', () => {
   })
 
   it('一条结束了(被收 / 被关 / 到点),同 key 再发是新的一条:❌ 被排到下一帧的那次收顺手杀掉、❌ 继承上一条的字段', () => {
-    notify({ key: 'machine:d2', title: '离线', ongoing: true, tier: 'info' })
-    const first = lastOptions(sonner.info).id
+    notify({ key: 'machine:d2', title: '离线', tier: 'error' })
+    const first = lastOptions(sonner.error).id
     dismissNotice('machine:d2')
     expect(sonner.dismiss).toHaveBeenCalledWith(first)
-    notify({ key: 'machine:d2', title: '离线', ongoing: true, tier: 'info' })
-    const second = lastOptions(sonner.info).id
+    notify({ key: 'machine:d2', title: '离线', tier: 'error' })
+    const second = lastOptions(sonner.error).id
     expect(second).not.toBe(first)
-    // 用户关掉 / 到点消失同理
-    ;(lastOptions(sonner.info) as { onDismiss: () => void }).onDismiss()
-    notify({ key: 'machine:d2', title: '离线', ongoing: true, tier: 'info' })
-    expect(lastOptions(sonner.info).id).not.toBe(second)
-    const third = lastOptions(sonner.info).id
-    notify({ key: 'machine:d2', title: '已连接', tier: 'success' })
-    ;(lastOptions(sonner.success) as { onAutoClose: () => void }).onAutoClose()
-    notify({ key: 'machine:d2', title: '离线', ongoing: true, tier: 'info' })
-    expect(lastOptions(sonner.info).id).not.toBe(third)
-  })
-
-  it('ongoing 不按停留消失,且一定带关闭钮 —— 常驻的用户想关得关掉', () => {
-    for (const tier of ['success', 'info', 'warning', 'error'] as const) {
-      notify({ key: tier, title: tier, tier, ongoing: true })
-      expect(lastOptions(sonner[tier]), tier).toMatchObject({ duration: Infinity, closeButton: true })
-    }
-    notify({ key: 'legacy', title: 'x', ongoing: true })
-    expect(lastOptions(sonner)).toMatchObject({ duration: Infinity, closeButton: true })
+    ;(lastOptions(sonner.error) as { onDismiss: () => void }).onDismiss()
+    notify({ key: 'machine:d2', title: '离线', tier: 'error' })
+    expect(lastOptions(sonner.error).id).not.toBe(second)
   })
 
   it('retires an expired keyed notice before notifying its owner', () => {
@@ -133,41 +118,109 @@ describe('同 key 是同一条:原地更新,不叠', () => {
     expect(lastOptions(sonner.error).id).not.toBe(old.id)
   })
 
-  it('ongoing 的提示不点击穿透:它带着关闭钮,得点得到', () => {
-    notify({ key: 'k', title: 'wait', tier: 'info', ongoing: true })
-    expect(lastOptions(sonner.info).className).toBeUndefined()
-  })
-
-  it('waiting 的图标是产品唯一的加载态组件,❌ 另画 spinner', () => {
-    notify({ key: 'k', title: 'wait', tier: 'info', ongoing: true, waiting: true })
-    const icon = lastOptions(sonner.info).icon
-    expect(isValidElement(icon)).toBe(true)
-    notify({ key: 'k', title: 'done', tier: 'success' })
-    expect(lastOptions(sonner.success).icon).toBeUndefined()
-  })
-
   it('onDismiss 只在用户亲手关时回调:dismissNotice 收掉的那条,sonner 晚一帧的回调 ❌ 算用户关的', () => {
     const closedByUser = vi.fn()
-    notify({ key: 'machine:d4', title: '离线', ongoing: true, tier: 'info', onDismiss: closedByUser })
-    const appDismissed = lastOptions(sonner.info) as { onDismiss: () => void }
+    notify({ key: 'machine:d4', title: '离线', tier: 'error', onDismiss: closedByUser })
+    const appDismissed = lastOptions(sonner.error) as { onDismiss: () => void }
     dismissNotice('machine:d4')
-    // 同 key 紧接着又是新的一条,旧那条的回调这时才到
-    notify({ key: 'machine:d4', title: '离线', ongoing: true, tier: 'info', onDismiss: closedByUser })
+    notify({ key: 'machine:d4', title: '离线', tier: 'error', onDismiss: closedByUser })
     appDismissed.onDismiss()
     expect(closedByUser).not.toHaveBeenCalled()
-    ;(lastOptions(sonner.info) as { onDismiss: () => void }).onDismiss()
+    ;(lastOptions(sonner.error) as { onDismiss: () => void }).onDismiss()
     expect(closedByUser).toHaveBeenCalledTimes(1)
   })
 
   it('dismissNotice 按 key 收掉活着的那一条;没有这条就什么都不做', () => {
-    notify({ key: 'machine:d3', title: '离线', ongoing: true, tier: 'info' })
-    const id = lastOptions(sonner.info).id
+    notify({ key: 'machine:d3', title: '离线', tier: 'error' })
+    const id = lastOptions(sonner.error).id
     dismissNotice('machine:d3')
     expect(sonner.dismiss).toHaveBeenCalledWith(id)
     sonner.dismiss.mockClear()
     dismissNotice('machine:d3')
     dismissNotice('machine:never')
     expect(sonner.dismiss).not.toHaveBeenCalled()
+  })
+})
+
+describe('常驻的进右上角那一叠(owner 选的 B):位置只由寿命决定', () => {
+  afterEach(() => { for (const banner of persistentNotices.read()) dismissNotice(banner.key) })
+  const keys = () => persistentNotices.read().map((banner) => banner.key)
+
+  it('ongoing 进那一叠、❌ 进提示条;同 key 原地更新,不叠', () => {
+    notify({ key: 'machine:b1', title: '正在重新连接 Mac 1', tier: 'info', ongoing: true, waiting: true })
+    notify({ key: 'machine:b1', title: '连不上 Mac 1', tier: 'info', ongoing: true })
+    expect(sonner.info).not.toHaveBeenCalled()
+    expect(persistentNotices.read()).toMatchObject([{ key: 'machine:b1', title: '连不上 Mac 1' }])
+  })
+
+  it('一件事从常驻变转瞬(或反过来)只换位置:原处那条收掉,不回调 onDismiss', () => {
+    const closedByUser = vi.fn()
+    notify({ key: 'machine:b2', title: '离线', tier: 'info', ongoing: true, onDismiss: closedByUser })
+    notify({ key: 'machine:b2', title: '已连接', tier: 'success' })
+    expect(keys()).not.toContain('machine:b2')
+    expect(lastOptions(sonner.success).id).toMatch(/^machine:b2#/)
+    notify({ key: 'machine:b2', title: '又断了', tier: 'info', ongoing: true })
+    expect(sonner.dismiss).toHaveBeenCalledWith(lastOptions(sonner.success).id)
+    expect(keys()).toContain('machine:b2')
+    expect(closedByUser).not.toHaveBeenCalled()
+  })
+
+  it('按进来的先后排;在铃铛里清掉 = 回调 onDismiss,dismissNotice 收 = 不回调', () => {
+    const closed = vi.fn()
+    notify({ key: 'b3', title: 'first', ongoing: true, onDismiss: closed })
+    notify({ key: 'b4', title: 'second', ongoing: true, onDismiss: closed })
+    notify({ key: 'b3', title: 'first, updated', ongoing: true, onDismiss: closed })
+    expect(keys()).toEqual(['b3', 'b4'])
+    dismissNotice('b4')
+    expect(closed).not.toHaveBeenCalled()
+    persistentNotices.clear('b3')
+    expect(closed).toHaveBeenCalledTimes(1)
+    expect(keys()).toEqual([])
+  })
+
+  it('waiting 的图标是产品唯一的加载态组件,❌ 另画 spinner(转瞬的同一条规则)', () => {
+    notify({ key: 'k', title: 'wait', tier: 'info', waiting: true })
+    expect(isValidElement(lastOptions(sonner.info).icon)).toBe(true)
+  })
+
+  it('useNotice:给一条 = 在(原地更新),给 null / 卸载 = 收掉', async () => {
+    function Owner({ title }: { title: string | null }) { useNotice('live', title ? { title, ongoing: true } : null); return null }
+    const harness = createReactHarness()
+    await harness.render(createElement(Owner, { title: 'Installing' }))
+    await harness.render(createElement(Owner, { title: 'Installed' }))
+    expect(persistentNotices.read()).toMatchObject([{ key: 'live', title: 'Installed' }])
+    await harness.render(createElement(Owner, { title: null }))
+    expect(keys()).toEqual([])
+    await harness.render(createElement(Owner, { title: 'Again' }))
+    harness.cleanup()
+    expect(keys()).toEqual([])
+  })
+
+  it('「以后再说」= 收进铃铛:还在、标成 deferred,不回调 onDismiss;同一状态往前走还在铃铛里,换了状态回到卡片叠', () => {
+    const closed = vi.fn()
+    notify({ key: 'install', title: 'Installing Codex', description: '10%', ongoing: true, onDismiss: closed })
+    persistentNotices.defer('install')
+    expect(persistentNotices.read()).toMatchObject([{ key: 'install', deferred: true }])
+    notify({ key: 'install', title: 'Installing Codex', description: '60%', ongoing: true, onDismiss: closed })
+    expect(persistentNotices.read()).toMatchObject([{ key: 'install', description: '60%', deferred: true }])
+    notify({ key: 'install', title: 'Codex install failed', ongoing: true, onDismiss: closed })
+    expect(persistentNotices.read()).toMatchObject([{ key: 'install', deferred: false }])
+    expect(closed).not.toHaveBeenCalled()
+    persistentNotices.clear('install')
+    expect(closed).toHaveBeenCalledTimes(1)
+    expect(keys()).toEqual([])
+  })
+
+  it('dismissible:false 的常驻收不进铃铛,只由它的结果收掉', () => {
+    notify({ key: 'must-resolve', title: 'Resolve me', tier: 'warning', ongoing: true, dismissible: false })
+    persistentNotices.defer('must-resolve')
+    expect(persistentNotices.read()).toMatchObject([{ key: 'must-resolve', dismissible: false, deferred: false }])
+  })
+
+  it('不自己消失的转瞬(定时提醒)在提示条上,一定带关闭钮', () => {
+    notify({ key: 'meeting', title: 'Design review', duration: Infinity })
+    expect(lastOptions(sonner)).toMatchObject({ duration: Infinity, closeButton: true })
+    expect(keys()).toEqual([])
   })
 })
 
@@ -205,10 +258,8 @@ describe('用户读到的失败 / 告警落盘', () => {
 })
 
 
-it('compact copy feedback uses the same notice lifecycle and does not leak its layout into a reused key', () => {
-  notify({ key: 'compact-contract', title: 'Copied', tier: 'success', duration: 1500, presentation: 'compact' })
-  expect(lastOptions(sonner.success)).toMatchObject({ duration: 1500, position: 'top-center', className: 'gugu-notice-passthrough gugu-notice-compact' })
-  const id = lastOptions(sonner.success).id
-  notify({ key: 'compact-contract', title: 'Action failed', tier: 'error' })
-  expect(lastOptions(sonner.error)).toMatchObject({ id, position: undefined, className: undefined, duration: 6000, closeButton: true })
+it('no transient notice picks its own corner: every one lands in the single toast outlet', () => {
+  notify({ key: 'one-stack', title: 'Copied', tier: 'success', duration: 1500 })
+  expect(lastOptions(sonner.success)).not.toHaveProperty('position')
+  expect(lastOptions(sonner.success).closeButton).toBe(false)
 })

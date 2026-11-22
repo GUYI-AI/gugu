@@ -25,7 +25,7 @@ const openImageViewer = vi.hoisted(() => vi.fn())
 vi.mock('../../../apps/desktop/src/lib/imageViewer', () => ({ openImageViewer }))
 vi.mock('../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({
   SessionpageRpcError: class extends Error {}, fetchSessionOptions: vi.fn(() => new Promise(() => {})),
-  setSessionOption: vi.fn(), onLinkChange: vi.fn(() => () => {}),
+  setSessionOption: vi.fn(), fetchOlder: vi.fn(), onLinkChange: vi.fn(() => () => {}),
   onMachineEvent: vi.fn((_device: string, channel: { name: string }, listener: (view: LifeView) => void) => {
     if (channel.name === 'session:life-view') hostActions.listeners.add(listener)
     return () => { hostActions.listeners.delete(listener) }
@@ -255,8 +255,9 @@ it('settles only the discarded host input notice when the real life event remove
     hold: null, failure: null, lastExit: null, nativeSession: null, pending: { count: 0,
       items: ids.map((messageId, seq) => ({ seq, messageId, preview: messageId, text: messageId,
         kind: 'session-direct', state: 'unknown', discardable: true, resendable: true, failure: null })) } })
+  // A read timeline (it has a cursor): unknown receipts are resolved against it, then shown.
   await renderWithAppProviders(harness, createNode(SessionConversation, {
-    timeline: emptyAgentWatchTimeline(), deviceId: 'desktop', sessionId, agentName: 'Test agent', sessionRuntime: 'acp',
+    timeline: { ...emptyAgentWatchTimeline(), cursor: { epoch: 'e', seq: 0 } }, deviceId: 'desktop', sessionId, agentName: 'Test agent', sessionRuntime: 'acp',
     respondingItemId: null, onRespond: vi.fn(), onSend: vi.fn(), pendingSends: [], sending: false, agentWorking: false,
     onStop: vi.fn(), stopping: false, onLoadOlder: async () => undefined,
   }))

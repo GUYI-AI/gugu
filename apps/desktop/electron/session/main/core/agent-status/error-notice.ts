@@ -1,9 +1,10 @@
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { createHash } from 'node:crypto';
-import { desc, eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { agentQuotaReason } from '@gugu/core/shared/agentQuotaReason';
 import { db } from '@main/db/client';
-import { kv, sessions, sessionTurns } from '@main/db/schema';
+import { kv, sessions } from '@main/db/schema';
+import { lastIndexedTurn } from '../session-index/session-index';
 import type { AgentEvent } from '@shared/core/agents/agentEvents';
 
 const keyFor = (sessionId: string) => `session-error-notice:${sessionId}`;
@@ -47,14 +48,12 @@ export function acknowledgeErrorNotice(sessionId: string): void {
     return;
   }
   // Upgrading an existing failed session must not require one extra failed retry to learn its cause.
-  // Read only the latest stored outcome's fields, never the potentially large turn body.
-  const tail = db.select({ kind: sql<string | null>`json_extract(${sessionTurns.data}, '$.outcome.kind')`,
-    message: sql<string | null>`coalesce(json_extract(${sessionTurns.data}, '$.outcome.detail'), json_extract(${sessionTurns.data}, '$.outcome.said'))` })
-    .from(sessionTurns).where(eq(sessionTurns.sessionId, sessionId)).orderBy(desc(sessionTurns.seq)).limit(1).get();
-  if (tail?.kind !== 'error' || !tail.message) return;
+  // How its last turn ended, as the session index holds it (a session not yet indexed has nothing to learn yet).
+  const tail = lastIndexedTurn(sessionId);
+  if (tail?.outcome_kind !== 'error' || !tail.outcome_message) return;
   const row = db.select({ provider: sessions.provider, config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).get();
   const model = runtimeModelId(row?.config?.type === 'acp' ? row.config.model ?? row.config.contextUsage?.modelId : row?.config?.model);
-  const key = fingerprint(tail.message, row?.provider ?? undefined, model);
+  const key = fingerprint(tail.outcome_message, row?.provider ?? undefined, model);
   if (key) write(sessionId, { current: key, acknowledged: [key] });
 }
 

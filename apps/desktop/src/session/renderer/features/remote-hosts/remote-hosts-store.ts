@@ -741,8 +741,8 @@ export class RemoteHostsStore {
       .filter((folder) => folder.deviceId === deviceId && !folder.removalRequestedAt)
       .map((folder) => folderAsProject({ id: folder.folderId, path: folder.path, chatId: group.chatId, gitless: false, baseRef: null, attachedAt: folder.attachedAt })));
     const sessions = this.sessionsOf(deviceId).sessions;
-    if (sessions.length) appState.projects.syncMachineProjects(deviceId, folders, sessions);
-    else appState.projects.syncMachineProjects(deviceId, folders);
+    // What only the account recalls about a machine names an owner only for ids no machine has answered for (propose).
+    appState.projects.syncMachineProjects(deviceId, folders, sessions, 'account');
   }
 }
 

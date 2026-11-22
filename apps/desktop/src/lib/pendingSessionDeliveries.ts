@@ -50,22 +50,22 @@ export function projectSessionPendingDeliveries(previous: readonly PendingPrompt
 /** Unknown receipts may already belong to an older page. Resolve those pages before publishing a tail bubble. */
 export const PENDING_DELIVERY_HISTORY_BUDGET = { pages: 6, bytes: 768 * 1024, milliseconds: 1500 } as const
 
-export async function loadPendingDeliveryHistory(newest: readonly TranscriptTurn[], nextCursor: number | null,
-  inputs: readonly PendingPrompt[], read: (before: number) => Promise<{ turns: TranscriptTurn[]; nextCursor: number | null }>, alive: () => boolean,
+/** `readOlder` gives the page before the oldest one read so far, and whether anything lies before that. */
+export async function loadPendingDeliveryHistory(newest: readonly TranscriptTurn[], hasOlder: boolean,
+  inputs: readonly PendingPrompt[], readOlder: () => Promise<{ turns: TranscriptTurn[]; hasOlder: boolean }>, alive: () => boolean,
   budget: { pages: number; bytes: number; milliseconds: number } = PENDING_DELIVERY_HISTORY_BUDGET) {
   const unknown = inputs.filter(input => input.delivery?.state === 'unknown')
   let turns: TranscriptTurn[] = []
-  let cursor = nextCursor
+  let more = hasOlder
   let pages = 0, bytes = 0
   let reason: 'matched' | 'end' | 'pages' | 'bytes' | 'timeout' | 'disposed' = 'matched'
   const started = Date.now()
-  while (cursor !== null && alive() && unknown.some(input => !pendingPromptLanded(input, [...turns, ...newest]))) {
+  while (more && alive() && unknown.some(input => !pendingPromptLanded(input, [...turns, ...newest]))) {
     if (pages >= budget.pages) { reason = 'pages'; break }
     const remaining = budget.milliseconds - (Date.now() - started)
     if (remaining <= 0) { reason = 'timeout'; break }
-    const before = cursor
     let timer: ReturnType<typeof setTimeout> | undefined
-    const page = await Promise.race([read(before), new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), remaining) })])
+    const page = await Promise.race([readOlder(), new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), remaining) })])
       .finally(() => clearTimeout(timer))
     pages++
     if (!alive()) { reason = 'disposed'; break }
@@ -74,9 +74,8 @@ export async function loadPendingDeliveryHistory(newest: readonly TranscriptTurn
     bytes += size
     if (bytes > budget.bytes) { reason = 'bytes'; break }
     turns = [...page.turns, ...turns]
-    cursor = page.nextCursor
-    if (cursor !== null && cursor >= before) throw new Error('Session history cursor did not advance')
+    more = page.hasOlder
   }
-  if (cursor === null) reason = 'end'
-  return { turns, cursor, pages, bytes, reason, milliseconds: Date.now() - started }
+  if (!more) reason = 'end'
+  return { turns, hasOlder: more, pages, bytes, reason, milliseconds: Date.now() - started }
 }

@@ -7,6 +7,7 @@ import type { EnqueuePending } from './session-pending';
 
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
+  sqlite: undefined as unknown,
   calls: [] as string[],
   enqueued: [] as EnqueuePending[],
 }));
@@ -15,7 +16,10 @@ vi.mock('@main/db/client', () => ({
     if (!mocks.db) throw new Error('Test database not initialized');
     return mocks.db;
   },
+  get sqlite() { return mocks.sqlite; },
 }));
+// The session index is what these read; the tests write it themselves.
+vi.mock('../session-timeline/service', () => ({ ensureSessionIndexed: async () => {} }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 const restartStatus = vi.hoisted(() => vi.fn(async () => {}));
@@ -32,6 +36,7 @@ vi.mock('./session-life', async () => {
 });
 
 import { restartSession } from './restart-session';
+import { writeSessionIndex } from '../session-index/session-index';
 
 describe('restartSession on a session-life session', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -39,6 +44,7 @@ describe('restartSession on a session-life session', () => {
     mocks.calls = []; mocks.enqueued = [];
     fixture = await openFixture('empty');
     mocks.db = fixture.db;
+    mocks.sqlite = fixture.sqlite;
     const config = JSON.stringify({ version: '1', type: 'acp', agentDisplayName: 'T', firstUtterance: '把测试跑一遍', initialQueue: [{ text: '把测试跑一遍', origin: 'manual' }] });
     fixture.sqlite.exec(`
       INSERT INTO workspaces (id, type, kind, location, path, key) VALUES ('root', 'local', 'project-root', 'local', '/repo', 'root');
@@ -89,8 +95,7 @@ describe('restartSession on a session-life session', () => {
 
   it('a session whose first turn ran is not replayed: nothing is queued, nothing runs, its first-turn payload is gone', async () => {
     fixture.sqlite.prepare("UPDATE sessions SET config = json_set(config, '$.initialPrompt', '把测试跑一遍', '$.initialMessageId', 'm1') WHERE id = 's'").run();
-    fixture.sqlite.prepare("INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES ('s:0', 's', 0, 't0', ?)")
-      .run(JSON.stringify({ id: 't0', seq: 0, initiator: 'user', items: [{ kind: 'message', id: 'm1', seq: 0, role: 'user', text: '把测试跑一遍' }] }));
+    writeSessionIndex('s', [{ id: 't0', seq: 0, initiator: 'user', items: [{ kind: 'message', id: 'm1', seq: 0, role: 'user', text: '把测试跑一遍' }] }]);
     await restartSession('s');
     expect(mocks.calls).toEqual(['reconfigure:s', 'forget:s']);
     expect(fixture.sqlite.prepare("SELECT count(*) AS n FROM session_pending WHERE session_id = 's'").get()).toEqual({ n: 0 });

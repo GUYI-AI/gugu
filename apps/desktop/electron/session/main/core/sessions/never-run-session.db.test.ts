@@ -3,17 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 import { clearProviderSessionMissing } from './mark-provider-session-missing';
 import { isResidentNeverRun, RESIDENT_AGENT_FIRST_UTTERANCE } from './never-run-session';
+import { writeSessionIndex } from '../session-index/session-index';
 
-// #7223 「建来常驻、一句没聊过」= 没有已提交回合(session_turns)、也没有真首轮;起来之后陈旧的 missing 标记要去掉。
+// #7223 「建来常驻、一句没聊过」= 时间线里没有回合(会话索引)、也没有真首轮;起来之后陈旧的 missing 标记要去掉。
 // 读写真库(迁移跑到最新)。
 
-const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined, emit: vi.fn() }));
+const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined, sqlite: undefined as unknown, emit: vi.fn() }));
 vi.mock('@main/db/client', () => ({
   get db() {
     if (!mocks.db) throw new Error('Test database not initialized');
     return mocks.db;
   },
+  get sqlite() { return mocks.sqlite; },
 }));
+// The session index is what these read; the tests write it themselves.
+vi.mock('../session-timeline/service', () => ({ ensureSessionIndexed: async () => {} }));
 vi.mock('@main/lib/events', () => ({ events: { emit: mocks.emit } }));
 
 let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -28,9 +32,7 @@ function seedSession(config: Record<string, unknown>, providerSessionId: string 
 }
 
 function seedTurn(): void {
-  fixture.sqlite
-    .prepare(`INSERT INTO session_turns (id, session_id, seq, turn_id, data) VALUES ('s:0', 's', 0, 't0', '{}')`)
-    .run();
+  writeSessionIndex('s', [{ id: 't0', seq: 0, initiator: 'user', items: [] }]);
 }
 
 function config(): Record<string, unknown> {
@@ -41,6 +43,7 @@ function config(): Record<string, unknown> {
 beforeEach(async () => {
   fixture = await openFixture('empty');
   mocks.db = fixture.db;
+  mocks.sqlite = fixture.sqlite;
   mocks.emit.mockReset();
 });
 
@@ -70,7 +73,7 @@ describe('isResidentNeverRun (#7223)', () => {
     await expect(isResidentNeverRun('s')).resolves.toBe(false);
   });
 
-  it('阴控 —— 聊过(session_turns 有行):不算', async () => {
+  it('阴控 —— 聊过(会话索引里有轮):不算', async () => {
     seedSession({ firstUtterance: RESIDENT_AGENT_FIRST_UTTERANCE });
     seedTurn();
     await expect(isResidentNeverRun('s')).resolves.toBe(false);

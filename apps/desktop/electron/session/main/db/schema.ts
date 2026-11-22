@@ -22,8 +22,6 @@ import type { TerminalShellId } from '@shared/core/terminals/terminal-settings';
 import { workspaceConfig } from '@shared/core/workspaces/workspace-config';
 import { workspaceProviderData } from '@shared/core/workspaces/workspace-provider-data';
 import type { Hold } from '@gugu/core/local/session-life/types';
-import { windowCommitTables } from './window-commit-schema';
-import { windowPackTables } from './window-pack-schema';
 
 /** Durable local IM rows. Their original body is never part of the disposable search schema. */
 export const imMessages = sqliteTable('im_messages', {
@@ -679,57 +677,6 @@ export const sessionPendingSource = sqliteTable('session_pending_source', {
   sessionId: text('session_id').notNull(),
   sourceMessageId: text('source_message_id').notNull(),
 }, table => ({ source: uniqueIndex('idx_session_pending_source_identity').on(table.sessionId, table.sourceMessageId) }));
-
-/**
- * 会话历史的落盘（#5381）。一条已提交的回合一行，`data` 是那一回合的结构化条目
- * （消息 / 思考 / 工具调用），不是渲染好的文本。
- *
- * **为什么必须自己存**：从前会话页不存对话内容，历史唯一来源是恢复时的 ACP `session/load`
- * 重放。而重放完不完整取决于 provider —— 实测 `claude-agent-acp` 在上下文压缩之后只重放最后一次
- * 压缩边界之后的部分（6177 行的会话只推回 46 条），压缩前的消息就永久离开了界面。用户视角是
- * 「我重启了，我消息也丢了」，而这段对话在 agent 侧其实还在。把「用户会不会丢历史」交给
- * 二十多家 provider 各自决定，方向就是错的。
- *
- * **`seq` 由主进程分配，不复用运行时那份**。运行时的回合序号是「在当前这条 cell 里的位置」，
- * 重开会话后它从 0 重数——而重放只包含压缩后的一段，于是新回合的序号会与库里已有的撞号。
- * 写入时取 `max(seq)+1`，序即到达序。
- */
-export const sessionTurns = sqliteTable(
-  'session_turns',
-  {
-    /** `${conversationId}:${seq}` —— 一条会话内唯一，天然幂等。 */
-    id: text('id').primaryKey(),
-    sessionId: text('session_id')
-      .notNull()
-      .references(() => sessions.id, { onDelete: 'cascade' }),
-    /** 主进程分配的到达序，一条会话内单调递增。 */
-    seq: integer('seq').notNull(),
-    /** 运行时那侧的回合 id，仅作诊断与追溯用，❌ 不做跨重启的对齐键。 */
-    turnId: text('turn_id').notNull(),
-    /** 该回合的结构化条目，JSON。 */
-    data: text('data').notNull(),
-    createdAt: text('created_at')
-      .notNull()
-      .default(sql`CURRENT_TIMESTAMP`),
-    /**
-     * How many times `data` was rewritten in place (a late tail, a changed outcome, a record fill). A reader that keeps
-     * turns (the phone) compares it with the one it holds and reads again only the turns that changed. Counted by a
-     * trigger (migration 0050), so no writer can forget it.
-     */
-    revision: integer('revision').notNull().default(0),
-  },
-  (table) => ({
-    sessionSeqIdx: index('idx_session_turns_session_seq').on(
-      table.sessionId,
-      table.seq
-    ),
-  })
-);
-
-export type SessionTurnRow = typeof sessionTurns.$inferSelect;
-export const { sessionWindowCommitReceipts, sessionWindowCommitPositions } = windowCommitTables({ sessionId: sessions.id, rowId: sessionTurns.id });
-export const { sessionWindowPackGroups,sessionWindowPackSources,sessionWindowPackFrames,sessionWindowPackPositions,sessionWindowPackDependencies }
-  = windowPackTables({ sessionId: sessions.id, sourceId: sessionWindowCommitReceipts.sourceId });
 
 /**
  * #6334 用量页:一条会话「在干活」(working / needs_user)的一段时间一行,时间是 epoch 毫秒。

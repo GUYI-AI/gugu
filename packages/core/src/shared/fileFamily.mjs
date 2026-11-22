@@ -1,5 +1,5 @@
-// @@@file-family - 一个文件归哪一族:图标和族色都只查这一处(packages/session-shared/src/file-marks.ts 的表)。
-// 10 族 + other;后缀说了算,没有后缀或后缀不认识时看 mime。文件 App 拿不到 core,经 `<gugu-file-mark>`(ui.js)读同一份。
+// @@@file-family - 一个文件归哪一族:文件图标在 manifest 认不出它时(没有后缀、后缀没收、只有 mime 说得清)按族取图标
+// (packages/session-shared/src/file-marks.ts)。10 族 + other;后缀说了算,没有后缀或后缀不认识时看 mime。
 import { extensionOf, normalizeMimeType } from './imageMime.mjs'
 
 const FAMILIES = [

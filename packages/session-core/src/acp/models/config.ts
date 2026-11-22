@@ -130,6 +130,8 @@ export const sessionConfigStateSchema = z.object({
    * 会**静默**把它丢掉,产品面上看不出任何异常(#5269,owner 2026-09-09 实撞)。
    */
   acceptsImagePrompts: z.boolean(),
+  /** The running agent can step the conversation back (its plugin's `acp.revert`, available on this adapter build). */
+  canRevert: z.boolean(),
 });
 export type SessionConfigState = z.infer<typeof sessionConfigStateSchema>;
 
@@ -140,6 +142,7 @@ export const initialSessionConfigState: SessionConfigState = {
   modeOptions: null,
   availableCommands: [],
   acceptsImagePrompts: false,
+  canRevert: false,
 };
 
 export const sessionUsageSchema = z.object({

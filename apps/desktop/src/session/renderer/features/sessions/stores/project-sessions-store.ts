@@ -1,7 +1,7 @@
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { makeObservable, observable, reaction, runInAction, toJS } from 'mobx';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notices';
 import { match } from 'ts-pattern';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import type { GitRepositoryStore } from '@renderer/features/projects/stores/git-repository-store';
@@ -167,13 +167,14 @@ export class ProjectSessionsStore {
         if (!inWorkspace) return;
         const sessionName = inWorkspace.displayName;
         const label = type[0].toUpperCase() + type.slice(1);
-        toast.error(
-          sessionName
+        notify({
+          title: sessionName
             ? translateSessionMessage('taskError.scriptFailedForTask', { label, sessionName })
             : translateSessionMessage('taskError.scriptFailed', { label }),
           // description 是用户自己那段脚本的输出,不是内部报错 —— 留着。
-          { description: message }
-        );
+          description: message,
+          tier: 'error',
+        });
       }),
       // Handles sessions provisioned by the automation path (or any main-process caller)
       // without renderer-initiated RPCs. The `isUnprovisioned` guard prevents a

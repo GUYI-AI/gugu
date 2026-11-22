@@ -20,7 +20,8 @@ vi.mock('@renderer/lib/ipc', () => ({
     workspace: { files: { readChunk: (...args: unknown[]) => mocks.readChunk(...args) } },
     sessions: { sendMessage: (...args: unknown[]) => mocks.sendMessage(...args) },
   }),
-  rpc: {},
+  // This window's main: the assistant's cloud computer is reached by no device link, so its files are read in chunks.
+  rpc: { workspace: { files: { streamsFrom: async () => ({ success: true, data: false }) } } },
 }))
 // 它家那台上的会话目录(助理自己那条会话从这里认):只给一条,别的与这里无关。
 vi.mock('../../../apps/desktop/src/session/renderer/features/assistant/assistant-home-sessions', () => ({

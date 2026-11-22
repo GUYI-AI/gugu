@@ -37,6 +37,8 @@ export interface AcpConnectionEntry extends AcpConnectionContext {
   supportsImagePrompt: boolean;
   /** initialize._meta.steering.supported: route busy steering through the ACP extension. */
   supportsSteering: boolean;
+  /** See AcpAgentConnection.agentVersion. */
+  agentVersion?: string;
   /** 这个受管进程的 pid(spawn 当场绑定);重载判据用它,见 AcpAgentConnection.pid。 */
   pid: number | null;
   stopProcess(): Promise<void>;
@@ -216,6 +218,7 @@ async function provisionAcpConnection(
     supportsForkSession: connection.data.supportsForkSession,
     supportsImagePrompt: connection.data.supportsImagePrompt,
     supportsSteering: connection.data.supportsSteering,
+    ...(connection.data.agentVersion ? { agentVersion: connection.data.agentVersion } : {}),
     pid: connection.data.pid,
     stopProcess: connection.data.stopProcess,
   };

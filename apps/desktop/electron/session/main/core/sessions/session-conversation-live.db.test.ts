@@ -8,13 +8,19 @@ import { AcpRuntime } from '../../../../../../../packages/session-runtime/src/ac
 import { personalConversationPreview } from '@gugu/session-core/session-record/personal-conversation';
 import { activityPreviewSources } from '@gugu/session-chat-ui/activity-preview';
 
-const mock = vi.hoisted(() => ({ db: undefined as AppDb | undefined }));
+const mock = vi.hoisted(() => ({ db: undefined as AppDb | undefined, gate: Promise.resolve() as Promise<void> }));
 vi.mock('@main/db/client', () => ({ get db() { if (!mock.db) throw new Error('Missing fixture'); return mock.db; } }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
+vi.mock('../activity/signals', () => ({ activitySignal: vi.fn() }));
+// A live turn's effects wait on its publication context: the test holds them there.
+vi.mock('./native-publication-host', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./native-publication-host')>();
+  return { ...actual, nativePublicationContext: async (...args: Parameters<typeof actual.nativePublicationContext>) => { await mock.gate; return actual.nativePublicationContext(...args); } };
+});
 import { nativeConversationListActivity, openNativeConversationPreviews } from './session-conversation-live';
 import { nativeConversationActivity } from './session-conversation-activity';
 import { nativeConversationUnread } from './session-conversation-read';
-import { appendRecordTurnNow, persistCommittedTurn, reviseRecordTurnNow, withStoredTurns } from './session-turn-store';
+import { committedTurnsObserved, observeCommittedTurn } from './committed-turn-observer';
 import { events } from '@main/lib/events';
 
 let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -35,7 +41,7 @@ describe('ordinary personal replies in the native conversation directory', () =>
     let now = 10_000;
     vi.spyOn(Date, 'now').mockImplementation(() => now);
     const h = makeAcpHarness();
-    const bridge = openNativeConversationPreviews(id => withStoredTurns(id, async () => {}));
+    const bridge = openNativeConversationPreviews(committedTurnsObserved);
     const writes: Promise<unknown>[] = [];
     const order: string[] = [];
     let releaseDurable = () => {};
@@ -44,7 +50,7 @@ describe('ordinary personal replies in the native conversation directory', () =>
         project: turn => personalConversationPreview(turn, activityPreviewSources),
         onChange: event => { if (!event.preview) order.push('empty'); writes.push(bridge.update(event)); },
       },
-      onTurnCommitted: event => { order.push('commit'); writes.push(persistCommittedTurn(event)); },
+      onTurnCommitted: event => { order.push('commit'); writes.push(observeCommittedTurn(event)); },
     });
     let finish!: () => void;
     try {
@@ -69,10 +75,9 @@ describe('ordinary personal replies in the native conversation directory', () =>
       now = 40_000; await send('second', ' continued');
       await vi.waitFor(() => expect(nativeConversationListActivity('s')?.text).toBe('Last reply continued'));
       expect(nativeConversationListActivity('s')?.at).toBe(new Date(30_000).toISOString());
-      // Finish after the transcript publication tick is drained, with persistence deliberately blocked.
+      // Finish after the transcript publication tick is drained, with the turn's effects deliberately held.
       await new Promise(resolve => setTimeout(resolve, 150));
-      const barrier = withStoredTurns('s', () => new Promise<void>(resolve => { releaseDurable = resolve; }));
-      await Promise.resolve();
+      mock.gate = new Promise<void>(resolve => { releaseDurable = resolve; });
       const observed: Array<string | null> = [];
       vi.mocked(events.emit).mockImplementation((_channel, data) => {
         if ((data as { changes?: { nativeLastMessage?: boolean } }).changes?.nativeLastMessage) observed.push(nativeConversationListActivity('s')?.text ?? null);
@@ -83,7 +88,7 @@ describe('ordinary personal replies in the native conversation directory', () =>
       expect(order.indexOf('empty')).toBeGreaterThan(order.indexOf('commit'));
       expect(nativeConversationActivity('s')).toBeNull();
       expect(nativeConversationListActivity('s')?.text).toBe('Last reply continued');
-      releaseDurable(); await barrier;
+      releaseDurable();
       await vi.waitFor(() => expect(nativeConversationActivity('s')?.text).toBe('Last reply continued'));
       await Promise.all(writes);
       expect(observed.every(text => text === 'Last reply continued')).toBe(true);
@@ -94,7 +99,7 @@ describe('ordinary personal replies in the native conversation directory', () =>
       // A worker restart can discard temporary state without reverting the row to the owner's input.
       bridge.dispose();
       expect(nativeConversationListActivity('s')?.text).toBe('Last reply continued');
-    } finally { releaseDurable(); finish?.(); await rt.dispose(); bridge.dispose(); await Promise.all(writes); }
+    } finally { releaseDurable(); mock.gate = Promise.resolve(); finish?.(); await rt.dispose(); bridge.dispose(); await Promise.all(writes); }
   });
 
   it('ignores an old worker and its delayed cleanup after a successor publishes', async () => {
@@ -123,24 +128,17 @@ describe('ordinary personal replies in the native conversation directory', () =>
     bridge.dispose();
   });
 
-  it.each(['record', 'replay'] as const)('fills a %s preview with its original clock and no unread or live inbox', async source => {
-    const old = historical('Original answer', 1000);
-    if (source === 'record') await withStoredTurns('s', () => appendRecordTurnNow('s', old));
-    else await persistCommittedTurn({ sessionId: 's', source: 'replay', turn: old });
+  it('fills a replayed preview with its original clock and no unread or live inbox', async () => {
+    await observeCommittedTurn({ sessionId: 's', source: 'replay', turn: historical('Original answer', 1000) });
     expect(nativeConversationListActivity('s')).toMatchObject({ text: 'Original answer', at: new Date(1000).toISOString() });
     expect(nativeConversationUnread('s')).toEqual([]);
-    if (source === 'record') {
-      await withStoredTurns('s', () => reviseRecordTurnNow('s', 0, historical('Completed native answer', 2000)));
-      expect(nativeConversationListActivity('s')?.text).toBe('Completed native answer');
-      expect(nativeConversationUnread('s')).toEqual([]);
-    }
   });
 
-  it('does not invent a clock for a native record or demote newer live activity on late history', async () => {
-    await withStoredTurns('s', () => appendRecordTurnNow('s', historical('Clock unknown')));
+  it('does not invent a clock for history or demote newer live activity on late history', async () => {
+    await observeCommittedTurn({ sessionId: 's', source: 'replay', turn: historical('Clock unknown') });
     expect(nativeConversationListActivity('s')).toBeNull();
-    await persistCommittedTurn({ sessionId: 's', source: 'live', turn: { ...historical('New answer', 5000), id: 'live' } });
-    await withStoredTurns('s', () => appendRecordTurnNow('s', historical('Old answer', 1000)));
+    await observeCommittedTurn({ sessionId: 's', source: 'live', turn: { ...historical('New answer', 5000), id: 'live' } });
+    await observeCommittedTurn({ sessionId: 's', source: 'replay', turn: historical('Old answer', 1000) });
     expect(nativeConversationListActivity('s')?.text).toBe('New answer');
   });
 });

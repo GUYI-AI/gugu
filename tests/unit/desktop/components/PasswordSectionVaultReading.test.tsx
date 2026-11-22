@@ -104,7 +104,8 @@ describe('the device prompt over a kept vault', () => {
     const joining: PasswordSnapshot = { ...snapshotOf(), sync: { state: 'joining', code: '123456' } }
     let fail = false
     const vault = fakeVault(async () => (fail ? { ok: false, code: 'SYSTEM_STORAGE_UNAVAILABLE' } : { ok: true, snapshot: joining }))
-    await render(createNode(PasswordDeviceHost))
+    const { NoticeHost } = await import('../../../../apps/desktop/src/components/NoticeHost')
+    await render(createNode('div', {}, createNode(NoticeHost), createNode(PasswordDeviceHost)))
     await waitForCondition(() => document.querySelector('[data-testid="password-join-card"]') !== null, 'join card not drawn')
     expect(document.querySelector('[data-testid="password-join-card"] [data-refresh-failed]')).toBeNull()
     fail = true

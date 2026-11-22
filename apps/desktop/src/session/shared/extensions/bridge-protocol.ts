@@ -151,7 +151,7 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 53: withdrawn (selected-text annotations from the Files App; its selections are cited instead). The number stays.
 // 54: `files.sendSelection`, the preinstalled Files App's Send box beside a selection, into the page's session; 55: the same
 // on a chat folder's page, into that chat. Both withdrawn with 60 (the host's selection menu cites instead).
-// 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's family glyph, or with `tile` the host's file tile. Presentation
+// 56 (ui-entry.ts): `<gugu-file-mark name mime tile>`, a file's icon in its colour, or with `tile` the host's file tile. Presentation
 // only, as 51: an older host leaves the element empty, so an App that draws files with it declares 56.
 // 57 (`openingViewOf`): `files.openWith(file, { among, origin })` — an image no App claims opens in the host's image
 // viewer, paging through `among` (the files shown with it, in the page's order) and opening from `origin` (its picture's
@@ -168,7 +168,9 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // @@@menu-order, the destructive last), `alone` (its name when its submenu holds only it and is shown in its place) and
 // `hotkey` (the key drawn at the row's end, as host menus do: 'F2', 'Mod+Click'). The host orders and folds; the App only
 // says which rows are rare. Presentation only, as 51: an older host draws the rows as given.
-export const EXTENSION_API_VERSION = 62;
+// 63 (ui-entry.ts): `<gugu-file-mark folder [open]>`, a folder from the host's file icon set, in currentColor (ui.css gives it
+// the set's folder colour). Presentation only, as 51: an older host draws the element as a file by its name.
+export const EXTENSION_API_VERSION = 63;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

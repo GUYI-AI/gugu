@@ -113,3 +113,8 @@ export async function workspaceFileRange(deviceId: string, place: { workspaceId:
   const bytes = await streamedRange(key, deviceId, { size, etag }, (offset, stream) => ({ place, path, offset, etag, stream }), request.offset, length);
   return { size, etag, offset: request.offset, data: Buffer.from(bytes).toString('base64') };
 }
+
+/** Whether `deviceId`'s files stream here (a device link reaches it, its server streams); a link that will not open throws. */
+export async function machineStreams(deviceId: string): Promise<boolean> {
+  return streams ? streams.linked(deviceId) : false;
+}

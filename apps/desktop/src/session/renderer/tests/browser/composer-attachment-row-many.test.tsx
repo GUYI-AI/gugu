@@ -115,7 +115,7 @@ describe('real mobile composer attachment grid', () => {
     await pick(11)
     await until('only ten chips added', () => harness.container.querySelectorAll('[data-slot="composer-attachment"]').length === 10)
     expect(notify).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(notify).mock.calls[0]![0]).toMatchObject({ key: 'mobile-attachment-limit', presentation: 'compact' })
+    expect(vi.mocked(notify).mock.calls[0]![0]).toMatchObject({ key: 'mobile-attachment-limit', tier: 'info', duration: 1500 })
     await act(async () => harness.container.querySelector<HTMLButtonElement>('[data-slot="composer-attachment"] button')!.click())
     await pick(2)
     await until('removed slot refilled', () => harness.container.querySelectorAll('[data-slot="composer-attachment"]').length === 10)

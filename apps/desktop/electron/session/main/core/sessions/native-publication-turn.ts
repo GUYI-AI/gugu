@@ -17,7 +17,7 @@ type TurnInput = {
   context: NativePublicationContext | null;
 };
 
-/** Freeze the exact transcript bytes before asynchronous window capture; write custody only in its canonical transaction. */
+/** Freeze the exact transcript bytes before the turn is written; write custody only in its canonical transaction. */
 export function prepareNativePublicationTurn(input: TurnInput, source: PublicationDb): {
   turn: TranscriptTurn; commit(source: PublicationDb): void;
 } {

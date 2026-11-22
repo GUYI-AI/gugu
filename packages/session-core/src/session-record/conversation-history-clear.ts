@@ -36,7 +36,6 @@ export function clearedHistoryResult<T>(input: T, floor?: string | null): T {
   if (value.batch) return { ...value, batch: clearedHistoryResult(value.batch, floor) } as T;
   if (!Array.isArray(value.turns)) return input;
   const turns = clearedHistoryTurns(value.turns as TranscriptTurn[], floor);
-  const ids = new Set(turns.flatMap(turn => turn.items.map(item => item.id)));
   const turnIds = new Set(turns.map(turn => turn.id));
   const aligned = (rows: unknown[]) => rows.filter((_, index) => turnIds.has((value.turns as TranscriptTurn[])[index]?.id));
   const epoch = (value: string) => value.endsWith(historyClearEpoch(floor)) ? value : value + historyClearEpoch(floor);
@@ -46,8 +45,6 @@ export function clearedHistoryResult<T>(input: T, floor?: string | null): T {
       ? { cursor: { ...value.cursor, epoch: epoch(String(value.cursor.epoch)) } } : {}),
     ...(Array.isArray(value.originTurnIds) ? { originTurnIds: aligned(value.originTurnIds) } : {}),
     ...(Array.isArray(value.turnRevisions) ? { turnRevisions: aligned(value.turnRevisions) } : {}),
-    ...('bodyRefs' in value ? { bodyRefs: (value.bodyRefs as { itemId?: string }[]).filter(ref => ref.itemId && ids.has(ref.itemId)) } : {}),
-    ...('sourceFragments' in value ? { sourceFragments: [] } : {}),
-    ...(turns.length < value.turns.length ? { hasOlder: false, moreBefore: 'no', olderCursor: null, nextCursor: null } : {}),
+    ...(turns.length < value.turns.length ? { hasOlder: false, nextCursor: null } : {}),
   } as T;
 }

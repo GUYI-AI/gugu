@@ -3,7 +3,7 @@ import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { isValidGitIdentity } from '@gugu/session-core/session-record/contract';
 import { observer } from 'mobx-react-lite';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notices';
 import { workspaceBackend } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 import { rpc } from '@renderer/lib/ipc';
 import { Button } from '@renderer/lib/ui/button';
@@ -68,7 +68,7 @@ export const CommitCard = observer(function CommitCard({ autoStage = false }: Co
     changesView.suppressNextAutoExpand('staged');
     const result = await git.stageAllFiles();
     if (!result.success) {
-      toast.error(vcsFailureText('stage', result.error, translate, 'changes.stageFailed'));
+      notify({ title: vcsFailureText('stage', result.error, translate, 'changes.stageFailed'), tier: 'error' });
       setPhase('idle');
       return false;
     }
@@ -111,7 +111,7 @@ export const CommitCard = observer(function CommitCard({ autoStage = false }: Co
     if (!result.success) {
       setPhase('idle');
       if (askIdentityIfNeeded(result.error, false)) return;
-      toast.error(vcsFailureText('commit', result.error, translate, 'changes.commitFailed'));
+      notify({ title: vcsFailureText('commit', result.error, translate, 'changes.commitFailed'), tier: 'error' });
       return;
     }
     setCommitMessage('');
@@ -130,9 +130,7 @@ export const CommitCard = observer(function CommitCard({ autoStage = false }: Co
     if (!commitResult.success) {
       setPhase('idle');
       if (askIdentityIfNeeded(commitResult.error, true)) return;
-      toast.error(
-        vcsFailureText('commit', commitResult.error, translate, 'changes.commitFailed')
-      );
+      notify({ title: vcsFailureText('commit', commitResult.error, translate, 'changes.commitFailed'), tier: 'error' });
       return;
     }
     setCommitMessage('');
@@ -145,9 +143,7 @@ export const CommitCard = observer(function CommitCard({ autoStage = false }: Co
     setPhase('pushing');
     const pushResult = await git.push();
     if (!pushResult.success) {
-      toast.error(
-        translate('changes.pushFailed', { detail: formatPushErrorDetail(pushResult.error, translate) })
-      );
+      notify({ title: translate('changes.pushFailed', { detail: formatPushErrorDetail(pushResult.error, translate) }), tier: 'error' });
       setPhase('idle');
       return;
     }
@@ -160,9 +156,7 @@ export const CommitCard = observer(function CommitCard({ autoStage = false }: Co
     if (!(await stageAllIfNeeded())) return;
     const commitResult = await git.commit(fullMessage);
     if (!commitResult.success) {
-      toast.error(
-        vcsFailureText('commit', commitResult.error, translate, 'changes.commitFailed')
-      );
+      notify({ title: vcsFailureText('commit', commitResult.error, translate, 'changes.commitFailed'), tier: 'error' });
       setPhase('idle');
       return;
     }

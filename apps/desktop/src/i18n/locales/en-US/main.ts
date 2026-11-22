@@ -330,7 +330,6 @@ export default {
     "installLocalMissing": "{{name}} isn't on this computer. Downloading…",
     "harnessSelect": "Select {{name}}",
     "backgroundInstall": "Agent installation",
-    "hideInstall": "Hide",
     "harnessVerifyFailed": "Could not detect the agent after installation. Try again.",
     "harnessReadFailed": "Could not read agent status. Try again.",
     "harnessCancelFailed": "Could not cancel the installation. Try again.",
@@ -461,7 +460,6 @@ export default {
       "tooLarge": "Too large · view on desktop"
     },
     "timeline": {
-      "loadingWindow": "Loading…",
       "outputTrimmed_one": "… {{count}} char omitted from this preview",
       "outputTrimmed_other": "… {{count}} chars omitted from this preview",
       "loading": "Loading the timeline…",
@@ -1069,7 +1067,6 @@ export default {
       "availableDescription": "Choose Update to start downloading, or choose Later.",
       "availableTitle": "A new version is available",
       "availableVersion": "Version {{version}} is available",
-      "close": "Close",
       "download": "Update",
       "downloadingDescription": "You can restart and update as soon as the download finishes.",
       "downloadingTitle": "Downloading the new version…",

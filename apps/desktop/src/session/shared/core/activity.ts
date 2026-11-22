@@ -10,8 +10,8 @@ export const activityEventSchema = z.object({
   kind: z.enum(['session.created', 'session.renamed', 'session.archived', 'session.deleted',
     'session.input_submitted', 'agent.status', 'session.message_delivered',
     'question.pending', 'question.resolved', 'question.cancelled', 'automation.run',
-    // The session's stored history gained a turn / dropped its turns from turn_seq on (a revert). Only these name a
-    // turn, by the stored history's own sequence: the one turn identity on this machine that survives restarts.
+    // The session's runtime committed a turn (`object_id` its runtime id, `related_object_id` a key the agent numbered
+    // in it, `identityKeys`, which its record keeps) / a revert removed turns from the history.
     'session.turn_recorded', 'session.history_reverted',
     // project.* events were written by earlier releases only (a group is the only container now).
     'project.created', 'project.deleted', 'project.folder_attached', 'project.folder_detached',
@@ -27,7 +27,7 @@ export const activityEventSchema = z.object({
   spawned_by_session_id: id.optional(),
   object_id: id.optional(),
   related_object_id: id.optional(),
-  /** Position in the session's stored history (session_turns.seq): the turn a turn event is about. */
+  /** Historical: the stored-history position older turn events carry. Nothing reads it now. */
   turn_seq: z.number().int().nonnegative().optional(),
   app_version: id.optional(),
   model_id: id.optional(),

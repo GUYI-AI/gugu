@@ -467,6 +467,9 @@ export default defineConfig({
             'react/jsx-runtime',
             '@vanilla-extract/recipes/createRuntimeFn',
             '@vanilla-extract/sprinkles/createRuntimeSprinkles',
+            // The ACP capability's revert availability compares agent versions with semver. Undeclared, CI found it
+            // mid-run (new dependencies optimized: semver → reloading) and loaded a second Solid.
+            'semver',
             // #6563 代码块按需 import 的 shiki 语法;不预声明,PR#6568 CI 在这里同样半路重载。
             ...LAZY_LANG_MODULES,
           ],

@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { addNativeReplies, type NativeReadJournal } from '@gugu/session-core/session-record/native-read';
 
 const state = vi.hoisted(() => ({ journal: {} as NativeReadJournal }));
-vi.mock('./service', () => ({ nativeRecord: vi.fn(), nativeToolImage: vi.fn(), nativeAttachment: vi.fn() }));
+vi.mock('./service', () => ({ nativeAttachment: vi.fn() }));
 vi.mock('./create-session', () => ({}));
 vi.mock('./turn-files', () => ({ prefetchFiles: vi.fn() }));
 vi.mock('./task-exchanges', () => ({ readTaskExchanges: vi.fn(), watchTaskExchanges: vi.fn(), unwatchTaskExchanges: vi.fn() }));

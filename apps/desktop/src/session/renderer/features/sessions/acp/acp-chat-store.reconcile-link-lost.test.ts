@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // A turn commits, and the reconciliation that would move it into history loses the connection
 // (2026-11-12: a long reply vanished mid-screen). The turn stays visible until the link is back,
-// then the same reconciliation runs again and history takes it over.
+// then the same reconciliation runs again and history takes it over. Only a side chat reconciles with its runtime.
 import { afterEach, expect, it, vi } from 'vitest';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { HistoryPage } from '@gugu/session-core/acp/client';
@@ -11,7 +11,7 @@ vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: () => {} }));
 installAcpChatStoreHost();
 const { AcpChatStore } = await import('./acp-chat-store');
 
-const answer: TranscriptTurn = { id: 'A', seq: 0, initiator: 'user', items: [
+const answer: TranscriptTurn = { id: 'A', seq: 0, initiator: 'user', startedAt: 1, items: [
   { kind: 'message', id: 'A:question', seq: 0, role: 'user', text: 'Question A' },
   { kind: 'message', id: 'A:answer', seq: 1, role: 'assistant', text: 'A long answer with $x^2$' },
 ] };
@@ -43,7 +43,7 @@ for (const shape of ['thrown', 'result'] as const) {
       getHistory, whenConnected,
       dispose() {},
     };
-    const store = new AcpChatStore(`reconcile-link-lost-${shape}`, 'project');
+    const store = new AcpChatStore(`reconcile-link-lost-${shape}`, 'project', { id: `side-${shape}`, forkFromProviderSessionId: 'native-parent' });
     cleanup.push(() => store.dispose());
     const internals = store as unknown as { session: unknown; _runtimeCursor: unknown; _subscribeLiveSession(value: unknown): void };
     internals.session = session;

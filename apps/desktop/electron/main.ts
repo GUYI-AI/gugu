@@ -189,6 +189,7 @@ import { TUNNEL_MACHINES_CHANNELS, type TunnelWant } from '../src/lib/tunnelMach
 import { machineDisplayName } from '@gugu/core/device/machineDisplayName'
 import {
   createDeviceRuntimeHostLoop,
+  readDeviceRuntimeOwner,
   stopRuntimeHostWithTimeout,
   runtimeAuthFromSupabaseTokens,
   clearHumanAuthSession,
@@ -3057,13 +3058,20 @@ if (sshMachineStore) {
   // #6264 一台机器一条认证过的连接,咕咕开着就一直在(照 VS Code Remote-SSH):套接字按这个咕咕的数据目录分开,
   // 启动时收掉上次没正常退出留下的,退出时收掉自己的(见 ssh-machines.ts closeSshMasters)。
   configureSshControlScope(app.getPath('userData'))
-  setImmediate(() => closeSshMasters(undefined, runSshInBackground))
+  const leftoversClosed = new Promise<void>((resolve) => setImmediate(() => {
+    const exits: Promise<void>[] = []
+    closeSshMasters(undefined, (args) => void exits.push(runSshInBackground(args)))
+    void Promise.all(exits).then(() => resolve())
+  }))
   app.on('will-quit', () => closeSshMasters())
   // 桌面此刻登着的账号:映射只认同一个账号装上的机器(附件直传、卸载都按它挑机器)。
   const currentUserId = async () => {
     const auth = await desktopAuthProvider().getAuth().catch(() => null)
     return auth?.userId ?? null
   }
+  // The links' owner: the window pushes who is signed in only once it has booted, so until then it is the account this
+  // machine's device runtime last ran for (the links open at boot, below); signed out (pushed null) = none.
+  const linkOwnerId = async () => pushedHumanAuth === undefined ? readDeviceRuntimeOwner() : currentUserId()
   registerSshMachinesIpc({ ipcMain, getWindow: () => mainWindow, store: sshMachineStore, currentUserId }) // #6264 远程 SSH 的机器:一切走设备连接(server/ssh-link.ts)
   if (REMOTE_TUNNEL_OPEN) {
     const tunnelLog = createLogger('server/tunnel')
@@ -3112,7 +3120,7 @@ if (sshMachineStore) {
     ipcMain,
     getWindow: () => mainWindow,
     store: sshMachineStore,
-    currentUserId,
+    currentUserId: linkOwnerId,
     installKey: createMachineKeyInstaller({
       store: sshMachineStore,
       keyDir: guguKeyDir(app.getPath('userData')),
@@ -3135,6 +3143,14 @@ if (sshMachineStore) {
   })
   sshLinks = links
   app.on('will-quit', () => links.closeAll())
+  // @@@boot-links - the window asks for each machine's link only once it has booted (seconds in); open them now,
+  // beside that boot, and its own open() takes the link already up (`links.open` reuses it). After the leftover
+  // shared connections are closed, so a new link never rides one that is about to exit.
+  void Promise.all([app.whenReady(), leftoversClosed]).then(async () => {
+    const userId = await linkOwnerId()
+    if (!userId) return
+    for (const machine of sshMachineStore.list()) if (machine.ownerUserId === userId) void links.open(machine.deviceId)
+  }).catch((error: unknown) => createLogger('server/ssh-link').warn({ error: String(error) }, 'ssh link: could not open the links at boot'))
   // 「设置 → 设备 → 从这台机器上卸载咕咕 server」:只对这台桌面用 SSH 装上的机器。
   registerServerSshUninstallIpc({ ipcMain, getWindow: () => mainWindow, store: sshMachineStore, currentUserId })
 }

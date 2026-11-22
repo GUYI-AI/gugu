@@ -49,6 +49,7 @@ Object.defineProperty(window, 'electronAPI', { configurable: true, value: {
   eventSend() {}, getPathForFile: () => '',
 } });
 const { AcpChatStore } = await import('@renderer/features/sessions/acp/acp-chat-store');
+const { hostTimeline } = await import('@renderer/features/sessions/acp/acp-chat-store.test-host');
 
 function replica<T>(initial: T) {
   const box = observable.box(initial, { deep: false });
@@ -80,7 +81,11 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
   const received: SessionInput[] = [];
   let life: LifeView = { sessionId, version: 1, kind: 'ready', stage: null, hold: null, failure: null,
     lastExit: null, nativeSession: null, pending: { count: 0, items: [] } };
+  // The page's committed turns are the session's timeline, as this computer's host serves and pushes it.
+  const timeline = hostTimeline();
   hostRpc.eventOn.mockImplementation((channel: string, cb: (data: unknown) => void) => {
+    const followed = timeline.eventOn(channel, cb);
+    if (followed) return followed;
     const set = events.get(channel) ?? new Set(); events.set(channel, set); set.add(cb); return () => { set.delete(cb); };
   });
   hostRpc.invoke.mockImplementation(async (channel: string, ...args: unknown[]) => {
@@ -92,7 +97,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
       return new Promise(resolve => held.push({ input, accept: () => resolve({ ok: true, value: { accepted: 'queued', clientMessageId: request.clientMessageId } }) }));
     }
     if (channel === 'integrations.list') return [];
-    return [];
+    return timeline.invoke(channel) ?? [];
   });
 
   const busy = name.startsWith('B-');
@@ -120,6 +125,8 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
   cleanup.push(() => store.dispose());
   const internals = store as unknown as { session: unknown; _subscribeLiveSession(session: unknown): void; _drawLifeHead(view: LifeView | null): void };
   runInAction(() => { internals.session = session; store.historyLoading = false; });
+  const opening = store as unknown as { _historyGeneration: number; _openHistory(generation: number): Promise<void> };
+  await opening._openHistory(opening._historyGeneration);
   internals._subscribeLiveSession(session);
 
   let current = true;
@@ -296,6 +303,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
     await send(); await lifeRow('accepted'); await accept();
     await nativeQ('previous-same', 'previous-same:user');
     historyTurns = [{ ...session.activeTurn.current()!, endedAt: Date.now(), outcome: { kind: 'done' } }];
+    timeline.show(historyTurns);
     eventLabel = 'first-turn-commit-inject';
     session.activeTurn.set(null); session.sessionState.set(readyState);
     await until('first real input is committed history', () => store.chatState.transcript.state.committedTurns.some(turn => turn.id === firstSame.id));
@@ -409,6 +417,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
       sentNow = true;
     }
     historyTurns = [{ ...foreground, outcome: { kind: 'done' }, endedAt: Date.now() }];
+    timeline.show(historyTurns);
     session.activeTurn.set(null); session.sessionState.set(readyState);
     await until('foreground completion is in real history', () => store.chatState.transcript.state.committedTurns.some(turn => turn.id === foreground.id));
     if (!sentNow) await releaseQueuedSessionInput(sessionId, historyTurns);

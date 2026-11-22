@@ -382,8 +382,9 @@ function perform(sessionId: string | null, tabId: string, action: ExtensionHostA
       const block = action.target.kind === 'session' ? blockOnScreen(action.target.sessionId) : null;
       if (block) return focusScreenBlock(block);
       // A folder on another machine, as the account names it: its project's calls go there even before that machine's
-      // own project list has come in (machine-routing).
-      if (action.target.kind === 'folder' && action.target.deviceId) machineRegistry.register(action.target.deviceId, [action.target.workspaceId]);
+      // own folder list has come in — only for ids no machine has answered for yet (a stale device row of the same
+      // server names the same ids; machine-routing `propose`).
+      if (action.target.kind === 'folder' && action.target.deviceId) machineRegistry.propose(action.target.deviceId, [action.target.workspaceId]);
       peekStore.open(sessionId, tabId, action.target);
       return;
     }

@@ -270,6 +270,7 @@ export {
 export { permanentlyRemove } from './cloud/agentIdentityRemoval'
 export {
   createDeviceRuntimeHostLoop,
+  readDeviceRuntimeOwner,
   stopRuntimeHostWithTimeout,
   type DeviceRuntimeHost,
   type DeviceRuntimeHostDebugSnapshot,

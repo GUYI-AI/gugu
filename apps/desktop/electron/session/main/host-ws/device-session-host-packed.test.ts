@@ -15,7 +15,7 @@ const page = { nextCursor: 41, turns: Array.from({ length: 60 }, (_, seq) => ({ 
 /** A window between a machine and a reader; `asks` is what the reader says when it opens. */
 async function linked(reader: 'current' | 'older') {
   const frameHost = new FrameSessionHost();
-  frameHost.ipcMain.handle('sessions.getStoredHistory', () => page);
+  frameHost.ipcMain.handle('sessionTimeline.sessionOlder', () => page);
   const { handlers, dispose } = createSessionHostDeviceRpcHandlers({ host: () => frameHost });
   const onLine: string[] = [];
   let listener: ((payload: unknown) => void) | null = null;
@@ -32,7 +32,7 @@ async function linked(reader: 'current' | 'older') {
   const answers: unknown[] = [];
   const pipe = await openRemoteSessionHostPipe('dev', deps)({ onClose: () => undefined,
     onFrame: (frame) => { const message = decodeHostWsMessage(frame); if (message?.t === 'result') answers.push(message); } });
-  pipe.send(encodeHostWsMessage({ t: 'invoke', id: 1, channel: 'sessions.getStoredHistory', args: [{ sessionId: 's', before: 100, lean: 'folded' }] }));
+  pipe.send(encodeHostWsMessage({ t: 'invoke', id: 1, channel: 'sessionTimeline.sessionOlder', args: [{ conversationId: 's', beforeTurnId: 's:turn:s100', trim: true }] }));
   await vi.waitFor(() => expect(answers).toHaveLength(1));
   pipe.close(); dispose();
   return { answer: answers[0], onLine: onLine.filter(line => !line.includes('"hello"')).join('') };

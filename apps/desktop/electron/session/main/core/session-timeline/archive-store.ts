@@ -1,26 +1,12 @@
 /**
- * 时间线存档的磁盘面。
+ * Where each session's timeline checkpoint lives (one archive file per session), and keeping their total bounded.
  *
- * 为什么要有它：打开一条会话时，机器要把整份记录从头折算一遍才答得出「最近几轮是什么」。
- * 一份 18MB 的 claude 记录实测 **1713ms**，而手机上冷开一次总共才 3.5 秒左右 —— 这一项是最大的。
- * 而且它每次冷开都要重付：时间线空闲 60 秒就被拆掉（`IDLE_DISPOSE_MS`），下次打开从头再来。
- * 把折算结果存到磁盘上，下次只读文件新长出来的那一段，这一项就从 1.7 秒掉到几十毫秒。
- *
- * 三条纪律，缺一条这个缓存就会从「快」变成「错」：
- *
- * ① **存档只是捷径，任何一处对不上都要能安全退回「从头读」。** 版本、指纹、续读点，
- *    任何一格不对就当没有存档 —— 那只是慢，不是错。❌ 绝不能拿着一个过期的偏移量往下读：
- *    拼出来的是一份**缺了中间**的时间线，而它不报错、在界面上和「读得慢」分不出来。
- * ② **写要原子。** 先写同目录的临时文件再 rename —— 半截 JSON 落在正式位置上，
- *    下次开会话就是一个 parse 失败（那还算好的）或者一份被截断的历史（那就糟了）。
- * ③ **读要能忍坏文件。** 磁盘满、进程被杀、手改过，都可能留下读不出来的存档；
- *    读不出来就删掉重来，❌ 不许把异常抛给「打开会话」这条路 —— 缓存坏了不该让功能坏掉。
+ * Opening a session folds its record on the fold thread from the last checkpoint (`fold.ts`), which reads it, checks
+ * it (version, resume point; anything off means a fold from the start) and writes the next one atomically. A
+ * checkpoint is derived data: deleting one only costs the next open a whole fold, on that thread.
  */
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-
-import type { TimelineArchive } from '@gugu/session-core/session-record';
-import { fitsTimelineArchiveSourceBudget } from '@gugu/session-core/session-record';
 
 import { app } from 'electron';
 
@@ -28,16 +14,6 @@ import { log } from '@main/lib/logger';
 
 /** 存档目录名。放在 app 自己的 userData 下，与用户的项目目录无关。 */
 const DIRECTORY_NAME = 'session-timeline-archive';
-
-/**
- * 单份存档的大小上限。
- *
- * 存档里最大的那一块是折算好的全部轮次，它随记录线性长；一份 39MB 的记录折出来约 5.5MB。
- * 给一个上限是因为**收益是有天花板的而成本没有**：省下来的永远只是「重放一次」的那点时间，
- * 而写一个几百 MB 的文件会拖住主进程、吃满磁盘。超了就不存，下次照旧从头读。
- */
-const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
-// Read legacy caches up to 64 MiB; new writes require consumed-source metadata.
 
 /** 存档总量上限：超了就按最后使用时间从旧到新删。 */
 const MAX_TOTAL_BYTES = 512 * 1024 * 1024;
@@ -67,73 +43,8 @@ function fileFor(sessionId: string): string | null {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) return null;
   return join(dir, `${sessionId}.json`);
 }
-
-export async function loadTimelineArchive(
-  sessionId: string
-): Promise<TimelineArchive | null> {
-  const file = fileFor(sessionId);
-  if (!file) return null;
-  try {
-    if ((await stat(file)).size > MAX_ARCHIVE_BYTES) {
-      await dropTimelineArchive(sessionId);
-      return null;
-    }
-    const raw = await readFile(file, 'utf8');
-    const parsed = JSON.parse(raw) as TimelineArchive;
-    // 这里只做「像不像一份存档」这一层。真正判它还成不成立（版本、续读点对不对得上）
-    // 归 timeline 与记录源自己 —— 它们才知道自己那份状态长什么样。
-    if (!parsed || typeof parsed !== 'object' || typeof parsed.epoch !== 'string') {
-      await dropTimelineArchive(sessionId);
-      return null;
-    }
-    return parsed;
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    // 没有存档是常态（第一次打开这条会话），❌ 不值得记一行日志。
-    if (code === 'ENOENT') return null;
-    log.warn('sessionTimeline: 存档读不出来，丢掉重来', {
-      sessionId,
-      error: String(error),
-    });
-    await dropTimelineArchive(sessionId);
-    return null;
-  }
-}
-
-export async function saveTimelineArchive(
-  sessionId: string,
-  archive: TimelineArchive
-): Promise<void> {
-  const file = fileFor(sessionId);
-  if (!file) return;
-  if (!fitsTimelineArchiveSourceBudget(archive.sourceBytes)) return;
-  let payload: string;
-  try {
-    payload = JSON.stringify(archive);
-  } catch (error) {
-    log.warn('sessionTimeline: 存档序列化失败，这条会话不存档', {
-      sessionId,
-      error: String(error),
-    });
-    return;
-  }
-  if (Buffer.byteLength(payload, 'utf8') > MAX_ARCHIVE_BYTES) {
-    log.info('sessionTimeline: 存档超过上限，跳过（下次照旧整份重读）', {
-      sessionId,
-      bytes: Buffer.byteLength(payload, 'utf8'),
-    });
-    return;
-  }
-  try {
-    await mkdir(root()!, { recursive: true });
-    // 临时文件必须和目标同目录：跨设备的 rename 不是原子的，而 /tmp 常常是另一个文件系统。
-    const tmp = `${file}.${process.pid}.tmp`;
-    await writeFile(tmp, payload, 'utf8');
-    await rename(tmp, file);
-  } catch (error) {
-    log.warn('sessionTimeline: 存档写不进去', { sessionId, error: String(error) });
-  }
-}
+/** Where a session's archive lives; the fold thread reads and writes it there too (`fold.ts`). */
+export { fileFor as timelineArchiveFile };
 
 export async function dropTimelineArchive(sessionId: string): Promise<void> {
   const file = fileFor(sessionId);

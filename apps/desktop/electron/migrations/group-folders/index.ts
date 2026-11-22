@@ -1,4 +1,4 @@
-// Projects become folders of groups (@@@group-folders), the data half; the schema half is drizzle/0054_group_folders.
+// Projects become folders of groups (@@@group-folders), the data half; the schema half is drizzle/0056_group_folders.
 //
 // One transaction over the session database, run once after the schema step and before any reader:
 //   · every project's root folder (created when the project was never opened) and attached folders become folders bound
@@ -160,7 +160,7 @@ export async function runGroupFoldersOnce(deps: GroupFoldersDeps): Promise<Group
       WHERE project_id IS NOT NULL OR json_extract(data, '$.project_id') IS NOT NULL`).run()
     // Ambiguous bindings: no group rather than a guess (listed in the summary).
     for (const projectId of ambiguous.keys()) db.prepare('UPDATE sessions SET chat_id = NULL WHERE project_id = ?').run(projectId)
-    // 0054 recorded every session's group before it was known: record it again now that it is.
+    // 0056 recorded every session's group before it was known: record it again now that it is.
     db.prepare('INSERT OR REPLACE INTO activity_session_chats (session_id, chat_id) SELECT id, chat_id FROM sessions').run()
     if (mapping) {
       const insert = db.prepare('INSERT OR REPLACE INTO file_revision_cache (account_id, item_id, version, revision_json) VALUES (?, ?, ?, ?)')

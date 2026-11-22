@@ -1,5 +1,5 @@
 import type { PermissionOptionKind } from '@agentclientprotocol/sdk';
-import { guguBridgeRevert, type AcpAgentApi, type LiveSettingsCapability } from '@gugu/session-core/agents/plugins';
+import { guguBridgeRevert, guguBridgeRevertSince, type AcpAgentApi, type LiveSettingsCapability } from '@gugu/session-core/agents/plugins';
 import { isOk } from '@gugu/session-shared';
 import { noopLogger } from '@gugu/session-shared/logger';
 import { describe, expect, it, vi } from 'vitest';
@@ -3171,6 +3171,18 @@ describe('native in-place conversation revert', () => {
     expect(await cell.prompt({ text: 'replacement' })).toMatchObject({ success: true });
     expect(cell.acpSessionId).toBe('session-1');
     await vi.waitFor(() => expect(cell.history().committed).toHaveLength(2));
+  });
+
+  it('a bridge build older than its revert offers none and refuses one', async () => {
+    const { cell, agent } = makeCell(new FakeAcpAgent(), { revert: guguBridgeRevertSince('1.7.1') });
+    expect(cell.config.canRevert).toBe(false);
+    cell.setAgentVersion('1.6.2');
+    expect(cell.config.canRevert).toBe(false);
+    agent.extMethod = vi.fn();
+    expect(await cell.revertSession('native-1')).toMatchObject({ success: false, error: { type: 'invalid_state' } });
+    expect(agent.extMethod).not.toHaveBeenCalled();
+    cell.setAgentVersion('1.7.1');
+    expect(cell.config.canRevert).toBe(true);
   });
 
   it('asks a bridge to restore files with one boolean, and a bridge that cannot fails the revert', async () => {

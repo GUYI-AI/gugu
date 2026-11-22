@@ -63,9 +63,10 @@ type Internal = {
 };
 
 let seq = 0;
-function attachedStore(initial: Record<string, unknown>) {
+/** `side`: a side chat, the one kind that reconciles its history with the runtime (others draw their timeline). */
+function attachedStore(initial: Record<string, unknown>, side = false) {
   seq += 1;
-  const store = new AcpChatStore(`conv-6582-${seq}`, 'proj-1');
+  const store = new AcpChatStore(`conv-6582-${seq}`, 'proj-1', side ? { id: `side-6582-${seq}`, forkFromProviderSessionId: 'native-parent' } : undefined);
   const internal = store as unknown as Internal;
   vi.spyOn(internal, '_runBootstrap').mockResolvedValue(undefined);
   const session = {
@@ -99,7 +100,7 @@ const storedTurn = {
 
 describe('#6582 runningBackgroundTaskIds', () => {
   it('re-reads history when a settled turn\'s subagent card changes, not on each of its calls, and merges a change that lands during the read (#2500)', async () => {
-    const { store, session } = attachedStore(readyState);
+    const { store, session } = attachedStore(readyState, true);
     let finish!: () => void;
     const refresh = vi.spyOn(store as unknown as Internal, '_refreshHistory')
       .mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }))
@@ -136,7 +137,7 @@ describe('#6582 runningBackgroundTaskIds', () => {
   });
 
   it('子任务进度对账时，清掉活动轮与放回活动轮是转录的同一次更新（否则这一轮的行全被卸掉重挂，流式文字整段重新淡入）', async () => {
-    const { store, session } = attachedStore(readyState);
+    const { store, session } = attachedStore(readyState, true);
     const internal = store as unknown as Internal;
     const live = { id: 'parent-follow-up', seq: 2, initiator: 'user' as const, items: [] };
     session.activeTurn.push(live);

@@ -1798,9 +1798,9 @@ function closeMoveDialog() {
 }
 
 function folderMark() {
-  const mark = document.createElement('gugu-icon')
+  const mark = document.createElement('gugu-file-mark')
   mark.className = 'file-mark'
-  mark.setAttribute('name', 'folder')
+  mark.setAttribute('folder', '')
   return mark
 }
 

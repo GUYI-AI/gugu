@@ -38,7 +38,10 @@ function appendOutput(data) {
   if (output.length > 2_000) output.shift()
 }
 
-function diagnostics() {
+// @@@whole-log — readiness and failure are judged on the whole log, never on the diagnostics tail: lines the app logs
+// after boot OK (one per installer-failure record, ~750 chars each, up to the installer's 50-line cap) push boot OK
+// out of any fixed tail window.
+function fullLog() {
   const logPath = join(userData, 'logs', 'gugu-main.log')
   let fileLog = ''
   try {
@@ -46,7 +49,11 @@ function diagnostics() {
   } catch {
     // The app may be creating or rotating the log while the smoke reads it.
   }
-  return [...output, fileLog].join('').slice(-12_000)
+  return [...output, fileLog].join('')
+}
+
+function diagnostics() {
+  return fullLog().slice(-12_000)
 }
 
 function terminateProcessTree() {
@@ -214,9 +221,9 @@ for (;;) {
       `app exited before smoke passed (${JSON.stringify(childExit)})\n${diagnostics()}`
     )
   }
-  const logs = diagnostics()
+  const logs = fullLog()
   if (/\[sessionpage\] (FAILED|boot failed)/.test(logs)) {
-    throw new Error(`session-page backend failed during boot\n${logs}`)
+    throw new Error(`session-page backend failed during boot\n${diagnostics()}`)
   }
 
   if (!command) {
