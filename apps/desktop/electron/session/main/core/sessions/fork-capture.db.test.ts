@@ -14,6 +14,7 @@ import {
   recordProviderContinuationIntent,
 } from './provider-continuation-intent';
 import { recordRuntimeForkOwnership } from './runtime-fork-ownership';
+import { recordSessionPlatformModel, sessionPlatformModel } from './platform-model-selection';
 
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
@@ -384,6 +385,8 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     expect(child?.provider).toBe('codex');
     expect(forkedFromId(child)).toBe('66666666-6666-4666-8666-666666666666');
     expect(child?.config).toMatchObject({ permissionMode: 'read-only' });
+    // A source that never recorded a model decision passes the fallback on.
+    expect(await sessionPlatformModel(child!.id)).toBeUndefined();
   });
 
   it('reads Codex rollouts from the home Gugu manages for codex, not the app env', async () => {
@@ -411,6 +414,8 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
       })}\n`
     );
 
+    await recordSessionPlatformModel('66666666-6666-4666-8666-666666666667', { modelId: 'glm-test' });
+
     await captureExternalForks(projectId, '66666666-6666-4666-8666-666666666667');
 
     const child = (await fixture.db.select().from(sessions)).find((row) => row.providerSessionId === codexChildId);
@@ -419,6 +424,8 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     // The source row keeps its own thread.
     const parent = (await fixture.db.select().from(sessions)).find((row) => row.id === '66666666-6666-4666-8666-666666666667');
     expect(parent?.providerSessionId).toBe(codexParentId);
+    // The fork runs on the model its source chose, as a product fork does.
+    expect(await sessionPlatformModel(child!.id)).toEqual({ modelId: 'glm-test' });
   });
 
   it('reads Claude transcripts from the home Gugu manages for claude, not the app env', async () => {
@@ -435,10 +442,14 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     await utimes(path.join(dir, `${PARENT}.jsonl`), new Date('2026-07-01'), new Date('2026-07-01'));
     await utimes(path.join(dir, `${CHILD}.jsonl`), new Date('2026-07-02'), new Date('2026-07-02'));
 
+    await recordSessionPlatformModel(PARENT, null);
+
     await captureExternalForks(projectId, PARENT);
 
     const child = (await fixture.db.select().from(sessions)).find((row) => row.providerSessionId === CHILD);
     expect(forkedFromId(child)).toBe(PARENT);
+    // An explicit harness-model choice (null) is inherited as is, not dropped to the fallback.
+    expect(await sessionPlatformModel(child!.id)).toBeNull();
   });
 
   it('scans a large Codex session tree with bounded open handles, still finding the fork', async () => {

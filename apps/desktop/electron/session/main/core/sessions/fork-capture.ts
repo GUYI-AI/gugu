@@ -35,6 +35,7 @@ import { readRuntimeForkOwnership } from './runtime-fork-ownership';
 import { setProviderSessionId } from './set-session-id';
 import { isRetiredRemoteWorkspace } from '@main/core/workspaces/resolve-workspace-kind';
 import { resolveAgentHomeEnv } from '@main/core/agents/agent-home';
+import { inheritSessionPlatformModel } from './platform-model-selection';
 
 type SessionRow = typeof sessions.$inferSelect;
 
@@ -285,6 +286,7 @@ async function captureCodexForks(
       .onConflictDoNothing()
       .returning();
     if (!inserted) continue;
+    await inheritSessionPlatformModel(inserted.id, parent.id);
     rows.push(inserted);
     knownProviderSessionIds.add(transcript.providerSessionId);
     rowByProviderSessionId.set(transcript.providerSessionId, inserted);
@@ -657,6 +659,7 @@ async function captureWorkspaceForks(projectId: string, workspace: { id: string;
       .onConflictDoNothing()
       .returning();
     if (!inserted) continue; // raced with a concurrent registration
+    await inheritSessionPlatformModel(inserted.id, parentRow.id);
 
     managed.push(inserted);
     pool.push({
