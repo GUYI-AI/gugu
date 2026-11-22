@@ -84,8 +84,20 @@ afterEach(async () => {
 /** The source row's own 「全部导入」. */
 const importAll = () => [...harness.container.querySelectorAll<HTMLButtonElement>('.gg-import-source button')].find(button => button.textContent === '全部导入')!
 
+it('opens every source folded, whichever source it is', async () => {
+  const history = { ...providers[0]!, id: 'cursor', sourceId: undefined, sourceLabel: undefined, label: 'Cursor', historyOnly: true }
+  state.counts[history.id] = 2
+  await harness.render(withQueries(<LocalImportSources providers={[...providers, history]} ownerId="fixture" jobs={[]} />))
+  const toggles = [...harness.container.querySelectorAll<HTMLButtonElement>('.gg-import-source [aria-expanded]')]
+  expect(toggles.map(toggle => toggle.getAttribute('aria-label'))).toEqual(['ChatGPT', 'Cursor'])
+  expect(toggles.map(toggle => toggle.getAttribute('aria-expanded'))).toEqual(['false', 'false'])
+  await clickElement(toggles[0]!)
+  expect(toggles.map(toggle => toggle.getAttribute('aria-expanded'))).toEqual(['true', 'false'])
+})
+
 it('renders all five real category rows and queues only the selected category or all five', async () => {
   await harness.render(withQueries(<LocalImportSources providers={providers} ownerId="fixture" jobs={[]} />))
+  await clickElement(harness.container.querySelector('.gg-import-source [aria-expanded]')!)
   const rows = [...harness.container.querySelectorAll('.gg-import-row')]
   expect(rows.map(row => row.querySelector('.gg-settings-row-title')?.textContent)).toEqual([
     '任务1', '空间2', '记忆3', '技能4', '连接器5',
