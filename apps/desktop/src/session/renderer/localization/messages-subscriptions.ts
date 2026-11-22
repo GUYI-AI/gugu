@@ -82,7 +82,7 @@ export const enUSSubscriptionMessages = {
   'subscriptions.planAsOf': 'Plan info updated {date}',
   'subscriptions.usageAsOf': 'Updated {time}',
   'subscriptions.connections.switchAction': 'Switch',
-  'subscriptions.remainingPercent': '{percent}% remaining',
+  'subscriptions.remainingPercent': '{percent}% left',
   'subscriptions.via': 'Connected to {vendors}',
   'subscriptions.extraUsage': 'Billed as Claude extra usage; not taken from your plan’s quota',
   'subscriptions.window.fiveHour': '5 hours',
