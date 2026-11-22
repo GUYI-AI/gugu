@@ -13,11 +13,11 @@
   mask-image: var(--gg-illustration);
   -webkit-mask-image: var(--gg-illustration);
 }
-.gg-illustration[data-illustration='add-contact'] { aspect-ratio: 480 / 329; --gg-illustration: url('../../assets/illustrations/add-contact.webp'); }
-.gg-illustration[data-illustration='join-group'] { aspect-ratio: 480 / 317; --gg-illustration: url('../../assets/illustrations/join-group.webp'); }
-.gg-illustration[data-illustration='new-task'] { aspect-ratio: 480 / 475; --gg-illustration: url('../../assets/illustrations/new-task.webp'); }
-.gg-illustration[data-illustration='no-requests'] { aspect-ratio: 480 / 597; --gg-illustration: url('../../assets/illustrations/no-requests.webp'); }
-.gg-illustration[data-illustration='no-match'] { aspect-ratio: 480 / 503; --gg-illustration: url('../../assets/illustrations/no-match.webp'); }
+.gg-illustration[data-illustration='add-contact'] { aspect-ratio: 264 / 181; --gg-illustration: url('../../assets/illustrations/add-contact.png'); }
+.gg-illustration[data-illustration='join-group'] { aspect-ratio: 340 / 225; --gg-illustration: url('../../assets/illustrations/join-group.png'); }
+.gg-illustration[data-illustration='new-task'] { aspect-ratio: 224 / 222; --gg-illustration: url('../../assets/illustrations/new-task.png'); }
+.gg-illustration[data-illustration='no-requests'] { aspect-ratio: 168 / 209; --gg-illustration: url('../../assets/illustrations/no-requests.png'); }
+.gg-illustration[data-illustration='no-match'] { aspect-ratio: 224 / 235; --gg-illustration: url('../../assets/illustrations/no-match.png'); }
 .gg-illustration[data-illustration='no-notifications'] { aspect-ratio: 208 / 267; --gg-illustration: url('../../assets/illustrations/no-notifications.png'); }
 .gg-illustration[data-illustration='no-agents'] { aspect-ratio: 256 / 242; --gg-illustration: url('../../assets/illustrations/no-agents.png'); }
 .gg-illustration[data-illustration='no-tasks'] { aspect-ratio: 312 / 186; --gg-illustration: url('../../assets/illustrations/no-tasks.png'); }
