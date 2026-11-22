@@ -10,7 +10,7 @@ import { messageForUser } from '@/lib/userFacingError';
  *
  * 视觉复用共享控件和字阶；二维码载荷、查询与入群流程留在原来的链路。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { X } from '@/lib/icons'
 import type {
   ContactGroupChat,
@@ -18,7 +18,6 @@ import type {
   PublicGroupInviteLookupResult,
 } from '@gugu/core/shared/types/contacts'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import { contactsService } from '../../lib/contacts'
 import { groupInviteLinkFor } from '../../lib/groupInviteShareUrl'
 import { isProjectGroupChat } from '../../lib/groupMemberPermissions'
 import { useGroupInviteJoin } from '../../lib/groupInviteJoin'
@@ -27,22 +26,24 @@ import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Sheet } from '../ui/Sheet'
 import { useTranslation } from 'react-i18next'
-import { GroupInviteCode } from '../chat/GroupInviteShare'
+import { GroupInviteActions } from '../chat/GroupInviteShare'
 import { groupSettings } from '../chat/useGroupChatSettings'
 import { groupRoster } from '../../hooks/useRoomCollab'
-import { useReplica } from '../../lib/replica'
+import { useReplica, retryOf } from '../../lib/replica'
+import { RefreshFailed } from '../ui/RefreshFailed'
+import { publicGroupInvite } from '../../lib/publicGroupInvite'
 
-/** 群聊详情里扫码加入的码。项目群不拉人(gugu-dev#181):不出码,说一句原因。 */
-export function GroupInviteQrShare({ group }: { group: ContactGroupChat }) {
+/** 群资料上的「邀请」一行:复制链接 + 海报(带码),与邀请单同一份动作。项目群不拉人(gugu-dev#181):不给动作,说一句原因。 */
+/** The group card's invite actions (copy link · QR code), in the card's light action row. */
+export function GroupInviteRow({ group }: { group: ContactGroupChat }) {
   const { t } = useTranslation('messaging')
   if (isProjectGroupChat(group.id)) {
-    return <div data-testid="project-group-no-invite" className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('group.projectGroupNoInvite')}</div>
+    return <span data-testid="project-group-no-invite" className="self-center px-3 text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('group.projectGroupNoInvite')}</span>
   }
-  return <GroupInviteQr group={group} />
+  return <GroupInviteLink group={group} />
 }
 
-function GroupInviteQr({ group }: { group: ContactGroupChat }) {
-  const { t } = useTranslation('contacts')
+function GroupInviteLink({ group }: { group: ContactGroupChat }) {
   // Only groups with a 群号 can be shared (channels and number-less groups never are).
   const hasGroupNumber = group.kind === 'group' && typeof group.public_id === 'number' && Number.isInteger(group.public_id) && group.public_id > 0
   // The group's own settings and roster readings (the same link and decision, groupInviteLinkFor, as its Invite sheet;
@@ -52,16 +53,10 @@ function GroupInviteQr({ group }: { group: ContactGroupChat }) {
   const failure = settings.state === 'error' ? settings.error : roster.state === 'error' ? roster.error : null
   const link = settings.state === 'value' ? groupInviteLinkFor(group.id, settings.value) : undefined
 
-  // Sharing switched off: nothing to show. A failed read says why instead of hiding the section.
-  if (!hasGroupNumber || link === null) return null
-  return (
-    <section className="!pt-4">
-      <div className="!mb-3 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-secondary)]">{t('groupInvite.qrTitle')}</div>
-      {failure ? <p role="alert" className="!m-0 text-[length:var(--font-body)] text-[var(--danger-fg)]">{messageForUser(failure)}</p>
-        : link === undefined || roster.state !== 'value' ? <p className="!m-0 text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('common.loading')}</p>
-        : <GroupInviteCode inviteLink={link} groupName={group.name} snapshot={roster.value} />}
-    </section>
-  )
+  // Sharing switched off, or not read yet: no invite actions. A failed read says why instead of hiding them.
+  if (failure) return <span role="alert" className="self-center px-3 text-[length:var(--font-caption)] text-[var(--danger-fg)]">{messageForUser(failure)}</span>
+  if (!hasGroupNumber || !link || roster.state !== 'value') return null
+  return <GroupInviteActions appearance="card" inviteLink={link} groupName={group.name} snapshot={roster.value} />
 }
 
 export function GroupJoinConfirmDialog({
@@ -194,9 +189,6 @@ function PublicGroupInviteSearchResult({
 }) {
   const { t } = useTranslation('contacts')
   if (!lookup) return null
-  if (lookup.status === 'lookup_error') {
-    return <div style={{ padding: 16, color: 'var(--danger-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.lookupFailed')}</div>
-  }
   if (lookup.status === 'not_found' || !lookup.group) {
     return <div style={{ padding: 16, color: 'var(--text-secondary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.notFound')}</div>
   }
@@ -217,36 +209,21 @@ export function GroupInviteJoinModal({
   onClose: () => void
 }) {
   const { t } = useTranslation('contacts')
-  const [lookup, setLookup] = useState<PublicGroupInviteLookupResult | null>(null)
-  const [loading, setLoading] = useState(true)
-  const { joining, joinError, join, reset } = useGroupInviteJoin()
-
-  useEffect(() => {
-    let cancelled = false
-    reset()
-    setLoading(true)
-    setLookup(null)
-    contactsService.lookupPublicGroupInvite(publicId)
-      .then((result) => { if (!cancelled) setLookup(result) })
-      .catch((error) => {
-        console.error('[ContactsPanel] public group lookup failed', error)
-        if (!cancelled) setLookup({ status: 'lookup_error', group: null })
-      })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
-  }, [publicId, reset])
+  const reading = useReplica(publicGroupInvite, [publicId])
+  const { joining, joinError, join } = useGroupInviteJoin()
+  const group = reading.state === 'value' ? reading.value.group : null
 
   const onJoin = useCallback(async () => {
-    const group = lookup?.group
     if (!group || !joinToken || joining) return
+    const entry = publicGroupInvite.at(publicId)
     try {
       const result = await join(group, joinToken)
-      setLookup({ status: result.status === 'joined' ? 'joined' : 'available', group: result.group })
+      entry.set({ status: result.status === 'joined' ? 'joined' : 'available', group: result.group })
       if (result.status === 'joined') onClose()
     } catch {
       // useGroupInviteJoin owns the localized error and logs the original failure.
     }
-  }, [lookup?.group, joinToken, joining, join, onClose])
+  }, [group, publicId, joinToken, joining, join, onClose])
 
   return (
     <Sheet
@@ -261,10 +238,19 @@ export function GroupInviteJoinModal({
           <span style={{ fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 600, color: 'var(--text-primary)' }}>{t('groupInvite.joinTitle')}</span>
           <IconButton aria-label={t('common.close')} onClick={onClose}><X size={16} /></IconButton>
         </div>
-        {loading ? (
+        {reading.state === 'unknown' ? (
           <div style={{ padding: 16, color: 'var(--text-secondary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>{t('groupInvite.lookingUp')}</div>
+        ) : reading.state === 'error' ? (
+          <div style={{ padding: 16, color: 'var(--danger-fg)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)' }}>
+            {t('groupInvite.lookupFailed')}{' '}
+            <Button variant="ghost" size="sm" onClick={retryOf(reading)}>{t('common.retry')}</Button>
+          </div>
         ) : (
-          <PublicGroupInviteSearchResult lookup={lookup} canJoin={joinToken != null} joining={joining} joinError={joinError} onJoin={onJoin} />
+          <>
+            <PublicGroupInviteSearchResult lookup={reading.value} canJoin={joinToken != null} joining={joining} joinError={joinError} onJoin={onJoin} />
+            {/* Looked up before, its lookup again failing: what was read stays, the failure said with a retry (❌ drawn as current). */}
+            {reading.error ? <div className="px-4 pb-4"><RefreshFailed reading={reading} /></div> : null}
+          </>
         )}
       </div>
     </Sheet>

@@ -2,6 +2,7 @@
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { notifyManager } from '@tanstack/react-query'
 import type { GoogleLoginState } from '../../../../apps/desktop/src/lib/googleLoginFlow'
 import { i18n } from '../../../../apps/desktop/src/i18n'
 import '../../../../apps/desktop/src/i18n/registerMainCatalog'
@@ -24,8 +25,16 @@ const { LoginPage } = await import('../../../../apps/desktop/src/pages/LoginPage
 let root: Root, host: HTMLDivElement
 const button = (label: string) => [...host.querySelectorAll<HTMLButtonElement>('button')].find((element) => element.textContent === label)!
 async function state(value: GoogleLoginState) { await act(async () => { m.state = value; for (const listener of m.listeners) listener() }) }
+// The sign-in methods are a device replica: each test (and each remount below) starts from a device that never read them.
+async function forgetSignInMethods() {
+  const { queryClient } = await import('../../../../apps/desktop/src/lib/replica')
+  queryClient.clear()
+  localStorage.clear()
+}
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  notifyManager.setScheduler((callback) => { callback() })
+  await forgetSignInMethods()
   vi.clearAllMocks()
   m.settings.mockImplementation(async () => Response.json({ external: { google: true } }))
   vi.stubGlobal('fetch', function (this: unknown, input: RequestInfo | URL) {
@@ -54,8 +63,14 @@ it('starts Google with one minimal button and exposes explicit cancellation whil
   expect(button('取消 Google 登录').disabled).toBe(true)
 })
 
+it('a cancelled Google sign-in returns to the idle button without an alert', async () => {
+  await state({ phase: 'failed', failure: 'cancelled', busy: false })
+  expect(host.querySelector('[role="alert"]')).toBeNull()
+  expect(button('用 Google 登录').disabled).toBe(false)
+})
+
 it.each([
-  ['cancelled', '已取消 Google 登录'], ['timeout', 'Google 登录已超时，请重试'],
+  ['timeout', 'Google 登录已超时，请重试'],
   ['invalidCode', '登录授权已过期或与本次登录不匹配，请重试'],
 ] as const)('shows the real %s failure and enables a fresh attempt', async (failure, copy) => {
   await state({ phase: 'failed', failure, busy: false })
@@ -79,6 +94,7 @@ it('does not let email submission overwrite an active Google verifier', async ()
 
 async function remountSettings(request: () => Promise<Response>) {
   await act(async () => root.unmount())
+  await forgetSignInMethods()
   m.settings.mockImplementation(request)
   root = createRoot(host)
   await act(async () => root.render(<LoginPage />))

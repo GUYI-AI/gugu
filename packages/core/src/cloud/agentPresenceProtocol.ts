@@ -40,6 +40,11 @@ export type AgentPresencePayload = {
   recentActions: string[]
   // @@@last-action-at (#437) - the agent's real newest tool-action time (ISO), from the shared runtime
   lastActionAt: string | null
+  /**
+   * 这个 agent 的会话最后一次有动静(开工、停下、等人、出错)的时刻,宿主随读数一起写(会话行的 lastInteractedAt)。
+   * 各端「按最近活动排 agent」读它;null = 宿主还没报过(老宿主)。❌ 拿 lastActionAt 代替:那是近 5 分钟的工具调用。
+   */
+  lastInteractedAt: string | null
   windowTitle: string | null
   pid: number | null
   deviceId: string | null
@@ -67,6 +72,7 @@ type RawPresence = {
   agent_type?: unknown
   recent_actions?: unknown
   last_action_at?: unknown
+  last_interacted_at?: unknown
   window_title?: unknown
   pid?: unknown
   device_id?: unknown
@@ -159,6 +165,7 @@ export function parseAgentPresencePayload(raw: unknown): AgentPresencePayload | 
     agentType: asAgentType(presence.agent_type),
     recentActions: asStringArray(presence.recent_actions),
     lastActionAt: asString(presence.last_action_at),
+    lastInteractedAt: asString(presence.last_interacted_at),
     windowTitle: asString(presence.window_title),
     pid: asNumber(presence.pid),
     deviceId: asString(presence.device_id),

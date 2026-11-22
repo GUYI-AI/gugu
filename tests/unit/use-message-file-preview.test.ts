@@ -9,7 +9,7 @@ import type { PreviewFile } from '@/components/chat/useMessageFilePreview'
 // 字节、链接、交给系统应用都经 lib/attachmentBytes(一个入口);这里把它换掉,判的是预览自己的状态机。
 const bytesMocks = vi.hoisted(() => ({
   attachmentBytes: vi.fn(), downloadAttachment: vi.fn(),
-  attachmentPreview: vi.fn(),
+  attachmentPreview: vi.fn(), localAttachmentUrl: async () => null,
   openAttachmentInSystemApp: vi.fn(),
   openAttachmentImage: vi.fn(),
   sourceKeyOf: (source: { kind: string; url?: string }) => `${source.kind}:${source.url ?? ''}`,
@@ -75,7 +75,7 @@ describe('useMessageFilePreview', () => {
     })
     openPreview = preview.open
     closePreview = preview.close
-    return preview.panel
+    return preview.beside(null)
   }
 
   beforeEach(() => {
@@ -105,7 +105,7 @@ describe('useMessageFilePreview', () => {
     expect(bytesMocks.openAttachmentImage).toHaveBeenCalledWith(image.source, image.fileName, { chatId: 'chat', messageId: 'message' })
     expect(appMocks.openResource).not.toHaveBeenCalled()
     expect(closeRightSurfaces).not.toHaveBeenCalled()
-    expect(container.childElementCount).toBe(0)
+    expect(container.querySelector('[data-testid="preview-content"]')).toBeNull()
   })
 
   it.each([
@@ -233,7 +233,7 @@ describe('useMessageFilePreview', () => {
 
   // 手机上点视频要能直接播(#6682):进应用内预览、由 <video> 按需取签好的链接,❌ 整段读进内存,❌ 交给系统应用。
   it('previews playable videos in place from the signed link without fetching the whole file', async () => {
-    bytesMocks.attachmentPreview.mockResolvedValue({ status: 'ready', url: 'https://cdn.test/promo?auth_key=1', thumbUrl: null, sha256: null, width: null, height: null })
+    bytesMocks.attachmentPreview.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object' }, content: async () => ({ url: 'https://cdn.test/promo?auth_key=1', expiresAt: Date.now() + 60_000 }), dispose: async () => {} })
     const video: PreviewFile = { kind: 'file', fileName: 'promo.mp4', mimeType: '', sizeBytes: 9_000_000, source: { kind: 'url', url: 'https://files.test/promo.mp4' } }
 
     await act(async () => { root.render(React.createElement(Probe)) })
@@ -249,7 +249,7 @@ describe('useMessageFilePreview', () => {
   it('closes the mobile preview on Android back before the page underneath moves', async () => {
     mobile = true
     const { isSheetOpen, NATIVE_BACK_EVENT } = await import('@/components/ui/sheetStack')
-    bytesMocks.attachmentPreview.mockResolvedValue({ status: 'ready', url: 'https://cdn.test/promo', thumbUrl: null, sha256: null, width: null, height: null })
+    bytesMocks.attachmentPreview.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object' }, content: async () => ({ url: 'https://cdn.test/promo', expiresAt: Date.now() + 60_000 }), dispose: async () => {} })
     const video: PreviewFile = { kind: 'file', fileName: 'promo.mp4', mimeType: 'video/mp4', sizeBytes: 1, source: { kind: 'url', url: 'https://files.test/promo.mp4' } }
     await act(async () => { root.render(React.createElement(Probe)) })
     await act(async () => { openPreview?.(video); await Promise.resolve() })

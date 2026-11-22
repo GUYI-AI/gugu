@@ -22,7 +22,7 @@ export function RemoteFloatingCard({
 }) {
   return (
     <div className={cn('pointer-events-none absolute inset-x-0 z-10 flex justify-center px-4', offsetClassName)} data-testid={testId}>
-      <div className="pointer-events-auto w-full max-w-[440px] overflow-hidden rounded-[var(--radius-xl)] bg-background-quaternary text-foreground shadow-lift">
+      <div className="pointer-events-auto w-full max-w-[440px] overflow-hidden rounded-[var(--radius-xl)] bg-background-quaternary p-4 text-foreground shadow-lift">
         {children}
       </div>
     </div>

@@ -1,17 +1,19 @@
-import { useInfiniteQuery } from '@tanstack/react-query';
+import type { Commit } from '@gugu/session-core/git';
 import { commitRef } from '@shared/core/git/utils';
 import type { PullRequest } from '@shared/core/pull-requests/pull-requests';
+import { replica } from '@/lib/replica';
+import { useReplicaPages } from '@/lib/replicaPages';
 import { workspaceRpc } from '@renderer/features/sessions/workspace-backend/workspace-backend';
 
-const PAGE_SIZE = 50;
+export const COMMIT_PAGE_SIZE = 50;
 
 export type CommitRangeSource = 'pull-request' | 'branch';
 
+/** The commits between two objects: named by their oids, so what it lists never changes (a new head is a new range). */
 export type CommitRange = {
   source: CommitRangeSource;
   baseRefOid: string;
   headRefOid: string;
-  revision?: number;
 };
 
 export function commitRangeForPullRequest(pr: PullRequest): CommitRange {
@@ -22,43 +24,32 @@ export function commitRangeForPullRequest(pr: PullRequest): CommitRange {
   };
 }
 
-export const commitsQueryKey = (
-  projectId: string,
-  workspaceId: string,
-  source: CommitRangeSource,
-  baseRefOid: string,
-  headRefOid: string,
-  revision: number
-) => [projectId, workspaceId, 'commits', source, baseRefOid, headRefOid, revision] as const;
+/** `next`: the offset of the page after this one, null when this one is the last. */
+type CommitPage = { commits: Commit[]; aheadCount: number; next: string | null };
+
+const commitPage = replica({
+  name: 'commitPage',
+  scope: 'device',
+  read: async (_owner, projectId: string, workspaceId: string, baseRefOid: string, headRefOid: string, cursor: string | null): Promise<CommitPage> => {
+    const offset = cursor === null ? 0 : Number(cursor);
+    const result = await workspaceRpc(projectId).gitWorktree.getLog(
+      projectId,
+      workspaceId,
+      COMMIT_PAGE_SIZE,
+      offset,
+      undefined,
+      undefined,
+      commitRef(baseRefOid),
+      commitRef(headRefOid)
+    );
+    if (!result.success) throw new Error('Failed to load commits', { cause: result.error });
+    const { commits, aheadCount } = result.data;
+    return { commits, aheadCount, next: commits.length === COMMIT_PAGE_SIZE ? String(offset + COMMIT_PAGE_SIZE) : null };
+  },
+  fresh: Infinity,
+  keep: 5 * 60_000,
+});
 
 export function useCommits(projectId: string, workspaceId: string, range: CommitRange | undefined) {
-  const source = range?.source ?? 'branch';
-  const baseRefOid = range?.baseRefOid ?? '';
-  const headRefOid = range?.headRefOid ?? '';
-  const revision = range?.revision ?? 0;
-
-  return useInfiniteQuery({
-    queryKey: commitsQueryKey(projectId, workspaceId, source, baseRefOid, headRefOid, revision),
-    queryFn: async ({ pageParam }: { pageParam: number }) => {
-      if (!range) return { commits: [], aheadCount: 0 };
-
-      const result = await workspaceRpc(projectId).gitWorktree.getLog(
-        projectId,
-        workspaceId,
-        PAGE_SIZE,
-        pageParam,
-        undefined,
-        undefined,
-        commitRef(range.baseRefOid),
-        commitRef(range.headRefOid)
-      );
-      if (!result.success) throw new Error('Failed to load commits');
-      return result.data;
-    },
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, _all, lastPageParam) =>
-      lastPage.commits.length === PAGE_SIZE ? lastPageParam + PAGE_SIZE : undefined,
-    enabled: !!range,
-    staleTime: 5 * 60_000,
-  });
+  return useReplicaPages(commitPage, range ? [projectId, workspaceId, range.baseRefOid, range.headRefOid] : null, (page) => page.next);
 }

@@ -4,16 +4,12 @@
  * 「spawned 子会话 ready + 空闲 + transcript 为空」那道完整性检查只看引擎那页,于是每次打开都报
  * 「ACP transcript is empty」,点重试是同一个判断,次次都红。
  *
- * 判据:库里有 ⇒ 照库上屏、不报错;库里也空 ⇒ 照旧报(#4949 那个空白面板的形状还要拦住)。
- *
- * ## 判据能判假吗
- *
- * 能:去掉条件里的 `this._storedBaseSeq === null`,第一条用例当场红(mac1 实测,输出贴在 PR 里)。
+ * 判据:时间线里有 ⇒ 照时间线上屏、不报错;时间线也空 ⇒ 照旧报(#4949 那个空白面板的形状还要拦住)。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '@shared/core/sessions/sessions';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import { installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
+import { host, installAcpChatStoreHost, replica } from './acp-chat-store.test-host';
 
 const records = vi.hoisted(() => new Map<string, Partial<Session>>());
 
@@ -37,17 +33,7 @@ vi.mock('@renderer/lib/acp/acp-live-session', async (original) => ({
   AcpLiveSession: { create: vi.fn(async () => liveSession) },
 }));
 
-type StoredPage = { turns: TranscriptTurn[]; originTurnIds: string[]; nextCursor: number | null };
-let storedPage: StoredPage | null = null;
-
-// 与库的读法同一套语义:带 `fromSeq` 的是开场后补读的尾巴,只回那之后的几轮。
-installAcpChatStoreHost((channel: string, args?: { fromSeq?: number }) => {
-  if (channel !== 'sessions.getStoredHistory' || !storedPage) return Promise.resolve(channel === 'sessions.getStoredHistory' ? storedPage : []);
-  const fromSeq = args?.fromSeq;
-  if (fromSeq === undefined) return Promise.resolve(storedPage);
-  const turns = storedPage.turns.filter((t) => t.seq >= fromSeq);
-  return Promise.resolve({ turns, originTurnIds: [], nextCursor: null });
-});
+installAcpChatStoreHost();
 const { AcpChatStore } = await import('./acp-chat-store');
 
 const turn = (id: string, seq: number): TranscriptTurn =>
@@ -84,7 +70,7 @@ const committedIds = (store: InstanceType<typeof AcpChatStore>) =>
   store.chatState.transcript.state.committedTurns.map((t) => t.id);
 
 beforeEach(() => {
-  storedPage = null;
+  host.show([]);
   liveSession = resumedEmptyEngine();
 });
 afterEach(() => {
@@ -93,8 +79,8 @@ afterEach(() => {
 });
 
 describe('AcpChatStore: a resumed spawned child whose engine replays nothing', () => {
-  it('opens from the stored turns when the engine history is empty but the store has them', async () => {
-    storedPage = { turns: [turn('s0', 0), turn('s1', 1), turn('s2', 2)], originTurnIds: [], nextCursor: null };
+  it('opens from the timeline when the engine history is empty but the record has turns', async () => {
+    host.show([turn('s0', 0), turn('s1', 1), turn('s2', 2)]);
     const { store, internals } = spawnedChild();
 
     await internals._runBootstrap({ attachOnly: true });
@@ -104,8 +90,7 @@ describe('AcpChatStore: a resumed spawned child whose engine replays nothing', (
     store.dispose();
   });
 
-  it('❌ negative: the store is empty too — still reported as an empty transcript', async () => {
-    storedPage = { turns: [], originTurnIds: [], nextCursor: null };
+  it('❌ negative: the timeline is empty too — still reported as an empty transcript', async () => {
     const { store, internals } = spawnedChild();
 
     await internals._runBootstrap({ attachOnly: true });

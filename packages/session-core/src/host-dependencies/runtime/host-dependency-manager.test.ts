@@ -300,6 +300,39 @@ describe('HostDependencyManager cached path invalidation', () => {
   });
 });
 
+describe('HostDependencyManager detection reads the current PATH', () => {
+  it('re-reads the PATH before every detection round, so a CLI installed after startup is found', async () => {
+    // The context's PATH as it was at startup has no codex; the user's current PATH does.
+    let pathHasCodex = false;
+    const ctx = makeCtx(async (command, args = []) => {
+      if (command === 'which' && args.at(-1) === 'codex' && pathHasCodex) return { stdout: '/home/u/.npm-global/bin/codex\n', stderr: '' };
+      if (command === 'realpath') return { stdout: `${args[0]}\n`, stderr: '' };
+      if (command === '/home/u/.npm-global/bin/codex') return { stdout: 'codex-cli 1.2.3\n', stderr: '' };
+      throw new Error('missing');
+    }, { refreshShellEnv: async () => { pathHasCodex = true; } });
+    const manager = new HostDependencyManager(ctx, { dependencies: TEST_DEPENDENCIES, installMethodDetector: unknownDetector });
+
+    await manager.probe('codex');
+    expect(manager.get('codex')?.status).toBe('missing');
+
+    await manager.probeAll();
+    expect(ctx.refreshShellEnv).toHaveBeenCalledTimes(1);
+    expect(manager.get('codex')).toMatchObject({ status: 'available', path: '/home/u/.npm-global/bin/codex' });
+  });
+
+  it('keeps how `--version` failed, so the panel can say it', async () => {
+    const ctx = makeCtx(async (command, args = []) => {
+      if (command === 'which' && args.at(-1) === 'codex') return { stdout: '/bin/codex\n', stderr: '' };
+      if (command === '/bin/codex') throw Object.assign(new Error('exit 1'), { code: 1, stdout: '', stderr: '' });
+      throw new Error('missing');
+    });
+    const manager = new HostDependencyManager(ctx, { dependencies: TEST_DEPENDENCIES, installMethodDetector: unknownDetector });
+
+    await manager.probe('codex');
+    expect(manager.get('codex')).toMatchObject({ status: 'error', path: '/bin/codex', failure: { exitCode: 1, timedOut: false } });
+  });
+});
+
 describe('HostDependencyManager probe env (#6186)', () => {
   it.each(['macos', 'linux', 'windows'] as const)('discovers a newly installed agent using the latest host ledger on %s (#465)', async (platform) => {
     const bin = platform === 'windows' ? 'C:\\gugu\\agents\\mise-bin\\codex.cmd' : '/gugu/agents/mise-bin/codex';

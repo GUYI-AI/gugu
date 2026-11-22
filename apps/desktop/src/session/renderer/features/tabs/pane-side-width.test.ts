@@ -141,6 +141,14 @@ describe('every page on the side comes at its own width', () => {
     expect(sideWidth(restarted)).toBe(360);
   });
 
+  it('a page on the side turned into another in place comes at the new page\'s width, dragged or not', () => {
+    const { layout, open, sideWidth, drag } = setup();
+    const folder = open('folder');
+    drag(800);
+    layout.open('info', { path: 'info' }, { from: folder, intent: 'navigate' });
+    expect(sideWidth()).toBe(360);
+  });
+
   it('a closed page takes its width with it', () => {
     const { layout, open, close, drag } = setup();
     const a = open('file', 'A.md');
@@ -254,6 +262,14 @@ describe('a chat\'s tool pages come at their own width', () => {
     'opened after the 「+」 page closed (owner 11-19)': ({ open, close, drag }) => {
       const start = open('start'); drag(900); close(start);
       open('info');
+    },
+    'the 「+」 page turned into it in place (owner 11-22)': ({ layout, open, drag }) => {
+      const start = open('start'); drag(900);
+      layout.open('info', { path: 'info' }, { from: start, intent: 'navigate', inPlace: true });
+    },
+    'the 「+」 page, never dragged, turned into it in place': ({ layout, open }) => {
+      const start = open('start');
+      layout.open('info', { path: 'info' }, { from: start, intent: 'navigate', inPlace: true });
     },
     'opened in front of the 「+」 page': ({ open, drag }) => {
       open('start'); drag(900);

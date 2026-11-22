@@ -37,7 +37,7 @@ export async function configuredIntegrationIndex() {
       modifiedAt: new Date(account.updatedAt).toISOString(), isDefault: account.isDefault,
       // #921 kept but not usable now (rejected): a task would get no tools; only the person can fix it.
       ...(platformCredentials.needsReconnect(provider, account)
-        ? { note: `${plugin.metadata.name}要重新连接，现在用不了；到连接页重新填 Key` }
+        ? { note: `${plugin.metadata.name}需要重新连接，当前不可用。请在连接页重新填写 Key` }
         : { ...(use ? { use } : {}), ...(note ? { note } : {}) }),
     }))
   })

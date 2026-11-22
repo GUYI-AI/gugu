@@ -25,6 +25,13 @@ const HOST_TOKENS: Record<string, string> = {
   ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [`c${n}`, `--chart-${n}`])),
 };
 
+/** Calls `onChange` when the host's light/dark truth, `<html data-theme>` (written only by host-theme.ts), flips. */
+export function subscribeHostTheme(onChange: () => void): () => void {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  return () => observer.disconnect();
+}
+
 /** Token → colour as the element the figure is drawn in resolves it now (light or dark). */
 export function svgPalette(element: Element): Record<string, string> {
   const style = getComputedStyle(element);
@@ -42,6 +49,37 @@ const PIXEL_LENGTH = /^([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?)(?:px)?$/i;
 
 function parsePixelLength(attribute: string | null): number {
   return Number(attribute?.trim().match(PIXEL_LENGTH)?.[1]);
+}
+
+/** The margin a drawn diagram gets inside its own background when viewed: pele crops its box to the shapes. */
+const DRAWN_MARGIN = 16;
+
+/**
+ * A drawn diagram (pele's SVG, which reads `--*` variables) as an image to view: each variable it reads is set on its
+ * root to the value `element` resolves now, and it sits on its own background (`--pele-bg`) with a margin, so it reads
+ * as a card on the viewer's black. Read when it opens: the inline drawing keeps following the theme, the image does not.
+ */
+export function drawnSvgImage(svg: string, element: Element): { src: string; width: number; height: number } {
+  const root = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+  const box = (root.getAttribute('viewBox') ?? '').trim().split(/[\s,]+/).map(Number);
+  if (root.localName !== 'svg' || box.length !== 4 || !box.every(Number.isFinite) || !(box[2]! > 0) || !(box[3]! > 0)) {
+    throw new Error('drawn SVG has no root with a viewBox');
+  }
+  const [x, y, w, h] = box as [number, number, number, number];
+  const width = w + 2 * DRAWN_MARGIN;
+  const height = h + 2 * DRAWN_MARGIN;
+  root.setAttribute('viewBox', `${x - DRAWN_MARGIN} ${y - DRAWN_MARGIN} ${width} ${height}`);
+  root.setAttribute('width', String(width));
+  root.setAttribute('height', String(height));
+  const style = getComputedStyle(element);
+  const svgStyle = (root as unknown as SVGSVGElement).style;
+  for (const name of new Set(Array.from(svg.matchAll(/var\(\s*(--[a-z0-9-]+)/gi), (match) => match[1]!))) {
+    const value = style.getPropertyValue(name).trim();
+    if (value) svgStyle.setProperty(name, value);
+  }
+  svgStyle.setProperty('background', 'var(--pele-bg)');
+  const markup = new XMLSerializer().serializeToString(root);
+  return { src: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`, width, height };
 }
 
 export function svgFigure(source: string, palette: Record<string, string>): SvgFigure {

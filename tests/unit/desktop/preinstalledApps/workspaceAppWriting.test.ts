@@ -4,6 +4,7 @@
 // selection is wrapped in (and out of) a mark; the reading block's + inserts after its source span;
 // an empty document says what can be done; front matter is one block in the source, not a setext heading.
 // The preview is a stand-in that marks lines as gugu.markdown's `sourceLines` does (judged in markdown-entry.test.ts).
+import { hostMenu } from './sharedMenu'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
@@ -80,7 +81,7 @@ function dismiss() {
   open?.answer(null)
 }
 const gugu = {
-  showContextMenu: vi.fn(({ items }: { items: Row[] }) => new Promise<string | null>((answer) => { shown?.answer(null); shown = { items, answer } })),
+  showContextMenu: vi.fn(({ items }: { items: Row[] }) => new Promise<string | null>((answer) => { shown?.answer(null); shown = { items: hostMenu(items as never, 'More') as Row[], answer } })),
   navigation: { go: vi.fn(async (_delta: number) => true) },
   linkTo: vi.fn(async ({ file, at }: { file: { id: string }; at?: { lines: string } }) => `gugu-file://${file.id}${at ? `#${at.lines}` : ''}`),
   setTabTitle: vi.fn(async () => {}),
@@ -234,8 +235,9 @@ describe('markdown redesign: the real document page', () => {
   test('M7 the open document offers the same permitted file actions in the approved order', async () => {
     $('more').click()
     await frame()
-    // 对照 (side by side) leads, then the file's actions (owner 11-06: the head keeps one read/edit toggle).
-    expect(labels()).toEqual(['Side by side', 'Forward', 'Copy link', 'Open with another App', 'Download', 'Rename', 'Move to…', 'Delete'])
+    // 对照 (side by side) leads, then the file's table (@@@file-menu) less Open: the rare rows in More, Delete last.
+    expect(labels()).toEqual(['Side by side', 'Open with another App', 'Forward', 'Download', 'Copy link', 'More'])
+    expect(labels(rowNamed('More').items)).toEqual(['Rename', 'Move to…', 'Delete'])
     close()
   })
 
@@ -244,7 +246,8 @@ describe('markdown redesign: the real document page', () => {
     $('more').click()
     // 对照 is one of a choice (side by side or not): the host draws its mark.
     expect(rowNamed('Side by side').checked).toBe(false)
-    expect(labels()).toEqual(['Side by side', 'Forward', 'Copy link', 'Open with another App', 'Download'])
+    // Four rows are not folded (the host's short-menu rule).
+    expect(labels()).toEqual(['Side by side', 'Open with another App', 'Forward', 'Download', 'Copy link'])
   })
 
   test('editing coalesces pointer bursts into one placement and one geometry read per frame', async () => {

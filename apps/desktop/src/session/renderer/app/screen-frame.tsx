@@ -1,26 +1,24 @@
 import { tabFullscreen, WORKSPACE_ANCHOR } from '@renderer/features/tabs/tab-fullscreen';
 import { observer } from 'mobx-react-lite';
-import { Fragment, useEffect, useRef, type CSSProperties, type DragEvent } from 'react';
-import { useGroupRef } from 'react-resizable-panels';
+import { type CSSProperties, type DragEvent } from 'react';
 import { Settings, X } from '@/lib/icons';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
-import { observeGroupParticipantWidth } from '@renderer/features/chats/group-participant-width';
+import { participantSplitSizes } from '@renderer/features/chats/group-participant-width';
 import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { ExtensionSharedSlot } from '@renderer/features/extensions/extension-shared-slot';
-import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { extensionSurfaceStore } from '@renderer/features/extensions/extension-surface-store';
+import { useAppPageTab } from '@renderer/features/extensions/extension-tab-provider';
+import { Unknown } from '@/components/ui/Unknown';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import type { PaneLayoutNode } from '@renderer/features/tabs/pane-layout-tree';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
 import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup, setGroupLayout } from '@renderer/lib/ui/resizable';
+import { TrackCut } from '@renderer/features/tabs/pane-track-cut';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { followLink } from '@/lib/guguLinks';
-import { cn } from '@renderer/utils/utils';
 import {
-  blockDropPreview,
   closeScreenBlock,
   dropOnScreen,
   focusScreenBlock,
@@ -101,77 +99,34 @@ const BlockTree = observer(function BlockTree({ node }: { node: PaneLayoutNode }
   return <BlockCut node={node} />;
 });
 
-/** 块与块之间一根线(和格与格之间同一种)。拖它改份额,双击 = 等分。 */
+/**
+ * 块与块之间一根线(和格与格之间同一种)。拖它改份额,双击 = 等分(在轨道的弹簧上走过去)。
+ * 份额就是 node.sizes;一个群的参与者那块按它记下的像素宽,换算成这一刀此刻量到的宽里的份额(窗口变宽变窄只改显示的比例)。
+ */
 const BlockCut = observer(function BlockCut({ node }: { node: Extract<PaneLayoutNode, { type: 'split' }> }) {
-  const groupRef = useGroupRef();
-  const groupElementRef = useRef<HTMLDivElement>(null);
   const fullscreen = tabFullscreen.target !== null;
-  const ids = node.children.map(childPanelId);
-  const idsKey = ids.join(',');
-  const sizesKey = node.sizes.join(',');
-  const participantOwner = groupParticipantPanes.pairIn(node)?.chatId;
-  const participantWidth = groupParticipantPanes.rightWidth;
-
-  // 份额以 node.sizes 为准:库里的布局对不上就摆回去。
-  const syncLayout = () => {
-    const handle = groupRef.current;
-    if (handle) setGroupLayout(handle, Object.fromEntries(ids.map((id, index) => [id, node.sizes[index] ?? 0])), 0.5);
-  };
-  // ids / sizes are read through their keys: a new array every render must not re-run this.
-  useEffect(() => syncLayout(), [idsKey, sizesKey, groupRef]);
-  // The panel set the library last reported a layout for. A report for another set (a block opened or closed under
-  // this cut, including the library's own late report of the set it had before) is put back to node.sizes: a fresh
-  // mount would have used each panel's defaultSize there. A report for the same set again (a min-size clamp on a window
-  // resize) is the library's own and is left alone, so the two never fight. It starts as the set the group mounts with:
-  // that one is laid out from defaultSize already, so a later setLayout for it (the participant width) is left alone.
-  const reportedIds = useRef([...ids].sort().join(','));
-
-  useEffect(() => {
-    const element = groupElementRef.current;
-    const handle = groupRef.current;
-    if (!element || !handle || !participantOwner) return;
-    return observeGroupParticipantWidth(element, node, handle, groupParticipantPanes);
-  }, [groupRef, idsKey, sizesKey, node.orientation, participantOwner, participantWidth]);
-
-  // 这一刀下面换了一块:❌ 按有哪几块换 key 重挂整组 —— 留下的对话块会跟着重建(落点、焦点、光标、开着的右栏都没了)。
-  // 新挂上的那块只拿到 1% 的事(2026-10-09 挤成 19px)由上面 reportedIds 那条规则摆回 node.sizes。
+  const pair = groupParticipantPanes.pairIn(node);
+  const rightWidth = groupParticipantPanes.rightWidth;
+  const along = node.orientation === 'horizontal' ? 'width' : 'height';
+  const shares = pair
+    ? (span: number) => participantSplitSizes(node, pair.targetIndex, rightWidth, (span * (node.sizes[pair.targetIndex - 1] + node.sizes[pair.targetIndex])) / 100)
+    : node.sizes;
   return (
-    <ResizablePanelGroup
-      orientation={node.orientation}
-      groupRef={groupRef}
-      elementRef={groupElementRef}
+    // 块与块之间就是一根线,和一条会话里格与格之间、会话列表右边那根同一种(1px border 色),❌ 另起一道粗缝
+    // (owner 10-09:先是「怎么会没有任何分割线」—— 透明缝在这层皮里和白底同色;改成 6px 灰带又是
+    // 「这么粗的线,你是想干啥?不能统一吗」)。线浮在贴在块上的会话页那层上面,左右那几 px 的抓手才抓得到。
+    <TrackCut
+      axis={node.orientation === 'horizontal' ? 'x' : 'y'}
+      shares={shares}
+      items={node.children.map((child) => ({ id: childPanelId(child), min: blockTreeMin(child, along), node: <BlockTree node={child} /> }))}
+      animate
       disabled={fullscreen}
-      onLayoutChanged={(layout, meta) => {
-        // Sorted: the library lists a panel in registration order, so one opened in the middle comes last.
-        const reported = Object.keys(layout).sort().join(',');
-        if (!meta.isUserInteraction && reported !== reportedIds.current) syncLayout();
-        reportedIds.current = reported;
-        if (meta.isUserInteraction) {
-          screenLayout.setSplitSizes(node.id, ids.map((id) => layout[id] ?? 0));
-          const participant = groupParticipantPanes.pairIn(node);
-          const target = participant && node.children[participant.targetIndex];
-          if (target?.type === 'pane') {
-            const width = document.querySelector<HTMLElement>(`[data-screen-block="${target.paneId}"]`)?.getBoundingClientRect().width;
-            if (width) groupParticipantPanes.rememberWidth(width);
-          }
-        }
+      onShares={(sizes, span) => {
+        screenLayout.setSplitSizes(node.id, sizes);
+        if (pair) groupParticipantPanes.rememberWidth((span * sizes[pair.targetIndex]) / 100);
       }}
-    >
-      {node.children.map((child, index) => (
-        <Fragment key={childPanelId(child)}>
-          {index > 0 && (
-            // 块与块之间就是一根线,和一条会话里格与格之间、会话列表右边那根同一种(1px border 色),❌ 另起一道粗缝
-            // (owner 10-09:先是「怎么会没有任何分割线」—— 透明缝在这层皮里和白底同色;改成 6px 灰带又是
-            // 「这么粗的线,你是想干啥?不能统一吗」)。
-            // 会话页是贴在块上的另一层,压在这根线两边:线自己抬到那层上面,左右那几 px 的抓手才抓得到(会话列表那根也是这么浮着的)。
-            <ResizableHandle style={{ zIndex: 'var(--z-pane-divider)' }} disabled={fullscreen} onDoubleClick={() => screenLayout.equalizeSplit(node.id)} />
-          )}
-          <ResizablePanel id={childPanelId(child)} defaultSize={`${node.sizes[index] ?? 0}%`} minSize={`${blockTreeMin(child, node.orientation === 'horizontal' ? 'width' : 'height')}px`}>
-            <BlockTree node={child} />
-          </ResizablePanel>
-        </Fragment>
-      ))}
-    </ResizablePanelGroup>
+      onEqualize={() => screenLayout.equalizeSplit(node.id)}
+    />
   );
 });
 
@@ -251,8 +206,7 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
  */
 const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: string; tabKind: string }) {
   const { translate } = useSessionMessages();
-  const contribution = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === tabKind);
-  const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, `screen:${blockId}`), installedExtensionsStore.tabTitle(tabKind) ?? tabKind);
+  const { contribution, label, tooltip, unknown, failed } = useAppPageTab(extensionSurfaceStore.said(null, `screen:${blockId}`), tabKind);
   const corners = screenLayout.corners(blockId);
   const multi = screenLayout.order.length > 1;
   const focused = screenLayout.focusedBlockId === blockId;
@@ -292,7 +246,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
                 onClick={() => void followLink({ kind: 'app-detail', extensionId: contribution.extensionId })}>
                 <Settings className="size-3.5" />
               </button>
-            ) : null}
+            ) : contribution === null && !failed ? <Unknown className="size-6" /> : null}
             {multi ? <CloseBlockButton blockId={blockId} /> : null}
           </TabBarActionRow>
         }
@@ -303,6 +257,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
             isFocusedPane={focused}
             label={label}
             title={tooltip}
+            labelSlot={unknown ? <Unknown className="w-20" /> : undefined}
             preSlot={<TabKindMark kind={tabKind} />}
             closeLabel={translate('task.closeTab', { label })}
             onClose={takeAway}
@@ -324,7 +279,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
   const { translate } = useSessionMessages();
   const { chatId, tabKind, itemId, title } = content;
   const slot = `screen:${blockId}`;
-  const { label, tooltip } = extensionTabTitle(extensionSurfaceStore.said(null, slot), itemId && !installedExtensionsStore.isChatFile(tabKind, title) ? title : (installedExtensionsStore.tabTitle(tabKind) ?? title));
+  const { label, tooltip, unknown } = useAppPageTab(extensionSurfaceStore.said(null, slot), tabKind, itemId ? title : undefined, title);
   const corners = screenLayout.corners(blockId);
   const multi = screenLayout.order.length > 1;
   const putBack = () => {
@@ -353,6 +308,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
             isFocusedPane={screenLayout.focusedBlockId === blockId}
             label={label}
             title={tooltip}
+            labelSlot={unknown ? <Unknown className="w-20" /> : undefined}
             preSlot={<TabKindMark kind={tabKind} />}
             closeLabel={translate('task.closeTab', { label })}
             onClose={putBack}
@@ -445,82 +401,6 @@ export function CloseBlockButton({ blockId }: { blockId: string }) {
     >
       <X className="size-3.5" />
     </button>
-  );
-}
-
-/** 拖到一块边上时画出来的那一半:松手前就看得到新的一块会落在哪。 */
-export const BlockDropPreviewLayer = observer(function BlockDropPreviewLayer() {
-  const drop = blockDropPreview.get();
-  if (!drop) return null;
-  if ('mention' in drop) return <MentionDropPreview blockId={drop.blockId} sessionId={drop.mention.sessionId} />;
-  if ('paneId' in drop) return <PaneDropPreview blockId={drop.blockId} paneId={drop.paneId} strip={drop.strip} />;
-  const anchor = blockAnchorName(drop.blockId);
-  const half: Record<string, string> =
-    drop.edge === 'left'
-      ? { left: 'anchor(left)', right: 'anchor(center)', top: 'anchor(top)', bottom: 'anchor(bottom)' }
-      : drop.edge === 'right'
-        ? { left: 'anchor(center)', right: 'anchor(right)', top: 'anchor(top)', bottom: 'anchor(bottom)' }
-        : drop.edge === 'top'
-          ? { left: 'anchor(left)', right: 'anchor(right)', top: 'anchor(top)', bottom: 'anchor(center)' }
-          : { left: 'anchor(left)', right: 'anchor(right)', top: 'anchor(center)', bottom: 'anchor(bottom)' };
-  return (
-    <div
-      className={cn('pointer-events-none z-40 rounded-[var(--radius-control)] border border-foreground/20 bg-foreground/10')}
-      style={{ position: 'absolute', positionAnchor: anchor, ...half } as CSSProperties}
-      data-block-drop-preview={drop.edge}
-    />
-  );
-});
-
-/**
- * App 落进一条会话的某一格:整格罩一层(同格子里拖页签进来时那一层);落在页签条上 = 一根竖线标出插到哪
- * (同一条会话里拖页签时那根,见 draggable-tab.tsx 的 DropIndicator)。
- */
-function PaneDropPreview({ blockId, paneId, strip }: { blockId: string; paneId: string; strip?: { before: string | null } }) {
-  const cell = document.querySelector<HTMLElement>(`[data-screen-page="${CSS.escape(blockId)}"] [data-pane-cell="${CSS.escape(paneId)}"]`);
-  const rect = cell?.getBoundingClientRect();
-  if (!cell || !rect) return null;
-  if (strip) {
-    const slots = [...cell.querySelectorAll<HTMLElement>('.session-tab-bar .session-tab-slot')];
-    const before = strip.before ? cell.querySelector<HTMLElement>(`[data-tabid="${CSS.escape(strip.before)}"]`)?.closest<HTMLElement>('.session-tab-slot') : null;
-    const ref = before ?? slots.at(-1);
-    const box = ref?.getBoundingClientRect();
-    if (!box) return null;
-    return (
-      <div
-        className="pointer-events-none fixed z-40 w-0.5 bg-foreground"
-        style={{ left: (before ? box.left : box.right) - 1, top: box.top + 4, height: box.height - 8 }}
-        data-pane-drop-preview={paneId}
-        data-pane-drop-before={strip.before ?? 'end'}
-      />
-    );
-  }
-  return (
-    <div
-      className="pointer-events-none fixed z-40 rounded-[var(--radius-control)] border border-foreground/20 bg-foreground/10"
-      style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
-      data-pane-drop-preview={paneId}
-    />
-  );
-}
-
-/**
- * 插 @ 的落点:罩住那枚 @ 会落进去的地方 —— 聊天是输入框,终端就是终端本身(同分块落点那一层)。
- * 指针在聊天记录上也罩输入框:松手的结果是输入框里多一枚 @,画的就是结果。
- */
-function MentionDropPreview({ blockId, sessionId }: { blockId: string; sessionId: string }) {
-  const surface = document.querySelector<HTMLElement>(
-    `[data-screen-page="${CSS.escape(blockId)}"] [data-session-chat-surface][data-session-chat-session-id="${CSS.escape(sessionId)}"]`
-  );
-  const target = surface?.querySelector<HTMLElement>('[data-slot="composer-bar"]') ?? surface;
-  const rect = target?.getBoundingClientRect();
-  if (!target || !rect) return null;
-  return (
-    <div
-      className="pointer-events-none fixed z-40 border border-foreground/20 bg-foreground/10"
-      style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height, borderRadius: getComputedStyle(target).borderRadius }}
-      data-mention-drop-preview={sessionId}
-    />
   );
 }
 

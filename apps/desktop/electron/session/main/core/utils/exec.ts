@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from '@gugu/core/local/childProcess';
+import { parseRegExportValue } from '@main/utils/windows-env';
 
 function windowsExecutableExtensions(env: NodeJS.ProcessEnv): string[] {
   const pathExt = env.PATHEXT || '.COM;.EXE;.BAT;.CMD';
@@ -36,21 +37,6 @@ function findExecutableOnPath(name: string, env: NodeJS.ProcessEnv = process.env
   return null;
 }
 
-/**
- * One string value out of a `reg export` file. The file is UTF-16LE whatever the system code page,
- * and escapes `\` and `"` inside the quoted value.
- */
-export function parseRegExportString(exported: string, name: string): string | null {
-  const prefix = `"${name}"="`;
-  for (const rawLine of exported.split(/\r?\n/)) {
-    const line = rawLine.trimEnd();
-    if (line.startsWith(prefix) && line.endsWith('"')) {
-      return line.slice(prefix.length, -1).replace(/\\(.)/g, '$1');
-    }
-  }
-  return null;
-}
-
 function readGitForWindowsInstallPath(env: NodeJS.ProcessEnv): string | null {
   const reg = env.SystemRoot ? path.join(env.SystemRoot, 'System32', 'reg.exe') : 'reg.exe';
   for (const root of ['HKLM', 'HKCU']) {
@@ -63,7 +49,7 @@ function readGitForWindowsInstallPath(env: NodeJS.ProcessEnv): string | null {
       execFileSync(reg, ['export', `${root}\\SOFTWARE\\GitForWindows`, file, '/y'], {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
-      const installPath = parseRegExportString(fs.readFileSync(file, 'utf16le'), 'InstallPath');
+      const installPath = parseRegExportValue(fs.readFileSync(file, 'utf16le'), 'InstallPath')?.value;
       if (installPath) return installPath;
     } catch {
       // The key is absent when Git for Windows is not installed for this scope.

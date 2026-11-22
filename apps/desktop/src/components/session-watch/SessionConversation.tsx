@@ -2,8 +2,6 @@ import { useObserver } from 'mobx-react-lite'
 import { AnnotationTray } from '@renderer/features/sessions/annotations/annotation-tray'
 import { annotationPrompt, sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '@renderer/features/sessions/annotations/annotation-images'
-import { hasPendingWindow } from './timeline-window-fields'
-import { boundedWindowReady } from './desktop-window-history'
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection'
 import { useRejectedSessionInputCommands } from '@/hooks/useRejectedSessionInputCommands'
 import { registerNativeComposer } from '@/lib/nativeComposerHandoff'
@@ -11,7 +9,6 @@ import { useNativeConversationRead } from '@/hooks/useNativeConversationRead'
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { SessionChatLoading } from '@renderer/features/sessions/acp/session-chat-loading'
 import { toolImageUrl } from '@gugu/session-core/acp/client'
 import { openImageViewer } from '@/lib/imageViewer'
 import { PhoneTaskDraftRecovery } from '../../mobile/local-agent/PhoneTaskDraftRecovery'
@@ -59,13 +56,14 @@ import { Plus } from '@/lib/icons'
 import { messageForUser } from '@/lib/userFacingError'
 import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice'
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
+import { resendNativeInputByPerson } from '@/lib/nativeInputResend'
 import { nativeUserAttachmentCommands } from './native-user-attachments'
 import { usePhoneSessionQuotes } from './use-phone-session-quotes'
 import { EngineIcon } from '@/components/AgentHarnessIdentity'
 import { engineLabel } from '@/lib/usage/engineLabel'
-import { useQueuedSessionInputs, useSessionInputAccount } from '@/lib/sessionInputOutboxBridge'
+import { useQueuedSessionInputs, useSessionInputAccount } from '@/lib/outbox/kinds/sessionInput'
 import { localQueuedInputs } from './local-queued-inputs'
-import type { SessionInput } from '@/lib/sessionInputOutbox'
+import type { SessionInput } from '@/lib/sessionInput'
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput'
 import { phoneRecordWait, projectPhonePendingInputs, type PhoneRecordWait } from './phone-pending-inputs'
 import { projectSessionPendingDeliveries, settledHostRow } from '@/lib/pendingSessionDeliveries'
@@ -82,8 +80,8 @@ import { rendererLogger } from '@/lib/log'
 /** The phone supplies session data and RPC actions to the same project conversation UI. */
 export function SessionConversation({ timeline, deviceId, sessionId, agentName, agentUserId, harness, draft, onDraftApplied, startupPrompt, phoneHost = false, local = false, nativeRecord = false, hostReachable = true, appPanel = false,
   machineLabel, sessionRuntime, respondingItemId, onRespond, onSend, pendingSends, sending, agentWorking,
-  onStop, stopping, footerNotice, composerControls, permissionsInWork = false, onLoadOlder, onHeldShown, onAtBottom, emptyNote, onBeforeSend,
-  historyReady = true, historyCursor, queueReady = false, unseen = false,
+  onStop, stopping, footerNotice, composerControls, permissionsInWork = false, onLoadOlder, onAtBottom, emptyNote, onBeforeSend,
+  queueReady = false, unseen = false,
 }: {
   timeline: AgentWatchTimeline; deviceId: string; sessionId: string; agentName: string; agentUserId?: string | null
   /** 这条会话的 harness(claude-code / codex …):输入框里模型左边那颗锁着的标,同桌面会话页。 */
@@ -101,16 +99,14 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   onBeforeSend?: () => void
   pendingSends: readonly PendingSend[]; sending: boolean; agentWorking: boolean
   headerRunning?: boolean
-  onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: (modelControl: ReactNode, model: ExistingSessionModel, skills: ReturnType<typeof creationSkillInput>) => ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
+  onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: (modelControl: ReactNode, model: ExistingSessionModel, skills: ReturnType<typeof creationSkillInput>) => ReactNode; onLoadOlder: () => Promise<void>
   /** Only the existing Work controls may take ownership of the phone permission selector. */
   permissionsInWork?: boolean
   onAtBottom?: () => void; onLoadToolImage?: (itemId: string, index: number) => Promise<void>; emptyNote?: ReactNode
-  historyReady?: boolean; historyCursor?: number | null
   /** A live foreground snapshot, not a cached/offline history window. */
   queueReady?: boolean
 }) {
   const { resolvedLocale } = useLocale()
-  const { t } = useTranslation('main')
   const { t: ta } = useTranslation('assistant')
   const { theme } = useTheme()
   const visibility = useConversationVisibility(true)
@@ -294,7 +290,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const readWorkingCopy = useMemo(() => sessionWorkingCopyReader({ id: sessionId, deviceId }), [sessionId, deviceId])
   const outputs = useOpenedOutputOpener({ deviceId, sessionId, onQuote: quoteOutput, readFileChunk: local ? readOutput : undefined, readWorkingCopy })
   const { openFile, handlers: outputHandlers } = outputs
-  const background = usePhoneBackgroundTasks(deviceId, sessionId, timeline.turns, dismissals, !phoneHost, timeline.subagents, localClient?.fetchBackgroundTasks)
+  const background = usePhoneBackgroundTasks(deviceId, sessionId, timeline.turns, dismissals, !phoneHost, timeline.subagents, local)
   const nativeTurns = timeline.turns
   const pendingInput = useRef<{ sessionId: string; prompts: readonly PendingPrompt[] }>({ sessionId, prompts: [] })
   // Kept across renders like `pendingInput`: an input judged placeable is never held later (see `phoneRecordWait`).
@@ -329,7 +325,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const receivedInputs = useMemo(() => projectSessionPendingDeliveries(received.current.key === receivedKey ? received.current.inputs : [], phonePending ?? placeableLife, nativeTurns),
     [receivedKey, phonePending, placeableLife, nativeTurns])
   const receiptHistory = usePendingDeliveryHistory({ deviceId, sessionId, local, enabled: nativeRecord && !phoneHost,
-    ready: historyReady, cursor: historyCursor, turns: nativeTurns, inputs: receivedInputs })
+    ready: timeline.cursor !== null, hasOlder: timeline.hasOlder, turns: nativeTurns, inputs: receivedInputs })
   const turns = receiptHistory.turns
   const settledInputs = useMemo(() => receivedInputs.filter(input => input.delivery?.state !== 'accepted' || !pendingPromptLanded(input, turns)), [receivedInputs, turns])
   received.current = { key: receivedKey, inputs: settledInputs }
@@ -362,7 +358,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     onRetrySend: id => {
       const input = received.current.inputs.find(input => input.id === id && (input.delivery?.state === 'unknown' || (input.delivery?.state === 'failed' && settledHostRow(lifeView.current, id))))
       if (!input) return rejectedInputCommands.onRetrySend?.(id)
-      if (input.delivery?.retryable) void runNativeInputAction(sessionId, id, local ? null : deviceId, () => machineRpc(deviceId, local).sessions.lifeRetryUnknown(sessionId, id))
+      if (input.delivery?.retryable) void resendNativeInputByPerson(sessionId, id, local ? null : deviceId,
+        options => machineRpc(deviceId, local).sessions.lifeRetryUnknown(sessionId, id, options))
     },
     canDiscardSend: id => !!rejectedInputCommands.canDiscardSend?.(id) || settledHostRow(lifeView.current, id),
     onDiscardSend: id => {
@@ -372,17 +369,16 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     ...(nativeRecord && !phoneHost ? userAttachments : { onViewAttachment: userAttachments.onViewAttachment }),
     classifyLink: classifyFileLink, onOpenLink: followConversationLink, onOpenSender: openMessageSender,
     onOpenFile: ({ path, source }) => openFile(path, source),
-    conversationAgentSession: () => sessionId, conversationAgentUserId: () => agentUserId ?? null,
+    conversationAgentSession: () => sessionId, conversationAgentUserId: () => agentUserId ?? null, readConversationFile: input => readConversationFile(local, deviceId, input),
     ...quotes.commands,
     onDismissBackgroundTask: ({ entryId }) => { dismissSubagent(sessionId, entryId); setDismissals(value => value + 1) },
-    onHeldShown,
-    resolveToolImage: async (itemId, index) => toolImageUrl(await (phoneHost ? phoneTimelineClient.fetchToolImage(deviceId, sessionId, itemId, index) : nativeRecord ? machineRpc(deviceId, local).sessionTimeline.sessionNativeToolImage({ conversationId: sessionId, itemId, index }).then(result => { if (!result.ok) throw new Error(result.error.message); if (!result.value.ok) throw new Error(result.value.message); return result.value.image }) : (localClient ?? { fetchToolImage }).fetchToolImage(deviceId, sessionId, itemId, index))),
+    resolveToolImage: async (itemId, index) => toolImageUrl(await (phoneHost ? phoneTimelineClient.fetchToolImage(deviceId, sessionId, itemId, index) : (localClient ?? { fetchToolImage }).fetchToolImage(deviceId, sessionId, itemId, index))),
     onViewImages: ({ urls, index, thumb }) => { openImageViewer(urls.map(url => ({ url, alt: '', thumb })), index) }, ...outputHandlers, conversationAgentName: () => agentName, onStop,
     onStopBackgroundTask: ({ stopId }) => {
       setBackgroundError(null)
       void (localClient?.stopBackgroundTask ?? stopBackgroundTask)(deviceId, sessionId, stopId).catch(error => setBackgroundError(messageForUser(error)))
     },
-  }), [rejectedInputCommands, phoneRetryCommands, nativeRecord, phoneHost, userAttachments, openFile, outputHandlers, sessionId, agentUserId, quotes.commands, deviceId, local, localClient, agentName, onStop, onHeldShown])
+  }), [rejectedInputCommands, phoneRetryCommands, nativeRecord, phoneHost, userAttachments, openFile, outputHandlers, sessionId, agentUserId, quotes.commands, deviceId, local, localClient, agentName, onStop])
   const composer = <>
     <ConversationSettlements sessionId={sessionId} settlements={timeline.settlements} runtime={sessionRuntime} mobile machine={machineLabel} busyItemId={respondingItemId} respond={onRespond} />
     {footerNotice}
@@ -415,9 +411,9 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       toolbarExtra={mobile ? undefined : <ComposerAttachButton disabled={sending} mobile={false} glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} />} />
   </>
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
-    <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} sourceWindow={boundedWindowReady(timeline) ? timeline : undefined} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
+    <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
       onReachStart={quotes.loadOlder} composerContent={composer} shown={visibility.shown} onAtBottomChange={atBottom => { reading.onAtBottomChange(atBottom); if (atBottom) onAtBottom?.() }} onVisibleItems={reading.onVisibleItems} contentOverlay onReady={ready => { view.current = ready; setOverlay(ready.contentOverlay ?? null); reading.onReady(ready) }} className="relative min-h-0 flex-1" />
-    {overlay ? createPortal(hasPendingWindow(timeline) ? <SessionChatLoading label={t('agentWatch.timeline.loadingWindow')} /> : turns.length === 0 ? emptyNote : null, overlay) : null}</div>{outputs.panel}{options.confirmation}{draftPreview.panel}
+    {overlay ? createPortal(turns.length === 0 ? emptyNote : null, overlay) : null}</div>{outputs.panel}{options.confirmation}{draftPreview.panel}
   </MessageProvider></SessionUiTheme>
 }
 

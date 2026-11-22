@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, parseOccupation, type Occupation } from '@gugu/core/shared/firstRun'
 import { writeOccupation } from '../../lib/firstRun'
 import { ownSettings } from '../../lib/ownSettings'
-import { useReplica } from '../../lib/replica'
+import { useReplica, retryOf, refreshFailure } from '../../lib/replica'
 import { clearViewState, useViewState } from '../../lib/viewStateTable'
 import { Unknown } from '../ui/Unknown'
 import { RefreshFailed } from '../ui/RefreshFailed'
@@ -67,7 +67,6 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
   // 读不到 = 这一行如实说读不到、不给改,❌ 当成没填让人覆盖掉原值。
   // 身份是自己那一行设置里的一个键:和首次引导、文件存储等读同一份(lib/ownSettings)。
   const settingsRow = useReplica(ownSettings, user?.id && !teamAccount ? ['user'] : null)
-  useEffect(() => { if (settingsRow.state === 'error') log.error({ error: settingsRow.error }, 'read own settings failed') }, [settingsRow])
   const occupationReading = settingsRow.state === 'value' ? { ...settingsRow, value: parseOccupation(settingsRow.value) } : settingsRow
   // 改了但还没存的那一份;没有 = 没动过,显示存着的。
   const occupationEdit = edit.occupation ?? null
@@ -202,32 +201,15 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
             />
           )}
         />
-        <SettingsRow
-          stack
-          layout="field"
-          className="col-start-1"
-          title={<label htmlFor="settings-account-bio">{t('account.bio')}</label>}
-          control={(
-            <input
-              id="settings-account-bio"
-              className="gg-settings-input window-no-drag-region"
-              data-field="wide"
-              value={bio ?? ''}
-              onChange={e => { setBio(e.target.value); setSaved(false) }}
-              onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
-              placeholder={t('account.bioPlaceholder')}
-            />
-          )}
-        />
         {!teamAccount && <SettingsRow
           stack
           layout="field"
           title={<label htmlFor="settings-account-occupation">{t('account.occupation')}</label>}
-          description={occupation.kind === 'ready' ? <>{t('account.occupationNote')}{settingsRow.state === 'value' ? <RefreshFailed error={settingsRow.error} onRetry={() => { void ownSettings.refresh('user') }} /> : null}</> : undefined}
+          description={occupation.kind === 'ready' && refreshFailure(settingsRow) ? <RefreshFailed reading={settingsRow} /> : undefined}
           control={occupation.kind !== 'ready' ? (
             occupation.kind === 'unknown' ? <Unknown className="h-8 w-full max-w-xs" /> : (
               <span className="gg-settings-row-value flex items-center gap-2" role="alert">{occupation.message}
-                <Button variant="secondary" size="sm" onClick={() => { void ownSettings.refresh('user') }}>{t('staleRead.retry', { ns: 'common' })}</Button></span>
+                <Button variant="secondary" size="sm" onClick={retryOf(settingsRow)}>{t('staleRead.retry', { ns: 'common' })}</Button></span>
             )
           ) : (
             <span className="flex w-full flex-col gap-2">
@@ -265,16 +247,32 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
           )}
         />
         }
+        <SettingsRow
+          stack
+          layout="field"
+          data-settings-span="full"
+          title={<label htmlFor="settings-account-bio">{t('account.bio')}</label>}
+          control={(
+            <input
+              id="settings-account-bio"
+              className="gg-settings-input window-no-drag-region"
+              data-field="wide"
+              value={bio ?? ''}
+              onChange={e => { setBio(e.target.value); setSaved(false) }}
+              onKeyDown={e => { if (e.key === 'Enter') void handleSave() }}
+              placeholder={t('account.bioPlaceholder')}
+            />
+          )}
+        />
+        {/* 保存:表单的最后一行,靠右;状态(失败 / 已保存)在按钮左边。 */}
+        <div className="gg-settings-actions">
+          {saveError && <span role="alert" className="gg-settings-actions-note" data-tone="danger">{saveError}</span>}
+          {saved && !dirty && <span className="gg-settings-actions-note">{t('account.saved')}</span>}
+          <Button variant="primary" size="md" onClick={() => { void handleSave() }} disabled={saving || !dirty}>
+            {saving ? t('account.saving') : t('account.save')}
+          </Button>
+        </div>
       </SettingsGroup>
-
-      {/* 保存:靠右一行,状态(失败 / 已保存)在按钮左边。 */}
-      <div className="gg-settings-actions">
-        {saveError && <span role="alert" className="gg-settings-actions-note" data-tone="danger">{saveError}</span>}
-        {saved && !dirty && <span className="gg-settings-actions-note">{t('account.saved')}</span>}
-        <Button variant="primary" size="md" onClick={() => { void handleSave() }} disabled={saving || !dirty}>
-          {saving ? t('account.saving') : t('account.save')}
-        </Button>
-      </div>
 
       {teamAccount ? <TeamAccountMethods /> : <>
         {user && <AccountLoginMethods key={user.id} userId={user.id} onEmailChanged={email => updateUser({ ...user, email })} />}
@@ -283,7 +281,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
       </>}
 
       {mobile && !teamAccount && officialServicesEnabled() && (
-        <SettingsGroup presentation="summary"><GuguSubscriptionRow /></SettingsGroup>
+        <GuguSubscriptionRow />
       )}
 
       {/* Account-wide action stays below the editor and its save feedback. */}

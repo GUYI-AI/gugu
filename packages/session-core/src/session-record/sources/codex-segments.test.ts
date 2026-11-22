@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { RecordEntry, SessionRecordLocator, SessionRecordResume } from '../contract';
-import { readRecordFrom } from '../fill-read';
 import { createCodexJsonlSource, resolveRolloutFile } from './codex-jsonl';
 
 const THREAD = '019ed98a-a0ce-7f63-a9aa-04e0760a80c2';
@@ -64,6 +63,19 @@ describe('Codex history_base segments', () => {
     expect(said(read.entries)).toEqual(['question keep-原始', 'keep-原始', 'question keep-first', 'keep-first', 'question discard-first', 'discard-first']);
   });
 
+  it("a fork's own rollout, plainly named, shows its parent up to the fork point, then its own turns", async () => {
+    const { root } = await stage(1);
+    const parent = '019ed98d-0000-7000-8000-000000000003', fork = '019ed98e-0000-7000-8000-000000000004';
+    const folder = join(root, '2026', '06', '21');
+    await mkdir(folder, { recursive: true });
+    const kept = [line('session_meta', { id: parent }), ...turn('before-fork')];
+    await writeFile(join(folder, `rollout-2026-06-21T07-03-21-${parent}.jsonl`), encoded([...kept, ...turn('parent-later')]));
+    await writeFile(join(folder, `rollout-2026-06-21T08-03-21-${fork}.jsonl`), encoded([line('session_meta', { id: fork, forked_from_id: parent,
+      history_base: { thread_id: parent, end_ordinal_exclusive: kept.length, end_byte_offset: Buffer.byteLength(encoded(kept)) } }), ...turn('forked')]));
+    const { entries } = await start({ harness: 'codex', providerSessionId: fork, roots: [root] });
+    expect(said(entries)).toEqual(['question before-fork', 'before-fork', 'question forked', 'forked']);
+  });
+
   it('reads two successive reverts by per-file byte cutoffs, never treating the logical ordinal as a local line number', async () => {
     const { locator, second } = await stage();
     expect(await resolveRolloutFile(locator, false)).toBe(second);
@@ -91,25 +103,6 @@ describe('Codex history_base segments', () => {
     expect(resumed.entries.find(entry => entry.event?.kind === 'message' && entry.event.role === 'assistant')?.key).toBe(`codex:${THREAD}:4:2`);
   });
 
-  it('fills ancestors from the beginning and can seek a turn in the current segment without replaying ancestors', async () => {
-    const { locator } = await stage();
-    const read = async (position = 0, state?: unknown, turn = 0) => {
-      const turns: import('../../acp/models/turns/turn').TranscriptTurn[] = [];
-      const starts: Array<import('../contract').TurnStart | null> = [];
-      const result = await readRecordFrom({ locator, sessionId: 'segments', fill: true, position, at: { state, turn },
-        onSettled: (batch, _from, at) => { turns.push(...batch); starts.push(...at); } });
-      return { ...result, turns: [...turns, ...result.tail], starts: [...starts, ...result.tailStarts] };
-    };
-    const whole = await read();
-    expect(whole.turns).toHaveLength(3);
-    expect(whole.starts.slice(0, 2)).toEqual([null, null]);
-    const current = whole.starts[2]!;
-    expect(current).not.toBeNull();
-    const tail = await read(current.position, current.state, 2);
-    expect(tail.from).toBe(current.position);
-    expect(tail.turns).toEqual(whole.turns.slice(2));
-  });
-
   it('invalidates a saved tail when another segment becomes current', async () => {
     const staged = await stage(1);
     const original = await start(staged.locator);
@@ -120,6 +113,20 @@ describe('Codex history_base segments', () => {
     const reopened = await start(staged.locator, resume);
     expect(reopened.resets).toEqual(['source_replaced']);
     expect(said(reopened.entries)).toEqual(['question keep-原始', 'keep-原始', 'question keep-first', 'keep-first', 'question keep-second', 'keep-second']);
+  });
+
+  it('a revert while the record is tailed: catching up reads the new segment instead of the old file', async () => {
+    const staged = await stage(1);
+    const tailed = await start(staged.locator);
+    expect(said(tailed.entries)).toContain('discard-first');
+    await writeFile(join(staged.root, `rollout-2026-06-20T07-03-21-${THREAD}_${SECOND}.jsonl`), encoded(staged.secondLines));
+    await tailed.source.catchUp!();
+    expect(tailed.resets).toEqual(['source_replaced']);
+    expect(said(tailed.entries)).toEqual(['question keep-原始', 'keep-原始', 'question keep-first', 'keep-first', 'question keep-second', 'keep-second']);
+    // The new segment is tailed from then on.
+    await appendFile(join(staged.root, `rollout-2026-06-20T07-03-21-${THREAD}_${SECOND}.jsonl`), encoded(turn('later')));
+    await tailed.source.catchUp!();
+    expect(said(tailed.entries).slice(-2)).toEqual(['question later', 'later']);
   });
 
   it('uses a segment without history_base as a complete record', async () => {

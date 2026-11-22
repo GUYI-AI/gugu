@@ -11,14 +11,16 @@ vi.mock('../../../../apps/desktop/src/components/toastContext', () => ({ useToas
 vi.mock('../../../../apps/desktop/src/components/chat/useGroupChatSettings', () => ({ useGroupChatSettings: scope.settings }))
 const archive = vi.hoisted(() => ({ confirm: vi.fn(async (_agentUserId: string, _name: string) => false), remove: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/archiveOwnedAgent', () => ({ confirmOwnedAgentArchive: archive.confirm }))
-vi.mock('../../../../apps/desktop/src/store/contactsContext', () => ({ useContactsStore: () => ({ removeOwnedAgent: archive.remove }) }))
+vi.mock('../../../../apps/desktop/src/store/contactsContext', () => ({ useContactsStore: () => ({ removeOwnedAgent: archive.remove, updateAgentProfile: rename.agent }) }))
+const rename = vi.hoisted(() => ({ openModal: vi.fn(), agent: vi.fn(async () => {}) }))
+vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: rename.openModal }))
 const rows = () => [...document.querySelectorAll('[data-testid^="conversation-row-"]')].map(row => row.textContent)
 let harness: ReturnType<typeof createReactHarness>
 const onHide = vi.fn(async () => undefined)
 const removal = () => document.querySelector<HTMLElement>('[data-testid="conversation-row-hide-chat"]')
 const render = (kind: 'dm' | 'ai' | 'group' | 'topic' = 'dm') => harness.render(<><ChatRowContextMenu chat={chat({ id: 'chat', kind, name: '设计评审', alias: '设计评审', peer_alias: '设计评审', peer_user_id: 'agent' })} x={40} y={40} onClose={vi.fn()} onPin={vi.fn()} onSetNotificationLevel={vi.fn()} onHide={onHide} /><ConversationDeleteConfirmationHost /></>)
 beforeEach(() => {
-  harness = createReactHarness(); onHide.mockClear(); scope.clear.mockClear(); scope.settings.mockClear(); archive.confirm.mockClear()
+  harness = createReactHarness(); onHide.mockClear(); scope.clear.mockClear(); scope.settings.mockClear(); archive.confirm.mockClear(); rename.openModal.mockClear(); rename.agent.mockClear()
   scope.identitiesById = { agent: displayIdentity('agent', { type: 'agent', owner_user_id: 'owner', session_archived_at: null, removed_at: null }) }
 })
 afterEach(() => { harness.cleanup() })
@@ -47,7 +49,7 @@ it('offers a distinct confirmed history deletion while hiding remains immediate'
   expect(scope.clear).not.toHaveBeenCalled()
   const dialog = document.querySelector('[role=dialog]')!
   expect(dialog.textContent).toContain('清空「设计评审」的聊天记录？')
-  expect(dialog.textContent).toContain('只清你这边，其他成员不受影响。')
+  expect(dialog.textContent).toContain('仅清空你的聊天记录，其他成员不受影响。')
   expect(document.querySelector('[role=dialog] [role=checkbox]')).toBeNull()
   await clickElement(document.querySelector<HTMLElement>('[data-testid=conversation-delete-submit]')!)
   await vi.waitFor(() => expect(scope.clear).toHaveBeenCalledWith('chat'))
@@ -57,7 +59,7 @@ it('offers a distinct confirmed history deletion while hiding remains immediate'
 // owner 11-20: an Agent's DM has no clear history; my own active Agent's row archives it through the one agent archive.
 it('my agent row archives through the agent archive confirmation and offers no clear history', async () => {
   await render()
-  expect(rows()).toEqual(['置顶', '标为已读', '关闭通知', '不显示', '归档会话'])
+  expect(rows()).toEqual(['置顶', '标为已读', '关闭通知', '不显示', '编辑 Agent 名字', '归档会话'])
   await clickElement(document.querySelector<HTMLElement>('[data-testid="conversation-row-archive"]')!)
   await vi.waitFor(() => expect(archive.confirm).toHaveBeenCalledOnce())
   expect(archive.confirm.mock.calls[0].slice(0, 2)).toEqual(['agent', '设计评审'])
@@ -65,9 +67,20 @@ it('my agent row archives through the agent archive confirmation and offers no c
 })
 it.each([
   ['someone else\'s agent', { type: 'agent' as const, owner_user_id: 'another-owner' }],
+  ['my removed agent', { type: 'agent' as const, owner_user_id: 'owner', removed_at: '2026-11-20T00:00:00Z' }],
   ['my archived agent', { type: 'agent' as const, owner_user_id: 'owner', session_archived_at: '2026-11-20T00:00:00Z' }],
 ])('%s: no archive and no clear history', async (_name, identity) => {
   scope.identitiesById.agent = displayIdentity('agent', identity)
   await render()
-  expect(rows()).toEqual(['置顶', '标为已读', '关闭通知', '不显示'])
+  expect(rows()).toEqual(['置顶', '标为已读', '关闭通知', '不显示', ...(_name === 'my archived agent' ? ['编辑 Agent 名字'] : [])])
+})
+
+
+it('opens the rename dialog with the Agent identity name and saves through the contacts store', async () => {
+  scope.identitiesById.agent = displayIdentity('agent', { type: 'agent', owner_user_id: 'owner', display_name: '原名字' })
+  await render()
+  await clickElement(document.querySelector<HTMLElement>('[data-testid="conversation-row-rename-agent"]')!)
+  expect(rename.openModal).toHaveBeenCalledExactlyOnceWith('renameSessionModal', expect.objectContaining({ currentTitle: '原名字' }))
+  await rename.openModal.mock.calls[0][1].rename('新名字')
+  expect(rename.agent).toHaveBeenCalledExactlyOnceWith('agent', { name: '新名字' })
 })

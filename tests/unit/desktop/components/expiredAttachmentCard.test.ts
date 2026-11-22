@@ -13,10 +13,10 @@ import { holdSentFile } from '../../../../apps/desktop/src/lib/sentFileCopies'
 
 const f = vi.hoisted(() => ({ message: vi.fn(), metadata: vi.fn(), cached: vi.fn(), send: vi.fn(), forget: vi.fn(), signed: vi.fn(), view: vi.fn(), registerImage: vi.fn(), releaseImage: vi.fn() }))
 vi.mock('@/lib/chat', () => ({ chatService: { getMessageById: f.message } }))
-vi.mock('@/lib/attachmentBytes', () => ({ attachmentMetadata: f.metadata, cachedAttachmentCopy: f.cached,
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({ attachmentMetadata: f.metadata, localAttachmentCopy: f.cached,
   sourceKeyOf: () => 'file@1', attachmentBytes: f.signed, useAttachmentObjectUrl: f.view,
   registerAttachmentImage: f.registerImage,
-}))
+})))
 vi.mock('@/components/extensionBundle/ExtensionBundleCard', () => ({ ExtensionBundleCard: () => null }))
 vi.mock('@/components/markdown/Markdown', () => ({ Markdown: () => null }))
 vi.mock('react-i18next', async (importOriginal) => ({ ...await importOriginal<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key }) }))
@@ -113,6 +113,18 @@ describe('expired attachment re-upload', () => {
     expect(f.signed).not.toHaveBeenCalled()
     await harness.render(null)
     expect(f.releaseImage).toHaveBeenCalledOnce()
+  })
+  it.each([true, false])('shows an expired image\'s preview, says the original expired when opened, and keeps re-upload for its sender (mine: %s)', async isMine => {
+    const content = formatAttachmentMetadata({ kind: 'image', fileName: 'shot.png', mimeType: 'image/png', sizeBytes: 3, url: 'https://fixture.invalid/shot' })
+    const image = { ...parseAttachmentContent(content, { id: 'message' })!, source: { kind: 'item' as const, itemId: 'file', version: 1 } }
+    f.view.mockReturnValue({ status: 'expired', objectUrl: 'blob:preview' })
+    await renderWithAppProviders(harness, createElement(MediaAttachmentBubble, { meta: image, messageId: 'message', isMine }), { toast, chat: { sendAttachmentsToChat: f.send } })
+    const picture = harness.container.querySelector<HTMLImageElement>('img[src="blob:preview"]')!
+    expect(harness.container.textContent).not.toContain('attachmentView.fileExpired')
+    await act(async () => { picture.closest('button')!.click() })
+    expect(toast).toHaveBeenCalledExactlyOnceWith('attachmentView.originalExpired', 'info')
+    expect(f.registerImage).not.toHaveBeenCalled()
+    expect(harness.container.textContent.includes('attachmentView.reupload')).toBe(isMine)
   })
   it('rechecks the real sender and ACL, then reuses normal send with the original private audience and thread', async () => {
     await render(); await click()

@@ -3,6 +3,7 @@ import { err, ok } from '@gugu/session-shared';
 import { events } from '@main/lib/events';
 import { planEventChannel } from '@shared/events/appEvents';
 import { createRPCController } from '@shared/lib/ipc/rpc';
+import { log } from '@main/lib/logger';
 import { resolveWorkspace } from '../../projects/utils';
 import { workspaceFileIndexService } from '@main/core/search/workspace-file-index-service';
 import { fileErrorToMessage, isPermissionDenied } from './file-errors';
@@ -22,6 +23,7 @@ import {
 } from '../workspace-transfer';
 
 import { createAttachmentUploads } from '../attachment-uploads';
+import { changedOnItsMachine, machineStreams, workspaceFileRange } from '../machine-file-streams';
 import type { AttachmentUploadSpec, AttachmentUploadChunk } from '@gugu/session-core/session-record/contract';
 
 const attachmentUploads = createAttachmentUploads();
@@ -135,6 +137,8 @@ export const workspaceFileSystemController = createRPCController({
   createRemotePreview: async (input: {
     projectId: string;
     workspaceId: string;
+    /** The machine, and the workspace as it names it: the preview's later pieces stream over its device link. */
+    machine?: { deviceId: string; projectId: string; workspaceId: string };
     root: string;
     surface: 'pane' | 'browser';
     documentPath?: string;
@@ -172,6 +176,32 @@ export const workspaceFileSystemController = createRPCController({
     const resolved = await resolveWorkspaceFiles(projectId, workspaceId);
     if (!resolved.success) return resolved;
     return transfer(() => readWorkspaceChunk(resolved.data.env.path, request));
+  },
+
+  /**
+   * Ranges of a file on another machine, over that machine's device link (`@@@machine-file-stream`): this computer's
+   * own verb (machine-routing keeps it here), with the workspace named as that machine names it. Not linked =
+   * `{ linked: false }`: the window reads that machine's chunks through its channel (`readChunk`).
+   */
+  /** Whether a machine's files stream to this computer (`@@@machine-file-reader` asks once per reader). */
+  streamsFrom: async (deviceId: string) => {
+    try {
+      return ok(await machineStreams(deviceId));
+    } catch (error) {
+      log.warn('Streamed reads of another machine are unavailable', { deviceId, error: String(error) });
+      return err({ type: 'internal_error', message: (error as Error)?.message ?? String(error) });
+    }
+  },
+
+  readStreamed: async (deviceId: string, projectId: string, workspaceId: string, request: { path: string; offset: number; length: number; size: number; etag: string }) => {
+    try {
+      const range = await workspaceFileRange(deviceId, { projectId, workspaceId }, request);
+      return ok(range ? { linked: true as const, ...range } : { linked: false as const });
+    } catch (error) {
+      const type = changedOnItsMachine(error) ? 'content_changed' : error instanceof WorkspaceTransferError ? error.code : 'internal_error';
+      log.warn('Streamed read of a file on another machine failed', { deviceId, type, error: String(error) });
+      return err({ type, message: (error as Error)?.message ?? String(error) });
+    }
   },
 
   attachmentUploadBegin: async (projectId: string, workspaceId: string, request: AttachmentUploadSpec) => {

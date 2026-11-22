@@ -15,6 +15,29 @@ const LOGGED_OUT_PATTERN = /not (authenticated|logged in|signed in)|login requir
  */
 const USER_SUPPLIED_CREDENTIAL_ENV = ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
 
+/**
+ * macOS 上登录前先确保登录钥匙串是开着的(`security unlock-keychain -u`:没锁立即返回;锁着就由系统弹它自己的
+ * 密码框,等人输完)。
+ *
+ * 为什么不能交给 CLI 自己:它把凭据写进钥匙串的那条 `security` 只等 2 秒(2.1.293),钥匙串锁着时系统弹的
+ * 解锁框没人来得及填,写入超时,钥匙串里原本就有它的条目(登录过期后重登正是这样)时它也不退回文件,
+ * 直接报「Couldn't save your login. If your Mac's keychain is locked…」—— 授权码明明是对的。
+ * 解锁失败(人点了取消)照样往下跑登录:结局由 CLI 说,登录窗口认出那句原话换成解锁提示(`SignInLinkBody`)。
+ *
+ * 只改本机这一条;别的机器上登录(headless)没人看得到那台机器的解锁框,不包。
+ */
+export function buildClaudeLoginCommand(
+  ctx: { cli: string },
+  _methodId: string,
+  platform: NodeJS.Platform = process.platform
+): { command: string; args: string[] } | null {
+  if (platform !== 'darwin') return null;
+  return {
+    command: '/bin/sh',
+    args: ['-c', '/usr/bin/security unlock-keychain -u >/dev/null 2>&1; exec "$0" "$@"', ctx.cli, 'auth', 'login'],
+  };
+}
+
 type ExecErrorWithOutput = {
   code?: unknown;
   stdout?: unknown;

@@ -206,17 +206,17 @@ describe('file links use the same shell request', () => {
   })
   it('refuses an answer whose chat is not one of this person\'s', async () => {
     mocked.opener.mockResolvedValueOnce({ success: true, data: answer(a, 'not-in-chat-list') })
-    await act(async () => { await expect(request({ kind: 'file', itemId: a })).rejects.toThrow('links.unavailable') })
+    await act(async () => { await expect(request({ kind: 'file', itemId: a })).rejects.toThrow('links.fileOpenFailed') })
     expect(openFile).not.toHaveBeenCalled()
   })
   it('returns the host\'s refusal as the link\'s failure', async () => {
     mocked.opener.mockResolvedValueOnce({ success: false, error: 'No such file in this chat' })
-    await act(async () => { await expect(request({ kind: 'file', itemId: a })).rejects.toThrow('links.unavailable') })
+    await act(async () => { await expect(request({ kind: 'file', itemId: a })).rejects.toThrow('links.fileOpenFailed') })
     expect(openFile).not.toHaveBeenCalled()
   })
   it('a platform with no host to answer: the link fails, it does not hang, and nothing is asked to open', async () => {
     mocked.host = false
-    await act(async () => { await expect(request({ kind: 'file', itemId: a })).rejects.toThrow('links.unavailable') })
+    await act(async () => { await expect(request({ kind: 'file', itemId: a })).rejects.toThrow('links.fileOpenFailed') })
     expect(openFile).not.toHaveBeenCalled()
     expect(mocked.opener).not.toHaveBeenCalled()
   })
@@ -265,6 +265,6 @@ describe('file links use the same shell request', () => {
     openFile.mockImplementation(() => new Promise<void>((_resolve, reject) => { refuse = reject }))
     const opened = request({ kind: 'file', itemId: a })
     await act(async () => { await until('the file destination received the request', () => openFile.mock.calls.length === 1) })
-    await act(async () => { refuse(new Error('native file host unavailable')); await expect(opened).rejects.toThrow('links.unavailable') })
+    await act(async () => { refuse(new Error('native file host unavailable')); await expect(opened).rejects.toThrow('links.fileOpenFailed') })
   })
 })

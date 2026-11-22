@@ -5,7 +5,6 @@ import { takeTaskReveal } from '@/hooks/useSourceMessageReveal';
 import { revealSourceMessage, SOURCE_MESSAGE_FLASH_MS } from '@/lib/sourceMessageReveal';
 import { UI_EVENTS } from '@/lib/uiEvents';
 import { parseMessageQuoteLink } from '@gugu/core/shared/ui/messageQuote';
-import { storedOutlineSeq } from '../view/session-timeline-outline';
 
 type SourceStore = {
   sessionId: string;
@@ -14,27 +13,12 @@ type SourceStore = {
   loadOlderHistory(): Promise<TranscriptTurn[]>;
   /** Changes whenever the store starts its history over (reattach, revert): pages read before that belong to nothing. */
   historyEpoch?: number;
-  /** A phone host applies fetched pages through its timeline props. */
+  /** The store draws the pages it reads itself (a timeline it follows): the list is not handed them. */
   historyManagedByHost?: boolean;
-  /**
-   * @@@history-window — a store that can show a stretch of stored history in place of its live transcript. While a
-   * window is open it is what the list shows (`shownChatState`) and pages (`historyWindow.loadOlder`).
-   */
-  shownChatState?: SourceStore['chatState'];
-  historyWindow?: { loadOlder(): Promise<TranscriptTurn[]> } | null;
-  /** The oldest stored turn the live transcript holds. */
-  oldestLoadedSeq?: number;
-  openHistoryWindow?(seq: number, anchor?: (turns: readonly TranscriptTurn[]) => string | null): Promise<boolean>;
-  closeHistoryWindow?(opts?: { keepPosition?: boolean }): void;
 };
 
 /** How many turns a reveal reading back to a far message lets pile up before it prepends them. */
 const REVEAL_BATCH_TURNS = 300;
-/**
- * A message more than this many turns above the loaded history is shown in a history window instead of being paged to:
- * everything between would have to be loaded and laid out first, which is seconds of work at a few thousand turns.
- */
-const FAR_REVEAL_TURNS = 300;
 
 /** The chat reveal controller, with the session's history loader and virtual list. */
 export function useSessionSourceMessage(store: SourceStore | null | undefined, view: MutableRefObject<ChatView | null>, onMissing: () => void) {
@@ -67,20 +51,6 @@ export function useSessionSourceMessage(store: SourceStore | null | undefined, v
     if (!current) return [];
     if (loading.current?.store === current) return loading.current.promise;
     const currentView = view.current;
-    const shownWindow = current.historyWindow;
-    if (shownWindow) {
-      // The list is showing a history window: its top edge pages the window, not the live transcript underneath.
-      const paging = shownWindow.loadOlder().then(async turns => {
-        if (loading.current?.promise === paging) loading.current = null;
-        if (!turns.length || !mounted.current || latest.current !== current || current.historyWindow !== shownWindow || view.current !== currentView) return [];
-        currentView?.loadOlder(turns);
-        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
-        return turns;
-      });
-      loading.current = { store: current, promise: paging };
-      try { return await paging; }
-      finally { if (loading.current?.promise === paging) loading.current = null; }
-    }
     const epoch = current.historyEpoch;
     // A store that started over while pages were being read has drawn its history anew, without them.
     const shown = () => mounted.current && latest.current === current && view.current === currentView && current.historyEpoch === epoch;
@@ -96,7 +66,7 @@ export function useSessionSourceMessage(store: SourceStore | null | undefined, v
     const over = () => { if (loading.current?.promise === request) loading.current = null; };
     const request: Promise<TranscriptTurn[]> = (async () => {
       let held = await current.loadOlderHistory();
-      if (until && !current.historyManagedByHost) {
+      if (until) {
         let found = until(held);
         while (!found && held.length && current.canLoadOlderHistory && shown()) {
           const older = await current.loadOlderHistory();
@@ -133,10 +103,7 @@ export function useSessionSourceMessage(store: SourceStore | null | undefined, v
       const state = chat.transcript.state;
       return resolveConversationMessageReference([...state.committedTurns, ...(state.activeTurnSnapshot ? [state.activeTurnSnapshot] : [])], reference, current.sessionId);
     };
-    // What the list shows: a history window while one is open, the live transcript otherwise.
-    const target = () => within(current.shownChatState ?? current.chatState);
-    // One frame for the panel to hand the list its other state, one for the list to lay it out.
-    const shownAgain = async () => { for (let frames = 0; frames < 2; frames += 1) await new Promise<void>(resolve => requestAnimationFrame(() => resolve())); };
+    const target = () => within(current.chatState);
     const showLoaded = () => {
       const id = target();
       if (!id || !valid()) return false;
@@ -147,21 +114,6 @@ export function useSessionSourceMessage(store: SourceStore | null | undefined, v
       showLoaded,
       load: async () => {
         const holds = (turns: readonly TranscriptTurn[]) => resolveConversationMessageReference(turns, reference, current.sessionId) !== null;
-        // Far above the loaded history: show the stretch around it, not everything on the way there.
-        const seq = storedOutlineSeq(current.sessionId, source?.kind === 'session' ? source.itemId : reference);
-        const oldest = current.oldestLoadedSeq;
-        if (current.openHistoryWindow && seq !== undefined && oldest !== undefined && oldest - seq > FAR_REVEAL_TURNS
-          && await current.openHistoryWindow(seq, turns => resolveConversationMessageReference(turns, reference, current.sessionId))) {
-          if (!valid()) return;
-          await shownAgain();
-          if (showLoaded()) return;
-        }
-        // In the live transcript, or reached by paging it: a window that is open gives way first.
-        if (current.historyWindow && valid()) {
-          current.closeHistoryWindow?.({ keepPosition: within(current.chatState) !== null });
-          await shownAgain();
-          if (showLoaded()) return;
-        }
         while (valid() && current.canLoadOlderHistory) {
           const turns = await loadOlder(holds);
           if (showLoaded()) return;

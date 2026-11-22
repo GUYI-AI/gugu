@@ -16,12 +16,12 @@ export default {
     },
     "offlineWarning": "Currently offline and may not respond promptly",
     "archivedWarning": "Recipient is archived.",
-    "wakeRefused": "{{name}} can't come online right now: ",
+    "wakeRefused": "{{name}} cannot come online: ",
     "dm": {
       "resolving": "Opening the conversation…",
       "noSession": "This agent has no session yet.",
-      "machineOffline": "Its computer is offline, so the conversation can't be opened.",
-      "failed": "The conversation couldn't be opened.",
+      "machineOffline": "The device is offline. The conversation cannot be opened.",
+      "failed": "Could not open the conversation.",
       "retry": "Retry"
     },
     "taskpage": {
@@ -29,7 +29,7 @@ export default {
         "allow": "Allow",
         "queuePosition": "({{current}} of {{total}})",
         "alreadyAnswered": "Already answered elsewhere.",
-        "noLongerWaiting": "No longer waiting: this ask is over, nothing was installed.",
+        "noLongerWaiting": "This request has ended. Nothing was installed.",
         "failed": "The approval did not go through. Open it in Tasks to answer."
       },
       "resolve": "Resolve issue",
@@ -66,7 +66,7 @@ export default {
         "generic": "Reply not completed",
         "authentication": "Model authorization refused",
         "network": "Cannot reach the model service",
-        "timeout": "No response in time",
+        "timeout": "Response timed out",
         "rateLimited": "Too many requests",
         "nextMessage": "The next message will retry automatically",
         "recovered_one": "{{name}} has recovered after {{count}} earlier failed reply.",
@@ -93,8 +93,8 @@ export default {
       "deliveryRejected": "This message did not reach the assistant and will not be resent automatically.",
       "notAdmitted": "Messages retained. Your assistant will reply when ready.",
       "outcomeUnknown": "Failed to send this message.",
-      "undelivered": "Not delivered yet: no running Gugu instance holds this Agent. It will read the message once that instance is open.",
-      "appUnavailable": "Not delivered: this came from an App that cannot run where this Agent lives (not installed, turned off, needs an update, or not possible on a phone).",
+      "undelivered": "Not delivered yet: no running Gugu instance holds this Agent. The message will be read once that instance is open.",
+      "appUnavailable": "Not delivered: this message came from an App that cannot run on this Agent's runtime device (not installed, turned off, needs an update, or not supported on phones).",
       "retry": "Retry",
       "retrying": "Retrying…",
       "timeout": "This Agent did not respond in time"
@@ -129,23 +129,23 @@ export default {
     "backToList": "Back to chats",
     "conversationProfile": "View chat details",
     "downloadFailed": "Could not download the file",
-    "filePreview": { "readAgain": "Read again", "close": "Close file preview", "download": "Download", "openExternal": "Open externally", "loading": "Reading file…", "rendering": "Rendering preview…", "renderFailed": "Could not render this file", "sheetTruncated": "This spreadsheet is too large, so only the first part is shown. Open it in an Office app to see everything.", "openInOffice": "Open in Office app", "previewLimits": "This document is too large or complex to preview safely.", "unsupported": "This file type cannot be previewed here. Download or open it externally.", "readFailed": "Could not read the file ({{status}})", "pdfControls": "PDF controls", "previousPage": "Previous page", "nextPage": "Next page", "zoomOut": "Zoom out", "zoomIn": "Zoom in", "zoom": "Zoom", "zoomReset": "Reset to 100%", "pageNumber": "Page number", "outline": "Outline", "fitWidth": "Fit width", "fitPage": "Fit page", "find": "Find", "findPrevious": "Previous match", "findNext": "Next match", "closeFind": "Close find" },
+    "filePreview": { "readAgain": "Read again", "close": "Close file preview", "download": "Download", "openExternal": "Open externally", "loading": "Reading file…", "stalled": "The connection is stuck; reading resumes where it stopped once it recovers…", "rendering": "Rendering preview…", "renderFailed": "Could not render this file", "sheetTruncated": "This spreadsheet is too large, so only the first part is shown. Open it in an Office app to see everything.", "openInOffice": "Open in Office app", "previewLimits": "This document is too large or complex to preview safely.", "unsupported": "This file type cannot be previewed here. Download or open it externally.", "readFailed": "Could not read the file ({{status}})", "pdfControls": "PDF controls", "previousPage": "Previous page", "nextPage": "Next page", "zoomOut": "Zoom out", "zoomIn": "Zoom in", "zoom": "Zoom", "zoomReset": "Reset to 100%", "pageNumber": "Page number", "outline": "Outline", "fitWidth": "Fit width", "fitPage": "Fit page", "find": "Find", "findPrevious": "Previous match", "findNext": "Next match", "closeFind": "Close find" },
     "empty": {
       "chats": "Select a chat to start chatting",
       "contacts": "Select a contact to view details"
     },
     "engineMissing": "Engine unknown",
     "engineMissingTitle": "This Agent's engine is not configured",
-    "firstConversationDescription": "Send a message to start your first conversation.",
-    "firstConversationTitle": "Say hello to {{name}}",
+    "firstConversationDescription": "Send a message to start the conversation.",
+    "firstConversationTitle": "Start a conversation with {{name}}",
     "importedHistoryLoadFailed": "Could not load imported history",
-    "loadFailedBody": "It couldn't be loaded this time — the chat isn't empty. Try again.",
+    "loadFailedBody": "Could not load the chat history. This does not mean the chat is empty. Try again.",
     "loadFailedCopy": "Copy",
     "loadFailedDetails": "Details",
     "loadFailedHideDetails": "Hide details",
     "loadFailedRetry": "Retry",
-    "loadFailedStale": "Couldn't load the latest messages; showing what was loaded earlier.",
-    "loadFailedTitle": "Couldn't load this chat",
+    "loadFailedStale": "Could not load the latest messages. Showing messages loaded earlier.",
+    "loadFailedTitle": "Could not load this chat",
     "management": {
       "actionFailed": "{{action}} failed: {{reason}}",
       "clear": "Clear",
@@ -178,7 +178,7 @@ export default {
       "none": "None"
     },
     "operationFailed": "The operation failed. Try again.",
-    "pinnedMessage": "📌 One pinned message",
+    "pinnedMessage": "1 pinned message",
     "selectedMessages": "{{count}} selected",
     "selectedMessages_one": "{{count}} selected",
     "selectedMessages_other": "{{count}} selected",
@@ -190,10 +190,10 @@ export default {
     },
     "appEnable": {
       "devices": "Install on",
-      "devicesHint": "On each computer it is new to, every agent can use it. You can change this in the App's settings.",
-      "addsChat": "Installed here already for some agents only: this adds the group “{{name}}” and changes nothing else.",
-      "decline": "Don't install",
-      "machine": "This computer",
+      "devicesHint": "On each new device, all agents can use it by default. You can change this in the App's settings.",
+      "addsChat": "Already installed on this device for some agents. This adds the group “{{name}}” and leaves other settings unchanged.",
+      "decline": "Do not install",
+      "machine": "This device",
       "all": "All agents",
       "allSub": "Including the agents in each project",
       "chosen": "{{count}} agents, groups, or projects selected",
@@ -203,23 +203,23 @@ export default {
       "members": "{{count}} people",
       "members_one": "{{count}} person",
       "members_other": "{{count}} people",
-      "remove": "Stop giving it to {{name}}",
+      "remove": "Remove access for {{name}}",
       "add": "Add an agent, group or project…",
-      "empty": "None chosen yet.",
-      "hint": "The agents chosen, and the agents in the groups chosen, can use its tools.",
+      "empty": "None selected.",
+      "hint": "Selected agents, and agents in selected groups, can use its tools.",
       "pickerTitle": "Add an agent, group or project",
       "search": "Search agents, groups, projects or topics",
       "agents": "Your agents",
-      "recent": "Groups talked in recently",
+      "recent": "Recent groups",
       "topicHint": "Topic “{{name}}” is in this group",
       "picked": "{{count}} chosen",
       "done": "Done",
-      "noPlaces": "You have no agents and are in no groups yet",
-      "noMatch": "Nothing found",
+      "noPlaces": "You have no agents and have not joined any groups",
+      "noMatch": "No results",
       "hereAll": "All agents here",
       "hereAllOn": "All agents on {{machine}}",
       "more": "{{names}} and {{count}} in all",
-      "none": "Not given to any agent yet — no agent has its tools"
+      "none": "Not enabled for any agent. No agent can use its tools."
     },
     "peek": {
       "openFull": "Open in full",
@@ -235,19 +235,19 @@ export default {
       "resize": "Resize the panel",
       "offer": "Open it with “{{name}}”",
       "appFiles": "Files of “{{name}}”",
-      "noAppFiles": "This chat has no files of “{{name}}” yet. It opens files in a chat: make one, or ask an agent to.",
-      "fileUnavailable": "This file can't be opened here: it may have been deleted, or be outside this chat.",
-      "noOpener": "No App on this device opens “{{name}}”, and the Gugu market has none that does.",
-      "marketUnreadable": "No App on this device opens “{{name}}”, and the Gugu market can't be reached right now. Try again later.",
-      "offerFromMarket": "It is an App from the Gugu market: install it here once.",
-      "switchedOffWhy": "This file belongs to “{{name}}”, which is installed but switched off. Turn it on and the file opens in it.",
+      "noAppFiles": "This chat has no “{{name}}” files. This App opens files in a chat. Create one, or ask an agent to create one.",
+      "fileUnavailable": "This file cannot be opened here. It may have been deleted, or it is not in this chat.",
+      "noOpener": "No App on this device or in the Gugu market can open “{{name}}”.",
+      "marketUnreadable": "No App on this device can open “{{name}}”, and the Gugu market cannot be reached. Try again later.",
+      "offerFromMarket": "This App is from the Gugu market. Install it on this device once.",
+      "switchedOffWhy": "This file belongs to “{{name}}”, which is installed but turned off. Turn it on to open the file.",
       "switchOn": "Turn on",
-      "switchFailed": "It was not turned on. Try again later.",
-      "arriving": "“{{name}}” is being set up. The file opens here as soon as it is in.",
-      "arrivingWaits": "“{{name}}” is not in yet: it could not be fetched from the download site this time. Try again — it also goes in by itself the next time gugu starts.",
+      "switchFailed": "Could not turn it on. Try again later.",
+      "arriving": "Installing “{{name}}”. The file opens here when installation finishes.",
+      "arrivingWaits": "“{{name}}” is not installed yet: it could not be downloaded. Try again. It will also install automatically the next time Gugu starts.",
       "arrivingRetry": "Try again",
-      "installFailed": "It did not install. Try again later.",
-      "offerWhy": "This file belongs to “{{name}}”, which is not installed here yet. Install it and the file opens in it.",
+      "installFailed": "Installation failed. Try again later.",
+      "offerWhy": "This file belongs to “{{name}}”, which is not installed on this device. Install it to open the file.",
       "updateHere": "This chat has version {{version}}",
       "update": "Update",
       "default": "Default",
@@ -255,7 +255,7 @@ export default {
       "hideRaw": "Hide the raw content",
       "install": "Install",
       "goToApps": "Go to Apps",
-      "unavailable": "This App cannot open here right now: it is not installed, or it is switched off.",
+      "unavailable": "This App cannot be opened: it is not installed or is turned off.",
       "title": "Open “{{name}}” with"
     },
     "source": {
@@ -320,7 +320,7 @@ export default {
     "markUnreadFailed": "Could not mark this chat unread. Try again.",
     "muted": "Notifications muted",
     "newMessage": "New message",
-    "newsNotCallingYou": "New messages, none calling you",
+    "newsNotCallingYou": "New messages, none mentioning you",
     "sendPreview": "[{{count}} attachments]",
     "noResults": "No chats found",
     "searchMessagesTitle": "Search messages",
@@ -335,7 +335,7 @@ export default {
       "announcementRequired": "Announcement content is required",
       "cloudAgentGroupUnsupported": "Cloud Agents cannot join group chats yet",
       "removeMemberFailed": "Could not remove this member. You may not have permission, or the member may have already left.",
-      "setListenModeFailed": "Not changed. The listen mode is still what it was."
+      "setListenModeFailed": "Could not change the listen mode. The setting is unchanged."
     },
     "groupAction": {
       "joined": "Joined the group chat",
@@ -379,12 +379,13 @@ export default {
     "send": "Send",
     "settings": "Settings"
   },
-  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}", "noSuchMessage": "No message in this chat starts with {{prefix}}", "messageUnavailable": "Message unavailable", "chatUnavailable": "Chat unavailable", "sessionUnavailable": "Session unavailable", "messages": "{{count}} messages", "severalMessages": "{{count}} messages in this chat start with {{prefix}} — pick one"},
+  "linkPill": {"unavailable": "Unavailable: removed, or you cannot see it", "message": "{{sender}}: {{words}}", "noSuchMessage": "No message in this chat starts with {{prefix}}", "messageUnavailable": "Message unavailable", "chatUnavailable": "Chat unavailable", "sessionUnavailable": "Session unavailable", "messages": "{{count}} messages", "severalMessages": "{{count}} messages in this chat start with {{prefix}}. Pick one"},
   "attachmentView": {
     "types": {"pdf": "PDF document", "word": "Word document", "excel": "Excel spreadsheet", "presentation": "Presentation", "text": "Text", "markdown": "Markdown document", "csv": "CSV spreadsheet", "html": "Web page", "json": "JSON document", "archive": "Archive", "image": "Image", "audio": "Audio", "video": "Video"},
     "fileGone": "File deleted",
     "fileVersion": "Version {{n}}",
     "fileExpired": "File expired",
+    "originalExpired": "The original has expired; only this preview is left",
     "fileMissing": "Expired",
     "reupload": "Upload again",
     "selectOriginal": "Choose the original file",
@@ -394,10 +395,11 @@ export default {
     "usageUnavailable": "File storage usage is unavailable right now.",
 
     "fileUnavailable": "File unavailable right now",
+    "fileIntegrity": "This file failed verification: its bytes don't match its checksum, so it wasn't opened",
     "fileNoAccess": "You no longer have access to this file",
     "fileUpdated": "This file was updated; open it again",
     "holderOffline": "{{machine}} is offline. This file opens when it is back online.",
-    "holderMachine": "The computer that keeps it",
+    "holderMachine": "The device that stores it",
     "besideOffline": "On {machine}, device offline",
     "besideUnavailable": "This file is not available right now.",
     "besideOutside": "Only files in this document's folder can be shown.",
@@ -406,22 +408,22 @@ export default {
     "senderUploadFailed": "The sender's upload did not complete",
     "uploading": "Uploading",
     "notUploaded": "Not uploaded yet",
-    "uploadFailed": "Upload failed, tap to retry",
+    "uploadFailed": "Upload failed, tap to retry", "uploadOriginalChanged": "Not sent: the file changed or was removed before its upload finished. Send it again.",
     "newerInFolder": "Newer version in the folder",
     "retry": "Retry"
   },
   "dispatchPick": {
     "myAgents": "My agents",
-    "title": "Hand to",
+    "title": "Assign to",
     "search": "Search members, tasks or chats",
     "chatAgents": "Agents in {{chat}}",
     "chatPeople": "People in {{chat}}",
     "new": "New",
     "newAgent": "A new agent",
-    "empty": "No one to hand it to",
+    "empty": "No one available",
     "send": "Send",
     "text": "What will be sent",
-    "textPlaceholder": "Say what to do",
+    "textPlaceholder": "Describe the task",
     "visible": "Visible to everyone in the chat (by default only they see it)"
   },
   "composePick": {
@@ -430,23 +432,29 @@ export default {
     "action": "Add to composer"
   },
   "composer": {
+    "sessionInput": {
+      "attachmentsKept": "The attachment draft is kept. You can send it when the connection is restored.",
+      "composerNotReady": "The task input is not ready yet. The draft is kept.",
+      "accountNotReady": "Task input for the current account is not ready yet.",
+      "notConfirmed": "The task has not confirmed receipt of this message. Gugu will retry automatically."
+    },
     "phoneTask": {
       "attachFolder": "Attach folder",
       "attachFailed": "Could not attach the folder. Try again.",
       "action": "New task",
       "chip": "New task with {{agent}}",
       "pickAgent": "Choose agent",
-      "placeholder": "What should {{agent}} do?",
+      "placeholder": "Describe the task for {{agent}}",
       "pickFolder": "Tap a folder to start",
       "where": "In {{folder}} on {{machine}}",
       "offline": "{{machine}} is offline. Pick another folder.",
       "optionsFailed": "Could not read the agents on {{machine}}. Check it is online, then pick the folder again.",
-      "noAgent": "No usable agent on {{machine}}",
+      "noAgent": "No available agents on {{machine}}",
       "loading": "Reading the agents on {{machine}}",
       "cancel": "Cancel task",
       "failed": {
         "host_outdated": "Gugu on {{machine}} is too old. Update it, then send the task again.",
-        "start_failed": "The task did not start. Open its task card to see why."
+        "start_failed": "The task failed to start. See the task card for details."
       }
     },
     "notInGroup": "Not in this group",
@@ -480,8 +488,8 @@ export default {
     "mentionMembers": "Mention a member",
     "mentionNoMatch": "No matching members",
     "placeholder": "Write a message…",
-    "mobilePlaceholder": "Write anything…",
-    "projectGroupPlaceholder": "Message {{name}}… @ an agent to call it",
+    "mobilePlaceholder": "Write a message…",
+    "projectGroupPlaceholder": "Message {{name}}… @ to mention an agent",
     "removeAttachment": "Remove {{fileName}}",
     "sendFailed": "Message was not sent: {{guidance}}",
     "failedFileLabel": "{{kind}} {{name}}",
@@ -515,8 +523,8 @@ export default {
     "sendTo": "Send to:",
     "several": "Select several",
     "fileFailed": "{{name}} could not be forwarded with the task",
-    "fileGone": "{{name}} is gone and wasn't forwarded.",
-    "fileTooLarge": "{{name}} is too large. At most 512 MB is forwarded at once.",
+    "fileGone": "{{name}} is no longer available and was not forwarded.",
+    "fileTooLarge": "{{name}} is too large. You can forward up to 512 MB at a time.",
     "batchPreview": "Forward {{count}} messages",
     "batchPreview_one": "Forward {{count}} message",
     "batchPreview_other": "Forward {{count}} messages",
@@ -539,7 +547,7 @@ export default {
     "selected": "{{count}} selected",
     "selected_one": "{{count}} selected",
     "selected_other": "{{count}} selected",
-    "shareFailed": "Couldn't share. Try again later.",
+    "shareFailed": "Could not share. Try again later.",
     "shareToApps": "Share to other apps",
     "title": "Forward"
   },
@@ -547,9 +555,9 @@ export default {
     "projectGroupNoInvite": "A project group holds only you and your agents. To work with others, start a group chat in Chats.",
     "addMember": "Add member",
     "agentFlood": {
-      "ledgerLoadFailed": "Could not read the ledger for this automatic change, so undo is unavailable. Reopen this line in a moment and try again.",
+      "ledgerLoadFailed": "Could not load the record of this automatic change, so undo is unavailable. Reopen this chat later and try again.",
       "undoAll": "Undo all",
-      "undoFailed": "The undo did not go through; listen modes are unchanged. Tap Undo all again.",
+      "undoFailed": "Could not undo. Listen modes are unchanged. Try Undo all again.",
       "undoing": "Undoing…",
       "undone": "Undone"
     },
@@ -577,7 +585,7 @@ export default {
       "topicOpened": "{{actor}} opened a topic: "
     },
     "memberList": {
-      "agentLeave": "Take it out of this group",
+      "agentLeave": "Remove the Agent from this group",
       "clearSearch": "Clear search",
       "add": "Add",
       "addMembers": "Add members",
@@ -587,19 +595,17 @@ export default {
       "noMatches": "No members match \"{{query}}\"",
       "revokeAdmin": "Remove admin",
       "search": "Search members, owners or engines",
-      "setActive": "Switch to active",
+      "setActive": "Switch to proactive",
       "setPassive": "Switch to passive",
-      "loadFailed": "Could not load the member list. Close and reopen 👥 to try again.",
+      "loadFailed": "Could not load the member list. Close and reopen Members to try again.",
       "notParticipant": "No members of this topic are visible right now",
       "sectionAgents": "Agents",
       "sectionPeople": "People",
       "myAgents": "My agents",
       "otherAgents": "Others' agents",
       "listen": {
-        "all": "Hears all messages",
-        "allHint": "Also receives group messages that don't mention it. Its owner can click to switch to mentions only.",
-        "mentions": "Mentions only",
-        "mentionsHint": "Receives only messages that mention or reply to it. Its owner can click to switch to all messages."
+        "activeHint": "Proactive: also gets messages people send without addressing anyone.",
+        "passiveHint": "Passive: only @mentions, replies, @Everyone and whispers to it."
       },
       "title": "Group members",
       "titleTopic": "Topic members"
@@ -609,17 +615,17 @@ export default {
         "agentNotOwned": "You can only add your own Agents",
         "agentOwnerLeft": "This Agent's owner has left the group, so the request no longer applies",
         "alreadyDecided": "This request has already been handled",
-        "generic": "Couldn't join the group. Please try again later",
+        "generic": "Could not join the group. Try again later",
         "groupArchived": "This group has been disbanded",
         "memberLimit": "The group is full. Raise the member limit first",
-        "notMember": "You're no longer in this group",
-        "requesterLeft": "The person who asked has left the group, so the request no longer applies"
+        "notMember": "You are no longer in this group",
+        "requesterLeft": "The requester has left the group, so the request no longer applies"
       }
     },
     "nameLoading": "Loading…",
     "namePlaceholder": "Group name",
     "picker": {
-      "agentRequestPending": "Submitted for approval — waiting for the owner or an admin",
+      "agentRequestPending": "Submitted for approval. Waiting for the owner or an admin",
       "agentRequestRejected": "Your last request was declined; you can submit again",
       "invitationSent": "Sent {{count}} invitations; members join after they or their Agent owner accept",
       "invitationSent_one": "Sent {{count}} invitation; the member joins after they or their Agent owner accepts",
@@ -637,7 +643,7 @@ export default {
       "partialFailure": "{{succeeded}} added, {{failed}} failed: {{reason}}",
       "title": "Add group members"
     },
-    "renameFailed": "Rename did not go through — check your connection or permissions, then press Enter again",
+    "renameFailed": "Could not rename. Check your connection or permissions, then press Enter again",
     "renameHintTopic": "Rename topic",
     "renamePlaceholderTopic": "Topic name",
     "settings": {
@@ -657,15 +663,15 @@ export default {
       "agentFloodTopicsFailed": "Could not load topics.",
       "agentFloodPermissionsFailed": "Could not load topic permissions. Read-only for now.",
       "agentFloodSaveFailed": "Could not save the threshold. Please try again.",
-      "agentFloodThreshold": "Turn agents passive past this many",
-      "agentFloodThresholdAria": "How many agents before they all turn passive",
-      "agentFloodThresholdDefaultHint": "Leave empty for the product default. Currently effective: {{count}}. Past the line only an @ mention wakes them.",
+      "agentFloodThreshold": "Switch all agents to passive above this number",
+      "agentFloodThresholdAria": "Number of agents above which all switch to passive",
+      "agentFloodThresholdDefaultHint": "Leave empty to use the default. Current value: {{count}}. Above the threshold, only an @ mention wakes agents.",
       "agentFloodThresholdError": "This must be a whole number of 1 or more",
-      "agentFloodThresholdInheritHint": "Leave empty to follow the source line. Currently effective: {{count}}. Past the line only an @ mention wakes them.",
+      "agentFloodThresholdInheritHint": "Leave empty to use the source chat's setting. Current value: {{count}}. Above the threshold, only an @ mention wakes agents.",
       "agentApproval": "Require approval for Agents",
       "agentApprovalAria": "Require approval when an Agent joins",
       "agentApprovalDescription": "Agents added by regular members join only after the owner or an admin accepts them in Contacts › New requests",
-      "allowMemberInvite": "Let members invite people",
+      "allowMemberInvite": "Allow members to invite",
       "allowMemberInviteAria": "Allow regular members to invite contacts",
       "allowMemberInviteDescription": "Regular members can invite their contacts",
       "avatarEditor": {
@@ -807,7 +813,7 @@ export default {
       "keepPermanent": "Keep",
       "keptTemporary": "Made temporary: the cloud copy is deleted when it expires",
       "keptPermanent": "Kept",
-      "keepFailed": "Not changed",
+      "keepFailed": "Could not change",
       "copy": "Copy",
       "copyLink": "Copy link",
       "openLink": "Open link",
@@ -861,12 +867,13 @@ export default {
       "undelivered": "instance not running, not delivered",
       "sending": "Sending",
       "stopped": "Stopped. Sends with your next message.",
+      "notSentWillResend": "Not sent. It goes out on its own once the connection is back",
       "unknownNotResent": "Failed to send",
       "failure": {
-        "hostOffline": "The computer running this task is offline. It will be sent automatically once that computer is back.",
-        "hostNotReady": "The computer running this task is not ready for messages yet. Retry in a moment.",
-        "phoneUnconfirmed": "Your phone has not confirmed this message yet. Retry in a moment.",
-        "noAcknowledgement": "The task did not respond. Retry in a moment."
+        "hostOffline": "The device running this task is offline. The message will be sent automatically when the device is back online.",
+        "hostNotReady": "The device running this task is not ready to receive messages. Try again later.",
+        "phoneUnconfirmed": "Your phone has not confirmed this message. Try again later.",
+        "noAcknowledgement": "The task did not respond. Try again later."
       }
     },
     "showQuoted": "Go to the quoted message",
@@ -881,8 +888,8 @@ export default {
       "handedTo": "Assigned to",
       "onMachine": "on {{machine}}",
       "onColleagueComputer": "Cannot view {{name}}’s task",
-      "awaitingApproval": "Waiting for the group owner to let it in",
-      "rejected": "Not let into the group; its result is in its session",
+      "awaitingApproval": "Waiting for group owner approval",
+      "rejected": "The group owner did not approve it. See its session for the result",
       "open": "Open this session",
       "line": "New task: {{text}}",
       "scheduleLine": "Scheduled: {{text}}",
@@ -910,7 +917,7 @@ export default {
   "outbox": {
     "selectFileAgain": "Upload interrupted. Select the file again.",
     "sourceNotSent": "The original message was not sent. Retry it before forwarding again.",
-    "followedNotSent": "The message this one follows was not sent. Resend that one first.",
+    "followedNotSent": "The preceding message was not sent. Resend it first.",
     "sourceDiscarded": "The original message was discarded before it was sent",
     "deliveryTimeout": "Delivery timed out after {{seconds}}s because the network stopped responding",
     "discarded": "Discarded",
@@ -921,23 +928,24 @@ export default {
   },
   "shareIntake": {
     "back": "Back",
-    "failures": "Couldn't read: {{names}}",
+    "failures": "Could not read: {{names}}",
     "listSeparator": ", ",
     "noChats": "No chats yet",
     "noResults": "No matching chats",
     "nothingToSend": "Nothing to send",
     "reason": {
-      "refused": "Gugu's own files can't be shared here",
+      "refused": "Gugu's own files cannot be shared here",
       "tooLarge": "over 100 MB",
-      "unreadable": "couldn't be read"
+      "unreadable": "could not be read"
     },
     "searchChats": "Search chats",
     "title": "Send to"
   },
   "topic": {
+    "untitled": "Topic",
     "leave": "Leave topic",
-    "leaveHint": "You can still read it, but won't get notifications from this topic",
-    "removeHint": "They can still read it, but won't get notifications from this topic",
+    "leaveHint": "You can still read it, but will not get notifications from this topic",
+    "removeHint": "They can still read it, but will not get notifications from this topic",
     "calledYou": "Someone @ you",
     "pins": {
       "pin": "Pin {{name}} to group",
@@ -959,21 +967,16 @@ export default {
       "participantCount_one": "{{count}} participant",
       "observer": "View only",
       "openedBy": "by {{name}}",
-      "quiet": "No one has spoken yet"
+      "quiet": "No messages yet"
     },
-    "breadcrumb": {
-      "sourceDeleted": "The source message was deleted, but this topic remains",
-      "sourcePreview": "From: {{preview}}"
-    },
-    "openFailed": "The topic did not open. That message may have just been deleted — try another one.",
+    "openFailed": "Could not open the topic. The message may have been deleted. Open the topic from another message.",
     "pane": {
       "attachments": "Attachments",
       "members": "Members",
       "collapseSplit": "Collapse split view",
       "collapseSplitHint": "Collapse the split view; the topic stays open",
-      "composerPlaceholder": "Write anything…",
-      "empty": "No one has spoken in this topic yet",
-      "resize": "Drag to resize the topic pane"
+      "composerPlaceholder": "Write a message…",
+      "empty": "No messages in this topic yet"
     }
   },
   "resources": {
@@ -994,6 +997,23 @@ export default {
     "helpSend": "Choose an agent",
     "helpAsk": "Add what you want to do",
     "helpConfirm": "Review before changes",
+  },
+  "projectRecovery": {
+    "unavailable": "Unavailable",
+    "folderMissing": "Folder not found on this computer",
+    "restore": "Restore",
+    "clean": "Clean up",
+    "cancel": "Cancel",
+    "cleanLabel": "Clean up unavailable projects",
+    "cleanTitle": "Clean up {{count}} unavailable projects?",
+    "cleanBody": "Their groups will be collapsed and can be restored later.",
+    "checkFailed": "Could not check the project status. Try again later.",
+    "incompleteHistory": "The recovery record is incomplete. Contact the maintainers to check it.",
+    "invalidDirectory": "Choose a usable folder.",
+    "inspectFailed": "Could not read this folder. Check its access permissions.",
+    "pathConflict": "This folder already belongs to another project. Choose a different folder.",
+    "stateChanged": "The project status has changed. Confirm again.",
+    "failed": "The operation did not complete. Check the folder access permissions and the project group permissions, then try again."
   },
   "filePill": {
     "picked": "Picked on version {{version}}"

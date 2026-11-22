@@ -3,11 +3,12 @@ import os from 'node:os';
 import lockfile from 'proper-lockfile';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bundledMisePath, launcherRelease, managedLauncher, miseEnvironment, miseToolSlug, readManagedLauncherRelease, runMiseOperation } from './mise-installer';
+import { bundledMisePath, launcherRelease, managedLauncher, miseEnvironment, miseToolSlug, readManagedLauncherRelease, runMiseOperation, warmBundledMise } from './mise-installer';
 import { managedMiseBinDir } from './managed-agent-home';
 import * as progressMeter from './install-progress-meter';
 import * as selectionModule from './install-source-race';
 import { PlatformBuildMissingError } from './mise-distribution';
+import { installerEnvironment } from '../../../../egress/installer';
 
 const mocks = vi.hoisted(() => ({ appRoot: '', run: vi.fn(), exec: vi.fn(), resolve: vi.fn(), info: vi.fn(), env: {} as NodeJS.ProcessEnv }));
 vi.mock('@main/lib/logger', () => ({ log: { info: mocks.info, warn: vi.fn() } }));
@@ -37,6 +38,7 @@ const npmTarget = {
   backend: { kind: 'npm' as const, node: '24.21.0' },
 };
 const tool = 'http:gugu-agent';
+const ARCHIVE = 'https://registry.npmjs.org/@vendor/agent-linux-x64/-/agent-linux-x64-1.2.3.tgz';
 const version = '1.2.3-official-content';
 const launcher = () => path.join(managedMiseBinDir(), process.platform === 'win32' ? 'agent.cmd' : 'agent');
 let abort: AbortController | undefined;
@@ -90,9 +92,11 @@ describe('common automatic installation execution', () => {
     const result = await runMiseOperation({ mise: { target, operation: 'install', source: automatic } }, preparation);
     expect(result).toMatchObject({ success: true, data: { registry: 'official' } });
     const childEnv = mocks.run.mock.calls.find((c) => c[1][0] === 'install')![2].env;
-    expect(childEnv).toMatchObject(mocks.env);
-    expect(selection.mock.calls[0][0].env).toBe(childEnv);
-    expect(selection.mock.calls[0][0].env.NO_PROXY).toBe(childEnv.NO_PROXY);
+    const sampledEnv = selection.mock.calls[0][0].env;
+    expect(sampledEnv).toMatchObject(mocks.env);
+    // The race samples through the same installer adaptation the child gets (loopback bypass merged).
+    expect(childEnv).toEqual(await installerEnvironment(ARCHIVE, sampledEnv));
+    expect(childEnv.HTTPS_PROXY).toBe(mocks.env.HTTPS_PROXY);
     expect(childEnv.MISE_DATA_DIR).toBe(path.join(preparation.root, 'data'));
     expect(await readFile(launcher(), 'utf8')).toBe('previous launcher');
     expect(JSON.stringify(mocks.info.mock.calls.filter((c) => c[0].includes('source selection')))).not.toMatch(/secret|7897|internal/);
@@ -132,9 +136,8 @@ beforeEach(async () => {
   mocks.env = {};
   mocks.info.mockClear();
   mocks.exec.mockReset().mockResolvedValue({ stdout: 'agent 1.2.3', stderr: '' });
-  mocks.resolve.mockReset().mockResolvedValue({ kind: 'platform-archive', tool, version: '1.2.3', installVersion: version, executable: 'bin/agent', config: '[tools]\n' });
+  mocks.resolve.mockReset().mockResolvedValue({ kind: 'platform-archive', tool, version: '1.2.3', installVersion: version, executable: 'bin/agent', config: '[tools]\n', sampleUrl: ARCHIVE });
   mocks.run.mockReset().mockImplementation(async (_command, args, options) => {
-    if (args[0] === '--version') return '2026.9.12 test';
     if (args[0] === 'ls') return JSON.stringify(entries);
     if (args[0] === 'install') {
       const install_path = path.join(options.env.MISE_DATA_DIR, 'installs/http-gugu-agent', version);
@@ -182,6 +185,23 @@ describe('application-owned mise lifecycle', () => {
     expect(await readFile(path.join(earlier, 'bin/agent'), 'utf8')).toBe('long-running old program');
     expect(entries.map(entry => entry.version)).toEqual(['0.9.0', version]);
   });
+  // On a clean Windows machine the first launch of the bundled mise.exe waits for Defender to scan it (13 s and 32 s
+  // measured), whichever command it is. The old pre-download `--version` + `ls` under a 15 s deadline failed 2 of 3.
+  it('runs mise once before the download, and no mise command has a deadline shorter than a first launch', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const commands: Array<{ args: string[]; deadline?: number }> = [];
+    const run = mocks.run.getMockImplementation()!;
+    mocks.run.mockImplementation(async (command, args, options) => {
+      commands.push({ args, deadline: args[0] === 'install' ? undefined : timeout.mock.lastCall?.[0] });
+      return run(command, args, options);
+    });
+    expect((await runMiseOperation({ mise: { target, operation: 'install' } })).success).toBe(true);
+    expect((await runMiseOperation({ mise: { target, operation: 'uninstall', selectedPath: launcher() } })).success).toBe(true);
+    expect(commands.slice(0, commands.findIndex(c => c.args[0] === 'install')).map(c => c.args)).toEqual([['ls', '--json', tool]]);
+    const deadlines = commands.filter(c => c.args[0] !== 'install').map(c => c.deadline);
+    expect(deadlines.length).toBeGreaterThan(2);
+    expect(deadlines.every(ms => ms !== undefined && ms >= 60_000)).toBe(true);
+  });
   // An install the desktop stopped half-way (the mise process group is killed with it, nothing after it runs): the
   // launcher is what makes an agent installed, and it is only published after mise finished and the program verified.
   it('a fresh install has no launcher while mise is still installing', async () => {
@@ -222,7 +242,6 @@ describe('application-owned mise lifecycle', () => {
 
   it('下载到一半断了:失败里带着停下那一刻的进度(哪一步、已下多少 / 共多少)—— 说得清卡在哪一步(#7199)', async () => {
     mocks.run.mockImplementation(async (_command, args, options) => {
-      if (args[0] === '--version') return '2026.9.12 test';
       if (args[0] === 'ls') return JSON.stringify(entries);
       if (args[0] === 'uninstall') return '';
       if (args[0] === 'install') {
@@ -334,7 +353,7 @@ describe('application-owned mise lifecycle', () => {
       const sampledEnv = selection.mock.calls[0][0].env;
       const childEnv = mocks.run.mock.calls.find((call) => call[1][0] === 'install')![2].env;
       expect(sampledEnv).toMatchObject(mocks.env);
-      expect(childEnv).toEqual({ ...sampledEnv, NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org' });
+      expect(childEnv).toEqual(await installerEnvironment('https://registry.npmjs.org', { ...sampledEnv, NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org' }));
     });
 
     it('node 与包一条命令一起装,下载源经 NPM_CONFIG_REGISTRY 递给 mise', async () => {
@@ -489,7 +508,7 @@ describe('application-owned mise lifecycle', () => {
       backend: { kind: 'acp-registry' as const, agentId: 'antigravity-acp' },
     };
     beforeEach(() => {
-      mocks.resolve.mockResolvedValue({ kind: 'acp-registry', tool, version: '1.1.1', installVersion: version, executable: 'bin/agent', config: '[tools]\n' });
+      mocks.resolve.mockResolvedValue({ kind: 'acp-registry', tool, version: '1.1.1', installVersion: version, executable: 'bin/agent', config: '[tools]\n', sampleUrl: ARCHIVE });
       const base = mocks.run.getMockImplementation()!;
       mocks.run.mockImplementation(async (command, args, options) => {
         const output = await base(command, args, options);
@@ -508,7 +527,7 @@ describe('application-owned mise lifecycle', () => {
     });
 
     it('cmd 指的文件不在就失败并回滚,❌ 不发布一个指向空处的启动器', async () => {
-      mocks.resolve.mockResolvedValue({ kind: 'acp-registry', tool, version: '1.1.1', installVersion: version, executable: 'bin/missing', config: '[tools]\n' });
+      mocks.resolve.mockResolvedValue({ kind: 'acp-registry', tool, version: '1.1.1', installVersion: version, executable: 'bin/missing', config: '[tools]\n', sampleUrl: ARCHIVE });
       const result = await runMiseOperation({ mise: { target: acpTarget, operation: 'install' } });
       expect(result.success).toBe(false);
       expect(await readFile(launcher(), 'utf8')).toBe('previous launcher');
@@ -543,5 +562,19 @@ describe('application-owned mise lifecycle', () => {
     expect(env.MISE_SYSTEM_CONFIG_DIR).toBe(path.join(home, 'system'));
     // The pinned engine never checks the network for a newer mise of its own.
     expect(env.MISE_DISABLE_UPDATE_WARNING).toBe('1');
+  });
+});
+
+describe('warmBundledMise', () => {
+  it('launches the bundled mise once with the pinned environment and never throws', async () => {
+    mocks.run.mockClear();
+    mocks.run.mockResolvedValueOnce('2026.9.12');
+    await warmBundledMise();
+    const [command, args, options] = mocks.run.mock.calls[0]!;
+    expect([command, args]).toEqual([bundledMisePath(), ['--version']]);
+    expect(options.env.MISE_DISABLE_UPDATE_WARNING).toBe('1');
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    mocks.run.mockRejectedValueOnce(new Error('spawn failed'));
+    await expect(warmBundledMise()).resolves.toBeUndefined();
   });
 });

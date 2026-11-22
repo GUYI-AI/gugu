@@ -1,5 +1,6 @@
 import type { AgentAppDetailLink } from '@gugu/core/shared/ui/guguLink';
 import type { NavigateFnTyped } from '@renderer/lib/layout/navigation-provider';
+import { currentAppsLocation } from './apps-location';
 
 type AgentDetailHost = Window & {
   __GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?: (agentId: string) => boolean;
@@ -13,7 +14,7 @@ export function openAgentAppDetail(navigate: NavigateFnTyped, agentId: string, d
     ...(deviceId ? { deviceId } : {}),
   };
   const fromEmbeddedComposer = (window as AgentDetailHost).__GUGU_OPEN_SESSIONPAGE_AGENT_INSTALL__?.(agentId);
-  navigate('apps', { agentDetail, ...(fromEmbeddedComposer ? { agentDetailFrom: 'embedded-composer' } : {}) });
+  navigate('apps', { location: { ...currentAppsLocation(), installed: undefined }, agentDetail, ...(fromEmbeddedComposer ? { agentDetailFrom: 'embedded-composer' } : {}) });
 }
 
 export function restoreAgentDetailComposer() {

@@ -130,7 +130,7 @@
  * ❌ 这里原来有 .gg-aw-row[aria-disabled] 与 .gg-aw-dot / [data-online]。2026-09-22 删(Refs #6104):
  * 全仓(含 e2e / tests)没有任何元素带这两个类 —— 行现在是 .gg-aw-item / .gg-aw-machine,
  * 「不可进」那一档由 :476 的 `.gg-aw-item[aria-disabled='true']` 出(而且两条的 opacity 还不一样:
- * 0.62 vs 0.55,读的人无从知道哪个是现状);状态点换成了 StatusGlyph 的 .gg-aw-glyph。
+ * 0.62 vs 0.55,读的人无从知道哪个是现状);状态点换成了头像角标(SessionAvatar)。
  */
 
 /*
@@ -303,34 +303,8 @@
   background: var(--muted-fg);
   opacity: 0.4;
 }
-/* #6448 agent 状态的颜色与会话页、聊天同一张表(owner 2026-09-25):只引 tokens.css 的 `--agent-tone-*`。
-   需要你 = 黄(从前手机上的「在等你」是红,与桌面各说各的,已改)· 出错 = 红 · 在跑 / 后台在跑 = 橙。 */
-.gg-aw .gg-aw-glyph[data-tone='needs_user'] .gg-aw-glyph-inner {
-  background: var(--agent-tone-needs-user);
-  opacity: 1;
-}
-.gg-aw .gg-aw-glyph[data-tone='error'] .gg-aw-glyph-inner {
-  background: var(--agent-tone-error);
-  opacity: 1;
-}
-/* 「做完了」不上色(表里:未读加粗、不另上色):它退回墨色,不占色相。 */
-.gg-aw .gg-aw-glyph[data-tone='done'] .gg-aw-glyph-inner {
-  background: var(--text-muted);
-  opacity: 1;
-}
-/* 在跑 = 缺口环在转;后台在跑 = 同一个环、静止(回合已经关了,还有东西在后台跑)。 */
-.gg-aw .gg-aw-glyph[data-tone='running'] .gg-aw-glyph-inner,
-.gg-aw .gg-aw-glyph[data-tone='parked'] .gg-aw-glyph-inner {
-  background: transparent;
-  opacity: 1;
-  border: 2px solid var(--agent-tone-running);
-  border-top-color: transparent;
-}
-.gg-aw .gg-aw-glyph[data-animate='true'] .gg-aw-glyph-inner {
-  animation: gg-aw-spin 1s linear infinite;
-}
 /* @@@live-accent (Refs #6109) —— 「连上了」是 design.md 里 live 那一格(「streaming, running, **connected**,
-   or currently selected」),用唯一的那个蓝。它是机器那根轴,❌ 不是 agent 状态:agent 在跑是上面的橙。
+   or currently selected」),用唯一的那个蓝。它是机器那根轴,❌ 不是 agent 状态(agent 状态画在头像角标上)。
    页头「正在开会话 / 正在读选项」的转圈也是 live。 */
 .gg-aw .gg-aw-glyph[data-live='online'] .gg-aw-glyph-inner {
   background: var(--live);
@@ -354,7 +328,6 @@
   color: var(--fg);
 }
 @media (prefers-reduced-motion: reduce) {
-  .gg-aw .gg-aw-glyph[data-animate='true'] .gg-aw-glyph-inner,
   .gg-aw .gg-aw-glyph[data-live='busy'] .gg-aw-glyph-inner { animation: none; }
 }
 @keyframes gg-aw-spin { to { transform: rotate(360deg); } }
@@ -482,7 +455,6 @@
   min-width: 0;
   max-width: 100%;
 }
-.gg-aw .gg-aw-head-state { flex: none; }
 
 /* ── 选项抽屉:下钻结构 ─────────────────────────────────────────────────────
    尺寸逐条照 orca(mobile/src/session/MobileNativeChatSessionOptionRows.tsx 的 styles):

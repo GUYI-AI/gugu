@@ -221,3 +221,31 @@ export function createWorkspaceUploads(options: { idleMs?: number; maxBytes?: nu
     },
   };
 }
+
+/** One piece of a stream: the reader sees bytes (and its bar moves) a piece at a time, and a message on the link waits one piece at most. */
+export const FILE_STREAM_PIECE_BYTES = 64 * 1024
+
+/**
+ * The bytes of one version of a file (`size`, `etag`) from `offset`, in stream pieces, to a reader over the device link: a file
+ * whose version is not that one, before, during or after, is refused ("changed"), never sent as a mix. One loop for every
+ * stream a machine serves (`file.stream`, `files.stream`).
+ */
+export async function streamFileRange(file: string, version: { size: number; etag: string }, offset: number,
+  context: { write(offset: number, bytes: Uint8Array): Promise<void>; signal: AbortSignal }, stillBound: () => Promise<boolean> = async () => true): Promise<void> {
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > version.size) throw new WorkspaceTransferError('invalid_payload', 'stream offset out of range');
+  const handle = await open(file, 'r')
+  try {
+    const changed = async () => { const info = await handle.stat({ bigint: true }); return Number(info.size) !== version.size || etagOf(info) !== version.etag }
+    if (await changed()) throw new Error('Local file changed during read')
+    for (let at = offset; at < version.size;) {
+      context.signal.throwIfAborted()
+      const bytes = Buffer.alloc(Math.min(FILE_STREAM_PIECE_BYTES, version.size - at))
+      const { bytesRead } = await handle.read(bytes, 0, bytes.length, at)
+      if (bytesRead === 0) throw new Error('Local file changed during read')
+      await context.write(at, bytes.subarray(0, bytesRead))
+      at += bytesRead
+    }
+    if (await changed() || !await stillBound()) throw new Error('Local file changed during read')
+  } finally { await handle.close().catch(() => undefined) }
+}
+

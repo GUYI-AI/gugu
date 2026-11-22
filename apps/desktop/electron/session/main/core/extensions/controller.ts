@@ -306,32 +306,13 @@ export const extensionsController = createRPCController({
     }
   },
 
-  /**
-   * 摩擦单 F51: the files of this group that a click opens with this App (their `claimedBy`), newest first — for its
-   * card's 「Open」: one file opens straight away, several are listed first in the group's panel.
-   */
-  groupFilesOpenedBy: async (args: { chatId: string; extensionId: string }) => {
+  /** An App picked in a chat, not as a page of its own (its card's 「Open」, 摩擦单 F51; API 14 `chatFile`): the file it names there, or its files there. */
+  appInChat: async (args: { chatId: string; extensionId: string }) => {
     try {
       const files = await import('@main/core/extensions/app-files');
-      const { filesOpenedBy } = await import('@shared/extensions/app-files-core');
-      const data = filesOpenedBy(await files.groupFiles(String(args?.chatId ?? '')), String(args?.extensionId ?? ''));
-      return { success: true as const, data };
+      return { success: true as const, data: await files.appInChat(String(args?.chatId ?? ''), String(args?.extensionId ?? '')) };
     } catch (error) {
-      log.warn('Failed to list the group files an App opens:', error);
-      return { success: false as const, error: error instanceof Error ? error.message : String(error) };
-    }
-  },
-
-  /**
-   * An App opened in a chat that names its file there (API 14 `chatFile`): that file, found or made, as a file opened with
-   * that App — so the panel opens it the way it opens any group file, and the two are one tab (owner 10-24).
-   */
-  appChatFile: async (args: { chatId: string; extensionId: string }) => {
-    try {
-      const files = await import('@main/core/extensions/app-files');
-      return { success: true as const, data: await files.appChatFile(String(args?.chatId ?? ''), String(args?.extensionId ?? '')) };
-    } catch (error) {
-      log.warn('Failed to find the file an App names in a chat:', error);
+      log.warn('Failed to open an App in a chat:', error);
       return { success: false as const, error: error instanceof Error ? error.message : String(error) };
     }
   },
@@ -921,6 +902,21 @@ export const extensionsController = createRPCController({
         void pushBindingWork(args.extensionId).catch((error: unknown) => log.warn('The work list could not be told to an App\'s pages:', error));
         void pushBindingSurfaces(args.extensionId).catch((error: unknown) => log.warn('App conversation surface could not be told to its pages:', error));
       }
+      return { success: true as const };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+
+  /** API 61 (app-credentials.ts): the saved credential an App uses per website, read and picked in its permissions. Never a value. */
+  appCredentials: async (args: { extensionId: string }) => {
+    try {
+      const { appCredentials } = await import('./app-credentials-instance');
+      return { success: true as const, data: await appCredentials.states(args.extensionId) };
+    } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
+  },
+  setAppCredential: async (args: { extensionId: string; site: string; credentialId: string | null }) => {
+    try {
+      const { appCredentials } = await import('./app-credentials-instance');
+      appCredentials.pick(args.extensionId, args.site, args.credentialId);
       return { success: true as const };
     } catch (error) { return { success: false as const, error: error instanceof Error ? error.message : String(error) }; }
   },

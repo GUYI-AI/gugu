@@ -26,7 +26,7 @@ export function usePhoneSessionSidebar({ sessionId, entry }: { sessionId: string
   const projectKey = (device: string, project: string) => `${device}\u0000${project}`
   const families = agentFamilies(directory.map(({ deviceId, session }) => ({ id: session.conversationId,
     projectId: projectKey(deviceId, session.projectId), parentSessionId: session.parentConversationId,
-    isPinned: false, time: Date.parse(session.lastInteractedAt ?? '') || 0, agentUserId: session.agent?.userId,
+    time: Date.parse(session.lastInteractedAt ?? '') || 0, agentUserId: session.agent?.userId,
     bornInChatId: session.bornInChatId })))
   const projects = accountProjectsStore.projects.filter(project => !project.archived)
   const projectIds = new Set(projects.flatMap(project => project.bindings.map(binding => projectKey(binding.deviceId, binding.localProjectId))))

@@ -8,7 +8,7 @@ const progress = vi.hoisted(() => ({ set: vi.fn(), fail: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/attachmentSendTiming', () => ({ attachmentSendTiming: () => timing }))
 vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => ({ warn: vi.fn() }) }))
 vi.mock('@gugu/core/cloud/declaredUploads', () => ({ createDeclaredUploads: create }))
-vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({ cachedAttachmentCopy: async (sha: string) => copies.get(sha) ?? null }))
+vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({ localAttachmentCopy: async (sha: string) => copies.get(sha) ?? null }))
 vi.mock('../../../../apps/desktop/src/lib/attachmentChanges', () => ({ noteAttachmentChanged: changed }))
 vi.mock('../../../../apps/desktop/src/lib/attachmentUploadProgress', () => ({ setAttachmentUploadProgress: progress.set, failAttachmentUploadProgress: progress.fail }))
 beforeEach(() => { vi.resetModules(); vi.clearAllMocks(); copies.clear() })
@@ -21,7 +21,8 @@ describe('one upload host per platform', () => {
     await adapter.resumeAttachmentUploads()
     expect(create).not.toHaveBeenCalled()
     expect(() => adapter.beginAttachmentUpload({ messageId: 'm', chatId: 'chat', as: 'owner', pendingKey: 'key', sha256: 'a'.repeat(64), name: 'file', contentType: 'text/plain', size: 1 }, new Blob(['x']), null)).toThrow('native host')
-    expect(invoke).toHaveBeenCalledWith('attachments:resume', {})
+    // Main resumes on its own at sign-in; a second resume over IPC raced its window check (regressed in a47160404a).
+    expect(invoke).not.toHaveBeenCalled()
     const sha256 = 'a'.repeat(64); copies.set(sha256, new Blob(['image']))
     const event = eventOn.mock.calls[0]![1] as (event: unknown) => void
     event({ messageId: 'm', sha256, loaded: 3, total: 5, attempt: 1 })

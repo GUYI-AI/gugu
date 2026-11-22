@@ -50,8 +50,8 @@ it.each([360, 1000])('explains the group access consequence before cloud deletio
   await act(async () => { await page.elementLocator(harness.container.querySelector('[data-testid="file-storage-clean"]')!).click(); });
   await until('the deletion confirmation opens', () => document.querySelector('[data-testid="file-storage-clean-confirm"]') !== null);
   const confirmation = document.querySelector('[data-testid="file-storage-clean-confirm"]')!;
-  expect(confirmation.textContent).toContain('群里的人也将打不开这些文件。');
-  expect(confirmation.textContent).toContain('你机器上的文件还在。');
+  expect(confirmation.textContent).toContain('群成员将无法打开这些文件。');
+  expect(confirmation.textContent).toContain('你机器上的文件不受影响。');
   expect(confirmation.textContent).not.toContain('·');
   await page.screenshot({ path: `__screenshots__/file-storage-confirm-${width}.png` });
 });

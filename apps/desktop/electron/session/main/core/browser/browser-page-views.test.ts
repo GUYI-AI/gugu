@@ -121,8 +121,12 @@ function fakeWindow(name = '', zoom = 1) {
     destroyed: false,
     visible: true,
     minimized: false,
+    focused: false,
     isDestroyed() {
       return this.destroyed;
+    },
+    isFocused() {
+      return this.focused;
     },
     isVisible() {
       return this.visible;
@@ -182,6 +186,7 @@ import {
   leaseBrowserPagePresentation,
   mountBrowserPage,
   releaseBrowserPage,
+  runBrowserPageCommand,
   snapshotBrowserPage,
   toDip,
   visibleHostOfPage,
@@ -251,6 +256,25 @@ describe('#7274 建网页', () => {
       error: 'unsupported-url',
     });
     expect(state.views).toHaveLength(0);
+  });
+});
+
+describe('browser tab focus handoff', () => {
+  it.each([
+    { state: 'focused', hostFocused: true, expectedCalls: 1 },
+    { state: 'in the background', hostFocused: false, expectedCalls: 0 },
+  ])('checks the owning window when it is $state', ({ hostFocused, expectedCalls }) => {
+    const hostName = 'gugu-aux:browser';
+    const host = fakeWindow(hostName);
+    host.focused = hostFocused;
+    mainWindow.focused = !hostFocused;
+    state.windows.push(host);
+    const { view } = mount('b1', 'https://example.com', hostName);
+    expect(host.children).toContain(view);
+
+    expect(runBrowserPageCommand('b1', 'focus')).toBe(true);
+
+    expect(view.webContents.focused).toBe(expectedCalls);
   });
 });
 

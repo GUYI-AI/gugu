@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { nativeHomeRoots } from '@gugu/session-core/agents/plugins/helpers';
 import { requireNativeHome } from '@gugu/session-plugins/agents';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions, workspaces } from '@main/db/schema';
 import { events } from '@main/lib/events';
@@ -32,16 +32,18 @@ import {
   listProviderContinuationIntents,
 } from './provider-continuation-intent';
 import { readRuntimeForkOwnership } from './runtime-fork-ownership';
-import { isObservedCodexFork } from './codex-fork-observer';
 import { setProviderSessionId } from './set-session-id';
 import { isRetiredRemoteWorkspace } from '@main/core/workspaces/resolve-workspace-kind';
+import { resolveAgentHomeEnv } from '@main/core/agents/agent-home';
+import { inheritSessionPlatformModel } from './platform-model-selection';
 
 type SessionRow = typeof sessions.$inferSelect;
 
 const SCAN_MIN_INTERVAL_MS = 5_000;
 const lastScanAt = new Map<string, number>();
 const inFlight = new Set<string>();
-const recurringScans = new Map<string, NodeJS.Timeout>();
+/** 每个项目一个扫描器,一趟扫完它挂载着的会话(#3340:❌ 一条会话一个定时器、各读一遍整个项目)。 */
+const projectScans = new Map<string, NodeJS.Timeout>();
 const codexTranscriptCache = new Map<string, CodexForkTranscript | null>();
 /**
  * 每份 Claude 记录的开头只读一次:第一条消息与 forkedFrom 一经写下就不会再变。没有它,每 5 秒
@@ -78,24 +80,23 @@ export function tombstoneDeletedSession(providerSessionIds: Array<string | null 
 /**
  * spec session-fork-share:用户在 TUI 里(claude `/fork` 复制成后台会话、`/branch`、
  * `--resume <源> --fork-session`,codex `/fork`)fork 出的会话不走咕咕的路,咕咕只能轮询发现。
- * 轮询按会话:一趟只盯**这一条、未归档**的会话,只列文件名,只有「首条消息对得上它」的新记录才算候选;与它无关的记录(同目录下
- * 别的会话、别的咕咕实例的会话)读一次开头就再也不碰。同目录里咕咕**自己管着**的别的会话(产品分叉就住在那儿,#6269)
- * 算「已知」、也进候选池认父亲,但登记归父亲那一条的那一趟。
+ * 轮询按项目:一趟盯这个项目里挂载着的(再加上 `sessionId` 这一条)**未归档**会话,一个工作目录只列一次文件名,
+ * 只有「首条消息对得上它们」的新记录才算候选;与它们无关的记录(别的咕咕实例的会话)读一次开头就再也不碰。
+ * 同目录里咕咕**自己管着**、这一趟没盯的会话(产品分叉就住在那儿,#6269)算「已知」、也进候选池认父亲,但不替它登记。
  */
-export function scheduleExternalForkCapture(projectId: string, sessionId: string): void {
-  const key = `${projectId}:${sessionId}`;
+export function scheduleExternalForkCapture(projectId: string, sessionId?: string): void {
   const now = Date.now();
-  if (inFlight.has(key)) return;
-  const last = lastScanAt.get(key);
+  if (inFlight.has(projectId)) return;
+  const last = lastScanAt.get(projectId);
   if (last !== undefined && now - last < SCAN_MIN_INTERVAL_MS) return;
-  lastScanAt.set(key, now);
-  inFlight.add(key);
-  void captureExternalForks(projectId, sessionId)
+  lastScanAt.set(projectId, now);
+  inFlight.add(projectId);
+  void captureExternalForks(projectId, ...sessionWorkspaceManager.sessionsOf(projectId), ...(sessionId ? [sessionId] : []))
     .catch((error) => {
       log.warn('forkCapture: scan failed', { projectId, error: String(error) });
     })
     .finally(() => {
-      inFlight.delete(key);
+      inFlight.delete(projectId);
     });
 }
 
@@ -217,7 +218,7 @@ async function captureCodexForks(
   sessionPath: string,
   rows: SessionRow[],
   knownProviderSessionIds: Set<string>,
-  unclaimedForkSourceIds: Set<string>,
+  unclaimedForkSourceIds: () => Set<string>,
   env: NodeJS.ProcessEnv
 ): Promise<void> {
   // 出生时 sessionId = 行 id 的会话还没拿到 codex 线程 id,不可能已经被 fork。
@@ -253,16 +254,13 @@ async function captureCodexForks(
 
   for (const transcript of transcripts) {
     if (knownProviderSessionIds.has(transcript.providerSessionId)) continue;
-    // A live app-server client may still be deciding whether this child is the visible TUI's
-    // rewind branch. Do not materialize it in the sidebar during that handoff window.
-    if (isObservedCodexFork(transcript.providerSessionId)) continue;
     const parent = rowByProviderSessionId.get(transcript.parentProviderSessionId);
     if (!parent || parent.provider !== 'codex') continue;
     const transcriptPath = await realpath(transcript.cwd).catch(() => transcript.cwd);
     if (transcriptPath !== sessionPath) continue;
     // 这条 rollout 的来源会话上还挂着一条待认领的产品 fork ⇒ 它可能正是那条 fork 的 child,
     // 归属未定,留到下一趟(认领落定后它要么已知、要么才算真外部)。
-    if (unclaimedForkSourceIds.has(parent.id)) continue;
+    if (unclaimedForkSourceIds().has(parent.id)) continue;
     const parentConfig = parent.config?.type === 'pty' ? parent.config : undefined;
     const [inserted] = await db
       .insert(sessions)
@@ -288,6 +286,7 @@ async function captureCodexForks(
       .onConflictDoNothing()
       .returning();
     if (!inserted) continue;
+    await inheritSessionPlatformModel(inserted.id, parent.id);
     rows.push(inserted);
     knownProviderSessionIds.add(transcript.providerSessionId);
     rowByProviderSessionId.set(transcript.providerSessionId, inserted);
@@ -487,48 +486,27 @@ async function resolveForkParent(
   return best ? (sameRoot.find((c) => c.sessionId === best.sessionId) ?? null) : null;
 }
 
-export async function captureExternalForks(projectId: string, sessionId: string): Promise<void> {
-  const [workspace] = await db
-    .select({
-      id: workspaces.id,
-      path: workspaces.path,
-      type: workspaces.type,
-      location: workspaces.location,
-    })
-    .from(sessions)
-    .innerJoin(workspaces, eq(sessions.workspaceId, workspaces.id))
-    .where(eq(sessions.id, sessionId))
-    .limit(1);
-  if (!workspace?.path || isRetiredRemoteWorkspace(workspace)) return;
-
-  // Claude slugs its transcript dir from the session cwd AFTER resolving symlinks — on
-  // macOS a /tmp/... workspace records under /private/tmp/... (verified live). Canonicalize
-  // before slugging or the scan reads an empty dir and silently finds nothing.
-  const workspacePath = workspace.path;
-  const sessionPath = await realpath(workspacePath).catch(() => workspacePath);
-
-  // 「这条记录咕咕认不认识」按**整个项目**问,「谁能当父亲」只看这一条。两件事的范围不同:
+export async function captureExternalForks(projectId: string, ...sessionIds: string[]): Promise<void> {
+  // 「这条记录咕咕认不认识」按**整个项目**问,「谁能当父亲」只看这一趟盯着的会话。两件事的范围不同:
   // 产品分叉是独立会话、与来源共用工作目录(#6269)⇒ 两边的记录在同一个目录里、还共享开头;
-  // 只拿这一条当「已知」,来源那一趟会把分叉的记录当成外部 fork 再登记一遍,分叉那一趟
-  // 又会把来源的记录认成自己的 fork。咕咕管着的任何会话,都不是「外部」。
-  const projectRows = await db
-    .select()
-    .from(sessions)
-    .where(eq(sessions.projectId, projectId));
-
+  // 只拿盯着的当「已知」,来源那一趟会把分叉的记录当成外部 fork 再登记一遍,分叉那一趟
+  // 又会把来源的记录认成自己的 fork。咕咕管着的任何会话,都不是「外部」。认不认识只读这几列;带 config 的整行
+  // 只在真有不认识的记录时才读(#3340:稳态下每一趟的开销不随项目里的会话数长)。
   const knownProviderSessionIds = new Set<string>(tombstonedProviderSessionIds);
-  for (const row of projectRows) {
+  const asked = new Set(sessionIds);
+  const watchedIds: string[] = [];
+  for (const row of db.select({ id: sessions.id, providerSessionId: sessions.providerSessionId, provider: sessions.provider, archivedAt: sessions.archivedAt })
+    .from(sessions).where(eq(sessions.projectId, projectId)).all()) {
     knownProviderSessionIds.add(row.id);
     if (row.providerSessionId) knownProviderSessionIds.add(row.providerSessionId);
+    // spec session-graph:归档只问会话自己那一列。已归档的会话仍算「已知」—— 它的记录不许被当成新 fork
+    // 再登记一遍 —— 但不再监测它派生出的 fork。两家的会话都跑在用户自己的配置根上(#26),记录也在那里。
+    if (asked.has(row.id) && !row.archivedAt && (row.provider === 'claude' || row.provider === 'codex')) watchedIds.push(row.id);
   }
-  // spec session-graph:归档只问会话自己那一列。已归档的会话仍算「已知」—— 它的记录不许被当成新 fork
-  // 再登记一遍 —— 但不再监测它派生出的 fork。
-  const managed = projectRows.filter((row) => row.id === sessionId && !row.archivedAt);
-  if (managed.length === 0) return;
-  const owner = managed[0]!;
-  if (owner.provider !== 'claude' && owner.provider !== 'codex') return;
-  // 两家的会话都跑在用户自己的配置根上(#26),记录也在那里,换了默认订阅也不挪。
-  const transcriptEnv = process.env;
+  if (watchedIds.length === 0) return;
+  const watched = db.select().from(sessions).where(inArray(sessions.id, watchedIds)).all();
+  let projectRows: SessionRow[] | undefined;
+  const readProjectRows = () => (projectRows ??= db.select().from(sessions).where(eq(sessions.projectId, projectId)).all());
   // 运行时自己 fork 出、只活在运行时里的会话(#4236)不进侧栏 —— 这一条的、同目录别的会话的都一样。
   // ❌ 以前遇到「别的会话的」就抛错:而一个工作目录挂多条会话是常态,于是每一趟都在半路
   // 抛错退出,外部 fork 永远认领不到(正式版日志每小时 1400+ 条 `forkCapture: scan failed`)。
@@ -536,9 +514,33 @@ export async function captureExternalForks(projectId: string, sessionId: string)
     knownProviderSessionIds.add(runtimeFork.providerSessionId);
     knownProviderSessionIds.add(runtimeFork.runtimeSessionId);
   }
+  const workspaceRows = await db.select({ id: workspaces.id, path: workspaces.path, type: workspaces.type, location: workspaces.location })
+    .from(workspaces).where(inArray(workspaces.id, watched.flatMap((row) => (row.workspaceId ? [row.workspaceId] : []))));
+  for (const workspace of workspaceRows) {
+    if (!workspace.path || isRetiredRemoteWorkspace(workspace)) continue;
+    const managed = watched.filter((row) => row.workspaceId === workspace.id);
+    await captureWorkspaceForks(projectId, { id: workspace.id, path: workspace.path }, managed, readProjectRows, knownProviderSessionIds);
+  }
+}
 
-  // 待认领的产品分叉是别的会话(#6269),它的来源却是这一条 —— 所以也按整个项目找。
-  const unclaimedForkSourceIds = unclaimedProductForkSourceIds(projectRows);
+/**
+ * The env the engine's own sessions run with: the home Gugu manages for it (`CODEX_HOME` /
+ * `CLAUDE_CONFIG_DIR`, the same value every spawn gets) over the app's env. Records are written
+ * under that home, so the scan reads there; without a managed home this is the app's env.
+ */
+async function engineEnv(providerId: 'claude' | 'codex'): Promise<NodeJS.ProcessEnv> {
+  return { ...process.env, ...(await resolveAgentHomeEnv(providerId)) };
+}
+
+/** 一个工作目录里盯着的会话一趟扫完:记录目录只列一次。 */
+async function captureWorkspaceForks(projectId: string, workspace: { id: string; path: string }, managed: SessionRow[],
+  readProjectRows: () => SessionRow[], knownProviderSessionIds: Set<string>): Promise<void> {
+  // 待认领的产品分叉是别的会话(#6269),它的来源却是盯着的这些 —— 所以按整个项目找。
+  const unclaimedForkSourceIds = () => unclaimedProductForkSourceIds(readProjectRows());
+  // Claude slugs its transcript dir from the session cwd AFTER resolving symlinks — on
+  // macOS a /tmp/... workspace records under /private/tmp/... (verified live). Canonicalize
+  // before slugging or the scan reads an empty dir and silently finds nothing.
+  const sessionPath = await realpath(workspace.path).catch(() => workspace.path);
 
   await captureCodexForks(
     projectId,
@@ -547,22 +549,23 @@ export async function captureExternalForks(projectId: string, sessionId: string)
     managed,
     knownProviderSessionIds,
     unclaimedForkSourceIds,
-    transcriptEnv
+    await engineEnv('codex')
   );
 
   if (!managed.some((row) => row.provider === 'claude')) return;
-  const files = await listSessionTranscriptFiles(sessionPath, transcriptEnv);
+  const files = await listSessionTranscriptFiles(sessionPath, await engineEnv('claude'));
   await bindProviderContinuations(projectId, sessionPath, managed, files, knownProviderSessionIds);
 
+  // 稳态下目录里的记录都认识:不必为每条在管会话读锚(#3340)。
+  if (files.every((file) => knownProviderSessionIds.has(file.providerSessionId))) return;
   const fileByProviderSessionId = new Map(files.map((file) => [file.providerSessionId, file]));
-  // 候选父亲 = 这个目录里咕咕在管的**全部**会话,不只这一条:产品分叉是独立会话、与来源同目录
+  // 候选父亲 = 这个目录里咕咕在管的**全部**会话,不只这一趟盯着的:产品分叉是独立会话、与来源同目录
   // (#6269),在分叉的终端里再 `/fork` 一次,真父亲是那条分叉 —— 候选池里没有它,这一趟就会把孙子
-  // 错认成来源的儿子,而 config.forkedFrom 一经写下就是永久的。父亲认准之后**由父亲那一条的那一趟登记**,
+  // 错认成来源的儿子,而 config.forkedFrom 一经写下就是永久的。父亲认准之后**由盯着父亲的那一趟登记**,
   // 别的会话只让它进池(好让它的后代也认对父亲),不替人落行。
-  const lineageRows = projectRows.filter((row) => !row.archivedAt);
-  const foreignLineageIds = new Set(
-    lineageRows.filter((row) => row.id !== sessionId).map((row) => row.id)
-  );
+  const managedById = new Map(managed.map((row) => [row.id, row]));
+  const lineageRows = readProjectRows().filter((row) => !row.archivedAt).map((row) => managedById.get(row.id) ?? row);
+  const foreignLineageIds = new Set(lineageRows.filter((row) => !managedById.has(row.id)).map((row) => row.id));
   const pool: LineageCandidate[] = [];
   for (const row of lineageRows) {
     if (row.provider !== 'claude') continue;
@@ -605,7 +608,7 @@ export async function captureExternalForks(projectId: string, sessionId: string)
   fresh.sort((a, b) => a.mtimeMs - b.mtimeMs);
   // 待认领的产品 fork 会遮住一整条谱系,不只遮一个 transcript:被推迟的那条自己也进候选池,
   // 于是「被推迟者的后代」会挑中它而不是错认成祖父 —— 错认写进 config.forkedFrom 是永久的。
-  const unclaimedLineageIds = new Set(unclaimedForkSourceIds);
+  const unclaimedLineageIds = unclaimedForkSourceIds();
   for (const transcript of fresh) {
     const parent = await resolveForkParent(transcript, pool);
     if (!parent) continue;
@@ -656,6 +659,7 @@ export async function captureExternalForks(projectId: string, sessionId: string)
       .onConflictDoNothing()
       .returning();
     if (!inserted) continue; // raced with a concurrent registration
+    await inheritSessionPlatformModel(inserted.id, parentRow.id);
 
     managed.push(inserted);
     pool.push({
@@ -682,17 +686,12 @@ export async function captureExternalForks(projectId: string, sessionId: string)
 // getUnarchivedSession never fires (verified live: boot → zero scans).
 sessionWorkspaceManager.hooks.on('session:provisioned', ({ projectId, sessionId }) => {
   scheduleExternalForkCapture(projectId, sessionId);
-  const key = `${projectId}:${sessionId}`;
-  if (recurringScans.has(key)) return;
-  const timer = setInterval(() => scheduleExternalForkCapture(projectId, sessionId), 5_000);
-  timer.unref();
-  recurringScans.set(key, timer);
+  if (!projectScans.has(projectId)) projectScans.set(projectId, setInterval(() => scheduleExternalForkCapture(projectId), SCAN_MIN_INTERVAL_MS).unref());
 });
 
-sessionWorkspaceManager.hooks.on('session:torn-down', ({ projectId, sessionId }) => {
-  const key = `${projectId}:${sessionId}`;
-  const timer = recurringScans.get(key);
-  if (timer) clearInterval(timer);
-  recurringScans.delete(key);
-  lastScanAt.delete(key);
+sessionWorkspaceManager.hooks.on('session:torn-down', ({ projectId }) => {
+  if (sessionWorkspaceManager.sessionsOf(projectId).length > 0) return;
+  clearInterval(projectScans.get(projectId));
+  projectScans.delete(projectId);
+  lastScanAt.delete(projectId);
 });

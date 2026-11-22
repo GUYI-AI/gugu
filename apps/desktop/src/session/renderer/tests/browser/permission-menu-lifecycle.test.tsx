@@ -8,7 +8,7 @@ import { MessageProvider } from '@gugu/session-ui/react/components';
 import { LocalizationProvider, setLocalePreference } from '@/i18n';
 import { registerSessionLocaleResources, translateSessionMessage } from '@renderer/localization/locale-store';
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
-import { queryClient as replicaClient } from '@/lib/replica';
+import { followRendererSession, queryClient as replicaClient } from '@/lib/replica';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@gugu/session-ui/styles/global';
@@ -35,7 +35,7 @@ vi.mock('@renderer/features/integrations/use-connected-issue-providers', () => (
 vi.mock('@renderer/features/library/prompts/use-prompt-library', () => ({ usePromptLibrary: () => ({ value: [] }) }));
 vi.mock('@renderer/lib/stores/use-agents', () => ({
   AGENTS_METADATA_QUERY_KEY: ['agents', 'metadata'],
-  useAgents: () => ({ data: active.agents }), useAgent: () => ({ data: undefined }), useAgentIcon: () => undefined,
+  useAgents: () => ({ state: 'value', value: active.agents, stale: false, error: null }), useAgent: () => ({ state: 'unknown' }), useAgentIcon: () => undefined,
 }));
 vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', async importOriginal => ({
   ...await importOriginal<typeof import('@renderer/features/sessions/session-config/platform-model-catalog')>(),
@@ -47,7 +47,9 @@ vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', asy
 Object.defineProperty(window, 'electronAPI', {
   configurable: true,
   value: {
-    invoke: async (channel: string, ...args: unknown[]) => channel === 'sessionTimeline.sessionCreateModels' ? active.read(...args) : [],
+    // The harness's own model catalog answers "not probed yet" (a catalog answer, ❌ an empty list in its place).
+    invoke: async (channel: string, ...args: unknown[]) => channel === 'sessionTimeline.sessionCreateModels' ? active.read(...args)
+      : channel === 'agents.modelCatalog' ? { state: { kind: 'unknown' }, refreshing: false } : [],
     eventOn: () => () => {}, eventSend: () => {}, getPathForFile: () => '',
     subscribeAppActive: (listener: (active: boolean) => void) => { listener(true); return () => {}; },
   },
@@ -63,6 +65,8 @@ let root: Root | null = null;
 let container: HTMLDivElement | null = null;
 let store: InstanceType<typeof AcpChatStore> | null = null;
 let client: QueryClient | null = null;
+// The permission menu is an account replica: it reads while someone is signed in.
+followRendererSession('SIGNED_IN', 'permission-menu-test');
 
 afterEach(() => {
   root?.unmount(); container?.remove(); store?.dispose(); client?.clear(); replicaClient.clear();

@@ -9,7 +9,7 @@ import { events, rpc } from '@/session/renderer/lib/ipc'
 import { appState } from '@/session/renderer/lib/stores/app-state'
 import { assistantHandedOver, carryBuiltInPanelOnce, keepBuiltInAssistantLastTab, keptBuiltInAssistantLastTab, markAssistantHandedOver } from '@/session/renderer/features/apps/app-conversation-panel'
 import { homeTarget } from '@/session/renderer/features/assistant/assistant-home-sessions'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { LOCAL_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
 import { extensionsInventoryChangedChannel } from '@/session/shared/extensions/marketEvents'
 
 installAssistantAppEntryBridge()
@@ -48,8 +48,11 @@ export const AssistantAppEntryHost = observer(function AssistantAppEntryHost() {
   // the assistant is ready, and the binding waits for ready (main: `pending`), so the end of the setup is asked again.
   const setupStep = mine?.setup ?? null
   const preparing = mine?.preparing === true
-  const manifest = installedExtensionsStore.manifestFor(ASSISTANT_APP_ID)
-  const installed = manifest ? JSON.stringify([manifest.version, installedExtensionsStore.origins[ASSISTANT_APP_ID] ?? null, installedExtensionsStore.isEnabled(ASSISTANT_APP_ID)]) : ''
+  // The App as installed here (version, origin, switch): a change asks main again. Not read yet = its own key (asked again once read).
+  const installedApps = useInstalledApps(LOCAL_HOST)
+  const apps = installedApps.state === 'value' ? installedApps.value : null
+  const manifest = apps?.manifestFor(ASSISTANT_APP_ID)
+  const installed = !apps ? null : manifest ? JSON.stringify([manifest.version, apps.origins[ASSISTANT_APP_ID] ?? null, apps.isEnabled(ASSISTANT_APP_ID)]) : ''
   const [changes, setChanges] = useState(0)
   useEffect(() => events.on(extensionsInventoryChangedChannel, (note) => {
     if (!note?.extensionId || note.extensionId === ASSISTANT_APP_ID) setChanges((n) => n + 1)

@@ -19,7 +19,7 @@ it('e3 keeps message SQL and renderer writes at their sole boundaries', () => {
     'apps/desktop/electron/session/drizzle/0046_persistent_im_messages.sql:',
     'apps/desktop/electron/session/drizzle/0053_personal_conversation_history.sql:',
     // The forward native-retirement fence is an explicit migration boundary.
-    'apps/desktop/electron/session/drizzle/0054_retired_message_accounts.sql:',
+    'apps/desktop/electron/session/drizzle/0056_retired_message_accounts.sql:',
     'apps/desktop/electron/session/main/db/schema.ts:',
     'apps/desktop/electron/session/main/core/im-messages/',
   ]
@@ -32,11 +32,9 @@ it('e3 keeps message SQL and renderer writes at their sole boundaries', () => {
   expect(matches('collectMessageStoreBatch|omitMessages|replayMessagePage|putChatAccess', 'apps')).toEqual([])
 })
 
-it('e8 confines the temporary phone seam to its adapter sites', () => {
-  const sites = matches('platform\\.localMessages', 'apps/desktop/src').map(line => line.split(':')[0])
-  expect([...new Set(sites)].sort()).toEqual([
-    'apps/desktop/src/lib/imRepository.ts',
-    'apps/desktop/src/lib/messageIngest.ts',
-    'apps/desktop/src/session/renderer/features/global-search/use-global-search.ts',
-  ])
+it('e8 has no platform seam in the message path: one store contract, its adapters chosen in messageIngest alone', () => {
+  expect(matches('platform\\.localMessages', 'apps', 'packages')).toEqual([])
+  const callers = matches('createLocalMessageStore\\(', 'apps/desktop/src').map(line => line.split(':')[0])
+    .filter(path => !/\.test\./.test(path) && path !== 'apps/desktop/src/lib/localMessageStore.ts')
+  expect(callers).toEqual(['apps/desktop/src/lib/messageIngest.ts'])
 })

@@ -5,6 +5,7 @@ import type { ResourceContext } from '@/session/shared/resource-actions'
 import type { TabOpenIntent } from '@/session/shared/view-state'
 import { savedFileName } from '@/session/shared/extensions/app-runtime-protocol'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
+import { drawnSvgImage } from '@gugu/session-chat-ui/svg'
 
 /**
  * A file the person opens (a click, a link, an App page's `files.openWith`) that no App claims opens here when it is an
@@ -39,6 +40,8 @@ export interface ImageViewerItem {
   size?: Size
   /** File previews keep their existing citation producer when opening the shared image viewer. */
   quote?: () => Promise<void> | void
+  /** An unsent composer image: the editor's Done hands the edited copy back here, in its place. */
+  replace?: (file: File, caption: string) => void
 }
 
 /** 缩略图 <img> → 取它原图的办法(附件进群文件夹 ③:气泡用 CDN 缩略图,原图到看的时候才下)。 */
@@ -134,6 +137,12 @@ export function openImageViewer(items: ImageViewerItem[], index = 0): void {
   if (!host) throw new Error('image viewer host is not mounted')
   if (items.length === 0) throw new Error('openImageViewer needs at least one image')
   host({ items, index: Math.max(0, Math.min(index, items.length - 1)) })
+}
+
+/** A drawn diagram (a mermaid block, chat or transcript) opens in this viewer, as any picture: themed as the page is now. */
+export function openDiagramViewer(svg: string, thumb?: HTMLElement | null): void {
+  const { src, width, height } = drawnSvgImage(svg, thumb ?? document.documentElement)
+  openImageViewer([{ url: src, alt: '', file: { name: 'diagram.svg', contentType: 'image/svg+xml' }, size: { width, height }, thumb }])
 }
 
 // 画廊 = 此刻渲染在带 IMAGE_GALLERY_ATTR 的容器里、带 IMAGE_VIEWER_SRC_ATTR(原图地址)的缩略图,按文档顺序。

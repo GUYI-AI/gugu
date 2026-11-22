@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next'
 import type { AssistantHomePlace } from '../../lib/assistantHome'
 import { Button } from '../ui/Button'
 import { Switch } from '../ui/Switch'
+import { Unknown } from '../ui/Unknown'
 import { requestAssistantClose } from '../../lib/assistantClose'
 import { SettingsGroup, SettingsPage, SettingsRow } from '../settings/SettingsPrimitives'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { quickChatShortcutLabel, useQuickChatState } from './useQuickChatState'
 import { AssistantMoveGroup, type AssistantMoveGroupProps } from './AssistantMoveGroup'
 
@@ -12,19 +14,29 @@ import { AssistantMoveGroup, type AssistantMoveGroupProps } from './AssistantMov
 export function QuickChatSettingsGroup({ assistantName }: { assistantName: string }) {
   const { t } = useTranslation('assistant')
   const quick = useQuickChatState()
-  if (!quick.state?.supported) return null
+  if (!quick.available) return null
+  const reading = quick.reading
+  // Read and not supported here (server mode): no group. Not read yet: the group in its place with a placeholder (❌ inserted late).
+  if (reading.state === 'value' && !reading.value.supported) return null
+  const state = reading.state === 'value' ? reading.value : null
   return (
-    <SettingsGroup title={t('quickChat.settingsTitle')}>
+    // Read before, its read again failing: the switch stays, the failure said with a retry (❌ drawn as current).
+    <SettingsGroup title={t('quickChat.settingsTitle')}
+      footer={reading.state === 'value' ? <RefreshFailed reading={reading} /> : undefined}>
       <SettingsRow
         title={t('quickChat.settingsRow')}
         description={
-          !quick.state.enabled
-            ? t('quickChat.off', { shortcut: quickChatShortcutLabel(quick.state) })
-            : quick.state.registered
-              ? t('quickChat.on', { shortcut: quickChatShortcutLabel(quick.state), name: assistantName })
-              : t('quickChat.taken', { shortcut: quickChatShortcutLabel(quick.state) })
+          reading.state === 'unknown' ? <Unknown className="w-56" />
+            : reading.state === 'error' ? t('quickChat.settingUnreadable')
+            : !reading.value.enabled
+              ? t('quickChat.off', { shortcut: quickChatShortcutLabel(reading.value) })
+              : reading.value.registered
+                ? t('quickChat.on', { shortcut: quickChatShortcutLabel(reading.value), name: assistantName })
+                : t('quickChat.taken', { shortcut: quickChatShortcutLabel(reading.value) })
         }
-        control={<Switch checked={quick.state.enabled} onCheckedChange={quick.setEnabled} aria-label={t('quickChat.settingsRow')} data-testid="assistant-settings-quick-chat" />}
+        control={state
+          ? <Switch checked={state.enabled} onCheckedChange={quick.setEnabled} aria-label={t('quickChat.settingsRow')} data-testid="assistant-settings-quick-chat" />
+          : <Unknown className="h-5 w-9" />}
         data-testid="assistant-settings-quick-chat-row"
       />
     </SettingsGroup>

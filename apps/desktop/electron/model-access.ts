@@ -1,4 +1,5 @@
 import { isUserFacingModelId } from '@gugu/session-core/acp/client'
+import { egress } from '@gugu/core/shared/egress'
 import { execFile } from '@gugu/core/local/childProcess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -25,14 +26,13 @@ import {
   type RuntimeAuthProvider,
 } from '@gugu/core'
 import { platformProtocolForEngine } from './engine-injection-contract'
-import * as electron from 'electron'
 import type { PlatformCallableRoutes } from '@gugu/session-core/agents/plugins'
 import type { GuguCatalogReason } from '@gugu/session-core/session-record/contract'
 import { createLogger } from './lib/logger'
 import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { platformModelsEnabled } from '@gugu/core/cloud/optionalServices'
 import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
-import { parsePlatformReasoningEfforts } from '../src/session/shared/core/agents/platform-model'
+import { parsePlatformCreditMultipliers, parsePlatformReasoningEfforts } from '../src/session/shared/core/agents/platform-model'
 
 // Protocol membership is decided by the shared protocol table, so adding a
 // protocol never means editing a literal union in this file.
@@ -124,10 +124,7 @@ export interface IssuedModelAccess {
 }
 
 // A ticket's `expires_at` is on the backend's clock: its answers tune the main process's `serverNow()` (`@@@server-clock`).
-const modelAccessFetch = withServerClock((url: string, init: RequestInit): Promise<Response> => {
-  const netFetch = (electron as { net?: { fetch?: typeof fetch } } | undefined)?.net?.fetch
-  return netFetch ? netFetch(url, init) : fetch(url, init)
-})
+const modelAccessFetch = withServerClock((url: string, init: RequestInit): Promise<Response> => egress.fetch(url, init))
 
 /**
  * model-access 的非 2xx 回应;status 让调用方分清「这张票服务端不认识」(404)与其它失败。
@@ -196,8 +193,7 @@ async function invokeModelAccessAs(
   body: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   if (!platformModelsEnabled()) throw new Error('Official model service is not configured')
-  // #5331 签令牌走 Chromium 连接池(与 supabase-js 同池,空闲保活约 5 分钟);Node 全局 fetch 的 undici 池
-  // 4 s 就断,两次新建会话之间必然冷掉,每次都重握 0.95 s 的 TLS。electron 缺席(单测)时退回全局 fetch。
+  // Model credentials and other cloud requests share the selected egress backend and its connection pool.
   const response = await modelAccessFetch(`${getSupabaseUrl().replace(/\/$/, '')}/functions/v1/model-access`, {
     method: 'POST',
     headers: {
@@ -245,7 +241,7 @@ export async function assertAgentModelSelectionOpen(input: {
     throw new Error(`这个平台模型尚未对当前 Agent 开放（${selection.modelId} / ${selection.protocol}）`)
   }
   // 存成 Agent 默认也一样:免费档存一个会员模型,下一次开会话只会在签发那一步被拒(#7056)。
-  if (model.requiresMembership) throw new Error(`咕咕 ${model.displayName} 要开会员才能用`)
+  if (model.requiresMembership) throw new Error(`咕咕 ${model.displayName} 需要开通会员`)
 }
 
 export async function listPlatformModels(authProvider: RuntimeAuthProvider): Promise<PlatformModelCatalogItem[]> {
@@ -267,7 +263,7 @@ export async function listPlatformModels(authProvider: RuntimeAuthProvider): Pro
         displayName,
         protocols,
         enabled: row.enabled === true,
-        creditMultipliers: creditMultipliers(row.credit_multipliers),
+        creditMultipliers: parsePlatformCreditMultipliers(row.credit_multipliers),
         contextWindow: positiveIntOrNull(row.context_window),
         reasoningEfforts: parsePlatformReasoningEfforts(row.reasoning_efforts),
         requiresMembership: row.requires_membership === true,
@@ -280,22 +276,6 @@ export async function listPlatformModels(authProvider: RuntimeAuthProvider): Pro
 /** 目录/签发里的上下文窗口:只认正整数,其余(缺省、0、负、非数)一律 null → 注入侧不注入该键。 */
 function positiveIntOrNull(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null
-}
-
-/**
- * 目录里的倍率映射,只留下这台客户端认识的协议和真实的正数。
- *
- * 旧版服务端不带这个字段 → 空表 → UI 只是不显示数字。倍率缺失从来不是错误路径。
- */
-function creditMultipliers(value: unknown): Partial<Record<ModelAccessProtocol, number>> {
-  if (!value || typeof value !== 'object') return {}
-  const parsed: Partial<Record<ModelAccessProtocol, number>> = {}
-  for (const [protocol, raw] of Object.entries(value as Record<string, unknown>)) {
-    if (!isModelAccessProtocol(protocol)) continue
-    const ratio = Number(raw)
-    if (Number.isFinite(ratio) && ratio > 0) parsed[protocol] = ratio
-  }
-  return parsed
 }
 
 export async function issuePlatformModelAccess(input: {

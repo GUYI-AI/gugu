@@ -3,7 +3,7 @@ import { forgetProjectOnScreen, revalidateScreenSessions } from '@renderer/app/s
 import { err, ok } from '@gugu/session-shared';
 import { makeObservable, observable, runInAction } from 'mobx';
 import { events, rpc, rpcOn } from '@renderer/lib/ipc';
-import { machineRegistry } from '@renderer/lib/machine-routing';
+import { machineRegistry, type MachineListSource } from '@renderer/lib/machine-routing';
 import { machineLinkState, subscribeMachineLink } from '@renderer/lib/machine-clients';
 import { appState } from '@renderer/lib/stores/app-state';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
@@ -416,11 +416,16 @@ export class ProjectManagerStore {
    * 与本机项目同一套界面(照 Zed:机器是项目的属性)。**只登记,❌ 挂**:侧栏的行来自会话目录,
    * 要用到某个项目时才由 ensureMounted 挂上。清单里没有了的那台机器的项目拿掉(在那台机器上删掉的)。
    */
-  syncMachineProjects(deviceId: string, projects: readonly LocalProject[], sessions: readonly SessionProjectLocation[] = []): void {
-    machineRegistry.register(
-      deviceId,
-      projects.map((project) => project.id)
-    );
+  syncMachineProjects(
+    deviceId: string,
+    projects: readonly LocalProject[],
+    sessions: readonly SessionProjectLocation[] = [],
+    from: MachineListSource = 'machine'
+  ): void {
+    // 那台机器自己答的清单定主;账号上记着的那份只给还没主的项目定主(旧设备行的副本抢不走活机器的项目,见 propose)。
+    const ids = projects.map((project) => project.id);
+    if (from === 'machine') machineRegistry.register(deviceId, ids);
+    else machineRegistry.propose(deviceId, ids);
     const keep = new Set(projects.map((project) => project.id));
     runInAction(() => {
       for (const project of projects) {
@@ -431,7 +436,9 @@ export class ProjectManagerStore {
         }
         if (!known) this.projects.set(project.id, createUnmountedProject(project, 'idle'));
       }
-      reconcileSessionProjectLocations(sessions);
+      // 只改指到项目表里有的项目:那台机器的会话清单可以写着隐藏任务工作区(`<固定 id>~<机器>`),它的项目清单(账号上那份)却从不列它,
+      // 改指过去就把本机自己的会话(同一个 id)指到一个表里没有的项目、被守卫当成「已删」送回首页(#3425)。
+      reconcileSessionProjectLocations(sessions.filter((session) => this.projects.has(session.projectId)));
       for (const [id, store] of [...this.projects]) {
         if (keep.has(id) || this.pendingCreationIds.has(id)) continue;
         if (machineRegistry.machineOf(id) !== deviceId) continue;

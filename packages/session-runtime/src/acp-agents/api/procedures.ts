@@ -183,9 +183,6 @@ export function createAcpProcedures(runtime: AcpRuntime) {
     }): { connectionKey: string; pid: number | null; closing?: true } | null {
       return runtime.adapterProvenance(input.sessionId);
     },
-    windowActiveReference(input: { sessionId: string; referenceId: string }): boolean {
-      return runtime.windowActiveReference(input.sessionId, input.referenceId);
-    },
     setIdleCompaction(input: { enabled: boolean }): Record<string, never> {
       runtime.setIdleCompaction(input.enabled);
       return {};

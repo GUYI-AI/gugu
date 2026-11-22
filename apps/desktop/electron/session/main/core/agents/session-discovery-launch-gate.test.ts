@@ -85,10 +85,11 @@ describe('启动那道闸 = 列表与 spawn 的唯一判据', () => {
     await listOf(['opencode'])
     expect(probes()).toBe(afterFirst)
 
-    write('1.17.0-downgraded')
+    // opencode prints a bare version (its declared line); a wrapper's own text would read as no version.
+    write('1.17.0')
     const [row] = await listOf(['opencode'])
     expect(probes()).toBeGreaterThan(afterFirst)
-    expect(row.blocked?.acp).toMatch(/requires harness runtime 1\.18\.0 or newer; found 1\.17\.0-downgraded/)
+    expect(row.blocked?.acp).toMatch(/requires harness runtime 1\.18\.0 or newer; found 1\.17\.0/)
   })
 
   it('判定不兼容的读数同样按文件身份记住:同一份文件不再反复跑 --version;就地升级(文件变了)就重探', async () => {
@@ -99,7 +100,7 @@ describe('启动那道闸 = 列表与 spawn 的唯一判据', () => {
       chmodSync(path, 0o755)
     }
     const probes = () => readFileSync(count, 'utf8').split('\n').filter(Boolean).length
-    write('v1.8.3')
+    write('1.8.3 (Claude Code)')
     engines.claude = { cli: path }
     for (let attempt = 0; attempt < 5; attempt++) {
       await expect(assertLocalHarnessLaunchable('claude', 'pty')).rejects.toThrow(/requires harness runtime 2\.1\.69 or newer; found 1\.8\.3/)

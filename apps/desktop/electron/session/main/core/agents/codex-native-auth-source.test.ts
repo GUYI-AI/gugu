@@ -61,7 +61,8 @@ it('renews only through the selected official CLI, in the native root, and coale
     const results = await Promise.all(Array.from({ length: 4 }, () => requestNativeCodexAccess(env!, { useToken: true })));
     expect(new Set(results.map(value => value!.accessToken)).size).toBe(1);
     expect(state.run).toHaveBeenCalledTimes(1); expect(writes).toEqual(['official CLI']);
-    expect(seen).toHaveLength(4);
+    // The local endpoint is reached through the loopback transport; fetch would only mean a network request.
+    expect(seen).toEqual([]);
     expect(JSON.stringify(results)).not.toContain('rotated-only-by-cli');
   } finally { spy.mockRestore(); }
 });

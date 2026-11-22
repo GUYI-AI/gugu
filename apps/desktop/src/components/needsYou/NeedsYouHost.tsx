@@ -13,17 +13,21 @@ import { installShellSlots, readShellSlots } from '@/lib/shellSlots'
 import { setSidebarNotificationsOpen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { IconButton } from '../ui/IconButton'
 import { SectionLabel } from '../ui/SectionLabel'
 import { PaneEmptyState } from '../ui/PaneEmptyState'
+import { Illustration } from '../ui/Illustration'
 import { Hint } from '../ui/Tooltip'
 import { rowKeyActivate } from '../contacts/contactsPanelStyles'
 import { NOTIFICATION_LIST_SLOT_PREFIX, NOTIFICATION_TOGGLE_SLOT_PREFIX } from './NotificationSlot'
 import { NeedsYouTaskRow } from './NeedsYouTaskRow'
 import { isAssistantAgent } from '@/session/renderer/features/assistant/assistant-lineage'
 import { markNeedsYouTaskSeen, useNeedsYouTasks, type NeedsYouTask } from './useNeedsYouTasks'
-import { usePasswordNotifications, usePasswordSnapshot, openPasswordRequest, openPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
-import { promptedRequests, waitingToJoin } from '../password/passwordModel'
+import { passwordNotifications, usePasswordVault, openPasswordRequest, openPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
+import { promptedRequests } from '../password/passwordModel'
+import { persistentNotices } from '@/lib/notices'
+import { NoticeCard } from '../NoticeHost'
 
 installShellSlots()
 const EMPTY_SLOTS: ReadonlyMap<string, HTMLElement> = new Map()
@@ -34,10 +38,14 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
   const { t } = useTranslation()
   const mobile = useMobileShell()
   const { tasks, count, attention, error, loading } = useNeedsYouTasks()
-  const passwords = usePasswordNotifications()
-  const sync = usePasswordSnapshot()?.sync
-  const devices = promptedRequests(sync), joining = waitingToJoin(sync)
-  const notificationCount = count + passwords.length + devices.length + (joining ? 1 : 0)
+  const vault = usePasswordVault()
+  const passwords = passwordNotifications(vault.snapshot)
+  const sync = vault.snapshot?.sync
+  const devices = promptedRequests(sync)
+  // 右上角那一叠卡里点了「以后再说」的常驻通知,收在这里;在这里清掉才算关掉(lib/notices)。
+  const notices = useSyncExternalStore(persistentNotices.subscribe, persistentNotices.read, persistentNotices.read)
+  const deferred = notices.filter(notice => notice.deferred)
+  const notificationCount = count + passwords.length + devices.length + deferred.length
   const open = useSidebarNotificationsOpen()
   useEffect(() => { onAttentionChange?.(attention) }, [onAttentionChange, attention])
   const slots = readShellSlots()
@@ -71,23 +79,25 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
         {notificationCount > 0 && <Chip tone="danger" shape="count" className="pointer-events-none absolute -right-1 -top-1" data-testid="notification-count">{notificationCount > 99 ? '99+' : notificationCount}</Chip>}
       </span>, element, key) : null
     if (!key.startsWith(NOTIFICATION_LIST_SLOT_PREFIX) || !open || !active) return null
-    const showEmpty = mobile && !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && !joining
+    const showEmpty = !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && deferred.length === 0
     return createPortal(<>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">
         <SectionLabel>{title}</SectionLabel>
         {unreadFailures.length > 0 && <Button size="sm" variant="ghost" data-testid="notification-mark-all-read" disabled={marking > 0} onClick={() => { void markRead(unreadFailures) }}>{t('chatList.markAllRead', { ns: 'messaging' })}</Button>}
       </div>
       {showEmpty ? <div className="grid min-h-0 flex-1 place-items-center px-4 pb-4" data-testid="notification-list">
-        <PaneEmptyState phone icon={<Bell size={24} />} caption={t('settings.general.notificationsEmpty.title', { ns: 'main' })} hint={t('settings.general.notificationsEmpty.hint', { ns: 'main' })} />
+        <PaneEmptyState art={<Illustration name="no-notifications" className={mobile ? 'w-[104px]' : 'w-[88px]'} />} caption={t('settings.general.notificationsEmpty.title', { ns: 'main' })} hint={t('settings.general.notificationsEmpty.hint', { ns: 'main' })} />
       </div> : <div data-testid="notification-list" data-notification-scroll="" role="listbox" aria-label={title} className="min-h-0 flex-1 overflow-auto px-2 pb-4">
         {error && <p role="alert">{error}</p>}
         {readError && <p role="alert">{readError}</p>}
+        <RefreshFailed error={vault.failure} onRetry={vault.retry} />
         {passwords.map(request => <Button key={request.requestId} variant="ghost" className="w-full justify-start" data-password-notification={request.requestId}
-          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{request.kind === 'save' ? '请求保存密码' : '请求使用密码'} : {request.origin}</Button>)}
+          onClick={() => { openPasswordRequest(request); setSidebarNotificationsOpen(false) }}>{t(request.kind === 'save' ? 'passwords.notifySave' : 'passwords.notifyUse', { ns: 'settings' })} : {request.origin}</Button>)}
         {devices.map(request => <Button key={request.deviceId} variant="ghost" className="w-full justify-start" data-password-device={request.deviceId}
-          onClick={() => { openPasswordDevicePrompt(request.deviceId); setSidebarNotificationsOpen(false) }}>「{request.label || '新设备'}」想用你的密码</Button>)}
-        {joining && <Button variant="ghost" className="w-full justify-start" data-password-join=""
-          onClick={() => { openPasswordDevicePrompt(null); setSidebarNotificationsOpen(false) }}>在另一台设备上允许这台电脑用你的密码</Button>}
+          onClick={() => { openPasswordDevicePrompt(request.deviceId); setSidebarNotificationsOpen(false) }}>{t('passwords.notifyDevice', { ns: 'settings', name: request.label || t('passwords.newDevice', { ns: 'settings' }) })}</Button>)}
+        {deferred.length > 0 && <div className="flex flex-col gap-2 px-2 pb-2" data-testid="notification-notices">
+          {deferred.map(notice => <NoticeCard key={notice.key} notice={notice} onClear={() => persistentNotices.clear(notice.key)} />)}
+        </div>}
         {tasks.map(task => {
           // The assistant's own session is the assistant, not a task of its: its row opens the assistant's chat, which the one
           // decision (lib/assistantEntry.ts) sends to its App, or, when the App is not usable here, opens as any chat — never the

@@ -314,10 +314,13 @@ function defaultRunSync(args: string[]): void {
   spawnSync('ssh', args, { stdio: 'ignore', timeout: 2_000 })
 }
 
-/** 启动时那一次:不挡主进程(退出时才用同步的那一份,进程马上要走了)。 */
-export function runSshInBackground(args: string[]): void {
+/** 启动时那一次:不挡主进程(退出时才用同步的那一份,进程马上要走了);它结束时兑现。 */
+export function runSshInBackground(args: string[]): Promise<void> {
   const child = spawn('ssh', args, { stdio: 'ignore' })
-  child.on('error', () => undefined)
+  return new Promise((resolve) => {
+    child.on('error', () => resolve())
+    child.on('close', () => resolve())
+  })
 }
 
 /**
@@ -373,8 +376,6 @@ export function registerSshMachinesIpc(options: {
     const userId = (await options.currentUserId?.().catch(() => null)) ?? null
     return userId ? options.store.list().filter((m) => m.ownerUserId === userId) : []
   }
-  const ids = async () => (await mine()).map((m) => m.deviceId)
-  options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.list, () => ids())
   options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.describe, async () => summarizeSshMachines(await mine()))
   options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.forget, async (_event, deviceId: unknown) => {
     if (typeof deviceId !== 'string' || !ID.test(deviceId)) return false
@@ -419,10 +420,9 @@ export function registerSshMachinesIpc(options: {
     return answer
   })
   options.store.onChange(() => {
-    void ids().then((list) => {
-      const win = options.getWindow()
-      if (win && !win.isDestroyed()) win.webContents.send(SERVER_SSH_MACHINES_CHANNELS.changed, list)
-    })
+    // A change signal: the renderer reads its list again (`describe`).
+    const win = options.getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send(SERVER_SSH_MACHINES_CHANNELS.changed)
   })
 }
 

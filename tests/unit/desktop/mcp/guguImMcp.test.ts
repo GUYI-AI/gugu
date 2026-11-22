@@ -29,7 +29,7 @@ const W_FILE = '0d000000-0000-4000-8000-000000000002'
 const W_OTHER = '0d000000-0000-4000-8000-000000000003'
 const W_NEW = '0d000000-0000-4000-8000-000000000004'
 const TEST_CONTEXT = {
-  supabaseUrl: '',
+  supabaseUrl: 'https://db.example.test',
   anonKey: '',
   agentId: 'agent-1',
   threadRootId: null,
@@ -983,7 +983,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       chat_id: '00000000-0000-4000-8000-000000000001', text: 'Archive marker', to_user_ids: ['user:alice'],
     } })
     expect(result.isError).not.toBe(true)
-    expect(text(result)).toContain('对方已归档、未送达')
+    expect(text(result)).toContain('not delivered, recipient archived')
     expect(text(result)).toContain('agent_archived')
     expect(text(result)).toContain('no replay after restoration')
     expect(h.calls.inserts).toHaveLength(1)
@@ -999,8 +999,8 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
       chat_id: '00000000-0000-4000-8000-000000000001', text: 'Removal marker', to_user_ids: ['user:alice', 'user:bob'],
     } })
     expect(result.isError).not.toBe(true)
-    expect(text(result)).toContain('对方已归档、未送达 (user:alice; agent_archived')
-    expect(text(result)).toContain('对方已移除、未送达 (user:bob; identity_removed; retained in history, the identity cannot be restored)')
+    expect(text(result)).toContain('not delivered, recipient archived (user:alice; agent_archived')
+    expect(text(result)).toContain('not delivered, recipient removed (user:bob; identity_removed; retained in history, the identity cannot be restored)')
     expect(h.calls.inserts).toHaveLength(1)
     await client.close()
   })
@@ -1015,7 +1015,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     } })
     // 消息已经进了群:报错会让 agent 重发一遍。
     expect(result.isError).not.toBe(true)
-    expect(text(result)).toContain('未送达 (user:alice; a_reason_added_later; retained in history')
+    expect(text(result)).toContain('not delivered (user:alice; a_reason_added_later; retained in history')
     expect(h.calls.inserts).toHaveLength(1)
     await client.close()
   })
@@ -1023,8 +1023,8 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
   // 从来不是成员的 id(库拒、工具说清是谁)—— 各走一遍真实的发送路径。
   test.each([
     { who: 'a current member', to: 'alice', refused: null, blocks: [], expect: /^sent \(id=/ },
-    { who: 'a removed identity that once had a seat', to: 'bob', refused: null, blocks: [{ agent_user_id: 'bob', reason: 'identity_removed' }], expect: /对方已移除、未送达 \(user:bob; identity_removed/ },
-    { who: 'an id that was never a member', to: 'ghost', refused: ['ghost'], blocks: [], expect: /收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：ghost/ },
+    { who: 'a removed identity that once had a seat', to: 'bob', refused: null, blocks: [{ agent_user_id: 'bob', reason: 'identity_removed' }], expect: /not delivered, recipient removed \(user:bob; identity_removed/ },
+    { who: 'an id that was never a member', to: 'ghost', refused: ['ghost'], blocks: [], expect: /Recipients are not members of chat 00000000-0000-4000-8000-000000000001: ghost/ },
   ])('#2383 message_send to $who follows the server', async ({ to, refused, blocks, expect: expected }) => {
     const h = harness(['agent-1', 'alice'])
     const insert = h.deps.restInsert
@@ -1055,7 +1055,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     const client = await connect(h.deps)
     const r = await client.callTool({ name: 'message_send', arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: 'hi', to_user_ids: ['user:alice'] } })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('读不到 chat(00000000-0000-4000-8000-000000000001)的成员名单')
+    expect(text(r)).toContain('Could not read the member list of chat 00000000-0000-4000-8000-000000000001.')
     expect(text(r)).not.toContain('不在本 chat')
     expect(h.calls.inserts).toHaveLength(0)
     await client.close()
@@ -1202,39 +1202,39 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(() => assertAgentMessageText('norm \\(\\rVert x \\rVert\\)')).not.toThrow()
     expect(() => assertAgentMessageText(String.raw`Delimited math: \(x\neq 0\)`)).not.toThrow()
     expect(() => assertAgentMessageText('examples: `x\\neq 0`\n```tex\n\\theta, \\frac{1}{2}\n```')).not.toThrow()
-    expect(() => assertAgentMessageText('Line1\\nNext')).toThrow(/字面|真实换行/)
-    expect(() => assertAgentMessageText('Line1\\nnext step')).toThrow(/字面|真实换行/)
-    expect(() => assertAgentMessageText('x\\neq 0')).toThrow(/TeX|LaTeX|分隔符/)
-    expect(() => assertAgentMessageText(String.raw`Embedded drive token abcC:\Docs\neq 0`)).toThrow(/TeX|LaTeX|分隔符/)
+    expect(() => assertAgentMessageText('Line1\\nNext')).toThrow(/literal|real line break/)
+    expect(() => assertAgentMessageText('Line1\\nnext step')).toThrow(/literal|real line break/)
+    expect(() => assertAgentMessageText('x\\neq 0')).toThrow(/TeX|LaTeX|delimiters/)
+    expect(() => assertAgentMessageText(String.raw`Embedded drive token abcC:\Docs\neq 0`)).toThrow(/TeX|LaTeX|delimiters/)
     expect(() => assertAgentMessageText(
       String.raw`Windows path: C:\Program Files\Gugu, then x\neq 0`,
-    )).toThrow(/TeX|LaTeX|分隔符/)
+    )).toThrow(/TeX|LaTeX|delimiters/)
     expect(() => assertAgentMessageText(
       String.raw`Windows path: C:\Gugu then x\neq 0`,
-    )).toThrow(/TeX|LaTeX|分隔符/)
+    )).toThrow(/TeX|LaTeX|delimiters/)
     expect(() => assertAgentMessageText(
       String.raw`Windows path: C:\Docs  then\neq 0`,
-    )).toThrow(/TeX|LaTeX|分隔符/)
+    )).toThrow(/TeX|LaTeX|delimiters/)
     expect(() => assertAgentMessageText(
       String.raw`Windows path: C:\Docs		then\neq 0`,
-    )).toThrow(/TeX|LaTeX|分隔符/)
+    )).toThrow(/TeX|LaTeX|delimiters/)
     expect(() => assertAgentMessageText(
       String.raw`Later spaced path C:\Root\Program Files\new\notes.txt then x\neq 0`,
-    )).toThrow(/TeX|LaTeX|分隔符/)
+    )).toThrow(/TeX|LaTeX|delimiters/)
     expect(() => assertAgentMessageText('broken math: \\(\u0009heta\\)')).toThrow(/TeX|LaTeX|转义|破损/)
-    expect(() => assertAgentMessageText('broken \\\\(\\operatorname{Min}(R)\\\\)')).toThrow(/TeX|LaTeX|分隔符/)
+    expect(() => assertAgentMessageText('broken \\\\(\\operatorname{Min}(R)\\\\)')).toThrow(/TeX|LaTeX|delimiters/)
     expect(() => assertAgentMessageText('broken: S^1=mathbb R/2pimathbb Z')).toThrow(/TeX|LaTeX|转义|破损/)
-    expect(() => assertAgentMessageText('broken: \\operatorname{Min}(R) outside math')).toThrow(/TeX|LaTeX|分隔符/)
+    expect(() => assertAgentMessageText('broken: \\operatorname{Min}(R) outside math')).toThrow(/TeX|LaTeX|delimiters/)
   })
   test.each(dollarRunBoundaryFixtures)('message_send dollar-run parity: $name', ({ markdown, validator }) => {
     const assertion = expect(() => assertAgentMessageText(markdown))
     if (validator === 'allow') assertion.not.toThrow()
-    else assertion.toThrow(/TeX|LaTeX|分隔符/)
+    else assertion.toThrow(/TeX|LaTeX|delimiters/)
   })
   test.each(markdownStructureBoundaryFixtures)('message_send markdown-structure parity: $name', ({ markdown, validator }) => {
     const assertion = expect(() => assertAgentMessageText(markdown))
     if (validator === 'allow') assertion.not.toThrow()
-    else assertion.toThrow(/TeX|LaTeX|分隔符/)
+    else assertion.toThrow(/TeX|LaTeX|delimiters/)
   })
   test('message_send 在入库前拒绝正文字面换行转义，代码区原样保留', async () => {
     for (const escapedText of ['第一行\\n第二行', '推导完成\\nTheorem 成立']) {
@@ -1245,7 +1245,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
         arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: escapedText, to_user_ids: ['user:alice'] },
       })
       expect(result.isError).toBe(true)
-      expect(text(result)).toMatch(/字面.*\\n|真实换行/)
+      expect(text(result)).toMatch(/literal \\n|real line break/)
       expect(blocked.calls.inserts).toHaveLength(0)
       expect(blocked.calls.rpcs).toHaveLength(0)
       await client.close()
@@ -1393,7 +1393,9 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     const client = await connect(h.deps)
     const r = await client.callTool({ name: 'message_send', arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: 'hi', to_user_ids: ['user:ghost'] } })
     expect(r.isError).toBe(true)
-    expect(text(r)).toContain('收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：ghost。用 message_members 查有效成员后重发。')
+    // The refusal names who can be addressed instead, so a made-up recipient is corrected from the refusal itself.
+    expect(text(r)).toContain('Recipients are not members of chat 00000000-0000-4000-8000-000000000001: ghost. Members you can address: ')
+    expect(text(r)).toMatch(/aid:alice\)?\. Send again to one of these addresses\./)
     expect(h.calls.inserts).toHaveLength(0)
     await client.close()
   })
@@ -1528,8 +1530,8 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
         arguments: { chat_id: '00000000-0000-4000-8000-000000000001', text: 'Ada, 分析甲你看下', to_user_ids: [] },
       })
       expect(result.isError).toBe(true)
-      expect(text(result)).toContain('正文叫了 Ada、分析甲')
-      expect(text(result)).toContain('agent-ascii、agent-long')
+      expect(text(result)).toContain('the text calls on Ada, 分析甲')
+      expect(text(result)).toContain('agent-ascii, agent-long')
       expect(h.calls.inserts).toHaveLength(0)
       expect(writeRpcs(h.calls.rpcs)).toEqual([])
       await client.close()
@@ -2193,17 +2195,17 @@ describe('restRpc void/空 body 容忍 (#1216)', () => {
     try { await fn() } finally { globalThis.fetch = orig }
   }
   test('204/空 body → null（不在空 body 上 JSON.parse）', async () => {
-    await withFetch(() => ({ ok: true, status: 204, text: async () => '', json: async () => { throw new Error('不应调用 json()') } }), async () => {
+    await withFetch(() => new Response(null, { status: 204 }), async () => {
       await expect(restRpc('retired_probe', {})).resolves.toBeNull()
     })
   })
   test('非空 body → 正常解析', async () => {
-    await withFetch(() => ({ ok: true, status: 200, text: async () => '{"x":1}' }), async () => {
+    await withFetch(() => new Response('{"x":1}', { status: 200 }), async () => {
       await expect(restRpc('some_rpc', {})).resolves.toEqual({ x: 1 })
     })
   })
   test('!ok → 抛错（含 status）', async () => {
-    await withFetch(() => ({ ok: false, status: 403, text: async () => 'denied' }), async () => {
+    await withFetch(() => new Response('denied', { status: 403 }), async () => {
       await expect(restRpc('x', {})).rejects.toThrow(/403/)
     })
   })
@@ -2688,7 +2690,7 @@ describe('#3805 运行时分叉:IM 工具注册照旧,执行一律拒', () => {
       await expect(
         callToolImpl(forkContext, def.name, {}, {}),
         `${def.name} 必须被拒`,
-      ).rejects.toThrow(/运行时分叉[\s\S]*Codex 3|Codex 3[\s\S]*运行时分叉/)
+      ).rejects.toThrow(/runtime fork of Codex 3/)
     }
   })
   test('端到端:真 transport 上、参数完全合法的一次发送也照拒', async () => {
@@ -2699,18 +2701,18 @@ describe('#3805 运行时分叉:IM 工具注册照旧,执行一律拒', () => {
     })
     expect(r.isError).toBe(true)
     expect(text(r)).toContain('Codex 3')
-    expect(text(r)).toContain('运行时分叉')
+    expect(text(r)).toContain('is a runtime fork of')
     await client.close()
   })
   test('反例:不是分叉就不该被这条闸拦(否则整个 IM 面被误伤也照样绿)', async () => {
     await expect(callToolImpl({ ...TEST_CONTEXT }, 'message_conversations', {}, {})).rejects.not.toThrow(
-      /运行时分叉/,
+      /runtime fork/,
     )
   })
   test('来源没有显示名时不编名字,话仍然说得完整', async () => {
     await expect(
       callToolImpl({ ...TEST_CONTEXT, forkOf: '' }, 'message_send', {}, {}),
-    ).rejects.toThrow(/来源会话/)
+    ).rejects.toThrow(/the source session/)
   })
 })
 
@@ -2831,7 +2833,7 @@ describe('message_send whisper (#6835)', () => {
     h.deps.restInsert = async () => { throw restWriteError('INSERT messages', 400, JSON.stringify({ code: '23514',
       message: 'A whisper goes to a member of this chat: carol is not a member of 00000000-0000-4000-8000-000000000001' })) }
     const r = await send(h, { whisper: true, to_user_ids: ['user:carol'] })
-    expect(text(r)).toContain('收件人不在本 chat（00000000-0000-4000-8000-000000000001）成员里：carol。')
+    expect(text(r)).toContain('Recipients are not members of chat 00000000-0000-4000-8000-000000000001: carol.')
     expect(h.calls.inserts).toHaveLength(0)
   })
 
@@ -2860,7 +2862,7 @@ describe('message_send whisper (#6835)', () => {
     const h = harness(['agent-1', 'alice'])
     const r = await send(h, { whisper: true, to_user_ids: ['user:alice'] }, { ...TEST_CONTEXT, threadRootId: 'thread-1' })
     expect(r.isError).toBe(true)
-    expect(text(r)).toMatch(/悄悄话只能发在主线.*thread=thread-1/)
+    expect(text(r)).toMatch(/whisper can only go to the main timeline.*thread=thread-1/)
     expect(h.calls.inserts).toHaveLength(0)
   })
 })

@@ -69,36 +69,36 @@ describe('gugu-dev#181 message_send flood notice', () => {
   test('the 9th message within a minute gets a notice, and is still sent', async () => {
     const { text, inserted } = await send({ rows: history(['agent-1', 9, 5]) })
     expect(inserted).toHaveLength(1)
-    expect(text).toMatch(/^sent \(id=[^)]+\)\n提醒:你在这个群里 1 分钟内已发 9 条,其间没有人发言。/)
+    expect(text).toMatch(/^sent \(id=[^)]+\)\nNote: you have sent 9 messages in this group within 1 minute with no one else speaking./)
   })
 
   test('13 messages spread over five minutes trip the 5-minute line', async () => {
     const { text } = await send({ rows: history(['agent-1', 13, 20]) })
-    expect(text).toContain('5 分钟内已发 13 条')
+    expect(text).toContain('sent 13 messages in this group within 5 minutes')
   })
 
   test('31 messages within an hour trip the 1-hour line', async () => {
     const { text } = await send({ rows: history(['agent-1', 31, 100]) })
-    expect(text).toContain('1 小时内已发 31 条')
+    expect(text).toContain('sent 31 messages in this group within 1 hour')
   })
 
   test('a human message restarts the count; other agents do not', async () => {
     const reset = await send({ rows: history(['agent-1', 5, 2], ['owner-1', 1, 2], ['agent-1', 10, 2]) })
     expect(reset.text).toMatch(/^sent \(id=[^)]+\)$/)
     const agents = await send({ rows: history(['agent-1', 5, 2], ['agent-2', 1, 2], ['agent-1', 10, 2]) })
-    expect(agents.text).toContain('1 分钟内已发 15 条')
+    expect(agents.text).toContain('sent 15 messages in this group within 1 minute')
   })
 
   test('a topic is counted on its own chat and named as a topic', async () => {
     const { text, reads } = await send({ kind: 'topic', rows: history(['agent-1', 9, 5]) })
-    expect(text).toContain('你在这个话题里 1 分钟内已发 9 条')
+    expect(text).toContain('sent 9 messages in this topic within 1 minute')
     expect(reads.some((path) => path.startsWith('messages?chat_id=eq.c1&'))).toBe(true)
   })
 
   test('a failed frequency read is said plainly and never fails the send', async () => {
     const { text, inserted } = await send({ rows: [], messagesError: new Error('HTTP 503') })
     expect(inserted).toHaveLength(1)
-    expect(text).toMatch(/^sent \(id=[^)]+\)\n这条已发出;发送频率没读到\(HTTP 503\),不用重发。$/)
+    expect(text).toMatch(/^sent \(id=[^)]+\)\nSent; the sending rate could not be read \(HTTP 503\)\. Do not send it again\.$/)
   })
 
   test('a DM is not counted', async () => {

@@ -51,10 +51,6 @@ vi.mock('@/session/renderer/lib/ipc', () => ({
     return () => { state.inventoryNotes.delete(listener); };
   } },
 }));
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: {
-  get manifests() { return state.inventory; },
-  isEnabled: (id: string) => !state.disabled.includes(id),
-} }));
 // The built-in task window, as far as this test needs it: which task, for whom, and its back control.
 vi.mock('@/components/assistant/AssistantWorkTaskWindow', () => ({ AssistantWorkTaskWindow: (props: { ownerId: string; request: Record<string, unknown>; onClose?: () => void; appPanel?: boolean }) => {
   state.windows.push({ ...props, signedIn: state.owner } as never);
@@ -67,6 +63,7 @@ vi.mock('@/components/assistant/AssistantSettingsPage', () => ({ AssistantSettin
 } }));
 
 const { AppWorkLedgerHost } = await import('../../../../apps/desktop/src/components/appSlot/AppWorkLedgerHost');
+const { installedExtensions } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions');
 const { AppHostLayerHost } = await import('../../../../apps/desktop/src/components/appSlot/AppHostLayerHost');
 const { forgetPushedWorkForTest, pushedRowsOf } = await import('../../../../apps/desktop/src/components/appSlot/appWorkLedger');
 const { forgetReportedHostLayersForTest } = await import('../../../../apps/desktop/src/components/appSlot/appHostLayer');
@@ -75,6 +72,7 @@ const { appHostLayerSlotKey, readAppHostLayerBridge, resetAppHostLayersForTest }
 const { installAssistantShellBridge, publishAssistantShell } = await import('../../../../apps/desktop/src/lib/assistantShellBridge');
 const { installIdentityDirectoryBridge, publishIdentityDirectory } = await import('../../../../apps/desktop/src/lib/identityDirectoryBridge');
 const { assistantPanelTaskChat } = await import('../../../../apps/desktop/src/components/assistant/assistant-panel-tasks');
+const { followRendererSession, queryClient } = await import('../../../../apps/desktop/src/lib/replica');
 installAssistantShellBridge();
 installIdentityDirectoryBridge();
 
@@ -98,8 +96,12 @@ let root: Root;
 let host: HTMLDivElement;
 let cell: HTMLDivElement;
 const render = async (visible = true) => act(async () => {
+  // The ledger replica follows the signed-in account, as the app publishes it.
+  followRendererSession(state.owner ? 'SIGNED_IN' : 'SIGNED_OUT', state.owner || null);
   state.tick += 1;
   for (const listener of state.ticks) listener();
+  // What main lists as installed here, as the test's state says it now.
+  installedExtensions.set(['local'], { extensions: state.inventory, invalid: [], disabled: state.disabled } as never);
   root.render(<><AppWorkLedgerHost /><AppHostLayerHost visible={visible} /></>);
 });
 const settle = () => act(async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve(); });
@@ -110,6 +112,9 @@ const openTask = (target: { ownerId?: string; workId?: string; sessionId?: strin
 const note = (extensionId?: string) => act(async () => { for (const listener of state.inventoryNotes) listener({ extensionId }); });
 
 beforeEach(async () => {
+  // Replica readings land synchronously (react-query's notify batching would wait a macrotask).
+  (await import('@tanstack/react-query')).notifyManager.setScheduler((callback) => { callback(); });
+  queryClient.clear();
   resetAppHostLayersForTest();
   forgetPushedWorkForTest();
   forgetReportedHostLayersForTest();
@@ -216,12 +221,13 @@ describe('the ledger, read as the built-in list reads it', () => {
 
   // Owner 11-12 (fresh account): the list was read while setup was finishing, the cloud said the assistant is not available
   // to this account yet (42501: its provision not ready), and the list said 「任务列表没读到 · 系统会自动再读」 for good.
-  it('during setup the cloud has no list yet: an empty list, not a failure; read again as the assistant\'s setup moves on', async () => {
+  // The list is not there yet (42501): "preparing" — the ledger's `loading`, ❌ a read empty list nor a failure (inventory A, work records).
+  it('during setup the cloud has no list yet: preparing, not a failure nor an empty list; read again as the assistant\'s setup moves on', async () => {
     ledger.list.mockRejectedValue(Object.assign(new Error('Assistant is not available to this account'), { code: '42501' }));
     await act(async () => showAssistant(OWNER, null));
     await render();
     await settle();
-    expect(lastPushed()).toMatchObject({ ownerId: OWNER, assistantId, state: 'ready', rows: [] });
+    expect(lastPushed()).toMatchObject({ ownerId: OWNER, assistantId, state: 'loading', rows: [] });
     // Setup done (where it lives known): read again at once, and the rows come.
     ledger.list.mockImplementation(async () => [work({ assistant_user_id: assistantId })]);
     const before = ledger.list.mock.calls.length;

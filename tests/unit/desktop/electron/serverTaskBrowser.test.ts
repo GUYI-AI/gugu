@@ -140,7 +140,7 @@ it.skipIf(!process.env.GUGU_TEST_CHROME)('real static-page capture feedback belo
       ready: Promise.resolve(), capture: params => page.debugger.sendCommand('Page.captureScreenshot', params),
     })
     const call = new AbortController()
-    const feedback = browserPageFeedback(page)
+    const feedback = browserPageFeedback(page, () => 'zh-CN')
     screen = (await browser.existingPage('feedback-task'))!
     const frames: import('../../../../apps/desktop/electron/server/server-task-browser').TaskPageScreenFrame[] = []
     await screen.startScreen(frame => frames.push(frame))

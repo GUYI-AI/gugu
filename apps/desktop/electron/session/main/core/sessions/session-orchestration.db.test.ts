@@ -7,6 +7,7 @@ import { setProjectGroupHost } from '../projects/project-group-host';
 import { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@shared/core/projects/session-home-project';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SessionPaneTab } from '@gugu/session-core/session-record/contract';
+import { SESSION_PREVIEW_CONCURRENCY } from '@gugu/session-core/session-record/contract';
 import type { AppDb } from '@main/db/client';
 import { resumeHostUpdate } from '../agent-status/resume-host-update';
 import { sessionBootTasks } from '../boot-tasks';
@@ -893,7 +894,7 @@ describe('session orchestration', () => {
       setSessionHostLocale('en-US');
       await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('No agent is installed on this computer yet. Install one from New task, then try again.');
       setSessionHostLocale('zh-CN');
-      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('这台电脑上还没有装 agent。先在「新建任务」里装一个，再试一次。');
+      await expect(spawnSessionForApp({ extensionId: 'board', envelope, prompt: 'x' })).rejects.toThrow('这台电脑上尚未安装 agent。请先在「新建任务」中安装，然后重试。');
       expect(childRows()).toEqual([]);
     });
 
@@ -2398,6 +2399,73 @@ describe('session orchestration', () => {
     ).resolves.toEqual(expect.objectContaining({ status: 'working' }));
   });
 
+  it('#2007 pages child metadata before reading model decisions/runtime/previews and batch-enriches only selected ids', async () => {
+    for (const id of ['selected', 'unselected', 'legacy-child']) insertPtyChild(id, 'idle', 'caller');
+    await recordSessionPlatformModel('selected', { modelId: 'chosen-model' });
+    fixture.sqlite.prepare("UPDATE sessions SET parent_session_id = NULL, config = json_set(config, '$.parentRemote', json_object('deviceId', 'remote-device', 'sessionId', 'caller')) WHERE id = 'legacy-child'").run();
+    const models = await import('./platform-model-selection');
+    const single = vi.spyOn(models, 'sessionPlatformModel');
+    const batch = vi.spyOn(models, 'sessionPlatformModels');
+    mocks.readSessionPreview.mockClear();
+    try {
+      const index = await runSessionAction(context, { action: 'children', metadata_only: true }) as Array<Record<string, unknown>>;
+      expect(index.map(row => row.session_id).sort()).toEqual(['legacy-child', 'selected', 'unselected']);
+      expect(index.every(row => !('model' in row) && !('runtime' in row) && !('preview' in row))).toBe(true);
+      expect(single).not.toHaveBeenCalled();
+      expect(batch).not.toHaveBeenCalled();
+      expect(mocks.readSessionPreview).not.toHaveBeenCalled();
+      const details = await runSessionAction(context, { action: 'get_many', session_ids: ['selected', 'missing'] });
+      expect(details).toEqual([
+        expect.objectContaining({ session_id: 'selected', model: { source: 'gugu', id: 'chosen-model', spawn_model_id: 'platform:chosen-model' } }),
+        expect.objectContaining({ session_id: 'missing', preview: { error: { code: 'session_not_found', message: expect.any(String) } } }),
+      ]);
+      expect(batch).toHaveBeenCalledExactlyOnceWith(['selected', 'missing']);
+      expect(single).not.toHaveBeenCalled();
+      expect(mocks.readSessionPreview).toHaveBeenCalledExactlyOnceWith('selected');
+      await expect(runSessionAction(context, { action: 'get_many', session_ids: Array.from({ length: 33 }, (_, i) => `id-${i}`) })).rejects.toThrow('at most 32');
+    } finally { single.mockRestore(); batch.mockRestore(); }
+  });
+
+  it('#2007 get_many reads previews on a bounded pool: at most SESSION_PREVIEW_CONCURRENCY in flight, request order kept, a failing row stays on its row', async () => {
+    const ids = Array.from({ length: 20 }, (_, i) => `pool-${i}`);
+    for (const id of ids) insertPtyChild(id, 'idle', 'caller');
+    const gates = new Map<string, () => void>();
+    let inFlight = 0;
+    let peak = 0;
+    const original = mocks.readSessionPreview.getMockImplementation();
+    mocks.readSessionPreview.mockClear();
+    mocks.readSessionPreview.mockImplementation(async (sessionId: string) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise<void>((resolve) => gates.set(sessionId, resolve));
+      inFlight -= 1;
+      if (sessionId === 'pool-3') throw new Error('boom');
+      if (sessionId === 'pool-4') return { ok: false, error: { code: 'record_not_found', message: 'gone' } };
+      return { ok: true, value: { running: false, now: null, ended: { kind: 'done', reason: 'end_turn' }, entries: [{ kind: 'text', id: `${sessionId}-a`, text: sessionId, truncated: false, at: null }] } };
+    });
+    try {
+      const pending = runSessionAction(context, { action: 'get_many', session_ids: ids }) as Promise<Array<{ session_id: string; preview: { entries: Array<{ text: string }> } }>>;
+      let done = false;
+      void pending.then(() => { done = true; }, () => { done = true; });
+      // The pool fills up to the cap at once (reads really overlap) and nothing beyond the cap starts while they are held.
+      await vi.waitFor(() => expect(gates.size).toBe(SESSION_PREVIEW_CONCURRENCY));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(mocks.readSessionPreview).toHaveBeenCalledTimes(SESSION_PREVIEW_CONCURRENCY);
+      // Finish them newest-first so completion order is the reverse of request order; the pool keeps refilling.
+      while (!done) {
+        for (const [id, release] of [...gates].reverse()) { gates.delete(id); release(); }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      const rows = await pending;
+      expect(peak).toBe(SESSION_PREVIEW_CONCURRENCY);
+      expect(mocks.readSessionPreview).toHaveBeenCalledTimes(ids.length);
+      expect(rows.map((row) => row.session_id)).toEqual(ids);
+      expect(rows[3].preview).toEqual({ error: { code: 'preview_failed', message: 'boom' } });
+      expect(rows[4].preview).toEqual({ error: { code: 'record_not_found', message: 'gone' } });
+      expect(rows.filter((_, i) => i !== 3 && i !== 4).every((row) => row.preview.entries[0].text === row.session_id)).toBe(true);
+    } finally { mocks.readSessionPreview.mockImplementation(original!); }
+  });
+
   // 被拒停住的 child 在状态上与做完的一模一样(idle):session_get 上的 preview.ended 把两者分开。
   // 宿主的 children 不算近况(#7379 复核):工具层切完窗以后才对窗内的行逐个走 get。
   it('session_get carries how the last turn ended; children reads no preview; an unreadable record is said on its row', async () => {
@@ -2781,7 +2849,12 @@ describe('session_archive', () => {
     seedChild('child-a');
     seedChild('grandchild', 'child-a');
 
-    await expect(runSessionAction(context, { action: 'archive', session_id: 'child-a' })).resolves.toEqual({
+    // With a child under it the scope has no default: the agent says it, as the person ticks or leaves the box.
+    await expect(runSessionAction(context, { action: 'archive', session_id: 'child-a' })).rejects.toThrow(
+      'session has 1 child session(s): pass with_children=true to archive them with it, or with_children=false'
+    );
+    expect(archivedAt('child-a')).toBeNull();
+    await expect(runSessionAction(context, { action: 'archive', session_id: 'child-a', with_children: false })).resolves.toEqual({
       session_id: 'child-a',
       archived: true,
       with_children: false,

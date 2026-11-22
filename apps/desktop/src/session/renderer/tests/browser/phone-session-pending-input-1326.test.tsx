@@ -3,33 +3,43 @@ import { act } from 'react';
 import { page, userEvent } from 'vitest/browser';
 import { SessionConversation } from '@/components/session-watch/SessionConversation';
 import { emptyAgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
-import { state, changed, EMPTY } from '@/lib/sessionInputOutboxBridge';
+import { state, changed, EMPTY } from '@/lib/outbox/kinds/sessionInput';
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
-import type { LifeView } from '@shared/core/sessions/session-life';
+import type { LifeView, NativeInputRetryOptions, NativeInputRetryResult } from '@shared/core/sessions/session-life';
 import { renderDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { i18n } from '@/i18n';
+import { ModalRenderer } from '@renderer/lib/modal/modal-renderer';
+import { modalStore } from '@renderer/lib/modal/modal-store';
+import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 
-const { retry, resend, discard } = vi.hoisted(() => ({ retry: vi.fn(async () => {}), resend: vi.fn(async () => {}), discard: vi.fn(async () => {}) }));
+const { retry, resend, discard } = vi.hoisted(() => ({ retry: vi.fn(async () => {}),
+  resend: vi.fn(async (_sessionId: string, _messageId: string, _options?: NativeInputRetryOptions): Promise<NativeInputRetryResult> => ({ kind: 'done' })),
+  discard: vi.fn(async () => {}) }));
 const hostLife = vi.hoisted(() => ({ view: null as LifeView | null }));
 const hostHistory = vi.hoisted(() => ({ read: vi.fn() }));
 vi.mock('@/components/session-watch/useSessionLifeView', () => ({ useSessionLifeView: () => ({ view: hostLife.view, error: null, current: () => hostLife.view }) }));
-vi.mock('@/lib/sessionInputOutboxBridge', async original => ({ ...(await original<object>()), retrySessionInputs: retry }));
+vi.mock('@/lib/outbox/kinds/sessionInput', async original => ({ ...(await original<object>()), retrySessionInputs: retry }));
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
-vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: hostHistory.read, lifeRetryUnknown: resend, lifeDiscard: discard } }) }));
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), fetchOlder: hostHistory.read, machineRpc: () => ({ sessions: { lifeRetryUnknown: resend, lifeDiscard: discard } }) }));
 
+// A timeline that has had its first snapshot: until then an unknown receipt is not placed.
+const loaded = () => ({ ...emptyAgentWatchTimeline(), cursor: { epoch: 'e', seq: 0 } });
 let harness: ReturnType<typeof createReactHarness>;
-afterEach(() => {
+afterEach(async () => {
+  modalStore.closeModal();
   harness?.cleanup();
   Object.assign(state(), { accountId: null, rows: EMPTY, valid: () => false });
   retry.mockClear();
-  resend.mockClear();
+  resend.mockReset();
+  resend.mockResolvedValue({ kind: 'done' });
   discard.mockClear();
   hostLife.view = null;
   hostHistory.read.mockReset();
+  await i18n.changeLanguage('en-US');
 });
 
 it('clears an unknown incoming marker when the phone already has its native bubble', async () => {
@@ -37,7 +47,7 @@ it('clears an unknown incoming marker when the phone already has its native bubb
   const text = renderDeliveryEnvelope({ route: 'session-direct', from: 'Remote sender', fromType: 'agent', fromId: 'session:sender', messageId: 'msg:incoming', at: 'now', content: 'Incoming phone instruction' });
   hostLife.view = { sessionId: 'phone-task', version: 1, kind: 'ready', stage: null, hold: null, failure: null, lastExit: null, nativeSession: null,
     pending: { count: 1, items: [{ seq: 1, messageId: 'incoming', kind: 'session-direct', text, preview: text, state: 'unknown', failure: null }] } };
-  const timeline = emptyAgentWatchTimeline();
+  const timeline = loaded();
   timeline.turns = [{ id: 'native', seq: 0, initiator: 'agent', items: [{ kind: 'message', id: 'native-echo', seq: 0, role: 'user', text }], outcome: { kind: 'done' } }];
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
@@ -63,7 +73,7 @@ it.each([false, true])('only resends an unmatched phone input on an explicit cli
   const send = vi.fn();
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+  await renderWithAppProviders(harness, <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={send} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
   await until('the unmatched incoming input is visible with its unknown receipt', () => !!harness.container.querySelector('[data-user-card="not-landed"]') && !!harness.container.querySelector('[data-send-state="unknown"]'));
@@ -74,7 +84,8 @@ it.each([false, true])('only resends an unmatched phone input on an explicit cli
   if (supported) {
     expect(action?.textContent).toMatch(/Resend|重发/);
     await userEvent.click(action!);
-    expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'not-landed');
+    // The explicit click negotiates consent; a successful host still completes in one call.
+    expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'not-landed', { allowConfirmation: true });
   } else {
     expect(action).toBeNull();
     expect(resend).not.toHaveBeenCalled();
@@ -90,7 +101,7 @@ it('uses the ordinary pending projection on the phone, keeping acceptance and au
   Object.assign(state(), { accountId: 'owner', rows: [input], valid: () => true });
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+  await renderWithAppProviders(harness, <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
   await until('phone pending input appears in the transcript', () => !!harness.container.querySelector('[data-user-card="phone-send"]') && !!harness.container.querySelector('[data-send-state="sending"]'));
@@ -130,22 +141,22 @@ it('loads older phone history before placing an unknown receipt and never draws 
   const text = renderDeliveryEnvelope({ route: 'session-direct', from: 'Remote sender', fromType: 'agent', fromId: 'session:sender', messageId: 'msg:older-incoming', at: 'now', content: 'Older incoming instruction' });
   hostLife.view = { sessionId: 'phone-task', version: 1, kind: 'ready', stage: null, hold: null, failure: null, lastExit: null, nativeSession: null,
     pending: { count: 1, items: [{ seq: 1, messageId: 'older-incoming', kind: 'session-direct', text, preview: text, state: 'unknown', failure: null }] } };
-  const timeline = emptyAgentWatchTimeline();
+  const timeline = loaded();
   timeline.hasOlder = true;
   timeline.turns = [{ id: 'latest', seq: 2, initiator: 'user', items: [{ kind: 'message', id: 'latest-user', seq: 0, role: 'user', text: 'Latest human input' }], outcome: { kind: 'done' } }];
-  let release: (value: { turns: typeof timeline.turns; nextCursor: number | null }) => void = () => {};
+  let release: (value: { epoch: string; turns: typeof timeline.turns; hasOlder: boolean }) => void = () => {};
   hostHistory.read.mockImplementation(() => new Promise(resolve => { release = resolve }));
   const loadOlder = vi.fn(async () => {});
   const props = { deviceId: 'device', sessionId: 'phone-task', agentName: 'Agent', nativeRecord: true, sessionRuntime: 'acp' as const,
     respondingItemId: null, onRespond: vi.fn(), onSend: vi.fn(), pendingSends: [], sending: false, agentWorking: false, onStop: vi.fn(), stopping: false, onLoadOlder: loadOlder };
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation {...props} timeline={timeline} historyCursor={2} />, { contacts: {} });
+  await renderWithAppProviders(harness, <SessionConversation {...props} timeline={timeline} />, { contacts: {} });
   await until('missing unknown receipt requests its older page', () => hostHistory.read.mock.calls.length === 1);
   expect(harness.container.textContent).not.toContain('Older incoming instruction');
   const older = { ...timeline, hasOlder: false, turns: [{ id: 'older', seq: 1, initiator: 'agent' as const,
     items: [{ kind: 'message' as const, id: 'older-native', seq: 0, role: 'user' as const, text }], outcome: { kind: 'done' as const } }, ...timeline.turns] };
-  await act(async () => { release({ turns: [older.turns[0]!], nextCursor: null }); });
+  await act(async () => { release({ epoch: 'e', turns: [older.turns[0]!], hasOlder: false }); });
   await until('older confirmed agent delivery is folded without an unresolved marker', () => !!harness.container.querySelector('[data-agent-activity][data-expanded="false"]') && !harness.container.querySelector('[data-send-state="unknown"]'));
   await userEvent.click(harness.container.querySelector('[data-agent-activity] button[data-collapse-id]')!);
   await until('the older native bubble clears its unresolved marker', () => !!harness.container.querySelector('[data-user-card="older-native"]') && !harness.container.querySelector('[data-send-state="unknown"]'));
@@ -160,7 +171,7 @@ it('retains the phone recovery label on the same ordinary sending input', async 
   Object.assign(state(), { accountId: 'owner', rows: [input], valid: () => true });
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+  await renderWithAppProviders(harness, <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     startupPrompt={{ id: input.id, text: input.text, starting: 'restoring', held: true }}
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
@@ -176,7 +187,7 @@ it('uses the shared failed-message disclosure on touch and the existing inline e
   Object.assign(state(), { accountId: 'owner', rows: [input], valid: () => true });
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+  await renderWithAppProviders(harness, <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
   await until('the shared failure trigger is mounted', () => !!harness.container.querySelector('[data-testid="message-send-failed"]'));
@@ -204,7 +215,7 @@ it('offers resend and discard on a failed host row and discard on an unknown one
     ] } };
   harness = createReactHarness();
   harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+  await renderWithAppProviders(harness, <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
     sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
     onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />, { contacts: {} });
   // The host rows retain durable order; both states now use the same failed-send copy.
@@ -214,7 +225,8 @@ it('offers resend and discard on a failed host row and discard on an unknown one
   await until('the failed row offers both actions', () => !!document.querySelector('[data-testid="message-send-failed-menu"]'));
   expect(document.querySelector('[data-testid="message-send-discard"]')).not.toBeNull();
   await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-retry"]')!);
-  expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'host-refused');
+  // Failed host rows use the same explicit recovery API, without changing their notice/discard actions.
+  expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'host-refused', { allowConfirmation: true });
   await until('the menu closes', () => !document.querySelector('[data-testid="message-send-failed-menu"]'));
   const unknown = trigger(1);
   expect(unknown.getAttribute('aria-label')).toBe(i18n.t('message.sendStatus.failedHint', { ns: 'messaging' }));
@@ -226,4 +238,43 @@ it('offers resend and discard on a failed host row and discard on an unknown one
   await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-discard"]')!);
   expect(discard).toHaveBeenCalledExactlyOnceWith('phone-task', 'host-unknown');
   expect(retry).not.toHaveBeenCalled();
+});
+
+it.each([
+  ['en-US', false], ['en-US', true], ['zh-CN', false], ['zh-CN', true],
+] as const)('phone recovery uses plain %s copy and submits consent only on confirmation (%s)', async (locale, confirmed) => {
+  await page.viewport(390, 844);
+  await i18n.changeLanguage(locale);
+  hostLife.view = { sessionId: 'phone-task', version: 1, kind: 'ready', stage: null, hold: null, failure: null, lastExit: null, nativeSession: null,
+    pending: { count: 1, items: [{ seq: 1, messageId: 'tail-input', kind: 'session-direct', text: 'old input', preview: 'old input',
+      state: 'unknown', failure: null, resendable: true, discardable: true }] } };
+  resend.mockResolvedValueOnce({ kind: 'confirmation-required', confirmation: 'phone-row-consent', reason: 'native_tail_does_not_cover_history', detail: 'EACCES /fixture/private/raw-detail-marker' });
+  const send = vi.fn();
+  harness = createReactHarness();
+  harness.container.style.cssText = 'height:700px;width:390px;display:flex;flex-direction:column';
+  await renderWithAppProviders(harness, <SessionLocalizationProvider>
+    <SessionConversation timeline={loaded()} deviceId="device" sessionId="phone-task" agentName="Agent" nativeRecord
+      sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={send} pendingSends={[]} sending={false} agentWorking={false}
+      onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />
+    <ModalRenderer />
+  </SessionLocalizationProvider>, { contacts: {} });
+  await until('the unresolved phone input is visible', () => !!harness.container.querySelector('[data-testid="message-send-failed"]'));
+  expect(resend).not.toHaveBeenCalled();
+  await act(async () => { await userEvent.click(harness.container.querySelector<HTMLElement>('[data-testid="message-send-failed"]')!); });
+  await until('the existing phone failure menu is open', () => !!document.querySelector('[data-testid="message-send-retry"]'));
+  await act(async () => { await userEvent.click(document.querySelector<HTMLElement>('[data-testid="message-send-retry"]')!); });
+  await until('the existing native delivery confirmation is open', () => !!document.querySelector('[role="dialog"]'));
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+  expect(dialog.textContent).toContain(locale === 'zh-CN' ? 'Agent 那边的对话记录' : "the agent's conversation record");
+  expect(dialog.textContent).toContain(locale === 'zh-CN' ? '再次发送可能产生重复' : 'could create a duplicate');
+  expect(dialog.textContent).not.toMatch(/原生记录|native history/i);
+  expect(dialog.textContent).not.toContain('native_tail_does_not_cover_history');
+  expect(dialog.textContent).not.toContain('raw-detail-marker');
+  expect(resend).toHaveBeenCalledExactlyOnceWith('phone-task', 'tail-input', { allowConfirmation: true });
+  const label = locale === 'zh-CN' ? (confirmed ? /^仍然重发/ : /^取消$/) : (confirmed ? /^Send again anyway/ : /^Cancel$/);
+  await act(async () => { await userEvent.click(page.getByRole('button', { name: label })); });
+  await until('confirmation is settled', () => !modalStore.isOpen && resend.mock.calls.length === (confirmed ? 2 : 1));
+  if (confirmed) expect(resend).toHaveBeenNthCalledWith(2, 'phone-task', 'tail-input', { allowConfirmation: true, confirmation: 'phone-row-consent' });
+  expect(harness.container.querySelectorAll('[data-user-card]')).toHaveLength(1);
+  expect(send).not.toHaveBeenCalled(); expect(retry).not.toHaveBeenCalled(); expect(discard).not.toHaveBeenCalled();
 });

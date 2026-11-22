@@ -2,15 +2,17 @@ import { revealSessionpage } from '../../hooks/useSessionpageReveal'
 import { rendererLogger } from '../../lib/log'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { platform } from '../../platform'
-import { rpc } from '../../session/renderer/lib/ipc'
+import { onMachineEvent, rpc } from '../../session/renderer/lib/ipc'
+import { marketRefreshedChannel } from '../../session/shared/extensions/marketEvents'
 import { appState } from '../../session/renderer/lib/stores/app-state'
-import type { AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
+import type { AppInChat, AppOpenWithDetail } from '../../session/shared/extensions/app-runtime-protocol'
 import type { ExtensionInstallConsentOutcome } from '../../session/shared/extensions/host-actions'
 import type { InstallConsentAsk } from '../../session/renderer/features/extensions/install-consent'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
-import { appChatFile, groupFileOpener, groupFilesOpenedBy, phoneRuns } from './phoneAppHost'
+import { appInChat, groupFileOpener, phoneRuns } from './phoneAppHost'
 import { grantableBy, type AttachmentInstallRefused, type AttachmentPackage } from '../../session/shared/extensions/attachment-install'
 import { PHONE_CAPABILITIES, phoneApps } from './phoneApps'
+import { phoneMarketCatalog } from '../settings/phoneMarketPage'
 import { setExtensionEnabled } from '../../session/renderer/features/extensions/set-extension-enabled'
 import type { HandedConsent } from '../../session/shared/extensions/install-consent-flow'
 
@@ -44,8 +46,8 @@ export interface AppMarketInstall {
 /**
  * This device's Apps (L9): who installs them from a chat, who says which App opens a group file, where 「始终用它」 is
  * kept — main on the desktop (`rpc.extensions`), the phone's own App store in this page (phoneApps.ts). The card and the
- * group's panel ask here, never which platform they are on; what is installed they read from `installedExtensionsStore`,
- * which both fill. None on the web, where Apps do not run.
+ * group's panel ask here, never which platform they are on; what is installed they read from the `installedExtensions`
+ * replica under `HERE_HOST`, which both fill. None on the web, where Apps do not run.
  */
 export interface AppsHere {
   /** Whether this device can use the App at all — by what it can do (app-redesign §5): the desktop every App, the phone `phoneRuns`. */
@@ -60,11 +62,12 @@ export interface AppsHere {
   installFromMarket(args: AppMarketInstall): Promise<Answer<AppMarketAnswer>>
   /** The market's Apps this device can install, each its version for here: what a group's 「用 X 打开」 offer looks among. */
   marketOffers(): Promise<Answer<{ manifest: ExtensionManifest; version: string }[]>>
+  /** The market index this device reads was fetched again and differs (`changed`): what it offers is read again. Returns stop. */
+  onMarketChanged(listener: () => void): () => void
   /** `at`: the place a pill points at — the App that opens the file gets it as a `link` event (desktop: main; phone: its host). */
   groupFileOpener(args: { chatId?: string; itemId: string; at?: Record<string, string>; among?: string[] }): Promise<Answer<AppOpenWithDetail>>
-  groupFilesOpenedBy(args: { chatId: string; extensionId: string }): Promise<Answer<{ itemId: string; name: string; displayName: string }[]>>
-  /** API 14: the file an App names for this chat (`chatFile`), found or made, as that file opened with the App. */
-  appChatFile(args: { chatId: string; extensionId: string }): Promise<Answer<AppOpenWithDetail>>
+  /** An App picked in a chat, not as a page of its own: the file it names there (API 14 `chatFile`, made the first time), or its files there. */
+  appInChat(args: { chatId: string; extensionId: string }): Promise<Answer<AppInChat>>
   setOpenWithDefault(args: { key: string; tabKind: string | null }): Promise<unknown>
   /** An installed App switched on or off (161 10-16, every App has its switch): the Apps page's own switch on the desktop, the phone's store on the phone. */
   setEnabled(args: { manifest: ExtensionManifest; enabled: boolean }): Promise<Answer<unknown>>
@@ -78,9 +81,9 @@ const desktop: AppsHere = {
   installAttachment: (args) => rpc.extensions.installAttachment(args),
   installFromMarket: (args) => rpc.extensions.installFromMarket(args),
   marketOffers: () => rpc.extensions.marketOffers(),
+  onMarketChanged: (listener) => onMachineEvent(null, marketRefreshedChannel, (refreshed) => { if (refreshed.outcome === 'changed') listener() }),
   groupFileOpener: (args) => rpc.extensions.groupFileOpener(args),
-  groupFilesOpenedBy: (args) => rpc.extensions.groupFilesOpenedBy(args),
-  appChatFile: (args) => rpc.extensions.appChatFile(args),
+  appInChat: (args) => rpc.extensions.appInChat(args),
   setOpenWithDefault: (args) => rpc.extensions.setOpenWithDefault(args),
   setEnabled: async ({ manifest, enabled }) => {
     try {
@@ -101,9 +104,11 @@ const phone: AppsHere = {
   grantable: (manifest) => grantableBy(manifest, PHONE_CAPABILITIES),
   installAttachment: (args) => phoneApps.installAttachment(args),
   installFromMarket: (args) => phoneApps.installFromMarket(args),
+  // The catalog first (what the offers are read from), then the listener.
+  onMarketChanged: (listener) => phoneApps.market.onRefreshed((refreshed) => { if (refreshed.outcome === 'changed') void phoneMarketCatalog.refresh('phone').then(listener) }),
   marketOffers: async () => {
     try {
-      const entries = await phoneApps.market.entries()
+      const { entries } = await phoneMarketCatalog.fetch('phone')
       // Only what this phone can use at all (app-redesign §5), as its card's install would say.
       const offers = entries.filter((entry) => entry.compat === null && !entry.deprecated && phoneRuns(entry.manifest))
       return { success: true, data: offers.map((entry) => ({ manifest: entry.manifest, version: entry.version })) }
@@ -115,10 +120,9 @@ const phone: AppsHere = {
     await phoneApps.ready()
     return groupFileOpener(args)
   },
-  groupFilesOpenedBy,
-  appChatFile: async (args) => {
+  appInChat: async (args) => {
     await phoneApps.ready()
-    return appChatFile(args)
+    return appInChat(args)
   },
   setOpenWithDefault: async (args) => phoneApps.setOpenWithDefault(args),
   setEnabled: ({ manifest, enabled }) => phoneApps.setEnabled(manifest.id, enabled),

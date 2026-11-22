@@ -1,34 +1,34 @@
 import type { GitChange } from '@gugu/session-core/git';
 import { GrowingList } from '@gugu/session-ui/react/growing-list';
-import { ChevronDown, ChevronRight, Folder, FolderOpen } from '@/lib/icons'
+import { ChevronDown, ChevronRight } from '@/lib/icons'
 import { useCallback, useMemo, useState } from 'react';
 import {
   buildNestedVisibleRows,
   isChainExpanded,
   type TreeRow,
 } from '@renderer/features/sessions/file-tree/tree-utils';
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { FileMark, FolderMark } from '@gugu/session-ui/file-mark';
 import { cn } from '@renderer/utils/utils';
-import { ChangeStatusAffordance } from './changes-list-item';
+import { ChangeStatusAffordance, type ChangeRow } from './changes-list-item';
 import { buildChangesTree } from './changes-tree-utils';
 
 import { STATE_LAYERS } from '@renderer/lib/ui/state-layers';
 
-export interface VirtualizedChangesTreeProps {
-  changes: GitChange[];
+export interface VirtualizedChangesTreeProps<T extends ChangeRow = GitChange> {
+  changes: T[];
   rootPath?: string;
-  onSelectChange?: (change: GitChange) => void;
-  onDoubleClickChange?: (change: GitChange) => void;
+  onSelectChange?: (change: T) => void;
+  onDoubleClickChange?: (change: T) => void;
   isSelected?: (path: string) => boolean;
   onToggleSelect?: (path: string) => void;
-  onPrefetch?: (change: GitChange) => void;
+  onPrefetch?: (change: T) => void;
   activePath?: string;
   className?: string;
 }
 
 const ITEM_HEIGHT = 28;
 
-export function VirtualizedChangesTree({
+export function VirtualizedChangesTree<T extends ChangeRow>({
   changes,
   rootPath,
   onSelectChange,
@@ -38,7 +38,7 @@ export function VirtualizedChangesTree({
   onPrefetch,
   activePath,
   className,
-}: VirtualizedChangesTreeProps) {
+}: VirtualizedChangesTreeProps<T>) {
   const [collapsedPaths, setCollapsedPaths] = useState<Set<string>>(() => new Set());
 
   const tree = useMemo(() => buildChangesTree(changes, rootPath), [changes, rootPath]);
@@ -140,9 +140,7 @@ function DirectoryRow({
           <ChevronRight className="h-3.5 w-3.5" />
         )}
       </span>
-      <span className="shrink-0 text-foreground-muted">
-        {isExpanded ? <FolderOpen className="h-3.5 w-3.5" /> : <Folder className="h-3.5 w-3.5" />}
-      </span>
+      <FolderMark open={isExpanded} size={16} className="shrink-0" />
       <span className="min-w-0 flex-1 truncate text-left text-sm">{displayName}</span>
     </button>
   );
@@ -160,7 +158,7 @@ function FileRow({
   style,
 }: {
   row: TreeRow;
-  change: GitChange;
+  change: ChangeRow;
   isSelected: boolean;
   isActive: boolean;
   onToggleSelect?: (path: string) => void;
@@ -185,7 +183,7 @@ function FileRow({
     >
       <span className="inline-block w-3.5 shrink-0" />
       <span className="shrink-0">
-        <FileIcon filename={node.name} size={12} />
+        <FileMark name={node.name} size={16} />
       </span>
       <span
         className={cn(

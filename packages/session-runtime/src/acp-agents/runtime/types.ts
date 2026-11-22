@@ -26,6 +26,10 @@ export interface PromptQueueStore {
 export type AcpRuntimeProcessHost = Omit<AcpProcessHost, 'resolveSpawnContext'>;
 
 export interface AcpRuntimeDeps {
+  /** A session's preview may have changed (its running turn moved): readers project it from its timeline. */
+  messagePreview?: {
+    onChange: (event: { sessionId: string }) => void;
+  };
   conversationPreview?: {
     project: (turn: TranscriptTurn) => import('@gugu/session-core/session-record/personal-conversation').PersonalConversationPreview | null;
     onChange: (event: { sessionId: string; preview: import('@gugu/session-core/session-record/personal-conversation').PersonalConversationPreview | null }) => void;
@@ -56,7 +60,7 @@ export interface AcpRuntimeDeps {
   onTurnCommitted?: (event: {
     sessionId: string;
     providerId?: string;
-    platformCredentials?: boolean;
+    hostCredentials?: boolean;
     source: 'live' | 'replay' | 'revision' | 'backfill';
     turn: TranscriptTurn;
   }) => void;

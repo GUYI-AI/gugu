@@ -20,10 +20,8 @@ function run(options: { supported: boolean; language: string; android: boolean }
   vi.spyOn(document, 'addEventListener').mockImplementation((type, listener) => {
     if (type === 'DOMContentLoaded') loaded.push(listener as () => void)
   })
-  // jsdom has no CSS namespace; the gate only ever calls CSS.supports.
-  const css = { supports: () => options.supported }
-  vi.stubGlobal('CSS', css)
-  Object.defineProperty(window, 'CSS', { value: css, configurable: true })
+  // The gate reads the floor API's probe (window.CSSLayerBlockRule), which jsdom does not have.
+  vi.stubGlobal('CSSLayerBlockRule', options.supported ? class CSSLayerBlockRule {} : undefined)
   vi.spyOn(navigator, 'language', 'get').mockReturnValue(options.language)
   const nativePromise = vi.fn((_plugin: string, method: string) =>
     Promise.resolve(method === 'startupContext' ? { enabled: true, attemptId: 'attempt-1' } : undefined))
@@ -67,17 +65,18 @@ describe('engine floor gate', () => {
   })
 
   it('probes the API that sets ENGINE_FLOOR, and the renderer build targets the same floor', () => {
-    const probed = Object.values(ENGINE_APIS).filter(api => new RegExp(api.pattern.source).test(gate!))
+    const probed = Object.values(ENGINE_APIS).filter(api => api.probe && gate!.includes(api.probe))
+    expect(probed.length).toBeGreaterThan(0)
     expect(Math.max(...probed.map(api => api.chrome))).toBe(ENGINE_FLOOR.chrome)
     expect(Math.max(...probed.map(api => api.safari))).toBe(ENGINE_FLOOR.safari)
     expect(ENGINE_FLOOR_BUILD_TARGET).toEqual([`chrome${ENGINE_FLOOR.chrome}`, `safari${ENGINE_FLOOR.safari}`])
     expect(readFileSync(resolve(process.cwd(), 'vite.config.mts'), 'utf8')).toContain('target: ENGINE_FLOOR_BUILD_TARGET,')
   })
 
-  it('loads exactly the core-js modules the floor table names, first in every entry', () => {
+  it('loads exactly the polyfill modules the floor table names, first in every entry', () => {
     const imported = [...readFileSync(resolve(process.cwd(), 'apps/desktop/src/lib/engine-polyfills.ts'), 'utf8')
-      .matchAll(/import 'core-js\/modules\/(.+?)\.js'/g)].map(m => m[1]).sort()
-    expect(imported).toEqual(Object.values(ENGINE_APIS).flatMap(api => api.polyfill ?? []).sort())
+      .matchAll(/^import '(.+?)'/gm)].map(m => m[1]).sort()
+    expect(imported).toEqual([...new Set(Object.values(ENGINE_APIS).flatMap(api => api.polyfill ?? []))].sort())
     for (const entry of ['apps/desktop/index.html', 'apps/desktop/session-embedded.html']) {
       const modules = [...readFileSync(resolve(process.cwd(), entry), 'utf8').matchAll(/<script type="module"[^>]*src="([^"]+)"/g)]
       expect(modules[0]?.[1], entry).toMatch(/src\/lib\/engine-polyfills\.ts$/)

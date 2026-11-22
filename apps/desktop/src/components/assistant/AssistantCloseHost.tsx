@@ -13,9 +13,9 @@ import { cn } from '../../lib/cn'
 import { notify } from '../../lib/notices'
 import { listDevicesOnceIdentified } from '../../lib/listDevicesOnceIdentified'
 import { wakeCloudComputerUntilOnline } from '@gugu/core/cloud/cloudComputer'
-import { rendererCloudComputerClient } from '../../lib/cloudComputer'
+import { rendererCloudComputerClient } from '../../lib/cloudComputerClient'
 import { useAssistantHome } from '../../lib/useAssistantHome'
-import { reloadMyAssistant } from '../../lib/myAssistant'
+import { myAssistant } from '../../lib/myAssistant'
 import { assistantResumeStore } from '../../lib/assistantSetup'
 import { retireCustomizeCard, writeSetupStep } from '../../lib/assistantSetupState'
 import { ASSISTANT_HOME_CHANNELS } from '../../lib/assistantHomeIpc'
@@ -127,7 +127,7 @@ export function AssistantCloseHost() {
         retireCustomizeCard(ownerUserId)
         for (const record of assistantResumeStore.list(ownerUserId)) assistantResumeStore.forget(ownerUserId, record.operationId)
         moveJournalStore(ownerUserId).clear()
-        reloadMyAssistant(ownerUserId)
+        void myAssistant.refresh()
       },
     }
   }, [ownerUserId, removeOwnedAgent, open, refresh])
@@ -163,8 +163,9 @@ function LocalCloseDialog({ assistantId, name, deps, onClose }: { assistantId: s
 
   useEffect(() => {
     let cancelled = false
-    planLocalClose(assistantId, deps)
-      .then((next) => !cancelled && setPlan(next))
+    Promise.resolve(deps.check?.())
+      .then(() => deps.listSessions())
+      .then((listed) => !cancelled && setPlan(planLocalClose(assistantId, listed)))
       .catch((error: unknown) => {
         // 读不到它开过哪些会话 = 不知道那个勾在说什么、也不知道它自己的会话在哪:❌ 照着空清单关。
         log.warn({ error: String(error) }, 'list sessions for closing the assistant failed')

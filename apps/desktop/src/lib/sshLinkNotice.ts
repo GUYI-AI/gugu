@@ -1,9 +1,8 @@
 // #6264 远程 SSH 的机器连不上时,全局那张浮卡(components/SshLinkSignIn.tsx)此刻挂哪一条。纯函数。
 import type { SshLinkFailure } from './sshLink'
 
-/** 要这张卡片出面的原因(纯连不上 = 各模块自己的「问不到」已经说了,这里不重复)。 */
+/** 要这张卡片出面的原因。纯连不上、要先登录 = 用到那台机器的地方各自就地说(登录在那里点),这里不重复、不打扰。 */
 const NOTICE_REASONS: ReadonlySet<SshLinkFailure> = new Set([
-  'signInRequired',
   'hostKeyChanged',
   'outdated',
   'refused',

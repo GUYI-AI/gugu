@@ -56,7 +56,7 @@ const open = (id: string, init: MouseEventInit = {}) => row(id).querySelector('.
 const select = async (id: string) => {
   if (!bar().hidden) return open(id)
   row(id).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-  await menu.pick('选择')
+  await menu.pick('更多', '选择')
 }
 const picked = () => ids().filter((id) => row(id!).classList.contains('picked'))
 const bar = () => $('pick-bar')
@@ -130,7 +130,7 @@ describe('picking', () => {
       // A phone's file menu is the host's shared menu too (one menu, one submenu style, one Delete confirm).
       expect(menu.isOpen()).toBe(true)
       vi.useRealTimers()
-      await menu.pick('选择')
+      await menu.pick('更多', '选择')
       expect(picked()).toEqual(['b'])
       expect($('select-files').getAttribute('aria-pressed')).toBe('true')
       expect(gugu.files.openWith).not.toHaveBeenCalled()
@@ -169,7 +169,7 @@ describe('picking', () => {
 
   test('deselecting the last desktop menu selection restores single-click opening', async () => {
     row('b').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    await menu.pick('选择')
+    await menu.pick('更多', '选择')
     expect(picked()).toEqual(['b'])
     open('b')
     expect(picked()).toEqual([])
@@ -224,7 +224,7 @@ describe('picking', () => {
     target.focus()
     target.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true }))
     // The host's menu takes the keys while it is open; closed, the focus is where it was.
-    expect(menu.labels()[0]).toBe('转发')
+    expect(menu.labels()[0], 'the row menu opens on its first row').toBe('打开')
     await menu.dismiss()
     expect(document.activeElement).toBe(target)
     target.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true, cancelable: true }))
@@ -247,14 +247,14 @@ describe('picking', () => {
     expect(gugu.files.openWith).not.toHaveBeenCalled()
   })
 
-  test('mobile More and retention are submenus of the shared menu and retain disabled reasons', async () => {
+  test('the phone menu is the same table: no tabs or panes, so another App shows in place; keep is in the details', async () => {
     touch = true
     row('b').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    const options = menu.rows('更多', '保留方式')
-    expect(options.map((item) => item.enabled)).toEqual([false, false])
-    expect(options.every((item) => item.checked !== undefined)).toBe(true)
-    expect(options[0]!.title).toBe('只有上传这份文件的人能改它保留多久。')
-    expect(menu.labels()[0]).toBe('转发')
+    const labels = menu.labels()
+    expect(labels.slice(0, 2)).toEqual(['打开', '用其他应用打开'])
+    expect(labels.at(-1)).toBe('更多')
+    expect(menu.labels('更多')).toEqual(expect.arrayContaining(['选择', '详情']))
+    expect([...labels, ...menu.labels('更多')]).not.toContain('保留方式')
   })
 
   test('another kind lets go of what was picked', async () => {
@@ -272,8 +272,10 @@ describe('转发 (API 23)', () => {
     return menu.labels()
   }
 
-  test('a file\'s menu: Forward first in the use group (as a message\'s menu has it before Download); the host\'s page gets that file', async () => {
-    expect(menuOf('a').slice(0, 4)).toEqual(['转发', '复制链接', '用其他应用打开', '下载'])
+  test('a file\'s menu: Forward before Download (as a message\'s menu has it), after the ways to open; the host\'s page gets that file', async () => {
+    const labels = menuOf('a')
+    expect(labels.slice(0, 2)).toEqual(['打开', '打开方式'])
+    expect(labels.filter((label) => ['转发', '下载', '复制链接'].includes(label))).toEqual(['转发', '下载', '复制链接'])
     await menu.pick('转发')
     await until('forward asked', () => gugu.files.forward!.mock.calls.length > 0)
     expect(gugu.files.forward).toHaveBeenLastCalledWith([expect.objectContaining({ id: 'a' })])

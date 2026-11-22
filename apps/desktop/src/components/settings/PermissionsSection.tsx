@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Unknown } from '../ui/Unknown'
 import { useTranslation } from 'react-i18next'
 import type { SystemPermission, SystemPermissionState } from '../../platform/types'
 import {
@@ -21,7 +22,8 @@ import { IOSCalendarPermissionsPage } from '@/mobile/ios-calendar/IOSCalendarPer
  * 一行 = 一项系统权限:标题 + 系统当下的真实状态 + 一句「用来……」,整行可点。
  * 状态每次进来、每次回到前台都重新问系统(useSystemPermissionStates);点下去能弹框就弹,
  * 不能就直达系统里咕咕的对应设置页,连设置页都跳不过去就说清去哪改 —— ❌ 点了没反应。
- * 桌面与手机是同一页;列哪几行由 `platform.systemPermissions` 决定,一行都没有时整页连导航项都不出现。
+ * 桌面与手机是同一页;列哪几行由 `platform.systemPermissions` 决定。桌面上这一页同时管本机任务能做的事
+ * (ThisDeviceActions,跨平台),系统权限只是其中一组:没有系统权限的宿主(Linux)只少这一组,页面照常。
  */
 
 const STATE_KEYS: Record<SystemPermissionState, string> = {
@@ -39,7 +41,6 @@ function labelKeyOf(permission: SystemPermission): string {
 
 export function PermissionsSection() {
   if (platform.capabilities.calendarSettings) return <IOSCalendarPermissionsSection />
-  if (platform.systemPermissions.length === 0) return null
   return platform.kind === 'capacitor' ? <PhonePermissionsSection /> : <SystemPermissionsSection />
 }
 
@@ -76,7 +77,7 @@ function SystemPermissionsSection() {
     }
   }
 
-  const systemPermissions = (
+  const systemPermissions = rows.length > 0 && (
     <>
       <SettingsGroup
         footer={(
@@ -104,7 +105,7 @@ function SystemPermissionsSection() {
               // 与「我的」入口列表同一种行尾:状态 + ›,整行可点。
               control={(
                 <>
-                  {state !== undefined && <span className="gg-settings-row-value">{t(STATE_KEYS[state])}</span>}
+                  {state !== undefined ? <span className="gg-settings-row-value">{t(STATE_KEYS[state])}</span> : !failed && <Unknown className="w-12" />}
                   <ChevronRight size={16} aria-hidden="true" className="gg-settings-row-chevron" />
                 </>
               )}

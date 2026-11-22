@@ -2,13 +2,16 @@ import { rendererLogger } from '@/lib/log';
 import { messageForUser } from '@/lib/userFacingError';
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets'
 import { useAuth } from '../store/auth'
 import { useToast } from './toastContext'
 import { Sheet } from './ui/Sheet'
 import { Button } from './ui/Button'
+import { Illustration } from './ui/Illustration'
 import { Switch } from './ui/Switch'
 import { platform } from '../platform'
+import { appVersion } from '../lib/appVersion'
+import { useReplica } from '../lib/replica'
+import { Unknown } from './ui/Unknown'
 import {
   FEEDBACK_MODULES,
   FEEDBACK_CONTENT_MAX,
@@ -32,17 +35,6 @@ import {
   type FeedbackDraftImage,
 } from '../lib/feedbackDraft'
 
-declare const __APP_VERSION__: string
-
-// @@@4326 致谢插画 —— 咕咕捧着刚寄到的那封反馈信。官网现役 mascot(gugu-edge-mascot)为参考图,
-// 同一套黑描边 / 黄喙 / 鼠尾草绿挎包,所以它与产品其它咕咕是同一只鸟。透明底单张:白身子在深色主题上
-// 自己就是剪影,黑描边在浅色主题上自己就是线稿 —— 两套主题共用一张,不做双版本。
-const GUGU_THANKS_URL = publicAssetPath('/assets/feedback/gugu-thanks.webp')
-
-// 插画的显示尺寸写死在两个轴上(宽 106 = 高 150 × 原图 298/420 比例):加载失败时 <img> 仍占住这个盒子,
-// 下面的文案与按钮不会往上塌(issue 的降级要求)。❌ 不加 onError 兜底换图——那是假装成功。
-const THANKS_ART_HEIGHT = 150
-const THANKS_ART_WIDTH = 106
 
 // @@@2062 问题反馈弹窗:截图改「提交才上传」——草稿期图只以 dataURL 留本地(粘贴 Ctrl/Cmd+V 或选文件),
 // 关窗(X / 取消 / Esc / 背景点击)保留草稿到 IndexedDB、重开续填,提交时才上传进私有桶(未提交绝不上传,
@@ -72,12 +64,8 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
     'screenshot-size': t('feedback.validation.screenshotSize'),
   })[code]
 
-  // 版本:构建期常量打底,Electron 上用主进程实时值刷新(同 AboutSection,拒不吞错)。
-  const [version, setVersion] = useState(__APP_VERSION__)
-  useEffect(() => {
-    if (!platform.capabilities.appVersion) return
-    void platform.getAppVersion().then(setVersion)
-  }, [])
+  // 版本:与「设置 → 关于」同一份(lib/appVersion.ts)。未知时诊断行画占位;提交时取值。
+  const versionReading = useReplica(appVersion, [])
 
   // 把当前表单快照进 ref,供关窗写草稿 + 载入时判「是否仍为空态」(避免闭包读到旧值)。
   const submittedRef = useRef(false)
@@ -187,7 +175,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
         content,
         module,
         screenshots: shots.map((shot) => dataUrlToFile(shot.dataUrl, shot.name)),
-        appVersion: version,
+        appVersion: await appVersion.fetch(),
         platform: platform.kind,
         diagnostics: feedbackDiagnosticsWithLog(collectFeedbackDiagnostics(), attachedLog),
       })
@@ -220,21 +208,14 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
         </button>
 
         {submitted ? (
-          // 致谢态:表单让位给咕咕。进场沿用 Sheet 那条已调好的 pop-in —— 时长曲线读 token,
-          // 与 sheetMotion.ts 里桌面卡片那条同源(#4323);reduced-motion 下退化为静止。
+          // 致谢态:表单让位给咕咕(墨线插画,与各处空态同一套 ui/Illustration)。进场沿用 Sheet 那条已调好的
+          // pop-in —— 时长曲线读 token,与 sheetMotion.ts 里桌面卡片那条同源(#4323);reduced-motion 下退化为静止。
           <div
             data-testid="feedback-thanks"
             className="animate-[gg-sheet-pop-in_var(--dur-med)_var(--ease-spring)] motion-reduce:animate-none"
             style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '18px 6px 4px', gap: 0 }}
           >
-            <img
-              src={GUGU_THANKS_URL}
-              alt={t('feedback.thanks.illustrationAlt')}
-              width={THANKS_ART_WIDTH}
-              height={THANKS_ART_HEIGHT}
-              draggable={false}
-              style={{ width: THANKS_ART_WIDTH, height: THANKS_ART_HEIGHT, objectFit: 'contain', display: 'block' }}
-            />
+            <Illustration name="feedback-thanks" className="w-[112px]" />
             <div style={{ fontSize: 'var(--font-heading)', fontWeight: 600, color: 'var(--text-primary)', marginTop: 16 }}>{t('feedback.thanks.title')}</div>
           </div>
         ) : (
@@ -339,7 +320,7 @@ export function FeedbackModal({ onClose }: { onClose: () => void }) {
           {/* 自动附带信息提示 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', borderRadius: 'var(--radius-control)', background: 'var(--muted)', fontSize: 'var(--font-body)', color: 'var(--faint-fg)', marginBottom: 16 }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" style={{ flexShrink: 0 }}><g fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="12" cy="12" r="10" /><path strokeLinecap="round" d="M12 17v-6" /><circle cx="12" cy="7.5" r="0.5" fill="currentColor" /></g></svg>
-            {t('feedback.diagnostics', { version })}
+            {versionReading.state === 'value' ? t('feedback.diagnostics', { version: versionReading.value }) : <Unknown className="w-48" />}
           </div>
         </div>
 

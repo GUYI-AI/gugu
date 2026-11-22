@@ -4,7 +4,7 @@
  * while the page is idle, up to GROW_CAP lines. Counted in Chromium, where the lines have real heights.
  */
 import { ComboboxPopup, type ComboboxPopupHandle, type ComboboxPopupItem } from '@gugu/session-ui/react/primitives'
-import { GROW_CAP, GrowingList, growSpan } from '@gugu/session-ui/react/growing-list'
+import { GROW_CAP, GrowingList, growSpan, type GrowingListWindow } from '@gugu/session-ui/react/growing-list'
 import { act, createRef, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it } from 'vitest'
@@ -30,6 +30,47 @@ beforeEach(() => {
   }, options)
   restoreIdle = () => { globalThis.requestIdleCallback = original }
 })
+// These contracts supply idle periods as inputs. Native Chromium is allowed to
+// stay busy for the whole case; timeout callbacks are not idle periods (W3C).
+// Only scheduling is controlled: React commits, layout and scrolling stay real.
+function controlledIdle() {
+  const callbacks = new Map<number, IdleRequestCallback>()
+  const timeouts: (number | undefined)[] = []
+  let nextId = 0
+  const request = globalThis.requestIdleCallback
+  const cancel = globalThis.cancelIdleCallback
+  const restoreDiagnostics = restoreIdle
+  globalThis.requestIdleCallback = (callback, options) => {
+    const id = ++nextId
+    callbacks.set(id, callback)
+    timeouts.push(options?.timeout)
+    return id
+  }
+  globalThis.cancelIdleCallback = (id) => { callbacks.delete(id) }
+  restoreIdle = () => {
+    callbacks.clear()
+    globalThis.requestIdleCallback = request
+    globalThis.cancelIdleCallback = cancel
+    restoreDiagnostics()
+  }
+  async function deliver(didTimeout = false, remaining = 50) {
+    const pending = callbacks.entries().next().value
+    if (!pending) throw new Error('GrowingList stopped scheduling before its growth contract completed')
+    const [id, callback] = pending
+    callbacks.delete(id)
+    await act(async () => callback({ didTimeout, timeRemaining: () => remaining }))
+  }
+  return {
+    deliver, timeouts, pending: () => callbacks.size,
+    async growTo(target: number, mounted: () => number) {
+      // A growth callback must make progress. Bound by the requested row count,
+      // never by machine speed, and retain the exact final DOM count assertion.
+      for (let turn = 0; mounted() !== target && turn < target; turn++) await deliver()
+      expect(mounted()).toBe(target)
+    },
+  }
+}
+
 function growthFacts(scroller: HTMLElement, mounted: () => number) {
   const count = mounted()
   if (count !== lastLoggedCount) {
@@ -111,11 +152,12 @@ it('sections sharing one scroller each mount only their part in view, and scroll
 
 function counted(count: number) {
   const renders = new Map<number, number>()
+  let window: GrowingListWindow | undefined
   function Panel() {
     const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
     return (
       <div ref={setScroller} data-testid="scroller" style={{ height: 400, overflowY: 'auto' }}>
-        <GrowingList scroller={scroller} count={count} getKey={(i) => i} estimateSize={() => 40} renderLine={(i) => {
+        <GrowingList windowRef={(value) => { window = value }} scroller={scroller} count={count} getKey={(i) => i} estimateSize={() => 40} renderLine={(i) => {
           renders.set(i, (renders.get(i) ?? 0) + 1)
           return <div data-line={i} style={{ height: 40 }}>line {i}</div>
         }} />
@@ -123,13 +165,14 @@ function counted(count: number) {
     )
   }
   act(() => mountHost().render(<Panel />))
-  return { renders, scroller: document.querySelector<HTMLElement>('[data-testid="scroller"]')!, mounted: () => document.querySelectorAll('[data-line]').length }
+  return { renders, scroller: document.querySelector<HTMLElement>('[data-testid="scroller"]')!, mounted: () => document.querySelectorAll('[data-line]').length, isScrolling: () => window?.isScrolling === true }
 }
 
 it('an idle list grows to all its lines, each rendered once, and a scroll through them renders none', async () => {
+  const idle = controlledIdle()
   const { renders, scroller, mounted } = counted(400)
   expect(mounted()).toBeLessThan(40)
-  await until('all 400 lines are mounted', () => growthFacts(scroller, mounted), value => value.mounted === 400)
+  await idle.growTo(400, mounted)
   expect(Math.max(...renders.values())).toBe(1)
   for (let step = 1; step <= 5; step++) {
     renders.clear()
@@ -140,15 +183,42 @@ it('an idle list grows to all its lines, each rendered once, and a scroll throug
 })
 
 it(`a list longer than GROW_CAP grows to GROW_CAP lines, and grows again around where a long scroll ends`, async () => {
-  const { scroller, mounted } = counted(2000)
-  await until(`${GROW_CAP} lines are mounted`, () => growthFacts(scroller, mounted), value => value.mounted === GROW_CAP)
-  await new Promise((resolve) => setTimeout(resolve, 1500))
+  const idle = controlledIdle()
+  const { scroller, mounted, isScrolling } = counted(2000)
+  await idle.growTo(GROW_CAP, mounted)
+  // Deliver the final scheduled callback: reaching the cap must stop rearming.
+  await idle.deliver()
+  expect(idle.pending()).toBe(0)
   expect(mounted()).toBe(GROW_CAP)
   act(() => { scroller.scrollTop = 1900 * 40 })
+  await until('the native scroll settles at the end', () => !isScrolling() && document.querySelector('[data-line="1900"]') !== null)
+  await until('the settled scroll schedules regrowth', () => idle.pending() > 0)
+  await idle.growTo(GROW_CAP, mounted)
   await until('the lines around the end are mounted, the far ones dropped', () => ({
     ...growthFacts(scroller, mounted), last: document.querySelector('[data-line="1999"]') != null,
     first: document.querySelector('[data-line="0"]') != null,
   }), value => value.last && !value.first && value.mounted === GROW_CAP)
+})
+
+it('a native idle callback makes progress without assuming the browser can fill the whole list within one case', async () => {
+  const { scroller, mounted } = counted(400)
+  const initial = mounted()
+  await until('the native idle callback grows the list', () => growthFacts(scroller, mounted),
+    value => value.idle.callbacks > 0 && value.mounted > initial)
+})
+
+it('zero remaining idle time yields, while an expired timeout still makes bounded progress', async () => {
+  const idle = controlledIdle()
+  const { mounted } = counted(400)
+  const initial = mounted()
+  await idle.deliver(false, 0)
+  expect(mounted()).toBe(initial)
+  expect(idle.pending()).toBe(1)
+  expect(idle.timeouts.every(timeout => timeout !== undefined && timeout > 0)).toBe(true)
+  await idle.deliver(true, 0)
+  expect(mounted()).toBeGreaterThan(initial)
+  expect(mounted()).toBeLessThan(400)
+  expect(idle.pending()).toBe(1)
 })
 
 it('the grown span joins the view, fills a gap towards it, and stops at the ends and at the cap', () => {

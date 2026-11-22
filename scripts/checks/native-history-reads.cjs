@@ -27,7 +27,7 @@ const DEBT_CEILING = new Map([
   ["packages/session-core/src/session-record/sources/tree-jsonl.ts:readFromStart:31fd01fc0c3124d0849525e3c60d48e236b279a20f9c6566a845def9eb9f7bc5", 1],
   ["packages/session-core/src/session-record/sources/zstd-frames.ts:read-loop-to-eof:3d84b8d49e034d33fb782084efd743d40888460dc820c473d59dcc2c376918f6", 1],
   ["apps/desktop/electron/session/main/core/session-timeline/archive-store.ts:readFile:19015d28c7e6858957b9f2e190dcc553f91ce723940e7d8f8669557f3523aa2a", 1],
-  ["packages/core/src/local/agent/transcriptInventory.ts:readFile:e00466b5a73cb8072cd82cfa764c419189cd094302f10e35c5c402a6feb6b32d", 1],
+  ["packages/core/src/local/agent/transcriptInventory.ts:readFile:df782b2769883d9f9c14c4695bd3af03ccfef2c471a56251020a8a5cc5b87575", 1],
 ])
 function validateDebt(entries) {
   const seen = new Set()

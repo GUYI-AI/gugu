@@ -14,6 +14,7 @@ import { Sheet } from '@/components/ui/Sheet'
 import { withoutAssistantHome } from '@/lib/assistantHome'
 import { ChevronLeft } from '@/lib/icons'
 import { queryClient } from '@/lib/replica'
+import { cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 import { useDevicesStore } from '@/store/devicesContext'
 import type { PhoneAssistantState } from '../assistant/usePhoneAssistant'
 import { PhoneMarketAgents, PhoneMarketLocalAgents } from './PhoneMarketAgents'
@@ -38,8 +39,8 @@ export function PhoneMarketplace({ initialArea, assistant, appDetail, onHandledA
   const [area, setArea] = useState(initialArea)
   const [requestedApp, setRequestedApp] = useState(() => appDetail ? { link: appDetail, installed: true } : undefined)
   useEffect(() => { if (appDetail) setRequestedApp({ link: appDetail, installed: true }) }, [appDetail])
-  const { devices, phones, cloudComputer } = useDevicesStore()
-  const homeId = cloudComputer?.snapshot?.deviceId ?? null
+  const { devices, phones } = useDevicesStore()
+  const homeId = cloudSnapshotOf(useCloudComputer())?.deviceId ?? null
   const { desktopDevices, thisPhone } = useMemo(() => {
     const endpoints = [...devices, ...(phones ?? [])]
     const desktopDevices = deviceMachines(withoutAssistantHome(endpoints.filter(device => !isPhoneDevice(device)), homeId))

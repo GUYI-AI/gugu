@@ -165,6 +165,8 @@ export {
   // @@@4972 会话发现工具的「咕咕提供的模型」读取口 —— 宿主装的就是 composer 那条 IPC 调的
   // 同一个 sessionpagePlatformCatalog,于是 agent 查到的和用户看到的是同一次计算。
   setPlatformModelCatalogResolver,
+  // 那道门本身(composer 从 `agents.modelCatalog` 读它的答案,platform-model-catalog-hook.ts)。
+  setPlatformModelGate,
   // @@@sessionpage TASKPAGE-FUSION — register the PTY-divert hook + teardown so a session-page codex TUI
   // conversation runs as `codex --remote … resume <tid>` against a gugu-started app-server (native TUI +
   // socket delivery, same session); teardown disposes that app-server when the conversation truly ends.
@@ -183,7 +185,6 @@ export {
   // 随心跳上云的会话状态摘要:机器离线后手机只剩它可读。同上,经桥拿。
   sessionpageSessionDigest,
   // server 换版看的忙闲(activity.json)。同上,经桥拿。
-  sessionpageBusyForVersionSwitch,
   sessionpageVersionSwitchActivity,
   sessionpageBootFailures,
   onSessionpageAuthorizationActivityChange,
@@ -205,9 +206,9 @@ export {
   // 于是 setTabTitle / setTabBadge / openBrowserTab / reportError / compose
   // 五个动词一律「Renderer not ready」(实机实证)。
   setExtensionHostWindowChannel,
-  setLoginShellPathRehydrator,
+  setUserPathRefresher,
   setLoginShellEnvProvider,
-  setPlatformCredentialsProbe,
+  setHostCredentialsProbe,
   type ExtensionHostWindowChannel,
   type EmdashRpcRouter,
   type SessionAction,

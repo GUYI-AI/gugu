@@ -9,7 +9,11 @@ export type DeclaredUploadHost = {
   progress(messageId: string, progress?: DeclaredUploadProgress): void
   warn?(error: unknown): void
 }
-const FINISH_WAIT_MS = 120_000, RETRY_FIRST_MS = 5_000, RETRY_MAX_MS = 60_000
+/** The failure's reason when the file being uploaded changed or went away before its bytes were up. */
+export const ORIGINAL_CHANGED = 'original_changed'
+/** A file-backed Blob refuses to read once its file changed (`NotReadableError`); a host's copy says so by its code. */
+const originChanged = (error: unknown) => (error as { name?: string } | null)?.name === 'NotReadableError' || (error as { code?: string } | null)?.code === ORIGINAL_CHANGED
+const FINISH_WAIT_MS = 120_000, RETRY_FIRST_MS = 5_000, RETRY_MAX_MS = 600_000
 export function createDeclaredUploads(host: DeclaredUploadHost) {
   const running = new Map<string, Promise<void>>()
   const permits = new Map<string, { pendingKey: string; upload: DeclaredUploadState }>()
@@ -81,7 +85,16 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
         if (only && !only.has(pending.message_id)) continue
         if (closed || dropped.has(pending.message_id) || terminal.has(pending.message_id)) continue
         if (running.has(pending.message_id)) { wakeAfterRun.add(pending.message_id); continue }
-        const file = await host.copyOf(pending.sha256)
+        let file: Blob | null
+        try { file = await host.copyOf(pending.sha256) }
+        catch (error) {
+          // This device sent it, and the original it owes no longer holds those bytes: the upload ends here, saying why.
+          if (!originChanged(error)) throw error
+          terminal.add(pending.message_id)
+          host.progress(pending.message_id, { sha256: pending.sha256, chatId: pending.chat_id, loaded: 0, total: pending.size_bytes, attempt: 1, failed: true, final: true, reason: ORIGINAL_CHANGED })
+          host.warn?.(error)
+          continue
+        }
         if (!file || closed || dropped.has(pending.message_id)) continue
         void begin({ messageId: pending.message_id, chatId: pending.chat_id, as: pending.as, pendingKey: pending.staging_key, sha256: pending.sha256,
           name: pending.file_name ?? '', contentType: pending.content_type, size: pending.size_bytes }, file, null)
@@ -90,7 +103,8 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
       else clearRetry()
     } catch (error) {
       if (!closed) {
-        if (retryableAttachmentError(error)) schedule()
+        // The same rule as an upload: only the service's own refusal stops asking again.
+        if (!(error instanceof AttachmentsError && !retryableAttachmentError(error))) schedule()
         host.warn?.(error)
       }
       throw error
@@ -106,7 +120,7 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
     permits.set(task.messageId, { pendingKey: task.pendingKey, upload })
     try {
       const endpoint = await host.endpoint()
-      const finished = await finishDeclaredAttachment(endpoint, { staging_key: task.pendingKey, size_bytes: task.size, ...(first ? { plan: first } : {}) },
+      const finished = await finishDeclaredAttachment(endpoint, { staging_key: task.pendingKey, sha256: task.sha256, size_bytes: task.size, ...(first ? { plan: first } : {}) },
         { bytes: file.slice(0, file.size, task.contentType), name: task.name, contentType: task.contentType }, { id: task.messageId, chat_id: task.chatId, as: task.as }, {
           signal: controller.signal,
           upload,
@@ -125,10 +139,15 @@ export function createDeclaredUploads(host: DeclaredUploadHost) {
       if (closed || dropped.has(task.messageId)) return
       // A missing pending row is not a terminal receipt: its commit may still be in flight.
       const missing = error instanceof AttachmentsError && error.code === 'upload_not_found'
-      const retryable = missing || retryableAttachmentError(error)
-      const final = error instanceof AttachmentsError && !retryable && error.status !== 401
-      const reason = error instanceof AttachmentsError && error.status === 429 && error.code.endsWith('_full') ? error.reason : undefined
-      if (error instanceof AttachmentsError && error.status === 401) authWaiting.add(task.messageId)
+      const changed = originChanged(error)
+      const signIn = error instanceof AttachmentsError && error.status === 401
+      // Only a refusal from the attachment service, or an original that no longer holds these bytes, ends the upload
+      // here. Anything else (a refreshed token, a local read, a bug) waits and tries again until the server stops
+      // listing the duty: its receipt expires or the server fails it.
+      const final = changed || error instanceof AttachmentsError && !missing && !signIn && !retryableAttachmentError(error)
+      const retryable = !final && !signIn
+      const reason = changed ? ORIGINAL_CHANGED : error instanceof AttachmentsError && error.status === 429 && error.code.endsWith('_full') ? error.reason : undefined
+      if (signIn) authWaiting.add(task.messageId)
       if (final) { permits.delete(task.messageId); terminal.add(task.messageId); retrying.delete(task.messageId); clearRetry() }
       else if (retryable) { retrying.add(task.messageId); schedule() }
       host.progress(task.messageId, { ...progress, failed: true, final, reason })

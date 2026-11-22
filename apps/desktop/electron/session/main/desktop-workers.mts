@@ -5,13 +5,11 @@
 export const desktopWorkers = {
   'codex-task-scan': { entry: 'main/core/session-import/codex-task-worker.ts', file: 'codex-task-scan.js' },
   'cursor-import': { entry: 'main/core/session-import/cursor-worker.ts', file: 'cursor-import.js' },
+  'local-session-preview': { entry: '../sessionpage/local-session-preview-worker.ts', file: 'local-session-preview.js' },
+  'session-timeline-fold': { entry: 'main/core/session-timeline/fold-worker.ts', file: 'session-timeline-fold.js' },
   'git-status': {
     entry: 'main/core/git/status/worker.ts',
     file: 'git-status.js',
-  },
-  'turn-text-backfill': {
-    entry: 'main/db/turn-text-backfill-worker.ts',
-    file: 'turn-text-backfill.js',
   },
   'task-turn-search': {
     entry: 'main/core/search/task-turn-search-worker.ts',

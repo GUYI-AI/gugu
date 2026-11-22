@@ -13,8 +13,8 @@ export function useChatWorkspaceDivider(layout: PaneLayoutStore, splitId: string
     const handle = handleRef.current;
     const view = handle?.ownerDocument.defaultView;
     if (!splitId || !handle || !view) return;
-    // The resizable group listens on document capture. Use this divider's pointer gesture
-    // before that, while leaving the built-in keyboard resize on the same separator.
+    // This divider's left-button press is its own gesture: cancelled at document capture so no
+    // text selection or mouse-down default starts under it; its keyboard resize stays the cut's.
     const claimPointer = (event: PointerEvent) => {
       const target = event.target;
       if (event.button === 0 && target && 'nodeType' in target && handle.contains(target as Node)) event.preventDefault();

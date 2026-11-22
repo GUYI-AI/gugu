@@ -189,7 +189,7 @@ describe('#7169 平台中转口:一头中途断了,另一头当场跟着断', ()
     const response = await fetch(`${relay.baseUrl}/responses`, { method: 'POST', headers: { authorization: `Bearer ${relay.apiKey}` }, body: '{}' })
     expect(response.status).toBe(502)
     await vi.waitFor(() => expect(logged.get('sessionpage/platform-model')?.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionId: CONV, path: '/v1/responses', error: expect.stringMatching(/ECONNREFUSED/) }),
+      expect.objectContaining({ sessionId: CONV, path: '/v1/responses', error: 'connect' }),
       expect.stringContaining('连不上网关'),
     ))
   })

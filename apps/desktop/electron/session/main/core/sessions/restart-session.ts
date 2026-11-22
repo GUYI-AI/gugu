@@ -1,6 +1,6 @@
-import { and, count, eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { sessionPending, sessions, sessionTurns } from '@main/db/schema';
+import { sessionPending, sessions } from '@main/db/schema';
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { agentStatusWriter } from '@main/core/agent-status/agent-status-writer';
@@ -9,6 +9,8 @@ import type { SessionConfig } from '@shared/core/sessions/session-config';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import { hydrateSession } from './hydrateSession';
 import { sessionLife } from './session-life';
+import { indexedTurnCount } from '../session-index/session-index';
+import { ensureSessionIndexed } from '../session-timeline/service';
 
 /**
  * spec session-resume:引擎侧什么都没有的会话,换一条新的引擎会话。首轮没跑完的,**照咕咕记着的那句首轮重来**;
@@ -39,9 +41,9 @@ export async function restartSession(
   if (!row) throw new Error('Session not found');
   if (!row.config) throw new Error(`Session has no config: ${sessionId}`);
 
-  // 有已提交回合(session_turns,#5381)= 首轮跑完过,不重来。
-  const [turns] = await db.select({ n: count() }).from(sessionTurns).where(eq(sessionTurns.sessionId, sessionId));
-  const ran = (turns?.n ?? 0) > 0;
+  // 时间线里有回合(会话索引)= 首轮跑完过,不重来。
+  await ensureSessionIndexed(sessionId);
+  const ran = indexedTurnCount(sessionId) > 0;
   // 记着的首轮:优先用还留在载荷里的那份(它本来就是要投递的那句),否则用创建时记下的事实。
   const replay = ran ? undefined : row.config.initialPrompt?.trim() || row.config.firstUtterance?.trim();
   if (!ran && !replay) {

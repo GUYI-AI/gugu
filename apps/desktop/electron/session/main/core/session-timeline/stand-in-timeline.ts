@@ -106,6 +106,7 @@ export function createStandInTimeline(input: StandInTimelineInput): SessionTimel
     syncQueuedPrompts: () => undefined,
     syncTerminals: () => {},
     syncLiveReply: () => undefined,
+    syncActiveTurn: () => undefined,
     catchUp: async () => undefined,
     questionOpen: () => false,
     cancelSettlement: () => undefined,

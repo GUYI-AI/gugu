@@ -15,7 +15,8 @@ import { LiveForwardMessageDialog } from '../chat/ForwardMessageDialog'
 import { useForwardToChats } from '../chat/forwardToChats'
 import { useToast } from '../toastContext'
 import { ListRow } from '../ui/ListRow'
-import { installPackageOf, packageArrived } from './sharedPackages'
+import { installPackageOf } from './sharedPackages'
+import { sharedAppPackages } from './packageReplicas'
 import { isExtensionBundle } from './summarizeExtensionBundle'
 import { useExtensionWorkspaceRevisions } from './useExtensionWorkspaceRevisions'
 import { useAssistantAppStatus } from './useAssistantAppStatus'
@@ -42,7 +43,7 @@ export function ExtensionForwardHost() {
   const { user } = useAuth()
   const { toast } = useToast()
   // 摩擦单 F66: an App package sent in any chat here (the account revision bus, whatever is on screen) — that chat's list
-  // of packages is behind, and an App on this device may update itself from it.
+  // of packages is behind (`sharedAppPackages`), and an App on this device may update itself from it.
   useEffect(() => {
     if (!appsHere) return undefined
     const sent = subscribeAccountRevision('message_created', (operations) => {
@@ -50,7 +51,7 @@ export function ExtensionForwardHost() {
         const { chatId, message } = readMessageCreatedRevision(operation.payload)
         const meta = message?.content_type === 'attachment' && typeof message.content === 'string' ? parseAttachmentContent(message.content, messageFileRefOf(message)) : null
         if (!meta || !isExtensionBundle(meta)) continue
-        packageArrived(chatId)
+        void sharedAppPackages.refresh(chatId)
         if (meta.source.kind === 'gone' || !message?.id) continue
         void updateUnasked(installPackageOf({ source: meta.source, messageId: String(message.id) }))
       }

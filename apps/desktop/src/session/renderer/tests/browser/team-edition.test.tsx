@@ -10,7 +10,9 @@ import { TeamAuthPane } from '@/features/team/TeamAuthPane'
 import { TeamAccountMembership, TeamAccountMethods } from '@/features/team/TeamAccount'
 import { TeamApiError } from '@/features/team/errors'
 import type { TeamApi, TeamRole, TeamDirectoryUsageMember } from '@/features/team/types'
-import { mockTeamApi, teamProfile, teamSignIn, teamUser } from '../../../../../../../tests/fixtures/teamEdition'
+import { mockTeamApi, teamProfile, teamSignIn, teamUser, teamApiDouble } from '../../../../../../../tests/fixtures/teamEdition'
+vi.mock('@/features/team/runtime', async () => (await import('../../../../../../../tests/fixtures/teamEdition')).teamRuntimeDouble)
+import { queryClient } from '@/lib/replica'
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@/styles/tokens.css'
@@ -24,14 +26,15 @@ beforeEach(async () => {
   await page.viewport(1440, 960); document.documentElement.setAttribute('data-theme', 'light'); await i18n.changeLanguage('zh-CN'); auth.accept.mockClear(); auth.begin.mockClear()
   for (const key of Object.keys(localStorage)) if (key.startsWith('gugu:team-disable:v1:team-ming:team-person-lin:')) localStorage.removeItem(key)
 })
-afterEach(() => harness?.cleanup())
+afterEach(() => { harness?.cleanup(); queryClient.clear() })
 const click = (name: string) => userEvent.click(page.getByRole('button', { name, exact: true }))
 async function capture(name: string) {
   if (import.meta.env.VITE_TEAM_CAPTURE === '1') await page.screenshot({ path: `__screenshots__/team-desktop-${name}.png` })
 }
 async function mountTeam(role: TeamRole, api: TeamApi, node = <TeamPage onTopUp={vi.fn()} />) {
   harness = createReactHarness(); harness.container.style.cssText = 'height:900px;width:1300px;display:flex'
-  await renderWithAppProviders(harness, <TeamProvider user={teamUser} api={api}><TeamAccessGate>{node}</TeamAccessGate></TeamProvider>, { auth: teamUser })
+  teamApiDouble.current = api
+  await renderWithAppProviders(harness, <TeamProvider user={teamUser}><TeamAccessGate>{node}</TeamAccessGate></TeamProvider>, { auth: teamUser })
   await until('the verified team product is ready', () => !harness.container.querySelector('.gg-team-access-blocker') && Boolean(harness.container.textContent?.trim()))
 }
 
@@ -105,8 +108,8 @@ it('loads and searches a 128-person team while keeping the summary above the mem
 it('blocks a restored team context for another principal before loading any product data', async () => {
   const api = mockTeamApi(), directorySummary = vi.fn(api.directorySummary)
   harness = createReactHarness()
-  await renderWithAppProviders(harness, <TeamProvider user={teamUser} api={{ ...api, directorySummary,
-    context: async () => ({ ...await api.context(), member_identity_id: 'another-principal' }) }}>
+  teamApiDouble.current = { ...api, directorySummary, context: async () => ({ ...await api.context(), member_identity_id: 'another-principal' }) }
+  await renderWithAppProviders(harness, <TeamProvider user={teamUser}>
     <TeamAccessGate><TeamPage onTopUp={vi.fn()} /></TeamAccessGate>
   </TeamProvider>, { auth: teamUser })
   await until('the restored identity mismatch is blocked', () => !!harness.container.querySelector('.gg-team-access-blocker[role="alert"]'))
@@ -128,14 +131,15 @@ it('projects verified display details once and preserves a later saved self edit
   function StatefulAccount() {
     const [user, updateUser] = useState({ ...teamUser, email: 'internal-routing@example.test' })
     return <AuthContext.Provider value={{ user, updateUser, logout, loading: false, status: 'authenticated' }}>
-      <TeamProvider user={user} api={api}><TeamAccessGate>
+      <TeamProvider user={user}><TeamAccessGate>
         <output data-testid="display-profile">{user.nickname} {user.email} {user.bio}</output>
         <button onClick={() => updateUser({ ...user, nickname: '林晓的新名称', bio: '新的简介' })}>保存个人资料</button>
       </TeamAccessGate></TeamProvider>
     </AuthContext.Provider>
   }
-  harness = createReactHarness()
-  await renderWithAppProviders(harness, <StatefulAccount />)
+  harness = createReactHarness(); teamApiDouble.current = api
+  // The replica's account is the signed-in team member, as in the product.
+  await renderWithAppProviders(harness, <StatefulAccount />, { auth: teamUser })
   await until('the verified visible email replaces the internal routing email', () => harness.container.querySelector('output')?.textContent?.includes('lin@example.test') === true)
   expect(harness.container.textContent).not.toContain('internal-routing@example.test')
   await click('保存个人资料')
@@ -211,9 +215,10 @@ it('replays the original disable request after a lost response and a component r
 
 it('allows only the current member to confirm a pending email change before signing out', async () => {
   const api = mockTeamApi(), confirmEmailChange = vi.fn(api.confirmEmailChange), logout = vi.fn(async () => ({ success: true }))
+  teamApiDouble.current = { ...api, confirmEmailChange, profile: async () => ({ ...teamProfile(), pending_email_change: { challenge_id: 'change-fixture', new_email: 'new@example.test', expires_at: '2099-01-01T00:00:00Z' } }) }
   harness = createReactHarness()
   await renderWithAppProviders(harness, <AuthContext.Provider value={{ user: teamUser, loading: false, status: 'authenticated', updateUser: vi.fn(), logout }}>
-    <TeamProvider user={teamUser} api={{ ...api, confirmEmailChange, profile: async () => ({ ...teamProfile(), pending_email_change: { challenge_id: 'change-fixture', new_email: 'new@example.test', expires_at: '2099-01-01T00:00:00Z' } }) }}>
+    <TeamProvider user={teamUser}>
       <TeamAccessGate><TeamAccountMethods /></TeamAccessGate>
     </TeamProvider></AuthContext.Provider>, { auth: teamUser })
   await until('the pending member email is offered', () => harness.container.textContent?.includes('new@example.test') === true)

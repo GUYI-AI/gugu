@@ -3,14 +3,12 @@
  * Mermaid — Solid component rendering a MermaidLaidOut block.
  *
  * Renders a plain placeholder first (synchronous), then swaps to an SVG
- * rendered by official mermaid, started on an idle callback (mirroring
- * Code.tsx / Shiki). The SVG is drawn in the host's light/dark theme and
- * redrawn once when that theme flips.
+ * rendered by pele, started on an idle callback (mirroring Code.tsx / Shiki).
+ * The SVG colours itself from the theme, so a theme flip needs no redraw.
  *
  * The container is fixed at a 21:9 aspect ratio (height pre-computed in
  * mermaid.def.tsx from the measured width). On click the host's
- * onViewMermaid command is fired, allowing the application to open a
- * full-size diagram viewer.
+ * onViewMermaid command is fired, so the application opens its viewer.
  */
 
 import { useCaches } from '@session-chat/components/contexts/CachesContext';
@@ -20,7 +18,6 @@ import { cancelIdle, scheduleIdle } from '@session-chat/components/engine/dom-ut
 import type { MermaidLaidOut } from '@session-chat/core/layout/layout-types';
 import type { MermaidBlock } from '@session-chat/core/markdown/document';
 import { Show, createEffect, createSignal, onCleanup } from 'solid-js';
-import { readMermaidTheme, subscribeMermaidTheme } from '@session-chat/core/mermaid/render';
 import { mermaidCanvas, mermaidError, mermaidPlaceholder, mermaidWrapper } from './mermaid.css';
 import { useChatTranslator } from '@session-chat/localization';
 
@@ -36,15 +33,11 @@ export function Mermaid(props: MermaidProps) {
   const [svg, setSvg] = createSignal<string | null>(null);
   const [failed, setFailed] = createSignal(false);
 
-  const [theme, setTheme] = createSignal(readMermaidTheme());
-  onCleanup(subscribeMermaidTheme(() => setTheme(readMermaidTheme())));
-
   createEffect(() => {
     const source = props.rawBlock.source;
-    const t = theme();
 
     // Synchronous fast-path when SVG is already cached (e.g. scroll-back).
-    const cached = caches.peekMermaid(source, t);
+    const cached = caches.peekMermaid(source);
     if (cached) {
       setSvg(cached);
       setFailed(false);
@@ -52,14 +45,13 @@ export function Mermaid(props: MermaidProps) {
     }
 
     // Deferred path — render on idle to keep first-paint / scroll off the
-    // critical path. The previous diagram stays up until its replacement
-    // arrives, so a theme switch swaps pictures without flashing the placeholder.
+    // critical path.
     const abort = new AbortController();
     const handle = scheduleIdle(() => {
-      void caches.renderMermaid(source, t, abort.signal).then((result) => {
+      void caches.renderMermaid(source, abort.signal).then((result) => {
         if (abort.signal.aborted) return;
         setSvg(result);
-        // Source mermaid rejects — show error fallback.
+        // Source pele rejects — show error fallback.
         setFailed(result === null);
       });
     });
@@ -76,6 +68,7 @@ export function Mermaid(props: MermaidProps) {
       chart: props.rawBlock.source,
       blockId: props.block.id,
       source: 'mermaid-block',
+      thumb: (e.currentTarget as HTMLElement).querySelector<HTMLElement>('svg'),
     });
   }
 

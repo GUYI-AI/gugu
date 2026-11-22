@@ -25,6 +25,8 @@ export interface DependencyState {
   path: string | null;
   checkedAt: number;
   error?: string;
+  /** How `--version` failed, when `status` is `error` (the probe's own exit code / timeout / signal). */
+  failure?: { exitCode: number | null; timedOut: boolean; signal?: string };
   latestVersion?: string | null;
   updateAvailable?: boolean;
 }
@@ -656,6 +658,3 @@ export interface DependencyDescriptor {
   uninstall?: UninstallStrategy;
 }
 
-export type DependencyProbeOptions = {
-  refreshShellEnv?: boolean;
-};

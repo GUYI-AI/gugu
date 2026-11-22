@@ -1,10 +1,11 @@
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
-import { BlockDropPreviewLayer, BlockGrip, ScreenFrame, screenDropHandlers, startSessionBlockDrag } from '@renderer/app/screen-frame';
+import { BlockGrip, ScreenFrame, screenDropHandlers, startSessionBlockDrag } from '@renderer/app/screen-frame';
 import { blockDropPreview, resolveBlockDrop, setBlockDropPreview } from '@renderer/app/screen-layout-actions';
 import { clearDraggedScreenContent, hasDraggedScreenContent, setDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { shieldNativeDrags } from '@renderer/lib/drag-shield';
+import { DropHighlightLayer } from '@renderer/lib/drop-highlight';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import '@/styles/tokens.css';
@@ -13,7 +14,7 @@ import { drainTopicSplitRequest } from '@/lib/topicSplitRequest';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { WorkspaceLayoutContextProvider } from '@renderer/lib/layout/layout-provider';
 
-// #7052 一屏几块:真组件(ScreenFrame + react-resizable-panels)、真几何。判据钉的是 2026-10-09 实机撞过的几件:
+// #7052 一屏几块:真组件(ScreenFrame 的 TrackCut)、真几何。判据钉的是 2026-10-09 实机撞过的几件:
 //  · 块与块之间一根 1px 线,和会话列表右边那根同色(owner「怎么会没有任何分割线」→「这么粗的线…不能统一吗」);
 //  · 会话页是贴在块上的另一层,压在线两边:线两边那几 px 照样抓得到;
 //  · 一列塌成一块(占一块的 App 被收走)之后,剩下的块各得一半,❌ 新挂上的那块只拿到 1%(实测挤成 19px);
@@ -56,7 +57,7 @@ describe('一屏几块的骨架 (#7052)', () => {
     ['left', 0.3, 0.4], ['right', 0.7, 0.4], ['top', 0.4, 0.3], ['bottom', 0.6, 0.7],
   ] as const)('previews and splits a task dropped in the chat centre nearest its %s edge', async (edge, x, y) => {
     screenLayout.show({ kind: 'chat', chatId: 'chat-centre' });
-    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /><BlockDropPreviewLayer /></WorkspaceLayoutContextProvider>);
+    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /><DropHighlightLayer /></WorkspaceLayoutContextProvider>);
     await until('chat block rendered', () => blockWidths().length === 1);
     const blockId = screenLayout.order[0];
     const block = host!.querySelector<HTMLElement>('[data-screen-block]')!;
@@ -67,7 +68,12 @@ describe('一屏几块的骨架 (#7052)', () => {
     const event = { dataTransfer, target: block, clientX: rect.left + rect.width * x, clientY: rect.top + rect.height * y, preventDefault: vi.fn(), stopPropagation: vi.fn() };
     handlers.onDragOverCapture(event as never);
     expect(blockDropPreview.get()).toEqual({ blockId, edge });
-    await until('split preview rendered', () => document.querySelector(`[data-block-drop-preview="${edge}"]`) !== null);
+    // The shared drop highlight springs onto the half that edge splits off (@@@drop-highlight).
+    const half = { left: edge === 'right' ? rect.left + rect.width / 2 : rect.left, top: edge === 'bottom' ? rect.top + rect.height / 2 : rect.top, width: edge === 'left' || edge === 'right' ? rect.width / 2 : rect.width, height: edge === 'top' || edge === 'bottom' ? rect.height / 2 : rect.height };
+    await until('split preview on that half', () => {
+      const box = document.querySelector('[data-drop-highlight="shown"]')?.getBoundingClientRect();
+      return !!box && (['left', 'top', 'width', 'height'] as const).every((key) => Math.abs(box[key] - half[key]) < 1);
+    });
     handlers.onDropCapture(event as never);
     expect(screenLayout.order).toHaveLength(2);
     expect(screenLayout.blockOfSession('incoming')).toBeDefined();
@@ -186,7 +192,7 @@ describe('一屏几块的骨架 (#7052)', () => {
     const slot = () => document.querySelector(`[data-screen-block="${blockId}"]`);
     const original = slot();
     expect(original).not.toBeNull();
-    // 存下来的是 screenLayout.snapshot(布局树和份额);份额只在人拖线时写(setSplitSizes),库自己的布局不写。
+    // 存下来的是 screenLayout.snapshot(布局树和份额);份额只在人拖线时写(setSplitSizes),窗口宽窄夹出来的不写。
     const saved = JSON.stringify(screenLayout.snapshot);
 
     screenLayout.showBeside(s('b'));
@@ -206,8 +212,8 @@ describe('一屏几块的骨架 (#7052)', () => {
     expect(JSON.stringify(screenLayout.snapshot), '1 → 2 → 1 存下来的一个字节不差').toBe(saved);
   });
 
-  // 只有一块时是「一格的组」,不重挂:从群里点 agent 的名字,参与者在右边分出一块,同一组从 1 格变 2 格。库要到下一次渲染才把
-  // 新的那格收进组里,这一次提交里的 effect 给 2 格的布局,库会抛「Invalid 1 panel layout」—— 整窗崩到 Something went wrong。
+  // 只有一块时是「一格的组」,不重挂:从群里点 agent 的名字,参与者在右边分出一块,同一组从 1 格变 2 格
+  // (2026-10 曾在这一步整窗崩到 Something went wrong)。
   it('从单块打开群参与者:不抛错,右边那块按记住的宽度;收回又占满', async () => {
     const thrown: string[] = [];
     const onError = (event: ErrorEvent) => thrown.push(event.message);
@@ -275,8 +281,7 @@ describe('一屏几块的骨架 (#7052)', () => {
     expect(writes).toEqual([]);
   });
 
-  // 份额什么时候摆回 node.sizes:只在库为一组新的几块报来第一份布局时(开/收一块)。之后库自己改的(窗口变窄按最窄夹住)
-  // 不摆回去,也不来回打架;摆回去在画出来之前 —— 每一帧都量,❌ 有一帧新挂上的那块是 1%。
+  // 开/收一块时这一刀按 node.sizes 摆,在画出来之前 —— 每一帧都量,❌ 有一帧新挂上的那块是 1%。
   it('收起一块的那一帧起两块就各得一半,没有一帧是 1%', async () => {
     screenLayout.show(s('a'));
     screenLayout.showBeside(s('b'));
@@ -299,7 +304,7 @@ describe('一屏几块的骨架 (#7052)', () => {
     expect(twoBlockFrames.filter((widths) => widths.some((w) => w < 400)), JSON.stringify(twoBlockFrames)).toEqual([]);
   });
 
-  it('夹在两块中间新开一块,按 node.sizes 分(库把新的那块排在最后报)', async () => {
+  it('夹在两块中间新开一块,按 node.sizes 分', async () => {
     screenLayout.show(s('a'));
     screenLayout.showBeside(s('c'));
     root!.render(<ScreenFrame />);
@@ -314,7 +319,7 @@ describe('一屏几块的骨架 (#7052)', () => {
     expect(widths.map((w, i) => Math.abs(w - wanted[i]) < 10), `${widths} vs ${wanted}`).toEqual([true, true, true]);
   });
 
-  it('窗口变窄,库按最窄把一块夹住:不摆回 node.sizes,也不来回打架', async () => {
+  it('窗口变窄,一块按最窄被夹住:不写回 node.sizes,也不来回打架', async () => {
     screenLayout.show(s('a'));
     screenLayout.showBeside(s('b'));
     root!.render(<ScreenFrame />);
@@ -323,14 +328,14 @@ describe('一屏几块的骨架 (#7052)', () => {
     screenLayout.setSplitSizes(splitId, [75, 25]);
     await until('按 75/25 摆好', () => Math.abs(blockWidths()[1] - 250) < 5);
 
-    host!.style.width = '600px'; // 25% = 150px,比一格最窄 220px 还窄:库夹到 220
+    host!.style.width = '600px'; // 25% = 150px,比一格最窄 220px 还窄:夹到 220
     await nextFrames(5);
     const clamped = blockWidths();
     expect(clamped[1], JSON.stringify(clamped)).toBeGreaterThanOrEqual(219);
     await nextFrames(20);
     expect(blockWidths(), '夹住之后不再动').toEqual(clamped);
     const split = screenLayout.layout!;
-    expect(split.type === 'split' && split.sizes, '库自己夹的不写回 node.sizes').toEqual([75, 25]);
+    expect(split.type === 'split' && split.sizes, '夹住的不写回 node.sizes').toEqual([75, 25]);
   });
 
   it('拖到一块的边上 = 分出一块;正中不接;块放不下两半(一格最窄 220px)就不给落点', async () => {

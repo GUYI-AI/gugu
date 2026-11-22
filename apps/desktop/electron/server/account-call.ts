@@ -18,7 +18,7 @@ import type { ServerAccount } from './server-layout'
 
 /** Released CLI callers may name the current identity, but cannot select a directory. */
 export function accountRequestError(account: ServerAccount | null, requested: string | null): string | null {
-  if (!account?.signedIn) return '这台机器上还没有登录咕咕账号。'
+  if (!account?.signedIn) return '这台机器上尚未登录咕咕账号。'
   if (requested && requested !== account.userId) return `当前账号是 ${account.email ?? account.userId}，与请求的账号 ${requested} 不符。`
   return null
 }
@@ -29,7 +29,7 @@ export function describeConnectError(error: NodeJS.ErrnoException, email: string
   if (error.code === 'ENOENT' || error.code === 'ECONNREFUSED') {
     return `${who}的咕咕 server 未运行或版本太旧。执行 gugu-server status 查看。`
   }
-  return `连不上${who}的咕咕 server 进程:${error.message}`
+  return `无法连接${who}的咕咕 server 进程:${error.message}`
 }
 
 /**

@@ -1,9 +1,8 @@
 import { createAssistantPanelClient, AssistantPanelError } from '@gugu/core/cloud/assistantPanel'
-import { createAssistantPanelOutbox } from '@gugu/core/cloud/assistantPanelOutbox'
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
-import { identityDb, chatDb } from '@/lib/supabase'
-import { getRendererSession, observeRendererSession } from '@/lib/sessionPublication'
-import { rendererLogger } from '@/lib/log'
+import { enqueueAssistantNotice } from '@/lib/outbox/kinds/assistantNotice'
+import { identityDb } from '@/lib/supabase'
+import { myAssistant } from '@/lib/myAssistant'
+import { getRendererSession } from '@/lib/sessionPublication'
 import { assistantAppChangeSchema, type AssistantAppChange } from '@/session/shared/extensions/assistant-app'
 
 const accountId = () => getRendererSession()?.user.id ?? null
@@ -16,56 +15,18 @@ export function assertAssistantPanelOwner(expectedOwner: string | null): asserts
   if (!expectedOwner || accountId() !== expectedOwner) throw new AssistantPanelError('account-changed','Assistant panel account changed')
 }
 
+/** The assistant the outbox addresses: the account's `myAssistant` replica, read for the owner the notice belongs to. */
 export async function personalAssistant(owner: string): Promise<string | null> {
   assertAssistantPanelOwner(owner)
-  const { data,error,status } = await identityDb.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-    .eq('owner_user_id',owner).eq('member_key','assistant').abortSignal(AbortSignal.timeout(10_000))
+  const assistant = await myAssistant.fetch()
   assertAssistantPanelOwner(owner)
-  if (error) throw new AssistantPanelError(error.code,'Could not read the personal assistant',undefined,undefined,status)
-  return pickAssistant((data ?? []) as AssistantProvisionRow[])?.agentId ?? null
+  return assistant.agentId
 }
 
-const outbox = createAssistantPanelOutbox({ storage: {
-  getItem: key => window.localStorage.getItem(key),setItem: (key,value) => window.localStorage.setItem(key,value),
-},accountId,assistantId: personalAssistant,
-  send: (assistant,notice) => assistantPanelCloud.notice(assistant,assistantAppChangeSchema.parse(notice)),
-})
-const log = rendererLogger('assistant/panel')
-let retry: ReturnType<typeof setTimeout> | undefined
-let delay = 1000
-
-/** Retries do not involve the execution host and never change the saved result. */
-async function flushNotices(): Promise<void> {
-  clearTimeout(retry)
-  const owner = accountId()
-  if (!owner) return
-  try { await outbox.flush(owner); delay = 1000 }
-  catch { log.warn({},'Saved App change publication will retry') }
-  try {
-    if (accountId() === owner && outbox.hasPending(owner)) {
-      retry = setTimeout(() => { void flushNotices() },delay)
-      delay = Math.min(delay * 2,60_000)
-    }
-  } catch { log.warn({},'Saved App change outbox could not be read') }
-}
-observeRendererSession(() => { delay = 1000; void flushNotices() })
-if (typeof window !== 'undefined') window.addEventListener('online',() => { delay = 1000; void flushNotices() })
-void flushNotices()
-
+/** Durable through the outbox (kind `assistantNotice`): the source edit has already saved; telling the assistant follows. */
 export async function queueAssistantAppChange(
   change: AssistantAppChange, assistantId: string | undefined, expectedOwnerId: string | null,
-) {
+): Promise<void> {
   assertAssistantPanelOwner(expectedOwnerId)
-  const notice = assistantAppChangeSchema.parse(change)
-  try { return await outbox.enqueue(expectedOwnerId,notice,assistantId) }
-  finally { void flushNotices() }
-}
-
-export async function assistantPrivateChat(ownerId: string, assistantId: string): Promise<string> {
-  assertAssistantPanelOwner(ownerId)
-  const { data,error,status } = await chatDb.rpc('open_dm',{ p_target_user_id: assistantId }).abortSignal(AbortSignal.timeout(10_000))
-  assertAssistantPanelOwner(ownerId)
-  if (error) throw new AssistantPanelError(error.code,'PANEL_PRIVATE_FOLDER_UNAVAILABLE',undefined,undefined,status)
-  if (typeof data !== 'string') throw new AssistantPanelError('missing-identity','PANEL_PRIVATE_FOLDER_UNAVAILABLE')
-  return data
+  await enqueueAssistantNotice(assistantAppChangeSchema.parse(change), assistantId)
 }

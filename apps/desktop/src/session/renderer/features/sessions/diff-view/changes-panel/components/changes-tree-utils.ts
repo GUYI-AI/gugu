@@ -1,4 +1,4 @@
-import type { GitChange } from '@gugu/session-core/git';
+import type { ChangeRow } from './changes-list-item';
 import {
   makeNode,
   normalizeFileTreePath,
@@ -6,15 +6,15 @@ import {
   type NestedFileNode,
 } from '@renderer/features/sessions/file-tree/tree-utils';
 
-export interface ChangesTree {
+export interface ChangesTree<T extends ChangeRow = ChangeRow> {
   rootNodes: NestedFileNode[];
-  changeByPath: Map<string, GitChange>;
+  changeByPath: Map<string, T>;
   directoryPaths: Set<string>;
 }
 
-export function buildChangesTree(changes: GitChange[], rootPath?: string): ChangesTree {
+export function buildChangesTree<T extends ChangeRow>(changes: T[], rootPath?: string): ChangesTree<T> {
   const nodesByPath = new Map<string, NestedFileNode>();
-  const changeByPath = new Map<string, GitChange>();
+  const changeByPath = new Map<string, T>();
   const directoryPaths = new Set<string>();
   const rootNodes: NestedFileNode[] = [];
   const normalizedRoot = rootPath ? normalizeFileTreePath(rootPath) : null;

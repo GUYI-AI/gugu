@@ -4,7 +4,7 @@ type RevertInput = { sessionId: string; anchor: string; restoreFiles?: boolean }
 export function createHistoryReverter<M, R extends { success: boolean }>(deps: {
   boundary: (sessionId: string, anchor: string) => Promise<number | null>;
   revert: (input: RevertInput, meta?: M) => Promise<R>;
-  truncate: (sessionId: string, boundary: number | null) => Promise<void>;
+  truncate: (sessionId: string, boundary: number | null, anchor: string) => Promise<void>;
   finish: (sessionId: string) => Promise<unknown>;
 }) {
   const pending = new Map<string, { anchor: string; boundary: number | null; result: R }>();
@@ -26,7 +26,7 @@ export function createHistoryReverter<M, R extends { success: boolean }>(deps: {
         pending.set(input.sessionId, confirmed);
       }
       try {
-        await deps.truncate(input.sessionId, confirmed.boundary);
+        await deps.truncate(input.sessionId, confirmed.boundary, confirmed.anchor);
         await deps.finish(input.sessionId);
       } catch (cause) {
         throw new Error('The provider history was reverted, but saving the display history failed. Retry this same revert to finish saving; sending remains blocked.', { cause });

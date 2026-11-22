@@ -1,3 +1,4 @@
+import { whatwgLoopbackWebSocket } from '../../../../../packages/core/src/local/loopback.ts';
 // JSON-RPC over the `hermes serve` WebSocket (`/api/ws?token=`): requests out, events and server requests in.
 import type { Json } from './mapping.ts';
 
@@ -25,7 +26,7 @@ export function connectGateway(port: number, token: string, handlers: {
   onServerRequest(method: string, params: Json): Promise<Json>;
   onClose(reason: string): void;
 }): Promise<Gateway> {
-  const socket = new WebSocket(`ws://127.0.0.1:${port}/api/ws?token=${encodeURIComponent(token)}`);
+  const socket = whatwgLoopbackWebSocket(`ws://127.0.0.1:${port}/api/ws?token=${encodeURIComponent(token)}`);
   const pending = new Map<number, { method: string; resolve(value: Json): void; reject(error: Error): void }>();
   let nextId = 1;
   let open = false;

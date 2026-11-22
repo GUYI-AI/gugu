@@ -10,7 +10,7 @@
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ASSISTANT_APP_ID, openAssistantEntry } from '../../../../apps/desktop/src/lib/assistantEntry'
-import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store'
+import { peekInstalledApps } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions'
 import { useAssistantPageNotHere } from '../../../../apps/desktop/src/session/renderer/features/apps/assistant-page-not-here'
 import { installAssistantShellBridge, publishAssistantShell, type AssistantShellSnapshot } from '../../../../apps/desktop/src/lib/assistantShellBridge'
 import { QUICK_CHAT_CHANNELS } from '../../../../apps/desktop/src/lib/quickChatIpc'
@@ -28,7 +28,7 @@ const ASSISTANT = 'assistant-agent'
 
 const session = vi.hoisted(() => ({ agentId: 'assistant-agent' }))
 vi.mock('@renderer/lib/modal/modal-store', () => ({ modalStore: { closeModal: vi.fn() } }))
-vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { push: vi.fn() }, sidebar: { revealActiveSession: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {}, navigate: vi.fn() } } }))
+vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { start: vi.fn(), push: vi.fn() }, sidebar: { revealActiveSession: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {}, navigate: vi.fn() } } }))
 vi.mock('@renderer/features/sessions/stores/session-agent-bindings', () => ({ sessionAgentBindings: { bindingFor: () => ({ agentUserId: session.agentId }) } }))
 vi.mock('@renderer/features/projects/project-presence', () => ({ projectPresence: () => 'present' }))
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({ getSessionManagerStore: () => ({ listState: 'read', sessions: new Map([['task', { data: { archivedAt: null } }]]) }) }))
@@ -129,7 +129,7 @@ describe.each(UNAVAILABLE_APP_STATES)('the assistant App %s', (state) => {
 // Restoring the window to the assistant App's own page (verify-pass1 D9): the page is one more route into the assistant.
 describe.each(UNAVAILABLE_APP_STATES)('the window restored to the assistant App\'s page, the App %s', (state) => {
   function RestoredPage({ report }: { report: (notHere: boolean) => void }) {
-    report(useAssistantPageNotHere(ASSISTANT_APP_ID, !!installedExtensionsStore.mainTabOf(ASSISTANT_APP_ID)?.enabled))
+    report(useAssistantPageNotHere(ASSISTANT_APP_ID, !!peekInstalledApps('local')?.mainTabOf(ASSISTANT_APP_ID)?.enabled))
     return null
   }
   it('says it is getting ready, never "switched off", and opens the assistant\'s chat as any chat', async () => {

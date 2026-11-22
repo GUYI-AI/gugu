@@ -53,6 +53,26 @@ function platformInjection() {
 }
 
 describe('AcpRuntime session manager', () => {
+  it('#2007 says a running turn moved by session identity only: readers project the preview from the timeline', async () => {
+    const h = makeAcpHarness();
+    const changed = vi.fn();
+    h.deps.messagePreview = { onChange: changed };
+    const rt = new AcpRuntime(h.deps);
+    await rt.startSession(makeStartInput({ sessionId: 'bounded-live' }));
+    let finish!: (value: { stopReason: 'end_turn' }) => void;
+    h.agent.prompt = vi.fn(() => new Promise<{ stopReason: 'end_turn' }>(resolve => { finish = resolve; }));
+    const prompt = rt.sendPrompt('bounded-live', { text: 'input' });
+    await h.agent.called('prompt');
+    await h.client().sessionEvent({ sessionId: 'session-1', event: decodeSessionUpdate({
+      sessionUpdate: 'agent_message_chunk', sessionId: 'session-1', messageId: 'large', content: { type: 'text', text: 'visible tail' },
+    } as SessionUpdate) });
+    await vi.waitFor(() => expect(changed).toHaveBeenCalledWith({ sessionId: 'bounded-live' }));
+    expect(changed.mock.calls.every(([event]) => Object.keys(event).join() === 'sessionId')).toBe(true);
+    finish({ stopReason: 'end_turn' });
+    await prompt;
+    await rt.dispose();
+  });
+
   it('logs one attributed process start and does not log an idempotent start as a restart', async () => {
     const h = makeAcpHarness()
     const warn = vi.spyOn(h.deps.logger, 'warn')

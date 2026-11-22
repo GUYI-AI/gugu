@@ -25,7 +25,7 @@ import { events, onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
 import type { EventDefinition } from '@shared/lib/ipc/events';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import { gitRepoUpdateChannel, gitWorktreeUpdateChannel } from '@shared/core/git/events';
-import { machineRegistry } from '@renderer/lib/machine-routing';
+import { machineCodec, machineRegistry } from '@renderer/lib/machine-routing';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { log } from '@renderer/utils/logger';
 import { remotePortKey, remotePortLinkChannel, type RemotePortLink, type RemotePortReason } from '@shared/remote-port-link';
@@ -33,7 +33,7 @@ import type { SshPrompt } from '@shared/ssh-prompt';
 import { remoteErrorCode } from '../remote-failure-copy';
 import { hostStatusLabel, machineNoticeLabel } from '../connection-status';
 import { remoteHostsStore } from '../remote-hosts-store';
-import { remoteForLocalPort, watchRemoteForwards } from './remote-forward-cache';
+import { remoteForLocalPort, holdRemotePorts } from './remote-ports-replicas';
 import { remotePageFailureCopy, remotePortFailureText } from './remote-page-copy';
 import { RemotePageSession } from './remote-page-session';
 import {
@@ -86,6 +86,7 @@ function machineRpc(deviceId: string): WorkspaceRpc {
         const result = await rpc.workspace.files.createRemotePreview({
           projectId,
           workspaceId,
+          machine: { deviceId, ...machineCodec(deviceId).outbound({ projectId, workspaceId }) },
           root: root.data.path,
           surface: 'pane',
           documentPath: doc.data.path,
@@ -131,6 +132,7 @@ class MachineBrowserAttachment implements WorkspaceBrowserAttachment {
         const result = await rpc.workspace.files.createRemotePreview({
           projectId: ctx.projectId,
           workspaceId: ctx.workspaceId,
+          machine: { deviceId, ...machineCodec(deviceId).outbound({ projectId: ctx.projectId, workspaceId: ctx.workspaceId }) },
           root,
           surface: 'browser',
           failureCopy: remotePageFailureCopy(deviceLabel(deviceId)),
@@ -145,7 +147,7 @@ class MachineBrowserAttachment implements WorkspaceBrowserAttachment {
       browserId,
       (url) => this.pages.present(url) ?? presentForwardedUrl(url, (local) => this.remoteForLocal(local))
     );
-    this.stopForwardCache = watchRemoteForwards(deviceId);
+    this.stopForwardCache = holdRemotePorts(deviceId);
     // 页面自己发的 localhost 请求(前端调后端的另一个端口、跳转)也到那台机器(主进程 remote-loopback-requests.ts)。
     void rpc.remotePorts.bindBrowser({ browserId, deviceId, sessionId: ctx.sessionId }).catch(() => undefined);
   }

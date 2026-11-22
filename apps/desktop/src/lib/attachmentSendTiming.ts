@@ -1,6 +1,6 @@
 import { rendererLogger } from './log'
 import { i18n } from '../i18n'
-import type { AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
+import { retryableAttachmentError as retryableAttachmentFailure, type AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
 import { xhrAttachmentUpload } from './attachmentUploadTransport'
 import { AttachmentDeadlineError, linkedAttachmentSignal, runAttachmentStage, type AttachmentStageOperation } from '@gugu/core/cloud/attachmentDeadline'
 export { linkedAttachmentSignal } from '@gugu/core/cloud/attachmentDeadline'
@@ -45,3 +45,13 @@ export function attachmentSendTiming(clientId: string, chatId: string) {
   }
 }
 export type AttachmentSendTiming = ReturnType<typeof attachmentSendTiming>
+
+/** Declaring a file's bytes (before its message is queued) retries a transient failure: 3 attempts, 500 ms apart and more. */
+export async function retryAttachmentUpload<T>(run: (attempt: number) => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try { return await run(attempt) } catch (error) {
+      if (attempt >= 3 || !(error instanceof AttachmentStageTimeout || retryableAttachmentFailure(error))) throw error
+      await new Promise(resolve => setTimeout(resolve, attempt * 500))
+    }
+  }
+}

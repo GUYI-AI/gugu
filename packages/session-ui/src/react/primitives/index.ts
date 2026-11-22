@@ -18,6 +18,7 @@ export { Popover } from './popover';
 export { DropdownMenu } from './dropdown-menu';
 export { Combobox, useComboboxAnchor } from './combobox/combobox';
 export { InputGroup, type InputGroupAddonAlign } from './input-group';
+export { OpenLayer } from './open-layer';
 
 // ── Non-namespaced compound helpers (remain as named exports) ─────────────────
 export {

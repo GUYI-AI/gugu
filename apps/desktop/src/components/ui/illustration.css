@@ -1,0 +1,25 @@
+/* Ink-line spot illustrations for empty pages. Each image carries only alpha (the ink); the colour is the text token,
+   so one file serves light and dark. Width comes from the caller; the height follows the drawing's own ratio. */
+.gg-illustration {
+  background-color: var(--text-primary);
+  opacity: 0.82;
+  mask-position: center;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+  /* One url per drawing, read by both properties: a small file inlined as a data URI is then written once, not twice. */
+  mask-image: var(--gg-illustration);
+  -webkit-mask-image: var(--gg-illustration);
+}
+.gg-illustration[data-illustration='add-contact'] { aspect-ratio: 264 / 181; --gg-illustration: url('../../assets/illustrations/add-contact.png'); }
+.gg-illustration[data-illustration='join-group'] { aspect-ratio: 340 / 225; --gg-illustration: url('../../assets/illustrations/join-group.png'); }
+.gg-illustration[data-illustration='new-task'] { aspect-ratio: 224 / 222; --gg-illustration: url('../../assets/illustrations/new-task.png'); }
+.gg-illustration[data-illustration='no-requests'] { aspect-ratio: 168 / 209; --gg-illustration: url('../../assets/illustrations/no-requests.png'); }
+.gg-illustration[data-illustration='no-match'] { aspect-ratio: 224 / 235; --gg-illustration: url('../../assets/illustrations/no-match.png'); }
+.gg-illustration[data-illustration='no-notifications'] { aspect-ratio: 208 / 267; --gg-illustration: url('../../assets/illustrations/no-notifications.png'); }
+.gg-illustration[data-illustration='no-agents'] { aspect-ratio: 256 / 242; --gg-illustration: url('../../assets/illustrations/no-agents.png'); }
+.gg-illustration[data-illustration='no-tasks'] { aspect-ratio: 312 / 186; --gg-illustration: url('../../assets/illustrations/no-tasks.png'); }
+.gg-illustration[data-illustration='feedback-thanks'] { aspect-ratio: 224 / 289; --gg-illustration: url('../../assets/illustrations/feedback-thanks.png'); }
+.gg-illustration[data-illustration='no-messages'] { aspect-ratio: 208 / 173; --gg-illustration: url('../../assets/illustrations/no-messages.png'); }

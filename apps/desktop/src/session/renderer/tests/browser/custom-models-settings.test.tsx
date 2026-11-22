@@ -11,25 +11,25 @@ import { SessionLocalizationProvider } from '@renderer/localization/localization
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { ChatComposer } from '@gugu/session-ui/react/components';
 import type { CustomModelConnection } from '@gugu/session-core/models/custom-model';
-import type { CustomModelProtocolProbe, SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
+import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
 import { composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
-const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[] }));
+const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null }));
 vi.mock('@renderer/lib/stores/use-agents', async (importOriginal) => ({
   ...await importOriginal<typeof import('@renderer/lib/stores/use-agents')>(),
   useAgents: () => ({ data: [] }),
 }));
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({ getAgentConfigRuntimeClient: async () => ({
   listCustomModels: async () => ({ success: true, data: state.rows }),
-  testCustomModel: async (input: unknown) => { state.reads.push(input); return { success: true, data: { kind: 'unlisted', reason: 'no-list' } }; },
+  testCustomModel: async (input: unknown) => { state.reads.push(input); return { success: true, data: state.testResult ?? { kind: 'unlisted', reason: 'no-list' } }; },
   detectCustomModelProtocols: async (input: unknown) => { state.probes.push(input); return { success: true, data: state.probe }; },
   saveCustomModel: async (input: SaveCustomModel) => { state.saved = input; return { success: true, data: { ...input, id: input.id ?? '481825a8-60b9-4c83-8d1b-f104e3db0269', credentialRef: 'ref', keySaved: true } }; },
 }) }));
 let root: Root, host: HTMLDivElement;
-beforeEach(() => { queryClient.clear(); setLocalePreference('en-US'); state.rows = []; state.saved = null; state.reads = []; state.probe = null; state.probes = []; host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host); });
+beforeEach(() => { queryClient.clear(); setLocalePreference('en-US'); state.rows = []; state.saved = null; state.reads = []; state.probe = null; state.probes = []; state.testResult = null; host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host); });
 afterEach(() => { root.unmount(); host.remove(); });
 const record = (): CustomModelConnection => ({ id: '481825a8-60b9-4c83-8d1b-f104e3db0269', name: 'Existing provider', credentialRef: 'ref', keySaved: false, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }], models: [] });
 const render = (content: React.ReactNode) => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>{content}</SessionLocalizationProvider></QueryClientProvider>);
@@ -39,7 +39,7 @@ it('shows migrated records with no model or key and a repair entrypoint', async 
   const row = () => document.querySelector('[data-custom-connection]');
   await until('the device record renders inside Settings', () => !!row());
   expect(row()?.textContent).toContain('This custom provider has no model selected yet');
-  expect(row()?.textContent).toContain('This device does not have the key yet');
+  expect(row()?.textContent).toContain('No key saved on this device');
   await userEvent.click(page.getByRole('button', { name: 'Select models', exact: true }));
   await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
   expect(document.querySelector('[data-testid=custom-model-provider]')).toBeNull();
@@ -113,16 +113,45 @@ it('a custom address shows no protocol: the models it lists are all selected and
   await until('the form saved', () => state.saved !== null);
   expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, models: [{ id: 'model-a' }, { id: 'model-b' }], apiKey: 'sk-test' });
 });
-it.each([
-  ['unauthorized', 'This address refused the key.'],
-  ['unreachable', 'Cannot reach this address.'],
-] as const)('a custom address that answers %s marks the key and says so under it', async (reason, text) => {
-  state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason }, { step: 'openai-chat-completions', reason: 'no-model' }] };
+const failures = [
+  ['unauthorized', 'This address refused the key.', '该地址拒绝了此 Key。'],
+  ['unreachable', 'Cannot reach this address.', '无法连接到该地址。'],
+  ['dns', 'Cannot resolve this address. Check the hostname and DNS settings.', '无法解析该地址。请检查域名和 DNS 设置。'],
+  ['timeout', 'The connection timed out. Check the network or proxy and try again.', '连接超时。请检查网络或代理后重试。'],
+  ['certificate', 'Cannot verify this address’s security certificate. Check the certificate or proxy settings.', '无法验证该地址的安全证书。请检查证书或代理设置。'],
+  ['connection-refused', 'The address or proxy refused the connection. Check its port and whether it is running.', '该地址或代理拒绝了连接。请检查端口及服务是否已启动。'],
+  ['redirect', 'This address redirects requests. Enter the final API address instead.', '该地址会重定向请求。请直接填写最终的 API 地址。'],
+  ['proxy', 'Cannot use the configured proxy. Check its address and use an HTTP or HTTPS proxy.', '无法使用配置的代理。请检查地址，并使用 HTTP 或 HTTPS 代理。'],
+] as const;
+for (const locale of ['en-US', 'zh-CN'] as const) {
+  it.each(failures)(`${locale} shows the specific %s diagnosis without collapsing it into unreachable`, async (reason, en, zh) => {
+    setLocalePreference(locale);
+    state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason }, { step: 'openai-chat-completions', reason: 'no-model' }] };
+    render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+    await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
+    await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
+    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent(locale === 'en-US' ? en : zh);
+    expect(document.querySelector('[data-testid=custom-model-key]')?.getAttribute('aria-invalid')).toBe('true');
+    expect(page.getByTestId('custom-model-key-problem').element().textContent).not.toContain('sk-test');
+  });
+}
+it.each(failures)('the saved connection’s Test connection action preserves %s', async (reason, text) => {
+  state.rows = [{ ...record(), keySaved: true, models: [{ id: 'model' }] }];
+  state.testResult = { kind: 'unlisted', reason };
+  render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
+  await userEvent.click(page.getByRole('button', { name: 'Test connection', exact: true }));
+  await expect.element(page.getByRole('status')).toHaveTextContent(text);
+});
+it('preserves a connection failure that first occurs during the save-time named-model probe', async () => {
+  state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
   await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
-  await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent(text);
-  expect(document.querySelector('[data-testid=custom-model-key]')?.getAttribute('aria-invalid')).toBe('true');
+  await userEvent.fill(page.getByRole('textbox', { name: 'Models', exact: true }), 'my-model');
+  state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'dns' }, { step: 'openai-chat-completions', reason: 'dns' }] };
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await expect.element(page.getByRole('alert')).toHaveTextContent('Cannot resolve this address. Check the hostname and DNS settings.');
+  expect(state.saved).toBeNull();
 });
 it('a converted third-party model is selectable and tagged with its vendor; an IP address gets no tag', async () => {
   const chat = (id: string, baseUrl: string, model: string): CustomModelConnection => ({ ...record(), id, name: id, keySaved: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl }], models: [{ id: model }] });

@@ -2,9 +2,7 @@ import { PhoneMessagesEmpty } from '@/mobile/chat/PhoneMessagesEmpty'
 import { useUnreadLocatorNavigation } from '@/hooks/useUnreadLocatorNavigation'
 import { useMessageQuote } from '@/hooks/useMessageQuote'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
 import { useTranslation } from 'react-i18next'
-import { DUR_SLOW_MS, EASE_SPRING, tween } from '@/styles/motion'
 import { X } from '@/lib/icons'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 import { visibleDeliveryMessages } from '@gugu/core/shared/ui/systemNotice'
@@ -18,22 +16,12 @@ import { IconButton } from '../ui/IconButton'
 import { useBackLayer } from '../ui/sheetStack'
 import { ChatMessageComposer } from './ChatMessageComposer'
 import { RunningBarSlot, RunningTokenBar, type RunningToken } from '../RunningTokenBar'
-import { TopicBreadcrumb } from './TopicBreadcrumb'
 import { TopicToolWorkspace } from './TopicToolWorkspace'
 import { MessageList, type ChatListRowItem, type MessageListRowProps } from './MessageList'
 import { useToast } from '../toastContext'
 import { useSourceMessageReveal } from '@/hooks/useSourceMessageReveal'
 import type { FlowListHandle } from '@/lib/flowList'
-import {
-  TOPIC_SPLIT_MAX_WIDTH,
-  TOPIC_SPLIT_MIN_WIDTH,
-  clampTopicSplitWidth,
-  maxTopicSplitWidthForAvailableWidth,
-  quotePrefixOf,
-  readStoredTopicSplitWidth,
-  writeStoredTopicSplitWidth,
-} from './topicSplitModels'
-import { ResizablePane } from '@/layouts/ResizablePane'
+import { quotePrefixOf } from './topicSplitModels'
 import { prioritizeTopicParticipants } from './topicMentionModels'
 import { useReadReceiptPanel } from '@/hooks/useReadReceiptPanel'
 import { useMessageDelivery } from '@/hooks/useMessageDelivery'
@@ -70,12 +58,6 @@ export type TopicSplitPaneProps = {
   loading: boolean
   memberProfiles: Record<string, MemberProfileCardModel>
   visibleChats: readonly (Pick<ChatItem, 'id' | 'unread_locator'> & { name: string; member_user_ids?: string[] })[]
-  /**
-   * 这条话题引自哪一句。四种值分开(见 TopicBreadcrumb):'pending' 还没读到 / 'unreadable' 读到了
-   * 但这个人看不到 / null 来源消息确实被删了 / 有字 = 预览。从会话列表点进来的人,
-   * 光看话题名说不出它从哪条消息长出来的 —— 这是「双向连接」上行的那一半。
-   */
-  sourceMessagePreview: string | null | 'pending' | 'unreadable'
   /**
    * 这个号一变就把焦点交给**这一栏**的输入框(用鼠标点话题进来的那条路)。
    * ❌ 不走 lib/focusComposer 那条全局契约:分栏这份 composer 是 surface="aside",
@@ -175,6 +157,10 @@ const TOPIC_SPLIT_HEADER_STYLE: React.CSSProperties = {
   padding: '12px 12px 0',
   flexShrink: 0,
 }
+const TOPIC_SPLIT_TITLE_STYLE: React.CSSProperties = {
+  minWidth: 0, fontSize: 'var(--font-title)', lineHeight: 'var(--lh-title)', fontWeight: 'var(--font-weight-semibold)',
+  color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+}
 const TOPIC_SPLIT_HEADER_ACTIONS_STYLE: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, marginTop: 'calc((var(--lh-title) - var(--control-h-sm)) / 2)' }
 const TOPIC_SPLIT_MESSAGES_STYLE: React.CSSProperties = {
   flex: 1,
@@ -201,7 +187,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   loading,
   memberProfiles,
   visibleChats,
-  sourceMessagePreview,
   focusComposerToken,
   memberReadSeqs,
   onSend,
@@ -235,14 +220,8 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   const { readReceiptHandle, receiptOf } = useReadReceiptPanel({
     chatId: topic.chatId, messages, memberReadSeqs, memberProfiles, recipientFacts, deliveryWaits,
   })
-  // 宽度记在本机:拖过一次之后下次打开还是那个宽度(与会话列表同口径)。
-  const [width, setWidth] = useState(() => readStoredTopicSplitWidth())
-  const commitWidth = useCallback((next: number) => {
-    setWidth(next)
-    writeStoredTopicSplitWidth(next)
-  }, [])
   // 引用条留在**这一栏**:引用的是话题里的一句话,发出去也该落在话题里。
-  // @@@3922 换话题时这个组件实例**不重挂**(key 在下面那个 motion.div 上,不在组件本身),
+  // @@@3922 换话题时这个组件实例**不重挂**(key 在下面那个 div 上,不在组件本身),
   // 所以引用条得自己认主体 —— 否则在话题 A 里点的引用会跟着漂到 B,一按回车就发错线。
   // 焦点:点话题进来时要落在**这一栏**的输入框上,❌ 不留在左边来源线那一个。
   // 移动壳不抢 —— 抢了就立刻弹软键盘,把本来就窄的消息区再挤掉一半(同 lib/focusComposer 的那条惯例)。
@@ -340,15 +319,10 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
 
   // Phone topic navigation stays in its source room; Back first returns to the main conversation.
   useBackLayer(onClose, mobile && visible !== false)
-  const headerTitle = <TopicBreadcrumb topicName={topic.name} sourceMessagePreview={sourceMessagePreview} />
+  // Desktop: the side page it is drawn in moves on the pane tree's track; it does not slide in on its own.
   const page = (
-    // @@@2234 同 history/workspace/群 thread 面板:进场保留、**退场不保留占位**。
-    // ⇒ ❌ 不要给它套 AnimatePresence / 加 exit。
-    <motion.div
+    <div
       key={`topic-split-${topic.chatId}`}
-      initial={mobile ? false : { x: 340, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={tween(DUR_SLOW_MS, EASE_SPRING)}
       style={mobile ? TOPIC_TAB_STYLE : TOPIC_SPLIT_SHELL_STYLE}
     >
       <div
@@ -363,7 +337,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
             (找茬第十轮)。嵌进来的那两个面板自带的头由 tokens.css 收掉,所以不会两条头叠着摆。 */}
         {mobile || embedded ? null : (
         <div style={TOPIC_SPLIT_HEADER_STYLE}>
-          {headerTitle}
+          <span data-testid="topic-split-title" style={TOPIC_SPLIT_TITLE_STYLE}>{topic.name}</span>
           <div style={TOPIC_SPLIT_HEADER_ACTIONS_STYLE}>
               <IconButton
                 size="sm"
@@ -460,34 +434,8 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
         </ChatBottomDock>
         <ReadReceiptPopover handle={readReceiptHandle} receiptOf={receiptOf} testId="message-read-receipt-panel" />
       </div>
-    </motion.div>
+    </div>
   )
-  if (mobile) return page
-  if (embedded) {
-    return <TopicToolWorkspace chatId={topic.chatId} name={topic.name} memberCount={participantIds?.length} title={headerTitle} visible={visible !== false} onForward={onForward}>{page}</TopicToolWorkspace>
-  }
-  return (
-    <>
-    {/* @@@5856 宽度归 ResizablePane —— owner 拿掉了「全宽打开」那颗键之后,
-        「想看大一点」这件事只剩这条分割线,所以它必须真能拖(拖拽那一套复用会话列表那一份,
-        见 ResizablePane 的注释:边界情形全在那儿踩过了)。 */}
-    <ResizablePane
-      edge="left"
-      hidden={false}
-      mobile={false}
-      width={width}
-      minWidth={TOPIC_SPLIT_MIN_WIDTH}
-      initialMaxWidth={TOPIC_SPLIT_MAX_WIDTH}
-      clampWidth={clampTopicSplitWidth}
-      maxWidthForAvailable={maxTopicSplitWidthForAvailableWidth}
-      onWidthChange={setWidth}
-      onWidthCommit={commitWidth}
-      resizeLabel={t('topic.pane.resize')}
-      paneTestId="topic-split-resizable"
-      handleTestId="topic-split-resize-handle"
-    >
-      {page}
-    </ResizablePane>
-    </>
-  )
+  if (!embedded || mobile) return page
+  return <TopicToolWorkspace chatId={topic.chatId} name={topic.name} memberCount={participantIds?.length} visible={visible !== false} onForward={onForward}>{page}</TopicToolWorkspace>
 }

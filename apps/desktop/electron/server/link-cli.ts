@@ -139,7 +139,7 @@ export async function runLink(
       adopt(account)
     } catch (error) {
       // 记不下来只是这台还会被别处列出、还接云端转来的 RPC —— 连接本身照样接。
-      io.stderr.write(`没能记下「这台机器是远程 SSH」:${error instanceof Error ? error.message : String(error)}\n`)
+      io.stderr.write(`无法记录「这台机器是远程 SSH」:${error instanceof Error ? error.message : String(error)}\n`)
     }
   }
 
@@ -205,7 +205,8 @@ export async function runLink(
       })
       current.on('data', (chunk: Buffer) => {
         if (acked) {
-          io.stdout.write(chunk)
+          // A stream (`D` frames) can outrun the ssh channel: hold the socket until stdout takes more, never into memory.
+          if (!io.stdout.write(chunk)) { current.pause(); io.stdout.once('drain', () => current.resume()) }
           return
         }
         pending = pending.length ? Buffer.concat([pending, chunk]) : chunk
@@ -222,7 +223,10 @@ export async function runLink(
         io.stdout.write(`\n${LINK_PROTOCOL_MARK} ${REMOTE_PROTOCOL_VERSION}\n${LINK_READY_MARK}\n`)
         if (ack.rest.length) io.stdout.write(ack.rest)
         io.stdin.on('data', (data: Buffer | string) => {
-          current.write(typeof data === 'string' ? Buffer.from(data, 'utf8') : data)
+          if (!current.write(typeof data === 'string' ? Buffer.from(data, 'utf8') : data)) {
+            io.stdin.pause?.()
+            current.once('drain', () => io.stdin.resume?.())
+          }
         })
         io.stdin.on('end', () => current.end())
         io.stdin.on('error', () => current.end())

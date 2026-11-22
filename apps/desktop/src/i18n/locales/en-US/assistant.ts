@@ -111,7 +111,8 @@ export default {
     "engineChecking": "Checking…",
     "engineRetry": "Check again",
     "engineConfigure": "Configure {{name}}",
-    "engineUnusable": "Unavailable",
+    "engineNotInstalled": "Not installed",
+    "engineSignedOut": "Not signed in",
     "engineReadFailed": "Could not read",
 
     "identityTitle": "Choose a name and look",
@@ -312,6 +313,7 @@ export default {
     "title": "Preparing your Gugu"
   },
   "cloud": {
+    "upgradeIncomplete": "Upgrading Gugu in the cloud did not finish. Try again.",
     "loading": "Reading Gugu's state…",
     "unreadable": "Could not read Gugu's state. Try again later."
   },
@@ -841,6 +843,7 @@ export default {
     "morePrompt": "I've seen these ideas. Based on what you know about me, give me a fresh set."
   },
   "quickChat": {
+    "settingUnreadable": "Can't read the quick chat setting right now.",
     "title": "Quick chat with {{name}}",
     "assistant": "Gugu",
     "close": "Close quick chat",

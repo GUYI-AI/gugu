@@ -1,5 +1,11 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// These cases time the conversation list on a faked clock. The local message store is not what they measure: an instant
+// store keeps its own (IndexedDB) steps out of the reading; the store contract has its own tests.
+vi.mock('../../../../apps/desktop/src/lib/messageIngest', async original => ({
+  ...await original<typeof import('../../../../apps/desktop/src/lib/messageIngest')>(),
+  ingestMessages: async () => [],
+}))
 import { createAccountCatchupPriority } from '../../../../apps/desktop/src/lib/accountCatchupPriority'
 import { createAccountRevisionCoordinator } from '../../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'

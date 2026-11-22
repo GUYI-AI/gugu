@@ -75,11 +75,11 @@ export default {
   "meeting": {
     "heading": "Meeting starting soon",
     "startRecording": "Start recording",
-    "dismiss": "Dismiss",
     "recording": "Recording",
     "error": "Could not start recording. Try again.",
     "setting": "Meeting reminders",
     "settingDescription": "Remind you to record when a meeting on this device's calendar is about to start.",
-    "needsCalendar": "Connect Calendar first in Connected apps → This device."
+    "needsCalendar": "Connect Calendar first in Connected apps → This device.",
+    "calendarUnreadable": "Could not read this device's calendar."
   }
 } as const;

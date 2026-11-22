@@ -1,5 +1,5 @@
 import type { CustomModelMeta } from '@gugu/session-core/models/custom-model'
-import type { CustomModelProtocolProbe } from '@gugu/session-core/workspace-server/agent-config'
+import type { ConnectionModelList, CustomModelProtocolProbe } from '@gugu/session-core/workspace-server/agent-config'
 import { metadataSeparator } from '@/i18n/format'
 import { useEffect, useId, useState } from 'react'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
@@ -34,7 +34,7 @@ export type ModelList =
   | { kind: 'waiting' }
   | { kind: 'reading' }
   | { kind: 'listed'; models: string[]; endpoints?: CustomModelMeta['endpoints'] }
-  | { kind: 'unlisted'; reason: 'no-list' | 'unauthorized' | 'unreachable'; endpoints?: CustomModelMeta['endpoints'] }
+  | { kind: 'unlisted'; reason: Extract<ConnectionModelList, { kind: 'unlisted' }>['reason']; endpoints?: CustomModelMeta['endpoints'] }
   | { kind: 'failed'; message: string }
 
 /** 手填的几个模型名:逗号(中英文)、空格、换行都算隔开;去空、去重。 */
@@ -49,7 +49,9 @@ export function probeModelList(probe: CustomModelProtocolProbe): ModelList {
   if (failures.some(({ reason }) => reason === 'unauthorized')) return { kind: 'unlisted', reason: 'unauthorized', endpoints }
   // The address answered, just without a list: the person names the model and the check reruns with it on save.
   if (endpoints.length || failures.some(({ step, reason }) => step === 'models' && reason === 'no-list')) return { kind: 'unlisted', reason: 'no-list', endpoints }
-  return { kind: 'unlisted', reason: 'unreachable', endpoints }
+  const failure = failures.find(({ reason }) => reason !== 'no-list' && reason !== 'no-model' && reason !== 'refused')
+  const reason = failure?.reason
+  return { kind: 'unlisted', reason: reason && reason !== 'no-model' && reason !== 'refused' ? reason : 'unreachable', endpoints }
 }
 
 /** key / 地址一变就重读(表单里打字时等 400ms 停下再读);已存的连接立刻读。 */
@@ -59,7 +61,6 @@ export function useConnectionModelList(
 ): ModelList {
   const sourceKey = source ? JSON.stringify(source) : ''
   const [list, setList] = useState<ModelList>({ kind: 'waiting' })
-  // @@@effect-flow - probing the key being typed (debounced); the key is never put in a cache.
   useEffect(() => {
     if (!sourceKey) {
       setList({ kind: 'waiting' })

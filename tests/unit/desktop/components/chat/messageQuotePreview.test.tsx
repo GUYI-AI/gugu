@@ -4,7 +4,7 @@ import { createNode, createReactHarness } from '../../../../support/testHarness'
 import { MessageQuotePreview } from '../../../../../apps/desktop/src/components/chat/ChatComposerContextBands'
 
 const thumb = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/attachmentBytes', () => ({ useAttachmentObjectUrl: thumb }))
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({ useAttachmentObjectUrl: thumb })))
 
 let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {

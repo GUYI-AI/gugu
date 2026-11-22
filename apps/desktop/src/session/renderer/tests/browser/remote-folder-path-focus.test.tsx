@@ -4,6 +4,7 @@ import { page, userEvent } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { Sheet } from '@/components/ui/Sheet';
 import { RemoteFolderPicker } from '@/components/RemoteFolderPicker';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import '@/styles/tokens.css';
 
 const listDirectory = vi.fn(async (_device: string, _request: { path: string; show_hidden?: boolean }, _options?: unknown) => ({ result: { path: '/home/work', home: '/home/work', entries: [] } }));
@@ -19,6 +20,8 @@ vi.mock('react-i18next', async (original) => ({
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(async () => {
+  queryClient.clear();
+  followRendererSession('SIGNED_IN', 'tester');
   listDirectory.mockClear();
   host = document.createElement('div');
   document.body.append(host);

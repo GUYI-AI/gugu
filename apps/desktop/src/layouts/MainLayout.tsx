@@ -4,7 +4,8 @@ import { Sheet } from '../components/ui/Sheet'
 import { PaneHeader } from '../components/ui/Pane'
 import { RightPanelBackButton } from '../components/chat/RightPanel'
 import { SessionAppFrame } from '../components/appSlot/SessionAppFrame'
-import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
+import { peekInstalledApps } from '../session/renderer/features/extensions/installed-extensions'
+import { LISTED_HOST } from '../components/appSlot/hereHost'
 import { ResourceMonitorHost } from '@/session/renderer/features/settings/components/resource-monitor-host'
 import { reopenGlobalSearch } from '@/session/renderer/features/global-search/search-session'
 import { reaction } from 'mobx'
@@ -32,6 +33,7 @@ import { translateSessionMessage } from '@/session/renderer/localization/locale-
 import { MobileTabPager } from '@/mobile/MobileTabPager'
 import { navigateMobile } from '@/mobile/navigateMobile'
 import { PhoneLayer } from '@/mobile/PhoneLayer'
+import { PhoneChatPage, type PhoneChatPageHandle } from '@/mobile/PhoneChatPage'
 import { PhoneMeButton } from '@/mobile/PhoneMeButton'
 import { PhonePartnersPage } from '@/mobile/partners/PhonePartnersPage'
 import { useAppActive, useReportChatOnScreen } from '@/lib/onScreenChat'
@@ -48,11 +50,6 @@ import { useSessionpageAgentInstallNavigation } from '../components/sessionpage/
 import { useOpenNewSessionOnDeviceHost } from '../components/sessionpage/openNewSessionOnDeviceHost'
 import { MobileCreatePage } from '../components/MobileAgentCreatePage'
 import { isAssistantSettingsSection, type ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
-import { ResizableChatListPane } from './ResizableChatListPane'
-import {
-  readStoredChatListPaneWidth,
-  writeStoredChatListPaneWidth,
-} from './ResizableChatListPaneStorage'
 import { AuthUser } from '../store/auth'
 import { useActiveChatListedSource, useChatStore, useChatStoreReader } from '../store/chatContext'
 import { ExtensionConsentSheet } from '../components/extensionBundle/ExtensionConsentSheet'
@@ -62,7 +59,7 @@ import { GroupAddMembersHost } from '../components/chat/GroupAddMembersSheet'
 import { MessageForwardHost } from '../components/chat/MessageForwardHost'
 import { useSessionpageReveal } from '../hooks/useSessionpageReveal'
 import { useOwnedAgentConversationEntry } from '../hooks/useOwnedAgentConversationEntry'
-import { SessionInputOutboxHost } from '../hooks/useSessionInputOutbox'
+import { OutboxHost } from '../hooks/useOutboxHost'
 import { SentMessageBodyHost } from '../components/chat/SentMessageBodyHost'
 import { NeedsYouHost } from '../components/needsYou/NeedsYouHost'
 import { AgentFailureSlotHost } from '../components/AgentTurnFailureBar'
@@ -218,8 +215,8 @@ function InnerLayout({
     upsertChat,
     writeDraft,
     setDraftAttachments,
-    setDraftQuote, setDraftWhisper,
-  } = useChatStore('activeChatId', 'setActiveChatId', 'refreshChats', 'upsertChat', 'writeDraft', 'setDraftAttachments', 'setDraftQuote', 'setDraftWhisper')
+    setDraftQuote, setDraftWhisper, sendMessageToChat,
+  } = useChatStore('activeChatId', 'setActiveChatId', 'refreshChats', 'upsertChat', 'writeDraft', 'setDraftAttachments', 'setDraftQuote', 'setDraftWhisper', 'sendMessageToChat')
   const mobile = useMobileShell()
   // @@@phone-root — 弹层挂在壳外,只能从 <html> 认手机;用属性而不是 `:root:has([data-phone-shell])`:桌面用不到它,不该替它付 :has 失效。
   useLayoutEffect(() => {
@@ -328,7 +325,11 @@ function InnerLayout({
       await askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
     },
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
-    openOwnApp: (extensionId, tab) => { const page = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`); if (!page) throw new Error('App tab is unavailable'); setOpenedPhoneApp({ kind: page.kind, name: page.extensionName }) },
+    openOwnApp: (extensionId, tab) => {
+      const page = peekInstalledApps(LISTED_HOST)?.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`)
+      if (!page) throw new Error('App tab is unavailable')
+      setOpenedPhoneApp({ kind: page.kind, name: page.extensionName })
+    },
     openProject: (projectId) => { setOpenedPhoneApp(null); setActiveTab('tasks'); appState.navigation.navigate('project', { projectId }) },
     openChat: openChatTarget,
     openAssistant: (tasks) => {
@@ -348,7 +349,8 @@ function InnerLayout({
   const tabs = mobile ? MOBILE_TABS : SIDEBAR_TABS
   // 手机上 'assistant' / 'tasks' / 'settings' 是推在列表首页上的一层(PhoneLayer,没有底栏);底下的分页器停在推它之前那一格,返回回到那里。
   const phoneLayerOpen = mobile && !MOBILE_TABS.includes(activeTab)
-  const pagerTab = phoneChatShown ? 'chats' : phoneLayerOpen ? phoneRootTab : activeTab
+  const pagerTab = phoneChatShown || phoneLayerOpen ? phoneRootTab : activeTab
+  const phoneChatPage = useRef<PhoneChatPageHandle>(null)
   const exitPhoneLayer = useCallback(() => navigateMobile(() => setActiveTab(phoneRootTab), 'pop'), [setActiveTab, phoneRootTab])
   const exitPhoneSessions = useCallback(() => navigateMobile(() => {
     setActiveTab(watchParentTab ?? phoneRootTab)
@@ -361,12 +363,15 @@ function InnerLayout({
   // 手机「伙伴」(#446):推进去的页没有底栏;「消息」右上「新项目」推进它的新项目页。
   const [partnersPushed, setPartnersPushed] = useState(false)
   // 返回:会话页上压着别的会话时回到它(@@@phone-chat-trail),否则回到会话页的来处(根 tab)。
-  const backFromPhoneChat = useCallback(() => navigateMobile(() => {
+  const leavePhoneChat = useCallback(() => {
     const under = shellTab.popChat()
     if (under && 'chatId' in under) return setActiveChatId(under.chatId)
     shellTab.setChatFrom(null)
     if (under) reopenGlobalSearch()
-  }, 'pop'), [shellTab, setActiveChatId])
+  }, [shellTab, setActiveChatId])
+  const backFromPhoneChat = useCallback(() => {
+    if (!phoneChatPage.current?.back()) navigateMobile(leavePhoneChat, 'pop')
+  }, [leavePhoneChat])
   const [newProjectRequest, setNewProjectRequest] = useState(0)
   const openNewProject = useCallback(() => navigateMobile(() => {
     setActiveTab('contacts')
@@ -396,10 +401,6 @@ function InnerLayout({
   const sessionSlotRef = useRef<HTMLDivElement>(null)
   const composerSlotRef = useRef<HTMLDivElement>(null)
   const emdashFrameHomeRef = useRef<HTMLDivElement>(null)
-  // Declared here (not further down with the rest of the chat-list-pane state) so the position-sync
-  // effect below can depend on it without a temporal-dead-zone error — it needs to re-run whenever a
-  // pane-width drag changes the composer/task slot's rect.
-  const [chatListPaneWidth, setChatListPaneWidth] = useState(readStoredChatListPaneWidth)
 
   // Prewarm the embedded renderer so reaching a surface that needs it feels native. The gate is the
   // build target (sessionHost capability), not the shell width — the desktop Electron window never
@@ -451,8 +452,8 @@ function InnerLayout({
   // first paint — no flash) that this effect sizes/positions to exactly cover whichever slot
   // (sessionSlotRef/composerSlotRef) is current, via getBoundingClientRect(). A hidden slot (display:
   // none, e.g. sessionSlotRef while on another tab) has a zero rect: the overlay keeps its last box and is
-  // hidden the retained-surface way (content-visibility + scale(0)), so its scroll offsets survive. ResizeObserver + window resize + explicit
-  // chatListPaneWidth / activeTab dependencies keep the rect in sync (activeTab: same commit as the tab switch, #6753).
+  // hidden the retained-surface way (content-visibility + scale(0)), so its scroll offsets survive. ResizeObserver + window resize + an explicit
+  // activeTab dependency keep the rect in sync (activeTab: same commit as the tab switch, #6753).
   // 移动 shell 走同一套:全屏创建页的正文区就是 composerSlotRef 指的那个槽(两个 shell 的槽互斥
   // 渲染,共用一个 ref),量到的 rect 只是变成了整屏 —— ❌ 不为移动端另开一条定位分支。
   useLayoutEffect(() => {
@@ -502,7 +503,7 @@ function InnerLayout({
       window.removeEventListener('resize', syncRect)
       offPeek()
     }
-  }, [showCreateSurface, mobile, phoneChatShown, chatListPaneWidth, sessionHostAvailable, activeTab])
+  }, [showCreateSurface, mobile, phoneChatShown, sessionHostAvailable, activeTab])
 
   // Which root the ONE session-page instance renders internally — 'session-create' while the create page is open,
   // else the normal session-page Workspace. Independent of the reparent effect above (that moves WHERE
@@ -522,15 +523,6 @@ function InnerLayout({
   // @@@scan-orchestrate (#537) - the scan entry now lives in the chat-list "+" menu, but a decoded QR
   const [scanSeed, setScanSeed] = useState<{ route: QrScanRoute; token: number } | null>(null)
   const [cameraPermissionSheetOpen, setCameraPermissionSheetOpen] = useState(false)
-
-  const previewChatListPaneWidth = useCallback((width: number) => {
-    setChatListPaneWidth(width)
-  }, [])
-
-  const commitChatListPaneWidth = useCallback((width: number) => {
-    setChatListPaneWidth(width)
-    writeStoredChatListPaneWidth(width)
-  }, [])
 
   // @@@1507 直达指定设置 section(侧栏「额度」→ quota)。移动端无设置弹窗:直达「我的」tab 对应 detail 面。
   const openSettingsSection = useCallback((section: ActiveSection) => {
@@ -877,9 +869,8 @@ function InnerLayout({
     if (!sessionHostAvailable) return
     const w = window as typeof window & { __GUGU_SESSIONPAGE_MESSAGES__?: SessionpageMessageHost }
     const host: SessionpageMessageHost = {
-      async sendCardToChat(chatId, content) {
-        await chatService.sendMessage(chatId, user.id, content, crypto.randomUUID(), 'card')
-      },
+      // Through the outbox like any message: durable, retried, idempotent on its id.
+      async sendCardToChat(chatId, content) { await sendMessageToChat(chatId, content, { contentType: 'card' }) },
       rememberedTaskProject: async (chatId, localDeviceId) => rememberedChatProject(await readAgentCreateDefaults(), chatId, localDeviceId),
       rememberTaskProject: async (chatId, deviceId, projectId) => { await rememberAgentCreateProject(deviceId, projectId, chatId) },
     }
@@ -887,7 +878,7 @@ function InnerLayout({
     return () => {
       if (w.__GUGU_SESSIONPAGE_MESSAGES__ === host) delete w.__GUGU_SESSIONPAGE_MESSAGES__
     }
-  }, [sessionHostAvailable, user])
+  }, [sessionHostAvailable, sendMessageToChat])
 
   useEffect(() => {
     if (!sessionHostAvailable) return
@@ -1055,7 +1046,7 @@ function InnerLayout({
           mobile={mobile}
           tabs={tabs}
           activeTab={pagerTab}
-          covered={phoneLayerOpen}
+          covered={phoneLayerOpen || phoneChatShown}
           swipeable={tabBarVisible}
           onSettle={selectTab}
           tabBarRef={tabBarRef}
@@ -1065,16 +1056,13 @@ function InnerLayout({
             // 手机壳里它是分页器的一页,不隐藏(横滑时相邻页要看得见),只 inert(MobileTabPager)。
             // gugu-dev#181 桌面上(有会话页)没有单独的聊天页:对话是会话页这屏的一块,列表在会话页侧栏「对话」里。
             chats: !chatsAreBlocks && (
-              <div key="chat" style={{ display: 'flex', flexDirection: mobile ? 'column' : 'row', flex: 1, minWidth: 0, overflow: 'hidden', ...(activeTab === 'chats' || mobile ? undefined : RETAINED_SURFACE_HIDDEN_STYLE) }}>
+              <div key="chat" className="gg-shell-chat-list" data-mobile={mobile || undefined} data-active={activeTab === 'chats' || mobile || undefined}
+                style={activeTab === 'chats' || mobile ? undefined : RETAINED_SURFACE_HIDDEN_STYLE}>
                   {/* #2525 移动端全屏创建页:列表/会话/底部 tab 岛全部让位(display 隐藏而非卸载 ——
                       返回时列表滚动位置与会话状态原样还在),真正的 composer 由下面那份 fixed overlay
                       盖到本页正文槽上。 */}
-                  <ResizableChatListPane mobile={mobile}
-                    hidden={chatListHidden}
-                    width={chatListPaneWidth}
-                    onWidthChange={previewChatListPaneWidth}
-                    onWidthCommit={commitChatListPaneWidth}
-                  >
+                  {/* Only the phone shell gets here (desktop chats are blocks of the session page): the list is the page. */}
+                  <div data-testid={AUTOMATION_TEST_IDS.chatListPane} className="relative flex min-h-0 w-full min-w-0 flex-1" style={mobile && showCreateSurface ? { display: 'none' } : undefined}>
                     <ChatListPanel
                       mobile={mobile}
                       hidden={chatListHidden}
@@ -1090,23 +1078,6 @@ function InnerLayout({
                       onOpenSessionCreate={mobile ? openAgentCreateDraftFromContacts : undefined}
                       onNewProject={mobile ? openNewProject : undefined}
                     />
-                  </ResizableChatListPane>
-                  <div data-shell-chat-detail={mobile ? undefined : ''} style={{ flex: '1 1 auto', minWidth: 0, minHeight: 0, position: 'relative', display: mobile && (!phoneChatShown || showCreateSurface) ? 'none' : 'flex' }}>
-                    {/* 创建面打开时聊天区只隐藏不卸载(同 #6158 的常驻面):从前条件卸载,关掉创建面回来 = 整个面板重挂,
-                        消息列表、滚动位置、分栏、群协作状态全部重来一遍,就是那一下白闪。 */}
-                    <div className="flex min-h-0 min-w-0 flex-[1_1_auto]" style={showCreateSurface || assistantOnPhone ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
-                      <ActiveChatArea
-                        imPage
-                        chatId={activeChatId}
-                        navigationTarget={unreadNavigationTarget === 'chat'}
-                        hidden={showCreateSurface || shownChatId !== activeChatId}
-                        mobile={mobile}
-                        openNonce={chatOpenNonce}
-                        onBack={mobile ? pressBack : undefined}
-                        onOpenUserChat={handleOpenProfileChat}
-                        onOpenSessionpageAgentFile={!mobile && sessionHostAvailable ? handleOpenSessionpageAgentFile : undefined}
-                      />
-                    </div>
                   </div>
                   {mobile && showSessionCreate && (
                     <MobileCreatePage
@@ -1162,6 +1133,22 @@ function InnerLayout({
             ),
           }}
         />
+
+        {/* The one chat tree stays outside the pager: the actual origin list remains underneath,
+            including a conversation entered from Partners. Resizing never reparents/remounts it. */}
+        {!chatsAreBlocks && <PhoneChatPage ref={phoneChatPage} mobile={mobile}
+          shown={phoneChatShown && !showCreateSurface && !assistantOnPhone}
+          covered={phoneLayerOpen}
+          desktopShown={activeTab === 'chats'}
+          enabled={mobile && !phoneLayerOpen && !showCreateSurface && !shellTab.peekChat()}
+          place={activeChatId} onBack={leavePhoneChat}>
+          <div className="flex min-h-0 min-w-0 flex-[1_1_auto]" style={showCreateSurface || assistantOnPhone ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
+            <ActiveChatArea imPage chatId={activeChatId} navigationTarget={unreadNavigationTarget === 'chat'}
+              hidden={showCreateSurface || shownChatId !== activeChatId} mobile={mobile} openNonce={chatOpenNonce}
+              onBack={mobile ? pressBack : undefined} onOpenUserChat={handleOpenProfileChat}
+              onOpenSessionpageAgentFile={!mobile && sessionHostAvailable ? handleOpenSessionpageAgentFile : undefined} />
+          </div>
+        </PhoneChatPage>}
 
         {/* 手机上推在「消息 / 伙伴」首页上的三层(owner 10-26,OpenDCAI/gugu#446):整屏、没有底栏,返回回到推它之前那一格。
             常驻只藏(PhoneLayer):草稿、滚动位置、各自往下钻的层级都在,同从前它们是分页器里的一页。 */}
@@ -1229,7 +1216,7 @@ function InnerLayout({
           </div>
         )}
 
-        <SentMessageBodyHost />{effectsActive && <SessionInputOutboxHost accountId={user.id} />}{mobile && <AgentWatchRoot />}
+        <SentMessageBodyHost />{effectsActive && <OutboxHost accountId={user.id} />}{mobile && <AgentWatchRoot />}
         {/* 批准页的机器移除与设置共用 DevicesProvider 那份设备数据;系统交给 App 的邀请短链与相机扫码同一条路。 */}
         <ServerLoginApproveHost active={effectsActive} onScanRoute={openScanRoute} />
         {effectsActive && <PasswordDeviceHost />}

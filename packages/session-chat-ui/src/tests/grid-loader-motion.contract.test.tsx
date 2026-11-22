@@ -24,18 +24,17 @@ afterEach(async () => {
   await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
 })
 
-it('pauses offscreen and resumes without replacing its animations', async () => {
+it('stops offscreen and starts again on the shared beat', async () => {
   const host = document.createElement('div')
   document.body.append(host)
   teardown.push(render(() => <GridLoader />, host), () => host.remove())
   const animations = () => [...host.querySelectorAll('i')].flatMap(cell => cell.getAnimations())
   await until('dots run', () => animations().length === 9 && animations().every(a => a.playState === 'running'))
-  const first = animations()[0]
   host.style.cssText = 'position:fixed;top:20000px'
-  await until('offscreen dots pause', () => animations().every(a => a.playState === 'paused'))
+  await until('offscreen dots have no animations', () => animations().length === 0)
   host.style.cssText = ''
-  await until('visible dots resume', () => animations().every(a => a.playState === 'running'))
-  expect(animations()[0]).toBe(first)
+  await until('visible dots run again', () => animations().length === 9 && animations().every(a => a.playState === 'running'))
+  for (const a of animations()) expect(Math.abs(Number(a.currentTime) - Number(a.timeline!.currentTime))).toBeLessThan(100)
 })
 
 it('shows the original first-frame pattern without animation under reduced motion', async () => {
@@ -49,7 +48,7 @@ it('shows the original first-frame pattern without animation under reduced motio
   expect(cells.map(cell => Number(getComputedStyle(cell).opacity))).toEqual([0.9, 0.15, 0.15, 0.15, 0.9, 0.9, 0.15, 0.15, 0.15])
 })
 
-it('runs on CSS keyframes alone and pauses while its window is not seen', async () => {
+it('runs on CSS keyframes alone and stops while its window is not seen', async () => {
   const timers = vi.spyOn(window, 'setInterval')
   const host = document.createElement('div')
   document.body.append(host)
@@ -63,7 +62,7 @@ it('runs on CSS keyframes alone and pauses while its window is not seen', async 
   expect(timers).not.toHaveBeenCalled()
 
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }))
-  await until('every dot pauses with the window', () => animations().every((a) => a.playState === 'paused'))
+  await until('every dot stops with the window', () => animations().length === 0)
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }))
-  await until('and runs again when it is seen', () => animations().every((a) => a.playState === 'running'))
+  await until('and runs again when it is seen', () => animations().length === 9 && animations().every((a) => a.playState === 'running'))
 })

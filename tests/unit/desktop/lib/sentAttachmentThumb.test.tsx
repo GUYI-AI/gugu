@@ -12,6 +12,7 @@ vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
   resolveFile: f.resolve,
   fileReader: () => ({ accountId: 'account-1', actorId: 'account-1' }),
   fileReadSignal: () => undefined,
+  nativeLocalBytes: async () => null,
   // Holds node:buffer Blobs: jsdom's Blob (and a Response's, here) has no stream(); the renderer's does.
   attachmentCache: async () => ({ match: async (key: string) => f.store.has(key) ? { blob: async () => f.store.get(key) } : undefined,
     put: async (key: string, response: Response) => { f.store.set(key, new NodeBlob([await response.arrayBuffer()])) } }),
@@ -21,7 +22,7 @@ vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
   fileMetadata: async () => ({ status: 'gone' }),
 }))
 
-import { keepSentAttachment, useAttachmentObjectUrl } from '../../../../apps/desktop/src/lib/attachmentBytes'
+import { attachmentBytes, keepSentAttachment, useAttachmentObjectUrl } from '../../../../apps/desktop/src/lib/attachmentBytes'
 import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/replica'
 // The replica reads for the signed-in account, as the product publishes it.
 ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'owner')
@@ -65,5 +66,35 @@ describe('a sent image after its commit', () => {
     await harness.render(createElement(Thumb, { metadata: metadataFor('b'.repeat(64)) }))
     await vi.waitFor(() => expect(status()).toBe('failed'))
     expect(f.resolve).toHaveBeenCalledTimes(1)
+  })
+})
+
+// Opened again (or opened after sending it): the read is authorized afresh, and its bytes are the copy kept here.
+describe('a kept copy opened in full', () => {
+  beforeEach(() => { f.store.clear(); f.resolve.mockReset() })
+  it('reads no bytes once the read is authorized', async () => {
+    await keepSentAttachment(file)
+    const read = vi.fn(), dispose = vi.fn(async () => {})
+    f.resolve.mockResolvedValue({ status: 'ready', purpose: 'file', reader: { accountId: 'account-1' }, revision: (metadataFor(sha256) as Extract<FileMetadata, { status: 'ready' }>).revision, read, stream: read, dispose })
+    const bytes = await attachmentBytes(source, 'shown')
+    expect(bytes.status).toBe('ready')
+    expect(await (bytes as { blob: Blob }).blob.text()).toBe('local png bytes')
+    expect(read).not.toHaveBeenCalled()
+    expect(dispose).toHaveBeenCalledTimes(1)
+  })
+  it('keeps bytes that came over the network, and none of bytes read from this machine\'s disk', async () => {
+    for (const here of [false, true]) {
+      f.store.clear()
+      const chunk = new Uint8Array(await file.arrayBuffer())
+      f.resolve.mockResolvedValue({ status: 'ready', purpose: 'file', reader: { accountId: 'account-1' }, revision: (metadataFor(sha256) as Extract<FileMetadata, { status: 'ready' }>).revision,
+        read: async () => chunk, stream: async function* () { yield chunk }, dispose: async () => {}, fromDisk: async () => here })
+      expect((await attachmentBytes(source, 'full')).status).toBe('ready')
+      expect(f.store.size).toBe(here ? 0 : 1)
+    }
+  })
+  it('a read no longer authorized is not answered from the copy', async () => {
+    await keepSentAttachment(file)
+    f.resolve.mockResolvedValue({ status: 'gone', sha256 })
+    expect(await attachmentBytes(source, 'full')).toEqual({ status: 'gone', sha256 })
   })
 })

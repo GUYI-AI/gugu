@@ -5,7 +5,7 @@ import type { PaneEdge } from '@renderer/features/tabs/pane-layout-tree';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { peekInstalledApps, peekInstalledAppsTracked } from '@renderer/features/extensions/installed-extensions';
 import { getSessionPageStore } from '@renderer/features/sessions/stores/session-selectors';
 import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { MIN_PANE_HEIGHT_PX, MIN_PANE_WIDTH_PX, type PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
@@ -19,6 +19,7 @@ import { groupParticipantPanes } from '@renderer/features/chats/group-participan
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { roomListsSession, roomOfEntry } from '@renderer/features/sidebar/inner-sidebar-scope';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
+import { dropShapeOf, hideDropHighlight, showDropHighlight, type DropShape } from '@renderer/lib/drop-highlight';
 
 export { isScreenView };
 
@@ -100,8 +101,9 @@ export function appsOnScreen(): string[] {
 function pruneGoneApps(): void {
   reaction(
     () => {
-      if (!installedExtensionsStore.isLoaded) return '';
-      const enabled = new Set<string>(installedExtensionsStore.residentTabContributions.map((entry) => entry.kind));
+      const installed = peekInstalledAppsTracked();
+      if (!installed) return '';
+      const enabled = new Set<string>(installed.residentTabContributions.map((entry) => entry.kind));
       return appsOnScreen()
         .filter((kind) => !enabled.has(kind))
         .join('\n');
@@ -125,14 +127,20 @@ function pruneGoneChats(): void {
   subscribeChatRemovals(chatsInLayout, forgetChatOnScreen, () => restored);
 }
 
-/** 这条对话没了:它那块收掉;它在这屏上、屏空了就摆回最近看过的会话。人正看着别的视图(资源库、设置……)时 ❌ 把人拽回这屏。 */
+/**
+ * 这条对话没了:它那块收掉;它在这屏上、屏空了就摆回最近看过的会话。人正看着别的视图(资源库、设置……)时 ❌ 把人拽回这屏。
+ * 导航还指着它、屏上又没有别的可跟:回首页(同解散的项目),❌ 停在一块不会再画出来的空白上 —— 导航没变,它回到群里时也不会再摆出来。
+ */
 function forgetChatOnScreen(chatId: string): void {
   const chat = { kind: 'chat', chatId } as const;
   const onScreen = screenLayout.blockOf(chat) !== undefined;
   screenLayout.forgetContent(chat);
   if (!onScreen) return;
   refillScreen();
-  if (isScreenView(appState.navigation.currentViewId)) followFocus();
+  const navigation = appState.navigation;
+  if (isScreenView(navigation.currentViewId)) followFocus();
+  const asked = navigation.viewParamsStore.chat as { chatId?: string } | undefined;
+  if (navigation.currentViewId === 'chat' && asked?.chatId === chatId) navigation.navigate('home');
 }
 
 /** 导航到一条会话(点左边一行、通知、新建完落地、后退)= 这屏把它摆出来。幂等;要赶在会话页第一次渲染之前装上。 */
@@ -460,7 +468,8 @@ export function putBackFromWindow(windowId: string): void {
     screenLayout.placeAt(content, target, edge, { even: halfWontFit(target, edge) });
     return;
   }
-  const extensionId = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === content.tabKind)?.extensionId;
+  // A placement the person makes, one moment: the App's page opens only for an App the list (read by now) has.
+  const extensionId = peekInstalledApps()?.allTabContributions.find((entry) => entry.kind === content.tabKind)?.extensionId;
   if (extensionId) appState.navigation.navigate('app', { appId: extensionId });
 }
 
@@ -585,6 +594,42 @@ const dropKey = (drop: BlockDrop | MentionDrop | null): string =>
 export function setBlockDropPreview(drop: BlockDrop | MentionDrop | null): void {
   if (dropKey(blockDropPreview.get()) === dropKey(drop)) return;
   runInAction(() => blockDropPreview.set(drop));
+  const shape = drop && blockDropShape(drop);
+  if (shape) showDropHighlight(shape);
+  else hideDropHighlight();
+}
+
+/**
+ * Where a drop on the screen lands, as the shared drop highlight draws it (@@@drop-highlight): the half of the block an edge
+ * splits off; a pane, or on its tab strip a 2px line where the tab goes in (the line within a session, draggable-tab.tsx's
+ * DropIndicator); a session's composer (or its terminal) that gets the @ — the pointer over its messages shows the composer
+ * too: what a drop gives is what is drawn.
+ */
+function blockDropShape(drop: BlockDrop | MentionDrop): DropShape | null {
+  const page = `[data-screen-page="${CSS.escape(drop.blockId)}"]`;
+  if ('mention' in drop) {
+    const surface = document.querySelector<HTMLElement>(`${page} [data-session-chat-surface][data-session-chat-session-id="${CSS.escape(drop.mention.sessionId)}"]`);
+    const target = surface?.querySelector<HTMLElement>('[data-slot="composer-bar"]') ?? surface;
+    return target ? dropShapeOf(target) : null;
+  }
+  if ('paneId' in drop) {
+    const cell = document.querySelector<HTMLElement>(`${page} [data-pane-cell="${CSS.escape(drop.paneId)}"]`);
+    if (!cell || !drop.strip) return cell ? dropShapeOf(cell, '8px') : null;
+    const before = drop.strip.before ? cell.querySelector<HTMLElement>(`[data-tabid="${CSS.escape(drop.strip.before)}"]`)?.closest<HTMLElement>('.session-tab-slot') : null;
+    const box = (before ?? [...cell.querySelectorAll<HTMLElement>('.session-tab-bar .session-tab-slot')].at(-1))?.getBoundingClientRect();
+    return box ? { left: (before ? box.left : box.right) - 1, top: box.top + 4, width: 2, height: box.height - 8, radius: '1px' } : null;
+  }
+  const block = screenBlockElement(drop.blockId)?.getBoundingClientRect();
+  if (!block) return null;
+  const { left, top, width, height } = block;
+  const across = drop.edge === 'left' || drop.edge === 'right';
+  return {
+    left: drop.edge === 'right' ? left + width / 2 : left,
+    top: drop.edge === 'bottom' ? top + height / 2 : top,
+    width: across ? width / 2 : width,
+    height: across ? height : height / 2,
+    radius: '8px',
+  };
 }
 
 /**

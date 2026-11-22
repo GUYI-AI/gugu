@@ -77,10 +77,12 @@ const agentActionSchema = z.discriminatedUnion('action', [
   z.object({ action: z.literal('install'), ...APP_INSTALL_ARGS }),
   z.object({ action: z.literal('manage'), ...APP_MANAGE_ARGS, consent: handedConsentSchema.optional() }),
   // #6646 Built by the host from `app_install { source_message_id }` after it read the message as this agent: the card's
-  // message (#7290), which the install reads as the owner — who published it is the server's word on it, never a URL.
+  // message (#7290), which the install reads again as `reader`, that agent — who published it is the server's word on
+  // it, never a URL.
   z.object({
     action: z.literal('install_attachment'),
     message_id: z.string().min(1),
+    reader: z.string().min(1).optional(),
     // D-31 Another machine of the owner's asked the person (app_install { device }): what to do with that ask here.
     consent: handedConsentSchema.optional(),
   }),
@@ -946,7 +948,7 @@ async function actOn(action: z.infer<typeof agentActionSchema>, dependencies: Ex
       // A Gugu server asks too: as this agent's approval in its session, followed from a phone or a desktop (D-31 ③).
       return (dependencies.requestInstallConsent ?? requestExtensionInstallConsent)(action.request);
     case 'install_attachment': {
-      const result = await installExtensionFromAttachment({ messageId: action.message_id, ...(action.consent ? { consent: action.consent } : {}) }, dependencies);
+      const result = await installExtensionFromAttachment({ messageId: action.message_id, ...(action.reader ? { reader: action.reader } : {}), ...(action.consent ? { consent: action.consent } : {}) }, dependencies);
       // E-05 for an agent is what it always was: an error with the install's own reason (the card says it to a person).
       if (result.outcome === 'refused') throw new Error(result.reason);
       if (!result.installed) return saidIfUnanswered(result);

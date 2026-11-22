@@ -34,6 +34,8 @@ const {
   removeHarnessConnection,
   sessionHarnessConnectionId,
 } = await import('./harness-connections');
+const { migrateCustomModelConnections } = await import('./custom-models');
+const { log } = await import('@main/lib/logger');
 
 beforeEach(async () => {
   state.home = await mkdtemp(join(tmpdir(), 'gugu-connections-'));
@@ -88,6 +90,19 @@ it('references the terminal account and keeps the former native vault as an inde
   await expect(readFile(join(vault(work.id), 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   await expect(readFile(join(state.codexRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
   expect((await state.fixture!.registry.getAccount('harness:codex', work.id))?.meta?.harnessConnection?.migratedTo).toBe('native');
+});
+
+it('lists the ChatGPT sign-in the terminal already holds as the native connection, without a request, a copy or a row per read', async () => {
+  const terminalRoot = process.env.CODEX_HOME!;
+  await writeAuthAt(terminalRoot, chatgptAuth('person'));
+  const before = await readFile(join(terminalRoot, 'auth.json'));
+  const first = await listHarnessConnections('codex');
+  expect(first).toMatchObject([{ id: 'native', kind: 'native', current: true }]);
+  const rows = (await state.fixture!.registry.listAccounts('harness:codex')).map(row => row.accountId).sort();
+  for (let index = 0; index < 3; index += 1) expect(await listHarnessConnections('codex')).toEqual(first);
+  expect((await state.fixture!.registry.listAccounts('harness:codex')).map(row => row.accountId).sort()).toEqual(rows);
+  expect(await readFile(join(terminalRoot, 'auth.json'))).toEqual(before);
+  await expect(readFile(join(state.codexRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 it('migrates copied OAuth into one native reference and removes both managed copies idempotently', async () => {
@@ -324,4 +339,20 @@ it('a Claude connection config root is where its old sessions ran (now its vault
   expect(connectionConfigRoot('claude', connection.id)).toBe(asked.configRootEnv?.CLAUDE_CONFIG_DIR);
   expect(connectionConfigRoot('claude', 'native')).toBeNull();
   expect(connectionConfigRoot('codex', connection.id)).toBeNull();
+});
+
+it('a default Claude API connection from an earlier release becomes a custom model, and Claude sessions still start on native', async () => {
+  await state.fixture!.registry.upsertAccount({ providerId: 'harness:claude', accountId: 'api', secret: 'fixture-key',
+    meta: { displayName: 'Anthropic API', harnessConnection: { kind: 'api-key', models: ['claude-sonnet-4-5'] } } });
+  await state.fixture!.registry.setDefaultAccount('harness:claude', 'api');
+  // The upgrade, in boot order.
+  migrateCustomModelConnections();
+  await migrateOwnedHarnessAccounts('claude', process.env, true);
+  const migratedTo = (await state.fixture!.registry.getAccount('harness:claude', 'api'))?.meta?.harnessConnection?.migratedTo;
+  expect((await state.fixture!.registry.getAccount('models:custom', migratedTo!))?.meta?.customModel).toBeTruthy();
+  expect(log.info).toHaveBeenCalledWith('custom-model migration: moved API connections',
+    { migrated: [{ namespace: 'harness:claude', from: 'api', to: `models:custom/${migratedTo}`, sessions: 0, automations: 0 }] });
+  await expect(resolveHarnessConnection('claude', { sessionId: 'old' })).resolves.toMatchObject({ connectionId: 'native' });
+  await expect(resolveHarnessConnection('claude', {})).resolves.toMatchObject({ connectionId: 'native' });
+  await expect(resolveHarnessConnection('claude', { connectionId: 'api' })).resolves.toMatchObject({ connectionId: 'native' });
 });

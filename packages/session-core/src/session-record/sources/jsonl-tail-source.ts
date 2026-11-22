@@ -6,6 +6,7 @@ import type {
   SessionRecordSourceEvents
 } from '../contract';
 import { jsonlCheckAt, locateImages, readRecordImage } from './record-images';
+import { initialTree, keepNode, markTurn, type RecordNode, type TreeState } from './record-tree';
 import { emitJsonLines, pollInterval, warnOf, type SessionRecordSourceOptions } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
 import { stat } from 'node:fs/promises';
@@ -22,6 +23,11 @@ export type JsonlTailFormat<S> = {
   /** 续读点里这份数据的版本。形状或读法变了就升，老存档一律作废重读。 */
   resumeVersion: number;
   resolve(): Promise<string>;
+  /**
+   * The record can go on in another file (a Codex revert writes a new segment): catching up looks for it again, and a
+   * record found elsewhere is read anew from there.
+   */
+  continuesElsewhere?: true;
   /** Immutable ancestors, each cut at its child's file-local byte boundary; only the resolved file is tail-followed. */
   prefixes?(path: string): Promise<ReadonlyArray<{ path: string; endByteOffset: number }>>;
   /** 从头读时的状态。文件被换掉、整份重读时回到它。 */
@@ -32,28 +38,61 @@ export type JsonlTailFormat<S> = {
   snapshot?(state: S): S;
   /** The native children `state` already knows (`SessionRecordSource.childIdsAt`). */
   childIds?(state: S): string[];
+  /**
+   * What a record is on the conversation tree (`record-tree.ts`), or null for a line that is not on it. Called before
+   * `decode`, on every line; a line on an abandoned branch is then not decoded at all.
+   */
+  node?(record: Record<string, unknown>, state: S): RecordNode | null;
 };
 
-type ResumeData<S> = { version: number; path: string; tail: TailResume; state: S; prefixBytes?: number };
+/** The format's own state and the tree's, read and resumed together. */
+type Tracked<S> = { format: S; tree: TreeState };
+
+type ResumeData<S> = { version: number; path: string; tail: TailResume; state: Tracked<S>; prefixBytes?: number };
 
 export function createJsonlTailSource<S>(
   locator: SessionRecordLocator,
   options: SessionRecordSourceOptions | undefined,
-  format: JsonlTailFormat<S>
+  adapter: JsonlTailFormat<S>
 ): SessionRecordSource {
   const warn = warnOf(options);
   let reader: TailReader | null = null;
   let path: string | null = null;
+  /** What a read again starts from: `format.initial()` gives it while that read runs. */
+  let seed: Tracked<S> | null = null;
+  const format = tracked(adapter, () => seed);
   let state = format.initial();
   let sink: SessionRecordSourceEvents | null = null;
   let stopped = false;
   let prefixBytes = 0;
+  /** A read from `start` is running: a fork it finds is read again once it ends (`readAgain`). */
+  let reading = false;
+  /** A read again that a tailed fork started; `catchUp` waits for it. */
+  let again: Promise<void> | null = null;
 
   const emit = (lines: string[], offsets: number[], file = path, seekable = true) => {
     if (stopped || !sink) return;
     const events = sink;
     emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), options?.fill ? decodeNoting : (record) => format.decode(record, state),
       file ? (entries, index) => locateImages(entries, lines[index], offsets[index], file) : undefined, seekable ? offsets : undefined);
+    if (!reading && format.again(state)) {
+      again = whole(() => readAgain(events)).catch((error: unknown) => warn('重读失败', { path, error: (error as Error).message }));
+    }
+  };
+
+  const whole = async (read: () => Promise<void>) => {
+    reading = true;
+    try { await read(); } finally { reading = false; }
+  };
+
+  /** While a read found a fork it did not know: drop what was read, and read the record again through `start`. */
+  const readAgain = async (events: SessionRecordSourceEvents) => {
+    for (let next = format.again(state); next && !stopped; next = format.again(state)) {
+      reader?.stop();
+      events.onReset('source_replaced');
+      seed = next;
+      try { await start(events); } finally { seed = null; }
+    }
   };
 
   const streamPrefixes = async (found: string) => {
@@ -120,7 +159,21 @@ export function createJsonlTailSource<S>(
       }
       reader.start();
     },
-    catchUp: async () => { if (options?.readMode !== 'snapshot') await reader?.catchUp(); },
+    catchUp: async () => {
+      if (options?.readMode === 'snapshot') return;
+      if (adapter.continuesElsewhere && sink && path && !reading) {
+        const events = sink;
+        const found = await format.resolve().catch(() => null);
+        if (found && found !== path && !stopped) {
+          reader?.stop();
+          events.onReset('source_replaced');
+          await source.start(events);
+          return;
+        }
+      }
+      await reader?.catchUp();
+      await again;
+    },
     readImage: readRecordImage,
     // resume-tail: a plain JSONL record starts at a line start, with the decoder state a read had there (a fill read's
     // `RecordEntry.state`). A `.zst` archive (only found by a snapshot read) starts at its beginning.
@@ -129,12 +182,12 @@ export function createJsonlTailSource<S>(
       if (!found || found.endsWith('.zst')) return null;
       const info = await stat(found);
       const tail: TailResume = { ino: info.ino, size: info.size, mtimeMs: info.mtimeMs, lineOffset: position };
-      const data: ResumeData<S> = { version: format.resumeVersion, path: found, tail, state: at === undefined ? format.initial() : at as S };
+      const data: ResumeData<S> = { version: format.resumeVersion, path: found, tail, state: at === undefined ? format.initial() : at as Tracked<S> };
       return { data, fingerprint: `${format.name}:${found}:${tail.ino}:${tail.size}:${tail.mtimeMs}` } satisfies SessionRecordResume;
     },
     recordPath: () => format.resolve().catch(() => null),
     checkAt: async (position) => { const found = await format.resolve().catch(() => null); return found ? jsonlCheckAt(found, position) : null; },
-    ...(format.childIds ? { childIdsAt: (at: unknown) => format.childIds!(at as S) } : {}),
+    ...(format.childIds ? { childIdsAt: (at: unknown) => format.childIds!(at as Tracked<S>) } : {}),
     async stamp() {
       const found = await format.resolve().catch(() => null);
       if (!found) return null;
@@ -159,5 +212,35 @@ export function createJsonlTailSource<S>(
       sink = null;
     }
   };
+  // A whole read (initial, snapshot or resume) ends first; only then is the record read again, at most once more.
+  const start = source.start.bind(source);
+  source.start = (events, resume) => whole(async () => {
+    await start(events, resume);
+    await readAgain(events);
+  });
   return source;
+}
+
+/** The adapter with the tree in front of it: a line on an abandoned branch makes no entries. */
+function tracked<S>(adapter: JsonlTailFormat<S>, seed: () => Tracked<S> | null) {
+  const { node, snapshot, childIds } = adapter;
+  return {
+    name: adapter.name,
+    resumeVersion: adapter.resumeVersion,
+    resolve: () => adapter.resolve(),
+    ...(adapter.prefixes ? { prefixes: adapter.prefixes.bind(adapter) } : {}),
+    initial: (): Tracked<S> => structuredClone(seed()) ?? { format: adapter.initial(), tree: initialTree() },
+    decode(record: Record<string, unknown>, state: Tracked<S>): RecordEntry[] | null {
+      const line = node?.(record, state.format) ?? null;
+      if (line && !keepNode(state.tree, line)) return [];
+      const entries = adapter.decode(record, state.format);
+      return line && entries ? markTurn(entries, line) : entries;
+    },
+    snapshot: (state: Tracked<S>): Tracked<S> =>
+      ({ format: snapshot ? snapshot(state.format) : structuredClone(state.format), tree: { ...state.tree } }),
+    ...(childIds ? { childIds: (state: Tracked<S>) => childIds(state.format) } : {}),
+    /** A read found a fork it did not know: the state to read again from, knowing every fork found so far. */
+    again: (state: Tracked<S>): Tracked<S> | null =>
+      state.tree.fresh ? { format: adapter.initial(), tree: initialTree(state.tree.forks) } : null,
+  };
 }

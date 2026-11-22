@@ -31,9 +31,9 @@ import { pendingServerAssistant } from '../../lib/assistantServerSetup'
 import { clearAssistantOnboardingNavigation, readAssistantOnboardingNavigation, saveAssistantOnboardingNavigation } from '../../lib/assistantOnboardingNavigation'
 import { AssistantSetupIdentity } from './AssistantSetupIdentity'
 import { DEFAULT_ASSISTANT_LOOK } from '../agentAvatar/look'
-import { reloadMyAssistant } from '../../lib/myAssistant'
+import { myAssistant } from '../../lib/myAssistant'
 import { rendererLogger } from '../../lib/log'
-import { getMembership } from '../../lib/billing/membership'
+import { isMember, membershipFailure, refreshSpendingPower, useSpendingPower } from '../../lib/billing/useSpendingPower'
 import { membershipSettingsSection } from '../../lib/billing/settingsDestination'
 import { cloudComputerEnabled } from '@gugu/core/cloud/optionalServices'
 import { UI_EVENTS } from '../../lib/uiEvents'
@@ -93,7 +93,8 @@ export function AssistantOnboarding({
     const label = occupation ? (occupation.key === 'other' ? occupation.text : tMain(`firstRun.occupation.${occupation.key}`)) : ''
     return { ...draft, owner: { preferredName: ownerName?.trim() ?? '', about: label ? t('setup.ownerOccupation', { occupation: label }) : '' } }
   }, [draft, ownerName, ownerUserId, t, tMain])
-  const [engine, setEngine] = useState<AssistantEngine>('claude')
+  /** null until the person picks one: the engine step defaults to the engine this computer already has. */
+  const [engine, setEngine] = useState<AssistantEngine | null>(null)
   const [busy, setBusy] = useState<Busy>(null)
   const localAttempt = useRef<AbortController | null>(null)
   const localInstallationStarted = useRef(false)
@@ -104,9 +105,10 @@ export function AssistantOnboarding({
   const [error, setError] = useState<string | null>(null)
   const [setupEnded, setSetupEnded] = useState(false)
   const [cloudFailure, setCloudFailure] = useState<CloudComputerActionFailure | null>(null)
-  const [member, setMember] = useState<boolean | null>(null)
-  const [memberError, setMemberError] = useState<string | null>(null)
-  const [memberAttempt, setMemberAttempt] = useState(0)
+  // 安家页读取会员权益(账号额度那一份 replica):读取失败如实显示,不能当成免费会员;没读到 = null(那一页画「在读」)。
+  const spending = useSpendingPower(cloudEnabled && step === 'home' ? { id: ownerUserId } : null)
+  const member = isMember(spending)
+  const memberError = membershipFailure(spending)
   const hue = BODY_COLORS[draft.color]?.hue ?? 268
   const displayName = draft.name.trim() || t('setup.namePlaceholder')
 
@@ -132,7 +134,7 @@ export function AssistantOnboarding({
     setBusy('resume')
     writeSetupStep(ownerUserId, 'shell')
     resumeLocalAssistant(record)
-      .then(() => { resumed = true; writeSetupStep(ownerUserId, 'connect'); reloadMyAssistant(ownerUserId) })
+      .then(() => { resumed = true; writeSetupStep(ownerUserId, 'connect'); void myAssistant.refresh() })
       .catch((e: unknown) => {
         writeSetupStep(ownerUserId, 'shell')
         setSetupEnded(e instanceof AssistantSetupError && e.kind === 'cancelled')
@@ -141,22 +143,6 @@ export function AssistantOnboarding({
       })
       .finally(() => setBusy(resumed ? null : 'computer'))
   }, [ownerUserId, localDeviceId])
-
-  // 安家页读取会员权益；读取失败如实显示，不能当成免费会员。
-  useEffect(() => {
-    if (!cloudEnabled || step !== 'home' || member !== null) return
-    let cancelled = false
-    setMemberError(null)
-    getMembership()
-      .then((m) => !cancelled && setMember(!!m && m.tier !== 'free'))
-      .catch((e: unknown) => {
-        log.error({ error: String(e) }, 'read membership failed')
-        if (!cancelled) setMemberError(messageForUser(e))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [cloudEnabled, step, member, memberAttempt])
 
   const claimCloud = useCallback(async () => {
     setBusy('cloud')
@@ -175,7 +161,8 @@ export function AssistantOnboarding({
     }
   }, [setupDraft, ownerUserId])
 
-  const installHere = useCallback(async () => {
+  // `chosen` is the engine the person continued with; a recovery that resumed on mount never showed the step, so none.
+  const installHere = useCallback(async (chosen?: AssistantEngine) => {
     if (!localDeviceId) return
     setBusy('computer')
     setInstalling(localInstallationStarted.current)
@@ -202,9 +189,9 @@ export function AssistantOnboarding({
       if (pending) {
         onInstalling()
         await resumeLocalAssistant(pending)
-      } else await setUpAssistantOnThisComputer(await setupDraft(), localDeviceId, { signal: attempt.signal, onInstalling, engine })
+      } else await setUpAssistantOnThisComputer(await setupDraft(), localDeviceId, { signal: attempt.signal, onInstalling, engine: chosen })
       writeSetupStep(ownerUserId, 'connect')
-      reloadMyAssistant(ownerUserId)
+      void myAssistant.refresh()
     } catch (e) {
       keepBusy = localInstallationStarted.current || e instanceof AssistantSetupCleanupError
       writeSetupStep(ownerUserId, keepBusy ? 'shell' : null)
@@ -219,7 +206,7 @@ export function AssistantOnboarding({
       setCancelling(false)
       setBusy(keepBusy ? 'computer' : null)
     }
-  }, [setupDraft, localDeviceId, ownerUserId, engine])
+  }, [setupDraft, localDeviceId, ownerUserId])
 
   // 管家正在云上给它开家(会员一键领取之后,或上一次开到一半):进度由现成的开通面板说。
   if (cloudEnabled && (snapshot?.state === 'provisioning' || snapshot?.state === 'error')) {
@@ -263,7 +250,7 @@ export function AssistantOnboarding({
                   } catch (e) { log.error({ error: String(e) }, 'assistant preparation cleanup retry failed'); return }
                   finally { setCancelling(false) }
                 }
-                void installHere()
+                void installHere(engine ?? undefined)
               }} disabled={cancelling}>{t(setupEnded ? 'setup.startNew' : 'setup.retry')}</Button>
             </> : <p className="ta-onb-sub inline-flex items-center gap-2">
               <LoadingIndicator size="inline" />
@@ -280,14 +267,14 @@ export function AssistantOnboarding({
           <AssistantSetupIdentity draft={draft} onChange={setDraft} onBack={() => setStep('intro')} onContinue={() => setStep('home')} />
         ) : step === 'engine' ? (
           <AssistantEngineChoice engine={engine} onEngineChange={value => { setEngine(value); setError(null) }} draft={draft} setupFailed={!!error}
-            onContinue={() => void installHere()} onBack={() => setStep('home')} />
+            onContinue={value => { setEngine(value); void installHere(value) }} onBack={() => setStep('home')} />
         ) : step === 'server' ? (
           <AssistantServerSetup key={ownerUserId} ownerUserId={ownerUserId} name={displayName} createDraft={setupDraft} onBack={() => setStep('home')}
             onAddServer={() => saveAssistantOnboardingNavigation(ownerUserId, draft)} />
         ) : memberError ? (
           <>
             <p className="ta-onb-error" role="alert">{memberError}</p>
-            <Button onClick={() => setMemberAttempt((attempt) => attempt + 1)}>{t('setup.retry')}</Button>
+            <Button onClick={refreshSpendingPower}>{t('setup.retry')}</Button>
           </>
         ) : (
           <AssistantHomeChoice

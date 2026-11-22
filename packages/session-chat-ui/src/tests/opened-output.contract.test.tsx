@@ -20,9 +20,7 @@ import {
 } from '@session-chat/components/rows/opened-output/opened-output.def';
 import type { ChatMessage, OpenedOutputItem, TranscriptTurn } from '@session-chat/model';
 import { createChatState } from '@session-chat/state/chat-state';
-import { FILE_MARKS } from '@gugu/session-shared/file-marks';
-/** A glyph as the browser serialises it once drawn (`<path/>` reads back as `<path></path>`). */
-const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML;
+import { fileIconColor } from '@gugu/session-shared/file-marks';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
 import { makeContractCtx, renderAndMeasureUnit, type ContractInspector } from './contract';
 
@@ -116,12 +114,12 @@ describe('opened-output card geometry contract', () => {
   it.each([
     { output: { kind: 'file' as const, path: '/r/Q3 预算.xlsx' }, tiles: 1, sheet: 1 },
     { output: pageCard.output, tiles: 0, sheet: 0 },
-  ])('draws a file by its family\'s tile, a page by its globe ($output.kind)', async ({ output, tiles, sheet }) => {
+  ])('draws a file by its icon\'s tile, a page by its globe ($output.kind)', async ({ output, tiles, sheet }) => {
     const reading = await renderAndMeasureUnit(openedOutputUnitDef, { ...documentCard, output }, makeContractCtx({ width: 420 }), (host) => {
       const tile = host.querySelector<HTMLElement>('.gg-file-tile');
       return {
         tiles: host.querySelectorAll('.gg-file-tile').length,
-        sheet: tile?.style.getPropertyValue('--gg-file-tile') === FILE_MARKS.sheet.color && tile.querySelector('svg')!.innerHTML === drawn(FILE_MARKS.sheet.glyph) ? 1 : 0,
+        sheet: tile?.style.getPropertyValue('--gg-file-tile') === fileIconColor('sheet') && tile.querySelector('svg')!.getAttribute('data-file-icon') === 'sheet' ? 1 : 0,
         tileWidth: tile?.getBoundingClientRect().width ?? 40,
       };
     }, openable);

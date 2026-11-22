@@ -1,7 +1,11 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { refreshFailure, replica, useReplica } from '@/lib/replica';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { thisDeviceId } from '@/store/thisDevice';
 import { readComposerVerbChat, setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
-import { platform } from '@/platform';
 import { machineLibraryHost } from '@renderer/features/library/library-host';
 import { useNewSessionMachine } from '@renderer/features/remote-hosts/use-new-session-machine';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -15,11 +19,20 @@ import { rememberedTaskRow, taskProjectChoice } from './task-project-memory';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { composerDrafts } from './composer-drafts';
 import { ComposerTray } from './composer-tray';
-import { ensureImplicitSessionHomeProjectId } from './implicit-session-home-project';
+import { implicitSessionHome } from './implicit-session-home-project';
 import { NewSessionComposer } from './new-session-page';
 import { sessionComposerDockBandClassName, sessionComposerDockedWidthClassName } from './session-composer-styles';
 import { cancelComposerVerb, composerVerbLook } from './composer-verb-tag';
 import { machineComposerProps } from './use-machine-create-target';
+
+/** The project a chat remembers for new tasks on this computer (kept by the host per chat and device; never pushed). */
+const chatTaskProject = replica({
+  name: 'chatTaskProject',
+  scope: 'account',
+  networkMode: 'always',
+  read: (_owner, chatId: string, deviceId: string) => sessionpageMessageHost().rememberedTaskProject(chatId, deviceId),
+  fresh: 0,
+});
 
 export function taskDispatchDraftKey(chatId: string): string {
   return `task:${chatId}`;
@@ -55,7 +68,7 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
 }) {
   const { translate } = useSessionMessages();
   // #2548 the chip reads 「新智能体」, as the composer button that opened this box (mock v33 派智能体); the box asks
-  // 「想让新智能体做点什么？」 (already says it is a new one, so no per-caller wording) and the group chip reads 「进群：群名」.
+  // 「新智能体要做什么？」 (already says it is a new one, so no per-caller wording) and the group chip reads 「加入：群名」.
   const draftKey = taskDispatchDraftKey(verbKey);
   // 选词那一刻框里写着的话跟过来:要在 NewSessionComposer 挂上(读草稿)之前放好。
   useState(() => {
@@ -63,24 +76,47 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
     if (carried) composerDrafts.set(draftKey, carried);
     return null;
   });
-  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  const localDeviceId = useLocalDeviceId();
-  const remembered = useChatProjectMemory(chatId, inGroup ? null : localDeviceId);
-  useEffect(() => {
-    if (remembered && selectedId === undefined) setSelectedId(remembered);
-  }, [remembered, selectedId]);
-  const implicitProjectId = useImplicitProjectId(!selectedId);
+  const [picked, setPicked] = useState<{ projectId: string | undefined } | null>(null);
+  const self = useReplica(thisDeviceId, []);
+  const localDeviceId = self.state === 'value' ? self.value : null;
+  // 这个对话记着的项目(哪台机器上的都算,认回账号上的项目):群和它的话题里 ❌ 沿用(#2599)。
+  const remembers = !inGroup && picked === null;
+  const memory = useReplica(chatTaskProject, remembers && localDeviceId ? [chatId, localDeviceId] : null);
+  // The remembered project is unknown until read (❌ "no project", then it pops in); unreadable memory blocks sending
+  // (❌ the task goes to the implicit directory instead of the project used last). This computer's id read as none and
+  // not read again is unreadable too (❌ "no project" from a read that failed); an id read is this computer's for good.
+  const selfFailure = localDeviceId === null ? refreshFailure(self) : null;
+  const selection: { known: true; projectId: string | undefined } | { known: false; failed: Error | null } = picked
+    ? { known: true, projectId: picked.projectId }
+    : !remembers ? { known: true, projectId: undefined }
+    : selfFailure ? { known: false, failed: selfFailure }
+    : memory.state === 'error' ? { known: false, failed: memory.error }
+    : self.state === 'unknown' || (localDeviceId !== null && memory.state === 'unknown') ? { known: false, failed: null }
+    : { known: true, projectId: memory.state === 'value' && memory.value ? rememberedTaskRow(memory.value, accountProjectsStore) : undefined };
+  const retryMemory = () => {
+    if (selfFailure) void thisDeviceId.refresh();
+    else if (localDeviceId) void chatTaskProject.refresh(chatId, localDeviceId);
+  };
+  const selectedId = selection.known ? selection.projectId : undefined;
+  // 没选项目:与新建会话页同一个隐式工作目录(「未选择项目」是真状态,不是列表第一个)。
+  const implicitProject = useReplica(implicitSessionHome, selection.known && !selectedId ? [] : null);
+  const implicitProjectId = implicitProject.state === 'value' ? implicitProject.value : undefined;
 
   const pickProject = (projectId: string | undefined) => {
-    setSelectedId(projectId);
+    setPicked({ projectId });
     if (localDeviceId && !inGroup) {
       const choice = taskProjectChoice(projectId, localDeviceId, (id) => machineRegistry.machineOf(id));
-      void sessionpageMessageHost().rememberTaskProject(chatId, choice.deviceId, choice.projectId).catch((error: unknown) => {
+      const entry = chatTaskProject.at(chatId, localDeviceId);
+      void sessionpageMessageHost().rememberTaskProject(chatId, choice.deviceId, choice.projectId).then(() => {
+        entry.set(choice.projectId ? { deviceId: choice.deviceId, projectId: choice.projectId } : null);
+      }, (error: unknown) => {
         log.warn('remember the project picked for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) });
       });
     }
   };
-  const projectPicker = <ComposerProjectPicker selectedId={selectedId} onSelect={pickProject} />;
+  const projectPicker = selection.known
+    ? <ComposerProjectPicker selectedId={selectedId} onSelect={pickProject} />
+    : <Unknown className="h-6 w-24" />;
   const tray = {
     draftKey,
     chatId,
@@ -89,7 +125,6 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
       placeholder: translate('taskDispatch.placeholderAgent'),
       verb: composerVerbLook('task', { label: translate('taskDispatch.agent'), onCancel: () => cancelComposerVerb(verbKey, draftKey), testId: 'task-dispatch' }),
       taskChatId: chatId,
-      openAfterCreate: false,
       birthChatId: joinChat ? chatId : undefined,
       onSessionCreated: (result: { projectId: string; sessionId: string }) => {
         setComposerVerb(verbKey, null);
@@ -99,7 +134,16 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   };
   return (
     <div data-testid="task-dispatch-composer" data-chat-id={chatId}>
-      {selectedId ? (
+      {/* The remembered project shown, its re-read failed: said with a retry (❌ the project read before as if current). */}
+      {selection.known ? <RefreshFailed reading={memory} /> : null}
+      {!selection.known ? (
+        selection.failed ? (
+          <div className="flex h-[132px] w-full items-start gap-3 p-3" data-testid="task-dispatch-project-failed">
+            <ComposerProjectPicker selectedId={undefined} onSelect={pickProject} />
+            <ReadFailedLine message={translate('taskDispatch.projectMemoryFailed')} onRetry={retryMemory} />
+          </div>
+        ) : <Unknown className="h-[132px] w-full" />
+      ) : selectedId ? (
         <ProjectDispatch key={selectedId} projectId={selectedId} projectPicker={projectPicker} {...tray} />
       ) : (
         <MachineDispatch projectPicker={projectPicker} implicitProjectId={implicitProjectId} {...tray} />
@@ -182,48 +226,4 @@ export function ComposerVerbDock({ chatId }: { chatId: string }) {
       </div>
     </div>
   );
-}
-
-function useLocalDeviceId(): string | null {
-  const [id, setId] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    void Promise.resolve(platform.getLocalDeviceSelfSnapshot?.()).then(
-      (self) => { if (live) setId(self?.device_id ?? null); },
-      () => undefined,
-    );
-    return () => { live = false; };
-  }, []);
-  return id;
-}
-
-/** 这个对话记着的项目(哪台机器上的都算,认回账号上的项目);没记过 = 这台电脑上最近一次选的。 */
-function useChatProjectMemory(chatId: string, deviceId: string | null): string | undefined {
-  const [remembered, setRemembered] = useState<{ chatId: string; choice: { deviceId: string; projectId: string } } | null>(null);
-  useEffect(() => {
-    if (!deviceId) return;
-    let live = true;
-    void sessionpageMessageHost().rememberedTaskProject(chatId, deviceId).then(
-      (choice) => { if (live && choice) setRemembered({ chatId, choice }); },
-      (error: unknown) => log.warn('read the project remembered for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) }),
-    );
-    return () => { live = false; };
-  }, [chatId, deviceId]);
-  // 在 observer 的渲染里认:账号上的项目列表读到 / 变了,跟着重认(❌ 只在读回记忆那一刻认一次)。
-  return remembered?.chatId === chatId ? rememberedTaskRow(remembered.choice, accountProjectsStore) : undefined;
-}
-
-/** 没选项目:与新建会话页同一个隐式工作目录(「未选择项目」是真状态,不是列表第一个)。 */
-function useImplicitProjectId(wanted: boolean): string | undefined {
-  const [projectId, setProjectId] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    if (!wanted || projectId) return;
-    let live = true;
-    void ensureImplicitSessionHomeProjectId().then(
-      (id) => { if (live && id) setProjectId(id); },
-      (error: unknown) => log.warn('prepare the implicit project for a task failed', { error: error instanceof Error ? error.message : String(error) }),
-    );
-    return () => { live = false; };
-  }, [wanted, projectId]);
-  return projectId;
 }

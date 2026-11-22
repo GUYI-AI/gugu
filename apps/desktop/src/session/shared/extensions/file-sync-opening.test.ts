@@ -58,9 +58,8 @@ it('stored range lifetimes use page revocation/removal, not a document epoch reo
   await c.relay.revoke(2, null); expect(released).not.toHaveBeenCalled();
   const predicate = () => true;
   await c.relay.revoke(2, 'unbound', predicate); expect(released).toHaveBeenLastCalledWith(2, predicate);
-  // A whole-page revocation names all of the page; only a page that is gone names nothing.
-  await c.relay.revoke(2, 'removed-from-group'); expect(released).toHaveBeenLastCalledWith(2, expect.any(Function));
-  expect(released.mock.lastCall![1]({ docName: 'any' })).toBe(true);
+  // A whole-page revocation and a page that is gone both release all of the page: a read is the page's.
+  await c.relay.revoke(2, 'removed-from-group'); expect(released).toHaveBeenLastCalledWith(2, undefined);
   c.relay.pageGone(2); expect(released).toHaveBeenLastCalledWith(2);
   expect(released).toHaveBeenCalledTimes(3);
 });

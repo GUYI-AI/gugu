@@ -1,5 +1,5 @@
 import type { ChatItem, TopicSummary } from '@gugu/core/shared/types/chat'
-import { chatAttention } from '@gugu/core/shared/ui/chatModels'
+import { activityMs, chatAttention, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels'
 import { oneListNewsDot } from '@/lib/chatLineUnread'
 import type { MemberProfileCardModel } from '@/components/MemberProfileCard'
 
@@ -26,4 +26,14 @@ export function roomTopicChoices(chatId: string, topics: readonly TopicSummary[]
 /** This entry never creates an Agent DM when its task session cannot be opened. */
 export function roomAgentEntry(profile: Pick<MemberProfileCardModel, 'type' | 'ownerUserId'>, userId: string | null, hasSession: boolean) {
   return profile.type === 'agent' && !!userId && profile.ownerUserId === userId && hasSession ? 'session' : 'profile'
+}
+
+/**
+ * The Agents sheet's order, the same as the desktop Agents column, chats and topics (compareByRecentActivity): the last
+ * session activity first (presence lastInteractedAt), else when the agent was made, then id. No status tiers: status
+ * is the avatar badge and the row text, never the position.
+ */
+export function roomAgentsByRecentActivity<T extends { id: string }>(agents: readonly T[], lastInteractedAt: (id: string) => string | null | undefined, createdAt: (id: string) => string | null | undefined): T[] {
+  const stamp = (agent: T) => ({ id: agent.id, activityMs: activityMs(lastInteractedAt(agent.id), createdAt(agent.id)) })
+  return [...agents].sort((a, b) => compareByRecentActivity(stamp(a), stamp(b)))
 }

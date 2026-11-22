@@ -1,11 +1,11 @@
 import { ReplicaState } from '@gugu/session-wire'
 import { sessionStateSchema, type SessionState } from '@gugu/session-core/acp/client'
 import { getAcpRuntimeClient } from '@/session/renderer/lib/acp/runtime-client'
-import { releaseQueuedSessionInput, state, subscribeSessionInputs } from './sessionInputOutboxBridge'
+import { releaseQueuedSessionInput, state, subscribeSessionInputs } from './outbox/kinds/sessionInput'
 import { rendererLogger } from './log'
 import { onMachineEvent, rpcOn } from '@/session/renderer/lib/ipc'
 import { sessionLifeViewChannel } from '@/session/shared/core/sessions/sessionEvents'
-import type { SessionInput } from './sessionInputOutbox'
+import type { SessionInput } from './sessionInput'
 
 function foregroundQueueReady(snapshot: SessionState): boolean {
   const completed = snapshot.lastTurnOutcome === 'none'

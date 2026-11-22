@@ -122,11 +122,11 @@ export function hasUnreadInRows(rows: readonly { unread_count: number; is_marked
 export function conversationCanHide(kind: string | null): boolean {
   return kind === 'dm' || kind === 'ai' || kind === 'group' || kind === 'topic'
 }
-export type PersonalConversationAction = 'pin' | 'mark-read' | 'notifications' | 'hide-chat' | 'archive' | 'unpin-from-sidebar' | 'delete-chat'
+export type PersonalConversationAction = 'pin' | 'mark-read' | 'notifications' | 'hide-chat' | 'rename-agent' | 'archive' | 'unpin-from-sidebar' | 'delete-chat'
 /** `agent`: the DM's peer is an Agent, whose history is its task's: no clearing. `canArchive`: it is my active Agent. */
 export type PersonalConversationMenuState = {
   canDelete: boolean; pinned?: boolean; pinnedToSidebar?: boolean; notificationsMuted?: boolean
-  hasUnread: boolean; agent?: boolean; canArchive?: boolean
+  hasUnread: boolean; agent?: boolean; canRenameAgent?: boolean; canArchive?: boolean
 }
 export function personalConversationMenu(state: PersonalConversationMenuState): MenuTableItem<PersonalConversationAction>[] {
   const items: MenuTableItem<PersonalConversationAction>[] = [
@@ -135,6 +135,7 @@ export function personalConversationMenu(state: PersonalConversationMenuState): 
     { id: 'notifications', label: messaging(state.notificationsMuted ? 'chatList.enableNotifications' : 'chatList.disableNotifications'), icon: 'bell' },
   ]
   if (state.canDelete) items.push({ id: 'hide-chat', label: messaging('chatList.hide'), icon: 'hide' })
+  if (state.canRenameAgent) items.push({ id: 'rename-agent', label: { ns: 'contacts', key: 'agentName.editAction' }, icon: 'rename' })
   // The agent's archive, as its tab, sidebar row and contacts row name it (session-menu.ts).
   if (state.canArchive) items.push({ id: 'archive', label: { ns: 'session', key: 'task.archiveTaskTitle' }, icon: 'archive' })
   if (state.pinnedToSidebar) items.push({ id: 'unpin-from-sidebar', label: messaging('chatList.unpinFromSidebar'), icon: 'sidebar-off', fold: true })

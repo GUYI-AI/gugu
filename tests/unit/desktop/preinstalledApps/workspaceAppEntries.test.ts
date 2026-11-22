@@ -71,7 +71,7 @@ const $ = (id: string) => document.getElementById(id) as HTMLElement
 // What the page shows, read from its DOM (审计 C4: no test-only view hangs on the product's window).
 const app = () => ({
   entries: [...$('file-list').querySelectorAll('.file')],
-  shown: document.body.classList.contains('show-doc') && !$('download').hidden ? $('doc-title').textContent : null,
+  shown: document.body.classList.contains('show-doc') && !$('more').hidden ? $('doc-title').textContent : null,
   info: $('doc-info').hidden ? '' : $('doc-info').textContent ?? '',
 })
 const banner = () => ['banner', 'list-banner'].map((id) => $(id)).filter((node) => !node.hidden).map((node) => node.textContent).join('')
@@ -128,7 +128,7 @@ describe('workspace App: what the old workspace panel did', () => {
     contextChanged({ ...context, file: { chat: 'chat-1', id: 'big' } })
     await vi.waitFor(() => expect(app().shown).toBe('large.json'))
     expect($('doc-message').hidden).toBe(false)
-    expect($('download').hidden).toBe(false)
+    expect($('more').hidden).toBe(false)
     expect(app().info).toContain('写手 (Agent) 于 2分钟前 创建')
     const sources = Array.from(document.querySelectorAll<HTMLButtonElement>('#doc-info .source'))
     expect(sources.map((b) => b.textContent)).toEqual(['第 1 条', '第 2 条'])
@@ -144,17 +144,18 @@ describe('workspace App: what the old workspace panel did', () => {
   })
 
   test('download saves the file on screen; a cancelled save dialog says nothing, a failure says so', async () => {
-    expect($('download').hidden).toBe(false)
+    // Download is in the open file's ⋯ (@@@file-menu), the one way to it.
+    const download = async () => { $('more').click(); await menu.pick('下载') }
     $('banner').hidden = true
     gugu.files.download.mockResolvedValueOnce(false)
-    $('download').click()
+    await download()
     await vi.waitFor(() => expect(gugu.files.download).toHaveBeenCalledTimes(1))
     expect(gugu.files.download.mock.calls[0][0]).toMatchObject({ id: 'big' })
     await Promise.resolve()
     expect(banner()).toBe('')
 
     gugu.files.download.mockRejectedValueOnce(new Error('disk full'))
-    $('download').click()
+    await download()
     await vi.waitFor(() => expect(banner()).toContain('disk full'))
     contextChanged({ ...context })
     await vi.waitFor(() => expect(app().shown).toBe(null))
@@ -230,20 +231,24 @@ describe('workspace App: what the old workspace panel did', () => {
     for (const li of app().entries) {
       const id = li.getAttribute('data-id')!
       rowMore(id).click()
-      expect(offered()).toEqual(['复制链接', '用其他应用打开', '下载', '打开', '在新页签打开', '在旁边打开', ...(id === 'photo' ? ['在聊天中定位'] : []), '选择', '详情'])
+      // One table (@@@file-menu): the ways to open in 打开方式 ›, the rare rows in 更多 ›.
+      expect(offered()).toEqual(['打开', '打开方式', ...(id === 'photo' ? ['在聊天中定位'] : []), '下载', '复制链接', '更多'])
+      expect(menu.labels('打开方式')).toEqual(['新页签', '在旁边', '其他应用…'])
+      expect(menu.labels('更多')).toEqual(['选择', '详情'])
       await menu.dismiss()
     }
     contextChanged({ ...context })
     await vi.waitFor(() => expect($('new-doc').hidden).toBe(false))
     rowMore('cfg').click()
     // 删除 joins the open menu once the folder answers for this file (asked as the menu opens, never with the list).
-    await vi.waitFor(() => expect(offered()).toEqual(['复制链接', '用其他应用打开', '下载', '改名', '移动到…', '删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情']))
+    await vi.waitFor(() => expect(menu.labels('更多')).toEqual(['改名', '移动到…', '选择', '详情', '删除']))
+    expect(offered()).toEqual(['打开', '打开方式', '下载', '复制链接', '更多'])
     await menu.dismiss()
     // owner 10-18: delete is offered only where the folder says this person may — for 'old' it says no.
     rowMore('old').click()
     await vi.waitFor(() => expect(gugu.files.canDelete).toHaveBeenCalledWith([expect.objectContaining({ id: 'old' })]))
     await new Promise((settled) => setTimeout(settled, 0))
-    expect(offered()).toEqual(['复制链接', '用其他应用打开', '下载', '改名', '移动到…', '打开', '在新页签打开', '在旁边打开', '选择', '详情'])
+    expect(menu.labels('更多')).toEqual(['改名', '移动到…', '选择', '详情'])
     await menu.dismiss()
   })
 })
@@ -255,21 +260,20 @@ describe('the document ⋯ is the file actions that lead the list menu', () => {
     await until('the folder and its permission are ready', () => !!document.querySelector('[data-id="plan"]') && $('new-doc').hidden === readOnly)
     try {
       rowMore('plan').click()
-      if (!readOnly) await until('delete permission is shown', () => offered().includes('删除'))
+      if (!readOnly) await until('delete permission is shown', () => menu.labels('更多').includes('删除'))
       const rowItems = offered()
+      const rowRare = menu.labels('更多')
       await menu.dismiss()
       gugu.files.open.mockResolvedValueOnce({ type: 'binary', entry: entries[0], close: vi.fn() } as never)
       contextChanged({ ...ctx, file: { chat: 'chat-1', id: 'plan' } })
       await until('the same file is open', () => app().shown === 'plan.md')
       $('more').click()
-      const fileItems = rowItems.slice(0, rowItems.indexOf('打开'))
-      expect(offered()).toEqual(fileItems)
-      expect(fileItems.slice(0, 3)).toEqual(['复制链接', '用其他应用打开', '下载'])
-      expect(fileItems.includes('删除')).toBe(!readOnly)
-      expect(fileItems.includes('改名')).toBe(!readOnly)
-      // List-only items stay in the list: the open document is already open and has no list to select in.
-      expect(rowItems).toContain('选择')
-      expect(offered()).not.toContain('打开')
+      // The same table less Open (it is open) and the list's Select and Details: 打开方式 › holds only another App here, so
+      // it shows in place (a new tab or beside would show the file that is already here).
+      expect(offered()).toEqual(['用其他应用打开', '下载', '复制链接', ...(readOnly ? [] : ['更多'])])
+      expect(rowItems).toEqual(['打开', '打开方式', '下载', '复制链接', '更多'])
+      if (!readOnly) expect(menu.labels('更多')).toEqual(['改名', '移动到…', '删除'])
+      expect(rowRare).toContain('选择')
     } finally {
       await menu.dismiss()
       contextChanged({ ...context })
@@ -310,7 +314,7 @@ describe('workspace App as a file manager: the host picks the App', () => {
     more.click()
     expect(menu.isOpen()).toBe(true)
     expect(target.getAttribute('aria-expanded'), 'its ⋯ stays drawn while the menu is open').toBe('true')
-    await menu.pick('用其他应用打开')
+    await menu.pick('打开方式', '其他应用…')
     expect(target.getAttribute('aria-expanded')).toBe('false')
     expect(document.activeElement, 'and still on the ⋯').toBe(target)
     await vi.waitFor(() => expect(gugu.files.openWith).toHaveBeenCalledTimes(1))
@@ -345,7 +349,7 @@ describe('workspace App as a file manager: the host picks the App', () => {
 
   test('rename from the ⋯ turns the row into its full name to edit; delete asks once more, and closing the menu takes that back', async () => {
     rowMore('cfg').click()
-    await menu.pick('改名')
+    await menu.pick('更多', '改名')
     const input = document.querySelector('[data-id="cfg"] .rename-input') as HTMLInputElement
     expect(input.value).toBe('cfg.json')
     input.value = 'unfinished.json'
@@ -359,17 +363,17 @@ describe('workspace App as a file manager: the host picks the App', () => {
     await vi.waitFor(() => expect(document.querySelector('[data-id="cfg"] .rename-input')).toBe(null))
 
     rowMore('cfg').click()
-    await vi.waitFor(() => expect(offered()).toContain('删除'))
-    expect(menu.row('删除').danger).toBe(true)
-    await menu.pick('删除')
+    await vi.waitFor(() => expect(menu.labels('更多')).toContain('删除'))
+    expect(menu.row('更多', '删除').danger).toBe(true)
+    await menu.pick('更多', '删除')
     // The question is a menu of its own, in red, where the menu was.
     expect(offered(), 'asked once more').toEqual(['确认删除'])
     expect(menu.row('确认删除').danger).toBe(true)
     await menu.dismiss() // a press elsewhere
     expect(gugu.files.remove).not.toHaveBeenCalled()
     rowMore('cfg').click()
-    await vi.waitFor(() => expect(offered(), 'the question is taken back').toEqual(['复制链接', '用其他应用打开', '下载', '改名', '移动到…', '删除', '打开', '在新页签打开', '在旁边打开', '选择', '详情']))
-    await menu.pick('删除')
+    await vi.waitFor(() => expect(offered(), 'the question is taken back').toEqual(['打开', '打开方式', '下载', '复制链接', '更多']))
+    await menu.pick('更多', '删除')
     await menu.pick('确认删除')
     await vi.waitFor(() => expect(gugu.files.remove).toHaveBeenCalledWith(expect.objectContaining({ id: 'cfg' })))
   })

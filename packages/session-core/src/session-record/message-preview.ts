@@ -2,6 +2,9 @@ import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { isGuguSilence } from '@gugu/core/local/agent/silenceMarker';
 import type { ToolNode, TranscriptItem, TranscriptTurn, TranscriptTurnOutcome } from '../acp/client';
 import { messageReferenceId } from '../acp/client';
+import { z } from 'zod';
+import { transcriptTurnOutcomeSchema } from '../acp/models/turns';
+import { previewActivitySourceSchema } from './preview-activity';
 import type { PreviewActivity, PreviewActivitySources } from './preview-activity';
 
 /**
@@ -62,6 +65,18 @@ export type MessagePreviewPayload = {
 export type MessagePreviewProjection = Pick<MessagePreviewPayload, 'running' | 'now' | 'ended' | 'entries' | 'error' | 'activityVersion'>;
 
 export const MESSAGE_PREVIEW_MAX_ENTRIES = 6;
+const previewStateSchema = z.enum(['reading', 'searching', 'editing', 'executing', 'thinking', 'running', 'messaging']);
+const previewActivity = { activityVersion: z.literal(1).optional(), activity: previewActivitySourceSchema.nullable().optional() };
+/** Private worker projection: no transcript, tool arguments, output or thinking crosses this boundary. */
+export const messagePreviewProjectionSchema = z.object({
+  running: z.boolean(), now: previewStateSchema.nullable(), ended: transcriptTurnOutcomeSchema.nullable(),
+  activityVersion: z.literal(1).optional(),
+  entries: z.array(z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('prompt'), id: z.string(), messageId: z.string().nullable(), ...previewActivity }),
+    z.object({ kind: z.literal('text'), id: z.string(), text: z.string(), truncated: z.boolean(), at: z.number().nullable(), ...previewActivity }),
+    z.object({ kind: z.literal('tool'), id: z.string(), state: previewStateSchema, count: z.number().int().positive() }),
+  ])).max(MESSAGE_PREVIEW_MAX_ENTRIES),
+});
 /** 原话只留尾部 70 字(卡片一行约 23 个汉字,约 3 行)。 */
 export const MESSAGE_PREVIEW_TEXT_LIMIT = 70;
 

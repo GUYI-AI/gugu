@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@renderer/lib/ipc', () => ({ rpc: {}, rpcOn: () => ({}) }));
+vi.mock('./installed-extensions', () => ({ installedExtensions: {}, LOCAL_HOST: 'local' }));
 const { installedElsewhere } = await import('./installed-elsewhere');
 
 /** I10 (architecture): uninstalled everywhere ⇒ no grant left. Only then are the account's rows cleared. */

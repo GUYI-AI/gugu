@@ -15,7 +15,7 @@ describe('synchronized conversation revert (#7304)', () => {
   it('reopens admission only after both histories were updated', async () => {
     const { deps, revert } = setup();
     await revert(input);
-    expect(deps.truncate).toHaveBeenCalledWith('s', 2);
+    expect(deps.truncate).toHaveBeenCalledWith('s', 2, 'native-turn');
     expect(deps.finish.mock.invocationCallOrder[0]).toBeGreaterThan(deps.truncate.mock.invocationCallOrder[0]!);
   });
   it('a failed cache save is retried without another native revert', async () => {

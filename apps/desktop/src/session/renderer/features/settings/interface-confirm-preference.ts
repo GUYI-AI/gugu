@@ -2,12 +2,7 @@ import { messageForUser } from '@/lib/userFacingError';
 import type { AppSettings } from '@shared/core/app-settings';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { log } from '@renderer/utils/logger';
-import {
-  getAppSettingValueSnapshot,
-  invalidateAppSettingsKey,
-  setAppSettingsValueInCache,
-  updateAppSettingsRequest,
-} from './app-settings-client';
+import { getAppSettingValueSnapshot, writeAppSetting } from './app-settings-client';
 
 /**
  * 「这一步前问不问」类偏好的唯一一份读写 —— 它们都住在 `interface` 里、形状一样:出厂 = 问,
@@ -37,12 +32,9 @@ export function stopAsking(
 ): void {
   const current = getAppSettingValueSnapshot('interface');
   if (!current) return;
-  const next = { ...current, [field]: false };
-  setAppSettingsValueInCache('interface', next);
-  updateAppSettingsRequest('interface', next).catch((error: unknown) => {
+  void writeAppSetting('interface', { ...current, [field]: false }).catch((error: unknown) => {
     // 写不进去就要说:否则下一次又弹,用户以为自己勾了个假的。
     log.error(`${failure.logTag} 保存「不再询问」失败`, { field, error: String(error) });
     toast({ title: failure.title, description: messageForUser(error), variant: 'destructive' });
-    invalidateAppSettingsKey('interface');
   });
 }

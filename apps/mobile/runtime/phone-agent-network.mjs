@@ -1,3 +1,4 @@
+import { EgressError } from '../../../packages/core/src/shared/egress.ts'
 import { setTimeout as delay } from 'node:timers/promises'
 import { anySignal } from '../../../packages/core/src/shared/anySignal.ts'
 
@@ -11,6 +12,10 @@ const transientStatus = new Set([408, 425, 500, 502, 503, 504])
 
 /** Whitelist transport facts. Never retain an error message, URL, body, header, or ticket. */
 export function phoneRequestFailure(error, status) {
+  if (error instanceof EgressError) {
+    const category = { dns: 'dns', connect: 'unreachable', proxy: 'unreachable', timeout: 'timeout', reset: 'connection_reset' }[error.kind]
+    return { category: category ?? 'other', retryable: category !== undefined }
+  }
   if (['dns', 'timeout', 'connection_reset', 'unreachable', 'network', 'service', 'authorization', 'quota', 'other'].includes(error?.category)) {
     return { category: error.category, ...(transportCodes.has(error.code) ? { code: error.code } : {}), ...(Number.isInteger(error.status) ? { status: error.status } : {}), ...(Number.isFinite(error.retryAt) ? { retryAt: error.retryAt } : {}), retryable: error.retryable === true }
   }
@@ -51,8 +56,8 @@ export function phoneRequestOperation(input, init = {}) {
 
 export function phonePreparationFailureText(error) {
   const failure = phoneRequestFailure(error)
-  const reason = { dns: '网络地址暂时解析不了', timeout: '网络连接持续超时', connection_reset: '网络连接反复中断', unreachable: '暂时连不上服务', network: '网络暂时连不上', service: '服务暂时不可用', authorization: '登录或授权已失效', quota: '当前可用额度不足' }[failure.category]
-  return reason ? `这次手机任务没能完成，${reason}。` : null
+  const reason = { dns: 'the network address could not be resolved', timeout: 'the network connection kept timing out', connection_reset: 'the network connection kept dropping', unreachable: 'the service could not be reached', network: 'the network was unreachable', service: 'the service was unavailable', authorization: 'the sign-in or authorization expired', quota: 'the available quota ran out' }[failure.category]
+  return reason ? `This phone task could not finish: ${reason}.` : null
 }
 
 /** One deadline across verification, status reporting and model access; never replays a tool action. */

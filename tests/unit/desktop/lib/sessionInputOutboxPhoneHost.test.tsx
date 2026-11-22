@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
-import type { SessionInput } from '@/lib/sessionInputOutbox'
+import type { SessionInput } from '@/lib/sessionInput'
 
 const fixture = vi.hoisted(() => ({
   owner: '', platform: 'electron', devices: [] as Device[], turns: [] as TranscriptTurn[], busy: true,
@@ -26,7 +26,9 @@ vi.mock('@/mobile/local-agent/nativeAgent', () => ({ phoneAgentAvailable: () => 
 vi.mock('@/session/shared/remote-sessions/session-list-cache', () => ({ readCachedSessionList: async () => null, writeCachedSessionList() {} }))
 vi.mock('@/components/chat/ChatSummariesHost', () => ({ ChatSummariesHost: () => null }))
 vi.mock('@/components/chat/NativeConversationReadHost', () => ({ NativeConversationReadHost: () => null }))
-vi.mock('@/store/devicesCache', () => ({ subscribeCachedDevices: () => () => {} }))
+vi.mock('@/store/devicesCache', () => ({ devicesModel: { subscribe: () => () => {} } }))
+vi.mock('@/lib/outbox/kinds/assistantNotice', () => ({ assistantNoticeOutboxKind: { name: 'assistantNotice', lane: () => 'assistant', send: async () => {} } }))
+vi.mock('@/lib/outbox/legacy', () => ({ importLegacyWrites: async () => {} }))
 vi.mock('@/lib/sessionSendQueueHost', () => ({ watchSessionSendQueues: (...args: unknown[]) => { fixture.native(...args); return fixture.stopNative } }))
 vi.mock('@/mobile/local-agent/phoneTimelineClient', () => ({ phoneTimelineClient: {
   fetchSnapshot: async () => { fixture.fetch(); return { turns: fixture.turns, liveReply: fixture.busy ? {} : null, queuedPrompts: [], settlements: [], cursor: null } },
@@ -37,8 +39,9 @@ vi.mock('@/mobile/local-agent/phoneTimelineClient', () => ({ phoneTimelineClient
 vi.mock('@/mobile/local-agent/phoneHostRpc', () => ({ invokePhoneHost: async (device: string, _channel: string, [request]: unknown[]) => { fixture.sent(device, request); return { accepted: true } } }))
 vi.mock('@/components/session-watch/sessionpage-rpc', () => ({ fetchSnapshot: vi.fn(), onMachineEvent: vi.fn(), fetchPhoneSessions: (device: string) => fixture.directoryFetch(device) }))
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ warn() {} }) }))
-import { SessionInputOutboxHost } from '@/hooks/useSessionInputOutbox'
-import { enqueueSessionInput, state } from '@/lib/sessionInputOutboxBridge'
+import { OutboxHost as SessionInputOutboxHost } from '@/hooks/useOutboxHost'
+import { enqueueSessionInput, retrySessionInputs, state } from '@/lib/outbox/kinds/sessionInput'
+import { installOutboxCore, settle } from '../../../helpers/sessionInputOutbox'
 import { RemoteMachinesHost } from '@/components/sessionpage/RemoteMachinesHost'
 import { liveDeviceSessions, phoneTaskDirectoryRequested, publishDirectoryDevices, retainDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 
@@ -46,14 +49,15 @@ import { liveDeviceSessions, phoneTaskDirectoryRequested, publishDirectoryDevice
 const root = () => <><RemoteMachinesHost enabled openSettingsSection={() => {}} /><SessionInputOutboxHost accountId={fixture.owner} /></>
 
 let harness: ReturnType<typeof createReactHarness>
+let core: ReturnType<typeof installOutboxCore>
 beforeEach(() => {
-  vi.clearAllMocks(); fixture.owner = crypto.randomUUID(); fixture.platform = 'electron'; fixture.busy = true; fixture.turns = []
+  vi.clearAllMocks(); fixture.owner = crypto.randomUUID(); core = installOutboxCore({ accountId: fixture.owner }); fixture.platform = 'electron'; fixture.busy = true; fixture.turns = []
   fixture.devices = [{ device_id: 'phone', is_online: true, capabilities: { host_kind: 'phone', host_runtime_capability: 1, runtimes: ['pi'] } } as Device]
   fixture.directoryFetch.mockReset().mockResolvedValue({ projects: [], sessions: [] })
   retainDeviceSessions([]); publishDirectoryDevices(fixture.devices)
   fixture.events = undefined; harness = createReactHarness()
 })
-afterEach(() => { harness.cleanup(); retainDeviceSessions([]); publishDirectoryDevices([]); expect(phoneTaskDirectoryRequested()).toBe(false) })
+afterEach(() => { harness.cleanup(); core.dispose(); retainDeviceSessions([]); publishDirectoryDevices([]); expect(phoneTaskDirectoryRequested()).toBe(false) })
 
 it.each((['electron', 'web'] as const).flatMap(platform => (['done', 'cancelled', 'error'] as const).map(outcome => ({ platform, outcome }))))('keeps phone custody after the task pane closes ($platform / $outcome)', async ({ platform, outcome }) => {
   fixture.platform = platform
@@ -77,14 +81,14 @@ it.each((['electron', 'web'] as const).flatMap(platform => (['done', 'cancelled'
   await act(async () => {
     fixture.events!({ ok: true, batch: { turns: fixture.turns, queuedPrompts: [], settlements: [] } } as never)
     await vi.waitFor(() => expect(fixture.fetch.mock.calls.length).toBeGreaterThan(1))
-    await (await state().queue)!.flush()
+    await retrySessionInputs(); await settle()
   })
   if (outcome === 'done') {
     await vi.waitFor(() => expect(fixture.sent).toHaveBeenCalledExactlyOnceWith('phone', expect.objectContaining({ clientRequestId: id, conversationId: 'phone-task' })))
-    expect(await (await state().queue)!.list()).toEqual([])
+    expect(state().rows).toEqual([])
   } else {
     expect(fixture.sent).not.toHaveBeenCalled()
-    expect(await (await state().queue)!.list()).toMatchObject([{ id, sendQueue: { order: expect.any(Number) } }])
+    expect(state().rows).toMatchObject([{ id, sendQueue: { order: expect.any(Number) } }])
   }
 })
 

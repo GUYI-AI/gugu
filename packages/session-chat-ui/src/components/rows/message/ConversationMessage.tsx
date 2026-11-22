@@ -29,7 +29,7 @@ import { ConversationNarration, conversationNarrationHeight } from './Conversati
 import { measureUserMessage } from './user-message-metrics';
 import { CONVERSATION_UTTERANCE_GAP } from '@session-chat/core/spacing';
 import { actionGap, conversationGutter, userMessageActionsHeight, type MessageVars } from './metrics';
-import { conversationRoot, conversationHeader, conversationName, conversationTime, conversationProcessButton, conversationProcessChevron, conversationTimeSeparator, conversationReferenceSeparator } from './conversation-message.css';
+import { conversationRoot, conversationHeader, conversationHeadBreak, conversationName, conversationTime, conversationProcessButton, conversationProcessChevron, conversationTimeSeparator, conversationReferenceSeparator } from './conversation-message.css';
 
 import { CONVERSATION_PREVIEW_MAX_H, USER_PREVIEW_MAX_H } from '@session-chat/components/engine/row-metrics';
 
@@ -75,11 +75,11 @@ export function conversationSenderName(item: ChatMessage, ctx: MeasureCtx): stri
   return shownSender(sender.from, sender.fromId, self) ?? t('transcript.deliveryUnknownSender');
 }
 function replySenderLabel(quote: NonNullable<ChatMessage['conversationReply']>, ctx: MeasureCtx) {
-  const self = ctx.selfIdentity ?? null;
+  const self = ctx.selfIdentity ?? null, t = rowTranslator(ctx);
   const sender = isSelfAddress(quote.fromId ?? null, self) && self?.displayName?.trim() ? self.displayName.trim() : shownSender(quote.from ?? null, quote.fromId ?? null, self);
   return [quote.chatId ? ctx.chatName?.(quote.chatId) : null,
     quote.self ? ctx.commands?.conversationAgentName?.() ?? null : sender]
-    .filter((part): part is string => Boolean(part?.trim())).join(rowTranslator(ctx)('metadata.separator'));
+    .filter((part): part is string => Boolean(part?.trim())).join(t('metadata.separator'));
 }
 function headerLayout(item: ChatMessage, ctx: MeasureCtx) {
   return conversationHeaderLayout(item, ctx, conversationSenderName(item, ctx));
@@ -154,8 +154,9 @@ function SingleConversationMessage(props: { data: ChatMessage; ctx: RenderCtx; v
   return <div class={conversationRoot} data-agent-conversation-message={props.data.id} data-side={subject() ? 'left' : 'right'}
     data-conversation-part={props.data.conversationPart}>
     <Show when={props.data.conversationPart !== 'body' && head().height > 0}>
-    <div class={conversationHeader} style={{ height: `${head().height}px`, gap: `${head().gap}px` }}>
+    <div class={conversationHeader} style={{ height: `${head().height}px`, 'column-gap': `${head().gap}px` }}>
       <Show when={head().name}>{label => <SenderName class={conversationName} name={label().text} target={senderTarget()} style={{ width: `${head().nameWidth}px` }} />}</Show>
+      <Show when={head().wrap}><span class={conversationHeadBreak} aria-hidden="true" /></Show>
       {reference()}
       <Show when={messageQuote(props.data) && subject() && props.data.conversationProcess}>
         <span class={conversationReferenceSeparator} data-slot="conversation-reference-separator" aria-hidden="true"> </span>

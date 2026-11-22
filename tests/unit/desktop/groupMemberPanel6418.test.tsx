@@ -240,7 +240,7 @@ describe('gugu-dev#181 我的 agent 收成一组', () => {
     expect(q('[data-member-role="owner-1"]')?.textContent).toBeTruthy()
     expect(q('[data-member-row="claude"] [data-agent-meta="owner"]')).toBeNull()
     expect(q('[data-member-row="codex"] [data-agent-meta="owner"]')).not.toBeNull()
-    expect(q('[data-member-row="codex"] [data-listen-mode-toggle]')?.textContent).toMatch(/收听全部消息|只收点名/)
+    expect(q('[data-member-row="codex"] [data-listen-mode-toggle]')?.textContent).toMatch(/^(主动|被动)$/)
   })
 })
 
@@ -375,22 +375,22 @@ describe('Agent owner and source-group listen-mode controls', () => {
     expect(menuItems()).toEqual(['改为主动', '设为管理员', '移出群聊'])
   })
 
-  it('普通成员只在自己的 agent 上有 ⋯:改档位、让它退出群聊', async () => {
+  it('普通成员只在自己的 agent 上有 ⋯:改档位、使 Agent 退出群聊', async () => {
     await renderPanel('member-1')
     expect(q('[data-member-row="claude"] button[aria-label^="管理"]')).toBeNull()
     expect(q('[data-member-row="member-2"] button[aria-label^="管理"]')).toBeNull()
     await click(q('[data-member-row="codex"] button[aria-label^="管理"]'))
-    expect(menuItems()).toEqual(['改为主动', '让它退出群聊'])
-    await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === '让它退出群聊') as HTMLElement)
+    expect(menuItems()).toEqual(['改为主动', '使 Agent 退出群聊'])
+    await click([...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent === '使 Agent 退出群聊') as HTMLElement)
     expect(removeMember.mock.calls).toEqual([['chat-1', 'codex']])
   })
 
-  it('普通成员点开自己 agent 的资料卡:没有角色选择,有「让它退出群聊」', async () => {
+  it('普通成员点开自己 agent 的资料卡:没有角色选择,有「使 Agent 退出群聊」', async () => {
     await renderPanel('member-1')
     await click(q('[data-member-row="codex"]'))
     expect(card()).not.toBeNull()
     expect(q('[data-testid="group-member-profile-menu"] select')).toBeNull()
-    expect(q('[data-profile-remove-button="codex"]')?.textContent).toBe('让它退出群聊')
+    expect(q('[data-profile-remove-button="codex"]')?.textContent).toBe('使 Agent 退出群聊')
   })
 
   it('没改成:行上写出原因,不是「点了没反应」;下一次点击先清掉', async () => {
@@ -400,7 +400,7 @@ describe('Agent owner and source-group listen-mode controls', () => {
     // 拒绝在 onClick 那次 act 之后的微任务里落地:再冲刷一轮。
     await act(async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() })
     // 一句对任何失败(断网、会话过期、被拦下)都成立的话;内部原因不上屏。
-    expect(q('[data-listen-mode-error="codex"]')?.textContent).toBe('没改成，档位还是原来的')
+    expect(q('[data-listen-mode-error="codex"]')?.textContent).toBe('无法更改收听模式，设置未变更')
     expect(q('[data-listen-mode-error="claude"]')).toBeNull()
     await click(toggle('codex'))
     await act(async () => { for (let i = 0; i < 5; i += 1) await Promise.resolve() })
@@ -424,13 +424,13 @@ describe('Agent owner and source-group listen-mode controls', () => {
 
 
 describe('topic participant controls project server authority', () => {
-  const renameAgent = vi.fn(async () => {})
+  const updateAgentProfile = vi.fn(async () => {})
   async function renderTopic(viewerId: string, manageable: boolean, snapshot = SNAPSHOT) {
     getSettings.mockResolvedValue({ ...authority(manageable), can_dissolve: false })
     const reload = vi.fn(async () => {})
     await renderWithAppProviders(harness, createNode(ControlledMemberListPanel, {
       chatId: 'topic-1', chatKind: 'topic', chatName: 'Topic', head, snapshot, onReload: reload,
-    }), { auth: { id: viewerId }, chat: { identitiesById: Object.fromEntries(IDENTITIES.map((identity) => [identity.id, identity])) }, contacts: { contacts: [], renameAgent } })
+    }), { auth: { id: viewerId }, chat: { identitiesById: Object.fromEntries(IDENTITIES.map((identity) => [identity.id, identity])) }, contacts: { contacts: [], updateAgentProfile } })
     return reload
   }
   it.each([false, true])('a non-admin owner can change their topic Agent listen mode and remove it on mobile=%s', async (mobile) => {
@@ -456,7 +456,7 @@ describe('topic participant controls project server authority', () => {
     expect(input).not.toBeNull()
     await typeInto(input!, 'New canonical name')
     await act(async () => { input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })
-    expect(renameAgent).toHaveBeenCalledWith('codex', 'New canonical name')
+    expect(updateAgentProfile).toHaveBeenCalledWith('codex', { name: 'New canonical name' })
   })
   it('lets a source-group manager change a topic agent’s mode without a topic seat', async () => {
     await renderTopic('owner-1', true, { ...SNAPSHOT, humans: SNAPSHOT.humans.filter((human) => human.id !== 'owner-1') })

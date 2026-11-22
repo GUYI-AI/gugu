@@ -36,7 +36,7 @@ export type DirectTerminalAskpass = {
   /** installKey:密码提问上勾了「以后连这台机器不用再输密码」(#6264「下次免密」)。 */
   answer(promptId: string, value: string | null, extra?: { installKey?: boolean }): boolean;
   /** 这次连接登上了(调用方确认):勾过「下次免密」就在这时去装钥匙。 */
-  authenticated?(): void;
+  authenticated?(): Promise<void> | void;
   /** 「下次免密」做完的结果(装好了 / 没做成),可能在连接关掉之后才来。 */
   onKeyInstall?(listener: (outcome: SshKeyInstallOutcome) => void): void;
   /** 新的一次连接:「又问了一遍 = 上次答错」重新计。 */

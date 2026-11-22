@@ -1,6 +1,7 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { projectMessageSearchText } from '@gugu/core/shared/ui/messageSearchText'
-import { requireId, requireLimit, restore, type MessageSqlDatabase, type StoredMessage } from './message-row'
+import { requireId, requireLimit } from '@shared/core/im-message-store'
+import { restore, type MessageSqlDatabase, type StoredMessage } from './message-row'
 
 const yieldToHost = () => new Promise<void>(resolve => setTimeout(resolve, 0))
 

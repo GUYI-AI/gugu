@@ -227,7 +227,7 @@ export interface ChatComposerProps {
   disabledPlaceholder?: string;
 
   agentOptions?: ComposerAgentOption[] | null;
-  /** 智能体名单还在路上:名单还空着时画占位(ComposerAgentLoading)。 */
+  /** 智能体名单(或这一框选中的那一家)还在路上:选择器的位置画占位(ComposerAgentLoading),❌ 先画「智能体」再换成名字。 */
   agentOptionsLoading?: boolean;
   selectedAgent?: string;
   onAgentChange?: (agentId: string) => void;
@@ -246,6 +246,8 @@ export interface ChatComposerProps {
 
   modelOptions?: Record<string, ComposerModelOption> | null;
   selectedModel?: string;
+  /** The model options are not read yet: the model trigger holds the name's place (see ComposerModelMenu). */
+  modelUnknown?: boolean;
   onModelChange?: (modelId: string) => void;
   /** 宿主要把模型面板打开:每变一次开一次(见 `ComposerModelMenu.openRequest`)。 */
   modelMenuOpenRequest?: number;
@@ -444,6 +446,7 @@ export function ChatComposer({
   onModelChange,
   modelMenuOpenRequest,
   modelSettingNotice,
+  modelUnknown,
   modelMenuNotice,
   onModelMenuOpen,
   modelUnlock,
@@ -513,6 +516,12 @@ export function ChatComposer({
   const rootRef = useRef<HTMLDivElement>(null);
   const phoneCapsule = mobile && phoneActions;
   const phoneEditor = usePhoneComposer(phoneCapsule, rootRef);
+  // @@@phone-has-attachment - whether the capsule holds a paperclip (ours via onAttach, or a host's in toolbarExtra that
+  // carries data-phone-attachment). phone-composer.css reads this attribute instead of :has(), which WebView < 105 drops.
+  // Written on the element, not through state: no render follows (React does not own this attribute).
+  useLayoutEffect(() => {
+    rootRef.current?.toggleAttribute('data-phone-has-attachment', !!phoneCapsule && !!rootRef.current.querySelector('[data-phone-attachment]'));
+  });
   const editorRef = useRef<PromptEditorRef | null>(null);
   const [hasText, setHasText] = useState(false);
   const [phoneSubmitting, setPhoneSubmitting] = useState(false);
@@ -728,7 +737,7 @@ export function ChatComposer({
       : null;
   const selectedAgentTitle = selectedAgentItem
     ? agentLocked && !hideLockedAgent
-      ? `${selectedAgentItem.name} — agents can't be switched after a conversation starts`
+      ? `${selectedAgentItem.name}: the agent cannot be changed after a conversation starts`
       : selectedAgentItem.name
     : undefined;
 
@@ -785,6 +794,7 @@ export function ChatComposer({
                 triggerTitle={selectedAgentTitle}
                 modelItems={modelItems}
                 selectedModel={selectedModel}
+                modelUnknown={modelUnknown}
                 onModelChange={onModelChange}
                 openRequest={modelMenuOpenRequest}
                 settingNotice={modelSettingNotice}
@@ -955,7 +965,7 @@ export function ChatComposer({
                   isItemDisabled={(item) => item.disabled === true}
                   disabled={disabled}
                   searchPlaceholder={translate('common.search')}
-                  className={permissionModeIsFirst ? styles.permissionModeTrigger : undefined}
+                  className={cx('gg-composer-permission-trigger', permissionModeIsFirst && styles.permissionModeTrigger)}
                   contentStyle={{ minWidth: '12rem' }}
                   // 面板自己不留内距 —— 与模型/agent 面板同一族,见 @@@composer-panel-row。
                   contentClassName={styles.composerPanelContent}
@@ -1031,10 +1041,10 @@ export function ChatComposer({
               )}
               {/* Harness (agent) selector first, then model — owner-specified order: gugu wants
                   the Harness picked explicitly first rather than folded into the model trigger's icon. */}
-              {agentOptionsLoading && !agentOptions?.length && (
-                <ComposerAgentLoading label={translate('composer.agent')} title={translate('composer.agentsLoading')} />
+              {agentOptionsLoading && (
+                <ComposerAgentLoading title={translate('composer.agentsLoading')} />
               )}
-              {agentOptions && agentOptions.length > 0 && !(agentLocked && hideLockedAgent) && (
+              {!agentOptionsLoading && agentOptions && agentOptions.length > 0 && !(agentLocked && hideLockedAgent) && (
                 <ComposerAgentSelector
                   options={agentOptions}
                   selectedId={selectedAgent}

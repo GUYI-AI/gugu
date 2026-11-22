@@ -235,7 +235,7 @@ describe('Google interactive login', () => {
       status: outcome === 'expired' ? 400 : 200, headers: { 'Content-Type': 'application/json' },
     }))
     const client = createGuguSupabaseClient({ url: 'https://auth.example.test', anonKey: 'public-test-key',
-      storageKey: 'sb-main', persistSession: true, autoRefreshToken: false, flowType: 'pkce', fetch,
+      storageKey: 'sb-main', persistSession: true, autoRefreshToken: false, flowType: 'pkce', wrapFetch: () => fetch,
       storage: { getItem: h.deps.storage.getItem,
         setItem: async (key, value) => { if (key === MAIN_PKCE_STORAGE_KEY) await h.deps.storage.setItem(key, value) },
         removeItem: async (key) => { if (key === MAIN_PKCE_STORAGE_KEY) await h.deps.storage.removeItem(key) },

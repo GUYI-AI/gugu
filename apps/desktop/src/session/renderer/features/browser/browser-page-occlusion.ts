@@ -1,3 +1,4 @@
+import { isElementVisible } from '@/lib/elementVisibility'
 /**
  * #7274 页签里的网页是画在界面**之上**的独立 view(browser-page-views.ts):咕咕自己的菜单、弹窗、提示、拖拽落点
  * 压到网页那一块上时,z-index 再高也盖不住它。所以页签每隔一会儿看一眼「网页那一块上面有没有别的东西」,
@@ -32,12 +33,11 @@ export const PAGE_OCCLUDER_SELECTOR = [
   '[data-sonner-toast]',
   '.pswp',
   '[data-pane-edge-preview]',
-  '[data-block-drop-preview]',
   '[data-occludes-browser-page]',
 ].join(', ');
 
 /** 选择器里用到的属性:它们在已有元素上被打上 / 改掉,那个元素也要进集合。 */
-const OCCLUDER_ATTRIBUTES = ['data-slot', 'role', 'data-sonner-toast', 'data-occludes-browser-page', 'data-pane-edge-preview', 'data-block-drop-preview'];
+const OCCLUDER_ATTRIBUTES = ['data-slot', 'role', 'data-sonner-toast', 'data-occludes-browser-page', 'data-pane-edge-preview'];
 
 /**
  * @@@occluder-set 文档里此刻带浮层标记的元素。❌ 每次检测都按选择器扫整个文档:页签每帧(跟随移动)和每 250ms 都要问一次,
@@ -109,7 +109,7 @@ export function isBrowserPageOccluded(placeholder: HTMLElement, rect: PageRect):
     if (placeholder.contains(element) || element.contains(placeholder)) continue;
     const box = element.getBoundingClientRect();
     if (box.width <= 0 || box.height <= 0 || !rectsOverlap(rect, box)) continue;
-    if (!element.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+    if (!isElementVisible(element, { opacity: true })) continue;
     return true;
   }
   return false;

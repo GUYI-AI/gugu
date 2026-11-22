@@ -11,17 +11,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  */
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const D = '../../../../apps/desktop/src';
+const EMPTY_CHANNELS = vi.hoisted(() => ({ channels: [], kinds: [], suggestedAgentId: null }));
 const reads = vi.hoisted(() => ({
   apps: { state: 'loading' } as Record<string, unknown>,
-  chat: { status: 'ready', list: [] } as Record<string, unknown>,
+  /** What the cloud answers for the chat channels (the `chatChannels` replica's read). */
+  chatList: (() => Promise.resolve(EMPTY_CHANNELS)) as () => Promise<unknown>,
   machine: { data: { panel: {} }, isLoading: false, error: null } as Record<string, unknown>,
   pushes: [] as Record<string, unknown>[],
   opened: [] as string[],
 }));
 vi.mock('react-i18next', async (original) => ({ ...(await original<object>()), useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }) }));
-vi.mock('../../../../apps/desktop/src/mobile/assistant/usePhoneRead', () => ({ usePhoneRead: () => reads.apps }));
+// The connections list is the `connectionList` replica's reading; the fixtures below say it the old way (loading / ok / error).
+const readingOf = (read: Record<string, unknown>) => read.state === 'ok' ? { state: 'value', value: read.data, stale: false, error: read.error ?? null }
+  : read.state === 'error' ? { state: 'error', error: read.error ?? new Error('unreadable') } : { state: 'unknown' };
+vi.mock('../../../../apps/desktop/src/components/assistant/assistant-panel-reads', () => ({ useConnectionList: () => readingOf(reads.apps) }));
 vi.mock('../../../../apps/desktop/src/components/assistant/assistant-panel-integrations', () => ({ readAssistantPanelIntegrations: vi.fn(), peekAssistantPanelIntegrations: vi.fn() }));
-vi.mock('../../../../apps/desktop/src/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => reads.chat }));
+vi.mock('../../../../apps/desktop/src/lib/chatChannels', () => ({ rendererChatChannelsClient: () => ({ list: () => reads.chatList() }) }));
 vi.mock('../../../../apps/desktop/src/components/assistant/assistant-app-connections', () => ({ assistantApplicationCounts: () => ({ saved: 2, connected: 1 }) }));
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { capabilities: { agentRuntime: true } } }));
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/stores/app-state', () => ({ appState: { sidebar: { orderedProjects: [{}, {}, {}] } } }));
@@ -33,11 +38,13 @@ vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assist
 vi.mock('../../../../apps/desktop/src/session/renderer/features/assistant/assistant-home-integrations', () => ({
   useOpenConnector: () => (id: string) => { reads.opened.push(id); },
 }));
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ isMyAssistant: () => false }));
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ myAssistant: { peek: () => ({ state: 'unknown' }), fetch: async () => ({ agentId: null, provisionDeviceId: null }), refresh: async () => undefined }, useMyAssistant: () => ({ state: 'unknown' }) }));
 
 const { installAssistantShellBridge, publishAssistantShell } = await import(`${D}/lib/assistantShellBridge`);
 const { AssistantAppCountsSource, connectorIconOf, openAssistantConnector, resetAssistantAppCountsForTest } = await import(`${D}/session/renderer/features/apps/assistant-app-counts`);
 const { integrationIcons } = await import('@gugu/session-plugins/integration-icons');
+const { followRendererSession, queryClient } = await import(`${D}/lib/replica`);
+const { chatChannels } = await import(`${D}/components/connections/connection-replicas`);
 
 const OWNER = '11000000-0000-4000-8000-000000000001';
 const OTHER = '22000000-0000-4000-8000-000000000002';
@@ -63,9 +70,13 @@ const last = () => reads.pushes.at(-1) as { ownerId: string; counts: Record<stri
 beforeEach(() => {
   resetAssistantAppCountsForTest();
   Object.assign(reads, {
-    apps: { state: 'loading' }, chat: { status: 'ready', list: [] },
+    apps: { state: 'loading' }, chatList: () => Promise.resolve(EMPTY_CHANNELS),
     machine: { data: { panel: {} }, isLoading: false, error: null }, pushes: [], opened: [],
   });
+  // The chat channels read before (none connected): the counts wait for nothing there.
+  queryClient.clear();
+  followRendererSession('SIGNED_IN', OWNER);
+  chatChannels.set([], EMPTY_CHANNELS);
   installAssistantShellBridge();
   publishAssistantShell(shell());
   container = document.body.appendChild(document.createElement('div'));
@@ -96,7 +107,7 @@ describe('the counts as read states', () => {
     expect(last().connectors).toEqual({ state: 'loading' });
   });
 
-  it('unreadable where the built-in row says it cannot read: the connections, the chat channels, the panel itself', () => {
+  it('unreadable where the built-in row says it cannot read: the connections, the chat channels, the panel itself', async () => {
     reads.apps = { state: 'error' };
     mount();
     expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } });
@@ -106,19 +117,40 @@ describe('the counts as read states', () => {
     resetAssistantAppCountsForTest();
     reads.pushes = [];
     reads.apps = ok();
-    reads.chat = { status: 'failed', list: [] };
+    queryClient.clear();
+    reads.chatList = () => Promise.reject(new Error('channels unreadable'));
     mount();
+    await act(async () => { await vi.waitFor(() => expect(chatChannels.peek().state).toBe('error')); });
     expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } });
     act(() => root.unmount());
     root = createRoot(container);
     resetAssistantAppCountsForTest();
     reads.pushes = [];
-    reads.chat = { status: 'ready', list: [] };
+    reads.chatList = () => Promise.resolve(EMPTY_CHANNELS);
+    chatChannels.set([], EMPTY_CHANNELS);
     reads.machine = { data: undefined, isLoading: false, error: new Error('PANEL_IDENTITY_UNAVAILABLE') };
     reads.apps = { state: 'loading' };
     mount();
     expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } });
     expect(last().connectors).toEqual({ state: 'unreadable' });
+  });
+
+  it('read before, a refresh that failed is unreadable: the old count and list are not handed over as current', async () => {
+    reads.apps = { ...ok(), error: new Error('panel unreachable') };
+    mount();
+    expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } });
+    expect(last().connectors).toEqual({ state: 'unreadable' });
+    act(() => root.unmount());
+    root = createRoot(container);
+    resetAssistantAppCountsForTest();
+    reads.pushes = [];
+    reads.apps = ok();
+    reads.chatList = () => Promise.reject(new Error('channels unreachable'));
+    mount();
+    expect(last().counts).toMatchObject({ connectedApps: { state: 'ready' } });
+    await act(async () => { await chatChannels.refresh().catch(() => undefined); });
+    expect(chatChannels.peek()).toMatchObject({ state: 'value', error: expect.any(Error) });
+    await act(async () => { await vi.waitFor(() => expect(last().counts).toMatchObject({ connectedApps: { state: 'unreadable' } })); });
   });
 
   it('nothing handed over while the window shows no assistant', () => {

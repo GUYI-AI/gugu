@@ -11,17 +11,22 @@ import { createReactHarness } from '../../support/testHarness'
 const world = vi.hoisted(() => ({
   devices: { devices: [{ device_id: 'mac', label: 'Mac' }, { device_id: 'cloud', label: 'Cloud', cloud_computer: true }], phones: [{ device_id: 'phone', label: 'Phone' }], loading: false, error: null as unknown },
   integrations: { data: null as unknown, error: null as unknown },
-  chats: { status: 'ready', list: [] as unknown[] },
   projects: { status: 'loading', projects: [] as unknown[] } as Record<string, unknown>,
 }))
 vi.mock('../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => world.devices }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/usePhoneProfileData', () => ({ usePhoneIntegrations: () => ({ ...world.integrations, loading: false, retry: vi.fn() }) }))
-vi.mock('../../../apps/desktop/src/components/settings/channels/useChatChannels', () => ({ useChatChannels: () => world.chats }))
+// The chat channels (the `chatChannels` replica) as the cloud lists them: read, none connected.
+const channels = vi.hoisted(() => ({ fail: false }))
+vi.mock('@/lib/chatChannels', () => ({ rendererChatChannelsClient: () => ({ list: async () => {
+  if (channels.fail) throw new Error('cloud unreachable')
+  return { channels: [], kinds: [], suggestedAgentId: null }
+} }) }))
 vi.mock('../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store', () => ({ get accountProjectsStore() { return world.projects } }))
 vi.mock('../../../apps/desktop/src/components/session-watch/useMachineLabel', () => ({ useMachineLabel: () => ({ isHome: () => false }) }))
 vi.mock('../../../apps/desktop/src/mobile/assistant/phoneProjectRows', () => ({ phoneProjectRows: (rows: unknown[]) => rows }))
 vi.mock('../../../apps/desktop/src/components/assistant/assistant-app-connections', () => ({ assistantApplicationCounts: () => ({ saved: 3, connected: 2 }) }))
 
+import { followRendererSession } from '../../../apps/desktop/src/lib/replica'
 import { PhoneAssistantCountsSource } from '../../../apps/desktop/src/mobile/assistant/PhoneAssistantCounts'
 import { phoneAssistantLayer, resetPhoneAssistantLayerForTest } from '../../../apps/desktop/src/components/appSlot/phoneAssistantLayer'
 import type { AppAssistantStatus } from '../../../apps/desktop/src/session/shared/extensions/assistant-binding'
@@ -30,7 +35,7 @@ const OWNER = '0a000000-0000-4000-8000-000000000049'
 const FOUND = { assistant: 'found', name: 'Pip', avatar: null, tint: null, home: null, setup: null, preparing: false, cloudAvailable: true, member: null,
   loadError: null, ownerName: null, counts: null, connectors: null, nameMax: 30 } as unknown as AppAssistantStatus
 let h: ReturnType<typeof createReactHarness>
-beforeEach(() => { resetPhoneAssistantLayerForTest(); h = createReactHarness() })
+beforeEach(() => { resetPhoneAssistantLayerForTest(); followRendererSession('SIGNED_IN', OWNER); h = createReactHarness() })
 afterEach(() => h.cleanup())
 const render = () => h.render(<PhoneAssistantCountsSource ownerId={OWNER} machine={{ state: 'opening' } as never} cloudDeviceId="cloud" />)
 
@@ -67,4 +72,19 @@ it('gives them only to the account the layer shows, with its assistant found; go
   expect(heard).toHaveBeenCalled()
   expect(phoneAssistantLayer.status()?.status.counts).toBeNull()
   h = createReactHarness()
+})
+
+it('connected apps read before, a refresh of the chat channels that fails hands over unreadable: ❌ the old count as current', async () => {
+  const { chatChannels } = await import('../../../apps/desktop/src/components/connections/connection-replicas')
+  phoneAssistantLayer.publishStatus({ ownerId: OWNER, status: FOUND })
+  world.integrations = { data: { items: [], configured: {}, statuses: {} }, error: null }
+  await render()
+  await act(async () => { await chatChannels.fetch() })
+  await render()
+  expect(phoneAssistantLayer.status()?.status.counts?.connectedApps).toEqual({ state: 'ready', value: { saved: 3, connected: 2 } })
+  channels.fail = true
+  await act(async () => { await chatChannels.refresh().catch(() => undefined) })
+  await render()
+  expect(phoneAssistantLayer.status()?.status.counts?.connectedApps).toEqual({ state: 'unreadable' })
+  channels.fail = false
 })

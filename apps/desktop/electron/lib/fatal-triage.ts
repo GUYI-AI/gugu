@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { EgressError } from '@gugu/core/shared/egress'
 
 /**
  * 崩溃分诊:把「进程真的坏了」和「网络/电源这类外部环境故障」分开。
@@ -12,6 +13,8 @@ import { join } from 'node:path'
  * - 判据只认错误自身的形状(name / code / message),❌ 不看调用栈、❌ 不看模块来源;
  * - 被**自定义** Error 子类包过的一律判缺陷 —— 包装说明代码已经接手过这个错误,
  *   那时候还没接住,就是真缺陷,不是环境问题;
+ * - 出网错误由 EgressError 标识(egress 判过的 connect / proxy / tls / timeout);electron-updater 仍走 Chromium,
+ *   它的 `net::ERR_*` 照旧认;
  * - 只有两种**透明包装**允许下探 cause:`TypeError: fetch failed`(undici 的固定形状)
  *   与 `AggregateError`(且要求每一个子错误都是环境故障)。多网卡/多地址时 Node 抛的就是它。
  * - 放行的每一条都必须落盘留痕(见 recordFatalSync),❌ 静默放过。
@@ -60,6 +63,7 @@ const errnoOf = (err: Error): string | null => {
 
 /** 只看这一层错误自身,不下探 cause。 */
 const selfIsEnvironmentFault = (err: Error): boolean => {
+  if (err instanceof EgressError) return true
   if (RECOVERABLE_ERROR_NAMES.has(err.name)) return true
   // 自定义子类(name 被改过)一律不算环境故障 —— 见文件头「被包装过的判缺陷」。
   if (err.name !== 'Error') return false

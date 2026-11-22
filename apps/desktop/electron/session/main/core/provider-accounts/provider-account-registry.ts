@@ -29,10 +29,13 @@ export type ProviderAccountUpsert = {
   secret?: string;
   /** Replaces the stored meta when provided; omitted meta keeps the existing value. */
   meta?: ProviderAccountMetaInput;
+  /** A new row is the provider's default when none is yet. `false` keeps a row out of that (a removal record is not a connection). */
+  electDefault?: boolean;
   /**
    * Secret key override for accounts whose secret already lives at a released
-   * key (e.g. GitHub's `github-account-token:<id>`). Ignored when the account
-   * already exists — an account's credentialRef never changes.
+   * key (e.g. GitHub's `github-account-token:<id>`) or in the password vault
+   * (`vault:<id>`). Ignored when the account already exists: moving an existing
+   * account's secret is `relocateSecret`.
    */
   credentialRef?: string;
 };
@@ -51,6 +54,11 @@ export type ProviderAccountSecretStore = {
   atomicSecretSnapshot?(db: AppDb | DrizzleTx, key: string): { sealed: string; secret: string } | null;
   atomicSecretCompareAndSwap?(db: AppDb, key: string, expectedSealed: string, replacement: string): Promise<(tx: DrizzleTx) => boolean>;
 };
+
+/** `vault:<credentialId>`: a secret kept in the person's password vault (a GitHub token); any other ref is the app's own
+ * encrypted store. The ref says where its secret lives; the registry never asks which provider it belongs to. */
+export const vaultCredentialRef = (credentialId: string) => `vault:${credentialId}`;
+export const vaultCredentialOf = (ref: string) => (ref.startsWith('vault:') ? ref.slice('vault:'.length) : null);
 
 export function defaultCredentialRef(providerId: string, accountId: string): string {
   return `provider-credential:${providerId}:${accountId}`;
@@ -164,7 +172,7 @@ export class ProviderAccountRegistry {
         providerId: input.providerId,
         accountId: input.accountId,
         credentialRef,
-        isDefault: !hasDefault,
+        isDefault: input.electDefault === false ? false : !hasDefault,
         meta: meta ?? null,
         createdAt: now,
         updatedAt: now,
@@ -294,6 +302,23 @@ export class ProviderAccountRegistry {
     return swapped;
   }
 
+  /**
+   * The account's secret now lives at `credentialRef` (written there by the caller): the row points at it in one write, then
+   * the secret at the old ref goes. A failure before the write leaves the row on its old secret, intact.
+   */
+  async relocateSecret(providerId: string, accountId: string, credentialRef: string): Promise<void> {
+    const previous = this.db.transaction((tx) => {
+      const row = tx.select().from(providerAccounts)
+        .where(and(eq(providerAccounts.providerId, providerId), eq(providerAccounts.accountId, accountId))).get();
+      if (!row) throw new Error('Account no longer exists');
+      tx.update(providerAccounts).set({ credentialRef, updatedAt: nextProviderAccountUpdate(row.updatedAt) })
+        .where(eq(providerAccounts.id, row.id)).run();
+      return row.credentialRef;
+    });
+    try { if (previous !== credentialRef) await this.secretStore.deleteSecret(previous); }
+    finally { this.changed(); }
+  }
+
   /** Read the secret stored at the account's credentialRef. */
   async resolveSecret(providerId: string, accountId?: string): Promise<string | null> {
     const account = await this.getAccount(providerId, accountId);
@@ -344,6 +369,26 @@ export class ProviderAccountRegistry {
     try { await this.secretStore.deleteSecret(removed.credentialRef); }
     finally { this.changed(); }
     return toProviderAccount(removed);
+  }
+
+  /**
+   * Take a connection away but keep its row as a removal record (sessions bound to it, and discovery, still read the row).
+   * The only place a soft removal is written: the record never keeps the connection's secret. The secret goes first, so a
+   * failure here leaves a connection that is still listed (and can be removed again) rather than a removed one holding a key.
+   */
+  async retireAccount(providerId: string, accountId: string, meta: ProviderAccountMetaInput): Promise<ProviderAccount> {
+    const existing = await this.findRow(providerId, accountId);
+    if (!existing) throw new Error('Account no longer exists');
+    await this.secretStore.deleteSecret(existing.credentialRef);
+    return (await this.upsertAccount({ providerId, accountId, meta })).account;
+  }
+
+  /** Removal records written before they dropped the secret still hold it; drop it. A plain delete by key, no decryption. */
+  async dropRetiredSecrets(): Promise<number> {
+    const rows = this.db.select().from(providerAccounts).all()
+      .filter((row) => row.meta?.customModel?.removed || row.meta?.harnessConnection?.removed);
+    for (const row of rows) await this.secretStore.deleteSecret(row.credentialRef);
+    return rows.length;
   }
 
   /** Remove every account (and secret) for a provider. */

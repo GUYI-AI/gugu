@@ -3,9 +3,9 @@ import {
   applyTurnToAuthExpiry,
   applyStartToAuthExpiry,
   authExpiryEffect,
-  sessionUsesPlatformCredentials,
+  sessionUsesHostCredentials,
   hookAuthExpiryEffect,
-  setPlatformCredentialsProbe,
+  setHostCredentialsProbe,
 } from './auth-expiry-from-turns';
 
 const failed = { outcome: { kind: 'error' as const, reason: 'prompt_failed' as const, signInRequired: true } };
@@ -17,22 +17,22 @@ describe('startup revocation before a turn exists', () => {
   const writer = () => ({ mark: vi.fn(async () => {}), clear: vi.fn(async () => {}), log: vi.fn() });
   it('marks the session-bound connection before the start failure is returned', async () => {
     const target = writer();
-    await applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'bound-old-agent', platformCredentials: false, failure }, target);
+    await applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'bound-old-agent', hostCredentials: false, failure }, target);
     expect(target.mark).toHaveBeenCalledWith('codex', 'bound-old-agent');
     expect(target.clear).not.toHaveBeenCalled();
   });
   it('does not expire a personal account for a platform failure or a generic startup error', () => {
     const target = writer();
-    expect(applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'platform-agent', platformCredentials: true, failure }, target)).toBeNull();
-    expect(applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'agent', platformCredentials: false,
+    expect(applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'platform-agent', hostCredentials: true, failure }, target)).toBeNull();
+    expect(applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'agent', hostCredentials: false,
       failure: { cause: { name: 'Error', message: 'refresh token request timed out' } } }, target)).toBeNull();
-    expect(applyStartToAuthExpiry({ sessionId: 'agent', platformCredentials: false, failure }, target)).toBeNull();
+    expect(applyStartToAuthExpiry({ sessionId: 'agent', hostCredentials: false, failure }, target)).toBeNull();
     expect(target.mark).not.toHaveBeenCalled();
   });
   it('keeps the original startup error when the expiry writer fails', async () => {
     const target = writer();
     target.mark.mockRejectedValueOnce(new Error('fixture write failure'));
-    await expect(applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'agent', platformCredentials: false, failure }, target)).resolves.toBeUndefined();
+    await expect(applyStartToAuthExpiry({ providerId: 'codex', sessionId: 'agent', hostCredentials: false, failure }, target)).resolves.toBeUndefined();
     expect(target.log).toHaveBeenCalledTimes(1);
   });
 });
@@ -61,8 +61,8 @@ describe('authExpiryEffect (#6264)', () => {
   });
 
   it('跑咕咕平台模型的会话不动它(用的是咕咕的凭据,与用户自己那份登录无关)', () => {
-    expect(authExpiryEffect({ providerId: 'codex', platformCredentials: true, source: 'live', turn: failed })).toBeNull();
-    expect(authExpiryEffect({ providerId: 'codex', platformCredentials: true, source: 'live', turn: done })).toBeNull();
+    expect(authExpiryEffect({ providerId: 'codex', hostCredentials: true, source: 'live', turn: failed })).toBeNull();
+    expect(authExpiryEffect({ providerId: 'codex', hostCredentials: true, source: 'live', turn: done })).toBeNull();
   });
 
   it('其它失败、取消、没有结局、不知道是哪家 ⇒ 不动', () => {
@@ -92,23 +92,23 @@ describe('applyTurnToAuthExpiry', () => {
 
 describe('hookAuthExpiryEffect:「编程」终端会话这条腿 (#6264)', () => {
   it('StopFailure authentication_failed ⇒ 标上;Stop ⇒ 撤掉;其它错误不动', () => {
-    expect(hookAuthExpiryEffect({ providerId: 'claude', type: 'error', signInRequired: true, platformCredentials: false })).toEqual({
+    expect(hookAuthExpiryEffect({ providerId: 'claude', type: 'error', signInRequired: true, hostCredentials: false })).toEqual({
       kind: 'mark',
       providerId: 'claude',
     });
-    expect(hookAuthExpiryEffect({ providerId: 'claude', type: 'stop', platformCredentials: false })).toEqual({ kind: 'clear', providerId: 'claude' });
-    expect(hookAuthExpiryEffect({ providerId: 'claude', type: 'error', platformCredentials: false })).toBeNull();
-    expect(hookAuthExpiryEffect({ providerId: 'claude', type: 'start', platformCredentials: false })).toBeNull();
+    expect(hookAuthExpiryEffect({ providerId: 'claude', type: 'stop', hostCredentials: false })).toEqual({ kind: 'clear', providerId: 'claude' });
+    expect(hookAuthExpiryEffect({ providerId: 'claude', type: 'error', hostCredentials: false })).toBeNull();
+    expect(hookAuthExpiryEffect({ providerId: 'claude', type: 'start', hostCredentials: false })).toBeNull();
   });
 
   it('跑咕咕平台模型的终端会话不动它;宿主没告诉我们时按「是」处理(宁可不学)', () => {
-    expect(hookAuthExpiryEffect({ providerId: 'claude', type: 'error', signInRequired: true, platformCredentials: true })).toBeNull();
-    setPlatformCredentialsProbe(null);
-    expect(sessionUsesPlatformCredentials('c1')).toBe(true);
-    setPlatformCredentialsProbe((id) => id === 'p1');
-    expect(sessionUsesPlatformCredentials('c1')).toBe(false);
-    expect(sessionUsesPlatformCredentials('p1')).toBe(true);
-    setPlatformCredentialsProbe(null);
+    expect(hookAuthExpiryEffect({ providerId: 'claude', type: 'error', signInRequired: true, hostCredentials: true })).toBeNull();
+    setHostCredentialsProbe(null);
+    expect(sessionUsesHostCredentials('c1')).toBe(true);
+    setHostCredentialsProbe((id) => id === 'p1');
+    expect(sessionUsesHostCredentials('c1')).toBe(false);
+    expect(sessionUsesHostCredentials('p1')).toBe(true);
+    setHostCredentialsProbe(null);
   });
 });
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation'
 import type { ComposerCard, QuestionCard, TaskCard } from '@gugu/core/shared/ui/taskCardModels'
@@ -6,7 +6,7 @@ import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { composerCardCopy } from '../../lib/composerCardCopy'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
-import { CalendarClock, Check, Sparkles } from '@/lib/icons'
+import { Check, Clock, Sparkles } from '@/lib/icons'
 import { AgentHarnessIcon, EngineIcon } from '../AgentHarnessIdentity'
 import { Avatar } from '../Avatar'
 import { useAgentDisplayStatuses } from '../../hooks/useAgentDisplayStatus'
@@ -14,8 +14,7 @@ import { useShownAgentName } from '../../hooks/useShownAgentName'
 import { useAvatarIdentity } from '../../lib/avatarIdentity'
 import { myAgentJoinRequests } from '../../lib/agentJoinRequests'
 import { useReplica } from '../../lib/replica'
-import { rendererLogger } from '../../lib/log'
-import { platform } from '../../platform'
+import { thisDeviceId } from '../../store/thisDevice'
 import { useChatStore } from '../../store/chatContext'
 import { useAuth } from '../../store/auth'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
@@ -27,7 +26,7 @@ import { AgentStatusGlyph } from '../../session/renderer/lib/components/agent-st
  * 不知道是哪个 agent(引用块里引卡的是人)时画一枚通用的星。
  */
 function ComposerCardMark({ type, agentUserId, size }: { type: ComposerCard['type']; agentUserId: string | null; size: number }) {
-  if (type === 'schedule') return <CalendarClock size={size} />
+  if (type === 'schedule') return <Clock size={size} />
   return agentUserId ? <AgentHarnessIcon agentId={agentUserId} size={size} /> : <Sparkles size={size} />
 }
 
@@ -79,16 +78,16 @@ export function ComposerCardView({ card, isMine, isGroup, chatId, senderName, ti
   const seated = !!task && !!memberProfiles?.[task.agentUserId] && memberProfiles[task.agentUserId]!.membership !== 'former'
   const join = useMyAgentJoin(owned && isGroup && !seated ? chatId : null, task?.agentUserId ?? null)
   const status = useAgentDisplayStatuses(task ? [task.agentUserId] : [])[task?.agentUserId ?? '']
-  const openable = task && (owned || onOpenTopic)
+  const openable = task && (onOpenTopic || (owned && place.local !== null))
   return (
     <ComposerCardFrame
       cardType={card.type}
       // 卡上记着接手的是哪种 agent(贴卡时写下的),谁看都画这一枚;没记的老卡画通用的星 —— ❌ 去查这个 agent 现在看不看得到。
-      mark={task ? (task.agentType ? <EngineIcon engine={task.agentType} size={13} /> : <Sparkles size={13} />) : <CalendarClock size={13} />}
+      mark={task ? (task.agentType ? <EngineIcon engine={task.agentType} size={13} /> : <Sparkles size={13} />) : <Clock size={13} />}
       title={task ? t('message.taskCard.task') : `${t('message.taskCard.schedule')}: ${card.type === 'schedule' ? card.scheduleLabel : ''}`}
       time={time}
       text={card.text}
-      onOpen={openable ? () => (onOpenTopic ? onOpenTopic() : openTaskCardSession(task, place.local)) : undefined}
+      onOpen={openable ? () => (onOpenTopic ? onOpenTopic() : openTaskCardSession(task, place.local === true)) : undefined}
       links={!!onOpenFile}
     >
       {task?.files?.length ? (
@@ -188,7 +187,7 @@ export function TaskCardHandedTo({ agentName, agentAvatar, agentUserId, note, ma
 }
 
 /**
- * 行尾那一格,和侧栏会话行同一枚字形(AgentStatusGlyph,同一个 presentAgentStatus):在跑 = 四个点在转、后台在跑 = 同一枚静止、
+ * 行尾那一格,和侧栏会话行同一枚字形(AgentStatusGlyph,同一个 presentAgentStatus):在跑 = 四个点在转、后台在跑 = 黄色双竖线、
  * 需要你 = 琥珀点、出错 = 红点;做完(空闲)= 勾;归档 / 离线不画。
  */
 export function TaskStatusMark({ status }: { status: AgentDisplayStatus | undefined }) {
@@ -201,30 +200,23 @@ export function TaskStatusMark({ status }: { status: AgentDisplayStatus | undefi
   return <AgentStatusGlyph presentation={presentation} label={t(`agentStatus.${presentation.label}`)} variant="2" />
 }
 
-function localDeviceId(): Promise<string | null> {
-  return Promise.resolve(platform.getLocalDeviceSelfSnapshot?.()).then((self) => self?.device_id ?? null, () => null)
-}
-
 /**
  * 卡上「在哪」:我的卡、会话就在这台电脑上 = 不写(点卡打开;卡就在它的项目群或对话里,原型里卡上只有三行);
  * 我在别的电脑上派的 = 那台电脑;同事的卡 = 在他的电脑上(过程看不到,结果看群里)。
  */
-function useTaskCardPlace(task: TaskCard | null, isMine: boolean, senderName: string): { local: boolean; label: string | null } {
+function useTaskCardPlace(task: TaskCard | null, isMine: boolean, senderName: string): { local: boolean | null; label: string | null } {
   const { t } = useTranslation('messaging')
-  const [here, setHere] = useState<string | null>(null)
-  useEffect(() => {
-    if (!task || !isMine) return
-    let live = true
-    void localDeviceId().then((id) => { if (live) setHere(id) })
-    return () => { live = false }
-  }, [task, isMine])
+  // 这台电脑是哪一台:本机宿主说(IPC,❌ 等云端设备表 —— 离线或没读过时它是未知)。
+  const self = useReplica(thisDeviceId, task && isMine ? [] : null)
   if (!task) return { local: false, label: null }
   if (!isMine) return { local: false, label: t('message.taskCard.onColleagueComputer', { name: senderName }) }
+  // 还不知道这台是哪台:卡上不写「在哪」,也不能点(❌ 猜)。本机宿主答不出(error):按会话 id 打开,对哪台电脑都成立。
+  if (self.state === 'unknown') return { local: null, label: null }
+  if (self.state === 'error') return { local: false, label: null }
+  const here = self.value
   if (here !== task.deviceId) return { local: false, label: here ? t('message.taskCard.onMachine', { machine: task.machineLabel }) : null }
   return { local: true, label: null }
 }
-
-const joinLog = rendererLogger('chat/task-card-join')
 
 /**
  * 我的卡、agent 还没坐进这个群时:它的入群请求是待审还是被拒。请求一变,库给发起人发 friend_requests_changed,
@@ -238,9 +230,6 @@ function useMyAgentJoin(chatId: string | null, agentUserId: string | null): 'pen
     if (!chatId || !agentUserId) return
     return subscribeAccountRevision('friend_requests_changed', () => { void myAgentJoinRequests.refresh(chatId) })
   }, [chatId, agentUserId, subscribeAccountRevision])
-  useEffect(() => {
-    if (reading.state === 'error') joinLog.error({ chatId, agentUserId, error: String(reading.error) }, 'reading the agent join request for a task card failed')
-  }, [reading, chatId, agentUserId])
   if (!chatId || !agentUserId) return null
   if (reading.state !== 'value') return reading.state === 'unknown' ? 'unknown' : null
   const status = reading.value.get(agentUserId)

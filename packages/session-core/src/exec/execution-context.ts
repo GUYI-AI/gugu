@@ -50,6 +50,9 @@ export interface IExecutionContext {
    */
   findWindowsCommandPaths?(command: string, env?: Record<string, string>): Promise<string[] | null>;
 
+  /** The canonical path of `path` (symlinks followed), resolved in-process. Absent = callers run `realpath`. */
+  realpath?(path: string): Promise<string>;
+
   /** Run a command and buffer all output. Rejects on non-zero exit code. */
   exec(
     command: string,

@@ -111,7 +111,8 @@ export default {
     "engineChecking": "正在检查…",
     "engineRetry": "重新检查",
     "engineConfigure": "配置 {{name}}",
-    "engineUnusable": "不可用",
+    "engineNotInstalled": "未安装",
+    "engineSignedOut": "未登录",
     "engineReadFailed": "读取失败",
 
     "identityTitle": "设置名字和形象",
@@ -312,6 +313,7 @@ export default {
     "title": "正在准备你的咕咕"
   },
   "cloud": {
+    "upgradeIncomplete": "云端咕咕升级未完成，请重试",
     "loading": "正在读取咕咕状态…",
     "unreadable": "无法读取咕咕状态，请稍后重试。"
   },
@@ -858,6 +860,7 @@ export default {
     "morePrompt": "「灵感」里的这些我看过了，根据你对我的了解再换一批。"
   },
   "quickChat": {
+    "settingUnreadable": "暂时读不到快速聊天的状态。",
     "title": "和{{name}}快速聊天",
     "assistant": "咕咕",
     "close": "关闭快速聊天",

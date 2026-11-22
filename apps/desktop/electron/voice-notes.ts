@@ -6,7 +6,8 @@
  * 一条笔记往往要转好几段:票按助理缓存,快过期才换;一条转写完由渲染层叫 release 结掉,忘了叫也会在闲置几分钟后自己结。
  * 应用退出时没结的票由平台票账本统一结清(model-access 的 ledger),这里 ❌ 另记一份。
  */
-import * as electron from 'electron'
+import { egress } from '@gugu/core/shared/egress'
+import { app, systemPreferences, shell } from 'electron'
 import { requireRuntimeAuth, type RuntimeAuthProvider } from '@gugu/core'
 import { assertTeamTaskSession, readTeamModelContext } from './team-model-funding'
 import {
@@ -43,11 +44,6 @@ type Held = { access: IssuedModelAccess; idle: ReturnType<typeof setTimeout> | n
 
 const held = new Map<string, Held>()
 const issuing = new Map<string, Promise<Held>>()
-
-function netFetch(url: string, init: RequestInit): Promise<Response> {
-  const fetcher = (electron as { net?: { fetch?: typeof fetch } } | undefined)?.net?.fetch
-  return fetcher ? fetcher(url, init) : fetch(url, init)
-}
 
 async function ticketFor(authProvider: RuntimeAuthProvider, agentUserId: string, previous?: IssuedModelAccess): Promise<Held> {
   const current = held.get(agentUserId)
@@ -130,7 +126,7 @@ const RETRYABLE = (status: number) => status === 408 || status === 429 || status
 type ModelReply = VoiceNoteTranscribeResult | { ok: false; code: 'ticket-expired' | 'retry'; message: string }
 
 async function callModel(access: IssuedModelAccess, request: VoiceNoteTranscribeRequest): Promise<ModelReply> {
-  const response = await netFetch(`${access.relayUrl}/v1/chat/completions`, {
+  const response = await egress.fetch(`${access.relayUrl}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${access.token}` },
     body: JSON.stringify({
@@ -146,7 +142,7 @@ async function callModel(access: IssuedModelAccess, request: VoiceNoteTranscribe
         },
       ],
     }),
-    signal: AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
+    timeoutMs: TRANSCRIBE_TIMEOUT_MS,
   })
   const payload = (await response.json().catch(() => null)) as unknown
   if (!response.ok) {
@@ -192,7 +188,7 @@ export async function transcribeVoiceNoteSegment(
       try {
         const auth = await requireRuntimeAuth(authProvider, 'team voice note refusal')
         assertTeamTaskSession(auth, entry.access.teamTask)
-        const context = await readTeamModelContext(auth, netFetch)
+        const context = await readTeamModelContext(auth, egress.fetch)
         if (context.teamId !== entry.access.teamTask.funding.team_id || context.memberId !== entry.access.teamTask.funding.member_id) return { ok: false, code: 'service-unavailable', message: '' }
         if (context.stopReason) return { ok: false, code: context.stopReason === 'team_credits_exhausted' ? 'team-credits-exhausted' : 'team-monthly-cap-reached', message: '' }
         if (reply.code === 'refused') return { ok: false, code: 'service-unavailable', message: '' }
@@ -217,14 +213,13 @@ export async function transcribeVoiceNoteSegment(
 
 /** 麦克风:macOS 第一次问会弹系统授权框;拒过就只能去系统设置里开。 */
 export async function voiceNoteMicrophone(action: VoiceNoteMicrophoneAction): Promise<VoiceNoteMicrophoneStatus> {
-  const { systemPreferences, shell } = electron
   if (action === 'open-settings') {
     if (process.platform === 'darwin') await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone')
     else if (process.platform === 'win32') await shell.openExternal('ms-settings:privacy-microphone')
     return 'unsupported'
   }
   // 冒充的麦克风(main.ts 的 GUGU_FAKE_MICROPHONE_FILE,装机包不认)不经系统授权。
-  if (process.env.GUGU_FAKE_MICROPHONE_FILE?.trim() && !electron.app.isPackaged) return 'granted'
+  if (process.env.GUGU_FAKE_MICROPHONE_FILE?.trim() && !app.isPackaged) return 'granted'
   if (process.platform === 'darwin') {
     const status = systemPreferences.getMediaAccessStatus('microphone')
     if (status === 'granted') return 'granted'

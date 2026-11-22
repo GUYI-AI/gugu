@@ -60,9 +60,10 @@ async function boot(fail: string, fatal = false, presenceProbe?: {
   const overrides: Record<string, Record<string, unknown>> = {
     './core/agents/install-progress-ledger': installs,
     './core/boot-tasks': { sessionBootTasks: tasks },
-    '@main/core/session-timeline/service': { listSessionStates: () => ({ projects: [], sessions: states }) },
+    '@main/core/session-timeline/service': { listSessionStates: () => ({ projects: [], sessions: states }), activeSessionStates: () => states },
     '@gugu/core/shared/agentStatus': { busyForVersionSwitch, parseAgentStatusView },
-    '@main/core/sessions/session-pending': { lifeSessions: () => [...pending.keys()], lifeStore: {
+    '@main/core/sessions/session-pending': { lifeSessions: () => [...pending.keys()],
+      lifePending: () => new Map([...pending].filter(([, rows]) => rows.queued.length > 0 || rows.dispatching.length > 0)), lifeStore: {
       pending: (id: string) => pending.get(id)!, read: (id: string) => lifeRows.get(id) ?? { archived: false, hold: null },
     } },
     '@gugu/core/local/session-life/step': { hydrateLife, shouldStartOnHydrate },
@@ -284,7 +285,7 @@ describe('real session host boot entry', () => {
       ).pluck()
       expect(requiredTables.all()).toEqual([])
       const db = drizzle(sqlite, { schema })
-      const migrate = vi.fn(() => migrateCustomModels(db, new Set()))
+      const migrate = vi.fn(() => migrateCustomModels(db, new Set(), new Map()))
       const result = await boot('', false, undefined, true, { initialize: () => initializeDatabase(sqlite), migrate })
       expect(requiredTables.all()).toEqual(['kv', 'provider_accounts'])
       expect(migrate).toHaveBeenCalledOnce()

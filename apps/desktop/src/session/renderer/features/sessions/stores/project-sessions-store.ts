@@ -1,7 +1,7 @@
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { makeObservable, observable, reaction, runInAction, toJS } from 'mobx';
-import { toast } from 'sonner';
+import { notify } from '@/lib/notices';
 import { match } from 'ts-pattern';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import type { GitRepositoryStore } from '@renderer/features/projects/stores/git-repository-store';
@@ -50,9 +50,7 @@ import { terminalRegistry } from './terminal-registry';
 import { workspaceRegistry } from './workspace-registry';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { rendererLogger } from '../../../../../lib/log';
-import { queryClient } from '@/lib/replica';
-import { AGENTS_METADATA_QUERY_KEY } from '@renderer/lib/stores/use-agents';
-import type { AgentPayload } from '@shared/core/agents/agent-payload';
+import { agentsMetadata } from '@renderer/lib/stores/agent-replicas';
 import { rememberTask } from '@renderer/features/command-palette/recent-tasks';
 
 /**
@@ -61,10 +59,9 @@ import { rememberTask } from '@renderer/features/command-palette/recent-tasks';
  * 同一组输入,❌ 猜一个 hooks kind。
  */
 async function agentHooksKind(provider: string): Promise<string> {
-  const agents = await queryClient.ensureQueryData<AgentPayload[]>({
-    queryKey: AGENTS_METADATA_QUERY_KEY,
-    queryFn: () => rpc.agents.list() as Promise<AgentPayload[]>,
-  });
+  // The list in hand (❌ read again past its 30 s, failing creation while it is right there); read only when none is.
+  const held = agentsMetadata.peek(null);
+  const agents = held.state === 'value' ? held.value : await agentsMetadata.fetch(null);
   const agent = agents.find((candidate) => candidate.id === provider);
   if (!agent) throw new Error(`session-manager: agent catalog has no '${provider}' at session creation`);
   return agent.capabilities.hooks.kind;
@@ -175,13 +172,14 @@ export class ProjectSessionsStore {
         // 脚本是工作区的;报给人看时带上在这个工作区里的一条会话的名字。
         const sessionName = [...this.sessions.values()].find((session) => session.workspaceId === workspaceId)?.displayName;
         const label = type[0].toUpperCase() + type.slice(1);
-        toast.error(
-          sessionName
+        notify({
+          title: sessionName
             ? translateSessionMessage('taskError.scriptFailedForTask', { label, sessionName })
             : translateSessionMessage('taskError.scriptFailed', { label }),
           // description 是用户自己那段脚本的输出,不是内部报错 —— 留着。
-          { description: message }
-        );
+          description: message,
+          tier: 'error',
+        });
       }),
       // Handles sessions provisioned by the automation path (or any main-process caller)
       // without renderer-initiated RPCs. The `isUnprovisioned` guard prevents a

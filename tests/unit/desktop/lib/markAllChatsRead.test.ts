@@ -43,7 +43,11 @@ function unreadRow(chatId: string, messageSeq: number, rootId: string | null = n
 const readState = { last_read_seq: 0, is_marked_unread: false, version: 1 }
 
 describe('markChatsReadAndRefresh', () => {
-  beforeEach(() => { rpc.mockReset() })
+  beforeEach(async () => {
+    rpc.mockReset()
+    // Read positions go through the outbox, bound to the signed-in account.
+    ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', 'user-1')
+  })
 
   it('marks every unread stream up to the seq the store had seen, thread streams on the same chat counter', async () => {
     const rows = [

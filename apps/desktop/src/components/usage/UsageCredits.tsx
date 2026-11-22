@@ -62,6 +62,8 @@ const ledgerPage = replica({
   read: (_userId, page: number, pageSize: number, model: string | null, from: string, to: string, _creditVersion: string | null) =>
     fetchLedgerPage({ page, pageSize, model, range: { from, to } }),
   keep: 5 * 60_000,
+  // Back to the foreground: a membership bought on the web meanwhile moves no broadcast here (#5899).
+  refreshOnFocus: true,
 })
 
 function Ledger({ range }: { range: DayRange }) {
@@ -106,7 +108,7 @@ function LedgerRows({ range, creditVersion }: { range: DayRange; creditVersion: 
   return (
     <div className="grid gap-[var(--spacing-md)]" data-testid="usage-ledger">
       <div className="gg-usage-caption">{t('usage.na.logs')}</div>
-      <form className="na-filter" onSubmit={(e) => { e.preventDefault(); search() }}>
+      <form className="na-filter gg-settings-surface" onSubmit={(e) => { e.preventDefault(); search() }}>
         <input className="na-input" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t('usage.na.modelName')}
           aria-label={t('usage.na.modelName')} data-testid="usage-ledger-model" />
         <Button variant="secondary" size="md" onClick={reset} data-testid="usage-ledger-reset">{t('usage.na.reset')}</Button>
@@ -115,7 +117,7 @@ function LedgerRows({ range, creditVersion }: { range: DayRange; creditVersion: 
       {error !== null && (
         <span data-testid="usage-ledger-error" className="gg-usage-muted" title={error}>{t('credits.activityError', { error })}</span>
       )}
-      <div className="na-table-wrap" data-busy={busy && rows !== null ? '' : undefined}>
+      <div className="na-table-wrap gg-settings-surface" data-busy={busy && rows !== null ? '' : undefined}>
         <table className="na-table na-table--ledger" data-testid="usage-ledger-rows">
           <thead>
             <tr>

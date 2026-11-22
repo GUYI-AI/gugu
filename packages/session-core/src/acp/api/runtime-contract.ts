@@ -137,6 +137,7 @@ const detachedPromptWaitInputSchema = z.object({ requestId: z.string() });
 export const acpRuntimeApiContract = defineContract({
   ...acpApiContract,
   ...acpSessionLifecycleProcedures,
+  messagePreviewChanged: eventStream({ key: z.void(), event: z.object({ sessionId: z.string() }) }),
   // Private worker state; the public session contract retains its old set of states.
   // Declared clients are routed here by the host's subscription handshake.
   session: liveModel({
@@ -223,10 +224,10 @@ export const acpRuntimeApiContract = defineContract({
       /** 跑这条会话的 harness —— 主进程据此维护「这家登录已失效」(#6264)。 */
       providerId: z.string().min(1).optional(),
       /**
-       * 这条会话跑的是咕咕平台模型(宿主签了平台凭据)—— 那时成败说明的是平台,不是用户自己那份登录,
-       * 「登录已失效」❌ 据此增减(#6264)。
+       * 这条会话的凭据由宿主提供(咕咕平台票,或模型连接里用户自己的 key)—— 那时成败说明的是那份凭据,
+       * 不是这家在这台机器上的登录,「登录已失效」❌ 据此增减(#6264)。
        */
-      platformCredentials: z.boolean().optional(),
+      hostCredentials: z.boolean().optional(),
       /**
        * `revision` = 最后一轮改口(结局或迟到的尾巴);`backfill` = **更早**的一轮被迟到的事件就地补了内容
        * (后台命令的终态回填到起它的那一轮,#6582)—— 它说的是过去,之后已经有别的轮了。
@@ -234,12 +235,6 @@ export const acpRuntimeApiContract = defineContract({
       source: z.enum(['live', 'replay', 'revision', 'backfill']),
       turn: transcriptTurnSchema,
     }),
-  }),
-  /** Primary scalar proof for a stopped-window active candidate. This private
-   * point read never clones an active turn or starts a session/worker. */
-  windowActiveReference: procedure({
-    input: z.strictObject({ sessionId: z.string().min(1).max(2048), referenceId: z.string().min(1).max(2048) }),
-    output: z.boolean(),
   }),
   /** 主进程保存回退后的显示历史,再放开这条会话的发送。 */
   finishHistoryRevert: procedure({

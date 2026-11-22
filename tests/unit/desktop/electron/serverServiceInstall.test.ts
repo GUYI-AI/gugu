@@ -27,6 +27,11 @@ it('keeps intentional stops out of the systemd restart loop and lets update exit
   expect(unit).toContain('KillMode=process')
 })
 
+it('#3344 an OOM kill of any cgroup process does not stop the whole unit', () => {
+  const unit = systemdUnit('/home/user/server/current/bin/gugu-server', '/home/user/server')
+  expect(unit).toContain('OOMPolicy=continue')
+})
+
 it('launchd restarts failed updates but exits successfully when stopped before starting the server', () => {
   const plist = launchdPlist('/home/user/server/current/bin/gugu-server', '/home/user/server', '/home/user/server.log')
   expect(plist).toContain('<key>SuccessfulExit</key><false/>')

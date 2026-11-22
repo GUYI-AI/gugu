@@ -57,12 +57,12 @@ vi.mock('@gugu/core/cloud/supabase', () => ({
 vi.mock('@gugu/core/cloud/attachmentsApi', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   configuredEndpoint: (token: string) => ({ supabaseUrl: 'https://db.test', anonKey: 'anon', token }),
-  uploadAttachmentBytes: async (_endpoint: unknown, file: { bytes: Uint8Array }, scope: Row) => {
+  withUploadedAttachment: async (_endpoint: unknown, file: { bytes: Uint8Array }, scope: Row, use: (key: string) => Promise<unknown>) => {
     uploadScopes.push(scope);
     const key = `staging/me/${randomUUID()}`;
     bucketed.push(key);
     stored.set(key, file.bytes);
-    return key;
+    return use(key);
   },
   placeAttachment: async (_endpoint: unknown, args: Row) => {
     places.push(args);

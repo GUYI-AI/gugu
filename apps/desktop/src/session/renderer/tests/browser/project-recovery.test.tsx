@@ -6,19 +6,21 @@ import { Avatar } from '@/components/Avatar';
 import { ProjectRecoverySubtitle } from '@/components/projects/ProjectRecoverySubtitle';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
+import { i18n } from '@/i18n';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 
 const state = vi.hoisted(() => ({ recover: vi.fn(), clean: vi.fn(), pick: vi.fn() }));
 const rows = [{ id: 'paper', chatId: 'paper-group', name: '论文伴读', path: '/missing/paper' as CanonicalPath }, { id: 'weekly', chatId: 'weekly-group', name: '周报整理', path: '/missing/weekly' as CanonicalPath }];
 vi.mock('@/lib/projectRecovery', () => ({
-  useUnavailableProjects: () => ({ projects: rows, refetch: async () => ({ data: rows }) }),
+  readUnavailableProjects: async () => rows,
   recoverUnavailableProject: state.recover, archiveUnavailableProjects: state.clean,
-  projectRecoveryMessage: () => '恢复记录不完整，请联系维护者核对',
+  projectRecoveryMessage: () => '恢复记录不完整，请联系维护者核对。',
 }));
 vi.mock('@/platform', () => ({ platform: { selectDirectory: state.pick } }));
 let harness: ReturnType<typeof createReactHarness>;
 beforeEach(async () => {
+  await i18n.changeLanguage('zh-CN');
   await page.viewport(1100, 800); document.documentElement.dataset.theme = 'light';
   vi.clearAllMocks(); state.recover.mockResolvedValue(undefined); state.clean.mockResolvedValue(undefined); state.pick.mockResolvedValue('/selected');
   harness = createReactHarness(); harness.container.style.cssText = 'width:290px;margin:32px';
@@ -74,7 +76,7 @@ it('keeps a declined directory picker and a recovery failure from changing proje
   await act(async () => {}); expect(state.recover).not.toHaveBeenCalled();
   state.recover.mockRejectedValueOnce(new Error('group_recovery_requires_topic_evidence'));
   await page.elementLocator(button(row, '恢复')).click();
-  await vi.waitFor(() => expect(row.querySelector('[role=alert]')?.textContent).toBe('恢复记录不完整，请联系维护者核对'));
+  await vi.waitFor(() => expect(row.querySelector('[role=alert]')?.textContent).toBe('恢复记录不完整，请联系维护者核对。'));
 });
 it('lets the existing dialog handle Escape without activating its enclosing project row', async () => {
   const opened = vi.fn(); const row = await mount(true, opened);

@@ -67,8 +67,8 @@ export interface ChatDraft {
   setMentionTargets: (u: SetStateAction<MentionTarget[]>) => void
   attachments: PendingAttachment[]
   setAttachments: (u: SetStateAction<PendingAttachment[]>) => void
-  // Empty the composer — words, @s, files, pills — as a send does before it goes.
-  clear: () => void
+  // Empty the composer — words, @s, files, pills — as a send does before it goes. Words typed after `sent` was taken stay.
+  clear: (sent?: string) => void
   // Flush the current mirror to the active chat synchronously. Sends use this
   // after their optimistic clear so a transient unmount cannot resurrect the
   // pre-send draft before the debounce timer fires.
@@ -180,8 +180,9 @@ export function useChatDraft(chatId: string | null | undefined): ChatDraft {
     if (targetKey) flushTo(targetKey)
   }, [cancelFlush, flushTo])
 
-  const clear = useCallback(() => {
-    writeDraft(keyRef.current, '')
+  const clear = useCallback((sent?: string) => {
+    const live = textRef.current.trim()
+    writeDraft(keyRef.current, sent && live.startsWith(sent) ? live.slice(sent.length).trim() : '')
     setMentionTargets([])
     setAttachments([])
   }, [writeDraft, setMentionTargets, setAttachments])

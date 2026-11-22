@@ -3,7 +3,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ nativeInputVersion: undefined as number | undefined, kind: 'project-error', reach: 'Lab Mac is offline' as string | null, link: 'closed', cloud: false, deviceId: 'mac-1' as string | null }));
+const state = vi.hoisted(() => ({ nativeInputVersion: undefined as number | undefined, kind: 'project-error', reach: 'Lab Mac is offline' as string | null, link: 'closed', cloud: false, deviceId: 'mac-1' as string | null, presence: 'present' }));
+const ensureMounted = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const fill = vi.hoisted(() => vi.fn());
 vi.mock('./open-session-in-session', () => ({ openSessionInSessionWhenReady: fill }));
 vi.mock('@renderer/lib/offline-session-slot', () => ({ OfflineSessionSlot: ({ sessionId, label }: { sessionId: string; label: string }) => <div data-offline-session={sessionId}>{label}<textarea aria-label="Native message" /></div> }));
@@ -14,7 +15,8 @@ vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
 vi.mock('@renderer/features/sessions/session-view-context', () => ({
   useSessionViewContext: () => ({ projectId: 'p', sessionId: 's' }), useWorkspaceViewModel: () => ({}),
 }));
-vi.mock('@renderer/features/projects/stores/project-selectors', () => ({ getProjectManagerStore: () => ({ ensureMounted: vi.fn().mockResolvedValue(undefined) }) }));
+vi.mock('@renderer/features/projects/stores/project-selectors', () => ({ getProjectManagerStore: () => ({ ensureMounted }) }));
+vi.mock('@renderer/features/projects/project-presence', () => ({ projectPresence: () => state.presence }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { device: () => ({ label: 'Lab Mac', lastSeenAt: null }), connectionState: () => 'offline', cloudScope: () => state.cloud ? { state: 'asleep' } : null, findListedSession: () => { throw new Error('Input eligibility must not read the directory'); } } }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => state.deviceId } }));
@@ -34,7 +36,7 @@ let root: Root;
 let container: HTMLDivElement;
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 beforeEach(() => {
-  state.nativeInputVersion = undefined; state.kind = 'project-error'; state.reach = 'Lab Mac is offline'; state.link = 'closed'; state.cloud = false; state.deviceId = 'mac-1'; fill.mockClear();
+  state.nativeInputVersion = undefined; state.kind = 'project-error'; state.reach = 'Lab Mac is offline'; state.link = 'closed'; state.cloud = false; state.deviceId = 'mac-1'; state.presence = 'present'; fill.mockClear(); ensureMounted.mockClear();
   container = document.body.appendChild(document.createElement('div'));
   root = createRoot(container);
 });
@@ -121,4 +123,40 @@ it('does not create an input target when the machine id is unavailable', () => {
   render();
   expect(container.querySelector('[data-offline-session]')).toBeNull();
   expect(body()).toBe('Lab Mac is offline');
+});
+
+// #3425 A project of another machine that the table does not have yet, while only its machine's own list can say whether it exists
+// (the machine's hidden task workspace is in no account copy): the guard lets the view through, and the pane must not be blank.
+describe('a project of another machine that is not in the table yet', () => {
+  it('shows the offline machine screen of an unmounted project, with the native input', () => {
+    state.kind = 'missing'; state.presence = 'unknown';
+    render();
+    expect(body()).toBe('Lab Mac is offline');
+    expect(container.querySelector('[data-offline-session="s"] textarea')).not.toBeNull();
+    expect(container.querySelector('button')).toBeNull();
+  });
+
+  it('keeps cloud wake ahead of it, as for an unmounted project', () => {
+    state.kind = 'missing'; state.presence = 'unknown'; state.cloud = true;
+    render();
+    expect(container.textContent).toBe('remoteHost.status.waking');
+  });
+
+  it('does not start mounting before the project is registered; mounts when it is', () => {
+    state.kind = 'missing'; state.presence = 'unknown';
+    render();
+    expect(ensureMounted).not.toHaveBeenCalled();
+    state.kind = 'project-mounting'; state.presence = 'present';
+    render();
+    expect(ensureMounted).toHaveBeenCalledExactlyOnceWith('p');
+  });
+
+  it('stays empty for a project known to be gone, and for one no machine owns', () => {
+    state.kind = 'missing'; state.presence = 'deleted';
+    render();
+    expect(container.textContent).toBe('');
+    state.presence = 'unknown'; state.deviceId = null;
+    render();
+    expect(container.textContent).toBe('');
+  });
 });

@@ -4,7 +4,7 @@ import type { AgentStatusPresentation } from '@gugu/core/shared/agentStatusPrese
 import type { AgentDisplayStatus, Device } from '@gugu/core/shared/types/chat'
 import { displayStatusOf } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentCloudState } from '@/lib/agentReplyPending'
-import { refreshCloudComputer } from '@/lib/cloudComputerStore'
+import { cloudComputer, cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 import { useContactsStore } from '@/store/contactsContext'
 import { useDevicesStore } from '@/store/devicesContext'
 import { readIdentityDirectoryBridge, type IdentityDirectorySnapshot } from '@/lib/identityDirectoryBridge'
@@ -57,7 +57,7 @@ export function useAgentsOnCloudComputer(): ReclaimedAgents {
  * 云端宿主(管家说 asleep / waking、没报错):发给它的消息照收 —— 排一条 agent.deliver,管家见待领命令就叫醒宿主
  * (同 core `deviceAcceptsWork`:云电脑休眠中 ≠ 离线)。所以 ❌ 画睡团、❌ 说「不在线」,也 ❌ 说「在线」(宿主此刻
  * 确实没起来):不画状态 —— 头像是本体、不出状态字。出错时管家报 error、叫醒被拒时(管家仍说 asleep)由
- * cloudComputerStore.wakeRefused 摘掉那一行的 cloud_computer,都不再算收回着,照读数如实说;
+ * lib/cloudComputer 的 wakeRefusals 摘掉那一行的 cloud_computer,都不再算收回着,照读数如实说;
  * 别人的 agent 住哪管家不告诉我们,照读数说。只用于画头像 / 写状态字;能不能发、提醒、在跑照旧读原读数。
  */
 export function useShownAgentStatus() {
@@ -73,12 +73,6 @@ export function useShownAgentStatus() {
       /** 按 id 直接取读数的那一份(成员资料表):收回着的那几位缺席 = 不画。❌ 喂给缺席即「确认中」的(groupAgentDisplayStatus)。 */
       statuses: (statuses: Readonly<Record<string, AgentDisplayStatus>>): Record<string, AgentDisplayStatus> =>
         Object.fromEntries(Object.entries(statuses).filter(([agentUserId, status]) => !quiet(agentUserId, status))),
-      /** 群的那一个汇总点:收回着的那几位不参与(只剩他们 = 不画点);读数原样交给汇总。 */
-      members: <T extends string | { id: string }>(members: readonly T[] | undefined, statuses: Readonly<Record<string, AgentDisplayStatus>>): T[] | undefined =>
-        members?.filter((member) => {
-          const id = typeof member === 'string' ? member : member.id
-          return !quiet(id, statuses[id])
-        }),
     }
   }, [reclaimed])
 }
@@ -90,11 +84,10 @@ export type ShownAgentStatus = ReturnType<typeof useShownAgentStatus>
  */
 export function useRefreshCloudComputerFor(agentUserId: string | null): void {
   const { contacts } = useContactsStore()
-  const { cloudComputer } = useDevicesStore()
-  const cloudDeviceId = cloudComputer?.snapshot?.deviceId ?? null
+  const cloudDeviceId = cloudSnapshotOf(useCloudComputer())?.deviceId ?? null
   const onCloud = !!agentUserId && !!cloudDeviceId && contacts.some((c) => c.id === agentUserId && c.device_id === cloudDeviceId)
   useEffect(() => {
-    if (onCloud) void refreshCloudComputer().catch(() => undefined)
+    if (onCloud) void cloudComputer.refresh()
   }, [agentUserId, onCloud])
 }
 
@@ -104,8 +97,8 @@ export function useRefreshCloudComputerFor(agentUserId: string | null): void {
  */
 export function useAgentCloudState(agentUserId: string | null): AgentCloudState {
   const { contacts } = useContactsStore()
-  const { devices, cloudComputer } = useDevicesStore()
-  const snapshot = cloudComputer?.snapshot ?? null
+  const { devices } = useDevicesStore()
+  const snapshot = cloudSnapshotOf(useCloudComputer())
   return useMemo(() => {
     if (!agentUserId) return null
     const deviceId = contacts.find((c) => c.id === agentUserId && c.type === 'agent')?.device_id

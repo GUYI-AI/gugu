@@ -18,7 +18,7 @@ import { Check, ChevronRight, Search } from '@/lib/icons'
 import { popupMotion } from './variants'
 import { useBackLayer } from './sheetStack'
 import { useMobileShell } from '../../hooks/useMobileShell'
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives'
+import { useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives'
 import { Switch } from './Switch'
 
 // @@@menu-variants - 菜单样式的唯一真相。`gg-menu*` 类名保留但不再承载样式:
@@ -77,6 +77,11 @@ export const menuRowClassName = menuItem
 export const menuRowLabelClassName = menuItemLabel
 const menuSurfacePadding = 'var(--gg-menu-padding, 4px)'
 const menuRowPadding = 'var(--gg-menu-item-padding, 6px 10px)'
+
+/** A row the size of a menu item that is not one: a placeholder while the items are not known, or why they are not. */
+export function MenuRow({ children }: { children: ReactNode }) {
+  return <div className="flex w-full min-h-9 items-center [padding:var(--gg-menu-item-padding,6px_10px)]">{children}</div>
+}
 
 /** A pointer coordinate (context menu) or the element the menu was opened from. */
 export type MenuAnchorProps =
@@ -147,7 +152,7 @@ export function Menu({
       <MenuPrimitive.Portal container={portalContainer}>
         {backdropClassName && <MenuPrimitive.Backdrop className={backdropClassName} />}
         <MenuPrimitive.Positioner
-          className={cn('gg-menu-positioner window-no-drag-region', menuPositioner)}
+          className={cn('gg-menu-positioner', menuPositioner)}
           anchor={elementAnchor ?? pointAnchor}
           positionMethod="fixed"
           side="bottom"
@@ -160,6 +165,7 @@ export function Menu({
           sticky
           style={{ zIndex }}
         >
+          <OpenLayer />
           <MenuPrimitive.Popup
             finalFocus={finalFocus}
             className={popupClassName ?? menuPopup}
@@ -328,7 +334,7 @@ export function MenuSubmenu({ icon, label, 'data-testid': testId, popupStyle, po
         <ChevronRight size={14} aria-hidden className="shrink-0 text-[var(--menu-icon)]" />
       </MenuPrimitive.SubmenuTrigger>
       <MenuPrimitive.Portal container={portalContainer}>
-        <MenuPrimitive.Positioner className="gg-menu-positioner window-no-drag-region" positionMethod="fixed" collisionPadding={8} style={submenuPositionerStyle}>
+        <MenuPrimitive.Positioner className="gg-menu-positioner" positionMethod="fixed" collisionPadding={8} style={submenuPositionerStyle}>
           <MenuPrimitive.Popup className={cn(menuPopup, popupClassName)} data-occludes-browser-page style={style}>
             {search && <MenuSearch {...search} />}
             {children}
@@ -412,7 +418,7 @@ function DropdownMenuContent({
   return (
     <MenuPrimitive.Portal container={portalContainer}>
       <MenuPrimitive.Positioner
-        className="gg-menu-positioner window-no-drag-region"
+        className="gg-menu-positioner"
         positionMethod="fixed"
         side={side}
         align={align}
@@ -421,6 +427,7 @@ function DropdownMenuContent({
         collisionPadding={8}
         style={{ zIndex }}
       >
+        <OpenLayer />
         <MenuPrimitive.Popup
           className={cn(menuPopup, className)}
           data-occludes-browser-page

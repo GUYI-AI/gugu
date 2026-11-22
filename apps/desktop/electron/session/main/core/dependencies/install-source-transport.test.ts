@@ -19,7 +19,7 @@ describe('mise environment route', () => {
   it.each([{ ALL_PROXY: 'socks5://127.0.0.1:1' }, { NO_PROXY: '10.0.0.0/8' }, { NO_PROXY: 'mirror.test:443' }, { HTTPS_PROXY: 'http://a:1', https_proxy: 'http://b:2' }, { SSL_CERT_FILE: '/custom.pem' }])('does not silently change unsupported routes %j', (env) => {
     expect(() => installProxyRoute(env, 'https://mirror.test/a')).toThrow();
   });
-  it('actual local requests use the supplied proxy; NO_PROXY switches to direct without process.env', async () => {
+  it('actual requests use the supplied proxy; loopback goes direct, as for mise, without process.env', async () => {
     const destination = createServer((_req, res) => res.end('archive'));
     const proxy = createServer();
     let hits = 0;
@@ -34,17 +34,16 @@ describe('mise environment route', () => {
     });
     await new Promise<void>((done) => destination.listen(0, '127.0.0.1', done));
     await new Promise<void>((done) => proxy.listen(0, '127.0.0.1', done));
-    const url = `http://127.0.0.1:${(destination.address() as AddressInfo).port}/artifact`;
+    const port = (destination.address() as AddressInfo).port;
     const env = { HTTP_PROXY: `http://127.0.0.1:${(proxy.address() as AddressInfo).port}` };
-    const via = createInstallTransport(env);
-    const direct = createInstallTransport({ ...env, NO_PROXY: '127.0.0.1' });
+    const transport = createInstallTransport(env);
     try {
-      expect(await (await via.fetch(url)).text()).toBe('archive');
+      // The test proxy tunnels every CONNECT to the local destination, so the mirror name needs no DNS.
+      expect(await (await transport.fetch(`http://mirror.test:${port}/artifact`)).text()).toBe('archive');
       expect(hits).toBe(1);
-      expect(await (await direct.fetch(url)).text()).toBe('archive');
+      expect(await (await transport.fetch(`http://127.0.0.1:${port}/artifact`)).text()).toBe('archive');
       expect(hits).toBe(1);
     } finally {
-      await Promise.all([via.close(), direct.close()]);
       proxy.closeAllConnections(); destination.closeAllConnections();
       await Promise.all([new Promise<void>((done) => proxy.close(() => done())), new Promise<void>((done) => destination.close(() => done()))]);
     }

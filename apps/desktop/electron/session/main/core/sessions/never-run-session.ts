@@ -1,6 +1,8 @@
-import { count, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
-import { sessions, sessionTurns } from '@main/db/schema';
+import { sessions } from '@main/db/schema';
+import { indexedTurnCount } from '../session-index/session-index';
+import { ensureSessionIndexed } from '../session-timeline/service';
 
 /**
  * 云端 `agent.create` 不带首句建出来的常驻 agent,从前行上记的首轮就是这一句占位(新建会话必须带首轮,
@@ -18,21 +20,17 @@ export const RESIDENT_AGENT_FIRST_UTTERANCE = 'preset team member runtime';
  * 按 id 找回时得到 `Resource not found` —— 从前这条会话从此每次唤醒都失败,私聊永远没人回。
  *
  * 不认的两种,照旧如实报 missing:
- * - 有已提交回合(`session_turns`,#5381)= 聊过。
+ * - 时间线里有回合(会话索引,`core/session-index`)= 聊过。
  * - 记着真首轮的 = 首轮没跑完的会话,spec session-resume 说照**那句**重来,由界面的「重来」走 restartSession;
  *   这里 ❌ 不替它重放 —— 存下来的那句没有当时的投递信封,原样重发会把回复送错地方。
  *
- * ⚠️ 盲区:#5381 之前聊过、之后没重开过(或从编程模式切过来)的会话同样没有回合行;若它恰好也没有真首轮,
- * 会被认成这一种。runtime 新开时照旧画「往上的内容它没有」那条界,如实告知,❌ 静默换掉。
  */
 export async function isResidentNeverRun(sessionId: string): Promise<boolean> {
-  const [[row], [turns]] = await Promise.all([
-    db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).limit(1),
-    db.select({ n: count() }).from(sessionTurns).where(eq(sessionTurns.sessionId, sessionId)),
-  ]);
+  const [row] = await db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
   const config = row?.config;
   if (!config) return false;
-  if ((turns?.n ?? 0) > 0) return false;
+  await ensureSessionIndexed(sessionId);
+  if (indexedTurnCount(sessionId) > 0) return false;
   if (config.type === 'acp' && config.initialQueue?.some((prompt) => prompt.text.trim() || prompt.files?.length)) return false;
   if (config.initialPrompt?.trim()) return false;
   const said = config.firstUtterance?.trim();

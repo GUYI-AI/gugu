@@ -1,12 +1,10 @@
-import { memo, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
+import { memo, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
-import { observer } from 'mobx-react-lite'
 import '../../i18n/registerAssistantCatalog'
 import { ChatAreaPanel } from '../ChatAreaPanel'
 import type { AssistantChatHandlers } from '../assistant/AssistantChatSlot'
 import { Plus } from '../../lib/icons'
-import { rendererLogger } from '../../lib/log'
 import { useReportChatOnScreen } from '../../lib/onScreenChat'
 import { installShellSlots, readShellSlots } from '../../lib/shellSlots'
 import { APP_CONVERSATION_SLOT_PREFIX, installAppConversationSurfaceBridge, noteAppConversationDrawn, publishAppConversationSurfaces } from '../../lib/appConversationSurfaceBridge'
@@ -15,32 +13,19 @@ import { useAuth } from '../../store/auth'
 import { useAppComposerEntries } from './appComposerActions'
 import { AppComposerRow } from './AppComposerRow'
 import { useStoreValueBy } from '../../store/chatContext'
-import { events, rpc } from '@/session/renderer/lib/ipc'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
-import type { ExtensionManifest } from '@/session/shared/extensions/manifest'
-import { extensionsInventoryChangedChannel } from '@/session/shared/extensions/marketEvents'
-import type { GrantedSurfaceBinding } from '@/session/shared/extensions/unread-binding'
+import { LOCAL_HOST, useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
+import { useReplica } from '../../lib/replica'
+import { appSurfaceBindings, installedAs } from './appBindingReplicas'
 
 installShellSlots()
 installAppConversationSurfaceBridge()
 
-const log = rendererLogger('app-conversation-surface')
 const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
 // The built-in assistant's chat face (AssistantChatSlot), without its typing line. The 「+」 holds what the App declares for
 // the person's own assistant chat (API 48, appComposerActions.tsx), run by the host. Over that chat (46's `header`, main's
 // word) the composer says what the built-in's did, 「和<its name>聊天」, the name read as the host's row reads it, and the row
 // above it has the built-in's 「自定义<name>」 hint and the App's capsule (AppComposerRow).
 const noop = () => () => undefined
-
-/** What one read answered for one account: each App's binding, and each App as installed when it was read. */
-type Verified = { ownerId: string; bindings: Record<string, GrantedSurfaceBinding>; installed: Record<string, string> }
-/** Apps main said changed (`extensionsInventoryChangedChannel`) since the last read, and how many such notes there were. */
-type Changed = { apps: ReadonlySet<string>; serial: number }
-
-/** One App as installed here: what its update, or a reinstall from another publisher, changes. Another App's never does. */
-function installedAs(manifest: ExtensionManifest): string {
-  return JSON.stringify([manifest, installedExtensionsStore.origins[manifest.id] ?? null, installedExtensionsStore.publishers[manifest.id] ?? null])
-}
 
 /**
  * #1925 An App's main page beside the conversation its binding is bound to: the shell's half. Which conversation may be
@@ -54,52 +39,35 @@ function installedAs(manifest: ExtensionManifest): string {
  * leaves the column's slot; the conversation itself is the ordinary native one (ChatAreaPanel), in this tree. Nothing of it
  * reaches the App.
  */
-export const AppConversationSurfaceHost = observer(function AppConversationSurfaceHost({ visible, ...handlers }: {
+export function AppConversationSurfaceHost({ visible, ...handlers }: {
   /** 会话页那一屏此刻摆在眼前(MainLayout 的 tab 在「任务」):与「助理」App 的聊天同一条判据。 */
   visible: boolean
 } & AssistantChatHandlers) {
   const { user } = useAuth()
   const ownerId = user?.id ?? null
-  const inventory = installedExtensionsStore.manifests
-  const placing = inventory.filter((manifest) => manifest.contributes.conversationSurface && installedExtensionsStore.isEnabled(manifest.id))
+  const installedReading = useInstalledApps(LOCAL_HOST)
+  const installed = installedReading.state === 'value' ? installedReading.value : null
+  const inventory = installed?.manifests
+  // Unknown: no column is placed yet (it comes with the list), and `lapsed` below keeps what was verified meanwhile.
+  const placing = installed ? installed.manifests.filter((manifest) => manifest.contributes.conversationSurface && installed.isEnabled(manifest.id)) : []
   const wanted = placing.length > 0
-  const [verified, setVerified] = useState<Verified | null>(null)
-  const [changed, setChanged] = useState<Changed>({ apps: new Set(), serial: 0 })
-  useEffect(() => events.on(extensionsInventoryChangedChannel, (note) => {
-    const extensionId = note?.extensionId
-    setChanged((before) => ({ apps: extensionId ? new Set([...before.apps, extensionId]) : before.apps, serial: before.serial + 1 }))
-  }), [])
-  // Another account's read is never used again, not even on switching back.
-  useEffect(() => { setVerified((before) => (before && before.ownerId !== ownerId ? null : before)) }, [ownerId])
+  // main's verified bindings (`appSurfaceBindings`), followed for the account even while no App places a column, so an App
+  // reinstalled is drawn only after a new read; asked of main only while one does.
+  const reading = useReplica(appSurfaceBindings, ownerId ? [] : null, { read: wanted })
+  // Not read yet, or unreadable: no column (an authority not verified draws nothing).
+  const current = reading.state === 'value' ? reading.value : null
+  // An App switched off, uninstalled, or not as it was installed when read: not drawn — only a new read brings it back.
+  const lapsed = current && installed ? Object.keys(current.bindings).filter((id) => !placing.some((manifest) => manifest.id === id && current.installed[id] === installedAs(installed, manifest))) : []
+  // What is installed changed and a column lapsed for it: read again, once per list.
+  const lapsedOn = useRef<object | null>(null)
   useEffect(() => {
-    if (!ownerId || !wanted) return
-    let disposed = false
-    const asked = changed.serial
-    const installed = Object.fromEntries(inventory.map((manifest) => [manifest.id, installedAs(manifest)]))
-    void rpc.extensions.conversationSurfaceBindings({ ownerId }).then((result) => {
-      if (disposed) return
-      if (!result.success || result.data.ownerId !== ownerId) throw new Error('App conversation surface authority unavailable')
-      setVerified({ ownerId, bindings: result.data.bindings, installed })
-      setChanged((now) => (now.serial === asked && now.apps.size > 0 ? { apps: new Set(), serial: asked } : now))
-    }).catch((error: unknown) => {
-      // A read that failed takes nothing back that it could not check: what was verified stays, an App changed stays undrawn.
-      if (!disposed) log.warn({ error }, 'Could not verify App conversation surfaces')
-    })
-    return () => { disposed = true }
-  }, [ownerId, inventory, wanted, changed.serial])
-  const current = verified && verified.ownerId === ownerId ? verified : null
-  // An App switched off, uninstalled, or not as it was installed when read: not drawn, and forgotten — only a new read
-  // brings it back, never this one.
-  const lapsed = current ? Object.keys(current.bindings).filter((id) => !placing.some((manifest) => manifest.id === id && current.installed[id] === installedAs(manifest))) : []
-  const lapsedKey = lapsed.join('\n')
-  useEffect(() => {
-    if (!lapsedKey) return
-    const gone = new Set(lapsedKey.split('\n'))
-    setVerified((before) => before && { ...before, bindings: Object.fromEntries(Object.entries(before.bindings).filter(([id]) => !gone.has(id))) })
-  }, [lapsedKey])
+    if (lapsed.length === 0 || !inventory || lapsedOn.current === inventory) return
+    lapsedOn.current = inventory
+    void appSurfaceBindings.refresh()
+  }, [lapsed.length, inventory])
   const candidates = placing.flatMap((manifest) => {
     const binding = current?.bindings[manifest.id]
-    if (!binding || changed.apps.has(manifest.id) || lapsed.includes(manifest.id)) return []
+    if (!binding || lapsed.includes(manifest.id)) return []
     // 46: the host's row above it, only as main verified it for this read (declared, and the account's own assistant chat).
     const header = binding.header === 'assistant' && manifest.contributes.conversationSurface?.header === 'assistant' ? 'assistant' : null
     return binding.ownerId === ownerId && binding.name === manifest.contributes.conversationSurface?.binding ? [[manifest.id, binding.chatId, binding.authority, header] as const] : []
@@ -135,7 +103,7 @@ export const AppConversationSurfaceHost = observer(function AppConversationSurfa
       })}
     </>
   )
-})
+}
 
 /**
  * The assistant the shell has for this account, when `chatId` is its private chat (as the host's row above it reads it,

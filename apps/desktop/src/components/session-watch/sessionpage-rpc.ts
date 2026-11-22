@@ -4,8 +4,8 @@ import { SessionInputAdmissionError, sessionInputAdmission } from '@gugu/core/sh
 import { invokePhoneHost } from '../../mobile/local-agent/phoneHostRpc'
 import type { ToolImage } from '@gugu/session-core/acp/client'
 import { rendererLogger } from '@/lib/log'
-import { readCachedDevices, subscribeCachedDevices } from '@/store/devicesCache'
-import { getCloudComputerState, subscribeCloudComputerState } from '@/lib/cloudComputerStore'
+import { devicesModel, readCachedDevices } from '@/store/devicesCache'
+import { cloudComputer, cloudSnapshotOf } from '@/lib/cloudComputer'
 import { remoteHostReachable } from '@/session/shared/remote-hosts'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { appCallWaitMs, type AppCallAction, type AppMessageAction, type AppMessageReceipt, type AppSpawnAction } from '@gugu/session-core/session-record/contract'
@@ -50,6 +50,7 @@ import type {
 // ⚠️ 只能从 `/contract` 取,❌ 不许写成 `@gugu/session-core/session-record`:那个 barrel 会往下拖
 // node:fs 与 better-sqlite3(宿主侧的记录源),浏览器里首屏直接白屏 —— 实测过一次。
 import type { SessionpageSessionOptionsWithMenu } from '@main/core/session-timeline/session-model-menu'
+import { i18n } from '@/i18n/runtime'
 
 /**
  * 手机 → 某台机器的会话页:与别的电脑同一条线(`taskhost.*` 窗口)、同一张有类型的路由表(`sessionTimeline.*`)。
@@ -63,7 +64,8 @@ const hosts = new Map<string, SessionHostClient>()
 
 function reachable(deviceId: string): boolean {
   const device = readCachedDevices().find((row) => row.device_id === deviceId)
-  const snapshot = getCloudComputerState().snapshot
+  // A one-moment decision outside rendering (is the link worth opening now).
+  const snapshot = cloudSnapshotOf(cloudComputer.peek())
   const cloud = snapshot?.deviceId === deviceId ? snapshot.state : device?.cloud_computer
   // An empty/unfinished device directory is unknown, not proof of an offline host.
   return remoteHostReachable({
@@ -80,8 +82,8 @@ function host(deviceId: string): SessionHostClient {
       isReachable: () => reachable(deviceId),
       peerVersion: () => readCachedDevices().find(device => device.device_id === deviceId)?.capabilities?.app_version ?? null,
       subscribeReachability: (listener) => {
-        const stopCloud = subscribeCloudComputerState(listener)
-        const stopDevices = subscribeCachedDevices(listener)
+        const stopCloud = cloudComputer.subscribe([], () => listener())
+        const stopDevices = devicesModel.subscribe([], () => listener())
         return () => { stopCloud(); stopDevices() }
       },
       subscribeEvents: true,
@@ -201,8 +203,8 @@ export function fetchAfter(deviceId: string, sessionId: string, cursor: RecordCu
   return value(once(deviceId).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim: true }))
 }
 
-export function fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, cursor?: TimelineSnapshot['olderCursor']): Promise<TimelineOlderResult> {
-  return value(rpc(deviceId).sessionTimeline.sessionOlder({ conversationId: sessionId, ...(cursor ? { cursor } : { beforeTurnId }), limit, trim: true }))
+export function fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number): Promise<TimelineOlderResult> {
+  return value(rpc(deviceId).sessionTimeline.sessionOlder({ conversationId: sessionId, beforeTurnId, limit, trim: true }))
 }
 
 /**
@@ -227,7 +229,7 @@ export async function sendSessionText(deviceId: string, sessionId: string, text:
   const result = await rpc(deviceId).sessionTimeline.sessionSend({ conversationId: sessionId, text, ...(clientMessageId ? { clientMessageId } : {}), ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}) })
   if (!result.ok) throw new SessionInputAdmissionError(result.error.message, sessionInputAdmission(result.error), result.error.code)
   const receipt = result.value
-  if (clientMessageId && receipt.clientMessageId !== clientMessageId) throw new Error('会话尚未确认接收这条消息，稍后自动重试')
+  if (clientMessageId && receipt.clientMessageId !== clientMessageId) throw new Error(i18n.t('composer.sessionInput.notConfirmed', { ns: 'messaging' }))
   return receipt
 }
 

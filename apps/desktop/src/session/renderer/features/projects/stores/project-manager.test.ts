@@ -744,6 +744,26 @@ describe('remote project classification on reconnect', () => {
     }
   });
 
+  it('does not re-point a task at a project this desktop has no entry for (the other machine\'s hidden task workspace is in no account copy)', async () => {
+    const { machineRegistry } = await import('@renderer/lib/machine-routing');
+    const deviceId = 'other-config-device';
+    const home = '00000000-0000-4000-8000-000000000001';
+    const ordinary = localProject({ id: 'other-config-project' });
+    const store = new ProjectManagerStore();
+    const saved = appState.navigation.viewParamsStore;
+    appState.navigation.viewParamsStore = { session: { projectId: home, sessionId: 'local-task' } };
+    try {
+      // that machine's session list names the same task under its hidden task workspace, which its project list does not carry
+      store.syncMachineProjects(deviceId, [ordinary], [{ conversationId: 'local-task', projectId: `${home}~${deviceId}` }]);
+      expect(appState.navigation.updateViewParams).not.toHaveBeenCalled();
+    } finally {
+      appState.navigation.viewParamsStore = saved;
+      vi.mocked(appState.navigation.updateViewParams).mockReset();
+      store.dispose();
+      machineRegistry.forgetMachine(deviceId);
+    }
+  });
+
   it('aligns a moved task after registering its new project and before removing the old one or checking the route', async () => {
     const { machineRegistry } = await import('@renderer/lib/machine-routing');
     const deviceId = 'migrated-assistant-device';
@@ -801,6 +821,20 @@ describe('#581 这台电脑的项目不被别的机器认领', () => {
     store.dropMachine('stale-row-1');
     machineRegistry.forgetMachine('stale-row-1');
     expect(store.projects.has(mine.id)).toBe(true);
+  });
+
+  it('同一台 server 两条设备行:旧行的账号副本抢不走活的那台答过的项目,也不因它的清单变了拿掉', async () => {
+    const { machineRegistry } = await import('@renderer/lib/machine-routing');
+    const theirs = localProject({ id: 'server-project-two-rows', name: 'srv' });
+    const store = new ProjectManagerStore();
+    vi.spyOn(store, 'mountProject').mockResolvedValue(undefined);
+    store.syncMachineProjects('live-row', [theirs]);
+    store.syncMachineProjects('stale-row', [theirs], [], 'account');
+    expect(machineRegistry.machineOf(theirs.id)).toBe('live-row');
+    store.syncMachineProjects('stale-row', [], [], 'account');
+    expect(store.projects.has(theirs.id), '旧行的清单空了,活的那台的项目还在').toBe(true);
+    store.dropMachine('stale-row'); store.dropMachine('live-row');
+    machineRegistry.forgetMachine('stale-row'); machineRegistry.forgetMachine('live-row');
   });
 
   it('本机清单先到:别的机器的清单(账号副本)再写着它也认领不走,那台的清单变了 / 被移除都拿不掉它', async () => {

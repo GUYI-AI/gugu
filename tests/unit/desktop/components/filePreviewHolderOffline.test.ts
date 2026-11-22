@@ -15,7 +15,7 @@ const { readBytes, metadata, devices } = vi.hoisted(() => ({
 vi.mock('@/lib/guguLinks', () => ({ openLinkTarget: vi.fn() }))
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }))
 vi.mock('@/lib/attachmentBytes', () => ({
-  attachmentBytes: readBytes, sourceKeyOf: () => 'notes', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),
+  attachmentBytes: readBytes, sourceKeyOf: () => 'notes', attachmentPreview: vi.fn(), localAttachmentUrl: async () => null, openAttachmentInSystemApp: vi.fn(),
 }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: metadata }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: devices.rows }) }))
@@ -29,7 +29,7 @@ function Conversation() {
   const preview = useMessageFilePreview({ mobile: false, visible: true, closeRightSurfaces: () => undefined, toast: () => undefined, onForward: () => undefined })
   return createElement('div', null,
     createElement('button', { onClick: () => preview.open({ kind: 'file', fileName: 'notes.md', mimeType: 'text/markdown', sizeBytes: 28, source: { kind: 'item', itemId: 'notes', version: 2 } }) }, 'open'),
-    preview.panel)
+    preview.beside(null))
 }
 const kept = (online: boolean, label: string | null) => ({ status: 'ready', revision: { source: 'local', host_online: online, host_label: label, host_device_id: 'mac' } })
 
@@ -72,7 +72,7 @@ describe('a project file whose machine is off', () => {
     for (const answer of [kept(true, 'Studio Mac'), { status: 'ready', revision: { source: 'managed-object' } }]) {
       metadata.mockResolvedValue(answer)
       await open()
-      expect(pane.textContent).toBe('文件暂时打不开')
+      expect(pane.textContent).toBe('文件暂时无法打开')
       harness.cleanup(); harness = createReactHarness(); pane.replaceChildren()
     }
   })

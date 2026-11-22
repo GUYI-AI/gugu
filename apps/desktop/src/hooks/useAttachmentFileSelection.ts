@@ -8,7 +8,7 @@ export function useAttachmentFileSelection(attachments: readonly { id: string; f
   const mobile = useMobileShell()
   const { selection } = useMemo(() => ({ scope, selection: createAttachmentFileSelection(() => notify({
     key: 'mobile-attachment-limit', title: translateSessionMessage('composer.attachmentLimit'),
-    tier: 'info', presentation: 'compact', duration: 1500,
+    tier: 'info', duration: 1500,
   })) }), [scope])
   selection.observe(attachments)
   return useMemo(() => ({

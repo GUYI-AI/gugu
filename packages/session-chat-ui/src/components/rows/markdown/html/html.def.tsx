@@ -39,7 +39,7 @@ function hydrateMentionIcons(root: HTMLElement): () => void {
       img.alt = '';
       slot.appendChild(img);
     } else if (icon === 'file') {
-      disposers.push(render(() => <FileMark name={iconName ?? ''} size={12} />, slot));
+      disposers.push(render(() => <FileMark name={iconName ?? ''} size={12} ink />, slot));
     } else {
       const Icon = KIND_ICONS[icon as keyof typeof KIND_ICONS] ?? MentionAtIcon;
       disposers.push(render(() => <Icon />, slot));

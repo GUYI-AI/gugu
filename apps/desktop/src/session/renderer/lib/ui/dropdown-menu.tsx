@@ -1,7 +1,7 @@
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { CheckIcon, ChevronRightIcon } from '@/lib/icons'
 import * as React from 'react';
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives';
+import { useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
@@ -43,6 +43,7 @@ function DropdownMenuContent({
         // 不经 Trigger 弹出时(附件卡的「侧边栏 ▾」在 Solid 那棵树里)靠它定位。
         anchor={anchor}
       >
+        <OpenLayer />
         <MenuPrimitive.Popup
           data-slot="dropdown-menu-content"
           className={cn(

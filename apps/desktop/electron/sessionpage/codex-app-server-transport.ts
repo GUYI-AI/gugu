@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import http from 'node:http'
+import { loopbackRequest } from '@gugu/core/local/loopback'
 import net from 'node:net'
 import type { ChildProcess } from 'node:child_process'
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
@@ -119,7 +119,7 @@ function probeWebSocketReadiness(endpoint: CodexAppServerEndpoint): Promise<bool
       settled = true
       resolve(ready)
     }
-    const request = http.request(
+    const request = loopbackRequest(
       {
         ...(endpoint.kind === 'unix'
           ? { socketPath: endpoint.socketPath }

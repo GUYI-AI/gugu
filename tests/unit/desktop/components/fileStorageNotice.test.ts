@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, createElement, Fragment } from 'react'
 import { focusManager, notifyManager, onlineManager } from '@tanstack/react-query'
-import { toast, type Action } from 'sonner'
+import { toast } from 'sonner'
+import { persistentNotices, dismissNotice } from '../../../../apps/desktop/src/lib/notices'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chat, createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
@@ -37,6 +38,7 @@ describe('group manager storage notice', () => {
   })
   afterEach(() => {
     harness.cleanup()
+    for (const banner of persistentNotices.read()) dismissNotice(banner.key)
     fileStorageUsageClient.clear()
     focusManager.setFocused(undefined)
     onlineManager.setOnline(true)
@@ -51,19 +53,20 @@ describe('group manager storage notice', () => {
     })
     await tick()
   }
-  const lastWarning = () => vi.mocked(toast.warning).mock.calls.at(-1)!
+  // The storage warning is a persistent notice: it lives in the banner slot (lib/notices), not in the toast strip.
+  const shown = () => persistentNotices.read().find((banner) => banner.title?.startsWith('attachmentView.storage'))
   const attachment = (id: string) => message({ chat_id: chatId, id, content_type: 'attachment' })
 
   it.each(['owner', 'admin'] as const)('reads only the existing metadata RPC as the actual %s account', async role => {
     await render(role)
     expect(rpc).toHaveBeenCalledExactlyOnceWith('file_transfer_group_usage', { p_chat: chatId, p_as: 'user-1' })
     expect(harness.container.textContent).toBe('')
-    expect(toast.warning).not.toHaveBeenCalled()
+    expect(shown()).toBeUndefined()
   })
   it('does not query for ordinary members, unknown roles or private chats', async () => {
     await render('member'); await render(null); await render('owner', [], 'dm')
     expect(rpc).not.toHaveBeenCalled()
-    expect(toast.warning).not.toHaveBeenCalled()
+    expect(shown()).toBeUndefined()
   })
   it('keeps a failed background read out of the composer without a retry row', async () => {
     rpc.mockResolvedValue(unavailable)
@@ -73,19 +76,19 @@ describe('group manager storage notice', () => {
     expect(harness.container.querySelector('button')).toBeNull()
     expect(harness.container.textContent).toBe('')
     expect(toast.error).not.toHaveBeenCalled()
-    expect(toast.warning).not.toHaveBeenCalled()
+    expect(shown()).toBeUndefined()
   })
   it.each([false, true])('uses one shared notice with verified used/reserved bytes, never an inline strip (%s)', async full => {
     rpc.mockResolvedValue({ data: { ...warning, full }, error: null })
     await render()
     expect(harness.container.querySelector('[role="status"]')).toBeNull()
     expect(harness.container.textContent).toBe('')
-    expect(lastWarning()[0]).toBe(`${full ? 'attachmentView.storageFull' : 'attachmentView.storageWarning'} 900 B / 1000 B`)
-    expect(lastWarning()[1]).toMatchObject({ duration: Infinity, closeButton: true })
+    expect(shown()?.title).toBe(`${full ? 'attachmentView.storageFull' : 'attachmentView.storageWarning'} 900 B / 1000 B`)
+    expect(shown()).toMatchObject({ ongoing: true, tier: 'warning' })
+    expect(toast.warning).not.toHaveBeenCalled()
     const listener = vi.fn()
     window.addEventListener(UI_EVENTS.openApp, listener)
-    const action = lastWarning()[1]?.action as Action
-    action.onClick({} as never)
+    shown()!.action!.onClick()
     expect(listener.mock.calls[0][0].detail).toEqual({ extensionId: 'workspace', chatId })
     window.removeEventListener(UI_EVENTS.openApp, listener)
   })
@@ -100,7 +103,7 @@ describe('group manager storage notice', () => {
       expect(rpc).toHaveBeenCalledTimes(index + 2)
     }
     expect(console.error).toHaveBeenCalledWith('[files/storage-usage] could not read group file storage usage', expect.objectContaining({ chatId, error: expect.any(String) }))
-    expect(toast.warning).not.toHaveBeenCalled()
+    expect(shown()).toBeUndefined()
     expect(toast.error).not.toHaveBeenCalled()
     expect(harness.container.textContent).toBe('')
     expect(fileStorageUsageClient.getQueryData(['file-storage-usage', 'user-1', chatId])).toBeUndefined()
@@ -108,15 +111,14 @@ describe('group manager storage notice', () => {
   it('retains verified warning through a failed attachment refresh and clears only after a healthy read', async () => {
     rpc.mockResolvedValueOnce({ data: warning, error: null }).mockResolvedValue(unavailable)
     await render()
-    const firstId = lastWarning()[1]?.id
+    const first = shown()!
     await render('admin', [attachment('file')])
     expect(rpc).toHaveBeenCalledTimes(2)
     expect(fileStorageUsageClient.getQueryData(['file-storage-usage', 'user-1', chatId])).toEqual(warning)
-    expect(lastWarning()[1]?.id).toBe(firstId)
-    expect(toast.dismiss).not.toHaveBeenCalledWith(firstId)
+    expect(shown()).toMatchObject({ key: first.key, seq: first.seq })
     rpc.mockResolvedValue({ data: healthy, error: null })
     await tick(1000)
-    expect(toast.dismiss).toHaveBeenCalledWith(firstId)
+    expect(shown()).toBeUndefined()
   })
   it.each([false, true])('shares slow requests across mounts, attachment changes, focus and polling (cached=%s)', async cached => {
     if (cached) {
@@ -133,7 +135,7 @@ describe('group manager storage notice', () => {
     await act(async () => { resolve({ data: healthy, error: null }) })
     await tick()
     expect(harness.container.textContent).toBe('')
-    if (!cached) expect(toast.warning).not.toHaveBeenCalled()
+    if (!cached) expect(shown()).toBeUndefined()
   })
   it('stops retrying after losing manager access', async () => {
     rpc.mockResolvedValue(unavailable)
@@ -163,18 +165,17 @@ describe('group manager storage notice', () => {
   it('honors dismissal across refreshes and remounts until verified recovery starts a new incident', async () => {
     rpc.mockResolvedValue({ data: warning, error: null })
     await render()
-    lastWarning()[1]?.onDismiss?.({} as never)
-    const count = vi.mocked(toast.warning).mock.calls.length
+    persistentNotices.clear(shown()!.key)
     await render('member')
     rpc.mockResolvedValue({ data: { ...warning, full: true }, error: null })
     await render()
     await tick(60_000)
-    expect(toast.warning).toHaveBeenCalledTimes(count)
+    expect(shown()).toBeUndefined()
     rpc.mockResolvedValue({ data: healthy, error: null })
     await tick(60_000)
     rpc.mockResolvedValue({ data: warning, error: null })
     await tick(60_000)
-    expect(toast.warning).toHaveBeenCalledTimes(count + 1)
+    expect(shown()).toBeDefined()
   })
   it('refreshes on attachments but leaves unrelated text messages alone', async () => {
     await render()

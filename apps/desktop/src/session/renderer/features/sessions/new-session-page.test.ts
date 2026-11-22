@@ -1,9 +1,9 @@
-import { motionValue } from 'framer-motion';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { setLocalePreference } from '@/i18n';
 import type { SessionFailure } from '@renderer/features/sessions/stores/session-failure';
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects';
@@ -53,7 +53,10 @@ const mocks = vi.hoisted(() => ({
   prompt: null as string | null,
   initialPrompt: undefined as string | undefined,
   onCreated: undefined as undefined | ((result: { projectId: string; sessionId: string }) => void),
-  handleCreateSession: vi.fn()
+  handleCreateSession: vi.fn(),
+  sessionSettings: { state: 'value', value: { autoApproveByDefault: false, includeIssueContextByDefault: false }, stale: false, error: null } as
+    | { state: 'value'; value: object; stale: boolean; error: null } | { state: 'error'; error: Error },
+  reloadSettings: vi.fn()
 }));
 
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
@@ -108,8 +111,8 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-create-session-sta
     ...args: unknown[]
   ) => {
     mocks.createSessionStateProjectId = projectId;
-    // (projectId, defaultBranch, isUnborn, currentBranch, workspaceId, …, options)
-    mocks.createSessionStateWorkspaceId = args[3] as string | null | undefined;
+    // (projectId, workspaceId, …, options)
+    mocks.createSessionStateWorkspaceId = args[0] as string | null | undefined;
     mocks.createSessionStateOptions = args.at(-1) as typeof mocks.createSessionStateOptions;
     return {
       isValid: false,
@@ -119,20 +122,8 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-create-session-sta
   }
 }));
 
-vi.mock('@renderer/features/sessions/create-session-modal/use-project-git-context', () => ({
-  useProjectGitContext: () => ({
-    defaultBranch: undefined,
-    isUnborn: false,
-    currentBranch: null,
-    repositoryWorkspaceId: null
-  })
-}));
-
 vi.mock('@renderer/features/sessions/hooks/useSessionSettings', () => ({
-  useSessionSettings: () => ({
-    autoApproveByDefault: false,
-    includeIssueContextByDefault: false
-  })
+  useSessionSettings: () => ({ settings: mocks.sessionSettings, reload: mocks.reloadSettings })
 }));
 
 vi.mock('@renderer/features/sessions/session-config/session-field', () => ({
@@ -142,9 +133,12 @@ vi.mock('@renderer/features/sessions/session-config/session-field', () => ({
   }
 }));
 
-vi.mock('./implicit-session-home-project', () => ({
-  ensureImplicitSessionHomeProjectId: vi.fn().mockResolvedValue('implicit-task-home')
-}));
+vi.mock('./implicit-session-home-project', async () => {
+  const { replica } = await import('@/lib/replica');
+  return {
+    implicitSessionHome: replica({ name: 'implicitSessionHome', scope: 'account', read: async () => 'implicit-task-home', fresh: Infinity }),
+  };
+});
 
 vi.mock('@renderer/features/sessions/session-config/initial-session-section', () => ({
   useInitialSessionState: (...args: unknown[]) => {
@@ -175,11 +169,8 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
 }));
 
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
-  // 顶栏的左侧槽位让位量读的是侧栏那条动画宽度(motion value),替身也得给一个真的 —— 给个假对象
-  // 会在 useTransform 里炸,而炸出来的是「读不到 .get()」这种和布局毫不相干的报错。
   useWorkspaceLayoutContext: () => ({
     isLeftOpen: true,
-    leftAnimatedWidth: motionValue(260),
     setCollapsed: vi.fn(),
   })
 }));
@@ -207,6 +198,9 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', async (impo
   const { runInAction } = await import('mobx');
   class TestAccounts extends actual.AccountProjectsStore {
     extra: AccountProject[] = [];
+    override get localDeviceId(): string | null {
+      return 'this-computer';
+    }
     override get projects(): readonly AccountProject[] {
       return [
         ...mocks.orderedProjects.map((project) => ({
@@ -224,7 +218,6 @@ vi.mock('@renderer/features/projects/stores/account-projects-store', async (impo
     connected: () => true,
   });
   runInAction(() => {
-    accountProjectsStore.localDeviceId = 'this-computer';
     accountProjectsStore.status = 'ready';
   });
   return { ...actual, accountProjectsStore };
@@ -291,6 +284,8 @@ describe('NewSessionPage', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    // The project home's folders are replica entries of the signed-in account.
+    followRendererSession('SIGNED_IN', 'tester');
     mocks.showAddProjectModal.mockReset();
     mocks.notify.mockReset();
     mocks.dismissNotice.mockReset();
@@ -308,6 +303,8 @@ describe('NewSessionPage', () => {
     mocks.initialPrompt = undefined;
     mocks.onCreated = undefined;
     mocks.handleCreateSession.mockReset();
+    mocks.sessionSettings = { state: 'value', value: { autoApproveByDefault: false, includeIssueContextByDefault: false }, stale: false, error: null };
+    mocks.reloadSettings.mockReset();
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, '');
     composerDrafts.set(projectDraftKey('project-1'), '');
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
@@ -323,7 +320,7 @@ describe('NewSessionPage', () => {
     // setLocalePreference 会往 window 派发 CustomEvent；用 Node 全局那个会被 jsdom 的 EventTarget 拒收。
     vi.stubGlobal('CustomEvent', dom.window.CustomEvent);
     // 新建会话页的分栏:量分栏区宽度要 `ResizeObserver`、
-    // 存宽度要 `localStorage`、弹簧要 rAF;面板里的文件树分栏(react-resizable-panels)还要
+    // 存宽度要 `localStorage`、弹簧要 rAF;面板里还要
     // `DOMRect`。少一个不是断言失败,
     // 是渲染期抛异常、整棵树起不来(实撞:14 条一起红在 `localStorage is not defined`,
     // 修掉又露出 `ResizeObserver is not defined`、库内 `new DOMRect` 的 `n is not a constructor`)。
@@ -340,17 +337,12 @@ describe('NewSessionPage', () => {
     vi.stubGlobal('cancelAnimationFrame', (handle: number) =>
       clearTimeout(handle as unknown as ReturnType<typeof setTimeout>)
     );
-    // ⚠️ 装两处。react-resizable-panels 是从**元素所属的 window** 上取这个构造器的
-    // (`mountGroup.ts:38`: `group.element.ownerDocument.defaultView.ResizeObserver`),
-    // 只 `stubGlobal` 它够不着 —— 报出来是库内一句 `n is not a constructor`,与 ResizeObserver
-    // 三个字毫无关系,查了好一会儿。产品自己的代码读的是裸全局,所以两处都要。
     class ResizeObserverStub {
       observe(): void {}
       unobserve(): void {}
       disconnect(): void {}
     }
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
-    (dom.window as unknown as { ResizeObserver: unknown }).ResizeObserver = ResizeObserverStub;
     container = dom.window.document.querySelector('#root') as HTMLDivElement;
     root = createRoot(container);
     // 语言必须显式钉住：默认偏好是 `system`，会随宿主的 navigator 语言解析，
@@ -377,6 +369,8 @@ describe('NewSessionPage', () => {
     await act(async () => {
       root.render(localized(React.createElement(ShellTitlebar), React.createElement(NewSessionPage)));
     });
+    // The hidden task-home project is a replica reading: let its answer land (react-query notifies on the next task).
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   }
 
   // 项目块画的窗口 chrome 与项目首页(app/project-block.tsx)。
@@ -398,6 +392,7 @@ describe('NewSessionPage', () => {
 
   afterEach(() => {
     act(() => root.unmount());
+    queryClient.clear();
     vi.unstubAllGlobals();
     dom.window.close();
   });
@@ -460,7 +455,7 @@ describe('NewSessionPage', () => {
     expect(card?.textContent).toContain('project-1');
     expect(container.querySelector('h1.gg-type-page-title')).toBeNull();
     // 这里没有宿主通道:读不到文件夹就照实说读不到,❌ 拿根目录冒充、❌ 整页崩掉。
-    expect(card?.textContent).toContain('读不到这个项目的文件夹');
+    expect(card?.textContent).toContain('无法读取此项目的文件夹');
     expect(mocks.createSessionStateOptions).toEqual({
       requireGeneratedName: true,
       runInProjectDir: true
@@ -498,6 +493,15 @@ describe('NewSessionPage', () => {
       key: expect.stringMatching(/^session-create:/), tier: 'error', ongoing: true,
       title: expect.not.stringContaining('taskError.'),
     }));
+  });
+
+  it('settings that could not be read say so with a retry where the composer goes (❌ a placeholder for ever)', async () => {
+    mocks.sessionSettings = { state: 'error', error: new Error('settings unreadable') };
+    await renderPage();
+    const failed = container.querySelector('[data-read-failed]');
+    expect(failed?.textContent).toContain('settings unreadable');
+    await act(async () => { failed!.querySelector('button')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+    expect(mocks.reloadSettings).toHaveBeenCalledTimes(1);
   });
 
   it('stays silent while nothing has failed', async () => {
@@ -638,8 +642,8 @@ describe('NewSessionPage', () => {
     await act(async () => {
       root.render(localized(React.createElement(NewSessionComposer, { projectId: 'project-1' })));
     });
-    // 没选 = 项目根目录(这里的 git 上下文桩给的根目录是 null)。
-    expect(mocks.createSessionStateWorkspaceId).toBeNull();
+    // 没选 = 项目根目录(这里的项目桩给的根目录是项目自己的 id)。
+    expect(mocks.createSessionStateWorkspaceId).toBe('project-1');
   });
 
   it('draws the shared machine picker (compact size) in the composer tray', async () => {
@@ -647,9 +651,9 @@ describe('NewSessionPage', () => {
     const picker = container.querySelector('[data-testid="composer-device-picker"]');
     expect(picker).not.toBeNull();
     expect(picker?.getAttribute('data-size')).toBe('compact');
-    // 默认这台电脑:电脑图标 + 名字「这台电脑」(托盘里各处同一个叫法)。
+    // 默认这台电脑:电脑图标 + 名字「本机」(托盘里各处同一个叫法)。
     expect(picker?.getAttribute('data-selected-id')).toBe('local');
-    expect(picker?.textContent).toContain('这台电脑');
+    expect(picker?.textContent).toContain('本机');
     expect(picker?.querySelector('[data-kind="computer"]')).not.toBeNull();
   });
 
@@ -820,7 +824,7 @@ describe('NewSessionPage', () => {
   });
 
   // 项目与机器解耦:账号上一个文件夹都没有的项目也列出来(identity.list_my_projects)。每个项目都有 ›:有文件夹的列「设备 · 路径」,
-  // 没有能用文件夹的给「在某台设备上选文件夹」;绑在这一端没加载的设备上的,列成灰的「暂不可用」,而不是当成没有文件夹。
+  // 没有能用文件夹的给「在某台设备上选择文件夹」;绑在这一端没加载的设备上的,列成灰的「暂不可用」,而不是当成没有文件夹。
   it('lists an account project that has no folder on any machine, with a way to give it one', async () => {
     const { accountProjectsStore } = await import('@renderer/features/projects/stores/account-projects-store');
     (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = ([
@@ -835,14 +839,14 @@ describe('NewSessionPage', () => {
       // Archived ones are not listed; every listed project has a ›.
       expect(rows.map((item) => item.getAttribute('data-chat-id'))).toEqual(['chat-project-1', 'chat-empty', 'chat-bound']);
       // No binding anywhere says so; a folder only on a device that is not loaded here is not "no folder".
-      expect(rows[1]?.textContent).toContain('还没有文件夹');
-      expect(rows[2]?.textContent).not.toContain('还没有文件夹');
+      expect(rows[1]?.textContent).toContain('暂无文件夹');
+      expect(rows[2]?.textContent).not.toContain('暂无文件夹');
       const unavailable = container.querySelector('[role="menuitem"][data-device-id="d"][disabled]');
       expect(unavailable?.textContent).toContain('暂不可用');
       // Neither has a usable folder, so each offers to pick one on a machine ("pick a folder", not just a machine name).
       const pickOn = Array.from(container.querySelectorAll('[data-testid="project-pick-folder-on"]'));
       expect(pickOn.length).toBeGreaterThanOrEqual(2);
-      expect(pickOn[0]?.textContent).toContain('选文件夹');
+      expect(pickOn[0]?.textContent).toContain('选择文件夹');
     } finally {
       (accountProjectsStore as unknown as { extra: AccountProject[] }).extra = [];
     }
@@ -883,7 +887,7 @@ describe('NewSessionPage', () => {
     ];
     await renderProjectHome();
     expect(container.querySelector('[data-testid="composer-device-picker"]')?.getAttribute('data-selected-id')).toBe('local');
-    expect(container.querySelector('[data-testid="composer-device-picker"]')?.textContent).toContain('这台电脑');
+    expect(container.querySelector('[data-testid="composer-device-picker"]')?.textContent).toContain('本机');
     // 项目预选这一个;这一页就是它的,没有「未选择项目」。
     expect(container.textContent).not.toContain('未选择项目');
     expect(mocks.createSessionCallbackProjectId).toBe('project-1');
@@ -948,7 +952,7 @@ describe('NewSessionPage', () => {
       expect(listed.map((item) => [item.getAttribute('data-chat-id'), item.textContent?.trim()])).toEqual([
         ['chat-project-1', 'project-1'],
         ['chat-project-offline', 'project-offline'],
-        ['chat-empty', 'paper还没有文件夹'],
+        ['chat-empty', 'paper暂无文件夹'],
       ]);
       expect(listed.map((item) => item.getAttribute('data-testid'))).toEqual(['project-picker-item', 'project-picker-item', 'project-picker-item']);
       // Picking a folder in › selects the project (the folder's device and path are what the row says).

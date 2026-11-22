@@ -53,7 +53,7 @@
 - **I4 写入是叠层。** 写入不改底值，而是在底值上叠一层，底值照常接收推送和读数。
   - **撤层**：写入返回了本版本域里的版本 → 底值追上这个版本时撤层。没返回版本 → 写成功时留一条 I1 凭据，要求一次在成功之后才发起的读取；凭据清掉时撤层。
   - **失败**：可撤销的写入直接撤层，不回滚到发起时抓的旧值，因为真值可能已经被别人改了。发件箱的写入留着叠层，继续重试。
-  - 写入在发起时绑定账号。现有 `lib/stores/live/optimistic-model.ts` 的语义收进 replica。
+  - 写入在发起时绑定账号。现有 `lib/stores/live/optimistic-model.ts` 的语义收进 replica。叠层这个原语在 PR 5 落进 `lib/replica.ts`；在此之前（PR 3），写入是点击时直接 `set`，被拒就重读，重读也失败就退回点击前读到的值，并告诉用户。
 - **I5 快照条目重启后重读。** 只适用于走快照键的条目：从快照恢复的一律算旧值，挂载时先画出来，同时重读，因为快照不保存失效凭据。日志档里以 IM 库为持久层的条目（会话行、身份、名册）**豁免**：它们的版本戳和游标在同一个事务里落盘，待处理的修订也持久化（协调器的收件箱要等 listener 成功才删）。豁免的条件是：listener 必须等重读落地才算成功。因此每个模型各自注册一个 listener，不要把几个模型挂在同一个注册上，否则一个模型一直读不到，会连带拖住其他模型后面的修订。所以这类条目重启后直接可信，不会先闪一下。
 
 **持久化：哪些条目可以 persist。上限要声明，写入时强制执行。**
@@ -92,7 +92,7 @@
 | 机制 | 档 | 处置 |
 |---|---|---|
 | 原 readModel 的 44 个模型 | 日志 / 信号 / 无推送，逐个标 | 就是 replica（PR 2 改名） |
-| 26 个文件里直接用的 44 个 `useQuery` | 多为信号或无推送 | 并进 replica：置顶并进 PR 2，其余并进 PR 3 |
+| 26 个文件里直接用的 44 个 `useQuery` | 多为信号或无推送 | 并进 replica：置顶并进 PR 2，其余并进 PR 3（实际清点是 32 个文件里的 54 个 `useQuery`，另有 `useQueries`、`useInfiniteQuery`；PR 3 之后 `lib/replica.ts` 以外不再直接用 react-query，源码检查是硬规则） |
 | `useRoomCollab` / `useGroupCollabLoader` 和联系人群详情的加载器、`lastTopics`、各处 `useGroupChatSettings` | 日志 | 换成 `groupRoster`、`topicsOfChat`、`groupSettings`（PR 2） |
 | 联系人 store 里的各个列表 | 日志 | 并进 replica（PR 2） |
 | 会话列表投影 `chatProjection`（实体格加修订戳） | 日志 | 每个实体格变成一个 replica 条目 `chatRow(chatId)`，修订戳就是版本，批量调度器变成批量读取器（PR 4） |
@@ -101,16 +101,19 @@
 | 消息窗口：`ChatWindowCache`、`messageWindows`、快照 epoch、跳号修复、补洞、冷启判定、覆盖层重验证、话题消息 | 日志，流形状 | **保留，作为 IM 消息存储这个流引擎的一部分**，不并进 replica：区间覆盖没有「键 → 读数」的对应。引擎自己的不变量：游标只在已验证连续的区间内推进；区间有洞时先补，补好了才发布。手机端的 IndexedDB 窗口和桌面的 SQLite 是同一份存储契约的两个实现，要并成一个，平台差异只留在存储适配层（PR 4）。 |
 | 回执、对端读位 | 日志 | 单调合并的覆盖层条目：delivered → read 只往前走，读位取较大值（PR 4） |
 | 回应 | 日志 | 后写为准，推送只用来失效：取消一个 👍 不能被单调合并吞掉。靠 I1 的凭据补上现在「跳过自己再重取」那条路承认的乱序缺口（PR 4） |
-| 发件箱：`chatOutbox`、`sessionInputOutbox`、`pendingSessionDeliveries`、`attachmentSendRecovery`、`readWriter.unconfirmed` | — | 并成一个发件箱机制（PR 4） |
+| 写入：聊天消息（文本、卡片、附件、转发、新话题）、会话输入、读位与回执、回应、助理面板的 App 变更通知 | — | **一个发件箱** `lib/outbox`（`@@@outbox`）：一张 IndexedDB 表，id 即幂等键；各 kind 只声明怎么发、按什么分道、怎么合并。lane 之间并行、lane 内先进先出；入队时合并；统一退避（自动重试 3 次：1 s、4 s、15 s，之后标红「未发出」）和每次尝试的期限；入队时绑定账号。到不了的失败在后端恢复、联网、目标就绪时自动重发，被拒的等人处理。守卫：`tests/unit/desktop/lib/oneOutbox.test.ts`（PR 4a） |
+| `pendingSessionDeliveries` | 宿主 | 不是发件箱：它是宿主 `session_pending` 队列的只读投影，归宿主档（PR 5） |
+| 字节上传（`declaredUploads`、宿主 `attachment-uploads`） | — | 保留：字节不进发件箱，消息条目依赖上传完成 |
+| 助理工作发件箱（主进程 `assistantWorkOutbox`） | — | 保留：渲染进程关着时主进程也要能写 |
 | 修订侧：对账节拍、跳过事件重放、首帧快照 | — | 保留，它们是日志通道本身 |
 | 宿主侧：`deviceRpc`、session-host 的 ws 连接、`agentStatusFeedBridge` 的本机写入 | 宿主 | 保留，作为宿主档的通道 |
 | `acp-chat-store`、终端输出 | — | 保留，作为会话宿主流引擎 |
 | 会话、项目、PR、远端主机的 MobX store，以及 `lib/stores/live/*` | 宿主 | 并进 replica，版本域是宿主版本；叠层语义收进 I4（PR 5） |
 | 助理面板缓存、助理工作记录、`myAssistant`、`cloudComputerStore`、App 市场的 kept-shelf 和 `installedExtensionsStore` | 信号 / 宿主 | 并进 replica，kept-shelf 改成持久化条目（PR 3） |
-| `forwardedSourceCache`、`sharedPackages`、`remote-forward-cache`、`running-sessions` | 按所属域 | 随所属的域并进 |
+| `forwardedSourceCache`、`sharedPackages`、`remote-forward-cache`、`running-sessions` | 按所属域 | 随所属的域并进。前三个在 PR 3 并进；`running-sessions` 是会话宿主流（会话域），留到 PR 5 |
 | 附件字节、二维码、缩略图 | — | 保留：内容不可变，是内容缓存，不是副本 |
 | 草稿存储、`chatWindowCache.view`、localStorage 里的视图偏好 | — | 属于 ③：先用 `rpc.viewState.save` 统一落盘，等视图状态表建好后迁进去（连续性车道） |
-| 现存的 localStorage 设备偏好（例如语言、主题） | — | 属于 ②：迁进 `appSettings` 的键，迁完删掉 localStorage 那份（PR 3） |
+| 现存的 localStorage 设备偏好（例如语言、主题） | — | 属于 ②。桌面：迁进 `appSettings` 的键，迁完删掉 localStorage 那份，首帧值由 preload 同步交出（PR 3）。web 和手机没有主进程，localStorage 就是它们的设备存储（§5），照旧放在那里；两种后端在 `lib/devicePreferences.ts` 后面，每个壳只用一种 |
 
 ## 4. 名字
 
@@ -152,4 +155,4 @@
 **迁移：**
 - react-query 的 `useQuery` 和 `select` 不再出现在组件里（`select` 目前一处都没用）。
 - MobX 的 `observer`（180 个文件里约 294 处）：每个域的 PR 删掉本域的 MobX。在 PR 5（会话域）删掉最后一个 MobX store 和适配层，这就是终点。
-- 新增一条源码检查：组件里不许新增 `useQuery`、`observer(`、`useSyncExternalStore`（`selectStore.ts` 本身除外），用 baseline 棘轮，只许减不许增。
+- 源码检查（`scripts/checks/effect-fetch-state.mts`，在 `lint:source` 里，PR 3 起是硬规则，没有 baseline）：effect 不许把读到的东西塞进组件 state；读数不许回退成字面量；`lib/replica.ts` 以外不许直接用 react-query 的读和取数状态 hook（`useQuery`、`useQueries`、`useInfiniteQuery`、`useSuspenseQuery`、`useIsFetching`、`useQueryClient`），也不许调用 `queryClient` 的方法（写入仍可用 `useMutation`）。`observer(`、`useSyncExternalStore` 的棘轮随 PR 4、PR 5 各域一起做。

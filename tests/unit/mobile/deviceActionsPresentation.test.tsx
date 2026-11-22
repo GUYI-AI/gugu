@@ -115,6 +115,19 @@ it('keeps system permissions and every task grant together, including folder aut
   expect(h.container.querySelector('[data-testid="settings-device-action-detail-back"]')?.textContent).toContain('本机控制')
 })
 
+it('keeps the task grants on a desktop host that has no system permission rows (Linux)', async () => {
+  const { platform } = await import('../../../apps/desktop/src/platform')
+  const original = platform.systemPermissions
+  Object.assign(platform, { systemPermissions: [] })
+  try {
+    mocks.state.groups = [{ id: 'files.documents', connected: false, blocked: null, actions: [] }]
+    await h.render(<PermissionsSection />)
+    expect(h.container.querySelector('[data-testid="settings-device-action-group-files.documents"]')).not.toBeNull()
+    expect(h.container.querySelector('[data-testid^="settings-permission-"]')).toBeNull()
+    expect(h.container.querySelector('[data-testid="settings-permissions"] .gg-settings-card:empty')).toBeNull()
+  } finally { Object.assign(platform, { systemPermissions: original }) }
+})
+
 it('lets the permissions frame own a single title and its back action', async () => {
   mocks.state.groups = [{ id: 'files.documents', connected: false, blocked: null, actions: [] }]
   function Frame() {
@@ -187,7 +200,7 @@ it('separates missing grants from unavailable or system-blocked capabilities in 
  await h.render(<ThisDeviceActions bare managePermissions />)
  const group=(id:string)=>h.container.querySelector(`[data-testid="settings-device-actions-${id}"]`)!
  expect(group('available').textContent).toContain('备忘录')
- expect(group('available').textContent).not.toContain('暂时用不了')
+ expect(group('available').textContent).not.toContain('暂不可用')
  expect(group('unsupported').textContent).toContain('日历')
  expect(group('system-blocked').textContent).toContain('通讯录')
  expect(h.container.textContent).not.toContain('任务 Agent')

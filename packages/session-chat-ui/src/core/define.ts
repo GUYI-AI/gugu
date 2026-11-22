@@ -74,7 +74,7 @@ export type MeasureCtx = {
   commands?: ChatCommands;
   selfIdentity?: SelfIdentity | null;
   chatName?: (id: string) => string | null;
-  appName?: (id: string) => string | null;
+  appName?: (id: string) => string | null | undefined;
   width: number;
   isCollapsed: (id: string) => boolean;
   expanded: (id: string) => boolean;

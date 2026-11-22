@@ -4,7 +4,7 @@ import { page } from 'vitest/browser';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 import { SessionConversation } from '@/components/session-watch/SessionConversation';
 import { emptyAgentWatchTimeline, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
-import { state, changed, EMPTY } from '@/lib/sessionInputOutboxBridge';
+import { state, changed, EMPTY } from '@/lib/outbox/kinds/sessionInput';
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
@@ -37,7 +37,7 @@ vi.mock('@/components/session-watch/useSessionLifeView', () => ({
 }));
 vi.mock('@gugu/core/cloud/config', async original => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({ chatView: 'double' }) } });
-vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: { getStoredHistory: vi.fn() } }) }));
+vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({ ...(await original<object>()), fetchSessionOptions: vi.fn(() => new Promise(() => {})), machineRpc: () => ({ sessions: {} }) }));
 
 const life = store<LifeView | null>(null);
 hostLife.store = life;

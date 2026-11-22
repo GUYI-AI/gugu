@@ -75,11 +75,11 @@ export default {
   "meeting": {
     "heading": "会议即将开始",
     "startRecording": "开始录音",
-    "dismiss": "关闭提醒",
     "recording": "正在录制中",
     "error": "无法开始录制，请重试。",
     "setting": "入会提醒",
     "settingDescription": "本机日历中的会议即将开始时，提醒你录音。",
-    "needsCalendar": "请先在「连接应用 → 本机」中连接日历。"
+    "needsCalendar": "请先在「连接应用 → 本机」中连接日历。",
+    "calendarUnreadable": "无法读取本机日历。"
   }
 } as const;

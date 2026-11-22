@@ -116,7 +116,7 @@ export interface MessageListRowProps {
   // @@@5856 开话题(从本消息长出一条线)+ 本消息底下已有的话题锚点卡。锚点是溯源不是父容器:
   // 卡片只是双向连接的一端,话题本身在会话列表里缩进挂在来源那条线底下。
   onOpenTopic: ((messageId: string) => void) | undefined
-  topicAnchors: ReadonlyMap<string, TopicSummary[]> | undefined
+  topicAnchors: ReadonlyMap<string, TopicSummary[]> | null | undefined
   onOpenTopicAnchor: ((topicChatId: string) => void) | undefined
   /** 这条线上「agent 超过 5 个已自动转 passive」的那条系统消息(每条线至多一条)。 */
   agentFloodNoticeMessageId: string | null | undefined
@@ -503,7 +503,7 @@ export function MessageList({
   // 未读行不在窗口里:比窗口最早一条还早 = 在上方(-1);否则是尾部对账还没回来,先不判(null)。
   const unreadIndex = unreadAbove ? rows.findIndex((row) => row.message.id === unreadAbove.messageId || !!albums.get(row.message.id)?.some(member => member.id === unreadAbove.messageId)) : -1
   const unreadAt = !unreadAbove ? null : unreadIndex >= 0 ? unreadIndex : rows.length > 0 && rows[0].message.seq > unreadAbove.messageSeq ? -1 : null
-  const showUnreadAbove = useRowAboveViewport(ownScrollerRef, unreadIndex >= 0 ? rows[unreadIndex]!.message.id : unreadAbove?.messageId, unreadAt, initialTopMostItemIndex !== null, unreadAbove?.onSeen)
+  const showUnreadAbove = useRowAboveViewport(ownScrollerRef, resetKey, unreadIndex >= 0 ? rows[unreadIndex]!.message.id : unreadAbove?.messageId, unreadAt, initialTopMostItemIndex !== null, unreadAbove?.onSeen)
   const frameStyle = useMemo<CSSProperties>(() => ({ minHeight: 0, ...(style ?? { flex: 1 }), ...LIST_FRAME_STYLE, visibility: initialTopMostItemIndex === null ? 'hidden' : undefined }), [style, initialTopMostItemIndex])
   return (
     <RowStoreContext.Provider value={rowStore}>

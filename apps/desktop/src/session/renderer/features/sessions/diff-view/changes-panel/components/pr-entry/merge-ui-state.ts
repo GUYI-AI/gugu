@@ -1,4 +1,5 @@
 import { computeCheckRunsSummary } from '@renderer/utils/github';
+import { translateSessionMessage as t } from '@renderer/localization/locale-store';
 import type { PullRequest, PullRequestCheck } from '@shared/core/pull-requests/pull-requests';
 
 export type MergeSeverity = 'success' | 'warning' | 'error' | 'neutral';
@@ -26,8 +27,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
     return {
       kind: 'unknown',
       severity: 'neutral',
-      title: 'Merge status unknown',
-      detail: 'Refresh PR status and try again.',
+      title: t('pr.mergeState.unknown'),
+      detail: t('pr.mergeState.closedHint'),
       canMerge: false,
       canBypassRequirements: false,
     };
@@ -36,8 +37,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
     return {
       kind: 'draft',
       severity: 'neutral',
-      title: 'Draft pull request',
-      detail: 'Mark ready for review to enable merging.',
+      title: t('pr.mergeState.draft'),
+      detail: t('pr.mergeState.draftHint'),
       canMerge: false,
       canBypassRequirements: false,
     };
@@ -47,8 +48,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
       return {
         kind: 'ready',
         severity: 'success',
-        title: 'Ready to merge',
-        detail: 'No conflicts or required reviews.',
+        title: t('pr.mergeState.ready'),
+        detail: t('pr.mergeState.readyHint'),
         canMerge: true,
         canBypassRequirements: false,
       };
@@ -56,8 +57,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
       return {
         kind: 'conflicts',
         severity: 'error',
-        title: 'Merge conflicts',
-        detail: 'Resolve conflicts before merging.',
+        title: t('pr.mergeState.conflicts'),
+        detail: t('pr.mergeState.conflictsHint'),
         canMerge: false,
         canBypassRequirements: false,
       };
@@ -65,8 +66,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
       return {
         kind: 'behind',
         severity: 'warning',
-        title: 'Branch is out-of-date',
-        detail: 'Update the branch, or merge without waiting if your account can bypass rules.',
+        title: t('pr.mergeState.behind'),
+        detail: t('pr.mergeState.behindHint'),
         canMerge: false,
         canBypassRequirements: true,
       };
@@ -74,8 +75,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
       return {
         kind: 'blocked',
         severity: 'error',
-        title: 'Merging is blocked',
-        detail: 'Required reviews, checks, or branch rules are not satisfied.',
+        title: t('pr.mergeState.blocked'),
+        detail: t('pr.mergeState.blockedHint'),
         canMerge: false,
         canBypassRequirements: true,
       };
@@ -83,8 +84,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
       return {
         kind: 'blocked',
         severity: 'error',
-        title: 'Merging is blocked',
-        detail: 'Required checks are not satisfied.',
+        title: t('pr.mergeState.blocked'),
+        detail: t('pr.mergeState.hooksHint'),
         canMerge: false,
         canBypassRequirements: true,
       };
@@ -94,8 +95,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
           return {
             kind: 'unstable',
             severity: 'warning',
-            title: 'Checks still running',
-            detail: 'Waiting for GitHub checks to finish.',
+            title: t('pr.mergeState.checksRunning'),
+            detail: t('pr.mergeState.checksRunningHint'),
             canMerge: false,
             canBypassRequirements: true,
           };
@@ -103,8 +104,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
           return {
             kind: 'unstable',
             severity: 'warning',
-            title: 'Checks not passing',
-            detail: 'Review failing checks before merging.',
+            title: t('pr.mergeState.checksFailing'),
+            detail: t('pr.mergeState.checksFailingHint'),
             canMerge: false,
             canBypassRequirements: true,
           };
@@ -112,9 +113,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
           return {
             kind: 'unstable',
             severity: 'warning',
-            title: 'Checks passing, but PR is unstable',
-            detail:
-              'GitHub still reports the branch as unstable. Review branch rules before merging.',
+            title: t('pr.mergeState.unstable'),
+            detail: t('pr.mergeState.unstableHint'),
             canMerge: false,
             canBypassRequirements: true,
           };
@@ -122,8 +122,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
           return {
             kind: 'unstable',
             severity: 'warning',
-            title: 'Checks pending or not passing',
-            detail: 'Review GitHub checks before merging.',
+            title: t('pr.mergeState.checksUnknown'),
+            detail: t('pr.mergeState.checksUnknownHint'),
             canMerge: false,
             canBypassRequirements: true,
           };
@@ -133,8 +133,8 @@ export function computeMergeUiState(pr: PullRequest): MergeUiState {
       return {
         kind: 'unknown',
         severity: 'neutral',
-        title: 'Merge status unknown',
-        detail: 'Refresh to try again.',
+        title: t('pr.mergeState.unknown'),
+        detail: t('pr.mergeState.retryHint'),
         canMerge: false,
         canBypassRequirements: false,
       };

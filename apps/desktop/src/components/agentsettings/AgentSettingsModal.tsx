@@ -22,8 +22,9 @@ import { useAgentDisplayStatus } from '../../hooks/useAgentDisplayStatus'
 import { useAgentHeaderStatus } from '../../hooks/useAgentHeaderStatusText'
 import { agentStatusColorVar, type AgentStatusTone } from '@gugu/core/shared/agentStatusPresentation'
 import { useContactsStore } from '../../store/contactsContext'
+import { AgentParkedGlyph } from '../AgentParkedGlyph'
 
-const ALERT_DOT_TONES: ReadonlySet<AgentStatusTone> = new Set(['error', 'needs_user', 'running', 'parked'])
+const ALERT_DOT_TONES: ReadonlySet<AgentStatusTone> = new Set(['error', 'needs_user', 'running'])
 
 export interface AgentSettingsModalProps {
   agent: ContactUser
@@ -44,7 +45,7 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
   const assistant = useIsAssistantAvatar(agent.id)
   const { presence } = useAgentDisplayStatus(agent.id)
   const headerStatus = useAgentHeaderStatus(agent.id)
-  // 点与那一句状态读同一格:出错、需要你、在跑(含后台在跑)取共用色表(agentStatusColorVar)的红 / 黄 / 橙 ——
+  // 点与那一句状态读同一格:出错、需要你、在跑取共用色表(agentStatusColorVar)的红 / 黄 / 橙;后台在跑不画点,画双竖线 ——
   // ❌ 出错了还画绿点。其余照旧:不在线 / 已移除灰,别的绿。
   const dotColor = headerStatus.tone && ALERT_DOT_TONES.has(headerStatus.tone) ? agentStatusColorVar(headerStatus.tone) : null
   const headerOffline = headerStatus.tone === 'offline' || headerStatus.tone === 'removed'
@@ -144,7 +145,7 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
               data-tone={headerStatus.tone ?? undefined}
               data-offline={headerOffline || undefined}
               style={dotColor ? ({ '--gg-as-status-dot': dotColor } as CSSProperties) : undefined}
-            >{headerStatus.text}</span>
+            >{headerStatus.tone === 'parked' ? <AgentParkedGlyph /> : null}{headerStatus.text}</span>
           </div>
           {!mobileShell ? (
           <button className={asClass.close} onClick={requestClose} aria-label={t('settings.close')}>

@@ -38,14 +38,6 @@ export async function readSessionPreview(
   sessionId: string,
   turnLimit = 4,
 ): Promise<service.SessionTimelineResult<MessagePreviewProjection>> {
-  if (service.readSessionRow(sessionId)?.runtime === 'acp') {
-    // 原生聊天已提交的回合可能尚未进入 harness 文件(如准入期间取消),与聊天正文读同一份库尾。
-    const record = await service.nativeRecord({ conversationId: sessionId, tail: true, limit: turnLimit });
-    if (!record.ok) return record;
-    const turns = [...record.value.turns, ...(record.value.activeTurn ? [record.value.activeTurn] : [])];
-    // 库内 seq 与活回合的运行时 seq 各自计数;原生读口给出的顺序才是这里的先后。
-    return { ok: true, value: projectMessagePreview(turns.map((turn, seq) => ({ ...turn, seq })), activityPreviewSources) };
-  }
   const snapshot = await service.snapshot({ conversationId: sessionId, limit: turnLimit });
   return snapshot.ok ? { ok: true, value: projectMessagePreview(snapshot.value.turns, activityPreviewSources) } : snapshot;
 }
@@ -191,7 +183,7 @@ export function createMessagePreviewHost(deps: MessagePreviewHostDeps): {
       closed: false,
     };
     watches.set(topic, watch);
-    const subscribed = await service.subscribe(
+    const subscribed = await service.subscribePreview(
       { conversationId: sessionId, subscriptionId: watch.serviceSubscriptionId, cursor: null },
       () => schedule(watch)
     );

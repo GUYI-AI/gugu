@@ -3,9 +3,6 @@ import { cdp, userEvent } from 'vitest/browser';
 import tokensCss from '@/styles/tokens.css?raw';
 import uiCss from '@/session/app-runtime/ui/ui.css?raw';
 import { appPaletteCss } from '@/session/app-runtime/ui/app-palette.mjs';
-import { FILE_MARKS } from '@gugu/session-shared/file-marks';
-/** A glyph as the browser serialises it once drawn (`<path/>` reads back as `<path></path>`). */
-const drawn = (glyph: string) => Object.assign(document.createElementNS('http://www.w3.org/2000/svg', 'svg'), { innerHTML: glyph }).innerHTML;
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
 
 /**
@@ -70,6 +67,9 @@ beforeAll(async () => {
       <gugu-file-mark id="mark-blob" name="blob.bin"></gugu-file-mark>
       <gugu-file-mark id="tile-sheet" name="Q3 budget.vote.xlsx" tile style="width: 40px; height: 40px"></gugu-file-mark>
       <gugu-file-mark id="tile-pdf" name="report.pdf" tile style="width: 24px; height: 24px"></gugu-file-mark>
+      <gugu-file-mark id="folder" folder></gugu-file-mark>
+      <gugu-file-mark id="folder-open" folder open></gugu-file-mark>
+      <gugu-file-mark id="folder-own" folder style="color: rgb(1, 2, 3)"></gugu-file-mark>
     </main>`;
   document.getElementById('time')!.setAttribute('datetime', new Date(Date.now() - 3 * 60_000).toISOString());
   await settle();
@@ -187,19 +187,27 @@ describe('an App page with gugu\'s look', () => {
     expect(document.getElementById('empty')!.shadowRoot!.querySelector('.icon svg')).not.toBeNull();
   });
 
-  // The host's file table and tile in an App page (API 56): what the Files App draws its files with, as the output cards do.
-  it('draws a file by its family: the glyph in ink, or with `tile` the host\'s tile in the family colour, sized by the App', () => {
-    const part = (id: string, name: string) => document.getElementById(id)!.shadowRoot!.querySelector(`[part="${name}"]`)!;
-    expect(part('mark-pdf', 'glyph').innerHTML).toBe(drawn(FILE_MARKS.pdf.glyph));
-    expect(part('mark-scan', 'glyph').innerHTML).toBe(drawn(FILE_MARKS.pdf.glyph));
-    expect(part('mark-blob', 'glyph').innerHTML).toBe(drawn(FILE_MARKS.other.glyph));
-    expect(document.getElementById('mark-pdf')!.shadowRoot!.querySelector('[part="tile"]')).toBeNull();
-    const sheet = part('tile-sheet', 'tile');
-    expect(part('tile-sheet', 'glyph').innerHTML).toBe(drawn(FILE_MARKS.sheet.glyph));
-    expect(css(sheet, '--gg-file-tile')).toBe(css(document.documentElement, '--em-file-sheet'));
-    expect(css(part('tile-pdf', 'tile'), '--gg-file-tile')).toBe(css(document.documentElement, '--em-file-pdf'));
-    expect([sheet.getBoundingClientRect().width, part('tile-pdf', 'tile').getBoundingClientRect().width]).toEqual([40, 24]);
+  // The host's file icons and tile in an App page (API 56): what the Files App draws its files with, as the output cards do.
+  it('draws a file by its icon: in the icon\'s colour, or with `tile` the host\'s tile washed in that colour, sized by the App', () => {
+    const part = (id: string, name: string) => document.getElementById(id)!.shadowRoot!.querySelector(`[part="${name}"]`);
+    const icon = (id: string) => document.getElementById(id)!.dataset.fileIcon;
+    expect([icon('mark-pdf'), icon('mark-scan'), icon('mark-blob'), icon('tile-sheet')]).toEqual(['pdf', 'pdf', 'unknown', 'sheet']);
+    expect(part('mark-pdf', 'tile')).toBeNull();
+    expect(css(part('mark-pdf', 'mark')!, 'color')).toBe(tokenColor('--em-file-red', 'color'));
+    const sheet = part('tile-sheet', 'tile')!;
+    expect(css(sheet, '--gg-file-tile')).toBe(css(document.documentElement, '--em-file-green'));
+    expect(css(part('tile-pdf', 'tile')!, '--gg-file-tile')).toBe(css(document.documentElement, '--em-file-red'));
+    expect([sheet.getBoundingClientRect().width, part('tile-pdf', 'tile')!.getBoundingClientRect().width]).toEqual([40, 24]);
     expect(css(sheet, 'background-color')).not.toBe('rgba(0, 0, 0, 0)');
+  });
+
+  // API 63: a folder from the same set, in the set's folder colour unless the App's CSS colours it.
+  it('draws a folder, closed or open, in the folder colour, which the App\'s own CSS can override', () => {
+    const icon = (id: string) => document.getElementById(id)!.dataset.fileIcon;
+    const mark = (id: string) => document.getElementById(id)!.shadowRoot!.querySelector('[part="mark"]')!;
+    expect([icon('folder'), icon('folder-open')]).toEqual(['folder', 'folder-open']);
+    expect(css(mark('folder'), 'color')).toBe(tokenColor('--em-file-mute', 'color'));
+    expect(css(mark('folder-own'), 'color')).toBe('rgb(1, 2, 3)');
   });
 
   it('loses to the App\'s own CSS, with no !important: the whole look is in @layer gugu', () => {

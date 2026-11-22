@@ -5,7 +5,6 @@ import type { GroupChatSettings, GroupCollabSnapshot } from '@gugu/core/shared/t
 import { useChatStore } from '../../store/chatContext'
 import { LayoutGrid, MessageSquare, SquarePen, Users } from '@/lib/icons'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
-import type { groupAgentStatusIndicatorProps } from '../../lib/groupAgentStatus'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
 import { Popover } from '../ui/Popover'
@@ -19,7 +18,7 @@ import { topicCallTotal, topicUnreadTotal } from './topicPinsModel'
 import { useChatWorkspaceHeaderDensity } from '@renderer/features/tabs/use-chat-workspace-header-density'
 import { useStripNarrow } from '../../session/renderer/features/tabs/tab-strip-narrow'
 import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
-import { useInnerSidebarChat } from '../../lib/innerSidebarBridge'
+import { useInnerSidebarPresent } from '../../lib/innerSidebarBridge'
 import { Unknown } from '../ui/Unknown'
 
 interface ChatHeaderActionsProps {
@@ -36,7 +35,6 @@ interface ChatHeaderActionsProps {
     /** null until the roster is read: the count is a placeholder, ❌ 0. */
     snapshot: GroupCollabSnapshot | null
     settings: GroupChatSettings | null
-    statusIndicatorProps?: ReturnType<typeof groupAgentStatusIndicatorProps>
     onReload: () => Promise<void>
   }
   moreButtonRef: RefObject<HTMLButtonElement | null>
@@ -71,9 +69,8 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
   const folded = density === 'menu'
   const labeled = density === 'labeled' || (density === undefined && !narrow)
   const showApps = !!activeChatId && !folded && (density !== undefined || !narrow)
-  // #2548 桌面内层侧栏挂着这个对话时，隐藏重复的话题按钮。手机居中页头把成员入口收进更多。
-  const innerChat = useInnerSidebarChat()
-  const innerColumn = !mobile && activeChatId !== null && innerChat === activeChatId
+  // #2548 有内层侧栏的窗口里，群的话题都在那一列：按下哪一块，焦点和那一列就一起挪过去，所以每一块都不画话题按钮。
+  const innerColumn = useInnerSidebarPresent()
   const showTopics = !mobile && !innerColumn && !!groupId
   const membersInMore = hasMembers && (folded || membersInMenu)
   const topicsInMore = folded && showTopics

@@ -10,13 +10,13 @@
     <title>咕咕</title>
     <!-- @@@engine-floor - an engine below ENGINE_FLOOR (scripts/build/engine-floor.mts) stops here, before any stylesheet or
          module loads, and gets one plain page saying what to update. Above it, the build supplies what the engine lacks
-         (sRGB color fallbacks, core-js polyfills); below it the layout itself is missing. The probe must include the
-         feature that sets the floor (pinned by tests/unit/desktop/engineFloorGate.test.ts). Colors below are sRGB on
+         (sRGB color fallbacks, polyfills); below it the layout itself is missing (Tailwind's styles live in @layer). The probe
+         is the floor API's `probe` (pinned by tests/unit/desktop/engineFloorGate.test.ts). Colors below are sRGB on
          purpose. On Android the native splash waits for a content frame, so this page reports one through the startup
          plugin (androidStartupHandoff.ts). -->
     <script>
       (function() {
-        if (window.CSS && CSS.supports && CSS.supports('selector(:has(*))') && CSS.supports('container-type', 'inline-size')) return;
+        if (window.CSSLayerBlockRule) return;
         // Everything after this point, the bundle's module and stylesheet tags included, parses as inert hidden text.
         // (window.stop() would also prevent loading, but it aborts before <body> and Chromium then never paints.)
         document.write('<plaintext hidden>');
