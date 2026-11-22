@@ -45,7 +45,7 @@ describe('hash first, then the permit', () => {
     try {
       await withUploadedAttachment(s.endpoint, { ...file, contentType: 'image/png' }, scope, place(s.endpoint))
       await vi.waitFor(() => expect(s.routes('file-preview')).toHaveLength(1))
-    } finally { drawImagePreviews({ draw: async () => null, warn: () => {} }) }
+    } finally { drawImagePreviews({ draw: () => new Promise(() => {}), warn: () => {} }) }
     const plans = s.routes('upload').map(call => call.body.sha256)
     expect(plans).toEqual([sha, sha, sha, sha, previewSha])
     expect(s.routes('file-preview')[0]!.body).toMatchObject({ sha256: sha })

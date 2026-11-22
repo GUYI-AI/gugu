@@ -37,6 +37,7 @@ import { PROJECT_FILE_STREAM } from './projectFileHost'
 import { createWorkingCopyStreamer } from './session/main/core/extensions/working-copy-files'
 import { MACHINE_FILE_STREAM, setMachineFileStreams } from './session/main/core/files/machine-file-streams'
 import { remoteFileStreams } from './projectFileSsh'
+import { nodeImagePreview } from '@gugu/core/local/files/nodeImagePreview'
 import { nativeImagePreview } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { localCopy } from '@gugu/core/local/files/fileSnapshots'
@@ -2544,8 +2545,11 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
 // A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
 setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
-// Every image main uploads (the composer's, an agent's, an App's, a project publication) offers this preview.
-drawImagePreviews({ draw: nativeImagePreview, warn: error => createLogger('files/image-preview').warn({ error: String(error) }, 'Image preview offer failed') })
+// Every image main uploads (the composer's, an agent's, an App's, a project publication) offers a preview. The decoder
+// belongs to the runtime: the desktop is Electron and has nativeImage; the headless server is plain Node (its nativeImage
+// is a shim that cannot decode) and draws with sharp. sharp is never loaded into Electron: its libvips clashes with the
+// glib Electron loads on Linux.
+drawImagePreviews({ draw: process.versions.electron ? nativeImagePreview : nodeImagePreview, warn: error => createLogger('files/image-preview').warn({ error: String(error) }, 'Image preview offer failed') })
 const attachmentUploads = createAttachmentUploadHost({
   account: async () => {
     const auth = await desktopAuthProvider().getAuth()
