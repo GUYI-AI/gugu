@@ -40,11 +40,12 @@ const usageDays = replica({
   read: (_userId, from: string, to: string, deviceId: string | null) => fetchUsageDays(from, to, deviceId),
 })
 
-const usageDevices = replica({
+export const usageDevices = replica({
   name: 'usageDevices',
   scope: 'account',
   read: () => fetchUsageDevices(),
-  persist: { maxBytes: 1024, maxEntries: 1 },
+  // Every device that ever had usage, removed ones too: ~50 B each, so 2 KB holds ~38.
+  persist: { maxBytes: 2048, maxEntries: 1 },
 })
 
 const creditDays = replica({

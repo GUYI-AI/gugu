@@ -78,7 +78,7 @@ function noFileService(): never {
 }
 
 /**
- * Wait for a fact, not a clock (#4357): a write lands within the service's debounce (1 s, at most 5 s) of a loaded
+ * Wait for a fact, not a clock (#4357): a write lands within the service's debounce (here 50 ms, at most 250 ms) of a loaded
  * machine's time, not ours. Wait for the fact to arrive (something was heard, the disk changed), then assert the exact
  * value.
  */
@@ -247,6 +247,8 @@ async function localService(feedRoot = root) {
   feed?.unsubscribe();
   service = createLocalFileService({
     warn: (message) => warnings.push(message),
+    // What is proven is that a write lands after the debounce, merged and atomically, not how long the debounce is.
+    writeDebounceMs: 50,
     watchFolder: async (folder) => {
       watchedFolders.push(folder);
       const watched = runtime.watchDirectory(folder);
@@ -312,7 +314,7 @@ describe('gugu.files on a working copy', () => {
     }
     await until(() => fa.text().toString() === fb.text().toString() && fa.text().toString().length >= '# 标题\n正文\n'.length + 6);
     expect(fa.text().toString()).toBe('CBA# 标题\n正文\nabc');
-    // Written within the debounce (1 s, at most 5 s), atomically: no temporary file left behind.
+    // Written within the debounce, atomically: no temporary file left behind.
     await until(() => read('notes.md') === 'CBA# 标题\n正文\nabc');
     expect(fs.readdirSync(root)).toEqual(['notes.md']);
     // The stamp is the account's, as in a group (F9): `self` over stateless.

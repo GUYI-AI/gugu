@@ -54,14 +54,15 @@ export async function fetchUsageDays(from: string, to: string, deviceId: string 
   return (Array.isArray(data) ? data : []).map((row) => toUsageDay(row as Record<string, unknown>))
 }
 
-export type UsageDevice = { deviceId: string; firstDay: string; lastDay: string }
+/** A device with usage on record: the activity page's device filter names it (by the device list), nothing more. */
+export type UsageDevice = { deviceId: string }
 
 export async function fetchUsageDevices(): Promise<UsageDevice[]> {
   const { data, error } = await dataClient.rpc('my_usage_devices')
   if (error) fail(error)
   return (Array.isArray(data) ? data : []).map((raw) => {
     const row = raw as Record<string, unknown>
-    return { deviceId: String(row.deviceId), firstDay: String(row.firstDay), lastDay: String(row.lastDay) }
+    return { deviceId: String(row.deviceId) }
   })
 }
 

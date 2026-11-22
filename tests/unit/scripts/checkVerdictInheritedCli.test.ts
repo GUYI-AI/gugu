@@ -16,8 +16,11 @@ process.stdout.write(JSON.stringify(responses[endpoint]))
 `)
 
 describe('check-verdict partial rerun through the GitHub CLI boundary (#288)', () => {
-  it.each(['inherited', 'third-attempt', 'rerun', 'missing-source-marker', 'malformed-source',
-    'malformed', 'duplicate', 'unrelated-annotation', 'incomplete-history'] as const)(
+  // Through the real CLI: the cases that depend on reading the attempt history (inherited, rerun, third attempt,
+  // incomplete history) and one where the current annotation must stop that read. The annotation-parsing variants
+  // (missing or malformed source marker, malformed or duplicate current marker) are the same attachDeciderOutputs
+  // decision, proven in process by checkVerdict.test.ts ("does not replace missing or invalid current evidence").
+  it.each(['inherited', 'third-attempt', 'rerun', 'unrelated-annotation', 'incomplete-history'] as const)(
     'uses original annotations only for proven inheritance: %s', (scenario) => {
     const directory = mkdtempSync(join(tmpdir(), 'gugu-verdict-inherited-'))
     const root = join(directory, 'repo')
@@ -65,11 +68,7 @@ jobs:
       const third = { ...inherited, run_attempt: 3,
         check_run_url: `https://api.github.com/${prefix}/check-runs/300` }
       const currentId = scenario === 'third-attempt' ? 300 : 200
-      const currentAnnotations = scenario === 'malformed'
-        ? [{ title: 'ci-job-outputs', message: 'android false' }]
-        : scenario === 'duplicate'
-          ? Array.from({ length: 2 }, () => ({ title: 'ci-job-outputs', message: 'android=false' }))
-          : scenario === 'unrelated-annotation' ? [{ title: 'warning', message: 'not an output' }] : []
+      const currentAnnotations = scenario === 'unrelated-annotation' ? [{ title: 'warning', message: 'not an output' }] : []
       writeFileSync(responsesFile, JSON.stringify({
         [`${prefix}/pulls/288`]: { head: { sha }, base: { ref: 'dev', sha }, changed_files: 0 },
         [`${prefix}/pulls/288/files?per_page=100`]: [],
@@ -79,8 +78,7 @@ jobs:
           ...(scenario === 'third-attempt' ? [check(300, 'Detect changed areas')] : []),
           check(201, 'Android build', 'skipped'), check(202, 'Gate'),
         ] }],
-        [`${prefix}/check-runs/100/annotations?per_page=100`]: [scenario === 'missing-source-marker' ? []
-          : [{ title: 'ci-job-outputs', message: scenario === 'malformed-source' ? 'android false' : 'android=false' }]],
+        [`${prefix}/check-runs/100/annotations?per_page=100`]: [[{ title: 'ci-job-outputs', message: 'android=false' }]],
         [`${prefix}/check-runs/200/annotations?per_page=100`]: [currentId === 200 ? currentAnnotations : []],
         [`${prefix}/check-runs/300/annotations?per_page=100`]: [currentAnnotations],
         [`${prefix}/actions/runs/11/attempts/1/jobs?per_page=100`]: [{ jobs: scenario === 'incomplete-history' ? [] : [original] }],
@@ -106,7 +104,7 @@ jobs:
       } else {
         expect(verdict.failed).toEqual(['pull_request/Android build (skipped; Detect changed areas published no ci-job-outputs android)'])
       }
-      if (['malformed', 'duplicate', 'unrelated-annotation'].includes(scenario)) {
+      if (scenario === 'unrelated-annotation') {
         expect(readFileSync(log, 'utf8')).not.toContain('/attempts/')
       }
     } finally {

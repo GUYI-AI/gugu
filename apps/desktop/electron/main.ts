@@ -28,6 +28,7 @@ import { createDesktopWorkReportIds } from './assistant-work-report-ids'
 import { createAssistantWorkAvailabilityNotifier } from '@gugu/core/cloud/assistantWorkAvailability'
 import { registerFileViewerMenus } from './file-viewer-context-menu'
 import { registerContentContextMenus } from './content-context-menu'
+import { registerHostLayer } from './host-layer'
 import { configuredEndpoint, drawImagePreviews } from '@gugu/core/cloud/attachmentsApi'
 import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
@@ -744,6 +745,7 @@ installDevtoolsLock((url) => {
 })
 installPageFullscreen()
 registerContentContextMenus(ipcMain)
+registerHostLayer(ipcMain)
 registerFileViewerMenus(app, () => currentHostCatalog().fileViewerMenu, (error) => {
   processGoneLogger.error({ error: String(error) }, 'Content context menu failed')
 }, (host) => isOwnPage(host.getURL(), mainWindow?.webContents.getURL() ?? ''))
@@ -1313,10 +1315,7 @@ function buildTrayMenu(): Menu {
     { type: 'separator' },
     {
       label: labels.quit,
-      click: () => {
-        isQuitting = true
-        app.quit()
-      },
+      click: () => app.quit(),
     },
   ])
 }
@@ -1637,10 +1636,7 @@ const handleMainRendererGone = createMainRendererGoneHandler({
   now: () => Date.now(),
   reload: () => loadMainWindowContents(),
   ask: askAfterRepeatedRendererCrashes,
-  quit: () => {
-    isQuitting = true
-    app.quit()
-  },
+  quit: () => app.quit(),
   log: processGoneLogger,
 })
 const mainRendererResponsiveness = createMainRendererResponsivenessLog({
@@ -2380,6 +2376,9 @@ ipcMain.on('window:maximize', (event) => {
   else win.maximize()
 })
 ipcMain.on('window:close', (event) => BrowserWindow.fromWebContents(event.sender)?.close())
+// File → Exit in the Windows title bar. Every quit entry (this, the tray, the native menu, Cmd+Q) is app.quit();
+// before-quit raises isQuitting and runs the shutdown, so the close-to-tray interception lets the window go.
+ipcMain.on('app:quit', () => app.quit())
 ipcMain.on('window:is-maximized-sync', (event) => { event.returnValue = BrowserWindow.fromWebContents(event.sender)?.isMaximized() ?? false })
 // @@@app-active 「App 在前台」= 咕咕有一扇窗口拿着焦点(快速聊天小窗也是主窗渲染层画的,它在前台也算)。
 // 渲染层的 visibilityState 答不了这个:主窗关了 backgroundThrottling,最小化、被遮住、切到别的应用时页面照样 visible,

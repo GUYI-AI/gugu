@@ -91,7 +91,9 @@ describe('#2798 Electron E2E build provenance', () => {
     const root = fixture()
     expect(run(root, '--write').status).toBe(0)
     write(join(root, 'dist/assets/index-other.js'), 'different but complete renderer artifact\n')
-    write(join(root, 'dist/index.html'), '<script type="module" src="/assets/index-other.js"></script>\n')
+    // Only the module entry counts: a commented-out or classic script before it is not the renderer.
+    write(join(root, 'dist/index.html'), '<!-- <script type="module" src="/assets/index-S1.js"></script> -->\n'
+      + '<script src="/assets/legacy.js"></script>\n<script crossorigin type=\'module\' src="/assets/index-other.js"></script>\n')
 
     const checked = run(root, '--check')
     expect(checked.status).toBe(1)

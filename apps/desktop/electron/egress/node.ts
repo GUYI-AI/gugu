@@ -7,6 +7,8 @@ export interface NodeBackendOptions {
   name: string
   routes: RoutesFor
   keepAliveTimeoutMs?: number
+  /** Bound on opening a connection (proxy, SOCKS handshake and TLS included). Default 10 s. */
+  connectTimeoutMs?: number
   log?: EgressBackend['log']
   ca?: string[]
 }
@@ -69,7 +71,7 @@ export function nodeEgressBackend(options: NodeBackendOptions): EgressBackend & 
   const tls = options.ca ? { ca: options.ca } : {}
   // HTTP/1.1 only: undici 8 offers h2 by default and then puts every request to an origin on one connection, whose 512 KB
   // flow-control window all its streams share: a file read as three ranged GETs at once got one window per round trip.
-  const pool = { keepAliveTimeout: options.keepAliveTimeoutMs ?? 60_000, keepAliveMaxTimeout: 600_000, headersTimeout: 0, bodyTimeout: 0, connectTimeout: 10_000, allowH2: false }
+  const pool = { keepAliveTimeout: options.keepAliveTimeoutMs ?? 60_000, keepAliveMaxTimeout: 600_000, headersTimeout: 0, bodyTimeout: 0, connectTimeout: options.connectTimeoutMs ?? 10_000, allowH2: false }
   const dispatchers = new Map<string, Dispatcher>()
   const via = (route: ProxyRoute): Dispatcher => {
     const key = route ?? 'direct'

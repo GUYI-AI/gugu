@@ -357,3 +357,14 @@ export async function until(check: () => boolean, ms = 3000): Promise<void> {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }
+
+/**
+ * On fake timers: advances them a step at a time until `check` holds, or fails after `ms` of them. For a wait on the
+ * runtime's own back-off (a `rate-limited` close steps back 1 s, then 2 s, …): the behavior after it, without idling.
+ */
+export async function untilAdvancing(check: () => boolean, ms: number): Promise<void> {
+  for (let spent = 0; !check(); spent += 250) {
+    if (spent > ms) throw new Error(`not within ${ms} ms of timers: ${check.toString()}`);
+    await vi.advanceTimersByTimeAsync(250);
+  }
+}
