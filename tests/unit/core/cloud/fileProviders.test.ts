@@ -176,6 +176,26 @@ describe('one cloud provider and verified raw chunk cache', () => {
     expect(fetcher.mock.calls.map(row => row[0])).toEqual(['https://objects.invalid/preview', 'https://objects.invalid/file'])
     await full.dispose()
   })
+  it('an expired image still shows its preview, signed through the same reference; the file itself stays expired', async () => {
+    const a = withPreview(api()), c = cache(), fetcher = objects()
+    a.fetcher.mockResolvedValueOnce(Response.json({ status: 'expired', sha256: revision.sha256, preview: shown }))
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink(), fetch: fetcher as typeof fetch })
+    const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
+    const ref = { item_id: 'file', version: 2 }
+    const preview = await resolve(ref, context.actor, { purpose: 'preview' })
+    if (preview.status !== 'expired' || !preview.content) throw Error('expired preview expected')
+    expect(await (await preview.content()).text()).toBe('small preview')
+    expect(a.calls.filter(row => row.route === 'file-download')).toEqual([{ route: 'file-download', body: expect.objectContaining({ preview: true, ref }) }])
+    // A projected row says the same without a round trip; a file read never gets the preview.
+    expect((await resolve(ref, context.actor, { purpose: 'preview', metadata: { status: 'expired', sha256: null, preview: shown } }) as { content?: unknown }).content).toBeTypeOf('function')
+    // A row stored by a client before previews has none: the server is asked again.
+    a.fetcher.mockResolvedValueOnce(Response.json({ status: 'expired', sha256: revision.sha256, preview: shown }))
+    const resolves = () => a.fetcher.mock.calls.filter(row => String(row[0]).endsWith('/file-resolve')).length, before = resolves()
+    expect((await resolve(ref, context.actor, { purpose: 'preview', metadata: { status: 'expired', sha256: null } }) as { content?: unknown }).content).toBeTypeOf('function')
+    expect(resolves()).toBe(before + 1)
+    a.fetcher.mockResolvedValueOnce(Response.json({ status: 'expired', sha256: revision.sha256, preview: shown }))
+    expect(await resolve(ref, context.actor)).not.toHaveProperty('content')
+  })
   it('refuses preview bytes that are not the stored preview', async () => {
     const imageRevision = { ...revision, content_type: 'image/png', preview: { ...shown, sha256: 'ab'.repeat(32) } }
     const a = withPreview(api(imageRevision)), c = cache()

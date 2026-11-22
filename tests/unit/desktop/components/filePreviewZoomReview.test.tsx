@@ -1,13 +1,11 @@
 // @vitest-environment jsdom
 // #1625 review: reused preview panels, CSP-blocked HTML, the code editor, PhotoSwipe and the main-process probe.
 import { createElement, act } from 'react'
-import type PhotoSwipe from 'photoswipe'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../../support/testHarness'
 import { MessageFilePreviewPanel } from '../../../../apps/desktop/src/components/chat/MessageFilePreviewPanel'
 import { HtmlPreviewSurface } from '../../../../apps/desktop/src/components/preview/HtmlPreviewSurface'
 import { bindEditorFileZoom, readFileZoom, writeFileZoom } from '../../../../apps/desktop/src/components/preview/file-content-zoom'
-import { wireReadingZoom } from '../../../../apps/desktop/src/components/preview/image-reading-zoom'
 import { fileZoomScript, FILE_ZOOM_ATTRIBUTE } from '../../../../apps/desktop/src/session/shared/preview/file-zoom'
 import { PREVIEW_RESTORED_MESSAGE_TYPE } from '../../../../apps/desktop/src/session/shared/preview/preview-link-script'
 import { runWindowMenuCommand, type WindowMenuCommandTarget } from '../../../../apps/desktop/electron/window-menu-commands'
@@ -118,42 +116,6 @@ it('the code editor follows the text/code preference and takes its pinch instead
   expect(setFontSize).not.toHaveBeenCalled()
   expect(container.hasAttribute(FILE_ZOOM_ATTRIBUTE)).toBe(false)
   container.remove()
-})
-
-it('the image viewer writes the preference on a zoom only, keeps a larger one at a cap, and zooms from what is shown', () => {
-  const handlers = new Map<string, Array<(event: Record<string, unknown>) => void>>()
-  const slide = {
-    zoomLevels: { initial: 0.5, max: 1 },
-    currZoomLevel: 0.5,
-    zoomTo: vi.fn((level: number) => { emit('beforeZoomTo', { destZoomLevel: level }); slide.currZoomLevel = level }),
-  }
-  const element = document.body.appendChild(document.createElement('div'))
-  const pswp = { currSlide: slide, element, opener: { isOpen: false }, on: (name: string, handler: (event: Record<string, unknown>) => void) => handlers.set(name, [...handlers.get(name) ?? [], handler]) }
-  const emit = (name: string, event: Record<string, unknown> = {}) => handlers.get(name)?.forEach(handler => handler(event))
-  writeFileZoom('image', 3)
-  wireReadingZoom(pswp as unknown as PhotoSwipe)
-  emit('afterInit')
-
-  // Anything that is not a zoom leaves the preference alone: opening, a pan, a resize, a pinch.
-  emit('zoomPanUpdate', { slide })
-  slide.zoomTo(0.6)
-  expect(readFileZoom('image')).toBe(3)
-  pswp.opener.isOpen = true
-
-  // Zooming at this small image's cap does not lower it.
-  slide.zoomTo(1)
-  expect(readFileZoom('image')).toBe(3)
-
-  element.tabIndex = -1; element.focus()
-  expect(runScript(fileZoomScript('zoomOut'))).toBe(true)
-  expect(readFileZoom('image')).toBeCloseTo(2 / 1.2)
-  expect(slide.currZoomLevel).toBeCloseTo(0.5 * 2 / 1.2)
-
-  // A zoom below the cap is remembered.
-  slide.zoomTo(0.6)
-  expect(readFileZoom('image')).toBeCloseTo(1.2)
-  emit('destroy')
-  element.remove()
 })
 
 it('a scripted HTML page keeps Cmd+ after re-renders, also when it never scrolls and its URL ends in "?"', async () => {

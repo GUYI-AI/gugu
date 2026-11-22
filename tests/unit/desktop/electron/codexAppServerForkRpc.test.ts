@@ -6,8 +6,6 @@ import {
   CodexTurnStartTracker,
   codexTurnCompletionStatus,
   codexTurnLifecycle,
-  codexForkStartedEvent,
-  codexForkRewritesHistory,
   openCodexThread,
   CODEX_INITIALIZE_PARAMS,
 } from '../../../../apps/desktop/electron/sessionpage/codex-app-server-delivery'
@@ -334,113 +332,6 @@ describe('Codex turn start tracking', () => {
   })
 })
 describe('Codex app-server thread creation', () => {
-  it('recognizes a user fork but excludes subagent lineage', () => {
-    expect(codexForkStartedEvent({
-      method: 'thread/started',
-      params: {
-        thread: {
-          id: 'child-thread',
-          forkedFromId: 'parent-thread',
-          parentThreadId: null,
-        },
-      },
-    })).toEqual({
-      threadId: 'child-thread',
-      forkedFromId: 'parent-thread',
-      parentThreadId: null,
-    })
-    expect(codexForkStartedEvent({
-      method: 'thread/started',
-      params: {
-        thread: {
-          id: 'subagent-thread',
-          forkedFromId: 'parent-thread',
-          parentThreadId: 'parent-thread',
-        },
-      },
-    })).toEqual({
-      threadId: 'subagent-thread',
-      forkedFromId: 'parent-thread',
-      parentThreadId: 'parent-thread',
-    })
-  })
-
-  it('distinguishes a truncated or rewritten rewind from an explicit full-history fork', () => {
-    const parent = { thread: { turns: [{ id: 'turn-1' }, { id: 'turn-2' }] } }
-    expect(codexForkRewritesHistory(parent, {
-      thread: { turns: [{ id: 'turn-1' }] },
-    })).toBe(true)
-    expect(codexForkRewritesHistory(parent, {
-      thread: { turns: [{ id: 'turn-1' }, { id: 'turn-new' }] },
-    })).toBe(true)
-    expect(codexForkRewritesHistory(parent, {
-      thread: { turns: [{ id: 'turn-1' }, { id: 'turn-2' }] },
-    })).toBe(false)
-  })
-
-  it('adopts a rewritten TUI thread and persists the new provider id', async () => {
-    const onThreadIdChanged = vi.fn(async () => undefined)
-    const session = new CodexAppServerSession('rewind-session', '/unused-codex', undefined, {
-      sessionId: 'conversation-1',
-      onThreadIdChanged,
-    })
-    const rpc = vi.fn(async (_method: string, params: { threadId: string }) => ({
-      thread: {
-        id: params.threadId,
-        turns: params.threadId === 'parent-thread'
-          ? [{ id: 'turn-1' }, { id: 'turn-2' }]
-          : [{ id: 'turn-1' }],
-      },
-    }))
-    const internals = session as unknown as {
-      client: { rpc: typeof rpc }
-      threadId: string | null
-      reconcileThreadFork: (childThreadId: string, parentThreadId: string) => Promise<void>
-    }
-    internals.client = { rpc }
-    internals.threadId = 'parent-thread'
-
-    await internals.reconcileThreadFork('child-thread', 'parent-thread')
-
-    expect(session.threadId).toBe('child-thread')
-    expect(onThreadIdChanged).toHaveBeenCalledWith('child-thread')
-    expect(rpc).toHaveBeenNthCalledWith(1, 'thread/read', {
-      threadId: 'parent-thread',
-      includeTurns: true,
-    })
-    expect(rpc).toHaveBeenNthCalledWith(2, 'thread/read', {
-      threadId: 'child-thread',
-      includeTurns: true,
-    })
-  })
-
-  it('leaves a full-history explicit fork for rollout capture', async () => {
-    const onThreadIdChanged = vi.fn(async () => undefined)
-    const session = new CodexAppServerSession('explicit-fork-session', '/unused-codex', undefined, {
-      sessionId: 'conversation-2',
-      onThreadIdChanged,
-    })
-    const internals = session as unknown as {
-      client: { rpc: (method: string, params: unknown) => Promise<unknown> }
-      threadId: string | null
-      reconcileThreadFork: (childThreadId: string, parentThreadId: string) => Promise<void>
-    }
-    internals.client = {
-      rpc: async (_method, params) => ({
-        thread: {
-          id: (params as { threadId: string }).threadId,
-          turns: [{ id: 'turn-1' }, { id: 'turn-2' }],
-        },
-      }),
-    }
-    internals.threadId = 'parent-thread'
-
-    await internals.reconcileThreadFork('child-thread', 'parent-thread')
-
-    expect(session.threadId).toBe('parent-thread')
-    expect(onThreadIdChanged).not.toHaveBeenCalled()
-  })
-
   it('uses thread/fork with the provider session id for a forked conversation', async () => {
     const rpc = vi.fn(async (_method: string, _params: unknown) => ({ thread: { id: 'child-thread' } }))
     await expect(

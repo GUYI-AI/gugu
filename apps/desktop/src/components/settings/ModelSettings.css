@@ -81,7 +81,8 @@
 
 .gg-model-page .gg-model-icon-button svg { width: 18px; height: 18px; }
 
-.gg-model-page .gg-coding-provider { display: flex; flex-direction: column; gap: 20px; }
+/* A provider takes the Coding Plan card's columns (below) for its account rows. */
+.gg-model-page .gg-coding-provider { display: grid; grid-template-columns: subgrid; gap: 20px 12px; }
 .gg-model-page .gg-coding-provider-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 500; line-height: 22px; }
 .gg-model-page .gg-coding-provider-title > :first-child { width: 20px; height: 20px; }
 .gg-model-page .gg-coding-provider .gg-settings-row-title { font-weight: 400; }
@@ -91,21 +92,35 @@
 .gg-model-page .gg-model-subscription-row:hover .gg-model-name svg,
 .gg-model-page .gg-model-name:focus-visible:not([data-pointer-focus]) svg { opacity: 1; }
 
-/* Account columns share one width; SettingsRow's general 60% control cap would wrap the two windows. */
-.gg-model-page .gg-coding-provider { overflow-x: auto; }
-.gg-model-page .gg-model-subscription-row { min-width: 560px; }
-.gg-model-page .gg-model-subscription-row div.gg-settings-row { grid-template-columns: minmax(112px, 1fr) auto; }
-.gg-model-page .gg-model-subscription-row .gg-settings-row-body { flex-wrap: nowrap; }
+/* One column template for the Coding Plan card: name | 5-hour window | weekly window | actions. Account rows take their
+   columns from it (subgrid), so columns line up across rows and providers, each as wide as its widest content. */
+.gg-settings-detail .gg-model-page section[data-testid='settings-coding-plans'] > div.gg-settings-card {
+  display: grid;
+  grid-template-columns: minmax(112px, 1fr) max-content max-content minmax(min-content, max-content);
+  column-gap: 12px;
+}
+.gg-model-page [data-testid='settings-coding-plans'] > .gg-settings-card > *,
+.gg-model-page .gg-coding-provider > * { grid-column: 1 / -1; }
+.gg-model-page .gg-model-subscription-row,
+.gg-model-page .gg-model-subscription-row div.gg-settings-row { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; }
+.gg-model-page .gg-model-subscription-row .gg-settings-row-control { display: grid; grid-template-columns: subgrid; grid-column: 2 / -1; }
+.gg-model-page .gg-model-subscription-controls,
+.gg-model-page .gg-model-subscription-usage > .gg-model-quota { display: contents; }
+.gg-model-page .gg-model-subscription-usage { display: grid; grid-template-columns: subgrid; grid-column: 1 / 3; align-items: center; }
+/* Beside a quota, the account's state sits under its name; without one, it and sign-in take the quota's columns. */
+.gg-model-page .gg-model-subscription-row .gg-settings-row-body { grid-column: 1; flex-direction: column; align-items: flex-start; gap: 0; }
+.gg-model-page .gg-model-subscription-usage-state { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-title { width: 100%; }
-.gg-model-page .gg-model-subscription-row .gg-model-name { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.gg-model-page .gg-model-subscription-row .gg-model-name { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; justify-content: flex-start; }
 .gg-model-page .gg-model-subscription-row .gg-model-name svg { flex-shrink: 0; }
 .gg-model-page .gg-model-subscription-row .gg-settings-row-title > input { width: 100%; max-width: 160px; }
-.gg-model-page .gg-model-subscription-controls { display: grid; grid-template-columns: 328px 56px 28px; align-items: center; gap: 12px; }
-.gg-model-page .gg-model-subscription-usage { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.gg-model-page .gg-model-subscription-usage > .gg-model-quota { display: grid; width: 328px; grid-template-columns: repeat(2, 156px); gap: 16px; }
-.gg-model-page .gg-model-subscription-usage .gg-model-quota-window { display: grid; grid-template-columns: 36px 44px 60px; gap: 8px; }
+.gg-model-page .gg-model-subscription-usage .gg-model-quota-window { display: grid; grid-template-columns: repeat(3, max-content); align-items: center; gap: 8px; }
 .gg-model-page .gg-model-subscription-usage [data-window-minutes='300'] { grid-column: 1; }
 .gg-model-page .gg-model-subscription-usage [data-window-minutes='10080'] { grid-column: 2; }
+/* Beside a quota, sign-in joins current/switch and delete: one line when the card has room, else current/switch and
+   delete wrap under it. */
+.gg-model-page .gg-model-subscription-actions { grid-column: 3; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; }
+.gg-model-page .gg-model-subscription-state { display: flex; align-items: center; gap: 12px; }
 .gg-model-page .gg-model-subscription-status { display: flex; width: 56px; align-items: center; justify-content: center; white-space: nowrap; }
 .gg-model-page .gg-model-subscription-status > * { width: 100%; flex-shrink: 0; text-align: center; white-space: nowrap; }
 .gg-model-page .gg-model-subscription-remove { display: flex; width: 28px; min-height: 28px; align-items: center; justify-content: center; }

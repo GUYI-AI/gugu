@@ -726,6 +726,10 @@ if (process.env.GUGU_FAKE_MICROPHONE_FILE?.trim() && !app.isPackaged) {
 // pointer:none,Tailwind 的整块 hover 样式随之失效(置顶 / 归档等 hover 浮出按钮全灭)。command-line
 // 开关必须在 app ready 前追加,所以与上面的 CDP 端口放在一起。细节与真机读数见 linux-pointer-media.ts。
 pinDesktopPointerMedia(app.commandLine)
+// @@@no-renderer-ax — 平台无障碍客户端(窗口管理、启动器、划词、输入法)读一次窗口,Chromium 就为网页打开无障碍树且不再关,
+// 之后每个运行中的动画每帧多一次样式重算和树序列化,空闲的窗口一直发热。这个开关挡住平台客户端打开渲染进程的无障碍树;
+// 代价是 VoiceOver 读不到网页内容,这是有意的取舍。
+app.commandLine.appendSwitch('disable-renderer-accessibility')
 forwardWindowSeen()
 // @@@devtools-lock — 必须在任何窗口创建之前注册 'web-contents-created',否则主窗口漏在守卫外面。
 installDevtoolsLock((url) => {
@@ -4593,7 +4597,7 @@ function loadEmdashBridge(): EmdashBridgeModule | null {
     // 每次检测前都重读:咕咕开着时用户在别处装了 CLI / 改了 rc 或用户 PATH,启动时那份已经过期。
     emdashBridge.setUserPathRefresher(async () => {
       const read = await refreshUserPath()
-      return { from: read.from, shell: read.shell, at: read.at, ...(read.hydrated ? {} : { failed: read.reason }) }
+      return { from: read.from, shell: read.shell, at: read.at, tookMs: read.tookMs, ...(read.hydrated ? {} : { failed: read.reason, failedDetail: read.detail }) }
     })
     // #5873 同一次采样的另一半:整份登录 shell 环境。传的是**取值函数**而非当下的值 ——
     // 注入发生在 loadEmdashBridge() 那一刻,而 hydrateLoginShellPath() 可能还没跑过、

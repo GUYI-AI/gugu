@@ -385,6 +385,7 @@ export default {
     "fileGone": "File deleted",
     "fileVersion": "Version {{n}}",
     "fileExpired": "File expired",
+    "originalExpired": "The original has expired; only this preview is left",
     "fileMissing": "Expired",
     "reupload": "Upload again",
     "selectOriginal": "Choose the original file",

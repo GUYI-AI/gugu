@@ -20,10 +20,10 @@ export const DiffToolbar = observer(function DiffToolbar({ tab }: DiffToolbarPro
   const canPreview = tab.renderer.kind === 'text' && tab.renderer.previewKind !== undefined;
 
   const diffSourceLabel = (() => {
-    if (tab.diffGroup === 'staged') return 'Staged';
-    if (tab.diffGroup === 'disk') return 'Changed';
-    if (tab.diffGroup === 'pr') return 'PR';
-    if (tab.diffGroup === 'git') return 'Git';
+    if (tab.diffGroup === 'staged') return translate('changes.staged');
+    if (tab.diffGroup === 'disk') return translate('changes.changed');
+    if (tab.diffGroup === 'pr') return translate('diff.sourcePr');
+    if (tab.diffGroup === 'git') return translate('diff.sourceGit');
     return undefined;
   })();
 

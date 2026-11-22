@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import postcss from 'postcss'
 import { createElement, Fragment } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -63,5 +65,21 @@ describe('提示条的宿主:同一个文档里一次只有一个在画(#137)', 
   it('会话页单独成文档(没有主 app)时由它自己画', async () => {
     await render(host('session', true))
     expect(toasters()).toBe(1)
+  })
+})
+
+// #3450 首装导入卡片是常驻的、钉在右上;设置 Sheet 的 ✕ 也在右上 —— 模态开着时它要让位(不盖、不接点击)。
+describe('模态开着时首装导入卡片让位(#3450)', () => {
+  const declared = (prop: string): string[] => {
+    const values: string[] = []
+    postcss.parse(readFileSync('apps/desktop/src/components/notice-host.css', 'utf8')).walkRules((rule) => {
+      if (rule.selector.includes('[data-base-ui-inert]') && rule.selector.includes('gugu-notice-first-install-import')) {
+        rule.walkDecls(prop, (decl) => { values.push(decl.value) })
+      }
+    })
+    return values
+  }
+  it('the persistent card is hidden inside the subtree Base UI marks inert, and returns when the layer closes', () => {
+    expect(declared('visibility'), 'an open modal marks the notice host inert; the card must not paint over or intercept its controls').toContain('hidden')
   })
 })
