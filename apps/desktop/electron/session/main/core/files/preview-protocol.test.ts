@@ -51,7 +51,7 @@ vi.mock('@main/lib/events', () => ({
 }));
 
 import { remotePreviewReadChannel, remotePreviewReadResultChannel } from '@shared/events/appEvents';
-import { REMOTE_CHUNK_TIMEOUT_MS, createBytesPreview, createChatFolderPreview, createDocumentPreview, createPreview, createRemotePreview, handlePreviewRequest, previewAssetsChanged, releasePreview, setPreviewDocument } from './preview-protocol';
+import { REMOTE_CHUNK_TIMEOUT_MS, bytesRequestRefused, createBytesPreview, createChatFolderPreview, createDocumentPreview, createPreview, createRemotePreview, handlePreviewRequest, previewAssetsChanged, releasePreview, setPreviewDocument } from './preview-protocol';
 import { resolveWorkspace } from '../projects/utils';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 
@@ -570,6 +570,10 @@ describe('this machine\'s bytes of a sha, at an address that names only the sha'
     const whole = await handlePreviewRequest(new Request(url), 'pane');
     expect(whole.status).toBe(200);
     expect(whole.headers.get('content-type')).toBe('video/mp4');
+    // Only the renderer may read it cross-origin: a page previewed on this scheme (untrusted HTML) may not.
+    expect(whole.headers.get('access-control-allow-origin')).toBe('gugu-app://app');
+    const fromPage = await handlePreviewRequest(new Request(url, { headers: { Origin: 'gugu-preview://0123abcd' } }), 'pane');
+    expect(fromPage.headers.get('access-control-allow-origin')).toBe('gugu-app://app');
     expect(await whole.text()).toBe('0123456789');
     const part = await handlePreviewRequest(new Request(url, { headers: { Range: 'bytes=2-5' } }), 'pane');
     expect(part.status).toBe(206);
@@ -580,6 +584,18 @@ describe('this machine\'s bytes of a sha, at an address that names only the sha'
     expect((await handlePreviewRequest(new Request(url), 'browser')).status).toBe(404);
     releasePreview(previewId);
     expect((await handlePreviewRequest(new Request(url), 'pane')).status).toBe(404);
+  });
+
+  // A page previewed on this scheme is untrusted: it may not read a sha address, even one whose URL it got hold of.
+  it('only the renderer\'s own frame may ask for a sha address; a previewed page may not', () => {
+    const { url, previewId } = createBytesPreview(sha, 'video/mp4', file);
+    expect(bytesRequestRefused(url, 'gugu-app://app')).toBe(false);
+    for (const page of ['null', `gugu-preview://${'0'.repeat(32)}`, undefined]) expect(bytesRequestRefused(url, page)).toBe(true);
+    const document = createDocumentPreview('<p>page</p>');
+    expect(bytesRequestRefused(document.url, 'null')).toBe(false);
+    expect(bytesRequestRefused('https://example.com/', 'null')).toBe(false);
+    releasePreview(previewId);
+    releasePreview(document.previewId);
   });
 
   it('bytes that can no longer be read fail the response, loudly', async () => {

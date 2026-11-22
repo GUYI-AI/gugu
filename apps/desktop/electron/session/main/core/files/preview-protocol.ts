@@ -13,7 +13,7 @@
  * 围栏本身是纯函数,住在 `@shared/preview/preview-url`,主进程与渲染层读同一份、单测直接打它。
  */
 
-import { protocol, type Session } from 'electron';
+import { protocol, session, type Session } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
 import type { IFileSystem } from '@gugu/session-core/files';
 import { REMOTE_WORKSPACE_MAX_FILE_BYTES } from '@gugu/session-core/session-record/contract';
@@ -136,6 +136,12 @@ export function createBytesPreview(sha256: string, contentType: string, file: Se
   return { url: `${PREVIEW_SCHEME}://${previewId}/${sha256}`, previewId };
 }
 
+/** The renderer's own origin, as main loads it (main.ts: the dev server, or `gugu-app://app`); never a request's Origin. */
+export function rendererOrigin(): string {
+  const dev = process.env.VITE_DEV_SERVER_URL;
+  return dev ? new URL(dev).origin : 'gugu-app://app';
+}
+
 /** One read of a bytes registration's file while it streams. */
 const BYTES_READ = 1024 * 1024;
 
@@ -143,7 +149,7 @@ function serveBytes(registration: BytesPreviewRegistration, pathname: string, ra
   if (pathname !== `/${registration.sha256}`) return notFound('not this file');
   const { file } = registration;
   const wanted = byteRange(range, file.size);
-  if (wanted === 'unsatisfiable') return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${file.size}`, 'Access-Control-Allow-Origin': '*' } });
+  if (wanted === 'unsatisfiable') return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${file.size}`, 'Access-Control-Allow-Origin': rendererOrigin() } });
   const start = wanted?.start ?? 0;
   const end = wanted?.end ?? file.size - 1;
   let offset = start;
@@ -162,8 +168,8 @@ function serveBytes(registration: BytesPreviewRegistration, pathname: string, ra
       'Content-Type': registration.contentType,
       'Content-Length': String(end - start + 1),
       'Accept-Ranges': 'bytes',
-      // The renderer (gugu-app://) reads it as a Blob; the id is the capability, issued to that renderer alone.
-      'Access-Control-Allow-Origin': '*',
+      // Readable cross-origin by the renderer alone — never by a page previewed on this scheme, which is untrusted content.
+      'Access-Control-Allow-Origin': rendererOrigin(),
       'Cache-Control': 'no-store',
       ...(wanted ? { 'Content-Range': `bytes ${start}-${end}/${file.size}` } : {}),
     },
@@ -353,6 +359,21 @@ function assetHash(bytes: Uint8Array): string {
 export function setupPreviewProtocol(): void {
   if (protocol.isProtocolHandled(PREVIEW_SCHEME)) return;
   protocol.handle(PREVIEW_SCHEME, (request) => handlePreviewRequest(request, 'pane'));
+  // Electron keeps only the last listener: anything else on the default session that must see requests joins this one.
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    callback(bytesRequestRefused(details.url, details.frame?.origin) ? { cancel: true } : {});
+  });
+}
+
+/**
+ * A sha address is read by the renderer alone. Pages previewed on this same scheme are untrusted content, and the
+ * handler cannot tell who asks: Electron runs no CORS check on a protocol handler's response and passes it no `Origin`
+ * or `Referer`. The asking frame, as the browser knows it, can: anything but the renderer's own origin is refused.
+ */
+export function bytesRequestRefused(url: string, frameOrigin: string | undefined): boolean {
+  if (!url.startsWith(`${PREVIEW_SCHEME}://`)) return false;
+  const registration = registry.get(new URL(url).hostname);
+  return !!registration && 'file' in registration && frameOrigin !== rendererOrigin();
 }
 
 /**

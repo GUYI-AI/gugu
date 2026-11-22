@@ -511,8 +511,8 @@ protocol.registerSchemesAsPrivileged([
   // @@@6156-preview-scheme — 网页预览的文件供给。与上面两个同理由在此注册(必须早于 app
   // ready);handler 在会话页模块 boot 时装(files/preview-protocol.ts),那里才拿得到工作区。
   // 每次打开预览发一个新 id 当 host,于是两份预览各自一个 secure origin、存储互不相见。
-  // corsEnabled: the renderer fetches this machine's bytes of a sha from here; which response may be read cross-origin is
-  // still each response's own `Access-Control-Allow-Origin` (see previewSchemePrivilege).
+  // The scheme is CORS-enabled, and each kind of response decides whom it lets read it: a sha address (this machine's
+  // bytes) only the renderer's own origin; a previewed page's files, the page itself (preview-protocol.ts).
   previewSchemePrivilege()
 ])
 import {
