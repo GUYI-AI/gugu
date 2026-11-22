@@ -117,3 +117,25 @@ describe('a large cloud download reads its ranges in parallel', () => {
     expect(ranges.filter(range => range !== lane1 && range !== lane2 && range !== `bytes=0-${13 * CHUNK - 1}`)).toEqual([`bytes=${15 * CHUNK}-${27 * CHUNK - 1}`])
   })
 })
+
+describe('a platform that reads objects at its own address', () => {
+  it('every object read and a video\'s source go through it; the signed address is never fetched itself', async () => {
+    const bytes = randomBytes(1000), asked: string[] = []
+    const row = { ...revisionOf(bytes), content_type: 'video/mp4' }
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const route = String(input).split('/').at(-1)!
+      if (route === 'file-resolve') return Response.json({ ...row, status: 'ready' })
+      if (route === 'file-download') return Response.json({ status: 'ready', url: 'https://files.invalid/signed?sig=1', expires_at: new Date(Date.now() + 60_000).toISOString(), sha256: row.sha256, size_bytes: bytes.length, download_id: 'download' })
+      throw Error(`Unexpected test route ${route} ${String(init?.method)}`)
+    })
+    const endpoint = async () => ({ supabaseUrl: 'https://api.invalid', anonKey: 'test-anon', token: 'test-token', fetch: fetcher as typeof fetch })
+    const objects = vi.fn(async (input: RequestInfo | URL) => { asked.push(String(input)); return new Response(bytes) })
+    const cloud = cloudFileProviders({ endpoint, cache: memory().store, sink: async () => collect(), fetch: objects as typeof fetch, objectUrl: signed => `app-object://${encodeURIComponent(signed)}` })
+    const sink = collect()
+    await cloud.download!(row, context, sink)
+    expect(digest(sink.bytes())).toBe(row.sha256)
+    expect(asked).toEqual([`app-object://${encodeURIComponent('https://files.invalid/signed?sig=1')}`])
+    const video = await cloud.preview!(row, context, async () => { throw Error('a managed video is not read whole') })
+    expect(video).toMatchObject({ url: `app-object://${encodeURIComponent('https://files.invalid/signed?sig=1')}` })
+  })
+})

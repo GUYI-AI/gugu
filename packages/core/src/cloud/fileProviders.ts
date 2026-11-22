@@ -158,6 +158,11 @@ export function cloudFileProviders(deps: {
   endpoint(context: FileContext): Promise<AttachmentsEndpoint>
   sink(size: number, context: FileContext): Promise<FileSink>
   cache: FileChunkCache; fetch?: typeof fetch
+  /**
+   * Where this platform reads a signed object address from, when not from the address itself: the desktop renderer
+   * reads every object through main (`cloudObjectUrl`), for its bytes and for a `<video>`'s source alike.
+   */
+  objectUrl?(signed: string): string
   downloadSession?: FileDownloadSession
   metadata?(context: FileContext): Promise<unknown>
   imageCache?: Pick<Cache, 'match' | 'put'>
@@ -186,7 +191,8 @@ export function cloudFileProviders(deps: {
     context.signal?.throwIfAborted()
     const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? fetch
     context.signal?.throwIfAborted()
-    return fetcher
+    const objectUrl = deps.objectUrl
+    return objectUrl ? ((input: RequestInfo | URL, init?: RequestInit) => fetcher(objectUrl(String(input)), init)) as typeof fetch : fetcher
   }
   const read = async (revision: FileRevision, context: FileContext, encrypted: boolean, destination?: FileSink): Promise<FileBytes> => {
     const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
@@ -332,7 +338,7 @@ export function cloudFileProviders(deps: {
         advertised(signed)
         const expiresAt = Date.parse(lease.expires_at ?? '')
         if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= serverNow()) throw new Error('Invalid video preview lease')
-        return { url: lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
+        return { url: deps.objectUrl?.(lease.url) ?? lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
       }
       // A video kept on a machine has no preview of its own: it is read whole, like the file it is.
       if (video) throw new Error('Local media preview is unavailable')

@@ -23,6 +23,24 @@
 export const PREVIEW_SCHEME = 'gugu-preview';
 
 /**
+ * A cloud object's signed address, as the renderer reads it on the desktop: `gugu-preview://object/<base64url>`. Main
+ * fetches the signed address itself (`cloudObjectFetch`, one connection per request) and streams the answer back,
+ * `Range` and status passed through. Every desktop reader of cloud object bytes, a download or a `<video>`, uses it.
+ */
+export const CLOUD_OBJECT_HOST = 'object';
+export function cloudObjectUrl(signed: string): string {
+  const encoded = btoa(signed).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '');
+  return `${PREVIEW_SCHEME}://${CLOUD_OBJECT_HOST}/${encoded}`;
+}
+/** The signed https address a cloud object request carries; null for anything else. */
+export function signedUrlOfCloudObject(url: URL): string | null {
+  if (url.protocol !== `${PREVIEW_SCHEME}:` || url.hostname !== CLOUD_OBJECT_HOST) return null;
+  let signed: string;
+  try { signed = atob(url.pathname.slice(1).replaceAll('-', '+').replaceAll('_', '/')); } catch { return null; }
+  return signed.startsWith('https://') ? signed : null;
+}
+
+/**
  * 注册给 `registerSchemesAsPrivileged` 的那一条。**住在这个零依赖模块里是有原因的**:
  * 宿主 `main.ts` 必须在 `app ready` 之前注册 scheme,而它一旦在顶层 import 会话页主进程那边
  * 的模块,整张图就被提升到 `app.setPath` 之前(见 main.ts 里那条注释)。所以描述放这儿、

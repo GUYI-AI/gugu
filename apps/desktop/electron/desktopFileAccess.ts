@@ -6,6 +6,7 @@ import { attachmentRequest, configuredEndpoint, offerImagePreviewOf } from '@gug
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
 import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/core/local/files/fileSnapshots'
+import { cloudObjectFetch } from './session/main/core/files/cloud-object-fetch'
 import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
@@ -76,7 +77,7 @@ export function createDesktopFileAccess(deps: {
   /** The same held versions as `read`, as one stream on a device link (`file.stream`). */
   const stream = createProjectFileStreamer({ identity, root, env: deps.env, later })
   const metadata = createFileMetadataLoader(async (context, refs) => attachmentRequest(await endpoint(context), 'file-resolve', { refs, as: context.actor.actorId }, context.signal))
-  const providers = { ...cloudFileProviders({ endpoint, metadata, cache: createFileChunkCache(deps.tempRoot), sink: size => createFileSink(deps.tempRoot, size) }),
+  const providers = { ...cloudFileProviders({ endpoint, metadata, fetch: cloudObjectFetch, cache: createFileChunkCache(deps.tempRoot), sink: size => createFileSink(deps.tempRoot, size) }),
     local: localProjectFileProvider({ identity, read, root, env: deps.env, later }),
     ssh: async (...args: Parameters<ReturnType<typeof ownSshFileProvider>>) => {
       const links = deps.links(); return links ? ownSshFileProvider(links, deps.tempRoot)(...args) : null

@@ -15,6 +15,21 @@ const bus = vi.hoisted(() => {
 });
 
 vi.mock('electron', () => ({ protocol: { isProtocolHandled: () => false, handle: vi.fn() } }));
+// The main-process object transport (cloud-object-fetch.test.ts tests it on the wire): here, what it was asked and answers.
+const objects = vi.hoisted(() => ({
+  asked: [] as Array<{ url: string; range: string | null }>,
+  answer: async (): Promise<Response> => new Response('0123456789', { status: 200 }),
+}));
+vi.mock('./cloud-object-fetch', () => {
+  class CloudObjectRouteError extends Error {}
+  return {
+    CloudObjectRouteError,
+    cloudObjectFetch: async (url: string, init?: RequestInit) => {
+      objects.asked.push({ url, range: new Headers(init?.headers).get('range') });
+      return objects.answer();
+    },
+  };
+});
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../projects/utils', () => ({ resolveWorkspace: vi.fn(async () => null) }));
 // The chat folder a document is in, as the signed-in person reads it (app-files.ts): one document and the files beside it.
@@ -54,6 +69,8 @@ import { remotePreviewReadChannel, remotePreviewReadResultChannel } from '@share
 import { REMOTE_CHUNK_TIMEOUT_MS, bytesRequestRefused, createBytesPreview, createChatFolderPreview, createDocumentPreview, createPreview, createRemotePreview, handlePreviewRequest, previewAssetsChanged, releasePreview, setPreviewDocument } from './preview-protocol';
 import { resolveWorkspace } from '../projects/utils';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
+import { cloudObjectUrl } from '@shared/preview/preview-url';
+import { CloudObjectRouteError } from './cloud-object-fetch';
 
 const ROOT = '/root/.config/咕咕/task-home';
 const COPY = { unavailable: '没能打开 d22 上的这个网页。', outside: '这里只能打开 d22 上这条会话文件夹里的网页。' };
@@ -601,5 +618,47 @@ describe('this machine\'s bytes of a sha, at an address that names only the sha'
   it('bytes that can no longer be read fail the response, loudly', async () => {
     const { url } = createBytesPreview(sha, '', { size: 10, read: async () => { throw new Error('NotReadableError'); } });
     await expect((await handlePreviewRequest(new Request(url), 'pane')).text()).rejects.toThrow();
+  });
+});
+
+describe('a cloud object for the renderer, fetched by main', () => {
+  const signed = 'https://files.example/u/object?Expires=1&Signature=a+b/c=';
+  beforeEach(() => { objects.asked.length = 0; });
+
+  it('forwards the range to the signed address and passes the store\'s answer through as it is', async () => {
+    const url = cloudObjectUrl(signed);
+    expect(url.startsWith('gugu-preview://object/')).toBe(true);
+    objects.answer = async () => new Response('2345', { status: 206, headers: { 'content-range': 'bytes 2-5/10', 'content-length': '4', 'content-type': 'video/mp4', 'x-oss-request-id': 'kept-out' } });
+    const part = await handlePreviewRequest(new Request(url, { headers: { Range: 'bytes=2-5' } }), 'pane');
+    expect(objects.asked).toEqual([{ url: signed, range: 'bytes=2-5' }]);
+    expect(part.status).toBe(206);
+    expect(part.headers.get('content-range')).toBe('bytes 2-5/10');
+    expect(part.headers.get('content-type')).toBe('video/mp4');
+    expect(part.headers.get('x-oss-request-id')).toBeNull();
+    expect(part.headers.get('access-control-allow-origin')).toBe('gugu-app://app');
+    expect(part.headers.get('access-control-expose-headers')).toBe('Content-Range');
+    expect(await part.text()).toBe('2345');
+    // An expired signature's refusal reaches the reader as the store said it: that is what renews it.
+    objects.answer = async () => new Response(null, { status: 403 });
+    expect((await handlePreviewRequest(new Request(url), 'pane')).status).toBe(403);
+  });
+
+  it('only the renderer\'s own frame may ask, only for https, and only on the pane surface', async () => {
+    const url = cloudObjectUrl(signed);
+    expect(bytesRequestRefused(url, 'gugu-app://app')).toBe(false);
+    for (const page of ['null', `gugu-preview://${'0'.repeat(32)}`, undefined]) expect(bytesRequestRefused(url, page)).toBe(true);
+    expect((await handlePreviewRequest(new Request(cloudObjectUrl('http://files.example/plain')), 'pane')).status).toBe(404);
+    expect((await handlePreviewRequest(new Request('gugu-preview://object/%%%'), 'pane')).status).toBe(404);
+    expect((await handlePreviewRequest(new Request(url), 'browser')).status).toBe(404);
+    expect(objects.asked).toEqual([]);
+  });
+
+  it('says a refused route and a broken transport as themselves, never as bytes', async () => {
+    objects.answer = async () => { throw new CloudObjectRouteError('SOCKS5 127.0.0.1:1080'); };
+    const route = await handlePreviewRequest(new Request(cloudObjectUrl(signed)), 'pane');
+    expect([route.status, route.headers.get('x-gugu-object-failure')]).toEqual([421, 'unsupported_proxy']);
+    objects.answer = async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }); };
+    const broken = await handlePreviewRequest(new Request(cloudObjectUrl(signed)), 'pane');
+    expect([broken.status, broken.headers.get('x-gugu-object-failure')]).toEqual([502, 'transport']);
   });
 });
