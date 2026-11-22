@@ -8,7 +8,8 @@
  * 不认识的行原样进日志,❌ 猜。
  */
 import type { ChildProcess } from 'node:child_process'
-import { execFileSync, spawn } from '@gugu/core/local/childProcess'
+import { execFile, execFileSync, spawn } from '@gugu/core/local/childProcess'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { RelayEndpoint } from '@gugu/core/cloud/remoteTunnel'
@@ -23,9 +24,15 @@ export function tomlString(value: string): string {
 
 /**
  * 一份 frpc 配置。`loginFailExit = false`:中转一时连不上(网络、frps 重启)frpc 自己按退避重连,
- * ❌ 退出让我们从头拉起;日志打到标准输出,由这里读。纯函数。
+ * ❌ 退出让我们从头拉起;日志打到标准输出,由这里读。给了 admin = 开本机回环上的管理口(带口令),
+ * `frpc reload` 经它换访问端而不断别的访问端上的连接(createFrpcVisitorHost)。纯函数。
  */
-export function frpcConfig(input: { relay: RelayEndpoint; user: string; entry: FrpcProxy | FrpcVisitor }): string {
+export function frpcConfig(input: {
+  relay: RelayEndpoint
+  user: string
+  entries: ReadonlyArray<FrpcProxy | FrpcVisitor>
+  admin?: { port: number; password: string }
+}): string {
   const lines = [
     `serverAddr = ${tomlString(input.relay.serverAddr)}`,
     `serverPort = ${input.relay.serverPort}`,
@@ -37,29 +44,33 @@ export function frpcConfig(input: { relay: RelayEndpoint; user: string; entry: F
     'log.to = "console"',
     'log.level = "info"',
     'log.disablePrintColor = true',
-    '',
+    ...(input.admin
+      ? ['webServer.addr = "127.0.0.1"', `webServer.port = ${input.admin.port}`, 'webServer.user = "gugu"', `webServer.password = ${tomlString(input.admin.password)}`]
+      : []),
   ]
-  const entry = input.entry
-  if (entry.kind === 'proxy') {
-    lines.push(
-      '[[proxies]]',
-      `name = ${tomlString(entry.name)}`,
-      'type = "stcp"',
-      `secretKey = ${tomlString(entry.secretKey)}`,
-      'localIP = "127.0.0.1"',
-      `localPort = ${entry.localPort}`,
-    )
-  } else {
-    lines.push(
-      '[[visitors]]',
-      `name = ${tomlString(entry.name)}`,
-      'type = "stcp"',
-      `serverUser = ${tomlString(entry.serverUser)}`,
-      `serverName = ${tomlString(entry.serverName)}`,
-      `secretKey = ${tomlString(entry.secretKey)}`,
-      'bindAddr = "127.0.0.1"',
-      `bindPort = ${entry.bindPort}`,
-    )
+  for (const entry of input.entries) {
+    lines.push('')
+    if (entry.kind === 'proxy') {
+      lines.push(
+        '[[proxies]]',
+        `name = ${tomlString(entry.name)}`,
+        'type = "stcp"',
+        `secretKey = ${tomlString(entry.secretKey)}`,
+        'localIP = "127.0.0.1"',
+        `localPort = ${entry.localPort}`,
+      )
+    } else {
+      lines.push(
+        '[[visitors]]',
+        `name = ${tomlString(entry.name)}`,
+        'type = "stcp"',
+        `serverUser = ${tomlString(entry.serverUser)}`,
+        `serverName = ${tomlString(entry.serverName)}`,
+        `secretKey = ${tomlString(entry.secretKey)}`,
+        'bindAddr = "127.0.0.1"',
+        `bindPort = ${entry.bindPort}`,
+      )
+    }
   }
   return `${lines.join('\n')}\n`
 }
@@ -158,6 +169,12 @@ export function startFrpc(input: {
   configFile: string
   config: string
   onState?: (up: boolean) => void
+  /** Every log line, for a runner that tracks more than one visitor (createFrpcVisitorHost). */
+  onLine?: (line: string) => void
+  /** The process exited (it is restarted after a backoff unless stopped). */
+  onExit?: () => void
+  /** The binary could not be started at all. */
+  onSpawnError?: (message: string) => void
   log?: (message: string, fields?: Record<string, unknown>) => void
   spawnFrpc?: (binary: string, args: string[]) => ChildProcess
 }): FrpcRunner {
@@ -211,6 +228,7 @@ export function startFrpc(input: {
         if (!line.trim()) continue
         tail.push(line)
         if (tail.length > TAIL_LINES) tail.shift()
+        input.onLine?.(line)
         const event = classifyFrpcLine(line)
         if (event === 'up') {
           rejected = null
@@ -230,11 +248,13 @@ export function startFrpc(input: {
     proc.on('error', (error) => {
       spawnFailure = error.message
       log('frpc spawn failed', { error: error.message })
+      input.onSpawnError?.(error.message)
       wake()
     })
     proc.on('exit', (code, signal) => {
       if (child === proc) child = null
       setUp(false)
+      input.onExit?.()
       if (stopped) return
       log('frpc exited, restarting', { code, signal, backoffMs: backoff, tail: tail.slice(-3) })
       restartTimer = setTimeout(run, backoff)
@@ -285,6 +305,206 @@ export function startFrpc(input: {
         fs.rmSync(pidFile, { force: true })
       } catch {
         // 配置里有令牌与密钥;删不掉也只是一份本用户 0600 的文件
+      }
+    },
+  }
+}
+
+/**
+ * The desktop's visitors (one per remote machine) share one frpc per relay: one process with a visitor per
+ * machine, instead of one process per machine (~8–10 MB resident each on macOS; six remote machines were six frpc).
+ * Adding or removing a machine rewrites the config and hot-reloads it through frpc's loopback admin port
+ * (`frpc reload`): visitors that stay keep their connections (frpc 0.71.1, measured).
+ * A visitor's state comes from the lines that name it: `visitor added: [name]` = up; a down / rejected line
+ * carrying `[name]` is that visitor's; one with no visitor name (the relay connection) is every visitor's.
+ */
+export type FrpcVisitorHost = {
+  start(input: {
+    binary: string
+    relay: RelayEndpoint
+    user: string
+    visitor: Omit<FrpcVisitor, 'kind'>
+    onState?: (up: boolean) => void
+  }): FrpcRunner
+}
+
+type HostedVisitor = {
+  entry: FrpcVisitor
+  up: boolean
+  stopped: boolean
+  rejected: string | null
+  failure: string | null
+  onState?: (up: boolean) => void
+  waiters: Set<() => void>
+}
+
+type VisitorGroup = {
+  key: string
+  binary: string
+  relay: RelayEndpoint
+  user: string
+  configFile: string
+  admin: { port: number; password: string } | null
+  runner: FrpcRunner | null
+  visitors: Map<string, HostedVisitor>
+  chain: Promise<void>
+}
+
+const VISITOR_NAME = /\[(visit-[^\]]+)\]/
+const VISITOR_ADDED = /visitor added: \[([^\]]+)\]/
+const RELOAD_TIMEOUT_MS = 15_000
+
+function runReload(binary: string, configFile: string): Promise<{ ok: true } | { ok: false; detail: string }> {
+  return new Promise((resolve) => {
+    execFile(binary, ['reload', '-c', configFile], { timeout: RELOAD_TIMEOUT_MS }, (error, stdout, stderr) => {
+      resolve(error ? { ok: false, detail: `${String(stderr || stdout || error.message).trim().split('\n').slice(-2).join(' ')}` } : { ok: true })
+    })
+  })
+}
+
+export function createFrpcVisitorHost(deps: {
+  dir: () => string
+  freePort: () => Promise<number>
+  log: (message: string, fields?: Record<string, unknown>) => void
+  startFrpc?: typeof startFrpc
+  reload?: typeof runReload
+}): FrpcVisitorHost {
+  const groups = new Map<string, VisitorGroup>()
+  const wake = (visitor: HostedVisitor) => {
+    for (const waiter of [...visitor.waiters]) waiter()
+  }
+  const setUp = (visitor: HostedVisitor, up: boolean) => {
+    if (visitor.up === up) return
+    visitor.up = up
+    if (up) visitor.rejected = null
+    visitor.onState?.(up)
+    wake(visitor)
+  }
+  const fail = (group: VisitorGroup, detail: string) => {
+    for (const visitor of group.visitors.values()) {
+      visitor.failure = detail
+      setUp(visitor, false)
+      wake(visitor)
+    }
+  }
+
+  const onLine = (group: VisitorGroup, line: string) => {
+    const added = VISITOR_ADDED.exec(line)
+    if (added) {
+      const visitor = group.visitors.get(added[1]!)
+      if (visitor) setUp(visitor, true)
+      return
+    }
+    const event = classifyFrpcLine(line)
+    if (event !== 'down' && event !== 'rejected') return
+    const named = VISITOR_NAME.exec(line)?.[1]
+    // A named line about a visitor that was just removed (its listener closing on reload) touches nobody.
+    const targets = named ? [group.visitors.get(named)].filter((v): v is HostedVisitor => !!v) : [...group.visitors.values()]
+    for (const visitor of targets) {
+      if (event === 'rejected') {
+        visitor.rejected = line.trim()
+        wake(visitor)
+      }
+      setUp(visitor, false)
+    }
+  }
+
+  const startProcess = (group: VisitorGroup, config: string) => {
+    group.runner = (deps.startFrpc ?? startFrpc)({
+      binary: group.binary,
+      configFile: group.configFile,
+      config,
+      onLine: (line) => onLine(group, line),
+      onExit: () => {
+        for (const visitor of group.visitors.values()) setUp(visitor, false)
+      },
+      onSpawnError: (message) => fail(group, message),
+      log: deps.log,
+    })
+  }
+
+  // Bring the process in line with the group's visitors. Runs one at a time per group (group.chain).
+  const sync = async (group: VisitorGroup) => {
+    if (group.visitors.size === 0) {
+      group.runner?.stop()
+      group.runner = null
+      if (groups.get(group.key) === group) groups.delete(group.key)
+      return
+    }
+    group.admin ??= { port: await deps.freePort(), password: crypto.randomBytes(18).toString('base64url') }
+    const config = frpcConfig({ relay: group.relay, user: group.user, entries: [...group.visitors.values()].map((v) => v.entry), admin: group.admin })
+    if (!group.runner) return startProcess(group, config)
+    fs.writeFileSync(group.configFile, config, { mode: 0o600 })
+    const reloaded = await (deps.reload ?? runReload)(group.binary, group.configFile)
+    if (reloaded.ok) return
+    // The admin port did not take it (the process may be between restarts): start over with the full set.
+    deps.log('frpc reload failed, restarting it', { detail: reloaded.detail, visitors: group.visitors.size })
+    group.runner.stop()
+    for (const visitor of group.visitors.values()) setUp(visitor, false)
+    startProcess(group, config)
+  }
+  const schedule = (group: VisitorGroup) => {
+    group.chain = group.chain.then(() => sync(group)).catch((error: unknown) => {
+      deps.log('frpc visitor host failed', { error: (error as Error).message })
+      fail(group, (error as Error).message)
+    })
+  }
+
+  return {
+    start(input) {
+      const key = JSON.stringify([input.binary, input.relay.serverAddr, input.relay.serverPort, input.relay.token, input.relay.protocol ?? 'tcp', input.user])
+      let group = groups.get(key)
+      if (!group) {
+        const id = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16)
+        group = {
+          key, binary: input.binary, relay: input.relay, user: input.user,
+          configFile: path.join(deps.dir(), `frpc-relay-${id}.toml`),
+          admin: null, runner: null, visitors: new Map(), chain: Promise.resolve(),
+        }
+        groups.set(key, group)
+      }
+      const owner = group
+      owner.visitors.get(input.visitor.name)?.waiters.forEach((waiter) => waiter())
+      const visitor: HostedVisitor = {
+        entry: { kind: 'visitor', ...input.visitor },
+        up: false, stopped: false, rejected: null, failure: null, onState: input.onState, waiters: new Set(),
+      }
+      owner.visitors.set(input.visitor.name, visitor)
+      schedule(owner)
+      return {
+        isUp: () => visitor.up,
+        waitUp(timeoutMs) {
+          return new Promise((resolve) => {
+            const outcome = (): Awaited<ReturnType<FrpcRunner['waitUp']>> | null => {
+              if (visitor.up) return { ok: true }
+              if (visitor.stopped) return { ok: false, reason: 'stopped', detail: 'stopped' }
+              if (visitor.rejected) return { ok: false, reason: 'rejected', detail: visitor.rejected }
+              if (visitor.failure) return { ok: false, reason: 'spawn', detail: visitor.failure }
+              return null
+            }
+            const timer = setTimeout(() => finish({ ok: false, reason: 'timeout', detail: 'visitor did not come up' }), timeoutMs)
+            const waiter = () => {
+              const result = outcome()
+              if (result) finish(result)
+            }
+            function finish(result: Awaited<ReturnType<FrpcRunner['waitUp']>>) {
+              clearTimeout(timer)
+              visitor.waiters.delete(waiter)
+              resolve(result)
+            }
+            visitor.waiters.add(waiter)
+            waiter()
+          })
+        },
+        stop() {
+          if (visitor.stopped) return
+          visitor.stopped = true
+          setUp(visitor, false)
+          wake(visitor)
+          if (owner.visitors.get(visitor.entry.name) !== visitor) return
+          owner.visitors.delete(visitor.entry.name)
+          schedule(owner)
+        },
       }
     },
   }

@@ -23,7 +23,7 @@ import {
   tunnelRelayUp,
 } from '../../../../packages/core/src/cloud/remoteTunnel'
 import { resolveDeviceHostInfo } from '../../../../packages/core/src/cloud/deviceHostInfo'
-import { classifyFrpcLine, frpcCandidates, frpcConfig, killStaleFrpc, startFrpc } from '../../../../apps/desktop/electron/server/frpc-runner'
+import { classifyFrpcLine, createFrpcVisitorHost, frpcCandidates, frpcConfig, killStaleFrpc, startFrpc } from '../../../../apps/desktop/electron/server/frpc-runner'
 import {
   createAuthorizedKeys,
   ensureHostKey,
@@ -119,7 +119,7 @@ describe('中转坐标与 tunnel.open 的形状', () => {
 
 describe('frpc:配置、日志、进程', () => {
   it('proxy 与 visitor 各一份;字符串按 TOML 转义', () => {
-    const proxy = frpcConfig({ relay: RELAY, user: 'u-1', entry: { kind: 'proxy', name: 'ssh-x', secretKey: 'k"1', localPort: 4022 } })
+    const proxy = frpcConfig({ relay: RELAY, user: 'u-1', entries: [{ kind: 'proxy', name: 'ssh-x', secretKey: 'k"1', localPort: 4022 }] })
     expect(proxy).toContain('type = "stcp"')
     expect(proxy).toContain('secretKey = "k\\"1"')
     expect(proxy).toContain('localIP = "127.0.0.1"')
@@ -128,19 +128,37 @@ describe('frpc:配置、日志、进程', () => {
     const visitor = frpcConfig({
       relay: RELAY,
       user: 'u-1',
-      entry: { kind: 'visitor', name: 'visit-x', serverUser: 'u-1', serverName: 'ssh-x', secretKey: 'k', bindPort: 5022 },
+      entries: [{ kind: 'visitor', name: 'visit-x', serverUser: 'u-1', serverName: 'ssh-x', secretKey: 'k', bindPort: 5022 }],
     })
     expect(visitor).toContain('[[visitors]]')
     expect(visitor).toContain('serverUser = "u-1"')
     expect(visitor).toContain('bindAddr = "127.0.0.1"')
     expect(visitor).not.toContain('[[proxies]]')
     expect(proxy).not.toContain('transport.protocol')
+    expect(proxy).not.toContain('webServer')
+  })
+
+  it('several visitors in one config, with the loopback admin port that `frpc reload` uses', () => {
+    const config = frpcConfig({
+      relay: RELAY,
+      user: 'u-1',
+      admin: { port: 7400, password: 'p"w' },
+      entries: [
+        { kind: 'visitor', name: 'visit-a', serverUser: 'u-1', serverName: 'ssh-a', secretKey: 'ka', bindPort: 5001 },
+        { kind: 'visitor', name: 'visit-b', serverUser: 'u-1', serverName: 'ssh-b', secretKey: 'kb', bindPort: 5002 },
+      ],
+    })
+    expect(config.match(/\[\[visitors\]\]/g)).toHaveLength(2)
+    expect(config).toContain('webServer.addr = "127.0.0.1"')
+    expect(config).toContain('webServer.port = 7400')
+    expect(config).toContain('webServer.password = "p\\"w"')
+    expect(config.indexOf('webServer.port')).toBeLessThan(config.indexOf('[[visitors]]'))
   })
 
   it('wss 的中转:两份配置都写 transport.protocol = "wss"', () => {
     const relay = { serverAddr: 'relay.example.test', serverPort: 443, token: 't', protocol: 'wss' as const }
-    const proxy = frpcConfig({ relay, user: 'u-1', entry: { kind: 'proxy', name: 'ssh-x', secretKey: 'k', localPort: 4022 } })
-    const visitor = frpcConfig({ relay, user: 'u-1', entry: { kind: 'visitor', name: 'v', serverUser: 'u-1', serverName: 'ssh-x', secretKey: 'k', bindPort: 5022 } })
+    const proxy = frpcConfig({ relay, user: 'u-1', entries: [{ kind: 'proxy', name: 'ssh-x', secretKey: 'k', localPort: 4022 }] })
+    const visitor = frpcConfig({ relay, user: 'u-1', entries: [{ kind: 'visitor', name: 'v', serverUser: 'u-1', serverName: 'ssh-x', secretKey: 'k', bindPort: 5022 }] })
     for (const config of [proxy, visitor]) {
       expect(config).toContain('transport.protocol = "wss"')
       expect(config).toContain('serverPort = 443')
@@ -212,6 +230,107 @@ describe('frpc:配置、日志、进程', () => {
     child.stderr.write("[W] login to the server failed: token in login doesn't match token from configuration\n")
     await expect(result).resolves.toMatchObject({ ok: false, reason: 'rejected' })
     rejected.stop()
+  })
+})
+
+describe('frpc visitor host: one process per relay, a visitor per machine', () => {
+  type Started = { config: string; configFile: string; onLine: (line: string) => void; onExit: () => void; stopped: boolean }
+  function host(reloadOk = true) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'frpc-host-'))
+    const started: Started[] = []
+    const reloads: string[] = []
+    let port = 7000
+    const visitors = createFrpcVisitorHost({
+      dir: () => dir,
+      freePort: async () => ++port,
+      log: () => undefined,
+      startFrpc: ((input: { config: string; configFile: string; onLine: (line: string) => void; onExit: () => void }) => {
+        const proc: Started = { config: input.config, configFile: input.configFile, onLine: input.onLine, onExit: input.onExit, stopped: false }
+        started.push(proc)
+        return { isUp: () => false, waitUp: async () => ({ ok: true as const }), stop: () => void (proc.stopped = true) }
+      }) as never,
+      reload: async (_binary, configFile) => {
+        reloads.push(fs.readFileSync(configFile, 'utf8'))
+        return reloadOk ? { ok: true as const } : { ok: false as const, detail: 'connect: connection refused' }
+      },
+    })
+    return { dir, started, reloads, visitors }
+  }
+  const visitor = (id: string, bindPort: number) => ({ name: `visit-${id}`, serverUser: 'me', serverName: `ssh-${id}`, secretKey: `k-${id}`, bindPort })
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 10))
+
+  it('a second machine on the same relay is a hot reload of the one process, not a second process', async () => {
+    const { started, reloads, visitors } = host()
+    const a = visitors.start({ binary: 'frpc', relay: RELAY, user: 'me', visitor: visitor('a', 5001) })
+    await settle()
+    const b = visitors.start({ binary: 'frpc', relay: RELAY, user: 'me', visitor: visitor('b', 5002) })
+    await settle()
+    expect(started).toHaveLength(1)
+    expect(started[0]!.config).toContain('serverName = "ssh-a"')
+    expect(started[0]!.config).toContain('webServer.port = 7001')
+    expect(reloads).toHaveLength(1)
+    expect(reloads[0]).toContain('serverName = "ssh-a"')
+    expect(reloads[0]).toContain('serverName = "ssh-b"')
+    a.stop()
+    await settle()
+    expect(reloads.at(-1)).not.toContain('serverName = "ssh-a"')
+    expect(started[0]!.stopped).toBe(false)
+    b.stop()
+    await settle()
+    expect(started[0]!.stopped).toBe(true)
+  })
+
+  it('state per visitor: its own `visitor added` / named lines; unnamed relay lines reach every visitor', async () => {
+    const { started, visitors } = host()
+    const states: Record<string, boolean[]> = { a: [], b: [] }
+    const a = visitors.start({ binary: 'frpc', relay: RELAY, user: 'me', visitor: visitor('a', 5001), onState: (up) => states.a!.push(up) })
+    const b = visitors.start({ binary: 'frpc', relay: RELAY, user: 'me', visitor: visitor('b', 5002), onState: (up) => states.b!.push(up) })
+    await settle()
+    const proc = started[0]!
+    const waitA = a.waitUp(1_000)
+    proc.onLine('[I] [visitor/visitor_manager.go:186] [49e9] visitor added: [visit-a]')
+    await expect(waitA).resolves.toEqual({ ok: true })
+    expect([a.isUp(), b.isUp()]).toEqual([true, false])
+    proc.onLine('[I] [visitor/visitor_manager.go:186] [49e9] visitor added: [visit-b]')
+    proc.onLine('[W] [visitor/visitor.go:146] [49e9] [visit-b] stcp internal listener closed')
+    expect([a.isUp(), b.isUp()]).toEqual([true, false])
+    // A visitor already removed from the set (its listener closing on reload) touches nobody.
+    proc.onLine('[W] [visitor/visitor.go:146] [49e9] [visit-gone] stcp local listener closed')
+    expect(a.isUp()).toBe(true)
+    proc.onLine('[I] [client/service.go:335] [49e9] try to connect to server...')
+    expect([a.isUp(), b.isUp()]).toEqual([false, false])
+    const rejected = b.waitUp(1_000)
+    proc.onLine("[W] login to the server failed: token in login doesn't match token from configuration")
+    await expect(rejected).resolves.toMatchObject({ ok: false, reason: 'rejected' })
+    proc.onLine('[I] [visitor/visitor_manager.go:186] [49e9] visitor added: [visit-a]')
+    proc.onExit()
+    expect(states.a).toEqual([true, false, true, false])
+    expect(states.b).toEqual([true, false])
+    a.stop()
+    b.stop()
+  })
+
+  it('a reload the admin port refuses restarts the process with the whole set (loudly, never a silent half state)', async () => {
+    const { started, visitors } = host(false)
+    visitors.start({ binary: 'frpc', relay: RELAY, user: 'me', visitor: visitor('a', 5001) })
+    await settle()
+    const b = visitors.start({ binary: 'frpc', relay: RELAY, user: 'me', visitor: visitor('b', 5002) })
+    await settle()
+    expect(started).toHaveLength(2)
+    expect(started[0]!.stopped).toBe(true)
+    expect(started[1]!.config).toContain('serverName = "ssh-a"')
+    expect(started[1]!.config).toContain('serverName = "ssh-b"')
+    expect(b.isUp()).toBe(false)
+  })
+
+  it('a different relay (or account) is its own process', async () => {
+    const { started, visitors } = host()
+    visitors.start({ binary: 'frpc', relay: RELAY, user: 'me', visitor: visitor('a', 5001) })
+    visitors.start({ binary: 'frpc', relay: { ...RELAY, serverAddr: 'other.example.test' }, user: 'me', visitor: visitor('b', 5002) })
+    await settle()
+    expect(started).toHaveLength(2)
+    expect(new Set(started.map((proc) => proc.configFile)).size).toBe(2)
+    expect(started.every((proc) => /frpc-relay-[0-9a-f]{16}\.toml$/.test(proc.configFile))).toBe(true)
   })
 })
 
@@ -451,7 +570,7 @@ describe('桌面那一头:状态机', () => {
   }
   function deps(overrides: Partial<Parameters<typeof createTunnelMachines>[0]> = {}) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tunnel-desk-'))
-    const configs: string[] = []
+    const configs: { serverName: string; bindPort: number }[] = []
     return {
       configs,
       deps: {
@@ -464,8 +583,8 @@ describe('桌面那一头:状态机', () => {
         log: () => undefined,
         freePort: async () => 5555,
         runSsh: async () => ({ code: 0, stderr: '' }),
-        startFrpc: ((input: { config: string }) => {
-          configs.push(input.config)
+        startVisitor: ((input: { visitor: { serverName: string; bindPort: number } }) => {
+          configs.push(input.visitor)
           return { isUp: () => true, waitUp: async () => ({ ok: true as const }), stop: () => undefined }
         }) as never,
         ...overrides,
@@ -513,8 +632,7 @@ describe('桌面那一头:状态机', () => {
     await settle()
     expect(machines.state()).toEqual({ ready: ['d1'], problems: {} })
     expect(machines.linkMachine('d1')).toMatchObject({ accountUserId: 'me', target: { destination: 'gugu@127.0.0.1', port: 5555 } })
-    expect(configs[0]).toContain('serverName = "ssh-d1-0001"')
-    expect(configs[0]).toContain('bindPort = 5555')
+    expect(configs[0]).toMatchObject({ serverName: 'ssh-d1-0001', bindPort: 5555 })
     machines.want([])
     expect(machines.state()).toEqual({ ready: [], problems: {} })
     expect(machines.linkMachine('d1')).toBeNull()
@@ -554,7 +672,7 @@ describe('桌面那一头:状态机', () => {
           calls += 1
           return calls === 1 ? new Promise((resolve) => (releaseFirst = resolve)) : okResponse
         }) as never,
-        startFrpc: (() => {
+        startVisitor: (() => {
           const frpc = { stopped: false }
           started.push(frpc)
           return { isUp: () => true, waitUp: async () => ({ ok: true as const }), stop: () => void (frpc.stopped = true) }
