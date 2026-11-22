@@ -55,7 +55,8 @@ export function sourceKeyOf(source: AttachmentSource): string {
 
 /** `acknowledged`: only for 'shown' — the bytes came before the server acknowledged the read; rejecting means take them down. */
 /** `pending`: its message declared it and its sender's upload is still on its way; `unsent`: that upload did not complete. */
-export type AttachmentBytes = { status: 'ready'; blob: Blob; link: FileRevision; acknowledged?: Promise<void> } | { status: 'gone' | 'expired' | 'missing' | 'pending' | 'unsent' }
+/** `expired` with `thumb`: a thumbnail read of an image whose original expired, its sender's preview. */
+export type AttachmentBytes = { status: 'ready'; blob: Blob; link: FileRevision; acknowledged?: Promise<void> } | { status: 'gone' | 'missing' | 'pending' | 'unsent' } | { status: 'expired'; thumb?: Blob }
 type ReadBytes = Exclude<AttachmentBytes, { status: 'unsent' }> | { status: 'failed' }
 
 /** Thumbnails only display; original blobs are created exclusively from a fully verified file handle. */
@@ -72,6 +73,7 @@ async function readAttachmentBytes(source: AttachmentSource, variant: Attachment
     const local = metadata?.status === 'ready' ? await localAttachmentCopy(metadata.revision.sha256, metadata.revision.content_type) : null
     if (local && metadata?.status === 'ready') return { status: 'ready', blob: local, link: metadata.revision }
     const preview = await attachmentPreview(source, metadata)
+    if (preview.status === 'expired') return preview.content ? { status: 'expired', thumb: await preview.content() } : { status: 'expired' }
     if (preview.status !== 'ready') return preview
     try {
       onLink?.(preview.revision)
@@ -111,7 +113,8 @@ export type AttachmentView =
   /** arrived: the bytes came while the bubble was waiting for its sender's upload (it fades them in). */
   | { status: 'ready'; objectUrl: string; link?: FileRevision; arrived?: true }
   | { status: 'gone' }
-  | { status: 'expired' }
+  /** objectUrl: its preview, which outlived the original. */
+  | { status: 'expired'; objectUrl?: string }
   | { status: 'missing' }
   | { status: 'failed'; holder: OfflineHolder | null }
   /** Its sender's upload is still on its way (the bubble keeps looking); unsent: it did not complete. */
@@ -199,6 +202,7 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
         awaited.current = true
         return show({ status: 'pending' })
       }
+      if (bytes.status === 'expired' && bytes.thumb) { const objectUrl = URL.createObjectURL(bytes.thumb); return show({ status: 'expired', objectUrl }, objectUrl) }
       if (bytes.status !== 'ready') return show({ status: bytes.status })
       const objectUrl = URL.createObjectURL(bytes.blob)
       // Pixels already on screen are swapped only once the new ones are decoded: the <img> never paints empty between them.
@@ -206,7 +210,7 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
       if (!alive) return URL.revokeObjectURL(objectUrl)
       show({ status: 'ready', objectUrl, link: bytes.link, ...(awaited.current ? { arrived: true } : {}) }, objectUrl)
     }
-    if (variant === 'thumb' && metadata && metadata.status !== 'ready') {
+    if (variant === 'thumb' && metadata && metadata.status !== 'ready' && metadata.status !== 'expired') {
       if (metadata.status === 'pending') void showBytes({ status: 'pending' }, false)
       else show({ status: metadata.status === 'failed' ? 'unsent' : metadata.status })
       return () => { alive = false }
