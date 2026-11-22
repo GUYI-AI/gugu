@@ -18,10 +18,9 @@ export type DropVerdict = boolean | string;
  * 隔着看不见的已归档会话成环只有主进程查得到 —— 松手后由 moveSessionUnder 的失败提示说。
  */
 export function nestVerdict(child: DraggedSessionRef, target: { sessionId: string; title: string } | null): DropVerdict {
-  const parent = sidebarStore.parentOf(child.sessionId);
-  if (target === null) return parent !== null;
+  if (target === null) return sidebarStore.parentOf(child.sessionId) !== null;
   if (target.sessionId === child.sessionId) return false;
-  if (parent === target.sessionId) return translateSessionMessage('sidebar.nestRefusedAlready', { parent: target.title });
+  if (sidebarStore.parentOf(child.sessionId) === target.sessionId) return translateSessionMessage('sidebar.nestRefusedAlready', { parent: target.title });
   if (sidebarStore.isWithin(target.sessionId, child.sessionId)) return translateSessionMessage('sidebar.nestRefusedLoop', { parent: target.title, child: child.title });
   return true;
 }
