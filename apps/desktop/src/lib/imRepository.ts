@@ -16,7 +16,7 @@ import { clearMessageWindows } from './messageWindows'
 import { assertIdentityClosure } from './identityClosure'
 import { resolveListenModeDefault } from '@gugu/core/cloud/listenMode'
 import { rendererLogger } from './log'
-import { initializeMessages, ingestMessages } from './messageIngest'
+import { initializeMessages, ingestMessages, retireClosedMessageAccount } from './messageIngest'
 import { messageWindow } from './messageWindows'
 import { compareChatsByActivityDesc } from '@gugu/core/shared/ui/chatModels'
 import { captureMessagePosition } from '@gugu/core/shared/ui/messageTimeline'
@@ -169,6 +169,7 @@ export async function eraseClosedImAccount(accountId: string, suppliedAdapter?: 
   const adapter = suppliedAdapter ?? await openLocalSyncDb()
   try {
     if (!adapter.retireAccount) throw new Error('Local account retirement is unavailable')
+    await retireClosedMessageAccount(accountId)
     await adapter.retireAccount(accountId)
     if (typeof window !== 'undefined') clearClosedLegacyChatList(accountId)
     clearMessageWindows(accountId)
