@@ -144,7 +144,7 @@ describe('右键「App」列出来的 App (#7050)', () => {
       [app('zeta'), app('off'), app('files', {}, { opensFiles: { chat: ['.x.json'] } }), app('alpha')],
       ['off']
     );
-    expect(peekInstalledApps('local')!.openableApps.map((entry) => entry.extensionId)).toEqual(['zeta', 'alpha']);
+    expect(peekInstalledApps('local')!.appsIn('page').map((entry) => entry.extensionId)).toEqual(['zeta', 'alpha']);
   });
 });
 

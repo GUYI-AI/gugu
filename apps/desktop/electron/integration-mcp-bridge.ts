@@ -37,7 +37,7 @@ export interface LocalIntegrationTools {
  * 是平台的转发口 + 本人现取的会话令牌。`fetch`:认得那一端特有的「不成」应答、把它说成一句清楚的错(平台转发口的
  * 「没连」「存着的凭据被拒」);不给 = 全局 fetch。
  */
-export type IntegrationEndpoint = { url: string; headers: Record<string, string>; transport?: McpTransportKind; fetch?: typeof fetch }
+export type IntegrationEndpoint = { url: string; headers: Record<string, string>; transport?: McpTransportKind; fetch?: typeof globalThis.fetch }
 
 /** 工具从哪来:转发给对方的托管 MCP,或咕咕自己答。 */
 export type IntegrationUpstream =

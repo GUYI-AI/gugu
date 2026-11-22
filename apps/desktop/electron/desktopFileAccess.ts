@@ -2,21 +2,20 @@ import type { RuntimeAuth } from '@gugu/core'
 import type { DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder'
 import { mkdir } from 'node:fs/promises'
 import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime'
-import { attachmentRequest, configuredEndpoint } from '@gugu/core/cloud/attachmentsApi'
+import { attachmentRequest, configuredEndpoint, offerImagePreviewOf } from '@gugu/core/cloud/attachmentsApi'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
 import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/core/local/files/fileSnapshots'
 import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
-import { PROJECT_FILE_READ, createProjectFileReader, localProjectFileProvider } from './projectFileHost'
+import { PROJECT_FILE_READ, createProjectFileReader, createProjectFileStreamer, heldFileBlob, localProjectFileProvider } from './projectFileHost'
 import { ownSshFileProvider, type HeldFileSshLinks } from './projectFileSsh'
 import { createProjectTransferHost } from './projectFileTransferHost'
 import { fileHoldings, type FileVersionLookup as ProjectFileVersionLookup } from './fileHoldings'
 import { listMyChatFolders, type ChatFoldersRpcClient } from '@gugu/core/cloud/chatFolders'
 import type { setAccountFileResolver } from './session/main/core/extensions/account-token'
 import { createProjectFilePublisher } from './projectFilePublication'
-import { offerNativeImagePreview } from './imagePreview'
 import type { makeIdentityClient } from './supabase'
 
 /** One composition root for native IPC, Apps, MCP and inbox. Identity lookup here never registers or refreshes. */
@@ -44,7 +43,7 @@ export function createDesktopFileAccess(deps: {
   auth(): Promise<RuntimeAuth | null>; root(projectId: string): Promise<string | null>
   /** This device's project bound to a chat, as the account records it. */
   project(chatId: string): Promise<string | undefined>
-  links(): HeldFileSshLinks | null; tempRoot: string; fetch: typeof fetch; env?: NodeJS.ProcessEnv
+  links(): HeldFileSshLinks | null; tempRoot: string; fetch: typeof globalThis.fetch; env?: NodeJS.ProcessEnv
   rpc(name: string, args: Record<string, unknown>): Promise<unknown>
   /** Where this device keeps what it sends into project chats it binds no project to (DEVICE_STORE). */
   deviceStore: string
@@ -75,9 +74,11 @@ export function createDesktopFileAccess(deps: {
     return row?.status === 'ready' ? row : null
   }
   const read = createProjectFileReader({ identity, root, later })
+  /** The same held versions as `read`, as one stream on a device link (`file.stream`). */
+  const stream = createProjectFileStreamer({ identity, root, later })
   const metadata = createFileMetadataLoader(async (context, refs) => attachmentRequest(await endpoint(context), 'file-resolve', { refs, as: context.actor.actorId }, context.signal))
   const providers = { ...cloudFileProviders({ endpoint, metadata, cache: createFileChunkCache(deps.tempRoot), sink: size => createFileSink(deps.tempRoot, size) }),
-    local: localProjectFileProvider({ identity, read, tempRoot: deps.tempRoot, later }),
+    local: localProjectFileProvider({ identity, read, root, later }),
     ssh: async (...args: Parameters<ReturnType<typeof ownSshFileProvider>>) => {
       const links = deps.links(); return links ? ownSshFileProvider(links, deps.tempRoot)(...args) : null
     },
@@ -97,7 +98,7 @@ export function createDesktopFileAccess(deps: {
   }
   const sshHandlers: DeviceRpcHandlers = { [PROJECT_FILE_READ]: async (payload, ctx) => ({ result: await read(payload as Parameters<typeof read>[0], ctx.request.user_id) }) }
   const publish = createProjectFilePublisher({ identity, root, project: deps.project, rpc: deps.rpc,
-    preview: async (original, contentType, sha256) => offerNativeImagePreview(await endpoint(), original, contentType, sha256, (await identity()).accountId),
+    preview: async (original, contentType, sha256) => offerImagePreviewOf(await endpoint(), original, contentType, sha256, (await identity()).accountId),
     async storage() { const { auth, db } = await identityDb(); return parseFileStorage(await readUserSettingsConfig(db as unknown as SettingsTableClient, auth.userId, 'user')) },
     // @@@group-folders Files stay on this account's machines in a chat one of its devices binds a folder to.
     async projectChat(chatId) {
@@ -105,7 +106,14 @@ export function createDesktopFileAccess(deps: {
       return (await listMyChatFolders(db as unknown as ChatFoldersRpcClient)).some((group) => group.chatId === chatId)
     },
   })
-  return { providers, resolve, resolveAccount, read, drain, publish,
+  /** The bytes of a version this device holds in a project, found by its sha: read where they are, checked against it. */
+  const held = async (sha256: string): Promise<Blob | null> => {
+    const { accountId, deviceId } = await identity()
+    const revision = fileHoldings().heldBySha(sha256, accountId, deviceId)
+    const projectRoot = revision ? await root(revision.host_project_id!) : null
+    return revision && projectRoot ? heldFileBlob(revision, projectRoot).catch(() => null) : null
+  }
+  return { providers, resolve, resolveAccount, read, stream, drain, publish, held,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
   }
 }

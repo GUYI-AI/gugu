@@ -287,7 +287,7 @@ describe('real session host boot entry', () => {
       ).pluck()
       expect(requiredTables.all()).toEqual([])
       const db = drizzle(sqlite, { schema })
-      const migrate = vi.fn(() => migrateCustomModels(db, new Set()))
+      const migrate = vi.fn(() => migrateCustomModels(db, new Set(), new Map()))
       const result = await boot('', false, undefined, true, { initialize: () => initializeDatabase(sqlite), migrate })
       expect(requiredTables.all()).toEqual(['kv', 'provider_accounts'])
       expect(migrate).toHaveBeenCalledOnce()

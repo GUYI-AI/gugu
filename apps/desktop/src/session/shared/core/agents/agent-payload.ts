@@ -368,8 +368,12 @@ export type LookupPathSource = {
   /** The login shell that was asked; absent on Windows. */
   shell?: string;
   at: number;
+  /** How long the re-read took. */
+  tookMs: number;
   /** The re-read failed and the previous PATH was used. */
-  failed?: 'probe-failed' | 'invalid-output';
+  failed?: 'timed-out' | 'probe-failed' | 'invalid-output';
+  /** What the failed read said (the program's error, the timeout) — for the log, not for user copy. */
+  failedDetail?: string;
 };
 
 /** What the last lookup saw, so the panel can say why nothing usable was found. */
@@ -409,6 +413,11 @@ export type AgentInstallationStatus = {
   installOptions: InstallOption[];
   /** Why the last lookup found no usable program; only when `reading` is not-detected or detected-but-broken. */
   lookup?: AgentLookup;
+  /**
+   * Whether session start would accept the copy in use on every declared surface (`harnessVersionSupported`);
+   * null when its version is unknown or unreadable.
+   */
+  versionSupported?: boolean | null;
   /**
    * 带伴随程序的家(#6335)才有:主程序在前,逐个程序的读数。此时顶层的 `reading` / `status` /
    * `updateAvailable` 是**合并**过的(任一条腿的程序没装 ⇒ 不算装好),`installations` / `used` /

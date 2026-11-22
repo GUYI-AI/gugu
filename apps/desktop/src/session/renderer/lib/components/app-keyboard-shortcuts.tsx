@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { zenFilePanel } from '@renderer/features/sessions/stores/workspace-panel-chrome-store';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import {
@@ -32,7 +31,7 @@ export function AppKeyboardShortcuts() {
       // Mod+Shift+F reopens the last search; the other entry points set their query first (openGlobalSearch).
       { id: 'app.globalSearch', execute: () => showGlobalSearch({}) },
       { id: 'app.toggleLeftSidebar', execute: toggleLeft },
-      { id: 'app.zenMode', execute: () => toggleZenMode(zenFilePanel()) },
+      { id: 'app.zenMode', execute: () => toggleZenMode() },
     ],
   });
   return null;

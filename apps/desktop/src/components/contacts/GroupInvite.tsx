@@ -26,16 +26,14 @@ import { IconButton } from '../ui/IconButton'
 import { Sheet } from '../ui/Sheet'
 import { useTranslation } from 'react-i18next'
 import { GroupInviteActions } from '../chat/GroupInviteShare'
-import { FieldRow } from '../contactsDetailControls'
 import { groupSettings } from '../chat/useGroupChatSettings'
 import { groupRoster } from '../../hooks/useRoomCollab'
 import { useReplica, retryOf } from '../../lib/replica'
 import { RefreshFailed } from '../ui/RefreshFailed'
 import { publicGroupInvite } from '../../lib/publicGroupInvite'
 
-/** 群资料上的「邀请」一行:复制链接 + 海报(带码),与邀请单同一份动作。 */
+/** The group card's invite actions (copy link · QR code), in the card's light action row. */
 export function GroupInviteRow({ group }: { group: ContactGroupChat }) {
-  const { t } = useTranslation('contacts')
   // Only groups with a 群号 can be shared (channels and number-less groups never are).
   const hasGroupNumber = group.kind === 'group' && typeof group.public_id === 'number' && Number.isInteger(group.public_id) && group.public_id > 0
   // The group's own settings and roster readings (the same link and decision, groupInviteLinkFor, as its Invite sheet;
@@ -45,16 +43,10 @@ export function GroupInviteRow({ group }: { group: ContactGroupChat }) {
   const failure = settings.state === 'error' ? settings.error : roster.state === 'error' ? roster.error : null
   const link = settings.state === 'value' ? groupInviteLinkFor(settings.value) : undefined
 
-  // Sharing switched off: nothing to show. A failed read says why instead of hiding the row.
-  if (!hasGroupNumber || link === null) return null
-  return (
-    <FieldRow
-      label={t('groupInvite.invite')}
-      value={failure ? <span role="alert" className="text-[var(--danger-fg)]">{messageForUser(failure)}</span>
-        : link === undefined || roster.state !== 'value' ? <span className="text-[length:var(--font-caption)] text-[var(--muted-fg)]">{t('common.loading')}</span>
-        : <GroupInviteActions inviteLink={link} groupName={group.name} snapshot={roster.value} />}
-    />
-  )
+  // Sharing switched off, or not read yet: no invite actions. A failed read says why instead of hiding them.
+  if (failure) return <span role="alert" className="self-center px-3 text-[length:var(--font-caption)] text-[var(--danger-fg)]">{messageForUser(failure)}</span>
+  if (!hasGroupNumber || !link || roster.state !== 'value') return null
+  return <GroupInviteActions appearance="card" inviteLink={link} groupName={group.name} snapshot={roster.value} />
 }
 
 export function GroupJoinConfirmDialog({

@@ -1,7 +1,7 @@
 import type { AttachmentUploadIpc } from './attachmentUploadHost'
 import type { PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import { contextBridge, ipcRenderer } from 'electron'
-import * as ElectronNS from 'electron'
+import { webUtils as electronWebUtils } from 'electron'
 import { installProcessMetricsResponder } from './process-metrics-responder'
 
 import {
@@ -66,7 +66,6 @@ function sendRendererCommandReady(domain: RendererCommandDomain): void {
 // `ipcRenderer.invoke`; gugu's named wrappers are untouched (additive keys, no collisions).
 
 // The desktop package runs Electron >=30, where webUtils is the supported file-path API.
-const electronWebUtils = (ElectronNS as { webUtils?: { getPathForFile(file: File): string } }).webUtils
 function emdashGetPathForFile(file: File): string {
   if (!electronWebUtils) {
     throw new Error('[sessionpage] electron.webUtils is required by the desktop Electron runtime')

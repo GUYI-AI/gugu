@@ -136,7 +136,6 @@ export async function selectInstallSources(input: Input, dependencies: Partial<D
   } finally {
     clearTimeout(timer);
     timeout.abort();
-    await transport.close();
   }
   input.signal?.throwIfAborted();
   const order = rankInstallSources(sources, fallback);

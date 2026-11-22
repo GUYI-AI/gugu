@@ -4,6 +4,7 @@ import { rendererLogger } from '../lib/log'
 import { contactsService } from '../lib/contacts'
 import { contactGroupChatsOf, sharedGroupAgentsOf } from '../lib/contactGroupChats'
 import { contactGroups, contactRelations, contactRequests, groupJoinRequests, refreshStrictly, type ContactRelation } from '../lib/contactsReplicas'
+import { joinRequestIdentityIds } from '../lib/groupAgentJoin'
 import { useReplica, useReplicaFetching } from '../lib/replica'
 import { useAuth } from './auth'
 import { useChatStore, useStoreValueBy } from './chatContext'
@@ -138,8 +139,15 @@ export function ContactsProvider({ children, active = true }: { children: React.
     }
   }, [userId, subscribeAccountRevision])
 
+  // The identities this domain names, all kept by the lifecycle prune: contacts, both ends of every friend request and the
+  // join requesters (their replicas write these identities; ❌ only the contacts — the prune then dropped request senders).
   useIdentityLifecycle(userId, getImRepository, () => Promise.all([refreshStrictly(contactRelations), refreshChats({ preserveMissingActive: false, throwOnError: true })]),
-    () => { const reading = contactRelations.peek(); return reading.state === 'value' ? reading.value.map((relation) => relation.id) : null })
+    () => {
+      const relations = contactRelations.peek()
+      const requests = contactRequests.peek()
+      if (relations.state !== 'value' || requests.state !== 'value') return null
+      return [...relations.value.map((relation) => relation.id), ...[...requests.value.received, ...requests.value.sent].flatMap((request) => [request.sender_id, request.receiver_id]), ...joinRequestIdentityIds(managedJoinRequests)]
+    })
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const sendRequest = useCallback(
@@ -257,11 +265,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
     await refreshChats()
   }, [applyAgentProfileUpdate, refreshChats, userId])
 
-  // Every name entry uses the profile path (renameOwnedAgent decides where the rename is written).
-  const renameAgent = useCallback(async (agentId: string, name: string) => {
-    await updateAgentProfile(agentId, { name })
-  }, [updateAgentProfile])
-
   const uploadAgentAvatar = useCallback(async (agentId: string, file: File, profile?: { name?: string; bio?: string }) => {
     // The name (if any) goes the one rename way (updateAgentProfile → renameOwnedAgent); the upload carries the rest.
     if (profile?.name !== undefined) await updateAgentProfile(agentId, { name: profile.name })
@@ -353,7 +356,6 @@ export function ContactsProvider({ children, active = true }: { children: React.
       updateContactAlias,
       setAgentPublic,
       setAgentDesiredStatus,
-      renameAgent,
       updateAgentProfile,
       uploadAgentAvatar,
       setAgentLook,
@@ -365,7 +367,7 @@ export function ContactsProvider({ children, active = true }: { children: React.
     groupInvitations, managedJoinRequests, groupJoinRequestsError, requestsStatus, requestsError, loadingContacts,
     loadingGroups, contactsStatus, groupChatsStatus, sendRequest, acceptRequest,
     rejectRequest, loadContacts, loadGroups, refreshAllRequests, loadGroupJoinRequests, createGroup, renameGroup,
-    deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus, renameAgent,
+    deleteGroup, updateContactAlias, setAgentPublic, setAgentDesiredStatus,
     updateAgentProfile, uploadAgentAvatar, setAgentLook, removeOwnedAgent, removeContact,
   ])
   const [store] = useState(() => createSelectStore<ContactsContextValue>(value))

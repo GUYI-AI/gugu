@@ -57,7 +57,7 @@ describe('the main-process commit host and actual canonical writer', () => {
     const owner = reserveWindowCommitHost('view', 'c', failed), after = await owner.prepare(); owner.authorize();
     expect(events.subscriberCount).toBe(0); expect(fixture.sqlite.prepare('SELECT id FROM session_turns').all()).toEqual([]);
     connected = await connectWindowCommitHost(stream(events), observed, connection);
-    const actual: WindowCommittedEvent = { sessionId: 'c', providerId: 'claude', platformCredentials: false, source: 'live', turn: {
+    const actual: WindowCommittedEvent = { sessionId: 'c', providerId: 'claude', hostCredentials: false, source: 'live', turn: {
       id: 'actual-turn', seq: 0, referenceId: 'actual-ref', initiator: 'user', outcome: { kind: 'done' },
       items: [{ kind: 'message', id: 'actual-item', seq: 0, role: 'assistant', text: 'whole cold turn' }],
     } };
@@ -73,7 +73,7 @@ describe('the main-process commit host and actual canonical writer', () => {
     const events = source(), project = vi.fn(async () => ({ projectionId: 'unused' }));
     bindWindowCommitProjection(project);
     connected = await connectWindowCommitHost(stream(events), () => {}, connection);
-    events.emit({ sessionId: 'c', providerId: 'claude', platformCredentials: false, source: 'live', turn: {
+    events.emit({ sessionId: 'c', providerId: 'claude', hostCredentials: false, source: 'live', turn: {
       id: 'unwatched', seq: 0, referenceId: 'unwatched-ref', initiator: 'user', outcome: { kind: 'done' },
       items: [{ kind: 'message', id: 'unwatched-item', seq: 0, role: 'assistant', text: 'no window is open' }] } });
     await withStoredTurns('c', async () => {});
@@ -94,7 +94,7 @@ describe('the main-process commit host and actual canonical writer', () => {
     gate.reject(new Error('layout could not be prepared')); connected = await connecting;
     expect(events.subscriberCount).toBe(1);
     expect(() => reserveWindowCommitHost('view', 'c', vi.fn())).toThrow(expect.objectContaining({ code: 'live_projection_unavailable' }));
-    events.emit({ sessionId: 'c', providerId: 'claude', platformCredentials: false, source: 'live', turn: {
+    events.emit({ sessionId: 'c', providerId: 'claude', hostCredentials: false, source: 'live', turn: {
       id: 'kept', seq: 0, referenceId: 'kept-ref', initiator: 'user', outcome: { kind: 'done' },
       items: [{ kind: 'message', id: 'kept-item', seq: 0, role: 'assistant', text: 'canonical history still persists' }] } });
     await withStoredTurns('c', async () => {});

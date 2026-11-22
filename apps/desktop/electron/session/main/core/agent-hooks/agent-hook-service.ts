@@ -14,9 +14,13 @@ import { HookServer, type HookSource, type PersistedHookSource } from './hook-se
 import { EndpointPorts, PersistedRecords } from '@main/lib/stable-endpoint';
 import {
   applyHookToAuthExpiry,
-  sessionUsesPlatformCredentials,
+  sessionUsesHostCredentials,
   type AuthExpiryWriter,
 } from '@main/core/agent-config/auth-expiry-from-turns';
+import { eq } from 'drizzle-orm';
+import { db } from '@main/db/client';
+import { sessions } from '@main/db/schema';
+import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 
 /** 用时再 import:agent-config 那一侧的 worker ❌ 因为钩子服务起来就被提前拉起(同 acp runtime-process/host)。 */
 const hookAuthExpiryWriter: AuthExpiryWriter = {
@@ -24,6 +28,12 @@ const hookAuthExpiryWriter: AuthExpiryWriter = {
   clear: async (providerId, sessionId) => (await import('@main/core/agent-config/runtime-process/host')).clearAgentAuthExpired(providerId, sessionId),
   log: (message, detail) => log.warn(message, detail),
 };
+
+/** A custom model's key is the host's to supply, as the platform ticket is (ACP: `runContext.customModel`). */
+function terminalUsesHostCredentials(sessionId: string): boolean {
+  if (sessionUsesHostCredentials(sessionId)) return true;
+  return Boolean(customModelRefFromOption(db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).get()?.config?.model));
+}
 
 /** #6264「编程」终端会话里登录被拒同样回写「登录已失效」;正常结束一轮就撤掉(见 auth-expiry-from-turns.ts)。 */
 function learnAuthExpiryFromEvent(event: AgentEvent): void {
@@ -34,7 +44,7 @@ function learnAuthExpiryFromEvent(event: AgentEvent): void {
       sessionId: event.sessionId,
       type: event.type,
       signInRequired: event.payload.signInRequired,
-      platformCredentials: sessionUsesPlatformCredentials(event.sessionId),
+      hostCredentials: terminalUsesHostCredentials(event.sessionId),
     },
     hookAuthExpiryWriter
   );

@@ -99,12 +99,10 @@ const initialSession = {
 function Probe({
   groupChatId,
   taskChatId,
-  openAfterCreate,
   remoteInstall = false,
 }: {
   groupChatId?: string
   taskChatId?: string
-  openAfterCreate?: boolean
   remoteInstall?: boolean
 }) {
   const { beforeCreate } = useRemoteInstallBeforeCreate(remoteInstall ? { deviceId: 'remote-1', label: 'Remote' } : null, initialSession.provider);
@@ -117,7 +115,6 @@ function Probe({
     onCreated: mocks.onCreated,
     groupChatId,
     taskChatId,
-    openAfterCreate,
     beforeCreate,
   });
   return null;
@@ -566,22 +563,30 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     expect(mocks.navigate).toHaveBeenCalled();
   });
 
-  it.each(['startup', 'local-session'])('consumes a successful %s draft when the page stays open', async transport => {
+  it.each(['startup', 'local-session'])('consumes a successful %s draft when the page stays with its chat', async transport => {
     initialSession.promptCapability = transport === 'startup' ? { kind: 'none', startupDelivery: 'startup-prompt' } : { kind: 'keystroke' };
     if (transport === 'local-session') {
       initialSession.sessionView = 'code';
       initialSession.sessionpage = { tui: { identity: 'none', messageTransport: 'local-session' } };
     }
-    await act(async () => root.render(React.createElement(Probe, { openAfterCreate: false })));
+    await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1' })));
     await act(async () => latest?.handleCreateSession());
     expect(initialSession.prompt).toBe('');
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(mocks.start).toHaveBeenCalledOnce();
   });
 
+  it('a task with no chat for its card (a project whose group is not known) opens, instead of starting where nobody sees it', async () => {
+    initialSession.promptCapability = { kind: 'none', startupDelivery: 'startup-prompt' };
+    await act(async () => root.render(React.createElement(Probe, { taskChatId: undefined })));
+    await act(async () => latest?.handleCreateSession());
+    expect(mocks.navigate).toHaveBeenCalledWith('session', { projectId: 'project-1', sessionId: expect.any(String) });
+    expect(mocks.start).not.toHaveBeenCalled();
+  });
+
   it('a dispatched task whose workspace could not be prepared opens, instead of vanishing from the chat', async () => {
     mocks.viewKind.mockReturnValue('provision-error');
-    await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1', openAfterCreate: false })));
+    await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1' })));
     await act(async () => latest?.handleCreateSession());
     expect(mocks.navigate).toHaveBeenCalledWith('session', { projectId: 'project-1', sessionId: expect.any(String) });
     // Its life would only fail the same way; the session page's retry prepares it again.
@@ -643,7 +648,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
     const draft = handedOver();
     try {
       initialSession.promptCapability = { kind: 'none', startupDelivery: 'startup-prompt' };
-      await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1', openAfterCreate: false })));
+      await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1' })));
       await act(async () => latest?.handleCreateSession());
       expect(mocks.createSession.mock.calls[0]?.[0].sessionConfig.initialSession.initialQueue).toEqual([
         { text: 'make one task', hiddenContext: 'the sample context', origin: 'manual' },
@@ -661,7 +666,7 @@ describe('useCreateSessionCallback ordinary messaging', () => {
       initialSession.sessionpage = { tui: { identity: 'addressable', messageTransport: 'local-session' } };
       initialSession.promptCapability = { kind: 'argv', startupDelivery: 'startup-prompt' };
       mocks.createSession.mockRejectedValueOnce(new Error('credits exhausted'));
-      await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1', openAfterCreate: false })));
+      await act(async () => root.render(React.createElement(Probe, { taskChatId: 'chat-1' })));
       await act(async () => latest?.handleCreateSession());
       expect(mocks.createSession.mock.calls[0]?.[0].sessionConfig.initialSession.initialPrompt).toBe('make one task');
       expect(mocks.logWarn).toHaveBeenCalledWith(expect.stringContaining('no channel for its hidden context'), expect.anything());

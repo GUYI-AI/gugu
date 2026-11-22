@@ -29,6 +29,7 @@ export function installMemoryFileHoldings(folders: Record<string, { root: string
     findCopy: (key, sha, ownerId, deviceId) => held([...files.values()].findLast((row) => row.host_project_id === key && row.sha256 === sha
       && row.relative_path?.startsWith('.gugu/attachments/')), ownerId, deviceId),
     findByName: (chat, name, ownerId, deviceId) => held([...files.values()].find((row) => row.chat_id === chat && row.workspace?.path === name), ownerId, deviceId),
+    heldBySha: (sha, ownerId, deviceId) => [...files.values()].map((row) => row.sha256 === sha ? held(row, ownerId, deviceId) : null).find(Boolean) ?? null,
     root: (key) => folders[key]?.root ?? null,
     firstFolder: (chatId) => Object.entries(folders).find(([, folder]) => folder.chatId === chatId)?.[0],
   }

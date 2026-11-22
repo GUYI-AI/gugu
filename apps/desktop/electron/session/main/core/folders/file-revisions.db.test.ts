@@ -55,6 +55,15 @@ describe('which file versions this device holds', () => {
     expect(await files.readFileRevision(ref, 'owner', 'host-device', noRecord)).toBeNull();
   });
 
+  it('finds a held version by its sha only for this account, device and a folder still bound to its chat', () => {
+    expect(files.heldRevisionBySha(revision.sha256!, 'owner', 'host-device')).toEqual(revision);
+    expect(files.heldRevisionBySha('cd'.repeat(32), 'owner', 'host-device')).toBeNull();
+    expect(files.heldRevisionBySha(revision.sha256!, 'other', 'host-device')).toBeNull();
+    expect(files.heldRevisionBySha(revision.sha256!, 'owner', 'other-device')).toBeNull();
+    folders.bindFolder(folderId, 'other-group');
+    expect(files.heldRevisionBySha(revision.sha256!, 'owner', 'host-device')).toBeNull();
+  });
+
   it('an unbound folder holds nothing; bound again, what it sent is held again without asking', async () => {
     for (let n = 0; n < 4; n++) files.rememberFileRevision({ ...revision, item_id: `item-${n}` }, 'owner');
     for (let n = 0; n < 4; n++) expect(await files.readFileRevision({ item_id: `item-${n}`, version: 1 }, 'owner', 'host-device', noRecord)).not.toBeNull();

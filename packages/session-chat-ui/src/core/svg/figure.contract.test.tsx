@@ -3,7 +3,8 @@
  * this theme's colours, and one that cannot be drawn says why instead of drawing something else.
  */
 import { describe, expect, it } from 'vitest';
-import { SVG_FIGURE_MAX_BYTES, svgFigure } from './figure';
+import { renderMermaidDiagram } from '../mermaid/render';
+import { SVG_FIGURE_MAX_BYTES, drawnSvgImage, svgFigure } from './figure';
 
 const PALETTE = { fg: 'rgb(1, 2, 3)', c1: '#2a78d6' };
 
@@ -98,5 +99,37 @@ describe('svgFigure', () => {
     expect(svgFigure('<div>no</div>', PALETTE)).toEqual({ ok: false, reason: 'invalid' });
     const big = `<svg viewBox="0 0 10 10"><!--${'x'.repeat(SVG_FIGURE_MAX_BYTES)}--></svg>`;
     expect(svgFigure(big, PALETTE)).toEqual({ ok: false, reason: 'too-large' });
+  });
+});
+
+describe('drawnSvgImage', () => {
+  function themed(vars: Record<string, string>): HTMLElement {
+    const element = document.createElement('div');
+    for (const [name, value] of Object.entries(vars)) element.style.setProperty(name, value);
+    document.body.append(element);
+    return element;
+  }
+  function pixel(image: HTMLImageElement): number[] {
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d')!;
+    context.drawImage(image, 0, 0);
+    return Array.from(context.getImageData(1, 1, 1, 1).data);
+  }
+
+  it('is the diagram at its own size plus a margin, in the colours the element resolves when it opens', async () => {
+    const svg = await renderMermaidDiagram('flowchart LR\n  A[Proposer] --> B[Stager]');
+    const font = '"Segoe UI", system-ui, sans-serif';
+    const light = drawnSvgImage(svg, themed({ '--pele-bg': 'rgb(250, 250, 250)', '--pele-fg': 'rgb(20, 20, 20)', '--pele-font': font }));
+    const dark = drawnSvgImage(svg, themed({ '--pele-bg': 'rgb(10, 20, 30)', '--pele-fg': 'rgb(240, 240, 240)', '--pele-font': font }));
+    const drawn = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+    // The drawing's own box, plus a 16px margin on each side.
+    expect([light.width, light.height]).toEqual([Number(drawn.getAttribute('width')) + 32, Number(drawn.getAttribute('height')) + 32]);
+    expect(decoded(light.src)).toContain('--pele-fg: rgb(20, 20, 20)');
+    const [lightImage, darkImage] = await Promise.all([load(light.src), load(dark.src)]);
+    expect([lightImage.naturalWidth, lightImage.naturalHeight]).toEqual([light.width, light.height]);
+    expect(pixel(lightImage)).toEqual([250, 250, 250, 255]);
+    expect(pixel(darkImage)).toEqual([10, 20, 30, 255]);
   });
 });

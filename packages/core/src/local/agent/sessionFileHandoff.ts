@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, openAsBlob } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { basename } from 'node:path'
-import { contentRequestId, uploadAttachmentBytes, type AttachmentsEndpoint } from '../../cloud/attachmentsApi'
+import { contentRequestId, withUploadedAttachment, type AttachmentsEndpoint } from '../../cloud/attachmentsApi'
 import { commitSessionAttachment, revokeSessionAttachment, type SessionFileInput } from '../../cloud/sessionAttachments'
 import { resolveAttachmentMimeType } from '../../shared/imageMime.mjs'
 import { requireAgentFileAccess } from '../state/agentFileBoundary'
@@ -32,21 +32,22 @@ export async function uploadSessionFile(endpoint: AttachmentsEndpoint, file: Ses
   if (sender.expectedSha256 && sender.expectedSha256 !== sha) throw new Error('Registered artifact changed before upload')
   const attachmentId = sender.attachmentId ?? randomUUID()
   // A stored handoff keeps its attachment ID while recovering the same bytes for the same recipients.
-  const stagingKey = sender.stagingKey ?? await uploadAttachmentBytes(endpoint, { bytes, name, contentType }, {
-    chat_id: null, as: sender.agentId,
-    request_id: await contentRequestId('session', attachmentId, sender.agentId, sender.sessionId, [...sender.recipients].sort().join(','), sha, String(size)),
-  })
-  await sender.onStaged?.(stagingKey)
-  await sender.beforeCommit?.()
-  const args = { staging_key: stagingKey, attachment_id: attachmentId, sender_user_id: sender.agentId,
+  const args = { attachment_id: attachmentId, sender_user_id: sender.agentId,
     sender_session_id: sender.sessionId, recipient_user_ids: sender.recipients, file_name: name, content_type: contentType }
-  // Retry the same upload and id; never create another file to recover a lost receipt.
-  let receipt
-  for (let attempt = 0; ; attempt++) {
-    try { receipt = await commitSessionAttachment(endpoint, args); break } catch (error) {
-      if (attempt >= 2 || (typeof (error as { status?: number }).status === 'number' && (error as { status: number }).status < 500)) throw error
+  const commit = async (stagingKey: string) => {
+    await sender.onStaged?.(stagingKey)
+    await sender.beforeCommit?.()
+    // Retry the same upload and id; never create another file to recover a lost receipt.
+    for (let attempt = 0; ; attempt++) {
+      try { return await commitSessionAttachment(endpoint, { ...args, staging_key: stagingKey }) } catch (error) {
+        if (attempt >= 2 || (typeof (error as { status?: number }).status === 'number' && (error as { status: number }).status < 500)) throw error
+      }
     }
   }
+  const receipt = sender.stagingKey ? await commit(sender.stagingKey) : await withUploadedAttachment(endpoint, { bytes, name, contentType, sha256: sha }, {
+    chat_id: null, as: sender.agentId,
+    request_id: await contentRequestId('session', attachmentId, sender.agentId, sender.sessionId, [...sender.recipients].sort().join(','), sha, String(size)),
+  }, commit)
   if (receipt.sha256 !== sha || Number(receipt.size_bytes) !== size) {
     await revokeSessionAttachment(endpoint, args.attachment_id, sender.agentId)
     throw new Error('Uploaded session attachment differs from the original bytes')

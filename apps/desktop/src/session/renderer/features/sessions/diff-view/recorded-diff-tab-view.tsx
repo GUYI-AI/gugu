@@ -8,7 +8,8 @@ import { getSharedChatContext } from '@renderer/lib/chat/shared-chat-context';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { AnnotationEditor } from '../annotations/annotation-editor';
 import { sessionAnnotations } from '../annotations/session-annotations';
-import { fileBaseName } from '../stores/workspace-path';
+import { MicroLabel } from '@renderer/lib/ui/label';
+import { panelHeaderBarClass } from '@renderer/lib/ui/panel-header-bar';
 import type { RecordedDiffTabResource } from './recorded-diff-tab-provider';
 
 const RecordedDiffView = observer(function RecordedDiffView({ change }: Pick<RecordedDiffTabResource, 'change'>) {
@@ -34,10 +35,8 @@ const RecordedDiffView = observer(function RecordedDiffView({ change }: Pick<Rec
 
   return (
     <section className="flex h-full min-h-0 flex-col text-foreground" aria-label={translate('diff.recordedChanges')}>
-      <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3 text-sm">
-        <span className="truncate font-medium" title={change.path}>{fileBaseName(change.path)}</span>
-        <span className="text-foreground-muted shrink-0">{translate('diff.recordedChanges')}</span>
-      </header>
+      {/* Same frame as the working-tree diff page: the tab names the file, the bar names the source. */}
+      <div className={panelHeaderBarClass}><MicroLabel>{translate('diff.recordedChanges')}</MicroLabel></div>
       <div className="min-h-0 flex-1 overflow-auto">
         {status !== 'available' && <p className="text-foreground-muted px-3 py-3 text-sm">
           {translate(status === 'partial' ? 'diff.recordedPartial' : 'diff.recordedUnavailable')}

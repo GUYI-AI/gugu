@@ -27,11 +27,6 @@ import { STATE_LAYERS } from '@renderer/lib/ui/state-layers';
 const ESTIMATED_COMMIT_ROW_HEIGHT = 43;
 const COMMIT_ROW_GAP = 4;
 
-const DEFAULT_EMPTY_STATE = {
-  label: 'No commits',
-  description: 'No commits available',
-};
-
 type CommitListEmptyState = {
   label: string;
   description: string;
@@ -51,7 +46,7 @@ function commitRangeIdentity(range: CommitRange | undefined): string {
 
 export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
   range,
-  emptyState = DEFAULT_EMPTY_STATE,
+  emptyState,
 }: {
   range: CommitRange | undefined;
   emptyState?: CommitListEmptyState;
@@ -64,6 +59,7 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
     hashes: new Set(),
   }));
   const { translate } = useSessionMessages();
+  const empty = emptyState ?? { label: translate('pr.noCommits'), description: translate('pr.noCommitsAvailable') };
   const { first, pages, more, loadingMore, moreFailed } = useCommits(projectId, workspaceId, range);
   const commits = pages.flatMap((page) => page.commits);
   const expandedHashes =
@@ -84,10 +80,10 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
     });
   };
 
-  if (!range) return <EmptyState label={emptyState.label} description={emptyState.description} />;
+  if (!range) return <EmptyState label={empty.label} description={empty.description} />;
   return (
     <ReadingSlot reading={first} placeholder="my-2 h-[125px] w-full" className="px-3 py-2" failed={() => translate('pr.commitsFailed')}>
-      {() => commits.length === 0 ? <EmptyState label={emptyState.label} description={emptyState.description} /> : (
+      {() => commits.length === 0 ? <EmptyState label={empty.label} description={empty.description} /> : (
         <div ref={setScroller} className="h-full overflow-x-hidden overflow-y-auto py-2">
           <GrowingList
             scroller={scroller}
@@ -118,7 +114,7 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
                 onClick={more ?? undefined}
                 disabled={loadingMore}
               >
-                {loadingMore ? 'Loading...' : 'Load more'}
+                {translate(loadingMore ? 'pr.loadingMore' : 'pr.loadMore')}
               </button>
             </div>
           )}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { observer } from 'mobx-react-lite';
-import { SettingsNote, SettingsPage, SettingsRow } from '@/components/settings/SettingsPrimitives';
+import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from '@/components/settings/SettingsPrimitives';
 import { Switch } from '@/components/ui/Switch';
 import { DEVICE_ACTIONS_CHANNELS, type DeviceActionsConnectResult } from '@/lib/deviceActionsIpc';
 import { desktopIpc } from '@/platform/desktopIpc';
@@ -38,18 +38,20 @@ export const ResourceMonitorSettingsPage = observer(function ResourceMonitorSett
 
   return (
     <SettingsPage>
-      <SettingsRow
-        title={translate('resourceMonitor.enabled')}
-        description={translate('resourceMonitor.description')}
-        control={<SettingValue reading={settings} placeholder="h-5 w-8 rounded-[var(--radius-capsule)]">
-          {({ value: { enabled: on } }) => <Switch aria-label={translate('resourceMonitor.enabled')} checked={on} disabled={isSaving} onCheckedChange={(next) => void setEnabled(next)} />}
-        </SettingValue>}
-      />
-      {value?.enabled && <SettingsRow
-        title={translate('resourceMonitor.pageCounters')}
-        description={translate('resourceMonitor.pageCountersDescription')}
-        control={<Switch aria-label={translate('resourceMonitor.pageCounters')} checked={value.pageCounters} disabled={isSaving} onCheckedChange={(next) => update({ pageCounters: next })} />}
-      />}
+      <SettingsGroup>
+        <SettingsRow
+          title={translate('resourceMonitor.enabled')}
+          description={translate('resourceMonitor.description')}
+          control={<SettingValue reading={settings} placeholder="h-5 w-8 rounded-[var(--radius-capsule)]">
+            {({ value: { enabled: on } }) => <Switch aria-label={translate('resourceMonitor.enabled')} checked={on} disabled={isSaving} onCheckedChange={(next) => void setEnabled(next)} />}
+          </SettingValue>}
+        />
+        {value?.enabled && <SettingsRow
+          title={translate('resourceMonitor.pageCounters')}
+          description={translate('resourceMonitor.pageCountersDescription')}
+          control={<Switch aria-label={translate('resourceMonitor.pageCounters')} checked={value.pageCounters} disabled={isSaving} onCheckedChange={(next) => update({ pageCounters: next })} />}
+        />}
+      </SettingsGroup>
       {grantFailure && <SettingsNote role="alert" tone="danger">{translate('resourceMonitor.grantFailed', { message: grantFailure })}</SettingsNote>}
       {value?.enabled === false && <SettingsNote>{translate('resourceMonitor.off')}</SettingsNote>}
       <ResourceTimeline live={enabled} onFloat={enabled ? openResourcePopup : undefined} />

@@ -13,14 +13,15 @@
  * 围栏本身是纯函数,住在 `@shared/preview/preview-url`,主进程与渲染层读同一份、单测直接打它。
  */
 
-import { protocol, type Session } from 'electron';
+import { protocol, session, type Session } from 'electron';
 import { createHash, randomUUID } from 'node:crypto';
 import type { IFileSystem } from '@gugu/session-core/files';
 import { REMOTE_WORKSPACE_MAX_FILE_BYTES } from '@gugu/session-core/session-record/contract';
 import { events } from '@main/lib/events';
+import { claimBeforeRequest } from '@main/core/shared/before-request';
 import { log } from '@main/lib/logger';
 import { previewHolderOfflineChannel, remotePreviewReadChannel, remotePreviewReadResultChannel } from '@shared/events/appEvents';
-import { answerBesideDocument, chatFolderPreviewCsp, unavailableAnswer, type ChatFolderPreviewCopy, type PreviewAnswer } from '@shared/preview/chat-folder-preview';
+import { answerBesideDocument, byteRange, chatFolderPreviewCsp, unavailableAnswer, type ChatFolderPreviewCopy, type PreviewAnswer } from '@shared/preview/chat-folder-preview';
 import {
   PREVIEW_SCHEME,
   previewRootFor,
@@ -31,6 +32,7 @@ import {
 import { remotePageRoot } from '@shared/preview/remote-page-url';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
+import { changedOnItsMachine, workspaceFileRange } from './machine-file-streams';
 import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, type RemoteChunk } from './remote-preview-read';
 
 /**
@@ -39,7 +41,7 @@ import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, ty
  */
 type PreviewSource =
   | { kind: 'local'; workspaceId: string }
-  | { kind: 'remote'; workspaceId: string }
+  | { kind: 'remote'; workspaceId: string; machine?: StreamMachine }
   /**
    * A document in a chat's folder: its page's relative URLs name the files beside it in that folder, read as the
    * signed-in person (in the cloud, or fetched from the machine that keeps them). The root is the document's own folder.
@@ -106,7 +108,75 @@ type DocumentPreviewRegistration = {
   failureCopy?: never;
 };
 
-const registry = new Map<string, PreviewRegistration | DocumentPreviewRegistration>();
+/**
+ * This machine's bytes of one file (its file store, an original it sent, a file it holds for a chat), already checked
+ * against their sha by whoever registered them: `gugu-preview://<id>/<sha>`. The address names the sha and nothing of where
+ * the bytes lie; only the renderer that was authorized for them gets the id. A `<video>` reads it in ranges; a renderer
+ * that wants a Blob fetches it. Bytes that stop matching (the original changed) fail the response, never another file.
+ */
+type BytesPreviewRegistration = {
+  source: { kind: 'bytes' };
+  surface: 'pane';
+  sha256: string;
+  contentType: string;
+  file: ServedBytes;
+  failureCopy?: never;
+};
+
+/** What a bytes registration serves: a size and reads within it. */
+export interface ServedBytes {
+  size: number;
+  read(offset: number, length: number): Promise<Uint8Array>;
+}
+
+const registry = new Map<string, PreviewRegistration | DocumentPreviewRegistration | BytesPreviewRegistration>();
+
+export function createBytesPreview(sha256: string, contentType: string, file: ServedBytes): { url: string; previewId: string } {
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('A bytes preview is named by its sha');
+  const previewId = newPreviewId();
+  registry.set(previewId, { source: { kind: 'bytes' }, surface: 'pane', sha256, contentType: contentType || 'application/octet-stream', file });
+  return { url: `${PREVIEW_SCHEME}://${previewId}/${sha256}`, previewId };
+}
+
+/** The renderer's own origin, as main loads it (main.ts: the dev server, or `gugu-app://app`); never a request's Origin. */
+export function rendererOrigin(): string {
+  const dev = process.env.VITE_DEV_SERVER_URL;
+  return dev ? new URL(dev).origin : 'gugu-app://app';
+}
+
+/** One read of a bytes registration's file while it streams. */
+const BYTES_READ = 1024 * 1024;
+
+function serveBytes(registration: BytesPreviewRegistration, pathname: string, range: string | null): Response {
+  if (pathname !== `/${registration.sha256}`) return notFound('not this file');
+  const { file } = registration;
+  const wanted = byteRange(range, file.size);
+  if (wanted === 'unsatisfiable') return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${file.size}`, 'Access-Control-Allow-Origin': rendererOrigin() } });
+  const start = wanted?.start ?? 0;
+  const end = wanted?.end ?? file.size - 1;
+  let offset = start;
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (offset > end) return controller.close();
+      const piece = await file.read(offset, Math.min(BYTES_READ, end - offset + 1));
+      if (piece.byteLength === 0) throw new Error('File ended before its size');
+      controller.enqueue(piece);
+      offset += piece.byteLength;
+    },
+  });
+  return new Response(file.size === 0 ? null : body, {
+    status: wanted ? 206 : 200,
+    headers: {
+      'Content-Type': registration.contentType,
+      'Content-Length': String(end - start + 1),
+      'Accept-Ranges': 'bytes',
+      // Readable cross-origin by the renderer alone — never by a page previewed on this scheme, which is untrusted content.
+      'Access-Control-Allow-Origin': rendererOrigin(),
+      'Cache-Control': 'no-store',
+      ...(wanted ? { 'Content-Range': `bytes ${start}-${end}/${file.size}` } : {}),
+    },
+  });
+}
 
 export function createDocumentPreview(documentHtml: string): { url: string; previewId: string } {
   const previewId = newPreviewId();
@@ -180,9 +250,13 @@ export async function createPreview(
  *  · `pane`:「文件」页签的 HTML 预览,带 `documentPath`(+ 编辑器正文),返回那份文档的地址;
  *  · `browser`:「浏览器」页签,不带文档 —— 页签按 `remote-page-url.ts` 自己把 `file:` 地址排进来。
  */
+/** The machine a remote preview's files are on, and its workspace as that machine names it (`@@@machine-file-stream`). */
+export type StreamMachine = { deviceId: string; workspaceId: string };
+
 export function createRemotePreview(input: {
-  /** 那台机器上的项目与工作区(渲染层按项目所在机器把读块请求路由过去)。 */
+  /** 那台机器上的工作区(渲染层按它所在的机器把读块请求路由过去)。 */
   workspaceId: string;
+  machine?: StreamMachine;
   root: string;
   surface: PreviewSurface;
   documentPath?: string;
@@ -199,7 +273,7 @@ export function createRemotePreview(input: {
     if (!url) return null;
   }
   registry.set(previewId, {
-    source: { kind: 'remote', workspaceId: input.workspaceId },
+    source: { kind: 'remote', workspaceId: input.workspaceId, ...(input.machine ? { machine: input.machine } : {}) },
     surface: input.surface,
     root,
     documentPath: input.surface === 'pane' ? input.documentPath : undefined,
@@ -221,7 +295,7 @@ function newPreviewId(): string {
 /** 编辑器里的正文变了。下一次取这份文档就发新的。 */
 export function setPreviewDocument(previewId: string, documentHtml: string): void {
   const registration = registry.get(previewId);
-  if (registration) {
+  if (registration && !('file' in registration)) {
     registration.documentHtml = documentHtml;
     if ('root' in registration) {
       registration.assets = new Map();
@@ -288,6 +362,20 @@ function assetHash(bytes: Uint8Array): string {
 export function setupPreviewProtocol(): void {
   if (protocol.isProtocolHandled(PREVIEW_SCHEME)) return;
   protocol.handle(PREVIEW_SCHEME, (request) => handlePreviewRequest(request, 'pane'));
+  claimBeforeRequest(session.defaultSession, 'preview-protocol (sha addresses)', (details, callback) => {
+    callback(bytesRequestRefused(details.url, details.frame?.origin) ? { cancel: true } : {});
+  });
+}
+
+/**
+ * A sha address is read by the renderer alone. Pages previewed on this same scheme are untrusted content, and the
+ * handler cannot tell who asks: Electron runs no CORS check on a protocol handler's response and passes it no `Origin`
+ * or `Referer`. The asking frame, as the browser knows it, can: anything but the renderer's own origin is refused.
+ */
+export function bytesRequestRefused(url: string, frameOrigin: string | undefined): boolean {
+  if (!url.startsWith(`${PREVIEW_SCHEME}://`)) return false;
+  const registration = registry.get(new URL(url).hostname);
+  return !!registration && 'file' in registration && frameOrigin !== rendererOrigin();
 }
 
 /**
@@ -399,6 +487,7 @@ async function servePreviewRequest(url: URL, surface: PreviewSurface, range: str
   if (!registration || registration.surface !== surface) {
     return failurePage(undefined, 'unavailable', 404, 'unknown_preview');
   }
+  if ('file' in registration) return serveBytes(registration, url.pathname, range);
 
   if (!('root' in registration)) {
     return url.pathname === '/index.html'
@@ -472,7 +561,7 @@ async function readPreviewBytes(
   const source = registration.source;
   if (source.kind === 'remote') {
     const result = await readRemotePreviewBytes(
-      (chunk) => readRemoteChunk(source.workspaceId, chunk, signal),
+      remotePieces(source, signal),
       resolved,
       REMOTE_PREVIEW_MAX_BYTES,
       signal
@@ -555,6 +644,29 @@ const REMOTE_PREVIEW_MAX_BYTES = REMOTE_WORKSPACE_MAX_FILE_BYTES;
 
 /** 一块多久没回话就算这一块取不到(远程 SSH 的机器首次接上设备连接要握手,留足那一次)。 */
 export const REMOTE_CHUNK_TIMEOUT_MS = 20_000;
+
+/**
+ * A remote resource's pieces: the first through the machine's channel (it anchors the version), the rest from one stream
+ * over that machine's device link (`@@@machine-file-stream`) when one reaches it. A linked machine streams or fails.
+ */
+function remotePieces(source: { workspaceId: string; machine?: StreamMachine }, signal?: AbortSignal) {
+  let version: { size: number; etag: string } | null = null;
+  let linked: boolean | null = null;
+  return async (chunk: { path: string; offset: number; length: number }): Promise<RemoteChunk> => {
+    const machine = source.machine;
+    if (chunk.offset > 0 && version && machine && linked !== false) {
+      const range = await workspaceFileRange(machine.deviceId, { workspaceId: machine.workspaceId }, { ...chunk, ...version })
+        .catch((error: unknown) => { throw Object.assign(new Error('remote read failed'), { code: changedOnItsMachine(error) ? 'content_changed' : 'unreadable', cause: error }); });
+      if (range) { linked = true; return range; }
+      if (linked) throw Object.assign(new Error('remote read failed'), { code: 'unreadable' });
+      linked = false;
+    }
+    // @@@cloud-only-chunks - a machine no device link reaches: its pieces go one call each through its channel.
+    const read = await readRemoteChunk(source.workspaceId, chunk, signal);
+    if (chunk.offset === 0) version = read.etag ? { size: read.size, etag: read.etag } : null;
+    return read;
+  };
+}
 
 /**
  * 问渲染层要一块:渲染层手里有到那台机器的连接(会话页宿主协议,远程 SSH 走 SSH、远程隧道走咕咕云),

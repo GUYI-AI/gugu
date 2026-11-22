@@ -11,8 +11,11 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 
 import { STATE_LAYERS } from '@renderer/lib/ui/state-layers';
 
+/** One row on the Review page. A status is what git adds; a folder without git has none. */
+export type ChangeRow = Pick<GitChange, 'path' | 'additions' | 'deletions'> & { status?: GitChangeStatus };
+
 interface ChangesListItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  change: GitChange;
+  change: ChangeRow;
   rootPath?: string;
   isSelected?: boolean;
   isActive?: boolean;
@@ -72,7 +75,7 @@ export const ChangesListItem = forwardRef<HTMLButtonElement, ChangesListItemProp
 );
 
 interface ChangeStatusAffordanceProps {
-  change: GitChange;
+  change: ChangeRow;
   filename: string;
   isSelected?: boolean;
   onToggleSelect?: (path: string) => void;
@@ -94,7 +97,7 @@ export function ChangeStatusAffordance({
           })}
     >
       <DiffLineStats additions={change.additions} deletions={change.deletions} />
-      <span className="relative flex size-4 items-center justify-center">
+      {(change.status || onToggleSelect) && <span className="relative flex size-4 items-center justify-center">
         <span
           className={cn(
             'transition-opacity',
@@ -102,7 +105,7 @@ export function ChangeStatusAffordance({
             isSelected && 'opacity-0'
           )}
         >
-          <GitChangeStatusIcon status={change.status} className="size-4" />
+          {change.status && <GitChangeStatusIcon status={change.status} className="size-4" />}
         </span>
         {onToggleSelect && (
           <span
@@ -123,7 +126,7 @@ export function ChangeStatusAffordance({
             />
           </span>
         )}
-      </span>
+      </span>}
     </div>
   );
 }

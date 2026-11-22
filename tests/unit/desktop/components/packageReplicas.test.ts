@@ -32,7 +32,7 @@ const download = vi.fn(async (source: { url: string }, ...rest: unknown[]) => {
 vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({
   sourceKeyOf: (source: { url: string }) => `url:${source.url}`,
   attachmentBytes: (source: { url: string }, ...rest: unknown[]) => download(source, ...rest),
-  cachedAttachmentCopy: async (sha256: string | null) => (sha256 ? kept.get(sha256) ?? null : null),
+  localAttachmentCopy: async (sha256: string | null) => (sha256 ? kept.get(sha256) ?? null : null),
 }))
 
 const pkg = (id: string, version: string) => {

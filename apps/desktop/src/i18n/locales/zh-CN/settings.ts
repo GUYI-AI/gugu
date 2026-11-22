@@ -137,7 +137,6 @@ export default {
     "occupationRequired": "选择「其他」时，请填写你的职业",
     "occupationReadFailed": "无法读取身份信息，请检查网络后重试",
     "occupationUnreadable": "无法读取身份信息，请稍后重新打开设置",
-    "occupationNote": "仅你和你的咕咕可见。",
     "occupationUnset": "未选择",
     "intro": "头像、名称和简介是别人在咕咕里看到的你。",
     "avatar": "头像",
@@ -988,7 +987,6 @@ export default {
     "submitting": "提交中…",
     "thanks": {
       "done": "完成",
-      "illustrationAlt": "咕咕抱着你刚寄出的那封反馈信，正在向你道谢",
       "title": "谢谢你的反馈"
     },
     "title": "反馈问题",

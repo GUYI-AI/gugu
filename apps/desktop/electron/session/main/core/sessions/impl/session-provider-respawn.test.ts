@@ -43,6 +43,9 @@ const buildCommandMock = vi.hoisted(() =>
 const installPluginMock = vi.hoisted(() => vi.fn(async () => []));
 const writeHooksMock = vi.hoisted(() => vi.fn(async () => []));
 const recordProviderContinuationIntentMock = vi.hoisted(() => vi.fn(async () => undefined));
+const readProviderContinuationIntentMock = vi.hoisted(() =>
+  vi.fn(async (): Promise<{ sourceProviderSessionId: string; continuationProviderSessionId?: string } | null> => null)
+);
 const injectSessionMessageWhenReadyMock = vi.hoisted(() => vi.fn());
 const injectSystemBootstrapWhenReadyMock = vi.hoisted(() => vi.fn());
 const localAgentForSessionMock = vi.hoisted(() => vi.fn());
@@ -75,6 +78,7 @@ vi.mock('../runtime-fork-ownership', () => ({
 
 vi.mock('@main/core/sessions/provider-continuation-intent', () => ({
   recordProviderContinuationIntent: recordProviderContinuationIntentMock,
+  readProviderContinuationIntent: readProviderContinuationIntentMock,
 }));
 
 vi.mock('@main/core/dependencies/host-dependency-store', () => ({
@@ -407,6 +411,8 @@ describe('conversation provider respawn state', () => {
     writeHooksMock.mockReset();
     writeHooksMock.mockResolvedValue([]);
     recordProviderContinuationIntentMock.mockReset();
+    readProviderContinuationIntentMock.mockReset();
+    readProviderContinuationIntentMock.mockResolvedValue(null);
     recordProviderContinuationIntentMock.mockResolvedValue(undefined);
     injectSessionMessageWhenReadyMock.mockReset();
     injectSystemBootstrapWhenReadyMock.mockReset();
@@ -1092,6 +1098,103 @@ describe('conversation provider respawn state', () => {
       sessionId: 'claude-fork',
       sourceProviderSessionId: 'source-claude-session',
     });
+  });
+
+  it('resumes a Claude fork with the child id its hook reported, not the conversation id', async () => {
+    vi.useFakeTimers();
+    try {
+      const exitHandlers: Array<Array<(info: PtyExitInfo) => void>> = [];
+      spawnLocalPty.mockImplementation(() => {
+        const handlers: Array<(info: PtyExitInfo) => void> = [];
+        exitHandlers.push(handlers);
+        return fakePty(handlers);
+      });
+      const provider = localProvider();
+      const item = session({ providerId: 'claude', id: 'claude-fork', providerSessionId: 'claude-fork' });
+
+      await provider.startSession(item, undefined, false, undefined, 'source-claude-session');
+      for (const listener of agentSessionListeners) {
+        listener({
+          sourceId: currentHookSourceId(),
+          sessionId: item.id,
+          projectId: item.projectId,
+          providerId: item.providerId,
+          providerSessionId: 'claude-child',
+        });
+      }
+      for (const handler of exitHandlers[0] ?? []) handler({ exitCode: 0 });
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(buildCommandMock).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          forkFromProviderSessionId: undefined,
+          isResuming: true,
+          providerSessionId: 'claude-child',
+          cliSessionId: 'claude-child',
+        })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('forks a Claude fork again when it exited before the provider minted its child id', async () => {
+    vi.useFakeTimers();
+    try {
+      const exitHandlers: Array<Array<(info: PtyExitInfo) => void>> = [];
+      spawnLocalPty.mockImplementation(() => {
+        const handlers: Array<(info: PtyExitInfo) => void> = [];
+        exitHandlers.push(handlers);
+        return fakePty(handlers);
+      });
+      readProviderContinuationIntentMock.mockResolvedValue({ sourceProviderSessionId: 'source-claude-session' });
+      const provider = localProvider();
+      const item = session({ providerId: 'claude', id: 'claude-fork', providerSessionId: 'claude-fork' });
+
+      await provider.startSession(item, undefined, false, undefined, 'source-claude-session');
+      for (const handler of exitHandlers[0] ?? []) handler({ exitCode: 0 });
+      await vi.advanceTimersByTimeAsync(500);
+
+      expect(buildCommandMock).toHaveBeenCalledTimes(2);
+      expect(buildCommandMock).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ forkFromProviderSessionId: 'source-claude-session', isResuming: false })
+      );
+      expect(readProviderContinuationIntentMock).toHaveBeenCalledWith('/tmp/ws-1', 'claude-fork');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('forks again on a cold resume of a Claude fork whose child id was never minted', async () => {
+    spawnLocalPty.mockReturnValue(fakePty([]));
+    readProviderContinuationIntentMock.mockResolvedValue({ sourceProviderSessionId: 'source-claude-session' });
+    const provider = localProvider();
+    const item = session({
+      providerId: 'claude',
+      id: 'claude-fork',
+      providerSessionId: 'claude-fork',
+      forkedFrom: { sessionId: 'source-conversation' },
+    });
+
+    await provider.startSession(item, undefined, true);
+
+    expect(buildCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({ forkFromProviderSessionId: 'source-claude-session', isResuming: false })
+    );
+  });
+
+  it('resumes a plain Claude session by its own id even when an intent file is absent', async () => {
+    spawnLocalPty.mockReturnValue(fakePty([]));
+    const provider = localProvider();
+    const item = session({ providerId: 'claude', id: 'claude-plain', providerSessionId: 'claude-plain' });
+
+    await provider.startSession(item, undefined, true);
+
+    expect(buildCommandMock).toHaveBeenCalledWith(
+      expect.objectContaining({ forkFromProviderSessionId: undefined, isResuming: true, cliSessionId: 'claude-plain' })
+    );
   });
 
   it('fails loudly when a native-id fork exits without reporting a resumable session id', async () => {

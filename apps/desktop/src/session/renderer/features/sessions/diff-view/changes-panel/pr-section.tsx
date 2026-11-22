@@ -28,11 +28,6 @@ import { SectionHeader } from './components/section-header';
 import { useChangesViewMode } from './hooks/use-changes-view-mode';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
-const BRANCH_COMMITS_EMPTY_STATE = {
-  label: 'No commits',
-  description: 'No commits ahead of the base branch.',
-};
-
 export const PullRequestsSection = observer(function PullRequestsSection({
   collapsed,
   onToggleCollapsed,
@@ -69,7 +64,7 @@ export const PullRequestsSection = observer(function PullRequestsSection({
   const hasOpenPr = pullRequests.some((p) => p.status === 'open');
   const isRefreshing = repositoryUrl ? (prSyncStore?.isSyncing(repositoryUrl) ?? false) : false;
   const syncState = repositoryUrl ? prSyncStore?.getState(repositoryUrl) : undefined;
-  const syncError = syncState?.status === 'error' ? (syncState.error ?? 'Sync failed') : null;
+  const syncError = syncState?.status === 'error' ? (syncState.error ?? translate('pr.syncFailed')) : null;
 
   const onCreatePr =
     sessionBranch && repositoryUrl
@@ -100,8 +95,8 @@ export const PullRequestsSection = observer(function PullRequestsSection({
       : undefined;
 
   const prActions: SplitButtonAction[] = [
-    { value: 'create-pr', label: 'Create PR', action: () => onCreatePr?.() },
-    { value: 'create-draft-pr', label: 'Create draft PR', action: () => onCreateDraftPr?.() },
+    { value: 'create-pr', label: translate('pr.create'), action: () => onCreatePr?.() },
+    { value: 'create-draft-pr', label: translate('pr.createDraft'), action: () => onCreateDraftPr?.() },
   ];
 
   const handleRefresh = async () => {
@@ -132,10 +127,8 @@ export const PullRequestsSection = observer(function PullRequestsSection({
     : translate(showBranchCommits || branchHead?.state === 'error' ? 'changes.branchCommits' : 'changes.pullRequests');
   const sectionCount = branchUnread ? null : showBranchCommits ? branchCommitCount : pullRequests.length;
   const createPrTooltip = !repositoryUrl
-    ? 'Pull requests unavailable'
-    : hasOpenPr
-      ? 'A pull request is already open'
-      : 'Create a pull request';
+    ? translate('pr.unavailable')
+    : translate(hasOpenPr ? 'pr.alreadyOpen' : 'pr.createHint');
 
   return (
     <>
@@ -213,10 +206,11 @@ export const PullRequestsSection = observer(function PullRequestsSection({
 });
 
 function BranchCommitsEntry({ range }: { range: CommitRange }) {
+  const { translate } = useSessionMessages();
   return (
     <div className="flex min-h-0 flex-1 flex-col border-t border-border">
       <div className="min-h-0 flex-1 px-2.5">
-        <CommitRangeCommitsList range={range} emptyState={BRANCH_COMMITS_EMPTY_STATE} />
+        <CommitRangeCommitsList range={range} emptyState={{ label: translate('pr.noCommits'), description: translate('pr.noBranchCommits') }} />
       </div>
     </div>
   );

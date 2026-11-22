@@ -3,6 +3,7 @@ import { WireError } from '@gugu/session-wire'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { errorText } from './subscription-queries'
 import { showModal } from '@renderer/lib/modal/modal-provider'
+import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store'
 import { replica } from '@/lib/replica'
 
 /** Re-import an already migrated configuration from Subscriptions. */
@@ -10,7 +11,7 @@ export async function openAgentHomeImport(providerId: string, machine: string | 
   const home = await readAgentHome(providerId, machine)
   if (!home) return false
   if (home.needsImport) {
-    if (!machine && home.sourceReadable) openShellSettings('data-import')
+    if (home.sourceReadable) openAgentHomeImportPage(machine)
     return false
   }
   const diff = await readAgentHomeDiff(providerId, machine)
@@ -18,6 +19,26 @@ export async function openAgentHomeImport(providerId: string, machine: string | 
     providerId, machine, diff, onSuccess: () => resolve(true), onClose: () => resolve(false),
   }))
 }
+
+export function openAgentHomeImportPage(machine: string | null) {
+  settingsDeviceStore.select(machine ?? 'local')
+  openShellSettings('data-import')
+}
+
+/** Persistent inventory, including imported homes whose CLI may no longer be installed. */
+export const agentConfigImportHomes = replica({
+  name: 'agentConfigImportHomes', scope: 'device',
+  read: async (_device: string, machine: string | null = null) => {
+    const { rpcOn } = await import('@renderer/lib/ipc')
+    // This existing lookup contains every registered provider, regardless of installation or
+    // availability in the new-task picker. Do not lose an imported home when its CLI is removed.
+    const providers = await rpcOn(machine).agents.listIcons()
+    const client = await getAgentConfigRuntimeClient(machine)
+    const result = await client.scanAgentHomes({ providerIds: Object.keys(providers) })
+    if (!result.success) throw new Error(errorText(result.error))
+    return result.data.filter(home => home.sourceReadable)
+  },
+})
 
 export async function readAgentHomeDiff(providerId: string, machine: string | null) {
   const client = await getAgentConfigRuntimeClient(machine)

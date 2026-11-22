@@ -1,8 +1,9 @@
+import { egress } from '../shared/egress'
 import { sha256 } from '@noble/hashes/sha2.js'
 import { copyVerifiedFile, ciphertextSize, transformFile, type FileSink } from '../shared/fileCipher'
 // Signed-URL expiries are on the backend's clock (`@@@server-clock`).
 import { serverNow } from '../shared/serverClock'
-import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileRefKey, relayRefusedError, requireFileRange, parseFileMetadata, snapshotBlob, type FileBytes, type FileContext, type FileMetadata, type FileProviders, type FileRevision } from '../shared/fileResolver'
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileRefKey, relayRefusedError, requireFileRange, parseFileMetadata, snapshotBlob, type FileBytes, type FileContext, type FileMetadata, type FilePreview, type FileProviders, type FileRevision } from '../shared/fileResolver'
 import type { FileChunkCache } from '../shared/fileCache'
 import { AttachmentsError, attachmentRequest, type AttachmentsEndpoint } from './attachmentsApi'
 import { withBoundedOperation } from './boundedOperation'
@@ -25,7 +26,7 @@ const sameLegacyObject = (revision: FileRevision, row: { bucket_id?: string; obj
 const uncached: FileChunkCache = { get: async () => null, put: async () => {}, clear: async () => {} }
 
 /** Retain verified chunks; reconnect only the incomplete chunk, with the signer's authorized origin fallback. */
-function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress']) {
+function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof globalThis.fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress']) {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined, buffered: Uint8Array = new Uint8Array(), next = -1, interrupted = false
   let last: { index: number; bytes: Uint8Array } | undefined, lease: Download | undefined, origin = false, renewed = false
   const target = () => ({ stage: origin || lease?.bucket_id === 'temporary' ? 'oss' as const : 'cdn' as const, url: lease!.url })
@@ -95,11 +96,11 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
 export function cloudFileProviders(deps: {
   endpoint(context: FileContext): Promise<AttachmentsEndpoint>
   sink(size: number, context: FileContext): Promise<FileSink>
-  cache: FileChunkCache; fetch?: typeof fetch
+  cache: FileChunkCache; fetch?: typeof globalThis.fetch
   downloadSession?: FileDownloadSession
   metadata?(context: FileContext): Promise<unknown>
   imageCache?: Pick<Cache, 'match' | 'put'>
-}): Pick<FileProviders, 'metadata' | 'managed' | 'temporary' | 'preview' | 'download'> {
+}): Pick<FileProviders, 'metadata' | 'managed' | 'temporary' | 'preview' | 'expiredPreview' | 'download'> {
   const session = deps.downloadSession ?? fileDownloadSession
   const request = async (context: FileContext, route: string, body: Record<string, unknown>) => {
     context.signal?.throwIfAborted()
@@ -122,7 +123,7 @@ export function cloudFileProviders(deps: {
   }
   const objectTransport = async (context: FileContext) => {
     context.signal?.throwIfAborted()
-    const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? fetch
+    const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? egress.fetch
     context.signal?.throwIfAborted()
     return fetcher
   }
@@ -226,11 +227,10 @@ export function cloudFileProviders(deps: {
       if (!source.interrupted() && !context.signal?.aborted) await deps.cache.clear(key)
     }
   }
-  const readPreview = async (preview: NonNullable<FileRevision['preview']>, revision: FileRevision, context: FileContext) => {
+  const readPreview = async (preview: FilePreview, ref: FileContext['ref'], context: FileContext) => {
     const key = `https://attachments.gugu.invalid/preview/${cacheKey(context, preview.sha256)}`
     const hit = await deps.imageCache?.match(key)
     if (hit) return hit.blob()
-    const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
     let lease: Download | undefined
     const sign = async (renew = false, origin = false): Promise<SignedDownload> => {
       const signed = await download(context, { ref, as: context.actor.actorId, preview: true,
@@ -272,9 +272,12 @@ export function cloudFileProviders(deps: {
         if (typeof lease.url !== 'string' || !lease.url || !Number.isFinite(expiresAt) || expiresAt <= serverNow()) throw new Error('Invalid video preview lease')
         return { url: lease.url, expiresAt } // Every renewal goes through the same ACL and quota signer.
       }
+      // A video kept on a machine has no preview of its own: it is read whole, like the file it is.
+      if (video) throw new Error('Local media preview is unavailable')
       // An image shows the preview its sender uploaded with it; without one, the original, read like any file.
-      if (video || !revision.preview) return snapshotBlob(await full(), revision.content_type)
-      return readPreview(revision.preview, revision, context)
+      if (!revision.preview) return snapshotBlob(await full(), revision.content_type)
+      return readPreview(revision.preview, 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref, context)
     },
+    expiredPreview: (preview, context) => readPreview(preview, context.ref, context),
   }
 }

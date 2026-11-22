@@ -63,7 +63,7 @@ export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPal
   const settled = debouncedQuery === search;
   // The last completed reading stays shown (.gg-stale), including zero rows, while the next words' are on their way.
   const results = valueOf(reading) ?? null;
-  const stale = results !== null && (!settled || (reading.state === 'value' && reading.stale));
+  const stale = results !== null && (!settled || (reading.state === 'value' && !!reading.previous));
   const current = stale ? null : results;
   // Only retained read rows are stale; live chats and the current words' search link are independent.
   const readingGroupClass = stale ? `${GROUP_CLASS} gg-stale` : GROUP_CLASS;

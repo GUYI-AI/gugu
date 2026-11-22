@@ -3,18 +3,19 @@ import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
 import { OPENED_FILE_MAX_BYTES, REMOTE_WORKSPACE_CHUNK_BYTES } from '@gugu/session-core/session-record/contract';
 import { EDITOR_CONFIRM_FILE_BYTES } from '@renderer/lib/editor/file-size-limits';
 import { getFileKind } from '@renderer/lib/editor/fileKind';
-import { workspaceRpc } from './workspace-backend';
+import { machineFileReader } from './machine-file-reader';
+import { workspaceBackend, workspaceRpc } from './workspace-backend';
 
 /** As long as the chunks on the line at once may take to come through: the machine's link waits behind them, its heartbeats too. */
 const LINE_BUDGET_MS = 1_000;
 const MOST_AHEAD = 4;
 
-type FirstChunk = { size: number; bytes: Uint8Array; ms: number };
+type FirstChunk = { size: number; etag: string; bytes: Uint8Array; ms: number };
 
 const chunkReader = (projectId: string, workspaceId: string, path: string) => async (offset: number) => {
   const result = await workspaceRpc(projectId).files.readChunk(workspaceId, { path, offset, length: REMOTE_WORKSPACE_CHUNK_BYTES });
   if (!result.success) throw new Error(String(result.error.type));
-  return { size: result.data.size, bytes: base64ToBytes(result.data.data) };
+  return { size: result.data.size, etag: result.data.etag, bytes: base64ToBytes(result.data.data) };
 };
 
 /** A file's first chunk, and how long it took to come: asked before the rest of its read is known to be wanted. */
@@ -38,16 +39,31 @@ export async function readWorkspaceBytes(projectId: string, workspaceId: string,
   // time — as many as the first chunk's speed brings through in LINE_BUDGET_MS — and kept in order.
   const ahead = Math.max(1, Math.min(MOST_AHEAD, Math.floor(first.bytes.length / Math.max(1, first.ms) * LINE_BUDGET_MS / REMOTE_WORKSPACE_CHUNK_BYTES)));
   if (first.bytes.length === 0 && size > 0) throw new Error('The file changed while it was read');
-  const offsets: number[] = [];
-  for (let offset = first.bytes.length; offset < size; offset += REMOTE_WORKSPACE_CHUNK_BYTES) offsets.push(offset);
   const parts: BlobPart[] = [first.bytes.slice().buffer];
+  let from = first.bytes.length;
+  const machine = workspaceBackend(projectId).machine;
+  if (machine.kind === 'remote' && from < size) {
+    // A linked machine: the rest from one stream (`@@@machine-file-reader`); a machine no link reaches answers its first
+    // range by its channel, and the rest are asked below, several at a time (`@@@cloud-only-chunks`).
+    const reader = machineFileReader(machine.deviceId, workspaceId, (at, offset) => chunkReader(projectId, workspaceId, at)(offset));
+    reader.anchor(path, first);
+    do {
+      const chunk = await reader.read(path, from, REMOTE_WORKSPACE_CHUNK_BYTES);
+      if (chunk.size !== size || chunk.bytes.length !== Math.min(REMOTE_WORKSPACE_CHUNK_BYTES, size - from)) throw new Error('The file changed while it was read');
+      parts.push(chunk.bytes.slice().buffer);
+      from += chunk.bytes.length;
+    } while (from < size && reader.linked);
+  }
+  const offsets: number[] = [];
+  for (let offset = from; offset < size; offset += REMOTE_WORKSPACE_CHUNK_BYTES) offsets.push(offset);
+  const base = parts.length;
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(ahead, offsets.length) }, async () => {
     while (next < offsets.length) {
       const k = next++, offset = offsets[k]!;
       const chunk = await read(offset);
       if (chunk.size !== size || chunk.bytes.length !== Math.min(REMOTE_WORKSPACE_CHUNK_BYTES, size - offset)) throw new Error('The file changed while it was read');
-      parts[k + 1] = chunk.bytes.slice().buffer;
+      parts[base + k] = chunk.bytes.slice().buffer;
     }
   }));
   return parts;

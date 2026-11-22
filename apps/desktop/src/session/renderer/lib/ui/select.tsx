@@ -3,7 +3,7 @@
 import { Select as SelectPrimitive } from '@base-ui/react/select';
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from '@/lib/icons'
 import * as React from 'react';
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives';
+import { useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
 
 const Select = SelectPrimitive.Root;
@@ -91,6 +91,7 @@ function SelectContent({
         alignItemWithTrigger={alignItemWithTrigger}
         className="isolate z-50"
       >
+        <OpenLayer />
         <SelectPrimitive.Popup
           data-slot="select-content"
           data-align-trigger={alignItemWithTrigger}

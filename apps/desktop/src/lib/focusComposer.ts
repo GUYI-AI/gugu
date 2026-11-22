@@ -1,4 +1,5 @@
 import { AUTOMATION_TEST_IDS } from './automationDom'
+import { isElementVisible } from './elementVisibility'
 
 /**
  * @@@composer-focus-contract (#4315) — 全 app 唯一一条「聚焦输入框」的路。
@@ -87,7 +88,7 @@ export function registerComposerFocusTarget(resolve: ComposerTargetResolver): ()
 }
 
 function onScreen(element: HTMLElement): boolean {
-  return typeof element.checkVisibility !== 'function' || element.checkVisibility({ visibilityProperty: true })
+  return isElementVisible(element)
 }
 
 function resolveComposer(target?: ComposerTargetResolver): HTMLElement | null {

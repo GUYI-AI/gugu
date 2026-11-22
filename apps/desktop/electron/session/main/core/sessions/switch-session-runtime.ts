@@ -93,14 +93,9 @@ export async function switchSessionRuntime(
     await dehydrateSession(sessionId);
   }
 
-  const nextConfig = configForRuntime(row.config, runtime, {
-    // 从通用模式搬走时,`session_id` 里那个 id 是 **ACP 适配器铸的**(与 conversation.id 不同)。
-    // 编程腿续跑要用它,而不是咕咕自己的 conversation.id —— 后者在引擎侧根本不存在,续出来的是
-    // 一条全新的空会话,且**不会报错**(2026-09-09 本机实测 claude:transcript 落在
-    // `~/.claude/projects/<cwd>/<适配器铸的 id>.jsonl`,用 conversation.id 那条文件不存在)。
-    providerMintedSessionId:
-      current === 'acp' && !!row.providerSessionId && row.providerSessionId !== sessionId,
-  });
+  // 从通用模式搬走时,`session_id` 里那个 id 是 ACP 适配器铸的;编程腿续跑本来就只认 `session_id`
+  // (`resolveAgentSessionCommandArgs`),不必另记来历。
+  const nextConfig = configForRuntime(row.config, runtime);
   await db
     .update(sessions)
     .set({ runtime, config: nextConfig, updatedAt: new Date().toISOString() })
@@ -132,20 +127,14 @@ export async function switchSessionRuntime(
  * - `providerSessionEndpoint`:宿主给**那个 TUI 进程**记的控制端点。进程都没了,端点是条死链。
  * - `mcpSessionServers`:那条 ACP 适配器**起进程那一刻**带上的几台(事实)。新进程还没起,
  *   这一格现在无人认领;缺席正是它定义好的「老会话」态 —— 面板退回只用意图算,下次重开自愈。
- *
- * 反过来**要记上**一条来历:从通用模式搬走时,`session_id` 里那个 id 是引擎铸的,
- * 编程腿续跑得用它 ⇒ 落 `providerMintedSessionId`(见 `resolveAgentSessionCommandArgs`)。
+
  *
  * ⚠️ `mcpDisabledServers` / `mcpToggleDecided`(**意图**:用户在 `/mcp` 里关掉了哪几台)只长在
  * ACP 那份 schema 上 —— 换到编程模式时它们随 schema 一起被剥掉,再切回来是一份干净的默认。
  * 那是今天的事实,不是一个决定:`/mcp` 面板本身就只在通用模式里。要让意图跨腿活下来,
  * 得先把它挪出 leg-specific 的 config,❌ 别在这里偷偷抄一份。
  */
-function configForRuntime(
-  config: SessionConfig,
-  runtime: SessionRuntime,
-  facts: { providerMintedSessionId: boolean }
-): SessionConfig {
+function configForRuntime(config: SessionConfig, runtime: SessionRuntime): SessionConfig {
   const {
     initialPrompt: _initialPrompt,
     providerSessionEndpoint: _endpoint,
@@ -166,7 +155,6 @@ function configForRuntime(
       ...ptyRest,
       version: '1',
       type: 'pty',
-      ...(facts.providerMintedSessionId ? { providerMintedSessionId: true } : {}),
     } as SessionConfig;
   }
   return { ...rest, version: '1', type: 'acp' } as SessionConfig;

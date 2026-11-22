@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isSignInFailure } from '@gugu/session-core/acp';
 import { classifyTurnFailure } from './turn-failure';
+import { usesHostCredentials } from '../runtime/session-manager';
 
 // d22 真机日志里那一条(2026-09-24):refresh token 已失效,凭据文件还在。
 const CODEX_REFRESH_DEAD = {
@@ -84,7 +85,7 @@ describe('classifyTurnFailure 带出 signInRequired', () => {
     expect(classifyTurnFailure({ at: 'prompt', cause }).outcome).toMatchObject({
       kind: 'error', reason: 'prompt_failed', signInRequired: true, signInReason: 'revoked', detail: expect.stringContaining(cause.message),
     });
-    const platform = classifyTurnFailure({ at: 'prompt', cause, platformCredentials: true }).outcome;
+    const platform = classifyTurnFailure({ at: 'prompt', cause, hostCredentials: true }).outcome;
     expect(platform).not.toHaveProperty('signInRequired');
     expect(platform).not.toHaveProperty('signInReason');
   });
@@ -101,8 +102,20 @@ describe('classifyTurnFailure 带出 signInRequired', () => {
   });
 
   it('跑咕咕平台模型的会话被鉴权拒:说的是平台那一侧,不带这一格', () => {
-    const { outcome } = classifyTurnFailure({ at: 'prompt', cause: CODEX_REFRESH_DEAD, platformCredentials: true });
+    const { outcome } = classifyTurnFailure({ at: 'prompt', cause: CODEX_REFRESH_DEAD, hostCredentials: true });
     expect(outcome).not.toHaveProperty('signInRequired');
+  });
+
+  it('自定义模型连接的 key 被拒(凭据由宿主提供):不说登录,行上是上游原话,带状态码', () => {
+    const { outcome } = classifyTurnFailure({ at: 'prompt', cause: CLAUDE_403, hostCredentials: true });
+    expect(outcome).not.toHaveProperty('signInRequired');
+    expect(outcome).toMatchObject({ kind: 'error', reason: 'prompt_failed', said: expect.stringContaining('403') });
+  });
+
+  it('自定义模型连接与平台票都算宿主提供的凭据', () => {
+    expect(usesHostCredentials({ runContext: { customModel: { endpoint: 'http://127.0.0.1:1/r/c/anthropic-messages' } } })).toBe(true);
+    expect(usesHostCredentials({ platformAccessSessionId: 'ticket', runContext: {} })).toBe(true);
+    expect(usesHostCredentials({ runContext: {} })).toBe(false);
   });
 
   it('普通失败不带这一格', () => {

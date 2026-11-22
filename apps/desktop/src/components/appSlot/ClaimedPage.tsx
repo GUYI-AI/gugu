@@ -5,6 +5,7 @@ import { LISTED_HOST } from './hereHost'
 import { extensionViewStore } from '../../session/renderer/features/extensions/extension-view-store'
 import { PeekCovered } from './peekCovered'
 import type { PreparedChatFile } from '../../session/shared/extensions/app-runtime-protocol'
+import { isElementVisible } from '@/lib/elementVisibility'
 
 
 /** What in an ancestor can hide the slot without moving or resizing it (`RETAINED_SURFACE_HIDDEN_STYLE`). */
@@ -39,7 +40,7 @@ export function ClaimedPage({ slotId, chatId, resourceChat, kind, itemId, takeOp
     // The same store the session page's slots claim (one module, two React roots): the root layer draws the page here.
     let token: number | null = null
     const visible = () => {
-      if (!element.isConnected || !element.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return false
+      if (!element.isConnected || !isElementVisible(element, { opacity: true })) return false
       const box = element.getBoundingClientRect()
       return box.width > 0 && box.height > 0
     }

@@ -2,7 +2,6 @@ import { statSync } from 'node:fs';
 import { join } from 'node:path';
 import { MissingProviderSessionError } from '@gugu/session-core/acp';
 import type { AcpSpawnContext, IAcpBehavior } from '@gugu/session-core/agents/plugins';
-import { withLoopbackNoProxy } from './session-bundle';
 
 function hasConversationDatabase(path: string): boolean {
   try {
@@ -36,9 +35,9 @@ export function buildAntigravityAcpSpawn(ctx: AcpSpawnContext) {
   if (legacy) {
     const command = ctx.programs?.antigravity ?? (ctx.authProgram === null ? ctx.cli : undefined);
     if (!command) throw new Error('Antigravity legacy store requires the host-resolved agy_acp_server installation');
-    return { command, args: [], env: withLoopbackNoProxy(ctx.env) };
+    return { command, args: [], env: ctx.env };
   }
   const root = ctx.env.GEMINI_HOME?.trim();
   if (!root) throw new Error('Antigravity CLI ACP requires the managed GEMINI_HOME');
-  return { command: ctx.cli, args: ['acp', '--stdio', '--gemini-dir', root], env: withLoopbackNoProxy(ctx.env) };
+  return { command: ctx.cli, args: ['acp', '--stdio', '--gemini-dir', root], env: ctx.env };
 }

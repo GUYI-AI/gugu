@@ -48,13 +48,13 @@ import {
 // import 只会拿到复制品。
 import { encryptedAppSecretsStore } from '@main/core/secrets/encrypted-app-secrets-store'
 import { interruptTuiTurn } from '@main/core/sessions/interrupt-tui-turn'
-import { resolveSystemProxy } from '@main/utils/systemProxyEnv'
+import { resolveSystemProxy } from '../../egress/harness-proxy'
 export { setUserPathRefresher } from './utils/userEnv'
 // #5873 同一个属主的另一半:整份登录 shell 环境的快照。PATH 早就在补,而 key / 代理
 // 一直没人送 —— 终端腿靠 `-il` 自己 source 到,TUI 腿(`zsh -c`)与聊天腿(裸 spawn)读不到。
 export { setLoginShellEnvProvider } from './utils/userEnv'
 // #6264 这条终端会话是不是跑在咕咕平台模型上:平台令牌的持有表住宿主,由宿主注入(同上,❌ 相对 import)。
-export { setPlatformCredentialsProbe } from './core/agent-config/auth-expiry-from-turns'
+export { setHostCredentialsProbe } from './core/agent-config/auth-expiry-from-turns'
 // @@@5301 会话页 agent 系统通知的正文注入口。会话页 ❌ 不 import 宿主的语言 store
 // (它有模块级状态,跨界只会拿到复制品) —— 由宿主把当下语言的两句文案推进来。
 export { setSessionAgentNotificationCopy } from './core/agent-hooks/notification-copy'
@@ -620,7 +620,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // renamed above, and every reader of a name below (search backfill first) needs the projection.
   await loadTaskNames()
   await loadAcpForkHandshakes()
-  // #6892 起任何 agent / worker 之前问一次系统代理,只补给 agent 与安装器(utils/systemProxyEnv.ts)。
+  // #6892 起任何 agent / worker 之前问一次系统代理,只补给 agent 与安装器(egress/harness-proxy.ts)。
   log.info('[session-host] system proxy for agent processes', await resolveSystemProxy((url) => electronSession.defaultSession.resolveProxy(url)))
 
   // @@@5080 收残之前先问一句:这份数据目录现在还有别的活宿主在用吗?

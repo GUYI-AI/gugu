@@ -33,9 +33,10 @@ import {
   listProviderContinuationIntents,
 } from './provider-continuation-intent';
 import { readRuntimeForkOwnership } from './runtime-fork-ownership';
-import { isObservedCodexFork } from './codex-fork-observer';
 import { setProviderSessionId } from './set-session-id';
 import { isRetiredRemoteWorkspace } from '@main/core/workspaces/resolve-workspace-kind';
+import { resolveAgentHomeEnv } from '@main/core/agents/agent-home';
+import { inheritSessionPlatformModel } from './platform-model-selection';
 
 type SessionRow = typeof sessions.$inferSelect;
 
@@ -255,9 +256,6 @@ async function captureCodexForks(
 
   for (const transcript of transcripts) {
     if (knownProviderSessionIds.has(transcript.providerSessionId)) continue;
-    // A live app-server client may still be deciding whether this child is the visible TUI's
-    // rewind branch. Do not materialize it in the sidebar during that handoff window.
-    if (isObservedCodexFork(transcript.providerSessionId)) continue;
     const parent = rowByProviderSessionId.get(transcript.parentProviderSessionId);
     if (!parent || parent.provider !== 'codex') continue;
     const transcriptPath = await realpath(transcript.cwd).catch(() => transcript.cwd);
@@ -290,6 +288,7 @@ async function captureCodexForks(
       .onConflictDoNothing()
       .returning();
     if (!inserted) continue;
+    await inheritSessionPlatformModel(inserted.id, parent.id);
     rows.push(inserted);
     knownProviderSessionIds.add(transcript.providerSessionId);
     rowByProviderSessionId.set(transcript.providerSessionId, inserted);
@@ -534,6 +533,15 @@ export async function captureExternalForks(...sessionIds: string[]): Promise<voi
   }
 }
 
+/**
+ * The env the engine's own sessions run with: the home Gugu manages for it (`CODEX_HOME` /
+ * `CLAUDE_CONFIG_DIR`, the same value every spawn gets) over the app's env. Records are written
+ * under that home, so the scan reads there; without a managed home this is the app's env.
+ */
+async function engineEnv(providerId: 'claude' | 'codex'): Promise<NodeJS.ProcessEnv> {
+  return { ...process.env, ...(await resolveAgentHomeEnv(providerId)) };
+}
+
 /** 一个工作目录里盯着的会话一趟扫完:记录目录只列一次。 */
 async function captureWorkspaceForks(workspace: { id: string; path: string }, managed: SessionRow[],
   readWorkspaceRows: () => SessionRow[], knownProviderSessionIds: Set<string>): Promise<void> {
@@ -550,11 +558,11 @@ async function captureWorkspaceForks(workspace: { id: string; path: string }, ma
     managed,
     knownProviderSessionIds,
     unclaimedForkSourceIds,
-    process.env
+    await engineEnv('codex')
   );
 
   if (!managed.some((row) => row.provider === 'claude')) return;
-  const files = await listSessionTranscriptFiles(sessionPath, process.env);
+  const files = await listSessionTranscriptFiles(sessionPath, await engineEnv('claude'));
   await bindProviderContinuations(sessionPath, managed, files, knownProviderSessionIds);
 
   // 稳态下目录里的记录都认识:不必为每条在管会话读锚(#3340)。
@@ -660,6 +668,7 @@ async function captureWorkspaceForks(workspace: { id: string; path: string }, ma
       .onConflictDoNothing()
       .returning();
     if (!inserted) continue; // raced with a concurrent registration
+    await inheritSessionPlatformModel(inserted.id, parentRow.id);
 
     managed.push(inserted);
     pool.push({

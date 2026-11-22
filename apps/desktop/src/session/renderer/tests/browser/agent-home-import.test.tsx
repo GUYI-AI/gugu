@@ -1,25 +1,34 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness, clickElement } from '../../../../../../../tests/support/testHarness'
-import { ModalRenderer } from '@renderer/lib/modal/modal-renderer'
-import { openAgentHomeImport } from '@renderer/features/settings/subscriptions/ensure-agent-home'
+import { agentConfigImportHomes, openAgentHomeImport } from '@renderer/features/settings/subscriptions/ensure-agent-home'
 import { readAgentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
 import { AgentHomePreparationStatus } from '@/components/settings/data-import/AgentHomePreparationStatus'
 import { AgentHomeSkippedFiles } from '@/components/settings/data-import/AgentHomeSkippedFiles'
 import { QwenConfigImport } from '@/components/settings/data-import/QwenConfigImport'
 import { AgentConfigImport } from '@/components/settings/data-import/AgentConfigImport'
-import { firstInstallImportHomes, showFirstInstallImportNotice } from '@renderer/features/settings/subscriptions/first-install-import-notice'
+import { firstInstallImportHomes, showFirstInstallImportNotice, watchFirstInstallImportNotices } from '@renderer/features/settings/subscriptions/first-install-import-notice'
 import { Sheet } from '@/components/ui/Sheet'
 import type { AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
+import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import '@/i18n/registerMainCatalog'
 import '@/styles/tokens.css'
 
-const calls = vi.hoisted(() => ({ scanHomes: vi.fn(), importHome: vi.fn(), diffHome: vi.fn(), reimportHome: vi.fn(), notice: vi.fn() }))
+const calls = vi.hoisted(() => ({ scanHomes: vi.fn(), importHome: vi.fn(), diffHome: vi.fn(), reimportHome: vi.fn(), notice: vi.fn(), machines: [] as (string | null)[], links: new Map<string, () => void>(), linkState: new Map<string, string>(), each: null as null | ((machine: string) => () => void) }))
 vi.mock('@/lib/notices', async (load) => ({ ...await load<typeof import('@/lib/notices')>(), notify: calls.notice }))
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
-  getAgentConfigRuntimeClient: async () => ({
+  getAgentConfigRuntimeClient: async (machine: string | null = null) => { calls.machines.push(machine); return ({
     scanAgentHomes: calls.scanHomes, importAgentHome: calls.importHome, diffAgentHome: calls.diffHome, reimportAgentHome: calls.reimportHome,
-  }),
+  }); },
+}))
+vi.mock('@renderer/lib/ipc', async original => ({ ...await original<typeof import('@renderer/lib/ipc')>(),
+  rpcOn: () => ({ agents: { listIcons: async () => ({ codex: {}, qwen: {} }) } }),
+}))
+vi.mock('@renderer/lib/machine-clients', async original => ({ ...await original<typeof import('@renderer/lib/machine-clients')>(),
+  machineLabel: (machine: string) => machine,
+  machineLinkState: (machine: string) => calls.linkState.get(machine),
+  onEachMachine: (setup: (machine: string) => () => void) => { calls.each = setup; return () => { calls.each = null; calls.links.clear() } },
+  subscribeMachineLink: (machine: string, check: () => void) => { calls.links.set(machine, check); return () => { calls.links.delete(machine) } },
 }))
 const home: AgentHomeScan = {
   providerId: 'codex', name: 'Codex', userRoot: '/fixture/.codex', sourceReadable: true,
@@ -27,7 +36,8 @@ const home: AgentHomeScan = {
   groups: [], issues: [], mcpSecrets: [], projectMcpCount: 0,
 }
 let harness: ReturnType<typeof createReactHarness>
-afterEach(() => { harness?.cleanup(); vi.clearAllMocks() })
+beforeEach(() => { calls.machines = []; calls.links.clear(); calls.linkState.clear(); settingsDeviceStore.select('local') })
+afterEach(() => { harness?.cleanup(); settingsDeviceStore.select('local'); vi.clearAllMocks() })
 
 it('lets a person choose Qwen configuration groups and keeps hooks unchecked initially', async () => {
   const qwen = { ...home, providerId: 'qwen', name: 'Qwen Code', groups: [
@@ -70,12 +80,15 @@ it('lets a person choose Qwen configuration groups and keeps hooks unchecked ini
   await expect.poll(() => dialog()).toBeNull()
 })
 
-it('never opens the removed configuration import dialog on an unmarked remote host', async () => {
+it('opens the import page on the requested unmarked remote host without copying data', async () => {
   calls.scanHomes.mockResolvedValue({ success: true, data: [home] })
-  harness = createReactHarness()
-  await harness.render(<ModalRenderer />)
+  const open = vi.fn()
+  window.addEventListener(UI_EVENTS.openSettings, open, { once: true })
   expect(await openAgentHomeImport('codex', 'remote-headless')).toBe(false)
-  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  expect(settingsDeviceStore.selected).toBe('remote-headless')
+  expect(open).toHaveBeenCalledWith(expect.objectContaining({ detail: { section: 'data-import', action: undefined } }))
+  expect(calls.machines).toEqual(['remote-headless'])
+  expect(calls.importHome).not.toHaveBeenCalled()
 })
 
 it('opens the import page for an unmarked local home without copying its data', async () => {
@@ -234,4 +247,95 @@ it('folds quota-excluded sessions and says their originals remain in place', asy
   await clickElement(summary)
   await expect.poll(() => harness.container.querySelectorAll('li').length).toBe(2)
   expect(harness.container.textContent).toContain('old-a.jsonl')
+})
+
+it('keeps first import, refresh, diff and reimport on the remote machine', async () => {
+  const source = { ...home, groups: [{ id: 'settings', count: 1 }] }
+  calls.scanHomes.mockResolvedValue({ success: true, data: [source] })
+  calls.importHome.mockImplementation(async () => {
+    calls.scanHomes.mockResolvedValue({ success: true, data: [{ ...source, needsImport: false, importedAt: 'fixture' }] })
+    return { success: true, data: { issues: [] } }
+  })
+  calls.diffHome.mockResolvedValue({ success: true, data: { entries: [
+    { id: 'config', path: 'config.toml', group: 'settings', state: 'userChanged', revision: 'source-v2' },
+  ], issues: [] } })
+  calls.reimportHome.mockResolvedValue({ success: true, data: { issues: [] } })
+  harness = createReactHarness()
+  await harness.render(<Sheet ariaLabel="Settings" onClose={() => undefined} zIndex="var(--z-settings)"><AgentConfigImport providerId="codex" machine="remote-repeat" /></Sheet>)
+  const submit = () => document.querySelector<HTMLButtonElement>('button[type="submit"]')!
+  await expect.poll(() => submit()).not.toBeNull()
+  expect(calls.importHome).not.toHaveBeenCalled()
+  await clickElement(submit())
+  await expect.poll(() => calls.importHome.mock.calls.length).toBe(1)
+  await expect.poll(() => document.querySelector('fieldset')).toBeNull()
+  await clickElement(submit())
+  await expect.poll(() => document.querySelector('[data-testid="agent-home-reimport-apply"]')).not.toBeNull()
+  await clickElement(document.querySelector<HTMLButtonElement>('[data-testid="agent-home-reimport-apply"]')!)
+  await expect.poll(() => calls.reimportHome.mock.calls.length).toBe(1)
+  expect(calls.reimportHome).toHaveBeenCalledWith({ providerId: 'codex', decisions: [{ id: 'config', revision: 'source-v2' }] })
+  expect(calls.machines.length).toBeGreaterThanOrEqual(5)
+  expect(calls.machines.every(machine => machine === 'remote-repeat')).toBe(true)
+})
+
+it('keeps previously imported configurations in the import inventory without depending on CLI availability', async () => {
+  calls.scanHomes.mockResolvedValue({ success: true, data: [{ ...home, needsImport: false, importedAt: 'fixture' }] })
+  expect(await agentConfigImportHomes.fetch('remote-inventory')).toMatchObject([{ providerId: 'codex', needsImport: false }])
+  expect(calls.scanHomes).toHaveBeenCalledWith({ providerIds: ['codex', 'qwen'] })
+  expect(calls.machines).toEqual(['remote-inventory'])
+})
+
+it('deduplicates the existing prompt by account and machine and routes its action to that machine', () => {
+  showFirstInstallImportNotice([home], 'notice-a', 'account-a')
+  showFirstInstallImportNotice([home], 'notice-a', 'account-a')
+  showFirstInstallImportNotice([home], 'notice-b', 'account-a')
+  showFirstInstallImportNotice([home], 'notice-a', 'account-b')
+  expect(calls.notice).toHaveBeenCalledTimes(3)
+  const notice = calls.notice.mock.calls[0]![0]
+  expect(notice.description).toContain('notice-a')
+  notice.action.onClick()
+  expect(settingsDeviceStore.selected).toBe('notice-a')
+  expect(calls.importHome).not.toHaveBeenCalled()
+  localStorage.removeItem(notice.key)
+})
+
+it('uses connected-machine discovery for the existing prompt and stops publishing after unmount', async () => {
+  calls.scanHomes.mockResolvedValue({ success: true, data: [{ ...home, groups: [{ id: 'settings', count: 1 }] }] })
+  const stop = watchFirstInstallImportNotices('watch-account')
+  calls.linkState.set('remote-watch', 'closed')
+  calls.each!('remote-watch')
+  expect(calls.machines).not.toContain('remote-watch')
+  calls.linkState.set('remote-watch', 'open'); calls.links.get('remote-watch')!()
+  await expect.poll(() => calls.notice.mock.calls.some(([notice]) => notice.key.endsWith(':remote-watch'))).toBe(true)
+  const count = calls.notice.mock.calls.length
+  stop()
+  expect(calls.links.size).toBe(0)
+  expect(calls.notice.mock.calls.length).toBe(count)
+  expect(calls.importHome).not.toHaveBeenCalled()
+})
+
+it('resets explicit configuration choices when the target machine changes', async () => {
+  calls.scanHomes.mockResolvedValue({ success: true, data: [{ ...home, groups: [{ id: 'settings', count: 1 }, { id: 'skills', count: 1 }] }] })
+  harness = createReactHarness()
+  await harness.render(<AgentConfigImport providerId="codex" machine="form-a" />)
+  const skills = () => harness.container.querySelector<HTMLInputElement>('input[value="skills"]')!
+  await expect.poll(() => skills()).not.toBeNull()
+  await clickElement(skills())
+  expect(skills().checked).toBe(false)
+  await harness.render(<AgentConfigImport providerId="codex" machine="form-b" />)
+  await expect.poll(() => skills()?.checked).toBe(true)
+  expect(calls.machines).toEqual(['form-a', 'form-b'])
+  expect(calls.importHome).not.toHaveBeenCalled()
+})
+
+it('does not publish a remote discovery response after its account watcher is disposed', async () => {
+  let release!: (result: unknown) => void
+  calls.scanHomes.mockResolvedValueOnce({ success: true, data: [] }).mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+  const stop = watchFirstInstallImportNotices('late-account')
+  await expect.poll(() => calls.scanHomes.mock.calls.length).toBe(1)
+  calls.linkState.set('late-machine', 'open'); calls.each!('late-machine')
+  await expect.poll(() => calls.machines.includes('late-machine')).toBe(true)
+  stop()
+  release({ success: true, data: [{ ...home, groups: [{ id: 'settings', count: 1 }] }] })
+  await firstInstallImportHomes.fetch('late-machine')
+  expect(calls.notice).not.toHaveBeenCalled()
 })

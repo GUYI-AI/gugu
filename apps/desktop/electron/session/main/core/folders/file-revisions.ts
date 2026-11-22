@@ -79,6 +79,15 @@ export function findFileCopy(key: string, sha: string, ownerId: string, deviceId
   return found ? held(ownerId, deviceId, found) : null;
 }
 
+/** A version of `sha256` this device holds for the account, as its version records say (no database lookup). */
+export function heldRevisionBySha(sha256: string, ownerId: string, deviceId: string): FileRevision | null {
+  for (const row of cached(ownerId)) {
+    const revision = row.sha256 === sha256 ? held(ownerId, deviceId, row) : null;
+    if (revision) return revision;
+  }
+  return null;
+}
+
 /** The database's record of one version of a file (its current one when no version is named). */
 export type FileVersionLookup = (ref: { item_id: string; version?: number }) => Promise<FileRevision | null>;
 

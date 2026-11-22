@@ -131,11 +131,6 @@
   },
   {
     "rule": "copy-leaks-raw-error-slot",
-    "file": "apps/desktop/src/components/AddFriendSearch.tsx",
-    "count": 1
-  },
-  {
-    "rule": "copy-leaks-raw-error-slot",
     "file": "apps/desktop/src/session/renderer/features/browser/browser-toolbar-actions.ts",
     "count": 1
   },

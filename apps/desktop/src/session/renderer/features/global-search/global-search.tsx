@@ -7,6 +7,7 @@ import { ListRowContent } from '@/components/ui/ListRow'
 import { SectionLabel } from '@/components/ui/SectionLabel'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { AtSign, Clock, FileText, History, Image, Link, Search, Users, X } from '@/lib/icons'
+import { FileMark } from '@gugu/session-ui/file-mark'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
 import { followLink } from '@/lib/guguLinks'
 import { UI_EVENTS } from '@/lib/uiEvents'
@@ -33,7 +34,7 @@ const ResultAvatar = observer(function ResultAvatar({ hit, name }: { hit: Search
   const identity = useAvatarIdentity(senderId)
   return system ? <IdentityPlaceholder className="mt-1" /> : (
     <span className="mt-1 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-foreground/[0.07] text-[length:var(--font-caption)] font-medium text-foreground/55">
-      {file ? <FileText size={11} /> : senderId
+      {file ? <FileMark name={hit.kind === 'message' ? hit.fileName ?? '' : ''} size={12} /> : senderId
         ? <Avatar name={identity?.display_name ?? name} avatarUrl={identity?.avatar} seed={senderId} size={20} isAgent={identity?.type === 'agent'} still />
         : Array.from(name)[0]}
     </span>
@@ -177,8 +178,10 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
 
   return (
     <div className="flex max-h-[min(600px,80vh)] flex-col overflow-hidden max-sm:h-full max-sm:max-h-none" data-testid="global-search">
-      <div className="flex h-12 shrink-0 items-center gap-2 px-4">
-        <Search className="h-4 w-4 shrink-0 text-foreground/40" />
+      {/* The phone page: the field is a filled capsule, roomier than the desktop modal's bare row. */}
+      <div className="flex h-12 shrink-0 items-center gap-2 px-4 max-sm:h-16 max-sm:gap-3">
+        <div className="flex h-full min-w-0 flex-1 items-center gap-2 max-sm:h-11 max-sm:rounded-full max-sm:bg-foreground/[0.06] max-sm:px-4">
+        <Search className="h-4 w-4 shrink-0 text-foreground/40 max-sm:h-5 max-sm:w-5" />
         {chips.map((chip, index) => (
           <span key={`${chip.kind}:${index}`} className="flex h-6 min-w-0 max-w-40 items-center gap-1 rounded-md bg-foreground/[0.06] pl-2 pr-1 text-xs text-foreground/75">
             <span className="truncate">{chipLabel(chip)}</span>
@@ -199,7 +202,8 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
             else if (event.key === 'Tab') { event.preventDefault(); cycleFacet(event.shiftKey ? -1 : 1) }
             else if (event.key === 'Backspace' && !event.currentTarget.value && chips.length) { event.preventDefault(); setChips(chips.slice(0, -1)) }
           }} />
-        <button type="button" onClick={onClose} className="-mr-2 min-h-11 shrink-0 px-2 text-sm text-foreground/60 sm:hidden">{translate('globalSearch.cancel')}</button>
+        </div>
+        <button type="button" onClick={onClose} className="-mr-2 min-h-11 shrink-0 px-2 text-[length:var(--font-title)] text-foreground sm:hidden">{translate('globalSearch.cancel')}</button>
       </div>
 
       {hasQuery && (
@@ -238,18 +242,22 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
           <div role="alert" className="px-3 py-3 text-sm text-[var(--em-foreground-destructive)]">{translate('globalSearch.indexingTasksFailed')}</div>
         )}
         {!hasQuery && (
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(max(8em,calc((100%_-_0.5rem)/3)),1fr))] gap-1 border-t border-foreground/[0.08] px-1 pt-2 text-[length:var(--font-body)]" data-testid="global-search-quick">
+          <>
+          {/* The phone page lists the types one per row, every label on one line. */}
+          {names && <SectionLabel className="px-3 pt-4">{translate('globalSearch.byType')}</SectionLabel>}
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(max(8em,calc((100%_-_0.5rem)/3)),1fr))] gap-1 border-t border-foreground/[0.08] px-1 pt-2 text-[length:var(--font-body)] max-sm:flex max-sm:flex-col max-sm:gap-0 max-sm:border-t-0 max-sm:pt-0" data-testid="global-search-quick">
             {quick.filter((item) => !item.scoped || inChat).map((item) => (
               <span key={item.key} className="relative">
                 <button type="button" data-quick={item.key} onClick={(event) => item.run(event.currentTarget)}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[length:var(--font-body)] text-foreground/75 hover:bg-foreground/[0.06] max-sm:min-h-11">
-                  <span className="text-foreground/45">{item.icon}</span>{item.label}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[length:var(--font-body)] text-foreground/75 hover:bg-foreground/[0.06] max-sm:min-h-14 max-sm:gap-4 max-sm:text-[length:var(--font-title)] max-sm:text-foreground">
+                  <span className="text-foreground/45 max-sm:grid max-sm:size-8 max-sm:shrink-0 max-sm:place-items-center max-sm:rounded-[10px] max-sm:bg-foreground/[0.06] max-sm:text-foreground max-sm:[&>svg]:size-5">{item.icon}</span>{item.label}
                 </button>
                 {item.key === 'date' && <input type="date" aria-label={item.label} tabIndex={-1} className="pointer-events-none absolute inset-0 opacity-0"
                   onChange={(event) => { setDateNote(null); jumpToDay(event.currentTarget.value).catch((error: unknown) => setDateNote(messageForUser(error))) }} />}
               </span>
             ))}
           </div>
+          </>
         )}
         {!hasQuery && dateNote && <div role="status" className="px-3 pt-2 text-sm text-foreground/50">{dateNote}</div>}
         {!hasQuery && recent.length > 0 && (

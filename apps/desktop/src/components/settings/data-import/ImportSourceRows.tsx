@@ -223,20 +223,23 @@ function RemoteImportDevice({ machine, providers, ownerId, jobs }: RowsProps & {
   )
 }
 
-export function RemoteImportSources({ machines, ...props }: RowsProps & { machines: readonly MachineChoice[] }) {
+export function RemoteImportSources({ machines, selectedMachine, onMachineChange, machineDetails, ...props }: RowsProps & {
+  machines: readonly MachineChoice[]; selectedMachine?: string; onMachineChange?: (machine: string) => void; machineDetails?: (machine: string) => ReactNode
+}) {
   const { t } = useTranslation('main')
   const [selected, setSelected] = useState<string | null>(null)
-  const machine = machines.find(({ id }) => id === selected) ?? machines[0]
+  const machine = selectedMachine === undefined ? machines.find(({ id }) => id === selected) ?? machines[0] : machines.find(({ id }) => id === selectedMachine)
   if (!machine) return <SettingsNote>{t('settings.dataImport.noDevices')}</SettingsNote>
   return (
-    <SettingsGroup title={t('settings.dataImport.deviceTab')} note={t('settings.dataImport.remoteDescription')}>
+    <><SettingsGroup title={t('settings.dataImport.deviceTab')} note={t('settings.dataImport.remoteDescription')}>
       <SettingsRow title={t('settings.dataImport.machineList')}
         description={machine.isOnline ? t('settings.dataImport.onlineStatus') : t('settings.dataImport.offlineStatus')}
         control={<select className="gg-settings-select" aria-label={t('settings.dataImport.machineList')} value={machine.id}
-          onChange={(event) => setSelected(event.target.value)}>
+          onChange={(event) => { setSelected(event.target.value); onMachineChange?.(event.target.value) }}>
           {machines.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}
         </select>} />
       <RemoteImportDevice key={machine.id} {...props} machine={machine} />
     </SettingsGroup>
+    {machineDetails?.(machine.id)}</>
   )
 }

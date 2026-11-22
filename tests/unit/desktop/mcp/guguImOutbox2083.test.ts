@@ -72,7 +72,7 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
     })
     await expect(
       callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', text: 'not queued' }, deps),
-    ).rejects.toThrow(/transport failed/)
+    ).rejects.toThrow(RpcTransportError)
     expect(inserted).toEqual([])
     expect('enqueueOutbox' in deps).toBe(false)
   })

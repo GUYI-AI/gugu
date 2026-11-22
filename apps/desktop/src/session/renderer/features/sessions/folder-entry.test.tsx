@@ -21,7 +21,7 @@ vi.mock('@renderer/features/extensions/installed-extensions', () => {
   const apps = {
     get enabledTabContributions() { return h.tabs.filter((tab) => h.folderEnabled || tab.extensionId !== 'workspace'); },
     get allTabContributions() { return h.tabs; },
-    openableApps: [{ extensionId: 'notes', name: 'Notes', kind: 'notes.main', iconDataUrl: null }],
+    appsIn: () => [{ extensionId: 'notes', name: 'Notes', kind: 'notes.main', iconDataUrl: null }],
     tabTitle: (kind: string) => h.tabs.find((tab) => tab.kind === kind)?.title,
     isChatFile: () => false,
   };

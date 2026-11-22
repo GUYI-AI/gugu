@@ -1,6 +1,6 @@
 import { AutomationAgentAvatar } from './AutomationAgentAvatar';
 import cronstrue from 'cronstrue';
-import { CalendarClock, CheckCircle2, Clock, Folder, MinusCircle, XCircle, type IconComponent } from '@/lib/icons'
+import { CheckCircle2, Clock, Folder, MinusCircle, XCircle, type IconComponent } from '@/lib/icons'
 import { observer } from 'mobx-react-lite';
 import {
   useLatestAutomationRun,
@@ -129,7 +129,7 @@ export const AutomationRow = observer(function AutomationRow({
             )}
             {cronLabel && (
               <span className="flex items-center gap-1 rounded-md bg-background-1 px-2 py-1 text-foreground-muted group-hover:state-hover-layer">
-                <CalendarClock className="size-3 shrink-0" />
+                <Clock className="size-3 shrink-0" />
                 <span className="shrink-0">{cronLabel}</span>
               </span>
             )}

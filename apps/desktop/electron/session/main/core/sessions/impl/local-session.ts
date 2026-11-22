@@ -30,7 +30,10 @@ import {
   resolveAgentSessionCommandArgs,
   resolveForkResumeCommandArgs,
 } from '@main/core/sessions/resolve-agent-session-command';
-import { recordProviderContinuationIntent } from '@main/core/sessions/provider-continuation-intent';
+import {
+  readProviderContinuationIntent,
+  recordProviderContinuationIntent,
+} from '@main/core/sessions/provider-continuation-intent';
 import { applyHarnessTitle } from '@main/core/sessions/renameSession';
 import { setProviderSessionId } from '@main/core/sessions/set-session-id';
 import { setSessionEndpoint } from '@main/core/sessions/set-session-endpoint';
@@ -265,6 +268,13 @@ export class LocalSessionProvider implements SessionProvider {
     return run;
   }
 
+  private async unmintedForkSource(session: Session): Promise<string | undefined> {
+    if (getPlugin(session.providerId).capabilities.sessions.childId !== 'provider-minted') return undefined;
+    if ((session.providerSessionId ?? session.id) !== session.id) return undefined;
+    const intent = await readProviderContinuationIntent(this.sessionPath, session.id);
+    return intent?.continuationProviderSessionId ? undefined : intent?.sourceProviderSessionId;
+  }
+
   private async startSessionOnce(
     session: Session,
     initialSize: { cols: number; rows: number },
@@ -274,6 +284,16 @@ export class LocalSessionProvider implements SessionProvider {
     // Only the initial fork spawn carries the source id; later spawns resume the child id.
     forkFromProviderSessionId?: string
   ): Promise<void> {
+    // A provider-minted fork (claude `--resume <src> --fork-session`) that exited before the engine
+    // minted its child id still stores the conversation id, which names no transcript. There is no
+    // child to resume, so this start is the fork again, from the source its intent recorded.
+    if (isResuming && !forkFromProviderSessionId) {
+      const source = await this.unmintedForkSource(session);
+      if (source) {
+        isResuming = false;
+        forkFromProviderSessionId = source;
+      }
+    }
     const ptySessionId = makePtySessionId(this.workspaceId, session.id, session.id);
     this.knownPtySessionIds.add(ptySessionId);
     this.detachedPtySessionIds.delete(ptySessionId);
@@ -491,10 +511,10 @@ export class LocalSessionProvider implements SessionProvider {
       );
 
       if (forkFromProviderSessionId && plugin.capabilities.sessions.childId === 'provider-minted') {
-        // Claude mints the child transcript id after the fork process starts. This intent is
-        // needed for both product forks (which already have `forkedFrom`) and runtime-only
-        // continuations; without it, recovery can only resume the placeholder conversation id
-        // and loses the child history after the lease is replaced.
+        // Claude mints the child id after the fork process starts and reports it with the first
+        // prompt's hook. The intent records the source: a fork that exits before that prompt has no
+        // child and is forked again from it (`unmintedForkSource`), and fork-capture can still bind a
+        // child whose hook never reached the app.
         await recordProviderContinuationIntent({
           sessionPath: this.sessionPath,
           sessionId: session.id,

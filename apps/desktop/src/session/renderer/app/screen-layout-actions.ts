@@ -126,14 +126,20 @@ function pruneGoneChats(): void {
   subscribeChatRemovals(chatsInLayout, forgetChatOnScreen, () => restored);
 }
 
-/** 这条对话没了:它那块收掉;它在这屏上、屏空了就摆回最近看过的会话。人正看着别的视图(资源库、设置……)时 ❌ 把人拽回这屏。 */
+/**
+ * 这条对话没了:它那块收掉;它在这屏上、屏空了就摆回最近看过的会话。人正看着别的视图(资源库、设置……)时 ❌ 把人拽回这屏。
+ * 导航还指着它、屏上又没有别的可跟:回首页(同解散的项目),❌ 停在一块不会再画出来的空白上 —— 导航没变,它回到群里时也不会再摆出来。
+ */
 function forgetChatOnScreen(chatId: string): void {
   const chat = { kind: 'chat', chatId } as const;
   const onScreen = screenLayout.blockOf(chat) !== undefined;
   screenLayout.forgetContent(chat);
   if (!onScreen) return;
   refillScreen();
-  if (isScreenView(appState.navigation.currentViewId)) followFocus();
+  const navigation = appState.navigation;
+  if (isScreenView(navigation.currentViewId)) followFocus();
+  const asked = navigation.viewParamsStore.chat as { chatId?: string } | undefined;
+  if (navigation.currentViewId === 'chat' && asked?.chatId === chatId) navigation.navigate('home');
 }
 
 /** 导航到一条会话(点左边一行、通知、新建完落地、后退)= 这屏把它摆出来。幂等;要赶在会话页第一次渲染之前装上。 */

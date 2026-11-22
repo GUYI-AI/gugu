@@ -14,7 +14,6 @@
     "  derived        —— 没有自有 state,值全部由下游 hook 当场派生",
     "  no-own-state   —— 只有 ref / useMemo,不承载『关于某个主体的读数』"
   ],
-
   "apps/desktop/src/hooks/useRejectedSessionInputCommands.ts::useRejectedSessionInputCommands": {
     "how": "subject-scoped",
     "why": "Actions resolve input IDs from the current session's outbox snapshot on every render. Editor state carries its input ID and is exposed only while that ID is rejected in the current session; switching sessions cannot display or edit the prior session's input."
@@ -38,10 +37,6 @@
   "apps/desktop/src/hooks/useSessionpageAgentProjection.ts::useSessionpageAgentProjection": {
     "how": "keyed-map",
     "why": "#3911:读数是按 agentUserId 做键的 replica 条目(agentSessionContext),渲染期按当前参数取;换 agent 的那一帧读到的是新 agent 的条目(没答过 = 还不知道),不会是上一个 agent 的答案。"
-  },
-  "apps/desktop/src/hooks/useSessionpageSessionTimeline.ts::useSessionpageSessionTimeline": {
-    "how": "subject-scoped",
-    "why": "state 与 conversationId 一起存,增量只并进同一 conversationId 的 state,返回前要求当前 conversationId 匹配;切换主体的第一帧不会消费上一个会话的动作,也不会把上一个会话的待答审批显示在这个会话上。"
   },
   "apps/desktop/src/hooks/useTopics.ts::useTopicsOfChat": {
     "how": "subject-scoped",

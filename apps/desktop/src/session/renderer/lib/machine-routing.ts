@@ -33,6 +33,7 @@ const LOCAL_ONLY_NAMESPACES = new Set([
 /**
  * 带着项目 / 会话 id、却属于这台电脑的几条:
  *  · `gugu-preview://` 的登记表在看界面的这台电脑的主进程里(别的机器上的页面由这台电脑按块取来渲染,见 preview-protocol.ts);
+ *  · 别的机器上一份文件的流式读(`readStreamed`):这台电脑的主进程经那台机器的设备连接取,工作区按那台机器的叫法给;
  *  · 屏上有哪些会话,报给这台电脑自己的闲置回收(app/sessions-on-screen.ts)—— 屏上摆着别的机器上的会话也一样。
  */
 const LOCAL_ONLY_CHANNELS = new Set([
@@ -42,6 +43,7 @@ const LOCAL_ONLY_CHANNELS = new Set([
   'workspace.files.setPreviewDocument',
   'workspace.files.previewAssetsChanged',
   'workspace.files.releasePreview',
+  'workspace.files.readStreamed',
   'sessions.reportSessionsOnScreen',
 ]);
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ComposerPermissionRequest } from '@gugu/session-ui/react/components';
-import { settlementFromWire, type AskSource, type Settlement, type SessionpageSessionEvent, type TimelineAfterResult } from '@gugu/session-core/session-record/contract';
+import { settlementFromWire, type AskSource, type RecordCursor, type Settlement, type SessionpageSessionEvent, type TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { appInstallAskOf } from '@shared/extensions/host-actions';
 import { deviceCapabilityAskOf } from '@shared/device-capability-ask';
@@ -41,28 +41,48 @@ export function useSessionHostAsk(
         ? latestAgentQuestion(Object.fromEntries([...settlements].filter(([, item]) => item.origin && sources.includes(item.origin.source))))
         : pendingHostAsk(settlements, sources));
     };
-    const subscriptionId = crypto.randomUUID();
     const there = rpcOn(machineRegistry.machineOf(sessionId));
-    // Listen first: an ask between the snapshot and the subscription must not slip past.
-    const off = events.on(sessionpageSessionTimelineChannel, (event: SessionpageSessionEvent) => {
-      const result = event.result as TimelineAfterResult;
-      if (!result.ok) {
+    let close = () => undefined as void;
+    // @@@host-ask-reread - one snapshot + subscription per timeline generation. A batch from another epoch (a new session's
+    // stand-in replaced by its real record) or one that skips seqs does not continue what is held: read it again, the same
+    // rule as the session page's own timeline (agent-watch-store `applyBatch`).
+    const open = () => {
+      close();
+      const subscriptionId = crypto.randomUUID();
+      let cursor: RecordCursor | null = null;
+      // Listen first: an ask between the snapshot and the subscription must not slip past.
+      const off = events.on(sessionpageSessionTimelineChannel, (event: SessionpageSessionEvent) => {
+        const result = event.result as TimelineAfterResult;
+        if (!result.ok) {
+          cursor = result.snapshot.cursor;
+          settlements.clear();
+          take(result.snapshot.settlements);
+        } else if (cursor && (result.batch.cursor.epoch !== cursor.epoch || result.batch.from > cursor.seq)) open();
+        else {
+          cursor = result.batch.cursor;
+          take(result.batch.settlements);
+        }
+      }, subscriptionId);
+      close = () => {
+        off();
+        void there.sessionTimeline.sessionUnsubscribe({ subscriptionId }).catch(() => undefined);
+      };
+      void (async () => {
+        const snapshot = await there.sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: 1 });
+        if (!alive) return;
+        if (!snapshot.ok) throw new Error(`${snapshot.error.code}: ${snapshot.error.message}`);
+        cursor = snapshot.value.cursor;
         settlements.clear();
-        take(result.snapshot.settlements);
-      } else take(result.batch.settlements);
-    }, subscriptionId);
-    void (async () => {
-      const snapshot = await there.sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: 1 });
-      if (!alive || !snapshot.ok) return;
-      take(snapshot.value.settlements);
-      await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor });
-    })().catch((error: unknown) =>
-      log.warn('Host asks of this session could not be read', { sessionId, error: error instanceof Error ? error.message : String(error) })
-    );
+        take(snapshot.value.settlements);
+        await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor });
+      })().catch((error: unknown) =>
+        log.warn('Host asks of this session could not be read', { sessionId, error: error instanceof Error ? error.message : String(error) })
+      );
+    };
+    open();
     return () => {
       alive = false;
-      off();
-      void there.sessionTimeline.sessionUnsubscribe({ subscriptionId }).catch(() => undefined);
+      close();
     };
   }, [sessionId, sources, includeDiscussion]);
   return ask;

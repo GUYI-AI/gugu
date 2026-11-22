@@ -12,6 +12,7 @@ import { useReplicas } from '@/lib/replica'
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs'
 import { Button } from '@/components/ui/Button'
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store'
+import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store'
 import { importDeviceChoices } from '@renderer/features/session-import/import-device'
 import { FoldingRow, ImportSourceIcon, LocalImportSources, RemoteImportSources } from './ImportSourceRows'
 import { importedSourceHistory, importSourceCounts } from './import-replicas'
@@ -62,12 +63,15 @@ const NO_EXTRA_PROVIDERS: readonly ImportProvider[] = []
 type ImportTab = 'apps' | 'devices'
 
 export const DataImportSection = observer(function DataImportSection({
-  onClose, extraProviders = NO_EXTRA_PROVIDERS, localDetails,
-}: { onClose: () => void; extraProviders?: readonly ImportProvider[]; localDetails?: ReactNode }) {
+  onClose, extraProviders = NO_EXTRA_PROVIDERS, localDetails, machineDetails,
+}: { onClose: () => void; extraProviders?: readonly ImportProvider[]; localDetails?: ReactNode; machineDetails?: (machine: string) => ReactNode }) {
   const { t } = useTranslation('main')
   const { user } = useAuth()
   const importSettings = useAppSettingsKey('dataImport').settings
-  const [tab, setTab] = useState<ImportTab>('apps')
+  const selectedMachine = settingsDeviceStore.selected
+  const [tab, setTab] = useState<ImportTab>(selectedMachine === 'local' ? 'apps' : 'devices')
+  // A subscription row or a first-install notice can open an already mounted import page.
+  useEffect(() => { setTab(selectedMachine === 'local' ? 'apps' : 'devices') }, [selectedMachine])
   const panelId = useId()
   const jobs = useSyncExternalStore(importJobs.subscribe, importJobs.getSnapshot)
   const ownerJobs = jobs.filter(({ ownerId }) => ownerId === user?.id)
@@ -112,7 +116,11 @@ export const DataImportSection = observer(function DataImportSection({
   return (
     <SettingsPage className="gg-data-import">
       <div className="gg-import-toolbar">
-        <SegmentedTabs<ImportTab> ariaLabel={t('settings.nav.data-import')} value={tab} onChange={setTab} items={[
+        <SegmentedTabs<ImportTab> ariaLabel={t('settings.nav.data-import')} value={tab} onChange={(next) => {
+          setTab(next)
+          if (next === 'apps') settingsDeviceStore.select('local')
+          else if (selectedMachine === 'local' && machines[0]) settingsDeviceStore.select(machines[0].id)
+        }} items={[
           { value: 'apps', label: t('settings.dataImport.thisComputer'), panelId },
           { value: 'devices', label: t('settings.dataImport.machineList'), panelId },
         ]} />
@@ -128,7 +136,7 @@ export const DataImportSection = observer(function DataImportSection({
             <ImportSyncSettings ownerId={user.id} />
           </>
         ) : (
-          <RemoteImportSources machines={machines} providers={providers.filter((provider) => !provider.localOnly)} ownerId={user.id} jobs={ownerJobs} />
+          <RemoteImportSources machines={machines} selectedMachine={selectedMachine === 'local' ? undefined : selectedMachine} onMachineChange={(machine) => settingsDeviceStore.select(machine)} machineDetails={machineDetails} providers={providers.filter((provider) => !provider.localOnly)} ownerId={user.id} jobs={ownerJobs} />
         ))}
         {local && user && (categoryHistory.state !== 'value' || categoryHistory.items.length > 0) && <SettingsGroup title={t('settings.dataImport.categoryResults')}>
           {categoryHistory.state !== 'value' && <SettingsRow title={t('settings.dataImport.reading')} control={<LoadingIndicator size="inline" />} />}

@@ -56,6 +56,9 @@ import { EXTENSION_FILE_SELECTION_METHOD, parseSelectionAction, selectionConvers
 import type { AnnotationConversation } from '@shared/browser-annotation';
 import { fileSync } from '@main/core/extensions/file-sync';
 import { isTaskHomeFolder } from '@main/core/folders/folders';
+import { currentAccountAccessToken } from '@main/core/extensions/account-token';
+import { endCallsIn } from '@main/core/extensions/extension-program-surface';
+import { userIdFromSupabaseAccessToken } from '@gugu/core';
 import { fileRefOf, folderOf, isWorkspace, openingNameOf, openingViewOf, opensAsLink, openWithIntentOf, openWithTabOf, placeKey, placeOf, projectWorkspace, sessionIdOf, sessionWorkspace, workspaceFolder, workspaceSession, workspaceTarget, type AppFileEntry, type AppFileOpened, type AppFileRef, type AppPlace, type AppWhere, type WorkspacePlace, type PreparedChatFile } from '@shared/extensions/app-runtime-protocol';
 import { placeFor, placeLink, type FileOpenerCandidate } from '@shared/extensions/file-openers';
 import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
@@ -146,6 +149,8 @@ type BindingChange = { previousWorkspace: string | null };
 const sessionOfBinding = (binding: Pick<SurfaceBinding, 'workspace'>): string | null => workspaceSession(binding);
 const bindingChanges = new Map<number, BindingChange>();
 const bindings = new Map<number, SurfaceBinding>();
+/** The agent a page is worked as (a bare uuid; the operator names it `user:<uuid>`), or null when the person works it. */
+const agentOf = (binding: Pick<SurfaceBinding, 'operator'>): string | null => binding.operator.kind === 'agent' ? binding.operator.id.replace(/^user:/, '') : null;
 function closeNativePageResources(pageId: number): void {
   try { closeAppPageResources(pageId); }
   catch (error) { log.warn('App page resource cleanup failed', { pageId, error: String(error) }); }
@@ -229,7 +234,7 @@ function pageCaller(binding: SurfaceBinding, webContentsId: number, gesture: boo
     handed: handedFileOf(binding),
     ...(binding.personOpened ? { personOpened: true as const } : {}),
     boundChat: binding.conversation,
-    ...(binding.operator.kind === 'agent' ? { asAgent: binding.operator.id.replace(/^user:/, '') } : {}),
+    ...(agentOf(binding) ? { asAgent: agentOf(binding)! } : {}),
   });
   return {
     extensionId: binding.extensionId,
@@ -1345,6 +1350,17 @@ export function chatsWithPages(): string[] {
 
 /** A row of this chat's members changed: if that moved who is in it (`rosterMoved`), read them again and tell its pages. */
 export async function chatMembersChanged(chatId: string, changes: readonly MemberChange[]): Promise<void> {
+  // A reader that left the chat (taken out of the group) is cut off at once (read-contract §2.5): its pages there are
+  // revoked, and what they read goes with them; its running calls handed this chat lose it, their reads with it.
+  const left = new Set(changes.flatMap((change) => (change.left && change.memberId ? [change.memberId] : [])));
+  if (left.size) {
+    const token = await currentAccountAccessToken();
+    const person = token ? userIdFromSupabaseAccessToken(token) : null;
+    for (const [id, binding] of bindings) {
+      if (binding.conversation === chatId && left.has(agentOf(binding) ?? person ?? '')) void fileSync.revoke(id, 'removed-from-group');
+    }
+    for (const agent of left) endCallsIn(chatId, agent);
+  }
   // No page drawn for it: nobody keeps its members current, so they are forgotten — read afresh when a page is (`pushContext`).
   if (![...bindings.values()].some((binding) => binding.conversation === chatId)) {
     chatsDrawnIn.delete(chatId);

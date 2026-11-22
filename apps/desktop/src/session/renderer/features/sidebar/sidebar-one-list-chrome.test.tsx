@@ -72,11 +72,11 @@ vi.mock('@renderer/lib/layout/layout-provider', async () => {
   const { useLayoutEffect, useRef } = await import('react');
   return {
   sidebarRailTextOpacity: (progress: number) => Math.min(1, Math.max(0, 2 * progress - 1)),
-  useSidebarProgressFollow: (follow: (element: HTMLElement, progress: number) => void) => {
+  useSidebarProgressFollow: (follow: (element: HTMLElement, progress: number, railLayout: boolean) => void) => {
     const ref = useRef<HTMLElement | null>(null);
     useSyncExternalStore(state.subscribe, state.version);
     useLayoutEffect(() => {
-      if (ref.current) follow(ref.current, state.progress);
+      if (ref.current) follow(ref.current, state.progress, !state.open && state.progress === 0);
     });
     return ref;
   },
@@ -199,16 +199,17 @@ describe('the top: 创建智能体 and the 「+」 menu', () => {
     expect(state.request).toHaveBeenCalledTimes(2);
   });
 
-  it('collapsing moves the 「+」 and narrows 创建智能体 with the open/close progress, ❌ a jump at the start', async () => {
+  it('collapsing keeps the top row\'s layout until it lands on the rail and fades 创建智能体 with the progress, ❌ a jump at the start', async () => {
     await render(<SidebarOneListTop collapsed={false} onCreateAgent={vi.fn()} />);
     const top = document.querySelector<HTMLElement>('[data-sidebar-one-list-top]')!;
-    // 12px gutter and a 4px gap expanded (progress 1), 20px and no gap on the rail (progress 0): the 「+」 lands on x = 36.
+    // 12px gutter and a 4px gap expanded, 20px and no gap on the rail: the 「+」 lands on x = 36. In between the row keeps
+    // the expanded layout (the 「+」 slides by a transform of the laid-out row, which jsdom has none of).
     expect(top.style.paddingInline).toBe('12px');
     expect(top.style.gap).toBe('4px');
     expect(q('sidebar-create-agent')!.style.opacity).toBe('1');
     await change(() => (state.progress = 0.5));
-    expect(top.style.paddingInline).toBe('16px');
-    expect(top.style.gap).toBe('2px');
+    expect(top.style.paddingInline).toBe('12px');
+    expect(top.style.gap).toBe('4px');
     expect(q('sidebar-create-agent')!.style.opacity).toBe('0');
     expect(top.className).not.toMatch(/\b(px-3|pl-5|gap-1)\b/);
     const button = q('sidebar-create-agent')!;
@@ -216,6 +217,9 @@ describe('the top: 创建智能体 and the 「+」 menu', () => {
     expect(button.classList.contains('hidden')).toBe(false);
     expect(button.style.paddingInline).toBe('0px');
     expect(button.hasAttribute('inert')).toBe(false);
+    await change(() => { state.open = false; state.progress = 0; });
+    expect(top.style.paddingInline).toBe('20px');
+    expect(top.style.gap).toBe('0px');
   });
 
   it('collapsed (the rail): the 「+」 stays, 创建智能体 is inert (its width already 0) and leads the 「+」 menu instead', async () => {

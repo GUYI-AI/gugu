@@ -27,7 +27,7 @@ const folders = (chat = context.chat.id) => [
   { id: 'target-b', chat, name: 'Target B', displayName: 'Target B', type: 'folder' },
   documents.get(context.file?.id ?? '')!.entry,
 ]
-const menu = fakeSharedMenu()
+const menu = fakeSharedMenu({ more: 'More' })
 const gugu = {
   showContextMenu: menu.showContextMenu,
   getContext: vi.fn(async () => context), onContextChanged: (fn: typeof contextChanged) => { contextChanged = fn; return () => {} },
@@ -43,7 +43,8 @@ const gugu = {
   },
 }
 const $ = (id: string) => document.getElementById(id)!
-const offered = () => menu.labels()
+// Every row a person can reach: the top level and its More › (@@@file-menu).
+const offered = () => [...menu.labels(), ...(menu.labels().includes('More') ? menu.labels('More') : [])]
 const targets = () => [...$('move-targets').querySelectorAll<HTMLButtonElement>('button')]
 const paint = () => new Promise<void>((done) => requestAnimationFrame(() => done()))
 const close = async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); await menu.dismiss() }
@@ -55,7 +56,7 @@ async function show(ctx: Context) {
 async function clickMove() {
   $('more').click()
   expect(offered()).toContain('Move to…')
-  await menu.pick('Move to…')
+  await menu.pick('More', 'Move to…')
 }
 beforeAll(async () => {
   document.body.innerHTML = new DOMParser().parseFromString(readFileSync(resolve('apps/desktop/preinstalled-apps/workspace/index.html'), 'utf8'), 'text/html').body.innerHTML
@@ -151,7 +152,7 @@ test('the list entry reads every folder once for its targets (the list holds onl
   const reads = gugu.files.list.mock.calls.length
   const moveFromList = async () => {
     document.querySelector(`[data-id="${entry.id}"]`)!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    await menu.pick('Move to…')
+    await menu.pick('More', 'Move to…')
     await vi.waitFor(() => expect(targets().map((button) => button.textContent)).toContain('Target A'))
   }
   await moveFromList()

@@ -1,5 +1,5 @@
 // 渲染层调 attachments 函数(core 的那一份客户端,packages/core/src/cloud/attachmentsApi.ts):这个构建的服务器,登录的人现在的令牌。
-import { commitAttachment, configuredEndpoint, declareAttachment, offerImagePreview, placeAttachment, uploadAttachmentBytes, type AttachmentsEndpoint, type CommitArgs, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
+import { commitAttachment, configuredEndpoint, declareAttachment, drawImagePreviews, placeAttachment, withUploadedAttachment, type AttachmentsEndpoint, type CommitArgs, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
 import { beginAttachmentUpload } from './attachmentUploads'
 import { imagePreview } from './imagePreview'
 import { resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
@@ -11,6 +11,9 @@ import { i18n } from '../i18n'
 import type { AttachmentUploadContext } from './taskAttachmentUpload'
 import { pathOfFile } from './fileOnDisk'
 import { prefetchTaskFiles, pushTaskFiles, pushTaskAttachment, taskAttachmentUsesSsh, taskAttachmentWorkspacePath, type TaskAttachmentTarget } from './taskAttachmentTarget'
+
+// Every image this renderer uploads or declares (the phone's and the web's composer, a task's attachment) offers this preview.
+drawImagePreviews({ draw: imagePreview, warn: error => rendererLogger('chat/attachment-uploads').warn({ error: String(error) }, 'Image preview offer failed') })
 
 // 令牌只读会话协调器已发布的那一份,和数据客户端(supabase.ts 的 accessToken)同一个来源:数据客户端没有自己的 auth 会话,
 // 在它身上 auth.getSession() 直接抛(「configured with the accessToken option」)。
@@ -45,16 +48,13 @@ async function cloudChatAttachment(endpoint: AttachmentsEndpoint, file: File, sc
       : await declareAttachment(endpoint, { bytes: file, contentType }, { chat_id: scope.chat_id, as: scope.as, request_id: scope.message_id }, signal)
     signal?.throwIfAborted()
   } finally { signal?.removeEventListener('abort', drop) }
-  // Renderer keeps a display copy; the native host owns the durable upload copy on desktop.
-  try { await (await import('./attachmentBytes')).keepSentAttachment(file, declared.sha256) }
-  catch (error) { drop(); throw error }
+  // On desktop the native host knows where these bytes are (localAttachmentCopy asks it); elsewhere the renderer keeps them.
+  if (!native) {
+    try { await (await import('./attachmentBytes')).keepSentAttachment(file, declared.sha256) }
+    catch (error) { drop(); throw error }
+  }
   if (signal?.aborted) { drop(); signal.throwIfAborted() }
   if (!native) void beginAttachmentUpload({ sha256: declared.sha256, messageId: scope.message_id, chatId: scope.chat_id, as: scope.as, pendingKey: declared.staging_key, name, contentType, size: file.size }, file, declared.plan ?? null)
-  // Desktop main offers the preview of what it declares; here (the phone, the web) the renderer draws it.
-  if (!native && contentType.startsWith('image/')) {
-    void imagePreview(file).then(preview => offerImagePreview(endpoint, preview, declared.sha256, scope.as))
-      .catch(error => rendererLogger('chat/attachment-uploads').warn({ error: String(error) }, 'Image preview offer failed'))
-  }
   return { staging_key: declared.staging_key, sha256: declared.sha256, size_bytes: declared.size_bytes }
 }
 export async function prepareChatAttachment(endpoint: AttachmentsEndpoint, file: File, scope: { chat_id: string; as: string; is_whisper?: boolean; message_id: string }, signal?: AbortSignal): Promise<PreparedChatAttachment> {
@@ -133,10 +133,10 @@ export async function placeTaskAttachment(file: File, prepared: TurnFileRef | nu
   if (!placement.published) {
     const name = file.name || 'file', mimeType = resolveFileMimeType(file)
     const endpoint = await attachmentsEndpoint()
-    const staging_key = await uploadAttachmentBytes(endpoint, { bytes: file, name, contentType: mimeType }, { chat_id: to.chatId, as: to.owner },
-      { signal, onProgress: onProgress && (progress => onProgress(progress.loaded, progress.total ?? file.size)) })
-    signal?.throwIfAborted()
-    const item = await placeAttachment(endpoint, { staging_key, chat_id: to.chatId, file_name: name, as_user_id: to.owner, content_type: mimeType }) as { id: string; version: number }
+    const item = await withUploadedAttachment(endpoint, { bytes: file, name, contentType: mimeType }, { chat_id: to.chatId, as: to.owner }, staging_key => {
+      signal?.throwIfAborted()
+      return placeAttachment(endpoint, { staging_key, chat_id: to.chatId, file_name: name, as_user_id: to.owner, content_type: mimeType })
+    }, { signal, onProgress: onProgress && (progress => onProgress(progress.loaded, progress.total ?? file.size)) }) as { id: string; version: number }
     placement.published = { itemId: item.id, version: item.version, name, mimeType, sizeBytes: file.size }
   }
   signal?.throwIfAborted()

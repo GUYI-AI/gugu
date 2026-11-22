@@ -342,6 +342,7 @@ export {
   resolveSessionRuntimeCompatible,
   assertSessionSurfaceDeclared,
   clearRuntimeVersionProbeCache,
+  harnessVersionSupported,
   HarnessStartupError,
   SessionRuntimeCompatibilityError,
   type SessionRuntimeResolution,

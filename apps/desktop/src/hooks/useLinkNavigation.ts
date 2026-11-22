@@ -199,7 +199,8 @@ export function useLinkNavigation(input: {
       const owner = current.current.ownerId
       const done: ReturnType<typeof open> = open(request).catch((error: unknown) => {
         if ((asked !== generation || owner !== current.current.ownerId) && request.target.kind !== 'file') return undefined
-        throw error instanceof OpenSuperseded ? error : targetError(request.target, error, messages.current.t('links.unavailable'))
+        // A file that did not open is not a deleted message: say so plainly (its cause stays on the error for App pages).
+        throw error instanceof OpenSuperseded ? error : targetError(request.target, error, messages.current.t(request.target.kind === 'file' ? 'links.fileOpenFailed' : 'links.unavailable'))
       }).finally(() => { if (opening?.done === done) opening = null })
       if (file) opening = { file, done }
       void done.then(request.resolve, request.reject)

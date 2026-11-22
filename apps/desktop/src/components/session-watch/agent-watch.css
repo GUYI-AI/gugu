@@ -455,7 +455,6 @@
   min-width: 0;
   max-width: 100%;
 }
-.gg-aw .gg-aw-head-state { flex: none; }
 
 /* ── 选项抽屉:下钻结构 ─────────────────────────────────────────────────────
    尺寸逐条照 orca(mobile/src/session/MobileNativeChatSessionOptionRows.tsx 的 styles):

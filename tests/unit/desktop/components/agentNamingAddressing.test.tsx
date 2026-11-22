@@ -28,7 +28,7 @@ it('keeps the original name in contact search results and the selected contact',
   const open = vi.fn()
   await renderWithAppProviders(harness, createNode(ContactSearch, {
     query: 'codex5', onQuery: vi.fn(), people: [], agents: [agent], groups: [],
-    onOpenContact: open, onOpenGroup: vi.fn(), onLookupNumber: vi.fn(), children: null,
+    onOpenContact: open, onOpenGroup: vi.fn(), onSearchEveryone: vi.fn(), children: null,
   }), providers)
   const row = harness.container.querySelector<HTMLElement>('[data-contact-id="fresh-agent"]')!
   expect(row.textContent).toContain('Codex 5')

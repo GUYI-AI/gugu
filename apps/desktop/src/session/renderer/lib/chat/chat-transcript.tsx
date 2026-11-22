@@ -40,6 +40,8 @@ import { createPortal } from 'react-dom';
 import { Hint } from '@/components/ui/Tooltip';
 import { FailedSendStatus } from '@/components/chat/FailedSendStatus';
 import { lendSessionFileReader } from '@/lib/sessionFileReaders';
+import { readWholeOpenedFile } from '@/components/session-watch/opened-output-open';
+import { mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
 import { offerSentMessageSlot } from '@/components/chat/sentMessageSlots';
 import { safeFailureLine } from '@renderer/features/sessions/gugu-reason';
 import { ConversationSourcePopover } from './conversation-source-popover';
@@ -137,11 +139,12 @@ export function ChatTranscript(props: ChatTranscriptProps): React.ReactElement {
     root, message, commands: () => propsRef.current.commands,
     onSize: size => propsRef.current.state.session.setBodySize(message.id, size),
   }), []);
-  // A file the agent handed its owner is read the way this timeline reads its pictures (`resolveAttachment`).
+  // A file the agent handed its owner is read where its session keeps it, by the session's own file read.
   useEffect(() => {
-    const sessionId = props.commands?.conversationAgentSession?.(), resolve = props.commands?.resolveAttachment;
-    if (!sessionId || !resolve) return;
-    return lendSessionFileReader(sessionId, path => resolve({ id: `path:${path}`, name: path.split(/[\\/]/).at(-1) ?? '' }));
+    const sessionId = props.commands?.conversationAgentSession?.(), read = props.commands?.readConversationFile;
+    if (!sessionId || !read) return;
+    return lendSessionFileReader(sessionId, async path =>
+      new Blob([await readWholeOpenedFile({ read, conversationId: sessionId, path })], { type: mimeTypeFromName(path) ?? '' }));
   }, [props.commands]);
 
   // 模块已经加载过(`loadChatUi`)就在 layout effect 里同步建视图:**第一次绘制之前**就有正文。❌ passive effect / 每次 import():

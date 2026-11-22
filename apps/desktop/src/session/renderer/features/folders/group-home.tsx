@@ -122,7 +122,6 @@ export const GroupTaskComposer = observer(function GroupTaskComposer({
             // gugu-dev#181: the first line lands as a task card in this group; the person stays here.
             taskChatId={chatId}
             groupChatId={chatId}
-            openAfterCreate={false}
             placeholder={placeholder}
             verb={verb}
             workspaceId={targetFolderId}

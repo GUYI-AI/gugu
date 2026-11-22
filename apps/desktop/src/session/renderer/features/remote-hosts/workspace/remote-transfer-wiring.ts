@@ -1,4 +1,4 @@
-// #6264 上传的生产装配:字节按块走那台机器的 `workspace.files.readChunk / writeChunk`(rpc 按工作区所在的机器路由),
+// #6264 上传的生产装配:字节按块走那台机器的 `workspace.files.writeChunk`(rpc 按工作区所在的机器路由),
 // 「替换吗」用本机文件树拖进来同一个对话框。
 // 判断都在 remote-transfers.ts;这里只接线。每个工作区一份,切走再切回来进度还在。
 import { WORKSPACE_WRITE_FORCE } from '@gugu/session-core/session-record/contract';
@@ -29,7 +29,7 @@ function joinPath(dir: string, name: string): string {
   return dir.endsWith('/') ? `${dir}${name}` : `${dir}/${name}`;
 }
 
-/** 传输要的四件事,落到那台机器的路由表动词上。 */
+/** 传输要的三件事,落到那台机器的路由表动词上。 */
 export function machineTransferRpc(deviceId: string, workspaceId: string): TransferRpc {
   return {
     async listWorkspace(_deviceId, request) {
@@ -44,15 +44,6 @@ export function machineTransferRpc(deviceId: string, workspaceId: string): Trans
           size: entry.size,
         })),
       };
-    },
-    async readWorkspaceFile(_deviceId, request) {
-      const result = await rpc.workspace.files.readChunk(workspaceId, {
-        path: request.path,
-        offset: request.offset,
-        length: request.length,
-      });
-      if (!result.success) throw machineFailure(result.error);
-      return result.data;
     },
     async writeWorkspaceFile(_deviceId, request) {
       const { sessionId: _unused, ...chunk } = request;

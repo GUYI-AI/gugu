@@ -1,8 +1,9 @@
 export default {
   "firstInstallImport": {
+    "remoteDescription": "Import memories, project rules, and work habits from {{machine}}",
     "title": "Import your data",
     "description": "Import your memories, project rules, and work habits",
-    "available": "Import your local {{name}} configuration"
+    "available": "Import the {{name}} configuration from this machine"
   },
   "usagePopover": {
     "title": "Usage",
@@ -137,6 +138,7 @@ export default {
     "manageConnections": "Manage connections"
   },
   "agentHome": {
+  "sourceUnavailable": "The terminal configuration on this machine cannot be read.",
   "nativeHistorySummary": "Previous Gugu sessions: {{removed}} moved, {{pending}} pending, {{retained}} retained; {{unowned}} belong to other profiles",
   "historySummary_one": "Imported {{count}} recent session; {{skipped}} remain in the original location",
   "historySummary_other": "Imported {{count}} recent sessions; {{skipped}} remain in the original location",
@@ -317,8 +319,15 @@ export default {
     "helpImproveFailed": "Could not save this setting. Try again.",
     "harnessRecommended": "Recommended",
     "harnessTitle": "Choose your agents",
-    "harnessSub": "Select one or both. Gugu installs and manages them in the background.",
+    "harnessSub": "Select one or both. Gugu uses yours if it is new enough, or installs one in the background.",
     "harnessInstalled": "Installed",
+    "harnessLocalUsable": "Uses your {{version}}",
+    "harnessLocalOutdated": "Your {{version}} is too old. Gugu will install a copy",
+    "harnessLocalBroken": "Your {{command}} won't run. Gugu will install a copy",
+    "harnessLocalMissing": "Not on this computer. Gugu will install it",
+    "installLocalOutdated": "Your {{command}} {{version}} is too old. Installing another copy…",
+    "installLocalBroken": "Your {{command}} won't run. Installing another copy…",
+    "installLocalMissing": "{{name}} isn't on this computer. Downloading…",
     "harnessSelect": "Select {{name}}",
     "backgroundInstall": "Agent installation",
     "hideInstall": "Hide",
@@ -1009,7 +1018,6 @@ export default {
     "newAgent": "Create agent",
     "newTask": "New task",
     "usage": "Usage",
-    "resizeChatList": "Resize chat list",
     "sessionExpired": {
       "description": "Retrying automatically. Messages cannot be sent and agents cannot be created until the connection is restored.",
       "title": "Cannot connect to the server"

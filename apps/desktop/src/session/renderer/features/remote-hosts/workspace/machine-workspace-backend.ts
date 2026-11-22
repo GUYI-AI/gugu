@@ -25,7 +25,7 @@ import { events, onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
 import type { EventDefinition } from '@shared/lib/ipc/events';
 import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import { gitRepoUpdateChannel, gitWorktreeUpdateChannel } from '@shared/core/git/events';
-import { machineRegistry } from '@renderer/lib/machine-routing';
+import { machineCodec, machineRegistry } from '@renderer/lib/machine-routing';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { log } from '@renderer/utils/logger';
 import { remotePortKey, remotePortLinkChannel, type RemotePortLink, type RemotePortReason } from '@shared/remote-port-link';
@@ -85,6 +85,7 @@ function machineRpc(deviceId: string): WorkspaceRpc {
         }
         const result = await rpc.workspace.files.createRemotePreview({
           workspaceId,
+          machine: { deviceId, ...machineCodec(deviceId).outbound({ workspaceId }) },
           root: root.data.path,
           surface: 'pane',
           documentPath: doc.data.path,
@@ -129,6 +130,7 @@ class MachineBrowserAttachment implements WorkspaceBrowserAttachment {
       register: async (root) => {
         const result = await rpc.workspace.files.createRemotePreview({
           workspaceId: ctx.workspaceId,
+          machine: { deviceId, ...machineCodec(deviceId).outbound({ workspaceId: ctx.workspaceId }) },
           root,
           surface: 'browser',
           failureCopy: remotePageFailureCopy(deviceLabel(deviceId)),

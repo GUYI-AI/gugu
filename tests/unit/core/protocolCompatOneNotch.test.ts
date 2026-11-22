@@ -8,9 +8,9 @@ import { helloProtocol, MIN_CLIENT_PROTOCOL, MIN_SERVER_PROTOCOL, REMOTE_PROTOCO
 import { sessionInputAdmission } from '../../../packages/core/src/shared/sessionInputAdmission'
 import { settlementFromWire, type Settlement } from '../../../packages/session-core/src/session-record/contract'
 
-describe('protocol 19 is a clean break: a project id and a folder id cannot share one argument position', () => {
-  it('both lower bounds are the current protocol; an 18 machine on either side is told to update', () => {
-    expect(REMOTE_PROTOCOL_VERSION).toBe(19)
+describe('protocol 20 is a clean break: a project id and a folder id cannot share one argument position', () => {
+  it('both lower bounds are the current protocol; a 19 machine on either side is told to update', () => {
+    expect(REMOTE_PROTOCOL_VERSION).toBe(20)
     expect(MIN_CLIENT_PROTOCOL).toBe(REMOTE_PROTOCOL_VERSION)
     expect(MIN_SERVER_PROTOCOL).toBe(REMOTE_PROTOCOL_VERSION)
     expect(serverProtocolTooOld(REMOTE_PROTOCOL_VERSION - 1, { unknownIsTooOld: false })).toBe(true)

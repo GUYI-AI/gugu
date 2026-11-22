@@ -28,8 +28,9 @@ export const mermaidBlockDef = defineBlock<MermaidBlock, MermaidLeafLayout>({
     return { height, width: ctx.width, layout };
   },
 
+  // The diagram is drawn from its source: a width change resizes its frame and keeps the drawn svg.
+  domFromContentOnly: true,
   Render(props: { node: Measured<MermaidLeafLayout> }) {
-    const l = props.node.layout;
-    return <Mermaid block={l} rawBlock={l.raw} />;
+    return <Mermaid block={props.node.layout} rawBlock={props.node.layout.raw} />;
   },
 });

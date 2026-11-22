@@ -112,9 +112,6 @@ describe('switchSessionRuntime', () => {
     // 死掉那条腿的东西不许跟过去。
     expect(config.initialQueue).toBeUndefined();
     expect(config.mcpSessionServers).toBeUndefined();
-    // 这个 id 是 ACP 适配器铸的 —— 记下来历,编程腿才知道要用它 `--resume`,
-    // 而不是回落到 conversation.id(那条会话在引擎侧根本不存在)。
-    expect(config.providerMintedSessionId).toBe(true);
     expect(mocks.emit).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ sessionId: 'chat', changes: { runtime: 'pty' } })
@@ -130,8 +127,6 @@ describe('switchSessionRuntime', () => {
     expect(row?.provider_session_id).toBe('provider-session-2');
     const config = configOf(fixture, 'term');
     expect(config.type).toBe('acp');
-    // 反向没有这条来历:编程腿的 id 本来就是咕咕铸的,通用腿直接拿 provider_session_id 去 load。
-    expect(config.providerMintedSessionId).toBeUndefined();
     // 端点属于那个已经没了的 TUI 进程;留着就是一条死链。
     expect(config.providerSessionEndpoint).toBeUndefined();
     expect(config.initialPrompt).toBeUndefined();

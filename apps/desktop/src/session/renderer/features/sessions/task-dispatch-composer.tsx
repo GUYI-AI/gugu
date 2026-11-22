@@ -122,7 +122,6 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
       placeholder: translate('taskDispatch.placeholderAgent'),
       verb: composerVerbLook('task', { label: translate('taskDispatch.agent'), onCancel: () => cancelComposerVerb(verbKey, draftKey), testId: 'task-dispatch' }),
       taskChatId: chatId,
-      openAfterCreate: false,
       // A task dispatched in a group lives in it (its agent joins); a group picked in the tray overrides it (GroupDispatch).
       groupChatId: joinChat ? chatId : undefined,
       onSessionCreated: (result: { projectId: string; sessionId: string }) => {

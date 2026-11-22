@@ -52,13 +52,10 @@ interface UseCreateSessionCallbackParams {
   /**
    * gugu-dev#181 派任务:这一轮由哪个对话的输入框派出。首句由宿主落成那里的一张任务卡(task-card-first-turn.ts),
    * 结果回那里。ACP 首句的附件引用由 Life 准备;PTY 卡片只放文件夹引用,不带本机路径。
+   * The sender stays where it is only because the card lands there (the session is started here); without a chat there is
+   * no card, so the new task opens like any other (❌ created where nobody sees it).
    */
   taskChatId?: string;
-  /**
-   * 建完去不去看它。缺省 = 去(导航到会话,会话页挂上来就起它);false = 发起方留在原处(项目里、聊天里派任务),
-   * 这里当场起它(startCreatedSession),会话放哪由 onCreated 决定。
-   */
-  openAfterCreate?: boolean;
   /** #6264 建任务之前先做的一步(别的机器上还没装所选的家:先在那台机器上装好)。失败 = 不建,原因说出来。 */
   beforeCreate?: () => Promise<void>;
 }
@@ -78,7 +75,6 @@ export function useCreateSessionCallback({
   onCreated,
   groupChatId,
   taskChatId,
-  openAfterCreate = true,
   beforeCreate,
 }: UseCreateSessionCallbackParams): {
   handleCreateSession: () => void;
@@ -294,7 +290,7 @@ export function useCreateSessionCallback({
     void (beforeCreate ? beforeCreate() : Promise.resolve()).then(() => sessionManager.createSession(createInput, {
       ...(placingFiles ? { placingFiles: true } : {}),
       onOptimistic: () => {
-        if (!openAfterCreate) return;
+        if (taskChatId) return;
         openedOptimistically = true;
         navigate('session', { projectId: selectedProjectId, sessionId });
         onClose();
@@ -351,9 +347,9 @@ export function useCreateSessionCallback({
       // @@@start-failure-exit - A task dispatched from a chat stays in the chat because its card lands there; a task
       // whose workspace could not be prepared never lands one. Staying would leave the person with no card, no task and
       // no reason, so it opens like any other new task: the session's own failure screen says why and retries.
-      if (!openAfterCreate && sessionViewKind(getSessionPageStore(selectedProjectId, sessionId), selectedProjectId) === 'provision-error') {
+      if (taskChatId && sessionViewKind(getSessionPageStore(selectedProjectId, sessionId), selectedProjectId) === 'provision-error') {
         navigate('session', { projectId: selectedProjectId, sessionId });
-      } else if (!openAfterCreate) {
+      } else if (taskChatId) {
         void rpcOn(machineRegistry.machineOf(selectedProjectId) ?? null).sessionTimeline.sessionStart({ conversationId: sessionId }).then((started) => {
           if (!started.ok) log.warn('start a session nobody opens failed', { sessionId, error: started.error });
         });
@@ -393,7 +389,6 @@ export function useCreateSessionCallback({
     beforeCreate,
     groupChatId,
     taskChatId,
-    openAfterCreate,
     state,
     initialSession,
     draft,

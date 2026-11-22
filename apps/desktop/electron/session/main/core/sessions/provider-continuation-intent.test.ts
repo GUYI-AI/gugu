@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { claudeTranscriptDirFor } from './fork-lineage';
 import {
   listProviderContinuationIntents,
+  readProviderContinuationIntent,
   recordProviderContinuationIntent,
 } from './provider-continuation-intent';
 
@@ -41,6 +42,16 @@ describe('#3890⑭ provider continuation intent 的残留与坏文件', () => {
     else process.env.CLAUDE_CONFIG_DIR = origConfigDir;
     await rm(configDir, { recursive: true, force: true });
     await rm(sessionPath, { recursive: true, force: true });
+  });
+
+  it('reads one conversation\'s own intent; none recorded is null', async () => {
+    expect(await readProviderContinuationIntent(sessionPath, CONV_A)).toBeNull();
+    await recordProviderContinuationIntent({ sessionPath, sessionId: CONV_A, sourceProviderSessionId: 's-a' });
+    expect(await readProviderContinuationIntent(sessionPath, CONV_A)).toMatchObject({
+      sessionId: CONV_A,
+      sourceProviderSessionId: 's-a',
+    });
+    expect(await readProviderContinuationIntent(sessionPath, CONV_B)).toBeNull();
   });
 
   it('一个坏 intent 只丢它自己，其余续接绑定照常拿得到（修复前:整趟抛，全部丢）', async () => {

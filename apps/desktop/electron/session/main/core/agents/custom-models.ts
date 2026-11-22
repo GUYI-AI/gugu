@@ -15,6 +15,7 @@ import { loginShellEnv } from '@main/utils/userEnv';
 import { migrateCustomModels } from './custom-model-migration';
 import { describeDiscoveryIssues, discoverLocalConnections, discoveredSecret, discoveryIdentity, keyLast4, type DiscoveredConnection } from './local-connection-discovery';
 import { nativeConfigRoot } from './native-config-root';
+import { connectionProbeEnv } from './connection-endpoint-env';
 import { listEndpointModels, probeEndpointProtocols, verifyEndpointModel } from './connection-endpoint-probe';
 
 const namespace = 'models:custom';
@@ -22,10 +23,14 @@ const migratedDatabases = new WeakSet<object>();
 
 export function migrateCustomModelConnections(): void {
   if (migratedDatabases.has(db)) return;
-  const vendors = new Set(pluginRegistry.getAll().filter((plugin) =>
+  const plugins = pluginRegistry.getAll();
+  const vendors = new Set(plugins.filter((plugin) =>
     plugin.capabilities.auth.kind === 'supported' && plugin.capabilities.auth.vendorKey,
   ).map((plugin) => plugin.metadata.id));
-  migrateCustomModels(db, vendors);
+  const defaults = new Map(plugins.flatMap(({ metadata, capabilities: { models } }) =>
+    models.kind === 'selectable' && models.defaultModelId ? [[metadata.id, models.defaultModelId] as const] : []));
+  const migrated = migrateCustomModels(db, vendors, defaults);
+  if (migrated.length) log.info('custom-model migration: moved API connections', { migrated });
   migratedDatabases.add(db);
 }
 
@@ -212,7 +217,7 @@ export async function testCustomModel(input: TestCustomModel): Promise<Connectio
   if (!key) throw new Error('The model’s API key is unavailable on this device');
   const endpoint = endpoints?.find(({ protocol }) => protocol.startsWith('openai-')) ?? endpoints?.[0];
   if (!endpoint) throw new Error('An API address is required');
-  const target = { endpoint: endpoint.baseUrl, apiKey: key, protocol: endpoint.protocol };
+  const target = { endpoint: endpoint.baseUrl, apiKey: key, protocol: endpoint.protocol, env: connectionProbeEnv() };
   const result = await listEndpointModels(target);
   return input.modelId && result.kind === 'unlisted' && result.reason === 'no-list'
     ? verifyEndpointModel(target, input.modelId)
@@ -222,7 +227,7 @@ export async function testCustomModel(input: TestCustomModel): Promise<Connectio
 /** Probes a typed address and key for the protocols it answers; runs on the machine whose key it is. */
 export async function detectCustomModelProtocols(input: DetectCustomModelProtocols): Promise<CustomModelProtocolProbe> {
   const probe = await probeEndpointProtocols({
-    baseUrl: normalizeModelBaseUrl(input.baseUrl), apiKey: input.apiKey, modelId: input.modelId, hint: detectModelProtocol(input.baseUrl),
+    baseUrl: normalizeModelBaseUrl(input.baseUrl), apiKey: input.apiKey, modelId: input.modelId, hint: detectModelProtocol(input.baseUrl), env: connectionProbeEnv(),
   });
   return { ...probe, endpoints: probe.endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })) };
 }

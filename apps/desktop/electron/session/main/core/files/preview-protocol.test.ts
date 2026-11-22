@@ -51,7 +51,7 @@ vi.mock('@main/lib/events', () => ({
 }));
 
 import { remotePreviewReadChannel, remotePreviewReadResultChannel } from '@shared/events/appEvents';
-import { REMOTE_CHUNK_TIMEOUT_MS, createChatFolderPreview, createDocumentPreview, createPreview, createRemotePreview, handlePreviewRequest, previewAssetsChanged, releasePreview, setPreviewDocument } from './preview-protocol';
+import { REMOTE_CHUNK_TIMEOUT_MS, bytesRequestRefused, createBytesPreview, createChatFolderPreview, createDocumentPreview, createPreview, createRemotePreview, handlePreviewRequest, previewAssetsChanged, releasePreview, setPreviewDocument } from './preview-protocol';
 import { resolveWorkspace } from '@main/core/workspaces/resolve-workspace';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 
@@ -555,5 +555,75 @@ describe('a chat folder document previewed with its folder', () => {
 
   it('a document someone may not read gets no preview', async () => {
     expect(await createChatFolderPreview('doc-2', '<p>x</p>', copy)).toBeNull();
+  });
+});
+
+describe('this machine\'s bytes of a sha, at an address that names only the sha', () => {
+  const sha = 'd'.repeat(64);
+  const bytes = new TextEncoder().encode('0123456789');
+  const file = { size: bytes.length, read: async (offset: number, length: number) => bytes.slice(offset, offset + length) };
+
+  it('serves the whole file, a range for a video, and nothing at another path; released, it is gone', async () => {
+    const { url, previewId } = createBytesPreview(sha, 'video/mp4', file);
+    expect(url).toBe(`gugu-preview://${previewId}/${sha}`);
+    const whole = await handlePreviewRequest(new Request(url), 'pane');
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get('content-type')).toBe('video/mp4');
+    // Only the renderer may read it cross-origin: a page previewed on this scheme (untrusted HTML) may not.
+    expect(whole.headers.get('access-control-allow-origin')).toBe('gugu-app://app');
+    const fromPage = await handlePreviewRequest(new Request(url, { headers: { Origin: 'gugu-preview://0123abcd' } }), 'pane');
+    expect(fromPage.headers.get('access-control-allow-origin')).toBe('gugu-app://app');
+    expect(await whole.text()).toBe('0123456789');
+    const part = await handlePreviewRequest(new Request(url, { headers: { Range: 'bytes=2-5' } }), 'pane');
+    expect(part.status).toBe(206);
+    expect(part.headers.get('content-range')).toBe('bytes 2-5/10');
+    expect(await part.text()).toBe('2345');
+    expect((await handlePreviewRequest(new Request(url, { headers: { Range: 'bytes=20-' } }), 'pane')).status).toBe(416);
+    expect((await handlePreviewRequest(new Request(`gugu-preview://${previewId}/${'e'.repeat(64)}`), 'pane')).status).toBe(404);
+    expect((await handlePreviewRequest(new Request(url), 'browser')).status).toBe(404);
+    releasePreview(previewId);
+    expect((await handlePreviewRequest(new Request(url), 'pane')).status).toBe(404);
+  });
+
+  // A page previewed on this scheme is untrusted: it may not read a sha address, even one whose URL it got hold of.
+  it('only the renderer\'s own frame may ask for a sha address; a previewed page may not', () => {
+    const { url, previewId } = createBytesPreview(sha, 'video/mp4', file);
+    expect(bytesRequestRefused(url, 'gugu-app://app')).toBe(false);
+    for (const page of ['null', `gugu-preview://${'0'.repeat(32)}`, undefined]) expect(bytesRequestRefused(url, page)).toBe(true);
+    const document = createDocumentPreview('<p>page</p>');
+    expect(bytesRequestRefused(document.url, 'null')).toBe(false);
+    expect(bytesRequestRefused('https://example.com/', 'null')).toBe(false);
+    releasePreview(previewId);
+    releasePreview(document.previewId);
+  });
+
+  it('bytes that can no longer be read fail the response, loudly', async () => {
+    const { url } = createBytesPreview(sha, '', { size: 10, read: async () => { throw new Error('NotReadableError'); } });
+    await expect((await handlePreviewRequest(new Request(url), 'pane')).text()).rejects.toThrow();
+  });
+});
+
+describe('a remote page on a machine a device link reaches (@@@machine-file-stream)', () => {
+  it('reads the first piece through the machine\'s channel and the rest from one stream of that version', async () => {
+    const { setMachineFileStreams } = await import('./machine-file-streams');
+    const big = 'x'.repeat(3 * 1024 * 1024 + 7);
+    const asked: number[] = [];
+    const stop = answerFrom({ [`${ROOT}/site/big.js`]: big });
+    const opened: Record<string, unknown>[] = [];
+    setMachineFileStreams({
+      linked: async (deviceId) => deviceId === 'dev-b',
+      open: async (_deviceId, _type, request, size, from) => {
+        opened.push(request(from, 's'));
+        return { dispose: async () => undefined, read: async (offset: number, length: number) => { asked.push(offset); return new Uint8Array(Buffer.from(big.slice(offset, offset + Math.min(length, size - offset)))); } };
+      },
+    });
+    const created = createRemotePreview({ workspaceId: 'ws', machine: { deviceId: 'dev-b', workspaceId: 'ws-there' }, root: ROOT, surface: 'browser', failureCopy: COPY })!;
+    try {
+      const response = await handlePreviewRequest(new Request(`gugu-preview://${created.previewId}/site/big.js`), 'browser');
+      expect(response.status).toBe(200);
+      expect((await response.text()).length).toBe(big.length);
+      expect(opened).toEqual([{ place: { workspaceId: 'ws-there' }, path: `${ROOT}/site/big.js`, offset: asked[0], etag: 'e1', stream: 's' }]);
+      expect(asked[0]).toBeGreaterThan(0);
+    } finally { stop(); setMachineFileStreams(null); releasePreview(created.previewId); }
   });
 });

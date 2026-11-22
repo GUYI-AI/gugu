@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
+import { egress, EgressError, egressErrorText } from '@gugu/core/shared/egress'
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
@@ -20,7 +21,7 @@ import { findRosterNameHits } from '../../../../packages/core/src/shared/rosterN
 import { findMentionSpans } from '../../../../packages/core/src/shared/mentionToken.mjs'
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
-import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey } from '@gugu/core/shared/fileResolver'
+import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey, isFileIntegrityError } from '@gugu/core/shared/fileResolver'
 import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { matchIdPrefix, uuidPrefixRange } from '../../../../packages/core/src/shared/idPrefix'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
@@ -28,7 +29,7 @@ import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
-import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, retryableAttachmentError, sendFileAsOwner, shareAttachment, uploadAttachmentBytes } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, AttachmentsError, commitAttachment, contentRequestId, retryableAttachmentError, sendFileAsOwner, shareAttachment, withUploadedAttachment } from '../../../../packages/core/src/cloud/attachmentsApi'
 import { fileSha256 } from '../../../../packages/core/src/local/agent/sessionFileHandoff'
 import { createGroupWithInvitations } from '../../../../packages/core/src/cloud/groupChat'
 import { createGroupAdmin, setGroupAvatar } from '../../../../packages/core/src/cloud/groupAdmin'
@@ -342,11 +343,11 @@ function restHeaders(context, accessToken, profile, extra = {}) {
   }
   return h
 }
-export async function restGet(context, path, profile = 'chat', fetchImpl = fetch) {
+export async function restGet(context, path, profile = 'chat', fetchImpl = egress.fetch) {
   const accessToken = await context.getAccessToken()
   let res
   try {
-    res = await fetchImpl(`${context.supabaseUrl}/rest/v1/${path}`, {
+    res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/${path}`, {
       headers: restHeaders(context, accessToken, profile),
     })
   } catch (error) {
@@ -354,9 +355,6 @@ export async function restGet(context, path, profile = 'chat', fetchImpl = fetch
     const status = Number(error?.status)
     if (Number.isInteger(status) && status >= 400 && status <= 599) {
       throw new RpcHttpError(status, { accessToken })
-    }
-    if (error instanceof TypeError || error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-      throw new RpcTransportError()
     }
     throw error
   }
@@ -366,9 +364,9 @@ export async function restGet(context, path, profile = 'chat', fetchImpl = fetch
   }
   return res.json()
 }
-async function restInsert(context, table, row, profile = 'chat', fetchImpl = fetch) {
+async function restInsert(context, table, row, profile = 'chat', fetchImpl = egress.fetch) {
   const accessToken = await context.getAccessToken()
-  const res = await fetchImpl(`${context.supabaseUrl}/rest/v1/${table}`, {
+  const res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/${table}`, {
     method: 'POST',
     headers: restHeaders(context, accessToken, profile, { Prefer: 'return=minimal' }),
     body: JSON.stringify(row),
@@ -411,9 +409,9 @@ async function addressableMembers(chatId, deps) {
   const more = ids.length > shown.length ? ` and ${ids.length - shown.length} more (message_members lists them all)` : ''
   return `Members you can address: ${shown.join(', ') || 'none besides you'}${more}. Send again to one of these addresses.`
 }
-async function restPatch(context, path, body, profile = 'chat', fetchImpl = fetch, returning = false) {
+async function restPatch(context, path, body, profile = 'chat', fetchImpl = egress.fetch, returning = false) {
   const accessToken = await context.getAccessToken()
-  const res = await fetchImpl(`${context.supabaseUrl}/rest/v1/${path}`, {
+  const res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/${path}`, {
     method: 'PATCH',
     headers: restHeaders(context, accessToken, profile, { Prefer: returning ? 'return=representation' : 'return=minimal' }),
     body: JSON.stringify(body),
@@ -421,21 +419,13 @@ async function restPatch(context, path, body, profile = 'chat', fetchImpl = fetc
   if (!res.ok) throw new Error(`PATCH ${path} → ${res.status} ${await res.text()}`)
   return returning ? res.json() : undefined
 }
-export async function restRpc(context, name, body, profile = 'chat', fetchImpl = fetch) {
+export async function restRpc(context, name, body, profile = 'chat', fetchImpl = egress.fetch) {
   const accessToken = await context.getAccessToken()
-  let res
-  try {
-    res = await fetchImpl(`${context.supabaseUrl}/rest/v1/rpc/${name}`, {
-      method: 'POST',
-      headers: restHeaders(context, accessToken, profile),
-      body: JSON.stringify(body || {}),
-    })
-  } catch (error) {
-    if (error instanceof TypeError || error?.name === 'AbortError' || error?.name === 'TimeoutError') {
-      throw new RpcTransportError()
-    }
-    throw error
-  }
+  const res = await cloudRequest(fetchImpl, `${context.supabaseUrl}/rest/v1/rpc/${name}`, {
+    method: 'POST',
+    headers: restHeaders(context, accessToken, profile),
+    body: JSON.stringify(body || {}),
+  })
   if (!res.ok) {
     const detail = rpcErrorDetail(await res.text().catch(() => ''))
     throw new RpcHttpError(res.status, { accessToken, detail })
@@ -446,8 +436,23 @@ export async function restRpc(context, name, body, profile = 'chat', fetchImpl =
   return t ? JSON.parse(t) : null
 }
 
+/**
+ * The request never got an answer (the egress says why: dns, connect, proxy, proxy-auth, tls, timeout, reset). What the
+ * runtime said about it means nothing to an agent or the person reading the task, so the error says what is wrong in
+ * their terms and what to do (`egressErrorText`); the egress already logged the cause.
+ */
 export class RpcTransportError extends Error {
-  constructor() { super('command RPC transport failed') }
+  constructor(kind = 'connect') { super(egressErrorText(kind)); this.kind = kind }
+}
+
+/** Every REST primitive below sends through here, so a request that got no answer reads the same from each of them. */
+async function cloudRequest(fetchImpl, url, init) {
+  try {
+    return await fetchImpl(url, init)
+  } catch (error) {
+    if (error instanceof EgressError) throw new RpcTransportError(error.kind)
+    throw error
+  }
 }
 
 export class RpcHttpError extends Error {
@@ -546,7 +551,7 @@ function createSessionState() {
 
 function createDeps(context, injected = {}, state = createSessionState()) {
   // Its answers tune this process's `serverNow()` (`@@@server-clock`): message `created_at` is the database's clock.
-  const fetchImpl = withServerClock(injected.fetch ?? fetch)
+  const fetchImpl = withServerClock(injected.fetch ?? egress.fetch)
   return {
     restGet: (path, profile) => restGet(context, path, profile, fetchImpl),
     restInsert: (table, row, profile) => restInsert(context, table, row, profile, fetchImpl),
@@ -2320,7 +2325,7 @@ async function documentUploadBytes(args) {
 
 // gugu_file:send-file-as-owner = 字节经 attachments/upload 直传 OSS,再由 attachments/share 以 owner 名义发出;send-file 走声明路径
 // (消息带文件索引先提交,字节随后,和人发附件同一条路);download = 按消息 id 把附件下到本机(downloadAttachment)。
-async function uploadForSend(args, deps, requestId) {
+async function uploadForSend(args, deps, requestId, send) {
   const fileName = resolveUploadName(args)
   const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
   const bytes = await uploadBlob('message_send_as_owner', args, contentType)
@@ -2328,8 +2333,8 @@ async function uploadForSend(args, deps, requestId) {
   // Bind the permit to this send and its bytes. A separate send of the same file has its own message request ID.
   const sha = await fileSha256(String(args.file_path))
   const request_id = await contentRequestId('send', requestId, deps.context.agentId, String(args.friend_user_id), sha, String(bytes.size))
-  return { endpoint, fileName, contentType, stagingKey: await uploadAttachmentBytes(endpoint, { bytes, name: fileName, contentType },
-    { chat_id: null, as: deps.context.agentId, request_id }) }
+  return withUploadedAttachment(endpoint, { bytes, name: fileName, contentType, sha256: sha },
+    { chat_id: null, as: deps.context.agentId, request_id }, (stagingKey) => send({ endpoint, fileName, contentType, stagingKey }))
 }
 
 /**
@@ -2413,10 +2418,10 @@ async function commitWithReplay(commit) {
 async function handleOwnerFile(args, deps) {
   const friendUserId = friendUserIdArg(args.friend_user_id)
   const request_id = randomUUID()
-  const { endpoint, fileName, contentType, stagingKey } = await uploadForSend(args, deps, request_id)
   // 库里那一半照 send_friend_message_as_owner 的规矩(gugu-supabase send_friend_file_as_owner):发送者是主人,记下是这个 agent 代发。
-  const send = { staging_key: stagingKey, friend_user_id: friendUserId, agent_user_id: deps.context.agentId, request_id, file_name: fileName, content_type: contentType, ...(args.caption ? { caption: args.caption } : {}) }
-  const result = await commitWithReplay(() => sendFileAsOwner(endpoint, send))
+  const result = await uploadForSend(args, deps, request_id, ({ endpoint, fileName, contentType, stagingKey }) => commitWithReplay(() => sendFileAsOwner(endpoint, {
+    staging_key: stagingKey, friend_user_id: friendUserId, agent_user_id: deps.context.agentId, request_id, file_name: fileName, content_type: contentType, ...(args.caption ? { caption: args.caption } : {}),
+  })))
   if (typeof result.message_id !== 'string' || result.sent_by_agent !== true) {
     throw new Error('message_send_as_owner: the server did not confirm the send')
   }
@@ -2487,7 +2492,11 @@ async function downloadFile(args, deps) {
       const home = typeof deps.context.guguHome === 'string' ? deps.context.guguHome.trim() : ''
       if (!home) { await file.dispose(); throw new Error('gugu MCP context has no guguHome; cannot save the file') }
       const item = source.item ?? (file.revision.item_id && file.revision.version ? { itemId: file.revision.item_id, version: file.revision.version } : null)
-      const saved = await saveToFileStore(file, home, file.revision.file_name)
+      const saved = await saveToFileStore(file, home, file.revision.file_name).catch((error) => {
+        // §2.5: the bytes are not the ones their sha names (the uploader's claim). Nothing was saved.
+        if (isFileIntegrityError(error)) throw new Error(`message_download_file: integrity_failed — the bytes of ${file.revision.file_name} do not match their SHA-256; nothing was saved`)
+        throw error
+      })
       return { ...saved, ...(saved.read_only ? { note: SHARED_READ_ONLY_COPY } : {}), ...(item ? { file: groupFileLink(item.itemId, { version: item.version }), next: attachmentFolderLine(item.itemId, item.version) } : {}) }
     })()
     // Registered before any caller's wait, so it runs first: a failure a caller is waiting for goes to that caller; one
@@ -3220,7 +3229,7 @@ export function createGuguImServer(getContext, deps = {}) {
           ? { runSessionAction: (action) => current.runSessionAction(action, signal) }
           : {}),
       }
-      const fetchImpl = deps.fetch ?? fetch
+      const fetchImpl = deps.fetch ?? egress.fetch
       const out = await dispatchTool(context, def.name, toolArgs, {
         ...deps,
         fetch: (input, init) => fetchImpl(input, { ...init, signal }),

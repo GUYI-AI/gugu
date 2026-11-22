@@ -157,7 +157,6 @@ export function mapSessionRowToSession(
     forkFromProviderSessionId: config?.type === 'acp' ? config.forkFromProviderSessionId : undefined,
     forkOnStartProviderSessionId: config?.forkOnStartProviderSessionId,
     providerSessionEndpoint: config?.providerSessionEndpoint,
-    providerMintedSessionId: config?.providerMintedSessionId,
     // Its one name: a bound task's pending-bind record is empty (task-name.ts).
     agentDisplayName: knownTaskName({ id: row.id, config }),
     // 重来靠的那句话:载荷里还留着的优先(它本来就是要投递的那句),否则用创建时记下的事实。

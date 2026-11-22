@@ -776,7 +776,7 @@ export async function callSessionStart<T extends { success: boolean }>(
 ): Promise<T> {
   try {
     const result = await start();
-    if (!result.success) await applyStartToAuthExpiry({ providerId, sessionId, platformCredentials: credentialInjected,
+    if (!result.success) await applyStartToAuthExpiry({ providerId, sessionId, hostCredentials: credentialInjected,
       failure: 'error' in result ? result.error : undefined }, authExpiryWriter);
     if (credentialInjected && !result.success) {
       await releaseEmdashPlatformSession(sessionId);

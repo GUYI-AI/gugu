@@ -38,9 +38,7 @@ export const machineListeningPorts = replica({
 });
 
 export function holdRemotePorts(deviceId: string): () => void {
-  const release = remotePortForwards.hold(deviceId);
-  void remotePortForwards.prefetch(deviceId);
-  return release;
+  return remotePortForwards.hold(deviceId);
 }
 
 export function remoteForLocalPort(deviceId: string, localPort: number): number | null {

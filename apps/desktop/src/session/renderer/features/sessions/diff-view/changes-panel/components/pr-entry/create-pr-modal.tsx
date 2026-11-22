@@ -101,7 +101,7 @@ export const CreatePrModal = observer(function CreatePrModal({
 
   const doCreate = async (push: boolean) => {
     if (!selectedBase?.branch) {
-      setError('Select a base branch before creating the pull request.');
+      setError(translate('pr.selectBaseFirst'));
       return;
     }
     if (!title.trim() || !targetRepositoryUrl) return;
@@ -152,7 +152,7 @@ export const CreatePrModal = observer(function CreatePrModal({
   return (
     <div className="flex max-h-[70vh] flex-col overflow-hidden">
       <DialogHeader>
-        <DialogTitle>{draft ? 'Create Draft PR' : 'Create Pull Request'}</DialogTitle>
+        <DialogTitle>{translate(draft ? 'pr.createDraftTitle' : 'pr.createTitle')}</DialogTitle>
       </DialogHeader>
       <DialogContentArea className="space-y-4">
         {!hasGitHubRemote && (
@@ -250,18 +250,18 @@ export const CreatePrModal = observer(function CreatePrModal({
           <SplitButton
             size="sm"
             loading={isCreating}
-            loadingLabel="Creating..."
+            loadingLabel={translate('pr.creating')}
             disabled={!hasGitHubRemote || !selectedBase?.branch || !title.trim()}
             actions={[
               {
                 value: 'push-and-create',
-                label: draft ? 'Push & Create Draft' : 'Push & Create PR',
+                label: translate(draft ? 'pr.pushAndCreateDraft' : 'pr.pushAndCreate'),
                 action: () => void doCreate(true),
               },
               {
                 value: 'create-only',
-                label: draft ? 'Create Draft' : 'Create PR',
-                description: 'Skip push and open a PR from the current remote state',
+                label: translate(draft ? 'pr.createDraftShort' : 'pr.create'),
+                description: translate('pr.createOnlyHint'),
                 action: () => void doCreate(false),
               },
             ]}
@@ -272,7 +272,7 @@ export const CreatePrModal = observer(function CreatePrModal({
             onClick={() => void doCreate(false)}
             disabled={!hasGitHubRemote || !selectedBase?.branch || !title.trim() || isCreating}
           >
-            {isCreating ? 'Creating...' : draft ? 'Create Draft' : 'Create PR'}
+            {translate(isCreating ? 'pr.creating' : draft ? 'pr.createDraftShort' : 'pr.create')}
           </ConfirmButton>
         )}
       </DialogFooter>

@@ -3,7 +3,7 @@ import { openAsBlob, createReadStream } from 'node:fs'
 import { chmod, link, mkdir, mkdtemp, open, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { FileSink } from '../../shared/fileCipher'
-import { FILE_CHUNK_BYTES, requireFileRange, requireFileRevision } from '../../shared/fileResolver'
+import { FILE_CHUNK_BYTES, FileIntegrityError, requireFileRange, requireFileRevision } from '../../shared/fileResolver'
 import type { FileChunkCache } from '../../shared/fileCache'
 import { createHash, randomUUID } from 'node:crypto'
 import { attachmentDownloadName } from '../../shared/attachmentDownloadName.mjs'
@@ -71,13 +71,30 @@ export const fileStoreDirectory = (guguHome: string) => join(guguHome, 'file-sto
 const STORED_FILE_MODE = 0o444
 const storeLog = coreLogger('file-store')
 
+// @@@file-sinks - a read in flight is staged in a private `read-*` directory under the temp root, owned by the one process
+// that made it and removed when its read is let go. A process killed outright cannot let go: a sink older than the running
+// process is such a leftover, which startup removes whatever its age (published `open-*` files keep their own lifetime).
+const FILE_SINK_PREFIX = 'read-'
+
+/** Removes the sinks of processes that are gone: every sink made before `startedAt`, this process's start. */
+export async function cleanupOrphanedFileSinks(tempRoot: string, startedAt: number): Promise<void> {
+  const entries = await readdir(tempRoot, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return []
+    throw error
+  })
+  await Promise.all(entries.filter(entry => entry.isDirectory() && entry.name.startsWith(FILE_SINK_PREFIX)).map(async entry => {
+    const directory = join(tempRoot, entry.name)
+    if ((await stat(directory)).mtimeMs < startedAt) await cleanupRemoteFileDirectory(directory)
+  }))
+}
+
 /** A private bounded staging file. Only a committed, read-only snapshot can leave this sink. */
 export async function createFileSink(tempRoot: string, size: number, destination?: string): Promise<FileSink & { blob(): Promise<Blob>; path(): string }> {
   requireFileRange(size, 0, 0)
   await requireAgentFileAccess(tempRoot)
   if (destination) await requireAgentFileAccess(destination)
   await mkdir(tempRoot, { recursive: true, mode: 0o700 })
-  const directory = destination ? dirname(destination) : await mkdtemp(join(tempRoot, 'open-'))
+  const directory = destination ? dirname(destination) : await mkdtemp(join(tempRoot, FILE_SINK_PREFIX))
   await requireAgentFileTreeAccess(directory)
   await chmod(directory, 0o700)
   const partial = destination ? `${destination}.${randomUUID()}.part` : join(directory, 'data.part'), path = destination ?? join(directory, 'data')
@@ -254,7 +271,7 @@ export async function writeFileHandle(file: FileHandle, path: string) {
     createdPartial = true
     for await (const chunk of file.stream()) { size += chunk.length; if (size > file.revision.size_bytes) throw new Error('File export size changed'); hash.update(chunk); await output.writeFile(chunk) }
     const observedSha = hash.digest('hex')
-    if (size !== file.revision.size_bytes || file.revision.sha256 !== null && observedSha !== file.revision.sha256) throw new Error('File export SHA-256 mismatch')
+    if (size !== file.revision.size_bytes || file.revision.sha256 !== null && observedSha !== file.revision.sha256) throw new FileIntegrityError('File export')
     await output.sync(); await output.close(); await requireAgentFileAccess(path); await rename(partial, path)
     return { file_path: path, file_name: basename(path), size_bytes: size, sha256: observedSha, content_type: file.revision.content_type }
   } catch (error) {
@@ -276,6 +293,39 @@ export async function storedCopy(guguHome: string, sha256: string): Promise<Blob
     for await (const chunk of blob.stream()) hash.update(chunk)
     if (hash.digest('hex') === sha256) return blob
   }
+  return null
+}
+
+/**
+ * A file this machine sent from its own disk is not copied: `<home>/file-origins/<sha256>` names where it is. Every hand-out
+ * hashes it again. One that no longer holds its sha (changed, moved or deleted) is no copy: a reader then reads it from where
+ * else it is kept, and an upload still owing those bytes fails, saying so (`FileOriginChangedError`).
+ */
+const originOf = (guguHome: string, sha256: string) => join(guguHome, 'file-origins', sha256)
+export class FileOriginChangedError extends Error {
+  readonly code = 'original_changed'
+  constructor(readonly path: string) { super(`The original file changed or was removed before its upload finished: ${path}`) }
+}
+export async function recordFileOrigin(guguHome: string, sha256: string, path: string): Promise<void> {
+  if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error('Invalid stored file SHA-256')
+  const record = await requireAgentFileAccess(originOf(guguHome, sha256)), part = `${record}.${randomUUID()}.part`
+  await mkdir(dirname(record), { recursive: true, mode: 0o700 })
+  await writeFile(part, JSON.stringify({ path }), { mode: 0o600 }); await rename(part, record)
+}
+/** This machine's bytes of `sha256`: the store's copy, else the original it sent. `strict`: an original that changed throws. */
+export async function localCopy(guguHome: string, sha256: string, strict = false): Promise<Blob | null> {
+  const stored = await storedCopy(guguHome, sha256)
+  if (stored) return stored
+  const text = await readFile(await requireAgentFileAccess(originOf(guguHome, sha256)), 'utf8').catch(error => { if (error.code === 'ENOENT') return null; throw error })
+  if (text === null) return null
+  const { path } = JSON.parse(text) as { path: string }
+  // An original that cannot be opened any more (moved, deleted, no longer readable) holds no bytes here.
+  // (openAsBlob throws a missing file at once, not through its promise.)
+  const blob = await (async () => openAsBlob(await requireAgentFileAccess(path)))().catch(() => null)
+  const hash = createHash('sha256')
+  if (blob) for await (const chunk of blob.stream()) hash.update(chunk)
+  if (blob && hash.digest('hex') === sha256) return blob
+  if (strict) throw new FileOriginChangedError(path)
   return null
 }
 

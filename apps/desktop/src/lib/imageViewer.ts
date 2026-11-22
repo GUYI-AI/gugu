@@ -5,6 +5,7 @@ import type { ResourceContext } from '@/session/shared/resource-actions'
 import type { TabOpenIntent } from '@/session/shared/view-state'
 import { savedFileName } from '@/session/shared/extensions/app-runtime-protocol'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
+import { drawnSvgImage } from '@gugu/session-chat-ui/svg'
 
 /**
  * A file the person opens (a click, a link, an App page's `files.openWith`) that no App claims opens here when it is an
@@ -136,6 +137,12 @@ export function openImageViewer(items: ImageViewerItem[], index = 0): void {
   if (!host) throw new Error('image viewer host is not mounted')
   if (items.length === 0) throw new Error('openImageViewer needs at least one image')
   host({ items, index: Math.max(0, Math.min(index, items.length - 1)) })
+}
+
+/** A drawn diagram (a mermaid block, chat or transcript) opens in this viewer, as any picture: themed as the page is now. */
+export function openDiagramViewer(svg: string, thumb?: HTMLElement | null): void {
+  const { src, width, height } = drawnSvgImage(svg, thumb ?? document.documentElement)
+  openImageViewer([{ url: src, alt: '', file: { name: 'diagram.svg', contentType: 'image/svg+xml' }, size: { width, height }, thumb }])
 }
 
 // 画廊 = 此刻渲染在带 IMAGE_GALLERY_ATTR 的容器里、带 IMAGE_VIEWER_SRC_ATTR(原图地址)的缩略图,按文档顺序。

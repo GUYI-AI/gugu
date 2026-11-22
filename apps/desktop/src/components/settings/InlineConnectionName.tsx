@@ -24,6 +24,6 @@ export function InlineConnectionName({ name, busy, onRename }: { name: string; b
       if (event.key === 'Escape') { event.preventDefault(); setEditing(false); }
       else if (event.key === 'Enter' && !event.nativeEvent.isComposing) { event.preventDefault(); void save(); }
     }} />;
-  return <Button type="button" variant="ghost" className="gg-model-name" aria-label={`${translate('task.rename')} ${name}`} disabled={busy}
-    onClick={() => { setDraft(name); setEditing(true); }}>{name}<Pencil className="size-3.5" aria-hidden /></Button>;
+  return <Button type="button" variant="ghost" className="gg-model-name" aria-label={`${translate('task.rename')} ${name}`} title={name} disabled={busy}
+    onClick={() => { setDraft(name); setEditing(true); }}><span className="truncate">{name}</span><Pencil className="size-3.5" aria-hidden /></Button>;
 }

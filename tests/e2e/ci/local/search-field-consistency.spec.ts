@@ -170,17 +170,15 @@ test('main renderer search fields share one visual contract', async ({ page }, t
   // 2026-09-05:原来这里还量第四个读数 —— 发现页的 DiscoverSearchField。发现页与找群同批下架,
   // 那个搜索框已不可达。宽屏上的两处普通搜索输入仍共用 SearchField 原语。
 
+  // 同一个 SearchField 原语:槽位、高度、字号、边框样式处处一致。通讯录左栏的框是导航列样式(variant="nav"):
+  // 与那一列的行同形 —— 胶囊、无常驻边框、浅底;页面里的框(加联系人)保持控件档圆角与常驻边框。
   for (const reading of metrics) {
-    expect(reading, JSON.stringify(reading)).toMatchObject({
-      slot: 'search-field',
-      height: 36,
-      borderRadius: '8px',
-      borderStyle: 'solid',
-      fontSize: '14px',
-    })
+    expect(reading, JSON.stringify(reading)).toMatchObject({ slot: 'search-field', height: 36, borderStyle: 'solid', fontSize: '14px' })
   }
-  expect(new Set(metrics.map(({ borderColor }) => borderColor)).size).toBe(1)
-  expect(new Set(metrics.map(({ backgroundColor }) => backgroundColor)).size).toBe(1)
+  const [contacts, addFriend] = metrics
+  expect(contacts, JSON.stringify(contacts)).toMatchObject({ borderRadius: '9999px', borderColor: 'rgba(0, 0, 0, 0)' })
+  expect(addFriend, JSON.stringify(addFriend)).toMatchObject({ borderRadius: '8px' })
+  expect(addFriend.borderColor).not.toBe('rgba(0, 0, 0, 0)')
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.getByTestId('mobile-contacts-nav').click()

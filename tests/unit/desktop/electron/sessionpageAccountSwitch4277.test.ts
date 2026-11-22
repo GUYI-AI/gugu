@@ -66,7 +66,6 @@ vi.mock('@gugu/core/cloud/config', () => ({
 
 vi.mock('../../../../apps/desktop/electron/supabase', () => ({
   // #5331 供给链改走 Chromium 连接池;单测里没有 electron,留 undefined ⇒ 退回全局 fetch。
-  electronFetch: undefined,
   makeChatClient: () => ({
     from: (table: string) => {
       let lookedUpId = ''

@@ -362,6 +362,21 @@ describe('global search panel', () => {
     expect(counts.every((count) => count > 0)).toBe(true)
   })
 
+  it('results left open past `fresh` stay as they are: ❌ dimmed, ❌ a found-nothing turned back into pending', async () => {
+    await render('回滚')
+    expect(options().length).toBeGreaterThan(0)
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+    expect(host.querySelector('[role=listbox][data-stale]')).toBeNull()
+    remote.messages.mockResolvedValue({ data: [], error: null })
+    remote.turns.mockResolvedValue([])
+    await act(async () => updateSearchSession({ text: '没有的词' }))
+    await settle()
+    expect(host.textContent).toContain('globalSearch.emptyFor')
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+    expect(host.textContent).toContain('globalSearch.emptyFor')
+    expect(host.querySelector('[data-testid="global-search-pending"]')).toBeNull()
+  })
+
   it('a failed message search says so and lists what the tasks found, ❌ "nothing found"', async () => {
     remote.messages.mockResolvedValue({ data: null, error: { message: 'search is down' } })
     await render('回滚')

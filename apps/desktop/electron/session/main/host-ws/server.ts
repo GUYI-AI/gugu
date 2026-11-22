@@ -7,7 +7,8 @@
 //   · 无头宿主(session/headless)以它为唯一传输
 import { randomBytes } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
-import { WebSocketServer, type RawData, type WebSocket } from 'ws';
+import { WebSocketServer } from 'ws';
+import type { RawData, WebSocket } from 'ws';
 import {
   HOST_WS_DEFAULT_PORT,
   HOST_WS_HEARTBEAT_MS,

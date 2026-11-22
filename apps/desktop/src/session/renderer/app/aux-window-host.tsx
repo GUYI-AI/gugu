@@ -24,6 +24,7 @@ import { readChatSummary } from '@/lib/chatSummariesBridge';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { mirrorDocument, bridgeHotkeys } from '@renderer/lib/aux-document';
+import { installGuestPress } from '@/lib/guest-press';
 import { ShellTitlebarDragRegion } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { rpc } from '@renderer/lib/ipc';
 import { WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
@@ -85,6 +86,7 @@ const AuxWindowFrame = observer(function AuxWindowFrame({ window: aux }: { windo
     doc.body.append(root, layer);
 
     const stopHotkeys = bridgeHotkeys(doc);
+    const stopGuestPress = installGuestPress(win);
     let closingOurselves = false;
     const onFocus = () => windowFocused(id);
     const onGone = () => {
@@ -101,6 +103,7 @@ const AuxWindowFrame = observer(function AuxWindowFrame({ window: aux }: { windo
       win.removeEventListener('focus', onFocus);
       win.removeEventListener('pagehide', onGone);
       stopHotkeys();
+      stopGuestPress();
       skinObserver.disconnect();
       stopMirror();
       setMounted(null);

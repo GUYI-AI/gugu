@@ -660,7 +660,7 @@ const CreationProbe = observer(function CreationProbe({ draftKey, local = false 
   latestState = state;
   latestCreation = useCreateSessionCallback({
     selectedProjectId: 'project-1', state: creationState, initialSession: state,
-    navigate: mocks.navigate, onClose: () => {}, onCreated: mocks.created, openAfterCreate: false,
+    navigate: mocks.navigate, onClose: () => {}, onCreated: mocks.created, taskChatId: 'chat-1',
   });
   return React.createElement(React.Fragment, null,
     React.createElement('textarea', { value: state.prompt, readOnly: true, 'data-draft-input': true }),

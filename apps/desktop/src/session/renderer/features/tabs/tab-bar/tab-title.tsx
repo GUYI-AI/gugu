@@ -9,7 +9,6 @@ export function TabTitle({
    */
   isFocusedPane = true,
   hasError,
-  maxWidth = 'max-w-[200px]',
   className,
   toolTabTitle,
   children,
@@ -17,7 +16,6 @@ export function TabTitle({
   isActive: boolean;
   isFocusedPane?: boolean;
   hasError?: boolean;
-  maxWidth?: string;
   className?: string;
   toolTabTitle?: boolean;
   children: React.ReactNode;
@@ -27,7 +25,6 @@ export function TabTitle({
       data-tool-tab-title={toolTabTitle || undefined}
       className={cn(
         'truncate p-1 text-sm opacity-85 group-hover:opacity-100 transition-opacity',
-        maxWidth,
         isActive && isFocusedPane && 'opacity-100',
         hasError && 'text-foreground-destructive',
         className

@@ -186,8 +186,11 @@ export const agentsController = createRPCController({
   // ── Installation status ──────────────────────────────────────────────────────
 
   // 伴随程序(#6335)那几行不单独出门 —— 折进属主那一家(`pluginInstallationStatus`)。
+  // Same rule as `list` (#2802): a harness not looked at yet is not answered as missing; first run and the agent store
+  // read this list.
   listAgentInstallationStatus: async () => {
     const mgr = await getDependencyManager();
+    await ensureAgentDependenciesProbed(mgr);
     return Array.from(mgr.getAll().values())
       .filter((s) => s.category === 'agent' && !getDependencyDescriptor(s.id)?.ownerId)
       .map((state) => {

@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { folderBytes } from '@main/core/extensions/extension-data';
+import { claimBeforeRequest, releaseBeforeRequest } from '@main/core/shared/before-request';
 import { session, webContents, type Session } from 'electron';
 import { log } from '@main/lib/logger';
 import { applyEmbeddedPagePermissions } from '@main/core/shared/embedded-page-permissions';
@@ -59,7 +60,7 @@ export function configureExtensionSession(bundle: ExtensionBundle): Session {
   // never be consulted by a webview running on this partition.
   setupExtensionProtocol(ses, () => entry.bundle);
 
-  ses.webRequest.onBeforeRequest((details, callback) => {
+  claimBeforeRequest(ses, 'extension-session', (details, callback) => {
     const decision = decideExtensionRequest(details.url, entry.bundle.networkHosts, entry.bundle.declaredHosts);
     if (decision.allowed) {
       callback({ cancel: false });
@@ -133,6 +134,7 @@ export async function clearExtensionSessionData(extensionId: string): Promise<vo
   // Left registered, it would keep serving the uninstalled bundle's directory
   // and CSP to whatever gets installed next.
   teardownExtensionProtocol(ses);
+  releaseBeforeRequest(ses);
   await ses.clearStorageData();
   await ses.clearCache();
 }

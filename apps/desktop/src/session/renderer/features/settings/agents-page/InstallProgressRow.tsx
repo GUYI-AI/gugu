@@ -17,11 +17,14 @@ import { installProgressLine } from './install-progress-line'
 export function InstallProgressRow({
   progress,
   onCancel,
-  compact = false
+  compact = false,
+  label
 }: {
   progress: AgentInstallProgress | null
   onCancel: () => void
   compact?: boolean
+  /** The caller's own line in place of the measured progress text (first run says why Gugu installs its own copy). */
+  label?: string
 }) {
   const { translate } = useSessionMessages()
   const [cancelRequested, setCancelRequested] = useState(false)
@@ -49,7 +52,7 @@ export function InstallProgressRow({
                 {line?.ratio != null && `${metadataSeparator()}${Math.round(line.ratio * 100)}%`}
               </>
             ) : (
-              (line?.text ?? translate('agentsPage.installingToGuguHome'))
+              (label ?? line?.text ?? translate('agentsPage.installingToGuguHome'))
             )}
           </p>
           {compact && line?.detail && <p className="m-0">{line.detail}</p>}
@@ -80,10 +83,10 @@ export function InstallProgressRow({
               data-testid="install-progress-determinate"
               className={
                 compact
-                  ? 'block h-full bg-foreground transition-[width] duration-500 motion-reduce:transition-none'
-                  : 'block h-full bg-foreground-info transition-[width] duration-500 motion-reduce:transition-none'
+                  ? 'block h-full w-full origin-left bg-foreground transition-transform duration-500 motion-reduce:transition-none'
+                  : 'block h-full w-full origin-left bg-foreground-info transition-transform duration-500 motion-reduce:transition-none'
               }
-              style={{ width: `${Math.round(line.ratio * 100)}%` }}
+              style={{ transform: `scaleX(${Math.round(line.ratio * 100) / 100})` }}
             />
           ) : (
             <span

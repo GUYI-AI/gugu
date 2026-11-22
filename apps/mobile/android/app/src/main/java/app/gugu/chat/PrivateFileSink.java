@@ -42,7 +42,7 @@ final class PrivateFileSink {
         if (closed || committed || written != size || file.length() != size) throw fail("Incomplete file stage");
         StringBuilder actual = new StringBuilder(64);
         for (byte value : digest.digest()) actual.append(String.format("%02x", value & 255));
-        if (!actual.toString().equals(expected)) throw fail("File SHA-256 mismatch");
+        if (!actual.toString().equals(expected)) throw fail("integrity_failed: File SHA-256 mismatch"); // isFileIntegrityError (fileResolver.ts) reads this code
         try (FileOutputStream output = new FileOutputStream(file, true)) { output.getFD().sync(); }
         if (!file.setReadOnly() || ready.exists() || !pending.renameTo(ready)) throw fail("Could not publish verified file");
         committed = true;
