@@ -213,7 +213,7 @@ export function AddFriendSearch({
   const answer = submitted && found.state === 'value' ? found.value : null
   const [last, setLast] = useState<{ query: string; users: ContactUser[] } | null>(null)
   if (answer && submitted && last?.users !== answer) setLast({ query: submitted.query, users: answer })
-  const previous = !answer && submitted && last && last.query !== submitted.query ? last.users : null
+  const previous = !answer && submitted && last && last.query !== submitted.query && last.users.length > 0 ? last.users : null
   const unanswered = !!submitted && !answer && found.state !== 'error'
   const slow = useDebounce(unanswered, PENDING_SHOW_MS) && unanswered
   const [active, setActive] = useState(0)
