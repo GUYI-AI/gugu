@@ -1,13 +1,13 @@
 import type { GitChange } from '@gugu/session-core/git';
 import { GrowingList } from '@gugu/session-ui/react/growing-list';
-import { ChevronDown, ChevronRight, Folder, FolderOpen } from '@/lib/icons'
+import { ChevronDown, ChevronRight } from '@/lib/icons'
 import { useCallback, useMemo, useState } from 'react';
 import {
   buildNestedVisibleRows,
   isChainExpanded,
   type TreeRow,
 } from '@renderer/features/sessions/file-tree/tree-utils';
-import { FileMark } from '@gugu/session-ui/file-mark';
+import { FileMark, FolderMark } from '@gugu/session-ui/file-mark';
 import { cn } from '@renderer/utils/utils';
 import { ChangeStatusAffordance, type ChangeRow } from './changes-list-item';
 import { buildChangesTree } from './changes-tree-utils';
@@ -140,9 +140,7 @@ function DirectoryRow({
           <ChevronRight className="h-3.5 w-3.5" />
         )}
       </span>
-      <span className="shrink-0 text-foreground-muted">
-        {isExpanded ? <FolderOpen className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
-      </span>
+      <FolderMark open={isExpanded} size={16} className="shrink-0" />
       <span className="min-w-0 flex-1 truncate text-left text-sm">{displayName}</span>
     </button>
   );

@@ -67,6 +67,9 @@ beforeAll(async () => {
       <gugu-file-mark id="mark-blob" name="blob.bin"></gugu-file-mark>
       <gugu-file-mark id="tile-sheet" name="Q3 budget.vote.xlsx" tile style="width: 40px; height: 40px"></gugu-file-mark>
       <gugu-file-mark id="tile-pdf" name="report.pdf" tile style="width: 24px; height: 24px"></gugu-file-mark>
+      <gugu-file-mark id="folder" folder></gugu-file-mark>
+      <gugu-file-mark id="folder-open" folder open></gugu-file-mark>
+      <gugu-file-mark id="folder-own" folder style="color: rgb(1, 2, 3)"></gugu-file-mark>
     </main>`;
   document.getElementById('time')!.setAttribute('datetime', new Date(Date.now() - 3 * 60_000).toISOString());
   await settle();
@@ -196,6 +199,15 @@ describe('an App page with gugu\'s look', () => {
     expect(css(part('tile-pdf', 'tile')!, '--gg-file-tile')).toBe(css(document.documentElement, '--em-file-red'));
     expect([sheet.getBoundingClientRect().width, part('tile-pdf', 'tile')!.getBoundingClientRect().width]).toEqual([40, 24]);
     expect(css(sheet, 'background-color')).not.toBe('rgba(0, 0, 0, 0)');
+  });
+
+  // API 63: a folder from the same set, in the set's folder colour unless the App's CSS colours it.
+  it('draws a folder, closed or open, in the folder colour, which the App\'s own CSS can override', () => {
+    const icon = (id: string) => document.getElementById(id)!.dataset.fileIcon;
+    const mark = (id: string) => document.getElementById(id)!.shadowRoot!.querySelector('[part="mark"]')!;
+    expect([icon('folder'), icon('folder-open')]).toEqual(['folder', 'folder-open']);
+    expect(css(mark('folder'), 'color')).toBe(tokenColor('--em-file-mute', 'color'));
+    expect(css(mark('folder-own'), 'color')).toBe('rgb(1, 2, 3)');
   });
 
   it('loses to the App\'s own CSS, with no !important: the whole look is in @layer gugu', () => {

@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { Folder, Globe, Plus, X } from '@/lib/icons';
-import { FileMark } from '@gugu/session-ui/file-mark';
+import { Globe, Plus, X } from '@/lib/icons';
+import { FileMark, FolderMark } from '@gugu/session-ui/file-mark';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { TabViewContext } from '../tabs/core/tab-provider';
@@ -38,7 +38,7 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
             {recent.slice(0, 4).map((item) => {
               const remove = translate('browser.workspaceRemoveRecent', { label: item.title });
               return <StartTile key={item.id} label={item.title} title={item.title} onClick={item.open}
-                icon={item.kind === 'web' ? <Globe className="size-7" /> : item.kind === 'folder' ? <Folder className="size-7" /> : <FileMark name={item.title} size={28} />}
+                icon={item.kind === 'web' ? <Globe className="size-7" /> : item.kind === 'folder' ? <FolderMark size={28} /> : <FileMark name={item.title} size={28} />}
                 corner={<Button size="icon-xs" variant="ghost" aria-label={remove} title={remove} onClick={item.remove}><X className="size-3" /></Button>} />;
             })}
           </div> : <p className="text-sm text-foreground-muted">{translate('browser.workspaceRecentEmpty')}</p>}

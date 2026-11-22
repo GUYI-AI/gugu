@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { FILE_ICON_VIEWBOX, fileMark, IMAGE_OFF_GLYPH } from '@gugu/session-shared/file-marks';
+import { FILE_ICON_VIEWBOX, fileMark, folderMark, IMAGE_OFF_GLYPH } from '@gugu/session-shared/file-marks';
 
 // 一个 body 一个固定的 `{ __html }`:换一个新对象 React 就重写 innerHTML(见 icons.tsx 的 @@@icon-body-identity)。
 const HTML = new Map<string, { __html: string }>();
@@ -17,4 +17,11 @@ export function FileMark({ name, mime, off, ink, size = 20, className, style }: 
   const mark = fileMark(name, mime);
   return <svg width={size} height={size} viewBox={FILE_ICON_VIEWBOX} fill="none" aria-hidden="true" data-file-icon={mark.id} className={className}
     style={ink ? style : { ...style, color: mark.color }} dangerouslySetInnerHTML={html(mark.body)} />;
+}
+
+/** A folder among files (lists, trees, pickers), from the same set: closed, or `open` (an expanded tree row). */
+export function FolderMark({ open, size = 16, className, style }: { open?: boolean; size?: number; className?: string; style?: CSSProperties }) {
+  const mark = folderMark(open);
+  return <svg width={size} height={size} viewBox={FILE_ICON_VIEWBOX} fill="none" aria-hidden="true" data-file-icon={mark.id} className={className}
+    style={{ ...style, color: mark.color }} dangerouslySetInnerHTML={html(mark.body)} />;
 }

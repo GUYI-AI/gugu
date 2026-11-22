@@ -168,7 +168,9 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // @@@menu-order, the destructive last), `alone` (its name when its submenu holds only it and is shown in its place) and
 // `hotkey` (the key drawn at the row's end, as host menus do: 'F2', 'Mod+Click'). The host orders and folds; the App only
 // says which rows are rare. Presentation only, as 51: an older host draws the rows as given.
-export const EXTENSION_API_VERSION = 62;
+// 63 (ui-entry.ts): `<gugu-file-mark folder [open]>`, a folder from the host's file icon set, in currentColor (ui.css gives it
+// the set's folder colour). Presentation only, as 51: an older host draws the element as a file by its name.
+export const EXTENSION_API_VERSION = 63;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

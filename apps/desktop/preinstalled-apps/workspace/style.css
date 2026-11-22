@@ -19,7 +19,7 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 }
 .file-title { display: flex; align-items: center; gap: var(--em-spacing-xs); min-width: 0; }
 .file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-mark { width: 16px; height: 16px; flex: none; object-fit: contain; color: var(--em-foreground-muted); }
+.file-mark { width: 16px; height: 16px; flex: none; object-fit: contain; }
 .file-meta {
   display: flex; justify-content: flex-end; gap: var(--em-spacing-md); min-width: 0; white-space: nowrap; font-variant-numeric: tabular-nums;
   font-size: var(--em-font-caption); line-height: var(--em-lh-caption); color: var(--em-foreground-passive, var(--em-foreground-muted));

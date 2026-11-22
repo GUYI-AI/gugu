@@ -1,7 +1,7 @@
 import type { ExtensionHostContext, ExtensionMember } from '@shared/extensions/bridge-protocol';
 import { applyThemeColors } from '../theme-colors';
 import { formatCalendarDate } from '@gugu/session-shared/format';
-import { FILE_ICON_VIEWBOX, fileMark } from '@gugu/session-shared/file-marks';
+import { FILE_ICON_VIEWBOX, fileMark, folderMark } from '@gugu/session-shared/file-marks';
 import tileCss from '@gugu/session-shared/file-tile.css?raw';
 import { ICONS, ICON_SVG_ATTRIBUTES, timePhrase } from './ui-core';
 
@@ -13,7 +13,8 @@ import { ICONS, ICON_SVG_ATTRIBUTES, timePhrase } from './ui-core';
  *   <gugu-avatar user="user:…" name>         a member's face (with `name`: and their name)
  *   <gugu-time datetime="2026-10-05T08:30">  「刚刚 / 3 分钟前 / 08:20 / 昨天 14:20 / 10月3日」, kept current
  *   <gugu-empty icon="archive">…</gugu-empty> an empty state around the App's own words and button
- *   <gugu-file-mark name="a.xlsx" mime tile>  a file's icon in its colour; with `tile`: the host's file tile, as on its output cards
+ *   <gugu-file-mark name="a.xlsx" mime tile>  a file's icon in its colour; with `tile`: the host's file tile, as on its output cards;
+ *   <gugu-file-mark folder open>             a folder (API 63)
  *
  * And the theme: `<html data-gugu-theme>` follows `context.themeMode`, which picks the palette in ui.css (gugu.js has set
  * it already, before the first paint, where the host knows it then: `GuguHost.theme`).
@@ -236,10 +237,11 @@ export class GuguEmpty extends HTMLElement {
 
 // ── <gugu-file-mark> ────────────────────────────────────────────────────────────────────────────────────────────────
 // The host's own icons and tile (`file-marks.ts`, `file-tile.css`): a file looks the same in an App as on the host.
-// Drawn in its colour (`--em-file-<colour>`); with `tile`, on the same colour's wash.
+// Drawn in its colour (`--em-file-<colour>`); with `tile`, on the same colour's wash. With `folder` (`open`): a folder
+// (API 63), drawn in currentColor so an App's own CSS can colour it (ui.css gives it --em-file-mute).
 const fileMarkSheet = sheet(`:host{display:inline-block}svg{display:block;width:100%;height:100%}${tileCss}`);
 export class GuguFileMark extends HTMLElement {
-  static observedAttributes = ['name', 'mime', 'tile'];
+  static observedAttributes = ['name', 'mime', 'tile', 'folder', 'open'];
   connectedCallback(): void {
     this.draw();
   }
@@ -249,8 +251,9 @@ export class GuguFileMark extends HTMLElement {
   private draw(): void {
     const root = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
     root.adoptedStyleSheets = [fileMarkSheet];
-    const mark = fileMark(this.getAttribute('name') ?? '', this.getAttribute('mime') ?? undefined);
-    const color = mark.color.replace('--file-', '--em-file-');
+    const folder = this.hasAttribute('folder');
+    const mark = folder ? folderMark(this.hasAttribute('open')) : fileMark(this.getAttribute('name') ?? '', this.getAttribute('mime') ?? undefined);
+    const color = folder ? 'currentColor' : mark.color.replace('--file-', '--em-file-');
     const glyph = (cls: string) => `<svg part="glyph" class="${cls}" viewBox="${FILE_ICON_VIEWBOX}" fill="none" aria-hidden="true">${mark.body}</svg>`;
     root.innerHTML = this.hasAttribute('tile')
       ? `<span part="tile" class="gg-file-tile" style="--gg-file-tile: ${color}; --gg-file-tile-wash: var(--em-file-tile-wash)">${glyph('gg-file-tile-glyph')}</span>`

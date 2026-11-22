@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { fileFamily } from '@gugu/core/shared/fileFamily.mjs'
-import { fileIconId, fileMark } from '@gugu/session-shared/file-marks'
+import { fileIconId, fileMark, folderMark } from '@gugu/session-shared/file-marks'
 import { FILE_ICON_SVGS } from '../../../../packages/session-shared/src/file-icons/index'
 
 const CASES: [string, string, string][] = [
@@ -37,6 +37,12 @@ describe('fileIconId', () => {
     const mark = fileMark('budget.xlsx')
     expect(mark).toMatchObject({ id: 'sheet', color: 'var(--file-green)' })
     expect(mark.body).toContain('currentColor')
+  })
+
+  test('a folder is the set\'s folder, closed or open', () => {
+    expect(folderMark()).toMatchObject({ id: 'folder', color: 'var(--file-mute)' })
+    expect(folderMark(true).id).toBe('folder-open')
+    expect(folderMark(true).body).not.toBe(folderMark().body)
   })
 })
 

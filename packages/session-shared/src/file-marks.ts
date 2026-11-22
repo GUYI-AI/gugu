@@ -62,5 +62,11 @@ export function fileMark(name: string, mime?: string): { id: FileIconId; body: s
   return { id, body: BODIES[id] ?? BODIES.unknown, color: fileIconColor(id) };
 }
 
+/** A folder, closed or open, from the same set (manifest `folder` / `folder-open`). */
+export function folderMark(open = false): { id: FileIconId; body: string; color: string } {
+  const id: FileIconId = open ? 'folder-open' : 'folder';
+  return { id, body: BODIES[id], color: fileIconColor(id) };
+}
+
 /** 一张图读不回来时的字形（24 格，Solar）：这是状态不是文件类型，❌ 别画成 image —— 那会把「没读到」说成「是张图」。 */
 export const IMAGE_OFF_GLYPH = FILE_GLYPHS.ImageOff;
