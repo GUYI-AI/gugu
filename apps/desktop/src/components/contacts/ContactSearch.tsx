@@ -55,7 +55,7 @@ export function Marked({ text, hits }: { text: string; hits: number[] }) {
   return <>{runs.map((run) => <span key={run.at} className={run.hit ? 'text-[var(--fg)]' : 'text-[var(--muted-fg)]'}>{run.text}</span>)}</>
 }
 
-export function ContactSearch({ query, onQuery, mobile = false, head, people, agents, groups, onOpenContact, onOpenGroup, onLookupNumber, children }: {
+export function ContactSearch({ query, onQuery, mobile = false, head, people, agents, groups, onOpenContact, onOpenGroup, onSearchEveryone, children }: {
   query: string
   onQuery: (query: string) => void
   mobile?: boolean
@@ -66,7 +66,7 @@ export function ContactSearch({ query, onQuery, mobile = false, head, people, ag
   groups: ContactGroupChat[]
   onOpenContact: (contact: ContactUser) => void
   onOpenGroup: (group: ContactGroupChat) => void
-  onLookupNumber: (number: string) => void
+  onSearchEveryone: (text: string) => void
   /** 没有关键词时的浏览视图(滚动区本身)。 */
   children: ReactNode
 }) {
@@ -90,7 +90,7 @@ export function ContactSearch({ query, onQuery, mobile = false, head, people, ag
   const current = Math.min(active, rows.length - 1)
 
   const open = (row: Row) => {
-    if (row.kind === 'lookup') onLookupNumber(row.number)
+    if (row.kind === 'lookup') onSearchEveryone(row.number)
     else if (row.kind === 'group') onOpenGroup(row.hit.item)
     else onOpenContact(row.hit.item)
   }

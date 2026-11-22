@@ -29,7 +29,8 @@ export function migrateCustomModelConnections(): void {
   ).map((plugin) => plugin.metadata.id));
   const defaults = new Map(plugins.flatMap(({ metadata, capabilities: { models } }) =>
     models.kind === 'selectable' && models.defaultModelId ? [[metadata.id, models.defaultModelId] as const] : []));
-  migrateCustomModels(db, vendors, defaults);
+  const migrated = migrateCustomModels(db, vendors, defaults);
+  if (migrated.length) log.info('custom-model migration: moved API connections', { migrated });
   migratedDatabases.add(db);
 }
 

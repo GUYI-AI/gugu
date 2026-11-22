@@ -1,0 +1,17 @@
+/* Ink-line spot illustrations for empty pages. Each PNG carries only alpha (the ink); the colour is the text token,
+   so one file serves light and dark. Width comes from the caller; the height follows the drawing's own ratio. */
+.gg-illustration {
+  background-color: var(--text-primary);
+  opacity: 0.82;
+  mask-position: center;
+  mask-size: contain;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: contain;
+  -webkit-mask-repeat: no-repeat;
+}
+.gg-illustration[data-illustration='add-contact'] { aspect-ratio: 480 / 329; mask-image: url('../../assets/illustrations/add-contact.webp'); -webkit-mask-image: url('../../assets/illustrations/add-contact.webp'); }
+.gg-illustration[data-illustration='join-group'] { aspect-ratio: 480 / 317; mask-image: url('../../assets/illustrations/join-group.webp'); -webkit-mask-image: url('../../assets/illustrations/join-group.webp'); }
+.gg-illustration[data-illustration='new-task'] { aspect-ratio: 480 / 475; mask-image: url('../../assets/illustrations/new-task.webp'); -webkit-mask-image: url('../../assets/illustrations/new-task.webp'); }
+.gg-illustration[data-illustration='no-requests'] { aspect-ratio: 480 / 597; mask-image: url('../../assets/illustrations/no-requests.webp'); -webkit-mask-image: url('../../assets/illustrations/no-requests.webp'); }
+.gg-illustration[data-illustration='no-match'] { aspect-ratio: 480 / 503; mask-image: url('../../assets/illustrations/no-match.webp'); -webkit-mask-image: url('../../assets/illustrations/no-match.webp'); }

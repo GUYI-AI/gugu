@@ -1,8 +1,8 @@
 import { useGroupDisplayName } from '../hooks/useGroupDisplayName'
 import { GroupInvitationRow, GroupInvitationsPanel } from './contacts/GroupInvitationsPanel'
 import { ContactsPageFrame } from './contacts/ContactsPageFrame'
+import { Illustration } from './ui/Illustration'
 import { PaneEmptyState } from './ui/PaneEmptyState'
-import { UserPlus } from '@/lib/icons'
 import { messageForUser } from '../lib/userFacingError'
 import { Button } from './ui/Button'
 import { DetailFooter, RequestRow } from './requests/RequestRow'
@@ -324,9 +324,19 @@ export function NewFriendsPanel({ onOpenGroupChat, onBack }: { onOpenGroupChat?:
             <div className="flex max-w-[min(720px,calc(100%-var(--contacts-drawer-w,0px)))] flex-col">{kind.body}</div>
           </section>
         ))}
+        {kinds.length === 0 && requestsStatus === 'loading' ? (
+          <div aria-busy="true" data-testid="new-requests-pending" className="!mt-4 flex max-w-[560px] flex-col gap-4">
+            {['w-[38%]', 'w-[30%]', 'w-[44%]'].map((width) => (
+              <div key={width} className="flex items-center gap-3">
+                <div className="size-[var(--avatar-sm)] shrink-0 rounded-full bg-[var(--muted)]" />
+                <div className="flex flex-1 flex-col gap-2"><div className={`h-2.5 rounded-full bg-[var(--muted)] ${width}`} /><div className="h-2 w-1/5 rounded-full bg-[var(--muted)]" /></div>
+              </div>
+            ))}
+          </div>
+        ) : null}
         {kinds.length === 0 && requestsStatus === 'ready' ? (
-          <div className="grid min-h-[50%] place-items-center">
-            <PaneEmptyState icon={<UserPlus size={26} color="var(--text-tertiary)" />} caption={t('requestsPane.empty')} />
+          <div className="grid min-h-[60%] place-items-center">
+            <PaneEmptyState art={<Illustration name="no-requests" className="w-[84px]" />} caption={t('requestsPane.empty')} hint={t('requestsPane.emptyHint')} />
           </div>
         ) : null}
       </ContactsPageFrame>

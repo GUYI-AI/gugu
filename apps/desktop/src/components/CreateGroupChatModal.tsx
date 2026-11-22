@@ -7,6 +7,7 @@ import { useToast } from './toastContext'
 import { messageForUser } from '../lib/userFacingError'
 import { MemberPicker } from './member-picker/MemberPicker'
 import { Field } from './ui/Field'
+import { PaneEmptyState } from './ui/PaneEmptyState'
 
 interface CreateGroupChatModalProps {
   onClose: () => void
@@ -50,6 +51,8 @@ export function CreateGroupChatForm({ onClose, onCreated, initialName, initialSe
       underlineMobileSources
       actions={<Field.Input value={typedName} onChange={(event) => setTypedName(event.target.value)} disabled={creating}
         aria-label={t('createGroup.nameLabel')} placeholder={t('createGroup.namePlaceholder')} className={mobile ? undefined : 'w-64 max-w-full'} data-testid="create-group-name" />}
+      // 一个联系人都没有时不画空的选人器(列表里一句「No contacts」+ 灰掉的确认键),直接说清先要做什么。
+      empty={<PaneEmptyState caption={t('createGroup.noContactsTitle')} hint={t('createGroup.noContactsHint')} />}
       onConfirm={create}
       onClose={onClose}
     />

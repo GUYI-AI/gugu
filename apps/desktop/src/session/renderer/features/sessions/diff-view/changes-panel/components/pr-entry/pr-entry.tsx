@@ -27,30 +27,6 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 
 export type MergeMode = 'merge' | 'squash' | 'rebase';
 
-const mergeLabels: Record<MergeMode, string> = {
-  merge: 'Merge pull request',
-  squash: 'Squash and merge',
-  rebase: 'Rebase and merge',
-};
-
-const mergeDescriptions: Record<MergeMode, string> = {
-  merge: 'All commits from this branch will be added to the base branch via a merge commit.',
-  squash: 'All commits from this branch will be combined into one commit in the base branch.',
-  rebase: 'All commits from this branch will be rebased and added to the base branch.',
-};
-
-const bypassMergeLabels: Record<MergeMode, string> = {
-  merge: 'Bypass rules and merge',
-  squash: 'Squash without waiting',
-  rebase: 'Rebase without waiting',
-};
-
-const bypassMergeDescriptions: Record<MergeMode, string> = {
-  merge: 'Bypass unmet requirements and add all commits via a merge commit.',
-  squash: 'Bypass unmet requirements and combine all commits into one commit.',
-  rebase: 'Bypass unmet requirements and rebase all commits onto the base branch.',
-};
-
 export const PullRequestEntry = observer(function PullRequestEntry({ pr }: { pr: PullRequest }) {
   const { translate } = useSessionMessages();
   const { projectId } = useSessionViewContext();
@@ -98,10 +74,8 @@ export const PullRequestEntry = observer(function PullRequestEntry({ pr }: { pr:
   const mergeActions: SplitButtonAction[] = (['merge', 'squash', 'rebase'] as const).map(
     (strategy) => ({
       value: strategy,
-      label: shouldBypassRequirements ? bypassMergeLabels[strategy] : mergeLabels[strategy],
-      description: shouldBypassRequirements
-        ? bypassMergeDescriptions[strategy]
-        : mergeDescriptions[strategy],
+      label: translate(shouldBypassRequirements ? `pr.mergeMethod.${strategy}Bypass` : `pr.mergeMethod.${strategy}`),
+      description: translate(shouldBypassRequirements ? `pr.mergeMethod.${strategy}BypassHint` : `pr.mergeMethod.${strategy}Hint`),
       action: () => handleMergeClick(strategy),
     })
   );

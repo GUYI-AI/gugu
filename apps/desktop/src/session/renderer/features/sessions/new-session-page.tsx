@@ -33,6 +33,9 @@ import {
 } from './session-composer-styles';
 import { CreateDeliveryError } from './create-session-modal/create-delivery-error';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from './composer-drafts';
+import { Illustration } from '@/components/ui/Illustration';
+import { Button } from '@/components/ui/Button';
+import { cn } from '@/lib/cn';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 
@@ -271,9 +274,7 @@ export const NewSessionPage = observer(function NewSessionPage({
       <div className="flex min-h-0 flex-1 items-center justify-center px-4">
         {/* 去掉入场滑入(不解释状态变化,只是每次开页都要看的表演)与 `text-xl font-semibold`
             (`.gg-type-page-title` 现在真有定义 20/28/600,别写两遍)。规格 §2 */}
-        <h1 className="gg-type-page-title">
-          {translate('task.newTask')}
-        </h1>
+        <NewTaskHero />
       </div>
       <div className={sessionComposerDockBandClassName}>
         <div className={sessionComposerDockedWidthClassName}>
@@ -320,3 +321,33 @@ export const newSessionView = {
   MainPanel: NewSessionMainPanel,
   transientParams: ['agentId', 'deviceId'],
 } satisfies ViewDefinition<NewSessionViewParams>;
+
+// 新任务页的大空白:一张墨线插画 + 一句说明 + 三个起手句(owner 11-22 定:就这三条,前提是产品确实能做到 ——
+// 三条都是本机 Codex / Claude 在任意项目或任务工作区里就能做的事)。点一下 = 把那句话放进下面的输入框(与 App 页
+// 「对 agent 说」同一条路:composerDrafts),不直接发;输入框里有字了起手句就收起,不和用户自己写的话抢位置。
+const STARTERS = [
+  ['task.starterExplain', 'task.starterExplainPrompt'],
+  ['task.starterFixTest', 'task.starterFixTestPrompt'],
+  ['task.starterSummarize', 'task.starterSummarizePrompt'],
+] as const;
+
+const NewTaskHero = observer(function NewTaskHero() {
+  const { translate } = useSessionMessages();
+  const typed = composerDrafts.get(NEW_SESSION_DRAFT_KEY).trim().length > 0;
+  return (
+    <div className="flex flex-col items-center gap-2 text-center" data-testid="new-task-hero">
+      <Illustration name="new-task" className="w-[112px]" />
+      {/* `.gg-type-page-title` 是 20/28/600 的页面标题,别再写一遍字号。 */}
+      <h1 className="gg-type-page-title mt-3">{translate('task.newTask')}</h1>
+      <p className="m-0 text-[length:var(--font-body)] text-[var(--text-secondary)]">{translate('task.newTaskHint')}</p>
+      <div className={cn('mt-3 flex flex-wrap justify-center gap-2', typed && 'invisible')} aria-hidden={typed || undefined}>
+        {STARTERS.map(([label, prompt]) => (
+          <Button key={label} variant="secondary" size="sm" className="rounded-[var(--radius-capsule)]" data-testid="new-task-starter"
+            onClick={() => composerDrafts.set(NEW_SESSION_DRAFT_KEY, translate(prompt))}>
+            {translate(label)}
+          </Button>
+        ))}
+      </div>
+    </div>
+  );
+});

@@ -31,8 +31,15 @@ function legacyModelId(model: string | undefined, listed: readonly string[], har
   return name && listed.includes(name) ? name : model;
 }
 
-/** Atomic metadata-only migration: no secret is decrypted, copied or deleted. */
-export function migrateCustomModels(database: AppDb, vendorKeyProviders: ReadonlySet<string>, harnessDefaults: ReadonlyMap<string, string>): void {
+export type CustomModelMigration = {
+  namespace: string; from: string;
+  /** `models:custom/<id>` a former API connection moved to; absent when only its vendor-key marker was set. */
+  to?: string; sessions: number; automations: number;
+};
+
+/** Atomic metadata-only migration: no secret is decrypted, copied or deleted. Returns what it changed. */
+export function migrateCustomModels(database: AppDb, vendorKeyProviders: ReadonlySet<string>, harnessDefaults: ReadonlyMap<string, string>): CustomModelMigration[] {
+  const migrated: CustomModelMigration[] = [];
   database.transaction((tx) => {
     const customRows = tx.select().from(providerAccounts).where(eq(providerAccounts.providerId, 'models:custom')).all();
     const byRef = new Map(customRows.map((row) => [row.credentialRef, row.accountId]));
@@ -65,6 +72,7 @@ export function migrateCustomModels(database: AppDb, vendorKeyProviders: Readonl
         if (row.meta?.credentialSource !== 'vendor-key') {
           tx.update(providerAccounts).set({ meta: { ...row.meta!, credentialSource: 'vendor-key' } })
             .where(eq(providerAccounts.id, row.id)).run();
+          migrated.push({ namespace: row.providerId, from: row.accountId, sessions: 0, automations: 0 });
         }
         continue;
       }
@@ -96,6 +104,8 @@ export function migrateCustomModels(database: AppDb, vendorKeyProviders: Readonl
       if (old.migratedTo === id) continue;
       tx.update(providerAccounts).set({ meta: { ...row.meta!, harnessConnection: { ...old, migratedTo: id } } })
         .where(eq(providerAccounts.id, row.id)).run();
+      const moved: CustomModelMigration = { namespace: row.providerId, from: row.accountId, to: `models:custom/${id}`, sessions: 0, automations: 0 };
+      migrated.push(moved);
       for (const session of sessionRows) {
         if (session.provider !== providerId || !session.config || customModelRefFromOption(session.config.model)) continue;
         if (session.config.subscriptionConnectionId !== row.accountId && !(row.isDefault && !session.config.subscriptionConnectionId)) continue;
@@ -104,6 +114,7 @@ export function migrateCustomModels(database: AppDb, vendorKeyProviders: Readonl
         tx.update(sessions).set({
           config: { ...session.config, model: customModelOptionId({ connectionId: id, modelId }) },
         }).where(eq(sessions.id, session.id)).run();
+        moved.sessions += 1;
         tx.insert(kv).values({ key: `sessionpage-platform-model:${session.id}`, value: JSON.stringify({ platformModel: null }) }).onConflictDoUpdate({ target: kv.key, set: { value: JSON.stringify({ platformModel: null }) } }).run();
       }
 
@@ -113,6 +124,7 @@ export function migrateCustomModels(database: AppDb, vendorKeyProviders: Readonl
           if (!config || config.provider !== providerId || config.platformModel || customModelRefFromOption(config.model)) continue;
           const model = customModelOptionId({ connectionId: id, modelId: legacyModelId(config.model, listed, harnessDefault) });
           tx.update(automations).set({ agentConfig: { ...config, model, platformModel: null } }).where(eq(automations.id, automation.id)).run();
+          moved.automations += 1;
         }
         const memory = tx.select().from(appSettings).where(eq(appSettings.key, 'newSessionMemory')).get();
         if (memory) {
@@ -139,4 +151,5 @@ export function migrateCustomModels(database: AppDb, vendorKeyProviders: Readonl
     const model = misread.get(value?.lastStarted?.model ?? '');
     if (model) tx.update(appSettings).set({ value: JSON.stringify({ ...value, lastStarted: { ...value.lastStarted, model } }) }).where(eq(appSettings.key, 'newSessionMemory')).run();
   });
+  return migrated;
 }

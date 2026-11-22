@@ -384,6 +384,7 @@ export default {
     "fileGone": "文件已删除",
     "fileVersion": "第 {{n}} 版",
     "fileExpired": "文件已过期",
+    "originalExpired": "原图已过期，只剩这张缩略图",
     "fileMissing": "已失效",
     "reupload": "重新上传",
     "selectOriginal": "选择原文件",

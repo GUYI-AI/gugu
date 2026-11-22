@@ -10,9 +10,10 @@ import {
   type PullRequestSessionItem,
 } from './pull-request-session';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { translateSessionMessage } from '@renderer/localization/locale-store';
 
 function commentAuthorLabel(comment: PullRequestSessionItem): string {
-  return comment.author?.displayName ?? comment.author?.userName ?? 'Unknown author';
+  return comment.author?.displayName ?? comment.author?.userName ?? translateSessionMessage('pr.unknownAuthor');
 }
 
 function commentLocationLabel(comment: PullRequestSessionItem): string | null {

@@ -4,7 +4,7 @@ import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { TabViewContext } from '../tabs/core/tab-provider';
 import { recentToolPanel, useRecentTools, type RecentTool } from './workspace-recent-tools';
-import { PaneEmptyStateAction, type WorkspacePanelAction, type WorkspacePanelSection } from '../sessions/pane-empty-state';
+import { PaneEmptyStateAction, useShortcutTitle, type WorkspacePanelAction, type WorkspacePanelSection } from '../sessions/pane-empty-state';
 import { openAppsLocation } from '@renderer/features/apps/apps-location';
 
 type WorkspaceRecentItem = {
@@ -20,6 +20,7 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
   recent: readonly WorkspaceRecentItem[];
 }) {
   const { translate } = useSessionMessages();
+  const shortcutTitle = useShortcutTitle();
   const sectionLabels: Record<WorkspacePanelSection, string> = {
     builtin: translate('browser.workspaceBuiltins'),
     extensions: translate('extensions.appsSection'),
@@ -33,7 +34,7 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
           <div className="grid grid-cols-2 gap-2 @max-[260px]:grid-cols-1">
             {actions.filter((item) => (item.section ?? 'builtin') === section).map((item) => <div key={item.id} className="relative min-w-0">
               <PaneEmptyStateAction icon={item.icon} label={item.label} disabled={item.disabled}
-                shortcutSettingsKey={item.shortcutSettingsKey} title={item.title ?? item.label} onClick={item.onClick}
+                title={shortcutTitle(item.title ?? item.label, item.shortcutSettingsKey)} onClick={item.onClick}
                 className={`border border-border bg-background text-foreground ${item.trailing ? 'pr-9' : ''}`} />
               {item.trailing && <span className="absolute inset-y-0 right-1 flex items-center">{item.trailing}</span>}
             </div>)}
