@@ -32,7 +32,7 @@ const provider = (kind: string, rename?: (name: string) => void) => createTabPro
     rename: { label: 'Rename', exec: (_resource, name?: string) => { if (name) rename(name); } },
   } : undefined,
   TabBarItem: ({ tab, host, ctx }) => <GenericTabItem tab={tab} host={host} ctx={ctx}
-    label={kind === 'conversation' ? '聊天标题' : '工具页签'} renameOnTitleClick={kind === 'conversation' && !!rename} />,
+    label={kind === 'conversation' ? '聊天标题' : '工具页签'} renameOnDoubleClick={kind === 'conversation' && !!rename} />,
   TabBarItemDragPreview: () => <GenericTabDragPreview label="工具页签" />,
 });
 
@@ -86,18 +86,20 @@ async function mountWorkspace(rename?: (name: string) => void) {
   return { inside, width, mode, chat, tool, neighbour, workspace, openWindow };
 }
 
-it('renames from the standalone chat title and cancels with Escape', async () => {
+it('renames the standalone chat title on double-click only, and cancels with Escape', async () => {
   const rename = vi.fn();
-  const { mode } = await mountWorkspace(rename);
+  const { mode, inside } = await mountWorkspace(rename);
   await mode('empty');
-  const title = page.getByRole('button', { name: /聊天标题/ });
-  const input = page.getByRole('textbox');
+  const title = page.getByText('聊天标题');
+  const input = page.getByRole('textbox', { name: '会话名称' });
   await userEvent.click(title);
+  expect(inside('input')).toBeNull();
+  await userEvent.dblClick(title);
   await expect.element(input).toHaveValue('聊天标题');
   await input.fill('放弃修改');
   await userEvent.keyboard('{Escape}');
   expect(rename).not.toHaveBeenCalled();
-  await userEvent.click(title);
+  await userEvent.dblClick(title);
   await input.fill('  新名字  ');
   await userEvent.keyboard('{Enter}');
   expect(rename).toHaveBeenCalledExactlyOnceWith('新名字');

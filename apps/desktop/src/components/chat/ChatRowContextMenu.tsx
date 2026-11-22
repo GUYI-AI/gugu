@@ -39,7 +39,7 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
   const { chats, identitiesById, clearConversation, undoConversationHide } = useChatStore('chats', 'identitiesById', 'clearConversation', 'undoConversationHide')
   const nativeRows = directoryRows(useDirectoryDevices(), useLiveDeviceSessions())
   const { user } = useAuth()
-  const { removeOwnedAgent, renameAgent } = useContactsStore()
+  const { removeOwnedAgent, updateAgentProfile } = useContactsStore()
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const markRead = useMarkChatsRead()
@@ -68,7 +68,7 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
       else if (action === 'rename-agent' && ownedAgent) showModal('renameSessionModal', {
         sessionId: '',
         currentTitle: ownedAgent.display_name,
-        rename: (nextName) => renameAgent(ownedAgent.id, nextName),
+        rename: (name) => updateAgentProfile(ownedAgent.id, { name }),
         labels: {
           title: t('agentName.editAction', { ns: 'contacts' }),
           field: t('agentName.label', { ns: 'contacts' }),

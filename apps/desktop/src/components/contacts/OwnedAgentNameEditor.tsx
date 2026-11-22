@@ -13,7 +13,7 @@ import { Hint } from '../ui/Tooltip'
  * The agent's name line: its owner renames it in place from a pencil beside the name (the assistant's name in
  * Settings has the same shape). Edits the agent identity, independently of task titles, local aliases and group roles.
  */
-export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membership, className, clickName, children }: {
+export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membership, className, children }: {
   agentId: string
   name: string
   ownerUserId?: string | null
@@ -21,13 +21,12 @@ export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membe
   membership?: string
   /** The host's name typography; the input inherits it. */
   className?: string
-  clickName?: boolean
   /** The name as the host draws it. */
   children: ReactNode
 }) {
   const { t } = useTranslation('contacts')
   const { user } = useAuth()
-  const { renameAgent } = useContactsStore()
+  const { updateAgentProfile } = useContactsStore()
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -49,7 +48,7 @@ export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membe
     setSaving(true)
     setError(null)
     try {
-      await renameAgent(agentId, next)
+      await updateAgentProfile(agentId, { name: next })
       setDraft(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('agentName.failed'))
@@ -58,13 +57,6 @@ export function OwnedAgentNameEditor({ agentId, name, ownerUserId, status, membe
       setSaving(false)
     }
   }
-  if (clickName && canRename && draft === null) return (
-    <button type="button" className={cn('flex min-w-0 cursor-text items-center gap-1 rounded text-left hover:bg-row-hover', className)}
-      aria-label={`${t('agentName.editAction')}: ${name}`} title={t('agentName.editAction')}
-      onClick={(event) => { event.stopPropagation(); setDraft(name) }}>
-      {children}
-    </button>
-  )
   if (draft === null || !canRename) return (
     <div className={cn('flex min-w-0 items-center gap-1', className)}>
       {/* 名字封顶两行在文字上,❌ 在这个 flex 行上(line-clamp 是 display:-webkit-box)。 */}

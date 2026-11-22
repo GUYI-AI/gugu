@@ -65,7 +65,7 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
               },
             ]
       }
-      renameOnTitleClick={!!session && !store.isTransient}
+      renameOnDoubleClick={!!session && !store.isTransient}
       renameValue={rawTitle}
       renameMaxLength={MAX_SESSION_TITLE_LENGTH}
     />

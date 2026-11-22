@@ -41,8 +41,8 @@ export interface GenericTabItemProps {
   renameValue?: string;
   /** Max character length enforced on the rename input. */
   renameMaxLength?: number;
-  /** Clicking the standalone conversation title starts inline rename. */
-  renameOnTitleClick?: boolean;
+  /** Double-clicking the conversation's title (standalone or as the workspace's first tab) starts inline rename; a click keeps selecting it. */
+  renameOnDoubleClick?: boolean;
   closeDisabled?: boolean;
 }
 
@@ -71,7 +71,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   kindCommands,
   renameValue,
   renameMaxLength,
-  renameOnTitleClick,
+  renameOnDoubleClick,
   closeDisabled,
 }: GenericTabItemProps) {
   const { translate } = useSessionMessages();
@@ -165,19 +165,10 @@ export const GenericTabItem = observer(function GenericTabItem({
   if (workspaceRole === 'title') {
     return (
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
-        <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title="">
-          {renameOnTitleClick && !isEditing ? (
-            <button
-              type="button"
-              className="flex min-w-0 cursor-text items-center gap-2 rounded text-left hover:bg-row-hover"
-              aria-label={`${translate('task.rename')}: ${label}`}
-              title={`${translate('task.rename')}: ${label}`}
-              onClick={(event) => { event.stopPropagation(); startRename(); }}
-            >
-              {preSlot}
-              <span className="truncate">{label}</span>
-            </button>
-          ) : <>{preSlot}{editableTitle ?? <span className="truncate" title={tooltip ?? label}>{label}</span>}</>}
+        <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title=""
+          onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}>
+          {preSlot}
+          {editableTitle ?? <span className="truncate" title={tooltip ?? label}>{label}</span>}
           {statusSlot}
         </div>
       </TabContextMenu>
@@ -190,6 +181,7 @@ export const GenericTabItem = observer(function GenericTabItem({
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
         <TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
           preSlot={preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={select}
+          onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}
           onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }} />
       </TabContextMenu>
     </TabSlot>;

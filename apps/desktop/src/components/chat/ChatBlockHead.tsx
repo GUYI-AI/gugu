@@ -39,7 +39,7 @@ export function ChatBlockHead({ host, actions, chat, name, avatar, isAgent, agen
       {host.title ? createPortal(
         !room && isAgent && agentIdentity && !agentIdentity.removed_at ? (
           <OwnedAgentNameEditor key={agentIdentity.id} agentId={agentIdentity.id} name={agentIdentity.display_name}
-            ownerUserId={agentIdentity.owner_user_id} clickName>{title}</OwnedAgentNameEditor>
+            ownerUserId={agentIdentity.owner_user_id}>{title}</OwnedAgentNameEditor>
         ) : title,
         host.title,
       ) : null}

@@ -48,7 +48,7 @@ export const SessionTabBarItem = observer(function SessionTabBarItem({
               },
             ]
       }
-      renameOnTitleClick={!!store}
+      renameOnDoubleClick={!!store}
       renameValue={rawTitle}
       renameMaxLength={MAX_SESSION_TITLE_LENGTH}
     />
