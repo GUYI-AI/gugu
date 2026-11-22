@@ -68,7 +68,7 @@ describe('a large cloud download reads its ranges in parallel', () => {
     const c = memory(), { cloud, signs } = providers(url, big, c.store), sink = collect()
     await cloud.download!(revisionOf(big), context, sink)
     expect(digest(sink.bytes())).toBe(digest(big))
-    expect(ranges.sort()).toEqual([`bytes=0-${13 * CHUNK - 1}`, lane1, lane2].sort())
+    expect(ranges.slice(0, 3).sort()).toEqual([`bytes=0-${13 * CHUNK - 1}`, lane1, lane2].sort())
     expect(signs).toHaveLength(1)
     expect(c.chunks.size).toBe(0)
   })
@@ -114,7 +114,35 @@ describe('a large cloud download reads its ranges in parallel', () => {
     const sink = collect()
     await providers(url, big, memory().store).cloud.download!(revisionOf(big), context, sink)
     expect(digest(sink.bytes())).toBe(digest(big))
-    expect(ranges.filter(range => range !== lane1 && range !== lane2 && range !== `bytes=0-${13 * CHUNK - 1}`)).toEqual([`bytes=${15 * CHUNK}-${27 * CHUNK - 1}`])
+    // The cut lane reopens at its first missing chunk (another lane may have taken part of its share by then).
+    expect(ranges.filter(range => range?.startsWith(`bytes=${15 * CHUNK}-`))).toHaveLength(1)
+  })
+
+  it('a slow connection does not hold the read back: the other lanes take its share', async () => {
+    // 120 chunks: three shares of 40. The middle share's first response is throttled (64 KiB per 50 ms, a real slow
+    // connection); every other response is served at once.
+    const file = randomBytes(60 * MB), slowStart = 40 * CHUNK, requested: { start: number; end: number; slow: boolean }[] = []
+    const url = await objectStore((request, response) => {
+      const [, from, to] = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range ?? '') ?? []
+      const start = Number(from ?? 0), end = to ? Number(to) + 1 : file.length
+      const slow = start === slowStart && !requested.some(seen => seen.slow)
+      requested.push({ start, end, slow })
+      if (!slow) return serveRange(request, response, file)
+      response.writeHead(206, { 'content-range': `bytes ${start}-${end - 1}/${file.length}`, 'content-length': end - start })
+      let at = start
+      const drip = setInterval(() => {
+        if (response.destroyed || at >= end) { clearInterval(drip); response.end(); return }
+        response.write(file.subarray(at, at += 64 * 1024))
+      }, 50)
+      response.on('close', () => clearInterval(drip))
+    })
+    const sink = collect()
+    await providers(url, file, memory().store).cloud.download!(revisionOf(file), context, sink)
+    expect(digest(sink.bytes())).toBe(digest(file))
+    // Of the slow share's 40 chunks, the other connections asked for nearly all.
+    const taken = new Set<number>()
+    for (const { start, end, slow } of requested) if (!slow) for (let c = Math.ceil(start / CHUNK); c * CHUNK < end; c++) if (c >= 40 && c < 80) taken.add(c)
+    expect(taken.size).toBeGreaterThanOrEqual(36)
   })
 })
 

@@ -32,9 +32,12 @@ const DOWNLOAD_LANES = 3
 
 /**
  * Retain verified chunks; reconnect only the incomplete chunk, with the signer's authorized origin fallback.
- * @@@download-lanes - a large file is read as up to `lanes` contiguous byte ranges of the same signed URL at once. The
- * first lane streams to the reader; the others run ahead into the chunk cache, which is where every chunk already goes,
- * and the reader takes theirs from it in order. The whole-file digest is still checked by the reader, in order.
+ * @@@download-lanes - a large file is read by up to `lanes` lanes of the same signed URL at once, each on its own
+ * connection. Each starts on an equal share and puts every chunk into the chunk cache, which is where every chunk already
+ * goes; the reader takes them in order, so the whole-file digest is still checked in order. A lane that finishes its
+ * share takes the back half of the largest share left, in whole chunks, on a new ranged GET; the lane that gave it up stops
+ * where the taken half starts. Halving keeps the GETs few, and the read ends when the file does, not when the slowest
+ * connection's third does.
  */
 function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof globalThis.fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress'], lanes = 1) {
   const count = Math.max(1, Math.ceil(size / FILE_CHUNK_BYTES))
@@ -53,10 +56,14 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
   }
   const lane = (first: number, end: number) => {
     const transport = createFileDownloadTransport(target, fetcher, session, stopping)
-    const stopByte = Math.min(end * FILE_CHUNK_BYTES, size)
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined, buffered: Uint8Array = new Uint8Array(), next = -1, interrupted = false
+    // The last byte the open response was asked for: a lane's share can shrink under an open response.
+    let stopByte = size
     const reset = async () => { transport.cancel(reader); reader = undefined; buffered = new Uint8Array() }
-    const open = (offset: number) => transport.open({ headers: stopByte !== size ? { Range: `bytes=${offset}-${stopByte - 1}` } : offset ? { Range: `bytes=${offset}-` } : {} })
+    const open = (offset: number) => {
+      stopByte = Math.min(runner.end * FILE_CHUNK_BYTES, size)
+      return transport.open({ headers: stopByte !== size ? { Range: `bytes=${offset}-${stopByte - 1}` } : offset ? { Range: `bytes=${offset}-` } : {} })
+    }
     const chunk = async (index: number): Promise<Uint8Array> => {
       stopping.throwIfAborted()
       const offset = index * FILE_CHUNK_BYTES, bytes = new Uint8Array(length(index))
@@ -107,41 +114,50 @@ function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (r
         if (!origin && lease?.origin_available === true) await (switching ??= sign(false, true).then(apply))
       })
     }
-    return { first, end, chunk, reset, interrupted: () => interrupted }
+    const runner = { pos: first, end, chunk, reset, interrupted: () => interrupted }
+    return runner
   }
   const all = Array.from({ length: width }, (_, k) => lane(Math.floor(k * count / width), Math.floor((k + 1) * count / width)))
-  // Every lane but the first runs ahead on its own; the reader waits for its chunks in order.
-  let ahead: Map<number, Promise<unknown>> | undefined
-  const running: Promise<unknown>[] = []
-  const start = () => {
-    if (ahead) return ahead
-    ahead = new Map()
-    for (const runner of all.slice(1)) {
-      let chain: Promise<unknown> = Promise.resolve()
-      for (let index = runner.first; index < runner.end; index++) {
-        chain = chain.then(() => runner.chunk(index).then(() => undefined))
-        ahead.set(index, chain)
+  // The chunk the reader is waiting for, handed over as it arrives; any other it takes from the cache.
+  const arrived = new Map<number, (bytes: Uint8Array) => void>()
+  const work = async (runner: (typeof all)[number]) => {
+    for (;;) {
+      while (runner.pos < runner.end) {
+        const index = runner.pos++
+        const bytes = await runner.chunk(index)
+        arrived.get(index)?.(bytes); arrived.delete(index)
       }
-      running.push(chain.catch(error => { if (failure === undefined && !stop.signal.aborted) { failure = error; failed?.(error) } }))
+      await runner.reset()
+      const from = all.reduce((most, other) => other.end - other.pos > most.end - most.pos ? other : most)
+      const taken = Math.floor((from.end - from.pos) / 2)
+      if (!taken) return
+      runner.pos = from.end - taken; runner.end = from.end; from.end = runner.pos
     }
-    return ahead
+  }
+  let running: Promise<unknown>[] | undefined
+  const start = () => {
+    running ??= all.map(runner => work(runner).catch(error => { if (failure === undefined && !stop.signal.aborted) { failure = error; failed?.(error) } }))
   }
   const chunk = async (index: number): Promise<Uint8Array> => {
     signal?.throwIfAborted()
     if (last?.index === index) return last.bytes
-    const runner = all.find(candidate => index < candidate.end)!
-    const pending = start().get(index)
-    const bytes = await Promise.race([failing, pending ? pending.then(async () => {
-      const hit = await cache.get(key, index)
+    // One lane is the reader's own: it reads on demand, as a read always did.
+    if (width === 1) {
+      const bytes = await all[0]!.chunk(index)
+      last = { index, bytes }
+      return bytes
+    }
+    start()
+    const bytes = await Promise.race([failing, settled.has(index) ? cache.get(key, index).then(hit => {
       if (!hit || hit.length !== length(index)) throw new Error('Invalid cached file chunk')
       return hit
-    }) : runner.chunk(index)])
+    }) : new Promise<Uint8Array>(resolve => arrived.set(index, resolve))])
     last = { index, bytes }
     return bytes
   }
   return { size, interrupted: () => all.some(runner => runner.interrupted()), async dispose() {
     // Lanes still reading ahead stop before the caller keeps or clears their chunks.
-    stop.abort(); await Promise.all([...all.map(runner => runner.reset()), ...running])
+    stop.abort(); await Promise.all([...all.map(runner => runner.reset()), ...running ?? []])
   }, async read(offset: number, length: number) {
     requireFileRange(size, offset, length)
     if (!size) await chunk(0)
