@@ -652,6 +652,28 @@ describe('a cloud object for the renderer, fetched by main', () => {
     expect(objects.asked).toEqual([]);
   });
 
+  it('passes the bytes on in pieces: a burst together, and what is ready at once when the network pauses', async () => {
+    const piece = (n: number) => new Uint8Array(16 * 1024).fill(n);
+    let release!: () => void;
+    const paused = new Promise<void>((resolve) => { release = resolve; });
+    objects.answer = async () => new Response(new ReadableStream<Uint8Array>({
+      async start(controller) {
+        for (let i = 0; i < 8; i++) controller.enqueue(piece(i)); // a burst the network had ready
+        await paused;
+        controller.enqueue(piece(9)); controller.close();
+      },
+    }), { status: 206, headers: { 'content-range': 'bytes 0-147455/147456' } });
+    const answer = await handlePreviewRequest(new Request(cloudObjectUrl(signed), { headers: { Range: 'bytes=0-' } }), 'pane');
+    const reader = answer.body!.getReader();
+    const first = await reader.read();
+    // The burst arrives as one piece, without waiting for the bytes still to come.
+    expect(first.value?.byteLength).toBe(8 * 16 * 1024);
+    release();
+    const second = await reader.read();
+    expect(second.value?.byteLength).toBe(16 * 1024);
+    expect((await reader.read()).done).toBe(true);
+  });
+
   it('says a request that got no answer as that, with its kind, never as bytes', async () => {
     for (const kind of ['proxy', 'tls', 'connect'] as const) {
       objects.answer = async () => { throw new EgressError(kind, 'files.example'); };
