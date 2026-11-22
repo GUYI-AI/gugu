@@ -179,7 +179,8 @@ it.each(['light', 'dark'] as const)('over the App panel the task reads as part o
   expect(title.textContent).toBe('能力测试:写一份说明');
   expect(title.scrollHeight).toBeLessThanOrEqual(title.clientHeight + 1);
   expect(box(title).top).toBeGreaterThanOrEqual(box(header).top);
-  expect(header.querySelector('[data-testid="agent-watch-session-status"]')?.textContent).toBeTruthy();
+  // The transcript already shows what the agent is doing: the header carries no status line under the title.
+  expect(header.querySelector('.gg-pane-heading-subtitle')).toBeNull();
   for (const item of [back, avatar, title, ...header.querySelectorAll('button')]) {
     expect(box(item).right).toBeLessThanOrEqual(box(collapse).left - 8 + 0.5);
   }
