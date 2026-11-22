@@ -21,7 +21,13 @@ $Target = [IO.Path]::GetFullPath($Target).TrimEnd('\')
 if ($Target -eq [IO.Path]::GetPathRoot($Target).TrimEnd('\')) { throw 'Cannot install at a volume root' }
 $journal = "$Target.gugu-install-$AppId"
 $statePath = Join-Path $journal 'transaction.json'
-$stage = Join-Path $journal 'stage'
+# @@@short-stage - the package is extracted to stage + each file's relative path, and the extractor (nsisunz)
+# fails on paths past MAX_PATH. So the stage is a short sibling of the target, on the target's volume (the commit
+# is a directory rename), not a folder inside the journal: that added ".gugu-install-<appId>\stage" and pushed the
+# deepest packaged file past 259 characters. The journal records the stage it created; older journals have none,
+# because their stage lived inside the journal and goes with it.
+# electron-builder.cjs checks the deepest packaged path against this name (STAGE_SUFFIX in windows-install-paths.cjs).
+$stage = "$Target.new"
 $reg = Join-Path $env:SystemRoot 'System32\reg.exe'
 function Registry-Path([string]$hive, [string]$key) {
   $full = if ($hive -eq 'HKLM') { 'HKEY_LOCAL_MACHINE' } else { 'HKEY_CURRENT_USER' }
@@ -159,13 +165,14 @@ function Save-State($s) {
 function Load-State {
   $s = Get-Content -LiteralPath $statePath -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($s.appId -ne $AppId -or $s.target -ne $Target -or $s.format -ne 1) { throw 'Unknown installer journal; preserved for inspection' }
+  if ($s.stage -and $s.stage -ne $stage) { throw 'Invalid staging path; preserved for inspection' }
   foreach ($entry in $s.roots) {
     if ($entry.backup -ne "$($entry.root).gugu-backup-$AppId") { throw 'Invalid backup path; preserved for inspection' }
   }
   return $s
 }
-function Remove-OwnedStage {
-  if (Test-Path -LiteralPath $stage) { Retry-Files { Remove-Item -LiteralPath $stage -Recurse -Force } }
+function Remove-OwnedStage($s) {
+  if ($s.stage -and (Test-Path -LiteralPath $s.stage)) { Retry-Files { Remove-Item -LiteralPath $s.stage -Recurse -Force } }
 }
 function Snapshot-Shortcuts {
   $files = @(); $missing = @()
@@ -238,7 +245,7 @@ function Restore-State($s) {
     }
   }
   Restore-Shortcuts $s
-  Remove-OwnedStage
+  Remove-OwnedStage $s
   Remove-Item -LiteralPath $journal -Recurse -Force
 }
 function Finish-State($s) {
@@ -301,8 +308,10 @@ try {
         if ($other.root.StartsWith("$($entry.root)\", [StringComparison]::OrdinalIgnoreCase)) { throw 'Nested registered installations cannot be replaced safely' }
       }
     }
+    # Only a journal claims a stage; a stage folder without one is not ours to delete.
+    if (Test-Path -LiteralPath $stage) { throw "Unclaimed staging folder exists; preserved: $stage" }
     New-Item -ItemType Directory -Path $journal | Out-Null
-    $s = @{ format=1; appId=$AppId; target=$Target; token=[Guid]::NewGuid().ToString('N'); roots=@($roots); registry=@(); registryMayHaveChanged=$false; completed=$false }
+    $s = @{ format=1; appId=$AppId; target=$Target; stage=$stage; token=[Guid]::NewGuid().ToString('N'); roots=@($roots); registry=@(); registryMayHaveChanged=$false; completed=$false }
     Save-State $s
     foreach ($hive in $scope) {
       foreach ($key in @($InstallKey,$UninstallKey)) {

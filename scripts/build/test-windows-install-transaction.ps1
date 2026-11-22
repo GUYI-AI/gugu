@@ -9,7 +9,7 @@ $app = "gugu.fixture.$id"
 $key = "Software\GuguInstallerFixture\$id\install"
 $uninstall = "Software\GuguInstallerFixture\$id\uninstall"
 $journal = "$target.gugu-install-$app"
-$stage = Join-Path $journal 'stage'
+$stage = "$target.new"
 $backup = "$target.gugu-backup-$app"
 $powershell = (Get-Process -Id $PID).Path
 $results = @()
@@ -216,6 +216,28 @@ try {
   Invoke-Phase prepare # A partial old application can have lost its manifest.
   Invoke-Phase rollback
   $results += 'partial residue with authentic Gugu product identity is recognized without a manifest'
+
+  # An older installer kept its stage inside the journal and recorded none; recovery removes it with the journal.
+  Invoke-Phase prepare
+  $state = Get-Content -LiteralPath (Join-Path $journal 'transaction.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $state.PSObject.Properties.Remove('stage')
+  [IO.File]::WriteAllText((Join-Path $journal 'transaction.json'), ($state | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
+  Remove-Item -LiteralPath $stage -Recurse -Force
+  Payload (Join-Path $journal 'stage') 'legacy-stage'
+  Invoke-Phase prepare
+  Assert (-not (Test-Path -LiteralPath (Join-Path $journal 'stage'))) 'Legacy in-journal stage survived recovery'
+  Assert (Test-Path -LiteralPath $stage) 'Recovery from a legacy journal did not stage beside the target'
+  Invoke-Phase rollback
+  Assert (-not (Test-Path -LiteralPath $stage) -and -not (Test-Path -LiteralPath $journal)) 'Rollback left the stage or journal'
+  $results += 'a journal from an installer that staged inside it is still recovered'
+
+  New-Item -ItemType Directory -Path $stage | Out-Null
+  [IO.File]::WriteAllText((Join-Path $stage 'keep.txt'), 'not ours')
+  Invoke-Phase prepare 2
+  Assert ([IO.File]::ReadAllText((Join-Path $stage 'keep.txt')) -eq 'not ours') 'Unclaimed stage folder was changed'
+  Assert (-not (Test-Path -LiteralPath $journal)) 'Unclaimed stage folder created a transaction'
+  Remove-Item -LiteralPath $stage -Recurse -Force
+  $results += 'a staging folder no journal claims is preserved'
 
   [IO.File]::WriteAllText((Join-Path $target 'fixture.exe'), 'unrelated same-named file')
   [IO.File]::WriteAllText((Join-Path $target 'keep.txt'), 'unrelated bytes')
