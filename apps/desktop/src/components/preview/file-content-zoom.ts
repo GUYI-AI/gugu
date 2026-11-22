@@ -13,23 +13,26 @@ takeLegacyLocalStorage((key) => key.startsWith('gugu.file-content-zoom.'), (key,
 
 const normalizeZoom = (kind: FileZoomKind, value: number) => kind === 'image' ? Math.max(1, value) : clampZoom(value, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM);
 
-/** Whether this platform remembers reading zooms at all (see `readingZoomMemory`): without it every view opens at 1 and nothing is stored. */
-const remembers = () => platform.capabilities.readingZoomMemory;
+/**
+ * Whether a kind's ratio is remembered: only where the platform keeps reading zooms (`readingZoomMemory`), and never for
+ * an image — every picture opens whole, at the size that fits. Without it a view opens at 1 and nothing is stored.
+ */
+const remembers = (kind: FileZoomKind) => platform.capabilities.readingZoomMemory && kind !== 'image';
 
 /** The ratio a type was last left at: where a view of it opened next starts (both renderer roots read the same one). */
 export function readFileZoom(kind: FileZoomKind): number {
-  if (!remembers()) return 1;
+  if (!remembers(kind)) return 1;
   const value = readInterface<number>(keyOf(kind)) ?? 1;
   if (!Number.isFinite(value) || value <= 0) return 1;
   return normalizeZoom(kind, value);
 }
 /**
- * Changes a type's remembered ratio and tells its subscribers: only for what has one view at a time (the image viewer,
+ * Changes a type's remembered ratio and tells its subscribers: only for what has one view at a time (the code editor,
  * an App's page). A view that can sit beside another of its type keeps its own (`createFileZoomView`).
  * `shownOn`: the view the person zoomed — the new ratio floats over it for a moment (zoom B: no lasting control).
  */
 export function writeFileZoom(kind: FileZoomKind, value: number, shownOn?: Element | null): void {
-  if (!remembers() || !Number.isFinite(value) || value <= 0 || value === readFileZoom(kind)) return;
+  if (!remembers(kind) || !Number.isFinite(value) || value <= 0 || value === readFileZoom(kind)) return;
   writeInterface(keyOf(kind), value);
   window.dispatchEvent(new Event(CHANGED));
   if (shownOn) showZoomRatio(shownOn, readFileZoom(kind));
@@ -38,7 +41,7 @@ export function writeFileZoom(kind: FileZoomKind, value: number, shownOn?: Eleme
 // @@@zoom-b — owner 11-05 picked B: a readable view has no lasting zoom control; the ratio shows up, centered near the
 // top of the view that changed, only while it changes. One element per document, reused; it never takes a pointer.
 const ratioShown = new WeakMap<Document, { element: HTMLElement; timer: number }>();
-function showZoomRatio(on: Element, value: number) {
+export function showZoomRatio(on: Element, value: number) {
   const doc = on.ownerDocument;
   let shown = ratioShown.get(doc);
   if (!shown) {
@@ -89,7 +92,7 @@ export function createFileZoomView(): FileZoomView {
       const next = normalizeZoom(kind, value);
       if (next === get(kind)) return;
       zooms.set(kind, next);
-      if (remembers()) writeInterface(keyOf(kind), next);
+      if (remembers(kind)) writeInterface(keyOf(kind), next);
       listeners.forEach(listener => listener());
       if (shownOn) showZoomRatio(shownOn, next);
     },
