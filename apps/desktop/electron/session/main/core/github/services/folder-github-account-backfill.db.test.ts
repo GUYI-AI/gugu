@@ -61,7 +61,7 @@ describe('FolderGitHubAccountBackfillService', () => {
           login: `user-${providerAccountId}`,
           avatarUrl: '',
         },
-      })
+      }, fixture.vault)
     ).account;
   }
 

@@ -3,7 +3,7 @@ import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { i18n } from '@/i18n'
 import { messageForUser } from './userFacingError'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
-import type { HostPendingRow, SessionInput, SessionInputFailure } from './sessionInputOutbox'
+import type { HostPendingRow, SessionInput, SessionInputFailure } from './sessionInput'
 
 export function sessionInputBaseline(turns: readonly TranscriptTurn[]): Pick<SessionInput, 'baseline' | 'afterTurnId'> {
   return { baseline: turns.flatMap(turn => turn.items.flatMap(item => item.kind === 'message' && item.role === 'user' ? [item.id] : [])),
@@ -36,7 +36,8 @@ export function projectSessionPendingInput(previous: PendingPrompt | null, sende
   let prompt: PendingPrompt | null = input ? {
     id: input.id, text: input.text, sentAt: input.createdAt, baselineMessageIds: input.baseline, afterTurnId: input.afterTurnId,
     attachments: input.files?.map(file => ({ id: file.itemId, name: file.name, href: `gugu-file://${file.itemId}?v=${file.version}`, kind: file.mimeType.startsWith('image/') ? 'image' : 'file' })),
-    held: true, delivery: input.failure ? { state: 'waiting', retryable: false, reason: sessionInputWaitingReason(input.failure), error: sessionInputFailureText(input.failure) } : { state: 'sending' },
+    held: true, delivery: input.undelivered && input.failure ? { state: 'failed', retryable: true, reason: i18n.t('message.sendStatus.notSentWillResend', { ns: 'messaging' }), error: sessionInputFailureText(input.failure) }
+      : input.failure ? { state: 'waiting', retryable: false, reason: sessionInputWaitingReason(input.failure), error: sessionInputFailureText(input.failure) } : { state: 'sending' },
   } : previous?.delivery && !(previous.delivery.state === 'failed' && previous.delivery.retryable === true && !host.some(row => row.messageId === previous.id))
     ? { ...previous, held: true, delivery: { state: 'receiving' } } : null
   if (!prompt) return null

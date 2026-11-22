@@ -36,12 +36,15 @@ vi.mock('@renderer/lib/ui/tooltip', () => ({
   TooltipContent: () => null,
 }));
 
+const { followRendererSession, queryClient } = await import('@/lib/replica');
 const { TabContent: RemotePortsTabContent } = await import('@renderer/features/remote-hosts/workspace/remote-ports-tab-view');
 
 let container: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
   vi.clearAllMocks();
+  queryClient.clear();
+  followRendererSession('SIGNED_IN', 'tester');
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);

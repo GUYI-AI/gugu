@@ -44,10 +44,6 @@ vi.mock('@renderer/lib/ipc', () => {
     on: vi.fn(() => () => {}),
   },
   rpc: {
-    // project-sessions-store 建任务时读这份清单拿 hooks kind(#6206 状态源判据的输入)。
-    agents: {
-      list: vi.fn(async () => [{ id: 'claude', capabilities: { hooks: { kind: 'config' } } }]),
-    },
     sessions: {
       getSessionsForFolder: mocks.getSessionsForFolder,
     },
@@ -65,6 +61,14 @@ vi.mock('@renderer/lib/ipc', () => {
   // 本机(null)那条线就是 events.on;测试里的项目都在本机。
   return { ...ipc, onMachineEvent: (_machine: unknown, event: never, cb: never) => (ipc.events.on as (...args: unknown[]) => () => void)(event, cb) };
 });
+
+// project-sessions-store 建任务时读 agent 名单拿 hooks kind(#6206 状态源判据的输入)。
+vi.mock('@renderer/lib/stores/agent-replicas', () => ({
+  agentsMetadata: {
+    fetch: vi.fn(async () => [{ id: 'claude', capabilities: { hooks: { kind: 'config' } } }]),
+    peek: vi.fn(() => ({ state: 'unknown' })),
+  },
+}));
 
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
   getProjectManagerStore: mocks.getProjectManagerStore,
@@ -175,6 +179,22 @@ describe('ProjectSessionsStore session lifecycle', () => {
 
   // @@@5173 引擎此刻起不来 ⇒ 这一轮**什么都没落库**(闸在事务之前就返回了)。于是这条失败
   // The composer owns the notice; the typed failure must not leave an optimistic row.
+  it('takes the hooks kind from the agent list in hand (❌ read again, which can fail the creation)', async () => {
+    const { agentsMetadata } = await import('@renderer/lib/stores/agent-replicas');
+    vi.mocked(agentsMetadata.peek).mockReturnValueOnce({ state: 'value', value: [{ id: 'claude', capabilities: { hooks: { kind: 'config' } } }], stale: true, error: null } as never);
+    const manager = makeSessionManager();
+    mocks.createAndProvisionSession.mockResolvedValue({ stage: 'create', result: {
+      success: false, error: { type: 'harness-unavailable', reason: 'updating', providerId: 'claude', harnessName: 'claude', detail: 'x' },
+    } });
+    await expect(manager.createSession({
+      projectId: 'project-1',
+      sessionConfig: { version: '1', name: 'held', initialSession: { id: 'session-held', provider: 'claude' } },
+      workspaceConfig: { workspace: { kind: 'worktree' } },
+    } as never)).rejects.toThrow(/harness-unavailable/);
+    expect(agentsMetadata.fetch).not.toHaveBeenCalled();
+    manager.dispose();
+  });
+
   it('returns a typed engine failure to the composer without a second toast or a session row', async () => {
     const manager = makeSessionManager();
     mocks.createAndProvisionSession.mockResolvedValue({ stage: 'create', result: {

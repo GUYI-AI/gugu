@@ -64,7 +64,10 @@ export function hostConnectionState(input: {
   cloudComputer?: CloudComputerPresence | null;
   /** #7199 这一端正在叫醒它 / 叫醒没成。 */
   wake?: 'waking' | 'failed' | null;
+  /** Whether it is reached over SSH is not known yet (see RemoteHostDevice.linkUnknown): pending, ❌ offline. */
+  linkUnknown?: boolean;
 }): HostConnectionState {
+  if (input.linkUnknown) return 'connecting';
   // 远程 SSH 的机器只看 SSH 这一条:要先登录就说要先登录,❌ 与顶上那张卡片各说各的(「重连中」vs「要先登录」)。
   if (input.sshLink === 'signInRequired') return 'sign-in';
   if (input.sshLink === 'updating') return 'updating';

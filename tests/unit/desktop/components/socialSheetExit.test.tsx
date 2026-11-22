@@ -6,12 +6,18 @@ import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListP
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { clickElement, contact, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 import { expectExit, frame, holdDialogExit } from '../../../support/dialogExit'
+import { contactsService } from '../../../../apps/desktop/src/lib/contacts'
 
+// The member picker reads the contacts again when it opens (contactRelations): answered as the context holds them, and the
+// IM library they are filed in is not opened here.
+vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({
+  ...await original<object>(), openedImRepository: async () => ({ putIdentities: async () => undefined }),
+}))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => import('../../../support/contactsChatServiceTestDouble'))
 vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../../support/agentDisplayStatusTestDouble'))
 let h: ReturnType<typeof createReactHarness>
 let exit: ReturnType<typeof holdDialogExit>
-beforeEach(() => { h = createReactHarness(); exit = holdDialogExit() })
+beforeEach(() => { h = createReactHarness(); exit = holdDialogExit(); vi.spyOn(contactsService, 'getContacts').mockResolvedValue(providers().contacts.contacts) })
 afterEach(() => { h.cleanup(); delete (HTMLElement.prototype as Partial<HTMLElement>).getAnimations })
 const q = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!
 const providers = () => ({ auth: { id: 'owner-1' }, contacts: { contacts: [contact({ id: 'alice', display_name: 'Alice' })], groupChats: [] }, chat: { chats: [] } })

@@ -10,10 +10,9 @@ import { INSTALL_PHASES, type InstallProgressReport } from '@gugu/session-core/d
 import { DOWNLOAD_STAGE, isDownloadStageFailure } from '@gugu/session-core/deps/runtime';
 import type { InstallCommandContext, InstallCommandError, InstallCommandOutcome } from '@gugu/session-core/deps/runtime';
 import { err, ok, type Result } from '@gugu/session-shared';
-import release from '@shared/core/agents/mise-release.json';
 import { managedAgentBinDir, managedAgentNpmRoot, managedAgentPrefix, managedMiseBinDir } from './managed-agent-home';
 import { resolveMiseDistribution, type MiseTarget } from './mise-distribution';
-import { miseProgress, runMiseProcess } from './mise-process';
+import { MISE_COMMAND_TIMEOUT_MS, miseProgress, runMiseProcess } from './mise-process';
 import { startInstallProgressMeter } from './install-progress-meter';
 import { buildAgentEnv } from '@main/core/pty/pty-env';
 import { anySignal } from '@gugu/core/shared/anySignal';
@@ -37,8 +36,8 @@ export function miseEnvironment(root: string, config: string, source: NodeJS.Pro
     MISE_OVERRIDE_CONFIG_FILENAMES: 'gugu.mise.toml',
     MISE_YES: '1', MISE_COLOR: '0', MISE_EXPERIMENTAL: '1', MISE_JOBS: '1',
     // The bundled mise is pinned and replaced only with Gugu, so its own "newer mise available" check
-    // (`mise --version` fetches mise.jdx.dev/VERSION, 30 s HTTP timeout) is never useful here and only
-    // makes the 15 s version step fail on a slow network (settings.toml `disable_update_warning`, 2026.9.12).
+    // (`mise --version` fetches mise.jdx.dev/VERSION, 30 s HTTP timeout) is never useful here
+    // (settings.toml `disable_update_warning`, 2026.9.12).
     MISE_DISABLE_UPDATE_WARNING: '1',
   };
 }
@@ -49,6 +48,23 @@ export function bundledMisePath(): string {
     ? path.join(process.resourcesPath, 'mise-bundle')
     : path.join(app.getAppPath(), 'mise-bundle', osName + '-' + process.arch);
   return path.join(root, 'mise', 'bin', process.platform === 'win32' ? 'mise.exe' : 'mise');
+}
+
+/**
+ * Launch the bundled mise once, in the background at startup. Windows Defender scans the unsigned mise.exe on its
+ * first launch only (10-35 s on a clean machine, see `MISE_COMMAND_TIMEOUT_MS`); paying that here keeps it out of
+ * the person's first agent install. Later launches take 0.1-0.2 s, so this runs on every start without state.
+ */
+export async function warmBundledMise(): Promise<void> {
+  const mise = bundledMisePath();
+  const root = path.join(managedAgentPrefix(), 'mise');
+  const started = Date.now();
+  try {
+    await runMiseProcess(mise, ['--version'], { cwd: path.dirname(mise), env: miseEnvironment(root, path.join(root, 'global.toml')), signal: AbortSignal.timeout(MISE_COMMAND_TIMEOUT_MS) });
+    log.info('[mise-installer] bundled mise warmed', { ms: Date.now() - started });
+  } catch (error) {
+    log.warn('[mise-installer] bundled mise warm-up failed', { ms: Date.now() - started, error: String(error).slice(0, 300) });
+  }
 }
 
 function shellQuote(value: string): string { return "'" + value.replaceAll("'", "'\\''") + "'"; }
@@ -207,7 +223,7 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
   };
   const touch = () => { clearTimeout(timer); timer = setTimeout(() => { idle = true; attemptAbort.abort(); }, IDLE_MS); };
   const run = (args: string[], cancellable = true, onOutput?: (line: string) => void) => {
-    const deadline = args[0] === 'install' ? undefined : AbortSignal.timeout(cancellable && args[0] === 'uninstall' ? 60_000 : 15_000);
+    const deadline = args[0] === 'install' ? undefined : AbortSignal.timeout(MISE_COMMAND_TIMEOUT_MS);
     const signals = [...(cancellable ? [signal] : []), ...(deadline ? [deadline] : [])];
     return runMiseProcess(mise, args, { cwd: work, env, ...(signals.length ? { signal: anySignal(signals) } : {}), onOutput });
   };
@@ -377,9 +393,6 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
       await mkdir(work, { recursive: true });
       releaseLock = await lockfile.lock(work, { realpath: false, stale: 30_000, update: 10_000, retries: 0, onCompromised: (error: Error) => abort.abort(error) });
       try { await access(config); } catch { await writeFile(config, ''); }
-      const version = await run(['--version']);
-      if (!version.startsWith(release.version + ' ')) throw new Error('Unexpected bundled mise version: ' + version);
-      const old = await inventory();
       if (operation === 'uninstall') {
         const selected = request.selectedPath;
         const legacyBin = managedAgentBinDir();
@@ -401,6 +414,7 @@ export async function runMiseOperation(context: InstallCommandContext, preparati
         }
         return ok();
       }
+      const old = await inventory();
       progress({ phase: 'resolving', elapsedMs: 0 });
       sourceSelection = await selectInstallSources({ target, source: request.source, env: baseEnv,
         signal: operationSignal, minimumVersion: request.minimumVersion });

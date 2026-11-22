@@ -210,6 +210,8 @@ async function renderStore(): Promise<void> {
 }
 beforeEach(async () => {
   authUser.id = 'user-1'
+  // The replica (and the outbox bound to its account) follows the signed-in user, as the published session makes it.
+  ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN', authUser.id)
   shownBoundary.chatId = null; readMock.mockReset().mockResolvedValue(undefined)
   projectionStub.reset()
   publishGate.current = null

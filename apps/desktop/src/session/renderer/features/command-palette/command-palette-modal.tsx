@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
 import { Command } from 'cmdk';
 import { MessageSquare, Search } from '@/lib/icons';
 import { useObserver } from 'mobx-react-lite';
@@ -30,6 +29,18 @@ import { paletteTasks } from './palette-tasks';
 import { recentTaskIds } from './recent-tasks';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { machineRegistry } from '@renderer/lib/machine-routing';
+import { refreshFailure, replica, useReplica, retryOf, valueOf } from '@/lib/replica';
+import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import type { SearchItem } from '@shared/core/search';
+
+const commandPaletteSearch = replica({
+  name: 'commandPaletteSearch',
+  scope: 'device',
+  read: (_owner, query: string): Promise<SearchItem[]> => rpc.search.commandPalette({ query }),
+  fresh: 5_000,
+  keep: 5_000,
+});
 
 interface CommandPaletteProps {
   initialQuery?: string;
@@ -47,12 +58,17 @@ export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPal
   const debouncedQuery = useDebounce(search, 100);
   const keyboard = useShortcutOverrides();
   const { translate } = useSessionMessages();
-  const { data: results = [] } = useQuery({
-    queryKey: ['cmdk-search', debouncedQuery],
-    queryFn: () => rpc.search.commandPalette({ query: debouncedQuery }),
-    enabled: !commandsMode,
-    staleTime: 5_000,
-  });
+  const reading = useReplica(commandPaletteSearch, commandsMode ? null : [debouncedQuery], { keepPrevious: true });
+  // Words typed but not settled into a read yet are as unknown as a read on its way: ❌ "no results" in between.
+  const settled = debouncedQuery === search;
+  // The last completed reading stays shown (.gg-stale), including zero rows, while the next words' are on their way.
+  const results = valueOf(reading) ?? null;
+  const stale = results !== null && (!settled || (reading.state === 'value' && reading.stale));
+  const current = stale ? null : results;
+  // Only retained read rows are stale; live chats and the current words' search link are independent.
+  const readingGroupClass = stale ? `${GROUP_CLASS} gg-stale` : GROUP_CLASS;
+  // A failed read, or a refresh failing over results still drawn: said above them with a retry.
+  const failed = settled ? refreshFailure(reading) : null;
   const commands = useObserver(() => rankPaletteMatches(commandRegistry.activeCommands
     .filter((command, index, all) => command.enabled !== false && !command.hideFromPalette
       && all.findIndex((other) => other.id === command.id) === index)
@@ -69,6 +85,7 @@ export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPal
     })
     , search, ({ title, description }) => [title, description]));
   const tasks = useObserver(() => {
+    if (!results) return null;
     const recent = commandsMode || search ? [] : recentTaskIds();
     // Recall opened local tasks beyond the search RPC's newest ten, from existing task rows only.
     const remembered = recent.flatMap(id => {
@@ -91,10 +108,13 @@ export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPal
           placeholder={commandsMode ? translate('palette.commandPlaceholder') : translate('palette.switchPlaceholder')}
           className="w-full bg-transparent px-3 py-3 text-sm outline-none placeholder:text-foreground/40" autoFocus />
       </div>
-      <Command.List className="max-h-96 overflow-y-auto p-1">
-        <Command.Empty className="py-8 text-center text-sm text-foreground/40">
-          {translate('palette.noResults', { query: search })}
-        </Command.Empty>
+      <Command.List data-stale={stale || undefined} aria-busy={stale || undefined}
+        className="max-h-96 overflow-y-auto p-1">
+        {(commandsMode || current) && (
+          <Command.Empty className="py-8 text-center text-sm text-foreground/40">
+            {translate('palette.noResults', { query: search })}
+          </Command.Empty>
+        )}
         {commandsMode ? (
           <Command.Group heading={translate('palette.commands')} className={GROUP_CLASS}>
             {commands.map(({ command, title, icon: Icon, hotkey }) => (
@@ -108,8 +128,14 @@ export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPal
           </Command.Group>
         ) : (
           <>
-            {tasks.length > 0 && (
-              <Command.Group heading={translate(search ? 'palette.tasks' : 'palette.recentTasks')} className={GROUP_CLASS}>
+            {failed && <ReadFailedLine className="p-2" message={translate('palette.searchFailed')} onRetry={retryOf(reading)} />}
+            {!tasks && !failed && (
+              <div data-testid="palette-search-pending" className="p-0">
+                {[0, 1, 2].map((row) => <div key={row} className={PALETTE_ITEM_CLASS}><Unknown className="w-48" /></div>)}
+              </div>
+            )}
+            {tasks && tasks.length > 0 && (
+              <Command.Group heading={translate(search ? 'palette.tasks' : 'palette.recentTasks')} className={readingGroupClass}>
                 {tasks.map((item) => {
                   const open = () => { done(); followLink({ kind: 'session', sessionId: item.id, ...(item.deviceId ? { deviceId: item.deviceId } : {}) }); };
                   const projectId = item.deviceId ? undefined : projectOfSession(item.id);

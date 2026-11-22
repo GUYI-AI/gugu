@@ -5,11 +5,11 @@ import type { PasswordBetaUi, PasswordSnapshot, PasswordSyncView } from '@gugu/c
 import { PasswordSection } from '@/components/settings/PasswordSection';
 import { PasswordDeviceHost } from '@/components/password/PasswordDeviceHost';
 import { Pane, PaneHeader } from '@/components/ui/Pane';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 
-vi.mock('@gugu/core/shared/passwordBeta', () => ({ PASSWORD_BETA_ENABLED: true }));
 
 const credential = { reference: { id: 'test-credential', version: 1, epoch: 'test' }, name: 'Example login', origin: 'https://example.test',
   maskedAccount: 't***', accountSecret: true, hasPassword: true, fields: [], grants: [], sites: [] };
@@ -34,6 +34,9 @@ beforeEach(async () => {
   document.documentElement.dataset.theme = 'light';
   current = snapshot({ state: 'joining', code: '482916', recovery: true });
   original = window.passwordVaultBeta;
+  // The vault is the signed-in account's (a replica entry of that account): one is signed in, its entry read afresh.
+  followRendererSession('SIGNED_IN', 'password-tester');
+  queryClient.removeQueries({ queryKey: ['passwordVault'] });
   invoke.mockReset(); invoke.mockImplementation(async () => ({ ok: true, snapshot: current }));
   window.passwordVaultBeta = { invoke, subscribe: listener => { listeners.add(listener); return () => listeners.delete(listener); } };
   harness = createReactHarness();

@@ -51,7 +51,7 @@ vi.mock('./extension-tab-provider', () => ({
 
 const { createRemoteExtensionsHost, LOCAL_EXTENSIONS_HOST } = await import('./extensions-host');
 const { setExtensionEnabled } = await import('./set-extension-enabled');
-const { installedExtensionsStore } = await import('./installed-extensions-store');
+const { installedExtensions, peekInstalledApps } = await import('./installed-extensions');
 const { resyncInstalledExtensionTabs } = await import('./register-extension-tabs');
 
 function manifest(id: string) {
@@ -61,9 +61,10 @@ function manifest(id: string) {
 describe('资源库 → 扩展看另一台咕咕桌面(#6264)', () => {
   it('清单、开关、卸载、从市场装都去那台机器;清单是它自己的一份,❌ 动本机那份', async () => {
     const host = createRemoteExtensionsHost('mac2', async () => null);
-    await host.store.load();
-    expect(host.store.manifests.map((m) => m.id)).toEqual(['pomodoro']);
-    expect(host.store).not.toBe(installedExtensionsStore);
+    expect(host.key).toBe('remote:mac2');
+    await installedExtensions.fetch(host.key);
+    expect(peekInstalledApps(host.key)?.manifests.map((m) => m.id)).toEqual(['pomodoro']);
+    expect(peekInstalledApps('local')).toBeNull();
     expect(local.list).not.toHaveBeenCalled();
     await host.api.installFromMarket({ ref: { extensionId: 'pomodoro', version: '1.0.0' }, consent: { kind: 'return' } });
     await host.api.installFromFolder({ sourceDir: '/tmp/x', consent: { kind: 'given', digest: 'd' } });
@@ -72,15 +73,16 @@ describe('资源库 → 扩展看另一台咕咕桌面(#6264)', () => {
       ['mac2', 'installFromMarket'],
       ['mac2', 'installFromFolder'],
     ]);
-    // 同一台机器再建一次(在线状态变了会重建)拿到的是同一份清单,❌ 从骨架重来。
-    expect(createRemoteExtensionsHost('mac2', async () => null).store).toBe(host.store);
+    // 同一台机器再建一次(在线状态变了会重建)读的是同一个条目,❌ 从骨架重来。
+    expect(createRemoteExtensionsHost('mac2', async () => null).key).toBe(host.key);
   });
 
   it('开关 / 卸载那台机器的:改的是那台的清单,这个窗口的 tab 一个不动(那台机器自己的窗口跟进)', async () => {
     const host = createRemoteExtensionsHost('mac3', async () => null);
     registry.registered.add('pomodoro.main');
+    await installedExtensions.fetch(host.key);
     await setExtensionEnabled(manifest('pomodoro'), false, host);
-    expect(host.store.disabled).toEqual(['pomodoro']);
+    expect(peekInstalledApps(host.key)?.disabled).toEqual(['pomodoro']);
     await host.api.uninstall({ extensionId: 'pomodoro' });
     expect(local.setEnabled).not.toHaveBeenCalled();
     expect(local.uninstall).not.toHaveBeenCalled();
@@ -116,7 +118,7 @@ describe('这台机器的扩展被别的桌面改了:窗口跟上(#6264)', () =>
       success: true,
       data: { extensions: [manifest('a'), manifest('b'), manifest('c')], invalid: [], icons: {}, disabled: [] },
     });
-    await installedExtensionsStore.load();
+    await resyncInstalledExtensionTabs();
     for (const id of ['a', 'b', 'c']) registry.registered.add(`${id}.main`);
     // 别处:b 被关了、c 被卸了、d 新装了。
     local.list.mockResolvedValueOnce({

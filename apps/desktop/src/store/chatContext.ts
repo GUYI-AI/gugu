@@ -58,6 +58,8 @@ export type SendMessageOptions = {
   beforeDeliver?: () => Promise<void>
   /** A message delivered before this one (the files it was sent with). */
   dependsOn?: string
+  /** A card (its JSON as content); text otherwise. */
+  contentType?: 'text' | 'card'
 }
 
 export type SendAttachmentOptions = {

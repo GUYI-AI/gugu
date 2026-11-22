@@ -1,6 +1,6 @@
 // #6264「在哪台机器上跑」是这一条会话的属性,❌ 整页的「当前机器」。
 // 项目与机器解耦:这里只管**没选项目**时的机器(那台机器的任务工作区,#609);项目选择器列的是账号下的项目,与机器无关,
-// 选了项目就去项目块里开,在哪台跑由项目块的机器选择器定(project-folder-stage.tsx)。
+// 选了项目就去项目块里开,在哪台跑由项目块的机器选择器定(group-folder-stage.tsx)。
 // 须在 observer 组件里调用:机器上线/离线/改名时跟着重画(列表很短,不必 memo)。
 import { useEffect, useState, type ReactElement } from 'react';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';

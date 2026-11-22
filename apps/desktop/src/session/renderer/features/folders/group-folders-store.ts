@@ -2,15 +2,18 @@ import { computed, makeObservable, observable, reaction, runInAction } from 'mob
 import type { AccountGroupFolders } from '@gugu/core/cloud/chatFolders';
 import { foldersChangedChannel, type FolderRecord } from '@shared/core/folders/folders';
 import { platform } from '@/platform';
+import { onAccountChange, valueOf } from '@/lib/replica';
+import { thisDeviceId } from '@/store/thisDevice';
 import { readDeviceRevision, readRevisionResourceKey, type AccountRevisionEvent, type AccountRevisionListener } from '@/lib/accountRevisionCoordinator';
-import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
+import { onMachineEvent } from '@renderer/lib/ipc';
 import { onEachMachine, onMachineReconnected } from '@renderer/lib/machine-clients';
 import { log } from '@renderer/utils/logger';
+import { machineGroupFolders } from './machine-group-folders';
 
 // @@@group-folders — which folders each group has on my machines. A group is the only container; a folder (a directory on
 // one machine, its workspace id there) is an optional attribute of a group. Two sources, one answer:
-//  · each machine's own list (rpc.folders.listAllFolders), read when it is connected and again when it says its folders
-//    changed — what is true there now;
+//  · each machine's own list (replica `machineGroupFolders`, which the assistant's workrooms also read), read when it is
+//    connected and again when it says its folders changed — what is true there now;
 //  · the account's record (identity.my_chat_folders), which also holds machines that are offline now.
 // A machine that has answered is read from its answer; one that has not (offline, too old, not yet) from the account's
 // record, marked offline. Not here: the folder stores a session page mounts (the folder manager), the cards drawn from it.
@@ -58,6 +61,10 @@ export function folderName(path: string): string {
   return trimmed.slice(Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\')) + 1) || trimmed;
 }
 
+/** For MobX: a tick each time the replica `thisDeviceId` changes (no copy of the id is held here). */
+const selfTick = observable.box(0);
+thisDeviceId.subscribe([], () => runInAction(() => selfTick.set(selfTick.get() + 1)));
+
 const byPlace = (a: GroupFolder, b: GroupFolder) =>
   (a.deviceId === null ? 0 : 1) - (b.deviceId === null ? 0 : 1)
   || (a.deviceId ?? '').localeCompare(b.deviceId ?? '')
@@ -69,9 +76,7 @@ export class GroupFoldersStore {
   account: readonly AccountGroupFolders[] = [];
   status: GroupFoldersStatus = 'loading';
   error: string | null = null;
-  /** This computer's device id (the account's record names machines by it); null = not known (the phone). */
-  localDeviceId: string | null = null;
-  /** Each machine's own answer (all its folders, bound or not), by machine; '' = this computer. */
+  /** Each machine's own answer (its folders bound to a group), by machine; '' = this computer. */
   readonly answers = observable.map<string, readonly FolderRecord[]>([], { deep: false });
   private generation = 0;
   private inFlight: Promise<void> | null = null;
@@ -83,11 +88,27 @@ export class GroupFoldersStore {
       account: observable.ref,
       status: observable,
       error: observable,
-      localDeviceId: observable,
       // Kept alive: components read `groups` through useSyncExternalStore, which needs the same array until it changes.
       byGroup: computed({ keepAlive: true }),
       groups: computed({ keepAlive: true }),
     });
+    // A machine's answer, as the replica holds it; a failed read leaves that machine on the account's record.
+    machineGroupFolders.subscribe([], ({ args: [machine], reading, fetching }) => {
+      if (fetching || reading.state === 'unknown') return;
+      runInAction(() => {
+        if (reading.state === 'value' && reading.error === null) this.answers.set(keyOf(machine), reading.value);
+        else this.answers.delete(keyOf(machine));
+      });
+    });
+  }
+
+  /**
+   * This computer's device id (the account's record names machines by it); null = not known (the phone). Read from the
+   * replica `thisDeviceId` (this machine's own fact, kept when the account's record cannot be read), ❌ a copy here.
+   */
+  get localDeviceId(): string | null {
+    selfTick.get();
+    return valueOf(thisDeviceId.peek()) ?? null;
   }
 
   /**
@@ -96,7 +117,10 @@ export class GroupFoldersStore {
    */
   start(subscribeRevision: SubscribeAccountRevision): () => void {
     void this.refresh();
+    // Which machine this is: the replica reads it, and hears it again when this computer is identified (its feed held here).
+    void thisDeviceId.prefetch();
     const offs = [
+      thisDeviceId.hold(),
       subscribeRevision('device_changed', (operations) => {
         if (operations.some((operation) => {
           const key = readDeviceRevision(operation.payload);
@@ -120,44 +144,43 @@ export class GroupFoldersStore {
    */
   watchMachines(): void {
     if (this.stopMachines) return;
-    void this.readMachine(null);
-    const offHere = onMachineEvent(null, foldersChangedChannel, () => {
-      void this.readMachine(null);
-      void this.refresh();
-    });
-    const offMachines = onEachMachine((deviceId) => {
+    // Each machine's change feed is the replica's (it reads that machine again); held here per machine, again per account.
+    const held = new Map<string | null, () => void>();
+    const follow = (deviceId: string | null) => {
+      held.get(deviceId)?.();
+      held.set(deviceId, machineGroupFolders.hold(deviceId));
       void this.readMachine(deviceId);
-      const offs = [
-        onMachineReconnected(deviceId, () => void this.readMachine(deviceId)),
-        (() => {
-          try {
-            return onMachineEvent(deviceId, foldersChangedChannel, () => void this.readMachine(deviceId));
-          } catch (error) {
-            // No link to that machine now: there is nothing to subscribe to; its reconnect reads it again.
-            log.warn('[group-folders] cannot follow this machine\'s folders', { deviceId, error });
-            return () => {};
-          }
-        })(),
-      ];
-      return () => offs.forEach((off) => off());
+    };
+    follow(null);
+    const offHere = onMachineEvent(null, foldersChangedChannel, () => void this.refresh());
+    const offMachines = onEachMachine((deviceId) => {
+      follow(deviceId);
+      const offReconnect = onMachineReconnected(deviceId, () => void this.readMachine(deviceId));
+      return () => {
+        offReconnect();
+        held.get(deviceId)?.();
+        held.delete(deviceId);
+      };
+    });
+    const offAccount = onAccountChange((accountId) => {
+      for (const deviceId of [...held.keys()]) {
+        if (accountId) follow(deviceId);
+        else held.get(deviceId)?.();
+      }
     });
     this.stopMachines = () => {
       offHere();
       offMachines();
+      offAccount();
+      for (const release of held.values()) release();
     };
   }
 
-  /** One machine's answer, replacing the last; an unanswered read leaves that machine on the account's record. */
+  /** Read one machine's answer again; it lands through the replica (a failed read leaves that machine on the account's record). */
   async readMachine(deviceId: string | null): Promise<void> {
-    const generation = this.generation;
-    try {
-      const folders = await rpcOn(deviceId).folders.listAllFolders();
-      if (generation !== this.generation) return;
-      runInAction(() => this.answers.set(keyOf(deviceId), folders));
-    } catch (error) {
+    await machineGroupFolders.reread(deviceId).catch((error: unknown) => {
       log.warn('[group-folders] a machine did not answer with its folders', { deviceId, error: String(error) });
-      if (generation === this.generation) runInAction(() => this.answers.delete(keyOf(deviceId)));
-    }
+    });
   }
 
   /** Read the account's record once; asked again while reading = read again after this one (❌ swallowed). */
@@ -167,9 +190,6 @@ export class GroupFoldersStore {
       return this.inFlight;
     }
     const generation = this.generation;
-    const self = Promise.resolve(platform.getLocalDeviceSelfSnapshot?.()).then((snapshot) => {
-      if (generation === this.generation && snapshot?.device_id) runInAction(() => { this.localDeviceId = snapshot.device_id; });
-    }, (error: unknown) => log.warn('[group-folders] this computer\'s device id could not be read', error));
     const read = import('@/lib/chatFolders').then((cloud) => cloud.listMyGroupFolders())
       .then((list) => {
         if (generation !== this.generation) return;
@@ -195,9 +215,8 @@ export class GroupFoldersStore {
           void this.refresh();
         }
       });
-    const both = Promise.all([self, read]).then(() => undefined);
-    this.inFlight = both;
-    return both;
+    this.inFlight = read;
+    return read;
   }
 
   /** Sign-out / switching accounts: nothing of the last account stays, and reads in flight land nowhere. */
@@ -209,7 +228,6 @@ export class GroupFoldersStore {
       this.account = [];
       this.status = 'loading';
       this.error = null;
-      this.localDeviceId = null;
       this.answers.clear();
     });
   }

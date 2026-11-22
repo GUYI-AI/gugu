@@ -1,5 +1,5 @@
-import { useId, useState } from 'react';
-import { observer } from 'mobx-react-lite';
+import { useEffect, useId, useState } from 'react';
+import { log } from '@renderer/utils/logger';
 import { ArrowRight, ArrowUp, ChevronLeft, Monitor } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
 import { NEW_SESSION_DRAFT_KEY, composerDrafts } from '@renderer/features/sessions/composer-drafts';
@@ -11,7 +11,8 @@ import { localizedManifestText } from '@shared/extensions/catalog';
 import { hostLinkTarget, type HostLink } from '@shared/extensions/host-links';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { AppSettingsForm } from './app-settings-form';
-import { installedExtensionsStore } from './installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps } from './installed-extensions';
+import { Unknown } from '@/components/ui/Unknown';
 import { openApp } from './app-dock';
 import './panel/app-store.css';
 import './app-settings-page.css';
@@ -31,16 +32,22 @@ const hostLinkLabels = {
  * declared; its `hostLinks`, gugu's own pages where what its tools manage is shown, one entry each. Everything else about the App (permissions, which agents get it, switching off, uninstalling) is on its settings
  * page, one link away.
  */
-export const AppSettingsPage = observer(function AppSettingsPage({ manifest, active }: { manifest: ExtensionManifest; active: boolean }) {
+export function AppSettingsPage({ manifest, active }: { manifest: ExtensionManifest; active: boolean }) {
   const { translate: t, locale } = useSessionMessages();
   const { navigate } = useNavigate();
   const prefix = useId();
   const text = localizedManifestText(manifest, locale);
-  const icon = installedExtensionsStore.appIcons[manifest.id];
-  const main = installedExtensionsStore.mainTabOf(manifest.id);
+  const installed = useInstalledApps(LOCAL_HOST);
+  const main = installed.state === 'value' ? installed.value.mainTabOf(manifest.id) : null;
   const fields = manifest.settings ?? [];
   const tabs = [...(text.examples.length > 0 ? ['overview' as const] : []), ...(fields.length > 0 ? ['settings' as const] : [])];
   const [tab, setTab] = useState<Tab>(tabs[0] ?? 'overview');
+  useEffect(() => {
+    if (!active) return;
+    void rpc.extensions.openSettings({ extensionId: manifest.id }).then((result) => {
+      if (!result.success) log.warn('The App was not told it was opened:', result.error);
+    }, (error: unknown) => log.warn('The App was not told it was opened:', error));
+  }, [active, manifest.id]);
   /** Same as 「对 agent 说」 on the App page: a new task with this sentence already in its box. */
   const ask = (example: string) => {
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, example);
@@ -49,11 +56,13 @@ export const AppSettingsPage = observer(function AppSettingsPage({ manifest, act
 
   return <main className="tool-app-page" aria-label={text.name}>
     <div className="tool-app-content">
-      {main && !main.hostSettings ? <button type="button" className="mk-back" data-testid="app-settings-back" onClick={() => openApp(manifest.id)}>
+      {installed.state !== 'value' ? <Unknown className="mk-back w-16" /> : main && !main.hostSettings ? <button type="button" className="mk-back" data-testid="app-settings-back" onClick={() => openApp(manifest.id)}>
         <ChevronLeft className="size-3.5" />{t('common.back')}
       </button> : null}
       <header className="tool-app-header">
-        {icon ? <img className="tool-app-icon" src={icon} alt="" /> : <Monitor className="tool-app-icon text-foreground-muted" />}
+        {installed.state !== 'value' ? <Unknown className="tool-app-icon" />
+          : installed.value.appIcons[manifest.id] ? <img className="tool-app-icon" src={installed.value.appIcons[manifest.id]} alt="" />
+          : <Monitor className="tool-app-icon text-foreground-muted" />}
         <div className="tool-app-heading">
           <div className="tool-app-title"><h1>{text.name}</h1><span>v{manifest.version}</span></div>
           {text.subtitle ? <p>{text.subtitle}</p> : null}
@@ -97,8 +106,8 @@ export const AppSettingsPage = observer(function AppSettingsPage({ manifest, act
 
       {tabs.includes('settings') ? <AppSettingsForm manifest={manifest} active={active} id={`${prefix}-settings`} role={tabs.length > 1 ? 'tabpanel' : undefined}
         labelledBy={tabs.length > 1 ? `${prefix}-settings-tab` : undefined} hidden={tab !== 'settings'}
-        read={() => rpc.extensions.openSettings({ extensionId: manifest.id })}
+        hostKey={LOCAL_HOST}
         save={(settings) => rpc.extensions.setSettings({ extensionId: manifest.id, settings })} /> : null}
     </div>
   </main>;
-});
+}

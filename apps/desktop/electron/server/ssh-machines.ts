@@ -373,8 +373,6 @@ export function registerSshMachinesIpc(options: {
     const userId = (await options.currentUserId?.().catch(() => null)) ?? null
     return userId ? options.store.list().filter((m) => m.ownerUserId === userId) : []
   }
-  const ids = async () => (await mine()).map((m) => m.deviceId)
-  options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.list, () => ids())
   options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.describe, async () => summarizeSshMachines(await mine()))
   options.ipcMain.handle(SERVER_SSH_MACHINES_CHANNELS.forget, async (_event, deviceId: unknown) => {
     if (typeof deviceId !== 'string' || !ID.test(deviceId)) return false
@@ -419,10 +417,9 @@ export function registerSshMachinesIpc(options: {
     return answer
   })
   options.store.onChange(() => {
-    void ids().then((list) => {
-      const win = options.getWindow()
-      if (win && !win.isDestroyed()) win.webContents.send(SERVER_SSH_MACHINES_CHANNELS.changed, list)
-    })
+    // A change signal: the renderer reads its list again (`describe`).
+    const win = options.getWindow()
+    if (win && !win.isDestroyed()) win.webContents.send(SERVER_SSH_MACHINES_CHANNELS.changed)
   })
 }
 

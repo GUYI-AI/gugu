@@ -1,17 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
+import { useOnChange } from '../../hooks/useOnChange'
 import type { AssistantShellSnapshot } from '../../lib/assistantShellBridge'
 import { assistantWorkrooms, type AssistantWorkrooms } from '../../lib/assistantChatList'
-import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
+import { useReplica } from '../../lib/replica'
 import { useAuth } from '../../store/auth'
-import { onMachineEvent, rpcOn } from '../../session/renderer/lib/ipc'
-import { machineRpc } from '@/components/session-watch/sessionpage-rpc'
-import { foldersChangedChannel } from '../../session/shared/core/folders/folders'
-import { sessionCreatedChannel } from '../../session/shared/core/sessions/sessionEvents'
+import { machineGroupFolders } from '../../session/renderer/features/folders/machine-group-folders'
+import { useDeviceSessions } from '../../session/shared/remote-sessions/session-directory'
 
-const log = rendererLogger('assistant/workrooms')
-
-/** Read the owning host's actual session identities and project bindings. Never infer ownership from a group name. */
+/**
+ * Which groups are the assistant's workrooms (❌ inferred from a group name). null = not read: no group hidden meanwhile.
+ * Read from the assistant's home machine: its sessions as the session directory lists them live (this computer's
+ * included; ❌ a second read of that list) and its folders bound to groups (replica `machineGroupFolders`).
+ */
 export function useAssistantWorkrooms(shell: AssistantShellSnapshot | null, membershipKey: string): AssistantWorkrooms | null {
   const { user } = useAuth()
   const ownerId = user?.id ?? null
@@ -19,32 +20,16 @@ export function useAssistantWorkrooms(shell: AssistantShellSnapshot | null, memb
   const home = shell?.home
   const deviceId = home?.deviceId ?? null
   const local = home?.kind === 'computer' && home.thisDevice
-  const scope = ownerId && assistantId && deviceId ? `${ownerId}:${assistantId}:${deviceId}:${local}` : null
-  const [read, setRead] = useState<{ scope: string; rooms: AssistantWorkrooms } | null>(null)
-  useEffect(() => {
-    if (!scope || !ownerId || !assistantId || !deviceId) return
-    let cancelled = false
-    let generation = 0
-    const refresh = async () => {
-      const turn = ++generation
-      try {
-        const rpc = platform.capabilities.agentRuntime ? rpcOn(local ? null : deviceId) : machineRpc(deviceId)
-        const [listed, folders] = await Promise.all([rpc.sessionTimeline.sessionsList(), rpc.folders.listGroupFolders()])
-        const bindings = folders.flatMap((folder) => folder.chatId ? [{ projectId: folder.id, chatId: folder.chatId }] : [])
-        const rooms = assistantWorkrooms(assistantId, ownerId, listed.sessions, bindings)
-        if (!cancelled && turn === generation) setRead({ scope, rooms })
-      } catch (error) {
-        // Keep already verified ownership for this scope; without a reading no group is hidden.
-        log.warn({ error: String(error) }, 'could not read assistant workroom ownership')
-      }
-    }
-    void refresh()
-    // 推送在助理所在的那台机器上订(本机 = null);手机上没有会话页宿主线,只读不订。
-    const machine = local ? null : deviceId
-    const listen = platform.capabilities.agentRuntime
-    const offBindings = listen ? onMachineEvent(machine, foldersChangedChannel, () => { void refresh() }) : () => {}
-    const offSessions = listen ? onMachineEvent(machine, sessionCreatedChannel, () => { void refresh() }) : () => {}
-    return () => { cancelled = true; offBindings(); offSessions() }
-  }, [scope, ownerId, assistantId, deviceId, local, membershipKey])
-  return read?.scope === scope ? read.rooms : null
+  // 推送在助理所在的那台机器上订(本机 = null);手机经那台机器的管道读它,只读不订。
+  const machine = local && platform.capabilities.agentRuntime ? null : deviceId
+  const subject = ownerId && assistantId && deviceId ? [machine] as [string | null] : null
+  const reading = useReplica(machineGroupFolders, subject)
+  // A membership change can change which bindings count: read again then (❌ on the first render).
+  useOnChange(membershipKey, () => { if (subject) void machineGroupFolders.refresh(machine) })
+  const folders = reading.state === 'value' ? reading.value : null
+  const bindings = useMemo(() => folders?.flatMap((folder) => folder.chatId ? [{ projectId: folder.id, chatId: folder.chatId }] : []) ?? null, [folders])
+  // Only a list read from that machine (❌ its heartbeat digest, `cached`): until then nothing is hidden.
+  const listed = useDeviceSessions((live) => (deviceId ? live[deviceId] : undefined))
+  const sessions = listed && !listed.cached ? listed.sessions : null
+  return useMemo(() => (sessions && bindings && assistantId && ownerId ? assistantWorkrooms(assistantId, ownerId, sessions, bindings) : null), [sessions, bindings, assistantId, ownerId])
 }

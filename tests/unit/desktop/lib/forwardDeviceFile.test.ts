@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { metadata, bytes } = vi.hoisted(() => ({ metadata: vi.fn(), bytes: vi.fn() }))
-vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => ({ attachmentMetadata: metadata, attachmentBytes: bytes }))
+vi.mock('../../../../apps/desktop/src/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({ attachmentMetadata: metadata, attachmentBytes: bytes })))
 vi.mock('../../../../apps/desktop/src/lib/fileHost', () => ({ holderOfflineText: ({ machine }: { machine: string }) => `${machine} offline` }))
 vi.mock('../../../../apps/desktop/src/i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../apps/desktop/src/i18n')>()

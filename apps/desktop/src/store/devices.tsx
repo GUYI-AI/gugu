@@ -1,7 +1,6 @@
 import { serverNow } from '@gugu/core/shared/serverClock'
-import { useEffect, useCallback, useMemo, useRef, useSyncExternalStore, useLayoutEffect } from 'react'
+import { useEffect, useCallback, useMemo, useLayoutEffect } from 'react'
 import { chatService } from '../lib/chat'
-import { recentMachineLimitRefusal } from '../lib/device-labels'
 import { isLifecycleCancellation } from '../lib/authBoundedFetch'
 import { isLocalDeviceUnidentified } from '../lib/localDeviceIdentity'
 import { rendererLogger } from '../lib/log'
@@ -30,14 +29,14 @@ import { reportAssistantAppChange } from '../components/assistant/assistant-app-
 import { useMyAssistant } from '../lib/myAssistant'
 import { machineRpc } from '../components/session-watch/sessionpage-rpc'
 import {
+  cloudComputer,
   cloudComputerPollMs,
-  cloudComputerWatchMs,
-  getCloudComputerState,
-  refreshCloudComputer,
-  resetCloudComputerState,
-  subscribeCloudComputerState,
+  cloudSnapshotOf,
+  knownCloudDeviceId,
+  useCloudComputer,
+  useWakeRefusal,
   withCloudComputerPresence,
-} from '../lib/cloudComputerStore'
+} from '../lib/cloudComputer'
 
 // #1749 设备 store：list(chatService.listDevices，含本机 self-merge) + 排序 + durable revision 刷新
 // (注册/心跳状态翻转/改名/删除都重拉) + rename/remove 动作。面板与 selector 共用这一份状态。
@@ -47,8 +46,11 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   const { user: authenticatedUser, loading: authLoading } = useAuth()
   const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
   const userId = active ? authenticatedUser?.id ?? null : null
-  const assistant = useMyAssistant(userId, null)
-  const appMachine = useMemo(() => assistant.provisionDeviceId ? { rpc: machineRpc(assistant.provisionDeviceId) } : null, [assistant.provisionDeviceId])
+  const assistant = useMyAssistant()
+  const assistantKnown = assistant.state === 'value' ? assistant.value : null
+  // Tell the assistant App unless it is known there is none (not read yet / unreadable: the notice waits in its outbox).
+  const reportsToAssistant = assistant.state !== 'value' || assistant.value.agentId !== null
+  const appMachine = useMemo(() => assistantKnown?.provisionDeviceId ? { rpc: machineRpc(assistantKnown.provisionDeviceId) } : null, [assistantKnown?.provisionDeviceId])
   // 第一帧就用上次那份铺开(读模型的快照),❌ 不是空列表 + 转圈;重读一返回就换成此刻的事实。
   // 界面还不活跃(active=false)时只画、不读。
   const reading = useReplica(devicesModel, [], { read: userId !== null })
@@ -75,19 +77,21 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   }, [userId, refresh])
 
 
-  // #7199 云电脑此刻怎样:管家的 /state 是事实源。换账号就清掉上一个账号的;登录后问一次。
-  const cloudComputer = useSyncExternalStore(subscribeCloudComputerState, getCloudComputerState, getCloudComputerState)
-  // 只在真换了账号时清:冷启动、刷新令牌时 userId 会短暂为 null(见 devicesCache.ts),那一下清掉会让云电脑闪成「离线」、
-  // 作废在途的叫醒进度,还会让会话页把它当成「又睡着了」再叫一次。退出登录后设备列表本来就空了。
-  const cloudAccountRef = useRef<string | null>(null)
+  // #7199 云电脑此刻怎样:replica `cloudComputer`(管家的 /state)。
+  const cloud = useCloudComputer()
+  // 开通、唤醒途中(管家每 3 秒问一次)每问到一次也重读设备列表:新机器第一次出现得快一点(❌ 只等 device_changed)。
   useEffect(() => {
     if (!userId) return
-    if (cloudAccountRef.current !== userId) {
-      cloudAccountRef.current = userId
-      resetCloudComputerState()
-    }
-    void refreshCloudComputer().catch(() => undefined)
+    let asking = false
+    return cloudComputer.subscribe([], ({ reading, fetching }) => {
+      const answered = asking && !fetching
+      asking = fetching
+      if (!answered || reading.state !== 'value' || !reading.value.available) return
+      if (cloudComputerPollMs(reading.value.snapshot, readCachedDevices()) !== null) void devicesModel.refresh()
+    })
   }, [userId])
+  const cloudSnapshot = cloudSnapshotOf(cloud)
+  const refused = useWakeRefusal(cloudSnapshot)
 
   // 账号上各台机器挂进群的文件夹(桌面与手机同一份):登录的人交给它,什么时候再读由它自己订;登出 / 换账号清空。
   const signedOut = !authLoading && !authenticatedUser
@@ -144,48 +148,44 @@ export function DevicesProvider({ children, active = true }: { children: React.R
     cache.set(rows)
     if (removed.size > 0) void desktopIpc()?.invoke(SERVER_SSH_MACHINES_CHANNELS.reconcile, { owner: userId, present: rows.map((row) => row.device_id) }).catch(() => undefined)
   }, [userId])
+  // The feed of `devices` (fresh: Infinity) starts with the account: starting over rows held as current reads them once
+  // (what changed while nobody listened, e.g. the shell was inactive). Rows kept from before are stale: the mount reads them.
+  useEffect(() => {
+    const held = devicesModel.peek()
+    if (userId && held.state === 'value' && !held.stale && !devicesModel.isFetching()) void devicesModel.refresh()
+  }, [userId])
   useEffect(() => {
     if (!userId) return
     return subscribeAccountRevision('device_changed', (operations) => {
       // 只有可能牵动云电脑的那几条才去问管家:它自己那一行(睡下 / 醒来)、新出现或被移除的一台(开通 / 销毁)。
       // 别的电脑每 30 秒一次的心跳摘要 ❌ —— 忙账号六七台机器,每次心跳都多一发管家请求。
-      const cloudDeviceId = getCloudComputerState().snapshot?.deviceId ?? null
+      const cloudDeviceId = knownCloudDeviceId()
       const known = new Set(readCachedDevices().map((row) => row.device_id))
       if (operations.some((operation) => {
         const key = readDeviceRevision(operation.payload)
         return key.removed || key.deviceId === cloudDeviceId || !known.has(key.deviceId)
-      })) void refreshCloudComputer().catch(() => undefined)
+      })) void cloudComputer.refresh()
       return applyDeviceRevisions(operations)
     })
   }, [userId, applyDeviceRevisions, subscribeAccountRevision])
 
-  // 切回窗口时再问一次(别的端开通 / 关掉了,或它在后台睡下了)。
-  useEffect(() => {
-    if (!userId || typeof document === 'undefined') return
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') void refreshCloudComputer().catch(() => undefined)
-    }
-    document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
-  }, [userId])
-
   const rename = useCallback(async (deviceId: string, label: string) => {
     const ownerId = userId ?? cachedDevicesAccount()
     await chatService.renameDevice(deviceId, label)
-    if (assistant.agentId || assistant.loading || assistant.error) await reportAssistantAppChange(appMachine, assistant.agentId ?? undefined, {
+    if (reportsToAssistant) await reportAssistantAppChange(appMachine, assistantKnown?.agentId ?? undefined, {
       resource: 'devices', operation: 'edited', id: deviceId, deviceId, after: { name: label },
     }, ownerId)
     await refresh()
-  }, [refresh, assistant.agentId, assistant.loading, assistant.error, appMachine, userId])
+  }, [refresh, reportsToAssistant, assistantKnown?.agentId, appMachine, userId])
 
   const remove = useCallback(async (deviceId: string, options: { cascade?: boolean } = {}) => {
     const ownerId = userId ?? cachedDevicesAccount()
     await chatService.removeDevice(deviceId, options)
-    if (assistant.agentId || assistant.loading || assistant.error) await reportAssistantAppChange(appMachine, assistant.agentId ?? undefined, {
+    if (reportsToAssistant) await reportAssistantAppChange(appMachine, assistantKnown?.agentId ?? undefined, {
       resource: 'devices', operation: 'removed', id: deviceId, deviceId,
     }, ownerId)
     await refresh()
-  }, [refresh, assistant.agentId, assistant.loading, assistant.error, appMachine, userId])
+  }, [refresh, reportsToAssistant, assistantKnown?.agentId, appMachine, userId])
 
   // #6264 这台电脑用远程 SSH 添加的机器(清单随装上 / 移除一台跟着变):在不在线只看 SSH 设备连接(❌ 看咕咕云心跳),
   // 侧栏、选择器、设置 → 设备同一个说法。别的机器照常读心跳。
@@ -196,13 +196,14 @@ export function DevicesProvider({ children, active = true }: { children: React.R
     () =>
       sortDevices(
         withCloudComputerPresence(
-          withSshLinkOnline(devices, sshMachineIds, linkProblems),
-          cloudComputer.snapshot,
+          // SSH list not read yet (first run only: it is kept across restarts): each row shows its own cloud heartbeat (its value, not a default).
+          sshMachineIds ? withSshLinkOnline(devices, sshMachineIds, linkProblems) : devices,
+          cloudSnapshot,
           serverNow(),
-          cloudComputer.wakeRefused?.deviceId ?? null,
+          refused?.deviceId ?? null,
         ),
       ),
-    [devices, sshMachineIds, linkProblems, cloudComputer.snapshot, cloudComputer.wakeRefused],
+    [devices, sshMachineIds, linkProblems, cloudSnapshot, refused?.deviceId],
   )
 
   // #7199 手机(只被调动作,不是运行位置)单独一份:设置 → 设备列它,「在哪跑」、侧栏、各处机器选择只读 machines。
@@ -213,30 +214,6 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   // 布局期发布:头像角标、收回着与否从这份读,首帧就要是这份,❌ 先画一帧旧的再翻。
   useLayoutEffect(() => { publishDirectoryDevices(directoryDevices) }, [directoryDevices])
 
-  // 开通、唤醒途中每 3 秒问一次管家(它的进度只在 /state 上),连设备列表一起刷。
-  const pollMs = userId ? cloudComputerPollMs(cloudComputer.snapshot, listedHere) : null
-  useEffect(() => {
-    if (pollMs === null) return
-    const timer = setInterval(() => {
-      void refreshCloudComputer().catch(() => undefined)
-      // 醒了的那台 server 上线时库里会翻一行,但开通途中的这几秒也顺带刷一下列表:新机器第一次出现得快一点。
-      void refresh()
-    }, pollMs)
-    return () => clearInterval(timer)
-  }, [pollMs, refresh])
-
-  // 有云电脑、不在途中:每 30 秒问一次管家(它睡下 / 被别处叫醒时库里那一行要等心跳超时才翻,在不在以管家为准)。
-  // 窗口在后台不问,切回来那一下上面会问。
-  const watchMs = userId && pollMs === null ? cloudComputerWatchMs(cloudComputer.snapshot) : null
-  useEffect(() => {
-    if (watchMs === null) return
-    const timer = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-      void refreshCloudComputer().catch(() => undefined)
-    }, watchMs)
-    return () => clearInterval(timer)
-  }, [watchMs])
-
   const listBoundAgents = useCallback(async (deviceId: string) => {
     return chatService.listAgentsOnDevice(deviceId)
   }, [])
@@ -244,8 +221,8 @@ export function DevicesProvider({ children, active = true }: { children: React.R
   // A fresh value on every provider render re-rendered every device reader (sidebar, composer, contacts sections) even when
   // the render changed nothing they read.
   const value = useMemo(
-    () => ({ devices: machines, phones, loading, error, refresh, rename, remove, listBoundAgents, recentMachineLimitRefusal, cloudComputer }),
-    [machines, phones, loading, error, refresh, rename, remove, listBoundAgents, cloudComputer],
+    () => ({ devices: machines, phones, loading, error, refresh, rename, remove, listBoundAgents }),
+    [machines, phones, loading, error, refresh, rename, remove, listBoundAgents],
   )
   return (
     <DevicesContext.Provider value={value}>

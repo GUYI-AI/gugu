@@ -2,10 +2,11 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings'
 import { observer } from 'mobx-react-lite';
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent } from 'react';
 import { Check, Monitor, Plus, Server } from '@/lib/icons';
 import { basenameFromAnyPath, shortHome } from '@shared/path-name';
-import { senderAvatarUrl, subscribeSenderAvatars } from '@renderer/lib/chat/sender-avatar';
+import { senderAvatarChanges, senderAvatarUrl } from '@renderer/lib/chat/sender-avatar';
+import { useSelect } from '@/lib/selectStore';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Button } from '@renderer/lib/ui/button';
@@ -99,11 +100,6 @@ function FrostedFront({ projectId, running, count, uid, W, paperW }: { projectId
       </g>
     </svg>
   </>;
-}
-
-function useAvatarTick() {
-  const [, tick] = useReducer((n: number) => n + 1, 0);
-  useEffect(() => subscribeSenderAvatars(tick), []);
 }
 
 function reducedMotion() {
@@ -232,7 +228,8 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
   touch?: boolean;
 }) {
   const { translate } = useSessionMessages();
-  useAvatarTick();
+  // Redraw when an agent's avatar should be read again (its identity, its session's owner, the theme).
+  useSelect(senderAvatarChanges, (seen) => seen);
   const [open, setOpen] = useState(false);
   const [dragover, setDragover] = useState(false);
   const [landing, setLanding] = useState(false);
@@ -580,7 +577,8 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
       {state.folders !== null || !state.loadError ? (
         <p className="gg-folder-card__hint" role={state.folders === null ? 'status' : undefined}>
           {state.folders === null
-            ? translate('projects.folders.loading')
+            // As a placeholder (@@@placeholder-reveal): nothing for 150 ms, then fading in — a read that answers sooner shows nothing.
+            ? <span className="gg-loading-line">{translate('projects.folders.loading')}</span>
             : open
               ? translate(floating ? (touch ? 'projects.folders.hintFloatingTouch' : 'projects.folders.hintFloating') : 'projects.folders.hintOpen')
               // A group with no folder yet: the card says「0 个文件夹」and its「+」binds the first; no hint about opening it.

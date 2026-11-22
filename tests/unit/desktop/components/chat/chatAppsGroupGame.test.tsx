@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { act, createRef } from 'react'
-import { runInAction } from 'mobx'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 
@@ -16,8 +15,10 @@ vi.mock('@/components/appSlot/appsHere', () => ({
   },
 }))
 
+// This device's Apps are the desktop's.
+vi.mock('@/components/appSlot/hereHost', () => ({ HERE_HOST: 'local' }))
 const { ChatAppsPicker } = await import('@/components/chat/ChatAppsPicker')
-const { installedExtensionsStore } = await import('@/session/renderer/features/extensions/installed-extensions-store')
+const { installedExtensions } = await import('@/session/renderer/features/extensions/installed-extensions')
 const { EXTENSION_API_VERSION, parseExtensionManifest } = await import('@/session/shared/extensions/manifest')
 
 const manifest = (id: string, tab: Record<string, unknown>) =>
@@ -27,19 +28,19 @@ let harness: ReturnType<typeof createReactHarness>
 beforeEach(() => {
   files.byApp = { tictactoe: 1 }; files.asked = []
   harness = createReactHarness()
-  runInAction(() => {
-    installedExtensionsStore.manifests = [
+  installedExtensions.set(['local'], {
+    extensions: [
       manifest('board', {}),
       manifest('tictactoe', { opensFiles: { chat: ['.tictactoe.json'] } }),
       manifest('sheet', { opensFiles: { chat: ['.sheet.json'] } }),
-    ]
-    installedExtensionsStore.disabled = []
-    installedExtensionsStore.isLoaded = true
-  })
+    ],
+    invalid: [],
+    disabled: [],
+  } as never)
 })
 afterEach(() => {
   harness.cleanup()
-  runInAction(() => { installedExtensionsStore.manifests = []; installedExtensionsStore.disabled = []; installedExtensionsStore.isLoaded = false })
+  installedExtensions.set(['local'], { extensions: [], invalid: [], disabled: [] } as never)
 })
 
 const onOpen = vi.fn()
@@ -74,7 +75,7 @@ describe('the group\'s App list holds the group game an agent installed', () => 
   })
 
   it('a switched-off game is not listed', async () => {
-    runInAction(() => { installedExtensionsStore.disabled = ['tictactoe'] })
+    installedExtensions.set(['local'], (list) => list && ({ ...list, disabled: ['tictactoe'] }))
     expect(await picker()).toEqual(['board'])
   })
 })

@@ -27,8 +27,10 @@ function projectConsumerKeys(): string[] {
   const keys = new Set<string>();
 
   // 项目目录之外也有项目词条的读者:侧栏、示例项目那一块(#709),和群文件夹(folders)。
-  for (const domain of ['browser', 'projects', 'folders', 'sidebar', 'sample-project']) {
-    for (const path of projectSourceFiles(join(featuresRoot, domain))) {
+  // The machines' home directories (lib/machine-paths.ts) are read by the folder dialogs and say so in project words.
+  const extra = [fileURLToPath(new URL('../lib/machine-paths.ts', import.meta.url))];
+  for (const domain of ['browser', 'projects', 'folders', 'sidebar', 'sample-project', ...extra]) {
+    for (const path of domain.endsWith('.ts') ? [domain] : projectSourceFiles(join(featuresRoot, domain))) {
       const source = ts.createSourceFile(
         path,
         readFileSync(path, 'utf8'),

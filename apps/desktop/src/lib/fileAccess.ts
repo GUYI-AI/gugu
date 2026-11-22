@@ -2,7 +2,7 @@ import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { attachmentRequest } from '@gugu/core/cloud/attachmentsApi'
 import { createCachedFileSink, type FileChunkCache } from '@gugu/core/shared/fileCache'
-import { createFileResolver, snapshotBlob, requireFileRange, FILE_CHUNK_BYTES, type FileBytes, type FileContext, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { createFileResolver, requireFileRange, FILE_CHUNK_BYTES, type FileBytes, type FileContext, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentsEndpoint } from './attachmentsEndpoint'
 import { budgetedCacheWriter } from './attachmentCacheBudget'
 import { rendererLogger } from './log'
@@ -65,16 +65,6 @@ const nativeBytes = (context: FileContext, file: { id: string; size: number }): 
 })
 const cloud = cloudFileProviders({ endpoint, metadata, cache: chunks, sink: async size => createCachedFileSink(chunks, size),
   imageCache: { match: async request => (await attachmentCache()).match(request), put: async (request, response) => putAttachment(request, await response.blob()) },
-  async image(file, revision) {
-    const bitmap = await createImageBitmap(await snapshotBlob(file, revision.content_type))
-    try {
-      const canvas = document.createElement('canvas'), scale = Math.min(1, 560 / bitmap.width)
-      canvas.width = Math.max(1, Math.round(bitmap.width * scale)); canvas.height = Math.max(1, Math.round(bitmap.height * scale))
-      const context = canvas.getContext('2d'); if (!context) throw new Error('Image preview is unavailable')
-      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-      return await new Promise<Blob>((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Image preview is unavailable')), 'image/webp'))
-    } finally { bitmap.close() }
-  },
 })
 export const resolveFile = createFileResolver({ ...cloud,
   async local(context) {

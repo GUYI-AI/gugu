@@ -5,7 +5,8 @@ vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ identityDb: {} }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: null }) }))
 const { assistantIdentityState } = await import('../../../../apps/desktop/src/lib/myAssistant')
 
-const known = { agentId: 'agent-1', loading: false, error: null }
+const value = (agentId: string | null) => ({ state: 'value' as const, value: { agentId, provisionDeviceId: null }, stale: false, error: null })
+const known = value('agent-1')
 
 describe('assistantIdentityState', () => {
   it('认出了是谁、通讯录读失败、里头没有它:读不到', () => {
@@ -21,8 +22,13 @@ describe('assistantIdentityState', () => {
     expect(assistantIdentityState(true, known, 'error')).toBe('found')
   })
 
-  it('库里的标记读失败:读不到;库里没有:还没有', () => {
-    expect(assistantIdentityState(false, { agentId: null, loading: false, error: 'boom' }, 'ready')).toBe('unreadable')
-    expect(assistantIdentityState(false, { agentId: null, loading: false, error: null }, 'ready')).toBe('none')
+  it('库里的标记还没读到:正在读;读失败:读不到;库里没有:还没有', () => {
+    expect(assistantIdentityState(false, { state: 'unknown' }, 'ready')).toBe('loading')
+    expect(assistantIdentityState(false, { state: 'error' as const, error: new Error('boom') }, 'ready')).toBe('unreadable')
+    expect(assistantIdentityState(false, value(null), 'ready')).toBe('none')
+  })
+
+  it('E-1: "none" kept from an earlier read whose read again failed: unreadable (❌ none, sending the person to set up another)', () => {
+    expect(assistantIdentityState(false, { ...value(null), error: new Error('offline') }, 'ready')).toBe('unreadable')
   })
 })

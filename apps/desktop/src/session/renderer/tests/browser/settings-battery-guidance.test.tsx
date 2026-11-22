@@ -14,6 +14,7 @@ const native = vi.hoisted(() => ({
   battery: vi.fn<() => Promise<SystemPermissionState>>(),
   deviceInfo: vi.fn(async () => ({ brand: 'OnePlus', manufacturer: 'OnePlus' })),
 }))
+import { followRendererSession, queryClient } from '@/lib/replica'
 vi.mock('@/platform', async original => {
   const actual = await original<typeof import('@/platform')>()
   return {
@@ -46,6 +47,8 @@ async function openSettings() {
   await harness.render(<LocalizationProvider><ThemeProvider><GeneralSection onOpenPermissions={() => {}} /></ThemeProvider></LocalizationProvider>)
 }
 beforeEach(async () => {
+  // The phone's maker is the account replica `phoneInstallation`: read for whoever is signed in.
+  followRendererSession('SIGNED_IN', 'reader')
   await page.viewport(390, 844)
   await i18n.changeLanguage('en-US')
   localStorage.removeItem(marker)
@@ -57,6 +60,8 @@ beforeEach(async () => {
 afterEach(() => {
   harness?.cleanup()
   harness = undefined
+  // Each case reads the permission and the installation afresh.
+  queryClient.clear()
   localStorage.removeItem(marker)
   writeDevicePreferences({ chatMessages: true })
 })

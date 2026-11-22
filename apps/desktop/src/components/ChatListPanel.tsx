@@ -298,7 +298,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
   const shownName = useShownAgentName({ name: displayName, createdAt: isAgentChat ? peerIdentity?.created_at ?? undefined : undefined })
   const preview = chatPreviewText(chat)
   const newsDot = callsOnly && oneListNewsDot(chat, unreadCount)
-  const unavailable = useUnavailableProjects(!mobile).projects.find(project => project.chatId === chat.id)
+  const unavailable = useUnavailableProjects(!mobile)?.find(project => project.chatId === chat.id)
 
   return (
     <>

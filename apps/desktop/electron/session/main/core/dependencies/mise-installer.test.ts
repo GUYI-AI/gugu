@@ -3,7 +3,7 @@ import os from 'node:os';
 import lockfile from 'proper-lockfile';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { bundledMisePath, launcherRelease, managedLauncher, miseEnvironment, miseToolSlug, readManagedLauncherRelease, runMiseOperation } from './mise-installer';
+import { bundledMisePath, launcherRelease, managedLauncher, miseEnvironment, miseToolSlug, readManagedLauncherRelease, runMiseOperation, warmBundledMise } from './mise-installer';
 import { managedMiseBinDir } from './managed-agent-home';
 import * as progressMeter from './install-progress-meter';
 import * as selectionModule from './install-source-race';
@@ -134,7 +134,6 @@ beforeEach(async () => {
   mocks.exec.mockReset().mockResolvedValue({ stdout: 'agent 1.2.3', stderr: '' });
   mocks.resolve.mockReset().mockResolvedValue({ kind: 'platform-archive', tool, version: '1.2.3', installVersion: version, executable: 'bin/agent', config: '[tools]\n' });
   mocks.run.mockReset().mockImplementation(async (_command, args, options) => {
-    if (args[0] === '--version') return '2026.9.12 test';
     if (args[0] === 'ls') return JSON.stringify(entries);
     if (args[0] === 'install') {
       const install_path = path.join(options.env.MISE_DATA_DIR, 'installs/http-gugu-agent', version);
@@ -182,6 +181,23 @@ describe('application-owned mise lifecycle', () => {
     expect(await readFile(path.join(earlier, 'bin/agent'), 'utf8')).toBe('long-running old program');
     expect(entries.map(entry => entry.version)).toEqual(['0.9.0', version]);
   });
+  // On a clean Windows machine the first launch of the bundled mise.exe waits for Defender to scan it (13 s and 32 s
+  // measured), whichever command it is. The old pre-download `--version` + `ls` under a 15 s deadline failed 2 of 3.
+  it('runs mise once before the download, and no mise command has a deadline shorter than a first launch', async () => {
+    const timeout = vi.spyOn(AbortSignal, 'timeout');
+    const commands: Array<{ args: string[]; deadline?: number }> = [];
+    const run = mocks.run.getMockImplementation()!;
+    mocks.run.mockImplementation(async (command, args, options) => {
+      commands.push({ args, deadline: args[0] === 'install' ? undefined : timeout.mock.lastCall?.[0] });
+      return run(command, args, options);
+    });
+    expect((await runMiseOperation({ mise: { target, operation: 'install' } })).success).toBe(true);
+    expect((await runMiseOperation({ mise: { target, operation: 'uninstall', selectedPath: launcher() } })).success).toBe(true);
+    expect(commands.slice(0, commands.findIndex(c => c.args[0] === 'install')).map(c => c.args)).toEqual([['ls', '--json', tool]]);
+    const deadlines = commands.filter(c => c.args[0] !== 'install').map(c => c.deadline);
+    expect(deadlines.length).toBeGreaterThan(2);
+    expect(deadlines.every(ms => ms !== undefined && ms >= 60_000)).toBe(true);
+  });
   // An install the desktop stopped half-way (the mise process group is killed with it, nothing after it runs): the
   // launcher is what makes an agent installed, and it is only published after mise finished and the program verified.
   it('a fresh install has no launcher while mise is still installing', async () => {
@@ -222,7 +238,6 @@ describe('application-owned mise lifecycle', () => {
 
   it('下载到一半断了:失败里带着停下那一刻的进度(哪一步、已下多少 / 共多少)—— 说得清卡在哪一步(#7199)', async () => {
     mocks.run.mockImplementation(async (_command, args, options) => {
-      if (args[0] === '--version') return '2026.9.12 test';
       if (args[0] === 'ls') return JSON.stringify(entries);
       if (args[0] === 'uninstall') return '';
       if (args[0] === 'install') {
@@ -543,5 +558,19 @@ describe('application-owned mise lifecycle', () => {
     expect(env.MISE_SYSTEM_CONFIG_DIR).toBe(path.join(home, 'system'));
     // The pinned engine never checks the network for a newer mise of its own.
     expect(env.MISE_DISABLE_UPDATE_WARNING).toBe('1');
+  });
+});
+
+describe('warmBundledMise', () => {
+  it('launches the bundled mise once with the pinned environment and never throws', async () => {
+    mocks.run.mockClear();
+    mocks.run.mockResolvedValueOnce('2026.9.12');
+    await warmBundledMise();
+    const [command, args, options] = mocks.run.mock.calls[0]!;
+    expect([command, args]).toEqual([bundledMisePath(), ['--version']]);
+    expect(options.env.MISE_DISABLE_UPDATE_WARNING).toBe('1');
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    mocks.run.mockRejectedValueOnce(new Error('spawn failed'));
+    await expect(warmBundledMise()).resolves.toBeUndefined();
   });
 });

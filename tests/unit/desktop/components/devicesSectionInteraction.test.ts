@@ -482,7 +482,7 @@ describe('DevicesSection interaction', () => {
     await act(async () => {
       root.render(createElement(DevicesContext.Provider, { value: only }, createElement(DevicesSection)))
     })
-    expect(container.querySelector('[data-testid="settings-devices-empty"]')?.textContent).toContain('目前只有这台电脑')
+    expect(container.querySelector('[data-testid="settings-devices-empty"]')?.textContent).toContain('让智能体在上面运行')
     expect(container.querySelector('[data-testid="settings-devices-search"]')).toBeNull()
 
     const many = store({

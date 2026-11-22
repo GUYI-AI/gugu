@@ -1,6 +1,6 @@
 import { parseMemoryNote } from '../shared/assistantMemory'
 import { queuedAssistantPanelBody } from './assistantPanelBodyQueue'
-import { assistantPanelCollection, AssistantPanelError, type AssistantPanelClient, type AssistantPanelDomain, type AssistantPanelItem } from './assistantPanel'
+import { assistantPanelCollection, AssistantPanelError, type AssistantPanelClient, type AssistantPanelDomain, type AssistantPanelItem, type AssistantPanelSnapshot } from './assistantPanel'
 import { splitInstructions } from '../shared/assistantInstructions'
 import { withAssistantPanelReadDeadline } from './assistantPanelRead'
 import type { AssistantPanelReadCache } from './assistantPanelCache'
@@ -23,6 +23,19 @@ function route(path: string) {
   if (path === ASSISTANT_PANEL_PATHS.instructions) return { domain: 'personality' as const,relative: 'instructions',root: path }
   for (const [domain,root] of roots) if (path === root || path.startsWith(`${root}/`)) return { domain,root,relative: path.slice(root.length).replace(/^\//,'') }
   throw new AssistantPanelError('invalid-path','Unknown panel resource path')
+}
+
+const collectionDevice = (domain: AssistantPanelDomain, deviceId: string) => ['tasks','integrations'].includes(domain) ? deviceId : undefined
+
+/** One collection of a snapshot as a reader may use it, or throws why not (the rule `collection` reads by). Pure. */
+export function readableAssistantPanelCollection(snapshot: AssistantPanelSnapshot, domain: AssistantPanelDomain, deviceId: string): AssistantPanelItem[] {
+  const result = assistantPanelCollection(snapshot,domain,collectionDevice(domain,deviceId))
+  const failed = snapshot.application.find(row => row.domain === domain && row.status === 'failed')
+  if (failed) throw new AssistantPanelError('application-failed','PANEL_APPLICATION_FAILED',failed.resourceKey,domain)
+  if (result.items.some(item => item.stale_at)) throw new AssistantPanelError('stale','PANEL_RESOURCE_STALE',undefined,domain)
+  if (result.state !== 'ready' && !(domain === 'voice-notes' && result.state === 'unprepared' && result.items.length > 0)) throw new AssistantPanelError(result.state === 'unprepared' ? 'unprepared' : 'collection-unavailable',
+    result.state === 'unprepared' ? 'This collection has not been prepared yet' : 'This collection could not be read')
+  return result.items
 }
 
 /** A cloud file view for the existing desktop and phone components. Its paths
@@ -87,14 +100,8 @@ export function createAssistantPanelFiles(input: {
   const collectionStates = new Map<AssistantPanelDomain, 'ready' | 'unprepared' | 'error'>()
   async function collection(domain: AssistantPanelDomain) {
     const current = await snapshot()
-    const result = assistantPanelCollection(current,domain,['tasks','integrations'].includes(domain) ? input.deviceId : undefined)
-    collectionStates.set(domain,result.state)
-    const failed = current.application.find(row => row.domain === domain && row.status === 'failed')
-    if (failed) throw new AssistantPanelError('application-failed','PANEL_APPLICATION_FAILED',failed.resourceKey,domain)
-    if (result.items.some(item => item.stale_at)) throw new AssistantPanelError('stale','PANEL_RESOURCE_STALE',undefined,domain)
-    if (result.state !== 'ready' && !(domain === 'voice-notes' && result.state === 'unprepared' && result.items.length > 0)) throw new AssistantPanelError(result.state === 'unprepared' ? 'unprepared' : 'collection-unavailable',
-      result.state === 'unprepared' ? 'This collection has not been prepared yet' : 'This collection could not be read')
-    return result.items
+    collectionStates.set(domain,assistantPanelCollection(current,domain,collectionDevice(domain,input.deviceId)).state)
+    return readableAssistantPanelCollection(current,domain,input.deviceId)
   }
   async function find(path: string, requireReady = true) {
     const target = route(path)

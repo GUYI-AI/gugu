@@ -90,11 +90,8 @@ export type ChatContextOptions = {
   senderAvatar?: (fromId: string | null) => string | null;
   /** Optional change source so mounted cards re-read `senderAvatar` when the host's cache changes. */
   subscribeSenderAvatars?: (listener: () => void) => () => void;
-  /**
-   * An App's name by its id, as the host names it (its installed Apps, the interface language), for a delivery an App
-   * sent. Synchronous; `null` = not known here (the card shows the id). Omitted = ids.
-   */
-  appName?: (appId: string) => string | null;
+  /** An App's name by id, as the host names it (semantics: lib/app-name.ts). Omitted = ids. */
+  appName?: (appId: string) => string | null | undefined;
   /** Optional change source so mounted cards re-read `appName` when the host's Apps or language change. */
   subscribeAppNames?: (listener: () => void) => () => void;
   /**
@@ -126,8 +123,8 @@ export type ChatContext = {
   readonly selfIdentity: () => SelfIdentity | null;
   /** Reactive accessor for a delivery sender's avatar URL; `null` = draw no avatar. */
   readonly senderAvatar: (fromId: string | null) => string | null;
-  /** Reactive accessor for an App's name by id; `null` = not known here. */
-  readonly appName: (appId: string) => string | null;
+  /** Reactive accessor for an App's name by id; `null` = not known here, `undefined` = not known yet. */
+  readonly appName: (appId: string) => string | null | undefined;
   /** Reactive accessor for a group's name by chat id; `null` = not known here. */
   readonly chatName: (chatId: string) => string | null;
   readonly chatKind: (chatId: string) => string | null;
@@ -172,7 +169,7 @@ export function createChatContext(opts: ChatContextOptions): ChatContext {
   let locale!: () => SupportedLocale;
   let selfIdentity!: () => SelfIdentity | null;
   let senderAvatar!: (fromId: string | null) => string | null;
-  let appName!: (appId: string) => string | null;
+  let appName!: (appId: string) => string | null | undefined;
   let chatName!: (chatId: string) => string | null;
   let chatKind!: (chatId: string) => string | null;
   let actor!: (address: string) => ChatActor | null;

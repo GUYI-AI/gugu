@@ -19,7 +19,8 @@ export type RemotePortRow = {
 
 const SOURCE_ORDER: readonly RemotePortSource[] = ['terminal', 'agent', 'listening', 'browser', 'login', 'manual'];
 
-export function mergePortRows(snapshot: RemotePortsSnapshot, listening: readonly SessionpageListeningPort[]): RemotePortRow[] {
+/** `listening` left out: not known yet (the tab draws that part as unknown), ❌ "nothing listens". */
+export function mergePortRows(snapshot: RemotePortsSnapshot, listening?: readonly SessionpageListeningPort[]): RemotePortRow[] {
   const rows = new Map<number, RemotePortRow>();
   const row = (remotePort: number): RemotePortRow => {
     let existing = rows.get(remotePort);
@@ -43,7 +44,7 @@ export function mergePortRows(snapshot: RemotePortsSnapshot, listening: readonly
     add(target, found.source);
     target.sessionId ??= found.sessionId;
   }
-  for (const port of listening) {
+  for (const port of listening ?? []) {
     const target = row(port.port);
     add(target, 'listening');
     if (port.process) target.process = port.process;

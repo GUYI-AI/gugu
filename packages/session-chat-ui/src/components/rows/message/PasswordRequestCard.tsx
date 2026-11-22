@@ -1,6 +1,5 @@
 /** @jsxImportSource solid-js */
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PASSWORD_REQUEST_PREFIX, requestPasswordFill, type PasswordApproval, type PasswordBetaUi, type PasswordFillOutcome, type PasswordItem, type PasswordRequestView, type PasswordSaveDraft, type PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import type { ChatMessage } from '@session-chat/model'
 import { vars } from '@session-chat/styles/theme.css'
@@ -70,7 +69,7 @@ export function passwordCardHeight(request: PasswordRequestView): number {
  * Everything saved already: a card to allow this use, once or always. */
 function storingOf(request: PasswordRequestView): boolean { return fills(request).some(entry => entry.source !== 'saved') }
 export function passwordRequest(item: ChatMessage): PasswordRequestView | null {
-  if (!PASSWORD_BETA_ENABLED || !item.ownerNotification || !item.text.startsWith(PASSWORD_REQUEST_PREFIX)) return null
+  if (!item.ownerNotification || !item.text.startsWith(PASSWORD_REQUEST_PREFIX)) return null
   try {
     const value = JSON.parse(item.text.slice(PASSWORD_REQUEST_PREFIX.length)) as PasswordRequestView
     return value.requestId === item.ownerNotification.requestId && typeof value.origin === 'string'

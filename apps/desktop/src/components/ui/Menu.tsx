@@ -78,6 +78,11 @@ export const menuRowLabelClassName = menuItemLabel
 const menuSurfacePadding = 'var(--gg-menu-padding, 4px)'
 const menuRowPadding = 'var(--gg-menu-item-padding, 6px 10px)'
 
+/** A row the size of a menu item that is not one: a placeholder while the items are not known, or why they are not. */
+export function MenuRow({ children }: { children: ReactNode }) {
+  return <div className="flex w-full min-h-9 items-center [padding:var(--gg-menu-item-padding,6px_10px)]">{children}</div>
+}
+
 /** A pointer coordinate (context menu) or the element the menu was opened from. */
 export type MenuAnchorProps =
   | { /** Pointer x of a context-menu gesture. */ x: number; /** Pointer y. */ y: number; anchor?: never }

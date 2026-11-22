@@ -23,7 +23,30 @@ vi.mock('@renderer/lib/shell-port', async original => {
 
 vi.mock('@/lib/supabase', () => ({
   dataClient: () => { throw new Error('Initial composer tests must not access the cloud'); },
+  identityDb: {},
+  getCurrentAuthUserId: () => 'fixture-owner',
 }));
+// The composer's Gugu group derives from the account's catalog (platform-model-catalog.ts). These tests describe a
+// catalog by what the host used to answer per engine (`platformCatalog(response)`): its models are the account's rows;
+// a host reason code is the account catalog failing (the group absent, the reason said).
+vi.mock('@/lib/agentModelSelection', async () => {
+  const { SESSIONPAGE_PLATFORM_CATALOG_CHANNEL: channel } = await import('@shared/core/agents/platform-model');
+  return {
+    fetchAgentHarnessModels: vi.fn(),
+    readAgentModelSelection: vi.fn(),
+    fetchPlatformModelCatalog: async () => {
+      const response = await mocks.invoke(channel, {}) as { models?: Array<PlatformModelOption>; catalogError?: string | null };
+      if (response.catalogError) throw new Error(response.catalogError);
+      return (response.models ?? []).map((model) => ({
+        id: model.id, displayName: model.displayName, protocols: [model.protocol], enabled: true,
+        requiresMembership: model.requiresMembership === true, hidden: model.hidden === true,
+        creditMultiplier: model.creditMultiplier ?? null,
+        creditMultipliers: model.creditMultiplier ? { [model.protocol]: model.creditMultiplier } : {},
+        contextWindow: model.contextWindow ?? null, reasoningEfforts: model.reasoningEfforts ?? null,
+      }));
+    },
+  };
+});
 import {
   SESSIONPAGE_PLATFORM_CATALOG_CHANNEL,
   type PlatformModelCatalogResponse,
@@ -38,7 +61,7 @@ import { buildInitialSession } from '../create-session-modal/build-create-sessio
 import { LibraryHostProvider, machineLibraryHost } from '@renderer/features/library/library-host';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { runInAction } from 'mobx';
-import { queryClient } from '@/lib/replica';
+import { followRendererSession, queryClient } from '@/lib/replica';
 import { notifyManager } from '@tanstack/react-query';
 // Deliver query results in the same task they resolve in, so a test's flush sees them.
 notifyManager.setScheduler((callback) => callback());
@@ -139,7 +162,7 @@ vi.mock('@renderer/features/sessions/acp/acp-chat-store', () => ({
 }));
 
 vi.mock('@renderer/lib/stores/app-state', () => ({
-  appState: {},
+  appState: { navigation: { viewParamsStore: {} } },
   sidebarStore: {},
 }));
 
@@ -214,6 +237,8 @@ const READY_CATALOG = {
 // 可改写：四态里只有 ready 有模型可选，另外三态要能在这里摆出来，否则「没装也不说为什么」
 // 那个缺口（真机上抓到的）永远测不出。
 const harnessCatalogRef = vi.hoisted(() => ({ current: null as unknown }));
+/** The machine's own gate for the Gugu group, answered with its harness catalog (`agents.modelCatalog`'s `gugu`). */
+const guguOfferRef = vi.hoisted(() => ({ current: { offered: true } as { offered: true } | { offered: false; reason: string } }));
 /**
  * ⚠️ 参数是**真类型**,❌ 不是 `unknown`。
  *
@@ -225,6 +250,8 @@ function harnessCatalog(state: HarnessCatalogState) {
   harnessCatalogRef.current = state;
 }
 
+/** A re-read that failed over what was read: the agents list, the harness catalog (both stay drawn). */
+const keptReadErrors = vi.hoisted(() => ({ agents: null as Error | null, catalog: null as Error | null }));
 // Target capability queries have their own QueryClient-backed race tests.
 // These creation tests supply the default catalog directly.
 vi.mock('@renderer/lib/stores/use-target-model-catalog', () => ({
@@ -232,9 +259,9 @@ vi.mock('@renderer/lib/stores/use-target-model-catalog', () => ({
 }));
 
 vi.mock('@renderer/lib/stores/use-harness-model-catalog', () => ({
-  HARNESS_MODEL_CATALOG_QUERY_KEY: ['agents', 'modelCatalog'],
   useHarnessModelCatalog: () => ({
     state: harnessCatalogRef.current,
+    refreshFailed: keptReadErrors.catalog,
     isLoading: false,
     refresh: vi.fn(),
   }),
@@ -253,17 +280,15 @@ vi.mock('@renderer/lib/stores/use-harness-model-credential', () => ({
     modelId: string | null | undefined
   ) => {
     harnessCredentialRef.lastArgs = { providerId, modelId };
-    return {
-      // 与真 hook 同一口径:没有 modelId 就没有读数 —— 恒 unknown。
-      status: modelId ? harnessCredentialRef.current : 'unknown',
-      refresh: (harnessCredentialRef.refresh ??= vi.fn()),
-    };
+    // 与真 hook 同一口径:没有 modelId 就没有读数 —— 恒 unknown。
+    return modelId ? harnessCredentialRef.current : 'unknown';
   },
 }));
 
 vi.mock('@renderer/lib/stores/use-agents', () => ({
   useAgents: () => ({
-    data: (agentFixtureRef.current ??= [
+    state: 'value', stale: false, error: keptReadErrors.agents,
+    value: (agentFixtureRef.current ??= [
       {
         id: 'claude',
         name: 'Claude Code',
@@ -490,6 +515,8 @@ vi.mock('@renderer/lib/ipc', () => {
     on: vi.fn(() => () => {}),
   },
   rpc: {
+    // The Gugu group's gate is the machine's answer, read with its harness catalog.
+    agents: { modelCatalog: async () => ({ state: harnessCatalogRef.current, refreshing: false, gugu: guguOfferRef.current }) },
     sessions: { sendMessage: mocks.sendMessage },
     sessionTimeline: { sessionStart: async () => ({ ok: true }) },
     sessionCreate: { admitFirstMessages: async () => {} },
@@ -588,6 +615,7 @@ vi.mock('@renderer/features/sessions/use-effective-provider', () => ({
     setProviderOverride: mocks.setProviderOverride,
     createDisabled: effectiveProviderRef.noProviderSelected,
     chosenByUser: true,
+    known: true,
   }),
 }));
 
@@ -813,6 +841,7 @@ describe('useInitialSessionState', () => {
 
   beforeEach(() => {
     queryClient.clear();
+    followRendererSession('SIGNED_IN', 'fixture-owner');
     latestState = undefined;
     mocks.droppedPath = '';
     harnessCatalog(READY_CATALOG);
@@ -1392,9 +1421,10 @@ describe('useInitialSessionState', () => {
   // 存下、到点交给同一个翻译点。原来它把这一组关掉,工具栏上还自己编一句「咕咕模型尚未对 X 开通」——
   // 而那时咕咕的模型明明开着。
   it('offers the Gugu group on the unattended (scheduled) surface too', async () => {
-    platformCatalog({ models: [GLM], agentDefault: { modelId: 'glm-5.2' } });
+    platformCatalog({ models: [GLM], agentDefault: null });
 
     await renderProbe('project-1', { unattended: true }, true);
+    await act(async () => latestState?.setPlatformModel('glm-5.2'));
 
     expect(latestState?.platformModels).toEqual([GLM]);
     expect(latestState?.platformModel).toBe('glm-5.2');
@@ -1590,6 +1620,7 @@ describe('InitialSessionField', () => {
 
   beforeEach(() => {
     queryClient.clear();
+    followRendererSession('SIGNED_IN', 'fixture-owner');
     latestState = undefined;
     // ⚠️ 这一句原来**没有**,于是本 describe 的每个用例都继承上一个用例留下的目录状态 ——
     // 一直没出事,只因为在此之前没人在这里改过它,值恒是上一个 describe 的 beforeEach 留下的
@@ -1597,6 +1628,7 @@ describe('InitialSessionField', () => {
     // 而红的地方与那条用例毫无关系(「selectedModel 是 undefined」),看起来像别的 bug。
     // ⇒ 用例之间的独立性不能靠「没人碰过」。
     harnessCatalog(READY_CATALOG);
+    guguOfferRef.current = { offered: true };
     harnessCredentialRef.current = 'unknown';
     harnessCredentialRef.lastArgs = null;
     harnessCredentialRef.refresh = undefined;
@@ -1721,6 +1753,7 @@ describe('InitialSessionField', () => {
     });
     expect(mocks.hostInstallNavigation).toHaveBeenCalledWith('claude');
     expect(mocks.navigate).toHaveBeenCalledWith('apps', {
+      location: { tab: 'agents', installed: undefined },
       agentDetail: { kind: 'agent-app-detail', agentId: 'claude' },
     });
   });
@@ -1968,9 +2001,10 @@ describe('InitialSessionField', () => {
   });
 
   it('leaves platformModel off the payload when a harness model is picked', async () => {
-    platformCatalog({ models: [GLM], agentDefault: { modelId: 'glm-5.2' } });
+    platformCatalog({ models: [GLM], agentDefault: null });
 
     await renderField();
+    await selectModel('platform:glm-5.2');
     expect(latestState?.platformModel).toBe('glm-5.2');
 
     await selectModel('claude-sonnet-5');
@@ -2014,10 +2048,11 @@ describe('InitialSessionField', () => {
   // 上一条是「切过去的过程中」,这条是「一进来就停在通用视角」(终端开关关着):
   // 预选、分组、载荷都得与编程视角一致,而不是靠切一次才回来。
   it('offers the platform group when the composer opens in the general view', async () => {
-    platformCatalog({ models: [GLM], agentDefault: { modelId: 'glm-5.2' } });
+    platformCatalog({ models: [GLM], agentDefault: null });
     settingsStore.set('terminal', { enabled: false });
 
     await renderField();
+    await selectModel('platform:glm-5.2');
 
     expect(latestState?.sessionView).toBe('general');
     expect(latestState?.platformModel).toBe('glm-5.2');
@@ -2044,34 +2079,49 @@ describe('InitialSessionField', () => {
     expect(payload?.platformModel).toEqual({ modelId: 'glm-5.2' });
   });
 
-  // 主进程给原因码,界面按码查文案表、❌ 原样转达原话(#6264 d22 / #6478 mac1)。
-  it('says why the platform group is missing by reason code, not by relaying the raw reason', async () => {
-    platformCatalog({ models: [], agentDefault: null, catalogError: 'gugu-models:runtime-not-connected' });
+  // The account catalog could not be read: the group is absent and the composer says so by reason code with a retry
+  // (it may clear by itself); ❌ the raw network or server text (#6264 d22 / #6478 mac1). Harness models stay selectable.
+  it('says a catalog that could not be read by reason code with a retry, never by the raw reason', async () => {
+    platformCatalog({ models: [], agentDefault: null, catalogError: 'net::ERR_PROXY_CONNECTION_FAILED' });
 
     await renderField();
     await guguCatalogAnswers();
 
-    expect(latestState?.platformNotice).toBe('guguCatalog.reason.runtime-not-connected');
-    expect(toolbarText()).not.toContain('guguCatalog.reason.runtime-not-connected');
-    // 配置事实,重试不会变 ⇒ 不给重试。
-    expect(latestState?.retryPlatformCatalog).toBeUndefined();
-    expect(toolbarText()).not.toContain('harnessCatalog.retry');
-    // 说出原因不等于阻断:harness 模型照常可选。
+    expect(latestState?.platformNotice).toBe('guguCatalog.reason.host-not-ready');
+    expect(toolbarText()).not.toContain('net::');
+    expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ title: 'guguCatalog.reason.host-not-ready', action: expect.objectContaining({ label: 'harnessCatalog.retry' }) }));
+    expect(latestState?.retryPlatformCatalog).toBeTypeOf('function');
     expect(chatComposerProps().selectedModel).toBe('claude-opus-4-8');
   });
 
-  it('shows an unreachable catalog as a retryable notice without the raw network error', async () => {
-    // 宿主把 `net::ERR_PROXY_CONNECTION_FAILED` 这类原文只记日志,界面上只收到码。
-    platformCatalog({ models: [], agentDefault: null, catalogError: 'gugu-models:unreachable' });
+  // C-3: whether the group is offered is the machine's own answer (with its harness catalog), ❌ a renderer copy of the
+  // rule: a machine whose runtime is not connected withholds it and says why, though the account has the model.
+  it('hides the Gugu group and says the reason the machine gives when it does not offer it', async () => {
+    platformCatalog({ models: [GLM], agentDefault: null });
+    guguOfferRef.current = { offered: false, reason: 'gugu-models:runtime-not-connected' };
 
     await renderField();
     await guguCatalogAnswers();
 
-    expect(latestState?.platformNotice).toBe('guguCatalog.reason.unreachable');
-    const text = toolbarText();
-    expect(text).not.toContain('net::');
-    expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ title: 'guguCatalog.reason.unreachable', action: expect.objectContaining({ label: 'harnessCatalog.retry' }) }));
-    expect(latestState?.retryPlatformCatalog).toBeTypeOf('function');
+    expect(latestState?.platformModels).toEqual([]);
+    expect(latestState?.platformNotice).toBe('guguCatalog.reason.runtime-not-connected');
+    expect(chatComposerProps().selectedModel).toBe('claude-opus-4-8');
+  });
+
+  it('offers the Gugu group when the machine says it is offered, and withdraws it when the machine stops offering it', async () => {
+    platformCatalog({ models: [GLM], agentDefault: null });
+
+    await renderField();
+    await guguCatalogAnswers();
+    expect(latestState?.platformModels).toEqual([GLM]);
+    expect(latestState?.platformNotice).toBeNull();
+
+    guguOfferRef.current = { offered: false, reason: 'gugu-models:no-identity-chat' };
+    // The machine's answer is read again (as on every mount and focus): the group follows it.
+    await act(async () => { await queryClient.refetchQueries(); });
+    await guguCatalogAnswers();
+    expect(latestState?.platformModels).toEqual([]);
+    expect(latestState?.platformNotice).toBe('guguCatalog.reason.no-identity-chat');
   });
 
   // #137 owner 2026-10-23:「已经说了设备下线,这里有必要再说一个错误的提示吗」—— 目录是问那台机器要的,
@@ -2101,19 +2151,6 @@ describe('InitialSessionField', () => {
     expect(latestState?.retryPlatformCatalog).toBeUndefined();
     expect(toolbarText()).not.toContain('guguCatalog.reason');
     expect(toolbarText()).not.toContain('harnessCatalog.retry');
-  });
-
-  it('never puts a raw server message on screen (#6264 d22: "model access server is not configured")', async () => {
-    // 老版本宿主(或别的机器)把服务端原文塞进了原因那一格:认不出 ⇒ 说「暂时用不了」,旁边给重试;
-    // ❌ 原话,也 ❌ 静默。
-    platformCatalog({ models: [], agentDefault: null, catalogError: 'model access server is not configured' });
-
-    await renderField();
-    await guguCatalogAnswers();
-
-    expect(latestState?.platformNotice).toBe('guguCatalog.reason.unknown');
-    expect(toolbarText()).not.toContain('not configured');
-    expect(latestState?.retryPlatformCatalog).toBeTypeOf('function');
   });
 
   it('defaults to the model the harness itself has selected', async () => {
@@ -2160,6 +2197,28 @@ describe('InitialSessionField', () => {
     expect(latestState?.harnessNotice).toBe('harnessCatalog.notInstalled|Claude Code');
     expect(noticeText()).toContain('harnessCatalog.notInstalled');
     expect(noticeText()).toContain('Claude Code');
+  });
+
+  it('the agents or the model list read before, a re-read that failed: said with a retry, both still offered', async () => {
+    harnessCatalog({ kind: 'ready', models: [{ id: 'opus', name: 'Opus' }], selected: 'opus', efforts: [], selectedEffort: null });
+    platformCatalog({ models: [GLM], agentDefault: null });
+    try {
+      keptReadErrors.agents = new Error('machine unreachable');
+      await renderField();
+      expect(noticeText()).toMatch(/Could not load the latest content|无法获取最新内容/);
+      expect(chatComposerProps().agentOptions?.length).toBeGreaterThan(0);
+      keptReadErrors.agents = null;
+      await renderField();
+      expect(mocks.dismissNotice).toHaveBeenCalled();
+      mocks.notify.mockClear();
+      keptReadErrors.catalog = new Error('harness gone');
+      await renderField();
+      expect(noticeText()).toMatch(/Could not load the latest content|无法获取最新内容/);
+      expect(Object.keys(chatComposerProps().modelOptions ?? {})).toContain('opus');
+    } finally {
+      keptReadErrors.agents = null;
+      keptReadErrors.catalog = null;
+    }
   });
 
   it('stays silent about the model catalog while no agent is selected', async () => {
@@ -2529,11 +2588,13 @@ describe('InitialSessionField', () => {
     expect(toolbarText()).not.toContain('harnessCatalog.');
   });
 
-  it('stays quiet when the request itself never got through', async () => {
-    // 默认 invoke 就是 reject —— 我们编不出用户看得懂的原因,那就不说。
+  it('holds the model trigger while the Gugu catalog is on its way (❌ the harness default, then a Gugu model)', async () => {
+    mocks.invoke.mockImplementation(() => new Promise(() => {}));
     await renderField();
 
+    expect(latestState?.modelKnown).toBe(false);
     expect(latestState?.platformNotice).toBeNull();
+    expect(chatComposerProps().modelUnknown).toBe(true);
   });
 
   it('remembers a started platform model so the next composer opens on it', async () => {

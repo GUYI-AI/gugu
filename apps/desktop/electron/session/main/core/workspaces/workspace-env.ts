@@ -1,3 +1,5 @@
+import { sessionBrowserEnv } from '../pty/server-browser-env';
+
 export interface SessionEnvContext {
   /** 变量名还叫 TASK_*:那是用户脚本里写着的名字(`.gugu.json`),值是这条会话的。 */
   session: { id: string; title: string };
@@ -26,7 +28,8 @@ export function getSessionEnvVars(ctx: SessionEnvContext): Record<string, string
     env[`GUGU_${name}`] = value;
     env[`EMDASH_${name}`] = value;
   }
-  return env;
+  // #6264 咕咕 server 上:这条会话的程序打开网页,推给正看着这条会话的桌面(server-browser-env.ts;桌面版上是空的)。
+  return { ...env, ...sessionBrowserEnv(ctx.session.id) };
 }
 
 function slugify(value: string): string {

@@ -77,18 +77,17 @@ export async function recordSampleProjectConversion(userId: string, became: { pr
 }
 
 /**
- * Called when the first-run intro is left, after first-run hints are enrolled. Retrying the intro keeps
- * the existing key. Never throws: a failure only costs this account its sample project and must not
- * keep the person out of the app.
+ * Called when the first-run intro is left, after first-run hints are enrolled. An existing key is kept, and this
+ * window's readers re-read it either way (another instance may have written it first). Never throws: a failure only
+ * costs this account its sample project and must not keep the person out of the app.
  */
 export async function enrollSampleProject(userId: string): Promise<void> {
   try {
-    const config = await readOwnSettings(userId, 'user')
-    if (parseSampleProject(config)) return
-    // The first read may predate a removal on another window/device. Recheck the
-    // latest row on every conditional-write attempt instead of replacing its key.
-    await updateOwnSettings(userId, 'user', (latest) => parseSampleProject(latest)
-      ? latest : { ...latest, [KEY]: { version: 1, dismissed: false } })
+    // A key another window/device wrote (or dismissed) is kept; the write rechecks the latest row on every attempt.
+    if (!parseSampleProject(await readOwnSettings(userId, 'user'))) {
+      await updateOwnSettings(userId, 'user', (latest) => parseSampleProject(latest)
+        ? latest : { ...latest, [KEY]: { version: 1, dismissed: false } })
+    }
   } catch (error) {
     log.error({ error: String(error) }, 'enroll sample project failed')
     return

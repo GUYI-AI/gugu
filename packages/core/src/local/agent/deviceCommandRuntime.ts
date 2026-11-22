@@ -254,6 +254,8 @@ export interface AgentRuntimeBridge {
   }): Promise<void>
   /** 这个 agent 此刻的读数(spec agent-status-vocabulary);null = 这台机器上没有它的状态。 */
   agentStatus?(agentUserId: string): AgentStatusReading | null
+  /** 这个 agent 绑的会话最后一次有动静(开工、停下、等人、出错)的时刻,ISO;null = 说不出。与读数同一个流。 */
+  lastInteractedAt?(agentUserId: string): string | null
   /** Recent provider tool actions owned by the session-page session, if available. */
   recentActionsForAgent?(agentUserId: string): {
     actions: string[]

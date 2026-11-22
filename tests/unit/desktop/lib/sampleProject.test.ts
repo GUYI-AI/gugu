@@ -8,8 +8,11 @@ const { parseSampleProject, readSampleProjectShown, enrollSampleProject, subscri
 
 beforeEach(() => {
   vi.resetAllMocks()
+  // As core's versioned write: it answers the row it saved.
   io.update.mockImplementation(async (client, userId, scope, edit) => {
-    await io.write(client, userId, scope, edit(await io.read()))
+    const config = edit(await io.read())
+    await io.write(client, userId, scope, config)
+    return { scope, config }
   })
 })
 
@@ -79,7 +82,9 @@ describe('account-scoped sample project key', () => {
     expect(listener).toHaveBeenCalledWith('owner-1')
   })
 
-  it('keeps an existing key, including a dismissal, when the intro is left again', async () => {
+  it('keeps an existing key, including a dismissal, and still tells this window to read it again', async () => {
+    // Another instance of the account left the intro first and wrote the key: this window must re-read, or it shows
+    // no sample until it restarts.
     const listener = vi.fn()
     const stop = subscribeSampleProject(listener)
     for (const sampleProject of [{ version: 1, dismissed: false }, { version: 1, dismissed: true }]) {
@@ -88,7 +93,7 @@ describe('account-scoped sample project key', () => {
     }
     stop()
     expect(io.write).not.toHaveBeenCalled()
-    expect(listener).not.toHaveBeenCalled()
+    expect(listener).toHaveBeenCalledTimes(2)
   })
 
   it('still tells every listener, and still resolves, when one listener throws', async () => {

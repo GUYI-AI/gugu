@@ -11,7 +11,7 @@ import { comparer, computed, makeAutoObservable, observable, reaction, runInActi
 import { deviceMachines } from '@gugu/core/shared/deviceMachines';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import type { SessionHostClient } from '@shared/lib/ipc/session-host-client';
-import { onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
+import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 import { foldersChangedChannel } from '@shared/core/folders/folders';
 import {
   closeMachineClient,
@@ -57,7 +57,7 @@ import { platform } from '@/platform';
 import { agentStatusText } from '@/lib/agentStatusText';
 import { diffAlerts, statusMapOf, type AgentWatchStatusMap } from '@/lib/agent-wait/agent-watch-alerts';
 import { announceAgentWait } from '@/lib/agent-wait/agent-wait-banner';
-import type { SettingsMeta } from '@renderer/features/settings/app-settings-client';
+import { fetchAppSettingValue } from '@renderer/features/settings/app-settings-client';
 import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
 
 const REMOTE_PREFIX = 'remote:';
@@ -364,7 +364,9 @@ export class RemoteHostsStore {
 
   /** 没有对过账的目录时读的那份:机器心跳摘要里的会话,换名后的;设备读数换了时派生一次。 */
   private get digestSessions(): ReadonlyMap<string, MachineSessions> {
-    return new Map([...this.hosts].map(([deviceId, { device }]) => [deviceId, machineSessions(deviceId, sessionListFromDigest(device.sessionDigest, device.isOnline).sessions)]));
+    // A machine without a digest (a row restored from the last run) has no entry: not known, ❌ no sessions.
+    return new Map([...this.hosts].flatMap(([deviceId, { device }]) => device.sessionDigest === null ? []
+      : [[deviceId, machineSessions(deviceId, sessionListFromDigest(device.sessionDigest, device.isOnline).sessions)] as const]));
   }
 
   private listedOn(deviceId: string): { listed: MachineSessions | undefined; live: boolean } {
@@ -699,8 +701,7 @@ export class RemoteHostsStore {
     const alerts = diffAlerts(this.waitReadings.get(deviceId) ?? {}, sessions, () => false);
     this.waitReadings.set(deviceId, statusMapOf(sessions));
     if (alerts.length === 0) return;
-    void rpc.appSettings.getWithMeta('notifications').then((meta) => {
-      const { enabled, sound } = (meta as SettingsMeta<'notifications'>).value;
+    void fetchAppSettingValue('notifications').then(({ enabled, sound }) => {
       if (!enabled) return;
       for (const alert of alerts) {
         const title = i18n.t('agentWatch.notify.status', { ns: 'main', name: alert.title, status: agentStatusText(alert.label) });
@@ -794,6 +795,7 @@ export function machineConnectionState(
     sshLink: state.device.sshLink ?? null,
     cloudComputer: state.device.cloudComputer ?? null,
     wake: state.device.cloudComputer ? wake : null,
+    linkUnknown: state.device.linkUnknown === true,
   });
 }
 

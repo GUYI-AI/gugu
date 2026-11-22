@@ -57,7 +57,7 @@ import { acknowledgeErrorNotice, clearErrorNotice, quotaErrorUnseen } from './er
  * 宿主按 agent 的流唯一的来源。出生、开机收残、打断、退出、provider 门、已读都是这里的一次写入。
  */
 export type AgentStatusWriterHooks = {
-  'agent:status': (change: AgentStatusChange & { reading: AgentStatusReading; sourceId?: string; activityAt?: number }) =>
+  'agent:status': (change: AgentStatusChange & { reading: AgentStatusReading; sourceId?: string }) =>
     | void
     | Promise<void>;
 };
@@ -495,6 +495,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
         agentStatusDetail: sessions.agentStatusDetail,
         agentStatusSeen: sessions.agentStatusSeen,
         archivedAt: sessions.archivedAt,
+        lastInteractedAt: sessions.lastInteractedAt,
       })
       .from(sessions);
     return rows
@@ -518,6 +519,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
           reviewGate: this.getProviderReviewGate(row.id),
           providerBlocker: this.getProviderBlocker(row.id),
           statusSourceFault: this.getStatusSourceFault(row.id),
+          ...(row.lastInteractedAt ? { activityAt: Date.parse(row.lastInteractedAt) } : {}),
         };
       });
   }

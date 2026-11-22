@@ -1,7 +1,11 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useState, type ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
+import { Unknown } from '@/components/ui/Unknown';
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
+import { refreshFailure, replica, useReplica } from '@/lib/replica';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
+import { thisDeviceId } from '@/store/thisDevice';
 import { readComposerVerbChat, setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
-import { platform } from '@/platform';
 import { machineLibraryHost } from '@renderer/features/library/library-host';
 import { useNewSessionMachine } from '@renderer/features/remote-hosts/use-new-session-machine';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -13,11 +17,20 @@ import { useGroupFolderStage } from '@renderer/features/folders/group-folder-sta
 import { groupFoldersStore } from '@renderer/features/folders/group-folders-store';
 import { composerDrafts } from './composer-drafts';
 import { ComposerTray } from './composer-tray';
-import { ensureImplicitSessionHomeProjectId } from './implicit-session-home-project';
+import { implicitSessionHome } from './implicit-session-home-project';
 import { NewSessionComposer } from './new-session-page';
 import { sessionComposerDockBandClassName, sessionComposerDockedWidthClassName } from './session-composer-styles';
 import { cancelComposerVerb, composerVerbLook } from './composer-verb-tag';
 import { machineComposerProps } from './use-machine-create-target';
+
+/** The group a chat remembers for new tasks on this computer (kept by the host per chat and device; never pushed). */
+const chatTaskProject = replica({
+  name: 'chatTaskProject',
+  scope: 'account',
+  networkMode: 'always',
+  read: (_owner, chatId: string, deviceId: string) => sessionpageMessageHost().rememberedTaskProject(chatId, deviceId),
+  fresh: 0,
+});
 
 export function taskDispatchDraftKey(chatId: string): string {
   return `task:${chatId}`;
@@ -61,24 +74,46 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
     if (carried) composerDrafts.set(draftKey, carried);
     return null;
   });
-  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
-  const localDeviceId = useLocalDeviceId();
-  const remembered = useChatGroupMemory(chatId, inGroup ? null : localDeviceId);
-  useEffect(() => {
-    if (remembered && selectedId === undefined) setSelectedId(remembered);
-  }, [remembered, selectedId]);
-  const implicitProjectId = useImplicitProjectId(!selectedId);
+  const [picked, setPicked] = useState<{ groupChatId: string | undefined } | null>(null);
+  const self = useReplica(thisDeviceId, []);
+  const localDeviceId = self.state === 'value' ? self.value : null;
+  // 这个对话记着的群(还挂着文件夹的才算;归档了 / 摘光了 = 没选):群和它的话题里 ❌ 沿用(#2599)。
+  const remembers = !inGroup && picked === null;
+  const memory = useReplica(chatTaskProject, remembers && localDeviceId ? [chatId, localDeviceId] : null);
+  // The remembered group is unknown until read (❌ "no group", then it pops in); unreadable memory blocks sending
+  // (❌ the task goes to the implicit directory instead of the group used last). This computer's id read as none and
+  // not read again is unreadable too (❌ "no group" from a read that failed); an id read is this computer's for good.
+  const selfFailure = localDeviceId === null ? refreshFailure(self) : null;
+  const selection: { known: true; groupChatId: string | undefined } | { known: false; failed: Error | null } = picked
+    ? { known: true, groupChatId: picked.groupChatId }
+    : !remembers ? { known: true, groupChatId: undefined }
+    : selfFailure ? { known: false, failed: selfFailure }
+    : memory.state === 'error' ? { known: false, failed: memory.error }
+    : self.state === 'unknown' || (localDeviceId !== null && memory.state === 'unknown') ? { known: false, failed: null }
+    : { known: true, groupChatId: memory.state === 'value' && memory.value ? rememberedGroup(memory.value.projectId) : undefined };
+  const retryMemory = () => {
+    if (selfFailure) void thisDeviceId.refresh();
+    else if (localDeviceId) void chatTaskProject.refresh(chatId, localDeviceId);
+  };
+  const selectedId = selection.known ? selection.groupChatId : undefined;
+  // 没选群:与新建会话页同一个隐式工作目录(「未选择群」是真状态,不是列表第一个)。
+  const implicitProjectId = useImplicitProjectId(selection.known && !selectedId);
 
   const pickProject = (groupChatId: string | undefined) => {
-    setSelectedId(groupChatId);
+    setPicked({ groupChatId });
     if (localDeviceId && !inGroup) {
       // @@@group-folders the chat remembers the group picked (the stored field still reads `projectId`; it holds the group's chat id).
-      void sessionpageMessageHost().rememberTaskProject(chatId, localDeviceId, groupChatId ?? null).catch((error: unknown) => {
+      const entry = chatTaskProject.at(chatId, localDeviceId);
+      void sessionpageMessageHost().rememberTaskProject(chatId, localDeviceId, groupChatId ?? null).then(() => {
+        entry.set(groupChatId ? { deviceId: localDeviceId, projectId: groupChatId } : null);
+      }, (error: unknown) => {
         log.warn('remember the project picked for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) });
       });
     }
   };
-  const projectPicker = <ComposerProjectPicker selectedId={selectedId} onSelect={pickProject} />;
+  const projectPicker = selection.known
+    ? <ComposerProjectPicker selectedId={selectedId} onSelect={pickProject} />
+    : <Unknown className="h-6 w-24" />;
   const tray = {
     draftKey,
     chatId,
@@ -98,7 +133,16 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
   };
   return (
     <div data-testid="task-dispatch-composer" data-chat-id={chatId}>
-      {selectedId ? (
+      {/* The remembered group shown, its re-read failed: said with a retry (❌ the group read before as if current). */}
+      {selection.known ? <RefreshFailed reading={memory} /> : null}
+      {!selection.known ? (
+        selection.failed ? (
+          <div className="flex h-[132px] w-full items-start gap-3 p-3" data-testid="task-dispatch-project-failed">
+            <ComposerProjectPicker selectedId={undefined} onSelect={pickProject} />
+            <ReadFailedLine message={translate('taskDispatch.projectMemoryFailed')} onRetry={retryMemory} />
+          </div>
+        ) : <Unknown className="h-[132px] w-full" />
+      ) : selectedId ? (
         <GroupDispatch key={selectedId} groupChatId={selectedId} projectPicker={projectPicker} {...tray} />
       ) : (
         <MachineDispatch projectPicker={projectPicker} implicitProjectId={implicitProjectId} {...tray} />
@@ -184,47 +228,14 @@ export function ComposerVerbDock({ chatId }: { chatId: string }) {
   );
 }
 
-function useLocalDeviceId(): string | null {
-  const [id, setId] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    void Promise.resolve(platform.getLocalDeviceSelfSnapshot?.()).then(
-      (self) => { if (live) setId(self?.device_id ?? null); },
-      () => undefined,
-    );
-    return () => { live = false; };
-  }, []);
-  return id;
-}
-
-/** The group this chat remembers (a group with folders now; archived / unbound = none); none remembered = the last one picked here. */
-function useChatGroupMemory(chatId: string, deviceId: string | null): string | undefined {
-  const [remembered, setRemembered] = useState<{ chatId: string; groupChatId: string } | null>(null);
-  useEffect(() => {
-    if (!deviceId) return;
-    let live = true;
-    void sessionpageMessageHost().rememberedTaskProject(chatId, deviceId).then(
-      (choice) => { if (live && choice) setRemembered({ chatId, groupChatId: choice.projectId }); },
-      (error: unknown) => log.warn('read the group remembered for a chat failed', { chatId, error: error instanceof Error ? error.message : String(error) }),
-    );
-    return () => { live = false; };
-  }, [chatId, deviceId]);
-  // Read in the observer's render: when the group folders change, read again (❌ only once when the memory came back).
-  const groupChatId = remembered?.chatId === chatId ? remembered.groupChatId : undefined;
-  return groupChatId && groupFoldersStore.foldersOf(groupChatId).length > 0 ? groupChatId : undefined;
+/** A remembered group still counts while it has folders attached (archived / unbound = none). Read in the observer's render:
+ *  when the group folders change, read again (❌ only once when the memory came back). */
+function rememberedGroup(groupChatId: string): string | undefined {
+  return groupFoldersStore.foldersOf(groupChatId).length > 0 ? groupChatId : undefined;
 }
 
 /** 没选群,或群一个文件夹都没挂(Q5):与新建会话页同一个隐式工作目录(task home)。`wanted` = 这一刻要它。 */
 export function useImplicitProjectId(wanted: boolean): string | undefined {
-  const [projectId, setProjectId] = useState<string | undefined>(undefined);
-  useEffect(() => {
-    if (!wanted || projectId) return;
-    let live = true;
-    void ensureImplicitSessionHomeProjectId().then(
-      (id) => { if (live && id) setProjectId(id); },
-      (error: unknown) => log.warn('prepare the implicit project for a task failed', { error: error instanceof Error ? error.message : String(error) }),
-    );
-    return () => { live = false; };
-  }, [wanted, projectId]);
-  return projectId;
+  const home = useReplica(implicitSessionHome, wanted ? [] : null);
+  return home.state === 'value' ? home.value : undefined;
 }

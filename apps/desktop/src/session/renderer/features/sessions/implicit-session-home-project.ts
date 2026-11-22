@@ -1,4 +1,5 @@
 import { getProjectManagerStore } from '@renderer/features/projects/stores/project-selectors';
+import { replica } from '@/lib/replica';
 
 /**
  * 隐藏工作区准备失败是**已知产品错误**，所以这里只抛稳定语义码，不抛成品文案：
@@ -27,7 +28,7 @@ export class ImplicitSessionHomeProjectError extends Error {
  * records it on first use (rpc.folders.ensureTaskHome); its id differs per machine. Another machine's is
  * remoteHostsStore.ensureTaskWorkspace (#609).
  */
-export async function ensureImplicitSessionHomeProjectId(): Promise<string | undefined> {
+export async function ensureImplicitSessionHomeProjectId(): Promise<string> {
   try {
     return await getProjectManagerStore().ensureTaskHome(null);
   } catch (error) {
@@ -35,3 +36,11 @@ export async function ensureImplicitSessionHomeProjectId(): Promise<string | und
   }
 }
 
+/** The task home on this computer, ready for this run (read once per account; a failure is an `ImplicitSessionHomeProjectError`). */
+export const implicitSessionHome = replica({
+  name: 'implicitSessionHome',
+  scope: 'account',
+  networkMode: 'always',
+  read: () => ensureImplicitSessionHomeProjectId(),
+  fresh: Infinity,
+});

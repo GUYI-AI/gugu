@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { motionValue } from 'framer-motion';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { followRendererSession, queryClient } from '@/lib/replica';
+import { thisDeviceId } from '@/store/thisDevice';
 import { setLocalePreference } from '@/i18n';
 import type { SessionFailure } from '@renderer/features/sessions/stores/session-failure';
 import { homeView } from '@renderer/app/home-view';
@@ -50,7 +51,10 @@ const mocks = vi.hoisted(() => ({
   prompt: null as string | null,
   initialPrompt: undefined as string | undefined,
   onCreated: undefined as undefined | ((result: { projectId: string; sessionId: string }) => void),
-  handleCreateSession: vi.fn()
+  handleCreateSession: vi.fn(),
+  sessionSettings: { state: 'value', value: { autoApproveByDefault: false, includeIssueContextByDefault: false }, stale: false, error: null } as
+    | { state: 'value'; value: object; stale: boolean; error: null } | { state: 'error'; error: Error },
+  reloadSettings: vi.fn()
 }));
 
 vi.mock('@renderer/features/projects/stores/project-selectors', () => ({
@@ -105,8 +109,8 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-create-session-sta
     ...args: unknown[]
   ) => {
     mocks.createSessionStateProjectId = projectId;
-    // (projectId, defaultBranch, isUnborn, currentBranch, workspaceId, …, options)
-    mocks.createSessionStateWorkspaceId = args[3] as string | null | undefined;
+    // (projectId, workspaceId, …, options)
+    mocks.createSessionStateWorkspaceId = args[0] as string | null | undefined;
     mocks.createSessionStateOptions = args.at(-1) as typeof mocks.createSessionStateOptions;
     return {
       isValid: false,
@@ -116,20 +120,8 @@ vi.mock('@renderer/features/sessions/create-session-modal/use-create-session-sta
   }
 }));
 
-vi.mock('@renderer/features/sessions/create-session-modal/use-project-git-context', () => ({
-  useProjectGitContext: () => ({
-    defaultBranch: undefined,
-    isUnborn: false,
-    currentBranch: null,
-    repositoryWorkspaceId: null
-  })
-}));
-
 vi.mock('@renderer/features/sessions/hooks/useSessionSettings', () => ({
-  useSessionSettings: () => ({
-    autoApproveByDefault: false,
-    includeIssueContextByDefault: false
-  })
+  useSessionSettings: () => ({ settings: mocks.sessionSettings, reload: mocks.reloadSettings })
 }));
 
 vi.mock('@renderer/features/sessions/session-config/session-field', () => ({
@@ -139,9 +131,12 @@ vi.mock('@renderer/features/sessions/session-config/session-field', () => ({
   }
 }));
 
-vi.mock('./implicit-session-home-project', () => ({
-  ensureImplicitSessionHomeProjectId: vi.fn().mockResolvedValue('implicit-task-home')
-}));
+vi.mock('./implicit-session-home-project', async () => {
+  const { replica } = await import('@/lib/replica');
+  return {
+    implicitSessionHome: replica({ name: 'implicitSessionHome', scope: 'account', read: async () => 'implicit-task-home', fresh: Infinity }),
+  };
+});
 
 vi.mock('@renderer/features/sessions/session-config/initial-session-section', () => ({
   useInitialSessionState: (...args: unknown[]) => {
@@ -172,11 +167,8 @@ vi.mock('@renderer/lib/layout/navigation-provider', () => ({
 }));
 
 vi.mock('@renderer/lib/layout/layout-provider', () => ({
-  // 顶栏的左侧槽位让位量读的是侧栏那条动画宽度(motion value),替身也得给一个真的 —— 给个假对象
-  // 会在 useTransform 里炸,而炸出来的是「读不到 .get()」这种和布局毫不相干的报错。
   useWorkspaceLayoutContext: () => ({
     isLeftOpen: true,
-    leftAnimatedWidth: motionValue(260),
     setCollapsed: vi.fn(),
   })
 }));
@@ -199,8 +191,9 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
 // 群选择器列有文件夹的群(groupFoldersStore.groups):每个 mocks.orderedProjects 是一个群 `chat-<id>`(名字 = id),
 // 文件夹 `ws-<id>` 在它登记的那台机器上(machineRegistry;没登记 = 这台电脑)。
 function seedGroups(): void {
+  followRendererSession('SIGNED_IN', 'tester');
+  thisDeviceId.set([], 'this-computer');
   runInAction(() => {
-    groupFoldersStore.localDeviceId = 'this-computer';
     groupFoldersStore.status = 'ready';
     groupFoldersStore.account = mocks.orderedProjects.map((project) => ({
       chatId: `chat-${project.id}`, name: project.id, archived: false, activeAt: '2026-01-01T00:00:00.000Z',
@@ -268,6 +261,8 @@ describe('NewSessionPage', () => {
   let container: HTMLDivElement;
 
   beforeEach(() => {
+    // The project home's folders are replica entries of the signed-in account.
+    followRendererSession('SIGNED_IN', 'tester');
     mocks.showAddProjectModal.mockReset();
     mocks.notify.mockReset();
     mocks.dismissNotice.mockReset();
@@ -285,6 +280,8 @@ describe('NewSessionPage', () => {
     mocks.initialPrompt = undefined;
     mocks.onCreated = undefined;
     mocks.handleCreateSession.mockReset();
+    mocks.sessionSettings = { state: 'value', value: { autoApproveByDefault: false, includeIssueContextByDefault: false }, stale: false, error: null };
+    mocks.reloadSettings.mockReset();
     composerDrafts.set(NEW_SESSION_DRAFT_KEY, '');
     composerDrafts.set(projectDraftKey('project-1'), '');
     dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
@@ -355,10 +352,13 @@ describe('NewSessionPage', () => {
     await act(async () => {
       root.render(localized(React.createElement(ShellTitlebar), React.createElement(NewSessionPage)));
     });
+    // The hidden task-home project is a replica reading: let its answer land (react-query notifies on the next task).
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   }
 
   afterEach(() => {
     act(() => root.unmount());
+    queryClient.clear();
     vi.unstubAllGlobals();
     dom.window.close();
   });
@@ -429,6 +429,15 @@ describe('NewSessionPage', () => {
     await renderPage();
     expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({ key: 'session-catalog:original-machine:codex:acp' }));
     expect(JSON.stringify(mocks.notify.mock.calls)).not.toMatch(/app-server|code=1|signal=null/);
+  });
+
+  it('settings that could not be read say so with a retry where the composer goes (❌ a placeholder for ever)', async () => {
+    mocks.sessionSettings = { state: 'error', error: new Error('settings unreadable') };
+    await renderPage();
+    const failed = container.querySelector('[data-read-failed]');
+    expect(failed?.textContent).toContain('settings unreadable');
+    await act(async () => { failed!.querySelector('button')!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })); });
+    expect(mocks.reloadSettings).toHaveBeenCalledTimes(1);
   });
 
   it('stays silent while nothing has failed', async () => {
@@ -559,8 +568,8 @@ describe('NewSessionPage', () => {
     await act(async () => {
       root.render(localized(React.createElement(NewSessionComposer, { projectId: 'project-1' })));
     });
-    // 没选 = 项目根目录(这里的 git 上下文桩给的根目录是 null)。
-    expect(mocks.createSessionStateWorkspaceId).toBeNull();
+    // 没选 = 项目根目录(这里的项目桩给的根目录是项目自己的 id)。
+    expect(mocks.createSessionStateWorkspaceId).toBe('project-1');
   });
 
   it('draws the shared machine picker (compact size) in the composer tray', async () => {

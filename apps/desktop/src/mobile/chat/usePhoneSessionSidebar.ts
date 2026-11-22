@@ -23,7 +23,7 @@ export function usePhoneSessionSidebar({ sessionId, entry }: { sessionId: string
   const rows = oneListAgentRows(shown, new Map(pins.map(pin => [chats.find(chat => chat.peer_user_id === pin.agentUserId)?.id ?? pin.sessionId, pin])), isOwnedAgentPeer, identitiesById)
   const families = agentFamilies(directory.map(({ deviceId, session }) => ({ id: session.conversationId,
     projectId: `${deviceId}\u0000${session.projectId}`, parentSessionId: session.parentConversationId,
-    isPinned: false, time: Date.parse(session.lastInteractedAt ?? '') || 0, agentUserId: session.agent?.userId,
+    time: Date.parse(session.lastInteractedAt ?? '') || 0, agentUserId: session.agent?.userId,
     bornInChatId: session.bornInChatId, groupChatId: session.groupChatId ?? null })))
   const scope = (room: InnerSidebarRoomAnchor): ChatAgentScope => ({
     here: id => id === room.chatId || summaries.get(id)?.sourceChatId === room.chatId })

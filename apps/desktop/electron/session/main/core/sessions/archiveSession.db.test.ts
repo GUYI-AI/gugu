@@ -35,7 +35,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('electron', () => ({ app: { getPath: () => mocks.userData }, clipboard: {}, nativeImage: {} }));
 // Only the assistant ownership UI helper is replaced; close/delete/archive below are real.
-vi.mock('@/lib/myAssistant', () => ({ isMyAssistant: () => false }));
+vi.mock('@/lib/myAssistant', () => ({ myAssistant: { peek: () => ({ state: 'unknown' }), fetch: async () => ({ agentId: null, provisionDeviceId: null }), refresh: async () => undefined } }));
 
 vi.mock('./sendMessage', () => ({ drainSessionMessageOutbox: vi.fn(async () => undefined) }));
 vi.mock('./session-life', () => ({ sessionLife: () => mocks.life }));

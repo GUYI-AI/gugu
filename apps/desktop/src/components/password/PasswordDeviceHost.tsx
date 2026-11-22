@@ -2,12 +2,12 @@ import { useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { createPortal } from 'react-dom'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import type { PasswordSyncRequest } from '@gugu/core/shared/passwordBetaProtocol'
-import { usePasswordSnapshot, useOpenPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
+import { usePasswordVault, useOpenPasswordDevicePrompt } from '@/lib/passwordBetaNotifications'
 import { X } from '@/lib/icons'
 import { Button } from '../ui/Button'
 import { IconButton } from '../ui/IconButton'
+import { RefreshFailed } from '../ui/RefreshFailed'
 import { Sheet } from '../ui/Sheet'
 import { SettingsNote } from '../settings/SettingsPrimitives'
 import { promptedRequests, usePasswordCommand } from './passwordModel'
@@ -22,7 +22,7 @@ const name = (t: TFunction<'settings'>, request: PasswordSyncRequest) => request
  */
 export function PasswordDeviceHost() {
   const { t } = useTranslation('settings')
-  const snapshot = usePasswordSnapshot()
+  const { snapshot, failure, retry } = usePasswordVault()
   const { busy, error, run, clear } = usePasswordCommand()
   const [aside, setAside] = useState<ReadonlySet<string>>(new Set())
   const [cardClosed, setCardClosed] = useState(false)
@@ -32,11 +32,11 @@ export function PasswordDeviceHost() {
     if (deviceId) setAside(previous => new Set([...previous].filter(id => id !== deviceId)))
     else setCardClosed(false)
   }, []))
-  if (!PASSWORD_BETA_ENABLED) return null
   const sync = snapshot?.sync
   const request = promptedRequests(sync).find(entry => !aside.has(entry.deviceId))
   const joining = sync?.state === 'joining' || sync?.state === 'blocked' || sync?.state === 'refused' ? sync : undefined
   const putAside = (deviceId: string) => { clear(); setAside(previous => new Set([...previous, deviceId])) }
+  const stale = <RefreshFailed error={failure} onRetry={retry} />
   return <>
     {request && <Sheet onClose={() => putAside(request.deviceId)} desktopWidth="380px" mobileFitContent ariaLabel={t('passwords.deviceRequestLabel')} testId="password-device-prompt" zIndex="var(--z-settings-modal)">
       <div className="flex flex-col gap-3 px-5 pb-5 pt-6" data-stage={request.stage}>
@@ -49,6 +49,7 @@ export function PasswordDeviceHost() {
               {request.code ? <Code value={request.code} /> : <span className="font-mono text-[length:var(--font-title)] tracking-[0.2em] text-[var(--muted-fg)]" aria-label={t('passwords.codeGenerating')}>··· ···</span>}
             </div>
           </>}
+        {stale}
         {error && <SettingsNote tone="danger" role="alert">{error}</SettingsNote>}
         {request.stage !== 'mismatch' && <Button variant="primary" size="lg" disabled={busy || request.stage !== 'compare'} data-testid="password-device-allow"
           onClick={() => { void run({ type: 'sync-approve', deviceId: request.deviceId }) }}>{t('passwords.allow')}</Button>}
@@ -71,6 +72,7 @@ export function PasswordDeviceHost() {
         : joining.state === 'joining' && joining.code
           ? <><Code value={joining.code} /><div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">{t('passwords.joinCompare')}</div></>
           : <div className="text-[length:var(--font-body)] leading-[1.5] text-[var(--muted-fg)]">{t('passwords.joinOpenOther')}</div>}
+      {stale}
       {joining.recovery && <Button variant="ghost" size="sm" className="self-start" onClick={() => { clear(); setRecovering(true) }}>{t('passwords.useRecoveryInstead')}</Button>}
     </div>, document.body)}
     {recovering && <RecoverSheet busy={busy} error={error} onClose={() => setRecovering(false)}

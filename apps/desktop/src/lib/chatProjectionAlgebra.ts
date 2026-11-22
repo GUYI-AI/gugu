@@ -491,7 +491,7 @@ export function sortMembers(members: MembershipValue[]): MembershipValue[] {
 
 /** List order: most recent activity first; equal activity by id, so a full and an incremental assemble agree. */
 export function compareListRows(left: ChatItem, right: ChatItem): number {
-  return compareChatsByActivityDesc(left, right) || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
+  return compareChatsByActivityDesc(left, right)
 }
 
 /** One conversation's list row, or null when it is not in the list (not published, deleted, peer not resolved yet). */

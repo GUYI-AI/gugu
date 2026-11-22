@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import '@/i18n/registerMessagingCatalog'
 import type { UnavailableProject } from '@/session/shared/projects'
-import { archiveUnavailableProjects, projectRecoveryMessage, recoverUnavailableProject, useUnavailableProjects } from '@/lib/projectRecovery'
+import { archiveUnavailableProjects, projectRecoveryMessage, readUnavailableProjects, recoverUnavailableProject } from '@/lib/projectRecovery'
 import { readArchivedGroups } from '@/lib/archivedGroupsRead'
 import { platform } from '@/platform'
 import { Avatar } from '../Avatar'
@@ -14,7 +14,6 @@ import './projectRecovery.css'
 /** The status and its two explicit actions occupy the existing second line. */
 export function ProjectRecoverySubtitle({ project }: { project: UnavailableProject }) {
   const { t } = useTranslation('messaging')
-  const reading = useUnavailableProjects()
   const [confirmed, setConfirmed] = useState<UnavailableProject[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -29,9 +28,9 @@ export function ProjectRecoverySubtitle({ project }: { project: UnavailableProje
   }
   const askToClean = async () => {
     setError('')
-    const result = await reading.refetch()
-    if (result.error) { setError(t('projectRecovery.checkFailed')); return }
-    const projects = (result.data ?? []).filter(row => row.chatId && !readArchivedGroups().has(row.chatId))
+    let rows: UnavailableProject[]
+    try { rows = await readUnavailableProjects() } catch { setError(t('projectRecovery.checkFailed')); return }
+    const projects = rows.filter(row => row.chatId && !readArchivedGroups().has(row.chatId))
     if (projects.length) setConfirmed(projects)
   }
   const clean = async () => {

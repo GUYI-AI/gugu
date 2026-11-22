@@ -26,8 +26,8 @@ interface GroupInviteShareProps {
 
 /**
  * @@@group-share 分享一个群 = 它的邀请链接(复制)和海报(带码)。两副样子共用这一份动作:
- * - GroupInviteActions:一排按钮,放在邀请单的确认按钮旁边;
- * - GroupInviteCode:码直接画出来,是「没人可选」时邀请单的主体,也是通讯录里群资料页上的那张码。
+ * - GroupInviteActions:一排按钮,放在邀请单的确认按钮旁边,也是通讯录群资料上「邀请」那一行;
+ * - GroupInviteCode:码直接画出来,是「没人可选」时邀请单的主体。
  */
 export function GroupInviteActions(props: GroupInviteShareProps) {
   const { t } = useTranslation('messaging')

@@ -18,7 +18,7 @@ const stored = () =>
 describe('a removed interface key left in the database', () => {
   it('reads, starts and writes as before; the next write drops the key', async () => {
     fixture = await openFixture('empty'); h.db = fixture.db;
-    fixture.sqlite.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run('interface', JSON.stringify({ desktopSidebarV2: true, chatView: 'single' }));
+    fixture.sqlite.prepare('INSERT INTO app_settings (key, value) VALUES (?, ?)').run('interface', JSON.stringify({ desktopSidebarV2: true, showLeftSidebarStateGroups: true, chatView: 'single' }));
     const settings = new SettingsStore();
     await settings.initialize();
 
@@ -31,6 +31,7 @@ describe('a removed interface key left in the database', () => {
     await settings.update('interface', { ...value, confirmBeforeArchive: false });
     expect(JSON.parse(stored()!)).toEqual({ chatView: 'single', confirmBeforeArchive: false });
     expect(await settings.get('interface')).not.toHaveProperty('desktopSidebarV2');
+    expect(await settings.get('interface')).not.toHaveProperty('showLeftSidebarStateGroups');
   });
 
   it('a row holding only the removed key is deleted by the next write at defaults', async () => {

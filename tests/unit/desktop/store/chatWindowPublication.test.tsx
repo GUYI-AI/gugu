@@ -3,7 +3,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createReactHarness, deferred, message } from '../../../support/testHarness'
 import { chatService } from '../../../../apps/desktop/src/lib/chat'
-import { openImRepository, ingestAccountMessage } from '../../../../apps/desktop/src/lib/imRepository'
+import { openImRepository } from '../../../../apps/desktop/src/lib/imRepository'
+import { ingestMessages } from '../../../../apps/desktop/src/lib/messageIngest'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
 import { openCachedChatWindow, useChatWindowCache } from '../../../../apps/desktop/src/store/chatWindowPublication'
 
@@ -77,7 +78,7 @@ describe('shared message cache publication', () => {
     await harness.render(<CacheOwner index={1} />)
     const repository = await openImRepository('user', { adapter: createMemoryLocalSyncDb() })
     const arrival = message({ id: 'arrived-while-closed', chat_id: 'topic', seq: 100 })
-    await repository.transaction(tx => ingestAccountMessage(repository, tx, arrival, '1'))
+    await ingestMessages('user', { writes: [], revisions: [{ revision: '1', writes: [{ type: 'put', message: arrival }] }] })
     const body = deferred<ReturnType<typeof message>[]>()
     const readMessages = vi.spyOn(chatService, 'getMessages').mockImplementation(() => body.promise)
     vi.spyOn(chatService, 'getOtherMembersReadSeqs').mockResolvedValue({})
@@ -88,9 +89,11 @@ describe('shared message cache publication', () => {
       observer: { current: () => true, painted, ready: vi.fn(), readSeqs: vi.fn() },
       commit: rows => { first.cache.set('topic', rows) }, revalidate: async () => {},
     })
-    await vi.waitFor(() => expect(painted).toHaveBeenCalledWith([arrival], true))
+    // What paints is the stored row: the store keeps no renderer-only fields (local_send_*).
+    const { local_send_state: _local, ...stored } = arrival
+    await vi.waitFor(() => expect(painted).toHaveBeenCalledWith([stored], true))
     expect(readMessages).toHaveBeenCalledWith('topic', 'user', 'initialLoad', 30)
-    expect(first.cache.rows('topic')).toEqual([arrival])
+    expect(first.cache.rows('topic')).toEqual([stored])
     body.resolve([arrival]); await read; repository.close()
   })
 

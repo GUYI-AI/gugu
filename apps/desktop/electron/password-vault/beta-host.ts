@@ -5,7 +5,6 @@ import { PasswordSaveError } from './save-error'
 import { app, ipcMain, type BrowserWindow } from 'electron'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { passwordGrantLevel, type PasswordUiCommand, type PasswordUiReply, type PasswordSnapshot } from '@gugu/core/shared/passwordBetaProtocol'
 import { privatePasswordVaultDirectory, PASSWORD_VAULT_STORAGE } from '@gugu/core/local/state/protectedPrivateStorage'
 import { protectedPrivateStorageStatus } from '@gugu/core/local/state/agentFileBoundary'
@@ -14,7 +13,7 @@ import type { PermissionPolicy } from '../permissions/rules'
 import { guguMcpToolScope, passwordNativeMcpIdentity } from '../mcp/password-native-identity'
 import type { GuguMcpContext } from '../acp-engine-utils'
 import { createVaultStorage } from './host'
-import { macVaultKeyProtector } from './mac'
+import { systemVaultKeyProtector } from './system-keys'
 import { VaultError, type CredentialGrant } from './contracts'
 import { httpsOrigin } from './schema'
 import { passwordGrantCandidates, passwordGrantSubjects, passwordRequestPresentation } from '../session/main/core/sessions/password-beta-presentation'
@@ -106,7 +105,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
     } })
   const saves = new BetaPasswordSaves({ deviceId, changed, describe, deliver: host.deliverSave })
   const remote = new BetaRemoteLogins({ deviceId, changed })
-  const keys = macVaultKeyProtector(reason => host.verifyOwner(reason))
+  const keys = systemVaultKeyProtector(process.platform === 'darwin' ? reason => host.verifyOwner(reason) : null)
   // The vault publishes through this port before each local commit; the engine exists once the vault does.
   const port: { sync?: VaultSync } = {}
   const { vault } = createVaultStorage({ root, accountId: ownerId, installationBinding: app.getPath('userData'),
@@ -116,7 +115,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
     assertPrivateStorageReady: protection, keys,
     invalidate: async () => { login.invalidate(); remote.invalidate() },
   }, login.sink, async (operation, signal) => {
-    if (!PASSWORD_BETA_ENABLED || await host.account() !== ownerId) throw unavailable()
+    if (await host.account() !== ownerId) throw unavailable()
     const result = await access.acquireFeatureGuard(operation, signal)
     if (result.status !== 'ready') throw unavailable()
     return result
@@ -128,7 +127,7 @@ async function createAccount(ownerId: string, host: NativeHost) {
   return { ownerId, vault, login, saves, remote, controller, assertCurrent, sync, pull: createVaultPulling(sync, host, controller.signal) }
 }
 async function account(): Promise<Account> {
-  if (!PASSWORD_BETA_ENABLED || !native) throw unavailable()
+  if (!native) throw unavailable()
   return accounts.get()
 }
 
@@ -145,7 +144,7 @@ async function snapshot(value: Account): Promise<PasswordSnapshot> {
 }
 /** A dedicated native renderer IPC. Never uses generic action logging, transcript or device RPC. */
 export function installPasswordBetaHost(host: NativeHost): void {
-  if (!PASSWORD_BETA_ENABLED || native) return
+  if (native) return
   native = host
   ipcMain.handle(PASSWORD_UI_CHANNEL, async (event, command: PasswordUiCommand): Promise<PasswordUiReply> => {
     try {
@@ -287,7 +286,6 @@ export function passwordBetaRemoteHandlers() {
     }),
     [PASSWORD_AGENT_RPC]: async (payload: unknown, ctx: { request: { user_id: string } }) => {
       try {
-        if (!PASSWORD_BETA_ENABLED) return fail()
         const op = remoteOpSchema.parse(payload), value = await account()
         if (ctx.request.user_id !== value.ownerId) return fail()
         const caller: RemoteCaller = op.caller, subjects = [`agent:${caller.agentId}`]
@@ -314,3 +312,43 @@ export function passwordBetaRemoteHandlers() {
     },
   }
 }
+
+/** A saved credential as the host's own screens show it: never a secret value. */
+export interface HostCredential { id: string; name: string; origin: string; sites: readonly string[]; account?: string; maskedAccount: string }
+/** Whether a credential is for `site` (a bare hostname): its own website or one of its other sites, subdomains included. */
+export const credentialServes = (item: { origin: string; sites: readonly string[] }, site: string) =>
+  [item.origin, ...item.sites].some(origin => { const host = new URL(origin).hostname; return host === site || host.endsWith(`.${site}`) })
+/**
+ * The host's own use of the vault (main only): a connector keeps its token here, an App's request carries the one the
+ * person chose. The host lists, saves and removes as the person's own screens do, and reads a value only for itself.
+ */
+export const passwordVaultForHost = Object.freeze({
+  async list(site?: string): Promise<HostCredential[]> {
+    const value = await account()
+    return accounts.run(value, async () => (await value.vault.list(person))
+      .filter(item => site === undefined || credentialServes(item, site))
+      .map(item => ({ id: item.reference.id, name: item.name, origin: item.origin, sites: item.sites, ...(item.account !== undefined ? { account: item.account } : {}), maskedAccount: item.maskedAccount })))
+  },
+  /** Saves a value the person handed the host (a device-flow token); `credentialId`: over that one. Answers its id. */
+  async save(input: { origin: string; name: string; account: string; password: string }, credentialId?: string): Promise<string> {
+    const value = await account()
+    return accounts.run(value, async () => {
+      const previous = credentialId ? (await value.vault.list(person)).find(item => item.reference.id === credentialId) : undefined
+      const saved = await value.vault.save(person, randomUUID(), { ...input, fields: previous?.fields.map(field => ({ id: field.id, name: field.name, value: '', secret: field.secret })) ?? [] }, previous?.reference)
+      changed()
+      return saved.reference.id
+    })
+  },
+  async secret(credentialId: string): Promise<string | null> {
+    const value = await account()
+    return accounts.run(value, () => value.vault.hostSecret(person, credentialId))
+  },
+  /** Gone already is done. */
+  async remove(credentialId: string): Promise<void> {
+    const value = await account()
+    await accounts.run(value, async () => {
+      const item = (await value.vault.list(person)).find(entry => entry.reference.id === credentialId)
+      if (item) { await value.vault.delete(person, randomUUID(), item.reference); changed() }
+    })
+  },
+})

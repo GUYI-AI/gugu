@@ -95,7 +95,6 @@ describe('sidebarAgentHome', () => {
   const entry = (facts: Partial<ChatAgentEntry> = {}): ChatAgentEntry => ({
     id: 's1',
     projectId: 'tasks',
-    isPinned: false,
     time: 0,
     agentUserId: 'a1',
     ...facts,

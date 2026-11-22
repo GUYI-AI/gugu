@@ -28,24 +28,27 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const 
 // 这一家只声明了一种登录方法:不出「选哪种」那一屏,直接进协议登录。
 vi.mock('@renderer/lib/stores/use-agents', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@renderer/lib/stores/use-agents')>()),
-  useAgent: () => ({ data: null }),
+  useAgent: () => ({ state: 'value', value: null, stale: false, error: null }),
 }));
 // 运行时那一侧:登录已经起来、在等浏览器,厂商给了登录链接。
 vi.mock('@renderer/lib/acp/auth-login-binding', () => ({
   AcpAuthLoginBinding: {
     create: async () => ({
       status: {
-        current: () => ({
-          status: { kind: 'unauthenticated' },
-          login: {
-            methodId: 'codebuddy-international',
-            startedAt: 1,
-            transport: 'acp-authenticate',
-            pendingUrl: { id: 'u1', url: LINK },
-            exit: null,
-            outcome: null,
-          },
-        }),
+        follow: (listener: (state: unknown) => void) => {
+          listener({
+            status: { kind: 'unauthenticated' },
+            login: {
+              methodId: 'codebuddy-international',
+              startedAt: 1,
+              transport: 'acp-authenticate',
+              pendingUrl: { id: 'u1', url: LINK },
+              exit: null,
+              outcome: null,
+            },
+          });
+          return () => {};
+        },
       },
       dispose: mocks.dispose,
     }),

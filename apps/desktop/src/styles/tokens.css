@@ -1664,8 +1664,10 @@ body.barcode-scanner-active #root {
 
 /* 列表行:会话/联系人/任务/文件/成员行。选中挂 data-selected(React: data-selected={sel || undefined})。 */
 .gg-row {
-  transition: background var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
+/* 此刻选不了的行(如联系人多选态下的「新的请求」):与菜单项的禁用态(.gg-mi[data-disabled])同一个淡法,不接指针。 */
+.gg-row[aria-disabled='true'] { opacity: 0.4; pointer-events: none; }
 /* #2598 置顶行常驻底色(飞书式:靠底色辨识,❌ 另起分隔条/标题栏——见 #1323/#1331 做减法先例)。
    刻意排在交互态之前:同特异度下后写的赢,hover/press/selected 照常盖过常驻态。 */
 .gg-row[data-pinned] { background: var(--pinned); }
@@ -1685,7 +1687,7 @@ body.barcode-scanner-active #root {
 /* @@@contacts-offscreen-rows 通讯录分组页(ContactsSectionPane)里的人行 / 群行:屏幕外的跳过布局与绘制(content-visibility)。
    auto 记住画过的实际高度,没画过的按 48px(头像 32 + 上下内距 8,通讯录行一律单行)占位。paint containment 会裁掉框外的东西:
    键盘焦点环画在框外 4px(outline 2 + offset 2),用 overflow-clip-margin 让出来,外观不变。 */
-.gg-c-sec-body .gg-row-host, .gg-c-sec-body > div > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 48px; overflow-clip-margin: 4px; }
+.gg-c-sec-body .gg-row-host, .gg-c-sec-body .gg-c-grid > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 48px; overflow-clip-margin: 4px; }
 
 /* Ghost 图标钮:导航轨/composer 图标/消息工具条/关闭钮。「开」态挂 data-on;菜单 Trigger 菜单开着时 Base UI 挂 data-popup-open,同一个开态。
    图标色只在 faint-fg → muted-fg → fg 三档内移动,不引入色相。 */
@@ -1794,11 +1796,6 @@ body.barcode-scanner-active #root {
 }
 .gg-winctl:hover { background-color: var(--hover); color: var(--text-primary); }
 .gg-winctl--close:hover { background-color: #E81123; color: #fff; }
-
-/* 悬浮显现:消息 hover 工具条/卡片快捷操作。❌ display:none 切换(闪跳);focus-within 保键盘可达。 */
-.gg-reveal { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
-.gg-reveal-host:hover .gg-reveal,
-.gg-reveal:focus-within { opacity: 1; }
 
 /* 系统减弱动态:全部动效降级为即时。iteration-count 必须配对压成 1——
    只压时长的话 infinite 动画(spinner/pulse/shimmer)会变成每圈 0.01ms 的高频闪烁,比不降级更糟。 */
@@ -2358,13 +2355,6 @@ body.barcode-scanner-active #root {
   background: var(--border-subtle);
 }
 
-/* @@@unknown-slot — the read model's placeholder (components/ui/Unknown.tsx): it holds the value's place from the first
-   frame but is drawn only after 150 ms, so a read that answers sooner shows nothing in between (❌ a flash of a bar). */
-@keyframes gg-unknown-appear { to { opacity: 1; } }
-.gg-unknown { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards; }
-@media (prefers-reduced-motion: reduce) { .gg-unknown { animation-duration: 0s; } }
-
-
 /* Model settings: approved light palette, with the existing dark theme surfaces. */
 :root {
   --model-settings-page: var(--page);
@@ -2396,3 +2386,19 @@ body.barcode-scanner-active #root {
   --usage-brand-codex-trackLight: #C9CFD6;
   --usage-brand-codex-trackDark: #41474F;
 }
+
+/* @@@placeholder-reveal — how what stands for a value not read yet appears: the read model's placeholder
+   (components/ui/Unknown.tsx, `.gg-unknown`), a loading line (`.gg-loading-line`), a search's previous results dimmed
+   (`.gg-stale`). Nothing for 150 ms (a read that answers sooner leaves nothing drawn in between), then a slow start
+   (ease-in cubic over 450 ms): half way only ~500 ms after it is drawn, so a read answering within half a second leaves a
+   faint bar at most (❌ a flash of a bar); a slower one shows the placeholder, as it should. The same with reduced motion
+   (an opacity change, no movement). */
+:root {
+  --gg-placeholder-delay: 150ms;
+  --gg-placeholder-duration: 450ms;
+  --gg-placeholder-easing: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+}
+@keyframes gg-placeholder-in { from { opacity: 0; } to { opacity: 1; } }
+.gg-unknown, .gg-loading-line { animation: gg-placeholder-in var(--gg-placeholder-duration) var(--gg-placeholder-easing) var(--gg-placeholder-delay) both; }
+@keyframes gg-stale-dim { from { opacity: 1; } to { opacity: 0.6; } }
+.gg-stale { animation: gg-stale-dim var(--gg-placeholder-duration) var(--gg-placeholder-easing) var(--gg-placeholder-delay) both; }

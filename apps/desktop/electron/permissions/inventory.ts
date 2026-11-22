@@ -22,6 +22,10 @@ export const CORE_TOOL_RISKS: Readonly<Record<string, ToolRisk>> = {
   ...entries('permission', 'high', `app_install app_manage group_remove_member group_set_role group_update
     group_folder_bind group_folder_unbind session_archive`),
   ...entries('send', 'medium', 'web_search'),
+  // The password tools carry no value to the agent: listing reads names only, and fill/save file a request the vault puts
+  // to the person (its own card, its own grants), so no second confirmation is stacked here.
+  ...entries('read', 'medium', 'password_credentials'),
+  ...entries('write', 'medium', 'password_fill password_save'),
   // Wrappers are expanded before evaluation. Their own entries do not confer permission on the payload.
   ...entries('execute', 'high', 'catalog_call device_call'),
 }

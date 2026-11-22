@@ -1,13 +1,14 @@
 import type { InstallMethod } from '@gugu/session-core/deps';
 import type {
   DependencyId,
-  DependencyProbeOptions,
   HostDependencySelection,
   InstallOverride,
 } from '@gugu/session-core/deps/runtime';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { ProviderCustomConfig } from '@shared/core/app-settings';
 import { createRPCController } from '@shared/lib/ipc/rpc';
+import { guguCatalogReasonCode } from '@gugu/session-core/session-record/contract';
+import { getPlatformModelGate, type AgentModelCatalogAnswer, type GuguModelsOffer } from './platform-model-catalog-hook';
 import { events } from '@main/lib/events';
 import { agentInstallProgressChannel } from '@shared/events/appEvents';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
@@ -383,9 +384,9 @@ export const agentsController = createRPCController({
     return mgr.probeOverride(id, selection);
   },
 
-  probeAll: async (options?: DependencyProbeOptions) => {
+  probeAll: async () => {
     const mgr = await getDependencyManager();
-    return mgr.probeAll(options);
+    return mgr.probeAll();
   },
 
   /**
@@ -411,7 +412,10 @@ export const agentsController = createRPCController({
    */
   modelCatalog: async (id: string, leg: SessionpageLeg, force?: boolean) => {
     const mgr = await catalogDependencyManager();
-    return lookupHarnessModelCatalog(id, {
+    const gate = getPlatformModelGate();
+    const reason = gate ? gate({ providerId: id, surface: leg }) : guguCatalogReasonCode('host-not-ready');
+    const gugu: GuguModelsOffer = reason === null ? { offered: true } : { offered: false, reason };
+    const lookup = await lookupHarnessModelCatalog(id, {
       // 目录替哪条腿读(#6246):两条腿的配置根可能不同,渲染层按它所在的那条腿问。
       leg,
       // 版本是缓存的主作废闸：harness 一升级，清单就可能变（codex 0.144.6 的缓存报出
@@ -421,6 +425,7 @@ export const agentsController = createRPCController({
         mgr.get(agentProgramFor(getPlugin(id), leg).dependencyId as DependencyId)?.version ?? null,
       ...(force ? { force: true } : {}),
     });
+    return { ...lookup, gugu } satisfies AgentModelCatalogAnswer;
   },
   /** Disposable target read: it never replaces the default-model catalog/cache. */
   targetModelCatalog: async (id: string, leg: SessionpageLeg, model: string) => {

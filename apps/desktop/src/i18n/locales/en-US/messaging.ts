@@ -863,6 +863,7 @@ export default {
       "undelivered": "instance not running, not delivered",
       "sending": "Sending",
       "stopped": "Stopped. Sends with your next message.",
+      "notSentWillResend": "Not sent. It goes out on its own once the connection is back",
       "unknownNotResent": "Failed to send",
       "failure": {
         "hostOffline": "The device running this task is offline. The message will be sent automatically when the device is back online.",

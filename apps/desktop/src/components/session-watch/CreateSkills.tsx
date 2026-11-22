@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
 import { Check, Search, Sparkles, X } from '@/lib/icons'
-import { useReplica } from '@/lib/replica'
+import { useReplica, retryOf } from '@/lib/replica'
 import { creationSkills } from './create-skills-read'
 import { preserveComposerFocus } from '../../mobile/composer/composer-focus'
 import { creationSkillsHostMethodMissing, creationSkillsHostTooOld, filterCreationSkills, type CreationSkill } from './create-skills'
@@ -35,7 +35,7 @@ export function CreateSkillsList({ deviceId, deviceLabel, deviceVersion, phone, 
   const oldHost = state.error && creationSkillsHostTooOld(state.error, deviceVersion, typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : undefined)
   const retry = <div className="gg-phone-composer-sheet-status" role="alert" data-testid="agent-watch-create-skills-error" data-failure={oldHost ? 'host-update-required' : missingMethod ? 'method-unavailable' : 'read-failed'}>
     {oldHost ? t('skillsHostUpdateRequired', { device: deviceLabel ?? t('device') }) : missingMethod ? t('skillsHostMethodUnavailable', { device: deviceLabel ?? t('device') }) : t('failedSkills')}
-    <Button variant="ghost" size="sm" onClick={() => void creationSkills.refresh(deviceId, harness, projectId)}>{t('retry')}</Button></div>
+    <Button variant="ghost" size="sm" onClick={retryOf(state)}>{t('retry')}</Button></div>
   if (state.state === 'error') return retry
   const filtered = filterCreationSkills(state.value.skills, search)
   return <>

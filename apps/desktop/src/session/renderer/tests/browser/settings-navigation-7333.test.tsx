@@ -13,7 +13,7 @@ import '@/components/settings/settings.css';
 import '@/styles/tokens.css';
 
 const tourFixture = vi.hoisted(() => ({ value: null as null | { step: 'contacts'; status: 'skipped' } }));
-vi.mock('@/lib/productTour', async original => ({ ...await original<object>(), useProductTourState: () => ({ data: tourFixture.value }) }));
+vi.mock('@/lib/productTour', async original => ({ ...await original<object>(), useProductTourState: () => ({ state: 'value', value: tourFixture.value, stale: false, error: null }) }));
 vi.mock('@/platform', async original => {
   const actual = await original<typeof import('@/platform')>();
   return { ...actual, platform: { ...actual.platform, kind: 'electron' } };
@@ -22,6 +22,7 @@ vi.mock('@/platform', async original => {
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@/lib/deviceProjects', async (original) => ({ ...await original<object>(), listMyDeviceProjects: async () => ({}) }));
 vi.mock('@/lib/chatFolders', () => ({ listMyGroupFolders: async () => [] }));
+vi.mock('@/store/devicesRead', () => ({ readDevices: async () => [] }));
 // File storage is a key of the account's own settings row (lib/ownSettings): an empty row = the defaults.
 vi.mock('@gugu/core/cloud/userSettings', async (original) => ({ ...await original<object>(), readUserSettingsConfig: async () => ({}) }));
 vi.mock('@/lib/fileStorage', async (original) => {
@@ -233,7 +234,8 @@ describe('settings navigation hierarchy and interaction (#7333)', () => {
     await until('the real settings dialog finished entering', () => dialog.getAnimations({ subtree: true }).every((animation) => animation.playState === 'finished'));
     const verify = () => {
       const title = detail.querySelector<HTMLElement>('[data-slot="pane-header"] h2')!;
-      const column = detail.querySelector<HTMLElement>('.gg-settings-body > *')!;
+      // A session-page section sits in a display: contents wrapper; its own element is the column.
+      const column = detail.querySelector<HTMLElement>('.gg-settings-body [data-session-settings-section]') ?? detail.querySelector<HTMLElement>('.gg-settings-body > *')!;
       expect(detail.getBoundingClientRect().width).toBeGreaterThan(550);
       expect(column.getBoundingClientRect().width).toBeGreaterThan(500);
       expect(column.getBoundingClientRect().width).toBeLessThanOrEqual(720);
@@ -244,6 +246,9 @@ describe('settings navigation hierarchy and interaction (#7333)', () => {
     await page.getByRole('button', { name: i18n.t('settings.nav.about', { ns: 'main' }), exact: true }).click();
     await until('About opens in the same dialog', () => !detail.isConnected || document.querySelector('[data-settings-modal-card]')?.getAttribute('data-settings-section') === 'about');
     expect(detail.isConnected, 'navigating to About must not unmount the settings panel').toBe(true);
+    verify();
+    await page.getByRole('button', { name: i18n.t('settings.nav.subscriptions', { ns: 'main' }), exact: true }).click();
+    await until('Subscriptions (drawn by the session page) opens in the same dialog', () => detail.querySelector('[data-session-settings-section="subscriptions"] [data-testid="subscriptions-refresh"]') !== null);
     verify();
     expect(document.querySelectorAll('[data-settings-modal-card]')).toHaveLength(1);
   });

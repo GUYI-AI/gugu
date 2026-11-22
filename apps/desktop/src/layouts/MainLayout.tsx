@@ -4,7 +4,8 @@ import { Sheet } from '../components/ui/Sheet'
 import { PaneHeader } from '../components/ui/Pane'
 import { RightPanelBackButton } from '../components/chat/RightPanel'
 import { SessionAppFrame } from '../components/appSlot/SessionAppFrame'
-import { installedExtensionsStore } from '../session/renderer/features/extensions/installed-extensions-store'
+import { peekInstalledApps } from '../session/renderer/features/extensions/installed-extensions'
+import { LISTED_HOST } from '../components/appSlot/hereHost'
 import { ResourceMonitorHost } from '@/session/renderer/features/settings/components/resource-monitor-host'
 import { reopenGlobalSearch } from '@/session/renderer/features/global-search/search-session'
 import { reaction } from 'mobx'
@@ -63,7 +64,7 @@ import { GroupAddMembersHost } from '../components/chat/GroupAddMembersSheet'
 import { MessageForwardHost } from '../components/chat/MessageForwardHost'
 import { useSessionpageReveal } from '../hooks/useSessionpageReveal'
 import { useOwnedAgentConversationEntry } from '../hooks/useOwnedAgentConversationEntry'
-import { SessionInputOutboxHost } from '../hooks/useSessionInputOutbox'
+import { OutboxHost } from '../hooks/useOutboxHost'
 import { SentMessageBodyHost } from '../components/chat/SentMessageBodyHost'
 import { NeedsYouHost } from '../components/needsYou/NeedsYouHost'
 import { AgentFailureSlotHost } from '../components/AgentTurnFailureBar'
@@ -220,8 +221,8 @@ function InnerLayout({
     upsertChat,
     writeDraft,
     setDraftAttachments,
-    setDraftQuote, setDraftWhisper,
-  } = useChatStore('activeChatId', 'setActiveChatId', 'refreshChats', 'upsertChat', 'writeDraft', 'setDraftAttachments', 'setDraftQuote', 'setDraftWhisper')
+    setDraftQuote, setDraftWhisper, sendMessageToChat,
+  } = useChatStore('activeChatId', 'setActiveChatId', 'refreshChats', 'upsertChat', 'writeDraft', 'setDraftAttachments', 'setDraftQuote', 'setDraftWhisper', 'sendMessageToChat')
   const mobile = useMobileShell()
   // @@@phone-root — 弹层挂在壳外,只能从 <html> 认手机;用属性而不是 `:root:has([data-phone-shell])`:桌面用不到它,不该替它付 :has 失效。
   useLayoutEffect(() => {
@@ -330,7 +331,11 @@ function InnerLayout({
       await askChatFile(chatId, { itemId: target.itemId, opener, ...(target.at ? { at: target.at } : {}), ...(source.message ? { message: source.message } : {}), ...(source.restore ? { restore: source.restore } : {}) })
     },
     openApp: (chatId, extensionId, tab) => { openChatTarget(chatId, 'resource'); askChat(chatId, { app: extensionId, ...(tab ? { tab } : {}) }) },
-    openOwnApp: (extensionId, tab) => { const page = installedExtensionsStore.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`); if (!page) throw new Error('App tab is unavailable'); setOpenedPhoneApp({ kind: page.kind, name: page.extensionName }) },
+    openOwnApp: (extensionId, tab) => {
+      const page = peekInstalledApps(LISTED_HOST)?.allTabContributions.find((entry) => entry.kind === `${extensionId}.${tab}`)
+      if (!page) throw new Error('App tab is unavailable')
+      setOpenedPhoneApp({ kind: page.kind, name: page.extensionName })
+    },
     openProject: (projectId) => {
       // An old gugu://project/<id> link (a local project before C1, or a folder id): the group it is now (the host's alias table).
       void rpc.folders.resolveLegacyProject(projectId).then((found) => {
@@ -884,9 +889,8 @@ function InnerLayout({
     if (!sessionHostAvailable) return
     const w = window as typeof window & { __GUGU_SESSIONPAGE_MESSAGES__?: SessionpageMessageHost }
     const host: SessionpageMessageHost = {
-      async sendCardToChat(chatId, content) {
-        await chatService.sendMessage(chatId, user.id, content, crypto.randomUUID(), 'card')
-      },
+      // Through the outbox like any message: durable, retried, idempotent on its id.
+      async sendCardToChat(chatId, content) { await sendMessageToChat(chatId, content, { contentType: 'card' }) },
       rememberedTaskProject: async (chatId, localDeviceId) => rememberedChatProject(await readAgentCreateDefaults(), chatId, localDeviceId),
       rememberTaskProject: async (chatId, deviceId, projectId) => { await rememberAgentCreateProject(deviceId, projectId, chatId) },
     }
@@ -894,7 +898,7 @@ function InnerLayout({
     return () => {
       if (w.__GUGU_SESSIONPAGE_MESSAGES__ === host) delete w.__GUGU_SESSIONPAGE_MESSAGES__
     }
-  }, [sessionHostAvailable, user])
+  }, [sessionHostAvailable, sendMessageToChat])
 
   useEffect(() => {
     if (!sessionHostAvailable) return
@@ -1229,7 +1233,7 @@ function InnerLayout({
           </div>
         )}
 
-        <SentMessageBodyHost />{effectsActive && <SessionInputOutboxHost accountId={user.id} />}{mobile && <AgentWatchRoot />}
+        <SentMessageBodyHost />{effectsActive && <OutboxHost accountId={user.id} />}{mobile && <AgentWatchRoot />}
         {/* 批准页的机器移除与设置共用 DevicesProvider 那份设备数据;系统交给 App 的邀请短链与相机扫码同一条路。 */}
         <ServerLoginApproveHost active={effectsActive} onScanRoute={openScanRoute} />
         {effectsActive && <PasswordDeviceHost />}

@@ -45,6 +45,7 @@ export class ChatWindowCache extends Map<string, MessageItem[]> {
   update(chatId: string, updater: MessageItem[] | ((previous: MessageItem[]) => MessageItem[])): this {
     const previous = this.rows(chatId)
     const next = typeof updater === 'function' ? updater(previous) : mergeMessagesById(previous, updater, chatId)
+    if (next === previous) return this
     const retained = new Set(next.map((row) => row.id))
     const before = new Map(previous.map((row) => [row.id, row]))
     const changed = next.filter((row) => before.get(row.id) !== row)

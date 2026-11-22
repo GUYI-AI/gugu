@@ -15,7 +15,7 @@ it('a second bundle reads through the authenticated shell while its own session 
  const panel=await import('../../../../apps/desktop/src/lib/assistantPanelBridge')
  const target=window as import('../../../../apps/desktop/src/lib/assistantPanelBridge').AssistantPanelWindow
  target.__GUGU_ASSISTANT_PANEL__={work:shell.assistantWorkReads,accountId:()=>shellSession.getRendererSession()?.user.id??null,
-  files:()=>{throw new Error('Unexpected file access')},personalAssistant:vi.fn(),privateChat:vi.fn(),queueNotice:vi.fn(),
+  files:()=>{throw new Error('Unexpected file access')},panelSnapshot:vi.fn(),queueNotice:vi.fn(),
   subscribeAccount:listener=>shellSession.observeRendererSession(()=>listener()),subscribeChanges:(owner,listener)=>{
    wire.listen(owner,'assistant_work_changed',listener,{});return ()=>{}
   }} as import('../../../../apps/desktop/src/lib/assistantPanelBridge').AssistantPanelBridge

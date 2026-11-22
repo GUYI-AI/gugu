@@ -13,6 +13,7 @@ import {
 import { sessionConversationTabId } from '../view/session-pane-policy';
 import { sessionPaneReady } from '../session-pane-ready';
 import { rpc } from '@renderer/lib/ipc';
+import { homeDirectory } from '@renderer/lib/machine-paths';
 import type { OpenedOutput } from '@gugu/session-chat-ui/opened-outputs';
 import { rendererLogger } from '../../../../../lib/log';
 import { fileBaseName, isAbsolutePath, isPathInsideWorkspace, resolveWorkspacePath } from './workspace-path';
@@ -27,6 +28,7 @@ import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { prepareBackgroundBrowserPage } from '../../live-window/background-browser-page';
 import { opensInImageViewer } from '@/lib/imageViewer';
 import type { ViewBox } from '@shared/extensions/app-runtime-protocol';
+import { readFirstChunk, readWorkspaceFileBytes } from '../workspace-backend/read-workspace-bytes';
 
 const sessionLog = rendererLogger('gugu-session');
 
@@ -38,13 +40,6 @@ function resolveEditorFilePath(workspacePath: string, filePath: string): string 
   return resolvedPath;
 }
 
-/** Cached `rpc.app.getHomeDirectory()` —— home 在会话内不变,一次 RPC 终身复用。 */
-let homeDirectoryPromise: Promise<string> | null = null;
-function fetchHomeDirectory(): Promise<string> {
-  homeDirectoryPromise ??= rpc.app.getHomeDirectory();
-  return homeDirectoryPromise;
-}
-
 /**
  * `~/x` → 家目录下的绝对路径,语义与主进程 `expandAbsoluteOrTildePath` 同一条(只认 `~/` 前缀)。
  * 不展开的话 `~` 会被当工作区相对路径拼成 `<ws>/~/…`,报一条指向不存在位置的误导 toast。
@@ -53,12 +48,11 @@ function fetchHomeDirectory(): Promise<string> {
 async function expandHomeTildePath(filePath: string): Promise<string> {
   if (!filePath.startsWith('~/')) return filePath;
   try {
-    const home = (await fetchHomeDirectory()).replace(/[\\/]+$/, '');
+    // home 在会话内不变:the account's `homeDirectory` replica reads it once (a failed read is read again next time).
+    const home = (await homeDirectory.fetch()).replace(/[\\/]+$/, '');
     return `${home}/${filePath.slice(2)}`;
   } catch (error: unknown) {
-    // 一次瞬时的 RPC 失败(桥没就绪等)不能污染整个会话 —— 释放缓存,下次点击重试,
-    // ❌ 把 rejected promise 记一辈子,那 `~/` 就永久退回误导 toast。
-    homeDirectoryPromise = null;
+    // 一次瞬时的 RPC 失败(桥没就绪等)不能污染整个会话:the reading is an error, and the next click reads again.
     sessionLog.warn({ err: String(error), filePath }, 'getHomeDirectory failed; keeping ~ path');
     return filePath;
   }
@@ -156,17 +150,21 @@ async function openResolvedFileInPane(
  * person looks at): what an image opens in. `asked`: the path as asked, its place among the images an App page showed
  * (`among`, paths of this working copy, spelled as `asked` is); `origin`: the clicked picture on the window.
  */
-type ImageView = { projectId: string; workspaceId: string; asked: string; among?: string[]; origin?: ViewBox };
+type ImageView = { projectId: string; workspaceId: string; asked: string; among?: string[]; origin?: ViewBox; first?: ReturnType<typeof readFirstChunk> };
 
 async function viewImages(resolvedPath: string, view: ImageView): Promise<void> {
-  const [{ readWorkspaceFileBytes }, { workingCopyImageItem, openViewerFromClick }] = await Promise.all([
-    import('../workspace-backend/read-workspace-bytes'), import('@/lib/attachmentBytes'),
-  ]);
+  const { workingCopyImageItem, openViewerFromClick } = await import('@/lib/attachmentBytes');
   const at = view.among?.indexOf(view.asked) ?? -1;
   const paths = at >= 0 ? view.among!.filter((path) => opensInImageViewer(path, null, undefined)) : [];
   const index = at >= 0 ? paths.indexOf(view.asked) : -1;
   const shown = index >= 0 ? paths.map((path, i) => (i === index ? resolvedPath : path)) : [resolvedPath];
-  const items = shown.map((path) => workingCopyImageItem(fileBaseName(path), () => readWorkspaceFileBytes(view.projectId, view.workspaceId, path, true)));
+  // The asked image's first chunk, already on its way (`@@@first-chunk-early`), is taken by its first read only.
+  let first = view.first;
+  const items = shown.map((path, i) => workingCopyImageItem(fileBaseName(path), () => {
+    const begun = i === Math.max(0, index) ? first : undefined;
+    if (begun) first = undefined;
+    return readWorkspaceFileBytes(view.projectId, view.workspaceId, path, true, begun);
+  }));
   await openViewerFromClick(items, Math.max(0, index), view.origin);
 }
 
@@ -188,6 +186,13 @@ async function openSessionFile(
   const intent = options?.intent ?? 'navigate';
   const filePath = await expandHomeTildePath(rawFilePath);
   const namedInside = resolveEditorFilePath(workspace.path, filePath);
+  // @@@first-chunk-early - an image the viewer shows is read on its machine from its first chunk; that chunk is asked beside
+  // `fileExists`, not after it, so a file on another machine has its pixels a round trip sooner. Missing, a folder, or opened
+  // by an App: that one chunk was read for nothing.
+  const first = namedInside !== null && !ask && opensInImageViewer(namedInside, null, intent)
+    ? readFirstChunk(projectId, provisioned.workspaceId, namedInside)
+    : undefined;
+  first?.catch(() => undefined);
   // The machine says whether the file is in this working copy and in which spelling (`@@@canonical-path`): an absolute
   // path written through an alias (an old transcript's `accounts/<id>/…`) is inside although its letters are not, and
   // the tab is keyed on the machine's spelling, never on the one this link happened to carry.
@@ -225,6 +230,7 @@ async function openSessionFile(
       projectId, workspaceId: provisioned.workspaceId, asked: namedInside ?? resolvedPath,
       ...(options?.among ? { among: options.among.flatMap((path) => resolveEditorFilePath(workspace.path, path) ?? []) } : {}),
       ...(options?.origin ? { origin: options.origin } : {}),
+      ...(first ? { first } : {}),
     },
   });
 }
@@ -287,9 +293,7 @@ export async function openExternalFilePath(
   // An image the person opens from outside the working copy: in the image viewer too, its bytes read as its tab would.
   if (provisioned?.workspaceId && opensInImageViewer(filePath, null, intent)) {
     const { workspaceId } = provisioned;
-    const [{ readWorkspaceFileBytes }, { workingCopyImageItem, openViewerFromClick }] = await Promise.all([
-      import('../workspace-backend/read-workspace-bytes'), import('@/lib/attachmentBytes'),
-    ]);
+    const { workingCopyImageItem, openViewerFromClick } = await import('@/lib/attachmentBytes');
     await openViewerFromClick([workingCopyImageItem(fileBaseName(filePath), () => readWorkspaceFileBytes(projectId, workspaceId, filePath, false))], 0);
     return;
   }

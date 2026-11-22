@@ -1,5 +1,6 @@
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
 import { createHash, randomUUID } from 'node:crypto'
+import { openAsBlob } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { inferDroppedBlobExtension, normalizeDroppedImageBytes } from './session/main/core/pty/persist-dropped-blob'
 import { tmpdir } from 'node:os'
@@ -45,8 +46,8 @@ export function createProjectFilePublisher(deps: {
   project(chatId: string): Promise<string | undefined>
   /** Whether this account keeps files on its own machines in this chat: one of its devices binds a folder to it. */
   projectChat(chatId: string): Promise<boolean>
-  /** Ask for a version's temporary copy, as a reader's first open does. */
-  requestCopy?(itemId: string, version: number): Promise<unknown>
+  /** Offer an image's preview for its bytes; the publication never waits for it. */
+  preview?(original: Blob, contentType: string, sha256: string): Promise<void>
 }) {
   /** Null: not a project chat, so the ordinary upload decides. */
   const place = async (chatId: string, task = false) => {
@@ -93,10 +94,10 @@ export function createProjectFilePublisher(deps: {
       content_type: row.content_type, size_bytes: first.size, sha256, host_account_id: identity.accountId, host_device_id: identity.deviceId, host_project_id: projectId, relative_path: path,
       workspace: { path: row.path, parent_id: row.parent_id, created_at: row.created_at, updated_at: row.updated_at, created_by: row.created_by, source_message_ids: row.source_message_ids ?? [] } }
     fileHoldings().remember(revision, identity.accountId)
-    // An image is read at a glance, often when this machine is off: its temporary copy goes up now instead of at the first read.
-    // Not when its owner turned copies off, nor for a read-once copy: the first reader would use it up, and the sender's own screen must not be that reader.
-    if (message && file.contentType.startsWith('image/') && here.storage?.temporary_transfer !== false && here.storage?.retention !== 'read-once') {
-      void deps.requestCopy?.(row.id, row.version).catch((error: unknown) => createLogger('project-file').warn({ item: row.id, error: String(error) }, 'image copy request failed'))
+    // An image is read at a glance, often when this machine is off: its preview goes up with it.
+    if (file.contentType.startsWith('image/') && deps.preview) {
+      void openAsBlob(file.path).then(original => deps.preview!(original, file.contentType, sha256))
+        .catch((error: unknown) => createLogger('project-file').warn({ item: row.id, error: String(error) }, 'image preview offer failed'))
     }
     const published = sent ? { ...row, message: sent } : row
     return task ? { ...published, path: handed } : published

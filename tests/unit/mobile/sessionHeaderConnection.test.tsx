@@ -9,11 +9,11 @@ import type { SessionpageSessionSummary } from '@gugu/session-core/session-recor
 // this page's link not answering are two facts: the first is 「设备离线 · 最后在线 …」, the second only 「连接中」. Both sit in
 // the header — ❌ a line / banner under it, ❌ 「未连接」 anywhere.
 const scope = vi.hoisted(() => ({ link: 'ok' as 'ok' | 'lost' }))
-vi.mock('../../../apps/desktop/src/lib/sessionInputOutboxBridge', () => ({ enqueueSessionInput: vi.fn(), retrySessionInputs: vi.fn(), useQueuedSessionInputs: () => [] }))
+vi.mock('../../../apps/desktop/src/lib/outbox/kinds/sessionInput', () => ({ enqueueSessionInput: vi.fn(), retrySessionInputs: vi.fn(), useQueuedSessionInputs: () => [] }))
 vi.mock('../../../apps/desktop/src/components/session-watch/useAgentWatchSession', () => ({ useAgentWatchSession: () => ({ timeline: emptyAgentWatchTimeline(), phase: 'ready', error: null, link: scope.link, pendingSends: [], reload() {}, loadOlder: async () => undefined, cancel() {}, respond() {} }) }))
 vi.mock('../../../apps/desktop/src/components/session-watch/useNativeSessionRecord', () => ({ useNativeSessionRecord: () => ({ record: null, error: null, followTail() {}, loadNewer() {}, loadOlder: async () => undefined }) }))
 vi.mock('../../../apps/desktop/src/components/session-watch/SessionConversation', () => ({ SessionConversation: () => <div data-conversation="" /> }))
-vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store', () => ({ installedExtensionsStore: { enabledTabContributions: [] } }))
+vi.mock('../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions', async (importOriginal) => ({ ...await importOriginal<object>(), useInstalledApps: () => ({ state: 'value', value: { enabledTabContributions: [] }, stale: false, error: null }) }))
 vi.mock('../../../apps/desktop/src/components/ui/sheetStack', async original => ({ ...await original<object>(), useBackLayer() {} }))
 
 let harness: ReturnType<typeof createReactHarness>

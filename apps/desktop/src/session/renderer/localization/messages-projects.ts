@@ -183,25 +183,14 @@ export const enUSProjectMessages = {
   'projects.error.retry': 'Retry',
   'projects.error.accountList': "Could not load your groups.",
 
-  // ── projects: pending creation ─────────────────────────────────────────
-
-  // ── projects: directory browser ────────────────────────────────────────
-
-  // ── projects: directory tree (web local folder picker) ────────────────
-  // 原属 projects.remote.*,那一组随 #5058「下线远程项目入口」一起删了。文案一字不改地搬过来:
-  // 「使用现有文件夹」用的就是这一句,它与远程无关,只是当初共用了那个目录浏览器。
+  // ── projects: this computer's home directory (lib/machine-paths.ts) ───
+  'projects.dirTree.homeUnavailable': 'Could not find the home directory on the host',
 
   // ── projects: GitHub account select ────────────────────────────────────
   // "GitHub CLI" and "OAuth" are proper nouns and stay verbatim.
   'projects.github.sourceDeviceFlow': 'Device flow',
   'projects.github.sourceSavedToken': 'Saved token',
   'projects.github.default': 'Default',
-
-  // ── projects: creation entry points ────────────────────────────────────
-
-  // ── projects: delete confirmation ──────────────────────────────────────
-
-  // ── projects: task list ────────────────────────────────────────────────
 
   // ── projects: pull requests ────────────────────────────────────────────
   // PR titles, branches, numbers and author logins are raw GitHub data.
@@ -380,23 +369,14 @@ export const zhCNProjectMessages: Record<ProjectMessageKey, string> = {
   'projects.error.retry': '重试',
   'projects.error.accountList': '群列表读取失败。',
 
-  // ── projects: pending creation ─────────────────────────────────────────
-
-  // ── projects: directory browser ────────────────────────────────────────
-
-  // ── projects: directory tree (web local folder picker) ────────────────
+  // ── projects: this computer's home directory (lib/machine-paths.ts) ───
+  'projects.dirTree.homeUnavailable': '找不到宿主的家目录',
 
   // ── projects: GitHub account select ────────────────────────────────────
   // "GitHub CLI" and "OAuth" are proper nouns and stay verbatim.
   'projects.github.sourceDeviceFlow': '设备流',
   'projects.github.sourceSavedToken': '已保存的令牌',
   'projects.github.default': '默认',
-
-  // ── projects: creation entry points ────────────────────────────────────
-
-  // ── projects: delete confirmation ──────────────────────────────────────
-
-  // ── projects: task list ────────────────────────────────────────────────
 
   // ── projects: pull requests ────────────────────────────────────────────
   // PR titles, branches, numbers and author logins are raw GitHub data.

@@ -2,7 +2,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writ
 import { execFileSync, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { describe, expect, test } from 'vitest'
+import { afterAll, describe, expect, test } from 'vitest'
 
 const repoRoot = resolve(__dirname, '../../..')
 const fixtureRoot = join(repoRoot, 'tests/fixtures/ui-state-debt-check')
@@ -17,7 +17,7 @@ function git(cwd: string, args: string[]) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
-function fixtureRepo(name: string) {
+function buildFixtureRepo(name: string) {
   const directory = mkdtempSync(join(tmpdir(), 'gugu-ui-state-debt-'))
   cpSync(join(fixtureRoot, name), directory, { recursive: true })
   if (name === 'invalid') {
@@ -29,6 +29,34 @@ function fixtureRepo(name: string) {
   git(directory, ['add', '.'])
   git(directory, ['commit', '-q', '-m', 'fixture'])
   return { directory, ref: git(directory, ['rev-parse', 'HEAD']) }
+}
+
+// @@@fixture-templates — each fixture repo (and the seeded `base`) is built once per file and copied per test:
+// the build is a git init/commit plus, for the seed, a child Node that loads the checker (~0.4 s each).
+const templates = new Map<string, string>()
+afterAll(() => {
+  for (const directory of templates.values()) rmSync(directory, { recursive: true, force: true })
+})
+
+function copyOf(key: string, build: () => string) {
+  let template = templates.get(key)
+  if (!template) templates.set(key, (template = build()))
+  const directory = mkdtempSync(join(tmpdir(), 'gugu-ui-state-debt-'))
+  cpSync(template, directory, { recursive: true })
+  return { directory }
+}
+
+function fixtureRepo(name: string) {
+  return copyOf(name, () => buildFixtureRepo(name).directory)
+}
+
+/** `base` with its actual debt committed as the baseline: the starting point of every directional case. */
+function seededRepo() {
+  return copyOf('base+baseline', () => {
+    const { directory } = buildFixtureRepo('base')
+    seedBaseline(directory)
+    return directory
+  })
 }
 
 function runChecker(cwd: string, args: string[]) {
@@ -73,9 +101,9 @@ function commitAll(directory: string, message: string) {
 
 describe('UI-state debt checker — counting probes (#2333)', () => {
   test('counts AST/CSS counterexamples per file and excludes comments', () => {
-    const repo = fixtureRepo('base')
+    const repo = seededRepo()
     try {
-      const entries = seedBaseline(repo.directory)
+      const entries = JSON.parse(readFileSync(join(repo.directory, BASELINE), 'utf8'))
       // 注释里的命中不算;每个计数按文件登记而不是汇总成一个数。
       expect(entries).toEqual([
         { counter: 'css-magic-transition', file: 'apps/desktop/src/counterexamples.css', count: 2 },
@@ -90,9 +118,8 @@ describe('UI-state debt checker — counting probes (#2333)', () => {
   })
 
   test('reports every counter plus the scan-surface denominator', () => {
-    const repo = fixtureRepo('base')
+    const repo = seededRepo()
     try {
-      seedBaseline(repo.directory)
       const result = runChecker(repo.directory, ARGS)
       expect(result.status).toBe(0)
       // 五个计数全部报,不挑;分母同报 —— 只报分子分不清「0 是干净」还是「没扫到」。
@@ -123,9 +150,8 @@ describe('UI-state debt checker — counting probes (#2333)', () => {
 
 describe('UI-state debt checker — bidirectional baseline (#3079)', () => {
   test('NEW: growing debt is red and names the governing rule', () => {
-    const repo = fixtureRepo('base')
+    const repo = seededRepo()
     try {
-      seedBaseline(repo.directory)
       rmSync(join(repo.directory, 'apps'), { recursive: true, force: true })
       cpSync(join(fixtureRoot, 'head', 'apps'), join(repo.directory, 'apps'), { recursive: true })
       commitAll(repo.directory, 'growth')
@@ -142,9 +168,8 @@ describe('UI-state debt checker — bidirectional baseline (#3079)', () => {
   // ── 红对照 1:删文件也判红 ────────────────────────────────────────────────
   // 旧的单向棘轮在这里是绿的 —— 删掉带债务的文件，计数下降，门放行，而且底座跟着降。
   test('STALE: deleting a debt-bearing file is red, and the denominator shrinks', () => {
-    const repo = fixtureRepo('base')
+    const repo = seededRepo()
     try {
-      seedBaseline(repo.directory)
       rmSync(join(repo.directory, 'apps/desktop/src/counterexamples.tsx'), { force: true })
       commitAll(repo.directory, 'delete the file instead of fixing it')
 
@@ -163,9 +188,8 @@ describe('UI-state debt checker — bidirectional baseline (#3079)', () => {
   // 这条容易被忽略,但少了它就分不清这道门是在守债还是在阻止改进:
   // 红的语义是「你动了但没登记」,不是「你不许动」。
   test('STALE: genuinely fixing debt is red until the baseline records it', () => {
-    const repo = fixtureRepo('base')
+    const repo = seededRepo()
     try {
-      seedBaseline(repo.directory)
       writeFileSync(
         join(repo.directory, 'apps/desktop/src/counterexamples.tsx'),
         'export default function Fixed() {\n  return { classes: "duration-[var(--dur-fast)]" }\n}\n'
@@ -190,9 +214,8 @@ describe('UI-state debt checker — bidirectional baseline (#3079)', () => {
 
   // ── 本次升级的核心:标量基线唯一看不见的形状 ──────────────────────────────
   test('equal swap (fixed here, regrown there) fires BOTH NEW and STALE', () => {
-    const repo = fixtureRepo('base')
+    const repo = seededRepo()
     try {
-      seedBaseline(repo.directory)
       // 把 tsx 里的三处 imperative-style-hover 挪到另一个文件：总数不变，17→17 形态。
       const source = readFileSync(join(repo.directory, 'apps/desktop/src/counterexamples.tsx'), 'utf8')
       const moved = source
@@ -231,9 +254,8 @@ describe('UI-state debt checker — bidirectional baseline (#3079)', () => {
   // 判据必须是**字节**不变,不是 JSON.parse 后语义相等:后者放过"拒绝了但顺手重写了一半/
   // 重排了顺序"这类半吊子写入 —— 那种文件在语义上等价,却证明 write 路径确实动过盘。
   test('--write refuses to record NEW debt — the gate has no master key', () => {
-    const repo = fixtureRepo('base')
+    const repo = seededRepo()
     try {
-      seedBaseline(repo.directory)
       const bytesBefore = readFileSync(join(repo.directory, BASELINE))
       rmSync(join(repo.directory, 'apps'), { recursive: true, force: true })
       cpSync(join(fixtureRoot, 'head', 'apps'), join(repo.directory, 'apps'), { recursive: true })
@@ -257,9 +279,8 @@ describe('UI-state debt checker — bidirectional baseline (#3079)', () => {
   // 反面:同一条 write 路径在**只有改进**时必须真的落盘 —— 否则"拒绝"是靠瘫痪实现的,
   // 那样 STALE 将永远无法销账,门会从"守债"退化成"禁止任何改动"。
   test('--write does record a pure improvement (the refusal is targeted, not paralysis)', () => {
-    const repo = fixtureRepo('base')
+    const repo = seededRepo()
     try {
-      seedBaseline(repo.directory)
       const bytesBefore = readFileSync(join(repo.directory, BASELINE))
       writeFileSync(join(repo.directory, 'apps/desktop/src/counterexamples.tsx'), 'export default 1\n')
       commitAll(repo.directory, 'fix')

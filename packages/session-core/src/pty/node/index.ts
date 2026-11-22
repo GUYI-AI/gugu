@@ -1,2 +1,2 @@
 export { CONPTY_SPAWN_OPTIONS, releaseConoutWorkerOnExit } from './conpty';
-export { NodePtySpawner } from './node-pty-spawner';
+export { NodePtyProcess, NodePtySpawner, spawnNodePty } from './node-pty-spawner';

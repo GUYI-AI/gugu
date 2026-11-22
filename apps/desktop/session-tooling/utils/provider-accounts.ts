@@ -3,7 +3,9 @@
  *
  * Opens a real SQLite fixture and wires a real ProviderAccountRegistry to it.
  * Only the secret store is in-memory, because encryptedAppSecretsStore depends
- * on Electron safeStorage which is unavailable under plain Node.
+ * on Electron safeStorage which is unavailable under plain Node. The password
+ * vault is in-memory too: what it saves lands in the same map at `vault:<id>`,
+ * the ref the real router sends to the vault.
  */
 
 import {
@@ -28,9 +30,26 @@ export class InMemorySecretStore implements ProviderAccountSecretStore {
   }
 }
 
+export type VaultSave = { origin: string; name: string; account: string; password: string };
+
+export class InMemoryVault {
+  readonly saved = new Map<string, Omit<VaultSave, 'password'>>();
+  private next = 0;
+  constructor(private readonly secretStore: InMemorySecretStore) {}
+
+  async save(input: VaultSave, credentialId?: string): Promise<string> {
+    const id = credentialId ?? `cred-${++this.next}`;
+    const { password, ...summary } = input;
+    this.saved.set(id, summary);
+    this.secretStore.secrets.set(`vault:${id}`, password);
+    return id;
+  }
+}
+
 export type RegistryFixture = FixtureDb & {
   registry: ProviderAccountRegistry;
   secretStore: InMemorySecretStore;
+  vault: InMemoryVault;
 };
 
 /** Open a fixture database with a real ProviderAccountRegistry on top of it. */
@@ -40,5 +59,5 @@ export async function openRegistryFixture(
   const fixture = await openFixture(name);
   const secretStore = new InMemorySecretStore();
   const registry = new ProviderAccountRegistry(fixture.db, secretStore);
-  return { ...fixture, registry, secretStore };
+  return { ...fixture, registry, secretStore, vault: new InMemoryVault(secretStore) };
 }

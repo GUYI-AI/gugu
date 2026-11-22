@@ -5,8 +5,8 @@ import { compareExtensionVersions } from '@shared/extensions/manifest';
 import { pinsAutoUpdate } from '@shared/extensions/market-entries';
 import { marketCompatText, type MarketVersionHistoryEntry } from '@shared/extensions/market';
 import type { SessionTranslate } from '../extension-consent';
-
-export type Loadable<T> = { status: 'idle' } | { status: 'loading' } | { status: 'ready'; data: T; error?: string } | { status: 'error'; error?: string };
+import { retryOf, type Reading } from '@/lib/replica';
+import { messageForUser } from '@/lib/userFacingError';
 
 const HISTORY_FOLDED = 5;
 
@@ -19,7 +19,7 @@ export function shortDate(iso: string, locale: string): string {
 }
 
 export function VersionHistorySection({
-  state,
+  reading,
   extensionId,
   installedVersion,
   offeredVersion,
@@ -27,11 +27,11 @@ export function VersionHistorySection({
   translate,
   onInstallVersion,
   onOpenExternal,
-  onReadAgain,
   foldedCount = HISTORY_FOLDED,
   showReleaseNotes = true,
 }: {
-  state: Loadable<MarketVersionHistoryEntry[]>;
+  /** The App's `marketVersionHistory` reading: its failure is said here with its own retry. */
+  reading: Reading<MarketVersionHistoryEntry[]>;
   extensionId: string;
   installedVersion: string | undefined;
   /** 市场给这台机器的那一版,这个 App 还在自动更新时才给:比它旧的那几版一装上就不再自动更新,按钮上说一句。 */
@@ -41,22 +41,23 @@ export function VersionHistorySection({
   /** Absent: the versions are only read here (the App is installed; versions are changed on its settings page). */
   onInstallVersion?: (version: string) => void;
   onOpenExternal: (url: string) => void;
-  onReadAgain?: () => void;
   foldedCount?: number;
   showReleaseNotes?: boolean;
 }) {
   const [all, setAll] = useState(false);
-  if (state.status === 'idle' || state.status === 'loading') {
+  if (reading.state === 'unknown') {
     return <p className="text-foreground-passive">{translate('extensions.loading')}</p>;
   }
-  const failure = state.status === 'error' || state.status === 'ready' && state.error
-    ? <div className="flex flex-wrap items-center gap-2"><p role="alert" className="text-foreground-muted">{state.error || translate('extensions.historyUnavailable')}</p>{onReadAgain ? <button type="button" className="xp-link" onClick={onReadAgain}>{translate('settings.readAgain')}</button> : null}</div> : null;
-  if (state.status === 'error') return failure;
-  if (state.data.length === 0) {
+  const retry = retryOf(reading);
+  const failure = reading.error
+    ? <div className="flex flex-wrap items-center gap-2"><p role="alert" className="text-foreground-muted">{reading.error.message === 'history unreadable' ? translate('extensions.historyUnavailable') : messageForUser(reading.error)}</p>{retry ? <button type="button" className="xp-link" onClick={retry}>{translate('settings.readAgain')}</button> : null}</div> : null;
+  if (reading.state === 'error') return failure;
+  const versions = reading.value;
+  if (versions.length === 0) {
     return <>{failure}<p className="text-foreground-muted">{translate('extensions.historyNone')}</p></>;
   }
   // 默认最近五版,装着的那一版总在;其余点开。
-  const shown = all ? state.data : state.data.filter((entry, index) => index < foldedCount || entry.version === installedVersion);
+  const shown = all ? versions : versions.filter((entry, index) => index < foldedCount || entry.version === installedVersion);
   return (
     <>
     {failure}
@@ -76,9 +77,9 @@ export function VersionHistorySection({
         />
       ))}
     </ul>
-    {shown.length < state.data.length ? (
+    {shown.length < versions.length ? (
       <button type="button" className="xp-link xp-history-more" onClick={() => setAll(true)} data-testid="extension-history-more">
-        {translate('extensions.historyShowAll', { count: state.data.length })}
+        {translate('extensions.historyShowAll', { count: versions.length })}
       </button>
     ) : null}
     </>

@@ -5,16 +5,14 @@ import { SectionLabel } from '../ui/SectionLabel'
 import { sectionCount, type ContactsSection } from './contactsSections'
 import { useContactRowRenderers, type ContactsRowHandlers } from './ContactRows'
 import { buildAgentForest, useAgentParents } from './contactsAgentTree'
-import { AgentMindMap } from './AgentMindMap'
+import { AgentFamilies } from './AgentFamilies'
+import { ContactsGrid } from './ContactsGrid'
 import { ContactsAgentSectionState, ContactsGroupSectionState, ContactsPersonSectionState } from './ContactsSectionState'
 import { ContactsCreateAgentButton } from './ContactsCreateAgentButton'
 import { ContactsPageFrame } from './ContactsPageFrame'
 
-/** 人行 / 群行铺成的多列(分组页、搜索结果同一把)。 */
-export const ROW_GRID = 'grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-x-4'
-
-// 版 B「导图 · 全宽」:右边整块是这一组的总览。agent 按派生关系画成导图(AgentMindMap,家族图换行排 + 单个 agent 头像格);
-// 人和群铺成多列。点一行,详情在 ContactsPageFrame 右边那一列抽屉里打开,总览不换页。
+// 右边整块是这一组的总览,全部排在同一套列轨上(ContactsGrid):agent 按派生关系成家族、一个家族一格(AgentFamilies),
+// 人和群一行一格。点一行,详情在 ContactsPageFrame 右边那一列抽屉里打开,总览不换页。
 
 const addClass =
   'inline-grid h-[var(--control-h-sm)] w-[var(--control-h-sm)] cursor-pointer place-items-center rounded-[var(--radius-control)] border-0 bg-transparent text-[var(--muted-fg)] hover:bg-[var(--hover)] hover:text-[var(--fg)]'
@@ -31,7 +29,7 @@ export function ContactsSectionPane({ section, rows, detail, onCloseDetail, onCr
   const render = useContactRowRenderers(rows)
   const parents = useAgentParents()
   const forest = buildAgentForest(section.agents, parents)
-  // 身份稳定:导图节点是 memo 的(@@@map-node-memo),换了函数身份等于每次重画整张图。
+  // 身份稳定:agent 节点是 memo 的(@@@map-node-memo),换了函数身份等于每次重画所有节点。
   const onSelectAgent = useStableHandler(rows.onSelectContact)
   const agentMenu = useStableHandler(render.agentMenu)
   const empty = sectionCount(section) === 0
@@ -49,22 +47,22 @@ export function ContactsSectionPane({ section, rows, detail, onCloseDetail, onCr
         {section.kind === 'device' ? (
           <>
             {section.agents.length > 0 ? <SectionLabel className="!mt-4">{t('sectionPane.agents')} · {section.agents.length}</SectionLabel> : null}
-            <AgentMindMap forest={forest} selectedId={rows.selectedContactId} onSelect={onSelectAgent} menuFor={agentMenu}
+            <AgentFamilies forest={forest} selectedId={rows.selectedContactId} onSelect={onSelectAgent} menuFor={agentMenu}
               pick={rows.selectionMode ? { ids: rows.selectedContactIds, can: (c) => c.owner_user_id === rows.currentUserId } : undefined} />
             {section.groups.length > 0 ? <SectionLabel className="!mt-6">{t('sectionPane.groups')} · {section.groups.length}</SectionLabel> : null}
-            <div className={ROW_GRID}>{section.groups.map(render.renderGroup)}</div>
+            {section.groups.length > 0 ? <ContactsGrid>{section.groups.map(render.renderGroup)}</ContactsGrid> : null}
             {section.primary ? <ContactsAgentSectionState isEmpty={empty} onCreateAgent={onCreateAgent} /> : null}
           </>
         ) : section.kind === 'people' ? (
-          <div className={`${ROW_GRID} !mt-4`}>
+          <ContactsGrid className="!mt-4">
             {section.people.map(render.renderPerson)}
             <ContactsPersonSectionState isEmpty={empty} onAddContact={onAddContact} />
-          </div>
+          </ContactsGrid>
         ) : (
-          <div className={`${ROW_GRID} !mt-4`}>
+          <ContactsGrid className="!mt-4">
             {section.groups.map(render.renderGroup)}
             <ContactsGroupSectionState isEmpty={empty} onCreateGroup={onCreateGroup} />
-          </div>
+          </ContactsGrid>
         )}
       </div>
     </ContactsPageFrame>

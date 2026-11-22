@@ -13,8 +13,13 @@ import {
 // 桌面与手机同一条路,所以这里 mock 的是那条云端 lib,不是 window.electronAPI。
 const fetchAgentHarnessModels = vi.fn()
 const location = vi.hoisted(() => ({ cloud: false }))
-vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ agentId: location.cloud ? 'agent-model-test' : null, loading: false }) }))
-vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [{ device_id: 'device-1', is_current_device: !location.cloud }], cloudComputer: location.cloud ? { snapshot: { deviceId: 'device-1' } } : undefined }) }))
+vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner-model-test' } }) }))
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ state: 'value', value: { agentId: location.cloud ? 'agent-model-test' : null, provisionDeviceId: null }, stale: false, error: null }) }))
+vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: [{ device_id: 'device-1', is_current_device: !location.cloud }] }) }))
+vi.mock('../../../../apps/desktop/src/lib/cloudComputer', () => ({
+  useCloudComputer: () => (location.cloud ? { state: 'value', value: { available: true, snapshot: { deviceId: 'device-1' } }, stale: false, error: null } : { state: 'value', value: { available: false }, stale: false, error: null }),
+  cloudSnapshotOf: (reading: { state: string; value?: { available: boolean; snapshot?: unknown } }) => (reading.state === 'value' && reading.value?.available ? reading.value.snapshot : null),
+}))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { capabilities: { agentRuntime: true } } }))
 // 本文件只测配置读写和计费来源，菜单本体复用已有ComposerModelMenu。
 vi.mock('../../../../apps/desktop/src/components/agentsettings/AgentModelPicker', () => ({
@@ -30,7 +35,8 @@ vi.mock('../../../../apps/desktop/src/lib/agentModelSelection', async () => {
   return {
     ...actual,
     fetchPlatformModelCatalog: (...args: unknown[]) => fetchPlatformModelCatalog(...args),
-    fetchAgentHarnessModels: (...args: unknown[]) => fetchAgentHarnessModels(...args),
+    // The pane reads the shared create-model catalog; its agent-harness question is the `general` view, no model asked.
+    fetchSessionCreateModels: (deviceId: string, harness: string, _view: unknown, _model: unknown, via: string) => fetchAgentHarnessModels(deviceId, harness, via === 'local'),
     readAgentModelSelection: (...args: unknown[]) => readAgentModelSelection(...args),
     setAgentModelSelection: (...args: unknown[]) => setAgentModelSelection(...args),
   }
@@ -65,6 +71,7 @@ let harness: ReturnType<typeof createReactHarness>
 
 const agent = {
   id: 'agent-model-test',
+  owner_user_id: 'owner-model-test',
   display_name: 'Model Test',
   avatar: null,
   bio: null,
@@ -73,11 +80,14 @@ const agent = {
   device_id: 'device-1',
 } satisfies ContactUser
 
+// A catalog as read (with its menu details): one restored from the snapshot carries none and is not drawn by the pane.
 const catalog = [{
   id: 'glm-5.2',
   displayName: 'GLM 5.2',
   protocols: ['anthropic-messages'],
   enabled: true,
+  creditMultipliers: {},
+  reasoningEfforts: null,
 }]
 
 beforeEach(() => {
@@ -285,11 +295,23 @@ describe('AgentAiModelPane', () => {
     expect(harness.container.textContent).not.toContain('咕咕模型暂不可用')
   })
 
+  it('a catalog and harness read before whose reads again fail stay offered and say the failure (❌ drawn as current)', async () => {
+    await harness.render(createNode(AgentAiModelPane, { agent }))
+    await waitForCondition(() => harness.container.querySelectorAll('option').length === 2, 'options')
+    fetchPlatformModelCatalog.mockReset().mockRejectedValue(new Error('catalog unreachable'))
+    fetchAgentHarnessModels.mockReset().mockRejectedValue(new Error('device unreachable'))
+    const { platformModels, sessionCreateModels } = await import('../../../../apps/desktop/src/lib/agentModelReplicas')
+    await Promise.all([platformModels.refresh(), sessionCreateModels.refresh()]).catch(() => undefined)
+    await waitForCondition(() => harness.container.textContent?.includes('catalog unreachable') === true
+      && harness.container.textContent?.includes('device unreachable') === true, 'refresh failures said')
+    expect(harness.container.querySelectorAll('option')).toHaveLength(2)
+  })
+
   // #6212 copilot runs on Gugu's models (its injection contract is wired, protocol openai-responses); the pane
   // used to read it as "cannot use models provided by Gugu" because a second type → engine list stopped at six types.
   it('offers Gugu models to a copilot agent on its own protocol', async () => {
     fetchPlatformModelCatalog.mockResolvedValue([
-      { id: 'glm-5.3', displayName: 'GLM-5.3', protocols: ['openai-responses'], enabled: true },
+      { id: 'glm-5.3', displayName: 'GLM-5.3', protocols: ['openai-responses'], enabled: true, creditMultipliers: {}, reasoningEfforts: null },
     ])
     await harness.render(createNode(AgentAiModelPane, { agent: { ...agent, agent_type: 'copilot' } }))
     await waitForCondition(() => harness.container.querySelectorAll('option').length === 2, 'copilot options did not load')
@@ -301,9 +323,9 @@ describe('AgentAiModelPane', () => {
   // #7056 与模型下拉同一个判据:要会员的、他在设置「模型」页关掉的都不列。
   it('leaves members-only and hidden models out of the list', async () => {
     fetchPlatformModelCatalog.mockResolvedValue([
-      { id: 'glm-5.3-flash', displayName: 'GLM 5.3 Flash', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: false },
-      { id: 'glm-5.3', displayName: 'GLM 5.3', protocols: ['anthropic-messages'], enabled: true, requiresMembership: true, hidden: false },
-      { id: 'grok-4.5', displayName: 'Grok 4.5', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: true },
+      { id: 'glm-5.3-flash', displayName: 'GLM 5.3 Flash', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: false, creditMultipliers: {}, reasoningEfforts: null },
+      { id: 'glm-5.3', displayName: 'GLM 5.3', protocols: ['anthropic-messages'], enabled: true, requiresMembership: true, hidden: false, creditMultipliers: {}, reasoningEfforts: null },
+      { id: 'grok-4.5', displayName: 'Grok 4.5', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: true, creditMultipliers: {}, reasoningEfforts: null },
     ])
     await harness.render(createNode(AgentAiModelPane, { agent }))
     await waitForCondition(() => harness.container.querySelectorAll('option').length === 2, 'model options did not load')
@@ -322,8 +344,8 @@ describe('AgentAiModelPane', () => {
       applied: null, appliedAt: null, applyError: null,
     })
     fetchPlatformModelCatalog.mockResolvedValue([
-      { id: 'glm-5.3-flash', displayName: 'GLM 5.3 Flash', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: false },
-      { id: 'glm-5.3', displayName: 'GLM 5.3', protocols: ['anthropic-messages'], enabled: true, requiresMembership: true, hidden: false },
+      { id: 'glm-5.3-flash', displayName: 'GLM 5.3 Flash', protocols: ['anthropic-messages'], enabled: true, requiresMembership: false, hidden: false, creditMultipliers: {}, reasoningEfforts: null },
+      { id: 'glm-5.3', displayName: 'GLM 5.3', protocols: ['anthropic-messages'], enabled: true, requiresMembership: true, hidden: false, creditMultipliers: {}, reasoningEfforts: null },
     ])
     await harness.render(createNode(AgentAiModelPane, { agent }))
     await waitForCondition(() => harness.container.querySelectorAll('option').length === 3, 'model options did not load')

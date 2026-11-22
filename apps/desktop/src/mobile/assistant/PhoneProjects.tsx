@@ -6,16 +6,15 @@ import { Button } from '@/components/ui/Button'
 import { AssistantEmpty, AssistantRow, AssistantSection, PageHead } from '@/session/renderer/features/assistant/assistant-ui-parts'
 import { groupFoldersStore, type GroupWithFolders } from '@/session/renderer/features/folders/group-folders-store'
 import { ReadView } from './PhoneMachineView'
-import type { PhoneRead } from './usePhoneRead'
+import type { Reading } from '@/lib/replica'
 
-/** groupFoldersStore at this moment, as the assistant library reads things (unreadable but read before = the last list, with a line). */
-function storeRead(): PhoneRead<null> & { reload: () => void } {
-  const reload = () => { void groupFoldersStore.refresh() }
+/** groupFoldersStore at this moment (a MobX store, not a replica yet), as the assistant library reads things (unreadable but read before = the last list, with a line). */
+function storeReading(): Reading<null> {
   const { status, error, groups } = groupFoldersStore
-  if (status === 'ready') return { state: 'ok', data: null, reload }
-  if (status === 'loading') return { state: 'loading', reload }
+  if (status === 'ready') return { state: 'value', value: null, stale: false, error: null }
+  if (status === 'loading') return { state: 'unknown' }
   const failure = new Error(error ?? 'group folders unreadable')
-  return groups.length ? { state: 'ok', data: null, refreshError: failure, reload } : { state: 'error', error: failure, reload }
+  return groups.length ? { state: 'value', value: null, stale: true, error: failure } : { state: 'error', error: failure }
 }
 
 const Stale = () => {
@@ -30,15 +29,15 @@ const Stale = () => {
 export const PhoneProjects = observer(function PhoneProjects({ detail = false, onOpen, onOpenGroup }: { detail?: boolean; onOpen?: () => void; machine?: unknown; onOpenGroup?: (chatId: string) => void }) {
   const { t } = useTranslation('assistant')
   const groups = groupFoldersStore.groups
-  const read = storeRead()
+  const read = storeReading()
   const [selected, setSelected] = useState<string | null>(null)
   const current = selected ? groups.find(group => group.chatId === selected) : null
   if (!detail) return <AssistantRow leading={<Folder />} title={t('library.workspace')} testId="assistant-library-workspace" onClick={onOpen}
-    detail={read.state === 'ok' ? t('library.items', { count: groups.length }) : t(read.state === 'error' ? 'library.failed' : 'library.loading')} />
+    detail={read.state === 'value' ? t('library.items', { count: groups.length }) : t(read.state === 'error' ? 'library.failed' : 'library.loading')} />
   if (current) return <GroupFolderIndex group={current} stale={groupFoldersStore.status === 'error'} onBack={() => setSelected(null)} />
   return <div className="ta-page" data-testid="assistant-library-page-workspace">
     <PageHead title={t('library.workspace')} />
-    <ReadView read={read} failedTitle={t('library.failed')}>{() => groups.length
+    <ReadView reading={read} failedTitle={t('library.failed')}>{() => groups.length
       ? <AssistantSection>{groups.map(group => {
         const first = group.folders[0]?.path
         const stale = groupFoldersStore.status === 'error' && group.folders.some(folder => folder.offline)

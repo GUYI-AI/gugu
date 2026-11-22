@@ -1,11 +1,11 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect } from 'react'
 import type { AssistantChatHandlers } from '@/components/assistant/AssistantChatSlot'
 import { MobileAssistantApp } from './MobileAssistantApp'
 import { MobileAssistantGate } from './MobileAssistantGate'
 import type { PhoneAssistantState } from './usePhoneAssistant'
 import { useAuth } from '@/store/auth'
 import { memberFace } from '@/lib/memberFaces'
-import { getCloudComputerState, subscribeCloudComputerState } from '@/lib/cloudComputerStore'
+import { cloudFailureOf, cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 import { phoneAssistantLayer } from '@/components/appSlot/phoneAssistantLayer'
 import { phoneAssistantStatusOf } from './phoneAssistantEntry'
 
@@ -50,10 +50,10 @@ export function MobileAssistantTab({ state, visible, chatRequest, navigationTarg
 function usePhoneAssistantStatusForApps(state: PhoneAssistantState) {
   const { user } = useAuth()
   const ownerId = user?.id ?? null
-  const cloud = useSyncExternalStore(subscribeCloudComputerState, getCloudComputerState, getCloudComputerState)
+  const cloud = useCloudComputer()
   const assistantId = state.assistant?.id ?? null
   const avatar = state.assistant?.avatar ?? null
-  const cloudFacts = { available: !!cloud?.available, state: cloud?.snapshot?.state ?? null, loadError: cloud?.loadError ?? null }
+  const cloudFacts = { available: cloud.state === 'value' && cloud.value.available, state: cloudSnapshotOf(cloud)?.state ?? null, loadError: cloudFailureOf(cloud) }
   const key = JSON.stringify([ownerId, user?.nickname ?? null, state.stage.stage, (state.stage as { state?: string }).state ?? null, state.assistant, state.home, cloudFacts])
   useEffect(() => {
     if (!ownerId) {

@@ -7,7 +7,7 @@ import { initializeMessageWindows, messageWindow } from './messageWindows'
 export async function alignMessageStore(accountId: string, target: string,
   source: Pick<AccountRevisionSource, 'syncSince'>, signal: AbortSignal): Promise<void> {
   if (messageWindow(accountId, '') === null) return
-  const initial = await localMessageQueries()!.throughRevision(accountId)
+  const initial = await localMessageQueries().throughRevision(accountId)
   const baseline = () => ingestMessages(accountId, { writes: [], revisions: [], throughRevision: target })
   if (initial === null) { await baseline(); return }
   let cursor = initial

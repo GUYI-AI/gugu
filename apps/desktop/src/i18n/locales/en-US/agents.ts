@@ -192,6 +192,7 @@ export default {
       "hostOffline": "{{machine}} is offline; recent activity cannot be read",
       "hostSilent": "{{machine}} is not responding; recent activity cannot be read",
       "promptElsewhere": "A message from another source",
+      "promptFailed": "This message could not be read",
       "recordNotFound": "This device cannot read this task's record",
       "toolCount": "{{state}} ×{{count}}",
       "unavailable": "Recent activity is unavailable right now"
@@ -332,6 +333,7 @@ export default {
       "original": "Keep the original configuration",
       "retryApply": "Retry switch",
       "retryCatalog": "Retry",
+      "retired": "{{model}} (no longer offered)",
       "deviceCatalogUnavailable": "Cannot read subscription models from the runtime device right now.",
       "deviceSubscriptionMissing": "The runtime device is not signed in to this model account.",
       "billed": "Provided by Gugu, billed in credits, and subject to platform quota windows.",

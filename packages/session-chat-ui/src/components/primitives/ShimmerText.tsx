@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { pauseAnimationsOffscreen } from '@gugu/session-shared/animation-visibility';
+import { stopAnimationsOffscreen } from '@gugu/session-shared/animation-visibility';
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show, splitProps, type JSX } from 'solid-js';
 import { textShimmer, textShimmerBaseSweep, textShimmerClip, textShimmerInk, textShimmerLightInk, textShimmerMultiline, textShimmerSweep } from '@session-chat/styles/effects.css';
 
@@ -22,7 +22,7 @@ export function ShimmerText(props: JSX.HTMLAttributes<HTMLSpanElement> & { activ
   const sweepEnded = (event: AnimationEvent) => {
     if (event.target !== event.currentTarget) return;
     // A finished animation stops compositor ticks during the hold. Rewinding
-    // its clock preserves CSS control of window/surface/viewport pauses;
+    // its clock leaves the surface pause and the window hold in charge;
     // calling play() here would override animation-play-state instead.
     restartTimer = setTimeout(() => {
       restartTimer = undefined;
@@ -39,7 +39,7 @@ export function ShimmerText(props: JSX.HTMLAttributes<HTMLSpanElement> & { activ
       // content changes update the static glyph texture; animation never does.
       const content = new MutationObserver(syncText);
       content.observe(host, { subtree: true, childList: true, characterData: true });
-      const stop = pauseAnimationsOffscreen(host);
+      const stop = stopAnimationsOffscreen(host);
       onCleanup(() => { content.disconnect(); stop(); clearTimeout(restartTimer); });
     });
   });

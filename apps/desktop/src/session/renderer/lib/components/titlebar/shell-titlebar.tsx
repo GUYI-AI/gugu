@@ -1,8 +1,7 @@
-import { motion, useTransform } from 'framer-motion'
 import { observer } from 'mobx-react-lite'
 import { useEffect, type ReactNode } from 'react'
 import { publishPanelToggle } from '@/lib/panelToggles'
-import { readRendererPlatform, shellRestoreLane, TITLEBAR_LEFT_EDGE_GAP_PX } from '@/lib/window-chrome'
+import { TITLEBAR_LEFT_EDGE_GAP_PX } from '@/lib/window-chrome'
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts'
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider'
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format'
@@ -71,14 +70,6 @@ export const ShellTitlebar = observer(function ShellTitlebar({
    */
   dragRegion?: boolean
 }) {
-  const { leftAnimatedWidth } = useWorkspaceLayoutContext()
-
-  // leftSlot 只需要让开**压在主区上的那一截**开关车道:侧栏越宽,按钮越多地压在侧栏上,
-  // 主区这边要让的就越少。读主区左缘所在的那个宽(侧栏画出来的边,收展时逐帧跟着走)。
-  const leftSlotOffset = useTransform(leftAnimatedWidth, (width) =>
-    Math.max(TITLEBAR_LEFT_EDGE_GAP_PX, shellRestoreLane(readRendererPlatform()) - width)
-  )
-
   return (
     <div className="relative z-40 h-0">
       {/* Keep the shell layout zero-height, but make the full top chrome lane a usable window handle.
@@ -97,13 +88,13 @@ export const ShellTitlebar = observer(function ShellTitlebar({
           全部点不到,叠加本行后全部点到,还原后又全部点不到。 */}
       {dragRegion ? <ShellTitlebarDragRegion /> : null}
       {leftSlot ? (
-        <motion.div
+        <div
           className="absolute top-0 flex h-10 items-center [-webkit-app-region:no-drag]"
-          style={{ left: leftSlotOffset }}
+          style={{ left: TITLEBAR_LEFT_EDGE_GAP_PX }}
           data-shell-titlebar-left=""
         >
           {leftSlot}
-        </motion.div>
+        </div>
       ) : null}
       {children}
     </div>

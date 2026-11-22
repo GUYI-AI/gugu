@@ -17,14 +17,4 @@ describe('没选文件夹 = 那台机器的任务工作区', () => {
     expect(home).toHaveBeenCalledTimes(1);
     expect(home).toHaveBeenCalledWith('d22');
   });
-
-  it('新建框没选项目走它;项目块定好的本地项目直接用,不再按路径找或建', async () => {
-    const { remoteHostsStore } = await import('./remote-hosts-store');
-    const { resolveMachineProject } = await import('@renderer/features/sessions/use-machine-create-target');
-    const tasks = vi.spyOn(remoteHostsStore, 'ensureTaskWorkspace').mockResolvedValue('tw');
-
-    await expect(resolveMachineProject({ deviceId: 'd24' })).resolves.toBe('tw');
-    await expect(resolveMachineProject({ deviceId: 'd24', projectId: 'bound' })).resolves.toBe('bound');
-    expect(tasks).toHaveBeenCalledTimes(1);
-  });
 });

@@ -25,6 +25,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { appState } from '@renderer/lib/stores/app-state';
 import { useAgentInstallationStatuses, useInstallingAgents } from '@renderer/lib/stores/use-agent-installation-statuses';
 import { useAgents } from '@renderer/lib/stores/use-agents';
+import { valueOf } from '@/lib/replica';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
 import { sessionpageLegFor } from '@shared/core/sessions/provider-selection';
@@ -107,10 +108,11 @@ type AgentNotice = { kind: 'none' | 'installing'; text: string } | null;
  */
 function useSampleAgentNotice(): AgentNotice {
   const { translate, locale } = useSessionMessages();
-  const { data: agents } = useAgents();
-  const { data: statuses } = useAgentInstallationStatuses();
+  const agents = valueOf(useAgents());
+  const statusesReading = useAgentInstallationStatuses().reading;
   const installing = useInstallingAgents();
-  if (!agents || !statuses) return null;
+  if (!agents || statusesReading.state !== 'value') return null;
+  const statuses = statusesReading.value;
   const usable = new Set(agents.filter((agent) => sessionpageLegFor(agent.capabilities.sessionpage, 'acp') !== null).map((agent) => agent.id));
   if (statuses.some((status) => status.status === 'available' && usable.has(status.id))) return null;
   const names = agents.filter((agent) => installing.has(agent.id)).map((agent) => agent.name);

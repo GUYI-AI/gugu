@@ -5,21 +5,22 @@
 // 真 usePhoneAssistant,只把它读的几份 store 换成可控的。
 import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { CloudComputerStoreState } from '../../../apps/desktop/src/lib/cloudComputerStore'
+import type { Reading } from '../../../apps/desktop/src/lib/replica'
+import type { CloudComputerState } from '../../../apps/desktop/src/lib/cloudComputer'
 import { createReactHarness } from '../../support/testHarness'
 
 const store = vi.hoisted(() => ({
-  devices: { loading: false, cloudComputer: undefined as CloudComputerStoreState | undefined },
+  devices: { loading: false, cloudComputer: { state: 'unknown' } as Reading<CloudComputerState> },
 }))
 
 vi.mock('../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'owner-1', nickname: null } }) }))
 vi.mock('../../../apps/desktop/src/store/contactsContext', () => ({ useContactList: () => [] }))
-vi.mock('../../../apps/desktop/src/lib/cloudComputerStore', () => ({
-  getCloudComputerState: () => store.devices.cloudComputer,
-  subscribeCloudComputerState: () => () => {},
+vi.mock('../../../apps/desktop/src/lib/cloudComputer', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useCloudComputer: () => store.devices.cloudComputer,
 }))
 vi.mock('../../../apps/desktop/src/lib/myAssistant', () => ({
-  useMyAssistantContact: () => ({ loading: false, agentId: null, error: null, provisionDeviceId: null, contact: null, homeDeviceId: null }),
+  useMyAssistantContact: () => ({ reading: { state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }, contact: null, homeDeviceId: null }),
 }))
 vi.mock('../../../apps/desktop/src/components/assistant/useAssistantDm', () => ({
   useAssistantDm: () => ({ chatId: null, failed: false, retry: () => {} }),
@@ -41,7 +42,7 @@ describe('手机「咕咕」那一格:设备列表刷新不让已经知道的事
 
   // 没有快照时 stage 才看「管家有没有结论」。共享测试库上的新号平时是引导、刷新时闪 cloud-loading:只能是没有快照、管家说「这里没开放」(available=false)。
   it('管家已经说过「这里没开放」:设备列表刷新的那一下仍是开通引导', async () => {
-    store.devices = { loading: false, cloudComputer: { available: false, snapshot: null, loadError: null } }
+    store.devices = { loading: false, cloudComputer: { state: 'value', value: { available: false }, stale: false, error: null } }
     await harness.render(<Probe />)
     expect(stage()).toBe('onboarding')
     store.devices = { ...store.devices, loading: true }
@@ -53,7 +54,7 @@ describe('手机「咕咕」那一格:设备列表刷新不让已经知道的事
   })
 
   it('第一次进来、管家还没回话:是「在读」,不是开通引导', async () => {
-    store.devices = { loading: false, cloudComputer: { available: true, snapshot: null, loadError: null } }
+    store.devices = { loading: false, cloudComputer: { state: 'unknown' } }
     await harness.render(<Probe />)
     expect(stage()).toBe('cloud-loading')
   })

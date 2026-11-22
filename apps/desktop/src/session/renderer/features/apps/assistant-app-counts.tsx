@@ -11,10 +11,10 @@ import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { integrationIcons } from '@gugu/session-plugins/integration-icons';
-import { usePhoneRead } from '@/mobile/assistant/usePhoneRead';
-import { assistantReadWaiting } from '@/components/assistant/useAssistantRead';
-import { peekAssistantPanelIntegrations, readAssistantPanelIntegrations } from '@/components/assistant/assistant-panel-integrations';
-import { useChatChannels } from '@/components/settings/channels/useChatChannels';
+import { assistantReadWaiting } from '@/mobile/assistant/phoneRead';
+import { useConnectionList } from '@/components/assistant/assistant-panel-reads';
+import { chatChannels } from '@/components/connections/connection-replicas';
+import { refreshFailure, useReplica } from '@/lib/replica';
 import { assistantApplicationCounts } from '@/components/assistant/assistant-app-connections';
 import type { AssistantHomePlace } from '@/lib/assistantHome';
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge';
@@ -98,21 +98,22 @@ export const AssistantAppCountsSource = observer(function AssistantAppCountsSour
   // The panel's read itself failed (no data and not still coming): every read through it is unreadable, not loading.
   const machineFailed = !machine.data && !!machine.error && !machine.isLoading;
   // As the profile page reads them (assistant-profile.tsx ProfileHome), under the same key.
-  const apps = usePhoneRead(panel && assistantId ? `profile-apps|${assistantId}` : null, () => readAssistantPanelIntegrations(panel!, i18n.language),
-    'read application connections', undefined, () => peekAssistantPanelIntegrations(panel, i18n.language));
-  const chat = useChatChannels();
-  // Its collection not prepared yet (setup finishing) is still coming: loading, never unreadable.
-  const appsFailed = apps.state === 'error' && !assistantReadWaiting(apps.error);
+  const apps = useConnectionList(assistantId ? panel : undefined, false, i18n.language);
+  const chat = useReplica(chatChannels, []);
+  // Its collection not prepared yet (setup finishing) is still coming: loading, never unreadable. A refresh that failed
+  // over what was read is unreadable too: the contract has no "last read" state (❌ the old count handed over as current).
+  const appsFailure = refreshFailure(apps);
+  const appsFailed = appsFailure !== null && !assistantReadWaiting(appsFailure);
   const counts = appAssistantCountsOf({
     devices: shell?.deviceCount === undefined ? LOADING : ready(shell.deviceCount),
-    connectedApps: machineFailed || appsFailed || chat.status === 'failed' ? UNREADABLE
-      : apps.state === 'ok' && (chat.status === 'ready' || chat.status === 'absent')
-        ? ready(assistantApplicationCounts(apps.data.items, apps.data.configured, apps.data.statuses, chat.list)) : LOADING,
+    connectedApps: machineFailed || appsFailed || refreshFailure(chat) !== null ? UNREADABLE
+      : apps.state === 'value' && chat.state === 'value'
+        ? ready(assistantApplicationCounts(apps.value.items, apps.value.configured, apps.value.statuses, chat.value)) : LOADING,
     // The groups with folders on my machines (the same list as the assistant's workspace page).
     projects: groupFoldersStore.status === 'error' ? UNREADABLE : groupFoldersStore.status === 'ready' ? ready(groupFoldersStore.groups.length) : LOADING,
   });
   const connectors = appAssistantConnectorsOf(machineFailed || appsFailed ? UNREADABLE
-    : apps.state === 'ok' ? ready(connectorsOf(apps.data.items, apps.data.configured, i18n.language)) : LOADING);
+    : apps.state === 'value' ? ready(connectorsOf(apps.value.items, apps.value.configured, i18n.language)) : LOADING);
   const ownerId = shell?.ownerId ?? null;
   const key = ownerId && assistantId ? JSON.stringify([ownerId, counts, connectors]) : '';
   useEffect(() => {

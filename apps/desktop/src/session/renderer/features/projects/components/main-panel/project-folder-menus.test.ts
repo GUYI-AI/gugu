@@ -16,7 +16,7 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
 }));
 vi.mock('@renderer/lib/chat/sender-avatar', () => ({
   senderAvatarUrl: (fromId: string) => `avatar:${fromId}`,
-  subscribeSenderAvatars: () => () => {},
+  senderAvatarChanges: { get: () => 0, subscribe: () => () => {} },
 }));
 const feedback = vi.hoisted(() => ({ toast: vi.fn(), bind: vi.fn(), readMachine: vi.fn() }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: feedback.toast }));

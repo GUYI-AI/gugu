@@ -1,7 +1,8 @@
 import type { AgentStatusPresentation } from '@gugu/core/shared/agentStatusPresentation';
+import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels';
 import type { ChatAgentCounts } from '@/lib/innerSidebarBridge';
 import { buildSessionTree, type SessionTreeNode } from '@renderer/features/sessions/session-tree';
-import { needsYouCount, SIDEBAR_STATE_GROUP_ORDER, sidebarStateGroup } from './session-groups';
+import { needsYouCount, sidebarStateGroup } from './session-groups';
 import { summarizeSessionBranches, type SessionBranchSummary } from './sidebar-session-branch';
 
 // #2548 内层侧栏的「智能体」(群里也这么写,owner 11-12):**住在**这个群里的我的会话(这台电脑与连着的机器上的,即侧栏里那些),
@@ -13,9 +14,10 @@ export type ChatAgentEntry = {
   id: string;
   projectId: string;
   parentSessionId?: string | null;
-  isPinned: boolean;
-  /** 最后交互时间,新的在前。 */
+  /** 最后交互时间(会话的 lastInteractedAt,毫秒;0 = 没有),新的在前。 */
   time: number;
+  /** 建这条会话的时刻:还没交互过的按它排(同 chatActivityAt)。别的机器上的会话不报它。 */
+  createdAt?: string;
   presentation?: AgentStatusPresentation | null;
   /** 没有 = 这条会话还没有咕咕身份,不在任何对话的成员名单里。 */
   agentUserId?: string;
@@ -133,7 +135,7 @@ export type ChatAgentRow = {
 };
 
 /**
- * 一张平的表最多露几个家族,其余收进「展开显示 (N)」。需要你的 ❌ 收:它们多过这个数也全露,只是后面的一个都不露了。
+ * 一张平的表最多露几个家族,其余收进「展开显示 (N)」。需要你的 ❌ 收:排在上限之后的也露,接在露出来的后面。
  * 10:提议稿那一屏露 11 行(3 个要你 + 8 个),一列 32px 的行在 800px 高的窗口里摆下话题那五行之后还放得下十来行。
  */
 export const CHAT_AGENT_LIMIT = 10;
@@ -155,27 +157,19 @@ export type ChatAgentDisclosure = {
   open?: string | null;
 };
 
-/** 需要你 → 在跑 → 其余:表里的三档(sidebarStateGroup 的次序,其余排最后)。 */
-const tierOf = (entry: ChatAgentEntry): number => {
-  const group = sidebarStateGroup(entry.presentation ?? null);
-  return group === null ? SIDEBAR_STATE_GROUP_ORDER.length : SIDEBAR_STATE_GROUP_ORDER.indexOf(group);
-};
-
 /**
- * 分区里的行:一张平的表,❌ 组头(#2548 ⑥,刘威:「直接通过状态图标来显示……别单独分栏」)。按根会话的状态排 ——
- * 需要你的在最上面,在跑的第二层,其余在最下面;同一档里置顶的在前、再按最后交互新的在前。是哪一档只看行尾那几个记号
- * (行组件自己画:橙点要你确认、红点出错、转动的字符在跑、时钟是定时的)。子会话挂在父会话下(展开着才列出)。
- * 露 CHAT_AGENT_LIMIT 个家族,多出来的收进一行;需要你的全露,打开着的会话所在的家族也露(排在露出来的最后,收起行少数一个)。
- * 置顶的 ❌ 搬走(这一列没有「置顶」分区)。
+ * 分区里的行:一张平的表,❌ 组头(#2548 ⑥,刘威:「直接通过状态图标来显示……别单独分栏」)。按根会话最近的动静排,
+ * 同会话列表与话题(compareByRecentActivity):最后交互新的在前,没交互过的按建的时刻,同一刻按 id。
+ * ❌ 按状态分档、❌ 按置顶:状态只看行尾那几个记号(行组件自己画:橙点要你确认、红点出错、转动的字符在跑、时钟是定时的),
+ * 这一列没有「置顶」分区。子会话挂在父会话下(展开着才列出)。
+ * 露 CHAT_AGENT_LIMIT 个家族,多出来的收进一行;排在上限之后的需要你的、打开着的会话所在的家族也露
+ * (按原来的次序接在后面,收起行少数它们)。
  */
 export function chatAgentSection(entries: readonly ChatAgentEntry[], disclosure: ChatAgentDisclosure): ChatAgentList {
   const forest = buildSessionTree(entries);
   const summaries = summarizeSessionBranches(forest);
-  const needsYou = (entry: ChatAgentEntry) => sidebarStateGroup(entry.presentation ?? null) === 'needs-you';
-  const roots = [...forest].sort(
-    (a, b) => tierOf(a.item) - tierOf(b.item) || Number(b.item.isPinned) - Number(a.item.isPinned) || b.item.time - a.item.time
-  );
-  const limit = Math.max(CHAT_AGENT_LIMIT, roots.filter((root) => needsYou(root.item)).length);
+  const stamp = ({ item }: SessionTreeNode<ChatAgentEntry>) => ({ id: item.id, activityMs: item.time || activityMs(null, item.createdAt) });
+  const roots = [...forest].sort((a, b) => compareByRecentActivity(stamp(a), stamp(b)));
   const rows: ChatAgentRow[] = [];
   const visit = (node: SessionTreeNode<ChatAgentEntry>, depth: number, parentGroupChatId?: string | null) => {
     const summary = summaries.get(node.item.id);
@@ -193,11 +187,11 @@ export function chatAgentSection(entries: readonly ChatAgentEntry[], disclosure:
     for (const child of node.children) visit(child, depth + 1, node.item.groupChatId ?? null);
   };
   const holds = (node: SessionTreeNode<ChatAgentEntry>): boolean => node.item.id === disclosure.open || node.children.some(holds);
-  const openRoot = disclosure.open ? roots.find(holds) : undefined;
-  const openPastLimit = openRoot !== undefined && roots.indexOf(openRoot) >= limit;
-  const shown = disclosure.showAll ? roots : [...roots.slice(0, limit), ...(openPastLimit ? [openRoot] : [])];
+  const stays = (root: SessionTreeNode<ChatAgentEntry>) => sidebarStateGroup(root.item.presentation ?? null) === 'needs-you' || holds(root);
+  const kept = roots.slice(CHAT_AGENT_LIMIT).filter(stays);
+  const shown = disclosure.showAll ? roots : [...roots.slice(0, CHAT_AGENT_LIMIT), ...kept];
   for (const root of shown) visit(root, 0);
-  return { rows, total: roots.length, overflow: Math.max(0, roots.length - limit - (openPastLimit ? 1 : 0)) };
+  return { rows, total: roots.length, overflow: Math.max(0, roots.length - CHAT_AGENT_LIMIT - kept.length) };
 }
 
 /**

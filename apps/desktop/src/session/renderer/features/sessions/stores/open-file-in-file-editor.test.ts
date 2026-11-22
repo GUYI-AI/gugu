@@ -65,14 +65,15 @@ vi.mock('@renderer/lib/ipc', () => ({
       files: { fileExists: mocks.fileExists, statExternalFile: mocks.statExternalFile },
     },
   },
+  rpcOn: () => ({ app: { getHomeDirectory: mocks.getHomeDirectory } }),
 }));
 
 vi.mock('./workspace-registry', () => ({
   workspaceRegistry: { get: mocks.workspaceGet },
 }));
 
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: {
+vi.mock('@renderer/features/extensions/installed-extensions', () => {
+  const apps = {
     get manifests() {
       return mocks.installedManifests;
     },
@@ -80,10 +81,10 @@ vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
       return mocks.openWithDefaults;
     },
     isEnabled: () => true,
-    noteOpenWithDefault: vi.fn(),
     locale: 'en-US',
-  },
-}));
+  };
+  return { LOCAL_HOST: 'local', fetchInstalledApps: async () => apps, peekInstalledApps: () => apps, noteOpenWithDefault: vi.fn() };
+});
 
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModal }));
 
@@ -91,12 +92,13 @@ vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModa
 const viewer = vi.hoisted(() => ({
   open: vi.fn(async (_items: Array<{ alt: string; read: () => Promise<Blob> }>, _index: number, _box?: unknown) => {}),
   read: vi.fn(async () => new Blob(['png'])),
+  first: vi.fn(async () => ({ size: 3, bytes: new Uint8Array(3), ms: 1 })),
 }));
 vi.mock('@/lib/attachmentBytes', () => ({
   workingCopyImageItem: (alt: string, read: () => Promise<Blob>) => ({ alt, read }),
   openViewerFromClick: viewer.open,
 }));
-vi.mock('../workspace-backend/read-workspace-bytes', () => ({ readWorkspaceFileBytes: viewer.read }));
+vi.mock('../workspace-backend/read-workspace-bytes', () => ({ readWorkspaceFileBytes: viewer.read, readFirstChunk: viewer.first }));
 
 const {
   makeFileLinkHandlers,
@@ -107,6 +109,7 @@ const {
   openHostRequestedExtensionInSessionWhenReady,
   openHostRequestedFileInSessionWhenReady,
 } = await import('./open-file-in-file-editor');
+const { followRendererSession, queryClient } = await import('@/lib/replica');
 
 describe('task file preview routing', () => {
   it('reports an unprepared or missing workspace rather than acknowledging an open', async () => {
@@ -137,6 +140,8 @@ describe('task file preview routing', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    queryClient.clear();
+    followRendererSession('SIGNED_IN', 'tester');
     mocks.showModal.mockReset();
     mocks.revealLiveWindow.mockReset().mockResolvedValue(undefined);
     mocks.showPage.mockReset();
@@ -207,9 +212,24 @@ describe('task file preview routing', () => {
       expect(items.map((item) => item.alt)).toEqual(['a.png']);
       expect([index, box]).toEqual([0, undefined]);
       await items[0]!.read();
-      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/a.png', true);
+      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/a.png', true, expect.any(Promise));
       expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
       expect(mocks.toastError).not.toHaveBeenCalled();
+    });
+
+    it('its first chunk is asked beside the machine\'s fileExists, and taken by its first read only', async () => {
+      let answer!: (value: unknown) => void;
+      mocks.fileExists.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+      const opening = openFileInSessionEditor('project-1', 'session-1', 'shots/a.png', { byHost: true, among: ['shots/a.png', 'shots/b.png'] });
+      await vi.waitFor(() => expect(viewer.first).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/a.png'));
+      answer({ success: true, data: { exists: true, isDirectory: false } });
+      await opening;
+      const [items] = viewer.open.mock.calls[0]!;
+      await items[0]!.read();
+      await items[0]!.read();
+      await items[1]!.read();
+      expect(viewer.read.mock.calls.map((call) => [(call as unknown[])[2], (call as unknown[])[4] instanceof Promise])).toEqual([['/repo/shots/a.png', true], ['/repo/shots/a.png', false], ['/repo/shots/b.png', false]]);
+      expect(viewer.first).toHaveBeenCalledTimes(1);
     });
 
     it('an App\'s open pages through the images it showed, from the clicked picture', async () => {
@@ -219,7 +239,7 @@ describe('task file preview routing', () => {
       expect(items.map((item) => item.alt)).toEqual(['x.png', 'a.png', 'b.webp']);
       expect([index, box]).toEqual([1, origin]);
       await items[2]!.read();
-      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/b.webp', true);
+      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/b.webp', true, undefined);
       expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
     });
 
@@ -361,11 +381,10 @@ describe('task file preview routing', () => {
     );
   });
 
-  it('getHomeDirectory 一次瞬时失败不污染会话 —— 缓存被释放,下次点击即恢复', async () => {
-    // 模块级 home 缓存跨用例存活:前面的用例已把它焐热,这里必须重置模块拿冷缓存,
-    // 否则 rejected 分支根本不会走到,Once mock 还会漏给后面的用例(实测就是这么红的)。
-    vi.resetModules();
-    const { openFileInSessionEditor: openFresh } = await import('./open-file-in-file-editor');
+  it('getHomeDirectory 一次瞬时失败不污染会话 —— 读失败是 error,下次点击即重读', async () => {
+    // The home folder is the account's `homeDirectory` replica (cleared before each case): a failed read is an error
+    // reading, never a cached value, so the next click reads again.
+    const openFresh = openFileInSessionEditor;
     mocks.getHomeDirectory.mockRejectedValueOnce(new Error('bridge not ready'));
     // 第一次:~ 没展开,被当相对路径拼成 <ws>/~/… —— 那个位置不存在(只对这一次 mock)。
     mocks.fileExists.mockResolvedValueOnce({

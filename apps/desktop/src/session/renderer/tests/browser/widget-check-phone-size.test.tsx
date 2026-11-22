@@ -17,10 +17,14 @@ vi.mock('@/lib/widgetRegistry', async original => {
     id: message.id, widget: parseWidgetMessage(message.content), senderId: message.sender_user_id,
   }) }
 })
-vi.mock('@/session/renderer/features/extensions/installed-extensions-store', async original => ({ ...(await original<object>()), installedExtensionsStore: {
+vi.mock('@/session/renderer/features/extensions/installed-extensions', async original => {
+  const installed = {
   isLoaded: true, isEnabled: () => true,
   manifestFor: () => ({ id: 'vote', version: '1.0.0', contributes: { tabs: [{ name: 'poll', widget: { height: 240 } }] } }),
-} }))
+}
+  return { ...(await original<object>()), useInstalledApps: () => ({ state: 'value', stale: false, error: null, value: installed }),
+    peekInstalledApps: () => installed, peekInstalledAppsTracked: () => installed, fetchInstalledApps: async () => installed }
+})
 vi.mock('@/components/chat/useConversationVisibility', () => ({ useConversationVisibility: () => ({ ref: useRef(null), shown: true }) }))
 // Only the App's contents are a stand-in; MessageBubble and WidgetBubble's real layout remain intact.
 vi.mock('@/components/appSlot/PhoneAppFrame', async original => ({ ...(await original<object>()), PhoneAppFrame: () => <iframe title="widget slot" style={{ width: '100%', height: '100%', border: 0 }} /> }))

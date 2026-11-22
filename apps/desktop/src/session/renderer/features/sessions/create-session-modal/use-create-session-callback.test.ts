@@ -39,7 +39,7 @@ vi.mock('@renderer/lib/ipc', () => ({
   onMachineEvent: () => mocks.stopInstallProgress,
 }));
 vi.mock('@renderer/lib/stores/use-agents', () => ({
-  useAgents: () => ({ data: [{ id: 'codex', name: 'Codex', reading: 'not-detected' }] }),
+  useAgents: () => ({ state: 'value', value: [{ id: 'codex', name: 'Codex', reading: 'not-detected' }], stale: false, error: null }),
 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
   useSessionMessages: () => ({ translate: (key: string, params?: Record<string, unknown>) => `${key} ${Object.values(params ?? {}).join(' ')}`.trim() }),

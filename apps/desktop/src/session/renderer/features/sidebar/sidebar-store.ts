@@ -9,7 +9,7 @@ import type { ProjectManagerStore } from '@renderer/features/projects/stores/pro
 import { pageSessions } from '@renderer/features/sessions/stores/session-selectors';
 import type { Snapshottable } from '@renderer/lib/stores/snapshottable';
 import { sidebarFolds, type SidebarFold } from './sidebar-folds';
-import type { SidebarSnapshot, SidebarSessionSortBy } from '@shared/view-state';
+import type { SidebarSnapshot } from '@shared/view-state';
 import type { JoinedGroup } from '@/lib/sidebarJoinedGroups';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
 import { isAssistantAgent, isAssistantSession, launchedByAssistant } from '@renderer/features/assistant/assistant-lineage';
@@ -19,10 +19,6 @@ import type { AgentStatusPresentation } from '@gugu/core/shared/agentStatusPrese
 import { sessionPresentation } from '@/lib/agent-wait/watch-status';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { sidebarStateGroup, type SidebarStateGroup } from './session-groups';
-
-function parseSidebarSessionSortBy(value: unknown): SidebarSessionSortBy | undefined {
-  return value === 'created-at' || value === 'updated-at' ? value : undefined;
-}
 
 /**
  * behavior session-page「键盘导航」: a station of the keyboard navigation — the New task entry or a conversation. Section
@@ -96,7 +92,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
    * ❌ 不在每一行里各调一次设置 hook(侧栏是几十行的场面)。
    */
   agentNameOnHoverEnabled = true;
-  sessionSortBy: SidebarSessionSortBy = 'created-at';
   /**
    * #6264 项目在哪台机器、那台机器叫什么、主目录在哪。由机器那边注入(remoteHostsStore.start),
    * 排版逻辑因此能脱离桥单测。搜索时机器名也算项目名的一部分。
@@ -362,7 +357,6 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       expandedSessionIds: [...this.expandedSessionIds],
       idleExpandedProjectIds: [...this.idleExpandedProjectIds],
       folds: [...sidebarFolds],
-      sessionSortBy: this.sessionSortBy,
     };
   }
 
@@ -376,13 +370,9 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     if (snapshot.folds !== undefined) {
       sidebarFolds.replace(snapshot.folds as SidebarFold[]);
     }
-    if (snapshot.sessionSortBy !== undefined) {
-      const v = parseSidebarSessionSortBy(snapshot.sessionSortBy);
-      if (v !== undefined) this.sessionSortBy = v;
-    }
     // Blobs written by older sidebars still carry their section folds, layout and project rows (pinnedCollapsed,
     // projectsCollapsed, sessionsCollapsed, chatsCollapsed, listLayout, listPage, expandedProjectIds, projectOrder,
-    // sessionOrderByProject): nothing reads them any more.
+    // sessionOrderByProject) and a sessionSortBy no list ever read: nothing reads them any more.
   }
 
 }

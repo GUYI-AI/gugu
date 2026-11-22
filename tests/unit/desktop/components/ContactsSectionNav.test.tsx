@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // 桌面通讯录:左栏只列分组(一行一个、带计数,❌ 折叠展开);点一个分组,右边大区域铺开这一组的全部联系人,
-// agent 按派生关系画成导图(AgentMindMap)。计数与右边铺开的是同一份分组;分组全空时给空态 CTA。
+// agent 按派生关系成家族、一个家族一格画成大纲(AgentFamilies)。计数与右边铺开的是同一份分组;分组全空时给空态 CTA。
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
 import { ContactsPanel } from '../../../../apps/desktop/src/components/ContactsPanel'
@@ -53,15 +53,31 @@ describe('contacts page: groups on the left, the chosen group spread on the righ
     }
   })
 
-  it('draws agents as a mind map: one curve per parent → child, single agents in the grid after the families', async () => {
+  it('draws each family as one outline cell (parent, then its children indented), single agents in their own cells after the families', async () => {
     parents.set('front', 'arch').set('review', 'arch').set('css', 'front')
     await render([agent('arch', '架构师'), agent('front', '前端设计'), agent('review', '代码评审'), agent('css', '样式整理'), agent('solo', '翻译助手')])
-    expect(pane().querySelectorAll('[data-testid="agent-family-map"]')).toHaveLength(1)
-    expect(pane().querySelectorAll('[data-testid="agent-family-map"] [data-map-edges] path')).toHaveLength(3)
-    // 家族图在前(先序:父在子前),单个 agent 在后
+    const family = pane().querySelectorAll('[data-testid="agent-family"]')
+    expect(family).toHaveLength(1)
+    // 大纲按先序读:父在上,子在父下面(孙子跟在它的父后面),单个 agent 不进家族
+    expect([...family[0]!.querySelectorAll<HTMLElement>('[data-contact-id]')].map((node) => node.dataset.contactId)).toEqual(['arch', 'front', 'css', 'review'])
     expect(shownIds()).toEqual(['arch', 'front', 'css', 'review', 'solo'])
     await clickElement(pane().querySelector('[data-contact-id="front"]') as HTMLElement)
     expect($('[data-testid="contacts-detail-drawer"] [data-slot="pane-header"]')?.textContent).toBe('前端设计')
+  })
+
+  it('folds a parent with more than five children into "…+N" and unfolds it in place', async () => {
+    const kids = ['k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k7']
+    kids.forEach((id) => parents.set(id, 'lead'))
+    await render([agent('lead', '发布协调'), ...kids.map((id) => agent(id, id))])
+    const fold = () => pane().querySelector<HTMLElement>('[data-agent-fold]')!
+    expect(fold().textContent).toBe('…+3')
+    expect(shownIds()).toEqual(['lead', 'k1', 'k2', 'k3', 'k4'])
+    await clickElement(fold())
+    expect(fold().getAttribute('aria-expanded')).toBe('true')
+    // 就地展开:其余子节点接在前四个后面,「收起」留在最后
+    expect(shownIds()).toEqual(['lead', ...kids])
+    await clickElement(fold())
+    expect(shownIds()).toEqual(['lead', 'k1', 'k2', 'k3', 'k4'])
   })
 
   it('keeps the empty-state calls to action when every group is empty', async () => {

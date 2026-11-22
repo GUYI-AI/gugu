@@ -153,7 +153,7 @@ describe('#2051 command-authored message delivery (S2b: spontaneous stable-id in
     const send = callTool('message_send', {
       chat_id: '00000000-0000-4000-8000-000000000001', file_name: 'proof.txt', file_path: proofPath, mime_type: 'text/plain', to_user_ids: [`user:${to}`],
     }, deps)
-    if (refuse) await expect(send).rejects.toThrow(`Recipients are not members of chat 00000000-0000-4000-8000-000000000001: ${refuse}. Look up current members with message_members and send again.`)
+    if (refuse) await expect(send).rejects.toThrow(`Recipients are not members of chat 00000000-0000-4000-8000-000000000001: ${refuse}. Members you can address: `)
     else expect(await send).toContain(expected)
     // The host may start bytes before commit; a definite refusal releases its upload duty.
     if (!refuse) expect(uploads).toEqual(['proof.txt'])

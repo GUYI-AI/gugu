@@ -6,7 +6,7 @@ import '@/i18n/registerMobileWorkspaceCatalog'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { useAssistantName } from '@/hooks/useAssistantHomeLabel'
 import { isAssistantHome, type AssistantHomeRow } from '@/lib/assistantHome'
-import { useDevicesStore } from '@/store/devicesContext'
+import { cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 
 type Row = Pick<Device, 'device_id' | 'cloud_computer' | 'label' | 'capabilities'>
 
@@ -15,11 +15,11 @@ type Row = Pick<Device, 'device_id' | 'cloud_computer' | 'label' | 'capabilities
  * ❌ 说那台的机器名(owner 10-15「用户只知道个人助理 Agent，甚至不需要知道它生活在哪儿」)。别的机器照旧是设备名。
  */
 export function useMachineLabel(): { label: (device: Row) => string; isHome: (device: AssistantHomeRow) => boolean } {
-  const { cloudComputer } = useDevicesStore()
+  const cloudComputer = useCloudComputer()
   const ownerId = useAuth().user?.id ?? null
   const { deviceId: localId } = usePhoneHostIdentity(ownerId)
   const { t } = useTranslation('mobileWorkspace')
-  const homeId = cloudComputer?.snapshot?.deviceId ?? null
+  const homeId = cloudSnapshotOf(cloudComputer)?.deviceId ?? null
   const name = useAssistantName()
   const isHome = useCallback((device: AssistantHomeRow) => isAssistantHome(device, homeId), [homeId])
   const label = useCallback((device: Row) => (isHome(device) ? name : device.device_id === localId ? t('thisPhone') : device.label), [isHome, name, localId, t])

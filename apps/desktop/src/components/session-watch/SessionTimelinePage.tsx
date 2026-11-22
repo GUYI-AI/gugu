@@ -12,9 +12,8 @@ import { boundedWindowReady } from './desktop-window-history'
 import { useSessionHistorySource } from './use-session-history-source'
 import { useSessionRestart } from './useSessionRestart'
 import { useTimelineFailureNotice } from './useTimelineFailureNotice'
-import { useEffect, useState, type ComponentProps, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type ComponentProps, type CSSProperties } from 'react'
 import { showPhoneAppView } from '@/components/appSlot/phoneAppState'
-import { reaction } from 'mobx'
 import { useTranslation } from 'react-i18next'
 import { PhoneTaskSkills } from '../../mobile/local-agent/PhoneTaskSkillsButton'
 import type { Device } from '@gugu/core/shared/types/chat'
@@ -27,7 +26,7 @@ import { IconButton } from '@/components/ui/IconButton'
 import { RefreshCw } from '@/lib/icons'
 import { AgentWatchScreen } from './AgentWatchChrome'
 import { SessionConversation } from './SessionConversation'
-import { enqueueSessionInput, releaseQueuedSessionInput, queuedSessionInputs, useQueuedSessionInputs } from '@/lib/sessionInputOutboxBridge'
+import { enqueueSessionInput, releaseQueuedSessionInput, queuedSessionInputs, useQueuedSessionInputs } from '@/lib/outbox/kinds/sessionInput'
 import { sessionInputBaseline } from '@/lib/pendingSessionInput'
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue'
 import { SessionAvatar } from './StatusGlyph'
@@ -45,7 +44,9 @@ import { type SessionMenuTarget, SessionActions, SessionMenuButton } from './Ses
 import { SessionAppMenu, SessionAppMenuItems } from './SessionAppMenu'
 import { useMachineLabel } from './useMachineLabel'
 import { SessionAppFrame } from '@/components/appSlot/SessionAppFrame'
-import { installedExtensionsStore } from '@/session/renderer/features/extensions/installed-extensions-store'
+import { useInstalledApps } from '@/session/renderer/features/extensions/installed-extensions'
+import { HERE_HOST } from '@/components/appSlot/hereHost'
+import type { Reading } from '@/lib/replica'
 import { useNetworkOnline } from '@/hooks/useNetworkOnline'
 import { translateSessionMessage } from '@/session/renderer/localization/locale-store'
 import { useMobileShell } from '@/hooks/useMobileShell'
@@ -58,11 +59,11 @@ import { SessionChatLoading } from '@renderer/features/sessions/acp/session-chat
  * owner 10-16 The App tabs a session offers on the phone: installed, switched on, opening no file — the session page's 「+」
  * on a computer. Their page draws here; their program runs on the session's computer.
  */
-function useSessionApps(): Array<{ kind: string; name: string }> {
-  const read = () => installedExtensionsStore.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: entry.title || entry.extensionName }))
-  const [apps, setApps] = useState(read)
-  useEffect(() => reaction(read, setApps, { equals: (a, b) => a.length === b.length && a.every((one, i) => one.kind === b[i]?.kind && one.name === b[i]?.name) }), [])
-  return apps
+function useSessionApps(): Reading<Array<{ kind: string; name: string }>> {
+  const installed = useInstalledApps(HERE_HOST)
+  return useMemo(() => installed.state === 'value'
+    ? { ...installed, value: installed.value.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: entry.title || entry.extensionName })) }
+    : installed, [installed])
 }
 
 /**
@@ -137,6 +138,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   // A draft brought to this session (a cite from its Files App) is the person's next words here: its conversation comes up.
   useEffect(() => { if (draft) setAppKind(null) }, [draft])
   const apps = useSessionApps()
+  const browserApp = { kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
   const { boundedHistory, nativeHistory, nativeRecord } = useSessionHistorySource({
     deviceId: device.device_id, sessionId: session.conversationId, mobile, phoneHost,
@@ -272,7 +274,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const appNavigation = !phoneHost && !appPanel && !embedded ? {
     appKind,
     onConversation: () => setAppKind(null),
-    apps: [{ kind: PHONE_TASK_BROWSER, name: translateSessionMessage('workspace.browser') }, ...apps],
+    apps: apps.state === 'value' ? [browserApp, ...apps.value] : [browserApp],
+    pending: !!HERE_HOST && apps.state !== 'value',
     onOpenApp: setAppKind,
   } : null
   const canManage = reachable && !hostSilent

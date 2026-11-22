@@ -860,6 +860,7 @@ export default {
       "undelivered": "所在实例未运行、未送达",
       "sending": "发送中",
       "stopped": "已停止，将随下一条消息一起发送",
+      "notSentWillResend": "未发出，网络恢复后将自动重发",
       "unknownNotResent": "发送失败",
       "failure": {
         "hostOffline": "该任务的运行设备离线，设备上线后将自动发送",

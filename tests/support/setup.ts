@@ -1,6 +1,18 @@
-import { beforeEach, vi } from 'vitest'
+import { afterEach, beforeEach, vi } from 'vitest'
+import 'fake-indexeddb/auto'
+import { IDBFactory } from 'fake-indexeddb'
 import { layOutScrollers } from './scrollerLayout'
 import { installJsdomCanvasStub } from './jsdom-canvas-stub'
+
+// 不在桌面壳里时,消息存储跑在 IndexedDB 上(lib/localMessageStore):每个用例一个空库,用例之间不串数据。
+beforeEach(() => { globalThis.indexedDB = new IDBFactory() })
+// fake-indexeddb 在 setImmediate 上排它的事务步骤(真 IndexedDB 不受计时器影响)。用例自己没列 toFake 时,
+// 假计时器照默认全部伪造,但留下 setImmediate:否则存储的每一步都卡在没人推进的假时钟上。用例明确列了的照列。
+const fakeTimers = vi.useFakeTimers.bind(vi)
+const fakeable = ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance',
+  'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'cancelIdleCallback'] as const
+vi.useFakeTimers = (config?: Parameters<typeof vi.useFakeTimers>[0]) => fakeTimers({ ...config,
+  toFake: config?.toFake ?? fakeable.filter(name => name in globalThis) })
 
 // 真 lottie 播放器不进单测进程 —— 它模块顶层那条轮询关不掉,会活过 jsdom 拆除再把无关的 job 判红。
 // 机制、为什么两份 setup 都要装、为什么这个名字必须在 vitest 别名表里定死:见替身模块的抬头。
@@ -80,4 +92,36 @@ beforeEach(async () => {
   await import('../../apps/desktop/src/i18n/registerContactsCatalog')
   await import('../../apps/desktop/src/i18n/registerAgentsCatalog')
   applyLocalePreference('zh-CN', false)
+})
+
+// @@@outbox — the window's one outbox (lib/outbox `outbox()`) is IndexedDB in the product; jsdom has none. Each test gets a
+// fresh one over memory, for the account the replica follows (renderWithAppProviders signs in through it). Imported here,
+// inside the hook, so a test file's own vi.mock of these modules applies. A test may install its own instead.
+let testOutbox: { dispose(): void } | undefined
+beforeEach(async () => {
+  if (typeof window === 'undefined') return
+  const [core, replica] = await Promise.all([import('../../apps/desktop/src/lib/outbox/core'), import('../../apps/desktop/src/lib/replica')])
+  // A file that mocks the replica (or the core) away has no outbox to install; a vi.mock throws on a missing export.
+  const exported = (module: object, name: string) => { try { return typeof (module as Record<string, unknown>)[name] === 'function' } catch { return false } }
+  if (!exported(core, 'createOutbox') || !exported(replica, 'onAccountChange') || !exported(replica, 'replicaAccount')) return
+  const { createOutbox } = core, { onAccountChange, replicaAccount } = replica
+  const rows = new Map<string, unknown>()
+  const box = createOutbox({
+    storage: {
+      list: async (accountId) => [...rows.entries()].filter(([key]) => key.startsWith(`${accountId}/`)).map(([, row]) => structuredClone(row)) as never,
+      write: async (accountId, puts, removes) => {
+        for (const item of puts) rows.set(`${accountId}/${item.id}`, structuredClone(item))
+        for (const id of removes) rows.delete(`${accountId}/${id}`)
+      },
+    },
+    account: { current: () => replicaAccount().id, onChange: onAccountChange, credential: () => replicaAccount().id },
+    online: () => () => {},
+  })
+  testOutbox = box
+  ;(globalThis as Record<string, unknown>).__GUGU_OUTBOX__ = box
+})
+afterEach(() => {
+  testOutbox?.dispose()
+  if ((globalThis as Record<string, unknown>).__GUGU_OUTBOX__ === testOutbox) delete (globalThis as Record<string, unknown>).__GUGU_OUTBOX__
+  testOutbox = undefined
 })

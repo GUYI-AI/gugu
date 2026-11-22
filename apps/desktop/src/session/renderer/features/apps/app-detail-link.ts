@@ -5,6 +5,7 @@ import { rpcOn } from '@renderer/lib/ipc';
 import { appState } from '@renderer/lib/stores/app-state';
 import { LOCAL_DEVICE_SCOPE } from '@renderer/features/remote-hosts/device-scope-store';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
+import { currentAppsLocation, openAppsLocation } from './apps-location';
 
 /** Validate the named host before opening a detail that can act on it. */
 export async function openAppDetailLink(target: AppDetailLink, ownerId: string, isCurrent = () => true) {
@@ -24,12 +25,23 @@ export async function openAppDetailLink(target: AppDetailLink, ownerId: string, 
   }
   if (!isCurrent()) return;
   revealSessionpage();
+  // Every way into the Apps page names a place on it (apps-location); a link goes from where the page was last.
+  const here = currentAppsLocation();
+  const device = scope === LOCAL_DEVICE_SCOPE ? undefined : scope;
   if (target.kind === 'agent-app-detail') {
+    // Over the page as it stands it closes back to it; over the Installed sheet it is a step, so closing returns to the sheet.
+    const overPage = appState.navigation.currentViewId === 'apps' && !here.installed;
     appState.navigation.navigate('apps', {
-      agentDetail: { ...target, deviceId: scope === LOCAL_DEVICE_SCOPE ? undefined : scope },
-      ...(appState.navigation.currentViewId === 'apps' ? { agentDetailFrom: 'apps' } : {}),
+      location: { ...here, installed: undefined },
+      agentDetail: { ...target, deviceId: device },
+      ...(overPage ? { agentDetailFrom: 'apps' } : {}),
     });
   } else {
-    appState.navigation.navigate('apps', { detail: scope === LOCAL_DEVICE_SCOPE && target.deviceId ? { ...target, deviceId: undefined } : target });
+    openAppsLocation({
+      ...here,
+      installed: undefined,
+      deviceId: device,
+      detail: { extensionId: target.extensionId, ...(target.variant ? { variant: target.variant } : {}), ...(target.fromApp ? { fromApp: true } : {}) },
+    });
   }
 }
