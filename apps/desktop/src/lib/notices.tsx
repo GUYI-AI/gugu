@@ -184,8 +184,10 @@ function showPersistent(notice: Notice): string {
   const { list } = persistent()
   const current = list.find((entry) => entry.key === key)
   if (!current || current.title !== notice.title || current.tier !== notice.tier) logIfRead({ ...notice, key })
-  // 同 key 原地更新(进度在走、状态在变)不改它在哪:用户收进铃铛的,更新了也还在铃铛里。
-  const next: PersistentNotice = { ...notice, key, seq: current?.seq ?? ++persistentSeq, deferred: current?.deferred ?? false }
+  // 用户收进铃铛的,同一件事还在原样往前走(进度在动、说明在变)就还在铃铛里;换了标题 = 进到了新的状态
+  // (可用 → 已就绪、安装中 → 失败),是一个新的决定,回到卡片叠上。
+  const deferred = current?.deferred === true && current.title === notice.title
+  const next: PersistentNotice = { ...notice, key, seq: current?.seq ?? ++persistentSeq, deferred }
   publish(current ? list.map((entry) => (entry === current ? next : entry)) : [...list, next])
   return key
 }

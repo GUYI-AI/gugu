@@ -27,7 +27,8 @@ const matching = (pattern: RegExp) => files.filter((file) => pattern.test(file.t
 
 describe('notice outlets', () => {
   it('only the host layers notices: --z-toast, --z-notice and sonner DOM belong to it', () => {
-    const host = ['apps/desktop/src/components/notice-host.css', 'apps/desktop/src/styles/tokens.css'];
+    const host = ['apps/desktop/src/components/NoticeHost.tsx', 'apps/desktop/src/components/notice-host.css', 'apps/desktop/src/lib/notices.tsx',
+      'apps/desktop/src/styles/tokens.css'];
     expect(matching(/--z-toast\b/), guide).toEqual(host);
     expect(matching(/--z-notice\b/), guide).toEqual(host);
     // The one remaining fixed bar on its own layer: sign-in lost (page state that blocks writes; owner 11-22 kept it as is).

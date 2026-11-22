@@ -49,7 +49,7 @@ afterEach(() => {
   delete document.documentElement.dataset.theme;
 });
 async function mount(corner = false) {
-  await harness.render(<><Frame>{corner && <PasswordDeviceHost />}</Frame></>);
+  await harness.render(<><NoticeHost /><Frame>{corner && <PasswordDeviceHost />}</Frame></>);
   await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="password-unlock-settings"]')).not.toBeNull());
   return harness.container.querySelector<HTMLElement>('[data-testid="password-unlock-settings"]')!;
 }

@@ -196,13 +196,15 @@ describe('常驻的进右上角那一叠(owner 选的 B):位置只由寿命决�
     expect(keys()).toEqual([])
   })
 
-  it('「以后再说」= 收进铃铛:还在、标成 deferred,不回调 onDismiss;之后同 key 更新也还在铃铛里', () => {
+  it('「以后再说」= 收进铃铛:还在、标成 deferred,不回调 onDismiss;同一状态往前走还在铃铛里,换了状态回到卡片叠', () => {
     const closed = vi.fn()
-    notify({ key: 'install', title: 'Installing 10%', ongoing: true, onDismiss: closed })
+    notify({ key: 'install', title: 'Installing Codex', description: '10%', ongoing: true, onDismiss: closed })
     persistentNotices.defer('install')
     expect(persistentNotices.read()).toMatchObject([{ key: 'install', deferred: true }])
-    notify({ key: 'install', title: 'Installing 60%', ongoing: true, onDismiss: closed })
-    expect(persistentNotices.read()).toMatchObject([{ key: 'install', title: 'Installing 60%', deferred: true }])
+    notify({ key: 'install', title: 'Installing Codex', description: '60%', ongoing: true, onDismiss: closed })
+    expect(persistentNotices.read()).toMatchObject([{ key: 'install', description: '60%', deferred: true }])
+    notify({ key: 'install', title: 'Codex install failed', ongoing: true, onDismiss: closed })
+    expect(persistentNotices.read()).toMatchObject([{ key: 'install', deferred: false }])
     expect(closed).not.toHaveBeenCalled()
     persistentNotices.clear('install')
     expect(closed).toHaveBeenCalledTimes(1)

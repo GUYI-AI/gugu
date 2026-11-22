@@ -37,7 +37,7 @@ describe('managed installations survive leaving the selection step (#7582)', () 
   it('tracks both concurrent installs independently after continuing', async () => {
     const codex = deferred(), claude = deferred();
     f.install.mockImplementation(({ id }) => id === 'codex' ? codex.promise : claude.promise);
-    await act(async () => root.render(<><FirstRunInstallProvider><Flow /></FirstRunInstallProvider></>));
+    await act(async () => root.render(<><NoticeHost /><FirstRunInstallProvider><Flow /></FirstRunInstallProvider></>));
     await act(async () => host.querySelector('button')!.click());
     expect(host.textContent).toContain('Next setup step');
     expect(f.install.mock.calls.map(([x]) => x)).toEqual([{ id: 'codex', method: 'mise' }, { id: 'claude', method: 'mise' }]);
@@ -51,7 +51,7 @@ describe('managed installations survive leaving the selection step (#7582)', () 
   it('does not report an external installed copy as a successful managed install', async () => {
     f.install.mockResolvedValue({ success: true });
     f.status.mockResolvedValue({ used: { kind: 'auto' }, installations: [{ provenance: { ours: false, kind: 'path' }, status: 'available' }] });
-    await act(async () => root.render(<><FirstRunInstallProvider><Flow /></FirstRunInstallProvider></>));
+    await act(async () => root.render(<><NoticeHost /><FirstRunInstallProvider><Flow /></FirstRunInstallProvider></>));
     await act(async () => host.querySelector('button')!.click());
     expect(host.querySelectorAll('[role="alert"]')).toHaveLength(2);
     expect(host.textContent).not.toContain('firstRun.harnessInstalled');
@@ -63,7 +63,7 @@ describe('managed installations survive leaving the selection step (#7582)', () 
       const queue = useFirstRunInstaller();
       return <><button data-k="a" onClick={() => queue(['codex'])}>Continue</button><button data-k="b" onClick={() => queue(['codex', 'claude'])}>Continue again</button></>;
     }
-    await act(async () => root.render(<><FirstRunInstallProvider><BackAndForth /></FirstRunInstallProvider></>));
+    await act(async () => root.render(<><NoticeHost /><FirstRunInstallProvider><BackAndForth /></FirstRunInstallProvider></>));
     await act(async () => host.querySelector<HTMLButtonElement>('[data-k="a"]')!.click());
     await act(async () => host.querySelector<HTMLButtonElement>('[data-k="b"]')!.click());
     expect(f.install.mock.calls.map(([x]) => x.id)).toEqual(['codex', 'claude']);
@@ -77,7 +77,7 @@ describe('first run uses a copy already on this computer when it is new enough',
   function One() { const queue = useFirstRunInstaller(); return <button onClick={() => queue(['codex'])}>Continue</button>; }
   it('does not install when session start would accept the local copy', async () => {
     f.list.mockResolvedValue([copy('installed', '0.160.0', true)]);
-    await act(async () => root.render(<><FirstRunInstallProvider><One /></FirstRunInstallProvider></>));
+    await act(async () => root.render(<><NoticeHost /><FirstRunInstallProvider><One /></FirstRunInstallProvider></>));
     await act(async () => host.querySelector('button')!.click());
     expect(f.probe).toHaveBeenCalledWith('codex');
     expect(f.install).not.toHaveBeenCalled();
@@ -92,7 +92,7 @@ describe('first run uses a copy already on this computer when it is new enough',
   ] as const)('installs its own copy without asking when the local one is %s, and says why', async (_label, statuses, reason) => {
     f.install.mockReturnValue(new Promise(() => {}));
     f.list.mockResolvedValue(statuses);
-    await act(async () => root.render(<><FirstRunInstallProvider><One /></FirstRunInstallProvider></>));
+    await act(async () => root.render(<><NoticeHost /><FirstRunInstallProvider><One /></FirstRunInstallProvider></>));
     await act(async () => host.querySelector('button')!.click());
     expect(f.install.mock.calls.map(([x]) => x)).toEqual([{ id: 'codex', method: 'mise' }]);
     expect(host.querySelector('[data-testid="install-progress-heading"]')?.textContent).toBe(reason);
