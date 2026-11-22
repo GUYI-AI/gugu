@@ -2,6 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { authBoundedFetch } from '../../../../apps/desktop/src/lib/authBoundedFetch'
 import { chatSendTimings, finishChatSendTiming } from '../../../../apps/desktop/src/lib/chatSendTiming'
 import { createChatOutbox } from '../../../../apps/desktop/src/store/chatOutbox'
+import { createOutbox } from '../../../../apps/desktop/src/lib/outbox/core'
+import { fakeAccount, memoryStorage } from '../store/chatOutboxHarness'
 import type { OutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
 
 const logger = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }))
@@ -13,7 +15,7 @@ it('emits one content-free record only after the authoritative response and dura
   vi.spyOn(performance, 'now').mockImplementation(() => now)
   vi.stubGlobal('fetch', vi.fn(async () => new Response('[]')))
   const record: OutboxRecord = {
-    clientMessageId: 'client-a', chatId: 'chat-a', senderUserId: 'sender-a',
+    clientMessageId: 'client-a', chatId: 'chat-a', senderUserId: 'user-1',
     payload: { content: 'PRIVATE BODY', contentType: 'text', toUserIds: null, replyToMessageId: null,
       threadRootId: null, isThreadRoot: false, isWhisper: false },
     state: 'pending', attempts: 0, lastError: null, enqueuedAt: '', updatedAt: '',
@@ -23,9 +25,12 @@ it('emits one content-free record only after the authoritative response and dura
   const ackEntered = new Promise<void>((resolve) => { enteredAck = resolve })
   const ackReady = new Promise<void>((resolve) => { releaseAck = resolve })
   chatSendTimings.set(record.clientMessageId, { submit: now })
-  const outbox = createChatOutbox({
-    load: async () => [], save: async (row) => { if (row.state === 'pending') now = 1020 },
-    remove: async () => {}, prepare: async (row) => { now = 1050; return row },
+  const storage = memoryStorage()
+  storage.beforeWrite = async (puts) => { if (puts.some((item) => item.state === 'queued')) now = 1020 }
+  const box = createOutbox({ storage, account: fakeAccount(), online: () => () => {} })
+  await box.loaded()
+  const outbox = createChatOutbox(box, {
+    prepare: async (row) => { now = 1050; return row },
     deliver: async () => {
       await authBoundedFetch('https://db.example/rest/v1/rpc/send_message_with_overlays', {
         method: 'POST', body: JSON.stringify({ p_message_id: record.clientMessageId, p_content: record.payload.content }),
@@ -33,8 +38,8 @@ it('emits one content-free record only after the authoritative response and dura
       now = 1250
       return { id: record.clientMessageId }
     },
-    ack: async () => { enteredAck(); await ackReady; now = 1260 },
-    onState: () => {}, onSent: () => {}, onDiscarded: () => {}, setTimeout: () => 0,
+    ack: async (_row, delivered) => { enteredAck(); await ackReady; now = 1260; return delivered },
+    onState: () => {}, onSent: () => {}, onDiscarded: () => {},
   })
   await outbox.enqueue(record)
   await ackEntered
@@ -50,6 +55,7 @@ it('emits one content-free record only after the authoritative response and dura
   finishChatSendTiming(record.clientMessageId, true)
   expect(logger.info).toHaveBeenCalledTimes(1)
   outbox.dispose()
+  box.dispose()
 })
 
 it('uses the two-second threshold on the injected monotonic clock, with absent stages left null', () => {

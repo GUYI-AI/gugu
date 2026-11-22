@@ -362,6 +362,28 @@ export type AgentProgramStatus = {
   managedUpdateAvailable: boolean;
 };
 
+/** Where the PATH of the last lookup came from (`refreshUserPath`, re-read before every detection). */
+export type LookupPathSource = {
+  from: 'login-shell' | 'windows-registry';
+  /** The login shell that was asked; absent on Windows. */
+  shell?: string;
+  at: number;
+  /** The re-read failed and the previous PATH was used. */
+  failed?: 'probe-failed' | 'invalid-output';
+};
+
+/** What the last lookup saw, so the panel can say why nothing usable was found. */
+export type AgentLookup = {
+  /** Names looked up on PATH, in order. */
+  commands: string[];
+  /** The program found, when it was found but `--version` failed. */
+  path: string | null;
+  versionArgs: string[];
+  /** How `--version` failed; null when nothing was found. */
+  failure: { exitCode: number | null; timedOut: boolean; signal?: string } | null;
+  pathSource: LookupPathSource | null;
+};
+
 /** Installation status on this machine; returned by `agents.listAgentInstallationStatus()`. */
 export type AgentInstallationStatus = {
   id: string;
@@ -385,6 +407,8 @@ export type AgentInstallationStatus = {
   usedId: string;
   /** Platform-resolved install options for this agent on the host. */
   installOptions: InstallOption[];
+  /** Why the last lookup found no usable program; only when `reading` is not-detected or detected-but-broken. */
+  lookup?: AgentLookup;
   /**
    * 带伴随程序的家(#6335)才有:主程序在前,逐个程序的读数。此时顶层的 `reading` / `status` /
    * `updateAvailable` 是**合并**过的(任一条腿的程序没装 ⇒ 不算装好),`installations` / `used` /

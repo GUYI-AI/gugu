@@ -5,7 +5,7 @@ import { messageItemFromRow } from '@gugu/core/cloud/messageItem'
 import { applyMigrations, bundledMigrations, initializeDatabase } from '../../initialize'
 import { createImMessageStore } from '../../../core/im-messages/store'
 import { createMemoryLocalSyncDb } from '../../../../../../src/lib/localSyncDb'
-import { ackOutboxRecord, openImRepository, putOutboxRecord } from '../../../../../../src/lib/imRepository'
+import { confirmSentMessage, openImRepository } from '../../../../../../src/lib/imRepository'
 import { initializeMessages, ingestMessages, prefetchMessages } from '../../../../../../src/lib/messageIngest'
 import { clearMessageWindows, messageWindow } from '../../../../../../src/lib/messageWindows'
 import { createAccountRevisionRuntime } from '../../../../../../src/lib/accountRevisionRuntime'
@@ -408,14 +408,14 @@ describe('0046 network sources store before they return', () => {
     expect(store.page('account', { chatId: 'chat', threadRootId: rootId, limit: 100 }).rows.map(row => row.id)).toEqual(['message-2'])
   })
 
-  it('e2 stores a send acknowledgement before removing its durable outbox row', async () => {
-    await putOutboxRecord(repository, { clientMessageId: 'message-1', chatId: 'chat', senderUserId: 'account',
+  it('e2 stores a send acknowledgement in SQLite (the outbox removes its row only after this resolves)', async () => {
+    await confirmSentMessage(repository, { clientMessageId: 'message-1', chatId: 'chat', senderUserId: 'account',
       payload: { content: 'orchid 1', contentType: 'text', toUserIds: null, replyToMessageId: null,
         threadRootId: null, isThreadRoot: false, isWhisper: false },
-      state: 'pending', attempts: 0, lastError: null, enqueuedAt: '2026-11-03T00:00:00Z', updatedAt: '2026-11-03T00:00:00Z' })
-    await ackOutboxRecord(repository, 'message-1', messageItemFromRow(raw(), 'account')!)
+      state: 'sending', attempts: 0, lastError: null, enqueuedAt: '2026-11-03T00:00:00Z', updatedAt: '2026-11-03T00:00:00Z' },
+    messageItemFromRow(raw(), 'account')!)
     expect(stored().map(row => row.id)).toEqual(['message-1'])
-    expect(repository.snapshot().outbox).toEqual([])
+    expect(repository.snapshot().message, 'desktop keeps message bodies in SQLite, not the IndexedDB cache').toEqual([])
   })
 
   it('e2 persists a server reaction on the canonical SQLite row rather than a view copy', async () => {

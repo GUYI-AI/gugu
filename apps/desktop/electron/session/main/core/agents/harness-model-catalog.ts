@@ -773,6 +773,7 @@ function toAvailableModels(raw: unknown[] | undefined): HarnessModelChoice[] {
  *    `webbrowser.open` 返回 True,`windows-default` 没被轮到。
  *    ❌ 别换成 `.cmd` / `.bat`:同一次实测里 URL 的 `&` 被 cmd 当成命令分隔符,后半截被当命令执行了。
  * ⚠️ 这只挡得住「经 $BROWSER 开浏览器」的实现;直接调 macOS `open` / LaunchServices 的 harness 挡不住。
+ * 咕咕 server 上探针本来就不是会话、不带会话的 `BROWSER`(server-browser-env.ts),开的网页到不了任何人的桌面。
  *    ❌ 不因此去改 PATH 屏蔽 `open`:那会连 harness 正常要用的子命令一起打断。
  */
 export function suppressBrowserLaunch(

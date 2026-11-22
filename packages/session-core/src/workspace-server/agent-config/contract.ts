@@ -60,7 +60,7 @@ const commonAgentConfigContract = defineContract({
     },
   }),
   refreshAgents: fallible({
-    input: z.object({ providerId: z.string().optional(), refreshShellEnv: z.boolean().optional() }),
+    input: z.object({ providerId: z.string().optional() }),
     data: z.void(),
     error: agentConfigRefreshErrorSchema,
   }),

@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import type { PasswordRequestView, PasswordSaveDraft, PasswordSnapshot, PasswordUiCommand, PasswordUiReply } from '@gugu/core/shared/passwordBetaProtocol'
 import { passwordErrorText } from '@/components/password/passwordModel'
 import { followLink } from './guguLinks'
@@ -41,7 +40,7 @@ export const passwordSaveDraft = replica({
  * (❌ a kept snapshot drawn as current). With nothing read they draw nothing; Settings → 密码 says a vault that cannot be read.
  */
 export function usePasswordVault(): { snapshot: PasswordSnapshot | undefined; failure: Error | null; retry?: Retry } {
-  const reading = useReplica(passwordVault, PASSWORD_BETA_ENABLED ? [] : null)
+  const reading = useReplica(passwordVault, [])
   return reading.state === 'value' ? { snapshot: reading.value, failure: reading.error, retry: reading.retry } : { snapshot: undefined, failure: null }
 }
 

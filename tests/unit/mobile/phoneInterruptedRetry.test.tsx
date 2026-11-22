@@ -3,7 +3,7 @@ import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createReactHarness } from '../../support/testHarness'
 import { usePhoneInterruptedRetry } from '../../../apps/desktop/src/components/session-watch/usePhoneInterruptedRetry'
-import { state } from '../../../apps/desktop/src/lib/sessionInputOutboxBridge'
+import { state } from '../../../apps/desktop/src/lib/outbox/kinds/sessionInput'
 
 const scope = vi.hoisted(() => ({ invoke: vi.fn(), notices: new Map<string | number, string>() }))
 vi.mock('../../../apps/desktop/src/mobile/local-agent/phoneHostRpc', () => ({ invokePhoneHost: scope.invoke }))

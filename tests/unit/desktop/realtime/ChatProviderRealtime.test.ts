@@ -36,7 +36,6 @@ const {
       getOtherMembersReadSeqs: vi.fn(),
       fetchMessageOverlays: vi.fn(),
       revalidateWindow: vi.fn(),
-      toggleReaction: vi.fn(),
       clearMessagesForMe: vi.fn(),
       deleteMessage: vi.fn(),
     },
@@ -308,6 +307,9 @@ async function resolveDeferred<T>(item: ReturnType<typeof deferred<T>>, value: T
   })
 }
 beforeEach(async () => {
+  // The replica (and the outbox bound to its account) follows the signed-in user, as the published session makes it.
+  const { followRendererSession } = await import('../../../../apps/desktop/src/lib/replica')
+  followRendererSession('SIGNED_IN', 'user-1')
   messageStorage.sqlite = false
   authOverride.current = null
   latestStore = null
@@ -330,7 +332,6 @@ beforeEach(async () => {
   chatServiceMock.fetchMessageOverlays.mockReset()
   chatServiceMock.revalidateWindow.mockReset()
   readMock.mockReset()
-  chatServiceMock.toggleReaction.mockReset()
   chatServiceMock.clearMessagesForMe.mockReset()
   chatServiceMock.deleteMessage.mockReset()
   serverChatList.mockResolvedValue(chatSnapshot([chat({ id: 'chat-1', name: 'Fresh chat' })]))
@@ -353,7 +354,6 @@ beforeEach(async () => {
   openImRepositoryMock.mockReset()
   openImRepositoryMock.mockImplementation(async () => memRepository)
   readMock.mockResolvedValue(undefined)
-  chatServiceMock.toggleReaction.mockResolvedValue(undefined)
   chatServiceMock.clearMessagesForMe.mockResolvedValue(undefined)
   chatServiceMock.deleteMessage.mockResolvedValue({ chatId: 'chat-1', globallyDeleted: false })
 })
@@ -550,34 +550,24 @@ describe('ChatProvider realtime freshness', () => {
     await resolveDeferred(oldSnapshot, [old])
     expectTextMissing(harness, 'old visible')
   })
-  it('keeps a pending reaction action bound to its original chat after switching chats', async () => {
+  it('keeps a pending reaction bound to its original chat after switching chats', async () => {
     const chatOneMessage = chatMessage('chat-1', 'chat one visible')
     const chatTwoMessage = chatMessage('chat-2', 'chat two visible')
-    const toggleRequest = deferred<void>()
-    const reactionSnapshot = deferred<MessageItem[]>()
     mockTwoChats()
-    chatServiceMock.toggleReaction.mockReturnValueOnce(toggleRequest.promise)
-    chatServiceMock.getMessages.mockImplementation(
-      async (chatId: string, _userId: string, source: string) => {
-        if (source === 'toggleReaction') return reactionSnapshot.promise
-        if (chatId === 'chat-1') return [chatOneMessage]
-        if (chatId === 'chat-2') return [chatTwoMessage]
-        return []
-      }
-    )
+    chatServiceMock.getMessages.mockImplementation(async (chatId: string) =>
+      chatId === 'chat-1' ? [chatOneMessage] : chatId === 'chat-2' ? [chatTwoMessage] : [])
     const harness = await renderActiveChat()
     expectTextContains(harness, 'chat one visible')
     void latestStore?.toggleReaction('chat-1-message', '👍')
     await flushReact()
     await setActiveChat('chat-2')
     expectTextContains(harness, 'chat two visible')
-    await actAndFlush(() => {
-      toggleRequest.resolve(undefined)
-    })
-    expect(chatServiceMock.getMessages).toHaveBeenCalledWith('chat-1', 'user-1', 'toggleReaction')
-    await resolveDeferred(reactionSnapshot, [chatOneMessage])
-    expectTextContains(harness, 'chat two visible')
     expectTextMissing(harness, 'chat one visible')
+    // The wish is the outbox's, written for the message and chat it was made on, whatever is on screen now.
+    const box = (globalThis as Record<string, unknown>).__GUGU_OUTBOX__ as { items(): readonly { kind: string; payload: unknown }[] }
+    expect(box.items().filter(item => item.kind === 'reaction').map(item => item.payload)).toEqual([
+      { chatId: 'chat-1', messageId: 'chat-1-message', userId: 'user-1', emoji: '👍', on: true },
+    ])
   })
   it('logs active message load failures instead of silently hiding them', async () => {
     const error = new Error('load failed')

@@ -221,7 +221,7 @@ export function withHostResolvedCli(
       try {
         if (input.providerId && !listPlugins().some((provider) => provider.metadata.id === input.providerId)) return err({ type: 'unknown-provider' as const, providerId: input.providerId });
         if (input.providerId) await localDependencyManager.probe(input.providerId, { waitForInstallations: true });
-        else await localDependencyManager.probeCategory('agent', { refreshShellEnv: input.refreshShellEnv });
+        else await localDependencyManager.probeCategory('agent');
         return client.syncHostDependencyLedger(await hostDependencyInventory());
       } catch (error) {
         return err({ type: 'invalid-state' as const, message: String(error) });

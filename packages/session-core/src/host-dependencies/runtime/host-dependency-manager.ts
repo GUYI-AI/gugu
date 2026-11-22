@@ -25,7 +25,6 @@ import type {
   DependencyDescriptor,
   DependencyId,
   DependencyInstallResult,
-  DependencyProbeOptions,
   DependencyState,
   DependencyStatus,
   DependencyStatusUpdatedEvent,
@@ -219,6 +218,9 @@ function dependencyStateFromProbeResult(
     path: resolvedPath,
     checkedAt: Date.now(),
     error: status === 'error' ? probe?.stderr?.trim() || (probe?.signal ? `Process terminated by ${probe.signal}` : 'Unknown error') : undefined,
+    ...(status === 'error' && probe
+      ? { failure: { exitCode: probe.exitCode, timedOut: probe.timedOut, ...(probe.signal ? { signal: probe.signal } : {}) } }
+      : {}),
   };
 }
 
@@ -1090,16 +1092,18 @@ export class HostDependencyManager<Ctx extends IExecutionContext = IExecutionCon
     return { kind: 'none' };
   }
 
-  async probeAll(options: DependencyProbeOptions = {}): Promise<void> {
-    await this.refreshShellEnvIfRequested(options);
+  /**
+   * A detection round looks things up in the user's PATH as it is now, not as it was when the app started:
+   * a CLI installed from another terminal, or an installer that edited the shell rc / the user PATH, is
+   * only visible after the context re-reads it.
+   */
+  async probeAll(): Promise<void> {
+    await this.ctx.refreshShellEnv?.();
     await this.probeMany(this._dependencies);
   }
 
-  async probeCategory(
-    cat: DependencyCategory,
-    options: DependencyProbeOptions = {},
-  ): Promise<void> {
-    await this.refreshShellEnvIfRequested(options);
+  async probeCategory(cat: DependencyCategory): Promise<void> {
+    await this.ctx.refreshShellEnv?.();
     const targets = this._dependencies.filter((d) => d.category === cat);
     await this.probeMany(targets);
   }
@@ -1435,12 +1439,6 @@ export class HostDependencyManager<Ctx extends IExecutionContext = IExecutionCon
     }
     const known = await resolveKnownPaths(descriptor.knownPaths?.[this.platform] ?? [], this.ctx, this.platform, probeEnv);
     return known[0] ?? null;
-  }
-
-  private async refreshShellEnvIfRequested(options: DependencyProbeOptions = {}): Promise<void> {
-    if (options.refreshShellEnv) {
-      await this.ctx.refreshShellEnv?.();
-    }
   }
 
   private updateState(state: DependencyState): void {

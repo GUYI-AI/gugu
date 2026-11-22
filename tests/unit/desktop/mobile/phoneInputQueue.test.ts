@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
-import type { SessionInput } from '@/lib/sessionInputOutbox'
+import type { SessionInput } from '@/lib/sessionInput'
 import { canReleasePhoneInput, canResumePhoneInput, phoneInputQueueIntent, phoneManualHostPrompts, phoneQueuedPrompts, phoneWaitingReceipts } from '@/components/session-watch/phone-input-queue'
 import { localQueuedInputs } from '@/components/session-watch/local-queued-inputs'
 import { projectPhonePendingInputs } from '@/components/session-watch/phone-pending-inputs'

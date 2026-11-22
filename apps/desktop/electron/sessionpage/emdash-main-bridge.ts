@@ -205,7 +205,7 @@ export {
   // 于是 setTabTitle / setTabBadge / openBrowserTab / reportError / compose
   // 五个动词一律「Renderer not ready」(实机实证)。
   setExtensionHostWindowChannel,
-  setLoginShellPathRehydrator,
+  setUserPathRefresher,
   setLoginShellEnvProvider,
   setPlatformCredentialsProbe,
   type ExtensionHostWindowChannel,

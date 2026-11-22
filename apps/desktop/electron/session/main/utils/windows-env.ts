@@ -37,3 +37,19 @@ export function prependWindowsPathEntry(env: NodeJS.ProcessEnv, entry: string): 
   env[pathKey] = [entry, ...entries].join(path.win32.delimiter);
   return true;
 }
+
+/**
+ * `read`(刚从注册表读到的 PATH)在前,`current` 里它没有的条目补在后;比较用上面同一把尺。
+ * 补在后而 ❌ 不丢:咕咕前置的目录(npm 全局 bin、自己的 agent 目录)不在注册表里。
+ */
+export function mergeWindowsPath(read: string, current: string): string {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of [...read.split(path.win32.delimiter), ...current.split(path.win32.delimiter)]) {
+    const key = normalizeWindowsPathEntry(entry);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(entry);
+  }
+  return merged.join(path.win32.delimiter);
+}

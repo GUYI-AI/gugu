@@ -33,8 +33,9 @@ export type ProviderAccountUpsert = {
   electDefault?: boolean;
   /**
    * Secret key override for accounts whose secret already lives at a released
-   * key (e.g. GitHub's `github-account-token:<id>`). Ignored when the account
-   * already exists — an account's credentialRef never changes.
+   * key (e.g. GitHub's `github-account-token:<id>`) or in the password vault
+   * (`vault:<id>`). Ignored when the account already exists: moving an existing
+   * account's secret is `relocateSecret`.
    */
   credentialRef?: string;
 };
@@ -53,6 +54,11 @@ export type ProviderAccountSecretStore = {
   atomicSecretSnapshot?(db: AppDb | DrizzleTx, key: string): { sealed: string; secret: string } | null;
   atomicSecretCompareAndSwap?(db: AppDb, key: string, expectedSealed: string, replacement: string): Promise<(tx: DrizzleTx) => boolean>;
 };
+
+/** `vault:<credentialId>`: a secret kept in the person's password vault (a GitHub token); any other ref is the app's own
+ * encrypted store. The ref says where its secret lives; the registry never asks which provider it belongs to. */
+export const vaultCredentialRef = (credentialId: string) => `vault:${credentialId}`;
+export const vaultCredentialOf = (ref: string) => (ref.startsWith('vault:') ? ref.slice('vault:'.length) : null);
 
 export function defaultCredentialRef(providerId: string, accountId: string): string {
   return `provider-credential:${providerId}:${accountId}`;
@@ -294,6 +300,23 @@ export class ProviderAccountRegistry {
     const swapped = await compareAndSwapProviderSecret(this.db, this.secretStore, providerId, accountId, generation, replacement);
     if (swapped) this.changed();
     return swapped;
+  }
+
+  /**
+   * The account's secret now lives at `credentialRef` (written there by the caller): the row points at it in one write, then
+   * the secret at the old ref goes. A failure before the write leaves the row on its old secret, intact.
+   */
+  async relocateSecret(providerId: string, accountId: string, credentialRef: string): Promise<void> {
+    const previous = this.db.transaction((tx) => {
+      const row = tx.select().from(providerAccounts)
+        .where(and(eq(providerAccounts.providerId, providerId), eq(providerAccounts.accountId, accountId))).get();
+      if (!row) throw new Error('Account no longer exists');
+      tx.update(providerAccounts).set({ credentialRef, updatedAt: nextProviderAccountUpdate(row.updatedAt) })
+        .where(eq(providerAccounts.id, row.id)).run();
+      return row.credentialRef;
+    });
+    try { if (previous !== credentialRef) await this.secretStore.deleteSecret(previous); }
+    finally { this.changed(); }
   }
 
   /** Read the secret stored at the account's credentialRef. */

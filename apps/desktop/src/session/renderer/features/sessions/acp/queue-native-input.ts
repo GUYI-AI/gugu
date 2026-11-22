@@ -1,4 +1,4 @@
-import { enqueueSessionInput, queuedSessionInputs, releaseQueuedSessionInput, sessionInputOutboxAvailable } from '@/lib/sessionInputOutboxBridge'
+import { enqueueSessionInput, queuedSessionInputs, releaseQueuedSessionInput, sessionInputOutboxAvailable } from '@/lib/outbox/kinds/sessionInput'
 import { machineRegistry } from '@renderer/lib/machine-routing'
 import { machineLinkState } from '@renderer/lib/machine-clients'
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract'

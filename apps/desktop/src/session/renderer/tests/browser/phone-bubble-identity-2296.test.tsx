@@ -7,7 +7,7 @@ import { SessionConversation } from '@/components/session-watch/SessionConversat
 import { emptyAgentWatchTimeline, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
 import { settlePendingSends } from '@/components/session-watch/pending-sends';
 import { useTimelineSession, type SessionpageTimelineClient } from '@/components/session-watch/use-timeline-session';
-import { state, changed, EMPTY } from '@/lib/sessionInputOutboxBridge';
+import { state, changed, EMPTY } from '@/lib/outbox/kinds/sessionInput';
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';

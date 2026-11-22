@@ -32,7 +32,6 @@ export function createAgentConfigProcedures(runtime: AgentConfigRuntime) {
     removeConnection: unsupportedConnectionOperation,
     refreshAgents(input: {
       providerId?: string;
-      refreshShellEnv?: boolean;
     }): Promise<Result<void, AgentConfigRefreshError>> {
       return runtime.refreshAgents(input);
     },
