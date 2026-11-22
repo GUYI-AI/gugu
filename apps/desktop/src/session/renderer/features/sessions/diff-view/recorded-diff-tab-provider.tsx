@@ -1,4 +1,4 @@
-import { FileIcon } from '@renderer/lib/editor/file-icon';
+import { FileMark } from '@gugu/session-ui/file-mark';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { TabProvider, TabResource } from '@renderer/features/tabs/core/tab-provider';
 import { createTabProvider } from '@renderer/features/tabs/core/tab-provider-registry';
@@ -23,7 +23,7 @@ export const recordedDiffTabProvider: TabProvider<'recorded-diff', RecordedDiffS
       const { path } = tab.resource.change;
       const fileName = fileBaseName(path);
       return <GenericTabItem tab={tab} host={host} ctx={ctx} label={fileName} tooltip={path}
-        hint={translate('diff.recordedChanges')} preSlot={<span className="shrink-0 [&>svg]:size-3"><FileIcon filename={fileName} /></span>} />;
+        hint={translate('diff.recordedChanges')} preSlot={<span className="shrink-0"><FileMark name={fileName} size={12} /></span>} />;
     },
     TabBarItemDragPreview: ({ tab }) => <GenericTabDragPreview label={fileBaseName(tab.resource.change.path)} />,
     TabContent: registeredTabView('recorded-diff'),

@@ -1003,32 +1003,36 @@
   --pele-radius: var(--radius-xs);
 }
 
-/* File-family marks share one App/host palette. Dark keeps the light hue at 85% chroma; where the light lightness is too dark to be ink on a dark tile, it is raised so each glyph reads >= 3.6:1 on its tile, on page and card alike. */
+/* File icons (packages/session-shared/src/file-icons): 9 hues + 2 neutrals, one value per theme, from its manifest.json
+   palette (light ≥ 4.5:1 on the page except amber 4.2; ≥ 3:1 on every other surface and inside a tile). A tile is the
+   same colour washed under the icon: --file-tile-wash. */
 :root {
-  --file-generic: oklch(0.63634 0.01132 286.02);
-  --file-pdf: oklch(0.61840 0.14465 27.02);
-  --file-word: oklch(0.59100 0.13565 260.18);
-  --file-sheet: oklch(0.60970 0.11638 153.04);
-  --file-slides: oklch(0.69924 0.12360 59.28);
-  --file-archive: oklch(0.59100 0.05070 66.06);
-  --file-image: oklch(0.63298 0.08133 207.76);
-  --file-video: oklch(0.60100 0.15088 291.37);
-  --file-audio: oklch(0.61064 0.13170 357.37);
-  --file-code: oklch(0.59200 0.02913 261.32);
-  --file-text: oklch(0.59000 0.01492 285.71);
+  --file-blue: #6FA3FF;
+  --file-cyan: #3FB6C9;
+  --file-green: #4FBF7F;
+  --file-amber: #CBB535;
+  --file-orange: #F2954A;
+  --file-red: #F47A7E;
+  --file-pink: #EE7FBE;
+  --file-purple: #A98BFA;
+  --file-brown: #CF9C88;
+  --file-ink: #C4C4CC;
+  --file-mute: #A1A1AA;
+  --file-tile-wash: 20%;
 }
 [data-theme="light"] {
-  --file-generic: #8a8a93;
-  --file-pdf: #d9534a;
-  --file-word: #3b74d4;
-  --file-sheet: #2e9a5a;
-  --file-slides: #df8530;
-  --file-archive: #8a6b4c;
-  --file-image: #2f9aa8;
-  --file-video: #7657cf;
-  --file-audio: #c95584;
-  --file-code: #4a5568;
-  --file-text: #5b5b66;
+  --file-blue: #2F6FDE;
+  --file-cyan: #0B7D8E;
+  --file-green: #24834C;
+  --file-amber: #967900;
+  --file-orange: #C05800;
+  --file-red: #D2334B;
+  --file-pink: #C2408F;
+  --file-purple: #7A55D6;
+  --file-brown: #8E5A46;
+  --file-ink: #3F3F46;
+  --file-mute: #71717A;
+  --file-tile-wash: 14%;
 }
 
 /* ── theme batch C2:会话页功能里的固定色(App 市场主推卡、项目文件夹卡、App 图标兜底底板) ─────────────

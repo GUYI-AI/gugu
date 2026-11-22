@@ -201,7 +201,7 @@ export function FileStorageDashboard() {
                 <tr key={`${file.item_id ?? file.chat_id}-${file.expires_at}-${index}`} data-testid="file-storage-file"
                   className="hover:bg-[var(--hover)] [&>td]:truncate [&>td]:border-b [&>td]:border-[var(--border-color)] [&>td]:px-2 [&>td]:py-[7px]">
                   <td data-field="name"><span className="flex min-w-0 items-center gap-2 text-[var(--fg)]">
-                    <FileMark name={file.file_name ?? ''} size={16} className="shrink-0 text-[var(--muted-fg)]" />
+                    <FileMark name={file.file_name ?? ''} size={16} className="shrink-0" />
                     <span className="truncate">{file.file_name ?? classLabel(file.class)}</span>
                   </span></td>
                   <td data-field="group" className="text-[var(--muted-fg)]">{groupName(file.chat_id)}</td>

@@ -1,7 +1,8 @@
 /*
- * 文件图块(≥ 24px:文件 App 的列表 / 宫格 / 详情、产物卡、「已编辑」卡):`fileTile()` 给的族字形放在族色浅底上,
- * 族色读 `--gg-file-tile`(宿主给 `var(--file-*)`,App 页面给 `var(--em-file-*)`)。大小由外面给,里面按比例,
- * 宫格那种大格子封顶。宿主 import 这一份;App 页面的 `<gugu-file-mark tile>` 把同一份文字放进它的 shadow DOM。
+ * 文件图块(≥ 32px:文件 App 的宫格 / 详情、产物卡、「已编辑」卡):`fileMark()` 给的图标放在同色浅底方块里。
+ * 颜色读 `--gg-file-tile`(宿主给 `var(--file-<色名>)`,App 页面给 `var(--em-file-<色名>)`),浅底的浓度读
+ * `--file-tile-wash`(浅色 14%、深色 20%,tokens.css;App 页面是 `--em-file-tile-wash`)。
+ * 大小由外面给;里面的图标取图块边长的 60%(40 → 24),大格子封顶 48。
  */
 .gg-file-tile {
   box-sizing: border-box;
@@ -14,8 +15,7 @@
   overflow: hidden;
   container-type: size;
   line-height: 1;
+  background: color-mix(in srgb, var(--gg-file-tile) var(--gg-file-tile-wash, var(--file-tile-wash, 14%)), transparent);
+  color: var(--gg-file-tile);
 }
-.gg-file-tile-glyph { display: block; width: min(50cqmin, 48px); height: min(50cqmin, 48px); }
-
-/* 族色字形 + 同色浅底(owner 11-16 选定);暗色的族色在 tokens.css 里抬过亮度,字形对底 ≥ 3.5:1。 */
-.gg-file-tile { background: color-mix(in srgb, var(--gg-file-tile) 14%, transparent); color: var(--gg-file-tile); }
+.gg-file-tile-glyph { display: block; width: min(60cqmin, 48px); height: min(60cqmin, 48px); }
