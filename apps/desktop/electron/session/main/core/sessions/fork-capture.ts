@@ -32,7 +32,6 @@ import {
   listProviderContinuationIntents,
 } from './provider-continuation-intent';
 import { readRuntimeForkOwnership } from './runtime-fork-ownership';
-import { isObservedCodexFork } from './codex-fork-observer';
 import { setProviderSessionId } from './set-session-id';
 import { isRetiredRemoteWorkspace } from '@main/core/workspaces/resolve-workspace-kind';
 
@@ -253,9 +252,6 @@ async function captureCodexForks(
 
   for (const transcript of transcripts) {
     if (knownProviderSessionIds.has(transcript.providerSessionId)) continue;
-    // A live app-server client may still be deciding whether this child is the visible TUI's
-    // rewind branch. Do not materialize it in the sidebar during that handoff window.
-    if (isObservedCodexFork(transcript.providerSessionId)) continue;
     const parent = rowByProviderSessionId.get(transcript.parentProviderSessionId);
     if (!parent || parent.provider !== 'codex') continue;
     const transcriptPath = await realpath(transcript.cwd).catch(() => transcript.cwd);

@@ -66,10 +66,6 @@ import {
 } from './codex-app-server-transport'
 import { lastActionAtIso, pushRecentAction, recentActionList, type RecentActionEntry } from '../recentActionWindow'
 import { createLogger } from '../lib/logger'
-import {
-  observeCodexFork,
-  settleCodexForkObservation,
-} from '@main/core/sessions/codex-fork-observer'
 
 interface RpcMessage {
   id?: number
@@ -215,41 +211,14 @@ export function codexThreadName(
   return name || null
 }
 
-export interface CodexForkStartedEvent {
-  threadId: string
-  forkedFromId: string
-  parentThreadId: string | null
-}
-
-/** Extract a user-visible fork from the broadcast thread/started notification. */
-export function codexForkStartedEvent(
-  message: Pick<RpcMessage, 'method' | 'params'>,
-): CodexForkStartedEvent | null {
-  if (message.method !== 'thread/started') return null
-  const thread = message.params?.thread
-  if (!thread || typeof thread !== 'object') return null
-  const record = thread as Record<string, unknown>
-  const threadId = typeof record.id === 'string' ? record.id : null
-  const forkedFromId = typeof record.forkedFromId === 'string'
-    ? record.forkedFromId
-    : typeof record.forked_from_id === 'string'
-      ? record.forked_from_id
-      : null
-  const parentThreadId = typeof record.parentThreadId === 'string'
-    ? record.parentThreadId
-    : typeof record.parent_thread_id === 'string'
-      ? record.parent_thread_id
-      : null
-  if (!threadId || !forkedFromId) return null
-  return { threadId, forkedFromId, parentThreadId }
-}
-
 /**
  * @@@6112 广播里那条「TUI 自己新建的」thread —— 既不是 fork,也不是 subagent。
  *
- * 判据是**两个血缘字段都空**:`forkedFromId` 有值 = 用户在 TUI 里 rewind 派生出来的分支
- * (那条归 codexForkStartedEvent 管),`parentThreadId` 有值 = subagent 的归属边(它永远不许
- * 顶替产品会话的活动 thread)。两者都空才是「这条 app-server 上刚出生的一条新会话」。
+ * 判据是**两个血缘字段都空**:`forkedFromId` 有值 = 一条分叉(TUI 的 `/fork`,归 fork-capture 的
+ * rollout 扫描去建自己的会话),`parentThreadId` 有值 = subagent 的归属边(它永远不许顶替产品会话的
+ * 活动 thread)。两者都空才是「这条 app-server 上刚出生的一条新会话」。
+ * TUI 里改写更早的一句(Esc-Esc)从 codex 0.156.0 起是原地 `thread/revert`,thread id 不变,不再派生
+ * 分叉(openai/codex#45845);TUI 腿的下界就是 0.156.0,所以这里没有「rewind 分叉」要认。
  *
  * 一条会话一个 app-server 进程,所以这条广播在本进程内唯一 —— 不必再按别的字段认领。
  */
@@ -265,31 +234,6 @@ export function codexPlainThreadStartedId(
   const hasLineage = ['forkedFromId', 'forked_from_id', 'parentThreadId', 'parent_thread_id']
     .some((key) => typeof record[key] === 'string' && record[key])
   return hasLineage ? null : threadId
-}
-
-function threadTurns(value: unknown): Array<{ id?: unknown }> | null {
-  const response = value && typeof value === 'object' ? value as Record<string, unknown> : null
-  const thread = response?.thread && typeof response.thread === 'object'
-    ? response.thread as Record<string, unknown>
-    : response
-  if (!thread || !Array.isArray(thread.turns)) return null
-  return thread.turns as Array<{ id?: unknown }>
-}
-
-/**
- * Rewind forks copy a strict history prefix, while an explicit `/fork` copies the source history
- * unchanged. A changed turn id at the same position also identifies a rewind after the edited
- * prompt has already been submitted.
- */
-export function codexForkRewritesHistory(parent: unknown, child: unknown): boolean {
-  const parentTurns = threadTurns(parent)
-  const childTurns = threadTurns(child)
-  if (!parentTurns || !childTurns) return false
-  if (childTurns.length < parentTurns.length) return true
-  return childTurns.some((turn, index) => {
-    const parentId = parentTurns[index]?.id
-    return typeof turn.id === 'string' && typeof parentId === 'string' && turn.id !== parentId
-  })
 }
 
 /** Map a real app-server item start to the compact action name presence exposes. */
@@ -1203,7 +1147,6 @@ export class CodexAppServerSession {
   private readonly turnStarts = new CodexTurnStartTracker()
   private readonly onThreadIdChanged?: (threadId: string) => Promise<void>
   private readonly onThreadName?: CodexAppServerRuntimeOptions['onThreadName']
-  private threadForkObservationQueue: Promise<void> = Promise.resolve()
   /** 新建与重开都给 TUI 的 `-c`:模型窗口 + 工作目录的按次信任(codexTuiSessionConfigArgs)+ 模型目录。 */
   private modelMetadataArgs: string[] = []
   /** 新建与重开都给 TUI 的 code mode 直接命名空间(codexTuiDirectOnlyArgs);resume 那条放进子命令里。 */
@@ -1386,7 +1329,7 @@ export class CodexAppServerSession {
   /**
    * @@@6112 认领 TUI 刚建出来的那条会话 —— tuiLoads='create' 下的「拿到 threadId」这一刻。
    *
-   * 只认第一条:同一个 app-server 进程后面还会广播别的 thread(compact / subagent / rewind 分支),
+   * 只认第一条:同一个 app-server 进程后面还会广播别的 thread(compact / subagent / `/fork` 分叉),
    * 那些各有各的处理,❌ 不许顶替产品会话的活动 thread。
    */
   private adoptTuiThread(message: RpcMessage): boolean {
@@ -1636,70 +1579,6 @@ export class CodexAppServerSession {
         'codex app-server 没能接入 TUI 载入的 thread',
       )
     })
-  }
-
-  private observeThreadStarted(message: RpcMessage): void {
-    if (this.adoptTuiThread(message)) return
-    const fork = codexForkStartedEvent(message)
-    const parentThreadId = this.threadId
-    // Subagent threads also carry lineage metadata, but their parent_thread_id is the
-    // ownership edge and must never replace the product conversation's active thread.
-    if (!fork || fork.parentThreadId || !parentThreadId || fork.forkedFromId !== parentThreadId) return
-
-    observeCodexFork(fork.threadId, parentThreadId)
-    this.threadForkObservationQueue = this.threadForkObservationQueue
-      .then(() => this.reconcileThreadFork(fork.threadId, parentThreadId))
-      .catch((error) => {
-        settleCodexForkObservation(fork.threadId, false)
-        deliveryLog.warn(
-          {
-            agent: this.agentKey,
-            sessionId: this.sessionId,
-            threadId: fork.threadId,
-            parentThreadId,
-            err: String(error),
-          },
-          'codex app-server fork observation failed',
-        )
-      })
-  }
-
-  private async reconcileThreadFork(childThreadId: string, parentThreadId: string): Promise<void> {
-    const client = this.client
-    if (!client || this.threadId !== parentThreadId) {
-      settleCodexForkObservation(childThreadId, false)
-      return
-    }
-
-    const [parent, child] = await Promise.all([
-      client.rpc('thread/read', { threadId: parentThreadId, includeTurns: true }),
-      client.rpc('thread/read', { threadId: childThreadId, includeTurns: true }),
-    ])
-    if (!codexForkRewritesHistory(parent, child)) {
-      // An explicit `/fork` keeps the full history and remains discoverable by the normal
-      // rollout scanner, so it still gets its own sidebar conversation.
-      settleCodexForkObservation(childThreadId, false)
-      return
-    }
-
-    this.threadId = childThreadId
-    this.threadMaterialization = 'materialized'
-    this.threadRefusesTurnsRead = false
-    this.recentActionWindow = []
-    for (const turnId of this.turnCompletions.activeTurnIdsSnapshot()) {
-      this.turnCompletions.complete(turnId)
-    }
-    await this.onThreadIdChanged?.(childThreadId)
-    settleCodexForkObservation(childThreadId, true)
-    deliveryLog.info(
-      {
-        agent: this.agentKey,
-        sessionId: this.sessionId,
-        parentThreadId,
-        threadId: childThreadId,
-      },
-      'codex app-server adopted TUI rewind thread',
-    )
   }
 
   /**
@@ -2076,7 +1955,7 @@ export class CodexAppServerSession {
   private subscribeEvents(client: CodexRpcClient): void {
     client.onEvent((message) => {
       if (this.terminalError) return
-      this.observeThreadStarted(message)
+      this.adoptTuiThread(message)
       this.observeTuiLoadedThread(message)
       if (!this.threadId) return
       this.observeThreadName(message, this.threadId)

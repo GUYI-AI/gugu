@@ -14,7 +14,6 @@ import {
   recordProviderContinuationIntent,
 } from './provider-continuation-intent';
 import { recordRuntimeForkOwnership } from './runtime-fork-ownership';
-import { observeCodexFork, settleCodexForkObservation } from './codex-fork-observer';
 
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
@@ -369,16 +368,6 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
       })}\n${JSON.stringify({ type: 'response_item', payload: { text: 'inherited' } })}`
     );
 
-    observeCodexFork(codexChildId, codexParentId);
-    await captureExternalForks(projectId, '66666666-6666-4666-8666-666666666666');
-
-    expect(
-      (await fixture.db.select().from(sessions)).some((row) => row.providerSessionId === codexChildId),
-    ).toBe(false);
-
-    // An explicit `/fork` is not adopted by the live TUI session, so the normal scanner
-    // must regain ownership after the classification window closes.
-    settleCodexForkObservation(codexChildId, false);
     await captureExternalForks(projectId, '66666666-6666-4666-8666-666666666666');
 
     const rows = await fixture.db.select().from(sessions);
