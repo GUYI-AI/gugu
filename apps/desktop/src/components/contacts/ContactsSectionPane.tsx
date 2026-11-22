@@ -4,9 +4,10 @@ import { useStableHandler } from '@/hooks/useStableHandler'
 import { SectionLabel } from '../ui/SectionLabel'
 import { sectionCount, type ContactsSection } from './contactsSections'
 import { useContactRowRenderers, type ContactsRowHandlers } from './ContactRows'
-import { buildAgentForest, useAgentParents } from './contactsAgentTree'
+import { agentFamiliesUnnest, buildAgentForest, useAgentParents } from './contactsAgentTree'
 import { AgentFamilies } from './AgentFamilies'
 import { ContactsGrid } from './ContactsGrid'
+import { DropHighlightLayer } from '@renderer/lib/drop-highlight'
 import { ContactsAgentSectionState, ContactsGroupSectionState, ContactsPersonSectionState } from './ContactsSectionState'
 import { ContactsCreateAgentButton } from './ContactsCreateAgentButton'
 import { ContactsPageFrame } from './ContactsPageFrame'
@@ -46,9 +47,14 @@ export function ContactsSectionPane({ section, rows, detail, onCloseDetail, onCr
       <div className="gg-c-sec-body">
         {section.kind === 'device' ? (
           <>
-            {section.agents.length > 0 ? <SectionLabel className="!mt-4">{t('sectionPane.agents')} · {section.agents.length}</SectionLabel> : null}
-            <AgentFamilies forest={forest} selectedId={rows.selectedContactId} onSelect={onSelectAgent} menuFor={agentMenu}
-              pick={rows.selectionMode ? { ids: rows.selectedContactIds, can: (c) => c.owner_user_id === rows.currentUserId } : undefined} />
+            {/* 标题连同 agent 区是一块「回到顶层」的落点;经过节点的拖放归节点(agentNodeDrag),❌ 冒到这里。 */}
+            <div data-agent-families-drop {...agentFamiliesUnnest}>
+              {section.agents.length > 0 ? <SectionLabel className="!mt-4">{t('sectionPane.agents')} · {section.agents.length}</SectionLabel> : null}
+              <AgentFamilies forest={forest} selectedId={rows.selectedContactId} onSelect={onSelectAgent} menuFor={agentMenu}
+                pick={rows.selectionMode ? { ids: rows.selectedContactIds, can: (c) => c.owner_user_id === rows.currentUserId } : undefined} />
+              {/* 落点高亮那一层另画一份:会话页那份(workspace)在这一页时藏着(content-visibility hidden),画了也看不见。 */}
+              <DropHighlightLayer />
+            </div>
             {section.groups.length > 0 ? <SectionLabel className="!mt-6">{t('sectionPane.groups')} · {section.groups.length}</SectionLabel> : null}
             {section.groups.length > 0 ? <ContactsGrid>{section.groups.map(render.renderGroup)}</ContactsGrid> : null}
             {section.primary ? <ContactsAgentSectionState isEmpty={empty} onCreateAgent={onCreateAgent} /> : null}
