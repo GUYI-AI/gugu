@@ -10,7 +10,7 @@ const uploadAttachmentBytes = (...[endpoint, file, scope, options]: [Parameters<
 const PART = 4
 const KEY = 'staging/u/22222222-2222-4222-8222-222222222222'
 type Answer = { status: number; body?: unknown }
-function server(opts: { done?: number[]; refuse?: (n: number, attempt: number) => number | null; complete?: Array<Answer>; begin?: Array<Answer>; parts?: Array<Answer> } = {}) {
+function server(opts: { done?: number[]; refuse?: (n: number, attempt: number) => number | null; complete?: Array<Answer>; begin?: Array<Answer>; parts?: Array<Answer>; window?: number; hold?: (n: number) => Promise<void> } = {}) {
   const done = new Set(opts.done ?? [])
   const stored = new Map<number, Uint8Array>()
   const calls: Array<{ route: string; body: Record<string, unknown> }> = []
@@ -26,6 +26,7 @@ function server(opts: { done?: number[]; refuse?: (n: number, attempt: number) =
       tries.set(n, attempt)
       const bytes = new Uint8Array(await (init.body as Blob).arrayBuffer())
       puts.push({ n, headers: init.headers as Record<string, string>, bytes })
+      await opts.hold?.(n)
       const refused = opts.refuse?.(n, attempt)
       if (refused) return new Response(null, { status: refused })
       stored.set(n, bytes)
@@ -47,7 +48,7 @@ function server(opts: { done?: number[]; refuse?: (n: number, attempt: number) =
       if (scripted) return json(scripted)
       for (const n of body.done as number[]) done.add(n)
       signedRound++
-      const todo = Array.from({ length: count }, (_, i) => i + 1).filter(n => !done.has(n)).slice(0, 2)
+      const todo = Array.from({ length: count }, (_, i) => i + 1).filter(n => !done.has(n)).slice(0, opts.window ?? 2)
       return json({ status: 200, body: { done: [...done].sort(), todo: todo.map(n => ({ n, bytes: n < count ? PART : size - (count - 1) * PART,
         url: `https://oss.example/${KEY}?partNumber=${n}&round=${signedRound}`, headers: { 'content-length': String(n < count ? PART : size - (count - 1) * PART), authorization: 'OSS4-HMAC-SHA256 …', 'x-oss-date': 'now' } })) } })
     }
@@ -78,14 +79,30 @@ describe('multipart uploads from a host that sends signed parts', () => {
     const s = server()
     const progress: number[] = []
     expect(await uploadAttachmentBytes(s.endpoint, file(10), scope, { onProgress: p => progress.push(p.loaded) })).toBe(KEY)
-    expect(s.calls.map(c => c.route)).toEqual(['upload', 'upload-parts', 'upload-parts', 'upload-parts', 'upload-complete'])
-    expect(s.calls.filter(c => c.route === 'upload-parts').map(c => c.body.done)).toEqual([[], [1, 2], [3]])
+    // Every part is reported exactly once, all of them before the join.
+    expect(s.calls.at(-1)!.route).toBe('upload-complete')
+    expect(s.calls.filter(c => c.route === 'upload-parts').flatMap(c => c.body.done as number[]).sort()).toEqual([1, 2, 3])
     expect([...s.stored.entries()].sort(([a], [b]) => a - b).map(([n, bytes]) => [n, [...bytes]])).toEqual([[1, [0, 1, 2, 3]], [2, [4, 5, 6, 7]], [3, [8, 9]]])
     for (const put of s.puts) {
       expect(Object.keys(put.headers).map(h => h.toLowerCase())).not.toContain('content-length')
       expect(put.headers.authorization).toContain('OSS4-HMAC-SHA256')
     }
     expect(progress.at(-1)).toBe(10)
+  })
+  // The window rolls: a slow part does not hold back the parts after it, and no more than three are on the wire at once.
+  it('keeps three parts sending while a slow one is still out, signing ahead instead of draining a batch', async () => {
+    let release!: () => void
+    const slow = new Promise<void>(resolve => { release = resolve })
+    let sending = 0, most = 0
+    const s = server({ window: 6, hold: async n => { most = Math.max(most, ++sending); await (n === 1 ? slow : new Promise(resolve => setTimeout(resolve, 5))); sending-- } })
+    const upload = uploadAttachmentBytes(s.endpoint, file(10 * PART), scope)
+    await expect.poll(() => s.puts.map(p => p.n)).toContain(8)
+    expect(s.stored.has(1)).toBe(false)
+    release()
+    await upload
+    expect(most).toBe(3)
+    expect(s.puts.map(p => p.n).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    expect(s.calls.filter(c => c.route === 'upload-parts').length).toBeLessThanOrEqual(12)
   })
   it('a later call for the same upload sends only the parts the server has not recorded', async () => {
     const s = server({ done: [1, 2] })
@@ -102,7 +119,8 @@ describe('multipart uploads from a host that sends signed parts', () => {
   it('a join refused for missing parts goes back for them; a join that does not make the file starts once more from upload', async () => {
     const missing = server({ complete: [{ status: 409, body: { error: 'upload_incomplete', message: 'Parts not sent yet: 2' } }] })
     await uploadAttachmentBytes(missing.endpoint, file(10), scope)
-    expect(missing.calls.map(c => c.route)).toEqual(['upload', 'upload-parts', 'upload-parts', 'upload-parts', 'upload-complete', 'upload-parts', 'upload-complete'])
+    expect(missing.calls.map(c => c.route).slice(-3)).toEqual(['upload-complete', 'upload-parts', 'upload-complete'])
+    expect(missing.calls.filter(c => c.route === 'upload-complete')).toHaveLength(2)
     const changed = server({ complete: [{ status: 409, body: { error: 'upload_changed', message: 'The parts make 4 bytes, not 10' } }] })
     await uploadAttachmentBytes(changed.endpoint, file(10), scope)
     expect(changed.calls.filter(c => c.route === 'upload').map(c => c.body.request_id)).toEqual([scope.request_id, scope.request_id])

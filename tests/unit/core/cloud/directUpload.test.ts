@@ -55,6 +55,25 @@ describe('hash first, then the permit', () => {
     expect(s.routes('place')[0]!.body.staging_key).toMatch(/^direct\/acct\//)
   })
 
+  // One message with the same bytes twice: the second declaration is `stored` (the server binds it to the first permit's
+  // object). Its finish answers upload_in_progress until the first upload lands. It waits; it never sends the bytes again.
+  it('the same bytes twice in one message: the second waits for the first upload and sends nothing', async () => {
+    let landed = false
+    const s = server({
+      upload: body => body.request_id === 'm-b' ? { status: 'stored', staging_key: 'direct/acct/m-b' } : direct(String(body.request_id)),
+      finish: body => body.staging_key === 'direct/acct/m-b' && !landed ? refuse(409, 'upload_in_progress', { retry_after: later() }) : {},
+    })
+    const first = await declareAttachment(s.endpoint, { bytes, contentType: 'text/plain' }, { ...scope, request_id: 'm-a' })
+    const second = await declareAttachment(s.endpoint, { bytes, contentType: 'text/plain' }, { ...scope, request_id: 'm-b' })
+    expect(second.staging_key).toBe('direct/acct/m-b')
+    const waiting = finishDeclaredAttachment(s.endpoint, second, file, { id: 'm-b', ...scope })
+    expect(await finishDeclaredAttachment(s.endpoint, first, file, { id: 'm-a', ...scope })).toBe(true)
+    landed = true
+    expect(await waiting).toBe(true)
+    expect(s.stored).toHaveLength(1)
+    expect(s.routes('finish').filter(call => call.body.staging_key === 'direct/acct/m-b').length).toBeGreaterThan(1)
+  })
+
   it('stored: no byte goes up, the key goes straight to place (and to a declared message\'s finish)', async () => {
     const s = server({ upload: body => ({ status: 'stored', staging_key: `direct/acct/${body.request_id}` }), place: () => ({ item: { id: 'item' } }), finish: () => ({}) })
     await withUploadedAttachment(s.endpoint, file, scope, place(s.endpoint))

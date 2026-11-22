@@ -135,7 +135,7 @@ export async function withUploadedAttachment<T>(
     }
     if (!plan?.staging_key) throw new AttachmentsError('upload', 502, 'invalid', 'upload plan has no staging key')
     try {
-      return await use(plan.staging_key)
+      return await retryWhileOtherUploads(() => use(plan!.staging_key!), options?.signal)
     } catch (error) {
       const code = objectRefusal(error)
       if (!code || retried.has(code)) throw error
@@ -145,6 +145,14 @@ export async function withUploadedAttachment<T>(
       if (upload.mayRollOver) await advanceUploadPermit(upload)
       else { upload.requestId = crypto.randomUUID(); upload.plan = undefined }
     }
+  }
+}
+
+/** `use` on a `stored` key whose bytes another permit is still writing waits for them (waitForOtherUpload). */
+async function retryWhileOtherUploads<T>(use: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  const otherUpload = { ms: 1_000 }
+  for (;;) {
+    try { return await use() } catch (error) { if (!await waitForOtherUpload(error, otherUpload, signal)) throw error }
   }
 }
 
@@ -195,52 +203,71 @@ async function retryUploadRequest<T extends { status: number }>(upload: () => Pr
 }
 
 /**
- * Sends the parts the server asks for, a few at a time, reporting each batch as it goes, then joins them. State lives on
- * the server: a part that is stored is never sent again, including by a later call. A part whose signature expired (403)
- * is signed again; a part's retry budget follows it across refreshed signatures.
+ * Sends the parts the server signs and joins them. State lives on the server: a part that is stored is never sent again,
+ * including by a later call. A part whose signature expired (403) is signed again; its retry budget follows it across
+ * signatures.
+ *
+ * @@@rolling-parts - PART_CONCURRENCY parts are always on the wire. Each `upload-parts` call reports the parts finished
+ * since the last one and answers signatures for the lowest parts not stored (PARTS_PER_ANSWER = 6 on the server). With at
+ * most 3 parts sending, an answer normally holds parts not yet started. It is asked again while fewer than PART_CONCURRENCY
+ * signed parts wait, so the next part starts the moment one finishes. A batch never drains first. Three because raw
+ * uploads to the store measured ~4 MB/s per connection: 3 connections reached ~11.7 MB/s, and 6 added nothing.
  */
 async function uploadAttachmentParts(endpoint: AttachmentsEndpoint, key: string, plan: { part_bytes: number; count: number },
   file: { bytes: Uint8Array | Blob; name: string; contentType: string }, attempts: PartAttempts, onProgress?: (progress: AttachmentByteProgress) => void, signal?: AbortSignal) {
   const blob = file.bytes instanceof Blob ? file.bytes : new Blob([file.bytes as BlobPart], { type: file.contentType })
   const partSize = (n: number) => n < plan.count ? plan.part_bytes : blob.size - (plan.count - 1) * plan.part_bytes
-  let report: number[] = []
   for (let joins = 0; ; joins++) {
-    for (;;) {
-      const answer = await call(endpoint, 'upload-parts', { staging_key: key, done: report }, signal) as { done: number[]; todo: SignedPart[] }
+    const done = new Set<number>(), sending = new Map<number, number>(), running = new Set<Promise<void>>()
+    const ready: SignedPart[] = []
+    // `fruitless`: the last answer signed nothing new, so asking again waits until a part finishes (never a busy loop).
+    let report: number[] = [], signing: Promise<void> | undefined, failure: unknown, fruitless = false
+    const progress = () => onProgress?.({ loaded: [...done].reduce((sum, n) => sum + partSize(n), 0) + [...sending.values()].reduce((a, b) => a + b, 0), total: blob.size })
+    const sign = () => signing ??= (async () => {
+      const told = report
       report = []
-      if (!answer.todo.length) break
-      const stored = answer.done.reduce((sum, n) => sum + partSize(n), 0), sending = new Map<number, number>()
-      const progress = () => onProgress?.({ loaded: stored + report.reduce((sum, n) => sum + partSize(n), 0) + [...sending.values()].reduce((a, b) => a + b, 0), total: blob.size })
-      const queue = [...answer.todo]
-      let expired = false
-      const failures: unknown[] = []
-      await Promise.all(Array.from({ length: Math.min(PART_CONCURRENCY, queue.length) }, async () => {
-        for (let part = queue.shift(); part && !expired && !failures.length; part = queue.shift()) {
-          const sent = part
-          const start = (sent.n - 1) * plan.part_bytes
-          const budget = attempts.get(sent.n) ?? { used: 0, resigned: false }
-          attempts.set(sent.n, budget)
-          try {
-            if (budget.used >= MAX_STORAGE_ATTEMPTS) throw new AttachmentsError('upload', 409, 'upload_incomplete', `Storage retry limit reached for part ${sent.n}`)
-            const { status } = await retryUploadRequest(
-              () => putPart(endpoint, sent, blob.slice(start, start + sent.bytes), loaded => { sending.set(sent.n, loaded); progress() }, signal), budget, signal)
-              .finally(() => sending.delete(sent.n))
-            if (status === 403) {
-              if (budget.resigned || budget.used >= MAX_STORAGE_ATTEMPTS) throw new AttachmentsError('upload', 403, 'failed', `Storage refused a fresh part signature for part ${sent.n}`)
-              budget.resigned = true; expired = true; return
-            }
-            if (status !== 200) throw new AttachmentsError('upload', status, 'failed', `storing part ${sent.n} of ${sent.bytes} bytes failed: HTTP ${status}`)
-            report.push(sent.n)
-            progress()
-          } catch (error) { failures.push(error) }
+      try {
+        const answer = await call(endpoint, 'upload-parts', { staging_key: key, done: told }, signal) as { done: number[]; todo: SignedPart[] }
+        for (const n of answer.done) done.add(n)
+        const fresh = answer.todo.filter(part => !done.has(part.n) && !sending.has(part.n) && !ready.some(held => held.n === part.n))
+        ready.push(...fresh)
+        fruitless = !fresh.length
+      } catch (error) { report.unshift(...told); failure ??= error } finally { signing = undefined }
+    })()
+    const send = (part: SignedPart) => {
+      const budget = attempts.get(part.n) ?? { used: 0, resigned: false }
+      attempts.set(part.n, budget)
+      sending.set(part.n, 0)
+      const start = (part.n - 1) * plan.part_bytes
+      const sent = (async () => {
+        if (budget.used >= MAX_STORAGE_ATTEMPTS) throw new AttachmentsError('upload', 409, 'upload_incomplete', `Storage retry limit reached for part ${part.n}`)
+        const { status } = await retryUploadRequest(() => putPart(endpoint, part, blob.slice(start, start + part.bytes), loaded => { sending.set(part.n, loaded); progress() }, signal), budget, signal)
+        if (status === 403) {
+          // Not stored, not sending, not held: the next answer signs it again.
+          if (budget.resigned || budget.used >= MAX_STORAGE_ATTEMPTS) throw new AttachmentsError('upload', 403, 'failed', `Storage refused a fresh part signature for part ${part.n}`)
+          budget.resigned = true
+          return
         }
-      }))
-      if (failures.length) {
-        // The parts that did go up are reported before giving up, so a later attempt does not send them again. That
-        // report failing too changes nothing: the original failure is the one said.
-        if (report.length) await call(endpoint, 'upload-parts', { staging_key: key, done: report }, signal).catch(() => undefined)
-        throw failures[0]
-      }
+        if (status !== 200) throw new AttachmentsError('upload', status, 'failed', `storing part ${part.n} of ${part.bytes} bytes failed: HTTP ${status}`)
+        done.add(part.n)
+        report.push(part.n)
+      })().catch(error => { failure ??= error }).finally(() => { sending.delete(part.n); running.delete(sent); progress() })
+      running.add(sent)
+    }
+    for (;;) {
+      if (!failure) while (running.size < PART_CONCURRENCY && ready.length) send(ready.shift()!)
+      const unsigned = plan.count - done.size - sending.size - ready.length
+      const allSent = !unsigned && !ready.length && !running.size
+      if (!failure && (unsigned > 0 && ready.length < PART_CONCURRENCY && (!fruitless || report.length) || allSent && report.length)) void sign()
+      const pending = [...running, ...(signing ? [signing] : [])]
+      if (!pending.length) break
+      await Promise.race(pending)
+    }
+    if (failure) {
+      // The parts that did go up are reported before giving up, so a later attempt does not send them again. That
+      // report failing too changes nothing: the original failure is the one said.
+      if (report.length) await call(endpoint, 'upload-parts', { staging_key: key, done: report }, signal).catch(() => undefined)
+      throw failure
     }
     try {
       await call(endpoint, 'upload-complete', { staging_key: key }, signal)
@@ -387,24 +414,30 @@ async function advanceUploadPermit(upload: DeclaredUploadState): Promise<void> {
   upload.plan = undefined
 }
 
+/**
+ * 409 upload_in_progress: another permit of this account is writing the same bytes (or its leftovers are being removed).
+ * Not a failure, from upload, finish or a call that registers the object. `retry_after` is that permit's release,
+ * minutes away, while it usually registers in seconds. Wait 1 s, 2 s, 4 s … 15 s, never past retry_after, then ask
+ * again. False for any other error.
+ */
+async function waitForOtherUpload(error: unknown, wait: { ms: number }, signal?: AbortSignal): Promise<boolean> {
+  if (!(error instanceof AttachmentsError) || error.status !== 409 || error.code !== 'upload_in_progress') return false
+  const remaining = (error.retryAfter ?? 0) - serverNow()
+  await waitForAttachmentRetry(remaining > 0 ? Math.min(wait.ms, remaining) : wait.ms, signal)
+  wait.ms = Math.min(wait.ms * 2, 15_000)
+  return true
+}
+
 async function readManagedUploadPlan(endpoint: AttachmentsEndpoint, file: { size: number; contentType: string; sha256: string },
   scope: { chat_id: string | null; as: string }, upload: DeclaredUploadState, signal?: AbortSignal) {
-  let inProgressWait = 1_000
+  const otherUpload = { ms: 1_000 }
   for (;;) {
     try {
       const request = { ...scope, request_id: upload.requestId }
       const { plan } = await retryUploadRequest(async () => ({ status: 200, plan: await planAttachmentUpload(endpoint, file, request, signal) }), { used: 0 }, signal)
       return plan
     } catch (error) {
-      if (error instanceof AttachmentsError && error.status === 409 && error.code === 'upload_in_progress') {
-        // Another permit of this account is writing the same bytes (or its leftovers are being removed): not a failure.
-        // `retry_after` is that permit's expiry, minutes away, while it usually registers in seconds (then this asks
-        // `stored`). A refused ask reserves nothing: ask again at 1 s, 2 s, 4 s … 15 s, never past retry_after.
-        const remaining = (error.retryAfter ?? 0) - serverNow()
-        await waitForAttachmentRetry(remaining > 0 ? Math.min(inProgressWait, remaining) : inProgressWait, signal)
-        inProgressWait = Math.min(inProgressWait * 2, 15_000)
-        continue
-      }
+      if (await waitForOtherUpload(error, otherUpload, signal)) continue
       if (!upload.mayRollOver || !isExpiredPermit(error)) throw error
       // After a restart or a lost signing response, each confirmed expiry leads to the same successor.
       await advanceUploadPermit(upload)
@@ -437,6 +470,7 @@ export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, de
   async function finish(uploadKey: string): Promise<boolean> {
     const until = Date.now() + (hooks.declarationWaitMs ?? 0)
     let finishFailures = 0
+    const otherUpload = { ms: 1_000 }
     for (let wait = 500; ; wait = Math.min(wait * 2, 8000)) {
       if (hooks.stopped?.()) return false
       try {
@@ -444,6 +478,8 @@ export async function finishDeclaredAttachment(endpoint: AttachmentsEndpoint, de
           file_name: file.name, content_type: file.contentType, message_id: message.id }, hooks.signal)
         return true
       } catch (error) {
+        // A `stored` key whose bytes another permit is still writing: they settle both declarations when they land.
+        if (await waitForOtherUpload(error, otherUpload, hooks.signal)) continue
         // If the response was lost, repeat the idempotent finish with the same keys and no new storage writes.
         if (error instanceof AttachmentsError && error.code === 'upload_not_found') {
           if (Date.now() + wait > until) throw error
