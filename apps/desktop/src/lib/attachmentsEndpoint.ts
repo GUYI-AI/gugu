@@ -1,6 +1,7 @@
 // 渲染层调 attachments 函数(core 的那一份客户端,packages/core/src/cloud/attachmentsApi.ts):这个构建的服务器,登录的人现在的令牌。
-import { commitAttachment, configuredEndpoint, declareAttachment, placeAttachment, withUploadedAttachment, type AttachmentsEndpoint, type CommitArgs, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
+import { commitAttachment, configuredEndpoint, declareAttachment, offerImagePreview, placeAttachment, withUploadedAttachment, type AttachmentsEndpoint, type CommitArgs, type DeclaredAttachment } from '@gugu/core/cloud/attachmentsApi'
 import { beginAttachmentUpload } from './attachmentUploads'
+import { imagePreview } from './imagePreview'
 import { resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract'
 import { isHeicLikeFile, mustCopyRatherThanReference } from '@renderer/lib/pty/terminal-image-paths'
@@ -44,11 +45,18 @@ async function cloudChatAttachment(endpoint: AttachmentsEndpoint, file: File, sc
       : await declareAttachment(endpoint, { bytes: file, contentType }, { chat_id: scope.chat_id, as: scope.as, request_id: scope.message_id }, signal)
     signal?.throwIfAborted()
   } finally { signal?.removeEventListener('abort', drop) }
-  // Renderer keeps a display copy; the native host owns the durable upload copy on desktop.
-  try { await (await import('./attachmentBytes')).keepSentAttachment(file, declared.sha256) }
-  catch (error) { drop(); throw error }
+  // On desktop the native host knows where these bytes are (localAttachmentCopy asks it); elsewhere the renderer keeps them.
+  if (!native) {
+    try { await (await import('./attachmentBytes')).keepSentAttachment(file, declared.sha256) }
+    catch (error) { drop(); throw error }
+  }
   if (signal?.aborted) { drop(); signal.throwIfAborted() }
   if (!native) void beginAttachmentUpload({ sha256: declared.sha256, messageId: scope.message_id, chatId: scope.chat_id, as: scope.as, pendingKey: declared.staging_key, name, contentType, size: file.size }, file, declared.plan ?? null)
+  // Desktop main offers the preview of what it declares; here (the phone, the web) the renderer draws it.
+  if (!native && contentType.startsWith('image/')) {
+    void imagePreview(file).then(preview => offerImagePreview(endpoint, preview, declared.sha256, scope.as))
+      .catch(error => rendererLogger('chat/attachment-uploads').warn({ error: String(error) }, 'Image preview offer failed'))
+  }
   return { staging_key: declared.staging_key, sha256: declared.sha256, size_bytes: declared.size_bytes }
 }
 export async function prepareChatAttachment(endpoint: AttachmentsEndpoint, file: File, scope: { chat_id: string; as: string; is_whisper?: boolean; message_id: string }, signal?: AbortSignal): Promise<PreparedChatAttachment> {

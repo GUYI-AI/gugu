@@ -12,6 +12,7 @@ import { installSessionTabViews } from '@renderer/features/sessions/session-tab-
 import { BrowserWorkspaceStartContent } from '@renderer/features/browser/browser-workspace-start-page';
 import { recentToolPanel, type RecentTool } from '@renderer/features/browser/workspace-recent-tools';
 import { commandRegistry } from '@renderer/lib/commands/registry';
+import { appState } from '@renderer/lib/stores/app-state';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 
@@ -120,7 +121,9 @@ it('shows the context tools, opens recent resources, and removes them only from 
   await userEvent.click(apps.getByRole('button', { name: '浏览器', exact: true }));
   expect(openApp).toHaveBeenCalledOnce();
   await userEvent.click(apps.getByRole('button', { name: '添加应用', exact: true }));
-  expect(navigate).toHaveBeenCalledWith('apps');
+  // Add App goes to the Apps tab of the Apps page, wherever that page was left.
+  expect(appState.navigation.currentViewId).toBe('apps');
+  expect(appState.navigation.viewParamsStore.apps?.location).toEqual({ tab: 'market' });
   expect(openFolder).toHaveBeenCalledOnce();
   expect(focusUrl).toHaveBeenCalledOnce();
   await userEvent.click(page.getByRole('button', { name: '行程.md', exact: true }));

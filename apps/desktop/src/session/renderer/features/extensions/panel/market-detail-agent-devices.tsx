@@ -1,17 +1,17 @@
 import { observer } from 'mobx-react-lite';
-import { useQueryClient } from '@tanstack/react-query';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { refreshSubscriptionReadings } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { SUBSCRIPTIONS } from '@renderer/features/settings/subscriptions/subscription-queries';
+import { managementAgent, refreshAgentReadings } from '@renderer/lib/stores/agent-replicas';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import { marketAgentInstallPlan, type MarketAgentInstallPlan } from './market-agent-install-plan';
 import { MarketDevicePicker, useMarketDevicePicker } from './market-detail-devices';
+import { refreshTag } from '@/lib/replica';
 
 export const MarketAgentDevices = observer(function MarketAgentDevices({ agentId }: { agentId: string }) {
   const { translate } = useSessionMessages();
-  const client = useQueryClient();
   const picker = useMarketDevicePicker<AgentPayload | null, MarketAgentInstallPlan>({
     itemKey: `agent:${agentId}`,
-    read: ({ host }) => host.agents.getManagement(agentId),
+    read: ({ device }) => managementAgent.fetch(device.id, agentId),
     describe: (agent) => {
       if (!agent) return { state: 'blocked', detail: translate('marketDetail.deviceUnavailable') };
       if (!agent.reading) return { state: 'blocked', detail: translate('extensions.tileNeedsApp') };
@@ -29,8 +29,8 @@ export const MarketAgentDevices = observer(function MarketAgentDevices({ agentId
       return true;
     },
     refresh: async ({ device }) => {
-      await client.invalidateQueries({ queryKey: ['agents'] });
-      void refreshSubscriptionReadings(device.id, agentId);
+      await refreshAgentReadings(device.id);
+      void refreshTag(SUBSCRIPTIONS, device.id, agentId);
     },
   });
   return <MarketDevicePicker {...picker} />;

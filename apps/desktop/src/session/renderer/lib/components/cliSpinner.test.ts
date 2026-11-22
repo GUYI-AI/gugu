@@ -13,8 +13,6 @@ import { SurfaceShownContext } from '@/lib/retainedSurface';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const FRAMES_1 = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-
 let container: HTMLDivElement;
 let root: Root;
 
@@ -34,11 +32,11 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function render(props: { variant?: '1' | '2'; animate?: boolean }): void {
+function render(props: { variant?: '1' | '2' }): void {
   act(() => root.render(createElement(CLISpinner, props)));
 }
 const spinner = () => container.querySelector<HTMLElement>('.cli-spinner');
-const paused = () => spinner()?.style.getPropertyValue('--gugu-animation-viewport-paused') === 'paused';
+const paused = () => spinner()?.hasAttribute('data-animation-off') ?? false;
 
 describe('CLISpinner', () => {
   it.each(['1', '2'] as const)('variant %s: the strip carries every frame and no timer ever runs', (variant) => {
@@ -128,16 +126,8 @@ describe('CLISpinner', () => {
     iframe.remove();
   });
 
-  it.each(['1', '2'] as const)('variant %s: animate=false draws one still glyph from the running set', (variant) => {
-    render({ variant, animate: false });
-    expect(container.querySelector('.cli-spinner')).toBeNull();
-    expect(container.querySelector('[data-animate="false"]')!.textContent).toBe('⠋');
-    expect(FRAMES_1).toContain(container.textContent);
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it.each([true, false])('animate=%s: the glyph keeps the ink colour (owner 2026-09-26)', (animate) => {
-    render({ variant: '2', animate });
+  it('the glyph keeps the ink colour (owner 2026-09-26)', () => {
+    render({ variant: '2' });
     const glyph = container.firstElementChild as HTMLElement;
     expect(glyph.className).toContain('text-foreground/60');
     expect(glyph.className).not.toContain('agent-tone');

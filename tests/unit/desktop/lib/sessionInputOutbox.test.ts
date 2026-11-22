@@ -1,356 +1,293 @@
-import { describe, expect, it, vi } from 'vitest'
+/**
+ * Session inputs as the outbox kind `sessionInput` (lib/outbox/kinds/sessionInput.ts), driven through the same API the
+ * composer and the transcript use, over a real outbox. Only the host transport and the disk are the test's.
+ */
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { SessionInputAdmissionError } from '@gugu/core/shared/sessionInputAdmission'
 import { buildSessionDirectEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
-import { openSessionInputStorage, SessionInputOutbox, sessionInputBubbles, withSessionInputDeadline, type HostPendingRow, type SessionInput, type SessionInputFailure } from '../../../../apps/desktop/src/lib/sessionInputOutbox'
+import { SessionInputFailureError, sessionInputBubbles, withSessionInputDeadline, type HostPendingRow, type SessionInput, type SessionInputFailure } from '../../../../apps/desktop/src/lib/sessionInput'
+import { changeRejectedSessionInput, enqueueSessionInput, retrySessionInput, retrySessionInputs, state } from '../../../../apps/desktop/src/lib/outbox/kinds/sessionInput'
+import { openOutboxStorage } from '../../../../apps/desktop/src/lib/outbox/storage'
+import { importLegacyWrites } from '../../../../apps/desktop/src/lib/outbox/legacy'
+import { installSessionInputOutbox, memoryOutboxStorage, settle, type InstalledSessionInputs } from '../../../helpers/sessionInputOutbox'
+
+// Only session inputs are under test; the App-notice kind reaches the cloud client.
+vi.mock('../../../../apps/desktop/src/lib/outbox/kinds/assistantNotice', () => ({ enqueueAssistantNotice: vi.fn() }))
+
+let installed: InstalledSessionInputs | undefined
+const install = (...args: Parameters<typeof installSessionInputOutbox>) => (installed = installSessionInputOutbox(...args))
+afterEach(() => { installed?.dispose(); installed = undefined; vi.useRealTimers() })
+const rows = () => state().rows
 
 describe('native session input persistence', () => {
   it('honors an explicit custody acceptance even when a later operation reports an error', async () => {
-    const storage = await openSessionInputStorage(new IDBFactory())
     let attempts = 0
-    const queue = new SessionInputOutbox('owner', storage, async () => {
-      attempts++
-      throw new SessionInputAdmissionError('accepted, but notification failed', 'accepted', 'same-code')
-    }, () => true)
-    await queue.enqueue({ deviceId: null, sessionId: 'agent', text: 'already in host custody' })
-    await queue.flush(); await queue.flush()
+    install({ send: async () => { attempts++; throw new SessionInputAdmissionError('accepted, but notification failed', 'accepted', 'same-code') } })
+    await enqueueSessionInput({ deviceId: null, sessionId: 'agent', text: 'already in host custody' })
+    await settle()
+    retrySessionInputs(); await settle()
     expect(attempts).toBe(1)
-    expect(await queue.list()).toEqual([])
+    expect(rows()).toEqual([])
   })
 
-  it.each([undefined, null])('keeps an untyped %s rejection uncertain rather than treating it as acceptance', async error => {
-    const storage = await openSessionInputStorage(new IDBFactory())
-    const queue = new SessionInputOutbox('owner', storage, async () => { throw error }, () => true)
-    const input = await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'retain this input' })
-    await queue.flush()
-    expect(await queue.list()).toEqual([expect.objectContaining({ id: input.id, admission: 'uncertain' })])
+  it.each([undefined, null])('keeps an untyped %s rejection in automatic recovery rather than treating it as acceptance or refusal', async error => {
+    install({ send: async () => { throw error } })
+    const input = await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'retain this input' })
+    await settle()
+    expect(rows()).toEqual([expect.objectContaining({ id: input.id, failure: expect.objectContaining({ code: 'send-failed' }) })])
+    expect(rows()[0]!.admission).toBeUndefined()
+    expect(sessionInputBubbles(rows(), [], null)[0]!.state).toBe('waiting')
   })
 
   it('hands definitive refusals to the person across restarts, with independent single-input recovery', async () => {
-    const storage = await openSessionInputStorage(new IDBFactory())
+    const storage = memoryOutboxStorage()
     const attempts: [string, string][] = []
     let refuse = true
     const send = async (input: SessionInput) => {
       attempts.push([input.id, input.text])
       if (refuse) throw new SessionInputAdmissionError('This input is not allowed', 'rejected', 'a-future-host-code')
     }
-    const queue = new SessionInputOutbox('owner', storage, send, () => true)
-    const a = await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'original' })
-    const b = await queue.enqueue({ deviceId: 'host', sessionId: 'other', text: 'keep this too' })
-    await queue.flush()
-    expect((await queue.list()).map(input => input.admission)).toEqual(['rejected', 'rejected'])
-    const restarted = new SessionInputOutbox('owner', storage, send, () => true)
-    await restarted.flush(); await restarted.flush(true)
+    install({ send, storage })
+    const a = await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'original' })
+    const b = await enqueueSessionInput({ deviceId: 'host', sessionId: 'other', text: 'keep this too' })
+    await settle()
+    expect(rows().map(input => input.admission)).toEqual(['rejected', 'rejected'])
+    installed!.dispose()
+    install({ send, storage }) // restart: a refusal stays the person's
+    await installed!.outbox.loaded(); await settle()
+    retrySessionInputs(); await settle()
     expect(attempts).toHaveLength(2)
-    expect(sessionInputBubbles(await restarted.list(), [], null).map(bubble => bubble.state)).toEqual(['failed', 'failed'])
-    await restarted.edit(a.id, 'edited')
-    await restarted.flush()
+    expect(sessionInputBubbles(rows(), [], null).map(bubble => bubble.state)).toEqual(['failed', 'failed'])
+    await changeRejectedSessionInput(a.id, { kind: 'edit', text: 'edited' })
+    await settle()
     expect(attempts).toHaveLength(2)
     refuse = false
-    await restarted.retry(a.id)
+    await retrySessionInput(a.id)
+    await settle()
     expect(attempts).toEqual([[a.id, 'original'], [b.id, 'keep this too'], [a.id, 'edited']])
-    expect((await restarted.list()).map(input => input.id)).toEqual([b.id])
-    await restarted.discard(b.id)
-    expect(await restarted.list()).toEqual([])
+    expect(rows().map(input => input.id)).toEqual([b.id])
+    await changeRejectedSessionInput(b.id, { kind: 'discard' })
+    expect(rows()).toEqual([])
   })
 
-  it.each(['uncertain', undefined] as const)('automatically recovers a %s result with the same id, independent of its diagnostic code', async admission => {
-    const storage = await openSessionInputStorage(new IDBFactory())
+  it.each(['uncertain', undefined] as const)('automatically recovers a %s result with the same id after its backoff, and keeps it out of manual edits', async admission => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     const attempts: string[] = []
-    const send = async (input: SessionInput) => {
+    install({ send: async input => {
       attempts.push(input.id)
       if (attempts.length === 1) throw Object.assign(new Error('session not found'), { code: 'session_not_found', ...(admission ? { admission } : {}) })
-    }
-    const queue = new SessionInputOutbox('owner', storage, send, () => true)
-    const input = await queue.enqueue({ deviceId: null, sessionId: 'agent', text: 'retry the original' })
-    await queue.flush()
-    expect(sessionInputBubbles(await queue.list(), [], null)[0].state).toBe('waiting')
-    await expect(queue.edit(input.id, 'unsafe change')).rejects.toThrow('manual decision')
-    await expect(queue.discard(input.id)).rejects.toThrow('manual decision')
-    await queue.flush()
+    } })
+    const input = await enqueueSessionInput({ deviceId: null, sessionId: 'agent', text: 'retry the original' })
+    await settle()
+    expect(sessionInputBubbles(rows(), [], null)[0]!.state).toBe('waiting')
+    await expect(changeRejectedSessionInput(input.id, { kind: 'edit', text: 'unsafe change' })).rejects.toThrow('manual decision')
+    await expect(changeRejectedSessionInput(input.id, { kind: 'discard' })).rejects.toThrow('manual decision')
+    await vi.advanceTimersByTimeAsync(1_000); await settle()
     expect(attempts).toEqual([input.id, input.id])
-    expect(await queue.list()).toEqual([])
+    expect(rows()).toEqual([])
   })
 
-  it('keeps a failure visible through automatic retry and clears it when a manual retry actually begins', async () => {
-    const storage = await openSessionInputStorage(new IDBFactory())
-    let finish: (() => void) | undefined
-    let sending = false
-    const queue = new SessionInputOutbox('owner', storage, async () => {
-      sending = true
-      await new Promise<void>(resolve => { finish = resolve })
-      throw new Error('still offline')
-    }, () => true)
-    const input = await queue.enqueue({ deviceId: null, sessionId: 'agent', text: 'retry me' })
-    await storage.put({ ...input, failure: { code: 'send-failed', message: 'offline' } })
-    const automatic = queue.flush()
-    await expect.poll(() => sending).toBe(true)
-    expect((await queue.list())[0].failure).toEqual({ code: 'send-failed', message: 'offline' })
-    finish!()
-    await automatic
-    sending = false
-    const manual = queue.flush(true)
-    await expect.poll(() => sending).toBe(true)
-    expect((await queue.list())[0].failure).toBeUndefined()
-    finish!()
-    await manual
-    expect((await queue.list())[0].failure).toEqual({ code: 'send-failed', message: 'still offline' })
+  it('shows an input undelivered (red) after three unanswered retries (1 s, 4 s, 15 s), then sends it again on recovery with the same id', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    let online = false
+    const sent: string[] = []
+    install({ send: async input => { sent.push(input.id); if (!online) throw new SessionInputFailureError({ code: 'host-offline' }) } })
+    const input = await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'retry me' })
+    await settle()
+    expect(rows()[0]).toMatchObject({ failure: { code: 'host-offline' } })
+    expect(sessionInputBubbles(rows(), [], null)[0]!.state).toBe('waiting')
+    await vi.advanceTimersByTimeAsync(1_000); await settle()
+    await vi.advanceTimersByTimeAsync(4_000); await settle()
+    expect(sent).toEqual([input.id, input.id, input.id])
+    expect(sessionInputBubbles(rows(), [], null)[0]!.state).toBe('waiting')
+    await vi.advanceTimersByTimeAsync(15_000); await settle()
+    expect(sent).toEqual([input.id, input.id, input.id, input.id])
+    expect(rows()[0]).toMatchObject({ undelivered: true, failure: { code: 'host-offline' } })
+    expect(rows()[0]!.admission).toBeUndefined()
+    expect(sessionInputBubbles(rows(), [], null)).toEqual([{ id: input.id, text: 'retry me', state: 'undelivered', failure: { code: 'host-offline' } }])
+    // Nothing polls: no timer sends it again.
+    await vi.advanceTimersByTimeAsync(120_000); await settle()
+    expect(sent).toHaveLength(4)
+    online = true
+    await retrySessionInputs() // the host came back (OutboxHost kicks on device and session-directory changes)
+    await settle()
+    expect(sent).toEqual([input.id, input.id, input.id, input.id, input.id])
+    expect(rows()).toEqual([])
+  })
+
+  it('a manual retry of an undelivered input starts again with a fresh attempt budget', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    let calls = 0
+    install({ send: async () => { calls++; throw new Error('still offline') } })
+    const input = await enqueueSessionInput({ deviceId: null, sessionId: 'agent', text: 'retry me' })
+    await settle(); await vi.advanceTimersByTimeAsync(20_000); await settle()
+    expect(rows()[0]).toMatchObject({ undelivered: true })
+    await retrySessionInput(input.id)
+    await settle()
+    expect(calls).toBe(5)
+    expect(rows()[0]).toMatchObject({ failure: { code: 'send-failed', message: 'still offline' } })
+    expect(rows()[0]!.undelivered).toBeUndefined()
   })
 
   it.each<SessionInputFailure>([
     { code: 'host-offline' }, { code: 'host-not-ready' }, { code: 'phone-unconfirmed' },
     { code: 'no-acknowledgement' }, { code: 'send-failed', message: 'SSH transport closed' },
   ])('retains automatic custody after $code until acceptance', async failure => {
-    const storage = await openSessionInputStorage(new IDBFactory())
     const delivered: string[] = []
-    const queue = new SessionInputOutbox('owner', storage, async input => { delivered.push(input.id) }, () => true)
-    const input = await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'recover automatically' })
-    await storage.put({ ...input, failure })
-    expect(sessionInputBubbles(await queue.list(), [], null)).toEqual([
-      { id: input.id, text: input.text, state: 'waiting', failure },
-    ])
-    await queue.flush()
+    let fail = true
+    install({ send: async input => {
+      if (fail) { fail = false; throw failure.code === 'send-failed' ? new Error(failure.message) : new SessionInputFailureError(failure) }
+      delivered.push(input.id)
+    } })
+    const input = await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'recover automatically' })
+    await settle()
+    expect(sessionInputBubbles(rows(), [], null)).toEqual([{ id: input.id, text: input.text, state: 'waiting', failure }])
+    await retrySessionInputs(); await settle()
     expect(delivered).toEqual([input.id])
-    expect(await queue.list()).toEqual([])
+    expect(rows()).toEqual([])
   })
 
-  it('preserves stored runtime attachment references and does not block the following input', async () => {
-    const storage = await openSessionInputStorage(new IDBFactory())
+  it('preserves runtime attachment references and does not block the following input', async () => {
     const received: SessionInput[] = []
-    const legacy: SessionInput = { id: 'older-input', accountId: 'owner', deviceId: 'host', sessionId: 'agent', text: 'read the image', createdAt: 1,
-      attachments: [{ type: 'attachment', id: 'old-image', mimeType: 'image/png' }] }
-    await storage.put(legacy)
-    const queue = new SessionInputOutbox('owner', storage, async input => { received.push(input) }, () => true)
-    await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'following input' })
-    await queue.flush()
+    install({ send: async input => { received.push(input) } })
+    const attachments = [{ type: 'attachment', id: 'old-image', mimeType: 'image/png' }] as unknown as SessionInput['attachments']
+    await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'read the image', attachments })
+    await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'following input' })
+    await settle()
     expect(received.map(input => input.text)).toEqual(['read the image', 'following input'])
-    expect(received[0].attachments).toEqual(legacy.attachments)
-    expect(await queue.list()).toEqual([])
+    expect(received[0]!.attachments).toEqual(attachments)
+    expect(rows()).toEqual([])
   })
+
   it('survives an offline restart and delivers in order automatically with the same identities', async () => {
-    const storage = await openSessionInputStorage(new IDBFactory())
+    const factory = new IDBFactory()
+    const storage = openOutboxStorage(factory)
     let online = false
     const received: SessionInput[] = []
     const send = async (input: SessionInput) => { if (!online) throw new Error('offline'); received.push(input) }
-    const first = new SessionInputOutbox('owner', storage, send, () => true)
-    const a = await first.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'first' })
-    const b = await first.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'second' })
-    await first.flush()
-    expect(await first.list()).toHaveLength(2)
+    install({ send, storage })
+    const a = await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'first' })
+    const b = await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'second' })
+    await settle()
+    expect(rows()).toHaveLength(2)
+    installed!.dispose()
     online = true
-    const restarted = new SessionInputOutbox('owner', storage, send, () => true)
-    await restarted.flush()
+    install({ send, storage: openOutboxStorage(factory) })
+    await installed!.outbox.loaded(); await settle()
+    await retrySessionInputs(); await settle()
     expect(received.map(input => [input.id, input.text])).toEqual([[a.id, 'first'], [b.id, 'second']])
-    expect(await restarted.list()).toEqual([])
+    expect(rows()).toEqual([])
   })
 
   it('replays the same id after an acknowledgement is lost, without a second native turn', async () => {
-    const storage = await openSessionInputStorage(new IDBFactory())
-    const host = new Map<string, string>()
+    const hostRows = new Map<string, string>()
     let lost = true
-    const queue = new SessionInputOutbox('owner', storage, async input => {
-      host.set(input.id, input.text)
-      if (lost) throw new Error('reply lost')
-    }, () => true)
-    const input = await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'raw user input' })
-    await queue.flush()
+    install({ send: async input => { hostRows.set(input.id, input.text); if (lost) throw new Error('reply lost') } })
+    const input = await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'raw user input' })
+    await settle()
     lost = false
-    await queue.flush()
-    expect([...host]).toEqual([[input.id, 'raw user input']])
-    expect(await queue.list()).toEqual([])
+    await retrySessionInputs(); await settle()
+    expect([...hostRows]).toEqual([[input.id, 'raw user input']])
+    expect(rows()).toEqual([])
   })
 
-  it('never drains another account after logout', async () => {
-    const storage = await openSessionInputStorage(new IDBFactory())
-    let current = true
-    const owner = new SessionInputOutbox('owner', storage, async () => { throw new Error('offline') }, () => current)
-    await owner.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'private' })
-    await owner.flush()
-    current = false
-    await owner.flush()
-    expect(await new SessionInputOutbox('other', storage, async () => {}, () => true).list()).toEqual([])
-    expect(await owner.list()).toHaveLength(1)
-  })
-})
-
-describe('admission results arriving after the sender deadline', () => {
-  function setup(send: (input: SessionInput) => Promise<void>, current = () => true) {
-    const saved = new Map<string, SessionInput>()
-    const storage = {
-      list: async (accountId: string) => [...saved.values()].filter(row => row.accountId === accountId).map(row => structuredClone(row)),
-      put: async (input: SessionInput) => { saved.set(input.id, structuredClone(input)) },
-      remove: async (_accountId: string, id: string) => { saved.delete(id) },
-    }
-    return new SessionInputOutbox('owner', storage, send, current)
-  }
-  const delayed = () => {
-    let resolve!: () => void, reject!: (error: Error) => void
-    const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no })
-    return { promise, resolve, reject }
-  }
-  async function deadline(queue: SessionInputOutbox) {
-    const flushing = queue.flush()
-    await vi.advanceTimersByTimeAsync(30_000)
-    await flushing
-    expect((await queue.list())[0].admission).toBe('uncertain')
-  }
-
-  it('accepts the original late receipt after an unchanged explicit retry loses its transport', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      const original = delayed(), send = vi.fn().mockImplementationOnce(() => original.promise).mockRejectedValue(new Error('retry transport lost'))
-      const queue = setup(send), input = await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'one unchanged input' })
-      await deadline(queue); await queue.retry(input.id)
-      expect((await queue.list())[0].admission).toBe('uncertain')
-      original.resolve(); await vi.advanceTimersByTimeAsync(0)
-      expect(await queue.list()).toEqual([])
-      expect(send).toHaveBeenCalledTimes(2)
-    } finally { vi.useRealTimers() }
+  it('a host that hangs holds only its own sessions: another session goes at once', async () => {
+    const sent: string[] = []
+    install({ send: input => input.deviceId === 'stuck-host' ? new Promise<void>(() => {}) : (sent.push(input.text), Promise.resolve()) })
+    await enqueueSessionInput({ deviceId: 'stuck-host', sessionId: 'a', text: 'to the hung host' })
+    await enqueueSessionInput({ deviceId: 'stuck-host', sessionId: 'a', text: 'behind it, same session' })
+    await enqueueSessionInput({ deviceId: 'other-host', sessionId: 'b', text: 'another session' })
+    await enqueueSessionInput({ deviceId: 'stuck-host', sessionId: 'c', text: 'another session on the hung host' })
+    await settle()
+    expect(sent).toEqual(['another session'])
+    expect(rows().map(row => row.text)).toEqual(['to the hung host', 'behind it, same session', 'another session on the hung host'])
   })
 
-  it.each(['accepted', 'rejected'] as const)('reconciles a late %s decision without another automatic send', async admission => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      const late = delayed(), send = vi.fn(() => late.promise), queue = setup(send)
-      const input = await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'original input' })
-      await deadline(queue)
-      if (admission === 'accepted') late.resolve()
-      else late.reject(new SessionInputAdmissionError('definitive late refusal', 'rejected'))
-      await vi.advanceTimersByTimeAsync(0)
-      if (admission === 'accepted') expect(await queue.list()).toEqual([])
-      else expect(await queue.list()).toEqual([expect.objectContaining({ id: input.id, admission: 'rejected' })])
-      await queue.flush()
-      expect(send).toHaveBeenCalledTimes(1)
-    } finally { vi.useRealTimers() }
+  it('aborts an attempt after 30 s without an answer and shows it waiting for acknowledgement', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+    const calls: string[] = []
+    install({ send: input => { calls.push(input.id); return new Promise<void>(() => {}) } })
+    const input = await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'silent host' })
+    await settle()
+    await vi.advanceTimersByTimeAsync(29_999); await settle()
+    expect(rows()[0]!.failure).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1); await settle()
+    expect(rows()[0]).toMatchObject({ id: input.id, failure: { code: 'no-acknowledgement' } })
+    await vi.advanceTimersByTimeAsync(1_000); await settle()
+    expect(calls).toEqual([input.id, input.id])
   })
 
-  it.each(['accepted', 'rejected'] as const)('reconciles a late %s decision even while an automatic replay is still pending', async admission => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      const original = delayed(), replay = delayed()
-      const send = vi.fn().mockImplementationOnce(() => original.promise).mockImplementation(() => replay.promise)
-      const queue = setup(send)
-      await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'same original admission' })
-      await deadline(queue)
-      const flushing = queue.flush(); await vi.advanceTimersByTimeAsync(0)
-      if (admission === 'accepted') original.resolve()
-      else original.reject(new SessionInputAdmissionError('original late refusal', 'rejected'))
-      await vi.advanceTimersByTimeAsync(0)
-      if (admission === 'accepted') expect(await queue.list()).toEqual([])
-      else expect((await queue.list())[0].admission).toBe('rejected')
-      replay.reject(new Error('replay connection lost')); await flushing
-      await queue.flush(); expect(send).toHaveBeenCalledTimes(2)
-    } finally { vi.useRealTimers() }
-  })
-
-  it.each([true, false])('hands over confirmed custody after an earlier refusal of the same automatic generation (original refused: %s)', async originalRefused => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      const original = delayed(), replay = delayed()
-      const send = vi.fn().mockImplementationOnce(() => original.promise).mockImplementation(() => replay.promise)
-      const queue = setup(send)
-      await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'one unchanged original input' })
-      await deadline(queue)
-      const flushing = queue.flush(); await vi.advanceTimersByTimeAsync(0)
-      const refused = originalRefused ? original : replay
-      const accepted = originalRefused ? replay : original
-      refused.reject(new SessionInputAdmissionError('refused before another attempt took custody', 'rejected'))
-      await vi.advanceTimersByTimeAsync(0)
-      expect((await queue.list())[0].admission).toBe('rejected')
-      accepted.resolve(); await vi.advanceTimersByTimeAsync(0); await flushing
-      expect(await queue.list()).toEqual([])
-      await queue.flush(); expect(send).toHaveBeenCalledTimes(2)
-    } finally { vi.useRealTimers() }
-  })
-
-  it.each(['accepted', 'rejected'] as const)('does not replay a stale drain snapshot after another input receives late %s', async admission => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      const late = delayed(), other = delayed()
-      let otherCalls = 0, lateCalls = 0
-      const queue = setup(async input => {
-        if (input.sessionId === 'other') {
-          if (++otherCalls === 1) throw new Error('temporary connection failure')
-          return other.promise
-        }
-        lateCalls++; return late.promise
-      })
-      await queue.enqueue({ deviceId: 'host', sessionId: 'other', text: 'first in the snapshot' })
-      await queue.enqueue({ deviceId: 'host', sessionId: 'late', text: 'second in the snapshot' })
-      await deadline(queue)
-      const replay = queue.flush(); await vi.advanceTimersByTimeAsync(0)
-      if (admission === 'accepted') late.resolve()
-      else late.reject(new SessionInputAdmissionError('late refusal', 'rejected'))
-      await vi.advanceTimersByTimeAsync(0); other.resolve(); await replay
-      expect(lateCalls).toBe(1)
-    } finally { vi.useRealTimers() }
-  })
-
-  it.each(['accepted', 'rejected'] as const)('an old late %s decision cannot override editing, discard or a newer manual retry', async admission => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      for (const action of ['edit', 'discard', 'retry'] as const) {
-        const old = delayed(), replacement = delayed()
-        const send = vi.fn().mockImplementationOnce(() => old.promise)
-          .mockRejectedValueOnce(new SessionInputAdmissionError('explicit refusal of replay', 'rejected'))
-          .mockImplementation(() => replacement.promise)
-        const queue = setup(send)
-        const input = await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'original' })
-        await deadline(queue)
-        await queue.flush()
-        await queue.edit(input.id, 'the person edited this')
-        let retry: Promise<void> | undefined
-        if (action === 'discard') await queue.discard(input.id)
-        if (action === 'retry') { retry = queue.retry(input.id); await vi.advanceTimersByTimeAsync(0) }
-        if (admission === 'accepted') old.resolve()
-        else old.reject(new SessionInputAdmissionError('old late refusal', 'rejected'))
-        await vi.advanceTimersByTimeAsync(0)
-        if (action === 'discard') expect(await queue.list()).toEqual([])
-        else expect(await queue.list()).toEqual([expect.objectContaining({ id: input.id, text: 'the person edited this',
-          ...(action === 'edit' ? { admission: 'rejected' } : {}) })])
-        if (retry) { expect((await queue.list())[0].admission).toBeUndefined(); replacement.resolve(); await retry }
-      }
-    } finally { vi.useRealTimers() }
-  })
-
-  it('does not apply a late decision after this account stopped owning the queue', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-    try {
-      let current = true
-      const late = delayed(), queue = setup(() => late.promise, () => current)
-      await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'account scoped' })
-      await deadline(queue); current = false; late.resolve()
-      await vi.advanceTimersByTimeAsync(0)
-      expect((await queue.list())[0].admission).toBe('uncertain')
-    } finally { vi.useRealTimers() }
+  it('never drains another account after logout, and keeps the first account\'s rows', async () => {
+    const storage = memoryOutboxStorage()
+    const sent: string[] = []
+    install({ send: async input => { sent.push(input.accountId) ; throw new Error('offline') }, storage })
+    await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'private' })
+    await settle()
+    installed!.setAccount('other')
+    await installed!.outbox.loaded(); await settle()
+    await retrySessionInputs(); await settle()
+    expect(rows()).toEqual([])
+    expect(sent.every(account => account === 'owner')).toBe(true)
+    expect([...storage.rows.values()].map(row => row.accountId)).toEqual(['owner'])
   })
 })
 
 it('keeps an image and its caption in one durable request across a reopened database', async () => {
   const factory = new IDBFactory()
-  const storage = await openSessionInputStorage(factory)
-  const queue = new SessionInputOutbox('owner', storage, async () => { throw new Error('offline') }, () => true)
+  install({ send: async () => { throw new Error('offline') }, storage: openOutboxStorage(factory) })
   const files = [{ itemId: 'image-item', version: 1, name: 'image.png', mimeType: 'image/png', sizeBytes: 4 }]
-  const input = await queue.enqueue({ deviceId: 'host', sessionId: 'agent', text: 'look at this', files })
-  await queue.flush()
+  const input = await enqueueSessionInput({ deviceId: 'host', sessionId: 'agent', text: 'look at this', files })
+  await settle()
+  installed!.dispose()
   const received: SessionInput[] = []
-  const restored = new SessionInputOutbox('owner', await openSessionInputStorage(factory), async input => { received.push(input) }, () => true)
-  await restored.flush()
+  install({ send: async input => { received.push(input) }, storage: openOutboxStorage(factory) })
+  await installed!.outbox.loaded(); await settle()
+  await retrySessionInputs(); await settle()
   expect(received).toEqual([expect.objectContaining({ id: input.id, text: 'look at this', files })])
-  expect(await restored.list()).toEqual([])
+  expect(rows()).toEqual([])
 })
 
 it('stores a missing acknowledgement as its failure code and keeps a host refusal in the host words', async () => {
-  const storage = await openSessionInputStorage(new IDBFactory())
   let send = (_input: SessionInput) => withSessionInputDeadline(new Promise<void>(() => {}), 1)
-  const outbox = new SessionInputOutbox('owner', storage, input => send(input), () => true)
-  const input = await outbox.enqueue({ deviceId: null, sessionId: 'agent', text: 'silent host' })
-  await outbox.flush()
-  expect((await outbox.list())[0]).toMatchObject({ id: input.id, failure: { code: 'no-acknowledgement' } })
-  send = async () => { throw new Error('Provider login expired') }
-  await outbox.flush()
-  expect((await outbox.list())[0]).toMatchObject({ id: input.id, failure: { code: 'send-failed', message: 'Provider login expired' } })
+  install({ send: input => send(input) })
+  const input = await enqueueSessionInput({ deviceId: null, sessionId: 'agent', text: 'silent host' })
+  await expect.poll(() => rows()[0]?.failure).toEqual({ code: 'no-acknowledgement' })
+  send = async () => { throw new SessionInputAdmissionError('Provider login expired', 'rejected') }
+  await retrySessionInputs()
+  await expect.poll(() => rows()[0]).toMatchObject({ id: input.id, admission: 'rejected', failure: { code: 'send-failed', message: 'Provider login expired' } })
+})
+
+it('moves the previous build\'s session inputs into the outbox once, keeping ids, queue and refusals', async () => {
+  const legacy = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open('gugu.session-input-outbox.v1', 1)
+    request.onupgradeneeded = () => request.result.createObjectStore('inputs', { keyPath: ['accountId', 'id'] })
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  const old: SessionInput[] = [
+    { id: 'plain', accountId: 'owner', deviceId: 'host', sessionId: 's', text: 'plain', createdAt: 1 },
+    { id: 'held', accountId: 'owner', deviceId: 'host', sessionId: 's', text: 'held', createdAt: 2, queued: true, sendQueue: { order: 2, afterInputId: 'plain' } },
+    { id: 'refused', accountId: 'owner', deviceId: 'host', sessionId: 'r', text: 'refused', createdAt: 3, admission: 'rejected', failure: { code: 'send-failed', message: 'no' } },
+    { id: 'someone-else', accountId: 'other', deviceId: 'host', sessionId: 's', text: 'not mine', createdAt: 4 },
+  ]
+  await new Promise<void>((resolve, reject) => {
+    const tx = legacy.transaction('inputs', 'readwrite')
+    for (const row of old) tx.objectStore('inputs').put(row)
+    tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error)
+  })
+  legacy.close()
+  install({ send: () => new Promise<void>(() => {}) })
+  await importLegacyWrites('owner')
+  await settle()
+  expect(rows().map(row => [row.id, row.admission ?? null, !!row.sendQueue])).toEqual(expect.arrayContaining([
+    ['plain', null, false], ['held', null, true], ['refused', 'rejected', false],
+  ]))
+  expect(rows().find(row => row.id === 'held')?.sendQueue?.afterInputId).toBe('plain')
+  expect(rows().some(row => row.id === 'someone-else')).toBe(false)
+  await importLegacyWrites('owner')
+  expect(rows()).toHaveLength(3)
 })
 
 describe('a bubble reads the one custody owner of its messageId', () => {
@@ -382,14 +319,14 @@ describe('a bubble reads the one custody owner of its messageId', () => {
       .toEqual([{ id: 'f', text: 'host f', state: 'failed', failure: null, hostReason: 'The session stopped before dispatch' }])
   })
 
-  it('names each state: queued sending, failed with the sender reason or the host failure, unknown not resent', () => {
+  it('names each state: queued sending, waiting with the sender reason, undelivered after its attempts, the host failure, unknown not resent', () => {
     expect(sessionInputBubbles(
-      [sender('b', 2, { failure: { code: 'host-offline' } }), sender('a', 1)],
+      [sender('b', 2, { failure: { code: 'host-offline' } }), sender('a', 1), sender('c', 3, { failure: { code: 'no-acknowledgement' }, undelivered: true })],
       [host(3, 'q', 'queued'), host(1, 'f', 'failed'), host(2, 'u', 'unknown')],
       null,
-    ).map(bubble => [bubble.id, bubble.state, bubble.state === 'failed' || bubble.state === 'waiting' ? bubble.failure : null])).toEqual([
+    ).map(bubble => [bubble.id, bubble.state, bubble.state === 'failed' || bubble.state === 'waiting' || bubble.state === 'undelivered' ? bubble.failure : null])).toEqual([
       ['f', 'failed', null], ['u', 'unknown', null], ['q', 'sending', null],
-      ['a', 'sending', null], ['b', 'waiting', { code: 'host-offline' }],
+      ['a', 'sending', null], ['b', 'waiting', { code: 'host-offline' }], ['c', 'undelivered', { code: 'no-acknowledgement' }],
     ])
   })
 

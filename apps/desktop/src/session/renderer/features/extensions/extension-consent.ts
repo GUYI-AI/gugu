@@ -4,6 +4,7 @@ import { localizedManifestText } from '@shared/extensions/catalog';
 import { addedPermissions } from '@shared/extensions/upgrade';
 import { READABLE_RESOURCE_DOMAINS } from '@shared/extensions/agent-resources';
 import type { ExtensionConsentDetails } from '@shared/extensions/host-actions';
+import { siteHosts } from '@shared/extensions/app-credentials';
 
 /**
  * What the user is asked before a bundle lands.
@@ -142,6 +143,13 @@ export function programDetails(manifest: ExtensionManifest, translate: SessionTr
   return { label: translate('extensions.consentDetails'), caption: translate('extensions.consentDetailsCommands'), lines };
 }
 
+/** `permissions.credentials` (61), one line per website: a saved credential, and the only place its value goes. */
+function describeCredentials(manifest: Pick<ExtensionManifest, 'permissions'>, translate: SessionTranslate, sites?: ReadonlySet<string>): string[] {
+  const hosts = manifest.permissions?.network ?? [];
+  return (manifest.permissions?.credentials ?? []).filter(({ site }) => !sites || !sites.has(site))
+    .map(({ site }) => translate('extensions.permissionsCredential', { site, hosts: siteHosts(hosts, site).join(', ') }));
+}
+
 /**
  * The permission list in plain words — abilities first, then where it may go.
  * An extension that asked for nothing says so: "no permissions" is information,
@@ -157,6 +165,7 @@ export function describePermissions(
   if (hosts.length > 0) {
     lines.push(translate('extensions.permissionsNetwork', { hosts: hosts.join(', ') }));
   }
+  lines.push(...describeCredentials(manifest, translate));
   // Asking for nothing still reaches one thing: the file the person opens with it.
   if (lines.length === 0) return translate('extensions.permissionsNone');
   return lines.join('\n');
@@ -211,6 +220,8 @@ export function consentPrompt(
   if (addedHosts.length > 0) {
     added.push(translate('extensions.permissionsNetwork', { hosts: addedHosts.join(', ') }));
   }
+  // A website whose credential the installed version did not use is new.
+  added.push(...describeCredentials(candidate, translate, new Set((installed.permissions?.credentials ?? []).map(({ site }) => site))));
   const goingBack = compareExtensionVersions(candidate.version, installed.version) < 0;
   const permissionsLine =
     added.length === 0

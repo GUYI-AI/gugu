@@ -3,6 +3,7 @@ import { open, readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { basename, join, sep } from 'node:path'
 import type { JsonlSearchResult } from './runtimeInfo'
 import { readDeliveryEnvelope } from './deliveryEnvelope'
+import { TranscriptAccessError } from './transcriptAccessError'
 import { asRecord, clipTitle, scanRootsOf, type TranscriptFrame, type TranscriptScanOptions, type TranscriptSourceSpec } from './transcriptSource'
 import { allTranscriptSourceSpecs, requireTranscriptSourceSpec } from './transcriptSources'
 import type {
@@ -107,7 +108,7 @@ export async function readFirstLines(
 
 // ── 帧 → 会话摘要（通用规则，35 家同一套）───────────────────────────────────────
 
-interface TranscriptDigest {
+export interface TranscriptDigest {
   providerSessionId: string | null
   cwd: string | null
   title: string | null
@@ -117,7 +118,7 @@ interface TranscriptDigest {
   sawConversation: boolean
 }
 
-function newDigest(): TranscriptDigest {
+export function newDigest(): TranscriptDigest {
   return { providerSessionId: null, cwd: null, title: null, titleIsUserSet: false, sawConversation: false }
 }
 
@@ -128,7 +129,7 @@ function newDigest(): TranscriptDigest {
  *    但**用户设的那一档压过引擎拟的那一档**，与先后无关；
  *  · 兜底标题 —— 首条**用户**轮次的摘句；助手的话不当标题。
  */
-function absorbFrame(digest: TranscriptDigest, frame: TranscriptFrame): void {
+export function absorbFrame(digest: TranscriptDigest, frame: TranscriptFrame): void {
   if (!digest.providerSessionId && frame.providerSessionId) digest.providerSessionId = frame.providerSessionId
   if (!digest.cwd && frame.cwd) digest.cwd = frame.cwd
   if (frame.explicitTitle) {
@@ -146,13 +147,13 @@ function absorbFrame(digest: TranscriptDigest, frame: TranscriptFrame): void {
 }
 
 /** 投递进来的那一轮只取正文:信封是写给 agent 的现场事实,摘句标题、预览与导入要的是这一轮说了什么。 */
-function readFrame(spec: TranscriptSourceSpec, entry: Record<string, unknown>, view?: 'context'): TranscriptFrame | null {
+export function readFrame(spec: TranscriptSourceSpec, entry: Record<string, unknown>, view?: 'context'): TranscriptFrame | null {
   const frame = spec.readFrame(entry, view)
   const delivery = frame?.turn?.role === 'user' ? readDeliveryEnvelope(frame.turn.content) : null
   return delivery ? { ...frame, turn: { ...frame!.turn!, content: delivery.body } } : frame
 }
 
-function parseJsonLine(line: string): Record<string, unknown> | null {
+export function parseJsonLine(line: string): Record<string, unknown> | null {
   const trimmed = line.trim()
   if (!trimmed) return null
   try {
@@ -282,7 +283,7 @@ export async function readLocalTranscript(
     if (frame.turn) turns.push(frame.turn)
   }
   if (turns.length === 0 && options.view !== 'context') {
-    throw new Error(`transcript 中没有可导入的用户/助手对话：${filePath}`)
+    throw new TranscriptAccessError('transcript-empty', filePath)
   }
   const metadata = {
     source,
@@ -307,7 +308,7 @@ export async function readLocalTranscript(
  * 根不存在（用户没装这一家）时跳过该根而不是抛错 —— 那不是越界，是没有这个目录。
  * 目标不存在时 realpath 抛，这正确：读一个不存在的文件本来就该失败。
  */
-async function assertPathInScanRoots(
+export async function assertPathInScanRoots(
   filePath: string,
   spec: TranscriptSourceSpec,
   options: TranscriptScanOptions
@@ -316,7 +317,7 @@ async function assertPathInScanRoots(
   try {
     realFile = await realpath(filePath)
   } catch {
-    throw new Error(`transcript 路径不存在或不可读：${filePath}`)
+    throw new TranscriptAccessError('transcript-unreadable', filePath)
   }
   for (const root of scanRootsOf(spec, options)) {
     let realRoot: string
@@ -327,5 +328,5 @@ async function assertPathInScanRoots(
     }
     if (realFile === realRoot || realFile.startsWith(realRoot + sep)) return
   }
-  throw new Error(`transcript 路径不在允许的扫描目录内：${filePath}`)
+  throw new TranscriptAccessError('transcript-outside-roots', filePath)
 }

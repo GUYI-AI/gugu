@@ -153,8 +153,8 @@ export async function requestHelperPermission(ctx: FamilyContext, kind: string, 
   const r = await ctx.deps.macHelper().call<{ status: string; settingsUrl?: string }>('permissions.request', { kind }, { signal: ctx.signal, timeoutMs: 120_000 })
   if (r.status === 'granted') return ok(null)
   const failed = fail('os_permission', r.status === 'not_determined'
-    ? `macOS 还没回话：请在这台电脑上的系统弹窗里允许咕咕使用「${label}」，再点一次「连接」`
-    : `macOS 没允许咕咕使用「${label}」：去 系统设置 → 隐私与安全性 → ${label} 里打开咕咕，再点一次「连接」`)
+    ? `macOS 尚未响应：请在这台电脑的系统弹窗中允许咕咕使用「${label}」，然后再次点击「连接」`
+    : `macOS 未允许咕咕使用「${label}」：请在 系统设置 → 隐私与安全性 → ${label} 中开启咕咕，然后再次点击「连接」`)
   // 缺的是哪一项,设置里就去哪一页(#7317 实测:缺屏幕录制,「连接」却总把人带去辅助功能)。
   return r.settingsUrl ? Object.assign(failed, { settingsUrl: r.settingsUrl }) : failed
 }

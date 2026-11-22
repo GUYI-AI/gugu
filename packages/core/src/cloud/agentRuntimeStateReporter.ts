@@ -63,6 +63,8 @@ export interface AgentRuntimeStateWrite {
   // 省略 = 传 NULL = 保留现值，非 runtime 观测方可以放心不给。
   recentActions?: string[] | null
   lastActionAt?: string | null
+  /** 这个 agent 的会话最后一次有动静(开工、停下、等人、出错)的时刻;SQL 侧 COALESCE,省略 = 保留现值。 */
+  lastInteractedAt?: string | null
 }
 
 // @@@2151 gone-agent 判定器：agent 在别处删 / 非本 owner 时，set_agent_runtime_state 命中 migration 036
@@ -104,7 +106,8 @@ export function createAgentRuntimeStateReporter(
         // 「这一轮为哪个会话跑」这一维(p_active_chat_id)已删:它让同一个 agent 在不同会话面给出两个答案。
         p_last_action_at: state.lastActionAt ?? null,
         p_agent_status: state.agentStatus ?? null,
-        p_agent_status_detail: state.agentStatusDetail ?? null
+        p_agent_status_detail: state.agentStatusDetail ?? null,
+        p_last_interacted_at: state.lastInteractedAt ?? null,
       }),
     )
     if (!error) return

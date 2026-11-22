@@ -13,7 +13,7 @@ import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
 import {
   innerSidebarTopicsSlotKey,
-  publishInnerSidebarChat,
+  publishInnerSidebarPresent,
   publishMyChatAgentCounts,
   setInnerSidebarTopicsAll,
   useInnerSidebarTopicsAll,
@@ -27,7 +27,7 @@ import { publishPanelToggle } from '@/lib/panelToggles';
 import { readShellSlots } from '@/lib/shellSlots';
 import { chatBlockOnScreen } from '@renderer/features/chats/group-participant-actions';
 import { openInfoTab } from '@renderer/features/chats/chat-tabs/chat-layouts';
-import { WORKSPACE_APP_ID } from '@renderer/features/extensions/installed-extensions-store';
+import { WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
 import { searchInChat } from '@renderer/features/global-search/search-session';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { navigateToGroupRoot } from '@renderer/app/screen-layout-actions';
@@ -76,6 +76,8 @@ import {
   sidebarCountClass,
   sidebarGroupHeaderClass,
 } from './sidebar-primitives';
+import { sessionDropTarget } from './session-drop-target';
+import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow';
 import { SampleInnerSidebar } from './sample-inner-sidebar';
 import { SidebarSessionItem } from './sidebar-session-item';
 
@@ -152,8 +154,11 @@ export const InnerSidebar = observer(function InnerSidebar() {
   // 换了对话就回到第一级(「全部」只对那一个对话)。
   useEffect(() => setInnerSidebarTopicsAll(null), [next?.chatId]);
   useEffect(() => runInAction(() => innerSidebarChat.set(next)), [next?.chatId, next?.kind]);
-  // 壳据此收起对话页头上与这一列重复的那一枚(话题)。
-  useEffect(() => publishInnerSidebarChat(next?.chatId ?? null), [next?.chatId]);
+  // 壳据此收起群页头上与这一列重复的话题钮(每一块都收:按到哪一块,这一列就挂过去)。
+  useEffect(() => {
+    publishInnerSidebarPresent(true);
+    return () => publishInnerSidebarPresent(false);
+  }, []);
   // 头一行是这一列自己:群 / 项目开着它的对话时,智能体开着它自己的(顶层)会话时(❌ 它的子智能体)。
   const ownSessions = next?.kind === 'agent' ? (families.topLevelOf.get(next.agentUserId) ?? []) : [];
   const headActive =
@@ -491,7 +496,7 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
 
 /**
  * 「智能体」:标题旁一个数(总数,连子会话),❌ 药丸、❌「需要你 / 运行中」组头(#2548 ⑥):一张平的表(chatAgentSection),
- * 是哪一档只看行尾那几个记号。群里也只列我的,标题照样写「智能体」(owner 11-12)。
+ * 按最近的动静排,状态只看行尾那几个记号。群里也只列我的,标题照样写「智能体」(owner 11-12)。
  */
 const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents }: { anchor: InnerSidebarAnchor; agents: readonly ChatAgentEntry[] }) {
   const { translate } = useSessionMessages();
@@ -507,9 +512,14 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
   }, [ancestorsKey]);
   const list = chatAgentSection(agents, { expanded: sidebarStore.expandedSessionIds, showAll, open });
   const total = chatAgentCounts(agents).total;
+  // A sub-session of this list dragged onto the section header goes back to the top level (spec session-page「把会话拖成 child」).
+  const unnestHere = sessionDropTarget(
+    (dragged) => sidebarStore.parentOf(dragged.sessionId) !== null && agents.some((agent) => agent.id === dragged.sessionId),
+    (child) => moveSessionUnder(child, null, sidebarStore.parentOf(child.sessionId))
+  );
   return (
     <SidebarGroup className="mb-2 flex shrink-0 flex-col" data-inner-sidebar-section="agents">
-      <div className={sidebarGroupHeaderClass}>
+      <div className={sidebarGroupHeaderClass} {...unnestHere}>
         <span className="flex items-center gap-1">
           <SidebarGroupToggle
             label={translate('sidebar.agents')}

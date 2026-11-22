@@ -8,7 +8,7 @@ vi.mock('../../../../apps/desktop/src/platform', async (original) => {
 })
 const progress = vi.hoisted(() => ({ value: null as null | { step: 'chats'; status: 'skipped' } }))
 vi.mock('../../../../apps/desktop/src/lib/productTour', async (original) => ({
-  ...await original<Record<string, unknown>>(), useProductTourState: () => ({ data: progress.value }),
+  ...await original<Record<string, unknown>>(), useProductTourState: () => ({ state: 'value', value: progress.value, stale: false, error: null }),
 }))
 const { Sidebar } = await import('../../../../apps/desktop/src/components/Sidebar')
 const { HelpSection } = await import('../../../../apps/desktop/src/components/settings/HelpSection')

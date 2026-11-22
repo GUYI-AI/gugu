@@ -102,7 +102,7 @@ describe('file citations share the composer document with the words', () => {
     const text = `先改 ${deckToken}，再改 ${sheetToken}，最后检查。`
     await draft(text)
     expect(pills().map((pill) => pill.textContent)).toEqual([deckPill.label, sheetPill.label])
-    expect(pills()[0]!.title).toBe(`${deckPill.label} (第 7 版上选的)`)
+    expect(pills()[0]!.title).toBe(`${deckPill.label} (选自第 7 版)`)
     expect(pills()[1]!.getAttribute('data-mention-id')).toBe(SHEET)
     expect(readComposer(textarea())).toBe(text)
   })
@@ -175,7 +175,7 @@ describe('file citations share the composer document with the words', () => {
     await send()
     expect(readComposer(textarea())).toBe(text)
     expect(pills()).toHaveLength(2)
-    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '消息没发出去：发送未完成，请稍后重新发送', tier: 'error', key: expect.any(String) }))
+    expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '消息发送失败：发送未完成，请稍后重新发送', tier: 'error', key: expect.any(String) }))
   })
 
   it('restores a failed send to its original chat without leaking into another draft', async () => {

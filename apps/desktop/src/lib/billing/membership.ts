@@ -6,10 +6,7 @@
 // 档位名称不入库:后端只给 tier_key(free/plus/pro/max),界面用它查本地化文案。
 // 这样改文案不用跑迁移,加语言也不用动数据库。
 import type { CreditAmount } from '@gugu/core/billing/creditAmount'
-import { activeCreditV2, creditV2, creditV2Read } from './v2/runtime'
-import { CreditV2StateError } from './v2/active'
 import type { MembershipV2 } from './v2/readers'
-import { i18n } from '@/i18n'
 
 export type MembershipTier = 'free' | 'plus' | 'pro' | 'max'
 
@@ -32,33 +29,24 @@ export interface Membership {
   topupCreditsPerCny: CreditAmount
 }
 
-/** 档位解析。 */
-export function toTier(value: unknown, field: string): MembershipTier {
-  if (typeof value !== 'string' || !TIER_KEYS.includes(value)) {
-    // 出现未知档位说明库里加了档而客户端不认识。报错而不是回落到 free:
-    // 悄悄按免费档渲染会让付了钱的用户看见免费档的额度。
-    // 档位名走 cause 不进 message,见 usage.ts 同处注释 (#4891)
-    throw new Error(i18n.t('membership.invalidTier', { ns: 'settings' }), { cause: { field, value } })
-  }
-  return value as MembershipTier
+/** A future server tier is unreadable by this client, never an inferred free plan. */
+export type MembershipProjection =
+  | { state: 'value'; value: Membership }
+  | { state: 'unreadable'; reason: 'unrecognized-tier' }
+
+export function toTier(value: unknown): MembershipTier | null {
+  return typeof value === 'string' && TIER_KEYS.includes(value) ? value as MembershipTier : null
 }
 
-/** 已登录用户的档位与订阅状态。空结果是未知，不能被消费方当成非会员。 */
-export async function getMembership(): Promise<Membership | null> {
-  return creditV2Read(async () => {
-    const { rows } = await activeCreditV2.rows(() => creditV2.membership())
-    if (!rows[0]) throw new CreditV2StateError('unknown')
-    return membershipProjection(rows[0])
-  })
-}
-
-export function membershipProjection(row: MembershipV2): Membership {
-  return {
-    planId: row.planId, tier: toTier(row.tierKey, 'tier_key'),
+export function membershipProjection(row: MembershipV2): MembershipProjection {
+  const tier = toTier(row.tierKey)
+  if (tier === null) return { state: 'unreadable', reason: 'unrecognized-tier' }
+  return { state: 'value', value: {
+    planId: row.planId, tier,
     monthlyPriceCny: row.monthlyPriceCny, periodCredits: row.periodCredits, periodHours: row.periodHours,
     expiresAt: row.expiresAt === null ? null : new Date(row.expiresAt),
     balanceCredits: row.balanceCredits, topupCreditsPerCny: row.topupCreditsPerCny,
-  }
+  } }
 }
 
 /**

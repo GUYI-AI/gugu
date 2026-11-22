@@ -48,15 +48,12 @@ vi.mock('@renderer/lib/stores/use-harness-model-catalog', () => ({
 vi.mock('@renderer/features/sessions/session-config/platform-model-catalog', () => ({
   usePlatformModelCatalog: () => ({ models: mocks.platformModels }),
 }));
-vi.mock('@renderer/lib/stores/use-harness-model-credential', () => ({
-  harnessModelCredentialKey: (providerId: string) => ['agents', 'modelCredential', providerId],
-}));
 vi.mock('@renderer/features/settings/subscriptions/subscription-queries', async importOriginal => ({
   ...(await importOriginal<typeof import('@renderer/features/settings/subscriptions/subscription-queries')>()),
   subscriptionKey: (machine: string | null, agentId?: string) => ['subscriptions', machine ?? 'local', ...(agentId ? [agentId] : [])],
   useSubscriptionPlan: (machine: string | null, agentId: string) => {
     mocks.planCalls.push([machine, agentId]);
-    return { data: mocks.plan };
+    return mocks.plan === undefined ? { state: 'unknown' } : { state: 'value', value: mocks.plan, stale: false, error: null };
   },
 }));
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({

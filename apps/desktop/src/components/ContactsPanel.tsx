@@ -1,23 +1,17 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
-import { groupDisplayName } from '@gugu/core/shared/ui/chatModels'
-import { AgentContactRow } from './contacts/AgentContactRow'
-import { useAgentRowActions } from '@/hooks/useAgentRowActions'
-import { contactAgents, peopleContacts } from './contacts/contactSelectors'
+import { myAgents, peopleContacts } from './contacts/contactSelectors'
 import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AgentSettingsModal } from './agentsettings/AgentSettingsModal'
-import { chatPublicId, displayName, sortContactsPinnedFirst, sortGroupChatsPinnedFirst } from '../lib/contactsListSort'
-import { Collapse } from './ui/Collapse'
-import { PaneEmptyState } from './ui/PaneEmptyState'
+import { displayName, sortContactsPinnedFirst, sortGroupChatsPinnedFirst } from '../lib/contactsListSort'
 // @@@ui-ruler 通讯录只消费原语:列/列头 → Pane/PaneHeader、行 → ListRow、图标钮 → IconButton、
 // 分区标签 → SectionLabel、小标签/计数 → Chip。几何一律来自 tokens.css 的那把尺子。
 import { Sheet } from './ui/Sheet'
 import { Pane, PaneHeader } from './ui/Pane'
 import { navigateMobile } from '@/mobile/navigateMobile'
-import { ListRow } from './ui/ListRow'
 import { SectionLabel } from './ui/SectionLabel'
 import { Chip } from './ui/Chip'
 import {
-  ChevronDown, ChevronRight,
+  ChevronRight,
   Check,
   MessageCircle,
   Pencil,
@@ -35,37 +29,30 @@ import { useAuth } from '../store/auth'
 import { NewFriendsPanel } from './NewFriendsPanel'
 import { AddFriendSearch } from './AddFriendSearch'
 import { ContactsHeaderActions } from './contacts/AddContactMenu'
-import { ActionButton, FieldList, FieldRow, IconButton } from './contactsDetailControls'
-import { Avatar } from './Avatar'
-import { CopyValue } from './CopyValue'
+import { IconButton } from './contactsDetailControls'
 import { CreateGroupChatForm, MEMBER_PICKER_SHEET } from './CreateGroupChatModal'
-import { ContactsPersonSectionState, ContactsGroupSectionState } from './contacts/ContactsSectionState'
-import { ContactsDeviceSections } from './contacts/ContactsDeviceSections'
-import { contactsAreEmpty } from './contacts/contactsByDevice'
-import { sidebarCountClass } from '../session/renderer/features/sidebar/sidebar-primitives'
-import { ContactGroupAvatar, ContactSearch, SelectionCheckbox } from './contacts/ContactSearch'
+import { ContactsGroupSectionState } from './contacts/ContactsSectionState'
+import { ContactsSectionNav } from './contacts/ContactsDeviceSections'
+import { useContactsSections, type ContactsSection } from './contacts/contactsSections'
+import { ContactsSectionPane } from './contacts/ContactsSectionPane'
+import { useDesktopContactSearch } from './contacts/ContactsSearchPane'
+import type { ContactsRowHandlers } from './contacts/ContactRows'
+import { ContactSearch } from './contacts/ContactSearch'
 import { ContactsListDock } from './contacts/ContactsListDock'
-import { Button } from './ui/Button'
+import { GroupChatDetailPane } from './contacts/GroupChatDetailPane'
+import { sortGroupsByActivity } from './contacts/groupRowFacts'
 import { useToast } from './toastContext'
 import type { ContactGroup, ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { isCloudAgentMarked } from '@gugu/core/shared/enums/agentTypeModels'
 import { chatService } from '../lib/chat'
-import { groupRoster } from '../hooks/useRoomCollab'
-import { useReplica } from '../lib/replica'
 import { closeIfMyAssistant } from '../lib/assistantClose'
-import { normalizeGroupRole } from '@gugu/core/shared/enums/groupRoleModels'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
-import { Unknown } from './ui/Unknown'
 import type { QrScanRoute } from '../lib/qrScanRoute'
 import { AgentContactProfileCard, PersonContactProfileCard } from './contacts/ContactProfileCard'
 import { commonGroupForAgent, requestStateForAgent } from './contacts/agentContactRequest'
-import {
-  ContactRowContextMenu,
-  type ContactRowMenuActions
-} from './contacts/ContactRowActions'
-import { useRowContextMenu } from '../hooks/useRowContextMenu'
+import type { ContactRowMenuActions } from './contacts/ContactRowActions'
 import { ShareAgentModal } from './contacts/ShareAgentModal'
-import { GroupInviteJoinModal, GroupInviteQrShare } from './contacts/GroupInvite'
+import { GroupInviteJoinModal } from './contacts/GroupInvite'
 import { ContactsIndex } from './contacts/ContactsIndex'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/cn'
@@ -73,11 +60,7 @@ import { messageForUser } from '../lib/userFacingError'
 import { confirmOwnedAgentArchive } from '../lib/archiveOwnedAgent'
 import { confirmConversationAction } from '../lib/confirmDanger'
 import { ContactDetail, GroupChatRow, PaneBackButton } from './contacts/ContactDetail'
-import {
-  cpaneActionsClass, cpaneAvatarClass, cpaneCardClass, cpaneNameClass, cpaneStatusClass, ct,
-  detailCaptionClass, detailCardRowClass, detailPlaceholderClass, detailSectionClass, detailTitleClass, groupChatListCountLabel,
-  groupChatListTitle, groupChatSummaryLabel, inlineInputClass, rowAvatarClass, rowKeyActivate, sectionChevronClass, sectionLabelClass
-} from './contacts/contactsPanelStyles'
+import { ct, profileBodyClass, groupChatListCountLabel, groupChatListTitle, groupChatSummaryLabel, inlineInputClass } from './contacts/contactsPanelStyles'
 // #855 契约：GroupJoinConfirmDialog 曾从本模块导出，实现搬走后仍从这里透出，外部 import 不受影响。
 export { GroupJoinConfirmDialog } from './contacts/GroupInvite'
 interface ContactsPanelProps {
@@ -189,216 +172,28 @@ function GroupNameEditor({
   )
 }
 
-// ── PersonContactRow ──────────────────────────────────────────────────────────
-function PersonContactRow({
-  contact,
-  selected,
-  multiSelected = false,
-  selectionMode = false,
-  pinned = false,
-  onSelect,
-  onToggleSelection,
-  menu
-}: {
-  contact: ContactUser
-  selected: boolean
-  multiSelected?: boolean
-  selectionMode?: boolean
-  pinned?: boolean
-  onSelect: () => void
-  onToggleSelection?: () => void
-  menu?: ContactRowMenuActions
-}) {
-  const { menuPos, onContextMenu, closeMenu } = useRowContextMenu()
-  return (
-    <>
-      <ListRow
-        role="button"
-        tabIndex={0}
-        data-contact-id={contact.id}
-        data-contact-option={selectionMode ? contact.id : undefined}
-        aria-pressed={selectionMode ? multiSelected : undefined}
-        selected={selected}
-        pinned={pinned}
-        leading={
-          <>
-            {selectionMode ? <SelectionCheckbox checked={multiSelected} /> : null}
-            <div className={rowAvatarClass}>
-              <Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size="sm" />
-            </div>
-          </>
-        }
-        title={displayName(contact)}
-        onClick={() => (selectionMode ? onToggleSelection?.() : onSelect())}
-        onKeyDown={rowKeyActivate(() => (selectionMode ? onToggleSelection?.() : onSelect()))}
-        onContextMenu={menu ? onContextMenu : undefined}
-      />
-      {menu && menuPos ? (
-        <ContactRowContextMenu x={menuPos.x} y={menuPos.y} onClose={closeMenu} {...menu} />
-      ) : null}
-    </>
-  )
-}
 
-// ── GroupChatRow (in 3-section sidebar) ──────────────────────────────────────
-function GroupSectionRow({
-  group,
-  selected,
-  pinned = false,
-  onSelect,
-  menu
-}: {
-  group: ContactGroupChat
-  selected: boolean
-  pinned?: boolean
-  onSelect: () => void
-  menu?: ContactRowMenuActions
-}) {
-  const { menuPos, onContextMenu, closeMenu } = useRowContextMenu()
-  return (
-    <>
-      <ListRow
-        role="button"
-        tabIndex={0}
-        data-group-id={group.id}
-        selected={selected}
-        pinned={pinned}
-        leading={<ContactGroupAvatar group={group} size="sm" />}
-        title={groupDisplayName(group)}
-        /* show member count like design's group row .st-dot.off — 静态灰点(非 agent 态),用 offline 档 */
-        meta={ct('panel.memberCount', { count: group.member_count })}
-        onClick={onSelect}
-        onKeyDown={rowKeyActivate(onSelect)}
-        onContextMenu={menu ? onContextMenu : undefined}
-      />
-      {menu && menuPos ? (
-        <ContactRowContextMenu x={menuPos.x} y={menuPos.y} onClose={closeMenu} {...menu} />
-      ) : null}
-    </>
-  )
-}
-
-// Replaces ContactsNav + ContactsIndex for desktop. Single scrollable sidebar with
-// 3 collapsible sections: Agent / 个人 / 群组.
+// 桌面左栏:新的请求 + 分组(一行一个,❌ 折叠展开)。点分组 → 右边大区域铺开这一组(ContactsSectionPane)。
 function ContactsThreeSectionSidebar({
-  mobile,
-  currentUserId,
-  agentContacts,
-  humanContacts,
-  groupChats,
-  pendingCount,
-  query,
-  onQuery,
-  selectedContactId,
-  selectedGroupId,
-  selectionMode,
-  selectedContactIds,
-  newFriendsActive,
-  onSelectContact,
-  onToggleContact,
-  onEnterSelectionMode,
-  onFinishSelectionMode,
-  onCreateGroupFromSelection,
-  onSelectGroup,
-  onSelectNewFriends,
-  onSelectAddFriend,
-  onCreateAgent,
-  onCreateGroup,
-  onStartChat,
-  onPin,
-  onMarkUnread,
-  onToggleNotif,
-  onRemove,
-  contactPinned,
-  contactNotifMuted,
-  getContactRemoveLabel,
-  onGroupPin,
-  onGroupToggleNotif,
-  onGroupLeave,
-  groupPinned,
-  groupNotifMuted
+  mobile, searchField, pendingCount, sections, selectedSectionKey, onSelectSection, selectionMode, selectedContactIds, newFriendsActive,
+  onEnterSelectionMode, onFinishSelectionMode, onCreateGroupFromSelection, onSelectNewFriends, onSelectAddFriend,
 }: {
   mobile?: boolean
-  currentUserId?: string | null
-  agentContacts: ContactUser[]
-  humanContacts: ContactUser[]
-  groupChats: ContactGroupChat[]
+  /** 搜索框(结果铺在右边大区域,见 ContactsSearchPane)。 */
+  searchField: ReactNode
   pendingCount: number
-  query: string
-  onQuery: (v: string) => void
-  selectedContactId: string | null
-  selectedGroupId: string | null
+  sections: ContactsSection[]
+  selectedSectionKey: string | null
+  onSelectSection: (key: string) => void
   selectionMode: boolean
   selectedContactIds: Set<string>
   newFriendsActive?: boolean
-  onSelectContact: (c: ContactUser) => void
-  onToggleContact: (c: ContactUser) => void
   onEnterSelectionMode: () => void
   onFinishSelectionMode: () => void
   onCreateGroupFromSelection: () => void
-  onSelectGroup: (g: ContactGroupChat) => void
   onSelectNewFriends: () => void
   onSelectAddFriend: (mode: 'contact' | 'group', seed?: string) => void
-  onCreateAgent?: () => void
-  onCreateGroup: () => void
-  // #886 — 右键菜单同款 chat-scoped 动作（与移动端 ContactRow / 聊天列表行为同步统一）
-  onStartChat?: (contact: ContactUser) => void
-  onPin?: (contact: ContactUser) => void
-  onMarkUnread?: (contact: ContactUser) => void
-  onToggleNotif?: (contact: ContactUser) => void
-  onRemove?: (contact: ContactUser) => void
-  contactPinned?: Map<string, boolean>
-  contactNotifMuted?: Map<string, boolean>
-  getContactRemoveLabel: (contact: ContactUser) => string
-  // #1694 — 群行右键菜单动作（chat-scoped；群本身即 chat，无需 resolveDmId）
-  onGroupPin?: (g: ContactGroupChat) => void
-  onGroupToggleNotif?: (g: ContactGroupChat) => void
-  onGroupLeave?: (g: ContactGroupChat) => void
-  groupPinned?: Map<string, boolean>
-  groupNotifMuted?: Map<string, boolean>
 }) {
-  // #886 — resolve the per-contact right-click menu action set (undefined ⇒ no menu, e.g. new-friends).
-  const buildRowMenu = useCallback(
-    (c: ContactUser): ContactRowMenuActions | undefined => {
-      if (!onPin || !onMarkUnread || !onToggleNotif || !onRemove) return undefined
-      return {
-        removeLabel: getContactRemoveLabel(c), contact: c, // #5645 → 「设置备注」
-        onStartChat: onStartChat ? () => onStartChat(c) : undefined,
-        isPinned: contactPinned?.get(c.id) ?? false,
-        notifMuted: contactNotifMuted?.get(c.id) ?? false,
-        onPin: () => onPin(c),
-        onMarkUnread: () => onMarkUnread(c),
-        onToggleNotif: () => onToggleNotif(c),
-        onRemove: () => onRemove(c)
-      }
-    },
-    [onPin, onMarkUnread, onToggleNotif, onRemove, onStartChat, contactPinned, contactNotifMuted, getContactRemoveLabel]
-  )
-  // #1694 — 群行右键菜单：ContactRowContextMenu 按对话动作表(入口 contacts-group)画；这里只给群的置顶 / 通知 / 退出。
-  // 解散群聊不进右键(menu-table.ts @@@menu-order),只在群设置页最底下;成员的「退出群聊」确认 + 动作在父层 onGroupLeave。
-  const buildGroupRowMenu = useCallback(
-    (g: ContactGroupChat): ContactRowMenuActions | undefined => {
-      if (!onGroupPin || !onGroupToggleNotif || !onGroupLeave) return undefined
-      return {
-        removeLabel: ct('contextMenu.leaveGroup'), group: { chatId: g.id, role: g.my_role, name: g.name },
-        isPinned: groupPinned?.get(g.id) ?? false,
-        notifMuted: groupNotifMuted?.get(g.id) ?? g.is_muted,
-        onPin: () => onGroupPin(g),
-        onToggleNotif: () => onGroupToggleNotif(g),
-        onRemove: () => onGroupLeave(g)
-      }
-    },
-    [onGroupPin, onGroupToggleNotif, onGroupLeave, groupPinned, groupNotifMuted]
-  )
-  const [personCollapsed, setPersonCollapsed] = useState(false)
-  const agentRowActions = useAgentRowActions({ onSelect: onSelectContact, onToggleSelection: onToggleContact, onStartChat, onPin, onMarkUnread, onToggleNotif, onRemove })
-
-  // #2598 三分区此前完全无排序(置顶点了位置不动 = 假开关)。置顶前置走 contactsListSort,与移动端同一条链路。
-  const isContactPinned = useCallback((c: ContactUser) => contactPinned?.get(c.id) ?? false, [contactPinned])
-  const isGroupPinned = useCallback((g: ContactGroupChat) => groupPinned?.get(g.id) ?? false, [groupPinned])
-  const sortedAgents = sortContactsPinnedFirst(agentContacts, isContactPinned)
-  const sortedHumans = sortContactsPinnedFirst(humanContacts, isContactPinned)
-
   return (
     // @@@ui-ruler 导航列 = Pane nav:列宽 --nav-col-w、底色 --sidebar、右分隔线全由原语给,
     // 与会话列表同宽同色 —— 切 tab 时分隔线不再左右跳。
@@ -420,86 +215,12 @@ function ContactsThreeSectionSidebar({
           />
         }
       />
-      <ContactSearch query={query} onQuery={onQuery} people={humanContacts} agents={agentContacts} groups={groupChats} onOpenContact={onSelectContact} onOpenGroup={onSelectGroup}
-        pick={selectionMode ? { ids: selectedContactIds, canPick: (c) => c.type !== 'agent' || c.owner_user_id === currentUserId, onToggle: onToggleContact } : undefined}
-        onLookupNumber={(number) => onSelectAddFriend('contact', number)}>
+      {searchField}
       <div className="flex-1 overflow-y-auto !px-2 !pb-3">
-        {/* 新的请求 row — @@@1944 目的地统一走 onSelectNewFriends（selectedNav 单一真相源），
-            与「添加联系人」+ 同一入口，请求视图只在详情列渲一次（不再有 sidebar 私有 overlay）。 */}
-        <ListRow
-          role="button"
-          tabIndex={0}
-          selected={newFriendsActive}
-          data-testid={AUTOMATION_TEST_IDS.contactsNewFriendsNav}
-          leading={
-            <div className="grid h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 place-items-center rounded-full bg-[var(--muted)] text-[var(--fg)]">
-              <UserPlus size={16} />
-            </div>
-          }
-          title={ct('panel.newRequests')}
-          accessory={pendingCount > 0 ? <Chip tone="accent" shape="count">{pendingCount}</Chip> : null}
-          onClick={onSelectNewFriends}
-          onKeyDown={rowKeyActivate(onSelectNewFriends)}
-        />
-
-        <ContactsDeviceSections
-          agents={sortedAgents} people={sortedHumans}
-          groups={sortGroupChatsPinnedFirst(groupChats, isGroupPinned)}
-          currentUserId={currentUserId}
-          onCreateAgent={onCreateAgent}
-          onCreateGroup={onCreateGroup}
-          renderAgent={(c) => (
-            <AgentContactRow
-              key={c.id} contact={c}
-              selected={c.id === selectedContactId}
-              multiSelected={selectedContactIds.has(c.id)}
-              selectionMode={selectionMode && c.owner_user_id === currentUserId}
-              pinned={isContactPinned(c)}
-              notifMuted={contactNotifMuted?.get(c.id) ?? false} actions={agentRowActions}
-              removeLabel={c.owner_user_id === currentUserId && onPin && onMarkUnread && onToggleNotif && onRemove ? getContactRemoveLabel(c) : undefined}
-            />
-          )}
-          renderGroup={(g) => (
-            <GroupSectionRow
-              key={g.id}
-              group={g}
-              selected={g.id === selectedGroupId}
-              pinned={isGroupPinned(g)}
-              onSelect={() => onSelectGroup(g)}
-              menu={buildGroupRowMenu(g)}
-            />
-          )}
-          personSection={
-            <>
-              <SectionLabel
-                interactive
-                className={sectionLabelClass}
-                trailing={<><span className={sidebarCountClass}>{sortedHumans.length}</span><span className={sectionChevronClass(personCollapsed)}><ChevronDown size={14} /></span></>}
-                onClick={() => setPersonCollapsed((v) => !v)}
-              >
-                {ct('panel.contactSectionTitle')}
-              </SectionLabel>
-              <Collapse open={!personCollapsed} className="gg-c-sec-body">
-                {sortedHumans.map((c) => (
-                  <PersonContactRow
-                    key={c.id}
-                    contact={c}
-                    selected={c.id === selectedContactId}
-                    multiSelected={selectedContactIds.has(c.id)}
-                    selectionMode={selectionMode}
-                    pinned={isContactPinned(c)}
-                    onSelect={() => onSelectContact(c)}
-                    onToggleSelection={() => onToggleContact(c)}
-                    menu={buildRowMenu(c)}
-                  />
-                ))}
-                <ContactsPersonSectionState isEmpty={contactsAreEmpty(sortedHumans, sortedAgents, groupChats)} onAddContact={() => onSelectAddFriend('contact')} />
-              </Collapse>
-            </>
-          }
-        />
+        {/* 新的请求 — @@@1944 目的地统一走 onSelectNewFriends（selectedNav 单一真相源）;请求视图只在详情列渲一次。 */}
+        <ContactsSectionNav sections={sections} selectedKey={selectedSectionKey} onSelect={onSelectSection}
+          requests={{ count: pendingCount, active: !!newFriendsActive, disabled: selectionMode, onSelect: onSelectNewFriends }} />
       </div>
-      </ContactSearch>
       <ContactsListDock
         mobile={mobile}
         selectionMode={selectionMode}
@@ -519,35 +240,11 @@ function CpaneShell({ title, overlay, children }: { title?: string; overlay?: Re
   return (
     <Pane paneRole="detail">
       <PaneHeader divider title={title} />
-      <div className="flex flex-1 items-start justify-center overflow-y-auto !px-6 !pb-6 !pt-[calc(var(--spacing-2xl)*2)]">
+      <div className={profileBodyClass}>
         <div className="w-full max-w-[480px]">{children}</div>
       </div>
       {overlay}
     </Pane>
-  )
-}
-
-function CpaneGroupHeader({
-  group,
-  onOpenGroupChat
-}: {
-  group: ContactGroupChat
-  onOpenGroupChat?: (g: ContactGroupChat) => void
-}) {
-  return (
-    <div className={cpaneCardClass}>
-      <div className={cpaneAvatarClass}>
-        <ContactGroupAvatar group={group} size={96} />
-      </div>
-      <div className={cpaneNameClass}>{groupDisplayName(group)}</div>
-      {/* group status: member count, no dot per design noStatus class */}
-      <div className={cpaneStatusClass}>{ct('panel.memberCount', { count: group.member_count })}</div>
-      <div className={cpaneActionsClass}>
-        <Button variant="primary" size="lg" onClick={() => onOpenGroupChat?.(group)}>
-          {ct('panel.enterGroup')}
-        </Button>
-      </div>
-    </div>
   )
 }
 
@@ -711,143 +408,6 @@ function ContactsNav({
         )}
       </div>
       </ContactSearch>
-    </Pane>
-  )
-}
-
-function GroupChatDetailPane({
-  group,
-  mobile = false,
-  onBack,
-  onOpenGroupChat
-}: {
-  group: ContactGroupChat | null
-  mobile?: boolean
-  onBack?: () => void
-  onOpenGroupChat?: (group: ContactGroupChat) => void
-}) {
-  const { identitiesById } = useChatStore('identitiesById')
-  const groupId = group?.id ?? null
-  // The chat's roster replica (the IM library's copy first, the same write path): ❌ a loader of its own (open-flicker CH22).
-  const roster = useReplica(groupRoster, groupId ? [groupId, 'group'] : null)
-  const members = roster.state === 'value' ? [...roster.value.humans, ...roster.value.agents] : null
-  const visibleMembers = members ? members.slice(0, 12) : []
-  const memberNames = useShownAgentName(visibleMembers.map(member => ({ name: identitiesById[member.id]?.display_name ?? '', createdAt: member.type === 'agent' ? identitiesById[member.id]?.created_at ?? undefined : undefined })))
-
-  if (!group) {
-    return (
-      <Pane paneRole="detail" mobile={mobile}>
-        <PaneHeader divider mobile={mobile} title={ct('groupDetail.title')} />
-        <div className={detailPlaceholderClass}>{ct('panel.selectGroupDetail')}</div>
-      </Pane>
-    )
-  }
-
-  const densityText = group.member_count >= 10
-    ? ct('groupDetail.multi')
-    : group.member_count >= 3
-      ? ct('groupDetail.small')
-      : ct('common.groupChat')
-
-  return (
-    <Pane paneRole="detail" mobile={mobile}>
-      {/* @@@1238-top 群详情列头与会话头同高同线,标题字阶来自 PaneHeader。 */}
-      <PaneHeader
-        divider
-        mobile={mobile}
-        title={ct('groupDetail.title')}
-        leading={mobile && onBack ? <PaneBackButton label={ct('panel.backToGroupList')} onBack={onBack} /> : undefined}
-      />
-
-      <div className="flex-1 overflow-y-auto overflow-x-hidden">
-        <section className={cn(detailSectionClass(mobile), 'flex items-start gap-4 border-b border-[var(--border)]')}>
-          <div className="flex h-[var(--avatar-lg)] w-[var(--avatar-lg)] shrink-0 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--primary)] text-[var(--primary-fg)]">
-            <Users size={28} />
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 className={detailTitleClass}>{groupDisplayName(group)}</h2>
-            <div className="!mt-2 flex flex-wrap items-center gap-2">
-              <Chip>{densityText}</Chip>
-              <span className="text-sm text-[var(--muted-fg)]">
-                {ct('groupDetail.memberCount', { count: group.member_count })}
-              </span>
-            </div>
-            <div className="!mt-4 flex flex-wrap gap-2">
-              <ActionButton
-                primary
-                icon={<MessageCircle size={15} />}
-                label={ct('panel.enterGroup')}
-                onClick={() => onOpenGroupChat?.(group)}
-              />
-            </div>
-          </div>
-        </section>
-
-        <section className={cn(detailSectionClass(mobile), 'border-b border-[var(--border)]')}>
-          <FieldList className="max-w-[620px]">
-            <FieldRow
-              label={ct('groupDetail.number')}
-              value={
-                chatPublicId(group) ? (
-                  <CopyValue
-                    value={chatPublicId(group)!}
-                    message={ct('groupDetail.copiedNumber')}
-                  />
-                ) : (
-                  ct('common.unassigned')
-                )
-              }
-            />
-            <FieldRow label={ct('groupDetail.membersLabel')} value={ct('groupDetail.memberCountValue', { count: group.member_count })} />
-            <FieldRow label={ct('groupDetail.typeLabel')} value={densityText} />
-            <GroupInviteQrShare group={group} />
-          </FieldList>
-        </section>
-
-        <section className={cn(detailSectionClass(mobile), mobile && '!pb-[max(24px,env(safe-area-inset-bottom))]')}>
-          <div className={cn(detailCaptionClass, '!mb-3')}>
-            {ct('groupDetail.overview')}
-          </div>
-          {roster.state !== 'value' || visibleMembers.length === 0 ? (
-            <div className="text-sm text-[var(--muted-fg)]" role={roster.state === 'error' ? 'alert' : undefined}>
-              {roster.state === 'unknown' ? <Unknown className="w-40" /> : roster.state === 'error' ? roster.error.message : ct('groupDetail.emptyMembers')}
-            </div>
-          ) : (
-            <div className="grid max-w-[720px] grid-cols-[repeat(auto-fill,minmax(168px,1fr))] gap-3">
-              {visibleMembers.map((member, index) => (
-                <div key={member.id} className={detailCardRowClass}>
-                  <Avatar
-                    name={memberNames[index]!}
-                    avatarUrl={identitiesById[member.id]?.avatar}
-                    seed={member.id}
-                    size="sm"
-                    isAgent={member.type === 'agent'}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="overflow-hidden text-ellipsis whitespace-nowrap text-[length:var(--font-body)] text-[var(--fg)]">
-                      {memberNames[index]}
-                    </div>
-                    <div className="text-xs text-[var(--muted-fg)]">
-                      {member.type === 'agent' ? 'Agent · ' : ''}
-                      {ct(`profile.roles.${normalizeGroupRole(member.role)}`)}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {members && members.length > visibleMembers.length ? (
-                <div className={cn(detailCardRowClass, 'justify-center text-[length:var(--font-body)] text-[var(--muted-fg)]')}>
-                  {ct('groupDetail.remainingMembers', { count: members.length - visibleMembers.length })}
-                </div>
-              ) : null}
-              {members && group.member_count > members.length ? (
-                <div className={cn(detailCardRowClass, 'justify-center text-[length:var(--font-body)] text-[var(--muted-fg)]')}>
-                  {ct('groupDetail.pendingSync', { count: group.member_count - members.length })}
-                </div>
-              ) : null}
-            </div>
-          )}
-        </section>
-      </div>
     </Pane>
   )
 }
@@ -1031,7 +591,9 @@ export const ContactsPanel = memo(function ContactsPanel({
   const [selectedSidebarGroupId, setSelectedSidebarGroupId] = useState<string | null>(null)
 
   const humanContacts = useMemo(() => peopleContacts(contacts), [contacts])
-  const agentContacts = useMemo(() => contactAgents(contacts, sharedGroupAgents), [contacts, sharedGroupAgents])
+  const agentContacts = useMemo(() => myAgents(contacts, user?.id), [contacts, user?.id])
+  // 桌面左栏点中的分组(设备 / 个人 / 群组);null = 第一组。
+  const [selectedSectionKey, setSelectedSectionKey] = useState<string | null>(null)
   const sentRequestIds = useMemo(
     () => new Set(sentRequests.map((request) => request.receiver_id)),
     [sentRequests]
@@ -1117,6 +679,13 @@ export const ContactsPanel = memo(function ContactsPanel({
     () => new Map(groupChats.map((g) => [g.id, (chats.find((c) => c.id === g.id)?.notification_level ?? 'all') === 'none'])),
     [groupChats, chats]
   )
+  // #2598 置顶前置走 contactsListSort(与移动端同一条链路),在分组之前排一次:分组页、agent 家族、搜索读同一个次序。
+  const sections = useContactsSections(
+    useMemo(() => sortContactsPinnedFirst(agentContacts, (c) => contactPinned.get(c.id) ?? false), [agentContacts, contactPinned]),
+    useMemo(() => sortContactsPinnedFirst(humanContacts, (c) => contactPinned.get(c.id) ?? false), [humanContacts, contactPinned]),
+    useMemo(() => sortGroupsByActivity(groupChats, chats, groupPinned), [groupChats, chats, groupPinned]),
+    user?.id,
+  )
   const handleGroupPin = useCallback(
     async (g: ContactGroupChat) => {
       const currentlyPinned = chats.find((c) => c.id === g.id)?.is_pinned ?? false
@@ -1177,15 +746,18 @@ export const ContactsPanel = memo(function ContactsPanel({
     if (!contact) return
     setSelectedNav(contact.type === 'agent' ? 'agent_library' : 'contacts')
     setSelectedContactId(contact.id)
+    // 桌面:左栏切到它所在的分组(右边铺开那一组,资料在抽屉里)。
+    setSelectedSectionKey(sections.find((s) => s.agents.some((c) => c.id === contact.id) || s.people.some((c) => c.id === contact.id))?.key ?? null)
     if (mobile) setMobilePane('detail')
-  }, [contacts, externalContactId, mobile, sharedGroupAgents])
+  }, [contacts, externalContactId, mobile, sharedGroupAgents, sections])
 
   useEffect(() => {
-    if (selectedNav === 'group_chats') return
+    // 桌面:点中分组只是铺开名录,❌ 替用户选第一个人(详情列给空态)。
+    if (!mobile || selectedNav === 'group_chats') return
     if (selectedContactId && scopedContacts.some((contact) => contact.id === selectedContactId))
       return
     setSelectedContactId(scopedContacts[0]?.id ?? null)
-  }, [selectedContactId, selectedNav, scopedContacts])
+  }, [mobile, selectedContactId, selectedNav, scopedContacts])
 
   useEffect(() => {
     if (selectedContactIds.size === 0) return
@@ -1271,10 +843,9 @@ export const ContactsPanel = memo(function ContactsPanel({
     })
   }
 
+  // 进多选留在原处:开着的详情、选中的分组都不动;只有从「新的请求」/ 加人页进来时回到分组(那两页没有可勾的人)。
   const enterContactSelectionMode = () => {
     setSelectedNav('contacts')
-    setSelectedContactId(null)
-    setSelectedSidebarGroupId(null)
     setContactSelectionMode(true)
     setSelectedContactIds(new Set())
   }
@@ -1309,25 +880,60 @@ export const ContactsPanel = memo(function ContactsPanel({
       joinToken={groupInviteJoin.joinToken} onClose={() => setGroupInviteJoin(null)} />
   ) : null
 
-  // Desktop layout: three-section sidebar + centered cpane
+  // 桌面搜索:框在左栏,结果铺在右边;点开一条 = 切到它所在的分组、选中它(开抽屉)。多选建群时点人 = 勾选。
+  const search = useDesktopContactSearch({
+    enabled: !mobile, query, onQuery: setQuery, sections, people: humanContacts, agents: agentContacts, groups: groupChats,
+    pick: contactSelectionMode ? { ids: selectedContactIds, can: (c) => c.type !== 'agent' || c.owner_user_id === user?.id, onToggle: toggleContactSelection } : undefined,
+    onOpenContact: (c, key) => {
+      setSelectedSectionKey(key); setSelectedContactId(c.id); setSelectedSidebarGroupId(null)
+      setSelectedNav(c.type === 'agent' ? 'agent_library' : 'contacts')
+    },
+    onOpenGroup: (g, key) => { setSelectedSectionKey(key); setSelectedContactId(null); setSelectedSidebarGroupId(g.id); setSelectedNav('group_chats') },
+    onLookupNumber: (number) => { setQuery(''); setAddFriendMode('contact'); setSelectedNav('add_friend'); setAddFriendSeed({ query: number, token: Date.now() }) },
+  })
+
+  // Desktop layout: section nav + the selected section spread over the right area
   if (!mobile) {
+    const rowHandlers: ContactsRowHandlers = {
+      currentUserId: user?.id, selectedContactId, selectedGroupId: selectedSidebarGroupId,
+      selectionMode: contactSelectionMode, selectedContactIds,
+      onSelectContact: (c) => {
+        if (contactSelectionMode && c.owner_user_id === user?.id) return toggleContactSelection(c)
+        setSelectedContactId(c.id)
+        setSelectedSidebarGroupId(null)
+        setSelectedNav(c.type === 'agent' ? 'agent_library' : 'contacts')
+      },
+      onToggleContact: toggleContactSelection,
+      onSelectGroup: (g) => {
+        setContactSelectionMode(false)
+        setSelectedContactIds(new Set())
+        setSelectedSidebarGroupId(g.id)
+        setSelectedContactId(null)
+        setSelectedNav('group_chats')
+      },
+      onStartChat: onSwitchToChat, onPin: handleContactPin, onMarkUnread: handleContactMarkUnread,
+      onToggleNotif: handleContactToggleNotif, onRemove: handleRemoveContact,
+      contactPinned, contactNotifMuted, getContactRemoveLabel,
+      onGroupPin: handleGroupPin, onGroupToggleNotif: handleGroupToggleNotif, onGroupLeave: handleGroupLeave,
+      groupPinned, groupNotifMuted,
+    }
+    const selectAddFriendDesktop = (mode: 'contact' | 'group', seed?: string) => {
+      setAddFriendMode(mode)
+      setContactSelectionMode(false)
+      setSelectedContactIds(new Set())
+      setSelectedNav('add_friend')
+      setSelectedContactId(null)
+      setSelectedSidebarGroupId(null)
+      // @@@add-friend-unify 点按钮进加人搜索必须开在空态：清掉上一次扫码残留的 seed，
+      // 否则会用旧扫码号预填搜索（seed effect 按 token 只触发一次，但新挂载会重读旧 token）。
+      setAddFriendSeed(seed ? { query: seed, token: Date.now() } : null)
+    }
     // @@@1944 桌面详情列唯一路由：selectedNav（+ 选中实体）→ 详情视图的单一真相源。
     // 每个 nav 目的地在双栏里只渲染一次——列表列恒为联系人导航，详情列由这里决定。
-    const cpaneRight = (() => {
-      if (selectedNav === 'add_friend') {
-        return <AddFriendSearch seed={addFriendSeed} autoFocus showHeader mode={addFriendMode} />
-      }
-      if (selectedNav === 'new_friends') {
-        return <NewFriendsPanel onOpenGroupChat={onOpenGroupChat} />
-      }
+    const contactDetail = (() => {
       if (selectedSidebarGroup) {
         return (
-          <CpaneShell title={selectedSidebarGroup.name}>
-            <CpaneGroupHeader
-              group={selectedSidebarGroup}
-              onOpenGroupChat={onOpenGroupChat}
-            />
-          </CpaneShell>
+          <GroupChatDetailPane group={selectedSidebarGroup} onOpenGroupChat={onOpenGroupChat} />
         )
       }
       if (selectedSidebarContact) {
@@ -1391,86 +997,38 @@ export const ContactsPanel = memo(function ContactsPanel({
           </CpaneShell>
         )
       }
-      // empty state
-      return (
-        <Pane paneRole="detail">
-          <PaneHeader divider />
-          <div className="gg-c-cpane-empty flex flex-1 items-center justify-center">
-            <PaneEmptyState icon={<Users size={26} color="var(--text-tertiary)" />} caption={ct('panel.selectContact')} />
-          </div>
-        </Pane>
-      )
+      return null
     })()
+    const section = sections.find((s) => s.key === selectedSectionKey) ?? sections[0]!
+    const closeDetail = () => { setSelectedContactId(null); setSelectedSidebarGroupId(null) }
+    const cpaneRight = search.pane ? search.pane
+      : selectedNav === 'add_friend' ? <AddFriendSearch seed={addFriendSeed} autoFocus showHeader mode={addFriendMode} />
+      : selectedNav === 'new_friends' ? <NewFriendsPanel onOpenGroupChat={onOpenGroupChat} />
+        : <ContactsSectionPane section={section} rows={rowHandlers} detail={contactDetail} onCloseDetail={closeDetail} onCreateAgent={onOpenAgentCreateDraft} onCreateGroup={() => setShowGroupModal(true)} onAddContact={() => selectAddFriendDesktop('contact')} />
 
     return (
       <div className="flex h-full min-w-0 flex-1 overflow-hidden">
         <ContactsThreeSectionSidebar
           mobile={false}
-          currentUserId={user?.id}
-          agentContacts={agentContacts}
-          humanContacts={humanContacts}
-          groupChats={groupChats}
+          searchField={search.field}
           pendingCount={pendingRequestCount}
-          query={query}
-          onQuery={setQuery}
-          selectedContactId={selectedContactId}
-          selectedGroupId={selectedSidebarGroupId}
+          sections={sections}
+          selectedSectionKey={search.pane ? null : section.key}
+          onSelectSection={(key) => { setQuery(''); setSelectedNav('contacts'); setSelectedSectionKey(key); closeDetail() }}
           selectionMode={contactSelectionMode}
           selectedContactIds={selectedContactIds}
-          newFriendsActive={selectedNav === 'new_friends'}
-          onSelectContact={(c) => {
-            if (contactSelectionMode && c.owner_user_id === user?.id) {
-              toggleContactSelection(c)
-              return
-            }
-            setSelectedContactId(c.id)
-            setSelectedSidebarGroupId(null)
-            setSelectedNav(c.type === 'agent' ? 'agent_library' : 'contacts')
-          }}
-          onToggleContact={toggleContactSelection}
+          newFriendsActive={!search.pane && selectedNav === 'new_friends'}
           onEnterSelectionMode={enterContactSelectionMode}
           onFinishSelectionMode={finishContactSelectionMode}
           onCreateGroupFromSelection={() => setShowGroupModal(true)}
-          onSelectGroup={(g) => {
-            setContactSelectionMode(false)
-            setSelectedContactIds(new Set())
-            setSelectedSidebarGroupId(g.id)
-            setSelectedContactId(null)
-            setSelectedNav('group_chats')
-          }}
           onSelectNewFriends={() => {
+            setQuery('')
             setContactSelectionMode(false)
             setSelectedContactIds(new Set())
             setSelectedNav('new_friends')
-            setSelectedContactId(null)
-            setSelectedSidebarGroupId(null)
+            closeDetail()
           }}
-          onSelectAddFriend={(mode, seed) => {
-            setAddFriendMode(mode)
-            setContactSelectionMode(false)
-            setSelectedContactIds(new Set())
-            setSelectedNav('add_friend')
-            setSelectedContactId(null)
-            setSelectedSidebarGroupId(null)
-            // @@@add-friend-unify 点按钮进加人搜索必须开在空态：清掉上一次扫码残留的 seed，
-            // 否则会用旧扫码号预填搜索（seed effect 按 token 只触发一次，但新挂载会重读旧 token）。
-            setAddFriendSeed(seed ? { query: seed, token: Date.now() } : null)
-          }}
-          onCreateAgent={onOpenAgentCreateDraft}
-          onCreateGroup={() => setShowGroupModal(true)}
-          onStartChat={onSwitchToChat}
-          onPin={handleContactPin}
-          onMarkUnread={handleContactMarkUnread}
-          onToggleNotif={handleContactToggleNotif}
-          onRemove={handleRemoveContact}
-          contactPinned={contactPinned}
-          contactNotifMuted={contactNotifMuted}
-          getContactRemoveLabel={getContactRemoveLabel}
-          onGroupPin={handleGroupPin}
-          onGroupToggleNotif={handleGroupToggleNotif}
-          onGroupLeave={handleGroupLeave}
-          groupPinned={groupPinned}
-          groupNotifMuted={groupNotifMuted}
+          onSelectAddFriend={selectAddFriendDesktop}
         />
         {cpaneRight}
         {groupModal}

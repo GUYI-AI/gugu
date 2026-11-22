@@ -2,11 +2,13 @@ import { beforeEach, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({
   owner: 'owner', devices: [{ device_id: 'here', is_current_device: true }, { device_id: 'other', is_current_device: false }],
   known: true, variants: vi.fn(), navigate: vi.fn(), reveal: vi.fn(), rpcOn: vi.fn(),
+  // Where the Apps page was last: the market tab, sorted, with the Installed sheet open.
+  here: { tab: 'market', sort: 'newest', installed: { section: 'apps' } },
 }))
 vi.mock('@/store/devicesCache', () => ({ cachedDevicesAccount: () => state.owner, readCachedDevices: () => state.devices }))
 vi.mock('@/hooks/useSessionpageReveal', () => ({ revealSessionpage: state.reveal }))
 vi.mock('@renderer/lib/ipc', () => ({ rpcOn: state.rpcOn }))
-vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { navigate: state.navigate } } }))
+vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { navigation: { navigate: state.navigate, viewParamsStore: { apps: { location: state.here } } } } }))
 vi.mock('@renderer/features/remote-hosts/device-scope-store', () => ({ LOCAL_DEVICE_SCOPE: 'local' }))
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { device: () => state.known ? {} : null } }))
 const { openAppDetailLink } = await import('../../../../apps/desktop/src/session/renderer/features/apps/app-detail-link')
@@ -20,12 +22,13 @@ it('opens the named device detail without switching its variant', async () => {
   await openAppDetailLink(target, 'owner')
   expect(state.rpcOn).toHaveBeenCalledWith('other')
   expect(state.variants).toHaveBeenCalledWith('kanban')
-  expect(state.navigate).toHaveBeenCalledWith('apps', { detail: target })
+  // The page goes from where it was, the sheet closed (a step; back reopens it), on that device, with the variant to show.
+  expect(state.navigate).toHaveBeenCalledWith('apps', { location: { tab: 'market', sort: 'newest', installed: undefined, deviceId: 'other', detail: { extensionId: 'kanban', variant: 'mine' } } })
 })
 it('uses local RPC only when the registered target really is this device', async () => {
   await openAppDetailLink({ ...target, deviceId: 'here' }, 'owner')
   expect(state.rpcOn).toHaveBeenCalledWith(null)
-  expect(state.navigate).toHaveBeenCalledWith('apps', { detail: { ...target, deviceId: undefined } })
+  expect(state.navigate).toHaveBeenCalledWith('apps', { location: expect.objectContaining({ deviceId: undefined, detail: { extensionId: 'kanban', variant: 'mine' } }) })
 })
 it.each(['unknown', 'foreign-account', 'unavailable', 'missing-variant'])('refuses %s without opening a local namesake', async (caseName) => {
   if (caseName === 'foreign-account') state.owner = 'other-account'
@@ -42,5 +45,5 @@ it('does not navigate after the caller changes while the device answers', async 
 it('opens the named device market detail even when that App is not installed (L11)', async () => {
   state.variants.mockResolvedValue({ success: false, error: 'App kanban is not installed' })
   await openAppDetailLink({ kind: 'app-detail', extensionId: 'kanban', deviceId: 'other' }, 'owner')
-  expect(state.navigate).toHaveBeenCalledWith('apps', { detail: { kind: 'app-detail', extensionId: 'kanban', deviceId: 'other' } })
+  expect(state.navigate).toHaveBeenCalledWith('apps', { location: expect.objectContaining({ deviceId: 'other', detail: { extensionId: 'kanban' } }) })
 })

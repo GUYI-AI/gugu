@@ -123,11 +123,12 @@ export const defaultView = (kind) => (kind === 'media' ? 'grid' : 'list')
 /**
  * A thumbnail is drawn for an image with a cloud copy, of a size worth reading whole. A project file kept on its machine
  * is read for one only while it has a cloud copy too (`keep`, a project chat's temporary one): reading it otherwise would
- * upload it.
+ * upload it. Nor is one of a working copy on another machine (`far`): the whole image would come over that machine's link
+ * for a 16px picture, and keep it busy under the image the person then opens.
  */
 export const THUMB_MAX_BYTES = 10 * 1024 * 1024
-export function wantsThumb(entry) {
-  return entry.type !== 'folder' && /^image\//i.test(entry.contentType || '') && (!entry.storedOn || !!entry.keep)
+export function wantsThumb(entry, far = false) {
+  return !far && entry.type !== 'folder' && /^image\//i.test(entry.contentType || '') && (!entry.storedOn || !!entry.keep)
     && (entry.size == null || entry.size <= THUMB_MAX_BYTES) && !/svg/i.test(entry.contentType)
 }
 

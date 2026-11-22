@@ -19,7 +19,7 @@ import { Hint } from './ui/Tooltip'
 import { Unknown } from './ui/Unknown'
 import { FieldList } from './contactsDetailControls'
 import { cn } from '@/lib/cn'
-import { Hash, Search, Users } from '@/lib/icons'
+import { Search } from '@/lib/icons'
 import { useAgentSession } from '@/lib/projectGroupChatsBridge'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { useAgentSessionRow } from '@/components/session-watch/useAgentSessionRow'
@@ -217,9 +217,6 @@ function DataRow({ field, label, value }: { field: string; label: string; value:
   )
 }
 
-
-export type MemberProfileListenRoom = { kind: 'group' | 'topic'; name: string }
-
 function ProfileSecondaryAction({ isAgent, phone, label, unavailableLabel, children, ...props }: {
   isAgent: boolean
   phone: boolean
@@ -255,7 +252,6 @@ export function MemberProfileCard({
   onOpenChat,
   onWhisper,
   onFindMessages,
-  listenRoom,
   editControls,
   aliasControls,
   fill = false,
@@ -266,12 +262,11 @@ export function MemberProfileCard({
   onWhisper?: (target: MemberProfileChatTarget) => void
   /** 「查找 TA 的消息」:这个会话的全局搜索,带 in: 和 from: 两枚可删的标签。 */
   onFindMessages?: () => void
-  listenRoom?: MemberProfileListenRoom
   editControls?: MemberProfileEditControls
   aliasControls?: MemberProfileAliasControls
   fill?: boolean
 }) {
-  const { t } = useTranslation('contacts')
+  const { t } = useTranslation(['contacts', 'messaging'])
   const isAgent = member.type === 'agent'
   const identity = useAvatarIdentity(isAgent ? member.id : '')
   const shownName = useShownAgentName({ name: member.displayName, createdAt: isAgent ? identity?.created_at ?? undefined : undefined })
@@ -299,10 +294,9 @@ export function MemberProfileCard({
   const showEdits = isGroupProfile && !rosterUnknown && (editControls?.canChangeRole || editControls?.canRemove)
   const roleLabel = rosterUnknown ? <Unknown /> : member.role === 'owner' ? t('profile.roles.owner') : member.role === 'admin' ? t('profile.roles.admin') : t('profile.roles.member')
 
-  // Listen-mode (倾听模式): agent-only, group scope.
+  // Listen-mode (收听模式): agent-only, group scope.
   // member.listenMode comes from GroupAgentItem.listen_mode via toAgentProfile.
-  // Defaults to 'active' when absent (matches DB default). The card mirrors
-  // the real state read-only; mutation lives in GroupCollabPanel's own control.
+  // Defaults to 'active' when absent (matches DB default).
   const showListenMode = isAgent && isGroupProfile
   const listenMode: ListenMode = member.listenMode ?? 'active'
   // @@@1208 (#857 收尾) 仅当父级(agent 的主人)接了 onChangeListenMode 才让分段控件可交互;否则只读镜像。
@@ -335,7 +329,6 @@ export function MemberProfileCard({
   const avatarSize = isAgent ? (phone ? 64 : 60) : 52
   const agentNameClass = phone ? 'text-xl leading-7 font-semibold' : 'text-lg leading-6 font-semibold'
   const listenHeading = t('profile.listenModeDescription')
-  const ListenRoomIcon = listenRoom?.kind === 'topic' ? Hash : Users
 
   return (
     <>
@@ -430,7 +423,7 @@ export function MemberProfileCard({
           Not in prototype visual but preserved for existing tests and data display.
           咕咕号 always rendered — direct profiles need it too (test invariant).
           @@@1344(a) — group-agent 卡隐藏群语境字段(备注/群角色/咕咕号/任务/动作)，保留身份字段
-          (简介/邮箱)、倾听模式与管理区。直接资料卡与群里的人类成员卡保留完整字段。 ─── */}
+          (简介/邮箱)、收听模式与管理区。直接资料卡与群里的人类成员卡保留完整字段。 ─── */}
       {member.bio || member.email || !(isAgent && isGroupProfile) ? (
         <FieldList className={profileFieldsClass}>
           {member.bio ? <DataRow field="bio" label={t('profile.bio')} value={member.bio} /> : null}
@@ -457,32 +450,27 @@ export function MemberProfileCard({
         </FieldList>
       ) : null}
 
-      {/* ── 倾听模式 segmented control (prototype .lm/.lmseg, lines 453-457)
+      {/* ── 收听模式 segmented control (prototype .lm/.lmseg, lines 453-457)
           Agent-only, room scope. The parent supplies onChangeListenMode for the agent owner
           or a current source-group manager. Other viewers retain the read-only projection. ── */}
       {showListenMode ? (
         <div className={profileListenClass}>
-          <div className="mb-2 text-xs leading-4 text-[var(--text-tertiary)]">{listenHeading}</div>
           <div className="flex h-8 items-center gap-3">
-            {listenRoom ? (
-              <div className={profileListenLabelClass}>
-                <ListenRoomIcon className="size-4 shrink-0 text-[var(--text-tertiary)]" aria-hidden />
-                <span className="truncate" title={listenRoom.name}>{listenRoom.name}</span>
-              </div>
-            ) : null}
-            <div className={profileListenSegmentClass} role="group" aria-label={listenRoom ? `${listenHeading} ${listenRoom.name}` : listenHeading}>
+            <div className={profileListenLabelClass}>{listenHeading}</div>
+            <div className={profileListenSegmentClass} role="group" aria-label={listenHeading}>
               {rosterUnknown ? <Unknown /> : LISTEN_MODES.map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={listenModeButtonClass(listenMode === mode)}
-                  aria-pressed={listenMode === mode}
-                  disabled={canEditListenMode ? editBusy : undefined}
-                  style={{ cursor: canEditListenMode ? 'pointer' : 'default' }}
-                  onClick={canEditListenMode ? () => { void editControls?.onChangeListenMode?.(mode) } : undefined}
-                >
-                  {mode === 'passive' ? t('profile.listenModes.passive') : t('profile.listenModes.proactive')}
-                </button>
+                <Hint key={mode} label={t(`group.memberList.listen.${mode}Hint`, { ns: 'messaging' })} side="top">
+                  <button
+                    type="button"
+                    className={listenModeButtonClass(listenMode === mode)}
+                    aria-pressed={listenMode === mode}
+                    disabled={canEditListenMode ? editBusy : undefined}
+                    style={{ cursor: canEditListenMode ? 'pointer' : 'default' }}
+                    onClick={canEditListenMode ? () => { void editControls?.onChangeListenMode?.(mode) } : undefined}
+                  >
+                    {mode === 'passive' ? t('profile.listenModes.passive') : t('profile.listenModes.proactive')}
+                  </button>
+                </Hint>
               ))}
             </div>
           </div>

@@ -625,6 +625,7 @@ export function createSessionpageDeliveryBridge(
     },
     // 这个 agent 此刻的读数只有一个来源:状态写入者 → 宿主按 agent 的流。❌ 再取传输自己的回合追踪做「或」。
     agentStatus: (agentUserId: string) => statusFeed.get(agentUserId)?.reading ?? null,
+    lastInteractedAt: (agentUserId: string) => statusFeed.get(agentUserId)?.lastInteractedAt ?? null,
     recentActionsForAgent: (agentUserId: string) => {
       const owner = ownerOf(agentUserId)
       return owner?.recentActionsForAgent?.(agentUserId) ?? null

@@ -335,6 +335,112 @@ it('persists incomplete evidence and refuses even an explicit replay until histo
   expect(r.dispatch).not.toHaveBeenCalled();
 });
 
+const uncovered: NativeInputLookup = async () => ({ state: 'incomplete', reason: 'native_tail_does_not_cover_history' });
+async function consent(r: ReturnType<typeof rig>, lookup = uncovered) {
+  const result = await r.owner.retryUnknownRow('s', 'interrupted', lookup, { allowConfirmation: true });
+  expect(result).toMatchObject({ kind: 'confirmation-required', reason: 'native_tail_does_not_cover_history' });
+  if (result.kind !== 'confirmation-required') throw new Error('Missing resend confirmation');
+  return result.confirmation;
+}
+
+it('an actual old native input outside 64 KiB stays unknown automatically and resends only after consent', async () => {
+  const { seq } = interrupted();
+  const directory = await mkdtemp(join(tmpdir(), 'gugu-old-native-input-'));
+  const path = join(directory, 'rollout-fixture-native-session.jsonl');
+  const metadata = JSON.stringify({ type: 'session_meta', payload: { id: 'native-session' } });
+  const original = JSON.stringify({ type: 'response_item', payload: { id: 'interrupted', type: 'message', role: 'user', content: [{ type: 'input_text', text: 'original envelope' }] } });
+  const newer = JSON.stringify({ type: 'event_msg', payload: { type: 'task_complete', last_agent_message: 'x'.repeat(24 * 1024) } });
+  await writeFile(path, [metadata, original, ...Array<string>(5).fill(newer)].join('\n') + '\n');
+  const lookup: NativeInputLookup = async input => (await readNativeInputTail({ harness: 'codex', providerSessionId: 'native-session', roots: [] }, { path })).find(input);
+  const r = rig();
+  try {
+    await r.owner.signIn('A');
+    await r.owner.reconcileUnknownRows('s', lookup);
+    expect(lifeStore.row('s', seq)).toMatchObject({ state: 'unknown', failure: { code: 'native_tail_does_not_cover_history' } });
+    const confirmation = await consent(r, lookup);
+    expect(r.run).not.toHaveBeenCalled(); expect(r.dispatch).not.toHaveBeenCalled();
+    await r.owner.retryUnknownRow('s', 'interrupted', lookup, { confirmation });
+    await r.owner.quiescent('s');
+    expect(r.dispatch).toHaveBeenCalledTimes(1);
+    expect(lifeStore.row('s', seq)).toMatchObject({ state: 'accepted', message: { id: 'interrupted', text: 'original envelope' } });
+    expect(fixture.sqlite.prepare("SELECT count(*) AS n FROM session_pending WHERE session_id='s'").get()).toEqual({ n: 1 });
+  } finally { await r.owner.signOut(); await rm(directory, { recursive: true, force: true }); }
+});
+
+it('rechecks after consent and accepts a newly recorded echo without dispatch', async () => {
+  const { seq } = interrupted(); const r = rig(); await r.owner.signIn('A');
+  const confirmation = await consent(r);
+  const lookup = vi.fn(async () => ({ state: 'received' as const, nativeReceiptId: 'late-native' }));
+  await r.owner.retryUnknownRow('s', 'interrupted', lookup, { confirmation });
+  expect(lookup).toHaveBeenCalledTimes(1);
+  expect(lifeStore.row('s', seq).state).toBe('accepted'); expect(r.dispatch).not.toHaveBeenCalled();
+  await r.owner.signOut();
+});
+
+it.each(['stop', 'account', 'binding', 'other-row'] as const)('consent cannot cross %s', async change => {
+  const { seq } = interrupted(); const r = rig(); await r.owner.signIn('A');
+  let current = true;
+  const lookup: NativeInputLookup = Object.assign(async () => uncovered({ id: '', text: '' }), { isCurrent: () => current });
+  const confirmation = await consent(r, lookup);
+  if (change === 'stop') await r.owner.interrupt('s', { k: 'interrupt', reason: 'user-stop' });
+  if (change === 'account') { await r.owner.signOut(); await r.owner.signIn('B'); }
+  if (change === 'binding') current = false;
+  await expect(r.owner.retryUnknownRow('s', change === 'other-row' ? 'other' : 'interrupted', uncovered, { confirmation })).rejects.toThrow();
+  expect(lifeStore.row('s', seq).state).toBe('unknown'); expect(r.dispatch).not.toHaveBeenCalled();
+  await r.owner.signOut();
+});
+
+it('a stop during the post-confirmation lookup cannot dispatch even with a positive echo', async () => {
+  const { seq } = interrupted(); const r = rig(); await r.owner.signIn('A');
+  const confirmation = await consent(r);
+  const lookup = Promise.withResolvers<NativeInputEvidence>();
+  const entered = Promise.withResolvers<void>();
+  const retry = r.owner.retryUnknownRow('s', 'interrupted', () => { entered.resolve(); return lookup.promise; }, { confirmation });
+  const rejected = expect(retry).rejects.toThrow('changed');
+  await entered.promise;
+  await r.owner.interrupt('s', { k: 'interrupt', reason: 'user-stop' });
+  lookup.resolve({ state: 'received', nativeReceiptId: 'late' });
+  await rejected;
+  expect(lifeStore.row('s', seq).state).toBe('unknown'); expect(r.dispatch).not.toHaveBeenCalled();
+  await r.owner.signOut();
+});
+
+it('a changed native binding never offers a way to bypass it with consent', async () => {
+  interrupted(); const r = rig(); await r.owner.signIn('A');
+  await expect(r.owner.retryUnknownRow('s', 'interrupted', async () => ({
+    state: 'incomplete', reason: 'native_session_changed',
+  }), { allowConfirmation: true })).rejects.toThrow('native_session_changed');
+  expect(r.dispatch).not.toHaveBeenCalled(); await r.owner.signOut();
+});
+
+it('consent is one-use even when the same confirmation is submitted concurrently', async () => {
+  interrupted(); const r = rig(); await r.owner.signIn('A');
+  const confirmation = await consent(r);
+  const outcomes = await Promise.allSettled([1, 2].map(() => r.owner.retryUnknownRow('s', 'interrupted', uncovered, { confirmation })));
+  expect(outcomes.map(outcome => outcome.status).sort()).toEqual(['fulfilled', 'rejected']);
+  await r.owner.quiescent('s'); expect(r.dispatch).toHaveBeenCalledTimes(1);
+  await r.owner.signOut();
+});
+
+it('discarding a row while confirmation is open cannot resurrect it', async () => {
+  interrupted(); const r = rig(); await r.owner.signIn('A');
+  const confirmation = await consent(r); r.owner.discardRow('s', 'interrupted');
+  await r.owner.retryUnknownRow('s', 'interrupted', uncovered, { confirmation });
+  expect(lifeStore.unaccepted('s')).toEqual([]); expect(r.dispatch).not.toHaveBeenCalled();
+  await r.owner.signOut();
+});
+
+it('native IO failure keeps its actual detail and automatic reconciliation never gains consent', async () => {
+  const { seq } = interrupted(); const r = rig(); await r.owner.signIn('A');
+  const lookup: NativeInputLookup = async () => { throw new Error('EACCES: native fixture is unreadable'); };
+  await r.owner.reconcileUnknownRows('s', lookup);
+  expect(lifeStore.row('s', seq).state).toBe('unknown'); expect(r.dispatch).not.toHaveBeenCalled();
+  expect(await r.owner.retryUnknownRow('s', 'interrupted', lookup, { allowConfirmation: true })).toMatchObject({
+    kind: 'confirmation-required', reason: 'native_lookup_failed', detail: 'Error: EACCES: native fixture is unreadable',
+  });
+  expect(r.dispatch).not.toHaveBeenCalled(); await r.owner.signOut();
+});
+
 it('a concurrent discard during native lookup cannot resurrect the original input', async () => {
   interrupted(); const r = rig(); await r.owner.signIn('A');
   const lookup = Promise.withResolvers<NativeInputEvidence>();

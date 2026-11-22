@@ -1,7 +1,5 @@
-import { ownSettings, readOwnSettings, updateOwnSettings } from './ownSettings'
+import { readOwnSettings, updateOwnSettings } from './ownSettings'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from './realtimeChannel'
-import { platform } from '../platform'
-import { rendererLogger } from './log'
 
 export type ChatPinSettings = { topicIds: string[] }
 const scopeOf = (chatId: string) => `chat:${chatId}` as const
@@ -32,22 +30,17 @@ export async function setChatPinPreference(userId: string, chatId: string, id: s
   return pinsOf(saved.config)
 }
 
-/** One account channel, including reconnect, visibility and native foreground refresh. */
+/** One account channel and reconnecting; a return to the app reads the pins again by their model (`refreshOnFocus`). */
 export function watchChatPinSettings(userId: string, chatId: string, read: () => void): () => void {
-  // Each of these says the row may have changed elsewhere: the next read asks the server, ❌ the shared reading.
-  const refresh = () => { void ownSettings.refresh(scopeOf(chatId)); read() }
+  // Each of these says the row may have changed elsewhere: read it again.
+  const refresh = () => { read() }
   const handle = subscribePrivateUserEventBus(userId, 'setting_changed', (payload) => {
     const setting = (payload as { setting?: { user_id?: string; scope?: string } } | null)?.setting
     if (setting?.user_id === userId && setting.scope === scopeOf(chatId)) refresh()
   }, { onSubscribed: refresh })
-  const visible = () => { if (document.visibilityState === 'visible') refresh() }
-  document.addEventListener('visibilitychange', visible)
   window.addEventListener('online', refresh)
-  const stopForeground = platform.subscribeAppForeground(refresh, (error) => { rendererLogger('chat/pins').error({ error }, 'Chat pin foreground subscription failed') })
   return () => {
     unsubscribePrivateUserEventBus(handle)
-    document.removeEventListener('visibilitychange', visible)
     window.removeEventListener('online', refresh)
-    stopForeground()
   }
 }

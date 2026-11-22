@@ -1,5 +1,7 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
-import { queryClient as readModelClient } from '@/lib/replica';
+import { followRendererSession, queryClient as readModelClient } from '@/lib/replica';
+import * as agentReplicas from './agent-replicas';
+import { wireAgentReadings, agentIcons, agentInstallationStatus, agentMetadata, agentSettings, agentsMetadata, harnessModelCatalog, harnessModelCredential, installSourceVersions, managementAgent, managementAgents } from './agent-replicas';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
@@ -31,8 +33,8 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   }),
 }));
 
-vi.mock('@renderer/lib/ipc', () => ({
-  rpc: {
+vi.mock('@renderer/lib/ipc', () => {
+  const rpc = {
     agents: {
       listAgentInstallationStatus: mocks.listAgentInstallationStatus,
       install: mocks.install,
@@ -40,18 +42,18 @@ vi.mock('@renderer/lib/ipc', () => ({
       refreshLatestVersion: mocks.refreshLatestVersion,
       probeAll: mocks.probeAll,
     },
-  },
-  events: { on: mocks.on },
-}));
+  };
+  return { rpc, rpcOn: () => rpc, events: { on: mocks.on }, onMachineEvent: () => () => {} };
+});
 
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));
 
 vi.mock('./use-agents', () => ({
-  AGENTS_METADATA_QUERY_KEY: ['agents', 'metadata'] as const,
-  useAgents: () => ({ data: [] }),
+  useAgents: () => ({ state: 'value', value: [], stale: false, error: null }),
 }));
 
-const SOURCE_VERSIONS_KEY = ['agents', 'install-source-versions', 'claude', 'local'] as const;
+const ACCOUNT = 'account-1';
+const SOURCE_VERSIONS_KEY = ['installSourceVersions', ACCOUNT, null, 'claude'] as const;
 
 type Api = ReturnType<typeof useAgentInstallationStatuses>;
 
@@ -76,6 +78,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
   let container: HTMLDivElement;
   let queryClient: QueryClient;
   let api: Api | undefined;
+  let unwire: () => void = () => {};
 
   beforeEach(async () => {
     vi.useFakeTimers();
@@ -94,6 +97,9 @@ describe('useAgentInstallationStatuses invalidate', () => {
 
     // The availability reading is a replica: it lives in the one client (lib/replica), cleared after each case.
     queryClient = readModelClient;
+    followRendererSession('SIGNED_IN', ACCOUNT);
+    // This computer's install-state push, wired once per document (embedded.tsx).
+    unwire = wireAgentReadings();
     container = dom.window.document.getElementById('root') as HTMLDivElement;
     root = createRoot(container);
 
@@ -120,6 +126,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
 
   afterEach(() => {
     act(() => root.unmount());
+    unwire();
     queryClient.clear();
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -273,6 +280,26 @@ describe('useAgentInstallationStatuses invalidate', () => {
     expect(status.installProgress).toBeNull();
   });
 
+  it('the statuses read before, a re-read that fails: the installation stays and the failure is handed to the surface', async () => {
+    let status!: ReturnType<typeof useAgentInstallationStatus>;
+    function AgentProbe() { status = useAgentInstallationStatus('claude'); return null; }
+    await act(async () => {
+      root.render(React.createElement(QueryClientProvider, { client: queryClient },
+        React.createElement(SessionLocalizationProvider, null, React.createElement(AgentProbe))));
+    });
+    await settle();
+    expect(status.statusFailure).toBeNull();
+    mocks.listAgentInstallationStatus.mockRejectedValue(new Error('machine gone'));
+    await act(async () => {
+      const read = agentInstallationStatus.refresh(null).catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(60_000);
+      await read;
+    });
+    await settle();
+    expect(agentInstallationStatus.peek(null)).toMatchObject({ state: 'value', value: [] });
+    expect(status.statusFailure?.message).toBe('machine gone');
+  });
+
   it('marks the per-registry version cache stale after an install', async () => {
     queryClient.setQueryData(SOURCE_VERSIONS_KEY, {
       npmmirror: { version: '1.0.0', outdated: true },
@@ -307,7 +334,7 @@ describe('useAgentInstallationStatuses invalidate', () => {
    * 徽标读的是 `agent.status`(AgentRow.tsx:8),来自 `useManagementAgents()` 的
    * `['agents','management']`,而它挂着 5 分钟 staleTime。这两条判据钉的就是那个键。
    */
-  const MANAGEMENT_KEY = ['agents', 'management'] as const;
+  const MANAGEMENT_KEY = ['managementAgents', ACCOUNT, null] as const;
 
   it('装完之后，智能体列表那份缓存也被标脏（否则徽标要等切页面/重启）', async () => {
     queryClient.setQueryData(MANAGEMENT_KEY, [{ id: 'claude', status: 'unavailable' }]);
@@ -333,28 +360,43 @@ describe('useAgentInstallationStatuses invalidate', () => {
   });
 
   /**
-   * 这条判的是**结构**,不是某一个键:作废按 `['agents', …]` 前缀整体来,所以将来新加的派生缓存
-   * 不必回到 invalidate() 里补登记。第三个键是故意编的 —— 它代表「还没被写出来的那个查询」,
-   * 只有前缀作废能覆盖它,逐条列举必然漏。
+   * 这条判的是**整族**:装完 / 重新检测之后,从安装状态派生的每一个读数都重读(`refreshAgentReadings`,
+   * agent-replicas.ts)。这里的键覆盖那个模块导出的**每一个** replica(下面先核覆盖):那里新加一个读数,这条先红,
+   * 直到它列在这里 —— 它没带 `ofMachine`(标签与机器在前)的话,后半条红。
    */
-  it('这一族里每一个都被覆盖，包括还没写出来的那个', async () => {
+  it('这一族里每一个都被作废', async () => {
     const keys = [
-      ['agents', 'metadata'],
-      ['agents', 'management'],
-      ['agents', 'icons'],
-      ['agents', 'modelCatalog'],
-      ['agents', 'modelCredential'],
-      ['agents', 'install-source-versions', 'claude', 'local'],
-      ['agents', 'some-future-derived-cache'],
-    ] as const;
-    for (const key of keys) queryClient.setQueryData(key, {});
+      agentInstallationStatus.key(null),
+      agentsMetadata.key(null),
+      managementAgents.key(null),
+      managementAgent.key(null, 'claude'),
+      agentIcons.key(null),
+      agentMetadata.key(null, 'claude'),
+      harnessModelCatalog.key(null, 'claude', 'acp'),
+      harnessModelCredential.key(null, 'claude', 'opus'),
+      agentReplicas.targetModelCatalog.key(null, 'claude', 'acp', 'opus'),
+      installSourceVersions.key(null, 'claude'),
+      agentSettings.key(null, 'claude'),
+    ];
+    const exported = (Object.values(agentReplicas) as unknown[])
+      .filter((value): value is { name: string } => typeof value === 'object' && value !== null
+        && typeof (value as { key?: unknown }).key === 'function' && typeof (value as { refresh?: unknown }).refresh === 'function')
+      .map((model) => model.name);
+    expect(exported.length).toBeGreaterThan(0);
+    expect([...new Set(keys.map((key) => key![0]))].sort()).toEqual([...exported].sort());
+    for (const key of keys) queryClient.setQueryData(key!, {});
+    const updates = keys.map((key) => queryClient.getQueryState(key!)!.dataUpdateCount);
 
     await act(async () => {
       api?.probeAll();
     });
     await settle();
 
-    const stale = keys.filter((key) => queryClient.getQueryState(key)?.isInvalidated);
-    expect(stale).toHaveLength(keys.length);
+    // Invalidated, or (one a surface here shows) already read again.
+    const left = keys.filter((key, index) => {
+      const state = queryClient.getQueryState(key!)!;
+      return !state.isInvalidated && state.dataUpdateCount === updates[index];
+    }).map((key) => key![0]);
+    expect(left).toEqual([]);
   });
 });

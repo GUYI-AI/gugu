@@ -25,6 +25,8 @@ export interface DependencyState {
   path: string | null;
   checkedAt: number;
   error?: string;
+  /** How `--version` failed, when `status` is `error` (the probe's own exit code / timeout / signal). */
+  failure?: { exitCode: number | null; timedOut: boolean; signal?: string };
   latestVersion?: string | null;
   updateAvailable?: boolean;
 }
@@ -131,10 +133,19 @@ export type InstallFailureArtifact = {
   bytes: number | null;
 };
 
+export type InstallSourceIntent =
+  | { kind: 'explicit'; registry: string }
+  | { kind: 'automatic'; registries: readonly string[]; fallbackRegistry: string };
+
+/** A host runner may report the source actually installed; legacy runners return void. */
+export type InstallCommandOutcome = void | { registry?: string };
+
 export type InstallCommandContext = {
   mise?: {
     target: Extract<InstallTarget, { kind: 'mise' }>;
-    registry?: string;
+    source?: InstallSourceIntent;
+    /** An update must not pick an older mirror release. */
+    minimumVersion?: string;
     operation: 'install' | 'update' | 'uninstall';
     selectedPath?: string;
   };
@@ -647,6 +658,3 @@ export interface DependencyDescriptor {
   uninstall?: UninstallStrategy;
 }
 
-export type DependencyProbeOptions = {
-  refreshShellEnv?: boolean;
-};

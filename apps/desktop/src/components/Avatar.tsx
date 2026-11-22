@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { pauseAnimationsOffscreen } from '@gugu/session-shared/animation-visibility'
+import { stopAnimationsOffscreen } from '@gugu/session-shared/animation-visibility'
 import { useTranslation } from 'react-i18next'
 import { colorOfDisplayStatus, labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
@@ -9,6 +9,7 @@ import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAva
 import { dicebearAvatarDataUri } from '../lib/dicebearAvatar'
 import { useAvatarTheme } from '../lib/avatarTheme'
 import { AgentNeedsUserGlyph } from './AgentNeedsUserGlyph'
+import { AgentParkedGlyph } from './AgentParkedGlyph'
 import { AgentHarnessBadge } from './AgentHarnessIdentity'
 import { BoringAgentAvatar } from './BoringAgentAvatar'
 import { AssistantDefaultAvatar } from './assistant/AssistantDefaultAvatar'
@@ -52,7 +53,7 @@ const AVATAR_STATUS_PULSE_DELAY_CLASS = `${AVATAR_STATUS_PULSE_CLASS} av-status_
 // @@@avatar-status-badge - top-right status indicator. Color and words come from the shared presentation
 // (packages/core/src/shared/agentStatusPresentation.ts — one table for the session page, chat and phone). Motion uses
 // Tailwind animation utilities plus global keyframes. working = solid dot + two staggered pulse rings; parked = the
-// same color, still; needs_user = Solar exclamation glyph; idle/offline/removed = static dot.
+// two bars of AgentParkedGlyph; needs_user = Solar exclamation glyph; idle/offline/removed = static dot.
 function AgentStatusBadge({ status, size }: { status: AgentDisplayStatus; size: number }) {
   const { t } = useTranslation('common')
   const color = colorOfDisplayStatus(status) ?? 'transparent'
@@ -61,7 +62,7 @@ function AgentStatusBadge({ status, size }: { status: AgentDisplayStatus; size: 
   // Pulses on avatars scrolled out of the message list stop; the ones on screen keep pulsing.
   const badge = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    if (running && badge.current) return pauseAnimationsOffscreen(badge.current)
+    if (running && badge.current) return stopAnimationsOffscreen(badge.current)
   }, [running])
   return (
     <div
@@ -88,6 +89,8 @@ function AgentStatusBadge({ status, size }: { status: AgentDisplayStatus; size: 
     >
       {status === 'needs_user' ? (
         <AgentNeedsUserGlyph size={Math.max(8, size)} />
+      ) : status === 'parked' ? (
+        <AgentParkedGlyph size={Math.max(8, size)} />
       ) : (
         <span
           className={AVATAR_STATUS_DOT_CLASS}

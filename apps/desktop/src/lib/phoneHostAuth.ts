@@ -2,6 +2,7 @@ import { Capacitor, registerPlugin } from '@capacitor/core'
 import type { Session } from '@supabase/supabase-js'
 import { createPhoneHostAuthGate } from './phoneHostAuthGate'
 import { getRendererSession } from './sessionPublication'
+import { i18n } from '@/i18n/runtime'
 
 type SessionResult = { data: { session: Session | null }; error: unknown }
 type HostAuthResult = { available: boolean; session: Session | null; signedOut?: boolean }
@@ -81,7 +82,7 @@ export function phoneHostSignOut(fallback: () => Promise<{ error: unknown }>): P
       if (!result.error) returnedSession = null
       return result
     }
-    if (!host.signedOut || !host.session) throw new Error('手机宿主没有确认退出登录')
+    if (!host.signedOut || !host.session) throw new Error(i18n.t('auth.phoneHostSignOutUnconfirmed', { ns: 'main' }))
     returnedSession = null
     return { error: null, signedOutSession: host.session }
   })

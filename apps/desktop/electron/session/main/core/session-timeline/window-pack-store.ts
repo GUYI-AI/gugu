@@ -108,10 +108,10 @@ export function createWindowPackStore(directory: string, db: WindowReceiptDataba
     const location = index.current(name); if (!location) return { kind: 'miss', reason: 'not_found' };
     const file = await open(path(location.groupId),'r').catch(()=>{throw fault('Committed pack file is unavailable');});
     try {
-      const before = await file.stat({ bigint: true });
-      if (!before.isFile() || !same(identity(before),location.physical)) throw fault('Pack physical identity changed');
+      // One stat after the read: ctime only moves forward, so an identity equal to
+      // the published one also proves nothing changed before or during the read.
       const packet = await readPacket(file,location,budget), after = await file.stat({ bigint: true });
-      if (closed || !same(identity(after),location.physical)) throw fault('Pack changed during point read');
+      if (closed || !after.isFile() || !same(identity(after),location.physical)) throw fault('Pack changed during point read');
       const current = index.lookup(location.groupId,name);
       if (!current || JSON.stringify(current) !== JSON.stringify(location)) throw fault('Pack receipt or position changed during read');
       if (build && !build.closed) {

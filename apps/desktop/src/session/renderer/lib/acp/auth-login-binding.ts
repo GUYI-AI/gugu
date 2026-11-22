@@ -1,13 +1,13 @@
 import {
-  agentConfigListSchema,
   type AgentConfigError,
   type AgentConfigList,
   type AuthStatusModelState,
 } from '@gugu/session-core/workspace-server/agent-config';
 import type { Result } from '@gugu/session-shared';
-import { ReplicaLog, ReplicaState } from '@gugu/session-wire';
-import { createImmutableMobxStore } from '@gugu/session-wire/util/mobx';
+import { ReplicaLog } from '@gugu/session-wire';
 import type { Terminal } from '@xterm/xterm';
+import { valueOf } from '@/lib/replica';
+import { agentConfigList } from '../stores/live/agent-config-list';
 import {
   getAgentConfigRuntimeClient,
   type AgentConfigRuntimeRpcClient,
@@ -16,7 +16,8 @@ import { createXtermLogSink } from '../pty/xterm-log-sink';
 
 type AuthStatusHandle = {
   readonly ready: Promise<void>;
-  current(): AuthStatusModelState;
+  /** 这个程序的登录态:先给此刻那一份,之后每变一次给一次(同一份不重给)。返回停止。 */
+  follow(listener: (state: AuthStatusModelState) => void): () => void;
   dispose(): void;
 };
 
@@ -56,11 +57,7 @@ export class AcpAuthLoginBinding {
     if (!result.success) throw new Error(errorMessage(result));
 
     const key = target;
-    const agents = new ReplicaState(client.agents.state(undefined, 'list'), {
-      schema: agentConfigListSchema,
-      store: createImmutableMobxStore(),
-    });
-    const status = createAuthStatusHandle(args.providerId, args.program, agents, args.connectionId);
+    const status = followAuthStatus(args.machine ?? null, args.providerId, args.program, args.connectionId);
     const output = args.terminal
       ? new ReplicaLog(client.loginOutput.handle(key), {
           store: createXtermLogSink(args.terminal),
@@ -70,8 +67,8 @@ export class AcpAuthLoginBinding {
     try {
       await Promise.all([status.ready, output?.ready]);
     } catch (error) {
-      // @@@replica-failed-ready — 调用方收到的是错误、拿不到这个 binding,没人会再 dispose:拒掉的那份副本自己放掉了
-      // attach,另一份还挂着;上面 startLogin 起的那一趟登录也没人取消 ⇒ 在这里整份拆掉(含取消)再抛。
+      // @@@replica-failed-ready — 调用方收到的是错误、拿不到这个 binding,没人会再 dispose:登录态的推送还被挂着、
+      // 输出那份副本也可能还接着;上面 startLogin 起的那一趟登录也没人取消 ⇒ 在这里整份拆掉(含取消)再抛。
       binding.dispose();
       throw error;
     }
@@ -89,7 +86,7 @@ export class AcpAuthLoginBinding {
   }
 
   /**
-   * 再问一次**这个程序**的登录态(结果经同一份 live state 回来,`status` 随之翻)。
+   * 再问一次**这个程序**的登录态(结果经 `agentConfigList` 那份读数回来,`status` 随之翻)。
    * 给「这一趟登完了没有」一个事件触发的读数 —— 登录弹窗在用户从浏览器回到窗口时调它,❌ 不轮询。
    */
   refreshStatus(): void {
@@ -120,25 +117,44 @@ function programTarget(providerId: string, program: string | undefined, connecti
   return { providerId, ...(program === undefined ? {} : { program }), ...(connectionId ? { connectionId } : {}) };
 }
 
-function createAuthStatusHandle(
+const UNKNOWN_AUTH: AuthStatusModelState = { status: { kind: 'unknown' }, login: null };
+
+/**
+ * 这一趟登录期间读的登录态 = 设置页那一份 `agentConfigList`(❌ 再开一份自己的 live state):登录期间把它的推送
+ * 挂着(`hold`,没有面在画它时也在推),`ready` 是 startLogin 之后读到的那一次(`reread`),❌ 拿登录前缓存的那份。
+ */
+function followAuthStatus(
+  machine: string | null,
   providerId: string,
   program: string | undefined,
-  agents: ReplicaState<AgentConfigList>,
   connectionId?: string
 ): AuthStatusHandle {
+  const release = agentConfigList.hold(machine);
+  // 放手(登上了、关窗)之后 ❌ 再给:跟着的人在登上那一下就放手了,之后的推送不再是这一趟的。
+  const following = new Set<() => void>();
+  const pick = (list: AgentConfigList | undefined): AuthStatusModelState => {
+    const entry = list?.[providerId];
+    return (connectionId ? entry?.connectionAuth?.[connectionId] : program === undefined ? entry?.auth : entry?.programAuth?.[program]) ?? UNKNOWN_AUTH;
+  };
   return {
-    ready: agents.ready,
-    current: () => {
-      const entry = agents.current()[providerId];
-      return (
-        (connectionId ? entry?.connectionAuth?.[connectionId] : program === undefined ? entry?.auth : entry?.programAuth?.[program]) ?? {
-          status: { kind: 'unknown' },
-          login: null,
-        }
-      );
+    ready: agentConfigList.reread(machine).then(() => undefined),
+    follow: (listener) => {
+      let last: AuthStatusModelState | null = null;
+      const emit = () => {
+        const next = pick(valueOf(agentConfigList.peek(machine)));
+        if (next === last) return;
+        last = next;
+        listener(next);
+      };
+      const stop = agentConfigList.subscribe([machine], emit);
+      following.add(stop);
+      emit();
+      return () => { following.delete(stop); stop(); };
     },
     dispose: () => {
-      void agents.dispose();
+      following.forEach((stop) => stop());
+      following.clear();
+      release();
     },
   };
 }

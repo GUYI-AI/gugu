@@ -26,7 +26,7 @@ export function AuxiliaryModelsGroup() {
     <SessionTitleModelRow auxiliary />
     <SettingsRow title={<span className="flex items-center gap-2">{translate('customModels.reviewerModel')}
       <InfoTooltip label={translate('customModels.reviewerModel')} content={translate('customModels.auxiliaryFallback')} />
-    </span>} control={<SettingValue reading={reviewer.settings} placeholder="h-8 w-[355px]" onReadAgain={reviewer.refresh}>
+    </span>} control={<SettingValue reading={reviewer.settings} placeholder="h-8 w-[355px]">
       {({ value }) => {
         if (options === null) return <Unknown className="h-8 w-[355px]" />;
         const selected = value && options.find(option => option.connectionId === value.connectionId && option.modelId === value.modelId);
@@ -47,7 +47,7 @@ export function AuxiliaryModelsGroup() {
       }}
     </SettingValue>} />
     {failure && <SettingsNote tone="danger" role="alert">{failure}</SettingsNote>}
-    {models.state !== 'unknown' && <RefreshFailed error={models.error} onRetry={() => { void customModels.refresh(null); }} />}
+    {models.state !== 'unknown' && <RefreshFailed reading={models} />}
     {preference && options && !options.some(option => option.connectionId === preference.connectionId && option.modelId === preference.modelId)
       && <SettingsNote>{translate('customModels.auxiliaryFallback')}</SettingsNote>}
   </SettingsGroup>;

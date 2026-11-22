@@ -123,6 +123,19 @@ export function lifeSessions(): readonly string[] {
   return db.select({ id: sessions.id }).from(sessions).where(eq(sessions.runtime, 'acp')).all().map(row => row.id);
 }
 
+/** Queued and dispatching seqs of Life sessions that hold any (of one session when given), in one read: idle sessions cost nothing (#3340). */
+export function lifePending(sessionId?: string): Map<string, { queued: Seq[]; dispatching: Seq[] }> {
+  const pending = new Map<string, { queued: Seq[]; dispatching: Seq[] }>();
+  for (const row of db.select({ sessionId: sessionPending.sessionId, seq: sessionPending.seq, state: sessionPending.state }).from(sessionPending)
+    .innerJoin(sessions, eq(sessions.id, sessionPending.sessionId))
+    .where(and(sessionId === undefined ? eq(sessions.runtime, 'acp') : eq(sessionPending.sessionId, sessionId), inArray(sessionPending.state, ['queued', 'dispatching'])))
+    .orderBy(asc(sessionPending.seq)).all()) {
+    const entry = pending.get(row.sessionId) ?? pending.set(row.sessionId, { queued: [], dispatching: [] }).get(row.sessionId)!;
+    (row.state === 'queued' ? entry.queued : entry.dispatching).push(row.seq as Seq);
+  }
+  return pending;
+}
+
 /** Whether session-life owns this session (a missing row is not one). */
 export function isLifeSession(sessionId: string): boolean {
   return db.select({ runtime: sessions.runtime }).from(sessions).where(eq(sessions.id, sessionId)).get()?.runtime === 'acp';
@@ -135,10 +148,7 @@ export const lifeStore: LifeStore = {
     return { archived: row.archivedAt !== null, hold: row.hold };
   },
   pending(sessionId) {
-    const rows = db.select({ seq: sessionPending.seq, state: sessionPending.state }).from(sessionPending)
-      .where(and(eq(sessionPending.sessionId, sessionId), inArray(sessionPending.state, ['queued', 'dispatching']))).orderBy(asc(sessionPending.seq)).all();
-    return { queued: rows.filter(row => row.state === 'queued').map(row => row.seq as Seq),
-      dispatching: rows.filter(row => row.state === 'dispatching').map(row => row.seq as Seq) };
+    return lifePending(sessionId).get(sessionId) ?? { queued: [], dispatching: [] };
   },
   row: readPending,
   enqueue: enqueuePending,

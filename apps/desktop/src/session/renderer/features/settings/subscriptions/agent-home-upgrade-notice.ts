@@ -3,6 +3,7 @@ import { notify } from '@/lib/notices'
 import type { AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { openShellSettings } from '@renderer/lib/open-shell-settings'
+import { replica } from '@/lib/replica'
 
 const shown = new Set<string>()
 
@@ -13,7 +14,34 @@ export async function readAgentHomeUpgradeResults(): Promise<AgentHomeScan[]> {
   return result.data.filter(({ upgraded, migrationSpace, migrationPreparation, nativeHistory }) => upgraded || migrationSpace || migrationPreparation || nativeHistory)
 }
 
+/** The configuration homes an upgrade changed: the first-run notice and the data-import page read this one. */
+export const agentHomeUpgradeResults = replica({
+  name: 'agentHomeUpgradeResults',
+  scope: 'device',
+  read: readAgentHomeUpgradeResults,
+})
+
 export function showAgentHomeUpgradeNotice(homes: readonly AgentHomeScan[]): void {
+  const codex = homes.find(home => home.providerId === 'codex' && home.upgraded
+    && (home.upgradeSignIn === 'copied' || home.upgradeSignIn === 'relogin'))
+  if (codex) {
+    // Reach people who already dismissed the former "sign-in copied" notice.
+    const key = `gugu.codexUpgradeRelogin:${codex.importedAt}`
+    if (!shown.has(key)) {
+      shown.add(key)
+      let dismissed = false
+      try { dismissed = !!localStorage.getItem(key) } catch { /* Use the window-local guard. */ }
+      if (!dismissed) {
+        const t = i18n.getFixedT(null, 'main')
+        notify({ key, title: t('agentHome.codexUpgradeReloginTitle', { name: codex.name }), tier: 'info', ongoing: true,
+          description: t('agentHome.codexUpgradeRelogin'),
+          action: { label: t('agentHome.signInSettings'), onClick: () => openShellSettings('model') },
+          onDismiss: () => { try { localStorage.setItem(key, '1') } catch { /* The in-memory guard remains. */ } },
+        })
+      }
+    }
+    homes = homes.filter(home => home !== codex || (home.upgradeIssues?.length ?? home.oldSessionsSkipped ?? 0) > 0)
+  }
   const blocked = homes.filter(({ migrationSpace }) => migrationSpace)
   if (blocked.length) {
     const key = 'gugu.agentHomeMigration.space:' + JSON.stringify(blocked.map((home) => [home.providerId, home.migrationSpace]))

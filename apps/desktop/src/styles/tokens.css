@@ -975,6 +975,22 @@
   --bubble-own: color-mix(in oklab, var(--fg) 8%, var(--card));
   --bubble-other: var(--bubble-agent);
   --bubble-mine: var(--bubble-own);
+  /* mermaid 图(packages/session-chat-ui/src/core/mermaid/render.ts,pele 画)只读 --pele-* 这些名字:图不随主题重画,跟着这一层的色走。 */
+  --pele-bg: var(--bg);
+  --pele-fg: var(--fg);
+  --pele-muted: var(--muted-fg);
+  --pele-line: var(--muted-fg);
+  --pele-surface: var(--muted);
+  --pele-surface-alt: var(--card);
+  --pele-border: var(--border-strong);
+  --pele-accent: var(--live);
+  --pele-critical: var(--danger);
+  --pele-error: var(--danger);
+  --pele-series-1: var(--chart-1); --pele-series-2: var(--chart-2); --pele-series-3: var(--chart-3);
+  --pele-series-4: var(--chart-4); --pele-series-5: var(--chart-5); --pele-series-6: var(--chart-6);
+  --pele-font: var(--font-family-system);
+  --pele-font-mono: var(--font-family-mono);
+  --pele-radius: var(--radius-xs);
 }
 
 /* File-family marks share one App/host palette. Dark keeps the light hue at 85% chroma; where the light lightness is too dark to be ink on a dark tile, it is raised so each glyph reads >= 3.6:1 on its tile, on page and card alike. */
@@ -1053,7 +1069,7 @@
 /* ── @@@window-material-css (#7333) 窗口底层材质 ─────────────────────────────────────────────
    真值是 `<html data-window-material>`:只由主进程按系统信号写(electron/window-material.ts,只有 mac 主窗可能是 native),
    ❌ 在 CSS 里再按平台名或 prefers-reduced-transparency 自己判一遍 —— 两个真值会打架。
-   native 时:窗口底层那两块(最左栏、壳里的导航列)让出底色,透出系统 vibrancy;内容表面(聊天、详情、设置卡片)
+   native 时:只有最左栏让出底色,透出系统 vibrancy(列表在 C 档工作区上,浅色深色同一份,desktop-shell.css);内容表面(聊天、详情、设置卡片)
    一律保持不透明,正文不受背后变化干扰。浮层仍是不透明面 + 投影 —— 那是当前的可读降级,不等于原生 glass。
    壳根与内容容器的底色走 --shell-bg(MainLayout 内联读它);它们透明之后,每个内容面得自己画 --bg。 */
 :root {
@@ -1069,22 +1085,7 @@
 :root[data-window-material='opaque'][data-theme='light'] {
   --nav-rail: var(--muted);
 }
-/* 只管壳里的导航列;设置弹窗(挂在 body 上,不在壳里)的左栏照旧是 --sidebar 实色。 */
-:root[data-window-material='native'] [data-gugu-shell-phase] .gg-pane[data-role='nav'] {
-  background: transparent;
-}
-/* 「侧栏渐进底色」打开时:导航列在材质上再铺一层内容色的薄纱,三栏仍是一条阶梯(rail 透 → 列表半透 → 内容实)。 */
-:root[data-window-material='native'][data-sidebar-tint='on'] [data-gugu-shell-phase] .gg-pane[data-role='nav'] {
-  background: color-mix(in oklab, var(--bg) 40%, transparent);
-}
-/* @@@dark-material-veil 深色材质上这层薄纱默认就铺,且加到 70%:深色 sidebar 材质随窗口背后内容在 rgb(43,47,49)…(76,79,82) 之间变,
-   背后是白窗口时分区标题(--muted-fg)只有 2.7:1;70% 之后三种背景(深 / 白 / 花哨)都在 4.7–5.4,条目仍比标题亮,最左栏照旧全透。
-   读数是 mac1 屏幕合成像素(按窗口号截图拍不到材质混色,恒为 70,73,75)。浅色导航列本来就落在不透明工作区底上,不受影响。
-   ❌ 低于 ~63%:背后是白窗口时标题掉回 4.5 以下。 */
-:root[data-window-material='native']:not([data-theme='light']) [data-gugu-shell-phase] .gg-pane[data-role='nav'] {
-  background: color-mix(in oklab, var(--bg) 70%, transparent);
-}
-/* 任务页(会话页嵌在壳里):停靠的项目/会话列透出材质,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
+/* 任务页(会话页嵌在壳里):停靠的项目/会话列透出下面的 C 档工作区,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
    正文(WorkspaceContentLayout 的 bg-background)与各块(screen-frame)照旧不透明。
    浮出预览(data-peek,盖在正文上)❌ 透:那一层要稳定的不透明面。拖入文件时的高亮底(bg-background-2)也保留。
    ❌ 把 .bg-background-tertiary 这个通用类一律清空:正文里的分块也用它。
@@ -1096,18 +1097,11 @@
 :root[data-window-material='native'] .gugu-skin [data-workspace-left-panel] > :not([data-peek]) [data-region='left-sidebar']:not(.bg-background-2) {
   background-color: transparent;
 }
-:root[data-window-material='native'][data-sidebar-tint='on'] .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
-  background-color: color-mix(in oklab, var(--bg) 40%, transparent);
-}
-/* 同 @@@dark-material-veil:任务页停靠列、群 / 项目的内层栏与壳里的导航列同一层薄纱。 */
-:root[data-window-material='native']:not([data-theme='light']) .gugu-skin :is([data-workspace-left-panel] > :not([data-peek]), [data-region='inner-sidebar']) {
-  background-color: color-mix(in oklab, var(--bg) 70%, transparent);
-}
 
-/* #7610 owner 选 C:列表、工作区上下留边与右侧导航共用接近白色的整块底。
+/* #7610 owner 选 C:列表、工作区上下留边与右侧导航共用一整块底(浅色接近白色;深色同一结构,只换色)。
    外层圆角归这块工作区,不再只圈右侧正文;布局处方见 desktop-shell.css。
    从既有 sidebar 档取色,渐进底色开关也只改这一份真值。 */
-:root[data-window-material][data-theme='light'] {
+:root[data-window-material] {
   --desktop-workspace-bg: var(--sidebar);
 }
 
@@ -1210,12 +1204,10 @@ input {
    内容在每次滚动时左右跳 4px),只把 thumb 的颜色在两个状态间切。
    「正在滚动」由 lib/scrollbarAutoHide.ts 打的 `data-scrolling` 属性表示 —— CSS 没有这个状态,
    鼠标停在可滚区域内也会在停滚后隐藏,只有悬停滑块本身时才加深颜色。
+   横向滑块常亮:横着滚的是消息里的表格、代码块,鼠标的滚轮滚不动它们,看得见、拖得动的滑块是唯一入口。
 
-   ⚠️ 这一条**只管主界面**,❌ 不要顺手把 session/renderer/index.css 的 `.gugu-skin` 那套一起改。
-   那边写了 `scrollbar-color`,而**元素上只要存在 scrollbar-color,Blink 就整个禁用 ::-webkit-scrollbar
-   伪元素**、改走系统滚动条 —— 在 macOS 上那本来就是「滚动时才浮出」的 overlay 条,已经是这里想要的
-   效果了。真机实测(Chromium headless 四格对照):`scrollbar-color + webkit` 同时写 ⇒ 不显示;
-   只写 webkit ⇒ 显示。所以给那边加 `data-scrolling` 规则是一条**不会生效**的改动。 */
+   这是全应用(含会话页)唯一一套。❌ 在别处再写 `scrollbar-width` / `scrollbar-color`:元素上一有它们,
+   Blink 就整个不认 ::-webkit-scrollbar、改走系统滚动条 —— Windows 上那是静止时不画的悬浮条。 */
 @media (hover: hover) and (pointer: fine) {
   ::-webkit-scrollbar {
     width: 4px;
@@ -1228,7 +1220,8 @@ input {
     background: transparent;
     border-radius: 2px;
   }
-  [data-scrolling]::-webkit-scrollbar-thumb {
+  [data-scrolling]::-webkit-scrollbar-thumb,
+  ::-webkit-scrollbar-thumb:horizontal {
     background: var(--border-color);
   }
   ::-webkit-scrollbar-thumb:hover {
@@ -1650,9 +1643,10 @@ body.barcode-scanner-active #root {
   --warn-tint: color-mix(in srgb, var(--warn) 14%, transparent);
   /* #6448 agent 状态的颜色只在这里定义一次(owner 2026-09-25 定表),会话页、聊天、手机都经
      `agentStatusColorVar`(packages/core/src/shared/agentStatusPresentation.ts)取这几个名字:
-     在跑 / 后台在跑 = 橙(聊天侧沿用的那个),需要你 = --warn 黄,出错 = --danger 红,在线 = 绿(可达)。
-     做完只加粗不上色,空闲不上色。 */
+     在跑 = 橙(聊天侧沿用的那个),后台在跑 = --warn 黄(画成双竖线 AgentParkedGlyph,不是点),需要你 = --warn 黄,
+     出错 = --danger 红,在线 = 绿(可达)。做完只加粗不上色,空闲不上色。 */
   --agent-tone-running: #ff5f1f;
+  --agent-tone-parked: var(--warn);
   --agent-tone-needs-user: var(--warn);
   --agent-tone-error: var(--danger);
   --agent-tone-online: var(--green);
@@ -1670,8 +1664,10 @@ body.barcode-scanner-active #root {
 
 /* 列表行:会话/联系人/任务/文件/成员行。选中挂 data-selected(React: data-selected={sel || undefined})。 */
 .gg-row {
-  transition: background var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), opacity var(--dur-fast) var(--ease);
 }
+/* 此刻选不了的行(如联系人多选态下的「新的请求」):与菜单项的禁用态(.gg-mi[data-disabled])同一个淡法,不接指针。 */
+.gg-row[aria-disabled='true'] { opacity: 0.4; pointer-events: none; }
 /* #2598 置顶行常驻底色(飞书式:靠底色辨识,❌ 另起分隔条/标题栏——见 #1323/#1331 做减法先例)。
    刻意排在交互态之前:同特异度下后写的赢,hover/press/selected 照常盖过常驻态。 */
 .gg-row[data-pinned] { background: var(--pinned); }
@@ -1688,10 +1684,10 @@ body.barcode-scanner-active #root {
    指针一移到钮上，行自身的 :hover 就假掉、底色闪一下；由外层 host 接管补上。
    pinned/selected 用 :not() 显式让开，别靠特异度赛跑去猜谁赢。 */
 @media (hover: hover) { .gg-row-host:hover > .gg-row:not([data-selected]):not([data-popup-open]):not([data-pinned]) { background: var(--hover); } }
-/* @@@contacts-offscreen-rows 通讯录分段里的行:屏幕外的跳过布局与绘制(content-visibility),页内查找照样搜得到。
+/* @@@contacts-offscreen-rows 通讯录分组页(ContactsSectionPane)里的人行 / 群行:屏幕外的跳过布局与绘制(content-visibility)。
    auto 记住画过的实际高度,没画过的按 48px(头像 32 + 上下内距 8,通讯录行一律单行)占位。paint containment 会裁掉框外的东西:
    键盘焦点环画在框外 4px(outline 2 + offset 2),用 overflow-clip-margin 让出来,外观不变。 */
-.gg-c-sec-body .gg-row-host, .gg-c-sec-body > div > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 48px; overflow-clip-margin: 4px; }
+.gg-c-sec-body .gg-row-host, .gg-c-sec-body .gg-c-grid > .gg-row { content-visibility: auto; contain-intrinsic-size: auto 48px; overflow-clip-margin: 4px; }
 
 /* Ghost 图标钮:导航轨/composer 图标/消息工具条/关闭钮。「开」态挂 data-on;菜单 Trigger 菜单开着时 Base UI 挂 data-popup-open,同一个开态。
    图标色只在 faint-fg → muted-fg → fg 三档内移动,不引入色相。 */
@@ -1800,11 +1796,6 @@ body.barcode-scanner-active #root {
 }
 .gg-winctl:hover { background-color: var(--hover); color: var(--text-primary); }
 .gg-winctl--close:hover { background-color: #E81123; color: #fff; }
-
-/* 悬浮显现:消息 hover 工具条/卡片快捷操作。❌ display:none 切换(闪跳);focus-within 保键盘可达。 */
-.gg-reveal { opacity: 0; transition: opacity var(--dur-fast) var(--ease); }
-.gg-reveal-host:hover .gg-reveal,
-.gg-reveal:focus-within { opacity: 1; }
 
 /* 系统减弱动态:全部动效降级为即时。iteration-count 必须配对压成 1——
    只压时长的话 infinite 动画(spinner/pulse/shimmer)会变成每圈 0.01ms 的高频闪烁,比不降级更糟。 */
@@ -1978,6 +1969,12 @@ body.barcode-scanner-active #root {
 }
 .gg-pane-header[data-mobile] { height: var(--pane-header-h-touch); }
 .gg-pane-header[data-divider] { border-bottom: 1px solid var(--border); }
+/* At the window's right edge the controls drawn over content (Linux) keep their room; 0 where they are not over it.
+   A column with its own close floating at the top right (the contacts drawer) sets --pane-close-room, and every header
+   inside it leaves that room too — so a long title ends in an ellipsis before the close instead of running under it. */
+.gg-pane-header[data-window-edge], [data-pane-close] .gg-pane-header {
+  padding-right: calc(var(--pane-pad-x) + var(--pane-close-room, 0px) + var(--titlebar-controls-width, 0px));
+}
 .gg-pane-title {
   flex: 1 1 auto;
   min-width: 0;
@@ -2364,13 +2361,6 @@ body.barcode-scanner-active #root {
   background: var(--border-subtle);
 }
 
-/* @@@unknown-slot — the read model's placeholder (components/ui/Unknown.tsx): it holds the value's place from the first
-   frame but is drawn only after 150 ms, so a read that answers sooner shows nothing in between (❌ a flash of a bar). */
-@keyframes gg-unknown-appear { to { opacity: 1; } }
-.gg-unknown { opacity: 0; animation: gg-unknown-appear 0s linear 150ms forwards; }
-@media (prefers-reduced-motion: reduce) { .gg-unknown { animation-duration: 0s; } }
-
-
 /* Model settings: approved light palette, with the existing dark theme surfaces. */
 :root {
   --model-settings-page: var(--page);
@@ -2402,3 +2392,19 @@ body.barcode-scanner-active #root {
   --usage-brand-codex-trackLight: #C9CFD6;
   --usage-brand-codex-trackDark: #41474F;
 }
+
+/* @@@placeholder-reveal — how what stands for a value not read yet appears: the read model's placeholder
+   (components/ui/Unknown.tsx, `.gg-unknown`), a loading line (`.gg-loading-line`), a search's previous results dimmed
+   (`.gg-stale`). Nothing for 150 ms (a read that answers sooner leaves nothing drawn in between), then a slow start
+   (ease-in cubic over 450 ms): half way only ~500 ms after it is drawn, so a read answering within half a second leaves a
+   faint bar at most (❌ a flash of a bar); a slower one shows the placeholder, as it should. The same with reduced motion
+   (an opacity change, no movement). */
+:root {
+  --gg-placeholder-delay: 150ms;
+  --gg-placeholder-duration: 450ms;
+  --gg-placeholder-easing: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+}
+@keyframes gg-placeholder-in { from { opacity: 0; } to { opacity: 1; } }
+.gg-unknown, .gg-loading-line { animation: gg-placeholder-in var(--gg-placeholder-duration) var(--gg-placeholder-easing) var(--gg-placeholder-delay) both; }
+@keyframes gg-stale-dim { from { opacity: 1; } to { opacity: 0.6; } }
+.gg-stale { animation: gg-stale-dim var(--gg-placeholder-duration) var(--gg-placeholder-easing) var(--gg-placeholder-delay) both; }

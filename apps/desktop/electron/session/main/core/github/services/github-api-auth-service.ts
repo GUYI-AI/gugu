@@ -30,7 +30,9 @@ type GitHubCliTokenLookup = {
 export class GitHubApiAuthService {
   constructor(
     private readonly accountLookup: GitHubAccountLookup,
-    private readonly cliTokenLookup: GitHubCliTokenLookup
+    private readonly cliTokenLookup: GitHubCliTokenLookup,
+    /** Settles pending upgrade work on the stored accounts (the vault move) before one is read. Never rejects. */
+    private readonly beforeRead: () => Promise<void> = async () => {}
   ) {}
 
   async getToken(
@@ -39,6 +41,7 @@ export class GitHubApiAuthService {
   ): Promise<Result<string, GitHubApiAuthError>> {
     const normalizedHost = normalizeRepositoryHost(host);
     const accountId = context.accountId?.trim() || null;
+    await this.beforeRead();
     const account = await this.resolveAccount(normalizedHost, accountId);
     if (!account) return err(githubApiAuthRequired(normalizedHost));
     if (!account.success) return err(account.error);
@@ -51,7 +54,8 @@ export class GitHubApiAuthService {
   /**
    * gh-sourced accounts hold no local copy: ask gh each time, so a token it has
    * rotated or logged out of fails here immediately instead of silently using a
-   * stale one. Every other source resolves from the encrypted store as before.
+   * stale one. Every other source resolves from where its row's ref says: the
+   * password vault, or the app's encrypted store until the upgrade move ran.
    */
   private async resolveToken(account: GitHubAccount): Promise<string | null> {
     if (account.credentialSource === 'cli') {

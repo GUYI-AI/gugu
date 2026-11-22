@@ -21,6 +21,7 @@ import { useInChatSlot, useChatSlotProjectName } from '../../lib/shellSlots'
 import { sessionComposerDockedWidthClassName } from '../../session/renderer/features/sessions/session-composer-styles'
 import { useChatTaskDrop } from './useChatTaskDrop'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
+import { useDraftAttachmentPreview } from './useDraftAttachmentPreview'
 import { useChatDraft, makePendingAttachment, revokeAttachmentPreviewUrls } from './useChatDraft'
 import { useChatMessageSend } from './useChatMessageSend'
 import { ComposerAttachButton } from './ComposerAttachButton'
@@ -76,6 +77,7 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
   const annotationDraft = annotationConversation ? sessionAnnotations.forConversation(annotationConversation, user?.id ?? currentUserId) : undefined
   const { text, setText, mentionTargets, setMentionTargets, attachments, setAttachments } = draft
   const fileSelection = useAttachmentFileSelection(attachments, chatId)
+  const draftPreview = useDraftAttachmentPreview(chatId, mobile && !hidden, id => attachments.find(item => item.id === id)?.file, (id, file, caption) => replaceAttachment(id, file, caption))
   const editorApiRef = useRef<PromptEditorRef | null>(null)
   const inputRef = useRef<HTMLElement | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -107,6 +109,18 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
       })
     }
   }, [enqueueFiles, setAttachments])
+  // 编辑过的图换掉原来那一枚:同一个 id、同一个位置,原图不留。原来是照片(带压缩件)的,编辑后照样压一次。
+  // 查看器开在更早的一次渲染里,所以按 id 取此刻的那一枚(照片可能已经压完换了文件)。
+  const currentAttachments = useRef(attachments)
+  currentAttachments.current = attachments
+  const replaceAttachment = (id: string, file: File, caption: string) => {
+    const previous = currentAttachments.current.find((item) => item.id === id)
+    if (!previous) return
+    revokeAttachmentPreviewUrls([previous])
+    setAttachments((pending) => pending.map((item) => item.id === id ? makePendingAttachment(file, id) : item))
+    if (caption) editorApiRef.current?.insertText(caption, 'end')
+    if (previous.photo) void compressPhoto(file).then((compressed) => { if (compressed !== file) setAttachments((pending) => pending.map((item) => item.id === id && item.file === file ? { ...item, file: compressed, photo: { original: file, compressed } } : item)) })
+  }
 
   useEffect(() => isMain ? registerComposerFocusTarget(() => inputRef.current) : undefined, [isMain])
   useComposerEntryFocus(chatId ? 'chat:' + chatId : null, isMain && !hidden && props.entryActive === true, () => {
@@ -142,6 +156,7 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
   const composerAttachments: ComposerAttachment[] = attachments.map((attachment) => ({
     id: attachment.id, name: attachment.file.name, kind: attachment.kind === 'image' ? 'image' : 'file',
     previewUrl: attachment.previewUrl ?? undefined, mimeType: attachment.file.type, meta: formatAttachmentSize(attachment.file.size),
+    hasLocalPreview: mobile,
     imageQuality: attachment.photo && (attachment.file === attachment.photo.compressed ? 'compressed' : 'original'),
   }))
   const onMentionInsert = (item: MentionItem) => {
@@ -176,7 +191,7 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
           onInputChange={setText} onSubmitWhileWorking={props.conversation ? handleSend : undefined} onSubmit={handleSend} onMentionInsert={onMentionInsert}
           mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon} queryCommands={queryPrompts} dataDropTypes={dataDropTypes} onDataDropped={onDataDropped}
           onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles} onDirectoriesDropped={onDirectoriesDropped}
-          attachments={composerAttachments} onAttachmentsChange={(next) => { const kept = attachments.filter((file) => next.some((item) => item.id === file.id)); revokeAttachmentPreviewUrls(attachments.filter((file) => !kept.includes(file))); setAttachments(kept) }}
+          attachments={composerAttachments} onViewAttachment={draftPreview.open} onAttachmentsChange={(next) => { const kept = attachments.filter((file) => next.some((item) => item.id === file.id)); revokeAttachmentPreviewUrls(attachments.filter((file) => !kept.includes(file))); setAttachments(kept) }}
           attachmentExtra={annotationConversation && annotationDraft?.items.length ? <AnnotationTray conversation={annotationConversation} onSend={() => { void handleSend() }} enabled={!disabled && !sending && !hidden && !takenOver && isMain} /> : null}
           onAttachmentQualityChange={(id) => setAttachments((pending) => pending.map((item) => item.id === id && item.photo ? { ...item, file: item.file === item.photo.compressed ? item.photo.original : item.photo.compressed } : item))}
           toolbarExtra={mobile
@@ -185,6 +200,7 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
                 onClick={() => { inputRef.current?.blur(); setAttachOpen((open) => !open) }}><Paperclip /></IconButton>
             : <ComposerAttachButton glyph={attachGlyph} actions={attachMenu} disabled={disabled} mobile={mobile} onPickFile={() => fileInputRef.current?.click()} />}
           className={inChatSlot ? sessionComposerDockedWidthClassName : undefined} />
+        {draftPreview.panel}
         {mobile && attachOpen && <PhoneAttachPanel onClose={() => setAttachOpen(false)} entries={[
           { id: 'photos', label: t('composer.photos'), icon: <Image />, onSelect: () => photoInputRef.current?.click() },
           { id: 'camera', label: t('composer.camera'), icon: <Camera />, onSelect: () => cameraInputRef.current?.click() },

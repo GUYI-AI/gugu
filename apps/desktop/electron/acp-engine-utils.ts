@@ -1,4 +1,3 @@
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { registerPasswordBetaTools } from './mcp/password-beta-tools'
 import { guguMcpToolScope } from './mcp/password-native-identity'
 import { registerGuguActivityTools } from './mcp/gugu-activity-tool'
@@ -171,6 +170,8 @@ interface GuguMcpContextBase {
   grantKey?: string
   /** Raw session ID stamped by the native bridge creator; never parse grantKey for identity. */
   nativeSessionId?: string
+  /** The owner reads this session's own record (a structured session page): a message to the owner is committed there. */
+  ownerReadsSession?: true
 }
 
 /** #6615 会话经 catalog_* 够得到的扩展工具,与此刻被排除在外的程序(问题 16);扩展服务就绪后由宿主设上,没设 = 没有。 */
@@ -254,7 +255,6 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
   const baseTools = initial.personalAssistant ? GUGU_ASSISTANT_LISTED_TOOLS : GUGU_LISTED_TOOLS
   const search = initial.webSearch?.available() ? initial.webSearch : undefined
   const listedTools = new Set<string>(search ? [...baseTools, 'web_search'] : baseTools)
-  if (PASSWORD_BETA_ENABLED) for (const name of ['password_credentials', 'password_fill']) listedTools.add(name)
   const trackRequest: GuguMcpRequestTracker = (work, toolName, requestId) => {
     const tracked = trackHostRequest(work, toolName, requestId)
     if (initial.personalAssistant && toolName) {
@@ -421,6 +421,7 @@ export interface BuildSocialBridgeDeps {
   host: DesktopGuguMcpHost
   grantKey: string
   nativeSessionId?: string
+  ownerReadsSession?: true
   personalAssistant?: true
   assistantWork?: AssistantWorkBinding
   runHostAction?: (action: unknown, auth: RuntimeAuth, signal: AbortSignal) => Promise<unknown>
@@ -467,6 +468,7 @@ export async function buildSocialBridge(
       guguHome: resolveGuguHome(context.env),
       grantKey: deps.grantKey,
       nativeSessionId: deps.nativeSessionId,
+      ...(deps.ownerReadsSession ? { ownerReadsSession: true as const } : {}),
       ...(deps.webSearch ? { webSearch: {
         available: deps.webSearch.available,
         run: async (query: string, signal: AbortSignal) => {

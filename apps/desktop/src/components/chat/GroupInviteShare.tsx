@@ -13,6 +13,7 @@ import { SharePosterDialog } from '../SharePosterDialog'
 import { useToast } from '../toastContext'
 import { Button } from '../ui/Button'
 import { buildUnifiedMembers, GROUP_FACES } from './groupMemberModels'
+import { ProfileCardAction } from '../contacts/ProfileCardAction'
 
 /** Displayed size of a group's own invite QR code. */
 const GROUP_INVITE_QR_SIZE = 208
@@ -26,12 +27,20 @@ interface GroupInviteShareProps {
 
 /**
  * @@@group-share 分享一个群 = 它的邀请链接(复制)和海报(带码)。两副样子共用这一份动作:
- * - GroupInviteActions:一排按钮,放在邀请单的确认按钮旁边;
- * - GroupInviteCode:码直接画出来,是「没人可选」时邀请单的主体,也是通讯录里群资料页上的那张码。
+ * - GroupInviteActions:一排按钮,放在邀请单的确认按钮旁边,也是通讯录群资料上「邀请」那一行;
+ * - GroupInviteCode:码直接画出来,是「没人可选」时邀请单的主体。
  */
-export function GroupInviteActions(props: GroupInviteShareProps) {
+/** `appearance="card"`: the profile card's light icon-and-text actions (the contacts group card), else the settings bar's buttons. */
+export function GroupInviteActions({ appearance, ...props }: GroupInviteShareProps & { appearance?: 'card' }) {
   const { t } = useTranslation('messaging')
   const share = useGroupInviteShare(props)
+  if (appearance === 'card') return (
+    <div data-testid="group-invite-link" data-layout="bar" className="contents">
+      <ProfileCardAction icon={Link} label={t('group.settings.copyLink')} testId="group-invite-copy-link" title={props.inviteLink} onClick={share.copy} />
+      <ProfileCardAction icon={QrCode} label={t('group.settings.qrCode')} testId="group-invite-qr" onClick={share.openPoster} />
+      {share.poster}
+    </div>
+  )
   return (
     <div data-testid="group-invite-link" data-layout="bar" className="flex min-w-0 items-center gap-2">
       <Button variant="secondary" size="sm" data-testid="group-invite-copy-link" title={props.inviteLink} onClick={share.copy}>

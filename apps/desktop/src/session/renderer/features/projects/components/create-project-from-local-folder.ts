@@ -3,6 +3,7 @@ import { getProjectManagerStore } from '@renderer/features/projects/stores/proje
 import { toast } from '@renderer/lib/hooks/use-toast';
 import type { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { basenameFromAnyPath } from '@shared/path-name';
+import { recoverRetainedProjectAtPath } from '@/lib/projectRecovery';
 import {
   isProjectPathConflictError,
   projectPathConflictMessage,
@@ -34,6 +35,17 @@ export async function createProjectFromLocalFolder(
   }
   const projectManager = getProjectManagerStore();
   const pendingProjectId = crypto.randomUUID();
+  try {
+    const restored = await recoverRetainedProjectAtPath(path);
+    if (restored) return restored;
+  } catch (failure) {
+    log.error({ path, error: failure instanceof Error ? failure.message : String(failure) }, '恢复原项目失败');
+    const incompleteHistory = failure instanceof Error && failure.message.includes('group_recovery_requires_topic_evidence');
+    toast({ title: translate('projects.create.restoreFailed'), description: incompleteHistory
+      ? translate('projects.create.restoreIncomplete')
+      : translate('projects.create.restoreCheckPermissions'), variant: 'destructive' });
+    return null;
+  }
   try {
     const projectId = await projectManager.createProject(
       { type: 'local' },

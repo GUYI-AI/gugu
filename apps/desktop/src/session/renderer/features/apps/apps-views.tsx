@@ -1,9 +1,10 @@
-import type { AgentAppDetailLink, ExtensionAppDetailLink } from '@gugu/core/shared/ui/guguLink';
+import type { AgentAppDetailLink } from '@gugu/core/shared/ui/guguLink';
+import { retryOf } from '@/lib/replica';
 import { action, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import { useEffect, useState, type ReactElement, type ReactNode } from 'react';
+import type { ReactElement, ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
@@ -13,11 +14,11 @@ import { AppConversationFrame } from './app-conversation-frame';
 import { AppHostLayerFrame } from './app-host-layer';
 import { useAssistantPageNotHere } from './assistant-page-not-here';
 import { extensionSurfaceStore, extensionTabTitle } from '@renderer/features/extensions/extension-surface-store';
-import { installedExtensionsStore } from '@renderer/features/extensions/installed-extensions-store';
+import { LOCAL_HOST, useInstalledApps, type InstalledApps } from '@renderer/features/extensions/installed-extensions';
+import { Unknown } from '@/components/ui/Unknown';
 import { reloadAppPage } from '@renderer/features/extensions/app-page-unsaved';
 import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-library-page';
 import { LibraryHostProvider, LOCAL_LIBRARY_HOST, machineLibraryHost } from '@renderer/features/library/library-host';
-import type { MarketplaceTab } from '@renderer/features/settings/components/ExtensionsSettingsCard';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { PageContent, PageLayout } from '@renderer/lib/components/page-layout';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
@@ -26,7 +27,7 @@ import { appState } from '@renderer/lib/stores/app-state';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
-import type { InstalledSection } from '@renderer/features/extensions/installed/installed-item';
+import { appsLocation, moveAppsLocation, previousAppsLocation, type AppsLocation } from './apps-location';
 import { AgentAppDetailDialog } from './agent-app-detail-dialog';
 import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
@@ -36,22 +37,14 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const { params, setParams } = useParams('apps');
   const { navigate } = useNavigate();
   const currentViewId = appState.navigation.currentViewId;
-  const { agentDetail, agentDetailFrom, detail, installedSection: requestedInstalled, installedDeviceId: requestedDevice } = params;
-  const marketHost = detail?.deviceId ? deviceDetailHost(detail.deviceId) : LOCAL_LIBRARY_HOST;
-  const [installedSection, setInstalledSection] = useState<InstalledSection | null>(null);
-  const [installedDeviceId, setInstalledDeviceId] = useState<string>();
-  useEffect(() => {
-    if (currentViewId !== 'apps' || requestedInstalled !== 'connectors') return;
-    setInstalledDeviceId(requestedDevice);
-    setInstalledSection('connectors');
-    setParams({ installedSection: undefined, installedDeviceId: undefined });
-  }, [currentViewId, requestedInstalled, requestedDevice, setParams]);
-  useEffect(() => {
-    if (currentViewId !== 'apps') setInstalledSection(null);
-  }, [currentViewId]);
-  const launchInstalled = () => {
-    setInstalledDeviceId(undefined);
-    setInstalledSection('agents');
+  const { agentDetail, agentDetailFrom } = params;
+  const location = appsLocation(params);
+  const marketHost = location.deviceId ? deviceDetailHost(location.deviceId) : LOCAL_LIBRARY_HOST;
+  const installed = location.installed;
+  // The sheet is a place of its own: closing it is going back to where it was opened from.
+  const closeInstalled = () => {
+    if (previousAppsLocation()) navigateBack(true);
+    else moveAppsLocation((here) => ({ ...here, installed: undefined }));
   };
 
   const closeAgentDetail = () => {
@@ -70,11 +63,6 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
           <PageContent className="max-w-none px-0">
             <LibraryHostProvider value={marketHost} key={marketHost.key}>
               <ExtensionsLibraryPage
-                detail={detail}
-                openInstalled={launchInstalled}
-                onCloseDetailLink={() => setParams({ detail: undefined })}
-                marketPage={params.marketPage}
-                onMarketPageChange={(marketPage) => setParams({ marketPage })}
                 onOpenAgentDetail={(agentId) => setParams({
                   agentDetail: { kind: 'agent-app-detail', agentId, ...(marketHost.remote && { deviceId: marketHost.remote.deviceId }) },
                   agentDetailFrom: 'apps',
@@ -84,9 +72,9 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
           </PageContent>
         </PageLayout>
       </div>
-      {installedSection && currentViewId === 'apps' && <InstalledManager key={`${installedSection}:${installedDeviceId ?? 'local'}`}
-        initialSection={installedSection} initialDeviceId={installedDeviceId}
-        onClose={() => setInstalledSection(null)}
+      {installed && currentViewId === 'apps' && <InstalledManager place={installed}
+        onPlace={(next) => moveAppsLocation((here) => ({ ...here, installed: next }))}
+        onClose={closeInstalled}
         onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
         onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
       {agentDetail && (
@@ -125,10 +113,7 @@ const AgentDetailHost = observer(function AgentDetailHost({ target, children }: 
 });
 
 type AppsViewParams = {
-  marketPage?: MarketplaceTab;
-  installedSection?: 'connectors';
-  installedDeviceId?: string;
-  detail?: ExtensionAppDetailLink;
+  location?: AppsLocation;
   agentDetail?: AgentAppDetailLink;
   agentDetailFrom?: 'apps' | 'embedded-composer';
 };
@@ -136,7 +121,8 @@ function AppsViewWrapper({ children }: { children: ReactNode } & AppsViewParams)
 
 export const appsView = {
   WrapView: AppsViewWrapper,
-  transientParams: ['detail', 'agentDetail', 'agentDetailFrom', 'installedSection', 'installedDeviceId'],
+  placeParams: ['location'],
+  transientParams: ['agentDetail', 'agentDetailFrom'],
   TitlebarSlot: ShellTitlebar,
   MainPanel: AppsMainPanel,
   withoutSessionSidebar: true,
@@ -173,6 +159,10 @@ function useShownAsAssistant(appId: string | undefined, tab: string | undefined)
   return target.kind === 'app' && !!appId && target.extensionId === appId && !tab;
 }
 
+function pageOf(apps: InstalledApps, appId: string | undefined, tab: string | undefined) {
+  return tab ? apps.allTabContributions.find((entry) => entry.extensionId === appId && entry.kind === `${appId}.${tab}`) ?? null : appId ? apps.mainTabOf(appId) : null;
+}
+
 /**
  * 整页的顶栏:左边它的名字,右上角 ⧉ = 在新窗口打开(原型「它整页右上角 ⧉ = 窗口」)。⧉ 作用于这一页的内容,
  * 跟着内容走、贴窗口右缘(这页没有工作区面板那一簇),几何交给 <TabBarActionRow>,❌ 自己写 right-*。
@@ -180,7 +170,8 @@ function useShownAsAssistant(appId: string | undefined, tab: string | undefined)
 const AppTitlebar = observer(function AppTitlebar() {
   const { translate } = useSessionMessages();
   const { params } = useParams('app');
-  const main = params.tab ? installedExtensionsStore.allTabContributions.find((entry) => entry.extensionId === params.appId && entry.kind === `${params.appId}.${params.tab}`) : params.appId ? installedExtensionsStore.mainTabOf(params.appId) : null;
+  const installed = useInstalledApps(LOCAL_HOST);
+  const main = installed.state === 'value' ? pageOf(installed.value, params.appId, params.tab) : null;
   const error = main ? pageError() : null;
   const heading = main ? extensionTabTitle(extensionSurfaceStore.said(null, 'dock'), main.extensionName) : null;
   const openInWindowLabel = translate('tabs.openInWindow');
@@ -188,6 +179,10 @@ const AppTitlebar = observer(function AppTitlebar() {
   // The assistant's page: nothing of the App's on the band but a reported error's mark. Its page starts at the top, under
   // this band, so the band is not the window's handle while the page is drawn (a drag band over the App's webview takes
   // real clicks on its tabs, owner 11-12): the conversation's column carries the handle (AppConversationFrame `windowHandle`).
+  // ❌ an empty band then a name.
+  if (installed.state === 'unknown' && !assistantPage) {
+    return <ShellTitlebar leftSlot={<Unknown className="h-4 w-24" />} />;
+  }
   if (assistantPage) {
     return <ShellTitlebar dragRegion={!main?.enabled} leftSlot={main && error ? <AppErrorMark error={error} onToggle={() => toggleErrorDetails(main.kind)} testId="app-page-error" /> : null} />;
   }
@@ -240,7 +235,8 @@ const AppTitlebar = observer(function AppTitlebar() {
 const AppMainPanel = observer(function AppMainPanel() {
   const { translate } = useSessionMessages();
   const { params } = useParams('app');
-  const main = params.tab ? installedExtensionsStore.allTabContributions.find((entry) => entry.extensionId === params.appId && entry.kind === `${params.appId}.${params.tab}`) : params.appId ? installedExtensionsStore.mainTabOf(params.appId) : null;
+  const installed = useInstalledApps(LOCAL_HOST);
+  const main = installed.state === 'value' ? pageOf(installed.value, params.appId, params.tab) : null;
   const error = main?.enabled ? pageError() : null;
   // The title bar is a zero-height band over the top of the main area (the App's name, the window's handle): the page
   // starts under it, as a session's tabs do (tab-bar.tsx) — an App drawing from its top edge sat beneath its own name
@@ -252,14 +248,22 @@ const AppMainPanel = observer(function AppMainPanel() {
   const assistantNotHere = useAssistantPageNotHere(params.appId, !!main?.enabled);
   return (
     <div className="flex h-full min-h-0 w-full flex-col" style={assistantPage ? undefined : { paddingTop: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-testid="app-page" data-assistant-page={assistantPage ? '' : undefined}>
-      {!main?.enabled ? (
+      {installed.state === 'unknown' ? (
+        // ❌ 「已停用」 before the list says so.
+        <div className="min-h-0 flex-1" data-testid="app-page-unknown" aria-busy="true" />
+      ) : installed.state === 'error' ? (
+        <div className="flex flex-col items-start gap-2 text-sm text-foreground-muted" style={{ padding: 24 }} data-testid="app-page-unreadable">
+          <p>{translate('extensions.loadFailed')}</p>
+          <Button variant="outline" size="sm" onClick={retryOf(installed)}>{translate('common.retry')}</Button>
+        </div>
+      ) : !main?.enabled ? (
         <p className="text-sm text-foreground-muted" style={{ padding: 24 }}>{translate(assistantNotHere ? 'extensions.assistantPreparing' : 'extensions.turnOnInSettings')}</p>
       ) : (
         <>
           {error && errorDetailsShown.has(main.kind) ? <AppErrorDetails error={error} testId="app-page-error-details" onReload={() => void reloadAppPage(null, 'dock')} /> : null}
           {/* #1925 Its main page placed beside its bound conversation: the conversation's frame, while the host may draw it. */}
           {/* #1925 (44, 46) Elsewhere its page stands alone; a host page over it (a task, the assistant's own pages) in its place. */}
-          {placedBesideConversation(main) ? <AppConversationFrame extensionId={main.extensionId} tabKind={main.kind} windowHandle={assistantPage} /> : <AppHostLayerFrame extensionId={main.extensionId} tabKind={main.kind} />}
+          {placedBesideConversation(installed.value, main) ? <AppConversationFrame extensionId={main.extensionId} tabKind={main.kind} windowHandle={assistantPage} /> : <AppHostLayerFrame extensionId={main.extensionId} tabKind={main.kind} />}
         </>
       )}
     </div>
@@ -267,9 +271,9 @@ const AppMainPanel = observer(function AppMainPanel() {
 });
 
 /** The App's main page — not another of its tabs — and the App declares it beside its conversation binding (#1925). */
-function placedBesideConversation(page: { extensionId: string; kind: string }): boolean {
-  return installedExtensionsStore.mainTabOf(page.extensionId)?.kind === page.kind
-    && !!installedExtensionsStore.manifestFor(page.extensionId)?.contributes.conversationSurface;
+function placedBesideConversation(apps: InstalledApps, page: { extensionId: string; kind: string }): boolean {
+  return apps.mainTabOf(page.extensionId)?.kind === page.kind
+    && !!apps.manifestFor(page.extensionId)?.contributes.conversationSurface;
 }
 
 export const appView = {

@@ -1,4 +1,5 @@
 import type { SessionpageSessionCreateRequest } from '@gugu/session-core/session-record/contract'
+import { taskFlowText } from '@/components/session-watch/task-flow-catalog'
 import { forgetPhoneAgentCreateAttempt, readPhoneAgentCreateAttempt } from './phoneAgentCreate'
 
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
@@ -13,9 +14,9 @@ export function readPhoneSessionCreate(ownerId: string, deviceId: string, storag
       request = JSON.parse(raw) as SessionpageSessionCreateRequest
     } catch {
       // 值坏了(手改/跨版本脏数据)按同一条「记录不完整」处理,❌ 漏出原生 SyntaxError。
-      throw new Error('上次创建记录不完整，请保留记录后重试')
+      throw new Error(taskFlowText('errors.createRecordIncomplete'))
     }
-    if (!request.clientRequestId || !request.prompt?.trim() || request.harness !== 'pi') throw new Error('上次创建记录不完整，请保留记录后重试')
+    if (!request.clientRequestId || !request.prompt?.trim() || request.harness !== 'pi') throw new Error(taskFlowText('errors.createRecordIncomplete'))
     return request
   }
   const previous = readPhoneAgentCreateAttempt(ownerId, deviceId, storage)
@@ -24,13 +25,13 @@ export function readPhoneSessionCreate(ownerId: string, deviceId: string, storag
 
 export function rememberPhoneSessionCreate(ownerId: string, deviceId: string, request: SessionpageSessionCreateRequest, storage: StorageLike = window.localStorage): void {
   const existing = readPhoneSessionCreate(ownerId, deviceId, storage)
-  if (existing && JSON.stringify(existing) !== JSON.stringify(request)) throw new Error('上次创建尚未确认，请先继续同一次创建')
+  if (existing && JSON.stringify(existing) !== JSON.stringify(request)) throw new Error(taskFlowText('errors.createPending'))
   storage.setItem(key(ownerId, deviceId), JSON.stringify(request))
 }
 
 export function forgetPhoneSessionCreate(ownerId: string, deviceId: string, request: SessionpageSessionCreateRequest, storage: StorageLike = window.localStorage): void {
   const existing = readPhoneSessionCreate(ownerId, deviceId, storage)
-  if (existing?.clientRequestId !== request.clientRequestId) throw new Error('创建记录已经改变，请保留记录后重试')
+  if (existing?.clientRequestId !== request.clientRequestId) throw new Error(taskFlowText('errors.createRecordChanged'))
   storage.removeItem(key(ownerId, deviceId))
   const previous = readPhoneAgentCreateAttempt(ownerId, deviceId, storage)
   if (previous && previous.id === request.clientRequestId) forgetPhoneAgentCreateAttempt(previous, storage)

@@ -1,9 +1,9 @@
 /** @jsxImportSource solid-js */
 import { createSignal, For, onCleanup, onMount, Show } from 'solid-js'
-import { PASSWORD_BETA_ENABLED } from '@gugu/core/shared/passwordBeta'
 import { PASSWORD_REQUEST_PREFIX, requestPasswordFill, type PasswordApproval, type PasswordBetaUi, type PasswordFillOutcome, type PasswordItem, type PasswordRequestView, type PasswordSaveDraft, type PasswordUiCommand } from '@gugu/core/shared/passwordBetaProtocol'
 import type { ChatMessage } from '@session-chat/model'
 import { vars } from '@session-chat/styles/theme.css'
+import { defaultChatTranslator, useChatTranslator, type ChatTranslator } from '@session-chat/localization'
 import { passwordField, passwordFieldIcons, passwordIconButton, passwordInput, passwordQuietAction, passwordSplitPart, passwordTip } from './password-request-card.css'
 
 /**
@@ -16,10 +16,19 @@ const PAD = 16, GAP = 14, HEAD = 36, NOTE = 16, NOTE_GAP = 4, FOOT = 32
 type Fill = NonNullable<PasswordApproval['fills']>[number]
 const fills = (request: PasswordRequestView): Fill[] => request.kind === 'save' ? [] : request.fills ?? []
 /** What the person weighs before allowing; the second flag marks a caution. */
-function notes(request: PasswordRequestView): [string, boolean][] {
-  if (request.kind === 'save') return request.maskedAccount ? [[`账号 ${request.maskedAccount}`, false]] : []
-  return [...(request.elsewhere ? [[`「${request.credential ?? '这条密码'}」不是为这个网站保存的`, true] as [string, boolean]] : []),
-    ...(request.exposed?.length ? [[`${request.exposed.join('、')} 填进的不是密码框，网页能再显示它`, true] as [string, boolean]] : [])]
+function notes(request: PasswordRequestView, t: ChatTranslator): [string, boolean][] {
+  if (request.kind === 'save') return request.maskedAccount ? [[t('transcript.password.noteAccount', { account: request.maskedAccount }), false]] : []
+  return [...(request.elsewhere ? [[request.credential ? t('transcript.password.noteElsewhere', { credential: request.credential })
+      : t('transcript.password.noteElsewhereUnnamed'), true] as [string, boolean]] : []),
+    ...(request.exposed?.length ? [[t('transcript.password.noteExposed', { fields: request.exposed.join(t('transcript.password.listSeparator')) }), true] as [string, boolean]] : [])]
+}
+/** The canonical names the host gives the vault's own two values (`fillName` in the password vault), also on a typed one. */
+const VAULT_NAMES: Readonly<Record<string, 'account' | 'password'>> = { '账号': 'account', '密码': 'password' }
+const vaultKey = (entry: { key?: string; name: string }) => entry.key === 'account' || entry.key === 'password' ? entry.key : VAULT_NAMES[entry.name]
+/** The account and the password read in the person's language; any other name as written. */
+const shownName = (entry: { key?: string; name: string }, t: ChatTranslator) => {
+  const key = vaultKey(entry)
+  return key === 'account' ? t('transcript.password.account') : key === 'password' ? t('transcript.password.password') : entry.name
 }
 /** A save request is a form in the chat (assistant-ui 「Elicitation form」): a label over each input, the inputs filled. */
 const DESC = 20, LABEL = 17, LABEL_GAP = 4, INPUT = 28, INPUT_GAP = 10, CHECK = 20, ADD = 20
@@ -48,7 +57,8 @@ export function passwordCardHeight(request: PasswordRequestView): number {
     const inputs = request.inputs?.length ?? 2
     return PAD * 2 + HEAD + GAP + DESC + GAP + inputs * (LABEL + LABEL_GAP + INPUT) + (inputs - 1) * INPUT_GAP + extrasHeight(request) + GAP + FOOT
   }
-  const fields = fills(request).length, marks = notes(request).length
+  // Only the number of notes counts here, which does not depend on the language.
+  const fields = fills(request).length, marks = notes(request, defaultChatTranslator).length
   return PAD * 2 + HEAD
     + (fields ? GAP + fields * (LABEL + LABEL_GAP + INPUT) + (fields - 1) * INPUT_GAP + extrasHeight(request) : 0)
     + (marks ? GAP + marks * NOTE + (marks - 1) * NOTE_GAP : 0)
@@ -59,14 +69,14 @@ export function passwordCardHeight(request: PasswordRequestView): number {
  * Everything saved already: a card to allow this use, once or always. */
 function storingOf(request: PasswordRequestView): boolean { return fills(request).some(entry => entry.source !== 'saved') }
 export function passwordRequest(item: ChatMessage): PasswordRequestView | null {
-  if (!PASSWORD_BETA_ENABLED || !item.ownerNotification || !item.text.startsWith(PASSWORD_REQUEST_PREFIX)) return null
+  if (!item.ownerNotification || !item.text.startsWith(PASSWORD_REQUEST_PREFIX)) return null
   try {
     const value = JSON.parse(item.text.slice(PASSWORD_REQUEST_PREFIX.length)) as PasswordRequestView
     return value.requestId === item.ownerNotification.requestId && typeof value.origin === 'string'
       && typeof value.sessionId === 'string' && typeof value.agent === 'string' ? value : null
   } catch { return null }
 }
-const requester = (request: PasswordRequestView) => [...new Set([request.agentName || '此智能体', request.sessionTitle].filter(Boolean))].join(' / ')
+const requester = (request: PasswordRequestView, t: ChatTranslator) => [...new Set([request.agentName || t('transcript.password.thisAgent'), request.sessionTitle].filter(Boolean))].join(' / ')
 function host(origin: string) { try { return new URL(origin).host } catch { return origin } }
 const clip = { overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap', 'min-width': 0 } as const
 const tint = (percent: number) => `color-mix(in srgb, ${vars.fg} ${percent}%, transparent)`
@@ -96,6 +106,7 @@ const IconClose = () => <svg width="12" height="12" viewBox="0 0 24 24" aria-hid
  */
 function CardField(props: { value: string; placeholder: string; secret: boolean; lockable: boolean; disabled: boolean; readOnly?: boolean; autocomplete?: string
   label?: string; onInput(value: string): void; onSecret?(secret: boolean): void; onEnter?(): void; onRemove?(): void }) {
+  const t = useChatTranslator()
   const [shown, setShown] = createSignal(false)
   const icons = () => (props.secret && !props.readOnly ? 1 : 0) + (props.lockable ? 1 : 0) + (props.onRemove ? 1 : 0)
   return <div class={passwordField} style={{ position: 'relative', flex: '1 1 0', 'min-width': 0, height: `${INPUT}px` }}>
@@ -105,14 +116,14 @@ function CardField(props: { value: string; placeholder: string; secret: boolean;
     <Show when={icons() && !props.disabled}>
       <span class={passwordFieldIcons} style={{ position: 'absolute', right: '2px', top: '2px', display: 'flex' }}>
         <Show when={props.secret && !props.readOnly}>
-          <button type="button" class={passwordIconButton} aria-label={shown() ? '隐藏' : '显示'} aria-pressed={shown()} onClick={() => setShown(value => !value)}><IconEye off={shown()} /></button>
+          <button type="button" class={passwordIconButton} aria-label={shown() ? t('transcript.password.hide') : t('transcript.password.show')} aria-pressed={shown()} onClick={() => setShown(value => !value)}><IconEye off={shown()} /></button>
         </Show>
         <Show when={props.lockable}>
-          <button type="button" class={passwordIconButton} aria-label={props.secret ? '保密：智能体只能代填，看不到。点一下改成不保密' : '不保密：智能体能看到。点一下改成保密'} aria-pressed={props.secret}
-            title={props.secret ? '保密' : '不保密'} onClick={() => { setShown(false); props.onSecret?.(!props.secret) }}><IconLock open={!props.secret} /></button>
+          <button type="button" class={passwordIconButton} aria-label={props.secret ? t('transcript.password.secretOn') : t('transcript.password.secretOff')} aria-pressed={props.secret}
+            title={props.secret ? t('transcript.password.secret') : t('transcript.password.notSecret')} onClick={() => { setShown(false); props.onSecret?.(!props.secret) }}><IconLock open={!props.secret} /></button>
         </Show>
         <Show when={props.onRemove}>
-          <button type="button" class={passwordIconButton} aria-label="删掉这一项" onClick={() => props.onRemove?.()}><IconClose /></button>
+          <button type="button" class={passwordIconButton} aria-label={t('transcript.password.removeItem')} onClick={() => props.onRemove?.()}><IconClose /></button>
         </Show>
       </span>
     </Show>
@@ -121,21 +132,23 @@ function CardField(props: { value: string; placeholder: string; secret: boolean;
 
 /** 「+ 添加一项」: one more item of the person's own (a name and a value, 保密 unless unlocked). */
 function AddExtra(props: { requestId: string; disabled: boolean }) {
+  const t = useChatTranslator()
   const list = () => extrasOf(props.requestId)
   return <button type="button" class={passwordQuietAction} disabled={props.disabled || list().length >= 16}
     style={{ ...quiet, height: `${ADD}px`, padding: '0 6px', 'border-radius': '6px', 'font-weight': 400 }}
-    onClick={() => setExtras(props.requestId, [...list(), { id: crypto.randomUUID(), name: '', value: '', secret: true }])}>+ 添加一项</button>
+    onClick={() => setExtras(props.requestId, [...list(), { id: crypto.randomUUID(), name: '', value: '', secret: true }])}>{t('transcript.password.addItem')}</button>
 }
 
 /** The items the person added, a name and a value each; with `add`, 「+ 添加一项」 under them. */
 function ExtraRows(props: { requestId: string; disabled: boolean; add?: boolean; onEnter(): void }) {
+  const t = useChatTranslator()
   const list = () => extrasOf(props.requestId)
   const change = (id: string, patch: Partial<Extra>) => setExtras(props.requestId, list().map(extra => extra.id === id ? { ...extra, ...patch } : extra))
   return <>
     <For each={list()}>{extra => <div style={{ display: 'flex', gap: '8px', height: `${INPUT}px` }}>
-      <input type="text" spellcheck={false} aria-label="名称" placeholder="名称" disabled={props.disabled} class={passwordInput} style={{ ...input, flex: '0 0 36%', width: '36%' }}
+      <input type="text" spellcheck={false} aria-label={t('transcript.password.name')} placeholder={t('transcript.password.name')} disabled={props.disabled} class={passwordInput} style={{ ...input, flex: '0 0 36%', width: '36%' }}
         value={extra.name} onInput={event => change(extra.id, { name: event.currentTarget.value })} />
-      <CardField value={extra.value} placeholder="值" label={extra.name || '值'} secret={extra.secret} lockable disabled={props.disabled} onEnter={props.onEnter}
+      <CardField value={extra.value} placeholder={t('transcript.password.value')} label={extra.name || t('transcript.password.value')} secret={extra.secret} lockable disabled={props.disabled} onEnter={props.onEnter}
         onInput={value => change(extra.id, { value })} onSecret={secret => change(extra.id, { secret })}
         onRemove={() => setExtras(props.requestId, list().filter(entry => entry.id !== extra.id))} />
     </div>}</For>
@@ -147,17 +160,18 @@ const extrasReady = (requestId: string) => extrasOf(requestId).every(extra => !e
 const extrasFilled = (requestId: string) => extrasOf(requestId).filter(extra => extra.name.trim() && extra.value)
 
 /** The card's last line once the person approved: where the fill is, then what 「记住」 did once the login went through. */
-function outcomeText(result: string, keep: PasswordFillOutcome['keep'], storing: boolean): string {
+function outcomeText(result: string, keep: PasswordFillOutcome['keep'], storing: boolean, t: ChatTranslator): string {
   switch (result) {
-    case 'approved': case 'running': return '正在填入…'
-    case 'filled': return keep === 'waiting' ? `已填入，登录成功后${storing ? '存到咕咕' : '生效'}` : keep === 'kept' ? (storing ? '已填入，已存到咕咕' : '已填入，以后不再问')
-      : keep === 'dropped' ? `已填入；没登录上，${storing ? '没有存' : '下次还会问'}` : '已填入'
-    case 'saved': return '已保存'
-    case 'invalidated': return '请求已失效，请重新发起'
-    case 'rejected': return '已拒绝'
-    case 'expired': return '已过期，需要时让 Agent 重新发起'
-    case 'unavailable': case 'uncertain': return '没填成，网页可能已经变了'
-    default: return '这条请求已结束'
+    case 'approved': case 'running': return t('transcript.password.filling')
+    case 'filled': return t(keep === 'waiting' ? storing ? 'transcript.password.filledKeepAfterSignIn' : 'transcript.password.filledAllowAfterSignIn'
+      : keep === 'kept' ? storing ? 'transcript.password.filledKept' : 'transcript.password.filledAllowed'
+      : keep === 'dropped' ? storing ? 'transcript.password.filledNotKept' : 'transcript.password.filledNotAllowed' : 'transcript.password.filled')
+    case 'saved': return t('transcript.password.saved')
+    case 'invalidated': return t('transcript.password.invalidated')
+    case 'rejected': return t('transcript.password.rejected')
+    case 'expired': return t('transcript.password.expiredAskAgent')
+    case 'unavailable': case 'uncertain': return t('transcript.password.fillFailed')
+    default: return t('transcript.password.ended')
   }
 }
 
@@ -165,8 +179,9 @@ function outcomeText(result: string, keep: PasswordFillOutcome['keep'], storing:
 export function PasswordRequestCard(props: { request: PasswordRequestView }) {
   const save = props.request.kind === 'save'
   const changing = props.request.kind === 'save' && !!props.request.credentialId
+  const t = useChatTranslator()
   const [current, setCurrent] = createSignal<PasswordRequestView>()
-  const [state, setState] = createSignal(save ? '等待你填写' : '等待你批准')
+  const [state, setState] = createSignal(t(save ? 'transcript.password.waitingFill' : 'transcript.password.waitingApproval'))
   const [busy, setBusy] = createSignal(false)
   const [actionError, setActionError] = createSignal('')
   // Once this card settled the request (已允许 / 已拒绝), the refresh its own action triggers must not overwrite that.
@@ -182,9 +197,9 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
       if (!settled) setCurrent(pending)
       // After 「填入」 the card follows the use itself: what the site did, and whether anything was kept.
       const outcome = reply?.ok ? reply.snapshot.outcomes?.find(value => value.requestId === props.request.requestId) : undefined
-      if (outcome) { settled = true; setState(outcomeText(outcome.result, outcome.keep, fills(props.request).some(entry => entry.source !== 'saved'))) }
-      else if (!pending && !settled) setState(Date.now() >= props.request.expiresAt ? '已过期，请重新发起' : '这张请求已结束')
-    } catch { if (!settled) { setCurrent(undefined); setState(Date.now() >= props.request.expiresAt ? '已过期，请重新发起' : '当前无法读取这条请求') } }
+      if (outcome) { settled = true; setState(outcomeText(outcome.result, outcome.keep, fills(props.request).some(entry => entry.source !== 'saved'), t)) }
+      else if (!pending && !settled) setState(t(Date.now() >= props.request.expiresAt ? 'transcript.password.expired' : 'transcript.password.ended'))
+    } catch { if (!settled) { setCurrent(undefined); setState(t(Date.now() >= props.request.expiresAt ? 'transcript.password.expired' : 'transcript.password.unreadable')) } }
   }
   onMount(() => { void refresh(); const close = ui()?.subscribe(() => { void refresh() }); onCleanup(() => close?.()) })
   const act = async (command: PasswordUiCommand, done: string) => {
@@ -193,8 +208,8 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
     try {
       const result = await ui()?.invoke(command)
       if (result?.ok) { settled = true; setCurrent(undefined); setState(done); return true }
-      else setActionError(result?.ok === false && result.code === 'SYSTEM_STORAGE_UNAVAILABLE' ? '发起电脑的系统密码存储不可用' : '保存失败，请重试')
-    } catch { setActionError('当前无法处理，请重试') }
+      else setActionError(t(result?.ok === false && result.code === 'SYSTEM_STORAGE_UNAVAILABLE' ? 'transcript.password.storageUnavailable' : 'transcript.password.saveFailed'))
+    } catch { setActionError(t('transcript.password.actionFailed')) }
     finally { setBusy(false) }
     return false
   }
@@ -209,7 +224,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
    * 「在设置里编辑」 opens the full form for the rest (name, secret marks).
    */
   function saveCard(request: Extract<PasswordRequestView, { kind: 'save' }>) {
-    const inputs = request.inputs ?? [{ key: 'account', name: '账号', secret: false }, { key: 'password', name: '密码', secret: true }]
+    const inputs = request.inputs ?? [{ key: 'account', name: t('transcript.password.account'), secret: false }, { key: 'password', name: t('transcript.password.password'), secret: true }]
     const [values, setValues] = createSignal<Record<string, string>>({})
     const [draftReady, setDraftReady] = createSignal(false)
     let draft: PasswordSaveDraft | undefined, item: PasswordItem | undefined, loaded = false
@@ -244,7 +259,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
       const account = inputs.find(entry => entry.key === 'account')
       void act({ type: 'save', origin: request.origin, name: draft?.name ?? item?.name ?? '', account: typed.account ?? '',
         accountSecret: account ? secretOf(account) : undefined, password: typed.password ?? '', fields, sites: item?.sites,
-        ...(item ? { reference: item.reference } : {}), requestId: request.requestId }, changing ? '已保存修改' : '已保存').then(saved => { if (saved) { setValues({}); dropCard(request.requestId) } })
+        ...(item ? { reference: item.reference } : {}), requestId: request.requestId }, t(changing ? 'transcript.password.changesSaved' : 'transcript.password.saved')).then(saved => { if (saved) { setValues({}); dropCard(request.requestId) } })
     }
     const site = host(request.origin)
     return <section data-password-request={request.requestId} style={{ height: `${passwordCardHeight(request)}px`, width: '100%', 'max-width': '400px',
@@ -253,16 +268,19 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
       <div style={{ display: 'flex', 'align-items': 'center', gap: '10px', height: `${HEAD}px`, 'flex-shrink': 0 }}>
         <span style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'center', width: '28px', height: '28px', 'border-radius': '8px', background: tint(5), color: vars.fgMuted, 'flex-shrink': 0 }}><IconKey /></span>
         <div style={{ display: 'flex', 'flex-direction': 'column', 'min-width': 0, flex: '1 1 0' }}>
-          <span style={{ ...clip, 'font-size': '13.5px', 'line-height': '20px', 'font-weight': 500 }}>{`${changing ? '修改' : '保存'} ${site} 的${inputs.some(entry => entry.key === 'password') ? '密码' : ` ${inputs.map(entry => entry.name).join('、')}`}`}</span>
-          <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{requester(request)}</span>
+          <span style={{ ...clip, 'font-size': '13.5px', 'line-height': '20px', 'font-weight': 500 }}>{inputs.some(entry => entry.key === 'password')
+            ? t(changing ? 'transcript.password.titleChangePassword' : 'transcript.password.titleSavePassword', { site })
+            : t(changing ? 'transcript.password.titleChangeFields' : 'transcript.password.titleSaveFields',
+              { site, fields: inputs.map(entry => shownName(entry, t)).join(t('transcript.password.listSeparator')) })}</span>
+          <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{requester(request, t)}</span>
         </div>
       </div>
-      <p style={{ ...clip, margin: 0, height: `${DESC}px`, 'font-size': '12px', 'line-height': `${DESC}px`, color: vars.fgMuted, 'flex-shrink': 0 }}>存进保险箱后，保密的值智能体只能代填，看不到。</p>
+      <p style={{ ...clip, margin: 0, height: `${DESC}px`, 'font-size': '12px', 'line-height': `${DESC}px`, color: vars.fgMuted, 'flex-shrink': 0 }}>{t('transcript.password.saveDescription')}</p>
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${INPUT_GAP}px`, 'flex-shrink': 0 }}>
         {inputs.map(entry => <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${LABEL_GAP}px` }}>
-          <span style={label}>{entry.name}<Show when={secretOf(entry)}><span style={{ opacity: 0.7 }}> 保密</span></Show></span>
-          <CardField value={values()[entry.key] ?? ''} label={entry.name} secret={secretOf(entry)} lockable={entry.key !== 'password'} disabled={!current() || busy()}
-            autocomplete={entry.key === 'password' ? 'new-password' : 'off'} placeholder={stored(entry.key) ? '已保存，留空不改' : entry.key === 'account' ? '邮箱或用户名' : ''}
+          <span style={label}>{shownName(entry, t)}<Show when={secretOf(entry)}><span style={{ opacity: 0.7 }}> {t('transcript.password.secret')}</span></Show></span>
+          <CardField value={values()[entry.key] ?? ''} label={shownName(entry, t)} secret={secretOf(entry)} lockable={entry.key !== 'password'} disabled={!current() || busy()}
+            autocomplete={entry.key === 'password' ? 'new-password' : 'off'} placeholder={stored(entry.key) ? t('transcript.password.storedKeep') : entry.key === 'account' ? t('transcript.password.accountPlaceholder') : ''}
             onInput={value => setValues(list => ({ ...list, [entry.key]: value }))} onSecret={secret => setSecrets(list => ({ ...list, [entry.key]: secret }))} onEnter={submit} />
         </div>)}
         <ExtraRows requestId={request.requestId} disabled={!current() || busy()} add onEnter={submit} />
@@ -270,10 +288,10 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
       <div style={{ height: `${FOOT}px`, display: 'flex', 'align-items': 'center', gap: '8px', 'flex-shrink': 0 }}>
         <Show when={current()} fallback={<span role="status" style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{state()}</span>}>
           <Show when={actionError()}><span role="alert" style={{ ...clip, 'font-size': '11px', color: vars.fgMuted }}>{actionError()}</span></Show>
-          <Show when={scope.passwordVaultBeta && !actionError()}><button type="button" style={{ ...quiet, 'padding-inline-start': 0 }} class={passwordQuietAction} disabled={busy()} onClick={fill}>在设置里编辑</button></Show>
+          <Show when={scope.passwordVaultBeta && !actionError()}><button type="button" style={{ ...quiet, 'padding-inline-start': 0 }} class={passwordQuietAction} disabled={busy()} onClick={fill}>{t('transcript.password.editInSettings')}</button></Show>
           <span style={{ flex: '1 1 0' }} />
-          <button type="button" style={quiet} class={passwordQuietAction} disabled={busy()} onClick={() => { void act({ type: 'reject-save', requestId: request.requestId }, '已拒绝').then(() => dropCard(request.requestId)) }}>拒绝</button>
-          <button type="button" style={{ ...solid, opacity: ready() ? 1 : 0.4, cursor: ready() ? 'pointer' : 'default' }} disabled={busy() || !ready()} onClick={submit}>保存</button>
+          <button type="button" style={quiet} class={passwordQuietAction} disabled={busy()} onClick={() => { void act({ type: 'reject-save', requestId: request.requestId }, t('transcript.password.rejected')).then(() => dropCard(request.requestId)) }}>{t('transcript.password.reject')}</button>
+          <button type="button" style={{ ...solid, opacity: ready() ? 1 : 0.4, cursor: ready() ? 'pointer' : 'default' }} disabled={busy() || !ready()} onClick={submit}>{t('transcript.password.save')}</button>
         </Show>
       </div>
     </section>
@@ -281,8 +299,10 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
   const view = () => current() ?? props.request
   const use = props.request.kind === 'save' ? undefined : props.request
   const site = host(props.request.origin)
+  const fillName = (entry: Fill) => shownName({ key: entry.key, name: entry.value }, t)
   // The ask in the person's words: a password among the values is a login; anything else is filling in.
-  const title = save ? `${changing ? '修改' : '保存'} ${site} 的密码` : !use?.fills?.length || use.fills.some(fill => fill.value === '密码') ? `登录 ${site}` : `在 ${site} 填入`
+  const title = save ? t(changing ? 'transcript.password.titleChangePassword' : 'transcript.password.titleSavePassword', { site })
+    : t(!use?.fills?.length || use.fills.some(fill => vaultKey({ key: fill.key, name: fill.value }) === 'password') ? 'transcript.password.titleSignIn' : 'transcript.password.titleFill', { site })
   /**
    * Keeping and using are two steps. A value not in the vault yet: the person types it, 「填入」 fills the page, and
    * 「存到咕咕」 keeps it (allowing nobody). A saved value: the person allows this use, once or always (this Agent, on
@@ -290,10 +310,10 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
    */
   const [typed, setTyped] = createSignal<Record<number, string>>({})
   const storing = storingOf(props.request)
-  const agent = () => view().agentName || '这个智能体'
+  const agent = () => view().agentName || t('transcript.password.thisAgent')
   /** Already in the vault: the same row, ticked and fixed, saying where it is. */
   const stored = () => item()?.name || (use?.credential) || site
-  const tip = () => storing ? `加密保存在咕咕，开了同步的设备也能用。之后${agent()}要用，还会先问你。` : `已经存在咕咕里（${stored()}）。要删掉，去 设置 → 密码。`
+  const tip = () => storing ? t('transcript.password.tipStoring', { agent: agent() }) : t('transcript.password.tipStored', { name: stored() })
   /** The row can be changed only for values not saved yet, and only where keeping them is offered. */
   const choosable = () => storing && !!use?.remember && !!current() && !busy()
   /** 「始终允许」 is offered where a standing allowance may be given (not into an input that shows the secret). */
@@ -342,7 +362,7 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
       <span style={{ display: 'flex', 'align-items': 'center', 'justify-content': 'center', width: '28px', height: '28px', 'border-radius': '8px', background: tint(5), color: vars.fgMuted, 'flex-shrink': 0 }}><IconKey /></span>
       <div style={{ display: 'flex', 'flex-direction': 'column', 'min-width': 0 }}>
         <span style={{ ...clip, 'font-size': '13.5px', 'line-height': '20px', 'font-weight': 500 }}>{title}</span>
-        <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{requester(view())}</span>
+        <span style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted }}>{requester(view(), t)}</span>
       </div>
     </div>
     <Show when={fills(props.request).length}>
@@ -351,23 +371,23 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
             value shows as it is; a secret one stays hidden and is the stored one unless the person types another here,
             which replaces it for this use only. */}
         {fills(props.request).map((entry, index) => <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${LABEL_GAP}px` }}>
-          <span style={label}><span style={clip}>{entry.input || entry.value}</span>
-            <Show when={entry.input && entry.input !== entry.value}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}> {entry.value}</span></Show>
-            <Show when={entry.plain}><span style={{ 'flex-shrink': 0, color: vars.fgPermission }}> 明文</span></Show>
-            <Show when={entry.source !== 'saved' && storing && remember() && secretOf(entry, index)}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}> 保密</span></Show></span>
+          <span style={label}><span style={clip}>{entry.input || fillName(entry)}</span>
+            <Show when={entry.input && entry.input !== entry.value}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}> {fillName(entry)}</span></Show>
+            <Show when={entry.plain}><span style={{ 'flex-shrink': 0, color: vars.fgPermission }}> {t('transcript.password.plain')}</span></Show>
+            <Show when={entry.source !== 'saved' && storing && remember() && secretOf(entry, index)}><span style={{ 'flex-shrink': 0, opacity: 0.7 }}> {t('transcript.password.secret')}</span></Show></span>
           {/* A value to keep can be looked at and marked 保密 or not, as in Settings; a saved one is only shown. */}
-          <CardField value={text(entry, index)} label={entry.input || entry.value} secret={entry.source === 'saved' ? !!entry.secret : secretOf(entry, index)}
+          <CardField value={text(entry, index)} label={entry.input || fillName(entry)} secret={entry.source === 'saved' ? !!entry.secret : secretOf(entry, index)}
             lockable={entry.source !== 'saved' && storing && !!use?.remember && remember() && entry.key !== 'password'} readOnly={!storing} disabled={!current() || busy()}
-            placeholder={entry.source === 'missing' ? `填${/^[\x21-\x7e]/.test(entry.value) ? ' ' : ''}${entry.value}` : entry.secret ? '已保存' : ''}
+            placeholder={entry.source === 'missing' ? t(/^[\x21-\x7e]/.test(fillName(entry)) ? 'transcript.password.fillPlaceholderLatin' : 'transcript.password.fillPlaceholder', { name: fillName(entry) }) : entry.secret ? t('transcript.password.saved') : ''}
             onInput={value => setTyped(list => ({ ...list, [index]: value }))} onSecret={secret => setSecretAt(list => ({ ...list, [index]: secret }))}
-            onEnter={() => decide('allow_once', '正在填入…')} />
+            onEnter={() => decide('allow_once', t('transcript.password.filling'))} />
         </div>)}
-        <Show when={addingOf(props.request)}><ExtraRows requestId={props.request.requestId} disabled={!current() || busy()} onEnter={() => decide('allow_once', '正在填入…')} /></Show>
+        <Show when={addingOf(props.request)}><ExtraRows requestId={props.request.requestId} disabled={!current() || busy()} onEnter={() => decide('allow_once', t('transcript.password.filling'))} /></Show>
       </div>
     </Show>
-    <Show when={notes(props.request).length}>
+    <Show when={notes(props.request, t).length}>
       <div style={{ display: 'flex', 'flex-direction': 'column', gap: `${NOTE_GAP}px`, 'flex-shrink': 0 }}>
-        {notes(props.request).map(([note, caution]) => <span title={note} style={{ display: 'flex', 'align-items': 'center', gap: '8px', height: `${NOTE}px`, 'font-size': '12px', 'line-height': '16px', color: caution ? vars.fg : tint(60) }}>
+        {notes(props.request, t).map(([note, caution]) => <span title={note} style={{ display: 'flex', 'align-items': 'center', gap: '8px', height: `${NOTE}px`, 'font-size': '12px', 'line-height': '16px', color: caution ? vars.fg : tint(60) }}>
           <span aria-hidden="true" style={{ width: '4px', height: '4px', 'border-radius': '50%', background: caution ? vars.fgPermission : tint(20), 'flex-shrink': 0 }} /><span style={clip}>{note}</span></span>)}
       </div>
     </Show>
@@ -376,36 +396,36 @@ export function PasswordRequestCard(props: { request: PasswordRequestView }) {
     <div style={{ display: 'flex', 'align-items': 'center', height: `${CHECK}px`, 'flex-shrink': 0 }}>
     <label style={{ position: 'relative', display: 'flex', 'align-items': 'center', gap: '8px', height: `${CHECK}px`, 'font-size': '12px', 'line-height': '16px', color: choosable() ? vars.fg : vars.fgMuted, cursor: choosable() ? 'pointer' : 'default', 'flex-shrink': 0 }}>
       <input type="checkbox" checked={storing ? !!use?.remember && remember() : true} disabled={!choosable()} onChange={event => setRemember(event.currentTarget.checked)} style={{ margin: 0, width: '14px', height: '14px', 'accent-color': vars.fg }} />
-      存到咕咕
+      {t('transcript.password.keepInGugu')}
       <span role="img" tabindex="0" aria-label={tip()} data-tip={tip()} class={passwordTip}>i</span>
     </label>
     <Show when={addingOf(props.request) && current()}><span style={{ display: 'flex', 'margin-inline-start': 'auto', 'margin-inline-end': '-6px' }}><AddExtra requestId={props.request.requestId} disabled={!current() || busy()} /></span></Show>
     </div>
     <div style={{ position: 'relative', height: `${FOOT}px`, display: 'flex', 'align-items': 'center', 'justify-content': 'flex-end', gap: '8px', 'flex-shrink': 0 }}>
       <Show when={current()} fallback={<span role="status" style={{ ...clip, 'font-size': '12px', 'line-height': '16px', color: vars.fgMuted, 'margin-inline-end': 'auto' }}>{state()}</span>}>
-        <button type="button" style={quiet} class={passwordQuietAction} disabled={busy()} onClick={() => decide('reject', '已拒绝')}>拒绝</button>
+        <button type="button" style={quiet} class={passwordQuietAction} disabled={busy()} onClick={() => decide('reject', t('transcript.password.rejected'))}>{t('transcript.password.reject')}</button>
         <Show when={menu()}>
           <div role="menu" data-password-menu style={{ position: 'absolute', right: 0, bottom: `calc(100% + 6px)`, padding: '4px', 'border-radius': '12px', background: vars.bg,
             border: `1px solid ${tint(10)}`, 'box-shadow': `0 6px 24px ${tint(12)}`, 'z-index': 1 }}>
-            <button type="button" role="menuitem" class={passwordQuietAction} onClick={() => decide('allow_once', '正在填入…', true)}
-              style={{ ...quiet, color: vars.fg, height: '32px', 'border-radius': '8px', padding: '0 10px' }}>始终允许</button>
+            <button type="button" role="menuitem" class={passwordQuietAction} onClick={() => decide('allow_once', t('transcript.password.filling'), true)}
+              style={{ ...quiet, color: vars.fg, height: '32px', 'border-radius': '8px', padding: '0 10px' }}>{t('transcript.password.allowAlways')}</button>
           </div>
         </Show>
         <Show when={storing} fallback={
           // 「允许这一次」 with 「始终允许」 folded under its arrow.
           <div data-password-menu style={{ display: 'flex', 'align-items': 'stretch', height: `${FOOT}px`, 'border-radius': '999px', background: vars.fg, overflow: 'hidden' }}>
             <button type="button" class={passwordSplitPart} style={{ ...split, 'padding-inline': always ? '12px 10px' : '12px' }} disabled={busy()}
-              onClick={() => decide('allow_once', '正在填入…')}>允许这一次</button>
+              onClick={() => decide('allow_once', t('transcript.password.filling'))}>{t('transcript.password.allowOnce')}</button>
             <Show when={always}>
               <span aria-hidden="true" style={{ width: '1px', margin: '8px 0', background: `color-mix(in srgb, ${vars.bg} 28%, transparent)` }} />
-              <button type="button" aria-label="更多" aria-haspopup="menu" aria-expanded={menu()} class={passwordSplitPart} style={{ ...split, padding: '0 10px 0 8px' }}
+              <button type="button" aria-label={t('transcript.password.more')} aria-haspopup="menu" aria-expanded={menu()} class={passwordSplitPart} style={{ ...split, padding: '0 10px 0 8px' }}
                 disabled={busy()} onClick={() => setMenu(value => !value)}>
                 <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" /></svg>
               </button>
             </Show>
           </div>}>
           <button type="button" style={{ ...solid, opacity: ready() ? 1 : 0.4, cursor: ready() ? 'pointer' : 'default' }} disabled={busy() || !ready()}
-            onClick={() => decide('allow_once', '正在填入…')}>填入</button>
+            onClick={() => decide('allow_once', t('transcript.password.filling'))}>{t('transcript.password.fill')}</button>
         </Show>
       </Show>
     </div>

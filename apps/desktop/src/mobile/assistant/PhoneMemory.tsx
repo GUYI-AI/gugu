@@ -3,25 +3,28 @@ import { AssistantMemoryContent } from '@/components/assistant/AssistantMemoryCo
 import { assistantPanelFailure } from '@/components/assistant/assistant-panel-errors'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import './phone-memory.css'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
+import type { AssistantPanelItem } from '@gugu/core/cloud/assistantPanel'
 import { useTranslation } from 'react-i18next'
 import { formatCalendarDate } from '@/i18n/format'
 import { Markdown } from '@/components/markdown/Markdown'
 import { Button } from '@/components/ui/Button'
 import { SquarePen, Trash2 } from '@/lib/icons'
 import { isOwnerProfileNote, type MemoryKind } from '@/session/renderer/features/assistant/assistant-files'
-import { readMemoryNotes, type MemoryEntry } from '@/session/renderer/features/assistant/assistant-machine-core'
+import { memoryNotesOf, type MemoryEntry } from '@/session/renderer/features/assistant/assistant-machine-core'
 import { AssistantEmpty, PageHead } from '@/session/renderer/features/assistant/assistant-ui-parts'
 import type { PhonePageProps } from './MobileAssistantApp'
 import { PhoneConfirmDialog } from './PhoneConfirmDialog'
 import { PhoneHealth } from './PhoneHealth'
 import { PhoneMachineView, ReadView, type OpenedPageProps } from './PhoneMachineView'
 import { deleteMemoryNote } from './phoneMemoryData'
-import { machineKey, usePhoneRead, type PhoneRead } from './usePhoneRead'
+import type { Reading } from '@/lib/replica'
+import { useAssistantPanelCollection } from '@/components/assistant/assistant-panel-reads'
+import { assistantPanel } from '@/components/assistant/assistant-panel-replica'
 import { reportAssistantAppChange } from '@/components/assistant/assistant-app-client'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
-type NotesRead = PhoneRead<{ notes: MemoryEntry[]; index: string | null }> & { reload: () => void }
+type NotesRead = Reading<{ notes: MemoryEntry[]; index: string | null }>
 
 function kindLabel(kind: MemoryKind, t: Translate, name: string): string {
   if (kind === 'user') return t('memory.filter.user')
@@ -44,8 +47,10 @@ function useTime() {
 export function PhoneMemory(props: PhonePageProps) {
   const { sub, machine } = props
   const ready = machine.state === 'ready' ? machine.machine : null
-  // 健康页与它点开的那一条共用一份读数(它记的 health_* 几条)。
-  const notes = usePhoneRead(ready ? `memory|${machineKey(ready)}` : null, () => readMemoryNotes(ready!), 'read memory')
+  // 健康页与它点开的那一条共用一份读数(它记的 health_* 几条):面板快照里的「记忆」那一份,画的时候推出来。
+  const memoryDir = ready?.paths.memoryDir ?? ''
+  const derive = useCallback((rows: AssistantPanelItem[]) => memoryNotesOf(rows, memoryDir), [memoryDir])
+  const notes = useAssistantPanelCollection(ready, 'memory', derive)
   if (sub === 'health') return <PhoneHealth {...props} healthNotes={notes} />
   if (sub?.startsWith('note:')) return <MemoryNote {...props} file={sub.slice('note:'.length)} notes={notes} />
   return null
@@ -56,7 +61,7 @@ function MemoryNote(props: PhonePageProps & { file: string; notes: NotesRead }) 
   const { t } = useTranslation('assistant')
   const { assistant, machine, notes, file } = props
   const opened = machine.state === 'ready' ? machine.machine : null
-  const note = notes.state === 'ok' ? notes.data.notes.find((entry) => entry.file === file) ?? null : null
+  const note = notes.state === 'value' ? notes.value.notes.find((entry) => entry.file === file) ?? null : null
   if (opened && note) return <MemoryNoteBody {...props} machine={opened} note={note} />
   // 读到之前 / 读不到 / 已经不在了:页头先说是记忆,下面说清是哪一步。
   return (
@@ -64,7 +69,7 @@ function MemoryNote(props: PhonePageProps & { file: string; notes: NotesRead }) 
       <PageHead title={t('nav.memory')} />
       <PhoneMachineView machine={machine} name={assistant.display_name}>
         {() => (
-          <ReadView read={notes} failedTitle={t('memory.loadFailed')}>
+          <ReadView reading={notes} failedTitle={t('memory.loadFailed')}>
             {() => <AssistantEmpty title={t('memory.goneTitle')}>{t('memory.gone')}</AssistantEmpty>}
           </ReadView>
         )}
@@ -73,7 +78,7 @@ function MemoryNote(props: PhonePageProps & { file: string; notes: NotesRead }) 
   )
 }
 
-function MemoryNoteBody({ assistant, askInChat, go, notes, machine, note }: OpenedPageProps & { notes: NotesRead; note: MemoryEntry }) {
+function MemoryNoteBody({ assistant, askInChat, go, machine, note }: OpenedPageProps & { note: MemoryEntry }) {
   const { t } = useTranslation('assistant')
   const time = useTime()
   const [confirming, setConfirming] = useState(false)
@@ -105,7 +110,7 @@ function MemoryNoteBody({ assistant, askInChat, go, notes, machine, note }: Open
           failedText={t('memory.deleteFailed')}
           testId="assistant-memory-delete-dialog"
           onClose={() => setConfirming(false)}
-          onConfirmed={() => { notes.reload(); go(null) }}
+          onConfirmed={() => { if (machine.panel) void assistantPanel.refresh(machine.panel.assistantId); go(null) }}
           onConfirm={async () => {
             await deleteMemoryNote(machine, note, () => reportAssistantAppChange(machine, assistant.id, { resource: 'memory', operation: 'removed',
               id: note.path, deviceId: machine.deviceId, before: { name: note.title, path: note.path } }))

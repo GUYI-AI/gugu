@@ -13,10 +13,10 @@ import { holdSentFile } from '../../../../apps/desktop/src/lib/sentFileCopies'
 
 const f = vi.hoisted(() => ({ message: vi.fn(), metadata: vi.fn(), cached: vi.fn(), send: vi.fn(), forget: vi.fn(), signed: vi.fn(), view: vi.fn(), registerImage: vi.fn(), releaseImage: vi.fn() }))
 vi.mock('@/lib/chat', () => ({ chatService: { getMessageById: f.message } }))
-vi.mock('@/lib/attachmentBytes', () => ({ attachmentMetadata: f.metadata, cachedAttachmentCopy: f.cached,
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({ attachmentMetadata: f.metadata, localAttachmentCopy: f.cached,
   sourceKeyOf: () => 'file@1', attachmentBytes: f.signed, useAttachmentObjectUrl: f.view,
   registerAttachmentImage: f.registerImage,
-}))
+})))
 vi.mock('@/components/extensionBundle/ExtensionBundleCard', () => ({ ExtensionBundleCard: () => null }))
 vi.mock('@/components/markdown/Markdown', () => ({ Markdown: () => null }))
 vi.mock('react-i18next', async (importOriginal) => ({ ...await importOriginal<typeof import('react-i18next')>(), useTranslation: () => ({ t: (key: string) => key }) }))

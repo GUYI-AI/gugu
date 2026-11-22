@@ -33,7 +33,8 @@ export function AppIcon({
 }) {
   const registered = useAgentIcon(id, !asset);
   const icon = asset ?? registered;
-  const plate = icon?.plate ?? FALLBACK_PLATE;
+  // The icon table not read yet: a neutral plate of the same size (❌ the fallback plate, then the vendor's colour).
+  const plate = icon === undefined ? { color: 'var(--muted)', mark: 'white' as const } : icon?.plate ?? FALLBACK_PLATE;
   // The mark takes a little over half the plate, the proportion of a macOS app icon glyph.
   const markSize = Math.round(size * 0.58);
   return (

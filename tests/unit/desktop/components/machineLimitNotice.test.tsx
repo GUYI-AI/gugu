@@ -5,7 +5,8 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import type { MachineLimitRefusal } from '@gugu/core/cloud/machineLimit'
 import { DevicesContext, type DevicesContextValue } from '../../../../apps/desktop/src/store/devicesContext'
 import { MachineLimitNotice } from '../../../../apps/desktop/src/components/settings/addServer/MachineLimitNotice'
-import { createReactHarness } from '../../../support/testHarness'
+import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
+import { createReactHarness, waitForCondition } from '../../../support/testHarness'
 
 const api = vi.hoisted(() => ({ read: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/device-labels', () => ({ currentMachineLimitRefusal: api.read }))
@@ -19,7 +20,7 @@ const endpoint = (id: string): Device => ({
   capabilities: { host_kind: 'server', terminals: [], runtimes: [], host_runtime_capability: 1 },
 })
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { vi.clearAllMocks(); harness = createReactHarness() })
+beforeEach(() => { vi.clearAllMocks(); queryClient.clear(); followRendererSession('SIGNED_IN', 'u-1'); harness = createReactHarness() })
 afterEach(() => { harness.cleanup() })
 const click = async (node: Element | null) => { expect(node).not.toBeNull(); await act(async () => (node as HTMLElement).click()) }
 const row = () => document.querySelector('[data-machine-id="box"]')
@@ -49,17 +50,20 @@ describe('machine limit notice occupants', () => {
     }
     await harness.render(<Provider><MachineLimitNotice refusal={initial} /></Provider>)
     expect(api.read).toHaveBeenCalledWith({ machine_id: 'new-machine', via: 'tunnel' })
+    await waitForCondition(() => row()?.querySelector('button')?.disabled === false, 'occupant not removable')
     expect(row()?.textContent).toContain('My server')
     await click(row()?.querySelector('button') ?? null)
     expect(document.querySelector('[data-testid="settings-device-remove-dialog"]')).not.toBeNull()
     expect(remove).not.toHaveBeenCalled()
     await click(confirm())
     expect(remove.mock.calls.map(([id]) => id)).toEqual(['stable', 'beta'])
+    // Checked again after the one removal that went through: the machine still holds the slot.
+    await waitForCondition(() => api.read.mock.calls.length === 2, 'not checked again after the removal')
     expect(row()).not.toBeNull()
     expect(document.querySelector('[data-testid="settings-device-remove-dialog"]')?.textContent).toContain('Retry this removal')
     await click(confirm())
     expect(remove.mock.calls.map(([id]) => id)).toEqual(['stable', 'beta', 'beta'])
-    expect(row()).toBeNull()
+    await waitForCondition(() => row() === null, 'the freed slot still lists the machine')
     expect(document.querySelector('[data-testid="settings-device-remove-dialog"]')).toBeNull()
     expect(harness.container.textContent).not.toContain('1/1')
   })
@@ -83,6 +87,7 @@ describe('machine limit notice occupants', () => {
       <MachineLimitNotice refusal={initial} />
     </DevicesContext.Provider>)
     await render([endpoint('stable')])
+    await waitForCondition(() => row() !== null, 'occupants not drawn')
     expect(row()?.querySelector('button')?.disabled).toBe(true)
     await render([endpoint('stable'), endpoint('beta')])
     expect(row()?.querySelector('button')?.disabled).toBe(false)
@@ -98,6 +103,7 @@ describe('machine limit notice occupants', () => {
     await harness.render(<DevicesContext.Provider value={value}>
       <MachineLimitNotice refusal={refusal} />
     </DevicesContext.Provider>)
+    await waitForCondition(() => row() !== null, 'occupants not drawn')
     expect(row()?.querySelector('button')?.disabled).toBe(true)
     await click(row()?.querySelector('button') ?? null)
     expect(document.querySelector('[data-testid="settings-device-remove-dialog"]')).toBeNull()
@@ -109,10 +115,31 @@ describe('machine limit notice occupants', () => {
     await harness.render(<DevicesContext.Provider value={context([endpoint('stable'), endpoint('beta')])}>
       <MachineLimitNotice refusal={initial} />
     </DevicesContext.Provider>)
+    await waitForCondition(() => harness.container.querySelector('[role="alert"]') !== null, 'failure not said')
     expect(row()).toBeNull()
     expect(harness.container.querySelector('[role="alert"] button')?.textContent).toMatch(/^(重试|Retry)$/)
     expect(harness.container.querySelector('[role="alert"]')?.textContent).toContain('Current machines could not be loaded')
     await click(harness.container.querySelector('[role="alert"] button'))
-    expect(row()).not.toBeNull()
+    await waitForCondition(() => row() !== null, 'retry did not read again')
+  })
+
+  it('asks again after a removal made here, and says the slot is free once the check answers so', async () => {
+    let held = true
+    api.read.mockImplementation(async () => held ? initial : null)
+    const onAvailable = vi.fn()
+    const remove = vi.fn(async () => { held = false })
+    await harness.render(<DevicesContext.Provider value={context([endpoint('stable'), endpoint('beta')], remove)}>
+      <MachineLimitNotice refusal={initial} onAvailable={onAvailable} />
+    </DevicesContext.Provider>)
+    await waitForCondition(() => row()?.querySelector('button')?.disabled === false, 'occupant not removable')
+    const before = api.read.mock.calls.length
+    await click(row()?.querySelector('button') ?? null)
+    await click(confirm())
+    // The removal is followed by a check of the enforcement RPC (no device-list change needed): there is room now.
+    await waitForCondition(() => row() === null && api.read.mock.calls.length > before, 'not checked again after the removal')
+    const notice = harness.container.querySelector('[data-testid="add-server-machine-limit"]')!
+    expect(notice.textContent).not.toContain('1/1')
+    await click(notice.querySelector('button'))
+    expect(onAvailable).toHaveBeenCalledOnce()
   })
 })

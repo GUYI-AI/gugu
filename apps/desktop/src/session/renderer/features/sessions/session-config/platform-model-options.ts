@@ -126,8 +126,8 @@ export function sanitizeHarnessModelOptions(
   const offending = platformNamespaceCollisions(Object.keys(harnessOptions));
   if (offending.length === 0) return harnessOptions;
   const message =
-    `harness 模型 id 撞上了平台条目前缀 '${PLATFORM_OPTION_PREFIX}':${offending.join(', ')}。` +
-    '改插件里的模型 id,或改 platform-model-options.ts 的前缀 —— 两个命名空间不能重叠。';
+    `harness model ids collide with the platform option prefix '${PLATFORM_OPTION_PREFIX}': ${offending.join(', ')}. ` +
+    'Rename the model id in the plugin, or change the prefix in platform-model-options.ts; the two namespaces must not overlap.';
   if (import.meta.env.DEV && options?.fromStaticTable) throw new Error(message);
   log.warn(message);
   // 丢的就是判定点名的那些 —— ❌ 别在这里再写一次 `startsWith`:那会让同一条规则在同一个函数里
@@ -143,7 +143,8 @@ function decorate(
   option: ComposerModelOption,
   modelId: string,
   tierLabel: string | null | undefined,
-  icon: ComposerModelDecor['icon']
+  icon: ComposerModelDecor['icon'],
+  providerName: ComposerModelDecor['providerName']
 ): ComposerModelOption {
   const provider = resolveModelProvider(modelId, option.name);
   const node = icon?.(provider);
@@ -152,7 +153,7 @@ function decorate(
     // 已经自带组头的条目不动 —— 平台条目由 `platformComposerOption` 贴过了(走词表),
     // 插件静态表将来若自己分组,那也是它更清楚的分法。
     ...(option.groupLabel || !tierLabel ? {} : { groupLabel: tierLabel }),
-    ...(provider ? { providerLabel: provider.name } : {}),
+    ...(provider ? { providerLabel: providerName ? providerName(provider.name) : provider.name } : {}),
     ...(node ? { icon: node } : {}),
   };
 }
@@ -167,6 +168,8 @@ export interface ComposerModelDecor {
   ownTierLabel?: string | null;
   /** 厂商 → 图标。不给 = 不画图标(纯数据调用方,如单测与 e2e,不必拖上 React)。 */
   icon?: (provider: ModelProvider | null) => ComposerModelOption['icon'];
+  /** 厂商名 → 当前界面语言下的显示名(英文界面里「智谱」显示 Zhipu)。不给 = 原样。 */
+  providerName?: (name: string) => string;
 }
 
 /**
@@ -213,13 +216,13 @@ export function composerModelOptions(
     ...Object.fromEntries(
       Object.entries(harness ?? {}).map(([id, option]) => [
         id,
-        decorate(option, id, decor?.ownTierLabel, decor?.icon),
+        decorate(option, id, decor?.ownTierLabel, decor?.icon, decor?.providerName),
       ])
     ),
     ...Object.fromEntries(
       platformModels.map((model) => [
         platformOptionId(model.id),
-        decorate(platformComposerOption(model), model.id, null, decor?.icon),
+        decorate(platformComposerOption(model), model.id, null, decor?.icon, decor?.providerName),
       ])
     ),
   };

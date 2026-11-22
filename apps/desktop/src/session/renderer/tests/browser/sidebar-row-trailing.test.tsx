@@ -112,7 +112,7 @@ it('keeps the count and the status side by side against the right edge, leaving 
 it('a child in error leaves the running parent showing its own running state', async () => {
   const failed = presentAgentStatus({ reading: { status: 'error', detail: null } });
   const entry = (id: string, presentation: AgentStatusPresentation, parentSessionId?: string) =>
-    ({ id, projectId: 'p', isPinned: false, time: 1, presentation, parentSessionId });
+    ({ id, projectId: 'p', time: 1, presentation, parentSessionId });
   // The agents section's own rows, rendered as the inner sidebar renders them.
   const { rows } = chatAgentSection([entry('parent', running), entry('child', failed, 'parent')], { expanded: new Set(), showAll: false });
   await mount([{ id: 'alone', presentation: running }, { id: 'parent', presentation: running, tree: rows[0]!.summary }], (row) =>

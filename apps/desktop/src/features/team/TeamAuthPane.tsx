@@ -42,7 +42,6 @@ export function TeamAuthPane({ onPersonal, googleEnabled, invitationLink }: { on
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [clockActive])
-  // @@@effect-flow - Anonymous invitation verification is request-scoped authentication; its capability token stays in memory, never shared cache or persistence.
   useEffect(() => {
     verifiedLink.current = null; setInvitation(null)
     if (!invitationLink) { setInvitationLoading(false); return }

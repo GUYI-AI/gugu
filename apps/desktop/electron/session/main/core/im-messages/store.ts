@@ -1,198 +1,126 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { projectMessageSearchText } from '@gugu/core/shared/ui/messageSearchText'
-import type { ImMessageBatch, ImMessagePage, ImMessageRange, ImMessageWrite } from '@shared/core/im-messages'
-import { createChatAccess } from './chat-access'
-import { decimal, dropMessages, dropRanges, encodeRest, requireId, requireLimit, restore, reusingStatements,
-  type MessageSqlDatabase, type StoredMessage } from './message-row'
+import type { ImMessageBatch, ImMessagePage } from '@shared/core/im-messages'
+import { messageStoreOperations, requireId, type ChatAccessRow, type MessageStoreAdapter } from '@shared/core/im-message-store'
+import { dropMessages, encodeRest, restore, reusingStatements, type MessageSqlDatabase, type StoredMessage } from './message-row'
 import { searchMessages } from './search'
-import { historyMessageVisible } from '@gugu/core/shared/conversationHistoryTime'
+
+type AccessRecord = { chat_id: string; source_chat_id: string | null; own_member: number | null; membership_revoked: number;
+  archived: number; membership_revision: string | null; chat_revision: string | null; history_cleared_at: string | null }
+
+const accessRow = (row: AccessRecord): ChatAccessRow => ({ chatId: row.chat_id, sourceChatId: row.source_chat_id,
+  ownMember: row.own_member === null ? null : row.own_member === 1, membershipRevoked: row.membership_revoked === 1,
+  archived: row.archived === 1, membershipRevision: row.membership_revision, chatRevision: row.chat_revision,
+  historyClearedAt: row.history_cleared_at })
+
+/** The session SQLite adapter of the shared message store contract: storage only, every rule is in the contract. */
+function sqliteAdapter(connection: MessageSqlDatabase, accountId: string): MessageStoreAdapter {
+  const all = (sql: string, ...args: unknown[]) => connection.prepare(sql).all(accountId, ...args)
+  const get = (sql: string, ...args: unknown[]) => connection.prepare(sql).get(accountId, ...args)
+  const run = (sql: string, ...args: unknown[]) => connection.prepare(sql).run(accountId, ...args)
+  const restoreAll = (rows: unknown[]) => (rows as StoredMessage[]).map(restore)
+  return {
+    transaction: body => connection.transaction(body)(),
+    row(id) {
+      const row = get('SELECT * FROM im_messages WHERE account_id=? AND id=?', id) as (StoredMessage & { claimed_revision: string | null }) | undefined
+      return row && { message: restore(row), claimedRevision: row.claimed_revision }
+    },
+    putRow(message, claimedRevision) {
+      // Compute before mutating; either the original row and index both change, or neither does.
+      const text = projectMessageSearchText(message)
+      const old = get('SELECT rowid FROM im_messages WHERE account_id=? AND id=?', message.id) as { rowid: number } | undefined
+      if (old) connection.prepare('DELETE FROM im_messages_text WHERE rowid = ?').run(old.rowid)
+      const row = connection.prepare(`INSERT INTO im_messages
+        (account_id, id, chat_id, thread_root_id, seq, sender_user_id, created_at, content_type, content,
+         is_whisper, to_user_ids, file_item_id, rest, claimed_revision)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(account_id, id) DO UPDATE SET chat_id=excluded.chat_id,
+          thread_root_id=excluded.thread_root_id, seq=excluded.seq, sender_user_id=excluded.sender_user_id,
+          created_at=excluded.created_at, content_type=excluded.content_type, content=excluded.content,
+          is_whisper=excluded.is_whisper, to_user_ids=excluded.to_user_ids,
+          file_item_id=excluded.file_item_id, rest=excluded.rest, claimed_revision=excluded.claimed_revision
+        RETURNING rowid`).get(accountId, message.id, message.chat_id, message.thread_root_id ?? null,
+        message.seq, message.sender_user_id, message.created_at, message.content_type, message.content,
+        Number(message.is_whisper === true), JSON.stringify(message.to_user_ids), message.file_item_id ?? null,
+        encodeRest(message), claimedRevision) as { rowid: number }
+      if (text) connection.prepare('INSERT INTO im_messages_text(rowid, text) VALUES (?, ?)').run(row.rowid, text)
+      return restore(connection.prepare('SELECT * FROM im_messages WHERE rowid=?').get(row.rowid) as StoredMessage)
+    },
+    deleteRows(chatId, ids) {
+      if (!ids) dropMessages(connection, 'account_id = ? AND chat_id = ?', accountId, chatId)
+      else for (const id of ids) dropMessages(connection, 'account_id = ? AND chat_id = ? AND id = ?', accountId, chatId, id)
+    },
+    stream(chatId, root, after, before, limit, newer) {
+      const stream = root ? '(thread_root_id=? OR id=?)' : 'thread_root_id IS NULL'
+      return restoreAll(all(`SELECT * FROM im_messages WHERE account_id=? AND chat_id=?
+        AND ${stream} AND seq<? AND seq>? ORDER BY seq ${newer ? 'ASC' : 'DESC'} LIMIT ?`,
+      chatId, ...(root ? [root, root] : []), before, after, limit))
+    },
+    // Each correlated range reads only a window from the stream index; no historical row_number scan.
+    latest: (chatIds, limit) => restoreAll(connection.prepare(`SELECT m.* FROM json_each(?) chats
+      JOIN im_messages m ON m.rowid IN (SELECT rowid FROM im_messages
+        WHERE account_id = ? AND chat_id = chats.value AND thread_root_id IS NULL
+        ORDER BY seq DESC LIMIT ?) ORDER BY m.chat_id, m.seq`).all(JSON.stringify(chatIds), accountId, limit)),
+    rows: ids => restoreAll(all('SELECT * FROM im_messages WHERE account_id=? AND id IN (SELECT value FROM json_each(?))', JSON.stringify(ids))),
+    createdAt: chatId => (all('SELECT id, created_at FROM im_messages WHERE account_id=? AND chat_id=?', chatId) as
+      { id: string; created_at: string }[]).map(row => ({ id: row.id, createdAt: row.created_at })),
+    ranges: (chatId, root) => (all(`SELECT from_seq, to_seq FROM im_message_ranges WHERE account_id=? AND chat_id=?
+      AND thread_root_id=? ORDER BY from_seq`, chatId, root) as { from_seq: number; to_seq: number }[])
+      .map(row => ({ fromSeq: row.from_seq, toSeq: row.to_seq })),
+    setRanges(chatId, root, ranges) {
+      run('DELETE FROM im_message_ranges WHERE account_id=? AND chat_id=? AND thread_root_id=?', chatId, root)
+      for (const range of ranges) run('INSERT INTO im_message_ranges VALUES(?,?,?,?,?)', chatId, root, range.fromSeq, range.toSeq)
+    },
+    dropRanges: chatId => { run('DELETE FROM im_message_ranges WHERE account_id=? AND chat_id=?', chatId) },
+    tombstoned: (chatId, messageId) => !!get(`SELECT 1 FROM im_message_tombstones
+      WHERE account_id = ? AND chat_id = ? AND message_id IN ('', ?) LIMIT 1`, chatId, messageId),
+    tombstone: (chatId, messageId) => { run(`INSERT INTO im_message_tombstones(account_id, chat_id, message_id)
+      VALUES (?, ?, ?) ON CONFLICT DO NOTHING`, chatId, messageId) },
+    clearDeparture: chatId => { run(`DELETE FROM im_message_tombstones WHERE account_id=? AND chat_id=? AND message_id=''`, chatId) },
+    access(chatId) {
+      const row = get('SELECT * FROM im_message_chats WHERE account_id=? AND chat_id=?', chatId) as AccessRecord | undefined
+      return row && accessRow(row)
+    },
+    putAccess(row) {
+      run(`INSERT INTO im_message_chats(account_id,chat_id,source_chat_id,own_member,membership_revoked,archived,
+        membership_revision,chat_revision,history_cleared_at) VALUES (?,?,?,?,?,?,?,?,?)
+        ON CONFLICT(account_id,chat_id) DO UPDATE SET source_chat_id=excluded.source_chat_id,own_member=excluded.own_member,
+        membership_revoked=excluded.membership_revoked,archived=excluded.archived,membership_revision=excluded.membership_revision,
+        chat_revision=excluded.chat_revision,history_cleared_at=excluded.history_cleared_at`,
+      row.chatId, row.sourceChatId, row.ownMember === null ? null : Number(row.ownMember), Number(row.membershipRevoked),
+      Number(row.archived), row.membershipRevision, row.chatRevision, row.historyClearedAt)
+    },
+    accessChildren: sourceChatId => (all('SELECT * FROM im_message_chats WHERE account_id=? AND source_chat_id=?',
+      sourceChatId) as AccessRecord[]).map(accessRow),
+    throughRevision: () => (get('SELECT through_revision FROM im_message_accounts WHERE account_id = ?') as
+      { through_revision: string } | undefined)?.through_revision ?? null,
+    setThroughRevision(revision) {
+      run(`INSERT INTO im_message_accounts(account_id, through_revision) VALUES (?, ?)
+        ON CONFLICT(account_id) DO UPDATE SET through_revision=excluded.through_revision`, revision)
+    },
+    clear() {
+      dropMessages(connection, 'account_id = ?', accountId)
+      for (const table of ['im_message_tombstones', 'im_message_accounts', 'im_message_chats', 'im_message_ranges']) {
+        run(`DELETE FROM ${table} WHERE account_id = ?`)
+      }
+    },
+  }
+}
 
 /** All durable messages and their derived index share the existing session connection. */
 export function createImMessageStore(database: MessageSqlDatabase) {
   const connection = reusingStatements(database)
-  const find = connection.prepare('SELECT rowid, claimed_revision, rest FROM im_messages WHERE account_id = ? AND id = ?')
-  const indexDelete = connection.prepare('DELETE FROM im_messages_text WHERE rowid = ?')
-  const indexInsert = connection.prepare('INSERT INTO im_messages_text(rowid, text) VALUES (?, ?)')
-  const isDeleted = connection.prepare(`SELECT 1 FROM im_message_tombstones
-    WHERE account_id = ? AND chat_id = ? AND message_id IN ('', ?) LIMIT 1`)
-  const upsert = connection.prepare(`INSERT INTO im_messages
-    (account_id, id, chat_id, thread_root_id, seq, sender_user_id, created_at, content_type, content,
-     is_whisper, to_user_ids, file_item_id, rest, claimed_revision)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(account_id, id) DO UPDATE SET chat_id=excluded.chat_id,
-      thread_root_id=excluded.thread_root_id, seq=excluded.seq, sender_user_id=excluded.sender_user_id,
-      created_at=excluded.created_at, content_type=excluded.content_type, content=excluded.content,
-      is_whisper=excluded.is_whisper, to_user_ids=excluded.to_user_ids,
-      file_item_id=excluded.file_item_id, rest=excluded.rest,
-      claimed_revision=COALESCE(im_messages.claimed_revision, excluded.claimed_revision)
-    RETURNING rowid`)
-  const progress = connection.prepare('SELECT through_revision FROM im_message_accounts WHERE account_id = ?')
-  const writeProgress = connection.prepare(`INSERT INTO im_message_accounts(account_id, through_revision)
-    VALUES (?, ?) ON CONFLICT(account_id) DO UPDATE SET through_revision=excluded.through_revision`)
-  const applyAccess = createChatAccess(connection)
-
-  const revision = (accountId: string): string | null =>
-    (progress.get(accountId) as { through_revision: string } | undefined)?.through_revision ?? null
-
-  function cover(accountId: string, range: ImMessageRange): void {
-    requireId(range.chatId)
-    if (!Number.isSafeInteger(range.fromSeq) || !Number.isSafeInteger(range.toSeq)
-      || range.fromSeq < 1 || range.toSeq < range.fromSeq) throw new Error('Invalid message coverage range')
-    if (isDeleted.get(accountId, range.chatId, '')) return
-    const root = range.threadRootId ?? ''
-    const overlaps = connection.prepare(`SELECT from_seq,to_seq FROM im_message_ranges
-      WHERE account_id=? AND chat_id=? AND thread_root_id=? AND from_seq<=? AND to_seq>=?`)
-      .all(accountId, range.chatId, root, range.toSeq + 1, range.fromSeq - 1) as { from_seq: number; to_seq: number }[]
-    const from = Math.min(range.fromSeq, ...overlaps.map(row => row.from_seq))
-    const to = Math.max(range.toSeq, ...overlaps.map(row => row.to_seq))
-    connection.prepare(`DELETE FROM im_message_ranges WHERE account_id=? AND chat_id=?
-      AND thread_root_id=? AND from_seq<=? AND to_seq>=?`).run(accountId, range.chatId, root, to + 1, from - 1)
-    connection.prepare('INSERT INTO im_message_ranges VALUES(?,?,?,?,?)').run(accountId, range.chatId, root, from, to)
-  }
-
-  /** A revision-ordered arrival continues the covered tail of its stream. */
-  function extend(accountId: string, message: MessageItem): void {
-    const row = connection.prepare(`SELECT max(to_seq) AS tail FROM im_message_ranges
-      WHERE account_id=? AND chat_id=? AND thread_root_id=?`)
-      .get(accountId, message.chat_id, message.thread_root_id ?? '') as { tail: number | null }
-    cover(accountId, { chatId: message.chat_id, threadRootId: message.thread_root_id,
-      fromSeq: row.tail !== null && row.tail < message.seq ? row.tail + 1 : message.seq, toSeq: message.seq })
-  }
-
-  function put(accountId: string, message: MessageItem, revision?: string): ImMessageWrite[] {
-    requireId(message.id)
-    requireId(message.chat_id)
-    if (!Number.isSafeInteger(message.seq)) throw new Error('Invalid message sequence')
-    if (message.seq < 1 || isDeleted.get(accountId, message.chat_id, message.id)) return []
-    const cleared = connection.prepare(`WITH RECURSIVE ancestors(chat_id) AS (
-      SELECT ? UNION SELECT c.source_chat_id FROM im_message_chats c JOIN ancestors a ON c.chat_id=a.chat_id
-        WHERE c.account_id=? AND c.source_chat_id IS NOT NULL
-      ) SELECT history_cleared_at FROM im_message_chats WHERE account_id=? AND chat_id IN(SELECT chat_id FROM ancestors)
-        AND history_cleared_at IS NOT NULL`).all(message.chat_id, accountId, accountId) as { history_cleared_at: string }[]
-    if (cleared.some(row => !historyMessageVisible(message.created_at, row.history_cleared_at))) return []
-    // Compute before mutating; either the original row and index both change, or neither does.
-    const text = projectMessageSearchText(message)
-    const old = find.get(accountId, message.id) as { rowid: number; claimed_revision: string | null; rest: string } | undefined
-    const rest = encodeRest(old ? withStoredOverlays(message, old.rest) : message)
-    // @@@arrival-claim - the first revision that delivers a message claims it, even if a page fetch stored the body first;
-    // the claim lives and dies with the row.
-    const claims = revision !== undefined && !old?.claimed_revision
-    if (old) indexDelete.run(old.rowid)
-    const row = upsert.get(accountId, message.id, message.chat_id, message.thread_root_id ?? null,
-      message.seq, message.sender_user_id, message.created_at, message.content_type, message.content,
-      Number(message.is_whisper === true), JSON.stringify(message.to_user_ids), message.file_item_id ?? null,
-      rest, claims ? revision : null) as { rowid: number }
-    if (text) indexInsert.run(row.rowid, text)
-    if (revision !== undefined) extend(accountId, message)
-    const stored = connection.prepare('SELECT * FROM im_messages WHERE rowid=?').get(row.rowid) as StoredMessage
-    return [{ type: 'put', message: restore(stored), ...(claims ? { claimed: true as const } : {}) }]
-  }
-
-  function write(accountId: string, operation: ImMessageWrite, revision?: string): ImMessageWrite[] {
-    if (operation.type === 'put') return put(accountId, operation.message, revision)
-    if (operation.type === 'chatAccess') return applyAccess(accountId, operation.access, revision)
-    requireId(operation.chatId)
-    if (operation.type === 'truncateRange') {
-      dropRanges(connection, accountId, operation.chatId)
-      return []
-    }
-    if (operation.type === 'delete') {
-      requireId(operation.id)
-      connection.prepare(`INSERT INTO im_message_tombstones(account_id, chat_id, message_id)
-        VALUES (?, ?, ?) ON CONFLICT DO NOTHING`).run(accountId, operation.chatId, operation.id)
-      dropMessages(connection, 'account_id = ? AND chat_id = ? AND id = ?', accountId, operation.chatId, operation.id)
-      return [operation]
-    }
-    return applyAccess(accountId, { chatId: operation.chatId, ownMember: false, membershipRevoked: true }, revision)
-  }
-
-  const ingest = connection.transaction((accountId: string, batch: ImMessageBatch) => {
+  const account = (accountId: string) => {
     requireId(accountId)
-    const previous = revision(accountId)
-    const applied: ImMessageWrite[] = []
-    for (const operation of batch.writes) applied.push(...write(accountId, operation))
-    for (const page of batch.revisions) {
-      if (!decimal.test(page.revision)) throw new Error('Invalid message revision')
-      // Another window or a crash before IndexedDB commit can replay a page already committed here.
-      if (previous !== null && BigInt(page.revision) <= BigInt(previous)) continue
-      for (const operation of page.writes) applied.push(...write(accountId, operation, page.revision))
-    }
-    for (const range of batch.ranges ?? []) cover(accountId, range)
-    if (batch.throughRevision !== undefined) {
-      if (!decimal.test(batch.throughRevision)) throw new Error('Invalid message through_revision')
-      if (batch.revisions.some(page => BigInt(page.revision) > BigInt(batch.throughRevision!))) {
-        throw new Error('Message revision exceeds the committed cursor')
-      }
-      if (previous === null || BigInt(batch.throughRevision) > BigInt(previous)) {
-        writeProgress.run(accountId, batch.throughRevision)
-      }
-    }
-    return applied
-  })
-
+    return messageStoreOperations(sqliteAdapter(connection, accountId))
+  }
   return {
-    ingest,
+    ingest: (accountId: string, batch: ImMessageBatch) => account(accountId).ingest(batch),
+    windows: (accountId: string, chatIds: string[], limit: number): MessageItem[] => account(accountId).windows(chatIds, limit),
+    page: (accountId: string, options: ImMessagePage) => account(accountId).page(options),
+    throughRevision: (accountId: string) => account(accountId).throughRevision(),
+    clearAccount: (accountId: string) => account(accountId).clear(),
     search: (accountId: string, chatId: string, query: string, limit: number, fromUserId?: string) =>
       searchMessages(connection, accountId, chatId, query, limit, fromUserId),
-    throughRevision(accountId: string) { requireId(accountId); return revision(accountId) },
-    windows(accountId: string, chatIds: string[], limit: number): MessageItem[] {
-      requireId(accountId)
-      requireLimit(limit)
-      chatIds.forEach(requireId)
-      // Each correlated range reads only a window from the stream index; no historical row_number scan.
-      return (connection.prepare(`SELECT m.* FROM json_each(?) chats
-        JOIN im_messages m ON m.rowid IN (SELECT rowid FROM im_messages
-          WHERE account_id = ? AND chat_id = chats.value AND thread_root_id IS NULL
-          ORDER BY seq DESC LIMIT ?) ORDER BY m.chat_id, m.seq`)
-        .all(JSON.stringify(chatIds), accountId, limit) as StoredMessage[]).map(restore)
-    },
-    page(accountId: string, options: ImMessagePage) {
-      requireId(accountId)
-      requireLimit(options.limit)
-      if (options.ids) {
-        if (!options.ids.length || options.ids.length > 500) throw new Error('Invalid local message id page')
-        options.ids.forEach(requireId)
-        const rows = connection.prepare(`SELECT * FROM im_messages WHERE account_id=? AND id IN (SELECT value FROM json_each(?)) ORDER BY seq`)
-          .all(accountId, JSON.stringify(options.ids)) as StoredMessage[]
-        return { rows: rows.map(restore), covered: false }
-      }
-      requireId(options.chatId!)
-      const before = options.beforeSeq ?? Number.MAX_SAFE_INTEGER
-      const after = options.afterSeq ?? 0
-      if (!Number.isSafeInteger(before) || before < 1 || !Number.isSafeInteger(after) || after < 0) {
-        throw new Error('Invalid persistent message cursor')
-      }
-      const args: unknown[] = [accountId, options.chatId]
-      const stream = options.threadRootId ? '(thread_root_id=? OR id=?)' : 'thread_root_id IS NULL'
-      if (options.threadRootId) args.push(options.threadRootId, options.threadRootId)
-      const newer = options.afterSeq !== undefined
-      const records = connection.prepare(`SELECT * FROM im_messages WHERE account_id=? AND chat_id=?
-        AND ${stream} AND seq<? AND seq>? ORDER BY seq ${newer ? 'ASC' : 'DESC'} LIMIT ?`)
-        .all(...args, before, after, options.limit) as StoredMessage[]
-      const rows = records.map(restore)
-      if (!newer) rows.reverse()
-      const bottom = rows[0]?.seq ?? 1
-      const top = rows[rows.length - 1]?.seq ?? after
-      const range = connection.prepare(`SELECT from_seq,to_seq FROM im_message_ranges
-        WHERE account_id=? AND chat_id=? AND thread_root_id=? AND from_seq<=? AND to_seq>=? LIMIT 1`)
-        .get(accountId, options.chatId, options.threadRootId ?? '', newer ? after + 1 : bottom,
-          newer ? top : before - 1) as { from_seq: number; to_seq: number } | undefined
-      return { rows, covered: !!range && (rows.length === options.limit || (!newer && range.from_seq === 1)) }
-    },
-    clearAccount: connection.transaction((accountId: string) => {
-      requireId(accountId)
-      dropMessages(connection, 'account_id = ?', accountId)
-      for (const table of ['im_message_tombstones', 'im_message_accounts', 'im_message_chats', 'im_message_ranges']) {
-        connection.prepare(`DELETE FROM ${table} WHERE account_id = ?`).run(accountId)
-      }
-    }),
   }
-}
-
-/** A body-only row (no reactions / delivery_blocks) does not speak for the overlay facts already stored. */
-function withStoredOverlays(message: MessageItem, storedRest: string): MessageItem {
-  const stored = JSON.parse(storedRest) as Pick<MessageItem, 'reactions' | 'delivery_blocks' | 'local_timeline'>
-  if (message.reactions && message.delivery_blocks && !stored.local_timeline) return message
-  return { ...message, local_timeline: stored.local_timeline ?? message.local_timeline,
-    reactions: message.reactions ?? stored.reactions, delivery_blocks: message.delivery_blocks ?? stored.delivery_blocks }
 }

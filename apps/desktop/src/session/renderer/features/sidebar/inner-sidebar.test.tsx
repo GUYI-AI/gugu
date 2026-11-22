@@ -62,6 +62,8 @@ const state = vi.hoisted(() => ({
   openSessionWhenReady: vi.fn(),
   prepareProjectTask: vi.fn(),
   toggleIdleExpanded: vi.fn(),
+  moveSessionUnder: vi.fn(),
+  showDropHighlight: vi.fn(),
 }));
 vi.mock('@renderer/lib/layout/layout-provider', () => ({ useInnerSidebarFrame: () => 260 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({
@@ -113,8 +115,11 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
     toggleSessionExpanded: vi.fn(),
     expandSessions: vi.fn(),
     toggleIdleExpanded: (key: string) => state.toggleIdleExpanded(key),
+    parentOf: (id: string) => state.items.find((entry) => entry.id === id)?.parentSessionId ?? null,
   },
 }));
+vi.mock('@renderer/lib/drop-highlight', async (original) => ({ ...(await original<object>()), showDropHighlight: (...args: unknown[]) => state.showDropHighlight(...args) }));
+vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSessionUnder: (...args: unknown[]) => state.moveSessionUnder(...args) }));
 vi.mock('./sidebar-session-item', () => ({
   SidebarSessionItem: ({ sessionId, agentAvatar }: { sessionId: string; agentAvatar?: boolean }) => (
     <div data-session-row={sessionId} data-agent-avatar={agentAvatar === true || undefined} />
@@ -146,13 +151,14 @@ state.toggleIdleExpanded.mockImplementation((key: string) => runInAction(() => {
 }));
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
 const { readComposerVerb, setComposerVerb } = await import('@/lib/composerVerbBridge');
-const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarChat } = await import('@/lib/innerSidebarBridge');
+const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarPresent } = await import('@/lib/innerSidebarBridge');
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
 const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
 const { sidebarFolds } = await import('./sidebar-folds');
 const { readPanelToggle } = await import('@/lib/panelToggles');
 const { sidebarStore } = await import('@renderer/lib/stores/app-state');
+const { clearDraggedScreenContent, setDraggedScreenContent, SCREEN_CONTENT_DRAG_TYPE } = await import('@renderer/lib/drag-screen-content');
 const { screenLayout } = await import('@renderer/app/screen-layout');
 type ScreenBlockContent = import('@renderer/app/screen-layout').ScreenBlockContent;
 
@@ -166,9 +172,9 @@ const render = () => act(async () => root.render(<InnerSidebar />));
 const agentsCount = () => host.querySelector('[data-inner-sidebar-section="agents"] [data-inner-agents-count]')?.textContent;
 const topicsView = (chatId: string, fields: { total: number; hidden: number; calling?: number }) =>
   act(() => publishInnerSidebarTopicsView({ chatId, calling: 0, ...fields }));
-let shellColumnChat: string | null = null;
+let shellColumnPresent = false;
 function ShellProbe() {
-  shellColumnChat = useInnerSidebarChat();
+  shellColumnPresent = useInnerSidebarPresent();
   return null;
 }
 
@@ -253,7 +259,29 @@ describe('inner sidebar', () => {
     await render();
     expect(sections()).toEqual(['agents', 'topics']);
     expect(host.textContent).toContain('sidebar.agents');
-    expect(sessionRows()).toEqual(['shop-task', 'shop-idle', 'shop-chat-agent']);
+    expect(sessionRows()).toEqual(['shop-chat-agent', 'shop-idle', 'shop-task']);
+  });
+
+  it('#3367 a sub-session dragged onto the Agents header goes back to the top level; a top-level one is not taken', async () => {
+    state.items = [...state.items, item('shop-sub', 'p-shop', idle, 0, 'shop-task')];
+    openProject('p-shop');
+    await render();
+    const header = host.querySelector<HTMLElement>('[data-inner-sidebar-section="agents"] > div')!;
+    const drag = (type: 'dragover' | 'drop', sessionId: string) => {
+      const dataTransfer = { types: [SCREEN_CONTENT_DRAG_TYPE], dropEffect: 'none', effectAllowed: 'copyMove', setData: () => undefined, setDragImage: () => undefined, getData: () => '' } as unknown as DataTransfer;
+      setDraggedScreenContent(dataTransfer, { kind: 'session', projectId: 'p-shop', sessionId, title: sessionId });
+      const event = Object.assign(new Event(type, { bubbles: true, cancelable: true }), { dataTransfer });
+      act(() => { header.dispatchEvent(event); });
+      clearDraggedScreenContent();
+      return event.defaultPrevented;
+    };
+    state.showDropHighlight.mockClear();
+    expect(drag('dragover', 'shop-task'), 'already at the top level: no drop target').toBe(false);
+    expect(state.showDropHighlight).not.toHaveBeenCalled();
+    expect(drag('dragover', 'shop-sub')).toBe(true);
+    expect(state.showDropHighlight, 'the shared drop highlight moves onto the header').toHaveBeenCalledTimes(1);
+    expect(drag('drop', 'shop-sub')).toBe(true);
+    expect(state.moveSessionUnder).toHaveBeenCalledWith({ kind: 'session', projectId: 'p-shop', sessionId: 'shop-sub', title: 'shop-sub' }, null, 'shop-task');
   });
 
   it("agent rows lead with the agent's own avatar: every row asks the session row for it (mock v33)", async () => {
@@ -361,19 +389,18 @@ describe('inner sidebar', () => {
     expect(host.querySelector('[data-inner-topics-drill]')).toBeNull();
   });
 
-  it('one flat list, no 「needs you」 / 「running」 headers: needs you, then running, then the rest; past 10 one 「Show more」 opens to Collapse', async () => {
+  it('one flat list, no 「needs you」 / 「running」 headers, most recent first; needs you past 10 still shows; one 「Show more」 opens to Collapse', async () => {
     state.items = [
-      ...Array.from({ length: 7 }, (_, index) => item(`run-${index}`, 'p-shop', running, 100 - index)),
       ...Array.from({ length: 5 }, (_, index) => item(`idle-${index}`, 'p-shop', idle, 100 - index)),
+      ...Array.from({ length: 7 }, (_, index) => item(`run-${index}`, 'p-shop', running, 90 - index)),
       item('asks', 'p-shop', waiting, 0),
     ];
     openProject('p-shop');
     await render();
     expect(host.querySelector('[data-agent-group]'), 'no group headers').toBeNull();
-    expect(host.querySelector('[data-inner-sidebar-section="agents"]')?.textContent).not.toContain('sidebar.needsYou');
     expect(agentsCount()).toBe('13');
-    expect(sessionRows()).toEqual(['asks', ...Array.from({ length: 7 }, (_, index) => `run-${index}`), 'idle-0', 'idle-1']);
-    expect(moreRows()).toEqual(['sidebar.showMore:3']);
+    expect(sessionRows()).toEqual([...Array.from({ length: 5 }, (_, index) => `idle-${index}`), ...Array.from({ length: 5 }, (_, index) => `run-${index}`), 'asks']);
+    expect(moreRows()).toEqual(['sidebar.showMore:2']);
     await act(async () => host.querySelector<HTMLElement>('[data-more-row="chat:shop-chat"]')!.click());
     expect(sessionRows()).toHaveLength(13);
     expect(moreRows()).toEqual(['sidebar.showLess']);
@@ -479,7 +506,7 @@ describe('inner sidebar', () => {
     await act(async () => shell.render(<ShellProbe />));
     openChat('group');
     await render();
-    expect(shellColumnChat).toBe('group');
+    expect(shellColumnPresent).toBe(true);
     openSession('mine-in-group', true);
     await render();
     expect(host.querySelector('[data-inner-sidebar-chat="group"]')).not.toBeNull();
@@ -489,7 +516,8 @@ describe('inner sidebar', () => {
     await render();
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
     expect(innerSidebarChat.get()).toBeNull();
-    expect(shellColumnChat).toBeNull();
+    // Still there for the window: a click on any group block moves it onto that group.
+    expect(shellColumnPresent).toBe(true);
     openChat('dm');
     await render();
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
@@ -580,7 +608,7 @@ describe('a standalone agent with sub-agents', () => {
   });
   const head = () => host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-slot="button"]');
 
-  it('opening it shows the column: the agent as its head row (fold only), then just 智能体 with its sub-agents, needs you → running → rest', async () => {
+  it('opening it shows the column: the agent as its head row (fold only), then just 智能体 with its sub-agents, most recent first', async () => {
     const shell = createRoot(document.createElement('div'));
     await act(async () => shell.render(<ShellProbe />));
     openSession('solo-task');
@@ -598,10 +626,10 @@ describe('a standalone agent with sub-agents', () => {
     expect(sections()).toEqual(['agents']);
     expect(readShellSlots()!.getSlots().has('inner-topics:dm-solo')).toBe(false);
     // The grandchild stays folded under its parent; the count is every sub-agent.
-    expect(sessionRows()).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy', 'sub-asks']);
     expect(agentsCount()).toBe('4');
     expect(innerSidebarChat.get()).toEqual(solo);
-    expect(shellColumnChat).toBe('dm-solo');
+    expect(shellColumnPresent).toBe(true);
     act(() => shell.unmount());
   });
 
@@ -699,7 +727,7 @@ describe('a standalone agent with sub-agents', () => {
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
     openSession('solo-task');
     await render();
-    expect(sessionRows()).toEqual(['sub-asks', 'sub-busy', 'sub-quiet']);
+    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy', 'sub-asks']);
     expect(agentsCount()).toBe('4');
   });
 
@@ -715,7 +743,7 @@ describe('a standalone agent with sub-agents', () => {
     state.items = state.items.filter((entry) => entry.id !== 'sub-asks');
     await render();
     expect(state.placementReads).toBeGreaterThan(reads);
-    expect(sessionRows()).toEqual(['sub-busy', 'sub-quiet']);
+    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy']);
   });
 
   it('an agent living in a group or a project is no standalone agent: no column of its own, sub-agents or not', async () => {

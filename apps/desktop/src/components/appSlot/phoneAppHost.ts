@@ -16,7 +16,6 @@ import { AppFileError, contentTypeOf, createAppFiles, rosterMoved, tooLargeError
 import { AppSendError, chatSelectionPills, dispatchFromApp, type AppSendPlatform } from '../../session/shared/extensions/app-send-core'
 import { answerAgentPick, pickAgentAsk } from '../../session/shared/extensions/app-dispatch-core'
 import { pickDispatchTarget } from '../chat/dispatchAsk'
-import { openSelectionSend } from '../chat/selectionSendAsk'
 import { chatOf, createAppMessages } from '../../session/shared/extensions/app-messages-core'
 import { createAppCloud, type CloudChannel } from '../../session/shared/extensions/app-cloud-core'
 import { dataClient } from '../../lib/supabase'
@@ -68,7 +67,7 @@ import { claimantOf, openerChoice, placeFor, placeLink, requireOwnTabChoice, typ
 import { opensInChats, withCoveredCapabilities, type ExtensionCapability, type ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { readDisplayIdentities } from '../../lib/identityReadAdapter'
 import { memberFaces } from '../../lib/memberFaces'
-import { installedExtensionsStore } from '../../session/renderer/features/extensions/installed-extensions-store'
+import { fetchInstalledApps, peekInstalledApps, PHONE_HOST, type InstalledApps } from '../../session/renderer/features/extensions/installed-extensions'
 import { fileIconKey } from '../../session/shared/extensions/app-icon'
 import { appFrameChannel } from './appOrigin'
 import { PHONE_CAPABILITIES, phoneApps } from './phoneApps'
@@ -86,7 +85,7 @@ import { APP_FORWARD_FILES_EVENT, APP_SESSION_FRAME_NAME } from '../../session/s
 import { answerPhoneBinding, createPhoneBindings } from './phoneAppBindings'
 import { phoneBindingPorts } from './phoneBindingPorts'
 import { appToast } from '../../session/shared/extensions/app-toast'
-import { chatSelectionSendOf, requirePreinstalledFiles, selectionSendOf } from '../../session/shared/extensions/selection-send'
+import { parseSelectionAction, selectionConversationOf, selectionMenu, type FileReference } from '../../session/shared/extensions/file-selection'
 import { toast } from '../../session/renderer/lib/hooks/use-toast'
 
 const log = rendererLogger('app-slot/phone-host')
@@ -100,6 +99,9 @@ const log = rendererLogger('app-slot/phone-host')
  * Only what the phone has is answered: the rest is `invalid` (an App feature-detects, and the
  * runtime in the frame only offers what `framed-host.ts` lists).
  */
+
+/** Each frame's chat files named for a press on its selection menu (`filesSelectionAction`), read once per file. */
+const selectionNames = new WeakMap<object, Map<string, FileReference | null>>()
 
 /**
  * This phone can use the App (app-redesign §5): it has something to open here — a page of its own, which opens in any
@@ -178,9 +180,16 @@ const relay = new FileSyncRelay({
   warn: (message, data) => log.warn(data ?? {}, message),
 })
 
-/** The Apps on this phone — shipped and installed from chats (phoneApps.ts fills the store) — that may be opened. */
+/** What is installed, as an App's call is answered (one moment): a call meeting it unread is refused loudly. */
+function installedNow(): InstalledApps {
+  const installed = peekInstalledApps(PHONE_HOST)
+  if (!installed) throw new Error('The Apps on this phone are not read yet')
+  return installed
+}
+
 function appsHereNow(): ExtensionManifest[] {
-  return installedExtensionsStore.manifests.filter((manifest) => installedExtensionsStore.isEnabled(manifest.id))
+  const installed = installedNow()
+  return installed.manifests.filter((manifest) => installed.isEnabled(manifest.id))
 }
 
 /** `gugu.dispatch` (15): the desktop's answer (`app-send-core.ts`), as the person signed in to this page. */
@@ -222,8 +231,9 @@ const files = createAppFiles({
     const candidate = claimantOf(typedName, appsHereNow(), 'chat', phoneApps.remembered)
     if (!candidate) return null
     // The icon it declared for this kind of file (`fileIcons`), as this page re-encoded it (app-icon.ts) — as main does on the desktop.
-    const icon = installedExtensionsStore.icons[fileIconKey(candidate.tabKind, candidate.suffix)] ?? null
-    return { suffix: candidate.suffix, state: candidate.state, app: { id: candidate.extensionId, name: localizedManifestText(candidate.app, installedExtensionsStore.locale).name, icon } }
+    const installed = installedNow()
+    const icon = installed.icons[fileIconKey(candidate.tabKind, candidate.suffix)] ?? null
+    return { suffix: candidate.suffix, state: candidate.state, app: { id: candidate.extensionId, name: localizedManifestText(candidate.app, installed.locale).name, icon } }
   },
   async account() {
     const token = getRendererAccessToken()
@@ -445,7 +455,7 @@ export function hostAppFrame(
   const send = (message: HostToFrame) => channel.post(message)
   /** This page's cloud subscriptions (`gugu.cloud.on`), by topic and event: gone with the page. */
   const cloudWatches = new Map<string, () => void>()
-  const cloudApp = () => ({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
+  const cloudApp = () => ({ id: hosted.binding.extensionId, origin: installedNow().origins[hosted.binding.extensionId] })
   const event = (hostEvent: ExtensionHostEvent) => send({ m: APP_FRAME_MARKER, t: 'event', event: hostEvent })
   /** The page, and the one chat file the host handed it (`ctx.file`): every call names its own target (真源原则 13). */
   const surface = (): FileSurface => ({
@@ -453,9 +463,17 @@ export function hostAppFrame(
     extensionId: hosted.binding.extensionId,
     itemId: hosted.binding.itemId ?? null,
   })
+  /**
+   * 60 An opened file carries the menu its selections have in this frame (file-selection.ts): Cite and Send for a chat's file
+   * in a chat page (into that chat here); none for a session's page, whose composer is on another machine.
+   */
+  const withSelectionMenu = <T extends { entry: unknown }>(opened: T): T & { selectionMenu: ReturnType<typeof selectionMenu> } => {
+    const conversation = selectionConversationOf({ session: hosted.binding.session?.id, chat: hosted.binding.chatId })
+    return { ...opened, selectionMenu: selectionMenu(conversation, conversation?.kind === 'chat', true, hosted.binding.locale) }
+  }
   /** Who is in the chat the page is drawn for (摩擦单 F36): read when the frame first asks, again when the members change. */
   let members: ExtensionMember[] | null = null
-  const contextHasMembers = () => !((installedExtensionsStore.manifestFor(hosted.binding.extensionId)?.apiVersion ?? 25) >= 27)
+  const contextHasMembers = () => !((installedNow().manifestFor(hosted.binding.extensionId)?.apiVersion ?? 25) >= 27)
   /** And the chat itself (`getContext().chat`), read with them; undefined until read — `files.chat()` throws when it cannot be. */
   let chat: ExtensionChat | null | undefined
   const readMembers = async () => {
@@ -511,7 +529,7 @@ export function hostAppFrame(
     ...(hosted.binding.viewState ? { viewState: hosted.binding.viewState } : {}),
     tabId: hosted.binding.tabId,
     ...(hosted.binding.modal ? { modal: { data: hosted.binding.modal.data } } : {}),
-    ...(hosted.binding.widget ? { widget: widgetContext(hosted.binding.widget, installedExtensionsStore.manifestFor(hosted.binding.extensionId)?.apiVersion ?? 25) } : {}),
+    ...(hosted.binding.widget ? { widget: widgetContext(hosted.binding.widget, installedNow().manifestFor(hosted.binding.extensionId)?.apiVersion ?? 25) } : {}),
     ...(chat ? { chat: { ...chatForCapabilities(chat, hosted.binding.capabilities), ...(contextHasMembers() ? { members: members ?? [] } : {}) } } : {}),
     ...(hosted.binding.itemId && hosted.binding.chatId ? { file: { chat: hosted.binding.chatId, id: hosted.binding.itemId } } : {}),
     ...(hosted.binding.session
@@ -548,7 +566,7 @@ export function hostAppFrame(
     const computerReply = (value: unknown) => method === 'filesRead'
       ? workspaceAppFileChunk(value as { size: number; offset: number; data: string }) : value
     if ((session || args.device !== undefined) && verbFacts(method)?.machine) {
-      const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+      const manifest = installedNow().manifestFor(hosted.binding.extensionId)
       if (!manifest) refused('not-installed', `${hosted.binding.extensionId} is not installed on this phone`)
       if (args.device !== undefined) {
         const invalid = notOnSessionMachine(method, args)
@@ -565,7 +583,7 @@ export function hostAppFrame(
     if (folder) {
       const refusal = folderElsewhereRefusal(method, (capability) => hosted.binding.capabilities.includes(capability))
       if (refusal) throw refusal
-      const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+      const manifest = installedNow().manifestFor(hosted.binding.extensionId)
       if (!manifest) refused('not-installed', `${hosted.binding.extensionId} is not installed on this phone`)
       return callOnComputer({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, folderMachine(folder.deviceId), method, args).then(computerReply)
     }
@@ -586,7 +604,7 @@ export function hostAppFrame(
           focused: () => document.visibilityState === 'visible' && document.hasFocus(),
         }, args, async (action) => { if (action.kind === 'toast') toast({ title: action.text }) })
       case 'linkTo': {
-        const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+        const manifest = installedNow().manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')
         const target = linkTargetOf(args, manifest)
         return guguLink(target, args.external === true || (target.kind !== 'chat' && target.kind !== 'file') ? phoneLinkScheme() : undefined)
@@ -599,7 +617,7 @@ export function hostAppFrame(
       case 'modalOpen': {
         const modal = phoneModals.open(pageId, { ...hosted.binding }, args)
         try {
-          const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+          const manifest = installedNow().manifestFor(hosted.binding.extensionId)
           if (!manifest) refused('not-installed', 'This App is no longer installed')
           const focus = (edge: AppModalFocus) => {
             const child = modal.child === null ? undefined : frames.get(modal.child)
@@ -684,24 +702,36 @@ export function hostAppFrame(
       }
       case 'clipboardWriteText':
         return platform.writeClipboardText(pageArgument('clipboardWriteText', args))
-      case 'filesSendSelection': {
-        requirePreinstalledFiles({ id: hosted.binding.extensionId, origin: installedExtensionsStore.origins[hosted.binding.extensionId] })
-        // API 55 A page of a chat's folder sends into that chat, the binding's; the call names none.
-        const chatId = session ? null : hosted.binding.chatId
-        if (!session && !chatId) refused('denied', 'Send needs a session page or a chat\'s folder')
-        const { draft, quote, pills } = session ? selectionSendOf(args, sessionWorkspace(session.id))
-          : await chatSelectionSendOf(args, refs => chatSelectionPills(sendPlatform, chatId!, refs))
-        // A phone's Send is the bar above the keyboard; only the outcome goes back to the page.
-        return await openSelectionSend({ cite: { draft, quote, pills }, to: session ? { session: session.id } : { chat: chatId! }, anchor: 'dock' })
+      case 'filesSelectionAction': {
+        // 60 Cite or Send pressed on the menu the runtime drew in this frame (file-selection.ts): a draft, or the host's box.
+        // A chat folder's file is named by its pill, into that chat here; a computer's path, or a session's composer on
+        // another machine, is not this phone's to reach — its menu has no Cite or Send (`selectionMenuHere`).
+        const pressed = parseSelectionAction(args)
+        const conversation = selectionConversationOf({ session: session?.id, chat: hosted.binding.chatId })
+        const ref = pressed.file
+        const chat = 'workspace' in ref ? null : ref.chat ?? hosted.binding.chatId
+        if (conversation?.kind !== 'chat' || !chat) refused('denied', 'This page\'s selection has no chat to go to')
+        const named = selectionNames.get(hosted) ?? new Map<string, FileReference | null>()
+        selectionNames.set(hosted, named)
+        const key = JSON.stringify([ref, pressed.version ?? null])
+        if (!named.has(key)) {
+          const [pill] = await chatSelectionPills(sendPlatform, chat, [{ file: ref, ...(pressed.version === undefined ? {} : { version: pressed.version }) }])
+          named.set(key, pill ? { name: pill.label, target: pill.target } : null)
+        }
+        const file = named.get(key)
+        if (!file) refused('not-found', 'This file is not in this chat')
+        const { runFileSelection } = await import('../../session/renderer/features/sessions/annotations/file-selection-overlay')
+        runFileSelection(hosted.frame, null, { webContentsId: 0, action: pressed.action, conversation, file, pick: pressed.pick, rect: pressed.rect, viewport: pressed.viewport })
+        return undefined
       }
       case 'listAgents': {
-        const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+        const manifest = installedNow().manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')
         const dispatch = phoneDispatch({ extensionId: manifest.id, extensionName: manifest.name }, hosted.binding.capabilities, {})
         return args.report === true ? dispatch.listAgents(true) : dispatch.listAgents()
       }
       case 'dispatch': {
-        const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+        const manifest = installedNow().manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')
         const { agents, local, spawnOn } = phoneDispatch({ extensionId: manifest.id, extensionName: manifest.name }, hosted.binding.capabilities,
           { deviceId: hosted.binding.session?.deviceId, chatId: hosted.binding.chatId, agents: members?.filter((member) => member.kind === 'agent').map((member) => member.id) })
@@ -774,14 +804,14 @@ export function hostAppFrame(
             // Read in pieces on its machine (`filesRead`, gated above) into the phone's own file preview.
             const refusal = folderElsewhereRefusal('filesRead', (capability) => hosted.binding.capabilities.includes(capability))
             if (refusal) throw refusal
-            const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+            const manifest = installedNow().manifestFor(hosted.binding.extensionId)
             if (!manifest) refused('not-installed', 'This App is not installed')
             return openPhoneWorkingCopyFile({ extensionId: manifest.id, extensionName: manifest.name, version: manifest.version }, folderMachine(folder.deviceId), ref, hooks.openWorkingCopy)
           }
           const id = workspaceSession(ref)
           const listed = id ? listedSession(readCachedDevices(), liveDeviceSessions(), id) : null
           if (!listed || !('row' in listed)) refused('not-found', 'This session is not in your task list')
-          const manifest = installedExtensionsStore.manifestFor(hosted.binding.extensionId)
+          const manifest = installedNow().manifestFor(hosted.binding.extensionId)
           if (!manifest) refused('not-installed', 'This App is not installed')
           const device = readCachedDevices().find((device) => device.device_id === listed.row.deviceId)
           // The phone has no host for an App's session-file tab yet: its existing file preview is the available opener.
@@ -818,11 +848,11 @@ export function hostAppFrame(
         })
       }
       case 'filesOpen':
-        return files.open(surface(), { ref: chatRef(args.ref), ...(args.readOnly === true ? { readOnly: true } : {}), deferDetails: args.deferDetails === true })
+        return files.open(surface(), { ref: chatRef(args.ref), ...(args.readOnly === true ? { readOnly: true } : {}), deferDetails: args.deferDetails === true }).then(withSelectionMenu)
       case 'filesReopen': {
         const ref = chatRef(args.ref)
         if (!('id' in ref)) refused('invalid', 'reopen takes a file by its id')
-        return files.reopen(surface(), { ref: ref as Extract<ChatFileRef, { id: string }>, ...(args.readOnly === true ? { readOnly: true } : {}) })
+        return files.reopen(surface(), { ref: ref as Extract<ChatFileRef, { id: string }>, ...(args.readOnly === true ? { readOnly: true } : {}) }).then(withSelectionMenu)
       }
       case 'filesClose':
         return Promise.resolve(files.close(surface(), args as never))
@@ -1075,10 +1105,11 @@ export const phoneLinkScheme = () => guguLinkScheme({ tier: typeof __GUGU_TIER__
 
 /** Host facts and transports only; target parsing and opening order are shared with main. */
 export async function openPhoneLink(target: string | OpenTarget, source?: Pick<LinkSource, 'message'>) {
-  if (platform.capabilities.mobileApps) await phoneApps.ready()
+  // No App store on the web: no Apps there (a fact of the platform, not a list unread).
+  const installed = platform.capabilities.mobileApps ? await fetchInstalledApps(PHONE_HOST) : null
   return openLinkWith({
-    installed: () => installedExtensionsStore.manifests.map((manifest) => ({ manifest })),
-    isEnabled: (id) => installedExtensionsStore.isEnabled(id),
+    installed: () => (installed ? installed.manifests.map((manifest) => ({ manifest })) : []),
+    isEnabled: (id) => installed?.isEnabled(id) === true,
     locale: () => document.documentElement.lang,
     resourceChat: async (chatId) => { const { token, userId } = await sendPlatform.account(); return resourceChatIdOf(token, chatId, userId) },
     sessionProject: async (sessionId) => { const listed = listedSession(readCachedDevices(), liveDeviceSessions(), sessionId); return 'row' in listed ? listed.row.session.projectId : null },

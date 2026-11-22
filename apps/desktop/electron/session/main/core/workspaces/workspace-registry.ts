@@ -63,11 +63,7 @@ export class WorkspaceRegistry {
           onDetach: result.onDetach,
           release: once(async () => {
             await workspace.dispose?.();
-            if (!workspace.dispose) {
-              await workspace.fileTree.dispose();
-              // gugu #2358: 非 git 工作区无 gitWorktree。
-              await workspace.gitWorktree?.dispose();
-            }
+            if (!workspace.dispose) await workspace.fileTree.dispose();
           }),
         });
         result.onCreateSideEffect?.(workspace);

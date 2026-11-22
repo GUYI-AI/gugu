@@ -115,4 +115,13 @@ describe('#6448 agent status reading on the presence row', () => {
     expect(presence.status).toBeNull()
     expect(presence.activityStatus).toBe('idle')
   }))
+
+  it('the last interaction travels with the reading; a write that does not carry it keeps it', async () => rollback(async ({ owner, agent }) => {
+    const report = createAgentRuntimeStateReporter(ownerRpcClient(owner))
+    const at = '2026-11-21T10:00:00.000Z'
+    await report({ agentUserId: agent, activityStatus: 'running', agentStatus: 'working', agentStatusDetail: 'running', runtimeKind: 'gugu', runtimeLabel: 'h', lastInteractedAt: at })
+    expect(Date.parse((await readPresence(agent)).lastInteractedAt ?? '')).toBe(Date.parse(at))
+    await report({ agentUserId: agent, activityStatus: 'idle', runtimeKind: 'gugu', runtimeLabel: 'h' })
+    expect(Date.parse((await readPresence(agent)).lastInteractedAt ?? ''), 'an offline write says nothing about it').toBe(Date.parse(at))
+  }))
 })

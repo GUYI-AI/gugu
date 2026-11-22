@@ -16,6 +16,7 @@ import {
   PROVIDER_REVIEW_GATE_STATUS,
 } from '@main/core/sessions/provider-review-gate';
 import { sessionsAliveInTmux } from '@main/core/sessions/session-process';
+import { recordPtyEngineEnd } from '@main/core/sessions/pty-turn-ends';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { clearInterruptedTurn, recordInterruptedTurns } from './interrupted-turns';
@@ -56,7 +57,7 @@ import { acknowledgeErrorNotice, clearErrorNotice, quotaErrorUnseen } from './er
  * 宿主按 agent 的流唯一的来源。出生、开机收残、打断、退出、provider 门、已读都是这里的一次写入。
  */
 export type AgentStatusWriterHooks = {
-  'agent:status': (change: AgentStatusChange & { reading: AgentStatusReading; sourceId?: string; activityAt?: number }) =>
+  'agent:status': (change: AgentStatusChange & { reading: AgentStatusReading; sourceId?: string }) =>
     | void
     | Promise<void>;
 };
@@ -333,6 +334,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
         await db.update(sessions)
           .set({ agentStatus: 'idle', agentStatusDetail: 'plain', agentStatusSeen: 1 })
           .where(eq(sessions.id, sessionId));
+        recordPtyEngineEnd(sessionId, this.now().timestamp, true);
         recordInterruptedTurns([sessionId], lastExit);
         settled.push(sessionId);
       });
@@ -393,7 +395,11 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
   async settleSessionExited(params: StatusWriteParams): Promise<void> {
     this.providerReviewGates.delete(params.sessionId);
     this.providerBlockers.delete(params.sessionId);
-    await this.interrupt(params);
+    const at = this.now();
+    await this.inOrder(params.sessionId, async () => {
+      recordPtyEngineEnd(params.sessionId, at.timestamp);
+      await this.apply(params.sessionId, () => [{ kind: 'Interrupted', sessionId: params.sessionId }], at);
+    });
   }
 
   /** 打开会话 = 这一句已读。照常发布:手机列表、宿主按 agent 的流跟着更新。 */
@@ -496,6 +502,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
         agentStatusDetail: sessions.agentStatusDetail,
         agentStatusSeen: sessions.agentStatusSeen,
         archivedAt: sessions.archivedAt,
+        lastInteractedAt: sessions.lastInteractedAt,
       })
       .from(sessions);
     return rows
@@ -520,6 +527,7 @@ class AgentStatusWriter implements IInitializable, IDisposable, Hookable<AgentSt
           reviewGate: this.getProviderReviewGate(row.id),
           providerBlocker: this.getProviderBlocker(row.id),
           statusSourceFault: this.getStatusSourceFault(row.id),
+          ...(row.lastInteractedAt ? { activityAt: Date.parse(row.lastInteractedAt) } : {}),
         };
       });
   }

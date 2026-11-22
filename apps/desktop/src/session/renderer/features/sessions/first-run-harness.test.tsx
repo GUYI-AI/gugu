@@ -3,8 +3,10 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { FirstRunHarness } from '@/components/firstRun/FirstRunHarness';
+import { queryClient } from '@/lib/replica';
+import { until } from '../../../../../../../tests/support/awaitCondition';
 
-const f = vi.hoisted(() => ({ queue: vi.fn(), remember: vi.fn(), save: vi.fn(), done: vi.fn() }));
+const f = vi.hoisted(() => ({ queue: vi.fn(), remember: vi.fn(), save: vi.fn(), done: vi.fn(), local: vi.fn() }));
 vi.mock('react-i18next', async (importOriginal) => ({ ...(await importOriginal<typeof import('react-i18next')>()), useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
   useAppSettingsKey: () => ({ updateAsync: f.save, isSaving: false, settings: { state: 'value', value: { value: {}, defaults: {}, overrides: {} }, stale: false, error: null } }),
@@ -12,6 +14,11 @@ vi.mock('@renderer/features/settings/use-app-settings-key', () => ({
 vi.mock('@renderer/lib/components/app-icon', () => ({ AppIcon: () => null }));
 vi.mock('@/components/firstRun/first-run-install-context', () => ({ useFirstRunInstaller: () => f.queue }));
 vi.mock('@/lib/firstRun', () => ({ writeFirstRunHarness: f.remember }));
+// The shared installation status the agent store and Settings read; here a device entry over `f.local`.
+vi.mock('@renderer/lib/stores/agent-replicas', async () => {
+  const { replica } = await import('@/lib/replica');
+  return { agentInstallationStatus: replica({ name: 'testAgentInstallationStatus', scope: 'device', read: (_device: string, _machine: null) => f.local() }) };
+});
 
 let host: HTMLDivElement; let root: Root;
 const render = () => act(async () => root.render(<FirstRunHarness userId="qa-user" onDone={f.done} />));
@@ -20,11 +27,12 @@ const choice = (id: string) => host.querySelector<HTMLInputElement>(`[data-testi
 beforeEach(() => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   f.queue.mockReset(); f.remember.mockReset().mockResolvedValue(undefined); f.save.mockReset().mockResolvedValue(undefined); f.done.mockReset();
+  f.local.mockReset().mockResolvedValue([]);
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
-afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
+afterEach(async () => { await act(async () => root.unmount()); host.remove(); queryClient.clear(); });
 
-describe('first-run managed background installation (#7582)', () => {
+describe('first-run agent selection (#7582)', () => {
   it('defaults to Codex, allows both, and continues without waiting for installation', async () => {
     await render();
     expect(choice('codex').checked).toBe(true); expect(choice('claude').checked).toBe(false);
@@ -37,7 +45,7 @@ describe('first-run managed background installation (#7582)', () => {
     expect(f.remember).toHaveBeenCalledWith('qa-user', ['codex', 'claude']);
     expect(f.done).toHaveBeenCalledOnce();
   });
-  it('requires a selection and always queues the managed copy', async () => {
+  it('requires a selection and queues the picked agents', async () => {
     await render(); await act(async () => choice('codex').click());
     expect(next().disabled).toBe(true);
     await act(async () => choice('claude').click()); await act(async () => next().click());
@@ -49,5 +57,16 @@ describe('first-run managed background installation (#7582)', () => {
     await render(); await act(async () => next().click());
     expect(f.queue).not.toHaveBeenCalled(); expect(f.done).not.toHaveBeenCalled();
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('offline');
+  });
+  it('says on each tile what this computer has', async () => {
+    f.local.mockResolvedValue([
+      { id: 'codex', reading: 'installed', version: '0.160.0', versionSupported: true },
+      { id: 'claude', reading: 'detected-but-broken', version: null, versionSupported: null },
+    ]);
+    await render();
+    const line = (id: string) => host.querySelector(`[data-testid="first-run-harness-${id}-local"]`)?.textContent
+    await until('both tiles read this computer', () => Boolean(line('codex') && line('claude')));
+    expect(host.querySelector('[data-testid="first-run-harness-codex-local"]')?.textContent).toBe('firstRun.harnessLocalUsable');
+    expect(host.querySelector('[data-testid="first-run-harness-claude-local"]')?.textContent).toBe('firstRun.harnessLocalBroken');
   });
 });

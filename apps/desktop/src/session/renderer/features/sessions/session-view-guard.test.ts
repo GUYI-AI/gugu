@@ -3,7 +3,7 @@ import { sessionViewCanActivate } from './session-view-guard';
 import { NavigationStore } from '@renderer/lib/stores/navigation-store';
 
 vi.mock('@renderer/lib/modal/modal-store', () => ({ modalStore: { closeModal: vi.fn() } }));
-vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { push: vi.fn() }, sidebar: { revealActiveSession: vi.fn() } } }));
+vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { start: vi.fn(), push: vi.fn() }, sidebar: { revealActiveSession: vi.fn() } } }));
 
 const state = vi.hoisted(() => ({ agentId: 'assistant', assistantId: 'assistant', archived: false, listed: true, listState: 'read' as 'reading' | 'read' | 'failed', target: 'app' as 'app' | 'chat' | 'wait', opened: [] as string[] }));
 // Where the assistant entry goes (lib/assistantEntry.ts): its App, its chat as any chat (the App not usable here), or nowhere yet.

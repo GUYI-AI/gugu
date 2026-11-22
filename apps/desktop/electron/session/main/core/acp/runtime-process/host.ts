@@ -28,9 +28,10 @@ import { withStoredTurns, storedRevertBoundary, truncateStoredHistory } from '@m
 import { connectWindowCommitHost } from '../../session-timeline/window-commit-host';
 import { prepareWindowCommitStorage } from '../../session-timeline/window-projection-production';
 import { openNativeConversationPreviews } from '@main/core/sessions/session-conversation-live';
+import { publishNativeMessagePreviewChanged } from '../../session-timeline/native-preview-events';
 import { createHistoryReverter } from './history-revert';
 import { connectNativePromptPreparation } from './native-prompt-preparation';
-import { applyTurnToAuthExpiry, type AuthExpiryWriter } from '@main/core/agent-config/auth-expiry-from-turns';
+import { applyStartToAuthExpiry, applyTurnToAuthExpiry, type AuthExpiryWriter } from '@main/core/agent-config/auth-expiry-from-turns';
 import { clearProviderSessionMissing, markProviderSessionMissing } from '@main/core/sessions/mark-provider-session-missing';
 import { isResidentNeverRun } from '@main/core/sessions/never-run-session';
 import { setSessionMcpServers } from '@main/core/sessions/set-session-mcp-servers';
@@ -62,7 +63,9 @@ import { log } from '@main/lib/logger';
 import { pushIdleCompactionSetting } from '../idle-compaction-setting';
 import { sessionStartStageChannel } from '@shared/core/sessions/sessionEvents';
 import { desktopWorkerPath } from '@main/worker-manifest';
+import { harnessWorkerHost } from '@main/harness-worker-host';
 import { stripUntrustedSessionAuthority, trustedPlatformInputPatch } from './session-meta';
+import { withSessionBrowserEnv } from '../../pty/server-browser-env';
 import { cancelExtensionSessionCalls } from '@main/core/extensions/extension-program-access';
 
 export { mergeTrustedSessionMeta, stripUntrustedSessionAuthority } from './session-meta';
@@ -246,6 +249,7 @@ const acpWorker = lazyWorker(
       name: 'acp',
       contract: acpRuntimeApiContract,
       entry: desktopWorkerPath('acp'),
+      host: harnessWorkerHost,
       scope: acpRuntimeScope,
       env: {
         ...process.env,
@@ -286,6 +290,10 @@ const acpWorker = lazyWorker(
       }, handle.connection, prepareWindowCommitStorage);
       handle.scope.add(() => committed.close());
       const conversationPreviews = openNativeConversationPreviews(sessionId => withStoredTurns(sessionId, async () => undefined));
+      handle.scope.add(await handle.client.messagePreviewChanged.subscribe(undefined, {
+        onEvent: ({ sessionId }) => publishNativeMessagePreviewChanged(sessionId),
+      }));
+      handle.scope.add(() => publishNativeMessagePreviewChanged());
       handle.scope.add(() => conversationPreviews.dispose());
       handle.scope.add(await handle.client.conversationActivity.subscribe(undefined, {
         onEvent: event => {
@@ -301,6 +309,7 @@ const acpWorker = lazyWorker(
           void pushIdleCompactionSetting(handle.client as AcpRuntimeProcessClient);
           committed.invalidate();
           conversationPreviews.reset();
+          publishNativeMessagePreviewChanged();
           // A restarted worker has no surviving adapter processes or session records.
           void releaseEmdashPlatformSession(null);
         })
@@ -490,7 +499,8 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     },
     firstTurn: injection.firstTurn,
     mcpServers: injection.mcpServers,
-    capabilitySpawnEnv: injection.spawnEnv,
+    // #6264 咕咕 server 上:这条会话的 agent 打开网页,推给正看着它的桌面(server-browser-env.ts;桌面版上是空的)。
+    capabilitySpawnEnv: withSessionBrowserEnv(input.input.sessionId, injection.spawnEnv),
     capabilitySpawnArgs: injection.spawnArgs,
     sessionPrompt: injection.sessionPrompt,
     sessionMeta: injection.sessionMeta,
@@ -761,10 +771,13 @@ export async function withHostResolvedCli<T extends { input: { providerId: strin
 export async function callSessionStart<T extends { success: boolean }>(
   start: () => Promise<T>,
   sessionId: string,
-  credentialInjected: boolean
+  credentialInjected: boolean,
+  providerId?: string,
 ): Promise<T> {
   try {
     const result = await start();
+    if (!result.success) await applyStartToAuthExpiry({ providerId, sessionId, platformCredentials: credentialInjected,
+      failure: 'error' in result ? result.error : undefined }, authExpiryWriter);
     if (credentialInjected && !result.success) {
       await releaseEmdashPlatformSession(sessionId);
     }

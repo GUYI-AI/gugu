@@ -1,7 +1,8 @@
 import type { AssistantConnectedApp } from '@/components/assistant/assistant-app-connections';
 import { ChannelBrandIcon } from '@/components/settings/channels/ChannelBrandIcon';
-import { useChatChannels } from '@/components/settings/channels/useChatChannels';
+import { chatChannels } from './connection-replicas';
 import { WechatConnectDialog } from '@/components/settings/channels/WechatConnectDialog';
+import { useChatChannels } from '@/components/settings/channels/channelAgents';
 import { useOwnerConnectionStore } from '@/lib/connectionBridge';
 import { useDevicesStore } from '@/store/devicesContext';
 import type { ConnectionRoute } from '@gugu/core/cloud/connectionRouting';
@@ -26,10 +27,10 @@ export function OwnerConnectorMarketDetail({ app, host, route, deviceId, readOnl
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
   const data = useIntegrationsContext();
-  const channels = useChatChannels();
+  const { client, list, apply } = useChatChannels();
   const metadata = app.integration;
   const platform = keptByPlatform(metadata);
-  const wechatReady = !!channels.client && !!channels.list?.kinds.includes('wechat');
+  const wechatReady = !!client && !!list?.kinds.includes('wechat');
   const ownerConnections = useOwnerConnectionStore(null, route, route?.mode === 'owner' && !platform);
   const readDevice = ownerConnections && metadata ? async ({ deviceId }: ConnectorTarget) => {
     const rows = await ownerConnections.collection('integrations');
@@ -37,13 +38,17 @@ export function OwnerConnectorMarketDetail({ app, host, route, deviceId, readOnl
       && (item.source?.scopeKey === 'platform' || item.device_id === deviceId));
   } : undefined;
   const authorize = (target: ConnectorTarget, done: (ok: boolean) => void) => {
-    if (!metadata) return channels.client && channels.list ? (
+    if (!metadata) return client && list ? (
       <WechatConnectDialog
-        client={channels.client}
-        list={channels.list}
-        refresh={channels.refresh}
-        apply={channels.apply}
-        onClose={() => done(channels.list?.channels.some(({ kind }) => kind === 'wechat') ?? false)}
+        client={client}
+        list={list}
+        refresh={() => chatChannels.refresh()}
+        apply={apply}
+        onClose={() => {
+          // What the dialog left: the list as it is now (its `apply` wrote it).
+          const now = chatChannels.peek();
+          done(now.state === 'value' && !('absent' in now.value) && now.value.channels.some(({ kind }) => kind === 'wechat'));
+        }}
       />
     ) : null;
     return target.deviceId === deviceId
@@ -68,7 +73,7 @@ export function OwnerConnectorMarketDetail({ app, host, route, deviceId, readOnl
     onConnected={() => { ownerConnections?.invalidate(); data.reloadConnections(); }}
     onDisconnect={app.saved ? async () => {
       if (metadata) await data.disconnectIntegration(app.id);
-      else if (channels.client) channels.apply(await channels.client.disconnect('wechat'));
+      else if (client) apply(await client.disconnect('wechat'));
     } : undefined}
     disconnectDescription={platform ? translate('integrations.platformDisconnectNotice', { name: app.name, credential: metadata?.disconnectCredentialLabel ?? app.name }) : undefined}
     onTryPlaybook={metadata?.playbooks?.length ? (prompt) => {

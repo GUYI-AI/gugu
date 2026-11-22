@@ -13,7 +13,7 @@ import { useLibraryHost, type LibraryHost } from '@renderer/features/library/lib
 import { rpc } from '@renderer/lib/ipc';
 import { openShellFeedback } from '@renderer/lib/open-shell-feedback';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
-import { useOptionalGithubContext } from '@renderer/lib/providers/github-context-provider';
+import { cancelGithubConnect as cancelLocalGithubConnect } from '@renderer/lib/providers/github-context-provider';
 import { Button } from '@renderer/lib/ui/button';
 import {
   DialogContentArea,
@@ -52,13 +52,12 @@ export function GithubDeviceFlowModal({ host, ...props }: GithubDeviceFlowModalP
 function GithubDeviceFlowModalBody({ onSuccess, onClose, onError }: Omit<GithubDeviceFlowModalProps, 'host'>) {
   const { toast } = useToast();
   const { translate } = useSessionMessages();
-  const localContext = useOptionalGithubContext();
   const library = useLibraryHost();
   const events = library.github;
   const cancelGithubConnect = useCallback(() => {
-    if (library.remote || library.connectionMetadataExpected || !localContext) void library.github.authCancel();
-    else localContext.cancelGithubConnect();
-  }, [library, localContext]);
+    if (library.remote || library.connectionMetadataExpected) void library.github.authCancel();
+    else cancelLocalGithubConnect();
+  }, [library]);
 
   // Presentational state - updated via IPC events from main process
   const [userCode, setUserCode] = useState<string>('');

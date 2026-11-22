@@ -1,30 +1,20 @@
-import { useEffect, useId, useState, type FormEvent } from 'react'
+import { useId, useState, type FormEvent } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/Button'
 import { Sheet } from '@/components/ui/Sheet'
-import { replica, useReplica } from '@/lib/replica'
+import { useReplica } from '@/lib/replica'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
-import { readAgentHome, readAgentHomeDiff } from '@renderer/features/settings/subscriptions/ensure-agent-home'
+import { agentHome, readAgentHomeDiff } from '@renderer/features/settings/subscriptions/ensure-agent-home'
 import { ReimportDialog } from '@renderer/features/settings/subscriptions/ReimportDialog'
 import { AgentHomeSkippedFiles } from './AgentHomeSkippedFiles'
+import { SettingsGroup, SettingsRow } from '../SettingsPrimitives'
 import type { AgentHomeDiff, AgentHomeScan } from '@gugu/session-core/workspace-server/agent-config'
-
-const configHome = replica({
-  name: 'configImportHome',
-  scope: 'device',
-  read: (_device: string, providerId: string) => readAgentHome(providerId, null),
-})
 
 export function AgentConfigImport({ providerId }: { providerId: string }) {
   const { t } = useTranslation('main')
   const titleId = useId()
-  const reading = useReplica(configHome, [providerId])
+  const reading = useReplica(agentHome, [null, providerId])
   const preparing = reading.state === 'value' && Boolean(reading.value?.migrationPreparation)
-  useEffect(() => {
-    if (!preparing) return
-    const timer = setInterval(() => { void configHome.refresh(providerId).catch(() => {}) }, 1000)
-    return () => clearInterval(timer)
-  }, [preparing, providerId])
   const [busy, setBusy] = useState(false)
   const [failed, setFailed] = useState(false)
   const [picked, setPicked] = useState<Set<string>>()
@@ -51,7 +41,7 @@ export function AgentConfigImport({ providerId }: { providerId: string }) {
       const result = await client.importAgentHome({ providerId: home.providerId, groups: groupIds })
       if (!result.success) throw new Error('Could not import local configuration')
       setIssues(result.data.issues)
-      await configHome.refresh(providerId)
+      await agentHome.refresh(null, providerId)
     } catch {
       setFailed(true)
     } finally {
@@ -61,34 +51,35 @@ export function AgentConfigImport({ providerId }: { providerId: string }) {
 
   function finishReimport() {
     setDiff(null)
-    void configHome.refresh(providerId).catch(() => setFailed(true))
+    void agentHome.refresh(null, providerId).catch(() => setFailed(true))
   }
 
-  return <section className="gg-import-history" data-testid={`${providerId}-config-import`}>
-    <h3>{t('agentHome.local')}</h3>
-    <form className="gg-import-history-entry p-3" onSubmit={(event) => void apply(event)}>
-      <div className="gg-import-name">{home.name}</div>
-      {home.needsImport && <fieldset className="my-2 space-y-2" disabled={busy} aria-label={t('agentHome.local')}>
-        {groups.map(({ id }) => <label className="flex gap-2" key={id}>
-          <input type="checkbox" value={id} checked={groupIds.includes(id)} onChange={(event) => {
-            const next = new Set<string>(groupIds)
-            if (event.target.checked) next.add(id)
-            else next.delete(id)
-            setPicked(next)
-          }} />
-          {t(`agentHome.groups.${id}`)}
-        </label>)}
-      </fieldset>}
-      {failed && <p role="alert" className="gg-import-meta">{t('agentHome.configurationImportFailed')}</p>}
-      <AgentHomeSkippedFiles issues={issues} />
-      <Button type="submit" variant="secondary" size="sm" disabled={busy || (home.needsImport && groupIds.length === 0)}>
-        {t(home.needsImport ? 'settings.dataImport.action' : 'agentHome.reimport')}
-      </Button>
+  return <SettingsGroup title={t('agentHome.local')} data-testid={`${providerId}-config-import`}>
+    <form onSubmit={(event) => void apply(event)}>
+      <SettingsRow title={home.name}
+        description={<>
+          {home.needsImport && <fieldset className="mt-1 flex flex-wrap gap-x-4 gap-y-1" disabled={busy} aria-label={t('agentHome.local')}>
+            {groups.map(({ id }) => <label className="flex items-center gap-2" key={id}>
+              <input type="checkbox" value={id} checked={groupIds.includes(id)} onChange={(event) => {
+                const next = new Set<string>(groupIds)
+                if (event.target.checked) next.add(id)
+                else next.delete(id)
+                setPicked(next)
+              }} />
+              {t(`agentHome.groups.${id}`)}
+            </label>)}
+          </fieldset>}
+          {failed && <span role="alert" className="text-[var(--danger-fg)]">{t('agentHome.configurationImportFailed')}</span>}
+          <AgentHomeSkippedFiles issues={issues} />
+        </>}
+        control={<Button type="submit" variant="secondary" size="sm" disabled={busy || (home.needsImport && groupIds.length === 0)}>
+          {t(home.needsImport ? 'settings.dataImport.action' : 'agentHome.reimport')}
+        </Button>} />
     </form>
     {diff && <Sheet onClose={() => setDiff(null)} titleId={titleId} desktopWidth="min(672px, 100%)"
       desktopMaxHeight="calc(100dvh - 32px)" dimNested zIndex="var(--z-settings-modal)">
       <ReimportDialog providerId={home.providerId} machine={null} diff={diff} titleId={titleId}
         onClose={() => setDiff(null)} onSuccess={finishReimport} />
     </Sheet>}
-  </section>
+  </SettingsGroup>
 }

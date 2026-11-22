@@ -30,10 +30,6 @@ export interface ContactsContextValue {
   // #2118 — contacts / groupChats 各自的三态(注意 loadingGroups 是联系人标签 groups,≠ 群聊 groupChats)。
   contactsStatus: ContactsLoadStatus
   groupChatsStatus: ContactsLoadStatus
-  searchResults: ContactUser[]
-  isSearching: boolean
-  searchUsers: (query: string) => Promise<void>
-  clearSearch: () => void
   sendRequest: (targetUserId: string, message?: string | null) => Promise<void>
   acceptRequest: (requestId: string) => Promise<AcceptFriendRequestResult>
   rejectRequest: (requestId: string) => Promise<void>
@@ -73,10 +69,6 @@ const EMPTY_CONTACTS: ContactsContextValue = {
   loadingGroups: false,
   contactsStatus: 'idle',
   groupChatsStatus: 'idle',
-  searchResults: [],
-  isSearching: false,
-  searchUsers: async () => {},
-  clearSearch: () => {},
   sendRequest: async () => {},
   acceptRequest: async () => ({ chatId: null, name: null, kind: null, created: false, member_count: null }),
   rejectRequest: async () => {},

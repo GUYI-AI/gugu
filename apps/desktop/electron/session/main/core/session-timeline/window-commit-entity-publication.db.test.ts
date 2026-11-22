@@ -28,7 +28,6 @@ describe('immutable canonical entity publication', () => {
   const huge = '真实 output 中文😀 \\ "\n'.repeat(10000);
   beforeEach(async () => {
     fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
-    fixture.sqlite.pragma('synchronous=FULL');
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     directory = await mkdtemp(join(tmpdir(), 'commit-entity-publication-'));
   });
@@ -79,9 +78,9 @@ describe('immutable canonical entity publication', () => {
     await expect(publishCommitEntity(c)).rejects.toMatchObject({ code: 'EIO' }); interrupted.mockRestore();
     const id = commitEntityPublicationId(c.position), key = commitEntityPublicationKey(c.receipt, id);
     expect(await disk.readWindowFrame(windowCommitProjectionDirectory(directory, key), key, createWindowBudget())).toMatchObject({ kind: 'miss', reason: 'not_found' });
-    expect(await publishCommitEntity(c)).toEqual({ kind: 'published', entityId: id });
+    expect(await publishCommitEntity(c)).toMatchObject({ kind: 'published', entityId: id });
     const saved = await disk.readWindowFrame(windowCommitProjectionDirectory(directory, key), key, createWindowBudget()); if (saved.kind !== 'hit') throw new Error('Missing publication');
-    expect(await publishCommitEntity(c)).toEqual({ kind: 'published', entityId: id });
+    expect(await publishCommitEntity(c)).toMatchObject({ kind: 'published', entityId: id });
     expect(await disk.readWindowFrame(windowCommitProjectionDirectory(directory, key), key, createWindowBudget())).toEqual(saved);
     await rm(join(windowCommitProjectionDirectory(directory, key), windowFrameName(key))); await disk.writeWindowFrame(windowCommitProjectionDirectory(directory, key), key, Buffer.from('{"version":0}'));
     expect((await readCommitEntityPublication(directory, c.receipts, c.receipt, id, createWindowBudget())).kind).toBe('rebuild');

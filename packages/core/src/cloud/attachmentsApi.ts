@@ -148,6 +148,12 @@ export async function withUploadedAttachment<T>(
   }
 }
 
+/** An image's preview: a small image its sender uploads with no chat and offers for the original's bytes (`sha256`). */
+export async function offerImagePreview(endpoint: AttachmentsEndpoint, preview: Blob, sha256: string, as: string, signal?: AbortSignal): Promise<void> {
+  await withUploadedAttachment(endpoint, { bytes: preview, name: 'preview', contentType: preview.type }, { chat_id: null, as },
+    staging_key => call(endpoint, 'file-preview', { staging_key, sha256 }, signal), { signal })
+}
+
 /** The same request id for the same content from the same sender to the same place, so a later call resumes the upload. */
 export async function contentRequestId(...identity: string[]): Promise<string> {
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity.join('\n'))))

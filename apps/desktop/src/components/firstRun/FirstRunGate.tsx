@@ -21,7 +21,7 @@ import { ProductTour } from '../productTour/ProductTour'
 import { availableTourSteps } from '../productTour/tourTargets'
 import { FeatureFilms } from '../productTour/FeatureFilms'
 import type { ProductTourRequest, TourStepId } from '../../lib/productTour'
-import { readAgentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
+import { agentHomeUpgradeResults, showAgentHomeUpgradeNotice } from '@renderer/features/settings/subscriptions/agent-home-upgrade-notice'
 import { firstInstallImportHomes, showFirstInstallImportNotice } from '@renderer/features/settings/subscriptions/first-install-import-notice'
 import { FirstRunHarness } from './FirstRunHarness'
 import { FirstRunTerminal } from './FirstRunTerminal'
@@ -120,7 +120,7 @@ function FirstRunFlow({ user, children }: { user: AuthUser; children: ReactNode 
   useEffect(() => {
     if (state.kind !== 'done' || platform.kind !== 'electron') return
     let active = true
-    void readAgentHomeUpgradeResults().then((homes) => {
+    void agentHomeUpgradeResults.fetch().then((homes) => {
       if (active) showAgentHomeUpgradeNotice(homes)
     }).catch((error: unknown) => log.error({ error: String(error) }, 'read configuration upgrade notices failed'))
     void firstInstallImportHomes.fetch().then((homes) => {
@@ -268,7 +268,7 @@ function FirstRunProfile({ user, initial, step, onDone }: { user: AuthUser; init
   return (
     <>
       {step}
-      <Avatar name={name || user.nickname} avatarUrl={avatarUrl} seed={user.id} size={88} />
+      <Avatar name={name || user.nickname} avatarUrl={avatarUrl} seed={user.id} isAgent={false} size={88} />
       <Button
         variant="secondary"
         size="sm"

@@ -9,12 +9,13 @@ import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/cor
 import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
-import { PROJECT_FILE_READ, createProjectFileReader, localProjectFileProvider } from './projectFileHost'
+import { PROJECT_FILE_READ, createProjectFileReader, heldFileBlob, localProjectFileProvider } from './projectFileHost'
 import { ownSshFileProvider, type HeldFileSshLinks } from './projectFileSsh'
 import { createProjectTransferHost } from './projectFileTransferHost'
-import { findProjectFileByName, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
+import { findProjectFileByName, heldRevisionBySha, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
 import type { setAccountFileResolver } from './session/main/core/extensions/account-token'
 import { createProjectFilePublisher } from './projectFilePublication'
+import { offerNativeImagePreview } from './imagePreview'
 import type { makeIdentityClient } from './supabase'
 
 /** One composition root for native IPC, Apps, MCP and inbox. Identity lookup here never registers or refreshes. */
@@ -75,7 +76,7 @@ export function createDesktopFileAccess(deps: {
   const read = createProjectFileReader({ identity, root, env: deps.env, later })
   const metadata = createFileMetadataLoader(async (context, refs) => attachmentRequest(await endpoint(context), 'file-resolve', { refs, as: context.actor.actorId }, context.signal))
   const providers = { ...cloudFileProviders({ endpoint, metadata, cache: createFileChunkCache(deps.tempRoot), sink: size => createFileSink(deps.tempRoot, size) }),
-    local: localProjectFileProvider({ identity, read, tempRoot: deps.tempRoot, env: deps.env, later }),
+    local: localProjectFileProvider({ identity, read, root, env: deps.env, later }),
     ssh: async (...args: Parameters<ReturnType<typeof ownSshFileProvider>>) => {
       const links = deps.links(); return links ? ownSshFileProvider(links, deps.tempRoot)(...args) : null
     },
@@ -95,7 +96,7 @@ export function createDesktopFileAccess(deps: {
   }
   const sshHandlers: DeviceRpcHandlers = { [PROJECT_FILE_READ]: async (payload, ctx) => ({ result: await read(payload as Parameters<typeof read>[0], ctx.request.user_id) }) }
   const publish = createProjectFilePublisher({ identity, root, project: deps.project, rpc: deps.rpc, env: deps.env,
-    requestCopy: async (itemId, version) => attachmentRequest(await endpoint(), 'file-request', { ref: { item_id: itemId, version }, as: (await identity()).accountId, request_id: crypto.randomUUID() }),
+    preview: async (original, contentType, sha256) => offerNativeImagePreview(await endpoint(), original, contentType, sha256, (await identity()).accountId),
     async storage() { const { auth, db } = await identityDb(); return parseFileStorage(await readUserSettingsConfig(db as unknown as SettingsTableClient, auth.userId, 'user')) },
     // The account's projects are its project groups (chat.project_groups), with or without a folder on any machine.
     async projectChat(chatId) {
@@ -106,7 +107,14 @@ export function createDesktopFileAccess(deps: {
       return data
     },
   })
-  return { providers, resolve, resolveAccount, read, drain, publish,
+  /** The bytes of a version this device holds in a project, found by its sha: read where they are, checked against it. */
+  const held = async (sha256: string): Promise<Blob | null> => {
+    const { accountId, deviceId } = await identity()
+    const revision = await heldRevisionBySha(sha256, accountId, deviceId, deps.env)
+    const projectRoot = revision ? await root(revision.host_project_id!) : null
+    return revision && projectRoot ? heldFileBlob(revision, projectRoot).catch(() => null) : null
+  }
+  return { providers, resolve, resolveAccount, read, drain, publish, held,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
   }
 }

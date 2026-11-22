@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { replica, useReplica } from '../../lib/replica'
-import { Unknown } from '../ui/Unknown'
+import { refreshFailure, useReplica } from '../../lib/replica'
+import { deviceMeetings } from '../../lib/deviceMeetings'
+import { RefreshFailed } from '../ui/RefreshFailed'
+import { ReadingSlot } from '../ui/ReadingSlot'
 import { useTranslation } from 'react-i18next'
 import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
 import { AssistantStatusGroups, OnboardingSlot } from '../assistant/AssistantShellHost'
@@ -11,13 +13,11 @@ import { AssistantNameInline } from '../assistant/AssistantNameInline'
 import { AgentSettingsModal } from '../agentsettings/AgentSettingsModal'
 import { Button } from '../ui/Button'
 import { Switch } from '../ui/Switch'
-import { ChevronRight, Clock, Database, Monitor, Plug, MessageCircle, SidebarMinimalistic } from '@/lib/icons'
+import { CalendarClock, ChevronRight, Database, Monitor, Plug, MessageCircle, SidebarMinimalistic } from '@/lib/icons'
 import { useAssistantHome } from '../../lib/useAssistantHome'
 import { platform } from '../../platform'
 import { useAuth } from '../../store/auth'
 import { useDevicePreferences, writeDevicePreferences } from '../../lib/devicePreferences'
-import { invokeOnMachine } from '../../session/renderer/lib/ipc'
-import { VOICE_NOTE_MEETINGS_CHANNEL, type VoiceNoteMeetingsResult } from '../../session/shared/core/voice-notes'
 import { useContactsStore } from '../../store/contactsContext'
 import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './SettingsPrimitives'
 import '../../i18n/registerAssistantCatalog'
@@ -48,23 +48,24 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
   const name = contact?.display_name ?? t('rail')
   const move: AssistantMoveGroupProps | null =
     user?.id && contact && home && platform.capabilities.agentRuntime
-      ? { ownerUserId: user.id, assistantId: contact.id, assistantName: contact.display_name, home, localDeviceId, cloudAvailable: !!cloudComputer?.available }
+      ? { ownerUserId: user.id, assistantId: contact.id, assistantName: contact.display_name, home, localDeviceId, cloud: cloudComputer }
       : null
 
   const [lookOpen, setLookOpen] = useState(false)
 
   // 还没有咕咕:一页只画「安家」的流程(会员一键领取、非会员装在这台电脑上)。认它是谁还在读 / 读不到时照实说,❌ 当成没有。
+  // 读到过、再读失败(比如留着的「还没有」):此刻不知道,照实说读不到,❌ 照旧的画「安家」。
   if (!contact) {
-    if (mine.loading || mine.agentId)
-      return (
-        <SettingsPage data-testid="settings-assistant">
-          <SettingsNote>{t('identity.loading')}</SettingsNote>
-        </SettingsPage>
-      )
-    if (mine.error)
+    if (refreshFailure(mine.reading))
       return (
         <SettingsPage data-testid="settings-assistant">
           <SettingsNote tone="danger">{t('identity.unreadable')}</SettingsNote>
+        </SettingsPage>
+      )
+    if (mine.reading.state === 'unknown' || (mine.reading.state === 'value' && mine.reading.value.agentId))
+      return (
+        <SettingsPage data-testid="settings-assistant">
+          <SettingsNote>{t('identity.loading')}</SettingsNote>
         </SettingsPage>
       )
     return (
@@ -97,7 +98,7 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
         data-testid={`settings-assistant-open-${tab}`}
         title={title}
         description={description}
-        leading={tab === 'memory' ? <Database size={16} /> : <Clock size={16} />}
+        leading={tab === 'memory' ? <Database size={16} /> : <CalendarClock size={16} />}
         control={<ChevronRight size={16} className="gg-settings-row-chevron" aria-hidden="true" />}
         onClick={() => onOpenAssistantPage(tab)}
       />
@@ -117,6 +118,8 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
             stack
           />
         ) : null}
+        {/* Who it is read before, its read again failing (its home is that read's): said with a retry. */}
+        <RefreshFailed reading={mine.reading} />
       </SettingsGroup>
 
       {/* 它记得什么 / 每天做什么:数据在助理 App 的页里,这里是入口(手机上没有这一组)。 */}
@@ -145,7 +148,11 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
       {home?.kind === 'computer' ? (
         <ComputerHomeGroups home={home} assistantName={name} move={move} />
       ) : snapshot && (snapshot.state === 'awake' || snapshot.state === 'asleep' || snapshot.state === 'waking') ? (
-        <AssistantStatusGroups snapshot={snapshot} device={device} assistantName={name} move={move} />
+        <>
+          {/* The state read before, its read again failing: the groups keep it, the failure said with a retry (❌ drawn as current). */}
+          <RefreshFailed reading={cloudComputer} />
+          <AssistantStatusGroups snapshot={snapshot} device={device} assistantName={name} move={move} />
+        </>
       ) : move ? (
         <AssistantMoveGroup {...move} />
       ) : null}
@@ -156,28 +163,20 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
   )
 }
 
-/** Whether this computer can read a calendar for meeting reminders. */
-const meetingCalendar = replica({
-  name: 'meetingCalendar',
-  scope: 'device',
-  read: async () => {
-    const result = await (invokeOnMachine(null, VOICE_NOTE_MEETINGS_CHANNEL) as Promise<VoiceNoteMeetingsResult>)
-    return result.ok ? 'ok' as const : result.code === 'not_granted' || result.code === 'unsupported' || result.code === 'os_permission' ? 'missing' as const : 'ok' as const
-  },
-  persist: { maxBytes: 2048, maxEntries: 1 },
-})
 
 /** 入会提醒开关(语音笔记);日历没连上就照实说要先去连。偏好存在这台电脑上(lib/devicePreferences)。 */
 function MeetingReminderGroup() {
   const { t } = useTranslation('voiceNotes')
   const enabled = useDevicePreferences().meetingReminder
-  const reading = useReplica(meetingCalendar, [])
+  const reading = useReplica(deviceMeetings, [])
   return (
     <SettingsGroup title={t('title')} data-testid="settings-assistant-voice">
       <SettingsRow
         title={t('meeting.setting')}
-        description={reading.state === 'unknown' ? <Unknown className="w-56" />
-          : reading.state === 'value' && reading.value === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
+        // Unreadable: said, with a retry (❌ the line a connected calendar gets).
+        description={<ReadingSlot reading={reading} placeholder="w-56" failed={() => t('meeting.calendarUnreadable')}>
+          {(meetings) => meetings.status === 'missing' ? t('meeting.needsCalendar') : t('meeting.settingDescription')}
+        </ReadingSlot>}
         control={<Switch checked={enabled} onCheckedChange={(on) => writeDevicePreferences({ meetingReminder: on })} aria-label={t('meeting.setting')} data-testid="assistant-meeting-reminder-switch" />}
       />
     </SettingsGroup>

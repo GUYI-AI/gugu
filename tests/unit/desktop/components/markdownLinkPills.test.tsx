@@ -9,6 +9,7 @@ import { Markdown } from '../../../../apps/desktop/src/components/markdown/Markd
 import { AuthContext } from '../../../../apps/desktop/src/store/auth'
 import { ChatStoreProvider } from '../../../../apps/desktop/src/store/chatContext'
 import { queryClient as attachmentQueryClient } from '../../../../apps/desktop/src/lib/replica'
+import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 
 const ME = '11111111-1111-4111-8111-111111111111'
 const ALICE = '22222222-2222-4222-8222-222222222222'
@@ -22,13 +23,21 @@ const SOURCE = '99999999-9999-4999-8999-999999999999'
 const AGENT = '66666666-6666-4666-8666-666666666666'
 const AGENT_CHAT = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const TASK = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+const REMOTE_TASK = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
+const HERE = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee'
+const SERVER = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
 
-const mocks = vi.hoisted(() => ({ fileMetadata: vi.fn(), getMessageById: vi.fn(), sessionsList: vi.fn() }))
+/** The account's machines as the session directory holds them: each read (its live list in) unless `reading`. */
+function machines(rows: { id: string; sessions?: { conversationId: string; title: string }[]; reading?: boolean }[]) {
+  publishDirectoryDevices(rows.map(({ id }) => ({ device_id: id, label: id.slice(0, 4), is_online: true, capabilities: {}, session_digest: [] })) as never)
+  for (const { id, sessions = [], reading = false } of rows) updateDeviceSessions(id, { projects: [], sessions: sessions as never, cached: false, loading: reading, error: null })
+}
+
+const mocks = vi.hoisted(() => ({ fileMetadata: vi.fn(), getMessageById: vi.fn() }))
 vi.mock('@/platform', () => ({ platform: { kind: 'web' } }))
 vi.mock('@/components/appSlot/phoneAppHost', () => ({ openPhoneLink: vi.fn(async () => ({ kind: 'opened' })) }))
 vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({ fileMetadata: mocks.fileMetadata }))
 vi.mock('../../../../apps/desktop/src/lib/chat', () => ({ chatService: { getMessageById: mocks.getMessageById } }))
-vi.mock('@renderer/lib/ipc', async (load) => ({ ...(await load<object>()), rpcOn: () => ({ sessionTimeline: { sessionsList: mocks.sessionsList } }) }))
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 // Markdown loads the pill on first use; load it once here so a busy run does not spend a case's wait on compiling it.
@@ -45,6 +54,7 @@ afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
   attachmentQueryClient.clear()
+  publishDirectoryDevices([]); removeDeviceSessions(HERE); removeDeviceSessions(SERVER)
   vi.clearAllMocks()
 })
 
@@ -84,10 +94,21 @@ describe('chat link pills, drawn in place', () => {
   })
 
   it('names a direct chat with an agent by the agent (that chat has no name of its own), and a task link by its title', async () => {
-    mocks.sessionsList.mockResolvedValue({ sessions: [{ conversationId: TASK, title: 'Fix the login', harness: 'claude' }] })
+    // This computer's list is in the directory too (the signed-in shell keeps it live there).
+    machines([{ id: HERE, sessions: [{ conversationId: TASK, title: 'Fix the login' }] }])
     await render(`ask [it](${conversationLink(AGENT_CHAT)}) about [the task](gugu://session/${TASK}) or [that one](gugu://session/cccccccc-cccc-4ccc-8ccc-cccccccccccc)`)
     await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['Helper', 'Fix the login', '任务不可用']))
     expect(pills().map(pill => !!pill.querySelector('.gg-md-mention-icon svg'))).toEqual([true, true, false])
+  })
+
+  // A task on another machine of the account is named the way a click finds it: by the session directory.
+  it('names a task link on another machine by its title, and keeps the words while a machine is still being read', async () => {
+    machines([{ id: HERE }, { id: SERVER, sessions: [{ conversationId: REMOTE_TASK, title: 'Deploy docs' }] }])
+    await render(`see [the lane](gugu://session/${REMOTE_TASK}) and [that one](gugu://session/cccccccc-cccc-4ccc-8ccc-cccccccccccc)`)
+    await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['Deploy docs', '任务不可用']))
+    machines([{ id: HERE }, { id: SERVER, reading: true }])
+    await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['the lane', 'that one']))
+    expect(pills().map(pill => pill.dataset.unavailable)).toEqual([undefined, undefined])
   })
 
   it('marks an @agent mention with the agent mark and leaves an @person mention the bold name', async () => {
@@ -123,6 +144,19 @@ describe('chat link pills, drawn in place', () => {
     expect(pills().map(pill => pill.textContent)).toEqual(['old notes', '消息不可用'])
     expect(pills()[0]?.title).toBe('文件已删除')
     expect(pills()[1]?.title).toBe('不可用：已删除，或你无权查看')
+  })
+
+  it('a file and a message read before whose reads again fail keep their names, greyed with the reason (❌ drawn as current)', async () => {
+    mocks.fileMetadata.mockResolvedValue({ status: 'ready', revision: { source: 'managed-object', version: 2, file_name: 'plan.pdf', content_type: 'application/pdf', size_bytes: 2048 } })
+    mocks.getMessageById.mockResolvedValue({ id: MESSAGE, chat_id: CHAT, sender_user_id: ALICE, content: 'Ship it', retracted_at: null })
+    await render(`[the spec](${groupFileLink(DOC, { version: 2 })}) [the decision](${conversationLink(CHAT, MESSAGE)})`)
+    await settle(() => expect(pills().map(pill => pill.textContent)).toEqual(['plan.pdf', 'Alice：Ship it']))
+    expect(pills().map(pill => pill.dataset.unavailable)).toEqual([undefined, undefined])
+    mocks.fileMetadata.mockRejectedValue(new Error('offline'))
+    mocks.getMessageById.mockRejectedValue(new Error('offline'))
+    await act(async () => { await queryClient.refetchQueries({ type: 'active' }).catch(() => undefined) })
+    await settle(() => expect(pills().map(pill => pill.dataset.unavailable)).toEqual(['true', 'true']))
+    expect(pills().map(pill => pill.textContent)).toEqual(['plan.pdf', 'Alice：Ship it'])
   })
 
   it('keeps the plain link where nobody is signed in and no chat list is read', async () => {

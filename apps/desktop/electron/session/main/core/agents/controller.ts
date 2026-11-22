@@ -1,13 +1,14 @@
 import type { InstallMethod } from '@gugu/session-core/deps';
 import type {
   DependencyId,
-  DependencyProbeOptions,
   HostDependencySelection,
   InstallOverride,
 } from '@gugu/session-core/deps/runtime';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import type { ProviderCustomConfig } from '@shared/core/app-settings';
 import { createRPCController } from '@shared/lib/ipc/rpc';
+import { guguCatalogReasonCode } from '@gugu/session-core/session-record/contract';
+import { getPlatformModelGate, type AgentModelCatalogAnswer, type GuguModelsOffer } from './platform-model-catalog-hook';
 import { events } from '@main/lib/events';
 import { agentInstallProgressChannel } from '@shared/events/appEvents';
 import type { AgentInstallProgress } from '@gugu/session-core/workspace-server';
@@ -185,8 +186,11 @@ export const agentsController = createRPCController({
   // ── Installation status ──────────────────────────────────────────────────────
 
   // 伴随程序(#6335)那几行不单独出门 —— 折进属主那一家(`pluginInstallationStatus`)。
+  // Same rule as `list` (#2802): a harness not looked at yet is not answered as missing; first run and the agent store
+  // read this list.
   listAgentInstallationStatus: async () => {
     const mgr = await getDependencyManager();
+    await ensureAgentDependenciesProbed(mgr);
     return Array.from(mgr.getAll().values())
       .filter((s) => s.category === 'agent' && !getDependencyDescriptor(s.id)?.ownerId)
       .map((state) => {
@@ -243,15 +247,6 @@ export const agentsController = createRPCController({
         const partRegistry = dependencyId === id ? registry : undefined;
         result = await finishInstall(dependencyId, method, partRegistry, await mgr.install(dependencyId, method, {
           registry: partRegistry,
-          /**
-           * 用户没指定源时,按测速排出来的顺序试(#6157)。
-           *
-           * 那趟计时来自面板一打开就发的「查各源最新版本」—— ❌ 不为选源另发一趟请求。
-           * 还没测过就是空数组,安装照旧走 descriptor 的推荐源。
-           */
-          ...(partRegistry === undefined
-            ? { registries: agentUpdateService.installSourceOrder(dependencyId) }
-            : {}),
           signal: controller.signal,
           onProgress: (report) => reportInstallProgress(id, { ...report, ...partTag(index, parts) }),
         }));
@@ -392,9 +387,9 @@ export const agentsController = createRPCController({
     return mgr.probeOverride(id, selection);
   },
 
-  probeAll: async (options?: DependencyProbeOptions) => {
+  probeAll: async () => {
     const mgr = await getDependencyManager();
-    return mgr.probeAll(options);
+    return mgr.probeAll();
   },
 
   /**
@@ -420,7 +415,10 @@ export const agentsController = createRPCController({
    */
   modelCatalog: async (id: string, leg: SessionpageLeg, force?: boolean) => {
     const mgr = await catalogDependencyManager();
-    return lookupHarnessModelCatalog(id, {
+    const gate = getPlatformModelGate();
+    const reason = gate ? gate({ providerId: id, surface: leg }) : guguCatalogReasonCode('host-not-ready');
+    const gugu: GuguModelsOffer = reason === null ? { offered: true } : { offered: false, reason };
+    const lookup = await lookupHarnessModelCatalog(id, {
       // 目录替哪条腿读(#6246):两条腿的配置根可能不同,渲染层按它所在的那条腿问。
       leg,
       // 版本是缓存的主作废闸：harness 一升级，清单就可能变（codex 0.144.6 的缓存报出
@@ -430,6 +428,7 @@ export const agentsController = createRPCController({
         mgr.get(agentProgramFor(getPlugin(id), leg).dependencyId as DependencyId)?.version ?? null,
       ...(force ? { force: true } : {}),
     });
+    return { ...lookup, gugu } satisfies AgentModelCatalogAnswer;
   },
   /** Disposable target read: it never replaces the default-model catalog/cache. */
   targetModelCatalog: async (id: string, leg: SessionpageLeg, model: string) => {

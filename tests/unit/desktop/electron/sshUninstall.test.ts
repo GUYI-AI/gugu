@@ -291,7 +291,7 @@ describe('#6264 卸载时把同机别的账号都注销(照 code tunnel unregist
       const result = spawnSync('sh', [file], { env: { ...process.env, HOME: home, GUGU_SERVER_HOME: '' }, encoding: 'utf8' })
       expect(result.status).toBe(1)
       expect(result.stdout).not.toContain(UNINSTALLED_MARK)
-      expect(result.stderr).toContain(`卸载失败:账号 ${OTHER} 连不上咕咕云端`)
+      expect(result.stderr).toContain(`卸载失败:账号 ${OTHER} 无法连接咕咕云端`)
       expect(result.stderr).toContain('(getaddrinfo ENOTFOUND)')
       expect(fs.readFileSync(log, 'utf8')).not.toContain('service uninstall')
       expect(fs.existsSync(serverHome)).toBe(true)

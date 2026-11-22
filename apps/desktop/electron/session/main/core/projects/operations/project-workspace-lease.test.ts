@@ -33,8 +33,7 @@ vi.mock('./getProjects', () => ({ getProjectById: mocks.getProjectById }));
 
 vi.mock('./project-folders', () => ({ resolveProjectFolder: mocks.resolveProjectFolder }));
 
-const projectGitRepository = { repo: 'project-1' };
-const projectFetchService = { fetch: 'project-1' };
+const projectGit = { git: 'project-1' };
 
 describe('project workspace lease', () => {
   beforeEach(() => {
@@ -47,9 +46,7 @@ describe('project workspace lease', () => {
     mocks.getProject.mockReturnValue({
       repoPath: '/tmp/project-1',
       settings: {},
-      isGitless: false,
-      gitRepository: projectGitRepository,
-      gitRepositoryFetchService: projectFetchService,
+      git: projectGit,
     });
     mocks.resolveProjectFolder.mockResolvedValue(null);
     mocks.createWorkspaceFactory.mockReturnValue(vi.fn());
@@ -69,14 +66,11 @@ describe('project workspace lease', () => {
         workDir: '/tmp/project-1',
         projectId: 'project-1',
         projectPath: '/tmp/project-1',
-        gitless: false,
-        gitRepository: projectGitRepository,
-        gitRepositoryFetchService: projectFetchService,
+        git: projectGit,
       })
     );
-    // 根目录不问「挂上的文件夹」那张表,也不改 git 复查的目录
+    // 根目录不问「挂上的文件夹」那张表
     expect(mocks.resolveProjectFolder).not.toHaveBeenCalled();
-    expect(mocks.createWorkspaceFactory.mock.calls[0]![1]).not.toHaveProperty('gitProbePath');
   });
 
   // #7341 点项目首页里挂上的那个文件夹:草稿工作区就在那个文件夹里,git 照它自己的目录判,❌ 借根目录的 git 服务。
@@ -98,11 +92,9 @@ describe('project workspace lease', () => {
       workDir: '/tmp/project-1-worktree',
       projectId: 'project-1',
       projectPath: '/tmp/project-1',
-      gitless: false,
-      gitProbePath: '/tmp/project-1-worktree',
     });
-    expect(context.gitRepository).toBeUndefined();
-    expect(context.gitRepositoryFetchService).toBeUndefined();
+    // Not the project's git: the workspace reads its own folder.
+    expect(context.git).toBeUndefined();
   });
 
   it('rejects a workspace that is neither the project root nor attached to the project', async () => {

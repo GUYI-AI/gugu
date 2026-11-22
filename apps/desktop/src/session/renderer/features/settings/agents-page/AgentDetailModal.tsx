@@ -3,6 +3,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { observer } from 'mobx-react-lite';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useManagementAgent } from '@renderer/lib/stores/use-agents';
+import { RefreshFailed } from '@/components/ui/RefreshFailed';
 import { Dialog, DialogContent, DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import { ModalLayout } from '@renderer/lib/ui/modal-layout';
 import { cn } from '@renderer/utils/utils';
@@ -36,7 +37,8 @@ const AgentDetailModalContent = observer(function AgentDetailModalContent({
   onClose: () => void;
 }) {
   const { translate } = useSessionMessages();
-  const { data: agentPayload } = useManagementAgent(agentId);
+  const detail = useManagementAgent(agentId);
+  const agentPayload = detail.state === 'value' ? detail.value : undefined;
   // 有「连接」一节的家都是同一种样子(#2507):与 Claude / Codex 一样的卡头与固定高度的内容。
   const compact = agentOffersConnections(agentPayload);
   /**
@@ -61,6 +63,8 @@ const AgentDetailModalContent = observer(function AgentDetailModalContent({
   );
   const content = (
     <DialogContentArea className={cn('gap-6', CONTENT_MAX_HEIGHT)}>
+      {/* This agent's detail could not be read (again): said with a retry, what was read staying (❌ shown as current). */}
+      <RefreshFailed reading={detail} />
       {agentPayload ? (
         /* Render cached installation immediately; probes refresh it in the background. */
         <fieldset disabled={readOnly} className="contents" data-read-only={readOnly || undefined}>

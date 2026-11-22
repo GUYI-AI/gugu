@@ -49,7 +49,7 @@ describe('one cloud provider and verified raw chunk cache', () => {
     const row = { ...revision, content_type: 'image/png' }, a = api(row), c = cache()
     const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink() })
     a.fetcher.mockResolvedValue(Response.json({ status: 'missing', code: 'object_not_found' }))
-    const read = purpose === 'download' ? cloud.managed(row, context) : cloud.preview!(row, context, vi.fn())
+    const read = purpose === 'download' ? cloud.managed(row, context) : cloud.preview!(row, context, () => cloud.managed(row, context))
     await expect(read).rejects.toThrow('missing')
   })
   const legacyRef = { message_id: 'historical-message' }
@@ -141,34 +141,53 @@ describe('one cloud provider and verified raw chunk cache', () => {
       expect(await result).toMatchObject({ status: 503, message: expect.stringContaining('HTTP 503') })
     } finally { vi.useRealTimers() }
   })
-  it('uses and caches only the existing CDN thumbnail for managed previews; full downloads still verify the original', async () => {
-    const thumbnail = 'https://objects.invalid/file?auth_key=lease&x-oss-process=image/resize,w_560/format,webp'
-    const imageRevision = { ...revision, content_type: 'image/png' }
-    const a = api(imageRevision, plain, { thumb_url: thumbnail }), c = cache(), images = new Map<string, Response>()
+  const small = Buffer.from('small preview'), shown = { sha256: digest(small), size_bytes: small.length, content_type: 'image/webp' }
+  /** The sender's preview signs at its own URL; the original at the file's. */
+  function withPreview(a: ReturnType<typeof api>) {
+    const original = a.fetcher.getMockImplementation()!
+    a.fetcher.mockImplementation(async (input, init) => {
+      const request = JSON.parse(init!.body as string)
+      if (String(input).endsWith('/file-download') && request.preview === true) {
+        a.calls.push({ route: 'file-download', body: request })
+        return Response.json({ status: 'ready', url: 'https://objects.invalid/preview', sha256: shown.sha256, size_bytes: small.length, download_id: 'preview' })
+      }
+      return original(input, init)
+    })
+    return a
+  }
+  const objects = () => vi.fn(async (url: RequestInfo | URL) => new Response(String(url) === 'https://objects.invalid/preview' ? small : plain))
+  it('shows and caches the preview its sender stored; full downloads still verify the original', async () => {
+    const imageRevision = { ...revision, content_type: 'image/png', preview: shown }
+    const a = withPreview(api(imageRevision)), c = cache(), images = new Map<string, Response>()
     const imageCache = { match: vi.fn(async key => images.get(String(key))?.clone()), put: vi.fn(async (key, value) => { images.set(String(key), value.clone()) }) } as Pick<Cache, 'match' | 'put'>
-    const fetcher = vi.fn(async (url: RequestInfo | URL) => String(url) === thumbnail ? new Response('small thumbnail', { headers: { 'content-type': 'image/webp' } }) : new Response(plain))
+    const fetcher = objects()
     const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink(), imageCache, fetch: fetcher as typeof fetch })
     const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
     for (let i = 0; i < 2; i++) {
       const preview = await resolve(context.ref, context.actor, { purpose: 'preview' })
       if (preview.status !== 'ready') throw Error('ready expected')
-      const content = await preview.content()
-      expect(content).toBeInstanceOf(Blob); expect(await (content as Blob).text()).toBe('small thumbnail'); await preview.dispose()
+      const content = await preview.content() as Blob
+      expect(content.type).toBe('image/webp'); expect(await content.text()).toBe('small preview'); await preview.dispose()
     }
-    expect(fetcher.mock.calls.map(row => row[0])).toEqual([thumbnail])
-    expect(a.calls.filter(row => row.route === 'file-download')).toHaveLength(1)
+    expect(fetcher.mock.calls.map(row => row[0])).toEqual(['https://objects.invalid/preview'])
+    expect(a.calls.filter(row => row.route === 'file-download')).toEqual([{ route: 'file-download', body: expect.objectContaining({ preview: true, ref: { item_id: 'file', version: 2 } }) }])
     const full = await cloud.managed(revision, context)
     expect(digest(Buffer.concat([await full.read(0, 524288), await full.read(524288, plain.length - 524288)]))).toBe(revision.sha256)
-    expect(fetcher.mock.calls.map(row => row[0])).toEqual([thumbnail, 'https://objects.invalid/file'])
+    expect(fetcher.mock.calls.map(row => row[0])).toEqual(['https://objects.invalid/preview', 'https://objects.invalid/file'])
     await full.dispose()
   })
+  it('refuses preview bytes that are not the stored preview', async () => {
+    const imageRevision = { ...revision, content_type: 'image/png', preview: { ...shown, sha256: 'ab'.repeat(32) } }
+    const a = withPreview(api(imageRevision)), c = cache()
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink(), fetch: objects() as typeof fetch })
+    await expect(cloud.preview!(imageRevision, context, vi.fn())).rejects.toThrow('File preview changed')
+  })
   it('reopens a content-cached message preview without a metadata round trip, but still authorizes the original', async () => {
-    const thumbnail = 'https://objects.invalid/thumbnail?lease=first-open'
-    const imageRevision = { ...revision, content_type: 'image/png', width: 1200, height: 900 }
-    const a = api(imageRevision, plain, { thumb_url: thumbnail }), c = cache(), images = new Map<string, Response>()
+    const imageRevision = { ...revision, content_type: 'image/png', width: 1200, height: 900, preview: shown }
+    const a = withPreview(api(imageRevision)), c = cache(), images = new Map<string, Response>()
     const imageCache = { match: async (key: RequestInfo | URL) => images.get(String(key))?.clone(),
       put: async (key: RequestInfo | URL, value: Response) => { images.set(String(key), value.clone()) } }
-    const fetcher = vi.fn(async () => new Response('cached pixels', { headers: { 'content-type': 'image/webp' } }))
+    const fetcher = objects()
     const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink(), imageCache, fetch: fetcher as typeof fetch })
     const metadata = { status: 'ready' as const, revision: imageRevision }
     for (let mount = 0; mount < 2; mount++) {
@@ -176,23 +195,21 @@ describe('one cloud provider and verified raw chunk cache', () => {
       const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
       const preview = await resolve({ item_id: 'file', version: 2 }, context.actor, { purpose: 'preview', metadata })
       if (preview.status !== 'ready') throw Error('ready expected')
-      expect(await (await preview.content() as Blob).text()).toBe('cached pixels')
+      expect(await (await preview.content() as Blob).text()).toBe('small preview')
       await preview.dispose()
     }
     expect(a.calls.map(call => call.route)).toEqual(['file-download'])
     expect(fetcher).toHaveBeenCalledTimes(1)
-    expect([...images.keys()][0]).not.toContain('lease=')
     a.fetcher.mockRejectedValue(new Error('current access denied'))
     const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
     const options = { purpose: 'file' as const, metadata }
     await expect(resolve({ item_id: 'file', version: 2 }, context.actor, options)).rejects.toThrow('current access denied')
     expect(fetcher).toHaveBeenCalledTimes(1)
   })
-  it.each(['image/svg+xml', 'image/png'])('uses the verified original when the signer provides no thumbnail for %s', async contentType => {
-    const row = { ...revision, content_type: contentType }, a = api(row, plain, { thumb_url: null }), c = cache()
-    const image = vi.fn(async () => { throw Error('Unexpected local image conversion') })
+  it.each(['image/svg+xml', 'image/png'])('uses the verified original when %s has no preview', async contentType => {
+    const row = { ...revision, content_type: contentType }, a = api(row), c = cache()
     const fetcher = vi.fn(async (_url: RequestInfo | URL) => new Response(plain))
-    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink(), image, fetch: fetcher as typeof fetch })
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink(), fetch: fetcher as typeof fetch })
     const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
     const preview = await resolve(context.ref, context.actor, { purpose: 'preview' })
     if (preview.status !== 'ready') throw Error('ready expected')
@@ -201,15 +218,14 @@ describe('one cloud provider and verified raw chunk cache', () => {
       expect(blob.type).toBe(contentType)
       expect(digest(new Uint8Array(await blob.arrayBuffer()))).toBe(row.sha256)
       expect(fetcher.mock.calls.map(call => call[0])).toEqual(['https://objects.invalid/file'])
-      expect(image).not.toHaveBeenCalled()
     } finally { await preview.dispose() }
   })
-  it('a local preview opens the verified source first and never signs a CDN URL', async () => {
+  it('a device-kept image without a preview shows its verified original, as any file', async () => {
     const a = api(), c = cache(), file = bytesFile(plain), full = vi.fn(async () => file)
-    const image = vi.fn(async (verified: FileBytes) => { expect(verified).toBe(file); return new Blob(['local pixels'], { type: 'image/webp' }) })
-    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink(), image })
-    expect(await (await cloud.preview!({ ...revision, source: 'local', content_type: 'image/png' }, context, full) as Blob).text()).toBe('local pixels')
-    expect(full).toHaveBeenCalledTimes(1); expect(image).toHaveBeenCalledTimes(1); expect(a.calls).toEqual([])
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink() })
+    const blob = await cloud.preview!({ ...revision, source: 'local', content_type: 'image/png' }, context, full) as Blob
+    expect(digest(new Uint8Array(await blob.arrayBuffer()))).toBe(revision.sha256)
+    expect(full).toHaveBeenCalledTimes(1); expect(a.calls).toEqual([])
   })
   it('managed video leases stream by Range, expire after 60 seconds and renew through the same signer', async () => {
     let now = 1_800_000_000_000
@@ -246,14 +262,12 @@ describe('one cloud provider and verified raw chunk cache', () => {
       expect(fullSink).not.toHaveBeenCalled(); await preview.dispose()
     } finally { clock.mockRestore() }
   })
-  it('a project video fully opens its verified/decrypted snapshot before exposing local playback', async () => {
-    const c = cache(), a = api(), opened = vi.fn(async () => bytesFile(plain))
-    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: c.store, sink: async () => sink() })
-    const video = await cloud.preview!({ ...revision, source: 'local', content_type: 'video/mp4' }, context, opened)
-    expect(video).toBeInstanceOf(Blob); expect((video as Blob).type).toBe('video/mp4')
-    expect(digest(new Uint8Array(await (video as Blob).arrayBuffer()))).toBe(revision.sha256)
-    expect(opened).toHaveBeenCalledTimes(1); expect(a.calls).toEqual([])
-    await expect(cloud.preview!({ ...revision, source: 'local', content_type: 'video/mp4' }, context, async () => { throw Error('SHA mismatch') })).rejects.toThrow('SHA mismatch')
+  // A held video is read whole by the resolver's verified read, like any file: it has no preview, and nothing is opened for one.
+  it('a held video has no media preview and opens nothing for one', async () => {
+    const a = api(), opened = vi.fn(async () => bytesFile(plain))
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: cache().store, sink: async () => sink() })
+    await expect(cloud.preview!({ ...revision, source: 'local', content_type: 'video/mp4' }, context, opened)).rejects.toThrow('Local media preview is unavailable')
+    expect(opened).not.toHaveBeenCalled(); expect(a.calls).toEqual([])
   })
   it('an empty managed file still performs an authenticated GET before publishing its empty snapshot', async () => {
     const row = { ...revision, size_bytes: 0, sha256: digest(new Uint8Array()) }, a = api(row, new Uint8Array()), c = cache(), fetcher = vi.fn(async () => new Response(new Uint8Array()))
@@ -274,7 +288,8 @@ describe('one cloud provider and verified raw chunk cache', () => {
     await file.dispose()
     const hit = await cloud.managed(revision, context)
     expect(await hit.read(0, 1)).toEqual(new Uint8Array([73])); await hit.dispose()
-    expect(a.calls.filter(row => row.route === 'file-download')).toHaveLength(1)
+    // A finished read dropped its chunks (they only serve a resume), so a new read signs and downloads again.
+    expect(a.calls.filter(row => row.route === 'file-download')).toHaveLength(2); expect(c.chunks.size).toBe(0)
   })
   it('recovers a real interrupted HTTP GET in the same read without fetching its verified prefix again', async () => {
     const c = cache(), requests: (string | undefined)[] = []
@@ -295,7 +310,7 @@ describe('one cloud provider and verified raw chunk cache', () => {
     const deps = { endpoint: a.endpoint, cache: c.store, sink: async () => sink(), fetch }
     try {
       const resumed = await cloudFileProviders(deps).managed(revision, context)
-      expect(c.chunks.size).toBe(2); expect(c.store.clear).not.toHaveBeenCalled()
+      expect(c.chunks.size).toBe(0); expect(c.store.clear).toHaveBeenCalledTimes(1)
       const chunks = [await resumed.read(0, 524288), await resumed.read(524288, plain.length - 524288)]
       expect(digest(Buffer.concat(chunks))).toBe(revision.sha256)
       expect(requests).toEqual([undefined, 'bytes=524288-'])
@@ -365,14 +380,13 @@ describe('one cloud provider and verified raw chunk cache', () => {
     const decoded = await cloud.temporary(local, context)
     expect(a.calls.map(row => row.route)).toEqual(['file-request', 'file-read-complete'])
     expect(digest(Buffer.concat([await decoded.read(0, 524288), await decoded.read(524288, plain.length - 524288)]))).toBe(revision.sha256)
-    expect(c.chunks.size).toBeGreaterThan(0)
+    // The bytes are in the sink once shown: the read drops its chunks before the acknowledgement settles.
+    expect(c.chunks.size).toBe(0); expect(c.store.clear).toHaveBeenCalledTimes(1)
     answer()
-    if (outcome === 'same' || outcome === 'flaky') { await decoded.acknowledged; expect(c.store.clear).not.toHaveBeenCalled() }
-    else if (outcome === 'down') { await expect(decoded.acknowledged).rejects.toMatchObject({ status: 503 }); expect(c.store.clear).not.toHaveBeenCalled() }
-    else {
-      await expect(decoded.acknowledged).rejects.toMatchObject({ reason: outcome, message: outcome === 'gone' ? 'gone' : 'File access or revision changed during download' })
-      expect(c.store.clear).toHaveBeenCalledTimes(1); expect(c.chunks.size).toBe(0)
-    }
+    if (outcome === 'same' || outcome === 'flaky') await decoded.acknowledged
+    else if (outcome === 'down') await expect(decoded.acknowledged).rejects.toMatchObject({ status: 503 })
+    else await expect(decoded.acknowledged).rejects.toMatchObject({ reason: outcome, message: outcome === 'gone' ? 'gone' : 'File access or revision changed during download' })
+    expect(c.store.clear).toHaveBeenCalledTimes(1)
     expect(a.calls.filter(row => row.route === 'file-read-complete')).toHaveLength(acks)
     expect(a.calls[0]!.body.download_request_id).toMatch(/^[0-9a-f-]{36}$/)
     expect(a.calls[1]!.body).toMatchObject({ download_id: 'download', ref: { item_id: 'file', version: 2 }, expect: { sha256: local.sha256, size_bytes: local.size_bytes } })

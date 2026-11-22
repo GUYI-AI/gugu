@@ -3,7 +3,7 @@ import { messageForUser } from '@/lib/userFacingError';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { getSessionView } from '@renderer/features/sessions/stores/session-selectors';
 import { toast } from '@renderer/lib/hooks/use-toast';
-import { rpcOn } from '@renderer/lib/ipc';
+import { agentMetadata } from '@renderer/lib/stores/agent-replicas';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { log } from '@renderer/utils/logger';
@@ -50,8 +50,7 @@ export function startSideSession(projectId: string, sessionId: string): void {
   const { source, forkFromProviderSessionId } = candidate;
 
   // 能不能分叉问会话所在的那台机器(别的机器上的会话,agent 装在那台机器上)。
-  void rpcOn(machineRegistry.machineOf(source.id))
-    .agents.get(source.providerId)
+  void agentMetadata.reread(machineRegistry.machineOf(source.id), source.providerId)
     .then((agent) => {
       // Side chat is an ACP runtime tab whatever the source's runtime: it needs the ACP leg's fork.
       if (!agentForksOn(agent?.capabilities, 'acp')) {

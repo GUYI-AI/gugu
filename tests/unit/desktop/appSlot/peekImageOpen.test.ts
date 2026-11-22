@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { peekStore } from '@/session/renderer/features/extensions/peek-store'
 
 const image = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/attachmentBytes', () => ({ openAttachmentImage: image }))
+vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({ openAttachmentImage: image })))
 const detail = { chatId: 'chat', itemId: 'photo', name: 'photo.png', typedName: 'photo.png', file: { document: false, contentType: 'image/png', version: 2, size: 8 }, choice: { kind: 'none' as const } }
 afterEach(() => { peekStore.close(null, 'tab'); peekStore.close('session', 'tab'); vi.clearAllMocks() })
 

@@ -18,7 +18,7 @@ const directory = vi.hoisted(() => ({
   '0b000000-0000-4000-8000-00000000000b': { type: 'human', owner_user_id: null, display_name: 'Mallory' },
   '0c000000-0000-4000-8000-00000000000c': { type: 'agent', owner_user_id: '0a000000-0000-4000-8000-00000000000a', display_name: 'Claude 3' },
 } as Record<string, { type: string; owner_user_id: string | null; display_name: string }>));
-// #7290 Cards by their message, as main reads them as the signed-in person (app-files.ts packageReads): the row the
+// #7290 Cards by their message, as main reads them as their reader (app-files.ts packageReads): the row the
 // server keeps (its publisher among it), and the link attachments/urls signs for its bytes.
 const cards = vi.hoisted(() => ({ rows: {} as Record<string, unknown>, signed: [] as unknown[], bytes: new Uint8Array() }));
 vi.mock('./app-files', () => ({

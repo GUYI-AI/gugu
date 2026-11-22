@@ -8,7 +8,7 @@ import { ManagedVersionsRow } from './ManagedVersionsRow';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const state = vi.hoisted(() => ({ owner: 'owner', reading: { state: 'unknown' } as Reading<ManagedAgentVersions>, refresh: vi.fn(), clean: vi.fn(), confirm: vi.fn(), toast: vi.fn() }));
-vi.mock('@/lib/replica', () => ({ replicaAccount: () => ({ id: state.owner }), useReplica: () => state.reading }));
+vi.mock('@/lib/replica', async load => ({ ...await load<typeof import('@/lib/replica')>(), replicaAccount: () => ({ id: state.owner }), useReplica: () => state.reading }));
 vi.mock('./managed-versions-model', () => ({ managedVersions: { refresh: state.refresh }, cleanManagedVersions: state.clean }));
 vi.mock('@/lib/userFacingError', () => ({ messageForUser: String }));
 vi.mock('@/lib/log', () => ({ rendererLogger: () => ({ error: vi.fn() }) }));
@@ -59,7 +59,7 @@ describe('approved managed versions row', () => {
   });
   it('a failed read retains the last list and only enables explicit Retry', async () => {
     await mount(); await open();
-    state.reading = { state: 'value', value: data, stale: true, error: new Error('read failed') };
+    state.reading = { state: 'value', value: data, stale: true, error: new Error('read failed'), retry: async () => { state.refresh(null, 'codex') } };
     await act(async () => root.render(<ManagedVersionsRow agentId="codex" name="Codex" disabled={false} />));
     expect(host.textContent).toContain('agentsPage.oldVersionsReadFailed');
     expect(host.textContent).toContain('v1.1.0');

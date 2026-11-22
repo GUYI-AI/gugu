@@ -1,10 +1,9 @@
-import {useEffect,useRef,useState} from 'react'
+import {useEffect,useRef} from 'react'
 import {useTranslation} from 'react-i18next'
-import type {ContactUser} from '@gugu/core/shared/types/contacts'
-import {withAssistantPanelReadDeadline,isAssistantPanelReadRetryable} from '@gugu/core/cloud/assistantPanelRead'
 import {rememberAssistantTaskChat,showAssistantTaskChat,useOpenedAssistantTaskChat,type AssistantTaskChat} from '../../lib/assistantTaskChat'
 import {assistantWorkTarget} from '../../lib/assistantWorkTarget'
-import {readRequiredDisplayIdentities} from '../../lib/identityReadAdapter'
+import {useAvatarIdentity} from '../../lib/avatarIdentity'
+import {Unknown} from '../ui/Unknown'
 import {useContactsStore} from '../../store/contactsContext'
 import {useMobileShell} from '../../hooks/useMobileShell'
 import {useToast} from '../toastContext'
@@ -34,27 +33,10 @@ export function AssistantWorkTaskWindow({ownerId,request,onClose,appPanel=false}
  const runtime=useAssistantWorkRuntime(canonical?.task.deviceId??null)
  const agentId=canonical?.taskAgentId??null
  const contact=contacts.find(row=>row.id===agentId&&row.type==='agent'&&row.owner_user_id===ownerId)
- const [identity,setIdentity]=useState<{ownerId:string;agent:ContactUser}|null>(null)
- const [identityFailed,setIdentityFailed]=useState(false)
- useEffect(()=>{
-  if(!agentId||contact||identity?.ownerId===ownerId&&identity.agent.id===agentId){setIdentityFailed(false);return}
-  let alive=true,failures=0,timer:ReturnType<typeof setTimeout>|undefined
-  setIdentityFailed(false)
-  const readIdentity=async()=>{
-   try{
-    const rows=await withAssistantPanelReadDeadline(()=>readRequiredDisplayIdentities([agentId]))
-    const agent=rows.find(row=>row.id===agentId&&row.type==='agent'&&row.owner_user_id===ownerId)
-    if(!agent)throw new Error('Task identity is not owned by this account')
-    if(alive){setIdentity({ownerId,agent});setIdentityFailed(false)}
-   }catch(error){
-    if(!alive)return
-    setIdentityFailed(true)
-    if(failures++<2&&isAssistantPanelReadRetryable(error))timer=setTimeout(()=>void readIdentity(),1500)
-   }
-  }
-  void readIdentity()
-  return()=>{alive=false;clearTimeout(timer)}
- },[agentId,ownerId,contact,detail?.work,identity])
+ // A task agent not in contacts: read the identity directory, then check it is this account's agent.
+ const directory=useAvatarIdentity(agentId&&!contact?agentId:'')
+ const owned=directory&&directory.type==='agent'&&directory.owner_user_id===ownerId?directory:null
+ const identityFailed=!!directory&&!owned
  const remembered=useRef('')
  const canonicalKey=canonical?JSON.stringify(canonical):''
  useEffect(()=>{
@@ -64,7 +46,8 @@ export function AssistantWorkTaskWindow({ownerId,request,onClose,appPanel=false}
   if(opened?.ownerId===ownerId&&opened.request.workId===canonical.workId&&JSON.stringify(opened.request)!==canonicalKey)
    showAssistantTaskChat({ownerId,request:canonical,name:canonical.title!})
  },[ownerId,canonicalKey,canonical,opened])
- const agent=contact??(identity?.ownerId===ownerId&&identity.agent.id===agentId?identity.agent:null)
+ const agent=contact??owned
+ const titleKnown=detail?detail.titleKnown:true
  const title=detail?.work.title??request.title??t('tasks.title')
  const state=detail?.work.outcome??request.outcome??'active'
  const workState=t(state==='active'&&!agentId?'tasks.starting':`tasks.workState.${state}`)
@@ -77,10 +60,10 @@ export function AssistantWorkTaskWindow({ownerId,request,onClose,appPanel=false}
  </span>
  const close=onClose??(()=>showAssistantTaskChat(null))
  const transcript=<CloudTaskTranscript mobile={mobile} request={canonical??request} events={detail?.events??[]}/>
- if(agent)return <AssistantTaskChatWindow agent={{...agent,display_name:title}} task={(canonical??request).task} onClose={close} status={status} pendingContent={transcript} appPanel={appPanel}/>
+ if(agent)return <AssistantTaskChatWindow agent={{...agent,display_name:titleKnown?title:agent.display_name}} task={(canonical??request).task} onClose={close} status={status} pendingContent={transcript} appPanel={appPanel}/>
  return <section className="assistant-task-chat-window ta-skin" data-testid="assistant-task-chat-window" data-app-panel={appPanel||undefined} aria-label={title}>
   <TaskChatFilePreviewHost mobile={mobile}>
-   <PaneHeader title={title} subtitle={status} mobile={mobile} divider leading={<IconButton aria-label={t('panel.back')} onClick={close} data-testid="assistant-task-chat-close"><ChevronLeft/></IconButton>}/>
+   <PaneHeader title={titleKnown?title:<Unknown className="w-32"/>} subtitle={status} mobile={mobile} divider leading={<IconButton aria-label={t('panel.back')} onClick={close} data-testid="assistant-task-chat-close"><ChevronLeft/></IconButton>}/>
    {transcript}
   </TaskChatFilePreviewHost>
  </section>

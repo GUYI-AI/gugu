@@ -55,3 +55,9 @@ export function lastTurnSignInRequired(turns: readonly Pick<TranscriptTurn, 'out
   const outcome = turns.at(-1)?.outcome;
   return outcome?.kind === 'error' && outcome.signInRequired === true;
 }
+
+export function lastTurnSignInReason(turns: readonly Pick<TranscriptTurn, 'outcome'>[]): 'required' | 'revoked' | null {
+  const outcome = turns.at(-1)?.outcome;
+  return outcome?.kind === 'error' && outcome.signInRequired
+    ? outcome.signInReason === 'revoked' ? 'revoked' : 'required' : null;
+}

@@ -23,8 +23,8 @@ import { appScope } from '@main/app/app-scope';
 import { resolveLocalAgentRunContext } from '@main/core/agents/agent-run-context';
 import { getPlugin, listPlugins } from '@main/core/agents/plugin-registry';
 import { desktopWorkerPath } from '@main/worker-manifest';
-import { systemProxyFill } from '@main/utils/systemProxyEnv';
-import { loginShellEnv } from '@main/utils/userEnv';
+import { harnessWorkerHost } from '@main/harness-worker-host';
+import { connectionProbeProxyEnv } from '@main/core/agents/connection-endpoint-env';
 import { err, ok, type Result } from '@gugu/session-shared';
 import type { AgentAuthStatus } from '@gugu/session-core/agents/plugins';
 import type { AgentConfigAuthError } from '@gugu/session-core/workspace-server';
@@ -41,15 +41,16 @@ const agentConfigWorker = lazyWorker(
     name: 'agent-config',
     contract: agentConfigRuntimeContract,
     entry: desktopWorkerPath('agent-config'),
+    host: harnessWorkerHost,
     scope: agentConfigRuntimeScope,
     // #6264「登录已失效」标记按「这台机器 × 这家的配置家」记(见 session-runtime auth-expiry-file.ts):
     // 咕咕 server 上放在几个账号共用的数据根(同机账号共用 claude 那份登录,A 发现过期 B 也看得到);
     // 桌面上一台机器一份数据目录,仍放那里。
     env: {
       ...process.env,
-      // #6892 harness 的登录态 / 模型目录探针在这个 worker 里起(agy models 要连外网);它在另一个进程,
-      // 用不了 buildAgentEnv(那份依赖主进程里的登录 shell 快照),所以在给它环境的这一处补。
-      ...systemProxyFill(process.env, loginShellEnv()),
+      // The worker cannot read the host's login-shell snapshot. Resolve proxy values here,
+      // with the same shell/process/system precedence as the agents it configures.
+      ...connectionProbeProxyEnv(),
       GUGU_AGENT_AUTH_EXPIRY_FILE: join(
         process.env.GUGU_SERVER_MODE === '1' && process.env.GUGU_SERVER_HOME ? process.env.GUGU_SERVER_HOME : app.getPath('userData'),
         'agent-auth-expiry.json'
@@ -185,6 +186,8 @@ export async function clearAgentAuthExpired(providerId: string, sessionId?: stri
 export async function disposeAgentConfigRuntimeProcess(): Promise<void> {
   rendererWireDispose?.();
   rendererWireDispose = null;
+  const { releaseNativeCodexAuthSources } = await import('@main/core/agents/codex-native-auth-source');
+  await releaseNativeCodexAuthSources();
   await agentConfigWorker.dispose();
 }
 
@@ -219,7 +222,7 @@ export function withHostResolvedCli(
       try {
         if (input.providerId && !listPlugins().some((provider) => provider.metadata.id === input.providerId)) return err({ type: 'unknown-provider' as const, providerId: input.providerId });
         if (input.providerId) await localDependencyManager.probe(input.providerId, { waitForInstallations: true });
-        else await localDependencyManager.probeCategory('agent', { refreshShellEnv: input.refreshShellEnv });
+        else await localDependencyManager.probeCategory('agent');
         return client.syncHostDependencyLedger(await hostDependencyInventory());
       } catch (error) {
         return err({ type: 'invalid-state' as const, message: String(error) });

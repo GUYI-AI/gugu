@@ -7,7 +7,7 @@ import { readSetupStep, writeSetupStep } from '@/lib/assistantSetupState'
 import { useMyAssistantContact } from '@/lib/myAssistant'
 import { useAuth } from '@/store/auth'
 import { useContactList } from '@/store/contactsContext'
-import { getCloudComputerState, subscribeCloudComputerState } from '@/lib/cloudComputerStore'
+import { cloudFailureOf, cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 import { directoryDevices, subscribeDeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import type { Device } from '@gugu/core/shared/types/chat'
 import type { PhoneAssistant } from './MobileAssistantApp'
@@ -43,11 +43,11 @@ export type PhoneAssistantState = {
 export function usePhoneAssistant(enabled: boolean): PhoneAssistantState {
   const { user } = useAuth()
   const contacts = useContactList(enabled)
-  const cloudComputer = useSyncExternalStore(subscribeCloudComputerState, getCloudComputerState, getCloudComputerState)
+  const cloud = useCloudComputer()
   // The shell calls this on the desktop too (disabled). Reading the contacts or the device context there re-rendered the whole
   // shell on every contacts update and device heartbeat; both are only subscribed to where the phone assistant exists.
   const devices = useSyncExternalStore(enabled ? subscribeDeviceSessions : noSubscription, enabled ? directoryDevices : noDevices, noDevices)
-  const snapshot = enabled ? cloudComputer?.snapshot ?? null : null
+  const snapshot = enabled ? cloudSnapshotOf(cloud) : null
   const cloudDeviceId = enabled ? snapshot?.deviceId ?? devices.find((device) => device.cloud_computer)?.device_id ?? null : null
   const mine = useMyAssistantContact(contacts)
   const contact = enabled ? mine.contact : null
@@ -82,9 +82,9 @@ export function usePhoneAssistant(enabled: boolean): PhoneAssistantState {
       // 管家还没问到 = 还不知道(❌ 当成「这里没开放」);问过了:没开放、有快照、没问到(有原因)都是知道了。
       // 只看管家那一份:设备列表每刷新一次都会先变成「在读」(任何一行设备变动都会刷),❌ 让已经知道的事跟着退回「在读」——
       // 那会把开通引导卸掉再挂上(#7429)。
-      cloudKnown: !!cloudComputer && (!cloudComputer.available || cloudComputer.snapshot !== null || cloudComputer.loadError !== null),
-      cloudLoadFailed: !!cloudComputer?.loadError,
-      identity: mine,
+      cloudKnown: cloud.state !== 'unknown',
+      cloudLoadFailed: cloudFailureOf(cloud) !== null,
+      identity: mine.reading,
     }),
   }
 }

@@ -126,23 +126,26 @@ test('unregistered paths, changed bytes and permission revocation before commit 
     let checks = 0
     const tools = phoneFileTools({ agent, job: fx.job, cloud: fx.cloud, store: fx.store, env: { GUGU_HOME: fx.root }, authorize: async () => { if (++checks > 1) throw Object.assign(new Error('photo permission revoked'), { code: 'os_permission' }) }, emit: () => undefined })
     const send = tools.find((item) => item.name === 'message_send_file')
-    await assert.rejects(send.execute('unknown', { chat_id: chatId, file_path: '/etc/hosts' }), /登记/)
+    await assert.rejects(send.execute('unknown', { chat_id: chatId, file_path: '/etc/hosts' }), /registered/)
     await assert.rejects(send.execute('revoked', { chat_id: chatId, file_path: fx.artifact.data.file_path }), /permission revoked/)
     assert.equal(fx.requests.some(([url]) => url.endsWith('/commit')), false)
     await writeFile(fx.artifact.data.file_path, Buffer.alloc(bytes.length, 0))
-    await assert.rejects(send.execute('modified', { chat_id: chatId, file_path: fx.artifact.data.file_path }), /内容已变化/)
+    await assert.rejects(send.execute('modified', { chat_id: chatId, file_path: fx.artifact.data.file_path }), /content changed/)
   } finally { await fx.close() }
 })
 
 test('attachment download ignores an untrusted body URL and requires message ACL before requesting any object bytes', async () => {
   const fx = await fixture()
   try {
-    fx.cloud.rpc = async (_schema, name) => { assert.equal(name, 'can_read_message'); return true }
-    fx.cloud.chat = { from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { id: '4f6dac4f-a3f2-48da-9876-d3a4567d8b64', content_type: 'attachment', content: '[附件] secret.txt (text/plain)\n[URL] http://127.0.0.1/secret\n[Size] 42\n[Kind] file' }, error: null }) }) }) }) }
+    fx.cloud.rpc = async (_schema, name, args) => {
+      assert.deepEqual([name, args], ['messages_by_id_as', { p_as: agent.agentUserId, p_id: '4f6dac4f-a3f2-48da-9876-d3a4567d8b64' }])
+      return [{ id: '4f6dac4f-a3f2-48da-9876-d3a4567d8b64', content_type: 'attachment', content: '[附件] secret.txt (text/plain)\n[URL] http://127.0.0.1/secret\n[Size] 42\n[Kind] file' }]
+    }
+    fx.cloud.chat = { from: () => { throw new Error('read as the agent, not with the owner\'s token') } }
     const endpoint = await fx.cloud.attachmentEndpoint()
     fx.cloud.attachmentEndpoint = async () => ({ ...endpoint, fetch: async (url, init) => { fx.requests.push([String(url), init]); return json({ status: 'gone', sha256: null }) } })
     const tool = phoneFileTools({ agent, job: fx.job, cloud: fx.cloud, store: fx.store, env: {}, authorize: async () => undefined, emit: () => undefined }).find((item) => item.name === 'message_download_file')
-    await assert.rejects(tool.execute('unsafe', { source_message_id: 'msg:4f6dac4f-a3f2-48da-9876-d3a4567d8b64' }), /已删除或不可见/)
+    await assert.rejects(tool.execute('unsafe', { source_message_id: 'msg:4f6dac4f-a3f2-48da-9876-d3a4567d8b64' }), /deleted or not visible/)
     assert.deepEqual(fx.requests.map(([url]) => url), ['https://files.invalid/functions/v1/attachments/file-resolve'])
     assert.deepEqual(JSON.parse(fx.requests[0][1].body), { ref: { message_id: '4f6dac4f-a3f2-48da-9876-d3a4567d8b64' }, as: agent.agentUserId })
   } finally { await fx.close() }
@@ -152,8 +155,11 @@ test('the message authority downloads the verified original even when its body c
   const fx = await fixture()
   const id = '4f6dac4f-a3f2-48da-9876-d3a4567d8b64'
   try {
-    fx.cloud.rpc = async (_schema, name) => { assert.equal(name, 'can_read_message'); return true }
-    fx.cloud.chat = { from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { id, content_type: 'attachment', content: '[附件] private.bin (application/octet-stream)\n[URL] http://127.0.0.1/secret\n[Size] 42\n[Kind] file' }, error: null }) }) }) }) }
+    fx.cloud.rpc = async (_schema, name) => {
+      assert.equal(name, 'messages_by_id_as')
+      return [{ id, content_type: 'attachment', content: '[附件] private.bin (application/octet-stream)\n[URL] http://127.0.0.1/secret\n[Size] 42\n[Kind] file' }]
+    }
+    fx.cloud.chat = { from: () => { throw new Error('read as the agent, not with the owner\'s token') } }
     const endpoint = await fx.cloud.attachmentEndpoint()
     const revision = { status: 'ready', source: 'managed-object', file_name: 'private.bin', content_type: 'application/octet-stream', size_bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') }
     fx.cloud.attachmentEndpoint = async () => ({ ...endpoint, fetch: async (url, init) => {

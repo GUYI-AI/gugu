@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { projectRejectedSessionInputs, projectSessionPendingInput, sessionInputBaseline } from '@/lib/pendingSessionInput'
 import { activeTurnWithPending } from '@session-chat/state/pending-prompt'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
-import type { HostPendingRow, SessionInput, SessionInputFailure } from '@/lib/sessionInputOutbox'
+import type { HostPendingRow, SessionInput, SessionInputFailure } from '@/lib/sessionInput'
 
 const turn = (id: string, text: string, at = 10): TranscriptTurn => ({ id, seq: at, initiator: 'user', startedAt: at,
   items: [{ kind: 'message', id: `${id}:user`, seq: 0, role: 'user', text }] })

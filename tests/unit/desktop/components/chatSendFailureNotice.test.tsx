@@ -19,14 +19,14 @@ describe('attachment failure notices', () => {
     ['report.pdf', 'application/pdf', '文件'],
   ])('names the localized type and filename for %s', (name, type, kind) => {
     setLocalePreference('zh-CN')
-    expect(notice([new File(['data'], name, { type })])).toEqual({ tier: 'error', title: `${kind} ${name} 没发出去：发送未完成，请稍后重新发送` })
+    expect(notice([new File(['data'], name, { type })])).toEqual({ tier: 'error', title: `${kind} ${name} 发送失败：发送未完成，请稍后重新发送` })
   })
 
   it('groups a batch into one notice that lists every filename from the start', () => {
     setLocalePreference('zh-CN')
     const files = ['first.txt', 'second.txt', 'third.txt'].map(name => new File(['data'], name))
     const result = notice(files)
-    expect(result.title).toBe('3 个文件没发出去：发送未完成，请稍后重新发送')
+    expect(result.title).toBe('3 个文件发送失败：发送未完成，请稍后重新发送')
     const description = document.createElement('div')
     description.innerHTML = renderToStaticMarkup(<>{result.description}</>)
     expect(description.querySelector('details'), 'a notice is measured once; an expander would spill out of the card').toBeNull()
@@ -47,7 +47,7 @@ describe('attachment failure notices', () => {
   it.each([401, 403, 413, 429, 503])('translates a recognized status without displaying diagnostics (%s)', status => {
     setLocalePreference('zh-CN')
     const result = notice([new File(['data'], 'notes.txt')], new AttachmentsError('upload', status, 'failed', 'raw diagnostic'))
-    expect(result.title).toContain('文件 notes.txt 没发出去：')
+    expect(result.title).toContain('文件 notes.txt 发送失败：')
     expect(result.title).not.toMatch(/raw diagnostic|attachments|HTTP|failureReason/)
   })
 

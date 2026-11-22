@@ -80,7 +80,6 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
   }, [workspaceRootRef, workspaceWidth]);
   // #2642 内层栏的右边缘 = 列表画出来的边 + 内层栏画出来的宽(内层栏紧挨列表,左右都不留缝,desktop-shell.css)。
   const innerEdge = useTransform([leftAnimatedWidth, innerShownWidth], ([left, inner]: number[]) => left + inner);
-  const showInnerHandle = innerSidebarShown && !sidebarHidden;
 
   // GUYI-AI/gugu#2548 the rail is the expanded list itself, only narrow: the avatars' left edges stay put and the text fades
   // with the progress (sidebarRailTextOpacity, left-sidebar). The layer keeps the list's width through the fold, clipped at
@@ -116,9 +115,9 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     >
       {/* @@@list-clip - the list's place in the layout, as wide as its drawn edge in every frame of a fold, both ways: the
           page beside it follows the one spring. The list itself (the aside) keeps its own width through the fold and is clipped
-          at the drawn edge, so its rows ❌ re-lay out each frame. Hide only this empty placeholder on other places. Keep its motion binding stable: swapping it for a numeric zero
-          can restore the old width when unmounting the inner column rerenders the layout. The list itself stays mounted. */}
-      <motion.div aria-hidden className="h-full shrink-0" style={{ width: leftAnimatedWidth, display: sidebarHidden ? 'none' : undefined }} />
+          at the drawn edge, so its rows ❌ re-lay out each frame. A place without the list has none of what sits beside it (this
+          place, the edges, the inner column), so nothing there reads the list's geometry; only the list stays mounted. */}
+      {sidebarHidden ? null : <motion.div aria-hidden className="h-full shrink-0" style={{ width: leftAnimatedWidth }} />}
       <motion.aside
         data-workspace-left-panel=""
         className="absolute inset-y-0 left-0 z-40 overflow-hidden"
@@ -158,8 +157,8 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
         />
       ) : null}
       {/* #2642 内层栏右边缘的分隔条,规矩同上面那一根(悬停才出线、拖动跟手、松手存、左右键步进),只是拖不收:这一列有自己的
-          收起钮,拖到最窄就停住。排在这一列**前面**:它和正文之间 ❌ 夹东西(desktop-shell.css 用相邻选择器把两半拼成一张卡片)。 */}
-      {showInnerHandle ? (
+          收起钮,拖到最窄就停住。排在这一列**前面**:它和正文之间 ❌ 夹东西。 */}
+      {innerSidebarShown ? (
         <PanelResizeHandle
           edge="end"
           offset={innerEdge}
@@ -181,7 +180,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
         />
       ) : null}
       {/* 固定占这一格(没有内层侧栏时是 null):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
-          #2548 有内层栏时它和正文是同一张卡片的左右两半(desktop-shell.css),所以它必须紧挨着正文那一格。 */}
+          #2548 有内层栏时它归列表那一层,紧挨着正文那张卡片(desktop-shell.css)。 */}
       {sidebarHidden ? null : innerSidebar}
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
         {mainContent}
@@ -189,7 +188,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       </div>
       {!sidebarHidden ? <PanelResizeDragGuard edge="end" offset={leftAnimatedWidth} /> : null}
       {/* #2642 正文的页签条压在内层栏分隔条的右半截上:守卫排在正文后面,那半截才是拖宽度而 ❌ 拖窗口。 */}
-      {showInnerHandle ? <PanelResizeDragGuard edge="end" offset={innerEdge} /> : null}
+      {innerSidebarShown ? <PanelResizeDragGuard edge="end" offset={innerEdge} /> : null}
       {/* 左侧栏开关的控制器(快捷键、「消息」再点一下都走它);按钮本身 #2548 起在一张表侧栏的头一行。 */}
       {sidebarHidden ? null : <ShellSidebarToggle />}
     </div>

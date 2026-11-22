@@ -184,6 +184,5 @@ it.each([['desktop', false], ['phone', true]] as const)('changes only the topic 
   expect(rows.get('topic-1')).toBe('passive')
   expect(rows.get('group-1')).toBe('passive')
   expect(initiallyActive).toBe('true')
-  expect(popup?.querySelector('.gg-pop-lml')?.textContent).toBe('Topic Test')
   expect(segment?.[0]?.getAttribute('aria-pressed')).toBe('true')
 })

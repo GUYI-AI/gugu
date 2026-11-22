@@ -132,7 +132,7 @@ async function mountPanelLayer(theme: 'light' | 'dark') {
 
 const DEVICES = {
   devices: [], loading: false, error: null, refresh: async () => {}, rename: async () => {}, remove: async () => {},
-  listBoundAgents: async () => [], cloudComputer: { available: false, snapshot: null, loadError: null, wakeRefused: null },
+  listBoundAgents: async () => [],
 } as unknown as React.ContextType<typeof DevicesContext>;
 
 /** Pseudo-elements in `root` that paint something: the transcript's edge fades are drawn this way. */
@@ -150,13 +150,11 @@ it.each(['light', 'dark'] as const)('over the App panel the task reads as part o
   expect(window.getAttribute('data-app-panel')).toBe('true');
   expect(screen.getAttribute('data-panel-layer')).toBe('true');
 
-  // 1. The panel's gradient shows through: no page color of the task's own, no white fades painted over the gradient;
-  //    a pinned message's strip is the gradient where it sticks.
+  // 1. The panel's gradient shows through: no page color of the task's own, no white fades painted over the gradient.
   expect(getComputedStyle(panel).backgroundImage).toContain('linear-gradient');
   expect(getComputedStyle(screen).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   expect(paintedPseudo(screen)).toEqual([]);
   expect(getComputedStyle(host.querySelector('[data-chat-scroll]')!).maskImage).toContain('linear-gradient');
-  for (const strip of host.querySelectorAll('[data-chat-pin-backdrop]')) expect(getComputedStyle(strip).backgroundImage).toContain('linear-gradient');
 
   // 2. The header is the panel's top row: its height, its 16px edge, the round back centred with the collapse, then the
   //    face, the name and the status, all clear of the collapse.

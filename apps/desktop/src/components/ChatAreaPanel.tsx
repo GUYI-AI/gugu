@@ -32,7 +32,6 @@ import { useStructurallyShared } from '../hooks/useStructurallyShared'
 import { RunningBarSlot, RunningTokenBar } from './RunningTokenBar'
 import { AgentConversationNoticeSlot } from './AgentTurnFailureBar'
 import { useAgentDisplayStatuses, useAgentRecentActivity } from '../hooks/useAgentDisplayStatus'
-import { groupAgentStatusIndicatorProps } from '../lib/groupAgentStatus'
 import { useMessageFilePreview } from './chat/useMessageFilePreview'
 import type { MemberProfileCardModel, MemberProfileChatTarget } from './MemberProfileCard'
 import { useShownAgentStatus } from './chat/useAgentsOnCloudComputer'
@@ -56,15 +55,13 @@ import { ChatHeaderActions } from './chat/ChatHeaderActions'
 import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
 import { sessionComposerDockBandClassName } from '../session/renderer/features/sessions/session-composer-styles'
-import { GroupTabContent } from './appSlot/GroupTabContent'; import { useChatOpener } from './appSlot/useChatOpener'; import { ChatPaneContent, ChatTabPage, ChatTabPortals } from './appSlot/ChatTabHosts'; import { TabBarAddMenu } from '../session/renderer/features/sessions/tab-bar-actions'; import { useTabsReading } from './appSlot/useTabsReading'
+import { GroupTabContent } from './appSlot/GroupTabContent'; import { useChatOpener } from './appSlot/useChatOpener'; import { ChatPaneContent, ChatTabPage, ChatTabPortals } from './appSlot/ChatTabHosts'; import { TabBarAddMenu } from '../session/renderer/features/sessions/tab-bar-actions'; import { useMobxReading } from '../lib/mobxReadable'
 import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'; import { closeInfoTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { useTopicSurface } from '@/hooks/useTopicSurface'
 import { chatDisplayName, isRoomChat } from '@gugu/core/shared/ui/chatModels'
-import { topicService } from '@/lib/topics'
 import { useAgentFloodNotice } from '@/hooks/useAgentFloodNotice'
 import { TopicSplitPane } from './chat/TopicSplitPane'
 import { useToast } from './toastContext'
-import { rendererLogger } from '../lib/log'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import { PaneEmptyState } from './ui/PaneEmptyState'
 import { PaneHeader } from './ui/Pane'
@@ -104,8 +101,6 @@ interface ChatAreaPanelProps {
 // 竖排多行纯文字「{名} 正在执行 …」+ hover 抛工具名 → 改横排单行流光 token + 去术语计数卡，与单聊同一套。
 // 运行中占位只剩 RunningTokenBar 一种形状(#6448 删掉了已无人引用的 AgentTypingIndicator;
 // #2186 删掉了它上面的 StreamingAgentBubble 纯转发壳)。
-
-const chatAreaLog = rendererLogger('chat/area-panel')
 
 export function ChatAreaPanel({ chatId, ...surface }: ChatAreaPanelProps) {
   return chatId === undefined ? <ChatAreaSurface {...surface} /> : <ChatLineScope chatId={chatId}><ChatAreaSurface {...surface} /></ChatLineScope>
@@ -204,7 +199,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   // (真源 §2.4), beside the messages on the task's tab engine (chat-tabs/chat-layouts): asked of the chat every way in.
   const opener = useChatOpener(activeChatId)
   const inBlock = Boolean(blockHost)
-  const tabs = useTabsReading(() => {
+  const tabs = useMobxReading(() => {
     if (!activeChatId) return { page: null as ChatPanelTab | null, chatUp: true, infoShown: false, memberTopic: null }
     const panels = panelTabsOf(activeChatId)
     const focused = focusedChatTab(activeChatId)
@@ -227,39 +222,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     embedded: Boolean(blockHost),
   })
   const topicSplitOpen = Boolean(topicSurface.splitTopic)
-  // @@@5856 分栏标题块要说清「引自哪一句」。三态必须分开(pending 还没读到 / null 读到了「没这条」/
-  // 有字 = 预览),合并任意两种都会让它说假话:首帧闪「已删除」、读取失败也渲染成「已删除」。
-  // @@@3922 另把它 subject-scope(渲染期比对),否则从话题 A 切到 B 时 B 会顶着 A 的预览一个往返。
-  const splitTopicChatIdForPreview = mobile ? null : topicSurface.topic?.chatId ?? null // 手机的话题页没有标题块,不读
-  const [sourcePreviewState, setSourcePreviewState] = useState<{
-    forTopicChatId: string | null
-    preview: string | null | 'pending' | 'unreadable'
-  }>({ forTopicChatId: null, preview: 'pending' })
-  useEffect(() => {
-    const topicChatId = splitTopicChatIdForPreview
-    if (!topicChatId) { setSourcePreviewState({ forTopicChatId: null, preview: 'pending' }); return }
-    setSourcePreviewState({ forTopicChatId: topicChatId, preview: 'pending' })
-    let cancelled = false
-    // @@@5856 三态如实转述:'readable' → 预览;'gone' → null(说「已删除」);
-    // 'unreadable' → 那一行什么都不说。❌ 不许把后者并进「已删除」——消息没被删,别人都看得见。
-    void topicService.getSourceState(topicChatId)
-      .then((state) => {
-        if (cancelled) return
-        const preview = state.kind === 'readable' ? state.preview : state.kind === 'gone' ? null : 'unreadable'
-        setSourcePreviewState({ forTopicChatId: topicChatId, preview })
-      })
-      .catch((error: unknown) => {
-        // 读失败 ≠ 消息被删。留在 pending:那一行什么都不说,❌ 不谎报「已删除」。
-        chatAreaLog.error({ error, topicChatId }, 'topic source message preview failed')
-        if (!cancelled) setSourcePreviewState({ forTopicChatId: topicChatId, preview: 'pending' })
-      })
-    return () => { cancelled = true }
-  }, [splitTopicChatIdForPreview])
-  const topicSourceMessagePreview: string | null | 'pending' | 'unreadable' =
-    sourcePreviewState.forTopicChatId === splitTopicChatIdForPreview
-      ? sourcePreviewState.preview
-      : 'pending'
-
   // @@@5856 **话题不整屏打开** —— owner 2026-09-19:「怎么还有把一个 topic 当做群的形式表达」。
   // 会话列表点话题走的是「切到来源线 + 往盒子里放一条请求」,聊天区在这里把它取出来开成分栏。
   // 挂载时取一次(列表点的时候聊天区可能根本还没挂 —— 一个会话都没选时主区是空状态),
@@ -524,7 +486,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         room={isRoomChatSurface ? {
           snapshot: groupCollabSnapshot,
           settings: groupSettings.settings,
-          statusIndicatorProps: groupAgentStatusIndicatorProps(shownAgent.members(groupCollabSnapshot?.agents ?? [], groupAgentStatuses), groupAgentStatuses),
           onReload: loadGroupCollab,
         } : undefined}
         moreButtonRef={moreButtonRef}
@@ -574,7 +535,6 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       loading={topicSurface.splitLine.loadingMessages}
       memberProfiles={messageMemberProfiles}
       visibleChats={splitChats}
-      sourceMessagePreview={topicSourceMessagePreview}
       focusComposerToken={splitFocusToken}
       memberReadSeqs={topicSurface.splitLine.memberReadSeqs}
       mentionMembers={splitMentionMembers}
@@ -617,10 +577,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
-        divider data-chat-area-header="" data-chat-context-id={phoneTopic?.topicChatId ?? activeChat.id} mobile={mobile} centered={mobile}
+        divider atWindowEdge data-chat-area-header="" data-chat-context-id={phoneTopic?.topicChatId ?? activeChat.id} mobile={mobile} centered={mobile}
         style={{
           background: mobile ? 'transparent' : 'var(--bg-primary)',
-          paddingRight: 'calc(var(--pane-pad-x) + var(--titlebar-controls-width))',
           // agent 单聊:小鸟比头栏高几像素,允许它探出头栏(见 tokens.css .gg-agent-header)。
           overflow: 'hidden',
         }}

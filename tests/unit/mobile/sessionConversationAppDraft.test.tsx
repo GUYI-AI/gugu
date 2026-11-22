@@ -42,19 +42,21 @@ vi.mock('../../../apps/desktop/src/components/assistant-ui/session-transcript-vi
 
 import { SessionConversation } from '../../../apps/desktop/src/components/session-watch/SessionConversation'
 import { emptyAgentWatchTimeline } from '../../../apps/desktop/src/components/session-watch/agent-watch-store'
-import { state, changed, EMPTY } from '../../../apps/desktop/src/lib/sessionInputOutboxBridge'
-import type { SessionInputOutbox } from '../../../apps/desktop/src/lib/sessionInputOutbox'
+import { state, changed, EMPTY } from '../../../apps/desktop/src/lib/outbox/kinds/sessionInput'
+import { installOutboxCore } from '../../helpers/sessionInputOutbox'
 import { SessionInputQueue } from '../../../apps/desktop/src/components/chat/SessionInputQueue'
 import * as attachmentEndpoint from '../../../apps/desktop/src/lib/attachmentsEndpoint'
 import * as sessionPublication from '../../../apps/desktop/src/lib/sessionPublication'
 import { chatService } from '../../../apps/desktop/src/lib/chat'
 import { translateSessionMessage } from '../../../apps/desktop/src/session/renderer/localization/locale-store'
 let harness: ReturnType<typeof createReactHarness>
+let core: ReturnType<typeof installOutboxCore> | undefined
 const oldScroll = Element.prototype.scrollTo
 const oldWidth = Object.getOwnPropertyDescriptor(window, 'innerWidth')!
 beforeEach(() => { sendNotices.clear(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 }); harness = createReactHarness(); stubVisibleIntersection(); Element.prototype.scrollTo = () => undefined })
 afterEach(() => { Object.defineProperty(window, 'innerWidth', oldWidth); harness.cleanup(); vi.restoreAllMocks(); Element.prototype.scrollTo = oldScroll; vi.unstubAllGlobals();
-  Object.assign(state(), { accountId: null, queue: null, rows: EMPTY, valid: () => false }); changed(); lifeRead.mockReset(); transcriptView.setScrollMode.mockClear()
+  core?.dispose(); core = undefined
+  Object.assign(state(), { accountId: null, rows: EMPTY, valid: () => false }); changed(); lifeRead.mockReset(); transcriptView.setScrollMode.mockClear()
   hostActions.retry.mockReset(); hostActions.discard.mockReset(); hostActions.listeners.clear()
 })
 it('puts each App draft in the real task composer once, preserving human edits and sending nothing', async () => {
@@ -156,8 +158,9 @@ it('opens an inline user image in the image viewer outside a native-record task'
 it('shows an online host refusal through the existing input queue failure status and retry action', async () => {
   const failure = { code: 'send-failed' as const, message: 'Provider login expired' }
   const input = { id: 'failed-local', accountId: 'owner', deviceId: 'desktop', sessionId: 'failure-1451', text: 'queued intent', createdAt: 1, queued: true, failure }
-  const retryInput = vi.fn(async () => {})
-  Object.assign(state(), { accountId: 'owner', queue: Promise.resolve({ retry: retryInput } as unknown as SessionInputOutbox), rows: [input], valid: () => true })
+  core = installOutboxCore({ accountId: 'owner' })
+  const retryInput = vi.spyOn(core.outbox, 'retry').mockResolvedValue(undefined)
+  Object.assign(state(), { accountId: 'owner', rows: [input], valid: () => true })
   lifeRead.mockResolvedValue({ sessionId: 'failure-1451', version: 1, kind: 'ready', pending: { count: 0, items: [] } })
   await renderWithAppProviders(harness, createNode(SessionConversation, {
     timeline: emptyAgentWatchTimeline(), deviceId: 'desktop', sessionId: 'failure-1451', agentName: 'Test agent', sessionRuntime: 'acp',
@@ -277,3 +280,16 @@ it('settles only the discarded host input notice when the real life event remove
   expect(sendNotices.size).toBe(1)
   expect(hostActions.discard.mock.calls).toEqual([[sessionId, 'host-a'], [sessionId, 'host-a']])
 })
+
+
+it('does not query ACP-only options for a PTY conversation (#3374)', async () => {
+  const { fetchSessionOptions } = await import('../../../apps/desktop/src/components/session-watch/sessionpage-rpc');
+  vi.mocked(fetchSessionOptions).mockClear();
+  await renderWithAppProviders(harness, createNode(SessionConversation, {
+    deviceId: 'machine', sessionId: 'pty-3374', local: false, mobile: true, sessionRuntime: 'pty',
+    agentName: 'Claude Code', machineLabel: 'Test host', respondingItemId: null, onRespond: vi.fn(),
+    onSend: vi.fn(), pendingSends: [], sending: false, agentWorking: false, stopping: false,
+    timeline: emptyAgentWatchTimeline(), onStop: vi.fn(), onLoadOlder: async () => undefined,
+  }));
+  expect(fetchSessionOptions).not.toHaveBeenCalled();
+});

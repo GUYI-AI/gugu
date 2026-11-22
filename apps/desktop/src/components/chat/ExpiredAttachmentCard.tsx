@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
-import { attachmentMetadata, cachedAttachmentCopy } from '../../lib/attachmentBytes'
+import { attachmentMetadata, localAttachmentCopy } from '../../lib/attachmentBytes'
 import { attachmentState } from '../../lib/attachmentState'
 import { chatService } from '../../lib/chat'
 import { useAuth } from '../../store/auth'
@@ -30,7 +30,7 @@ export function ExpiredAttachmentCard({ meta, messageId, isMine }: { meta: Parse
       if (!attachment) throw new Error(t('attachmentView.fileGone'))
       const status = await attachmentMetadata(attachment.source)
       if (status.status !== 'expired') throw new Error(t('attachmentView.fileUnavailable'))
-      const local = picked ?? await cachedAttachmentCopy(status.sha256)
+      const local = picked ?? await localAttachmentCopy(status.sha256)
       if (!local) { setNeedsOriginal(true); return }
       await sendAttachmentsToChat(original.chat_id, [new File([local], attachment.fileName, { type: attachment.mimeType })], { toUserIds: original.to_user_ids, isWhisper: original.is_whisper,
         threadRootId: original.thread_root_id ?? (original.is_thread_root ? original.id : null) })

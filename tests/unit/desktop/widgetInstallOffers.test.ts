@@ -6,7 +6,7 @@ import type { SharedPackage } from '../../../apps/desktop/src/components/extensi
 const manifest = (version: string, extra: Partial<ExtensionManifest> = {}): ExtensionManifest => ({ id: 'vote', name: 'Vote', version,
   contributes: { tabs: [{ name: 'main', title: 'Vote', entry: 'index.html', widget: { height: 200 } }] }, ...extra } as ExtensionManifest)
 const card = { messageId: 'package-message', source: { kind: 'message' as const, messageId: 'package-message' } }
-const shared = (m = manifest('2.0.0')) => new Map<string, SharedPackage>([['vote', { manifest: m, card }]])
+const shared = (m = manifest('2.0.0')): SharedPackage[] => [{ manifest: m, card }]
 const market = [{ manifest: manifest('3.0.0'), version: '3.0.0' }]
 
 describe('the shared file/widget install offer rules', () => {
@@ -17,8 +17,8 @@ describe('the shared file/widget install offer rules', () => {
     expect(availableInstallOffers(shared(), market, [manifest(version)], {})).toEqual([])
   })
   it('offers the existing market version only without a group package, and excludes forks', () => {
-    expect(availableInstallOffers(new Map(), market, [], {})).toMatchObject([{ from: { kind: 'market', extensionId: 'vote', version: '3.0.0' } }])
-    expect(availableInstallOffers(new Map(), market, [manifest('1.0.0')], { vote: 'fork' })).toEqual([])
+    expect(availableInstallOffers([], market, [], {})).toMatchObject([{ from: { kind: 'market', extensionId: 'vote', version: '3.0.0' } }])
+    expect(availableInstallOffers([], market, [manifest('1.0.0')], { vote: 'fork' })).toEqual([])
   })
   it('only offers the exact App id and a declared widget view on this platform', () => {
     const offers = availableInstallOffers(shared(), [], [], {})

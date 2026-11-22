@@ -46,7 +46,7 @@ export function setProjectGroupHost(next: ProjectGroupHost | null): void {
 /** 宿主还没接上(启动早期、或这个宿主没有身份那一层)是传输层的事,不是项目的结果 ⇒ 抛,❌ 编成一个空列表。 */
 export function projectGroupHost(): ProjectGroupHost {
   if (!host) {
-    throw Object.assign(new Error('项目群:这台机器的咕咕宿主还没接上(稍后再试)'), { code: 'host_not_ready' });
+    throw Object.assign(new Error('项目群:这台机器的咕咕宿主尚未连接(请稍后重试)'), { code: 'host_not_ready' });
   }
   return host;
 }

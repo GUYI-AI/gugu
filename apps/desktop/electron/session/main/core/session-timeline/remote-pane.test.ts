@@ -3,6 +3,7 @@ import type { SessionpagePaneOpenEvent } from '@gugu/session-core/session-record
 import {
   MAX_QUEUED_SESSIONS,
   MAX_QUEUED_PER_SESSION,
+  PANE_ACK_TIMEOUT_MS,
   QUEUED_TTL_MS,
   RemotePaneError,
   createRemotePaneRoute,
@@ -339,20 +340,19 @@ describe('remote pane route', () => {
   });
 });
 
-// #6264 那台机器上的程序要「打开网页」($BROWSER / xdg-open):照 VS Code 远端 openExternal,在人这一侧打开。
+// #6264 那台机器上会话里的程序要「打开网页」($BROWSER):照 VS Code 远端 openExternal,在人这一侧打开。
 describe('remote pane route: open a web page on the person\'s side', () => {
   const external = (url: string) => ({ kind: 'external' as const, url });
   function setupExternal() {
     let id = 0;
-    let clock = 1_000;
-    const route = createRemotePaneRoute({ newId: () => `req-${++id}`, now: () => clock });
+    const route = createRemotePaneRoute({ newId: () => `req-${++id}` });
     const published: SessionpagePaneOpenEvent[] = [];
     const view = (subscriptionId: string, sessionId: string, opts: { external: boolean; browser?: boolean }) =>
       route.subscribe(
         { subscriptionId, sessionId, browser: opts.browser ?? true, pages: true, external: opts.external },
         (event) => published.push(event)
       );
-    return { route, published, view, advance: (ms: number) => (clock += ms) };
+    return { route, published, view };
   }
 
   it('goes to the desktop watching that session', async () => {
@@ -365,30 +365,13 @@ describe('remote pane route: open a web page on the person\'s side', () => {
     await expect(opening).resolves.toEqual({ opened: true });
   });
 
-  it('falls back to the desktop that most recently looked at this machine when nobody watches that session', async () => {
-    const { route, published, view, advance } = setupExternal();
-    view('old', 'conv-2', { external: true });
-    advance(1_000);
-    view('recent', 'conv-3', { external: true, browser: false });
-    const opening = route.open('conv-1', external('https://example.com/'), 'pinned');
-    await Promise.resolve();
-    expect(published).toHaveLength(1);
-    // It opens as part of the session that desktop is looking at.
-    expect(published[0]).toMatchObject({ subscriptionId: 'recent', request: { sessionId: 'conv-3' } });
-    route.ack({ requestId: 'req-1', subscriptionId: 'recent', ok: true });
-    await expect(opening).resolves.toEqual({ opened: true });
-  });
-
-  it('keeps a touched desktop as the freshest one', async () => {
-    const { route, published, view, advance } = setupExternal();
+  // A program outside any session (a model probe in a temp folder) must not land on whatever desktop looks at this machine.
+  it('reaches only a desktop watching that session: a page from no session, or an unwatched one, reaches nobody', async () => {
+    const { route, published, view } = setupExternal();
     view('a', 'conv-2', { external: true });
-    advance(1_000);
-    view('b', 'conv-3', { external: true });
-    advance(1_000);
-    route.touch('a');
-    void route.open('', external('https://example.com/'), 'pinned');
-    await Promise.resolve();
-    expect(published.at(-1)).toMatchObject({ subscriptionId: 'a' });
+    await expect(route.open('', external('https://example.com/a'), 'pinned')).rejects.toMatchObject({ code: 'no_viewer' });
+    await expect(route.open('conv-1', external('https://example.com/b'), 'pinned')).rejects.toMatchObject({ code: 'no_viewer' });
+    expect(published).toEqual([]);
   });
 
   it('never pushes to an older desktop that does not know this kind of request', async () => {
@@ -400,12 +383,27 @@ describe('remote pane route: open a web page on the person\'s side', () => {
     expect(published).toEqual([]);
   });
 
-  it('queues for the session when no desktop is around, and says so plainly when the session is unknown too', async () => {
-    const { route, view } = setupExternal();
-    await expect(route.open('conv-1', external('https://example.com/'), 'pinned')).resolves.toEqual({ queued: true });
-    await expect(route.open('', external('https://example.com/'), 'pinned')).rejects.toMatchObject({ code: 'no_viewer' });
-    expect(view('a', 'conv-1', { external: true }).pending.map((request) => request.target)).toEqual([
-      external('https://example.com/'),
-    ]);
+  // The program asking (a sign-in helper waiting for its callback) is gone by the time someone opens the session;
+  // a queued page would pop up then, one per launch.
+  it('never queues a page: nobody watching, the viewer leaving, or no answer each fail at once', async () => {
+    vi.useFakeTimers();
+    const { route, published, view } = setupExternal();
+    await expect(route.open('conv-1', external('https://example.com/a'), 'pinned')).rejects.toMatchObject({ code: 'no_viewer' });
+    expect(view('a', 'conv-1', { external: true }).pending).toEqual([]);
+
+    const leaving = route.open('conv-1', external('https://example.com/b'), 'pinned');
+    await Promise.resolve();
+    route.unsubscribe('a');
+    await expect(leaving).rejects.toMatchObject({ code: 'no_viewer' });
+
+    view('b', 'conv-1', { external: true });
+    const silent = route.open('conv-1', external('https://example.com/c'), 'pinned');
+    const settled = expect(silent).rejects.toMatchObject({ code: 'viewer_timeout' });
+    await vi.advanceTimersByTimeAsync(PANE_ACK_TIMEOUT_MS);
+    await settled;
+    const pushed = published.length;
+    expect(route.touch('b')).toBe(0);
+    expect(view('c', 'conv-1', { external: true }).pending).toEqual([]);
+    expect(published).toHaveLength(pushed);
   });
 });

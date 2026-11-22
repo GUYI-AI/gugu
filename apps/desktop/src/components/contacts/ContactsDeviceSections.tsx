@@ -1,127 +1,58 @@
-import { memo, useMemo, useState, type ReactNode } from 'react'
-import { useTranslation } from 'react-i18next'
-import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
-import { Collapse } from '../ui/Collapse'
 import { ListRow } from '../ui/ListRow'
-import { displayName } from '@/lib/contactsListSort'
-import { groupDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { SectionLabel } from '../ui/SectionLabel'
-import { ChevronDown } from '@/lib/icons'
-import { useDevicesStore } from '../../store/devicesContext'
-import { useDisplayDevices } from '@/hooks/useAssistantHomeLabel'
-import { ContactsAgentSectionState, ContactsGroupSectionState } from './ContactsSectionState'
-import { ContactsCreateAgentButton } from './ContactsCreateAgentButton'
-import { contactsAreEmpty, partitionContactsByDevice, type ContactsDeviceSection } from './contactsByDevice'
+import type { ReactNode } from 'react'
+import { Monitor, Server, User, UserPlus, Users, type IconComponent } from '@/lib/icons'
+import { Chip } from '../ui/Chip'
+import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
+import { sectionCount, type ContactsSection } from './contactsSections'
 import { sidebarCountClass } from '../../session/renderer/features/sidebar/sidebar-primitives'
+import { ct, rowKeyActivate } from './contactsPanelStyles'
+import { cn } from '@/lib/cn'
 
-// #5019 桌面三段侧栏的「设备段」:本机 → 其他设备(各成一段) → 咕咕云 → (设备表未到时的)Agent,
-// 每段里先 agent 行再群行;之后是 personSection(个人),最后是「群组」= 没有我 agent 的群(云段)。
-// 从 ContactsPanel(冻结 god 文件)抽出;行组件与右键菜单仍由面板渲染,这里只管分段与折叠。
-//
-// 折叠状态按段 key 记,设备增减不串;主段的空态是 Agent 分区那套(还没有 Agent + 新建),其余设备段空了
-// 就整段不出现(一台什么都没跑的设备不是一个分区)。
-// 默认只展开「群组」(个人在面板里,也默认展开);设备段默认折叠。搜索不走这里:有关键词时整块换成 ContactSearch 的结果表。
+// 桌面通讯录左栏的分组行(分组本身见 contactsSections):一行一个、带计数,❌ 折叠展开;
+// 点一下,右边大区域铺开这一组的全部联系人(ContactsSectionPane)。
 
-const GROUPS_KEY = '__groups'
-const defaultOpen = (key: string) => key === GROUPS_KEY
+const REQUESTS = 'new-requests'
+const iconOf = (section: ContactsSection) =>
+  section.kind === 'people' ? User : section.kind === 'groups' ? Users
+    : section.scope === 'local' ? Monitor : Server
 
-const sectionLabelClass = 'gg-c-sec-h !mt-3'
-const sectionAddClass =
-  'gg-c-sec-add inline-grid h-[var(--control-h-sm)] w-[var(--control-h-sm)] cursor-pointer place-items-center rounded-[var(--radius-control)] border-0 bg-transparent text-[var(--muted-fg)] hover:bg-[var(--hover)] active:bg-[var(--press)] hover:text-[var(--fg)]'
-const chevronClass = (collapsed: boolean) =>
-  `gg-c-sec-chev flex shrink-0 transition-transform duration-[var(--dur-med)] [transition-timing-function:var(--ease)]${collapsed ? ' -rotate-90' : ''}`
-
-export function ContactsDeviceSections({
-  agents,
-  people,
-  groups,
-  currentUserId,
-  onCreateAgent,
-  onCreateGroup,
-  renderAgent,
-  renderGroup,
-  personSection,
-}: {
-  agents: ContactUser[]
-  people: ContactUser[]
-  groups: ContactGroupChat[]
-  currentUserId?: string | null
-  onCreateAgent?: () => void
-  onCreateGroup: () => void
-  renderAgent: (contact: ContactUser) => ReactNode
-  renderGroup: (group: ContactGroupChat) => ReactNode
-  personSection: ReactNode
+/** 左栏整列只有一种行:导航胶囊、裸图标、右端计数 —— 「新的请求」与各分组同形(选中 / 悬停 / 禁用都来自 .gg-row)。 */
+export function ContactsSectionNav({ sections, selectedKey, onSelect, requests }: {
+  sections: ContactsSection[]
+  selectedKey: string | null
+  onSelect: (key: string) => void
+  requests: { count: number; active: boolean; disabled: boolean; onSelect: () => void }
 }) {
-  const { t } = useTranslation('contacts')
-  // #7199 个人助理住的那台那一段,段名是它的名字(用户看不到它住在哪)。
-  const devices = useDisplayDevices(useDevicesStore().devices)
-  const partition = useMemo(
-    () => partitionContactsByDevice(agents, groups, devices, currentUserId),
-    [agents, groups, devices, currentUserId],
+  const row = (key: string, Icon: IconComponent, title: string, meta: ReactNode, selected: boolean, select: () => void, disabled = false, className?: string) => (
+    <ListRow
+      key={key}
+      className={className}
+      role="button"
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled || undefined}
+      variant="nav"
+      data-testid={key === REQUESTS ? AUTOMATION_TEST_IDS.contactsNewFriendsNav : 'contacts-section-nav'}
+      data-section-key={key === REQUESTS ? undefined : key}
+      selected={selected}
+      leading={<span className="grid h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 place-items-center text-[var(--muted-fg)]"><Icon size={18} /></span>}
+      title={title}
+      meta={meta}
+      onClick={select}
+      onKeyDown={rowKeyActivate(select)}
+    />
   )
-  const empty = contactsAreEmpty(people, agents, groups)
-  const [openByKey, setOpenByKey] = useState<Record<string, boolean>>({})
-  const isOpen = (key: string) => openByKey[key] ?? defaultOpen(key)
-  const toggle = (key: string) => setOpenByKey((prev) => ({ ...prev, [key]: !(prev[key] ?? defaultOpen(key)) }))
-  const setOpen = (key: string) => (open: boolean) => setOpenByKey((prev) => ({ ...prev, [key]: open }))
-  // 展开过一次(点开,或页内查找命中时 beforematch 经 Collapse 要求展开)就一直是完整行:收起动画里看到的仍是完整行。
-  const everOpened = (key: string) => isOpen(key) || key in openByKey
-
-  const titleOf = (section: ContactsDeviceSection): string => {
-    if (section.scope === 'local') return t('panel.localDeviceSectionTitle')
-    if (section.scope === 'cloud') return t('panel.cloudDeviceSectionTitle')
-    if (section.scope === 'device') return section.displayLabel ?? section.key
-    return t('panel.agentSectionTitle')
-  }
-
-  return (
-    <>
-      {partition.sections.map((section) => {
-        const isPrimary = section.key === partition.primaryKey
-        const open = isOpen(section.key)
-        return (
-          <div key={section.key} data-testid="contacts-device-section" data-device-scope={section.scope}>
-            <SectionLabel
-              interactive
-              className={sectionLabelClass}
-              trailing={<>{isPrimary && <ContactsCreateAgentButton className={sectionAddClass} onCreate={onCreateAgent} />}<span className={sidebarCountClass}>{section.agents.length + section.groups.length}</span><span className={chevronClass(!open)}><ChevronDown size={14} /></span></>}
-              onClick={() => toggle(section.key)}
-            >
-              {titleOf(section)}
-            </SectionLabel>
-            <Collapse open={open} onOpenChange={setOpen(section.key)} className="gg-c-sec-body">
-              {everOpened(section.key) ? section.agents.map(renderAgent) : section.agents.map((c) => <FoldedRow key={c.id} name={displayName(c)} />)}
-              {everOpened(section.key) ? section.groups.map(renderGroup) : section.groups.map((g) => <FoldedRow key={g.id} name={groupDisplayName(g)} />)}
-              {isPrimary ? (
-                <ContactsAgentSectionState isEmpty={empty} onCreateAgent={onCreateAgent} />
-              ) : null}
-            </Collapse>
-          </div>
-        )
-      })}
-
-      {personSection}
-
-      <SectionLabel
-        interactive
-        className={sectionLabelClass}
-        trailing={<><span className={sidebarCountClass}>{partition.cloudGroups.length}</span><span className={chevronClass(!isOpen(GROUPS_KEY))}><ChevronDown size={14} /></span></>}
-        onClick={() => toggle(GROUPS_KEY)}
-      >
-        {t('panel.groupSectionTitle')}
-      </SectionLabel>
-      <Collapse open={isOpen(GROUPS_KEY)} onOpenChange={setOpen(GROUPS_KEY)} className="gg-c-sec-body">
-        {partition.cloudGroups.map(renderGroup)}
-        <ContactsGroupSectionState isEmpty={empty} onCreateGroup={onCreateGroup} />
-      </Collapse>
-    </>
-  )
+  // 设备一组带一行小标题;人 / 群紧随其后只隔一段留白(页标题已是「联系人」,❌ 再写一遍)。计数退到 --faint-fg,不和名字抢。
+  const sectionRow = (section: ContactsSection, className?: string) => row(section.key, iconOf(section), section.title,
+    <span className={cn(sidebarCountClass, 'text-[var(--faint-fg)]')}>{sectionCount(section)}</span>,
+    !requests.active && section.key === selectedKey, () => onSelect(section.key), false, className)
+  const devices = sections.filter((section) => section.kind === 'device')
+  const rest = sections.filter((section) => section.kind !== 'device')
+  return [
+    row(REQUESTS, UserPlus, ct('panel.newRequests'), requests.count > 0 ? <Chip tone="accent" shape="count">{requests.count}</Chip> : null,
+      requests.active, requests.onSelect, requests.disabled),
+    <SectionLabel key="devices-label" className="!mt-4">{ct('panel.devicesHeading')}</SectionLabel>,
+    ...devices.map((section) => sectionRow(section)),
+    ...rest.map((section, index) => sectionRow(section, index === 0 ? '!mt-4' : undefined)),
+  ]
 }
-
-// @@@folded-rows - 从没展开过的段(设备段默认收起):行只留名字这一个文字节点 —— 页内查找照样搜得到(#4323 hidden="until-found"),
-// 头像 SVG、状态、悬停菜单这些重的子树等第一次展开再挂。几何与完整行同高(头像位 + 单行),命中那一下浏览器滚到的位置不偏。
-// memo: the sections re-render on every device heartbeat and chat-list update (owner-scale: ~300 folded rows each
-// time, with the contacts page not even shown); a folded row only changes with its name.
-const FoldedRow = memo(function FoldedRow({ name }: { name: string }) {
-  return <ListRow leading={<div className="h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0" />} title={name} />
-})

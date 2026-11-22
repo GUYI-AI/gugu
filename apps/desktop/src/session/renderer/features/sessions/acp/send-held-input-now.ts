@@ -1,13 +1,13 @@
 import type { AcpLiveSession } from '@renderer/lib/acp/acp-live-session'
 import type { AcpChatStore } from './acp-chat-store'
-import { releaseQueuedSessionInput, state } from '@/lib/sessionInputOutboxBridge'
-import { withSessionInputDeadline } from '@/lib/sessionInputOutbox'
+import { releaseQueuedSessionInput, state } from '@/lib/outbox/kinds/sessionInput'
+import { withSessionInputDeadline } from '@/lib/sessionInput'
 
 /** The old host queue and the new local queue may coexist immediately after an upgrade. */
 export async function sendHeldInputNow(store: AcpChatStore, id: string, steers: boolean): Promise<void> {
   const session = store.session
-  const own = state(), account = own.accountId, sender = own.queue
-  const valid = () => own.valid() && own.accountId === account && own.queue === sender && store.session === session
+  const own = state(), account = own.accountId
+  const valid = () => own.valid() && own.accountId === account && store.session === session
   const transcript = store.chatState.transcript.state
   const turns = [...transcript.committedTurns, ...(transcript.activeTurnSnapshot ? [transcript.activeTurnSnapshot] : [])]
   if (!steers && session?.sessionState.current().queuedPrompts.some(input => !input.clientMessageId)) {

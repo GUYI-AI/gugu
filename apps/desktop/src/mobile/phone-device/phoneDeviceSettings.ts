@@ -3,6 +3,7 @@
  * `enabled` retains the installation-bound consent gate for existing grants; the
  * UI enables it only with an explicit category choice. It never permits remote actions.
  */
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import { useSyncExternalStore } from 'react'
 import { PHONE_ACTION_GROUPS, type PhoneActionGroup, type PhoneGroupGrants } from './phoneActionCatalog'
 
@@ -131,7 +132,7 @@ export function cachedPhoneInstallation(): { cachedInstallId: string | null; cac
 
 /** Cache the native registration; a restored WebView cannot carry consent to another installation. */
 export function phoneInstallId(installKey: string, registrationId: string, previousInstallKey?: string | null): string {
-  if (!installKey?.trim() || !registrationId?.trim()) throw new Error('无法读取这台手机的原生设备登记。请更新手机安装包后重试。')
+  if (!installKey?.trim() || !registrationId?.trim()) throw new Error(mobileWorkspaceText('phoneDevice.nativeRegistrationUnreadable'))
   try {
     const boundTo = localStorage.getItem(INSTALL_BOUND_KEY)
     if (boundTo !== installKey && (!previousInstallKey || boundTo !== previousInstallKey)) clearInstallationChoices()
@@ -140,7 +141,7 @@ export function phoneInstallId(installKey: string, registrationId: string, previ
     localStorage.setItem(INSTALL_BOUND_KEY, installKey)
     return registrationId
   } catch {
-    throw new Error('这台手机存不下设备标识(localStorage 不可用),没法登记成设备')
+    throw new Error(mobileWorkspaceText('phoneDevice.installIdUnavailable'))
   }
 }
 

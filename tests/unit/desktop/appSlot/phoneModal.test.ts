@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hostAppFrame } from '../../../../apps/desktop/src/components/appSlot/phoneAppHost';
 import { listenAppModals, type AppModalPresentation } from '../../../../apps/desktop/src/components/appModal/appModal';
-import { installedExtensionsStore } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store';
+import { installedExtensions } from '../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions';
 import { EXTENSION_API_VERSION, parseExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest';
 import { APP_FRAME_MARKER, APP_RUNTIME_GATE_PAGE } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol';
 
@@ -32,7 +32,7 @@ async function call(element: HTMLIFrameElement, method: string, args: Record<str
   return posted.get(element)!.mock.calls.map(([message]) => message).find((message) => message.id === id);
 }
 beforeEach(() => {
-  vi.spyOn(installedExtensionsStore, 'manifestFor').mockReturnValue(manifest);
+  installedExtensions.set(['phone'], { extensions: [manifest], invalid: [] } as never);
   Object.defineProperty(navigator, 'userActivation', { value: { isActive: false }, configurable: true });
   stop = listenAppModals((event) => { if (event.type === 'open') presentation = event.presentation; });
   frame = document.createElement('iframe'); frame.src = 'https://board.apps.gugu.invalid/main.html'; document.body.append(frame); watch(frame);

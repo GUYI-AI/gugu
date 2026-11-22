@@ -63,10 +63,6 @@ describe('tuiResumesExactly refuses what would not come back as the same convers
     expect(tuiResumesExactly(sessionFor(byMode('provider-id'), SESSION_ID))).toBe(false);
   });
 
-  it('caller-id whose stored id is not the one the argv would resume', () => {
-    expect(tuiResumesExactly(sessionFor(byMode('caller-id'), NATIVE_ID_SHAPES[0]!))).toBe(false);
-  });
-
   it('a provider that declares nothing', () => {
     const undeclared = pluginRegistry.getAll().find((plugin) => !plugin.capabilities.sessions.tuiResume)!;
     expect(tuiResumesExactly(sessionFor(undeclared.metadata.id, NATIVE_ID_SHAPES[0]!))).toBe(false);
@@ -100,6 +96,27 @@ describe('sessions.resumeNeedsProviderId: no native id yet ⇒ a fresh session, 
   for (const plugin of lenient) {
     it(`${plugin.metadata.id} keeps its own resume argv when no native id is stored`, () => {
       expect(resolveAgentSessionCommandArgs(sessionFor(plugin.metadata.id, SESSION_ID), true).isResuming).toBe(true);
+    });
+  }
+});
+
+describe('a caller-id session whose stored id the engine minted (claude --fork-session child) resumes that id', () => {
+  for (const plugin of declared.filter((candidate) => candidate.capabilities.sessions.tuiResume === 'caller-id')) {
+    it(`${plugin.metadata.id} resumes the engine-minted id, not the conversation id`, () => {
+      const session = sessionFor(plugin.metadata.id, NATIVE_ID_SHAPES[0]!);
+      const resolved = resolveAgentSessionCommandArgs(session, true);
+      const command = plugin.behavior.prompt!.buildCommand({
+        cli: plugin.metadata.id,
+        permissionMode: 'edit',
+        initialPrompt: undefined,
+        cliSessionId: resolved.cliSessionId,
+        providerSessionId: session.providerSessionId,
+        isResuming: resolved.isResuming,
+        model: '',
+      });
+      expect(command.args).toContain(NATIVE_ID_SHAPES[0]);
+      expect(command.args).not.toContain(SESSION_ID);
+      expect(tuiResumesExactly(session)).toBe(true);
     });
   }
 });

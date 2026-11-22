@@ -144,7 +144,7 @@ describe('filters', () => {
 describe('details', () => {
   test('⋯ › 详情: the file in full, where it is kept and until when, its versions; Escape closes it', async () => {
     row('spec').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    await menu.pick('详情')
+    await menu.pick('更多', '详情')
     expect($('details').hidden).toBe(false)
     expect($('details').querySelector('.details-title')!.textContent).toBe('spec.pdf')
     const said = facts()
@@ -152,7 +152,9 @@ describe('details', () => {
     expect(said['上传']).toMatch(/^张三，/)
     expect(said['改动']).toMatch(/^小雨，.*，第 2 版$/)
     expect(said['位置']).toBe('聊天文件')
-    expect(said['保留']).toMatch(/^临时 \(.*清除云端副本\)$/)
+    // How long it is kept is the switch here, the current way pressed, and until when (@@@file-menu).
+    expect($('details').querySelector('.details-keep [aria-pressed="true"]')!.textContent).toBe('临时')
+    expect(said['保留']).toMatch(/清除云端副本$/)
     await until('its versions', () => $('details').querySelectorAll('.details-versions li').length === 2)
     expect(gugu.files.versions).toHaveBeenCalledWith(expect.objectContaining({ id: 'spec' }))
     expect([...$('details').querySelectorAll('.details-actions button')].map((b) => b.textContent)).toEqual(['打开', '下载', '在聊天中定位'])
@@ -162,7 +164,7 @@ describe('details', () => {
 
   test('a file kept on a machine says which, and whether it is on', async () => {
     row('ckpt').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
-    await menu.pick('详情')
+    await menu.pick('更多', '详情')
     expect(facts()['存放']).toBe('GF server (离线)')
     expect(facts()['保留']).toBe('没有云端副本')
   })

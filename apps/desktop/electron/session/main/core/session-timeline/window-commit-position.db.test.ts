@@ -14,6 +14,7 @@ import type { WindowCommittedEvent } from './window-commit-tap';
 import * as publishers from './window-commit-publisher';
 import * as service from './service';
 import { persistCommittedTurn } from '../sessions/session-turn-store';
+import { until } from '../../../../../../../tests/support/awaitCondition';
 
 type Reader = ReturnType<typeof import('./desktop-source-reader').createDesktopSourceWindowReader>;
 const state = vi.hoisted(() => ({ db: undefined as AppDb | undefined, sqlite: undefined as Database.Database | undefined, root: '', primary: vi.fn(async () => false) }));
@@ -49,7 +50,7 @@ let fixture: Awaited<ReturnType<typeof openFixture>>, connected: Awaited<ReturnT
 let pair: ReturnType<typeof memoryTransportPair>, source: EventStreamSource<WindowCommittedEvent>;
 const input = { conversationId: 'c', subscriptionId: 'view' };
 beforeEach(async () => {
-  fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite; fixture.sqlite.pragma('synchronous=FULL');
+  fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
   fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id,provider,runtime) VALUES('c','p','claude','acp')");
   state.root = await mkdtemp(join(tmpdir(), 'commit-position-')); state.primary.mockResolvedValue(false);
   pair = memoryTransportPair(); source = new EventStreamSource<WindowCommittedEvent>({ generation: 27 });
@@ -76,7 +77,7 @@ it('waits an admitted real projection outside the canonical tail before returnin
   });
   const after = await open(); emit('A'); await entered.promise;
   const position = service.windowLivePosition({ ...input, referenceId: 'A', appliedCursor: after });
-  try { emit('B'); await vi.waitFor(() => expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({ n: 2 })); }
+  try { emit('B'); await until('turn B is stored', () => (fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get() as { n: number }).n, n => n === 2); }
   finally { gate.resolve(); }
   expect(await position).toMatchObject({ ok: true, value: { kind: 'committed', position: { rowId: 'c:0', referenceId: 'A' }, firstCommitCursor: { sequence: 1 } } });
   let count = 0, cursor = after;
@@ -143,7 +144,7 @@ it('returns the real committed A after an old positive probe travels across A co
   const pending=service.windowLivePosition({...input,referenceId:'A',appliedCursor:after});await entered.promise;
   emit('A');const page=await service.windowLiveRead({...input,after});if(!page.ok)throw new Error(JSON.stringify(page));
   await service.windowLiveAck({...input,through:page.value.next});emit('B');
-  await vi.waitFor(()=>expect(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get()).toEqual({n:2}));
+  await until('turn B is stored',()=>(fixture.sqlite.prepare('SELECT count(*) n FROM session_turns').get() as {n:number}).n,n=>n===2);
   probe.resolve(true);expect(await pending).toMatchObject({ok:true,value:{kind:'committed',position:{referenceId:'A'},firstCommitCursor:{sequence:1}}});
   let cursor=page.value.next;const next=await service.windowLiveRead({...input,after:cursor});if(!next.ok)throw new Error(JSON.stringify(next));cursor=next.value.next;
   await service.windowLiveAck({...input,through:cursor});

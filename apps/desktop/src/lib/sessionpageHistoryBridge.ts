@@ -15,6 +15,8 @@ export interface SessionpageHistory {
   forward(): void
   /** 历史游标一动就回调(会话页自己的后退/前进、换任务、换页签都算)。返回取消订阅。 */
   subscribe(listener: () => void): () => void
+  /** 游标此刻的位置(一个修订号):与 subscribe 一起就是 `useSelect` 能读的 Readable。 */
+  get(): number
 }
 
 export type SessionpageHistoryBridgeWindow = Pick<Window, 'dispatchEvent'> & {
@@ -32,4 +34,13 @@ export function readSessionpageHistory(
   w: SessionpageHistoryBridgeWindow = window as unknown as SessionpageHistoryBridgeWindow,
 ): SessionpageHistory | null {
   return w[SESSIONPAGE_HISTORY_KEY] ?? null
+}
+
+/** 桥本身(会话页晚加载、热更新重挂时换一份):挂上来时 READY 广播一次。给 `useSelect` 读。 */
+export const sessionpageHistoryBridge = {
+  get: (): SessionpageHistory | null => readSessionpageHistory(),
+  subscribe: (listener: () => void): (() => void) => {
+    window.addEventListener(SESSIONPAGE_HISTORY_READY_EVENT, listener)
+    return () => window.removeEventListener(SESSIONPAGE_HISTORY_READY_EVENT, listener)
+  },
 }

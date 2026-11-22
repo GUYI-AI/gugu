@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
-import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment } from './fileAccess'
-import { queryClient, replica } from './replica'
+import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes } from './fileAccess'
+import { replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
 import { openImageViewer, registerFullImage, type ImageViewerItem, type Size } from './imageViewer'
@@ -69,7 +69,7 @@ async function readAttachmentBytes(source: AttachmentSource, variant: Attachment
   if (source.kind === 'session-file') return sessionFileBytes(source)
   if (variant === 'thumb') {
     // A full copy already on this device (sent from here, or opened before) is the thumbnail: no signing, no download.
-    const local = metadata?.status === 'ready' && metadata.revision.content_type.startsWith('image/') ? await cachedAttachmentCopy(metadata.revision.sha256) : null
+    const local = metadata?.status === 'ready' ? await localAttachmentCopy(metadata.revision.sha256, metadata.revision.content_type) : null
     if (local && metadata?.status === 'ready') return { status: 'ready', blob: local, link: metadata.revision }
     const preview = await attachmentPreview(source, metadata)
     if (preview.status !== 'ready') return preview
@@ -83,9 +83,13 @@ async function readAttachmentBytes(source: AttachmentSource, variant: Attachment
   const file = await resolveAttachment(source, { ...(variant === 'shown' ? { showFirst: true as const } : {}), ...(progress ? { progress } : {}) })
   if (file.status !== 'ready') return file
   onLink?.(file.revision)
+  // The read is authorized now; a copy of this very version kept here (opened or sent before) is its bytes, without moving them again.
+  const kept = await localAttachmentCopy(file.revision.sha256, file.revision.content_type)
+  if (kept) { await file.dispose(); return { status: 'ready', blob: kept, link: file.revision } }
   const key = file.revision.sha256 === null ? null : fullKey(file.reader.accountId, file.revision.sha256)
+  // Only bytes that came over the network are kept: one read from this machine's own disk is already here.
   const keep = async (blob: Blob) => {
-    if (!key) return
+    if (!key || await file.fromDisk?.()) return
     try { await putAttachment(key, blob) }
     catch (error) { log.warn({ error }, 'authorized copy not kept') }
   }
@@ -130,8 +134,7 @@ async function sessionThumb(source: AttachmentSource, metadata?: FileMetadata): 
   const args = [sourceKey, metadata?.status === 'ready' ? metadata.revision.sha256 : metadata?.status ?? null, source, metadata ?? null] as const
   const bytes = await model.fetch(...args)
   // Bytes still on their way from the sender (or refused) are read again next time, not remembered for the run.
-  const key = bytes.status === 'pending' || bytes.status === 'unsent' ? model.key(...args) : null
-  if (key) queryClient.removeQueries({ queryKey: key, exact: true })
+  if (bytes.status === 'pending' || bytes.status === 'unsent') await model.reset(...args)
   return bytes
 }
 
@@ -339,16 +342,37 @@ export async function openAttachmentInSystemApp(source: AttachmentSource, fileNa
 }
 export const openFileHandle = (file: FileHandle, fileName: string) => platform.openRemoteFile(file, fileName)
 
-/** Reads only an existing full-size local copy; never signs or downloads. ACL is checked by the caller. */
-export async function cachedAttachmentCopy(sha256: string | null): Promise<Blob | null> {
+/**
+ * The one way to this machine's bytes of a sha: what the desktop holds on disk (its file store, or an original it sent,
+ * checked against the sha), else what this renderer kept of bytes it read over the network. Never signs or downloads; ACL
+ * is checked by the caller.
+ */
+export async function localAttachmentCopy(sha256: string | null, contentType = ''): Promise<Blob | null> {
   if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) return null
+  const native = await nativeLocalBytes(sha256, contentType)
+  if (native) try { return await native.blob() } finally { await native.release() }
+  return keptAttachmentCopy(sha256, contentType)
+}
+
+/** The same bytes as an address a `<video>` reads in ranges: main's own, or a URL of what this renderer kept. */
+export async function localAttachmentUrl(sha256: string | null, contentType = ''): Promise<{ url: string; release(): Promise<void> } | null> {
+  if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) return null
+  const native = await nativeLocalBytes(sha256, contentType)
+  if (native) return native
+  const kept = await keptAttachmentCopy(sha256, contentType)
+  if (!kept) return null
+  const url = URL.createObjectURL(kept)
+  return { url, release: async () => URL.revokeObjectURL(url) }
+}
+
+async function keptAttachmentCopy(sha256: string, contentType: string): Promise<Blob | null> {
   const hit = await (await attachmentCache()).match(fullKey(fileReader().accountId, sha256))
   if (!hit) return null
   const blob = await hit.blob()
-  return await blobSha256(blob) === sha256 ? blob : null
+  return await blobSha256(blob) === sha256 ? blob.slice(0, blob.size, contentType || blob.type) : null
 }
 
-/** A file this device sends is a full local copy of what it commits: kept by its sha256, read back by cachedAttachmentCopy. */
+/** Where there is no main process (the phone, the web), the bytes a device sends are kept here, read back by localAttachmentCopy. */
 export async function keepSentAttachment(file: Blob, sha256?: string): Promise<void> {
   await putAttachment(fullKey(fileReader().accountId, sha256 ?? await blobSha256(file)), file)
 }

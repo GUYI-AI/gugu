@@ -15,7 +15,14 @@ const BESIDE_MIN_WIDTH = 960
  * two sit side by side; narrow (a chat's panel, a phone), it opens over the page, with a way back. The page itself is never
  * moved, unmounted or given up — only hidden while covered — so it is just as it was when what was opened closes.
  */
-export const AppPeekSlot = observer(function AppPeekSlot({ sessionId, tabId, narrow = false, children }: { sessionId: string | null; tabId: string; narrow?: boolean; children: ReactNode }) {
+export const AppPeekSlot = observer(function AppPeekSlot({ sessionId, tabId, chatId, narrow = false, children }: {
+  sessionId: string | null;
+  tabId: string;
+  /** The chat the page is drawn in: what it opens beside it is that chat's too (its selection's Cite and Annotate go there). */
+  chatId?: string;
+  narrow?: boolean;
+  children: ReactNode;
+}) {
   const target = peekStore.of(sessionId, tabId)
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [width, setWidth] = useState(0)
@@ -48,7 +55,7 @@ export const AppPeekSlot = observer(function AppPeekSlot({ sessionId, tabId, nar
           data-peek-kind={target.kind}
         >
           <Suspense fallback={null}>
-            <AppPeek target={target} slotKey={`${sessionId ?? ''}:${tabId}`} beside={beside} onClose={close} />
+            <AppPeek target={target} slotKey={`${sessionId ?? ''}:${tabId}`} {...(chatId ? { chatId } : {})} beside={beside} onClose={close} />
           </Suspense>
         </div>
       ) : null}

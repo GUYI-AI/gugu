@@ -10,12 +10,14 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { github: {}, projects: {} }, events: { on: () => () => {} } }));
 vi.mock('@renderer/lib/modal/modal-provider', () => ({ useShowModal: () => vi.fn() }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn(), useToast: () => ({ toast: vi.fn() }) }));
+const reading = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock('@renderer/lib/hooks/useGithubAccounts', async (original) => ({ ...(await original<object>()), useGitHubAccounts: () => reading.current }));
 
-const { GitHubAccountRows } = await import('./GitHubAccountsSection');
+const { GitHubAccountRows, GitHubAccountsSection } = await import('./GitHubAccountsSection');
 
 const account = { accountId: 'gh:1', login: 'octo', isDefault: false, source: 'device-flow' } as never;
 
-async function render(readOnly: boolean) {
+async function render(readOnly: boolean, section = false) {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
   vi.stubGlobal('window', dom.window);
   vi.stubGlobal('document', dom.window.document);
@@ -32,15 +34,17 @@ async function render(readOnly: boolean) {
         React.createElement(
           SessionLocalizationProvider,
           null,
-          React.createElement(GitHubAccountRows, { accounts: [account], readOnly })
+          section ? React.createElement(GitHubAccountsSection) : React.createElement(GitHubAccountRows, { accounts: [account], readOnly })
         )
       )
     );
   });
   const buttons = [...dom.window.document.querySelectorAll('button')];
+  const said = dom.window.document.querySelector('[data-refresh-failed]') !== null;
+  const text = dom.window.document.body.textContent ?? '';
   act(() => root.unmount());
   vi.unstubAllGlobals();
-  return buttons;
+  return Object.assign(buttons, { said, text });
 }
 
 describe('别的机器上的 GitHub 账号行(#6264)', () => {
@@ -53,5 +57,16 @@ describe('别的机器上的 GitHub 账号行(#6264)', () => {
   it('在线:照常可点', async () => {
     const buttons = await render(false);
     expect(buttons.some((button) => !button.disabled)).toBe(true);
+  });
+});
+
+describe('the accounts read before, a re-read that fails', () => {
+  it('stay listed, and the failure is said with a retry (❌ shown as current)', async () => {
+    reading.current = { state: 'value', value: [account], stale: false, error: new Error('machine unreachable') };
+    const drawn = await render(false, true);
+    expect(drawn.text).toContain('octo');
+    expect(drawn.said).toBe(true);
+    reading.current = { state: 'value', value: [account], stale: false, error: null };
+    expect((await render(false, true)).said).toBe(false);
   });
 });

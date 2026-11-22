@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: {} }, events: { on: () => () => {} } }));
+// Each render is another host (`remote:<n>`): the page reads its tools, skills, data and settings through that host's API.
+const apis = vi.hoisted(() => new Map<string, unknown>());
+vi.mock('@renderer/lib/ipc', () => ({ rpc: { extensions: {} }, rpcOn: (id: string) => ({ extensions: apis.get(id) }), events: { on: () => () => {} }, onMachineEvent: () => () => {} }));
+let hosts = 0;
 // The 「给哪些 agent」 section reaches the window-bound platform layer; these pages are about the page's own words.
 vi.mock('./app-given-section', () => ({ AppGivenSection: () => React.createElement('div', { 'data-testid': 'given' }) }));
 
@@ -44,6 +47,10 @@ const api = {
 };
 
 async function render(props: Record<string, unknown>, then?: (document: Document) => Promise<void>) {
+  const device = `manage-${++hosts}`;
+  const given = (props.api ?? api) as Record<string, unknown>;
+  const settings = (props.settingsApi as { read?: unknown } | undefined)?.read;
+  apis.set(device, settings ? { ...given, settings } : given);
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
   for (const key of ['window', 'document', 'HTMLElement', 'Element', 'Node', 'navigator', 'getComputedStyle'] as const) {
     vi.stubGlobal(key, key === 'getComputedStyle' ? dom.window.getComputedStyle.bind(dom.window) : dom.window[key]);
@@ -61,9 +68,12 @@ async function render(props: Record<string, unknown>, then?: (document: Document
       onBack: () => undefined,
       onLifecycle: () => undefined,
       onOpenExternal: () => undefined,
+      hostKey: `remote:${device}`,
       ...props,
     } as never));
   });
+  // Its reads are replicas: their answers land after a task boundary (react-query's notify), ❌ a clock.
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   const document = dom.window.document;
   const text = document.body.textContent ?? '';
   if (then) await then(document);
@@ -82,6 +92,44 @@ describe('App 设置页', () => {
       expect(document.querySelector('[data-testid="app-manage-skills"]')?.textContent).toContain('notes');
     });
     expect(api.agentTools).toHaveBeenCalledWith({ extensionId: 'notes' });
+  });
+
+  it('read before, a refresh that fails is said with a retry, what was read staying: tools, skills, data size', async () => {
+    let fail = false;
+    const failing = <T,>(data: T) => vi.fn(async () => (fail ? { success: false, error: 'machine unreachable' } : { success: true, data }));
+    const given = { ...api, agentTools: failing([{ name: 'add', about: 'Add a note' }]), agentSkills: failing(['notes']), appData: failing({ bytes: 2048 }) };
+    const { extensionAgentTools, extensionAgentSkills, extensionDataBytes } = await import('../market-replicas');
+    apis.set('manage-refresh', given);
+    await render({ api: given, hostKey: 'remote:manage-refresh', onClearData: () => undefined }, async (document) => {
+      expect(document.querySelectorAll('[data-refresh-failed]')).toHaveLength(0);
+      fail = true;
+      await act(async () => {
+        await Promise.all([
+          extensionAgentTools.refresh('remote:manage-refresh', 'notes', '1.0.0'),
+          extensionAgentSkills.refresh('remote:manage-refresh', 'notes', '1.0.0'),
+          extensionDataBytes.refresh('remote:manage-refresh', 'notes'),
+        ]).catch(() => undefined);
+      });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(document.querySelectorAll('[data-refresh-failed]')).toHaveLength(3);
+      expect(document.querySelector('[data-testid="app-manage-tools"]')?.textContent).toContain('extensions.manageTools(1)');
+      expect(document.querySelector('[data-testid="app-manage-skills"]')?.textContent).toContain('notes');
+    });
+  });
+
+  it('the tools heading waits for the tools: never 「给 agent 的工具」 first and then 「工具（N）」', async () => {
+    let answer!: (reply: unknown) => void;
+    const agentTools = vi.fn(() => new Promise((resolve) => { answer = resolve; }));
+    await render({ api: { ...api, agentTools } }, async (document) => {
+      const row = () => document.querySelector('[data-testid="app-manage-tools"]');
+      expect(row()?.textContent).not.toContain('extensions.addsTools');
+      expect(row()?.textContent).not.toContain('extensions.inspecting');
+      expect(row()?.querySelector('[data-unknown]')).not.toBeNull();
+      await act(async () => { answer({ success: true, data: [{ name: 'add', about: 'Add a note' }, { name: 'list', about: null }] }); });
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+      expect(row()?.textContent).toContain('extensions.manageTools(2)');
+      expect(row()?.querySelector('[data-unknown]')).toBeNull();
+    });
   });
 
   it('a section it has nothing for is not drawn: an App from a folder has no version history, the phone no agents', async () => {

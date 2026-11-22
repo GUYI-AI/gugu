@@ -49,10 +49,6 @@ vi.mock('@renderer/lib/stores/app-state', () => ({
     launchedByAssistant: () => false,
   },
 }))
-vi.mock('@renderer/features/extensions/installed-extensions-store', () => ({
-  installedExtensionsStore: { isLoaded: true, manifestFor: () => undefined, appName: () => undefined },
-  InstalledExtensionsStore: class {},
-}))
 vi.mock('@renderer/features/sessions/archive-session-flow', () => ({
   requestArchiveSession: () => undefined,
   archiveSessionNow: () => undefined,
@@ -71,6 +67,10 @@ import { SidebarSessionItem } from '@renderer/features/sidebar/sidebar-session-i
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
+import { installedExtensions } from '@renderer/features/extensions/installed-extensions'
+
+// Nothing installed on this computer (the sidebar's rows name no App).
+installedExtensions.set(['local'], { extensions: [], invalid: [] } as never)
 
 let root: Root
 let host: HTMLDivElement

@@ -144,6 +144,8 @@ it.each(['off', 'error', 'timeout'] as const)('can cancel a real persisted autho
   localStorage.setItem(OAUTH_PENDING_STORAGE_KEY, JSON.stringify({ version: 1, id: '5aa55e8b-f140-4d30-81bb-692d26e17c91', phase: 'authorizing', expiresAt: Date.now() + 300_000 }))
   vi.stubGlobal('fetch', async () => mode === 'timeout' ? new Promise<Response>(() => {})
     : Response.json({ external: { google: false } }, { status: mode === 'error' ? 503 : 200 }))
+  // The sign-in methods are a replica: its answers are published at once here, as in the app's act()-free frames.
+  ;(await import('@tanstack/react-query')).notifyManager.setScheduler((callback) => { callback() })
   const { googleLogin } = await import('../../../../apps/desktop/src/lib/googleLogin')
   googleLogin.initialize()
   await vi.waitFor(() => expect(googleLogin.getSnapshot().phase).toBe('authorizing'))

@@ -17,8 +17,8 @@ describe('the file storage setting across client versions', () => {
     io.writes = []
     io.config = { other: 'keep', file_storage: { image_retention: '30d', temporary_retention: '1d', later_key: { any: 1 } } }
   })
-  it('reads a setting a newer client wrote, and writing back keeps the keys this client does not know', async () => {
-    expect(await readFileStorage('u')).toMatchObject({ image_retention: '30d', retention: '7d' })
+  it('reads a setting another client wrote, and writing back keeps the keys this client does not know', async () => {
+    expect(await readFileStorage('u')).toMatchObject({ temporary_retention: '1d', retention: '7d' })
     await writeFileStorage('u', { retention: '1d' })
     expect(io.writes).toEqual([{ other: 'keep', file_storage: {
       proactive_upload: false, temporary_transfer: true, retention: '1d', image_retention: '30d', temporary_retention: '1d', later_key: { any: 1 },

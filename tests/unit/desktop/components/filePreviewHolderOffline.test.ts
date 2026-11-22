@@ -15,7 +15,7 @@ const { readBytes, metadata, devices } = vi.hoisted(() => ({
 vi.mock('@/lib/guguLinks', () => ({ openLinkTarget: vi.fn() }))
 vi.mock('@/platform', () => ({ platform: { kind: 'electron' } }))
 vi.mock('@/lib/attachmentBytes', () => ({
-  attachmentBytes: readBytes, sourceKeyOf: () => 'notes', attachmentPreview: vi.fn(), openAttachmentInSystemApp: vi.fn(),
+  attachmentBytes: readBytes, sourceKeyOf: () => 'notes', attachmentPreview: vi.fn(), localAttachmentUrl: async () => null, openAttachmentInSystemApp: vi.fn(),
 }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: metadata }))
 vi.mock('@/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: devices.rows }) }))
@@ -72,7 +72,7 @@ describe('a project file whose machine is off', () => {
     for (const answer of [kept(true, 'Studio Mac'), { status: 'ready', revision: { source: 'managed-object' } }]) {
       metadata.mockResolvedValue(answer)
       await open()
-      expect(pane.textContent).toBe('文件暂时打不开')
+      expect(pane.textContent).toBe('文件暂时无法打开')
       harness.cleanup(); harness = createReactHarness(); pane.replaceChildren()
     }
   })

@@ -1,3 +1,4 @@
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import type { IOSOwnerBinding } from '../ios-runtime/iosOwnerClient'
 import { IOSAgentError, iosHostFailure, sameIOSBinding, type IOSAgentClient, type IOSHostState } from './iosAgentClient'
 import { IOSNotificationsSettings, type IOSNotificationsMeta, type IOSNotificationsValue } from './iosNotificationsSettings'
@@ -71,7 +72,7 @@ export class IOSHostRuntimeStore {
     const epoch = ++this.epoch
     ++this.settingsSequence; this.removeListener()
     if (sameIOSBinding(next, this.failedStop)) {
-      this.set({ phase: 'failed', binding: next, host: null, settings: unknownSettings(), error: this.state.error ?? new IOSAgentError('stop_failed', '本机宿主尚未停止，请重试。') })
+      this.set({ phase: 'failed', binding: next, host: null, settings: unknownSettings(), error: this.state.error ?? new IOSAgentError('stop_failed', mobileWorkspaceText('ios.hostNotStopped')) })
       return
     }
     if (sameIOSBinding(next, this.paused)) {
@@ -91,7 +92,7 @@ export class IOSHostRuntimeStore {
       && sameIOSBinding(publication.binding, binding) && sameIOSBinding(this.desired, binding)
   }
   private require(binding: IOSOwnerBinding, epoch: number): void {
-    if (!this.current(binding, epoch)) throw new IOSAgentError('stale_context', '本机宿主身份已变化。')
+    if (!this.current(binding, epoch)) throw new IOSAgentError('stale_context', mobileWorkspaceText('ios.hostIdentityChanged'))
   }
   private async configuredState(binding: IOSOwnerBinding, epoch: number): Promise<IOSHostState> {
     this.require(binding, epoch)
@@ -164,14 +165,14 @@ export class IOSHostRuntimeStore {
   }
   async updateNotifications(value: IOSNotificationsValue, originalId: string): Promise<IOSNotificationsMeta> {
     const binding = this.desired, epoch = this.epoch
-    if (!binding || this.state.phase !== 'configured') throw new IOSAgentError('host_not_ready', '本机设置入口尚未配置。')
+    if (!binding || this.state.phase !== 'configured') throw new IOSAgentError('host_not_ready', mobileWorkspaceText('ios.settingsNotConfigured'))
     this.require(binding, epoch)
     const sequence = ++this.settingsSequence
     this.set({ ...this.state, settings: { status: 'loading', meta: null, error: null } })
     try {
       const meta = await this.settingsBridge(binding, epoch).update(value, originalId)
       this.require(binding, epoch)
-      if (sequence !== this.settingsSequence) throw new IOSAgentError('stale_context', '本机设置请求已被替代。')
+      if (sequence !== this.settingsSequence) throw new IOSAgentError('stale_context', mobileWorkspaceText('ios.settingsSuperseded'))
       this.set({ ...this.state, settings: { status: 'ready', meta, error: null } }); return meta
     } catch (cause) {
       if (this.current(binding, epoch) && sequence === this.settingsSequence) this.set({ ...this.state, settings: { status: 'unknown', meta: null, error: iosHostFailure(cause) } })
@@ -184,7 +185,7 @@ export class IOSHostRuntimeStore {
     if (!binding) return
     const publication = this.owner.getSnapshot()
     if (!this.subscribers || publication.status !== 'ready' || !sameIOSBinding(publication.binding, binding)) {
-      throw new IOSAgentError('stale_context', '本机宿主身份已变化。')
+      throw new IOSAgentError('stale_context', mobileWorkspaceText('ios.hostIdentityChanged'))
     }
     const epoch = ++this.epoch
     ++this.settingsSequence; ++this.configureSequence; this.removeListener()

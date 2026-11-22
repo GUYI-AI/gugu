@@ -136,6 +136,24 @@ export async function listProviderContinuationIntents(
   return intents.filter((intent): intent is ProviderContinuationIntent => intent !== null);
 }
 
+/**
+ * 这条会话自己那份分叉记录(没有就是 null)。分叉在引擎铸出子 id 之前就退了的会话,再起时要从这里取来源、重新分叉。
+ */
+export async function readProviderContinuationIntent(
+  sessionPath: string,
+  sessionId: string
+): Promise<ProviderContinuationIntent | null> {
+  const filePath = intentPathFor(await realpath(sessionPath), sessionId);
+  let raw: string;
+  try {
+    raw = await readFile(filePath, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+  return parseIntent(raw, filePath);
+}
+
 export async function completeProviderContinuationIntent(
   sessionPath: string,
   intent: ProviderContinuationIntent,

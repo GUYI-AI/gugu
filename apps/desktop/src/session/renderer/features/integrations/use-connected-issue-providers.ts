@@ -18,7 +18,7 @@ export function useConnectedIssueProviders(
 
   const connectedProviders = useMemo(
     () =>
-      integrations
+      !integrations || !connectionStatus ? [] : integrations
         .filter(isIssueIntegration)
         .map((integration) => integration.id)
         .filter((provider) => isProviderUsable(connectionStatus[provider], context)),
@@ -26,7 +26,7 @@ export function useConnectedIssueProviders(
   );
 
   const checkUsable = useMemo(
-    () => (provider: IssueProviderType) => isProviderUsable(connectionStatus[provider], context),
+    () => (provider: IssueProviderType) => isProviderUsable(connectionStatus?.[provider], context),
     [connectionStatus, context]
   );
 

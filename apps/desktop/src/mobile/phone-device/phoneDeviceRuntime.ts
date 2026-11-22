@@ -7,6 +7,7 @@
  * 只在咕咕开着(含「后台守着」)时活着 —— 第一版不接推送(owner 2026-10-15)。被划掉之后心跳停,2 分钟后判离线。
  * 先登记再订频道:频道的放行看「这台设备在不在这个账号名下」,行还没有就会被拒。
  */
+import { mobileWorkspaceText } from '@/i18n/registerMobileWorkspaceCatalog'
 import { useSyncExternalStore } from 'react'
 import {
   deviceRpcChannelName,
@@ -46,12 +47,12 @@ import type { JoinDeviceTopic } from '@gugu/core/cloud/deviceRpcAttach'
 import { readPhoneDataStatus } from './phoneDataActions'
 import { phoneDeviceRow } from './phoneDeviceRow'
 import { registerGuguDevice } from '@gugu/core/cloud/deviceRegistration'
-import { readPhoneInstallation } from './phoneInstallation'
+import { readPhoneInstallationOf } from './phoneInstallation'
+import { replica } from '@/lib/replica'
 import {
   effectiveGrants,
   groupGranted,
   phoneDeviceId,
-  phoneInstallId,
   readPhoneDeviceSettings,
   setPhoneAgentHostEnabled,
   setPhoneDeviceEnabled,
@@ -79,9 +80,6 @@ export const RECENT_CALLS_LIMIT = 30
 
 export interface PhoneDeviceSnapshot {
   link: PhoneDeviceLink
-  /** 系统此刻给了什么;还没读到 = null。 */
-  os: PhoneOsState | null
-  info: PhoneDeviceInfo | null
   deviceId: string | null
   /** 最近一次心跳成功的时刻。 */
   lastHeartbeatAt: number | null
@@ -89,9 +87,8 @@ export interface PhoneDeviceSnapshot {
   host: PhoneAgentHostState | null
 }
 
-const OFF: PhoneDeviceSnapshot = { link: { state: 'off' }, os: null, info: null, deviceId: null, lastHeartbeatAt: null, recent: [], host: null }
+const OFF: PhoneDeviceSnapshot = { link: { state: 'off' }, deviceId: null, lastHeartbeatAt: null, recent: [], host: null }
 let snapshot: PhoneDeviceSnapshot = OFF
-let osReadRevision = 0
 const listeners = new Set<() => void>()
 
 function publish(next: Partial<PhoneDeviceSnapshot>): void {
@@ -116,14 +113,26 @@ export async function readPhoneOsState(): Promise<PhoneOsState> {
   return { runtime, special, health, data }
 }
 
-/** All readers share ordering, including the settings page while both endpoints are off. */
-async function readLatestOs(isCurrent: () => boolean, apply: (os: PhoneOsState) => void = () => {}): Promise<boolean> {
-  const revision = ++osReadRevision
-  const os = await readPhoneOsState()
-  if (revision !== osReadRevision || !isCurrent()) return false
-  apply(os)
-  publish({ os })
-  return true
+/** What the system grants this phone now (device): the one holder of the OS permission state. ❌ Persisted. */
+export const phoneOsState = replica({
+  name: 'phoneOsState',
+  scope: 'device',
+  read: () => readPhoneOsState(),
+})
+
+function osNow(): PhoneOsState | null {
+  const reading = phoneOsState.peek()
+  return reading.state === 'value' ? reading.value : null
+}
+
+/**
+ * A new read of the OS state (heartbeat, foreground return, the settings page through refreshPhoneDevice): `reread`
+ * reads anew and the read begun last lands, so a permission changed in the system settings is not answered by an older
+ * read. Whether the caller goes on (the session that asked is still the current one) is the caller's.
+ */
+async function readLatestOs(isCurrent: () => boolean): Promise<boolean> {
+  await phoneOsState.reread()
+  return isCurrent()
 }
 
 /** 网页比安装包新时,原生还没有 healthStatus:如实标成「这个版本读不了」(old_app),❌ 让整份系统状态读失败。 */
@@ -168,14 +177,12 @@ export function startPhoneDevice(options: {
   claimNotice: (label: string) => () => void
 }): () => void {
   session?.stop()
-  osReadRevision++
   const beforeBoot = previousSessionDrain
   const { userId } = options
   let alive = true
   let deviceId: string | null = null
   let installId: string | null = null
   let info: PhoneDeviceInfo | null = null
-  let os: PhoneOsState | null = null
   let capability: DeviceActionsCapability | null = null
   let channel: ManagedRealtimeChannel | null = null
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null
@@ -188,7 +195,7 @@ export function startPhoneDevice(options: {
   let hostTimer: ReturnType<typeof setInterval> | null = null
   let stoppingHost: Promise<void> | null = null
   let booting: Promise<void> | null = null
-  const readCurrentOs = () => readLatestOs(() => alive, (next) => { os = next })
+  const readCurrentOs = () => readLatestOs(() => alive)
 
   let recent: PhoneActionCall[] = []
 
@@ -206,7 +213,7 @@ export function startPhoneDevice(options: {
   const provider = createPhoneActionProvider({
     action: phoneActionByName,
     granted: (group) => alive && groupGranted(readPhoneDeviceSettings(userId), group),
-    os: () => os,
+    os: () => osNow(),
     manifest: () => capability?.actions ?? [],
     record: (entry) => {
       if (!alive) return
@@ -223,14 +230,14 @@ export function startPhoneDevice(options: {
     const host = await nativeAgent.hostState({ ownerId: userId })
     if (!alive) return
     publish({ host, ...(host.lastHeartbeatAt !== undefined ? { lastHeartbeatAt: host.lastHeartbeatAt } : {}), ...(host.ready ? { link: { state: 'online' as const, since: snapshot.link.state === 'online' ? snapshot.link.since : Date.now() } }
-      : host.status === 'failed' ? { link: { state: 'error' as const, message: host.error ?? '手机宿主启动失败', at: Date.now() } } : {}) })
+      : host.status === 'failed' ? { link: { state: 'error' as const, message: host.error ?? mobileWorkspaceText('phoneDevice.hostStartFailed'), at: Date.now() } } : {}) })
   }
 
   let rpcHost: ReturnType<typeof createPhoneDeviceRpcHost> | null = null
   const join: JoinDeviceTopic = (name, handlers) => new Promise((resolve, reject) => {
     let topic: ManagedRealtimeChannel | null = null
     let joined = false
-    const timer = setTimeout(() => { reject(new Error('手机设备频道订阅超时')); if (topic) unsubscribeAuthenticatedRealtimeChannel(topic) }, 12_000)
+    const timer = setTimeout(() => { reject(new Error(mobileWorkspaceText('phoneDevice.channelTimeout'))); if (topic) unsubscribeAuthenticatedRealtimeChannel(topic) }, 12_000)
     const create = () => dataClient.channel(name, { config: { private: true, broadcast: { self: false, ack: true } } })
       .on('broadcast', { event: '*' }, handlers.onMessage)
     topic = subscribeAuthenticatedRealtimeChannel(create, `phone-device-asker:${name}`, {
@@ -244,7 +251,7 @@ export function startPhoneDevice(options: {
       },
       onStatus: (status, err) => {
         if (!isSubscribeFailure(status)) return
-        const error = err ?? new Error(`手机设备频道断开:${subscribeStatusName(status)}`)
+        const error = err ?? new Error(mobileWorkspaceText('phoneDevice.channelClosed', { status: subscribeStatusName(status) }))
         if (!joined) {
           clearTimeout(timer)
           reject(error)
@@ -256,6 +263,7 @@ export function startPhoneDevice(options: {
   })
 
   const rebuildCapability = () => {
+    const os = osNow()
     if (!os) return false
     const next = buildPhoneActionsCapability(effectiveGrants(readPhoneDeviceSettings(userId)), os)
     if (capability && capabilityFingerprint(capability) === capabilityFingerprint(next)) return false
@@ -281,7 +289,7 @@ export function startPhoneDevice(options: {
       await withPhoneHostAuthHandoff(async () => {
         if (!alive || !deviceId || !installId || !info) return
         const currentAuth = getRendererSession()
-        if (!currentAuth || currentAuth.user.id !== userId) throw new Error('手机宿主的登录状态已改变')
+        if (!currentAuth || currentAuth.user.id !== userId) throw new Error(mobileWorkspaceText('phoneDevice.hostAuthChanged'))
         const auth = phoneHostSessionForHandoff(currentAuth)
         await nativeAgent.configure({ ownerId: userId, deviceId, installId, deviceInfo: info,
           supabaseUrl: getSupabaseUrl(), supabaseAnonKey: getSupabaseAnonKey(), accessToken: auth.access_token,
@@ -343,7 +351,7 @@ export function startPhoneDevice(options: {
       },
       onStatus: (status, err) => {
         if (!isSubscribeFailure(status)) return
-        const message = err instanceof Error ? err.message : `频道没订上:${subscribeStatusName(status)}`
+        const message = err instanceof Error ? err.message : mobileWorkspaceText('phoneDevice.channelSubscribeFailed', { status: subscribeStatusName(status) })
         joined = false
         log.warn({ status: subscribeStatusName(status), error: message }, 'phone device channel failed')
         publish({ link: { state: 'error', message, at: Date.now() } })
@@ -366,10 +374,10 @@ export function startPhoneDevice(options: {
         collecting = false
         syncCollecting()
       }
-      const installation = await readPhoneInstallation(userId)
+      const installation = await readPhoneInstallationOf(userId)
       if (!alive) return
-      info = installation
-      installId = phoneInstallId(info.install_key ?? '', info.registration_id ?? '', info.previous_install_key)
+      info = installation.info
+      installId = installation.installId
       deviceId = phoneDeviceId(installId, userId)
       if (!embeddedHost) rpcHost = createPhoneDeviceRpcHost({ userId, deviceId, provider, join,
         replyShared: async (payload) => { if (!channel) return; await channel.send({ type: 'broadcast', event: 'broadcast', payload }) },
@@ -377,7 +385,7 @@ export function startPhoneDevice(options: {
       })
       await readCurrentOs()
       if (!alive) return
-      publish({ info, deviceId })
+      publish({ deviceId })
       rebuildCapability()
       await beat()
       if (!alive) return
@@ -436,7 +444,6 @@ export function startPhoneDevice(options: {
     stop: () => {
       if (!alive) return
       alive = false
-      osReadRevision++
       if (heartbeatTimer) clearInterval(heartbeatTimer)
       if (hostTimer) clearInterval(hostTimer)
       unsubscribeSettings()
@@ -464,8 +471,8 @@ export function startPhoneDevice(options: {
       }
       if (session === current) session = null
       previousSessionDrain = current.drain()
-      // 系统权限的读数留着:设置页关掉总开关之后仍要显示各组「系统给没给」。
-      publish({ ...OFF, os: snapshot.os, info: snapshot.info })
+      // 系统权限的读数留着(phoneOsState):设置页关掉总开关之后仍要显示各组「系统给没给」。
+      publish(OFF)
     },
     refresh: refreshOs,
     drain: async () => {
@@ -522,17 +529,17 @@ async function retainPhoneAgentDevice(userId: string, deviceId: string): Promise
   const host = await nativeAgent.hostState({ ownerId: userId })
   if (!host.sessions.length) return false
   if (host.ownerId !== userId || host.deviceId !== deviceId || thisPhoneDeviceId(userId) !== deviceId || getRendererSession()?.user.id !== userId) {
-    throw new Error('手机会话与当前账号或设备不一致')
+    throw new Error(mobileWorkspaceText('phoneDevice.sessionMismatch'))
   }
   const { data, error } = await identityDb.from('gugu_devices').select('capabilities').eq('user_id', userId).eq('device_id', deviceId).maybeSingle()
   if (error) throw new Error(error.message)
   if (!data) return false
   const capabilities = data.capabilities
-  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities) || capabilities.host_kind !== 'phone') throw new Error('手机设备登记信息不一致')
+  if (!capabilities || typeof capabilities !== 'object' || Array.isArray(capabilities) || capabilities.host_kind !== 'phone') throw new Error(mobileWorkspaceText('phoneDevice.registrationMismatch'))
   // A newer user action may already have enabled either endpoint again.
   const settings = readPhoneDeviceSettings(userId)
   if (settings.enabled || settings.hostEnabled) return true
-  if (getRendererSession()?.user.id !== userId) throw new Error('手机宿主的登录状态已改变')
+  if (getRendererSession()?.user.id !== userId) throw new Error(mobileWorkspaceText('phoneDevice.hostAuthChanged'))
   const updated = await identityDb.from('gugu_devices').update({ status: 'offline', updated_at: new Date().toISOString(), capabilities: { ...capabilities, runtimes: [] } }).eq('user_id', userId).eq('device_id', deviceId)
   if (updated.error) throw new Error(updated.error.message)
   return true

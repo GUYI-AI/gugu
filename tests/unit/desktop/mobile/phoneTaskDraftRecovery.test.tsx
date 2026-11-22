@@ -6,8 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
 import { readComposer, writeComposer } from '../../../support/composerEditor'
 import { stubVisibleIntersection } from '../../../support/visibleIntersection'
-import { EMPTY, state as outboxState } from '../../../../apps/desktop/src/lib/sessionInputOutboxBridge'
-import type { SessionInputOutbox } from '../../../../apps/desktop/src/lib/sessionInputOutbox'
+import { EMPTY, state as outboxState } from '../../../../apps/desktop/src/lib/outbox/kinds/sessionInput'
+import { installOutboxCore } from '../../../helpers/sessionInputOutbox'
 
 const transcript = vi.hoisted(() => ({ commands: undefined as ChatCommands | undefined, pendingMessages: undefined as unknown }))
 const auth = vi.hoisted(() => ({ owner: 'draft-owner-a' }))
@@ -43,6 +43,7 @@ async function show(onSend = async (_text: string) => undefined) {
     agentWorking: false, onStop: () => undefined, stopping: false, onLoadOlder: async () => undefined,
   }), { auth: { id: auth.owner } })
 }
+let core: ReturnType<typeof installOutboxCore> | undefined
 beforeEach(() => {
   stubVisibleIntersection()
   localStorage.clear(); auth.owner = 'draft-owner-a'; rpc.invoke.mockReset(); rpc.invoke.mockImplementation(() => new Promise(() => undefined)); harness = createReactHarness()
@@ -50,14 +51,16 @@ beforeEach(() => {
 })
 afterEach(() => {
   harness.cleanup(); Element.prototype.scrollTo = oldScroll; vi.unstubAllGlobals()
-  Object.assign(outboxState(), { accountId: null, queue: null, rows: EMPTY, valid: () => false })
+  core?.dispose(); core = undefined
+  Object.assign(outboxState(), { accountId: null, rows: EMPTY, valid: () => false })
 })
 
 it.each([false, true])('keeps phone history stable while typing with rejected input %s, preserving retry and edit actions', async rejected => {
-  const retry = vi.fn().mockResolvedValue(undefined)
-  const flush = vi.fn().mockResolvedValue(undefined)
+  // The window's one outbox: a retry is its retry of that id, never a drain of everything (kick).
+  core = installOutboxCore({ accountId: auth.owner })
+  const retry = vi.spyOn(core.outbox, 'retry').mockResolvedValue(undefined)
+  const flush = vi.spyOn(core.outbox, 'kick')
   Object.assign(outboxState(), { accountId: auth.owner, valid: () => true,
-    queue: Promise.resolve({ retry, flush } as unknown as SessionInputOutbox),
     rows: rejected ? [{ id: 'refused', accountId: auth.owner, deviceId: 'phone-draft', sessionId: 'task-draft',
       text: '原消息', createdAt: 1, admission: 'rejected', failure: { code: 'send-failed', message: 'Archived task' } }] : EMPTY })
   await show()

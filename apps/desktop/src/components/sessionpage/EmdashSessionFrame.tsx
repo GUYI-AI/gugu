@@ -1,16 +1,16 @@
 // 会话页(源码在 apps/desktop/src/session 与 packages/session-*)。它与咕咕**同一次 rollup**出产物(第二个入口 session-embedded.html),
-// 这里把产出的 bundle 挂进一个 Shadow DOM——
-// 同一文档、同一进程、同一 React 版本,CSS 靠 shadow root 隔离(会话页与 gugu 都用
-// Tailwind v4 且都在 :root 定义 --text-*,同文档合并会互相污染,故 shadow 隔离)。
+// 这里把产出的 bundle 直接挂进咕咕自己的文档(light DOM,不是 Shadow DOM,见下方 @@@task-fusion)——
+// 同一文档、同一进程、同一 React 版本;会话页的样式在构建时收窄到 .gugu-skin 下,靠它与咕咕隔开。
 //
 // 「原生融入」皮肤(owner 令:会话页要看起来本来就长在 gugu 里、UI 风格一致):
 // 会话页的主题靠在挂载元素上打 emlight/emdark 类切换其 --neutral-*/--jade-* 原始色阶,
 // 上层语义 token(--background/--foreground/--border 及 --em-* 设计系统)从中派生。我们
 // 给挂载元素同时打 gugu-skin 标记 + 跟随 gugu 主题的 emlight/emdark,再在会话页自身
 // CSS 之后注入一段桥接 <style>:把会话页的原始色阶/语义原色重定义为 gugu 的语义 token
-// (--bg/--fg/--accent/--border-color… 经 host 继承进 shadow)。桥接规则不进 @layer、且
+// (--bg/--fg/--accent/--border-color… 从咕咕的 :root 继承下来)。桥接规则不进 @layer、且
 // 注入在后 → 稳压会话页的分层/在前规则。gugu 切明暗 → 挂载类翻转 → 会话页整体跟随。
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { createSelectStore, useSelect } from '@/lib/selectStore'
 import { useTranslation } from 'react-i18next'
 import { platform } from '@/platform'
 import { i18n } from '@/i18n'
@@ -145,7 +145,7 @@ const GUGU_SKIN_BRIDGE_CSS = `
 
 /* 兜底 + 实测必要(非仅"以防万一"):会话页用 Tailwind v4 preflight 的
    'html, :host { font-family: var(--default-font-family, ui-sans-serif…) }' 做基础字体
-   ——它直接设在 shadow host 上、走继承落到 mount 的每个后代,我们从没碰过
+   ——它设在根上、走继承落到 mount 的每个后代,我们从没碰过
    --default-font-family 这个变量。绝大多数组件(如 Home 的 ActionListItem)也没有任何
    font-* 工具类去引用 --em-font-sans/--em-type-*,所以只改那些变量文字并不会真的变
    Sora——实测验证:同一条规则不带 !important 时 computed font-family 仍是 preflight 的
@@ -209,6 +209,8 @@ const GUGU_SKIN_BRIDGE_CSS = `
 // electronAPI 那个名下:壳里多处拿它的真值判「是不是 Electron」)。必须在加载会话页 bundle 之前装好
 // —— bundle 的 ipc.ts 在模块求值时就取桥。
 let sessionHostClient: SessionHostWsClient | null = null
+/** ④ The web shell's task-host connection (state, endpoint), published by `installSessionHostBridge`. Owner: this window. */
+const hostConnection = createSelectStore<{ state: SessionHostConnectionState; endpoint: string } | null>(null)
 function installSessionHostBridge(): SessionHostWsClient | null {
   if (platform.kind === 'electron') return null
   if (!sessionHostClient) {
@@ -228,6 +230,9 @@ function installSessionHostBridge(): SessionHostWsClient | null {
       invoke: answerSessionShellChannels(hostInvoke, createWebSessionShellAnswers(hostInvoke)),
     }
     const client = sessionHostClient
+    const publishConnection = () => hostConnection.set({ state: client.state(), endpoint: client.endpoint.url })
+    publishConnection()
+    client.onStateChange(publishConnection)
     installSessionShellAuthHandoff({
       hostInvoke,
       onHostOpen: (cb) => client.onStateChange((state) => { if (state === 'open') cb() }),
@@ -268,8 +273,9 @@ export function EmdashSessionFrame() {
   // 正常路径用户到达时已就绪;错误卡只留给真起不来(资源加载失败 / renderer bootstrap 失败,fail loud),不给「慢」。
   const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
   // 网页版:无头宿主的连接状态;桌面版恒为 null(桥在 preload 里,没有"连接"这回事)。
-  const [hostState, setHostState] = useState<SessionHostConnectionState | null>(null)
-  const [hostEndpoint, setHostEndpoint] = useState<string | null>(null)
+  const connection = useSelect(hostConnection, (value) => value, Object.is)
+  const hostState = connection?.state ?? null
+  const hostEndpoint = connection?.endpoint ?? null
   // Cold start keeps one loader (spec loading-state, #2571): while the startup wordmark is up and this frame is the page on
   // screen, it holds the wordmark until the task page has drawn or cannot (error card, web host not connected), instead of
   // a second loader after it. Warming up behind another page it lets go at once; a later load shows the ordinary loader.
@@ -303,12 +309,7 @@ export function EmdashSessionFrame() {
     if (!host || startedRef.current) return
     startedRef.current = true
 
-    const hostClient = installSessionHostBridge()
-    if (hostClient) {
-      setHostEndpoint(hostClient.endpoint.url)
-      setHostState(hostClient.state())
-      hostClient.onStateChange(setHostState)
-    }
+    installSessionHostBridge()
     // @@@task-fusion (#2802) — 这里从前是 `host.attachShadow({ mode: 'open' })`。
     // shadow root 当初的职责是隔离**两个各自独立的样式系统**;现在只剩一份构建、
     // 一套 token、一道 lint,那个前提消失了,而边界本身开始持续产 bug:浏览器把 CSS 送进

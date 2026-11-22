@@ -206,13 +206,13 @@ type MovePlan = { trees: { name: 'memory' | 'skills' | 'resources'; from: string
 export async function planMove(source: MoveSide): Promise<MovePlan> {
   const trees: { name: 'memory' | 'skills' | 'resources'; from: string; plan: CopyPlan }[] = [];
   const specs: [('memory' | 'skills' | 'resources'), string, string][] = [
-    ['memory', source.paths.memoryDir, '记忆'],
-    ['skills', source.paths.skillsDir, '技能'],
-    ['resources', source.paths.resourcesDir, '给助理的资料'],
+    ['memory', source.paths.memoryDir, 'memory'],
+    ['skills', source.paths.skillsDir, 'skills'],
+    ['resources', source.paths.resourcesDir, 'resources'],
   ];
   for (const [name, dir, label] of specs) {
     const plan = await planTree(source.fs, dir);
-    assertPlanFits(plan, `${source.label}的${label}`);
+    assertPlanFits(plan, `${source.label} ${label}`);
     await probeReadable(source.fs, dir, plan);
     trees.push({ name, from: dir, plan });
   }

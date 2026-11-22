@@ -17,7 +17,7 @@ const io = vi.hoisted(() => ({
 }))
 vi.mock('../../../../apps/desktop/src/lib/firstRun', () => io)
 vi.mock('../../../../apps/desktop/src/lib/firstRunHints', () => ({
-  startFirstRunHints: vi.fn(async () => undefined), readFirstRunHints: vi.fn(async () => null), dismissFirstRunHints: vi.fn(),
+  startFirstRunHints: vi.fn(async () => undefined), readFirstRunHints: vi.fn(async () => null), parseFirstRunHints: () => null, allFirstRunHintsDismissed: () => true, dismissFirstRunHints: vi.fn(),
 }))
 vi.mock('../../../../apps/desktop/src/lib/sampleProject', () => ({ enrollSampleProject: vi.fn(async () => undefined) }))
 vi.mock('../../../../apps/desktop/src/lib/auth', () => ({ authService: {} }))
@@ -34,7 +34,7 @@ vi.mock('@renderer/lib/ipc', () => {
       getWithMeta: async () => ({ value: { enabled: false, lastPicked: 'codex' }, defaults: {}, overrides: {} }),
       update: async () => undefined,
     },
-    agents: { getAgentInstallationStatus: native.status, cancelInstall: vi.fn(), list: async () => [], listAgentInstallationStatus: async () => [] },
+    agents: { probe: async () => undefined, getAgentInstallationStatus: native.status, cancelInstall: vi.fn(), list: async () => [], listAgentInstallationStatus: async () => [] },
   }
   return { rpc, rpcOn: () => rpc, events: { on: () => () => {} }, onMachineEvent: () => () => {} }
 })

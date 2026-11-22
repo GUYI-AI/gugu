@@ -41,6 +41,14 @@ const CODEX_UNCLASSIFIED_401 = /\bunauthorized \(401\)/i;
 
 const AUTH_ERROR_TYPE = /auth|credential|sign.?in|login/i;
 
+/** Codex can report this refresh failure without an HTTP/auth classification. */
+export function isCodexRefreshTokenRevoked(cause: SerializedError): boolean {
+  const data = cause.data;
+  const message = data && typeof data === 'object' && !Array.isArray(data)
+    ? (data as Record<string, unknown>).message : undefined;
+  return [cause.message, message].some(value => typeof value === 'string' && /\brefresh token (?:was |has been )?revoked\b/i.test(value));
+}
+
 /**
  * The ACP code, unless the harness names another error in `data.errorType`: Kiro uses -32000 for its own typed failures
  * too (`ModelRegistryUnavailableError`, `McpServersNotReadyError`, ...), while its sign-in refusal carries no `data`.
@@ -53,13 +61,14 @@ export function isAcpAuthRequired(cause: { code?: unknown; data?: unknown }): bo
 }
 
 /**
- * 这次被拒是不是「这家在这台机器上的登录不能用了」(#6264)—— 认结构化信号,❌ 不按句子猜。
- * 唯一的例外是 codex 自己没分类的那一步(见 `CODEX_UNCLASSIFIED_401`),也只认它写出的状态码。
+ * 这次被拒是不是「这家在这台机器上的登录不能用了」(#6264)—— 优先认结构化信号。
+ * codex 未分类时,只认明确的 unauthorized (401) 或 refresh token revoked;不泛猜登录指令。
  *
- * 句子会漂(同一件事 codex 有「could not be refreshed」「was revoked」「was already used」三种说法,
+ * 句子会漂(同一件事 codex 有「could not be refreshed」「was already used」等说法,
  * claude 有「Not logged in」「Session expired」),而协议码与错误分类是对方明确给出的契约。
  */
 export function isSignInFailure(cause: SerializedError): boolean {
+  if (isCodexRefreshTokenRevoked(cause)) return true;
   if (isAcpAuthRequired(cause)) return true;
   const data = cause.data;
   if (!data || typeof data !== 'object' || Array.isArray(data)) return false;

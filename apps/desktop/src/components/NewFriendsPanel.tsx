@@ -1,11 +1,14 @@
 import { useGroupDisplayName } from '../hooks/useGroupDisplayName'
-import { GroupInvitationsPanel } from './contacts/GroupInvitationsPanel'
+import { GroupInvitationRow, GroupInvitationsPanel } from './contacts/GroupInvitationsPanel'
+import { ContactsPageFrame } from './contacts/ContactsPageFrame'
+import { PaneEmptyState } from './ui/PaneEmptyState'
+import { UserPlus } from '@/lib/icons'
 import { messageForUser } from '../lib/userFacingError'
 import { Button } from './ui/Button'
-import { ListRowContent } from './ui/ListRow'
+import { DetailFooter, RequestRow } from './requests/RequestRow'
 import { SectionLabel } from './ui/SectionLabel'
 import { useEffect, useMemo, useState } from 'react'
-import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
+import type { CSSProperties } from 'react'
 import { useContactsStore } from '../store/contactsContext'
 import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import type { ContactGroupChat } from '@gugu/core/shared/types/contacts'
@@ -41,69 +44,6 @@ const requestEmptyClass = 'nfp-req-empty !py-[54px] text-center text-[length:var
 // 与请求行(容器 8 + 行 8)同一条左边线。
 const styleRowError: CSSProperties = { padding: '0 8px 8px', fontSize: 'var(--font-caption)', color: 'var(--danger-fg)' }
 const stylePlaceholderAvatar: CSSProperties = { width: 'var(--avatar-sm)', height: 'var(--avatar-sm)', borderRadius: 'var(--radius-circle)', background: 'var(--bg-elevated)' }
-const openOnKey = (open: () => void) => (event: KeyboardEvent<HTMLDivElement>) => {
-  if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); open() }
-}
-
-// ── Request row (shared) ──────────────────────────────────────────────────────
-
-// @@@6418 好友申请与入群申请是同一种表达:头像 · 谁 · 一行说明 · 行尾。行的几何与按钮只此一份,
-// 两种请求各自只决定「显示什么」和「点了做什么」。行尾:等我处理的是同意 / 拒绝,其余是灰字状态;点行看详情。
-function RequestRow({
-  avatar,
-  name,
-  sub,
-  status,
-  onOpen,
-  loading,
-  onAccept,
-  onReject,
-  acceptLabel,
-  rejectLabel,
-  acceptData,
-  rowData,
-}: {
-  avatar: ReactNode
-  name: ReactNode
-  sub: ReactNode
-  status: string | null
-  onOpen: () => void
-  loading: boolean
-  onAccept: () => void
-  onReject: () => void
-  acceptLabel: string
-  rejectLabel: string
-  acceptData?: Record<string, string | undefined>
-  rowData?: Record<string, string | undefined>
-}) {
-  return (
-    <div className="nfp-reqrow gg-list-row gg-row" role="button" tabIndex={0} onClick={onOpen} onKeyDown={openOnKey(onOpen)} {...rowData}>
-      <ListRowContent leading={avatar} title={<span className="nfp-name">{name}</span>} meta={status ?? undefined} subtitle={sub} />
-      {status ? null : <div className="flex shrink-0 gap-2" onClick={(event) => event.stopPropagation()}>
-        <Button variant="primary" size="sm" {...acceptData} onClick={onAccept} disabled={loading}>{acceptLabel}</Button>
-        <Button variant="secondary" size="sm" onClick={onReject} disabled={loading}>{rejectLabel}</Button>
-      </div>}
-    </div>
-  )
-}
-
-// 详情底部:等我处理的是同一对操作(先收起详情,结果落在那一行上),其余是同一句状态。
-function DetailFooter({ status, loading, onAccept, onReject, acceptLabel, rejectLabel }: {
-  status: string | null
-  loading: boolean
-  onAccept: () => void
-  onReject: () => void
-  acceptLabel: string
-  rejectLabel: string
-}) {
-  if (status) return <span data-testid="request-detail-status">{status}</span>
-  return (
-    <>
-      <Button variant="secondary" size="sm" disabled={loading} onClick={onReject}>{rejectLabel}</Button>
-      <Button variant="primary" size="sm" disabled={loading} onClick={onAccept}>{acceptLabel}</Button>
-    </>
-  )
-}
 
 // ── Friend / Agent request item ───────────────────────────────────────────────
 
@@ -155,6 +95,7 @@ function FriendRequestItem({
         sub={note ? (direction === 'sent' ? t('friendRequests.myNote', { message: note }) : note) : context}
         status={status}
         onOpen={() => setOpen(true)}
+        selected={open}
         loading={loading}
         onAccept={run(onAccept)}
         onReject={run(onReject)}
@@ -225,6 +166,7 @@ function GroupJoinRequestItem({ request, onDecided }: { request: ManagedGroupJoi
         sub={note ? `${joinLine}: ${note}` : joinLine}
         status={status}
         onOpen={() => setOpen(true)}
+        selected={open}
         loading={loading}
         onAccept={() => { void decide(true) }}
         onReject={() => { void decide(false) }}
@@ -333,16 +275,63 @@ export function NewFriendsPanel({ onOpenGroupChat, onBack }: { onOpenGroupChat?:
       is_muted: false,
     })
   }
+  const friendItems = (entries: FriendRequestEntry[]) => entries.map((entry) => (
+    <FriendRequestItem
+      key={entry.request.id}
+      entry={entry}
+      onAccept={() => acceptFriendRequest(entry.request.id)}
+      onReject={() => rejectRequest(entry.request.id)}
+    />
+  ))
   const renderFriendEntries = (entries: FriendRequestEntry[], empty: string) => entries.length === 0
     ? <div className={requestEmptyClass}>{empty}</div>
-    : entries.map((entry) => (
-      <FriendRequestItem
-        key={entry.request.id}
-        entry={entry}
-        onAccept={() => acceptFriendRequest(entry.request.id)}
-        onReject={() => rejectRequest(entry.request.id)}
-      />
-    ))
+    : friendItems(entries)
+
+  // 桌面:与分组页同一副版式(ContactsPageFrame:页头 + 计数、右边抽屉)。三类请求按节排(好友 / Agent / 群),
+  // ❌ 页签:有就出那一节,一眼看全。请求要逐条处理:单列(最宽 720,靠左),行尾直接同意 / 拒绝,点行在抽屉里看详情。
+  // 手机整页照旧是页签。
+  if (!onBack) {
+    const pending = friendPendingCount + agentPendingCount + groupPendingCount
+    const kinds = [
+      { key: 'f', label: t('friendRequests.friendsTab'), count: friendEntries.length, body: friendItems(friendEntries) },
+      { key: 'a', label: t('friendRequests.agentTab'), count: agentEntries.length, body: friendItems(agentEntries) },
+      {
+        key: 'g', label: t('friendRequests.groupTab'), count: groupJoinRequests.length + groupInvitations.length,
+        body: <>
+          {groupJoinRequests.map((request) => <GroupJoinRequestItem key={request.id} request={request} onDecided={async () => { await Promise.all([refreshGroupJoinRequests(), refreshChats()]) }} />)}
+          {groupInvitations.map((invitation) => <GroupInvitationRow key={invitation.id} invitation={invitation} />)}
+        </>,
+      },
+    ].filter((kind) => kind.count > 0)
+    return (
+      <ContactsPageFrame testId="new-requests" title={t('friendRequests.title')} subtitle={pending > 0 ? t('requestsPane.pending', { count: pending }) : t('requestsPane.nonePending')}>
+        {requestsStatus === 'error' ? (
+          <div role="alert" className="!mt-4 text-sm text-[var(--danger-fg)]">
+            {messageForUser(new Error(requestsError ?? ''))}
+            <Button variant="ghost" size="sm" className="ml-2 underline" onClick={() => void refreshRequests()}>{t('common.retry')}</Button>
+          </div>
+        ) : null}
+        {groupJoinRequestsError ? (
+          <div role="alert" className="!mt-4 text-sm text-[var(--danger-fg)]">
+            {messageForUser(new Error(groupJoinRequestsError))}
+            <Button variant="ghost" size="sm" className="ml-2 underline" onClick={() => void refreshGroupJoinRequests()}>{t('common.retry')}</Button>
+          </div>
+        ) : null}
+        {kinds.map((kind) => (
+          <section key={kind.key} data-request-kind={kind.key}>
+            <SectionLabel className="!mt-4">{kind.label} · {kind.count}</SectionLabel>
+            {/* Rows end in their actions (Accept / Ignore): stop short of the drawer that floats over the right side, open or not, so nothing reflows. */}
+            <div className="flex max-w-[min(720px,calc(100%-var(--contacts-drawer-w,0px)))] flex-col">{kind.body}</div>
+          </section>
+        ))}
+        {kinds.length === 0 && requestsStatus === 'ready' ? (
+          <div className="grid min-h-[50%] place-items-center">
+            <PaneEmptyState icon={<UserPlus size={26} color="var(--text-tertiary)" />} caption={t('requestsPane.empty')} />
+          </div>
+        ) : null}
+      </ContactsPageFrame>
+    )
+  }
 
   return (
     <div

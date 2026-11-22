@@ -62,6 +62,8 @@ const ledgerPage = replica({
   read: (_userId, page: number, pageSize: number, model: string | null, from: string, to: string, _creditVersion: string | null) =>
     fetchLedgerPage({ page, pageSize, model, range: { from, to } }),
   keep: 5 * 60_000,
+  // Back to the foreground: a membership bought on the web meanwhile moves no broadcast here (#5899).
+  refreshOnFocus: true,
 })
 
 function Ledger({ range }: { range: DayRange }) {

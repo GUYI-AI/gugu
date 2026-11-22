@@ -49,6 +49,9 @@ export function createAcpProcedures(runtime: AcpRuntime) {
   const promptError = (error: AcpSendPromptError): Error => 'cause' in error && error.cause?.name === 'AcpPromptCancelled' && error.cause.code === 'CANCELLED'
     ? new WireError('CANCELLED', errorMessage(error), { cause: error.cause }) : new Error(errorMessage(error));
   return {
+    activeMessagePreview(input: { sessionId: string; historyFloor: string | null }) {
+      return runtime.manager.activeMessagePreview(input.sessionId, input.historyFloor);
+    },
     startSession(input: {
       input: StartSessionInput;
     }): Promise<Result<{ providerSessionId: string }, AcpStartSessionError>> {

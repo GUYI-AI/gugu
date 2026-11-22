@@ -4,7 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, waitForCondition } from '../../../support/testHarness'
 
 const rpc = vi.hoisted(() => ({ read: vi.fn(), save: vi.fn(), available: true }))
-vi.mock('../../../../apps/desktop/src/mobile/local-agent/phoneTaskSkills', async (original) => ({ ...await original<typeof import('../../../../apps/desktop/src/mobile/local-agent/phoneTaskSkills')>(), readPhoneTaskSkills: rpc.read, savePhoneTaskSkills: rpc.save }))
+vi.mock('../../../../apps/desktop/src/mobile/local-agent/phoneTaskSkills', async (original) => {
+  const { replica } = await import('../../../../apps/desktop/src/lib/replica')
+  return {
+    ...await original<typeof import('../../../../apps/desktop/src/mobile/local-agent/phoneTaskSkills')>(), readPhoneTaskSkills: rpc.read, savePhoneTaskSkills: rpc.save,
+    // The dialog reads through the replica; its read is the phone's answer (the mocked RPC).
+    phoneTaskSkills: replica({ name: 'phoneTaskSkills', scope: 'account', read: (_owner: string, deviceId: string, session: string) => rpc.read(deviceId, session), fresh: 0 }),
+  }
+})
 vi.mock('../../../../apps/desktop/src/mobile/local-agent/nativeAgent', () => ({ phoneAgentAvailable: () => rpc.available }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: { id: 'skill-owner' } }) }))
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceSettings', () => ({ thisPhoneDeviceId: () => 'this-phone' }))
@@ -12,6 +19,7 @@ vi.mock('../../../../apps/desktop/src/components/ui/Sheet', () => ({ Sheet: ({ c
 
 import { PhoneSkillsManager, PhoneTaskSkills } from '../../../../apps/desktop/src/mobile/local-agent/PhoneTaskSkillsButton'
 import { importPhoneTaskSkill, validatePhoneTaskSkills, type PhoneTaskSkillsSnapshot } from '../../../../apps/desktop/src/mobile/local-agent/phoneTaskSkills'
+import { freshReplicaAccount } from '../../../support/replicaAccount'
 const skillId = '3e94449f-13ee-44a2-aac5-8a0bc2ff56ab'
 const sessionId = '8e2660f8-cd08-4329-a045-cfe27e020b58'
 const limits = { maxSkills: 20, maxNameChars: 80, maxDescriptionChars: 512, maxInstructionChars: 16384, maxTotalBytes: 131072 }
@@ -30,7 +38,9 @@ async function editName(name: string) {
   const input = node('phone-skill-name') as HTMLInputElement
   await act(async () => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, name); input.dispatchEvent(new Event('input', { bubbles: true })) })
 }
-beforeEach(() => { vi.clearAllMocks(); rpc.available = true; rpc.read.mockResolvedValue(initial()); rpc.save.mockImplementation(async (_device, _session, _revision, skills) => ({ ...initial(), revision: 5, skills })); harness = createReactHarness() })
+beforeEach(async () => {
+  await freshReplicaAccount('skill-owner')
+ vi.clearAllMocks(); rpc.available = true; rpc.read.mockResolvedValue(initial()); rpc.save.mockImplementation(async (_device, _session, _revision, skills) => ({ ...initial(), revision: 5, skills })); harness = createReactHarness() })
 afterEach(() => harness.cleanup())
 
 describe('phone task Skill configuration', () => {
@@ -73,6 +83,30 @@ describe('phone task Skill configuration', () => {
     await waitForCondition(() => node('phone-skills-error')?.textContent === '暂时离线', 'reload failed')
     expect(harness.container.textContent).not.toContain('已经放弃的文字')
     expect((node('phone-skills-save') as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('F2-4: opened again, the skills kept from the last open are not editable until this open\'s read lands', async () => {
+    await show()
+    harness.cleanup({ keepReads: true }); harness = createReactHarness()
+    let answer!: (value: PhoneTaskSkillsSnapshot) => void
+    rpc.read.mockReturnValueOnce(new Promise((resolve) => { answer = resolve }))
+    await harness.render(createNode(PhoneSkillsManager, { deviceId: 'this-phone', sessionId, busy: false, onClose: vi.fn() }))
+    await waitForCondition(() => rpc.read.mock.calls.length === 2, 'read again on open')
+    expect((node('phone-skill-add') as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => answer(initial()))
+    await waitForCondition(() => !(node('phone-skill-add') as HTMLButtonElement).disabled, 'editable once read')
+  })
+
+  it('F2-4: a newer revision read while editing keeps the draft, and its save names the revision it started from', async () => {
+    await show()
+    await editName('我的修改')
+    rpc.read.mockResolvedValueOnce({ ...initial(), revision: 7 })
+    const { phoneTaskSkills } = await import('../../../../apps/desktop/src/mobile/local-agent/phoneTaskSkills')
+    await act(async () => { await phoneTaskSkills.refresh('this-phone', sessionId) })
+    expect((node('phone-skill-name') as HTMLInputElement).value).toBe('我的修改')
+    await clickElement(node('phone-skills-save'))
+    await waitForCondition(() => rpc.save.mock.calls.length === 1, 'saved')
+    expect(rpc.save.mock.calls[0]![2]).toBe(4)
   })
 
   it('does not discard an edited document when the sheet is dismissed', async () => {

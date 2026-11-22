@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import './chatFileReadsStub'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { clearViewState } from '../../../../apps/desktop/src/lib/viewStateTable'
+import { followRendererSession } from '../../../../apps/desktop/src/lib/replica'
 import { act, createElement } from 'react'
 import { createReactHarness } from '../../../support/testHarness'
 import { until } from '../../../support/awaitCondition'
@@ -12,15 +14,17 @@ import { until } from '../../../support/awaitCondition'
  * the folder. Control (the parent commit): back went to the folder; a covered slot gave its page up.
  */
 
+// 最近打开: an open is kept through the chat database (useChatOpener `noteOpened`); never the network here.
+vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: null })) } }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { kind: 'electron', capabilities: { appUpdates: false, notifications: false, rendererCommandBridge: false } },
 }))
 vi.mock('../../../../apps/desktop/src/components/appSlot/appsHere', () => ({
-  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), setOpenWithDefault: vi.fn() },
+  appsHere: { runs: () => true, grantable: (manifest: unknown) => manifest, installAttachment: vi.fn(), marketOffers: vi.fn(async () => ({ success: true, data: [] })), onMarketChanged: () => () => {}, groupFileOpener: vi.fn(), groupFilesOpenedBy: vi.fn(async () => ({ success: true, data: [] })), setOpenWithDefault: vi.fn() },
 }))
-vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', () => ({
-  sharedPackagesOf: async () => new Map(),
-  subscribeSharedPackages: () => () => {},
+vi.mock('../../../../apps/desktop/src/components/extensionBundle/sharedPackages', async (original) => ({
+  ...(await original<object>()),
+  chatPackageCards: async () => (await import('./chatTabsHarness')).sharedCards.answer(),
 }))
 
 const { ask, chatTabs, shownItem } = await import('./chatTabsHarness')
@@ -30,7 +34,7 @@ import { tabFullscreen } from '../../../../apps/desktop/src/session/renderer/fea
 const { AppPeekSlot } = await import('../../../../apps/desktop/src/components/appSlot/AppPeekSlot')
 const { ClaimedPage } = await import('../../../../apps/desktop/src/components/appSlot/ClaimedPage')
 const { peekStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/peek-store')
-const { installedExtensionsStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions-store')
+const { installedExtensions } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/installed-extensions')
 const { extensionViewStore } = await import('../../../../apps/desktop/src/session/renderer/features/extensions/extension-view-store')
 
 const board = { id: 'kanban', name: 'Kanban', version: '1.0.0', apiVersion: 3, defaultLocale: 'en', entry: 'index.html', contributes: { tabs: [{ name: 'board', title: 'Kanban' }] } }
@@ -43,6 +47,8 @@ const slotOfToken = new Map<number, string>()
 const spies: { mockRestore(): void }[] = []
 const original = { checkVisibility: HTMLElement.prototype.checkVisibility, rect: HTMLElement.prototype.getBoundingClientRect }
 beforeEach(() => {
+  // Signed in, as the harness's person (user-1): the group's shared packages are read for an account.
+  followRendererSession('SIGNED_IN', 'user-1')
   harness = createReactHarness()
   slotEvents.length = 0
   const claim = extensionViewStore.claim.bind(extensionViewStore)
@@ -62,14 +68,17 @@ beforeEach(() => {
     return !this.closest('.invisible')
   }
   HTMLElement.prototype.getBoundingClientRect = () => ({ x: 0, y: 0, top: 0, left: 0, right: 520, bottom: 800, width: 520, height: 800, toJSON: () => ({}) })
-  act(() => installedExtensionsStore.applyList({ extensions: [board], invalid: [] } as never))
+  act(() => installedExtensions.set(['local'], { extensions: [board], invalid: [] } as never))
 })
+// Where each resource last opened is the account's (tab-placement memory): each case starts with none remembered (after
+// the setup above, whose closing of tabs is itself remembered).
+beforeEach(() => { clearViewState({ conversation: '', panel: 'tab-placement' }) })
 afterEach(() => {
   harness.cleanup()
   for (const spy of spies.splice(0)) spy.mockRestore()
   HTMLElement.prototype.checkVisibility = original.checkVisibility
   HTMLElement.prototype.getBoundingClientRect = original.rect
-  act(() => installedExtensionsStore.applyList({ extensions: [], invalid: [] } as never))
+  act(() => installedExtensions.set(['local'], { extensions: [], invalid: [] } as never))
 })
 
 const button = (testId: string) => harness.container.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)
@@ -265,4 +274,9 @@ describe('G1: a task\'s file beside an App in a chat\'s panel', () => {
     expect(drawn()).toBe(true)
     await act(async () => peekStore.close(null, 'slot-y'))
   })
+})
+
+it('the shared-package mock is live (signed in): a file waits for this chat\'s packages, then is drawn', async () => {
+  const { expectSharedPackagesLive } = await import('./chatTabsHarness')
+  await expectSharedPackagesLive((node) => harness.render(node))
 })

@@ -31,7 +31,7 @@ describe('AppErrorBoundary shell', () => {
 
   it('renders the localized fallback when a child throws', async () => {
     await harness.render(createNode(AppErrorBoundary, null, createNode(Bomb)))
-    expect(document.body.textContent).toContain('出错了')
+    expect(document.body.textContent).toContain('发生错误')
     expect(document.body.textContent).toContain('重新加载')
   })
 

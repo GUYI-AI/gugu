@@ -1,5 +1,4 @@
 import { ExternalLink } from '@/lib/icons';
-import { reaction } from 'mobx';
 import { useEffect, useRef, useState } from 'react';
 import { AcpAuthLoginBinding } from '@renderer/lib/acp/auth-login-binding';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
@@ -54,7 +53,6 @@ export function AcpAuthenticateSignIn({
   const onSuccessRef = useRef(onSuccess);
   onSuccessRef.current = onSuccess;
 
-  // @@@effect-flow - starting the sign-in this panel runs.
   useEffect(() => {
     let disposed = false;
     let stopReaction: (() => void) | null = null;
@@ -69,20 +67,16 @@ export function AcpAuthenticateSignIn({
         bindingRef.current = binding;
         // 判据同终端那条:挂载那一刻的读数是登录**前**的,❌ 不当本次结果(login-success.ts)。
         const progress = { sawInitialReading: false };
-        stopReaction = reaction(
-          () => binding.status.current(),
-          (state) => {
-            if (acpLoginAttemptSucceeded(state, progress)) {
-              binding.dispose(false);
-              bindingRef.current = null;
-              onSuccessRef.current();
-              return;
-            }
-            progress.sawInitialReading = true;
-            setView(acpLoginView(state));
-          },
-          { fireImmediately: true }
-        );
+        stopReaction = binding.status.follow((state) => {
+          if (acpLoginAttemptSucceeded(state, progress)) {
+            binding.dispose(false);
+            bindingRef.current = null;
+            onSuccessRef.current();
+            return;
+          }
+          progress.sawInitialReading = true;
+          setView(acpLoginView(state));
+        });
       },
       (error: unknown) => {
         if (!disposed) setStartError(error instanceof Error ? error.message : String(error));

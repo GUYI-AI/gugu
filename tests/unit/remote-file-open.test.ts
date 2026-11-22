@@ -24,7 +24,7 @@ const bytes = (text: string) => new TextEncoder().encode(text)
 
 // The former whole-array IPC protections now exercise the actual bounded native sink and opaque token handoff.
 async function openVerifiedOriginal(input: { bytes: Uint8Array; filename: string }, dependencies: { tempRoot: string; openPath(path: string): Promise<string>; maxBytes?: number }) {
-  const host = createNativeFileHost({ root: dependencies.tempRoot, owner: async () => 'owner', alive: () => true, local: async () => null, ssh: async () => null, published: () => {}, ...dependencies })
+  const host = createNativeFileHost({ root: dependencies.tempRoot, owner: async () => 'owner', alive: () => true, local: async () => null, ssh: async () => null, published: () => {}, serve: async () => { throw new Error('not served here') }, ...dependencies })
   const file = await verifiedFileHandle(input.bytes)
   const id = await stageFileHandle(file, input.filename, command => host.stage(1, command))
   await host.open(1, id)

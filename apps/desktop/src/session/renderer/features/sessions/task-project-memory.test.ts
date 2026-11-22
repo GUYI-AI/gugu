@@ -7,6 +7,8 @@ import {
   rememberedChatProject,
 } from '@gugu/core/shared/ui/agentCreateDefaultsModels';
 import { AccountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
+import { followRendererSession } from '@/lib/replica';
+import { thisDeviceId } from '@/store/thisDevice';
 import { rememberedTaskRow, taskProjectChoice } from './task-project-memory';
 
 vi.mock('@/lib/deviceProjects', () => ({ listMyAccountProjects: async () => [] }));
@@ -25,9 +27,11 @@ function store(): AccountProjectsStore {
     machineOf: (id) => machineOf[id] ?? null,
     connected: () => true,
   });
+  // This computer is the replica `thisDeviceId`'s, for the account signed in.
+  followRendererSession('SIGNED_IN', 'tester');
+  thisDeviceId.set([], 'this-computer');
   runInAction(() => {
     accounts.list = [paper, notes];
-    accounts.localDeviceId = 'this-computer';
     accounts.status = 'ready';
   });
   return accounts;

@@ -31,7 +31,6 @@ export {
   type DependencyId,
   type DependencyInstallError,
   type DependencyInstallResult,
-  type DependencyProbeOptions,
   type DependencyState,
   type DependencyStatus,
   type DependencyStatusMap,
@@ -60,12 +59,15 @@ export {
   type HostDependencyManagerOptions,
   type InstallCommandRunner,
 } from './host-dependency-manager';
+export { installSourceIntent } from './install-source-intent';
+export type { InstallSourceIntent, InstallCommandOutcome } from './types';
 export {
   resolveAllCommandPaths,
   resolveCommandPath,
   resolveRealpath,
   runVersionProbe,
-  versionLineOf,
+  versionProbeArgs,
+  versionTextOf,
   withProbeSwitches,
 } from './probe';
 export {
