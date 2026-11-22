@@ -75,7 +75,7 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 14px 14px 12px;
+  padding: 16px 16px 14px;
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
   background: var(--surface-white);
@@ -116,27 +116,23 @@
   font-weight: var(--font-weight-medium);
 }
 .gugu-notice-card-description {
-  color: var(--text-secondary);
-  font-size: var(--font-caption);
-  line-height: 1.5;
-  overflow-wrap: anywhere;
-}
-.gugu-notice-card-description:has(button, input, [role='progressbar']) {
   margin-top: 4px;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 .gugu-notice-card-actions {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .gugu-notice-card-spacer {
   flex: 1;
 }
 .gugu-notice-card-close {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 12px;
+  right: 12px;
 }
 .gugu-notice-pager {
   display: flex;
