@@ -82,6 +82,11 @@ class TabEntryImpl<S = unknown> implements TabEntry<S> {
  * the side of a pair in a pane of its own (PaneLayoutStore `@@@pair`).
  */
 export interface PaneSplitter {
+  /**
+   * Closing this tab would close its pane: the layout may take the pane off the screen first (its page live until it is
+   * off) and run `close` then. True = it will; the tab stays until then.
+   */
+  closesPane?(tabId: string, close: () => void): boolean;
   tabClosing?(entry: TabEntry): void;
   /**
    * A tab left this pane for good; `wasActive`: it was the one in front; `after`: the tab that stood left of it (null:
@@ -523,6 +528,7 @@ export class PaneStore<R extends TabRegistry = TabRegistry>
   }
 
   closeTab(id: string): void {
+    if (this.entries.has(id) && this._layoutSplitter?.closesPane?.(id, () => this._removeTab(id))) return;
     this._removeTab(id);
   }
 

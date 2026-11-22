@@ -54,6 +54,9 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   const shownBefore = useRef(single);
   const swap = !!shownBefore.current && !!single && shownBefore.current !== single;
   useLayoutEffect(() => { shownBefore.current = single; });
+  // Wide, the root cut is on a track: a pane whose last tab closes goes off it before it goes (@@@closing-pane).
+  useLayoutEffect(() => narrow ? undefined : layout.attachMotion(), [layout, narrow]);
+  const closing = layout.closingPaneId;
   const first = cornerPane(layout.layout, 'top-left');
   const last = cornerPane(layout.layout, 'top-right');
   // 并排(spec session-page「并排」):一条会话只有一条页签条 —— 横跨两页画在上面,两页各自的内容在下面。
@@ -67,12 +70,12 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
         <div style={lifted ? STRIP_OVER_FULLSCREEN : undefined}><OverFullscreenStrip.Provider value={lifted}>{renderPane(layout.mainGroup.paneId, true, true, 'bar')}</OverFullscreenStrip.Provider></div>
       </div>}
       <div className="relative min-h-0 min-w-0 flex-1" data-pane-tree-narrow={alone || undefined} data-chat-tool-dragging={draggingChatTool || undefined}>
-        {/* The root is a cut even as one pane, so the side page coming moves on its track. */}
+        {/* The root is a cut even as one pane, so the side page coming and going moves on its track (going, live: @@@closing-pane). */}
         <Cut node={layout.layout} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} anchorOf={anchorOf} single={single} swap={swap} />
         {layout.groups.map(({ paneId }) => {
           const shown = layout.isPaneShown(paneId);
           const anchored = { position: 'absolute', positionAnchor: anchorOf(paneId), top: 'anchor(top)', bottom: 'anchor(bottom)', left: 'anchor(left)', right: 'anchor(right)' } as CSSProperties;
-          return <RetainedTabContent key={paneId} visible={shown} style={anchored} className="min-h-0 min-w-0" inert={!shown} aria-hidden={!shown || undefined}>
+          return <RetainedTabContent key={paneId} visible={shown} style={anchored} className="min-h-0 min-w-0" inert={!shown || paneId === closing} aria-hidden={!shown || paneId === closing || undefined}>
             {renderPane(paneId, alone || paneId === first, alone || paneId === last, (scopedChrome || paired) ? 'body' : 'all')}
           </RetainedTabContent>;
         })}
@@ -114,12 +117,16 @@ const Cut = observer(function Cut({ node, ...rest }: TreeProps) {
   const root = node === layout.layout;
   // One page of the chat workspace on screen: the other is at nothing on the same track, ❌ unmounted or laid over.
   const only = root ? rest.single : undefined;
+  // A pane closing goes to nothing; the rest take its share (@@@closing-pane).
+  const closing = root ? layout.closingPaneId : undefined;
+  const gone = (child: PaneLayoutNode) => child.type === 'pane' && child.paneId === closing;
+  const kept = split.sizes.reduce((sum, size, at) => sum + (gone(split.children[at]) ? 0 : size), 0);
   return <TrackCut
     axis={horizontal ? 'x' : 'y'}
-    shares={only ? split.children.map((child) => (paneOrder(child).includes(only) ? 100 : 0)) : split.sizes}
-    disabled={!!only}
+    shares={only ? split.children.map((child) => (paneOrder(child).includes(only) ? 100 : 0)) : closing && kept > 0 ? split.sizes.map((size, at) => (gone(split.children[at]) ? 0 : (size * 100) / kept)) : split.sizes}
+    disabled={!!only || !!closing}
     onLanded={root ? () => layout.panesLanded() : undefined}
-    items={split.children.map((child) => ({ id: childId(child), min: only ? 0 : horizontal ? minExtent(child, 'width', layout.paneMinWidth) : minExtent(child, 'height', MIN_PANE_HEIGHT_PX), node: tree(child) }))}
+    items={split.children.map((child) => ({ id: childId(child), min: only || gone(child) ? 0 : horizontal ? minExtent(child, 'width', layout.paneMinWidth) : minExtent(child, 'height', MIN_PANE_HEIGHT_PX), node: tree(child) }))}
     // The outermost cut is the pair's: the side page coming to another width (a tab of another kind in front) moves.
     animate={root && !rest.swap}
     onShares={(sizes) => layout.setSplitSizes(split.id, sizes)}
