@@ -24,7 +24,7 @@ function Conversation({ restore }: { restore?: () => void }) {
   const preview = useMessageFilePreview({ mobile: false, visible: true, closeRightSurfaces: () => undefined, toast: () => undefined, onForward: () => undefined })
   return createElement('div', null,
     createElement('button', { onClick: () => preview.open({ kind: 'file', fileName: 'budget.md', mimeType: 'text/markdown', sizeBytes: 28, source: { kind: 'item', itemId: 'budget', version: 1 } }, undefined, restore) }, '打开附件'),
-    preview.panel)
+    preview.beside(null))
 }
 
 describe('personal assistant file preview', () => {

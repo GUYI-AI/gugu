@@ -973,8 +973,7 @@ export default {
       "collapseSplit": "收起分栏",
       "collapseSplitHint": "收起分栏，话题不会关闭",
       "composerPlaceholder": "输入消息",
-      "empty": "此话题暂无消息",
-      "resize": "拖动改变话题分栏的宽度"
+      "empty": "此话题暂无消息"
     }
   },
   "resources": {

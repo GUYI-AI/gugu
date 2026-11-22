@@ -125,7 +125,6 @@ export const TaskDispatchComposer = observer(function TaskDispatchComposer({
       placeholder: translate('taskDispatch.placeholderAgent'),
       verb: composerVerbLook('task', { label: translate('taskDispatch.agent'), onCancel: () => cancelComposerVerb(verbKey, draftKey), testId: 'task-dispatch' }),
       taskChatId: chatId,
-      openAfterCreate: false,
       birthChatId: joinChat ? chatId : undefined,
       onSessionCreated: (result: { projectId: string; sessionId: string }) => {
         setComposerVerb(verbKey, null);

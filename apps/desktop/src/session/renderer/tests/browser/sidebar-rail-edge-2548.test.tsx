@@ -126,7 +126,7 @@ for (const material of ['native', 'opaque'] as const) {
     }
 
     const rail = aside.getBoundingClientRect();
-    for (const layer of [aside.firstElementChild!, document.querySelector('[data-region="left-sidebar"]')!]) {
+    for (const layer of [aside.closest('[data-panel-slot]')!, document.querySelector('[data-region="left-sidebar"]')!]) {
       const box = layer.getBoundingClientRect();
       expect([box.left, box.width]).toEqual([rail.left, rail.width]);
     }
@@ -204,16 +204,18 @@ it('the rail flips in the frame the list\'s layer takes the rail\'s width, both 
       </WorkspaceLayoutContextProvider>
     </SessionLocalizationProvider>
   );
-  const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+  const slot = document.querySelector<HTMLElement>('[data-panel-slot="list"]')!;
+  // The size the list is laid out at (panel-track writes it on the content box, the list's layer fills that).
+  const content = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!.parentElement!;
   const sidebar = document.querySelector<HTMLElement>('[data-region="left-sidebar"]')!;
   // One mutation batch is one task: the frame loop's writes land together, a React commit lands in a batch of its own.
   const batches: { width: string; rail: boolean; flipped: boolean }[] = [];
   const observer = new MutationObserver((records) => batches.push({
-    width: aside.style.width,
+    width: content.style.width,
     rail: sidebar.hasAttribute('data-sidebar-rail'),
     flipped: records.some((record) => record.attributeName === 'data-sidebar-rail'),
   }));
-  observer.observe(aside, { subtree: true, attributes: true, attributeFilter: ['style', 'data-sidebar-rail'] });
+  observer.observe(slot, { subtree: true, attributes: true, attributeFilter: ['style', 'data-sidebar-rail'] });
   for (const [direction, rail] of [['collapse', true], ['expand', false]] as const) {
     batches.length = 0;
     document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
@@ -267,7 +269,7 @@ it('collapsed, the rail keeps the bell between 「»」 and the 「+」, and ope
   for (let box: HTMLElement | null = railRow; box && box !== aside; box = box.parentElement) expect(getComputedStyle(box).overflowY, box.className).not.toBe('hidden');
   expect(bell.top).toBeGreaterThanOrEqual(fold.getBoundingClientRect().bottom);
   expect(plus.getBoundingClientRect().top).toBeGreaterThanOrEqual(bell.bottom);
-  // The edge lands once it is within SIDEBAR_LANDED_PX of the rail, while the bell's and the 「+」's rows follow the spring's
+  // The edge lands once it is within PANEL_LANDED_PX of the rail, while the bell's and the 「+」's rows follow the spring's
   // own progress, whose sub-pixel tail runs on a little longer: both are on the axis where that motion rests.
   await expect.poll(() => railRow.getBoundingClientRect().left + 20 + 16 - panel.left).toBe(36);
   await expect.poll(() => plus.getBoundingClientRect().left + 16 - panel.left).toBe(36);

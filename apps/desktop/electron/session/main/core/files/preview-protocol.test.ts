@@ -603,3 +603,28 @@ describe('this machine\'s bytes of a sha, at an address that names only the sha'
     await expect((await handlePreviewRequest(new Request(url), 'pane')).text()).rejects.toThrow();
   });
 });
+
+describe('a remote page on a machine a device link reaches (@@@machine-file-stream)', () => {
+  it('reads the first piece through the machine\'s channel and the rest from one stream of that version', async () => {
+    const { setMachineFileStreams } = await import('./machine-file-streams');
+    const big = 'x'.repeat(3 * 1024 * 1024 + 7);
+    const asked: number[] = [];
+    const stop = answerFrom({ [`${ROOT}/site/big.js`]: big });
+    const opened: Record<string, unknown>[] = [];
+    setMachineFileStreams({
+      linked: async (deviceId) => deviceId === 'dev-b',
+      open: async (_deviceId, _type, request, size, from) => {
+        opened.push(request(from, 's'));
+        return { dispose: async () => undefined, read: async (offset: number, length: number) => { asked.push(offset); return new Uint8Array(Buffer.from(big.slice(offset, offset + Math.min(length, size - offset)))); } };
+      },
+    });
+    const created = createRemotePreview({ projectId: 'proj', workspaceId: 'ws', machine: { deviceId: 'dev-b', projectId: 'proj-there', workspaceId: 'ws' }, root: ROOT, surface: 'browser', failureCopy: COPY })!;
+    try {
+      const response = await handlePreviewRequest(new Request(`gugu-preview://${created.previewId}/site/big.js`), 'browser');
+      expect(response.status).toBe(200);
+      expect((await response.text()).length).toBe(big.length);
+      expect(opened).toEqual([{ place: { projectId: 'proj-there', workspaceId: 'ws' }, path: `${ROOT}/site/big.js`, offset: asked[0], etag: 'e1', stream: 's' }]);
+      expect(asked[0]).toBeGreaterThan(0);
+    } finally { stop(); setMachineFileStreams(null); releasePreview(created.previewId); }
+  });
+});

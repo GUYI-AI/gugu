@@ -19,7 +19,7 @@ function Conversation({ mobile }: { mobile: boolean }) {
   return <>
     <textarea defaultValue={draft} aria-label="task draft" />
     <button onClick={() => preview.open({ kind: 'file', fileName: 'notes.txt', mimeType: 'text/plain', sizeBytes: 13, source: { kind: 'attachment', attachmentId: 'file-id' } })}>Open file</button>
-    {preview.panel}
+    {preview.beside(null)}
   </>
 }
 let ui: ReturnType<typeof createReactHarness>

@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState, type RefObject } from 'react'
 import { clippedElementBox } from '../../lib/elementVisibility'
 import { widgetPresenceOf, type WidgetPresence } from './widgetPresence'
+import { isElementVisible } from '@/lib/elementVisibility'
 
 /** The list a slot scrolls in: on a phone its page is mounted half of that list's height ahead (contract r13). */
 function scrollerOf(element: HTMLElement): HTMLElement | null {
@@ -22,7 +23,7 @@ export function useWidgetPresence(chatId: string, widgetId: string, ref: RefObje
     const scroller = preload ? scrollerOf(element) : null
     const measure = () => {
       const { full, clip } = clippedElementBox(element, { left: 0, top: 0, width: innerWidth, height: innerHeight })
-      const seen = element.isConnected && document.visibilityState !== 'hidden' && element.checkVisibility({ visibilityProperty: true, opacityProperty: true })
+      const seen = element.isConnected && document.visibilityState !== 'hidden' && isElementVisible(element, { opacity: true })
       const visible = shown && seen && clip.width > 0 && clip.height > 0
       const list = scroller?.getBoundingClientRect()
       const nearby = !!list && seen && full.top < list.bottom + list.height / 2 && full.top + full.height > list.top - list.height / 2

@@ -29,7 +29,7 @@ export function IntegrationGridCard({
           // 现在:悬浮/按下改叠状态层(与全仓同一条阶梯,不依赖容器色阶是否塌),
           // 选中留给唯一真的有区别的那一级。层走 background-image、选中走 background-color,
           // 两者不抢同一个属性,所以「选中 + 悬浮」是叠加而不是替换。
-          'group relative flex w-full items-center gap-4 rounded-lg border border-border bg-background-1 p-4 text-left text-foreground transition-all hover:state-hover-layer active:state-press-layer',
+          'group relative flex w-full items-center gap-4 rounded-lg border border-border bg-background-1 p-4 text-left text-foreground transition-colors hover:state-hover-layer active:state-press-layer',
           // 选中还额外换边框色:这张卡的容器色阶塌得只剩一级可用,单靠底色的话
           // 「未选中按下」(明色下 = #fff 叠 5.1% 黑 ≈ rgb(242,242,242))和
           // 「选中静止」(bg-background-3 = rgb(243,244,246))几乎一模一样,按一下

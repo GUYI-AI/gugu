@@ -44,17 +44,25 @@ export function runOneListCreateAction(action: Exclude<OneListCreateAction, 'new
   requestShellChatAction(action);
 }
 
+/** The bell's row on the rail (SidebarRailBell). */
+const RAIL_BELL_ROW_PX = 40;
 const CREATE_MENU_ICON = { 'create-group': Users, 'new-project': FolderPlus, 'add-contact': UserRound } as const;
 const CREATE_MENU_LABEL = { 'create-group': 'sidebar.newGroupChat', 'new-project': 'task.projectNew', 'add-contact': 'sidebar.addContact' } as const;
 
 /**
- * The top row's geometry as a function of the open/close progress p (mock v19: 「创建智能体」收窄淡出,+ 从右边滑到这条竖线上):
- * side padding 12 → 20 and the gap 4 → 0 as p goes 1 → 0, 创建智能体 takes what is left (0 on the rail), so the 「+」 (32)
- * slides from the right end onto the avatars' axis (20 + 16 = 36) with the same progress as everything else.
+ * The top row (mock v19: 「创建智能体」收窄淡出,+ 从右边滑到这条竖线上). Its layout is the expanded one (side padding 12, gap 4)
+ * or the rail's (20, 0, 创建智能体 at 0), taken where the rows take the rail's layout (@@@panel-track: one layout at each end
+ * of the fold). In between the 「+」 (32) slides from the row's right end onto the avatars' axis (20 + 16 = 36) by a
+ * transform, with the same progress as everything else; 创建智能体 fades (followNames).
  */
-function followTopRow(row: HTMLElement, progress: number) {
-  row.style.paddingInline = `${20 - 8 * progress}px`;
-  row.style.gap = `${4 * progress}px`;
+function followTopRow(row: HTMLElement, progress: number, railLayout: boolean) {
+  row.style.paddingInline = railLayout ? '20px' : '12px';
+  row.style.gap = railLayout ? '0px' : '4px';
+  const plus = row.lastElementChild as HTMLElement | null;
+  if (!plus) return;
+  // From its expanded place (12 from the right end) to the rail's (20 from the left); a read of a clean layout.
+  const travel = railLayout ? 0 : (1 - progress) * (row.clientWidth - 12 - plus.offsetWidth - 20);
+  plus.style.transform = travel > 0 ? `translateX(${-travel}px)` : '';
 }
 
 /** What the rail hides along with the names: it takes their opacity (sidebarRailTextOpacity), on its own element. */
@@ -131,13 +139,20 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
 }
 
 /**
- * The bell's place on the rail: a row between 「»」 and the 「+」, on the avatars' axis (20 + 32 / 2 = 36). The row opens with
- * the collapse (40px tall at the rail, 0 expanded) so the avatars move down with the progress, ❌ jump; the bell itself is
- * the head's (the same slot, the same count) and changes place only where the edge lands on the rail, fading in there as the
- * rows' counts do. Opening it on the rail expands the sidebar into the same list (LeftSidebar).
+ * The bell's place on the rail: a row between 「»」 and the 「+」, on the avatars' axis (20 + 32 / 2 = 36), 40px tall on the
+ * rail and 0 expanded. It takes its height where the rows take the rail's layout (the list keeps its width until the fold
+ * lands, @@@panel-track); in between, what is under it moves down with the progress by a transform (followBelowRailBell), so the
+ * avatars still move, ❌ jump. The bell itself is the head's (the same slot, the same count) and changes place there too,
+ * fading in as the rows' counts do. Opening it on the rail expands the sidebar into the same list (LeftSidebar).
  */
-function followRailBellRow(row: HTMLElement, progress: number) {
-  row.style.height = `${40 * (1 - progress)}px`;
+function followRailBellRow(row: HTMLElement, _progress: number, railLayout: boolean) {
+  row.style.height = railLayout ? `${RAIL_BELL_ROW_PX}px` : '0px';
+}
+
+/** What sits under the bell's row, moved down as far as the row would be open at this progress (0 at either end). */
+export function followBelowRailBell(element: HTMLElement, progress: number, railLayout: boolean) {
+  const shift = railLayout ? 0 : RAIL_BELL_ROW_PX * (1 - progress);
+  element.style.transform = shift > 0 ? `translateY(${shift}px)` : '';
 }
 
 export function SidebarRailBell() {

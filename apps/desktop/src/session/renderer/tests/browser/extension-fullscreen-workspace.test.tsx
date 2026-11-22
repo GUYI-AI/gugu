@@ -157,7 +157,7 @@ it('keeps a host PDF canvas above both split backgrounds when fullscreen', async
   }
 });
 
-// Use the real ScreenFrame/ResizableHandle as well as the real pane and resident
+// Use the real ScreenFrame and its block divider as well as the real pane and resident
 // layer. The screen divider used to choose z-30 independently of the pane table.
 async function screenSplit() {
   const layouts = ['group', 'direct'].map((name) => {
@@ -194,7 +194,7 @@ async function screenSplit() {
 
 async function resizeScreen(handle: HTMLElement, input: 'pointer' | 'keyboard') {
   if (input === 'keyboard') {
-    // Also exercise the library's key listener if focus survives disabling it.
+    // A disabled divider takes no keys even if focus survives disabling it.
     handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
   } else {
     const rect = handle.getBoundingClientRect();
