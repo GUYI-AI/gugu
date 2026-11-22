@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { mergeMessagesById } from '@gugu/core/shared/ui/messageListModels'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
-import { readMessageWindow, type AccountImRepository } from '../lib/imRepository'
+import type { AccountImRepository } from '../lib/imRepository'
 import { chatService } from '../lib/chat'
 import { decideColdStartFetch, deltaResultRequiresDegrade } from '../lib/coldStartFetch'
 import { INITIAL_PAGE, NEWER_PAGE, maxMainlineSeq } from './chatMessageWindow'
@@ -37,13 +37,13 @@ export async function openCachedChatWindow(options: {
   const { chatId, userId, cache, observer } = options
   const repository = await options.getRepository()
   if (!observer.current()) return
-  const idbSparse = readMessageWindow(repository, chatId)?.sparse === true
   const disk = seedCacheFromDisk(cache, repository, chatId)
   let painted = !!cache.get(chatId)?.some((message) => message.seq >= 0)
   if (disk) { observer.painted(disk.rows, disk.hasMoreOlder); painted = true }
-  // Desktop: the SQLite coverage ranges say whether the stored tail is contiguous.
-  const sparse = messageWindow(userId, chatId) === null ? idbSparse
-    : !(await readMessagePage(userId, { chatId, limit: INITIAL_PAGE }))?.covered
+  // Whether the stored tail is contiguous up to its own newest row; whether the server has newer rows is
+  // decideColdStartFetch's question (expected tail, unread), answered below.
+  const storedTail = maxMainlineSeq(messageWindow(userId, chatId) ?? [])
+  const sparse = !storedTail || !(await readMessagePage(userId, { chatId, beforeSeq: storedTail + 1, limit: INITIAL_PAGE })).covered
   if (!observer.current()) return
   const maxSeq = maxMainlineSeq(cache.get(chatId))
   const plan = sparse ? { kind: 'initialLoad' as const } : decideColdStartFetch({
@@ -87,7 +87,7 @@ export function fetchChatHistoryPage(userId: string): FetchHistoryPage {
   return async (chatId, way, cursor, limit) => {
     if (way === 'older') {
       const local = await readMessagePage(userId, { chatId, beforeSeq: cursor, limit })
-      if (local?.covered) return local.rows
+      if (local.covered) return local.rows
     }
     return way === 'newer'
       ? chatService.getMessages(chatId, userId, 'loadNewer', limit, undefined, cursor)
@@ -113,13 +113,10 @@ export function restoreChatHistoryAnchor(window: ChatHistoryWindow, userId: stri
 /** Paint the bounded local thread before its ordinary network revalidation. The caller owns its race guard. */
 export async function fetchThreadMessages(chatId: string, rootId: string, userId: string,
   publishLocal: (rows: MessageItem[]) => void): Promise<MessageItem[]> {
-  const localAccount = messageWindow(userId, chatId) !== null
-  if (localAccount) {
-    const local = await readMessagePage(userId, { chatId, threadRootId: rootId, limit: 100 })
-    if (local?.rows.length) {
-      setMessageWindow(userId, chatId, rootId, local.rows)
-      publishLocal(local.rows)
-    }
+  const local = await readMessagePage(userId, { chatId, threadRootId: rootId, limit: 100 })
+  if (local.rows.length) {
+    setMessageWindow(userId, chatId, rootId, local.rows)
+    publishLocal(local.rows)
   }
-  return chatService.getThreadMessages(chatId, rootId, userId, localAccount ? 100 : 50)
+  return chatService.getThreadMessages(chatId, rootId, userId, 100)
 }

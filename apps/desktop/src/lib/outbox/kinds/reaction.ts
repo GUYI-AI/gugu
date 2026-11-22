@@ -2,6 +2,7 @@ import type { MessageItem, ReactionGroup } from '@gugu/core/shared/types/chat'
 import { dbPayload } from '@gugu/core/cloud/supabase'
 import { chatDb } from '../../supabase'
 import { outbox, type OutboxKind } from '..'
+import { invalidateReactions } from '../../chatMessageRevalidation'
 
 /** What the person wants their reaction to be, not a toggle: a double tap merges into one write of the last wish. */
 export type ReactionWish = { chatId: string; messageId: string; userId: string; emoji: string; on: boolean }
@@ -22,7 +23,8 @@ export function reactionOutboxKind(onAck: (wish: ReactionWish) => void): OutboxK
         await chatDb.from('message_reactions').delete().eq('message_id', messageId).eq('user_id', userId).eq('emoji', emoji).throwOnError()
       }
     },
-    onAck: (item) => onAck(item.payload),
+    // A reaction read begun before this write may not see it (@@@reaction-read-order).
+    onAck: (item) => { invalidateReactions([item.payload.messageId]); onAck(item.payload) },
   }
 }
 

@@ -7,7 +7,7 @@ import {
   type AccountRevisionSource,
   type AccountRevisionScheduling,
 } from './accountRevisionRuntime'
-import { ingestAccountMessage, imSelectors, recordMessageDeletion, type AccountImRepository, type ImRepositoryTransaction } from './imRepository'
+import { imSelectors, type AccountImRepository } from './imRepository'
 import { rendererLogger } from './log'
 import { noteAttachmentChanged } from './attachmentChanges'
 
@@ -240,16 +240,16 @@ export function createAccountRevisionCoordinator(
   const baseline = (imSelectors.syncState('account-revision-cursor')(repository.snapshot()) as { revision: string } | undefined)?.revision ?? '0'
 
   // Inline payloads and recovered bodies share this one commit-then-notify path.
-  const commitArrival = (operation: AccountRevisionOperation, message: MessageItem, transaction: ImRepositoryTransaction, live: boolean,
+  const commitArrival = (operation: AccountRevisionOperation, message: MessageItem, live: boolean,
     arrived?: ReadonlySet<string>) => {
     const arrival = readMessageCreatedRevision(operation.payload)
     if (message.id !== arrival.messageId || message.chat_id !== arrival.chatId) throw new Error('message revision crossed chat boundary')
-    const { won } = ingestAccountMessage(repository, transaction, message, operation.revision, arrived)
+    // @@@arrival-claim - the message store reports which puts of this page claimed their row (a later delete in the same
+    // page withdraws it). A recovered body (no page) was fetched once by its own recovery.
+    const won = arrived?.has(message.id) ?? true
     return () => {
       // The claim is committed. Never retry the OS side effect: a crash may lose one alert, never duplicate it.
-      // A later message_deleted in the same page marks the claim deleted.
-      if (!active || !live || !won
-        || (imSelectors.view(`message-revision:${message.id}`)(repository.snapshot()) as { deleted?: boolean } | undefined)?.deleted) return
+      if (!active || !live || !won) return
       void messages!.notify(message).catch(error => coordinatorLog.error({ error, messageId: message.id }, 'message notification failed'))
     }
   }
@@ -273,31 +273,12 @@ export function createAccountRevisionCoordinator(
       if (messages && event === 'message_created') {
         try {
           const message = decodeArrival(operation)
-          if (message) afterCommit = commitArrival(operation, message, transaction, live, arrived)
+          if (message) afterCommit = commitArrival(operation, message, live, arrived)
           messageCommitted = message !== undefined
         } catch (error) {
           // A bad/legacy payload belongs to the existing inbox consumer's
           // failure isolation. It must not roll back unrelated revision rows.
           coordinatorLog.error({ error, revision: operation.revision }, 'message payload requires inbox recovery')
-        }
-      }
-      if (messages && event === 'message_deleted') {
-        const key = readRevisionResourceKey(operation.payload, event)
-        if (!key.entityId) throw new Error('message_deleted revision requires entity_id')
-        recordMessageDeletion(transaction, accountId, key.chatId, key.entityId, operation.revision)
-      }
-      if (messages && event === 'chat_changed') {
-        const refresh = readMessageRefreshRevision(operation.payload)
-        if (refresh) {
-          const raw = refresh.message as (RawMessageRow & { deleted_at?: unknown; deleted_for_user_ids?: unknown }) | null
-          if (!raw || raw.deleted_at || (Array.isArray(raw.deleted_for_user_ids) && raw.deleted_for_user_ids.includes(accountId))) {
-            recordMessageDeletion(transaction, accountId, refresh.chatId, refresh.messageId, operation.revision)
-          } else {
-            const message = messageItemFromRow(raw, accountId)
-            if (!message || !Number.isSafeInteger(message.seq) || message.seq < 1) throw new Error('Refreshed message body is malformed')
-            // This updates the phone repository too. It is an existing body, never a notification arrival.
-            ingestAccountMessage(repository, transaction, message, operation.revision)
-          }
         }
       }
       transaction.putView(operationKey(operation.revision), messages && event === 'message_created'
@@ -316,7 +297,7 @@ export function createAccountRevisionCoordinator(
           const message = await messages.recover(readMessageCreatedRevision(operation.payload).messageId)
           if (!active || !message) continue // Authoritative RLS/deletion absence; never synthesize a row.
           const live = operation.notify === true && BigInt(operation.revision) > BigInt(baseline)
-          ;(await repository.transaction(transaction => commitArrival(operation, message, transaction, live)))()
+          commitArrival(operation, message, live)()
         }
       } })
     claimCounts.set('message_created', 1)

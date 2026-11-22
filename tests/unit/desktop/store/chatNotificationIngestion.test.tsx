@@ -7,6 +7,7 @@ import { chat, createReactHarness, deferred, displayIdentity } from '../../../su
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
+import { messageWindow } from '../../../../apps/desktop/src/lib/messageWindows'
 import { createAccountRevisionCoordinator, type AccountRevisionCoordinator } from '../../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import type { AccountRevisionSource, AccountRevisionOperation } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
 import { createChatListProjectionLedger, useChatProjectionBinding } from '../../../../apps/desktop/src/store/chatListProjection'
@@ -111,7 +112,7 @@ beforeEach(async () => {
   await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '0' }))
   native.capabilities.conversationNotifications = true; native.faces = noFaces; native.current = true
   native.show.mockReset().mockImplementation(async () => {
-    bodyPresentAtNotification.push(repository.snapshot().message.some(row => row.id === MESSAGE))
+    bodyPresentAtNotification.push((messageWindow(ACCOUNT, GROUP) ?? []).some(row => row.id === MESSAGE))
     return { success: true, displayed: false }
   })
   cloudRows.set('rpc:list_conversation_memberships', [{ chat_id: GROUP, user_id: ACCOUNT, last_read_seq: 0, is_marked_unread: false,
