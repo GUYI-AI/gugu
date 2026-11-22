@@ -396,6 +396,52 @@ describe('attachment bytes go up behind their message', () => {
     expect(progress.fail).toHaveBeenCalledExactlyOnceWith('message-1', undefined)
   })
 
+  it('an error the queue does not recognise is not a verdict: the upload waits and tries again, at most one plan per round', async () => {
+    vi.useFakeTimers()
+    try {
+      copies.set('a'.repeat(64), new Blob(['bytes']))
+      server.pending.mockResolvedValue({ uploads: [pending('message-1', 'a'.repeat(64))] })
+      server.plan.mockImplementation(() => plan('pending/message-1'))
+      // A headless server that cannot make the request at all throws a plain Error, not a refusal.
+      server.store.mockRejectedValue(new Error('net.request is unavailable'))
+      // Finish settles only bytes that reached storage.
+      let stored = false
+      server.finish.mockImplementation(async () => { if (!stored) throw refuse(409, 'upload_missing'); return {} })
+      const failed = beginAttachmentUpload(task(), new Blob(['bytes']), plan('pending/message-1')).catch(error => error)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect((await failed).message).toBe('net.request is unavailable')
+      expect(progress.fail).toHaveBeenLastCalledWith('message-1', expect.any(Function))
+      const stores = server.store.mock.calls.length, planned = server.plan.mock.calls.length
+      await vi.advanceTimersByTimeAsync(5_100)
+      expect(server.pending).toHaveBeenCalledOnce()
+      expect(server.store.mock.calls.length).toBeGreaterThan(stores)
+      // A round reuses a live permit; it asks for at most one plan, never one per attempt.
+      expect(server.plan.mock.calls.length - planned).toBeLessThanOrEqual(1)
+      server.store.mockImplementation(async () => { stored = true })
+      await vi.advanceTimersByTimeAsync(10_100)
+      expect(progress.set).toHaveBeenLastCalledWith('message-1')
+    } finally { vi.useRealTimers() }
+  })
+
+  it('a local copy that cannot be read on resume is asked for again, not given up on', async () => {
+    vi.useFakeTimers()
+    try {
+      server.pending.mockResolvedValue({ uploads: [pending('message-1', 'a'.repeat(64))] })
+      let reads = 0
+      queue.dispose()
+      queue = createDeclaredUploads({ endpoint, copyOf: async sha => { if (++reads === 1) throw new Error('EBUSY: resource busy'); return copies.get(sha) ?? null },
+        progress: (id, value) => { if (value?.failed) progress.fail(id); else if (value) progress.set(id, value); else progress.set(id) } })
+      copies.set('a'.repeat(64), new Blob(['bytes']))
+      server.plan.mockImplementation(() => plan('pending/message-1'))
+      await resumeAttachmentUploads().catch(() => undefined)
+      expect(server.store).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(5_100)
+      expect(server.pending).toHaveBeenCalledTimes(2)
+      expect(server.store).toHaveBeenCalledOnce()
+      expect(progress.set).toHaveBeenLastCalledWith('message-1')
+    } finally { vi.useRealTimers() }
+  })
+
   it('a message discarded unsent stops its upload', async () => {
     let release!: () => void
     server.store.mockImplementation(() => new Promise<void>(resolve => { release = resolve }))
