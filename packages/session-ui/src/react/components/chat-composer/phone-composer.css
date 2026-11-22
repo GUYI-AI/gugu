@@ -2,11 +2,13 @@
    and a 60px / 943px visible send circle. Existing 16/24 typography is retained. */
 [data-slot='composer'][data-phone-capsule] { --phone-composer-start-gutter: 16px; --phone-composer-end-gutter: 64px; }
 /* Keep the same text width when the paperclip moves, so wrapped text cannot
-   move the paperclip back and forth across the one-line boundary. */
-[data-slot='composer'][data-phone-capsule]:not([data-phone-expanded]):has([data-phone-attachment]) {
+   move the paperclip back and forth across the one-line boundary.
+   No :has() in this file: Android System WebView before 105 drops every rule that uses one, and the capsule comes
+   apart. The composer marks its root data-phone-has-attachment and the permission button gg-composer-permission-trigger. */
+[data-slot='composer'][data-phone-capsule][data-phone-has-attachment]:not([data-phone-expanded]) {
   --phone-composer-end-gutter: 80px;
 }
-[data-slot='composer'][data-phone-capsule]:not([data-phone-expanded]):not([data-phone-multiline]):has([data-phone-attachment]) {
+[data-slot='composer'][data-phone-capsule][data-phone-has-attachment]:not([data-phone-expanded]):not([data-phone-multiline]) {
   --phone-composer-start-gutter: 48px;
   --phone-composer-end-gutter: 48px;
 }
@@ -49,7 +51,7 @@
   grid-row: 2;
   padding: 4px 8px 4px var(--phone-composer-start-gutter);
 }
-[data-slot='composer'][data-phone-capsule] [data-slot='composer-actions-start'] > button:not(:has([data-slot='composer-permission-mode'])) {
+[data-slot='composer'][data-phone-capsule] [data-slot='composer-actions-start'] > button:not(.gg-composer-permission-trigger) {
   grid-column: 1;
   grid-row: 3;
   justify-self: start;
@@ -102,7 +104,7 @@
 [data-slot='composer'][data-phone-capsule] [data-phone-send] > svg { width: 16px; height: 16px; }
 [data-slot='composer'][data-phone-capsule] [data-phone-editor-toggle] > svg { width: 20px; height: 20px; }
 /* Metadata belongs above the input; it never competes with the attachment or send target. */
-[data-slot='composer'][data-phone-capsule] [data-slot='composer-actions-start'] > button:has([data-slot='composer-permission-mode']) {
+[data-slot='composer'][data-phone-capsule] [data-slot='composer-actions-start'] > button.gg-composer-permission-trigger {
   grid-column: 1;
   grid-row: 1;
   justify-self: start;

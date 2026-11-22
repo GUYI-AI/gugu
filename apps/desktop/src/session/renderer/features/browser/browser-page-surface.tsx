@@ -5,6 +5,7 @@ import { browserPageEventChannel, type BrowserPageMode } from '@shared/events/br
 import { forgetPageFocus, guardHostFocus, notePageFocus } from './browser-host-focus';
 import { BrowserPageHandle } from './browser-page-handle';
 import { isBrowserPageOccluded, type PageRect } from './browser-page-occlusion';
+import { isElementVisible } from '@/lib/elementVisibility';
 
 const surfaceLog = rendererLogger('browser/page-surface');
 
@@ -119,7 +120,7 @@ export function BrowserPageSurface({
         visibleRef.current &&
         rect.width > 0 &&
         rect.height > 0 &&
-        element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+        isElementVisible(element, { opacity: true });
       if (onScreen && now - lastOcclusionCheck >= OCCLUSION_CHECK_MS) {
         lastOcclusionCheck = now;
         occluded = isBrowserPageOccluded(element, rect);

@@ -14,7 +14,7 @@ import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native
 import { pageCorners } from './page-corners';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
-import { clippedElementBox, elementBox, type ElementBox as Box } from '@/lib/elementVisibility';
+import { clippedElementBox, elementBox, isElementVisible, type ElementBox as Box } from '@/lib/elementVisibility';
 import { readSelfIdentityBridge } from '@/lib/selfIdentityBridge';
 import { useTheme } from '@/store/theme';
 import { widgetSnapshotWebP, widgetSnapshots, widgetWidthBucket } from '@/lib/widgetSnapshots';
@@ -228,7 +228,7 @@ export const ExtensionPage = observer(function ExtensionPage({
     if (!widgetId || !element || !account || accountIdRef.current !== account.accountId || webContentsId === null
       || !paintedRef.current || document.visibilityState === 'hidden' || !element.isConnected) return;
     const { clip } = clippedElementBox(element, { left: 0, top: 0, width: innerWidth, height: innerHeight });
-    if (clip.width <= 0 || clip.height <= 0 || !element.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return;
+    if (clip.width <= 0 || clip.height <= 0 || !isElementVisible(element, { opacity: true })) return;
     if (capturingRef.current) { pendingCaptureRef.current = true; return; }
     const remaining = 2_000 - (performance.now() - lastCaptureRef.current);
     if (remaining > 0) { captureTimerRef.current = setTimeout(capture, remaining); return; }
@@ -490,7 +490,7 @@ export const ExtensionPage = observer(function ExtensionPage({
               clip.width > 0 &&
               clip.height > 0 &&
               claim.element.isConnected &&
-              claim.element.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+              isElementVisible(claim.element, { opacity: true });
             if (!shown) releaseHiddenFocus(box, claim);
             box.style.left = `${clip.left}px`;
             box.style.top = `${clip.top}px`;

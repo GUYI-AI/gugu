@@ -2,11 +2,12 @@ import { useEffect, useRef, useState, type MutableRefObject, type RefObject } fr
 import { UI_EVENTS } from '../lib/uiEvents'
 import type { UnreadLocatorCommit } from '../lib/chatUnreadLocatorWindow'
 import type { UnreadMessageRevealRequest } from '../lib/chatUnreadLocator'
+import { isElementVisible } from '@/lib/elementVisibility'
 
 function isVisibleWithinSurface(row: HTMLElement, surface: HTMLElement): boolean {
   if (!row.isConnected || !surface.isConnected || row.getClientRects().length === 0 || surface.getClientRects().length === 0) return false
   // checkVisibility 认 display / visibility / content-visibility(藏起来的常驻面,lib/retainedSurface.ts)整条祖先链。
-  if (!row.checkVisibility({ visibilityProperty: true })
+  if (!isElementVisible(row)
     || Number.parseFloat(window.getComputedStyle(surface).opacity || '1') < 0.99) return false
   const rowRect = row.getBoundingClientRect()
   const surfaceRect = surface.getBoundingClientRect()
