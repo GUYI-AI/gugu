@@ -21,13 +21,21 @@ $Target = [IO.Path]::GetFullPath($Target).TrimEnd('\')
 if ($Target -eq [IO.Path]::GetPathRoot($Target).TrimEnd('\')) { throw 'Cannot install at a volume root' }
 $journal = "$Target.gugu-install-$AppId"
 $statePath = Join-Path $journal 'transaction.json'
-# @@@short-stage - the package is extracted to stage + each file's relative path, and the extractor (nsisunz)
-# fails on paths past MAX_PATH. So the stage is a short sibling of the target, on the target's volume (the commit
-# is a directory rename), not a folder inside the journal: that added ".gugu-install-<appId>\stage" and pushed the
-# deepest packaged file past 259 characters. The journal records the stage it created; older journals have none,
-# because their stage lived inside the journal and goes with it.
-# electron-builder.cjs checks the deepest packaged path against this name (STAGE_SUFFIX in windows-install-paths.cjs).
+# @@@short-stage - every packaged file is written below the stage (nsisunz) and deleted below the backup, and neither
+# works past MAX_PATH. So both are short siblings on their tree's volume (commit is a directory rename): the stage
+# "<target>.new", each backup "<old root>.old-<6 hex>". Earlier installers used ".gugu-install-<appId>\stage" and
+# ".gugu-backup-<appId>", which pushed the deepest packaged file past 259 characters; their journals are still
+# recovered. A backup name is fresh per transaction, so a backup a cleanup could not delete never blocks a later
+# install. Packaging checks the deepest file against both names (windows-install-paths.cjs).
 $stage = "$Target.new"
+function New-BackupPath([string]$root) {
+  do { $path = "$root.old-" + [Guid]::NewGuid().ToString('N').Substring(0, 6) } while (Test-Path -LiteralPath $path)
+  return $path
+}
+function Test-BackupPath($entry) {
+  return $entry.backup -eq "$($entry.root).gugu-backup-$AppId" -or
+    $entry.backup -match ('^' + [regex]::Escape($entry.root) + '\.old-[0-9a-f]{6}$')
+}
 $reg = Join-Path $env:SystemRoot 'System32\reg.exe'
 function Registry-Path([string]$hive, [string]$key) {
   $full = if ($hive -eq 'HKLM') { 'HKEY_LOCAL_MACHINE' } else { 'HKEY_CURRENT_USER' }
@@ -167,7 +175,7 @@ function Load-State {
   if ($s.appId -ne $AppId -or $s.target -ne $Target -or $s.format -ne 1) { throw 'Unknown installer journal; preserved for inspection' }
   if ($s.stage -and $s.stage -ne $stage) { throw 'Invalid staging path; preserved for inspection' }
   foreach ($entry in $s.roots) {
-    if ($entry.backup -ne "$($entry.root).gugu-backup-$AppId") { throw 'Invalid backup path; preserved for inspection' }
+    if (-not (Test-BackupPath $entry)) { throw 'Invalid backup path; preserved for inspection' }
   }
   return $s
 }
@@ -248,13 +256,29 @@ function Restore-State($s) {
   Remove-OwnedStage $s
   Remove-Item -LiteralPath $journal -Recurse -Force
 }
+function Write-InstallerLog($entry) {
+  foreach ($destination in @($DiagnosticLog,$FailureLog) | Where-Object { $_ } | Select-Object -Unique) {
+    try {
+      New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($destination)) -Force | Out-Null
+      $kept = @(if (Test-Path -LiteralPath $destination) { Get-Content -LiteralPath $destination -Encoding UTF8 | Select-Object -Last 49 })
+      [IO.File]::WriteAllLines($destination, [string[]]($kept + ($entry | ConvertTo-Json -Compress)), (New-Object Text.UTF8Encoding($false)))
+    } catch { [Console]::Error.WriteLine("Could not record the installer log entry in ${destination}: $($_.Exception.Message)") }
+  }
+}
 function Finish-State($s) {
   # Persist completion before deletion. A crash during backup cleanup must never
   # roll a successfully registered new version back to a partly deleted old tree.
   $s.completed = $true
   Save-State $s
-  foreach ($entry in $s.roots) {
-    if (Test-Path -LiteralPath $entry.backup) { Retry-Files { Remove-Item -LiteralPath $entry.backup -Recurse -Force } }
+  foreach ($root in $s.roots) {
+    if (-not (Test-Path -LiteralPath $root.backup)) { continue }
+    try { Retry-Files { Remove-Item -LiteralPath $root.backup -Recurse -Force } } catch {
+      # @@@cleanup-residue - the new version is installed and registered. An old tree that cannot be deleted is left
+      # behind and reported; it never fails this install, and (backup names are fresh) never blocks a later one.
+      $message = "The previous installation's backup could not be removed and was left in place: $($root.backup). $($_.Exception.GetBaseException().Message)"
+      [Console]::Error.WriteLine($message)
+      Write-InstallerLog ([ordered]@{ time=[DateTime]::UtcNow.ToString('o'); phase=$Phase; version=$Version; mode=$Mode; target=$Target; residue=$root.backup; error=$message })
+    }
   }
   $marker = Join-Path $Target '.gugu-install-transaction'
   if ((Test-Path -LiteralPath $marker) -and ([IO.File]::ReadAllText($marker)) -eq $s.token) { Remove-Item -LiteralPath $marker }
@@ -282,9 +306,7 @@ try {
         $location = [IO.Path]::GetFullPath($location).TrimEnd('\')
         if (-not (Test-Path -LiteralPath (Join-Path $location $Executable))) { throw 'Registered install has no expected executable; preserved' }
         if ($roots.root -notcontains $location) {
-          $backup = "$location.gugu-backup-$AppId"
-          if (Test-Path -LiteralPath $backup) { throw 'Unclaimed backup exists; preserved' }
-          $roots += @{ root=$location; backup=$backup }
+          $roots += @{ root=$location; backup=(New-BackupPath $location) }
         }
       }
     }
@@ -294,11 +316,9 @@ try {
           $script:unrecognizedTarget = $true
           throw "Unregistered target contains unrecognized files; choose a new empty installation folder. Preserved: $Target"
         }
-        $backup = "$Target.gugu-backup-$AppId"
-        if (Test-Path -LiteralPath $backup) { throw 'Unclaimed backup exists; preserved' }
         # Treat a recognized residue exactly like a registered old tree. It is
         # backed up at commit and restored with absent registration on failure.
-        $roots += @{ root=$Target; backup=$backup }
+        $roots += @{ root=$Target; backup=(New-BackupPath $Target) }
       } else { Remove-Item -LiteralPath $Target }
     }
     foreach ($entry in $roots) {
@@ -387,13 +407,7 @@ try {
       step=$(if ($script:moveFailure) { $script:moveFailure.step }); holders=$(if ($script:moveFailure) { $script:moveFailure.holders } else { @() })
       # What still runs from the trees being replaced: the usual reason a directory rename is refused.
       running=@(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $path = $_.ExecutablePath; $path -and @($roots | Where-Object { $path.StartsWith("$_\", [StringComparison]::OrdinalIgnoreCase) }).Count } | ForEach-Object { "$($_.ProcessId) $($_.ExecutablePath)" }) }
-    foreach ($destination in @($DiagnosticLog,$FailureLog) | Where-Object { $_ } | Select-Object -Unique) {
-      try {
-        New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($destination)) -Force | Out-Null
-        $kept = @(if (Test-Path -LiteralPath $destination) { Get-Content -LiteralPath $destination -Encoding UTF8 | Select-Object -Last 49 })
-        [IO.File]::WriteAllLines($destination, [string[]]($kept + ($entry | ConvertTo-Json -Compress)), (New-Object Text.UTF8Encoding($false)))
-      } catch { [Console]::Error.WriteLine("Could not record the failure in ${destination}: $($_.Exception.Message)") }
-    }
+    Write-InstallerLog $entry
   } catch { [Console]::Error.WriteLine("Could not record the failure in ${FailureLog}: $($_.Exception.Message)") }
   if ($script:moveFailure -and @($script:moveFailure.holders | Where-Object { $_ -match '^\d+ ' }).Count) { exit 3 }
   if ($script:unrecognizedTarget) { exit 4 }

@@ -10,7 +10,6 @@ $key = "Software\GuguInstallerFixture\$id\install"
 $uninstall = "Software\GuguInstallerFixture\$id\uninstall"
 $journal = "$target.gugu-install-$app"
 $stage = "$target.new"
-$backup = "$target.gugu-backup-$app"
 $powershell = (Get-Process -Id $PID).Path
 $results = @()
 $priorTemp = $env:TEMP; $priorTmp = $env:TMP
@@ -37,6 +36,9 @@ function Invoke-Phase($phase, [int]$expected = 0) {
   } finally { Pop-Location; $ErrorActionPreference=$prior }
   Assert ($code -eq $expected) "$phase returned $code, expected $expected"
 }
+# Backup names are fresh per transaction; the journal records each.
+function Backup { (Get-Content -LiteralPath (Join-Path $journal 'transaction.json') -Raw -Encoding UTF8 | ConvertFrom-Json).roots[0].backup }
+function Leftover-Backups { @(Get-ChildItem -LiteralPath $root -Force | Where-Object { $_.Name -like "$(Split-Path $target -Leaf).old-*" -or $_.Name -like '*.gugu-backup-*' }) }
 function Payload($dir, $text) {
   New-Item -ItemType Directory -Path (Join-Path $dir 'resources\app') -Force | Out-Null
   [IO.File]::WriteAllText((Join-Path $dir 'fixture.exe'), $text)
@@ -70,6 +72,8 @@ try {
   Invoke-Phase prepare
   Payload $stage 'upgrade'
   Invoke-Phase commit
+  $backup = Backup
+  Assert ($backup -match '\.old-[0-9a-f]{6}$') "Backup is not short and fresh: $backup"
   Assert (Test-Path -LiteralPath $backup) 'Old tree was not retained before registration'
   Assert (-not (Test-Path -LiteralPath (Join-Path $target 'obsolete.js'))) 'Old file leaked into new payload'
   Registration '0.3.5'
@@ -102,7 +106,7 @@ try {
 
   Invoke-Phase prepare
   Payload $stage 'interrupted'
-  [IO.Directory]::Move($target, $backup)
+  [IO.Directory]::Move($target, (Backup))
   Invoke-Phase prepare
   Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'upgrade') 'Crash recovery lost old application'
   Invoke-Phase rollback
@@ -119,6 +123,43 @@ try {
   Assert ($failures[0].phase -eq 'finish' -and $failures[0].error -match 'registration') 'Registration failure was not recorded'
   Assert ($failures[1].phase -eq 'commit' -and $failures[1].version -eq '0.3.5' -and $failures[1].cause) 'Locked-tree failure was not recorded with its cause'
   $results += 'every failure is recorded for the next app start; successes record nothing'
+
+  # A journal written by an earlier installer names its backup "<root>.gugu-backup-<appId>"; it is still honoured.
+  Invoke-Phase prepare
+  $state = Get-Content -LiteralPath (Join-Path $journal 'transaction.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+  $state.roots[0].backup = "$target.gugu-backup-$app"
+  [IO.File]::WriteAllText((Join-Path $journal 'transaction.json'), ($state | ConvertTo-Json -Depth 8), (New-Object Text.UTF8Encoding($false)))
+  Payload $stage 'legacy-backup'
+  Invoke-Phase commit
+  Assert (Test-Path -LiteralPath "$target.gugu-backup-$app") 'Legacy backup name was not used'
+  Registration '0.3.5'
+  Invoke-Phase finish
+  Assert ((Leftover-Backups).Count -eq 0) 'Legacy backup was not cleaned'
+  $results += 'a journal naming the earlier long backup is still committed and cleaned'
+
+  # A backup that cannot be deleted is reported and left; it fails neither this install nor the next one.
+  Invoke-Phase prepare
+  Payload $stage 'residue'
+  Invoke-Phase commit
+  $stuck = Backup
+  $hold = [IO.File]::Open((Join-Path $stuck 'fixture.exe'), 'Open', 'Read', 'None')
+  try {
+    Registration '0.3.5'
+    Invoke-Phase finish
+    Assert (-not (Test-Path -LiteralPath $journal)) 'Undeletable backup kept the journal'
+    Assert (Test-Path -LiteralPath $stuck) 'Held backup vanished'
+    $last = Get-Content -LiteralPath $failLog -Encoding UTF8 | Select-Object -Last 1 | ConvertFrom-Json
+    Assert ($last.residue -eq $stuck -and $last.error -match 'left in place') 'Undeletable backup was not reported'
+    Invoke-Phase prepare
+    Payload $stage 'after-residue'
+    Invoke-Phase commit
+    Assert ((Backup) -ne $stuck) 'A new transaction reused the leftover backup'
+    Registration '0.3.5'
+    Invoke-Phase finish
+    Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'after-residue') 'Install after a leftover backup failed'
+  } finally { $hold.Dispose() }
+  Remove-Item -LiteralPath $stuck -Recurse -Force
+  $results += 'an undeletable backup is reported, left behind and never blocks an install'
   Assert ($failures[1].step -like "$target -> *") 'Locked-tree failure did not name the refused rename'
   Assert (@($failures[1].holders | Where-Object { $_ -match "^$PID .*\[handle .*fixture\.exe\]" }).Count -eq 1) "Locked-tree failure did not name this process as the holder: $($failures[1].holders -join ' | ')"
   $results += 'a refused rename names its step and the process holding the tree'
@@ -147,7 +188,7 @@ try {
   # NSIS may recreate a missing destination before prepare recovers a journal.
   Invoke-Phase prepare
   Payload $stage 'not-published'
-  [IO.Directory]::Move($target, $backup)
+  [IO.Directory]::Move($target, (Backup))
   New-Item -ItemType Directory -Path $target | Out-Null
   Invoke-Phase prepare
   Assert (([IO.File]::ReadAllText((Join-Path $target 'fixture.exe'))) -eq 'transient') 'Empty recreated target blocked recovery'
@@ -206,7 +247,7 @@ try {
   Invoke-Phase commit
   Registration '0.3.5'
   Invoke-Phase finish
-  Assert (-not (Test-Path $backup) -and -not (Test-Path $journal)) 'Adopted residue left a transaction'
+  Assert ((Leftover-Backups).Count -eq 0 -and -not (Test-Path $journal)) 'Adopted residue left a transaction'
   $results += 'unregistered Gugu residue installs transactionally and restores absent registration on failure'
 
   Remove-Item -LiteralPath "HKCU:\$key","HKCU:\$uninstall" -Recurse

@@ -1,6 +1,6 @@
-// @@@short-stage - the Windows installer extracts every packaged file to `<install dir>.new\<file>`, and its extractor
-// fails past MAX_PATH. Packaging measures the deepest file against that prefix; these pin the measurement and that the
-// installer and the measurement use the same stage name.
+// @@@short-stage - the Windows installer writes every packaged file below `<install dir>.new` and deletes the old tree
+// below `<old dir>.old-<6 hex>`; neither works past MAX_PATH. Packaging measures the deepest file against the longer
+// name; these pin the measurement and that the installer and the measurement use the same names.
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url)
 const repo = resolve(__dirname, '../../..')
 const paths = require('../../../scripts/build/windows-install-paths.cjs') as {
   STAGE_SUFFIX: string
+  BACKUP_SUFFIX: string
   MAX_PATH: number
   MARGIN: number
   INSTALL_PARENT: string
@@ -35,11 +36,13 @@ function tree(length: number): string {
 }
 
 describe('Windows stage path budget', () => {
-  it('the installer stages at the name the packaging check measures', () => {
+  it('the installer stages and backs up at the names the packaging check measures', () => {
     const helper = readFileSync(join(repo, 'build-resources/nsis/install-transaction.ps1'), 'utf8')
     const nsis = readFileSync(join(repo, 'build-resources/nsis/zip-transaction.nsh'), 'utf8')
     expect(helper).toContain(`$stage = "$Target${paths.STAGE_SUFFIX}"`)
     expect(nsis).toContain(`StrCpy $guguStage "$INSTDIR${paths.STAGE_SUFFIX}"`)
+    const backup = /\$path = "\$root(\.old-)" \+ \[Guid\]::NewGuid\(\)\.ToString\('N'\)\.Substring\(0, (\d+)\)/.exec(helper)
+    expect(backup && backup[1].length + Number(backup[2])).toBe(paths.BACKUP_SUFFIX.length)
   })
 
   it('measures the deepest relative path with Windows separators', () => {
@@ -48,7 +51,7 @@ describe('Windows stage path budget', () => {
 
   it('fails packaging exactly when the deepest extraction path passes the budget', () => {
     const installDirName = 'gugu-acceptance-windows-test'
-    const fixed = paths.INSTALL_PARENT.length + installDirName.length + paths.STAGE_SUFFIX.length + 1
+    const fixed = paths.INSTALL_PARENT.length + installDirName.length + Math.max(paths.STAGE_SUFFIX.length, paths.BACKUP_SUFFIX.length) + 1
     const fits = paths.MAX_PATH - paths.MARGIN - fixed
     expect(paths.checkWindowsStagePaths({ appOutDir: tree(fits), installDirName }).length).toBe(paths.MAX_PATH - paths.MARGIN)
     expect(() => paths.checkWindowsStagePaths({ appOutDir: tree(fits + 1), installDirName })).toThrow(/windows-stage-path/)
