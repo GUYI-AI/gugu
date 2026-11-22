@@ -2578,6 +2578,15 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
     const { url, previewId } = createBytesPreview(sha256, contentType, file)
     return { url, release: () => releasePreview(previewId) }
   },
+  cloud: {
+    read: (revision, context) => revision.source === 'managed-object' ? desktopFiles.providers.managed(revision, context) : desktopFiles.providers.temporary(revision, context),
+    // An image without a preview of its own is shown from the file, which the renderer reads like any file.
+    async preview(revision, context) {
+      const shown = await desktopFiles.providers.preview!(revision, context, async () => { throw new Error('File preview is the file itself') })
+      return shown instanceof Blob ? new Uint8Array(await shown.arrayBuffer()) : shown
+    },
+    expiredPreview: async (preview, context) => new Uint8Array(await (await desktopFiles.providers.expiredPreview!(preview, context)).arrayBuffer()),
+  },
 })
 /**
  * The one social bridge every session surface wires (an ACP session, its side-chat fork, a terminal session): the same

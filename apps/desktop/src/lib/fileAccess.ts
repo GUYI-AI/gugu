@@ -1,9 +1,8 @@
-import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
+import { cloudFileProviders, filePreviewCacheKey } from '@gugu/core/cloud/fileProviders'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { attachmentRequest } from '@gugu/core/cloud/attachmentsApi'
 import { createCachedFileSink, type FileChunkCache } from '@gugu/core/shared/fileCache'
-import { createFileResolver, requireFileRange, FILE_CHUNK_BYTES, type FileBytes, type FileContext, type FileRevision } from '@gugu/core/shared/fileResolver'
-import { cloudObjectUrl } from '@shared/preview/preview-url'
+import { createFileResolver, fileReadError, parseFileMetadata, requireFileRange, snapshotBlob, FILE_CHUNK_BYTES, type FileBytes, type FileContext, type FileMetadata, type FilePreview, type FileProviders, type FileReadFailure, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentsEndpoint } from './attachmentsEndpoint'
 import { budgetedCacheWriter } from './attachmentCacheBudget'
 import { rendererLogger } from './log'
@@ -49,7 +48,7 @@ const metadata = createFileMetadataLoader(async (context, refs) => attachmentReq
 const native = (op: string, context: FileContext, args = {}): Promise<unknown> => window.electronAPI
   ? window.electronAPI.invoke('files:read', { op, actor: context.actor, ref: context.ref, ...args }) : Promise.resolve(null)
 /** A read whose bytes the main process carries (this computer's copy, or one over the SSH link): how far it has come, while it runs. */
-async function nativeWithProgress(op: 'open' | 'ssh', context: FileContext, args: Record<string, unknown>): Promise<unknown> {
+async function nativeWithProgress(op: 'open' | 'ssh' | 'cloud', context: FileContext, args: Record<string, unknown>): Promise<unknown> {
   const electron = window.electronAPI
   if (!context.progress || !electron) return native(op, context, args)
   const id = crypto.randomUUID(), progress = context.progress
@@ -83,12 +82,63 @@ const servedBytes = (context: FileContext, file: ServedFile): FileBytes => ({
   },
   async dispose() { await native('dispose', context, { id: file.id }) },
 })
-// On the desktop no cloud object is fetched here: every one is read through main (`cloudObjectUrl`), a `<video>`'s too.
-// That address is main's own, not the network: the page reads it with its fetch, and main's egress goes out.
-const cloud = cloudFileProviders({ endpoint, metadata, cache: chunks, sink: async size => createCachedFileSink(chunks, size),
-  ...(globalThis.window?.electronAPI ? { objectUrl: cloudObjectUrl, fetch: (input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init) } : {}),
-  imageCache: { match: async request => (await attachmentCache()).match(request), put: async (request, response) => putAttachment(request, await response.blob()) },
-})
+const imageCache = { match: async (request: string) => (await attachmentCache()).match(request), put: async (request: string, response: Response) => putAttachment(request, await response.blob()) }
+type CloudProviders = Pick<FileProviders, 'metadata' | 'managed' | 'temporary' | 'preview' | 'expiredPreview'>
+/**
+ * On the desktop main reads every cloud file (`files:read` op `cloud`): it signs, reads in lanes, keeps the chunks on
+ * disk, verifies the sha natively and keeps the snapshot. The renderer reads that snapshot at its address like this
+ * machine's own copy, and hashes nothing. A `<video>` is handed its signed address, which main signs. A failure comes
+ * back as a value and is the same error here (`fileReadError`). Hosts with no main process read in the page.
+ */
+function mainCloudProviders(): CloudProviders {
+  const cloudRead = async (op: 'cloud' | 'cloud-preview' | 'cloud-expired-preview', context: FileContext, args: Record<string, unknown>) => {
+    context.signal?.throwIfAborted()
+    const read = crypto.randomUUID(), cancel = () => { void native('cancel', context, { read }) }
+    context.signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      const answer = await (op === 'cloud' ? nativeWithProgress(op, context, { ...args, read }) : native(op, context, { ...args, read })) as { failed?: FileReadFailure } & Record<string, unknown>
+      if (answer.failed) throw fileReadError(answer.failed)
+      return answer
+    } finally { context.signal?.removeEventListener('abort', cancel) }
+  }
+  const read = async (revision: FileRevision, context: FileContext): Promise<FileBytes> => {
+    const file = await cloudRead('cloud', context, { revision }) as { id: string; size: number; url?: string; ack?: true }
+    const bytes = file.url ? servedBytes(context, file as ServedFile) : nativeBytes(context, file)
+    if (!file.ack) return bytes
+    const acknowledged = (native('ack', context, { id: file.id }) as Promise<{ failed?: FileReadFailure } | null>).then(answer => { if (answer?.failed) throw fileReadError(answer.failed) })
+    acknowledged.catch(() => undefined)
+    return { ...bytes, acknowledged }
+  }
+  // A preview's bytes, kept in the page's attachment cache under the same key a page read keeps them.
+  const cachedPreview = async (context: FileContext, sha256: string, contentType: string, fetchBytes: () => Promise<Uint8Array>) => {
+    const key = filePreviewCacheKey(context, sha256), hit = await imageCache.match(key)
+    if (hit) return hit.blob()
+    const blob = new Blob([await fetchBytes() as Uint8Array<ArrayBuffer>], { type: contentType })
+    await imageCache.put(key, new Response(blob)); return blob
+  }
+  return {
+    metadata: async (context): Promise<FileMetadata> => {
+      context.signal?.throwIfAborted()
+      const row = await metadata(context)
+      context.signal?.throwIfAborted()
+      return parseFileMetadata(row, context.ref)
+    },
+    managed: read, temporary: read,
+    async preview(revision, context, full) {
+      const video = revision.content_type.startsWith('video/')
+      if (!video && !revision.content_type.startsWith('image/')) throw new Error('File has no media preview')
+      // An image without a preview of its own is shown from the file itself, read like any file.
+      if (!video && !revision.preview) return snapshotBlob(await full(), revision.content_type)
+      const shown = () => cloudRead('cloud-preview', context, { revision })
+      if (video) return await shown() as { url: string; expiresAt: number }
+      return cachedPreview(context, revision.preview!.sha256, revision.preview!.content_type, async () => (await shown()).bytes as Uint8Array)
+    },
+    expiredPreview: (preview: FilePreview, context) => cachedPreview(context, preview.sha256, preview.content_type,
+      async () => (await cloudRead('cloud-expired-preview', context, { preview })).bytes as Uint8Array),
+  }
+}
+const cloud: CloudProviders = globalThis.window?.electronAPI ? mainCloudProviders()
+  : cloudFileProviders({ endpoint, metadata, cache: chunks, sink: async size => createCachedFileSink(chunks, size), imageCache })
 export const resolveFile = createFileResolver({ ...cloud,
   async local(context) {
     const revision = await native('local', context) as FileRevision | null

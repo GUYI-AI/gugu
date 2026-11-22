@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createNativeFileHost } from '../../apps/desktop/electron/nativeFileHost'
-import { FILE_CHUNK_BYTES, type FileBytes, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileReadError, type FileBytes, type FileContext, type FileReadFailure, type FileRevision } from '@gugu/core/shared/fileResolver'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -156,5 +156,43 @@ describe('native file capabilities are scoped and never expose incomplete origin
     await f.host.stage(2, { op: 'commit', id: other.id })
     await f.host.open(2, other.id)
     expect(f.openPath).toHaveBeenCalledOnce()
+  })
+})
+
+describe('the desktop renderer\'s cloud reads run in main', () => {
+  const cloudRevision: FileRevision = { ...commitment, source: 'managed-object', item_id: 'item', version: 1, chat_id: 'group', file_name: 'file.bin' }
+  const host = (cloud: Parameters<typeof createNativeFileHost>[0]['cloud']) => createNativeFileHost({ root: tmpdir(), owner: async () => 'owner', alive: () => true, local: vi.fn(), ssh: vi.fn(), openPath: vi.fn(), published: () => {}, serve, cloud })
+  it('hands the renderer the verified snapshot at its address, and the acknowledgement\'s refusal as itself', async () => {
+    let refuse!: (error: Error) => void
+    const acknowledged = new Promise<void>((_, reject) => { refuse = reject }); acknowledged.catch(() => undefined)
+    const file: FileBytes = { size: bytes.length, read: async (offset, length) => bytes.slice(offset, offset + length), dispose: vi.fn(async () => {}), acknowledged }
+    const read = vi.fn(async (_revision: FileRevision, _context: FileContext) => file)
+    const files = host({ read, preview: vi.fn(), expiredPreview: vi.fn() })
+    const opened = await files.read(1, context, { op: 'cloud', read: 'r1', revision: cloudRevision }) as { id: string; size: number; url: string; ack?: true }
+    expect(opened).toMatchObject({ size: bytes.length, url: `gugu-preview://served/${commitment.sha256}`, ack: true })
+    expect(read.mock.calls[0]![1].actor).toEqual(context.actor)
+    const ack = files.read(1, context, { op: 'ack', id: opened.id }) as Promise<{ failed?: FileReadFailure } | null>
+    refuse(new FileReadRevokedError('gone'))
+    const failure = (await ack)!.failed!
+    expect(fileReadError(failure)).toBeInstanceOf(FileReadRevokedError)
+    expect((fileReadError(failure) as FileReadRevokedError).reason).toBe('gone')
+    await files.read(1, context, { op: 'dispose', id: opened.id })
+    expect(file.dispose).toHaveBeenCalledOnce()
+  })
+  it('says a failed read as what it was, and a cancelled read stops main\'s', async () => {
+    const files = host({ read: async () => { throw Object.assign(new MissingFileObjectError()) }, preview: vi.fn(), expiredPreview: vi.fn() })
+    const missing = await files.read(1, context, { op: 'cloud', read: 'r2', revision: cloudRevision }) as { failed: FileReadFailure }
+    expect(fileReadError(missing.failed)).toBeInstanceOf(MissingFileObjectError)
+    const refused = await host({ read: async () => { throw Object.assign(new Error('attachments/file-download: forbidden'), { status: 403, code: 'forbidden' }) }, preview: vi.fn(), expiredPreview: vi.fn() })
+      .read(1, context, { op: 'cloud', read: 'r3', revision: cloudRevision }) as { failed: FileReadFailure }
+    expect(fileReadError(refused.failed)).toMatchObject({ message: 'attachments/file-download: forbidden', status: 403, code: 'forbidden' })
+    let seen!: AbortSignal
+    const stalled = host({ read: (_revision, reading) => new Promise((_, reject) => { seen = reading.signal!; seen.addEventListener('abort', () => reject(seen.reason)) }), preview: vi.fn(), expiredPreview: vi.fn() })
+    const pending = stalled.read(1, context, { op: 'cloud', read: 'r4', revision: cloudRevision }) as Promise<{ failed: FileReadFailure }>
+    await vi.waitFor(() => expect(seen).toBeDefined())
+    await stalled.read(2, context, { op: 'cancel', read: 'r4' }) // another window's cancel is not this read's
+    expect(seen.aborted).toBe(false)
+    await stalled.read(1, context, { op: 'cancel', read: 'r4' })
+    expect((await pending).failed.message).toBe('File read cancelled')
   })
 })

@@ -78,6 +78,24 @@ export class FileIntegrityError extends Error {
 export function isFileIntegrityError(error: unknown): boolean {
   return error instanceof FileIntegrityError || error instanceof Error && error.message.includes('integrity_failed')
 }
+/**
+ * A file read's failure as a plain value, for a read run in another process (main for the desktop renderer): what the
+ * reader branches on (the class of a revocation or a missing object, an HTTP status, a code, the message) survives.
+ */
+export type FileReadFailure = { name: string; message: string; reason?: string; status?: number; code?: string }
+export function fileReadFailure(error: unknown): FileReadFailure {
+  const { message = String(error), reason, status, code } = (error ?? {}) as Partial<FileReadFailure>
+  const name = error instanceof FileReadRevokedError ? 'FileReadRevokedError' : error instanceof MissingFileObjectError ? 'MissingFileObjectError'
+    : error instanceof Error ? error.name : 'Error'
+  return { name, message, ...(typeof reason === 'string' ? { reason } : {}), ...(typeof status === 'number' ? { status } : {}), ...(typeof code === 'string' ? { code } : {}) }
+}
+export function fileReadError(failure: FileReadFailure): Error {
+  if (failure.name === 'FileReadRevokedError') return new FileReadRevokedError(failure.reason as FileReadRevokedError['reason'])
+  if (failure.name === 'MissingFileObjectError') return new MissingFileObjectError()
+  const error = Object.assign(new Error(failure.message), { ...(failure.status !== undefined ? { status: failure.status } : {}), ...(failure.code !== undefined ? { code: failure.code } : {}) })
+  if (failure.name === 'AbortError') error.name = 'AbortError'
+  return error
+}
 /** How long an agent's read waits for bytes their sender is still uploading before saying so. */
 export const ATTACHMENT_PENDING_WAIT_MS = 8_000
 const RELAY_QUOTA_FULL = new Set(['account_storage_full', 'group_storage_full', 'global_storage_full'])

@@ -23,6 +23,8 @@ const cacheKey = (context: FileContext, digest: string) => hex(sha256(new TextEn
 const sameLegacyObject = (revision: FileRevision, row: { bucket_id?: string; object_name?: string; message_id?: string }) =>
   !revision.legacy_object || row.bucket_id === revision.legacy_object.bucket_id && row.object_name === revision.legacy_object.object_name && row.message_id === revision.legacy_object.message_id
 // An unhashed historical object cannot authenticate persistent cached chunks between opens.
+/** Where a preview's verified bytes are kept for this reader and reference (`imageCache`). */
+export const filePreviewCacheKey = (context: FileContext, sha256: string) => `https://attachments.gugu.invalid/preview/${cacheKey(context, sha256)}`
 const uncached: FileChunkCache = { get: async () => null, put: async () => {}, clear: async () => {} }
 
 /** Bytes per download lane: a file gets one more parallel ranged GET per this many bytes, up to `DOWNLOAD_LANES`. */
@@ -175,13 +177,6 @@ export function cloudFileProviders(deps: {
   endpoint(context: FileContext): Promise<AttachmentsEndpoint>
   sink(size: number, context: FileContext): Promise<FileSink>
   cache: FileChunkCache; fetch?: typeof globalThis.fetch
-  /**
-   * Where this platform reads a signed object's bytes from, when not from the address itself: the desktop renderer reads
-   * them through main (`cloudObjectUrl`). The mapped address is read with `fetch`, which such a platform gives too (main's
-   * address is not the network's). A `<video>` is handed the signed address itself: Chromium's media loader is the
-   * platform's reader for it, with Chromium's own proxy and certificates.
-   */
-  objectUrl?(signed: string): string
   downloadSession?: FileDownloadSession
   metadata?(context: FileContext): Promise<unknown>
   imageCache?: Pick<Cache, 'match' | 'put'>
@@ -210,8 +205,7 @@ export function cloudFileProviders(deps: {
     context.signal?.throwIfAborted()
     const fetcher = deps.fetch ?? (await deps.endpoint(context)).fetch ?? egress.fetch
     context.signal?.throwIfAborted()
-    const objectUrl = deps.objectUrl
-    return objectUrl ? ((input: RequestInfo | URL, init?: RequestInit) => fetcher(objectUrl(String(input)), init)) as typeof globalThis.fetch : fetcher
+    return fetcher
   }
   const read = async (revision: FileRevision, context: FileContext, encrypted: boolean, destination?: FileSink): Promise<FileBytes> => {
     const ref = 'item_id' in context.ref ? { ...context.ref, version: revision.version } : context.ref
@@ -315,7 +309,7 @@ export function cloudFileProviders(deps: {
     }
   }
   const readPreview = async (preview: FilePreview, ref: FileContext['ref'], context: FileContext) => {
-    const key = `https://attachments.gugu.invalid/preview/${cacheKey(context, preview.sha256)}`
+    const key = filePreviewCacheKey(context, preview.sha256)
     const hit = await deps.imageCache?.match(key)
     if (hit) return hit.blob()
     let lease: Download | undefined
