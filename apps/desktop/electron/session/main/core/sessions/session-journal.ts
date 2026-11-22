@@ -113,13 +113,19 @@ export async function journalTurnIndexBase(sessionId: string): Promise<number> {
 
 /**
  * A revert to the person's message `anchor`: that turn and every turn after it leave the journal, and the last turn
- * kept says how many went. No such message here (the session's turns are in its agent's record) changes nothing.
+ * kept says how many went. No such message here: the session's turns are in its agent's record, which the revert cut
+ * from `startedAt` (that turn's start) on; what the journal holds from then on goes too, the owner notifications sent in
+ * those turns and how a turn the record lacks ended.
  */
-export function revertJournal(sessionId: string, anchor: string): Promise<void> {
+export function revertJournal(sessionId: string, anchor: string, startedAt: number | null = null): Promise<void> {
   return queued(sessionId, async () => {
     const lines = [...(await readLines(sessionId)).values()];
     const from = lines.findIndex((line) => line.turn.items.some((item) => item.kind === 'message' && item.role === 'user' && item.revertAnchor === anchor));
-    if (from < 0) return;
+    if (from < 0) {
+      const kept = startedAt === null ? lines : lines.filter((line) => line.at < startedAt);
+      if (kept.length < lines.length) await rewrite(sessionId, kept);
+      return;
+    }
     const kept = lines.slice(0, from);
     const removed = lines.slice(from).filter((line) => !line.recorded && line.turn.items.some((item) => item.kind === 'message' && item.role === 'user')).length;
     const last = kept.findLastIndex((line) => !line.recorded && !line.turn.items.some((item) => item.kind === 'message' && item.ownerNotification));

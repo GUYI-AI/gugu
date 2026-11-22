@@ -52,6 +52,14 @@ describe('session journal', () => {
     expect((await lines()).map((line) => line.id)).toEqual(['S1:turn:0@10']);
   });
 
+  it("a revert of a turn in the agent's record drops what the journal holds from that turn's start on", async () => {
+    await appendJournalTurn('S1', turn('owner-notify:a', 10, 'before'));
+    await appendJournalTurn('S1', turn('S1:turn:1', 30, 'killed'), true);
+    await appendJournalTurn('S1', turn('owner-notify:b', 40, 'after'));
+    await revertJournal('S1', 'in-the-record', 20);
+    expect((await lines()).map((line) => line.id)).toEqual(['owner-notify:a@10']);
+  });
+
   it('merging stored lines in twice adds them once, in time order', async () => {
     await appendJournalTurn('S1', turn('S1:turn:5', 50, 'live'));
     const stored = [{ id: 'S1:turn:1@10', at: 10, turn: turn('S1:turn:s0', 10, 'old') }, { id: 'S1:turn:5@50', at: 50, turn: turn('S1:turn:s1', 50, 'live') }];

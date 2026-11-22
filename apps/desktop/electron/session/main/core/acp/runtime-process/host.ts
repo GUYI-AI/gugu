@@ -720,7 +720,7 @@ function decorateRuntimeClient(client: ContractClient<AcpRuntimeApiContract>): A
       boundary: async (sessionId, anchor) => (await import('../../session-timeline/service')).revertPointStartedAt(sessionId, anchor),
       revert: client.revertSession,
       truncate: async (sessionId, from, anchor) => {
-        await revertJournal(sessionId, anchor);
+        await revertJournal(sessionId, anchor, from);
         if (from !== null) forgetRevertedTurns(sessionId, from);
       },
       finish: (sessionId) => detachedClient.finishHistoryRevert({ sessionId }),
