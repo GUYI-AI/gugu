@@ -289,7 +289,7 @@ function ContactsNav({
     <Pane paneRole="nav" mobile={mobile}>
       <ContactSearch mobile={mobile} query={query} onQuery={onQuery} people={people} agents={agents} groups={groupChats} onOpenContact={onOpenContact}
         head={(searchButton) => <PaneHeader mobile={mobile} title={ct('common.contacts')} actions={searchButton} />}
-        onOpenGroup={(group) => onOpenGroupChat?.(group)} onLookupNumber={(number) => onSelect('add_friend', number)}>
+        onOpenGroup={(group) => onOpenGroupChat?.(group)} onSearchEveryone={(text) => onSelect('add_friend', text)}>
       <div className="flex-1 overflow-y-auto !px-2 !pb-3">
         <NavButton
           mobile={mobile}
@@ -889,7 +889,7 @@ export const ContactsPanel = memo(function ContactsPanel({
       setSelectedNav(c.type === 'agent' ? 'agent_library' : 'contacts')
     },
     onOpenGroup: (g, key) => { setSelectedSectionKey(key); setSelectedContactId(null); setSelectedSidebarGroupId(g.id); setSelectedNav('group_chats') },
-    onLookupNumber: (number) => { setQuery(''); setAddFriendMode('contact'); setSelectedNav('add_friend'); setAddFriendSeed({ query: number, token: Date.now() }) },
+    onSearchEveryone: (text) => { setQuery(''); setAddFriendMode('contact'); setSelectedNav('add_friend'); setAddFriendSeed({ query: text, token: Date.now() }) },
   })
 
   // Desktop layout: section nav + the selected section spread over the right area

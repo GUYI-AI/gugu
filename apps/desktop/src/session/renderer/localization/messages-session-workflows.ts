@@ -173,6 +173,13 @@ export const enUSSessionWorkflowMessages = {
   'sessionHistory.importOfferAction': 'Import earlier sessions ›',
 
   'task.newTask': 'New task',
+  'task.newTaskHint': 'Describe what you want done. Pick the project and machine below.',
+  'task.starterExplain': 'Explain this project',
+  'task.starterExplainPrompt': 'Explain how this project is organized: its main parts, how they fit together, and where to start reading.',
+  'task.starterFixTest': 'Fix a failing test',
+  'task.starterFixTestPrompt': 'Run the tests, find the one that fails, and fix the cause.',
+  'task.starterSummarize': 'Summarize a file',
+  'task.starterSummarizePrompt': 'Summarize this file in a few short points: ',
   'task.creatingAgent': 'Creating agent…',
   'task.agentCreateIncomplete':
     'The message, engine, or name needed to create the agent is not ready yet',
@@ -822,6 +829,13 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'sessionHistory.importOfferAction': '导入历史会话 ›',
 
   'task.newTask': '新建任务',
+  'task.newTaskHint': '说说你想做的事，项目和机器在下面选。',
+  'task.starterExplain': '讲讲这个项目',
+  'task.starterExplainPrompt': '讲讲这个项目是怎么组织的：主要有哪几块、它们怎么配合、从哪里开始读。',
+  'task.starterFixTest': '修一个挂掉的测试',
+  'task.starterFixTestPrompt': '跑一遍测试，找到失败的那个，把原因修掉。',
+  'task.starterSummarize': '总结一个文件',
+  'task.starterSummarizePrompt': '用几条简短的要点总结这个文件：',
   'task.creatingAgent': '正在创建 Agent…',
   'task.agentCreateIncomplete': '创建 Agent 所需的消息、引擎或名称尚未准备完成',
   'task.homeProjectUnavailable': '无法准备默认会话文件，请选择或添加一个项目',
