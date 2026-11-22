@@ -96,7 +96,7 @@ export function RunHistory({ automation }: RunHistoryProps) {
               <AutomationRunRow
                 key={run.id}
                 run={run}
-                projectId={automation.projectId ?? null}
+                projectId={automation.workspaceId ?? null}
                 deliveredTo={automation.agentSessionId}
                 deliveredToName={automation.agentSession?.name}
               />

@@ -93,7 +93,7 @@ describe('助手脚本与会话环境($BROWSER)', () => {
     // ACP legs: merged into the session's capability spawn env.
     expect(withSessionBrowserEnv('conv-7', { A: '1' })).toEqual({ A: '1', ...session })
     // PTY legs, session terminals and scripts: the session env every one of them already gets.
-    expect(getSessionEnvVars({ session: { id: 'conv-7', title: 'T' }, sessionPath: '/srv/app', projectPath: '/srv/app' })).toMatchObject(session)
+    expect(getSessionEnvVars({ session: { id: 'conv-7', title: 'T' }, sessionPath: '/srv/app', folderPath: '/srv/app' })).toMatchObject(session)
     const shared = buildAgentEnv({ includeUserShellEnv: false })
     expect(shared.BROWSER).toBeUndefined()
     expect(shared.GUGU_TASK_ID).toBeUndefined()
