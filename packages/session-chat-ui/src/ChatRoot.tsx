@@ -446,13 +446,15 @@ export function ChatRoot(props: ChatRootProps) {
     measureUnitAt(i);
     if (before > 0 && virt.size(i) !== before) setAnchor({ ...m, offset: (m.offset * virt.size(i)) / before });
   };
-  const updateContentColumnGeometry = () => {
-    const width = widthProbeEl?.getBoundingClientRect().width ?? 0;
+  // `boxWidth` / `boxHeight`: the size a ResizeObserver delivered. Reading the box instead would lay the page out again
+  // after whatever an earlier observer in the same delivery wrote (the rows re-measured at a new width).
+  const updateContentColumnGeometry = (boxWidth?: number) => {
+    const width = boxWidth ?? widthProbeEl?.getBoundingClientRect().width ?? 0;
     if (width > 0) setColumnWidth(width);
   };
 
-  const updateSlotPadBottom = () => {
-    const height = props.composer !== 'slot' || effectiveComposerPlacement() === 'center' ? 0 : composerSlotEl?.getBoundingClientRect().height ?? 0;
+  const updateSlotPadBottom = (boxHeight?: number) => {
+    const height = props.composer !== 'slot' || effectiveComposerPlacement() === 'center' ? 0 : boxHeight ?? composerSlotEl?.getBoundingClientRect().height ?? 0;
     setSlotPadBottom(height);
     // The composer layer's height for a host's CSS: a host whose surface shows through (no painted fades) masks the
     // scroller off where the layer begins.
@@ -2235,7 +2237,8 @@ export function ChatRoot(props: ChatRootProps) {
     // on genuine column width changes and not on canvas height mutations from
     // streaming/tween updates.
     if (widthProbeEl) {
-      const roWidth = new ResizeObserver(() => updateContentColumnGeometry());
+      const roWidth = new ResizeObserver((entries) =>
+        updateContentColumnGeometry(entries.find((entry) => entry.target === widthProbeEl)?.borderBoxSize[0]?.inlineSize));
       roWidth.observe(widthProbeEl);
       roWidth.observe(el);
       updateContentColumnGeometry();
@@ -2250,7 +2253,7 @@ export function ChatRoot(props: ChatRootProps) {
     // amounts for the same strip and the transcript stepped 8px on every
     // placement change.
     if (props.composer === 'slot' && composerSlotEl) {
-      const roSlot = new ResizeObserver(() => { updateSlotPadBottom(); settleTailNow(); });
+      const roSlot = new ResizeObserver(([entry]) => { updateSlotPadBottom(entry?.borderBoxSize[0]?.blockSize); settleTailNow(); });
       roSlot.observe(composerSlotEl);
       onCleanup(() => roSlot.disconnect());
     }
