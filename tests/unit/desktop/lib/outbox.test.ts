@@ -242,6 +242,24 @@ describe('outbox core', () => {
     expect(box.items()).toEqual([])
   })
 
+  it('merges enqueues of one id that overlap, as a seen-read fires one per row it reports', async () => {
+    const storage = memoryStorage()
+    const box = createOutbox({ storage, account: account('u1'), online: () => () => {} })
+    const read = kind('read', { merge: (previous, next) => Number(previous.text) > Number(next.text) ? previous : next })
+    box.register(read.definition)
+    await box.loaded()
+    // Not awaited one by one: each is still on its way to disk when the next arrives.
+    await Promise.all(['334', '335', '336'].map((text) => box.enqueue('read', { text }, { id: 'read:main:c' })))
+    await flush()
+    read.calls[0]!.resolve()
+    await flush()
+    expect(read.calls.map((call) => call.item.payload.text).at(-1)).toBe('336')
+    read.calls.at(-1)!.resolve()
+    await flush()
+    expect(box.items()).toEqual([])
+    expect(storage.rows.size).toBe(0)
+  })
+
   it('waits for a dependency, and fails its dependents when it is discarded', async () => {
     const box = createOutbox({ storage: memoryStorage(), account: account('u1'), online: () => () => {} })
     const note = kind()

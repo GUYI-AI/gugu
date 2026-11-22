@@ -298,9 +298,14 @@ export function mergeFetchedChatsPreservingActiveLocal(
     // Read state is one versioned member-row tuple. A request started before mark_read/mark_unread commits
     // may arrive later; preserve the locally newer tuple for active and inactive rows alike. Never merge
     // unread_count independently from the cursor/manual bit that produced it.
+    // The local version counts local advances, the server's the writes it applied, and the read outbox merges the
+    // advances of one stream into fewer writes: a fetched tuple that already holds the local cursor and manual bit is
+    // not older, whatever the counts say, and its unread counts and locator are the server's for that cursor.
     const fetchedReadStateVersion = fetched.read_state_version ?? 0
     const localReadStateVersion = local?.read_state_version ?? 0
-    if (local && localReadStateVersion > fetchedReadStateVersion) {
+    const fetchedHoldsLocalRead = !!local && fetched.last_read_seq >= local.last_read_seq
+      && (fetched.is_marked_unread ?? false) === (local.is_marked_unread ?? false)
+    if (local && localReadStateVersion > fetchedReadStateVersion && !fetchedHoldsLocalRead) {
       next = {
         ...next,
         last_read_seq: local.last_read_seq,
