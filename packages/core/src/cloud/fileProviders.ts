@@ -24,62 +24,124 @@ const sameLegacyObject = (revision: FileRevision, row: { bucket_id?: string; obj
 // An unhashed historical object cannot authenticate persistent cached chunks between opens.
 const uncached: FileChunkCache = { get: async () => null, put: async () => {}, clear: async () => {} }
 
-/** Retain verified chunks; reconnect only the incomplete chunk, with the signer's authorized origin fallback. */
-function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress']) {
-  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined, buffered: Uint8Array = new Uint8Array(), next = -1, interrupted = false
-  let last: { index: number; bytes: Uint8Array } | undefined, lease: Download | undefined, origin = false, renewed = false
+/** Bytes per download lane: a file gets one more parallel ranged GET per this many bytes, up to `DOWNLOAD_LANES`. */
+const DOWNLOAD_LANE_BYTES = 8 * 1024 * 1024
+// Three connections saturate the object store from one host (measured 11-22: 3 streams ≈ 11.7 MB/s, 6 add nothing).
+const DOWNLOAD_LANES = 3
+
+/**
+ * Retain verified chunks; reconnect only the incomplete chunk, with the signer's authorized origin fallback.
+ * @@@download-lanes - a large file is read as up to `lanes` contiguous byte ranges of the same signed URL at once. The
+ * first lane streams to the reader; the others run ahead into the chunk cache, which is where every chunk already goes,
+ * and the reader takes theirs from it in order. The whole-file digest is still checked by the reader, in order.
+ */
+function remoteSource(size: number, key: string, cache: FileChunkCache, sign: (renew?: boolean, origin?: boolean) => Promise<SignedDownload>, fetcher: () => Promise<typeof fetch>, session: FileDownloadSession, signal?: AbortSignal, progress?: FileContext['progress'], lanes = 1) {
+  const count = Math.max(1, Math.ceil(size / FILE_CHUNK_BYTES))
+  const width = Math.max(1, Math.min(lanes, Math.ceil(size / DOWNLOAD_LANE_BYTES)))
+  const stop = new AbortController(), stopping = anySignal([signal, stop.signal])
+  let lease: Download | undefined, origin = false, leasing: Promise<void> | undefined, renewal: Promise<void> | undefined, switching: Promise<void> | undefined
+  let last: { index: number; bytes: Uint8Array } | undefined, received = 0, failure: unknown, failed: ((error: unknown) => void) | undefined
+  const settled = new Set<number>()
+  const failing = new Promise<never>((_, reject) => { failed = reject }); failing.catch(() => undefined)
+  const apply = (signed: SignedDownload) => { lease = signed.lease; origin = signed.direct }
   const target = () => ({ stage: origin || lease?.bucket_id === 'temporary' ? 'oss' as const : 'cdn' as const, url: lease!.url })
-  const transport = createFileDownloadTransport(target, fetcher, session, signal)
-  const reset = async () => { transport.cancel(reader); reader = undefined; buffered = new Uint8Array() }
+  const length = (index: number) => Math.min(FILE_CHUNK_BYTES, size - index * FILE_CHUNK_BYTES)
+  const done = (index: number) => {
+    if (settled.has(index)) return
+    settled.add(index); received += length(index); progress?.(received, size)
+  }
+  const lane = (first: number, end: number) => {
+    const transport = createFileDownloadTransport(target, fetcher, session, stopping)
+    const stopByte = Math.min(end * FILE_CHUNK_BYTES, size)
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined, buffered: Uint8Array = new Uint8Array(), next = -1, interrupted = false
+    const reset = async () => { transport.cancel(reader); reader = undefined; buffered = new Uint8Array() }
+    const open = (offset: number) => transport.open({ headers: stopByte !== size ? { Range: `bytes=${offset}-${stopByte - 1}` } : offset ? { Range: `bytes=${offset}-` } : {} })
+    const chunk = async (index: number): Promise<Uint8Array> => {
+      stopping.throwIfAborted()
+      const offset = index * FILE_CHUNK_BYTES, bytes = new Uint8Array(length(index))
+      const hit = await cache.get(key, index)
+      if (hit && hit.length !== bytes.length) throw new Error('Invalid cached file chunk')
+      if (hit && (!reader || index < next)) { done(index); return hit }
+      try {
+        if (!lease) await (leasing ??= sign().then(apply).finally(() => { leasing = undefined }))
+      } catch (error) { interrupted = isTransientFileReadError(error); throw error }
+      return retryFileDownload(target, async () => {
+        try {
+          if (!reader) {
+            const used = lease
+            let response = await open(offset)
+            const expires = Date.parse(used!.expires_at ?? '')
+            // A valid capability's 403 is a refusal. Only an actually expired lease may be renewed, once per read; a lane
+            // whose lease another lane already renewed reopens with the new one.
+            if (response.status === 403 && lease === used && !renewal && Number.isFinite(expires) && expires <= serverNow()) renewal = sign(true, origin).then(apply)
+            if (response.status === 403 && renewal) {
+              void response.body?.cancel().catch(() => undefined)
+              await renewal
+              if (lease !== used) response = await open(offset)
+            }
+            const ranged = offset || stopByte !== size
+            if (response.status !== (ranged ? 206 : 200) || !response.body || ranged && response.headers.get('content-range') !== `bytes ${offset}-${stopByte - 1}/${size}`) {
+              void response.body?.cancel().catch(() => undefined)
+              return transport.refuse(Object.assign(new Error(`Invalid file range response (HTTP ${response.status})`), { status: response.status }))
+            }
+            reader = response.body.getReader(); next = index
+          }
+          if (index !== next) throw new Error('File transfer must continue from its cached prefix')
+          for (let filled = 0; filled < bytes.length;) {
+            if (!buffered.length) {
+              const received = await transport.read(reader)
+              if (received.done) throw new Error('Truncated file response')
+              buffered = received.value
+            }
+            const take = Math.min(buffered.length, bytes.length - filled)
+            bytes.set(buffered.subarray(0, take), filled); buffered = buffered.subarray(take); filled += take
+          }
+          if (offset + bytes.length === stopByte && (buffered.length || !(await transport.read(reader)).done)) throw new Error('File response has extra bytes')
+          await cache.put(key, index, bytes); next++; interrupted = false
+          done(index)
+          return bytes
+        } catch (error) { if (!stop.signal.aborted) interrupted = isTransientFileReadError(error); throw error }
+      }, stopping, async () => {
+        await reset()
+        if (!origin && lease?.origin_available === true) await (switching ??= sign(false, true).then(apply))
+      })
+    }
+    return { first, end, chunk, reset, interrupted: () => interrupted }
+  }
+  const all = Array.from({ length: width }, (_, k) => lane(Math.floor(k * count / width), Math.floor((k + 1) * count / width)))
+  // Every lane but the first runs ahead on its own; the reader waits for its chunks in order.
+  let ahead: Map<number, Promise<unknown>> | undefined
+  const running: Promise<unknown>[] = []
+  const start = () => {
+    if (ahead) return ahead
+    ahead = new Map()
+    for (const runner of all.slice(1)) {
+      let chain: Promise<unknown> = Promise.resolve()
+      for (let index = runner.first; index < runner.end; index++) {
+        chain = chain.then(() => runner.chunk(index).then(() => undefined))
+        ahead.set(index, chain)
+      }
+      running.push(chain.catch(error => { if (failure === undefined && !stop.signal.aborted) { failure = error; failed?.(error) } }))
+    }
+    return ahead
+  }
   const chunk = async (index: number): Promise<Uint8Array> => {
     signal?.throwIfAborted()
-    const offset = index * FILE_CHUNK_BYTES, length = Math.min(FILE_CHUNK_BYTES, size - offset)
     if (last?.index === index) return last.bytes
-    const hit = await cache.get(key, index)
-    if (hit && hit.length !== length) throw new Error('Invalid cached file chunk')
-    if (hit && (!reader || index < next)) return hit
-    try {
-      if (!lease) { const signed = await sign(); lease = signed.lease; origin = signed.direct }
-    } catch (error) { interrupted = isTransientFileReadError(error); throw error }
-    return retryFileDownload(target, async () => {
-      try {
-        if (!reader) {
-          let response = await transport.open({ headers: offset ? { Range: `bytes=${offset}-` } : {} })
-          const expires = Date.parse(lease!.expires_at ?? '')
-          // A valid capability's 403 is a refusal. Only an actually expired lease may be renewed, once per read.
-          if (response.status === 403 && !renewed && Number.isFinite(expires) && expires <= serverNow()) {
-            void response.body?.cancel().catch(() => undefined); renewed = true
-            const signed = await sign(true, origin); lease = signed.lease; origin = signed.direct
-            response = await transport.open({ headers: offset ? { Range: `bytes=${offset}-` } : {} })
-          }
-          if (response.status !== (offset ? 206 : 200) || !response.body || offset && response.headers.get('content-range') !== `bytes ${offset}-${size - 1}/${size}`) {
-            void response.body?.cancel().catch(() => undefined)
-            return transport.refuse(Object.assign(new Error(`Invalid file range response (HTTP ${response.status})`), { status: response.status }))
-          }
-          reader = response.body.getReader(); next = index
-        }
-        if (index !== next) throw new Error('File transfer must continue from its cached prefix')
-        const bytes = new Uint8Array(length)
-        for (let filled = 0; filled < length;) {
-          if (!buffered.length) {
-            const received = await transport.read(reader)
-            if (received.done) throw new Error('Truncated file response')
-            buffered = received.value
-          }
-          const take = Math.min(buffered.length, length - filled)
-          bytes.set(buffered.subarray(0, take), filled); buffered = buffered.subarray(take); filled += take
-        }
-        if (offset + length === size && (buffered.length || !(await transport.read(reader)).done)) throw new Error('File response has extra bytes')
-        await cache.put(key, index, bytes); next++; last = { index, bytes }; interrupted = false
-        progress?.(offset + length, size)
-        return bytes
-      } catch (error) { interrupted = isTransientFileReadError(error); throw error }
-    }, signal, async () => {
-      await reset()
-      if (!origin && lease?.origin_available === true) { const signed = await sign(false, true); lease = signed.lease; origin = signed.direct }
-    })
+    const runner = all.find(candidate => index < candidate.end)!
+    const pending = start().get(index)
+    const bytes = await Promise.race([failing, pending ? pending.then(async () => {
+      const hit = await cache.get(key, index)
+      if (!hit || hit.length !== length(index)) throw new Error('Invalid cached file chunk')
+      return hit
+    }) : runner.chunk(index)])
+    last = { index, bytes }
+    return bytes
   }
-  return { size, interrupted: () => interrupted, dispose: reset, async read(offset: number, length: number) {
+  return { size, interrupted: () => all.some(runner => runner.interrupted()), async dispose() {
+    // Lanes still reading ahead stop before the caller keeps or clears their chunks.
+    stop.abort(); await Promise.all([...all.map(runner => runner.reset()), ...running])
+  }, async read(offset: number, length: number) {
     requireFileRange(size, offset, length)
     if (!size) await chunk(0)
     const bytes = new Uint8Array(length)
@@ -168,7 +230,8 @@ export function cloudFileProviders(deps: {
     // A key still requires the current download ACL, even if every ciphertext chunk is cached.
     if (encrypted && !lease) await sign()
     const digest = encrypted ? lease!.ciphertext_sha256! : revision.sha256, key = cacheKey(context, digest ?? crypto.randomUUID())
-    const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ? { lease, direct } : sign(), () => objectTransport(context), session, context.signal, context.progress)
+    // An unhashed historical object keeps no chunks, so it has nowhere to put bytes read ahead: one lane.
+    const source = remoteSource(encrypted ? ciphertextSize(revision.size_bytes) : revision.size_bytes, key, revision.legacy_object ? uncached : deps.cache, async (renew, origin) => renew || origin ? sign(renew, origin) : lease ? { lease, direct } : sign(), () => objectTransport(context), session, context.signal, context.progress, revision.legacy_object ? 1 : DOWNLOAD_LANES)
     // @@@save-through-cache - a save to disk reads through the same chunk cache as a read for display, so a read that dies
     // halfway (the process stops, the retry window runs out) resumes from the chunks it has; once it ends they are dropped.
     let dataKey: Uint8Array | undefined
