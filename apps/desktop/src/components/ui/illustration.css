@@ -22,3 +22,4 @@
 .gg-illustration[data-illustration='no-agents'] { aspect-ratio: 256 / 242; --gg-illustration: url('../../assets/illustrations/no-agents.png'); }
 .gg-illustration[data-illustration='no-tasks'] { aspect-ratio: 312 / 186; --gg-illustration: url('../../assets/illustrations/no-tasks.png'); }
 .gg-illustration[data-illustration='feedback-thanks'] { aspect-ratio: 224 / 289; --gg-illustration: url('../../assets/illustrations/feedback-thanks.png'); }
+.gg-illustration[data-illustration='no-messages'] { aspect-ratio: 208 / 173; --gg-illustration: url('../../assets/illustrations/no-messages.png'); }
