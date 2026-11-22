@@ -6,6 +6,7 @@ import { FirstRunInstallProvider } from '@/components/firstRun/FirstRunInstallPr
 import { NoticeHost } from '@/components/NoticeHost';
 import { useFirstRunInstaller } from '@/components/firstRun/first-run-install-context';
 import { queryClient } from '@/lib/replica';
+import { InitialResizeObserver } from '../../../../../../../tests/support/initialResizeObserver';
 
 const f = vi.hoisted(() => ({ install: vi.fn(), status: vi.fn(), probe: vi.fn(), list: vi.fn() }));
 vi.mock('react-i18next', async (importOriginal) => ({ ...(await importOriginal<typeof import('react-i18next')>()), useTranslation: () => ({ t: (key: string) => key }) }));
@@ -27,6 +28,8 @@ function Flow() {
 let host: HTMLDivElement; let root: Root;
 const deferred = () => { let resolve!: (x: { success: boolean }) => void; const promise = new Promise<{ success: boolean }>(r => { resolve = r; }); return { promise, resolve }; };
 beforeEach(() => {
+  // The notice host follows the composer's box (notice-host-position.ts); jsdom has no ResizeObserver.
+  vi.stubGlobal('ResizeObserver', InitialResizeObserver);
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   f.install.mockReset(); f.probe.mockReset().mockResolvedValue(undefined); f.list.mockReset().mockResolvedValue([]); f.status.mockReset().mockResolvedValue({ used: { kind: 'method', method: 'mise' }, installations: [{ provenance: { ours: true, kind: 'mise' }, status: 'available' }] });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);

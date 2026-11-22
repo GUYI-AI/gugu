@@ -27,10 +27,9 @@ const matching = (pattern: RegExp) => files.filter((file) => pattern.test(file.t
 
 describe('notice outlets', () => {
   it('only the host layers notices: --z-toast, --z-notice and sonner DOM belong to it', () => {
-    const host = ['apps/desktop/src/components/NoticeHost.tsx', 'apps/desktop/src/components/notice-host.css', 'apps/desktop/src/lib/notices.tsx',
-      'apps/desktop/src/styles/tokens.css'];
-    expect(matching(/--z-toast\b/), guide).toEqual(host);
-    expect(matching(/--z-notice\b/), guide).toEqual(host);
+    expect(matching(/--z-toast\b/), guide).toEqual(['apps/desktop/src/components/notice-host.css', 'apps/desktop/src/styles/tokens.css']);
+    expect(matching(/--z-notice\b/), guide).toEqual(['apps/desktop/src/components/NoticeHost.tsx', 'apps/desktop/src/components/notice-host.css',
+      'apps/desktop/src/lib/notices.tsx', 'apps/desktop/src/styles/tokens.css']);
     // The one remaining fixed bar on its own layer: sign-in lost (page state that blocks writes; owner 11-22 kept it as is).
     expect(matching(/--z-banner\b/), guide).toEqual(['apps/desktop/src/components/SessionExpiredNotice.tsx', 'apps/desktop/src/styles/tokens.css']);
     // The embedded browser page reads where a toast is (a native view must not paint over it): a reader, not a drawer.
