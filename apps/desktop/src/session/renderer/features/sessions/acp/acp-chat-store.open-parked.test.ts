@@ -54,6 +54,8 @@ vi.mock('../stores/session-registry', () => ({
 const runtime = vi.hoisted(() => ({
   getStoredQueue: vi.fn(async (..._args: unknown[]) => [] as unknown[]),
 }));
+/** This machine's stored queue, read by main (`sessions.acpStoredQueue`). */
+const storedQueue = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => [] as unknown[]));
 
 const custody = vi.hoisted(() => vi.fn(async (..._args: unknown[]) => {}));
 vi.mock('./queue-native-input', () => ({ sendThroughCustody: custody, canQueueNativeInput: () => false }));
@@ -171,6 +173,7 @@ const host = {
 
 installAcpChatStoreHost((channel: string, ...args: unknown[]) => {
   if (channel === 'sessions.syncStoredHistoryFromRecord') return host.sync(args[0] as string);
+  if (channel === 'sessions.acpStoredQueue') return storedQueue(args[0]);
   if (channel !== 'sessions.getStoredHistory') return Promise.resolve([]);
   const params = args[0] as { limit?: number; fromSeq?: number };
   host.storedReads.push(params);
@@ -424,6 +427,7 @@ beforeEach(() => {
   link.reconnected.clear();
   host.sync.mockReset().mockResolvedValue({ inserted: 0 });
   runtime.getStoredQueue.mockClear();
+  storedQueue.mockClear();
   custody.mockClear();
   life.start.mockClear();
   life.stop.mockClear();
@@ -521,8 +525,9 @@ describe('#980 打开一条没在跑的会话', () => {
     expect(store.affordances.canSubmit).toBe(true);
     expect(store.affordances.isWorking).toBe(false);
     expect(toasts).toEqual([]);
-    // 停着时运行时替它存着的队列照样摆出来(只读存档,不叫醒它)。
-    expect(runtime.getStoredQueue).toHaveBeenCalledWith({ sessionId: store.runtimeSessionId });
+    // 停着时存着的那份队列照样摆出来(只读存档):本机的由主进程读,❌ 为了读把运行时拉起来。
+    expect(storedQueue).toHaveBeenCalledWith(store.runtimeSessionId);
+    expect(runtime.getStoredQueue).not.toHaveBeenCalled();
   });
 
   it('停着时按停止:请宿主的 session-life 停它(用户的停),❌ 静默无操作', async () => {

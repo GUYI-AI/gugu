@@ -16,6 +16,11 @@ export type ResolveAcpProvider = (providerId: string) => ResolvedAcpProvider | n
 export type { ResolvedPromptAttachment, ResolvePromptAttachment } from '../session/cell-deps';
 import type { ResolvePromptAttachment } from '../session/cell-deps';
 
+/** What a stopped session shows of its stored queue: the text and where each input came from. */
+export function storedQueueView(inputs: readonly PromptInput[]): Array<Pick<PromptInput, 'text' | 'origin'>> {
+  return inputs.map(({ text, origin }) => ({ text, origin }));
+}
+
 /** The runtime machine's durable snapshot; no renderer-side queue is involved. */
 export interface PromptQueueStore {
   load(sessionId: string): readonly PromptInput[];

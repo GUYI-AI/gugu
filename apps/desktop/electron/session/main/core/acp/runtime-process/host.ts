@@ -19,6 +19,8 @@ import {
   type ContractClient,
 } from '@gugu/session-wire/api';
 import { lazyWorker, type WorkerHandle } from '@gugu/session-wire/worker';
+import { storedQueueView } from '@gugu/session-runtime/acp-agents';
+import { promptQueueStoreIn } from '@gugu/session-runtime/acp-agents/node';
 import { app } from 'electron';
 import { getHostIpc } from '@main/lib/host-ipc';
 import { appScope } from '@main/app/app-scope';
@@ -243,6 +245,7 @@ const authExpiryWriter: AuthExpiryWriter = {
   clear: async (providerId, sessionId) => (await import('@main/core/agent-config/runtime-process/host')).clearAgentAuthExpired(providerId, sessionId),
   log: (message, detail) => log.warn(message, detail),
 };
+const acpAttachmentsDir = () => join(app.getPath('userData'), 'acp-attachments');
 const acpWorker = lazyWorker(
   () => {
     return {
@@ -253,7 +256,7 @@ const acpWorker = lazyWorker(
       scope: acpRuntimeScope,
       env: {
         ...process.env,
-        GUGU_ACP_ATTACHMENTS_DIR: join(app.getPath('userData'), 'acp-attachments'),
+        GUGU_ACP_ATTACHMENTS_DIR: acpAttachmentsDir(),
         // 桥的入口不走 env:宿主按插件的 `acp.bridge` 声明解析好,随每次 start/resume 的
         // `AgentRunContext.acpAdapterEntry` 递进来(#6394;从前的 GUGU_CODEX_APP_SERVER_ACP_ENTRY 已删)。
       },
@@ -383,6 +386,16 @@ export async function acpWorkerLease(): Promise<{
 export async function peekAcpWorkerClient(): Promise<AcpRuntimeProcessClient | null> {
   const handle = await acpWorker.peek();
   return handle ? handle.client as AcpRuntimeProcessClient : null;
+}
+
+/**
+ * A stopped session's stored queue, read the way the worker reads it, without starting the worker: the worker answers
+ * while it is up; while it is not, no session is live in it, and its own rule reduces to reading its store.
+ */
+export async function readAcpStoredQueue(sessionId: string): Promise<Array<Pick<PromptInput, 'text' | 'origin'>>> {
+  const client = await peekAcpWorkerClient();
+  if (client) return client.getStoredQueue({ sessionId });
+  return storedQueueView(promptQueueStoreIn(acpAttachmentsDir()).load(sessionId));
 }
 
 /** Resource observation never initializes an idle worker. */

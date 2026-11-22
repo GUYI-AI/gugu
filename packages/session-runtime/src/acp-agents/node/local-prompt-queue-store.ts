@@ -48,6 +48,11 @@ export class LocalPromptQueueStore implements PromptQueueStore {
   }
 }
 
+/** The queue snapshots under the runtime's attachments dir: the worker's store, and the host's read of it while no worker runs. */
+export function promptQueueStoreIn(attachmentsDir: string): LocalPromptQueueStore {
+  return new LocalPromptQueueStore(join(attachmentsDir, 'prompt-queues'));
+}
+
 function isMissingFile(error: unknown): boolean {
   return Boolean(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT');
 }

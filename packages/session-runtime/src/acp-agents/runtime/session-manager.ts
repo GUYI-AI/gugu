@@ -119,7 +119,7 @@ import {
   type SessionLiveModels,
   type SessionsListModel,
 } from '../state/live-models';
-import type { AcpRuntimeDeps, AcpStartInput, SendPromptInput } from './types';
+import { storedQueueView, type AcpRuntimeDeps, type AcpStartInput, type SendPromptInput } from './types';
 import { ASSISTANT_IDLE_COMPACTION, CLAUDE_CACHE_LAST_REQUEST_MAX_AGE_MS, IdleCompaction, claudeCacheIdleCompaction, type IdleCompactionPolicy } from './idle-compaction';
 import { readPromptCache, resolveClaudeIdleCompaction } from './claude-idle-compaction';
 
@@ -2003,7 +2003,7 @@ export class SessionManager implements InboundRouter {
   /** Read-only stopped queue projection; reading it must never wake the provider. */
   getStoredQueue(sessionId: string): Array<Pick<PromptInput, 'text' | 'origin'>> {
     if (this.cells.has(sessionId)) return [];
-    return (this.deps.promptQueueStore?.load(sessionId) ?? []).map(({ text, origin }) => ({ text, origin }));
+    return storedQueueView(this.deps.promptQueueStore?.load(sessionId) ?? []);
   }
 
   getTerminals(sessionId: string): TerminalState[] {

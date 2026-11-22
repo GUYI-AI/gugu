@@ -3402,8 +3402,12 @@ export class AcpChatStore {
   /** 停着时运行时替它存着的那份队列(只读、锁着显示);下一次起时运行时先发它们。只读存档,❌ 叫醒它。 */
   private _loadStoredQueue(onError: (error: unknown) => void): void {
     const generation = ++this._storedQueueGeneration;
-    void getAcpRuntimeClient(machineRegistry.machineOf(this.runtimeSessionId))
-      .then((client) => client.getStoredQueue({ sessionId: this.runtimeSessionId }))
+    const machine = machineRegistry.machineOf(this.runtimeSessionId);
+    // 本机的由主进程读(运行时没起时照样读得到,❌ 为了读把它拉起来);别的机器照旧问那台的运行时。
+    const stored = machine
+      ? getAcpRuntimeClient(machine).then((client) => client.getStoredQueue({ sessionId: this.runtimeSessionId }))
+      : rpc.sessions.acpStoredQueue(this.runtimeSessionId);
+    void stored
       .then((queue) => {
         if (this._disposed || !this._closedByHost || generation !== this._storedQueueGeneration) return;
         runInAction(() => { this._storedQueue = queue; });

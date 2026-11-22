@@ -1,4 +1,3 @@
-import { join } from 'node:path';
 import os from 'node:os';
 import { acpRuntimeApiContract } from '@gugu/session-core/acp';
 import { AgentPluginHost, type CLIAgentPluginProvider } from '@gugu/session-core/agents/plugins';
@@ -22,7 +21,7 @@ import type { AcpRuntimeDeps } from '../runtime/types';
 import { ChildAcpProcessHost } from './child-process-host';
 import { LocalAttachmentStore } from './local-attachment-store';
 import { createPromptAttachmentResolver } from './resolve-prompt-attachment';
-import { LocalPromptQueueStore } from './local-prompt-queue-store';
+import { promptQueueStoreIn } from './local-prompt-queue-store';
 
 export type BootAcpRuntimeProcessOptions = {
   projectMessagePreview: NonNullable<AcpRuntimeDeps['messagePreview']>['project'];
@@ -71,7 +70,7 @@ export function bootAcpRuntimeProcess(options: BootAcpRuntimeProcessOptions): vo
         warn: (message, detail) => logger.warn(message, detail),
       });
       const attachmentStore = new LocalAttachmentStore(attachmentsDir);
-      const promptQueueStore = new LocalPromptQueueStore(join(attachmentsDir, 'prompt-queues'));
+      const promptQueueStore = promptQueueStoreIn(attachmentsDir);
       const homeDir = os.homedir();
       const agentHost = new AgentPluginHost({
         windowsShimReader: diskWindowsShimReader,

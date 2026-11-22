@@ -88,6 +88,8 @@ export const sessionController = createRPCController({
   // Whether this machine's ACP runtime is up, without starting it (a page reads the session table only from a live runtime).
   // (The runtime host loads on first call: it owns the worker, this table only answers about it.)
   acpRuntimeUp: async () => (await (await import('../acp/runtime-process/host')).peekAcpRuntimeClient()) !== null,
+  // A stopped session's stored queue on this machine, readable while no runtime runs.
+  acpStoredQueue: async (sessionId: string) => (await import('../acp/runtime-process/host')).readAcpStoredQueue(sessionId),
   lifeView: async (sessionId: string) => {
     await sessionLife().reconcileUnknownRows(sessionId, nativePendingInputLookup(sessionId));
     return sessionLife().read(sessionId);

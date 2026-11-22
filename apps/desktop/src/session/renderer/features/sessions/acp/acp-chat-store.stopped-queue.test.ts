@@ -13,7 +13,7 @@ vi.mock('../stores/session-registry', () => ({
   },
 }));
 vi.mock('@renderer/lib/acp/runtime-client', () => ({
-  getAcpRuntimeClient: async () => ({ queuePrompt: vi.fn(), getStoredQueue }),
+  getAcpRuntimeClient: async () => ({ queuePrompt: vi.fn() }),
 }));
 const toasts = vi.hoisted(() => [] as unknown[]);
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: (arg: unknown) => toasts.push(arg) }));
@@ -21,7 +21,9 @@ vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: (arg: unknown) => toast
 type StoreModule = typeof import('./acp-chat-store');
 type Store = InstanceType<StoreModule['AcpChatStore']>;
 
-const invoke = vi.fn((..._args: unknown[]) => Promise.resolve([]));
+// This machine's stored queue is read by main (`sessions.acpStoredQueue`).
+const invoke = vi.fn((channel: unknown, ...args: unknown[]) =>
+  channel === 'sessions.acpStoredQueue' ? getStoredQueue({ sessionId: args[0] }) : Promise.resolve([]));
 installAcpChatStoreHost(invoke);
 const { AcpChatStore }: StoreModule = await import('./acp-chat-store');
 
