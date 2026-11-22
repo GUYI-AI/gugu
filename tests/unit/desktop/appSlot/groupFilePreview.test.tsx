@@ -9,7 +9,7 @@ import { until } from '../../../support/awaitCondition'
 
 const boundary = vi.hoisted(() => ({
   mobile: false,
-  read: vi.fn(),
+  read: vi.fn(), download: vi.fn(async () => undefined),
   document: vi.fn(),
   forward: vi.fn(),
   signed: vi.fn(),
@@ -28,7 +28,7 @@ vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: vi.fn(async () => ({ error: nu
 vi.mock('@/lib/attachmentBytes', () => (((mocked: Record<string, unknown>) => ({ ...mocked, shownAttachmentBytes: async (source: unknown, progress?: unknown) => { const read = mocked.attachmentBytes as (...args: unknown[]) => Promise<{ status: string }>; const bytes = await read(source, 'shown', undefined, undefined, progress); if (bytes.status !== 'ready') throw new Error(bytes.status); return bytes } }))({
   attachmentBytes: boundary.read,
   attachmentPreview: boundary.signed, localAttachmentUrl: boundary.local,
-  openAttachmentInSystemApp: boundary.open,
+  openAttachmentInSystemApp: boundary.open, downloadAttachment: boundary.download,
   openAttachmentImages: boundary.image,
   sourceKeyOf: (source: { itemId: string; version: number }) => `${source.itemId}@${source.version}`,
 })))
@@ -288,7 +288,7 @@ describe('unclaimed group files use the message preview from every entry', () =>
     expect(boundary.signed).not.toHaveBeenCalled()
     expect(harness.container.querySelector('button[aria-label="在系统浏览器打开"]')).toBeNull()
     await act(async () => harness.container.querySelector<HTMLButtonElement>('button[aria-label="下载"]')!.click())
-    expect(boundary.save).toHaveBeenCalledWith(expect.anything(), 'report.exe')
+    expect(boundary.download).toHaveBeenCalledWith(expect.objectContaining({ kind: 'item' }), 'report.exe')
     expect(boundary.open).not.toHaveBeenCalled()
   })
 

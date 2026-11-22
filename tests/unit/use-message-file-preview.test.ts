@@ -145,7 +145,8 @@ describe('useMessageFilePreview', () => {
     expect(downloadMocks.downloadBlob).not.toHaveBeenCalled()
     expect(container.querySelector('[data-testid="preview-content"]')).not.toBeNull()
     await act(async () => { (container.querySelector('[data-testid="preview-download"]') as HTMLButtonElement).click() })
-    expect(downloadMocks.downloadBlob).toHaveBeenCalledWith(expect.anything(), file.fileName)
+    // A chat's file is saved the way a message's Download saves it (main, on the desktop).
+    expect(bytesMocks.downloadAttachment).toHaveBeenCalledWith(file.source, file.fileName)
     await act(async () => { openPreview?.(file) })
     expect(container.querySelector('[data-testid="preview-forward"]')).toBeNull()
     expect(container.querySelector('[data-testid="preview-download"]')).not.toBeNull()
@@ -321,7 +322,7 @@ describe('useMessageFilePreview', () => {
     await act(async () => { root.render(React.createElement(Probe)); await Promise.resolve() })
     await act(async () => { openPreview?.(file); await Promise.resolve() })
     const error = new Error('Attachment access denied /Users/test/private sk-synthetic-secret\nstack detail')
-    if (action === 'download') bytesMocks.attachmentBytes.mockRejectedValue(error)
+    if (action === 'download') bytesMocks.downloadAttachment.mockRejectedValue(error)
     else bytesMocks.openAttachmentInSystemApp.mockRejectedValue(error)
     previewToast.mockClear()
     await act(async () => { (container.querySelector(`[data-testid="preview-${action}"]`) as HTMLElement).click(); await Promise.resolve() })

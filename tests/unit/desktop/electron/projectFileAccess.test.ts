@@ -256,8 +256,8 @@ describe('downloads consume one file and leave no cached chunks behind', () => {
       if (String(url) !== 'https://objects.invalid/big') throw new Error('Unexpected file request')
       const from = Number(/bytes=(\d+)-/.exec(new Headers(init?.headers).get('range') ?? '')?.[1] ?? 0)
       ranges.push(from)
-      // One chunk per read. The first save stops when it asks for its third chunk (the process stops): by then the first
-      // two are cached. A later save is served in full.
+      // One chunk per read. The first save stops when it asks for its third chunk (the process stops): by then the chunks
+      // it has read are cached. A later save is served in full.
       const firstSave = ranges.length === 1
       let at = from
       const body = new ReadableStream<Uint8Array>({ pull(controller) {
@@ -271,12 +271,15 @@ describe('downloads consume one file and leave no cached chunks behind', () => {
     const first = await resolve(ref, actor, { signal: stop.signal })
     if (first.status !== 'ready') throw new Error('Missing fixture')
     await expect(saveToFileStore(first, home, 'big.bin')).rejects.toThrow()
-    expect((await chunksLeft()).length).toBeGreaterThan(0)
+    // How many chunks were cached when it stopped depends on how far the lane read ahead; the next save asks for the rest.
+    const open = (await chunksLeft()).find(name => name.startsWith('open-'))!
+    const cached = (await readdir(join(tempRoot, open))).filter(name => /^\d+$/.test(name)).length
+    expect(cached).toBeGreaterThan(0)
     const second = await resolve(ref, actor)
     if (second.status !== 'ready') throw new Error('Missing fixture')
     const saved = await saveToFileStore(second, home, 'big.bin')
     expect(digest(await readFile(saved.file_path))).toBe(stored.sha256)
-    expect(ranges).toEqual([0, 2 * 512 * 1024])
+    expect(ranges).toEqual([0, cached * 512 * 1024])
     expect(await chunksLeft()).toEqual([])
   })
   it('removes the partial on a digest mismatch and never publishes corrupted content', async () => {

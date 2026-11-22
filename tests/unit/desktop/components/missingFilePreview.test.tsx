@@ -9,7 +9,8 @@ import { createReactHarness, renderWithAppProviders } from '../../../support/tes
 import { queryClient } from '@/lib/replica'
 
 const io = vi.hoisted(() => ({ bytes: vi.fn(), preview: vi.fn(), image: vi.fn(), external: vi.fn(), download: vi.fn() }))
-vi.mock('@/lib/attachmentBytes', () => ({ attachmentBytes: io.bytes, attachmentPreview: io.preview, localAttachmentUrl: async () => null, openAttachmentImage: io.image, openAttachmentInSystemApp: io.external, sourceKeyOf: () => 'message:missing-preview' }))
+// A preview's Download is downloadAttachment; with no main process it reads the bytes and saves them from the page, as here.
+vi.mock('@/lib/attachmentBytes', () => ({ downloadAttachment: async (source: unknown, name: string) => { const bytes = await io.bytes(source, 'full'); if (bytes.status !== 'ready') throw new Error(bytes.status); await io.download(bytes.blob, name) }, attachmentBytes: io.bytes, attachmentPreview: io.preview, localAttachmentUrl: async () => null, openAttachmentImage: io.image, openAttachmentInSystemApp: io.external, sourceKeyOf: () => 'message:missing-preview' }))
 vi.mock('@/lib/download', () => ({ downloadBlob: io.download }))
 
 const file: PreviewFile = { kind: 'file', fileName: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5, source: { kind: 'message', messageId: 'missing-preview' } }
