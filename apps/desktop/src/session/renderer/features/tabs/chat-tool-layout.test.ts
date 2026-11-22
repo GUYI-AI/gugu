@@ -185,6 +185,9 @@ describe('mounted chat workspace', () => {
       expect(tools.tabOrder).toEqual([first, second]);
       expect(tools._resources.get(first)).toBe(firstResource);
       expect(layout.layout).toBe(before);
+      // The chat is still on screen until the view's track lands (@@@leaving-panes).
+      expect(layout.isPaneShown(panes.chat.paneId)).toBe(true);
+      layout.panesLanded();
       expect(layout.isPaneShown(panes.chat.paneId)).toBe(false);
 
       tools.closeTab(first);
@@ -207,6 +210,7 @@ describe('mounted chat workspace', () => {
       layout.open('tool', { id: 'first' }, newTab);
       const panes = layout.chatWorkspacePanes!;
       layout.setChatToolLayout('hidden');
+      layout.panesLanded();
       const geometry = layout.layout;
       const background = layout.open('tool', { id: 'background' }, { ...newTab, activate: false })!;
       const resource = panes.tools!.pane._resources.get(background);

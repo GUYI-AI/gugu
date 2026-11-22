@@ -35,7 +35,7 @@ interface WorkspaceLayoutProps {
  * ## 这一层的几何
  *
  * 一条 flex 行:列表、内层栏两格,正文吃剩下的(flex-1)。三者是同一条 PanelTrack(panel-track.ts):格子去哪由
- * layout-provider 推出,怎么动只由 track 画 —— 两头各排一次版,中间每帧只有 transform。
+ * layout-provider 推出,怎么动只由 track 定 —— 每一帧都按画出来的尺寸真排版,正文跟着让。
  *
  * #2548 the list collapses to a rail of its avatars (SIDEBAR_RAIL_PX) and is always there. Its content layer keeps the
  * list's width through a fold and is clipped at the drawn edge (@@@list-clip below).
@@ -88,10 +88,10 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       // #2548 the content is a card stacked on the one list only while the list is beside it (desktop-shell.css).
       data-workspace-sidebar-hidden={sidebarHidden ? '' : undefined}
     >
-      {/* @@@list-clip - the list, the inner column and the page are one PanelTrack (panel-track.ts): a fold lays each of
-          them out once and moves them with transforms, so the page is ❌ re-laid out in every frame of it. The list keeps its
-          width through the fold and is clipped at its drawn edge (its text fades, left-sidebar); it lands on the rail's
-          width with the rows' rail layout. A place without the list (资源库, App) keeps the list mounted, taking no room,
+      {/* @@@list-clip - the list, the inner column and the page are one PanelTrack (panel-track.ts): in every frame of a
+          fold each is laid out at the size it is drawn at, and the page takes the rest. The list keeps its width through the
+          fold and is clipped at its drawn edge (its text fades, left-sidebar); it lands on the rail's width with the rows'
+          rail layout. A place without the list (资源库, App) keeps the list mounted, taking no room,
           as a retained surface (❌ display:none: that drops every row's layout box and the way back restyles the whole list,
           @@@retained-places, lib/retainedSurface.ts). */}
       <PanelSlot track={track} id="list" className="z-40">

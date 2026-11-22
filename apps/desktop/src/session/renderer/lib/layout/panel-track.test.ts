@@ -14,90 +14,74 @@ vi.mock('framer-motion', () => ({
   },
 }));
 
-const { paintTrack, planSlot, PanelTrack } = await import('./panel-track');
+const { contentAt, paintSlot, PanelTrack } = await import('./panel-track');
 
 afterEach(() => {
   frames.played.length = 0;
   frames.hold = false;
 });
 
-describe('a move is laid out once at each end', () => {
-  it('a slot takes the smaller of its two sizes in the layout and lays its content out at the larger', () => {
-    expect(planSlot(240, 240, { size: 72, content: 72 })).toEqual({ place: 72, content: 240 });
-    expect(planSlot(72, 72, { size: 240, content: 240 })).toEqual({ place: 72, content: 240 });
-    // a column folding to nothing keeps its laid-out width
-    expect(planSlot(260, 260, { size: 0, content: 260 })).toEqual({ place: 0, content: 260 });
+describe('the size is the state', () => {
+  it('a slot to or from nothing keeps its open content size; a pane reflows with its drawn size; a held slot keeps the larger', () => {
+    expect(contentAt(130, { size: 260, content: 260 }, { size: 0, content: 260, reflows: true })).toBe(260);
+    expect(contentAt(130, { size: 0, content: 0 }, { size: 260, content: 260, reflows: true })).toBe(260);
+    // the chat beside a side page coming in: laid out at every width it is drawn at
+    expect(contentAt(700, { size: 889, content: 889 }, { size: 529, content: 529, reflows: true })).toBe(700);
+    // the list folding to its rail keeps the list's width until it lands
+    expect(contentAt(156, { size: 240, content: 240 }, { size: 72, content: 72, reflows: false })).toBe(240);
   });
 
-  it('a pane that reflows takes its new width at the start, unless it goes to nothing', () => {
-    // the chat beside a side page coming in: wrapped once, at 529, ❌ at 889 until it lands
-    expect(planSlot(889, 889, { size: 529, content: 529, reflows: true })).toEqual({ place: 529, content: 529 });
-    expect(planSlot(529, 529, { size: 889, content: 889, reflows: true })).toEqual({ place: 529, content: 889 });
-    expect(planSlot(260, 260, { size: 0, content: 0, reflows: true })).toEqual({ place: 0, content: 260 });
-  });
-});
-
-describe('a frame is transforms', () => {
-  it('a start slot is clipped at its drawn edge and the fill rides on it', () => {
-    // the list mid-fold: drawn 156, laid out in place 72 with content 240
-    const { slots, fill } = paintTrack([{ drawn: 156, place: 72, content: 240 }]);
-    expect(slots[0]).toEqual({ window: -84, inner: 84, opacity: 1, soft: false, hidden: false });
-    expect(fill).toBe(84);
-  });
-
-  it('a slot that closes to nothing fades with its size behind a soft edge, and is out of reach at 0', () => {
-    const half = paintTrack([{ drawn: 130, place: 0, content: 260 }]).slots[0];
-    expect(half).toMatchObject({ opacity: 0.5, soft: true, hidden: false });
-    const gone = paintTrack([{ drawn: 0, place: 0, content: 260 }]).slots[0];
-    expect(gone).toMatchObject({ opacity: 0, hidden: true });
-  });
-
-  it('a slot after another moves with the one before it', () => {
-    const { slots, fill } = paintTrack([
-      { drawn: 156, place: 72, content: 240 },
-      { drawn: 260, place: 260, content: 260 },
-    ]);
-    expect(slots[1]).toMatchObject({ window: 84, inner: 0 });
-    expect(fill).toBe(84);
+  it('a slot is clipped at its drawn edge with its far edge on it, and fades only to or from nothing', () => {
+    expect(paintSlot({ drawn: 156, content: 240 }, false)).toEqual({ offset: -84, opacity: 1, soft: false, hidden: false });
+    expect(paintSlot({ drawn: 130, content: 260 }, true)).toMatchObject({ offset: -130, opacity: 0.5, soft: true, hidden: false });
+    expect(paintSlot({ drawn: 0, content: 260 }, true)).toMatchObject({ opacity: 0, hidden: true });
   });
 });
 
 describe('PanelTrack', () => {
   const nodes = () => ({ place: document.createElement('div'), window: document.createElement('div'), content: document.createElement('div') });
 
-  it('writes sizes only at the two ends and transforms in between, and lands on the target', () => {
+  it('lays the slot out at its drawn size in every frame and lands on the target', () => {
     const track = new PanelTrack([{ id: 'list', at: { size: 240 } }]);
     const list = nodes();
     track.attach('list', list);
     const fill = document.createElement('div');
     track.attachFill(fill);
-    const widths: string[] = [];
-    track.subscribe(() => widths.push(list.content.style.width));
+    const places: string[] = [];
+    track.subscribe(() => places.push(list.place.style.width));
     track.to({ list: { size: 72 } });
-    // start (laid out at 240), three frames (unchanged), landing (72)
-    expect(widths).toEqual(['240px', '240px', '240px', '240px', '72px']);
-    expect(list.place.style.width).toBe('72px');
-    expect(list.window.style.transform).toBe('');
+    // start, three frames, landing: the place is the drawn size each time
+    expect(places).toEqual(['240px', '198px', '156px', '114px', '72px']);
+    expect(list.content.style.width).toBe('72px');
+    expect(list.content.style.left).toBe('');
     expect(fill.style.transform).toBe('');
-    expect(list.window.style.willChange).toBe('');
     expect(track.drawn('list')).toBe(72);
   });
 
-  it('mid-move the fill and the window move by transform and are on their own layer', () => {
+  it('mid-move the content keeps the larger size, its far edge on the drawn edge', () => {
     frames.hold = true;
     const track = new PanelTrack([{ id: 'list', at: { size: 240 } }]);
     const list = nodes();
     track.attach('list', list);
-    const fill = document.createElement('div');
-    track.attachFill(fill);
     track.to({ list: { size: 72 } });
     // the last frame played: 0.75 of the way, drawn 114
     expect(track.drawn('list')).toBe(114);
-    expect(list.place.style.width).toBe('72px');
-    expect(fill.style.transform).toBe('translateX(42px)');
-    expect(list.window.style.transform).toBe('translateX(-126px)');
-    expect(list.content.style.transform).toBe('translateX(126px)');
-    expect(fill.style.willChange).toBe('transform');
+    expect(list.place.style.width).toBe('114px');
+    expect(list.content.style.width).toBe('240px');
+    expect(list.content.style.left).toBe('-126px');
+  });
+
+  it('a fill coming from nothing keeps its open size while it moves, and takes the rest when it lands', () => {
+    frames.hold = true;
+    const track = new PanelTrack([{ id: 'chat', at: { size: 1000 } }], 'x', 1000);
+    track.attach('chat', nodes());
+    const place = document.createElement('div');
+    const content = document.createElement('div');
+    track.attachFill(place, content);
+    track.to({ chat: { size: 600, reflows: true } });
+    expect(content.style.width).toBe('400px');
+    track.jump({ chat: { size: 600, reflows: true } });
+    expect(content.style.width).toBe('');
   });
 
   it('a move to where it already goes does nothing; a jump stops a move and writes the target at once', () => {

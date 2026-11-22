@@ -1,7 +1,7 @@
 /**
  * @@@list-clip — folding the list, either way, moves the page with the one spring (panel-track): in every frame its left
- * edge is on the list's drawn edge, and it is laid out once: at its wider width for the whole move (a collapse from the
- * start, an expand until it lands), running past the shell's right edge ❌ short of it. Its width never follows the frames.
+ * edge is on the list's drawn edge and it is laid out at the width that leaves it — the size is the state, ❌ one layout
+ * under a transform.
  */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
@@ -81,10 +81,10 @@ it('a fold moves the page with the list\'s edge in every frame, the same way in 
     const gaps = frames.map((frame) => Math.round(frame.gap));
     expect(new Set(gaps).size, `${direction}: the page's left edge follows the list's edge (${gaps.join(',')})`).toBe(1);
     expect(frames.every((frame) => frame.right <= Math.round(before.right) + 0.5), `${direction}: the page always reaches the shell's right edge`).toBe(true);
-    // Laid out once: a collapse at its start, an expand where it lands; in between the page keeps the wider width.
+    // Laid out in every frame: its width follows the list's edge, and it ends on the shell's right edge the whole way.
     const widths = [before.width, ...frames.map((frame) => frame.width)];
-    const changes = widths.filter((width, i) => i > 0 && width !== widths[i - 1]).length;
-    expect(changes, `${direction}: the page is laid out once (${widths.join(',')})`).toBe(1);
+    expect(new Set(widths).size, `${direction}: the page is laid out at each width (${widths.join(',')})`).toBeGreaterThan(5);
+    expect(frames.every((frame) => Math.abs(frame.right - before.right) < 1), `${direction}: the page ends on the shell's right edge`).toBe(true);
     // One way, no jump back: the list's edge only moves toward where it lands.
     const edges = frames.map((frame) => frame.edge);
     const step = direction === 'collapse' ? -1 : 1;

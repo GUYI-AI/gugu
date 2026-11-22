@@ -31,8 +31,10 @@ export function useMessageFilePreview({ mobile, visible, closeRightSurfaces, toa
   const host = useContext(FilePreviewHost)
   const hosted = host !== null
   const onOpenChange = host?.onOpenChange
-  const [preview, setPreview] = useState<{ file: PreviewFile; message?: MessageItem; opening: number } | null>(null)
-  const isOpen = preview !== null
+  // `closing`: closed, still beside the content until its cell is at nothing (the cut's track lands).
+  const [preview, setPreview] = useState<{ file: PreviewFile; message?: MessageItem; opening: number; closing?: true } | null>(null)
+  const isOpen = preview !== null && !preview.closing
+  const onTrack = !(host && 'target' in host) && !mobile
   useEffect(() => {
     onOpenChange?.(isOpen)
     return () => onOpenChange?.(false)
@@ -59,8 +61,8 @@ export function useMessageFilePreview({ mobile, visible, closeRightSurfaces, toa
   }, [closeRightSurfaces, downloadFailed, hosted, toast, readOnly])
   const close = useCallback(() => {
     restoreRef.current = null
-    setPreview(null)
-  }, [])
+    setPreview((now) => (now && onTrack ? { ...now, closing: true } : null))
+  }, [onTrack])
   const closeByUser = useCallback(() => {
     const restore = restoreRef.current
     close()
@@ -86,8 +88,9 @@ export function useMessageFilePreview({ mobile, visible, closeRightSurfaces, toa
   const beside = (content: ReactNode) => host && 'target' in host ? <>{content}{host.target && preview ? createPortal(body, host.target) : null}</> : mobile ? (
     <>{content}{preview && <Sheet fullScreenMobile onClose={closeByUser} ariaLabel={preview.file.fileName} testId="message-file-preview-sheet">{body}</Sheet>}</>
   ) : (
-    <TrackCut axis="x" animate exit onShares={() => {}} onEqualize={() => {}}
-      shares={(span) => { const side = Math.min(520, Math.max(380, 0.38 * window.innerWidth)); return preview ? [100 - (100 * side) / span, (100 * side) / span] : [100] }}
+    <TrackCut axis="x" animate onShares={() => {}} onEqualize={() => {}}
+      onLanded={preview?.closing ? () => setPreview((now) => (now?.closing ? null : now)) : undefined}
+      shares={(span) => { const side = Math.min(520, Math.max(380, 0.38 * window.innerWidth)); return preview ? preview.closing ? [100, 0] : [100 - (100 * side) / span, (100 * side) / span] : [100] }}
       items={[{ id: 'content', min: 0, node: content }, ...(preview ? [{ id: 'file-preview', min: 0, fixed: true, node: body }] : [])]} />
   )
   return { isOpen: !!preview, open, close, beside }

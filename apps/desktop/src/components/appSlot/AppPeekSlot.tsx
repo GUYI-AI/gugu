@@ -37,14 +37,18 @@ export const AppPeekSlot = observer(function AppPeekSlot({ sessionId, tabId, cha
     return () => observer.disconnect()
   }, [open])
   const close = () => peekStore.close(sessionId, tabId)
+  // What is drawn beside the page: what is open, or what was until its cell is at nothing (the cut's track lands).
+  const [drawn, setDrawn] = useState(target)
   // The phone's back key (and the header's back) closes it before anything under it.
   useBackLayer(close, target !== null)
   const beside = !narrow && width >= BESIDE_MIN_WIDTH
+  if (drawn !== target && (target || !beside)) setDrawn(target)
+  const closing = !target && drawn !== null
   const covered = target !== null && !beside
-  const peek = (over: boolean) => target && (
-    <div className={over ? 'absolute inset-0 flex flex-col bg-[var(--bg-primary)]' : 'flex min-h-0 flex-1 flex-col'} data-testid="app-peek" data-peek-kind={target.kind}>
+  const peek = (over: boolean) => drawn && (
+    <div className={over ? 'absolute inset-0 flex flex-col bg-[var(--bg-primary)]' : 'flex min-h-0 flex-1 flex-col'} data-testid="app-peek" data-peek-kind={drawn.kind} inert={closing || undefined}>
       <Suspense fallback={null}>
-        <AppPeek target={target} slotKey={`${sessionId ?? ''}:${tabId}`} {...(chatId ? { chatId } : {})} beside={beside} onClose={close} />
+        <AppPeek target={drawn} slotKey={`${sessionId ?? ''}:${tabId}`} {...(chatId ? { chatId } : {})} beside={beside} onClose={close} />
       </Suspense>
     </div>
   )
@@ -53,11 +57,11 @@ export const AppPeekSlot = observer(function AppPeekSlot({ sessionId, tabId, cha
     // one header on screen, the peek's, whose back returns to the page with its own.
     <div ref={boxRef} className={`${narrow ? '' : 'relative '}flex min-h-0 min-w-0 flex-1`} data-testid="app-peek-slot" data-peek={target ? (beside ? 'beside' : 'over') : undefined}>
       {/* Beside, what is opened comes and goes on the cut's track (max(420px, 45%) wide); the page keeps its element. */}
-      <TrackCut axis="x" animate exit={!target} onShares={() => {}} onEqualize={() => {}}
-        shares={(span) => target && beside ? [100 - (100 * Math.max(420, 0.45 * span)) / span, (100 * Math.max(420, 0.45 * span)) / span] : [100]}
+      <TrackCut axis="x" animate onShares={() => {}} onEqualize={() => {}} onLanded={closing ? () => setDrawn(null) : undefined}
+        shares={(span) => drawn && beside ? closing ? [100, 0] : [100 - (100 * Math.max(420, 0.45 * span)) / span, (100 * Math.max(420, 0.45 * span)) / span] : [100]}
         items={[{ id: 'page', min: 0, node: <div data-peek-page className={`flex min-h-0 min-w-0 flex-1 flex-col${covered ? ' invisible' : ''}`}>
           <PeekCovered.Provider value={covered}>{children}</PeekCovered.Provider>
-        </div> }, ...(target && beside ? [{ id: 'peek', min: 0, fixed: true, node: peek(false) }] : [])]} />
+        </div> }, ...(drawn && beside ? [{ id: 'peek', min: 0, fixed: true, node: peek(false) }] : [])]} />
       {covered && peek(true)}
     </div>
   )

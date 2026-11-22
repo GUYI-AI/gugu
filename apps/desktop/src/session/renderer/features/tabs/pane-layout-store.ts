@@ -154,6 +154,11 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   private readonly _chatToolLayout = observable.box<PopulatedChatToolLayout | undefined>(undefined);
   private readonly _chatToolDisposer?: () => void;
   private readonly _chatWorkspaceHosts = observable.box(0);
+  /**
+   * @@@leaving-panes — panes the chat workspace stopped showing that are still on screen: the view moves their cell to
+   * nothing and says when it is there (`panesLanded`). Until then they are shown — live, ❌ a picture of them.
+   */
+  private readonly _leavingPaneIds = observable.set<string>();
   private _lastPersistentActivePaneId: string;
   private readonly _lastPersistentActiveTabIds = new Map<string, string | undefined>();
 
@@ -202,6 +207,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       chatWorkspaceMode: computed,
       chatWorkspacePanes: computed,
       chatWorkspaceSinglePaneId: computed,
+      panesLanded: action,
       chatWorkspaceConversationPresentation: computed,
       showChatWorkspaceConversation: action,
       attachChatWorkspace: action,
@@ -364,7 +370,12 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
   isPaneShown(paneId: string): boolean {
     const single = this.chatWorkspaceSinglePaneId;
-    return single ? single === paneId : !this.narrow || this.activePaneId === paneId;
+    return single ? single === paneId || this._leavingPaneIds.has(paneId) : !this.narrow || this.activePaneId === paneId;
+  }
+
+  /** The view's cells came to rest: panes leaving the screen are off it. */
+  panesLanded(): void {
+    this._leavingPaneIds.clear();
   }
 
   attachChatWorkspace(): () => void {
@@ -381,9 +392,19 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       (tabId) => { if (tabId) this._selectChatWorkspaceTab(tabId, false); },
       { fireImmediately: true }
     );
+    // Hiding the other page (hidden, full) takes it off the screen; switching the one page on screen (full) is a page swap.
+    const stopLeaving = reaction(
+      () => this.chatWorkspaceSinglePaneId,
+      (single, was) => {
+        this._leavingPaneIds.clear();
+        if (single && !was && !this.narrow) for (const { paneId } of this.groups) if (paneId !== single) this._leavingPaneIds.add(paneId);
+      }
+    );
     this._focusChatWorkspacePage();
     return action(() => {
       stop();
+      stopLeaving();
+      this._leavingPaneIds.clear();
       this._chatWorkspaceHosts.set(this._chatWorkspaceHosts.get() - 1);
     });
   }

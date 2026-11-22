@@ -140,8 +140,8 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
 
 /**
  * The bell's place on the rail: a row between 「»」 and the 「+」, on the avatars' axis (20 + 32 / 2 = 36), 40px tall on the
- * rail and 0 expanded. It takes its height where the rows take the rail's layout (one layout at each end of the fold,
- * @@@panel-track); in between, what is under it moves down with the progress by a transform (followBelowRailBell), so the
+ * rail and 0 expanded. It takes its height where the rows take the rail's layout (the list keeps its width until the fold
+ * lands, @@@panel-track); in between, what is under it moves down with the progress by a transform (followBelowRailBell), so the
  * avatars still move, ❌ jump. The bell itself is the head's (the same slot, the same count) and changes place there too,
  * fading in as the rows' counts do. Opening it on the rail expands the sidebar into the same list (LeftSidebar).
  */

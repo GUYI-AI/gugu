@@ -3,7 +3,7 @@ import { act, useEffect } from 'react';
 import { afterAll, afterEach, expect, it } from 'vitest';
 import { cdp, page } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
-import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
+import { until } from '../../../../../../../tests/support/awaitCondition';
 import { createTabProvider, createTabRegistry } from '@renderer/features/tabs/core/tab-provider-registry';
 import { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
@@ -66,7 +66,7 @@ it('shields embedded pages during a real divider drag and releases the shield on
   expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
 });
 
-it('a cut given other shares moves its divider over frames, and lays its panes out only where it starts and lands', async () => {
+it('a cut given other shares moves its divider over frames, and lays its panes out at each size it is drawn at', async () => {
   await mount();
   const root = layout.layout;
   if (root.type !== 'split') throw new Error('mount makes a split');
@@ -82,14 +82,14 @@ it('a cut given other shares moves its divider over frames, and lays its panes o
     places.add(place.style.width);
   }
   expect(new Set(edges).size, JSON.stringify(edges)).toBeGreaterThan(5);
-  // the place is the smaller width the whole way (the start's layout), then the landing's: one layout at each end
-  expect(places.size, [...places].join(' ')).toBeLessThanOrEqual(2);
+  // the place is laid out at the drawn width in every frame
+  expect(places.size, [...places].join(' ')).toBeGreaterThan(5);
   // lands on 30% of the cut (less its one divider pixel)
   const cut = divider.parentElement!.getBoundingClientRect();
   expect(Math.abs(edges.at(-1)! - cut.left - 0.3 * (cut.width - 1))).toBeLessThan(1.5);
 });
 
-it('the side page comes in on the track: it slides in from the end, and the page beside it re-wraps once, at its new width, as it starts', async () => {
+it('the side page comes in on the track: it slides in from the end, and the page beside it is laid out at every width it is drawn at', async () => {
   await page.viewport(1100, 800);
   harness = createReactHarness();
   harness.container.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px';
@@ -114,53 +114,9 @@ it('the side page comes in on the track: it slides in from the end, and the page
   expect(new Set(lefts).size, JSON.stringify(lefts)).toBeGreaterThan(5);
   expect(lefts[0], JSON.stringify(lefts)).toBeGreaterThan(800);
   expect(Math.abs(lefts.at(-1)! - 500)).toBeLessThan(2);
-  // Control: laid out at the larger width while moving, it read 1000 until it landed and then jumped to 500.
-  expect(keptWidths.size, [...keptWidths].join(' ')).toBe(1);
-  expect(Math.abs([...keptWidths][0] - 500), [...keptWidths].join(' ')).toBeLessThan(2);
-});
-
-it.each([false, true])('the side page goes out on the track with its last frame, unless it is drawn natively (native %s)', async (native) => {
-  await page.viewport(1100, 800);
-  harness = createReactHarness();
-  harness.container.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px';
-  const provider = createTabProvider({ kind: 'page', resourceKey: (state: { id: string }) => state.id, initialize: () => ({ dispose() {} }), dispose() {}, TabContent: () => null, TabBarItem: () => null, TabBarItemDragPreview: () => null });
-  layout = new PaneLayoutStore(createTabRegistry([provider]), { viewId: 'tree-v3-exit' });
-  layout.open('page', { id: 'conversation' }, { from: null, intent: 'newTab' });
-  const file = layout.open('page', { id: 'file' }, { from: null, intent: 'newTab' })!;
-  layout.focusedPane.setDimensions(harness.container.clientWidth, harness.container.clientHeight);
-  const kept = layout.activePaneId;
-  await act(() => harness.render(<PaneTreeView layout={layout} renderPane={(id, _first, _last, part) => (part === 'bar' ? null : <div data-page={id} style={{ height: '100%' }}>page {id}<div data-extension-slot='' hidden={!native} /></div>)} />));
-  await act(() => { expect(layout.splitPane(kept, 'right', file)).toBe(true); });
-  const other = layout.groups.find(({ paneId }) => paneId !== kept)!.paneId;
-  await untilStable('the side page is in', () => harness.container.querySelector(`[data-page="${other}"]`)!.getBoundingClientRect().left);
-  await act(() => layout.closePane(other));
-  // Gone from the store at once: what is drawn is its last frame, out of reach.
-  expect(layout.groups.map(({ paneId }) => paneId)).toEqual([kept]);
-  // An App page or the browser would copy as a blank slab: it closes at once, as before.
-  if (native) expect(harness.container.querySelector(`[data-page="${other}"]`)).toBeNull();
-  else expect(harness.container.querySelector(`[data-page="${other}"]`)?.closest('[inert]')).not.toBeNull();
-  const lefts: number[] = [];
-  const cells: number[] = [];
-  const start = performance.now();
-  while (performance.now() - start < 900) {
-    await new Promise(requestAnimationFrame);
-    cells.push(harness.container.querySelectorAll('[style*="anchor-name"]').length);
-    const frame = harness.container.querySelector<HTMLElement>('[data-last-frame]');
-    if (frame) expect(frame.textContent).toBe(`page ${other}`);
-    // A native page kept out of sight (a tab behind the one in front) is no reason to go at once, and is not copied.
-    if (frame) expect(frame.querySelector('[data-extension-slot]')).toBeNull();
-    // Drawn over the page beside it, which is at its new width from the start (a flat sibling after it).
-    if (frame) expect(harness.container.querySelector(`[data-page="${kept}"]`)!.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    lefts.push(frame ? Math.round(frame.getBoundingClientRect().left) : -1);
-  }
-  // Control: before the last frame was kept, the side page's place was empty from the first frame (all -1).
-  if (native) return expect([...new Set(cells)], 'no cell is kept for it').toEqual([1]);
-  expect(cells[0]).toBe(2);
-  expect(lefts[0], JSON.stringify(lefts)).toBeGreaterThan(400);
-  expect(lefts[0], JSON.stringify(lefts)).toBeLessThan(1000);
-  expect(new Set(lefts.filter((left) => left >= 0)).size, JSON.stringify(lefts)).toBeGreaterThan(5);
-  expect(lefts.at(-1), JSON.stringify(lefts)).toBe(-1);
-  expect(harness.container.textContent).not.toContain(`page ${other}`);
+  // The size is the state: the page beside it narrows with the side page's edge, ❌ re-wrapped once at 500 under a transform.
+  expect(keptWidths.size, [...keptWidths].join(' ')).toBeGreaterThan(5);
+  expect(Math.abs(Math.min(...keptWidths) - 500), [...keptWidths].join(' ')).toBeLessThan(2);
 });
 
 it('focus coming into a child still sliding in scrolls nothing: the page beside it stays where it is', async () => {
@@ -182,27 +138,6 @@ it('focus coming into a child still sliding in scrolls nothing: the page beside 
   expect(document.activeElement?.getAttribute('aria-label')).toBe('address');
   // Control: with the cut's boxes overflow hidden, focus scrolled them and the main page jumped left by the side's offset.
   expect([...lefts]).toEqual([0]);
-});
-
-it('with exit, a last child that goes away is drawn until it is off, moving out over frames', async () => {
-  await page.viewport(1100, 800);
-  harness = createReactHarness();
-  harness.container.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px';
-  const cut = (side: boolean) => <TrackCut axis="x" animate exit onShares={() => {}} onEqualize={() => {}} shares={side ? [60, 40] : [100]}
-    items={[{ id: 'main', min: 0, node: <div /> }, ...(side ? [{ id: 'side', min: 0, fixed: true, node: <div data-testid="side" style={{ height: '100%' }} /> }] : [])]} />;
-  await act(() => harness.render(cut(true)));
-  await act(() => harness.render(cut(false)));
-  const lefts: number[] = [];
-  const start = performance.now();
-  while (performance.now() - start < 900) {
-    await new Promise(requestAnimationFrame);
-    const side = harness.container.querySelector('[data-testid="side"]');
-    lefts.push(side ? Math.round(side.getBoundingClientRect().left) : -1);
-  }
-  // It starts on screen (from 600, read a frame or more into the move) and is drawn until it is off.
-  expect(lefts[0], JSON.stringify(lefts)).toBeLessThan(1000);
-  expect(new Set(lefts.filter((left) => left >= 0)).size, JSON.stringify(lefts)).toBeGreaterThan(5);
-  expect(lefts.at(-1), JSON.stringify(lefts)).toBe(-1);
 });
 
 it('narrowing and widening only change visibility, preserving both panes, tabs and layout shares', async () => {

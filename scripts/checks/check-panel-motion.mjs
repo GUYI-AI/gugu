@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 
 // @@@panel-motion gate — a panel's size moves on screen in one place: PanelTrack (apps/desktop/src/session/renderer/lib/
-// layout/panel-track.ts). It lays each box out once at each end of a move and plays every frame as transforms; a transition
-// of a layout property re-lays the page out in every frame instead (11-21 baseline: 12–16 dropped frames per list fold).
+// layout/panel-track.ts), whose size is the state: each frame lays the boxes out at the size they are drawn at, and the
+// track says when they land (what leaves the screen goes then). A transition of a layout property is a second mover with
+// neither: its size is the browser's, and nothing knows when it is there.
 //
 // Fails on:
 //  · a CSS or Tailwind transition of a layout property (width, height, min/max-*, left/right/top/bottom/inset, margin,
