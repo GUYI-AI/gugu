@@ -75,11 +75,12 @@ function decode(node: TreeNode): RecordEntry[] {
     // 人说的话才进时间线;通知、定时任务这些是 qwen 替人塞的(`provenance: system`)。
     if (record.provenance !== 'real_user') return [];
     const blocks = parts.flatMap((part) => userBlock(asRecord(part)));
-    return blocks.map((block, index) => ({
-      key: key(index),
-      ...stamp,
-      event: messageEvent('user', block, key(0))
-    }));
+    // A prompt rewinds by the promptId its lines carry, files included, the point `qwenRevert` gets live.
+    const point = typeof record.promptId === 'string' && record.promptId ? record.promptId : null;
+    return blocks.map((block, index) => {
+      const event = messageEvent('user', block, key(0));
+      return { key: key(index), ...stamp, event: point && event.kind === 'message' ? { ...event, revertAnchor: point, revertFiles: true as const } : event };
+    });
   }
 
   if (record.type === 'assistant') {

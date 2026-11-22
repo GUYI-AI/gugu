@@ -70,7 +70,8 @@ function decode(node: TreeNode): RecordEntry[] {
   if (record.type === 'message' && record.role === 'user') {
     if (!isRealUserMessage(record)) return [];
     return entries(texts(record.content, 'input_text').filter(isPersonText)
-      .map((text) => ({ kind: 'message', role: 'user', messageId: node.id, text })));
+      // A prompt rolls back to its own record id: the `userMessageId` its live answer gave (`codebuddyRevert`).
+      .map((text) => ({ kind: 'message', role: 'user', messageId: node.id, text, revertAnchor: node.id })));
   }
 
   if (record.type === 'message' && record.role === 'assistant') {
