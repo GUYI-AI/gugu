@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { buildRosterNameIndex, resolveOpeningAgentCall } from '@gugu/core/shared/rosterNameMatching.mjs'
 import { firstMentionedUserId, resolveMentionUserIds, type MentionCandidate } from '@/lib/mention'
 import { rememberGroupMention } from '@/lib/groupMentionRecall'
+import { citedFileEditorIds } from '@/lib/citedFileEditors'
 import { scheduleComposerFocus } from '@/lib/focusComposer'
 import { rendererLogger } from '@/lib/log'
 import { chatSendFailureNotice } from './chatSendFailureNotice'
@@ -59,8 +60,16 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       members,
       !!isGroupChat,
     )
-    const rosterRecipientIds = !whisperTarget && isGroupChat && explicitRecipientIds.length === 0 && !replyToMessageId
-      ? resolveOpeningAgentCall(rosterNameIndex, typed)
+    const undirected = !whisperTarget && isGroupChat && explicitRecipientIds.length === 0 && !replyToMessageId
+    const rosterRecipientIds = undirected ? resolveOpeningAgentCall(rosterNameIndex, typed) : []
+    sendingRef.current = true
+    setSending(true)
+    // A message that cites chat files and names no one goes to the members who made those files.
+    const citeRecipientIds = undirected && rosterRecipientIds.length === 0 && currentUserId
+      ? (await citedFileEditorIds(typed, currentUserId).catch((error: unknown) => {
+          rendererLogger('chat/send').error({ chatId, error: String(error) }, 'cited file editors unreadable')
+          return []
+        })).filter((id) => id !== currentUserId && props.groupMembers?.some((member) => member.id === id))
       : []
     const sendOptions = whisperTarget
       ? {
@@ -75,7 +84,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
           // @mention hard-triggers identically to a picked one.
           // #1641 human-only send adapter: an opening call resolved against the already-subscribed group
           // roster becomes the same structural recipient as @. The DB trigger still reads no message text.
-          toUserIds: [...new Set(explicitRecipientIds.length ? explicitRecipientIds : rosterRecipientIds)],
+          toUserIds: [...new Set(explicitRecipientIds.length ? explicitRecipientIds : rosterRecipientIds.length ? rosterRecipientIds : citeRecipientIds)],
           replyToMessageId,
         }
 
@@ -99,8 +108,6 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     let filesOwned = false
     // #2581 文字和文件是一次发出的一条:文字挂在最后一个文件上(什么类型都一样),带引用回复时引用也跟着文件走。
     const captionOnFiles = pendingFiles.length > 0 && !!onSendAttachments
-    sendingRef.current = true
-    setSending(true)
     try {
       // C1:先清空输入框、先上屏乐观气泡。会话就绪不再挡在前面(它可能要重开会话,气泡迟迟不出):
       // 文字消息把它交给 outbox 在投递前 await,失败时气泡变「未送达」可重试,❌ 退回输入框。
@@ -159,7 +166,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       sendingRef.current = false
       setSending(false)
     }
-  }, [draft, beforeSend, chatId, currentUserId, text, attachments, activeMentionTargets, members, rosterNameIndex, isGroupChat, onSend, onSendAttachments, quoteContent, onQuoteConsumed, t, toast, disabled, disabledReason, whisperTarget, onExitWhisper, writeDraft, setMentionTargets, setAttachments, clear, persistTo, flush, inputRef, mobile, annotationDraft, resolvedLocale])
+  }, [draft, beforeSend, chatId, currentUserId, text, attachments, activeMentionTargets, members, rosterNameIndex, isGroupChat, props.groupMembers, onSend, onSendAttachments, quoteContent, onQuoteConsumed, t, toast, disabled, disabledReason, whisperTarget, onExitWhisper, writeDraft, setMentionTargets, setAttachments, clear, persistTo, flush, inputRef, mobile, annotationDraft, resolvedLocale])
 
   return { sending, handleSend }
 }
