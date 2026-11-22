@@ -32,7 +32,7 @@ import { ShareAgentModal } from './ShareAgentModal'
 import { cn } from '@/lib/cn'
 import { chatPublicId, displayName, userPublicId } from '../../lib/contactsListSort'
 import {
-  ct, detailBlockClass, detailBodyClass, detailCaptionClass, detailNoticeClass, detailPlaceholderClass, detailTitleClass,
+  ct, detailBlockClass, detailBodyClass, detailCaptionClass, detailNoticeClass, detailPlaceholderClass, detailTitleClass, detailTitleTypeClass,
   formatDateTime, getAgentProjectPath, rowKeyActivate
 } from './contactsPanelStyles'
 
@@ -219,7 +219,7 @@ function AgentDetail({
         <Avatar name={shownName} avatarUrl={contact.avatar} seed={contact.id} size="lg" isAgent />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <OwnedAgentNameEditor key={contact.id} agentId={contact.id} name={contact.display_name} ownerUserId={contact.owner_user_id} status={status} className={detailTitleClass}>
+            <OwnedAgentNameEditor key={contact.id} agentId={contact.id} name={contact.display_name} ownerUserId={contact.owner_user_id} status={status} className={detailTitleTypeClass}>
               <h2>{shownName}</h2>
             </OwnedAgentNameEditor>
             <Chip>{ct('common.agent')}</Chip>

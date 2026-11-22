@@ -1,3 +1,4 @@
+import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { Unknown } from '@/components/ui/Unknown';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
@@ -79,7 +80,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
         if (!result.success) throw new Error(errorText(result.error));
         report(result.data.kind === 'listed' ? translate('customModels.connected', { count: result.data.models.length })
           : result.data.kind === 'connected' ? translate('customModels.connectedNoList')
-          : translate(result.data.reason === 'no-list' ? 'customModels.noList' : result.data.reason === 'unauthorized' ? 'customModels.refused' : 'customModels.unreachable'));
+          : translate(connectionProbeMessageKey(result.data.reason)));
       }
     } catch (error) { report(errorText(error)); }
     finally { setBusy(null); }

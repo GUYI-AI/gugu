@@ -1,3 +1,5 @@
+import { openAsBlob } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { copyVerifiedFile } from '@gugu/core/shared/fileCipher'
 import { fileRefKey, requireFileRange, requireFileRevision, type FileBytes, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { readWorkspaceChunk } from './session/main/core/files/workspace-transfer'
@@ -96,15 +98,40 @@ export async function snapshotProjectFile(revision: FileRevision, read: ProjectF
   return copyVerifiedFile(revision, await openProjectFileSource(revision, read, progress), await createFileSink(tempRoot, revision.size_bytes), signal)
 }
 
+/**
+ * A version this machine holds, read where it is: checked once against its sha (that pass is its progress), then read in
+ * place. A file-backed Blob refuses to read once its file changes, so no later byte can come from another version.
+ */
+export async function heldFileBlob(revision: FileRevision, root: string, progress?: FileContext['progress']): Promise<Blob> {
+  const { path } = await readWorkspaceChunk(root, { path: revision.relative_path!, offset: 0, length: 0 })
+  const blob = await openAsBlob(path)
+  if (blob.size !== revision.size_bytes) throw new Error('Local file changed')
+  const hash = createHash('sha256')
+  let done = 0
+  for await (const chunk of blob.stream()) { hash.update(chunk); done += chunk.length; progress?.(done, blob.size) }
+  if (hash.digest('hex') !== revision.sha256) throw new Error('Local file changed')
+  return blob
+}
+async function openHeldFile(revision: FileRevision, root: string, progress?: FileContext['progress']): Promise<FileBytes> {
+  const blob = await heldFileBlob(revision, root, progress)
+  return { size: blob.size, read: async (offset, length) => { requireFileRange(blob.size, offset, length); return new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()) }, dispose: async () => {} }
+}
+
 /** The person's own copy, before any metadata lookup; and, once an actor's metadata lookup has authorized it, where its bytes are read (fileResolver `open`). */
 export function localProjectFileProvider(deps: {
   identity(): Promise<{ accountId: string; deviceId: string }>
-  read: ReturnType<typeof createProjectFileReader>; tempRoot: string; env?: NodeJS.ProcessEnv; later: ProjectFileVersionLookup
+  read: ReturnType<typeof createProjectFileReader>; root(projectId: string): Promise<string | null>; env?: NodeJS.ProcessEnv; later: ProjectFileVersionLookup
 }) {
   return async (context: FileContext) => {
     const identity = await deps.identity()
     if (context.actor.actorId !== identity.accountId || context.actor.accountId !== identity.accountId) return null
     const revision = await readProjectFile(context.ref, identity.accountId, identity.deviceId, deps.env, deps.later)
-    return revision ? { revision, open: () => context.download ? openProjectFileSource(revision, request => deps.read(request, context.actor.actorId)) : snapshotProjectFile(revision, request => deps.read(request, context.actor.actorId), deps.tempRoot, context.signal, context.progress) } : null
+    if (!revision) return null
+    return { revision, async open() {
+      if (context.download) return openProjectFileSource(revision, request => deps.read(request, context.actor.actorId))
+      const root = await deps.root(revision.host_project_id!)
+      if (!root) throw new Error('Project root is unavailable')
+      return openHeldFile(revision, root, context.progress)
+    } }
   }
 }

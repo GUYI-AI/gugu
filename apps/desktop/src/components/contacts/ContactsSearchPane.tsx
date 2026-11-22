@@ -107,6 +107,7 @@ export function useDesktopContactSearch({ enabled, query, onQuery, sections, peo
   const field = (
     <div className="shrink-0 !px-3 !pb-2">
       <SearchField
+        variant="nav"
         ref={input}
         data-testid={AUTOMATION_TEST_IDS.contactsSearchInput}
         value={query}

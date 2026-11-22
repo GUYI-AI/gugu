@@ -48,6 +48,7 @@ vi.mock('../../../../apps/desktop/src/store/chatContext', () => {
 // The contacts replicas publish identities through the account's IM library.
 vi.mock('../../../../apps/desktop/src/lib/imRepository', async (original) => ({ ...(await original<object>()), openedImRepository: () => getImRepositoryMock() }))
 vi.mock('../../../../apps/desktop/src/lib/contacts', () => ({ contactsService: contactsServiceMock }))
+vi.mock('../../../../apps/desktop/src/lib/groupInvitations', async (original) => ({ ...(await original<object>()), listGroupInvitations: async () => [] }))
 
 const { renameOnHost, notify } = vi.hoisted(() => ({ renameOnHost: vi.fn(), notify: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {} }))
@@ -241,6 +242,23 @@ describe('confirmed Agent deletion has one identity receipt', () => {
       refreshChatsMock.mockRejectedValue(new Error('refresh unavailable'))
       await act(async () => { await expect(store!.removeOwnedAgent('agent-1')).resolves.toBeUndefined() })
       expect(notify).not.toHaveBeenCalled()
+    } finally { harness.cleanup() }
+  })
+})
+
+describe('the identity prune keeps what the contacts domain names', () => {
+  it('a friend request sender stays: its identity is named by the request, not only by contacts', async () => {
+    const { useIdentityLifecycle } = await import('../../../../apps/desktop/src/hooks/useIdentityLifecycle')
+    const lifecycle = vi.mocked(useIdentityLifecycle)
+    lifecycle.mockClear()
+    contactsServiceMock.getContacts.mockResolvedValue([{ ...sharedGroupAgent, id: 'friend-1', type: 'human', owner_user_id: null }])
+    contactsServiceMock.getReceivedRequests.mockResolvedValue([{ id: 'req-1', sender_id: 'sender-1', receiver_id: 'user-1', message: null, status: 'pending', created_at: '2026-11-21T00:00:00Z' }])
+    contactsServiceMock.getSentRequests.mockResolvedValue([{ id: 'req-2', sender_id: 'user-1', receiver_id: 'asked-1', message: null, status: 'pending', created_at: '2026-11-21T00:00:00Z' }])
+    const harness = await renderProvider()
+    try {
+      await flushReact()
+      const keep = lifecycle.mock.calls.at(-1)![3]()
+      expect(keep).toEqual(expect.arrayContaining(['friend-1', 'sender-1', 'asked-1']))
     } finally { harness.cleanup() }
   })
 })

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vitest'
 import { attachmentSha256, pendingAttachmentUploads } from '@gugu/core/cloud/attachmentsApi'
-import { storeBytes, storedCopy } from '@gugu/core/local/files/fileSnapshots'
+import { localCopy, storeBytes, storedCopy } from '@gugu/core/local/files/fileSnapshots'
 const hosts = vi.hoisted(() => [] as import('@gugu/core/cloud/declaredUploads').DeclaredUploadHost[])
 const queues = vi.hoisted(() => [] as { begin: ReturnType<typeof vi.fn>; resume: ReturnType<typeof vi.fn>; drop: ReturnType<typeof vi.fn>; retry: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn> }[])
 vi.mock('@gugu/core/cloud/declaredUploads', () => ({ createDeclaredUploads: (host: import('@gugu/core/cloud/declaredUploads').DeclaredUploadHost) => {
@@ -43,6 +43,26 @@ it('stores verified original bytes before declaring, resumes only from that stor
   await host.resume(); await host.retry('m'); await host.drop('m')
   expect(queues[0]!.resume).toHaveBeenCalledOnce(); expect(queues[0]!.retry).toHaveBeenCalledWith('m'); expect(queues[0]!.drop).toHaveBeenCalledWith('m')
   host.dispose(); expect(queues[0]!.dispose).toHaveBeenCalledOnce()
+})
+// A file on this disk is uploaded from where it is: nothing is copied, and an original changed before its upload finished
+// is no copy at all — the upload owing it fails with that reason, a reader just does not find it here.
+it('declares a file on disk by reference, and an original changed afterwards fails the upload owing it', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'declared-upload-host-')); roots.push(home)
+  const path = join(home, 'picked.bin'); await writeFile(path, 'original on disk')
+  const sha256 = createHash('sha256').update('original on disk').digest('hex')
+  const fetcher = vi.fn(async () => new Response(JSON.stringify({ staging_key: 'pending', url: 'https://store.test', fields: {}, max_bytes: 100 }), { status: 200 }))
+  const host = createAttachmentUploadHost({ account: async () => ({ id: 'owner', home, endpoint: async () => ({ supabaseUrl: 'https://db.test', anonKey: 'a', token: 't', fetch: fetcher }) }), progress: vi.fn(), warn: error => { throw error } })
+  const { declared } = await host.declare({ file: { name: 'picked.bin', path, size: 16, contentType: 'application/octet-stream' }, chatId: 'chat', as: 'owner', messageId: 'm' })
+  expect(declared.sha256).toBe(sha256)
+  expect(await readdir(home)).not.toContain('file-store')
+  expect(await (queues[0]!.begin.mock.calls[0]![1] as Blob).text()).toBe('original on disk')
+  expect(await (await hosts[0]!.copyOf(sha256))?.text()).toBe('original on disk')
+  await writeFile(path, 'edited after send')
+  await expect(hosts[0]!.copyOf(sha256)).rejects.toMatchObject({ code: 'original_changed' })
+  expect(await localCopy(home, sha256)).toBeNull()
+  await rm(path)
+  await expect(hosts[0]!.copyOf(sha256)).rejects.toMatchObject({ code: 'original_changed' })
+  host.dispose()
 })
 it('a stored sha is reused; corrupted bytes cannot resume and replacements are verified before publication', async () => {
   const home = await mkdtemp(join(tmpdir(), 'declared-upload-host-')); roots.push(home)

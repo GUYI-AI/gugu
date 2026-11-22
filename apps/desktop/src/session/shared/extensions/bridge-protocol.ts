@@ -164,7 +164,11 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 61 (app-credentials.ts): `permissions.credentials` and `gugu.credentials.read(site, url, options?)` /
 // `.write(site, method, url, body?, options?)`: a request the host sends with the saved credential the person picked for the
 // App on that website, in the declared header; answers `{ status, data, headers }`. A computer's pages only.
-export const EXTENSION_API_VERSION = 61;
+// 62: `showContextMenu` rows say `fold` (rare: the host lays it under 更多 by its one menu rule, menu-table.ts
+// @@@menu-order, the destructive last), `alone` (its name when its submenu holds only it and is shown in its place) and
+// `hotkey` (the key drawn at the row's end, as host menus do: 'F2', 'Mod+Click'). The host orders and folds; the App only
+// says which rows are rare. Presentation only, as 51: an older host draws the rows as given.
+export const EXTENSION_API_VERSION = 62;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

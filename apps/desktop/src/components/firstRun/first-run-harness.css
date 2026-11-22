@@ -16,6 +16,9 @@
 /* 选择器多叠一级:.gg-chip 在 tokens.css 里没进 @layer,真 app 里它排在本文件后面,同权重会盖掉这里的底色 */
 .first-run-harness-choice .first-run-harness-badge { position: absolute; top: 12px; left: 12px; background: var(--selected); color: var(--text-secondary); }
 .first-run-harness-choice h2 { margin: 0; font-size: var(--font-title); line-height: var(--lh-title); font-weight: 600; color: var(--text-primary); }
+/* 名字下面一行:本机检测结果(用本机的 / 太旧 / 运行不起来 / 没有)。 */
+.first-run-harness-name { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-xs); }
+.first-run-harness-name p { margin: 0; min-height: var(--lh-caption); font-size: var(--font-caption); line-height: var(--lh-caption); color: var(--text-secondary); }
 .first-run-harness-actions { margin-top: 0; }
 .first-run-harness-actions > button { width: 100%; }
 .first-run-install-task-heading { display: flex; align-items: center; justify-content: space-between; gap: var(--spacing-sm); }

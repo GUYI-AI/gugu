@@ -683,6 +683,16 @@ describe('远程隧道暂不开放(当前默认)', () => {
 })
 
 describe('DevicesSection · 添加一台机器', () => {
+  it('「添加一台机器」只出现一次:这一行本身就是动作,❌ 行标题旁再放一颗同文案的按钮', async () => {
+    installApi()
+    const harness = createReactHarness()
+    await harness.render(withDevices([device('mine', 'MacBook', { is_current_device: true })])(<DevicesSection />))
+    await act(async () => undefined)
+    expect(document.body.textContent!.split('添加一台机器')).toHaveLength(2)
+    expect(document.querySelectorAll('[data-testid="settings-add-server-button"] button')).toHaveLength(0)
+    harness.cleanup()
+  })
+
   it('按钮打开一个两项的菜单:先「远程 SSH」再「远程隧道」,各带一句说明;挑哪个就展开哪一块(同时只一块)', async () => {
     installApi()
     const harness = createReactHarness()

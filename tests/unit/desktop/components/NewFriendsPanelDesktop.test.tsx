@@ -55,6 +55,18 @@ describe('new requests on desktop: sections, single column, drawer', () => {
     expect($('[data-testid="request-detail"]')).toBeNull()
   })
 
+  it('keeps one row highlighted: opening another request hands the drawer over and un-highlights the previous row', async () => {
+    await renderWithAppProviders(harness, createNode(NewFriendsPanel, {}), { contacts: { friendRequests: friendRequestEntries(received, sent) } })
+    const selected = () => harness.container.querySelectorAll('.nfp-reqrow[data-selected]')
+    for (const name of ['Zoe 周', '鲍勃', 'Ann']) await clickElement(row(name))
+    expect(selected()).toHaveLength(1)
+    expect(row('Ann').hasAttribute('data-selected')).toBe(true)
+    expect(document.querySelectorAll('[data-testid="request-detail"]')).toHaveLength(1)
+    expect($('[data-testid="contacts-detail-drawer"] [data-testid="request-detail"]')?.textContent).toContain('上次会上聊过')
+    await clickElement($('[data-testid="contacts-detail-drawer"] button[title]')!)
+    expect(selected()).toHaveLength(0)
+  })
+
   it('says so when there is nothing at all', async () => {
     await renderWithAppProviders(harness, createNode(NewFriendsPanel, {}), { contacts: { friendRequests: [] } })
     expect(kinds()).toEqual([])

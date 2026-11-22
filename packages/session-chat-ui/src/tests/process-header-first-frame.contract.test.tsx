@@ -47,10 +47,10 @@ it.each([
     // question's summary, painted only once the question has gone by. Inspect those boxes, not the lane.
     const containment = getComputedStyle(lane()).contain.split(' ');
     expect(containment.some(value => ['paint', 'content', 'strict'].includes(value))).toBe(true);
-    const pin = lane().querySelector<HTMLElement>('[data-chat-pin-backdrop]')!.parentElement!;
-    expect(getComputedStyle(pin).position).toBe('sticky');
+    expect(getComputedStyle(lane().firstElementChild!).position).toBe('sticky');
+    const pin = lane().querySelector<HTMLElement>('[data-pin-summary]')!;
     expect(host.querySelector('[data-user-card="input"]')!.getBoundingClientRect().bottom, 'the question ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
-    if (pinnedSummaryShown(lane().querySelector<HTMLElement>('[data-pin-summary]')!)) expect(pin.getBoundingClientRect().bottom, 'the pin paint ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
+    if (pinnedSummaryShown(pin)) expect(pin.getBoundingClientRect().bottom, 'the pin paint ends before the process header').toBeLessThanOrEqual(head.top + 0.5);
     expect(header().offsetHeight).toBe(28);
     for (let el: HTMLElement | null = header(); el && host.contains(el); el = el.parentElement) {
       expect(getComputedStyle(el).opacity).toBe('1');

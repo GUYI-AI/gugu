@@ -130,13 +130,6 @@
 }
 /* The composer sits on the panel's content line, 16px off its bottom, level with the chat column's. */
 .assistant-task-chat-window[data-app-panel] [data-chat-composer-placement] > :last-child { padding-bottom: 16px; }
-/* A pinned message's strip is opaque (rows run under it), in the panel's own color where it sticks — right under the top
-   row: the panel's gradient at the panel's size (the window is a size container), moved up by that row. */
-.assistant-task-chat-window[data-app-panel] { container-type: size; }
-.assistant-task-chat-window[data-app-panel] [data-chat-pin-backdrop] {
-  background: var(--ta-panel-bg) 0 calc(-1 * var(--ta-h-top)) / 100% 100cqh no-repeat;
-}
-
 .ta-panel-top[hidden],
 .ta-panel-body[hidden],
 .ta-phone [hidden] {

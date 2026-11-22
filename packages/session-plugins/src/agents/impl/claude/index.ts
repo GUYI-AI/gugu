@@ -280,7 +280,7 @@ export const plugin = definePlugin(
     hooks: {
       kind: 'config',
       scope: 'workspace',
-      supportedEvents: ['start', 'notification', 'stop', 'error', 'wait', 'wait_resolved'],
+      supportedEvents: ['start', 'notification', 'stop', 'error', 'wait', 'wait_resolved', 'session'],
       // hooks 不报打断(Esc):从这个版本起读 claude 自己的会话在场文件补这一条边(presence.ts)。
       presence: { sinceVersion: CLAUDE_PRESENCE_SINCE },
     },

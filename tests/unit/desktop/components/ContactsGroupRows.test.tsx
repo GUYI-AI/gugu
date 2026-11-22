@@ -65,6 +65,6 @@ describe('contacts Groups page', () => {
     expect(drawer.textContent).toContain('项目文件夹')
     expect(drawer.textContent).toContain('mac-mini · ~/work/gugu')
     expect(drawer.textContent).not.toContain('群类型')
-    expect(drawer.textContent).toContain('进入群聊')
+    expect(drawer.textContent).toContain('发消息')
   })
 })

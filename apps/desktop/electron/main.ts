@@ -32,6 +32,7 @@ import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/fi
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
 import { offerNativeImagePreview } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
+import { localCopy } from '@gugu/core/local/files/fileSnapshots'
 import { registerExternalImportIpc } from './external-import/ipc'
 import { uploadSessionFiles } from '@gugu/core/local/agent/sessionFileHandoff'
 import { writeTaskCopy } from './projectFilePublication'
@@ -510,8 +511,8 @@ protocol.registerSchemesAsPrivileged([
   // @@@6156-preview-scheme — 网页预览的文件供给。与上面两个同理由在此注册(必须早于 app
   // ready);handler 在会话页模块 boot 时装(files/preview-protocol.ts),那里才拿得到工作区。
   // 每次打开预览发一个新 id 当 host,于是两份预览各自一个 secure origin、存储互不相见。
-  // ❌ corsEnabled:预览页在沙箱里是不透明源,取自己旁边的模块脚本与字体要放行,那一条由
-  // handler 逐个响应打 `Access-Control-Allow-Origin`,不给这个 scheme 开全局 CORS 通行。
+  // The scheme is CORS-enabled, and each kind of response decides whom it lets read it: a sha address (this machine's
+  // bytes) only the renderer's own origin; a previewed page's files, the page itself (preview-protocol.ts).
   previewSchemePrivilege()
 ])
 import {
@@ -2556,6 +2557,12 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
   local: desktopFiles.providers.local, ssh: desktopFiles.providers.ssh, publish: (chat, file, actor, message, task) => desktopFiles.publish(chat, file, null, actor, undefined, { message, ...(task ? { task: true, itemId: task.itemId } : {}) }),
   taskCopy: (name, bytes, mimeType) => writeTaskCopy(join(resolveGuguHome(process.env), 'attachments'), name, bytes, mimeType), publication: desktopFiles.publish.local,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
+  stored: async sha256 => await localCopy(resolveGuguHome(process.env), sha256) ?? await desktopFiles.held(sha256),
+  serve: async (sha256, contentType, file) => {
+    const { createBytesPreview, releasePreview } = await import('./session/main/core/files/preview-protocol')
+    const { url, previewId } = createBytesPreview(sha256, contentType, file)
+    return { url, release: () => releasePreview(previewId) }
+  },
 })
 /**
  * The one social bridge every session surface wires (an ACP session, its side-chat fork, a terminal session): the same

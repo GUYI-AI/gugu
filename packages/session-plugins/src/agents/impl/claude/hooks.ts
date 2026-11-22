@@ -153,6 +153,9 @@ function parseClaudeHookEvent(
 export function claudeHookSpecs(): HookSpec[] {
   return [
     { hookKey: 'UserPromptSubmit', command: makeStdinHookCommand('start') },
+    // 这一发进程真实的会话 id(`session_id`)。`--fork-session` 的子 id 由 claude 铸,子 transcript 也正是在第一句话
+    // 这一刻写下 ⇒ 报在这里,库里记着的 id 就恒指向一份存在的记录;一句话没说就退的分叉没有子会话,再起时重新分叉。
+    { hookKey: 'UserPromptSubmit', command: makeStdinHookCommand('session') },
     { hookKey: 'Notification', command: makeStdinHookCommand('notification') },
     { hookKey: 'Stop', command: makeStdinHookCommand('stop') },
     // 回合因 API 错误结束时 Claude 不发 Stop、发 StopFailure。少了它,失败的回合停在 working,

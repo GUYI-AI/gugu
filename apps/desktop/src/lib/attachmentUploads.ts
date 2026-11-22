@@ -24,8 +24,8 @@ function progress(messageId: string, value?: DeclaredUploadProgress) {
   if (value) {
     if (shas.get(messageId) !== value.sha256) {
       shas.set(messageId, value.sha256)
-      void import('./attachmentBytes').then(async ({ cachedAttachmentCopy }) => {
-        const file = await cachedAttachmentCopy(value.sha256)
+      void import('./attachmentBytes').then(async ({ localAttachmentCopy }) => {
+        const file = await localAttachmentCopy(value.sha256)
         if (shas.get(messageId) !== value.sha256) return
         if (file) { copies.set(messageId, file); noteAttachmentChanged(messageId) }
         else shas.delete(messageId)
@@ -40,7 +40,7 @@ function progress(messageId: string, value?: DeclaredUploadProgress) {
 }
 const local = native ? null : createDeclaredUploads({
   endpoint: async () => ({ ...await (await import('./attachmentsEndpoint')).attachmentsEndpoint(), upload: xhrAttachmentUpload }),
-  copyOf: async sha => (await import('./attachmentBytes')).cachedAttachmentCopy(sha), progress, warn,
+  copyOf: async sha => (await import('./attachmentBytes')).localAttachmentCopy(sha), progress, warn,
 })
 native?.eventOn('attachments:progress', value => {
   const event = value as AttachmentProgressEvent

@@ -171,22 +171,22 @@ describe('sticky user lanes', () => {
     const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!;
     const edge = () => t.scrollEl.getBoundingClientRect().top;
     const shown = () => pinnedSummaryShown(t.summary('a-user')!);
-    const cover = () => lane.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!.getBoundingClientRect();
+    const cover = () => t.summary('a-user')!.getBoundingClientRect();
     expect(shown(), 'the message is on screen').toBe(false);
     const handOver = Math.round(t.scrollEl.scrollTop + t.cardTop('a-user')!);
     await t.scrollTo(handOver + 150);
     expect(shown(), 'stuck before the sweep').toBe(true);
     const repeats = t.summary('a-user')!.getBoundingClientRect().height;
     // Sweep back over the hand-over and forth, reading right after each write: no frame runs in between, so the
-    // drawn-or-not flag is a frame late, as it is under load. Wherever the message's first lines are on screen
-    // while the summary is drawn, the summary's opaque layer is over them.
+    // drawn-or-not flag is a frame late, as it is under load. Wherever the lines it repeats are on screen below the
+    // pin line while the summary is drawn, the summary's bubble is over them.
     const down = Array.from({ length: 91 }, (_, i) => handOver - 120 + 3 * i);
     let covered = 0;
     for (const st of [...[...down].reverse(), ...down]) {
       t.scrollEl.scrollTop = st;
       if (!shown()) continue;
       const card = t.card('a-user')!.getBoundingClientRect();
-      const top = Math.max(card.top, edge()), bottom = card.top + repeats;
+      const top = Math.max(card.top, edge() + PIN_LINE), bottom = card.top + repeats;
       if (bottom <= top) continue;
       covered++;
       expect(cover().top, `scrollTop=${st}`).toBeLessThanOrEqual(top + 0.5);
@@ -197,8 +197,12 @@ describe('sticky user lanes', () => {
     expect(shown(), 'resting, the summary is not drawn').toBe(false);
     await t.scrollTo(900);
     expect(shown()).toBe(true);
-    expect(getComputedStyle(lane.querySelector('[data-chat-pin-backdrop]')!).opacity).toBe('1');
-    expect(cover().top, 'the strip is opaque from the scroller edge').toBeLessThanOrEqual(edge() + 0.5);
+    // Owner 2026-11-22: stuck, only the bubble is drawn — no page-colored strip around it, and beside it clicks reach the rows.
+    const layer = lane.firstElementChild as HTMLElement;
+    expect(layer.children.length, 'nothing but the summary in the stuck layer').toBe(1);
+    expect(getComputedStyle(layer).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(layer.contains(document.elementFromPoint(cover().left - 20, cover().top + cover().height / 2)), 'a click beside the bubble').toBe(false);
+    expect(layer.contains(document.elementFromPoint(cover().left + 20, cover().top + cover().height / 2)), 'a click on the bubble').toBe(true);
     expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
     expect(t.cardTop('a-user')!, 'the message itself scrolled away').toBeLessThan(0);
   });
@@ -362,10 +366,13 @@ describe('sticky user lanes', () => {
     await stuckAfter('c-user');
     expect(t.pinTop('c-user'), 'the inserted c takes over').toBeCloseTo(PIN_LINE, 0);
   });
-  it('in the agent conversation, a delivered bubble ends the lane before it instead of sliding under its stuck copy', async () => {
+  it('in the agent conversation, a delivered bubble ends the lane before it: the stuck copy neither slides under it nor leaves before it arrives', async () => {
     const delivered = longTurn('b', 1, 150);
     delivered.items[0] = { kind: 'message', id: 'b-user', seq: 0, role: 'user',
       text: '<gugu_delivery route="chat" msg="msg:b" from="小王" from_id="user:wang"><![CDATA[来自群里的一条消息]]></gugu_delivery>' } as TranscriptTurn['items'][number];
+    // A long reply after it, so the delivered bubble can be scrolled all the way up to the stuck copy.
+    delivered.items.push({ kind: 'message', id: 'b-final', seq: 151, role: 'assistant',
+      text: Array.from({ length: 12 }, (_, i) => `b reply ${i}. Lorem ipsum dolor sit amet.`).join('\n\n') } as TranscriptTurn['items'][number]);
     const theme = buildChatTheme(DEFAULT_CONFIG, { preset: 'double', userGutter: 72, agentConversation: true });
     const t = await mount([longTurn('a', 0, 150), delivered], undefined, theme);
     // 投进来的那条不是钉顶单元,在对话布局里画成右侧一个气泡:按它那一行找。
@@ -376,12 +383,20 @@ describe('sticky user lanes', () => {
     t.view.scrollToItem('b-user', { align: 'start', offset: -120 });
     await until('the delivered bubble is below the pin line', () => ({ top: rowTop(), scrollTop: t.scrollEl.scrollTop }), value => value.top !== null && value.top < 260 && value.top > 80);
     const st = t.scrollEl.scrollTop;
-    // MBP 验收 10-28:前一条打字消息的钉顶副本一直盖着投进来的那条。
-    for (let i = 0; i < 40; i++) {
-      t.scrollEl.scrollTop = st + i * 6;
-      const a = t.pinBottom('a-user');
-      if (a !== null) expect(a, `step ${i}`).toBeLessThanOrEqual(deliveredRow()!.getBoundingClientRect().top + 1);
+    // MBP 验收 10-28:前一条打字消息的钉顶副本一直盖着投进来的那条。owner 11-22:它又在投进来那条的名字行碰到它时就被推走,
+    // 气泡还隔着名字行和行距。被推走的那一刻,两个气泡之间只剩钉顶的留白。
+    let pushed = false;
+    for (let i = 0; i < 160 && !pushed; i++) {
+      t.scrollEl.scrollTop = st + i * 2;
+      const a = t.pinBottom('a-user'), bubble = t.card('b-user')!.getBoundingClientRect().top;
+      if (a !== null) expect(a, `step ${i}`).toBeLessThanOrEqual(bubble - PIN_SUMMARY_GAP + 1);
+      else {
+        pushed = true;
+        expect(t.summary('a-user')!.getBoundingClientRect().bottom, `step ${i}: pushed off by the bubble, not by the name above it`)
+          .toBeCloseTo(bubble - PIN_SUMMARY_GAP, 0);
+      }
     }
+    expect(pushed, 'the delivered bubble pushed the stuck copy off').toBe(true);
   });
 
   // #2629: the reader's own message that came in as a delivery (a task started from a chat message) is drawn below its

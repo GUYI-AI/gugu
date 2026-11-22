@@ -34,7 +34,7 @@ vi.mock('@renderer/lib/ipc', () => {
       getWithMeta: async () => ({ value: { enabled: false, lastPicked: 'codex' }, defaults: {}, overrides: {} }),
       update: async () => undefined,
     },
-    agents: { getAgentInstallationStatus: native.status, cancelInstall: vi.fn(), list: async () => [], listAgentInstallationStatus: async () => [] },
+    agents: { probe: async () => undefined, getAgentInstallationStatus: native.status, cancelInstall: vi.fn(), list: async () => [], listAgentInstallationStatus: async () => [] },
   }
   return { rpc, rpcOn: () => rpc, events: { on: () => () => {} }, onMachineEvent: () => () => {} }
 })

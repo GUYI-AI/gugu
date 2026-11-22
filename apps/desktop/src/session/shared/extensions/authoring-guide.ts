@@ -130,8 +130,6 @@ export const EXTENSION_GUIDE_PAGE = `# window.gugu — the API your page calls
 Location fills context, never changes authority: a task has \`session\`, a chat panel has \`chat\`, a file page has \`file\`;
 the dock/background have neither chat nor session. Read context before drawing.
 - \`gugu.files\`: open, list, create, rename, remove — the one way to open and edit a session's file. Name its target (\`apps-files\`).
-- \`setTabTitle\` / \`setTabBadge\`: your tab/panel. \`reportError\`: there and in the App error log, read by \`app_check\`.
-- \`openBrowserTab\`: a browser tab in a session; the system browser elsewhere (a phone: a new window).
 - What a host cannot do is not on its \`gugu\` (\`typeof gugu.x\`): the background page and a program have no tab
   or gesture (no \`setTabTitle\`, \`dispatch\` without \`to\`, \`clipboard\`, picker); a phone has no background page, \`notify\`,
   programs (a session's tab calls its computer's), agents or working copies — no cookies: \`localStorage\` / IndexedDB or \`writeData\`.
@@ -159,11 +157,11 @@ Free:
 - \`gugu.navigation.go(-1|1)\` → boolean; own history/chat opener. State: \`getContext().navigation\`.
 - \`onContextChanged(fn)\` → theme, language, visibility and size changes; member changes only through API 26. Returns an unsubscribe.
 - \`onCommand(fn)\` → the person picked one of your menu/toolbar entries: its id.
-- \`showContextMenu({ x, y, items: [{ id, label, enabled?, checked?, danger?, title?, person?, items? }, { type: "separator" }] })\` (API 18/38, page) → id | null.
+- \`showContextMenu({ x, y, items: [{ id, label, enabled?, checked?, danger?, title?, person?, fold?, alone?, hotkey?, items? }, { type: "separator" }] })\` (API 18/38/62, page) → id | null. \`fold\`: under More; \`alone\`: its label in place of a one-row submenu.
 - \`setTabTitle(title)\` → title (max 48); file tabs use it as a tooltip. Back/forward stay local.
 - \`setTabBadge(badge)\` → a count (99+ max, <=0 none), a string (a dot) or \`null\`.
-- \`openBrowserTab(url)\` → http(s) only.
-- \`reportError(message)\` → shown to the person. Never fail silently.
+- \`openBrowserTab(url)\` → http(s) only: a session's browser tab, else the system browser (phone: a new window).
+- \`reportError(message)\` → shown on your tab and in the App error log (\`app_check\`). Never fail silently.
 - \`sendToBackground(message)\` → your background page (none: rejects); host stamps \`from\`.
 - \`onBackgroundMessage(fn)\` → paint the background's broadcasts.
 - \`broadcastToViews(message)\` → background → live views, resolves \`{ delivered }\` (0 is normal).

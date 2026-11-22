@@ -10,7 +10,7 @@ import { Avatar } from '../Avatar'
 import { useShownAgentContactStatus } from '../contactAgentTone'
 import { ContactRowContextMenu, type ContactRowMenuActions } from './ContactRowActions'
 import { rowKeyActivate } from './contactsPanelStyles'
-import type { AgentTreeNode } from './contactsAgentTree'
+import { agentNodeDrag, type AgentTreeNode } from './contactsAgentTree'
 import { SelectionCheckbox } from './ContactSearch'
 import { ContactsGrid } from './ContactsGrid'
 
@@ -94,6 +94,7 @@ const AgentNode = memo(function AgentNode({ contact, selected, onSelect, menuFor
         onClick={() => onSelect(contact)}
         onKeyDown={rowKeyActivate(() => onSelect(contact))}
         onContextMenu={hasMenu ? onContextMenu : undefined}
+        {...agentNodeDrag(contact.id, name, hasMenu)}
       >
         {picked === undefined ? null : <SelectionCheckbox checked={picked} />}
         <Avatar name={name} avatarUrl={contact.avatar} seed={contact.id} size="sm" isAgent agentStatus={tone ?? undefined} />

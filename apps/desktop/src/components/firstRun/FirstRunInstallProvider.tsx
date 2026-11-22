@@ -1,6 +1,7 @@
 import { messageForUser } from '@/lib/userFacingError';
 import { useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { TFunction } from 'i18next'
 import type { FirstRunHarness } from '@gugu/core/shared/firstRun'
 import { useAgentInstallationStatuses, useAgentInstallProgress } from '@renderer/lib/stores/use-agent-installation-statuses'
 import { InstallProgressRow } from '@renderer/features/settings/agents-page/InstallProgressRow'
@@ -10,8 +11,10 @@ import { rpc } from '@renderer/lib/ipc'
 import { Button } from '../ui/Button'
 import { useNotice } from '@/lib/notices'
 import { FirstRunInstallContext } from './first-run-install-context'
+import { readLocalCopy, type LocalCopy } from './local-copy'
 
-type InstallTask = { id: FirstRunHarness; state: 'installing' | 'done' | 'failed'; error?: string }
+/** `local`: what was found here; for any kind but `usable` Gugu installs its own copy and the row says why. */
+type InstallTask = { id: FirstRunHarness; state: 'checking' | 'installing' | 'done' | 'failed'; local?: LocalCopy; error?: string }
 
 /** 跨引导步骤和主界面常驻；页面切换不会取消安装，也不会丢掉失败后的重试入口。 */
 export function FirstRunInstallProvider({ children, showNotification = true }: { children: ReactNode; showNotification?: boolean }) {
@@ -28,25 +31,32 @@ export function FirstRunInstallProvider({ children, showNotification = true }: {
   // 「已有安装在进行」报错。失败的照常能重试。
   const current = useRef(tasks)
   current.current = tasks
+  const install = (id: FirstRunHarness, local: LocalCopy) => {
+    update({ id, state: 'installing', local })
+    void installation.installAsync({ id, method: 'mise' }).then((result) => {
+        if (!result.success) {
+          update({ id, state: 'failed', local, error: getAgentInstallErrorPresentation(result.error, { translate }).message })
+          return
+        }
+        void rpc.agents.getAgentInstallationStatus(id).then((status) => {
+          const managedReady = status?.used.kind === 'method' && status.used.method === 'mise'
+            && status.installations.some((copy) => copy.provenance.ours && copy.provenance.kind === 'mise' && copy.status === 'available')
+          update(managedReady
+            ? { id, state: 'done', local }
+            : { id, state: 'failed', local, error: t('firstRun.harnessVerifyFailed') })
+        }).catch((error: unknown) => update({ id, state: 'failed', local, error: messageForUser(error) }))
+    }).catch((error: unknown) => update({ id, state: 'failed', local, error: messageForUser(error) }))
+  }
+  // A usable copy here stays the one in use: nothing is written, the selection stays auto, as Settings stores for a
+  // local copy that is first on PATH. Anything else gets Gugu's own copy, without asking.
   const start = (ids: FirstRunHarness[]) => {
     setHidden(false)
     for (const id of ids) {
       const known = current.current.find((task) => task.id === id)
       if (known && known.state !== 'failed') continue
-      update({ id, state: 'installing' })
-      void installation.installAsync({ id, method: 'mise' }).then((result) => {
-          if (!result.success) {
-            update({ id, state: 'failed', error: getAgentInstallErrorPresentation(result.error, { translate }).message })
-            return
-          }
-          void rpc.agents.getAgentInstallationStatus(id).then((status) => {
-            const managedReady = status?.used.kind === 'method' && status.used.method === 'mise'
-              && status.installations.some((copy) => copy.provenance.ours && copy.provenance.kind === 'mise' && copy.status === 'available')
-            update(managedReady
-              ? { id, state: 'done' }
-              : { id, state: 'failed', error: t('firstRun.harnessVerifyFailed') })
-          }).catch((error: unknown) => update({ id, state: 'failed', error: messageForUser(error) }))
-      }).catch((error: unknown) => update({ id, state: 'failed', error: messageForUser(error) }))
+      update({ id, state: 'checking' })
+      void readLocalCopy(id).then((local) => local.kind === 'usable' ? update({ id, state: 'done', local }) : install(id, local))
+        .catch((error: unknown) => update({ id, state: 'failed', error: messageForUser(error) }))
     }
   }
 
@@ -71,8 +81,16 @@ function InstallTaskRow({ task, onRetry, onCancel }: { task: InstallTask; onRetr
         {task.state === 'done' ? <span>{t('firstRun.harnessInstalled')}</span> : null}
         {task.state === 'failed' ? <Button size="sm" variant="ghost" onClick={onRetry}>{t('firstRun.retry')}</Button> : null}
       </div>
-      {task.state === 'installing' ? <InstallProgressRow progress={progress} onCancel={onCancel} /> : null}
+      {task.state === 'installing' ? <InstallProgressRow progress={progress} onCancel={onCancel} label={task.local && installReason(t, task.id, task.local)} /> : null}
       {task.error ? <p className="ta-onb-error" role="alert">{task.error}</p> : null}
     </div>
   )
+}
+
+/** The card's line while Gugu installs its own copy: why the one here was not used. */
+function installReason(t: TFunction<'main'>, id: FirstRunHarness, local: LocalCopy): string {
+  const name = id === 'codex' ? 'Codex' : 'Claude'
+  if (local.kind === 'outdated') return t('firstRun.installLocalOutdated', { command: id, version: local.version })
+  if (local.kind === 'broken') return t('firstRun.installLocalBroken', { command: id })
+  return t('firstRun.installLocalMissing', { name })
 }
