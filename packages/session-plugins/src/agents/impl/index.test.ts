@@ -1065,12 +1065,13 @@ describe('pluginRegistry', () => {
     }
   });
 
-  it('gates the Codex session-page TUI leg on 0.153.0 and the chat leg on 0.136.0 (#6341, #6387)', () => {
+  it('gates the Codex session-page TUI leg on 0.156.0 and the chat leg on 0.136.0 (#6341, #6387)', () => {
     const compat = pluginRegistry.get('codex')!.capabilities.sessionBundle.runtimeCompatibility;
-    // #6294 的「TUI 建 thread、咕咕认领」:0.149.0 起未落盘 thread 才能 section/move,0.153.0 起 thread/read 才带 model。
+    // #6294 的「TUI 建 thread、咕咕认领」:0.149.0 起未落盘 thread 才能 section/move,0.153.0 起 thread/read 才带 model;
+    // 0.156.0 起 TUI 改写更早的一句是原地 thread/revert,不再另起分叉 thread(openai/codex#45845)。
     expect(compat?.['app-server']).toEqual({
       kind: 'semver-supported-floor',
-      supportedFloor: '0.153.0',
+      supportedFloor: '0.156.0',
       versionArgs: ['--version'],
     });
     // #6387 app-server `skills/extraRoots/set` (installed Apps' skills as codex's own) is there from 0.136.0 on.
