@@ -254,6 +254,21 @@ function rememberVersionReading(context: IExecutionContext, key: string, reading
   runtimeVersionReadings.set(context, perContext);
 }
 
+/**
+ * Would session start accept this harness version on every surface the descriptor declares? The same per-requirement
+ * check session start applies (`runtimeSatisfied`), over each harness requirement; interpreter requirements
+ * (`runtime: 'node'`) read node, not the harness, so they are not this version's to meet. Nothing declared ⇒ true, as
+ * session start lets it through. null when the version is not readable semver.
+ */
+export function harnessVersionSupported(
+  descriptor: Pick<SessionBundleDescriptor, 'runtimeCompatibility'> | undefined,
+  version: string | null,
+): boolean | null {
+  if (!version || !semver.valid(version)) return null;
+  return Object.values(descriptor?.runtimeCompatibility ?? {}).flat()
+    .every((requirement) => requirement.runtime === 'node' || runtimeSatisfied(version, requirement));
+}
+
 /** 装新版 / 改了选择 ⇒ 之前判定兼容的版本全部作废(WeakMap 没有 clear,换一张新的)。 */
 export function clearRuntimeVersionProbeCache(): void {
   runtimeVersionReadings = new WeakMap();
