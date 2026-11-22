@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ComposerPermissionRequest } from '@gugu/session-ui/react/components';
-import { settlementFromWire, type AskSource, type Settlement, type SessionpageSessionEvent, type TimelineAfterResult } from '@gugu/session-core/session-record/contract';
+import { settlementFromWire, type AskSource, type RecordCursor, type Settlement, type SessionpageSessionEvent, type TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { appInstallAskOf } from '@shared/extensions/host-actions';
 import { deviceCapabilityAskOf } from '@shared/device-capability-ask';
@@ -43,22 +43,43 @@ export function useSessionHostAsk(
     };
     const subscriptionId = crypto.randomUUID();
     const there = rpcOn(machineRegistry.machineOf(sessionId));
+    let cursor: RecordCursor | null = null;
+    let follows = 0;
+    const warn = (error: unknown) =>
+      log.warn('Host asks of this session could not be read', { sessionId, error: error instanceof Error ? error.message : String(error) });
+    /**
+     * A new session's timeline first opens as a stand-in (no record yet); when the real record appears the
+     * stand-in sends one batch on another epoch — 「整份重读」 — and delivers nothing again (#3588). Any batch
+     * that is not a continuation of the snapshot we hold (another epoch, or a skipped `seq`, the rule the
+     * timeline view applies in `applyBatch`) means this subscription is detached: snapshot + subscribe again.
+     * Re-subscribing with the same id replaces the dead one server-side.
+     */
+    const follow = async () => {
+      const mine = ++follows;
+      const snapshot = await there.sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: 1 });
+      if (!alive || !snapshot.ok || mine !== follows) return;
+      settlements.clear();
+      cursor = snapshot.value.cursor;
+      take(snapshot.value.settlements);
+      await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor });
+    };
     // Listen first: an ask between the snapshot and the subscription must not slip past.
     const off = events.on(sessionpageSessionTimelineChannel, (event: SessionpageSessionEvent) => {
       const result = event.result as TimelineAfterResult;
       if (!result.ok) {
         settlements.clear();
+        cursor = result.snapshot.cursor;
         take(result.snapshot.settlements);
-      } else take(result.batch.settlements);
+        return;
+      }
+      if (cursor && (cursor.epoch !== result.batch.cursor.epoch || result.batch.from > cursor.seq)) {
+        void follow().catch(warn);
+        return;
+      }
+      if (!cursor || result.batch.cursor.seq >= cursor.seq) cursor = result.batch.cursor;
+      take(result.batch.settlements);
     }, subscriptionId);
-    void (async () => {
-      const snapshot = await there.sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: 1 });
-      if (!alive || !snapshot.ok) return;
-      take(snapshot.value.settlements);
-      await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor });
-    })().catch((error: unknown) =>
-      log.warn('Host asks of this session could not be read', { sessionId, error: error instanceof Error ? error.message : String(error) })
-    );
+    void follow().catch(warn);
     return () => {
       alive = false;
       off();
