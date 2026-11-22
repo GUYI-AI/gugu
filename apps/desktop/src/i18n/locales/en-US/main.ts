@@ -317,7 +317,7 @@ export default {
     "helpImproveFailed": "Could not save this setting. Try again.",
     "harnessRecommended": "Recommended",
     "harnessTitle": "Choose your agents",
-    "harnessSub": "Select one or both. Gugu uses the copy on this computer when it is new enough, and otherwise installs one in the background.",
+    "harnessSub": "Select one or both. Gugu uses yours if it is new enough, or installs one in the background.",
     "harnessInstalled": "Installed",
     "harnessLocalUsable": "Uses your {{version}}",
     "harnessLocalOutdated": "Your {{version}} is too old. Gugu will install a copy",
