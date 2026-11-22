@@ -12,6 +12,7 @@ import { cn } from '@renderer/utils/utils';
 import { GitStatusSection } from './git-status-section';
 import { SECTION_HEADER_HEIGHT, usePanelLayout } from './hooks/use-panel-layout';
 import { PullRequestsSection } from './pr-section';
+import { SessionEditedFiles } from './session-edited-files';
 import { StagedSection } from './staged-section';
 import { UnstagedSection } from './unstaged-section';
 
@@ -111,7 +112,7 @@ export const ChangesPanel = observer(function ChangesPanel({ isVisible }: { isVi
   );
 });
 
-/** 画不出改动清单时的那一格:那台机器离线 / 还在读 / 改动太多 / 不是 git 仓库 / 读失败(可重试)。❌ 空白一片。 */
+/** 画不出 git 改动清单时的那一格:那台机器离线 / 还在读 / 改动太多 / 不是 git 仓库(改列本会话编辑过的文件) / 读失败(可重试)。❌ 空白一片。 */
 const ChangesPanelState = observer(function ChangesPanelState() {
   const { translate } = useSessionMessages();
   const { projectId } = useSessionViewContext();
@@ -123,8 +124,8 @@ const ChangesPanelState = observer(function ChangesPanelState() {
   if (problem?.kind === 'too-many-files') return <EmptyState label={translate('changes.tooManyChanges')} />;
   if (problem?.kind === 'not-repository') {
     return (
-      <EmptyState
-        label={
+      <SessionEditedFiles
+        notRepository={
           machine.kind === 'remote'
             ? translate('remoteWorkspace.notRepository', { device: machine.label() })
             : translate('changes.notRepository')

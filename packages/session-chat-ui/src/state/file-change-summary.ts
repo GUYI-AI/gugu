@@ -2,6 +2,7 @@ import type { SessionPatch } from '@gugu/session-core/acp'
 import { changedFilePaths, projectToolContent } from '@gugu/session-core/acp'
 import type { ChatDiff, ChatItem, FileChangeSummaryItem } from '@session-chat/model'
 import { patchStats } from '@session-chat/components/rows/tools/diff/diff-lines'
+import type { RecordedFileChange } from '@session-chat/commands'
 
 /** Only acknowledged edits count. The patch bytes are a view of canonical content. */
 export function successfulFileDiff(item: ChatItem): ChatDiff | null {
@@ -58,4 +59,20 @@ export function isListedInSummary(summary: FileChangeSummaryItem | null, path: s
     const listed = file.path.replaceAll('\\', '/')
     return listed === target || (!/^(\/|[A-Za-z]:\/)/.test(listed) && target.endsWith(`/${listed}`))
   })
+}
+
+/** One file across a whole session: every turn's Edited-card patches for it, oldest first, under the latest turn that touched it. */
+export type SessionFileChange = RecordedFileChange & { adds: number | null; dels: number | null }
+
+/** The Edited cards of these turns folded per file, most recently edited first. Same source as the card; nothing else is read. */
+export function sessionFileChanges(turns: readonly { id: string; items: readonly ChatItem[] }[]): SessionFileChange[] {
+  const byPath = new Map<string, SessionFileChange>()
+  const add = (a: number | null | undefined, b: number | null) => a === undefined ? b : a === null || b === null ? null : a + b
+  for (const turn of turns) for (const file of fileChangeSummary([turn], turn.id)?.files ?? []) {
+    const prior = byPath.get(file.path)
+    byPath.delete(file.path)
+    byPath.set(file.path, { turnId: turn.id, path: file.path, patches: [...(prior?.patches ?? []), ...fileChangePatches(file.path, file.diffs)],
+      adds: add(prior?.adds, file.adds), dels: add(prior?.dels, file.dels) })
+  }
+  return [...byPath.values()].reverse()
 }
