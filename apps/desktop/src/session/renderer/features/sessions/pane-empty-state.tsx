@@ -15,6 +15,8 @@ import {
 import { canStartSideSession, startSideSession } from '@renderer/features/sessions/start-side-session';
 import { useArrowKeyNavigation } from '@renderer/lib/hooks/use-arrow-key-navigation';
 import { BoundShortcut } from '@renderer/lib/ui/shortcut';
+import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
+import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { cn } from '@renderer/utils/utils';
 import type { CommandId } from '@shared/commands';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -304,6 +306,15 @@ export const WorkspacePanelActionList = observer(function WorkspacePanelActionLi
     </div>
   );
 });
+
+/** The start pages' two-column cards have no room for keycaps beside the name: the shortcut rides in the hover title. */
+export function useShortcutTitle() {
+  const keyboard = useShortcutOverrides();
+  return (title: string, commandId?: CommandId) => {
+    const hotkey = commandId && getEffectiveHotkey(commandId, keyboard);
+    return hotkey ? `${title} ${formatHotkeyText(hotkey)}` : title;
+  };
+}
 
 /** 空态清单的一行(别的机器上的会话的工作区空态也用这一行,#6264)。 */
 const ACTION_BOX = 'flex min-h-10 w-full items-center px-2.5 py-2';
