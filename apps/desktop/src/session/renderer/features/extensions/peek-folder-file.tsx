@@ -37,8 +37,10 @@ function Reachable({ target, tabId, chatId }: { target: FolderPeek; tabId: strin
       live = false;
     };
   }, [target.path, target.ask, attempt]);
-  if (!opener || held === null) return null;
-  if (held !== 'ready') return <Unread target={target} why={held} />;
+  if (!opener) return null;
+  // The file is read while its workspace is being held (the machine resolves the workspace for the read itself): the
+  // hold's two round trips are not waited for first. A hold that fails says why in place of the file.
+  if (held !== null && held !== 'ready') return <Unread target={target} why={held} />;
   if ('failed' in opener) {
     return (
       <div className="flex h-full items-center justify-center p-4">

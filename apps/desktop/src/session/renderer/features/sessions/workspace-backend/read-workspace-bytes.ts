@@ -31,29 +31,36 @@ export function readFirstChunk(projectId: string, workspaceId: string, path: str
  */
 export async function readWorkspaceBytes(projectId: string, workspaceId: string, path: string, maxBytes = Infinity, begun?: Promise<FirstChunk>): Promise<BlobPart[]> {
   const read = chunkReader(projectId, workspaceId, path);
-  const first = await (begun ?? readFirstChunk(projectId, workspaceId, path));
+  const machine = workspaceBackend(projectId).machine;
+  // Another machine: its file reader (`@@@machine-file-reader`). Linked, every byte streams after a no-byte anchor; not
+  // linked, its first chunk is the anchor and the rest are asked below, several at a time (`@@@cloud-only-chunks`).
+  const reader = machine.kind === 'remote' ? machineFileReader(machine.deviceId, projectId, workspaceId, (at, offset, length) =>
+    workspaceRpc(projectId).files.readChunk(projectId, workspaceId, { path: at, offset, length }).then((result) => {
+      if (!result.success) throw new Error(String(result.error.type));
+      return { size: result.data.size, etag: result.data.etag, bytes: base64ToBytes(result.data.data) };
+    })) : null;
+  const asked = Date.now();
+  const first: FirstChunk = begun ? await begun
+    : reader ? await reader.read(path, 0, REMOTE_WORKSPACE_CHUNK_BYTES).then((chunk) => ({ ...chunk, ms: Date.now() - asked }))
+    : await readFirstChunk(projectId, workspaceId, path);
   const size = first.size;
   if (size > maxBytes) throw Object.assign(new Error('too large'), { code: 'too-large' });
-  // @@@read-ahead - each chunk is a round trip to the file's machine. Asked one after another, a file on another machine
-  // was mostly waiting (3 MB over a 150 ms line: about 2 s, where its bytes take 1.2 s). The rest are asked several at a
-  // time — as many as the first chunk's speed brings through in LINE_BUDGET_MS — and kept in order.
-  const ahead = Math.max(1, Math.min(MOST_AHEAD, Math.floor(first.bytes.length / Math.max(1, first.ms) * LINE_BUDGET_MS / REMOTE_WORKSPACE_CHUNK_BYTES)));
   if (first.bytes.length === 0 && size > 0) throw new Error('The file changed while it was read');
   const parts: BlobPart[] = [first.bytes.slice().buffer];
   let from = first.bytes.length;
-  const machine = workspaceBackend(projectId).machine;
-  if (machine.kind === 'remote' && from < size) {
-    // A linked machine: the rest from one stream (`@@@machine-file-reader`); a machine no link reaches answers its first
-    // range by its channel, and the rest are asked below, several at a time (`@@@cloud-only-chunks`).
-    const reader = machineFileReader(machine.deviceId, projectId, workspaceId, (at, offset) => chunkReader(projectId, workspaceId, at)(offset));
+  if (reader && from < size) {
     reader.anchor(path, first);
-    do {
+    while (from < size && reader.linked) {
       const chunk = await reader.read(path, from, REMOTE_WORKSPACE_CHUNK_BYTES);
       if (chunk.size !== size || chunk.bytes.length !== Math.min(REMOTE_WORKSPACE_CHUNK_BYTES, size - from)) throw new Error('The file changed while it was read');
       parts.push(chunk.bytes.slice().buffer);
       from += chunk.bytes.length;
-    } while (from < size && reader.linked);
+    }
   }
+  // @@@read-ahead - each chunk is a round trip to the file's machine. Asked one after another, a file on another machine
+  // was mostly waiting (3 MB over a 150 ms line: about 2 s, where its bytes take 1.2 s). The rest are asked several at a
+  // time — as many as the first chunk's speed brings through in LINE_BUDGET_MS — and kept in order.
+  const ahead = Math.max(1, Math.min(MOST_AHEAD, Math.floor(first.bytes.length / Math.max(1, first.ms) * LINE_BUDGET_MS / REMOTE_WORKSPACE_CHUNK_BYTES)));
   const offsets: number[] = [];
   for (let offset = from; offset < size; offset += REMOTE_WORKSPACE_CHUNK_BYTES) offsets.push(offset);
   const base = parts.length;

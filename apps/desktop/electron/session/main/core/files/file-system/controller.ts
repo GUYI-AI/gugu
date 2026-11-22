@@ -23,7 +23,7 @@ import {
 } from '../workspace-transfer';
 
 import { createAttachmentUploads } from '../attachment-uploads';
-import { changedOnItsMachine, workspaceFileRange } from '../machine-file-streams';
+import { changedOnItsMachine, machineStreams, workspaceFileRange } from '../machine-file-streams';
 import type { AttachmentUploadSpec, AttachmentUploadChunk } from '@gugu/session-core/session-record/contract';
 
 const attachmentUploads = createAttachmentUploads();
@@ -183,6 +183,16 @@ export const workspaceFileSystemController = createRPCController({
    * own verb (machine-routing keeps it here), with the workspace named as that machine names it. Not linked =
    * `{ linked: false }`: the window reads that machine's chunks through its channel (`readChunk`).
    */
+  /** Whether a machine's files stream to this computer (`@@@machine-file-reader` asks once per reader). */
+  streamsFrom: async (deviceId: string) => {
+    try {
+      return ok(await machineStreams(deviceId));
+    } catch (error) {
+      log.warn('Streamed reads of another machine are unavailable', { deviceId, error: String(error) });
+      return err({ type: 'internal_error', message: (error as Error)?.message ?? String(error) });
+    }
+  },
+
   readStreamed: async (deviceId: string, projectId: string, workspaceId: string, request: { path: string; offset: number; length: number; size: number; etag: string }) => {
     try {
       const range = await workspaceFileRange(deviceId, { projectId, workspaceId }, request);
