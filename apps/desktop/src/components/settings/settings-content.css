@@ -16,6 +16,8 @@ div.gg-pane.gg-settings-detail:not([data-mobile]) { --settings-group-gap: var(--
 /* The top inset keeps the first card's ring inside the scroller. */
 .gg-settings-detail:not([data-mobile]) div.gg-settings-body { padding-top: var(--spacing-xs); padding-bottom: var(--spacing-2xl); }
 .gg-settings-detail:not([data-mobile]) .gg-settings-page { gap: var(--settings-group-gap); }
+/* Sections the task page draws (projects, browser, themes, auxiliary models) sit on the same surface, not on their own --bg. */
+.gg-settings-detail:not([data-mobile]) [data-session-settings-section] { background: transparent; }
 .gg-settings-detail:not([data-mobile]) .gg-settings-lede { margin-bottom: var(--spacing-2xl); }
 .gg-settings-detail:not([data-mobile]) .gg-settings-group > .gg-settings-card,
 .gg-settings-detail:not([data-mobile]) .gg-settings-surface {

@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next'
 import { OCCUPATION_KEYS, OCCUPATION_OTHER_MAX, occupationComplete, parseOccupation, type Occupation } from '@gugu/core/shared/firstRun'
 import { writeOccupation } from '../../lib/firstRun'
 import { ownSettings } from '../../lib/ownSettings'
-import { useReplica, retryOf } from '../../lib/replica'
+import { useReplica, retryOf, refreshFailure } from '../../lib/replica'
 import { clearViewState, useViewState } from '../../lib/viewStateTable'
 import { Unknown } from '../ui/Unknown'
 import { RefreshFailed } from '../ui/RefreshFailed'
@@ -205,7 +205,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
           stack
           layout="field"
           title={<label htmlFor="settings-account-occupation">{t('account.occupation')}</label>}
-          description={occupation.kind === 'ready' && settingsRow.state === 'value' ? <RefreshFailed reading={settingsRow} /> : undefined}
+          description={occupation.kind === 'ready' && refreshFailure(settingsRow) ? <RefreshFailed reading={settingsRow} /> : undefined}
           control={occupation.kind !== 'ready' ? (
             occupation.kind === 'unknown' ? <Unknown className="h-8 w-full max-w-xs" /> : (
               <span className="gg-settings-row-value flex items-center gap-2" role="alert">{occupation.message}

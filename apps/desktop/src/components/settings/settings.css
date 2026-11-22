@@ -400,7 +400,6 @@ div.gg-settings-identity {
 
 /* Devices: machines are plain settings rows (hairline between, no tinted list box). */
 .gg-settings-device-list { display: flex; flex-direction: column; }
-.gg-settings-device-row { min-height: 52px; padding: var(--spacing-md) 0; }
-.gg-pane[data-mobile] .gg-settings-device-row { padding-inline: var(--spacing-lg); }
+.gg-settings-device-row { min-height: 52px; padding: var(--spacing-md) var(--spacing-lg); }
 .gg-settings-device-list > .gg-settings-device-row + .gg-settings-device-row,
 .gg-settings-device-list:not(.hidden) + .gg-settings-row { border-top: 1px solid var(--border-color); }

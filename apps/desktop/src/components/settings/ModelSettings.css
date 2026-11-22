@@ -1,7 +1,6 @@
 /* Model settings: each group (title, note, rows) is one settings card — its content starts in the group label,
    so the section itself carries the card surface shared by every settings page. */
 .gg-settings-detail div.gg-settings-page.gg-model-page { gap: var(--settings-group-gap); }
-.gg-model-page [data-session-settings-section='auxiliary-models'] { background: transparent; }
 .gg-settings-detail .gg-model-page section.gg-settings-group {
   gap: 0;
   border: 0;
