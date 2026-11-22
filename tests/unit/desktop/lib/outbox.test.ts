@@ -184,22 +184,25 @@ describe('outbox core', () => {
     expect(second.get('refused')).toMatchObject({ state: 'failed', failure: { reason: 'rejected' } })
   })
 
-  it('fails a write the server refused as rejected, and never sends it again on recovery or restart (#3578)', async () => {
+  it('fails a write the server refused once, never sends it again on recovery or restart; a transient failure waits (#3578)', async () => {
     const storage = memoryStorage()
     const first = createOutbox({ storage, account: account('u1'), online: () => () => {} })
     const note = kind('note', { timeoutMs: null })
     first.register(note.definition)
     await first.loaded()
-    // send_message_with_overlays raising dm_friendship_required reaches the outbox as a wrapped PostgREST error.
-    await first.enqueue('note', { text: 'x', lane: 'a' }, { id: 'dm' })
+    await first.enqueue('note', { text: 'dm', lane: 'a' }, { id: 'dm' })
+    await first.enqueue('note', { text: 'busy', lane: 'b' }, { id: 'lock' })
     await flush()
-    note.calls.at(-1)!.reject(new Error('dm_friendship_required', { cause: { code: '42501', message: 'dm_friendship_required' } }))
+    // As the chat writer throws send_message_with_overlays' dm_friendship_required: its words, the SQLSTATE in `cause`.
+    note.calls.find((call) => call.item.id === 'dm')!.reject(new Error('dm_friendship_required', { cause: { code: '42501', message: 'dm_friendship_required' } }))
+    note.calls.find((call) => call.item.id === 'lock')!.reject(Object.assign(new Error('could not obtain lock'), { code: '55P03' }))
     await flush()
-    expect(first.get('dm')).toMatchObject({ state: 'failed', failure: { reason: 'rejected', message: 'dm_friendship_required' } })
+    expect(storage.rows.get('u1/dm')).toMatchObject({ state: 'failed', attempts: 1, failure: { reason: 'rejected', message: 'dm_friendship_required' } })
+    expect(storage.rows.get('u1/lock')).toMatchObject({ state: 'waiting', failure: { reason: 'unreachable' } })
     noteBackendAnswer(false)
     noteBackendAnswer(true)
     await flush()
-    expect(note.calls).toHaveLength(1)
+    expect(note.calls.filter((call) => call.item.id === 'dm')).toHaveLength(1)
     first.dispose()
 
     const second = createOutbox({ storage, account: account('u1'), online: () => () => {} })
@@ -207,43 +210,17 @@ describe('outbox core', () => {
     second.register(again.definition)
     await second.loaded()
     await flush()
-    expect(again.calls).toEqual([])
+    expect(again.calls.map((call) => call.item.id)).not.toContain('dm')
     expect(second.get('dm')).toMatchObject({ state: 'failed', failure: { reason: 'rejected' } })
   })
 
-  it('reads refusal classes on the error and its cause chain (isServerRefusal)', () => {
-    expect(isServerRefusal({ code: '42501', message: 'dm_friendship_required' })).toBe(true)
-    expect(isServerRefusal({ code: '23505' })).toBe(true)
-    expect(isServerRefusal(new Error('wrapped', { cause: { code: '22023' } }))).toBe(true)
-    expect(isServerRefusal(new Error('deep', { cause: new Error('mid', { cause: { status: 404 } }) }))).toBe(true)
-    expect(isServerRefusal(new AggregateError([new Error('a'), { code: '55000' }], 'batch'))).toBe(true)
-    // Retryable semantics stay unreachable: connection failures, operator intervention, credentials.
-    expect(isServerRefusal({ code: '08006' })).toBe(false)
-    expect(isServerRefusal({ code: '57014' })).toBe(false)
-    expect(isServerRefusal({ code: '53300' })).toBe(false)
-    expect(isServerRefusal(Object.assign(new Error('jwt expired'), { status: 401 }))).toBe(false)
-    expect(isServerRefusal(new Error('offline'))).toBe(false)
-    expect(isServerRefusal({ code: 'ENOENT' })).toBe(false)
-  })
-
-  it('fails a refused write as rejected while a retryable failure stays unreachable', async () => {
-    const box = createOutbox({ storage: memoryStorage(), account: account('u1'), online: () => () => {} })
-    const note = kind('note', { timeoutMs: null })
-    box.register(note.definition)
-    await box.loaded()
-    for (const [id, error, state, reason] of [
-      ['unique', { code: '23505', message: 'duplicate key' }, 'failed', 'rejected'],
-      ['status', Object.assign(new Error('conflict'), { status: 409 }), 'failed', 'rejected'],
-      // Retryable semantics stay unreachable: the write waits on its backoff, it does not fail.
-      ['conn', { code: '08006', message: 'connection failure' }, 'waiting', 'unreachable'],
-      ['cancelled', { code: '57014', message: 'query canceled' }, 'waiting', 'unreachable'],
-      ['auth', Object.assign(new Error('jwt expired'), { status: 401 }), 'waiting', 'unreachable'],
-    ] as const) {
-      await box.enqueue('note', { text: id, lane: id }, { id })
-      await flush()
-      note.calls.at(-1)!.reject(error)
-      await flush()
-      expect(box.get(id)).toMatchObject({ state, failure: { reason } })
+  it('reads a refusal from the SQLSTATE or HTTP status on the error or its cause (isServerRefusal)', () => {
+    for (const refused of [{ code: '42501' }, { code: '23505' }, { code: '55000' }, new Error('wrapped', { cause: { code: '22023' } }), { status: 403 }, { status: 409 }]) {
+      expect(isServerRefusal(refused)).toBe(true)
+    }
+    // Transient classes, PostgREST's own codes (PGRST202: RPC not in its schema cache yet), credentials, 5xx, no answer.
+    for (const transient of [{ code: '08006' }, { code: '40001' }, { code: '55P03' }, { code: '57014' }, { code: 'XX000' }, { code: 'PGRST202' }, { status: 401 }, { status: 429 }, { status: 502 }, new Error('offline')]) {
+      expect(isServerRefusal(transient)).toBe(false)
     }
   })
 

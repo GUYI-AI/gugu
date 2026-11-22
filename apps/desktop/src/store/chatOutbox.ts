@@ -8,7 +8,7 @@
 
 import type { OutboxRecord } from '../lib/imRepository'
 import { i18n } from '@/i18n'
-import { OUTBOX_TIMEOUT_MS, OutboxRejected, OutboxTimeout, isServerRefusal, type Outbox, type OutboxFailure, type OutboxItem } from '../lib/outbox'
+import { OUTBOX_TIMEOUT_MS, OutboxRejected, OutboxTimeout, failureOf, type Outbox, type OutboxFailure, type OutboxItem } from '../lib/outbox'
 import { chatSendTimings, finishChatSendTiming } from '../lib/chatSendTiming'
 
 export const CHAT_MESSAGE = 'chatMessage'
@@ -110,10 +110,9 @@ export function createChatOutbox(outbox: Outbox, deps: ChatOutboxDeps): ChatOutb
       return delivered
     },
     complete: deps.ack && ((item, delivered) => deps.ack!(recordOf(item), delivered)),
-    failure: (error): OutboxFailure => error instanceof OutboxRejected ? { reason: error.reason, message: error.message }
-      : isServerRefusal(error) ? { reason: 'rejected', message: error instanceof Error ? error.message : String(error) }
-      : { reason: 'unreachable', message: error instanceof OutboxTimeout ? i18n.t('outbox.deliveryTimeout', { ns: 'messaging', seconds: OUTBOX_TIMEOUT_MS / 1000 })
-        : error instanceof Error ? error.message : String(error) },
+    failure: (error): OutboxFailure => error instanceof OutboxTimeout
+      ? { reason: 'unreachable', message: i18n.t('outbox.deliveryTimeout', { ns: 'messaging', seconds: OUTBOX_TIMEOUT_MS / 1000 }) }
+      : failureOf(error),
     blocked: (item, source) => i18n.t(source.failure?.reason === 'dependency' ? 'outbox.sourceDiscarded' : item.payload.operation?.kind === 'forward' ? 'outbox.sourceNotSent' : 'outbox.followedNotSent', { ns: 'messaging' }),
     onState: (item) => deps.onState(recordOf(item)),
     onAck: (item, acknowledged) => {

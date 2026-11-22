@@ -53,34 +53,26 @@ export class OutboxTimeout extends Error {
 }
 
 /**
- * SQLSTATE classes whose answer a retry can never change: data exception (22), integrity violation (23),
- * syntax/access-rule violation (42 — 42501 is the server saying no to this caller), program limits (54),
- * prerequisite state (55). Classes like 08 (connection) or 53 (resources) can clear on their own: those stay
- * unreachable. HTTP statuses that refuse the request as written; 401 is not one — a refreshed credential answers
- * it differently, and the outbox already sends again on that recovery.
- */
-const REFUSAL_SQLSTATE_CLASSES = new Set(['22', '23', '42', '54', '55'])
-const REFUSAL_STATUSES = new Set([400, 403, 404, 405, 409, 410, 413, 415, 422])
-
-/**
- * Read on the thrown error or anywhere on its cause chain (a writer may wrap the server's own error):
- * did the target refuse this write as written? One answer for every kind — the alternative was each caller
- * keeping a private word list of refused SQLSTATEs (#3578).
+ * The server answered and refused this write: the same write gets the same answer, so it is not sent again on its own.
+ * Judged from what the server said, not its wording: a Postgres SQLSTATE (PostgREST passes the database's own through)
+ * refuses unless its class is transient (connection 08, rollback 40, resources 53, operator 57, system 58, internal XX,
+ * lock not available 55P03); an HTTP status refuses when it is a 4xx other than 401, 408, 425 or 429. No answer, a 5xx or
+ * PostgREST's own PGRST codes (its connection and credential failures) may differ next time. Looks through `cause`:
+ * a writer may wrap the server's error.
  */
 export function isServerRefusal(error: unknown): boolean {
-  const pending: unknown[] = [error]
-  for (let count = 0; pending.length && count < 32; count++) {
-    const at = pending.shift()
-    if (!at || typeof at !== 'object') continue
-    const code: unknown = Reflect.get(at, 'code')
-    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code) && REFUSAL_SQLSTATE_CLASSES.has(code.slice(0, 2))) return true
-    const status: unknown = Reflect.get(at, 'status')
-    if (typeof status === 'number' && REFUSAL_STATUSES.has(status)) return true
-    pending.push(Reflect.get(at, 'cause'))
-    const errors: unknown = Reflect.get(at, 'errors')
-    if (Array.isArray(errors)) pending.push(...errors.slice(0, 32))
+  for (let at = error, depth = 0; at && typeof at === 'object' && depth < 4; at = (at as { cause?: unknown }).cause, depth += 1) {
+    const { code, status } = at as { code?: unknown; status?: unknown }
+    if (typeof code === 'string' && /^[0-9A-Z]{5}$/.test(code)) return !/^(08|40|53|57|58|XX)/.test(code) && code !== '55P03'
+    if (typeof status === 'number' && status >= 400 && status < 500) return ![401, 408, 425, 429].includes(status)
   }
   return false
+}
+
+/** What a failed attempt says: refused (OutboxRejected, or the server's own refusal) or unreachable. */
+export function failureOf(error: unknown): OutboxFailure {
+  if (error instanceof OutboxRejected) return { reason: error.reason, message: error.message, ...(error.code ? { code: error.code } : {}) }
+  return { reason: isServerRefusal(error) ? 'rejected' : 'unreachable', message: error instanceof Error ? error.message : String(error) }
 }
 
 export interface OutboxKind<P = unknown, R = unknown> {
@@ -100,7 +92,7 @@ export interface OutboxKind<P = unknown, R = unknown> {
   blocked?(item: OutboxItem<P>, dependency: OutboxItem): string
   /** The target cannot take writes now (its host is offline): the lane waits for kick(kind) without spending an attempt. */
   ready?(item: OutboxItem<P>): boolean
-  /** Failure for an error the send threw; default: OutboxRejected is refused, anything else unreachable. */
+  /** Failure for an error the send threw; default: failureOf. */
   failure?(error: unknown): OutboxFailure
   /** Durable completion before the row is removed (writing the confirmed message where it is read). */
   complete?(item: OutboxItem<P>, result: R): Promise<R>
@@ -373,11 +365,7 @@ export function createOutbox(deps: {
       pump() // what waited for it, in other lanes
       return
     }
-    const failure = kind.failure ? kind.failure(error) : error instanceof OutboxRejected
-      ? { reason: error.reason, message: error.message, ...(error.code ? { code: error.code } : {}) }
-      : isServerRefusal(error)
-        ? { reason: 'rejected' as const, message: error instanceof Error ? error.message : String(error) }
-        : { reason: 'unreachable' as const, message: error instanceof Error ? error.message : String(error) }
+    const failure = kind.failure ? kind.failure(error) : failureOf(error)
     const attempts = live.attempts + 1
     log.warn({ kind: item.kind, id: item.id, attempts, reason: failure.reason, error: failure.message }, 'outbox write not confirmed')
     if (failure.reason !== 'unreachable' || background || attempts >= OUTBOX_MAX_ATTEMPTS) {
