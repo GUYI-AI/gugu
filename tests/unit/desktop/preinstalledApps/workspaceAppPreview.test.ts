@@ -108,8 +108,8 @@ describe('workspace App: the preview is gugu.markdown()', () => {
     const renamed = { ...pending, name: 'renamed.md', detailsPending: false, createdBy: { ...entry.createdBy, name: 'Current creator' } }
     gugu.files.list.mockResolvedValueOnce([renamed])
     document.getElementById('more')!.click()
-    await vi.waitFor(() => expect(menu.labels()).toContain('Rename'))
-    await menu.pick('Rename')
+    await vi.waitFor(() => expect(menu.labels('More')).toContain('Rename'))
+    await menu.pick('More', 'Rename')
     const input = document.querySelector<HTMLInputElement>('#doc-title .rename-input')!
     input.value = renamed.name
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))

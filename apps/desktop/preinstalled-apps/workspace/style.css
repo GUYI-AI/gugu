@@ -112,6 +112,9 @@ img.details-picture { object-fit: contain; }
 .details-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px var(--em-spacing-md); margin: 0; font-size: var(--em-font-caption); line-height: var(--em-lh-caption); }
 .details-facts dt { color: var(--em-foreground-muted); }
 .details-facts dd { margin: 0; overflow-wrap: anywhere; }
+.details-keep { display: inline-flex; overflow: visible; }
+.details-keep button:disabled { cursor: default; }
+.details-note { margin-top: 2px; color: var(--em-foreground-muted); }
 .details-sub { margin: var(--em-spacing-xs) 0 0; font-size: var(--em-font-caption); color: var(--em-foreground-muted); }
 .details-versions { margin: 0; padding-inline-start: 0; list-style: none; font-size: var(--em-font-caption); }
 .details-versions li[data-expired] { opacity: .6; }
@@ -324,8 +327,6 @@ body[data-kind='json'] .editor { display: block; }
 body.json-dirty .json-actions { display: flex; }
 body[data-state='message'] .panes, body[data-state='message'] .modes, body[data-state='message'] .status { display: none; }
 body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
-/* Download and Open with… are in ⋯ at every width (owner 10-30, folder-docs); side by side needs room. */
-.fold { display: none; }
 @media (max-width: 640px) {
   .doc-title { flex-basis: 100%; }
   #mode-split { display: none; }

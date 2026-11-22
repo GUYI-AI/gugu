@@ -26,8 +26,8 @@ const gugu = {
 const el = (id: string) => document.getElementById(id)!
 async function moveFromToolbar() {
   el('more').click()
-  expect(menu.labels(), 'the actual file toolbar offers Move').toContain('Move to…')
-  await menu.pick('Move to…')
+  expect(menu.labels('More'), 'the actual file toolbar offers Move').toContain('Move to…')
+  await menu.pick('More', 'Move to…')
 }
 beforeAll(async () => {
   document.body.innerHTML = new DOMParser().parseFromString(readFileSync(resolve('apps/desktop/preinstalled-apps/workspace/index.html'), 'utf8'), 'text/html').body.innerHTML

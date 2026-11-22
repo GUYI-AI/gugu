@@ -55,7 +55,7 @@ const $ = (id: string) => document.getElementById(id) as HTMLElement
 // One toggle (owner 11-06): the button shown is where a press goes — ✎ (edit) while reading, 👁 (preview) otherwise.
 const toggle = () => [...document.querySelectorAll<HTMLButtonElement>('.modes > button')].filter((button) => !button.hidden).map((button) => button.id.slice(5))
 // What is on screen, read from the DOM (审计 C4).
-const shown = () => document.body.classList.contains('show-doc') && !$('download').hidden ? $('doc-title').textContent : null
+const shown = () => document.body.classList.contains('show-doc') && !$('more').hidden ? $('doc-title').textContent : null
 
 beforeAll(async () => {
   const html = readFileSync(resolve(process.cwd(), 'apps/desktop/preinstalled-apps/workspace/index.html'), 'utf8')
@@ -103,7 +103,7 @@ describe('workspace App in a narrow pane (F32)', () => {
     expect($('mode-split').hidden, '对照 is not in the head').toBe(true)
   })
 
-  test('Download and Open with another App fold behind ⋯, which is there only when one of them is', async () => {
+  test('Download and Open with another App are in ⋯, which is there only when a file is', async () => {
     expect($('more').hidden, 'nothing on screen: nothing to fold').toBe(true)
     const entry = { ...entries[0], id: 'big', name: 'large.json', displayName: 'large.json' }
     gugu.files.open.mockResolvedValueOnce({ type: 'binary', entry, close: vi.fn() } as never)
@@ -118,7 +118,7 @@ describe('workspace App in a narrow pane (F32)', () => {
     $('more').click()
     expect(menu.isOpen()).toBe(true)
     expect($('more').getAttribute('aria-expanded')).toBe('true')
-    await vi.waitFor(() => expect(menu.labels()).toEqual(['Copy link', 'Open with another App', 'Download', 'Rename', 'Move to…', 'Delete']))
+    await vi.waitFor(() => expect(menu.labels()).toEqual(['Open with another App', 'Download', 'Copy link', 'More']))
     await menu.pick('Download')
     expect($('more').getAttribute('aria-expanded'), 'choosing closes it').toBe('false')
     await vi.waitFor(() => expect(gugu.files.download).toHaveBeenCalledWith(expect.objectContaining({ id: 'big' })))
@@ -184,8 +184,8 @@ describe('workspace App in a narrow pane (F32)', () => {
     const opens = gugu.files.open.mock.calls.length
     const rename = async () => {
       $('more').click()
-      await vi.waitFor(() => expect(menu.labels()).toContain('Rename'))
-      await menu.pick('Rename')
+      await vi.waitFor(() => expect(menu.labels('More')).toContain('Rename'))
+      await menu.pick('More', 'Rename')
       return $('doc-title').querySelector<HTMLInputElement>('.rename-input')!
     }
     const style = document.createElement('style')

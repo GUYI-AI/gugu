@@ -234,8 +234,9 @@ describe('markdown redesign: the real document page', () => {
   test('M7 the open document offers the same permitted file actions in the approved order', async () => {
     $('more').click()
     await frame()
-    // 对照 (side by side) leads, then the file's actions (owner 11-06: the head keeps one read/edit toggle).
-    expect(labels()).toEqual(['Side by side', 'Forward', 'Copy link', 'Open with another App', 'Download', 'Rename', 'Move to…', 'Delete'])
+    // 对照 (side by side) leads, then the file's table (@@@file-menu) less Open: the rare rows in More, Delete last.
+    expect(labels()).toEqual(['Side by side', 'Open with another App', 'Forward', 'Download', 'Copy link', 'More'])
+    expect(labels(rowNamed('More').items)).toEqual(['Rename', 'Move to…', 'Delete'])
     close()
   })
 
@@ -244,7 +245,8 @@ describe('markdown redesign: the real document page', () => {
     $('more').click()
     // 对照 is one of a choice (side by side or not): the host draws its mark.
     expect(rowNamed('Side by side').checked).toBe(false)
-    expect(labels()).toEqual(['Side by side', 'Forward', 'Copy link', 'Open with another App', 'Download'])
+    // Four rows are not folded (the host's short-menu rule).
+    expect(labels()).toEqual(['Side by side', 'Open with another App', 'Forward', 'Download', 'Copy link'])
   })
 
   test('editing coalesces pointer bursts into one placement and one geometry read per frame', async () => {
