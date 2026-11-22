@@ -21,7 +21,8 @@ export function AgentLookupLine({ lookup, onCheck }: { lookup: AgentLookup; onCh
     : translate('agentsPage.lookupNotFound', { commands: lookup.commands.join(' / ') });
   const time = pathSource ? new Date(pathSource.at).toLocaleTimeString(locale) : '';
   const source = !pathSource ? translate('agentsPage.lookupFromLaunch')
-    : pathSource.failed ? translate('agentsPage.lookupReadFailed', { time, detail: pathSource.failedDetail ?? pathSource.failed })
+    : pathSource.failed === 'timed-out' ? translate('agentsPage.lookupReadTimedOut', { time })
+    : pathSource.failed ? translate('agentsPage.lookupReadFailed', { time })
     : pathSource.from === 'windows-registry' ? translate('agentsPage.lookupFromRegistry', { time })
     : translate('agentsPage.lookupFromLoginShell', { shell: pathSource.shell ?? '', time });
   return (

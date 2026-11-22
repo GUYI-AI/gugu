@@ -371,8 +371,8 @@ export type LookupPathSource = {
   /** How long the re-read took. */
   tookMs: number;
   /** The re-read failed and the previous PATH was used. */
-  failed?: 'probe-failed' | 'invalid-output';
-  /** What the failed read said (a timeout, the program's error) — shown to the user as is. */
+  failed?: 'timed-out' | 'probe-failed' | 'invalid-output';
+  /** What the failed read said (the program's error, the timeout) — for the log, not for user copy. */
   failedDetail?: string;
 };
 

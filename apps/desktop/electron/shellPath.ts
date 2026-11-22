@@ -90,7 +90,7 @@ export type UserPathRead = {
   at: number
   /** How long the read took. */
   tookMs: number
-} & ({ hydrated: true; path: string } | { hydrated: false; reason: 'probe-failed' | 'invalid-output'; detail: string })
+} & ({ hydrated: true; path: string } | { hydrated: false; reason: 'timed-out' | 'probe-failed' | 'invalid-output'; detail: string })
 
 export type LoginShellPathResult = UserPathRead | { hydrated: false; reason: 'windows' }
 
@@ -227,7 +227,7 @@ export function hydrateLoginShellPath({
   try {
     output = probe(shell, loginShellProbeArgs(shell), loginShellProbeEnv(env))
   } catch (error) {
-    return recordLoginShellPath({ from: 'login-shell', shell, ...timing(started), hydrated: false, reason: 'probe-failed', detail: describeProbeError(error) })
+    return recordLoginShellPath({ from: 'login-shell', shell, ...timing(started), hydrated: false, ...probeFailure(error) })
   }
   return recordLoginShellPath(applyLoginShellOutput(shell, output, env, started))
 }
@@ -237,13 +237,16 @@ function timing(started: number): { at: number; tookMs: number } {
   return { at, tookMs: at - started }
 }
 
-/** What the failed probe says, so the log and the store can repeat it — ❌ swallowed into a bare 'probe-failed'. */
-function describeProbeError(error: unknown): string {
+/**
+ * How the probe failed: a timeout gets its own reason (the store says so in words); `detail` is what the program said,
+ * for the log — ❌ swallowed into a bare 'probe-failed', ❌ spliced raw into user copy.
+ */
+function probeFailure(error: unknown): { reason: 'timed-out' | 'probe-failed'; detail: string } {
   const e = error as { killed?: boolean; signal?: string | null; code?: unknown; stderr?: unknown; message?: unknown }
-  if (e?.killed) return `timed out after ${SHELL_TIMEOUT_MS} ms (${e.signal ?? 'killed'})`
+  if (e?.killed) return { reason: 'timed-out', detail: `timed out after ${SHELL_TIMEOUT_MS} ms (${e.signal ?? 'killed'})` }
   const stderr = typeof e?.stderr === 'string' ? e.stderr.trim() : ''
   const code = e?.code === undefined || e?.code === null ? '' : `exit ${String(e.code)}: `
-  return code + (stderr || (typeof e?.message === 'string' ? e.message : String(error)))
+  return { reason: 'probe-failed', detail: code + (stderr || (typeof e?.message === 'string' ? e.message : String(error))) }
 }
 
 function loginShellOf(platform: NodeJS.Platform, env: NodeJS.ProcessEnv): string {
@@ -306,7 +309,7 @@ async function readWindowsRegistryPath(env: NodeJS.ProcessEnv, exportKey: Regist
   try {
     exported = await Promise.all(WINDOWS_PATH_KEYS.map((key) => exportKey(key, buildExternalToolEnv(env))))
   } catch (error) {
-    return { from: 'windows-registry', ...timing(started), hydrated: false, reason: 'probe-failed', detail: describeProbeError(error) }
+    return { from: 'windows-registry', ...timing(started), hydrated: false, ...probeFailure(error) }
   }
   const [machine, user] = exported.map((text) => {
     const value = parseRegExportValue(text, 'Path')
@@ -348,7 +351,7 @@ export async function refreshUserPath({
   try {
     output = await probe(shell, loginShellProbeArgs(shell), loginShellProbeEnv(env))
   } catch (error) {
-    return recordLoginShellPath({ from: 'login-shell', shell, ...timing(started), hydrated: false, reason: 'probe-failed', detail: describeProbeError(error) })
+    return recordLoginShellPath({ from: 'login-shell', shell, ...timing(started), hydrated: false, ...probeFailure(error) })
   }
   return recordLoginShellPath(applyLoginShellOutput(shell, output, env, started))
 }

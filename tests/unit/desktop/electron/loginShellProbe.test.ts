@@ -92,7 +92,7 @@ describe('refreshUserPath', () => {
       platform: 'win32', env,
       exportKey: async () => { throw Object.assign(new Error('Command failed'), { killed: true, signal: 'SIGTERM' }) },
     })
-    expect(timedOut).toMatchObject({ from: 'windows-registry', hydrated: false, reason: 'probe-failed', detail: 'timed out after 5000 ms (SIGTERM)' })
+    expect(timedOut).toMatchObject({ from: 'windows-registry', hydrated: false, reason: 'timed-out', detail: 'timed out after 5000 ms (SIGTERM)' })
     const denied = await refreshUserPath({
       platform: 'win32', env,
       exportKey: async () => { throw Object.assign(new Error('Command failed'), { code: 1, stderr: 'ERROR: Access is denied.\r\n' }) },
