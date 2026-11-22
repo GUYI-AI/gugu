@@ -12,7 +12,7 @@ vi.mock('../../../../apps/desktop/src/lib/fileAccess', () => ({
   resolveFile: f.resolve,
   fileReader: () => ({ accountId: 'account-1', actorId: 'account-1' }),
   fileReadSignal: () => undefined,
-  nativeLocalCopy: async () => null,
+  nativeLocalBytes: async () => null,
   // Holds node:buffer Blobs: jsdom's Blob (and a Response's, here) has no stream(); the renderer's does.
   attachmentCache: async () => ({ match: async (key: string) => f.store.has(key) ? { blob: async () => f.store.get(key) } : undefined,
     put: async (key: string, response: Response) => { f.store.set(key, new NodeBlob([await response.arrayBuffer()])) } }),

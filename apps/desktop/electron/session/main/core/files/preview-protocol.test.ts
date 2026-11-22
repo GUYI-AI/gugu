@@ -51,7 +51,7 @@ vi.mock('@main/lib/events', () => ({
 }));
 
 import { remotePreviewReadChannel, remotePreviewReadResultChannel } from '@shared/events/appEvents';
-import { REMOTE_CHUNK_TIMEOUT_MS, createChatFolderPreview, createDocumentPreview, createPreview, createRemotePreview, handlePreviewRequest, previewAssetsChanged, releasePreview, setPreviewDocument } from './preview-protocol';
+import { REMOTE_CHUNK_TIMEOUT_MS, createBytesPreview, createChatFolderPreview, createDocumentPreview, createPreview, createRemotePreview, handlePreviewRequest, previewAssetsChanged, releasePreview, setPreviewDocument } from './preview-protocol';
 import { resolveWorkspace } from '../projects/utils';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 
@@ -556,5 +556,34 @@ describe('a chat folder document previewed with its folder', () => {
 
   it('a document someone may not read gets no preview', async () => {
     expect(await createChatFolderPreview('doc-2', '<p>x</p>', copy)).toBeNull();
+  });
+});
+
+describe('this machine\'s bytes of a sha, at an address that names only the sha', () => {
+  const sha = 'd'.repeat(64);
+  const bytes = new TextEncoder().encode('0123456789');
+  const file = { size: bytes.length, read: async (offset: number, length: number) => bytes.slice(offset, offset + length) };
+
+  it('serves the whole file, a range for a video, and nothing at another path; released, it is gone', async () => {
+    const { url, previewId } = createBytesPreview(sha, 'video/mp4', file);
+    expect(url).toBe(`gugu-preview://${previewId}/${sha}`);
+    const whole = await handlePreviewRequest(new Request(url), 'pane');
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get('content-type')).toBe('video/mp4');
+    expect(await whole.text()).toBe('0123456789');
+    const part = await handlePreviewRequest(new Request(url, { headers: { Range: 'bytes=2-5' } }), 'pane');
+    expect(part.status).toBe(206);
+    expect(part.headers.get('content-range')).toBe('bytes 2-5/10');
+    expect(await part.text()).toBe('2345');
+    expect((await handlePreviewRequest(new Request(url, { headers: { Range: 'bytes=20-' } }), 'pane')).status).toBe(416);
+    expect((await handlePreviewRequest(new Request(`gugu-preview://${previewId}/${'e'.repeat(64)}`), 'pane')).status).toBe(404);
+    expect((await handlePreviewRequest(new Request(url), 'browser')).status).toBe(404);
+    releasePreview(previewId);
+    expect((await handlePreviewRequest(new Request(url), 'pane')).status).toBe(404);
+  });
+
+  it('bytes that can no longer be read fail the response, loudly', async () => {
+    const { url } = createBytesPreview(sha, '', { size: 10, read: async () => { throw new Error('NotReadableError'); } });
+    await expect((await handlePreviewRequest(new Request(url), 'pane')).text()).rejects.toThrow();
   });
 });

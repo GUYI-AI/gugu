@@ -5,7 +5,7 @@ import { attachmentBytes } from '@/lib/attachmentBytes'
 
 const io = vi.hoisted(() => ({ resolve: vi.fn(), shown: vi.fn(), put: vi.fn(), remove: vi.fn() }))
 vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone' }),
-  resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined, nativeLocalCopy: async () => null,
+  resolveFile: io.resolve, fileReader: () => ({ accountId: 'account', actorId: 'account' }), fileReadSignal: () => undefined, nativeLocalBytes: async () => null,
   attachmentCache: async () => ({ match: async () => undefined, put: io.put, delete: io.remove }), putAttachment: io.put, attachmentCacheOrigin: 'https://attachments.test',
 }))
 vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), shownFileBlob: io.shown }))

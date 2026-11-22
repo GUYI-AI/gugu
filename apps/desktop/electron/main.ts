@@ -2558,6 +2558,11 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
   taskCopy: (name, bytes, mimeType) => writeTaskCopy(join(resolveGuguHome(process.env), 'attachments'), name, bytes, mimeType), publication: desktopFiles.publish.local,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
   stored: async sha256 => await localCopy(resolveGuguHome(process.env), sha256) ?? await desktopFiles.held(sha256),
+  serve: async (sha256, contentType, file) => {
+    const { createBytesPreview, releasePreview } = await import('./session/main/core/files/preview-protocol')
+    const { url, previewId } = createBytesPreview(sha256, contentType, file)
+    return { url, release: () => releasePreview(previewId) }
+  },
 })
 /**
  * The one social bridge every session surface wires (an ACP session, its side-chat fork, a terminal session): the same

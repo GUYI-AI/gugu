@@ -9,7 +9,7 @@ import type { PreviewFile } from '@/components/chat/useMessageFilePreview'
 // 字节、链接、交给系统应用都经 lib/attachmentBytes(一个入口);这里把它换掉,判的是预览自己的状态机。
 const bytesMocks = vi.hoisted(() => ({
   attachmentBytes: vi.fn(), downloadAttachment: vi.fn(),
-  attachmentPreview: vi.fn(), localAttachmentCopy: async () => null,
+  attachmentPreview: vi.fn(), localAttachmentUrl: async () => null,
   openAttachmentInSystemApp: vi.fn(),
   openAttachmentImage: vi.fn(),
   sourceKeyOf: (source: { kind: string; url?: string }) => `${source.kind}:${source.url ?? ''}`,

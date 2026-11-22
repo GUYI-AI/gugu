@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
-import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalCopy } from './fileAccess'
+import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes } from './fileAccess'
 import { replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
@@ -349,8 +349,23 @@ export const openFileHandle = (file: FileHandle, fileName: string) => platform.o
  */
 export async function localAttachmentCopy(sha256: string | null, contentType = ''): Promise<Blob | null> {
   if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) return null
-  const native = await nativeLocalCopy(sha256, contentType)
+  const native = await nativeLocalBytes(sha256, contentType)
+  if (native) try { return await native.blob() } finally { await native.release() }
+  return keptAttachmentCopy(sha256, contentType)
+}
+
+/** The same bytes as an address a `<video>` reads in ranges: main's own, or a URL of what this renderer kept. */
+export async function localAttachmentUrl(sha256: string | null, contentType = ''): Promise<{ url: string; release(): Promise<void> } | null> {
+  if (!sha256 || !/^[0-9a-f]{64}$/.test(sha256)) return null
+  const native = await nativeLocalBytes(sha256, contentType)
   if (native) return native
+  const kept = await keptAttachmentCopy(sha256, contentType)
+  if (!kept) return null
+  const url = URL.createObjectURL(kept)
+  return { url, release: async () => URL.revokeObjectURL(url) }
+}
+
+async function keptAttachmentCopy(sha256: string, contentType: string): Promise<Blob | null> {
   const hit = await (await attachmentCache()).match(fullKey(fileReader().accountId, sha256))
   if (!hit) return null
   const blob = await hit.blob()
