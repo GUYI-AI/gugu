@@ -34,7 +34,7 @@ import {
 import { remotePageRoot } from '@shared/preview/remote-page-url';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 import { resolveWorkspace } from '../projects/utils';
-import { cloudObjectFetch, CloudObjectRouteError } from './cloud-object-fetch';
+import { egress, EgressError } from '@gugu/core/shared/egress';
 import { readRemotePreviewBytes, remotePreviewFailureStatus, withUtf8Charset, type RemoteChunk } from './remote-preview-read';
 
 /**
@@ -184,7 +184,8 @@ function serveBytes(registration: BytesPreviewRegistration, pathname: string, ra
 const OBJECT_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'last-modified'];
 
 /**
- * A cloud object for the renderer (`cloudObjectUrl`): main fetches the signed address over its own transport and streams
+ * A cloud object for the renderer (`cloudObjectUrl`): main fetches the signed address through its egress (Node's HTTP/1.1,
+ * a connection per concurrent request, the route and roots Chromium would use) and streams
  * the answer back as it is, `Range` passed through, so the renderer's reader sees exactly what the store said (a 206 and
  * its range, an expired signature's 403). A transport failure is said as one, never as some other file.
  */
@@ -193,11 +194,12 @@ async function serveCloudObject(url: URL, range: string | null, signal?: AbortSi
   if (!signed) return notFound('not a cloud object address');
   let answer: Response;
   try {
-    answer = await cloudObjectFetch(signed, { headers: range ? { Range: range } : {}, signal });
+    answer = await egress.fetch(signed, { headers: range ? { Range: range } : {}, signal });
   } catch (error) {
-    const route = error instanceof CloudObjectRouteError;
-    log.warn('Cloud object request failed', { host: new URL(signed).host, error: String(error) });
-    return new Response(null, { status: route ? 421 : 502, headers: { 'X-Gugu-Object-Failure': route ? 'unsupported_proxy' : 'transport', 'Access-Control-Allow-Origin': rendererOrigin() } });
+    // No answer at all (the proxy refused, the route is one egress cannot take, TLS, no connection): said as that.
+    const kind = error instanceof EgressError ? error.kind : 'error';
+    log.warn('Cloud object request failed', { host: new URL(signed).host, kind });
+    return new Response(null, { status: 502, headers: { 'X-Gugu-Object-Failure': kind, 'Access-Control-Allow-Origin': rendererOrigin() } });
   }
   const headers: Record<string, string> = { 'Access-Control-Allow-Origin': rendererOrigin(), 'Access-Control-Expose-Headers': 'Content-Range', 'Cache-Control': 'no-store' };
   for (const name of OBJECT_HEADERS) { const value = answer.headers.get(name); if (value !== null) headers[name] = value; }

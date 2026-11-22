@@ -15,21 +15,20 @@ const bus = vi.hoisted(() => {
 });
 
 vi.mock('electron', () => ({ protocol: { isProtocolHandled: () => false, handle: vi.fn() } }));
-// The main-process object transport (cloud-object-fetch.test.ts tests it on the wire): here, what it was asked and answers.
+// Main's egress (its own tests cover routes and roots): here, what a cloud object request asked it and what it answers.
 const objects = vi.hoisted(() => ({
   asked: [] as Array<{ url: string; range: string | null }>,
   answer: async (): Promise<Response> => new Response('0123456789', { status: 200 }),
 }));
-vi.mock('./cloud-object-fetch', () => {
-  class CloudObjectRouteError extends Error {}
-  return {
-    CloudObjectRouteError,
-    cloudObjectFetch: async (url: string, init?: RequestInit) => {
+vi.mock('@gugu/core/shared/egress', async (actual) => ({
+  ...(await actual<typeof import('@gugu/core/shared/egress')>()),
+  egress: {
+    fetch: async (url: string, init?: RequestInit) => {
       objects.asked.push({ url, range: new Headers(init?.headers).get('range') });
       return objects.answer();
     },
-  };
-});
+  },
+}));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 vi.mock('../projects/utils', () => ({ resolveWorkspace: vi.fn(async () => null) }));
 // The chat folder a document is in, as the signed-in person reads it (app-files.ts): one document and the files beside it.
@@ -70,7 +69,7 @@ import { REMOTE_CHUNK_TIMEOUT_MS, bytesRequestRefused, createBytesPreview, creat
 import { resolveWorkspace } from '../projects/utils';
 import { previewDocumentHtml } from '@shared/preview/preview-link-script';
 import { cloudObjectUrl } from '@shared/preview/preview-url';
-import { CloudObjectRouteError } from './cloud-object-fetch';
+import { EgressError } from '@gugu/core/shared/egress';
 
 const ROOT = '/root/.config/咕咕/task-home';
 const COPY = { unavailable: '没能打开 d22 上的这个网页。', outside: '这里只能打开 d22 上这条会话文件夹里的网页。' };
@@ -653,12 +652,11 @@ describe('a cloud object for the renderer, fetched by main', () => {
     expect(objects.asked).toEqual([]);
   });
 
-  it('says a refused route and a broken transport as themselves, never as bytes', async () => {
-    objects.answer = async () => { throw new CloudObjectRouteError('SOCKS5 127.0.0.1:1080'); };
-    const route = await handlePreviewRequest(new Request(cloudObjectUrl(signed)), 'pane');
-    expect([route.status, route.headers.get('x-gugu-object-failure')]).toEqual([421, 'unsupported_proxy']);
-    objects.answer = async () => { throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }); };
-    const broken = await handlePreviewRequest(new Request(cloudObjectUrl(signed)), 'pane');
-    expect([broken.status, broken.headers.get('x-gugu-object-failure')]).toEqual([502, 'transport']);
+  it('says a request that got no answer as that, with its kind, never as bytes', async () => {
+    for (const kind of ['proxy', 'tls', 'connect'] as const) {
+      objects.answer = async () => { throw new EgressError(kind, 'files.example'); };
+      const failed = await handlePreviewRequest(new Request(cloudObjectUrl(signed)), 'pane');
+      expect([failed.status, failed.headers.get('x-gugu-object-failure'), await failed.text()]).toEqual([502, kind, '']);
+    }
   });
 });
