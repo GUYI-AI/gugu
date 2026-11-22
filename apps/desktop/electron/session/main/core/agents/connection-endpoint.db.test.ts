@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { createServer, type Server } from 'node:http';
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import { openRegistryFixture, type RegistryFixture } from '@tooling/utils/provider-accounts';
@@ -17,7 +18,7 @@ beforeEach(async () => {
   state.fixture = await openRegistryFixture('empty');
   state.fixture.sqlite.exec("INSERT INTO projects (id, name, path) VALUES ('project','Project','/repo')");
 });
-afterEach(() => { releaseCustomModelForwarders(); state.fixture?.close(); state.fixture = null; vi.unstubAllGlobals(); });
+afterEach(() => { releaseCustomModelForwarders(); state.fixture?.close(); state.fixture = null; vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 function session(id: string, provider: string, model?: string, connectionId?: string) {
   state.fixture!.db.insert(sessions).values({ id, projectId: 'project', provider, runtime: 'acp', config: { version: '1', type: 'acp', ...(model ? { model } : {}), ...(connectionId ? { subscriptionConnectionId: connectionId } : {}) } }).run();
 }
@@ -125,7 +126,8 @@ it('tests an edited address using its saved key only in the host request', async
   const [url, init] = fetcher.mock.calls[0]!;
   expect(url).toBe('https://edited.test/v1/models');
   expect(new Headers(init?.headers).get('authorization')).toBe('Bearer fixture-secret');
-  expect(init?.redirect).toBe('error');
+  // Inspect the 3xx status for a specific diagnosis, without following it or forwarding the saved key.
+  expect(init?.redirect).toBe('manual');
 });
 
 it('only performs a model request from an explicit test when no models are listed', async () => {
@@ -139,4 +141,58 @@ it('only performs a model request from an explicit test when no models are liste
   expect(url).toBe('https://provider.test/anthropic/v1/messages/count_tokens');
   expect(new Headers(init?.headers).get('x-api-key')).toBe('fixture-secret');
   expect(JSON.parse(String(init?.body))).toMatchObject({ model: 'model-1' });
+});
+
+async function listen(server: Server): Promise<string> {
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Expected a loopback TCP listener');
+  return `http://127.0.0.1:${address.port}`;
+}
+
+it.each([301, 302, 303, 307, 308].flatMap((status) => [
+  { status, destination: 'same-origin' }, { status, destination: 'cross-origin' },
+]))('reports HTTP $status to $destination without forwarding a saved key or making a fallback model request', async ({ status, destination }) => {
+  for (const name of ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'http_proxy', 'https_proxy', 'all_proxy']) vi.stubEnv(name, '');
+  vi.stubEnv('NO_PROXY', '*'); vi.stubEnv('no_proxy', '*');
+  const record = await saveCustomModel({ name: 'Provider', apiKey: 'fixture-secret', preset: null, endpoints, models: [{ id: 'm' }] });
+  const originalRequests: (string | undefined)[] = [];
+  const redirectedRequests: (string | undefined)[] = [];
+  let redirectUrl = '';
+  const reply = (key: string | undefined) => { redirectedRequests.push(key); return JSON.stringify({ data: [{ id: 'redirected-model' }] }); };
+  const other = createServer((req, res) => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(reply(req.headers.authorization)); });
+  const source = createServer((req, res) => {
+    if (req.url === '/v1/models') {
+      originalRequests.push(req.headers.authorization);
+      res.writeHead(status, { location: redirectUrl }); res.end();
+    } else {
+      res.writeHead(200, { 'content-type': 'application/json' }); res.end(reply(req.headers.authorization));
+    }
+  });
+  try {
+    const otherUrl = await listen(other);
+    const sourceUrl = await listen(source);
+    redirectUrl = (destination === 'same-origin' ? sourceUrl : otherUrl) + '/redirect-target';
+    const input = { connectionId: record.id, endpoints: [{ protocol: 'openai-responses' as const, baseUrl: sourceUrl + '/v1' }], modelId: 'm' };
+
+    // Negative control: forcing automatic following reaches the target and, on the same origin, leaks the dummy saved key.
+    const realFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', (url: Parameters<typeof fetch>[0], init?: RequestInit) => realFetch(url, { ...init, redirect: 'follow' }));
+    expect(await testCustomModel(input)).toEqual({ kind: 'listed', models: ['redirected-model'] });
+    expect(redirectedRequests).toEqual([destination === 'same-origin' ? 'Bearer fixture-secret' : undefined]);
+    vi.unstubAllGlobals();
+    originalRequests.length = 0; redirectedRequests.length = 0;
+
+    // Exercise the real saved-credential host path and Node fetch. Even same-origin redirects must remain unvisited.
+    const result = await testCustomModel(input);
+    expect(result).toEqual({ kind: 'unlisted', reason: 'redirect' });
+    expect(originalRequests).toEqual(['Bearer fixture-secret']);
+    expect(redirectedRequests).toEqual([]);
+    expect(JSON.stringify(result)).not.toContain('fixture-secret');
+  } finally {
+    for (const server of [source, other]) {
+      server.closeAllConnections();
+      if (server.listening) await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  }
 });
