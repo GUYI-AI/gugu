@@ -1162,6 +1162,20 @@ export function createAppFiles(platform: FilesPlatform) {
     },
     /** Diagnostic only; no bridge capability exposes this counter. */
     readHandleCount: () => [...snapshots.values()].filter(entry => entry.file !== undefined).length,
+    /**
+     * A reader left a chat (taken out of its group): what it holds of that chat's files is let go now, page or no page
+     * (read-contract §2.5) — ❌ kept until its page goes and the idle timer runs. `actor`: the agent read as, or null for
+     * the person.
+     */
+    async releaseChat(chatId: string, actor: string | null): Promise<void> {
+      await Promise.all([...snapshots].map(async ([key, entry]) => {
+        if (entry.actor !== actor) return;
+        const file = await entry.file?.catch(() => null);
+        if (file?.revision.chat_id !== chatId || snapshots.get(key) !== entry) return;
+        entry.leases = 0;
+        await disposeSnapshot(key, entry);
+      }));
+    },
 
     async resourceChat(chatId: string, as: { asAgent?: string | null } = {}): Promise<string> {
       const { token, userId } = await platform.account();

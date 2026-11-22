@@ -194,6 +194,17 @@ const files = createAppFiles({
   warn: (message, data) => log.warn(`[app-files] ${message}`, data ?? {}),
 });
 
+/**
+ * A member of a chat left it (or was taken out). This account's own reader — the person, or one of its agents a page reads
+ * as — lets go of what it holds of that chat's files. Says whether it was the person.
+ */
+export async function readerLeftChat(chatId: string, memberId: string): Promise<boolean> {
+  const me = await signedIn();
+  const person = me?.userId === memberId;
+  await files.releaseChat(chatId, person ? null : memberId);
+  return person;
+}
+
 /** A chat document's place, for the host's own preview of it (`gugu-preview://`, preview-protocol.ts). */
 export function chatDocumentPlace(itemId: string) {
   return files.documentPlace(itemId);

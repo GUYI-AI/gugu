@@ -307,4 +307,17 @@ describe('chat stored files reuse verified, pinned range reads', () => {
     call.abort();
     await vi.waitFor(() => expect(f.files.readHandleCount()).toBe(0));
   });
+  it('a reader taken out of the chat lets go of what it holds of the chat\'s files at once, page or no page', async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    await f.files.read(surface, { ref, offset: 0, length: 4 });
+    // The page went away: the read waits for the next page of this reader (#3281) — until the reader leaves the chat.
+    f.release();
+    await f.files.releaseChat('another-group', null);
+    await f.files.releaseChat('group', '22222222-2222-4222-8222-222222222222');
+    expect(f.files.readHandleCount()).toBe(1);
+    await f.files.releaseChat('group', null);
+    expect(f.files.readHandleCount()).toBe(0);
+    expect(f.dispose).toHaveBeenCalledTimes(1);
+  });
 });

@@ -64,7 +64,7 @@ import { coalescedReads } from '@shared/extensions/coalesced-reads';
 import { agentReport } from '@shared/extensions/agent-view';
 import { stopResourceWatches } from './app-resource-watches';
 import { stopVoiceWatches } from './app-voice-note-watches';
-import { changedGroupFiles, resourceChatOf, type DesktopFilePage } from '@main/core/extensions/app-files';
+import { changedGroupFiles, readerLeftChat, resourceChatOf, type DesktopFilePage } from '@main/core/extensions/app-files';
 
 /**
  * The host side of the extension bridge.
@@ -1347,6 +1347,15 @@ export function chatsWithPages(): string[] {
 
 /** A row of this chat's members changed: if that moved who is in it (`rosterMoved`), read them again and tell its pages. */
 export async function chatMembersChanged(chatId: string, changes: readonly MemberChange[]): Promise<void> {
+  // One of this account's readers left the chat: what it holds of the chat's files goes now, and its pages there are told
+  // (read-contract §2.5) — the service closes a document's connection itself, but a held stored read has none to close.
+  for (const { memberId } of changes.filter((change) => change.left && change.memberId)) {
+    const person = await readerLeftChat(chatId, memberId!);
+    for (const [id, binding] of bindings) {
+      if (binding.conversation !== chatId) continue;
+      if (person ? binding.operator.kind === 'person' : binding.operator.kind === 'agent' && binding.operator.id === memberId) void fileSync.revoke(id, 'removed-from-group');
+    }
+  }
   // No page drawn for it: nobody keeps its members current, so they are forgotten — read afresh when a page is (`pushContext`).
   if (![...bindings.values()].some((binding) => binding.conversation === chatId)) {
     chatsDrawnIn.delete(chatId);
