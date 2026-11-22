@@ -160,6 +160,32 @@ describe('宿主按 agent 的流:agent 的状态 = 它绑的那条会话的读�
     feed.dispose()
   })
 
+  it('the entry carries when its session last had activity: the snapshot seeds it, active edges move it on, nothing moves it back', async () => {
+    const env = await isolatedGuguEnv('gugu-agent-status-feed-activity-')
+    await bindAgent(env)
+    const feed = new AgentStatusFeed()
+    const writer = writerSource()
+    writer.snapshot.push({ ...change(SESSION_ID, reading('idle', 'plain')), activityAt: Date.parse('2026-11-21T10:00:00Z') })
+    const heard: Array<string | null> = []
+    feed.attach(writer.source, { env })
+    feed.subscribe((_agentUserId, entry) => heard.push(entry?.lastInteractedAt ?? null))
+    await settle()
+    expect(feed.get(AGENT_ID)?.lastInteractedAt).toBe('2026-11-21T10:00:00.000Z')
+
+    writer.emit({ ...change(SESSION_ID, reading('working', 'running')), activityAt: Date.parse('2026-11-21T10:05:00Z') })
+    await settle()
+    expect(feed.get(AGENT_ID)?.lastInteractedAt).toBe('2026-11-21T10:05:00.000Z')
+    // Read, not activity: the reading may change, the moment does not.
+    writer.emit(change(SESSION_ID, reading('working', 'running'), true))
+    await settle()
+    expect(feed.get(AGENT_ID)?.lastInteractedAt).toBe('2026-11-21T10:05:00.000Z')
+    writer.emit({ ...change(SESSION_ID, reading('working', 'running'), true), activityAt: Date.parse('2026-11-21T09:00:00Z') })
+    await settle()
+    expect(feed.get(AGENT_ID)?.lastInteractedAt, 'a late, older reading does not move it back').toBe('2026-11-21T10:05:00.000Z')
+    expect(heard).toEqual(['2026-11-21T10:00:00.000Z', '2026-11-21T10:05:00.000Z', '2026-11-21T10:05:00.000Z'])
+    feed.dispose()
+  })
+
   it('the entry carries the bound session\'s lifecycle and republishes when only the lifecycle moves', async () => {
     const env = await isolatedGuguEnv('gugu-agent-status-feed-life-')
     await bindAgent(env)

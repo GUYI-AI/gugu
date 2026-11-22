@@ -15,7 +15,4 @@ const hostPlatform = globalThis.window?.electronAPI
     ? Capacitor.getPlatform() === 'ios' ? iosPlatform : capacitorPlatform
     : webPlatform
 
-// Phase two removes this seam when the phone also owns a local SQLite message database.
-export const platform = Object.assign(hostPlatform, {
-  localMessages: hostPlatform.kind === 'electron' ? 'sqlite' as const : 'window' as const,
-})
+export const platform = hostPlatform

@@ -50,7 +50,7 @@ let fixture: Awaited<ReturnType<typeof openFixture>>, connected: Awaited<ReturnT
 let pair: ReturnType<typeof memoryTransportPair>, source: EventStreamSource<WindowCommittedEvent>;
 const input = { conversationId: 'c', subscriptionId: 'view' };
 beforeEach(async () => {
-  fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite; fixture.sqlite.pragma('synchronous=FULL');
+  fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
   fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id,provider,runtime) VALUES('c','p','claude','acp')");
   state.root = await mkdtemp(join(tmpdir(), 'commit-position-')); state.primary.mockResolvedValue(false);
   pair = memoryTransportPair(); source = new EventStreamSource<WindowCommittedEvent>({ generation: 27 });

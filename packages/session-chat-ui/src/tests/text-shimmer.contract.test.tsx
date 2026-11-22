@@ -33,7 +33,7 @@ function mount(label = '正在工作 · Running a long command') {
   return { host, setActive, setText };
 }
 
-const viewportPaused = (host: HTMLElement) => host.style.getPropertyValue('--gugu-animation-viewport-paused') === 'paused';
+const viewportPaused = (host: HTMLElement) => host.hasAttribute('data-animation-off');
 
 function watchSweepEvent(sweep: HTMLElement, type: 'animationstart' | 'animationend') {
   let seen = false;
@@ -81,17 +81,16 @@ it('keeps one semantic label, its geometry and live text while animating only tr
   expect(host.textContent).toBe('Working for 2 minutes');
 });
 
-it('pauses outside the viewport, on retained surfaces, and when the host window hides', async () => {
+it('stops outside the viewport and when the host window hides, and pauses on retained surfaces', async () => {
   const { host } = mount();
   await until('the shimmer starts', () => !viewportPaused(host));
-  const animations = host.getAnimations({ subtree: true });
-  expect(animations).toHaveLength(2);
+  expect(host.getAnimations({ subtree: true })).toHaveLength(2);
   window.dispatchEvent(new CustomEvent('__window_seen', { detail: false }));
   expect(viewportPaused(host)).toBe(true);
-  expect(host.getAnimations({ subtree: true })).toEqual(animations);
-  expect(host.getAnimations({ subtree: true }).every((animation) => animation.playState === 'paused')).toBe(true);
+  expect(host.getAnimations({ subtree: true })).toHaveLength(0);
   window.dispatchEvent(new CustomEvent('__window_seen', { detail: true }));
   expect(viewportPaused(host)).toBe(false);
+  expect(host.getAnimations({ subtree: true })).toHaveLength(2);
   surface!.style.visibility = 'hidden';
   surface!.inert = true;
   await until('the retained surface pauses', () => host.getAnimations({ subtree: true }).every((animation) => animation.playState === 'paused'));
@@ -99,9 +98,11 @@ it('pauses outside the viewport, on retained surfaces, and when the host window 
   surface!.inert = false;
   await until('the retained surface resumes', () => host.getAnimations({ subtree: true }).every((animation) => animation.playState === 'running'));
   surface!.style.top = '-200px';
-  await until('the offscreen shimmer pauses', () => viewportPaused(host));
+  await until('the offscreen shimmer stops', () => viewportPaused(host));
+  expect(host.getAnimations({ subtree: true })).toHaveLength(0);
   surface!.style.top = '20px';
   await until('the shimmer returns', () => !viewportPaused(host));
+  expect(host.getAnimations({ subtree: true })).toHaveLength(2);
 });
 
 it('keeps reduced-motion labels flat and readable with no running sweep', async () => {
@@ -164,13 +165,13 @@ it('finishes each sweep, holds without running animations, and rewinds without o
     expect(animations.every((animation) => animation.playState === 'finished')).toBe(true);
     expect(vi.getTimerCount()).toBe(1);
 
-    window.dispatchEvent(new CustomEvent('__window_seen', { detail: false }));
+    surface!.inert = true;
     expect(host.getAnimations({ subtree: true }).every((animation) => animation.playState === 'paused')).toBe(true);
     const restarted = watchSweepEvent(sweep, 'animationstart');
     const endedAgain = watchSweepEvent(sweep, 'animationend');
     vi.advanceTimersByTime(1000);
     expect(animations.every((animation) => animation.currentTime === 0 && animation.playState === 'paused')).toBe(true);
-    window.dispatchEvent(new CustomEvent('__window_seen', { detail: true }));
+    surface!.inert = false;
     // A rAF callback can precede CSS sampling the rewound sweep. Observe its
     // actual start before finishing it again, or the second end event is lost.
     expect(animations.every((animation) => getComputedStyle((animation.effect as KeyframeEffect).target as Element).animationPlayState === 'running')).toBe(true);

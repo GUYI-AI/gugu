@@ -92,12 +92,13 @@ vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModa
 const viewer = vi.hoisted(() => ({
   open: vi.fn(async (_items: Array<{ alt: string; read: () => Promise<Blob> }>, _index: number, _box?: unknown) => {}),
   read: vi.fn(async () => new Blob(['png'])),
+  first: vi.fn(async () => ({ size: 3, bytes: new Uint8Array(3), ms: 1 })),
 }));
 vi.mock('@/lib/attachmentBytes', () => ({
   workingCopyImageItem: (alt: string, read: () => Promise<Blob>) => ({ alt, read }),
   openViewerFromClick: viewer.open,
 }));
-vi.mock('../workspace-backend/read-workspace-bytes', () => ({ readWorkspaceFileBytes: viewer.read }));
+vi.mock('../workspace-backend/read-workspace-bytes', () => ({ readWorkspaceFileBytes: viewer.read, readFirstChunk: viewer.first }));
 
 const {
   makeFileLinkHandlers,
@@ -211,9 +212,24 @@ describe('task file preview routing', () => {
       expect(items.map((item) => item.alt)).toEqual(['a.png']);
       expect([index, box]).toEqual([0, undefined]);
       await items[0]!.read();
-      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/a.png', true);
+      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/a.png', true, expect.any(Promise));
       expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
       expect(mocks.toastError).not.toHaveBeenCalled();
+    });
+
+    it('its first chunk is asked beside the machine\'s fileExists, and taken by its first read only', async () => {
+      let answer!: (value: unknown) => void;
+      mocks.fileExists.mockImplementationOnce(() => new Promise((resolve) => { answer = resolve; }));
+      const opening = openFileInSessionEditor('project-1', 'session-1', 'shots/a.png', { byHost: true, among: ['shots/a.png', 'shots/b.png'] });
+      await vi.waitFor(() => expect(viewer.first).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/a.png'));
+      answer({ success: true, data: { exists: true, isDirectory: false } });
+      await opening;
+      const [items] = viewer.open.mock.calls[0]!;
+      await items[0]!.read();
+      await items[0]!.read();
+      await items[1]!.read();
+      expect(viewer.read.mock.calls.map((call) => [(call as unknown[])[2], (call as unknown[])[4] instanceof Promise])).toEqual([['/repo/shots/a.png', true], ['/repo/shots/a.png', false], ['/repo/shots/b.png', false]]);
+      expect(viewer.first).toHaveBeenCalledTimes(1);
     });
 
     it('an App\'s open pages through the images it showed, from the clicked picture', async () => {
@@ -223,7 +239,7 @@ describe('task file preview routing', () => {
       expect(items.map((item) => item.alt)).toEqual(['x.png', 'a.png', 'b.webp']);
       expect([index, box]).toEqual([1, origin]);
       await items[2]!.read();
-      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/b.webp', true);
+      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/b.webp', true, undefined);
       expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
     });
 

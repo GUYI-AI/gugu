@@ -11,7 +11,9 @@ import type { ChatItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { topicService } from '../lib/topics'
 import { rendererLogger } from '../lib/log'
 import { useAuth } from '../store/auth'
-import { ingestMessages, localMessageQueries } from '../lib/messageIngest'
+import { ingestMessages } from '../lib/messageIngest'
+import { imSelectors, openImRepositoryNow } from '../lib/imRepository'
+import { ACCOUNT_REVISION_CURSOR_KEY } from '../lib/accountRevisionRuntime'
 import { readRevisionResourceKey, type AccountRevisionEvent, type AccountRevisionListener } from '../lib/accountRevisionCoordinator'
 
 const topicsLog = rendererLogger('chat/topics')
@@ -41,14 +43,21 @@ export function topicsSourceChatId(chat: Pick<ChatItem, 'id' | 'kind'> | null | 
 
 type SubscribeAccountRevision = (event: AccountRevisionEvent, listener: AccountRevisionListener) => () => void
 
-/** Read topics of a line and record their access facts locally, as of the local revision before the read. */
+/**
+ * Read topics of a line and record their access facts locally, as of the local revision before the read: the account's
+ * committed revision cursor, read synchronously (never ahead of the message store, so the stamp is never too new).
+ */
 async function readTopics(userId: string | null, sourceChatId: string, topicChatId?: string) {
-  const revision = userId ? await localMessageQueries()?.throughRevision(userId) : null
+  const repository = userId ? openImRepositoryNow(userId) : null
+  const revision = repository
+    ? (imSelectors.syncState(ACCOUNT_REVISION_CURSOR_KEY)(repository.snapshot()) as { revision?: string } | undefined)?.revision ?? null
+    : null
   const rows = await topicService.listTopicsOfChat(sourceChatId, topicChatId)
-  const record = async () => {
-    if (userId) await ingestMessages(userId, { writes: rows.map(topic => ({ type: 'chatAccess', access: {
+  // The facts go into the message store's write queue (later page writes follow them there); the list never waits on disk.
+  const record = () => {
+    if (userId) void ingestMessages(userId, { writes: rows.map(topic => ({ type: 'chatAccess', access: {
       chatId: topic.chat_id, sourceChatId, ownMember: topic.is_participant, revision: revision ?? '0',
-    } })), revisions: [] })
+    } })), revisions: [] }).catch(error => topicsLog.error({ error, sourceChatId }, 'record topic access facts failed'))
   }
   return { rows, record }
 }
@@ -73,7 +82,7 @@ export const topicsOfChat = replica({
   scope: 'account',
   read: async (owner: string, sourceChatId: string): Promise<TopicSummary[]> => {
     const { rows, record } = await readTopics(owner, sourceChatId)
-    await record()
+    record()
     return rows
   },
 })
@@ -113,8 +122,7 @@ export function useTopicsOfChat(
       try {
         const { rows, record } = await readTopics(userId, sourceChatId, topicChatId)
         if (!current()) return
-        await record()
-        if (!current()) return
+        record()
         entry.set((shown) => shown ? withTopic(shown, topicChatId, rows[0]) : shown)
       } catch (err) {
         if (!current()) return

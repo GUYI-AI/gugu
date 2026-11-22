@@ -1,6 +1,6 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { mergeMessagesById } from '@gugu/core/shared/ui/messageListModels'
-import { readMessageWindow, type AccountImRepository } from '../lib/imRepository'
+import type { AccountImRepository } from '../lib/imRepository'
 import { trimToMessageWindow } from './chatMessageWindow'
 import { messageWindow, publishMessageWindows } from '../lib/messageWindows'
 import type { ChatWindowCache } from './chatWindowCache'
@@ -8,8 +8,12 @@ import { recordNativeConversationHistoryClear } from '../lib/nativeConversationH
 
 /** One account commit feeds every viewport, including conversations not open yet. */
 export function bindRepositoryMessageCache(repository: AccountImRepository, cache: ChatWindowCache): () => void {
-  // Desktop windows come from the session SQLite store; the repository then carries no message rows.
-  publishMessageWindows(repository.accountId, (chatId, rows) => { if (rows) cache.set(chatId, rows); else cache.delete(chatId) })
+  // Windows come from the message store (messageIngest); the repository carries no message rows.
+  publishMessageWindows(repository.accountId, (chatId, rows, deletedIds) => {
+    if (!rows) cache.delete(chatId)
+    else if (!deletedIds) cache.set(chatId, rows)
+    else if (cache.rows(chatId).some(row => deletedIds.includes(row.id))) cache.update(chatId, previous => previous.filter(row => !deletedIds.includes(row.id)))
+  })
   let previous: ReturnType<AccountImRepository['snapshot']> | undefined
   return repository.subscribe(snapshot => snapshot, snapshot => {
     for (const row of snapshot.chat) {
@@ -19,10 +23,7 @@ export function bindRepositoryMessageCache(repository: AccountImRepository, cach
     if (previous && previous.chat !== snapshot.chat) {
       for (const row of previous.chat) if (!snapshot.chat.some(chat => chat.id === row.id)) cache.delete(row.id)
     }
-    const messagesChanged = previous?.message !== snapshot.message
     previous = snapshot
-    if (!messagesChanged) return
-    for (const chatId of new Set(snapshot.message.map(row => row.chatId))) cache.set(chatId, readMessageWindow(repository, chatId)?.messages ?? [])
   })
 }
 
@@ -36,12 +37,10 @@ export function bindRepositoryMessageCache(repository: AccountImRepository, cach
  */
 export function paintableDiskWindow(repository: AccountImRepository, chatId: string, live: MessageItem[] | undefined): { rows: MessageItem[]; hasMoreOlder: boolean } | null {
   if (live?.some(message => message.seq >= 0)) return null
-  const local = messageWindow(repository.accountId, chatId)
-  const cached = local === null ? readMessageWindow(repository, chatId)
-    : { messages: local, hasMoreOlder: (local[0]?.seq ?? 1) > 1 }
-  const rows = cached ? trimToMessageWindow(cached.messages.filter((message) => message.chat_id === chatId)) : []
-  if (!cached || rows.length === 0) return null
-  return { rows: trimToMessageWindow(mergeMessagesById(live ?? [], rows, chatId)), hasMoreOlder: cached.hasMoreOlder }
+  const local = messageWindow(repository.accountId, chatId) ?? []
+  const rows = trimToMessageWindow(local.filter((message) => message.chat_id === chatId))
+  if (rows.length === 0) return null
+  return { rows: trimToMessageWindow(mergeMessagesById(live ?? [], rows, chatId)), hasMoreOlder: (local[0]?.seq ?? 1) > 1 }
 }
 
 /** 盘上的窗能画就写进内存缓存(同一份判定),返回写进去的那份;画不了返回 null、缓存不动。 */

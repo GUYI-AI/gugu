@@ -180,11 +180,9 @@ export type NavigationSnapshot = {
   viewParams: Record<string, unknown>;
 };
 
-export type SidebarSessionSortBy = 'created-at' | 'updated-at';
-
 /**
  * Persisted sidebar UI state; fields may be absent in older DB blobs. Older blobs may also carry fields of the removed
- * desktop sidebar (section folds, the 项目 | 对话 layout and page, #2548): restore ignores them.
+ * desktop sidebar (section folds, the 项目 | 对话 layout and page, #2548) and an unread `sessionSortBy`: restore ignores them.
  */
 export type SidebarSnapshot = {
   expandedProjectIds?: string[];
@@ -194,5 +192,4 @@ export type SidebarSnapshot = {
   folds?: string[];
   projectOrder?: string[];
   sessionOrderByProject?: Record<string, string[]>;
-  sessionSortBy?: SidebarSessionSortBy;
 };

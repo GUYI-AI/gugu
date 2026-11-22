@@ -1,4 +1,3 @@
-import { historyMessageVisible, historyTime } from '@gugu/core/shared/conversationHistoryTime'
 import { replaceEqualDeep } from '@tanstack/react-query'
 import { memoizeByReference } from './memoizeByReference'
 import type { CommitArgs } from '@gugu/core/cloud/attachmentsApi'
@@ -18,11 +17,8 @@ import { resolveListenModeDefault } from '@gugu/core/cloud/listenMode'
 import { rendererLogger } from './log'
 import { initializeMessages, ingestMessages } from './messageIngest'
 import { messageWindow } from './messageWindows'
-import { platform } from '../platform'
 import { compareChatsByActivityDesc } from '@gugu/core/shared/ui/chatModels'
-import { mergeMessagesById } from '@gugu/core/shared/ui/messageListModels'
-import { captureMessagePosition, orderMessages } from '@gugu/core/shared/ui/messageTimeline'
-import { MAX_WINDOW } from '../store/chatMessageWindow'
+import { captureMessagePosition } from '@gugu/core/shared/ui/messageTimeline'
 import {
   IM_STORE_NAMES,
   migrateLegacyChatList,
@@ -40,19 +36,6 @@ export type IdentityRow = LocalImRow & { id: string; value: DisplayIdentity }
 export type ChatRow = LocalImRow & { id: string; value: ChatItem }
 type ChatRowChanges = { changed: readonly ChatItem[]; deleted: readonly string[] }
 export type MembershipRow = LocalImRow & { chatId: string; identityId: string; value: EntityValue }
-export type MessageRow = LocalImRow & {
-  id: string
-  chatId: string
-  streamId: string
-  seq: number
-  value: MessageItem
-}
-export type StreamRow = LocalImRow & {
-  id: string
-  chatId: string
-  kind: 'main' | 'thread'
-  rootMessageId: string | null
-}
 export type PresenceRow = LocalImRow & { identityId: string; value: EntityValue }
 export type OutboxRow = LocalImRow & { id: string; value: OutboxRecord }
 export type ViewRow = LocalImRow & { key: string; value: unknown }
@@ -98,8 +81,6 @@ export interface ImRepositorySnapshot {
   identity: readonly IdentityRow[]
   chat: readonly ChatRow[]
   membership: readonly MembershipRow[]
-  message: readonly MessageRow[]
-  stream: readonly StreamRow[]
   presence: readonly PresenceRow[]
   outbox: readonly OutboxRow[]
   view: readonly ViewRow[]
@@ -115,9 +96,7 @@ export interface ImRepositoryTransaction {
   putIdentity(value: unknown): void
   putChat(id: string, value: ChatItem): void
   putMembership(chatId: string, identityId: string, value: EntityValue): void
-  putMessage(value: MessageItem): void
   readView(key: string): unknown
-  putStream(id: string, chatId: string, kind: 'main' | 'thread', rootMessageId?: string | null): void
   putPresence(identityId: string, value: EntityValue): void
   putView(key: string, value: unknown): void
   putSyncState(key: string, value: unknown): void
@@ -152,14 +131,10 @@ export const imSelectors = {
   // position would make one moved conversation rewrite every row below it.
   chats: fromTable('chat', (rows) => rows
     .map((row) => row.value)
-    .sort((a, b) => compareChatsByActivityDesc(a, b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))),
+    .sort(compareChatsByActivityDesc)),
   chatRowsById: fromTable('chat', (rows) => new Map(rows.map(row => [row.id, row.value]))),
   membershipsForChat: (chatId: string) => fromTable('membership', (rows) =>
     rows.filter((row) => row.chatId === chatId)),
-  messagesForChat: (chatId: string) => fromTable('message', (rows) => orderMessages(rows
-    .filter((row) => row.chatId === chatId).map((row) => row.value))),
-  messagesForStream: (streamId: string) => fromTable('message', (rows) => orderMessages(rows
-    .filter((row) => row.streamId === streamId).map((row) => row.value))),
   presence: (snapshot: ImRepositorySnapshot) => snapshot.presence,
   outbox: (snapshot: ImRepositorySnapshot) => snapshot.outbox
     .map((row) => row.value)
@@ -223,7 +198,7 @@ export async function openImRepository(
   const adapter = options.adapter ?? await openLocalSyncDb()
   try {
     const openedAt = performance.now()
-    await initializeMessages(accountId, adapter)
+    initializeMessages(accountId)
     if (!options.initialize) {
       if (options.storage !== undefined) await migrateLegacyChatList(adapter, accountId, options.storage)
       else if (typeof window !== 'undefined') await migrateLegacyChatList(adapter, accountId)
@@ -289,7 +264,7 @@ function createAccountRepository(
         const transaction = createTransaction(accountId, operations, current)
         const result = await mutate(transaction)
         validateOperations(accountId, operations)
-        const applied = applyOperations(current, operations, accountId)
+        const applied = applyOperations(current, operations)
         await adapter.commit(applied.operations)
         current = applied.snapshot
         publish()
@@ -365,47 +340,14 @@ function createTransaction(accountId: string, operations: LocalImDbOperation[], 
       identityWrites.add(identity.id)
       put('identity', { accountId, id: identity.id, value: identity })
     },
-    putChat(id, value) {
-      const key = `history-cleared:${id}`, before = readView(key) as string | undefined
-      const at = value.conversation_cleared_at
-      if (at && (!before || historyTime(at) > historyTime(before))) {
-        const ids = new Set([id])
-        for (const sourceId of ids) for (const row of stored.chat) if (row.value.source_chat_id === sourceId) ids.add(row.id)
-        for (const chatId of ids) {
-          const held = readView(`history-cleared:${chatId}`) as string | undefined
-          const floor = held && historyTime(held) > historyTime(at) ? held : at
-          put('view', { accountId, key: `history-cleared:${chatId}`, value: floor })
-          for (const row of stored.message) if (row.chatId === chatId && !historyMessageVisible(row.value.created_at, floor))
-            operations.push({ type: 'delete', store: 'message', key: [accountId, row.id] })
-        }
-      }
-      put('chat', { accountId, id: nonEmpty(id, 'chat.id'), value })
-    },
+    putChat: (id, value) => put('chat', { accountId, id: nonEmpty(id, 'chat.id'), value }),
     putMembership: (chatId, identityId, value) => put('membership', {
       accountId,
       chatId: nonEmpty(chatId, 'membership.chatId'),
       identityId: nonEmpty(identityId, 'membership.identityId'),
       value,
     }),
-    putMessage(value) {
-      if ((readView(`message-revision:${value.id}`) as { deleted?: boolean } | undefined)?.deleted) return
-      const chatId = nonEmpty(value.chat_id, 'message.chatId')
-      if (value.seq >= 0 && !historyMessageVisible(value.created_at, readView(`history-cleared:${chatId}`) as string | undefined)) return
-      const root = value.thread_root_id ?? null
-      const streamId = messageStreamId(value)
-      const position = stored.message.find(row => row.id === value.id && row.chatId === chatId)?.value.local_timeline
-      if (position) value = { ...value, local_timeline: position }
-      put('stream', { accountId, id: streamId, chatId, kind: root ? 'thread' : 'main', rootMessageId: root })
-      put('message', { accountId, id: nonEmpty(value.id, 'message.id'), chatId, streamId, seq: value.seq, value })
-    },
     readView,
-    putStream: (id, chatId, kind, rootMessageId = null) => put('stream', {
-      accountId,
-      id: nonEmpty(id, 'stream.id'),
-      chatId: nonEmpty(chatId, 'stream.chatId'),
-      kind,
-      rootMessageId,
-    }),
     putPresence: (identityId, value) => put('presence', {
       accountId,
       identityId: nonEmpty(identityId, 'presence.identityId'),
@@ -470,8 +412,8 @@ export function referencedIdentityIds(repository: AccountImRepository, also: Ite
     for (const id of value.member_user_ids ?? []) ids.add(id)
   }
   for (const row of snapshot.membership) if (listed.has(row.chatId)) ids.add(row.identityId)
-  for (const { chatId, value } of snapshot.message) {
-    if (!listed.has(chatId)) continue
+  // Cached messages are the message store's windows (every platform), published per listed conversation.
+  for (const chatId of listed) for (const value of messageWindow(repository.accountId, chatId) ?? []) {
     if (value.sender_user_id) ids.add(value.sender_user_id)
     for (const id of value.to_user_ids ?? []) ids.add(id)
   }
@@ -509,111 +451,6 @@ export async function replaceChatRowsAndIdentities(
 
 export function readChatRows(repository: AccountImRepository): ChatItem[] {
   return imSelectors.chats(repository.snapshot())
-}
-
-export interface CachedMessageWindow {
-  messages: MessageItem[]
-  oldestSeq: number
-  maxSeq: number
-  hasMoreOlder: boolean
-  /** Event rows are paintable, but do not prove a contiguous tail. */
-  sparse?: boolean
-}
-
-/**
- * Called inside the revision inbox/cursor transaction. On the phone the per-message version row doubles as the
- * notification claim: only the first commit that creates it wins. Desktop keeps no such row (@@@arrival-claim). The repository serializes
- * transactions and desktop runs one repository per account, so read-then-write here is atomic.
- */
-export function ingestAccountMessage(repository: AccountImRepository, transaction: ImRepositoryTransaction,
-  message: MessageItem, revision: string, arrived?: ReadonlySet<string>): { won: boolean } {
-  // Desktop: the body is already in the local message store; whether this page stored it is the claim (@@@arrival-claim).
-  // A recovered body (no page) was fetched and stored once by its own recovery.
-  if (platform.localMessages === 'sqlite') return { won: arrived?.has(message.id) ?? true }
-  const snapshot = repository.snapshot()
-  const versionKey = `message-revision:${message.id}`
-  const version = transaction.readView(versionKey) as { revision: string; deleted?: boolean } | undefined
-  if (version && (version.deleted || BigInt(version.revision) >= BigInt(revision))) return { won: false }
-  transaction.putView(versionKey, { revision })
-  const previous = snapshot.message.find(row => row.id === message.id && row.streamId === messageStreamId(message))?.value
-  transaction.putMessage(mergeMessagesById(previous ? [previous] : [], [message], message.chat_id)[0]!)
-  if (!message.thread_root_id) {
-    const key = `message-window:${message.chat_id}`
-    const cursor = imSelectors.view(key)(snapshot) as Omit<CachedMessageWindow, 'messages'> | undefined
-    // Final ranges and retention are derived once, from all writes in the page.
-    transaction.putView(key, { oldestSeq: 0, maxSeq: 0,
-      hasMoreOlder: cursor?.hasMoreOlder ?? message.seq > 1,
-      sparse: !cursor || cursor.sparse === true || message.seq > cursor.maxSeq + 1 })
-  }
-  return { won: !version }
-}
-
-/** Deletion from the account feed. Desktop's local message store already holds the row removal and its tombstone. */
-export function recordMessageDeletion(transaction: ImRepositoryTransaction, accountId: string, chatId: string | null, id: string, revision: string): void {
-  if (platform.localMessages === 'sqlite') return
-  transaction.delete('message', [accountId, id])
-  transaction.putView(`message-revision:${id}`, { revision, deleted: true, chatId })
-}
-
-export async function replaceMessageWindow(
-  repository: AccountImRepository,
-  chatId: string,
-  messages: MessageItem[],
-  hasMoreOlder = false,
-  /** null is a local write-through, not proof that a sparse tail was fetched. */
-  verifiedTailSeq?: number | null,
-): Promise<void> {
-  if (platform.localMessages === 'sqlite') return // Desktop windows are read from the session SQLite store.
-  await repository.transaction((transaction) => {
-    // Account arrivals (message-revision rows): a late older window must neither drop nor revive them.
-    const arrivals = new Map(repository.snapshot().view.filter(row => row.key.startsWith('message-revision:'))
-      .map(row => [row.key.slice('message-revision:'.length), row.value as { deleted?: boolean }]))
-    const eligible = messages.filter((message) => message.chat_id === chatId && message.seq >= 0 && !arrivals.get(message.id)?.deleted)
-    const fetchedIds = new Set(eligible.map(message => message.id))
-    const fetched = mergeMessagesById(imSelectors.messagesForChat(chatId)(repository.snapshot()).filter(message => fetchedIds.has(message.id)), eligible, chatId)
-    const maxFetched = Math.max(0, ...fetched.map(message => message.seq))
-    const coverageTail = verifiedTailSeq ?? maxFetched
-    const sparse = (verifiedTailSeq === null
-      && (imSelectors.view(`message-window:${chatId}`)(repository.snapshot()) as { sparse?: boolean } | undefined)?.sparse === true)
-      || repository.snapshot().message.some(row => row.chatId === chatId && !row.value.thread_root_id
-        && arrivals.has(row.id) && row.seq > coverageTail)
-    const newer = imSelectors.messagesForChat(chatId)(repository.snapshot())
-      .filter(message => arrivals.has(message.id) && (message.thread_root_id || message.seq > maxFetched))
-    const persisted = mergeMessagesById(fetched, newer, chatId).slice(-MAX_WINDOW)
-    const ids = new Set(persisted.map((message) => message.id))
-    const streamIds = new Set(persisted.map(messageStreamId))
-    for (const row of repository.snapshot().message) {
-      if (row.chatId === chatId && !ids.has(row.id)) transaction.delete('message', [repository.accountId, row.id])
-    }
-    for (const row of repository.snapshot().stream) {
-      if (row.chatId === chatId && !streamIds.has(row.id)) transaction.delete('stream', [repository.accountId, row.id])
-    }
-    for (const message of persisted) transaction.putMessage(message)
-    transaction.putView(`message-window:${chatId}`, {
-      oldestSeq: persisted.length > 0 ? Math.min(...persisted.map((message) => message.seq)) : 0,
-      maxSeq: persisted.length > 0 ? Math.max(...persisted.map((message) => message.seq)) : 0,
-      hasMoreOlder,
-      ...(sparse ? { sparse: true } : {}),
-    })
-  })
-}
-
-function messageStreamId(message: MessageItem): string {
-  return message.thread_root_id ? `thread:${message.chat_id}:${message.thread_root_id}` : `main:${message.chat_id}`
-}
-
-export function readMessageWindow(repository: AccountImRepository, chatId: string): CachedMessageWindow | null {
-  const messages = imSelectors.messagesForStream(`main:${chatId}`)(repository.snapshot())
-  const cursor = imSelectors.view(`message-window:${chatId}`)(repository.snapshot()) as Omit<CachedMessageWindow, 'messages'> | undefined
-  if (messages.length === 0 && !cursor) return null
-  const seqs = messages.map((message) => message.seq)
-  return {
-    messages,
-    oldestSeq: seqs.length > 0 ? Math.min(...seqs) : 0,
-    maxSeq: seqs.length > 0 ? Math.max(...seqs) : 0,
-    hasMoreOlder: cursor?.hasMoreOlder ?? false,
-    ...(cursor?.sparse ? { sparse: true } : !cursor ? { sparse: true } : {}),
-  }
 }
 
 /** Publish a group roster with the identities it needs as one snapshot. */
@@ -704,8 +541,7 @@ export function readGroupRoster(repository: AccountImRepository, chatId: string)
 export function outboxMessagePosition(repository: AccountImRepository, record: OutboxRecord): OutboxRecord {
   if (record.preview?.local_timeline) return record
   const root = record.payload.threadRootId ?? null
-  const rows = messageWindow(repository.accountId, record.chatId, root)
-    ?? imSelectors.messagesForStream(root ? `thread:${record.chatId}:${root}` : `main:${record.chatId}`)(repository.snapshot())
+  const rows = messageWindow(repository.accountId, record.chatId, root) ?? []
   return { ...record, preview: { ...record.preview, local_timeline: captureMessagePosition(rows, record.enqueuedAt) } }
 }
 
@@ -715,7 +551,6 @@ export async function confirmSentMessage(repository: AccountImRepository, record
   const position = record.preview?.local_timeline
   if (position) message = { ...message, local_timeline: position }
   await ingestMessages(repository.accountId, { writes: [{ type: 'put', message }], revisions: [] })
-  if (platform.localMessages !== 'sqlite') await repository.transaction((transaction) => transaction.putMessage(message))
   return message
 }
 
@@ -760,7 +595,6 @@ function validateOperations(accountId: string, operations: readonly LocalImDbOpe
 function applyOperations(
   snapshot: ImRepositorySnapshot,
   operations: readonly LocalImDbOperation[],
-  accountId: string,
 ): { snapshot: ImRepositorySnapshot; operations: LocalImDbOperation[] } {
   // 每张碰到的表按主键建一次索引,一次事务里的写都落在它上面。真改了的表才换成新数组;没碰到、或只是把一行原样再写
   // 一遍的表(每次刷会话列表都会把全部身份再写一遍)还是原来那个对象 —— @@@table-selector 靠它认出「没变」。
@@ -805,37 +639,6 @@ function applyOperations(
     } else if (rows.delete(key)) {
       changed.add(operation.store)
       effective.push(operation)
-    }
-  }
-  // Message writes re-derive each touched window's bounds from the committed main stream. Account
-  // ingestion (it writes message-revision rows) also bounds every stream it touched, once per page.
-  if (changed.has('message')) {
-    const before = new Map(snapshot.message.map(row => [row.id, row]))
-    const put = operations.flatMap(operation => operation.type === 'put' && operation.store === 'message' ? [operation.value] : [])
-    const removed = operations.flatMap(operation => operation.type === 'delete' && operation.store === 'message' && Array.isArray(operation.key)
-      ? [before.get(operation.key[1] as string)].filter(row => row !== undefined) : [])
-    const stream = (id: string) => [...rowsOf('message').values()].filter(row => row.streamId === id).sort((a, b) => (b.seq as number) - (a.seq as number))
-    const ingested = operations.some(operation => operation.type === 'put' && String(operation.value.key).startsWith('message-revision:'))
-    for (const streamId of ingested ? new Set(put.map(row => row.streamId as string)) : []) {
-      for (const row of stream(streamId).slice(MAX_WINDOW)) {
-        const key = [accountId, row.id as string]
-        rowsOf('message').delete(JSON.stringify(key))
-        effective.push({ type: 'delete', store: 'message', key })
-      }
-    }
-    for (const chatId of new Set([...put, ...removed].map(row => row.chatId as string))) {
-      const key = `message-window:${chatId}`
-      const row = rowsOf('view').get(JSON.stringify([accountId, key]))
-      if (!row) continue
-      const seqs = stream(`main:${chatId}`).map(row => row.seq as number)
-      const value = { ...(row.value as object), oldestSeq: seqs.at(-1) ?? 0, maxSeq: seqs[0] ?? 0 }
-      if (JSON.stringify(value) === JSON.stringify(row.value)) continue
-      const nextRow = { ...row, value }
-      rowsOf('view').set(JSON.stringify([accountId, key]), nextRow)
-      changed.add('view')
-      const pending = effective.findLast(operation => operation.type === 'put' && operation.store === 'view' && operation.value.key === key)
-      if (pending?.type === 'put') pending.value = nextRow
-      else effective.push({ type: 'put', store: 'view', value: nextRow })
     }
   }
   for (const store of changed) {

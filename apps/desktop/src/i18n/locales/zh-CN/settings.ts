@@ -1067,7 +1067,7 @@ export default {
     "expiresOn_one": "有效期至 {{date}}（还剩 {{days}} 天）",
     "expiresOn_other": "有效期至 {{date}}（还剩 {{days}} 天）",
     "invalidNumber": "会员数据有误，请刷新后重试",
-    "invalidTier": "会员档位无法识别，请刷新后重试",
+    "invalidTier": "无法读取会员信息，请更新应用后重试",
     "noDiscountNote": "季付与年付均按月价等比计算，不含折扣。",
     "nonExpiringBalance_one": "不过期积分 {{credits}}",
     "nonExpiringBalance_other": "不过期积分 {{credits}}",

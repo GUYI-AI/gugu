@@ -88,7 +88,7 @@ function probeNativePtyErrorBoundary(label, req) {
   } catch (error) {
     caught = error
   }
-  if (!caught || !String(caught.message || caught).includes('posix_spawnp failed')) {
+  if (!caught || !String(caught.message || caught).includes('posix_spawn failed')) {
     throw new Error(label + ': node-pty native error 未回到 JavaScript boundary')
   }
 }

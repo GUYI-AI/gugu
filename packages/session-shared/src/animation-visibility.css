@@ -4,12 +4,22 @@
   --gugu-animation-surface-paused: paused;
 }
 
-/* One pause policy for CSS motion, including inline animation shorthands,
-   Tailwind utilities and pseudo-elements. A surface pause takes priority
-   over the per-element viewport state (pauseAnimationsOffscreen). Keep the animation clock intact
-   so showing the same surface resumes rather than restarting its animation.
+/* One pause policy for CSS motion on retained surfaces, including inline animation shorthands,
+   Tailwind utilities and pseudo-elements. A surface keeps its animation clocks, so showing it again resumes
+   rather than replaying one-shot motion (an entrance fade would play on every tab switch).
    A window nobody sees is not in this cascade: its animations are held directly (animation-visibility.ts,
    holdAnimations), because a flag on <html> would re-style the whole document on every hide and show. */
 *, ::before, ::after {
-  animation-play-state: var(--gugu-animation-surface-paused, var(--gugu-animation-viewport-paused, running)) !important;
+  animation-play-state: var(--gugu-animation-surface-paused, running) !important;
+}
+
+/* Motion nobody can see is removed, not paused: an element marked data-animation-off (stopAnimationsOffscreen while
+   it is off screen or its window is unseen, a hidden measuring copy) has no animations inside it at all. Chromium
+   cannot composite motion on an element with nothing visible to draw, so a running animation there is serviced on
+   the main thread, and every main-thread animation re-styles all animated elements each frame. Coming back starts
+   the animation again; looping ones rejoin the shared beat (joinSharedBeat). */
+:is([data-animation-off], [data-animation-off] *),
+:is([data-animation-off], [data-animation-off] *)::before,
+:is([data-animation-off], [data-animation-off] *)::after {
+  animation: none !important;
 }

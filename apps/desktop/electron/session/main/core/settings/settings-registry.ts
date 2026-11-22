@@ -66,7 +66,6 @@ export const SETTINGS_DEFAULTS = {
   },
   interface: {
     autoRightSidebarBehavior: false,
-    showLeftSidebarStateGroups: false,
     showLeftSidebarAgentNameOnHover: true,
     hideContextBar: false,
     chatView: 'double' as const,

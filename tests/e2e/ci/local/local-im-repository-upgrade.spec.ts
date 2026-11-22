@@ -79,8 +79,6 @@ test('real repository API commits, selects, subscribes, hands an older build\'s 
       })
       transaction.putChat('chat-1', { id: 'chat-1', kind: 'group', name: 'A', created_at: '2026-08-09T00:00:00.000Z' })
       transaction.putMembership('chat-1', 'identity-1', { role: 'member' })
-      transaction.putMessage(message)
-      transaction.putStream('thread:chat-1:root-1', 'chat-1', 'thread', 'root-1')
       transaction.putPresence('identity-1', { state: 'online' })
       transaction.putView('active-chat', 'chat-1')
       transaction.putSyncState('cursor', { revision: 1 })
@@ -103,7 +101,6 @@ test('real repository API commits, selects, subscribes, hands an older build\'s 
     await repositoryModule.confirmSentMessage(recoveredA, taken[0], message)
     const afterAck = {
       outbox: repositoryModule.imSelectors.outbox(recoveredA.snapshot()).length,
-      messages: repositoryModule.imSelectors.messagesForChat('chat-1')(recoveredA.snapshot()).length,
     }
     const resetNotifications: number[] = []
     recoveredA.subscribe(repositoryModule.imSelectors.chats, (chats: unknown[]) => resetNotifications.push(chats.length))
@@ -125,11 +122,11 @@ test('real repository API commits, selects, subscribes, hands an older build\'s 
 
   expect(result.notifications).toEqual([0, 1])
   expect(result.committedCounts).toMatchObject({
-    identity: 1, chat: 1, membership: 1, message: 1, stream: 2,
+    identity: 1, chat: 1, membership: 1,
     presence: 1, outbox: 0, view: 1, sync_state: 1,
   })
   expect(result.recoveredOutbox).toEqual(['message-1'])
-  expect(result.afterAck).toEqual({ outbox: 0, messages: 1 })
+  expect(result.afterAck).toEqual({ outbox: 0 })
   expect(result.resetNotifications).toEqual([1, 0])
   expect(result.isolated).toEqual({ accountAChats: 0, accountBChatName: 'B' })
 })
@@ -179,26 +176,23 @@ test('v2 upgrade atomically normalizes account rows and removes every legacy sto
     }
   })
 
-  expect(result.version).toBe(4)
-  expect(result.stores.sort()).toEqual([
-    'chat', 'identity', 'membership', 'message', 'outbox', 'presence', 'stream', 'sync_state', 'view',
-  ])
-  expect(result.accountA).toMatchObject({ identity: 2, membership: 2, message: 2, stream: 1, view: 1, outbox: 1 })
+  // Legacy message windows are a cache the message store rebuilds (v5): they are not carried.
+  expect(result.version).toBe(5)
+  expect(result.stores.sort()).toEqual(['chat', 'identity', 'membership', 'outbox', 'presence', 'sync_state', 'view'])
+  expect(result.accountA).toMatchObject({ identity: 2, membership: 2, view: 0, outbox: 1 })
   expect(result.accountB).toMatchObject({ outbox: 1 })
   expect(result.schema).toEqual({
     chat: { keyPath: ['accountId', 'id'], indexes: ['accountId'] },
     identity: { keyPath: ['accountId', 'id'], indexes: ['accountId'] },
     membership: { keyPath: ['accountId', 'chatId', 'identityId'], indexes: ['accountChat', 'accountId'] },
-    message: { keyPath: ['accountId', 'id'], indexes: ['accountChatSeq', 'accountId', 'accountStreamSeq'] },
     outbox: { keyPath: ['accountId', 'id'], indexes: ['accountId'] },
     presence: { keyPath: ['accountId', 'identityId'], indexes: ['accountId'] },
-    stream: { keyPath: ['accountId', 'id'], indexes: ['accountId'] },
     sync_state: { keyPath: ['accountId', 'key'], indexes: ['accountId'] },
     view: { keyPath: ['accountId', 'key'], indexes: ['accountId'] },
   })
 })
 
-test('published v1 upgrades every legacy row directly to v4', async ({ page }) => {
+test('published v1 upgrades every legacy row directly to v5', async ({ page }) => {
   await seedVersionOne(page)
 
   const result = await page.evaluate(async () => {
@@ -226,16 +220,14 @@ test('published v1 upgrades every legacy row directly to v4', async ({ page }) =
   })
 
   expect(result.error).toBe('')
-  expect(result.version).toBe(4)
-  expect(result.stores.sort()).toEqual([
-    'chat', 'identity', 'membership', 'message', 'outbox', 'presence', 'stream', 'sync_state', 'view',
-  ])
-  expect(result.counts).toMatchObject({ identity: 2, membership: 2, message: 2, stream: 1, view: 1 })
+  expect(result.version).toBe(5)
+  expect(result.stores.sort()).toEqual(['chat', 'identity', 'membership', 'outbox', 'presence', 'sync_state', 'view'])
+  expect(result.counts).toMatchObject({ identity: 2, membership: 2, view: 0 })
 })
 
 // #7290 v3 → v4:老客户端存下的消息行没有指向字节的列 ⇒ 消息窗口和从它推出来的(stream、view、sync_state 游标)丢掉重取;
 // 会话、身份、成员、在线、发件箱照留。
-test('v3 upgrades to v4 by dropping the cached message window and its cursors, keeping the rest', async ({ page }) => {
+test('v3 upgrades to v5 by dropping the cached message tables and its cursors, keeping the rest', async ({ page }) => {
   await page.evaluate(async (name) => {
     const keyPaths: Record<string, string[]> = {
       identity: ['accountId', 'id'], chat: ['accountId', 'id'], membership: ['accountId', 'chatId', 'identityId'],
@@ -290,31 +282,26 @@ test('v3 upgrades to v4 by dropping the cached message window and its cursors, k
     return { version, counts }
   })
 
-  expect(result.version).toBe(4)
-  expect(result.counts).toEqual({ chat: 1, identity: 1, membership: 1, presence: 1, outbox: 1, message: 0, stream: 0, view: 0, sync_state: 0 })
+  expect(result.version).toBe(5)
+  expect(result.counts).toEqual({ chat: 1, identity: 1, membership: 1, presence: 1, outbox: 1, view: 0, sync_state: 0 })
 })
 
 for (const version of [1, 2] as const) {
-  test(`published v${version} empty 0/0 window upgrades to v4`, async ({ page }) => {
-    await seedEmptyLegacy(page, version, 0)
+  // A legacy window is a cache: whatever its bounds say, it is dropped, never validated into a failed upgrade.
+  for (const maxSeq of [0, 99]) test(`published v${version} empty window (max seq ${maxSeq}) upgrades to v5 without it`, async ({ page }) => {
+    await seedEmptyLegacy(page, version, maxSeq)
     const result = await openLegacyUpgrade(page)
-    expect(result).toMatchObject({ error: '', version: 4, view: { oldestSeq: 0, maxSeq: 0, hasMoreOlder: true } })
-  })
-
-  test(`published v${version} empty nonzero window rolls back byte-for-byte`, async ({ page }) => {
-    await seedEmptyLegacy(page, version, 99)
-    const before = await dumpLegacyDatabase(page)
-    const result = await openLegacyUpgrade(page)
-    expect(result.error).toContain(`Local IM schema v${version} migration failed`)
-    expect(result.version).toBe(version)
-    expect(await dumpLegacyDatabase(page)).toEqual(before)
+    expect(result).toMatchObject({ error: '', version: 5 })
+    expect(result.view).toBeUndefined()
   })
 }
 
-test('a confirmed send keeps the main cached window reopenable and excludes a thread send', async ({ page }) => {
+test('a confirmed send lands in the message store, main and thread streams apart, and survives reopening', async ({ page }) => {
   const result = await page.evaluate(async ({ mainOne, mainTwo, thread }) => {
-    const moduleUrl = '/src/lib/imRepository.ts'
-    const repositoryModule = await import(/* @vite-ignore */ moduleUrl)
+    const repositoryUrl = '/src/lib/imRepository.ts'
+    const ingestUrl = '/src/lib/messageIngest.ts'
+    const repositoryModule = await import(/* @vite-ignore */ repositoryUrl)
+    const ingestModule = await import(/* @vite-ignore */ ingestUrl)
     const outboxFor = (message: Record<string, unknown>) => ({
       clientMessageId: message.id, chatId: 'chat-1', senderUserId: 'account-a',
       payload: { content: message.content, contentType: 'text', toUserIds: null, replyToMessageId: null,
@@ -322,68 +309,31 @@ test('a confirmed send keeps the main cached window reopenable and excludes a th
       state: 'pending', attempts: 0, lastError: null,
       enqueuedAt: '2026-08-09T00:00:00.000Z', updatedAt: '2026-08-09T00:00:00.000Z',
     })
+    const ids = async (threadRootId: string | null) => (await ingestModule.readMessagePage('account-a',
+      { chatId: 'chat-1', threadRootId, limit: 10 })).rows.map((row: { id: string }) => row.id)
     const repository = await repositoryModule.openImRepository('account-a')
-    await repositoryModule.replaceMessageWindow(repository, 'chat-1', [mainOne], true)
-    await repositoryModule.confirmSentMessage(repository, repositoryModule.outboxMessagePosition(repository, outboxFor(mainTwo)), mainTwo)
-    repository.close()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    let error = ''
-    let afterMain: Record<string, unknown> = {}
-    let afterThread: Record<string, unknown> = {}
-    try {
-      const reopened = await repositoryModule.openImRepository('account-a')
-      const window = repositoryModule.readMessageWindow(reopened, 'chat-1')
-      afterMain = { ids: window?.messages.map((row: { id: string }) => row.id), maxSeq: window?.maxSeq,
-        outbox: repositoryModule.imSelectors.outbox(reopened.snapshot()).length }
-      await repositoryModule.confirmSentMessage(reopened, repositoryModule.outboxMessagePosition(reopened, outboxFor(thread)), thread)
-      reopened.close()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-      const final = await repositoryModule.openImRepository('account-a')
-      const finalWindow = repositoryModule.readMessageWindow(final, 'chat-1')
-      afterThread = { ids: finalWindow?.messages.map((row: { id: string }) => row.id), maxSeq: finalWindow?.maxSeq,
-        outbox: repositoryModule.imSelectors.outbox(final.snapshot()).length }
-      final.close()
-    } catch (caught) {
-      error = caught instanceof Error ? caught.message : String(caught)
+    await ingestModule.ingestMessages('account-a', { writes: [{ type: 'put', message: mainOne }], revisions: [] })
+    for (const message of [mainTwo, thread]) {
+      await repositoryModule.confirmSentMessage(repository, repositoryModule.outboxMessagePosition(repository, outboxFor(message)), message)
     }
-    return { error, afterMain, afterThread }
+    repository.close()
+    const reopened = await repositoryModule.openImRepository('account-a')
+    const result = { main: await ids(null), thread: await ids('root-1'), outbox: repositoryModule.imSelectors.outbox(reopened.snapshot()).length }
+    reopened.close()
+    return result
   }, {
     mainOne: messageValue({ id: 'main-1', seq: 1 }),
     mainTwo: messageValue({ id: 'main-2', seq: 2 }),
     thread: messageValue({ id: 'thread-3', seq: 3, thread_root_id: 'root-1' }),
   })
 
-  expect(result).toEqual({
-    error: '',
-    afterMain: { ids: ['main-1', 'main-2'], maxSeq: 2, outbox: 0 },
-    afterThread: { ids: ['main-1', 'main-2'], maxSeq: 2, outbox: 0 },
-  })
+  expect(result).toEqual({ main: ['main-1', 'main-2'], thread: ['thread-3'], outbox: 0 })
 })
 
-test('a malformed v1 row rolls back version and preserves every legacy byte', async ({ page }) => {
+test('a malformed v1 message window is dropped with the legacy cache, not carried or validated', async ({ page }) => {
   await seedVersionOne(page, 'envelope-mismatch')
-  const before = await dumpLegacyDatabase(page)
-  const result = await page.evaluate(async () => {
-    const moduleUrl = '/src/lib/localSyncDb.ts'
-    const repositoryModule = await import(/* @vite-ignore */ moduleUrl)
-    let error = ''
-    try { await repositoryModule.openLocalSyncDb() } catch (caught) {
-      error = caught instanceof Error ? caught.message : String(caught)
-    }
-    const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('gugu.localSync.v1')
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
-    })
-    const version = database.version
-    const stores = Array.from(database.objectStoreNames)
-    database.close()
-    return { error, version, stores }
-  })
-  expect(result.error).toContain('Local IM schema v1 migration failed')
-  expect(result.version).toBe(1)
-  expect(result.stores.sort()).toEqual(['chatCursor', 'messages', 'meta', 'profiles', 'roster'])
-  expect(await dumpLegacyDatabase(page)).toEqual(before)
+  const result = await openLegacyUpgrade(page)
+  expect(result).toMatchObject({ error: '', version: 5 })
 })
 
 test('a synchronous DataCloneError aborts earlier requests in the same real IDB transaction', async ({ page }) => {
@@ -416,7 +366,7 @@ test('a synchronous DataCloneError aborts earlier requests in the same real IDB 
 
   expect(result.error).toContain('DataCloneError')
   expect(result.notifications).toEqual([0])
-  expect(Object.values(result.counts)).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0])
+  expect(Object.values(result.counts)).toEqual([0, 0, 0, 0, 0, 0, 0])
 })
 
 // Unsent messages exist nowhere else, so the outbox is the one store that stays strict.
@@ -441,32 +391,22 @@ test('malformed current v4 outbox row fails at repository open', async ({ page }
   expect(result.loaded).toBe(-1)
 })
 
-for (const store of ['identity', 'chat', 'membership', 'message', 'stream', 'presence', 'view', 'sync_state'] as const) {
+for (const store of ['identity', 'chat', 'membership', 'presence', 'view', 'sync_state'] as const) {
   test(`malformed current v4 ${store} row drops alone and the account snapshot rebuilds it`, async ({ page }) => {
     await seedMalformedCurrentVersion(page, store)
     await expectDroppedAloneThenRebuilt(page, { store, reason: `invalid current ${store} row` })
   })
 }
 
-const RELATIONAL_DROPS = {
-  'missing-message-field': { store: 'message', reason: 'invalid current message row', kept: { stream: ['main:chat-1'] } },
-  'message-stream-id': { store: 'message', reason: 'invalid current message row', kept: { stream: ['main:chat-2'] } },
-  'missing-message-stream': { store: 'message', reason: 'stream main:chat-1 is missing', kept: {} },
-  'stream-shape': { store: 'stream', reason: 'invalid current stream row', kept: {} },
-  'message-window-bounds': {
-    store: 'view', reason: 'message window does not cover stored messages 1..2',
-    kept: { message: ['message-1', 'message-2'], stream: ['main:chat-1'] },
-  },
-} as const
-
-for (const [relation, drop] of Object.entries(RELATIONAL_DROPS)) {
-  test(`relationally malformed current v4 ${relation} drops alone and the account snapshot rebuilds it`, async ({ page }) => {
-    await seedRelationallyMalformedCurrentVersion(page, relation as CurrentVersionRelationShape)
-    await expectDroppedAloneThenRebuilt(page, drop)
+// A legacy message window is a cache, dropped at the upgrade: its own malformations never abort it (v5).
+for (const shape of ['envelope-mismatch', 'cursor-mismatch', 'duplicate-id'] as const) {
+  test(`${shape} in a legacy message window upgrades to v5 without the window`, async ({ page }) => {
+    await seedVersionTwo(page, shape)
+    expect(await openLegacyUpgrade(page)).toMatchObject({ error: '', version: 5 })
   })
 }
 
-for (const invalid of ['missing-meta', 'invalid-meta', 'malformed-outbox', 'envelope-mismatch', 'cursor-mismatch', 'duplicate-id'] as const) {
+for (const invalid of ['missing-meta', 'invalid-meta', 'malformed-outbox'] as const) {
   test(`${invalid} aborts the whole upgrade and leaves the complete v2 schema`, async ({ page }) => {
     await seedVersionTwo(page, invalid)
     const before = await dumpLegacyDatabase(page)
@@ -806,8 +746,8 @@ async function expectDroppedAloneThenRebuilt(
   })
 
   const healthy = {
-    identity: ['identity-ok'], chat: ['chat-ok'], membership: ['chat-ok/identity-ok'], message: ['message-ok'], stream: ['main:chat-ok'],
-    presence: ['identity-ok'], outbox: ['outbox-ok'], view: ['list-scroll', 'message-window:chat-ok'],
+    identity: ['identity-ok'], chat: ['chat-ok'], membership: ['chat-ok/identity-ok'],
+    presence: ['identity-ok'], outbox: ['outbox-ok'], view: ['list-scroll'],
     // The revision cursor is forgotten on any drop: that is what sends this start through the full snapshot.
     sync_state: ['other'],
   } as Record<string, string[]>
@@ -824,7 +764,7 @@ async function expectDroppedAloneThenRebuilt(
 
 async function seedMalformedCurrentVersion(
   page: Page,
-  malformedStore: 'identity' | 'chat' | 'membership' | 'message' | 'stream' | 'presence' | 'outbox' | 'view' | 'sync_state',
+  malformedStore: 'identity' | 'chat' | 'membership' | 'presence' | 'outbox' | 'view' | 'sync_state',
 ): Promise<void> {
   await page.evaluate(async ({ name, malformedStore, malformedMessage, healthy }) => {
     const keyPaths: Record<string, string[]> = {
@@ -871,68 +811,3 @@ async function seedMalformedCurrentVersion(
   }, { name: DB_NAME, malformedStore, malformedMessage: messageValue({ seq: -1 }), healthy: healthyRows() })
 }
 
-type CurrentVersionRelationShape =
-  | 'missing-message-field'
-  | 'message-stream-id'
-  | 'missing-message-stream'
-  | 'stream-shape'
-  | 'message-window-bounds'
-
-async function seedRelationallyMalformedCurrentVersion(page: Page, shape: CurrentVersionRelationShape): Promise<void> {
-  const first = messageValue()
-  const second = messageValue({ id: 'message-2', seq: 2, content: 'second' })
-  await page.evaluate(async ({ name, shape, first, second, healthy }) => {
-    const keyPaths: Record<string, string[]> = {
-      identity: ['accountId', 'id'], chat: ['accountId', 'id'], membership: ['accountId', 'chatId', 'identityId'],
-      message: ['accountId', 'id'], stream: ['accountId', 'id'], presence: ['accountId', 'identityId'],
-      outbox: ['accountId', 'id'], view: ['accountId', 'key'], sync_state: ['accountId', 'key'],
-    }
-    const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open(name, 4)
-      request.onerror = () => reject(request.error)
-      request.onupgradeneeded = () => {
-        for (const [storeName, keyPath] of Object.entries(keyPaths)) {
-          const store = request.result.createObjectStore(storeName, { keyPath })
-          store.createIndex('accountId', 'accountId')
-          if (storeName === 'message') {
-            store.createIndex('accountChatSeq', ['accountId', 'chatId', 'seq'])
-            store.createIndex('accountStreamSeq', ['accountId', 'streamId', 'seq'])
-          }
-          if (storeName === 'membership') store.createIndex('accountChat', ['accountId', 'chatId'])
-        }
-      }
-      request.onsuccess = () => resolve(request.result)
-    })
-    const transaction = database.transaction(Object.keys(keyPaths), 'readwrite')
-    for (const [storeName, rows] of Object.entries(healthy)) {
-      for (const row of rows) transaction.objectStore(storeName).put(row)
-    }
-    const messageStore = transaction.objectStore('message')
-    const streamStore = transaction.objectStore('stream')
-    if (shape === 'missing-message-field') {
-      const { created_at: _missing, ...missingField } = first
-      messageStore.put({ accountId: 'account-a', id: 'message-1', chatId: 'chat-1', streamId: 'main:chat-1', seq: 1, value: missingField })
-      streamStore.put({ accountId: 'account-a', id: 'main:chat-1', chatId: 'chat-1', kind: 'main', rootMessageId: null })
-    } else if (shape === 'message-stream-id') {
-      messageStore.put({ accountId: 'account-a', id: 'message-1', chatId: 'chat-1', streamId: 'main:chat-2', seq: 1, value: first })
-      streamStore.put({ accountId: 'account-a', id: 'main:chat-2', chatId: 'chat-2', kind: 'main', rootMessageId: null })
-    } else if (shape === 'missing-message-stream') {
-      messageStore.put({ accountId: 'account-a', id: 'message-1', chatId: 'chat-1', streamId: 'main:chat-1', seq: 1, value: first })
-    } else if (shape === 'stream-shape') {
-      streamStore.put({ accountId: 'account-a', id: 'thread:chat-1:root-1', chatId: 'chat-1', kind: 'main', rootMessageId: null })
-    } else {
-      messageStore.put({ accountId: 'account-a', id: 'message-1', chatId: 'chat-1', streamId: 'main:chat-1', seq: 1, value: first })
-      messageStore.put({ accountId: 'account-a', id: 'message-2', chatId: 'chat-1', streamId: 'main:chat-1', seq: 2, value: second })
-      streamStore.put({ accountId: 'account-a', id: 'main:chat-1', chatId: 'chat-1', kind: 'main', rootMessageId: null })
-      transaction.objectStore('view').put({
-        accountId: 'account-a', key: 'message-window:chat-1',
-        value: { oldestSeq: 1, maxSeq: 99, hasMoreOlder: false },
-      })
-    }
-    await new Promise<void>((resolve, reject) => {
-      transaction.oncomplete = () => resolve()
-      transaction.onerror = () => reject(transaction.error)
-    })
-    database.close()
-  }, { name: DB_NAME, shape, first, second, healthy: healthyRows() })
-}

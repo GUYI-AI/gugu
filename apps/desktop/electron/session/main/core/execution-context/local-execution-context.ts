@@ -1,3 +1,4 @@
+import { realpath as fsRealpath } from 'node:fs/promises';
 import { execFile } from '@gugu/core/local/childProcess';
 import { promisify } from 'node:util';
 import {
@@ -39,6 +40,10 @@ export class LocalExecutionContext implements IExecutionContext {
 
   private resolveCommand(command: string): string {
     return command === 'git' ? getGitExecutable() : command;
+  }
+
+  realpath(path: string): Promise<string> {
+    return fsRealpath(path);
   }
 
   /** Every detection re-reads the user's current PATH (login shell / Windows registry) into this process. */

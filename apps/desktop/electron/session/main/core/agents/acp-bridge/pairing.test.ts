@@ -32,6 +32,8 @@ describe('bridge pairing (#6394)', () => {
     expect(parseCliVersion(wrapped, /\(Claude Code\)\s*$/)).toBe('2.1.212');
     // [control] without its line declared, the first version as before.
     expect(parseCliVersion(wrapped)).toBe('1.2.74');
+    // A wrapper that prints only its own version (reclaude `v1.7.4`): no Claude Code line, no version.
+    expect(parseCliVersion('v1.7.4\n', /\(Claude Code\)\s*$/)).toBeNull();
   });
 
   it('compares versions numerically, not as strings', () => {

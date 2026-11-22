@@ -13,14 +13,29 @@ import type { DependencyStatus, ProbeResult } from './types';
 export const VERSION_RE = /(\d+\.\d+(?:\.\d+)*)/;
 
 /**
- * `--version` 打出的哪一行是这一家自己的(`HostDependencyDescriptor.versionLine`):恰好一行匹配才算;没声明、
- * 没有一行匹配、或不止一行匹配(包装器自己也打一行同样的标识)都是 null —— 读的人照旧读法,❌ 挑第一行。
- * 读版本的三处(启动闸 `parseRuntimeVersion`、资源库 `extractVersion`、能不能跑 `defaultProbeStatus`)都经它。
+ * 读版本的那段文字 —— 启动闸、资源库、能不能跑、会话诊断、Claude 桥配对都只经这一处。
+ * 声明了自己那一行(`HostDependencyDescriptor.versionLine`)的家只认那一行:恰好一行匹配才算;没有一行匹配、
+ * 或不止一行匹配(包装器自己也打一行同样的标识)就是 null(没读到版本),❌ 退回第一行或整段里的第一个数字 ——
+ * 包装器自己的版本号(reclaude 打的 `v1.7.4`)曾被这样读成 claude 的版本,启动闸判「太旧」。
+ * 没声明的家整段照旧。
  */
-export function versionLineOf(output: string, versionLine: RegExp | undefined): string | null {
-  if (!versionLine) return null;
+export function versionTextOf(output: string, versionLine: RegExp | undefined): string | null {
+  if (!versionLine) return output;
   const lines = output.split('\n').map((line) => line.trim()).filter((line) => versionLine.test(line));
   return lines.length === 1 ? lines[0] : null;
+}
+
+/**
+ * @@@wrapper-version-probe — 问这个可执行文件「它跑的 CLI 是哪一版」用哪组参数。探版本的三处(资源库
+ * `runVersionProbe`、启动闸、Claude 桥)都经这一处,包装器的分支只在这里。
+ *
+ * reclaude(装成 `claude` 的账号路由客户端)把 `--version` 当成自己的命令,只打它自己的版本(`v1.7.4`);
+ * 它把 `cli <参数>` 原样交给它跑的 Claude Code(`cli --version` → `2.1.322 (Claude Code)`,2026-11-20 实测)。
+ * 按跟随软链接之后的文件名认,❌ 按用户敲的命令名认(它装成 `claude`)。
+ */
+export async function versionProbeArgs(executable: string, args: readonly string[], ctx: IExecutionContext): Promise<string[]> {
+  const real = await resolveRealpath(executable, ctx);
+  return /(?:^|[\\/])reclaude$/.test(real) ? ['cli', ...args] : [...args];
 }
 
 /**
@@ -42,7 +57,8 @@ export function defaultProbeStatus(result: ProbeResult, versionLine?: RegExp): D
   if (result.signal && !result.timedOut) return 'error';
   const ranAndFailed = result.exitCode !== null && result.exitCode !== 0 && !result.timedOut;
   const printed = result.stdout || result.stderr;
-  const reportedAVersion = VERSION_RE.test(versionLineOf(printed, versionLine) ?? printed.split('\n')[0] ?? '');
+  const own = versionTextOf(printed, versionLine);
+  const reportedAVersion = own !== null && VERSION_RE.test(versionLine ? own : printed.split('\n')[0] ?? '');
   if (result.path !== null) return ranAndFailed && !reportedAVersion ? 'error' : 'available';
   if (result.timedOut && result.stdout) return 'available';
   if (result.exitCode !== null && (result.stdout || result.stderr)) return 'available';
@@ -212,6 +228,8 @@ export async function resolveRealpath(
 ): Promise<string> {
   if (targetPlatform(platform) === 'windows') return resolvedPath;
   try {
+    // 本机的上下文在进程内解析(每次探版本都会走到这里,❌ 每次另起一个进程);远端的跑 `realpath`。
+    if (ctx.realpath) return await ctx.realpath(resolvedPath);
     const { stdout } = await ctx.exec('realpath', [resolvedPath], {
       timeout: REALPATH_TIMEOUT_MS,
     });
@@ -257,8 +275,9 @@ export async function runVersionProbe(
   opts: { timeoutMs?: number; env?: Record<string, string> } = {}
 ): Promise<ProbeResult> {
   const bin = resolvedPath ?? command;
+  const probeArgs = await versionProbeArgs(bin, args, ctx);
   try {
-    const { stdout, stderr, processGroupResidualCount } = await ctx.exec(bin, args, {
+    const { stdout, stderr, processGroupResidualCount } = await ctx.exec(bin, probeArgs, {
       timeout: opts.timeoutMs ?? VERSION_PROBE_TIMEOUT_MS,
       processGroup: true,
       env: opts.env,

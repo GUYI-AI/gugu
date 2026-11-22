@@ -33,7 +33,7 @@ describe('complete durable canonical commit publisher', () => {
     { kind: 'message', id: 'runtime:0:last', seq: 5, role: 'assistant', text: '' }],
   terminals: [{ terminalId: 'terminal', owner: 'agent', canKill: false, command: 'true', args: [], cwd: '/fixture', output: 'terminal body', truncated: false, exitStatus: null }] });
   beforeEach(async () => {
-    fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite; fixture.sqlite.pragma('synchronous=FULL');
+    fixture = await openFixture('empty'); state.db = fixture.db; state.sqlite = fixture.sqlite;
     fixture.sqlite.exec("INSERT INTO projects(id,name,path) VALUES('p','P','/fixture'); INSERT INTO sessions(id,project_id) VALUES('c','p')");
     directory = await mkdtemp(join(tmpdir(), 'commit-publisher-'));
     await persistCommittedTurn({ sessionId: 'c', source: 'live', turn: turn(), windowCapture: { directory, scope: 'a'.repeat(64),
