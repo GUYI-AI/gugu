@@ -367,7 +367,7 @@ test('a synchronous DataCloneError aborts earlier requests in the same real IDB 
 
   expect(result.error).toContain('DataCloneError')
   expect(result.notifications).toEqual([0])
-  expect(Object.values(result.counts)).toEqual([0, 0, 0, 0, 0, 0, 0, 0])
+  expect(Object.values(result.counts)).toEqual([0, 0, 0, 0, 0, 0, 0])
 })
 
 // Unsent messages exist nowhere else, so the outbox is the one store that stays strict.
