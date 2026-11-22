@@ -48,12 +48,12 @@ export function createNativeFileHost(deps: {
     await check(scope, entry.owner, entry.epoch); return entry
   }
   return { drop,
-    async attachment(scope: number, request: ({ op: 'declare' } & AttachmentDeclareRequest) | { op: 'drop' | 'retry'; messageId: string } | { op: 'resume' }) {
+    async attachment(scope: number, request: ({ op: 'declare' } & AttachmentDeclareRequest) | { op: 'drop' | 'retry'; messageId: string }) {
       const epoch = epochOf(scope), owner = await deps.owner()
       if (!owner || !deps.attachments) throw new Error('Attachment uploader is unavailable')
       await check(scope, owner, epoch)
       const result = request.op === 'declare' ? (await deps.attachments.declare(request)).declared
-        : request.op === 'resume' ? await deps.attachments.resume() : await deps.attachments[request.op](request.messageId)
+        : await deps.attachments[request.op](request.messageId)
       await check(scope, owner, epoch)
       return result
     },
@@ -175,7 +175,6 @@ export function registerNativeFileIpc(ipc: IpcMain, host: ReturnType<typeof crea
   ipc.handle('attachments:declare', (event, row: AttachmentDeclareRequest) => host.attachment(scope(event), { ...row, op: 'declare' }))
   ipc.handle('attachments:drop', (event, row: { messageId: string }) => host.attachment(scope(event), { ...row, op: 'drop' }))
   ipc.handle('attachments:retry', (event, row: { messageId: string }) => host.attachment(scope(event), { ...row, op: 'retry' }))
-  ipc.handle('attachments:resume', event => host.attachment(scope(event), { op: 'resume' }))
   ipc.handle('files:read', (event, row: FileContext & Parameters<typeof host.read>[2]) => host.read(scope(event), { actor: row.actor, ref: row.ref }, row,
     (progress) => { if (!event.sender.isDestroyed()) event.sender.send('files:read-progress', progress) }))
   ipc.handle('files:stage', (event, row: FileStageCommand) => host.stage(scope(event), row))

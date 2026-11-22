@@ -56,7 +56,7 @@ export interface MemberPickerProps {
   busyLabel?: string
   /** 提交后的说明 / 错误,画在确认按钮上方。 */
   footer?: ReactNode
-  /** 选人之外的动作:桌面在确认按钮左边,手机在标题下。 */
+  /** 选人之外的动作:桌面在确认按钮左边,手机在标题下。确认按钮手机在底栏,标题整行不让。 */
   actions?: ReactNode
   /** 一个可选的人都没有时(通讯录已读到、没在搜、没选人)画的主体;给了它,选人区和确认按钮就收起。 */
   empty?: ReactNode
@@ -194,7 +194,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
         picked: selected.filter(id => model.sourcesOf(id).includes(source.key)).length })),
     ]} />
   const confirmButton = (
-    <Button variant="primary" size={mobile ? 'sm' : 'md'} disabled={!canConfirm} onClick={() => void confirm()}>
+    <Button variant="primary" size={mobile ? 'lg' : 'md'} disabled={!canConfirm} onClick={() => void confirm()}>
       {busy && busyLabel ? busyLabel : confirmLabel(selected.length)}
     </Button>
   )
@@ -248,7 +248,7 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
       <div className={cn('flex items-center gap-2', mobile ? '!px-3 !pt-3 !pb-2' : '!px-5 !pt-4 !pb-3')}>
         {mobile ? closeButton : null}
         <h3 className={cn('m-0 min-w-0 flex-1 truncate text-[length:var(--font-heading)] font-semibold text-[var(--text-primary)]', mobile && 'text-center')}>{title}</h3>
-        {!mobile ? closeButton : showEmpty ? <span aria-hidden className="w-[var(--control-h-touch)]" /> : confirmButton}
+        {mobile ? <span aria-hidden className="w-[var(--control-h-touch)]" /> : closeButton}
       </div>
       {showEmpty ? <div className="flex min-h-0 flex-1 items-center justify-center !p-6">{empty}</div> : <>
       {mobile && actions ? <div className="flex shrink-0 !px-3 !pb-2">{actions}</div> : null}
@@ -293,7 +293,8 @@ export function MemberPicker({ title, confirmLabel, onConfirm, onClose, initialS
       {!loadingContacts && contactsStatus === 'ready' && unavailableSelection ? <p role="alert" className="!m-0 !px-5 !py-2 text-[length:var(--font-caption)] text-[var(--danger-fg)]">{t('memberPicker.selectionUnavailable')}</p> : null}
       </>}
       {footer}
-      {!mobile && !showEmpty ? <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[var(--border-subtle)] !px-5 !py-3">{actions ? <div className="me-auto min-w-0">{actions}</div> : null}{confirmButton}</div> : null}
+      {showEmpty ? null : mobile ? <div className="flex shrink-0 flex-col border-t border-[var(--border-subtle)] !px-3 !py-2">{confirmButton}</div>
+        : <div className="flex shrink-0 items-center justify-end gap-2 border-t border-[var(--border-subtle)] !px-5 !py-3">{actions ? <div className="me-auto min-w-0">{actions}</div> : null}{confirmButton}</div>}
     </div>
   )
 }

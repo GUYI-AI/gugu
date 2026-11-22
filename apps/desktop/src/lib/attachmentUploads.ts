@@ -57,8 +57,8 @@ export function dropAttachmentUpload(messageId: string): void {
   else local!.drop(messageId)
   progress(messageId)
 }
+/** Where the renderer hosts the queue (the phone, the web). On desktop the main process resumes on its own, at sign-in. */
 export async function resumeAttachmentUploads(): Promise<void> {
-  if (native) await invoke('attachments:resume')
-  else await local!.resume()
+  await local?.resume()
 }
 export const resumingCopy = (messageId: string): Blob | null => copies.get(messageId) ?? null
