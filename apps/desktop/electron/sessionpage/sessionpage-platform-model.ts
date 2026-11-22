@@ -1,3 +1,4 @@
+import { egress } from '@gugu/core/shared/egress'
 import { PlatformClosureReleaseProofs, performPlatformRelease } from './platform-release-proof'
 import type { SessionBootTasks } from '@gugu/core/shared/sessionBootTasks'
 import { writeSessionSettingsFile, SESSION_SETTINGS_FILE_PREFIX as SETTINGS_FILE_PREFIX } from './session-settings-file'
@@ -459,7 +460,7 @@ async function proxyPlatformRequest(
         try {
           const auth = await requireRuntimeAuth(held.authProvider, 'team task refusal')
           assertTeamTaskSession(auth, held.teamTask)
-          const context = await withinCredentialDeadline(readTeamModelContext(auth, fetch))
+          const context = await withinCredentialDeadline(readTeamModelContext(auth, egress.fetch))
           if (context.teamId !== held.teamTask!.funding.team_id || context.memberId !== held.teamTask!.funding.member_id
             || context.memberIdentityId !== held.teamTask!.memberIdentityId) throw new TeamFundingError('team_identity_required')
           if (context.stopReason) {
@@ -731,10 +732,6 @@ function credentialProxyEnv(
     if (normalized === `${upstreamRoot}/v1`) return [key, proxy.baseUrl]
     return [key, value]
   }))
-  for (const key of ['NO_PROXY', 'no_proxy']) {
-    const current = next[key]?.split(',').map((entry) => entry.trim()).filter(Boolean) ?? []
-    next[key] = [...new Set([...current, '127.0.0.1', 'localhost', '::1'])].join(',')
-  }
   return next
 }
 

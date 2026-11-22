@@ -7,6 +7,7 @@
 //   place  → only put in the chat's folder (a new file, or a new version of one) — no message;
 //   forward → a new-kind attachment message forwarded (the server makes the target's item);
 //   urls   → signed links for items' versions or whisper messages.
+import { egress } from '../shared/egress'
 import { FileDownloadFailure, isDownloadConnectionError, isTransientFileReadError, retryFileDownload } from './fileDownloadRetry'
 import { AttachmentDeadlineError, runAttachmentStage, waitForAttachmentRetry } from './attachmentDeadline'
 import { serverNow } from '../shared/serverClock'
@@ -25,7 +26,7 @@ export interface AttachmentsEndpoint {
   token: string
   /** An account host rechecks its account and current credentials for every service request. */
   getAccessToken?(): Promise<string>
-  fetch?: typeof fetch
+  fetch?: typeof globalThis.fetch
   upload?: AttachmentUploadTransport
   /**
    * This host can send a server-signed PUT straight to the object store, so it asks for multipart uploads. A main process
@@ -41,7 +42,7 @@ export function configuredEndpoint(token: string): AttachmentsEndpoint {
 }
 
 /** A long-lived account host, including the MCP host, uses the same endpoint and signed-parts capability. */
-export async function accountAttachmentsEndpoint(context: { supabaseUrl: string; anonKey: string; getAccessToken(): Promise<string> }, fetchImpl: typeof fetch = fetch): Promise<AttachmentsEndpoint> {
+export async function accountAttachmentsEndpoint(context: { supabaseUrl: string; anonKey: string; getAccessToken(): Promise<string> }, fetchImpl: typeof globalThis.fetch = egress.fetch): Promise<AttachmentsEndpoint> {
   return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
 }
 
@@ -58,11 +59,12 @@ async function call(endpoint: AttachmentsEndpoint, route: string, body: Record<s
   signal?.throwIfAborted()
   const url = `${endpoint.supabaseUrl.replace(/\/+$/, '')}/functions/v1/attachments/${route}`
   const request = async () => {
-    const response = await (endpoint.fetch ?? fetch)(url, {
+    const response = await (endpoint.fetch ?? egress.fetch)(url, {
       method: 'POST',
       headers: { apikey: endpoint.anonKey, Authorization: `Bearer ${endpoint.getAccessToken ? await endpoint.getAccessToken() : endpoint.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       signal,
+      timeoutMs: route.startsWith('upload-') ? 0 : undefined,
     })
     const text = await response.text()
     let json: unknown = null
@@ -316,7 +318,7 @@ async function sendAttachmentRequest(endpoint: AttachmentsEndpoint, url: string,
   size: number, onProgress?: (progress: AttachmentByteProgress) => void): Promise<{ status: number }> {
   const upload = endpoint.upload
   if (!upload) {
-    const response = await (endpoint.fetch ?? fetch)(url, init)
+    const response = await (endpoint.fetch ?? egress.fetch)(url, init)
     await response.body?.cancel()
     return response
   }

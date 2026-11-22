@@ -88,3 +88,5 @@ if (!process.env.GUGU_SESSION_DB_FILE?.trim()) {
   const unique = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
   process.env.GUGU_SESSION_DB_FILE = join(dir, `${unique}.db`);
 }
+
+import './vitest-egress-setup'

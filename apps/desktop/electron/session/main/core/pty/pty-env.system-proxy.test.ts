@@ -22,15 +22,17 @@ describe('system proxy for agent processes', () => {
   });
 
   it('reads the first PAC entry; DIRECT and SOCKS are reported, not guessed', async () => {
-    const { proxyFromPac } = await import('./systemProxyEnv');
-    expect(proxyFromPac('PROXY 127.0.0.1:7897; DIRECT')).toEqual({ proxy: 'http://127.0.0.1:7897' });
-    expect(proxyFromPac('HTTPS proxy.corp:443')).toEqual({ proxy: 'https://proxy.corp:443' });
-    expect(proxyFromPac('DIRECT')).toMatchObject({ proxy: null, reason: 'direct' });
-    expect(proxyFromPac('SOCKS5 127.0.0.1:7891; DIRECT')).toMatchObject({ proxy: null, reason: 'unsupported' });
+    const { proxyFromAnswer } = await import('../../../../egress/harness-proxy');
+    expect(proxyFromAnswer('PROXY 127.0.0.1:7897; DIRECT')).toEqual({ proxy: 'http://127.0.0.1:7897' });
+    expect(proxyFromAnswer('HTTPS proxy.corp:443')).toEqual({ proxy: 'https://proxy.corp:443' });
+    expect(proxyFromAnswer('DIRECT')).toMatchObject({ proxy: null, reason: 'direct' });
+    expect(proxyFromAnswer('SOCKS5 127.0.0.1:7891; DIRECT')).toMatchObject({ proxy: null, reason: 'unsupported' });
+    expect(proxyFromAnswer('PROXY [::1]:7897')).toEqual({ proxy: 'http://[::1]:7897' });
+    expect(proxyFromAnswer('QUIC proxy:443')).toMatchObject({ proxy: null, reason: 'unsupported' });
   });
 
   it('fills HTTPS/HTTP_PROXY, and NO_PROXY for loopback only when it fills a proxy', async () => {
-    const { resolveSystemProxy, systemProxyFill } = await import('./systemProxyEnv');
+    const { resolveSystemProxy, systemProxyFill } = await import('../../../../egress/harness-proxy');
     expect(systemProxyFill({})).toEqual({}); // not resolved yet
     await resolveSystemProxy(async () => 'DIRECT');
     expect(systemProxyFill({})).toEqual({});
@@ -44,7 +46,7 @@ describe('system proxy for agent processes', () => {
   });
 
   it('never overrides a proxy the user configured — in that env or in the login shell, any case', async () => {
-    const { resolveSystemProxy, systemProxyFill } = await import('./systemProxyEnv');
+    const { resolveSystemProxy, systemProxyFill } = await import('../../../../egress/harness-proxy');
     await resolveSystemProxy(async () => 'PROXY 127.0.0.1:7897');
     expect(systemProxyFill({ https_proxy: 'http://mine:1' })).toEqual({});
     expect(systemProxyFill({ ALL_PROXY: 'socks5://mine:2' })).toEqual({});
@@ -52,8 +54,8 @@ describe('system proxy for agent processes', () => {
   });
 
   it('agent env gets it; the user terminal env and process.env do not', async () => {
-    const { resolveSystemProxy } = await import('./systemProxyEnv');
-    const { buildAgentEnv, buildTerminalEnv } = await import('../core/pty/pty-env');
+    const { resolveSystemProxy } = await import('../../../../egress/harness-proxy');
+    const { buildAgentEnv, buildTerminalEnv } = await import('./pty-env');
     await resolveSystemProxy(async () => 'PROXY 127.0.0.1:7897');
     expect(buildAgentEnv({ includeUserShellEnv: false }).HTTPS_PROXY).toBe('http://127.0.0.1:7897');
     expect(buildAgentEnv({ includeUserShellEnv: false, providerVars: { HTTPS_PROXY: 'http://set-in-agent-settings:9' } }).HTTPS_PROXY)

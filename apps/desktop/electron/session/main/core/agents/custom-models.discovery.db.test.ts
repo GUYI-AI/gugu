@@ -6,6 +6,8 @@ import { eq } from 'drizzle-orm';
 import { openRegistryFixture, type RegistryFixture } from '@tooling/utils/provider-accounts';
 import { providerAccounts, sessions } from '@main/db/schema';
 import { customModelOptionId } from '@gugu/session-core/models/custom-model';
+import { installEnvironmentFetch } from '@gugu/core/shared/egress';
+import { createEnvironmentFetch } from '../../../../egress/environment';
 import { releaseCustomModelForwarders } from './custom-model-forwarder';
 
 const state = vi.hoisted(() => ({ fixture: null as RegistryFixture | null }));
@@ -30,7 +32,7 @@ beforeEach(async () => {
 });
 afterEach(async () => {
   releaseCustomModelForwarders(); state.fixture?.close(); state.fixture = null;
-  vi.unstubAllGlobals(); vi.unstubAllEnvs(); await rm(home, { recursive: true, force: true });
+  installEnvironmentFetch(createEnvironmentFetch()); vi.unstubAllEnvs(); await rm(home, { recursive: true, force: true });
 });
 
 const auth = (value: unknown) => writeFile(join(home, 'auth.json'), JSON.stringify(value));
@@ -197,7 +199,8 @@ it('testing a discovered connection uses its key only in the host request', asyn
   await twoFound();
   const acme = await named('Acme Gateway');
   const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ data: [{ id: 'acme-large' }] }));
-  vi.stubGlobal('fetch', fetcher);
+  // The connection test leaves through the egress in the agent's environment.
+  installEnvironmentFetch((_env, url, init) => fetcher(String(url), init));
   expect(await testCustomModel({ connectionId: acme.id })).toEqual({ kind: 'listed', models: ['acme-large'] });
   expect(new Headers(fetcher.mock.calls[0]![1]?.headers).get('authorization')).toBe(`Bearer ${ROTATED}`);
 });

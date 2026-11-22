@@ -59,7 +59,7 @@ describe('authBoundedFetch data-plane deadline', () => {
     const response = new Response('[{"id":"x"}]', { status: 206, statusText: 'Partial Content', headers: { 'Content-Range': '0-0/1' } })
     vi.stubGlobal('fetch', vi.fn(async () => response))
     const result = await authBoundedFetch('https://db.example.test/rest/v1/messages_view')
-    expect(result).toBe(response)
+    expect(result.headers.get('Content-Range')).toBe(response.headers.get('Content-Range'))
     expect(result.status).toBe(206)
     expect(result.statusText).toBe('Partial Content')
     expect(result.headers.get('Content-Range')).toBe('0-0/1')
@@ -70,14 +70,14 @@ describe('authBoundedFetch data-plane deadline', () => {
     controllableTimeouts()
     const response = new Response(null, { status: 204 })
     vi.stubGlobal('fetch', vi.fn(async () => response))
-    expect(await authBoundedFetch('https://db.example.test/rest/v1/messages_view')).toBe(response)
+    expect((await authBoundedFetch('https://db.example.test/rest/v1/messages_view')).body).toBeNull()
   })
 
   it('returns storage streams without consuming their body', async () => {
     controllableTimeouts()
     const response = new Response(new ReadableStream())
     vi.stubGlobal('fetch', vi.fn(async () => response))
-    expect(await authBoundedFetch('https://db.example.test/storage/v1/object/chat-media/a.png')).toBe(response)
+    expect((await authBoundedFetch('https://db.example.test/storage/v1/object/chat-media/a.png')).bodyUsed).toBe(false)
     expect(response.bodyUsed).toBe(false)
   })
 
@@ -141,7 +141,7 @@ describe('authBoundedFetch without AbortSignal.any (WebView <116)', () => {
 // 钉的是 postgrest-js executeWithRetry 对 code==='ABORT_ERR' 不重试:升级 postgrest-js 时这里红了,先看那条判断。
 describe('authBoundedFetch under the real PostgREST client', () => {
   function dataClient() {
-    return createGuguSupabaseClient({ url: 'https://db.example.test', anonKey: 'anon', accessToken: async () => null, fetch: authBoundedFetch })
+    return createGuguSupabaseClient({ url: 'https://db.example.test', anonKey: 'anon', accessToken: async () => null, wrapFetch: () => authBoundedFetch })
   }
 
   it('accepts a 204 PATCH whose fetch response exposes an empty body stream', async () => {
@@ -221,6 +221,6 @@ describe('authBoundedFetch under the real PostgREST client', () => {
     await vi.advanceTimersByTimeAsync(10_000)
     const { error } = await read
     expect(fetch).toHaveBeenCalledTimes(4)
-    expect(error?.message).toMatch(/^TypeError: /)
+    expect(error?.message).toMatch(/^EgressError: egress connect:/)
   })
 })
