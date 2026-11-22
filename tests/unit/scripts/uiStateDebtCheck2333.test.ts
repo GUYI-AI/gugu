@@ -19,8 +19,10 @@ const { countTree, run } = await import(pathToFileURL(checker).href) as {
 // 理由:那份基线的目标是归零;一旦真归零,读活基线的"不许回头"断言会连同"不许前进"一起变成
 // 平凡真 —— 守门的测试恰好在最该守的时刻自动失效。合成 fixture 的债务量由本文件写死,与真实债务无关。
 
+// `git commit` starts `git maintenance run --auto --detach` in the background; a template repo copied right after it
+// can lose a file under cpSync (ENOENT in .git, seen on hosted macOS). Fixture repos never need maintenance.
 function git(cwd: string, args: string[]) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  return execFileSync('git', ['-c', 'maintenance.auto=false', ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
 function buildFixtureRepo(name: string) {
