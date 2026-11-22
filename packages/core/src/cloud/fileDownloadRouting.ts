@@ -39,7 +39,22 @@ export const fileDownloadSession = createFileDownloadSession()
 /** Deadline each CDN network wait, not an actively progressing transfer's total duration. */
 export function createFileDownloadTransport(target: () => ByteHop, fetcher: () => Promise<typeof globalThis.fetch>,
   session: FileDownloadSession, signal?: AbortSignal) {
-  let connection: AbortController | undefined
+  let connection: AbortController | undefined, reading: AbortController | undefined, idle: ReturnType<typeof setTimeout> | undefined
+  // Settles (rejects) once, when the connection is aborted or the read is: one promise per connection, not per read.
+  const stopped = new WeakMap<AbortController, Promise<never>>()
+  const stoppedOf = (active: AbortController) => {
+    let ending = stopped.get(active)
+    if (!ending) {
+      ending = new Promise<never>((_, reject) => {
+        const end = () => reject(active.signal.aborted ? active.signal.reason : signal?.reason)
+        active.signal.addEventListener('abort', end, { once: true }); signal?.addEventListener('abort', end, { once: true })
+        if (active.signal.aborted || signal?.aborted) end()
+      })
+      ending.catch(() => undefined)
+      stopped.set(active, ending)
+    }
+    return ending
+  }
   const failed = (hop: ByteHop, error: unknown) => {
     if (hop.stage === 'cdn' && !signal?.aborted) session.failed(hop.url, error)
   }
@@ -83,10 +98,37 @@ export function createFileDownloadTransport(target: () => ByteHop, fetcher: () =
         return response
       }, hop, active)
     },
-    read(reader: ReadableStreamDefaultReader<Uint8Array>) { return receive(() => reader.read(), target()) },
+    /**
+     * A body read: the connection's own signal (the reader's abort, a route switch) already ends it, so the only bound to
+     * add is the CDN idle deadline, one timer set again per read. A store gives a large body in thousands of small reads;
+     * a deadline built per read (its error, controller and races) halved what three lanes carried.
+     */
+    async read(reader: ReadableStreamDefaultReader<Uint8Array>) {
+      signal?.throwIfAborted()
+      const hop = target(), active = connection
+      if (hop.stage === 'cdn' && active) {
+        reading = active
+        clearTimeout(idle)
+        idle = setTimeout(() => {
+          const stalled = reading
+          if (!stalled) return
+          reading = undefined
+          stalled.abort(Object.assign(new Error('CDN byte read timed out'), { code: 'ETIMEDOUT' }))
+        }, CDN_IDLE_MS)
+      }
+      try {
+        active?.signal.throwIfAborted()
+        // A body that does not end when its connection is aborted still ends this read.
+        return await (active ? Promise.race([reader.read(), stoppedOf(active)]) : reader.read())
+      } catch (error) {
+        const reason = active?.signal.aborted ? active.signal.reason : signal?.aborted ? signal.reason : error
+        failed(hop, reason); throw reason
+      } finally { if (reading === active) { reading = undefined; clearTimeout(idle) } }
+    },
     refuse(error: Error): never { failed(target(), error); throw error },
     cancel(reader?: ReadableStreamDefaultReader<Uint8Array>) {
-      connection?.abort(); connection = undefined
+      connection?.abort(); connection = undefined; reading = undefined
+      if (idle) { clearTimeout(idle); idle = undefined }
       // A broken stream's cancel promise must not hold the next authorized route hostage.
       void reader?.cancel().catch(() => undefined)
     },
