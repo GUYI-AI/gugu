@@ -50,6 +50,22 @@ describe('AddFriendSearch reads the submitted search', () => {
     expect(search.mock.calls.map((call) => call[0])).toEqual(['张'])
   })
 
+  it('never shows the last query\'s answer as the answer to a new one', async () => {
+    vi.spyOn(contactsService, 'searchUsers')
+      .mockResolvedValueOnce([])
+      .mockImplementationOnce(() => new Promise(() => {}))
+    await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: {} })
+    await typeInto(input(), 'aaa')
+    await submit()
+    await waitForCondition(() => harness.container.textContent?.includes(noResults('aaa')) ?? false, 'no empty answer for the first query')
+    await typeInto(input(), 'bbb')
+    await submit()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)) })
+    expect(harness.container.textContent).not.toContain(noResults('bbb'))
+    expect(harness.container.textContent).not.toContain(noResults('aaa'))
+    expect(harness.container.querySelector('[data-testid="friend-search-pending"]')).not.toBeNull()
+  })
+
   it('says a failed search where the hits go, and Retry reads again', async () => {
     const search = vi.spyOn(contactsService, 'searchUsers')
       .mockRejectedValueOnce(new Error('network down'))

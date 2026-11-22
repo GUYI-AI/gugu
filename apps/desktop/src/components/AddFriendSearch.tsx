@@ -6,6 +6,7 @@ import { useReplica, useReplicaFetching, refreshFailure, retryOf } from '../lib/
 import { createContactQrPayload, createGuguQrUrl, parseGuguQrPayload } from '@gugu/core/shared/qrPayload'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { useDebounce } from '@renderer/lib/hooks/useDebounce'
+import { useNetworkOnline } from '../hooks/useNetworkOnline'
 import { Avatar } from './Avatar'
 import { Button } from './ui/Button'
 import { Field } from './ui/Field'
@@ -204,9 +205,17 @@ export function AddFriendSearch({
   const [settled, setSettled] = useState('')
   const typed = useDebounce(settled, DEBOUNCE_MS)
   const [submitted, setSubmitted] = useState<Submission | null>(null)
-  const found = useReplica(userSearch, submitted ? [submitted.query] : null, { keepPrevious: true })
+  const found = useReplica(userSearch, submitted ? [submitted.query] : null)
   const fetching = useReplicaFetching(userSearch, submitted ? [submitted.query] : null)
-  const slow = useDebounce(fetching, PENDING_SHOW_MS) && fetching
+  const online = useNetworkOnline()
+  // 这一次搜的答案;没到之前,上一次的答案(标着它自己的查询串)留在原地变淡。❌ replica 的 keepPrevious:
+  // 它把上一串的值当成这一串的占位,断网时请求暂停、占位一直挂着,上一次「没找到」就成了这一次的「没找到」。
+  const answer = submitted && found.state === 'value' ? found.value : null
+  const [last, setLast] = useState<{ query: string; users: ContactUser[] } | null>(null)
+  if (answer && submitted && last?.users !== answer) setLast({ query: submitted.query, users: answer })
+  const previous = !answer && submitted && last && last.query !== submitted.query ? last.users : null
+  const unanswered = !!submitted && !answer && found.state !== 'error'
+  const slow = useDebounce(unanswered, PENDING_SHOW_MS) && unanswered
   const [active, setActive] = useState(0)
 
   const [openId, setOpenId] = useState<string | null>(null)
@@ -230,13 +239,13 @@ export function AddFriendSearch({
   const sentIds = new Set(sentRequests.map((r) => r.receiver_id))
   const friendIds = new Set(contacts.map((c) => c.id))
   const statusOf = (u: ContactUser): Status => friendIds.has(u.id) ? 'friend' : sentIds.has(u.id) ? 'sent' : null
-  const results = found.state === 'value' && submitted ? found.value : []
+  const results = answer ?? previous ?? []
   const people = results.filter((u) => u.type !== 'agent')
   const agents = results.filter((u) => u.type === 'agent')
   const ordered = [...people, ...agents]
   const current = Math.min(active, Math.max(0, ordered.length - 1))
   // 框里的字和画着的结果对得上,Enter 才是「加这一行」;否则 Enter 是「现在就搜」。
-  const showingTyped = !!submitted && submitted.text === query.trim() && found.state === 'value' && !fetching
+  const showingTyped = !!answer && !fetching && submitted!.text === query.trim()
 
   const clearSearch = () => {
     setQuery(''); setSettled(''); setSubmitted(null); setOpenId(null); setJustSentId(null); setActive(0)
@@ -353,8 +362,12 @@ export function AddFriendSearch({
         ) : null}
       </div>
     )
-  } else if (found.state === 'unknown') {
-    body = slow ? <SkeletonRows /> : null
+  } else if (!answer && !online) {
+    body = (
+      <div role="alert" data-testid="friend-search-offline" className="mt-4 rounded-[var(--radius-surface)] border border-[var(--border-color)] p-3 text-[length:var(--font-body)] text-[var(--text-secondary)]">
+        {t('errors.offline', { ns: 'common' })}
+      </div>
+    )
   } else if (failure) {
     body = (
       <div role="alert" data-testid="friend-search-failed" className="mt-4 flex items-center gap-3 rounded-[var(--radius-surface)] border border-[var(--border-color)] p-3 text-[length:var(--font-body)] text-[var(--text-secondary)]">
@@ -362,7 +375,9 @@ export function AddFriendSearch({
         <Button variant="secondary" size="sm" onClick={retryOf(found)}>{t('common.retry')}</Button>
       </div>
     )
-  } else if (results.length === 0) {
+  } else if (!answer && !previous) {
+    body = slow ? <SkeletonRows /> : null
+  } else if (answer && answer.length === 0) {
     body = (
       <div className="mt-10" data-testid="friend-search-empty">
         <PaneEmptyState
@@ -375,7 +390,7 @@ export function AddFriendSearch({
     )
   } else {
     body = (
-      <div className={cn('flex flex-col transition-opacity duration-[var(--dur-fast)]', fetching && 'opacity-60')}>
+      <div className={cn('flex flex-col transition-opacity duration-[var(--dur-fast)]', (!answer || fetching) && 'opacity-60')}>
         {people.length > 0 ? <><SectionLabel className="!mt-3">{t('panel.contactSectionTitle')} · {people.length}</SectionLabel>{people.map(rowFor)}</> : null}
         {agents.length > 0 ? <><SectionLabel className="!mt-3">{t('panel.agentSectionTitle')} · {agents.length}</SectionLabel>{agents.map(rowFor)}</> : null}
       </div>
