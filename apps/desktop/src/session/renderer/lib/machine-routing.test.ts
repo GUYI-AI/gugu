@@ -59,6 +59,7 @@ describe('machine routing (one workbench seam)', () => {
     expect(r.route('workspace.files.previewAssetsChanged', [P, ['/srv/a.css']])).toBeNull();
     expect(r.route('workspace.files.releasePreview', [P, 'ws'])).toBeNull();
     expect(r.route('workspace.files.readStreamed', ['dev-a', P, 'ws', { path: 'a', offset: 0, length: 1, size: 1, etag: 'e' }])).toBeNull();
+    expect(r.route('workspace.files.streamsFrom', ['dev-a'])).toBeNull();
     expect(r.route('workspace.files.readChunk', [P, 'ws', { path: 'a', offset: 0, length: 1 }])).toBe('dev-a');
   });
 

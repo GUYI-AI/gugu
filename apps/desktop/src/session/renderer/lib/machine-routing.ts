@@ -45,6 +45,7 @@ const LOCAL_ONLY_CHANNELS = new Set([
   'workspace.files.previewAssetsChanged',
   'workspace.files.releasePreview',
   'workspace.files.readStreamed',
+  'workspace.files.streamsFrom',
   'sessions.reportSessionsOnScreen',
 ]);
 
