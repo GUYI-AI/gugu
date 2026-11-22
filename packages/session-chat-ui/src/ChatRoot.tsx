@@ -112,7 +112,6 @@ import {
   heroSlotHiddenClass,
   heroSlotVisibleClass,
   outerClip,
-  pinBackdrop,
   pinLane,
   pinSticky,
   pinMessageRow,
@@ -2492,7 +2491,6 @@ export function ChatRoot(props: ChatRootProps) {
                                   raises the summary in front of the message; late, the message slides off it instead. */}
                               <Show when={pinAnchorSet().has(unitIndex)}>
                                 <div class={`${pinSticky} ${pinSummaryLayer}`} style={{ top: `${userTopGap - pinRest(unitIndex)}px`, 'padding-top': `${pinRest(unitIndex)}px` }}>
-                                  <div class={pinBackdrop} style={{ top: `${pinRest(unitIndex) - userTopGap}px` }} data-chat-pin-backdrop="" aria-hidden="true" />
                                   <PinnedUserSummary item={u()!.data as ChatMessage} ctx={measureContext()} vars={UNIT_REGISTRY.message!.vars as MessageVars} />
                                 </div>
                               </Show>

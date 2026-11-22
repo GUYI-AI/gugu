@@ -171,22 +171,22 @@ describe('sticky user lanes', () => {
     const lane = t.card('a-user')!.closest<HTMLElement>('[data-index]')!;
     const edge = () => t.scrollEl.getBoundingClientRect().top;
     const shown = () => pinnedSummaryShown(t.summary('a-user')!);
-    const cover = () => lane.querySelector<HTMLElement>('[data-chat-pin-backdrop]')!.getBoundingClientRect();
+    const cover = () => t.summary('a-user')!.getBoundingClientRect();
     expect(shown(), 'the message is on screen').toBe(false);
     const handOver = Math.round(t.scrollEl.scrollTop + t.cardTop('a-user')!);
     await t.scrollTo(handOver + 150);
     expect(shown(), 'stuck before the sweep').toBe(true);
     const repeats = t.summary('a-user')!.getBoundingClientRect().height;
     // Sweep back over the hand-over and forth, reading right after each write: no frame runs in between, so the
-    // drawn-or-not flag is a frame late, as it is under load. Wherever the message's first lines are on screen
-    // while the summary is drawn, the summary's opaque layer is over them.
+    // drawn-or-not flag is a frame late, as it is under load. Wherever the lines it repeats are on screen below the
+    // pin line while the summary is drawn, the summary's bubble is over them.
     const down = Array.from({ length: 91 }, (_, i) => handOver - 120 + 3 * i);
     let covered = 0;
     for (const st of [...[...down].reverse(), ...down]) {
       t.scrollEl.scrollTop = st;
       if (!shown()) continue;
       const card = t.card('a-user')!.getBoundingClientRect();
-      const top = Math.max(card.top, edge()), bottom = card.top + repeats;
+      const top = Math.max(card.top, edge() + PIN_LINE), bottom = card.top + repeats;
       if (bottom <= top) continue;
       covered++;
       expect(cover().top, `scrollTop=${st}`).toBeLessThanOrEqual(top + 0.5);
@@ -197,8 +197,12 @@ describe('sticky user lanes', () => {
     expect(shown(), 'resting, the summary is not drawn').toBe(false);
     await t.scrollTo(900);
     expect(shown()).toBe(true);
-    expect(getComputedStyle(lane.querySelector('[data-chat-pin-backdrop]')!).opacity).toBe('1');
-    expect(cover().top, 'the strip is opaque from the scroller edge').toBeLessThanOrEqual(edge() + 0.5);
+    // Owner 2026-11-22: stuck, only the bubble is drawn — no page-colored strip around it, and beside it clicks reach the rows.
+    const layer = lane.firstElementChild as HTMLElement;
+    expect(layer.children.length, 'nothing but the summary in the stuck layer').toBe(1);
+    expect(getComputedStyle(layer).backgroundColor).toBe('rgba(0, 0, 0, 0)');
+    expect(layer.contains(document.elementFromPoint(cover().left - 20, cover().top + cover().height / 2)), 'a click beside the bubble').toBe(false);
+    expect(layer.contains(document.elementFromPoint(cover().left + 20, cover().top + cover().height / 2)), 'a click on the bubble').toBe(true);
     expect(t.pinTop('a-user')).toBeCloseTo(PIN_LINE, 0);
     expect(t.cardTop('a-user')!, 'the message itself scrolled away').toBeLessThan(0);
   });

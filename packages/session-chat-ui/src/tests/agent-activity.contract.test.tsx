@@ -82,7 +82,7 @@ describe('approved A2A activity', () => {
       ...Array.from({ length: 12 }, (_, i) => delivery(`a${i}`, `Update ${i}. `.repeat(45)))]),
       turn('conclusion', [ordinary('Following conclusion')])]);
     const lane = () => t.head()?.closest<HTMLElement>('[data-index]');
-    const unpinned = () => !lane() || (getComputedStyle(lane()!.firstElementChild!).position !== 'sticky' && !lane()!.querySelector('[data-chat-pin-backdrop]'));
+    const unpinned = () => !lane() || (getComputedStyle(lane()!.firstElementChild!).position !== 'sticky' && !lane()!.querySelector('[data-pin-summary]'));
     for (const open of [false, true]) {
       if (open) { t.button().click(); await untilStable('opened activity settled', () => t.scroll().scrollHeight); }
       for (const scrollTop of [80, 300, 850]) {

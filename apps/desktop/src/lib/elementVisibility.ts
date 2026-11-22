@@ -12,18 +12,16 @@ function intersect(a: ElementBox, b: ElementBox): ElementBox {
 }
 
 /**
- * A transcript sticks rows to the top of its scroller (a turn's user summary, an opened activity's header): what they cover
- * is not seen. A pin is stuck, or being pushed out, while its backdrop's top is at or above the scroller's.
+ * A transcript sticks a turn's user summary to the top of its scroller: the bubble covers what is under it. A summary
+ * covers once its row says it is drawn stuck (data-pin-stuck); one at rest lies behind its own message and cuts nothing.
+ * Only the bubble is drawn, so a clip beside it is not cut.
  */
-function belowPins(scroller: Element, element: Element, clip: ElementBox): ElementBox {
-  const top = scroller.getBoundingClientRect().top
+function belowPins(scroller: Element, clip: ElementBox): ElementBox {
   let edge = clip.top
-  for (const backdrop of scroller.querySelectorAll('[data-chat-pin-backdrop]')) {
-    const pin = backdrop.parentElement
-    // A pin covers only once its row says it is drawn stuck (data-pin-stuck): one at the top but not yet shown cuts nothing.
-    if (!pin || pin.contains(element) || pin.closest('[data-pin-stuck]')?.getAttribute('data-pin-stuck') !== 'true'
-      || backdrop.getBoundingClientRect().top > top + 1) continue
-    edge = Math.max(edge, pin.getBoundingClientRect().bottom)
+  for (const summary of scroller.querySelectorAll('[data-pin-stuck="true"] [data-pin-summary]')) {
+    const box = summary.getBoundingClientRect()
+    if (box.right <= clip.left || box.left >= clip.left + clip.width) continue
+    edge = Math.max(edge, box.bottom)
   }
   return edge > clip.top ? intersect(clip, { left: clip.left, top: edge, width: clip.width, height: clip.top + clip.height - edge }) : clip
 }
@@ -40,7 +38,7 @@ export function clippedElementBox(element: HTMLElement, bounds: ElementBox): { f
         clip = intersect(clip, elementBox(node))
         // Pins only stick inside a transcript's own scroller (ChatRoot marks it data-chat-scroll); every other clipping ancestor
         // (panes, frames) holds whole conversations, and searching those for pins grew with the mounted messages.
-        if (node.hasAttribute('data-chat-scroll')) clip = belowPins(node, element, clip)
+        if (node.hasAttribute('data-chat-scroll')) clip = belowPins(node, clip)
       }
       // A conversation's composer floats over the end of its message list (ChatBottomDock): behind its cards is not seen.
       const composer = node.hasAttribute('data-chat-dock-column') ? node.querySelector(':scope > [data-chat-bottom-dock]')?.lastElementChild : null
