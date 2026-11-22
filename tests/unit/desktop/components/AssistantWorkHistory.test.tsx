@@ -6,6 +6,7 @@ import { rememberAssistantTaskChat,showAssistantTaskChat } from '../../../../app
 import { useTaskChatRows } from '../../../../apps/desktop/src/components/assistant/useTaskChatRows'
 import { followRendererSession,queryClient } from '../../../../apps/desktop/src/lib/replica'
 import '../../../../apps/desktop/src/i18n/registerAssistantCatalog'
+import { WORK_RETRY_MS } from '../../../../apps/desktop/src/components/assistant/assistant-work-records'
 
 const cloud = vi.hoisted(() => ({ history: vi.fn(),list:vi.fn(),watch: vi.fn(),refresh: null as null | (() => void) }))
 vi.mock('../../../../apps/desktop/src/lib/assistantWork',() => ({ assistantWorkCloud: { historyAll: cloud.history,listAll:cloud.list,
@@ -47,12 +48,18 @@ it('selects distinct work for the same executor and replaces removed source cont
 it('recovers a transient account read in the background without a retry button',async()=>{
   cloud.history.mockRejectedValueOnce(new Error('Transient account connection')).mockResolvedValue([event('work-retry','Recovered cloud history')])
   rememberAssistantTaskChat('owner',request('work-retry'));showAssistantTaskChat({ownerId:'owner',request:request('work-retry'),name:'worker'})
-  await renderWithAppProviders(harness,<View />)
-  expect(harness.container.textContent).toContain('暂时无法读取完整的协作记录')
-  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,1100))})
-  await vi.waitFor(()=>expect(harness.container.textContent).toContain('Recovered cloud history'),{timeout:2500})
-  expect(harness.container.querySelector('button')).toBeNull()
-  expect(harness.container.textContent).not.toContain('暂时无法读取完整的协作记录')
+  // The background retry waits WORK_RETRY_MS[0] (2 s); that wait is not what is proven, so it runs on a fake clock.
+  vi.useFakeTimers({toFake:['setTimeout','clearTimeout']})
+  try{
+    await renderWithAppProviders(harness,<View />)
+    await act(async()=>{await vi.advanceTimersByTimeAsync(0)})
+    await vi.waitFor(()=>expect(harness.container.textContent).toContain('暂时无法读取完整的协作记录'))
+    expect(cloud.history).toHaveBeenCalledTimes(1)
+    await act(async()=>{await vi.advanceTimersByTimeAsync(WORK_RETRY_MS[0])})
+    await vi.waitFor(()=>expect(harness.container.textContent).toContain('Recovered cloud history'))
+    expect(harness.container.querySelector('button')).toBeNull()
+    expect(harness.container.textContent).not.toContain('暂时无法读取完整的协作记录')
+  }finally{vi.useRealTimers()}
 })
 
 it('coalesces changes during a history read into one following refresh',async()=>{

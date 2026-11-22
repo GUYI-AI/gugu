@@ -11,10 +11,13 @@ vi.mock('@/lib/fileAccess', () => ({ fileMetadata: async () => ({ status: 'gone'
 vi.mock('@gugu/core/shared/fileResolver', async original => ({ ...await original<typeof import('@gugu/core/shared/fileResolver')>(), shownFileBlob: io.shown }))
 
 const source = { kind: 'item' as const, itemId: 'file', version: 2 }
-const revision = { source: 'local', item_id: 'file', version: 2, file_name: 'page.html', content_type: 'text/html', size_bytes: 4, sha256: 'a'.repeat(64) }
-const kept = `https://attachments.test/account/account/sha256/${'a'.repeat(64)}`
+// Each case is a version this run has not read yet: the bytes of a version read once are the run's (attachmentShownRemount).
+let sha = '', kept = '', versions = 0
 beforeEach(() => {
   vi.clearAllMocks()
+  sha = (++versions).toString(16).padStart(64, 'a')
+  kept = `https://attachments.test/account/account/sha256/${sha}`
+  const revision = { source: 'local', item_id: 'file', version: 2, file_name: 'page.html', content_type: 'text/html', size_bytes: 4, sha256: sha }
   io.resolve.mockResolvedValue({ status: 'ready', revision, reader: { accountId: 'account' } })
 })
 

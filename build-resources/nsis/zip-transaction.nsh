@@ -263,7 +263,7 @@ FunctionEnd
   WriteINIStr "$PLUGINSDIR\installer-links.ini" "links" "oldStart" "$oldStartMenuLink"
   WriteINIStr "$PLUGINSDIR\installer-links.ini" "links" "newDesktop" "$newDesktopLink"
   WriteINIStr "$PLUGINSDIR\installer-links.ini" "links" "oldDesktop" "$oldDesktopLink"
-  StrCpy $guguStage "$INSTDIR.gugu-install-${APP_ID}\stage"
+  StrCpy $guguStage "$INSTDIR.new" # @@@short-stage in install-transaction.ps1
   !insertmacro guguTransaction prepare
   !insertmacro guguRequireTransactionSuccess
   StrCpy $guguTransactionActive "true"

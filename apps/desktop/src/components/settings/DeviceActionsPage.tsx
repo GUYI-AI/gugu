@@ -54,7 +54,8 @@ import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow, Toggle } from '
 import { useDeviceActionGroupText } from './deviceActionGroupText'
 import { reportAssistantAppChange } from '../assistant/assistant-app-client'
 import { libraryDeviceId } from '../assistant/assistant-library-client'
-import { cachedDevicesAccount } from '../../store/devicesCache'
+import { cachedDevicesAccount, devicesModel } from '../../store/devicesCache'
+import { useReplica } from '../../lib/replica'
 import { UI_EVENTS } from '../../lib/uiEvents'
 import { useSettingsDetail } from './SettingsDetailNavigation'
 import { DeviceMachineConfigurations, type DeviceConfigurationActions } from '../devices/DeviceMachineConfigurations'
@@ -482,6 +483,8 @@ function OtherDeviceActions({ device, compact = false, machineOnline }: { device
   const { t } = useTranslation('settings')
   const text = useDeviceActionGroupText()
   const actions = device.capabilities?.actions?.actions ?? null
+  // Rows kept from before carry no action list (devicesModel's snapshot): until the read lands it is not read yet, ❌ "none".
+  const devices = useReplica(devicesModel, [], { read: false })
   const groups = useMemo(() => {
     const out = new Map<string, DeviceActionSummary[]>()
     for (const a of actions ?? []) out.set(a.group, [...(out.get(a.group) ?? []), a])
@@ -491,6 +494,7 @@ function OtherDeviceActions({ device, compact = false, machineOnline }: { device
   if (device.capabilities?.host_kind === 'server') return <SettingsNote data-testid="settings-device-actions-server">{t('devices.deviceActions.serverNone')}</SettingsNote>
   const readError = device.capabilities?.actions?.read_error
   if (readError) return <SettingsNote role="alert" tone="danger" data-testid="settings-device-actions-read-failed">{t('devices.deviceActions.otherReadFailed', { message: readError })}</SettingsNote>
+  if (!actions && devices.state === 'value' && devices.stale) return <SettingsNote>{t('devices.assistantPage.reading')}</SettingsNote>
   if (!actions) return <SettingsNote>{t('devices.deviceActions.otherNone')}</SettingsNote>
   return (
     <>

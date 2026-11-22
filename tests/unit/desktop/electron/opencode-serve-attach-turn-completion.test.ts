@@ -166,6 +166,7 @@ describe.skipIf(process.platform === 'win32')('opencode serve turn-completion up
     completionTimeoutMs: number,
     busyOnPrompt = true,
     onTurnLifecycle?: (lifecycle: TurnLifecycleEdge) => void,
+    turnStartTimeoutMs = 2_000,
   ) {
     const port = await reserveLoopbackPort()
     const fake = await startFakeServe(port, { busyOnPrompt })
@@ -178,7 +179,7 @@ describe.skipIf(process.platform === 'win32')('opencode serve turn-completion up
       cwd: os.tmpdir(),
       env: process.env,
       readyTimeoutMs: 3_000,
-      turnStartTimeoutMs: 2_000,
+      turnStartTimeoutMs,
       completionTimeoutMs,
       onTurnLifecycle,
       onSessionTitle: (title) => markers.get(title)?.(),
@@ -345,8 +346,9 @@ describe.skipIf(process.platform === 'win32')('opencode serve turn-completion up
     // so the new prompt skips awaitBusy() — and a prompt the backend silently dropped gets a SUCCESS
     // receipt, routing around the turn-start guard this transport already had.
     // Setup: turn one starts, wall clock passes the budget while timers do not run, and the backend
-    // then stops emitting busy at all. The new prompt must be reported as never started.
-    const { session, fake } = await makeSession(60_000)
+    // then stops emitting busy at all. The new prompt must be reported as never started (after a short turn-start bound:
+    // the claim is the rejection, not its length).
+    const { session, fake } = await makeSession(60_000, true, undefined, 200)
     const first = await session.injectPrompt('one')
     first.completion.catch(() => {})
 

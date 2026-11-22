@@ -3,6 +3,7 @@ import { toast as sonner } from 'sonner'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { TOAST_DWELL_MS, isReadableTier, type ToastTier } from './toastTiers'
 import { rendererLogger } from './log'
+import { requestToasterId } from '@renderer/app/aux-layers'
 
 const noticeLog = rendererLogger('notice')
 
@@ -86,6 +87,7 @@ function showToast({ key, title, description, tier, variant, waiting, action, ic
   const passthrough = !action && (tier === 'success' || tier === 'info')
   // 每个字段都显式给(没有就是 undefined):sonner 更新同 id 的提示时是 `{...旧的, ...新的}`,省略的字段会沿用上一次。
   let id: string | undefined
+  const live = key !== undefined && liveIds.has(key)
   if (key !== undefined) {
     id = liveIds.get(key) ?? `${key}#${++idSeq}`
     liveIds.set(key, id)
@@ -111,6 +113,9 @@ function showToast({ key, title, description, tier, variant, waiting, action, ic
     duration,
     // 不自己消失的(提醒)一定能当场关掉。
     closeButton: duration === Infinity ? true : undefined as boolean | undefined,
+    // A new toast shows in the window it was asked from (aux-layers; NoticeHost draws a strip in each pop-out). One
+    // updated in place stays where it is: sonner keeps the field it is not given.
+    ...(!live && { toasterId: requestToasterId() }),
   }
 
   logIfRead({ key, title, description, tier, variant })

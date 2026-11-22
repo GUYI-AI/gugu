@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { awaitFact } from '../../../../../../../tests/support/awaitFact';
 import * as programSurfaces from './extension-program-surface';
@@ -14,6 +14,7 @@ import {
   onExtensionProgramNotification,
   retireExtensionPrograms,
   revokeExtensionPrograms,
+  setExtensionProgramStopGraceForTesting,
   stopAllExtensionPrograms,
   toolVisibleTo,
   type ExtensionProgram,
@@ -456,6 +457,9 @@ describe('extension programs run by gugu (#6615)', () => {
   }, 30_000);
 
   it('stopping takes the whole tree, even a program that ignores stdin closing', async () => {
+    // What is proven is that the tree goes after the grace, not the grace's 2 s.
+    setExtensionProgramStopGraceForTesting(50);
+    onTestFinished(() => setExtensionProgramStopGraceForTesting(undefined));
     const log = path.join(dir, 'grandchild.log');
     const { pid } = await whoami(program('tree', 'v1', 'grandchild', log), 'conv-a');
     const grandchild = Number(fs.readFileSync(log, 'utf8').trim());

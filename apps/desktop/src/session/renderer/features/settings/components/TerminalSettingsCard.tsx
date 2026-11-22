@@ -93,7 +93,11 @@ const clampFontSize = (size: number) =>
 
 const isMac = isMacHost();
 
-/** Fonts installed on this device. Listed fresh on every open (a font installed meanwhile shows up); the last list shows until then. */
+/**
+ * Fonts installed on this device, listed fresh on every open (a font installed meanwhile shows up). Not kept across restarts:
+ * the list grows with the machine's fonts (hundreds on a Mac), and the first frame does not need it — the picker names the
+ * chosen font without the list (selectedOption), the list is only for the open dropdown.
+ */
 const installedFonts = replica({
   name: 'installedFonts',
   scope: 'device',
@@ -102,7 +106,6 @@ const installedFonts = replica({
     if (!result?.success || !Array.isArray(result.fonts)) throw new Error('Could not list installed fonts');
     return Array.from(new Set(result.fonts.map((font) => font.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   },
-  persist: { maxBytes: 8192, maxEntries: 1 },
 });
 
 const TerminalSettingsCard: React.FC = () => {

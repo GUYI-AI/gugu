@@ -421,8 +421,22 @@ describe('reinstalling its own folder extension (quiet upgrade)', () => {
     expect(refused.installed).toBe(true);
     expect(refused.next?.startsWith(note)).toBe(true);
 
-    // File-boundary verification does real asynchronous filesystem work before the notification deadline starts.
-    const answer = await run(() => new Promise<void>(() => {}));
+    // File-boundary verification does real asynchronous filesystem work before the notification deadline starts: real
+    // turns of the event loop, and the deadline's timer (1.5 s) moved on fake time instead of waited out.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    let answer: Awaited<ReturnType<typeof run>>;
+    try {
+      const pending = run(() => new Promise<void>(() => {}));
+      let settled = false;
+      void pending.finally(() => { settled = true; });
+      while (!settled) {
+        await new Promise((resolve) => setImmediate(resolve));
+        vi.advanceTimersByTime(100);
+      }
+      answer = await pending;
+    } finally {
+      vi.useRealTimers();
+    }
     expect(answer.installed).toBe(true);
     expect(answer.next?.startsWith(note)).toBe(true);
 

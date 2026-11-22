@@ -48,10 +48,14 @@ describe('an attachment whose sender is still uploading', () => {
 
   it('someone else sees it pending, asks nothing more until told, and its bytes arrive (to fade in) once they are up', async () => {
     f.resolve.mockResolvedValue(ready)
-    await harness.render(createElement(Thumb, { source: { kind: 'message', messageId: 'theirs' }, metadata: pending }))
-    expect(shown(harness)?.getAttribute('data-status')).toBe('pending')
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    expect(f.resolve, 'no timer asks the server again').not.toHaveBeenCalled()
+    // A fake clock: a whole minute passes without any timer asking the server again, in no real time.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      await harness.render(createElement(Thumb, { source: { kind: 'message', messageId: 'theirs' }, metadata: pending }))
+      expect(shown(harness)?.getAttribute('data-status')).toBe('pending')
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000) })
+      expect(f.resolve, 'no timer asks the server again').not.toHaveBeenCalled()
+    } finally { vi.useRealTimers() }
     await act(async () => { noteAttachmentChanged('theirs') })
     await vi.waitFor(() => expect(shown(harness)?.getAttribute('data-status')).toBe('ready'))
     expect(shown(harness)?.getAttribute('data-arrived')).toBe('yes')

@@ -7,6 +7,8 @@ export interface NodeBackendOptions {
   name: string
   routes: RoutesFor
   keepAliveTimeoutMs?: number
+  /** Bound on opening a connection (proxy, SOCKS handshake and TLS included). Default 10 s. */
+  connectTimeoutMs?: number
   log?: EgressBackend['log']
   ca?: string[]
 }
@@ -67,7 +69,7 @@ class RouteDispatcher extends Dispatcher {
 export function nodeEgressBackend(options: NodeBackendOptions): EgressBackend & { closeConnections(): Promise<void> } {
   // The egress owns the header deadline; undici bounds only the connection (proxy, SOCKS handshake and TLS included).
   const tls = options.ca ? { ca: options.ca } : {}
-  const pool = { keepAliveTimeout: options.keepAliveTimeoutMs ?? 60_000, keepAliveMaxTimeout: 600_000, headersTimeout: 0, bodyTimeout: 0, connectTimeout: 10_000 }
+  const pool = { keepAliveTimeout: options.keepAliveTimeoutMs ?? 60_000, keepAliveMaxTimeout: 600_000, headersTimeout: 0, bodyTimeout: 0, connectTimeout: options.connectTimeoutMs ?? 10_000 }
   const dispatchers = new Map<string, Dispatcher>()
   const via = (route: ProxyRoute): Dispatcher => {
     const key = route ?? 'direct'
