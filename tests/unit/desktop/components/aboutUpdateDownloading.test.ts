@@ -14,6 +14,7 @@ vi.stubGlobal('__APP_VERSION__', '0.2.53-beta.62.1') // vite define 的构建期
 const checkForUpdates = vi.hoisted(() => vi.fn(async (): Promise<unknown> => ({ status: 'idle' })))
 const installUpdate = vi.hoisted(() => vi.fn(async (): Promise<void> => {}))
 const updateState = vi.hoisted(() => vi.fn(async (): Promise<unknown> => ({ status: 'idle', updateInfo: null, revision: 0 })))
+vi.mock('@/components/LiveNotice', () => import('../../../support/inlineLiveNotice'))
 vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: {
     capabilities: { appUpdates: true, appVersion: false },

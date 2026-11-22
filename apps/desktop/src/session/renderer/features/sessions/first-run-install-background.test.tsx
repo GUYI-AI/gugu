@@ -11,6 +11,7 @@ vi.mock('@renderer/lib/stores/use-agent-installation-statuses', () => ({
   useAgentInstallationStatuses: () => ({ installAsync: f.install }), useAgentInstallProgress: () => null,
 }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
+vi.mock('@/components/LiveNotice', () => import('../../../../../../../tests/support/inlineLiveNotice'));
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { agents: { getAgentInstallationStatus: f.status, cancelInstall: vi.fn() } } }));
 
 function Flow() {
