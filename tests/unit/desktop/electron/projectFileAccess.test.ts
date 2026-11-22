@@ -438,6 +438,17 @@ describe('the database\'s version record decides what this device holds', () => 
     expect(await file.read(500_000, 2)).toEqual(new Uint8Array([83, 83]))
     await file.dispose()
   })
+  // The machine's bytes of a sha include a version it holds: found by its record, read where it is, and only while it still holds that sha.
+  it('finds a held version by its sha, read in place, and not once the file no longer holds it', async () => {
+    await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
+    const never = vi.fn(async () => { throw Error('Network must remain unused') })
+    const access = createDesktopFileAccess({ auth: async () => ({ userId: 'owner', accessToken: 'memory-only-token' }), root: async () => root, project: async () => 'project', links: () => null, tempRoot, fetch: never as typeof fetch, rpc: never as never, env, deviceStore: join(home, 'project-files'), identityDb: never as never })
+    expect(digest(new Uint8Array(await (await access.held(revision.sha256!))!.arrayBuffer()))).toBe(revision.sha256)
+    expect(await access.held('f'.repeat(64))).toBeNull()
+    await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
+    expect(await access.held(revision.sha256!)).toBeNull()
+    expect(never).not.toHaveBeenCalled()
+  })
   it('the composition root asks the database for that version as the owner', async () => {
     await writeDeviceIdCache(deviceFile(env, 'owner'), 'host-device')
     const network = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {

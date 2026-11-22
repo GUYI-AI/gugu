@@ -9,10 +9,10 @@ import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/cor
 import { DEVICE_STORE, createFileResolver, type FileContext, type FileRef, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { parseFileStorage } from '@gugu/core/shared/fileStorage'
 import { readUserSettingsConfig, type SettingsTableClient } from '@gugu/core/cloud/userSettings'
-import { PROJECT_FILE_READ, createProjectFileReader, localProjectFileProvider } from './projectFileHost'
+import { PROJECT_FILE_READ, createProjectFileReader, heldFileBlob, localProjectFileProvider } from './projectFileHost'
 import { ownSshFileProvider, type HeldFileSshLinks } from './projectFileSsh'
 import { createProjectTransferHost } from './projectFileTransferHost'
-import { findProjectFileByName, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
+import { findProjectFileByName, heldRevisionBySha, type ProjectFileVersionLookup } from './sessionpage/sessionpage-project-groups'
 import type { setAccountFileResolver } from './session/main/core/extensions/account-token'
 import { createProjectFilePublisher } from './projectFilePublication'
 import { offerNativeImagePreview } from './imagePreview'
@@ -107,7 +107,14 @@ export function createDesktopFileAccess(deps: {
       return data
     },
   })
-  return { providers, resolve, resolveAccount, read, drain, publish,
+  /** The bytes of a version this device holds in a project, found by its sha: read where they are, checked against it. */
+  const held = async (sha256: string): Promise<Blob | null> => {
+    const { accountId, deviceId } = await identity()
+    const revision = await heldRevisionBySha(sha256, accountId, deviceId, deps.env)
+    const projectRoot = revision ? await root(revision.host_project_id!) : null
+    return revision && projectRoot ? heldFileBlob(revision, projectRoot).catch(() => null) : null
+  }
+  return { providers, resolve, resolveAccount, read, drain, publish, held,
     handlers: (transport: 'ssh' | 'realtime'): DeviceRpcHandlers => transport === 'ssh' ? sshHandlers : {},
   }
 }

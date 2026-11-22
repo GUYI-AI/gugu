@@ -2557,7 +2557,7 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
   local: desktopFiles.providers.local, ssh: desktopFiles.providers.ssh, publish: (chat, file, actor, message, task) => desktopFiles.publish(chat, file, null, actor, undefined, { message, ...(task ? { task: true, itemId: task.itemId } : {}) }),
   taskCopy: (name, bytes, mimeType) => writeTaskCopy(join(resolveGuguHome(process.env), 'attachments'), name, bytes, mimeType), publication: desktopFiles.publish.local,
   openPath: path => shell.openPath(path), published: directory => trackRemoteFileDirectory(remoteFileOpenDirectories, directory),
-  stored: sha256 => localCopy(resolveGuguHome(process.env), sha256),
+  stored: async sha256 => await localCopy(resolveGuguHome(process.env), sha256) ?? await desktopFiles.held(sha256),
 })
 /**
  * The one social bridge every session surface wires (an ACP session, its side-chat fork, a terminal session): the same

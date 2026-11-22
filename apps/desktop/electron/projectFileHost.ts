@@ -102,7 +102,7 @@ export async function snapshotProjectFile(revision: FileRevision, read: ProjectF
  * A version this machine holds, read where it is: checked once against its sha (that pass is its progress), then read in
  * place. A file-backed Blob refuses to read once its file changes, so no later byte can come from another version.
  */
-async function openHeldFile(revision: FileRevision, root: string, progress?: FileContext['progress']): Promise<FileBytes> {
+export async function heldFileBlob(revision: FileRevision, root: string, progress?: FileContext['progress']): Promise<Blob> {
   const { path } = await readWorkspaceChunk(root, { path: revision.relative_path!, offset: 0, length: 0 })
   const blob = await openAsBlob(path)
   if (blob.size !== revision.size_bytes) throw new Error('Local file changed')
@@ -110,6 +110,10 @@ async function openHeldFile(revision: FileRevision, root: string, progress?: Fil
   let done = 0
   for await (const chunk of blob.stream()) { hash.update(chunk); done += chunk.length; progress?.(done, blob.size) }
   if (hash.digest('hex') !== revision.sha256) throw new Error('Local file changed')
+  return blob
+}
+async function openHeldFile(revision: FileRevision, root: string, progress?: FileContext['progress']): Promise<FileBytes> {
+  const blob = await heldFileBlob(revision, root, progress)
   return { size: blob.size, read: async (offset, length) => { requireFileRange(blob.size, offset, length); return new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer()) }, dispose: async () => {} }
 }
 

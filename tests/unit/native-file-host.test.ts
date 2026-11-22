@@ -42,6 +42,18 @@ describe('native file capabilities are scoped and never expose incomplete origin
     const pending = f.host.publish(1, request); await started; await f.host.drop(1); finish({ id: 'item', version: 1 })
     await expect(pending).rejects.toThrow('account or window changed')
   })
+  // This machine's bytes of a sha, as the lookup finds them: handed out in the usual frames, and nothing it does not hold.
+  it('hands out this machine\'s bytes of a sha, and nothing it does not hold', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'gugu-native-file-153-')); roots.push(root)
+    const stored = vi.fn(async (sha256: string) => sha256 === 'a'.repeat(64) ? new Blob([bytes]) : null)
+    const host = createNativeFileHost({ root, owner: async () => 'owner', alive: () => true, local: vi.fn(), ssh: vi.fn(), openPath: vi.fn(), published: () => {}, stored })
+    const ref = { ref: { attachment_id: 'a'.repeat(64) }, actor: context.actor }
+    expect(await host.read(1, ref, { op: 'stored', sha256: 'b'.repeat(64) })).toBeNull()
+    const opened = await host.read(1, ref, { op: 'stored', sha256: 'a'.repeat(64) }) as { id: string; size: number }
+    expect(opened.size).toBe(bytes.length)
+    expect(await host.read(1, ref, { op: 'read', id: opened.id, offset: 0, length: 3 })).toEqual(bytes)
+    await expect(host.read(1, ref, { op: 'read', id: opened.id, offset: 0, length: FILE_CHUNK_BYTES + 1 })).rejects.toThrow('Invalid file range')
+  })
   it('plans a local publication without publishing a file or reading any bytes', async () => {
     const f = await fixture()
     await expect(f.host.publish(1, { chatId: 'group' })).resolves.toBe(true)
