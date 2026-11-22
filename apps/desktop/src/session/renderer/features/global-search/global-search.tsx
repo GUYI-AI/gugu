@@ -243,7 +243,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
         {!hasQuery && (
           <>
           {/* The phone page lists the types one per row, every label on one line. */}
-          <SectionLabel className="px-3 pt-4 sm:hidden">{translate('globalSearch.byType')}</SectionLabel>
+          {names && <SectionLabel className="px-3 pt-4">{translate('globalSearch.byType')}</SectionLabel>}
           <div className="grid grid-cols-[repeat(auto-fit,minmax(max(8em,calc((100%_-_0.5rem)/3)),1fr))] gap-1 border-t border-foreground/[0.08] px-1 pt-2 text-[length:var(--font-body)] max-sm:flex max-sm:flex-col max-sm:gap-0 max-sm:border-t-0 max-sm:pt-0" data-testid="global-search-quick">
             {quick.filter((item) => !item.scoped || inChat).map((item) => (
               <span key={item.key} className="relative">
