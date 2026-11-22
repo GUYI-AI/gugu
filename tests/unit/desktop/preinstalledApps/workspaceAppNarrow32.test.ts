@@ -21,7 +21,7 @@ const setNarrow = (matches: boolean) => {
   for (const fn of narrow.listeners) fn()
 }
 
-const menu = fakeSharedMenu()
+const menu = fakeSharedMenu({ more: 'More' })
 const gugu = {
   showContextMenu: menu.showContextMenu,
   linkTo: vi.fn(async ({ file }: { file: { id: string } }) => `gugu-file://${file.id}`),

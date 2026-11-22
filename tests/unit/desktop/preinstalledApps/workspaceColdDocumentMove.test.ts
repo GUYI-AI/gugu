@@ -11,7 +11,7 @@ const folder = { ...file, id: 'docs', name: 'docs', displayName: 'docs', type: '
 const entries = [file, folder]
 const context = { tabId: 'file-context', file: { chat: 'chat', id: file.id }, chat: { id: 'chat', kind: 'group', name: 'Files', groupId: null }, workspace: { id: 'working-copy', sessionId: 'task' }, locale: 'en-US', capabilities: ['files:read', 'files:write'] }
 let changed: (ctx: Record<string, unknown>) => Promise<void>
-const menu = fakeSharedMenu()
+const menu = fakeSharedMenu({ more: 'More' })
 const gugu = {
   linkTo: async () => 'gugu-file://readme',
   getContext: async () => context, markdown: async () => ({ render: () => document.createDocumentFragment() }),

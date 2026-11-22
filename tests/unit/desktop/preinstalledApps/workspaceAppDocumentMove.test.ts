@@ -27,7 +27,7 @@ const folders = (chat = context.chat.id) => [
   { id: 'target-b', chat, name: 'Target B', displayName: 'Target B', type: 'folder' },
   documents.get(context.file?.id ?? '')!.entry,
 ]
-const menu = fakeSharedMenu()
+const menu = fakeSharedMenu({ more: 'More' })
 const gugu = {
   showContextMenu: menu.showContextMenu,
   getContext: vi.fn(async () => context), onContextChanged: (fn: typeof contextChanged) => { contextChanged = fn; return () => {} },

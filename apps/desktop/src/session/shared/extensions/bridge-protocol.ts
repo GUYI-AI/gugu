@@ -161,7 +161,11 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // 60 (file-selection.ts): an opened file carries its selection menu (the host's table: Copy · Cite · Send);
 // `files.showSelection({ file, places, text?, code?, rect } | null)` draws it in the page, moved in the same frame; Cite and
 // Send pressed there go to the host in the person's gesture — a draft, or the host's own box to send from.
-export const EXTENSION_API_VERSION = 60;
+// 61: `showContextMenu` rows say `fold` (rare: the host lays it under 更多 by its one menu rule, menu-table.ts
+// @@@menu-order, the destructive last), `alone` (its name when its submenu holds only it and is shown in its place) and
+// `hotkey` (the key drawn at the row's end, as host menus do: 'F2', 'Mod+Click'). The host orders and folds; the App only
+// says which rows are rare. Presentation only, as 51: an older host draws the rows as given.
+export const EXTENSION_API_VERSION = 61;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;

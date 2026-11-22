@@ -43,7 +43,7 @@ const file = {
 const md = { render: vi.fn((_element: Element, _text: string, _options: unknown) => {}) }
 const context = { chat: { id: 'chat-1', name: 'G', kind: 'group', groupId: 'chat-1' }, file: { chat: 'chat-1', id: 'plan' }, locale: 'en', capabilities: ['files:read', 'files:write'] }
 let contextChanged = (_ctx: typeof context) => {}
-const menu = fakeSharedMenu()
+const menu = fakeSharedMenu({ more: 'More' })
 const gugu = {
   showContextMenu: menu.showContextMenu,
   linkTo: vi.fn(async ({ file }: { file: { id: string } }) => `gugu-file://${file.id}`),
