@@ -6,7 +6,7 @@
  * dependency through the package entry point.
  */
 
-import type { TimelineWindowFields } from '@gugu/session-core/session-record/contract';
+import type { SessionpageOpenedFileChunk, SessionpageOpenedFileReadRequest, TimelineWindowFields } from '@gugu/session-core/session-record/contract';
 import type { SessionPatch } from '@gugu/session-core/acp';
 import type { ViewportProtection } from './core/viewport-protection';
 import type { ChatAttachment, ChatMessage, OpenedOutput } from './model';
@@ -71,6 +71,8 @@ export type ChatCommands = {
   onMessageBodyMount?: (target: { root: HTMLElement; message: import('@gugu/core/shared/types/chat').MessageItem }) => void | (() => void);
   onOpenSender?: (target: import('./lib/sender-target').MessageSenderTarget) => void;
   conversationAgentSession?: () => string | null;
+  /** One piece of a file this session handed to people, read on its machine by the session's own check (an owner notification's file). */
+  readConversationFile?: (request: SessionpageOpenedFileReadRequest) => Promise<SessionpageOpenedFileChunk>;
   /** External agents may expose only their public identity, with no readable session. */
   conversationAgentUserId?: () => string | null;
   /** Recorded-conversation hosts can supply an event clock without freezing the UI scheduler. */

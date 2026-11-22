@@ -36,9 +36,7 @@ export async function attachmentPreview(source: AttachmentSource, metadata?: Fil
 async function sessionFileBytes(source: Extract<AttachmentSource, { kind: 'session-file' }>): Promise<AttachmentBytes> {
   const read = sessionFileReader(source.sessionId)
   if (!read) throw new Error('This file is kept in its task on another view; open it from that task')
-  const dataUrl = await read(source.path)
-  if (!dataUrl) throw new Error('Could not read the file from its session host')
-  const blob = await (await fetch(dataUrl)).blob()
+  const blob = await read(source.path)
   return { status: 'ready', blob, link: sessionFileRevision(source, blob.type, blob.size) }
 }
 function sessionFileRevision(source: Extract<AttachmentSource, { kind: 'session-file' }>, contentType: string, size: number): FileRevision {
