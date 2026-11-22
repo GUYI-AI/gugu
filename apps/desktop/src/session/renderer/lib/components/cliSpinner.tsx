@@ -36,7 +36,7 @@ const FRAMES_2 = [
  *
  * 转动全在 CSS 里(cliSpinner.css):整套字形竖排成一条,窗口只露一行,按 80ms 一格走
  * (steps)—— 合成器上的位移,主线程不逐帧换字、不重渲。从前是每 80ms 一次 setState,看得见就一直在主线程上跑。
- * 看不见就停:滚出视口、窗口不可见、所在页面没在显示时暂停(与 ShimmerText 同一道开关);页签上被 × 盖住的那个由
+ * 看不见就停:滚出视口、窗口不可见、所在页面没在显示时去掉动画(与 ShimmerText 同一道开关 data-animation-off);页签上被 × 盖住的那个由
  * 页签自己暂停(tab-close-button)。
  */
 export function CLISpinner({ variant = '1' }: { variant?: '1' | '2' }) {
@@ -54,9 +54,9 @@ export function CLISpinner({ variant = '1' }: { variant?: '1' | '2' }) {
   }, [shown, inView]);
 
   const frames = variant === '1' ? FRAMES_1 : FRAMES_2;
-  const style = { '--cli-spinner-frames': frames.length, ...(shown && inView ? {} : { '--gugu-animation-viewport-paused': 'paused' }) } as CSSProperties;
+  const style = { '--cli-spinner-frames': frames.length } as CSSProperties;
   return (
-    <span ref={element} className="cli-spinner text-foreground/60" style={style}>
+    <span ref={element} className="cli-spinner text-foreground/60" style={style} data-animation-off={shown && inView ? undefined : ''}>
       <span className="cli-spinner__strip" aria-hidden="true">
         {frames.map((frame, index) => <span key={index}>{frame}</span>)}
       </span>

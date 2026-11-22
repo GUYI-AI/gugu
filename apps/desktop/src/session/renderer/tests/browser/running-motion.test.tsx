@@ -29,7 +29,7 @@ function mount(node: React.ReactNode): HTMLElement {
 }
 const strips = (host: HTMLElement) => [...host.querySelectorAll('.cli-spinner__strip')].flatMap((strip) => strip.getAnimations());
 
-it('turns with one infinite stepped animation and no timer, and pauses with its window', async () => {
+it('turns with one infinite stepped animation and no timer, and stops with its window', async () => {
   const timers = vi.spyOn(window, 'setInterval');
   const host = mount(<CLISpinner variant="2" />);
   await until('spinner mounts', () => !!host.firstElementChild);
@@ -40,7 +40,7 @@ it('turns with one infinite stepped animation and no timer, and pauses with its 
   expect(timing.duration).toBe(24 * 80);
   expect(timers).not.toHaveBeenCalled();
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }));
-  await until('it pauses with the window', () => strips(host)[0]!.playState === 'paused');
+  await until('it stops with the window', () => strips(host).length === 0);
 });
 
 it('the active tab, whose × covers the glyph, holds it still; an inactive tab keeps it turning', async () => {
@@ -56,14 +56,15 @@ it('the active tab, whose × covers the glyph, holds it still; an inactive tab k
   expect(strips(inactive)[0]!.playState).toBe('running');
 });
 
-it('pauses offscreen and on inert retained surfaces, then resumes the same clock', async () => {
+it('stops offscreen and starts again on the shared beat; pauses on inert retained surfaces and resumes the same clock', async () => {
   const host = mount(<CLISpinner />);
   await until('spinner runs', () => strips(host)[0]?.playState === 'running');
-  const animation = strips(host)[0]!;
   host.style.cssText = 'position:fixed;top:20000px';
-  await until('offscreen spinner pauses', () => animation.playState === 'paused');
+  await until('offscreen spinner has no animation', () => strips(host).length === 0);
   host.style.cssText = '';
-  await until('onscreen spinner resumes', () => animation.playState === 'running');
+  await until('onscreen spinner turns again', () => strips(host)[0]?.playState === 'running');
+  const animation = strips(host)[0]!;
+  expect(Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime))).toBeLessThan(100);
   host.inert = true;
   await until('retained surface pauses', () => animation.playState === 'paused');
   host.inert = false;
