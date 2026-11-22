@@ -120,7 +120,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
   };
 
   return (
-    <div className="bg-background-2/10 rounded-lg p-4">
+    <div className="gg-settings-surface p-4">
       <div className="space-y-6">
         {Object.entries(SHORTCUTS_BY_CATEGORY)
           .map(([category, shortcuts]) => [category, shortcuts.filter(([key]) => terminalEnabled || !TERMINAL_SHORTCUTS.has(key))] as const)

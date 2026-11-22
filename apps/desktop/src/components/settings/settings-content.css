@@ -10,26 +10,36 @@
   border-bottom: 0;
   flex-shrink: 0;
 }
-.gg-settings-detail:not([data-mobile]) div.gg-settings-body { padding-top: 0; padding-bottom: var(--spacing-2xl); }
-.gg-settings-detail:not([data-mobile]) .gg-settings-page { gap: var(--spacing-2xl); }
+/* One surface under the nav and the content; every settings group floats on it as a card (owner 11-22, variant B). */
+.gg-settings-nav-pane:not([data-mobile]) { border-inline-end: 0; }
+div.gg-pane.gg-settings-detail:not([data-mobile]) { --settings-group-gap: var(--spacing-lg); background: var(--sidebar); }
+/* The top inset keeps the first card's ring inside the scroller. */
+.gg-settings-detail:not([data-mobile]) div.gg-settings-body { padding-top: var(--spacing-xs); padding-bottom: var(--spacing-2xl); }
+.gg-settings-detail:not([data-mobile]) .gg-settings-page { gap: var(--settings-group-gap); }
 .gg-settings-detail:not([data-mobile]) .gg-settings-lede { margin-bottom: var(--spacing-2xl); }
-.gg-settings-detail:not([data-mobile]) .gg-settings-group > .gg-settings-card {
+.gg-settings-detail:not([data-mobile]) .gg-settings-group > .gg-settings-card,
+.gg-settings-detail:not([data-mobile]) .gg-settings-surface {
   border: 0;
-  border-radius: 0;
-  overflow: visible;
+  border-radius: var(--radius-surface);
+  background: var(--card);
+  box-shadow: var(--shadow-lift);
 }
+.gg-settings-detail:not([data-mobile]) .gg-settings-group > .gg-settings-card { padding-block: var(--spacing-xs); }
 .gg-settings-detail:not([data-mobile]) .gg-settings-group > .gg-section-label { font-weight: var(--font-weight-medium); }
-.gg-settings-detail:not([data-mobile]) div.gg-settings-row { padding-inline: 0; column-gap: var(--spacing-2xl); }
+/* Rows reach the card edges (hover fills the card width); the divider between them stays inset. */
+.gg-settings-detail:not([data-mobile]) div.gg-settings-row { padding-inline: var(--spacing-lg); column-gap: var(--spacing-2xl); }
 .gg-settings-detail:not([data-mobile]) .gg-settings-row-description { max-width: 48ch; }
-.gg-settings-detail:not([data-mobile]) .gg-settings-row + .gg-settings-row { border-top-color: var(--border-color); }
+.gg-settings-detail:not([data-mobile]) .gg-settings-row + .gg-settings-row {
+  border-top: 0;
+  background-image: linear-gradient(var(--border-color), var(--border-color));
+  background-size: calc(100% - 2 * var(--spacing-lg)) 1px;
+  background-position: center top;
+  background-repeat: no-repeat;
+}
 
-/* Navigation is a separate role, including mixed groups with read-only values. */
+/* Navigation rows are ordinary rows of their card: no pill of their own, only the shared hover/press layer. */
 .gg-settings-detail:not([data-mobile]) div.gg-settings-row[role='button'] {
-  padding: var(--spacing-md);
-  margin-block: var(--spacing-xs);
-  border: 0;
-  border-radius: var(--radius-control);
-  background-color: color-mix(in oklab, var(--fg) 2.4%, transparent);
+  padding-block: var(--spacing-md);
   column-gap: var(--spacing-md);
 }
 .gg-settings-detail:not([data-mobile]) .gg-settings-row[role='button'] .gg-settings-row-title { font-weight: var(--font-weight-medium); }
@@ -39,7 +49,7 @@
   width: var(--control-h-md);
   height: var(--control-h-md);
   border-radius: var(--radius-control);
-  background: var(--bg);
+  background: var(--muted);
 }
 @media (hover: hover) {
   .gg-settings-detail:not([data-mobile]) .gg-settings-row[role='button']:hover:not([aria-disabled='true']) { background-color: var(--hover); }
@@ -47,17 +57,13 @@
 .gg-settings-detail:not([data-mobile]) .gg-settings-row[role='button']:active:not([aria-disabled='true']) { background-color: var(--press); }
 .gg-settings-detail:not([data-mobile]) [data-settings-group='navigation'] > .gg-settings-card { display: flex; flex-direction: column; }
 
-/* Identity and status summaries earn a surface; they are not settings tables. */
-.gg-settings-detail:not([data-mobile]) [data-settings-group='summary'] > .gg-settings-card {
-  padding: var(--spacing-lg);
-  border-radius: var(--radius-surface);
-  background: var(--muted);
-}
+/* Identity and status summaries: the same card, with the content inset instead of the rows. */
+.gg-settings-detail:not([data-mobile]) [data-settings-group='summary'] > .gg-settings-card { padding: var(--spacing-lg); }
 .gg-settings-detail:not([data-mobile]) [data-settings-group='summary'] .gg-settings-row { min-height: 0; padding: 0; }
 .gg-settings-detail:not([data-mobile]) [data-settings-group='summary'] .gg-settings-row + .gg-settings-row {
   margin-top: var(--spacing-lg);
   padding-top: var(--spacing-lg);
-  border-top: 1px solid var(--border-color);
+  background-size: 100% 1px;
 }
 .gg-settings-detail:not([data-mobile]) [data-settings-group='summary'] .gg-settings-row[data-leading] .gg-settings-row-title {
   font-size: var(--font-title);
@@ -85,15 +91,13 @@
 .gg-settings-detail:not([data-mobile]) [data-settings-group='editor'] > .gg-settings-card {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: var(--spacing-2xl);
+  column-gap: var(--spacing-lg);
   row-gap: var(--spacing-md);
+  padding: var(--spacing-lg);
 }
-.gg-settings-detail:not([data-mobile]) [data-settings-group='editor'] .gg-settings-row { padding-block: 0; }
-.gg-settings-detail:not([data-mobile]) [data-settings-group='danger'] { padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
-/* Without feedback below the sign-in rows, keep their normal bottom inset up to the divider. */
-.gg-settings-detail:not([data-mobile]) .gg-account-login-methods:has(> .gg-settings-card:last-child) + [data-settings-group='danger'] {
-  margin-top: calc(-1 * var(--spacing-2xl));
-}
+.gg-settings-detail:not([data-mobile]) [data-settings-group='editor'] .gg-settings-row { padding: 0; background: none; }
+.gg-settings-detail:not([data-mobile]) [data-settings-group='editor'] [data-settings-span='full'] { grid-column: 1 / -1; }
+.gg-settings-detail:not([data-mobile]) [data-settings-group='editor'] .gg-settings-actions { grid-column: 1 / -1; justify-content: flex-end; }
 @container gg-settings (max-width: 540px) {
   .gg-settings-detail:not([data-mobile]) [data-settings-group='editor'] > .gg-settings-card { grid-template-columns: minmax(0, 1fr); }
 }

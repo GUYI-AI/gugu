@@ -27,14 +27,14 @@
 
 .gg-usage-section { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--spacing-md); min-width: 0; }
 .gg-usage-hint { font-size: var(--font-caption); color: var(--muted-fg); font-weight: var(--font-weight-regular); }
-.gg-usage-card { border: 1px solid var(--border); border-radius: var(--radius-xl); padding: var(--spacing-lg); min-width: 0; }
+.gg-usage-card { padding: var(--spacing-lg); min-width: 0; }
 .gg-usage-muted { color: var(--muted-fg); font-size: var(--font-body); }
 .gg-usage-caption { color: var(--muted-fg); font-size: var(--font-caption); }
 
 /* 总览:四格,窄处两格 */
 .gg-usage-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--spacing-sm); }
 @container (max-width: 560px) { .gg-usage-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-.gg-usage-tile { border: 1px solid var(--border); border-radius: var(--radius-xl); padding: var(--spacing-md) var(--spacing-md); min-width: 0; }
+.gg-usage-tile { padding: var(--spacing-md) var(--spacing-md); min-width: 0; }
 .gg-usage-tile-value {
   font-size: var(--font-size-xl);
   font-weight: var(--font-weight-semibold);
@@ -118,7 +118,7 @@
 [data-tone="chart-4"] { --na-tone: var(--usage-accent-4); }
 
 /* LogStatCards:overflow-hidden rounded-lg border / grid divide-x / 单元 px-5 py-4 */
-.na-stats { overflow: hidden; border: 1px solid var(--border); border-radius: var(--na-radius-lg); }
+.na-stats { overflow: hidden; }
 .na-stats-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); min-width: 0; }
 .na-stat { min-width: 0; padding: 16px 20px; border-left: 1px solid color-mix(in oklch, var(--border) 60%, transparent); }
 .na-stat:first-child { border-left: 0; }
@@ -153,7 +153,7 @@
 .na-referral-link .na-input { min-width: 0; color: var(--muted-fg); }
 
 /* 图表卡:overflow-hidden rounded-lg border;头 border-b px-5 py-3;体 h-96 p-2 */
-.na-card { overflow: hidden; border: 1px solid var(--border); border-radius: var(--na-radius-lg); min-width: 0; }
+.na-card { overflow: hidden; min-width: 0; }
 .na-card-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); }
 .na-card-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
 /* 标题不让位(否则被右侧说明挤成「邀请好 / 友」逐字折行),说明占剩余宽度、自己换行。 */
@@ -173,9 +173,9 @@
 .na-seg-item svg { width: 14px; height: 14px; }
 
 /* 使用日志表 */
-.na-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; border: 1px solid var(--border); border-radius: var(--na-radius-lg); background: color-mix(in oklch, var(--card, var(--bg)) 50%, transparent); }
+.na-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; }
 .na-input { height: 32px; min-width: 10rem; flex: 1 1 10rem; padding: 0 10px; border: 1px solid var(--border-strong); border-radius: var(--na-radius-lg); background: var(--bg); color: var(--fg); font: inherit; font-size: var(--font-body); }
-.na-table-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--na-radius-lg); transition: opacity var(--dur-fast) var(--ease); }
+.na-table-wrap { overflow: auto; transition: opacity var(--dur-fast) var(--ease); }
 .na-table-wrap[data-busy] { pointer-events: none; opacity: .6; }
 .na-table { width: 100%; border-collapse: collapse; font-size: var(--font-body); font-variant-numeric: tabular-nums; }
 .na-table thead th { position: sticky; top: 0; z-index: 1; height: 40px; padding: 0 8px; background: var(--na-table-header); color: var(--fg); text-align: left; font-weight: var(--font-weight-medium); white-space: nowrap; border-bottom: 1px solid var(--border); }

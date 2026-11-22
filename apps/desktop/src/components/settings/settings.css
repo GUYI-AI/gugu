@@ -65,12 +65,14 @@ div.gg-settings-body {
   min-width: 0;
 }
 
-.gg-settings-card {
+/* 分组卡片,以及设置页里分组之外的块(用量小卡、表格、资源监视器、快捷键)—— 同一种卡,❌ 各页自己画框。 */
+.gg-settings-card,
+.gg-settings-surface {
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  overflow: hidden;
   min-width: 0;
 }
+.gg-settings-card { overflow: hidden; }
 
 /* 行:[图标] 标题/说明 [控件]。网格而不是 flex —— 窄屏时控件要落到**说明那一列**下面,
    不是落到图标下面。 */
@@ -236,13 +238,14 @@ div.gg-settings-body [data-session-settings-section] {
 /* 内页最上面那一句说明,由 SettingsPanel 补在没有自带说明的页上(通用、活跃)。 */
 .gg-settings-lede { margin-bottom: var(--spacing-2xl); }
 
-/* 表单页最后的「保存」:靠右一行,失败 / 已保存的小字在按钮左边。 */
+/* 表单的「保存」:表单卡片里的最后一行,靠右;失败 / 已保存的小字在按钮左边。 */
 .gg-settings-actions {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: var(--spacing-md);
 }
+.gg-pane[data-mobile] .gg-settings-card > .gg-settings-actions { padding: var(--spacing-md) var(--spacing-lg); }
 .gg-settings-actions-note {
   font-size: var(--font-caption);
   line-height: var(--lh-caption);

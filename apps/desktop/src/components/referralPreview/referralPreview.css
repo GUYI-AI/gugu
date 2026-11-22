@@ -1,10 +1,24 @@
-/* Continue the existing sign-in rows without changing their feedback spacing. */
+/* Continue the sign-in card: the two groups read as one card (seam closed, shadow clipped at the seam). */
 .gg-settings-detail:not([data-mobile]) .gg-account-login-methods:has(> .gg-settings-card:last-child) + .gg-referral-account-preview {
-  margin-top: calc(-1 * var(--spacing-2xl));
+  margin-top: calc(-1 * var(--settings-group-gap));
 }
-
+.gg-settings-detail:not([data-mobile]) .gg-account-login-methods:has(+ .gg-referral-account-preview) > .gg-settings-card:last-child {
+  padding-bottom: 0;
+  border-end-start-radius: 0;
+  border-end-end-radius: 0;
+  clip-path: inset(-32px -32px 0 -32px);
+}
+.gg-settings-detail:not([data-mobile]) .gg-account-login-methods:has(> .gg-settings-card:last-child) + .gg-referral-account-preview > .gg-settings-card {
+  padding-top: 0;
+  border-start-start-radius: 0;
+  border-start-end-radius: 0;
+  clip-path: inset(0 -32px -32px -32px);
+}
 .gg-settings-detail:not([data-mobile]) .gg-account-login-methods + .gg-referral-account-preview .gg-settings-row {
-  border-top: 1px solid var(--border-color);
+  background-image: linear-gradient(var(--border-color), var(--border-color));
+  background-size: calc(100% - 2 * var(--spacing-lg)) 1px;
+  background-position: center top;
+  background-repeat: no-repeat;
 }
 
 .gg-referral-dialog{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden}

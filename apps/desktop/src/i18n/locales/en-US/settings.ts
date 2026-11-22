@@ -137,7 +137,6 @@ export default {
     "occupationRequired": "If you choose Other, describe your occupation",
     "occupationReadFailed": "Could not read your occupation. Check your network and try again.",
     "occupationUnreadable": "Could not read your occupation. Reopen Settings later.",
-    "occupationNote": "Only you and your Gugu can see this.",
     "occupationUnset": "Not set",
     "intro": "Your avatar, name and bio are what others see of you in Gugu.",
     "avatar": "Avatar",

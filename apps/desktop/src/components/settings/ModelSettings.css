@@ -1,55 +1,52 @@
-/* WorkBuddy model settings. Keep the palette local to this page and its dialog. */
-div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-settings-page); }
-.gg-settings-detail div.gg-settings-page.gg-model-page { gap: 16px; }
+/* Model settings: each group (title, note, rows) is one settings card — its content starts in the group label,
+   so the section itself carries the card surface shared by every settings page. */
+.gg-settings-detail div.gg-settings-page.gg-model-page { gap: var(--settings-group-gap); }
 .gg-model-page [data-session-settings-section='auxiliary-models'] { background: transparent; }
 .gg-settings-detail .gg-model-page section.gg-settings-group {
   gap: 0;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--radius-surface);
   background: var(--card);
+  box-shadow: var(--shadow-lift);
   overflow: hidden;
 }
 .gg-settings-detail .gg-model-page .gg-settings-group > .gg-section-label {
-  padding: 16px 20px 0;
-  font-size: 14px;
-  font-weight: 500;
-  line-height: 22px;
+  padding: var(--spacing-md) var(--spacing-lg) 0;
 }
 .gg-settings-detail .gg-model-page .gg-settings-group > .gg-settings-note {
-  padding: 0 20px 16px;
-  font-size: 14px;
-  line-height: 22px;
-  color: var(--model-settings-description);
+  padding: var(--spacing-xs) var(--spacing-lg) var(--spacing-md);
 }
 .gg-settings-detail .gg-model-page section.gg-settings-group > div.gg-settings-card {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: 16px 20px;
+  padding: var(--spacing-lg);
   border: 0;
   border-radius: 0;
+  background: none;
+  box-shadow: none;
   overflow: visible;
   position: relative;
 }
 .gg-model-page .gg-settings-card::before {
   content: '';
   position: absolute;
-  left: 20px;
-  right: 20px;
-  top: -8px;
-  border-top: 1px solid var(--model-settings-separator);
+  left: var(--spacing-lg);
+  right: var(--spacing-lg);
+  top: 0;
+  border-top: 1px solid var(--border-color);
 }
 .gg-model-page .gg-model-rows { display: flex; flex-direction: column; gap: 24px; }
-.gg-settings-detail .gg-model-page div.gg-settings-row,
-.gg-settings-detail .gg-model-page div.gg-settings-row + div.gg-settings-row {
+.gg-settings-detail .gg-model-page section div.gg-settings-row,
+.gg-settings-detail .gg-model-page section div.gg-settings-row + div.gg-settings-row {
   min-height: 28px;
   padding: 0;
   border: 0;
+  background: none;
   column-gap: 12px;
 }
 .gg-model-page .gg-settings-row-body { flex-direction: row; align-items: center; gap: 8px; flex-wrap: wrap; }
 .gg-model-page .gg-settings-row-title { font-size: 14px; font-weight: 500; line-height: 22px; }
-.gg-model-page .gg-settings-row-description { font-size: 14px; line-height: 22px; color: var(--model-settings-source); }
 .gg-model-page .gg-settings-row-leading { width: 20px; height: 20px; }
 .gg-model-page .gg-settings-row-leading > svg,
 .gg-model-page .gg-settings-row-leading > img { width: 20px; height: 20px; }
@@ -62,10 +59,10 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 .gg-model-page .gg-auxiliary-models .gg-settings-row-title { font-weight: 400; }
 .gg-auxiliary-model-select { width: 355px; max-width: 100%; height: 32px; }
 .gg-model-dialog { border-radius: 12px; }
-.gg-model-dialog .gg-model-provider-link { color: var(--model-settings-description); }
+.gg-model-dialog .gg-model-provider-link { color: var(--text-secondary); }
 .gg-model-dialog [data-slot='dialog-title'] { font-size: 16px; font-weight: 500; }
 .gg-model-dialog .subscription-connection-form { gap: 20px; }
-.gg-model-dialog label { font-size: 14px; line-height: 24px; color: var(--model-settings-description); gap: 12px; }
+.gg-model-dialog label { font-size: 14px; line-height: 24px; color: var(--text-secondary); gap: 12px; }
 .gg-model-dialog input,
 .gg-model-dialog [data-testid='custom-model-provider'],
 .gg-model-dialog [data-slot='select-trigger'] { min-height: 32px; height: 32px; }
@@ -77,9 +74,9 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 }
 
 .gg-settings-detail .gg-model-page [data-platform-models] > .gg-section-label { padding: 0; }
-.gg-provided-model-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; border: 0; border-radius: 0; text-align: left; cursor: pointer; }
+.gg-provided-model-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 16px; padding: var(--spacing-md) var(--spacing-lg); border: 0; border-radius: 0; text-align: left; cursor: pointer; }
 .gg-model-card-title { display: block; color: var(--text-primary); font-size: 14px; font-weight: 500; line-height: 22px; }
-.gg-model-card-description { display: block; font-size: 14px; font-weight: 400; line-height: 22px; color: var(--model-settings-description); }
+.gg-model-card-description { display: block; font-size: var(--font-caption); font-weight: 400; line-height: var(--lh-caption); color: var(--muted-fg); }
 .gg-settings-detail .gg-model-page section.gg-settings-group > div.gg-settings-card:empty,
 .gg-settings-detail .gg-model-page section[data-platform-models][data-expanded='false'] > div.gg-settings-card { display: none; }
 
@@ -91,7 +88,7 @@ div.gg-pane.gg-settings-detail:has(.gg-model-page) { background: var(--model-set
 .gg-model-page .gg-coding-provider .gg-settings-row-title { font-weight: 400; }
 
 .gg-model-page .gg-model-name { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: inherit; cursor: text; text-align: left; }
-.gg-model-page .gg-model-name svg { opacity: 0; color: var(--model-settings-source); }
+.gg-model-page .gg-model-name svg { opacity: 0; color: var(--muted-fg); }
 .gg-model-page .gg-model-subscription-row:hover .gg-model-name svg,
 .gg-model-page .gg-model-name:focus-visible:not([data-pointer-focus]) svg { opacity: 1; }
 

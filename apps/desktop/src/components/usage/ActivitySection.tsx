@@ -137,7 +137,7 @@ function Summary({ data, usage, current, previous, preset }: {
   }
 
   const tile = (key: string, label: string, value: string | null, sub: ReactNode, failed: boolean, detail?: string) => (
-    <div className="gg-usage-tile" data-testid={`usage-tile-${key}`} title={detail}>
+    <div className="gg-usage-tile gg-settings-surface" data-testid={`usage-tile-${key}`} title={detail}>
       <div className="gg-usage-caption">{label}</div>
       <div className="gg-usage-tile-value">{failed ? '—' : value ?? <span className="gg-usage-skeleton">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>}</div>
       <div className="gg-usage-caption">{failed ? t('usage.unavailable') : value === null ? <span className="gg-usage-skeleton">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> : sub}</div>
@@ -198,7 +198,7 @@ function Activity({ usageState, today, metric, onMetric, range }: {
     : t('usage.units.tokens', { count, value: compact(count) })
   return (
     <>
-      <div className="gg-usage-card">
+      <div className="gg-usage-card gg-settings-surface">
         <div className="gg-usage-heat-head">
           <span className="gg-usage-muted" data-testid="usage-streaks">
             {!settled ? '' : active.size === 0 ? t('usage.emptyHeat') : t('usage.streaks', { current, longest, count: active.size })}
@@ -238,7 +238,7 @@ function Engines({ usage, range }: { usage: UsageDay[]; range: DayRange }) {
   if (rows.length === 0) return <span className="gg-usage-muted" data-testid="usage-engines-empty">{t('usage.enginesEmpty')}</span>
   return (
     <>
-      <div className="na-table-wrap">
+      <div className="na-table-wrap gg-settings-surface">
         <table className="na-table na-table--engines" data-testid="usage-engines">
           <thead>
             <tr>
