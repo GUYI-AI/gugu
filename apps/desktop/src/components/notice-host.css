@@ -40,63 +40,109 @@
   }
 }
 
-/* 常驻的横幅位(NoticeBannerSlot):页面最上面一行、占文档流,一次一条。外观同提示条一套 token。
-   右边给浮在内容右上角的窗口按钮让位(Linux;其它平台为 0),同页签条读的是同一个变量(main.tsx)。 */
-.gugu-notice-banner-slot {
-  flex: none;
-  padding: 8px calc(12px + var(--titlebar-controls-width, 0px)) 0 12px;
+/* 常驻的那一叠卡(NoticeDeck):右上角、窗口按钮那条车道下面(--titlebar-actions-lane,window-chrome.ts 的浮层规则;
+   Windows 的标题栏行已经算在里面),浮在内容上、在所有弹窗之下(--z-notice),一次露一张。手机上贴在安全区下面。 */
+.gugu-notice-deck {
+  position: fixed;
+  top: calc(var(--titlebar-actions-lane) + 8px);
+  right: 16px;
+  z-index: var(--z-notice);
+  width: min(360px, calc(100vw - 32px));
 }
-.gugu-notice-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 48px;
-  padding: 8px 8px 8px 16px;
+@media (max-width: 600px) {
+  .gugu-notice-deck {
+    top: calc(env(safe-area-inset-top, 0px) + 8px);
+    right: 12px;
+    width: calc(100vw - 24px);
+  }
+}
+/* 后面还有:底下露出一张(或两张)卡的边。 */
+.gugu-notice-deck-peek,
+.gugu-notice-deck-peek::before {
+  position: absolute;
+  inset: 8px 10px -8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-surface);
-  background: var(--card);
+  background: var(--surface-white);
+}
+.gugu-notice-deck-peek[data-depth='2']::before {
+  content: '';
+  z-index: -1;
+  opacity: 0.6;
+}
+.gugu-notice-card {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  background: var(--surface-white);
   color: var(--text-primary);
   font-size: var(--font-body);
   line-height: var(--lh-body);
 }
-.gugu-notice-banner-icon {
+.gugu-notice-deck .gugu-notice-card {
+  box-shadow: var(--shadow-toast-card);
+  animation: gugu-notice-card-in var(--dur-med) var(--ease);
+}
+@keyframes gugu-notice-card-in {
+  from { opacity: 0; transform: translateY(-8px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .gugu-notice-deck .gugu-notice-card { animation: none; }
+}
+.gugu-notice-card-icon {
   flex: none;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: var(--radius-control);
   background: var(--muted);
   color: var(--text-secondary);
 }
-.gugu-notice-banner[data-tier='error'] .gugu-notice-banner-icon,
-.gugu-notice-banner[data-tier='warning'] .gugu-notice-banner-icon {
+.gugu-notice-card[data-tier='error'] .gugu-notice-card-icon,
+.gugu-notice-card[data-tier='warning'] .gugu-notice-card-icon {
   color: var(--danger-fg);
 }
-.gugu-notice-banner-body {
+.gugu-notice-card-body {
   flex: 1;
   min-width: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  column-gap: 8px;
+  padding-right: 20px;
 }
-.gugu-notice-banner-title {
+.gugu-notice-card-title {
   font-weight: var(--font-weight-medium);
 }
-.gugu-notice-banner-description {
-  min-width: 0;
+.gugu-notice-card-description {
   color: var(--text-secondary);
+  font-size: var(--font-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
-/* 带控件的内容(进度行、提问、验证码)另起一行占满宽度。 */
-.gugu-notice-banner-description:has(button, input, [role='progressbar']) {
-  flex-basis: 100%;
+.gugu-notice-card-description:has(button, input, [role='progressbar']) {
+  margin-top: 4px;
 }
-.gugu-notice-banner-pager {
-  flex: none;
+.gugu-notice-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+.gugu-notice-card-spacer {
+  flex: 1;
+}
+.gugu-notice-card-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+.gugu-notice-pager {
   display: flex;
   align-items: center;
   gap: 2px;
+  margin-left: -6px;
   color: var(--text-secondary);
   font-size: var(--font-caption);
   font-variant-numeric: tabular-nums;

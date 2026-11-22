@@ -4,7 +4,7 @@ import { userEvent } from 'vitest/browser'
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { ToastProvider } from '@/components/Toast'
-import { NoticeBannerSlot } from '@/components/NoticeHost'
+import { NoticeHost } from '@/components/NoticeHost'
 import { useToast } from '@/components/toastContext'
 import { useMachineNotice, type MachineNoticeSpec } from '@renderer/features/remote-hosts/machine-notice'
 import '@/styles/tokens.css'
@@ -39,13 +39,13 @@ function EmitOnMount() {
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => harness?.cleanup())
 // Both positions: an offline machine is a persistent notice (the banner slot); «connected» is a toast.
-const notices = () => [...document.querySelectorAll<HTMLElement>('[data-sonner-toast], .gugu-notice-banner')].map((element) => element.textContent ?? '')
+const notices = () => [...document.querySelectorAll<HTMLElement>('[data-sonner-toast], .gugu-notice-card')].map((element) => element.textContent ?? '')
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 describe('the machine notice across page changes (#137)', () => {
   it('leaving the new-session page for the project page a moment later keeps the offline notice, and it can still be closed by the user', async () => {
     harness = createReactHarness()
-    await renderWithAppProviders(harness, <ToastProvider><NoticeBannerSlot /><Pages /></ToastProvider>)
+    await renderWithAppProviders(harness, <ToastProvider><Pages /></ToastProvider>)
     await act(async () => showPage('new-session'))
     await until('the offline notice appears', () => notices().some((text) => text.includes('Mac 1 is offline')))
     // 先卸载一个输入框、隔一拍再挂上另一个(换页就是这样,不在同一次提交里)
@@ -54,14 +54,14 @@ describe('the machine notice across page changes (#137)', () => {
     await act(async () => showPage('project'))
     await pause(1_000)
     expect(notices().filter((text) => text.includes('Mac 1 is offline'))).toHaveLength(1)
-    const close = document.querySelector<HTMLButtonElement>('.gugu-notice-banner [data-notice-close]')!
+    const close = document.querySelector<HTMLButtonElement>('.gugu-notice-card [data-notice-close]')!
     await act(async () => { await userEvent.click(close) })
     await until('the user closed it', () => notices().length === 0)
   })
 
   it('after that page change the notice still follows the machine: it changes in place and turns into "connected" when the machine is back', async () => {
     harness = createReactHarness()
-    await renderWithAppProviders(harness, <ToastProvider><NoticeBannerSlot /><Pages /></ToastProvider>)
+    await renderWithAppProviders(harness, <ToastProvider><Pages /></ToastProvider>)
     await act(async () => showPage('new-session'))
     await until('the offline notice appears', () => notices().some((text) => text.includes('Mac 1 is offline')))
     await act(async () => showPage('none'))

@@ -14,7 +14,6 @@ export const passwordErrorText = (code: string) => i18n.t(`passwords.errors.${ER
 export const promptedRequests = (sync?: PasswordSyncView): PasswordSyncRequest[] =>
   sync?.state === 'ready' ? sync.requests.filter(request => request.stage !== 'elsewhere') : []
 /** This device waits for another one to let it use the passwords. */
-export const waitingToJoin = (sync?: PasswordSyncView) => sync?.state === 'joining' || sync?.state === 'blocked'
 
 type Reply = Extract<PasswordUiReply, { ok: true }>
 /** One vault command with its busy flag and error line; the reply's snapshot reaches every surface. */

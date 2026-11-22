@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { NoticeBannerSlot, NoticeHost } from '@/components/NoticeHost'
+import { NoticeHost } from '@/components/NoticeHost'
 import { notify, dismissNotice } from '@/lib/notices'
 import { readThemePreference, writeThemePreference } from '@renderer/lib/theme/host-theme'
 import { clickElement, createReactHarness } from '../../../../../../../tests/support/testHarness'
@@ -57,7 +57,6 @@ it('persistent notices take the one banner slot on top of the content column: on
   const pageClosed = vi.fn(), dialogClosed = vi.fn()
   await harness.render(<><NoticeHost />
     <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-primary)' }}>
-      <NoticeBannerSlot />
       <div style={{ flex: 1, position: 'relative' }}>
         <header style={{ height: 40, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '0 12px' }}>
           <button type="button" aria-label="Close page" onClick={pageClosed} style={{ width: 28, height: 28 }} />
@@ -70,7 +69,7 @@ it('persistent notices take the one banner slot on top of the content column: on
     notify({ key: 'first-install-card', title: '咕咕 支持一键数据导入啦', description: '快速带入你的记忆、项目规则和工作习惯', ongoing: true, action: { label: '导入', onClick() {} } })
     notify({ key: 'card-edge', title: '群文件存储空间已满,暂时无法上传新文件。', tier: 'warning', ongoing: true, action: { label: '管理文件', onClick() {} } })
   })
-  const banners = () => document.querySelectorAll<HTMLElement>('.gugu-notice-banner')
+  const banners = () => document.querySelectorAll<HTMLElement>('.gugu-notice-card')
   expect(banners()).toHaveLength(1)
   expect(banners()[0]!.textContent).toContain('2/2')
   expect(document.querySelector('[data-sonner-toast]')).toBeNull()
@@ -80,11 +79,11 @@ it('persistent notices take the one banner slot on top of the content column: on
   await clickElement(close())
   expect(pageClosed).toHaveBeenCalledOnce()
   // Paging shows the other one in the same place.
-  await clickElement(banners()[0]!.querySelector<HTMLButtonElement>('.gugu-notice-banner-pager button')!)
+  await clickElement(banners()[0]!.querySelector<HTMLButtonElement>('.gugu-notice-pager button')!)
   expect(banners()[0]!.textContent).toContain('1/2')
   // A settings-style dialog opens over the page: the banner is under it, its close button is reachable.
   await harness.render(<><NoticeHost />
-    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}><NoticeBannerSlot /><div style={{ flex: 1 }} /></div>
+    <div style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}><div style={{ flex: 1 }} /></div>
     <div role="dialog" style={{ position: 'fixed', inset: '32px 0', zIndex: 'var(--z-settings)', background: 'var(--bg-primary)' }}>
       <button type="button" aria-label="Close settings" onClick={dialogClosed} style={{ position: 'absolute', top: 16, right: 16, width: 32, height: 32 }} />
     </div>

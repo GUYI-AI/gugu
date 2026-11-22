@@ -4,7 +4,7 @@ import { page } from 'vitest/browser';
 import type { PasswordBetaUi, PasswordSnapshot, PasswordSyncView } from '@gugu/core/shared/passwordBetaProtocol';
 import { PasswordSection } from '@/components/settings/PasswordSection';
 import { PasswordDeviceHost } from '@/components/password/PasswordDeviceHost';
-import { NoticeBannerSlot } from '@/components/NoticeHost';
+import { NoticeHost } from '@/components/NoticeHost';
 import { Pane, PaneHeader } from '@/components/ui/Pane';
 import { followRendererSession, queryClient } from '@/lib/replica';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
@@ -49,7 +49,7 @@ afterEach(() => {
   delete document.documentElement.dataset.theme;
 });
 async function mount(corner = false) {
-  await harness.render(<><NoticeBannerSlot /><Frame>{corner && <PasswordDeviceHost />}</Frame></>);
+  await harness.render(<><Frame>{corner && <PasswordDeviceHost />}</Frame></>);
   await vi.waitFor(() => expect(harness.container.querySelector('[data-testid="password-unlock-settings"]')).not.toBeNull());
   return harness.container.querySelector<HTMLElement>('[data-testid="password-unlock-settings"]')!;
 }
@@ -57,7 +57,7 @@ async function push(next: PasswordSnapshot) {
   await act(async () => { current = next; for (const listener of listeners) listener(); });
 }
 // The join card is a persistent notice: the banner (title + content + close) in the one banner slot.
-const joinCard = () => document.querySelector('[data-testid="password-join-card"]')?.closest('.gugu-notice-banner') ?? null;
+const joinCard = () => document.querySelector('[data-testid="password-join-card"]')?.closest('.gugu-notice-card') ?? null;
 const button = (scope: ParentNode, name: string) => [...scope.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent?.trim() === name)!;
 async function capture(name: string) {
   if (import.meta.env.VITE_OWNER_CAPTURE_PHASE) await page.screenshot({ element: document.body,

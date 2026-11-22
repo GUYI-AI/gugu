@@ -24,9 +24,9 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
 }))
 const { AboutSection } = await import('../../../../apps/desktop/src/components/settings/AboutSection')
 const { UpdateBanner } = await import('../../../../apps/desktop/src/components/UpdateBanner')
-const { NoticeBannerSlot } = await import('../../../../apps/desktop/src/components/NoticeHost')
+const { NoticeHost } = await import('../../../../apps/desktop/src/components/NoticeHost')
 // The phone card is a persistent notice: it draws in the one banner slot.
-const floating = () => createElement('div', {}, createElement(NoticeBannerSlot), createElement(UpdateBanner))
+const floating = () => createElement('div', {}, createElement(NoticeHost), createElement(UpdateBanner))
 
 let hostRevision = 0
 let harness: ReturnType<typeof createReactHarness>

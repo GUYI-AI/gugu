@@ -13,7 +13,7 @@ import {
   useWorkspaceWrapParams,
 } from '@renderer/lib/layout/navigation-provider';
 import { WorkspaceContentLayout, WorkspaceLayout } from '@renderer/lib/layout/workspace-layout';
-import { NoticeBannerSlot, NoticeHost } from '@/components/NoticeHost';
+import { NoticeHost } from '@/components/NoticeHost';
 import { SshKeyInstallToasts } from '@renderer/features/remote-hosts/ssh-key-install-toasts';
 import { observer } from 'mobx-react-lite';
 import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ComponentType, type CSSProperties, type ReactNode } from 'react';
@@ -70,8 +70,6 @@ export function Workspace() {
       <CodeEditorKeyboardBridge />
       {/* #2548 my agents pinned to the one list (固定到左侧栏), for the shell that draws that list. Draws nothing. */}
       <PinnedSidebarAgentsPublisher />
-      {/* 横幅位与提示条同理:嵌在主 app 里时主 app 那一处画,会话页单独成文档时由它画(#137)。 */}
-      <NoticeBannerSlot embedded />
       <WorkspaceLayout
         sidebarHidden={withoutSessionSidebar}
         leftSidebar={<LeftSidebar />}

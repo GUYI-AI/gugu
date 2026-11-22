@@ -126,7 +126,9 @@ export default {
   "notice": {
     "previous": "Previous notice",
     "next": "Next notice",
-    "position": "Notice {{index}} of {{total}}"
+    "position": "Notice {{index}} of {{total}}",
+    "later": "Later",
+    "clear": "Clear this notice"
   },
   "toast": {
     "dismiss": "Dismiss"

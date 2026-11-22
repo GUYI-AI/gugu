@@ -2,7 +2,7 @@ import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
 import { Toaster } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { readEffectiveHostTheme, subscribeToHostTheme } from '@renderer/lib/theme/host-theme'
-import { bannerFeed, type Banner } from '@/lib/notices'
+import { persistentNotices, type PersistentNotice } from '@/lib/notices'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2, Info, X } from '@/lib/icons'
 import { Button } from './ui/Button'
@@ -14,7 +14,7 @@ const CHANGED = 'gugu:notice-host-changed'
 let hostSeq = 0
 
 /**
- * 「谁来画」(#137):同一个文档里提示条和横幅位各只有一个在画。认领记在 `<html>` 上而不是模块变量里,
+ * 「谁来画」(#137):同一个文档里通知宿主只有一个在画。认领记在 `<html>` 上而不是模块变量里,
  * 因为主 app 与会话页两个入口各是各的 bundle,模块变量不跨入口。
  *  · 先到先得;画的那个卸载了,留着的接着认领(不然提示凭空消失)。
  *  · 主 app 的比会话页的优先:会话页是主 app 里的一块(平时隐藏在别的页面后面),主 app 重挂(登录 / 登出换了一棵树)时
@@ -24,7 +24,7 @@ let hostSeq = 0
 function canClaim(holder: string | undefined, embedded: boolean): boolean {
   return !holder || (!embedded && holder.startsWith('embedded:'))
 }
-function useDocumentClaim(claim: 'noticeHost' | 'noticeBanner', embedded: boolean): boolean {
+function useDocumentClaim(claim: 'noticeHost', embedded: boolean): boolean {
   // 能认领就在第一次渲染里就画出来:sonner 的提示条只认它挂上之后发的提示(之前发的不补),
   // 晚一拍才画,同一次挂载里子组件发的提示就丢了。认领本身仍在下面的 layout effect 里做,认不到再收回。
   const [owner, setOwner] = useState(() => canClaim(document.documentElement.dataset[claim], embedded))
@@ -60,7 +60,11 @@ function useDocumentClaim(claim: 'noticeHost' | 'noticeBanner', embedded: boolea
   return owner
 }
 
-/** 转瞬的提示条:composer 上方居中(看得见 composer / 手机 tab 栏时贴其上沿 8px,以它为中线),一次一条。 */
+/**
+ * 全 app 唯一的通知宿主(lib/notices 的两个位置都画在这里):
+ *  · 转瞬的提示条:composer 上方居中(看得见 composer / 手机 tab 栏时贴其上沿 8px,以它为中线),一次一条。
+ *  · 常驻的那一叠卡:右上角、窗口按钮车道下面,在所有弹窗之下(--z-notice),一次露一张。
+ */
 export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: string; /** 会话页里的那一份(见上)。 */ embedded?: boolean }) {
   // 主题真值读全局订阅,❌ 读 React 上下文:会话页是另一棵根,拿不到主 app 的 ThemeContext。
   const theme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
@@ -70,63 +74,78 @@ export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: stri
   // One position rule, desktop and phone: centred on the composer (or phone bar), 8px above it; none showing → bottom centre.
   const offset = anchor && { bottom: anchor.bottom }
   return (
-    <Toaster
-      className={anchor ? 'gugu-notices gugu-notices-above-composer' : 'gugu-notices'}
-      style={anchor && ({ '--gugu-notice-center': `${anchor.center}px` } as React.CSSProperties)}
-      position="bottom-center"
-      visibleToasts={1}
-      offset={offset}
-      mobileOffset={offset}
-      theme={theme}
-      toastOptions={closeLabel ? { closeButtonAriaLabel: closeLabel } : undefined}
-    />
+    <>
+      <Toaster
+        className={anchor ? 'gugu-notices gugu-notices-above-composer' : 'gugu-notices'}
+        style={anchor && ({ '--gugu-notice-center': `${anchor.center}px` } as React.CSSProperties)}
+        position="bottom-center"
+        visibleToasts={1}
+        offset={offset}
+        mobileOffset={offset}
+        theme={theme}
+        toastOptions={closeLabel ? { closeButtonAriaLabel: closeLabel } : undefined}
+      />
+      <NoticeDeck />
+    </>
   )
 }
 
 const TIER_ICON = { error: AlertTriangle, warning: AlertTriangle, success: CheckCircle2, info: Info } as const
 
-/**
- * 常驻的横幅位:页面最上面那一行,占文档流(内容往下让,❌ 浮在内容上),一次露一条,「‹ 1/2 ›」翻其余。
- * 全 app 只挂这一处(MainLayout;会话页单独成文档时由它自己挂,同上的认领规则)。
- */
-export function NoticeBannerSlot({ embedded = false }: { embedded?: boolean }) {
+/** 右上角那一叠:还在卡片上的常驻通知(没收进铃铛的),露最新的一张,「‹ 1/N ›」翻其余,后面的卡从底下露出边来。 */
+function NoticeDeck() {
   const { t } = useTranslation('common')
-  const owner = useDocumentClaim('noticeBanner', embedded)
-  const list = useSyncExternalStore(bannerFeed.subscribe, bannerFeed.read, bannerFeed.read)
+  const all = useSyncExternalStore(persistentNotices.subscribe, persistentNotices.read, persistentNotices.read)
+  const list = all.filter((notice) => !notice.deferred)
   const [pick, setPick] = useState<string>()
-  if (!owner || list.length === 0) return null
-  // 停在用户翻到的那一条;它没了(或还没翻过)就露最新进来的那条。
-  const index = Math.max(0, pick === undefined ? list.length - 1 : list.findIndex((banner) => banner.key === pick))
-  const shown = list[index]
+  if (list.length === 0) return null
+  // 停在用户翻到的那一张;它没了(或还没翻过)就露最新进来的那张。
+  const index = Math.max(0, pick === undefined ? list.length - 1 : list.findIndex((notice) => notice.key === pick))
   const step = (by: number) => setPick(list[(index + by + list.length) % list.length].key)
+  const pager = list.length > 1 && (
+    <div className="gugu-notice-pager" aria-label={t('notice.position', { index: index + 1, total: list.length })}>
+      <IconButton size="sm" aria-label={t('notice.previous')} onClick={() => step(-1)}><ChevronLeft size={14} /></IconButton>
+      <span>{index + 1}/{list.length}</span>
+      <IconButton size="sm" aria-label={t('notice.next')} onClick={() => step(1)}><ChevronRight size={14} /></IconButton>
+    </div>
+  )
   return (
-    <div className="gugu-notice-banner-slot" data-testid="notice-banner-slot">
-      <NoticeBanner banner={shown} closeLabel={t('toast.dismiss')} pager={list.length > 1 && (
-        <div className="gugu-notice-banner-pager" aria-label={t('notice.position', { index: index + 1, total: list.length })}>
-          <IconButton size="sm" aria-label={t('notice.previous')} onClick={() => step(-1)}><ChevronLeft size={14} /></IconButton>
-          <span>{index + 1}/{list.length}</span>
-          <IconButton size="sm" aria-label={t('notice.next')} onClick={() => step(1)}><ChevronRight size={14} /></IconButton>
-        </div>
-      )} />
+    <div className="gugu-notice-deck" data-testid="notice-deck" data-count={list.length}>
+      {list.length > 1 && <div className="gugu-notice-deck-peek" data-depth={list.length > 2 ? 2 : 1} aria-hidden />}
+      <NoticeCard notice={list[index]} pager={pager} onLater={() => persistentNotices.defer(list[index].key)} />
     </div>
   )
 }
 
-function NoticeBanner({ banner, pager, closeLabel }: { banner: Banner; pager: React.ReactNode; closeLabel: string }) {
-  const TierIcon = banner.tier ? TIER_ICON[banner.tier] : undefined
-  const icon = banner.waiting ? <LoadingIndicator size="inline" /> : banner.icon ?? (TierIcon && <TierIcon size={16} />)
+/**
+ * 一张常驻通知卡:卡片叠和铃铛列表画的是同一个组件。卡片叠里「以后再说」= 收进铃铛;铃铛里「清除」= 关掉(onDismiss)。
+ */
+export function NoticeCard({ notice, pager, onLater, onClear }: {
+  notice: PersistentNotice; pager?: React.ReactNode; onLater?: () => void; onClear?: () => void
+}) {
+  const { t } = useTranslation('common')
+  const TierIcon = notice.tier ? TIER_ICON[notice.tier] : undefined
+  const icon = notice.waiting ? <LoadingIndicator size="inline" /> : notice.icon ?? (TierIcon && <TierIcon size={16} />)
+  const closable = notice.dismissible !== false
+  const close = onClear ?? onLater
   return (
-    <section className="gugu-notice-banner" data-tier={banner.tier} data-notice-key={banner.key}
-      role={banner.tier === 'error' || banner.tier === 'warning' ? 'alert' : 'status'}>
-      {icon && <div className="gugu-notice-banner-icon">{icon}</div>}
-      <div className="gugu-notice-banner-body">
-        {banner.title && <div className="gugu-notice-banner-title">{banner.title}</div>}
-        {banner.description && <div className="gugu-notice-banner-description">{banner.description}</div>}
+    <section className="gugu-notice-card" data-tier={notice.tier} data-notice-key={notice.key}
+      role={notice.tier === 'error' || notice.tier === 'warning' ? 'alert' : 'status'}>
+      {icon && <div className="gugu-notice-card-icon">{icon}</div>}
+      <div className="gugu-notice-card-body">
+        {notice.title && <div className="gugu-notice-card-title">{notice.title}</div>}
+        {notice.description && <div className="gugu-notice-card-description">{notice.description}</div>}
+        {(pager || notice.action || (closable && onLater && !onClear)) && (
+          <div className="gugu-notice-card-actions">
+            {pager}
+            <span className="gugu-notice-card-spacer" />
+            {closable && onLater && !onClear && notice.action && <Button size="sm" variant="ghost" onClick={onLater}>{t('notice.later')}</Button>}
+            {notice.action && <Button size="sm" variant="primary" onClick={notice.action.onClick}>{notice.action.label}</Button>}
+          </div>
+        )}
       </div>
-      {pager}
-      {banner.action && <Button size="sm" variant="primary" onClick={banner.action.onClick}>{banner.action.label}</Button>}
-      {banner.dismissible !== false && (
-        <IconButton size="sm" aria-label={closeLabel} data-notice-close="" onClick={() => bannerFeed.close(banner.key)}><X size={14} /></IconButton>
+      {closable && close && (
+        <IconButton size="sm" className="gugu-notice-card-close" aria-label={onClear ? t('notice.clear') : t('notice.later')} data-notice-close="" onClick={close}><X size={14} /></IconButton>
       )}
     </section>
   )

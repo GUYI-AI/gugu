@@ -21,7 +21,6 @@ import { Sidebar } from '../components/Sidebar'
 import { returnToScreen } from '@/session/renderer/app/screen-layout-actions'
 import { registeredViews } from '@/session/renderer/lib/layout/registered-views'
 import { UpdateBanner } from '../components/UpdateBanner'
-import { NoticeBannerSlot } from '../components/NoticeHost'
 import { WindowControls } from '../components/WindowControls'
 import { MOBILE_TABS, SIDEBAR_TABS, type SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import { useTeamSession } from '@/features/team/context'
@@ -1030,9 +1029,6 @@ function InnerLayout({
         />
       )}
 
-      {/* The content column: the one banner slot (persistent notices, lib/notices) on top, in the flow; the page below it. */}
-      <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-      <NoticeBannerSlot />
       <div
         style={{
           flex: 1,
@@ -1259,7 +1255,6 @@ function InnerLayout({
           />
         )}
 
-      </div>
       </div>
 
       <ResourceMonitorHost />

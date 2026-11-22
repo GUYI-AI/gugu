@@ -114,9 +114,10 @@ export function MeetingReminder({ enabled }: { enabled: boolean }) {
     else setFailed(true)
   }
 
-  // 一条常驻提示(横幅位):标题 +「会议 · HH:mm - HH:mm」,「开始录音」,关闭钮收起。没有个人助理了(退出登录、云电脑没了)也收起。
+  // 定时提醒(owner 11-22):在转瞬那一格(composer 上方居中),不自己消失,带关闭钮 —— 盖在设置之上(开着设置也不能错过会议),
+  // 而那一格在底边,盖不到任何弹窗的 ✕。标题 +「会议 · HH:mm - HH:mm」,「开始录音」。没有个人助理了(退出登录、云电脑没了)也收起。
   useNotice('meeting-reminder', meeting && enabled ? {
-    title: meeting.title || t('meeting.heading'), ongoing: true, onDismiss: () => setMeeting(null),
+    title: meeting.title || t('meeting.heading'), duration: Infinity, onDismiss: () => setMeeting(null),
     description: <div data-testid="meeting-reminder" className="flex flex-col items-start gap-2">
       <span>{[t('meeting.heading'), [clock(meeting.start), clock(meeting.end)].filter(Boolean).join(' - ')].join(metadataSeparator())}</span>
       {failed ? <span className="text-[var(--danger-fg)]">{t('meeting.error')}</span> : null}

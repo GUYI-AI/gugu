@@ -40,7 +40,7 @@ vi.mock('@renderer/lib/ipc', () => {
 })
 
 import { FirstRunGate } from '../../../../apps/desktop/src/components/firstRun/FirstRunGate'
-import { NoticeBannerSlot } from '../../../../apps/desktop/src/components/NoticeHost'
+import { NoticeHost } from '../../../../apps/desktop/src/components/NoticeHost'
 import { i18n } from '../../../../apps/desktop/src/i18n/runtime'
 import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 
@@ -69,7 +69,7 @@ afterEach(() => {
 })
 
 async function startAndVisitSetup() {
-  await renderWithAppProviders(harness, createNode('div', {}, createNode(NoticeBannerSlot), createNode(FirstRunGate, { user }, createNode('main', {}, 'Main workspace'))), { auth: user })
+  await renderWithAppProviders(harness, createNode('div', {}, createNode(NoticeHost), createNode(FirstRunGate, { user }, createNode('main', {}, 'Main workspace'))), { auth: user })
   await waitForCondition(() => !!byId('first-run-harness-continue') && !(byId('first-run-harness-continue') as HTMLButtonElement).disabled, 'agent selection ready')
   await clickElement(byId('first-run-harness-continue')!)
   await waitForCondition(() => !!byId('first-run-terminal'), 'terminal page')
@@ -153,7 +153,7 @@ describe('installation notices appear only after full-screen first-run pages', (
     native.install.mockImplementation(() => new Promise(() => {}))
     const counts: string[] = []
     const count = () => byId('first-run-step-count')?.textContent ?? null
-    await renderWithAppProviders(harness, createNode('div', {}, createNode(NoticeBannerSlot), createNode(FirstRunGate, { user }, createNode('main', {}, 'Main workspace'))), { auth: user })
+    await renderWithAppProviders(harness, createNode('div', {}, createNode(NoticeHost), createNode(FirstRunGate, { user }, createNode('main', {}, 'Main workspace'))), { auth: user })
     await waitForCondition(() => !!byId('first-run-harness-continue') && !(byId('first-run-harness-continue') as HTMLButtonElement).disabled, 'agent selection ready')
     await clickElement(byId('first-run-harness-back')!)
     await waitForCondition(() => !!byId('first-run-profile'), 'profile page')

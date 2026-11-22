@@ -18,7 +18,7 @@ vi.mock('../../../../apps/desktop/src/lib/log', () => ({ rendererLogger: () => n
 
 import { ToastProvider } from '../../../../apps/desktop/src/components/Toast'
 import { ToastContext, type ToastType } from '../../../../apps/desktop/src/components/toastContext'
-import { bannerFeed, dismissNotice, notify, useNotice } from '../../../../apps/desktop/src/lib/notices'
+import { persistentNotices, dismissNotice, notify, useNotice } from '../../../../apps/desktop/src/lib/notices'
 import { TOAST_DWELL_MS } from '../../../../apps/desktop/src/lib/toastTiers'
 import { createReactHarness } from '../../../support/testHarness'
 
@@ -142,15 +142,15 @@ describe('同 key 是同一条:原地更新,不叠(转瞬的提示条)', () => {
   })
 })
 
-describe('常驻的进横幅位(方案 A):位置只由寿命决定', () => {
-  afterEach(() => { for (const banner of bannerFeed.read()) dismissNotice(banner.key) })
-  const keys = () => bannerFeed.read().map((banner) => banner.key)
+describe('常驻的进右上角那一叠(owner 选的 B):位置只由寿命决定', () => {
+  afterEach(() => { for (const banner of persistentNotices.read()) dismissNotice(banner.key) })
+  const keys = () => persistentNotices.read().map((banner) => banner.key)
 
-  it('ongoing 进横幅位、❌ 进提示条;同 key 原地更新,不叠', () => {
+  it('ongoing 进那一叠、❌ 进提示条;同 key 原地更新,不叠', () => {
     notify({ key: 'machine:b1', title: '正在重新连接 Mac 1', tier: 'info', ongoing: true, waiting: true })
     notify({ key: 'machine:b1', title: '连不上 Mac 1', tier: 'info', ongoing: true })
     expect(sonner.info).not.toHaveBeenCalled()
-    expect(bannerFeed.read()).toMatchObject([{ key: 'machine:b1', title: '连不上 Mac 1' }])
+    expect(persistentNotices.read()).toMatchObject([{ key: 'machine:b1', title: '连不上 Mac 1' }])
   })
 
   it('一件事从常驻变转瞬(或反过来)只换位置:原处那条收掉,不回调 onDismiss', () => {
@@ -165,7 +165,7 @@ describe('常驻的进横幅位(方案 A):位置只由寿命决定', () => {
     expect(closedByUser).not.toHaveBeenCalled()
   })
 
-  it('按进来的先后排;用户关 = 回调 onDismiss,dismissNotice 收 = 不回调', () => {
+  it('按进来的先后排;在铃铛里清掉 = 回调 onDismiss,dismissNotice 收 = 不回调', () => {
     const closed = vi.fn()
     notify({ key: 'b3', title: 'first', ongoing: true, onDismiss: closed })
     notify({ key: 'b4', title: 'second', ongoing: true, onDismiss: closed })
@@ -173,7 +173,7 @@ describe('常驻的进横幅位(方案 A):位置只由寿命决定', () => {
     expect(keys()).toEqual(['b3', 'b4'])
     dismissNotice('b4')
     expect(closed).not.toHaveBeenCalled()
-    bannerFeed.close('b3')
+    persistentNotices.clear('b3')
     expect(closed).toHaveBeenCalledTimes(1)
     expect(keys()).toEqual([])
   })
@@ -188,7 +188,7 @@ describe('常驻的进横幅位(方案 A):位置只由寿命决定', () => {
     const harness = createReactHarness()
     await harness.render(createElement(Owner, { title: 'Installing' }))
     await harness.render(createElement(Owner, { title: 'Installed' }))
-    expect(bannerFeed.read()).toMatchObject([{ key: 'live', title: 'Installed' }])
+    expect(persistentNotices.read()).toMatchObject([{ key: 'live', title: 'Installed' }])
     await harness.render(createElement(Owner, { title: null }))
     expect(keys()).toEqual([])
     await harness.render(createElement(Owner, { title: 'Again' }))
@@ -196,9 +196,29 @@ describe('常驻的进横幅位(方案 A):位置只由寿命决定', () => {
     expect(keys()).toEqual([])
   })
 
-  it('dismissible:false 的常驻(登录失效)没有关闭钮,只由它的结果收掉', () => {
-    notify({ key: 'session-expired', title: '登录已失效', tier: 'warning', ongoing: true, dismissible: false })
-    expect(bannerFeed.read()).toMatchObject([{ key: 'session-expired', dismissible: false }])
+  it('「以后再说」= 收进铃铛:还在、标成 deferred,不回调 onDismiss;之后同 key 更新也还在铃铛里', () => {
+    const closed = vi.fn()
+    notify({ key: 'install', title: 'Installing 10%', ongoing: true, onDismiss: closed })
+    persistentNotices.defer('install')
+    expect(persistentNotices.read()).toMatchObject([{ key: 'install', deferred: true }])
+    notify({ key: 'install', title: 'Installing 60%', ongoing: true, onDismiss: closed })
+    expect(persistentNotices.read()).toMatchObject([{ key: 'install', title: 'Installing 60%', deferred: true }])
+    expect(closed).not.toHaveBeenCalled()
+    persistentNotices.clear('install')
+    expect(closed).toHaveBeenCalledTimes(1)
+    expect(keys()).toEqual([])
+  })
+
+  it('dismissible:false 的常驻收不进铃铛,只由它的结果收掉', () => {
+    notify({ key: 'must-resolve', title: 'Resolve me', tier: 'warning', ongoing: true, dismissible: false })
+    persistentNotices.defer('must-resolve')
+    expect(persistentNotices.read()).toMatchObject([{ key: 'must-resolve', dismissible: false, deferred: false }])
+  })
+
+  it('不自己消失的转瞬(定时提醒)在提示条上,一定带关闭钮', () => {
+    notify({ key: 'meeting', title: 'Design review', duration: Infinity })
+    expect(lastOptions(sonner)).toMatchObject({ duration: Infinity, closeButton: true })
+    expect(keys()).toEqual([])
   })
 })
 

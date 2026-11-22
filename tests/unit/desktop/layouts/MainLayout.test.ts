@@ -497,8 +497,7 @@ describe('MainLayout', () => {
       user: { id: 'user-1', email: 'user@example.com', nickname: 'User' }
     }))
     const appShell = harness.container.firstElementChild as HTMLElement | null
-    // The content column holds the one banner slot (lib/notices) above the page shell; the shell is its last child.
-    const mainShell = appShell?.children[1]?.lastElementChild as HTMLElement | undefined
+    const mainShell = appShell?.children[1] as HTMLElement | undefined
     // #7333 壳根读 --shell-bg:不透明时与导航材质同底,mac 原生材质可见时透明(tokens.css @@@window-material-css)。
     expect(appShell?.style.background).toBe('var(--shell-bg)')
     const rootShellBg: string[] = []

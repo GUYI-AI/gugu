@@ -20,12 +20,12 @@ vi.mock('../../../../apps/desktop/src/platform', () => ({
   platform: { capabilities: { appUpdates: true }, downloadUpdate, installUpdate, updateState },
 }))
 const { UpdateBanner } = await import('../../../../apps/desktop/src/components/UpdateBanner')
-const { NoticeBannerSlot } = await import('../../../../apps/desktop/src/components/NoticeHost')
+const { NoticeHost } = await import('../../../../apps/desktop/src/components/NoticeHost')
 // The floating (phone) card is a persistent notice: it draws in the one banner slot.
-const floating = () => createElement(Fragment, null, createElement(NoticeBannerSlot), createElement(UpdateBanner))
+const floating = () => createElement(Fragment, null, createElement(NoticeHost), createElement(UpdateBanner))
 let harness: ReturnType<typeof createReactHarness>
 const bannerId = `[data-testid="${AUTOMATION_TEST_IDS.updateBanner}"]`
-const banner = () => harness.container.querySelector(bannerId)?.closest('.gugu-notice-banner') ?? null
+const banner = () => harness.container.querySelector(bannerId)?.closest('.gugu-notice-card') ?? null
 const content = () => banner()?.querySelector(bannerId) ?? null
 const downloadBtn = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.updateDownloadButton}"]`) as HTMLButtonElement | null
 const installBtn = () => harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.updateInstallButton}"]`) as HTMLButtonElement | null

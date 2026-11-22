@@ -15,17 +15,38 @@
 // 超时,应用误判并把还能用的 refresh token 烧掉,于是「再等十秒就好」变成「必须重新登录」。
 // 本横幅现在只**陈述事实**;真正失效时 coordinator 会落登录页,那条路本身已经响亮。
 import { useTranslation } from 'react-i18next'
+import { AlertTriangle } from '@/lib/icons'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
-import { useNotice } from '../lib/notices'
 import { useSessionWriteBlocked } from '../hooks/useSessionWriteBlocked'
 
-// 一条常驻提示,放在横幅位上(和别的常驻提示同一处、同一条规则)。不可关(dismissible:false):理由见上。
 export function SessionExpiredNotice() {
   const { t } = useTranslation('main')
   const blocked = useSessionWriteBlocked()
-  useNotice('session-expired', blocked ? {
-    ongoing: true, dismissible: false, tier: 'warning', title: t('shell.sessionExpired.title'),
-    description: <span data-testid={AUTOMATION_TEST_IDS.sessionExpiredNotice}>{t('shell.sessionExpired.description')}</span>,
-  } : null)
-  return null
+
+  if (!blocked) return null
+
+  return (
+    <div
+      data-testid={AUTOMATION_TEST_IDS.sessionExpiredNotice}
+      role="alert"
+      aria-live="assertive"
+      style={{
+        // Windows 的标题栏行(窗口按钮在里面)不能被这条横幅盖住:从它下沿起。其余平台这个 token 是 0。
+        position: 'fixed', top: 'var(--window-titlebar-height)', left: 0, right: 0, zIndex: 'var(--z-banner)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,
+        padding: '9px 16px',
+        background: 'var(--bg-elevated)',
+        borderBottom: '1px solid var(--border-strong)',
+        boxShadow: 'var(--shadow-lift)',
+        color: 'var(--text-primary)', fontSize: 'var(--font-body)', lineHeight: 'var(--lh-body)',
+        WebkitAppRegion: 'no-drag',
+      } as React.CSSProperties}
+    >
+      <AlertTriangle size={16} aria-hidden="true" style={{ color: 'var(--text-error)', flexShrink: 0 }} />
+      <span style={{ minWidth: 0 }}>
+        <strong style={{ fontWeight: 600 }}>{t('shell.sessionExpired.title')}</strong>
+        <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>{t('shell.sessionExpired.description')}</span>
+      </span>
+    </div>
+  )
 }

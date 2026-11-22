@@ -10,7 +10,7 @@ import type { InitialSessionState } from '@renderer/features/sessions/session-co
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { machineRegistry } from '@renderer/lib/machine-routing';
-import { NoticeBannerSlot, NoticeHost } from '@/components/NoticeHost';
+import { NoticeHost } from '@/components/NoticeHost';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@renderer/index.css';
 
@@ -46,7 +46,6 @@ function Harness() {
     if (editor.current?.getText() !== prompt) editor.current?.setText(prompt);
   }, [prompt]);
   return <>
-    <NoticeBannerSlot />
     <NoticeHost />
     <ChatComposer editorOptions={{ clearOnSubmit: false }} editorApiRef={editor} onInputChange={setPrompt}
       onSubmit={handleCreateSession} canSubmit={canCreate} attachments={attachments}

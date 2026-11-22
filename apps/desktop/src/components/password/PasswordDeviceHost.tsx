@@ -26,16 +26,15 @@ export function PasswordDeviceHost() {
   const [cardClosed, setCardClosed] = useState(false)
   const [recovering, setRecovering] = useState(false)
   const [newCode, setNewCode] = useState<string>()
-  useOpenPasswordDevicePrompt(useCallback((deviceId: string | null) => {
-    if (deviceId) setAside(previous => new Set([...previous].filter(id => id !== deviceId)))
-    else setCardClosed(false)
+  useOpenPasswordDevicePrompt(useCallback((deviceId: string) => {
+    setAside(previous => new Set([...previous].filter(id => id !== deviceId)))
   }, []))
   const sync = snapshot?.sync
   const request = promptedRequests(sync).find(entry => !aside.has(entry.deviceId))
   const joining = sync?.state === 'joining' || sync?.state === 'blocked' || sync?.state === 'refused' ? sync : undefined
   const putAside = (deviceId: string) => { clear(); setAside(previous => new Set([...previous, deviceId])) }
   const stale = <RefreshFailed error={failure} onRetry={retry} />
-  // A freshly signed-in device is usually still in the first-run guide; the one banner slot is mounted above it.
+  // One persistent notice (the deck; 「以后再说」 puts it in the bell, clearing it there closes it).
   useNotice('password-join', joining && !cardClosed ? {
     title: t(joining.state === 'refused' ? 'passwords.joinRefused' : 'passwords.joinAsk'), ongoing: true, onDismiss: () => setCardClosed(true),
     description: <div data-testid="password-join-card" className="flex flex-col items-start gap-2">

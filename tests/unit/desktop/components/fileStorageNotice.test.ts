@@ -2,7 +2,7 @@
 import { act, createElement, Fragment } from 'react'
 import { focusManager, notifyManager, onlineManager } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { bannerFeed, dismissNotice } from '../../../../apps/desktop/src/lib/notices'
+import { persistentNotices, dismissNotice } from '../../../../apps/desktop/src/lib/notices'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chat, createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
@@ -38,7 +38,7 @@ describe('group manager storage notice', () => {
   })
   afterEach(() => {
     harness.cleanup()
-    for (const banner of bannerFeed.read()) dismissNotice(banner.key)
+    for (const banner of persistentNotices.read()) dismissNotice(banner.key)
     fileStorageUsageClient.clear()
     focusManager.setFocused(undefined)
     onlineManager.setOnline(true)
@@ -54,7 +54,7 @@ describe('group manager storage notice', () => {
     await tick()
   }
   // The storage warning is a persistent notice: it lives in the banner slot (lib/notices), not in the toast strip.
-  const shown = () => bannerFeed.read().find((banner) => banner.title?.startsWith('attachmentView.storage'))
+  const shown = () => persistentNotices.read().find((banner) => banner.title?.startsWith('attachmentView.storage'))
   const attachment = (id: string) => message({ chat_id: chatId, id, content_type: 'attachment' })
 
   it.each(['owner', 'admin'] as const)('reads only the existing metadata RPC as the actual %s account', async role => {
@@ -165,7 +165,7 @@ describe('group manager storage notice', () => {
   it('honors dismissal across refreshes and remounts until verified recovery starts a new incident', async () => {
     rpc.mockResolvedValue({ data: warning, error: null })
     await render()
-    bannerFeed.close(shown()!.key)
+    persistentNotices.clear(shown()!.key)
     await render('member')
     rpc.mockResolvedValue({ data: { ...warning, full: true }, error: null })
     await render()
