@@ -233,6 +233,23 @@ describe('snapshot limits (@@@client-state-model, persistence)', () => {
     errors.mockRestore()
   })
 
+  it('keeps only the `kept` part of a value; a `kept` that throws is a refusal, ❌ a failed read', async () => {
+    rm.followRendererSession('SIGNED_IN', 'alice')
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
+    let shape: { card: string; big?: string } | null = { card: 'a', big: 'x'.repeat(1000) }
+    const model = rm.replica({ name: 'test-kept', scope: 'account', read: async () => shape!,
+      persist: { maxBytes: 200, maxEntries: 1, kept: (value) => ({ card: value.card.toUpperCase() }) } })
+    await model.prefetch()
+    expect(entriesOf('alice', 'test-kept')).toMatchObject([{ value: { card: 'A' } }])
+    expect(model.peek()).toMatchObject({ state: 'value', value: { card: 'a', big: 'x'.repeat(1000) } })
+    shape = { card: null as unknown as string }
+    await model.refresh(); await model.prefetch()
+    expect(model.peek()).toMatchObject({ state: 'value', value: { card: null }, error: null })
+    expect(entriesOf('alice', 'test-kept')).toHaveLength(0)
+    expect(errors.mock.calls.some((call) => JSON.stringify(call).includes('test-kept'))).toBe(true)
+    errors.mockRestore()
+  })
+
   it('keeps only the newest maxEntries keys of a model', async () => {
     rm.followRendererSession('SIGNED_IN', 'alice')
     const model = rm.replica({ name: 'test-days', scope: 'account', read: async (_owner: string, day: string) => day, persist: { maxBytes: 4096, maxEntries: 2 } })

@@ -81,8 +81,11 @@ type Definition<A extends unknown[], V> = {
    * unknown on the next start), and only the newest `maxEntries` keys of this model are kept. A refused write is said
    * (console error and a diagnostics counter), ❌ swallowed. The two snapshot blocks (account, device) stay within
    * SNAPSHOT_BUDGET_BYTES summed over their models' limits (a test checks it).
+   * `kept`: the part of a value the snapshot holds, when the first frame needs less than a read brings (a value whose size
+   * grows with what the account has would otherwise outgrow `maxBytes` and leave the first frame empty). What it leaves
+   * out must read as "not read yet" to every reader; the restored entry is read again at once, as any restored one.
    */
-  persist?: { maxBytes: number; maxEntries: number }
+  persist?: { maxBytes: number; maxEntries: number; kept?: (value: V) => V }
   /**
    * Read again when the window comes back to the foreground: past `fresh`, or always for a model kept current by a push
    * (`fresh: Infinity`), whose feed may have missed what changed while the window was in the background.
@@ -444,7 +447,16 @@ function writeSnapshotEntry(key: QueryKey, value: unknown, at: number, limits: L
   for (const [hash, entry] of Object.entries(snapshot)) {
     if (!(entry?.at > Date.now() - SNAPSHOT_MAX_AGE_MS)) delete snapshot[hash]
   }
-  const entry: SnapshotEntry = { key, value, at }
+  let entry: SnapshotEntry
+  try {
+    entry = { key, value: limits.kept ? limits.kept(value) : value, at }
+  } catch (error) {
+    // Said like any refusal (❌ thrown into the cache's listener, where it would break the read that just succeeded).
+    delete snapshot[hashKey(key)]
+    refuseSnapshotWrite(name, `its kept part could not be made (${String(error)})`)
+    writeSnapshot(owner, snapshot, name)
+    return
+  }
   const bytes = JSON.stringify(entry).length
   if (bytes > limits.maxBytes) {
     // Over its declared size: the older copy is not kept either, so the next start reads it as unknown.
