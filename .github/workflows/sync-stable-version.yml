@@ -1,0 +1,34 @@
+name: Sync stable version
+# After a stable release: tag v<version> on the released commit and open the PR that moves dev to the next patch number.
+# See scripts/release/sync-stable-version.mjs. It never pushes to dev.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        type: boolean
+        default: true
+        description: Print what would be tagged and opened; change nothing
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: sync-stable-version
+  cancel-in-progress: false
+jobs:
+  sync:
+    if: github.repository == 'GUYI-AI/gugu'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
+        run: node scripts/release/sync-stable-version.mjs
