@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ComposerPermissionRequest } from '@gugu/session-ui/react/components';
 import type { AskSource, RecordCursor, Settlement, SessionpageSessionEvent, TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
@@ -28,18 +28,26 @@ const HOST_APPROVALS: readonly AskSource[] = ['app-install', 'device-capability'
 export function useSessionHostAsk(
   sessionId: string | null,
   sources: readonly AskSource[],
-  includeDiscussion = false
+  includeDiscussion = false,
+  /**
+   * The settlements the page's own feed already follows (`AcpChatStore.hostSettlements`). Given, the ask is read off them
+   * and nothing more is read from the machine; over a device link a second subscription doubles every push of the session.
+   */
+  held?: Readonly<Record<string, Settlement>> | null,
 ): Settlement | null {
   const [ask, setAsk] = useState<Settlement | null>(null);
+  const following = held === undefined || held === null;
+  const heldAsk = useMemo(
+    () => (following || !sessionId ? null : askOf(held, sources, includeDiscussion)),
+    [following, sessionId, held, sources, includeDiscussion],
+  );
   useEffect(() => {
     setAsk(null);
-    if (!sessionId) return;
+    if (!sessionId || !following) return;
     let settlements: Readonly<Record<string, Settlement>> = {};
     const take = (next: Readonly<Record<string, Settlement>>) => {
       settlements = next;
-      setAsk(includeDiscussion
-        ? latestAgentQuestion(Object.fromEntries(Object.entries(settlements).filter(([, item]) => item.origin && sources.includes(item.origin.source))))
-        : pendingHostAsk(settlements, sources));
+      setAsk(askOf(settlements, sources, includeDiscussion));
     };
     const there = rpcOn(machineRegistry.machineOf(sessionId));
     let close = () => undefined as void;
@@ -89,8 +97,14 @@ export function useSessionHostAsk(
     };
     open();
     return () => close();
-  }, [sessionId, sources, includeDiscussion]);
-  return ask;
+  }, [sessionId, sources, includeDiscussion, following]);
+  return following ? ask : heldAsk;
+}
+
+function askOf(settlements: Readonly<Record<string, Settlement>>, sources: readonly AskSource[], includeDiscussion: boolean): Settlement | null {
+  return includeDiscussion
+    ? latestAgentQuestion(Object.fromEntries(Object.entries(settlements).filter(([, item]) => item.origin && sources.includes(item.origin.source))))
+    : pendingHostAsk(settlements, sources);
 }
 
 /**

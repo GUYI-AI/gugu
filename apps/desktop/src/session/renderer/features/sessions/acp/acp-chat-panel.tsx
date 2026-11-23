@@ -1453,7 +1453,7 @@ const ComposerForStore = observer(function ComposerForStore({
       {/* Every send of a task page is in custody until the transcript has it, so its bubbles always show here. */}
       <SessionInputQueue sessionId={store.runtimeSessionId} waitingForConnection life={life}
         inTranscript={[...store.chatState.session.state.pendingMessages.map(input => input.id), store.transcriptPendingId, store.stoppedRowId, ...store.failedRowIds, ...life?.pending.items.filter(input => isTranscriptDelivery(input)).map(input => input.messageId) ?? []].filter((id): id is string => id !== null)} />
-      <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} />
+      <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} settlements={store.hostSettlements} />
       <ChatComposer
         className={scheduleSlotShown(schedules) ? sessionComposerFrameLiftClassName : undefined}
         // 会话页的标签头不显示 harness,锁着的那颗 agent 标留在模型左边(私聊照旧藏)。

@@ -1,7 +1,7 @@
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput';
 import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice';
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice';
-import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
+import type { Settlement, TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type {
   ChatContext,
   ChatState,
@@ -153,6 +153,11 @@ export class AcpChatStore {
 
   session: AcpLiveSession | null = null;
   historyLoading = true;
+  /**
+   * The asks this session's timeline keeps (its settlements), as the page's own feed reads them; null when the page has
+   * no feed (a runtime view). The bands above the composer read these instead of following the timeline a second time.
+   */
+  hostSettlements: Readonly<Record<string, Settlement>> | null = null;
   /**
    * 一轮讲完后的对账撞上断线:那一轮原样留在屏上,等线回来再对一次账(`_refreshHistory`)。true 时消息列表末尾说
    * 「连接断了,连上后补全这一轮」。
@@ -313,7 +318,12 @@ export class AcpChatStore {
     this.chatContext = getSharedChatContext();
     this.chatState = createChatState(this.chatContext, { uri: runtimeSessionId });
     this._history = runtimeView ? null : new AcpTimelineFeed(sessionId, machineRegistry.machineOf(sessionId),
-      () => this._seedFromTimeline(), (error) => this._toastError('acpFailure.refreshHistory', error));
+      () => {
+        this._seedFromTimeline();
+        const settlements = this._history!.state.settlements;
+        if (settlements !== this.hostSettlements) runInAction(() => { this.hostSettlements = settlements; });
+      }, (error) => this._toastError('acpFailure.refreshHistory', error));
+    if (this._history) this.hostSettlements = this._history.state.settlements;
     registerSessionCommands(runtimeSessionId, () =>
       this.commands.map((command) => command.name)
     );
@@ -332,6 +342,7 @@ export class AcpChatStore {
       pendingPermissionMode: observable.ref,
       modelSettingError: observable,
       historyLoading: observable,
+      hostSettlements: observable.ref,
       reconcileAwaitingLink: observable,
       _loadError: observable.ref,
       _lifeRetriedVersion: observable,
