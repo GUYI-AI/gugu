@@ -58,10 +58,6 @@
     "how": "subject-scoped",
     "why": "话题名册与它描述的那条话题存在一起({chatId, snapshot}),渲染时先比对当前 topicChatId —— 不符就当作「还不知道」:从分栏点开的名片退成单人卡、不画档位也不给编辑控件。切到另一条话题的那一帧不会把上一条话题的档位画在新话题的名片上,也不会把改档写向错的 chat。"
   },
-  "apps/desktop/src/hooks/useAgentMessagePreview.ts::useAgentMessagePreview": {
-    "how": "subject-scoped",
-    "why": "#6357:状态连同 `chatId:agentId` 一起存,渲染期主体不符就交出 connecting/idle;副作用只写属于当前主体的那一格。"
-  },
   "apps/desktop/src/hooks/useStoredAgentTurnFailure.ts::useStoredAgentTurnFailure": {
     "how": "subject-scoped",
     "why": "快照携带账号、聊天、话题与Agent集合组成的subject；不符时立即返回空读数，取消旧主体请求；同主体只认最新读请求，迟到结果不能覆盖新事件。"
