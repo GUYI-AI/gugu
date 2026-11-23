@@ -26,7 +26,7 @@ export function messagePreviewTopic(chatId: string, agentId: string): string {
   return `gugu:preview:${chatId}:${agentId}`;
 }
 
-/** working 栏的状态键(`agentRunningVerb.ts`)+ `messaging`(咕咕发消息工具)。 */
+/** 运行状态键 + `messaging`(咕咕发消息工具)。 */
 export type MessagePreviewStateKey =
   | 'reading'
   | 'searching'

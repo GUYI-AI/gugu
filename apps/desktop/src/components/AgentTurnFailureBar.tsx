@@ -1,4 +1,4 @@
-// #2115 普通 ACP 回合失败条：composer 上方浮动条同槽位（RunningTokenBar 的失败态邻居；ChatBottomDock
+// #2115 普通 ACP 回合失败条：composer 上方的浮动条（ChatBottomDock
 // 浮在消息列表上，所以卡片用浮层的实底，见 turn-failure-card.css）。「{name} 回复失败：{人话}」+ 重试 + 关闭——重试 = CAS error→pending
 // 重排原 deliver 命令（真重投递，❌ 假按钮）。失败来自失败命令行，原因是宿主落的码，原始错误只在宿主日志。
 // 与聊天流共用 TurnFailureCard。
@@ -142,7 +142,7 @@ export function AgentQuotaStatus({ agentId, displayName: name, avatar, state, on
   )
 }
 
-// 几何与运行条 `.rtb-bar/.rtb-tok` 一致（同一排、同一刻度）；状态词用 --warn，不流光。
+// 一行：名字 + 状态词；状态词用 --warn，不流光。
 // #907 窄窗里长名字只让 `.aqs-nm` 省略收缩，状态词与关闭钮的既有宽度不动。
 const QUOTA_STYLE = `
 .aqs-bar{display:flex;align-items:center;gap:16px;padding:4px 14px 2px 24px;font-size:var(--font-caption);color:var(--faint-fg);white-space:nowrap;flex-shrink:0}

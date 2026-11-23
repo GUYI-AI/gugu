@@ -180,39 +180,6 @@ export default {
     "title": "Agent 模板库",
     "use": "使用"
   },
-  "runtime": {
-    "groupMine": "我的",
-    "groupOthers": "其他人的",
-    "justNow": "刚刚",
-    "messagePreview": {
-      "connecting": "正在连接…",
-      "done": "已完成",
-      "empty": "暂无近期活动",
-      "hostMachine": "运行设备",
-      "hostOffline": "{{machine}} 离线，无法读取近期活动",
-      "hostSilent": "{{machine}} 无响应，无法读取近期活动",
-      "promptElsewhere": "来自其他来源的消息",
-      "promptFailed": "无法读取这条消息",
-      "recordNotFound": "此设备无法读取该任务的记录",
-      "toolCount": "{{state}} ×{{count}}",
-      "unavailable": "暂时无法获取近期活动"
-    },
-    "more": "更多运行中的 Agent",
-    "stateWord": {
-      "editing": "编辑中",
-      "executing": "执行中",
-      "messaging": "回群消息",
-      "reading": "查阅中",
-      "running": "运行中",
-      "searching": "检索中",
-      "thinking": "思考中"
-    },
-    "toolCallUnit": "次工具调用",
-    "viewDetails": "{{name}} {{status}}，查看运行详情",
-    "viewMore": "查看另外 {{count}} 个运行中的 Agent",
-    "viewMore_one": "查看另外 {{count}} 个运行中的 Agent",
-    "viewMore_other": "查看另外 {{count}} 个运行中的 Agent",
-  },
   "scheduledTasks": {
     "errors": {
       "intervalMinimum": "触发间隔至少 {{seconds}} 秒",
