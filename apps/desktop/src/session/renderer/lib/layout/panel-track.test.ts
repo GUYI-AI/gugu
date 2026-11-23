@@ -31,10 +31,9 @@ describe('the size is the state', () => {
     expect(contentAt(156, { size: 240, content: 240 }, { size: 72, content: 72, reflows: false })).toBe(240);
   });
 
-  it('a slot is clipped at its drawn edge; only to or from nothing its far edge rides that edge and it fades', () => {
-    // the list folding to its rail: its avatars stay where they are, the rest is clipped
-    expect(paintSlot({ drawn: 156, content: 240 }, false)).toEqual({ offset: 0, opacity: 1, soft: false, hidden: false });
-    expect(paintSlot({ drawn: 130, content: 260 }, true)).toMatchObject({ offset: -130, opacity: 0.5, soft: true, hidden: false });
+  it('a slot is clipped at its drawn edge, and fades only to or from nothing', () => {
+    expect(paintSlot({ drawn: 156, content: 240 }, false)).toEqual({ opacity: 1, soft: false, hidden: false });
+    expect(paintSlot({ drawn: 130, content: 260 }, true)).toEqual({ opacity: 0.5, soft: true, hidden: false });
     expect(paintSlot({ drawn: 0, content: 260 }, true)).toMatchObject({ opacity: 0, hidden: true });
   });
 });
@@ -59,7 +58,7 @@ describe('PanelTrack', () => {
     expect(track.drawn('list')).toBe(72);
   });
 
-  it('mid-move the content keeps the larger size, its far edge on the drawn edge', () => {
+  it("mid-move held content keeps the larger size where it is laid out (the list's avatars do not move)", () => {
     frames.hold = true;
     const track = new PanelTrack([{ id: 'list', at: { size: 240 } }]);
     const list = nodes();
@@ -69,7 +68,7 @@ describe('PanelTrack', () => {
     expect(track.drawn('list')).toBe(114);
     expect(list.place.style.width).toBe('114px');
     expect(list.content.style.width).toBe('240px');
-    expect(list.content.style.left).toBe('-126px');
+    expect(list.content.style.left).toBe('');
   });
 
   it('a fill coming from nothing keeps its open size while it moves, and takes the rest when it lands', () => {
@@ -80,9 +79,12 @@ describe('PanelTrack', () => {
     const content = document.createElement('div');
     track.attachFill(place, content);
     track.to({ chat: { size: 600, reflows: true } });
+    // the last frame played: drawn 700, the fill 300 wide, its 400 pinned to the track's end
     expect(content.style.width).toBe('400px');
+    expect(content.style.left).toBe('-100px');
     track.jump({ chat: { size: 600, reflows: true } });
     expect(content.style.width).toBe('');
+    expect(content.style.left).toBe('');
   });
 
   it('a move to where it already goes does nothing; a jump stops a move and writes the target at once', () => {

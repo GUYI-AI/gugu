@@ -6,10 +6,10 @@ import { animate } from 'framer-motion';
  *
  *  · The size is the state: every frame each slot is laid out at the size it is drawn at (❌ transforms over a layout that
  *    already landed), and the fill, in the flow, takes what is left — what is beside a moving panel re-lays out with it.
- *  · A slot going to or from nothing keeps its content at its open size, clipped at its drawn edge (its far edge rides the
- *    edge, as a sheet pulled out), and fades behind a soft edge (owner 11-21); so does a fill. Any other slot's content is
- *    its drawn size, unless the caller holds it (`content`: the list keeps its width through a fold), and then it stays put,
- *    clipped at the drawn edge.
+ *  · What a move holds at its open size (a slot or the fill going to or from nothing, the list keeping its width through a
+ *    fold) stays where it is laid out, pinned to the edge that does not move, and is clipped at the drawn edge: a slot at its
+ *    start, the fill at the track's end. Nothing slides; the edge passes over it. To or from nothing it also fades behind a
+ *    soft edge (owner 11-21); a rail fades its own text. Any other slot's content is its drawn size.
  */
 export const PANEL_SPRING = { type: 'spring', duration: 0.5, bounce: 0.1 } as const;
 
@@ -38,9 +38,8 @@ export interface SlotGeometry {
   content: number;
 }
 
-/** One frame of a slot: its content's offset from the slot's start (px, ≤ 0), opacity, soft edge, out of reach. */
+/** One frame of a slot: its opacity, soft edge, and whether it is out of reach. */
 export interface SlotPaint {
-  offset: number;
   opacity: number;
   soft: boolean;
   /** Drawn at nothing: inert (❌ visibility, which would restyle its whole subtree). */
@@ -53,14 +52,11 @@ export function contentAt(drawn: number, from: { size: number; content: number }
   return target.reflows ? drawn : Math.max(from.content, target.content);
 }
 
-/** A slot's content is clipped at its drawn edge. `faded`: a move to or from nothing, whose content is a sheet pulled out (its
- *  far edge on the drawn edge); any other held content stays where it is laid out, its near edge put (a rail keeps its
- *  avatars in place and fades its own text). */
+/** A slot's content is clipped at its drawn edge; `faded`: a move to or from nothing. */
 export function paintSlot(slot: SlotGeometry, faded: boolean): SlotPaint {
   const clip = Math.max(0, slot.content - slot.drawn);
   const soft = faded && clip > PANEL_LANDED_PX;
   return {
-    offset: faded ? -clip || 0 : 0,
     opacity: soft ? clamp01(slot.drawn / slot.content) : 1,
     soft,
     hidden: slot.drawn < PANEL_LANDED_PX,
@@ -229,23 +225,22 @@ export class PanelTrack {
   private write(): void {
     const size = this.axis === 'x' ? 'width' : 'height';
     const start = this.axis === 'x' ? 'left' : 'top';
-    const px = (value: number) => (value ? `${value}px` : '');
     this.slots.forEach((slot) => {
       const nodes = slot.nodes;
       if (!nodes) return;
       const p = paintSlot(slot.geometry, Math.min(slot.from.size, slot.target.size) < PANEL_LANDED_PX);
       nodes.place.style[size] = `${slot.geometry.drawn}px`;
       nodes.content.style[size] = `${slot.geometry.content}px`;
-      nodes.content.style[start] = px(p.offset);
       nodes.window.style.opacity = p.opacity < 1 ? String(p.opacity) : '';
       nodes.window.style.maskImage = p.soft ? SOFT_EDGE[this.axis] : '';
       nodes.window.inert = p.hidden;
     });
     if (this.fill) {
-      // A fill coming from or going to nothing keeps its open size, its near edge on the last slot's edge.
+      // A fill coming from or going to nothing keeps its open size, pinned to the track's end.
       const ends = [this.fillFrom, this.fillAt('target')];
       const held = this.running && this.extent > 0 && Math.min(...ends) < PANEL_LANDED_PX ? Math.max(...ends) : 0;
       this.fill.content.style[size] = held ? `${held}px` : '';
+      this.fill.content.style[start] = held ? `${this.fillAt('drawn') - held}px` : '';
     }
     const drawn = new Map(this.slots.map((slot) => [slot.id, slot.geometry.drawn]));
     const landed = !this.running;

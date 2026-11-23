@@ -82,26 +82,26 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const leaving = mode === 'hidden' && !!tools && !layout.narrow && layout.isPaneShown(tools.paneId);
   const divided = (mode === 'split' || leaving) && !!tools && !layout.narrow;
   const toolsFirst = divided && layout.groups[0] === tools;
-  // @@@strip-on-track: divided, the two columns are placed on the root cut's first edge as it is drawn. The tools' tabs keep
-  // the width they have at rest and are clipped at the moving edge, as their page beneath is (PanelTrack): the strip
-  // re-lays out nothing mid-move.
+  // @@@strip-on-track: divided, the strip's columns are placed on the root cut's first edge as it is drawn. The tools' tabs
+  // follow the track's rule for their page beneath (PanelTrack): kept at the width they have at rest, pinned to the edge that
+  // does not move, clipped at the one that does. Nothing in the strip re-lays out mid-move.
   useLayoutEffect(() => {
     const chatNode = chatColumn.current;
     const toolNode = toolColumn.current;
     const place = ({ drawn, from, to }: CutEdge) => {
       if (toolsFirst) {
         const open = Math.max(from, to);
-        if (toolNode) Object.assign(toolNode.style, { left: `${drawn - open}px`, width: `${open}px` });
+        if (toolNode) Object.assign(toolNode.style, { left: '0px', right: '', width: `${open}px`, clipPath: `inset(0 ${Math.max(0, open - drawn)}px 0 0)` });
         if (chatNode) chatNode.style.marginInlineStart = `${drawn}px`;
       } else {
         const open = Math.min(from, to);
         if (chatNode) chatNode.style.flex = `0 1 ${drawn}px`;
-        if (toolNode) Object.assign(toolNode.style, { left: `${drawn}px`, width: `calc(100% - ${open}px)` });
+        if (toolNode) Object.assign(toolNode.style, { left: '', right: '0px', width: `calc(100% - ${open}px)`, clipPath: `inset(0 0 0 ${Math.max(0, drawn - open)}px)` });
       }
     };
     if (divided && edge) return edge.attach(place);
     if (chatNode) Object.assign(chatNode.style, { flex: '', marginInlineStart: '' });
-    if (toolNode) Object.assign(toolNode.style, { left: '', width: '' });
+    if (toolNode) Object.assign(toolNode.style, { left: '', right: '', width: '', clipPath: '' });
     return undefined;
   });
   if (!panes || !mode) return null;
