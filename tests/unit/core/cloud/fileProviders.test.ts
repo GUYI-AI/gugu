@@ -176,6 +176,31 @@ describe('one cloud provider and verified raw chunk cache', () => {
     expect(fetcher.mock.calls.map(row => row[0])).toEqual(['https://objects.invalid/preview', 'https://objects.invalid/file'])
     await full.dispose()
   })
+  // A 560 px PNG preview of a photo is about 1 MB: more than one read chunk.
+  it('shows a preview larger than one read chunk, verified by its sha', async () => {
+    const big = Buffer.alloc(922_317, 7), bigShown = { sha256: digest(big), size_bytes: big.length, content_type: 'image/png' }
+    const a = api({ ...revision, content_type: 'image/png', preview: bigShown }), original = a.fetcher.getMockImplementation()!
+    a.fetcher.mockImplementation(async (input, init) => {
+      const request = JSON.parse(init!.body as string)
+      if (String(input).endsWith('/file-download') && request.preview === true)
+        return Response.json({ status: 'ready', url: 'https://objects.invalid/preview', sha256: bigShown.sha256, size_bytes: big.length, download_id: 'preview' })
+      return original(input, init)
+    })
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) !== 'https://objects.invalid/preview') return new Response(plain)
+      const range = /bytes=(\d+)-(\d+)/.exec(new Headers(init?.headers).get('range') ?? '')
+      if (!range) return new Response(big)
+      const [from, to] = [Number(range[1]), Math.min(Number(range[2]), big.length - 1)]
+      return new Response(big.subarray(from, to + 1), { status: 206, headers: { 'content-range': `bytes ${from}-${to}/${big.length}` } })
+    })
+    const cloud = cloudFileProviders({ endpoint: a.endpoint, cache: cache().store, sink: async () => sink(), fetch: fetcher as typeof fetch })
+    const resolve = createFileResolver({ ...cloud, local: async () => null, ssh: async () => null })
+    const preview = await resolve(context.ref, context.actor, { purpose: 'preview' })
+    if (preview.status !== 'ready') throw Error('ready expected')
+    const content = await preview.content() as Blob
+    expect(content.type).toBe('image/png'); expect(digest(Buffer.from(await content.arrayBuffer()))).toBe(bigShown.sha256)
+    await preview.dispose()
+  })
   it('an expired image still shows its preview, signed through the same reference; the file itself stays expired', async () => {
     const a = withPreview(api()), c = cache(), fetcher = objects()
     a.fetcher.mockResolvedValueOnce(Response.json({ status: 'expired', sha256: revision.sha256, preview: shown }))
