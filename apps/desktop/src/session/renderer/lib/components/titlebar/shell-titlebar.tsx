@@ -1,6 +1,7 @@
 import { observer } from 'mobx-react-lite'
 import { createContext, useContext, useEffect, type CSSProperties, type ReactNode } from 'react'
-import { MODAL_ROW_CENTER, ModalClose } from '@/components/ui/ModalClose'
+import { ModalClose } from '@/components/ui/ModalClose'
+import { MODAL_ROW_CENTER } from '@/components/ui/modalGeometry'
 import { publishPanelToggle } from '@/lib/panelToggles'
 import { TITLEBAR_LEFT_EDGE_GAP_PX } from '@/lib/window-chrome'
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts'
@@ -82,15 +83,21 @@ export const ShellTitlebar = observer(function ShellTitlebar({
   dragRegion?: boolean
 }) {
   const closeModal = useContext(PageModalClose)
+  // In a modal the title starts where Settings' page title does; on a page, after the window's own controls.
+  const left = leftSlot ? (
+    <div
+      className="absolute top-0 flex h-10 items-center [-webkit-app-region:no-drag]"
+      style={{ left: closeModal ? 'var(--spacing-2xl)' : TITLEBAR_LEFT_EDGE_GAP_PX }}
+      data-shell-titlebar-left=""
+    >
+      {leftSlot}
+    </div>
+  ) : null
   if (closeModal) {
     return (
       <div className="relative z-40 h-0">
         <div style={MODAL_BAND}>
-          {leftSlot ? (
-            <div className="absolute top-0 flex h-10 items-center" style={{ left: 'var(--spacing-2xl)' }} data-shell-titlebar-left="">
-              {leftSlot}
-            </div>
-          ) : null}
+          {left}
           {children}
         </div>
         <ModalClose floating onClose={closeModal} />
@@ -114,15 +121,7 @@ export const ShellTitlebar = observer(function ShellTitlebar({
           的命中测试。真机实测(真鼠标点击,不是 elementFromPoint):只有 no-drag 时三个按钮
           全部点不到,叠加本行后全部点到,还原后又全部点不到。 */}
       {dragRegion ? <ShellTitlebarDragRegion /> : null}
-      {leftSlot ? (
-        <div
-          className="absolute top-0 flex h-10 items-center [-webkit-app-region:no-drag]"
-          style={{ left: TITLEBAR_LEFT_EDGE_GAP_PX }}
-          data-shell-titlebar-left=""
-        >
-          {leftSlot}
-        </div>
-      ) : null}
+      {left}
       {children}
     </div>
   )
