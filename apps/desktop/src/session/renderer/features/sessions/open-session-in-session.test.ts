@@ -3,6 +3,8 @@ import { observable, runInAction } from 'mobx';
 
 const opened = vi.hoisted(() => ({ calls: [] as unknown[], tabs: 0, views: [] as string[], provisioned: true, archived: false, provision: vi.fn(), reason: null as string | null, machineReason: null as string | null, deviceId: 'host' as string | null, cloud: false }));
 const ready = observable.box(true);
+/** A reason the machine link finds after navigation started (observable, as the real reach label is). */
+const lateReason = observable.box<string | null>(null);
 const listed = vi.hoisted(() => ({ nativeInputVersion: undefined as number | undefined }));
 
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
@@ -38,8 +40,8 @@ vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: 
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));
 vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage: (k: string) => k }));
 
-vi.mock('./workspace-backend/workspace-surface', () => ({ workspaceReachLabel: () => opened.reason }));
-vi.mock('./machine-unavailable-label', () => ({ machineUnavailableLabel: () => opened.reason ?? opened.machineReason }));
+vi.mock('./workspace-backend/workspace-surface', () => ({ workspaceReachLabel: () => lateReason.get() ?? opened.reason }));
+vi.mock('./machine-unavailable-label', () => ({ machineUnavailableLabel: () => lateReason.get() ?? opened.reason ?? opened.machineReason }));
 
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { openSessionInSessionWhenReady } from './open-session-in-session';
@@ -109,7 +111,7 @@ describe('task entry keeps the workspace failure reason', () => {
     }
   });
 
-  it('keeps the original unavailable reason when the target machine id is missing', async () => {
+  it('placement held back: keeps the original unavailable reason when the target machine id is missing', async () => {
     vi.useFakeTimers();
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(toast).mockClear();
@@ -117,7 +119,7 @@ describe('task entry keeps the workspace failure reason', () => {
     opened.reason = null;
     opened.machineReason = 'Remote host is offline. Resumes when it is back';
     opened.deviceId = null;
-    const dispose = openSessionInSessionWhenReady({ projectId: 'p', sessionId: 's' });
+    const dispose = openSessionInSessionWhenReady({ projectId: 'p', sessionId: 's', onReady: vi.fn() });
     try {
       await vi.advanceTimersByTimeAsync(10_000);
       expect(toast).toHaveBeenCalledWith(expect.objectContaining({
@@ -136,27 +138,68 @@ describe('task entry keeps the workspace failure reason', () => {
   it.each([
     ['cloud', 'Gugu on cloud host is too old. Update Gugu there'],
     ['ssh', 'Gugu on SSH host is too old. Update Gugu there'],
-    ['local', null],
-  ])('%s entry uses the current reason when readiness times out', async (_route, reason) => {
+    ['not answering', 'host did not respond. Check that it is online and retry.'],
+  ])('%s found while waiting: the gate says it in place, no timeout toast over that page', async (_route, reason) => {
+    vi.useFakeTimers();
+    vi.mocked(toast).mockClear();
+    opened.calls = [];
+    opened.provisioned = false;
+    const onReady = vi.fn();
+    const dispose = openSessionInSessionWhenReady({ projectId: 'p', sessionId: 's', onReady });
+    try {
+      expect(onReady).not.toHaveBeenCalled();
+      // The handshake can discover the reason after navigation starts.
+      runInAction(() => lateReason.set(reason));
+      expect(onReady).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(toast).not.toHaveBeenCalled();
+      expect(opened.calls).toEqual([]);
+    } finally {
+      dispose();
+      opened.provisioned = true;
+      runInAction(() => lateReason.set(null));
+      vi.useRealTimers();
+    }
+  });
+
+  it('placement held back, no reason known at the timeout: the toast says the workspace is not ready', async () => {
     vi.useFakeTimers();
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(toast).mockClear();
     opened.provisioned = false;
-    opened.reason = null;
     const onReady = vi.fn();
     const dispose = openSessionInSessionWhenReady({ projectId: 'p', sessionId: 's', onReady });
     try {
-      // The handshake can discover the mismatch after navigation starts.
-      opened.reason = reason;
       await vi.advanceTimersByTimeAsync(10_000);
       expect(onReady).not.toHaveBeenCalled();
-      expect(toast).toHaveBeenCalledWith(expect.objectContaining({
-        description: reason ?? 'sidebar.workspaceNotReady',
-      }));
+      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ description: 'sidebar.workspaceNotReady' }));
     } finally {
       dispose();
       opened.provisioned = true;
-      opened.reason = null;
+      logged.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  // owner msg 0a4871f7: a sidebar click already shows the task; its page was still saying 「正在通过远程隧道连接此设备…」
+  // when 「会话暂时无法打开」 popped over it.
+  it('already on screen (no onReady): a timeout is not toasted over the page, which says it in place', async () => {
+    vi.useFakeTimers();
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(toast).mockClear();
+    opened.provisioned = false;
+    opened.machineReason = 'host did not respond. Check that it is online and retry.';
+    opened.deviceId = null;
+    const dispose = openSessionInSessionWhenReady({ projectId: 'p', sessionId: 's' });
+    try {
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(logged).toHaveBeenCalled();
+      expect(toast).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+      opened.provisioned = true;
+      opened.machineReason = null;
+      opened.deviceId = 'host';
       logged.mockRestore();
       vi.useRealTimers();
     }

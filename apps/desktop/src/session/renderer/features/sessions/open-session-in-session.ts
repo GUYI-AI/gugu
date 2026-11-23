@@ -13,7 +13,10 @@ interface OpenSessionInSessionOptions {
   projectId: string;
   sessionId: string;
   timeout?: number;
-  /** Commit navigation or layout only after the task workspace can be opened. */
+  /**
+   * Commit navigation or layout only after the task workspace can be opened. Given = nothing is on screen until then, so a
+   * timeout is told as a toast; without it the caller already showed the task and its page tells every state.
+   */
   onReady?: () => void;
   /**
    * behavior session-page「键盘导航」: keyboard ↑↓ walks the sidebar and the main area follows every
@@ -48,20 +51,27 @@ export function openSessionInSessionWhenReady({
 }: OpenSessionInSessionOptions): () => void {
   const kind = sessionViewKind(getSessionPageStore(projectId, sessionId), projectId);
   if (!onlyIfNoTabs && kind !== 'archived' && kind !== 'missing') rememberTask(sessionId);
-  if (offlineSessionInputTarget(projectId, kind)) {
-    // Navigation (including a beside block) reaches SessionContentGate without a remote workspace.
+  // The machine is not answering, now or while we wait: navigation (including a beside block) reaches SessionContentGate
+  // without a remote workspace, and the gate says so in place (❌ wait for a workspace and time out into a toast over it).
+  const offline = () => Boolean(offlineSessionInputTarget(projectId, sessionViewKind(getSessionPageStore(projectId, sessionId), projectId)));
+  if (offline()) {
     onReady?.();
     return () => {};
   }
   const paneReady = sessionPaneReady(projectId, sessionId, { reviveArchived: false });
   return when(
     () => {
+      if (offline()) return true;
       const session = sessionRegistry
         .get(sessionId)
         ?.sessions.get(sessionId);
       return Boolean(paneReady() && getSessionView(host?.projectId ?? projectId, host?.sessionId ?? sessionId) && session);
     },
     () => {
+      if (offline()) {
+        onReady?.();
+        return;
+      }
       const session = sessionRegistry
         .get(sessionId)
         ?.sessions.get(sessionId);
@@ -93,6 +103,9 @@ export function openSessionInSessionWhenReady({
           sessionId,
           error,
         });
+        // Already on screen (no onReady): SessionContentGate says loading, offline or the failure in place (❌ a toast over
+        // a page still saying it is loading). Placement held back until ready: nothing is on screen, this is the answer.
+        if (!onReady) return;
         toast({
           title: translateSessionMessage('sidebar.conversationNotOpenable'),
           description: machineUnavailableLabel(projectId) ?? translateSessionMessage('sidebar.workspaceNotReady'),
