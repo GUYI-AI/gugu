@@ -76,7 +76,7 @@ it('Send opens the host\'s own line at the selection; only the person\'s submit 
   expect(sendMessageToChat).not.toHaveBeenCalled()
   await act(async () => { await userEvent.keyboard('Say which gates{Enter}') })
   await until('sent into the group', () => sendMessageToChat.mock.calls.length === 1)
-  expect(sendMessageToChat).toHaveBeenCalledWith(chatId, expect.stringMatching(/^> run the gates\n\nAGENTS\.md \([^)]+\): \/home\/me\/work\/AGENTS\.md\n\nSay which gates$/))
+  expect(sendMessageToChat).toHaveBeenCalledWith(chatId, expect.stringMatching(/^> run the gates\n\nAGENTS\.md \([^)]+\): \/home\/me\/work\/AGENTS\.md\n\nSay which gates$/), { toUserIds: [] })
   await until('the line goes once sent', () => !line())
   await act(async () => runFileSelection(guest, null, ask('send')))
   await until('opened again', () => !!line())
