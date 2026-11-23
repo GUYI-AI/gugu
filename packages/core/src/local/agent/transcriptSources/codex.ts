@@ -51,7 +51,7 @@ export type CodexRecordItem =
   | { kind: 'tool_result'; callId: string; output: unknown; failed: boolean }
   | { kind: 'file_change'; id: string; failed: boolean; changes: Array<{ path: string; kind: { type: 'add' | 'delete' } | { type: 'update'; move_path: string | null }; diff: string }> }
   | { kind: 'subagent'; id: string; threadId: string; name: string; activity: string }
-  | { kind: 'mcp_call'; id: string; server: string; tool: string; arguments: unknown; result: unknown; error: unknown; failed: boolean }
+  | { kind: 'mcp_call'; id: string; call: Record<string, unknown>; failed: boolean }
 
 /** 这一行把这一轮收在哪。`aborted` = 用户打断。 */
 export type CodexRecordEnd = 'end_turn' | 'failed' | 'aborted'
@@ -172,11 +172,10 @@ function readFileChange(item: Record<string, unknown>): Extract<CodexRecordItem,
   return { kind: 'file_change', id, changes, failed: item.status !== 'completed' }
 }
 
-/** An MCP call as the live app-server item has it (`mcpToolCall`): the server, the tool, its arguments and its result. */
+/** An MCP call as the live app-server item has it (`mcpToolCall`), read as that item is read (`codexMcpCall`). */
 function readMcpCall(item: Record<string, unknown>): Extract<CodexRecordItem, { kind: 'mcp_call' }> | null {
-  const id = nonEmptyString(item.id), server = nonEmptyString(item.server), tool = nonEmptyString(item.tool)
-  if (!id || !server || !tool) return null
-  return { kind: 'mcp_call', id, server, tool, arguments: item.arguments, result: item.result ?? null, error: item.error ?? null, failed: item.status !== 'completed' }
+  const id = nonEmptyString(item.id)
+  return id ? { kind: 'mcp_call', id, call: item, failed: item.status !== 'completed' } : null
 }
 
 /**

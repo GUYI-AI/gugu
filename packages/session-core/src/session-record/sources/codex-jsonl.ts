@@ -2,6 +2,7 @@ import { readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import { codexFilePatches } from '../../acp/transport/codex-file-patches';
+import { codexMcpCall } from '../../acp/transport/codex-mcp-call';
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
 import { readCodexRecord, type CodexRecord, type CodexRecordItem } from '@gugu/core/local/agent/transcriptSources/codex';
 
@@ -353,25 +354,15 @@ function toEvent(item: CodexRecordItem, messageId: string): NormalizedEvent {
     case 'tool_call':
       return toolCallStart(item.id, item.name, codexToolKind(item.name), item.input);
     case 'mcp_call': {
-      // Drawn as the live bridge draws the same app-server item (codex-app-server-acp `mcpToolCall`): titled
-      // `mcp__<server>__<tool>` so it reads as that MCP call, its result's text and pictures as the output, and the result
-      // itself kept only when those do not carry it whole. A send's receipt is that text: the task page draws the message
-      // from it once the turn is read back from the record.
-      const blocks = Array.isArray(asRecord(item.result)?.content) ? (asRecord(item.result)!.content as unknown[]) : [];
-      const { content: _content, ...besides } = asRecord(item.result) ?? {};
-      const carried = item.error == null && blocks.length > 0
-        && blocks.every((block) => ['text', 'image'].includes(String(asRecord(block)?.type)))
-        && Object.values(besides).every((value) => value == null || value === false);
-      const texts = blocks.flatMap((block) => { const text = asRecord(block)?.text; return asRecord(block)?.type === 'text' && typeof text === 'string' ? [text] : []; });
-      const images = blocks.flatMap((block) => {
-        const record = asRecord(block);
-        return record?.type === 'image' && typeof record.data === 'string' && typeof record.mimeType === 'string' ? [{ mimeType: record.mimeType, data: record.data }] : [];
-      });
-      const name = `mcp__${item.server}__${item.tool}`;
+      // Read as the live bridge reads the same app-server item (codexMcpCall): a send's receipt is its text, and the task
+      // page draws the sent message from it once the turn is read back from the record.
+      const { name, rawInput, rawOutput, blocks } = codexMcpCall(item.call);
+      const texts = blocks.flatMap((block) => block.type === 'text' && typeof block.text === 'string' ? [block.text] : []);
+      const images = blocks.flatMap((block) => block.type === 'image' && typeof block.data === 'string' && typeof block.mimeType === 'string'
+        ? [{ mimeType: block.mimeType, data: block.data }] : []);
       return {
         ...toolCallResult(item.id, item.failed ? 'failed' : 'completed', {
-          ...(texts.length ? { text: texts.join('\n') } : {}), images, rawInput: item.arguments,
-          ...(item.error != null ? { rawOutput: item.error } : carried ? {} : { rawOutput: item.result }),
+          ...(texts.length ? { text: texts.join('\n') } : {}), images, rawInput, ...(rawOutput !== undefined ? { rawOutput } : {}),
         }),
         title: name, toolKind: 'other',
       };
