@@ -110,6 +110,8 @@ export const GenericTabItem = observer(function GenericTabItem({
   );
 
   const [cardOpen, setCardOpen] = useState(false);
+  // 第 16 版:有名片的页签(我的 agent),它的动作在名片和详情里;页签菜单(⋯ / 右键)只留单独成窗、关闭页签这些页签自己的事。
+  const menuCommands = card ? [] : kindCommands;
   const cardPopover = card ? (
     <Popover.Root open={cardOpen} modal={false} onOpenChange={setCardOpen}>
       {cardOpen ? <Popover.Portal><Popover.Positioner side="bottom" align="start" sideOffset={8} collisionPadding={8}
@@ -181,7 +183,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   if (workspaceRole === 'title') {
     return (
       <>
-      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu>
         <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title="" data-tabid={card ? tab.tabId : undefined}
           onClick={card ? () => setCardOpen((open) => !open) : undefined}
           onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}>
@@ -199,7 +201,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   if (workspace?.role === 'conversation') {
     const select = () => { workspace.layout.showChatWorkspaceConversation(); pane.focusActiveContent(); };
     return <><TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
-      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu>
         <TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
           preSlot={preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={openCardOr(select)}
           onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}
@@ -224,7 +226,7 @@ export const GenericTabItem = observer(function GenericTabItem({
       {tab.pairRole === 'end' ? (
         <PairSeparator label={translate('tabs.separatePair')} onSeparate={() => host.separatePair()} />
       ) : null}
-      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands}>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands}>
         <TabChip
           isActive={tab.isActive}
           // 并排时两枚都亮着,点着的那一边标题深、另一边浅 —— 与「哪一格握着焦点」同一种明暗(spec session-page「并排」)。
