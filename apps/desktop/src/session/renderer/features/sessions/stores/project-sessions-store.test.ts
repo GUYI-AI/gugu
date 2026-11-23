@@ -461,14 +461,14 @@ describe('ProjectSessionsStore session lifecycle', () => {
   });
 
   // The pane and the view ask in the same moment on opening a session; over a device link each extra ask is a round trip.
-  it('provisions once for two opens in the same moment, and fetches its pull requests once', async () => {
+  it('provisions once for opens in the same moment (three on a released build), and fetches its pull requests once', async () => {
     const manager = makeSessionManager();
     const session = makeSession();
     const store = createUnprovisionedSession(session);
     store.transitionToUnprovisioned();
     manager.sessions.set(session.id, store);
 
-    await Promise.all([manager.provisionSession(session.id), manager.provisionSession(session.id)]);
+    await Promise.all([manager.provisionSession(session.id), manager.provisionSession(session.id), manager.provisionSession(session.id)]);
     // The host also broadcasts the provision it just answered.
     const provisioned = vi.mocked(events.on).mock.calls.find(([channel]) => channel === sessionProvisionedChannel)?.[1] as
       ((payload: { sessionId: string; projectId: string; path: string; workspaceId: string }) => void) | undefined;
