@@ -118,8 +118,9 @@ export interface ComposerModelOption {
    */
   providerLabel?: string;
   /**
-   * Small grey tag after the name in the desktop list and the trigger: which vendor a person's own address belongs to (its registrable
-   * domain without the public suffix, e.g. `deepseek`). Gugu's own models have none.
+   * Small grey tag after the name in the desktop list: which vendor a person's own address belongs to (its registrable domain without
+   * the public suffix, e.g. `deepseek`), so same-named models from two addresses stay apart. The trigger names only the model.
+   * Gugu's own models have none.
    */
   tag?: string;
   /**
