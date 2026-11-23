@@ -51,6 +51,7 @@ export type CodexRecordItem =
   | { kind: 'tool_result'; callId: string; output: unknown; failed: boolean }
   | { kind: 'file_change'; id: string; failed: boolean; changes: Array<{ path: string; kind: { type: 'add' | 'delete' } | { type: 'update'; move_path: string | null }; diff: string }> }
   | { kind: 'subagent'; id: string; threadId: string; name: string; activity: string }
+  | { kind: 'mcp_call'; id: string; server: string; tool: string; arguments: unknown; result: unknown; error: unknown; failed: boolean }
 
 /** 这一行把这一轮收在哪。`aborted` = 用户打断。 */
 export type CodexRecordEnd = 'end_turn' | 'failed' | 'aborted'
@@ -171,12 +172,21 @@ function readFileChange(item: Record<string, unknown>): Extract<CodexRecordItem,
   return { kind: 'file_change', id, changes, failed: item.status !== 'completed' }
 }
 
+/** An MCP call as the live app-server item has it (`mcpToolCall`): the server, the tool, its arguments and its result. */
+function readMcpCall(item: Record<string, unknown>): Extract<CodexRecordItem, { kind: 'mcp_call' }> | null {
+  const id = nonEmptyString(item.id), server = nonEmptyString(item.server), tool = nonEmptyString(item.tool)
+  if (!id || !server || !tool) return null
+  return { kind: 'mcp_call', id, server, tool, arguments: item.arguments, result: item.result ?? null, error: item.error ?? null, failed: item.status !== 'completed' }
+}
+
 /**
  * codex 把同一句话记两遍：`response_item`（喂给模型的历史）和 `event_msg`（给 TUI 看的事件）。
  * 本机 40 份 rollout 实测：`response_item/message` role=assistant 与 `event_msg/agent_message`
  * 都是 242 条，一一对应。两条都收就是每句话说两遍，所以内容**只认 response_item 这一路**，
  * event_msg 里只取 response_item 表达不了的东西：原生文件操作、子代理活动、回合起止（本机一份 54MB 真 rollout 实测
- * `task_started` 18 次 / `task_complete` 17 次 / `turn_aborted` 1 次，数得上）。
+ * `task_started` 18 次 / `task_complete` 17 次 / `turn_aborted` 1 次，数得上）,以及 code mode 的 `exec` 脚本里调的
+ * MCP 工具:模型那一路只记下 `exec` 和它的脚本输出,哪个服务器的哪个工具、参数和结果只在 `McpToolCall` 这一条里
+ * (2026-11 gpu 与 mac1 上的真 rollout:每条 MCP 调用都是 `exec-…` id,没有一条对得上模型的 call_id)。
  */
 export function readCodexRecord(entry: Record<string, unknown>): CodexRecord {
   const payload = asRecord(entry.payload)
@@ -195,6 +205,7 @@ export function readCodexRecord(entry: Record<string, unknown>): CodexRecord {
   if (event === 'item_completed') {
     const item = asRecord(payload?.item)
     if (item?.type === 'FileChange') record.item = readFileChange(item)
+    if (item?.type === 'McpToolCall') record.item = readMcpCall(item)
     if (item?.type === 'SubAgentActivity' && typeof item.agent_thread_id === 'string' && typeof item.agent_path === 'string' && typeof item.id === 'string') {
       record.item = { kind: 'subagent', id: item.id, threadId: item.agent_thread_id, name: item.agent_path, activity: String(item.kind) }
     }
