@@ -177,7 +177,7 @@ export function TaskCardHandedTo({ agentName, agentAvatar, agentUserId, note, ma
     <span className="flex h-5 min-w-0 items-center gap-2 text-[var(--font-caption)] text-[var(--muted-fg)]">
       <span className="shrink-0">{t('message.taskCard.handedTo')}</span>
       <span className="flex min-w-0 items-center gap-1">
-        <Avatar name={agentName} avatarUrl={agentAvatar} seed={agentUserId} isAgent harnessBadge={false} size={16} still />
+        <Avatar name={agentName} avatarUrl={agentAvatar} seed={agentUserId} isAgent size={16} still />
         <b className="truncate font-medium text-[var(--text-secondary)]">{agentName}</b>
       </span>
       <span className="min-w-0 truncate">{note}</span>

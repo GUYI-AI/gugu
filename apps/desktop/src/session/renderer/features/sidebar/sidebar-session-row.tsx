@@ -140,7 +140,7 @@ export function SessionRowShell({
   const leadingClass = cn('flex shrink-0 items-center', disabled && 'opacity-60');
   const leadingAvatar = agent ? (
     <span className={leadingClass} data-row-agent-avatar={agent.userId}>
-      <Avatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.userId} size={14} isAgent harnessBadge={false} still />
+      <Avatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.userId} size={14} isAgent still />
     </span>
   ) : null;
   const titleClass = cn(

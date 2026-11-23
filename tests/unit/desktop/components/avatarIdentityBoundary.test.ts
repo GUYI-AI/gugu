@@ -94,7 +94,7 @@ describe('default group face', () => {
     try {
       await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1' }))
       const drawn = harness.container.querySelector('[data-group-face] svg')
-      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1', harnessBadge: false }))
+      await harness.render(createNode(Avatar, { name: '协作群', variant: 'group', seed: 'chat-1' }))
       expect(harness.container.querySelector('[data-group-face] svg')).toBe(drawn)
     } finally {
       harness.cleanup()

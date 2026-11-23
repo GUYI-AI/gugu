@@ -18,7 +18,7 @@ export function ReadOnlyMessageBubble({ message, mobile, sender, timestamp, chil
   // A task card is a surface of its own, ❌ wrapped in a second bubble (as in the chat).
   const card = message.content_type === 'card' && !!parseComposerCard(message.content);
   return <div data-task-exchange="true" data-message-id={message.id} data-mobile={mobile || undefined} data-own={message.is_mine || undefined} className="task-exchange">
-    <Avatar seed={message.sender_user_id ?? undefined} name={sender.display_name} avatarUrl={sender.avatar} size="sm" isAgent={sender.type !== 'human'} still harnessBadge={false} />
+    <Avatar seed={message.sender_user_id ?? undefined} name={sender.display_name} avatarUrl={sender.avatar} size="sm" isAgent={sender.type !== 'human'} still />
     <div className="task-exchange__column">
       <div data-message-sender-name="true" className="task-exchange__who">{sender.display_name}{timestamp}</div>
       <div className={card ? 'max-w-[100cqw]' : undefined} style={card ? undefined : buildBubbleStyle(message.is_mine, !!message.is_whisper, mobile)}>{children}</div>

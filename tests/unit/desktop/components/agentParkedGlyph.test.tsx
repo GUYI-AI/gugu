@@ -28,7 +28,7 @@ const glyphs = () => harness.container.querySelectorAll('[data-agent-status-glyp
 
 describe('background running draws AgentParkedGlyph on every surface', () => {
   it.each([
-    ['avatar badge', () => createNode(Avatar, { name: 'Agent', seed: 'agent-1', size: 32, isAgent: true, harnessBadge: false, agentStatus: 'parked' })],
+    ['avatar badge', () => createNode(Avatar, { name: 'Agent', seed: 'agent-1', size: 32, isAgent: true, agentStatus: 'parked' })],
     ['session page row', () => {
       const presentation = presentAgentStatus({ reading: { status: 'working', detail: 'parked' } })
       return createNode(AgentStatusGlyph, { presentation, label: presentation.label })

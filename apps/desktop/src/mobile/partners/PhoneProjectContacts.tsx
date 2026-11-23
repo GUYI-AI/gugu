@@ -95,7 +95,7 @@ export function PhoneProjectContacts({
                 mobile
                 role="button"
                 tabIndex={0}
-                leading={<Avatar name={name} avatarUrl={agent.contact?.avatar} seed={agent.id} size="md" isAgent harnessBadge={false} />}
+                leading={<Avatar name={name} avatarUrl={agent.contact?.avatar} seed={agent.id} size="md" isAgent />}
                 title={name}
                 subtitle={assistant.state === 'unknown' ? <Unknown className="w-20" /> : assistant.state === 'value' && assistant.value.agentId === agent.id ? t('partners.assistant') : agent.work ?? undefined}
                 onClick={() => openAgent(agent)}

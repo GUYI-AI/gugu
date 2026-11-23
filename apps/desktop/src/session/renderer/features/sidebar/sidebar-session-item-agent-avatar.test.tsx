@@ -118,7 +118,7 @@ it('the leading slot is the agent avatar at 14px, not the harness logo', async (
   const face = avatar()!.firstElementChild as HTMLElement;
   expect([face.style.width, face.style.height]).toEqual(['14px', '14px']);
   // No harness badge or status badge on the face: the row's own status mark stays the only one.
-  expect(avatar()!.querySelectorAll('.agent-harness-badge, .av-status__dot')).toHaveLength(0);
+  expect(avatar()!.querySelectorAll('.av-running, .av-status__dot')).toHaveLength(0);
   expect(harnessIcon()).toBeNull();
 });
 

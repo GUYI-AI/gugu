@@ -43,7 +43,7 @@ export function AssistantTaskChatWindow({ agent, task, onClose, status, pendingC
       <TaskChatFilePreviewHost mobile={mobile}>
         <PeekSessionTimeline sessionId={task.sessionId} deviceId={task.deviceId} local={local} appPanel={appPanel} onBack={onClose} fallback={<>
           <PaneHeader title={name} subtitle={status} mobile={mobile} divider
-            leading={<><IconButton aria-label={t('panel.back')} onClick={onClose} data-testid="assistant-task-chat-close"><ChevronLeft /></IconButton><Avatar name={name} seed={agent.id} avatarUrl={agent.avatar} size="sm" isAgent still harnessBadge={false} /></>} />
+            leading={<><IconButton aria-label={t('panel.back')} onClick={onClose} data-testid="assistant-task-chat-close"><ChevronLeft /></IconButton><Avatar name={name} seed={agent.id} avatarUrl={agent.avatar} size="sm" isAgent still /></>} />
           {pendingContent ?? <div className="assistant-task-chat-window__pending"><LoadingIndicator size="panel" ariaLabel={t('chat.opening', { name })} /></div>}
         </>} />
       </TaskChatFilePreviewHost>

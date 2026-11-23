@@ -434,7 +434,7 @@ const InnerAgentHeadRow = observer(function InnerAgentHeadRow({
     <InnerHeadRowLayout
       headKey={anchor.chatId}
       name={name}
-      avatar={<Avatar name={name} avatarUrl={row.avatar} seed={anchor.agentUserId} size={24} isAgent harnessBadge={false} still />}
+      avatar={<Avatar name={name} avatarUrl={row.avatar} seed={anchor.agentUserId} size={24} isAgent still />}
       active={active}
       onOpen={openOwnSession}
       trailingButtons={1}

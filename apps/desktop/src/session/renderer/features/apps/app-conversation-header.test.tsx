@@ -89,7 +89,7 @@ describe('the host\'s row above the conversation', () => {
     expect(top.parentElement?.getAttribute('data-testid')).toBe('app-conversation-column');
     expect(find('app-conversation-identity')!.className).toBe('ta-identity');
     expect(find('app-conversation-identity')!.textContent).toBe('Dot');
-    expect(state.faces.at(-1)).toMatchObject({ name: 'Dot', avatarUrl: 'face.png', seed: ASSISTANT, size: 48, isAgent: true, harnessBadge: false });
+    expect(state.faces.at(-1)).toMatchObject({ name: 'Dot', avatarUrl: 'face.png', seed: ASSISTANT, size: 48, isAgent: true });
     expect([...top.querySelectorAll('.ta-chat-actions > button')].map((button) => button.getAttribute('data-testid'))).toEqual(['app-conversation-search', 'app-conversation-gear']);
     await click('app-conversation-search');
     expect(state.searched).toEqual([CHAT]);

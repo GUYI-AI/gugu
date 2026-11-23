@@ -1332,26 +1332,22 @@ input {
   }
 }
 
-/* The running beat (running-glyph.css): four states a second, played with step-end so each keyframe holds until the
-   next and every change lands on the 250 ms grid. (A steps() timing function steps each keyframe interval on its own:
-   steps over a 0-70% interval fell on a 175 ms grid, between the beats.) The ring is gone in the last quarter. */
-@keyframes av-status-pulse {
-  0% {
-    transform: scale(0.85);
-    opacity: 0.55;
-  }
-  25% {
-    transform: scale(1.26);
-    opacity: 0.35;
-  }
-  50% {
-    transform: scale(1.67);
-    opacity: 0.16;
-  }
-  75%, 100% {
-    transform: scale(2);
-    opacity: 0;
-  }
+/* A running agent's avatar corner (Avatar.tsx, AgentRunningBadge): the running glyph on a small round backing. */
+.av-running {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: var(--av-running-size);
+  height: var(--av-running-size);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: calc(var(--av-running-size) * 1.08);
+  line-height: 1;
+  pointer-events: none;
 }
 
 @keyframes gg-thread-up {

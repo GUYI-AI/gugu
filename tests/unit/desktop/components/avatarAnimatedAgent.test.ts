@@ -24,7 +24,7 @@ const svg = () => harness.container.querySelector<SVGElement>('svg[data-agent-av
 // React creates unique mask ids for each mounted SVG. Compare the face, independently of those document ids.
 const geometry = () => svg()?.innerHTML.replace(/id="[^"]+"|url\(#[^)]+\)/g, '')
 const render = (props: Record<string, unknown> = {}) => harness.render(createNode(Avatar, {
-  name: 'Agent', seed: ID, size: 32, isAgent: true, harnessBadge: false, ...props,
+  name: 'Agent', seed: ID, size: 32, isAgent: true, ...props,
 }))
 beforeEach(() => {
   document.documentElement.dataset.theme = 'light'
@@ -57,12 +57,12 @@ describe('default agent avatars', () => {
     expect(dot?.textContent).toBe('')
   })
 
-  it('renders a static beam SVG with the full agent id and its palette, plus the existing status badge', async () => {
+  it('renders a static beam SVG with the full agent id and its palette, plus the running glyph in its corner', async () => {
     await render({ agentStatus: 'working' })
     expect(svg()?.getAttribute('data-agent-avatar-boring')).toBe(ID)
     expect(svg()?.getAttribute('width')).toBe('32')
     expect(harness.container.querySelector('canvas')).toBeNull()
-    expect(harness.container.querySelector('.av-status--working')).not.toBeNull()
+    expect(harness.container.querySelector('.av-running')).not.toBeNull()
     const fills = Array.from(svg()!.querySelectorAll('[fill]')).map((el) => el.getAttribute('fill'))
     expect(fills).toContain(boringAvatarAppearance(ID).body)
     expect(runtime.register).not.toHaveBeenCalled()

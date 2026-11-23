@@ -52,7 +52,7 @@ it.each(['light', 'dark'].flatMap(theme => [360, 390].map(width => ({ theme, wid
         <PhoneAssistantRow state={assistant} onOpen={() => {}} />
         <div data-needs-you-list-slot=""><NeedsYouTaskRow task={waiting} emphasis onClick={() => {}} onKeyDown={() => {}} /></div>
         <ListRow mobile title="task-project" leading={<PhoneProjectChatAvatar chat={projectChat} mobile><Avatar name="group" variant="group" size={48} /></PhoneProjectChatAvatar>} />
-        <ListRow mobile title="ordinary agent" leading={<Avatar name="ordinary agent" seed="codex" size={48} isAgent agentStatus="error" harnessBadge={false} />} />
+        <ListRow mobile title="ordinary agent" leading={<Avatar name="ordinary agent" seed="codex" size={48} isAgent agentStatus="error" />} />
       </div></div></div>,
       { chat: { identitiesById: { codex: displayIdentity('codex', { type: 'agent', display_name: 'Codex 1' }) } } },
     )
