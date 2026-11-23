@@ -15,14 +15,21 @@ import { HOST_PROMPT_HASH } from '../acp/native-prompt-key';
  */
 export function withRuntimeTurn(turns: readonly TranscriptTurn[], runtime: TranscriptTurn | null): TranscriptTurn[] {
   if (!runtime) return [...turns];
-  return [...withoutTurn(turns, runtime), runtime];
-}
-
-/** `turns` without their tail turns that are `turn` as another source holds it (`sameTurnAs`), for whoever draws `turn` itself. */
-export function withoutTurn(turns: readonly TranscriptTurn[], turn: TranscriptTurn): TranscriptTurn[] {
-  const same = sameTurnAs(turn);
+  const same = sameTurnAs(runtime);
   let end = turns.length;
   while (end > 0 && same(turns[end - 1]!)) end -= 1;
+  return [...turns.slice(0, end), runtime];
+}
+
+/**
+ * `turns` without their tail turns that share an id the agent numbered with `turn` (`identityKeys`): another source's
+ * copy of a turn that is drawn on its own. Unlike `sameTurnAs`, the opening prompt is not enough: an earlier turn may
+ * open with the same words.
+ */
+export function withoutCopiesOf(turns: readonly TranscriptTurn[], turn: TranscriptTurn): TranscriptTurn[] {
+  const keys = identityKeys(turn);
+  let end = turns.length;
+  while (end > 0 && [...identityKeys(turns[end - 1]!)].some((key) => keys.has(key))) end -= 1;
   return turns.slice(0, end);
 }
 

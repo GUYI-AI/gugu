@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { TranscriptFileRef } from './models/turn-files';
-import { HOST_PROMPT_HASH } from './native-prompt-key';
+import { HOST_PROMPT_HASH } from './native-prompt-key.ts';
 
 /**
  * The text an agent records for a prompt: its text blocks (resources as their text) joined by line, as Hermes submits it

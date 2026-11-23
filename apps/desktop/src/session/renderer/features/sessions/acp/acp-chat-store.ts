@@ -66,7 +66,7 @@ import { getSharedChatContext } from '@renderer/lib/chat/shared-chat-context';
 import { sideChatOwnTurns } from './history-composition';
 import { AcpTimelineFeed } from './acp-timeline-feed';
 import { projectOwnerNotifications } from '@gugu/session-core/session-record/owner-notifications';
-import { withoutTurn } from '@gugu/session-core/session-record/runtime-turn';
+import { withoutCopiesOf } from '@gugu/session-core/session-record/runtime-turn';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import type { SessionMessageKey } from '@renderer/localization/messages';
@@ -2651,9 +2651,9 @@ export class AcpChatStore {
       return { turns: sideChatOwnTurns([...this._olderHistoryTurns, ...this._runtimeTurns]), activeTurn: live };
     }
     // The drawn running turn (live) and the frame kept after it ended own that turn: the timeline's copies of it step
-    // aside, whether the runtime's copy (same id) or the record's (other ids, `sameTurnAs`) when the record is ahead.
+    // aside, whether the runtime's copy (same id) or the record's (another turn id, the agent's own ids) when the record is ahead.
     let turns = this._history.state.turns.filter(turn => turn.id !== live?.id && turn.id !== frame?.id);
-    for (const drawn of [live, frame]) if (drawn) turns = withoutTurn(turns, drawn);
+    for (const drawn of [live, frame]) if (drawn) turns = withoutCopiesOf(turns, drawn);
     return projectOwnerNotifications(turns, live);
   }
 

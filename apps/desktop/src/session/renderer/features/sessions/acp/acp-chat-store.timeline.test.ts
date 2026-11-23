@@ -75,13 +75,22 @@ it('leaves the running turn to the live session and keeps a committed one until 
 });
 
 it('draws the running turn once when the record already holds its own copy of it', async () => {
-  // The record numbers its lines itself (another id) and is ahead of the live session: that copy steps aside.
-  const live = turn('runtime-1', 1, 'go');
+  // The record numbers the turn itself (another turn id) and is ahead of the live session; the agent's reply id is shared.
+  const reply = (id: string): TranscriptTurn['items'][number] => ({ kind: 'message', id: `${id}:message:m-1`, seq: 1, role: 'assistant', text: 'ok', at: 150 });
+  const live = { ...turn('runtime-1', 1, 'go'), items: [...turn('runtime-1', 1, 'go').items, reply('runtime-1')] };
   const { store, internal } = await opened([turn('a', 0, 'one')]);
   internal.session = { activeTurn: replica<TranscriptTurn | null>(live) };
-  host.show([turn('a', 0, 'one'), turn('s:node-7', 1, 'go')]);
+  host.show([turn('a', 0, 'one'), { ...turn('s:node-7', 1, 'go'), items: [...turn('s:node-7', 1, 'go').items, reply('s:node-7')] }]);
   expect(committedIds(store)).toEqual(['a']);
   expect(store.chatState.transcript.state.activeTurnSnapshot?.id).toBe('runtime-1');
+});
+
+it('keeps an earlier turn that opens with the same words as the running one', async () => {
+  const live = turn('runtime-2', 1, 'ok');
+  const { store, internal } = await opened([turn('a', 0, 'ok')]);
+  internal.session = { activeTurn: replica<TranscriptTurn | null>(live) };
+  host.show([turn('a', 0, 'ok')]);
+  expect(committedIds(store)).toEqual(['a']);
 });
 
 it('puts an owner notification made by the running turn into that turn', async () => {
