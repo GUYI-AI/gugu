@@ -99,3 +99,6 @@
 [data-region='inner-sidebar'] [data-topic-row] { gap: 7px; }
 /* The design's row (.lrow): radius 9 and 8px on both sides, for agent and topic rows alike (the shared row is a pill). */
 [data-region='inner-sidebar'] [data-inner-rows] :is([data-session-id], [role='listitem']) { border-radius: 9px; padding-inline-end: 8px; }
+/* Row hover actions (pin, archive …): the design's two 14px icons 6px apart, flush with the row's 8px end padding. */
+[data-region='inner-sidebar'] [data-inner-rows] [data-row-hover-actions] > * { gap: 6px; }
+[data-region='inner-sidebar'] [data-inner-rows] [data-row-hover-actions] button { width: 14px; min-width: 14px; height: 14px; padding: 0; }

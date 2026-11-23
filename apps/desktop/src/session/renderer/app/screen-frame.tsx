@@ -193,14 +193,14 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
         />
       )}
       body={
-        // 「全部 ›」打开了这个群 / 项目的话题页:这一块换成那一页(主区,❌ 右侧栏)。
-        topicsPage ? <TopicsPageSlot chatId={chatId} /> : (
-          <>
-            <ChatSlot chatId={chatId} className="flex min-h-0 min-w-0 flex-1 flex-col" />
-            {/* 对话的输入框选了「新任务 / 定时任务」:那个框收起,这里换上对应的框(结果回这个对话)。 */}
-            <ComposerVerbDock chatId={chatId} />
-          </>
-        )
+        <>
+          {/* 「全部 ›」打开了这个群 / 项目的话题页:这一块换成那一页(主区,❌ 右侧栏)。对话照旧挂着只是藏起来 ——
+              页签条上的名字和右端那排图标是它画的,卸掉它们也就没了。 */}
+          {topicsPage ? <TopicsPageSlot chatId={chatId} /> : null}
+          <ChatSlot chatId={chatId} className={topicsPage ? 'hidden' : 'flex min-h-0 min-w-0 flex-1 flex-col'} />
+          {/* 对话的输入框选了「新任务 / 定时任务」:那个框收起,这里换上对应的框(结果回这个对话)。 */}
+          {topicsPage ? null : <ComposerVerbDock chatId={chatId} />}
+        </>
       }
     />
   );
