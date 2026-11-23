@@ -86,6 +86,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const toolsFirst = divided && layout.groups[0] === tools;
   const leadingProps = { leadingSlot: leading, reserveShellRestoreLane, leadingReservePx };
   const splitWidth = divided ? `${layout.paneSizes[0]}%` : undefined;
+  // Side by side, the conversation and the tools are two cards (index.css); the tools' strip carries its tabs and the view buttons.
+  const toolCard = !!layout.chatToolCardPaneId;
 
   const conversationTab = tab && Title ? <PaneProvider group={chat} passive isFocusedPane={chatActive}>
     <ChatWorkspaceTabContext.Provider value={{ role: 'conversation', layout }}>
@@ -93,7 +95,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     </ChatWorkspaceTabContext.Provider>
   </PaneProvider> : null;
   const chatTitle = !sharedStrip && (
-    <div data-chat-workspace-chat-header="" className="min-w-0" style={divided && !toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
+    <div data-chat-workspace-chat-header="" data-chat-card-head={toolCard ? '' : undefined} className="min-w-0" style={toolCard ? { flex: `0 0 calc(${splitWidth} - var(--chat-card-half-gap))` } : { flex: 1 }}>
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
         <ChatWorkspaceTabContext.Provider value={{ role: toolsShown ? 'conversation' : 'title', layout }}>
           <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions}>
@@ -132,8 +134,6 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       )}
     </TabBarActionRow>
   );
-  // Side by side, the tool pane is a browser card of its own: its strip carries its tabs and the view buttons (index.css).
-  const toolCard = divided && !toolsFirst;
   const toolTabs = toolsShown && tools && (
     <div className="flex min-w-0" data-chat-tool-strip={divided ? '' : undefined} style={toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
       <div className="min-w-0 flex-1">
@@ -150,7 +150,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     </div>
   );
   return (
-    <div ref={header} className="flex min-w-0 shrink-0 bg-tab-strip" data-chat-workspace-header={mode} data-chat-tool-cards={toolCard ? '' : undefined} data-chat-tool-shared={toolsShown && sharedStrip ? '' : undefined}>
+    <div ref={header} className={toolCard ? 'flex min-w-0 shrink-0' : 'flex min-w-0 shrink-0 bg-tab-strip'} data-chat-workspace-header={mode} data-chat-tool-cards={toolCard ? '' : undefined} data-chat-tool-shared={toolsShown && sharedStrip ? '' : undefined}>
       {toolsFirst && toolTabs}
       {chatTitle}
       {!toolsFirst && toolTabs}

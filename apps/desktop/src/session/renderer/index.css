@@ -1111,30 +1111,57 @@
     mask-image: linear-gradient(to right, currentColor 75%, transparent);
   }
 
-  /* 右侧栏是一张独立的浏览器卡片(第 16 版 #57–#59):并排时工具那一格离开对话、四周留 8px,圆角 12;
+  /* 右侧栏是一张独立的浏览器卡片(第 16 版 #57–#59,稿子 .cards / .card / .strip / .tab):并排时对话、工具各是一张白卡片,
+     圆角 12、6% 细描边,中间 10px 缝(分隔条在缝正中),缝里透出窗口底(外框见 desktop-shell.css)。
+     头这一行 56 高(对话卡片顶上的胶囊栏);工具卡片的页签条 46 高贴顶,正文往上接住它。
      页签条是浅灰底,只有选中的页签是白的。合成一条(窄窗、完整视图)时整条页签条同样是浅灰。 */
-  /* 卡片四周的缝露出工作区底色(和对话顶栏同一档),白卡片才看得出是单独一张。 */
   [data-chat-tool-workspace][data-chat-tool-cards] {
-    background: var(--tab-strip);
+    --chat-card-ring: color-mix(in oklab, var(--fg) 6%, transparent);
+    --chat-card-half-gap: 5px;
+    --chat-card-head-height: 56px;
+    --chat-tool-strip-height: 46px;
   }
 
   [data-chat-workspace-header][data-chat-tool-cards] {
-    --chat-tool-card-gap: 8px;
-    height: calc(var(--tab-strip-height) + var(--chat-tool-card-gap));
-    align-items: flex-end;
+    height: var(--chat-card-head-height);
+    align-items: flex-start;
   }
 
-  [data-chat-workspace-header][data-chat-tool-cards] [data-chat-tool-strip] {
-    height: var(--tab-strip-height);
-    margin: 0 var(--chat-tool-card-gap);
+  [data-chat-card-head],
+  [data-chat-card] {
+    margin-right: var(--chat-card-half-gap);
+    background: var(--bg);
+  }
+
+  [data-chat-card-head] {
+    height: 100%;
     border-radius: 12px 12px 0 0;
-    box-shadow: inset 0 -1px 0 var(--border-color), 0 0 0 0.5px var(--border-color);
+    box-shadow: -0.5px 0 0 var(--chat-card-ring), 0.5px 0 0 var(--chat-card-ring), 0 -0.5px 0 var(--chat-card-ring);
+  }
+
+  [data-chat-card] {
+    border-radius: 0 0 12px 12px;
+    overflow: hidden;
+    box-shadow: -0.5px 0 0 var(--chat-card-ring), 0.5px 0 0 var(--chat-card-ring), 0 0.5px 0 var(--chat-card-ring);
   }
 
   [data-chat-workspace-header] [data-chat-tool-strip],
   [data-chat-workspace-header][data-chat-tool-shared] {
+    --chat-tool-tab-height: 34px;
     background: var(--muted);
-    box-shadow: inset 0 -1px 0 var(--border-color);
+    box-shadow: inset 0 -1px 0 var(--border);
+  }
+
+  [data-chat-workspace-header][data-chat-tool-cards] [data-chat-tool-strip] {
+    --tab-strip-height: var(--chat-tool-strip-height);
+    height: var(--chat-tool-strip-height);
+    margin-left: var(--chat-card-half-gap);
+    border-radius: 12px 12px 0 0;
+    box-shadow: inset 0 -1px 0 var(--border), -0.5px 0 0 var(--chat-card-ring), 0.5px 0 0 var(--chat-card-ring), 0 -0.5px 0 var(--chat-card-ring);
+  }
+
+  :is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] {
+    border-radius: 9px;
   }
 
   [data-chat-workspace-header] [data-chat-tool-strip] [data-tab-active],
@@ -1144,11 +1171,12 @@
   }
 
   [data-chat-tool-card] {
-    margin: 0 8px 8px;
+    margin-left: var(--chat-card-half-gap);
+    margin-top: calc(var(--chat-tool-strip-height) - var(--chat-card-head-height));
     background: var(--tab-face);
     border-radius: 0 0 12px 12px;
     overflow: hidden;
-    box-shadow: 0 0 0 0.5px var(--border-color);
+    box-shadow: -0.5px 0 0 var(--chat-card-ring), 0.5px 0 0 var(--chat-card-ring), 0 0.5px 0 var(--chat-card-ring);
   }
 
   [data-chat-tool-cards] [data-chat-tool-divider] {
