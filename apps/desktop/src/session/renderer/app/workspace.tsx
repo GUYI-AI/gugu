@@ -34,6 +34,8 @@ import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { RETAINED_SURFACE_HIDDEN_STYLE, SurfaceShown } from '@/lib/retainedSurface';
 import { sessionView } from '@renderer/features/sessions/view';
+import { runInAction } from 'mobx';
+import { pageModalOpen } from './page-modal';
 import { ensureMachineSessionWiring } from '@renderer/features/remote-hosts/workspace/machine-session-wiring';
 import { ensureMachineWorkspaceBackend } from '@renderer/features/remote-hosts/workspace/machine-workspace-backend';
 import { isEmbedVisible, subscribeEmbedVisibility } from '@renderer/lib/portal-container';
@@ -249,27 +251,21 @@ const PageArea = observer(function PageArea({ page }: { page: string }) {
   );
 });
 
-/** The session page's skin (theme + `.gugu-skin` scope) lives on its mount element; a modal portalled to the body copies it. */
-const skinSource = () => (window as Window & { __EMDASH_MOUNT__?: HTMLElement }).__EMDASH_MOUNT__ ?? document.querySelector<HTMLElement>('.gugu-skin');
-const subscribeSkin = (onChange: () => void) => {
-  const source = skinSource();
-  if (!source) return () => undefined;
-  const observer = new MutationObserver(onChange);
-  observer.observe(source, { attributes: true, attributeFilter: ['class'] });
-  return () => observer.disconnect();
-};
-const readSkin = () => skinSource()?.className ?? 'gugu-skin';
-
 /** A modal view (@@@page-modal), in the same modal frame as Settings (@@@page-modal-frame). */
 const PageModal = observer(function PageModal({ viewId, onClose }: { viewId: string; onClose: () => void }) {
-  const skin = useSyncExternalStore(subscribeSkin, readSkin);
+  useLayoutEffect(() => {
+    runInAction(() => pageModalOpen.set(true));
+    return () => runInAction(() => pageModalOpen.set(false));
+  }, []);
   const def = viewOf(viewId);
   const Wrap = (def.WrapView ?? Fragment) as ComponentType<{ children: ReactNode } & Record<string, unknown>>;
   const Titlebar = def.TitlebarSlot ?? NoTitlebar;
   const Main = def.MainPanel;
   return (
+    // In the session page's mount (its skin, and the layer an App's live page is drawn in); the frame rises above the
+    // shell while it is open (MainLayout, pageModalOpen).
     <Sheet onClose={onClose} {...PAGE_MODAL_FRAME} testId="page-modal" ariaLabel={viewId}>
-      <div className={skin} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }} data-page-modal={viewId}>
+      <div className="flex min-h-0 flex-1 flex-col" data-page-modal={viewId}>
         <PageModalClose.Provider value={onClose}>
           <Wrap {...paramsOf(viewId)}>
             <WorkspaceContentLayout titlebarSlot={<Titlebar />} mainPanel={<Main />} />

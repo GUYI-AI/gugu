@@ -94,8 +94,37 @@
   background-color: var(--desktop-workspace-bg);
 }
 
-/* @@@page-modal 弹窗的 ✕ 钉在右上角(同设置):联系人、App 市场页头右端的按钮让出它的位置。 */
-[data-contacts-modal] .gg-pane-header,
+/* @@@page-modal-close 联系人弹窗照设置弹窗的两种页头(settings.css / settings-content.css):左栏页头左右 --spacing-2xl;
+   右边的页头上 --spacing-2xl、下 --spacing-md,标题 --font-heading,一行的中线对齐右上角的 ✕(ModalClose)。
+   App 市场的页头(不是 pane header)右端再让出 ✕ 的位置。只在弹窗里:手机的联系人页不受影响。 */
+[data-contacts-modal] .gg-pane[data-role='nav'] > .gg-pane-header {
+  padding-inline: var(--spacing-2xl);
+}
+[data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header {
+  height: auto;
+  min-height: calc(var(--spacing-2xl) + var(--control-h-lg) + var(--spacing-md));
+  padding-top: var(--spacing-2xl);
+  padding-bottom: var(--spacing-md);
+  align-items: flex-start;
+}
+[data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header .gg-pane-title {
+  font-size: var(--font-heading);
+  line-height: var(--lh-heading);
+}
+/* 标题(有计数时连同那一行)从 ✕ 那一行里居中的位置起,和设置的页名同一条线。 */
+[data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header > :is(.gg-pane-title, .gg-pane-heading) {
+  margin-top: calc((var(--control-h-lg) - var(--lh-heading)) / 2);
+}
+[data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header > .gg-pane-actions {
+  min-height: var(--control-h-lg);
+}
+[data-contacts-modal] [data-drawer-close] {
+  top: var(--spacing-2xl);
+  display: flex;
+  align-items: center;
+  height: var(--control-h-lg);
+}
 [data-page-modal] .mk-market-header {
-  padding-inline-end: 48px;
+  padding-top: calc(var(--spacing-2xl) + (var(--control-h-lg) - var(--control-h-md)) / 2);
+  padding-inline-end: calc(var(--control-h-lg) + var(--spacing-lg) + 4px);
 }
