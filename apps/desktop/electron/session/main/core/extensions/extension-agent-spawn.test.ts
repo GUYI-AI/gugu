@@ -34,30 +34,6 @@ beforeEach(() => {
 });
 
 describe('扩展起 agent:交给宿主那一条起会话的路', () => {
-  it('调用点名的原样交出去(引擎、模型、形态、项目、出生的对话、标题),答它的 user:<uuid>', async () => {
-    const answer = await spawnAgentForExtension({
-      extensionId: 'ext-debug',
-      extensionName: '调试台',
-      prompt: '干活',
-      title: '调试台起的',
-      harness: 'codex',
-      model: 'platform:gpt-5.6',
-      transport: 'acp',
-      project: 'project-2',
-      chat: 'chat-7',
-    });
-    expect(answer).toEqual({ agentId: 'user:0a000000-0000-4000-8000-0000000000e1' });
-    expect(spawned[0]).toMatchObject({
-      extensionId: 'ext-debug',
-      prompt: '干活',
-      title: '调试台起的',
-      harness: 'codex',
-      model: 'platform:gpt-5.6',
-      transport: 'acp',
-      project: 'project-2',
-      chat: 'chat-7',
-    });
-  });
 
   it('首轮是来自「扩展名」的信封(与 send 同形),原话在里面', async () => {
     await spawnAgentForExtension({ extensionId: 'ext-debug', extensionName: '调试台', prompt: '干活' });

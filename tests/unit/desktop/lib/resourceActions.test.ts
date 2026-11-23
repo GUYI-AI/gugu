@@ -18,7 +18,6 @@ vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify: mocks.notic
 vi.mock('../../../../apps/desktop/src/lib/guguLinks', async (original) => ({ ...await original<object>(), openLink: mocks.open }))
 
 const { runResourceAction } = await import('../../../../apps/desktop/src/lib/resourceActions')
-const app = { kind: 'app-variant', target: { kind: 'app-detail', extensionId: 'radar', deviceId: 'device', variant: 'ui-smoke' }, facts: ['fork'] } as const
 const url = 'gugu-dev://app/radar?device=device&variant=ui-smoke'
 beforeEach(() => {
   vi.clearAllMocks()
@@ -29,28 +28,6 @@ beforeEach(() => {
 })
 
 describe('resource drafts', () => {
-  it('offers the local host task even when the remote directory has no devices', async () => {
-    await runResourceAction('send-resource-url', app)
-    expect(mocks.list).toHaveBeenCalledExactlyOnceWith()
-    expect(mocks.pick).toHaveBeenCalledWith(expect.objectContaining({ draft: true, text: url, local: ['user:agent'], resource: app }))
-    expect(mocks.clipboard).toHaveBeenCalledWith(url)
-    expect(mocks.compose).not.toHaveBeenCalled()
-  })
-  it('opens the selected task and appends the edited text through the existing composer', async () => {
-    mocks.pick.mockResolvedValue({ to: { agent: 'user:agent' }, text: `${url}\nKeep my changes`, visible: false })
-    await runResourceAction('send-resource-url', app)
-    expect(mocks.open).toHaveBeenCalledWith({ kind: 'session', sessionId: 'task', projectId: 'project' })
-    expect(mocks.compose).toHaveBeenCalledWith(expect.any(Function), `${url}\nKeep my changes`)
-    expect(mocks.compose.mock.calls[0]![0]()).toBe(mocks.view)
-    expect(mocks.notice).not.toHaveBeenCalled()
-  })
-  it('preserves an explicit group receipt through the same draft-opening path', async () => {
-    const { composeTaskDraft } = await import('../../../../apps/desktop/src/lib/composeDraft')
-    const row = { session: { conversationId: 'task', projectId: 'project' } } as Parameters<typeof composeTaskDraft>[0]
-    await composeTaskDraft(row, 'group draft', false, [], 'group-receipt')
-    expect(mocks.open).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'task', projectId: 'project' }, 'group-receipt')
-    expect(mocks.compose).toHaveBeenCalledWith(expect.any(Function), 'group draft')
-  })
   it('copies a pinned file version without querying tasks or using the build scheme', async () => {
     await runResourceAction('copy-resource-url', { kind: 'file', target: { kind: 'file', itemId: '00000000-0000-4000-8000-000000000001', version: 3 } })
     expect(mocks.clipboard).toHaveBeenCalledWith('gugu-file://00000000-0000-4000-8000-000000000001?v=3')

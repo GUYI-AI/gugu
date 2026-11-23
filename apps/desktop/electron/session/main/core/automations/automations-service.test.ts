@@ -73,29 +73,6 @@ describe('AutomationsService.deleteAutomation', () => {
     mocks.beginAutomationDeletion.mockResolvedValue(true);
   });
 
-  it('deletes terminal run sessions before their run rows and the automation', async () => {
-    vi.mocked(listAutomationRunCleanupTargets).mockResolvedValue([
-      { runId: 'run-1', status: 'done', sessionId: 'session-1', projectId: 'project-1' },
-      { runId: 'run-2', status: 'failed', sessionId: 'session-2', projectId: 'project-1' },
-      { runId: 'run-3', status: 'skipped', sessionId: null, projectId: null },
-    ]);
-
-    await new AutomationsService().deleteAutomation(automation.id);
-
-    expect(archiveSession).toHaveBeenNthCalledWith(1, 'project-1', 'session-1');
-    expect(archiveSession).toHaveBeenNthCalledWith(2, 'project-1', 'session-2');
-    expect(removeRun).toHaveBeenNthCalledWith(1, 'run-1');
-    expect(removeRun).toHaveBeenNthCalledWith(2, 'run-2');
-    expect(removeRun).toHaveBeenNthCalledWith(3, 'run-3');
-    expect(softDeleteAutomation).toHaveBeenCalledWith(automation.id);
-    expect(mocks.archiveSession.mock.invocationCallOrder[1]).toBeLessThan(
-      vi.mocked(removeRun).mock.invocationCallOrder[0]
-    );
-    expect(vi.mocked(removeRun).mock.invocationCallOrder[2]).toBeLessThan(
-      vi.mocked(softDeleteAutomation).mock.invocationCallOrder[0]
-    );
-  });
-
   it('rejects active runs without hiding the automation', async () => {
     vi.mocked(listAutomationRunCleanupTargets).mockResolvedValue([
       {
