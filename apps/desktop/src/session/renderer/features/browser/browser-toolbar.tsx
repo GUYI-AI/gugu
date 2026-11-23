@@ -190,7 +190,7 @@ export function BrowserToolbar({
         label={translate(session.isLoading ? 'browser.stop' : 'browser.reload')}
         onClick={() => onReload?.()}
       >
-        {session.isLoading ? <Square className="size-4" /> : <Reload className="size-4" />}
+        {session.isLoading ? <Square className="size-[15px]" /> : <Reload className="size-[15px]" />}
       </ToolbarIconButton>
       {annotationAction}
       <form
@@ -244,7 +244,7 @@ export function BrowserToolbar({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="size-7 shrink-0"
+                className="size-[22px] shrink-0 rounded-[6px] text-foreground-passive"
                 aria-label={translate('browser.actions')}
               />
             }
@@ -396,7 +396,7 @@ function ToolbarIconButton({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-7 shrink-0"
+            className="size-[22px] shrink-0 rounded-[6px] text-foreground-passive"
             disabled={disabled}
             aria-label={label}
             onClick={onClick}
