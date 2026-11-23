@@ -160,11 +160,13 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         // edge parts it from the content (#52).
         'relative flex h-full flex-col border-r border-border text-foreground-tertiary-muted transition-colors',
         isDragOver && 'bg-background-2 ring-2 ring-inset ring-border-2',
-        // 界面减法 #53 #69: a row is a 52px square block on the rail (padding 6 around its 40px avatar), 52 tall open; its
+        // 界面减法 #53 #69: a row is a 52px square block on the rail (padding 6 around its 40px avatar), 52 tall open, 6 apart; its
         // unread count sits on the avatar's top-right corner in both states (no row end: no time, no muted bell). Its text
         // (name, preview) follows the open/close progress through the scroll box's mask (followNamesMask).
-        '[&_[data-region=sidebar-scroll]_.gg-list-row]:h-[52px] [&_[data-region=sidebar-scroll]_.gg-list-row]:rounded-[12px] [&_[data-region=sidebar-scroll]_.gg-list-row]:p-1.5 [&_[data-region=sidebar-scroll]_.gg-list-row-body]:gap-0',
-        '[&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:absolute [&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:top-1 [&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:left-[30px]',
+        '[&_[data-region=sidebar-scroll]_.gg-list-row]:mb-1.5 [&_[data-region=sidebar-scroll]_.gg-list-row]:h-[52px] [&_[data-region=sidebar-scroll]_.gg-list-row]:rounded-[12px] [&_[data-region=sidebar-scroll]_.gg-list-row]:p-1.5 [&_[data-region=sidebar-scroll]_.gg-list-row-body]:gap-0',
+        '[&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:absolute [&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:top-1 [&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:left-[34px] data-[sidebar-rail]:[&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:left-[30px]',
+        // Design v16: the preview line is 12.5px.
+        '[&_[data-region=sidebar-scroll]_.gg-list-row-subtitle]:text-[12.5px]',
         '[&_[data-region=sidebar-scroll]_.gg-chat-row-muted]:hidden',
         // The list's gutter: 14 open, 8 on the rail (one element restyled when the rail flips).
         'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:px-2'

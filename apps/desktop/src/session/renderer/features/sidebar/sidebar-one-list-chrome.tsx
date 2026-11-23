@@ -81,14 +81,14 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
   const createRef = useSidebarProgressFollow<HTMLButtonElement>(followNames);
   const menuLabel = [...(collapsed ? [translate('sidebar.createAgent')] : []), ...ONE_LIST_CREATE_MENU.map((action) => translate(CREATE_MENU_LABEL[action]))].join(' / ');
   return (
-    <div ref={rowRef} className="flex shrink-0 items-center pb-2" data-sidebar-one-list-top="">
+    <div ref={rowRef} className={cn('flex shrink-0 items-center', collapsed ? 'pb-2' : 'pb-[17px]')} data-sidebar-one-list-top="">
       {/* Fades with the sidebar's text (followNames) and narrows to nothing: no side padding or border
           of its own (its label is centred, so expanded it looks the same), and its overflow is clipped on the way. Collapsed
           it is inert: out of the tab order and the pointer's way. */}
       <Button
         ref={createRef}
         variant="primary"
-        className="min-w-0 flex-1 overflow-hidden"
+        className="h-[34px] min-w-0 flex-1 overflow-hidden rounded-[10px]"
         style={{ paddingInline: 0, borderInlineWidth: 0 }}
         inert={collapsed}
         onClick={onCreateAgent}
@@ -148,8 +148,9 @@ export function SidebarRailRow() {
   const railLayout = useLeftRailLayout();
   const fieldRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   return (
-    // On the rail 「»」 (32) sits on the avatars' axis: 18 + 16 = 34.
-    <div className={cn('flex h-10 shrink-0 items-start', railLayout ? 'px-[18px]' : 'px-3')} data-sidebar-rail-row="">
+    // Design v16: on the rail 「»」 (32) sits on the avatars' axis (18 + 16 = 34), 38 from the window's top, under the traffic
+    // lights; open, the search field is 64 from the top and 17 above 创建智能体.
+    <div className={cn('flex shrink-0 items-start', railLayout ? '-mt-[7px] h-9 px-[18px]' : 'px-3 pb-[17px] pt-[19px]')} data-sidebar-rail-row="">
       {railLayout ? <SidebarFoldButton /> : <div ref={fieldRef} className="w-full"><SidebarSearchTrigger /></div>}
     </div>
   );

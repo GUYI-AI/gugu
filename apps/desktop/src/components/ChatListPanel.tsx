@@ -122,7 +122,7 @@ const MOBILE_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, o
 /** The one list's gutter is its scroll box's (left-sidebar): 14 open, 8 on the rail (界面减法 #48 #53). */
 const SIDEBAR_LIST_STYLE: React.CSSProperties = { padding: '0 0 8px' }
 /** First guess for a sidebar conversation line before it is measured (one row without topics). */
-const SIDEBAR_ENTRY_ESTIMATE = 52
+const SIDEBAR_ENTRY_ESTIMATE = 58
 
 /** A mounted sidebar line, placed by the line window. */
 const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%' })
