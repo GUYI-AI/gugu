@@ -113,7 +113,8 @@ for (const material of ['native', 'opaque'] as const) {
     const railFold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
     const box = railFold.getBoundingClientRect();
     expect(box.left + box.width / 2 - aside.getBoundingClientRect().left).toBe(34);
-    expect(box.top - panel.top).toBeGreaterThanOrEqual(inset + 40);
+    // Design v16: 38 from the window's top, under the traffic lights (they end at 30).
+    expect(box.top - panel.top).toBeCloseTo(38);
     for (const testId of ['sidebar-scheduled', 'sidebar-session-history', 'sidebar-search-trigger']) expect(document.querySelector(`[data-testid="${testId}"]`)).toBeNull();
 
     const rail = aside.getBoundingClientRect();
