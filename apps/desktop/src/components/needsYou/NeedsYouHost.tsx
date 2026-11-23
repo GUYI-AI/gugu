@@ -82,7 +82,7 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
     return createPortal(<>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">
         {/* The list takes the chats' place: its header is the way back to them, the usual "‹ parent" back. */}
-        <Button size="sm" variant="ghost" className="-ml-2 gap-0.5 font-medium text-[var(--fg)]" data-testid="notification-back"
+        <Button size="sm" variant="ghost" className="-ml-2 gap-1 font-medium text-[var(--fg)]" data-testid="notification-back"
           aria-label={t('chatArea.backToList', { ns: 'messaging' })} title={t('chatArea.backToList', { ns: 'messaging' })} onClick={() => setSidebarNotificationsOpen(false)}>
           <ChevronLeft className="size-4" />{t('shell.chats', { ns: 'main' })}
         </Button>
