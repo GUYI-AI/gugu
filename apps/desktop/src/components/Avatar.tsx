@@ -47,8 +47,8 @@ export interface AvatarProps {
 
 const SIZE_MAP = { xs: 18, sm: 32, md: 40, lg: 64 } as const
 const AVATAR_STATUS_DOT_CLASS = 'av-status__dot relative motion-reduce:animate-none'
-const AVATAR_STATUS_PULSE_CLASS = 'av-status__pulse pointer-events-none absolute -inset-0.5 rounded-full border-2 border-solid animate-[av-status-pulse_1.4s_steps(14,end)_infinite] motion-reduce:animate-none'
-const AVATAR_STATUS_PULSE_DELAY_CLASS = `${AVATAR_STATUS_PULSE_CLASS} av-status__pulse--delay [animation-delay:0.7s]`
+const AVATAR_STATUS_PULSE_CLASS = 'av-status__pulse pointer-events-none absolute -inset-0.5 rounded-full border-2 border-solid animate-[av-status-pulse_1s_step-end_infinite] motion-reduce:animate-none'
+const AVATAR_STATUS_PULSE_DELAY_CLASS = `${AVATAR_STATUS_PULSE_CLASS} av-status__pulse--delay [animation-delay:0.5s]`
 
 // @@@avatar-status-badge - top-right status indicator. Color and words come from the shared presentation
 // (packages/core/src/shared/agentStatusPresentation.ts — one table for the session page, chat and phone). Motion uses

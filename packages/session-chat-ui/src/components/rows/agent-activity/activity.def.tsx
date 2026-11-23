@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 import { createMemo, For } from 'solid-js';
 import { defineUnit } from '@session-chat/core/units';
-import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
+import { runningText } from '@session-chat/styles/effects.css';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { useChatTranslator } from '@session-chat/localization';
 import type { AgentActivityGroup } from '@session-chat/state/agent-activity';
@@ -27,11 +27,11 @@ export const activityUnitDef = defineUnit<AgentActivityGroup>({
         aria-label={t(expanded() ? 'transcript.activityCollapse' : 'transcript.activityExpand', { summary: activitySummaryText(parts()) })} />
       <span class={styles.inline}>
         <svg class={styles.icon} viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9.5 17-5-5 5-5m-5 5h10c1.667 0 5 1 5 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        <ShimmerText active={live()} multiline class={styles.label} style={{ width: label() ? `${label()!.width}px` : undefined }} title={activitySummaryText(parts())}>
+        <span class={styles.label} classList={{ [runningText]: live() }} style={{ width: label() ? `${label()!.width}px` : undefined }} title={activitySummaryText(parts())}>
           <For each={lines()}>{line => <span class={styles.line}><For each={line.parts}>{part => typeof part === 'string' ? <span class={styles.word}>{part}</span> : <button type="button" class={styles.name}
             aria-label={part.actor.name} title={part.actor.name} data-activity-target={part.actor.id}
             onClick={event => { event.stopPropagation(); commands().onOpenSender?.(part.actor.target); }}>{part.label}</button>}</For><span class={styles.hanging}>{line.hanging}</span></span>}</For>
-        </ShimmerText>
+        </span>
         <svg class={styles.chevron} style={{ transform: expanded() ? 'rotate(90deg)' : undefined }} viewBox="0 0 12 12" aria-hidden="true"><path d="m4 2.5 3.5 3.5L4 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" /></svg>
       </span>
     </div>;

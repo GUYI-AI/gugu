@@ -32,7 +32,7 @@ import {
   collapseStatusError,
   collapseStatusPermission,
 } from './collapse-header.css';
-import { ShimmerText } from './ShimmerText';
+import { runningText } from '@session-chat/styles/effects.css';
 import { useChatTranslator } from '@session-chat/localization';
 
 export type CollapseHeaderProps = {
@@ -52,7 +52,7 @@ export type CollapseHeaderProps = {
   /** Whether the section is currently expanded. */
   expanded: boolean;
   /**
-   * When true, applies `text-shimmer` to the label (streaming / running state).
+   * When true, the label takes the still running ink (`runningText`, streaming / running state).
    */
   active?: boolean;
   /** When true, renders the error icon pinned to the far right. */
@@ -104,9 +104,9 @@ export function CollapseHeader(props: CollapseHeaderProps) {
       data-collapse-id={props.collapsible ? props.id : undefined}
       data-collapse-anchor={props.anchorId}
     >
-      <ShimmerText multiline={props.wrap} class={collapseHeaderLabel} active={!!props.active} style={props.wrap ? { 'white-space': 'pre-wrap', overflow: 'visible', 'overflow-wrap': 'normal', 'font-size': `${props.labelSize ?? 12}px`, 'line-height': `${props.labelLineHeight ?? 18}px`, flex: '1 1 auto' } : undefined}>
+      <span class={collapseHeaderLabel} classList={{ [runningText]: !!props.active }} style={props.wrap ? { 'white-space': 'pre-wrap', overflow: 'visible', 'overflow-wrap': 'normal', 'font-size': `${props.labelSize ?? 12}px`, 'line-height': `${props.labelLineHeight ?? 18}px`, flex: '1 1 auto' } : undefined}>
         {props.children}
-      </ShimmerText>
+      </span>
       {props.trailing}
       <Show when={props.collapsible}>
         <span class={chevron} classList={{ [chevronExpanded]: props.expanded }} aria-hidden="true">

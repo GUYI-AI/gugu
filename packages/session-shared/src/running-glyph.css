@@ -1,0 +1,41 @@
+/* @@@running-beat - the one "running" mark of the product: a 2x2 dot square whose gap walks round it (⠚ ⠓ ⠋ ⠙), four
+   states, 250 ms each. Every running indicator is this glyph on this beat, and each joins the document timeline
+   (joinSharedBeat), so however many run at once the window changes at most four times a second. Each change is a
+   whole-window frame on macOS (WindowServer recomposites the window), so the cost of "running" is set by how often
+   anything running changes, not by how small it is: a sweep or a linear loop that changed every vsync kept a fanless
+   laptop hot with nothing else on screen.
+
+   Markup: <span class="gg-running-glyph"><span class="gg-running-glyph__strip"></span></span>. The four frames are
+   generated content stacked in the strip (no DOM text: nothing to copy, read or measure); a one-line window shows one,
+   and a stepped transform moves the strip on the compositor. The strip's own box is that one line too, the frames
+   overflowing it: a four-line box reached three lines below the glyph for anything that measures the row's boxes. */
+.gg-running-glyph {
+  display: inline-block;
+  flex: none;
+  height: 1lh;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+.gg-running-glyph__strip {
+  display: block;
+  height: 1lh;
+  animation: gg-running-glyph 1s steps(4, end) infinite;
+}
+
+.gg-running-glyph__strip::before {
+  content: '\281A\A\2813\A\280B\A\2819';
+  white-space: pre;
+}
+
+@keyframes gg-running-glyph {
+  to {
+    transform: translateY(-400%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gg-running-glyph__strip {
+    animation: none;
+  }
+}

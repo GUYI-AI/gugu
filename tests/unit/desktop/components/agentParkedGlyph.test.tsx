@@ -39,7 +39,7 @@ describe('background running draws AgentParkedGlyph on every surface', () => {
     await harness.render(node())
     expect(glyphs()).toHaveLength(1)
     // none of the dots / spinners the other states draw on these surfaces
-    expect(harness.container.querySelector('.av-status__dot, .cli-spinner, .gg-c-st-dot-mark, [class~="h-[6px]"]')).toBeNull()
+    expect(harness.container.querySelector('.av-status__dot, .gg-running-glyph, .gg-c-st-dot-mark, [class~="h-[6px]"]')).toBeNull()
   })
 
   it('the contact row adds no pseudo-element dot of its own for parked', () => {

@@ -39,17 +39,15 @@ describe('任务页的状态字形(#7243)', () => {
   it('在跑 = 转圈字形,不是小鸟', () => {
     renderGlyph('working');
     expectNoBird();
-    // the running glyph turns as a strip of braille frames (cliSpinner.css); each frame is one glyph
-    const frames = [...container.querySelectorAll('.cli-spinner__strip > span')].map((frame) => frame.textContent);
-    expect(frames.length).toBeGreaterThan(1);
-    for (const frame of frames) expect(frame).toMatch(/^[⠀-⣿]$/u);
+    // the running glyph is the shared four-state strip (@gugu/session-shared/running-glyph.css)
+    expect(container.querySelector('.gg-running-glyph__strip')).not.toBeNull();
   });
 
   it('后台运行中 = 双竖线(AgentParkedGlyph),不是转圈字形', () => {
     renderGlyph('working', 'parked');
     expectNoBird();
     expect(container.querySelector('[data-agent-status-glyph="parked"]')).not.toBeNull();
-    expect(container.querySelector('.cli-spinner')).toBeNull();
+    expect(container.querySelector('.gg-running-glyph')).toBeNull();
   });
 
   it('等你 = 黄点,出错 = 红点', () => {

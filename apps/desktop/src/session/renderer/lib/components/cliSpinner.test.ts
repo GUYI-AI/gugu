@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
 // spec agent-status「附属态」:后台运行中(回合已结束、只剩后台 / 定时)= 同一枚转圈字形、动画停。
-// 转动在 CSS 里(.cli-spinner 字形条,合成器位移):这里判组件的契约 —— 永远不起计时器;整套字形都在条上;
+// 转动在 CSS 里(共用的 .gg-running-glyph 字形条,合成器位移):这里判组件的契约 —— 永远不起计时器;整套字形都在条上;
 // 看不见(窗口、文档、所在页面、视口)就把暂停开关打开,看得见就关上。真实的动画时钟在浏览器用例里判
 // (tests/browser/running-motion.test.tsx)。
 import { createElement, act } from 'react';
@@ -32,28 +32,28 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function render(props: { variant?: '1' | '2' }): void {
-  act(() => root.render(createElement(CLISpinner, props)));
+function render(): void {
+  act(() => root.render(createElement(CLISpinner)));
 }
-const spinner = () => container.querySelector<HTMLElement>('.cli-spinner');
+const spinner = () => container.querySelector<HTMLElement>('.gg-running-glyph');
 const paused = () => spinner()?.hasAttribute('data-animation-off') ?? false;
 
 describe('CLISpinner', () => {
-  it.each(['1', '2'] as const)('variant %s: the strip carries every frame and no timer ever runs', (variant) => {
-    render({ variant });
-    const strip = container.querySelector('.cli-spinner__strip')!;
-    expect(strip.children.length).toBe(variant === '1' ? 10 : 24);
-    expect(spinner()!.style.getPropertyValue('--cli-spinner-frames')).toBe(String(strip.children.length));
+  it('draws the shared glyph strip (frames are its generated content, no DOM text) and no timer ever runs', () => {
+    render();
+    const strip = container.querySelector('.gg-running-glyph__strip')!;
+    expect(strip).not.toBeNull();
+    expect(container.textContent).toBe('');
     act(() => vi.advanceTimersByTime(5000));
     expect(vi.getTimerCount()).toBe(0);
     expect(paused()).toBe(false);
   });
 
   it('native minimize pauses it and restore resumes it, including on remount', () => {
-    render({});
+    render();
     act(() => window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false })));
     expect(paused()).toBe(true);
-    render({ variant: '2' });
+    render();
     expect(paused()).toBe(true);
     act(() => window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true })));
     expect(paused()).toBe(false);
@@ -63,7 +63,7 @@ describe('CLISpinner', () => {
   it('pauses on document visibility changes and resumes when visible', () => {
     let hidden = false;
     vi.spyOn(document, 'hidden', 'get').mockImplementation(() => hidden);
-    render({});
+    render();
     hidden = true;
     act(() => document.dispatchEvent(new Event('visibilitychange')));
     expect(paused()).toBe(true);
@@ -95,7 +95,7 @@ describe('CLISpinner', () => {
       observe() {}
       unobserve = unobserve;
     } });
-    render({});
+    render();
     const target = spinner()!;
     const visible = (isIntersecting: boolean) => act(() => intersect([{ target, isIntersecting } as unknown as IntersectionObserverEntry], {} as IntersectionObserver));
     visible(false);
@@ -115,7 +115,7 @@ describe('CLISpinner', () => {
     const portalDoc = iframe.contentDocument!;
     vi.spyOn(portalDoc, 'hidden', 'get').mockReturnValue(false);
     portalDoc.body.append(container);
-    render({});
+    render();
     expect(paused()).toBe(false);
     act(() => portalDoc.defaultView!.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false })));
     expect(paused()).toBe(true);
@@ -127,7 +127,7 @@ describe('CLISpinner', () => {
   });
 
   it('the glyph keeps the ink colour (owner 2026-09-26)', () => {
-    render({ variant: '2' });
+    render();
     const glyph = container.firstElementChild as HTMLElement;
     expect(glyph.className).toContain('text-foreground/60');
     expect(glyph.className).not.toContain('agent-tone');

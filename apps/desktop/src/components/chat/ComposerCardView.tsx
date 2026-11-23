@@ -197,7 +197,7 @@ export function TaskStatusMark({ status }: { status: AgentDisplayStatus | undefi
   const presentation = presentAgentStatus({
     reading: status === 'parked' ? { status: 'working', detail: 'parked' } : { status, detail: null },
   })
-  return <AgentStatusGlyph presentation={presentation} label={t(`agentStatus.${presentation.label}`)} variant="2" />
+  return <AgentStatusGlyph presentation={presentation} label={t(`agentStatus.${presentation.label}`)} />
 }
 
 /**

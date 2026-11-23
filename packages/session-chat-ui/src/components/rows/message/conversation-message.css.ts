@@ -83,3 +83,10 @@ globalStyle(`${conversationRoot}[data-side="left"] ${cardFadeOverlay}`, {
 });
 
 export const conversationDestination = style({ display: 'block', marginTop: 4, height: 18, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: vars.fgMuted, fontFamily: vars.fontSans, fontSize: vars.typeChromeTinyFontSize, lineHeight: '18px' });
+
+/** The running glyph in the brain icon's slot (17 wide): the process row keeps its measured width while it runs. */
+export const processGlyphSlot = style({
+  width: 17,
+  flex: 'none',
+  textAlign: 'center',
+});

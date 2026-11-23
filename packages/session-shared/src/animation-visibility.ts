@@ -22,7 +22,7 @@ const windows = new WeakMap<Document, WindowVisibility>()
  * document's animations (CSS animations, transitions and scripted ones; shadow trees are not part of a document's
  * animations, and no host document of ours has one) is set to playback
  * rate 0 and gets its own rate back when the window is seen again. Time stands still for it, so it resumes where it
- * was, and it asks for no frames meanwhile.
+ * was (a loop resumes on the shared beat, joinSharedBeat), and it asks for no frames meanwhile.
  *
  * ❌ An inherited custom property on <html> read by `animation-play-state` (what this was): changing it re-styles every
  * element of the document, once when the window hides and once more, in front of the user, when it comes back
@@ -32,7 +32,12 @@ const windows = new WeakMap<Document, WindowVisibility>()
  */
 function holdAnimations(doc: Document, state: WindowVisibility, hold: boolean): void {
   if (!hold) {
-    for (const [animation, rate] of state.held) animation.playbackRate = rate
+    for (const [animation, rate] of state.held) {
+      animation.playbackRate = rate
+      // A loop stood still while the document clock ran on: back on the shared beat, with what starts after it.
+      // ❌ one removed meanwhile (idle): a time written to it would bring it back, paused.
+      if (animation.playState !== 'idle' && animation.effect?.getComputedTiming().iterations === Infinity && animation.timeline?.currentTime != null) animation.currentTime = animation.timeline.currentTime
+    }
     state.held.clear()
     return
   }

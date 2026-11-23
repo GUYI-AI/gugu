@@ -64,18 +64,16 @@ export function AgentStatusGlyph({
   presentation,
   label,
   className,
-  variant,
 }: {
   presentation: AgentStatusPresentation;
   label: string;
   className?: string;
-  variant?: '1' | '2';
 }) {
   switch (presentation.tone) {
     case 'running':
       return (
         <span aria-label={label}>
-          <CLISpinner variant={variant} />
+          <CLISpinner />
         </span>
       );
     case 'parked':

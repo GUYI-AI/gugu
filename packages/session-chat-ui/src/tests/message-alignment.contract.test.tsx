@@ -78,7 +78,7 @@ it.each([{ width: 1440, mode: 'light' }, { width: 1440, mode: 'dark' }, { width:
   const lastFact = source.lastElementChild!;
   const strip = background()!;
   const silent = [...host.querySelectorAll<HTMLElement>('[data-slot="turn-process"]')].at(-1)!.lastElementChild as HTMLElement;
-  const label = strip.querySelector<HTMLElement>('[data-shimmer]') ?? strip.firstElementChild as HTMLElement;
+  const label = strip.firstElementChild as HTMLElement;
   const reading = {
     phase: capturePhase ?? 'test', width, mode,
     headerRight: lastFact.getBoundingClientRect().right,

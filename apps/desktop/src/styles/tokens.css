@@ -1332,13 +1332,23 @@ input {
   }
 }
 
+/* The running beat (running-glyph.css): four states a second, played with step-end so each keyframe holds until the
+   next and every change lands on the 250 ms grid. (A steps() timing function steps each keyframe interval on its own:
+   steps over a 0-70% interval fell on a 175 ms grid, between the beats.) The ring is gone in the last quarter. */
 @keyframes av-status-pulse {
   0% {
     transform: scale(0.85);
     opacity: 0.55;
   }
-  /* The ring is gone from here on: holding the transform means no frames while nothing can be seen. */
-  70%, 100% {
+  25% {
+    transform: scale(1.26);
+    opacity: 0.35;
+  }
+  50% {
+    transform: scale(1.67);
+    opacity: 0.16;
+  }
+  75%, 100% {
     transform: scale(2);
     opacity: 0;
   }
