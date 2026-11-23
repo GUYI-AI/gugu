@@ -11,6 +11,7 @@ import { AgentStatusIndicator } from '@renderer/lib/components/agent-status-indi
 import { MAX_SESSION_TITLE_LENGTH } from '@shared/core/sessions/sessions';
 import type { SessionTabResource } from './session-tab-resource';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { SessionConversationCard } from './session-conversation-card';
 import { useSessionTabCommands } from './view/session-actions';
 
 export const SessionTabBarItem = observer(function SessionTabBarItem({
@@ -51,6 +52,7 @@ export const SessionTabBarItem = observer(function SessionTabBarItem({
       renameOnDoubleClick={!!store}
       renameValue={rawTitle}
       renameMaxLength={MAX_SESSION_TITLE_LENGTH}
+      card={sessionCommands.length > 0 ? (close) => <SessionConversationCard sessionId={tab.resource.sessionId} commands={sessionCommands} onClose={close} /> : undefined}
     />
   );
 });

@@ -743,14 +743,19 @@ export default {
       "uploading": "上传中"
     }
   },
+  "conversationCard": {
+    "rename": "改名",
+    "notifications": "消息通知",
+    "details": "详情"
+  },
   "header": {
+    "details": "详情",
     "apps": "应用",
     "members": "{{count}} 位成员",
     "searchHistory": "搜索聊天记录",
     "groupInfoAndSettings": "群信息与设置",
     "noApps": "本设备暂无可用的应用。",
     "announcement": "群公告",
-    "groupInfo": "群信息",
     "chatInfo": "会话信息",
     "memberList": "成员列表",
     "more": "更多操作",

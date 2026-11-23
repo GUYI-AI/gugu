@@ -1,6 +1,9 @@
 export const enUSLegacyDmMessages = {
   'humanDm.friendshipRequired': 'Add this person as a friend before sending messages.',
   'legacyDm.history': 'Old private chat history',
+  'details.title': 'Details',
+  'details.children': 'Sub-sessions',
+  'details.session': 'Session',
   'legacyDm.archive': 'Old private chat archive',
   'legacyDm.readOnly': 'Read only',
   'legacyDm.search': 'Search by name or chat number',
@@ -22,6 +25,9 @@ export const enUSLegacyDmMessages = {
 export const zhCNLegacyDmMessages: Record<keyof typeof enUSLegacyDmMessages, string> = {
   'humanDm.friendshipRequired': '请先添加对方为好友，再发送消息。',
   'legacyDm.history': '旧私聊历史',
+  'details.title': '详情',
+  'details.children': '子会话',
+  'details.session': '会话',
   'legacyDm.archive': '旧私聊归档',
   'legacyDm.readOnly': '只读',
   'legacyDm.search': '按名称或私聊编号搜索',
