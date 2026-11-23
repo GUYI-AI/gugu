@@ -9,6 +9,7 @@ import { Sheet } from '../ui/Sheet'
 import { Button } from '../ui/Button'
 import { AddGroupMembers } from './AddGroupMembers'
 import { groupSettings } from './useGroupChatSettings'
+import { InRequestWindow } from '../InRequestWindow'
 
 /** The group's 「添加成员」 picker, loading the group itself: the group menus and a task dropped on a group's composer. */
 export function GroupAddMembersSheet({ chatId, initialSelectedIds, onClose }: {
@@ -52,5 +53,5 @@ export function GroupAddMembersHost() {
     window.addEventListener(UI_EVENTS.addGroupMembers, open)
     return () => window.removeEventListener(UI_EVENTS.addGroupMembers, open)
   }, [])
-  return chatId ? <GroupAddMembersSheet key={chatId} chatId={chatId} onClose={() => setChatId(null)} /> : null
+  return chatId ? <InRequestWindow key={chatId}><GroupAddMembersSheet chatId={chatId} onClose={() => setChatId(null)} /></InRequestWindow> : null
 }

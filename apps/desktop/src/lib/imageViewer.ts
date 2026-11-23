@@ -69,7 +69,8 @@ export interface ThumbBounds {
 
 /** 已解码的 <img> 的 natural 尺寸。只有它画的就是原图(没有另取原图的办法)时,这才是原图尺寸。 */
 export function decodedSizeOf(thumb: HTMLElement | null | undefined): Size | null {
-  const img = thumb instanceof HTMLImageElement ? thumb : thumb?.querySelector('img')
+  // By tag, not `instanceof`: a thumbnail in a pop-out window is that window's HTMLImageElement.
+  const img = thumb?.tagName === 'IMG' ? thumb as HTMLImageElement : thumb?.querySelector('img')
   if (!img || !img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) return null
   return { width: img.naturalWidth, height: img.naturalHeight }
 }

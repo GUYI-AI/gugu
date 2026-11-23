@@ -162,6 +162,14 @@ describe('dispatchFromApp (the shared answer)', () => {
     expect(rpcs.at(-1)).toMatchObject({ p_content: 'host this round', p_is_whisper: true });
   });
 
+  it('a draft from a page in a topic goes into the topic, the conversation on screen, not its group\'s composer', async () => {
+    const TOPIC = '55555555-5555-4555-8555-555555555555';
+    const { platform, drafts } = phone({ to: { chat: GROUP }, text: 'look at this' });
+    const sent = await dispatchFromApp(platform, 'files', { text: 'look', draft: true }, { chat, preselect: null, conversation: { chat: TOPIC, files: GROUP } });
+    expect(drafts).toEqual([expect.objectContaining({ chatId: TOPIC, text: 'look at this\n' })]);
+    expect(sent).toEqual({ to: { chat: TOPIC } });
+  });
+
   it('cancelled in the sheet: nothing goes, the App hears so', async () => {
     const { platform } = phone(null);
     const before = rpcs.length;

@@ -97,6 +97,9 @@ const {
   resetPlatformIssueBackoffsForTest,
   clearPlatformIssueBackoff,
 } = await import('../../../../apps/desktop/electron/sessionpage/sessionpage-platform-model')
+const { HostLocaleStore, installHostLocaleStore } = await import('../../../../apps/desktop/electron/host-locale-store')
+// The refusal sentences are host copy; these cases read the Chinese host's.
+installHostLocaleStore(new HostLocaleStore(() => ['zh-CN']))
 const { ModelAccessHttpError } = await import('../../../../apps/desktop/electron/model-access')
 const { RuntimeAuthError } = await import('@gugu/core')
 const { acpPlatformInjectionSchema } = await import('../../../../packages/session-core/src/acp/api/runtime-contract')

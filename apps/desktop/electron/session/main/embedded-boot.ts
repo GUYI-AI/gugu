@@ -55,11 +55,11 @@ export { setUserPathRefresher } from './utils/userEnv'
 export { setLoginShellEnvProvider } from './utils/userEnv'
 // #6264 这条终端会话是不是跑在咕咕平台模型上:平台令牌的持有表住宿主,由宿主注入(同上,❌ 相对 import)。
 export { setHostCredentialsProbe } from './core/agent-config/auth-expiry-from-turns'
-// @@@5301 会话页 agent 系统通知的正文注入口。会话页 ❌ 不 import 宿主的语言 store
-// (它有模块级状态,跨界只会拿到复制品) —— 由宿主把当下语言的两句文案推进来。
-export { setSessionAgentNotificationCopy } from './core/agent-hooks/notification-copy'
+// 会话页这侧写给人看的字(agent 系统通知、设备答给界面的那一句)的注入口。会话页 ❌ 不 import 宿主的语言 store
+// (它有模块级状态,跨界只会拿到复制品) —— 由宿主把当下语言的那一块文案推进来(core/host-copy.ts)。
+export { setSessionHostCopy } from './core/host-copy'
 export { setSystemNotificationsUsable } from './core/agent-hooks/system-notifications'
-export type { SessionAgentNotificationCopy } from './core/agent-hooks/notification-copy'
+export type { SessionHostCopy } from './core/host-copy'
 // 宿主的界面语言(App 名字等由会话页这侧拼给人看的字按它挑语言),同上由宿主注入。
 export { setSessionHostLocale } from './core/host-locale'
 export { startNativeConversationInboxHost } from './core/sessions/native-conversation-inbox'

@@ -23,6 +23,9 @@ patchedDependencies:
   app-builder-lib@26.15.3:
     hash: 9f415853b12a3f5cc40824c17cfc222d7a0bd67dd2b16637137c246fbcbcc4ed
     path: patches/app-builder-lib@26.15.3.patch
+  photoswipe@5.4.4:
+    hash: 2d2464a973952f25f77b7fe3061585f9cea4f5f08acdb419a7b3040c9c59fe42
+    path: patches/photoswipe@5.4.4.patch
   ssh2@1.17.0:
     hash: 67782042fc6b5f59e858c08a51d65bc9834be54fd0a06dbfe7212c43159d5d82
     path: patches/ssh2@1.17.0.patch
@@ -529,7 +532,7 @@ importers:
         version: 8.16.3
       photoswipe:
         specifier: ^5.4.4
-        version: 5.4.4
+        version: 5.4.4(patch_hash=2d2464a973952f25f77b7fe3061585f9cea4f5f08acdb419a7b3040c9c59fe42)
       pidusage:
         specifier: ^4.0.1
         version: 4.0.1
@@ -22056,7 +22059,7 @@ snapshots:
     dependencies:
       split2: 4.2.0
 
-  photoswipe@5.4.4: {}
+  photoswipe@5.4.4(patch_hash=2d2464a973952f25f77b7fe3061585f9cea4f5f08acdb419a7b3040c9c59fe42): {}
 
   picocolors@1.1.1: {}
 

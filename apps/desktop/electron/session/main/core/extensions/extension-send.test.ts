@@ -202,9 +202,13 @@ describe('to a member of a chat: a whisper in the person\'s name, from this App 
   });
 
   it('goes where the page is, not where the file is: a group page\'s draft of its folder\'s file goes into the group', async () => {
-    await draftHere({ chat: { id: GROUP, name: 'G', members: [] }, session: null, folders: [] } as never, { text: '> w', refs: [{ file: { workspace: 'folder:dev-1/ws-1', id: 'AGENTS.md' }, label: 'L2' }] });
+    await draftHere({ chat: { id: GROUP, name: 'G', members: [] }, conversation: { chat: GROUP, files: GROUP }, session: null, folders: [] } as never, { text: '> w', refs: [{ file: { workspace: 'folder:dev-1/ws-1', id: 'AGENTS.md' }, label: 'L2' }] });
     expect(drafts.at(-1)).toEqual({ chatId: GROUP, text: '> w', refs: [{ label: 'AGENTS.md (L2)', link: '/w/AGENTS.md' }] });
     expect(sessionDrafts).toEqual([]);
+    // In a topic of that group: into the topic, the conversation on screen.
+    const TOPIC = '66666666-6666-4666-8666-000000000002';
+    await draftHere({ chat: { id: GROUP, name: 'G', members: [] }, conversation: { chat: TOPIC, files: GROUP }, session: null, folders: [] } as never, { text: '> w', refs: [{ file: { workspace: 'folder:dev-1/ws-1', id: 'AGENTS.md' }, label: 'L2' }] });
+    expect(drafts.at(-1)).toMatchObject({ chatId: TOPIC });
   });
 
   it('a page with no conversation has nowhere to cite a computer\'s file into', async () => {

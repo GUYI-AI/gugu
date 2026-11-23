@@ -31,6 +31,7 @@ import {
 } from './mcp-oauth-flow';
 import { platformCredentials } from './platform-credentials-instance';
 import { SecureStorageUnavailableError } from '@main/core/secrets/secure-storage-unavailable';
+import { sessionHostCopy } from '@main/core/host-copy';
 
 /** 改了服务器 / 地址、授权码却留空:要重新填(界面按 `secret_required` 说,❌ 当成格式不对)。 */
 class SecretRequiredError extends Error {}
@@ -242,10 +243,10 @@ export class IntegrationConnectionService {
     const plugin = integrationPluginRegistry.get(integrationId);
     const method = cliMethodOf(integrationId);
     if (!plugin || !method) {
-      return { status: 'failed', error: '这个应用不使用命令行连接。' };
+      return { status: 'failed', error: sessionHostCopy().integrations.notCommandLine };
     }
     if (!cliToolSupportsHost(method.tool, { platform: process.platform, arch: process.arch })) {
-      return { status: 'failed', error: '这个集成尚未在这台设备上实现，请选择其他设备。' };
+      return { status: 'failed', error: sessionHostCopy().integrations.notImplemented };
     }
     if (isCliToolInstalled(method.tool)) return { status: 'ready' };
     // 上一次在后台装失败了、还没人来取:先把失败交出去(❌ 悄悄再装一遍,让界面永远停在「还在装」)。
@@ -272,7 +273,7 @@ export class IntegrationConnectionService {
       new Promise<'installing'>((resolve) => (timer = setTimeout(() => resolve('installing'), CLI_LOGIN_WAIT_SLICE_MS))),
     ]).finally(() => clearTimeout(timer));
     if (outcome !== 'failed') return { status: outcome };
-    const error = this.cliInstallFailures.get(method.tool) ?? '集成工具安装失败，请重试。';
+    const error = this.cliInstallFailures.get(method.tool) ?? sessionHostCopy().integrations.installFailedRetry;
     this.cliInstallFailures.delete(method.tool);
     return { status: 'failed', error };
   }
@@ -281,17 +282,17 @@ export class IntegrationConnectionService {
     const plugin = integrationPluginRegistry.get(integrationId);
     const method = cliMethodOf(integrationId);
     if (!plugin || !method) {
-      return { success: false, error: '这个应用不使用命令行连接。' };
+      return { success: false, error: sessionHostCopy().integrations.notCommandLine };
     }
     if (!cliToolSupportsHost(method.tool, { platform: process.platform, arch: process.arch })) {
-      return { success: false, error: '这个集成尚未在这台设备上实现，请选择其他设备。' };
+      return { success: false, error: sessionHostCopy().integrations.notImplemented };
     }
     this.cancelAuthorization(integrationId);
     const attempt = Symbol(integrationId);
     this.cliStarts.set(integrationId, attempt);
     this.startAuthorizationActivity(attempt);
     const current = () => this.cliStarts.get(integrationId) === attempt;
-    const superseded = { success: false as const, error: '本次连接已取消。' };
+    const superseded = { success: false as const, error: sessionHostCopy().integrations.connectionCancelled };
     const recipe = cliToolRecipe(method.tool);
     let entry: PendingCliLogin | undefined;
     try {
@@ -352,7 +353,7 @@ export class IntegrationConnectionService {
   /** 第二半:登录进程结束了没有;结束了就问工具「登上了吗」,登上了才记成已连接、把命令放上 agent 的 PATH。 */
   async cliLoginWait(integrationId: string): Promise<CliLoginWaitResult> {
     const pending = this.cliLogins.get(integrationId);
-    if (!pending) return { status: 'failed', error: '没有正在进行的授权，请重新连接。' };
+    if (!pending) return { status: 'failed', error: sessionHostCopy().integrations.noPendingAuthorization };
     pending.result ??= this.finishCliLogin(integrationId, pending);
     let timer: NodeJS.Timeout | undefined;
     const result = await Promise.race([
@@ -370,9 +371,9 @@ export class IntegrationConnectionService {
   ): Promise<Exclude<CliLoginWaitResult, { status: 'pending' }>> {
     const { recipe, installed, run } = pending;
     const outcome = await run.done;
-    if (outcome.kind === 'cancelled') return { status: 'failed', error: '授权已取消。' };
+    if (outcome.kind === 'cancelled') return { status: 'failed', error: sessionHostCopy().integrations.authorizationCancelled };
     if (outcome.kind === 'timed-out') {
-      return { status: 'failed', error: '授权已过期，请重新连接。' };
+      return { status: 'failed', error: sessionHostCopy().integrations.authorizationExpired };
     }
     if (outcome.code !== 0) {
       log.warn('Integration command-line login exited before authorization', { integrationId, code: outcome.code });
@@ -380,13 +381,13 @@ export class IntegrationConnectionService {
     }
     try {
       if (!(await readCliLoginStatus(recipe, installed))) {
-        return { status: 'failed', error: '尚未完成授权，请重新连接。' };
+        return { status: 'failed', error: sessionHostCopy().integrations.authorizationIncomplete };
       }
       if (recipe.tool === 'lark-cli' && !(await verifyFeishuLogin(installed))) {
-        return { status: 'failed', error: '飞书未能确认个人账号的授权，请重新连接。' };
+        return { status: 'failed', error: sessionHostCopy().integrations.feishuPersonalUnconfirmed };
       }
       // 网络验证期间也可能取消或重试，旧的一次不能再记成已连接。
-      if (this.cliLogins.get(integrationId) !== pending) return { status: 'failed', error: '授权已取消。' };
+      if (this.cliLogins.get(integrationId) !== pending) return { status: 'failed', error: sessionHostCopy().integrations.authorizationCancelled };
       // 先记连接、再放命令:「agent 的 PATH 上有它」必须意味着「记着连着」。放命令失败就撤回记录。
       const connected = await this.connect(integrationId, { tool: recipe.tool, connectedAt: Date.now() }, undefined, pending.includeAccountId);
       if (!connected.success) return { status: 'failed', error: cliFailureMessage(connected.error, 'verify') };
@@ -689,7 +690,7 @@ export class IntegrationConnectionService {
         if (!loggedIn) {
           return {
             connected: false,
-            error: '授权已失效，请重新连接。',
+            error: sessionHostCopy().integrations.authorizationInvalid,
             errorType: 'authorization_expired',
             capabilities,
           };

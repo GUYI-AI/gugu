@@ -5,12 +5,13 @@ import type {
 } from '@gugu/session-core/agents/plugins';
 import type { SessionMessageValues } from '@renderer/localization/locale-store';
 import type { SessionMessageLookupKey } from '@renderer/localization/messages';
+import { vendorName } from '@/i18n/vendorName';
 
 type Translate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;
 
 /**
  * 「订阅」页一行里的字(product spec)。纯函数:读数 → 要画的字，好钉单测。
- * 套餐名是厂商自己的叫法，原样显示;读不到的格说为什么，❌ 画成 0、❌ 猜。
+ * 套餐名是厂商自己的叫法，经 `planText` 显示(英文界面用厂商自己的英文名);读不到的格说为什么，❌ 画成 0、❌ 猜。
  */
 
 /** 谁在付钱 + 套餐 —— 行的第一行说明。`hasGuguModels`:这家能走咕咕积分(没登自己的账号时补一句)。 */
@@ -24,7 +25,7 @@ export function payerLine(plan: SubscriptionPlanReading, translate: Translate, h
     }
     case 'api-key':
       return plan.plan
-        ? `${translate('subscriptions.payer.apiKey')}: ${plan.plan}`
+        ? `${translate('subscriptions.payer.apiKey')}: ${planText(plan)}`
         : translate('subscriptions.payer.apiKey');
     case 'custom-endpoint':
       return translate('subscriptions.payer.customEndpoint', { endpoint: plan.endpoint ?? '' }).trim();
@@ -37,8 +38,13 @@ export function payerLine(plan: SubscriptionPlanReading, translate: Translate, h
   }
 }
 
+/** The plan's name as the vendor spells it in the current language; every surface that shows a plan name uses this. */
+export function planText(plan: SubscriptionPlanReading): string {
+  return plan.plan ? vendorName(plan.plan) : '';
+}
+
 function planName(plan: SubscriptionPlanReading, translate: Translate): string {
-  return plan.tierUnknown ? translate('subscriptions.tierUnknown', { plan: plan.plan ?? '' }) : plan.plan ?? '';
+  return plan.tierUnknown ? translate('subscriptions.tierUnknown', { plan: planText(plan) }) : planText(plan);
 }
 
 /** 资源库「账号」那一行跟在账号后面的套餐名:只在是订阅且读得出名字时(别的付钱方式那一行不说)。 */

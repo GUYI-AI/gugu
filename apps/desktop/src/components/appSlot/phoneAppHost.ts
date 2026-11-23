@@ -467,8 +467,8 @@ export function hostAppFrame(
   /** And the chat itself (`getContext().chat`), read with them; undefined until read — `files.chat()` throws when it cannot be. */
   let chat: ExtensionChat | null | undefined
   const readMembers = async () => {
+    // The chat whose files and members the page reads (a topic's group); `binding.chatId` stays where it is drawn.
     const chatId = hosted.binding.chatId ? await files.resourceChat(hosted.binding.chatId) : null
-    hosted.binding.chatId = chatId
     // A page in no conversation: its context says so (no `chat`), never a chat read for nothing.
     if (!chatId) {
       members = []
@@ -521,7 +521,7 @@ export function hostAppFrame(
     ...(hosted.binding.modal ? { modal: { data: hosted.binding.modal.data } } : {}),
     ...(hosted.binding.widget ? { widget: widgetContext(hosted.binding.widget, installedNow().manifestFor(hosted.binding.extensionId)?.apiVersion ?? 25) } : {}),
     ...(chat ? { chat: { ...chatForCapabilities(chat, hosted.binding.capabilities), ...(contextHasMembers() ? { members: members ?? [] } : {}) } } : {}),
-    ...(hosted.binding.itemId && hosted.binding.chatId ? { file: { chat: hosted.binding.chatId, id: hosted.binding.itemId } } : {}),
+    ...(hosted.binding.itemId && chat ? { file: { chat: chat.id, id: hosted.binding.itemId } } : {}),
     ...(hosted.binding.session
       ? {
           workspace: {
@@ -700,13 +700,13 @@ export function hostAppFrame(
         const pressed = parseSelectionAction(args)
         const conversation = selectionConversationOf({ session: session?.id, chat: hosted.binding.chatId })
         const ref = pressed.file
-        const chat = 'workspace' in ref ? null : ref.chat ?? hosted.binding.chatId
-        if (conversation?.kind !== 'chat' || !chat) refused('denied', 'This page\'s selection has no chat to go to')
+        const filesChat = 'workspace' in ref ? null : ref.chat ?? chat?.id
+        if (conversation?.kind !== 'chat' || !filesChat) refused('denied', 'This page\'s selection has no chat to go to')
         const named = selectionNames.get(hosted) ?? new Map<string, FileReference | null>()
         selectionNames.set(hosted, named)
         const key = JSON.stringify([ref, pressed.version ?? null])
         if (!named.has(key)) {
-          const [pill] = await chatSelectionPills(sendPlatform, chat, [{ file: ref, ...(pressed.version === undefined ? {} : { version: pressed.version }) }])
+          const [pill] = await chatSelectionPills(sendPlatform, filesChat, [{ file: ref, ...(pressed.version === undefined ? {} : { version: pressed.version }) }])
           named.set(key, pill ? { name: pill.label, target: pill.target } : null)
         }
         const file = named.get(key)
@@ -725,7 +725,7 @@ export function hostAppFrame(
         const manifest = installedNow().manifestFor(hosted.binding.extensionId)
         if (!manifest) refused('not-installed', 'This App is not installed')
         const { agents, local, spawnOn } = phoneDispatch({ extensionId: manifest.id, extensionName: manifest.name }, hosted.binding.capabilities,
-          { deviceId: hosted.binding.session?.deviceId, chatId: hosted.binding.chatId, agents: members?.filter((member) => member.kind === 'agent').map((member) => member.id) })
+          { deviceId: hosted.binding.session?.deviceId, chatId: chat?.id ?? null, agents: members?.filter((member) => member.kind === 'agent').map((member) => member.id) })
         return dispatchFromApp(
           {
             ...sendPlatform,
@@ -737,6 +737,7 @@ export function hostAppFrame(
           hosted.binding.extensionId,
           args,
           { chat: chat ? { id: chat.id, name: chat.name, members: members ?? [] } : null,
+            ...(chat && hosted.binding.chatId ? { conversation: { chat: hosted.binding.chatId, files: chat.id } } : {}),
             ...(!contextHasMembers() && chat ? { readMembers: () => files.members(chat!.id) } : {}), preselect: null, local, spawnOn },
         )
       }

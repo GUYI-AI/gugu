@@ -1,9 +1,10 @@
 import { BrowserWindow, shell, type BrowserWindowConstructorOptions } from 'electron'
-import { BUILD_TAG_WINDOW_NAME, isAuxWindowRequest, isBuildTagWindowName } from '@shared/aux-window'
+import { BUILD_TAG_WINDOW_NAME, HOST_LAYER_WINDOW_NAME, isAuxWindowRequest, isBuildTagWindowName, isHostLayerWindowName } from '@shared/aux-window'
 import { TRAFFIC_LIGHT_POSITION } from '@shared/window-chrome-native'
 import { hardenWebPreferences } from './devtools-lock'
 import { PAGE_FULLSCREEN_PREFERENCES } from './page-fullscreen'
 import { openBuildTagLayer } from './build-tag-window'
+import { openHostLayer } from './host-layer'
 import { serveWindowLayers, windowLayerOptions, windowLayerResponse } from './window-layers'
 import { attachTabHistorySwipe } from './tab-history-swipe'
 
@@ -76,6 +77,11 @@ export function attachAuxWindows(main: BrowserWindow, backgroundColor: () => str
     accepts: isBuildTagWindowName,
     options: () => windowLayerOptions({ enablePreferredSizeMode: true }),
     open: (host, _frameName, content) => openBuildTagLayer(host, content),
+  })
+  serveWindowLayers(HOST_LAYER_WINDOW_NAME, {
+    accepts: isHostLayerWindowName,
+    options: () => windowLayerOptions(),
+    open: (host, _frameName, content) => openHostLayer(host, content),
   })
   main.webContents.setWindowOpenHandler(({ url, frameName }) => {
     const layer = windowLayerResponse(main, url, frameName)

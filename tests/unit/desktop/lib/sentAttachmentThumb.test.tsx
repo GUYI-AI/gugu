@@ -89,12 +89,25 @@ describe('a kept copy opened in full', () => {
       f.resolve.mockResolvedValue({ status: 'ready', purpose: 'file', reader: { accountId: 'account-1' }, revision: (metadataFor(sha256) as Extract<FileMetadata, { status: 'ready' }>).revision,
         read: async () => chunk, stream: async function* () { yield chunk }, dispose: async () => {}, fromDisk: async () => here })
       expect((await attachmentBytes(source, 'full')).status).toBe('ready')
-      expect(f.store.size).toBe(here ? 0 : 1)
+      expect([...f.store.keys()].filter(key => key.includes('/sha256/'))).toHaveLength(here ? 0 : 1)
     }
   })
-  it('a read no longer authorized is not answered from the copy', async () => {
+  // @@@local-first
+  it('a version this machine has not remembered asks first: refused, the copy is not shown', async () => {
     await keepSentAttachment(file)
     f.resolve.mockResolvedValue({ status: 'gone', sha256 })
-    expect(await attachmentBytes(source, 'full')).toEqual({ status: 'gone', sha256 })
+    expect(await attachmentBytes({ kind: 'message', messageId: 'never-opened' }, 'full')).toEqual({ status: 'gone', sha256 })
+  })
+  it('a version remembered with its bytes here is answered from them without asking, even once withdrawn', async () => {
+    const opened: AttachmentSource = { kind: 'item', itemId: 'item-2', version: 1 }
+    const chunk = new Uint8Array(await file.arrayBuffer())
+    f.resolve.mockResolvedValue({ status: 'ready', purpose: 'file', reader: { accountId: 'account-1' }, revision: { ...(metadataFor(sha256) as Extract<FileMetadata, { status: 'ready' }>).revision, item_id: 'item-2' },
+      read: async () => chunk, stream: async function* () { yield chunk }, dispose: async () => {}, fromDisk: async () => false })
+    expect((await attachmentBytes(opened, 'full')).status).toBe('ready')
+    f.resolve.mockResolvedValue({ status: 'gone', sha256 })
+    const again = await attachmentBytes(opened, 'full')
+    expect(again.status).toBe('ready')
+    expect(await (again as { blob: Blob }).blob.text()).toBe('local png bytes')
+    expect(f.resolve).toHaveBeenCalledTimes(1)
   })
 })

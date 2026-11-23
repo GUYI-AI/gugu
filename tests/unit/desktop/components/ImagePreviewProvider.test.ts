@@ -404,6 +404,27 @@ describe('ImagePreviewProvider', () => {
     expect(document.querySelectorAll('.pswp')).toHaveLength(1)
   })
 
+  // A pop-out window (aux-window-host) is another document drawn by this renderer: the viewer opens there, and its keys
+  // are that window's. Before, it opened in the main window's body, behind the pop-out, and the click looked dead.
+  it('opens in the window its thumbnail is in, and closes by Escape there', async () => {
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const popOut = frame.contentWindow as Window & typeof globalThis
+    Object.assign(popOut, { matchMedia: window.matchMedia })
+    const thumb = popOut.document.createElement('img')
+    popOut.document.body.append(thumb)
+    await renderWithAppProviders(harness, createNode(ImagePreviewProvider, null))
+    await act(async () => openImageViewer([{ ...IMAGES[0], thumb }], 0))
+    const inPopOut = (id: string) => popOut.document.querySelector(`[data-testid="${id}"]`)
+    await waitForCondition(() => inPopOut(AUTOMATION_TEST_IDS.imagePreviewClose) !== null, 'viewer did not open in the pop-out')
+    expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).toBeNull()
+    await act(async () => {
+      popOut.document.body.dispatchEvent(new popOut.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    })
+    await waitForCondition(() => inPopOut(AUTOMATION_TEST_IDS.imagePreviewOverlay) === null, 'Escape in the pop-out did not close the viewer')
+    frame.remove()
+  })
+
   it('关闭后整层从 DOM 里拿掉', async () => {
     await openViewer()
     await clickElement(byTestId(AUTOMATION_TEST_IDS.imagePreviewClose)!)

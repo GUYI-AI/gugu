@@ -94,7 +94,7 @@ export interface DesktopDispatchEffects {
  * into the page's conversation (`selectionConversationOf`: its session, else its chat), each file named by where it is
  * (`fileReferenceOf`), as the host's selection menu cites. A chat folder's files go the chat way (`dispatchFromApp`).
  */
-async function draftOfComputerRefs(args: Record<string, unknown>, page: { session: string | null; chat: string | null; folders: readonly ExtensionChatFolder[] }):
+async function draftOfComputerRefs(args: Record<string, unknown>, page: { session: string | null; chat: string | null; files: string | null; folders: readonly ExtensionChatFolder[] }):
   Promise<{ session: { id: string }; text: string } | { chat: AppComposeDetail } | null> {
   if (args.draft !== true || !Array.isArray(args.refs) || args.refs.length === 0) return null;
   const refs = args.refs as { file?: { workspace?: unknown; id?: unknown }; label?: unknown; at?: { lines?: unknown } }[];
@@ -106,7 +106,7 @@ async function draftOfComputerRefs(args: Record<string, unknown>, page: { sessio
   if (!conversation) throw new AppSendError('invalid', 'This page has no conversation to cite its files into');
   const { fileReferenceOf } = await import('./file-selection-reference');
   const pills = await Promise.all(refs.map(async ({ file, label }) => {
-    const reference = await fileReferenceOf({ workspace: file!.workspace as string, id: file!.id as string }, undefined, { chat: page.chat, folders: page.folders });
+    const reference = await fileReferenceOf({ workspace: file!.workspace as string, id: file!.id as string }, undefined, { chat: page.files, folders: page.folders });
     if (!reference) throw new AppSendError('not-found', `Where ${String(file!.id)} is cannot be named from this computer`);
     return { label: typeof label === 'string' && label ? `${reference.name} (${label})` : reference.name, target: reference.target };
   }));
@@ -133,7 +133,7 @@ export async function dispatchForApp(
     const { draftIntoBoundConversation } = await import('./app-unread-bindings');
     return draftIntoBoundConversation(extensionId, args, effects.draftInChat);
   }
-  const quoted = await draftOfComputerRefs(args, { session: page.session, chat: page.chat?.id ?? null, folders: page.folders });
+  const quoted = await draftOfComputerRefs(args, { session: page.session, chat: page.conversation?.chat ?? null, files: page.conversation?.files ?? null, folders: page.folders });
   if (quoted && 'chat' in quoted) {
     await effects.draftInChat(quoted.chat);
     return { to: { chat: quoted.chat.chatId } };

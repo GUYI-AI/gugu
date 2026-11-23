@@ -20,8 +20,8 @@ async function listen(server: Server): Promise<number> {
   cleanups.push(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()) }))
   return (server.address() as { port: number }).port
 }
-function nodeTransport(routes: Parameters<typeof nodeEgressBackend>[0]['routes'], ca?: string[], keepAliveTimeoutMs?: number) {
-  const backend = nodeEgressBackend({ name: 'test-node', routes, ca, keepAliveTimeoutMs })
+function nodeTransport(routes: Parameters<typeof nodeEgressBackend>[0]['routes'], ca?: string[], keepAliveTimeoutMs?: number, connectTimeoutMs?: number) {
+  const backend = nodeEgressBackend({ name: 'test-node', routes, ca, keepAliveTimeoutMs, connectTimeoutMs })
   cleanups.push(() => backend.closeConnections?.())
   return createEgress(backend)
 }
@@ -155,14 +155,15 @@ describe('egress contract on a real Node transport', () => {
     const sockets = new WebSocketServer({ server: server as unknown as Server })
     cleanups.push(() => new Promise<void>(resolve => { for (const socket of sockets.clients) socket.terminate(); sockets.close(() => resolve()) }))
     const proxy = await socks5()
-    const transport = nodeTransport(async () => `socks5://127.0.0.1:${proxy.port}`, [TEST_CERT], 60_000) // desktop's pool setting
+    // Desktop's pool setting; the connect bound is shortened from 10 s so the idle wait below can pass it quickly.
+    const transport = nodeTransport(async () => `socks5://127.0.0.1:${proxy.port}`, [TEST_CERT], 60_000, 300)
     const socket = transport.webSocket(`wss://127.0.0.1:${port}`)
     await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }) })
     expect(await (await transport.fetch(`https://localhost:${port}/`)).text()).toBe('ok')
     // A CDN picks its certificate by SNI: the tunnelled TLS hello must name the origin.
     expect(names).toEqual(['localhost'])
-    // Idle past the 10 s connect bound: open connections must not be torn down by it.
-    await new Promise(resolve => setTimeout(resolve, 10_500))
+    // Idle past the connect bound: open connections must not be torn down by it.
+    await new Promise(resolve => setTimeout(resolve, 600))
     const message = new Promise<unknown>((resolve, reject) => {
       socket.addEventListener('message', event => resolve(event.data), { once: true })
       socket.addEventListener('close', () => reject(new Error('closed while idle')), { once: true })
@@ -172,7 +173,7 @@ describe('egress contract on a real Node transport', () => {
     expect(await (await transport.fetch(`https://localhost:${port}/`)).text()).toBe('ok')
     expect(proxy.tunnels()).toBe(2)
     socket.close()
-  }, 20_000)
+  })
 
   it('reaches a local process through loopbackFetch and refuses anything that is not loopback', async () => {
     const { loopbackFetch } = await import('@gugu/core/local/loopback')
@@ -214,10 +215,13 @@ describe('egress contract on a real Node transport', () => {
   })
 
   it('normalizes a truncated response body and preserves response metadata through clones', async () => {
-    const port = await listen(createServer((_request, response) => {
+    const server = createServer((_request, response) => {
       response.writeHead(200, { 'content-length': '100' })
       response.end('short')
-    }))
+    })
+    // The body ends short when the server drops the connection; don't hold it for Node's default 5 s keep-alive.
+    server.keepAliveTimeout = 50
+    const port = await listen(server)
     const response = await nodeTransport(async () => null).fetch(`http://127.0.0.1:${port}/stream`)
     const copy = response.clone()
     expect(copy.url).toBe(response.url)
@@ -264,6 +268,39 @@ describe('egress contract on a real Node transport', () => {
     expect(response.status).toBe(302)
     expect(response.headers.get('location')).toBe('http://127.0.0.1:9/elsewhere')
     expect(hits).toBe(1)
+  })
+
+  it('sends every request body as the runtime serializes it, with its length', async () => {
+    type Received = { contentType?: string; contentLength?: string; chunked: boolean; body: string }
+    const received: Received[] = []
+    const port = await listen(createServer((req, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', chunk => chunks.push(chunk)).on('end', () => {
+        received.push({ contentType: req.headers['content-type'], contentLength: req.headers['content-length'],
+          chunked: req.headers['transfer-encoding'] === 'chunked', body: Buffer.concat(chunks).toString('latin1') })
+        res.end('ok')
+      })
+    }))
+    const url = `http://127.0.0.1:${port}/`
+    const bodies: [string, () => RequestInit][] = [
+      ['form', () => { const form = new FormData(); form.append('key', 'k'); form.append('file', new Blob([new Uint8Array(4096).fill(7)], { type: 'image/jpeg' }), 'photo.jpg'); return { method: 'POST', body: form } }],
+      ['blob', () => ({ method: 'PUT', body: new Blob([new Uint8Array(4096).fill(9)]) })],
+      ['string', () => ({ method: 'POST', body: JSON.stringify({ hello: 'world' }), headers: { 'content-type': 'application/json' } })],
+      ['params', () => ({ method: 'POST', body: new URLSearchParams({ a: '1', b: 'two words' }) })],
+    ]
+    const transport = nodeTransport(async () => null)
+    for (const [name, init] of bodies) {
+      received.length = 0
+      await (await fetch(url, init())).text()
+      await (await transport.fetch(url, init())).text()
+      const [runtime, egress] = received
+      // A multipart boundary is random per serialization: compare the body with each request's own boundary.
+      const boundary = (r: Received) => /boundary=(.+)$/.exec(r.contentType ?? '')?.[1] ?? '\0'
+      expect({ ...egress, body: egress!.body.replaceAll(boundary(egress!), 'B') }, name)
+        .toEqual({ ...runtime, body: runtime!.body.replaceAll(boundary(runtime!), 'B'), contentType: runtime!.contentType?.replace(boundary(runtime!), boundary(egress!)) })
+      expect(egress!.chunked, name).toBe(false)
+      expect(Number(egress!.contentLength), name).toBe(Buffer.byteLength(egress!.body, 'latin1'))
+    }
   })
 
   it('rejects non-network schemes before invoking a backend', async () => {
@@ -334,5 +371,23 @@ describe('egress contract on a real Node transport', () => {
     expect(await scoped('https://private.test')).toBeNull()
     expect(await scoped('https://private.test:444')).toBe('http://proxy.invalid:1234')
     expect(await scoped('https://127.evil.test')).toBe('http://proxy.invalid:1234')
+  })
+  // A large download reads one file as several ranged GETs at once; under HTTP/2 undici puts every request to an origin
+  // on one connection, so they share it. Each request gets its own connection, over HTTP/1.1.
+  it('gives concurrent requests to one origin their own connections, over HTTP/1.1, even where the server offers h2', async () => {
+    const { createSecureServer } = await import('node:http2')
+    const connections: string[] = [], versions: string[] = []
+    const server = createSecureServer({ key: TEST_KEY, cert: TEST_CERT, allowHTTP1: true }, (request, response) => {
+      versions.push(request.httpVersion); setTimeout(() => response.end('ok'), 50)
+    })
+    server.on('secureConnection', socket => connections.push(socket.alpnProtocol || 'none'))
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    cleanups.push(() => new Promise<void>(resolve => server.close(() => resolve())))
+    const port = (server.address() as { port: number }).port
+    const transport = nodeTransport(async () => null, [TEST_CERT])
+    const answers = await Promise.all([1, 2, 3].map(i => transport.fetch(`https://127.0.0.1:${port}/part-${i}`).then(response => response.text())))
+    expect(answers).toEqual(['ok', 'ok', 'ok'])
+    expect(versions).toEqual(['1.1', '1.1', '1.1'])
+    expect(connections).toEqual(['http/1.1', 'http/1.1', 'http/1.1'])
   })
 })

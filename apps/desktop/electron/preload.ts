@@ -221,6 +221,7 @@ contextBridge.exposeInMainWorld('desktopWindow', {
   minimize: (): void => ipcRenderer.send('window:minimize'),
   maximize: (): void => ipcRenderer.send('window:maximize'),
   close: (): void => ipcRenderer.send('window:close'),
+  quit: (): void => ipcRenderer.send('app:quit'),
   // 首帧就要画对最大化 / 还原那颗钮:同步取一次,之后的变化走 onMaximizedChange。
   isMaximizedSync: (): boolean => ipcRenderer.sendSync('window:is-maximized-sync'),
   // Windows 标题栏「编辑 / 视图」菜单;命令清单由 main 的 window-menu-commands.ts 把关。

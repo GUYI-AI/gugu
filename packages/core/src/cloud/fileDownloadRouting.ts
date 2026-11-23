@@ -9,8 +9,8 @@ const parsedUrl = (url: string) => {
   try { return new URL(url) } catch { throw new Error('Invalid file download URL') }
 }
 
-/** A network preference, never an authorization or a cache of signed capabilities. */
-export function createFileDownloadSession() {
+/** A network preference, never an authorization or a cache of signed capabilities. `cdnIdleMs` bounds each CDN wait. */
+export function createFileDownloadSession({ cdnIdleMs = CDN_IDLE_MS }: { cdnIdleMs?: number } = {}) {
   const unavailable = new Map<string, number>()
   const advertised = new Map<string, string>()
   const scopeKey = (url: string) => { const parsed = parsedUrl(url); return parsed.origin + parsed.pathname.replace(/\/+$/, '') }
@@ -22,6 +22,7 @@ export function createFileDownloadSession() {
     return false
   }
   return {
+    cdnIdleMs,
     advertise(scope: string, url: string) { advertised.set(scopeKey(scope), parsedUrl(url).origin) },
     prefersOrigin(scope: string) {
       const route = advertised.get(scopeKey(scope))
@@ -57,7 +58,7 @@ export function createFileDownloadTransport(target: () => ByteHop, fetcher: () =
       })])
     }
     try {
-      return await (hop.stage === 'cdn' ? withBoundedOperation(CDN_IDLE_MS,
+      return await (hop.stage === 'cdn' ? withBoundedOperation(session.cdnIdleMs,
         () => Object.assign(new Error('CDN byte read timed out'), { code: 'ETIMEDOUT' }), deadline => {
           const abort = () => active?.abort(deadline.reason)
           deadline.addEventListener('abort', abort, { once: true })
