@@ -20,9 +20,9 @@ it('leaves the confirmation uncounted on a transport failure', async () => {
   expect(await readServerVersionSwitchBusyAgents('remote')).toBeUndefined()
 })
 
-it.each([0, 1234, undefined])('preserves the host restart receipt without inventing a timestamp (%s)', async at => {
+it.each([0, 1234, undefined])('reports only whether the host accepted the restart; the host reports its request itself (%s)', async at => {
   rpc.mockResolvedValue({ result: { requested: true, ...(at === undefined ? {} : { at }) } })
-  expect(await restartServerVersionNow('remote', '0.3.1', true)).toEqual({ requested: true, ...(at === undefined ? {} : { at }) })
+  expect(await restartServerVersionNow('remote', '0.3.1', true)).toEqual({ requested: true })
   expect(rpc).toHaveBeenCalledWith('remote', VERSION_RESTART_RPC, { version: '0.3.1', confirmed: true }, { timeoutMs: 15_000 })
 })
 it('keeps the old RPC acknowledgement usable without a receipt', async () => {
