@@ -8,14 +8,13 @@ import { useMobileShell } from '@/hooks/useMobileShell'
 import { sessionPresentation } from '@/lib/agent-wait/watch-status'
 import { followLink } from '@/lib/guguLinks'
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge'
-import { Bell } from '@/lib/icons'
+import { Bell, ChevronLeft } from '@/lib/icons'
 import { installShellSlots, readShellSlots } from '@/lib/shellSlots'
 import { setSidebarNotificationsOpen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { RefreshFailed } from '../ui/RefreshFailed'
 import { IconButton } from '../ui/IconButton'
-import { SectionLabel } from '../ui/SectionLabel'
 import { PaneEmptyState } from '../ui/PaneEmptyState'
 import { Illustration } from '../ui/Illustration'
 import { Hint } from '../ui/Tooltip'
@@ -82,7 +81,11 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
     const showEmpty = !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && deferred.length === 0
     return createPortal(<>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">
-        <SectionLabel>{title}</SectionLabel>
+        {/* The list takes the chats' place: its header is the way back to them, the usual "‹ parent" back. */}
+        <Button size="sm" variant="ghost" className="-ml-2 gap-1 font-medium text-[var(--fg)]" data-testid="notification-back"
+          aria-label={t('chatArea.backToList', { ns: 'messaging' })} title={t('chatArea.backToList', { ns: 'messaging' })} onClick={() => setSidebarNotificationsOpen(false)}>
+          <ChevronLeft className="size-4" />{t('shell.chats', { ns: 'main' })}
+        </Button>
         {unreadFailures.length > 0 && <Button size="sm" variant="ghost" data-testid="notification-mark-all-read" disabled={marking > 0} onClick={() => { void markRead(unreadFailures) }}>{t('chatList.markAllRead', { ns: 'messaging' })}</Button>}
       </div>
       {showEmpty ? <div className="grid min-h-0 flex-1 place-items-center px-4 pb-4" data-testid="notification-list">

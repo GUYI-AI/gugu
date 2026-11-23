@@ -1,4 +1,5 @@
 import type { TranscriptItem, TranscriptTurn } from '../acp/models/turns/turn';
+import { HOST_PROMPT_HASH } from '../acp/native-prompt';
 
 /**
  * The turn a running agent is in, as its runtime holds it, shown in place of the record's copy of that turn.
@@ -43,7 +44,10 @@ export function sameTurnKeys(turn: TranscriptTurn): readonly string[] {
   return keys;
 }
 
-/** What an agent itself numbered in a turn: tool calls, its messages, the person's native message. */
+/**
+ * What an agent itself numbered in a turn: tool calls, its messages, the person's native message; and the receipt of
+ * the native prompt the person's message was sent as (`host-prompts.ts`), which the runtime and the record both carry.
+ */
 export function identityKeys(turn: Pick<TranscriptTurn, 'items'>): Set<string> {
   const keys = new Set<string>();
   const visit = (item: { kind?: string; id?: string; role?: string; _meta?: Record<string, unknown>; toolCallId?: string; children?: unknown[] }) => {
@@ -53,6 +57,8 @@ export function identityKeys(turn: Pick<TranscriptTurn, 'items'>): Set<string> {
       // An item id is `${turn id}:message:${message id}`; the turn id differs between the runtime and a record.
       const own = typeof native === 'string' ? native : /^.*?:(?:message|thinking):(.+)$/.exec(item.id)?.[1];
       if (own && !own.startsWith('auto:')) keys.add(`message:${own}`);
+      const receipt = item.role === 'user' ? item._meta?.[HOST_PROMPT_HASH] : undefined;
+      if (typeof receipt === 'string') keys.add(`receipt:${receipt}`);
     }
     for (const child of item.children ?? []) visit(child as typeof item);
   };

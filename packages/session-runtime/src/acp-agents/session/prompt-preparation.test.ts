@@ -19,7 +19,7 @@ function fixture(providerId = 'claude') {
   return { cell,agent }
 }
 
-it.each(['hermes', 'codex', 'claude'])('records a confirmed native/original prompt boundary for %s when its record keeps native prompts', async providerId => {
+it.each(['hermes', 'codex', 'claude'])('records a confirmed native/original prompt boundary for %s', async providerId => {
   const { cell, agent } = fixture(providerId)
   const original = '<resource_changes>User-authored XML</resource_changes>'
   setNativePromptPreparation(async () => ({ text: '<resource_changes>Host preparation</resource_changes>', accepted: async () => {} }))
@@ -29,7 +29,7 @@ it.each(['hermes', 'codex', 'claude'])('records a confirmed native/original prom
   expect(turns).toHaveLength(1)
   const users = turns.flatMap(turn => turn.items).filter(item => item.kind === 'message' && item.role === 'user')
   expect(users).toHaveLength(1)
-  expect(originalNativePrompt(native, indexNativePrompts(users))).toBe(providerId === 'claude' ? undefined : original)
+  expect(originalNativePrompt(native, indexNativePrompts(users))).toBe(original)
 })
 
 it('places conditional profile review before the delivery envelope and preserves the final reply instruction', async () => {

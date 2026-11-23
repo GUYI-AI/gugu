@@ -1,5 +1,6 @@
 import { harnessPlatform, piProviderApi } from './platform';
 import { join } from 'node:path';
+import { customModelAcceptsImages } from '@gugu/session-core/models/custom-model';
 import type {
   CapabilityPackage,
   Degradation,
@@ -380,7 +381,7 @@ function modelArtifact(
           name: entry.label || entry.id,
           api,
           reasoning: entry.thinking === true,
-          input: entry.image === true ? ['text', 'image'] : ['text'],
+          input: customModelAcceptsImages(entry) ? ['text', 'image'] : ['text'],
           ...(entry.contextWindow ? { contextWindow: entry.contextWindow } : {}),
           ...(entry.maxOutput ? { maxTokens: entry.maxOutput } : {}),
         })),
