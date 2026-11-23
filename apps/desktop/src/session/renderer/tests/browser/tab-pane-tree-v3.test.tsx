@@ -114,8 +114,10 @@ it('the side page comes in on the track: it slides in from the end, and the page
     if (side) lefts.push(Math.round(side.getBoundingClientRect().left));
     keptWidths.add(Math.round(harness.container.querySelector(`iframe[title="${kept}"]`)!.getBoundingClientRect().width));
   }
+  // From the end, one way, onto its place: ❌ how early the first frame is caught (a runner's), ❌ past 500 and back.
   expect(new Set(lefts).size, JSON.stringify(lefts)).toBeGreaterThan(5);
-  expect(lefts[0], JSON.stringify(lefts)).toBeGreaterThan(800);
+  expect(lefts.every((left, at) => at === 0 || left <= lefts[at - 1]), JSON.stringify(lefts)).toBe(true);
+  expect(Math.min(...lefts), JSON.stringify(lefts)).toBeGreaterThan(498);
   expect(Math.abs(lefts.at(-1)! - 500)).toBeLessThan(2);
   // The size is the state: the page beside it narrows with the side page's edge, ❌ re-wrapped once at 500 under a transform.
   expect(keptWidths.size, [...keptWidths].join(' ')).toBeGreaterThan(5);
