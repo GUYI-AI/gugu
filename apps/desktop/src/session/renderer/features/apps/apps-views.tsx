@@ -22,7 +22,7 @@ import { LibraryHostProvider, LOCAL_LIBRARY_HOST, machineLibraryHost } from '@re
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { PageContent, PageLayout } from '@renderer/lib/components/page-layout';
 import { PageModalClose, ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
-import { MODAL_HEADER_H, MODAL_TITLE } from '@/components/ui/ModalClose';
+import { MODAL_HEADER_H, MODAL_TITLE } from '@/components/ui/modalGeometry';
 import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider';
 import { appState } from '@renderer/lib/stores/app-state';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';

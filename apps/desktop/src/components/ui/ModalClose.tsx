@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronLeft, X } from '@/lib/icons'
 import { IconButton } from './IconButton'
+import { MODAL_CLOSE_TOP } from './modalGeometry'
 
 /**
  * @@@page-modal-close — the ✕ of a page shown as a modal (设置、联系人、App 市场、一个 App 的页): one button, one place.
@@ -26,13 +27,6 @@ export function ModalBack({ onBack, label }: { onBack: () => void; label: string
     </IconButton>
   )
 }
-
-/** Settings' header geometry: the ✕'s top, the row's centre line, and where the page under the header starts. */
-export const MODAL_CLOSE_TOP = 'var(--spacing-2xl)'
-export const MODAL_ROW_CENTER = 'calc(var(--spacing-2xl) + var(--control-h-lg) / 2)'
-export const MODAL_HEADER_H = 'calc(var(--spacing-2xl) + var(--control-h-lg) + var(--spacing-md))'
-/** Settings' page title (settings.css: --font-heading, semibold), for a page modal whose title is its own. */
-export const MODAL_TITLE: CSSProperties = { fontSize: 'var(--font-heading)', lineHeight: 'var(--lh-heading)', fontWeight: 'var(--font-weight-semibold)' }
 
 // Above what the page floats in its corner (the contacts drawer, z-20).
 const FLOATING: CSSProperties = { position: 'absolute', zIndex: 30, top: MODAL_CLOSE_TOP, right: 'var(--spacing-lg)' }

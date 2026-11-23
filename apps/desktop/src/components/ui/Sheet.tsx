@@ -1,7 +1,7 @@
 import { type CSSProperties, type ReactNode } from 'react'
 import type { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 import { useTranslation } from 'react-i18next'
-import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
+import { UiPortalContainerProvider, useUiPopupZIndex } from '@gugu/session-ui/react/primitives'
 import { cn } from '@/lib/cn'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { Dialog } from './Dialog'
@@ -98,7 +98,11 @@ export interface SheetProps {
   closeOnBackdrop?: boolean
   /** Add the standard scrim when this sheet opens inside another dialog. */
   dimNested?: boolean
-  /** Stacking order. Default var(--z-modal)；非常规层传 var(--z-*) token（#1899），❌ 魔数。 */
+  /**
+   * Stacking order. Default: just above the sheet it is opened from (each Sheet tells its content its layer), else
+   * var(--z-modal) —— a dialog opened inside Settings or a page modal (--z-settings) is never drawn under it.
+   * 非常规层传 var(--z-*) token（#1899），❌ 魔数。
+   */
   zIndex?: number | string
 }
 
@@ -120,10 +124,12 @@ export function Sheet({
   titleId,
   closeOnBackdrop = true,
   dimNested = false,
-  zIndex = 'var(--z-modal)',
+  zIndex: zIndexProp,
 }: SheetProps) {
   const { t } = useTranslation()
   const mobile = useMobileShell()
+  const aboveParent = useUiPopupZIndex()
+  const zIndex = zIndexProp ?? aboveParent ?? 'var(--z-modal)'
   useBackLayer(() => { if (!onEscape?.()) onClose() }, open)
 
   const mobileStyle: CSSProperties = {
