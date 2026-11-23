@@ -8,6 +8,8 @@ import { ChatNotificationLevelControl } from './ChatNotificationLevelControl'
 import { managementSettingsDangerRowStyle, managementSettingsRowStyle } from './groupSettingsStyles'
 import { COLOR_MUTED } from './chatPresentation'
 import { rendererLogger } from '../../lib/log'
+import { Bell, Eraser, Pin } from '@/lib/icons'
+import { DetailsList, DetailsRow, DetailsSegmented, DetailsSwitch } from '../details/DetailsParts'
 
 const managementLog = rendererLogger('chat/management-actions')
 
@@ -23,7 +25,7 @@ export interface ChatManagementActionsProps {
    * drawer = 单聊抽屉原样(行距 10、分隔线);settings = 嵌在群聊设置页里,
    * 与该页其它行同一套几何(13px 行距、整行 hover、无分隔线、行尾 chevron)—— 同一页里❌ 两种节奏。
    */
-  appearance?: 'drawer' | 'settings'
+  appearance?: 'drawer' | 'settings' | 'details'
   /** 画在「清空聊天记录」前面(群设置页:它和离开 / 解散是最底下的一组,这里给那一组的小标题)。 */
   beforeClear?: ReactNode
 }
@@ -70,7 +72,16 @@ const APPEARANCE = {
     confirm: { padding: '10px 0' } as CSSProperties,
     error: { ...ERROR_STYLE, margin: '8px 0 0' } as CSSProperties,
   },
+  details: {
+    staticRow: STATIC_ROW_STYLE,
+    wrapRow: STATIC_ROW_STYLE,
+    dangerRow: DANGER_ROW_STYLE,
+    divider: null as CSSProperties | null,
+    confirm: { padding: '10px 4px' } as CSSProperties,
+    error: { ...ERROR_STYLE, margin: '0 0 8px' } as CSSProperties,
+  },
 }
+const NOTIFICATION_LEVELS: readonly NotificationLevel[] = ['all', 'important', 'none']
 
 export function ChatManagementActions({ activeChat, onClose, onClearMessages, onSetNotificationLevel, onTogglePinned, appearance = 'drawer', beforeClear }: ChatManagementActionsProps) {
   const { t } = useTranslation('messaging')
@@ -86,6 +97,64 @@ export function ChatManagementActions({ activeChat, onClose, onClearMessages, on
     setConfirmClear(false)
   }, [activeChat.id])
 
+  const setLevel = (level: NotificationLevel) => {
+    if (level === notificationLevel) return
+    setSettingNotificationLevel(true)
+    setActionError(null)
+    onSetNotificationLevel(level)
+      .catch((err) => {
+        const message = String((err as Error)?.message ?? err)
+        setActionError(t('chatArea.management.notificationFailed', { reason: message }))
+        managementLog.error({ error: err, chatId: activeChat.id, level }, 'set notification level failed')
+      })
+      .finally(() => setSettingNotificationLevel(false))
+  }
+  const setPinned = (next: boolean) => {
+    setPinning(true)
+    setActionError(null)
+    onTogglePinned(next)
+      .catch((err) => {
+        const message = String((err as Error)?.message ?? err)
+        setActionError(t('chatArea.management.pinFailed', { reason: message }))
+        managementLog.error({ error: err, chatId: activeChat.id, pinned: next }, 'pin chat failed')
+      })
+      .finally(() => setPinning(false))
+  }
+  const clear = () => {
+    onClearMessages()
+      .then(() => {
+        setConfirmClear(false)
+        onClose()
+      })
+      .catch((err) => {
+        const message = String((err as Error)?.message ?? err)
+        setActionError(t('chatArea.management.actionFailed', { action: t('chatArea.management.clearHistory'), reason: message }))
+        managementLog.error({ error: err, chatId: activeChat.id }, 'clear messages failed')
+      })
+  }
+  const confirmBox = (
+    <div style={look.confirm}>
+      <p style={CONFIRM_TEXT_STYLE}>{t('chatArea.management.clearConfirm')}</p>
+      <div style={CONFIRM_ACTIONS_STYLE}>
+        <Button variant="danger" size="sm" style={CONFIRM_BUTTON_STYLE} onClick={clear}>{t('chatArea.management.clear')}</Button>
+        <Button variant="secondary" size="sm" style={CONFIRM_BUTTON_STYLE} onClick={() => setConfirmClear(false)}>{t('common.cancel')}</Button>
+      </div>
+    </div>
+  )
+
+  // 第 16 版详情(设计稿「聊天」那一组):消息通知三档、置顶对话、清空聊天记录,同一组处理,只是画法不同。
+  if (appearance === 'details') return (
+    <DetailsList>
+      {actionError ? <div role="alert" style={look.error}>{actionError}</div> : null}
+      <DetailsRow icon={<Bell />} label={t('chatArea.management.notifications')} testId="chat-details-notifications"
+        end={<DetailsSegmented value={notificationLevel} onChange={(level) => { if (!settingNotificationLevel) setLevel(level) }}
+          options={NOTIFICATION_LEVELS.map((level) => ({ value: level, label: t(`chatArea.notificationLevel.${level}`) }))} />} />
+      <DetailsRow icon={<Pin />} label={t('chatArea.management.pin')} testId={AUTOMATION_TEST_IDS.chatDrawerPinSwitch}
+        end={<DetailsSwitch on={Boolean(activeChat.is_pinned)} onChange={(next) => { if (!pinning) setPinned(next) }} label={activeChat.is_pinned ? t('chatArea.management.unpin') : t('chatArea.management.pin')} />} />
+      {confirmClear ? confirmBox : <DetailsRow icon={<Eraser />} label={t('chatArea.management.clearHistory')} testId="chat-details-clear" onClick={() => setConfirmClear(true)} />}
+    </DetailsList>
+  )
+
   return (
     <div style={COLUMN_STYLE}>
       {actionError ? <div style={look.error}>{actionError}</div> : null}
@@ -94,18 +163,7 @@ export function ChatManagementActions({ activeChat, onClose, onClearMessages, on
         <ChatNotificationLevelControl
           value={notificationLevel}
           busy={settingNotificationLevel}
-          onSelect={(level) => {
-            if (level === notificationLevel) return
-            setSettingNotificationLevel(true)
-            setActionError(null)
-            onSetNotificationLevel(level)
-              .catch((err) => {
-                const message = String((err as Error)?.message ?? err)
-                setActionError(t('chatArea.management.notificationFailed', { reason: message }))
-                managementLog.error({ error: err, chatId: activeChat.id, level }, 'set notification level failed')
-              })
-              .finally(() => setSettingNotificationLevel(false))
-          }}
+          onSelect={setLevel}
         />
       </div>
       <div style={look.staticRow}>
@@ -117,17 +175,7 @@ export function ChatManagementActions({ activeChat, onClose, onClearMessages, on
           aria-label={activeChat.is_pinned ? t('chatArea.management.unpin') : t('chatArea.management.pin')}
           disabled={pinning}
           checked={Boolean(activeChat.is_pinned)}
-          onCheckedChange={(next) => {
-            setPinning(true)
-            setActionError(null)
-            onTogglePinned(next)
-              .catch((err) => {
-                const message = String((err as Error)?.message ?? err)
-                setActionError(t('chatArea.management.pinFailed', { reason: message }))
-                managementLog.error({ error: err, chatId: activeChat.id, pinned: next }, 'pin chat failed')
-              })
-              .finally(() => setPinning(false))
-          }}
+          onCheckedChange={setPinned}
         />
       </div>
       {look.divider ? <div style={look.divider} /> : null}
@@ -136,35 +184,7 @@ export function ChatManagementActions({ activeChat, onClose, onClearMessages, on
         <div className="gg-row" style={look.dangerRow} onClick={() => setConfirmClear(true)}>
           {t('chatArea.management.clearHistory')}
         </div>
-      ) : (
-        <div style={look.confirm}>
-          <p style={CONFIRM_TEXT_STYLE}>{t('chatArea.management.clearConfirm')}</p>
-          <div style={CONFIRM_ACTIONS_STYLE}>
-            <Button
-              variant="danger"
-              size="sm"
-              style={CONFIRM_BUTTON_STYLE}
-              onClick={() => {
-                onClearMessages()
-                  .then(() => {
-                    setConfirmClear(false)
-                    onClose()
-                  })
-                  .catch((err) => {
-                    const message = String((err as Error)?.message ?? err)
-                    setActionError(t('chatArea.management.actionFailed', { action: t('chatArea.management.clearHistory'), reason: message }))
-                    managementLog.error({ error: err, chatId: activeChat.id }, 'clear messages failed')
-                  })
-              }}
-            >
-              {t('chatArea.management.clear')}
-            </Button>
-            <Button variant="secondary" size="sm" style={CONFIRM_BUTTON_STYLE} onClick={() => setConfirmClear(false)}>
-              {t('common.cancel')}
-            </Button>
-          </div>
-        </div>
-      )}
+      ) : confirmBox}
     </div>
   )
 }

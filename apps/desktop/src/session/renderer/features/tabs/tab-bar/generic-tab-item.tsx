@@ -14,6 +14,7 @@ import type { TabCommand } from './tab-commands';
 import { TabContextMenu } from './tab-context-menu';
 import { ChatWorkspaceTabContext } from '../chat-workspace-context';
 import { Popover } from '@/components/ui/Popover';
+import { CONVERSATION_CAPSULE_CLASS } from './conversation-capsule';
 
 /** Props for GenericTabItem — aligns with TabBarItemProps<any> for convenience. */
 export interface GenericTabItemProps {
@@ -114,7 +115,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   const menuCommands = card ? [] : kindCommands;
   const cardPopover = card ? (
     <Popover.Root open={cardOpen} modal={false} onOpenChange={setCardOpen}>
-      {cardOpen ? <Popover.Portal><Popover.Positioner side="bottom" align="start" sideOffset={8} collisionPadding={8}
+      {cardOpen ? <Popover.Portal><Popover.Positioner side="bottom" align={workspaceRole === 'capsule' ? 'center' : 'start'} sideOffset={8} collisionPadding={8}
         anchor={() => document.querySelector(`[data-tabid="${CSS.escape(tab.tabId)}"]`)}>
         <Popover.Popup aria-label={label}>{card(() => setCardOpen(false))}</Popover.Popup>
       </Popover.Positioner></Popover.Portal> : null}
@@ -179,6 +180,25 @@ export const GenericTabItem = observer(function GenericTabItem({
         }}
       />
     ) : undefined;
+
+  if (workspaceRole === 'capsule') {
+    return (
+      <>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu>
+        <div className="flex h-full min-w-0 flex-1 items-center justify-center">
+          <div role="button" tabIndex={0} data-testid="conversation-capsule" data-chat-workspace-title="" data-tabid={tab.tabId} title={tooltip ?? label}
+            className={CONVERSATION_CAPSULE_CLASS}
+            onClick={card ? () => setCardOpen((open) => !open) : undefined}
+            onKeyDown={card ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setCardOpen((open) => !open); } } : undefined}
+            onDoubleClick={renameOnDoubleClick && !isEditing && !card ? startRename : undefined}>
+            {editableTitle ?? <span className="truncate">{label}</span>}
+          </div>
+        </div>
+      </TabContextMenu>
+      {cardPopover}
+    </>
+    );
+  }
 
   if (workspaceRole === 'title') {
     return (

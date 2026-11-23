@@ -10,8 +10,7 @@ import { useChatFolderName } from './chatFolderName'
 import { GroupAddMenu } from './GroupAddMenu'
 import { SettingsNavRow } from './groupSettingsUi'
 import { Unknown } from '../ui/Unknown'
-import { useMobileShell } from '@/hooks/useMobileShell'
-import { ChatDetailsQuickActions } from './ChatDetailsQuickActions'
+import { ChevronRight } from '@/lib/icons'
 
 // 群信息主页上的两行:群成员(头像、「+」、人数)和这个群的文件夹。从 GroupMembersSection 拆出来,各自只做一件事。
 
@@ -37,11 +36,7 @@ export function GroupMembersRow({ chatId, settings, memberIds, total, onOpen }: 
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
   const contain = (event: MouseEvent | KeyboardEvent) => event.stopPropagation()
-  const mobile = useMobileShell()
   return (
-    <>
-    {/* 第 16 版详情:群名之下、成员行之上是一排快捷操作(搜索 / 应用 / 话题);手机的这几项仍在 ⋯ 里。 */}
-    {mobile ? null : <ChatDetailsQuickActions chatId={chatId} isGroup />}
     <SettingsNavRow
       title={t('group.settings.members')}
       testId="group-settings-members"
@@ -62,7 +57,6 @@ export function GroupMembersRow({ chatId, settings, memberIds, total, onOpen }: 
         </>
       )}
     />
-    </>
   )
 }
 
@@ -75,4 +69,33 @@ export function GroupMemberCount({ total, style }: { total: number | null; style
 /** 文件夹那一行:页头「…」里「文件」那一项的同一个动作(开这个群的文件夹页签),名字也是同一个(useChatFolderName)。 */
 export function GroupFolderRow({ chatId }: { chatId: string }) {
   return <SettingsNavRow title={useChatFolderName()} testId="group-settings-folder" onClick={() => openPanelItem(chatId, folderItem())} />
+}
+
+/**
+ * 详情页(第 16 版设计稿 .memb)的群成员块:叠着的头像、「群成员」、人数、「+」(GroupAddMenu)、›;点它进成员页。
+ * 和 GroupMembersRow 同一份数据、同一个「+」、同一个去处,只是画法不同。
+ */
+export function GroupMembersBlock({ chatId, settings, memberIds, total, onOpen }: Parameters<typeof GroupMembersRow>[0]) {
+  const { t } = useTranslation('messaging')
+  const { identitiesById } = useChatStore('identitiesById')
+  const contain = (event: MouseEvent | KeyboardEvent) => event.stopPropagation()
+  return (
+    <div role="button" tabIndex={0} data-testid="group-settings-members" onClick={onOpen}
+      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }}
+      className="mb-3 flex h-12 cursor-pointer items-center gap-2.5 rounded-xl bg-[var(--muted)] px-3 text-[13.5px]">
+      <span className="flex ps-1.5">
+        {memberIds.slice(0, MEMBER_PREVIEW_COUNT).map((id) => (
+          <span key={id} className="-ms-1.5 flex rounded-full ring-2 ring-[var(--muted)]">
+            <Avatar name={identitiesById[id]?.display_name ?? ''} avatarUrl={identitiesById[id]?.avatar ?? null} seed={id} size={22} />
+          </span>
+        ))}
+      </span>
+      <span>{t('group.settings.members')}</span>
+      <span className="text-[12.5px] text-[var(--muted-fg)]">{total === null ? <Unknown className="w-[2ch]" /> : t('group.settings.memberCount', { count: total })}</span>
+      <span className="ms-auto flex items-center" onClick={contain} onKeyDown={contain}>
+        <GroupAddMenu chatId={chatId} canAddMembers={groupInviteAccess(chatId, 'group', settings).showInvite} size="sm" />
+      </span>
+      <ChevronRight className="size-3.5 text-[var(--faint-fg)]" />
+    </div>
+  )
 }

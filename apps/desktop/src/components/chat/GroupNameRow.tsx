@@ -9,8 +9,10 @@ import { InlineNameInput } from '../ui/InlineNameInput'
 import { Button } from '../ui/Button'
 import { GroupNameInlineEdit } from './GroupNameInlineEdit'
 
-export function GroupNameRow({ chat, name, canEdit, onCommit }: {
+export function GroupNameRow({ chat, name, canEdit, onCommit, hero = false }: {
   chat: ChatItem; name: string | null; canEdit: boolean; onCommit: (name: string) => Promise<void>
+  /** 详情页(第 16 版)头部:名字居中,「设置备注」是它下面那一行小字。 */
+  hero?: boolean
 }) {
   const { t } = useTranslation('contacts')
   const { user } = useAuth()
@@ -21,6 +23,14 @@ export function GroupNameRow({ chat, name, canEdit, onCommit }: {
     await updateDisplayAlias(user.id, { kind: 'group', id: chat.id }, alias)
     patchChat(chat.id, { alias: alias.trim() || null })
   }
+  if (hero) return <div className="flex min-w-0 flex-col items-center gap-1.5">
+    {open ? <InlineNameInput name={chat.alias ?? ''} allowEmpty maxLength={80} testId="group-alias-input"
+      placeholder={t('profile.alias')} onCommit={save} onClose={() => setOpen(false)} />
+      : <GroupNameInlineEdit name={name} canEdit={canEdit} onCommit={onCommit} />}
+    <button type="button" data-testid="group-set-alias" onClick={() => setOpen(true)}
+      className="rounded px-1 text-[12.5px] leading-[18px] text-[var(--muted-fg)] hover:bg-row-hover">{t('contextMenu.setAlias')}</button>
+    {chat.alias?.trim() ? <div className="text-[12.5px] text-[var(--muted-fg)]">{t('profile.alias')} : {groupDisplayName(chat)}</div> : null}
+  </div>
   return <>
     <div className="flex flex-wrap items-center gap-x-2">
       {open ? <InlineNameInput name={chat.alias ?? ''} allowEmpty maxLength={80} testId="group-alias-input"

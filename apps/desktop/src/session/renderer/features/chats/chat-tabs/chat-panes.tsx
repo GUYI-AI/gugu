@@ -1,3 +1,4 @@
+import { CONVERSATION_CAPSULE_CLASS } from '../../tabs/tab-bar/conversation-capsule';
 import { OwnedAgentChatBoundary } from '../owned-agent-chat-boundary';
 import { DndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
@@ -136,6 +137,16 @@ export const ChatTabChip = observer(function ChatTabChip({
 }) {
   const workspace = useContext(ChatWorkspaceTabContext);
   const workspaceRole = workspace?.role;
+  if (workspaceRole === 'capsule') {
+    // 第 16 版 #8:对话卡片顶上只剩这一颗胶囊;名字由 ChatBlockHead 画进 labelSlot(点它出名片),胶囊里不放头像。
+    return (
+      <div className="flex h-full min-w-0 flex-1 items-center justify-center" {...data}>
+        <div className={`${CONVERSATION_CAPSULE_CLASS} [&_[data-chat-block-avatar]]:hidden`} data-chat-workspace-title="">
+          {labelSlot ?? <span className="truncate" title={label}>{label}</span>}
+        </div>
+      </div>
+    );
+  }
   if (workspaceRole === 'title') {
     return (
       <div className="flex h-full min-w-0 flex-1 items-center gap-1" data-chat-workspace-title="" {...data}>

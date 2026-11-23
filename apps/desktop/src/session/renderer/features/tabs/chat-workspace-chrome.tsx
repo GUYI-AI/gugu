@@ -1,6 +1,6 @@
 import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { Maximize2, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
@@ -26,6 +26,9 @@ export type ChatWorkspaceChromeProps = {
   atWindowEdge?: boolean;
   embedded?: boolean;
 };
+
+/** The bar the capsule floats in (设计稿 .capbar): 56 high, the capsule centred in it. */
+const CAPSULE_BAR_STYLE = { '--tab-strip-height': '56px', '--tab-strip-inset-start': '0px' } as CSSProperties;
 
 export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   layout, actions, addTab, leading, reserveShellRestoreLane, leadingReservePx, atWindowEdge, embedded = false,
@@ -93,9 +96,10 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     </ChatWorkspaceTabContext.Provider>
   </PaneProvider> : null;
   const chatTitle = !sharedStrip && (
-    <div data-chat-workspace-chat-header="" className="min-w-0" style={divided && !toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
+    // 第 16 版 #8:对话自己的那条页签条只剩一颗浮动胶囊(设计稿 .capbar 56 高 / .capsule 居中)。
+    <div data-chat-workspace-chat-header="" className="min-w-0" style={{ ...(divided && !toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }), ...CAPSULE_BAR_STYLE }}>
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
-        <ChatWorkspaceTabContext.Provider value={{ role: toolsShown ? 'conversation' : 'title', layout }}>
+        <ChatWorkspaceTabContext.Provider value={{ role: 'capsule', layout }}>
           <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions}>
             {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
           </TabStripShell>

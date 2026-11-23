@@ -23,8 +23,8 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
   const [open, setOpen] = useState(false)
   return host.title ? createPortal(
     <Popover.Root open={open} modal={false} onOpenChange={setOpen}>
-      <Popover.Trigger nativeButton={false} data-testid="conversation-capsule" render={<span className="flex min-w-0 items-center gap-1" data-chat-block-title="" />}>
-        <Avatar
+      <Popover.Trigger nativeButton={false} data-testid="conversation-capsule" render={<span className="flex h-full min-w-0 items-center gap-1" data-chat-block-title="" />}>
+        <span className="flex" data-chat-block-avatar=""><Avatar
           name={name}
           avatarUrl={avatar}
           seed={room ? chat.id : chat.peer_user_id ?? undefined}
@@ -32,10 +32,10 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
           variant={room ? 'group' : 'default'}
           size={16}
           still
-        />
+        /></span>
         <span className="min-w-0 truncate">{name}</span>
       </Popover.Trigger>
-      {open ? <Popover.Portal><Popover.Positioner side="bottom" align="start" sideOffset={8} collisionPadding={8}>
+      {open ? <Popover.Portal><Popover.Positioner side="bottom" align="center" sideOffset={14} collisionPadding={8}>
         <Popover.Popup aria-label={name}>
           <ChatConversationCard chat={chat} name={name} avatar={avatar} isAgent={isAgent} onClose={() => setOpen(false)} />
         </Popover.Popup>
