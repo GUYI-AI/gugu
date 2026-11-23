@@ -38,6 +38,3 @@ export type RemotePortsSnapshot = {
 
 /** 这台机器的端口表变了(topic = deviceId)。 */
 export const remotePortsChangedChannel = defineEvent<{ deviceId: string }>('remote-port:changed');
-
-/** 发现了一个新端口(只在第一次发现时报一次;渲染层据此弹「可以打开了」)。 */
-export const remotePortDetectedChannel = defineEvent<DetectedRemotePort & { deviceId: string }>('remote-port:detected');
