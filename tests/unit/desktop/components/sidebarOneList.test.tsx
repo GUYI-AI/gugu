@@ -12,7 +12,6 @@ import { installOwnedAgentEntry } from '../../../../apps/desktop/src/lib/ownedAg
 import { publishProjectGroupChats } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
 import { publishDirectoryDevices, removeDeviceSessions, updateDeviceSessions } from '../../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
 import { installSessionViewRequestBridge } from '../../../../apps/desktop/src/session/renderer/features/sessions/stores/session-view-requests'
-import { publishMyChatAgentCounts } from '../../../../apps/desktop/src/lib/innerSidebarBridge'
 import { accountProjectsStore } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/account-projects-store'
 import { chat, clickElement, createNode, createReactHarness, device, displayIdentity, renderWithAppProviders } from '../../../support/testHarness'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
@@ -119,21 +118,6 @@ describe('the sidebar chat list as one list', () => {
     await clickElement(harness.container.querySelector<HTMLElement>('[data-chat-row="dm-solo"]')!)
     expect(openAgent).toHaveBeenCalledWith('dm-solo', 'a-solo', undefined, undefined, undefined)
     expect(openChat).toHaveBeenCalledTimes(1)
-  })
-
-  it('switch on, collapsed to the rail: a project row\'s running count is on its avatar, the part of the row the rail keeps', async () => {
-    publishSidebarChatView({ focusedChatId: null, groups: [], oneList: true })
-    publishMyChatAgentCounts(new Map([['project', { total: 3, running: 2 }]]))
-    try {
-      await render()
-      const badge = harness.container.querySelector<HTMLElement>('[data-chat-row="project"] [data-project-running]')!
-      expect(badge.dataset.projectRunning).toBe('2')
-      // The rail fades each row's text (left-sidebar.tsx, inside .gg-list-row-body); the avatar column is .gg-list-row-leading.
-      expect(badge.closest('.gg-list-row-leading')).not.toBeNull()
-      expect(badge.closest('.gg-list-row-body')).toBeNull()
-    } finally {
-      await act(async () => publishMyChatAgentCounts(new Map()))
-    }
   })
 })
 

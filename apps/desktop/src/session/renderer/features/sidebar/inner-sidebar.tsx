@@ -13,12 +13,10 @@ import { setComposerVerb } from '@/lib/composerVerbBridge';
 import {
   innerSidebarTopicsSlotKey,
   publishInnerSidebarPresent,
-  publishMyChatAgentCounts,
   setInnerSidebarTopicsAll,
   useInnerSidebarTopicsAll,
   useInnerSidebarTopicsView,
   useOneListAgentRows,
-  type ChatAgentCounts,
   type InnerSidebarTopicsView,
   type OneListAgentRow,
 } from '@/lib/innerSidebarBridge';
@@ -45,7 +43,6 @@ import {
   chatAgentNeedsYou,
   chatAgentSection,
   openSessionAncestors,
-  myAgentsInChat,
   type ChatAgentEntry,
 } from './chat-agents';
 import {
@@ -193,7 +190,6 @@ export const InnerSidebar = observer(function InnerSidebar() {
 
   return (
     <>
-      <MyChatAgentCountsPublisher agents={agents} summaries={summaries} />
       {next?.kind === 'agent' ? (
         <InnerAgentColumn
           key={next.chatId}
@@ -232,33 +228,6 @@ export const InnerSidebarRestore = observer(function InnerSidebarRestore() {
       <ListColumnToggle slot="column:inner" />
     </ShellRestoreLane>
   );
-});
-
-/**
- * 项目行、群行头像角上那个数(#2548;群行 #2599:群也是 agent 住的地方):每个项目群 / 用户群里住着的我的智能体,
- * 与这一列「智能体」分区头同一个推导(chatScope),❌ 群里所有是成员的 agent。
- */
-const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher({
-  agents,
-  summaries,
-}: {
-  agents: readonly ChatAgentEntry[];
-  summaries: ReadonlyMap<string, ChatSummary>;
-}) {
-  const counts = new Map<string, ChatAgentCounts>();
-  const projects = listedProjectIds();
-  const count = (anchor: InnerSidebarRoomAnchor) =>
-    counts.set(anchor.chatId, chatAgentCounts(myAgentsInChat(agents, chatScope(anchor, summaries, projects))));
-  for (const ref of sidebarStore.sidebarProjects) {
-    if (!counts.has(ref.chatId)) count({ kind: 'project', chatId: ref.chatId });
-  }
-  for (const [chatId, summary] of summaries) {
-    if (summary.kind === 'group' && !counts.has(chatId) && !isProjectChat(chatId)) count({ kind: 'group', chatId });
-  }
-  // 依赖是序列化后的数:每次渲染新建的 Map 不算变化(publish 自己也只在数变了时才通知)。
-  const key = JSON.stringify([...counts]);
-  useEffect(() => publishMyChatAgentCounts(counts), [key]);
-  return null;
 });
 
 const InnerSidebarColumn = observer(function InnerSidebarColumn({

@@ -30,8 +30,6 @@ const TOPICS_ALL_KEY = '__GUGU_INNER_SIDEBAR_TOPICS_ALL__'
 const TOPICS_ALL_EVENT = 'gugu:inner-sidebar-topics-all'
 const TOPICS_VIEW_KEY = '__GUGU_INNER_SIDEBAR_TOPICS_VIEW__'
 const TOPICS_VIEW_EVENT = 'gugu:inner-sidebar-topics-view'
-const AGENT_COUNTS_KEY = '__GUGU_MY_CHAT_AGENT_COUNTS__'
-const AGENT_COUNTS_EVENT = 'gugu:my-chat-agent-counts'
 const COLUMN_KEY = '__GUGU_INNER_SIDEBAR_PRESENT__'
 const COLUMN_EVENT = 'gugu:inner-sidebar-present'
 const AGENT_ROWS_KEY = '__GUGU_ONE_LIST_AGENT_ROWS__'
@@ -53,7 +51,6 @@ const subscribeTo = (event: string) => (listener: () => void) => {
 }
 const subscribeTopicsAll = subscribeTo(TOPICS_ALL_EVENT)
 const subscribeTopicsView = subscribeTo(TOPICS_VIEW_EVENT)
-const subscribeAgentCounts = subscribeTo(AGENT_COUNTS_EVENT)
 const subscribeColumn = subscribeTo(COLUMN_EVENT)
 const subscribeAgentRows = subscribeTo(AGENT_ROWS_EVENT)
 
@@ -87,28 +84,6 @@ export function useInnerSidebarTopicsView(chatId: string): InnerSidebarTopicsVie
     const view = read<InnerSidebarTopicsView>(TOPICS_VIEW_KEY)
     return view?.chatId === chatId ? view : null
   }, () => null)
-}
-
-const NO_COUNTS: ReadonlyMap<string, ChatAgentCounts> = new Map()
-
-/** 会话页:每个项目群 / 用户群里住着的我的智能体(整份替换;没变不通知)。开关关着时发一份空的。 */
-export function publishMyChatAgentCounts(next: ReadonlyMap<string, ChatAgentCounts>): void {
-  const current = read<ReadonlyMap<string, ChatAgentCounts>>(AGENT_COUNTS_KEY)
-  if (
-    current &&
-    current.size === next.size &&
-    [...next].every(([chatId, counts]) => current.get(chatId)?.total === counts.total && current.get(chatId)?.running === counts.running)
-  ) return
-  write(AGENT_COUNTS_KEY, AGENT_COUNTS_EVENT, next)
-}
-
-/** 壳:这个对话里我的智能体;不是项目群或用户群、会话页还没说过、或开关关着 = null。 */
-export function useMyChatAgentCounts(chatId: string): ChatAgentCounts | null {
-  return useSyncExternalStore(
-    subscribeAgentCounts,
-    () => (read<ReadonlyMap<string, ChatAgentCounts>>(AGENT_COUNTS_KEY) ?? NO_COUNTS).get(chatId) ?? null,
-    () => null,
-  )
 }
 
 /** 会话页:这一列在这个窗口里有没有(收起着也算有:展开钮就在)。没变不通知。 */

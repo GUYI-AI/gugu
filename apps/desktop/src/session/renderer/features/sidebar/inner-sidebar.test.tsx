@@ -169,7 +169,6 @@ type ScreenBlockContent = import('@renderer/app/screen-layout').ScreenBlockConte
 
 let host: HTMLDivElement;
 let root: Root;
-const counts = () => (window as unknown as Record<string, unknown>).__GUGU_MY_CHAT_AGENT_COUNTS__ as ReadonlyMap<string, unknown>;
 const sections = () => [...host.querySelectorAll<HTMLElement>('[data-inner-sidebar-section]')].map((section) => section.dataset.innerSidebarSection);
 const sessionRows = () => [...host.querySelectorAll<HTMLElement>('[data-session-row]')].map((row) => row.dataset.sessionRow);
 const moreRows = () => [...host.querySelectorAll<HTMLElement>('[data-more-row]')].map((row) => row.textContent);
@@ -566,17 +565,6 @@ describe('inner sidebar', () => {
     expect(host.querySelector('[data-inner-sidebar-chat="shop-chat"]')).not.toBeNull();
     act(() => restoreRoot.unmount());
     restore.remove();
-  });
-
-  it('publishes my agents per project group and per group for the row badge: only those living there', async () => {
-    openChat('dm');
-    await render();
-    // shop-task (running), shop-idle, shop-chat-agent: agent-a and agent-m are members there but live elsewhere (#2599).
-    // Planning: mine-in-group (running) lives there; member-only is running and a member, but was created in a DM.
-    expect([...counts()]).toEqual([
-      ['shop-chat', { total: 3, running: 1 }],
-      ['group', { total: 1, running: 1 }],
-    ]);
   });
 });
 
