@@ -5,7 +5,6 @@ import { sessionConversationTabId } from '@renderer/features/sessions/view/sessi
 //    每一条都订着,那台机器的闲置回收也认这份订阅(「有人看着」);
 //  · 点会话里的 localhost 链接:开进这条会话的浏览器格(页签自己经 SSH 转端口过去);
 //  · 会话输出里冒出 `localhost:5173` ⇒ 核实不是咕咕自己的端口后记进那台机器的端口表(machine-port-scanner.ts);
-//  · 那台机器上新发现的服务弹一声「可以打开了」(照 VS Code 自动转发后的那条通知),没在看就先记着。
 // 只装一次(启动时)。触发:进出会话页、换任务、那台机器连上 / 断开 —— 都是事件,❌ 定时查。
 import { closeSessionPaneTab, sessionPaneTabs } from '@renderer/features/sessions/stores/session-pane-tabs';
 import { openHostRequestedExtensionInSessionWhenReady } from '@renderer/features/sessions/stores/open-file-in-file-editor';
@@ -15,7 +14,7 @@ import type { SessionpagePaneOpenRequest } from '@gugu/session-core/session-reco
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { asProvisioned, getSessionPageStore } from '@renderer/features/sessions/stores/session-selectors';
 import { toast } from '@renderer/lib/hooks/use-toast';
-import { events, invokeOnMachine, onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
+import { invokeOnMachine, onMachineEvent, rpc, rpcOn } from '@renderer/lib/ipc';
 import { onMachineReconnected } from '@renderer/lib/machine-clients';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { setRemoteLinkTargetProvider } from '@renderer/lib/remote-link-target';
@@ -25,7 +24,6 @@ import { appState } from '@renderer/lib/stores/app-state';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { log } from '@renderer/utils/logger';
 import { SESSION_HOST_PANE } from '@shared/lib/ipc/session-host-device-frames';
-import { remotePortDetectedChannel } from '@shared/remote-ports';
 import { remoteHostsStore } from '../remote-hosts-store';
 import { createMachinePortScanner } from './machine-port-scanner';
 import { openExternalFromMachine } from './remote-open-external';
@@ -53,7 +51,7 @@ export function machineSessionsOnScreen(): ViewedMachineSession[] {
   });
 }
 
-/** 此刻在看的、在别的机器上的那条会话(主窗正显示的那一页;不是 ⇒ null):焦点给谁 —— 链接、端口通知开在哪。 */
+/** 此刻在看的、在别的机器上的那条会话(主窗正显示的那一页;不是 ⇒ null):焦点给谁 —— 链接开在哪。 */
 export function viewedMachineSession(): ViewedMachineSession | null {
   if (appState.navigation.currentViewId !== 'session') return null;
   const params = appState.navigation.viewParamsStore['session'] as { projectId?: string; sessionId?: string } | undefined;
@@ -160,9 +158,6 @@ function paneLink(deviceId: string): PaneLink {
   };
 }
 
-/** 没在看时攒着的「可以打开了」每台机器最多几条(一次测试起一串临时端口时 ❌ 刷屏,VS Code #112724)。 */
-export const MAX_PENDING_NOTICES = 3;
-
 let wired = false;
 
 export function ensureMachineSessionWiring(): void {
@@ -232,42 +227,4 @@ export function ensureMachineSessionWiring(): void {
   });
   observePtyOutput((ptySessionId, data) => scanner.onPtyOutput(ptySessionId, data));
   observeCommittedTurns((target, turn) => scanner.onCommittedTurn(target, turn));
-
-  // 新发现的服务:人正看着那台机器上的会话就当场弹;没在看就先记着,下次打开那台机器上的会话时再弹 ——
-  // ❌ 丢掉(d22 实机:agent 打出 localhost:8765 时人不在那一页,事后什么都没看到)。
-  const pending = new Map<string, number[]>();
-  const show = (session: ViewedMachineSession, remotePort: number) => {
-    const device = remoteHostsStore.device(session.deviceId)?.label ?? session.deviceId;
-    toast({
-      title: translateSessionMessage('remotePorts.detected', { device, port: remotePort }),
-      description: translateSessionMessage('remotePorts.detectedDetail', { port: remotePort }),
-      tier: 'info',
-      action: {
-        label: translateSessionMessage('remotePorts.open'),
-        // 端口是整台机器的:开进人此刻看着的这条会话的浏览器格(他就在这儿)。
-        onClick: () => void openInBrowserTab(session.projectId, session.sessionId, `http://localhost:${remotePort}/`),
-      },
-    });
-  };
-  events.on(remotePortDetectedChannel, (found) => {
-    const viewed = viewedMachineSession();
-    if (viewed && viewed.deviceId === found.deviceId) {
-      show(viewed, found.remotePort);
-      return;
-    }
-    const list = (pending.get(found.deviceId) ?? []).filter((port) => port !== found.remotePort);
-    list.push(found.remotePort);
-    pending.set(found.deviceId, list.slice(-MAX_PENDING_NOTICES));
-  });
-  reaction(
-    () => viewedMachineSession(),
-    (viewed) => {
-      if (!viewed) return;
-      const ports = pending.get(viewed.deviceId);
-      if (!ports) return;
-      pending.delete(viewed.deviceId);
-      for (const port of ports) show(viewed, port);
-    },
-    { equals: comparer.structural }
-  );
 }
