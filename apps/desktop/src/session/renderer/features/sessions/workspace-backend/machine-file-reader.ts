@@ -23,10 +23,6 @@ export function machineFileReader(deviceId: string | null, projectId: string, wo
   return {
     /** Whether this reader's machine streams: null until its first read asked main. */
     get linked() { return linked; },
-    /** A version already read from its start elsewhere (a first chunk asked early): reads go on from it. */
-    anchor(path: string, version: { size: number; etag: string }) {
-      versions.set(path, version);
-    },
     async read(path: string, offset: number, length: number): Promise<MachineChunk> {
       if (deviceId && there && linked === null) {
         const answer = await rpc.workspace.files.streamsFrom(deviceId);
