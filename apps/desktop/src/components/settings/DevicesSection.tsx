@@ -74,8 +74,6 @@ const log = rendererLogger('devices')
 // 每一项前面一个 16px 的「·」格;整行往左挪 16px、外层裁掉 ⇒ 换行后落在行首的那一项,它的点在裁掉的那 16px 里,
 // ❌ 出现「· 咕咕 0.2.51」那种孤零零挂在行首的分隔符。第一项(状态)用同宽的左内边距占位。
 
-const META_SEP = "ml-2"
-
 const DEVICE_LIST_CLASS = 'gg-settings-device-list'
 
 export function DevicesSection({
@@ -587,9 +585,8 @@ function DeviceRow({
             </Button>
           </div>
         )}
-        <div className="mt-[3px] overflow-hidden">
-        <div className="-ml-4 flex flex-wrap items-center gap-y-[2px] text-[length:var(--font-caption)] text-[var(--muted-fg)]">
-          <span className="inline-flex items-center gap-[5px] pl-4">
+        <div className="mt-[3px] flex flex-wrap items-center gap-x-2 gap-y-[2px] text-[length:var(--font-caption)] text-[var(--muted-fg)]">
+          <span className="inline-flex items-center gap-[5px]">
             {/* 状态点:在线 = connected = live 蓝(design.md 唯一的 accent);离线退成墨色最淡一档。 */}
             <span
               aria-hidden
@@ -654,27 +651,26 @@ function DeviceRow({
             )}
           </span>
           {/* 本机那一行名字旁已有「本机」标签,❌ 再说一遍。 */}
-          {model.kind !== 'this' && <span className={META_SEP} data-testid="settings-device-kind">{t(`devices.kind.${model.kind}`)}</span>}
-          {model.system && <span className={META_SEP}>{model.system}</span>}
-          {version && <span className={META_SEP}>{version}</span>}
-          {configurationCount > 1 && <span className={META_SEP} data-testid="settings-device-version-count">{t('devices.configurationCount', { count: configurationCount })}</span>}
+          {model.kind !== 'this' && <span data-testid="settings-device-kind">{t(`devices.kind.${model.kind}`)}</span>}
+          {model.system && <span>{model.system}</span>}
+          {version && <span>{version}</span>}
+          {configurationCount > 1 && <span data-testid="settings-device-version-count">{t('devices.configurationCount', { count: configurationCount })}</span>}
           {/* #6264 root 跑的 server:上面的智能体能改整台机器,如实写出来(隧道装的也看得到)。 */}
           {model.kind === 'server' && device.capabilities?.runs_as_root && (
-            <span className={META_SEP} title={t('devices.runsAsRootHint')} data-testid="settings-device-runs-as-root">{t('devices.runsAsRoot')}</span>
+            <span title={t('devices.runsAsRootHint')} data-testid="settings-device-runs-as-root">{t('devices.runsAsRoot')}</span>
           )}
           {/* 连法(远程 SSH / 远程隧道)只标在咕咕 server 上:那是「添加一台机器」的两种装法;
               另一台登着同一账号的咕咕桌面不是这么加进来的,只有「电脑」这个类别,❌ 标连法。 */}
           {model.kind === 'server' && model.connection.via === 'ssh' && (
-            <span title={t('devices.via.sshHint')} className={`${META_SEP} min-w-0 truncate`}>{t('devices.via.ssh', { address: model.connection.address })}</span>
+            <span title={t('devices.via.sshHint')} className="min-w-0 truncate">{t('devices.via.ssh', { address: model.connection.address })}</span>
           )}
           {model.kind === 'server' && model.connection.via === 'sshElsewhere' && (
-            <span title={t('devices.via.sshElsewhereHint')} className={META_SEP}>{t('devices.via.sshElsewhere')}</span>
+            <span title={t('devices.via.sshElsewhereHint')}>{t('devices.via.sshElsewhere')}</span>
           )}
-          {model.kind === 'server' && model.connection.via === 'unknown' && <Unknown className={`${META_SEP} w-24`} />}
+          {model.kind === 'server' && model.connection.via === 'unknown' && <Unknown className="w-24" />}
           {model.kind === 'server' && model.connection.via === 'cloud' && (
-            <span title={t('devices.via.tunnelHint')} className={META_SEP}>{t('devices.via.tunnel')}</span>
+            <span title={t('devices.via.tunnelHint')}>{t('devices.via.tunnel')}</span>
           )}
-        </div>
         </div>
         {replacedBy && <ReplacedHint by={replacedBy} onRemove={onRemove} />}
         {renameFailed && (
