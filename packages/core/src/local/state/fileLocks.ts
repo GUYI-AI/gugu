@@ -30,12 +30,16 @@
 const chains = new Map<string, Promise<void>>()
 
 /**
- * 等锁的上限。它**不**用来对付「持有者死了」——那种情况在本实现里不可能留下锁；它只兜
- * 「持有者忘了 release」这一类进程内编码错误，让它当场响亮失败而不是无声挂起。沿用原
- * 磁盘锁同量级（~2s）与同样的报错文案，调用方（如 guestRegistration 的超时兜底分支）
- * 的既有语义不变。
+ * 持有超过这么久就响亮报一次，点名是哪把锁、谁拿的。
+ *
+ * ❌ 别再给**等锁的人**设超时：每段临界区都只是一次本机读 + 原子写，排队者的等待时长是排在它前面的
+ * 那些临界区之和，再加上主进程事件循环的卡顿。慢机器（Windows ARM 上的 x64 仿真）上主进程一卡就是
+ * 几秒，写一次名册要几百 ms，于是「排在别人后面」本身就会超过任何写死的上限。等锁超时从前是 2 s，
+ * 它让首装后第一次发送失败：后台云端身份落地的那次名册回写排在同一会话的两次 provision 后面，等过
+ * 2 s 就被判失败，撤掉了刚建的 agent，平台票跟着签不出来。等锁的人没有做错任何事，不该替持有者失败。
+ * 真正要抓的是「持有者不放手」（编码错误或卡死的 fs 调用），那只能从持有者这一侧看：下面的看门狗。
  */
-const WAIT_TIMEOUT_MS = 2_000
+const HOLD_REPORT_MS = 2_000
 
 export async function acquireStateLock(
   lockKey: string,
@@ -49,36 +53,29 @@ export async function acquireStateLock(
   const chained = previous.then(() => held)
   chains.set(lockKey, chained)
   // 队尾自清：轮到我且身后无人时把 key 收掉，否则 Map 会随路径数量单向增长。
-  void chained.then(
-    () => {
-      if (chains.get(lockKey) === chained) chains.delete(lockKey)
-    },
-    () => {
-      if (chains.get(lockKey) === chained) chains.delete(lockKey)
-    }
-  )
-
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    await Promise.race([
-      previous,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`Timed out waiting for ${label} lock`)), WAIT_TIMEOUT_MS)
-      })
-    ])
-  } catch (error) {
-    // 没等到就走人：立刻让出自己这一格，否则排在我身后的人会被我这个永不兑现的占位堵死
-    // —— 那就等于在进程内重造了一个死锁。
-    releaseHeld()
-    throw error
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
+  void chained.then(() => {
+    if (chains.get(lockKey) === chained) chains.delete(lockKey)
+  })
+  // 拿锁的调用栈只在持有过久时才用得上，所以先取下来、出事才格式化。
+  const acquiredBy = new Error(`${label} lock holder`)
+  const queuedAt = Date.now()
+  await previous
+  const acquiredAt = Date.now()
+  const watchdog = setTimeout(() => {
+    console.error(
+      `[state-lock] ${label} lock held for over ${HOLD_REPORT_MS} ms and not released yet (waited ${acquiredAt - queuedAt} ms for it)`,
+      acquiredBy.stack
+    )
+  }, HOLD_REPORT_MS)
+  watchdog.unref?.()
 
   let released = false
   return async () => {
     if (released) return
     released = true
+    clearTimeout(watchdog)
+    const heldMs = Date.now() - acquiredAt
+    if (heldMs > HOLD_REPORT_MS) console.error(`[state-lock] ${label} lock was held for ${heldMs} ms`, acquiredBy.stack)
     releaseHeld()
   }
 }
