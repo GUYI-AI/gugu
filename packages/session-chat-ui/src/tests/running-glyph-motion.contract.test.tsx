@@ -11,7 +11,7 @@ import { until } from '../../../../tests/support/awaitCondition'
 const onBeat = (animation: Animation) => Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime)) < 50
 
 /**
- * Root contract: the transcript's running mark is the shared four-state glyph. One stepped compositor transform,
+ * Root contract: the transcript's running mark is the shared 24-state glyph. One stepped compositor transform,
  * four changes a second on the document clock; nothing on the main thread steps it, and it holds still whenever it
  * cannot be seen.
  */
@@ -35,17 +35,17 @@ function mount() {
   return { host, strip, animations: () => strip().getAnimations() }
 }
 
-it('turns four steps a second on CSS alone and stops while its window is not seen', async () => {
+it('turns eight steps a second on CSS alone and stops while its window is not seen', async () => {
   const timers = vi.spyOn(window, 'setInterval')
   const { strip, animations } = mount()
   // The frames are generated content: the glyph carries no DOM text to copy or read.
-  expect(getComputedStyle(strip(), '::before').content.replace(/[^\u2800-\u28ff]/gu, '')).toBe('⠚⠓⠋⠙')
+  expect(getComputedStyle(strip(), '::before').content.replace(/[^\u2800-\u28ff]/gu, '')).toBe('⠈⠉⠋⠓⠒⠐⠐⠒⠖⠦⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈')
   expect(strip().textContent).toBe('')
   await until('the glyph turns', () => animations().length === 1 && animations()[0]!.playState === 'running')
   const timing = animations()[0]!.effect!.getComputedTiming()
   expect(timing.iterations).toBe(Infinity)
-  expect(timing.duration).toBe(1000)
-  expect(getComputedStyle(strip()).animationTimingFunction).toBe('steps(4)')
+  expect(timing.duration).toBe(3000)
+  expect(getComputedStyle(strip()).animationTimingFunction).toBe('steps(24)')
   expect(timers).not.toHaveBeenCalled()
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }))
   await until('it stops with the window', () => animations().length === 0)
@@ -68,7 +68,7 @@ it('keeps its boxes inside the one line it shows, on every frame', async () => {
   const { host, strip, animations } = mount()
   await until('the glyph turns', () => animations()[0]?.playState === 'running')
   const glyph = host.querySelector<HTMLElement>('.gg-running-glyph')!.getBoundingClientRect()
-  for (const frame of [0, 250, 500, 750]) {
+  for (let frame = 0; frame < 3000; frame += 125) {
     animations()[0]!.currentTime = frame
     expect(strip().getBoundingClientRect().bottom).toBeLessThanOrEqual(glyph.bottom + 0.5)
   }

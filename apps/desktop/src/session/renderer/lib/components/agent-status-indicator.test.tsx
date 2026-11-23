@@ -39,7 +39,7 @@ describe('任务页的状态字形(#7243)', () => {
   it('在跑 = 转圈字形,不是小鸟', () => {
     renderGlyph('working');
     expectNoBird();
-    // the running glyph is the shared four-state strip (@gugu/session-shared/running-glyph.css)
+    // the running glyph is the shared 24-state strip (@gugu/session-shared/running-glyph.css)
     expect(container.querySelector('.gg-running-glyph__strip')).not.toBeNull();
   });
 

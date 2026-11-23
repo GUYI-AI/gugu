@@ -49,17 +49,17 @@ async function mount(doc = document) {
   return { host, animations };
 }
 
-// @@@running-beat — the running pill says its state word in still ink next to the shared four-state glyph: the
-// only thing that moves is a stepped transform that changes four times a second.
-it('keeps the running word still and turns only the shared glyph, four steps a second', async () => {
+// @@@running-beat — the running pill says its state word in still ink next to the shared 24-state glyph: the
+// only thing that moves is a stepped transform that changes eight times a second.
+it('keeps the running word still and turns only the shared glyph, eight steps a second', async () => {
   const { host } = await mount();
   const label = host.querySelector<HTMLElement>('.rtb-state')!;
   const [animation, ...rest] = label.getAnimations({ subtree: true });
   expect(rest).toHaveLength(0);
   expect((animation as CSSAnimation).animationName).toBe('gg-running-glyph');
-  expect(animation!.effect!.getTiming()).toMatchObject({ duration: 1000, iterations: Infinity });
-  expect(getComputedStyle(label.querySelector('.gg-running-glyph__strip')!).animationTimingFunction).toBe('steps(4)');
-  expect(getComputedStyle(label.querySelector('.gg-running-glyph__strip')!, '::before').content.replace(/[^\u2800-\u28ff]/gu, '')).toBe('⠚⠓⠋⠙');
+  expect(animation!.effect!.getTiming()).toMatchObject({ duration: 3000, iterations: Infinity });
+  expect(getComputedStyle(label.querySelector('.gg-running-glyph__strip')!).animationTimingFunction).toBe('steps(24)');
+  expect(getComputedStyle(label.querySelector('.gg-running-glyph__strip')!, '::before').content.replace(/[^\u2800-\u28ff]/gu, '')).toBe('⠈⠉⠋⠓⠒⠐⠐⠒⠖⠦⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈');
   // The word itself never animates and is not masked; the glyph adds no text to it.
   expect(label.textContent).toBe(label.querySelector('.gg-running-glyph')!.nextSibling!.textContent);
   expect(label.textContent!.length).toBeGreaterThan(0);
@@ -88,8 +88,8 @@ it('stops an avatar corner glyph scrolled out of view and starts it again on the
   const { host, animations } = await mount();
   const cornerOf = () => host.querySelector('.av-running')!.getAnimations({ subtree: true });
   expect(cornerOf()).toHaveLength(1);
-  // The avatar's only motion is the shared glyph: four steps a second, no status lamp beside it.
-  expect(cornerOf()[0]!.effect!.getTiming()).toMatchObject({ duration: 1000, iterations: Infinity });
+  // The avatar's only motion is the shared glyph: eight steps a second, no status lamp beside it.
+  expect(cornerOf()[0]!.effect!.getTiming()).toMatchObject({ duration: 3000, iterations: Infinity });
   expect(host.querySelector('.av-status')).toBeNull();
   host.style.cssText = 'position:fixed;left:0;top:-2000px';
   await until('the off-screen glyphs are gone', () => host.getAnimations({ subtree: true }).length === 0);

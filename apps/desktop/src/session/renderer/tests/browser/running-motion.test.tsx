@@ -40,8 +40,8 @@ it('turns with one infinite stepped animation and no timer, and stops with its w
   await until('the strip turns', () => strips(host).length === 1 && strips(host)[0]!.playState === 'running');
   const timing = strips(host)[0]!.effect!.getComputedTiming();
   expect(timing.iterations).toBe(Infinity);
-  expect(timing.duration).toBe(1000);
-  expect(getComputedStyle(host.querySelector('.gg-running-glyph__strip')!).animationTimingFunction).toBe('steps(4)');
+  expect(timing.duration).toBe(3000);
+  expect(getComputedStyle(host.querySelector('.gg-running-glyph__strip')!).animationTimingFunction).toBe('steps(24)');
   expect(timers).not.toHaveBeenCalled();
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }));
   await until('it stops with the window', () => strips(host).length === 0);
@@ -83,7 +83,7 @@ it('keeps the first glyph still under reduced motion, including a live preferenc
   await until('motion is disabled', () => strips(host).length === 0);
   const strip = host.querySelector<HTMLElement>('.gg-running-glyph__strip')!;
   expect(getComputedStyle(strip).transform).toBe('none');
-  expect(getComputedStyle(strip, '::before').content.replace(/[^\u2800-\u28ff]/gu, '')).toBe('⠚⠓⠋⠙');
+  expect(getComputedStyle(strip, '::before').content.replace(/[^\u2800-\u28ff]/gu, '')).toBe('⠈⠉⠋⠓⠒⠐⠐⠒⠖⠦⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈');
   await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   await until('motion resumes', () => strips(host)[0]?.playState === 'running');
 });
