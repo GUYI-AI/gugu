@@ -1,6 +1,7 @@
 import { messageForUser } from '@/lib/userFacingError';
 import type { AgentAttention } from '@gugu/core/shared/agentStatus'
 import { PAGE_MODAL_FRAME, Sheet } from '../components/ui/Sheet'
+import { ModalClose } from '../components/ui/ModalClose'
 import { PaneHeader } from '../components/ui/Pane'
 import { RightPanelBackButton } from '../components/chat/RightPanel'
 import { SessionAppFrame } from '../components/appSlot/SessionAppFrame'
@@ -19,7 +20,6 @@ import { useMobileShellDiagnostics } from '@/mobile/useMobileListDiagnostics'
 import { PhoneTabBar as MobileTabBar } from '@/mobile/PhoneTabBar'
 import { Sidebar } from '../components/Sidebar'
 import { returnToScreen } from '@/session/renderer/app/screen-layout-actions'
-import { registeredViews } from '@/session/renderer/lib/layout/registered-views'
 import { UpdateBanner } from '../components/UpdateBanner'
 import { WindowControls } from '../components/WindowControls'
 import { MOBILE_TABS, SIDEBAR_TABS, type SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
@@ -114,7 +114,7 @@ import { CameraPermissionSheet } from '../components/CameraPermissionSheet'
 import { RemoteMachinesHost } from '../components/sessionpage/RemoteMachinesHost'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { IconButton } from '../components/ui/IconButton'
-import { Settings, X } from '@/lib/icons'
+import { Settings } from '@/lib/icons'
 import { parseExtensionTabKind } from '../session/shared/extensions/manifest'
 import { followLink, openLink } from '../lib/guguLinks'
 import { useMobileShell, readMobileShell } from '../hooks/useMobileShell'
@@ -130,6 +130,7 @@ import { rendererLogger } from '../lib/log'
 import { appState } from '../session/renderer/lib/stores/app-state'
 import { setComposerVerb } from '../lib/composerVerbBridge'
 import { sessionPeek } from '../session/renderer/app/session-peek'
+import { pageModalOpen } from '../session/renderer/app/page-modal'
 
 const openChatLog = rendererLogger('chat/open-dm')
 
@@ -496,17 +497,21 @@ function InnerLayout({
       // Skipped, the page still hands its titlebar's app-region rects to the window: collapse them (lib/retainedSurface.ts).
       frame.style.transform = shown || peek ? '' : 'scale(0)'
       frame.style.visibility = peek ? 'hidden' : 'visible'
-      frame.style.zIndex = peek ? 'calc(var(--z-float) + 1)' : '5'
+      // A view shown as a modal (@@@page-modal: App 市场, an App's page) is above the whole shell as Settings is, notices
+      // included: the frame it is drawn in rises to that layer while it is open.
+      frame.style.zIndex = peek ? 'calc(var(--z-float) + 1)' : shown && pageModalOpen.get() ? 'var(--z-settings)' : '5'
     }
     syncRect()
     const ro = new ResizeObserver(syncRect)
     ro.observe(dest)
     window.addEventListener('resize', syncRect)
     const offPeek = reaction(() => sessionPeek.current !== null, hide)
+    const offModal = reaction(() => pageModalOpen.get(), hide)
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', syncRect)
       offPeek()
+      offModal()
     }
   }, [showCreateSurface, mobile, phoneChatShown, sessionHostAvailable, activeTab])
 
@@ -942,7 +947,7 @@ function InnerLayout({
         if (e.key === '1') {
           e.preventDefault()
           selectTab(sessionHostAvailable && !mobile ? 'tasks' : 'chats')
-          if (sessionHostAvailable && !mobile && registeredViews()[appState.navigation.currentViewId].modal) returnToScreen()
+          if (sessionHostAvailable && !mobile && pageModalOpen.get()) returnToScreen()
         }
         else if (e.key === '2') { e.preventDefault(); selectTab('contacts') }
       }
@@ -1239,11 +1244,10 @@ function InnerLayout({
       <ResourceMonitorHost />
       {contactsModal && (
         <Sheet onClose={() => selectTab(pageUnderContacts.current)} {...PAGE_MODAL_FRAME} testId="contacts-modal" ariaLabel={t('shell.contacts')}>
-          <div data-contacts-modal="" className="relative flex min-h-0 flex-1 flex-col">
+          {/* data-pane-close: every header in it leaves the floating ✕ its room (tokens.css, --pane-close-room). */}
+          <div data-contacts-modal="" data-pane-close="" className="relative flex min-h-0 flex-1 flex-col [--pane-close-room:calc(var(--control-h-lg)+var(--spacing-lg)+4px-var(--pane-pad-x))]">
             <ContactsPanel externalContactId={externalContactId} mobile={false} scanSeed={scanSeed} onSwitchToChat={contactsSwitchToChat} onOpenGroupChat={contactsOpenGroupChat} onOpenAgentCreateDraft={openAgentCreateDraftFromContacts} />
-            <IconButton shape="pill" size="lg" className="absolute top-2 right-2 bg-foreground/[0.06]" aria-label={t('settings.close')} onClick={() => selectTab(pageUnderContacts.current)}>
-              <X />
-            </IconButton>
+            <ModalClose floating onClose={() => selectTab(pageUnderContacts.current)} />
           </div>
         </Sheet>
       )}

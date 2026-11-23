@@ -96,8 +96,21 @@
   background-color: var(--desktop-workspace-bg);
 }
 
-/* @@@page-modal 弹窗的 ✕ 钉在右上角(同设置):联系人、App 市场页头右端的按钮让出它的位置。 */
-[data-contacts-modal] .gg-pane-header,
+/* @@@page-modal-close 弹窗里的页头和设置的页头同一几何(settings-content.css):上 --spacing-2xl、下 --spacing-md,
+   一行的中线对齐右上角的 ✕(ModalClose);App 市场的页头(不是 pane header)右端再让出 ✕ 的位置。 */
+[data-contacts-modal] .gg-pane-header {
+  height: auto;
+  min-height: 0;
+  padding-top: var(--spacing-2xl);
+  padding-bottom: var(--spacing-md);
+}
+[data-contacts-modal] .gg-pane-header > .gg-pane-actions {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  min-height: var(--control-h-lg);
+}
 [data-page-modal] .mk-market-header {
-  padding-inline-end: 48px;
+  padding-top: calc(var(--spacing-2xl) + (var(--control-h-lg) - var(--control-h-md)) / 2);
+  padding-inline-end: calc(var(--control-h-lg) + var(--spacing-lg) + 4px);
 }

@@ -22,8 +22,9 @@ import { usePanelScroll } from '../session/renderer/features/assistant/use-panel
 import { PhoneDeviceActionsPage } from '../mobile/phone-device/PhoneDeviceActionsPage'
 import { SettingsNav } from './settings/SettingsNav'
 import { SessionSettingsSection } from './sessionpage/SessionSettingsSection'
-import { ChevronLeft, X } from '@/lib/icons'
+import { ChevronLeft } from '@/lib/icons'
 import { PAGE_MODAL_FRAME, Sheet } from './ui/Sheet'
+import { ModalClose } from './ui/ModalClose'
 import { Pane, PaneHeader } from './ui/Pane'
 import { IconButton } from './ui/IconButton'
 import { useBackLayer } from './ui/sheetStack'
@@ -202,9 +203,7 @@ export function SettingsPanel({
                 <>
                 {activeSection === 'passwords' && <div ref={passwordActions} />}
                 {/* @@@1787 owner: ✗ 是桌面弹窗逻辑;移动端出口统一为左上返回箭头(SettingsNav onBack),✗ 只留桌面 */}
-                <IconButton shape="pill" size="lg" className="bg-foreground/[0.06]" aria-label={t('settings.close')} onClick={onClose}>
-                  <X />
-                </IconButton>
+                <ModalClose label={t('settings.close')} onClose={() => onClose?.()} />
                 </>
               ) : activeSection === 'apps' && !detailPage ? (
                 <Button size="sm" variant="ghost" data-testid="phone-market-show-installed" onClick={() => setMarketInstalled(true)}>

@@ -4,7 +4,7 @@ import { action, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import type { ReactElement, ReactNode } from 'react';
+import { useContext, type ReactElement, type ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
@@ -21,7 +21,8 @@ import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-lib
 import { LibraryHostProvider, LOCAL_LIBRARY_HOST, machineLibraryHost } from '@renderer/features/library/library-host';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { PageContent, PageLayout } from '@renderer/lib/components/page-layout';
-import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
+import { PageModalClose, ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
+import { MODAL_HEADER_H } from '@/components/ui/ModalClose';
 import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider';
 import { appState } from '@renderer/lib/stores/app-state';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
@@ -245,8 +246,10 @@ const AppMainPanel = observer(function AppMainPanel() {
   // The assistant App not here yet (restored while it is being put in, or switched off): the page says it is getting ready, never
   // that the App is switched off, and gives way to the assistant's chat (assistant-page-not-here.ts).
   const assistantNotHere = useAssistantPageNotHere(params.appId, !!main?.enabled);
+  // In a modal the title band is the modal's header, as tall as Settings' (@@@page-modal-close).
+  const inModal = useContext(PageModalClose) !== null;
   return (
-    <div className="flex h-full min-h-0 w-full flex-col" style={assistantPage ? undefined : { paddingTop: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-testid="app-page" data-assistant-page={assistantPage ? '' : undefined}>
+    <div className="flex h-full min-h-0 w-full flex-col" style={assistantPage ? undefined : { paddingTop: inModal ? MODAL_HEADER_H : WINDOW_CONTROL_BAR_HEIGHT_PX }} data-testid="app-page" data-assistant-page={assistantPage ? '' : undefined}>
       {installed.state === 'unknown' ? (
         // ❌ 「已停用」 before the list says so.
         <div className="min-h-0 flex-1" data-testid="app-page-unknown" aria-busy="true" />
