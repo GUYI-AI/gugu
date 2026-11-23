@@ -1,15 +1,16 @@
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, useState } from 'react';
-import { AppWindow, Archive, Copy, Folder, GitFork, LayoutGrid, Pin, PanelLeft, RotateCcw, Search } from '@/lib/icons';
+import { AppWindow, Archive, Bell, Copy, Folder, GitFork, LayoutGrid, Pin, PanelLeft, RotateCcw, Search } from '@/lib/icons';
 import { Avatar } from '@/components/Avatar';
 import { ChatAppsPicker } from '@/components/chat/ChatAppsPicker';
-import { DetailsChip, DetailsGroupTitle, DetailsHero, DetailsList, DetailsName, DetailsPage, DetailsRow, DetailsSwitch, DetailsTile, DetailsTiles } from '@/components/details/DetailsParts';
+import { DetailsChip, DetailsGroupTitle, DetailsSegmented, DetailsHero, DetailsList, DetailsName, DetailsPage, DetailsRow, DetailsSwitch, DetailsTile, DetailsTiles } from '@/components/details/DetailsParts';
 import { DropdownMenu, MenuItem } from '@/components/ui/Menu';
 import { InlineNameInput } from '@/components/ui/InlineNameInput';
 import { Popover } from '@/components/ui/Popover';
 import { useShownAgentName } from '@/hooks/useShownAgentName';
 import { useAvatarIdentity } from '@/lib/avatarIdentity';
-import { useChatSummaries } from '@/lib/chatSummariesBridge';
+import { agentChatOf, setChatRowNotificationLevel, useChatSummaries } from '@/lib/chatSummariesBridge';
+import { log } from '@renderer/utils/logger';
 import { openInWindow } from '@renderer/app/screen-layout-actions';
 import { WORKSPACE_APP_KIND } from '@renderer/features/chats/chat-tabs/chat-panel-item';
 import { openGlobalSearch } from '@renderer/features/global-search/search-session';
@@ -70,6 +71,7 @@ const SessionDetails = observer(function SessionDetails({ sessionId }: { session
     openSessionInSessionWhenReady(target);
   };
   const local = !machineRegistry.machineOf(projectId);
+  const chat = agentId ? agentChatOf(agentId) : null;
   const row = (id: string, icon: React.ReactNode, extra?: Partial<React.ComponentProps<typeof DetailsRow>>) => {
     const found = command(id);
     return found ? <DetailsRow key={id} icon={icon} label={found.label} testId={`session-details-session:${id}`}
@@ -96,6 +98,10 @@ const SessionDetails = observer(function SessionDetails({ sessionId }: { session
         <DetailsTile icon={<AppWindow />} label={translate('details.window')} testId="session-details-window" onClick={() => openInWindow({ kind: 'session', projectId, sessionId })} />
       </DetailsTiles>
       <DetailsList>
+        {chat ? <DetailsRow icon={<Bell />} label={translate('details.notifications')} testId="session-details-notifications"
+          end={<DetailsSegmented value={chat.summary.notificationLevel} onChange={(level) => void setChatRowNotificationLevel(chat.chatId, level)
+            .catch((error: unknown) => log.error('[session-details] notification level failed', { error: error instanceof Error ? error.message : String(error) }))}
+            options={(['all', 'important', 'none'] as const).map((level) => ({ value: level, label: translate(`details.notify.${level}`) }))} />} /> : null}
         {command('pin') ? <DetailsRow icon={<Pin />} label={translate('details.pin')} testId="session-details-pin"
           end={<DetailsSwitch on={pin.pinned} onChange={(on) => pin.setPinned(on)} label={translate('details.pin')} />} onClick={() => pin.setPinned(!pin.pinned)} /> : null}
         {sidebarPin && command('sidebar-pin') ? <DetailsRow icon={<PanelLeft />} label={translate('details.pinToSidebar')} testId="session-details-sidebar-pin"

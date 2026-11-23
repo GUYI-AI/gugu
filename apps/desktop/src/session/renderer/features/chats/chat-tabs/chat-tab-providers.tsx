@@ -18,6 +18,7 @@ import type { TabHost } from '@renderer/features/tabs/core/tab-host';
 import type { ResolvedTab, TabBarItemProps, TabContentProps, TabEntry, TabResource, TabViewContext } from '@renderer/features/tabs/core/tab-provider';
 import { createTabProvider } from '@renderer/features/tabs/core/tab-provider-registry';
 import { GenericTabDragPreview, GenericTabItem } from '@renderer/features/tabs/tab-bar/generic-tab-item';
+import { ChatSummaryAvatar } from './chat-summary-avatar';
 import { parseExtensionTabKind } from '@shared/extensions/manifest';
 import { groupPageSlot, isFolderItem, panelItemKey, WORKSPACE_APP_KIND, type PanelItem } from './chat-panel-item';
 import { TabKindMark } from '@renderer/features/extensions/extension-mark';
@@ -221,7 +222,7 @@ const useInfoLabel = () => useTranslation('messaging').t('header.details');
 const InfoTabItem = observer(function InfoTabItem({ tab, host, ctx }: TabBarItemProps<TabResource>) {
   return (
     <div className="contents" data-info-tab="">
-      <GenericTabItem tab={tab} host={host} ctx={ctx} label={useInfoLabel()} preSlot={<Users size={14} />} />
+      <GenericTabItem tab={tab} host={host} ctx={ctx} label={useInfoLabel()} preSlot={<ChatSummaryAvatar chatId={chatIdOfView(ctx)} size={16} />} />
     </div>
   );
 });
