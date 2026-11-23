@@ -18,9 +18,11 @@
   align-items: flex-start;
   border-radius: 12px;
   background-color: transparent;
-  padding-inline-end: calc(var(--head-reserve) - 26px) !important;
+  /* The block's own 6px end padding; while the hover ⋯ shows, also clear it (it sits over the block's end). */
+  padding-inline-end: calc(var(--head-reserve) - 30px) !important;
 }
-.gg-inner-head-double [data-inner-head-open][aria-current='page'] { background-color: var(--selected); }
+/* .ihl.on in the design: 7% black over the window, translucent so the warm window shows through. */
+.gg-inner-head-double [data-inner-head-open][aria-current='page'] { background-color: color-mix(in oklab, var(--fg) 7%, transparent); }
 /* Paint the hover independently of the two-line button, over the block only (not the collapse button). */
 .gg-inner-head-double [data-inner-head]:is(:hover, :focus-within, :has([aria-expanded='true']))::before {
   content: '';
@@ -81,4 +83,17 @@
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child,
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child * { font-size: 13px; font-weight: 400; }
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child { gap: 12px; }
+/* The design has the count 12px after the label; the fold chevron hangs in the gutter left of the label instead of between them. */
+[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child > button:first-child { position: relative; }
+[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child > button:first-child > svg { position: absolute; inset-inline-start: -17px; }
 [data-region='inner-sidebar'] [data-inner-rows] { padding-inline: 9px 6px; }
+/*
+ * Rows (design .lrow: 9px in, padding 0 8, 7px between icon and text, 18px agent face). A row with no sub-sessions has
+ * no expand arrow, so its arrow lane is dropped and it sits flush like the design; a row that can expand keeps the
+ * arrow and its indent.
+ */
+[data-region='inner-sidebar'] [data-inner-rows] [data-session-id]:not([aria-expanded]) > :first-child { display: none; }
+[data-region='inner-sidebar'] [data-inner-rows] [data-session-id][data-depth='0']:not([aria-expanded]) { padding-inline-start: 8px !important; }
+[data-region='inner-sidebar'] [data-inner-rows] [data-session-id] > button { gap: 7px; }
+[data-region='inner-sidebar'] [data-inner-rows] [data-row-agent-avatar] > * { width: 18px !important; height: 18px !important; }
+[data-region='inner-sidebar'] [data-topic-row] { gap: 7px; }
