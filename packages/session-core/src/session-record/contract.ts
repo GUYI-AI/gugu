@@ -552,8 +552,11 @@ export interface SessionTimeline {
   syncQueuedPrompts(prompts: readonly Pick<QueuedPrompt, 'id' | 'text' | 'queueEdit' | 'clientMessageId'>[]): void;
   syncLiveReply(reply: SessionLiveReply | null): void;
   syncTerminals(terminals: readonly TerminalState[]): void;
-  /** The runtime's turn in progress (null when none): shown in place of the record's copy of it (`runtime-turn.ts`). */
-  syncActiveTurn(turn: TranscriptTurn | null): void;
+  /**
+   * The runtime's turn in progress (null when none): shown in place of the record's copy of it (`runtime-turn.ts`).
+   * The runtime hands it over trimmed for transport, its pictures as `imageRefs`; `pictures` reads one from the runtime.
+   */
+  syncActiveTurn(turn: TranscriptTurn | null, pictures?: RuntimeTurnPictures): void;
 
   /** 一个 item 已由 provider 侧了结（超时、取消）时由宿主调用。终态，❌ 不能再答。 */
   cancelSettlement(itemId: string): void;
@@ -1248,6 +1251,9 @@ export const OPENED_FILE_MAX_BYTES = 20 * 1024 * 1024;
  * 视口、那一轮展开了再按 (会话, 条目, 第几张) 来取。`itemId` 是时间线里工具条目的 id(工具组里的子调用也认)。
  */
 export type SessionpageSessionToolImageRequest = { conversationId: string; itemId: string; index: number };
+
+/** Reads picture `index` of a tool item in the runtime's turn in progress, from the runtime that holds the turn whole. */
+export type RuntimeTurnPictures = (itemId: string, index: number) => Promise<ToolImageLookup>;
 
 /**
  * 手机取一张工具交回来的图时,宿主答的上限(base64 字数)。超过就回 `too_large`,手机说「在桌面上看」。
