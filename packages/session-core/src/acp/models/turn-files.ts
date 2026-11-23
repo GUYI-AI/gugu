@@ -15,4 +15,5 @@ export const turnFileRefSchema = z.object({
 export type TurnFileRef = z.infer<typeof turnFileRefSchema>;
 /** Human-visible/replay metadata: model context and host paths stay out of the transcript. */
 export const transcriptFileRefSchema = turnFileRefSchema.omit({ path: true, workspacePath: true, requiredPlacement: true });
+export type TranscriptFileRef = z.infer<typeof transcriptFileRefSchema>;
 export const promptFileSchema = turnFileRefSchema.extend({ promptText: z.string().optional() });

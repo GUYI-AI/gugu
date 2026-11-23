@@ -2,6 +2,7 @@ import { buildSessionPermissionOptions } from '@shared/session-permission-option
 import { ptyTurnEnds, recordPtyEngineEnd } from '../sessions/pty-turn-ends';
 import { sessionEngine, sessionProcess } from '../sessions/session-process';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
+import { nativePromptReceipt } from '../sessions/native-prompt-receipts';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
@@ -179,6 +180,7 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal
     archive,
     ...(journal ? { journal: createSessionRecordSource(journal) } : {}),
     ...(answerableQuestions ? { answerableQuestions } : {}),
+    hostPrompts: (digest) => nativePromptReceipt(sessionId, digest),
   });
   try {
     // Observe only an uncovered native turn. Reopening an ended record must not create new end facts.

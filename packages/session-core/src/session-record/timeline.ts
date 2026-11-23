@@ -1,5 +1,6 @@
 import { withRuntimeTurn } from './runtime-turn';
 import { withJournalTurns } from './journal-turns';
+import { HostPrompts, type HostPromptReceipts } from './host-prompts';
 import type { TerminalState } from '../acp/models/terminals';
 import type { SessionLiveReply } from './live-reply';
 import { applyHostTurnEnd, type HostTurnEnds, type HostTurnEnd } from './host-turn-end';
@@ -118,6 +119,8 @@ export type SessionTimelineDeps = {
   answerableQuestions?: boolean;
   /** Gugu's journal of this session (`sources/gugu-journal.ts`): its whole turns go among the record's by start time. */
   journal?: SessionRecordSource | null;
+  /** What the person sent with the prompts the record holds as sent natively (`host-prompts.ts`), kept by the host. */
+  hostPrompts?: HostPromptReceipts;
   /** Called after every applied batch, including the initial read (before `createSessionTimeline` returns). A fill drains here. */
   onApplied?: (timeline: SessionTimeline) => void;
   /** Where the source starts when no archive is restored (a fill from the tail, `SessionRecordSource.startingAt`). */
@@ -273,6 +276,7 @@ class RecordTimeline implements SessionTimeline {
   private stopHostTurnEnds: (() => void) | undefined;
   private hostEnds: readonly HostTurnEnd[] = [];
   private hostEnded = new WeakMap<TranscriptTurn, TranscriptTurn>();
+  private readonly sent: HostPrompts;
   private placed = new WeakMap<TranscriptTurn, TranscriptTurn>();
   /** Turns handed out by `drainSettled`, and the ids of what they own. */
   private retainedFrom = 0;
@@ -292,6 +296,7 @@ class RecordTimeline implements SessionTimeline {
     this.epochValue = this.newEpoch();
     this.parser = new AcpTranscriptParser({ sessionId: deps.sessionId });
     this.hostEnds = deps.hostTurnEnds?.read() ?? [];
+    this.sent = new HostPrompts(deps.hostPrompts);
   }
 
   async begin(): Promise<void> {
@@ -506,7 +511,7 @@ class RecordTimeline implements SessionTimeline {
 
   getSnapshot(options?: { limit?: number; committedOnly?: boolean }): TimelineSnapshot {
     const limit = options?.limit ?? this.defaultLimit;
-    const all = options?.committedOnly ? this.withHostEnds([...this.parser.history]) : this.currentTurns();
+    const all = options?.committedOnly ? this.recordTurns([...this.parser.history]) : this.currentTurns();
     const turns = limit >= all.length ? all : all.slice(all.length - limit);
     return {
       cursor: { epoch: this.epochValue, seq: this.seq },
@@ -682,6 +687,7 @@ class RecordTimeline implements SessionTimeline {
   syncActiveTurn(turn: TranscriptTurn | null): void {
     if (this.disposed || this.runtimeTurn === turn) return;
     this.runtimeTurn = turn;
+    this.sent.learn(turn);
     this.publish();
   }
 
@@ -972,7 +978,7 @@ class RecordTimeline implements SessionTimeline {
 
   private currentTurns(): TranscriptTurn[] {
     const active = this.parser.activeTurn;
-    const folded = this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]);
+    const folded = this.recordTurns(active ? [...this.parser.history, active] : [...this.parser.history]);
     const journal = [...this.journalTurns.values()];
     return this.inPlace(withRuntimeTurn(withJournalTurns(folded,
       journal.filter((line) => !line.recorded).map((line) => line.turn),
@@ -994,6 +1000,11 @@ class RecordTimeline implements SessionTimeline {
       this.placed.set(turn, placed);
       return placed;
     });
+  }
+
+  /** The record's turns with what only the host knows of them: how a turn ended, and what its person sent. */
+  private recordTurns(turns: TranscriptTurn[]): TranscriptTurn[] {
+    return this.sent.restore(this.withHostEnds(turns));
   }
 
   private withHostEnds(turns: TranscriptTurn[]): TranscriptTurn[] {
