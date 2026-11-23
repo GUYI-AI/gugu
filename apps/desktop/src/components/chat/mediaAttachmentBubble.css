@@ -23,6 +23,6 @@
    小图不至于把字挤成一窄条:宽度至少 200px(不超过气泡)。长串(网址)按任意处折,不撑宽。 */
 .chat-image-with-caption {
   width: min-content;
-  min-width: min(100%, 200px);
+  min-width: min(200px, calc(100cqw - 24px));
   overflow-wrap: anywhere;
 }
