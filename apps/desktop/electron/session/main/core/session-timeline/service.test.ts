@@ -69,6 +69,8 @@ const state = vi.hoisted(() => ({
   wake: vi.fn(async (_id: string): Promise<void> => {
     throw new Error('❌ 没开起来的会话不许走唤醒');
   }),
+  /** The session life's pending rows, by message id (`sessionLife().read`); none unless a case queues some. */
+  lifePending: [] as string[],
 }));
 
 const persistedQuestions = vi.hoisted(() => new Map<string, Settlement[]>());
@@ -128,6 +130,7 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 
+vi.mock('@main/core/sessions/session-life', () => ({ sessionLife: () => ({ read: () => ({ pending: { items: state.lifePending.map((messageId) => ({ messageId })) } }) }) }));
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 const openedOutputs = vi.hoisted(() => new Map<string, ({ kind: 'file'; path: string } | { kind: 'page'; url: string })[]>());
 vi.mock('../sessions/session-outputs', () => ({
@@ -444,6 +447,7 @@ describe('session timeline service', () => {
     state.emitPending = null;
     state.nativeUnread = [];
     state.rows = [row()];
+    state.lifePending = [];
     state.projects = [];
     state.deliverText = vi.fn(async () => ({ accepted: 'started' as const }));
     state.deliverPermission = vi.fn(async () => undefined);
@@ -669,6 +673,25 @@ describe('session timeline service', () => {
     await expect(
       service.respond({ conversationId: 'conv-1', itemId: 'x', optionId: 'y', kind: 'permission', by: 'desktop' })
     ).resolves.toMatchObject({ ok: false, error: { code: 'session_not_started' } });
+  });
+
+  it('a first message the session life still holds is drawn from that pending row, not a second time by the stand-in', async () => {
+    const factory = vi.fn(async () => makeTimeline().timeline);
+    service.setSessionTimelineFactory(factory);
+    const firstTurnText = async () => {
+      const read = await service.snapshot({ conversationId: 'conv-1' });
+      return read.ok ? read.value.turns.flatMap((turn) => turn.items.map((item) => (item as { text?: string }).text)) : read;
+    };
+    state.rows = [row({ providerSessionId: null, config: { type: 'acp', initialQueue: [{ text: 'hi' }], firstUtterance: 'hi' } })];
+    state.lifePending = ['conv-1:creation:0'];
+    expect(await firstTurnText()).toEqual([]);
+    state.rows = [row({ providerSessionId: null, config: { type: 'acp', initialQueue: [{ text: 'hi' }], firstUtterance: 'hi', initialMessageId: 'msg-1' } })];
+    state.lifePending = ['msg-1'];
+    expect(await firstTurnText()).toEqual([]);
+    // Nothing holds it (never admitted, or withdrawn): the stand-in is the only place it is shown.
+    state.lifePending = ['another-input'];
+    expect(await firstTurnText()).toEqual(['hi']);
+    expect(factory).not.toHaveBeenCalled();
   });
 
   it('单一目录之前绑在非原生连接上的会话:用户根优先,那条连接自己的配置根排最后兜底;原生会话不带它', async () => {
