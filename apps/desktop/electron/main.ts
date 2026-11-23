@@ -3574,6 +3574,8 @@ const killEnginesOnCrash = createNativeLegReap({
       closeTunnelMachines?.()
       tunnelEndpoint?.stop()
     }],
+    // Remote SSH 的共享连接(ControlPersist,脱离进程树):正常退出由 will-quit 收,信号路径只走到这里。
+    ['ssh-masters', () => { closeSshMasters() }],
   ],
 })
 // #156 server 模式下这两个信号就是「停掉服务」(`gugu-server stop`、systemd、守护进程收账号进程):先停设备循环 ——
