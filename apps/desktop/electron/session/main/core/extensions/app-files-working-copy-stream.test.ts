@@ -28,11 +28,11 @@ const remoteFile = { size: text.length, etag: 'etag-1' };
 /** A machine a device link reaches: one stream per open, front to back from where it was opened. */
 function fakeStreams(linked = true) {
   const opened: { from: number; request: Record<string, unknown> }[] = [];
-  return { opened, linked: vi.fn(async () => linked), open: vi.fn(async (_device: string, type: string, request: (offset: number, stream: string) => Record<string, unknown>, size: number, from: number) => {
+  return { opened, linked: vi.fn(async () => linked), open: vi.fn(async (_device: string, type: string, request: (offset: number, stream: string, etag?: string) => Record<string, unknown>, pin: { etag?: string }, from: number) => {
     expect(type).toBe(MACHINE_FILE_STREAM);
-    opened.push({ from, request: request(from, 's') });
+    opened.push({ from, request: request(from, 's', pin.etag) });
     let next = from;
-    return { size, dispose: vi.fn(async () => undefined), read: async (offset: number, length: number) => {
+    return { ...remoteFile, dispose: vi.fn(async () => undefined), read: async (offset: number, length: number) => {
       if (offset !== next) throw new Error('A file stream is read front to back');
       next += length;
       return new Uint8Array(Buffer.from(text.slice(offset, offset + length)));
@@ -98,7 +98,7 @@ it('a read that jumps starts the stream again there, of the same version', async
 
 it('a file that changed under the stream is said so, not mixed', async () => {
   const streams = fakeStreams();
-  streams.open.mockImplementationOnce(async (_d, _t, _r, size) => ({ size, dispose: vi.fn(async () => undefined), read: async (): Promise<Uint8Array<ArrayBuffer>> => { throw new Error('Local file changed during read'); } }));
+  streams.open.mockImplementationOnce(async () => ({ ...remoteFile, dispose: vi.fn(async () => undefined), read: async (): Promise<Uint8Array<ArrayBuffer>> => { throw new Error('Local file changed during read'); } }));
   setWorkingCopyStreams(streams);
   await expect(readAppFile(page(), { ref: { workspace, id: 'big.txt' }, offset: 0, length: 10 })).rejects.toMatchObject({ code: 'content-changed' });
 });
@@ -112,10 +112,14 @@ it('the machine streams its working copy\'s file to its own account only, of the
     return f.root;
   });
   const written: [number, string][] = [];
-  const context = (userId: string) => ({ userId, signal: new AbortController().signal, write: async (offset: number, bytes: Uint8Array) => { written.push([offset, Buffer.from(bytes).toString()]); } });
+  const heads: { size: number; etag: string }[] = [];
+  // The head is said before the first byte.
+  const context = (userId: string) => ({ userId, signal: new AbortController().signal,
+    head: (version: { size: number; etag: string }) => { expect(written).toHaveLength(0); heads.push(version); },
+    write: async (offset: number, bytes: Uint8Array) => { written.push([offset, Buffer.from(bytes).toString()]); } });
   const request = (extra: Record<string, unknown> = {}) => ({ ref: { workspace, id: 'clip.bin' }, offset: 3, etag, stream: 's', ...extra });
   await expect(stream(request(), context('someone-else'))).rejects.toMatchObject({ code: 'denied' });
-  await expect(stream(request({ etag: 'old' }), context('owner'))).rejects.toMatchObject({ code: 'content-changed' });
+  await expect(stream(request({ etag: 'old' }), context('owner'))).rejects.toThrow(/changed/);
   await expect(stream(request({ ref: { workspace, id: '../escape.bin' } }), context('owner'))).rejects.toThrow();
   expect(await stream(request(), context('owner'))).toEqual({ size: 10, etag });
   expect(written).toEqual([[3, '3456789']]);
@@ -128,6 +132,17 @@ it('the machine streams its working copy\'s file to its own account only, of the
   written.length = 0;
   expect(await stream(place(), context('owner'))).toEqual({ size: 10, etag });
   expect(written).toEqual([[8, '89']]);
+  // No version named: the one on disk, said in the head before its bytes.
+  written.length = 0; heads.length = 0;
+  const { etag: _pinned, ...unpinned } = place({ offset: 0 });
+  expect(await stream(unpinned, context('owner'))).toEqual({ size: 10, etag });
+  expect(heads).toEqual([{ size: 10, etag }]);
+  expect(written).toEqual([[0, '0123456789']]);
+  // A refused version says no head and sends no byte.
+  written.length = 0; heads.length = 0;
+  await expect(stream(place({ etag: 'old' }), context('owner'))).rejects.toThrow(/changed/);
+  expect(heads).toEqual([]);
+  expect(written).toEqual([]);
 });
 
 it('whether a machine streams comes from its mapping; a linked machine streams or fails, never quietly reads otherwise', async () => {
