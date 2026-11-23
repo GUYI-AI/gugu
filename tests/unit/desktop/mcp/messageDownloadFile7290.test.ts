@@ -19,6 +19,9 @@ const LEGACY_URL = 'https://db.test/storage/v1/object/public/chat-media/u/notes.
 const legacy = `[附件] notes.pdf (application/pdf)\n[URL] ${LEGACY_URL}\n[Size] 5\n[Kind] file`
 const envelope = '[附件] deck.pdf (application/pdf)\n[Size] 5\n[Kind] file'
 const homes: string[] = []
+const ITEM = '99999999-9999-4999-8999-999999999999'
+// A folder file is first asked as the agent (workspace_get_as): stored bytes go to the resolver.
+const STORED = { restRpc: async (name: string) => { expect(name).toBe('workspace_get_as'); return [{ id: ITEM, kind: 'file', version: 2 }] } }
 afterEach(async () => { await Promise.all(homes.splice(0).map((home) => rm(home, { recursive: true, force: true }))) })
 
 const OWNER = '22222222-2222-4222-8222-222222222222'
@@ -196,13 +199,40 @@ describe('message_download_file by source_message_id (#7290)', () => {
     const context = { agentId: AGENT, guguHome: home, resolveFile: async (ref: unknown, actor: string) => {
       calls.push([ref, actor]); return verifiedFileHandle(Buffer.from('bytes'), { file_name: 'brief.txt', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })
     } }
-    const receipt = JSON.parse(await callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, {}))
+    const receipt = JSON.parse(await callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, STORED))
     expect(calls).toEqual([[{ item_id: '99999999-9999-4999-8999-999999999999', version: 2 }, AGENT]])
     expect(receipt).toMatchObject({ file_name: 'brief.txt', read_only: true, file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' })
     // The tool's description stays one line; how to change a shared copy rides in the result that hands it over.
     expect(receipt.note).toContain('copy it to a file of your own')
     expect(await readFile(receipt.file_path, 'utf8')).toBe('bytes')
     await expect(callTool(context, 'message_download_file', { file: 'notes.txt' }, {})).rejects.toThrow('gugu-file://<item_id>?v=<n>')
+  })
+
+  // A live text file people and agents edit together has no stored bytes for the resolver: its text now is the file
+  // service's, read as the agent — what the Files App's own download reads.
+  test('a live text file by its gugu-file link: saves its text now, read from the file service as this agent', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gugu-download-live-')); homes.push(home)
+    const read: unknown[] = []
+    let text = '# P0\n- row 1\n'
+    const context = { agentId: AGENT, guguHome: home,
+      resolveFile: async () => { throw new Error('a live text file has no stored bytes to resolve') },
+      readDocument: async (itemId: string, actor: string) => { read.push([itemId, actor]); return text } }
+    const deps = { restRpc: async (name: string, body: Record<string, unknown>) => {
+      expect([name, body]).toEqual(['workspace_get_as', { p_item_id: ITEM, p_as_user_id: AGENT }])
+      return [{ id: ITEM, chat_id: CHAT, kind: 'document', filename: 'P0 跟进表.md', content_type: 'text/markdown', version: 2 }]
+    } }
+    for (const file of [`gugu-file://${ITEM}`, `gugu-file://${ITEM}?v=2`]) {
+      const receipt = JSON.parse(await callTool(context, 'message_download_file', { file }, deps))
+      expect(receipt).toMatchObject({ file_name: 'P0 跟进表.md', read_only: true, file: `gugu-file://${ITEM}?v=2`,
+        sha256: createHash('sha256').update(text).digest('hex'), size_bytes: Buffer.byteLength(text) })
+      expect(await readFile(receipt.file_path, 'utf8')).toBe(text)
+      text += '- row 2 中文\n'
+    }
+    expect(read).toEqual([[ITEM, AGENT], [ITEM, AGENT]])
+    // An earlier version than its current one is a pinned copy: the resolver's (gone when it holds none).
+    const pinned = { ...context, resolveFile: async () => ({ status: 'gone', sha256: null }) }
+    await expect(callTool(pinned, 'message_download_file', { file: `gugu-file://${ITEM}?v=1` }, deps)).rejects.toThrow('no longer readable (gone)')
+    expect(read).toHaveLength(2)
   })
 
   test('a second call for the same file waits on the download in flight instead of fetching again', async () => {
@@ -213,14 +243,14 @@ describe('message_download_file by source_message_id (#7290)', () => {
     const context = { agentId: AGENT, guguHome: home, resolveFile: async () => {
       opened++; await gate; return verifiedFileHandle(Buffer.from('bytes'), { file_name: 'big.bin', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })
     } }
-    const first = callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, {})
-    const second = callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, {})
+    const first = callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, STORED)
+    const second = callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, STORED)
     release()
     const [a, b] = (await Promise.all([first, second]) as string[]).map(text => JSON.parse(text))
     expect(opened).toBe(1)
     expect(a.file_path).toBe(b.file_path)
     // Settled downloads leave the table: a later call reads again (and finds the stored copy).
-    await callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, {})
+    await callTool(context, 'message_download_file', { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }, STORED)
     expect(opened).toBe(2)
   })
 
@@ -238,15 +268,15 @@ describe('message_download_file by source_message_id (#7290)', () => {
     const args = { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     try {
-      const first = callTool(context, 'message_download_file', args, {})
+      const first = callTool(context, 'message_download_file', args, STORED)
       await vi.advanceTimersByTimeAsync(DOWNLOAD_CALL_BUDGET_MS)
       expect(JSON.parse(await first)).toEqual({ status: 'transferring', state: 'waiting_sender', waited_ms: DOWNLOAD_CALL_BUDGET_MS,
         next: 'call message_download_file again with the same arguments' })
       progress!(1, 5)
-      const second = callTool(context, 'message_download_file', args, {})
+      const second = callTool(context, 'message_download_file', args, STORED)
       await vi.advanceTimersByTimeAsync(DOWNLOAD_CALL_BUDGET_MS)
       expect(JSON.parse(await second)).toMatchObject({ status: 'transferring', state: 'transferring', waited_ms: 2 * DOWNLOAD_CALL_BUDGET_MS })
-      const third = callTool(context, 'message_download_file', args, {})
+      const third = callTool(context, 'message_download_file', args, STORED)
       release()
       expect(JSON.parse(await third)).toMatchObject({ file_name: 'big.bin', size_bytes: 5 })
       expect(opened).toBe(1)
@@ -266,13 +296,13 @@ describe('message_download_file by source_message_id (#7290)', () => {
     const args = { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
     try {
-      const first = callTool(context, 'message_download_file', args, {})
+      const first = callTool(context, 'message_download_file', args, STORED)
       await vi.advanceTimersByTimeAsync(DOWNLOAD_CALL_BUDGET_MS)
       expect(JSON.parse(await first)).toMatchObject({ status: 'transferring' })
       refuse(Object.assign(new Error("its account's storage is full (quota_full)"), { code: 'quota_full' }))
       await vi.advanceTimersByTimeAsync(0)
-      await expect(callTool(context, 'message_download_file', args, {})).rejects.toThrow('(quota_full)')
-      expect(JSON.parse(await callTool(context, 'message_download_file', args, {}))).toMatchObject({ file_name: 'big.bin' })
+      await expect(callTool(context, 'message_download_file', args, STORED)).rejects.toThrow('(quota_full)')
+      expect(JSON.parse(await callTool(context, 'message_download_file', args, STORED))).toMatchObject({ file_name: 'big.bin' })
       expect(opened).toBe(2)
       expect(unhandled).not.toHaveBeenCalled()
     } finally { vi.useRealTimers(); process.off('unhandledRejection', unhandled) }
@@ -287,8 +317,8 @@ describe('message_download_file by source_message_id (#7290)', () => {
       return verifiedFileHandle(Buffer.from('bytes'), { file_name: 'big.bin', item_id: '99999999-9999-4999-8999-999999999999', version: 2 })
     } }
     const args = { file: 'gugu-file://99999999-9999-4999-8999-999999999999?v=2' }
-    await expect(callTool(context, 'message_download_file', args, {})).rejects.toThrow('(quota_full)')
-    expect(JSON.parse(await callTool(context, 'message_download_file', args, {}))).toMatchObject({ file_name: 'big.bin' })
+    await expect(callTool(context, 'message_download_file', args, STORED)).rejects.toThrow('(quota_full)')
+    expect(JSON.parse(await callTool(context, 'message_download_file', args, STORED))).toMatchObject({ file_name: 'big.bin' })
     expect(opened).toBe(2)
   })
 
