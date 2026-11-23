@@ -240,7 +240,7 @@ describe('the inner column\'s width (#2642)', () => {
 
   it('may take at most 40% of the card, never less than today\'s width nor more than 520', () => {
     expect(innerSidebarMaxWidth(860)).toBe(344);
-    expect(innerSidebarMaxWidth(560), 'a narrow card still holds today\'s width').toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
+    expect(innerSidebarMaxWidth(500), 'a narrow card still holds today\'s width').toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
     expect(innerSidebarMaxWidth(-40)).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
     expect(innerSidebarMaxWidth(4000)).toBe(520);
     expect(innerSidebarMaxWidth(null), 'not measured yet: only the hard cap').toBe(520);
@@ -255,7 +255,7 @@ describe('the inner column\'s width (#2642)', () => {
     expect(layout.innerShownWidth(), 'not measured yet').toBe(500);
     act(() => layout.setWorkspaceWidth(1000));
     expect(layout.innerShownWidth()).toBe(304);
-    act(() => layout.setLeftWidth(400));
+    act(() => layout.setLeftWidth(500));
     expect(layout.innerShownWidth()).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
     act(() => layout.setWorkspaceWidth(2000));
     expect(layout.innerShownWidth()).toBe(500);

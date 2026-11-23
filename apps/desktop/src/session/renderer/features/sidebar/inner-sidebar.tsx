@@ -256,18 +256,9 @@ const InnerSidebarColumn = observer(function InnerSidebarColumn({
     <InnerSidebarFrame kind={anchor.kind} chatId={anchor.chatId}>
       <InnerHeadRow anchor={anchor} summary={summary} active={headActive} />
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
-        {/* 第二级(全部话题):「话题」上面的分区原样留着,下面的收走 —— 「全部 › / ‹ 返回」因此永远在同一个位置。 */}
-        {anchor.kind === 'project' ? (
-          <>
-            {agentsSection}
-            {topics}
-          </>
-        ) : (
-          <>
-            {topics}
-            {levelTwo ? null : agentsSection}
-          </>
-        )}
+        {/* 群、项目同一个次序(第 16 版稿):「话题」在上、「智能体」在下。第二级(全部话题)收走下面的「智能体」,「全部 › / ‹ 返回」因此永远在同一个位置。 */}
+        {topics}
+        {levelTwo ? null : agentsSection}
       </div>
     </InnerSidebarFrame>
   );
@@ -305,7 +296,7 @@ const InnerSidebarFrame = observer(function InnerSidebarFrame({
 
 /** 群或项目的脸:自己设的头像,没设就是默认头像(同聊天列表那一行)。 */
 function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSummary | null }) {
-  return <Avatar name={summary?.name ?? ''} avatarUrl={summary?.avatar} seed={chatId} size={32} variant="group" />;
+  return <Avatar name={summary?.name ?? ''} avatarUrl={summary?.avatar} seed={chatId} size={40} variant="group" />;
 }
 
 /**
@@ -372,7 +363,8 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
             onToggle={() => setSidebarFold('inner:topics', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandTopics' : 'sidebar.collapseTopics')}
           />
-          {view && view.total > 0 ? <span className={sidebarCountClass}>{view.total}</span> : null}
+          {/* 稿子上没有话题也写「0」。 */}
+          {view ? <span className={sidebarCountClass}>{view.total}</span> : null}
           {/* 收起时标题旁挂里面叫到你的(同「对话」分区头那个未读数)。 */}
           {collapsed ? <SidebarUnreadCount count={view?.calling ?? 0} /> : null}
         </span>
@@ -400,7 +392,7 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
       </div>
       {/* 话题行画进这一格(壳那棵树);格子里的东西归壳管,这一侧 ❌ 往里放子元素。左右留白归 list body(SidebarMenu)。 */}
       {collapsed ? null : (
-        <SidebarMenu>
+        <SidebarMenu data-inner-rows="">
           <div ref={slot} data-region="inner-sidebar-topics" className="min-h-0" />
         </SidebarMenu>
       )}
@@ -412,7 +404,7 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
 });
 
 /**
- * 「智能体」:标题旁一个数(总数,连子会话),❌ 药丸、❌「需要你 / 运行中」组头(#2548 ⑥):一张平的表(chatAgentSection),
+ * 「智能体」:标题旁 ❌ 数(第 16 版稿只有「话题」挂数),❌ 药丸、❌「需要你 / 运行中」组头(#2548 ⑥):一张平的表(chatAgentSection),
  * 按最近的动静排,状态只看行尾那几个记号。群里也只列我的,标题照样写「智能体」(owner 11-12)。
  */
 const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents }: { anchor: InnerSidebarRoomAnchor; agents: readonly ChatAgentEntry[] }) {
@@ -445,14 +437,13 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
             onToggle={() => setSidebarFold('inner:agents', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandAgents' : 'sidebar.collapseAgents')}
           />
-          {total > 0 ? <span className={sidebarCountClass} data-inner-agents-count="">{total}</span> : null}
           {collapsed ? <SidebarUnreadCount count={chatAgentNeedsYou(agents)} /> : null}
         </span>
       </div>
       {collapsed ? null : total === 0 ? (
         <div className={innerSectionEmptyClass}>{translate('sidebar.noAgents')}</div>
       ) : (
-        <SidebarMenu className="pb-1">
+        <SidebarMenu className="pb-1" data-inner-rows="">
           {list.rows.map((row) => (
             <SidebarSessionItem
               key={row.sessionId}
