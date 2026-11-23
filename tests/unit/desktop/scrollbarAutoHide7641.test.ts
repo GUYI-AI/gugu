@@ -76,6 +76,22 @@ describe('@@@scrollbar-autohide (#7641) 滚动中标记', () => {
     expect(setAttribute).toHaveBeenCalledTimes(2)
   })
 
+  // scroll 一秒几十次:每次都 clearTimeout + setTimeout 就是每个事件两次计时器调用(Air 上占滚动主线程 11%)。
+  it('连续滚动只挂一个计时器,❌ 不能每个 scroll 事件都重挂', () => {
+    uninstall = installScrollbarAutoHide(document, 800)
+    const el = scrollableDiv()
+    const setTimer = vi.spyOn(globalThis, 'setTimeout')
+    const clearTimer = vi.spyOn(globalThis, 'clearTimeout')
+
+    for (let i = 0; i < 60; i++) {
+      el.dispatchEvent(new Event('scroll'))
+      vi.advanceTimersByTime(16)
+    }
+    expect(setTimer.mock.calls.length, '60 次滚动').toBeLessThanOrEqual(2)
+    expect(clearTimer).not.toHaveBeenCalled()
+    expect(vi.getTimerCount()).toBe(1)
+  })
+
   it('鼠标留在可滚动区域内,停滚后仍隐藏;CSS 只让滚动中的滑块显色', () => {
     uninstall = installScrollbarAutoHide(document, 800)
     const el = scrollableDiv()
