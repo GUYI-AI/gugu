@@ -47,7 +47,7 @@ import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 const user = { id: 'owner-install', email: 'owner@example.test', nickname: 'Owner' }
 let harness: ReturnType<typeof createReactHarness>
 let tourEntry: HTMLButtonElement | undefined
-let tourRail: HTMLElement | undefined
+let tourSidebar: HTMLElement | undefined
 const byId = (id: string) => harness.container.querySelector<HTMLElement>(`[data-testid="${id}"]`)
 const notice = () => byId('first-run-install-notification')
 
@@ -61,8 +61,8 @@ beforeEach(async () => {
 })
 afterEach(() => {
   harness.cleanup()
-  tourRail?.remove()
-  tourRail = undefined
+  tourSidebar?.remove()
+  tourSidebar = undefined
   tourEntry = undefined
   queryClient.clear()
   vi.unstubAllGlobals()
@@ -124,22 +124,25 @@ describe('installation notices appear only after full-screen first-run pages', (
   it.each(['complete', 'skip'] as const)('hides the installation notice throughout the tour and restores it after %s', async (exit) => {
     native.install.mockImplementation(() => new Promise(() => {}))
     await startAndVisitSetup()
+    // 界面减法 #51: the 设置 step points at my avatar at the foot of the sidebar.
     tourEntry = document.createElement('button')
-    tourEntry.dataset.rail = 'settings'
+    tourEntry.dataset.testid = 'me-menu-trigger'
     tourEntry.scrollIntoView = vi.fn()
     tourEntry.getBoundingClientRect = () => ({ x: 0, y: 40, top: 40, left: 0, right: 40, bottom: 80, width: 40, height: 40, toJSON() {} })
-    tourRail = document.createElement('nav')
-    tourRail.className = 'gg-sidebar-rail'
-    tourRail.append(tourEntry)
-    document.body.append(tourRail)
+    tourSidebar = document.createElement('nav')
+    tourSidebar.dataset.region = 'left-sidebar'
+    tourSidebar.append(tourEntry)
+    document.body.append(tourSidebar)
     await clickElement(byId('first-run-tour-start')!)
-    await waitForCondition(() => !!document.querySelector('[data-testid="product-tour-step-settings"]'), 'tour card shown')
+    // My avatar is the entry of the assistant, 联系人, 市场 and 设置 steps: the tour runs those four.
+    const card = () => document.querySelector('[data-testid^="product-tour-step-"]')
+    await waitForCondition(() => !!card(), 'tour card shown')
     expect(notice()).toBeNull()
 
-    if (exit === 'complete') await clickElement(document.querySelector('[data-testid="product-tour-next"]')!)
+    if (exit === 'complete') while (card()) await clickElement(document.querySelector('[data-testid="product-tour-next"]')!)
     else await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
     await waitForCondition(() => !!notice(), 'installation progress restored after tour')
-    expect(document.querySelector('[data-testid="product-tour-step-settings"]')).toBeNull()
+    expect(card()).toBeNull()
     expect(notice()!.querySelector('[data-testid="install-progress-track"]')).not.toBeNull()
     expect(native.install).toHaveBeenCalledOnce()
   })

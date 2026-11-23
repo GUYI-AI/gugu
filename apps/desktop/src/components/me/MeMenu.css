@@ -26,7 +26,7 @@
   padding: 8px;
   border-radius: 16px;
   background: var(--muted);
-  box-shadow: 0 0 0 0.5px var(--border-strong), 0 12px 36px rgb(0 0 0 / 0.16);
+  box-shadow: var(--shadow-menu);
   outline: none;
 }
 .gg-me-blk {
