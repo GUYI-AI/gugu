@@ -1503,8 +1503,10 @@ body.barcode-scanner-active #root {
    (paint containment 不分跳没跳过),让出的宽度取头像栏的触控宽。 */
 /* 头像栏宽(GroupAvatarSlot):桌面与头像按钮同宽;触控宽 = 手机的点击目标,已读环在手机上的点击区也用它。 */
 :root { --msg-avatar-gutter: 32px; --msg-avatar-gutter-touch: 44px; }
-/* 记真实大小(auto)要在可跳过之前就开着:浏览器只在这条属性在场时记,data-laid-out 那一刻才开就没记下,屏幕外的行先按占位排。 */
-.gg-msg-row > [data-row-body] { contain-intrinsic-size: auto 160px; }
+/* 记真实大小(auto)要在可跳过之前就开着:浏览器只在这条属性在场时记,data-laid-out 那一刻才开就没记下,屏幕外的行先按占位排。
+   @@@row-style-scope — contain: style 也从一挂上就开着(content-visibility:auto 本来就带它,跳过之后的样子不变):Blink 给后来才打开的
+   style containment 建的引号作用域(OrderedScope<LayoutQuote>)在行卸载后不收,每行留一个,开关一次会话 / 查看器就涨几十个。 */
+.gg-msg-row > [data-row-body] { contain-intrinsic-size: auto 160px; contain: style; }
 .gg-msg-row[data-laid-out] > [data-row-body] { content-visibility: auto; overflow-clip-margin: var(--msg-avatar-gutter-touch); }
 
 /* ── theme batch A:助理 App(.ta-*)的颜色取值 ───────────────────────────────────────────────
