@@ -47,7 +47,7 @@ export function DetailsTile({ icon, label, testId, ...props }: { icon: ReactNode
   return (
     <button type="button" data-testid={testId} {...props}
       className="flex h-[62px] min-w-0 cursor-pointer flex-col items-center justify-center gap-[5px] rounded-xl bg-[var(--muted)] text-[12px] text-[var(--fg)] hover:bg-[color-mix(in_oklab,var(--fg)_6%,var(--muted))]">
-      <span className="flex shrink-0 [&_svg]:size-[18px]">{icon}</span><span className="line-clamp-2 max-w-full px-0.5 text-center leading-[14px] break-words">{label}</span>
+      <span className="flex shrink-0 [&_svg]:size-[18px]">{icon}</span><span className="line-clamp-2 max-w-full px-0.5 text-center leading-[14px] break-words [text-wrap:balance]">{label}</span>
     </button>
   )
 }
