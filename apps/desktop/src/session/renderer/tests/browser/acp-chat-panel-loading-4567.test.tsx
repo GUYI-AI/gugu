@@ -105,6 +105,8 @@ describe('ACP task chat loading state (#4567)', () => {
   it('keeps the task surface mounted, without a skeleton, while the conversation store is attaching', async () => {
     host = document.createElement('div');
     host.className = 'emlight gugu-skin';
+    // A task block's size comes from the screen layout; the surface fills it (no content of its own yet).
+    host.style.cssText = 'width: 800px; height: 600px; display: grid;';
     document.body.appendChild(host);
     root = createRoot(host);
     // 「重新登录」那一行拿着 queryClient(登完让模型目录重读);这里给一份空的。
@@ -118,8 +120,8 @@ describe('ACP task chat loading state (#4567)', () => {
     const element = host.querySelector<HTMLElement>('[data-session-chat-surface]');
     expect(getComputedStyle(element!).visibility).toBe('visible');
     expect(getComputedStyle(element!).display).not.toBe('none');
-    expect(element!.getBoundingClientRect().width).toBeGreaterThan(0);
-    expect(element!.getBoundingClientRect().height).toBeGreaterThan(0);
+    expect(element!.getBoundingClientRect().width).toBe(800);
+    expect(element!.getBoundingClientRect().height).toBe(600);
     expect(host.querySelector('[data-skeleton-bubble]')).toBeNull();
     expect(host.querySelector('[role="status"][aria-busy="true"]')).toBeNull();
     expect(host.querySelector('[data-gg-loading]')).toBeNull();
