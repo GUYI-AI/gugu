@@ -193,3 +193,23 @@
 @media (hover: hover) {
   [data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row:hover .gg-list-row-title { color: var(--fg); }
 }
+
+/* @@@page-modal App 市场、App 页照设置的内容版式:灰底(--sidebar),卡片保持白色。
+   App 页的内容是 App 自己的网页:它所在的那一格(data-extension-slot)当作一张白卡片,四周留出灰底;
+   网页按这一格的圆角裁(extension-view-layer pageCorners)。 */
+/* 页的底读 --screen-ground(workspace-layout.tsx WorkspaceContentLayout),在弹窗这一层给它灰底。 */
+[data-page-modal] {
+  --screen-ground: var(--sidebar);
+}
+[data-page-modal] .mk-market-header {
+  background: var(--sidebar);
+}
+[data-page-modal] .mk-market-card {
+  background: var(--card);
+}
+[data-page-modal='app'] [data-extension-slot] {
+  margin: 0 var(--spacing-2xl) var(--spacing-2xl);
+  border-radius: var(--radius-surface);
+  background: var(--card);
+  box-shadow: var(--shadow-lift);
+}
