@@ -66,7 +66,8 @@ it('writes an identical Pi provider catalog for different custom selections shar
   expect(models(alpha).mode).toBe(0o600);
   expect(models(alpha).content).not.toContain('local-token');
   expect(JSON.parse(models(alpha).content).providers).toMatchObject({
-    'gugu-alpha': { baseUrl: piProviders[0]!.baseUrl, models: [{ id: 'same-model', maxTokens: 4096, reasoning: true, input: ['text', 'image'] }, { id: 'undeclared', input: ['text', 'image'] }, { id: 'text-only', input: ['text'] }] },
+    // Without it pi omits `strict` and the Responses API samples every optional tool parameter (reply_to_message_id: "/").
+    'gugu-alpha': { baseUrl: piProviders[0]!.baseUrl, compat: { supportsStrictMode: true }, models: [{ id: 'same-model', maxTokens: 4096, reasoning: true, input: ['text', 'image'] }, { id: 'undeclared', input: ['text', 'image'] }, { id: 'text-only', input: ['text'] }] },
     'gugu-beta': { baseUrl: piProviders[1]!.baseUrl },
   });
   expect(settings(alpha).defaultProvider).toBe('gugu-alpha');

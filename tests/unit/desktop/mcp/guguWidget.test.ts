@@ -98,6 +98,10 @@ describe('widget_send', () => {
     // The task timeline draws the widget from its arguments and this receipt: the chat it landed in and its identity.
     expect(receipt).toEqual({ status: 'sent', message_id: rows[0]!.p_message_id, widget_id: 'stable-widget', source_link: `gugu-chat://${chat}/${rows[0]!.p_message_id}` })
     await expect(sendWidgetOf({ ...context, forkOf: 'origin' }, args, content, deps)).rejects.toThrow('side chat')
+    // An agent that names its own task by its session id gets told a session is not a chat, before any read.
+    await expect(sendWidgetOf(context, { ...args, chat_id: `session:${chat}` }, content, deps)).rejects.toThrow('a session is not a chat')
+    expect(JSON.parse(await sendWidgetOf(context, { ...args, chat_id: `chat:${chat}` }, content, deps)).source_link).toContain(`gugu-chat://${chat}/`)
+    expect(rows).toHaveLength(2)
   })
 
   it('a terminal session cannot put a widget into its owner\'s private chat; a group still takes it', async () => {
