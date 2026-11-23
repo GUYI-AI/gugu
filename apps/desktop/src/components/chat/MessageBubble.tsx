@@ -210,7 +210,7 @@ export const MessageBubble = memo(function MessageBubble({
   // @@@1355 sender avatars are projected only from the canonical sender URL.
   // Display-only naming never changes the sender id or profile actions.
   const avatar = <MessageSenderAvatar senderUserId={msg.sender_user_id} name={avatarName} avatarUrl={avatarUrl} seed={msg.is_mine ? user?.id : (msg.sender_user_id ?? undefined)} size="sm" isAgent={avatarIsAgent} harnessBadge={!compactMobile} agentStatus={avatarIsAgent ? memberProfile?.agentStatus : undefined} still />
-  const canOpenProfile = !!memberProfile && !!memberProfileOpener
+  const profile = memberProfile && memberProfileOpener ? { handle: memberProfileOpener.handle, payload: { member: memberProfile, preferredSide: msg.is_mine ? 'left' as const : 'right' as const, openedFrom: memberProfileOpener.openedFrom } } : null
 
   if (msg.content_type === 'system') return <SystemMessageNotice message={msg} senderName={avatarName} onOpenTopic={onOpenTopicAnchor} />
   const showSender = isGroup && !msg.is_mine && !groupedWithPrev && !card && !!avatarName
@@ -241,14 +241,14 @@ export const MessageBubble = memo(function MessageBubble({
       }}
     >
       {/* Avatar — both sent and received；一组只在组尾画一个头像(sticky 贴滚动区底边),其余几条用等宽占位保持气泡对齐 */}
-      {hideAvatar ? null : <GroupAvatarSlot wide={compactMobile} groupedWithPrev={groupedWithPrev} groupedWithNext={groupedWithNext}>{canOpenProfile ? (
+      {hideAvatar ? null : <GroupAvatarSlot wide={compactMobile} groupedWithPrev={groupedWithPrev} groupedWithNext={groupedWithNext}>{profile ? (
         <MemberProfileAvatarButton
-          member={memberProfile!}
+          member={profile.payload.member}
           testId={AUTOMATION_TEST_IDS.messageAvatarProfileButton}
           avatarSize="sm"
           buttonSize={compactMobile ? 44 : 32}
           messageSenderId={msg.sender_user_id ?? undefined}
-          profile={{ handle: memberProfileOpener!.handle, payload: { member: memberProfile!, preferredSide: msg.is_mine ? 'left' : 'right', openedFrom: memberProfileOpener!.openedFrom } }}
+          profile={profile}
         />
       ) : avatar}</GroupAvatarSlot>}
 
@@ -342,7 +342,7 @@ export const MessageBubble = memo(function MessageBubble({
             onPointerDownCapture={(e) => setMenuLink(e.target instanceof Element ? e.target.closest<HTMLAnchorElement>('a[href]') : null)}
           >
             {/* 名字只在群里收到的、一组的第一条上(DM 头栏已经说了是谁);任务卡自己写着是谁发的。 */}
-            {showSender && <BubbleSender member={memberProfile} displayName={avatarName} senderId={msg.sender_user_id} replyMark={replyQuote} />}
+            {showSender && <BubbleSender member={memberProfile} displayName={avatarName} senderId={msg.sender_user_id} replyMark={replyQuote} profile={compactMobile ? null : profile} />}
             {isRetracted ? (
               // #1323 模块3 — 撤回文字 --text-tertiary→--muted-fg(原偏淡)
               <span className="msg-time-room-inline" style={{ color: 'var(--muted-fg)', fontStyle: 'italic', '--msg-time-room': timeRoom } as React.CSSProperties}>{t('message.retracted')}</span>
