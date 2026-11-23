@@ -22,7 +22,7 @@ import { LibraryHostProvider, LOCAL_LIBRARY_HOST, machineLibraryHost } from '@re
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { PageContent, PageLayout } from '@renderer/lib/components/page-layout';
 import { PageModalClose, ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
-import { MODAL_HEADER_H } from '@/components/ui/ModalClose';
+import { MODAL_HEADER_H, MODAL_TITLE } from '@/components/ui/ModalClose';
 import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider';
 import { appState } from '@renderer/lib/stores/app-state';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
@@ -176,6 +176,8 @@ const AppTitlebar = observer(function AppTitlebar() {
   const heading = main ? extensionTabTitle(extensionSurfaceStore.said(null, 'dock'), main.extensionName) : null;
   const openInWindowLabel = translate('tabs.openInWindow');
   const assistantPage = useShownAsAssistant(params.appId, params.tab);
+  // In a modal its name is the modal's title, as Settings' is (@@@page-modal-close).
+  const inModal = useContext(PageModalClose) !== null;
   // The assistant's page: nothing of the App's on the band but a reported error's mark. Its page starts at the top, under
   // this band, so the band is not the window's handle while the page is drawn (a drag band over the App's webview takes
   // real clicks on its tabs, owner 11-12): the conversation's column carries the handle (AppConversationFrame `windowHandle`).
@@ -191,7 +193,7 @@ const AppTitlebar = observer(function AppTitlebar() {
       leftSlot={
         main ? (
           <span className="flex min-w-0 items-center gap-1">
-            <span className="text-sm font-medium" title={heading?.tooltip}>{heading?.label}</span>
+            <span className="text-sm font-medium" style={inModal ? MODAL_TITLE : undefined} title={heading?.tooltip}>{heading?.label}</span>
             {error ? <AppErrorMark error={error} onToggle={() => toggleErrorDetails(main.kind)} testId="app-page-error" /> : null}
           </span>
         ) : null

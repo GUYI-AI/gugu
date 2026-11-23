@@ -22,5 +22,7 @@ export function ModalClose({ onClose, label, floating = false }: { onClose: () =
 export const MODAL_CLOSE_TOP = 'var(--spacing-2xl)'
 export const MODAL_ROW_CENTER = 'calc(var(--spacing-2xl) + var(--control-h-lg) / 2)'
 export const MODAL_HEADER_H = 'calc(var(--spacing-2xl) + var(--control-h-lg) + var(--spacing-md))'
+/** Settings' page title (settings.css: --font-heading, semibold), for a page modal whose title is its own. */
+export const MODAL_TITLE: CSSProperties = { fontSize: 'var(--font-heading)', lineHeight: 'var(--lh-heading)', fontWeight: 'var(--font-weight-semibold)' }
 
 const FLOATING: CSSProperties = { position: 'absolute', zIndex: 1, top: MODAL_CLOSE_TOP, right: 'var(--spacing-lg)' }
