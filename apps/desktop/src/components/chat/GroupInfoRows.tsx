@@ -86,20 +86,20 @@ export function GroupMembersBlock({ chatId, settings, memberIds, total, people, 
     <div role="button" tabIndex={0} data-testid="group-settings-members" onClick={onOpen}
       onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }}
       className="mb-3 flex h-12 cursor-pointer items-center gap-2.5 rounded-xl bg-[var(--muted)] px-3 text-[13.5px]">
-      <span className="flex ps-1.5">
+      <span className="flex shrink-0 ps-1.5">
         {memberIds.slice(0, MEMBER_PREVIEW_COUNT).map((id) => (
           <span key={id} className="-ms-1.5 flex rounded-full ring-2 ring-[var(--muted)]">
             <Avatar name={identitiesById[id]?.display_name ?? ''} avatarUrl={identitiesById[id]?.avatar ?? null} seed={id} size={22} />
           </span>
         ))}
       </span>
-      <span>{t('group.settings.members')}</span>
-      <span className="text-[12.5px] text-[var(--muted-fg)]">{people !== null && agents !== null ? t('groupDetails.memberSummary', { people, agents })
+      <span className="shrink-0 whitespace-nowrap">{t('group.settings.members')}</span>
+      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--muted-fg)]">{people !== null && agents !== null ? t('groupDetails.memberSummary', { people, agents })
         : total === null ? <Unknown className="w-[2ch]" /> : t('group.settings.memberCount', { count: total })}</span>
-      <span className="ms-auto flex items-center" onClick={contain} onKeyDown={contain}>
+      <span className="ms-auto flex shrink-0 items-center" onClick={contain} onKeyDown={contain}>
         <GroupAddMenu chatId={chatId} canAddMembers={groupInviteAccess(chatId, 'group', settings).showInvite} labeled />
       </span>
-      <ChevronRight className="size-3.5 text-[var(--faint-fg)]" />
+      <ChevronRight className="size-3.5 shrink-0 text-[var(--faint-fg)]" />
     </div>
   )
 }

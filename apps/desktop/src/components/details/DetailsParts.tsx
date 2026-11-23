@@ -6,7 +6,7 @@ import { ChevronRight } from '@/lib/icons'
  * details and a chat's. Only layout and look; every row's action is its caller's existing one.
  */
 export function DetailsPage({ children, testId }: { children: ReactNode; testId?: string }) {
-  return <div data-testid={testId} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-[26px] py-[22px]">{children}</div>
+  return <div data-testid={testId} className="@container/details flex min-h-0 flex-1 flex-col overflow-y-auto px-[26px] py-[22px]">{children}</div>
 }
 
 /** Centered: the avatar, the name (its own editor), one line under it. */
@@ -47,7 +47,7 @@ export function DetailsTile({ icon, label, testId, ...props }: { icon: ReactNode
   return (
     <button type="button" data-testid={testId} {...props}
       className="flex h-[62px] min-w-0 cursor-pointer flex-col items-center justify-center gap-[5px] rounded-xl bg-[var(--muted)] text-[12px] text-[var(--fg)] hover:bg-[color-mix(in_oklab,var(--fg)_6%,var(--muted))]">
-      <span className="flex [&_svg]:size-[18px]">{icon}</span><span className="max-w-full truncate px-1">{label}</span>
+      <span className="flex shrink-0 [&_svg]:size-[18px]">{icon}</span><span className="line-clamp-2 max-w-full px-0.5 text-center leading-[14px] break-words">{label}</span>
     </button>
   )
 }
@@ -60,18 +60,27 @@ export function DetailsList({ children }: { children: ReactNode }) {
   return <div className="mb-4 [&>*:last-child]:border-b-0">{children}</div>
 }
 
-/** One row: icon, words, what sits at its end (a value, a switch, the segmented control, a count with ›). */
+/**
+ * One row: icon, words, what sits at its end (a value, a switch, the segmented control, a count with ›). The words stay
+ * whole: a text value gives way first (truncates); a control that does not fit beside them wraps under them.
+ */
 export function DetailsRow({ icon, label, end, chevron, onClick, danger, testId, disabled }: {
   icon: ReactNode; label: string; end?: ReactNode; chevron?: boolean; onClick?: () => void; danger?: boolean; testId?: string; disabled?: boolean
 }) {
+  const text = typeof end === 'string' || typeof end === 'number'
   return (
     <div role={onClick ? 'button' : undefined} tabIndex={onClick && !disabled ? 0 : undefined} data-testid={testId} aria-disabled={disabled || undefined}
       onClick={disabled ? undefined : onClick}
       onKeyDown={onClick && !disabled ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } } : undefined}
-      className={`flex h-10 items-center gap-[11px] border-b border-[var(--border)] px-1 text-[13.5px]${onClick && !disabled ? ' cursor-pointer' : ''}${disabled ? ' opacity-50' : ''}${danger ? ' border-b-0 text-[var(--danger-fg)]' : ''}`}>
-      <span className={`flex [&_svg]:size-4${danger ? '' : ' text-[var(--muted-fg)]'}`}>{icon}</span>
-      <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
-      {end || chevron ? <span className={`ms-auto flex items-center gap-1 text-[12.5px] text-[var(--faint-fg)] ${typeof end === 'string' ? 'max-w-[55%] min-w-0' : 'shrink-0'}`}>{typeof end === 'string' ? <span className="min-w-0 truncate" title={end}>{end}</span> : end}{chevron ? <ChevronRight className="size-3.5" /> : null}</span> : null}
+      className={`flex min-h-10 items-center gap-x-[11px] border-b border-[var(--border)] px-1 text-[13.5px]${text ? '' : ' flex-wrap py-[5px]'}${onClick && !disabled ? ' cursor-pointer' : ''}${disabled ? ' opacity-50' : ''}${danger ? ' border-b-0 text-[var(--danger-fg)]' : ''}`}>
+      <span className={`flex shrink-0 [&_svg]:size-4${danger ? '' : ' text-[var(--muted-fg)]'}`}>{icon}</span>
+      <span className="shrink-0 whitespace-nowrap">{label}</span>
+      {end !== undefined && end !== null || chevron ? (
+        <span className={`ms-auto flex items-center justify-end gap-1 text-[12.5px] text-[var(--faint-fg)] ${text ? 'min-w-0 flex-1' : 'shrink-0'}`}>
+          {text ? <span className="min-w-0 truncate" title={String(end)}>{end}</span> : end}
+          {chevron ? <ChevronRight className="size-3.5 shrink-0" /> : null}
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -93,7 +102,7 @@ export function DetailsSegmented<T extends string>({ options, value, onChange }:
     <span role="radiogroup" className="flex gap-0.5 rounded-lg bg-[var(--muted)] p-0.5" onClick={(event) => event.stopPropagation()}>
       {options.map((option) => (
         <button key={option.value} type="button" role="radio" aria-checked={option.value === value} onClick={() => onChange(option.value)}
-          className={`rounded-md px-2 py-[3px] text-[12px] ${option.value === value ? 'bg-[var(--bg)] text-[var(--fg)] shadow-xs' : 'text-[var(--muted-fg)]'}`}>
+          className={`rounded-md px-2 py-[3px] text-[12px] whitespace-nowrap @max-[340px]/details:px-1 @max-[340px]/details:tracking-tight ${option.value === value ? 'bg-[var(--bg)] text-[var(--fg)] shadow-xs' : 'text-[var(--muted-fg)]'}`}>
           {option.label}
         </button>
       ))}
