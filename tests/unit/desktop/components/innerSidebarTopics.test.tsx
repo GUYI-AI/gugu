@@ -175,7 +175,7 @@ describe('the inner sidebar topics slot', () => {
     }
   })
 
-  it('a topic row drags into the chat area as a split, with the chat list topic sub-row payload', async () => {
+  it('a topic row drags into the chat area as the topic itself, with the chat list topic sub-row payload', async () => {
     await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...topics] }, contacts: {} })
     const slot = document.body.appendChild(document.createElement('div'))
     await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
@@ -192,7 +192,7 @@ describe('the inner sidebar topics slot', () => {
     const start = new Event('dragstart', { bubbles: true, cancelable: true })
     Object.defineProperty(start, 'dataTransfer', { value: { setData, setDragImage: dragImage, effectAllowed: 'all', types: [] } })
     await act(async () => { row.dispatchEvent(start) })
-    expect(setData).toHaveBeenCalledWith(SCREEN_CONTENT_DRAG_TYPE, JSON.stringify({ kind: 'chat', chatId: 'group', title: 't1', topic: { chatId: 't1', name: 't1' } }))
+    expect(setData).toHaveBeenCalledWith(SCREEN_CONTENT_DRAG_TYPE, JSON.stringify({ kind: 'chat', chatId: 't1', title: 't1' }))
     expect(dragImage).toHaveBeenCalledTimes(1)
     await act(async () => { row.dispatchEvent(new Event('dragend', { bubbles: true })) })
     slot.remove()

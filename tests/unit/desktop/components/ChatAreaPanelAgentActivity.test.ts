@@ -14,6 +14,7 @@ import { DevicesContext, type DevicesContextValue } from '../../../../apps/deskt
 import type { AccountRevisionListener } from '../../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import { presentationOfDisplayStatus } from '../../../support/agentDisplayStatusTestDouble'
 import { InitialResizeObserver } from '../../../support/initialResizeObserver'
+import { captureOpenedChats } from '../../../support/openedChats'
 import type { ChatContextValue } from '../../../../apps/desktop/src/store/chatContext'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 
@@ -453,14 +454,13 @@ describe('#1318 群聊去 thread', () => {
 // @@@5856 话题入口在消息 ⋯ 菜单;开出来是**分栏**,不是切走(product spec)。
 // 这一条是整条链路唯一的真渲染判据:菜单项 → 建话题 → 右侧分栏出现 → 主时间线仍在。
 describe('#5856 从一条消息开话题', () => {
-  it('消息 ⋯ 菜单「开话题」开出右侧分栏,来源那条线留在左边', async () => {
+  it('消息 ⋯ 菜单「开话题」建出话题,并把它换成主会话', async () => {
     await renderChatArea({
       activeChat: chat({ id: 'chat-1', kind: 'group', name: 'Team' }),
       messages: [mineMessage({ id: 'msg-1' })],
     })
 
-    // 初始:分栏不在;顶栏也没有「新建话题」——话题必须有来源,❌ 不能凭空建。
-    expect(harness.container.querySelector('[data-testid="topic-split-pane"]')).toBeNull()
+    // 顶栏没有「新建话题」——话题必须有来源,❌ 不能凭空建。
     expect(harness.container.querySelector('[aria-label="新建话题"]')).toBeNull()
 
     const actionTarget = harness.container.querySelector(
@@ -473,19 +473,18 @@ describe('#5856 从一条消息开话题', () => {
       (el): el is HTMLElement => el instanceof HTMLElement && el.textContent?.trim() === '开话题',
     )
     expect(openTopicItem).toBeTruthy()
+    const opened = captureOpenedChats()
     await clickElement(openTopicItem!)
+    opened.stop()
 
     // 建立是一步:点完就有一条话题,❌ 没有中间那张表(选成员/选可见性/确认)。
     expect(topicServiceMock.createTopic).toHaveBeenCalledWith(
       expect.objectContaining({ sourceChatId: 'chat-1', sourceMessageId: 'msg-1' }),
     )
 
-    const pane = harness.container.querySelector('[data-testid="topic-split-pane"]')
-    expect(pane).not.toBeNull()
-    expect(pane?.textContent).toContain('登录超时')
-
-    // 分栏不是切走:来源那条线的主时间线必须还在,继续能看能发。
-    expect(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.chatMessageList}"]`)).not.toBeNull()
+    // 点话题 = 换主会话(#62):建好的话题经打开会话的那一条路换上来,❌ 不开分栏。
+    expect(opened.chatIds).toEqual(['topic-1'])
+    expect(harness.container.querySelector('[data-testid="topic-split-pane"]')).toBeNull()
     // 老的群 thread 面板不该再出现(同名不同物,两个并存就是产品里有两个「话题」)。
     expect(harness.container.querySelector('[data-testid="group-thread-panel"]')).toBeNull()
   })
