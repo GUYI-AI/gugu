@@ -26,9 +26,21 @@ export function withRuntimeTurn(turns: readonly TranscriptTurn[], runtime: Trans
  * ids with the runtime).
  */
 export function sameTurnAs(turn: TranscriptTurn): (other: TranscriptTurn) => boolean {
-  const ids = identityKeys(turn);
-  const prompt = openingPrompt(turn);
-  return (other) => (prompt !== null && openingPrompt(other) === prompt) || [...identityKeys(other)].some((key) => ids.has(key));
+  const keys = new Set(sameTurnKeys(turn));
+  return (other) => sameTurnKeys(other).some((key) => keys.has(key));
+}
+
+const keysOf = new WeakMap<TranscriptTurn, readonly string[]>();
+
+/** What makes two turns the same turn (`sameTurnAs`): they share one of these. A turn is immutable, so once per turn. */
+export function sameTurnKeys(turn: TranscriptTurn): readonly string[] {
+  let keys = keysOf.get(turn);
+  if (!keys) {
+    const prompt = openingPrompt(turn);
+    keys = [...(prompt === null ? [] : [`prompt:${prompt}`]), ...identityKeys(turn)];
+    keysOf.set(turn, keys);
+  }
+  return keys;
 }
 
 /** What an agent itself numbered in a turn: tool calls, its messages, the person's native message. */

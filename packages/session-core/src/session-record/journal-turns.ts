@@ -1,6 +1,6 @@
 import type { TranscriptTurn } from '../acp/models/turns/turn';
 import type { SessionRecordLocator, SessionRecordSource } from './contract';
-import { sameTurnAs } from './runtime-turn';
+import { sameTurnKeys } from './runtime-turn';
 
 /**
  * The journal's whole turns placed among the record's folded turns by when they started: each journal turn goes
@@ -15,13 +15,14 @@ import { sameTurnAs } from './runtime-turn';
  */
 export function withJournalTurns(turns: readonly TranscriptTurn[], journal: readonly TranscriptTurn[], recorded: readonly TranscriptTurn[] = []): TranscriptTurn[] {
   if (recorded.length > 0) {
+    const nearest = nearestSameTurns(turns, recorded);
     const patched = [...turns];
     const unmatched: TranscriptTurn[] = [];
-    for (const turn of recorded) {
-      const index = nearestSameTurn(patched, turn);
+    recorded.forEach((turn, at) => {
+      const index = nearest[at]!;
       if (index < 0) unmatched.push(turn);
-      else patched[index] = { ...patched[index]!, ...(turn.outcome ? { outcome: turn.outcome } : {}), ...(turn.endedAt === undefined ? {} : { endedAt: turn.endedAt }) };
-    }
+      else patched[index] = endedAs(patched[index]!, turn);
+    });
     turns = patched;
     journal = unmatched.length === 0 ? journal : [...journal, ...unmatched].sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
   }
@@ -38,15 +39,44 @@ export function withJournalTurns(turns: readonly TranscriptTurn[], journal: read
   return out;
 }
 
-function nearestSameTurn(turns: readonly TranscriptTurn[], turn: TranscriptTurn): number {
-  const same = sameTurnAs(turn);
-  const distance = (other: TranscriptTurn) =>
-    other.startedAt === undefined || turn.startedAt === undefined ? Infinity : Math.abs(other.startedAt - turn.startedAt);
-  let best = -1;
-  for (let index = turns.length - 1; index >= 0; index -= 1) {
-    if (same(turns[index]!) && (best < 0 || distance(turns[index]!) < distance(turns[best]!))) best = index;
-  }
-  return best;
+const ended = new WeakMap<TranscriptTurn, { by: TranscriptTurn; turn: TranscriptTurn }>();
+
+/** `turn` with the end `by` journaled for it; the same object on every read, so the timeline sees it unchanged. */
+function endedAs(turn: TranscriptTurn, by: TranscriptTurn): TranscriptTurn {
+  const known = ended.get(turn);
+  if (known?.by === by) return known.turn;
+  const next = { ...turn, ...(by.outcome ? { outcome: by.outcome } : {}), ...(by.endedAt === undefined ? {} : { endedAt: by.endedAt }) };
+  ended.set(turn, { by, turn: next });
+  return next;
+}
+
+const NONE: readonly number[] = [];
+
+/**
+ * For each of `recorded`, the index of the turn in `turns` that is the same turn and started nearest to it, the last
+ * of equals; -1 for none. One pass over `turns`, looking up only the keys `recorded` has.
+ */
+function nearestSameTurns(turns: readonly TranscriptTurn[], recorded: readonly TranscriptTurn[]): number[] {
+  const wanted = new Map<string, number[]>();
+  recorded.forEach((turn, at) => {
+    for (const key of sameTurnKeys(turn)) {
+      const list = wanted.get(key);
+      if (list) list.push(at);
+      else wanted.set(key, [at]);
+    }
+  });
+  const distance = (a: TranscriptTurn, b: TranscriptTurn) =>
+    a.startedAt === undefined || b.startedAt === undefined ? Infinity : Math.abs(a.startedAt - b.startedAt);
+  const nearest = recorded.map(() => -1);
+  turns.forEach((turn, index) => {
+    for (const key of sameTurnKeys(turn)) {
+      for (const at of wanted.get(key) ?? NONE) {
+        const best = nearest[at]!;
+        if (best < 0 || distance(turn, recorded[at]!) <= distance(turns[best]!, recorded[at]!)) nearest[at] = index;
+      }
+    }
+  });
+  return nearest;
 }
 
 /** The record of a session that has none of an agent's, only gugu's journal beside it. */
