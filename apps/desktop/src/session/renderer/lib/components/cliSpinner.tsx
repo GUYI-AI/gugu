@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { joinSharedBeat, observeAnimationViewport } from '@gugu/session-shared/animation-visibility';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import './cliSpinner.css';
@@ -49,7 +49,9 @@ export function CLISpinner({ variant = '1' }: { variant?: '1' | '2' }) {
     if (!host) return;
     return observeAnimationViewport(host, setInView);
   }, []);
-  useEffect(() => {
+  // In the commit that drops data-animation-off, before paint (as stopAnimationsOffscreen does in one call): a passive
+  // effect runs after paint, and the restarted strip drew a frame on its own clock first.
+  useLayoutEffect(() => {
     if (shown && inView && element.current) joinSharedBeat(element.current);
   }, [shown, inView]);
 
