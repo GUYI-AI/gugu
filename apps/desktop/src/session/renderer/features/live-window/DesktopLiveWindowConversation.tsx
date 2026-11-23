@@ -9,7 +9,7 @@ import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
 import { desktopLiveWindowTransport } from './desktop-transport';
 import { liveWindowConversationKey, useLiveWindowConversation } from './use-live-window-conversation';
 import type { LiveWindowContext } from './types';
-import type { LiveWindowTabResource } from './live-window-tab';
+import { screenTabsOf, syncScreenTabs } from './screen-tabs';
 import { DesktopLiveWindow } from './DesktopLiveWindow';
 import { bindDesktopLiveWindowActivity } from './desktop-context';
 import { remoteHostsStore } from '../remote-hosts/remote-hosts-store';
@@ -33,15 +33,14 @@ export const DesktopLiveWindowConversation = observer(function DesktopLiveWindow
 const BoundWindow = observer(function BoundWindow({ chatTabId, sessionId, projectId, shown, onWidth, surface }: {
   chatTabId: string; sessionId: string; projectId: string; shown: boolean; onWidth(width: number): void; surface: RefObject<HTMLDivElement | null>;
 }) {
-  const { pane, paneId } = usePaneContext(), layout = usePaneLayoutContext();
+  const { pane } = usePaneContext(), layout = usePaneLayoutContext();
   const pageShown = useContext(SurfaceShownContext);
   const machine = machineRegistry.machineOf(projectId);
   const agentId = sessionAgentBindings.bindingFor(sessionId)?.agentUserId ?? sessionId;
   const context: LiveWindowContext = { conversationId: sessionId, deviceId: machine ?? 'local', sessionId, agentId,
     privateAgentChat: true, shown: shown && pageShown };
   const key = liveWindowConversationKey(context);
-  const screenShown = pane.resolvedTabs.some(tab => tab.isActive && tab.kind === 'live-window'
-    && (tab.resource as LiveWindowTabResource).state.conversationKey === key);
+  const screenShown = screenTabsOf(layout, key).some(({ tab }) => tab.isActive);
   context.shown = (shown || screenShown) && pageShown;
   const transport = useMemo(() => desktopLiveWindowTransport(machine), [machine]);
   // The lifetime-bound host observer remains authoritative when another tab evicts this chat's React view.
@@ -50,28 +49,8 @@ const BoundWindow = observer(function BoundWindow({ chatTabId, sessionId, projec
   useEffect(() => { bindDesktopLiveWindowActivity(live.conversation); }, [live.conversation]);
   const mode = live.presentation?.mode;
   useEffect(() => { if (shown) live.dispatch({ type: 'select-tab', tab: 'chat' }); }, [shown, live.conversation]);
-  useEffect(() => {
-    const matching = pane.resolvedTabs.filter(tab => tab.kind === 'live-window'
-      && (tab.resource as LiveWindowTabResource).state.conversationKey === key);
-    if (mode !== 'tabbed') {
-      if (matching.some(tab => tab.isActive)) pane.setActiveTab(chatTabId);
-      for (const tab of matching) pane.closeTab(tab.tabId);
-      return;
-    }
-    for (const source of live.sources) {
-      if (!matching.some(tab => (tab.resource as LiveWindowTabResource).state.sourceId === source.id)) {
-        layout.open('live-window', { conversationKey: key, sourceId: source.id, chatTabId },
-          { from: chatTabId, intent: 'newTab', activate: false, target: { paneId } });
-      }
-    }
-    for (const tab of matching) if (!live.sources.some(source => source.id === (tab.resource as LiveWindowTabResource).state.sourceId)) pane.closeTab(tab.tabId);
-    if (live.presentation?.selectedTab === 'screen') {
-      const selected = pane.resolvedTabs.find(tab => tab.kind === 'live-window'
-        && (tab.resource as LiveWindowTabResource).state.conversationKey === key
-        && (tab.resource as LiveWindowTabResource).state.sourceId === live.presentation?.selectedSourceId);
-      if (selected && !selected.isActive) pane.setActiveTab(selected.tabId);
-    }
-  }, [mode, live.sources, live.presentation?.selectedTab, live.presentation?.selectedSourceId, pane, layout, paneId, key, chatTabId]);
+  useEffect(() => { syncScreenTabs(layout, { pane, tabId: chatTabId }, key, live.presentation, live.sources); },
+    [live.presentation, live.sources, pane, layout, key, chatTabId]);
   useEffect(() => {
     const root = surface.current;
     if (!root) return;

@@ -357,13 +357,13 @@ describe('PaneLayoutStore: runtime-only persistence projection', () => {
     const { layout, onActiveTabChange } = createRuntimeProjectionLayout();
     layout.open('persistent-test', { id: 'source' }, { from: null, intent: 'newTab' });
     const sourcePaneId = layout.activePaneId;
-    layout.open('persistent-test', { id: 'tool' }, { intent: 'newTab', from: null, target: 'right' });
+    layout.open('persistent-test', { id: 'tool' }, { intent: 'newTab', from: null });
     const workspacePaneId = layout.activePaneId;
     layout.setActiveGroup(sourcePaneId);
     const baseline = structuredClone(layout.snapshot);
     onActiveTabChange.mockClear();
 
-    layout.open('runtime-test', { id: 'side-chat:view-2' }, { intent: 'newTab', from: null, target: { paneId: workspacePaneId } });
+    layout.open('runtime-test', { id: 'side-chat:view-2' }, { intent: 'newTab', from: null });
     layout.setActiveGroup(workspacePaneId);
 
     expect(layout.activePaneId).toBe(workspacePaneId);
