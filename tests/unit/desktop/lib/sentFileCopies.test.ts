@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { formatAttachmentMetadata } from '@gugu/core/shared/ui/attachmentModels'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
-import { adoptSentFile, dropSentFile, forgetSentFiles, holdSentFile, sentFileCopy } from '../../../../apps/desktop/src/lib/sentFileCopies'
+import { adoptSentFile, dropSentFile, forgetSentFiles, holdSentFile, holdSentItem, sentFileCopy } from '../../../../apps/desktop/src/lib/sentFileCopies'
 
 afterEach(() => { forgetSentFiles(); vi.useRealTimers(); vi.restoreAllMocks() })
 const committed = (id: string): MessageItem => ({
@@ -33,4 +33,11 @@ it('a discarded row forgets its file', () => {
   holdSentFile('m2', new Blob(['x']), 'blob:preview-2')
   dropSentFile('m2')
   expect(sentFileCopy({ kind: 'url', url: 'blob:preview-2' })).toBeNull()
+})
+
+it("a new task's picture reads from this device under the folder id it was named, before it is placed", () => {
+  const picture = new File(['png'], 'shot.png', { type: 'image/png' })
+  holdSentItem('task-item', 1, picture)
+  expect(sentFileCopy({ kind: 'item', itemId: 'task-item', version: 1 })).toBe(picture)
+  expect(sentFileCopy({ kind: 'item', itemId: 'task-item', version: 2 }), 'another version is not this file').toBeNull()
 })

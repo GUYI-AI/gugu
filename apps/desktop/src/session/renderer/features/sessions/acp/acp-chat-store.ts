@@ -1014,7 +1014,7 @@ export class AcpChatStore {
       // Same origin as the turn that takes this row over (`SessionCell`): the send, or the end of the turn it waited behind.
       const row = view!.pending.items.find(item => item.messageId === head.id)!;
       const sentAt = row.sentAt === undefined ? undefined : Math.max(row.sentAt, this.chatState.transcript.state.committedTurns.at(-1)?.endedAt ?? 0);
-      session.setPendingPrompt({ id: head.id, text: head.text, ...(sentAt !== undefined ? { sentAt } : {}), starting, held: true });
+      session.setPendingPrompt({ id: head.id, text: head.text, ...(row.files?.length ? { files: row.files } : {}), ...(sentAt !== undefined ? { sentAt } : {}), starting, held: true });
       this._syncMessageCount();
     });
   }
