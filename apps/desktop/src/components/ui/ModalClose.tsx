@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X } from '@/lib/icons'
+import { ChevronLeft, X } from '@/lib/icons'
 import { IconButton } from './IconButton'
 
 /**
@@ -14,6 +14,15 @@ export function ModalClose({ onClose, label, floating = false }: { onClose: () =
     <IconButton shape="pill" size="lg" className="bg-foreground/[0.06]" aria-label={label ?? t('dialog.close')} onClick={onClose}
       data-testid="page-modal-close" style={floating ? FLOATING : undefined}>
       <X />
+    </IconButton>
+  )
+}
+
+/** Settings' back from a page inside it (its header's leading button); a page modal's inner page goes back the same way. */
+export function ModalBack({ onBack, label }: { onBack: () => void; label: string }) {
+  return (
+    <IconButton shape="pill" size="lg" className="bg-foreground/[0.06]" aria-label={label} onClick={onBack}>
+      <ChevronLeft />
     </IconButton>
   )
 }

@@ -1956,11 +1956,11 @@ body.barcode-scanner-active #root {
 }
 .gg-pane-header[data-mobile] { height: var(--pane-header-h-touch); }
 .gg-pane-header[data-divider] { border-bottom: 1px solid var(--border); }
-/* At the window's right edge the controls drawn over content (Linux) keep their room; 0 where they are not over it.
-   A column with its own close floating at the top right (the contacts drawer) sets --pane-close-room, and every header
-   inside it leaves that room too — so a long title ends in an ellipsis before the close instead of running under it. */
+/* At the window's right edge the controls drawn over content (Linux; a page modal's ✕) keep their room; 0 where they are not
+   over it. A column at that edge (the contacts drawer, data-pane-close) has every header inside it leave that room too — so a
+   long title ends in an ellipsis before the controls instead of running under them. */
 .gg-pane-header[data-window-edge], [data-pane-close] .gg-pane-header {
-  padding-right: calc(var(--pane-pad-x) + var(--pane-close-room, 0px) + var(--titlebar-controls-width, 0px));
+  padding-right: calc(var(--pane-pad-x) + var(--titlebar-controls-width, 0px));
 }
 .gg-pane-title {
   flex: 1 1 auto;
