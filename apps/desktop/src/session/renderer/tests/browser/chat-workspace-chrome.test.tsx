@@ -162,6 +162,8 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(showButton.querySelector('svg')?.innerHTML).toBe(panelIcon);
   // Folded, the button sits on the capsule row's middle line (.capbar .rt: 28px box in the 56px row).
   expect(showButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 14 });
+  // …and floats there: the capsule row keeps the whole card's width, so the capsule centres on the card.
+  expect(inside('[data-chat-workspace-chat-header]')!.getBoundingClientRect().width).toBe(inside('[data-chat-workspace-header]')!.getBoundingClientRect().width);
   expect(getComputedStyle(showButton).borderRadius).toBe('8px');
   await until('the chat uses the full width of its own block', () => width(chat()), (size) => size === 800);
   // The tool goes out on the track and is out of reach once it lands.

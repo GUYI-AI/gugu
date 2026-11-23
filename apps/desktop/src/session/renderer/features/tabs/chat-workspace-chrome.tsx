@@ -154,11 +154,13 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     </div>
   );
   return (
-    <div ref={header} className={sharedStrip ? 'flex min-w-0 shrink-0 bg-tab-strip' : 'flex min-w-0 shrink-0'} data-chat-workspace-header={mode} data-chat-tool-cards={toolCard ? '' : undefined} data-chat-tool-shared={toolsShown && sharedStrip ? '' : undefined}>
+    <div ref={header} className={sharedStrip ? 'flex min-w-0 shrink-0 bg-tab-strip' : 'relative flex min-w-0 shrink-0'} data-chat-workspace-header={mode} data-chat-tool-cards={toolCard ? '' : undefined} data-chat-tool-shared={toolsShown && sharedStrip ? '' : undefined}>
       {toolsFirst && toolTabs}
       {chatTitle}
       {!toolsFirst && toolTabs}
-      {!toolCard && actionRow}
+      {/* The conversation's own head (no tools beside it) is the capsule row: its buttons float at the top right and take
+          no width, so the capsule centres on the whole card. Beside tools or merged into one strip they share the row. */}
+      {!toolCard && (toolsShown ? actionRow : <div className="absolute inset-y-0 right-0 flex">{actionRow}</div>)}
     </div>
   );
 });
