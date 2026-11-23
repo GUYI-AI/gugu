@@ -660,8 +660,8 @@ setCoreLoggerFactory((scope) => createLogger(`core/${scope}`))
 const autonomyDebugLogger = createLogger('autonomy-debug')
 // #4008 会话页会话状态 → 咕咕运行事实这条路上的告警(身份解析不到、快照读失败)。
 const sessionpageActivityLogger = createLogger('sessionpage/activity')
-// 退出登录会重启整个进程,这条路上的日志必须落盘 —— 进程都没了,stdout 没人接。
-const authLogger = createLogger('auth')
+// 应用重启(设置 → 设备动作里的「重启」)这条路上的日志必须落盘 —— 进程都没了,stdout 没人接。
+const relaunchLogger = createLogger('relaunch')
 const integrationMcpLogger = createLogger('sessionpage/integration-mcp')
 // @@@devtools-lock — 锁定态本身与它被突破时都要落盘:装机包上出问题时,日志文件是唯一的现场。
 const devtoolsLockLogger = createLogger('devtools-lock')
@@ -3616,7 +3616,7 @@ process.on('uncaughtException', createFatalExit({
 }))
 process.on('unhandledRejection', (reason) => {
   // 不退出(未必致命),仅让原本静默的 rejection 可见(fail loud);引擎清扫留给真正的致命/信号路径。
-  // 落盘同样走 crash 文件:退出登录会重启进程,主日志会被下次启动轮转掉,而这些拒绝是排障的第一现场。
+  // 落盘同样走 crash 文件:进程重启后主日志会被下次启动轮转掉,而这些拒绝是排障的第一现场。
   recordFatalSync({ dir: logDir, verdict: classifyFatal(reason), source: 'unhandledRejection', err: reason })
   createLogger('process').error({ reason }, '未处理的 Promise 拒绝')
 })
@@ -4112,21 +4112,7 @@ const fatalBootDeps: FatalBootDeps = { title: () => hostCopy().fatalBoot.title, 
 function fatalSessionpageBoot(err: unknown): void {
   showFatalSessionpageBoot(err, fatalBootDeps)
 }
-// 退出登录 = 重启 app(owner 拍板 2026-08-26)。
-// 
-// 为什么不是「把任务运行时拆掉再装回来」:那个边界看着可拆(bootEmdashModule /
-// disposeEmdashModule),实际是**一次性闩** —— dispose 用 `??=` 缓存 promise,第二次调
-// 什么都不做;它也不注销 IPC handler(该文件 removeHandler 0 处命中),拆的是模块级单例,
-// 还 closeDatabase 却没有对应的再开。硬做成可重入是这个子系统里的立项级改造。
-// 
-// 不重启会怎样(都实测过,不是推演):
-//   1. 会话页整页停在骨架屏 —— 退出登录把它拆了,随后的登录没装回来,只有整页重载能救
-//      (同账号同 localStorage,只重载:testid 7→20、骨架 20→0)
-//   2. MCP grant 谁先 hydrate 谁盖章 —— grant 表在主进程内存里,重载渲染层碰不到它,
-//      换回原账号也解不开,只能重启应用
-// 
-// 新进程把这两样一起清干净。代价是切账号会看到 app 重启一次,这是明面上的取舍。
-/** 退出登录重启时,等 before-quit 走完的上限。三段停机各 5s,留一倍余量后硬杀。 */
+/** 应用重启时,等 before-quit 走完的上限。三段停机各 5s,留一倍余量后硬杀。 */
 const RELAUNCH_EXIT_WATCHDOG_MS = 12_000
 
 ipcMain.handle('app:relaunch', () => {
@@ -4137,13 +4123,13 @@ ipcMain.handle('app:relaunch', () => {
     // relaunch 起来的新进程会撞上 ERR_CONNECTION_REFUSED。这里不因此改成「dev 不重启」——
     // 那会让开发态走一条产品态永远不走的路径,bug 只在打包后现形。响亮说清楚,让人重跑 pnpm dev。
     if (process.env.VITE_DEV_SERVER_URL) {
-      authLogger.warn(
+      relaunchLogger.warn(
         {},
-        'dev 模式:退出登录会重启应用,但 vite dev server 会随本进程一起结束,' +
+        'dev 模式:重启应用时 vite dev server 会随本进程一起结束,' +
           '新窗口连不上 —— 这是 dev 独有的,打包产物正常。重新 `pnpm dev` 即可。',
       )
     }
-    authLogger.info({}, 'relaunching after logout')
+    relaunchLogger.info({}, 'relaunching')
     app.relaunch()
     // ❌ 不用 app.exit():它强制退出、**跳过 before-quit**,于是既错过了优雅停机,又把退出
     //    交给 Node 的正常销毁流程 —— 有活 PTY 时会永久卡死在 pty.node 的线程 join 上
@@ -4154,7 +4140,7 @@ ipcMain.handle('app:relaunch', () => {
     // 看门狗:即便 before-quit 那条路也没能让进程走掉,重启也必须真的发生
     // (product spec)。unref 让它自己永不拖住一次正常退出。
     const watchdog = setTimeout(() => {
-      authLogger.error({}, '退出超时:before-quit 未能终结本进程,硬杀自己以保证重启真的发生')
+      relaunchLogger.error({}, '退出超时:before-quit 未能终结本进程,硬杀自己以保证重启真的发生')
       process.kill(process.pid, 'SIGKILL')
     }, RELAUNCH_EXIT_WATCHDOG_MS)
     watchdog.unref()

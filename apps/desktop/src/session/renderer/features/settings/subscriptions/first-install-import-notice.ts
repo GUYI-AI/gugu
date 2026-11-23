@@ -23,8 +23,12 @@ export const firstInstallImportHomes = replica({
   },
 })
 
+function noticeKeyFor(machine: string | null, accountId?: string): string {
+  return accountId ? `${key}:${encodeURIComponent(accountId)}:${encodeURIComponent(machine ?? 'local')}` : machine ? `${key}:${encodeURIComponent(machine)}` : key
+}
+
 export function showFirstInstallImportNotice(homes: readonly AgentHomeScan[], machine: string | null = null, accountId?: string): void {
-  const noticeKey = accountId ? `${key}:${encodeURIComponent(accountId)}:${encodeURIComponent(machine ?? 'local')}` : machine ? `${key}:${encodeURIComponent(machine)}` : key
+  const noticeKey = noticeKeyFor(machine, accountId)
   if (!homes.length || shown.has(noticeKey)) return
   try { if (localStorage.getItem(noticeKey) || (!machine && localStorage.getItem(key))) return } catch { /* A window can still show and dismiss this notice. */ }
   shown.add(noticeKey)
@@ -43,12 +47,19 @@ export function showFirstInstallImportNotice(homes: readonly AgentHomeScan[], ma
   })
 }
 
-/** Reuse the same notice on connected machines; no new notice entry point or automatic import. */
+/**
+ * Reuse the same notice on connected machines; no new notice entry point or automatic import. The watch lives as long as
+ * the signed-in account: stopping it (sign-out, another account) withdraws the notices it raised for that account, which
+ * come back on its next sign-in unless they were handled.
+ */
 export function watchFirstInstallImportNotices(accountId: string): () => void {
   let active = true
+  const raised = new Set<string>()
   const read = (machine: string | null) => {
     void firstInstallImportHomes.fetch(machine).then(homes => {
-      if (active) showFirstInstallImportNotice(homes, machine, accountId)
+      if (!active) return
+      showFirstInstallImportNotice(homes, machine, accountId)
+      raised.add(noticeKeyFor(machine, accountId))
     }).catch((error: unknown) => log.error({ error: String(error), machine }, 'read configuration import suggestions failed'))
   }
   read(null)
@@ -57,5 +68,12 @@ export function watchFirstInstallImportNotices(accountId: string): () => void {
     check()
     return subscribeMachineLink(machine, check)
   })
-  return () => { active = false; stop() }
+  return () => {
+    active = false
+    stop()
+    for (const noticeKey of raised) {
+      if (!shown.delete(noticeKey)) continue
+      dismissNotice(noticeKey)
+    }
+  }
 }

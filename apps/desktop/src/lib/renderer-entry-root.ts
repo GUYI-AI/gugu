@@ -94,3 +94,9 @@ export function renderEntryRoot(owner: string, container: Element, tree: ReactNo
   root.render(tree)
   return root
 }
+
+/** 把这个容器上的树拆掉(会话页随账号卸下时);之后同一容器上的 `renderEntryRoot` 从一个新 root 开始。 */
+export function unmountEntryRoot(container: Element): void {
+  ENTRY_ROOTS.get(container)?.root.unmount()
+  ENTRY_ROOTS.delete(container)
+}

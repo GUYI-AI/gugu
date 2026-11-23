@@ -29,8 +29,8 @@ import { installSessionShellAuthHandoff } from '@/lib/session-shell-auth-handoff
 import { createWebSessionShellAnswers } from '@/lib/session-shell-web-answers'
 import { answerSessionShellChannels, createSessionShellPort } from '@/session/shared/lib/ipc/shell-port'
 import { findSessionHostBridge, SESSION_HOST_BRIDGE_KEY } from '@/session/renderer/lib/electron-api'
-import { installSessionRendererBootFailureReporter } from '@/session/shared/lib/session-renderer-boot'
 import { importSessionEntry } from './importSessionEntry'
+import { sessionPageEntry, type SessionPageEntry } from '@/session/shared/lib/session-page-entry'
 import {
   parseEmdashManifest,
   requireEmdashManifestAssets,
@@ -111,6 +111,45 @@ async function loadEmdashAssets(): Promise<EmdashAssets> {
 function getEmdashAssets(): Promise<EmdashAssets> {
   emdashAssetsPromise ??= loadEmdashAssets()
   return emdashAssetsPromise
+}
+
+// One mount element for the process: the entry's process-wide wiring (popup layer, visibility) is bound to it.
+let sessionMount: HTMLDivElement | null = null
+function sessionMountElement(): HTMLDivElement {
+  if (!sessionMount) {
+    sessionMount = document.createElement('div')
+    sessionMount.style.cssText = 'height:100%;width:100%'
+  }
+  const host = window as unknown as { __EMDASH_MOUNT__?: HTMLElement }
+  host.__EMDASH_MOUNT__ = sessionMount
+  return sessionMount
+}
+
+let sessionEntryPromise: Promise<SessionPageEntry> | null = null
+function loadSessionEntry(jsUrl: string, sheetsLoaded: Promise<void> | null): Promise<SessionPageEntry> {
+  // 构建 CSS 全部到了再挂内容(不闪无样式的一帧);皮肤桥紧跟在它们后面，赢得层叠。Vite dev 下样式随 module 求值注入,
+  // 皮肤桥要排在它们之后,所以等 import 兑现再挂。
+  // import() 兑现 = 整张模块图求值完了(等宏任务的顶层 await 也算在内);取文件失败、解析错、求值时抛错、顶层 await
+  // 被拒都让它被拒，拒绝原因就是那个真实的错误。
+  sessionEntryPromise ??= (sheetsLoaded ? Promise.resolve(appendSkinBridge()) : Promise.resolve())
+    .then(() => importSessionEntry(jsUrl))
+    .then(() => {
+      if (!sheetsLoaded) appendSkinBridge()
+      return sessionPageEntry()
+    })
+  return sessionEntryPromise
+}
+
+function appendSkinBridge(): void {
+  const bridge = document.createElement('style')
+  bridge.setAttribute('data-gugu-skin', '')
+  bridge.textContent = GUGU_SKIN_BRIDGE_CSS
+  document.head.appendChild(bridge)
+}
+
+let sessionPageQueue: Promise<unknown> = Promise.resolve()
+function queueSessionPage(step: () => Promise<unknown>): void {
+  sessionPageQueue = sessionPageQueue.then(step)
 }
 
 // MainLayout calls this only for the desktop shell. Keeping the warm-up out of module scope is
@@ -265,8 +304,6 @@ export function EmdashSessionFrame() {
   const { t } = useTranslation('main')
   const hostRef = useRef<HTMLDivElement>(null)
   const mountRef = useRef<HTMLDivElement | null>(null)
-  // 保证挂载整段在一个组件实例上恰好跑一次(见下方 StrictMode 说明)。
-  const startedRef = useRef(false)
   // 会话页渲染层是个大 bundle,首次冷加载要几秒~几十秒。加载期间显式 loading 态(❌ 白屏,像坏了),
   // 会话页真挂上内容(mount 有子节点)后隐藏。
   // 加载态只有那个加载动画,无墙钟兜底页(owner 拍板砍掉):会话页在 App 启动即常驻预热,
@@ -303,12 +340,7 @@ export function EmdashSessionFrame() {
 
   useEffect(() => {
     const host = hostRef.current
-    // StrictMode(dev)对同一实例 setup→cleanup→setup 双调用。这里的挂载是全局一次性副作用
-    // (挂载元素放进宿主、会话页入口 import 进来、启动失败的桥装到 window 上),不能被 cleanup 中止——
-    // 否则唯一那次 populate 被 cancel → 空白 tab。用 startedRef 保证整段恰好跑一次、不设 cancel。
-    if (!host || startedRef.current) return
-    startedRef.current = true
-
+    if (!host) return
     installSessionHostBridge()
     // @@@task-fusion (#2802) — 这里从前是 `host.attachShadow({ mode: 'open' })`。
     // shadow root 当初的职责是隔离**两个各自独立的样式系统**;现在只剩一份构建、
@@ -319,21 +351,10 @@ export function EmdashSessionFrame() {
     // 懒加载 chunk 的样式则整个掉在 head 里进不来(owner 报的「chat UI 只剩文字」即此)。
     // 六个补丁同一个病根。现在改为直接挂进 light DOM:样式投递回到浏览器的默认语义,
     // 隔离改由「会话页自己的全局规则收窄到 .gugu-skin」承担(见 session/renderer/index.css 的说明)。
-    const mount = document.createElement('div')
-    mount.style.cssText = 'height:100%;width:100%'
+    const mount = sessionMountElement()
     // gugu-skin 皮肤 + 跟随 gugu 当前主题的会话页主题类。
     mount.className = sessionSkinClassName(themeRef.current)
     mountRef.current = mount
-    ;(window as unknown as { __EMDASH_MOUNT__?: HTMLElement }).__EMDASH_MOUNT__ = mount
-
-    // Discover the embedded renderer's transport-specific assets, then load its module into
-    // __EMDASH_MOUNT__. Built CSS is attached by the host as links; Vite dev injects CSS through its module graph.
-    const appendSkinBridge = () => {
-      const bridge = document.createElement('style')
-      bridge.setAttribute('data-gugu-skin', '')
-      bridge.textContent = GUGU_SKIN_BRIDGE_CSS
-      document.head.appendChild(bridge)
-    }
 
     // 会话页 React 真挂上内容(mount 出现子节点)→ 收起 loading 态。慢不算失败:等多久都只是加载态。
     const mountWatch = new MutationObserver(() => {
@@ -343,35 +364,31 @@ export function EmdashSessionFrame() {
       }
     })
     mountWatch.observe(mount, { childList: true })
-    // 会话页起不来 —— 资源没取到、入口 module 载不进来或求值时出错(import 被拒)、renderer bootstrap 失败(经桥报上来)
+    // 会话页起不来 —— 资源没取到、入口 module 载不进来或求值时出错(import 被拒)、这个账号的那棵树挂不上(mountSessionPage 被拒)
     // —— 都走这一个处理:错误卡 + fail loud,❌ 半残运行(product spec「打开速度」)。
+    let live = true
     const failBoot = (err: unknown) => {
+      if (!live) return
       mountWatch.disconnect()
       setLoadState('error')
       reportFatalBootFailure(err)
     }
-    installSessionRendererBootFailureReporter(failBoot)
 
-    void getEmdashAssets()
-      .then(async ({ sheetsLoaded, jsUrl }) => {
-        // @@@task-fusion (#2802) — 样式进 document.head。拆掉 shadow 后这就是浏览器的默认去处,
-        // 会话页自己的全局规则已在 session/renderer/index.css 里收窄到 `.gugu-skin`,不会漫出去伤咕咕。
-        if (sheetsLoaded) {
-          // 构建 CSS 全部到了再挂内容(不闪无样式的一帧);皮肤桥紧跟在它们后面，赢得层叠。
-          await sheetsLoaded
-          appendSkinBridge()
-        }
-        host.appendChild(mount)
-        // import() 兑现 = 整张模块图求值完了(等宏任务的顶层 await 也算在内);取文件失败、解析错、求值时抛错、顶层 await
-        // 被拒都让它被拒，拒绝原因就是那个真实的错误。一个 promise —— ❌ 再靠 script 的 load / error 去猜:求值抛错只触发
-        // load,而 load 也不等顶层 await。
-        return importSessionEntry(jsUrl).then(() => {
-          // Vite injects imported CSS while evaluating the module. Append the bridge after it so it
-          // follows those style tags just as it follows the host-inlined CSS in a built renderer.
-          if (!sheetsLoaded) appendSkinBridge()
-        })
-      })
-      .catch(failBoot)
+    // The page lives as long as this frame, which lives as long as the signed-in account's product: mounted here,
+    // unmounted when the frame goes (sign-out, a lost session). Mount and unmount run one after another, so a frame
+    // that goes while its account is still restoring leaves no tree behind (and StrictMode's setup → cleanup → setup
+    // ends mounted).
+    const entry = getEmdashAssets().then(async ({ sheetsLoaded, jsUrl }) => {
+      if (sheetsLoaded) await sheetsLoaded
+      host.appendChild(mount)
+      return loadSessionEntry(jsUrl, sheetsLoaded)
+    })
+    queueSessionPage(() => entry.then((page) => live ? page.mountSessionPage() : undefined).catch(failBoot))
+    return () => {
+      live = false
+      mountWatch.disconnect()
+      queueSessionPage(() => entry.then((page) => page.unmountSessionPage(), () => undefined))
+    }
   }, [])
 
   return (
