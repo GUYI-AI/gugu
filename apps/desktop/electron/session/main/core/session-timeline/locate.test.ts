@@ -81,6 +81,17 @@ describe('locateSessionRecord · 候选顺序(每家一格)', () => {
     expect(roots(provider, env)).toEqual(expected);
   });
 
+  it.each([
+    ['claude', { CLAUDE_CONFIG_DIR: '/e' }, '/managed/projects'],
+    ['codex', { CODEX_HOME: '/e' }, '/managed/sessions'],
+  ])('%s 后台补索引只使用咕咕托管目录', (provider, env, root) => {
+    const location = locateSessionRecord({
+      provider, providerSessionId: 's-1', env, homeDir: home,
+      managedConfigRoot: managed, managedOnly: true, fallbackConfigRoots: ['/old'],
+    });
+    expect(location).toMatchObject({ supported: true, locator: { roots: [root] } });
+  });
+
   it('opencode 族用 <家>_DB 指了绝对路径的库：它排在托管根前面', () => {
     expect(roots('mimocode', { MIMOCODE_DB: '/abs/x.db' })[0]).toBe('/abs/x.db');
   });

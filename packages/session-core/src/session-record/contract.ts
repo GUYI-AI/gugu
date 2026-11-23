@@ -519,6 +519,7 @@ export type SettleResult = { ok: true; settlement: Settlement } | { ok: false; e
 
 export interface SessionTimeline {
   readonly epoch: string;
+  getCursor(): RecordCursor;
   getRecordLineage?(): readonly RecordLineageNode[] | null;
   getSnapshot(options?: { limit?: number; committedOnly?: boolean }): TimelineSnapshot;
   /** 从 cursor 之后取；epoch 不对或 cursor 超前 → reset + 快照。 */

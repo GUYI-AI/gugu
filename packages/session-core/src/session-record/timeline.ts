@@ -502,6 +502,8 @@ class RecordTimeline implements SessionTimeline {
     return this.epochValue;
   }
 
+  getCursor(): RecordCursor { return { epoch: this.epochValue, seq: this.seq }; }
+
   getRecordLineage() { return this.source.getLineage?.() ?? null; }
 
   getSnapshot(options?: { limit?: number; committedOnly?: boolean }): TimelineSnapshot {

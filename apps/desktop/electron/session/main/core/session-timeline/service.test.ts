@@ -106,7 +106,12 @@ vi.mock('../sessions/session-conversation-activity', () => ({ nativeConversation
 
 
 // The session index has tests of its own (session-index.db.test.ts); here the timelines it follows are fakes.
-vi.mock('../session-index/session-index', () => ({ followSessionIndex: () => () => {}, sessionIndexed: () => true, writeSessionIndex: () => {} }));
+const index = vi.hoisted(() => ({ prepare: vi.fn(async () => {}), count: vi.fn(() => 0) }));
+vi.mock('../session-index/session-index', () => ({
+  followSessionIndex: () => () => {},
+  prepareSessionIndex: index.prepare,
+  indexedTurnCount: index.count,
+}));
 vi.mock('@main/db/client', () => ({
   db: {
     select: () => ({
@@ -307,6 +312,7 @@ function makeTimeline(onCatchUp: () => void = () => undefined) {
     epoch: 'e1',
     disposed: 0,
     listenerCount: () => listeners.size,
+    getCursor: () => ({ epoch: 'e1', seq: 0 }),
     getSnapshot: (): TimelineSnapshot => ({
       cursor: { epoch: 'e1', seq: 0 },
       turns: [],
@@ -451,6 +457,28 @@ describe('session timeline service', () => {
       throw new Error('❌ 没开起来的会话不许走唤醒');
     });
     state.readOptions.mockClear();
+  });
+
+  it('waits for the current turn facts before deciding whether a cold session already ran', async () => {
+    let ready!: () => void;
+    index.count.mockClear().mockReturnValueOnce(1);
+    index.prepare.mockImplementationOnce(() => new Promise<void>(resolve => { ready = resolve; }));
+
+    const ran = service.sessionHasRecordedTurn('conv-1');
+    expect(index.count).not.toHaveBeenCalled();
+    ready();
+    await expect(ran).resolves.toBe(true);
+  });
+
+  it('uses the open record to detect an already-started session while indexing is pending', async () => {
+    const { timeline } = makeTimeline();
+    const base = timeline.getSnapshot();
+    timeline.getSnapshot = () => ({ ...base, turns: [{ id: 'first', seq: 1, initiator: 'user', items: [] }] });
+    service.setSessionTimelineFactory(async () => timeline);
+
+    const opened = await service.snapshot({ conversationId: 'conv-1' });
+    expect(opened.ok).toBe(true);
+    await expect(service.sessionHasRecordedTurn('conv-1')).resolves.toBe(true);
   });
 
   it('follows a settling record on its own live reader until the last turn lands, without interactive effects', async () => {
