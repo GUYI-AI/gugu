@@ -113,7 +113,7 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
           </DropdownMenu.Trigger>
         </Hint>
         {menuOpen ? (
-          <DropdownMenu.Content aria-label={menuLabel} side="bottom" align={collapsed ? 'start' : 'end'} sideOffset={4}>
+          <DropdownMenu.Content aria-label={menuLabel} side={collapsed ? 'right' : 'bottom'} align={collapsed ? 'start' : 'end'} sideOffset={collapsed ? 8 : 4}>
             {collapsed && (
               <MenuItem icon={<SquarePen size={15} />} data-testid="sidebar-create-create-agent" onClick={onCreateAgent}>
                 {translate('sidebar.createAgent')}
