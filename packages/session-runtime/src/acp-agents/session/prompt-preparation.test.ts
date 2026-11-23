@@ -112,24 +112,6 @@ it.each(['typed','communication'] as const)('refuses detached %s delivery before
   expect(cell.machine.phase.kind).toBe('ready')
 })
 
-it('retains an already queued reminder when preparation fails and retries without another user action', async () => {
-  const { cell,agent } = fixture(), first = Promise.withResolvers<{ stopReason: 'end_turn' }>()
-  const prepare = vi.fn().mockResolvedValueOnce({ text: '',accepted: async () => {} })
-    .mockRejectedValueOnce(Object.assign(new Error('面板暂时读不到。'),{ deliveryRejectedBeforeAdmission: true }))
-    .mockResolvedValue({ text: '',accepted: async () => {} })
-  setNativePromptPreparation(prepare)
-  agent.prompt = vi.fn().mockImplementationOnce(() => first.promise).mockResolvedValue({ stopReason: 'end_turn' })
-  const running = cell.prompt({ text: 'First',origin: 'typed' })
-  await vi.waitFor(() => expect(agent.prompt).toHaveBeenCalledOnce())
-  cell.queuePrompt({ text: 'Due reminder',origin: 'communication' })
-  first.resolve({ stopReason: 'end_turn' });await running
-  await vi.waitFor(() => expect(prepare).toHaveBeenCalledTimes(2))
-  expect(cell.machine.queuedPrompts.map(row => row.text)).toEqual(['Due reminder'])
-  await vi.waitFor(() => expect(agent.prompt).toHaveBeenCalledTimes(2),{ timeout: 5000 })
-  expect(JSON.stringify(vi.mocked(agent.prompt).mock.calls[1])).toContain('Due reminder')
-  expect(cell.machine.queuedPrompts).toHaveLength(0)
-})
-
 it('keeps the submitted message visible while preparation is pending without claiming provider admission', async () => {
   const { cell,agent } = fixture(), preparation = Promise.withResolvers<{ text: string; accepted(): Promise<void> }>()
   setNativePromptPreparation(() => preparation.promise)

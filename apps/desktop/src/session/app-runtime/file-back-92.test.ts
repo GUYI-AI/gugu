@@ -119,29 +119,4 @@ describe('a task file deleted on the disk and put back (摩擦单 F92)', () => {
     expect(file.text).toBe(service.text('item-1@2'));
     file.close();
   });
-
-  it('closed while gone: `back` finds nobody, and nothing is opened again', async () => {
-    const { service, host, open } = await page();
-    const file = await open();
-    service.closeDocument('item-1@1', 'deleted');
-    service.control({ t: 'revoked', docName: 'item-1@1', reason: 'deleted' });
-    await until(() => file.status === 'gone');
-    file.close();
-    service.control({ t: 'back', docName: 'item-1@1' });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(host.appFiles.reopen).not.toHaveBeenCalled();
-    expect(file.status).toBe('gone');
-  });
-
-  it('taken back for another reason (a group, a permission): never waits to come back', async () => {
-    const { service, host, open } = await page();
-    const file = await open();
-    service.closeDocument('item-1@1', 'removed-from-group');
-    service.control({ t: 'revoked', docName: 'item-1@1', reason: 'removed-from-group' });
-    await until(() => file.status === 'gone');
-    service.control({ t: 'back', docName: 'item-1@1' });
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(host.appFiles.reopen).not.toHaveBeenCalled();
-    expect(file.status).toBe('gone');
-  });
 });

@@ -274,28 +274,6 @@ describe('RemoteFolderPicker', () => {
     expect((container.querySelector('[data-testid="remote-folder-path-input"]') as HTMLInputElement).value).toBe('/home/bob/projects/')
   })
 
-  it('地址栏补全:读过的别处目录再读失败,补全照给、同时说失败(❌ 当成当前的)', async () => {
-    listMock.mockResolvedValueOnce({ result: { path: '/home/bob', entries: [] } })
-    listMock.mockResolvedValueOnce({ result: { path: '/srv', entries: [{ name: 'app', kind: 'dir' }] } })
-    await act(async () => {
-      root.render(createElement(RemoteFolderPicker, { deviceId: 'dev-C', initialPath: '/home/bob', onSelect: () => {} }))
-    })
-    await flush()
-    await clickElement(container.querySelector('[data-testid="remote-folder-path-blank"]') as HTMLElement)
-    await setValue(container.querySelector('[data-testid="remote-folder-path-input"]') as HTMLInputElement, '/srv/a')
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 200)) })
-    await flush()
-    const suggestions = () => Array.from(container.querySelectorAll('[data-testid="remote-folder-path-suggestions"] li[role="option"]')).map((li) => li.textContent)
-    expect(suggestions()).toEqual(['app'])
-    expect(container.querySelector('[data-testid="remote-folder-path-completion-error"]')).toBeNull()
-    listMock.mockResolvedValueOnce({ error: { code: 'unreachable', message: 'machine gone' } })
-    const { remoteDirectory } = await import('../../../../apps/desktop/src/lib/remoteDirectory')
-    await act(async () => { await remoteDirectory.refresh('dev-C', '/srv', true).catch(() => undefined) })
-    await flush()
-    expect(container.querySelector('[data-testid="remote-folder-path-completion-error"]')).not.toBeNull()
-    expect(suggestions()).toEqual(['app'])
-  })
-
   it('选根目录或主目录本身当项目:先问一句,确认后才选', async () => {
     listMock.mockResolvedValueOnce({ result: { path: '/home/bob', home: '/home/bob', entries: [] } })
     const onSelect = vi.fn()

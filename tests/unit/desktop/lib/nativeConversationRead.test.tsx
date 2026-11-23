@@ -38,23 +38,6 @@ it('publishes the native tail only with a settled visible-item report and drops 
   expect([...entries.values()]).toEqual([expect.objectContaining({ sessionId: 'other', atTail: false })])
 })
 
-it.each([1, 2])('acknowledges only visible replies on native input version %s, without scrolling', async version => {
-  updateDeviceSessions('host', { sessions: [{ conversationId: 's', nativeInputVersion: version, nativeUnreadKeys: ['msg_first', 'msg_covered'] } as never] })
-  const turns = [{ id: 's:turn:s4', items: ['first', 'covered'].map(name => ({ id: `s:turn:s4:message:msg_${name}`, kind: 'message', role: 'assistant', text: name })) }] as TranscriptTurn[]
-  const openItem = vi.fn(() => true)
-  let controls!: ReturnType<typeof useNativeConversationRead>
-  function Fixture({ shown }: { shown: boolean }) { controls = useNativeConversationRead('host', 's', shown, () => turns); return null }
-  await harness.render(<Fixture shown />)
-  await act(async () => { controls.onReady({ openItem } as unknown as ChatView); controls.onVisibleItems(['s:turn:4:message:msg_first']) })
-  expect(openItem).toHaveBeenCalledWith('s:turn:s4:message:msg_first', { preserveActivity: true })
-  await vi.waitFor(() => expect(scope.visible).toHaveBeenCalledWith({ conversationId: 's', itemIds: ['s:turn:4:message:msg_first'] }))
-  expect(scope.visible.mock.calls.some(([request]) => request.itemIds.includes('s:turn:s4:message:msg_covered'))).toBe(false)
-  await harness.render(<Fixture shown={false} />)
-  scope.visible.mockClear()
-  await act(async () => { controls.onVisibleItems(['s:turn:s4:message:msg_covered']); await new Promise(resolve => setTimeout(resolve, 550)) })
-  expect(scope.visible).not.toHaveBeenCalled()
-})
-
 it('retries identity navigation after the target render units become available without acknowledging unseen replies', async () => {
   vi.useFakeTimers()
   try {

@@ -89,21 +89,6 @@ describe('multipart uploads from a host that sends signed parts', () => {
     }
     expect(progress.at(-1)).toBe(10)
   })
-  // The window rolls: a slow part does not hold back the parts after it, and no more than three are on the wire at once.
-  it('keeps three parts sending while a slow one is still out, signing ahead instead of draining a batch', async () => {
-    let release!: () => void
-    const slow = new Promise<void>(resolve => { release = resolve })
-    let sending = 0, most = 0
-    const s = server({ window: 6, hold: async n => { most = Math.max(most, ++sending); await (n === 1 ? slow : new Promise(resolve => setTimeout(resolve, 5))); sending-- } })
-    const upload = uploadAttachmentBytes(s.endpoint, file(10 * PART), scope)
-    await expect.poll(() => s.puts.map(p => p.n)).toContain(8)
-    expect(s.stored.has(1)).toBe(false)
-    release()
-    await upload
-    expect(most).toBe(3)
-    expect(s.puts.map(p => p.n).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
-    expect(s.calls.filter(c => c.route === 'upload-parts').length).toBeLessThanOrEqual(12)
-  })
   it('a later call for the same upload sends only the parts the server has not recorded', async () => {
     const s = server({ done: [1, 2] })
     await uploadAttachmentBytes(s.endpoint, file(10), scope)

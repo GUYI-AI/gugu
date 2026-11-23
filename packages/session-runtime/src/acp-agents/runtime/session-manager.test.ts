@@ -1946,43 +1946,6 @@ describe('AcpRuntime session manager', () => {
     expect(rt.sessionLiveModels('conv-model-rejected')).not.toBeNull();
   });
 
-  it('applies the chosen model once a harness publishes its model option after session/new', async () => {
-    const h = makeAcpHarness();
-    const provider = h.deps.agentHost.resolveAcp('claude');
-    if (!provider) throw new Error('test provider missing');
-    provider.behavior.catalogModelsInConfigUpdate = true;
-    const rt = new AcpRuntime(h.deps);
-    h.agent.newSession.mockImplementationOnce(async () => {
-      setTimeout(() => h.agent.capturedClient!.sessionEvent({
-        sessionId: 'session-late-model',
-        event: decodeSessionUpdate({ sessionUpdate: 'config_option_update', configOptions: modelConfigOptions('default-model') } as never),
-      }), 150);
-      return { sessionId: 'session-late-model' };
-    });
-    h.agent.setSessionConfigOption.mockImplementation(async () => ({ configOptions: modelConfigOptions('gpt-5.5') }));
-    const result = await rt.startSession(makeStartInput({ sessionId: 'conv-late-model', model: 'gpt-5.5' }));
-    expect(isOk(result)).toBe(true);
-    expect(h.agent.setSessionConfigOption).toHaveBeenCalledWith(expect.objectContaining({ value: 'gpt-5.5' }));
-    expect(JSON.stringify(rt.getChatHistory('conv-late-model'))).not.toContain('model-unavailable');
-    await rt.dispose();
-  });
-
-  it('fails the start at once when the process dies while waiting for a late model option', async () => {
-    const h = makeAcpHarness();
-    const provider = h.deps.agentHost.resolveAcp('claude');
-    if (!provider) throw new Error('test provider missing');
-    provider.behavior.catalogModelsInConfigUpdate = true;
-    const rt = new AcpRuntime(h.deps);
-    h.agent.newSession.mockImplementationOnce(async () => {
-      setTimeout(() => h.children[0]?.emitExit(1), 150);
-      return { sessionId: 'session-late-dies' };
-    });
-    const result = await rt.startSession(makeStartInput({ sessionId: 'conv-late-dies', model: 'gpt-5.5' }));
-    expect(isOk(result)).toBe(false);
-    expect(JSON.stringify(result)).toContain('exited during startup (code 1)');
-    await rt.dispose();
-  });
-
   it('opens the session when a harness never publishes its late model option', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
     try {

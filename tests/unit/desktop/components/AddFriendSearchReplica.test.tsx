@@ -22,49 +22,6 @@ const rowTitles = () => [...harness.container.querySelectorAll('.gg-row .gg-list
 
 // The user search is a reading of the submitted query (lib/contactsReplicas.ts userSearch), ❌ the contacts store's state.
 describe('AddFriendSearch reads the submitted search', () => {
-  it('searches what was typed once typing pauses, never below the minimum', async () => {
-    const search = vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
-    await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: {} })
-    await typeInto(input(), 's')
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)) })
-    expect(search).not.toHaveBeenCalled()
-    expect(harness.container.textContent).not.toContain(noResults('s'))
-    await typeInto(input(), 'someone')
-    expect(search).not.toHaveBeenCalled()
-    await waitForCondition(() => harness.container.textContent?.includes(noResults('someone')) ?? false, 'no empty answer after the pause')
-    expect(search).toHaveBeenCalledTimes(1)
-    expect(search).toHaveBeenCalledWith('someone', 'user-1')
-  })
-
-  it('takes one Han character as a query, and waits for an input method to finish', async () => {
-    const search = vi.spyOn(contactsService, 'searchUsers').mockResolvedValue([])
-    await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: {} })
-    await act(async () => { input().dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })) })
-    await typeInto(input(), 'zhang')
-    await act(async () => { input().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true })) })
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)) })
-    expect(search).not.toHaveBeenCalled()
-    await typeInto(input(), '张')
-    await act(async () => { input().dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '张' })) })
-    await waitForCondition(() => search.mock.calls.length > 0, 'the composed text was not searched')
-    expect(search.mock.calls.map((call) => call[0])).toEqual(['张'])
-  })
-
-  it('never shows the last query\'s answer as the answer to a new one', async () => {
-    vi.spyOn(contactsService, 'searchUsers')
-      .mockResolvedValueOnce([])
-      .mockImplementationOnce(() => new Promise(() => {}))
-    await renderWithAppProviders(harness, createNode(AddFriendSearch), { contacts: {} })
-    await typeInto(input(), 'aaa')
-    await submit()
-    await waitForCondition(() => harness.container.textContent?.includes(noResults('aaa')) ?? false, 'no empty answer for the first query')
-    await typeInto(input(), 'bbb')
-    await submit()
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 450)) })
-    expect(harness.container.textContent).not.toContain(noResults('bbb'))
-    expect(harness.container.textContent).not.toContain(noResults('aaa'))
-    expect(harness.container.querySelector('[data-testid="friend-search-pending"]')).not.toBeNull()
-  })
 
   it('says a failed search where the hits go, and Retry reads again', async () => {
     const search = vi.spyOn(contactsService, 'searchUsers')

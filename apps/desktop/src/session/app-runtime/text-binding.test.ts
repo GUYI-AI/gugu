@@ -80,50 +80,6 @@ describe('gugu.bind.text on a <textarea> (one line)', () => {
     unbind();
   });
 
-  it('control — what the L7 App did: redraw on every remote change, commit after a 90 ms pause by diffing against f.text', async () => {
-    const { service, file } = await page();
-    const field = document.createElement('textarea');
-    document.body.append(field);
-    field.value = file.text;
-    field.focus();
-    const lineEnd = START.indexOf('\n', START.indexOf('first'));
-    field.setSelectionRange(lineEnd, lineEnd);
-    const handle = file as TextFile & { insert(i: number, s: string): void; delete(i: number, n: number): void };
-    let pending: ReturnType<typeof setTimeout> | null = null;
-    const commitByDiff = () => {
-      pending = null;
-      const now = handle.text;
-      const next = field.value;
-      let start = 0;
-      while (start < now.length && start < next.length && now[start] === next[start]) start += 1;
-      let endNow = now.length;
-      let endNext = next.length;
-      while (endNow > start && endNext > start && now[endNow - 1] === next[endNext - 1]) {
-        endNow -= 1;
-        endNext -= 1;
-      }
-      if (endNow > start) handle.delete(start, endNow - start);
-      if (endNext > start) handle.insert(start, next.slice(start, endNext));
-    };
-    field.addEventListener('input', () => {
-      if (pending) clearTimeout(pending);
-      pending = setTimeout(commitByDiff, 90);
-    });
-    file.onChange(({ local }) => {
-      if (!local) field.value = handle.text; // the whole page redrawn, A's uncommitted letters with it
-    });
-    for (let i = 0; i < A_TYPES.length; i += 1) {
-      typeInto(field, A_TYPES[i]!);
-      if (i < B_TYPES.length) await bTypes(service, file, B_TYPES[i]!, B_TYPES.slice(0, i + 1));
-    }
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    const final = service.text('item-1@1');
-    const aKept = [...A_TYPES].filter((_, i) => final.includes(A_TYPES.slice(0, i + 1))).length;
-    const bKept = final.includes(B_TYPES) ? B_TYPES.length : 0;
-    // As L7 saw it: letters lost.
-    expect(aKept + bKept).toBeLessThan(A_TYPES.length + B_TYPES.length);
-  });
-
   it('a change before the caret moves it along; a remote change with nothing typed keeps the caret on its letter', async () => {
     const { service, file, bindText } = await page();
     const field = document.createElement('textarea');

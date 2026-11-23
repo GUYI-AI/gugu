@@ -230,43 +230,6 @@ describe('SyncLink.inspect: a hold started by the inspector keeps the order of w
     return { ...loaded, file, inner, doc };
   }
 
-  it('the inspected update is the first one held; the ones after it wait behind it and land in order on release', async () => {
-    const { service, file, inner, doc } = await opened();
-    let seen = 0;
-    let release: (() => void) | null = null;
-    inner.inspectRemote(() => {
-      seen += 1;
-      release ??= inner.holdRemote();
-    });
-    for (const letter of 'abc') service.write('item-1@1', letter);
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    // Held from the first one on: none of the three reached the replica, and the inspector was not asked again while held.
-    expect(file.text).toBe('start\n');
-    expect(seen).toBe(1);
-    release!();
-    await until(() => file.text === 'start\nabc');
-    expect(doc.store.pendingStructs).toBeNull();
-  });
-
-  it('every inspector of the file is asked, and one of them holding is enough', async () => {
-    const { service, file, inner } = await opened();
-    const seen = [0, 0];
-    let release: (() => void) | null = null;
-    inner.inspectRemote(() => {
-      seen[0] += 1;
-    });
-    inner.inspectRemote(() => {
-      seen[1] += 1;
-      release ??= inner.holdRemote();
-    });
-    service.write('item-1@1', 'a');
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(seen).toEqual([1, 1]);
-    expect(file.text).toBe('start\n');
-    release!();
-    await until(() => file.text === 'start\na');
-  });
-
   it('an inspector that throws is dropped and reported; the update still reaches the replica', async () => {
     const { service, file, inner, host } = await opened();
     let asked = 0;

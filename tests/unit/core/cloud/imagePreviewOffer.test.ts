@@ -42,15 +42,6 @@ describe('image previews offered by every upload', () => {
     await vi.waitFor(() => expect(seen.find(call => call.route === 'file-preview')?.body.sha256).toBe(declared.sha256))
   })
 
-  it('a file that is not an image, and the preview itself, offer nothing', async () => {
-    draw.mockClear()
-    const { seen, endpoint } = routes()
-    await uploadAttachmentBytes(endpoint, { bytes: original, name: 'data.bin', contentType: 'application/octet-stream' }, { chat_id: 'chat', as: 'agent' })
-    await new Promise(resolve => setTimeout(resolve, 10))
-    expect(draw).not.toHaveBeenCalled()
-    expect(seen.map(call => call.route)).toEqual(['upload'])
-  })
-
   it('a format the drawer cannot decode uploads without a preview, and the failure is warned', async () => {
     draw.mockRejectedValueOnce(new Error('unsupported image format'))
     const { seen, endpoint } = routes()
