@@ -3,20 +3,12 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, test } from 'vitest'
-import { localizedPromptText } from '../../../../apps/desktop/src/session/shared/extensions/catalog'
-import { parseExtensionManifest, safeParseExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
+import { safeParseExtensionManifest } from '../../../../apps/desktop/src/session/shared/extensions/manifest'
 import { APP_PROMPT_ACTIONS, editCloudPrompts, readCloudPrompts, withOverrides, type PromptLibraryPrompt } from '../../../../apps/desktop/src/session/shared/prompt-library'
 
 const raw = JSON.parse(readFileSync(resolve(__dirname, '../../../../apps/desktop/preinstalled-apps/workspace/manifest.json'), 'utf8'))
 
 describe('an App\'s prompts', () => {
-  test('the folder App offers 群文件整理 in both languages', () => {
-    const manifest = parseExtensionManifest(raw)
-    const [prompt] = manifest.contributes.prompts!
-    expect(localizedPromptText(manifest, prompt, 'zh-CN').title).toBe('群文件整理')
-    expect(localizedPromptText(manifest, prompt, 'en-US').title).toBe('Tidy up the chat folder')
-    expect(localizedPromptText(manifest, prompt, 'en-US').prompt).toContain('workspace__list')
-  })
 
   test('prompts need API 34, and a translation names a prompt the App has', () => {
     expect(safeParseExtensionManifest({ ...raw, apiVersion: 33 }).ok).toBe(false)

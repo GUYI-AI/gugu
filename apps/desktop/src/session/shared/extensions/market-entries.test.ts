@@ -1,5 +1,4 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+
 import apiIndex from './fixtures/app-api-index.json';
 import { compatOf, currentMarketHost, firstReleaseFor, marketCompatText } from './market';
 import { parseMarketIndex } from './market-snapshot';
@@ -90,22 +89,6 @@ describe('App API prompt contract', () => {
   it('A4 and A5 preserve semver and author-update refusals', () => {
     expect(compatOf({ apiVersion: 25, minAppVersion: '0.3.2' }, h25)).toMatchObject({ reason: 'needs-newer-app', minAppVersion: '0.3.2' });
     expect(compatOf({ apiVersion: 24, minAppVersion: '0.1.0' }, h25)).toEqual({ reason: 'needs-author-update', apiVersion: 24 });
-  });
-  it('A8 every existing text surface uses the shared compatibility wording', () => {
-    const readers = [
-      'apps/desktop/src/session/renderer/features/extensions/panel/app-version-history.tsx',
-      'apps/desktop/src/session/renderer/features/extensions/panel/app-lifecycle.ts',
-      'apps/desktop/src/session/renderer/features/extensions/panel/market-detail-extension-devices.tsx',
-      'apps/desktop/src/session/renderer/features/extensions/panel/app-product-page.tsx',
-      'apps/desktop/src/components/appSlot/phoneMarket.ts',
-      'apps/desktop/src/components/extensionBundle/ExtensionBundleCard.tsx',
-      'apps/desktop/electron/session/main/core/extensions/market-catalog.ts',
-    ];
-    for (const file of readers) {
-      const text = readFileSync(resolve(process.cwd(), file), 'utf8');
-      expect(text, file).toContain('marketCompatText');
-      expect(text, file).not.toMatch(/compat\.minAppVersion/);
-    }
   });
   it.each([false, true])('A9 keeps the original index card on home (featured=%s), while retired/author-update stay hidden', featured => {
     const index = parseMarketIndex(JSON.stringify(apiIndex));

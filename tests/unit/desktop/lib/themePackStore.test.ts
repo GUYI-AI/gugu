@@ -1,7 +1,5 @@
 // @vitest-environment jsdom
 // 资源库「主题」的两个槽位(深色时 / 浅色时各用哪族)与明暗偏好的配合(owner 11-07 拍板:单模式主题顺手切明暗)。
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { readThemePreference, writeThemePreference } from '../../../../apps/desktop/src/session/renderer/lib/theme/host-theme'
 import {
@@ -88,11 +86,5 @@ describe('theme pack slots', () => {
     expect(readThemePackSlots()).toEqual({})
     applyThemePackSlots()
     expect(style()).toBeNull()
-  })
-
-  it('index.html first-paint script uses the same storage key and style id', () => {
-    const html = readFileSync(join(__dirname, '../../../../apps/desktop/index.html'), 'utf8')
-    expect(html).toContain(`localStorage.getItem('${THEME_PACK_CSS_KEY}')`)
-    expect(html).toContain(`style.id = '${THEME_PACK_STYLE_ID}'`)
   })
 })

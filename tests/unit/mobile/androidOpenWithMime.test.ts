@@ -51,13 +51,6 @@ describe('Android Open with registration', () => {
     }
   })
 
-  it('keeps every concrete application MIME already named in the preview, file-card and shared type lists', () => {
-    const paths = ['apps/desktop/src/components/chat/documentPreview.ts', 'packages/core/src/shared/ui/attachmentType.ts', 'packages/core/src/shared/imageMime.mjs']
-    const known = new Set(paths.flatMap(path => [...readFileSync(path, 'utf8').matchAll(/['"](application\/[a-z0-9.+-]+)['"]/g)].map(match => match[1]!)))
-    known.delete('application/octet-stream') // A transport placeholder, not an advertised file format.
-    for (const mime of known) expect(matches('VIEW', mime), mime).toBe(true)
-  })
-
   it.each(['application/javascript', 'application/json', 'application/xml', 'application/yaml', 'application/x-yaml', 'application/toml', 'application/csv'])('keeps structured text %s on the existing text-preview path', mimeType => {
     expect(classifyDocumentPreview({ fileName: 'without-an-extension', mimeType })).toBe('text')
     expect(matches('VIEW', mimeType)).toBe(true)

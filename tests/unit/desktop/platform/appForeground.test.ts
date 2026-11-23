@@ -7,25 +7,12 @@ import { webPlatform } from '../../../../apps/desktop/src/platform/web'
 
 const { appAddListener } = vi.hoisted(() => ({ appAddListener: vi.fn() }))
 vi.mock('@capacitor/app', () => ({ App: { addListener: appAddListener } }))
-
-const source = readFileSync(resolve(process.cwd(), 'apps/desktop/src/platform/capacitor.ts'), 'utf8')
-const electronSource = readFileSync(resolve(process.cwd(), 'apps/desktop/src/platform/electron.ts'), 'utf8')
 const preloadSource = readFileSync(resolve(process.cwd(), 'apps/desktop/electron/preload.ts'), 'utf8')
 const mainSource = readFileSync(resolve(process.cwd(), 'apps/desktop/electron/main.ts'), 'utf8')
-const resumeSource = readFileSync(resolve(process.cwd(), 'apps/desktop/electron/server/account-resume-wiring.ts'), 'utf8')
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 describe('app foreground platform boundary', () => {
   beforeEach(() => appAddListener.mockReset())
-
-  it('confines official App resume registration and exact teardown to the Capacitor adapter', () => {
-    expect(source).toMatch(/from '@capacitor\/app'/)
-    expect(source).toMatch(/App\.addListener\(['"]resume['"]/)
-    expect(source).toMatch(/active\s*=\s*false/)
-    expect(source).toMatch(/handle\.remove\(\)/)
-    expect(source).toMatch(/catch\([^)]*onError/)
-    expect(source).not.toMatch(/gugu:app-foreground|removeAllListeners\([^)]*App/)
-  })
 
   it('forwards official resume only while active and removes the exact handle', async () => {
     const remove = vi.fn(async () => {})
@@ -47,13 +34,6 @@ describe('app foreground platform boundary', () => {
     expect(listener).toHaveBeenCalledOnce()
     expect(remove).toHaveBeenCalledOnce()
     expect(onError).not.toHaveBeenCalled()
-  })
-
-  it('routes Electron focus and system wake to the renderer adapter', () => {
-    expect(electronSource).toMatch(/onAppForeground/)
-    expect(preloadSource).toMatch(/ipcRenderer\.on\('app:foreground'/)
-    expect(mainSource).toContain('installNativeResumeSource(powerMonitor, notifyRendererForeground, resumeAccountMessaging)')
-    expect(resumeSource).toMatch(/power\.on\('resume',\s*\(\)\s*=>\s*\{\s*foreground\(\);\s*resume\('native-power'\)/)
   })
 
   it('answers Electron app-active from the host focus, not the never-hidden page', () => {

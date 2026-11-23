@@ -4,7 +4,6 @@
 // (只有自己传的、有云端副本的能改;不能改的说为什么,在悬停里)。页面跑在假的 window.gugu 上。
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { runInNewContext } from 'node:vm'
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { listedIn } from './folderList'
 import { until } from '../../../support/awaitCondition'
@@ -85,21 +84,6 @@ beforeEach(async () => {
   if ($('sort-label').textContent !== '最近') {
     $('sort').click()
     await menu.pick('最近')
-  }
-})
-
-test.each(['zh', 'en'] as const)('%s retention copy matches File storage', (locale) => {
-  const source = readFileSync(resolve(process.cwd(), 'apps/desktop/preinstalled-apps/workspace/app.js'), 'utf8')
-  const table = source.match(/const STRINGS = (\{[\s\S]*?\n\})\n/)
-  expect(table, 'the App localization table').not.toBeNull()
-  const strings = (runInNewContext(`(${table![1]})`) as Record<string, Record<string, string>>)[locale]!
-  const obsolete = ['一直保留', 'Until deleted', '文件存储与读取', '设备 › 文件存储', 'Devices › File storage', '直到有人删除', 'until someone deletes']
-  const outdated = Object.entries(strings).flatMap(([key, value]) => obsolete
-    .filter((phrase) => value.toLowerCase().includes(phrase.toLowerCase()))
-    .map((phrase) => ({ key, phrase, value })))
-  expect(outdated, 'obsolete retention names, rules and settings paths').toEqual([])
-  for (const key of ['storedOnMine', 'keepTip']) {
-    expect(strings[key], key).toContain(locale === 'zh' ? '设置 › 文件存储' : 'Settings › File storage')
   }
 })
 

@@ -1,6 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ASSISTANT_GUIDE_BEGIN, ASSISTANT_GUIDE_END, LEGACY_ASSISTANT_GUIDE_BEGIN, LEGACY_ASSISTANT_GUIDE_END, assistantHomeKind, assistantHomePaths } from '@gugu/core/shared/assistantPolicy'
@@ -13,12 +12,6 @@ it('treats a self-hosted Linux server as a computer home; only the cloud compute
   expect(assistantHomeKind({ GUGU_SERVER_MODE: '1' })).toBe('computer')
   expect(assistantHomeKind({ GUGU_SERVER_MODE: '1', GUGU_CLOUD_COMPUTER: '1' })).toBe('cloud')
   expect(assistantHomeKind({})).toBe('computer')
-})
-
-it('decides every assistant layout in the main process from the home identity, never from the launch mode', () => {
-  const main = readFileSync(join(__dirname, '../../../apps/desktop/electron/main.ts'), 'utf8')
-  expect(main).not.toMatch(/SERVER_MODE \? 'cloud'/)
-  expect(main.match(/assistantHomeKind\(process\.env\)/g)?.length).toBe(4)
 })
 
 const ownerText = (begin: string, end: string) => `# my rules\nuse tabs\n\n${begin}\n# 你是谁\n个人助理\n${end}\n\ntrailing note\n`

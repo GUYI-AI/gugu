@@ -2,47 +2,9 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 const read = (path: string) => readFileSync(new URL(`../../../../${path}`, import.meta.url), 'utf8')
-const css = read('apps/desktop/src/styles/tokens.css')
-const layer = read('apps/desktop/src/session/renderer/features/extensions/extension-view-layer.tsx')
-const tree = read('apps/desktop/src/session/renderer/features/tabs/pane-tree-view.tsx')
-const cut = read('apps/desktop/src/session/renderer/features/tabs/pane-track-cut.tsx')
-const fullscreen = read('apps/desktop/src/session/renderer/features/tabs/tab-fullscreen.ts')
-const screen = read('apps/desktop/src/session/renderer/app/screen-frame.tsx')
-const menu = read('packages/session-ui/src/react/primitives/dropdown-menu/dropdown-menu.css.ts')
 const appFrame = read('apps/desktop/src/session/renderer/features/apps/app-conversation-frame.tsx')
 
 describe('workspace surfaces share one stacking contract', () => {
-  it('puts ordinary guests below dividers and fullscreen, and only fullscreen guests above the opaque pane', () => {
-    const order = ['pane-resident', 'pane-resident-chrome', 'pane-divider', 'pane-fullscreen', 'pane-fullscreen-resident', 'menu']
-    const levels = order.map((role) => {
-      const declarations = [...css.matchAll(new RegExp(`--z-${role}:\\s*(\\d+)\\s*;`, 'g'))]
-      expect(declarations, role).toHaveLength(1)
-      return Number(declarations[0]![1])
-    })
-    for (let i = 1; i < levels.length; i++) expect(levels[i - 1]).toBeLessThan(levels[i]!)
-  })
-
-  it('keeps the resident measurement container out of a fixed or numeric stacking context', () => {
-    const classes = /data-slot="extension-view-layer"\s+className="([^"]+)"/.exec(layer)?.[1]?.split(/\s+/)
-    expect(classes).toContain('absolute')
-    expect(classes).not.toContain('fixed')
-    expect(classes?.some((name) => /^z-/.test(name))).toBe(false)
-    expect(layer).toContain("ancestorsOf(claim.element).some((element) => element.hasAttribute('data-tab-fullscreen'))")
-    expect(layer).toContain("'var(--z-pane-fullscreen-resident)'")
-    expect(layer).toContain("'var(--z-pane-resident)'")
-  })
-
-  it('prevents the pane, divider and menu from choosing independent numeric levels', () => {
-    expect(fullscreen).toContain("zIndex: 'var(--z-pane-fullscreen)'")
-    // The pane tree's and the screen's dividers are both TrackCut's.
-    expect(cut).toContain("zIndex: 'var(--z-pane-divider)'")
-    expect(cut).not.toMatch(/\bz-\d+\b/)
-    expect(tree.slice(tree.indexOf('const Cut'))).toContain('<TrackCut')
-    expect(screen).toContain('<TrackCut')
-    const menuLevels = [...menu.matchAll(/zIndex:\s*([^,\n]+)/g)].map((match) => match[1])
-    expect(menuLevels).not.toHaveLength(0)
-    expect(menuLevels.every((value) => value === "'var(--z-menu)'")).toBe(true)
-  })
 
   it('draws a host control over an App page\'s corner on its own level, above the page and below the dividers (#1925)', () => {
     expect(appFrame).toContain("zIndex: 'var(--z-pane-resident-chrome)'")

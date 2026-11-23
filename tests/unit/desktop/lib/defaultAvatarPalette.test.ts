@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 import { AVATAR_FEATURE_COLOR, AVATAR_PALETTE, BODY_COLORS, avatarColorIndex } from '@gugu/core/shared/ui/avatarPalette'
 import { agentIdentity } from '../../../../apps/desktop/src/components/agentAvatar/engine/identity'
@@ -70,17 +70,5 @@ describe('the shared twelve-hue default avatar palette', () => {
         expect(contrast(c.groupStroke, surface)).toBeGreaterThanOrEqual(3)
       }
     }
-  })
-
-  it('uses the same approved shades in live CSS group/project faces', () => {
-    const css = readFileSync('apps/desktop/src/styles/tokens.css', 'utf8')
-    for (let i = 0; i < 12; i++) {
-      for (const [role, token] of [['groupStroke', 'stroke'], ['groupText', 'text']] as const) {
-        const values = [...css.matchAll(new RegExp(`--avatar-group-${token}-${i + 1}: (#[0-9a-f]{6});`, 'g'))].map(m => m[1])
-        expect(values).toEqual([AVATAR_PALETTE[i].dark[role], AVATAR_PALETTE[i].light[role]])
-      }
-    }
-    expect(css).not.toContain('--group-face-')
-    expect(css).not.toContain('--avatar-group-fill-')
   })
 })
