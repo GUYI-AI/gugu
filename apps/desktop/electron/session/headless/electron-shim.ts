@@ -181,8 +181,8 @@ type HeadlessNativeImage = {
 }
 
 // @@@no-decoder - a server has no image decoder, so every image it reads is empty, as Electron says of bytes it cannot
-// decode. Each caller then takes its own "cannot decode" branch: an upload offers no preview (readers show the original),
-// an App keeps the generic icon, a dropped HEIC is refused. ❌ Hand the input back from toPNG/toJPEG: callers treat those
+// decode. Each caller then takes its own "cannot decode" branch: Electron's preview drawer rejects (a server draws its
+// previews with sharp), an App keeps the generic icon, a dropped HEIC is refused. ❌ Hand the input back from toPNG/toJPEG: callers treat those
 // bytes as this process's encoding (a 1.6 MB PNG went up as its own "560 px preview").
 function emptyImage(): HeadlessNativeImage {
   return {
