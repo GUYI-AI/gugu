@@ -17,7 +17,6 @@ import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { formatCalendarDay } from '@/i18n/format';
 import { useUnavailableProjects } from '@/lib/projectRecovery';
 import { ProjectRecoverySubtitle } from '@/components/projects/ProjectRecoverySubtitle';
 import type { UnavailableProject } from '@shared/projects';
@@ -25,7 +24,7 @@ import type { UnavailableProject } from '@shared/projects';
 /**
  * #2548 a project in the one list is its project group's conversation row. `projectId` is a row of the account project
  * list (sidebarStore.sidebarProjects) whose group is not a conversation of the chat list yet, so it is drawn as that row
- * would be (OneListProjectRow: the project cover, name, the time that row will show, no preview); same click, same menu,
+ * would be (OneListProjectRow: the project cover, name, no preview); same click, same menu,
  * in the place that row will take (the chat list's slot, sidebar-one-list). The cover is keyed by the
  * row's representative local project, as partnerProjects keys every project group's cover. #6264 a project on another
  * machine is this row too; that machine not connected = the row reads offline (data-offline), the project stays listed.
@@ -101,7 +100,6 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
       <OneListProjectRow
         name={projectLabel}
         faceId={groupChatId ?? rowId}
-        time={ref?.activeAt ? formatCalendarDay(ref.activeAt) : undefined}
         preview=""
         subtitle={unavailable ? <ProjectRecoverySubtitle project={unavailable} /> : undefined}
         selected={isProjectActive}
@@ -131,7 +129,6 @@ const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projec
     <OneListProjectRow
       name={name}
       faceId={chatId}
-      time={activeAt === null ? undefined : formatCalendarDay(activeAt)}
       preview=""
       subtitle={unavailable ? <ProjectRecoverySubtitle project={unavailable} /> : undefined}
       selected={focused?.kind === 'chat' && focused.chatId === chatId}

@@ -58,11 +58,11 @@ export function innerSidebarShownWidth(width: number, cardWidth: number | null):
 }
 
 /**
- * #2548 the list collapses to a rail of its avatars, this wide: the list's gutter (12) + row padding (8) + avatar (32) + the
- * same 8 + 12 on the other side, so every avatar sits on its middle (x = 36) without moving. The rail is always there, so the
+ * #2548 the list collapses to a rail of its avatars, this wide: the list's gutter (8) + a row's 52px square (its padding 6
+ * around the 40px avatar, 界面减法 #53) + 8, so every avatar sits on its middle (x = 34) without moving. The rail is always there, so the
  * list never goes away and there is no hover preview of it.
  */
-export const SIDEBAR_RAIL_PX = 72;
+export const SIDEBAR_RAIL_PX = 68;
 
 /** 侧栏占位宽:收起宽 + 进度 × (宽 − 收起宽);#2548 收起宽就是那一列头像。 */
 export function sidebarOccupiedWidth(progress: number, width: number, rail: number): number {

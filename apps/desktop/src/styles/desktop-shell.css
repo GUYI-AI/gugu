@@ -31,8 +31,7 @@
  * The invisible resize target is kept, including keyboard resizing.
  */
 [data-desktop-shell] .gg-pane[data-role='nav'],
-.gugu-skin [data-workspace-left-panel] [data-region='left-sidebar'],
-:root [data-desktop-shell] > .gg-sidebar-rail {
+.gugu-skin [data-workspace-left-panel] [data-region='left-sidebar'] {
   border-inline-end: 0;
 }
 
@@ -43,21 +42,6 @@
 [data-desktop-shell] .gg-session-frame,
 [data-desktop-shell] .gg-session-frame-host > .gugu-skin {
   background: var(--shell-bg);
-}
-
-/* #7610:C 档是一整块工作区(浅色、深色同一结构,只换颜色 token),从 rail 右边开始包住列表、页签条与内容。
- * 桌面主窗都用这一档,不分材质:native 时 rail 透出系统材质,opaque(Windows / Linux / mac 减弱透明度)时 rail 是
- * --nav-rail 实色;选择器只要 data-window-material 存在(只有带主进程桥的主窗才写),网页版与子窗口不在内。
- * MainLayout 这层已有 margin:0 的内联布局;这里只覆盖该值,不搬 DOM 或重建会话。
- * fixed 的会话页 overlay 仍按 viewport 定位,clip-path 只负责把它裁在共同圆角里。
- */
-:root[data-window-material] [data-desktop-shell] > .gg-sidebar-rail + div {
-  --shell-bg: var(--desktop-workspace-bg);
-  --radius-page: var(--radius-surface);
-  margin: var(--desktop-surface-inset) var(--desktop-surface-inset) var(--desktop-surface-inset) 0 !important;
-  clip-path: inset(0 round var(--radius-surface));
-  outline: 0.5px solid var(--border-color);
-  outline-offset: -0.5px;
 }
 
 /* 正文不再单独画第二层外框。它与侧栏之间的分隔、用户保存的栏宽仍归原布局。

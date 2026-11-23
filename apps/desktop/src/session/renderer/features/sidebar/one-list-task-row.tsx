@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useShownAgentName } from '@/hooks/useShownAgentName';
 import { useRowContextMenu } from '@/hooks/useRowContextMenu';
-import { formatCalendarDay } from '@/i18n/format';
+import { ONE_LIST_AVATAR_PX } from '@/lib/sidebarOneList';
 import { MenuTableItems } from '@/components/MenuTableItems';
 import { Menu } from '@/components/ui/Menu';
 import { SessionAvatar } from '@/components/session-watch/StatusGlyph';
@@ -36,9 +36,8 @@ export const OneListTaskRow = observer(function OneListTaskRow({ projectId, sess
   return (
     <div onContextMenu={menu.onContextMenu}>
       <OneListRow
-        leading={<SessionAvatar sessionId={sessionId} presentation={entry.presentation ?? null} />}
+        leading={<SessionAvatar sessionId={sessionId} presentation={entry.presentation ?? null} size={ONE_LIST_AVATAR_PX} />}
         name={name}
-        time={entry.time ? formatCalendarDay(entry.time) : undefined}
         preview=""
         selected={open}
         onOpen={(beside) => openSidebarSession(projectId, sessionId, beside)}

@@ -1,5 +1,4 @@
 import { messageForUser } from '@/lib/userFacingError';
-import type { AgentAttention } from '@gugu/core/shared/agentStatus'
 import { Sheet } from '../components/ui/Sheet'
 import { PaneHeader } from '../components/ui/Pane'
 import { RightPanelBackButton } from '../components/chat/RightPanel'
@@ -17,7 +16,7 @@ import '@/mobile/phone-look.css'
 import { PhoneViewportShell } from '@/mobile/PhoneViewportShell'
 import { useMobileShellDiagnostics } from '@/mobile/useMobileListDiagnostics'
 import { PhoneTabBar as MobileTabBar } from '@/mobile/PhoneTabBar'
-import { Sidebar } from '../components/Sidebar'
+import { MeHost } from '../components/me/MeMenu'
 import { returnToScreen } from '@/session/renderer/app/screen-layout-actions'
 import { registeredViews } from '@/session/renderer/lib/layout/registered-views'
 import { UpdateBanner } from '../components/UpdateBanner'
@@ -184,8 +183,6 @@ function InnerLayout({
     return () => window.removeEventListener(UI_EVENTS.openContact, open)
   }, [setActiveTab])
   useSessionpageReveal(setActiveTab)
-  // The same live task directory drives pending actions and the existing rail attention priority.
-  const [sessionAttention, setSessionAttention] = useState<AgentAttention>(null)
   const [settingsModalOpen, setSettingsModalOpen] = useState(false)
   // @@@1507 设置面板初始 section;侧栏「额度」直接开到 quota,齿轮入口回 account。
   const [settingsSection, setSettingsSection] = useState<ActiveSection>('account')
@@ -1002,13 +999,8 @@ function InnerLayout({
     >
       {mobile && <UpdateBanner />}
       {!mobile && (
-        <Sidebar
-          activeTab={activeTab}
-          onTabChange={selectTab}
-          settingsOpen={settingsModalOpen}
-          pendingContactsCount={pendingRequestCount}
-          sessionAttention={sessionAttention}
-        />
+        // 界面减法: no far-left rail; its places are in my menu, at the foot of the session page's sidebar.
+        <MeHost onTabChange={selectTab} pendingContactsCount={pendingRequestCount} />
       )}
 
       <div
@@ -1273,7 +1265,7 @@ function InnerLayout({
       <MessageForwardHost />
       {/* 摩擦单 F6: an install is consented to here, over whatever view is on screen. */}
       <ExtensionConsentSheet />
-      <NeedsYouHost onAttentionChange={setSessionAttention} />
+      <NeedsYouHost />
       <AgentFailureSlotHost />
 
       {/* @@@822 frameless 自绘窗口控制(Windows/Linux 右上角 min/max/close);Mac/web 自渲染为 null。

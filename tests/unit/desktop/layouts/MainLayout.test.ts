@@ -111,11 +111,11 @@ function useActivationProbe(owner: string, active: boolean, accountId: string | 
     if (active) activationProbe.calls.push({ owner, accountId })
   }, [active, accountId, owner])
 }
-vi.mock('../../../../apps/desktop/src/components/Sidebar', async () => {
+vi.mock('../../../../apps/desktop/src/components/me/MeMenu', async () => {
   const React = await vi.importActual<typeof import('react')>('react')
   return {
-    // #7046 起左栏不再订余额(积分环拿掉了),替身也就不报 sidebar-billing。
-    Sidebar: ({ onTabChange }: {
+    // 界面减法: the shell's tabs are opened from my menu (MeHost); the stand-in is its buttons.
+    MeHost: ({ onTabChange }: {
       onTabChange: (tab: 'settings' | 'chats' | 'tasks' | 'contacts') => void
     }) => {
       return React.createElement('div', { 'data-testid': 'mock-sidebar' },

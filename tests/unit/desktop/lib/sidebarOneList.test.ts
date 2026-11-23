@@ -295,14 +295,12 @@ describe('rows that never stand among the conversations come after every convers
 })
 
 describe('the sample project row shows its transcript\'s last message', () => {
-  it.each([['zh-CN', zhCNSampleProject], ['en-US', enUSSampleProject]] as const)('%s: "<sender>: <plain text>" and the time it shows', (_locale, content) => {
-    const last = content.messages.at(-1)!
+  it.each([['zh-CN', zhCNSampleProject], ['en-US', enUSSampleProject]] as const)('%s: "<sender>: <plain text>"', (_locale, content) => {
     const line = sampleProjectLastLine(content, 'Me')
-    expect(line.time).toBe(last.time)
     // The bundled run ends on the agent's reply (as a group row's preview in the mock: 「Codex 6: 三份…」).
-    expect(line.preview.startsWith(`${content.agent.name}: `)).toBe(true)
-    expect(line.preview).not.toMatch(/\]\(https?:/)
-    expect(line.preview.length).toBeGreaterThan(`${content.agent.name}: `.length)
+    expect(line.startsWith(`${content.agent.name}: `)).toBe(true)
+    expect(line).not.toMatch(/\]\(https?:/)
+    expect(line.length).toBeGreaterThan(`${content.agent.name}: `.length)
   })
 
   const content = (messages: SampleProjectContent['messages']): SampleProjectContent => ({
@@ -313,12 +311,12 @@ describe('the sample project row shows its transcript\'s last message', () => {
   })
 
   it('a last file message shows the file name after its sender', () => {
-    expect(sampleProjectLastLine(content([{ id: 'm1', kind: 'file', from: 'agent', time: '09:00', file: 'f1' }]), 'Me')).toEqual({ preview: 'Codex: plan.md', time: '09:00' })
+    expect(sampleProjectLastLine(content([{ id: 'm1', kind: 'file', from: 'agent', time: '09:00', file: 'f1' }]), 'Me')).toBe('Codex: plan.md')
   })
 
   it('the person looking at it is the sender of their own lines and of the task card', () => {
-    expect(sampleProjectLastLine(content([{ id: 'm1', kind: 'text', from: 'owner', time: '09:01', text: '**ok**' }]), 'Me').preview).toBe('Me: ok')
-    expect(sampleProjectLastLine(content([{ id: 'm1', kind: 'task', time: '09:02', text: 'Plan a trip' }]), 'Me').preview).toBe('Me: Plan a trip')
+    expect(sampleProjectLastLine(content([{ id: 'm1', kind: 'text', from: 'owner', time: '09:01', text: '**ok**' }]), 'Me')).toBe('Me: ok')
+    expect(sampleProjectLastLine(content([{ id: 'm1', kind: 'task', time: '09:02', text: 'Plan a trip' }]), 'Me')).toBe('Me: Plan a trip')
   })
 
   it('fails loud on a transcript without messages, or on a file it does not carry', () => {

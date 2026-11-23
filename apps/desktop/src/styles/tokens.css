@@ -152,23 +152,6 @@
   --sidebar-rail-width: 68px;
 }
 
-/* @@@rail-inset — 侧栏 rail 的上下留白,**按平台一个数**。
-   ❌ 别写回 `.gg-sidebar-rail { padding: … }`:那条规则的特指度是 (0,1,0),与本文件
-   `*:not(.gugu-skin, …)` 那条全局重置**相同**,而重置写在后面 ⇒ 组件自己的 padding
-   一次都没生效过(2026-09-19 实测:mac 的 padding-bottom 与 Windows 的上下两侧都是 0px,
-   而声明写的是 `32px 0 14px`)。mac 当时看起来是对的,只因为它另有一条
-   `:root[data-platform='mac'] .gg-sidebar-rail`(0,3,0)把 top 顶了回去 —— 于是同一个缺陷
-   在 mac 上被遮住、在 Windows 上露出来,读成「Windows 忘了让位」。
-   ⇒ 值放这里、规则用 `:root .gg-sidebar-rail`(0,2,0)压过重置,三个平台同一条路径。 */
-:root {
-  --sidebar-rail-pad-top: 32px;
-  --sidebar-rail-pad-bottom: 14px;
-}
-:root[data-platform='mac'] {
-  /* 交通灯在左上角,rail 的第一个元素必须整体下移到它们下面。 */
-  --sidebar-rail-pad-top: 58px;
-}
-
 /* 最左侧列表头位于 rail 右边，仅为超出 rail 的交通灯宽度预留空间。 */
 :root {
   --titlebar-list-header-inset: max(0px, calc(var(--titlebar-traffic-lights-width) - var(--sidebar-rail-width)));
@@ -206,7 +189,7 @@
    透明 1px 边线 + 共享 12px 圆角能恢复灰阶,撤销又回彩边;底色与 OverlayScrollbar 均已排除。
    这是独立标题行与不透明内容的窗口接壤边界,不属于列表组件。mac 与 Linux 都没有这条独立行,
    沿用原来的几何;阅读面仍是 desktop-shell.css 的唯一可见轮廓。 */
-:root[data-window-titlebar='row'][data-window-material='opaque'] [data-gugu-shell-phase] > .gg-sidebar-rail + div {
+:root[data-window-titlebar='row'][data-window-material='opaque'] [data-gugu-shell-phase] > div:first-child {
   border-top: 1px solid transparent;
   border-left: 1px solid transparent;
   /* 压过 MainLayout 的内联 borderRadius:var(--radius-page),不新造 Windows 圆角档。 */

@@ -146,7 +146,17 @@ vi.mock('@/components/ui/Popover', () => {
   };
 });
 
-const { SidebarOneListHead, SidebarOneListTop } = await import('./sidebar-one-list-chrome');
+const { SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop, SidebarRailRow } = await import('./sidebar-one-list-chrome');
+/** The sidebar's chrome as LeftSidebar stacks it: the head, the row under it, the foot (the list between is not needed). */
+function Chrome({ innerShownFor }: { innerShownFor?: string }) {
+  return (
+    <div data-region="left-sidebar">
+      <SidebarOneListHead innerShownFor={innerShownFor} />
+      <SidebarRailRow />
+      <SidebarOneListFoot />
+    </div>
+  );
+}
 
 let host: HTMLDivElement;
 let root: Root;
@@ -231,7 +241,7 @@ describe('the top: 创建智能体 and the 「+」 menu', () => {
     expect(button.style.paddingInline).toBe('0px');
     expect(button.hasAttribute('inert')).toBe(false);
     await change(() => { state.open = false; state.progress = 0; });
-    expect(top.style.paddingInline).toBe('20px');
+    expect(top.style.paddingInline).toBe('18px');
     expect(top.style.gap).toBe('0px');
   });
 
@@ -273,43 +283,41 @@ describe('the sidebar head', () => {
     expect(state.toggleLeft).toHaveBeenCalledTimes(1);
   });
 
-  it('puts the bell, Search, Scheduled and Session history to the right of the fold button', async () => {
-    await render(<SidebarOneListHead />);
+  it('open: the head ends in 「«」, the search field is the row under it, 已安排 · 会话历史 · the bell are in the foot after my avatar', async () => {
+    await render(<Chrome />);
     const head = document.querySelector<HTMLElement>('[data-sidebar-head]')!;
-    // The sidebar's 40px top band (the window's drag handle), 20px in: the 32px 「«」 is centred on x = 36.
+    // The sidebar's 40px top band (the window's drag handle), its controls at its end.
     expect(head.hasAttribute('data-sidebar-space')).toBe(true);
-    expect(head.className).toMatch(/\bpl-5\b/);
-    expect(head.style.paddingLeft).toBe('');
-    const bell = head.querySelector('[data-notification-slot="toggle"]')!;
-    const order = [q('sidebar-fold')!, bell, q('sidebar-search-trigger')!, q('sidebar-scheduled')!, q('sidebar-session-history')!];
-    const all = [...head.querySelectorAll('*')];
+    expect(head.className).toMatch(/\bjustify-end\b/);
+    expect(head.contains(q('sidebar-fold'))).toBe(true);
+    expect(document.querySelector('[data-sidebar-rail-row]')!.contains(q('sidebar-search-trigger'))).toBe(true);
+    const foot = document.querySelector<HTMLElement>('[data-sidebar-foot]')!;
+    const order = [foot.querySelector('[data-me-slot]')!, q('sidebar-scheduled')!, q('sidebar-session-history')!, foot.querySelector('[data-notification-slot="toggle"]')!];
+    const all = [...foot.querySelectorAll('*')];
     const positions = order.map((control) => all.indexOf(control));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
-    expect(head.firstElementChild!.contains(q('sidebar-fold'))).toBe(true);
-    expect(hiddenWithTheNames(q('sidebar-fold')!)).toBe(false);
-    for (const control of order.slice(1)) {
-      expect(hiddenWithTheNames(control)).toBe(true);
-      expect(control.closest('[inert]')).toBeNull();
-    }
-    expect(q('sidebar-session-history')!.closest<HTMLElement>('[data-hint]')!.dataset.hintSide).toBe('bottom');
+    expect(foot.querySelector<HTMLElement>('[data-me-slot]')!.dataset.meSlot).toBe('open');
+    expect(q('sidebar-session-history')!.closest<HTMLElement>('[data-hint]')!.dataset.hintSide).toBe('top');
   });
 
-  it('keeps the fold button in place and hides the other controls when collapsed', async () => {
+  it('on the rail: 「»」 in the row under the head, no search, 已安排 or 会话历史; the foot is the bell above my avatar', async () => {
     state.open = false;
-    await render(<SidebarOneListHead />);
+    state.progress = 0;
+    await render(<Chrome />);
     const head = document.querySelector<HTMLElement>('[data-sidebar-head]')!;
-    expect(head.firstElementChild!.contains(q('sidebar-fold'))).toBe(true);
+    expect(head.contains(q('sidebar-fold'))).toBe(false);
+    expect(document.querySelector('[data-sidebar-rail-row]')!.contains(q('sidebar-fold'))).toBe(true);
     expect(q('sidebar-fold')!.closest<HTMLElement>('[data-hint]')!.dataset.hint).toBe('sidebar.expandSidebar ([Mod+Shift+S])');
-    expect(q('sidebar-fold')!.closest('[inert]')).toBeNull();
-    for (const control of [head.querySelector('[data-notification-slot="toggle"]')!, q('sidebar-scheduled')!, q('sidebar-session-history')!, q('sidebar-search-trigger')!]) {
-      expect(hiddenWithTheNames(control)).toBe(true);
-      expect(control.closest('[inert]')).not.toBeNull();
-    }
+    for (const testId of ['sidebar-search-trigger', 'sidebar-scheduled', 'sidebar-session-history']) expect(q(testId)).toBeNull();
+    const foot = document.querySelector<HTMLElement>('[data-sidebar-foot]')!;
+    expect(foot.className).toMatch(/\bflex-col-reverse\b/);
+    expect(foot.querySelector<HTMLElement>('[data-me-slot]')!.dataset.meSlot).toBe('rail');
+    expect(foot.querySelector('[data-notification-slot="toggle"]')).not.toBeNull();
   });
 
   it('opens the existing Scheduled page and marks its button as current', async () => {
-    await render(<SidebarOneListHead />);
+    await render(<Chrome />);
     const scheduled = q('sidebar-scheduled')!;
     expect(scheduled.getAttribute('aria-label')).toBe('sidebar.scheduled');
     expect(scheduled.closest<HTMLElement>('[data-hint]')!.dataset.hint).toBe('sidebar.scheduled');
@@ -317,13 +325,13 @@ describe('the sidebar head', () => {
     await click(scheduled);
     expect(state.navigate).toHaveBeenCalledWith('automations');
     state.view = 'automations';
-    await render(<SidebarOneListHead key="on-scheduled" />);
+    await render(<Chrome key="on-scheduled" />);
     expect(q('sidebar-scheduled')!.getAttribute('aria-current')).toBe('page');
     expect(q('sidebar-scheduled')!.dataset.on).toBe('true');
   });
 
   it('会话历史 toggles: opens the existing 会话历史 page, lit while shown; clicked again it goes back to the view before', async () => {
-    await render(<SidebarOneListHead />);
+    await render(<Chrome />);
     const history = q('sidebar-session-history')!;
     expect(history.closest<HTMLElement>('[data-hint]')!.dataset.hint).toBe('sidebar.sessionHistory');
     expect(history.dataset.on).toBeUndefined();
@@ -333,7 +341,7 @@ describe('the sidebar head', () => {
     expect(state.back).not.toHaveBeenCalled();
     state.view = 'session-history';
     // The head is an observer (memoised); the slots hook re-renders it in the app, a new key does here.
-    await render(<SidebarOneListHead key="on-history" />);
+    await render(<Chrome key="on-history" />);
     const lit = q('sidebar-session-history')!;
     expect(lit.dataset.on).toBe('true');
     expect(lit.getAttribute('aria-pressed')).toBe('true');
@@ -357,17 +365,17 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   const details = (reason: string) => ({ reason, cancel: vi.fn(), allowPropagation: vi.fn() });
 
   it('does not show before a group or a project is opened', async () => {
-    await render(<SidebarOneListHead />);
+    await render(<Chrome />);
     expect(bubble()).toBeNull();
   });
 
   it('opening one while expanded brings up step 1 on the collapse button: 1 / 2, the shortcut, 跳过 and 下一步, no 上一步', async () => {
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     const card = bubble()!;
     expect(card.dataset.testid).toBe('sidebar-intro-collapse');
     expect(anchorOf(card)).toBe('sidebar-fold');
-    // Under the top row (❌ over the buttons it explains), running on from 「«」 at the row's start.
-    expect(placementOf(card)).toEqual({ side: 'bottom', align: 'start' });
+    // Under the top row (❌ over the button it explains), ending at 「«」 at the row's end.
+    expect(placementOf(card)).toEqual({ side: 'bottom', align: 'end' });
     expect(card.querySelector('.product-tour-kicker')!.textContent).toBe('1 / 2');
     expect(card.querySelector('h2')!.textContent).toBe('sidebar.introCollapseTitle');
     expect(card.querySelector('p')!.textContent).toBe('sidebar.introCollapseBody {"shortcut":"[Mod+Shift+S]"}');
@@ -379,14 +387,14 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   });
 
   it('下一步 moves to step 2 on the 会话历史 button and stores it: 2 / 2, the tools named, 上一步 · 打开看看 · 完成', async () => {
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     await click(q('sidebar-intro-next')!);
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'history' });
     const card = bubble()!;
     expect(card.dataset.testid).toBe('sidebar-intro-history');
     expect(anchorOf(card)).toBe('sidebar-session-history');
-    // Under the row too, running on from 会话历史.
-    expect(placementOf(card)).toEqual({ side: 'bottom', align: 'start' });
+    // 会话历史 is in the foot: above it, running on from it.
+    expect(placementOf(card)).toEqual({ side: 'top', align: 'start' });
     expect(card.querySelector('.product-tour-kicker')!.textContent).toBe('2 / 2');
     expect(card.querySelector('h2')!.textContent).toBe('sidebar.introHistoryTitle');
     expect(card.querySelector('p')!.textContent).toBe(`sidebar.introHistoryBody ${JSON.stringify({ tools: tools('zh-CN') })}`);
@@ -399,32 +407,32 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   it('the tools are the import list\'s engines, as an English list in English', async () => {
     state.locale = 'en-US';
     state.intro = 'history';
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     expect(bubble()!.querySelector('p')!.textContent).toBe(`sidebar.introHistoryBody ${JSON.stringify({ tools: tools('en-US') })}`);
     expect(bubble()!.querySelector('p')!.textContent).not.toContain('、');
   });
 
   it('上一步 goes back to step 1 and stores that', async () => {
     state.intro = 'history';
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     await click(q('sidebar-intro-previous')!);
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'collapse' });
     expect(anchorOf(bubble()!)).toBe('sidebar-fold');
   });
 
   it('跳过 ends it for good and stores that; it does not come up again', async () => {
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     await click(q('sidebar-intro-skip')!);
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'ended' });
     expect(bubble()).toBeNull();
-    await render(<SidebarOneListHead innerShownFor="g2" />);
+    await render(<Chrome innerShownFor="g2" />);
     expect(bubble()).toBeNull();
     expect(state.toggleLeft).not.toHaveBeenCalled();
   });
 
   it('完成 ends it', async () => {
     state.intro = 'history';
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     await click(q('sidebar-intro-next')!);
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'ended' });
     expect(bubble()).toBeNull();
@@ -433,7 +441,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
 
   it('打开看看 opens 会话历史 the way the head button does, then ends it', async () => {
     state.intro = 'history';
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     await click(q('sidebar-intro-open-history')!);
     expect(state.navigate).toHaveBeenCalledWith('session-history');
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'ended' });
@@ -443,7 +451,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   it('打开看看 on 会话历史 already: nothing to open (❌ the button\'s toggle back), it ends', async () => {
     state.intro = 'history';
     state.view = 'session-history';
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     await click(q('sidebar-intro-open-history')!);
     expect(state.navigate).not.toHaveBeenCalled();
     expect(state.back).not.toHaveBeenCalled();
@@ -451,7 +459,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   });
 
   it('Escape ends it, and still reaches what it was meant for', async () => {
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     const escape = details('escape-key');
     await act(async () => state.onOpenChange!(false, escape));
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'ended' });
@@ -460,7 +468,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   });
 
   it('a click elsewhere neither closes it nor is swallowed by it', async () => {
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     for (const reason of ['outside-press', 'focus-out']) {
       const dismissal = details(reason);
       await act(async () => state.onOpenChange!(false, dismissal));
@@ -472,7 +480,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   });
 
   it('collapsing while step 1 shows is step 1 learned: the rail hides 会话历史, so step 2 waits for the sidebar to expand', async () => {
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     await change(() => (state.open = false));
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'history' });
     expect(bubble()).toBeNull();
@@ -487,7 +495,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
 
   it('collapsing on step 2 hides it (not ended), and it comes back on 会话历史 once expanded', async () => {
     state.intro = 'history';
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     expect(bubble()!.dataset.testid).toBe('sidebar-intro-history');
     await change(() => (state.open = false));
     expect(bubble()).toBeNull();
@@ -497,18 +505,18 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
   });
 
   it('a collapse before it ever came up: it comes up at step 2', async () => {
-    await render(<SidebarOneListHead />);
+    await render(<Chrome />);
     await change(() => (state.open = false));
     expect(state.update).toHaveBeenLastCalledWith({ sidebarIntro: 'history' });
     expect(bubble()).toBeNull();
     await change(() => (state.open = true));
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     expect(bubble()!.dataset.testid).toBe('sidebar-intro-history');
   });
 
   it('opened while collapsed it waits, and comes up once the sidebar expands', async () => {
     state.open = false;
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     expect(bubble()).toBeNull();
     await change(() => (state.open = true));
     expect(bubble()!.dataset.testid).toBe('sidebar-intro-collapse');
@@ -516,17 +524,17 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
 
   it('never shows once stored as ended, nor before the settings are read (and writes nothing then)', async () => {
     state.intro = 'ended';
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     expect(bubble()).toBeNull();
     state.intro = undefined;
-    await render(<SidebarOneListHead key="unread" innerShownFor="g1" />);
+    await render(<Chrome key="unread" innerShownFor="g1" />);
     expect(bubble()).toBeNull();
     await change(() => (state.open = false));
     expect(state.update).not.toHaveBeenCalled();
   });
 
   it('steps aside while the bell\'s panel replaces the list, and comes back where it was (hidden, not ended)', async () => {
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     await change(() => (state.notificationsOpen = true));
     expect(bubble()).toBeNull();
     await change(() => (state.notificationsOpen = false));
@@ -536,7 +544,7 @@ describe('C9: the two-step intro, 侧栏可以收起来 → 会话历史, in the
 
   it('steps aside while the feature tour is on screen (❌ two bubbles at once), and comes back where it was', async () => {
     state.touring = true;
-    await render(<SidebarOneListHead innerShownFor="g1" />);
+    await render(<Chrome innerShownFor="g1" />);
     expect(bubble()).toBeNull();
     await change(() => (state.touring = false));
     expect(bubble()!.dataset.testid).toBe('sidebar-intro-collapse');

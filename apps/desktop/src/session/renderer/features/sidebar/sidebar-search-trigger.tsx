@@ -1,5 +1,3 @@
-import { IconButton } from '@/components/ui/IconButton';
-import { Hint } from '@/components/ui/Tooltip';
 import { Search } from '@/lib/icons';
 import { openGlobalSearch } from '@renderer/features/global-search/search-session';
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
@@ -18,21 +16,23 @@ function searchScope(): { chips: [{ kind: 'in'; chatId: string }] } | undefined 
   return anchor?.kind === 'group' ? { chips: [{ kind: 'in', chatId: anchor.chatId }] } : undefined;
 }
 
+/** The search field at the top of the open sidebar (界面减法 #46): 搜索 and its shortcut in a box. */
 export function SidebarSearchTrigger() {
   const { translate } = useSessionMessages();
   const hotkey = getEffectiveHotkey('app.globalSearch', useShortcutOverrides());
   const label = translate('common.search');
+  const shortcut = hotkey ? formatHotkeyText(hotkey) : null;
   return (
-    <Hint label={hotkey ? `${label} ${formatHotkeyText(hotkey)}` : label} side="bottom">
-      <IconButton
-        size="md"
-        tone="strong"
-        aria-label={translate('sidebar.searchConversations')}
-        data-testid="sidebar-search-trigger"
-        onClick={() => openGlobalSearch(searchScope())}
-      >
-        <Search />
-      </IconButton>
-    </Hint>
+    <button
+      type="button"
+      className="window-no-drag-region flex h-8 w-full items-center gap-2 rounded-[9px] bg-background/55 px-2.5 text-sm text-foreground-tertiary-muted shadow-[inset_0_0_0_0.5px_var(--border)] hover:bg-background/80"
+      aria-label={translate('sidebar.searchConversations')}
+      data-testid="sidebar-search-trigger"
+      onClick={() => openGlobalSearch(searchScope())}
+    >
+      <Search className="size-[15px] shrink-0" />
+      <span className="truncate">{label}</span>
+      {shortcut && <span className="ml-auto shrink-0 text-xs opacity-80">{shortcut}</span>}
+    </button>
   );
 }

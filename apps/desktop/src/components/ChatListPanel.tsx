@@ -41,7 +41,7 @@ import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
 import { useHeldOrder, usePointerHold } from '../lib/heldOrder'
-import { isOneListProjectLine, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
+import { isOneListProjectLine, ONE_LIST_AVATAR_PX, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
 import { usePublishOneListAgentRows } from '../lib/innerSidebarBridge'
 import { mobileListDiagnostics } from '@/mobile/mobileListDiagnostics'
 import { readShellSlots } from '../lib/shellSlots'
@@ -119,9 +119,9 @@ const NAV_HEADER_STYLE: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad
 const LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, overflowY: 'auto', padding: '4px 8px 16px' }
 const MOBILE_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--spacing-xs) var(--spacing-sm) var(--phone-nav-clearance)' }
 // 侧栏那一份不自己滚:滚的是会话页侧栏那一个滚动容器(置顶 / 项目 / 对话共用)。左右与侧栏的行同一道留白。
-const SIDEBAR_LIST_STYLE: React.CSSProperties = { padding: '0 12px 8px' }
+const SIDEBAR_LIST_STYLE: React.CSSProperties = { padding: '0 8px 8px' }
 /** First guess for a sidebar conversation line before it is measured (one row without topics). */
-const SIDEBAR_ENTRY_ESTIMATE = 58
+const SIDEBAR_ENTRY_ESTIMATE = 52
 
 /** A mounted sidebar line, placed by the line window. */
 const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%' })
@@ -373,7 +373,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
             name={shownName}
             avatarUrl={isRoom ? chat.avatar : peerIdentity?.avatar}
             seed={isRoom ? chat.id : chat.peer_user_id ?? undefined}
-            size={mobile ? 48 : 'sm'}
+            size={mobile ? 48 : callsOnly ? ONE_LIST_AVATAR_PX : 'sm'}
             isAgent={isAgentChat}
             harnessBadge={!mobile}
             agentStatus={agentStatus}
@@ -401,13 +401,8 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
             )}
           </>
         }
-        meta={pinnedSessionId === undefined ? formatCalendarDay(chatActivityAt(chat)) : (
-          // #2548 pinned to the one list: the menu item's sidebar glyph before the time (same size as the muted bell).
-          <span className="inline-flex items-center gap-1">
-            <PanelLeft size={13} strokeWidth={1.8} aria-hidden="true" />
-            {formatCalendarDay(chatActivityAt(chat))}
-          </span>
-        )}
+        // 界面减法 #66: the one list (callsOnly) shows no time; a row pinned to it keeps the menu item's sidebar glyph.
+        meta={pinnedSessionId !== undefined ? <PanelLeft size={13} strokeWidth={1.8} aria-hidden="true" /> : callsOnly ? undefined : formatCalendarDay(chatActivityAt(chat))}
         subtitle={
           unavailable ? <ProjectRecoverySubtitle project={unavailable} /> : draft ? (
             <>
