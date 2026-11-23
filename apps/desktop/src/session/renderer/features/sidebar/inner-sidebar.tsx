@@ -2,11 +2,9 @@ import { columnAgents } from './inner-sidebar-column';
 import { ChevronLeft, ChevronRight } from '@/lib/icons';
 import { observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, type ReactNode } from 'react';
 import { Avatar } from '@/components/Avatar';
 import { ListColumnToggle } from '@/components/PanelToggleButtons';
-import { openApp } from '@/components/appSlot/useOpenApp';
-import { ChatHeaderMenu } from '@/components/chat/ChatHeaderMenu';
 import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
 import {
@@ -22,9 +20,6 @@ import {
 import { publishPanelToggle } from '@/lib/panelToggles';
 import { readShellSlots } from '@/lib/shellSlots';
 import { chatBlockOnScreen } from '@renderer/features/chats/group-participant-actions';
-import { openInfoTab } from '@renderer/features/chats/chat-tabs/chat-layouts';
-import { WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
-import { searchInChat } from '@renderer/features/global-search/search-session';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { navigateToGroupRoot } from '@renderer/app/screen-layout-actions';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
@@ -300,8 +295,8 @@ function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSum
 }
 
 /**
- * 头一行就是这个群 / 项目自己:头像 + 名字,点它回到它的主群聊(owner 11-14;信息与设置在页头「成员 N」与「⋯」里)。
- * 第二行直接在群 / 项目里创建智能体。行尾悬停时显示会话页头的「⋯」，最右常驻收起按钮。
+ * 头一行就是这个群 / 项目自己:头像 + 名字,点它回到它的主群聊(owner 11-14)。
+ * 第二行直接在群 / 项目里创建智能体;收起按钮常驻在块外最右。❌ 悬停「⋯」(第 16 版稿):群的那些项在详情页里。
  * 项目那份菜单在项目页签的右键里。
  * ❌ 未读数(#2548 提议稿 state0):这个群的数挂在左边列表它那一行上(叫到你的才是红数,其余一颗灰点),这里再挂一份就是两处。
  */
@@ -316,7 +311,6 @@ const InnerHeadRow = observer(function InnerHeadRow({
 }) {
   const { translate } = useSessionMessages();
   const { chatId } = anchor;
-  const [menuOpen, setMenuOpen] = useState(false);
   const name = summary?.name ?? '';
   // 项目的代表本地项目(与侧栏那一行同一个);一个文件夹都没有的项目没有 —— 新智能体走群那一条,封面按群取色(同 partnerProjects)。
   const rowProjectId = anchor.kind === 'project' ? accountProjectsStore.representativeOf(chatId) : undefined;
@@ -330,15 +324,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
   const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
     <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => navigateToGroupRoot(chatId)} trailingButtons={1}
-      createAction={{ label: translate('sidebar.createAgent'), onClick: newAgent }}
-      hoverButton={<ChatHeaderMenu chatId={chatId} isGroupChat isRoomChat sidebar open={menuOpen} onOpenChange={setMenuOpen}
-        onSearch={() => searchInChat(chatId)}
-        onOpenFolder={() => openApp(WORKSPACE_APP_ID, chatId)}
-        onOpenInfo={() => {
-          if (!active) navigateToGroupRoot(chatId);
-          openInfoTab(chatId, 'main');
-        }}
-      />}>
+      createAction={{ label: translate('sidebar.createAgent'), onClick: newAgent }}>
       <InnerSidebarFoldButton />
     </InnerHeadRowLayout>
   );
