@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 // 会话页起不来只有一个处理(product spec「打开速度」):资源没取到、入口 module 载不进来或求值时出错(import 被拒)、
-// renderer bootstrap 被拒(经桥报上来),都是错误卡 + fatalBoot(桌面:主窗口上的错误框 + 退出)。慢不算起不来:等多久都只是加载态 ——
+// 这个账号的那棵树挂不上(mountSessionPage 被拒),都是错误卡 + fatalBoot(桌面:主窗口上的错误框 + 退出)。慢不算起不来:等多久都只是加载态 ——
 // 入口里等宏任务的顶层 await 让 import 很晚才兑现，也一样。
 import { act, createElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { kind: 'electron' } }))
 
-// The entry's import, one promise per frame: the test settles it as the module graph would.
+// The entry's import, one promise per process (the frame module is loaded fresh per test): the test settles it as the
+// module graph would, with the page's account-lifetime pair.
 const entry = vi.hoisted(() => {
   const pending: Array<{ resolve: (value?: unknown) => void; reject: (error: unknown) => void }> = []
   return {
@@ -15,14 +16,28 @@ const entry = vi.hoisted(() => {
     importSessionEntry: vi.fn((_url: string) => new Promise<unknown>((resolve, reject) => { pending.push({ resolve, reject }) })),
   }
 })
+/** The entry evaluated: it published its page pair on window, then its import settled. */
+function evaluate(imported: { resolve: (value?: unknown) => void }, page: ReturnType<typeof sessionPage>) {
+  publishSessionPageEntry(page)
+  imported.resolve()
+}
+/** The page's mount/unmount; each mount waits until the test settles it, as a restore over IPC would. */
+function sessionPage() {
+  const mounts: Array<{ resolve: () => void; reject: (error: unknown) => void }> = []
+  const page = {
+    mounts,
+    mountSessionPage: vi.fn(() => new Promise<void>((resolve, reject) => { mounts.push({ resolve, reject }) })),
+    unmountSessionPage: vi.fn(),
+  }
+  return page
+}
 vi.mock('../../../../apps/desktop/src/components/sessionpage/importSessionEntry', () => ({
   importSessionEntry: entry.importSessionEntry,
 }))
 
-import { EmdashSessionFrame } from '../../../../apps/desktop/src/components/sessionpage/EmdashSessionFrame'
 import { SESSION_HOST_BRIDGE_KEY } from '../../../../apps/desktop/src/session/renderer/lib/electron-api'
+import { publishSessionPageEntry } from '../../../../apps/desktop/src/session/shared/lib/session-page-entry'
 import { SESSION_SHELL_CHANNELS } from '../../../../apps/desktop/src/session/shared/lib/ipc/shell-port'
-import { reportSessionRendererBootFailure } from '../../../../apps/desktop/src/session/shared/lib/session-renderer-boot'
 import { createReactHarness } from '../../../support/testHarness'
 
 const MODULE_SRC = './assets/session-embedded-boot-test.js'
@@ -46,6 +61,7 @@ describe('session page boot', () => {
       text: async () => `<script type="module" src="${MODULE_SRC}"></script>`,
     })))
     vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.resetModules()
     harness = createReactHarness()
   })
 
@@ -54,23 +70,26 @@ describe('session page boot', () => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
     delete (window as unknown as Record<string, unknown>)[SESSION_HOST_BRIDGE_KEY]
+    delete (window as unknown as Record<string, unknown>).__EMDASH_SESSION_PAGE__
   })
 
   // No deadline: the chain up to the entry's import (mocked fetch → text → parse → import) is all microtasks.
   async function renderUntilEntryImported() {
+    const { EmdashSessionFrame } = await import('../../../../apps/desktop/src/components/sessionpage/EmdashSessionFrame')
     await harness.render(createElement(EmdashSessionFrame))
     while (entry.pending.length === 0) await act(async () => { await Promise.resolve() })
     expect(entry.importSessionEntry).toHaveBeenCalledWith(expect.stringContaining('session-embedded-boot-test.js'))
     return entry.pending[0]!
   }
 
-  it('a renderer bootstrap that rejects is fatal: error card and fatalBoot, not an endless loading state', async () => {
+  it('an account mount that rejects is fatal: error card and fatalBoot, not an endless loading state', async () => {
     const imported = await renderUntilEntryImported()
-    await act(async () => { imported.resolve() })
+    const page = sessionPage()
+    await act(async () => { evaluate(imported, page) })
     expect(loading()).not.toBeNull()
 
     await act(async () => {
-      reportSessionRendererBootFailure(new Error('bootstrap exploded'))
+      page.mounts[0]!.reject(new Error('bootstrap exploded'))
     })
 
     expect(invoke).toHaveBeenCalledWith(SESSION_SHELL_CHANNELS.fatalBoot, expect.stringContaining('bootstrap exploded'))
@@ -92,10 +111,19 @@ describe('session page boot', () => {
     expect(loading()).toBeNull()
   })
 
-  it('an entry that evaluated is not a failure', async () => {
+  it('an entry that evaluates without publishing its page is a failed boot, not an endless loading state', async () => {
     const imported = await renderUntilEntryImported()
 
     await act(async () => { imported.resolve() })
+
+    expect(invoke).toHaveBeenCalledWith(SESSION_SHELL_CHANNELS.fatalBoot, expect.stringContaining('without publishing its mount'))
+    expect(errorCard()).not.toBeNull()
+  })
+
+  it('an entry that evaluated is not a failure', async () => {
+    const imported = await renderUntilEntryImported()
+
+    await act(async () => { evaluate(imported, sessionPage()) })
 
     expect(invoke).not.toHaveBeenCalled()
     expect(errorCard()).toBeNull()
@@ -110,17 +138,18 @@ describe('session page boot', () => {
     const imported = await renderUntilEntryImported()
     expect(bridges()).toBe(0)
 
-    await act(async () => { imported.resolve() })
+    await act(async () => { evaluate(imported, sessionPage()) })
 
     expect(bridges()).toBe(1)
   })
 
   it('a failed boot keeps its card when the mount fills in afterwards', async () => {
     const imported = await renderUntilEntryImported()
-    await act(async () => { imported.resolve() })
+    const page = sessionPage()
+    await act(async () => { evaluate(imported, page) })
 
     await act(async () => {
-      reportSessionRendererBootFailure(new Error('bootstrap exploded after rendering'))
+      page.mounts[0]!.reject(new Error('bootstrap exploded after rendering'))
     })
     const mount = sessionMount()
     await act(async () => {
@@ -128,6 +157,41 @@ describe('session page boot', () => {
     })
 
     expect(errorCard()).not.toBeNull()
+  })
+
+  // Sign-out returns to the login page in place and the next account signs in in the same process: the next account's
+  // frame mounts the page again (a fresh tree, a fresh restore) from the entry that is already loaded.
+  it('the next account gets the page again: the old tree is unmounted, the entry is not imported twice', async () => {
+    const { EmdashSessionFrame } = await import('../../../../apps/desktop/src/components/sessionpage/EmdashSessionFrame')
+    await harness.render(createElement(EmdashSessionFrame, { key: 'account-a' }))
+    while (entry.pending.length === 0) await act(async () => { await Promise.resolve() })
+    const page = sessionPage()
+    await act(async () => { evaluate(entry.pending[0]!, page) })
+    await act(async () => { page.mounts[0]!.resolve() })
+
+    await harness.render(createElement('div'))
+    await act(async () => { await Promise.resolve() })
+    expect(page.unmountSessionPage).toHaveBeenCalledOnce()
+
+    await harness.render(createElement(EmdashSessionFrame, { key: 'account-b' }))
+    while (page.mountSessionPage.mock.calls.length < 2) await act(async () => { await Promise.resolve() })
+    expect(page.unmountSessionPage.mock.invocationCallOrder[0]).toBeLessThan(page.mountSessionPage.mock.invocationCallOrder[1]!)
+    expect(entry.importSessionEntry).toHaveBeenCalledOnce()
+    expect(sessionMount()!.isConnected).toBe(true)
+  })
+
+  // The account's product goes while its page is still restoring: the unmount waits for that mount, so no tree is left.
+  it('a frame that goes mid-restore leaves no tree behind', async () => {
+    const imported = await renderUntilEntryImported()
+    const page = sessionPage()
+    await act(async () => { evaluate(imported, page) })
+    await harness.render(createElement('div'))
+    await act(async () => { await Promise.resolve() })
+    expect(page.unmountSessionPage).not.toHaveBeenCalled()
+
+    await act(async () => { page.mounts[0]!.resolve() })
+
+    expect(page.unmountSessionPage).toHaveBeenCalledOnce()
   })
 
   // A slow machine, or an entry whose top-level await waits on a timer / the network: the import settles late.
@@ -142,7 +206,7 @@ describe('session page boot', () => {
     expect(errorCard()).toBeNull()
     expect(invoke).not.toHaveBeenCalled()
 
-    await act(async () => { imported.resolve() })
+    await act(async () => { evaluate(imported, sessionPage()) })
     const mount = sessionMount()
     await act(async () => {
       mount?.appendChild(document.createElement('div'))
