@@ -969,15 +969,7 @@ export default {
       "openedBy": "by {{name}}",
       "quiet": "No messages yet"
     },
-    "openFailed": "Could not open the topic. The message may have been deleted. Open the topic from another message.",
-    "pane": {
-      "attachments": "Attachments",
-      "members": "Members",
-      "collapseSplit": "Collapse split view",
-      "collapseSplitHint": "Collapse the split view; the topic stays open",
-      "composerPlaceholder": "Write a message…",
-      "empty": "No messages in this topic yet"
-    }
+    "openFailed": "Could not open the topic. The message may have been deleted. Open the topic from another message."
   },
   "resources": {
     "copyUrl": "Copy gugu URL",

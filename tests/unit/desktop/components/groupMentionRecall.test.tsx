@@ -165,10 +165,6 @@ describe('group mention recall through the real composer and send path', () => {
       current_task_title: null, last_action: null, last_active_at: null, listen_mode: 'passive' }] }, { alpha: { display_name: 'Alpha' } })
     await act(async () => update({ groupMembers: removed }))
     expect(hint()).toBeNull()
-    await act(async () => update({ groupMembers: members, surface: 'aside', participantIds: ['beta'] }))
-    expect(hint()).toBeNull()
-    await act(async () => update({ participantIds: ['alpha'] }))
-    expect(hint()?.textContent).toBe('@Alpha')
   })
 
   it('keeps a late successful submission in its original account and group after switching or signing out', async () => {

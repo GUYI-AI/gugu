@@ -740,7 +740,6 @@ describe('ChatMessageComposer', () => {
     })] }) }, createElement(ChatMessageComposer, {
       onSend, chatId, isGroupChat: true, currentUserId: 'me',
       groupMembers: [rosterMember('atlas', 'Atlas', 'agent'), rosterMember('ada', 'Ada', 'agent')],
-      participantIds: topic ? ['atlas', 'ada'] : undefined,
       messages: [message({ chat_id: chatId, sender_user_id: 'me', to_user_ids: ['atlas'], created_at: '2026-10-25T11:59:00Z' })],
     })))
     await flush()
@@ -824,34 +823,6 @@ describe('ChatMessageComposer', () => {
     await pressEnter()
     await flush()
     expect(readComposer(textarea)).toBe('@Agent 1 ')
-  })
-  // The aside (topic split) composer never registers as the global focus target, so its in-conversation
-  // follow-ups must name their own textarea — otherwise the registered main composer takes the caret.
-  it('the aside composer keeps focus after picking a mention with Enter and after sending with Enter', async () => {
-    const onSendAside = vi.fn(async () => {})
-    const members = [rosterMember('a-1', 'Ada', 'agent')]
-    await harness.render(createElement(Fragment, null,
-      createElement(ChatMessageComposer, { onSend: vi.fn(async () => {}), chatId: 'group-1', isGroupChat: true, groupMembers: members }),
-      createElement(ChatMessageComposer, { onSend: onSendAside, chatId: 'topic-1', isGroupChat: true, groupMembers: members, surface: 'aside' })))
-    await flush()
-    const main = container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"]`) as HTMLElement
-    const aside = container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.chatComposerAside}"]`) as HTMLElement
-    expect(main).not.toBeNull()
-    const nextFrames = () => act(async () => { for (let i = 0; i < 3; i += 1) await new Promise((resolve) => requestAnimationFrame(resolve)) })
-    const pressEnter = () => act(async () => { aside.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })) })
-    aside.focus()
-    await act(async () => {
-      writeComposer(aside, '@Ad')
-    })
-    await flush()
-    await pressEnter()
-    await nextFrames()
-    expect(readComposer(aside)).toBe('@Ada ')
-    expect(document.activeElement, 'picking a mention moved the caret to the main composer').toBe(aside)
-    await pressEnter()
-    await nextFrames()
-    expect(onSendAside).toHaveBeenCalledTimes(1)
-    expect(document.activeElement, 'sending moved the caret to the main composer').toBe(aside)
   })
   it('3a finds members by pinyin and by the alias the owner gave them', async () => {
     await harness.render(createElement(ContactsContext.Provider, {

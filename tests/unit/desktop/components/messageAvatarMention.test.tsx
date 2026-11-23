@@ -57,7 +57,7 @@ function avatarOf(messageId: string): Element {
   if (!button) throw new Error(`no sender avatar rendered for ${messageId}`)
   return button.firstElementChild ?? button
 }
-function profileOpener() { return { handle: Popover.createHandle<ActiveMemberProfile>(), openedFrom: 'main' as const } }
+function profileOpener() { return { handle: Popover.createHandle<ActiveMemberProfile>() } }
 function rightClick(target: Element): boolean {
   const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
   act(() => { target.dispatchEvent(event) })

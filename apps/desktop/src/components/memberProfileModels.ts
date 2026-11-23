@@ -6,16 +6,13 @@ import { messageReferencedUserIds } from '../lib/messageReferencedUserIds'
 
 export type MemberProfileSide = 'left' | 'right'
 
-// @@@5856 openedFrom:这张卡是从哪一栏点开的。卡片上的动作会落到**某一个输入框**上
-// (悄悄话就是),而同一扇窗里现在有两个输入框 —— 不记来源,从话题分栏点开的卡片会把悄悄话
-// 挂到主线的输入框上,发出去落在源群里,正是话题要隔开的那个方向。
 // 打开它的那个元素(头像/成员行)是这张卡的 Popover.Trigger,payload 就是这一份:卡贴着它、随列表滚动跟着它,
 // 再点它就关(owner 11-09)。❌ 拍下 getBoundingClientRect 当锚点:列表一滚卡片就留在原地(owner 2a)。
-export type ActiveMemberProfile = { member: MemberProfileCardModel; preferredSide?: MemberProfileSide; openedFrom?: 'main' | 'aside' }
+export type ActiveMemberProfile = { member: MemberProfileCardModel; preferredSide?: MemberProfileSide }
 /** One profile card per host; every avatar / member row that opens it is a `Popover.Trigger handle={…} payload={…}`. */
 export type MemberProfileHandle = ReturnType<typeof Popover.createHandle<ActiveMemberProfile>>
 /** What a message list needs to make its avatars open the host's card. */
-export type MemberProfileOpener = { handle: MemberProfileHandle; openedFrom: 'main' | 'aside' }
+export type MemberProfileOpener = { handle: MemberProfileHandle }
 
 export function agentOwnerDisplayName(
   identity: DisplayIdentity,

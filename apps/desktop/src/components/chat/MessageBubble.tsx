@@ -54,7 +54,7 @@ interface BubbleProps {
   onDelete: (messageId: string) => void
   isAgent?: boolean; hideAvatar?: boolean; streaming?: boolean // Live IM text shares the settled bubble's layout.
   memberProfile?: MemberProfileCardModel | null
-  /** 头像是这一栏资料卡的 Trigger(再点同一个头像就关);openedFrom 记卡是从主线还是话题分栏点开的。 */
+  /** 头像是这一栏资料卡的 Trigger(再点同一个头像就关)。 */
   memberProfileOpener?: MemberProfileOpener
   compactMobile?: boolean
   // @@@1484 是否群聊(group/channel)。仅群聊在 received 气泡上方显发送者名;DM/ai 1:1 头部已知对方,显名冗余。
@@ -248,7 +248,7 @@ export const MessageBubble = memo(function MessageBubble({
           avatarSize="sm"
           buttonSize={compactMobile ? 44 : 32}
           messageSenderId={msg.sender_user_id ?? undefined}
-          profile={{ handle: memberProfileOpener!.handle, payload: { member: memberProfile!, preferredSide: msg.is_mine ? 'left' : 'right', openedFrom: memberProfileOpener!.openedFrom } }}
+          profile={{ handle: memberProfileOpener!.handle, payload: { member: memberProfile!, preferredSide: msg.is_mine ? 'left' : 'right' } }}
         />
       ) : avatar}</GroupAvatarSlot>}
 

@@ -20,7 +20,6 @@ export const UI_EVENTS = {
   // 聊天页 / 资料卡 / 分享浮层读的都是通讯录那一份,❌ 让它们挂着旧名等 realtime。
   ownedAgentRenamed: '__owned_agent_renamed',
   quoteMessage: '__chat_quote_message',
-  // window 级事件:只有主输入框(InputArea 的 surface='main')登记它。
   composerAttachFiles: '__chat_composer_attach_files',
   // @@@sessionpage 分享 — 会话页头部点了分享:main 转达「分享这个 agent」,由 gugu 渲染层用自己的
   // 通讯录数据打开既有的 SharePosterDialog(contact QR 名片)。

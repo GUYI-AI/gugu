@@ -44,7 +44,7 @@ const groupMember: MemberProfileCardModel = {
   role: 'member', profileScope: 'group', listenMode: 'active', ownerUserId: 'owner-1',
 }
 const opened = (): ActiveMemberProfile => ({
-  member: groupMember, preferredSide: 'right', openedFrom: 'main',
+  member: groupMember, preferredSide: 'right',
 })
 const groupEdit = { onChangeListenMode: vi.fn(async () => {}), busy: false }
 

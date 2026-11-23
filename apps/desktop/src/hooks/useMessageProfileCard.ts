@@ -7,6 +7,6 @@ import { Popover } from '@/components/ui/Popover'
  */
 export function useMessageProfileCard() {
   const [card] = useState(() => Popover.createHandle<ActiveMemberProfile>())
-  const mainOpener = useMemo((): MemberProfileOpener => ({ handle: card, openedFrom: 'main' }), [card])
+  const mainOpener = useMemo((): MemberProfileOpener => ({ handle: card }), [card])
   return { card, mainOpener }
 }

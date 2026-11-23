@@ -69,12 +69,6 @@ describe('MessageList 文档流', () => {
     expect([...mounted].every(row => row.getAttribute('aria-setsize') === '30')).toBe(true)
   })
 
-  it('副栏报自己的表面,未读定位器只看得见主线', async () => {
-    await harness.render(createElement(MessageList, { ...listProps('topic-1', 3), surface: 'aside' }))
-    expect(harness.container.querySelector('[data-testid="chat-message-list"]')).toBeNull()
-    expect(harness.container.querySelector('[data-testid="chat-message-list-aside"]')?.getAttribute('data-unread-stream-surface')).toBe('aside')
-  })
-
   it('换一条线(resetKey)换一个滚动容器;同一条线的重渲沿用原来那个', async () => {
     await harness.render(createElement(MessageList, listProps('chat-1', 3)))
     const first = harness.container.querySelector('[data-testid="chat-message-list"]')
