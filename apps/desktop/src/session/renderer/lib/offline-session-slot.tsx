@@ -4,7 +4,11 @@ import '@/components/session-watch/agent-watch.css';
 import '@/components/session-watch/phone-conversation.css';
 import '@/components/assistant/assistant-task-chat.css';
 
-/** The shell owns the page's Devices/Chat/Auth contexts; the embedded gate owns its placement. */
+/**
+ * The page of a task on another machine whose workspace is not ready here (still preparing, or that machine not answering:
+ * remoteSessionPageTarget). `label` = why that machine cannot be reached, '' when nothing is known against it.
+ * The shell owns the page's Devices/Chat/Auth contexts; the embedded gate owns its placement.
+ */
 export function OfflineSessionSlot({ sessionId, deviceId, label }: { sessionId: string; deviceId: string; label: string }) {
   const id = useId();
   const target = [sessionId, deviceId].map(encodeURIComponent).join('/');

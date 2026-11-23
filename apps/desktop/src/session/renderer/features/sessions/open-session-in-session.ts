@@ -3,7 +3,7 @@ import { getSessionPageStore, getSessionView, sessionViewKind } from '@renderer/
 import { sessionTabKind } from './session-tab-kind';
 import { sessionPaneReady } from './session-pane-ready';
 import { machineUnavailableLabel } from './machine-unavailable-label';
-import { offlineSessionInputTarget } from './offline-session-input-target';
+import { remoteSessionPageTarget } from './remote-session-page-target';
 import { sessionRegistry } from './stores/session-registry';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -51,24 +51,25 @@ export function openSessionInSessionWhenReady({
 }: OpenSessionInSessionOptions): () => void {
   const kind = sessionViewKind(getSessionPageStore(projectId, sessionId), projectId);
   if (!onlyIfNoTabs && kind !== 'archived' && kind !== 'missing') rememberTask(sessionId);
-  // The machine is not answering, now or while we wait: navigation (including a beside block) reaches SessionContentGate
-  // without a remote workspace, and the gate says so in place (❌ wait for a workspace and time out into a toast over it).
-  const offline = () => Boolean(offlineSessionInputTarget(projectId, sessionViewKind(getSessionPageStore(projectId, sessionId), projectId)));
-  if (offline()) {
+  // A task on another machine without its workspace here opens on its own page (SessionContentGate), now or once that
+  // turns out while we wait: navigation (including a beside block) reaches the gate, which shows it and hands over to the
+  // panel when the workspace is ready (❌ wait for a workspace and time out into a toast over that page).
+  const ownPage = () => Boolean(remoteSessionPageTarget(projectId, sessionViewKind(getSessionPageStore(projectId, sessionId), projectId)));
+  if (ownPage()) {
     onReady?.();
     return () => {};
   }
   const paneReady = sessionPaneReady(projectId, sessionId, { reviveArchived: false });
   return when(
     () => {
-      if (offline()) return true;
+      if (ownPage()) return true;
       const session = sessionRegistry
         .get(sessionId)
         ?.sessions.get(sessionId);
       return Boolean(paneReady() && getSessionView(host?.projectId ?? projectId, host?.sessionId ?? sessionId) && session);
     },
     () => {
-      if (offline()) {
+      if (ownPage()) {
         onReady?.();
         return;
       }

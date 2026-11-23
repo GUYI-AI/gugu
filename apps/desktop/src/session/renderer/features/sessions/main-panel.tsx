@@ -27,7 +27,7 @@ import { machineUnavailableLabel } from './machine-unavailable-label';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { projectPresence } from '@renderer/features/projects/project-presence';
 import { openSessionInSessionWhenReady } from './open-session-in-session';
-import { offlineSessionInputTarget } from './offline-session-input-target';
+import { remoteSessionPageTarget } from './remote-session-page-target';
 
 const spinnerLog = rendererLogger('sessionpage/loading-span');
 
@@ -150,19 +150,20 @@ export const SessionContentGate = observer(function SessionContentGate({ childre
   const deviceId = machineRegistry.machineOf(projectId);
   const device = deviceId ? remoteHostsStore.device(deviceId) : null;
   const needsWorkspace = kind === 'project-mounting' || kind === 'provisioning' || kind === 'idle' || kind === 'provision-error' || kind === 'project-error';
-  const offlineInput = offlineSessionInputTarget(projectId, kind);
-  const offlineInputAvailable = offlineInput !== null;
+  const remotePage = remoteSessionPageTarget(projectId, kind);
+  const remotePageShown = remotePage !== null;
   const recovery = useRef({ projectId, sessionId, pending: false });
   useEffect(() => {
     if (recovery.current.projectId !== projectId || recovery.current.sessionId !== sessionId) {
       recovery.current = { projectId, sessionId, pending: false };
     }
-    if (offlineInputAvailable) recovery.current.pending = true;
+    if (remotePageShown) recovery.current.pending = true;
     if (!recovery.current.pending || unreachable || kind !== 'ready') return;
     recovery.current.pending = false;
-    // Fill a previously offline single block too, preserving any restored/user-selected tabs.
+    // The workspace is ready and its machine answers: the panel takes over from the task's own page; fill a single block
+    // too, preserving any restored/user-selected tabs.
     return openSessionInSessionWhenReady({ projectId, sessionId, onlyIfNoTabs: true });
-  }, [offlineInputAvailable, unreachable, kind, projectId, sessionId]);
+  }, [remotePageShown, unreachable, kind, projectId, sessionId]);
   const tunnelProgress = device?.tunnel === 'connecting' && !device.directTerminal
     ? translate('remoteWorkspace.tunnel.connecting') : null;
 
@@ -209,7 +210,7 @@ export const SessionContentGate = observer(function SessionContentGate({ childre
     );
   }
 
-  if (offlineInput) return <ColdSessionStrip><OfflineSessionSlot sessionId={sessionId} {...offlineInput} /></ColdSessionStrip>;
+  if (remotePage) return <ColdSessionStrip><OfflineSessionSlot sessionId={sessionId} deviceId={remotePage.deviceId} label={remotePage.label ?? ''} /></ColdSessionStrip>;
   if (unreachable && needsWorkspace) {
     return (
       <ColdSessionStrip>

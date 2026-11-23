@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { observable, runInAction } from 'mobx';
 
-const opened = vi.hoisted(() => ({ calls: [] as unknown[], tabs: 0, views: [] as string[], provisioned: true, archived: false, provision: vi.fn(), reason: null as string | null, machineReason: null as string | null, deviceId: 'host' as string | null, cloud: false }));
+const opened = vi.hoisted(() => ({ calls: [] as unknown[], tabs: 0, views: [] as string[], provisioned: true, archived: false, provision: vi.fn(), reason: null as string | null, machineReason: null as string | null, deviceId: null as string | null, cloud: false }));
 const ready = observable.box(true);
-/** A reason the machine link finds after navigation started (observable, as the real reach label is). */
-const lateReason = observable.box<string | null>(null);
+/** The task's machine, known only after navigation started (observable, as the real project routing is). */
+const lateDevice = observable.box<string | null>(null);
 const listed = vi.hoisted(() => ({ nativeInputVersion: undefined as number | undefined }));
 
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
@@ -36,12 +36,12 @@ vi.mock('@renderer/features/projects/stores/project-selectors', () => ({ getProj
 vi.mock('./stores/session-registry', () => ({
   sessionRegistry: { get: () => ({ sessions: { get: () => ({ data: { runtime: 'pty' } }) } }) },
 }));
-vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => opened.deviceId } }));
+vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => lateDevice.get() ?? opened.deviceId } }));
 vi.mock('@renderer/lib/hooks/use-toast', () => ({ toast: vi.fn() }));
 vi.mock('@renderer/localization/locale-store', () => ({ translateSessionMessage: (k: string) => k }));
 
-vi.mock('./workspace-backend/workspace-surface', () => ({ workspaceReachLabel: () => lateReason.get() ?? opened.reason }));
-vi.mock('./machine-unavailable-label', () => ({ machineUnavailableLabel: () => lateReason.get() ?? opened.reason ?? opened.machineReason }));
+vi.mock('./workspace-backend/workspace-surface', () => ({ workspaceReachLabel: () => opened.reason }));
+vi.mock('./machine-unavailable-label', () => ({ machineUnavailableLabel: () => opened.reason ?? opened.machineReason }));
 
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { openSessionInSessionWhenReady } from './open-session-in-session';
@@ -79,7 +79,11 @@ describe('给屏上一块空着的会话补上对话(onlyIfNoTabs)', () => {
 });
 
 describe('task entry keeps the workspace failure reason', () => {
-  it.each([undefined, 1, 2])('opens an offline task with native version %s without preparing or waiting for its workspace', async (version) => {
+  // owner 11-23: a task on another machine opens on its own page at once, answering or not (❌ a 「加载中」 page while its
+  // workspace prepares); the gate hands over to the panel when the workspace is ready.
+  it.each([
+    [undefined, 'Remote host is offline'], [1, 'Remote host is offline'], [2, 'Remote host is offline'], [2, null],
+  ])('a task on another machine (native version %s, reason %s) opens on its own page: no workspace wait, no toast', async (version, reason) => {
     await Promise.resolve();
     await Promise.resolve();
     opened.provision.mockClear();
@@ -87,7 +91,8 @@ describe('task entry keeps the workspace failure reason', () => {
     vi.mocked(toast).mockClear();
     opened.calls = [];
     opened.provisioned = false;
-    opened.machineReason = 'Remote host is offline';
+    opened.deviceId = 'host';
+    opened.machineReason = reason;
     listed.nativeInputVersion = version;
     const onReady = vi.fn();
     const prepare = vi.spyOn(preparation, 'sessionPaneReady');
@@ -105,6 +110,7 @@ describe('task entry keeps the workspace failure reason', () => {
       dispose();
       prepare.mockRestore();
       opened.provisioned = true;
+      opened.deviceId = null;
       opened.machineReason = null;
       listed.nativeInputVersion = undefined;
       vi.useRealTimers();
@@ -129,17 +135,13 @@ describe('task entry keeps the workspace failure reason', () => {
       dispose();
       opened.provisioned = true;
       opened.machineReason = null;
-      opened.deviceId = 'host';
+      opened.deviceId = null;
       logged.mockRestore();
       vi.useRealTimers();
     }
   });
 
-  it.each([
-    ['cloud', 'Gugu on cloud host is too old. Update Gugu there'],
-    ['ssh', 'Gugu on SSH host is too old. Update Gugu there'],
-    ['not answering', 'host did not respond. Check that it is online and retry.'],
-  ])('%s found while waiting: the gate says it in place, no timeout toast over that page', async (_route, reason) => {
+  it('its machine becomes known while waiting: the task opens on its own page then, no timeout toast over it', async () => {
     vi.useFakeTimers();
     vi.mocked(toast).mockClear();
     opened.calls = [];
@@ -148,8 +150,7 @@ describe('task entry keeps the workspace failure reason', () => {
     const dispose = openSessionInSessionWhenReady({ projectId: 'p', sessionId: 's', onReady });
     try {
       expect(onReady).not.toHaveBeenCalled();
-      // The handshake can discover the reason after navigation starts.
-      runInAction(() => lateReason.set(reason));
+      runInAction(() => lateDevice.set('host'));
       expect(onReady).toHaveBeenCalledOnce();
       await vi.advanceTimersByTimeAsync(10_000);
       expect(toast).not.toHaveBeenCalled();
@@ -157,7 +158,7 @@ describe('task entry keeps the workspace failure reason', () => {
     } finally {
       dispose();
       opened.provisioned = true;
-      runInAction(() => lateReason.set(null));
+      runInAction(() => lateDevice.set(null));
       vi.useRealTimers();
     }
   });
@@ -199,7 +200,7 @@ describe('task entry keeps the workspace failure reason', () => {
       dispose();
       opened.provisioned = true;
       opened.machineReason = null;
-      opened.deviceId = 'host';
+      opened.deviceId = null;
       logged.mockRestore();
       vi.useRealTimers();
     }
@@ -256,15 +257,17 @@ it('does not revive an archived task while waiting to open it', async () => {
 });
 
 it('keeps cloud wake on the ordinary workspace preparation path', () => {
+  opened.deviceId = 'host';
   opened.cloud = true;
   opened.machineReason = 'Cloud host is asleep';
   const prepare = vi.spyOn(preparation, 'sessionPaneReady');
   const dispose = openSessionInSessionWhenReady({ projectId: 'p', sessionId: 's', host: { projectId: 'beside', sessionId: 'owner' } });
   try { expect(prepare).toHaveBeenCalledOnce(); }
-  finally { dispose(); prepare.mockRestore(); opened.cloud = false; opened.machineReason = null; }
+  finally { dispose(); prepare.mockRestore(); opened.deviceId = null; opened.cloud = false; opened.machineReason = null; }
 });
 
 it('accepts missing-version beside navigation without waiting for either workspace', () => {
+  opened.deviceId = 'host';
   opened.provisioned = false;
   opened.machineReason = 'Remote host offline';
   opened.calls = [];
@@ -275,5 +278,5 @@ it('accepts missing-version beside navigation without waiting for either workspa
     expect(onReady).toHaveBeenCalledOnce();
     expect(prepare).not.toHaveBeenCalled();
     expect(opened.calls).toEqual([]);
-  } finally { dispose(); prepare.mockRestore(); opened.provisioned = true; opened.machineReason = null; }
+  } finally { dispose(); prepare.mockRestore(); opened.deviceId = null; opened.provisioned = true; opened.machineReason = null; }
 });
