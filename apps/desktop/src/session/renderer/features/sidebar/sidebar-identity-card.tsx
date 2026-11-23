@@ -2,7 +2,6 @@ import { platform } from '@/platform';
 import { safeFailureLine } from '../sessions/gugu-reason';
 import { log } from '@renderer/utils/logger';
 import { PreviewCard as PreviewCardPrimitive } from '@base-ui/react/preview-card';
-import { Check, Copy } from '@/lib/icons';
 import { makeAutoObservable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -38,7 +37,9 @@ import { TailValue } from './sidebar-identity-tail';
  *    一个人说完。底色走仓里 popover 同一格 background-quaternary。
  *  · 行之间**没有分隔线**:行靠节奏与 hover 底(row-hover)呼吸。
  *  · 标签与值都是正文字(sans),标签 muted;卡上没有标识符,所以没有 mono。
- *  · 复制图标只在行 hover 时露出;复制成功就地换成 ✓ + 「已复制」,1.6s 后收回,❌ 飞到角上的 toast。
+ *  · **没有复制图标**:整行 hover 底就说明它能点,点了就地把值换成「已复制」,1.6s 后收回,❌ 飞到角上的 toast。
+ *    图标只在 hover 时露出,却要么占着宽(每张卡最宽的值后面常驻一截看不见的空白,owner 实看:「名字后存在大量空白」),
+ *    要么浮在行尾盖住值的结尾 —— 两头都是看得见的毛病,所以不摆。
  *  · 单一点缀色:没有。卡上没有任何一处是「活的」,所以没有蓝。
  *
  * 开合:
@@ -336,12 +337,10 @@ function IdentityRow({ row }: { row: RowSpec }) {
         event.stopPropagation();
         void copy();
       }}
-      className="group/identity-row flex w-full cursor-pointer items-center gap-2 px-3 py-1 text-left transition-colors duration-[var(--dur-fast)] hover:bg-row-hover active:bg-row-press focus-visible:bg-row-hover"
+      className="flex w-full cursor-pointer items-center gap-2 px-3 py-1 text-left transition-colors duration-[var(--dur-fast)] hover:bg-row-hover active:bg-row-press focus-visible:bg-row-hover"
     >
       <span className={labelClass}>{row.label}</span>
-      {/* 图标**紧跟在值后面**,不推到卡的右缘 —— 短值与图标之间不留一截空白;图标只在指着的那一行出现,
-          两行图标不对齐也看不出来。反馈就地替换值:值与反馈叠在同一格,值只是藏起来仍占着宽,
-          所以点完卡不变窄、图标不挪位。 */}
+      {/* 反馈就地替换值:值与反馈叠在同一格,值只是藏起来仍占着宽,所以点完卡不变窄。 */}
       <span className="grid min-w-0 grid-cols-1">
         {row.keepTail ? (
           <TailValue text={row.display ?? row.value} className={cn('col-start-1 row-start-1', state !== null && 'invisible')} />
@@ -351,14 +350,6 @@ function IdentityRow({ row }: { row: RowSpec }) {
         <span aria-live="polite" className="min-w-0 whitespace-normal break-words text-left text-sm leading-5 col-start-1 row-start-1 text-foreground-muted">
           {state}
         </span>
-      </span>
-      <span
-        className={cn(
-          'flex size-4 shrink-0 items-center justify-center text-foreground-muted transition-opacity duration-[var(--dur-fast)]',
-          state === null && 'opacity-0 group-hover/identity-row:opacity-100 group-identity-row-kbd-focus:opacity-100'
-        )}
-      >
-        {state === copiedLabel ? <Check className="size-3" /> : <Copy className="size-3" />}
       </span>
     </button>
   );

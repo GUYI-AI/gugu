@@ -18,7 +18,6 @@
 @custom-variant group-kbd-focus (:where(.group):focus-visible:not([data-pointer-focus]) &);
 @custom-variant group-row-kbd-focus (:where(.group\/row):focus-visible:not([data-pointer-focus]) &);
 @custom-variant group-sep-kbd-focus (:where(.group\/sep):focus-visible:not([data-pointer-focus]) &);
-@custom-variant group-identity-row-kbd-focus (:where(.group\/identity-row):focus-visible:not([data-pointer-focus]) &);
 
 /* Tailwind v4 otherwise uses currentColor for unspecified borders.
  * Only supply a color; widths and explicit semantic/state colors stay owned
