@@ -25,7 +25,7 @@ export function SidebarSearchTrigger() {
   return (
     <button
       type="button"
-      className="window-no-drag-region flex h-8 w-full items-center gap-2 rounded-[9px] bg-background/55 px-2.5 text-sm text-foreground-tertiary-muted shadow-[inset_0_0_0_0.5px_var(--border)] hover:bg-background/80"
+      className="window-no-drag-region flex h-8 w-full items-center gap-2 rounded-[9px] bg-background/55 px-[10px] text-sm text-foreground-tertiary-muted shadow-[inset_0_0_0_0.5px_var(--border)] hover:bg-background/80"
       aria-label={translate('sidebar.searchConversations')}
       data-testid="sidebar-search-trigger"
       onClick={() => openGlobalSearch(searchScope())}

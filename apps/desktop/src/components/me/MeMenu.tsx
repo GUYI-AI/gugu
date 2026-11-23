@@ -1,3 +1,4 @@
+import { Button as ButtonPrimitive } from '@base-ui/react/button'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { observer } from 'mobx-react-lite'
@@ -95,7 +96,7 @@ function RailItem({
   // 图标只有形状没有文字,而 title 要等操作系统那 ~1s、扫过一排时一个都不弹、触屏上永远不弹。
   return (
     <Hint label={title}>
-      <button
+      <ButtonPrimitive
         {...button}
         type="button"
         className={cn('gg-sidebar-item', className)}
@@ -113,7 +114,7 @@ function RailItem({
           <span className="gg-sidebar-badge" data-tone={badgeTone} aria-hidden="true" />
         )}
         {running && <i className="gg-sidebar-running" aria-hidden="true" />}
-      </button>
+      </ButtonPrimitive>
     </Hint>
   )
 }
@@ -209,10 +210,10 @@ const MeApps = observer(function MeApps({ showSessions, close }: { showSessions:
   const dockFailed = (error: unknown) => { rendererLogger('actions/MeMenu').error({ error }, 'action failed'); toast(t('shell.appDockFailed'), 'error', messageForUser(error)) }
   return (
     <div data-testid={AUTOMATION_TEST_IDS.sidebarDock}>
-      <button type="button" className="gg-me-row" aria-expanded={!folded} onClick={() => setFolded(!folded)}>
+      <ButtonPrimitive type="button" className="gg-me-row" aria-expanded={!folded} onClick={() => setFolded(!folded)}>
         <span className="gg-me-row-label">{t('shell.pinnedApps')}</span>
         <span className="gg-me-row-key">{folded ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</span>
-      </button>
+      </ButtonPrimitive>
       {!folded && (
         <div className="gg-me-apps">
           {assistantApp && target.kind === 'app' && (
@@ -236,12 +237,12 @@ const MeApps = observer(function MeApps({ showSessions, close }: { showSessions:
 
 function MeRow({ icon, label, keyHint, badge, onClick, testId }: { icon: ReactNode; label: string; keyHint?: ReactNode; badge?: number | null; onClick: () => void; testId?: AutomationTestId }) {
   return (
-    <button type="button" className="gg-me-row" onClick={onClick} data-testid={testId}>
+    <ButtonPrimitive type="button" className="gg-me-row" onClick={onClick} data-testid={testId}>
       <span className="gg-me-row-icon">{icon}</span>
       <span className="gg-me-row-label">{label}</span>
       {badge != null && badge > 0 && <span className="gg-sidebar-badge gg-me-row-badge" aria-hidden="true" />}
       {keyHint && <span className="gg-me-row-key">{keyHint}</span>}
-    </button>
+    </ButtonPrimitive>
   )
 }
 
