@@ -18,7 +18,6 @@ import {
 } from '../test-support';
 import { toolDisplayName, type ToolCallItem } from '../../acp/models/turns/tool-calls';
 import { createCodexJsonlSource } from './codex-jsonl';
-import { sentMessageOf } from '../sent-message';
 import { SessionRecordNotFoundError } from './shared';
 import { TailReader } from './tail-reader';
 
@@ -582,25 +581,9 @@ describe('codex rollout 记录源', () => {
         { mimeType: 'image/jpeg', data: '/9j/AAAA' },
         { mimeType: 'image/png', data: 'iVBORBBBB' },
       ]);
-      // Codex's timing item heads what the model read, not what the tool answered.
-      expect(pictures.outputText).toBe('Picture: 952 wide, light');
+      expect(pictures.outputText).toBe('Wall time: 3.7 seconds\nOutput:\nPicture: 952 wide, light');
       expect(words.outputText).toBe('only words');
       expect(words).not.toHaveProperty('images');
-    });
-
-    // A send through catalog_call is drawn on the task page from its receipt: the receipt must come out of the record
-    // whole, not behind Codex's timing item (dev 27969f1: widget_send said sent, the task page drew no card).
-    it('a widget_send receipt read back from the record is a sent widget message', async () => {
-      const line = (payload: unknown) => JSON.stringify({ timestamp: '2026-11-23T00:40:00.000Z', type: 'response_item', payload });
-      const chat = 'f33b7cfc-0c7e-4ed5-a2e0-d9c2d1efc2f3', message = '6cdf9eea-c47a-4692-90a1-d71ec07df075';
-      const receipt = JSON.stringify({ status: 'sent', message_id: message, widget_id: '9d9833e5-29e3-488e-adbc-55b094160696', source_link: `gugu-chat://${chat}/${message}` });
-      const { timeline } = await build([
-        line({ type: 'function_call', name: 'catalog_call', namespace: 'mcp__gugu', call_id: 'call_widget',
-          arguments: JSON.stringify({ tool: 'widget_send', args: { chat_id: 'user:a7368a90-d846-4944-ae8d-6f40a50ca85c', app: 'github-pr', view: 'pr', text: 'PR #15111' } }) }),
-        line({ type: 'function_call_output', call_id: 'call_widget', output: [{ type: 'input_text', text: 'Wall time: 0.5772 seconds\nOutput:' }, { type: 'input_text', text: receipt }] }),
-      ]);
-      const [send] = collectItems(timeline.getSnapshot().turns).filter((item): item is ToolCallItem => item.kind.endsWith('-tool-call'));
-      expect(sentMessageOf(send!)).toMatchObject({ id: message, chat_id: chat, content_type: 'widget' });
     });
 
     // 复核 10f3ea946c:同一批图别存两份(rawOutput 一份、images 一份 —— 真记录里存档 6.7 → 13.4 MB)。

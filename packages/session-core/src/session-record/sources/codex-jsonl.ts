@@ -355,29 +355,20 @@ function toEvent(item: CodexRecordItem, messageId: string): NormalizedEvent {
     case 'tool_result': {
       const text = typeof item.output === 'string' ? item.output : null;
       // An MCP tool's result is recorded as input items (`input_text`, `input_image`): its text and pictures go as ACP
-      // content blocks, as the live ACP stream has them (148 10-14) — the card reads them there. Codex heads them with
-      // its own timing item for the model; the tool did not answer it, so it is not the tool's answer here either
-      // (a send's receipt is that answer, read whole by the task page's sent-message card).
-      const output = Array.isArray(item.output) ? item.output.filter((entry, index) => index > 0 || !isCodexTimingItem(entry)) : item.output;
-      const blocks = Array.isArray(output) ? output.flatMap(codexResultBlock) : [];
+      // content blocks, as the live ACP stream has them (148 10-14) — the card reads them there.
+      const blocks = Array.isArray(item.output) ? item.output.flatMap(codexResultBlock) : [];
       // The output is held once: a result whose every item became a block is not kept again as rawOutput (6 MB of
       // pictures stored twice, review 10f3ea946c); one with an item no block carries stays disclosed whole, as the
       // claude source does (#6020).
-      const carried = Array.isArray(output) && blocks.length > 0 && blocks.length === output.length;
+      const carried = Array.isArray(item.output) && blocks.length > 0 && blocks.length === item.output.length;
       const texts = blocks.filter((block) => block.type === 'text').map((block) => block.text);
       return toolCallResult(item.callId, item.failed ? 'failed' : 'completed', {
         ...(text !== null ? { text } : texts.length ? { text: texts.join('\n') } : {}),
         images: blocks.filter((block) => block.type === 'image'),
-        ...(output !== undefined && text === null && !carried ? { rawOutput: output } : {}),
+        ...(item.output !== undefined && text === null && !carried ? { rawOutput: item.output } : {}),
       });
     }
   }
-}
-
-/** Codex's first input item of an MCP result: `Wall time: 0.58 seconds\nOutput:`, what Codex tells the model, not the tool's answer. */
-function isCodexTimingItem(item: unknown): boolean {
-  const record = asRecord(item);
-  return record?.type === 'input_text' && typeof record.text === 'string' && /^Wall time: \d+(?:\.\d+)? seconds\nOutput:$/.test(record.text);
 }
 
 /** One recorded input item of a tool's result as an ACP content block: its text, or its picture (a `data:` URL). */
