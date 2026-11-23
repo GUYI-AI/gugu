@@ -20,8 +20,7 @@
 //  · 平台路(本地压缩)—— 明文摘要,在 `compacted.message`(替换历史里同样一条)⇒ 带过去;
 //  · 用户自己的 OpenAI(远端压缩)—— 只有一个加密的 `compaction` 条目,别的账号解不开 ⇒ 带不过去。
 // 带不过去时 ❌ 静默丢:返回 `sealedSummaryDropped`,调用方告诉 agent 也告诉人。
-import { createReadStream } from 'node:fs'
-import { readJsonlLines } from '../../../../packages/core/src/local/jsonl.mjs'
+import { readAllLines } from '../../../../packages/core/src/local/jsonl.mjs'
 
 /**
  * @param {(method: string, params: unknown) => Promise<any>} rpc 这台 app-server 的请求(失败即抛)
@@ -103,7 +102,7 @@ function conversationEntry(payload) {
 async function readRollout(path, limit) {
   const lines = []
   if (limit <= 0) return lines
-  for await (const line of readJsonlLines(createReadStream(path))) {
+  for await (const line of readAllLines(path)) {
     if (!line) continue
     lines.push(JSON.parse(line))
     if (lines.length >= limit) break

@@ -1,6 +1,7 @@
 import { readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { readAllLines, readFirstLines } from '@gugu/core/local/agent/transcriptInventory';
+import { readFirstLines } from '@gugu/core/local/agent/transcriptInventory';
+import { readAllLines } from '@gugu/core/local/jsonl.mjs';
 
 import { claudeFilePatch } from '../../acp/transport/claude-file-patch';
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';

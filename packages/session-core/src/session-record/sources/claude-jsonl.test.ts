@@ -14,8 +14,8 @@ import { SessionRecordForkDivergedError, SessionRecordNotFoundError } from './sh
 
 // 记下每份记录被「整份读」了几次：打开时间线串分叉链时，无关的记录不许被整份读进来。
 const wholeReads = vi.hoisted(() => new Map<string, number>());
-vi.mock('@gugu/core/local/agent/transcriptInventory', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@gugu/core/local/agent/transcriptInventory')>();
+vi.mock('@gugu/core/local/jsonl.mjs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@gugu/core/local/jsonl.mjs')>();
   return {
     ...actual,
     readAllLines: ((...args: Parameters<typeof actual.readAllLines>) => {
