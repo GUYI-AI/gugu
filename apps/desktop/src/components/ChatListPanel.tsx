@@ -653,6 +653,8 @@ export function ChatListPanel({
   const listQuery = searchQuery
   // 高亮哪一行:侧栏那一份认会话页正看着的那块对话,对话页那一份认它自己打开的那条。
   const selectedChatId = inSidebar ? sidebarView.focusedChatId : activeChatId
+  // A topic open as the main conversation lights its source row wherever the topic's own row is not drawn (稿子 #62:话题里仍高亮它的群).
+  const selectedTopicSource = chats.find((chat) => chat.id === selectedChatId && chat.kind === 'topic')?.source_chat_id ?? null
   const matchesSearch = (chat: ChatItem) => {
     const query = listQuery.trim().toLocaleLowerCase()
     if (!query) return true
@@ -787,7 +789,7 @@ export function ChatListPanel({
         joinPos={hasTopics ? undefined : join?.pos}
         joinOnScreen={hasTopics ? undefined : join?.onScreen}
         agentStatus={rowAgentStatus(chat, identitiesById, agentStatuses, shownAgent)}
-        isActive={chat.id === selectedChatId}
+        isActive={chat.id === selectedChatId || (chat.id === selectedTopicSource && !(hasTopics && topicsExpanded))}
         topicsExpanded={hasTopics ? topicsExpanded : undefined}
         mobile={mobile}
         draft={drafts[chat.id]}
