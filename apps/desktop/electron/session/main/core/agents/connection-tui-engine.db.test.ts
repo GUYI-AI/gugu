@@ -12,9 +12,11 @@ import { customModelOptionId } from '@gugu/session-core/models/custom-model';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { runContextLaunchArgs, type AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import { openRegistryFixture, type RegistryFixture } from '@tooling/utils/provider-accounts';
+import { requestNativeCodexAccess } from '@gugu/core/local/codex-native-auth.mjs';
+import { releaseNativeCodexAuthSources } from './codex-native-auth-source';
 
 const state = vi.hoisted(() => ({
   fixture: null as RegistryFixture | null,
@@ -40,7 +42,9 @@ vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error:
 vi.mock('@main/core/pty/pty-env', () => ({
   buildAgentEnv: () => ({ HOME: state.userHome, PATH: process.env.PATH ?? '', CODEX_HOME: join(state.userHome, '.codex') }),
 }));
-vi.mock('@main/core/agents/agent-home', () => ({ resolveAgentHomeEnv: async () => ({}) }));
+vi.mock('@main/core/agents/agent-home', () => ({
+  resolveAgentHomeEnv: async () => ({ CODEX_HOME: join(process.env.GUGU_HOME!, 'agent-homes', 'codex', '.codex') }),
+}));
 vi.mock('@main/core/acp/transport/local-acp-process-host', () => ({ resolveLocalAgentCli: async () => state.codexCli }));
 vi.mock('@main/core/agents/acp-bridge', () => ({ resolveHostAcpAdapterEntry: async () => undefined }));
 vi.mock('@main/core/settings/provider-settings-service', () => ({ providerOverrideSettings: { getItem: () => state.settings } }));
@@ -100,6 +104,7 @@ vi.mock('../../../../sessionpage/codex-app-server-delivery', () => {
 });
 
 const { saveCustomModel } = await import('./custom-models');
+const { createHarnessConnection, managedConfigRoot, selectHarnessConnection } = await import('./harness-connections');
 const { provisionAndOverride } = await import('../../../../sessionpage/codex-pty-provisioning');
 const { withPlatformDeclaration } = await import('../../../../sessionpage/sessionpage-platform-model');
 const { loadCodexAppServerCapabilities, PRODUCT_CAPABILITY_PACKAGES } = await import('../../../../capability-bundle');
@@ -121,6 +126,8 @@ beforeEach(async () => {
   customId = '';
   state.started.length = 0;
 });
+afterAll(releaseNativeCodexAuthSources);
+
 afterEach(async () => {
   releaseCustomModelForwarders();
   state.fixture?.close();
@@ -191,6 +198,20 @@ it('a native model in the terminal runs on the selected key as its own provider'
   expect(engine.extraArgs.some((arg) => arg.startsWith('model_providers.gugu_connection.base_url="http://127.0.0.1:'))).toBe(true);
   expect(engine.env.OPENAI_API_KEY).toMatch(/^sk-gugu-/);
   expect(JSON.stringify(engine.extraArgs)).not.toContain('codex-secret');
+});
+
+it('passes the selected account to Codex while retaining the history directory', async () => {
+  const account = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'Named' });
+  const idToken = Buffer.from(JSON.stringify({ sub: 'named-user' })).toString('base64url');
+  const authPath = join(state.home, 'harness-connections', 'codex', account.id, '.codex', 'auth.json');
+  await writeFile(authPath, JSON.stringify({
+    auth_mode: 'chatgpt',
+    tokens: { id_token: `h.${idToken}.s`, access_token: 'fixture-account-token', account_id: 'workspace' },
+  }));
+  await selectHarnessConnection('codex', account.id);
+  const engine = await terminalEngine('gpt-5.5');
+  expect(engine.env.CODEX_HOME).toBe(managedConfigRoot('codex'));
+  expect(await requestNativeCodexAccess(engine.env)).toMatchObject({ accessToken: 'fixture-account-token' });
 });
 
 it('extra args the user typed keep their place after the materialized args on both', async () => {

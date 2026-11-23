@@ -34,9 +34,5 @@
   [
     "apps/desktop/electron/session/main/core/session-timeline/archive-store.ts:readFile:19015d28c7e6858957b9f2e190dcc553f91ce723940e7d8f8669557f3523aa2a",
     1
-  ],
-  [
-    "packages/core/src/local/agent/transcriptInventory.ts:readFile:df782b2769883d9f9c14c4695bd3af03ccfef2c471a56251020a8a5cc5b87575",
-    1
   ]
 ]

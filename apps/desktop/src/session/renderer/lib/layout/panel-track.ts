@@ -1,4 +1,4 @@
-import { animate } from 'framer-motion';
+import { playSpring } from './panel-clock';
 
 /**
  * @@@panel-track — the one place a panel's size moves on screen. A track is a row (or column) of slots before a `fill` that
@@ -6,11 +6,11 @@ import { animate } from 'framer-motion';
  *
  *  · The size is the state: every frame each slot is laid out at the size it is drawn at (❌ transforms over a layout that
  *    already landed), and the fill, in the flow, takes what is left — what is beside a moving panel re-lays out with it.
- *  · A slot going to or from nothing keeps its content at its open size, clipped at its drawn edge (its far edge rides the
- *    edge, as a sheet pulled out), and fades behind a soft edge (owner 11-21); so does a fill. Any other slot's content is
- *    its drawn size, unless the caller holds it (`content`: the list keeps its width through a fold).
+ *  · A slot or the fill going to or from nothing keeps its content at its open size and moves with its edge, as a sheet
+ *    pulled out (a slot's far edge on its drawn edge, the fill's near edge), fading behind a soft edge (owner 11-21). A slot
+ *    that stays and holds its content (the list through a fold) keeps it where it is laid out, clipped at the drawn edge:
+ *    its avatars do not move, a rail fades its own text. Any other slot's content is its drawn size.
  */
-export const PANEL_SPRING = { type: 'spring', duration: 0.5, bounce: 0.1 } as const;
 
 /** Every edge this close to where it goes ends the move: the spring's sub-pixel tail would hold the landing layout back. */
 export const PANEL_LANDED_PX = 0.5;
@@ -52,13 +52,12 @@ export function contentAt(drawn: number, from: { size: number; content: number }
   return target.reflows ? drawn : Math.max(from.content, target.content);
 }
 
-/** A slot's content is clipped at its drawn edge, its far edge on that edge; `faded`: a move to or from nothing (a rail fades
- *  its own text). */
+/** A slot's content is clipped at its drawn edge; `faded`, a move to or from nothing, also slides it with the edge. */
 export function paintSlot(slot: SlotGeometry, faded: boolean): SlotPaint {
   const clip = Math.max(0, slot.content - slot.drawn);
   const soft = faded && clip > PANEL_LANDED_PX;
   return {
-    offset: -clip || 0,
+    offset: faded ? -clip || 0 : 0,
     opacity: soft ? clamp01(slot.drawn / slot.content) : 1,
     soft,
     hidden: slot.drawn < PANEL_LANDED_PX,
@@ -129,6 +128,12 @@ export class PanelTrack {
     return this.slot(id).geometry.drawn;
   }
 
+  /** Where a slot's move started and where it goes (both its target at rest). */
+  ends(id: string): { from: number; to: number } {
+    const slot = this.slot(id);
+    return { from: this.running ? slot.from.size : slot.target.size, to: slot.target.size };
+  }
+
   /** The size a slot's content is laid out at now. */
   content(id: string): number {
     return this.slot(id).geometry.content;
@@ -169,16 +174,12 @@ export class PanelTrack {
     const move = { stop: () => {} };
     this.running = move;
     this.frame(0);
-    const controls = animate(0, 1, {
-      ...PANEL_SPRING,
-      onUpdate: (progress) => {
-        if (this.running !== move) return;
-        if (this.slots.every((slot) => Math.abs(slot.from.size + progress * (slot.target.size - slot.from.size) - slot.target.size) < PANEL_LANDED_PX)) this.land();
-        else this.frame(progress);
-      },
-      onComplete: () => {
-        if (this.running === move) this.land();
-      },
+    const controls = playSpring((progress) => {
+      if (this.running !== move) return;
+      if (this.slots.every((slot) => Math.abs(slot.from.size + progress * (slot.target.size - slot.from.size) - slot.target.size) < PANEL_LANDED_PX)) this.land();
+      else this.frame(progress);
+    }, () => {
+      if (this.running === move) this.land();
     });
     if (this.running === move) move.stop = () => controls.stop();
     else controls.stop();
