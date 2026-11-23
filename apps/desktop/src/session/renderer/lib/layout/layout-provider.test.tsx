@@ -152,7 +152,7 @@ describe('dragging the edge of a sidebar that collapses to a rail', () => {
   });
 
   // What the occupied width (a transform of these two) reads on the next frame; mid-drag nothing re-renders.
-  const occupied = () => sidebarOccupiedWidth(layout.leftProgress.get(), layout.leftWidth.get(), 72);
+  const occupied = () => sidebarOccupiedWidth(layout.leftProgress.get(), layout.leftWidth.get(), SIDEBAR_RAIL_PX);
   const railed = async () => {
     writeInterface('gugu.taskpage.sidebarWidth', Number('300'));
     await mount();
@@ -172,7 +172,7 @@ describe('dragging the edge of a sidebar that collapses to a rail', () => {
     await act(async () => layout.dragLeftEdge(120, Number.POSITIVE_INFINITY));
     await act(async () => layout.releaseLeftEdge());
     expect(layout.isLeftOpen).toBe(false);
-    expect(occupied()).toBe(72);
+    expect(occupied()).toBe(SIDEBAR_RAIL_PX);
     expect(readInterface('gugu.taskpage.sidebarWidth')).toBe(300);
     await act(async () => layout.toggleLeft());
     expect(layout.isLeftOpen).toBe(true);
@@ -194,7 +194,7 @@ describe('dragging the edge of a sidebar that collapses to a rail', () => {
     await act(async () => layout.dragLeftEdge(100, Number.POSITIVE_INFINITY));
     await act(async () => layout.releaseLeftEdge());
     expect(layout.isLeftOpen).toBe(false);
-    expect(occupied()).toBe(72);
+    expect(occupied()).toBe(SIDEBAR_RAIL_PX);
     await act(async () => layout.dragLeftEdge(280, Number.POSITIVE_INFINITY));
     expect(layout.isLeftOpen).toBe(false);
     expect(occupied()).toBe(280);
@@ -254,9 +254,10 @@ describe('the inner column\'s width (#2642)', () => {
     await mount();
     expect(layout.innerShownWidth(), 'not measured yet').toBe(500);
     act(() => layout.setWorkspaceWidth(1000));
-    expect(layout.innerShownWidth()).toBe(304);
+    // The card is the page less the list's default width; the column takes 40% of it.
+    expect(layout.innerShownWidth()).toBeCloseTo((1000 - SIDEBAR_DEFAULT_WIDTH_PX) * 0.4);
     act(() => layout.setLeftWidth(400));
-    expect(layout.innerShownWidth()).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX);
+    expect(layout.innerShownWidth()).toBe(Math.max(INNER_SIDEBAR_DEFAULT_WIDTH_PX, (1000 - 400) * 0.4));
     act(() => layout.setWorkspaceWidth(2000));
     expect(layout.innerShownWidth()).toBe(500);
     expect(layout.innerWidth.get(), 'the choice itself never changed').toBe(500);
