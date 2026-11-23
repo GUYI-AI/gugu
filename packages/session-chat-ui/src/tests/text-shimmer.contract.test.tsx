@@ -35,17 +35,6 @@ function mount(label = '正在工作 · Running a long command') {
 
 const viewportPaused = (host: HTMLElement) => host.hasAttribute('data-animation-off');
 
-function watchSweepEvent(sweep: HTMLElement, type: 'animationstart' | 'animationend') {
-  let seen = false;
-  const listener = (event: AnimationEvent) => {
-    if (event.target !== sweep) return;
-    sweep.removeEventListener(type, listener);
-    seen = true;
-  };
-  sweep.addEventListener(type, listener);
-  return (step: string) => until(step, () => seen);
-}
-
 it('keeps one semantic label, its geometry and live text while animating only transforms', async () => {
   const { host, setText, setActive } = mount();
   await until('the shimmer enters the viewport', () => !viewportPaused(host));
@@ -115,9 +104,9 @@ it('keeps reduced-motion labels flat and readable with no running sweep', async 
   expect(getComputedStyle(host).backgroundImage).toBe('none');
 });
 
-// 真机 10-23:时间头扫完第一遍就再也不扫 —— 行的数据在停顿那 1 秒里换了一个对象(转录一更新就重建),
-// `active` 仍为真,可效果因此重跑、清掉了待重扫的计时器,扫完的动画再没有人倒回去。
-it('keeps replaying when the row data is rebuilt during the hold while it stays active', async () => {
+// Each sweep used to finish and be rewound from script a second later; that rewind cost a main-thread style
+// pass on every frame of a running turn. The sweep and its hold are now one infinite compositor animation.
+it('sweeps and holds as one infinite animation: nothing finishes, nothing rewinds from script, rebuilt rows keep it', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
   try {
     surface = document.createElement('div');
@@ -126,63 +115,24 @@ it('keeps replaying when the row data is rebuilt during the hold while it stays 
     const [item, setItem] = createSignal({ status: 'running' });
     dispose = render(() => <ShimmerText active={item().status === 'running'}>Worked for 19s</ShimmerText>, surface);
     const host = surface.firstElementChild as HTMLElement;
-    const ended = watchSweepEvent(host.querySelector<HTMLElement>(`.${textShimmerSweep}`)!, 'animationend');
     await until('the shimmer animations are ready', () => ({
       visible: !viewportPaused(host),
       animations: host.getAnimations({ subtree: true }).length,
     }), (state) => state.visible && state.animations === 2);
     const animations = host.getAnimations({ subtree: true });
-    for (const animation of animations) animation.finish();
-    await ended('the finished sweep emits animationend');
-    expect(vi.getTimerCount()).toBe(1);
-    setItem({ status: 'running' });
-    expect(vi.getTimerCount(), 'a rebuilt row that is still running keeps its pending replay').toBe(1);
-    vi.advanceTimersByTime(1000);
-    expect(animations.every((animation) => animation.currentTime === 0 && animation.playState === 'running')).toBe(true);
-  } finally {
-    vi.useRealTimers();
-  }
-});
-
-it('finishes each sweep, holds without running animations, and rewinds without overriding CSS pauses', async () => {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
-  try {
-    const { host, setActive } = mount();
-    const sweep = host.querySelector<HTMLElement>(`.${textShimmerSweep}`)!;
-    const ended = watchSweepEvent(sweep, 'animationend');
-    await until('the shimmer animations are ready after motion emulation resets', () => ({
-      visible: !viewportPaused(host),
-      reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
-      animations: host.getAnimations({ subtree: true }).map((animation) => animation.playState),
-    }), (state) => state.visible && !state.reducedMotion && state.animations.length === 2);
-    const animations = host.getAnimations({ subtree: true });
-    expect(animations).toHaveLength(2);
     for (const animation of animations) {
-      expect(animation.effect!.getTiming()).toMatchObject({ duration: 1000, iterations: 1, fill: 'forwards' });
+      expect(animation.effect!.getTiming()).toMatchObject({ duration: 2000, iterations: Infinity });
+      const frames = (animation.effect as KeyframeEffect).getKeyframes();
+      // The second half holds the swept position: the same transform at 50% and at 100%.
+      expect(frames.map((frame) => frame.offset)).toEqual([0, 0.5, 1]);
+      expect(frames[1]!.transform).toBe(frames[2]!.transform);
+      expect(frames[0]!.transform).not.toBe(frames[1]!.transform);
     }
-    for (const animation of animations) animation.finish();
-    await ended('the first finished sweep emits animationend');
-    expect(animations.every((animation) => animation.playState === 'finished')).toBe(true);
-    expect(vi.getTimerCount()).toBe(1);
-
-    surface!.inert = true;
-    expect(host.getAnimations({ subtree: true }).every((animation) => animation.playState === 'paused')).toBe(true);
-    const restarted = watchSweepEvent(sweep, 'animationstart');
-    const endedAgain = watchSweepEvent(sweep, 'animationend');
-    vi.advanceTimersByTime(1000);
-    expect(animations.every((animation) => animation.currentTime === 0 && animation.playState === 'paused')).toBe(true);
-    surface!.inert = false;
-    // A rAF callback can precede CSS sampling the rewound sweep. Observe its
-    // actual start before finishing it again, or the second end event is lost.
-    expect(animations.every((animation) => getComputedStyle((animation.effect as KeyframeEffect).target as Element).animationPlayState === 'running')).toBe(true);
-    await restarted('the rewound sweep emits animationstart');
-
-    for (const animation of animations) animation.finish();
-    await endedAgain('the next finished sweep emits animationend');
-    expect(vi.getTimerCount()).toBe(1);
-    setActive(false);
-    expect(vi.getTimerCount()).toBe(0);
-    expect(host.getAnimations({ subtree: true })).toHaveLength(0);
+    expect(vi.getTimerCount(), 'no script timer drives the shimmer').toBe(0);
+    setItem({ status: 'running' });
+    expect(host.getAnimations({ subtree: true })).toEqual(animations);
+    expect(animations.every((animation) => animation.playState === 'running')).toBe(true);
+    expect(host.querySelector<HTMLElement>(`.${textShimmerSweep}`)).not.toBeNull();
   } finally {
     vi.useRealTimers();
   }
