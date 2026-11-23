@@ -66,7 +66,8 @@ async function mountWorkspace(rename?: (name: string) => void) {
   const openWindow = vi.fn();
   workspace.setWindowOpener((id) => id === workspace.primaryChatTabId ? openWindow : null);
   await act(() => view.render(<WorkspaceDrag layout={workspace}>
-    <div style={{ width: 800, height: '100%' }} data-chat-workspace-test-main="">
+    {/* Clipped like the app's shell around the panes (overflow hidden is still scrollable by script). */}
+    <div style={{ width: 800, height: '100%', overflow: 'hidden' }} data-chat-workspace-test-main="">
       <PaneTreeView layout={workspace} chatChrome={{
         actions: <TabBarActionRow atWindowEdge={false}><span>聊天操作</span></TabBarActionRow>,
         addTab: <Button size="icon-sm" variant="ghost" aria-label="打开测试工具" onClick={() => workspace.open('tool', { id: 'file' }, { from: null, intent: 'newTab' })}><Plus className="size-3.5" /></Button>,
@@ -259,7 +260,7 @@ it('docks chat into the strip, then into a header button, and keeps both pages a
 });
 
 it('shrinks and scrolls the group strip with the selected tab still in view', async () => {
-  const { inside, mode, workspace } = await mountWorkspace();
+  const { inside, mode, workspace, chat, tool } = await mountWorkspace();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
   await act(() => {
@@ -277,6 +278,25 @@ it('shrinks and scrolls the group strip with the selected tab still in view', as
   });
   expect(inside('[data-chat-workspace-header] [data-tabstrip-overflow]')).toBeNull();
   expect(activeTab()!.getBoundingClientRect().width).toBeCloseTo(84, 0);
+
+  // Shown again with more tabs than fit, the strip reveals its tab by scrolling itself only: ❌ the clipped track around
+  // the pages (scrollIntoView would shove the chat aside and drop the tool page in place in one frame).
+  await userEvent.click(page.getByRole('button', { name: '隐藏标签页' }));
+  await mode('hidden');
+  await until('the hidden tools leave the strip once they land', () => !inside('[data-chat-workspace-header] [data-tab-label="工具页签"]'));
+  await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
+  await mode('split');
+  const shoved = new Set<string>();
+  const toolLefts = new Set<number>();
+  for (let frame = 0; frame < 20; frame += 1) {
+    await new Promise(requestAnimationFrame);
+    for (let node = chat()?.parentElement; node && node !== document.body; node = node.parentElement) {
+      if (node.scrollLeft !== 0) shoved.add(`${node.className} scrollLeft=${node.scrollLeft}`);
+    }
+    toolLefts.add(Math.round(tool()?.getBoundingClientRect().left ?? -1));
+  }
+  expect([...shoved], 'nothing around the pages scrolls').toEqual([]);
+  expect(toolLefts.size, [...toolLefts].join(' ')).toBeGreaterThan(2);
 });
 
 async function mouse(type: 'mouseMoved' | 'mousePressed' | 'mouseReleased', x: number, y: number, pressed = false) {

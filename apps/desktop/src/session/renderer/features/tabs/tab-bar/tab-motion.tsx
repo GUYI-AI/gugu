@@ -1,6 +1,7 @@
 import { type DragEndEvent, type DragMoveEvent, type DropAnimation } from '@dnd-kit/core';
 import { Component, type ReactNode, type RefObject } from 'react';
 import { CHAT_TOOL_DROP_PREFIX } from '../chat-tool-geometry';
+import { revealInRow } from '@/lib/revealInRow';
 import { DUR_MED_MS, EASE } from '@/styles/motion';
 
 type Point = { x: number; y: number };
@@ -63,9 +64,9 @@ export class TabStripMotion extends Component<Props> {
    *  effects call this on mount and on resize (TabBar), ❌ componentDidMount. */
   revealActiveTab() {
     const { scroller, activeTabId } = this.props;
-    if (!activeTabId || !scroller.current) return;
-    stripTabNodes(scroller.current).find(([id]) => id === activeTabId)?.[1]
-      .scrollIntoView({ behavior: 'instant', inline: 'nearest', block: 'nearest' });
+    const row = scroller.current;
+    const tab = row && stripTabNodes(row).find(([id]) => id === activeTabId)?.[1];
+    if (row && tab) revealInRow(row, tab);
   }
 
   private positions(): Map<string, Point> {

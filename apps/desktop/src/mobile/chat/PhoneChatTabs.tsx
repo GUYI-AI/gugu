@@ -7,6 +7,7 @@ import { TaskStatusMark } from '@/components/chat/ComposerCardView'
 import { SegmentedTabs } from '@/components/ui/SegmentedTabs'
 import { useAgentDisplayStatuses } from '@/hooks/useAgentDisplayStatus'
 import { Hash } from '@/lib/icons'
+import { revealInRow } from '@/lib/revealInRow'
 import { useChatStore } from '@/store/chatContext'
 import './phone-chat-tabs.css'
 
@@ -46,14 +47,11 @@ export function PhoneChatTabs({ topics, messages, current, onPick, dense = false
     return byAnchor
   }, [topics, messages])
   const statuses = useAgentDisplayStatuses([...new Set(agentOf.values())])
-  // 选中的那枚滑进视野:只动这一排自己的 scrollLeft(scrollIntoView 会连外层页面一起滚)。
+  // 选中的那枚滑进视野:只动这一排自己的 scrollLeft。
   useEffect(() => {
     const row = bar.current
     const tab = row?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
-    if (!row || !tab) return
-    const pad = 16
-    if (tab.offsetLeft - pad < row.scrollLeft) row.scrollLeft = tab.offsetLeft - pad
-    else if (tab.offsetLeft + tab.offsetWidth + pad > row.scrollLeft + row.clientWidth) row.scrollLeft = tab.offsetLeft + tab.offsetWidth + pad - row.clientWidth
+    if (row && tab) revealInRow(row, tab, 16)
   }, [value])
   if (topics.length === 0) return null
   const callsOf = (topic: TopicSummary) => {
