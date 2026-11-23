@@ -11,13 +11,14 @@
 //   ③ 沉降:`isSunkTopic` 只对 kind==='topic' 为真,而话题永不占顶层 ⇒ 顶层那一段沉降列表恒空。
 //      沉降只能发生在**子行这一层**(见 splitSunkTopics),❌ 不是列表底部那个「更早」分段。
 import type { ChatItem } from '@gugu/core/shared/types/chat'
+import { comparePinnedFirst } from '@gugu/core/shared/ui/chatModels'
 
 export function isTopicRow(chat: Pick<ChatItem, 'kind'>): boolean {
   return chat.kind === 'topic'
 }
 
 export type TopicNesting = {
-  /** 来源线 id → 挂在它底下的话题(已按时间排好)。 */
+  /** 来源线 id → 挂在它底下的话题(置顶的在前,再按时间)。 */
   bySource: Map<string, ChatItem[]>
   /** 真的挂上去了的那些话题 id —— 没挂上的要退回顶层,靠这个集合区分。 */
   nestedIds: Set<string>
@@ -45,7 +46,7 @@ export function groupTopicsBySource(
     else bySource.set(chat.source_chat_id, [chat])
     nestedIds.add(chat.id)
   }
-  for (const bucket of bySource.values()) bucket.sort(byTime)
+  for (const bucket of bySource.values()) bucket.sort((a, b) => comparePinnedFirst(a, b) || byTime(a, b))
   return { bySource, nestedIds }
 }
 
