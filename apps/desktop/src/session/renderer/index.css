@@ -1161,6 +1161,9 @@
   }
 
   [data-chat-workspace-header][data-chat-tool-cards] [data-chat-tool-strip] {
+    /* 稿子 .strip 左右各 8,页签之间 4,页签最宽 240(.tab max-width)。 */
+    --tab-strip-edge: 8px;
+    --tab-slot-max-width: 240px;
     --tab-strip-height: var(--chat-tool-strip-height);
     /* 稿子 .strip:46 高、底下 1px 线,34 高的页签离顶 5。 */
     --tab-strip-inset-start: calc((var(--chat-tool-strip-height) - 1px - var(--chat-tool-tab-height)) / 2);
@@ -1572,4 +1575,14 @@ html[data-gugu-dragging] :is(webview, iframe) {
 :is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div > div:last-child > button > svg {
   width: 12px;
   height: 12px;
+}
+
+/* 稿子 .tabs:页签之间 4px、没有分隔竖线(选中页签是浮在灰条上的白块,不靠线分)。 */
+[data-chat-tool-strip] [data-tabstrip-scroller] {
+  gap: 4px;
+}
+
+[data-chat-tool-strip] .session-tab-slot::before,
+[data-chat-tool-strip] .session-tab-slot::after {
+  display: none;
 }

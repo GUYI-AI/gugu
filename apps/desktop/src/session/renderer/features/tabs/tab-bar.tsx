@@ -267,7 +267,8 @@ export function TabStripShell({
       data-strip-narrow={narrow ? '' : undefined}
       style={{
         height: `var(--tab-strip-height, ${WINDOW_CONTROL_BAR_HEIGHT_PX}px)`,
-        paddingInlineStart: `${leading}px`,
+        // The plain edge is a variable (default 12px, the first tab's ears): a strip without ears (the tool card's) sets its own.
+        paddingInlineStart: leading === TAB_STRIP_LEADING_PX ? `var(--tab-strip-edge, ${TAB_STRIP_LEADING_PX}px)` : `${leading}px`,
       }}
       onClick={onClick}
     >
