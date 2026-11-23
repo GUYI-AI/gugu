@@ -108,7 +108,7 @@ it('renames the standalone chat title on double-click only, and cancels with Esc
 });
 
 it('opens the first tool into a split, hides/restores it and expands only its own block', async () => {
-  const { inside, width, mode, chat, tool, neighbour, openWindow } = await mountWorkspace();
+  const { inside, width, mode, chat, tool, neighbour } = await mountWorkspace();
   const neighbourBefore = neighbour().getBoundingClientRect().toJSON();
   await mode('empty');
   expect(inside('[data-chat-workspace-title]')?.textContent).toContain('聊天标题');
@@ -117,9 +117,8 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(inside('[data-chat-workspace-header] [data-tab-label]')).toBeNull();
   expect(tool()).toBeNull();
   expect(page.getByRole('button', { name: '单独成窗' }).query()).toBeNull();
-  await userEvent.click(page.getByRole('button', { name: /^(?:More|更多)$/ }));
-  await userEvent.click(page.getByRole('menuitem', { name: '单独成窗' }));
-  expect(openWindow).toHaveBeenCalledOnce();
+  // 第 16 版: the capsule row holds only the capsule (❌ ⋯); open-in-window is a tile in Details.
+  expect(page.getByRole('button', { name: /^(?:More|更多)$/ }).query()).toBeNull();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
   await until('the split produces two measurable pages', () => width(chat()) > 0 && width(tool()) > 0 && width(tool()) < 800);

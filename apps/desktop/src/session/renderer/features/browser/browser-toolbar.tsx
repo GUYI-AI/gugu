@@ -171,7 +171,7 @@ export function BrowserToolbar({
   return (
     <div className={cn('shrink-0', className)}>
     {/* The browser's own row (design .addr): 44px, no rule under it, the address a 30px pill — not the 41px panel header. */}
-    <div className="flex h-11 shrink-0 items-center gap-2 px-2.5">
+    <div className="flex h-11 shrink-0 items-center gap-2 px-[10px]">
       <ToolbarIconButton
         label={translate('browser.back')}
         disabled={(!adapter && !remote) || !session.canGoBack}
@@ -244,7 +244,7 @@ export function BrowserToolbar({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="size-[22px] shrink-0 rounded-[6px] text-foreground-passive"
+                className="size-[22px] shrink-0 rounded-sm text-foreground-passive"
                 aria-label={translate('browser.actions')}
               />
             }
@@ -396,7 +396,7 @@ function ToolbarIconButton({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-[22px] shrink-0 rounded-[6px] text-foreground-passive"
+            className="size-[22px] shrink-0 rounded-sm text-foreground-passive"
             disabled={disabled}
             aria-label={label}
             onClick={onClick}

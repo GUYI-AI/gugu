@@ -26,7 +26,7 @@ export function useBrowserAnnotations({ conversation, browserId, visible, availa
   const { translate } = useSessionMessages();
   const accountId = useAuth().user?.id;
   return {
-    toolbar: <Button type="button" variant="ghost" size="sm" disabled={!conversation || !available} className="h-[26px] shrink-0 gap-1 rounded-[7px] px-1.5 text-foreground-passive aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
+    toolbar: <Button type="button" variant="ghost" size="sm" disabled={!conversation || !available} className="h-[26px] shrink-0 gap-1 rounded-sm px-[6px] text-foreground-passive aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
       aria-pressed={active} title={active ? `${translate('annotations.hint')}: ${translate('annotations.browse')}` : translate('annotations.annotate')}
       onClick={() => setActive(!active)}><MousePointer className="size-[15px]" />{translate('annotations.mode')}</Button>,
     overlay: active && visible && available && conversation ? <BrowserAnnotationOverlay key={`${browserId}:${annotationConversationKey(conversation)}:${accountId ?? ''}`} conversation={conversation} accountId={accountId} browserId={browserId}
