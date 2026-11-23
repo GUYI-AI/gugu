@@ -1,5 +1,6 @@
-import { JsonlFramer } from '../jsonl.mjs'
-import { open, readFile, readdir, realpath, stat } from 'node:fs/promises'
+import { JsonlFramer, readJsonlLines } from '../jsonl.mjs'
+import { createReadStream } from 'node:fs'
+import { open, readdir, realpath, stat } from 'node:fs/promises'
 import { basename, join, sep } from 'node:path'
 import type { JsonlSearchResult } from './runtimeInfo'
 import { readDeliveryEnvelope } from './deliveryEnvelope'
@@ -259,14 +260,13 @@ export async function readLocalTranscript(
   const spec = requireTranscriptSourceSpec(source)
   await assertPathInScanRoots(filePath, spec, options)
   options.signal?.throwIfAborted()
-  const bytes = await readFile(filePath, { signal: options.signal })
-  options.signal?.throwIfAborted()
-  const lines = bytes.toString('utf8').split('\n')
+  // Stream lines: a transcript can outgrow V8's maximum string length (~512 MiB), so it is never one string.
+  const lines = readJsonlLines(createReadStream(filePath, { signal: options.signal }))
   const turns: ImportedTranscriptTurn[] = []
   const digest = newDigest()
   const context: Pick<TranscriptContext, 'loaded' | 'nested' | 'refs'> = { loaded: [], nested: [], refs: [] }
   const refs = new Set<string>()
-  for (const line of lines) {
+  for await (const line of lines) {
     options.signal?.throwIfAborted()
     const entry = parseJsonLine(line)
     if (!entry) continue
@@ -300,7 +300,7 @@ export async function readLocalTranscript(
  *
  * ⚠️ **两侧都要 realpath，不是只 resolve。** `resolve()` 只做字符串层面的规范化，**不解符号链接** ——
  * 扫描根里放一条指向根外的链接（`~/.claude/projects/x.jsonl -> /etc/shadow`），
- * `resolve` 判定通过，随后的 `readFile` 却会跟着链接走出去。而这条路的输入来自**渲染层经 IPC
+ * `resolve` 判定通过，随后的读取却会跟着链接走出去。而这条路的输入来自**渲染层经 IPC
  * 递进来的不受信路径**，围栏松一寸，导入面板就是个任意文件读取器。
  *
  * 只解一侧同样不行：macOS 上 `/var` → `/private/var`，只解目标不解根会让**每一次**判定都成越界。
