@@ -66,6 +66,7 @@ import { getSharedChatContext } from '@renderer/lib/chat/shared-chat-context';
 import { sideChatOwnTurns } from './history-composition';
 import { AcpTimelineFeed } from './acp-timeline-feed';
 import { projectOwnerNotifications } from '@gugu/session-core/session-record/owner-notifications';
+import { withoutTurn } from '@gugu/session-core/session-record/runtime-turn';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import type { SessionMessageKey } from '@renderer/localization/messages';
@@ -2420,12 +2421,20 @@ export class AcpChatStore {
       this._syncRuntimeBackgroundTaskIds(initialState);
       this._syncLiveSubagentIds(session.agents.current());
     });
+    let drawnLiveId = session.activeTurn.current()?.id ?? null;
     const disconnectChatSession = connectSession(
       this.chatState,
       {
         activeTurn: {
           getSnapshot: () => this._historyView(session.activeTurn.current()).activeTurn,
-          subscribe: cb => session.activeTurn.onChange(() => cb()),
+          // The host timeline and this runtime replica report the same running turn on two channels, in either order.
+          // Both tiers are drawn from both in one batch, so neither channel's lead draws that turn in both (@@@turn-one-owner).
+          subscribe: cb => session.activeTurn.onChange(() => batch(() => {
+            cb();
+            // A streaming patch keeps the turn: only a turn starting or ending moves it between the tiers.
+            const id = session.activeTurn.current()?.id ?? null;
+            if (id !== drawnLiveId) { drawnLiveId = id; this._seedFromTimeline(); }
+          })),
         },
         plan: asValueSource(session.plan),
         sessionState: asValueSource(session.sessionState),
@@ -2641,7 +2650,10 @@ export class AcpChatStore {
       // 分叉重放进来的来源历史是给模型的上下文,不画;挂上之前就从这个视图开出来的那一轮照画(#6762)。
       return { turns: sideChatOwnTurns([...this._olderHistoryTurns, ...this._runtimeTurns]), activeTurn: live };
     }
-    const turns = this._history.state.turns.filter(turn => turn.id !== live?.id && turn.id !== frame?.id);
+    // The drawn running turn (live) and the frame kept after it ended own that turn: the timeline's copies of it step
+    // aside, whether the runtime's copy (same id) or the record's (other ids, `sameTurnAs`) when the record is ahead.
+    let turns = this._history.state.turns.filter(turn => turn.id !== live?.id && turn.id !== frame?.id);
+    for (const drawn of [live, frame]) if (drawn) turns = withoutTurn(turns, drawn);
     return projectOwnerNotifications(turns, live);
   }
 

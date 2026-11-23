@@ -74,6 +74,16 @@ it('leaves the running turn to the live session and keeps a committed one until 
   expect(committedIds(store)).toEqual(['a', 's:node-7']);
 });
 
+it('draws the running turn once when the record already holds its own copy of it', async () => {
+  // The record numbers its lines itself (another id) and is ahead of the live session: that copy steps aside.
+  const live = turn('runtime-1', 1, 'go');
+  const { store, internal } = await opened([turn('a', 0, 'one')]);
+  internal.session = { activeTurn: replica<TranscriptTurn | null>(live) };
+  host.show([turn('a', 0, 'one'), turn('s:node-7', 1, 'go')]);
+  expect(committedIds(store)).toEqual(['a']);
+  expect(store.chatState.transcript.state.activeTurnSnapshot?.id).toBe('runtime-1');
+});
+
 it('puts an owner notification made by the running turn into that turn', async () => {
   const live = turn('runtime-1', 1, 'work');
   const notice: TranscriptTurn = { id: 'owner-notify:r', seq: 2, initiator: 'agent', startedAt: 150, items: [

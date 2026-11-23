@@ -1,5 +1,5 @@
 import type { TranscriptItem, TranscriptTurn } from '../acp/models/turns/turn';
-import { HOST_PROMPT_HASH } from '../acp/native-prompt';
+import { HOST_PROMPT_HASH } from '../acp/native-prompt-key';
 
 /**
  * The turn a running agent is in, as its runtime holds it, shown in place of the record's copy of that turn.
@@ -15,10 +15,15 @@ import { HOST_PROMPT_HASH } from '../acp/native-prompt';
  */
 export function withRuntimeTurn(turns: readonly TranscriptTurn[], runtime: TranscriptTurn | null): TranscriptTurn[] {
   if (!runtime) return [...turns];
-  const same = sameTurnAs(runtime);
+  return [...withoutTurn(turns, runtime), runtime];
+}
+
+/** `turns` without their tail turns that are `turn` as another source holds it (`sameTurnAs`), for whoever draws `turn` itself. */
+export function withoutTurn(turns: readonly TranscriptTurn[], turn: TranscriptTurn): TranscriptTurn[] {
+  const same = sameTurnAs(turn);
   let end = turns.length;
   while (end > 0 && same(turns[end - 1]!)) end -= 1;
-  return [...turns.slice(0, end), runtime];
+  return turns.slice(0, end);
 }
 
 /**
