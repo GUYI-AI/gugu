@@ -1,4 +1,4 @@
-import { Eye, EyeOff, MessageSquare, Trash2, X } from '@/lib/icons';
+import { Eye, EyeOff, MousePointer, Trash2, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { annotationConversationKey, type AnnotationConversation, type BrowserAnnotationInspection, type BrowserAnnotationQuery, type BrowserAnnotationTarget } from '@shared/browser-annotation';
@@ -28,7 +28,7 @@ export function useBrowserAnnotations({ conversation, browserId, visible, availa
   return {
     toolbar: <Button type="button" variant="ghost" size="sm" disabled={!conversation || !available} className="h-7 shrink-0 gap-2 px-2 aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
       aria-pressed={active} title={active ? `${translate('annotations.hint')}: ${translate('annotations.browse')}` : translate('annotations.annotate')}
-      onClick={() => setActive(!active)}><MessageSquare className="size-3.5" />{translate('annotations.mode')}</Button>,
+      onClick={() => setActive(!active)}><MousePointer className="size-3.5" />{translate('annotations.mode')}</Button>,
     overlay: active && visible && available && conversation ? <BrowserAnnotationOverlay key={`${browserId}:${annotationConversationKey(conversation)}:${accountId ?? ''}`} conversation={conversation} accountId={accountId} browserId={browserId}
       inspect={inspect} onExit={exit} filePath={filePath} subscribeSpaceRelease={subscribeSpaceRelease} /> : null,
   };

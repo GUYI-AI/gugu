@@ -128,7 +128,11 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   const hideButton = inside('button[aria-label="隐藏标签页"]')!;
   expect(chip.getBoundingClientRect().height).toBe(32);
   expect(getComputedStyle(chip).borderBottomLeftRadius).toBe('8px');
-  expect(hideButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 8 });
+  // Side by side the tools are a card of their own, 8px off the conversation's: its strip (and the buttons on it) sit 8px lower.
+  expect(hideButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 16 });
+  expect(hideButton.closest('[data-chat-tool-strip]')).not.toBeNull();
+  expect(getComputedStyle(inside('[data-chat-tool-strip]')!).borderTopLeftRadius).toBe('12px');
+  expect(inside('[data-chat-tool-card]')).not.toBeNull();
   expect(getComputedStyle(hideButton).borderRadius).toBe('8px');
   expect(hideButton.getAttribute('aria-pressed')).toBe('true');
   const panelIcon = hideButton.querySelector('svg')?.innerHTML;

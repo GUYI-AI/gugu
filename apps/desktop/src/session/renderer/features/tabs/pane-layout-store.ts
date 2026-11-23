@@ -357,6 +357,11 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     return true;
   }
 
+  /** Side by side, the tool pane is a card of its own beside the conversation's (index.css `[data-chat-tool-card]`). */
+  get chatToolCardPaneId(): string | undefined {
+    return this.chatWorkspaceMode === 'split' && !this.narrow ? this.chatWorkspacePanes?.tools?.paneId : undefined;
+  }
+
   get chatWorkspaceSinglePaneId(): string | undefined {
     const panes = this.chatWorkspacePanes;
     if (this.chatWorkspaceMode === 'hidden') return panes?.chat.paneId;
