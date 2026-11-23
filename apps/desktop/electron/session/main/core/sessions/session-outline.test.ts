@@ -37,6 +37,17 @@ describe('the outline of a conversation', () => {
     expect(outline[0]).toMatchObject({ id: 'r:0', inputs: [{ itemId: 'r:0:u', first: true }] });
   });
 
+  it('after a turn the reader already holds: only the stretch after it, marked; a turn it does not have: the whole outline', async () => {
+    mocks.turns = ['r:0', 'r:1', 'r:2', 'r:3', 'r:4'].map((id) => turn(id, 'user', [msg(`${id}:u`, 'user', `ask ${id}`), msg(`${id}:a`, 'assistant', 'ok')]));
+    const delta = await getOutline({ sessionId: 'c1', beforeTurnId: 'r:4', afterTurnId: 'r:1' });
+    expect(delta).toMatchObject({ after: 'r:1' });
+    expect(delta.turns.map((one) => one.id)).toEqual(['r:2', 'r:3']);
+    const whole = await getOutline({ sessionId: 'c1', beforeTurnId: 'r:4', afterTurnId: 'gone' });
+    expect(whole.after).toBeUndefined();
+    expect(whole.turns.map((one) => one.id)).toEqual(['r:0', 'r:1', 'r:2', 'r:3']);
+    expect(await getOutline({ sessionId: 'c1', beforeTurnId: 'r:0', afterTurnId: 'r:1' })).toEqual({ turns: [] });
+  });
+
   it('sends the start of a long reply, not the reply', async () => {
     mocks.turns = [turn('r:0', 'user', [msg('u', 'user', 'ask'), msg('a', 'assistant', 'word '.repeat(40_000))]), turn('r:1', 'user', [])];
     const { turns: outline } = await getOutline({ sessionId: 'c1', beforeTurnId: 'r:1' });
