@@ -33,7 +33,7 @@ function makeLayout(owner?: string) {
 afterEach(() => layouts.splice(0).forEach((layout) => layout.dispose()));
 
 describe('chat and tool layout', () => {
-  it('keeps the same conversation as a tab before the compact header button and switches without restoring a split', () => {
+  it('shows the same conversation from the shared strip at any width without restoring a split', () => {
     const layout = makeLayout('owner');
     const owner = layout.open('chat', { id: 'owner' }, newTab)!;
     const tool = layout.open('tool', { id: 'one' }, newTab)!;
@@ -41,16 +41,13 @@ describe('chat and tool layout', () => {
     try {
       const panes = layout.chatWorkspacePanes!;
       layout.setDimensions(900, 600);
-      expect(layout.chatWorkspaceConversationPresentation).toBe('pane');
       layout.collapseChatToolSide(layout.chatToolSide === 'right' ? 'left' : 'right');
-      expect(layout.chatWorkspaceConversationPresentation).toBe('tab');
+      expect(layout.chatWorkspaceMode).toBe('full');
       const tree = layout.layout;
       layout.setDimensions(380, 600);
-      expect(layout.chatWorkspaceConversationPresentation).toBe('bubble');
       layout.showChatWorkspaceConversation();
       expect(layout.chatWorkspaceSinglePaneId).toBe(panes.chat.paneId);
       expect(layout.chatWorkspaceMode).toBe('full');
-      expect(layout.chatWorkspaceConversationPresentation).toBe('tab');
       panes.tools!.pane.setActiveTab(tool);
       expect(layout.chatWorkspaceSinglePaneId).toBe(panes.tools!.paneId);
       expect(layout.layout).toBe(tree);

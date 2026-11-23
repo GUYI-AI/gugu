@@ -4,8 +4,8 @@ export type ChatToolSide = 'left' | 'right';
 export const CHAT_TOOL_COLLAPSE_PREVIEW_PX = 180;
 export const CHAT_TOOL_COLLAPSE_COMMIT_PX = 115;
 export const CHAT_TOOL_MIN_VISIBLE_PANE_PX = 324;
-/** Below this tool width the conversation leaves the shared strip for a compact button in the header row. */
-export const CHAT_TOOL_BUBBLE_MAX_WIDTH_PX = 420;
+/** Below this tool width the header's exit-full-view button keeps only its icon, so the tabs keep room for their names. */
+export const CHAT_TOOL_COMPACT_HEADER_MAX_WIDTH_PX = 420;
 
 export const CHAT_TOOL_DROP_PREFIX = 'chat-tool-group-edge-';
 export const chatToolDropId = (side: ChatToolSide, chatPaneId: string) => `${CHAT_TOOL_DROP_PREFIX}${side}-${chatPaneId}`;

@@ -188,7 +188,7 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   await until('the closed tool is gone', () => !tool());
 });
 
-it('docks chat into the strip, then into a header button, and keeps both pages alive', async () => {
+it('keeps the conversation as the first tab of the strip however narrow, and keeps both pages alive', async () => {
   const { inside, workspace, chat, tool, mode, width } = await mountWorkspace();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
@@ -201,13 +201,12 @@ it('docks chat into the strip, then into a header button, and keeps both pages a
   expect(chat()).toBe(originalChat);
   await userEvent.click(page.getByText('工具页签', { exact: true }));
   await act(() => { inside('[data-chat-workspace-test-main]')!.style.width = '560px'; });
-  await until('chat stays a tab in the compact strip', () => workspace.chatWorkspaceConversationPresentation === 'tab');
-  expect(inside('[data-testid="chat-workspace-bubble"]')).toBeNull();
+  const firstTab = () => inside('[data-chat-workspace-header] [data-tabid]');
+  await until('chat stays the first tab of the compact strip', () => firstTab()?.hasAttribute('data-chat-workspace-conversation-tab') ?? false);
   await act(() => { inside('[data-chat-workspace-test-main]')!.style.width = '380px'; });
-  await until('further narrowing exposes the chat bubble', () => !!inside('[data-testid="chat-workspace-bubble"]'));
-  // The way back is in the header row, never over the tool page (a native browser page would have to step aside under it).
-  expect(inside('[data-testid="chat-workspace-bubble"]')!.closest('[data-chat-workspace-header]')).not.toBeNull();
-  await userEvent.click(page.getByTestId('chat-workspace-bubble'));
+  // Narrower still it is an ordinary tab: still first, only shrinking, ❌ moved to the action row or over the page.
+  await until('the conversation is still the first tab', () => firstTab()?.hasAttribute('data-chat-workspace-conversation-tab') ?? false);
+  await userEvent.click(page.getByRole('button', { name: '聊天标题', exact: true }));
   await until('the same conversation returns', () => chat()?.closest('[inert]') === null);
   expect(chat()).toBe(originalChat);
   expect(tool()).toBe(originalTool);
