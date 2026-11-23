@@ -61,3 +61,15 @@ it('draws nothing once the sidebar no longer holds the session', async () => {
   await act(async () => root.render(<OneListTaskRow projectId="workspace" sessionId="gone" />));
   expect(host.querySelector('[data-slot="list-row"]')).toBeNull();
 });
+
+it('opened from a group / project column: that room\'s row is the lit one, not the task\'s own (#71)', async () => {
+  const { innerSidebarChat } = await import('./inner-sidebar-anchor');
+  const { runInAction } = await import('mobx');
+  runInAction(() => innerSidebarChat.set({ kind: 'group', chatId: 'group' }));
+  try {
+    await act(async () => root.render(<OneListTaskRow projectId="workspace" sessionId="pty-1" />));
+    expect(host.querySelector<HTMLElement>('[data-slot="list-row"]')!.dataset.selected).toBeUndefined();
+  } finally {
+    runInAction(() => innerSidebarChat.set(null));
+  }
+});
