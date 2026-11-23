@@ -53,7 +53,7 @@ export const SessionTabBarItem = observer(function SessionTabBarItem({
       renameOnDoubleClick={!!store}
       renameValue={rawTitle}
       renameMaxLength={MAX_SESSION_TITLE_LENGTH}
-      card={sessionCommands.length > 0 ? (close) => <LazySessionConversationCard page={ctx as SessionTabContext} sessionId={tab.resource.sessionId} commands={sessionCommands} onClose={close} /> : undefined}
+      card={sessionCommands.length > 0 ? (close) => <LazySessionConversationCard page={ctx as SessionTabContext} surface="tui" sessionId={tab.resource.sessionId} commands={sessionCommands} onClose={close} /> : undefined}
     />
   );
 });

@@ -70,8 +70,8 @@ export function DetailsRow({ icon, label, end, chevron, onClick, danger, testId,
       onKeyDown={onClick && !disabled ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } } : undefined}
       className={`flex h-10 items-center gap-[11px] border-b border-[var(--border)] px-1 text-[13.5px]${onClick && !disabled ? ' cursor-pointer' : ''}${disabled ? ' opacity-50' : ''}${danger ? ' border-b-0 text-[var(--danger-fg)]' : ''}`}>
       <span className={`flex [&_svg]:size-4${danger ? '' : ' text-[var(--muted-fg)]'}`}>{icon}</span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {end || chevron ? <span className="ms-auto flex items-center gap-1 text-[12.5px] text-[var(--faint-fg)]">{end}{chevron ? <ChevronRight className="size-3.5" /> : null}</span> : null}
+      <span className="min-w-0 flex-1 truncate" title={label}>{label}</span>
+      {end || chevron ? <span className={`ms-auto flex items-center gap-1 text-[12.5px] text-[var(--faint-fg)] ${typeof end === 'string' ? 'max-w-[55%] min-w-0' : 'shrink-0'}`}>{typeof end === 'string' ? <span className="min-w-0 truncate" title={end}>{end}</span> : end}{chevron ? <ChevronRight className="size-3.5" /> : null}</span> : null}
     </div>
   )
 }

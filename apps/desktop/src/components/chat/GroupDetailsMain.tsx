@@ -5,6 +5,8 @@ import { BookOpen, FileText, Info, LogOut, Shield } from '@/lib/icons'
 import { Avatar } from '../Avatar'
 import { DetailsGroupTitle, DetailsHero, DetailsList, DetailsPage, DetailsRow } from '../details/DetailsParts'
 import { Button } from '../ui/Button'
+import { useReplica } from '../../lib/replica'
+import { groupAnnouncements } from '../../lib/groupAnnouncements'
 import { ChatDetailsQuickActions } from './ChatDetailsQuickActions'
 import { ChatManagementActions } from './ChatManagementActions'
 import { GroupAvatarEditor } from './GroupAvatarEditor'
@@ -50,6 +52,9 @@ export function GroupDetailsMain(props: GroupDetailsMainProps) {
   const [editingAvatar, setEditingAvatar] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const shownName = name ?? t('group.settings.groupFallback')
+  // 公告行的预览(设计稿):置顶的、否则最新的那一条的第一行(同公告页那份读数,排序是服务端给的:置顶在前、新的在前)。
+  const announcements = useReplica(groupAnnouncements, [chat.id])
+  const latestAnnouncement = announcements.state === 'value' ? firstLine(announcements.value[0]?.content) : null
   return (
     <DetailsPage testId="group-details">
       <DetailsHero
@@ -71,7 +76,8 @@ export function GroupDetailsMain(props: GroupDetailsMainProps) {
       <GroupMembersBlock chatId={chat.id} settings={settings} memberIds={memberIds} total={total} people={props.people} agents={props.agents} onOpen={() => props.onOpenPage('members')} />
       <ChatDetailsQuickActions chatId={chat.id} isGroup />
       <DetailsList>
-        <DetailsRow icon={<FileText />} label={t('header.announcement')} testId="group-settings-announcement" chevron onClick={() => props.onOpenPage('announcement')} />
+        <DetailsRow icon={<FileText />} label={t('header.announcement')} testId="group-settings-announcement" chevron onClick={() => props.onOpenPage('announcement')}
+          end={latestAnnouncement ?? undefined} />
         <DetailsRow icon={<BookOpen />} label={t('group.settings.rules')} testId="group-settings-rules" chevron onClick={() => props.onOpenText('rules')}
           end={settings ? firstLine(settings.group_prompt) ?? t('group.settings.rulesUnset') : undefined} />
         <DetailsRow icon={<Info />} label={t('group.settings.description')} testId="group-settings-description" chevron onClick={() => props.onOpenText('description')}
