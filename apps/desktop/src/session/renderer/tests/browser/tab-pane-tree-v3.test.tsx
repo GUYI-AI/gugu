@@ -33,6 +33,8 @@ async function mount(minWidth?: number) {
   expect(layout.splitPane(layout.activePaneId, 'right', other)).toBe(true);
   await act(() => harness.render(<PaneTreeView layout={layout} renderPane={(id, _first, _last, part) => (part === 'bar' ? null : <iframe title={id} style={{ width: '100%', height: '100%' }} />)} />));
   await until('the actual split has a measurable divider', () => harness.container.querySelector<HTMLElement>('[data-slot="resizable-handle"]')?.getBoundingClientRect().height ?? 0, (height) => height > 100);
+  // On screen from here: what changes now moves (before its first frame a cut only places, @@@mount-lands).
+  await new Promise(requestAnimationFrame);
 }
 
 it('shields embedded pages during a real divider drag and releases the shield on mouse-up', async () => {
@@ -100,6 +102,7 @@ it('the side page comes in on the track: it slides in from the end, and the page
   layout.focusedPane.setDimensions(harness.container.clientWidth, harness.container.clientHeight);
   const kept = layout.activePaneId;
   await act(() => harness.render(<PaneTreeView layout={layout} renderPane={(id, _first, _last, part) => (part === 'bar' ? null : <iframe title={id} style={{ width: '100%', height: '100%' }} />)} />));
+  await new Promise(requestAnimationFrame);
   await act(() => { expect(layout.splitPane(kept, 'right', file)).toBe(true); });
   const other = layout.groups.find(({ paneId }) => paneId !== kept)!.paneId;
   const lefts: number[] = [];

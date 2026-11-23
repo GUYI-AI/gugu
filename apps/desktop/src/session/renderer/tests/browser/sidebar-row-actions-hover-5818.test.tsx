@@ -442,6 +442,32 @@ async function copySessionIdItem(): Promise<HTMLElement | undefined> {
   return find()
 }
 
+it('身份卡宽度只跟着最宽的那个值走:值后面只剩行的内边距,不为 hover 才露的东西常驻留一截空白', async () => {
+  await page.viewport(1024, 768)
+  registry.loaded.set('conv-1', { title: '总管（juma4 Claude）' })
+  sessionAgentBindings.note('conv-1', AGENT_USER_ID)
+  mount()
+  await mounted()
+  const row = host.querySelector<HTMLElement>('[data-session-id="conv-1"]')!
+  await clickThenPark(row)
+  const card = await openCard(row)
+  // 开卡带一段 zoom-in-95:量在半路,所有长度都乘着 0.95。
+  await Promise.all(card.getAnimations({ subtree: true }).map((animation) => animation.finished))
+  const box = card.firstElementChild as HTMLElement
+  const rows = Array.from(card.querySelectorAll<HTMLElement>('[data-identity-row]'))
+  expect(rows).toHaveLength(3)
+  // 量字本身占到哪(Range 的外框),❌ 量格子 —— 格子是 flex 子项,宽度由排版给,不说明字在哪结束。
+  const inkRight = Math.max(...rows.map((r) => {
+    const range = document.createRange()
+    range.selectNodeContents(r.children[1])
+    return range.getBoundingClientRect().right
+  }))
+  const padding = Number.parseFloat(getComputedStyle(rows[0]).paddingRight)
+  expect(padding).toBeGreaterThan(0)
+  // 修之前这里是 padding + 8px 间距 + 16px 看不见的复制图标格 = 36px。
+  expect(box.getBoundingClientRect().right - inkRight).toBeCloseTo(padding, 0)
+})
+
 it('#7334 右键「复制会话 ID」:复制完整的会话 ID', async () => {
   sessionAgentBindings.note('conv-1', AGENT_USER_ID)
   const clipboard = stubClipboard()

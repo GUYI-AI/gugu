@@ -167,10 +167,19 @@ installServerNodeDependencies(join(stage, 'app'), ['--omit=dev', '--no-audit', '
   for (const platform of readdirSync(ptyPrebuilds)) {
     if (platform !== `${osName}-${arch}`) rmSync(join(ptyPrebuilds, platform), { recursive: true, force: true })
   }
+  // sharp: only this package's own native binary and libvips. npm also brings its wasm32 build, which would let a native
+  // that fails to load slip into wasm unnoticed.
+  for (const name of readdirSync(join(appModules, '@img'))) {
+    if (name.startsWith('sharp-') && !name.endsWith(`-${osName}-${arch}`)) rmSync(join(appModules, '@img', name), { recursive: true, force: true })
+  }
 
   // 出包闸:dist-electron 里每一个按路径现解析的模块,都必须落在包自己的 node_modules 里。
   const resolved = assertRuntimeSpecifiersResolve(join(stage, 'app'))
   console.log(`[server-bundle] runtime modules resolve: ${resolved.join(', ')}`)
+  // Image previews (core local/files/nodeImagePreview): the package's own sharp must load this platform's libvips and draw one.
+  run(process.execPath, ['-e', "const s=require('sharp');if(s.versions.emscripten)throw new Error('sharp loaded its wasm build');"
+    + "s({create:{width:1200,height:800,channels:3,background:'#c33'}}).jpeg().toBuffer().then(b=>s(b).resize({width:560}).jpeg().toBuffer())"
+    + ".then(b=>s(b).metadata()).then(m=>{if(m.width!==560)throw new Error('sharp drew no preview');console.log('[server-bundle] sharp draws previews')})"], { cwd: join(stage, 'app') })
 }
 
 run(process.execPath, [join(root, 'scripts', 'build', 'build-mise-bundle.mjs')], { cwd: root })

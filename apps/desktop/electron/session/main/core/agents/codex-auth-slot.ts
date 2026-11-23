@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { atomicWriteText } from '@gugu/core/local/state/paths';
+import { copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { parse as parseTOML } from 'smol-toml';
 
@@ -41,9 +42,7 @@ async function readLiveState(path: string): Promise<LiveState | null> {
 
 async function recordLiveState(path: string, state: LiveState): Promise<void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.gugu-${process.pid}-${Date.now()}`;
-  await writeFile(temporary, `${JSON.stringify(state)}\n`, { mode: 0o600 });
-  await rename(temporary, path);
+  await atomicWriteText(path, `${JSON.stringify(state)}\n`);
 }
 
 const AUTH_FILE = 'auth.json';
@@ -101,15 +100,7 @@ async function readAuth(root: string): Promise<{ text: string; identity: string 
 /** 先写临时文件再改名:换到一半崩了,活动根里要么是旧账号、要么是新账号,❌ 半个文件。 */
 async function writeAuth(root: string, text: string): Promise<void> {
   await mkdir(root, { recursive: true, mode: 0o700 });
-  const target = join(root, AUTH_FILE);
-  const temporary = `${target}.gugu-${process.pid}-${Date.now()}`;
-  await writeFile(temporary, text, { mode: 0o600 });
-  try {
-    await rename(temporary, target);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
+  await atomicWriteText(join(root, AUTH_FILE), text);
 }
 
 /** 活动根的凭据不在 auth.json 里时,换文件等于什么都没换。 */

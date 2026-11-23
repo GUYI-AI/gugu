@@ -128,6 +128,15 @@ export function TrackCut({
     return () => observer.disconnect();
   }, [track]);
 
+  // @@@mount-lands — a cut not yet on screen has nowhere to move from: every share it gets before its first frame is
+  // placed. A chat workspace learns only on attaching that its tools are hidden; mounted again (its page re-drawn), it
+  // was springing the hidden page shut from the saved split.
+  const drawn = useRef(false);
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(() => { drawn.current = true; });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
   const sharesKey = sharesNow().join(',');
   const placed = useRef<PanelTrack | null>(null);
   useLayoutEffect(() => {
@@ -135,7 +144,7 @@ export function TrackCut({
     placed.current = track;
     const byHand = moved.current || dragging.current;
     moved.current = false;
-    const moves = animate && (!first || entering) && !byHand && extent.current > 0;
+    const moves = animate && drawn.current && (!first || entering) && !byHand && extent.current > 0;
     if (moves) track.to(targets());
     else {
       track.jump(targets());

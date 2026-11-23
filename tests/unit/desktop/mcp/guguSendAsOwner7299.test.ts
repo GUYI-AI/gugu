@@ -4,6 +4,10 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 // @ts-expect-error — MCP implementation is an untyped ESM module.
 import { callTool, TOOL_DEFS, RpcTransportError } from '../../../../apps/desktop/electron/mcp/gugu-im-server.mjs'
+import { drawImagePreviews } from '../../../../packages/core/src/cloud/attachmentsApi'
+
+// Main registers its image preview drawer at boot; here it never finishes one, so only the send's own requests are seen.
+drawImagePreviews({ draw: () => new Promise(() => {}), warn: () => {} })
 const friend = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const context = { agentId: 'agent-1', threadRootId: 'unrelated-thread', getAccessToken: async () => '' }
 const args = { friend_user_id: `user:${friend}`, text: '明天下午两点见' }

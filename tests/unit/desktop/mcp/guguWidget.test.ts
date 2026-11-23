@@ -99,6 +99,31 @@ describe('widget_send', () => {
     expect(receipt).toEqual({ status: 'sent', message_id: rows[0]!.p_message_id, widget_id: 'stable-widget', source_link: `gugu-chat://${chat}/${rows[0]!.p_message_id}` })
     await expect(sendWidgetOf({ ...context, forkOf: 'origin' }, args, content, deps)).rejects.toThrow('side chat')
   })
+
+  it('a terminal session cannot put a widget into its owner\'s private chat; a group still takes it', async () => {
+    const owner = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    const chat = '127ec4f0-30b1-4583-b469-706756153bdd'
+    const token = `x.${Buffer.from(JSON.stringify({ sub: owner })).toString('base64url')}.x`
+    const context = { agentId: 'agent', threadRootId: null, guguHome: '/tmp/widget-test', ownerReads: 'terminal', getAccessToken: async () => token }
+    let kind = 'dm'
+    const sent: unknown[] = []
+    const deps = {
+      restGet: async () => [],
+      restRpc: async (name: string, body: Record<string, unknown>) => {
+        if (name === 'chat_facts') return [{ id: chat, kind, group_prompt: null }]
+        if (name === 'list_member_ids') return [{ user_id: owner }, { user_id: 'agent' }]
+        expect(name).toBe('send_widget')
+        sent.push(body)
+        return [{ message_id: body.p_message_id, widget_id: 'w', seq: 1 }]
+      },
+    }
+    const content = JSON.stringify({ v: 2, text: args.text, app: args.app, view: args.view })
+    await expect(sendWidgetOf(context, { ...args, chat_id: chat }, content, deps)).rejects.toThrow('your owner reads this terminal session')
+    expect(sent).toHaveLength(0)
+    kind = 'group'
+    await sendWidgetOf(context, { ...args, chat_id: chat }, content, deps)
+    expect(sent).toHaveLength(1)
+  })
 })
 
 describe('widget_get', () => {

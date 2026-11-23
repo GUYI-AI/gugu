@@ -217,10 +217,12 @@ export interface DeviceRuntimeHost {
    */
   notifyCommandsChanged: () => void
   /**
-   * 这台机器能被调用的动作变了(一组授权开 / 关、电脑控制的 App 开 / 关,#7317)⇒ 当场写一次心跳,别的机器上的 agent 立刻读到新清单。
-   * ❌ 为这件事调 `tickOnce()` —— tick 只在心跳到期(30 s 一拍)时才写,清单最多旧 30 s。还没 start 就什么都不做:首轮按那时的清单登记。
+   * 心跳里报的事实变了 ⇒ 当场写一次心跳,别的端立刻读到:能被调用的动作(一组授权开 / 关、电脑控制的 App 开 / 关,#7317),
+   * 或者这台 server 刚接下一次确认重启(它马上就要退出,❌ 等下一拍,否则它带着「正在重启」走掉,谁也没看见)。
+   * ❌ 为这件事调 `tickOnce()` —— tick 只在心跳到期(30 s 一拍)时才写,最多旧 30 s。还没 start 就什么都不做:首轮按那时的事实登记。
+   * 停机会先等在路上的心跳落地,再标离线(见 stop)。
    */
-  notifyDeviceActionsChanged: () => void
+  notifyHostInfoChanged: () => Promise<void>
   /** 本机刚建 / 改 / 删了定时任务(表上没有事件):当场重排,❌ 等兜底周期。 */
   notifyScheduledTasksChanged: () => void
   start: () => void
@@ -1246,11 +1248,14 @@ export function createDeviceRuntimeHostLoop(
     activeHeartbeat = heartbeat
   }
 
-  function notifyDeviceActionsChanged(): void {
-    if (stopped || heartbeatTimer === null) return
-    // The heartbeat in flight may have read the list before the change: one more once it is written.
-    if (activeHeartbeat) void activeHeartbeat.finally(() => scheduleHeartbeat())
-    else scheduleHeartbeat()
+  /** Settles when the heartbeat carrying the change has been written (or has failed; heartbeatOnce reports that). */
+  function notifyHostInfoChanged(): Promise<void> {
+    if (stopped || heartbeatTimer === null) return Promise.resolve()
+    // The heartbeat in flight may have read the facts before the change: one more once it is written.
+    return (activeHeartbeat ?? Promise.resolve()).then(() => {
+      scheduleHeartbeat()
+      return activeHeartbeat ?? undefined
+    })
   }
 
   // #4008 —— activity 的发布节律。与 work tick 同频,但**不与它共用 flight**:回合期间 work flight 是
@@ -1613,7 +1618,7 @@ export function createDeviceRuntimeHostLoop(
       noteCommandAnnouncement()
       notifyWork()
     },
-    notifyDeviceActionsChanged,
+    notifyHostInfoChanged,
     notifyScheduledTasksChanged: () => {
       if (superviseTimer === null || stopped) return
       if (activeScheduledTasksRun) {

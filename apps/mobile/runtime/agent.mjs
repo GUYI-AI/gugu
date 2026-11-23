@@ -7,9 +7,13 @@ import { createNativeBridge } from './native-bridge.mjs'
 import { configureNodeNetwork } from '../../../packages/core/src/local/node-network.mjs'
 import { bindAgentEntry, createAgentEntry } from './agent-entry.mjs'
 import { installEgress, runtimeEgress } from '../../../packages/core/src/shared/egress.ts'
+import { drawImagePreviews } from '../../../packages/core/src/cloud/attachmentsApi.ts'
+import { nodeImagePreview } from '../../../packages/core/src/local/files/nodeImagePreview.ts'
 
 configureNodeNetwork()
 installEgress(runtimeEgress())
+// Every image this phone's agents send offers a preview, drawn with sharp (its wasm32 build here), as on the headless server.
+drawImagePreviews({ draw: nodeImagePreview, warn: (error) => process.stderr.write(`Image preview offer failed: ${error instanceof Error ? error.message : String(error)}\n`) })
 const output = (value) => process.stdout.write(`${JSON.stringify(value)}\n`)
 const bridge = createNativeBridge(output)
 const entry = createAgentEntry({ runTurn, cancelTurn, startPhoneAgentHost, bridge, output })
