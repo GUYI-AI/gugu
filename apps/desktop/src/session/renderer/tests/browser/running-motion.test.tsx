@@ -8,6 +8,8 @@ import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@renderer/index.css';
 import '@gugu/session-shared/animation-visibility.css';
 import '@gugu/session-shared/running-glyph.css';
+// The loop joins the document clock when it starts (animationstart), a frame after it reports running.
+const onBeat = (animation: Animation) => Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime)) < 50;
 
 // Root contract: the running glyph turns on the compositor (a stepped transform of its glyph strip); no timer steps it,
 // and it holds still whenever it cannot be seen — including the tab's own glyph while the × covers it.
@@ -66,7 +68,7 @@ it('stops offscreen and starts again on the shared beat; pauses on inert retaine
   host.style.cssText = '';
   await until('onscreen spinner turns again', () => strips(host)[0]?.playState === 'running');
   const animation = strips(host)[0]!;
-  expect(Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime))).toBeLessThan(100);
+  await until('it is back on the shared beat', () => onBeat(animation));
   host.inert = true;
   await until('retained surface pauses', () => animation.playState === 'paused');
   host.inert = false;

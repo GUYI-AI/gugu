@@ -10,6 +10,8 @@ import '@/styles/tokens.css';
 import '@gugu/session-shared/animation-visibility.css';
 import '@gugu/session-shared/running-glyph.css';
 import animationVisibilityCSS from '@gugu/session-shared/animation-visibility.css?inline';
+// The loop joins the document clock when it starts (animationstart), a frame after it reports running.
+const onBeat = (animation: Animation) => Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime)) < 50;
 
 /** Held by a hidden window: playback rate 0, its clock standing still. */
 const held = (animation: Animation) => animation.playbackRate === 0;
@@ -74,7 +76,7 @@ it('stops the running glyphs on the shared native signal and starts them again o
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }));
   await until('the animations run again at their own rate', () => host.getAnimations({ subtree: true }).length === 2 && host.getAnimations({ subtree: true }).every((animation) => animation.playbackRate === 1 && animation.playState === 'running'));
   const animations = host.getAnimations({ subtree: true });
-  for (const animation of animations) expect(Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime))).toBeLessThan(100);
+  await until('they are back on the shared beat', () => animations.every(onBeat));
   // The surface pause still reaches them (pause() / play() would cut it off).
   host.inert = true;
   await until('a retained inert surface pauses the same clocks', () => animations.every((animation) => animation.playState === 'paused'));
@@ -94,7 +96,7 @@ it('stops an avatar corner glyph scrolled out of view and starts it again on the
   host.style.cssText = '';
   await until('the glyphs turn again on screen', () => host.getAnimations({ subtree: true }).length === animations.length && cornerOf()[0]?.playState === 'running');
   // Back on the shared beat.
-  for (const animation of host.getAnimations({ subtree: true })) expect(Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime))).toBeLessThan(100);
+  await until('they are back on the shared beat', () => host.getAnimations({ subtree: true }).every(onBeat));
 });
 
 it('gives the hidden copies a narrow running bar keeps for measuring no animation at all', async () => {
@@ -206,3 +208,21 @@ it('hiding and showing the window re-styles nothing but what moves', async () =>
   expect(show).toBeLessThan(100);
 });
 
+
+// @@@shared-beat — every loop of the document is put on the document clock as it starts, whatever created it: a
+// component's own mount path was not enough (running glyphs mounted mid-session kept their own phase).
+it('puts any loop on the document clock the moment it starts, with no component joining it', async () => {
+  isAnimationWindowVisible();
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const style = document.createElement('style');
+  style.textContent = '@keyframes beat-probe { to { transform: translateX(4px); } }';
+  const probe = document.createElement('span');
+  probe.textContent = 'beat';
+  document.body.append(style, probe);
+  cleanup.push(() => { style.remove(); probe.remove(); });
+  const started = new Promise((resolve) => probe.addEventListener('animationstart', resolve, { once: true }));
+  probe.style.animation = 'beat-probe 1s steps(4, end) infinite';
+  await started;
+  const [animation] = probe.getAnimations();
+  expect(Math.abs(Number(animation!.currentTime) - Number(animation!.timeline!.currentTime))).toBeLessThan(50);
+});

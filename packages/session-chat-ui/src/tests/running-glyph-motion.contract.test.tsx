@@ -7,6 +7,8 @@ import { RunningGlyph } from '@session-chat/components/primitives/RunningGlyph'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { cdp } from 'vitest/browser'
 import { until } from '../../../../tests/support/awaitCondition'
+// The loop joins the document clock when it starts (animationstart), a frame after it reports running.
+const onBeat = (animation: Animation) => Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime)) < 50
 
 /**
  * Root contract: the transcript's running mark is the shared four-state glyph. One stepped compositor transform,
@@ -59,7 +61,7 @@ it('stops offscreen and starts again on the shared beat', async () => {
   host.style.cssText = ''
   await until('visible glyph turns again', () => animations()[0]?.playState === 'running')
   const animation = animations()[0]!
-  expect(Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime))).toBeLessThan(100)
+  await until('it is back on the shared beat', () => onBeat(animation))
 })
 
 it('keeps its boxes inside the one line it shows, on every frame', async () => {
