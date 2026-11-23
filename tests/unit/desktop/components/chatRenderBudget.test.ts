@@ -201,10 +201,13 @@ describe('加载中也画已有的行', () => {
     expect(harness.container.querySelector('[data-msg-id="m-pending"]')).not.toBeNull()
   })
 
-  it('loading 且一行都没有:才出骨架', async () => {
+  // owner 11-23:❌ 骨架屏这一档。还在读、一行都没有:列表的位置空着(不说「暂无消息」,那是错话),读到什么画什么。
+  it('loading 且一行都没有:空着的列表位,❌ 骨架、❌ 「暂无消息」', async () => {
     const store = makeStore('dm')
     store.set({ loadingMessages: true, messages: [] })
     await mount(store)
-    expect(harness.container.querySelector('[data-skeleton-bubble]')).not.toBeNull()
+    expect(harness.container.querySelector('[data-skeleton-bubble]')).toBeNull()
+    expect(harness.container.querySelector('[data-testid="chat-message-list"]')).not.toBeNull()
+    expect(harness.container.textContent).not.toMatch(/暂无消息|No messages yet/)
   })
 })

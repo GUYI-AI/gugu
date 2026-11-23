@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
-import {act} from 'react'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import {createReactHarness} from '../../../support/testHarness'
-import {MessageListSkeleton} from '../../../../apps/desktop/src/components/chat/MessageListSkeleton'
 import {useAssistantWorkDetail} from '../../../../apps/desktop/src/components/assistant/useAssistantWorkDetail'
 import {useTaskChatRows} from '../../../../apps/desktop/src/components/assistant/useTaskChatRows'
 import {rememberAssistantTaskChat} from '../../../../apps/desktop/src/lib/assistantTaskChat'
@@ -11,16 +9,6 @@ vi.mock('../../../../apps/desktop/src/lib/assistantWork',()=>({assistantWorkClou
 let harness:ReturnType<typeof createReactHarness>
 beforeEach(()=>{harness=createReactHarness()})
 afterEach(()=>{harness.cleanup();vi.useRealTimers()})
-it('does not flash placeholders before 300ms and does not reserve an extra message row',async()=>{
- vi.useFakeTimers()
- await harness.render(<MessageListSkeleton delayMs={300} overlay/>)
- expect(harness.container.querySelector('[data-skeleton-bubble]')).toBeNull()
- await act(async()=>vi.advanceTimersByTime(299))
- expect(harness.container.querySelector('[data-skeleton-bubble]')).toBeNull()
- await act(async()=>vi.advanceTimersByTime(1))
- expect(harness.container.querySelector('[data-skeleton-bubble]')).not.toBeNull()
- expect(harness.container.firstElementChild).toHaveProperty('style.position','absolute')
-})
 it('paints already-read work messages while the newly opened chat history is still pending',async()=>{
  const owner='first-paint-owner',assistant='first-paint-assistant',workId='first-paint-work',session='first-paint-session'
  ;(await import('../../../../apps/desktop/src/lib/replica')).followRendererSession('SIGNED_IN',owner)

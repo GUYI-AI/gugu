@@ -12,13 +12,15 @@ import { SessionTimelinePage } from './SessionTimelinePage'
  * comes first changes as they go on and offline, so the header would jump to the other row's state and last-seen time.
  *
  * `appPanel`: drawn over an App's panel (SessionTimelinePage).
+ *
+ * `unreachable`: the desktop's word that this machine is not answering (SessionTimelinePage).
  */
-export function PeekSessionTimeline({ sessionId, deviceId, local, nativeOnly = false, appPanel = false, fallback = null, onBack }: {
-  sessionId: string; deviceId?: string; local?: boolean; nativeOnly?: boolean; appPanel?: boolean; fallback?: ReactNode; onBack: () => void
+export function PeekSessionTimeline({ sessionId, deviceId, local, nativeOnly = false, appPanel = false, unreachable = false, fallback = null, onBack }: {
+  sessionId: string; deviceId?: string; local?: boolean; nativeOnly?: boolean; appPanel?: boolean; unreachable?: boolean; fallback?: ReactNode; onBack: () => void
 }) {
   const { devices } = useDevicesStore()
   const listed = listedSession(deviceId ? devices.filter((one) => one.device_id === deviceId) : devices, useLiveDeviceSessions(), sessionId)
   const device = 'row' in listed ? devices.find((one) => one.device_id === listed.row.deviceId) : undefined
   if (!('row' in listed) || !device || (nativeOnly && listed.row.session.nativeInputVersion !== 1 && listed.row.session.nativeInputVersion !== 2)) return fallback
-  return <SessionTimelinePage key={`${device.device_id}:${sessionId}`} device={device} session={listed.row.session} local={local} appPanel={appPanel} onBack={onBack} />
+  return <SessionTimelinePage key={`${device.device_id}:${sessionId}`} device={device} session={listed.row.session} local={local} appPanel={appPanel} unreachable={unreachable} onBack={onBack} />
 }

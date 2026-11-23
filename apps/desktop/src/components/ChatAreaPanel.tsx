@@ -50,7 +50,7 @@ import { ChatMessageComposer, type ChatMessageComposerProps, type ComposerAttach
 import { ChatMessageList, type MessageListRowProps } from './chat/ChatMessageList'
 import { useTaskChatRows } from './assistant/useTaskChatRows'
 import { MessageLoadFailure } from './chat/MessageLoadFailure'
-import { MessageListSkeleton } from './chat/MessageListSkeleton'; import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'; import { PhoneMessagesEmpty } from '../mobile/chat/PhoneMessagesEmpty'
+import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'; import { PhoneMessagesEmpty } from '../mobile/chat/PhoneMessagesEmpty'
 import { ChatHeaderActions } from './chat/ChatHeaderActions'
 import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
@@ -634,19 +634,19 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
       {/* Message list —— 有行就画列表,与 loading 无关:加载中已有的行(盘缓存/乐观发送)照样可见,
           列表不会因为 loading 翻转被卸载重挂。骨架只在「在加载且一行都没有」时占位。 */}
-      {mobile && surfaceVisible && isGroupChat && !phoneTopic && <PhoneGroupAgentCreation key={activeChat.id} chatId={activeChat.id} name={shownActiveChatName} />}{taskChatNotice}{loadingMessages && chatListRows.length === 0 && <MessageListSkeleton delayMs={threeParty?300:0} overlay={threeParty}/>}
+      {mobile && surfaceVisible && isGroupChat && !phoneTopic && <PhoneGroupAgentCreation key={activeChat.id} chatId={activeChat.id} name={shownActiveChatName} />}{taskChatNotice}
 
       {/* #7199 没读出来 ≠ 没聊过:读失败时说读不到 + 重试,❌ 往下落进首次对话欢迎页 / 「暂无消息」。 */}
       {messagesError && !(loadingMessages && chatListRows.length === 0) && (
         <MessageLoadFailure error={messagesError} inline={chatListRows.length > 0} onRetry={() => refreshMessages(activeChatId ?? undefined)} />
       )}
 
-      {!loadingMessages && !messagesError && chatListRows.length === 0 && (
-        /* @@@2186 — agent 运行态(activeAgentActivity)且尚无消息:空态让位、保留空白 list 容器。这曾由
+      {chatListRows.length === 0 && (loadingMessages || !messagesError) && (
+        /* @@@2186 — 还在读(owner 11-23:❌ 骨架屏)或 agent 运行态(activeAgentActivity)且尚无消息:空态让位、保留空白 list 容器。这曾由
            rows 里的恒空 agentActivity 行隐式保证(它把 rows 撑成非空、让列表挂载),该行因零高刷
            console error 被移除后,契约收进这一个 rows===0 分支;不挂空 rows 的列表,
            首条消息落库 rows>0 时列表正常挂载。 */
-        activeAgentActivity ? (
+        loadingMessages || activeAgentActivity ? (
           <div data-testid={AUTOMATION_TEST_IDS.chatMessageList} style={{ flex: 1 }} />
         ) : (
           <div style={mobile && isRoomChatSurface ? { flex: 1, display: 'grid', placeItems: 'center', padding: 16 } : { flex: 1, textAlign: 'center', color: 'var(--text-muted)', fontSize: 'var(--font-body)', padding: '40px 0' }}>
