@@ -1,4 +1,4 @@
-import { withRuntimeTurn } from './runtime-turn';
+import { endedTurnIds, withRuntimeTurn } from './runtime-turn';
 import { withJournalTurns } from './journal-turns';
 import { HostPrompts, type HostPromptReceipts } from './host-prompts';
 import type { TerminalState } from '../acp/models/terminals';
@@ -246,6 +246,8 @@ class RecordTimeline implements SessionTimeline {
   private liveReply: SessionLiveReply | null = null;
   /** The runtime's turn in progress (`syncActiveTurn`): live like the rest of the side channels, never archived. */
   private runtimeTurn: TranscriptTurn | null = null;
+  /** The turns that had ended when the runtime's turn started: none of them is a copy of it (`withoutCopiesOf`). */
+  private endedBeforeRuntime: ReadonlySet<string> = new Set();
   /** The journal's turns by key, in journal order; read again with the journal, never archived. */
   private journalTurns = new Map<string, { turn: TranscriptTurn; recorded: boolean }>();
   private liveReplyDirty = false;
@@ -688,6 +690,7 @@ class RecordTimeline implements SessionTimeline {
 
   syncActiveTurn(turn: TranscriptTurn | null): void {
     if (this.disposed || this.runtimeTurn === turn) return;
+    if (turn && turn.id !== this.runtimeTurn?.id) this.endedBeforeRuntime = endedTurnIds(this.recordedTurns().turns);
     this.runtimeTurn = turn;
     this.sent.learn(turn);
     this.publish();
@@ -979,12 +982,18 @@ class RecordTimeline implements SessionTimeline {
   }
 
   private currentTurns(): TranscriptTurn[] {
+    const { turns, base } = this.recordedTurns();
+    return this.inPlace(withRuntimeTurn(turns, this.runtimeTurn, this.endedBeforeRuntime), base);
+  }
+
+  /** The record's turns with the journal's, before the runtime's turn in progress takes its place; `base`: the first record seq. */
+  private recordedTurns(): { turns: TranscriptTurn[]; base: number } {
     const active = this.parser.activeTurn;
     const folded = this.recordTurns(active ? [...this.parser.history, active] : [...this.parser.history]);
     const journal = [...this.journalTurns.values()];
-    return this.inPlace(withRuntimeTurn(withJournalTurns(folded,
+    return { turns: withJournalTurns(folded,
       journal.filter((line) => !line.recorded).map((line) => line.turn),
-      journal.filter((line) => line.recorded).map((line) => line.turn)), this.runtimeTurn), folded[0]?.seq ?? 0);
+      journal.filter((line) => line.recorded).map((line) => line.turn)), base: folded[0]?.seq ?? 0 };
   }
 
   /**

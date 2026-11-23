@@ -18,6 +18,7 @@ type Internals = {
   session: { activeTurn: ReturnType<typeof replica<TranscriptTurn | null>> } | null;
   _historyGeneration: number;
   _committedFrameId: string | null;
+  _endedBeforeLive: ReadonlySet<string>;
   _openHistory(generation: number): Promise<void>;
 };
 const stores: InstanceType<typeof AcpChatStore>[] = [];
@@ -86,10 +87,13 @@ it('draws the running turn once when the record already holds its own copy of it
 });
 
 it('keeps an earlier turn that opens with the same words as the running one', async () => {
+  // `a` had ended when the running turn started (taken as it starts, `_endedBeforeLive`); the record's copy came after.
   const live = turn('runtime-2', 1, 'ok');
-  const { store, internal } = await opened([turn('a', 0, 'ok')]);
+  const ended = { ...turn('a', 0, 'ok'), outcome: { kind: 'done' as const } };
+  const { store, internal } = await opened([ended]);
+  internal._endedBeforeLive = new Set(['a']);
   internal.session = { activeTurn: replica<TranscriptTurn | null>(live) };
-  host.show([turn('a', 0, 'ok')]);
+  host.show([ended, turn('s:node-8', 1, 'ok')]);
   expect(committedIds(store)).toEqual(['a']);
 });
 
