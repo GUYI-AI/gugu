@@ -53,7 +53,7 @@ export function openSessionInSessionWhenReady({
   if (!onlyIfNoTabs && kind !== 'archived' && kind !== 'missing') rememberTask(sessionId);
   // The machine is not answering, now or while we wait: navigation (including a beside block) reaches SessionContentGate
   // without a remote workspace, and the gate says so in place (❌ wait for a workspace and time out into a toast over it).
-  const offline = () => offlineSessionInputTarget(projectId, sessionViewKind(getSessionPageStore(projectId, sessionId), projectId)) !== null;
+  const offline = () => Boolean(offlineSessionInputTarget(projectId, sessionViewKind(getSessionPageStore(projectId, sessionId), projectId)));
   if (offline()) {
     onReady?.();
     return () => {};
