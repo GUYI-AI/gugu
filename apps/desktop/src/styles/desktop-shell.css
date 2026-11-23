@@ -28,7 +28,8 @@
   box-shadow: 0 0 0 0.5px color-mix(in oklab, var(--fg) 6%, transparent);
 }
 
-.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace][data-chat-tool-cards]) {
+.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace][data-chat-tool-cards]),
+.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace][data-chat-tool-cards]) [data-workspace-content-page] {
   background: transparent;
   box-shadow: none;
   border-radius: 0;
