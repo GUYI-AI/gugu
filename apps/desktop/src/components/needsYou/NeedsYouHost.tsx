@@ -8,7 +8,7 @@ import { useMobileShell } from '@/hooks/useMobileShell'
 import { sessionPresentation } from '@/lib/agent-wait/watch-status'
 import { followLink } from '@/lib/guguLinks'
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge'
-import { Bell, ChevronLeft } from '@/lib/icons'
+import { Bell, MessageCircle } from '@/lib/icons'
 import { installShellSlots, readShellSlots } from '@/lib/shellSlots'
 import { setSidebarNotificationsOpen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge'
 import { Button } from '../ui/Button'
@@ -81,9 +81,9 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
     const showEmpty = !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && deferred.length === 0
     return createPortal(<>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">
-        {/* The list takes the conversations' place: a worded way back, not only the small bell above it. */}
+        {/* The list takes the chats' place: a worded way back besides the bell. A chat icon, not an arrow: the head above already has the collapse «. */}
         <Button size="sm" variant="ghost" className="-ml-2 gap-1" data-testid="notification-back" onClick={() => setSidebarNotificationsOpen(false)}>
-          <ChevronLeft className="size-3.5" />{t('chatArea.backToList', { ns: 'messaging' })}
+          <MessageCircle className="size-3.5" />{t('chatArea.backToList', { ns: 'messaging' })}
         </Button>
         {unreadFailures.length > 0 && <Button size="sm" variant="ghost" data-testid="notification-mark-all-read" disabled={marking > 0} onClick={() => { void markRead(unreadFailures) }}>{t('chatList.markAllRead', { ns: 'messaging' })}</Button>}
       </div>
