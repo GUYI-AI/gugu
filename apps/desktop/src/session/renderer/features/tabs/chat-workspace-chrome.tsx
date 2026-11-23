@@ -116,14 +116,14 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       {mode === 'empty' && <PaneProvider group={chat} passive isFocusedPane>{addTab}</PaneProvider>}
       {tabsVisible && tools && !sharedStrip && (
         <Button size="icon-sm" variant="ghost" title={maximize} aria-label={maximize} onClick={() => layout.setChatToolLayout('full')}>
-          <Maximize2 className="size-3.5" />
+          <Maximize2 className="size-[15px]" />
         </Button>
       )}
       {tools && (tabsVisible || mode === 'hidden') && (
         <Button size="icon-sm" variant="ghost" title={toggleLabel} aria-label={toggleLabel} aria-pressed={tabsVisible}
           className="aria-pressed:bg-row-selected aria-pressed:text-foreground"
           onClick={() => layout.setChatToolLayout(tabsVisible ? 'hidden' : 'split')}>
-          <PanelRight className="size-3.5" />
+          <PanelRight className="size-4" />
         </Button>
       )}
       {full && (
