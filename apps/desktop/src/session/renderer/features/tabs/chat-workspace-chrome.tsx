@@ -1,8 +1,9 @@
 import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { Maximize2, MessageSquare, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
+import { cn } from '@renderer/utils/utils';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
 import { folderItem } from '../chats/chat-tabs/chat-panel-item';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
@@ -15,6 +16,7 @@ import { PaneProvider } from './pane-context';
 import type { PaneLayoutStore } from './pane-layout-store';
 import { TabBar, TabStripShell } from './tab-bar';
 import { ChatWorkspaceTabContext } from './chat-workspace-context';
+import type { CutEdge, CutEdgeRelay } from './chat-workspace-edge';
 
 export type ChatWorkspaceChromeProps = {
   actions: ReactNode;
@@ -27,8 +29,8 @@ export type ChatWorkspaceChromeProps = {
 };
 
 export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
-  layout, actions, addTab, leading, reserveShellRestoreLane, leadingReservePx, atWindowEdge, embedded = false,
-}: ChatWorkspaceChromeProps & { layout: PaneLayoutStore }) {
+  layout, edge, actions, addTab, leading, reserveShellRestoreLane, leadingReservePx, atWindowEdge, embedded = false,
+}: ChatWorkspaceChromeProps & { layout: PaneLayoutStore; edge?: CutEdgeRelay }) {
   const { translate } = useSessionMessages();
   const panes = layout.chatWorkspacePanes;
   const mode = layout.chatWorkspaceMode;
@@ -73,19 +75,45 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     ownerDocument.addEventListener('keydown', keyDown, true);
     return () => ownerDocument.removeEventListener('keydown', keyDown, true);
   }, [dragging, embedded, focused, layout, mode]);
+  const chatColumn = useRef<HTMLDivElement>(null);
+  const toolColumn = useRef<HTMLDivElement>(null);
+  const tools = panes?.tools;
+  // The tools on their way off (hidden): their tabs leave with their page (@@@leaving-panes), ❌ before it.
+  const leaving = mode === 'hidden' && !!tools && !layout.narrow && layout.isPaneShown(tools.paneId);
+  const divided = (mode === 'split' || leaving) && !!tools && !layout.narrow;
+  const toolsFirst = divided && layout.groups[0] === tools;
+  // @@@strip-on-track: divided, the two columns are placed on the root cut's first edge as it is drawn. The tools' tabs keep
+  // the width they have at rest and are clipped at the moving edge, as their page beneath is (PanelTrack): the strip
+  // re-lays out nothing mid-move.
+  useLayoutEffect(() => {
+    const chatNode = chatColumn.current;
+    const toolNode = toolColumn.current;
+    const place = ({ drawn, from, to }: CutEdge) => {
+      if (toolsFirst) {
+        const open = Math.max(from, to);
+        if (toolNode) Object.assign(toolNode.style, { left: `${drawn - open}px`, width: `${open}px` });
+        if (chatNode) chatNode.style.marginInlineStart = `${drawn}px`;
+      } else {
+        const open = Math.min(from, to);
+        if (chatNode) chatNode.style.flex = `0 1 ${drawn}px`;
+        if (toolNode) Object.assign(toolNode.style, { left: `${drawn}px`, width: `calc(100% - ${open}px)` });
+      }
+    };
+    if (divided && edge) return edge.attach(place);
+    if (chatNode) Object.assign(chatNode.style, { flex: '', marginInlineStart: '' });
+    if (toolNode) Object.assign(toolNode.style, { left: '', width: '' });
+    return undefined;
+  });
   if (!panes || !mode) return null;
-  const { chat, tools } = panes;
+  const { chat } = panes;
   const tab = chat.pane.resolvedTabs.find(({ tabId }) => tabId === layout.primaryChatTabId);
   const Title = tab && chat.pane.registry.has(tab.kind) ? chat.pane.registry.get(tab.kind).TabBarItem : null;
   const full = mode === 'full';
-  const toolsShown = full || mode === 'split';
+  const toolsShown = full || mode === 'split' || leaving;
   const sharedStrip = full || mode === 'split' && layout.narrow;
   const conversationPresentation = layout.chatWorkspaceConversationPresentation;
   const chatActive = layout.activePaneId === chat.paneId;
-  const divided = mode === 'split' && !!tools && !layout.narrow;
-  const toolsFirst = divided && layout.groups[0] === tools;
   const leadingProps = { leadingSlot: leading, reserveShellRestoreLane, leadingReservePx };
-  const splitWidth = divided ? `${layout.paneSizes[0]}%` : undefined;
 
   const conversationTab = tab && Title ? <PaneProvider group={chat} passive isFocusedPane={chatActive}>
     <ChatWorkspaceTabContext.Provider value={{ role: 'conversation', layout }}>
@@ -93,7 +121,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     </ChatWorkspaceTabContext.Provider>
   </PaneProvider> : null;
   const chatTitle = !sharedStrip && (
-    <div data-chat-workspace-chat-header="" className="min-w-0" style={divided && !toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
+    <div ref={chatColumn} data-chat-workspace-chat-header="" className="min-w-0 flex-1">
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
         <ChatWorkspaceTabContext.Provider value={{ role: toolsShown ? 'conversation' : 'title', layout }}>
           <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions}>
@@ -104,7 +132,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     </div>
   );
   const toolTabs = toolsShown && tools && (
-    <div className="min-w-0" style={toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
+    <div ref={toolColumn} className={divided ? 'absolute inset-y-0' : 'min-w-0 flex-1'}>
       <PaneProvider group={tools} passive isFocusedPane={!sharedStrip || !chatActive}>
         <ChatWorkspaceTabContext.Provider value={{ role: 'tool', layout }}>
           <TabBar toolsOnly tabTrailingSlot={addTab}
@@ -124,9 +152,11 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const returnToChat = translate('tabs.returnToChat');
   return (
     <div ref={header} className="flex min-w-0 shrink-0 bg-tab-strip" data-chat-workspace-header={mode}>
-      {toolsFirst && toolTabs}
-      {chatTitle}
-      {!toolsFirst && toolTabs}
+      <div className={cn('flex min-w-0 flex-1', divided && 'relative overflow-clip')}>
+        {toolsFirst && toolTabs}
+        {chatTitle}
+        {!toolsFirst && toolTabs}
+      </div>
       <TabBarActionRow atWindowEdge={!!atWindowEdge}>
         {mode === 'empty' && <PaneProvider group={chat} passive isFocusedPane>{addTab}</PaneProvider>}
         {/* Too narrow for the conversation tab beside the tools: its way back sits in this row, never over the page (an in-app browser page is a native view that would have to step aside under it). */}

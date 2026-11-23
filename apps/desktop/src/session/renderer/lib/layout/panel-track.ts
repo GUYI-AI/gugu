@@ -8,7 +8,8 @@ import { animate } from 'framer-motion';
  *    already landed), and the fill, in the flow, takes what is left — what is beside a moving panel re-lays out with it.
  *  · A slot going to or from nothing keeps its content at its open size, clipped at its drawn edge (its far edge rides the
  *    edge, as a sheet pulled out), and fades behind a soft edge (owner 11-21); so does a fill. Any other slot's content is
- *    its drawn size, unless the caller holds it (`content`: the list keeps its width through a fold).
+ *    its drawn size, unless the caller holds it (`content`: the list keeps its width through a fold), and then it stays put,
+ *    clipped at the drawn edge.
  */
 export const PANEL_SPRING = { type: 'spring', duration: 0.5, bounce: 0.1 } as const;
 
@@ -52,13 +53,14 @@ export function contentAt(drawn: number, from: { size: number; content: number }
   return target.reflows ? drawn : Math.max(from.content, target.content);
 }
 
-/** A slot's content is clipped at its drawn edge, its far edge on that edge; `faded`: a move to or from nothing (a rail fades
- *  its own text). */
+/** A slot's content is clipped at its drawn edge. `faded`: a move to or from nothing, whose content is a sheet pulled out (its
+ *  far edge on the drawn edge); any other held content stays where it is laid out, its near edge put (a rail keeps its
+ *  avatars in place and fades its own text). */
 export function paintSlot(slot: SlotGeometry, faded: boolean): SlotPaint {
   const clip = Math.max(0, slot.content - slot.drawn);
   const soft = faded && clip > PANEL_LANDED_PX;
   return {
-    offset: -clip || 0,
+    offset: faded ? -clip || 0 : 0,
     opacity: soft ? clamp01(slot.drawn / slot.content) : 1,
     soft,
     hidden: slot.drawn < PANEL_LANDED_PX,
@@ -127,6 +129,12 @@ export class PanelTrack {
   /** Where a slot is drawn now (px). */
   drawn(id: string): number {
     return this.slot(id).geometry.drawn;
+  }
+
+  /** Where a slot's move started and where it goes (both its target at rest). */
+  ends(id: string): { from: number; to: number } {
+    const slot = this.slot(id);
+    return { from: this.running ? slot.from.size : slot.target.size, to: slot.target.size };
   }
 
   /** The size a slot's content is laid out at now. */

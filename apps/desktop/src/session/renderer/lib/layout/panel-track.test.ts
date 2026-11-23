@@ -31,8 +31,9 @@ describe('the size is the state', () => {
     expect(contentAt(156, { size: 240, content: 240 }, { size: 72, content: 72, reflows: false })).toBe(240);
   });
 
-  it('a slot is clipped at its drawn edge with its far edge on it, and fades only to or from nothing', () => {
-    expect(paintSlot({ drawn: 156, content: 240 }, false)).toEqual({ offset: -84, opacity: 1, soft: false, hidden: false });
+  it('a slot is clipped at its drawn edge; only to or from nothing its far edge rides that edge and it fades', () => {
+    // the list folding to its rail: its avatars stay where they are, the rest is clipped
+    expect(paintSlot({ drawn: 156, content: 240 }, false)).toEqual({ offset: 0, opacity: 1, soft: false, hidden: false });
     expect(paintSlot({ drawn: 130, content: 260 }, true)).toMatchObject({ offset: -130, opacity: 0.5, soft: true, hidden: false });
     expect(paintSlot({ drawn: 0, content: 260 }, true)).toMatchObject({ opacity: 0, hidden: true });
   });
