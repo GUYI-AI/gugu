@@ -75,19 +75,25 @@ export const TabBar = observer(function TabBar({
   // Pair identity can point at two hidden main-pane tabs while the old side is still displayed.
   const stripOrder = start && end ? combined.filter((id) => id !== end).flatMap((id) => id === start ? [id, end] : [id]) : combined;
 
-  // 放不下了没有:滚动区尺寸变了、页签数变了才重算(ResizeObserver,❌ 定时量)。
+  // 放不下了没有:滚动区尺寸变了、页签数变了才重算(ResizeObserver,❌ 定时量)。工具那条变窄时(它那页落定)
+  // 选中的页签留在视野里;挂上时每条都先把它带进视野。
   const [overflowing, setOverflowing] = useState(false);
   const tabCount = entries.length;
+  const motion = useRef<TabStripMotion>(null);
   useEffect(() => {
     const scroller = scrollContainerRef.current;
     if (!scroller) return;
-    const measure = () => setOverflowing(isStripOverflowing(scroller));
+    const measure = () => {
+      setOverflowing(isStripOverflowing(scroller));
+      if (toolsOnly) motion.current?.revealActiveTab();
+    };
+    motion.current?.revealActiveTab();
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
     observer.observe(scroller);
     return () => observer.disconnect();
-  }, [tabCount]);
+  }, [tabCount, toolsOnly]);
 
   // 竖着拨滚轮也横着走(VS Code 的贴条);原生 wheel 监听才能 preventDefault(React 的是 passive)。
   useEffect(() => {
@@ -131,7 +137,7 @@ export const TabBar = observer(function TabBar({
       leadingReservePx={leadingReservePx}
       leadingSlot={leadingSlot}
     >
-      <TabStripMotion scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={selectedTabId ?? pane.activeTabId} keepActiveOnResize={toolsOnly}>
+      <TabStripMotion ref={motion} scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={selectedTabId ?? pane.activeTabId}>
       {leadingTabsSlot}
       {stripOrder.map((id) => {
         const entry = tabsById.get(id);
