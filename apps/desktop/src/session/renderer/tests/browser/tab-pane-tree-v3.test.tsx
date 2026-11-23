@@ -7,7 +7,6 @@ import { until, untilStable } from '../../../../../../../tests/support/awaitCond
 import { createTabProvider, createTabRegistry } from '@renderer/features/tabs/core/tab-provider-registry';
 import { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
-import { TrackCut } from '@renderer/features/tabs/pane-track-cut';
 import { PaneContent } from '@renderer/features/tabs/pane-content';
 import { PaneContext } from '@renderer/features/tabs/pane-context';
 import { tabFullscreen, WORKSPACE_ANCHOR } from '@renderer/features/tabs/tab-fullscreen';
@@ -161,24 +160,38 @@ it.each([false, true])('a pane whose last tab closes goes off the track live —
   expect(layout.groups.map(({ paneId }) => paneId)).toEqual([kept]);
 });
 
-it('focus coming into a child still sliding in scrolls nothing: the page beside it stays where it is', async () => {
+it('focus coming into a page still sliding in scrolls nothing around it: the page beside it stays where it is', async () => {
   await page.viewport(1100, 800);
   harness = createReactHarness();
   harness.container.style.cssText = 'position:fixed;left:0;top:0;width:1000px;height:600px';
-  const cut = (side: boolean) => <TrackCut axis="x" animate onShares={() => {}} onEqualize={() => {}} shares={side ? [60, 40] : [100]}
-    items={[{ id: 'main', min: 0, node: <div data-testid="main" style={{ height: '100%' }} /> }, ...(side ? [{ id: 'side', min: 0, node: <input aria-label="address" /> }] : [])]} />;
-  await act(() => harness.render(cut(false)));
-  await act(() => harness.render(cut(true)));
+  const provider = createTabProvider({ kind: 'page', resourceKey: (state: { id: string }) => state.id, initialize: () => ({ dispose() {} }), dispose() {}, TabContent: () => null, TabBarItem: () => null, TabBarItemDragPreview: () => null });
+  layout = new PaneLayoutStore(createTabRegistry([provider]), { viewId: 'tree-v3-focus' });
+  layout.open('page', { id: 'conversation' }, { from: null, intent: 'newTab' });
+  const tool = layout.open('page', { id: 'browser' }, { from: null, intent: 'newTab' })!;
+  layout.focusedPane.setDimensions(harness.container.clientWidth, harness.container.clientHeight);
+  const kept = layout.activePaneId;
+  // The app's shell around the panes is a box that clips (overflow hidden) and so can be scrolled.
+  await act(() => harness.render(<div data-testid="shell" style={{ overflow: 'hidden', width: '100%', height: '100%' }}>
+    <PaneTreeView layout={layout} renderPane={(id, _first, _last, part) => part === 'bar' ? null : id === kept
+      ? <div data-testid="main" style={{ height: '100%' }} />
+      // A page that takes focus as it mounts (the browser's address bar), while it is still off the edge.
+      : <div style={{ paddingLeft: 150 }}><input aria-label="address" ref={(input) => input?.focus()} /></div>} />
+  </div>));
+  await new Promise(requestAnimationFrame);
+  await act(() => { expect(layout.splitPane(kept, 'right', tool)).toBe(true); });
+  const shell = harness.container.querySelector<HTMLElement>('[data-testid="shell"]')!;
   const lefts = new Set<number>();
+  const scrolls = new Set<number>();
   const start = performance.now();
-  for (let frame = 0; performance.now() - start < 700; frame += 1) {
+  while (performance.now() - start < 700) {
     await new Promise(requestAnimationFrame);
-    // A page that takes focus once it is up (the browser's address bar), while it is still off the edge.
-    if (frame === 3) harness.container.querySelector<HTMLInputElement>('[aria-label="address"]')!.focus();
     lefts.add(Math.round(harness.container.querySelector('[data-testid="main"]')!.getBoundingClientRect().left));
+    scrolls.add(shell.scrollLeft);
   }
   expect(document.activeElement?.getAttribute('aria-label')).toBe('address');
-  // Control: with the cut's boxes overflow hidden, focus scrolled them and the main page jumped left by the side's offset.
+  // Control: with the pages' box overflow visible, focus scrolled the shell by the side page's offset and the page beside it
+  // was pushed left, then pulled back as the move shrank the overflow.
+  expect([...scrolls]).toEqual([0]);
   expect([...lefts]).toEqual([0]);
 });
 
