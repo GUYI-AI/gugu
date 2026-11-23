@@ -73,8 +73,10 @@ export function GroupNameInlineEdit({
       <div data-testid="group-name-display" role={canEdit ? 'button' : undefined} tabIndex={canEdit ? 0 : undefined}
         onClick={canEdit ? startEditing : undefined}
         onKeyDown={canEdit ? (event) => { if (event.key === 'Enter') startEditing() } : undefined}
-        className={`flex min-w-0 items-center gap-1.5 rounded-[6px] px-1 text-[19px] leading-[22px] font-semibold ${canEdit ? 'cursor-text hover:bg-row-hover' : ''}`}>
-        <span className="min-w-0 truncate">{resolveOrLoud(name, 'group details title')}</span>
+        style={{ overflowWrap: 'anywhere' }}
+        className={`flex min-w-0 items-center gap-1.5 rounded-[6px] px-1 text-center text-[19px] leading-[22px] font-semibold ${canEdit ? 'cursor-text hover:bg-row-hover' : ''}`}>
+        {/* #6791 群设置页里群名显示全名:换行,不截断。 */}
+        <span className="min-w-0">{resolveOrLoud(name, 'group details title')}</span>
         {canEdit ? <button type="button" data-testid="group-name-edit" aria-label={labels?.editHint ?? t('group.editName')}
           onClick={(event) => { event.stopPropagation(); startEditing() }} className="flex shrink-0 text-[var(--faint-fg)]"><Pencil size={13} /></button> : null}
       </div>
