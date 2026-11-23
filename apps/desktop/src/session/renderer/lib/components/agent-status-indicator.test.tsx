@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
-// #7243(owner 2026-10-15):任务页的 agent 状态不画咕咕小鸟 —— 在跑 = 墨色转圈字形、后台运行中 = 黄色双竖线、
-// 等你 = 黄点、出错 = 红点、空闲不画。判的是渲染出来的东西:每一态都没有小鸟的画布。
+// #7243(owner 2026-10-15):任务页的 agent 状态不画咕咕小鸟 —— 在跑 = 墨色字形在转、后台运行中 = 同一个字形停住、
+// 等你 = 感叹号字形、出错 = 红点、空闲不画。判的是渲染出来的东西:每一态都没有小鸟的画布。
 import { createElement, act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -43,17 +43,18 @@ describe('任务页的状态字形(#7243)', () => {
     expect(container.querySelector('.gg-running-glyph__strip')).not.toBeNull();
   });
 
-  it('后台运行中 = 双竖线(AgentParkedGlyph),不是转圈字形', () => {
+  it('后台运行中 = 停住的字形(AgentParkedGlyph),不转', () => {
     renderGlyph('working', 'parked');
     expectNoBird();
-    expect(container.querySelector('[data-agent-status-glyph="parked"]')).not.toBeNull();
-    expect(container.querySelector('.gg-running-glyph')).toBeNull();
+    expect(container.querySelector('[data-agent-status-glyph="parked"]')?.className).toContain('gg-running-glyph--still');
+    expect(container.querySelectorAll('.gg-running-glyph')).toHaveLength(1);
   });
 
-  it('等你 = 黄点,出错 = 红点', () => {
+  it('等你 = 感叹号字形,出错 = 红点', () => {
     renderGlyph('needs_user', 'approval');
     expectNoBird();
-    expect(container.querySelector('span')?.className).toContain('bg-[var(--agent-tone-needs-user)]');
+    expect(container.querySelector('[data-agent-status-glyph="needs_user"]')).not.toBeNull();
+    expect(container.querySelector('[class*="bg-["]')).toBeNull();
 
     renderGlyph('error');
     expectNoBird();

@@ -1,6 +1,6 @@
 // 通讯录侧 agent 状态视觉映射 —— 从 ContactsPanel 抽出(god freeze 冻结,参考 #2179 抽 groupMemberModels 打法)。
 // 文案、颜色与其它每一面同一张表(packages/core/src/shared/agentStatusPresentation.ts,owner 2026-09-25 定):
-//   working 运行中 橙 · parked 后台运行中 黄(双竖线 AgentParkedGlyph)· needs_user 需要你 黄(Solar 感叹号字形)· error 出错了 红
+//   working 运行中 橙 · parked 后台运行中(停住的运行字形 AgentParkedGlyph)· needs_user 需要你 黄(Solar 感叹号字形)· error 出错了 红
 //   idle 在线 绿 · offline 不在线 灰(owner:待命 → 不在线,「待命会让人以为它还在运行」)· pending 确认中 灰 · removed 已移除
 // #6448 之前通讯录把「运行中」也写成「在线」(不强调活动细节),与头像、聊天头给出两个答案 —— 已改成同一句话。
 // ❌ 别在此私有飘(#1953 教训):颜色只写 `--agent-tone-*` 这几个 token。
@@ -69,18 +69,3 @@ export function agentContactRowDotClass(tone: AgentContactTone): string {
   if (tone === 'needs_user') return 'gg-c-st-dot-mark h-[8px] w-[8px] shrink-0'
   return `gg-c-st-dot-mark h-[5px] w-[5px] shrink-0 rounded-[var(--radius-capsule)] ${agentContactRowToneColorClass(tone)}`
 }
-
-export function agentContactAvatarBadgeClass(tone: AgentContactTone | null): string {
-  if (tone === 'idle') return agentAvatarBadge('after:bg-[var(--agent-tone-online)]')
-  if (tone === 'working') return agentAvatarBadge('after:bg-[var(--agent-tone-running)]')
-  // needs_user and parked are glyphs on the avatar's own badge (AgentNeedsUserGlyph / AgentParkedGlyph), so do not
-  // add the legacy pseudo-element dot as a second, ambiguous marker.
-  if (tone === 'needs_user' || tone === 'parked') return ''
-  if (tone === 'error') return agentAvatarBadge('after:bg-[var(--agent-tone-error)]')
-  if (tone === 'removed') return agentAvatarBadge('after:bg-[var(--agent-tone-removed)]')
-  return ''
-}
-
-/** 头像右下角 after 伪元素小圆点(Tailwind 类串);color 传完整字面类(JIT 需在源码可见)。 */
-export const agentAvatarBadge = (color: string) =>
-  `relative after:absolute after:right-[-1px] after:bottom-[-1px] after:h-2.5 after:w-2.5 after:rounded-full after:border-2 after:border-transparent after:bg-clip-padding ${color} after:content-[""]`

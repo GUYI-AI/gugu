@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { colorOfDisplayStatus, labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
+import { labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
 import { normalizeAvatarUrl, reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
@@ -42,63 +42,24 @@ export interface AvatarProps {
 }
 
 const SIZE_MAP = { xs: 18, sm: 32, md: 40, lg: 64 } as const
-const AVATAR_STATUS_DOT_CLASS = 'av-status__dot relative'
-
-// @@@avatar-running-badge - a running agent wears the product's one running glyph (running-glyph.css, on the shared
-// beat) in the avatar's bottom-right corner, small and on a see-through round backing so it covers little of the face:
-// the only motion an avatar has.
-function AgentRunningBadge({ avatarSize, label }: { avatarSize: number; label: ReturnType<typeof labelOfDisplayStatus> }) {
+// @@@avatar-status-corner - an agent's one status mark, in the avatar's bottom-right corner, small and on a see-through
+// round backing so it covers little of the face. The marks are one family around the product's running glyph
+// (running-glyph.css): running = the snake turning, parked = the snake held still, needs_user = the exclamation glyph,
+// error = a red dot. Every other state (idle, offline, starting …) draws nothing: the words say it where there is room.
+function AgentStatusCorner({ status, avatarSize }: { status: AgentDisplayStatus; avatarSize: number }) {
   const { t } = useTranslation('common')
   const size = Math.max(8, Math.min(14, Math.round(avatarSize * 0.34)))
-  const text = t(`agentStatus.${label}`)
+  const mark = status === 'working' ? <CLISpinner className="av-status__glyph" />
+    : status === 'parked' ? <AgentParkedGlyph className="av-status__glyph" />
+    : status === 'needs_user' ? <AgentNeedsUserGlyph size={size - 2} />
+    : status === 'error' ? <span className="av-status__dot" />
+    : null
+  if (!mark) return null
+  const text = t(`agentStatus.${labelOfDisplayStatus(status)}`)
   return (
-    <span className="av-running" role="img" aria-label={text} title={text} style={{ '--av-running-size': `${size}px` } as React.CSSProperties}>
-      <CLISpinner className="av-running__glyph" />
+    <span className={`av-status av-status--${status}`} role="img" aria-label={text} title={text} style={{ '--av-status-size': `${size}px` } as React.CSSProperties}>
+      {mark}
     </span>
-  )
-}
-
-// @@@avatar-status-badge - top-right status indicator. Color and words come from the shared presentation
-// (packages/core/src/shared/agentStatusPresentation.ts — one table for the session page, chat and phone). It has
-// no motion of its own: a running agent wears AgentRunningBadge in the bottom-right corner instead. parked = the
-// two bars of AgentParkedGlyph; needs_user = Solar exclamation glyph; idle/offline/removed = static dot.
-function AgentStatusBadge({ status, size }: { status: AgentDisplayStatus; size: number }) {
-  const { t } = useTranslation('common')
-  const color = colorOfDisplayStatus(status) ?? 'transparent'
-  const label = t(`agentStatus.${labelOfDisplayStatus(status)}`)
-  return (
-    <div
-      className={`av-status av-status--${status}`}
-      role="img"
-      aria-label={label}
-      title={label}
-      style={{
-        position: 'absolute',
-        top: -2,
-        right: -2,
-        width: size,
-        height: size,
-        borderRadius: 'var(--radius-circle)',
-        background: 'transparent',
-        border: '1.5px solid transparent',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: Math.max(2, Math.round(size * 0.14)),
-        boxSizing: 'border-box',
-      }}
-    >
-      {status === 'needs_user' ? (
-        <AgentNeedsUserGlyph size={Math.max(8, size)} />
-      ) : status === 'parked' ? (
-        <AgentParkedGlyph size={Math.max(8, size)} />
-      ) : (
-        <span
-          className={AVATAR_STATUS_DOT_CLASS}
-          style={{ width: '100%', height: '100%', borderRadius: 'var(--radius-circle)', background: color }}
-        />
-      )}
-    </div>
   )
 }
 
@@ -145,8 +106,6 @@ export function Avatar({
   useEffect(() => {
     reportInvalidAvatarUrl(avatarUrl, `main avatar "${name || 'unknown'}"`)
   }, [avatarUrl, name])
-
-  const badgeSize = Math.max(8, Math.min(16, Math.round(px * 0.3)))
 
   const base: React.CSSProperties = {
     position: 'relative',
@@ -257,9 +216,8 @@ export function Avatar({
           style={emptyStyle}
         />
       )}
-      {agentStatus === 'working' && !animatedAssistant ? <AgentRunningBadge avatarSize={px} label={labelOfDisplayStatus(agentStatus)} /> : null}
-      {agentStatus && agentStatus !== 'working' && !animatedAssistant ? (
-        <AgentStatusBadge status={agentStatus} size={badgeSize} />
+      {agentStatus && !animatedAssistant ? (
+        <AgentStatusCorner status={agentStatus} avatarSize={px} />
       ) : null}
     </div>
   )

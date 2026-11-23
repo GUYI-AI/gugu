@@ -72,11 +72,14 @@ it.each(['light', 'dark'].flatMap(theme => [360, 390].map(width => ({ theme, wid
     const pending = rows[1].querySelector<HTMLElement>('.gg-phone-message-avatar-badge')!.getBoundingClientRect()
     const project = rows[2].querySelector<HTMLElement>('.gg-phone-message-avatar-badge')!.getBoundingClientRect()
     const ordinary = rows[3].querySelector<HTMLElement>('.av-status')!.getBoundingClientRect()
-    for (const [badge, index] of [[pending, 1], [project, 2], [ordinary, 3]] as const) {
+    for (const [badge, index] of [[pending, 1], [project, 2]] as const) {
       expect(badge.x + badge.width / 2 - slots[index].right).toBe(-5)
       expect(badge.y + badge.height / 2 - slots[index].top).toBe(5)
     }
-    // The status mark lives in the avatar corner, never at the row's end; an unread row's end is its count badge.
+    // An agent's own status mark is the avatar's bottom-right corner (Avatar.tsx @@@avatar-status-corner).
+    expect(ordinary.right).toBe(slots[3].right + 2)
+    expect(ordinary.bottom).toBe(slots[3].bottom + 2)
+    // The status mark lives on the avatar, never at the row's end; an unread row's end is its count badge.
     expect(rows[1].querySelector('.gg-list-row-trailing [role="img"]')).toBeNull()
     expect(rows[1].querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent).toBe('1')
   },

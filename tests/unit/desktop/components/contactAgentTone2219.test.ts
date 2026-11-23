@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  agentContactAvatarBadgeClass,
   agentContactPresentation,
   agentContactRowDotClass,
   agentContactRowStatusClass,
@@ -51,7 +50,6 @@ describe('contacts speak the one status table (#6448)', () => {
     // needs_user 是 8px 的 Solar 字形(颜色在字形上),不是色点。
     expect(agentContactRowDotClass('needs_user')).toContain('h-[8px]')
     expect(agentContactRowDotClass('needs_user')).not.toContain('bg-[')
-    expect(agentContactAvatarBadgeClass('needs_user')).toBe('')
     expect(agentContactRowStatusClass('needs_user')).not.toContain(' off')
   })
 })

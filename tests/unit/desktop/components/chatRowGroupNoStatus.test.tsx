@@ -34,7 +34,7 @@ const identitiesById = {
   'a-member': displayIdentity('a-member', { type: 'agent', owner_user_id: 'me' }),
   'a-peer': displayIdentity('a-peer', { type: 'agent', owner_user_id: 'me' }),
 }
-const statusOf = (id: string) => harness.container.querySelector(`[data-chat-row="${id}"] :is(.av-status, .av-running)`)?.className ?? null
+const statusOf = (id: string) => harness.container.querySelector(`[data-chat-row="${id}"] .av-status`)?.className ?? null
 
 it.each([
   ['the desktop list', { placement: 'sidebar' }],
@@ -43,7 +43,7 @@ it.each([
   await renderWithAppProviders(harness, createNode(ChatListPanel, props), { chat: { chats, identitiesById }, contacts: {} })
   expect(harness.container.querySelector('[data-chat-row="room"]')).not.toBeNull()
   expect(statusOf('room')).toBeNull()
-  expect(statusOf('dm-agent')).toContain('av-running')
+  expect(statusOf('dm-agent')).toContain('av-status--working')
   expect(statusOf('dm-human')).toBeNull()
   // The list follows only the agents it draws a status for.
   expect(followed.at(-1)).toEqual(['a-peer'])

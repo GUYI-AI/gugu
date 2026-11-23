@@ -47,14 +47,9 @@ afterEach(() => {
 })
 
 describe('default agent avatars', () => {
-  it.each(['offline', 'archived'] as const)('#1987 retains the existing muted %s avatar dot', async (agentStatus) => {
+  it.each(['idle', 'offline', 'archived', 'starting', 'removed'] as const)('a %s agent wears no corner mark', async (agentStatus) => {
     await render({ agentStatus })
-    const badge = harness.container.querySelector(`.av-status--${agentStatus}`)
-    expect(badge?.getAttribute('role')).toBe('img')
-    const dot = badge?.querySelector<HTMLElement>('span')
-    expect(dot?.style.background).toBe('var(--agent-tone-muted)')
-    expect(dot?.style.borderRadius).toBe('var(--radius-circle)')
-    expect(dot?.textContent).toBe('')
+    expect(harness.container.querySelector('.av-status')).toBeNull()
   })
 
   it('renders a static beam SVG with the full agent id and its palette, plus the running glyph in its corner', async () => {
@@ -62,7 +57,7 @@ describe('default agent avatars', () => {
     expect(svg()?.getAttribute('data-agent-avatar-boring')).toBe(ID)
     expect(svg()?.getAttribute('width')).toBe('32')
     expect(harness.container.querySelector('canvas')).toBeNull()
-    expect(harness.container.querySelector('.av-running')).not.toBeNull()
+    expect(harness.container.querySelector('.av-status--working .gg-running-glyph')).not.toBeNull()
     const fills = Array.from(svg()!.querySelectorAll('[fill]')).map((el) => el.getAttribute('fill'))
     expect(fills).toContain(boringAvatarAppearance(ID).body)
     expect(runtime.register).not.toHaveBeenCalled()

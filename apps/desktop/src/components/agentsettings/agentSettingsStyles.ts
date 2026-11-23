@@ -40,7 +40,7 @@ export const asClass = {
   // 名字 + 状态同一块:放得下就同一行,放不下状态落到名字下一行;名字只占一行、截断(全名在「资料」里)。
   titleBlock: 'gg-as-title flex min-w-0 flex-1 flex-wrap items-center gap-x-[11px] gap-y-0.5',
   name: 'gg-as-name min-w-0 max-w-full truncate text-[length:var(--font-title)] font-semibold',
-  // 出错 / 需要你 / 在跑的点色由组件按状态给(--gg-as-status-dot,agentStatusColorVar);后台在跑不画点(组件画双竖线);其余绿,不在线灰。
+  // 出错 / 需要你 / 在跑的点色由组件按状态给(--gg-as-status-dot,agentStatusColorVar);后台在跑不画点(组件画停住的运行字形);其余绿,不在线灰。
   status:
     'gg-as-status flex min-w-0 items-center gap-[5px] text-[length:var(--font-body)] text-[var(--muted-fg)] before:h-1.5 before:w-1.5 before:shrink-0 before:rounded-[var(--radius-capsule)] before:[background:var(--gg-as-status-dot,var(--green))] before:content-[""] data-[offline]:before:[background:var(--faint-fg)] data-[tone=parked]:before:hidden',
   close:

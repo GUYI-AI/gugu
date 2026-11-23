@@ -29,6 +29,12 @@
   white-space: pre;
 }
 
+/* Held still: an agent running out of sight (AgentParkedGlyph) shows one frame of the snake, not its motion. */
+.gg-running-glyph--still > .gg-running-glyph__strip {
+  animation: none;
+  transform: translateY(-200%);
+}
+
 @keyframes gg-running-glyph {
   to {
     transform: translateY(-2400%);

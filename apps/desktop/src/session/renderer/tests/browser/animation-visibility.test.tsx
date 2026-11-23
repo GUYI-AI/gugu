@@ -43,7 +43,7 @@ async function mount(doc = document) {
   await until('the pill glyph and the avatar corner glyph turn', () => host.getAnimations({ subtree: true }).length === 2 && host.querySelector<HTMLElement>('.rtb-state .gg-running-glyph')?.hasAttribute('data-animation-off') === false);
   const animations = host.getAnimations({ subtree: true });
   expect(animations.every((animation) => (animation as CSSAnimation).animationName === 'gg-running-glyph')).toBe(true);
-  expect(host.querySelector('.av-running')!.getAnimations({ subtree: true })).toHaveLength(1);
+  expect(host.querySelector('.av-status--working')!.getAnimations({ subtree: true })).toHaveLength(1);
   expect(host.querySelector('.rtb-state')!.getAnimations({ subtree: true })).toHaveLength(1);
   expect(animations.every((animation) => animation.playState === 'running')).toBe(true);
   return { host, animations };
@@ -86,11 +86,11 @@ it('stops the running glyphs on the shared native signal and starts them again o
 
 it('stops an avatar corner glyph scrolled out of view and starts it again on the shared beat when it returns', async () => {
   const { host, animations } = await mount();
-  const cornerOf = () => host.querySelector('.av-running')!.getAnimations({ subtree: true });
+  const cornerOf = () => host.querySelector('.av-status--working')!.getAnimations({ subtree: true });
   expect(cornerOf()).toHaveLength(1);
   // The avatar's only motion is the shared glyph: eight steps a second, no status lamp beside it.
   expect(cornerOf()[0]!.effect!.getTiming()).toMatchObject({ duration: 3000, iterations: Infinity });
-  expect(host.querySelector('.av-status')).toBeNull();
+  expect(host.querySelectorAll('.av-status')).toHaveLength(1);
   host.style.cssText = 'position:fixed;left:0;top:-2000px';
   await until('the off-screen glyphs are gone', () => host.getAnimations({ subtree: true }).length === 0);
   host.style.cssText = '';
