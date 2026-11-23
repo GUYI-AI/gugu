@@ -25,10 +25,6 @@
       "count": 1,
       "reason": "label swap max-width inside a control (I3): motion inside a row, not a panel"
     },
-    "apps/desktop/src/session/renderer/features/sidebar/inner-sidebar-parts.tsx": {
-      "count": 1,
-      "reason": "head-row button reveal width (I3): motion inside a row, not a panel"
-    },
     "apps/desktop/src/session/renderer/lib/ui/assistant-ui/surfaces.tsx": {
       "count": 2,
       "reason": "in-panel disclosure height and the tool-row width reveal (I2): motion inside a row, not a panel"

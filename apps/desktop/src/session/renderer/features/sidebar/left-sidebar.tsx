@@ -163,11 +163,11 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         // 界面减法 #53 #69: a row is a 52px square block on the rail (padding 6 around its 40px avatar), 52 tall open, 6 apart; its
         // unread count sits on the avatar's top-right corner in both states (no row end: no time, no muted bell). Its text
         // (name, preview) follows the open/close progress through the scroll box's mask (followNamesMask).
-        '[&_[data-region=sidebar-scroll]_.gg-list-row]:mb-1.5 [&_[data-region=sidebar-scroll]_.gg-list-row]:h-[52px] [&_[data-region=sidebar-scroll]_.gg-list-row]:!rounded-[12px] [&_[data-region=sidebar-scroll]_.gg-list-row]:!p-1.5 [&_[data-region=sidebar-scroll]_.gg-list-row-body]:!gap-0',
+        '[&_[data-region=sidebar-scroll]_.gg-list-row]:mb-[6px] [&_[data-region=sidebar-scroll]_.gg-list-row]:h-[52px] [&_[data-region=sidebar-scroll]_.gg-list-row]:!rounded-[12px] [&_[data-region=sidebar-scroll]_.gg-list-row]:!p-[6px] [&_[data-region=sidebar-scroll]_.gg-list-row-body]:!gap-0',
         '[&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:absolute [&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:top-1 [&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:left-[34px] data-[sidebar-rail]:[&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:left-[30px]',
-        // Design v16: the name is 14px regular, the preview line 12.5px. `!`: the list row's own rules (.gg-list-row in
+        // Design v16: the name is 14px regular, the preview line the caption size (the design's 12.5 is not on the type scale). `!`: the list row's own rules (.gg-list-row in
         // tokens.css) are outside the utilities layer, so a plain utility loses to them.
-        '[&_[data-region=sidebar-scroll]_.gg-list-row-subtitle]:!text-[12.5px] [&_[data-region=sidebar-scroll]_.gg-list-row-title]:!font-normal',
+        '[&_[data-region=sidebar-scroll]_.gg-list-row-subtitle]:!text-[length:var(--font-caption)] [&_[data-region=sidebar-scroll]_.gg-list-row-title]:!font-normal',
         '[&_[data-region=sidebar-scroll]_.gg-chat-row-muted]:hidden',
         // The list's gutter: 14 open, 8 on the rail (one element restyled when the rail flips).
         'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:px-2'
