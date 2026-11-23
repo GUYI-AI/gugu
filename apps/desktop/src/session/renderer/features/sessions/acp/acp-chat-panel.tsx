@@ -1,6 +1,6 @@
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
-import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica, valueOf } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
@@ -25,7 +25,6 @@ import { useConversationVisibility } from '@/components/chat/useConversationVisi
 import { useNativeConversationRead } from '@/hooks/useNativeConversationRead';
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue';
 import { sessionLifeView } from '../stores/session-life-views';
-import { lifeIsStarting } from '@shared/core/sessions/session-life';
 import { AgentFailureSlot } from '@/components/AgentFailureSlot';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { useSessionMessageQuotes } from './use-session-message-quotes';
@@ -56,7 +55,7 @@ import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { nativeChatAppearance } from '@renderer/lib/chat/native-chat-appearance.css';
 import { useMarkSeenWhenShown } from '@renderer/features/sessions/hooks/use-mark-seen-when-shown';
 import { createPortal, flushSync } from 'react-dom';
-import { SessionChatLoading, CodexPreparationStatus } from './session-chat-loading';
+import { CodexPreparationStatus } from './codex-preparation-status';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
 import { useConnectedIssueProviders } from '@renderer/features/integrations/use-connected-issue-providers';
@@ -262,7 +261,6 @@ const ComposerForStore = observer(function ComposerForStore({
   store,
   editorApiRef,
   composerSlot,
-  contentOverlaySlot,
   onViewAttachment,
   onScrollToBottom,
   modelMenuRequest,
@@ -272,7 +270,6 @@ const ComposerForStore = observer(function ComposerForStore({
   store: AcpChatStore;
   editorApiRef: RefObject<PromptEditorRef | null>;
   composerSlot: HTMLElement;
-  contentOverlaySlot: HTMLElement | null;
   /** 面板要把模型菜单打开(「这个模型要会员」那一行上的「换模型」):每变一次开一次。 */
   modelMenuRequest: number;
   onModelMenuRequest: () => void;
@@ -400,7 +397,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const customFeatures = runningCustomModel && customReading.state === 'value'
     ? customReading.value.find((record) => record.id === runningCustomModel.connectionId)?.models.find(({ id }) => id === runningCustomModel.modelId)
     : undefined;
-  const acceptsImages = !runningCustomModel || customFeatures?.image === true;
+  const acceptsImages = !runningCustomModel || customModelAcceptsImages(customFeatures);
   const acceptsThinking = !runningCustomModel || customFeatures?.thinking === true;
   const hostBand = useHostAskBand(store.runtimeSessionId, hostSession);
   const resolveHostAsk = hostBand?.resolve;
@@ -1447,9 +1444,6 @@ const ComposerForStore = observer(function ComposerForStore({
       {/* This task's agent's failed deliveries (the shell draws the same bar a chat's composer shows). */}
       {agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}
       {providerId === 'codex' ? <CodexPreparationStatus sessionId={store.runtimeSessionId} /> : null}
-      {contentOverlaySlot && life && lifeIsStarting(life) && !store.showHistoryLoading && !store.transcriptPendingId && !store.chatState.session.state.pendingMessages.length ? (
-        createPortal(<SessionChatLoading label={translate(`transcript.${store.startPhaseOf(life) ?? 'starting'}`)} stage={life.stage?.at} />, contentOverlaySlot)
-      ) : null}
       {/* Every send of a task page is in custody until the transcript has it, so its bubbles always show here. */}
       <SessionInputQueue sessionId={store.runtimeSessionId} waitingForConnection life={life}
         inTranscript={[...store.chatState.session.state.pendingMessages.map(input => input.id), store.transcriptPendingId, store.stoppedRowId, ...store.failedRowIds, ...life?.pending.items.filter(input => isTranscriptDelivery(input)).map(input => input.messageId) ?? []].filter((id): id is string => id !== null)} />
@@ -1617,7 +1611,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const sourceMessage = useSessionSourceMessage(store, viewRef, () => toast({ title: translate('transcript.originalMessageMissing'), variant: 'destructive' }));
   const [composerSlot, setComposerSlot] = useState<HTMLElement | null>(null);
   const [heroSlot, setHeroSlot] = useState<HTMLElement | null>(null);
-  const [overlaySlot, setOverlaySlot] = useState<HTMLElement | null>(null);
   // 一个对话框认两种内容:transcript 里的图片走 `src`,输入框里的文本附件走 `text`(#5269)。
   const [viewer, setViewer] = useState<
     { src?: string; alt?: string; text?: string; truncated?: boolean } | null
@@ -1651,7 +1644,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       reading.onReady(view);
       setComposerSlot(view.composerSlot);
       setHeroSlot(view.heroSlot);
-      setOverlaySlot(view.contentOverlay);
     },
     [bindReadyView, reading.onReady]
   );
@@ -1662,7 +1654,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     bindGoneView();
     setComposerSlot(null);
     setHeroSlot(null);
-    setOverlaySlot(null);
   }, [bindGoneView]);
   useSearchedTaskReveal(store, chatView, sourceMessage.reveal);
 
@@ -1721,8 +1712,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const interruptedBy = sessionStore?.status === 'idle' || sessionStore?.status === 'error'
     ? (sessionStore.data.interruptedBy ?? null) : null;
   const agent = agents?.find((candidate) => candidate.id === providerId) ?? null;
-  const startupNotice = agent?.capabilities.acp.startup?.noticeKey;
-  const startupNoticeKey = declaredMessageKey(startupNotice);
   // 与 composer、抽屉的「账号」行共用同一份判据(#6100)—— ❌ 不在这里再抄一个 find。
   // 聊天面板跑的是 `acp` 那条腿的程序(#6335):两条腿是两个程序的家,这里登的是聊天面板那个。
   const cliAuthMethod = resolveSignInTarget(agent, 'acp')?.method ?? null;
@@ -2253,17 +2242,14 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   );
 
   // A freshly-created task can publish its tab before the resource manager has finished attaching
-  // the conversation store. Keep the task surface mounted during that hand-off; returning a bare
-  // null leaves the ACP session page visually blank and gives the user no usable empty/loading state.
+  // the conversation store. Keep the task surface mounted (its own background) during that hand-off,
+  // ❌ a bare null and ❌ a separate "loading" picture: the transcript and composer draw as soon as the store is there.
   if (!store) {
     return (
       <div
         className="relative h-full w-full bg-background-secondary-1"
         data-session-chat-surface={tabKind === 'side-chat' ? 'side-chat' : 'source'}
-        data-session-chat-loading="true"
-      >
-        <SessionChatLoading label={translate('chat.loading')} />
-      </div>
+      />
     );
   }
 
@@ -2300,7 +2286,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             state={store.chatState}
             composer="slot"
             composerPlacement={store.isEmpty ? 'center' : 'bottom'}
-            contentOverlay
             stickToBottom
             pinUserMessages={tabKind !== 'side-chat'}
             onReady={handleReady}
@@ -2319,18 +2304,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       <FindBar {...findBar} />
       {outputMenu.menu}
       {connections.panel}
-
-      {/* 加载态。⚠️ **只在没东西可看时**才盖 —— 库里那份历史是先画出来的(#5381),
-          已经有内容还盖一层不透明底,等于把用户自己说过的话藏起来
-          (spec `session-always-openable`)。
-          ❌ 这里不再有任何错误分支:失败一律是消息列表末尾的一行(session-condition),
-          见本文件 useEffect「把加载失败翻成列表里的一行」。 */}
-      {overlaySlot &&
-        store.showHistoryLoading &&
-        createPortal(
-          <SessionChatLoading label={startupNoticeKey ? translate(startupNoticeKey) : translate('chat.loading')} />,
-          overlaySlot
-        )}
 
       {/* #4900 那条贴顶横幅已退役 —— owner 2026-09-19:「不应该有任何需要横幅性质的 ui 表达,
           有问题就像消息一样贴消息列表才对吧」。它的两颗动作(「去登录」与「我登好了」)
@@ -2355,7 +2328,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           store={store}
           editorApiRef={editorApiRef}
           composerSlot={composerSlot}
-          contentOverlaySlot={overlaySlot}
           onViewAttachment={handleAttachmentView}
           onScrollToBottom={() => viewRef.current?.scrollToBottom({ behavior: 'smooth' })}
           modelMenuRequest={modelMenuRequest}

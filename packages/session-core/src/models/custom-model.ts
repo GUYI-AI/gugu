@@ -59,6 +59,14 @@ export const customModelMetaSchema = z.object({
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
 export type CustomModelEntry = z.infer<typeof customModelEntrySchema>;
 
+/**
+ * Whether a custom model takes image input. Only the person can say a model doesn't: no model list or Codex config
+ * carries the fact, so an undeclared model is not refused here and the provider answers for itself.
+ */
+export function customModelAcceptsImages(entry: Pick<CustomModelEntry, 'image'> | undefined): boolean {
+  return entry?.image !== false;
+}
+
 export type PiCustomModelProvider = {
   connectionId: string;
   name: string;

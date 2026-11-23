@@ -2,7 +2,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 
 vi.mock('@renderer/features/tabs/pane-context', () => ({
@@ -101,9 +100,13 @@ afterEach(() => {
 });
 
 describe('ACP task chat loading state (#4567)', () => {
-  it('renders a visible loading surface while the conversation store is attaching', async () => {
+  // #4567: the task surface stays mounted (not a bare null) while the conversation store attaches. owner 11-23: it is
+  // the task's own surface, ❌ a separate skeleton「加载中」picture; the transcript and composer draw once the store is there.
+  it('keeps the task surface mounted, without a skeleton, while the conversation store is attaching', async () => {
     host = document.createElement('div');
     host.className = 'emlight gugu-skin';
+    // A task block's size comes from the screen layout; the surface fills it (no content of its own yet).
+    host.style.cssText = 'width: 800px; height: 600px; display: grid;';
     document.body.appendChild(host);
     root = createRoot(host);
     // 「重新登录」那一行拿着 queryClient(登完让模型目录重读);这里给一份空的。
@@ -113,17 +116,14 @@ describe('ACP task chat loading state (#4567)', () => {
       </QueryClientProvider>
     );
 
-    const loading = page.getByRole('status', { name: 'Loading chat', exact: true });
-    await until('loading surface is visible', () => loading.query()?.checkVisibility({ opacityProperty: true, visibilityProperty: true }) === true);
-    await expect.element(loading).toBeVisible();
-    expect(host.querySelectorAll('[data-session-chat-loading="true"] [data-skeleton-bubble]')).toHaveLength(6);
-    expect(host.querySelector('[data-gg-loading]')).toBeNull();
-
-    const element = host.querySelector<HTMLElement>('[data-session-chat-loading="true"]');
-    expect(element).not.toBeNull();
+    await until('task surface is mounted', () => host!.querySelector('[data-session-chat-surface]') !== null);
+    const element = host.querySelector<HTMLElement>('[data-session-chat-surface]');
     expect(getComputedStyle(element!).visibility).toBe('visible');
     expect(getComputedStyle(element!).display).not.toBe('none');
-    expect(element!.getBoundingClientRect().width).toBeGreaterThan(0);
-    expect(element!.getBoundingClientRect().height).toBeGreaterThan(0);
+    expect(element!.getBoundingClientRect().width).toBe(800);
+    expect(element!.getBoundingClientRect().height).toBe(600);
+    expect(host.querySelector('[data-skeleton-bubble]')).toBeNull();
+    expect(host.querySelector('[role="status"][aria-busy="true"]')).toBeNull();
+    expect(host.querySelector('[data-gg-loading]')).toBeNull();
   });
 });

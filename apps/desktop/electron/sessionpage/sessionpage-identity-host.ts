@@ -18,7 +18,8 @@ import type {
 } from '../../src/session/shared/lib/ipc/shell-port'
 import { localAgentForSession } from './sessionpage-session-agent'
 import { listAgents, provisionSessionpageAgentOneTrip, writeAgentName } from '@gugu/core'
-import { agentsForOwner } from '@gugu/core/local/state/agentOwner'
+import { agentOwnerUserId, agentsForOwner } from '@gugu/core/local/state/agentOwner'
+import { uniqueAgentDisplayName } from '@gugu/core/shared/agentDefaultName'
 import { createLogger } from '../lib/logger'
 
 const log = createLogger('sessionpage/task-names')
@@ -180,7 +181,13 @@ export function createSessionpageIdentityHost(deps: SessionpageIdentityHostDeps)
   }
 
   // Local first: the roster is this device's mirror of the identity name, pending until published.
-  const renameBound = async (agentUserId: string, name: string): Promise<void> => {
+  // #4007 the name is the addressing name: a rename (a person's or the automatic title) is made unique among the
+  // owner's other agents by the same rule minting uses, so two agents never answer to one name.
+  const renameBound = async (agentUserId: string, requested: string): Promise<void> => {
+    const roster = await listAgents(env, { includeGuests: true })
+    const owner = agentOwnerUserId(roster.find((row) => row.gugu_user_id === agentUserId)) || null
+    const others = agentsForOwner(roster, owner).filter((row) => row.gugu_user_id !== agentUserId)
+    const name = uniqueAgentDisplayName(others.map((row) => ({ display_name: row.name })), requested)
     await writeAgentName(agentUserId, name, 'local', env)
     await publishName(agentUserId)
   }

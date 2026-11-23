@@ -20,6 +20,6 @@ describe('an App icon on a gugu server (headless electron shim)', () => {
     const png = readFileSync(fileURLToPath(new URL('../../../../../preinstalled-apps/workspace/icon.png', import.meta.url)));
     expect(png.length).toBeGreaterThan(0);
     writeFileSync(path.join(dir, 'icon.png'), png);
-    expect(renderExtensionIcon(dir, 'icon.png')).toEqual({ reason: 'icon could not be re-encoded' });
+    expect(renderExtensionIcon(dir, 'icon.png')).toEqual({ reason: 'icon is not an image the host can decode' });
   });
 });

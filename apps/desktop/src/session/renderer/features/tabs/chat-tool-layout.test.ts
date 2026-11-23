@@ -33,7 +33,7 @@ function makeLayout(owner?: string) {
 afterEach(() => layouts.splice(0).forEach((layout) => layout.dispose()));
 
 describe('chat and tool layout', () => {
-  it('keeps the same conversation as a tab before the compact header button and switches without restoring a split', () => {
+  it('shows the same conversation from the shared strip at any width without restoring a split', () => {
     const layout = makeLayout('owner');
     const owner = layout.open('chat', { id: 'owner' }, newTab)!;
     const tool = layout.open('tool', { id: 'one' }, newTab)!;
@@ -41,16 +41,13 @@ describe('chat and tool layout', () => {
     try {
       const panes = layout.chatWorkspacePanes!;
       layout.setDimensions(900, 600);
-      expect(layout.chatWorkspaceConversationPresentation).toBe('pane');
       layout.collapseChatToolSide(layout.chatToolSide === 'right' ? 'left' : 'right');
-      expect(layout.chatWorkspaceConversationPresentation).toBe('tab');
+      expect(layout.chatWorkspaceMode).toBe('full');
       const tree = layout.layout;
       layout.setDimensions(380, 600);
-      expect(layout.chatWorkspaceConversationPresentation).toBe('bubble');
       layout.showChatWorkspaceConversation();
       expect(layout.chatWorkspaceSinglePaneId).toBe(panes.chat.paneId);
       expect(layout.chatWorkspaceMode).toBe('full');
-      expect(layout.chatWorkspaceConversationPresentation).toBe('tab');
       panes.tools!.pane.setActiveTab(tool);
       expect(layout.chatWorkspaceSinglePaneId).toBe(panes.tools!.paneId);
       expect(layout.layout).toBe(tree);
@@ -298,14 +295,18 @@ describe('mounted chat workspace', () => {
     }
   });
 
-  it('bounds the size while previewing each collapsing edge only after the pointer passes the threshold', () => {
+  it('previews a fold as soon as the pointer passes a pane minimum and arms it 65 pt further', () => {
     const width = 1001;
     const at = (offset: number) => chatDividerAt(offset, width, 320, 360);
     expect(at(500)).toEqual({ sizes: [50, 50], preview: undefined, collapse: undefined });
-    expect(at(180)).toEqual({ sizes: [32, 68], preview: 'left', collapse: undefined });
-    expect(at(115)).toEqual({ sizes: [32, 68], preview: 'left', collapse: 'left' });
-    expect(at(800)).toEqual({ sizes: [64, 36], preview: undefined, collapse: undefined });
-    expect(at(985)).toEqual({ sizes: [64, 36], preview: 'right', collapse: 'right' });
+    expect(at(320)).toEqual({ sizes: [32, 68], preview: undefined, collapse: undefined });
+    // Right past the chat's minimum: no dead span before the preview.
+    expect(at(319)).toEqual({ sizes: [32, 68], preview: 'left', collapse: undefined });
+    expect(at(256)).toEqual({ sizes: [32, 68], preview: 'left', collapse: undefined });
+    expect(at(255)).toEqual({ sizes: [32, 68], preview: 'left', collapse: 'left' });
+    expect(at(640)).toEqual({ sizes: [64, 36], preview: undefined, collapse: undefined });
+    expect(at(641)).toEqual({ sizes: [64, 36], preview: 'right', collapse: undefined });
+    expect(at(705)).toEqual({ sizes: [64, 36], preview: 'right', collapse: 'right' });
   });
 
   it('retains the existing two-tool pairing when both tool pages are explicitly paired', () => {

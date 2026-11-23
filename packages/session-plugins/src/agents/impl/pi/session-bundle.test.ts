@@ -47,7 +47,7 @@ it('writes an identical Pi provider catalog for different custom selections shar
     name: connectionId,
     baseUrl: `${base}/${connectionId}/openai-responses`,
     protocol: 'openai-responses' as const,
-    models: [{ id: 'same-model', image: true, thinking: true, contextWindow: 32768, maxOutput: 4096 }],
+    models: [{ id: 'same-model', image: true, thinking: true, contextWindow: 32768, maxOutput: 4096 }, { id: 'undeclared' }, { id: 'text-only', image: false }],
   }));
   const materialize = (connectionId: string) => materializePiModelConfig('acp', {
     env: { GUGU_HOME: '/gugu' },
@@ -66,7 +66,7 @@ it('writes an identical Pi provider catalog for different custom selections shar
   expect(models(alpha).mode).toBe(0o600);
   expect(models(alpha).content).not.toContain('local-token');
   expect(JSON.parse(models(alpha).content).providers).toMatchObject({
-    'gugu-alpha': { baseUrl: piProviders[0]!.baseUrl, models: [{ id: 'same-model', maxTokens: 4096, reasoning: true, input: ['text', 'image'] }] },
+    'gugu-alpha': { baseUrl: piProviders[0]!.baseUrl, models: [{ id: 'same-model', maxTokens: 4096, reasoning: true, input: ['text', 'image'] }, { id: 'undeclared', input: ['text', 'image'] }, { id: 'text-only', input: ['text'] }] },
     'gugu-beta': { baseUrl: piProviders[1]!.baseUrl },
   });
   expect(settings(alpha).defaultProvider).toBe('gugu-alpha');

@@ -35,7 +35,6 @@ import { unreadAboveCount } from '../../lib/chatUnreadLocatorWindow'
 import { usePresentedUnreadEntry } from '../../lib/chatUnreadStreamNavigation'
 import { ChatTailNotice } from './ChatTailNotice'
 import { MessageLoadFailure } from './MessageLoadFailure'
-import { MessageListSkeleton } from './MessageListSkeleton'
 import { useChatSearch } from './useChatSearch'
 
 /**
@@ -357,7 +356,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
           data-testid="topic-split-messages"
           style={TOPIC_SPLIT_MESSAGES_STYLE}
         >
-          {loading && messages.length === 0 && <MessageListSkeleton />}
           {history.messagesError && !(loading && messages.length === 0) && <MessageLoadFailure error={history.messagesError}
             inline={messages.length > 0} onRetry={() => history.refreshMessages()} />}
           {!loading && !history.messagesError && rows.length === 0 && <div data-testid="topic-split-empty" style={mobile ? { flex: 1, display: 'grid', placeItems: 'center', padding: 16 } : TOPIC_SPLIT_EMPTY_STYLE}>

@@ -16,6 +16,7 @@ import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session
 import { db } from '@main/db/client';
 import { nativePublicationContext } from '@main/core/sessions/native-publication-host';
 import { queueNativeInput } from '@main/core/sessions/native-publication-journal';
+import { creationMessageId } from '@main/core/sessions/session-life-creation';
 import {
   applySessionRuntimeCommand,
   assertSessionSurfaceDeclared,
@@ -511,7 +512,7 @@ export class LocalSessionProvider implements SessionProvider {
       // person's line; automations and agent spawns do not, and a task card's first line lands as that card.
       if (!agentSession.isResuming && session.startupOrigin === 'session-page' && !session.taskChatId && initialPrompt?.trim()) {
         const context = await nativePublicationContext(session.id);
-        if (context) queueNativeInput(context, session.id, session.initialMessageId ?? `${session.id}:creation:0`, new Date().toISOString(), db);
+        if (context) queueNativeInput(context, session.id, creationMessageId(session, 0), new Date().toISOString(), db);
       }
       const effectiveInitialPrompt = spill?.prompt ?? startupPrompt;
       // 首句走 local-session 的家:❌ 不进启动参数,spawn 之后过了启动门再注入(见下面 `startupTurnText`)。
