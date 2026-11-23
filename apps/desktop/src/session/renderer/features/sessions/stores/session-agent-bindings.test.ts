@@ -9,12 +9,13 @@ const LOCAL: SessionShellAgentName = { conversationId: 'conv-local-1', displayNa
 const REMOTE: SessionShellAgentName = { conversationId: 'conv-d22-1', displayName: 'Codex 8', agentUserId: 'agent-d22-uuid' };
 
 function fakeSource(options: { all?: SessionShellAgentName[]; remote?: SessionShellAgentName[] } = {}) {
+  let accountListener: (() => void) | null = null;
   let identityListener: ((event: SessionShellAgentName) => void) | null = null;
   let remoteListener: (() => void) | null = null;
   let directoryListener: (() => void) | null = null;
   let remote = options.remote ?? [];
   const source: SessionAgentBindingsSource = {
-    readAll: () => Promise.resolve(options.all ?? []),
+    readAll: vi.fn(() => Promise.resolve(options.all ?? [])),
     readRemote: () => remote,
     onRemoteChange: (cb) => {
       remoteListener = cb;
@@ -32,9 +33,18 @@ function fakeSource(options: { all?: SessionShellAgentName[]; remote?: SessionSh
       },
       ensure: () => undefined,
     }),
+    onAccountChange: (cb) => {
+      accountListener = cb;
+      return () => (accountListener = null);
+    },
   };
   return {
     source,
+    /** 换了登录的人(本机那一份从此按新的人答)。 */
+    switchAccount: (all: SessionShellAgentName[]) => {
+      options.all = all;
+      accountListener?.();
+    },
     push: (event: SessionShellAgentName) => identityListener?.(event),
     /** 会话目录变了(那台机器的列表到了)。 */
     directoryChanged: (rows: SessionShellAgentName[]) => {
@@ -97,5 +107,48 @@ describe('sessionAgentBindings 覆盖别的机器上的会话 (#6264)', () => {
     names.start();
     names.start();
     expect(onRemote).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Sign-out returns to the login page in place: the next person's sidebar reads this machine's table as that person,
+// the same table a restart would read. A binding the previous person's run noted must not hide a task from the next.
+describe('sessionAgentBindings across a sign-out in place', () => {
+  it('the previous account\'s bindings are forgotten and the next start reads the table again', async () => {
+    const fake = fakeSource({ all: [] });
+    const names = new SessionAgentBindings(fake.source);
+    names.start();
+    await settle();
+    fake.push(LOCAL);
+    expect(names.bindingFor(LOCAL.conversationId)?.agentUserId).toBe(LOCAL.agentUserId);
+
+    fake.switchAccount([]);
+    expect(names.bindingFor(LOCAL.conversationId)).toBeUndefined();
+    expect(names.isLoaded).toBe(false);
+
+    names.start();
+    await settle();
+    expect(fake.source.readAll).toHaveBeenCalledTimes(2);
+    expect(names.isLoaded).toBe(true);
+    expect(names.bindingFor(LOCAL.conversationId)).toBeUndefined();
+  });
+
+  it('a read that comes back after the account changed does not land', async () => {
+    const fake = fakeSource({ all: [LOCAL] });
+    const names = new SessionAgentBindings(fake.source);
+    names.start();
+    fake.switchAccount([]);
+    await settle();
+
+    expect(names.bindingFor(LOCAL.conversationId)).toBeUndefined();
+    expect(names.isLoaded).toBe(false);
+  });
+
+  it('start stays idempotent for one account: no second read', async () => {
+    const fake = fakeSource({ all: [LOCAL] });
+    const names = new SessionAgentBindings(fake.source);
+    names.start();
+    names.start();
+    await settle();
+    expect(fake.source.readAll).toHaveBeenCalledTimes(1);
   });
 });
