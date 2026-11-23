@@ -82,8 +82,8 @@ export async function prepareSubscriptionMigration(providerId: string): Promise<
  *
  * 1. 有会话正在干活就先不切 —— 停掉它会丢掉这一轮;用户看过提示仍要切(`stopBusySessions`)就连它们一起关掉。
  *    额度用完正是要切号的时候,这时手上的回合本来也跑不下去,所以拒绝必须带着一键关掉的出路;
- * 2. 先停掉其余在跑的这一家的会话,再换凭据。旧进程活着时会原地刷新 token、把旧账号写回活动根,
- *    换进去的新账号就被它盖掉了;它也不会自己认出换了人;
+ * 2. 先停掉其余在跑的会话，下一次启动读取新选择。Codex 的凭据留在各账号目录，
+ *    Claude 的旧进程仍需要先退出，避免它刷新时覆盖共享目录里的新登录。
  * 3. 停掉的会话放回「重启之后还没打开过」的样子,下一条消息用新订阅接着原对话跑。
  */
 export async function switchSubscription(
