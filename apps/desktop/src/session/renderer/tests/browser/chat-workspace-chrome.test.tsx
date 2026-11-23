@@ -112,7 +112,8 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   const neighbourBefore = neighbour().getBoundingClientRect().toJSON();
   await mode('empty');
   expect(inside('[data-chat-workspace-title]')?.textContent).toContain('聊天标题');
-  expect(inside('[data-chat-workspace-header]')?.getBoundingClientRect().height).toBe(44);
+  // The conversation's own head is the design's 56px capsule row (.capbar).
+  expect(inside('[data-chat-workspace-header]')?.getBoundingClientRect().height).toBe(56);
   expect(inside('[data-chat-workspace-header] [data-tab-label]')).toBeNull();
   expect(tool()).toBeNull();
   expect(page.getByRole('button', { name: '单独成窗' }).query()).toBeNull();
@@ -159,7 +160,8 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   const showButton = inside('button[aria-label="显示标签页"]')!;
   expect(showButton.getAttribute('aria-pressed')).toBe('false');
   expect(showButton.querySelector('svg')?.innerHTML).toBe(panelIcon);
-  expect(showButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 8 });
+  // Folded, the button sits on the capsule row's middle line (.capbar .rt: 28px box in the 56px row).
+  expect(showButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 14 });
   expect(getComputedStyle(showButton).borderRadius).toBe('8px');
   await until('the chat uses the full width of its own block', () => width(chat()), (size) => size === 800);
   // The tool goes out on the track and is out of reach once it lands.

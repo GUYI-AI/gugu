@@ -1127,6 +1127,12 @@
     align-items: flex-start;
   }
 
+  /* 对话卡片顶上是 56 高的胶囊栏(稿子 .capbar):收起右侧栏时那颗打开按钮和胶囊同一条中线、离卡片右缘 10(.capbar .rt)。 */
+  [data-chat-workspace-header]:not([data-chat-tool-shared], [data-chat-tool-cards]) {
+    --tab-strip-height: 56px;
+    --tabbar-actions-edge-gap: 10px;
+  }
+
   [data-chat-card-head],
   [data-chat-card] {
     margin-right: var(--chat-card-half-gap);
@@ -1148,6 +1154,7 @@
   [data-chat-workspace-header] [data-chat-tool-strip],
   [data-chat-workspace-header][data-chat-tool-shared] {
     --chat-tool-tab-height: 34px;
+    --tab-strip-inset-start: 8px;
     background: var(--muted);
     box-shadow: inset 0 -1px 0 var(--border);
   }
@@ -1166,12 +1173,13 @@
 
   [data-chat-workspace-header] [data-chat-tool-strip] [data-tab-active],
   [data-chat-workspace-header][data-chat-tool-shared] [data-tab-active] {
-    /* 和分段控件的选中块同一条规矩:不是浮层,不加阴影(tokens.css --listen-mode-active-shadow)。 */
     background: var(--tab-face);
+    box-shadow: 0 1px 2px color-mix(in oklab, var(--fg) 8%, transparent);
   }
 
   [data-chat-tool-card] {
-    margin-left: var(--chat-card-half-gap);
+    /* 分隔条那 1px 算在对话那一格里,工具卡片少让 1px,正文才和页签条左缘对齐。 */
+    margin-left: calc(var(--chat-card-half-gap) - 1px);
     margin-top: calc(var(--chat-tool-strip-height) - var(--chat-card-head-height));
     background: var(--tab-face);
     border-radius: 0 0 12px 12px;
