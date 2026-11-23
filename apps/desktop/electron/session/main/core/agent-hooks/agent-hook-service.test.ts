@@ -76,9 +76,12 @@ vi.mock('@main/core/agents/plugin-registry', () => ({
   isValidProviderId: vi.fn((value: unknown) => typeof value === 'string'),
 }));
 
+// No conversation row: the hook writes the reported id as reported (the row-owner rule is in agent-hook-session-id.db.test.ts).
 vi.mock('@main/db/client', () => ({
-  db: {},
+  db: { select: () => ({ from: () => ({ where: () => Promise.resolve([]) }) }) },
 }));
+
+vi.mock('@main/core/sessions/fork-capture', () => ({ captureExternalForks: vi.fn() }));
 
 describe('providerSupportsNativeStartHook', () => {
   it('detects providers that emit native start hooks', () => {
