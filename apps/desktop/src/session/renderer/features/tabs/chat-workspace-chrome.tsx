@@ -1,7 +1,7 @@
 import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Maximize2, MessageSquare, Minimize2, PanelRight } from '@/lib/icons';
+import { Maximize2, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
 import { folderItem } from '../chats/chat-tabs/chat-panel-item';
@@ -14,6 +14,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { PaneProvider } from './pane-context';
 import type { PaneLayoutStore } from './pane-layout-store';
 import { TabBar, TabStripShell } from './tab-bar';
+import { CHAT_TOOL_COMPACT_HEADER_MAX_WIDTH_PX } from './chat-tool-geometry';
 import { ChatWorkspaceTabContext } from './chat-workspace-context';
 
 export type ChatWorkspaceChromeProps = {
@@ -80,7 +81,6 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const full = mode === 'full';
   const toolsShown = full || mode === 'split';
   const sharedStrip = full || mode === 'split' && layout.narrow;
-  const conversationPresentation = layout.chatWorkspaceConversationPresentation;
   const chatActive = layout.activePaneId === chat.paneId;
   const divided = mode === 'split' && !!tools && !layout.narrow;
   const toolsFirst = divided && layout.groups[0] === tools;
@@ -108,7 +108,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       <PaneProvider group={tools} passive isFocusedPane={!sharedStrip || !chatActive}>
         <ChatWorkspaceTabContext.Provider value={{ role: 'tool', layout }}>
           <TabBar toolsOnly tabTrailingSlot={addTab}
-            leadingTabsSlot={sharedStrip && conversationPresentation !== 'bubble' ? conversationTab : undefined}
+            leadingTabsSlot={sharedStrip ? conversationTab : undefined}
             selectedTabId={sharedStrip ? chatActive ? tab?.tabId : tools.pane.resolvedActiveTabId : undefined}
             {...(toolsFirst || sharedStrip ? leadingProps : {})} />
         </ChatWorkspaceTabContext.Provider>
@@ -121,7 +121,6 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const toggleLabel = tabsVisible ? hide : show;
   const exit = translate('tabs.exitToolFullView');
   const maximize = translate('tabs.enterToolFullView');
-  const returnToChat = translate('tabs.returnToChat');
   return (
     <div ref={header} className="flex min-w-0 shrink-0 bg-tab-strip" data-chat-workspace-header={mode}>
       {toolsFirst && toolTabs}
@@ -129,13 +128,6 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       {!toolsFirst && toolTabs}
       <TabBarActionRow atWindowEdge={!!atWindowEdge}>
         {mode === 'empty' && <PaneProvider group={chat} passive isFocusedPane>{addTab}</PaneProvider>}
-        {/* Too narrow for the conversation tab beside the tools: its way back sits in this row, never over the page (an in-app browser page is a native view that would have to step aside under it). */}
-        {conversationPresentation === 'bubble' && (
-          <Button size="icon-sm" variant="ghost" data-testid="chat-workspace-bubble" title={returnToChat} aria-label={returnToChat}
-            onClick={() => layout.showChatWorkspaceConversation()}>
-            <MessageSquare className="size-3.5" />
-          </Button>
-        )}
         {tabsVisible && tools && !sharedStrip && (
           <Button size="icon-sm" variant="ghost" title={maximize} aria-label={maximize} onClick={() => layout.setChatToolLayout('full')}>
             <Maximize2 className="size-3.5" />
@@ -150,8 +142,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
         )}
         {full && (
           <Button size="sm" variant="ghost" className="gap-1 text-xs" title={exit} aria-label={exit} onClick={() => layout.setChatToolLayout('split')}>
-            {/* Narrow enough for the compact way back: icon only, like the tab strip's own exit (index.css), so the page tab keeps its name. */}
-            <Minimize2 className="size-3.5" />{conversationPresentation !== 'bubble' && exit}
+            {/* Narrow: icon only, like the tab strip's own exit (index.css), so the conversation and page tabs keep their names. */}
+            <Minimize2 className="size-3.5" />{(layout.dimensions?.width ?? Infinity) >= CHAT_TOOL_COMPACT_HEADER_MAX_WIDTH_PX && exit}
           </Button>
         )}
       </TabBarActionRow>
