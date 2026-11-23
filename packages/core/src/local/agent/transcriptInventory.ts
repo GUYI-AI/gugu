@@ -1,5 +1,4 @@
-import { JsonlFramer, readJsonlLines } from '../jsonl.mjs'
-import { createReadStream } from 'node:fs'
+import { JsonlFramer } from '../jsonl.mjs'
 import { open, readdir, realpath, stat } from 'node:fs/promises'
 import { basename, join, sep } from 'node:path'
 import type { JsonlSearchResult } from './runtimeInfo'
@@ -104,6 +103,28 @@ export async function readFirstLines(
     throw error
   } finally {
     await handle?.close()
+  }
+}
+
+/**
+ * The whole file, line by line, in positional 1 MiB blocks. A transcript can outgrow V8's maximum string length
+ * (~512 MiB), so it is never decoded as one string.
+ */
+async function* readAllLines(path: string, signal?: AbortSignal): AsyncGenerator<string> {
+  const buffer = Buffer.alloc(1024 * 1024)
+  const frames = new JsonlFramer()
+  const handle = await open(path, 'r')
+  try {
+    let position = 0
+    let bytesRead
+    while ((bytesRead = (await handle.read(buffer, 0, buffer.length, position)).bytesRead) > 0) {
+      signal?.throwIfAborted()
+      position += bytesRead
+      yield* frames.write(buffer.subarray(0, bytesRead))
+    }
+    yield* frames.end()
+  } finally {
+    await handle.close()
   }
 }
 
@@ -260,8 +281,7 @@ export async function readLocalTranscript(
   const spec = requireTranscriptSourceSpec(source)
   await assertPathInScanRoots(filePath, spec, options)
   options.signal?.throwIfAborted()
-  // Stream lines: a transcript can outgrow V8's maximum string length (~512 MiB), so it is never one string.
-  const lines = readJsonlLines(createReadStream(filePath, { signal: options.signal }))
+  const lines = readAllLines(filePath, options.signal)
   const turns: ImportedTranscriptTurn[] = []
   const digest = newDigest()
   const context: Pick<TranscriptContext, 'loaded' | 'nested' | 'refs'> = { loaded: [], nested: [], refs: [] }
