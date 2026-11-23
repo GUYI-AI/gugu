@@ -78,6 +78,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   innerSidebarEntry,
   local = false,
   appPanel = false,
+  unreachable = null,
   onBack,
 }: {
   device: Device
@@ -94,6 +95,11 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
    * view switcher is not offered there — the panel is the task's conversation, nothing else.
    */
   appPanel?: boolean
+  /**
+   * The desktop already found this machine not answering (SessionContentGate): what it says, naming the machine. The page
+   * then claims no answer before its own link has had one (❌ green dot + skeleton under a 「连接中」 strip).
+   */
+  unreachable?: string | null
   onBack: () => void
 }) {
   const { t } = useTranslation('main')
@@ -140,7 +146,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   useTimelineFailureNotice(`${device.device_id}/${session.conversationId}`, error, recovery)
   // The directory says a crashed / unplugged machine is online until its lease runs out (about two minutes): its not
   // answering is the earlier fact: the header says 「连接中」 (❌ 「设备离线」); the reads keep trying and the page comes back by itself.
-  const hostSilent = !local && online && link === 'lost' && (!error || remoteFailureKind(errorCode) === 'machine-unreachable')
+  const hostSilent = !local && online && (link === 'lost' || (unreachable !== null && link !== 'ok'))
+    && (!error || remoteFailureKind(errorCode) === 'machine-unreachable')
   const answering = online && !hostSilent
   // Header state (owner 11-08: 「连接中」/「设备离线」 in the header, ❌ a banner, ❌ 「未连接」). The directory saying
   // the machine is off and this page's link not answering are separate facts: only the first is 「设备离线」.
@@ -340,6 +347,13 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
                 <div className="gg-aw-placeholder" data-testid="agent-watch-waiting-record">{t('agentWatch.timeline.waitingRecord')}</div>
               </div>
             ) : <SessionChatLoading label={t('agentWatch.timeline.loading')} />
+          ) : !answering && !local ? (
+            /* Not answering and nothing to show: say so where the conversation would be, which machine and how to retry
+               (❌ an empty page; ❌ a toast over it). A directory-offline machine has nothing to retry: it comes back by itself. */
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center" data-testid="agent-watch-unreachable">
+              <div className="gg-aw-placeholder">{unreachable ?? translateSessionMessage('remoteWorkspace.noAnswer', { device: machineLabel(device) })}</div>
+              {online ? <Button variant="secondary" onClick={reload}>{tc('connection.retry')}</Button> : null}
+            </div>
           ) : null}
         />
       )}
