@@ -1140,6 +1140,7 @@
 
   [data-chat-tool-card] {
     margin: 0 8px 8px;
+    background: var(--tab-face);
     border-radius: 0 0 12px 12px;
     overflow: hidden;
     box-shadow: 0 0 0 0.5px var(--border-color);
