@@ -28,7 +28,7 @@ import type { FilePlace } from '@gugu/core/shared/ui/guguLink';
 import { prepareBackgroundBrowserPage } from '../../live-window/background-browser-page';
 import { opensInImageViewer } from '@/lib/imageViewer';
 import type { ViewBox } from '@shared/extensions/app-runtime-protocol';
-import { readFirstChunk, readWorkspaceFileBytes } from '../workspace-backend/read-workspace-bytes';
+import { beginWorkspaceRead, readWorkspaceFileBytes, type BegunRead } from '../workspace-backend/read-workspace-bytes';
 
 const sessionLog = rendererLogger('gugu-session');
 
@@ -150,7 +150,7 @@ async function openResolvedFileInPane(
  * person looks at): what an image opens in. `asked`: the path as asked, its place among the images an App page showed
  * (`among`, paths of this working copy, spelled as `asked` is); `origin`: the clicked picture on the window.
  */
-type ImageView = { projectId: string; workspaceId: string; asked: string; among?: string[]; origin?: ViewBox; first?: ReturnType<typeof readFirstChunk> };
+type ImageView = { projectId: string; workspaceId: string; asked: string; among?: string[]; origin?: ViewBox; first?: BegunRead };
 
 async function viewImages(resolvedPath: string, view: ImageView): Promise<void> {
   const { workingCopyImageItem, openViewerFromClick } = await import('@/lib/attachmentBytes');
@@ -158,7 +158,7 @@ async function viewImages(resolvedPath: string, view: ImageView): Promise<void> 
   const paths = at >= 0 ? view.among!.filter((path) => opensInImageViewer(path, null, undefined)) : [];
   const index = at >= 0 ? paths.indexOf(view.asked) : -1;
   const shown = index >= 0 ? paths.map((path, i) => (i === index ? resolvedPath : path)) : [resolvedPath];
-  // The asked image's first chunk, already on its way (`@@@first-chunk-early`), is taken by its first read only.
+  // The asked image's read, already begun (`@@@first-read-early`), is taken by its first read only.
   let first = view.first;
   const items = shown.map((path, i) => workingCopyImageItem(fileBaseName(path), () => {
     const begun = i === Math.max(0, index) ? first : undefined;
@@ -186,13 +186,11 @@ async function openSessionFile(
   const intent = options?.intent ?? 'navigate';
   const filePath = await expandHomeTildePath(rawFilePath);
   const namedInside = resolveEditorFilePath(workspace.path, filePath);
-  // @@@first-chunk-early - an image the viewer shows is read on its machine from its first chunk; that chunk is asked beside
-  // `fileExists`, not after it, so a file on another machine has its pixels a round trip sooner. Missing, a folder, or opened
-  // by an App: that one chunk was read for nothing.
+  // An image the viewer shows is begun beside `fileExists`, not after it (`@@@first-read-early`), so a file on another
+  // machine has its pixels a round trip sooner. Missing, a folder, or opened by an App: that one range was read for nothing.
   const first = namedInside !== null && !ask && opensInImageViewer(namedInside, null, intent)
-    ? readFirstChunk(projectId, provisioned.workspaceId, namedInside)
+    ? beginWorkspaceRead(projectId, provisioned.workspaceId, namedInside)
     : undefined;
-  first?.catch(() => undefined);
   // The machine says whether the file is in this working copy and in which spelling (`@@@canonical-path`): an absolute
   // path written through an alias (an old transcript's `accounts/<id>/…`) is inside although its letters are not, and
   // the tab is keyed on the machine's spelling, never on the one this link happened to carry.
