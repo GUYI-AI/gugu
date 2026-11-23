@@ -264,12 +264,6 @@ describe('the top: 创建智能体 and the 「+」 menu', () => {
 });
 
 describe('the sidebar head', () => {
-  // Written the names' opacity on its own element (followNames), or inside one that is.
-  const hiddenWithTheNames = (element: Element) => {
-    for (let node: Element | null = element; node; node = node.parentElement) if ((node as HTMLElement).style?.opacity) return true;
-    return false;
-  };
-
   it('collapse: chevrons only, the tooltip says what it does with the shortcut, and it runs the collapse action', async () => {
     await render(<SidebarOneListHead />);
     const fold = q('sidebar-fold')!;

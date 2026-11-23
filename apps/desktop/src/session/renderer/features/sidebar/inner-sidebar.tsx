@@ -43,7 +43,7 @@ import {
   type InnerSidebarView,
 } from './inner-sidebar-anchor';
 import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarCrowded, setInnerSidebarFolded } from './inner-sidebar-fold';
-import { chatScope, chatViewOf, isProjectChat, listedProjectIds, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
+import { chatScope, chatViewOf, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import {
   InnerHeadRowLayout,
@@ -116,7 +116,6 @@ export const InnerSidebar = observer(function InnerSidebar() {
   const { translate } = useSessionMessages();
   const summaries = useChatSummaries();
   const families = sidebarFamilies.get();
-  const agents = families.entries;
   const view = currentView(summaries);
   // 这一屏挂在哪,只认这一屏自己记着的入口(screen-layout `entry`):从群 / 项目里点开的智能体、切走再回来摆回的那一屏,都挂回那个群。
   const next = followInnerSidebar(

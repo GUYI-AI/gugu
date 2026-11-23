@@ -48,18 +48,18 @@ describe('which topics the inner sidebar shows', () => {
     expect(ids(topicsOfChat(topics, 'group'))).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 'news', 'calls-me'])
   })
 
-  it('level one: the latest 5 by activity, and every unread one in its own place (as the chat list sub-rows)', () => {
+  it('level one: at most 5, unread ones first, then the latest by activity (yangchichi msg:616413ff)', () => {
     const level = innerSidebarTopicRows(topicsOfChat(topics, 'group'), { all: false })
     expect(INNER_SIDEBAR_TOPIC_LIMIT).toBe(5)
-    expect(ids(level.shown)).toEqual(['t0', 't1', 't2', 't3', 't4', 'news', 'calls-me'])
-    expect(level).toMatchObject({ hidden: 2, calling: 1 })
+    expect(ids(level.shown)).toEqual(['news', 'calls-me', 't0', 't1', 't2'])
+    expect(level).toMatchObject({ hidden: 4, calling: 1 })
   })
 
-  it('unread topics are shown even past the limit', () => {
+  it('unread topics never break the limit (a project whose topics were never opened showed them all)', () => {
     const many = Array.from({ length: 7 }, (_, index) => topic(`call-${index}`, index, unread(1, 1)))
     const level = innerSidebarTopicRows([...many, topic('quiet', 8)], { all: false })
-    expect(ids(level.shown)).toEqual(ids(many))
-    expect(level).toMatchObject({ hidden: 1, calling: 7 })
+    expect(ids(level.shown)).toEqual(ids(many.slice(0, 5)))
+    expect(level).toMatchObject({ hidden: 3, calling: 7 })
   })
 
   it('All = every topic, newest activity first, the same order as the chat list', () => {
@@ -79,7 +79,7 @@ describe('which topics the inner sidebar shows', () => {
   it('a pinned topic goes above every unpinned one, however old, and back to its place when unpinned', () => {
     const pinned = topics.map((row) => (row.id === 't6' || row.id === 'calls-me' ? { ...row, is_pinned: true } : row))
     expect(ids(topicsOfChat(pinned, 'group'))).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 't3', 't4', 't5', 'news'])
-    expect(ids(innerSidebarTopicRows(topicsOfChat(pinned, 'group'), { all: false }).shown)).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 'news'])
+    expect(ids(innerSidebarTopicRows(topicsOfChat(pinned, 'group'), { all: false }).shown)).toEqual(['calls-me', 't6', 'news', 't0', 't1'])
     const unpinned = pinned.map((row) => ({ ...row, is_pinned: false }))
     expect(ids(topicsOfChat(unpinned, 'group'))).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 'news', 'calls-me'])
   })
@@ -106,11 +106,11 @@ describe('the inner sidebar topics slot', () => {
   })
   const rows = () => Array.from(document.querySelectorAll<HTMLElement>('[data-inner-sidebar-topics] [data-topic-row]')).map((row) => row.dataset.topicRow)
 
-  it('draws level one into the slot, follows All, and opens a topic the existing way', async () => {
+  it('draws level one into the slot (All opens the topics page in the main area, the slot stays) and opens a topic the existing way', async () => {
     await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...topics] }, contacts: {} })
     const slot = document.body.appendChild(document.createElement('div'))
     await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
-    expect(rows()).toEqual(['t0', 't1', 't2', 't3', 't4', 'news', 'calls-me'])
+    expect(rows()).toEqual(['news', 'calls-me', 't0', 't1', 't2'])
     // #2548 a topic that calls me (3 unread, 1 addressed) says 「@1」 in red; one with news that does not call me (2 unread,
     // 0 addressed) only wears the grey dot, without a number; one with nothing new wears nothing.
     const mark = (id: string) => {
@@ -122,7 +122,7 @@ describe('the inner sidebar topics slot', () => {
     expect(mark('t0')).toBeNull()
 
     await act(async () => setInnerSidebarTopicsAll('group'))
-    expect(rows()).toHaveLength(9)
+    expect(rows(), 'the column keeps level one: All is a page of its own').toHaveLength(5)
     await act(async () => setInnerSidebarTopicsAll(null))
 
     await clickElement(slot.querySelector('[data-topic-row="t1"]') as HTMLElement)

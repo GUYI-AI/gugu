@@ -29,7 +29,7 @@ export function InnerTopicsPage({ chatId }: { chatId: string }) {
           <IconButton size="sm" aria-label={t('common.back')} onClick={() => setInnerSidebarTopicsAll(null)}>
             <ChevronLeft />
           </IconButton>
-          <span className="flex items-center gap-3 text-[13px] text-[var(--text-tertiary)]" data-topics-page-head="">
+          <span className="flex items-center gap-3 text-[length:var(--font-caption)] text-[var(--text-tertiary)]" data-topics-page-head="">
             <span>{t('history.tabs.topics')}</span>
             <span className="tabular-nums">{topics.length}</span>
           </span>
@@ -43,7 +43,7 @@ export function InnerTopicsPage({ chatId }: { chatId: string }) {
           autoFocus
         />
         {matches === 0 ? (
-          <p className="px-2 py-1 text-[12.5px] text-[var(--text-tertiary)]">{t(needle ? 'history.empty.searchTopics' : 'history.empty.topics')}</p>
+          <p className="px-2 py-1 text-[length:var(--font-caption)] text-[var(--text-tertiary)]">{t(needle ? 'history.empty.searchTopics' : 'history.empty.topics')}</p>
         ) : (
           <InnerSidebarTopics chatId={chatId} page query={query} />
         )}

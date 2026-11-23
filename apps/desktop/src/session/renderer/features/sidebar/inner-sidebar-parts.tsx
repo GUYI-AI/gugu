@@ -18,7 +18,7 @@ import {
 // #2548 内层侧栏里几样零件:群 / 项目那一列(inner-sidebar.tsx)与示例项目那一列(sample-inner-sidebar.tsx)画同一个样子。
 
 /** 分区里什么都没有时那一行字。 */
-export const innerSectionEmptyClass = 'ms-2 px-2 py-1 text-[12.5px] leading-[18px] text-foreground-passive';
+export const innerSectionEmptyClass = 'ms-2 px-2 py-1 text-[length:var(--font-caption)] leading-[18px] text-foreground-passive';
 
 /**
  * 头一行:这个群 / 项目自己 —— 头像 + 名字(+ 标签,示例的「示例」),点它做什么由调用方给(群 / 项目 = 回到它的主群聊)。

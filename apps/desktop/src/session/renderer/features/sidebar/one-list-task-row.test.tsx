@@ -38,14 +38,14 @@ afterEach(() => {
   host.remove();
 });
 
-it('is a two-line list row: the session\'s avatar and status, its title, when it was last used; open = selected', async () => {
+it('is a two-line list row: the session\'s avatar and status, its title (no time column: 界面减法 #3 hides the time); open = selected', async () => {
   await act(async () => root.render(<OneListTaskRow projectId="workspace" sessionId="pty-1" />));
   const row = host.querySelector<HTMLElement>('[data-slot="list-row"]')!;
   expect(row.dataset.taskRow).toBe('pty-1');
   expect(row.dataset.selected).toBe('true');
   expect(row.querySelector('.gg-list-row-leading [data-avatar="pty-1"]')!.getAttribute('data-tone')).toBe('running');
   expect(row.querySelector('.gg-list-row-title')!.textContent).toBe('Fix the build');
-  expect(row.querySelector('.gg-list-row-meta')!.textContent).not.toBe('');
+  expect(row.querySelector('.gg-list-row-meta'), 'the one list shows no time').toBeNull();
   expect(row.querySelectorAll('.gg-list-row-line')).toHaveLength(2);
 });
 

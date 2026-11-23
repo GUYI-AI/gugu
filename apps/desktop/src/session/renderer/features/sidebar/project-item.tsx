@@ -117,7 +117,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
  * not loaded yet): its row is still there and opens its project group (openChatOnScreen, as a group row of the list does).
  * Its face is its group's.
  */
-const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, activeAt, unavailable }: { projectId: string; chatId: string; name: string; activeAt: string | null; unavailable?: UnavailableProject }) {
+const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, unavailable }: { projectId: string; chatId: string; name: string; activeAt: string | null; unavailable?: UnavailableProject }) {
   const { translate } = useSessionMessages();
   const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
   const open = (beside: boolean) => {
