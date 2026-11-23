@@ -46,6 +46,32 @@ describe('ssh-link-ipc tap: an active close reaches whoever listens on that link
     expect(await openForRenderer()).toEqual({ ok: false, reason: 'updating' })
     expect(open).toHaveBeenCalledTimes(2)
   })
+  it('a tunnel link the machine’s server refuses steps the tunnel aside; only a failed SSH path rebuilds it', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
+    const tunnels = {
+      linkMachine: vi.fn(() => ({ target: { destination: 'tunnel', display: 'tunnel' }, accountUserId: 'owner-1' })),
+      reportBroken: vi.fn(), linkRefused: vi.fn(), linkOpened: vi.fn(),
+    }
+    const links = registerSshLinkIpc({
+      ipcMain: { handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) => handlers.set(channel, fn) } as never,
+      getWindow: () => null, currentUserId: async () => 'owner-1',
+      store: { list: () => [], onChange: () => () => undefined } as never,
+      tunnels,
+    })
+    const open = vi.spyOn(links, 'open')
+    const openForRenderer = () => handlers.get(SSH_LINK_CHANNELS.open)!({}, 'tunnel-device')
+    open.mockResolvedValueOnce({ ok: false, reason: 'notInstalled', detail: 'no such file' })
+    expect(await openForRenderer()).toEqual({ ok: false, reason: 'notInstalled', detail: 'no such file', via: 'tunnel' })
+    expect(tunnels.linkRefused).toHaveBeenCalledExactlyOnceWith('tunnel-device', 'notInstalled: no such file')
+    open.mockResolvedValueOnce({ ok: false, reason: 'unreachable', detail: 'timed out' })
+    await openForRenderer()
+    expect(tunnels.reportBroken).toHaveBeenCalledExactlyOnceWith('tunnel-device')
+    open.mockResolvedValueOnce({ ok: true })
+    expect(await openForRenderer()).toEqual({ ok: true })
+    expect(tunnels.linkOpened).toHaveBeenCalledExactlyOnceWith('tunnel-device')
+    expect(tunnels.linkRefused).toHaveBeenCalledTimes(1)
+  })
+
   it('file reads use only the current owner’s real SSH mapping, excluding tunnels', async () => {
     let current = 'owner-1'
     const machines = [{ deviceId: 'ssh-device', ownerUserId: 'owner-1' }, { deviceId: 'foreign-device', ownerUserId: 'owner-2' }]
@@ -54,7 +80,7 @@ describe('ssh-link-ipc tap: an active close reaches whoever listens on that link
       store: { list: () => machines, onChange: () => () => undefined } as never,
       currentUserId: async () => current,
 
-      tunnels: { linkMachine: vi.fn(() => ({ target: { destination: 'tunnel', display: 'tunnel' }, accountUserId: 'owner-1' })), reportBroken: vi.fn() },
+      tunnels: { linkMachine: vi.fn(() => ({ target: { destination: 'tunnel', display: 'tunnel' }, accountUserId: 'owner-1' })), reportBroken: vi.fn(), linkRefused: vi.fn(), linkOpened: vi.fn() },
     })
     const open = vi.spyOn(links, 'open')
     // Owned = this account's own SSH mapping, open or not (a read opens it again: one path, never a relay copy).

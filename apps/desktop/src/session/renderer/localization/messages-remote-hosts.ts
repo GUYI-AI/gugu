@@ -124,6 +124,7 @@ export const enUSRemoteHostMessages = {
   'remoteWorkspace.tunnel.relayDown': "This machine cannot reach the Remote Tunnel relay. Retrying automatically.",
   'remoteWorkspace.tunnel.visitorFailed': "This computer cannot reach the Remote Tunnel relay. Retrying automatically.",
   'remoteWorkspace.tunnel.sshFailed': "Remote Tunnel is up but could not sign in to this machine. Retrying automatically.",
+  'remoteWorkspace.tunnel.linkRefused': "Remote Tunnel is up, but Gugu on this machine did not accept the connection. Using Gugu Cloud and retrying automatically.",
   'remoteWorkspace.tunnel.local': 'Gugu on this computer is missing the Remote Tunnel component. Update Gugu.',
   'remoteWorkspace.tunnel.unreachable': "Could not reach this machine through Gugu cloud. Retrying automatically.",
   'remoteWorkspace.serverTooOld':
@@ -293,6 +294,7 @@ export const zhCNRemoteHostMessages: Record<RemoteHostMessageKey, string> = {
   'remoteWorkspace.tunnel.relayDown': '此设备无法连接远程隧道中转，正在自动重试。',
   'remoteWorkspace.tunnel.visitorFailed': '本机无法连接远程隧道中转，正在自动重试。',
   'remoteWorkspace.tunnel.sshFailed': '远程隧道已连通，但无法登录此设备，正在自动重试。',
+  'remoteWorkspace.tunnel.linkRefused': '远程隧道已连通，但此设备上的咕咕没有接受连接。先经咕咕云连接，并自动重试。',
   'remoteWorkspace.tunnel.local': '本机的咕咕缺少远程隧道组件，请更新咕咕。',
   'remoteWorkspace.tunnel.unreachable': '无法通过咕咕云连接此设备，正在自动重试。',
   'remoteWorkspace.serverTooOld':

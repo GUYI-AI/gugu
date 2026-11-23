@@ -2790,6 +2790,7 @@ function onHumanAuthSessionChanged(): void {
     createLogger('device-runtime/auth').warn({ error: String(error) }, 'Realtime account auth update failed')
   })
   deviceRuntimeHost?.notifyAuthChanged()
+  tunnelMachines?.accountChanged()
   deviceProjectsPublisher?.notify()
   // 登录一到就认本机(认出即通知窗口重读设备表);登出时答 null,下次登录认出来会再通知一次。
   void localDeviceId()
