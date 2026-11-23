@@ -210,7 +210,7 @@ export function GroupMembersSection({
       </>
     )
   } else if (!mobileShell) { // 桌面:第 16 版「详情」页(GroupDetailsMain);手机整页照旧,左上返回 = 关。
-    content = <GroupDetailsMain chat={chat} name={groupName} settings={settings} manager={viewerIsManager} memberIds={unifiedMembers.map((member) => member.id)} total={totalMembers} avatar={{ uploading: avatarUploading, onFile: handleAvatarFile, onReset: handleAvatarReset }} onRename={handleRename} onOpenPage={push} onOpenText={openTextPage} onClose={onClose} onClearMessages={onClearMessages} onSetNotificationLevel={onSetNotificationLevel} onTogglePinned={onTogglePinned} exit={canExit ? { owner: viewerRole === 'owner', busy, confirming: confirmExit, setConfirming: setConfirmExit, run: () => { void handleExit() } } : null} errorLine={errorLine} />
+    content = <GroupDetailsMain chat={chat} name={groupName} settings={settings} manager={viewerIsManager} memberIds={unifiedMembers.map((member) => member.id)} total={totalMembers} people={snapshot ? snapshot.humans.length : null} agents={snapshot ? snapshot.agents.length : null} avatar={{ uploading: avatarUploading, onFile: handleAvatarFile, onReset: handleAvatarReset }} onRename={handleRename} onOpenPage={push} onOpenText={openTextPage} onClose={onClose} onClearMessages={onClearMessages} onSetNotificationLevel={onSetNotificationLevel} onTogglePinned={onTogglePinned} exit={canExit ? { owner: viewerRole === 'owner', busy, confirming: confirmExit, setConfirming: setConfirmExit, run: () => { void handleExit() } } : null} errorLine={errorLine} />
   } else {
     content = (
       <>

@@ -46,7 +46,7 @@ const BoundCard = observer(function BoundCard({ projectId, sessionId, agentId }:
         </span>
       </span>
       <span className="flex items-center gap-2 px-3 py-2.5 text-[13px]">
-        <span className={`size-[7px] shrink-0 rounded-full ${live.connected ? 'bg-[var(--live)]' : 'bg-[var(--faint-fg)]'}`} />
+        <span className={`size-[7px] shrink-0 rounded-full ${live.connected ? 'bg-[var(--green)]' : 'bg-[var(--faint-fg)]'}`} />
         <span className="min-w-0 flex-1 truncate">{status}</span>
         <Maximize2 className="size-3.5 text-[var(--muted-fg)]" />
       </span>

@@ -743,6 +743,11 @@ export default {
       "uploading": "上传中"
     }
   },
+  "groupDetails": {
+    "searchHistory": "搜索聊天记录",
+    "searchChat": "搜索对话",
+    "memberSummary": "{{people}} 人 · {{agents}} 个智能体"
+  },
   "conversationCard": {
     "rename": "改名",
     "notifications": "消息通知",

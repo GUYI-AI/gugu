@@ -745,6 +745,11 @@ export default {
       "uploading": "Uploading"
     }
   },
+  "groupDetails": {
+    "searchHistory": "Search",
+    "searchChat": "Search",
+    "memberSummary": "{{people}} people · {{agents}} agents"
+  },
   "conversationCard": {
     "rename": "Rename",
     "notifications": "Notifications",

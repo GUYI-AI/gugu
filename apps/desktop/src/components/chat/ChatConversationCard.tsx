@@ -28,9 +28,19 @@ export function ChatConversationCard({ chat, name, avatar, isAgent, onClose }: {
   const room = isRoomChat(chat.kind)
   const { settings, update } = useGroupChatSettings(room ? chat.id : null)
   const findHotkey = getEffectiveHotkey('app.find', getAppSettingValueSnapshot('keyboard'))
+  const { identitiesById } = useChatStore('identitiesById')
+  const members = chat.member_user_ids ?? []
+  // 设计稿名片第二行(群 / 话题):三个叠着的头像 + 「N 名成员」。私聊没有这一行。
+  const subtitle = room && members.length > 0 ? <>
+    <span className="flex ps-1.5">{members.slice(0, 3).map((id) => <span key={id} className="-ms-1.5 flex rounded-full ring-[1.5px] ring-[var(--popover)]">
+      <Avatar name={identitiesById[id]?.display_name ?? ''} avatarUrl={identitiesById[id]?.avatar ?? null} seed={id} size={18} />
+    </span>)}</span>
+    {t('group.settings.memberCount', { count: members.length })}
+  </> : null
   return <ConversationCard
     avatar={<Avatar name={name} avatarUrl={avatar} seed={room ? chat.id : chat.peer_user_id ?? undefined} isAgent={isAgent} harnessBadge={false} variant={room ? 'group' : 'default'} size={44} still />}
     name={name}
+    subtitle={subtitle}
     onRename={room && settings?.can_manage ? async (next) => { if (!(await update({ name: next }))) throw new Error('group rename failed') } : null}
     notify={{ on: (chat.notification_level ?? 'all') !== 'none', set: (on) => void setChatNotificationLevel(chat.id, on ? 'all' : 'none') }}
     action={{ icon: <Search size={16} />, label: t(room ? 'header.searchHistory' : 'header.searchChat'), testId: 'conversation-card-search',
