@@ -35,7 +35,7 @@ export function ChatSettingsPanel({ mobile = false, ...body }: ChatSettingsPanel
   return (
     <div data-testid="chat-settings-panel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {activeChat.kind === 'group' || !mobile ? null : <SettingsPageHead title={t('chatArea.settings.conversation')} onClose={onClose} mobile />}
-      {mobile ? null : <ChatDetailsQuickActions chatId={activeChat.id} isGroup={activeChat.kind === 'group'} />}
+      {mobile || activeChat.kind === 'group' ? null : <ChatDetailsQuickActions chatId={activeChat.id} isGroup={false} />}
       <ChatRightPanelBody {...body} />
     </div>
   )

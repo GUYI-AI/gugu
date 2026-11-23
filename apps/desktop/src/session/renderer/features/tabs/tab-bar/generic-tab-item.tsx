@@ -14,6 +14,7 @@ import type { TabCommand } from './tab-commands';
 import { TabContextMenu } from './tab-context-menu';
 import { ChatWorkspaceTabContext } from '../chat-workspace-context';
 import { Popover } from '@/components/ui/Popover';
+import { CONVERSATION_CAPSULE_CLASS } from './conversation-capsule';
 
 /** Props for GenericTabItem — aligns with TabBarItemProps<any> for convenience. */
 export interface GenericTabItemProps {
@@ -110,9 +111,11 @@ export const GenericTabItem = observer(function GenericTabItem({
   );
 
   const [cardOpen, setCardOpen] = useState(false);
+  // 第 16 版:有名片的页签(我的 agent),它的动作在名片和详情里;页签菜单(⋯ / 右键)只留单独成窗、关闭页签这些页签自己的事。
+  const menuCommands = card ? [] : kindCommands;
   const cardPopover = card ? (
     <Popover.Root open={cardOpen} modal={false} onOpenChange={setCardOpen}>
-      {cardOpen ? <Popover.Portal><Popover.Positioner side="bottom" align="start" sideOffset={8} collisionPadding={8}
+      {cardOpen ? <Popover.Portal><Popover.Positioner side="bottom" align={workspaceRole === 'capsule' ? 'center' : 'start'} sideOffset={8} collisionPadding={8}
         anchor={() => document.querySelector(`[data-tabid="${CSS.escape(tab.tabId)}"]`)}>
         <Popover.Popup aria-label={label}>{card(() => setCardOpen(false))}</Popover.Popup>
       </Popover.Positioner></Popover.Portal> : null}
@@ -178,32 +181,53 @@ export const GenericTabItem = observer(function GenericTabItem({
       />
     ) : undefined;
 
+  if (workspaceRole === 'capsule') {
+    return (
+      <>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu>
+        <div className="flex h-full min-w-0 flex-1 items-center justify-center">
+          <div role="button" tabIndex={0} data-testid="conversation-capsule" data-chat-workspace-title="" data-tabid={tab.tabId} title={tooltip ?? label}
+            className={CONVERSATION_CAPSULE_CLASS}
+            onClick={card ? () => setCardOpen((open) => !open) : undefined}
+            onKeyDown={card ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setCardOpen((open) => !open); } } : undefined}
+            onDoubleClick={renameOnDoubleClick && !isEditing && !card ? startRename : undefined}>
+            {editableTitle ?? <span className="truncate">{label}</span>}
+          </div>
+        </div>
+      </TabContextMenu>
+      {cardPopover}
+    </>
+    );
+  }
+
   if (workspaceRole === 'title') {
     return (
-      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
+      <>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu>
         <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title="" data-tabid={card ? tab.tabId : undefined}
           onClick={card ? () => setCardOpen((open) => !open) : undefined}
           onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}>
           {preSlot}
           {editableTitle ?? <span className="truncate" title={tooltip ?? label}>{label}</span>}
           {statusSlot}
-          {cardPopover}
         </div>
       </TabContextMenu>
+      {/* Outside the title: React bubbles a click in the portaled card up to its parent, which would reopen it. */}
+      {cardPopover}
+    </>
     );
   }
 
   if (workspace?.role === 'conversation') {
     const select = () => { workspace.layout.showChatWorkspaceConversation(); pane.focusActiveContent(); };
-    return <TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
-      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
+    return <><TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu>
         <TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
           preSlot={preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={openCardOr(select)}
           onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}
           onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }} />
       </TabContextMenu>
-      {cardPopover}
-    </TabSlot>;
+    </TabSlot>{cardPopover}</>;
   }
 
   const base = tooltip ?? label;
@@ -216,12 +240,13 @@ export const GenericTabItem = observer(function GenericTabItem({
   // 把「+」顶出滚动区裁掉(owner:「这个也得修,还挺严重」);同时 .session-tab-slot 之间的
   // 短分隔线是**相邻兄弟**选择器(index.css),被 trigger 隔开后从来没画出来过。
   return (
+    <>
     <DraggableTab id={tab.tabId} pairRole={tab.pairRole}>
       {/* 并排的一对:两枚中间那根线指上去就是「拆开」(spec session-page「并排」)。 */}
       {tab.pairRole === 'end' ? (
         <PairSeparator label={translate('tabs.separatePair')} onSeparate={() => host.separatePair()} />
       ) : null}
-      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands}>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands}>
         <TabChip
           isActive={tab.isActive}
           // 并排时两枚都亮着,点着的那一边标题深、另一边浅 —— 与「哪一格握着焦点」同一种明暗(spec session-page「并排」)。
@@ -264,8 +289,9 @@ export const GenericTabItem = observer(function GenericTabItem({
             表格而不是页签。Chrome 的分隔线是 16px 短竖线、且自己或邻居被选中/悬浮时消失 ——
             判据在兄弟节点上，只能用 CSS 表达，见 index.css 的 .session-tab-slot。 */}
       </TabContextMenu>
-      {cardPopover}
     </DraggableTab>
+    {cardPopover}
+    </>
   );
 });
 

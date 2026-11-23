@@ -312,7 +312,7 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
       await openDetailsFromCapsule()
       const info = infoTabOf('group-1')!
       await act(async () => { readShellSlots()!.setSlot(chatTabSlotKey('group-1', info.tabId), infoSlot) })
-      await clickElement([...infoSlot.querySelectorAll<HTMLElement>('[data-testid="chat-details-quick-actions"] button')].find((item) => item.textContent === '文件')!)
+      await clickElement(infoSlot.querySelector<HTMLElement>('[data-testid="chat-details-folder"]')!)
       const shown = shownPanelTab('group-1')!
       folder = shown.tabId
       expect(isFolderItem(shown.item)).toBe(true)

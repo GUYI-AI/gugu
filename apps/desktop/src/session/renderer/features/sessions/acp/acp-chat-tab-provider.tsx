@@ -13,7 +13,7 @@ import { sessionRegistry } from '../stores/session-registry';
 import { acpChatResources } from './acp-chat-resources';
 import { confirmCloseSessionTab } from '../close-session-tab-flow';
 import { AcpChatTabResource } from './acp-chat-tab-resource';
-import { SessionConversationCard } from '../session-conversation-card';
+import { LazySessionConversationCard } from '../session-conversation-card-lazy';
 import { useSessionTabCommands } from '../view/session-actions';
 
 export interface AcpChatState {
@@ -69,7 +69,7 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
       renameOnDoubleClick={!!session && !store.isTransient}
       renameValue={rawTitle}
       renameMaxLength={MAX_SESSION_TITLE_LENGTH}
-      card={sessionCommands.length > 0 ? (close) => <SessionConversationCard sessionId={store.sessionId} commands={sessionCommands} onClose={close} /> : undefined}
+      card={sessionCommands.length > 0 ? (close) => <LazySessionConversationCard page={ctx as SessionTabContext} sessionId={store.sessionId} commands={sessionCommands} onClose={close} /> : undefined}
     />
   );
 });
