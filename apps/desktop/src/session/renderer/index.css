@@ -1154,8 +1154,8 @@
   [data-chat-workspace-header] [data-chat-tool-strip],
   [data-chat-workspace-header][data-chat-tool-shared] {
     --chat-tool-tab-height: 34px;
-    /* 页签条自己(TabBar 根、头这一行)用的是 bg-tab-strip:就地把这个色换成稿子的浅灰,❌ 两层灰叠着。 */
-    --color-tab-strip: var(--muted);
+    /* 页签条自己(TabBar 根、头这一行)的 bg-tab-strip 直接读 --tab-strip:就地换成稿子的浅灰,❌ 两层灰叠着。 */
+    --tab-strip: var(--muted);
     background: var(--muted);
     box-shadow: inset 0 -1px 0 var(--border);
   }
