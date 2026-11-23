@@ -16,7 +16,6 @@ import { presentationOfDisplayStatus } from '../../../support/agentDisplayStatus
 import { InitialResizeObserver } from '../../../support/initialResizeObserver'
 import type { ChatContextValue } from '../../../../apps/desktop/src/store/chatContext'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
-import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 
 
 
@@ -491,9 +490,8 @@ describe('#5856 从一条消息开话题', () => {
     expect(harness.container.querySelector('[data-testid="group-thread-panel"]')).toBeNull()
   })
 
-  // 链接、通知、App 点名、⌘K 面板都只是把这条对话摆上来(桌面摆成一块,手机聊天页设成当前对话);摆上来的是话题时,
-  // 在这里换成源对话 + 话题分栏 —— 只这一处。
-  it.each([['in a block', false], ['on the phone chat page', true]])('%s, a topic put up as the chat becomes its source chat with the topic as the split', async (_where, mobile) => {
+  // 链接、通知、App 点名、⌘K 面板都只是把这条对话摆上来:话题和群一样是一条主会话,摆上来就是它自己(#62)。
+  it.each([['in a block', false], ['on the phone chat page', true]])('%s, a topic put up as the chat stays the main conversation', async (_where, mobile) => {
     const setActiveChatId = vi.fn()
     await renderChatArea({
       activeChat: chat({ id: 'topic-1', kind: 'topic', name: '登录页白屏', source_chat_id: 'chat-1' }),
@@ -502,7 +500,7 @@ describe('#5856 从一条消息开话题', () => {
       messages: [],
       mobile,
     })
-    expect(setActiveChatId).toHaveBeenCalledWith('chat-1')
-    expect(drainTopicSplitRequest('chat-1')).toMatchObject({ chatId: 'topic-1', name: '登录页白屏', sourceChatId: 'chat-1' })
+    expect(setActiveChatId).not.toHaveBeenCalled()
+    expect(harness.container.querySelector('[data-chat-surface="topic-1"]')).not.toBeNull()
   })
 })

@@ -23,7 +23,6 @@ import { ToastContext } from '../../../../apps/desktop/src/components/toastConte
 import { clickElement, createNode, createReactHarness, message } from '../../../support/testHarness'
 import { chatOnScreen } from '../../../../apps/desktop/src/lib/onScreenChat'
 import { askChat, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
-import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 import { APP_OPEN_WITH_EVENT, APP_OPEN_IN_CHAT_EVENT, APP_COMPOSE_EVENT, APP_SHOW_SESSION_EVENT } from '../../../../apps/desktop/src/session/shared/extensions/app-runtime-protocol'
 import { sheetStack } from '../../../../apps/desktop/src/components/ui/sheetStack'
 import { rememberAssistantTaskChat } from '../../../../apps/desktop/src/lib/assistantTaskChat'
@@ -669,7 +668,7 @@ describe('MainLayout', () => {
       expect(Boolean(harness.container.querySelector('nav'))).toBe(source === 'messages' || source === 'contacts')
     }
   })
-  // 伙伴里只有项目群聊那一行(话题不成行,owner 10-28):进去落在群聊页签,❌ 开话题分屏。
+  // 伙伴里只有项目群聊那一行(话题不成行,owner 10-28):进去落在群聊页签。
   it('returns from a project group opened in Partners to the retained project directory without showing the root tab bar', async () => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
@@ -677,8 +676,6 @@ describe('MainLayout', () => {
     await clickElement(harness.container.querySelector('[data-testid="mock-chat-new-project"]') as HTMLElement)
     await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-push"]') as HTMLElement)
     await clickElement(harness.container.querySelector('[data-testid="mock-phone-partners-group"]') as HTMLElement)
-    const { drainTopicSplitRequest } = await import('../../../../apps/desktop/src/lib/topicSplitRequest')
-    expect(drainTopicSplitRequest('project-chat')).toBeNull()
     expect(harness.container.querySelector('[data-testid="mock-phone-partners"]')?.getAttribute('data-active')).toBe('true')
     expect(harness.container.querySelector('nav')).toBeNull()
     await clickElement(harness.container.querySelector('[data-testid="mock-chat-area-back"]') as HTMLElement)
@@ -1279,7 +1276,6 @@ describe('MainLayout: files.openWith', () => {
     await act(async () => { await openLinkTarget({ kind: 'file', itemId: 'F1' }, { restore }) })
     if (blocks) expect(sessionPageViewRequests.openChat).toHaveBeenCalledWith('source', false, 'resource')
     else expect(chatStoreMock.setActiveChatId).toHaveBeenCalledWith('source')
-    expect(drainTopicSplitRequest('source')).toBeNull()
     expect(takeChatAsk('source')).toEqual({ itemId: 'F1', opener: fileAnswer('F1', 'topic-file'), restore })
     expect(takeChatAsk('topic-file')).toBeNull()
   })
@@ -1519,7 +1515,6 @@ it.each(['group', 'topic', 'owned', 'assistant'] as const)('places an annotated 
   else expect(chatStoreMock.setDraftQuote).not.toHaveBeenCalled()
   expect(chatStoreMock.writeDraft).toHaveBeenCalledWith(target, kind === 'owned' ? '① Check this' : { at: 'end', text: '① Check this' })
   expect(chatStoreMock.setDraftAttachments).toHaveBeenCalledWith(target, [expect.objectContaining({ file: expect.objectContaining({ name: 'edited.png', type: 'image/png' }) })])
-  if (kind === 'topic') expect(drainTopicSplitRequest(parent)).toMatchObject({ chatId: target })
   if (kind === 'assistant') await act(async () => publishAssistantShell({ assistant: null, chatId: null } as never))
 })
 
@@ -1569,11 +1564,12 @@ describe('MainLayout: opening a topic on the desktop', () => {
   const SRC = '0b1e7c1a-0000-4000-8000-000000000001'
   const TOPIC = '0b1e7c1a-0000-4000-8000-000000000002'
   const ways: Array<[string, () => void, string]> = [
-    ['a conversation link', () => { clickLink(conversationLink(TOPIC)) }, SRC],
+    ['a conversation link', () => { clickLink(conversationLink(TOPIC)) }, TOPIC],
     ['a notification', () => { window.dispatchEvent(new CustomEvent(UI_EVENTS.notificationClicked, { detail: { chatId: TOPIC } })) }, TOPIC],
     ['a phone notification', () => { notificationClicks.listener!({ chatId: TOPIC }) }, TOPIC],
-    ['an App naming it', () => { window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail: { chatId: TOPIC, itemId: 'F1', name: 'F1.md', typedName: 'F1.md', choice: { kind: 'none' } } })) }, SRC],
+    ['an App naming it', () => { window.dispatchEvent(new CustomEvent(APP_OPEN_WITH_EVENT, { detail: { chatId: TOPIC, itemId: 'F1', name: 'F1.md', typedName: 'F1.md', choice: { kind: 'none' } } })) }, TOPIC],
   ]
+  // A topic is a main conversation of its own (#62): every way in opens the topic itself, never its source.
   it.each(ways)('from %s, through the one door', async (_way, open, target) => {
     chatStoreMock.chats = [{ id: SRC, kind: 'group', name: '咕咕内测群' }, { id: TOPIC, kind: 'topic', name: '登录页白屏', source_chat_id: SRC }] as never
     await renderMainLayoutWithToast()
@@ -1582,8 +1578,6 @@ describe('MainLayout: opening a topic on the desktop', () => {
       for (let i = 0; i < 5; i += 1) await Promise.resolve()
     })
     expect(sessionPageViewRequests.openChat.mock.calls[0]).toEqual(_way === 'an App naming it' ? [target, false, 'resource'] : [target, false])
-    if (_way === 'a conversation link' || _way === 'an App naming it') expect(drainTopicSplitRequest(SRC)).toMatchObject({ chatId: TOPIC, sourceChatId: SRC })
-    else expect(drainTopicSplitRequest(SRC)).toBeNull()
   })
   it('unsubscribes notification clicks when MainLayout unmounts', async () => {
     await renderMainLayoutWithToast()
@@ -1647,7 +1641,7 @@ describe('MainLayout: opening a topic on the desktop', () => {
 
 
 describe('MainLayout: an App requested from a topic uses the shared source slot', () => {
-  it.each([UI_EVENTS.openApp, APP_OPEN_IN_CHAT_EVENT])('%s resolves a topic absent from the local list without opening a split', async (eventName) => {
+  it.each([UI_EVENTS.openApp, APP_OPEN_IN_CHAT_EVENT])('%s resolves a topic absent from the local list to its source', async (eventName) => {
     chatStoreMock.chats = [{ id: 'source-app', kind: 'group' }] as never
     resourceChat.mockResolvedValueOnce('source-app')
     await renderMainLayoutWithToast()
@@ -1658,21 +1652,19 @@ describe('MainLayout: an App requested from a topic uses the shared source slot'
     expect(sessionPageViewRequests.openChat).toHaveBeenCalledWith('source-app', false, 'resource')
     expect(takeChatAsk('source-app')).toEqual({ app: 'board' })
     expect(takeChatAsk('topic-app')).toBeNull()
-    expect(drainTopicSplitRequest('source-app')).toBeNull()
   })
 })
 
 // The returned route must name the mounted topic/task viewport, including phone presentation.
 describe('MainLayout: message link presentation identity', () => {
-  it.each([false, true])('routes a topic message directly to its source split (phone=%s)', async (phone) => {
+  it.each([false, true])('routes a topic message to the topic itself (phone=%s)', async (phone) => {
     if (phone) { platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false }
     const source = '0b1e7c1a-0000-4000-8000-000000000001', topic = '0b1e7c1a-0000-4000-8000-000000000002'
     chatServiceMock.getMessageById.mockResolvedValue({ id: MESSAGE_ID, chat_id: topic })
     chatStoreMock.chats = [{ id: source, kind: 'group' }, { id: topic, kind: 'topic', source_chat_id: source }] as never
     await renderMainLayoutWithToast()
     await act(async () => { clickLink(conversationLink(topic, MESSAGE_ID)); for (let i = 0; i < 5; i++) await Promise.resolve() })
-    expect(revealRoute.asked).toHaveBeenLastCalledWith(topic, MESSAGE_ID, phone ? 'chats:topic' : `chat:${source}:topic`)
-    expect(drainTopicSplitRequest(source)).toMatchObject({ chatId: topic, sourceChatId: source })
+    expect(revealRoute.asked).toHaveBeenLastCalledWith(topic, MESSAGE_ID, phone ? 'chats' : `chat:${topic}`)
   })
   it('routes a phone task message to the real task-chat slot', async () => {
     platformMock.kind = 'capacitor'; platformMock.capabilities.sessionHost = false

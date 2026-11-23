@@ -1,28 +1,21 @@
 // @vitest-environment jsdom
 //
-// @@@5856 话题这一面的三条**看不见但会坏**的接线 —— product spec。
-// 这三条都属于「不写判据就永远没人发现」的那类:界面上不会报错,只是某件事一直不发生。
-//   ① 分栏里读过的消息要推已读水位。不推 ⇒ 那条话题在会话列表里永远挂着未读,
-//      而「通知只到参与者」的另一半正是「读过了就别再叫我」。
-//   ② 别人在我正看的这条线上开了话题 ⇒ 当场读到那条话题(服务端给来源线成员发 chat_changed,
-//      entity_id 是那条话题,gugu-supabase 20261106080000)。老的 thread 面板有这条实时(#1588),换成话题不能反而丢掉。
-//      反例同样钉住:来源线自己的消息、别的线上开话题 ❌ 不许触发读取(那是白跑一次往返)。
-//   ③ 分栏里 @ 到的人要真的写进 to_user_ids —— 那是「被 @ 进来」的唯一通路。
-import { chatWindowStub, topicHistoryStub } from '../../support/chatWindowStub'
-import { renderWithConversations } from '../../support/conversationAccountStub'
-import { act, createElement, useEffect } from 'react'
+// @@@5856 话题这一面的看不见但会坏的接线 —— product spec。
+//   ① 别人在我正看的这条线上开了话题 ⇒ 当场读到那条话题(服务端给来源线成员发 chat_changed,
+//      entity_id 是那条话题,gugu-supabase 20261106080000)。反例同样钉住:来源线自己的消息、别的线上开话题 ❌ 不许触发读取。
+//   ② 话题是一条主会话(#62):打开的话题跟上自己的摘要,不论读者是不是参与者。
+//   ③ 从消息开话题:建完就把它换成主会话。
+import { chatWindowStub } from '../../support/chatWindowStub'
+import { captureOpenedChats } from '../../support/openedChats'
+import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { MessageItem, TopicSummary } from '@gugu/core/shared/types/chat'
-import { createNode, createReactHarness, chat, message, renderWithAppProviders } from '../../support/testHarness'
+import type { ChatItem, MessageItem, TopicSummary } from '@gugu/core/shared/types/chat'
+import { createNode, createReactHarness, message, renderWithAppProviders } from '../../support/testHarness'
 
 const listTopicsOfChat = vi.fn<(sourceChatId: string, topicChatId?: string) => Promise<TopicSummary[]>>()
-const getMessages = vi.fn<() => Promise<MessageItem[]>>()
-const markRead = vi.hoisted(() => vi.fn<(chatId: string, seq: number) => Promise<unknown>>())
-const sendScopedMessage = vi.fn()
-const actionsOf = vi.fn((id: string | null) => ({ ...topicHistoryStub(id ?? ''), sendMessage: sendScopedMessage }))
-function sendingFixture() { const fixture = chatWindowStub(); fixture.conversations.actions = actionsOf; return { ...fixture, createTopic } }
 const onCreateFailed = vi.fn()
 const createTopic = vi.fn()
+const refreshLine = vi.fn<(chatId: string) => Promise<unknown>>()
 let sourceMessages: MessageItem[]
 
 vi.mock('../../../apps/desktop/src/lib/topics', () => ({
@@ -31,28 +24,8 @@ vi.mock('../../../apps/desktop/src/lib/topics', () => ({
     createTopic: (...args: unknown[]) => createTopic(...args),
   },
 }))
-// 云端主线读位经唯一写入口 writeRead;这里按 (chatId, seq) 记下它。
-vi.mock('../../../apps/desktop/src/lib/readWriter', async (original) => ({
-  ...await original<typeof import('../../../apps/desktop/src/lib/readWriter')>(),
-  writeRead: async (target: { kind: string; chatId?: string; seq?: number }) => (target.kind === 'main' ? markRead(target.chatId!, target.seq!) : undefined),
-}))
-vi.mock('../../../apps/desktop/src/lib/chat', () => ({
-  chatService: {
-    getMessages: (...args: unknown[]) => getMessages(...(args as [])),
-    _callCountsBySource: {},
-    getOtherMembersReadSeqs: () => Promise.resolve({}),
-    revalidateWindow: (ids: string[]) => Promise.resolve({ overlays: new Map(), mutations: new Map(), presentIds: new Set(ids) }),
-  },
-}))
-
-vi.mock('../../../apps/desktop/src/lib/chatMessageWriter', () => ({
-  writeIdempotentChatMessage: () => { throw new Error('topic bypassed shared send queue') },
-}))
 
 const { useTopicSurface } = await import('../../../apps/desktop/src/hooks/useTopicSurface')
-// The topic open beside a group is its tab (chat-tabs), kept for the window: each case starts with none.
-const { closeTopicTab, openPanelItem, topicTabOf, closeChatTab, openInfoTab, infoTabOf, closeInfoTab } = await import('../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts')
-const { readChatSummary } = await import('../../../apps/desktop/src/lib/chatSummariesBridge')
 type Surface = ReturnType<typeof useTopicSurface>
 
 function topic(overrides: Partial<TopicSummary> = {}): TopicSummary {
@@ -81,22 +54,16 @@ async function emit(event: string, chatId: string, extra: Record<string, unknown
 
 let harness: ReturnType<typeof createReactHarness>
 let surface: Surface | null
-function Probe({ chatKind = 'group' }: { chatKind?: 'group' | 'topic' }) {
+let opened: ReturnType<typeof captureOpenedChats>
+function Probe({ chat }: { chat: Pick<ChatItem, 'id' | 'kind' | 'source_chat_id'> }) {
   surface = useTopicSurface({
     messages: sourceMessages,
-    chat: { id: 'chat-A', kind: chatKind },
-    userId: 'user-1',
-    closeRightSurfaces: () => {},
+    chat,
+    lineSettled: true,
+    refreshLine,
     subscribeAccountRevision,
     onCreateFailed,
-    embedded: true,
   })
-  return null
-}
-// 打开分栏这一步本身要在 act 里做,否则 setState 的警告会淹掉真实断言。
-function OpenSplit({ chatId, name }: { chatId: string; name: string }) {
-  const target = surface
-  useEffect(() => { target?.openSplit({ chatId, name }) }, [target, chatId, name])
   return null
 }
 
@@ -106,56 +73,20 @@ beforeEach(() => {
   createTopic.mockReset().mockResolvedValue({ chat_id: 'topic-1', name: 'Projected default' })
   surface = null
   listTopicsOfChat.mockReset().mockResolvedValue([topic()])
-  getMessages.mockReset().mockResolvedValue([])
-  markRead.mockReset().mockResolvedValue(undefined)
+  refreshLine.mockReset().mockResolvedValue(undefined)
   onCreateFailed.mockReset()
-  actionsOf.mockClear()
-  sendScopedMessage.mockReset().mockResolvedValue('client-id')
   harness = createReactHarness()
+  opened = captureOpenedChats()
 })
 afterEach(() => {
   harness.cleanup()
-  closeInfoTab('chat-A')
-  closeTopicTab('chat-A')
+  opened.stop()
 })
 
-async function mount() {
-  await renderWithAppProviders(harness, createNode(Probe, {}), { chat: sendingFixture() })
+async function mount(chat: Pick<ChatItem, 'id' | 'kind' | 'source_chat_id'> = { id: 'chat-A', kind: 'group', source_chat_id: null }) {
+  await renderWithAppProviders(harness, createNode(Probe, { chat }), { chat: { ...chatWindowStub(), createTopic } })
   await act(async () => { await Promise.resolve(); await Promise.resolve() })
 }
-async function openSplit(real = false) {
-  if (real) await renderWithConversations(harness, createElement('div', null, createNode(Probe, {}), createNode(OpenSplit, { chatId: 'topic-1', name: '分片下载失败' })), subscribeAccountRevision, { chat: { chats: [chat({ id: 'topic-1', unread_count: 9 })] } })
-  else await renderWithAppProviders(harness, createElement('div', null, createNode(Probe, {}), createNode(OpenSplit, { chatId: 'topic-1', name: '分片下载失败' })), { chat: sendingFixture() })
-  await act(async () => { await vi.dynamicImportSettled() })
-}
-
-describe('topic reading uses the shared visible-message watermark', () => {
-  it('loading a window does not mark hidden rows read; the actually visible row advances the watermark', async () => {
-    getMessages.mockResolvedValue([message({ id: 'm1', chat_id: 'topic-1', seq: 3 }), message({ id: 'm2', chat_id: 'topic-1', seq: 7 })])
-    await openSplit(true)
-    expect(markRead).not.toHaveBeenCalled()
-    await act(async () => { surface?.splitLine.markMessageVisible(surface.splitLine.messages[0]!) })
-    expect(markRead).toHaveBeenLastCalledWith('topic-1', 3)
-  })
-  it('does not mark a newer row until it becomes visible, and does not repeat a settled watermark', async () => {
-    getMessages.mockResolvedValue([message({ id: 'm1', chat_id: 'topic-1', seq: 3 })])
-    await openSplit(true)
-    await act(async () => { surface?.splitLine.markMessageVisible(surface.splitLine.messages[0]!) })
-    expect(markRead).toHaveBeenCalledTimes(1)
-    await act(async () => { surface?.splitLine.markMessageVisible(surface.splitLine.messages[0]!) })
-    expect(markRead).toHaveBeenCalledTimes(1)
-    getMessages.mockResolvedValue([message({ id: 'm2', chat_id: 'topic-1', seq: 9 })])
-    await emit('message_created', 'topic-1', { entity_id: 'm2' })
-    expect(markRead).toHaveBeenCalledTimes(1)
-    await act(async () => { surface?.splitLine.markMessageVisible(surface.splitLine.messages.find((row) => row.id === 'm2')!) })
-    expect(markRead).toHaveBeenCalledTimes(2)
-    expect(markRead).toHaveBeenLastCalledWith('topic-1', 9)
-  })
-  it('does not advance an empty conversation', async () => {
-    await openSplit(true)
-    expect(markRead).not.toHaveBeenCalled()
-  })
-})
 
 describe('别人在这条线上开了话题,清单当场读到它', () => {
   it('来源线上话题的 chat_changed 只读那一条话题', async () => {
@@ -182,64 +113,27 @@ describe('别人在这条线上开了话题,清单当场读到它', () => {
 })
 
 describe('an open topic follows its summary for every reader, member or not', () => {
-  it.each([false, true])('updates an open topic name without reopening its tab or changing its conversation (participant=%s)', async (isParticipant) => {
-    listTopicsOfChat.mockResolvedValue([topic({ is_participant: isParticipant })])
-    await openSplit()
-    const tabId = topicTabOf('chat-A')!.tabId
-    expect(readChatSummary('topic-1')).toBeNull()
-    expect(surface?.topic?.name).toBe('分片下载失败')
-    listTopicsOfChat.mockResolvedValue([topic({ name: 'Renamed topic', is_participant: isParticipant })])
-    await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
-    expect(surface?.topic).toEqual({ chatId: 'topic-1', name: 'Renamed topic' })
-    expect(surface?.splitTopic?.name).toBe('Renamed topic')
-    expect(topicTabOf('chat-A')?.topic.name).toBe('Renamed topic')
-    expect(topicTabOf('chat-A')?.tabId).toBe(tabId)
-    expect(actionsOf.mock.lastCall?.[0]).toBe('topic-1')
-    await act(async () => { openInfoTab('chat-A', 'members', topicTabOf('chat-A')!.topic) })
-    const infoTabId = infoTabOf('chat-A')!.tabId
-    listTopicsOfChat.mockResolvedValue([topic({ name: 'Renamed again', is_participant: isParticipant })])
-    await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
-    expect(infoTabOf('chat-A')?.info.topic?.name).toBe('Renamed again')
-    expect(infoTabOf('chat-A')?.tabId).toBe(infoTabId)
-    expect(topicTabOf('chat-A')?.topic.name).toBe('Renamed again')
-  })
   // A source-line member who never spoke in the topic gets no message_created for its rows,
-  // only the source line's chat_changed naming the topic. The open line must still show the new reply.
-  it('catches up when the source chat_changed brings a newer summary, and not otherwise', async () => {
+  // only the source line's chat_changed naming the topic. The open topic must still catch up to the new reply.
+  it('refreshes the open topic once for a newer summary, however often the source line repeats it', async () => {
     const first = message({ id: 't1', chat_id: 'topic-1', seq: 1, created_at: '2026-09-18T00:00:00.000Z' })
-    const reply = message({ id: 't2', chat_id: 'topic-1', seq: 2, created_at: '2026-09-18T00:01:00.000Z' })
     listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: first.created_at })])
-    getMessages.mockResolvedValue([first])
-    await openSplit(true)
-    expect(surface!.splitLine.messages.map((row) => row.id)).toEqual(['t1'])
-    const reads = getMessages.mock.calls.length
+    sourceMessages = [first]
+    await mount({ id: 'topic-1', kind: 'topic', source_chat_id: 'chat-A' })
+    expect(listTopicsOfChat).toHaveBeenCalledWith('chat-A', undefined)
+    expect(surface?.anchorsByMessageId).toBeNull()
     await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
-    expect(getMessages.mock.calls.length).toBe(reads)
-    listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: reply.created_at, message_count: 2 })])
-    getMessages.mockResolvedValue([first, reply])
-    await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
-    await act(async () => { await vi.dynamicImportSettled() })
-    expect(surface!.splitLine.messages.map((row) => row.id)).toEqual(['t1', 't2'])
+    expect(refreshLine).not.toHaveBeenCalled()
+    listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: '2026-09-18T00:01:00.000Z', message_count: 2 })])
+    for (let i = 0; i < 3; i++) await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
+    expect(refreshLine).toHaveBeenCalledExactlyOnceWith('topic-1')
   })
-})
 
-describe('a summary this reader cannot see past is caught up to once', () => {
-  // The summary's newest row can be one this reader cannot see (a whisper between others, a deleted
-  // row): the refresh brings nothing newer, and the same summary must not refresh the line again.
-  it('refreshes once for a newer summary, however often the source line repeats it', async () => {
-    const first = message({ id: 't1', chat_id: 'topic-1', seq: 1, created_at: '2026-09-18T00:00:00.000Z' })
-    // The open line's chat row makes this reader a member; the topic summary agrees (a disagreement is a revocation
-    // in the message store, which drops the line).
-    listTopicsOfChat.mockResolvedValue([topic({ is_participant: true, last_message_at: first.created_at })])
-    getMessages.mockResolvedValue([first])
-    await openSplit(true)
-    const reads = getMessages.mock.calls.length
-    listTopicsOfChat.mockResolvedValue([topic({ is_participant: true, last_message_at: '2026-09-18T00:05:00.000Z' })])
-    for (let i = 0; i < 3; i++) {
-      await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
-      await act(async () => { await vi.dynamicImportSettled() })
-    }
-    expect(getMessages.mock.calls.length - reads).toBe(1)
+  it('a group line never refreshes itself from its topics\' summaries', async () => {
+    listTopicsOfChat.mockResolvedValue([topic({ last_message_at: '2026-09-18T00:05:00.000Z' })])
+    await mount()
+    await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
+    expect(refreshLine).not.toHaveBeenCalled()
   })
 })
 
@@ -257,52 +151,7 @@ describe('#6010 摘要参与人数随来源线的失效通知更新', () => {
     expect(listTopicsOfChat).toHaveBeenCalledTimes(3)
     await emit('chat_changed', 'chat-B', { entity_id: 'topic-1' })
     expect(listTopicsOfChat).toHaveBeenCalledTimes(3)
-    expect(getMessages).not.toHaveBeenCalled()
-  })
-})
-
-describe('分栏里 @ 到的人写进 to_user_ids', () => {
-  it('keeps the open topic history when its tab is hidden, and releases it when closed', async () => {
-    await openSplit()
-    const history = surface!.splitLine.messageWindow
-    actionsOf.mockClear()
-    const board = await act(async () => openPanelItem('chat-A', { kind: 'kanban.board', title: 'Board' }, { from: topicTabOf('chat-A')!.tabId, intent: 'newTab' }))
-    expect(surface!.splitTopic).toBeNull()
-    expect(surface!.topic?.chatId).toBe('topic-1')
-    expect(surface!.splitLine.messageWindow).toBe(history)
-    expect(actionsOf).not.toHaveBeenCalled()
-    await act(async () => closeTopicTab('chat-A'))
-    expect(surface!.topic).toBeNull()
-    expect(actionsOf).toHaveBeenLastCalledWith(null, expect.any(Object))
-    await act(async () => closeChatTab('chat-A', board!))
-  })
-
-  it('#6004: @所有人 keeps the topic chat ID and broadcast sentinel, without expanding source members', async () => {
-    await openSplit()
-    await act(async () => { await surface?.sendInSplit('@所有人 看一下', ['*']) })
-    expect(actionsOf).toHaveBeenLastCalledWith('topic-1', expect.any(Object))
-    expect(sendScopedMessage).toHaveBeenLastCalledWith('@所有人 看一下', { toUserIds: ['*'], replyToMessageId: null })
-  })
-
-  it('keeps explicit recipients and replies on the shared optimistic outbox path', async () => {
-    await openSplit()
-    await act(async () => { await surface?.sendInSplit('小柯 看一下', ['agent-9'], 'original-message') })
-    expect(sendScopedMessage).toHaveBeenLastCalledWith('小柯 看一下', { toUserIds: ['agent-9'], replyToMessageId: 'original-message' })
-    await act(async () => { await surface?.sendInSplit('我先看看', []) })
-    expect(sendScopedMessage).toHaveBeenLastCalledWith('我先看看', { toUserIds: null, replyToMessageId: null })
-    await act(async () => { await surface?.sendInSplit('timed', [], null, false, 123) })
-    expect(sendScopedMessage).toHaveBeenLastCalledWith('timed', { toUserIds: null, replyToMessageId: null, isWhisper: false, submittedAt: 123 })
-  })
-
-  it('does not send an empty or closed topic and preserves shared queue failures', async () => {
-    await mount()
-    await surface?.sendInSplit('not open')
-    expect(sendScopedMessage).not.toHaveBeenCalled()
-    await openSplit()
-    await surface?.sendInSplit('   ')
-    expect(sendScopedMessage).not.toHaveBeenCalled()
-    sendScopedMessage.mockRejectedValueOnce(new Error('queue unavailable'))
-    await expect(surface?.sendInSplit('keep my draft')).rejects.toThrow('queue unavailable')
+    expect(refreshLine).not.toHaveBeenCalled()
   })
 })
 
@@ -337,7 +186,7 @@ it.each([
   expect(createTopic).toHaveBeenCalledExactlyOnceWith({
     sourceChatId: 'chat-A', sourceMessageId: source.id, name: 'Source contract',
   })
-  expect(surface?.splitTopic).toEqual({ chatId: 'topic-1', name: 'Projected default' })
+  expect(opened.chatIds).toEqual(['topic-1'])
   expect(onCreateFailed).not.toHaveBeenCalled()
 })
 
@@ -351,5 +200,5 @@ it('opens the existing task topic when its card is tapped again without making a
   await mount()
   await act(async () => { await surface!.openTopicFromMessage(source.id) })
   expect(createTopic).not.toHaveBeenCalled()
-  expect(surface?.splitTopic).toEqual({ chatId: 'topic-1', name: '分片下载失败' })
+  expect(opened.chatIds).toEqual(['topic-1'])
 })

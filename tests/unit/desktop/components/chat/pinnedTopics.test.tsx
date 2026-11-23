@@ -26,7 +26,8 @@ const { ChatHeaderActions } = await import('@/components/chat/ChatHeaderActions'
 const { PinnedTopicTabs } = await import('@/components/chat/PinnedTopicTabs')
 const { queryClient } = await import('@/lib/replica')
 const { unsubscribePrivateUserEventBus } = await import('@/lib/realtimeChannel')
-const { drainTopicSplitRequest } = await import('@/lib/topicSplitRequest')
+const { captureOpenedChats } = await import('../../../../support/openedChats')
+let opened: ReturnType<typeof captureOpenedChats>
 let harness: ReturnType<typeof createReactHarness>
 const locator = (unread: number, addressed: number) => ({ stream_id: 'main', stream_kind: 'main' as const, thread_root_id: null, message_id: 'first', message_seq: 1,
   unread_count: unread, addressed_count: addressed, cursor_seq: 0, version: 1, is_marked_unread: false })
@@ -48,10 +49,10 @@ const strip = (onPick = vi.fn(), current: string | null = null) => createNode(Pi
 beforeEach(() => {
   vi.mocked(unsubscribePrivateUserEventBus).mockClear()
   io.rows.clear(); io.listeners.length = 0; io.failRead = false; marked.scopes.length = 0
-  queryClient.clear(); drainTopicSplitRequest('g')
+  queryClient.clear(); opened = captureOpenedChats()
   harness = createReactHarness()
 })
-afterEach(() => { harness.cleanup(); queryClient.clear() })
+afterEach(() => { harness.cleanup(); queryClient.clear(); opened.stop() })
 
 describe('rich Topics menu', () => {
   it('shows who is calling you in red, keeps it in its place (pinned, then by activity), and opens it', async () => {
@@ -72,7 +73,7 @@ describe('rich Topics menu', () => {
     expect(rowChip.textContent, 'one call, not 27 unread').toBe('@1')
     expect(rowChip.dataset.tone).toBe('danger')
     await clickElement(row.querySelector<HTMLElement>('[data-testid="group-menu-topic"]')!)
-    expect(drainTopicSplitRequest('g')?.chatId).toBe('calling')
+    expect(opened.chatIds.at(-1)).toBe('calling')
   })
 
   it('leaves no permanent pin-width padding on a topic with no unread messages', async () => {
@@ -110,7 +111,7 @@ describe('rich Topics menu', () => {
       expect(document.querySelector('[data-topic-id="old"] .gg-list-row-title svg')).not.toBeNull()
       await clickElement(pin)
       await vi.waitFor(() => expect(savedPins()).toEqual(['old', 'new']))
-      expect(drainTopicSplitRequest('g')).toBeNull()
+      expect(opened.chatIds).toEqual([])
     } finally { style.remove() }
   })
 
@@ -151,9 +152,9 @@ describe('rich Topics menu', () => {
     await clickElement(document.querySelector<HTMLElement>('[data-topic-id="new"] [data-testid="group-topic-pin"]')!)
     await vi.waitFor(() => expect(savedPins()).toEqual(['old', 'new']))
     expect(document.querySelector('[data-testid="group-topics-popup"]')).not.toBeNull()
-    expect(drainTopicSplitRequest('g')).toBeNull()
+    expect(opened.chatIds).toEqual([])
     await clickElement(document.querySelector<HTMLElement>('[data-topic-id="new"] [data-testid="group-menu-topic"]')!)
-    expect(drainTopicSplitRequest('g')).toMatchObject({ chatId: 'new', sourceChatId: 'g', focusComposer: true })
+    expect(opened.chatIds).toEqual(['new'])
   })
 
   it('exposes a real retry and disables pinning when preferences could not be loaded', async () => {

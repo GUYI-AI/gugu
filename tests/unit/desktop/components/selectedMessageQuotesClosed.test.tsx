@@ -3,11 +3,9 @@ import { act, createElement } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { TFunction } from 'i18next'
 import { ChatMessageComposer } from '../../../../apps/desktop/src/components/chat/ChatMessageComposer'
-import { TopicSplitPane } from '../../../../apps/desktop/src/components/chat/TopicSplitPane'
 import { messageActionItems } from '../../../../apps/desktop/src/components/chat/messageActionItems'
 import { contentWithQuote, partialQuotedContent } from '../../../../apps/desktop/src/components/chat/messageQuoteContent'
-import { topicHistoryStub } from '../../../support/chatWindowStub'
-import { clickElement, createReactHarness, fireContextMenu, message, renderWithAppProviders } from '../../../support/testHarness'
+import { clickElement, createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
 import { writeComposer } from '../../../support/composerEditor'
 
 const shell = vi.hoisted(() => ({ mobile: true }))
@@ -54,26 +52,4 @@ it('leaves ordinary whole-message replies and legacy quotes without an IM source
 it('still reads a historical excerpt separately from the reply while sending is closed', () => {
   expect(partialQuotedContent({ content: '> [Ada]: Beta\n\n> Answer', reply_to_message_id: 'source', reply_to_content: 'Alpha Beta' }))
     .toEqual({ senderName: 'Ada', quoteText: 'Beta', replyText: '> Answer' })
-})
-
-it.each([
-  ['Alpha first line.\n\nBeta second paragraph.', '> Alpha first line.'],
-  ['A'.repeat(65) + '\nSecond paragraph.', '> ' + 'A'.repeat(60) + '…'],
-])('keeps the original topic reply preview and source identity: %s', async (content, preview) => {
-  const onSend = vi.fn(async () => {})
-  await renderWithAppProviders(h, createElement(TopicSplitPane, {
-    topic: { chatId: 'topic-1', name: 'Topic' }, messages: [message({ id: 'source', chat_id: 'topic-1', content })], loading: false,
-    memberProfiles: {}, memberReadSeqs: {}, visibleChats: [], onSend,
-    onSendAttachments: async () => {}, onClose: () => {}, currentUserId: 'user-1', history: topicHistoryStub(), mentionMembers: [], mobile: true,
-  }))
-  await fireContextMenu(h.container.querySelector<HTMLElement>('[data-msg-id="source"] [data-testid="message-bubble-action-target"]')!)
-  await act(async () => { await vi.dynamicImportSettled() })
-  await clickElement(document.querySelector('[data-testid="message-action-reply"]')!)
-  const band = h.container.querySelector('button[aria-label="取消引用"]')!.parentElement!
-  expect(band.querySelector('.max-w-60 > div:last-child')?.textContent).toBe(preview)
-  const editor = h.container.querySelector<HTMLElement>('[data-topic-split-composer] [contenteditable]')!
-  await act(async () => writeComposer(editor, 'Answer'))
-  await clickElement(h.container.querySelector('button[aria-label="发送消息"]')!)
-  // The last argument is the files this text follows; a text sent alone follows nothing.
-  expect(onSend).toHaveBeenCalledWith('Answer', [], 'source', undefined, expect.any(Number), undefined)
 })

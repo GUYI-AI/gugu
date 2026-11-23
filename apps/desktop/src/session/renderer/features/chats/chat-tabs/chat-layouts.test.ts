@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
-import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { folderItem, type PanelItem } from './chat-panel-item';
-import { askChat, chatAlone, chatBlockContentOf, chatTabShown, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, revealChatWorkspaceMessage, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
-import { CHAT_INFO_TAB_KIND, CHAT_PANEL_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
+import { askChat, chatAlone, chatBlockContentOf, chatTabShown, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, focusedChatTab, infoTabOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, showChatTab, takeChatAsk, updateFileNames } from './chat-layouts';
+import { CHAT_INFO_TAB_KIND } from './chat-tab-providers';
 import { openChatWorkspaceNewTab } from '../../tabs/chat-workspace-new-tab';
 import { browserSessionStore } from '../../browser/browser-session-store';
 import type { BrowserState } from '../../browser/browser-tab-provider';
@@ -17,39 +16,6 @@ const board: PanelItem = { kind: 'kanban.board', title: 'Board' };
 const count = (id: string) => chatLayoutOf(id).groups.reduce((sum, { pane }) => sum + pane.tabOrder.length, 0);
 
 describe('chat navigation uses the same page history and real panes as tasks', () => {
-  it('reveals a background file beside the pane current now, keeping the current topic in its pane', () => {
-    const id = 'background-topic-open';
-    const layout = chatLayoutOf(id);
-    const main = layout.mainGroup;
-    const chat = main.pane.resolvedActiveTabId!;
-    openTopicTab(id, { topicChatId: 'background-topic', name: 'Topic' });
-    const topic = topicTabOf(id)!.tabId;
-    showChatTab(id, topic);
-    const output = layout.open(CHAT_PANEL_TAB_KIND, file('background.html'), { from: chat, intent: 'beside', activate: false })!;
-    const side = layout.sideGroup!;
-    showChatTab(id, output);
-    expect(side.pane.resolvedActiveTabId).toBe(topic);
-    expect(main.pane.resolvedActiveTabId).toBe(output);
-  });
-  it('keeps the current topic when a group file opens; choosing another topic only navigates the topic slot', () => {
-    const id = 'current-topic-open';
-    const layout = chatLayoutOf(id);
-    const main = layout.mainGroup;
-    openTopicTab(id, { topicChatId: 'topic-a', name: 'A' });
-    const topic = topicTabOf(id)!.tabId;
-    const side = layout.sideGroup!;
-    showChatTab(id, topic);
-    openTopicTab(id, { topicChatId: 'topic-b', name: 'B' });
-    expect(topicTabOf(id)?.topic.topicChatId).toBe('topic-b');
-    expect(side.pane.resolvedActiveTabId).toBe(topic);
-    expect(main.pane.activeEntry?.kind).toBe(CHAT_TAB_KIND);
-    expect(layout.activePaneId).toBe(side.paneId);
-    const html = openPanelItem(id, { kind: null, itemId: 'html', title: 'preview.html', fileName: 'preview.html' })!;
-    expect(main.pane.resolvedActiveTabId).toBe(html);
-    expect(side.pane.resolvedActiveTabId).toBe(topic);
-    expect(topicTabOf(id)?.topic.topicChatId).toBe('topic-b');
-    expect(layout.activePaneId).toBe(side.paneId);
-  });
   it.each(['dm', 'group'])('keeps the folder context and real layout while browsing in %s', (kind) => {
     const id = `history-${kind}`;
     const layout = chatLayoutOf(id);
@@ -137,19 +103,6 @@ describe('chat navigation uses the same page history and real panes as tasks', (
     expect(JSON.stringify(layout.layout)).toBe(before);
     expect(chatAlone(id)).toBe(false);
   });
-  it('a topic pairs with its group in the group strip; another topic takes its place; closing it leaves the group', () => {
-    const id = 'topic-chat'; const layout = chatLayoutOf(id);
-    const chat = layout.focusedPane.resolvedActiveTabId!;
-    openTopicTab(id, { topicChatId: 'topic-a', name: 'A' });
-    const first = topicTabOf(id)!.tabId;
-    expect(layout.pair).toEqual({ pinned: chat, side: first });
-    openTopicTab(id, { topicChatId: 'topic-b', name: 'B' });
-    expect(topicTabOf(id)?.tabId).toBe(first);
-    expect(chatPaneOf(id, first)?.navigationOf(first)?.pages).toHaveLength(2);
-    closeTopicTab(id);
-    expect(layout.groups).toHaveLength(1);
-    expect(layout.groups.some(({ pane }) => pane.entriesOfKind(CHAT_TAB_KIND).length > 0)).toBe(true);
-  });
   it('a file name refresh keeps the same context and does not revive a closed tab', () => {
     const id = 'rename-chat'; const page = openPanelItem(id, file('README'))!;
     updateFileNames([{ id: 'README', filename: 'renamed.md', content_type: 'text/markdown' }], []);
@@ -158,56 +111,6 @@ describe('chat navigation uses the same page history and real panes as tasks', (
     closeChatTab(id, page);
     updateFileNames([{ id: 'README', filename: 'later.md', content_type: 'text/markdown' }], []);
     expect(panelTabsOf(id)).toEqual([]);
-  });
-  it('the members context follows the focused topic, its information page, and the source chat', () => {
-    const id = 'topic-members-focus';
-    const topic = { topicChatId: 'topic-members', name: 'Topic' };
-    openTopicTab(id, topic);
-    const topicTab = topicTabOf(id)!.tabId;
-    showChatTab(id, topicTab);
-    expect(memberTopicOf(id)).toEqual(topic);
-    openInfoTab(id, 'members', memberTopicOf(id));
-    expect(infoTabOf(id)?.info.topic).toEqual(topic);
-    expect(memberTopicOf(id)).toEqual(topic);
-    showChatTab(id, topicTab);
-    expect(memberTopicOf(id)).toEqual(topic);
-    showChatOnly(id);
-    expect(memberTopicOf(id)).toBeNull();
-    openInfoTab(id);
-    expect(infoTabOf(id)?.info.topic).toBeUndefined();
-    expect(memberTopicOf(id)).toBeNull();
-  });
-  it('does not restore a topic members page without its runtime-only topic tab', () => {
-    const id = 'topic-members-persistence';
-    const topic = { topicChatId: 'transient-topic-id', name: 'Transient topic' };
-    openTopicTab(id, topic);
-    openInfoTab(id, 'members', topic);
-    expect(JSON.stringify(chatLayoutOf(id).snapshot)).not.toContain(topic.topicChatId);
-    showChatOnly(id);
-    openInfoTab(id, 'members');
-    expect(chatLayoutOf(id).snapshot.groups.flatMap((group) => group.tabManager.tabs).some((tab) => tab.kind === 'extension' && tab.extensionKind === CHAT_INFO_TAB_KIND)).toBe(true);
-  });
-  it('reuses the information tab when switching from source members to topic members', () => {
-    const id = 'topic-members-switch';
-    openInfoTab(id, 'members');
-    const infoTab = infoTabOf(id)!.tabId;
-    openTopicTab(id, { topicChatId: 'topic-members-switch', name: 'Topic' });
-    showChatTab(id, topicTabOf(id)!.tabId);
-    openInfoTab(id, 'members', memberTopicOf(id));
-    expect(infoTabOf(id)?.tabId).toBe(infoTab);
-    expect(infoTabOf(id)?.info.topic?.topicChatId).toBe('topic-members-switch');
-    expect(infoTabOf(id)?.shown).toBe(true);
-  });
-  it('closing topic members restores the topic on a phone-sized page', () => {
-    const id = 'topic-members-phone';
-    chatLayoutOf(id).setDimensions(390, 620);
-    chatLayoutOf(id).setSinglePaneHost(true);
-    openTopicTab(id, { topicChatId: 'topic-members-phone', name: 'Topic' });
-    const topicTab = topicTabOf(id)!.tabId;
-    openInfoTab(id, 'members', memberTopicOf(id));
-    closeInfoTab(id);
-    expect(focusedChatTab(id)).toEqual({ tabId: topicTab, kind: 'topic' });
-    expect(infoTabOf(id)).toBeNull();
   });
   it('each chat receives only its latest ask once', () => {
     const opener = { chatId: 'asked', itemId: 'README', name: 'README.md', typedName: 'README.md', choice: { kind: 'none' } } as never;
@@ -278,64 +181,7 @@ describe('chat tool state is scoped to the conversation ID', () => {
     }
   });
 
-  it('reveals a selected topic from a hidden group and selects its retained conversation tab from full view', () => {
-    const sourceId = 'workspace-source-navigation';
-    const topicId = 'workspace-topic-navigation';
-    const source = chatLayoutOf(sourceId);
-    const topic = chatLayoutOf(topicId);
-    const stopSource = source.attachChatWorkspace();
-    const stopTopic = topic.attachChatWorkspace();
-    try {
-      const groupTool = openPanelItem(sourceId, file('group-tool'))!;
-      source.setChatToolLayout('hidden');
-      openTopicTab(sourceId, { topicChatId: topicId, name: '打开话题' });
-      expect(source.chatWorkspaceMode).toBe('split');
-      expect(topicTabOf(sourceId)?.shown).toBe(true);
-      expect(panelTabsOf(sourceId).map((tab) => tab.tabId)).toEqual([groupTool]);
 
-      const topicTool = openPanelItem(topicId, file('topic-tool'))!;
-      const directionAndWidth = topic.layout;
-      topic.setChatToolLayout('full');
-      revealChatWorkspaceMessage(topicId);
-      expect(topic.chatWorkspaceMode).toBe('full');
-      expect(topic.activePaneId).toBe(topic.chatWorkspacePanes?.chat.paneId);
-      expect(topic.chatWorkspaceSinglePaneId).toBe(topic.chatWorkspacePanes?.chat.paneId);
-      expect(topic.layout).toBe(directionAndWidth);
-      expect(panelTabsOf(topicId).map((tab) => tab.tabId)).toEqual([topicTool]);
-      expect(topicTabOf(sourceId)?.topic.topicChatId).toBe(topicId);
-    } finally {
-      stopTopic();
-      stopSource();
-    }
-  });
-
-  it('keeps the group, current topic slot and each topic’s own tools independent', () => {
-    const sourceId = 'chat-tool-topic-source';
-    const topicId = 'chat-tool-topic-1';
-    const otherTopicId = 'chat-tool-topic-2';
-    openTopicTab(sourceId, { topicChatId: topicId, name: '话题一' });
-    const source = chatLayoutOf(sourceId);
-    const sourceRoot = source.primaryChatTabId;
-    const topicSlot = topicTabOf(sourceId)?.tabId;
-    openPanelItem(sourceId, file('source-tool'), { intent: 'newTab' });
-    source.setChatToolLayout('full');
-    expect(sourceRoot).toBeDefined();
-    expect(sourceRoot).not.toBe(topicSlot);
-
-    const topic = chatLayoutOf(topicId);
-    expect(topic.chatToolLayout).toBe('empty');
-    const topicTool = openPanelItem(topicId, file('topic-tool'))!;
-    topic.setChatToolLayout('hidden');
-    openTopicTab(sourceId, { topicChatId: otherTopicId, name: '话题二' });
-    expect(topicTabOf(sourceId)?.tabId).toBe(topicSlot);
-    expect(chatLayoutOf(otherTopicId).chatToolLayout).toBe('empty');
-    expect(panelTabsOf(sourceId).map(({ tabId }) => tabId)).not.toContain(topicTool);
-    expect(chatLayoutOf(topicId).chatToolLayout).toBe('hidden');
-    expect(panelTabsOf(topicId).map(({ tabId }) => tabId)).toEqual([topicTool]);
-    expect(viewStateCache.read(`chat:${topicId}:tabs`)).toMatchObject({ chatToolLayout: 'hidden' });
-    expect(viewStateCache.read(`chat:${sourceId}:tabs`)).toMatchObject({ chatToolLayout: 'full' });
-    expect(JSON.stringify(source.snapshot)).not.toContain(topicTool);
-  });
 });
 
 it('opens actual new browser tabs independently and reveals the explicitly selected group workspace', () => {

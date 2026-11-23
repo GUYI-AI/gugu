@@ -43,21 +43,21 @@ const groupMember: MemberProfileCardModel = {
   id: 'a1', guguNumber: null, displayName: 'Claude 28', avatar: null, bio: null, email: null, type: 'agent',
   role: 'member', profileScope: 'group', listenMode: 'active', ownerUserId: 'owner-1',
 }
-const opened = (openedFrom: 'main' | 'aside'): ActiveMemberProfile => ({
-  member: groupMember, preferredSide: 'right', openedFrom,
+const opened = (): ActiveMemberProfile => ({
+  member: groupMember, preferredSide: 'right', openedFrom: 'main',
 })
 const groupEdit = { onChangeListenMode: vi.fn(async () => {}), busy: false }
 
 let harness: ReturnType<typeof createReactHarness>
 let result: ReturnType<typeof useTopicScopedMemberProfile>
-function Probe({ mainTopicChatId = null, ...props }: { profile: ActiveMemberProfile | null; mainTopicChatId?: string | null; asideTopicChatId: string | null; authorityRevision?: number }) {
+function Probe({ mainTopicChatId = null, ...props }: { profile: ActiveMemberProfile | null; mainTopicChatId?: string | null; authorityRevision?: number }) {
   result = useTopicScopedMemberProfile({ ...props, mainTopicChatId, currentUserId: 'owner-1', groupEditControlsFor: () => groupEdit })
   return null
 }
 // The roster is a replica: it reads for the signed-in account, through the account's open IM repository.
 const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
-async function render(profile: ActiveMemberProfile | null, mainTopicChatId: string | null = null) {
-  await harness.render(createNode(Probe, { profile, mainTopicChatId, asideTopicChatId: 'topic-1' }))
+async function render(profile: ActiveMemberProfile | null, mainTopicChatId: string | null = 'topic-1') {
+  await harness.render(createNode(Probe, { profile, mainTopicChatId }))
   await settle()
 }
 
@@ -73,9 +73,9 @@ beforeEach(async () => {
 afterEach(() => { harness.cleanup(); queryClient.clear(); repository.close(); vi.clearAllMocks() })
 
 describe('useTopicScopedMemberProfile', () => {
-  it('分栏点开:显示话题里的档位,改档写到话题 id', async () => {
+  it('话题里点开:显示话题里的档位,改档写到话题 id', async () => {
     getGroupCollab.mockResolvedValue({ snapshot: collab([agentItem('a1', 'passive')], [humanItem('owner-1', 'owner')]), identities: [] })
-    await render(opened('aside'))
+    await render(opened())
     expect(getGroupCollab).toHaveBeenCalledWith('topic-1')
     expect(result?.profile.member.listenMode).toBe('passive')
     expect(result?.editControls).not.toBe(groupEdit)
@@ -85,15 +85,15 @@ describe('useTopicScopedMemberProfile', () => {
 
   it('反例:主线点开的名片原样走群的档位和群的编辑控件', async () => {
     getGroupCollab.mockResolvedValue({ snapshot: collab([agentItem('a1', 'passive')], [humanItem('owner-1', 'owner')]), identities: [] })
-    await render(opened('main'))
+    await render(opened(), null)
     expect(result?.profile.member.listenMode).toBe('active')
     expect(result?.editControls).toBe(groupEdit)
     expect(getGroupCollab).not.toHaveBeenCalled()
   })
 
-  it.each(['main', 'aside'] as const)('hides listen mode for an agent outside the topic roster (%s)', async (opener) => {
+  it('hides listen mode for an agent outside the topic roster', async () => {
     getGroupCollab.mockResolvedValue({ snapshot: collab([], [humanItem('owner-1', 'owner')]), identities: [] })
-    await render(opened(opener), opener === 'main' ? 'topic-1' : null)
+    await render(opened())
     expect(result?.profile.member.profileScope).toBe('direct')
     expect(result?.profile.member.listenMode).toBeUndefined()
     expect(result?.editControls).toBeUndefined()
@@ -102,7 +102,7 @@ describe('useTopicScopedMemberProfile', () => {
   it('lets a source-group manager edit a topic agent while keeping the topic write scope', async () => {
     getSettings.mockResolvedValue({ id: 'topic-1', my_role: 'admin', can_manage: true } as GroupChatSettings)
     getGroupCollab.mockResolvedValue({ snapshot: collab([agentItem('a1', 'passive')], [humanItem('owner-1', 'member')]), identities: [] })
-    await render({ ...opened('aside'), member: { ...groupMember, ownerUserId: 'member-9' } })
+    await render({ ...opened(), member: { ...groupMember, ownerUserId: 'member-9' } })
     expect(getSettings).toHaveBeenCalledWith('topic-1')
     expect(result?.profile.member.listenMode).toBe('passive')
     await act(async () => { await result?.editControls?.onChangeListenMode?.('active') })
@@ -111,7 +111,7 @@ describe('useTopicScopedMemberProfile', () => {
 
   it('does not infer source-group management from a topic-local owner seat', async () => {
     getGroupCollab.mockResolvedValue({ snapshot: collab([agentItem('a1', 'passive')], [humanItem('owner-1', 'owner')]), identities: [] })
-    await render({ ...opened('aside'), member: { ...groupMember, ownerUserId: 'member-9' } })
+    await render({ ...opened(), member: { ...groupMember, ownerUserId: 'member-9' } })
     expect(result?.profile.member.listenMode).toBe('passive')
     expect(result?.editControls).toBeUndefined()
   })
@@ -120,13 +120,13 @@ describe('useTopicScopedMemberProfile', () => {
 it('re-reads topic authority on a source-group revision without changing its topic roster', async () => {
   getSettings.mockResolvedValue({ id: 'topic-1', my_role: 'admin', can_manage: true } as GroupChatSettings)
   getGroupCollab.mockResolvedValue({ snapshot: collab([agentItem('a1', 'passive')], [humanItem('owner-1', 'member')]), identities: [] })
-  const profile = { ...opened('aside'), member: { ...groupMember, ownerUserId: 'member-9' } }
-  await harness.render(createNode(Probe, { profile, asideTopicChatId: 'topic-1', authorityRevision: 0 }))
+  const profile = { ...opened(), member: { ...groupMember, ownerUserId: 'member-9' } }
+  await harness.render(createNode(Probe, { profile, mainTopicChatId: 'topic-1', authorityRevision: 0 }))
   await settle()
   expect(result?.editControls).toBeDefined()
   const before = getSettings.mock.calls.length
   getSettings.mockResolvedValue({ id: 'topic-1', my_role: 'member', can_manage: false } as GroupChatSettings)
-  await harness.render(createNode(Probe, { profile, asideTopicChatId: 'topic-1', authorityRevision: 1 }))
+  await harness.render(createNode(Probe, { profile, mainTopicChatId: 'topic-1', authorityRevision: 1 }))
   expect(getSettings).toHaveBeenCalledTimes(before + 1)
   expect(getSettings).toHaveBeenLastCalledWith('topic-1')
   expect(result?.editControls).toBeUndefined()
@@ -135,7 +135,7 @@ it('re-reads topic authority on a source-group revision without changing its top
 it('re-reads authority after a rejected mode write even without a revision event', async () => {
   getSettings.mockResolvedValue({ id: 'topic-1', my_role: 'admin', can_manage: true } as GroupChatSettings)
   getGroupCollab.mockResolvedValue({ snapshot: collab([agentItem('a1', 'passive')], [humanItem('owner-1', 'member')]), identities: [] })
-  await render({ ...opened('aside'), member: { ...groupMember, ownerUserId: 'member-9' } })
+  await render({ ...opened(), member: { ...groupMember, ownerUserId: 'member-9' } })
   setAgentListenMode.mockRejectedValueOnce(Object.assign(new Error('permission denied'), { code: '42501' }))
   getSettings.mockResolvedValue({ id: 'topic-1', my_role: 'member', can_manage: false } as GroupChatSettings)
   await act(async () => { await result?.editControls?.onChangeListenMode?.('active') })
@@ -156,12 +156,11 @@ it.each([['desktop', false], ['phone', true]] as const)('changes only the topic 
   })
   const card = Popover.createHandle<ActiveMemberProfile>()
   const sourceMember = { ...groupMember, listenMode: 'passive' as const }
-  const trigger = createNode(Popover.Trigger, { handle: card, payload: { ...opened('main'), member: sourceMember } })
+  const trigger = createNode(Popover.Trigger, { handle: card, payload: { ...opened(), member: sourceMember } })
   await renderWithAppProviders(harness, createNode('div', {}, trigger, createNode(MessageMemberProfileLayer, {
     card,
     memberProfiles: { a1: sourceMember },
     authorityRevision: 0,
-    asideTopic: null,
     chatId: 'topic-1',
     currentUserId: 'owner-1',
     isGroupChat: false,

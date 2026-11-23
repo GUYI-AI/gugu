@@ -10,7 +10,7 @@ import { useChatOpener } from '../../../../apps/desktop/src/components/appSlot/u
 import { useMessageFilePreview } from '../../../../apps/desktop/src/components/chat/useMessageFilePreview'
 import { appsHere } from '../../../../apps/desktop/src/components/appSlot/appsHere'
 import { OpenSuperseded, openLinkTarget } from '../../../../apps/desktop/src/lib/guguLinks'
-import { askChatFile, chatLayoutOf, closeChatTab, focusedChatTab, openTopicTab, topicTabOf, showChatTab, panelTabsOf, shownPanelTab, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChatFile, chatLayoutOf, closeChatTab, focusedChatTab, panelTabsOf, shownPanelTab, takeChatAsk } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { isWaitingItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { UI_EVENTS } from '../../../../apps/desktop/src/lib/uiEvents'
 import { translateSessionMessage } from '../../../../apps/desktop/src/session/renderer/localization/locale-store'
@@ -43,7 +43,7 @@ const claimed = (itemId: string): AppOpenWithDetail => ({ ...preview(itemId), ch
 
 /** The chat's panel: drawn or not (`panel`), taking asks or not just now (`canTake`). */
 function Panel({ canTake }: { canTake?: () => boolean }) {
-  return createElement('div', null, useChatOpener(group, undefined, canTake).overlay, state.mobile ? createElement(ChatTabPage, { chatId: group, panel: () => null, topic: () => null, info: () => null }) : null)
+  return createElement('div', null, useChatOpener(group, undefined, canTake).overlay, state.mobile ? createElement(ChatTabPage, { chatId: group, panel: () => null, info: () => null }) : null)
 }
 function Shell({ panel = true, canTake }: { panel?: boolean; canTake?: () => boolean }) {
   useLinkNavigation({ ownerId: 'owner', chats: () => [{ id: group, kind: 'group' }, { id: other, kind: 'group' }] as never, contacts: () => [],
@@ -217,21 +217,6 @@ describe('a file link in a message\'s text', () => {
 })
 
 describe('the pair beside the chat', () => {
-  it('resolves a waiting file and reopens an existing file without taking the current topic', async () => {
-    await harness.render(createElement(Shell))
-    openTopicTab(group, { topicChatId: 'current-topic', name: 'Topic' })
-    const topic = topicTabOf(group)!.tabId
-    showChatTab(group, topic)
-    const pane = chatLayoutOf(group).activePaneId
-    click('A')
-    expect(chatLayoutOf(group).activePaneId).toBe(pane)
-    await answer('A', preview('A'))
-    expect(focusedChatTab(group)?.tabId).toBe(topic)
-    click('A')
-    expect(focusedChatTab(group)?.tabId).toBe(topic)
-    await answer('A', preview('A'))
-    expect(focusedChatTab(group)?.tabId).toBe(topic)
-  })
 
   it('the waiting tab comes as a file does, half each; turning real does not move the cut', async () => {
     chatLayoutOf(group).setDimensions(1200, 800)

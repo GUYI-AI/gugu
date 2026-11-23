@@ -24,7 +24,7 @@ describe('unread entry presenters', () => {
     const presenters = sources(join(root, 'apps/desktop/src'))
       .filter((file) => /\bunreadAbove=\{/.test(readFileSync(file, 'utf8')))
       .map((file) => relative(root, file).replaceAll('\\', '/')).sort()
-    expect(presenters).toEqual(['apps/desktop/src/components/ChatAreaPanel.tsx', 'apps/desktop/src/components/chat/TopicSplitPane.tsx'])
+    expect(presenters).toEqual(['apps/desktop/src/components/ChatAreaPanel.tsx'])
     const missing = presenters.filter((file) => !/\busePresentedUnreadEntry\(/.test(readFileSync(join(root, file), 'utf8')))
     expect(missing, guide).toEqual([])
   })
