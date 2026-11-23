@@ -1,6 +1,7 @@
 import { type DragEndEvent, type DragMoveEvent, type DropAnimation } from '@dnd-kit/core';
 import { Component, type ReactNode, type RefObject } from 'react';
 import { CHAT_TOOL_DROP_PREFIX } from '../chat-tool-geometry';
+import { revealInRow } from '@/lib/revealInRow';
 import { DUR_MED_MS, EASE } from '@/styles/motion';
 
 type Point = { x: number; y: number };
@@ -53,27 +54,19 @@ export function stripTabNodes(scroller: HTMLElement): [string, HTMLElement][] {
   });
 }
 
-type Props = { scroller: RefObject<HTMLDivElement | null>; order: string; activeTabId: string | undefined; keepActiveOnResize?: boolean; children: ReactNode };
+type Props = { scroller: RefObject<HTMLDivElement | null>; order: string; activeTabId: string | undefined; children: ReactNode };
 
 /** Snapshot before React moves keyed slots. No wrapper: slots must remain direct flex siblings. */
 export class TabStripMotion extends Component<Props> {
   private animations = new Map<HTMLElement, Animation>();
 
-  private revealActiveTab() {
+  /** Brings the active tab into the strip's view. Its scroller (a parent) is attached after this mounts, so the strip's own
+   *  effects call this on mount and on resize (TabBar), ❌ componentDidMount. */
+  revealActiveTab() {
     const { scroller, activeTabId } = this.props;
-    if (!activeTabId) return;
-    scroller.current?.querySelector<HTMLElement>(`[data-tabid="${CSS.escape(activeTabId)}"]`)
-      ?.scrollIntoView({ behavior: 'instant', inline: 'nearest', block: 'nearest' });
-  }
-
-  private resizeObserver?: ResizeObserver;
-
-  componentDidMount() {
-    this.revealActiveTab();
-    const scroller = this.props.scroller.current;
-    if (!this.props.keepActiveOnResize || !scroller || typeof ResizeObserver === 'undefined') return;
-    this.resizeObserver = new ResizeObserver(() => this.revealActiveTab());
-    this.resizeObserver.observe(scroller);
+    const row = scroller.current;
+    const tab = row && stripTabNodes(row).find(([id]) => id === activeTabId)?.[1];
+    if (row && tab) revealInRow(row, tab);
   }
 
   private positions(): Map<string, Point> {
@@ -117,7 +110,6 @@ export class TabStripMotion extends Component<Props> {
   }
 
   componentWillUnmount() {
-    this.resizeObserver?.disconnect();
     for (const animation of this.animations.values()) animation.cancel();
   }
 

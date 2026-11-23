@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Avatar } from '@/components/Avatar';
@@ -33,13 +34,18 @@ async function mount(doc = document) {
   cleanup.push(() => host.remove());
   const root = createRoot(host);
   roots.push(root);
-  root.render(<>
+  // @@@mount-after-effects - the motion is watched from an effect (stopAnimationsOffscreen). Right after the commit
+  // the DOM already animates with no attribute, which also meets the wait below, so a poll landing before the
+  // effects ran handed the tests motion nobody watched (it still turned after hiding). A synchronous render runs its
+  // effects before flushSync returns.
+  flushSync(() => root.render(<>
     <RunningTokenBar previewChatId={null} tokens={[{
       id: 'animation-agent', name: 'Agent', avatarSeed: 'animation-agent', avatarUrl: avatar,
       stateKey: 'running', toolCount: 1, lastActiveAt: null,
     }]} />
     <Avatar name="Running agent" seed="animation-agent" avatarUrl={avatar} isAgent agentStatus="working" />
-  </>);
+  </>));
+  expect(host.querySelectorAll('[data-animation-off]'), 'the watched motion starts removed').toHaveLength(2);
   await until('the pill glyph and the avatar corner glyph turn', () => host.getAnimations({ subtree: true }).length === 2 && host.querySelector<HTMLElement>('.rtb-state .gg-running-glyph')?.hasAttribute('data-animation-off') === false);
   const animations = host.getAnimations({ subtree: true });
   expect(animations.every((animation) => (animation as CSSAnimation).animationName === 'gg-running-glyph')).toBe(true);
