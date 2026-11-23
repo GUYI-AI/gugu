@@ -68,7 +68,7 @@
   gap: 5px;
   border: 0;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--font-body);
   font-weight: 400;
   line-height: 20px;
   white-space: nowrap;
@@ -81,7 +81,7 @@
   padding: 4px 12px 6px 26px;
 }
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child,
-[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child * { font-size: 13px; font-weight: 400; }
+[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child * { font-size: var(--font-body); font-weight: 400; }
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child { gap: 12px; }
 /* The design has the count 12px after the label; the fold chevron hangs in the gutter left of the label instead of between them. */
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child > button:first-child { position: relative; }
