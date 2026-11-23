@@ -170,3 +170,17 @@ it('invalidates queued release on logout and can reconnect a gone replica on the
   close(); close = undefined
   expect(guard()).toBe(false)
 })
+
+// A restart interrupts the turn: the runtime drops the session's state topic, and the next message starts the session
+// again without touching the held input's outbox row. Life coming back ready is what must reopen the replica.
+it('reopens the state replica when Life is ready again after the running session went away', async () => {
+  close = watchSessionSendQueues('owner', () => undefined)
+  await expect.poll(() => fixture.release.mock.calls.length).toBe(1)
+  fixture.gone!(new Error("WireError: Unknown live topic 'session.state' (no instance for this key)"))
+  expect(fixture.dispose).toHaveBeenCalledOnce()
+  fixture.lifeKind = 'starting'; fixture.lifeEvent!({ sessionId: 'session' })
+  await Promise.resolve(); await Promise.resolve()
+  expect(fixture.release).toHaveBeenCalledOnce()
+  fixture.lifeKind = 'ready'; fixture.lifeEvent!({ sessionId: 'session' })
+  await expect.poll(() => fixture.release.mock.calls.length).toBe(2)
+})
