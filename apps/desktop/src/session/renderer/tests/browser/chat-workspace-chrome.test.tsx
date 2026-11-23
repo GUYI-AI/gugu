@@ -258,6 +258,59 @@ it('mounts a workspace whose tools are hidden with the chat already at full widt
   expect(chatWidths.every((size) => size === 800), chatWidths.join(' ')).toBe(true);
 });
 
+it('a move held back by a long frame goes on from where it was drawn, ❌ skipped ahead by the time it was held', async () => {
+  const { width, mode, chat, tool } = await mountWorkspace();
+  await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
+  await mode('split');
+  await untilStable('the split comes to rest', () => width(chat()));
+  const landing = Math.round(tool()!.getBoundingClientRect().left);
+  await userEvent.click(page.getByRole('button', { name: '隐藏标签页' }));
+  await mode('hidden');
+  await until('the hidden tool is out of reach', () => !!tool()?.closest('[inert]'));
+  // A first open mounts its pages: the frames right after the move starts are held back. The window hears the click after
+  // the app (which starts the move), in the same task.
+  window.addEventListener('click', () => {
+    const held = performance.now();
+    while (performance.now() - held < 300) { /* a long task */ }
+  }, { once: true });
+  await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
+  const lefts: number[] = [];
+  for (let frame = 0; frame < 30; frame += 1) {
+    await new Promise(requestAnimationFrame);
+    lefts.push(Math.round(tool()!.getBoundingClientRect().left));
+  }
+  const travel = 800 - landing;
+  // The first frame shown is near the start (a frame's step, ❌ 300 ms of a 500 ms move), and the rest still slides.
+  expect(800 - lefts[0], JSON.stringify(lefts)).toBeLessThan(travel / 4);
+  expect(new Set(lefts).size, JSON.stringify(lefts)).toBeGreaterThan(5);
+});
+
+it('the conversation keeps its look through a move: the strip is narrow or not by its width at rest, ❌ as drawn mid-move', async () => {
+  const { inside, width, mode, chat } = await mountWorkspace();
+  await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
+  await mode('split');
+  await untilStable('the split comes to rest', () => width(chat()));
+  const bar = () => inside('[data-chat-workspace-chat-header] .session-tab-bar');
+  const asTab = () => !!inside('[data-chat-workspace-conversation-tab]');
+  // At rest beside the tools the conversation strip is narrow (under 600 px here), alone it is not.
+  expect(bar()!.hasAttribute('data-strip-narrow')).toBe(true);
+  const looks = async () => {
+    const seen = new Set<string>();
+    for (let frame = 0; frame < 40; frame += 1) {
+      await new Promise(requestAnimationFrame);
+      if (asTab()) seen.add(`tab narrow=${bar()?.hasAttribute('data-strip-narrow')}`);
+    }
+    return [...seen];
+  };
+  await userEvent.click(page.getByRole('button', { name: '隐藏标签页' }));
+  expect(await looks(), 'hiding: while drawn as a tab, one look').toEqual(['tab narrow=true']);
+  await mode('hidden');
+  await until('the conversation is a title again once the tools are off', () => !asTab());
+  expect(bar()!.hasAttribute('data-strip-narrow')).toBe(false);
+  await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
+  expect(await looks(), 'showing: while drawn as a tab, one look').toEqual(['tab narrow=true']);
+});
+
 it('docks chat into the strip, then into a header button, and keeps both pages alive', async () => {
   const { inside, workspace, chat, tool, mode, width } = await mountWorkspace();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));

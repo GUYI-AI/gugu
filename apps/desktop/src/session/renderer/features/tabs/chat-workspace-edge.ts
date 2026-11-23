@@ -9,6 +9,8 @@ export interface CutEdge {
   /** Where its move started and where it goes; both the same at rest. */
   from: number;
   to: number;
+  /** The cut's whole length (px). */
+  extent: number;
 }
 
 export class CutEdgeRelay {

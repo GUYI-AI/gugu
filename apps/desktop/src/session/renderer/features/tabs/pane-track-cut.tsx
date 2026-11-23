@@ -121,7 +121,7 @@ export function TrackCut({
       const handle = handles.current[at];
       if (handle) handle.style.transform = `translate${axis.toUpperCase()}(${edge - 1}px)`;
     });
-    if (ids.length > 1) edgeRef.current?.({ drawn: drawn.get(ids[0]) ?? 0, ...track.ends(ids[0]) });
+    if (ids.length > 1) edgeRef.current?.({ drawn: drawn.get(ids[0]) ?? 0, ...track.ends(ids[0]), extent: extent.current });
   }), [track]);
 
   useLayoutEffect(() => {

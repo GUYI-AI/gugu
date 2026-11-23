@@ -1,6 +1,6 @@
 import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Maximize2, MessageSquare, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { cn } from '@renderer/utils/utils';
@@ -77,6 +77,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   }, [dragging, embedded, focused, layout, mode]);
   const chatColumn = useRef<HTMLDivElement>(null);
   const toolColumn = useRef<HTMLDivElement>(null);
+  // Divided, the conversation strip's width at rest: its look (narrow or not) follows it, ❌ the width drawn mid-move.
+  const [chatRest, setChatRest] = useState<number>();
   const tools = panes?.tools;
   // The tools on their way off (hidden): their tabs leave with their page (@@@leaving-panes), ❌ before it.
   const leaving = mode === 'hidden' && !!tools && !layout.narrow && layout.isPaneShown(tools.paneId);
@@ -84,23 +86,27 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const toolsFirst = divided && layout.groups[0] === tools;
   // @@@strip-on-track: divided, the strip's columns are placed on the root cut's first edge as it is drawn. The tools' tabs
   // move as their page beneath does (PanelTrack): at the width they have at rest, on the moving edge, clipped by the strip.
-  // Nothing in the strip re-lays out mid-move.
+  // The conversation column ends on the edge, its look (narrow or not) that of its width at rest: nothing in the strip
+  // changes how it looks mid-move.
   useLayoutEffect(() => {
     const chatNode = chatColumn.current;
     const toolNode = toolColumn.current;
-    const place = ({ drawn, from, to }: CutEdge) => {
+    const place = ({ drawn, from, to, extent }: CutEdge) => {
       if (toolsFirst) {
         const open = Math.max(from, to);
         if (toolNode) Object.assign(toolNode.style, { left: `${drawn - open}px`, width: `${open}px` });
         if (chatNode) chatNode.style.marginInlineStart = `${drawn}px`;
+        setChatRest(extent - open);
       } else {
         if (chatNode) chatNode.style.flex = `0 1 ${drawn}px`;
         if (toolNode) Object.assign(toolNode.style, { left: `${drawn}px`, width: `calc(100% - ${Math.min(from, to)}px)` });
+        setChatRest(Math.min(from, to));
       }
     };
     if (divided && edge) return edge.attach(place);
     if (chatNode) Object.assign(chatNode.style, { flex: '', marginInlineStart: '' });
     if (toolNode) Object.assign(toolNode.style, { left: '', width: '' });
+    setChatRest(undefined);
     return undefined;
   });
   if (!panes || !mode) return null;
@@ -123,7 +129,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     <div ref={chatColumn} data-chat-workspace-chat-header="" className="min-w-0 flex-1">
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
         <ChatWorkspaceTabContext.Provider value={{ role: toolsShown ? 'conversation' : 'title', layout }}>
-          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions}>
+          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions} restWidth={divided ? chatRest : undefined}>
             {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
           </TabStripShell>
         </ChatWorkspaceTabContext.Provider>
