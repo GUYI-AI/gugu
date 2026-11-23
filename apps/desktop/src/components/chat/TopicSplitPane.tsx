@@ -15,7 +15,6 @@ import type { MemberProfileOpener } from '../memberProfileModels'
 import { IconButton } from '../ui/IconButton'
 import { useBackLayer } from '../ui/sheetStack'
 import { ChatMessageComposer } from './ChatMessageComposer'
-import { RunningBarSlot, RunningTokenBar, type RunningToken } from '../RunningTokenBar'
 import { TopicToolWorkspace } from './TopicToolWorkspace'
 import { MessageList, type ChatListRowItem, type MessageListRowProps } from './MessageList'
 import { useToast } from '../toastContext'
@@ -78,14 +77,6 @@ export type TopicSplitPaneProps = {
   mentionMembers: readonly GroupRosterCandidate[]
   /** @ 候选里那些 agent 此刻在不在线。话题里 @ 就是「把人拉进来」的动作,看不见状态就是盲拉。 */
   agentStatuses?: AgentStatusById
-  /**
-   * 来源群的运行 token(手机专用)。手机上话题整页盖住了群,群里那条运行条就看不见了 ——
-   * 在话题输入框上面挂同一条:数据取来源群,短按 @ 进**话题**的输入框,长按看详情,同群里。
-   * 桌面不传:分栏旁边群里那条一直看得见。
-   */
-  runningTokens?: RunningToken[]
-  /** 运行条详情卡读哪条会话(来源群)。 */
-  runningPreviewChatId?: string | null
   composerControls?: React.ReactNode
   onClose: () => void
   /** 发言人的 id —— ChatMessageComposer 的 @ 候选与自指要用它。 */
@@ -192,8 +183,6 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
   onSendAttachments,
   mentionMembers,
   agentStatuses,
-  runningTokens,
-  runningPreviewChatId = null,
   composerControls,
   history,
   onClose,
@@ -301,7 +290,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
     onForward: onForward ?? noop,
     onDelete: onDelete ?? noop,
     onVisible: (message) => { if (visible !== false) history.markMessageVisible(message) },
-    // 右键发送者头像 → @ 他:插进**这一栏**的输入框,与上面运行中头像条同一个 setMentionToInsert。
+    // 右键发送者头像 → @ 他:插进**这一栏**的输入框。
     onMentionMember: setMentionToInsert,
     // 单层不嵌套:onOpenTopic 给 undefined —— 话题里的消息不给「开话题」入口,也就没有锚点卡
     // (spec「必须有来源」:话题上不再开话题)。MessageBubble 的菜单项只在收到这个 handler 时才画。
@@ -388,22 +377,7 @@ export function TopicSplitPane({ viewportKey = 'topic', navigationTarget = false
             自造的那份缺发送键、缺 @ 候选弹窗、缺草稿与附件 —— 这些原件早就解决过,
             重写一份等于把它们统统退回未解决态,而且不报任何错(owner 2026-09-19 实测点破)。
             话题是一间屋子 ⇒ isGroupChat,寻址规则与群一致。 */}
-        {/* 话题里运行条那一行同样是固定高的一行;只在传了 runningTokens 时才有(手机整页话题),桌面分栏旁边群里那一条一直看得见。 */}
-        <ChatBottomDock reserve={messages.length === 0} running={!!runningTokens?.length} above={runningTokens &&
-        <RunningBarSlot>
-        {runningTokens.length > 0 ? (
-          <RunningTokenBar
-            testId="topic-agent-running-status"
-            previewChatId={runningPreviewChatId}
-            tokens={runningTokens}
-            onTokenClick={(id) => {
-              const token = runningTokens.find((candidate) => candidate.id === id)
-              if (token) setMentionToInsert({ id: token.id, name: token.name })
-            }}
-          />
-        ) : null}
-        </RunningBarSlot>
-        }>
+        <ChatBottomDock reserve={messages.length === 0}>
         <div data-topic-split-composer="" style={mobile ? TOPIC_SPLIT_COMPOSER_MOBILE_STYLE : TOPIC_SPLIT_COMPOSER_STYLE}>
         {composerControls}
         <ChatMessageComposer

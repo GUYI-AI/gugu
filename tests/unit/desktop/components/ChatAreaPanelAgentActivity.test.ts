@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { readComposer } from '../../../support/composerEditor'
 import { act, createElement } from 'react'
 import { ChatAreaPanel } from '../../../../apps/desktop/src/components/ChatAreaPanel'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
@@ -13,7 +12,6 @@ import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localS
 import { DevicesContext, type DevicesContextValue } from '../../../../apps/desktop/src/store/devicesContext'
 import type { AccountRevisionListener } from '../../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import { presentationOfDisplayStatus } from '../../../support/agentDisplayStatusTestDouble'
-import { InitialResizeObserver } from '../../../support/initialResizeObserver'
 import type { ChatContextValue } from '../../../../apps/desktop/src/store/chatContext'
 import { chatDisplayName } from '@gugu/core/shared/ui/chatModels'
 import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSplitRequest'
@@ -146,41 +144,6 @@ describe('ChatAreaPanel agent activity placement', () => {
     const header = harness.container.querySelector('[data-chat-area-header]')
     expect(chatDisplayName(dm, 'Wei Zhang')).toBe('阿威')
     expect(header?.textContent).toContain(chatDisplayName(dm, 'Wei Zhang'))
-  })
-
-  // One row on every device (#951): my agents lead the visible row, the rest sit behind +N, all still mention targets.
-  it('prioritizes my agents in the one-row strip and keeps every mention target behind +N (#6008)', async () => {
-    const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(360)
-    const pill = vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) {
-      return this.matches('.rtb-more') ? 32 : this.matches('[data-message-preview-trigger]') ? 100 : 0
-    })
-    groupMock.agents = ['other-1', 'other-2', 'mine-1', 'mine-2', 'mine-3', 'mine-4', 'mine-idle'].map((id) => ({
-      id, display_name: id, type: 'agent', role: 'member', account_status: 'active', avatar: null, email: null,
-      owner_user_id: id.startsWith('mine-') ? 'user-1' : 'user-2',
-    }))
-    groupMock.statuses = {
-      'other-1': 'working', 'other-2': 'working', 'mine-1': 'working', 'mine-2': 'working',
-      'mine-3': 'working', 'mine-4': 'working', 'mine-idle': 'idle',
-    }
-    vi.stubGlobal('ResizeObserver', InitialResizeObserver)
-    await renderChatArea({ activeChat: chat({ id: 'chat-1', kind: 'group', name: 'Team' }), messages: [] })
-
-    try {
-      const runningBar = harness.container.querySelector('[data-testid="group-agent-running-status"]')!
-      const names = (root: ParentNode, selector: string) => Array.from(root.querySelectorAll<HTMLElement>(selector), (node) => node.querySelector('.rtb-nm')!.textContent)
-      // 360px fits three 100px pills plus +N.
-      expect(Array.from(runningBar.querySelectorAll<HTMLElement>('.rtb-bar > [data-message-preview-trigger]')).filter((node) => node.style.visibility !== 'hidden').map((node) => node.querySelector('.rtb-nm')!.textContent)).toEqual(['mine-1', 'mine-2', 'mine-3'])
-      expect(runningBar.querySelector('.rtb-more')?.textContent).toBe('+3')
-      await clickElement(runningBar.querySelector<HTMLButtonElement>('.rtb-more')!)
-      const panel = document.body.querySelector('.rtb-ov')!
-      expect(Array.from(panel.querySelectorAll('[role="group"]'), (group) => [group.getAttribute('aria-label'), names(group, '[data-message-preview-trigger]')])).toEqual([['我的', ['mine-4']], ['其他人的', ['other-1', 'other-2']]])
-      await clickElement(panel.querySelector<HTMLButtonElement>('[data-message-preview-trigger="mine-4"]')!)
-      expect(readComposer(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"]`))).toContain('@mine-4')
-    } finally {
-      width.mockRestore()
-      pill.mockRestore()
-      vi.unstubAllGlobals()
-    }
   })
 
   it.each([

@@ -26,12 +26,10 @@ import { drainTopicSplitRequest, requestTopicSplit } from '../lib/topicSplitRequ
 import { buildGroupRosterCandidates } from '../lib/mention'
 import { topicMentionCandidates } from './chat/topicMentionModels'
 import { resolveGroupRunningIndicator } from '../lib/agentRunningStatusModels'
-import { groupRunningTokens, latestSpokeAt } from '../lib/groupRunningTokenModels'
 import { useReadReceiptPanel } from '@/hooks/useReadReceiptPanel'; import { useMessageDelivery } from '@/hooks/useMessageDelivery'
 import { useStructurallyShared } from '../hooks/useStructurallyShared'
-import { RunningBarSlot, RunningTokenBar } from './RunningTokenBar'
 import { AgentConversationNoticeSlot } from './AgentTurnFailureBar'
-import { useAgentDisplayStatuses, useAgentRecentActivity } from '../hooks/useAgentDisplayStatus'
+import { useAgentDisplayStatuses } from '../hooks/useAgentDisplayStatus'
 import { useMessageFilePreview } from './chat/useMessageFilePreview'
 import type { MemberProfileCardModel, MemberProfileChatTarget } from './MemberProfileCard'
 import { useShownAgentStatus } from './chat/useAgentsOnCloudComputer'
@@ -90,17 +88,13 @@ interface ChatAreaPanelProps {
   // chat (where activeChatId doesn't change). Used to re-trigger the scroll-window reset (collapse + bottom).
   openNonce?: number
   onBack?: () => void
-  /** #7199「助理」App 里那块:头栏只在搜索时出现(头像、搜索、设置在 App 自己那一排),输入框「和 X 聊天」+「+」;typing = 接在消息流末尾、取代运行条的「它在处理」。 */
-  chrome?: { placeholder?: string; attachGlyph: ReactNode; attachMenu?: readonly ComposerAttachAction[]; typing?: ReactNode; composerHeader?: ReactNode; hideRunningStatus?: boolean;runtimeReady?:boolean }
+  /** #7199「助理」App 里那块:头栏只在搜索时出现(头像、搜索、设置在 App 自己那一排),输入框「和 X 聊天」+「+」;typing = 接在消息流末尾的「它在处理」。 */
+  chrome?: { placeholder?: string; attachGlyph: ReactNode; attachMenu?: readonly ComposerAttachAction[]; typing?: ReactNode; composerHeader?: ReactNode; runtimeReady?:boolean }
   /** Block tab-strip slots for actions, title, topics and right-panel tabs; absent on standalone/phone headers. */
   blockHost?: { actions: HTMLElement | null; title: HTMLElement | null; tabs: HTMLElement | null }
   onOpenUserChat?: (target: MemberProfileChatTarget) => void; onOpenSessionpageAgentFile?: (agentUserId: string, path: string) => Promise<void>
 }
 // ── ChatAreaPanel ──────────────────────────────────────────────────────────────
-// @@@1696 GroupAgentStatusLine / GroupAgentStatusBar 已删 —— 群聊运行态统一到共享 RunningTokenBar（见渲染点）：
-// 竖排多行纯文字「{名} 正在执行 …」+ hover 抛工具名 → 改横排单行流光 token + 去术语计数卡，与单聊同一套。
-// 运行中占位只剩 RunningTokenBar 一种形状(#6448 删掉了已无人引用的 AgentTypingIndicator;
-// #2186 删掉了它上面的 StreamingAgentBubble 纯转发壳)。
 
 export function ChatAreaPanel({ chatId, ...surface }: ChatAreaPanelProps) {
   return chatId === undefined ? <ChatAreaSurface {...surface} /> : <ChatLineScope chatId={chatId}><ChatAreaSurface {...surface} /></ChatLineScope>
@@ -338,11 +332,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   // One presence subscription per agent drives headers, roster and profile cards.
   const groupAgentStatuses = useAgentDisplayStatuses(groupAgentIds)
   const shownAgent = useShownAgentStatus() // #7199 画头像 / 状态字用的那一份;在跑、提醒照旧读原读数
-  const groupAgentRecentActivity = useAgentRecentActivity(groupAgentIds)
-  // 群的运行 token:群聊页的运行条和手机话题页挂的那条是同一份。
-  const groupRunTokens = groupRunningTokens({ agents: groupCollabSnapshot?.agents ?? [], statuses: groupAgentStatuses, identities: identitiesById, currentUserId: user?.id, recentActivity: groupAgentRecentActivity, spokeAt: latestSpokeAt(messages) })
-  // 群 thread panel 的运行中占位指示器(panel 内没有主线浮动条)。它和浮动条读**同一个** agent 态:
-  // DM 里就是本会话那个 agent,群里挑「任一成员在跑」里的第一个来画身份(纯函数在 agentRunningStatusModels)。
+  // 群 thread panel 的运行中占位指示器:DM 里就是本会话那个 agent,群里挑「任一成员在跑」里的第一个来画身份(纯函数在 agentRunningStatusModels)。
   const activeAgentActivity = useMemo<AgentConversationActivity | null>(
     () => isRoomChatSurface
       ? resolveGroupRunningIndicator({ chatId: activeChatId, threadRootId: threadScope.rootId, agentIds: groupAgentIds, statuses: groupAgentStatuses, identities: identitiesById })
@@ -532,8 +522,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       onSend={topicSurface.sendInSplit}
       onSendAttachments={topicSurface.sendAttachmentsInSplit}
       agentStatuses={groupAgentStatuses}
-      runningTokens={mobile ? groupRunTokens : undefined}
-      runningPreviewChatId={activeChatId} composerControls={phoneRoomControls}
+      composerControls={phoneRoomControls}
       memberProfileOpener={Object.keys(messageMemberProfiles).length > 0 ? messageProfile.asideOpener : undefined}
       onOpenAttachment={(file, message) => { const split = topicSurface.splitTopic; openFilePreview(file, message, split ? () => topicSurface.openSplit(split) : undefined) }}
       onClose={topicSurface.closeSplit}
@@ -670,25 +659,8 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
       <ChatTailNotice window={messageWindow} onClick={pinToBottom} />
 
-      {/* @@@1506 - Agent 运行状态：输入框上方的轻量浮动文字（owner #1506：无重白板，打字时也能瞥见）。群聊列出在跑的 agent（可点 → @mention）；
-          单聊是运行中/思考中（流式正文仍留消息流）。运行条那一行是固定高的一行(群、agent 私聊才有),没有底,消息从它后面滚过;运行条出现、消失不改变布局。 */}
-      <ChatBottomDock reserve={chatListRows.length === 0} running={isRoomChatSurface && !chrome?.hideRunningStatus && groupRunTokens.length > 0} above={isRoomChatSurface && !chrome?.hideRunningStatus && <RunningBarSlot>
-      {!chrome?.hideRunningStatus && (
-        // @@@1696 群聊运行态：横排单行「运行 token」(流光动词) + cap +N。数据 = 在跑(transient)的 agent，
-        // stateKey 由 presence recentActions 的最新 kind 派生，展示文案由 RunningTokenBar 翻译；
-        // toolCount 近似用近 5 分钟 actions.length。onTokenClick 仍 @mention。
-        <RunningTokenBar
-          testId="group-agent-running-status"
-          // @@@6357 悬浮 token = MessagePreview(它最近在做的事,不按 chat 过滤,#6573)。
-          previewChatId={activeChatId}
-          tokens={groupRunTokens}
-          onTokenClick={(id) => {
-            const agent = groupCollabSnapshot?.agents.find((a) => a.id === id)
-            if (agent) setMentionToInsert({ id: agent.id, name: identitiesById[agent.id]?.display_name ?? '' })
-          }}
-        />
-      )}</RunningBarSlot>}>
-      {/* #2115 — 普通 ACP 回合终态失败条（运行条同槽位;重试=CAS error→pending 重排原命令,详见 Slot）。 */}
+      <ChatBottomDock reserve={chatListRows.length === 0}>
+      {/* #2115 — 普通 ACP 回合终态失败条（输入框上方;重试=CAS error→pending 重排原命令,详见 Slot）。 */}
       <AgentConversationNoticeSlot sessionpageNotices={null} failureExplained={false} chatId={activeChatId} threadRootId={threadScope.rootId} profiles={messageMemberProfiles} />
       {/* Input area — white card with rounded border floating in gray.
           @@@multi-select (#988) — 多选态用底部批量操作条替换输入框（同槽位 + 同 --bg-primary 外壳）。 */}
