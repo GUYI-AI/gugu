@@ -263,6 +263,9 @@ function notifyFocusChange(): void {
 
 const rawInvokeRendererExtensions = makeInvoker('extensions')
 
+/** Scales an image in the window's renderer (src/lib/imagePreview.ts scaleImage); see electron/imagePreview.ts. */
+export const invokeRendererImages = makeInvoker('images')
+
 /**
  * Sends one extension host action to the renderer that draws the surface's window.
  *

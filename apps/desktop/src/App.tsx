@@ -29,6 +29,7 @@ import { ConversationDeleteConfirmationHost } from './components/chat/Conversati
 import { ContentContextMenuHost } from './components/ContentContextMenuHost'
 import { ThemeProvider } from './store/theme'
 import { rendererCommandEventName } from './lib/rendererCommandProtocol'
+import { imageCommandHandlers } from './lib/imagePreview'
 import { sessionCoordinator } from './lib/sessionCoordinator'
 import { publishSelfIdentity } from './lib/selfIdentityBridge'
 import { installAssistantPanelHost } from './components/assistant/assistant-panel-host'
@@ -151,6 +152,9 @@ export default function App() {
   useRendererRpcHandlers(rendererCommandEventName('auth'), 'auth', authRpcHandlers, (reqId, result) => {
     platform.sendRendererCommandResult('auth', reqId, result)
   }, platform.capabilities.rendererCommandBridge, () => platform.sendRendererCommandReady('auth'))
+  useRendererRpcHandlers(rendererCommandEventName('images'), 'images', imageCommandHandlers, (reqId, result) => {
+    platform.sendRendererCommandResult('images', reqId, result)
+  }, platform.capabilities.rendererCommandBridge, () => platform.sendRendererCommandReady('images'))
 
   if (loading) {
     return <FullScreenLoader />
