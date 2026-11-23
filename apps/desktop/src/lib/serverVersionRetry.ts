@@ -20,12 +20,12 @@ export async function retryServerVersionMatch(deviceId: string): Promise<boolean
 }
 
 /** 旧版本的账号进程只认旧的 retry RPC(它写的就是一个确认,守护进程把它算作对眼下目标的确认)。 */
-export type VersionRestartResult = { requested: boolean; at?: number }
+/** The machine reports the accepted restart itself (its heartbeat's `waiting` outcome); the reply only says whether it was accepted. */
+export type VersionRestartResult = { requested: boolean }
 export async function restartServerVersionNow(deviceId: string, version: string, supportsConfirmedRestart: boolean): Promise<VersionRestartResult> {
   const reply = await callDeviceRpc<VersionRestartResult>(deviceId,
     supportsConfirmedRestart ? VERSION_RESTART_RPC : LEGACY_VERSION_RETRY_RPC,
     supportsConfirmedRestart ? { version, confirmed: true } : {}, { timeoutMs: 15_000 })
   if (reply.error) throw new Error(reply.error.message)
-  const at = reply.result?.at
-  return { requested: reply.result?.requested === true, ...(typeof at === 'number' && Number.isFinite(at) ? { at } : {}) }
+  return { requested: reply.result?.requested === true }
 }
