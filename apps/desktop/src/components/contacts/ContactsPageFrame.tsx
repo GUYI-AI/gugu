@@ -55,10 +55,11 @@ export function ContactsPageFrame({ title, subtitle, actions, drawer, onCloseDra
   return (
     // --contacts-drawer-w: the drawer's one width; lists that end in row actions stop short of it (see NewFriendsPanel).
     <div className="relative flex h-full min-w-0 flex-1 overflow-hidden [--contacts-drawer-w:400px]">
-      <Pane paneRole="detail" data-testid={testId}>
+      {/* data-contacts-page / -body / -card: the page in its modal takes Settings' page layout (desktop-shell.css @@@page-modal). */}
+      <Pane paneRole="detail" data-testid={testId} data-contacts-page="">
         <PaneHeader divider atWindowEdge title={title} subtitle={subtitle} actions={actions} />
-        <div className="flex-1 overflow-y-auto !px-6 !pb-6" onPointerDown={closeOnBlank}>
-          <DrawerContext.Provider value={slot}>{children}</DrawerContext.Provider>
+        <div className="flex-1 overflow-y-auto !px-6 !pb-6" data-contacts-body="" onPointerDown={closeOnBlank}>
+          <div data-contacts-card=""><DrawerContext.Provider value={slot}>{children}</DrawerContext.Provider></div>
         </div>
       </Pane>
       <div ref={setEl} data-testid="contacts-detail-drawer" data-pane-close="" data-drawer="" className={drawerClass}>
