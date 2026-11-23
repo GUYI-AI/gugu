@@ -102,7 +102,8 @@ describe('#6727 改群名的可见入口', () => {
     const display = q('[data-testid="group-name-display"]')!
     expect(display.style.whiteSpace).not.toBe('nowrap')
     expect(display.style.textOverflow).not.toBe('ellipsis')
-    expect(display.style.overflowWrap).toBe('anywhere')
+    // Inline on the phone's page, a class on the desktop Details title (第 16 版): either way the full name wraps.
+    expect(display.style.overflowWrap === 'anywhere' || display.className.includes('[overflow-wrap:anywhere]')).toBe(true)
   })
 
   it('反例:普通成员没有编辑钮,点名字也不进输入态', async () => {

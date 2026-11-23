@@ -8,6 +8,7 @@ import { updateDisplayAlias } from '../../lib/displayOverrides'
 import { InlineNameInput } from '../ui/InlineNameInput'
 import { Button } from '../ui/Button'
 import { GroupNameInlineEdit } from './GroupNameInlineEdit'
+import { Button as ButtonPrimitive } from '@base-ui/react/button'
 
 export function GroupNameRow({ chat, name, canEdit, onCommit, hero = false }: {
   chat: ChatItem; name: string | null; canEdit: boolean; onCommit: (name: string) => Promise<void>
@@ -23,13 +24,13 @@ export function GroupNameRow({ chat, name, canEdit, onCommit, hero = false }: {
     await updateDisplayAlias(user.id, { kind: 'group', id: chat.id }, alias)
     patchChat(chat.id, { alias: alias.trim() || null })
   }
-  if (hero) return <div className="flex min-w-0 flex-col items-center gap-1.5">
+  if (hero) return <div className="flex min-w-0 flex-col items-center gap-[6px]">
     {open ? <InlineNameInput name={chat.alias ?? ''} allowEmpty maxLength={80} testId="group-alias-input"
       placeholder={t('profile.alias')} onCommit={save} onClose={() => setOpen(false)} />
       : <GroupNameInlineEdit name={name} canEdit={canEdit} onCommit={onCommit} hero />}
-    <button type="button" data-testid="group-set-alias" onClick={() => setOpen(true)}
-      className="text-[12.5px] leading-[18px] font-normal text-[var(--muted-fg)] hover:underline">{t('contextMenu.setAlias')}</button>
-    {chat.alias?.trim() ? <div className="text-[12.5px] font-normal text-[var(--muted-fg)]">{t('profile.alias')} : {groupDisplayName(chat)}</div> : null}
+    <ButtonPrimitive data-testid="group-set-alias" onClick={() => setOpen(true)}
+      className="text-[length:var(--font-caption)] leading-[18px] font-normal text-[var(--muted-fg)] hover:underline">{t('contextMenu.setAlias')}</ButtonPrimitive>
+    {chat.alias?.trim() ? <div className="text-[length:var(--font-caption)] font-normal text-[var(--muted-fg)]">{t('profile.alias')} : {groupDisplayName(chat)}</div> : null}
   </div>
   return <>
     <div className="flex flex-wrap items-center gap-x-2">

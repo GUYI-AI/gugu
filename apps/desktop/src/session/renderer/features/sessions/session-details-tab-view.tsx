@@ -51,7 +51,7 @@ const SessionDetails = observer(function SessionDetails({ sessionId }: { session
   // 置顶 of a standalone agent is its chat-list row's (rowPinOf): re-read when the chat list changes.
   useChatSummaries();
   // 动作表里「旧私聊历史」这类开菜单时才去读有没有的项:详情页一打开就读一次。
-  useEffect(() => { commands.forEach((command) => command.onMenuOpen?.()); }, [commands.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { commands.forEach((command) => command.onMenuOpen?.()); }, [commands.length]);
   const name = useShownAgentName({ name: store?.data.title ?? '', agentType: store?.data.providerId, createdAt: store?.data.createdAt });
   const agentId = sessionAgentBindings.bindingFor(sessionId)?.agentUserId;
   const identity = useAvatarIdentity(agentId ?? '');
@@ -111,7 +111,7 @@ const SessionDetails = observer(function SessionDetails({ sessionId }: { session
           <DropdownMenu.Trigger nativeButton={false} render={<div />}>
             <DetailsRow icon={<GitFork />} label={translate('details.children')} testId="session-details-children" end={children.length} chevron onClick={() => undefined} />
           </DropdownMenu.Trigger>
-          <DropdownMenu.Content align="end" style={{ minWidth: 240 }}>
+          <DropdownMenu.Content align="end" className="min-w-[240px]">
             {children.map((entry) => <MenuItem key={entry[0]} onClick={() => openChild(entry)}>{entry[1].data.title ?? entry[0]}</MenuItem>)}
           </DropdownMenu.Content>
         </DropdownMenu.Root> : null}

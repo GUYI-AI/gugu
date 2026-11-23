@@ -74,7 +74,8 @@ async function renderTopic(mobile: boolean, manageable: boolean, subscribeAccoun
   db.manageable = manageable
   const onClose = vi.fn()
   await renderWithAppProviders(harness, createNode(ChatSettingsPanel, {
-    // A topic is a main conversation of its own (#62): its info page is its members.
+    // A topic is a main conversation of its own (#62): on the phone its info page is its members; on the desktop its
+    // 详情 page (第 16 版) opens them from its members block (below).
     activeChat: chat({ id: 'topic-1', kind: 'topic', name: 'Current topic', source_chat_id: 'source' }), mobile,
     messages: [], onClose, onClearMessages: vi.fn(),
     onSetNotificationLevel: vi.fn(), onTogglePinned: vi.fn(), memberProfiles: [], currentUserId: 'viewer',
@@ -86,6 +87,11 @@ async function renderTopic(mobile: boolean, manageable: boolean, subscribeAccoun
       identitiesById: { viewer: displayIdentity('viewer', { display_name: 'Viewer' }) },
       getImRepository: async () => repository, subscribeAccountRevision },
   })
+  if (!mobile) {
+    const members = harness.container.querySelector<HTMLElement>('[data-testid="group-settings-members"]')
+    expect(members, 'the desktop 详情 page has the topic members block').not.toBeNull()
+    await act(async () => { members!.click() })
+  }
   return onClose
 }
 

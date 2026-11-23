@@ -5,6 +5,7 @@ import { platform } from '../../platform'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../session/renderer/lib/ui/tooltip'
 import { IconButton } from '../ui/IconButton'
 import { DropdownMenu, MenuItem } from '../ui/Menu'
+import { Button as ButtonPrimitive } from '@base-ui/react/button'
 
 /** The shell opens the creation composer for this group. */
 const newAgentInGroup = (chatId: string) => window.dispatchEvent(new CustomEvent(UI_EVENTS.createAgentInGroup, { detail: { chatId } }))
@@ -32,7 +33,7 @@ export function GroupAddMenu({ chatId, canAddMembers, onNewAgent = () => newAgen
     <DropdownMenu.Root modal={false}>
       <Tooltip>
         <DropdownMenu.Trigger render={<TooltipTrigger render={labeled
-          ? <button type="button" aria-label={label} data-group-add-menu="" className="inline-flex h-[22px] items-center gap-[5px] rounded-full px-2 text-[12px] text-[var(--muted-fg)] hover:bg-row-hover"><Plus size={12} /><span className="@max-[380px]/details:hidden">{label}</span></button>
+          ? <ButtonPrimitive aria-label={label} data-group-add-menu="" className="inline-flex h-[22px] items-center gap-[5px] rounded-full px-2 text-[length:var(--font-caption)] text-[var(--muted-fg)] hover:bg-row-hover"><Plus size={12} /><span className="@max-[380px]/details:hidden">{label}</span></ButtonPrimitive>
           : <IconButton size={size} tone="strong" aria-label={label} data-group-add-menu="" className={className}><Plus /></IconButton>
         } />} />
         <TooltipContent>{label}</TooltipContent>

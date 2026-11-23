@@ -39,7 +39,7 @@ export function ChatDetailsQuickActions({ chatId, isGroup, sourceChatId }: {
       </Popover.Root>
       {isGroup ? <DropdownMenu.Root modal={false}>
         <DropdownMenu.Trigger render={<DetailsTile icon={<Hash />} label={t('history.tabs.topics')} testId="chat-details-topics" />} />
-        <DropdownMenu.Content style={{ width: 320, maxWidth: 'min(320px, var(--available-width))' }} align="end">
+        <DropdownMenu.Content className="w-[320px] max-w-[min(320px,var(--available-width))]" align="end">
           <GroupTopicsRows chatId={chatId} />
         </DropdownMenu.Content>
       </DropdownMenu.Root> : null}

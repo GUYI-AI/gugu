@@ -186,8 +186,10 @@ export const GenericTabItem = observer(function GenericTabItem({
 
   if (workspaceRole === 'capsule') {
     return (
-      // 第 16 版:胶囊栏里只有这一颗胶囊(❌ ⋯):它的动作在名片和详情里(单独成窗是详情的一格)。
+      // 第 16 版:胶囊栏里只有这一颗胶囊(❌ ⋯):它的动作在名片和详情里(单独成窗是详情的一格);页签自己的事(单独成窗、
+      // 关闭)仍在右键里,和别的页签一样,只是不画出一颗钮。
       <>
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands}>
         {/* 按整张卡居中(设计稿 .capbar 整卡宽):相对页签条的 padding box 绝对居中,左边留白、右边按钮都不挤偏它。 */}
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div role="button" tabIndex={0} data-testid="conversation-capsule" data-chat-workspace-title="" data-tabid={tab.tabId} title={tooltip ?? label}
@@ -198,6 +200,7 @@ export const GenericTabItem = observer(function GenericTabItem({
             {editableTitle ?? <span className="truncate">{label}</span>}
           </div>
         </div>
+      </TabContextMenu>
       {cardPopover}
     </>
     );
