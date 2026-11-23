@@ -352,7 +352,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
                (❌ an empty page; ❌ a toast over it). A directory-offline machine has nothing to retry: it comes back by itself. */
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center" data-testid="agent-watch-unreachable">
               <div className="gg-aw-placeholder">{unreachable ?? translateSessionMessage('remoteWorkspace.noAnswer', { device: machineLabel(device) })}</div>
-              {online ? <Button variant="secondary" onClick={reload}>{tc('connection.retry')}</Button> : null}
+              {/* The overlay slot lets clicks through to the transcript (pointer-events: none); this button takes its own. */}
+              {online ? <Button variant="secondary" className="pointer-events-auto" onClick={reload}>{tc('connection.retry')}</Button> : null}
             </div>
           ) : null}
         />
