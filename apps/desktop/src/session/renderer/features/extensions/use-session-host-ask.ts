@@ -87,7 +87,7 @@ export function useSessionHostAsk(
         if (!snapshot.ok) throw new Error(`sessionSnapshot refused: ${snapshot.error.code}: ${snapshot.error.message}`);
         cursor = snapshot.value.cursor;
         take(mergeSettlements({}, snapshot.value.settlements));
-        const subscribed = await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor });
+        const subscribed = await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor, terminalPatch: true });
         // Closed while subscribing: its unsubscribe went first, so this subscription would stay open with nobody listening.
         if (!current) return void await unsubscribe();
         if (!subscribed.ok) throw new Error(`sessionSubscribe refused: ${subscribed.error.code}: ${subscribed.error.message}`);

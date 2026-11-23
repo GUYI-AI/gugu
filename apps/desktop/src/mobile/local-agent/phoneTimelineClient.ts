@@ -30,7 +30,7 @@ export function createPhoneTimelineClient(invoke = invokePhoneHost): Sessionpage
     poll.running = true
     if (poll.timer) clearTimeout(poll.timer)
     try {
-      const result = await invoke<TimelineAfterResult>(poll.deviceId, 'sessionTimeline.sessionAfter', [{ conversationId: poll.sessionId, cursor: poll.cursor, trim: true }])
+      const result = await invoke<TimelineAfterResult>(poll.deviceId, 'sessionTimeline.sessionAfter', [{ conversationId: poll.sessionId, cursor: poll.cursor, trim: true, terminalPatch: true }])
       if (polls.get(id) !== poll) return
       poll.cursor = result.ok ? result.batch.cursor : result.snapshot.cursor
       poll.failures = 0
@@ -49,7 +49,7 @@ export function createPhoneTimelineClient(invoke = invokePhoneHost): Sessionpage
   }
   const client: SessionpageTimelineClient = {
     fetchSnapshot: (deviceId, sessionId, limit) => invoke<TimelineSnapshot>(deviceId, 'sessionTimeline.sessionSnapshot', [{ conversationId: sessionId, ...(limit === undefined ? {} : { limit }), trim: true }]),
-    fetchAfter: (deviceId, sessionId, cursor) => invoke<TimelineAfterResult>(deviceId, 'sessionTimeline.sessionAfter', [{ conversationId: sessionId, cursor, trim: true }]),
+    fetchAfter: (deviceId, sessionId, cursor) => invoke<TimelineAfterResult>(deviceId, 'sessionTimeline.sessionAfter', [{ conversationId: sessionId, cursor, trim: true, terminalPatch: true }]),
     fetchOlder: (deviceId, sessionId, beforeTurnId, limit) => invoke<TimelineOlderResult>(deviceId, 'sessionTimeline.sessionOlder', [{ conversationId: sessionId, beforeTurnId, ...(limit === undefined ? {} : { limit }), trim: true }]),
     fetchToolImage: (deviceId, sessionId, itemId, index) => invoke<ToolImage>(deviceId, 'sessionTimeline.sessionToolImage', [{ conversationId: sessionId, itemId, index }]),
     subscribeSession: async (deviceId, sessionId, subscriptionId, cursor) => {

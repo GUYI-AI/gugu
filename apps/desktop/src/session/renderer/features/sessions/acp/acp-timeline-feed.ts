@@ -67,7 +67,7 @@ export class AcpTimelineFeed {
     if (generation !== this.generation) return;
     this.state = applySnapshot(this.state, snapshot);
     this.changed();
-    await value(this.host.sessionSubscribe({ conversationId, subscriptionId: id, cursor: snapshot.cursor, trim: this.trim }));
+    await value(this.host.sessionSubscribe({ conversationId, subscriptionId: id, cursor: snapshot.cursor, trim: this.trim, terminalPatch: true }));
   }
 
   /** Asks for what came after the cursor now, instead of waiting for the next push. */
@@ -75,7 +75,7 @@ export class AcpTimelineFeed {
     const generation = this.generation;
     const cursor = this.state.cursor;
     if (!cursor) return;
-    const result: TimelineAfterResult = await value(this.host.sessionAfter({ conversationId: this.sessionId, cursor, trim: this.trim }));
+    const result: TimelineAfterResult = await value(this.host.sessionAfter({ conversationId: this.sessionId, cursor, trim: this.trim, terminalPatch: true }));
     if (generation === this.generation) this.apply(applyTimelineResult(this.state, result));
   }
 

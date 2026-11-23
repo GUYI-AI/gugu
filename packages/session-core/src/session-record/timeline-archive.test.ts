@@ -105,6 +105,36 @@ describe('时间线存档', () => {
     expect(reopened.getSnapshot().terminals).toEqual(terminals);
   });
 
+  it('a reader that merges terminals by id gets only the ones that changed; one that does not gets the whole list', async () => {
+    const source = await stage(await fixtureLines());
+    const timeline = await open(source.root);
+    const terminal = (terminalId: string, output: string) => ({ terminalId, owner: 'agent' as const, canKill: false,
+      command: 'echo', args: [], cwd: '/w', output, truncated: false, exitStatus: null });
+    timeline.syncTerminals([terminal('a', 'one'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+    const held = timeline.getSnapshot().cursor;
+
+    // Only `a` grows: the patch names both, carries `a`; the whole list goes to a reader without terminalPatch.
+    timeline.syncTerminals([terminal('a', 'one two'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+    expect(timeline.getAfter(held, { terminalPatch: true })).toMatchObject({ ok: true, batch: {
+      terminalIds: ['a', 'b'], terminals: [terminal('a', 'one two')] } });
+    const whole = timeline.getAfter(held);
+    expect(whole).toMatchObject({ ok: true, batch: { terminals: [terminal('a', 'one two'), terminal('b', 'LONG_OUTPUT_OF_B')] } });
+    expect(whole.ok && 'terminalIds' in whole.batch).toBe(false);
+
+    // Nothing changed since: no terminals at all for the merging reader (absent = unchanged).
+    const now = timeline.getSnapshot().cursor;
+    timeline.syncTerminals([terminal('a', 'one two'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+    timeline.syncQueuedPrompts([{ id: 'q', clientMessageId: 'c', text: 'next' }]);
+    const quiet = timeline.getAfter(now, { terminalPatch: true });
+    expect(quiet.ok && quiet.batch.terminals).toBeUndefined();
+    expect(quiet.ok && quiet.batch.terminalIds).toBeUndefined();
+
+    // `b` goes away: the order says so, with nothing to carry.
+    const before = timeline.getSnapshot().cursor;
+    timeline.syncTerminals([terminal('a', 'one two')]);
+    expect(timeline.getAfter(before, { terminalPatch: true })).toMatchObject({ ok: true, batch: { terminalIds: ['a'], terminals: [] } });
+  });
+
   it('装回存档后只读增量，拼出来的时间线与整份重读逐字一致', async () => {
     const lines = await fixtureLines();
     const half = Math.max(1, Math.floor(lines.length / 2));

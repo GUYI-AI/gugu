@@ -842,12 +842,14 @@ export function snapshot(input: {
 export function after(input: {
   conversationId: string;
   cursor: RecordCursor;
+  terminalPatch?: boolean;
 }): Promise<SessionTimelineResult<TimelineAfterResult>> {
   return withTimeline(input.conversationId, async (timeline, floor) => {
     // Asked for now (a revert just landed, say): the record as written by now, wherever it now is.
     await timeline.catchUp();
     if (floor && !input.cursor.epoch.endsWith(historyClearEpoch(floor))) return { ok: false as const, reset: 'epoch_changed' as const, snapshot: timeline.getSnapshot() };
-    return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor);
+    const options = { terminalPatch: input.terminalPatch === true };
+    return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor, options);
   });
 }
 
@@ -1291,7 +1293,7 @@ export async function subscribe(
     const unsubscribeTimeline = entry.timeline.subscribe(input.cursor, (result) => {
       if (stopped) return;
       emit({ subscriptionId, result });
-    });
+    }, { terminalPatch: input.terminalPatch === true });
     teardown = () => {
       try {
         unsubscribeTimeline();

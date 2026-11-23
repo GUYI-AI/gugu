@@ -200,7 +200,7 @@ export function fetchSnapshot(deviceId: string, sessionId: string, limit?: numbe
 
 /** 补齐:一问一答,不等窗口(见 `once`)。 */
 export function fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor): Promise<TimelineAfterResult> {
-  return value(once(deviceId).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim: true }))
+  return value(once(deviceId).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim: true, terminalPatch: true }))
 }
 
 export function fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number): Promise<TimelineOlderResult> {
@@ -218,7 +218,7 @@ export function fetchToolImage(deviceId: string, sessionId: string, itemId: stri
 }
 
 export function subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null): Promise<unknown> {
-  return value(rpc(deviceId).sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor, trim: true }))
+  return value(rpc(deviceId).sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor, trim: true, terminalPatch: true }))
 }
 
 export function unsubscribeSession(deviceId: string, subscriptionId: string): Promise<unknown> {

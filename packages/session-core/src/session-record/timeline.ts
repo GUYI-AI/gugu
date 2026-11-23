@@ -180,6 +180,8 @@ export async function createSessionTimeline(
 type Subscriber = {
   cursor: RecordCursor;
   listener: (result: TimelineAfterResult) => void;
+  /** Merges terminals by id: batches carry only the changed ones (`TimelineBatch.terminalIds`). */
+  terminalPatch: boolean;
 };
 
 type PublishedItem = { item: TranscriptItem; seq: number };
@@ -248,6 +250,10 @@ class RecordTimeline implements SessionTimeline {
   private liveReplyDirty = false;
   private terminals: readonly TerminalState[] = [];
   private terminalsDirty = false;
+  /** Per terminal: its published JSON and the seq it last changed at; the order of ids, and the seq it last changed at. */
+  private publishedTerminals = new Map<string, { json: string; seq: number }>();
+  private terminalOrder = '';
+  private terminalOrderSeq = 0;
   private liveReplyTimer: ReturnType<typeof setTimeout> | null = null;
   private subscribers = new Set<Subscriber>();
   /** 最近一条记录的 provider 时钟。没有时钟的记录跟着上一条走，❌ 别拿 Date.now() 冒充。 */
@@ -557,7 +563,7 @@ class RecordTimeline implements SessionTimeline {
     };
   }
 
-  getAfter(cursor: RecordCursor): TimelineAfterResult {
+  getAfter(cursor: RecordCursor, options: { terminalPatch?: boolean } = {}): TimelineAfterResult {
     if (cursor.epoch !== this.epochValue) {
       return {
         ok: false,
@@ -569,7 +575,7 @@ class RecordTimeline implements SessionTimeline {
       // 游标比我还新 = 对面记着一段我没有的历史（宿主重开过、状态回退过）。
       return { ok: false, reset: 'cursor_ahead', snapshot: this.getSnapshot() };
     }
-    const batch = this.batchAfter(cursor.seq);
+    const batch = this.batchAfter(cursor.seq, options.terminalPatch === true);
     // spec「补不上（…缺口太大）就整份重载」：缺口大过一份快照时，补缺口既不更省，
     // 拼接面还更大 —— 直接给整份，让对面换掉手里那份。
     if (batch.turns.length > this.defaultLimit) {
@@ -580,10 +586,11 @@ class RecordTimeline implements SessionTimeline {
 
   subscribe(
     cursor: RecordCursor | null,
-    listener: (result: TimelineAfterResult) => void
+    listener: (result: TimelineAfterResult) => void,
+    options: { terminalPatch?: boolean } = {}
   ): () => void {
     const start = cursor ?? { epoch: this.epochValue, seq: 0 };
-    const subscriber: Subscriber = { cursor: start, listener };
+    const subscriber: Subscriber = { cursor: start, listener, terminalPatch: options.terminalPatch === true };
     this.subscribers.add(subscriber);
     // 订阅那一刻先补缺口：不补的话订阅者要一直等到下一条记录才看得到任何东西。
     this.deliver(subscriber);
@@ -1111,6 +1118,7 @@ class RecordTimeline implements SessionTimeline {
     for (const id of settledSubagents) this.publishedSteps.delete(id);
     for (const id of this.dirtySettlements) this.settlementSeq.set(id, nextSeq);
     this.dirtySettlements.clear();
+    if (this.terminalsDirty) this.stampTerminals(nextSeq);
     this.queuedDirty = false;
     this.liveReplyDirty = false;
     this.terminalsDirty = false;
@@ -1119,8 +1127,31 @@ class RecordTimeline implements SessionTimeline {
     for (const subscriber of [...this.subscribers]) this.deliver(subscriber);
   }
 
+  /** Which terminals changed in this publish (by content), and whether their order or membership did. */
+  private stampTerminals(seq: number): void {
+    const alive = new Set<string>();
+    for (const terminal of this.terminals) {
+      alive.add(terminal.terminalId);
+      const json = JSON.stringify(terminal);
+      if (this.publishedTerminals.get(terminal.terminalId)?.json !== json) this.publishedTerminals.set(terminal.terminalId, { json, seq });
+    }
+    for (const id of [...this.publishedTerminals.keys()]) if (!alive.has(id)) this.publishedTerminals.delete(id);
+    const order = this.terminals.map((terminal) => terminal.terminalId).join('\u0000');
+    if (order !== this.terminalOrder) {
+      this.terminalOrder = order;
+      this.terminalOrderSeq = seq;
+    }
+  }
+
+  /** A batch's terminals for a reader that merges by id: the changed ones and the order, or nothing when none changed. */
+  private terminalsAfter(seq: number): Pick<TimelineBatch, 'terminals' | 'terminalIds'> {
+    const changed = this.terminals.filter((terminal) => (this.publishedTerminals.get(terminal.terminalId)?.seq ?? 0) > seq);
+    if (changed.length === 0 && this.terminalOrderSeq <= seq) return {};
+    return { terminalIds: this.terminals.map((terminal) => terminal.terminalId), terminals: changed };
+  }
+
   private deliver(subscriber: Subscriber): void {
-    const result = this.getAfter(subscriber.cursor);
+    const result = this.getAfter(subscriber.cursor, { terminalPatch: subscriber.terminalPatch });
     if (result.ok) {
       if (this.isEmptyBatch(result.batch) && result.batch.cursor.seq === subscriber.cursor.seq) {
         return;
@@ -1140,7 +1171,7 @@ class RecordTimeline implements SessionTimeline {
     );
   }
 
-  private batchAfter(seq: number): TimelineBatch {
+  private batchAfter(seq: number, terminalPatch: boolean): TimelineBatch {
     const turns: TurnPatch[] = [];
     for (const entry of this.published.values()) {
       if (entry.touchedSeq <= seq) continue;
@@ -1176,7 +1207,7 @@ class RecordTimeline implements SessionTimeline {
       ...this.recentActionsSnapshot(),
       queuedPrompts: [...this.queued],
       liveReply: this.liveReply,
-      terminals: this.terminals,
+      ...(terminalPatch ? this.terminalsAfter(seq) : { terminals: this.terminals }),
       subagents: this.subagentSteps(seq)
     };
   }

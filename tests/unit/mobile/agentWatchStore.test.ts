@@ -514,3 +514,28 @@ describe('宿主重发条目时,取到的图带过去', () => {
     expect(imagesOf(next, [0])).toBeUndefined()
   })
 })
+
+describe('terminals merged by id (terminalPatch)', () => {
+  const terminal = (terminalId: string, output: string) => ({ terminalId, owner: 'agent' as const, canKill: false,
+    command: 'echo', args: [], cwd: '/w', output, truncated: false, exitStatus: null })
+  const at = (seq: number) => ({ epoch: 'e', seq })
+  const batchOf = (from: number, extra: Partial<TimelineBatch>): TimelineBatch =>
+    ({ from, cursor: at(from + 1), turns: [], removedTurnIds: [], settlements: [], ...extra })
+  const opened = () => applySnapshot(emptyAgentWatchTimeline(), { cursor: at(1), turns: [], settlements: [], hasOlder: false,
+    terminals: [terminal('a', 'one'), terminal('b', 'two')] } as TimelineSnapshot)
+
+  it('takes the changed ones, keeps the rest, in the batch order; absent keeps them all; a whole list replaces', () => {
+    let state = applyBatch(opened(), batchOf(1, { terminalIds: ['b', 'a', 'c'], terminals: [terminal('a', 'one more'), terminal('c', 'new')] }))
+    expect(state.terminals).toEqual([terminal('b', 'two'), terminal('a', 'one more'), terminal('c', 'new')])
+    state = applyBatch(state, batchOf(2, {}))
+    expect(state.terminals.map((t) => t.terminalId)).toEqual(['b', 'a', 'c'])
+    state = applyBatch(state, batchOf(3, { terminals: [terminal('z', 'whole')] }))
+    expect(state.terminals).toEqual([terminal('z', 'whole')])
+  })
+
+  it('a terminal the batch names but neither carries nor held is a lost batch: read the snapshot again', () => {
+    const state = applyBatch(opened(), batchOf(1, { terminalIds: ['a', 'b', 'gone'], terminals: [] }))
+    expect(state.needsSnapshot).toBe('gap')
+    expect(state.terminals.map((t) => t.terminalId)).toEqual(['a', 'b'])
+  })
+})
