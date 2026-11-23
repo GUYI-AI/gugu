@@ -51,7 +51,7 @@ export const ScreenFrame = observer(function ScreenFrame() {
   if (!layout) return null;
   return (
     // 工作区的锚点:页签全屏(tab-fullscreen.ts)的那一格贴到这里的四条边上。
-    <div className="flex h-full min-h-0 min-w-0 flex-1 bg-background-tertiary" data-screen-frame="" style={{ anchorName: WORKSPACE_ANCHOR } as CSSProperties}>
+    <div className="flex h-full min-h-0 min-w-0 flex-1 bg-[var(--screen-ground,var(--color-background-tertiary))]" data-screen-frame="" style={{ anchorName: WORKSPACE_ANCHOR } as CSSProperties}>
       <BlockCut node={layout.type === 'pane' ? soleBlock(layout) : layout} />
     </div>
   );
@@ -134,7 +134,7 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
   const block = screenLayout.blocks.get(blockId);
   return (
     <div
-      className="relative flex h-full w-full min-h-0 min-w-0 flex-1 flex-col bg-background"
+      className="relative flex h-full w-full min-h-0 min-w-0 flex-1 flex-col bg-[var(--screen-ground,var(--color-background))]"
       style={{ anchorName: blockAnchorName(blockId) } as CSSProperties}
       data-screen-block={blockId}
       onPointerDownCapture={() => focusScreenBlock(blockId)}

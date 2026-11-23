@@ -160,7 +160,7 @@ interface WorkspaceContentLayoutProps {
 
 export function WorkspaceContentLayout({ titlebarSlot, mainPanel }: WorkspaceContentLayoutProps) {
   return (
-    <div className="relative flex h-full flex-col bg-background text-foreground" data-workspace-content-page="">
+    <div className="relative flex h-full flex-col bg-[var(--screen-ground,var(--color-background))] text-foreground" data-workspace-content-page="">
       {titlebarSlot}
       <div className="flex-1 overflow-hidden">
         <div className="flex h-full flex-col overflow-hidden">{mainPanel}</div>

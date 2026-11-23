@@ -1543,3 +1543,33 @@ html[data-gugu-dragging] :is(webview, iframe) {
   pointer-events: none;
   box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-foreground) 16%, transparent);
 }
+
+/* 界面减法(稿子 .tab):工具卡片页签条里的页签内部 —— 图标 15、和标题隔 8,选中页签的图标跟字同色;关闭钮 18 方、圆角 5、12 的叉、浅灰。
+   页签内部是 TabChip 的工具类,工具类压得过分层规则,所以这一段不进 @layer,只在工具页签条(和合成一条)里生效。 */
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div {
+  gap: 8px;
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div > span:first-child > svg {
+  width: 15px;
+  height: 15px;
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-active] > div > span:first-child {
+  color: inherit;
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div > div:last-child {
+  width: 18px;
+  height: 18px;
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div > div:last-child > button {
+  border-radius: 5px;
+  color: var(--faint-fg);
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div > div:last-child > button > svg {
+  width: 12px;
+  height: 12px;
+}
