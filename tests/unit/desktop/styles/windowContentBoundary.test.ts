@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { hasWindowTitlebarRow } from '../../../../apps/desktop/src/lib/window-chrome'
 
 const css = postcss.parse(readFileSync('apps/desktop/src/styles/tokens.css', 'utf8'))
-const selector = ":root[data-window-titlebar='row'][data-window-material='opaque'] [data-gugu-shell-phase] > .gg-sidebar-rail + div"
+const selector = ":root[data-window-titlebar='row'][data-window-material='opaque'] [data-gugu-shell-phase] > div:first-child"
 
 function boundaryRule() {
   const rules: Rule[] = []
@@ -17,7 +17,8 @@ function boundaryRule() {
 function content(platform: string, material: 'native' | 'opaque') {
   document.documentElement.dataset.windowMaterial = material
   if (hasWindowTitlebarRow(platform)) document.documentElement.dataset.windowTitlebar = 'row'
-  document.body.innerHTML = '<div data-gugu-shell-phase="active"><aside class="gg-sidebar-rail"></aside><div data-content></div></div>'
+  // 界面减法 (#9/#14): the icon rail is gone, the list is the window's first column; the content is the shell's first child.
+  document.body.innerHTML = '<div data-gugu-shell-phase="active"><div data-content></div></div>'
   return document.querySelector('[data-content]')!
 }
 

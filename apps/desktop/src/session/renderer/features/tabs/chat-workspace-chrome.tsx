@@ -1,6 +1,6 @@
 import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { Maximize2, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
@@ -29,6 +29,9 @@ export type ChatWorkspaceChromeProps = {
 
 /** The bar the capsule floats in (设计稿 .capbar): 56 high, the card's own white, the capsule centred in it. */
 const CAPSULE_BAR_STYLE = { '--tab-strip-height': '56px', '--tab-strip-inset-start': '0px', '--tab-strip-inset-end': '0px', '--tab-strip': 'var(--bg)', '--color-tab-strip': 'var(--bg)' } as CSSProperties;
+// The conversation card's head: beside the tools its width comes from the drawn card (@@@card-head-width), else it fills the row.
+const CHAT_HEAD_CARD_STYLE = { flex: 'none', ...CAPSULE_BAR_STYLE } as CSSProperties;
+const CHAT_HEAD_ROW_STYLE = { flex: 1, ...CAPSULE_BAR_STYLE } as CSSProperties;
 
 export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   layout, actions, addTab, leading, reserveShellRestoreLane, leadingReservePx, atWindowEdge, embedded = false,
@@ -79,17 +82,21 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   }, [dragging, embedded, focused, layout, mode]);
   // @@@card-head-width - the conversation card's head is as wide as its body is drawn, ❌ its requested share: the cut
   // holds each page at its minimum, so at a narrow width the share and the drawn width part (the head would overhang).
+  // Written straight onto the head from the observer (it runs after layout, before paint), ❌ through React state: a
+  // re-render lands a frame later, and a fast drag drew the head and the body apart.
   const cardsOn = !!layout.chatToolCardPaneId;
-  const [chatCardWidth, setChatCardWidth] = useState<number | null>(null);
+  const chatHead = useRef<HTMLDivElement>(null);
+  const chatPaneId = layout.chatWorkspacePanes?.chat.paneId;
   useLayoutEffect(() => {
+    const head = chatHead.current;
     const card = cardsOn ? header.current?.closest('[data-chat-tool-workspace]')?.querySelector<HTMLElement>('[data-chat-card]') : null;
-    if (!card || typeof ResizeObserver === 'undefined') { setChatCardWidth(null); return; }
-    const measure = () => setChatCardWidth(card.getBoundingClientRect().width);
-    measure();
-    const observer = new ResizeObserver(measure);
+    if (!head || !card || typeof ResizeObserver === 'undefined') return;
+    const sync = () => { head.style.width = `${card.getBoundingClientRect().width}px`; };
+    sync();
+    const observer = new ResizeObserver(sync);
     observer.observe(card);
-    return () => observer.disconnect();
-  }, [cardsOn, layout.chatWorkspacePanes?.chat.paneId]);
+    return () => { observer.disconnect(); head.style.width = ''; };
+  }, [cardsOn, chatPaneId]);
   if (!panes || !mode) return null;
   const { chat, tools } = panes;
   const tab = chat.pane.resolvedTabs.find(({ tabId }) => tabId === layout.primaryChatTabId);
@@ -112,7 +119,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   </PaneProvider> : null;
   const chatTitle = !sharedStrip && (
     // 第 16 版 #8:对话自己的那条页签条只剩一颗浮动胶囊(设计稿 .capbar 56 高 / .capsule 居中)。
-    <div data-chat-workspace-chat-header="" data-chat-card-head={toolCard ? '' : undefined} className="min-w-0" style={{ ...(toolCard ? { flex: chatCardWidth === null ? `0 0 calc(${splitWidth} - var(--chat-card-half-gap))` : `0 0 ${chatCardWidth}px` } : { flex: 1 }), ...CAPSULE_BAR_STYLE }}>
+    <div ref={chatHead} data-chat-workspace-chat-header="" data-chat-card-head={toolCard ? '' : undefined} className="min-w-0" style={toolCard ? CHAT_HEAD_CARD_STYLE : CHAT_HEAD_ROW_STYLE}>
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
         <ChatWorkspaceTabContext.Provider value={{ role: 'capsule', layout }}>
           <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions}>

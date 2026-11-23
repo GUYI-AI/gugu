@@ -41,7 +41,8 @@ it.each(['light', 'dark'])('real contacts in the %s page modal open a selected d
   expect(getDetail().getBoundingClientRect().width, 'real CSS geometry must be present').toBeGreaterThan(600);
   const nav = region.querySelector<HTMLElement>('[data-role="nav"]')!;
   expect(getComputedStyle(nav).borderInlineEndWidth).toBe('0px');
-  expect(getComputedStyle(getDetail().querySelector('.gg-pane-header')!).borderBottomWidth).toBe('1px');
+  // The contacts modal follows Settings' content layout: the page header draws no rule (desktop-shell.css @@@page-modal).
+  expect(getComputedStyle(getDetail().querySelector('.gg-pane-header')!).borderBottomWidth).toBe('0px');
   // 人在「个人」分组:先在左栏点开它,右边铺开这一组。
   await page.elementLocator(region.querySelector<HTMLElement>('[data-testid="contacts-section-nav"][data-section-key="people"]')!).click();
   await until('people group spreads on the right', () => !!region.querySelector('[data-contact-id="alice"]'));
@@ -53,7 +54,7 @@ it.each(['light', 'dark'])('real contacts in the %s page modal open a selected d
   expect(getDetail().querySelector('[data-testid="contacts-detail-drawer"] .gg-pane-title')?.textContent).toBe('Alice');
 });
 
-it('an empty contacts page keeps a titled header with its rule, and the empty-state call to action', async () => {
+it('an empty contacts page keeps a titled header (no rule in the modal) and the empty-state call to action', async () => {
   harness = createReactHarness();
   harness.container.style.cssText = 'position:fixed;inset:0;display:flex';
   await renderWithAppProviders(harness,
@@ -61,9 +62,9 @@ it('an empty contacts page keeps a titled header with its rule, and the empty-st
       <div data-contacts-modal="" style={{ flex: 1, minHeight: 0 }}><ContactsPanel mobile={false} onOpenAgentCreateDraft={() => {}} /></div>
     </div>, { shellTab: 'contacts', contacts: { contacts: [], groupChats: [], sharedGroupAgents: [] }, chat: { chats: [] } });
   const detail = harness.container.querySelector<HTMLElement>('[data-contacts-modal] > div > :nth-child(2)')!;
-  // 右边恒是一个分组页(ContactsPageFrame):页头有标题、有分隔线,❌ 空白页头。
+  // 右边恒是一个分组页(ContactsPageFrame):页头有标题,❌ 空白页头。弹窗里照设置的版式,页头不画分隔线(@@@page-modal)。
   const header = detail.querySelector<HTMLElement>('.gg-pane-header')!;
   expect(header.querySelector('.gg-pane-title')?.textContent).toBeTruthy();
-  expect(getComputedStyle(header).borderBottomWidth).toBe('1px');
+  expect(getComputedStyle(header).borderBottomWidth).toBe('0px');
   expect(detail.querySelector('[data-testid="contacts-agent-empty"]')).not.toBeNull();
 });

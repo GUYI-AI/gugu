@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { NAV_COLUMN_WIDTH } from '@/lib/uiRuler';
+import { SIDEBAR_DEFAULT_WIDTH_PX } from '@renderer/lib/layout/layout-provider';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
 import { SIDEBAR_RAIL_PX, WorkspaceLayoutContextProvider, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
@@ -59,7 +59,7 @@ it('the real workspace keeps an opaque rounded reading surface inset from materi
   const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
   const surface = harness.container.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
   expect(shell).not.toBeNull();
-  expect(shell.querySelector<HTMLElement>('[data-workspace-left-panel]')!.getBoundingClientRect().width).toBe(NAV_COLUMN_WIDTH);
+  expect(shell.querySelector<HTMLElement>('[data-workspace-left-panel]')!.getBoundingClientRect().width).toBe(SIDEBAR_DEFAULT_WIDTH_PX); // 第 16 版:列表默认 236(layout-provider)
   expect(surface).not.toBeNull();
   const rect = surface.getBoundingClientRect();
   expect(rect.width).toBeGreaterThan(700);
