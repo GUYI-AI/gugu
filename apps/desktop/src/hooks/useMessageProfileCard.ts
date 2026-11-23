@@ -3,12 +3,10 @@ import type { ActiveMemberProfile, MemberProfileOpener } from '@/components/memb
 import { Popover } from '@/components/ui/Popover'
 
 /**
- * The profile card a message avatar opens. The main thread and its topic split share this one card; every avatar is its
- * Trigger (a second press on the same avatar closes it), and `openedFrom` says which column it was opened in.
+ * The profile card a message avatar opens; every avatar is its Trigger (a second press on the same avatar closes it).
  */
 export function useMessageProfileCard() {
   const [card] = useState(() => Popover.createHandle<ActiveMemberProfile>())
   const mainOpener = useMemo((): MemberProfileOpener => ({ handle: card, openedFrom: 'main' }), [card])
-  const asideOpener = useMemo((): MemberProfileOpener => ({ handle: card, openedFrom: 'aside' }), [card])
-  return { card, mainOpener, asideOpener }
+  return { card, mainOpener }
 }

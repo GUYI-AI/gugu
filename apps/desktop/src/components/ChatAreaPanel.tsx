@@ -22,7 +22,6 @@ import { LiveForwardMessageDialog } from './chat/ForwardMessageDialog'
 import { useForwardToChats, type ForwardNote } from './chat/forwardToChats'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { requestGroupAgentCreation, UI_EVENTS } from '../lib/uiEvents'
-import { drainTopicSplitRequest, requestTopicSplit } from '../lib/topicSplitRequest'
 import { buildGroupRosterCandidates } from '../lib/mention'
 import { topicMentionCandidates } from './chat/topicMentionModels'
 import { resolveGroupRunningIndicator } from '../lib/agentRunningStatusModels'
@@ -46,7 +45,6 @@ import {
   toIdentityProfile,
 } from './memberProfileModels'
 import { ChatMessageComposer, type ChatMessageComposerProps, type ComposerAttachAction } from './chat/ChatMessageComposer'
-// @@@5856 消息列表抽成共享组件(话题分栏也用它)——见 MessageList.tsx 头部注释。
 import { ChatMessageList, type MessageListRowProps } from './chat/ChatMessageList'
 import { useTaskChatRows } from './assistant/useTaskChatRows'
 import { MessageLoadFailure } from './chat/MessageLoadFailure'
@@ -56,11 +54,10 @@ import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
 import { sessionComposerDockBandClassName } from '../session/renderer/features/sessions/session-composer-styles'
 import { GroupTabContent } from './appSlot/GroupTabContent'; import { useChatOpener } from './appSlot/useChatOpener'; import { ChatPaneContent, ChatTabPage, ChatTabPortals } from './appSlot/ChatTabHosts'; import { TabBarAddMenu } from '../session/renderer/features/sessions/tab-bar-actions'; import { useMobxReading } from '../lib/mobxReadable'
-import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'; import { closeInfoTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
-import { useTopicSurface } from '@/hooks/useTopicSurface'
+import { folderItem } from '../session/renderer/features/chats/chat-tabs/chat-panel-item'; import { closeInfoTab, focusedChatTab, infoTabOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, type ChatPanelTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { openTopicChat, useTopicSurface } from '@/hooks/useTopicSurface'
 import { chatDisplayName, isRoomChat } from '@gugu/core/shared/ui/chatModels'
 import { useAgentFloodNotice } from '@/hooks/useAgentFloodNotice'
-import { TopicSplitPane } from './chat/TopicSplitPane'
 import { useToast } from './toastContext'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import { PaneEmptyState } from './ui/PaneEmptyState'
@@ -110,7 +107,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const { toast } = useToast()
   const { t } = useTranslation('messaging')
   const activeChat = useActiveChatIdentity()
-  const { subscribeAccountRevision, identitiesById, activeChatId, messages, loadingMessages, messagesError, refreshMessages, sendMessage, toggleReaction, memberReadSeqs, clearMessages, deleteMessage, sendAttachments, pinChat, deleteChat, leaveGroup, setChatNotificationLevel, loadOlderMessages, messageWindow, unreadEntry, jumpToUnreadEntry, loadNewerMessages, loadMessageAnchor, returnToLatestMessages, markMessageVisible, setFollowingTail, threadScope, setActiveChatId } = useChatStore('subscribeAccountRevision', 'identitiesById', 'activeChatId', 'messages', 'loadingMessages', 'messagesError', 'refreshMessages', 'sendMessage', 'toggleReaction', 'memberReadSeqs', 'clearMessages', 'deleteMessage', 'sendAttachments', 'pinChat', 'deleteChat', 'leaveGroup', 'setChatNotificationLevel', 'loadOlderMessages', 'messageWindow', 'unreadEntry', 'jumpToUnreadEntry', 'loadNewerMessages', 'loadMessageAnchor', 'returnToLatestMessages', 'markMessageVisible', 'setFollowingTail', 'threadScope', 'setActiveChatId')
+  const { subscribeAccountRevision, identitiesById, activeChatId, messages, loadingMessages, messagesError, refreshMessages, sendMessage, toggleReaction, memberReadSeqs, clearMessages, deleteMessage, sendAttachments, pinChat, deleteChat, leaveGroup, setChatNotificationLevel, loadOlderMessages, messageWindow, unreadEntry, jumpToUnreadEntry, loadNewerMessages, loadMessageAnchor, returnToLatestMessages, markMessageVisible, setFollowingTail, threadScope } = useChatStore('subscribeAccountRevision', 'identitiesById', 'activeChatId', 'messages', 'loadingMessages', 'messagesError', 'refreshMessages', 'sendMessage', 'toggleReaction', 'memberReadSeqs', 'clearMessages', 'deleteMessage', 'sendAttachments', 'pinChat', 'deleteChat', 'leaveGroup', 'setChatNotificationLevel', 'loadOlderMessages', 'messageWindow', 'unreadEntry', 'jumpToUnreadEntry', 'loadNewerMessages', 'loadMessageAnchor', 'returnToLatestMessages', 'markMessageVisible', 'setFollowingTail', 'threadScope')
   const { user } = useAuth()
   const surfaceTab = useImPageTab(imPage), surfaceVisible = surfaceTab === 'chats' && !hidden; usePresentedUnreadEntry(unreadEntry, surfaceVisible)
   const surfaceElement = useRef<HTMLDivElement>(null)
@@ -136,7 +133,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const activeChatName = activeChat ? chatDisplayName(activeChat, peerIdentity?.display_name) : ''
   const shownActiveChatName = useShownAgentName({ name: activeChatName, createdAt: !isRoomChatSurface && peerIdentity?.type === 'agent' ? peerIdentity.created_at ?? undefined : undefined })
   const activeChatAvatar = isRoomChatSurface ? (activeChat?.avatar ?? null) : (peerIdentity?.avatar ?? null)
-  // The file preview is the one surface beside the chat; info, folder, Apps and topics are tabs of the line (chat-tabs, owner 10-26).
+  // The file preview is the one surface beside the chat; info, folder and Apps are tabs of the line (chat-tabs, owner 10-26).
   const closeRightSurfaces = useCallback(() => {
     filePreviewCloseRef.current()
   }, [])
@@ -188,79 +185,31 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
   // A chat's tabs (a group's, a topic's, a private chat's — 主人 10-05) hold Apps' pages and files, the folder among them
   // (真源 §2.4), beside the messages on the task's tab engine (chat-tabs/chat-layouts): asked of the chat every way in.
-  const opener = useChatOpener(activeChatId)
+  const opener = useChatOpener(activeChatId, undefined, undefined, activeChat?.source_chat_id ?? activeChatId) // a topic's files are its source line's
   const inBlock = Boolean(blockHost)
   const tabs = useMobxReading(() => {
-    if (!activeChatId) return { page: null as ChatPanelTab | null, chatUp: true, infoShown: false, memberTopic: null }
+    if (!activeChatId) return { page: null as ChatPanelTab | null, chatUp: true, infoShown: false }
     const panels = panelTabsOf(activeChatId)
     const focused = focusedChatTab(activeChatId)
     const full = panels.find((tab) => panelFull(activeChatId, tab.tabId)) ?? null
-    const info = infoTabOf(activeChatId), memberTopic = memberTopicOf(activeChatId)
-    return { page: full, chatUp: inBlock ? !full : focused?.kind !== 'panel', memberTopic, infoShown: (inBlock ? Boolean(info?.shown) : focused?.kind === 'info') && info?.info.topic?.topicChatId === memberTopic?.topicChatId }
+    const info = infoTabOf(activeChatId)
+    return { page: full, chatUp: inBlock ? !full : focused?.kind !== 'panel', infoShown: inBlock ? Boolean(info?.shown) : focused?.kind === 'info' }
   }, [activeChatId, inBlock])
   const handleOpenFolder = useCallback(() => { if (activeChatId) { closeRightSurfaces(); openPanelItem(activeChatId, folderItem()) } }, [activeChatId, closeRightSurfaces])
-  // A block draws its shown tabs in the engine's slots; without a strip, one focused page covers the chat (topics too).
+  // A block draws its shown tabs in the engine's slots; without a strip, one focused page covers the chat.
   const coverChat = (page: ReactNode) => mobile ? <RightPanel>{page}</RightPanel> : <div className="absolute inset-0 z-20 flex flex-col bg-[var(--bg-primary)]">{page}</div>
-  const inTabs = (topicPane: ReactNode, infoPage: () => ReactNode) => !activeChatId ? null : blockHost ? <ChatTabPortals chatId={activeChatId} panel={panelContent} topic={() => topicPane} info={infoPage} /> : <ChatTabPage chatId={activeChatId} panel={(tab) => coverChat(panelContent(tab))} topic={() => mobile ? topicPane : coverChat(topicPane)} info={() => coverChat(infoPage())} />
+  const inTabs = (infoPage: () => ReactNode) => !activeChatId ? null : blockHost ? <ChatTabPortals chatId={activeChatId} panel={panelContent} info={infoPage} /> : <ChatTabPage chatId={activeChatId} panel={(tab) => coverChat(panelContent(tab))} info={() => coverChat(infoPage())} />
   const panelContent = (tab: ChatPanelTab) => activeChatId ? <GroupTabContent chatId={activeChatId} tabId={tab.tabId} item={tab.item} tabbed={Boolean(blockHost)} inWindow={tab.inWindow} mobile={mobile} visible={surfaceVisible} onForward={handleForward} onOpenWith={opener.openWith} /> : null
 
   const topicSurface = useTopicSurface({
-    chat: activeChat, messages,
-    userId: user?.id ?? null,
-    closeRightSurfaces,
-    subscribeAccountRevision,
+    chat: activeChat, messages, subscribeAccountRevision,
+    lineSettled: !loadingMessages && !messageWindow?.hasNewer, refreshLine: refreshMessages,
     onCreateFailed: (error) => toast(t('topic.openFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error))),
-    embedded: Boolean(blockHost),
   })
-  const topicSplitOpen = Boolean(topicSurface.splitTopic)
-  // @@@5856 **话题不整屏打开** —— owner 2026-09-19:「怎么还有把一个 topic 当做群的形式表达」。
-  // 会话列表点话题走的是「切到来源线 + 往盒子里放一条请求」,聊天区在这里把它取出来开成分栏。
-  // 挂载时取一次(列表点的时候聊天区可能根本还没挂 —— 一个会话都没选时主区是空状态),
-  // 收到事件再取一次(已经挂着的那种情况)。
-  // 依赖只取 openSplit 这一个 —— useTopicSurface 返回的是新对象字面量,整个拿来当依赖会每帧重挂监听。
-  const openSplit = topicSurface.openSplit
-  // 待办里属于**当前这条线**的那条请求,取出来开成分栏。三个时机各取一次:
-  // 挂载时(列表点下去那会儿主区可能还是空状态,聊天区根本没挂)、收到事件时(已经挂着)、
-  // 以及 activeChatId 变成来源线之后(点的那一刻显示的还是上一条线,当场取会把分栏记错线)。隐藏着不取:手机从列表点回同一个群会 bump openNonce,
-  // 重置 effect 在那次提交里 closeRightSurfaces,事件里当场开的分栏会被它关掉 ⇒ 等露出来那次提交、排在重置之后再取。
-  // 每次「带着聚焦要求开出来」都换一个号,分栏据此把焦点交给自己的输入框;用号而不是布尔:同一条话题连点两次也要再聚焦一次。
-  const [splitFocusToken, setSplitFocusToken] = useState(0)
-  const drainSplitRequest = useCallback(() => {
-    const request = drainTopicSplitRequest(surfaceVisible ? activeChatId : null)
-    if (!request) return
-    openSplit({ chatId: request.chatId, name: request.name }, request.toggle)
-    if (request.focusComposer) setSplitFocusToken((token) => token + 1)
-  }, [activeChatId, openSplit, surfaceVisible])
-  useEffect(() => {
-    drainSplitRequest()
-    window.addEventListener(UI_EVENTS.openTopicSplit, drainSplitRequest)
-    return () => window.removeEventListener(UI_EVENTS.openTopicSplit, drainSplitRequest)
-  }, [drainSplitRequest])
-  // 兜底收口:万一还是有谁把主区设成了一条话题(系统通知、未读定位、老深链),当场换回同一种形态。
-  // ❌ 不靠「把每个入口都记得改对」—— 漏一处就又冒出一个全宽的话题。
-  // 走的是与列表同一条路(投进盒子 + 切线),❌ 不在这儿直接 openSplit:那会把分栏记在话题自己名下。
-  useEffect(() => {
-    if (activeChat?.kind !== 'topic' || !activeChat.source_chat_id) return
-    requestTopicSplit({ chatId: activeChat.id, name: activeChat.name ?? '', sourceChatId: activeChat.source_chat_id })
-    setActiveChatId(activeChat.source_chat_id)
-  }, [activeChat?.kind, activeChat?.id, activeChat?.name, activeChat?.source_chat_id, setActiveChatId])
-  // 分栏现在显示哪条(关掉是 null)。会话列表据此给子行高亮 ——
-  // 分栏也能从消息上的锚点打开,所以这个真值只能从这儿广播出去。
-  const splitTopicChatId = topicSurface.splitTopic?.chatId ?? null
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent(UI_EVENTS.topicSplitChanged, { detail: { chatId: splitTopicChatId } }))
-  }, [splitTopicChatId])
-
-  // 锚点卡只交出 chatId;名字从同一份话题清单里取 —— ❌ 两处不各存一份(改名后会打架)。
-  const openTopicFromAnchor = useCallback((topicChatId: string) => {
-    const topic = topicSurface.topics.find((item) => item.chat_id === topicChatId)
-    if (!topic) return
-    openSplit({ chatId: topic.chat_id, name: topic.name })
-  }, [topicSurface.topics, openSplit])
   const agentFlood = useAgentFloodNotice(activeChatId, messages)
 
   // @@@1503 — 原「切换聊天关历史/群 thread 面板」那个 reset effect 已并入上方主 reset 的
-  // closeRightSurfaces()(history/分栏/成员列表都在 helper 内),reset 路径归一到单一 SSOT。
+  // closeRightSurfaces()(history/成员列表都在 helper 内),reset 路径归一到单一 SSOT。
 
   const handleMessageVisible = useCallback((message: MessageItem) => {
     if (surfaceVisible && message.chat_id === activeChatId) markMessageVisible(message)
@@ -319,22 +268,11 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   }, [toggleReaction, toast, t])
 
   const groupAgentIds = useMemo(() => groupCollabSnapshot?.agents.map((agent) => agent.id) ?? [], [groupCollabSnapshot?.agents])
-  // 主输入框能点名谁 = 这条线自己的名册。❌ 不许把来源线成员并进来 ——
-  // 分栏开着时 activeChat **就是**来源线,并进去等于把 member_user_ids 原样灌进主线候选,
-  // 而 buildGroupRosterCandidates 会滤掉 account_status==='removed' 的 agent、member_user_ids 不会 ⇒
-  // 一开分栏,主线的 @ 候选里就多出已经被移除的 agent(找茬第十轮)。
-  const composerGroupMembers = useMemo(
-    () => groupCollabSnapshot ? buildGroupRosterCandidates(groupCollabSnapshot, identitiesById) : [],
-    [groupCollabSnapshot, identitiesById],
-  )
-  const splitChats = useChatsWhile(Boolean(splitTopicChatId))
-  // Topic addressing includes its source chat.
-  const splitTopicMemberIds = splitChats.find((chat) => chat.id === splitTopicChatId)?.member_user_ids
-  const splitMentionMembers = useMemo(() => {
-    if (!topicSplitOpen || !activeChat) return composerGroupMembers
-    return topicMentionCandidates(composerGroupMembers,
-      activeChat.member_user_ids ?? (activeChat.peer_user_id ? [activeChat.peer_user_id] : []), splitTopicMemberIds, identitiesById)
-  }, [composerGroupMembers, identitiesById, activeChat, topicSplitOpen, splitTopicMemberIds])
+  // 主输入框能点名谁 = 这条线自己的名册;话题还能点来源线的人(被 @ 就是被拉进来,服务端触发器只认来源线成员)。
+  const roster = useMemo(() => groupCollabSnapshot ? buildGroupRosterCandidates(groupCollabSnapshot, identitiesById) : [], [groupCollabSnapshot, identitiesById])
+  const sourceChat = useChatsWhile(activeChat?.kind === 'topic').find((chat) => chat.id === activeChat?.source_chat_id)
+  const composerGroupMembers = useMemo(() => activeChat?.kind !== 'topic' ? roster
+    : topicMentionCandidates(roster, sourceChat?.member_user_ids, activeChat.member_user_ids, identitiesById), [roster, activeChat?.kind, activeChat?.member_user_ids, sourceChat?.member_user_ids, identitiesById])
   // One presence subscription per agent drives headers, roster and profile cards.
   const groupAgentStatuses = useAgentDisplayStatuses(groupAgentIds)
   const shownAgent = useShownAgentStatus() // #7199 画头像 / 状态字用的那一份;在跑、提醒照旧读原读数
@@ -387,14 +325,14 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     onDelete: handleDelete,
     onVisible: handleMessageVisible,
     memberProfileOpener: Object.keys(messageMemberProfiles).length > 0 ? messageProfile.mainOpener : undefined,
-    // @@@5856 消息 ⋯ 菜单「开话题」→ 从这条消息开一条真的话题并分栏打开。
+    // @@@5856 消息 ⋯ 菜单「开话题」→ 从这条消息开一条真的话题并换成主会话。
     // 悄悄话的守卫内联在 MessageBubble(`onOpenTopic && !msg.is_whisper`,按每条消息判、那边冻结
     // 没有注释位):话题名截自来源消息且对全线可见 ⇒ 拿悄悄话开就是公开它。判据见 chatAreaRoomSurface5856。
     // 话题里不再提供这一项(单层不嵌套),私聊同样可以开话题 —— 话题的来源是「一条已有消息」,
     // 不是「一个群」(product spec:必须有来源)。
     onOpenTopic: activeChat?.kind === 'topic' ? undefined : topicSurface.openTopicFromMessage,
     topicAnchors: topicSurface.anchorsByMessageId,
-    onOpenTopicAnchor: openTopicFromAnchor,
+    onOpenTopicAnchor: openTopicChat,
     agentFloodNoticeMessageId: agentFlood.noticeMessageId,
     onAgentFloodUndone: agentFlood.reload,
     onOpenFile: openFilePreview, onMentionMember: setMentionToInsert,
@@ -417,7 +355,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     handleDelete,
     handleMessageVisible,
     messageProfile.mainOpener,
-    activeChat?.kind, topicSurface.openTopicFromMessage, topicSurface.anchorsByMessageId, openTopicFromAnchor,
+    activeChat?.kind, topicSurface.openTopicFromMessage, topicSurface.anchorsByMessageId,
     agentFlood.noticeMessageId, agentFlood.reload,
     openFilePreview,
     selectMode,
@@ -432,7 +370,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       ? t('chatArea.empty.contacts')
       : ''
 
-  if (!activeChatId || !activeChat) { // #6158 别的 tab 上由 MainLayout 隐藏整面,❌ 在这里换成空态 —— 树留着,分栏/右栏/滚动才在
+  if (!activeChatId || !activeChat) { // #6158 别的 tab 上由 MainLayout 隐藏整面,❌ 在这里换成空态 —— 树留着,右栏/滚动才在
     return (
       // @@@empty-pane-drag (#3905) 空态不渲染对话头 ⇒ 右列一寸拖拽车道都没有;空态无可点内容,整块当把手。
       <div
@@ -460,16 +398,13 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
   // 块的页签条最后那枚之后的「+」(gugu-dev#181 第 ⑥ 步);页签本身由会话页的页签引擎画(chat-tabs)。
   const blockTabs = blockHost?.tabs && activeChatId ? createPortal(<TabBarAddMenu chatId={activeChatId} />, blockHost.tabs) : null
-  const split = mobile ? topicSurface.splitTopic : null
-  const memberTopic = split ? { topicChatId: split.chatId, name: split.name } : tabs.memberTopic
-  const phoneTopic = mobile ? memberTopic : null
-  const phoneTopicMeta = phoneTopic ? topicSurface.topics.find(topic => topic.chat_id === phoneTopic.topicChatId) : undefined
-  const phoneTopicName = phoneTopicMeta?.name ?? phoneTopic?.name
+  const isTopic = activeChat.kind === 'topic'
+  const sourceName = isTopic && sourceChat ? chatDisplayName(sourceChat, null) : null
   const headerActions = (
     <>
       <ChatHeaderActions
         isGroupChat={isGroupChat}
-        isRoomChat={isRoomChatSurface} memberTopic={memberTopic} memberTopicCount={(phoneTopicMeta ?? topicSurface.topics.find(topic => topic.chat_id === memberTopic?.topicChatId))?.participant_count}
+        isRoomChat={isRoomChatSurface}
         infoShown={tabs.infoShown}
         showHeaderMenu={showHeaderMenu}
         mobile={mobile}
@@ -481,9 +416,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         } : undefined}
         moreButtonRef={moreButtonRef}
         onSearch={() => { if (activeChatId) searchInChat(activeChatId) }}
-        onCreateAgent={mobile && !phoneTopic && isGroupChat ? () => requestGroupAgentCreation(activeChat.id) : undefined}
+        onCreateAgent={mobile && isGroupChat ? () => requestGroupAgentCreation(activeChat.id) : undefined}
         onOpenFolder={handleOpenFolder}
-        onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page, page === 'members' ? memberTopic : null) }}
+        onOpenInfo={(page) => { if (activeChatId) openInfoTab(activeChatId, page) }}
         onCloseInfo={() => { if (activeChatId) closeInfoTab(activeChatId) }}
         onToggleHeaderMenu={() => setShowHeaderMenu((v) => !v)}
         onCloseHeaderMenu={() => setShowHeaderMenu(false)}
@@ -495,7 +430,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
   const infoPage = () => activeChat && activeChatId ? (
     <GroupRenameContext.Provider value={groupRename}><ChatSettingsPanel
       key={infoTabOf(activeChatId)?.info.at}
-      initialPage={infoTabOf(activeChatId)?.info.page} topic={infoTabOf(activeChatId)?.info.topic}
+      initialPage={infoTabOf(activeChatId)?.info.page}
       activeChat={activeChat}
       messages={messages}
       onClose={() => closeInfoTab(activeChatId)}
@@ -517,36 +452,9 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
     /></GroupRenameContext.Provider>
   ) : null
 
-  const phoneRoomControls = mobile && activeChat && viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) }) && !chrome && !blockHost ? <PhoneRoomComposerControls key={activeChat.id} chatId={activeChat.id} topics={topicSurface.topics} topicsReady={topicSurface.topicsReady} current={topicSurface.splitTopic} onPick={topic => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={topicSurface.splitTopic ? messageProfile.asideOpener : messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
-  const topicPane = topicSurface.topic && (
-    <TopicSplitPane
-      viewportKey={`${viewportKey}:topic`} navigationTarget={navigationTarget}
-      topic={topicSurface.topic}
-      messages={topicSurface.splitLine.messages} history={topicSurface.splitLine}
-      loading={topicSurface.splitLine.loadingMessages}
-      memberProfiles={messageMemberProfiles}
-      visibleChats={splitChats}
-      focusComposerToken={splitFocusToken}
-      memberReadSeqs={topicSurface.splitLine.memberReadSeqs}
-      mentionMembers={splitMentionMembers}
-      onSend={topicSurface.sendInSplit}
-      onSendAttachments={topicSurface.sendAttachmentsInSplit}
-      agentStatuses={groupAgentStatuses}
-      runningTokens={mobile ? groupRunTokens : undefined}
-      runningPreviewChatId={activeChatId} composerControls={phoneRoomControls}
-      memberProfileOpener={Object.keys(messageMemberProfiles).length > 0 ? messageProfile.asideOpener : undefined}
-      onOpenAttachment={(file, message) => { const split = topicSurface.splitTopic; openFilePreview(file, message, split ? () => topicSurface.openSplit(split) : undefined) }}
-      onClose={topicSurface.closeSplit}
-      embedded={Boolean(blockHost)}
-      currentUserId={user?.id ?? null}
-      mobile={mobile}
-      onReaction={(id, emoji) => void topicSurface.splitLine.toggleReaction(id, emoji)
-        .catch((error) => toast(t('message.actions.react'), 'error', safeFailureLine(String((error as Error)?.message ?? error))))}
-      onForward={handleForward} visible={surfaceVisible && topicSurface.splitTopic !== null}
-      onDelete={(id) => void topicSurface.splitLine.deleteMessage(id)
-        .catch((error) => toast(t('message.actions.delete'), 'error', safeFailureLine(String((error as Error)?.message ?? error))))}
-    />
-  )
+  // 手机输入框上的话题条:群里是群的话题,话题里是来源线的话题(当前这条选中;选「群」= 回到群)。
+  const roomId = isTopic ? activeChat.source_chat_id : activeChat.id
+  const phoneRoomControls = mobile && roomId && (isTopic || viewAnchor({ kind: 'chat', chatId: activeChat.id, chatKind: activeChat.kind, projectGroup: isProjectChat(activeChat.id) })) && !chrome && !blockHost ? <PhoneRoomComposerControls key={roomId} chatId={roomId} topics={topicSurface.topics} topicsReady={topicSurface.topicsReady} current={isTopic ? { chatId: activeChat.id, name: activeChat.name ?? '' } : null} onPick={topic => openTopicChat(topic?.chat_id ?? roomId)} members={drawerMemberProfiles} roster={{ ready: groupCollabSnapshot !== null, failed: groupCollabError !== null, retry: () => { void loadGroupCollab() } }} userId={user?.id ?? null} profileOpener={messageProfile.mainOpener} onOpenAgent={onOpenUserChat} /> : null
 
   return (
     <div ref={surfaceElement} data-chat-surface={activeChatId}
@@ -566,7 +474,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       {blockHost && <ChatBlockHead host={blockHost} actions={headerActions} chat={activeChat} name={shownActiveChatName} avatar={activeChatAvatar} isAgent={peerIdentity?.type === 'agent'} />}
       {blockTabs}
       {!chrome && !blockHost && <PaneHeader
-        divider atWindowEdge data-chat-area-header="" data-chat-context-id={phoneTopic?.topicChatId ?? activeChat.id} mobile={mobile} centered={mobile}
+        divider atWindowEdge data-chat-area-header="" data-chat-context-id={activeChat.id} mobile={mobile} centered={mobile}
         style={{
           background: mobile ? 'transparent' : 'var(--bg-primary)',
           // agent 单聊:小鸟比头栏高几像素,允许它探出头栏(见 tokens.css .gg-agent-header)。
@@ -575,23 +483,23 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         leading={mobile && onBack ? (
           <IconButton
             size="lg"
-            aria-label={topicSurface.splitTopic ? t('common.back') : t('chatArea.backToList')}
+            aria-label={t('chatArea.backToList')}
             title={t('common.back')}
-            onClick={topicSurface.splitTopic ? topicSurface.closeSplit : onBack}
+            onClick={onBack}
           >
             <ChevronLeft />
           </IconButton>
         ) : null}
         title={<PhoneConversationHeading
-          name={phoneTopicName ?? shownActiveChatName}
-          topic={mobile && (Boolean(phoneTopic) || activeChat.kind === 'topic')}
+          name={shownActiveChatName}
+          topic={mobile && isTopic}
           centered={mobile}
           label={t('chatArea.conversationProfile')}
-          onOpen={() => phoneTopic ? openInfoTab(activeChatId, 'main', { ...phoneTopic, name: phoneTopicName ?? phoneTopic.name }) : openConversationOrAgentSettings()}
+          onOpen={openConversationOrAgentSettings}
         />}
-        subtitle={phoneTopic ? <span data-phone-header-source="">{shownActiveChatName}</span> : undefined}
+        subtitle={sourceName ? <span data-phone-header-source="">{sourceName}</span> : undefined}
         actions={headerActions}
-      />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={topicSurface.splitTopic?.chatId ?? null} onPick={(topic) => topic ? topicSurface.openSplit({ chatId: topic.chat_id, name: topic.name }) : topicSurface.closeSplit()} /> : null}
+      />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={null} onPick={(topic) => { if (topic) openTopicChat(topic.chat_id) }} /> : null}
 
       <div
         style={{
@@ -603,7 +511,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           position: 'relative',
         }}
       >
-        {filePreview.beside(<ChatPaneContent chatId={activeChat.id} data-testid="session-chat-panel" className={`relative isolate flex min-h-0 min-w-0 flex-1 flex-col${mobile && topicSurface.splitTopic ? ' invisible pointer-events-none' : ''}`}>
+        {filePreview.beside(<ChatPaneContent chatId={activeChat.id} data-testid="session-chat-panel" className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col">
         {opener.overlay}
         {emptyProject ? <ChatPartSlot chatId={activeChat.id} part="empty" className="flex min-h-0 min-w-0 flex-1 flex-col" /> : <div
           style={{
@@ -634,7 +542,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
       {/* Message list —— 有行就画列表,与 loading 无关:加载中已有的行(盘缓存/乐观发送)照样可见,
           列表不会因为 loading 翻转被卸载重挂。骨架只在「在加载且一行都没有」时占位。 */}
-      {mobile && surfaceVisible && isGroupChat && !phoneTopic && <PhoneGroupAgentCreation key={activeChat.id} chatId={activeChat.id} name={shownActiveChatName} />}{taskChatNotice}
+      {mobile && surfaceVisible && isGroupChat && <PhoneGroupAgentCreation key={activeChat.id} chatId={activeChat.id} name={shownActiveChatName} />}{taskChatNotice}
 
       {/* #7199 没读出来 ≠ 没聊过:读失败时说读不到 + 重试,❌ 往下落进首次对话欢迎页 / 「暂无消息」。 */}
       {messagesError && !(loadingMessages && chatListRows.length === 0) && (
@@ -749,13 +657,12 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         </div>}
         </ChatPaneContent>)}
 
-        {inTabs(topicPane, infoPage)}
+        {inTabs(infoPage)}
       </div>
       <MessageMemberProfileLayer
         card={messageProfile.card}
         memberProfiles={messageMemberProfiles}
         authorityRevision={authorityRevision}
-        asideTopic={topicSurface.splitTopic}
         chatId={activeChatId}
         currentUserId={user?.id ?? null}
         isGroupChat={isGroupChat}
@@ -767,8 +674,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       {forwardMessages.length > 0 && activeChatId ? (
         <LiveForwardMessageDialog
           messages={forwardMessages}
-          // 被转发的消息知道自己从哪条 chat 来。写死 activeChatId 会在分栏转发时排掉「来源群」
-          // (最自然的目的地),而话题自己反而留在列表里 —— 选中就是原地复制一份还挂「转发」。
+          // 被转发的消息知道自己从哪条 chat 来:排掉的是它自己那条线。
           sourceChatId={forwardMessages[0]?.chat_id ?? activeChatId}
           onForward={handleForwardTo}
           onClose={() => setForwardMessages([])}

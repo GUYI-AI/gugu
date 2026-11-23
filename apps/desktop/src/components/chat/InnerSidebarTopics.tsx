@@ -1,5 +1,5 @@
 import type { PersonalConversationHiding } from '../../lib/hideListedConversation'
-import { memo, useEffect, useState } from 'react'
+import { memo, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ChatItem, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { chatAttention } from '@gugu/core/shared/ui/chatModels'
@@ -16,8 +16,7 @@ import { useRowContextMenu } from '../../hooks/useRowContextMenu'
 import { useStableHandler } from '../../hooks/useStableHandler'
 import { publishInnerSidebarTopicsView, useInnerSidebarTopicsAll } from '../../lib/innerSidebarBridge'
 import { readSessionpageViewRequestBridge } from '../../lib/sessionpageViewRequestBridge'
-import { requestTopicSplit } from '../../lib/topicSplitRequest'
-import { UI_EVENTS } from '../../lib/uiEvents'
+import { useSidebarChatView } from '../../lib/sidebarChatsBridge'
 import { Chip } from '../ui/Chip'
 import { ChatRowContextMenu } from './ChatRowContextMenu'
 import { TopicCallChip } from './GroupTopicsRows'
@@ -54,20 +53,13 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
     [chatId, topics.length, level.hidden, level.calling],
   )
 
-  // 分栏此刻开着哪条话题(行高亮):真值由聊天区广播,同聊天列表(UI_EVENTS.topicSplitChanged)。
-  const [activeTopicId, setActiveTopicId] = useState<string | null>(null)
-  useEffect(() => {
-    const onChanged = (event: Event) => setActiveTopicId((event as CustomEvent<{ chatId: string | null }>).detail?.chatId ?? null)
-    window.addEventListener(UI_EVENTS.topicSplitChanged, onChanged)
-    return () => window.removeEventListener(UI_EVENTS.topicSplitChanged, onChanged)
-  }, [])
-
-  // 与聊天列表侧栏那一份点话题同一条路:请会话页摆出源对话那一块,话题开成分栏。
+  // 行高亮 = 屏上聚焦的那条会话(与聊天列表同一个真值)。
+  const focusedChatId = useSidebarChatView().focusedChatId
+  // 与聊天列表侧栏那一份点话题同一条路:话题和群一样是一条主会话,请会话页摆出它自己那一块(#62)。
   const open = useStableHandler((topic: ChatItem, beside: boolean) => {
     const sessionPage = readSessionpageViewRequestBridge()
     if (!sessionPage) throw new Error('sessionpage view request bridge is not installed')
-    sessionPage.openChat(chatId, beside)
-    requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: chatId, focusComposer: true })
+    sessionPage.openChat(topic.id, beside)
   })
   const pin = useStableHandler((topic: ChatItem) => {
     void pinChat(topic.id, !topic.is_pinned).catch((error: unknown) => {
@@ -81,7 +73,7 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
   return (
     <div role="list" aria-label={t('history.tabs.topics')} data-inner-sidebar-topics={chatId}>
       {rows.shown.map((topic) => (
-        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === activeTopicId} onOpen={open} onPin={pin} onClose={canClose ? close : undefined} onSetLevel={setLevel} onRemove={remove} />
+        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === focusedChatId} onOpen={open} onPin={pin} onClose={canClose ? close : undefined} onSetLevel={setLevel} onRemove={remove} />
       ))}
     </div>
   )
@@ -101,7 +93,7 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
   const calls = chatAttention(topic).callsYou
   const unread = calls > 0 ? <TopicCallChip count={calls} at />
     : topic.unread_count > 0 ? <Chip shape="dot" role="img" aria-label={t('chatList.newsNotCallingYou')} title={t('chatList.newsNotCallingYou')} /> : null
-  // 拖进聊天区 = 开成分栏:与聊天列表话题子行(TopicSubRow)同一个拖拽源;行里那枚按钮因此放开原生拖拽。
+  // 拖进聊天区 = 开成一块:与聊天列表话题子行(TopicSubRow)同一个拖拽源;行里那枚按钮因此放开原生拖拽。
   return (
     <>
       <SidebarMenuRow

@@ -1,5 +1,5 @@
 import type { ChatItem } from '@gugu/core/shared/types/chat'
-import { requestTopicSplit } from '@/lib/topicSplitRequest'
+import { openTopicChat } from '@/hooks/useTopicSurface'
 import { chatAttention, compareChatsByActivityDesc } from '@gugu/core/shared/ui/chatModels'
 
 export type SourceTopic = ChatItem & { kind: 'topic'; source_chat_id: string }
@@ -27,5 +27,5 @@ export function topicMenuGroups({ pinned, others }: { pinned: readonly SourceTop
 }
 
 export function openPinnedTopic(topic: SourceTopic) {
-  requestTopicSplit({ chatId: topic.id, name: topic.name, sourceChatId: topic.source_chat_id, focusComposer: true })
+  openTopicChat(topic.id)
 }

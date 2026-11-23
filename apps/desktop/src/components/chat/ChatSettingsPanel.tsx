@@ -19,17 +19,18 @@ import { settingsDangerRowStyle } from './groupSettingsStyles'
 import { useCloseTopic } from './useCloseTopic'
 import { COLOR_MUTED } from './chatPresentation'
 import { useRoomCollab } from '../../hooks/useRoomCollab'
-import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
 
 // 从 ChatAreaPanel 拆出来的(那份文件行数冻结,#7199 给它加「吃一个会话 id」时腾的位置)。
 // 群信息 / 会话信息(owner 10-26):成员、公告、设置合成一枚页签(chat-info),桌面在对话旁边、手机是整页。
 // 页签本身就是标题和 ×:桌面上一级页不画页头,手机左上返回 = 关掉这一页。
-export type ChatSettingsPanelProps = ChatRightPanelBodyProps & { mobile?: boolean; topic?: ChatTopicState }
+export type ChatSettingsPanelProps = ChatRightPanelBodyProps & { mobile?: boolean }
+type ChatTopicState = { topicChatId: string; name: string }
 
-export function ChatSettingsPanel({ mobile = false, topic, ...body }: ChatSettingsPanelProps) {
+export function ChatSettingsPanel({ mobile = false, ...body }: ChatSettingsPanelProps) {
   const { activeChat, onClose } = body
   const { t } = useTranslation('messaging')
-  if (topic) return <TopicMembers key={topic.topicChatId} topic={topic} sourceChatId={activeChat.id} onClose={onClose} mobile={mobile} />
+  // A topic is a main conversation of its own: its info page is its members (from its source line's roster).
+  if (activeChat.kind === 'topic' && activeChat.source_chat_id) return <TopicMembers key={activeChat.id} topic={{ topicChatId: activeChat.id, name: activeChat.name ?? '' }} sourceChatId={activeChat.source_chat_id} onClose={onClose} mobile={mobile} />
   return (
     <div data-testid="chat-settings-panel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {activeChat.kind === 'group' || !mobile ? null : <SettingsPageHead title={t('chatArea.settings.conversation')} onClose={onClose} mobile />}

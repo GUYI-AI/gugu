@@ -24,7 +24,7 @@ export const innerSidebarChat = observable.box<InnerSidebarAnchor | null>(null, 
 /** 此刻正看着什么(导航的当前视图,读成内层侧栏需要的样子)。 */
 export type InnerSidebarView =
   /** 对话块。`chatKind` 读自壳那份对话摘要,还不知道 = null;`projectGroup` = 它是某个项目的项目群。 */
-  | { kind: 'chat'; chatId: string; chatKind: string | null; projectGroup: boolean }
+  | { kind: 'chat'; chatId: string; chatKind: string | null; projectGroup: boolean; roomChatId?: string }
   /** 项目块;`chatId` = 这个项目绑的项目群,没绑(或还没读到)= undefined。 */
   | { kind: 'project'; chatId: string | undefined }
   | { kind: 'session'; sessionId: string }
@@ -33,8 +33,10 @@ export type InnerSidebarView =
 /** 这个视图自己就是一个群 / 项目:内层侧栏挂在它上面;私聊、别的视图 = null。 */
 export function viewAnchor(view: InnerSidebarView): InnerSidebarRoomAnchor | null {
   if (view.kind === 'chat') {
-    if (view.projectGroup) return { kind: 'project', chatId: view.chatId };
-    return view.chatKind === 'group' ? { kind: 'group', chatId: view.chatId } : null;
+    // A topic is its own conversation, but the column it lives in is its source line's (`roomChatId`, chatViewOf).
+    const room = view.roomChatId ?? view.chatId;
+    if (view.projectGroup) return { kind: 'project', chatId: room };
+    return view.chatKind === 'group' ? { kind: 'group', chatId: room } : null;
   }
   if (view.kind === 'project') return view.chatId ? { kind: 'project', chatId: view.chatId } : null;
   return null;

@@ -94,11 +94,10 @@ import { readAgentCreateDefaults, rememberAgentCreateProject } from '../lib/agen
 import { rememberedChatProject } from '@gugu/core/shared/ui/agentCreateDefaultsModels'
 import { createOptimisticDmChat, createOptimisticGroupChat } from '@gugu/core/shared/ui/chatModels'
 import { UI_EVENTS } from '../lib/uiEvents'
-import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { platform } from '../platform'
 import { SessionModalHost } from '../components/SessionModalHost'
 import { useToast } from '../components/toastContext'
-import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, askChatFile } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
 import { filePillText } from '../components/markdown/filePills'
 import { draftWithPills } from '@gugu/session-shared/markdown'
@@ -300,17 +299,14 @@ function InnerLayout({
   }, [setActiveTab, chatsAreBlocks, focusComposerForUserEntry, openAssistantChat, openOwnedAgent, t])
   const openChatTarget = useCallback((chatId: string, purpose?: 'resource'): string => {
     setOpenedPhoneApp(null)
-    const chat = readChats().chats.find((candidate) => candidate.id === chatId)
-    const topic = chat?.kind === 'topic' && chat.source_chat_id ? chat : null
-    const shownChatId = topic?.source_chat_id ?? chatId
-    const viewportKey = openChatBlock(shownChatId, undefined, undefined, undefined, undefined, purpose)
+    // A topic is a main conversation like any other (#62): it opens as itself, never beside its source.
+    const viewportKey = openChatBlock(chatId, undefined, undefined, undefined, undefined, purpose)
     if (!viewportKey) {
-      enterChat(shownChatId)
-      setActiveChatId(shownChatId)
+      enterChat(chatId)
+      setActiveChatId(chatId)
     }
-    if (topic) requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: topic.source_chat_id! })
-    return topic ? `${viewportKey ?? 'chats'}:topic` : viewportKey ?? 'chats'
-  }, [enterChat, openChatBlock, setActiveChatId, readChats])
+    return viewportKey ?? 'chats'
+  }, [enterChat, openChatBlock, setActiveChatId])
   const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').ExtensionAppDetailLink>()
   const clearAppDetail = useCallback(() => setAppDetail(undefined), [])
   useLinkNavigation({ ownerId: user.id, chats: () => readChats().chats, contacts: () => readContacts().contacts,
@@ -711,10 +707,7 @@ function InnerLayout({
         }
       }
       if (besideApp) { placed(detail.chatId); return }
-      if (bringUp(detail.chatId, placed)) {
-        const chat = readChats().chats.find((candidate) => candidate.id === detail.chatId)
-        focusComposerForUserEntry('quote-attached', chat?.kind === 'topic' ? chat.source_chat_id ?? undefined : detail.chatId)
-      }
+      if (bringUp(detail.chatId, placed)) focusComposerForUserEntry('quote-attached', detail.chatId)
     }
     // gugu.files.openWith, wherever the page is (a chat's panel, an App's own page, a session's tab): the file's chat comes
     // up — the one on screen stays — and its panel opens it as the host resolved it, the way a link to it opens.
@@ -1108,7 +1101,6 @@ function InnerLayout({
                       onOpenGroupChat={handleOpenGroupChat}
                       onOpenProjectGroup={(chatId) => navigateMobile(() => {
                         openChatTarget(chatId)
-                        closeTopicTab(chatId)
                       }, 'push')}
                     />
                   ) : (
