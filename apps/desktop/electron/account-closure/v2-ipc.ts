@@ -60,25 +60,3 @@ export function registerDesktopClosureAgentResumeIpc(
     }
   })
 }
-
-export const ACCOUNT_CLOSED_NOTICE_CHANNEL = 'account-closure:closed-notice'
-const CLOSED_NOTICE_KEY = 'accountClosedNotice'
-/** One-shot account-closed notice across the post-closure relaunch, kept in main's small host
- * state file: `mark` right before the restart, `take` once after boot. Each command is one
- * synchronous read-modify-write on main's single thread, so two booting renderers cannot both take it. */
-export function registerAccountClosedNoticeIpc(
-  ipc: Pick<IpcMain, 'handle'>,
-  window: () => BrowserWindow | null,
-  state: { read(): Record<string, unknown>; write(next: Record<string, unknown>): void },
-) {
-  ipc.handle(ACCOUNT_CLOSED_NOTICE_CHANNEL, (event: IpcMainInvokeEvent, input: unknown) => {
-    try {
-      if (!isNativeAccountSender(event, window())) return { ok: false }
-      if (!object(input) || Object.keys(input).length !== 1 || (input.type !== 'mark' && input.type !== 'take')) return { ok: false }
-      const { [CLOSED_NOTICE_KEY]: pending, ...rest } = state.read()
-      if (input.type === 'mark') state.write({ ...rest, [CLOSED_NOTICE_KEY]: true })
-      else if (pending === true) state.write(rest)
-      return { ok: true, value: input.type === 'mark' || pending === true }
-    } catch { return { ok: false } }
-  })
-}

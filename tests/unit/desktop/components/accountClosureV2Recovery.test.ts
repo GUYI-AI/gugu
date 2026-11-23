@@ -1,27 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { registerAccountClosedNoticeIpc } from '../../../../apps/desktop/electron/account-closure/v2-ipc'
 
 const test = vi.hoisted(() => ({
   changed: null as null | (() => void), order: [] as string[], native: {
     discover: vi.fn(), readPolicy: vi.fn(), capture: vi.fn(), sendCode: vi.fn(), prepare: vi.fn(),
     confirm: vi.fn(), recover: vi.fn(), cancel: vi.fn(), finalize: vi.fn(),
   }, finalizeOwner: vi.fn(), currentOwner: null as string | null, unlisten: vi.fn(),
-  appRelaunch: false, relaunch: vi.fn(), logout: vi.fn(), forgetAll: vi.fn(), notify: vi.fn(),
-  // Main's app-state.json across the relaunch, and its real notice handler.
-  appState: {} as Record<string, unknown>, main: null as null | ((event: unknown, input: unknown) => unknown), mainEvent: null as unknown,
+  relaunch: vi.fn(), logout: vi.fn(), forgetAll: vi.fn(), notify: vi.fn(),
 }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {
   accountClosureV2: test.native, subscribeAppForeground: () => () => {},
-  capabilities: { get appRelaunch() { return test.appRelaunch } }, relaunchApp: test.relaunch,
+  capabilities: { appRelaunch: true }, relaunchApp: test.relaunch,
 } }))
 vi.mock('../../../../apps/desktop/src/platform/desktopIpc', () => ({ desktopIpc: () => ({
   eventOn: (channel: string, callback: () => void) => {
     expect(channel).toBe('account-closure:v2-changed'); test.order.push('subscribe'); test.changed = callback; return test.unlisten
   },
-  invoke: async (channel: string, input: { type: string }) => {
-    expect(channel).toBe('account-closure:closed-notice'); test.order.push(`notice:${input.type}`)
-    return test.main!(test.mainEvent, input)
-  },
+  invoke: async () => { throw new Error('closure recovery must not invoke main directly') },
 }) }))
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ observeRendererSession: () => () => {} }))
 vi.mock('../../../../apps/desktop/src/lib/sessionCoordinator', () => ({ sessionCoordinator: {
@@ -50,16 +44,10 @@ const runtime = () => import('../../../../apps/desktop/src/components/settings/a
 const sharedTail = async () => vi.mocked((await import('../../../../apps/desktop/src/lib/authLogout')).finishSignedOut)
 beforeEach(() => {
   vi.resetModules(); vi.clearAllMocks(); test.order = []; test.changed = null; test.currentOwner = null
-  test.appRelaunch = false; test.appState = {}
   test.native.discover.mockImplementation(async () => { test.order.push('discover'); return complete })
   test.native.readPolicy.mockRejectedValue(Object.assign(new Error('Signed out'), { code: 'unauthorized' }))
   test.native.finalize.mockImplementation(async () => { test.order.push('native-finalize'); return { ...complete, phase: 'finalized' } })
   test.finalizeOwner.mockResolvedValue(undefined)
-  test.relaunch.mockImplementation(async () => { test.order.push('relaunch') })
-  const frame = {}, sender = { mainFrame: frame }, window = { isDestroyed: () => false, webContents: sender }
-  test.mainEvent = { sender, senderFrame: frame }
-  registerAccountClosedNoticeIpc({ handle: (_channel: string, fn: unknown) => { test.main = fn as typeof test.main } } as never, () => window as never,
-    { read: () => structuredClone(test.appState), write: next => { test.appState = structuredClone(next) } })
 })
 describe('App-root V2 restoration', () => {
   it('subscribes then discovers an already-complete operation without needing a new event or live Auth', async () => {
@@ -95,49 +83,13 @@ describe('App-root V2 restoration', () => {
   })
 })
 describe('after a finalized closure (#3446)', () => {
-  it('restarts through the shared sign-out tail only after native finalize, never via a live sign-out', async () => {
-    test.appRelaunch = true
-    const dispose = (await runtime()).observeAccountClosureV2Recovery(vi.fn())
-    await vi.waitFor(() => expect(test.relaunch).toHaveBeenCalledOnce())
-    expect(await sharedTail()).toHaveBeenCalledOnce()
-    expect(test.order.slice(test.order.indexOf('native-finalize'))).toEqual(['native-finalize', 'notice:mark', 'relaunch'])
-    expect(test.forgetAll).toHaveBeenCalledOnce(); expect(test.logout).not.toHaveBeenCalled()
-    // This renderer is about to be replaced; the notice belongs to the next boot.
-    expect(test.notify).not.toHaveBeenCalled(); expect(test.appState).toEqual({ accountClosedNotice: true })
-    dispose()
-  })
-  it('shows the marker once on the first boot after the restart, then never again', async () => {
-    test.appState = { windowTone: 'dark', accountClosedNotice: true }
-    const firstBoot = await runtime()
-    firstBoot.announceAccountClosedAfterRelaunch(); firstBoot.announceAccountClosedAfterRelaunch()
-    await vi.waitFor(() => expect(test.notify).toHaveBeenCalledExactlyOnceWith(closedNotice))
-    expect(test.appState).toEqual({ windowTone: 'dark' })
-    expect(test.order.filter(step => step === 'notice:take')).toHaveLength(1)
-    vi.resetModules(); test.notify.mockClear()
-    ;(await runtime()).announceAccountClosedAfterRelaunch()
-    await vi.waitFor(() => expect(test.order.filter(step => step === 'notice:take')).toHaveLength(2))
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(test.notify).not.toHaveBeenCalled()
-  })
-  it('a signed-in boot clears a stale marker without showing it', async () => {
-    test.appState = { accountClosedNotice: true }; test.currentOwner = 'B'
-    ;(await runtime()).announceAccountClosedAfterRelaunch()
-    await vi.waitFor(() => expect(test.appState).toEqual({}))
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(test.notify).not.toHaveBeenCalled()
-  })
-  it('without restart support, shows the notice directly and requests no restart or marker', async () => {
+  it('leaves through the shared sign-out tail in place, only after native finalize, never via a live sign-out', async () => {
     const dispose = (await runtime()).observeAccountClosureV2Recovery(vi.fn())
     await vi.waitFor(() => expect(test.notify).toHaveBeenCalledExactlyOnceWith(closedNotice))
     expect(await sharedTail()).toHaveBeenCalledOnce(); expect(test.forgetAll).toHaveBeenCalledOnce()
+    expect(test.order.indexOf('native-finalize')).toBeGreaterThan(-1)
+    // Sign-out returns to the login page in place, so the app is never restarted for a closure.
     expect(test.relaunch).not.toHaveBeenCalled(); expect(test.logout).not.toHaveBeenCalled()
-    expect(test.order.some(step => step.startsWith('notice:'))).toBe(false); expect(test.appState).toEqual({})
     dispose()
-  })
-  it('a refused restart shows the notice in place and leaves no marker for a later boot', async () => {
-    test.appRelaunch = true; test.relaunch.mockRejectedValueOnce(Object.assign(new Error('no relaunch'), { code: 'unavailable' }))
-    const dispose = (await runtime()).observeAccountClosureV2Recovery(vi.fn())
-    await vi.waitFor(() => expect(test.notify).toHaveBeenCalledExactlyOnceWith(closedNotice))
-    expect(test.appState).toEqual({}); dispose()
   })
 })

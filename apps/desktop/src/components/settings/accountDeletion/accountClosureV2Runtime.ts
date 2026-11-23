@@ -12,22 +12,12 @@ const notifyClosed = () => {
       if (!sessionCoordinator.getSnapshot().session) notify({ key: 'account-closed', tier: 'success', title: i18n.t('accountDeletion.deleted', { ns: 'settings' }) })
     }).catch(() => undefined)
 }
-/** Main's one-shot marker for the notice across a relaunch; any failure reads as "none". */
-const closedNotice = async (type: 'mark' | 'take'): Promise<boolean> => {
-  try {
-    const reply = await desktopIpc()?.invoke('account-closure:closed-notice', { type }) as { ok?: unknown; value?: unknown } | null | undefined
-    return reply?.ok === true && reply.value === true
-  } catch { return false }
-}
 /** Runs only after native finalize returned `finalized` (receipt removed, record terminal), so
- * no local closure work is left to interrupt. Leaves through the ordinary sign-out tail; where
- * that restarts, main carries the notice to the next boot. A new login keeps its renderer. */
-async function finishClosedAccount(): Promise<void> {
+ * no local closure work is left to interrupt. Leaves through the ordinary sign-out tail, in place.
+ * A new login keeps its renderer. */
+function finishClosedAccount(): void {
   if (sessionCoordinator.getSnapshot().session) return
-  if (!platform.capabilities.appRelaunch) return finishSignedOut(notifyClosed)
-  await closedNotice('mark')
-  // A refused restart leaves this renderer in place: show the notice here, not on a later boot.
-  try { await finishSignedOut() } catch { if (await closedNotice('take')) notifyClosed() }
+  finishSignedOut(notifyClosed)
 }
 
 let controller: ReturnType<typeof createAccountClosureV2Controller> | null | undefined
@@ -39,17 +29,8 @@ export function accountClosureV2Controller() {
         throw Object.assign(new Error('A new login owns the renderer'), { code: 'wrong_local_owner' })
       }
       forgetCachedAccountProjectsForOwner(owner)
-    }, () => { void finishClosedAccount().catch(() => undefined) }) : null
+    }, finishClosedAccount) : null
   return controller
-}
-
-let bootNoticeTaken = false
-/** Once per boot, after the session is decided: show (and clear) the notice a closure left
- * before its relaunch. A signed-in boot still clears a stale marker without showing it. */
-export function announceAccountClosedAfterRelaunch(): void {
-  if (bootNoticeTaken) return
-  bootNoticeTaken = true
-  void closedNotice('take').then(taken => { if (taken) notifyClosed() })
 }
 
 /** Subscribe first, then discover: an event is merely a refresh hint, never
