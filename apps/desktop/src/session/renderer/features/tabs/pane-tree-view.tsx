@@ -71,7 +71,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
         {layout.groups.map(({ paneId }) => {
           const shown = layout.isPaneShown(paneId);
           const anchored = { position: 'absolute', positionAnchor: anchorOf(paneId), top: 'anchor(top)', bottom: 'anchor(bottom)', left: 'anchor(left)', right: 'anchor(right)' } as CSSProperties;
-          return <RetainedTabContent key={paneId} visible={shown} style={anchored} className="min-h-0 min-w-0" data-chat-tool-card={scopedChrome && paneId === layout.chatToolCardPaneId ? '' : undefined} inert={!shown || paneId === closing} aria-hidden={!shown || paneId === closing || undefined}>
+          return <RetainedTabContent key={paneId} visible={shown} style={anchored} className="min-h-0 min-w-0" data-chat-tool-card={scopedChrome && paneId === layout.chatToolCardPaneId ? '' : undefined} data-chat-card={scopedChrome && layout.chatToolCardPaneId && paneId === layout.chatWorkspacePanes?.chat.paneId ? '' : undefined} inert={!shown || paneId === closing} aria-hidden={!shown || paneId === closing || undefined}>
             {renderPane(paneId, alone || paneId === first, alone || paneId === last, (scopedChrome || paired) ? 'body' : 'all')}
           </RetainedTabContent>;
         })}

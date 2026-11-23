@@ -357,9 +357,10 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     return true;
   }
 
-  /** Side by side, the tool pane is a card of its own beside the conversation's (index.css `[data-chat-tool-card]`). */
+  /** Side by side with the tools on the right, the conversation and the tools are two cards (index.css `[data-chat-tool-card]`). */
   get chatToolCardPaneId(): string | undefined {
-    return this.chatWorkspaceMode === 'split' && !this.narrow ? this.chatWorkspacePanes?.tools?.paneId : undefined;
+    const tools = this.chatWorkspaceMode === 'split' && !this.narrow ? this.chatWorkspacePanes?.tools : undefined;
+    return tools && this.groups[0] !== tools ? tools.paneId : undefined;
   }
 
   get chatWorkspaceSinglePaneId(): string | undefined {

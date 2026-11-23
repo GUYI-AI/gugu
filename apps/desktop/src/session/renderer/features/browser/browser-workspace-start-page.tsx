@@ -70,18 +70,17 @@ export function StartTile({ icon, label, title, disabled, onClick, corner }: {
   </div>;
 }
 
-const toolsOrder = ['files', 'side-session', 'review', 'terminal', 'browser', 'ports'];
+const toolsOrder = ['files', 'side-session', 'review', 'terminal', 'ports'];
 
 export type BrowserWorkspaceStart = {
   ctx: TabViewContext;
   openRecent: (entry: Exclude<RecentTool, { kind: 'web' }>) => void;
 };
 
-export function BrowserWorkspaceStartContent({ config, actions, onOpenUrl, onFocusUrl }: {
+export function BrowserWorkspaceStartContent({ config, actions, onOpenUrl }: {
   config: BrowserWorkspaceStart;
   actions: WorkspacePanelAction[];
   onOpenUrl: (url: string) => void;
-  onFocusUrl: () => void;
 }) {
   const { translate } = useSessionMessages();
   const { items, remove } = useRecentTools(recentToolPanel(config.ctx));
@@ -89,8 +88,8 @@ export function BrowserWorkspaceStartContent({ config, actions, onOpenUrl, onFoc
     const position = toolsOrder.indexOf(action.id);
     return position < 0 ? toolsOrder.length : position;
   };
-  const ordered = [...actions].sort((a, b) => rank(a) - rank(b))
-    .map((action) => action.id === 'browser' ? { ...action, onClick: onFocusUrl } : action);
+  // The page is the browser already: its address bar is right above, so no tile opens one (界面减法, yangchichi).
+  const ordered = actions.filter((action) => action.id !== 'browser').sort((a, b) => rank(a) - rank(b));
   const recent = items.map((item): WorkspaceRecentItem => ({
     id: item.id,
     title: item.title || translate('workspace.files'),

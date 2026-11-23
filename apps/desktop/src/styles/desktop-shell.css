@@ -19,6 +19,20 @@
   overflow: hidden;
 }
 
+/* 界面减法 #57(稿子 .cards / .card):会话页的正文是对话卡片 —— 四周 8px 缝(左边贴着列表那一侧不留)、圆角 12、6% 细描边。
+ * 工具并排时正文拆成两张卡片(index.css [data-chat-card] / [data-chat-tool-card]),这一层让出底色和描边,缝里透出窗口底。 */
+.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace]) {
+  --workspace-chrome-inset: 8px;
+  box-shadow: 0 0 0 0.5px color-mix(in oklab, var(--fg) 6%, transparent);
+}
+
+.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace][data-chat-tool-cards]) {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+}
+
 /* #2548 群 / 项目的内层栏归列表那一层(整列通高、无卡片);只让出正文卡片的上缝,头一行与正文页头对齐。 */
 .gugu-skin [data-workspace-shell] > [data-panel-slot='inner'] [data-region='inner-sidebar'] {
   padding-top: var(--desktop-surface-inset);
