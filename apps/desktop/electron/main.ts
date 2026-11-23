@@ -2132,7 +2132,7 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
     openSystemSettings: (url) => shell.openExternal(url),
     log,
   })
-  runtime.onGrantsChanged(() => deviceRuntimeHost?.notifyDeviceActionsChanged())
+  runtime.onGrantsChanged(() => { void deviceRuntimeHost?.notifyHostInfoChanged() })
   return (deviceActionsRuntimeInstance = runtime)
 }
 
@@ -3595,6 +3595,7 @@ if (isSingleServerRun()) singleServerUpdater()?.bindRuntime({
   isBusy: () => serverVersionSwitchActivity()?.busy ?? true,
   versionSwitchActivity: serverVersionSwitchActivity,
   beforeSwitch: () => { stopServerActivity(); return () => startServerActivity() },
+  announce: () => deviceRuntimeHost?.notifyHostInfoChanged() ?? Promise.resolve(),
   shutdown: () => {
     noteExitReason(app.getPath('userData'), 'update')
     exitOnSignal('SIGTERM', EXIT_RESTART)
