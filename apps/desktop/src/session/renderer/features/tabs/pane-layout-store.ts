@@ -680,7 +680,11 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   dimensions: { width: number; height: number } | null = null;
 
   setDimensions(width: number, height: number): void {
+    const first = !this.dimensions;
     this.dimensions = { width, height };
+    // A layout restored before it was measured keeps its saved cut only until now: the first measurement seats the side
+    // page like any other way it comes there (@@@seat-side) — a dragged width wins, else the page's own, else half.
+    if (first) this._seatShown();
   }
 
   /**
@@ -1261,7 +1265,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     this._displaced.replace(Object.entries(snapshot.displaced ?? {}).filter(([tabId, record]) => open.has(tabId) && open.has(record.tabId)));
     this._sideShares.replace(Object.entries(snapshot.sideShares ?? {}).filter(([tabId, share]) => open.has(tabId) && Number.isFinite(share)));
     this._restoreChatToolLayout(snapshot.chatToolLayout);
-    // Not measured yet: the saved cut stands (it was seated before the restart); a declared width needs the extent.
+    // Not measured yet: the first measurement seats it (setDimensions); a declared width needs the extent.
     if (this._pairExtent()) this._seatShown();
   }
 
