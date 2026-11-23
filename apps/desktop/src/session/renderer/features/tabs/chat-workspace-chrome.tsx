@@ -128,7 +128,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const chatTitle = !sharedStrip && (
     <div ref={chatColumn} data-chat-workspace-chat-header="" className="min-w-0 flex-1">
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
-        <ChatWorkspaceTabContext.Provider value={{ role: toolsShown ? 'conversation' : 'title', layout }}>
+        <ChatWorkspaceTabContext.Provider value={{ role: 'title', layout }}>
           <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions} restWidth={divided ? chatRest : undefined}>
             {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
           </TabStripShell>

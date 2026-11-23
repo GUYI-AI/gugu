@@ -285,30 +285,30 @@ it('a move held back by a long frame goes on from where it was drawn, ❌ skippe
   expect(new Set(lefts).size, JSON.stringify(lefts)).toBeGreaterThan(5);
 });
 
-it('the conversation keeps its look through a move: the strip is narrow or not by its width at rest, ❌ as drawn mid-move', async () => {
-  const { inside, width, mode, chat } = await mountWorkspace();
+it('the conversation keeps its look through a move: a title, narrow or not by its width at rest, ❌ as drawn mid-move', async () => {
+  const { inside, width, mode, chat, tool } = await mountWorkspace();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
   await untilStable('the split comes to rest', () => width(chat()));
   const bar = () => inside('[data-chat-workspace-chat-header] .session-tab-bar');
-  const asTab = () => !!inside('[data-chat-workspace-conversation-tab]');
   // At rest beside the tools the conversation strip is narrow (under 600 px here), alone it is not.
   expect(bar()!.hasAttribute('data-strip-narrow')).toBe(true);
   const looks = async () => {
     const seen = new Set<string>();
     for (let frame = 0; frame < 40; frame += 1) {
       await new Promise(requestAnimationFrame);
-      if (asTab()) seen.add(`tab narrow=${bar()?.hasAttribute('data-strip-narrow')}`);
+      const look = `title=${!!inside('[data-chat-workspace-title]')} tab=${!!inside('[data-chat-workspace-conversation-tab]')}`;
+      if (tool() && !tool()!.closest('[inert]')) seen.add(`${look} narrow=${bar()?.hasAttribute('data-strip-narrow')}`);
     }
     return [...seen];
   };
   await userEvent.click(page.getByRole('button', { name: '隐藏标签页' }));
-  expect(await looks(), 'hiding: while drawn as a tab, one look').toEqual(['tab narrow=true']);
+  expect(await looks(), 'hiding: while the tools are on screen, one look').toEqual(['title=true tab=false narrow=true']);
   await mode('hidden');
-  await until('the conversation is a title again once the tools are off', () => !asTab());
+  await until('the hidden tool is out of reach', () => !!tool()?.closest('[inert]'));
   expect(bar()!.hasAttribute('data-strip-narrow')).toBe(false);
   await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
-  expect(await looks(), 'showing: while drawn as a tab, one look').toEqual(['tab narrow=true']);
+  expect(await looks(), 'showing: while the tools are on screen, one look').toEqual(['title=true tab=false narrow=true']);
 });
 
 it('keeps the conversation as the first tab of the strip however narrow, and keeps both pages alive', async () => {
