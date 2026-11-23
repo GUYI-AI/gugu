@@ -103,6 +103,7 @@ import { createStandInTimeline } from './stand-in-timeline';
 import { readStartFailure } from './start-failures';
 import { knownHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots';
 import { sessionLife } from '@main/core/sessions/session-life';
+import { creationMessageId } from '@main/core/sessions/session-life-creation';
 import { runtimeFork } from '@main/core/sessions/session-life-forks';
 import { notStartedSessionOptions } from './not-started-options';
 import { readSessionModelMenu, readSessionPermissionAgentName, type SessionpageSessionOptionsWithMenu } from './session-model-menu';
@@ -621,10 +622,17 @@ function rowCreatedAt(row: SessionRow): number | null {
   return Number.isFinite(at) ? at : null;
 }
 
-/** 这个人发出去的第一句话:还没投出去的首轮(聊天腿),或者建会话时记下的那句(终端腿)。 */
+/**
+ * 这个人发出去的第一句话:还没投出去的首轮(聊天腿),或者建会话时记下的那句(终端腿)。
+ * 聊天腿的首轮一入队就是会话的 pending 行,各端从那一行画它(连同发送、启动、失败的状态);那一行还在时,
+ * 替身 ❌ 再带一份 —— 同一句话会画成两个气泡。
+ */
 function firstMessageOf(row: SessionRow): string | null {
   const session = mapSessionRowToSession(row);
-  return session.initialQueue?.[0]?.text ?? session.firstUtterance ?? null;
+  const first = session.initialQueue?.[0];
+  if (!first) return session.firstUtterance ?? null;
+  const messageId = creationMessageId(session, 0);
+  return sessionLife().read(row.id).pending.items.some((item) => item.messageId === messageId) ? null : first.text;
 }
 
 /** Its agent keeps no record gugu reads, and gugu's journal has its turns. */

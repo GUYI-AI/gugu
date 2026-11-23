@@ -39,6 +39,11 @@ export async function admitFirstMessages(sessionId: string): Promise<void> {
   if (session.runtime === 'acp' && session.initialQueue?.length) await admitCreationTurns(session);
 }
 
+/** A creation turn's message id. The first keeps the stable id its creation surface minted (the landed gugu message uses it too). */
+export function creationMessageId(session: Pick<Session, 'id' | 'initialMessageId'>, index: number): string {
+  return index === 0 && session.initialMessageId ? session.initialMessageId : `${session.id}:creation:${index}`;
+}
+
 /**
  * The creation turns as the session's first pending rows (idempotent: stable message ids). Returns how many there are;
  * a desktop task page that creates its own session starts an empty one itself (lifeStart on open).
@@ -48,8 +53,7 @@ export function enqueueCreationTurns(session: CreationTurns, context: NativePubl
   const life = sessionLife();
   const landsFirst = Boolean(session.initialMessageId && (session.startupOrigin === 'chat-page' || session.taskChatId));
   queue.forEach((turn, index) => {
-    // The first turn keeps the stable id its creation surface minted (the landed gugu message uses it too).
-    const messageId = index === 0 && session.initialMessageId ? session.initialMessageId : `${session.id}:creation:${index}`;
+    const messageId = creationMessageId(session, index);
     life.enqueue({
       sessionId: session.id, messageId, text: turn.text, kind: turn.kind ?? 'ordinary',
       ...(context && !landsFirst && !turn.kind && (!turn.origin || turn.origin === 'manual') ? { personalPublication: context } : {}),
