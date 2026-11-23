@@ -3064,14 +3064,14 @@ let tunnelMachines: TunnelMachines | null = null
 let closeTunnelMachines: (() => void) | null = null
 if (sshMachineStore) {
   // #6264 一台机器一条认证过的连接,咕咕开着就一直在(照 VS Code Remote-SSH):套接字按这个咕咕的数据目录分开,
-  // 启动时收掉上次没正常退出留下的,退出时收掉自己的(见 ssh-machines.ts closeSshMasters)。
+  // 启动时收掉上次没正常退出留下的;退出时收掉自己的在 killEnginesOnCrash 的 ssh-masters 那条腿(正常退出末尾是
+  // reallyExit,不走 will-quit,所以 ❌ 挂 will-quit)。
   configureSshControlScope(app.getPath('userData'))
   const leftoversClosed = new Promise<void>((resolve) => setImmediate(() => {
     const exits: Promise<void>[] = []
     closeSshMasters(undefined, (args) => void exits.push(runSshInBackground(args)))
     void Promise.all(exits).then(() => resolve())
   }))
-  app.on('will-quit', () => closeSshMasters())
   // 桌面此刻登着的账号:映射只认同一个账号装上的机器(附件直传、卸载都按它挑机器)。
   const currentUserId = async () => {
     const auth = await desktopAuthProvider().getAuth().catch(() => null)
@@ -3574,7 +3574,8 @@ const killEnginesOnCrash = createNativeLegReap({
       closeTunnelMachines?.()
       tunnelEndpoint?.stop()
     }],
-    // Remote SSH 的共享连接(ControlPersist,脱离进程树):正常退出由 will-quit 收,信号路径只走到这里。
+    // Remote SSH 的共享连接(ControlPersist,脱离进程树,连着转发出来的本机端口):正常退出(before-quit 的 exit)
+    // 和信号退出都只走到这里。
     ['ssh-masters', () => { closeSshMasters() }],
   ],
 })
