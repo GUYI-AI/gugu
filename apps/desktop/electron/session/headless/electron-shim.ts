@@ -180,22 +180,24 @@ type HeadlessNativeImage = {
   resize: (options: { width?: number; height?: number; quality?: string }) => HeadlessNativeImage
 }
 
-function imageFromBuffer(buffer: Buffer): HeadlessNativeImage {
+// @@@no-decoder - a server has no image decoder, so every image it reads is empty, as Electron says of bytes it cannot
+// decode. Each caller then takes its own "cannot decode" branch: an upload offers no preview (readers show the original),
+// an App keeps the generic icon, a dropped HEIC is refused. ❌ Hand the input back from toPNG/toJPEG: callers treat those
+// bytes as this process's encoding (a 1.6 MB PNG went up as its own "560 px preview").
+function emptyImage(): HeadlessNativeImage {
   return {
-    toPNG: () => Buffer.from(buffer),
-    toJPEG: () => Buffer.from(buffer),
-    isEmpty: () => buffer.length === 0,
+    toPNG: () => Buffer.alloc(0),
+    toJPEG: () => Buffer.alloc(0),
+    isEmpty: () => true,
     getSize: () => ({ width: 0, height: 0 }),
     toDataURL: () => '',
-    // No image decoder here: a resized image is empty. What re-encodes an App's icon (extension-icon.ts) then gets no
-    // bytes and the App keeps the generic mark — the App's own bytes are never passed through as if this process wrote them.
-    resize: () => imageFromBuffer(Buffer.alloc(0))
+    resize: () => emptyImage()
   }
 }
 
 export const nativeImage = {
-  createFromBuffer: (buffer: Buffer): HeadlessNativeImage => imageFromBuffer(buffer),
-  createEmpty: (): HeadlessNativeImage => imageFromBuffer(Buffer.alloc(0))
+  createFromBuffer: (_buffer: Buffer): HeadlessNativeImage => emptyImage(),
+  createEmpty: (): HeadlessNativeImage => emptyImage()
 }
 
 let clipboardText = ''
