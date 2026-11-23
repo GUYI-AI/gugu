@@ -10,7 +10,6 @@ import type { BrowserState } from '../../browser/browser-tab-provider';
 import { recentToolPanel, trackRecentTools } from '../../browser/workspace-recent-tools';
 import { readViewState } from '@/lib/viewStateTable';
 import { tabFullscreen } from '../../tabs/tab-fullscreen';
-import { SIDE_PAGE_WIDTH_PX } from '../../tabs/side-width';
 
 const file = (id: string): PanelItem => ({ kind: 'workspace.main', itemId: id, title: `${id}.md`, fileName: `${id}.md` });
 const board: PanelItem = { kind: 'kanban.board', title: 'Board' };
@@ -217,29 +216,25 @@ describe('chat navigation uses the same page history and real panes as tasks', (
   });
 });
 
-describe('pages beside the chat start at one declared width (side-width.ts, owner 11-07)', () => {
+describe('a chat\'s Details open as the right card\'s peer: half each (界面减法, design S.frac = .5)', () => {
   const sideWidth = (id: string, width: number) => {
     const layout = chatLayoutOf(id);
     const side = layout.groups.find(({ paneId }) => paneId === layout.sidePaneId)!;
     const at = layout.layout.type === 'split' ? layout.layout.children.findIndex((child) => child.type === 'pane' && child.paneId === side.paneId) : -1;
     return Math.round((layout.paneSizes[at] / 100) * width);
   };
-  it('the side page width is 360px', () => expect(SIDE_PAGE_WIDTH_PX).toBe(360));
-  it.each([1280, 1920, 2560])('group info opens at the side page width beside a %ipx chat, not half', (width) => {
+  it.each([600, 1280, 1920, 2560])('group info opens at half beside a %ipx chat', (width) => {
     const id = `side-width-${width}`;
     chatLayoutOf(id).setDimensions(width, 900);
     openInfoTab(id, 'members');
-    expect(sideWidth(id, width)).toBe(SIDE_PAGE_WIDTH_PX);
+    expect(sideWidth(id, width)).toBe(width / 2);
   });
-  it('never more than half; a file beside the chat stays its peer', () => {
-    chatLayoutOf('side-width-narrow').setDimensions(600, 900);
-    openInfoTab('side-width-narrow', 'members');
-    expect(sideWidth('side-width-narrow', 600)).toBe(300);
+  it('a file beside the chat is its peer too', () => {
     chatLayoutOf('side-width-file').setDimensions(1600, 900);
     openPanelItem('side-width-file', file('README'));
     expect(chatLayoutOf('side-width-file').paneSizes).toEqual([50, 50]);
   });
-  it('a dragged width stays while open; double-click and reopening come back to the declared width', () => {
+  it('a dragged width stays while open; double-click and reopening come back to half', () => {
     const id = 'side-width-drag'; const layout = chatLayoutOf(id);
     layout.setDimensions(2000, 900);
     openInfoTab(id, 'members');
@@ -248,12 +243,12 @@ describe('pages beside the chat start at one declared width (side-width.ts, owne
     openInfoTab(id, 'announcement');
     expect(layout.paneSizes).toEqual([40, 60]);
     layout.equalizeSplit(cut);
-    expect(sideWidth(id, 2000)).toBe(SIDE_PAGE_WIDTH_PX);
+    expect(sideWidth(id, 2000)).toBe(1000);
     layout.setSplitSizes(cut, [40, 60]);
     closeInfoTab(id);
     expect(infoTabOf(id)).toBeNull();
     openInfoTab(id, 'members');
-    expect(sideWidth(id, 2000)).toBe(SIDE_PAGE_WIDTH_PX);
+    expect(sideWidth(id, 2000)).toBe(1000);
   });
 });
 

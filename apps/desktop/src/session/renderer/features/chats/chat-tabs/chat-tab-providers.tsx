@@ -24,7 +24,6 @@ import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { takeRestore } from './chat-tab-restores';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { RetainedTabContent, useRetainedTabs } from '@renderer/features/tabs/retained-tab-content';
-import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
 
 /** The chat itself: its messages and composer, first in its strip, never closed. */
 export const CHAT_TAB_KIND = 'chat';
@@ -270,7 +269,7 @@ export const chatInfoTabProvider = createTabProvider<typeof CHAT_INFO_TAB_KIND, 
   isPersistent: (state) => !state.topic,
 
   resourceKey: (state) => `${state.topic?.topicChatId ?? ''}:${state.page}:${state.at ?? ''}`,
-  sideWidth: () => SIDE_PAGE_WIDTH_PX,
+  // No sideWidth: the chat's Details are the browser card's peer, half each until dragged (界面减法, design S.frac = .5).
   initialize: stateResource,
   dispose: () => {},
   TabBarItem: InfoTabItem,
