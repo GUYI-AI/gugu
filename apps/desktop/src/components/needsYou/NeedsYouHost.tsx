@@ -8,7 +8,7 @@ import { useMobileShell } from '@/hooks/useMobileShell'
 import { sessionPresentation } from '@/lib/agent-wait/watch-status'
 import { followLink } from '@/lib/guguLinks'
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge'
-import { Bell, MessageCircle } from '@/lib/icons'
+import { Bell, ChevronLeft } from '@/lib/icons'
 import { installShellSlots, readShellSlots } from '@/lib/shellSlots'
 import { setSidebarNotificationsOpen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge'
 import { Button } from '../ui/Button'
@@ -81,9 +81,10 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
     const showEmpty = !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && deferred.length === 0
     return createPortal(<>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">
-        {/* The list takes the chats' place: a worded way back besides the bell. A chat icon, not an arrow: the head above already has the collapse «. */}
-        <Button size="sm" variant="ghost" className="-ml-2 gap-1" data-testid="notification-back" onClick={() => setSidebarNotificationsOpen(false)}>
-          <MessageCircle className="size-3.5" />{t('chatArea.backToList', { ns: 'messaging' })}
+        {/* The list takes the chats' place: its header is the way back to them, the usual "‹ parent" back. */}
+        <Button size="sm" variant="ghost" className="-ml-2 gap-0.5 font-medium text-[var(--fg)]" data-testid="notification-back"
+          aria-label={t('chatArea.backToList', { ns: 'messaging' })} title={t('chatArea.backToList', { ns: 'messaging' })} onClick={() => setSidebarNotificationsOpen(false)}>
+          <ChevronLeft className="size-4" />{t('shell.chats', { ns: 'main' })}
         </Button>
         {unreadFailures.length > 0 && <Button size="sm" variant="ghost" data-testid="notification-mark-all-read" disabled={marking > 0} onClick={() => { void markRead(unreadFailures) }}>{t('chatList.markAllRead', { ns: 'messaging' })}</Button>}
       </div>
