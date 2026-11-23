@@ -1113,6 +1113,11 @@
 
   /* 右侧栏是一张独立的浏览器卡片(第 16 版 #57–#59):并排时工具那一格离开对话、四周留 8px,圆角 12;
      页签条是浅灰底,只有选中的页签是白的。合成一条(窄窗、完整视图)时整条页签条同样是浅灰。 */
+  /* 卡片四周的缝露出工作区底色(和对话顶栏同一档),白卡片才看得出是单独一张。 */
+  [data-chat-tool-workspace][data-chat-tool-cards] {
+    background: var(--tab-strip);
+  }
+
   [data-chat-workspace-header][data-chat-tool-cards] {
     --chat-tool-card-gap: 8px;
     height: calc(var(--tab-strip-height) + var(--chat-tool-card-gap));
