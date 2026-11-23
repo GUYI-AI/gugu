@@ -198,7 +198,8 @@ export const workspaceFileSystemController = createRPCController({
       const range = await workspaceFileRange(deviceId, { projectId, workspaceId }, request);
       return ok(range ? { linked: true as const, ...range } : { linked: false as const });
     } catch (error) {
-      const type = changedOnItsMachine(error) ? 'content_changed' : error instanceof WorkspaceTransferError ? error.code : 'internal_error';
+      const type = changedOnItsMachine(error) ? 'content_changed' : error instanceof WorkspaceTransferError ? error.code
+        : (error as { code?: unknown } | null)?.code === 'server_outdated' ? 'server_outdated' : 'internal_error';
       log.warn('Streamed read of a file on another machine failed', { deviceId, type, error: String(error) });
       return err({ type, message: (error as Error)?.message ?? String(error) });
     }

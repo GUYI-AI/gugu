@@ -194,6 +194,18 @@ describe('the reader learns the version from the stream\'s head, acknowledges, r
     expect(line.sent.filter(m => m.type === 'file.stream')).toHaveLength(1)
   })
 
+  it('a server below 21 refusing a request with no version is said as a server too old, from its own answer', async () => {
+    for (const message of ['Invalid file stream request', 'Invalid working copy stream request']) {
+      const line = fakeLinks()
+      const opening = open(line)
+      await flush()
+      const request = line.sent.find(m => m.type === 'file.stream')!
+      line.reply(request.request_id, { error: { code: 'stream_failed', message } })
+      await expect(opening).rejects.toMatchObject({ code: 'server_outdated' })
+      expect(line.sent.filter(m => m.type === 'file.stream')).toHaveLength(1)
+    }
+  })
+
   it('a machine refusing the read is said at once with its reason, never retried as a dropped line', async () => {
     const line = fakeLinks()
     const opening = open(line)

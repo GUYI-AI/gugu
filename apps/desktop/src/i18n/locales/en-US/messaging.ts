@@ -399,6 +399,7 @@ export default {
 
     "fileUnavailable": "File unavailable right now",
     "fileIntegrity": "This file failed verification: its bytes don't match its checksum, so it wasn't opened",
+    "fileServerOutdated": "The Gugu server on this machine is too old. Update it to open files.",
     "fileNoAccess": "You no longer have access to this file",
     "fileUpdated": "This file was updated; open it again",
     "holderOffline": "{{machine}} is offline. This file opens when it is back online.",

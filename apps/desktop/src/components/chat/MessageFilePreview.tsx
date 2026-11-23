@@ -99,6 +99,8 @@ function previewFailure(error: unknown, t: TFunction<'messaging'>): PreviewRead 
   if (error instanceof FileReadRevokedError && (error.reason === 'access' || error.reason === 'revision')) return { content: null, errorStatus: 'failed', error: t(error.reason === 'access' ? 'attachmentView.fileNoAccess' : 'attachmentView.fileUpdated') }
   // The same bytes come again on a retry: not retryable.
   if (isFileIntegrityError(error)) return { content: null, errorStatus: 'failed', retryable: false, error: t('attachmentView.fileIntegrity') }
+  // The machine the file is on runs a Gugu server too old for how this desktop reads its files: only updating it helps.
+  if ((error as { code?: unknown } | null)?.code === 'server_outdated') return { content: null, errorStatus: 'failed', retryable: false, error: t('attachmentView.fileServerOutdated') }
   const errorStatus = error instanceof Error && (error.message === 'gone' || error.message === 'expired' || error.message === 'missing') ? error.message : 'failed'
   const status = (error as { status?: number } | null)?.status
   const retryable = errorStatus === 'failed' && !(status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429)

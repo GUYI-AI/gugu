@@ -115,6 +115,15 @@ export type StreamLine = { links: HeldFileSshLinks; deviceId: string; accountId:
 export type StreamVersion = { size: number; etag: string }
 export type LinkStream = FileBytes & { etag: string }
 
+/**
+ * What a server below protocol 21 answers a stream request that names no version (its streamers required an etag):
+ * read from that answer, not from the version number the link reports, so the read fails on what the machine said.
+ */
+const OLD_SERVER_REFUSAL = /^Invalid (working copy |file )?stream request$/
+export function serverOutdated(): Error {
+  return Object.assign(new Error('Gugu on this machine is too old to stream its files: update it, then open the file again'), { code: 'server_outdated' })
+}
+
 /** A stream's head (`<type>.head`, device-link-host.ts): the version the machine streams, before its first piece. */
 function streamHead(message: unknown, type: string, stream: string): StreamVersion | null {
   const outer = message && typeof message === 'object' ? message as { payload?: unknown } : null
@@ -185,7 +194,8 @@ export function openLinkStream(line: StreamLine, type: string, request: (offset:
             // An answer that is an error is the machine refusing this read (its streamer threw: changed, gone, outside,
             // denied): said at once, never retried as if the line had dropped. A dropped link answers nothing (onClosed).
             if (reply.error) return finish(/changed/i.test(reply.error.message ?? '')
-              ? new Error('Local file changed during read') : new Error(`The machine refused the file read: ${reply.error.message ?? reply.error.code}`))
+              ? new Error('Local file changed during read') : !here && OLD_SERVER_REFUSAL.test(reply.error.message ?? '') ? serverOutdated()
+                : new Error(`The machine refused the file read: ${reply.error.message ?? reply.error.code}`))
             finish(here && received === here.size ? 'done' : new Error('File stream ended before its size'))
           },
           onClosed() { finish('again') },

@@ -32,7 +32,7 @@ export function machineFileReader(deviceId: string | null, projectId: string, wo
       if (linked && deviceId && there) {
         const version = offset === 0 ? undefined : versions.get(path);
         const result = await rpc.workspace.files.readStreamed(deviceId, there.projectId, there.workspaceId, { path, offset, length, ...version });
-        if (!result.success) throw new Error(result.error.type === 'content_changed' ? 'The file changed while it was read' : result.error.message);
+        if (!result.success) throw Object.assign(new Error(result.error.type === 'content_changed' ? 'The file changed while it was read' : result.error.message), { code: result.error.type });
         if (!result.data.linked) throw new Error('The connection to this machine was lost while the file was read');
         const { size, etag } = result.data;
         if (offset === 0) versions.set(path, { size, etag });
