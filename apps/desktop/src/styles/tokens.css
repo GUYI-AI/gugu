@@ -1318,18 +1318,18 @@ input {
   }
 }
 
-/* A running agent's avatar corner (Avatar.tsx, AgentRunningBadge): the running glyph on a small round backing. */
+/* A running agent's avatar corner (Avatar.tsx, AgentRunningBadge): the running glyph on a small see-through round backing. */
 .av-running {
   position: absolute;
-  right: -4px;
-  bottom: -4px;
+  right: -2px;
+  bottom: -2px;
   width: var(--av-running-size);
   height: var(--av-running-size);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
   color: var(--text-primary);
   font-size: calc(var(--av-running-size) * 1.08);
   line-height: 1;

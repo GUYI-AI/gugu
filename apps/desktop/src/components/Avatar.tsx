@@ -45,10 +45,11 @@ const SIZE_MAP = { xs: 18, sm: 32, md: 40, lg: 64 } as const
 const AVATAR_STATUS_DOT_CLASS = 'av-status__dot relative'
 
 // @@@avatar-running-badge - a running agent wears the product's one running glyph (running-glyph.css, on the shared
-// four-step beat) in the avatar's bottom-right corner, on a small round backing: the only motion an avatar has.
+// beat) in the avatar's bottom-right corner, small and on a see-through round backing so it covers little of the face:
+// the only motion an avatar has.
 function AgentRunningBadge({ avatarSize, label }: { avatarSize: number; label: ReturnType<typeof labelOfDisplayStatus> }) {
   const { t } = useTranslation('common')
-  const size = Math.max(9, Math.min(18, Math.round(avatarSize * 0.44)))
+  const size = Math.max(8, Math.min(14, Math.round(avatarSize * 0.34)))
   const text = t(`agentStatus.${label}`)
   return (
     <span className="av-running" role="img" aria-label={text} title={text} style={{ '--av-running-size': `${size}px` } as React.CSSProperties}>
