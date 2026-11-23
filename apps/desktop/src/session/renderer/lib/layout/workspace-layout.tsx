@@ -6,7 +6,6 @@ import { PanelSlot } from '@renderer/lib/layout/panel-slot';
 import { PanelResizeDragGuard, PanelResizeHandle } from '@renderer/lib/layout/panel-resize-handle';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
-import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface';
 import './workspace-surface.css';
 
 /** 侧栏最宽不超过会话页宽度的这个比例 —— 窗口小的时候 520px 会把主区挤没。 */
@@ -19,9 +18,6 @@ interface WorkspaceLayoutProps {
   innerSidebar?: ReactNode;
   /** #2548 ⑤ 内层栏收起时正文左上角那枚展开钮(ShellRestoreLane);不在时它自己什么都不画。 */
   innerSidebarRestore?: ReactNode;
-  /** A place of its own on the far-left rail (App, Library): no task list beside it. The sidebar stays
-   *  mounted, only not shown — swapping the layout out rebuilt the whole task tree on every way back. */
-  sidebarHidden?: boolean;
 }
 
 /**
@@ -40,7 +36,7 @@ interface WorkspaceLayoutProps {
  * #2548 the list collapses to a rail of its avatars (SIDEBAR_RAIL_PX) and is always there. Its content layer keeps the
  * list's width through a fold and is clipped at the drawn edge (@@@list-clip below).
  */
-export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null, innerSidebarRestore = null, sidebarHidden = false }: WorkspaceLayoutProps) {
+export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null, innerSidebarRestore = null }: WorkspaceLayoutProps) {
   const { translate } = useSessionMessages();
   const {
     track,
@@ -48,7 +44,6 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     innerEdge,
     workspaceRootRef,
     setWorkspaceWidth,
-    setListHidden,
     setLeftWidth,
     dragLeftEdge,
     releaseLeftEdge,
@@ -69,7 +64,6 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     observer.observe(root);
     return () => observer.disconnect();
   }, [workspaceRootRef, setWorkspaceWidth]);
-  useLayoutEffect(() => setListHidden(sidebarHidden), [sidebarHidden, setListHidden]);
   const fillRef = useCallback((element: HTMLDivElement | null) => track.attachFill(element), [track]);
 
   const maxSidebarWidth = () => {
@@ -85,15 +79,11 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       ref={workspaceRootRef}
       className="relative flex h-full w-full overflow-clip"
       data-workspace-shell=""
-      // #2548 the content is a card stacked on the one list only while the list is beside it (desktop-shell.css).
-      data-workspace-sidebar-hidden={sidebarHidden ? '' : undefined}
     >
       {/* @@@list-clip - the list, the inner column and the page are one PanelTrack (panel-track.ts): in every frame of a
           fold each is laid out at the size it is drawn at, and the page takes the rest. The list keeps its width through the
           fold and is clipped at its drawn edge (its text fades, left-sidebar); it lands on the rail's width with the rows'
-          rail layout. A place without the list (资源库, App) keeps the list mounted, taking no room,
-          as a retained surface (❌ display:none: that drops every row's layout box and the way back restyles the whole list,
-          @@@retained-places, lib/retainedSurface.ts). */}
+          rail layout. */}
       <PanelSlot track={track} id="list" className="z-40">
         <div
           data-workspace-left-panel=""
@@ -102,14 +92,12 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
             // 拖分隔条时别让指针顺手把侧栏里的文字选中 —— 与工作区面板同一处方。
             isResizing && 'select-none'
           )}
-          style={sidebarHidden ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}
         >
           {leftSidebar}
         </div>
       </PanelSlot>
       {/* #2548 a sidebar that collapses to a rail keeps its edge: dragging the rail's edge opens it. */}
-      {!sidebarHidden ? (
-        <PanelResizeHandle
+      <PanelResizeHandle
           offset={leftAnimatedWidth}
           ariaLabel={translate('task.resizeSidebar')}
           // #2548 the sidebar as one list draws no line on its edge: hovering it only shows the resize cursor.
@@ -125,10 +113,9 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
           // (mock v18 拖边缘), ❌ the half-the-minimum threshold that collapsed it mid-drag.
           follow={{ onMove: (raw) => dragLeftEdge(raw, maxSidebarWidth()), onRelease: releaseLeftEdge }}
         />
-      ) : null}
       {/* #2642 内层栏右边缘的分隔条,规矩同上面那一根(悬停才出线、拖动跟手、松手存、左右键步进),只是拖不收:这一列有自己的
           收起钮,拖到最窄就停住。排在这一列**前面**:它和正文之间 ❌ 夹东西。 */}
-      {innerSidebarShown && !sidebarHidden ? (
+      {innerSidebarShown ? (
         <PanelResizeHandle
           offset={innerEdge}
           ariaLabel={translate('task.resizeInnerSidebar')}
@@ -151,17 +138,17 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
       {/* 固定占这一格(没有内层侧栏时宽 0):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
           #2548 有内层栏时它归列表那一层,紧挨着正文那张卡片(desktop-shell.css)。 */}
       <PanelSlot track={track} id="inner">
-        {sidebarHidden ? null : innerSidebar}
+        {innerSidebar}
       </PanelSlot>
       <div ref={fillRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
         {mainContent}
-        {sidebarHidden ? null : innerSidebarRestore}
+        {innerSidebarRestore}
       </div>
-      {!sidebarHidden ? <PanelResizeDragGuard offset={leftAnimatedWidth} /> : null}
+      <PanelResizeDragGuard offset={leftAnimatedWidth} />
       {/* #2642 正文的页签条压在内层栏分隔条的右半截上:守卫排在正文后面,那半截才是拖宽度而 ❌ 拖窗口。 */}
-      {innerSidebarShown && !sidebarHidden ? <PanelResizeDragGuard offset={innerEdge} /> : null}
+      {innerSidebarShown ? <PanelResizeDragGuard offset={innerEdge} /> : null}
       {/* 左侧栏开关的控制器(快捷键、「消息」再点一下都走它);按钮本身 #2548 起在一张表侧栏的头一行。 */}
-      {sidebarHidden ? null : <ShellSidebarToggle />}
+      <ShellSidebarToggle />
     </div>
   );
 }

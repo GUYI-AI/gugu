@@ -5,7 +5,6 @@
  */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
-import { useState } from 'react';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
 import { INNER_SIDEBAR_MAX_SHARE, INNER_SIDEBAR_MAX_WIDTH_PX, SIDEBAR_RAIL_PX, WorkspaceLayoutContextProvider, useInnerSidebarFrame, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
@@ -101,47 +100,6 @@ function InnerColumn() {
   useInnerSidebarFrame();
   return <div data-region="inner-sidebar" className="h-full w-full" />;
 }
-
-it('a place without the list takes no space or motion from it after a resize, while folding, or on return', async () => {
-  writeInterface('gugu.taskpage.sidebarWidth', 320);
-  function Places() {
-    const [sidebarHidden, setSidebarHidden] = useState(false);
-    return <>
-      <button style={{ position: 'fixed', bottom: 20, right: 20, zIndex: 100 }} onClick={() => setSidebarHidden(!sidebarHidden)}>switch place</button>
-      <WorkspaceLayout sidebarHidden={sidebarHidden} leftSidebar={<div>project list</div>} innerSidebar={<InnerColumn />} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<Body />} />} />
-    </>;
-  }
-  harness = createReactHarness();
-  await harness.render(<div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
-    <SessionLocalizationProvider><WorkspaceLayoutContextProvider><Places /></WorkspaceLayoutContextProvider></SessionLocalizationProvider>
-  </div>);
-  const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
-  const surface = shell.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
-  const list = shell.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
-  const button = (label: string) => [...harness.container.querySelectorAll('button')].find(button => button.textContent === label)!;
-  const handle = shell.querySelector<HTMLElement>('[data-panel-resize-handle]')!;
-  const start = handle.getBoundingClientRect().left + handle.getBoundingClientRect().width / 2;
-  pointer('pointerdown', handle, start);
-  pointer('pointermove', handle, start + 80);
-  pointer('pointerup', handle, start + 80);
-  await userEvent.click(button('switch place'));
-  await new Promise(requestAnimationFrame);
-  expect(surface.getBoundingClientRect().left, 'unmounting the group column must not restore the hidden list\'s space').toBe(shell.getBoundingClientRect().left);
-  await userEvent.click(button('switch place'));
-  await expect.poll(() => list.getBoundingClientRect().width).toBe(400);
-  for (const landedWidth of [SIDEBAR_RAIL_PX, 400]) {
-    await userEvent.click(button('toggle list'));
-    await userEvent.click(button('switch place'));
-    await new Promise(requestAnimationFrame);
-    expect(surface.getBoundingClientRect().left - shell.getBoundingClientRect().left, 'the hidden list must not shift the new page while it is still moving').toBeCloseTo(0);
-    expect(surface.getBoundingClientRect().right + parseFloat(getComputedStyle(surface).marginRight), 'the existing surface inset is the only space at the other edge').toBeCloseTo(shell.getBoundingClientRect().right);
-    await userEvent.click(button('switch place'));
-    await expect.poll(() => list.getBoundingClientRect().width).toBe(landedWidth);
-    await expect.poll(() => shell.firstElementChild!.getBoundingClientRect().width).toBe(landedWidth);
-    await expect.poll(() => surface.getBoundingClientRect().left - shell.querySelector('[data-region="inner-sidebar"]')!.getBoundingClientRect().right).toBeCloseTo(0);
-    expect(shell.querySelector('[data-workspace-left-panel]'), 'returning keeps the same list').toBe(list);
-  }
-});
 
 it('the inner column\'s widest is a share of the card beside the list\'s place, so folding the list lets it grow', async () => {
   writeInterface('gugu.taskpage.sidebarWidth', 320);

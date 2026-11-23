@@ -499,9 +499,13 @@ export const ExtensionPage = observer(function ExtensionPage({
             // Rounded where the place it is put in is rounded (the assistant panel's card): clipped as that place clips.
             Object.assign(box.style, pageCorners(getComputedStyle(claim.element), full, clip));
             box.style.visibility = shown ? 'visible' : 'hidden';
-            box.style.zIndex = ancestorsOf(claim.element).some((element) => element.hasAttribute('data-tab-fullscreen'))
-              ? 'var(--z-pane-fullscreen-resident)'
-              : 'var(--z-pane-resident)';
+            // A page shown as a modal (@@@page-modal) is above the whole shell: the page in it is drawn over that modal's layer.
+            const ancestors = ancestorsOf(claim.element);
+            box.style.zIndex = ancestors.some((element) => element.hasAttribute('data-page-modal'))
+              ? 'calc(var(--z-settings) + 1)'
+              : ancestors.some((element) => element.hasAttribute('data-tab-fullscreen'))
+                ? 'var(--z-pane-fullscreen-resident)'
+                : 'var(--z-pane-resident)';
             if (managed) box.style.opacity = shown ? '1' : '0';
             box.inert = !shown;
             const inner = innerRef.current;
