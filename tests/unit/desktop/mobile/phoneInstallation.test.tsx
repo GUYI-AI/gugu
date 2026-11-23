@@ -36,6 +36,7 @@ vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime', (
   startPhoneDevice: mocks.start, ensurePhoneAgentHostStopped: mocks.stopped,
   usePhoneDevice: () => ({ os: null, host: null, link: { state: 'off' } }),
   refreshPhoneDevice: async () => {}, stopPhoneAgentHost: async () => {}, restartPhoneAgentHost: async () => {},
+  enablePhoneAgentHost: async () => {},
 }))
 
 import { PhoneAgentSetupGate } from '../../../../apps/desktop/src/mobile/local-agent/PhoneAgentSetupGate'
