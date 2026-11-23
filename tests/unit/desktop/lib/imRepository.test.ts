@@ -200,11 +200,11 @@ describe('account-scoped normalized IM repository', () => {
       vi.unstubAllGlobals()
     }
   })
-  it('writes a confirmed send at the place its row held', async () => {
+  it('writes a confirmed send as the server returned it, without the place its row held', async () => {
     const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
     const local_timeline = { afterSeq: 0, createdAt: '2026-08-09T00:00:00.000Z' }
     const written = await confirmSentMessage(repository, { ...outbox('message-1', 'account-a'), preview: { local_timeline } }, message('message-1'))
-    expect(written.local_timeline).toEqual(local_timeline)
+    expect(written.local_timeline).toBeUndefined()
     repository.close()
     const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
     expect(await storedIds()).toEqual(['message-1'])
