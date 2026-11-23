@@ -38,7 +38,7 @@ afterEach(() => {
 async function openOnMemberPage(onClosePage: () => void, onCloseCard: () => void) {
   const page = (child: ReturnType<typeof createNode> | null) => createElement(RightPanel, { testId: 'member-page', onClose: onClosePage, children: child })
   await renderWithAppProviders(harness, page(null), { chat: {}, contacts: {} })
-  await renderWithAppProviders(harness, page(createNode(MemberProfilePopover, { profile: { member, preferredSide: 'left', openedFrom: 'aside' }, onClose: onCloseCard })), { chat: {}, contacts: {} })
+  await renderWithAppProviders(harness, page(createNode(MemberProfilePopover, { profile: { member, preferredSide: 'left' }, onClose: onCloseCard })), { chat: {}, contacts: {} })
 }
 
 describe('#6836 member profile card on the phone', () => {
@@ -88,7 +88,7 @@ describe('#6836 member profile card on the phone', () => {
   it('desktop: still the popover beside the element that opened it', async () => {
     shell.mobile = false
     const page = (child: ReturnType<typeof createNode> | null) => createElement(RightPanel, { testId: 'member-page', onClose: vi.fn(), children: child })
-    await renderWithAppProviders(harness, page(profileCardWithOpener({ member, preferredSide: 'left', openedFrom: 'aside' }, { onClose: vi.fn() })), { chat: {}, contacts: {} })
+    await renderWithAppProviders(harness, page(profileCardWithOpener({ member, preferredSide: 'left' }, { onClose: vi.fn() })), { chat: {}, contacts: {} })
     await pressProfileOpener()
     expect(document.body.querySelector('[data-slot="popover-positioner"]')).not.toBeNull()
     expect(card()?.getAttribute('data-sheet-mobile')).toBeNull()

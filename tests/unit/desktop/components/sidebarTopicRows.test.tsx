@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatListSlotHost } from '../../../../apps/desktop/src/components/ChatListSlotHost'
 import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListPanel'
 import { installAssistantShellBridge, publishAssistantShell, type AssistantShellSnapshot } from '../../../../apps/desktop/src/lib/assistantShellBridge'
-import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 import { useSidebarChatSignals } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
 import { installSessionViewRequestBridge } from '../../../../apps/desktop/src/session/renderer/features/sessions/stores/session-view-requests'
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
@@ -33,7 +32,7 @@ const topics = Array.from({ length: 5 }, (_, index) => chat({
 const rows = () => Array.from(harness.container.querySelectorAll<HTMLElement>('[data-topic-subrow]'))
 
 describe('shared sidebar topic branches', () => {
-  it('a group reveals read topics inline and opens the existing source/split path', async () => {
+  it('a group reveals read topics inline and opens the topic as the main conversation', async () => {
     const node = createNode(ChatListPanel, { placement: 'sidebar' })
     const markMessageVisible = vi.fn()
     const render = (unread: number) => renderWithAppProviders(harness, node, {
@@ -49,8 +48,7 @@ describe('shared sidebar topic branches', () => {
     expect(openChat).not.toHaveBeenCalled()
     expect(markMessageVisible).not.toHaveBeenCalled()
     await clickElement(rows().at(-1)!)
-    expect(openChat).toHaveBeenCalledWith(source.id, false)
-    expect(drainTopicSplitRequest(source.id)).toMatchObject({ chatId: 'topic-4', sourceChatId: source.id })
+    expect(openChat).toHaveBeenCalledWith('topic-4', false)
     await render(0)
     expect(rows()).toHaveLength(5)
     expect(rows().at(-1)?.textContent).not.toContain('8')

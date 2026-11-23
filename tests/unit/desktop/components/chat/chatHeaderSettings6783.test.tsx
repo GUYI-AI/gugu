@@ -6,7 +6,7 @@ import { createRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../../support/testHarness'
 import { ChatHeaderActions } from '../../../../../apps/desktop/src/components/chat/ChatHeaderActions'
-import { drainTopicSplitRequest } from '../../../../../apps/desktop/src/lib/topicSplitRequest'
+import { captureOpenedChats } from '../../../../support/openedChats'
 
 vi.mock('@/lib/chatPinSettings', () => ({ readChatPinSettings: async () => ({ topicIds: [] }), setChatPinPreference: vi.fn(), watchChatPinSettings: () => () => {} }))
 
@@ -70,7 +70,9 @@ describe('#6783 页头 = 这个聊天自己的信息', () => {
     await clickElement(topics)
     const rows = Array.from(document.querySelectorAll<HTMLElement>('[data-testid="group-menu-topic"]'))
     expect(rows.map((row) => row.querySelector('.gg-list-row-title')?.textContent)).toEqual(['新话题', '旧话题'])
+    const opened = captureOpenedChats()
     await clickElement(rows[0]!)
-    expect(drainTopicSplitRequest('g')).toMatchObject({ chatId: 't-new', sourceChatId: 'g' })
+    opened.stop()
+    expect(opened.chatIds).toEqual(['t-new'])
   })
 })

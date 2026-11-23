@@ -36,8 +36,6 @@ import { PhoneProjectChatAvatar } from '@/mobile/partners/PhoneProjectChatAvatar
 import { phoneChatUnread } from '@/mobile/chat/phoneChatUnread'
 import { oneListCalls, oneListNewsDot } from '@/lib/chatLineUnread'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
-import { UI_EVENTS } from '../lib/uiEvents'
-import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
 import { useHeldOrder, usePointerHold } from '../lib/heldOrder'
@@ -200,7 +198,7 @@ const SUNK_SECTION_STYLE: React.CSSProperties = {
 /** 一列会话行共用的那一份动作:身份不随列表重渲染而换,行(memo)才认得出「我这一行没变」。 */
 export interface ChatRowActions {
   activate: (chat: ChatItem, beside: boolean) => void
-  /** 点话题子行:开它的分栏(selectChat),❌ 不走来源行的「重复点击收起」。 */
+  /** 点话题子行:换成它这条主会话(selectChat),❌ 不走来源行的「重复点击收起」。 */
   openTopic: (topic: ChatItem, beside: boolean) => void
   toggleTopics: (chatId: string) => void
   pin: (chat: ChatItem) => void
@@ -632,16 +630,6 @@ export function ChatListPanel({
   const [focusedChatId, setFocusedChatId] = useState<string | null>(activeChatId)
   const [collapsedTopicSources, setCollapsedTopicSources] = useState<ReadonlySet<string>>(() => new Set())
   const [expandedTopicSources, setExpandedTopicSources] = useState<ReadonlySet<string>>(() => new Set())
-  // @@@5856 分栏此刻显示的是哪条话题 —— 子行的高亮要跟着它,而分栏也可以从消息上的锚点打开,
-  // 所以这个真值只能由聊天区广播过来(UI_EVENTS.topicSplitChanged),❌ 不许在这边猜。
-  const [activeTopicChatId, setActiveTopicChatId] = useState<string | null>(null)
-  useEffect(() => {
-    const onChanged = (event: Event) => {
-      setActiveTopicChatId((event as CustomEvent<{ chatId: string | null }>).detail?.chatId ?? null)
-    }
-    window.addEventListener(UI_EVENTS.topicSplitChanged, onChanged)
-    return () => window.removeEventListener(UI_EVENTS.topicSplitChanged, onChanged)
-  }, [])
   // @@@ui-ruler — ListRow(见 ui/ListRow.tsx)是纯函数组件,没有声明 `ref` prop,React 19 的
   // ref-as-prop 也够不到它(类型层会拒绝、运行时也不会转发到根 div)。键盘导航要拿真实 DOM 节点调
   // `.focus()`,原来靠一张 chatId→node 的 Map;既然要不到逐行 ref,改为在滚动容器内按
@@ -744,7 +732,7 @@ export function ChatListPanel({
     }),
     // isSunk 每次渲染新建(它读 Date.now),输入已在下面列全。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shownChats, topicNesting, activeTopicChatId, collapsedTopicSources, expandedTopicSources, mobile],
+    [shownChats, topicNesting, activeChatId, collapsedTopicSources, expandedTopicSources, mobile],
   )
   const visibleChatIds = useMemo(() => visibleChats.map((chat) => chat.id), [visibleChats])
 
@@ -816,7 +804,7 @@ export function ChatListPanel({
         key={topic.id}
         topic={topic}
         mobile={mobile}
-        isActive={!inSidebar && topic.id === activeTopicChatId}
+        isActive={topic.id === selectedChatId}
         tabIndex={focusedChatId === topic.id ? 0 : -1}
         actions={rowActions}
       />
@@ -878,34 +866,14 @@ export function ChatListPanel({
 
   const selectChat = useCallback((chat: ChatItem, focusTarget: 'composer' | 'sidebar' = 'composer', beside = false) => {
     if ((chat.kind === 'dm' || chat.kind === 'ai') && openOwnedAgentEntry(chat.id, chat.peer_user_id ?? undefined, drafts[chat.id])) return
-    // gugu-dev#181 侧栏那一份:对话是会话页这屏的一块,请会话页摆出来(话题 = 它的来源线那块,话题开成分栏)。
+    // gugu-dev#181 侧栏那一份:对话是会话页这屏的一块,请会话页摆出来(话题和群一样是一条主会话,#62)。
     if (inSidebar) {
       const sessionPage = readSessionpageViewRequestBridge()
       if (!sessionPage) throw new Error('sessionpage view request bridge is not installed')
-      const topic = chat.kind === 'topic' && chat.source_chat_id ? chat : null
-      sessionPage.openChat(topic?.source_chat_id ?? chat.id, beside)
-      if (chat.unread_locator && !topic) void openUnreadChat(chat.id, selectedChatId === chat.id).catch((error) => {
+      sessionPage.openChat(chat.id, beside)
+      if (chat.unread_locator) void openUnreadChat(chat.id, selectedChatId === chat.id).catch((error) => {
         chatListLog.error({ error: String(error) }, 'unread locator open failed')
       })
-      if (topic) requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: topic.source_chat_id!, focusComposer: focusTarget === 'composer' })
-      return
-    }
-    // @@@5856 点话题**不整屏切走**(spec:「开出来是分栏不切走」):主区切到它的来源那条线,
-    // 话题自己开成右边的分栏。❌ 不许 setActiveChatId(话题) —— 那正是「把 topic 当群」的那条路,
-    // 而且哪怕只有一帧也会被看见。
-    if (chat.kind === 'topic' && chat.source_chat_id) {
-      setActiveChatId(chat.source_chat_id)
-      // focusComposer:焦点要落在**分栏自己**的输入框上。
-      // ❌ 不许走 onChatSelected('composer') —— 那聚焦的是左边来源线的输入框,顺手打字回车
-      // 就发进了大群,正是「消息隔离」要防的那个方向(找茬第十轮实测)。
-      requestTopicSplit({
-        chatId: chat.id,
-        name: chat.name ?? '',
-        sourceChatId: chat.source_chat_id,
-        focusComposer: focusTarget === 'composer',
-        toggle: true,
-      })
-      onChatSelected?.('sidebar')
       return
     }
     // A phone's list covers the chat it reopens, so a tap there is an opening (#6530), not a jump inside a chat on screen.
@@ -969,11 +937,8 @@ export function ChatListPanel({
       if (!shortcut) return
 
       const path = event.composedPath()
-      // @@@5856 话题分栏里那个输入框也算「在聊天输入框里」。它 surface="aside",刻意不挂主 composer
-      // 那个 test-id(那是全局唯一锚点)⇒ 不认它的话,焦点一落进分栏,⌘↑/⌘↓ 就被下面那道
-      // 「在别的文本控件里就放行给它」的闸吃掉,整条快捷键在分栏里是死的。
       // #2548 on the task page the one list's rows are walked from its composer too, as its old task rows were.
-      const composerSelector = `[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"], [data-testid="topic-split-pane"]${inSidebar ? ', [data-testid="prompt-editor"]' : ''}`
+      const composerSelector = `[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"]${inSidebar ? ', [data-testid="prompt-editor"]' : ''}`
       const insideChatComposer = path.some(
         (node) =>
           node instanceof HTMLElement &&
@@ -992,10 +957,7 @@ export function ChatListPanel({
       const targetId =
         shortcut.kind === 'select'
           ? visibleChatIds[shortcut.index] ?? null
-          // @@@5856 游标是「现在选中的那一行」,选中话题时那是**子行**,不是来源线。
-          // 用 activeChatId 当游标会在有话题的线上原地打转:它停在来源线不动,
-          // nextChatId 每次都返回同一条子行(找茬第十轮实测:连按 6 次读数一字不变)。
-          : nextChatId(visibleChatIds, activeTopicChatId ?? selectedChatId, shortcut.direction)
+          : nextChatId(visibleChatIds, selectedChatId, shortcut.direction)
       const target = targetId ? chats.find((chat) => chat.id === targetId) : undefined
       if (!target) return
       const focusTarget = insideChatComposer ? 'composer' : 'sidebar'
@@ -1005,7 +967,7 @@ export function ChatListPanel({
 
     window.addEventListener('keydown', handleGlobalShortcut)
     return () => window.removeEventListener('keydown', handleGlobalShortcut)
-  }, [selectedChatId, activeTopicChatId, walksListKeys, inSidebar, chats, selectChat, visibleChatIds, notificationsOpen, focusChatRow])
+  }, [selectedChatId, walksListKeys, inSidebar, chats, selectChat, visibleChatIds, notificationsOpen, focusChatRow])
 
   // #2548 ⌃X⌃X on the task page archives the open task, then opens the row after the lit one as ⌘↓ does (the one before it
   // at the end); false = no other row, and the task page goes to New task (sidebarChatsBridge.installOneListNeighbour).

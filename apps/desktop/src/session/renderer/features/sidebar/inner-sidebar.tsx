@@ -48,7 +48,7 @@ import {
   type InnerSidebarView,
 } from './inner-sidebar-anchor';
 import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarCrowded, setInnerSidebarFolded } from './inner-sidebar-fold';
-import { chatScope, isProjectChat, listedProjectIds, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
+import { chatScope, chatViewOf, isProjectChat, listedProjectIds, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import {
   InnerHeadRowLayout,
@@ -85,12 +85,7 @@ function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarV
   if (currentViewId === 'chat') {
     const chatId = (viewParamsStore.chat as { chatId?: string } | undefined)?.chatId;
     if (!chatId) return { kind: 'other' };
-    return {
-      kind: 'chat',
-      chatId,
-      chatKind: summaries.get(chatId)?.kind ?? null,
-      projectGroup: isProjectChat(chatId),
-    };
+    return chatViewOf(chatId, summaries);
   }
   if (currentViewId === 'project') {
     const projectId = (viewParamsStore.project as { projectId?: string } | undefined)?.projectId;

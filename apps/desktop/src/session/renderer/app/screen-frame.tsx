@@ -33,7 +33,6 @@ import { ChatPartSlot, ChatSlot } from '@renderer/lib/chat-slot';
 import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
 import { openPanelItem } from '@renderer/features/chats/chat-tabs/chat-layouts';
-import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { ComposerVerbDock } from '@renderer/features/sessions/task-dispatch-composer';
 import { ProjectBlock } from './project-block';
 import { SampleProjectBlock } from '@renderer/features/sample-project/sample-project-block';
@@ -443,7 +442,6 @@ export function screenDropHandlers(enabled: boolean) {
       event.preventDefault();
       event.stopPropagation();
       dropOnScreen(hit.drop, hit.content);
-      if (hit.content.kind === 'chat' && hit.content.topic) requestTopicSplit({ ...hit.content.topic, sourceChatId: hit.content.chatId, focusComposer: true });
     },
     onDragLeave: (event: DragEvent<HTMLElement>) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBlockDropPreview(null);

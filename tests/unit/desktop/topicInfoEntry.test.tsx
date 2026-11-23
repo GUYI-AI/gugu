@@ -74,8 +74,8 @@ async function renderTopic(mobile: boolean, manageable: boolean, subscribeAccoun
   db.manageable = manageable
   const onClose = vi.fn()
   await renderWithAppProviders(harness, createNode(ChatSettingsPanel, {
-    activeChat: chat({ id: 'source', kind: 'group', name: 'Source group' }),
-    topic: { topicChatId: 'topic-1', name: 'Current topic' }, mobile,
+    // A topic is a main conversation of its own (#62): its info page is its members.
+    activeChat: chat({ id: 'topic-1', kind: 'topic', name: 'Current topic', source_chat_id: 'source' }), mobile,
     messages: [], onClose, onClearMessages: vi.fn(),
     onSetNotificationLevel: vi.fn(), onTogglePinned: vi.fn(), memberProfiles: [], currentUserId: 'viewer',
     groupCollabSnapshot: snapshot, groupAgentStatuses: {}, onReloadGroupCollab: vi.fn(),

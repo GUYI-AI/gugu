@@ -5,7 +5,7 @@ import { observer } from 'mobx-react-lite'
 import { createReactHarness } from '../../../support/testHarness'
 import { installShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
 import { folderItem } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-panel-item'
-import { chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, infoTabOf, openInfoTab, openPanelItem, openTopicTab, showChatOnly, showChatTab, topicTabOf } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, infoTabOf, openInfoTab, openPanelItem, showChatOnly, showChatTab } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { ChatTabHostContext } from '../../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-tab-providers'
 import { ChatTabPage, ChatTabPortals } from '../../../../apps/desktop/src/components/appSlot/ChatTabHosts'
 import { PaneContent } from '../../../../apps/desktop/src/session/renderer/features/tabs/pane-content'
@@ -27,21 +27,21 @@ const slots = () => [...harness.container.querySelectorAll('[data-chat-tab-slot]
 const Panels = observer(function Panels({ chatId }: { chatId: string }) {
   return <>{chatLayoutOf(chatId).groups.map(group => <PaneContext.Provider key={group.paneId} value={{ paneId: group.paneId, pane: group.pane, isFocusedPane: true }}><div data-test-pane={group.paneId} onPointerDownCapture={shellPointer}><PaneContent hideTabBar /></div></PaneContext.Provider>)}</>
 })
-const portal = (chatId: string) => <><Panels chatId={chatId} /><ChatTabPortals chatId={chatId} panel={tab => <textarea data-draft={tab.tabId} defaultValue={tab.item.title} />} topic={() => <textarea data-topic-draft defaultValue="topic" />} info={() => <textarea data-info-draft defaultValue="info" />} /></>
+const portal = (chatId: string) => <><Panels chatId={chatId} /><ChatTabPortals chatId={chatId} panel={tab => <textarea data-draft={tab.tabId} defaultValue={tab.item.title} />} info={() => <textarea data-info-draft defaultValue="info" />} /></>
 
 describe('chat slots follow actual panes and navigation contexts', () => {
-  it('keeps opener pointer and focus events from changing the current topic through a real portal', async () => {
+  it('keeps opener pointer and focus events from changing the current page through a real portal', async () => {
     const id = 'opener-focus'
     const layout = chatLayoutOf(id)
     const conversation = layout.focusedPane.resolvedActiveTabId!
     const file = openPanelItem(id, { kind: null, itemId: 'first', title: 'first.html' })!
-    openTopicTab(id, { topicChatId: 'focused-topic', name: 'Topic' })
-    const topic = topicTabOf(id)!.tabId
+    openInfoTab(id, 'members')
+    const topic = infoTabOf(id)!.tabId
     layout.pairWith(topic, file)
     showChatTab(id, topic)
     await harness.render(<><Panels chatId={id} /><ChatTabPortals chatId={id}
       panel={() => <><button data-pane-opener="" onClick={() => openPanelItem(id, { kind: null, itemId: 'next', title: 'next.html' }, { from: conversation })}>Open file</button><button data-ordinary>Menu</button></>}
-      topic={() => <textarea data-topic-draft defaultValue="unfinished" />} info={() => null} /></>)
+      info={() => <textarea data-topic-draft defaultValue="unfinished" />} /></>)
     const draft = harness.container.querySelector<HTMLTextAreaElement>('[data-topic-draft]')!
     await act(async () => draft.focus())
     const paneId = layout.activePaneId
@@ -73,7 +73,7 @@ describe('chat slots follow actual panes and navigation contexts', () => {
     layout.setSinglePaneHost(true)
     const from = origin === 'group-folder' ? openPanelItem(id, folderItem(), { intent: 'newTab' }) : undefined
     openPanelItem(id, { kind: null, title: 'notes.txt', itemId: `notes-${origin}` }, from ? { from } : undefined)
-    await harness.render(<><Panels chatId={id} /><ChatTabPortals chatId={id} panel={tab => <MessageFilePreviewPanel fill tabbed file={{ fileName: tab.item.title, sizeBytes: 12, mimeType: 'text/plain' }} kind="text" content="notes" loading={false} onClose={() => closeChatTab(id, tab.tabId)} />} topic={() => null} info={() => null} /></>)
+    await harness.render(<><Panels chatId={id} /><ChatTabPortals chatId={id} panel={tab => <MessageFilePreviewPanel fill tabbed file={{ fileName: tab.item.title, sizeBytes: 12, mimeType: 'text/plain' }} kind="text" content="notes" loading={false} onClose={() => closeChatTab(id, tab.tabId)} />} info={() => null} /></>)
     const toolbar = harness.container.querySelector('[data-file-toolbar]')
     expect(toolbar).not.toBeNull()
     expect(toolbar!.querySelector('[aria-label="tabs.read"]'), 'reading: the one toggle goes to editing').toBeNull()
@@ -124,7 +124,7 @@ describe('the phone draws the selected context', () => {
   it('changes the page in place and returns through its history', async () => {
     const id = 'phone-history-v3'; let mounted = 0
     function Panel({ title }: { title: string }) { const [instance] = useState(() => ++mounted); return <article>{title}:{instance}</article> }
-    await harness.render(<ChatTabPage chatId={id} panel={tab => <Panel title={tab.item.title} />} topic={() => <article>Topic</article>} info={() => <article>Info</article>} />)
+    await harness.render(<ChatTabPage chatId={id} panel={tab => <Panel title={tab.item.title} />} info={() => <article>Info</article>} />)
     const board = await act(async () => openPanelItem(id, { kind: 'kanban.board', title: 'Board' }))!
     expect(harness.container.textContent).toBe('Board:1')
     const file = await act(async () => openPanelItem(id, { kind: null, itemId: 'file', title: 'File' }, { from: board! }))!
@@ -132,21 +132,18 @@ describe('the phone draws the selected context', () => {
     await act(async () => chatPaneOf(id, board!)!.go(board!, -1)); expect(harness.container.textContent).toBe('Board:1')
     await act(async () => closeChatTab(id, board!)); expect(harness.container.textContent).toBe('')
   })
-  it('shows a topic or info page and closes back to the conversation', async () => {
+  it('shows an info page and closes back to the conversation', async () => {
     const id = 'phone-info-v3'
-    await harness.render(<ChatTabPage chatId={id} panel={() => null} topic={() => <article>Topic</article>} info={() => <article>Info</article>} />)
-    await act(async () => openTopicTab(id, { topicChatId: 'topic', name: 'Topic' })); expect(harness.container.textContent).toBe('Topic')
+    await harness.render(<ChatTabPage chatId={id} panel={() => null} info={() => <article>Info</article>} />)
     await act(async () => openInfoTab(id, 'members')); expect(harness.container.textContent).toBe('Info')
-    // The info page pushed the topic out: closing it brings the topic back (owner 11-05 §7).
-    await act(async () => closeInfoTab(id)); expect(harness.container.textContent).toBe('Topic')
-    await act(async () => closeTopicTab(id)); expect(harness.container.textContent).toBe('')
+    await act(async () => closeInfoTab(id)); expect(harness.container.textContent).toBe('')
   })
 })
 
 it('keeps the conversation mounted when its companion is selected', async () => {
   const id = 'hidden-chat-v3'; openInfoTab(id, 'members')
   const host = { chip: () => null, body: <div data-chat-body />, ownBlock() {} }
-  await harness.render(<ChatTabHostContext.Provider value={host}><Panels chatId={id} /><ChatTabPortals chatId={id} panel={() => null} topic={() => null} info={() => <article>Info</article>} /></ChatTabHostContext.Provider>)
+  await harness.render(<ChatTabHostContext.Provider value={host}><Panels chatId={id} /><ChatTabPortals chatId={id} panel={() => null} info={() => <article>Info</article>} /></ChatTabHostContext.Provider>)
   expect(harness.container.querySelector('[data-chat-body]')).not.toBeNull()
   expect(slots()).toEqual([infoTabOf(id)!.tabId])
 })

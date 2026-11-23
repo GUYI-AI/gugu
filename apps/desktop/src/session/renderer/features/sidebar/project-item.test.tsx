@@ -6,7 +6,7 @@ import { expect, it, vi } from 'vitest';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const state = vi.hoisted(() => ({
-  navigate: vi.fn(), expand: vi.fn(), beside: vi.fn(), show: vi.fn(), screen: false, topicSplit: vi.fn(),
+  navigate: vi.fn(), expand: vi.fn(), beside: vi.fn(), show: vi.fn(), screen: false,
   /** The account project rows (sidebarStore.sidebarProjects). */
   rows: [] as Array<{ kind: 'group' | 'local'; id: string; chatId: string; name: string }>,
   openChat: vi.fn(),
@@ -43,7 +43,6 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({
 vi.mock('@renderer/lib/machine-routing', () => ({ machineRegistry: { machineOf: () => 'assistant-device' } }));
 vi.mock('./session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: vi.fn() } }));
 vi.mock('@/lib/sidebarChatsBridge', () => ({ useSidebarChatSignals: () => state.signals }));
-vi.mock('@/lib/topicSplitRequest', () => ({ requestTopicSplit: state.topicSplit }));
 vi.mock('@renderer/features/chats/open-chat', () => ({ openChatOnScreen: state.openChat }));
 vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessages: () => ({ translate: (key: string) => key }) }));
 
@@ -72,7 +71,7 @@ it('opens an actual project on the assistant device and keeps its project menu',
 
 // owner 11-07「红点消不掉」: the row's count includes a topic calling you, and topics are not rows under the project — the
 // row itself is the way into that topic.
-it('a project row whose count comes from a topic calling you opens that topic beside its group', async () => {
+it('a project row whose count comes from a topic calling you opens that topic as the main conversation', async () => {
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);
@@ -83,13 +82,14 @@ it('a project row whose count comes from a topic calling you opens that topic be
     await act(async () => root.render(<SidebarProjectItem projectId="business" />));
     await act(async () => (host.querySelector('[data-project-row="business"]') as HTMLElement).click());
     expect(state.show).toHaveBeenLastCalledWith({ kind: 'project', projectId: 'business' });
-    expect(state.topicSplit).not.toHaveBeenCalled();
+    expect(state.openChat).not.toHaveBeenCalled();
+    state.show.mockClear();
     state.signals = { groupUnread: new Map([['business-group', 1]]), groupCallingTopic: new Map([['business-group', { chatId: 'topic-1', name: 'Release' }]]) };
     // The row is an observer (memoized): remount so it reads the new signals.
     await act(async () => root.render(<SidebarProjectItem key="calling" projectId="business" />));
     await act(async () => (host.querySelector('[data-project-row="business"]') as HTMLElement).click());
-    expect(state.topicSplit).toHaveBeenCalledWith({ chatId: 'topic-1', name: 'Release', sourceChatId: 'business-group', focusComposer: true });
-    expect(state.show).toHaveBeenLastCalledWith({ kind: 'project', projectId: 'business' });
+    expect(state.openChat).toHaveBeenCalledExactlyOnceWith('topic-1', false);
+    expect(state.show).not.toHaveBeenCalled();
   } finally {
     state.rows = [];
     state.signals = null;

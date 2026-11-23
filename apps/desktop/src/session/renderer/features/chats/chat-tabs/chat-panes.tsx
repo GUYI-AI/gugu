@@ -13,7 +13,6 @@ import { PaneProvider } from '@renderer/features/tabs/pane-context';
 import { TabDragOverlay } from '@renderer/features/tabs/tab-bar/tab-drag-preview';
 import { PaneLayoutProvider } from '@renderer/features/tabs/pane-layout-context';
 import { SplitPaneHotkey, TabBarAddMenu } from '@renderer/features/sessions/tab-bar-actions';
-import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import type { TabHost } from '@renderer/features/tabs/core/tab-host';
 import type { ResolvedTab } from '@renderer/features/tabs/core/tab-provider';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
@@ -27,7 +26,7 @@ import { CHAT_TAB_KIND, ChatTabHostContext, type ChatTabHost } from './chat-tab-
 
 /**
  * A chat's block (gugu-dev#181: a project's group, a chat ⌘-clicked beside a task): one strip on the task's engine —
- * the chat first, then what is open beside it (the folder, Apps, files, the topic) — and below it the chat with what
+ * the chat first, then what is open beside it (the folder, Apps, files) — and below it the chat with what
  * pairs with it, left or right, above or below (spec session-page「并排」): drag a tab to an edge, its menu's 「向右分 /
  * 向下分」, ⌘\; 「拆开」 and either fills the block. The shell draws each tab's content into the slot left for it.
  */
@@ -160,22 +159,6 @@ export const ChatTabChip = observer(function ChatTabChip({
     </TabSlot>
   );
 });
-
-/** A topic is displayed in its source's slot, but its own tools and persisted layout belong to its ID. */
-export function TopicChatPanes({ chatId, name, actions, body }: {
-  chatId: string;
-  name: string;
-  actions: ReactNode;
-  body: ReactNode;
-}) {
-  return <LegacyChatPanes
-    chatId={chatId}
-    embedded
-    body={body}
-    actionsSlot={<TabBarActionRow atWindowEdge={false}>{actions}</TabBarActionRow>}
-    chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label={name} menu={null} focused={false} />}
-  />;
-}
 
 /** No legacy pane or resource slots are created for an owned-agent conversation. */
 export function ChatPanes(props: ComponentProps<typeof LegacyChatPanes>) {

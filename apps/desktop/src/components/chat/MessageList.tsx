@@ -70,7 +70,7 @@ function computeReadReceipt(
 
 /**
  * 主时间线的消息列表。@@@5856 从 ChatAreaPanel 里**抽出来**的,不是新写的一份:
- * 话题分栏原先自己撸了一个 map + 手写贴底,owner 2026-09-19 实测的原话是
+ * 早先有一条线自己撸了一个 map + 手写贴底,owner 2026-09-19 实测的原话是
  * 「发的新消息和收到的新消息,消息列表居然不会滚动,我怀疑消息列表你也是自己 vibe 没有复用.应该复用」。
  *
  * 他说对了。这个列表难的不是把消息画出来,是滚动:首屏钉底要等 markdown/代码块异步撑高、
@@ -363,8 +363,7 @@ const MessageListRow = memo(function MessageListRow({ id, seenRows }: { id: stri
           <div style={selectMode ? SELECT_BUBBLE_STYLE : undefined}>{bubble}</div>
         </div>
       )}
-      {/* @@@5856 锚点:这条消息长出来的话题挂在它底下(它是这条消息的附件,所以跟气泡同侧同缩进),
-          双向连接的另一端是分栏标题块里那句「引自…」。正文要传进去:话题名默认就是从这条正文截的,
+      {/* @@@5856 锚点:这条消息长出来的话题挂在它底下(它是这条消息的附件,所以跟气泡同侧同缩进)。正文要传进去:话题名默认就是从这条正文截的,
           没改过名时锚点不再把它念第二遍(owner:「你不感觉这个像是个文字重复吗」)。 */}
       {view.anchoredTopics && handlers.onOpenTopicAnchor && (
         <TopicAnchorCard topics={view.anchoredTopics} isMine={!!msg.is_mine} sourceContent={msg.content} onOpen={handlers.onOpenTopicAnchor} memberProfiles={bubbleMemberProfiles} />
@@ -390,8 +389,6 @@ const ROW_CONTENTS_STYLE: CSSProperties = { display: 'contents' }
 const ROW_STYLE: CSSProperties = { paddingBottom: 'var(--spacing-xs)' }
 // 分页的起点下标(prepend 时往下减);列表本身已按文档流排,这个数只剩窗口记账用。
 export const VIRTUOSO_START_INDEX = 100000
-// @@@5856 两份表面各报各的:未读定位(useUnreadLocatorNavigation)用 querySelector 取**文档序第一个**主表面,副栏另报 aside。
-const SCROLLER_TEST_ID = { main: AUTOMATION_TEST_IDS.chatMessageList, aside: AUTOMATION_TEST_IDS.chatMessageListAside } as const
 const LIST_FRAME_STYLE: CSSProperties = { position: 'relative', display: 'flex', flexDirection: 'column' }
 // 原生滚动锚定(overflow-anchor 缺省 auto):视口上方的行变高时浏览器在同一次排版里改位置,见 lib/flowList.ts。
 const LIST_SCROLLER_STYLE: CSSProperties = { flex: 1, minHeight: 0, position: 'relative', overflowX: 'hidden', overflowY: 'auto', outline: 'none' }
@@ -402,7 +399,7 @@ const UNREAD_ABOVE_STYLE: CSSProperties = { position: 'absolute', top: 'var(--sp
  * 分页 / 未读定位这些只有主线才有的东西从外面传。
  *
  * ⚠️ @@@5856 但「滚动」不在这一类里 —— 它是消息列表的**缺省义务**,不是主线的特权:
- * 不传落点 = 停在最新一条;在底部时内容一变就贴底(新消息、markdown 异步撑高)。分栏用的就是这份缺省。
+ * 不传落点 = 停在最新一条;在底部时内容一变就贴底(新消息、markdown 异步撑高)。
  */
 export function MessageList({
   rows: allRows,
@@ -415,7 +412,6 @@ export function MessageList({
   followTail = true,
   onStartReached,
   style,
-  surface = 'main',
   unreadAbove,
   footer,
 }: {
@@ -429,8 +425,6 @@ export function MessageList({
   followTail?: boolean
   onStartReached?: () => void
   style?: CSSProperties
-  /** 这条消息流在哪一栏。只决定布局与自动化选择器;未读定位确认使用本视口 ref。 */
-  surface?: 'main' | 'aside'
   /** @@@6530 这次打开时的第一条未读:在视口上方时右上角出「↑ N 条新消息」,点了跳过去。 */
   unreadAbove?: { messageId: string; messageSeq: number; label: string; onJump: () => void; onSeen?: () => void } | null
   /** 接在最后一条后面、随消息流一起滚的那一格(助理聊天里它在处理时的打字气泡);窗口没到最新处时不画。 */
@@ -511,7 +505,7 @@ export function MessageList({
     <MessageQuoteSourceContext.Provider value={quoteSources}>
     <div style={frameStyle}>
       {/* 每换一条线(resetKey)换一个滚动容器:落点、贴底电平、锚定都从这条线自己的第一帧开始。 */}
-      <div key={resetKey} ref={handleScrollerRef} tabIndex={0} data-testid={SCROLLER_TEST_ID[surface]} data-unread-stream-surface={surface} data-chat-dock-reads="" data-message-avatars="true" data-image-gallery="" style={LIST_SCROLLER_STYLE}>
+      <div key={resetKey} ref={handleScrollerRef} tabIndex={0} data-testid={AUTOMATION_TEST_IDS.chatMessageList} data-unread-stream-surface="main" data-chat-dock-reads="" data-message-avatars="true" data-image-gallery="" style={LIST_SCROLLER_STYLE}>
         <div ref={contentRef}>
           {rows.slice(start, end).map((row) => <MessageListSlot key={row.message.id} id={row.message.id} flash={row.message.id === rowProps.flashMessageId} seenRows={seenRows} />)}
           {end >= rows.length ? footer : null}

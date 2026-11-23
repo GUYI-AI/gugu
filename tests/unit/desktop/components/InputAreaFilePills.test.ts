@@ -27,7 +27,7 @@ let harness: ReturnType<typeof createReactHarness>
 let store: ReturnType<typeof useChatStore>
 type ComposerProps = Parameters<typeof ChatMessageComposer>[0]
 
-function Host({ chatId, onSend, quoteContent, surface }: Pick<ComposerProps, 'chatId' | 'onSend' | 'quoteContent' | 'surface'>) {
+function Host({ chatId, onSend, quoteContent }: Pick<ComposerProps, 'chatId' | 'onSend' | 'quoteContent'>) {
   const { drafts, setDraft } = useTextDraftStore()
   const [draftMentions, setDM] = useState<Record<string, DraftMention[]>>({})
   const [draftAttachments, setDA] = useState<Record<string, DraftAttachment[]>>({})
@@ -37,7 +37,7 @@ function Host({ chatId, onSend, quoteContent, surface }: Pick<ComposerProps, 'ch
     () => ({ ...chatStore(), drafts, draftMentions, draftAttachments, setDraft, setDraftMentions, setDraftAttachments }),
     [drafts, draftMentions, draftAttachments, setDraft, setDraftMentions, setDraftAttachments],
   )
-  return createElement(ChatStoreProvider, { value }, createElement(AppHost), createElement(ChatMessageComposer, { onSend, chatId, quoteContent, surface, isGroupChat: true, groupMembers: [] }))
+  return createElement(ChatStoreProvider, { value }, createElement(AppHost), createElement(ChatMessageComposer, { onSend, chatId, quoteContent, isGroupChat: true, groupMembers: [] }))
 }
 
 function AppHost() {
@@ -154,8 +154,8 @@ describe('file citations share the composer document with the words', () => {
     expect(pills().map((pill) => pill.getAttribute('data-mention-id'))).toEqual([DECK, SHEET, DECK])
   })
 
-  it.each(['main', 'aside'] as const)('keeps pending typing and consecutive App citations in the %s composer', async (surface) => {
-    await harness.render(createElement(Host, { chatId: 'group-1', onSend: vi.fn(async () => {}), surface }))
+  it('keeps pending typing and consecutive App citations in the composer', async () => {
+    await harness.render(createElement(Host, { chatId: 'group-1', onSend: vi.fn(async () => {}) }))
     await flush()
     await type('Fresh instructions')
     await act(async () => {

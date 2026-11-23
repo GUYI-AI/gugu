@@ -1,8 +1,6 @@
 // @vitest-environment jsdom
 // 右键群聊消息的发送者头像 → 输入框 @ 他。插入本身走 rowProps.onMentionMember(主线里就是点运行中头像
 // 用的那个 setMentionToInsert),这里判的是:哪一次右键会调它、调的时候带什么、什么时候不碰原生菜单。
-import { topicHistoryStub } from '../../../support/chatWindowStub'
-import { readComposer } from '../../../support/composerEditor'
 import { act, createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { Info } from '../../../../apps/desktop/src/lib/icons'
@@ -10,7 +8,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { MemberProfileCardModel } from '../../../../apps/desktop/src/components/MemberProfileCard'
 import { MessageList, type ChatListRowItem, type MessageListRowProps } from '../../../../apps/desktop/src/components/chat/MessageList'
-import { TopicSplitPane } from '../../../../apps/desktop/src/components/chat/TopicSplitPane'
 import { createReactHarness, message, renderWithAppProviders } from '../../../support/testHarness'
 import { Popover } from '../../../../apps/desktop/src/components/ui/Popover'
 import type { ActiveMemberProfile } from '../../../../apps/desktop/src/components/memberProfileModels'
@@ -60,7 +57,7 @@ function avatarOf(messageId: string): Element {
   if (!button) throw new Error(`no sender avatar rendered for ${messageId}`)
   return button.firstElementChild ?? button
 }
-function profileOpener() { return { handle: Popover.createHandle<ActiveMemberProfile>(), openedFrom: 'main' as const } }
+function profileOpener() { return { handle: Popover.createHandle<ActiveMemberProfile>() } }
 function rightClick(target: Element): boolean {
   const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 })
   act(() => { target.dispatchEvent(event) })
@@ -136,16 +133,6 @@ describe('右键群聊消息头像 → @ 他', () => {
 
   // owner 10-22:「在话题中右键 agent 头像没有那个 @ 的功能 …… 说明链路不统一」。分栏手拼的 rowProps 漏了
   // onMentionMember;现在每个键都是必填,漏接是编译错。这一格从分栏真的组件走一遍:@ 进的是话题自己的输入框。
-  it('话题分栏:右键头像,@ 进话题自己的输入框', async () => {
-    await renderWithAppProviders(harness, createElement(TopicSplitPane, {
-      topic: { chatId: 'topic-1', name: '分片下载失败' }, messages, loading: false, memberProfiles, memberReadSeqs: {}, visibleChats: [],
-      onSend: async () => {}, onSendAttachments: async () => {},
-      onClose: noop, currentUserId: 'user-1', history: topicHistoryStub(), mentionMembers: [], memberProfileOpener: profileOpener(),
-    }))
-    expect(rightClick(avatarOf('m-claude'))).toBe(true)
-    const composer = harness.container.querySelector('[data-topic-split-composer] [contenteditable]')!
-    expect(readComposer(composer)).toBe('@Claude 5 ')
-  })
 })
 
 // owner 10-25:Telegram 式头像 —— 一组连续消息只在组尾画一个头像(sticky 贴滚动区底边),组首留标记、其余留占位。

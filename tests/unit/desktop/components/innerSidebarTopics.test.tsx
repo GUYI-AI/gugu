@@ -10,7 +10,6 @@ import { chatService } from '../../../../apps/desktop/src/lib/chat'
 import { confirmConversationAction } from '../../../../apps/desktop/src/lib/confirmDanger'
 import { innerSidebarTopicsSlotKey, setInnerSidebarTopicsAll } from '../../../../apps/desktop/src/lib/innerSidebarBridge'
 import { readShellSlots } from '../../../../apps/desktop/src/lib/shellSlots'
-import { drainTopicSplitRequest } from '../../../../apps/desktop/src/lib/topicSplitRequest'
 import { installSessionViewRequestBridge } from '../../../../apps/desktop/src/session/renderer/features/sessions/stores/session-view-requests'
 import { SCREEN_CONTENT_DRAG_TYPE } from '../../../../apps/desktop/src/session/renderer/lib/drag-screen-content'
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders, waitForCondition } from '../../../support/testHarness'
@@ -127,8 +126,7 @@ describe('the inner sidebar topics slot', () => {
     await act(async () => setInnerSidebarTopicsAll(null))
 
     await clickElement(slot.querySelector('[data-topic-row="t1"]') as HTMLElement)
-    expect(openChat).toHaveBeenCalledWith('group', false)
-    expect(drainTopicSplitRequest('group')).toMatchObject({ chatId: 't1', sourceChatId: 'group' })
+    expect(openChat).toHaveBeenCalledWith('t1', false)
     slot.remove()
   })
 
@@ -177,7 +175,7 @@ describe('the inner sidebar topics slot', () => {
     }
   })
 
-  it('a topic row drags into the chat area as a split, with the chat list topic sub-row payload', async () => {
+  it('a topic row drags into the chat area as the topic itself, with the chat list topic sub-row payload', async () => {
     await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...topics] }, contacts: {} })
     const slot = document.body.appendChild(document.createElement('div'))
     await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
@@ -194,7 +192,7 @@ describe('the inner sidebar topics slot', () => {
     const start = new Event('dragstart', { bubbles: true, cancelable: true })
     Object.defineProperty(start, 'dataTransfer', { value: { setData, setDragImage: dragImage, effectAllowed: 'all', types: [] } })
     await act(async () => { row.dispatchEvent(start) })
-    expect(setData).toHaveBeenCalledWith(SCREEN_CONTENT_DRAG_TYPE, JSON.stringify({ kind: 'chat', chatId: 'group', title: 't1', topic: { chatId: 't1', name: 't1' } }))
+    expect(setData).toHaveBeenCalledWith(SCREEN_CONTENT_DRAG_TYPE, JSON.stringify({ kind: 'chat', chatId: 't1', title: 't1' }))
     expect(dragImage).toHaveBeenCalledTimes(1)
     await act(async () => { row.dispatchEvent(new Event('dragend', { bubbles: true })) })
     slot.remove()

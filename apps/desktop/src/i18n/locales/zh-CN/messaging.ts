@@ -971,15 +971,7 @@ export default {
       "openedBy": "由 {{name}} 创建",
       "quiet": "暂无消息"
     },
-    "openFailed": "无法打开话题。该消息可能已被删除，请从其他消息开启话题。",
-    "pane": {
-      "attachments": "附件",
-      "members": "成员",
-      "collapseSplit": "收起分栏",
-      "collapseSplitHint": "收起分栏，话题不会关闭",
-      "composerPlaceholder": "输入消息",
-      "empty": "此话题暂无消息"
-    }
+    "openFailed": "无法打开话题。该消息可能已被删除，请从其他消息开启话题。"
   },
   "resources": {
     "copyUrl": "复制咕咕 URL",

@@ -93,11 +93,10 @@ import { readAgentCreateDefaults, rememberAgentCreateProject } from '../lib/agen
 import { rememberedChatProject } from '@gugu/core/shared/ui/agentCreateDefaultsModels'
 import { createOptimisticDmChat, createOptimisticGroupChat } from '@gugu/core/shared/ui/chatModels'
 import { UI_EVENTS } from '../lib/uiEvents'
-import { requestTopicSplit } from '../lib/topicSplitRequest'
 import { platform } from '../platform'
 import { SessionModalHost } from '../components/SessionModalHost'
 import { useToast } from '../components/toastContext'
-import { askChat, askChatFile, closeTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { askChat, askChatFile } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { openOwnedAgentResource } from '../lib/ownedAgentConversation'
 import { filePillText } from '../components/markdown/filePills'
 import { draftWithPills } from '@gugu/session-shared/markdown'
@@ -302,17 +301,14 @@ function InnerLayout({
   }, [setActiveTab, chatsAreBlocks, focusComposerForUserEntry, openAssistantChat, openOwnedAgent, t])
   const openChatTarget = useCallback((chatId: string, purpose?: 'resource'): string => {
     setOpenedPhoneApp(null)
-    const chat = readChats().chats.find((candidate) => candidate.id === chatId)
-    const topic = chat?.kind === 'topic' && chat.source_chat_id ? chat : null
-    const shownChatId = topic?.source_chat_id ?? chatId
-    const viewportKey = openChatBlock(shownChatId, undefined, undefined, undefined, undefined, purpose)
+    // A topic is a main conversation like any other (#62): it opens as itself, never beside its source.
+    const viewportKey = openChatBlock(chatId, undefined, undefined, undefined, undefined, purpose)
     if (!viewportKey) {
-      enterChat(shownChatId)
-      setActiveChatId(shownChatId)
+      enterChat(chatId)
+      setActiveChatId(chatId)
     }
-    if (topic) requestTopicSplit({ chatId: topic.id, name: topic.name ?? '', sourceChatId: topic.source_chat_id! })
-    return topic ? `${viewportKey ?? 'chats'}:topic` : viewportKey ?? 'chats'
-  }, [enterChat, openChatBlock, setActiveChatId, readChats])
+    return viewportKey ?? 'chats'
+  }, [enterChat, openChatBlock, setActiveChatId])
   const [appDetail, setAppDetail] = useState<import('@gugu/core/shared/ui/guguLink').ExtensionAppDetailLink>()
   const clearAppDetail = useCallback(() => setAppDetail(undefined), [])
   useLinkNavigation({ ownerId: user.id, chats: () => readChats().chats, contacts: () => readContacts().contacts,
@@ -713,10 +709,7 @@ function InnerLayout({
         }
       }
       if (besideApp) { placed(detail.chatId); return }
-      if (bringUp(detail.chatId, placed)) {
-        const chat = readChats().chats.find((candidate) => candidate.id === detail.chatId)
-        focusComposerForUserEntry('quote-attached', chat?.kind === 'topic' ? chat.source_chat_id ?? undefined : detail.chatId)
-      }
+      if (bringUp(detail.chatId, placed)) focusComposerForUserEntry('quote-attached', detail.chatId)
     }
     // gugu.files.openWith, wherever the page is (a chat's panel, an App's own page, a session's tab): the file's chat comes
     // up — the one on screen stays — and its panel opens it as the host resolved it, the way a link to it opens.
@@ -1049,7 +1042,7 @@ function InnerLayout({
           tabBarRef={tabBarRef}
           pages={{
             // #6158 聊天面常驻(与上面会话页那格同法):切到别的 tab 只隐藏(见 lib/retainedSurface.ts),❌ 条件卸载、❌ 换 key 重挂 ——
-            // 话题分栏/选中会话/滚动/分栏草稿全是本地状态。隐藏期间快捷键与「看见即已读」由 ChatAreaPanel/ChatListPanel 按 activeTab 门控(#6089)。
+            // 选中会话/滚动/草稿全是本地状态。隐藏期间快捷键与「看见即已读」由 ChatAreaPanel/ChatListPanel 按 activeTab 门控(#6089)。
             // 手机壳里它是分页器的一页,不隐藏(横滑时相邻页要看得见),只 inert(MobileTabPager)。
             // gugu-dev#181 桌面上(有会话页)没有单独的聊天页:对话是会话页这屏的一块,列表在会话页侧栏「对话」里。
             chats: !chatsAreBlocks && (
@@ -1104,7 +1097,6 @@ function InnerLayout({
                     onOpenGroupChat={handleOpenGroupChat}
                     onOpenProjectGroup={(chatId) => navigateMobile(() => {
                       openChatTarget(chatId)
-                      closeTopicTab(chatId)
                     }, 'push')}
                   />
                 </div>

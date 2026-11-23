@@ -29,7 +29,7 @@ function Content({state='ready',selected=null}:{state?:'ready'|'loading'|'failed
  const [current,setCurrent]=useState(selected);showTopicExternally=setCurrent
  return <>
   <PhoneRoomComposerControls chatId="room" topics={state==='ready'?topics:[]} topicsReady={state==='ready'} current={current?{chatId:current.chat_id,name:current.name}:null} onPick={topic=>{onPick(topic);setCurrent(topic)}} members={state==='ready'?[member,{...member,id:'former-agent',membership:'former'},{...member,id:'human',type:'human'}]:[]}
-   roster={{ready:state==='ready',failed:state==='failed',retry}} userId="owner" profileOpener={{handle,openedFrom:'main'}} onOpenAgent={onOpen} />
+   roster={{ready:state==='ready',failed:state==='failed',retry}} userId="owner" profileOpener={{handle}} onOpenAgent={onOpen} />
   <ChatComposer mobile editorOptions={{inputTestId:'room-editor'}} onSubmit={vi.fn()} />
   <MemberProfileRoot handle={handle}>{profile=><MemberProfilePopover profile={profile} onClose={()=>handle.close()} />}</MemberProfileRoot>
  </>

@@ -13,7 +13,6 @@ import '@/i18n/registerContactsCatalog';
 import '@/i18n/registerMainCatalog';
 import '@/styles/tokens.css';
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
-import { drainTopicSplitRequest } from '@/lib/topicSplitRequest';
 import { clearDraggedScreenContent, getDraggedScreenContent, SCREEN_CONTENT_DRAG_TYPE } from '@renderer/lib/drag-screen-content';
 import { publishSidebarChatView } from '@/lib/sidebarChatsBridge';
 
@@ -107,9 +106,7 @@ describe('the IM chat list in the master\'s roles (#7333)', () => {
     document.body.appendChild(target);
     try {
       await userEvent.dragAndDrop(root.querySelector<HTMLElement>(`[data-chat-row="${chatId}"]`)!, target);
-      expect(drops).toEqual([{ trusted: true, types: [SCREEN_CONTENT_DRAG_TYPE], content: { kind: 'chat', chatId: chatId === 't-live' ? 'grp-1' : chatId, title: chatId === 'dm-1' ? '林知夏' : chats.find((chat) => chat.id === chatId)!.name, ...(chatId === 't-live' ? { topic: { chatId, name: '去哪儿' } } : {}) } }]);
-      // An arbitrary accepting target is not a workspace split: it must not open a topic.
-      expect(drainTopicSplitRequest('grp-1')).toBeNull();
+      expect(drops).toEqual([{ trusted: true, types: [SCREEN_CONTENT_DRAG_TYPE], content: { kind: 'chat', chatId, title: chatId === 'dm-1' ? '林知夏' : chats.find((chat) => chat.id === chatId)!.name } }]);
     } finally { target.remove(); }
   });
 
@@ -148,12 +145,17 @@ describe('the IM chat list in the master\'s roles (#7333)', () => {
     } finally { target.remove(); }
   });
 
-  it('a sidebar topic activation requests a split toggle on its source', async () => {
-    const root = await renderList();
-    await userEvent.click(root.querySelector<HTMLElement>('[data-topic-subrow="t-live"]')!);
-    expect(drainTopicSplitRequest('grp-1')).toEqual({
-      chatId: 't-live', name: '去哪儿', sourceChatId: 'grp-1', focusComposer: true, toggle: true,
-    });
+  it('a topic activation opens the topic itself as the main conversation', async () => {
+    const setActiveChatId = vi.fn();
+    const onChatSelected = vi.fn();
+    harness = createReactHarness();
+    harness.container.style.cssText = 'width: 320px; height: 640px; display: flex;';
+    await renderWithAppProviders(harness, createNode(ChatListPanel, { activeTab: 'chats', mobile: false, placement: 'page', onChatSelected }),
+      { chat: { chats, activeChatId: 'grp-1', setActiveChatId, identitiesById: { 'peer-lin': displayIdentity('peer-lin', { display_name: '林知夏' }) } } });
+    await until('the topic row rendered', () => harness.container.querySelector('[data-topic-subrow="t-live"]') !== null);
+    await userEvent.click(harness.container.querySelector<HTMLElement>('[data-topic-subrow="t-live"]')!);
+    expect(setActiveChatId).toHaveBeenCalledExactlyOnceWith('t-live');
+    expect(onChatSelected).toHaveBeenCalledExactlyOnceWith('composer');
   });
 
   it('#7589 only a source with topics has a chevron; repeated clicks fold all its subrows without navigating', async () => {

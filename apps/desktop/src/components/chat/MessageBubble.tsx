@@ -30,7 +30,7 @@ import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels'
 import { HoverActionBar, MessageHoverRegion, MessageHoverTrigger } from './HoverActionBar'
 import { DeferredEmojiQuickPicker } from './messageActionModules'
 import { MsgMoreMenu } from './MsgMoreMenu'; import { PhoneTextSelection } from './PhoneTextSelection'; import { bubbleMenuGestures, usePhoneMessageMenu } from './phoneMessageMenuState'
-import { canSourceTopic } from './topicSplitModels' // @@@5856 与顶栏那颗按钮共用同一个判据,❌ 不再写第二份
+import { canSourceTopic } from './topicAnchorModels' // @@@5856 与顶栏那颗按钮共用同一个判据,❌ 不再写第二份
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { BubbleSender, BubbleTime, ReadReceiptRing } from './MessageBubbleChrome'; import { fmtMsgTime } from './messageRowTime'
 // Sending/failed state and its retry/discard menu live in MessageSendStatus.
@@ -54,7 +54,7 @@ interface BubbleProps {
   onDelete: (messageId: string) => void
   isAgent?: boolean; hideAvatar?: boolean; streaming?: boolean // Live IM text shares the settled bubble's layout.
   memberProfile?: MemberProfileCardModel | null
-  /** 头像是这一栏资料卡的 Trigger(再点同一个头像就关);openedFrom 记卡是从主线还是话题分栏点开的。 */
+  /** 头像是这一栏资料卡的 Trigger(再点同一个头像就关)。 */
   memberProfileOpener?: MemberProfileOpener
   compactMobile?: boolean
   // @@@1484 是否群聊(group/channel)。仅群聊在 received 气泡上方显发送者名;DM/ai 1:1 头部已知对方,显名冗余。
@@ -210,7 +210,7 @@ export const MessageBubble = memo(function MessageBubble({
   // @@@1355 sender avatars are projected only from the canonical sender URL.
   // Display-only naming never changes the sender id or profile actions.
   const avatar = <MessageSenderAvatar senderUserId={msg.sender_user_id} name={avatarName} avatarUrl={avatarUrl} seed={msg.is_mine ? user?.id : (msg.sender_user_id ?? undefined)} size="sm" isAgent={avatarIsAgent} harnessBadge={!compactMobile} agentStatus={avatarIsAgent ? memberProfile?.agentStatus : undefined} still />
-  const profile = memberProfile && memberProfileOpener ? { handle: memberProfileOpener.handle, payload: { member: memberProfile, preferredSide: msg.is_mine ? 'left' as const : 'right' as const, openedFrom: memberProfileOpener.openedFrom } } : null
+  const profile = memberProfile && memberProfileOpener ? { handle: memberProfileOpener.handle, payload: { member: memberProfile, preferredSide: msg.is_mine ? 'left' as const : 'right' as const } } : null
 
   if (msg.content_type === 'system') return <SystemMessageNotice message={msg} senderName={avatarName} onOpenTopic={onOpenTopicAnchor} />
   const showSender = isGroup && !msg.is_mine && !groupedWithPrev && !card && !!avatarName

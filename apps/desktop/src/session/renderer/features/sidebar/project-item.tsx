@@ -13,7 +13,6 @@ import { machineRegistry } from '@renderer/lib/machine-routing';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { sessionKeyboardNav } from './session-keyboard-nav';
 import { OneListProjectRow } from './project-row-parts';
-import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -69,7 +68,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
   const projectLabel = projectName ?? 'project';
   const openProject = (beside = false) => {
     // 行尾的数里有话题叫到你:话题不是项目行的子行,这一下就是去读它的入口(owner 11-07「红点消不掉」)。
-    if (callingTopic && groupChatId) requestTopicSplit({ chatId: callingTopic.chatId, name: callingTopic.name, sourceChatId: groupChatId, focusComposer: true });
+    if (callingTopic && groupChatId) return openChatOnScreen(callingTopic.chatId, beside);
     // behavior session-page「键盘导航」: the project row is a station too, so a click moves the cursor
     // onto it — ↓ afterwards continues from here.
     sessionKeyboardNav.syncCursorFromPointer({ kind: 'project', projectId });
