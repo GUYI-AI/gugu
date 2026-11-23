@@ -24,7 +24,7 @@ export function DetailsHero({ avatar, name, sub }: { avatar: ReactNode; name: Re
 export function DetailsName({ name, onEdit, testId }: { name: string; onEdit?: () => void; testId?: string }) {
   return (
     <button type="button" data-testid={testId} disabled={!onEdit} onClick={onEdit}
-      className="flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-1 leading-[26px] enabled:cursor-text enabled:hover:bg-row-hover">
+      className="flex max-w-full min-w-0 items-center gap-1.5 rounded-[6px] px-1 leading-[22px] enabled:cursor-text enabled:hover:bg-row-hover">
       <span className="min-w-0 truncate">{name}</span>
       {onEdit ? <PencilMark /> : null}
     </button>
@@ -102,7 +102,7 @@ export function DetailsSegmented<T extends string>({ options, value, onChange }:
     <span role="radiogroup" className="flex gap-0.5 rounded-lg bg-[var(--muted)] p-0.5" onClick={(event) => event.stopPropagation()}>
       {options.map((option) => (
         <button key={option.value} type="button" role="radio" aria-checked={option.value === value} onClick={() => onChange(option.value)}
-          className={`rounded-md px-2 py-[3px] text-[12px] whitespace-nowrap @max-[340px]/details:px-1 @max-[340px]/details:tracking-tight ${option.value === value ? 'bg-[var(--bg)] text-[var(--fg)] shadow-xs' : 'text-[var(--muted-fg)]'}`}>
+          className={`rounded-[6px] px-2 py-[3px] text-[12px] whitespace-nowrap @max-[340px]/details:px-1 @max-[340px]/details:tracking-tight ${option.value === value ? 'bg-[var(--bg)] text-[var(--fg)] shadow-[var(--segment-on-shadow)]' : 'text-[var(--muted-fg)]'}`}>
           {option.label}
         </button>
       ))}

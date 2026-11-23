@@ -26,9 +26,9 @@ export function GroupNameRow({ chat, name, canEdit, onCommit, hero = false }: {
   if (hero) return <div className="flex min-w-0 flex-col items-center gap-1.5">
     {open ? <InlineNameInput name={chat.alias ?? ''} allowEmpty maxLength={80} testId="group-alias-input"
       placeholder={t('profile.alias')} onCommit={save} onClose={() => setOpen(false)} />
-      : <GroupNameInlineEdit name={name} canEdit={canEdit} onCommit={onCommit} />}
+      : <GroupNameInlineEdit name={name} canEdit={canEdit} onCommit={onCommit} hero />}
     <button type="button" data-testid="group-set-alias" onClick={() => setOpen(true)}
-      className="rounded px-1 text-[12.5px] leading-[18px] font-normal text-[var(--muted-fg)] hover:bg-row-hover">{t('contextMenu.setAlias')}</button>
+      className="text-[12.5px] leading-[18px] font-normal text-[var(--muted-fg)] hover:underline">{t('contextMenu.setAlias')}</button>
     {chat.alias?.trim() ? <div className="text-[12.5px] font-normal text-[var(--muted-fg)]">{t('profile.alias')} : {groupDisplayName(chat)}</div> : null}
   </div>
   return <>

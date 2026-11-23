@@ -85,7 +85,7 @@ export function GroupMembersBlock({ chatId, settings, memberIds, total, people, 
   return (
     <div role="button" tabIndex={0} data-testid="group-settings-members" onClick={onOpen}
       onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }}
-      className="mb-3 flex h-12 cursor-pointer items-center gap-2.5 rounded-xl bg-[var(--muted)] px-3 text-[13.5px]">
+      className="mb-3 flex h-12 cursor-pointer items-center gap-2.5 rounded-xl bg-[var(--muted)] px-3 text-[13px]">
       <span className="flex shrink-0 ps-1.5">
         {/* 窄了先让头像:详情页(@container/details)不到 380 只留 3 个,不到 300 不留。 */}
         {memberIds.slice(0, 4).map((id, index) => (

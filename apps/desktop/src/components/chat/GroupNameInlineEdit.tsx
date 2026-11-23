@@ -16,6 +16,7 @@ export function GroupNameInlineEdit({
   onCommit,
   labels,
   wrap = false,
+  hero = false,
 }: {
   name: string | null
   canEdit: boolean
@@ -24,6 +25,8 @@ export function GroupNameInlineEdit({
   labels?: { editHint: string; placeholder: string }
   /** 在群自己的设置页里显示全名(换行);页头这类单行位置照旧截断。 */
   wrap?: boolean
+  /** 详情页头部(第 16 版设计稿 .hero .nm):19px、点名字直接改、后面一支小铅笔。 */
+  hero?: boolean
 }) {
   const { t } = useTranslation('messaging')
   const [editing, setEditing] = useState(false)
@@ -65,6 +68,18 @@ export function GroupNameInlineEdit({
     )
   }
   const startEditing = () => setEditing(true)
+  if (hero) return (
+    <div className="flex min-w-0 items-center justify-center">
+      <div data-testid="group-name-display" role={canEdit ? 'button' : undefined} tabIndex={canEdit ? 0 : undefined}
+        onClick={canEdit ? startEditing : undefined}
+        onKeyDown={canEdit ? (event) => { if (event.key === 'Enter') startEditing() } : undefined}
+        className={`flex min-w-0 items-center gap-1.5 rounded-[6px] px-1 text-[19px] leading-[22px] font-semibold ${canEdit ? 'cursor-text hover:bg-row-hover' : ''}`}>
+        <span className="min-w-0 truncate">{resolveOrLoud(name, 'group details title')}</span>
+        {canEdit ? <button type="button" data-testid="group-name-edit" aria-label={labels?.editHint ?? t('group.editName')}
+          onClick={(event) => { event.stopPropagation(); startEditing() }} className="flex shrink-0 text-[var(--faint-fg)]"><Pencil size={13} /></button> : null}
+      </div>
+    </div>
+  )
   return (
     <div className="flex min-w-0 items-center gap-1">
       <div
