@@ -17,6 +17,7 @@ import { Sheet } from '../ui/Sheet'
 import { cn } from '@/lib/cn'
 import { MessageSquare } from '@/lib/icons'
 import { ForwardNoteEditor } from './ForwardNoteEditor'
+import { InRequestWindow } from '../InRequestWindow'
 import type { ForwardNote } from './forwardToChats'
 import { useResolveTargets } from './useResolveTargets'
 
@@ -230,5 +231,6 @@ export function LiveForwardMessageDialog(props: Omit<ComponentProps<typeof Forwa
   const contacts = useContactList()
   // An own agent's conversation is placed by its task's latest turn, as the chat list places it.
   const placed = useNativeAgentChats(chats)
-  return <ForwardMessageDialog {...props} chats={placed} contacts={contacts} ownerId={user?.id} />
+  // Mounted when a forward is asked: the page opens in the window it was asked from.
+  return <InRequestWindow><ForwardMessageDialog {...props} chats={placed} contacts={contacts} ownerId={user?.id} /></InRequestWindow>
 }

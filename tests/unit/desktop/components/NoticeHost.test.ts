@@ -2,9 +2,13 @@
 import { createElement, Fragment } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn(), dismiss: vi.fn() }), Toaster: () => createElement('div', { 'data-testid': 'toaster' }) }))
+vi.mock('sonner', () => ({ toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn(), dismiss: vi.fn() }), Toaster: ({ id }: { id?: string }) => createElement('div', { 'data-testid': 'toaster', 'data-toaster-id': id }) }))
 
+import { act } from 'react'
+import { toast as sonner } from 'sonner'
 import { NoticeHost } from '../../../../apps/desktop/src/components/NoticeHost'
+import { notify } from '../../../../apps/desktop/src/lib/notices'
+import { setAuxLayer } from '../../../../apps/desktop/src/session/renderer/app/aux-layers'
 import { createReactHarness } from '../../../support/testHarness'
 
 let harness: ReturnType<typeof createReactHarness>
@@ -66,3 +70,33 @@ describe('提示条的宿主:同一个文档里一次只有一个在画(#137)', 
   })
 })
 
+// A pop-out window (aux-window-host) is another document: a toast asked from there shows there, in its own strip.
+describe('toasts in a pop-out window', () => {
+  it('draws a strip in each pop-out; a new toast goes to the window last pressed, an update in place stays put', async () => {
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const popOut = frame.contentDocument!
+    const layer = popOut.createElement('div')
+    popOut.body.append(layer)
+    await render(host('app'))
+    let close = () => {}
+    await act(async () => { close = setAuxLayer(popOut, layer) })
+    const strip = layer.querySelector<HTMLElement>('[data-testid="toaster"]')
+    expect(strip?.dataset.toasterId).toBeTruthy()
+    expect(toasters()).toBe(1)
+
+    popOut.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    notify({ key: 'sync', title: 'from the pop-out' })
+    expect(vi.mocked(sonner).mock.lastCall?.[1]).toMatchObject({ toasterId: strip!.dataset.toasterId })
+
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    notify({ key: 'sync', title: 'updated from the main window' })
+    expect(vi.mocked(sonner).mock.lastCall?.[1]).not.toHaveProperty('toasterId')
+    notify({ title: 'new from the main window' })
+    expect(vi.mocked(sonner).mock.lastCall?.[1]).toMatchObject({ toasterId: undefined })
+
+    await act(async () => close())
+    expect(layer.querySelector('[data-testid="toaster"]')).toBeNull()
+    frame.remove()
+  })
+})

@@ -13,6 +13,9 @@ import { startPresenceInterrupt } from '@main/core/agent-hooks/presence-interrup
 import { getPlugin } from '@main/core/agents/plugin-registry';
 import { setSessionAutoApproved } from '@main/core/agent-hooks/turn-autonomy';
 import { localAgentForSession } from '@main/core/sessionpage/sessionpage-session-agent';
+import { db } from '@main/db/client';
+import { nativePublicationContext } from '@main/core/sessions/native-publication-host';
+import { queueNativeInput } from '@main/core/sessions/native-publication-journal';
 import {
   applySessionRuntimeCommand,
   assertSessionSurfaceDeclared,
@@ -502,6 +505,14 @@ export class LocalSessionProvider implements SessionProvider {
         spill = await spillLargePrompt(initialPrompt);
       }
       mark('startup-envelope+spill');
+      // A person's first line from the task page is a personal input, as each later line sent through sendMessage is,
+      // and as the ACP leg's first turn is (enqueueCreationTurns): published to the owner's conversation with the
+      // agent under the same input id, so the task is listed as soon as it starts. Only `session-page` starts carry a
+      // person's line; automations and agent spawns do not, and a task card's first line lands as that card.
+      if (!agentSession.isResuming && session.startupOrigin === 'session-page' && !session.taskChatId && initialPrompt?.trim()) {
+        const context = await nativePublicationContext(session.id);
+        if (context) queueNativeInput(context, session.id, session.initialMessageId ?? `${session.id}:creation:0`, new Date().toISOString(), db);
+      }
       const effectiveInitialPrompt = spill?.prompt ?? startupPrompt;
       // 首句走 local-session 的家:❌ 不进启动参数,spawn 之后过了启动门再注入(见下面 `startupTurnText`)。
       const startupTurnText = !agentSession.isResuming && startupTurnViaLocalSession

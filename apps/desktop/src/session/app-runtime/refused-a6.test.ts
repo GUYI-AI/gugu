@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { loadPage, until } from './fake-file-service';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadPage, until, untilAdvancing } from './fake-file-service';
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 /**
  * L11 A6: a change the file service refused is said in one place â€” by the runtime, into the App's error record (the
@@ -24,6 +28,7 @@ describe('a change the file service refused is said by the runtime (L11 A6, æ‘©æ
   });
 
   it('rate-limited: said once for the file however often it comes, and the writes still land after reconnecting', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const { service, host, open } = await loadPage<TextFile>('text');
     const file = await open();
     for (let round = 1; round <= 2; round += 1) {
@@ -31,8 +36,8 @@ describe('a change the file service refused is said by the runtime (L11 A6, æ‘©æ
       await until(() => service.text('item-1@1') === file.text);
       service.closeDocument('item-1@1', 'rate-limited');
       file.insert(file.text.length, `offline ${round} `);
-      // Back after the runtime's step back (1 s, then 2 s).
-      await until(() => file.saved && service.text('item-1@1') === file.text, 10_000);
+      // Back after the runtime's step back (1 s, then 2 s), on fake timers.
+      await untilAdvancing(() => file.saved && service.text('item-1@1') === file.text, 10_000);
     }
     expect(host.reportError.mock.calls.filter(([message]) => message.includes('notes.md'))).toHaveLength(1);
     expect(service.text('item-1@1')).toBe('round 1 offline 1 round 2 offline 2 ');

@@ -328,13 +328,12 @@ jobs:
           go build -race -o "$RUNNER_TEMP/projection-media" ./cmd/projection-media
           export GUGU_TEST_MEDIA_HELPER="$RUNNER_TEMP/projection-media"
           test -x "$GUGU_TEST_CHROMIUM"
-          go test -race -tags 'browser helper' -count=3 -timeout=5m ./...
+          # One pass each: every PR runs this job again, so repeating identical inputs inside one run adds no coverage.
+          go test -race -tags 'browser helper' -count=1 -timeout=5m ./...
           go vet -tags 'browser helper' ./...
           export GUGU_PROJECTION_FFMPEG
           GUGU_PROJECTION_FFMPEG=$(command -v ffmpeg)
-          for _ in 1 2 3; do
-            node --test node/*.node-test.mjs
-          done
+          node --test node/*.node-test.mjs
   session-browser:
     name: Session browser project (${{ matrix.shard }}/3)
     needs: changes

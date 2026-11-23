@@ -108,6 +108,12 @@ jobs:
         with:
           java-version: ${{ steps.java.outputs.version }}
           lookup-only: 'true'
+      # No exact snapshot: start from the newest older one instead of resolving every dependency from scratch. Cold
+      # resolution from hosted runners met Maven Central 429s (Too Many Requests) and failed this seed repeatedly.
+      - if: steps.gradle.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup-gradle-cache
+        with:
+          java-version: ${{ steps.java.outputs.version }}
       - if: steps.gradle.outputs.cache-hit != 'true'
         uses: ./.github/actions/setup-community
       - if: steps.gradle.outputs.cache-hit != 'true'

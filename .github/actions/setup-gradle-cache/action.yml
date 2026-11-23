@@ -1,5 +1,5 @@
 name: Restore shared Android Gradle cache
-description: Restore a toolchain-compatible dev snapshot without saving PR-scoped caches
+description: Restore the exact, else the newest toolchain-compatible, dev snapshot without saving PR-scoped caches
 inputs:
   java-version:
     description: Exact JDK version returned by setup-java
@@ -10,7 +10,7 @@ inputs:
     default: 'false'
 outputs:
   cache-hit:
-    description: Whether the exact compatibility key exists
+    description: Whether the exact compatibility key exists (false when only a restore-keys fallback matched)
     value: ${{ steps.restore.outputs.cache-hit }}
   cache-key:
     description: Identical primary key for the dev-only writer
@@ -34,4 +34,9 @@ runs:
           !~/.gradle/caches/**/*.lock
           !~/.gradle/caches/**/gc.properties
         key: community-gradle-v1-${{ runner.os }}-${{ runner.arch }}-temurin-${{ inputs.java-version }}-${{ hashFiles('pnpm-lock.yaml', '.node-version', 'apps/mobile/android/**/*.gradle*', 'apps/mobile/android/**/gradle-wrapper.properties', 'apps/mobile/android/**/gradle-wrapper.jar', 'apps/mobile/android/gradle.properties', 'apps/mobile/android/**/*.toml', '.github/actions/setup-gradle-cache/action.yml') }}
+        # The key moves with every lockfile change, and dev seeds the new one only at the end of its cache chain (often
+        # 40+ minutes later). Without a fallback a PR in that window resolved every Android dependency from the network
+        # (one took 52 minutes). Gradle's caches are content-addressed, so the newest older snapshot is safe to start from;
+        # Gradle fetches only what changed. The dev seeder still sees cache-hit=false on a fallback and writes the exact key.
+        restore-keys: community-gradle-v1-${{ runner.os }}-${{ runner.arch }}-temurin-${{ inputs.java-version }}-
         lookup-only: ${{ inputs.lookup-only }}

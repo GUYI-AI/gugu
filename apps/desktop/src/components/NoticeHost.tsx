@@ -1,7 +1,9 @@
 import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import { Toaster } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { readEffectiveHostTheme, subscribeToHostTheme } from '@renderer/lib/theme/host-theme'
+import { readAuxLayers, subscribeAuxLayers } from '@renderer/app/aux-layers'
 import { persistentNotices, type PersistentNotice } from '@/lib/notices'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { AlertTriangle, ChevronLeft, ChevronRight, CheckCircle2, Info, X } from '@/lib/icons'
@@ -70,7 +72,10 @@ export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: stri
   const theme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
   const owner = useDocumentClaim('noticeHost', embedded)
   const anchor = useNoticeComposerAnchor(owner)
+  // Each pop-out window has its own strip: a toast asked from there shows there (lib/notices `toasterId`, aux-layers).
+  const popOuts = useSyncExternalStore(subscribeAuxLayers, readAuxLayers, readAuxLayers)
   if (!owner) return null
+  const toastOptions = closeLabel ? { closeButtonAriaLabel: closeLabel } : undefined
   // One position rule, desktop and phone: centred on the composer (or phone bar), 8px above it; none showing → bottom centre.
   const offset = anchor && { bottom: anchor.bottom }
   return (
@@ -83,8 +88,10 @@ export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: stri
         offset={offset}
         mobileOffset={offset}
         theme={theme}
-        toastOptions={closeLabel ? { closeButtonAriaLabel: closeLabel } : undefined}
+        toastOptions={toastOptions}
       />
+      {popOuts.map(({ layer, toasterId }) => createPortal(
+        <Toaster id={toasterId} className="gugu-notices" position="bottom-center" visibleToasts={1} theme={theme} toastOptions={toastOptions} />, layer, toasterId))}
       <NoticeDeck />
     </>
   )

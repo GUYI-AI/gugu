@@ -27,6 +27,7 @@ import { planDirectSpawn } from '../../../../packages/session-core/src/exec/wind
 import { codexReasoningText } from '../../../../packages/core/src/shared/reasoningText.mjs'
 import { isRenderableImage, mimeTypeFromName } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { codexFilePatches } from '../../../../packages/session-core/src/acp/transport/codex-file-patches.ts'
+import { codexMcpCall } from '../../../../packages/session-core/src/acp/transport/codex-mcp-call.ts'
 import { createCodexSubagents } from './codex-subagents.mjs'
 import { CODEX_AUTONOMY_BY_MODE, CODEX_PERMISSION_MODES } from '../../../../packages/session-plugins/src/agents/impl/codex/permission-modes.ts'
 import { redactAll } from '../../../../packages/session-shared/src/logger/redact.ts'
@@ -1076,29 +1077,15 @@ function itemTool(item, terminalId = item?.id) {
     return { title: 'Edit files', kind: 'edit', ...(content.length ? { content } : {}) }
   }
   if (type === 'mcpToolCall') {
-    // The shared tool row only offers disclosure when it receives a payload. The same mapping serves live updates and
-    // history replay.
-    // `mcp__<server>__<tool>`: the title shape the reducer reads as an MCP call and splits into server + tool.
-    // Its result's blocks (text, image, …) also as ACP `content` — MCP's content blocks are ACP's — as the Claude bridge
-    // sends a tool's result: a client reads a tool's pictures there, not in the provider's own `rawOutput`.
-    // And, as the Claude bridge does, the output travels once (review 10f3ea946c): a result those blocks carry whole —
-    // nothing in it besides `content`, and only blocks the client reads (text, image) — is not sent again as rawOutput.
-    // A failure, a result with more in it (structuredContent, isError, …), or one with a block the client does not read
-    // (resource_link, resource, audio: review 3b0e55360c) keeps the provider's value.
-    const blocks = Array.isArray(item.result?.content) ? item.result.content : []
-    const { content: _content, ...besides } = item.result ?? {}
-    const carried =
-      !item.error &&
-      blocks.length > 0 &&
-      blocks.every((block) => block?.type === 'text' || block?.type === 'image') &&
-      Object.values(besides).every((value) => value == null || value === false)
-    const name = `mcp__${item.server || 'mcp'}__${item.tool || 'tool'}`
+    // The shared tool row only offers disclosure when it receives a payload. The same mapping serves live updates, history
+    // replay and the rollout record (codexMcpCall).
+    const { name, rawInput, rawOutput, blocks } = codexMcpCall(item)
     return {
       name,
       title: name,
       kind: 'other',
-      rawInput: item.arguments,
-      rawOutput: item.error ?? (carried ? undefined : item.result) ?? undefined,
+      rawInput,
+      rawOutput,
       ...(blocks.length ? { content: blocks.map((block) => ({ type: 'content', content: block })) } : {}),
     }
   }

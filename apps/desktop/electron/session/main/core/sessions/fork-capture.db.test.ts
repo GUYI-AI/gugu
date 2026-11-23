@@ -296,6 +296,26 @@ describe('captureExternalForks — chained external forks in one sweep', () => {
     expect(grandchild?.workspaceId).toBe('workspace-1');
   });
 
+  it('leaves a billing-route-switch fork to the row it forks onto until that row claims it', async () => {
+    // The route switch forks this row's own session onto the new route (`forkOnStartProviderSessionId`), and the
+    // child (CHILD) belongs to this same row. Before the row takes its id, a sweep must not register it as an
+    // external fork of PARENT.
+    await fixture.db
+      .update(sessions)
+      .set({ config: { agentDisplayName: '母会话', version: '1', type: 'pty', permissionMode: 'edit', forkOnStartProviderSessionId: PARENT } })
+      .where(eq(sessions.id, PARENT));
+
+    await captureExternalForks(projectId, PARENT);
+    expect((await fixture.db.select().from(sessions)).map((row) => row.id)).toEqual([PARENT]);
+
+    // Claimed: the row now runs CHILD, so the mark is spent and GRANDCHILD is a real external fork of it.
+    await fixture.db.update(sessions).set({ providerSessionId: CHILD }).where(eq(sessions.id, PARENT));
+    await captureExternalForks(projectId, PARENT);
+    const rows = await fixture.db.select().from(sessions);
+    expect(rows.map((row) => row.id).sort()).toEqual([GRANDCHILD, PARENT].sort());
+    expect(forkedFromId(rows.find((row) => row.id === GRANDCHILD))).toBe(PARENT);
+  });
+
   it('leaves an ACP product fork\'s freshly forked session to that row until it is claimed', async () => {
     // ACP 分叉:行出生时 sessionId = null,`session/fork` 拿回的新 id(CHILD)要稍后才写进来;
     // claude 适配器在那之前就写下了 CHILD.jsonl。这一格空档里的扫描不许把它当外部 fork。

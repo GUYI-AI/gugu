@@ -2,6 +2,7 @@ import { app, safeStorage } from 'electron'
 import { timingSafeEqual } from 'node:crypto'
 import { VaultError, type VaultKeyProtector } from './contracts'
 import { decode } from './crypto'
+import { hostCopy } from '../host-locale-store'
 
 /**
  * The vault key, wrapped by the operating system's own protection through Electron safeStorage: the macOS Keychain, DPAPI
@@ -25,7 +26,7 @@ export function systemVaultKeyProtector(verifyOwner: ((reason: string) => Promis
     async verifyPerson() {
       available()
       if (process.platform !== 'darwin' || !verifyOwner) throw new VaultError('UNAVAILABLE')
-      try { await verifyOwner('查看已保存的密码') }
+      try { await verifyOwner(hostCopy().passwordVault.verifyReason) }
       catch { throw new VaultError('CANNOT_UNLOCK') }
     },
     async wrap(key, binding) {

@@ -53,7 +53,8 @@ it('uses real HTTP bytes for timeout, direct-first file/preview reads and a reco
   }
   const cloud = cloudFileProviders({
     endpoint: async () => ({ supabaseUrl: root, anonKey: 'fixture', token: 'fixture' }), fetch: transport,
-    downloadSession: createFileDownloadSession(),
+    // The hung CDN is given up after the idle bound (3 s in the product); what matters here is what happens after it.
+    downloadSession: createFileDownloadSession({ cdnIdleMs: 100 }),
     cache: { get: async () => null, put: async () => {}, clear: async () => {} },
     sink: async () => {
       const chunks: Uint8Array[] = []

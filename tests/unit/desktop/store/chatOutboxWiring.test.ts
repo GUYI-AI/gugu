@@ -317,8 +317,7 @@ describe('committed outbound reconciliation', () => {
 
     await harness.wiring.enqueue(enqueueInput(row.id))
     await vi.waitFor(() => {
-      expect(harness.appendMessage).toHaveBeenCalledWith({ ...row,
-        local_timeline: { afterSeq: 0, createdAt: expect.any(String) } })
+      expect(harness.appendMessage).toHaveBeenCalledWith(row)
     })
     expect(harness.appendMessage).toHaveBeenCalledTimes(1)
     // #1884 — 水位推进不等重验证:appendMessage(同步返回)之后同一 tick 就推进。

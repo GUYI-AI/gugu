@@ -312,9 +312,9 @@ export function cloudFileProviders(deps: {
     }
     const source = remoteSource(preview.size_bytes, key, uncached, sign, () => objectTransport(context), session, context.signal)
     try {
-      const bytes = await source.read(0, preview.size_bytes)
-      if (hex(sha256(bytes)) !== preview.sha256) throw new Error('File preview bytes changed')
-      const blob = new Blob([bytes], { type: preview.content_type })
+      // Read in chunks like every reader: a preview may be larger than one chunk (a 560 px PNG of a photo is ~1 MB).
+      const blob = await snapshotBlob(source, preview.content_type)
+      if (hex(sha256(new Uint8Array(await blob.arrayBuffer()))) !== preview.sha256) throw new Error('File preview bytes changed')
       await deps.imageCache?.put(key, new Response(blob)); return blob
     } finally { await source.dispose() }
   }

@@ -2,6 +2,7 @@ import { readdir } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 import { codexFilePatches } from '../../acp/transport/codex-file-patches';
+import { codexMcpCall } from '../../acp/transport/codex-mcp-call';
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
 import { readCodexRecord, type CodexRecord, type CodexRecordItem } from '@gugu/core/local/agent/transcriptSources/codex';
 
@@ -352,6 +353,20 @@ function toEvent(item: CodexRecordItem, messageId: string): NormalizedEvent {
       return { ...toolCallResult(item.id, item.failed ? 'failed' : 'completed', { contentBlocks: codexFilePatches(item) }), title: 'apply_patch', toolKind: 'edit' };
     case 'tool_call':
       return toolCallStart(item.id, item.name, codexToolKind(item.name), item.input);
+    case 'mcp_call': {
+      // Read as the live bridge reads the same app-server item (codexMcpCall): a send's receipt is its text, and the task
+      // page draws the sent message from it once the turn is read back from the record.
+      const { name, rawInput, rawOutput, blocks } = codexMcpCall(item.call);
+      const texts = blocks.flatMap((block) => block.type === 'text' && typeof block.text === 'string' ? [block.text] : []);
+      const images = blocks.flatMap((block) => block.type === 'image' && typeof block.data === 'string' && typeof block.mimeType === 'string'
+        ? [{ mimeType: block.mimeType, data: block.data }] : []);
+      return {
+        ...toolCallResult(item.id, item.failed ? 'failed' : 'completed', {
+          ...(texts.length ? { text: texts.join('\n') } : {}), images, rawInput, ...(rawOutput !== undefined ? { rawOutput } : {}),
+        }),
+        title: name, toolKind: 'other',
+      };
+    }
     case 'tool_result': {
       const text = typeof item.output === 'string' ? item.output : null;
       // An MCP tool's result is recorded as input items (`input_text`, `input_image`): its text and pictures go as ACP

@@ -53,6 +53,8 @@ export class OwnedStdioTransport implements Transport {
   constructor(
     private readonly spawn: () => OwnedStdioSpawn,
     private readonly hooks: { onSpawned?: (child: ChildProcessWithoutNullStreams) => void; onClosed?: () => void } = {},
+    /** How long close() lets the program exit on its own after stdin closes, and then after TERM. Default 2 s. */
+    private readonly stopGraceMs = STOP_GRACE_MS,
   ) {}
 
   private receive(line: string): void {
@@ -116,8 +118,8 @@ export class OwnedStdioTransport implements Transport {
     if (child.exitCode === null && child.signalCode === null) {
       const exited = new Promise<void>((resolve) => child.once('exit', () => resolve()));
       child.stdin.end();
-      await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, STOP_GRACE_MS))]);
+      await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, this.stopGraceMs))]);
     }
-    await owned.stop({ graceMs: STOP_GRACE_MS, killMs: STOP_GRACE_MS });
+    await owned.stop({ graceMs: this.stopGraceMs, killMs: this.stopGraceMs });
   }
 }

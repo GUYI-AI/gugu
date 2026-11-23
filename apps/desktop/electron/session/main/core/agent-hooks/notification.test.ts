@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { maybeShowNotification } from './notification';
-import { setSessionAgentNotificationCopy } from './notification-copy';
+import { setSessionHostCopy } from '../host-copy';
+import { hostCatalog } from '../../../../../shared/host-localization';
 import { setSystemNotificationsUsable } from './system-notifications';
 import { log } from '@main/lib/logger';
 
@@ -21,7 +22,7 @@ beforeEach(() => {
   h.systemUsable.mockResolvedValue(true);
   setSystemNotificationsUsable(h.systemUsable);
   h.settings.enabled = true; h.settings.sound = true; h.banners.length = 0;
-  setSessionAgentNotificationCopy({ needsApproval: 'Needs approval', needsAnswer: 'Needs an answer' });
+  setSessionHostCopy(hostCatalog('en-US').sessionHost);
 });
 const session = { sessionId: 's1', projectId: 'p1' };
 const working = { status: 'working', detail: 'running' } as const;
@@ -31,7 +32,7 @@ describe('agent banner owns its sound', () => {
   it.each([true, false])('uses sound=%s for an actual wait banner', async (sound) => {
     h.settings.sound = sound;
     await maybeShowNotification(session, working, approval);
-    expect(h.banners).toEqual([{ title: 'Codex — Review', body: 'Needs approval', silent: !sound }]);
+    expect(h.banners).toEqual([{ title: 'Codex — Review', body: 'Your agent needs your approval', silent: !sound }]);
   });
   it('does not emit a banner or sound for a finished/error reading or a repeated wait', async () => {
     await maybeShowNotification(session, working, { status: 'idle', detail: 'done' });

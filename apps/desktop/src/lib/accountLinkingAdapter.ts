@@ -11,7 +11,7 @@ import { AccountLinking, AccountLinkingError, LOGIN_METHOD_NOTICE_KEY, type Logi
 import { GoogleLoginFlow } from './googleLoginFlow'
 import { sessionCoordinator } from './sessionCoordinator'
 import { supabase } from './supabase'
-import { logoutAndRelaunch } from './authLogout'
+import { logout } from './authLogout'
 import { accountUnlinkRecovery } from './accountUnlinkRecovery'
 
 // One isolated SDK client per renderer. Its in-memory session and PKCE verifier never reach
@@ -233,7 +233,7 @@ export function createAccountLinking(userId: string): AccountLinking {
         // Selecting another account already removed this account locally. Do not sign
         // out the newly selected account when the old revocation response arrives.
         if (owner() !== userId) { accountUnlinkRecovery.clear(userId); return }
-        const result = await logoutAndRelaunch(() => accountUnlinkRecovery.clear(userId))
+        const result = await logout(() => accountUnlinkRecovery.clear(userId))
         if (!result.success) throw new AccountLinkingError('signOutFailed')
       })()
       const flight = work.finally(() => { unlinkCleanupFlights.delete(userId) })

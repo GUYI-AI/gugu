@@ -48,6 +48,9 @@ export const GUGU_ACKNOWLEDGEMENT = '- Acknowledge briefly when you take somethi
 /** 主人私聊怎么回:普通 agent 在会话里回(私聊页就是这条会话);助理那一份换成 ASSISTANT_OWNER_DM_TRANSPORT。 */
 export const GUGU_OWNER_DM_TRANSPORT = "- Your owner's private chat with you shows this session: answer it in your printed output. Use `message_send` there only to notify them — a decision you need, or a result they must not miss."
 
+/** A terminal session's owner reads the terminal, and the Gugu tools refuse a send to the owner there (owner 11-23). */
+const TERMINAL_OWNER_DM_TRANSPORT = "- Your owner reads this terminal: answer them in your printed output, results and files included (give a file's path). `message_send` to your owner is refused here."
+
 /** 助理的私聊是 IM 对话(#1162):message_send 就是它说话的方式,打印的只当进度。 */
 const ASSISTANT_OWNER_DM_TRANSPORT = "- Your owner's private chat with you is answered with `message_send`: that is how you speak there; what you print stays local progress."
 
@@ -124,6 +127,9 @@ Lists: \`rows\` is 1-based ("20" / "41-60" / "all"), default 20 (catalogs: all);
 }
 
 export const GUGU_PLATFORM_BLOCK = guguPlatformBlock({ ownerDmTransport: GUGU_OWNER_DM_TRANSPORT, acknowledgement: GUGU_ACKNOWLEDGEMENT })
+
+/** The block for a terminal (pty) session: the same block, with the owner answered in the terminal. */
+export const GUGU_TERMINAL_PLATFORM_BLOCK = guguPlatformBlock({ ownerDmTransport: TERMINAL_OWNER_DM_TRANSPORT, acknowledgement: GUGU_ACKNOWLEDGEMENT })
 
 /** The assistant's managed policy owns its more specific message_send acknowledgement, and in its private chat message_send is how it speaks. */
 const ASSISTANT_PLATFORM_BLOCK = guguPlatformBlock({ ownerDmTransport: ASSISTANT_OWNER_DM_TRANSPORT, acknowledgement: null })

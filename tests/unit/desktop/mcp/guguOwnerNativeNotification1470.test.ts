@@ -11,7 +11,7 @@ const host = () => vi.fn(async (input: Record<string, unknown>) => ({ status: 's
   ...(input.file ? { file_name: (input.file as { name: string }).name } : {}) }))
 function setup() {
   const runHostAction = host()
-  const context = { agentId: agent, threadRootId: null, getAccessToken: async () => token, runHostAction, ownerReadsSession: true as const }
+  const context = { agentId: agent, threadRootId: null, getAccessToken: async () => token, runHostAction, ownerReads: 'session' as 'session' | 'terminal' | undefined }
   const deps = {
     restGet: vi.fn(async (path: string) => path.startsWith('chats?') ? [{ id: dm, public_id: 218799 }] : []),
     restRpc: vi.fn(async (name: string) => name === 'chat_facts' ? [{ kind: 'dm', rules: null }] : name === 'list_member_ids' ? [{ user_id: owner }, { user_id: agent }] : name === 'open_dm' ? dm : null),
@@ -59,11 +59,48 @@ describe('owner sends commit into the bound native session', () => {
   })
 })
 
-describe('a session whose page the owner does not read (a terminal session)', () => {
+describe('a session with no owner page (no ownerReads)', () => {
   it.each([`user:${owner}`, dm])('sends %s as the ordinary DM message, never as an owner notification', async chatId => {
     const { context, deps, runHostAction } = setup()
-    await callTool({ ...context, ownerReadsSession: undefined }, 'message_send', { chat_id: chatId, text: 'Review the result' }, deps)
+    await callTool({ ...context, ownerReads: undefined }, 'message_send', { chat_id: chatId, text: 'Review the result' }, deps)
     expect(runHostAction).not.toHaveBeenCalled()
     expect(deps.restInsert).toHaveBeenCalledWith('messages', expect.objectContaining({ chat_id: dm, content: 'Review the result' }))
+  })
+})
+
+describe('a terminal session: its owner reads the terminal', () => {
+  const terminal = () => { const made = setup(); return { ...made, context: { ...made.context, ownerReads: 'terminal' as const } } }
+  it.each([`user:${owner}`, `aid:${owner}`, dm, '218799'])('refuses a message to the owner (%s) and writes nothing', async chatId => {
+    const { context, deps, runHostAction } = terminal()
+    await expect(callTool(context, 'message_send', { chat_id: chatId, text: 'Review the result' }, deps)).rejects.toThrow('Answer them in your printed output')
+    expect(runHostAction).not.toHaveBeenCalled()
+    expect(deps.restInsert).not.toHaveBeenCalled()
+    expect(deps.restRpc).not.toHaveBeenCalledWith('open_dm', expect.anything())
+  })
+  it('refuses a file to the owner before uploading it', async () => {
+    const { context, deps } = terminal()
+    await expect(callTool(context, 'message_send', { chat_id: dm, file_path: '/work/report.html' }, deps)).rejects.toThrow('your owner reads this terminal session')
+    expect(deps.attachmentsEndpoint).not.toHaveBeenCalled()
+  })
+  it('reads nothing a send to the same chat would not read', async () => {
+    const { context, deps } = terminal()
+    await expect(callTool(context, 'message_send', { chat_id: dm, text: 'x' }, deps)).rejects.toThrow('refused')
+    const refused = [...deps.restRpc.mock.calls.map(call => call[0]), ...deps.restGet.mock.calls.map(call => call[0])]
+    const plain = setup()
+    await callTool({ ...plain.context, ownerReads: undefined }, 'message_send', { chat_id: dm, text: 'x' }, plain.deps)
+    const sent = [...plain.deps.restRpc.mock.calls.map(call => call[0]), ...plain.deps.restGet.mock.calls.map(call => call[0])]
+    expect(refused.length).toBeLessThanOrEqual(sent.length)
+    for (const read of refused) expect(sent).toContain(read)
+  })
+  it('still sends to a group and to anyone else', async () => {
+    const group = 'ffffffff-ffff-4fff-8fff-ffffffffffff'
+    const { context, deps } = terminal()
+    deps.restRpc.mockImplementation(async (name: string) => name === 'chat_facts' ? [{ kind: 'group', rules: null }] : name === 'list_member_ids' ? [{ user_id: owner }, { user_id: agent }] : null)
+    await callTool(context, 'message_send', { chat_id: group, text: 'Done' }, deps)
+    expect(deps.restInsert).toHaveBeenCalledWith('messages', expect.objectContaining({ chat_id: group, content: 'Done' }))
+    const friendDm = 'abababab-abab-4bab-8bab-abababababab'
+    deps.restRpc.mockImplementation(async (name: string) => name === 'chat_facts' ? [{ kind: 'dm', rules: null }] : name === 'list_member_ids' ? [{ user_id: stranger }, { user_id: agent }] : null)
+    await callTool(context, 'message_send', { chat_id: friendDm, text: 'Hi' }, deps)
+    expect(deps.restInsert).toHaveBeenCalledWith('messages', expect.objectContaining({ chat_id: friendDm, content: 'Hi' }))
   })
 })

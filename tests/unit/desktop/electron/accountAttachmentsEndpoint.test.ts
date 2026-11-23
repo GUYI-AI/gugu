@@ -1,7 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { uploadAttachmentPlan } from '@gugu/core/cloud/attachmentsApi'
 import { AttachmentDeadlineError, ATTACHMENT_UPLOAD_IDLE_MS } from '@gugu/core/cloud/attachmentDeadline'
-import { hostAttachmentsEndpoint } from '../../../../apps/desktop/electron/attachmentUploadTransport'
+import { accountAttachmentsEndpoint, uploadAttachmentPlan } from '@gugu/core/cloud/attachmentsApi'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -10,7 +9,7 @@ afterEach(() => {
 })
 
 const url = 'https://store.test/attachment'
-const hostEndpoint = () => hostAttachmentsEndpoint({
+const hostEndpoint = () => accountAttachmentsEndpoint({
   supabaseUrl: 'https://db.test', anonKey: 'anon', getAccessToken: async () => 'token',
 })
 

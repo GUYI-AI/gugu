@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { contentRequestId, declareAttachment, declaredUploadState, drawImagePreviews, finishDeclaredAttachment, placeAttachment, planAttachmentUpload, withUploadedAttachment, type AttachmentsEndpoint } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { contentRequestId, declareAttachment, declaredUploadState, drawImagePreviews, finishDeclaredAttachment, placeAttachment, planAttachmentUpload, retryableAttachmentError, withUploadedAttachment, type AttachmentsEndpoint } from '../../../../packages/core/src/cloud/attachmentsApi'
 
 // Direct upload (contract §3): every upload sends the file's sha256 with its permit request; the server answers `stored`
 // (no bytes go up), `upload` straight to the final object, or 409 upload_in_progress (wait and ask again). The final
@@ -103,6 +103,22 @@ describe('hash first, then the permit', () => {
     // 1 s, then 2 s, then the 4 s step is cut to retry_after (5 s).
     expect(asks).toEqual([0, 1_000, 3_000, 5_000])
     expect(s.stored).toHaveLength(1)
+  })
+
+  it('upload_in_progress that never ends: a declared finish gives up after a minute with a retryable error, it never hangs', async () => {
+    vi.useFakeTimers()
+    // The earlier permit's upload was refused by the store and nobody released it: finish keeps answering in progress.
+    const s = server({ finish: () => refuse(409, 'upload_in_progress', { retry_after: later() }) })
+    const declared = { staging_key: 'direct/acct/m-1', sha256: sha, size_bytes: bytes.length, plan: { ...direct('m-1'), status: 'stored' as const } }
+    const t0 = Date.now()
+    const finished = finishDeclaredAttachment(s.endpoint, declared, file, { id: 'm-1', chat_id: 'chat', as: 'me' }).catch(error => error)
+    await vi.advanceTimersByTimeAsync(120_000)
+    const error = await finished
+    expect(error).toMatchObject({ status: 409, code: 'upload_in_progress' })
+    expect(retryableAttachmentError(error)).toBe(true)
+    // It asked again for a minute (1 s, 2 s, 4 s, 8 s, 15 s …), then said so.
+    expect(s.routes('finish').length).toBeGreaterThan(3)
+    expect(Date.now() - t0).toBeLessThanOrEqual(120_000)
   })
 
   it('the same bytes sent twice at once: the second gets `stored` soon after the first registers, not at the other permit\'s expiry', async () => {

@@ -247,20 +247,31 @@ describe('sticky user lanes', () => {
         expect([pin.left, pin.right], `${id} scrollTop=${st}: as wide as the bubble`).toEqual([card.left, card.right]);
         // Whatever is left of the message below the pin line lies inside the summary's box: nothing shows beside it.
         expect(card.bottom, `${id} scrollTop=${st}: the summary reaches the bubble's end`).toBeLessThanOrEqual(pin.bottom + 0.01);
-        return { top: pin.top - edge(), stuck: PIN_LINE > b - h + 0.5, shown: pinnedSummaryShown(summary) };
+        const pushed = e - h - PIN_SUMMARY_GAP < Math.max(PIN_LINE, b - h);
+        return { top: pin.top - edge(), stuck: PIN_LINE > b - h + 0.5, shown: pinnedSummaryShown(summary),
+          regime: pushed ? 'pushed' : PIN_LINE > b - h ? 'stuck' : 'below' };
       };
-      const seen = new Map<number, number>();
+      const seen = new Map<number, number>(), regime = new Map<number, string>();
       const down = Array.from({ length: to - from + 1 }, (_, i) => from + i);
-      // Every pixel down and back with no frame in between, then every 21st in an order no drag makes, a frame each.
-      // The jumps are the part paced by frames (two per jump); every 21st still lands each regime (below the pin line,
-      // stuck, pushed off: each tens of pixels wide) several times, while every pixel is checked without frames above.
+      // Every pixel down and back with no frame in between, then jumps in an order no drag makes, a frame each.
+      // The jumps are the part paced by frames (two per jump), so they go where the placement can break: both pixels
+      // of every regime change (below the pin line, stuck, pushed off) and the middle of every regime.
       for (const st of [...down, ...[...down].reverse()]) {
         t.scrollEl.scrollTop = st;
         const now = read(st);
         expect(seen.get(st) ?? now.top, `${id} scrollTop=${st}: the same place both ways`).toBe(now.top);
         seen.set(st, now.top);
+        regime.set(st, now.regime);
       }
-      for (const st of down.filter(st => st % 21 === 0).sort((x, y) => (x * 7919) % 101 - (y * 7919) % 101)) {
+      const jumps = new Set<number>();
+      for (let i = 1, start = 0; i <= down.length; i++) {
+        if (i < down.length && regime.get(down[i]!) === regime.get(down[i - 1]!)) continue;
+        jumps.add(down[Math.floor((start + i - 1) / 2)]!);
+        if (i < down.length) { jumps.add(down[i - 1]!); jumps.add(down[i]!); }
+        start = i;
+      }
+      expect(new Set(regime.values()), `${id}: the sweep meets every regime`).toEqual(new Set(['below', 'stuck', 'pushed']));
+      for (const st of [...jumps].sort((x, y) => (x * 7919) % 101 - (y * 7919) % 101)) {
         await scrollAndSettle(st);
         const now = read(st);
         expect(now.top, `${id} scrollTop=${st}: the same place after a jump`).toBe(seen.get(st));
@@ -350,14 +361,11 @@ describe('sticky user lanes', () => {
     // The running turn holds b and the message c inserted into it; before the fix only c was an
     // anchor, so a stayed stuck over all of b.
     const t = await mount([longTurn('a', 0, 150)], longTurn('b', 1, 150, ['c']));
+    // Go to the message by its identity (not 100 px at a time through 150 items), then read past it.
     const stuckAfter = async (id: string) => {
-      let st = t.scrollEl.scrollTop;
-      while (!(t.cardTop(id) !== null && t.cardTop(id)! < 250 && t.cardTop(id)! > 120)) {
-        st += 100;
-        expect(st, `${id} came into view`).toBeLessThan(40_000);
-        await t.scrollTo(st);
-      }
-      await t.scrollTo(st + 1500);
+      t.view.scrollToItem(id, { align: 'start', offset: -180 });
+      await until(`${id} came into view`, () => t.cardTop(id), top => top !== null && top < 250 && top > 120);
+      await t.scrollTo(t.scrollEl.scrollTop + 1500);
     };
     await stuckAfter('b-user');
     expect(t.pinTop('b-user'), 'b is stuck inside its part of the running turn').toBeCloseTo(PIN_LINE, 0);

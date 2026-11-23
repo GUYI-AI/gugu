@@ -21,8 +21,19 @@ export const devicesModel = replica({
   // Kept current by its push (DevicesProvider's account-revision feed, a durable cursor that also covers the time before it
   // listened): one more surface showing the machines is no reason to read them again.
   fresh: Infinity,
-  persist: { maxBytes: 8192, maxEntries: 1 },
+  // The snapshot keeps each machine's card (name, kind, online, version: what the first frame lists), not what grows with
+  // the machine's use: its action list (~280 B per action, a Mac registers dozens), its session digest (up to
+  // DEVICE_SESSION_DIGEST_LIMIT rows) and its projects. Those read as "not read yet" until the read that follows at once.
+  // A card is ~0.6 KB, so 8 KB holds about a dozen machines (the account block's budget leaves no more).
+  persist: { maxBytes: 8192, maxEntries: 1, kept: (rows) => rows.map(deviceCard) },
 })
+
+/** A machine as the snapshot keeps it: the row without the parts whose size follows the machine's use. */
+export function deviceCard({ session_digest: _digest, projects: _projects, projects_error: _projectsError, ...card }: Device): Device {
+  if (!card.capabilities?.actions) return card
+  const { actions: _actions, ...capabilities } = card.capabilities
+  return { ...card, capabilities }
+}
 
 /** The last known machines of the signed-in account; empty until this device ever read them. For logic outside React. */
 export function readCachedDevices(): Device[] {

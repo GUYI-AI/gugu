@@ -8,7 +8,7 @@ import { appSettingsService } from '@main/core/settings/settings-service';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { log } from '@main/lib/logger';
-import { sessionAgentNotificationCopy } from './notification-copy';
+import { sessionHostCopy } from '../host-copy';
 import { systemNotificationsUsable } from './system-notifications';
 import { taskName } from '@main/core/sessions/task-name';
 
@@ -38,7 +38,7 @@ export function focusAppFromNotification(): BrowserWindow | null {
  */
 function getNotificationBody(reading: AgentStatusView): string {
   const answering = reading.detail === 'question' || reading.detail === 'plan';
-  return sessionAgentNotificationCopy()[answering ? 'needsAnswer' : 'needsApproval'];
+  return sessionHostCopy().agentNotifications[answering ? 'needsAnswer' : 'needsApproval'];
 }
 
 async function getSessionLabel(sessionId: string): Promise<{ title: string | null; provider: string | null }> {

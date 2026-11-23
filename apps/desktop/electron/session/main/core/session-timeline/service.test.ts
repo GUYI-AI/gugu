@@ -17,6 +17,11 @@ import type {
   TimelineAfterResult,
   TimelineSnapshot,
 } from '@gugu/session-core/session-record';
+import { hostCatalog } from '../../../../../shared/host-localization';
+import { setSessionHostCopy } from '../host-copy';
+
+// The host injects its copy at startup; these cases read the Chinese host's.
+setSessionHostCopy(hostCatalog('zh-CN').sessionHost);
 
 type Row = {
   id: string;

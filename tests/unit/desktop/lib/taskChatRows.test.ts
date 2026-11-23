@@ -48,6 +48,12 @@ describe('one task chat with three real senders', () => {
     const report = { ...exchange('report', 'task-session', 'assistant-session', 1), createdAt: '2026-10-16T12:00:01.300Z' }
     expect(taskChatRows([incoming], [report], task).map((row) => row.message.id)).toEqual(['human-message', 'session-direct:report'])
   })
+  it('keeps messages in conversation order when their clocks disagree, and slots records between them by time', () => {
+    const first = { ...human, id: 'first', seq: 1, created_at: '2026-10-16T12:00:05Z' }
+    const second = { ...human, id: 'second', seq: 2, created_at: '2026-10-16T12:00:03Z' }
+    const report = exchange('report', 'task-session', 'assistant-session', 4)
+    expect(taskChatRows([first, second], [report], task).map((row) => row.message.id)).toEqual(['session-direct:report', 'first', 'second'])
+  })
   it('excludes other tasks and unrelated correspondents in both directions', () => {
     const rows = taskChatRows([human], [exchange('other', 'other-task', 'assistant-session', 1), exchange('other', 'assistant-session', 'other-task', 2), exchange('stranger', 'stranger', 'task-session', 3)], task)
     expect(rows.map((row) => row.message.id)).toEqual(['human-message'])

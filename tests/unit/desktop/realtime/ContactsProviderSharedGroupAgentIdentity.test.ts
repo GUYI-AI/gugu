@@ -54,6 +54,10 @@ const { renameOnHost, notify } = vi.hoisted(() => ({ renameOnHost: vi.fn(), noti
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {} }))
 vi.mock('../../../../apps/desktop/src/lib/archiveOwnedAgent', () => ({ renameOwnedAgent: renameOnHost }))
 vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify }))
+// Whether the renamed agent is the personal assistant is read from the backend; none of these cases is about the
+// assistant, and the real read waits out its network retries (24 s per rename).
+vi.mock('../../../../apps/desktop/src/lib/myAssistant', async (original) => ({ ...(await original<object>()),
+  myAssistant: { fetch: async () => ({ agentId: null, provisionDeviceId: null }), refresh: async () => {} } }))
 const { readRequiredDisplayIdentitiesMock } = vi.hoisted(() => ({ readRequiredDisplayIdentitiesMock: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/lib/identityReadAdapter', () => ({ readRequiredDisplayIdentities: readRequiredDisplayIdentitiesMock }))
 // The private identity_removed channel is not under test here; keep it off the real realtime socket.

@@ -5,6 +5,7 @@ import { LiveCollection } from '../../../../packages/session-core/src/lib/live-c
 import { createCachedFileSink, type FileChunkCache } from '@gugu/core/shared/fileCache'
 import { SessionBootTasks } from '@gugu/core/shared/sessionBootTasks'
 import { prepareFields, serializeError } from '../../../../packages/session-shared/src/logger/prepare'
+import { createPinoLogger } from '../../../../packages/session-shared/src/logger/pino'
 const deferred = <T,>() => { let resolve!: (value: T) => void; const promise = new Promise<T>(r => { resolve = r }); return { promise, resolve } }
 
 it('keeps teardown in flight through its post hook', async () => { const done=deferred<void>(); const entered=deferred<void>(); const map=new LifecycleMap<string,string,string>({postTeardown:async()=>{entered.resolve();await done.promise}}); await map.provision('k',async()=>ok('v')); const first=map.teardown('k',async()=>ok())!; await entered.promise; const second=map.teardown('k',async()=>ok()); try {expect(second).toBe(first);expect(map.teardownStatus('k').status).toBe('bootstrapping')} finally {done.resolve();await first} })
@@ -22,3 +23,6 @@ it('prepares circular arrays without recursing forever', () => {const array:unkn
 it('prepares cyclic Error causes without recursion', () => {const error=new Error('failure');error.cause=error;expect((prepareFields(error) as {cause:unknown}).cause).toBe('[Circular]')})
 
 it('retains falsy Error cause values in diagnostics', () => {for(const cause of [false,0,'',null])expect(serializeError(new Error('failure',{cause}))).toHaveProperty('cause',cause)})
+
+it('prepares bytes as their size, not one field per byte', () => {expect(prepareFields({bytes:new Uint8Array(524288),buffer:new ArrayBuffer(8)})).toEqual({bytes:'[Uint8Array 524288 bytes]',buffer:'[ArrayBuffer 8 bytes]'})})
+it('walks no field of a line whose level is off', () => {let walked=0;const fields={get big(){walked++;return 1}};const log=createPinoLogger({envLevel:'info',destination:{write(){}}});log.debug('x',fields);expect(walked).toBe(0);log.info('x',fields);expect(walked).toBe(1)})

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, type FileHandle, type FileMetadata, type FileProgress, type FileRevision } from '@gugu/core/shared/fileResolver'
+import { fileBlob, FileReadRevokedError, MissingFileObjectError, shownFileBlob, requireFileRevision, type FileHandle, type FileMetadata, type FileProgress, type FileRevision } from '@gugu/core/shared/fileResolver'
 import { attachmentFileRef, type AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import { resolveFile, fileReader, fileReadSignal, attachmentCache, attachmentCacheOrigin, putAttachment, nativeLocalBytes } from './fileAccess'
-import { replica } from './replica'
+import { onAccountChange, replica } from './replica'
 import { offlineHolder, type OfflineHolder } from './fileHost'
 import { platform } from '../platform'
 import { openImageViewer, registerFullImage, type ImageViewerItem, type Size } from './imageViewer'
@@ -20,7 +20,50 @@ const log = rendererLogger('attachment-bytes')
 /** `showFirst`: the bytes before the read acknowledgement, for a reader that can take them down. `progress`: how far they have come. */
 export async function resolveAttachment(source: AttachmentSource, options: { showFirst?: true; progress?: FileProgress } = {}) {
   const ref = attachmentFileRef(source)
-  return ref ? resolveFile(ref, fileReader(), { signal: fileReadSignal(), ...options }) : { status: 'gone' as const, sha256: null }
+  const file = ref ? await resolveFile(ref, fileReader(), { signal: fileReadSignal(), ...options }) : { status: 'gone' as const, sha256: null }
+  if (file.status === 'ready') void rememberVersion(source, file.revision)
+  return file
+}
+
+/**
+ * @@@local-first - Which version an immutable source is (a message's file, an attachment, a chat-folder version) is learned
+ * from its first resolve and remembered beside the bytes, in this account's Cache Storage: opening it again finds that
+ * version's bytes on this machine (this run's preview read, this machine's disk, the kept copy) without asking the server.
+ * Only bytes that are not here are authorized and fetched: a file withdrawn, or a member removed, is refused then; bytes
+ * already here cannot be taken back by refusing to show them.
+ */
+const versionKey = (accountId: string, sourceKey: string) => `${attachmentCacheOrigin}/account/${encodeURIComponent(accountId)}/source/${encodeURIComponent(sourceKey)}`
+const versions = new Map<string, FileRevision>()
+onAccountChange(() => versions.clear())
+function versionKeysOf(source: AttachmentSource, revision: FileRevision): string[] {
+  const keys = [sourceKeyOf(source)]
+  if (revision.item_id && revision.version !== undefined) keys.push(sourceKeyOf({ kind: 'item', itemId: revision.item_id, version: revision.version }))
+  return [...new Set(keys)]
+}
+/** In memory from its resolve (a preview opened during the read joins it); beside the bytes (`persist`) once they are here. */
+async function rememberVersion(source: AttachmentSource, revision: FileRevision, persist = false) {
+  if (!immutableSource(source) || source.kind === 'session-file' || !revision.sha256) return
+  const accountId = fileReader().accountId
+  for (const sourceKey of versionKeysOf(source, revision)) {
+    const key = versionKey(accountId, sourceKey)
+    versions.set(key, revision)
+    if (persist) await putAttachment(key, new Blob([JSON.stringify(revision)], { type: 'application/json' }))
+  }
+}
+async function knownVersion(source: AttachmentSource): Promise<FileRevision | null> {
+  if (!immutableSource(source) || source.kind === 'session-file') return null
+  const key = versionKey(fileReader().accountId, sourceKeyOf(source))
+  const remembered = versions.get(key)
+  if (remembered) return remembered
+  const hit = await (await attachmentCache()).match(key)
+  if (!hit) return null
+  try {
+    const revision = JSON.parse(await (await hit.blob()).text()) as FileRevision
+    requireFileRevision(revision)
+    if (!revision.sha256) return null
+    versions.set(key, revision)
+    return revision
+  } catch (error) { log.warn({ error }, 'remembered file version unreadable'); return null }
 }
 export async function attachmentMetadata(source: AttachmentSource): Promise<FileMetadata> {
   if (source.kind === 'session-file') return { status: 'ready', revision: sessionFileRevision(source, '', 0) }
@@ -80,28 +123,106 @@ async function readAttachmentBytes(source: AttachmentSource, variant: Attachment
       return { status: 'ready', blob, link: preview.revision }
     } finally { await preview.dispose() }
   }
-  const file = await resolveAttachment(source, { ...(variant === 'shown' ? { showFirst: true as const } : {}), ...(progress ? { progress } : {}) })
+  // @@@local-first: the bytes of a version already here are shown without asking the server; only what is not here is
+  // authorized (resolve) and fetched.
+  const known = await knownVersion(source)
+  const here = known ? await bytesHere(known, variant, progress) : null
+  if (here) return here
+  // A preview's progress is also told to previews of the same version that join this read (shownReads).
+  let key: string | null = null
+  const told: FileProgress | undefined = variant === 'shown' ? (...at) => { progress?.(...at); if (key) shownProgress.tell(key, ...at) } : progress
+  const file = await resolveAttachment(source, { ...(variant === 'shown' ? { showFirst: true as const } : {}), ...(told ? { progress: told } : {}) })
   if (file.status !== 'ready') return file
   onLink?.(file.revision)
-  // The read is authorized now; a copy of this very version kept here (opened or sent before) is its bytes, without moving them again.
-  const kept = await localAttachmentCopy(file.revision.sha256, file.revision.content_type)
-  if (kept) { await file.dispose(); return { status: 'ready', blob: kept, link: file.revision } }
-  const key = file.revision.sha256 === null ? null : fullKey(file.reader.accountId, file.revision.sha256)
-  // Only bytes that came over the network are kept: one read from this machine's own disk is already here.
+  key = file.revision.sha256 === null ? null : fullKey(file.reader.accountId, file.revision.sha256)
+  // A version this machine had not heard of may still be here (sent from here, kept by an open before it was remembered),
+  // or a preview of it may have begun reading since.
+  const found = await bytesHere(file.revision, variant, progress)
+  if (found) {
+    await file.dispose()
+    await rememberVersion(source, file.revision, true).catch((error) => log.warn({ error }, 'file version not remembered'))
+    return found
+  }
+  // Only bytes that came over the network are kept: one read from this machine's own disk is already here. Either way the
+  // version is remembered beside them, so the next opening finds them without asking.
   const keep = async (blob: Blob) => {
-    if (!key || await file.fromDisk?.()) return
-    try { await putAttachment(key, blob) }
-    catch (error) { log.warn({ error }, 'authorized copy not kept') }
+    if (!key) return
+    try {
+      if (!await file.fromDisk?.()) await putAttachment(key, blob)
+      await rememberVersion(source, file.revision, true)
+    } catch (error) { log.warn({ error }, 'authorized copy not kept') }
   }
   if (variant !== 'shown') { const blob = await fileBlob(file); await keep(blob); return { status: 'ready', blob, link: file.revision } }
   // A preview that can take itself down shows the bytes before the server's read acknowledgement. The plaintext is kept
   // only once acknowledged; a revoked read also removes the copy an earlier open kept.
-  const { blob, acknowledged } = await shownFileBlob(file)
-  // The kept copy only saves a later download: failing to write it never takes down an acknowledged read.
-  return { status: 'ready', blob, link: file.revision, acknowledged: acknowledged.then(() => keep(blob).catch((error) => log.warn({ error }, 'acknowledged copy not kept')), async (error) => {
-    if (key && (error instanceof FileReadRevokedError || error instanceof MissingFileObjectError)) await (await attachmentCache()).delete(key)
-    throw error
-  }) }
+  const read = shownFileBlob(file).then(({ blob, acknowledged }) => ({ blob,
+    // The kept copy only saves a later download: failing to write it never takes down an acknowledged read.
+    acknowledged: acknowledged.then(() => keep(blob).catch((error) => log.warn({ error }, 'acknowledged copy not kept')), async (error) => {
+      if (key && (error instanceof FileReadRevokedError || error instanceof MissingFileObjectError)) await (await attachmentCache()).delete(key)
+      throw error
+    }) }))
+  if (key) holdShown(key, read)
+  const { blob, acknowledged } = await read
+  return { status: 'ready', blob, link: file.revision, acknowledged }
+}
+
+/**
+ * This version's bytes on this machine, if they are here: a preview's read of it in this run (finished, or on its way:
+ * joined with its progress), else this machine's disk or the copy an earlier open kept (localAttachmentCopy).
+ */
+async function bytesHere(revision: FileRevision, variant: AttachmentVariant | 'shown', progress?: FileProgress): Promise<ReadBytes | null> {
+  if (!revision.sha256) return null
+  const key = fullKey(fileReader().accountId, revision.sha256)
+  const held = variant === 'shown' ? shownReads.get(key) : undefined
+  if (held) {
+    const stop = progress ? shownProgress.listen(key, progress) : () => undefined
+    try {
+      const { blob, acknowledged } = await held.read
+      touchShown(key)
+      return { status: 'ready', blob, link: revision, acknowledged }
+    } finally { stop() }
+  }
+  const blob = await localAttachmentCopy(revision.sha256, revision.content_type)
+  return blob ? { status: 'ready', blob, link: revision } : null
+}
+
+/**
+ * A preview's bytes of a version, by account and sha: a preview of that version mounted
+ * again (its group left and come back to, its tab out of the retained window) shows them without moving or hashing 10 MB
+ * again, and one mounted while they are on their way joins that read and its progress — ❌ a second read from the start.
+ * At most SHOWN_KEEP_BYTES are kept, least recently opened dropped first (Cache Storage still has them); a read that fails,
+ * or whose acknowledgement does, is dropped.
+ */
+export const SHOWN_KEEP_BYTES = 32 * 1024 ** 2
+type ShownRead = { blob: Blob; acknowledged: Promise<void> }
+const shownReads = new Map<string, { read: Promise<ShownRead>; size?: number }>()
+const shownProgress = listeners<Parameters<FileProgress>>()
+onAccountChange(() => shownReads.clear())
+function holdShown(key: string, read: Promise<ShownRead>) {
+  const entry: { read: Promise<ShownRead>; size?: number } = { read }
+  shownReads.set(key, entry)
+  const drop = () => { if (shownReads.get(key) === entry) shownReads.delete(key) }
+  read.then(({ blob, acknowledged }) => {
+    acknowledged.catch(drop)
+    if (shownReads.get(key) !== entry) return
+    entry.size = blob.size
+    touchShown(key)
+  }, drop)
+}
+/** The most recently opened last; past SHOWN_KEEP_BYTES the oldest read ones go (a read on its way stays). */
+function touchShown(key: string) {
+  const entry = shownReads.get(key)
+  if (!entry) return
+  shownReads.delete(key)
+  shownReads.set(key, entry)
+  let total = 0
+  for (const { size } of shownReads.values()) total += size ?? 0
+  for (const [held, { size }] of shownReads) {
+    if (total <= SHOWN_KEEP_BYTES) break
+    if (size === undefined) continue
+    shownReads.delete(held)
+    total -= size
+  }
 }
 
 export type AttachmentView =
@@ -144,16 +265,26 @@ function ownPendingCopy(source: AttachmentSource, messageId: string | undefined)
   return sentFileCopy(source) ?? (messageId ? sentFileOf(messageId) ?? resumingCopy(messageId) : null)
 }
 
-/** A thumbnail's link (its size) arrives before its bytes: bubbles showing that source listen while they are mounted. */
-const linkListeners = new Map<string, Set<(link: FileRevision) => void>>()
-function listenForLink(sourceKey: string, listener: (link: FileRevision) => void): () => void {
-  let set = linkListeners.get(sourceKey)
-  if (!set) linkListeners.set(sourceKey, set = new Set())
-  set.add(listener)
-  return () => { set.delete(listener); if (!set.size) linkListeners.delete(sourceKey) }
+/**
+ * What a read says while it is on its way (a thumbnail's link, a preview's progress) goes to every surface showing that
+ * source or version, each listening while it is mounted: the read itself is shared by all of them.
+ */
+function listeners<T extends unknown[]>() {
+  const sets = new Map<string, Set<(...args: T) => void>>()
+  return {
+    listen(key: string, listener: (...args: T) => void): () => void {
+      let set = sets.get(key)
+      if (!set) sets.set(key, set = new Set())
+      set.add(listener)
+      return () => { set.delete(listener); if (!set.size) sets.delete(key) }
+    },
+    tell(key: string, ...args: T) { sets.get(key)?.forEach((listener) => listener(...args)) },
+  }
 }
+/** A thumbnail's link (its size) arrives before its bytes. */
+const linkListeners = listeners<[FileRevision]>()
 const readThumb = (_accountId: string, sourceKey: string, _metadataKey: string | null, source: AttachmentSource, metadata: FileMetadata | null) =>
-  attachmentBytes(source, 'thumb', (link) => linkListeners.get(sourceKey)?.forEach((listener) => listener(link)), metadata ?? undefined)
+  attachmentBytes(source, 'thumb', (link) => linkListeners.tell(sourceKey, link), metadata ?? undefined)
 const immutableThumb = replica({ name: 'attachment-thumb', scope: 'account', read: readThumb, fresh: Infinity, keep: THUMB_GC_MS })
 const liveThumb = replica({ name: 'attachment-thumb-live', scope: 'account', read: readThumb, keep: THUMB_GC_MS })
 
@@ -219,7 +350,7 @@ export function useAttachmentObjectUrl(source: AttachmentSource, variant: Attach
     // The placeholder stays until the bytes are decoded: no empty frame between it and the picture.
     setView((current) => current.status === 'ready' || current.status === 'pending' ? current : { status: 'loading' })
     const onLink = (link: FileRevision) => alive && setView((current) => current.status === 'ready' || current.status === 'pending' ? current : { status: 'loading', link })
-    const stopListening = variant === 'thumb' ? listenForLink(sourceKey, onLink) : () => undefined
+    const stopListening = variant === 'thumb' ? linkListeners.listen(sourceKey, onLink) : () => undefined
     ;(variant === 'thumb' ? sessionThumb(source, metadata) : attachmentBytes(source, variant, onLink)).then(
       bytes => showBytes(bytes, replacing),
       async () => {

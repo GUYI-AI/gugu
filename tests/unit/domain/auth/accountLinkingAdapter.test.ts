@@ -21,7 +21,7 @@ vi.mock('../../../../apps/desktop/src/lib/sessionCoordinator', () => ({ sessionC
   getSnapshot: () => ({ session: m.session }), getAccessToken: () => m.session?.access_token ?? null, refresh: async () => {}, beginInteractiveLogin: () => 1,
   acceptInteractiveSession: (...args: unknown[]) => m.accept(...args), logout: () => m.logout(),
 } }))
-vi.mock('../../../../apps/desktop/src/lib/authLogout', () => ({ logoutAndRelaunch: async (onSignedOut?: () => void) => {
+vi.mock('../../../../apps/desktop/src/lib/authLogout', () => ({ logout: async (onSignedOut?: () => void) => {
   const result = await m.logout()
   if (result.success) onSignedOut?.()
   return result

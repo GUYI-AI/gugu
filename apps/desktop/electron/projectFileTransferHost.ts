@@ -8,7 +8,7 @@ type Pending = { id: string; item_id: string; version: number; chat_id: string; 
 
 /** Why a transfer failed, as a fixed reason: a file system error names a local path, so its message is never kept. */
 function failureReason(error: unknown) {
-  if (error instanceof AttachmentsError) return `${error.route} ${error.status} ${error.code}`
+  if (error instanceof AttachmentsError) return `${error.route} ${error.status} ${error.code}: ${error.reason}`
   if (!(error instanceof Error)) return 'unknown'
   const code = (error as NodeJS.ErrnoException).code
   return typeof code === 'string' ? code : /^[\w -]+$/.test(error.message) ? error.message : error.name

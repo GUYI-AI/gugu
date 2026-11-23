@@ -5,7 +5,7 @@ import { ReferralLinkPrompt } from './components/referralPreview/ReferralLinkPro
 import { watchReferralLinks } from './lib/referral'
 import { googleLogin } from './lib/googleLogin'
 import { LoginMethodChangeNotice } from './components/LoginMethodChangeNotice'
-import { logoutAndRelaunch } from './lib/authLogout'
+import { logout } from './lib/authLogout'
 import { MainLayout } from './layouts/MainLayout'
 import { AuthContext, type AuthUser } from './store/auth'
 import { ChatProvider } from './store/chat'
@@ -117,7 +117,7 @@ export default function App() {
     loading,
     status: session.status,
     updateUser: sessionCoordinator.updateUser,
-    logout: logoutAndRelaunch,
+    logout,
   }
   useEffect(() => {
     document.title = platform.documentTitle

@@ -7,7 +7,7 @@ import { MotionConfig } from 'framer-motion';
 // 会话页是独立文档,壳里装的垫片不跨文档:非安全上下文(http://<ip>)下 crypto.randomUUID 缺席会让这里启动即白。
 import '@/lib/insecure-context-shims';
 installLocalRendererDiagnostics();
-import { hasEntryRoot, renderEntryRoot } from '@/lib/renderer-entry-root';
+import { hasEntryRoot, renderEntryRoot, unmountEntryRoot } from '@/lib/renderer-entry-root';
 import { chatListRestored } from '@/lib/chatSummariesBridge';
 import { installRemoteHostSessionpageBridges } from './features/remote-hosts/install-sessionpage-bridges';
 import './lib/install-sessionpage-history-bridge';
@@ -78,7 +78,7 @@ import { installSessionTabViews, prewarmSessionTabViews } from './features/sessi
 import { appState } from './lib/stores/app-state';
 import { restoreSavedScreenSessionLocations, savedScreenSessionIds } from './features/sessions/restore-session-projects';
 import { SessionLocalizationProvider } from './localization/localization-provider';
-import { reportSessionRendererBootFailure } from '@/session/shared/lib/session-renderer-boot';
+import { publishSessionPageEntry } from '@/session/shared/lib/session-page-entry';
 
 declare global {
   interface Window {
@@ -106,8 +106,7 @@ async function settleOptional<T>(promise: Promise<T> | null): Promise<T | null> 
 /**
  * 把本页这棵树渲染进它的 root。
  *
- * 单独拆出来是因为它有**两个**调用点:首次 bootstrap 的末尾,以及热更新重新求值时的快路径。
- * 后者只重渲染、不重跑一次性接线 —— 见 `bootstrap()` 开头那段。
+ * 两个调用点:`mountSessionPage` 的末尾,以及热更新重新求值时的快路径(只重渲染、不重跑一次性接线,见 `wireProcess`)。
  */
 function renderSessionTree(container: HTMLElement, mountEl: HTMLElement | undefined): void {
   renderEntryRoot(
@@ -137,7 +136,11 @@ function renderSessionTree(container: HTMLElement, mountEl: HTMLElement | undefi
   );
 }
 
-async function bootstrap() {
+/**
+ * Process lifetime: wiring that is the same whichever account is signed in (bridges, visibility, the embed view,
+ * invalidation and extension wiring). Runs once per evaluation of this module.
+ */
+function wireProcess(): void {
   // Install the shared document listeners before any animated surface mounts.
   isAnimationWindowVisible();
   // Portals (Base UI dialogs/popovers/tooltips + raw createPortal) must stay inside the shadow
@@ -150,9 +153,8 @@ async function bootstrap() {
   installSessionTabViews();
   requestIdleCallback(() => prewarmSessionTabViews());
 
-  // ⚠️ 热更新会**重新执行整个入口模块** ⇒ `bootstrap()` 会被跑第二遍。下面那一整段是**一次性**
-  // 接线(可见性桥、命令提供者、缓存失效桥、扩展注册、导航/侧栏快照恢复),跑第二遍会挂重复监听,
-  // 并把开发者手上的导航位置拽回快照。已经有 root 就说明这一遍是热更新,只重渲染。
+  // ⚠️ 热更新会**重新执行整个入口模块** ⇒ 本函数会被跑第二遍。下面那一整段是**一次性**
+  // 接线(可见性桥、缓存失效桥、扩展注册),跑第二遍会挂重复监听。已经有 root 就说明这一遍是热更新,只重渲染。
   // 入口脚本是 `<script type="module">`(defer),模块执行时文档已解析完 ⇒ 这里取 `#root` 安全。
   const container = mountEl ?? (document.getElementById('root') as HTMLElement);
   // #4602: 会话启动失败账本的读端交给宿主 —— 对话页那棵树据此在当前 DM 里把 hydrate 失败显形。
@@ -173,6 +175,7 @@ async function bootstrap() {
   installRemoteHostSessionpageBridges(window, () => appState.navigation.navigate('new-session'));
   if (hasEntryRoot(container)) {
     renderSessionTree(container, mountEl);
+    hmrReevaluated = true;
     return;
   }
   // @@@task-fusion (#2802) — 拆掉 shadow root 后浮层不再需要重定向:document.body 就在同一棵
@@ -225,17 +228,6 @@ async function bootstrap() {
   wireExternalLinkRequests();
   // 屏上的会话报给主进程:闲置回收不停人正看着的会话(spec idle-reclaim「不在屏上」)。
   wireSessionsOnScreenReport();
-
-
-  // View-state/settings restoration is additive. Do not hold the only React mount behind a
-  // non-critical RPC: a stale KV record, a first-run settings read, or a project mount failure
-  // must leave the task surface usable and visible rather than an endless host skeleton.
-  // Project loading is store-owned and may continue after the first render; it must never hold
-  // the only React mount behind a slow database or filesystem call.
-  void appState.projects.load().catch((error: unknown) => {
-    log.warn('Project bootstrap failed:', error);
-  });
-
   // Extensions register their tab providers off the critical path (#2374): a tab whose provider
   // has not arrived yet is held as a placeholder and promoted in place once it registers, so the
   // session page never waits on an inventory read to become usable. The providers follow the
@@ -252,8 +244,27 @@ async function bootstrap() {
   wirePromptChanges();
   // Synchronous on purpose: main refuses to deliver an extension's action until
   // this side has declared itself ready, so an extension that acts the instant
-  // its surface loads must not race the bootstrap's awaits.
+  // its surface loads must not race the restore's awaits.
   wireExtensionHostActions();
+}
+
+/**
+ * Account lifetime: the signed-in account's view (navigation, screen, sidebar, its stored conversations), then the tree.
+ * The host mounts the page when an account's product mounts and unmounts it when that product goes (sign-out, a
+ * lost session): the next account gets a fresh tree and a fresh restore, never the previous account's.
+ */
+async function mountSessionPage(): Promise<void> {
+  const mountEl = window.__EMDASH_MOUNT__;
+  const container = mountEl ?? (document.getElementById('root') as HTMLElement);
+  // View-state/settings restoration is additive. Do not hold the only React mount behind a
+  // non-critical RPC: a stale KV record, a first-run settings read, or a project mount failure
+  // must leave the task surface usable and visible rather than an endless host skeleton.
+  // Project loading is store-owned and may continue after the first render; it must never hold
+  // the only React mount behind a slow database or filesystem call.
+  void appState.projects.load().catch((error: unknown) => {
+    log.warn('Project bootstrap failed:', error);
+  });
+
   const results = await Promise.allSettled([
     // Main checks the saved view against its sessions (an archived one is not reopened); the rest of the view state is
     // in memory since preload (view-state-cache).
@@ -273,11 +284,14 @@ async function bootstrap() {
   const restoreState = restoreResult.status === 'fulfilled' ? restoreResult.value : null;
   restoreSavedScreenSessionLocations(restoreState?.locations ?? []);
 
-  setupNavigationGuards();
+  if (!commandsReady) {
+    setupNavigationGuards();
+    setupAppCommandProvider();
+    setupExtensionCommandProvider();
+    setupViewCommandProvider();
+    commandsReady = true;
+  }
   if (savedNav) appState.navigation.restoreSnapshot(savedNav);
-  setupAppCommandProvider();
-  setupExtensionCommandProvider();
-  setupViewCommandProvider();
   if (sidebarResult) {
     appState.sidebar.restoreSnapshot(sidebarResult as Partial<SidebarSnapshot>);
   }
@@ -289,7 +303,19 @@ async function bootstrap() {
 // 它落地后自己广播一次重测,见 terminal-font-ready.ts。
 watchTerminalFontReady();
 
-bootstrap().catch((error: unknown) => {
-  log.error('Renderer bootstrap (embedded) failed:', error);
-  reportSessionRendererBootFailure(error);
-});
+/** The account's product went away: drop its tree. The next `mountSessionPage` starts from a fresh root. */
+function unmountSessionPage(): void {
+  const container = window.__EMDASH_MOUNT__ ?? document.getElementById('root');
+  if (container) unmountEntryRoot(container);
+}
+
+let commandsReady = false;
+let hmrReevaluated = false;
+wireProcess();
+publishSessionPageEntry({ mountSessionPage, unmountSessionPage });
+// Opened on its own (session-embedded.html, no host): there is no account lifetime around it, so it mounts at once.
+if (!window.__EMDASH_MOUNT__ && !hmrReevaluated) {
+  mountSessionPage().catch((error: unknown) => {
+    log.error('Renderer bootstrap (embedded) failed:', error);
+  });
+}

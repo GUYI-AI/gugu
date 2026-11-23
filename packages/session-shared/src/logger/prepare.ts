@@ -49,6 +49,9 @@ export function prepareFields(value: unknown, seen = new WeakSet<object>()): unk
     if (seen.has(value)) return '[Circular]';
     return serializeError(value, seen);
   }
+  // Bytes are said by their size: walked as an object, each byte became a field (512 KB = half a million of them).
+  if (ArrayBuffer.isView(value)) return `[${value.constructor.name} ${value.byteLength} bytes]`;
+  if (value instanceof ArrayBuffer) return `[ArrayBuffer ${value.byteLength} bytes]`;
   if (Array.isArray(value)) {
     if (seen.has(value)) return '[Circular]';
     seen.add(value);

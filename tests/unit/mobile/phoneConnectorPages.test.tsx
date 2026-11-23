@@ -18,6 +18,11 @@ import { freshReplicaAccount } from '../../support/replicaAccount'
 import { readableAssistantPanelCollection } from '@gugu/core/cloud/assistantPanelFiles'
 import type { AssistantPanelDomain } from '@gugu/core/cloud/assistantPanel'
 import { assistantPanel } from '../../../apps/desktop/src/components/assistant/assistant-panel-replica'
+import { queryClient } from '../../../apps/desktop/src/lib/replica'
+
+// Panel reads retry twice before a failure is drawn; react-query's default backoff (1 s, then 2 s) is not what these
+// cases prove, so the retries run back to back.
+queryClient.setDefaultOptions({ queries: { ...queryClient.getDefaultOptions().queries, retryDelay: 1 } })
 
 // #7199 手机连接应用的详情页与连接页:真目录(二十家)+ 假的助理的家(rpc 记下调用),渲染出来点一遍。
 // 判据落在行为上:点了什么就发了什么调用、连上后重读状态、没断成就留在确认卡上。

@@ -8,6 +8,8 @@ import { assertSameTeamFunding, assertTeamTaskActor, assertTeamTaskSession, team
 import { teamAccountTokenHint } from '../shared/team-account-claims'
 import { teamCreditStopReason, type TeamCreditStopReason } from '@gugu/session-core/session-record/team-credits'
 import { createTaskPayerStore } from './task-payer-store'
+import { hostCopy } from './host-locale-store'
+import { hostText } from '../shared/host-localization'
 import { createTeamIssueIntentStore, type TeamIssueBody, type TeamIssueSlot } from './team-issue-intents'
 import {
   agentModelSelectionForProtocol,
@@ -228,8 +230,8 @@ export async function assertAgentModelSelectionOpen(input: {
   selection: AgentModelSelection
 }): Promise<void> {
   if (input.selection.source !== 'platform') return
-  if (!input.authProvider) throw new Error('Agent 运行时尚未连接')
-  if (!input.engineId) throw new Error('这个 Agent 的引擎不支持咕咕提供的模型')
+  if (!input.authProvider) throw new Error(hostCopy().hostErrors.agentRuntimeNotConnected)
+  if (!input.engineId) throw new Error(hostCopy().hostErrors.engineWithoutGuguModels)
   // 协议**按引擎重新算**,❌ 不拿传进来的那份去比。传进来的可能是一条存下来的旧选择,而协议是
   // 派生值:#5824 改了几家 harness 的线协议之后,那一栏在所有旧记录里都是过期的,照旧比对会把
   // 一个完全正常的模型判成「尚未开放」。真正要问的是**这个模型在这个引擎的协议上有没有上架**。
@@ -238,10 +240,10 @@ export async function assertAgentModelSelectionOpen(input: {
   const models = await listPlatformModels(input.authProvider)
   const model = models.find((candidate) => candidate.id === selection.modelId)
   if (!model?.enabled || !model.protocols.includes(selection.protocol)) {
-    throw new Error(`这个平台模型尚未对当前 Agent 开放（${selection.modelId} / ${selection.protocol}）`)
+    throw new Error(hostText(hostCopy().hostErrors.guguModelNotOpen, { model: selection.modelId, protocol: selection.protocol }))
   }
   // 存成 Agent 默认也一样:免费档存一个会员模型,下一次开会话只会在签发那一步被拒(#7056)。
-  if (model.requiresMembership) throw new Error(`咕咕 ${model.displayName} 需要开通会员`)
+  if (model.requiresMembership) throw new Error(hostText(hostCopy().hostErrors.membershipRequired, { model: model.displayName }))
 }
 
 export async function listPlatformModels(authProvider: RuntimeAuthProvider): Promise<PlatformModelCatalogItem[]> {

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { applyLocalePreference } from '@/i18n/runtime';
 import { zhCNSharedMessages } from '@renderer/localization/messages-shared';
 import { zhCNSubscriptionMessages } from '@renderer/localization/messages-subscriptions';
 import { formatPercent, quotaReading, payerLine, planLabel, planNotes, unavailableText, usedText, windowLabel } from './subscription-view';
@@ -12,6 +13,10 @@ const translate = (key: string, values?: Record<string, unknown>) => {
   return template.replace(/\{(\w+)\}/g, (_, name: string) => String(values?.[name] ?? ''));
 };
 const t = translate as Parameters<typeof payerLine>[1];
+
+// Plan names are vendor names (vendorName): they follow the UI language the catalog above is in.
+beforeAll(() => applyLocalePreference('zh-CN', false));
+afterAll(() => applyLocalePreference('system', false));
 
 describe('「订阅」页一行里的字', () => {
   it('谁在付钱 + 套餐;档位读取失败就明说', () => {
