@@ -58,6 +58,25 @@ function updater(isBusy: () => boolean, verifyBoot: (binary: string) => Promise<
 }
 
 describe('server self-upgrade resolves its target at the moment it switches', () => {
+  it('announces the accepted restart in a heartbeat before it exits', async () => {
+    published = '0.2.53-beta.62.1'; stage(published)
+    const { control, shutdown, stop } = updater(() => true)
+    await vi.advanceTimersByTimeAsync(60_000)
+    let heartbeat!: () => void
+    const record = () => JSON.parse(fs.readFileSync(path.join(home, 'data/server-update.json'), 'utf8'))
+    const seen: unknown[] = []
+    const announce = vi.fn(() => { seen.push(record()); return new Promise<void>(resolve => { heartbeat = resolve }) })
+    control.bindRuntime({ isBusy: () => true, shutdown, announce })
+    const request = control.restartConfirmed(published, true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(announce).toHaveBeenCalledOnce()
+    expect(seen[0]).toMatchObject({ state: 'switching', version: published, lastOutcome: { kind: 'waiting', request } })
+    expect(shutdown).not.toHaveBeenCalled()
+    heartbeat()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(shutdown).toHaveBeenCalledOnce()
+    stop()
+  })
   it('keeps a prepared target and confirmation after a regular feed refresh fails', async () => {
     published = '0.2.53-beta.62.1'; stage(published)
     const { control, shutdown, stop } = updater(() => true)

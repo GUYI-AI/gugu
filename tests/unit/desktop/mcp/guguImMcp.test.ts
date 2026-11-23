@@ -22,6 +22,11 @@ import {
   dollarRunBoundaryFixtures,
   markdownStructureBoundaryFixtures,
 } from '../lib/markdownMathDelimiterRunFixtures'
+import { drawImagePreviews } from '../../../../packages/core/src/cloud/attachmentsApi'
+
+// Main registers its image preview drawer at boot; here it never finishes one, so only the send's own requests are seen.
+drawImagePreviews({ draw: () => new Promise(() => {}), warn: () => {} })
+
 type Call = unknown[]
 // 工作区条目 id 是 uuid(库里按主键查,文件服务的 /:id 也拿它拼),桩也用真 uuid。
 const W_DOC = '0d000000-0000-4000-8000-000000000001'

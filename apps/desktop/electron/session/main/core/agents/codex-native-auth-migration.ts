@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { codexOAuthIdentity } from '@gugu/core/local/codex-native-auth.mjs';
 import { assertCodexFileCredentialStore, codexAuthIdentity } from './codex-auth-slot';
 
@@ -15,7 +15,7 @@ export type CodexReferenceCommit = {
 type Move = { path: string; destination: string; hash: string; discard: boolean };
 type Journal = { version: 1; commit: CodexReferenceCommit; moves: Move[] };
 const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
-const inside = (root: string, path: string) => { const rel = relative(root, path); return rel !== '' && !isAbsolute(rel) && rel !== '..' && !rel.startsWith('../'); };
+const inside = (root: string, path: string) => { const rel = relative(root, path); return rel !== '' && !isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`); };
 
 async function document(path: string): Promise<{ text: string; identity: string | null } | null> {
   try {

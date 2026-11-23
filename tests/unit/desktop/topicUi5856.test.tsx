@@ -885,6 +885,13 @@ describe('会话列表:话题是来源线的子行,不是一行平级的会话',
     }
   })
 
+  it('来源线底下的子行：置顶的话题排在没置顶的前面，再按时间', async () => {
+    const { groupTopicsBySource } = await nest()
+    const rows = [chat('g1'), topicRow('new', 'g1', { last_message_at: '2026-11-03T00:00:00Z' }), topicRow('mid', 'g1', { last_message_at: '2026-11-02T00:00:00Z' }), topicRow('old', 'g1', { last_message_at: '2026-11-01T00:00:00Z', is_pinned: true })]
+    const nesting = groupTopicsBySource(rows as never, all, byTime as never, allListed)
+    expect(nesting.bySource.get('g1')?.map((r) => r.id)).toEqual(['old', 'new', 'mid'])
+  })
+
   it('溯源指针缺失的话题不归到任何一条线下（❌ 也不因此凭空消失）', async () => {
     const { groupTopicsBySource, isTopLevelChatRow } = await nest()
     const orphan = topicRow('t-orphan', 'g1', { source_chat_id: null })

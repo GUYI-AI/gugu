@@ -65,8 +65,9 @@ async function mountWorkspace(rename?: (name: string) => void) {
   workspace.setViewActive(true);
   const openWindow = vi.fn();
   workspace.setWindowOpener((id) => id === workspace.primaryChatTabId ? openWindow : null);
-  await act(() => view.render(<WorkspaceDrag layout={workspace}>
-    <div style={{ width: 800, height: '100%' }} data-chat-workspace-test-main="">
+  // `shown: false` takes the view away; drawn again, it mounts from nothing on the same store (a page re-mounted).
+  const draw = (shown = true) => view.render(<WorkspaceDrag layout={workspace}>
+    {shown && <div style={{ width: 800, height: '100%' }} data-chat-workspace-test-main="">
       <PaneTreeView layout={workspace} chatChrome={{
         actions: <TabBarActionRow atWindowEdge={false}><span>聊天操作</span></TabBarActionRow>,
         addTab: <Button size="icon-sm" variant="ghost" aria-label="打开测试工具" onClick={() => workspace.open('tool', { id: 'file' }, { from: null, intent: 'newTab' })}><Plus className="size-3.5" /></Button>,
@@ -74,16 +75,17 @@ async function mountWorkspace(rename?: (name: string) => void) {
         const group = workspace.groups.find((pane) => pane.paneId === paneId)!;
         return <PaneProvider group={group} isFocusedPane={group === workspace.groups.find((candidate) => candidate.paneId === workspace.activePaneId)}><PaneContent part={part} /></PaneProvider>;
       }} />
-    </div>
+    </div>}
     <aside style={{ width: 380, height: '100%' }} data-chat-workspace-test-neighbour="">另一条聊天</aside>
-  </WorkspaceDrag>));
+  </WorkspaceDrag>);
+  await act(() => draw());
   const inside = (selector: string) => view.container.querySelector<HTMLElement>(selector);
   const width = (element: HTMLElement | null | undefined) => element?.getBoundingClientRect().width ?? 0;
   const mode = (value: string) => until(`shows the ${value} chat header`, () => !!inside(`[data-chat-workspace-header="${value}"]`));
   const chat = () => inside('[data-chat-workspace-test-body="conversation"]');
   const tool = () => inside('[data-chat-workspace-test-body="tool"]');
   const neighbour = () => inside('[data-chat-workspace-test-neighbour]')!;
-  return { inside, width, mode, chat, tool, neighbour, workspace, openWindow };
+  return { inside, width, mode, chat, tool, neighbour, workspace, openWindow, draw };
 }
 
 it('renames the standalone chat title on double-click only, and cancels with Escape', async () => {
@@ -186,6 +188,28 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   await until('the chat fills its block after the last tool closes', () => width(chat()), (size) => size === 800);
   // It goes out on the track, live (@@@closing-pane), and is gone once it lands.
   await until('the closed tool is gone', () => !tool());
+});
+
+it('mounts a workspace whose tools are hidden with the chat already at full width, ❌ springing the tools shut', async () => {
+  const { width, mode, chat, draw } = await mountWorkspace();
+  await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
+  await mode('split');
+  await untilStable('the split comes to rest', () => width(chat()));
+  await userEvent.click(page.getByRole('button', { name: '隐藏标签页' }));
+  await mode('hidden');
+  await until('the chat uses the full width of its own block', () => width(chat()), (size) => size === 800);
+
+  // Its page taken away and drawn again from nothing (a block re-mounted): the hidden tools are where they were, from the
+  // first frame.
+  await act(() => draw(false));
+  await new Promise(requestAnimationFrame);
+  await act(() => draw());
+  const chatWidths: number[] = [];
+  for (let frame = 0; frame < 30; frame += 1) {
+    chatWidths.push(Math.round(width(chat())));
+    await new Promise(requestAnimationFrame);
+  }
+  expect(chatWidths.every((size) => size === 800), chatWidths.join(' ')).toBe(true);
 });
 
 it('keeps the conversation as the first tab of the strip however narrow, and keeps both pages alive', async () => {

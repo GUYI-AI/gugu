@@ -36,6 +36,7 @@ import { PROJECT_FILE_STREAM } from './projectFileHost'
 import { createWorkingCopyStreamer } from './session/main/core/extensions/working-copy-files'
 import { MACHINE_FILE_STREAM, setMachineFileStreams } from './session/main/core/files/machine-file-streams'
 import { remoteFileStreams } from './projectFileSsh'
+import { nodeImagePreview } from '@gugu/core/local/files/nodeImagePreview'
 import { nativeImagePreview } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { localCopy } from '@gugu/core/local/files/fileSnapshots'
@@ -2131,7 +2132,7 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
     openSystemSettings: (url) => shell.openExternal(url),
     log,
   })
-  runtime.onGrantsChanged(() => deviceRuntimeHost?.notifyDeviceActionsChanged())
+  runtime.onGrantsChanged(() => { void deviceRuntimeHost?.notifyHostInfoChanged() })
   return (deviceActionsRuntimeInstance = runtime)
 }
 
@@ -2534,8 +2535,11 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
 // A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
 setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
-// Every image main uploads (the composer's, an agent's, an App's, a project publication) offers this preview.
-drawImagePreviews({ draw: nativeImagePreview, warn: error => createLogger('files/image-preview').warn({ error: String(error) }, 'Image preview offer failed') })
+// Every image main uploads (the composer's, an agent's, an App's, a project publication) offers a preview. The decoder
+// belongs to the runtime: the desktop is Electron and has nativeImage; the headless server is plain Node (its nativeImage
+// is a shim that cannot decode) and draws with sharp. sharp is never loaded into Electron: its libvips clashes with the
+// glib Electron loads on Linux.
+drawImagePreviews({ draw: process.versions.electron ? nativeImagePreview : nodeImagePreview, warn: error => createLogger('files/image-preview').warn({ error: String(error) }, 'Image preview offer failed') })
 const attachmentUploads = createAttachmentUploadHost({
   account: async () => {
     const auth = await desktopAuthProvider().getAuth()
@@ -2570,11 +2574,14 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
 })
 /**
  * The one social bridge every session surface wires (an ACP session, its side-chat fork, a terminal session): the same
- * file resolver and publisher, uploads and session actions, so no surface loses a tool another has.
+ * file resolver and publisher, uploads and session actions, so no surface loses a tool another has. `ownerReads` says what
+ * the owner reads of the session: its record (`session`), its terminal (`terminal`), or neither (a side chat).
  */
-function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAction: BuildSocialBridgeDeps['runHostAction']): BuildSocialBridgeDeps {
+function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAction: BuildSocialBridgeDeps['runHostAction'],
+  ownerReads?: BuildSocialBridgeDeps['ownerReads']): BuildSocialBridgeDeps {
   return {
     host,
+    ...(ownerReads ? { ownerReads } : {}),
     resolveFile: desktopFiles.resolve,
     publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
     attachments: attachmentUploads,
@@ -3594,6 +3601,7 @@ if (isSingleServerRun()) singleServerUpdater()?.bindRuntime({
   isBusy: () => serverVersionSwitchActivity()?.busy ?? true,
   versionSwitchActivity: serverVersionSwitchActivity,
   beforeSwitch: () => { stopServerActivity(); return () => startServerActivity() },
+  announce: () => deviceRuntimeHost?.notifyHostInfoChanged() ?? Promise.resolve(),
   shutdown: () => {
     noteExitReason(app.getPath('userData'), 'update')
     exitOnSignal('SIGTERM', EXIT_RESTART)
@@ -6044,8 +6052,7 @@ app.whenReady().then(async () => {
           // 它们的宿主侧注入已经闭嘴,这份声明是模型唯一的来路。
           model: sessionBundleModelFor(info.providerId, 'acp', processConfigPlatform, info.fastMode),
           socialBridgeDeps: {
-            ...sessionSocialBridge(primaryGuguMcpHost, info.sessionId, runAction),
-            ownerReadsSession: true,
+            ...sessionSocialBridge(primaryGuguMcpHost, info.sessionId, runAction, 'session'),
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
               ...assistantWorkBinding(persistedSessionId, info.cwd, assistantHomeKind(process.env), provisioned.guguAgentUserId),
               currentInput: () => emdashBridge?.readCurrentActivityInput(persistedSessionId) ?? Promise.resolve(undefined),
@@ -6197,7 +6204,7 @@ app.whenReady().then(async () => {
       },
       socialBridge(info, host) {
         const sessionContext = ptySessionCallerContext(info)
-        return sessionSocialBridge(host, info.sessionId, (action, auth, signal) => runLocalSessionAction(auth, sessionContext, action, signal))
+        return sessionSocialBridge(host, info.sessionId, (action, auth, signal) => runLocalSessionAction(auth, sessionContext, action, signal), 'terminal')
       },
       platformRecovery: () => sessionpagePlatformRecovery,
       recordFailedSessionDirectMessage(params, message, error) {
