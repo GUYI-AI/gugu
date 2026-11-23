@@ -18,6 +18,10 @@ import {
   pickMacDmgFile,
   shouldUseDmgPath
 } from '../../../../apps/desktop/electron/macDmgUpdater'
+import { HostLocaleStore, installHostLocaleStore } from '../../../../apps/desktop/electron/host-locale-store'
+
+// The update errors are host copy: the person reads them in the update banner.
+beforeEach(() => installHostLocaleStore(new HostLocaleStore(() => ['en-US'])))
 
 describe('shouldUseDmgPath — 两条判据各挡一种静默失败', () => {
   const dmgOnly = [{ url: 'gugu-1.0-x64.dmg' }, { url: 'gugu-1.0-arm64.dmg' }]
@@ -149,7 +153,9 @@ describe('#663 review 回归:sha512 空串拒绝 + 未知架构 fail loud', () =
     }
   })
 
-  it('unsupported arch → throw (no silent x64 fallback)', () => {
-    expect(() => pickMacDmgFile([{ url: 'gugu-1.0-x64.dmg' }], 'ia32')).toThrow(/不支持的架构/)
+  it('unsupported arch → throw (no silent x64 fallback), in the host language', () => {
+    expect(() => pickMacDmgFile([{ url: 'gugu-1.0-x64.dmg' }], 'ia32')).toThrow("This Mac's architecture (ia32) is not supported")
+    installHostLocaleStore(new HostLocaleStore(() => ['zh-CN']))
+    expect(() => pickMacDmgFile([{ url: 'gugu-1.0-x64.dmg' }], 'ia32')).toThrow('不支持此 Mac 的架构 ia32')
   })
 })

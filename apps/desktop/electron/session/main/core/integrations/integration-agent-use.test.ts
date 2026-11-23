@@ -1,4 +1,9 @@
 import { expect, it, vi } from 'vitest';
+import { hostCatalog } from '../../../../../shared/host-localization';
+import { setSessionHostCopy } from '../host-copy';
+
+// The host injects its copy at startup; these cases read the Chinese host's.
+setSessionHostCopy(hostCatalog('zh-CN').sessionHost);
 
 /**
  * 资源库按「agent 能不能直接用」分组(11-07 资源库盘点):Jira、GitLab 这类 issue 系统与 GitHub 连上以后

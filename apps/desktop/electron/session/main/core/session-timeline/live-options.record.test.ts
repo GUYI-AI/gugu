@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { hostCatalog } from '../../../../../shared/host-localization';
+import { setSessionHostCopy } from '../host-copy';
+
+// The host injects its copy at startup; these cases read the Chinese host's.
+setSessionHostCopy(hostCatalog('zh-CN').sessionHost);
 
 /**
  * 手机经宿主改会话选项,与会话页 composer 同一条纪律:provider 确认 `applied` 之后写回记录,

@@ -4,6 +4,11 @@ import path from 'node:path';
 import { integrationPluginRegistry } from '@gugu/session-plugins/integrations';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { installedCliTool } from './cli/cli-tool-installer';
+import { hostCatalog } from '../../../../../shared/host-localization';
+import { setSessionHostCopy } from '../host-copy';
+
+// The host injects its copy at startup; these cases read the Chinese host's.
+setSessionHostCopy(hostCatalog('zh-CN').sessionHost);
 
 const store = vi.hoisted(() => ({
   accounts: new Map<string, unknown>(),
