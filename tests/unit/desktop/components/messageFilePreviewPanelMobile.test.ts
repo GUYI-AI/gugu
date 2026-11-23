@@ -56,6 +56,16 @@ describe('手机文件预览的出口', () => {
     expect(bar?.max).toBe(1)
   })
 
+  it('a read not yet slow (bytes coming from this machine) says nothing while it is pending', async () => {
+    harness = createReactHarness()
+    await harness.render(createElement(MessageFilePreviewPanel, {
+      file, kind: 'html', content: null, loading: true, loadingQuiet: true, onClose: vi.fn(), mobile: false,
+    }))
+    const status = harness.container.querySelector('[data-testid="message-file-preview-loading"]')
+    expect(status?.hasAttribute('data-quiet')).toBe(true)
+    expect(status?.textContent).toBe('')
+  })
+
   it('桌面右栏:页头照旧是标题 + 右上关闭', async () => {
     const { onClose, container } = await render(false)
     expect(container.querySelector('[data-slot="pane-header"]')).toBeNull()
