@@ -25,7 +25,7 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
   // Built-ins first, then Apps, then the door to add one: one row of tiles, the same tile as Recent.
   const ordered = [...actions.filter((item) => item.section !== 'extensions'), ...actions.filter((item) => item.section === 'extensions')];
   return (
-    <div className="h-full overflow-auto bg-tab-strip px-6 py-8 [container-type:inline-size]" data-workspace-new-tab-page="">
+    <div className="h-full overflow-auto bg-tab-face px-6 py-8 [container-type:inline-size]" data-workspace-new-tab-page="">
       <div className="mx-auto flex max-w-[720px] flex-col gap-9">
         <div className={START_TILE_GRID}>
           {ordered.map((item) => <StartTile key={item.id} icon={item.icon} label={item.label} disabled={item.disabled}
