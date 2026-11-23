@@ -165,6 +165,8 @@ it('a converted third-party model is selectable and tagged with its vendor; an I
   await userEvent.click(page.getByTestId('composer-model-trigger'));
   await until('the tags render', () => document.querySelectorAll('[data-slot=composer-model-tag]').length === 2);
   expect([...document.querySelectorAll('[data-slot=composer-model-tag]')].map((tag) => tag.textContent)).toEqual(['deepseek', 'bigmodel']);
-  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('deepseek');
+  // The trigger names only the model: nothing of the vendor besides the model's own label.
+  expect(document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent).toBe('deepseek-v4-flash');
+  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent?.replace('deepseek-v4-flash', '')).not.toContain('deepseek');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('·');
 });
