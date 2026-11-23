@@ -18,6 +18,7 @@ type Internals = {
   session: { activeTurn: ReturnType<typeof replica<TranscriptTurn | null>> } | null;
   _historyGeneration: number;
   _committedFrameId: string | null;
+  _endedBeforeLive: ReadonlySet<string>;
   _openHistory(generation: number): Promise<void>;
 };
 const stores: InstanceType<typeof AcpChatStore>[] = [];
@@ -72,6 +73,28 @@ it('leaves the running turn to the live session and keeps a committed one until 
   host.show([turn('a', 0, 'one'), turn('s:node-7', 2, 'go')]);
   expect(store.chatState.transcript.state.activeTurnSnapshot).toBeNull();
   expect(committedIds(store)).toEqual(['a', 's:node-7']);
+});
+
+it('draws the running turn once when the record already holds its own copy of it', async () => {
+  // The record numbers the turn itself (another turn id) and is ahead of the live session; the agent's reply id is shared.
+  const reply = (id: string): TranscriptTurn['items'][number] => ({ kind: 'message', id: `${id}:message:m-1`, seq: 1, role: 'assistant', text: 'ok', at: 150 });
+  const live = { ...turn('runtime-1', 1, 'go'), items: [...turn('runtime-1', 1, 'go').items, reply('runtime-1')] };
+  const { store, internal } = await opened([turn('a', 0, 'one')]);
+  internal.session = { activeTurn: replica<TranscriptTurn | null>(live) };
+  host.show([turn('a', 0, 'one'), { ...turn('s:node-7', 1, 'go'), items: [...turn('s:node-7', 1, 'go').items, reply('s:node-7')] }]);
+  expect(committedIds(store)).toEqual(['a']);
+  expect(store.chatState.transcript.state.activeTurnSnapshot?.id).toBe('runtime-1');
+});
+
+it('keeps an earlier turn that opens with the same words as the running one', async () => {
+  // `a` had ended when the running turn started (taken as it starts, `_endedBeforeLive`); the record's copy came after.
+  const live = turn('runtime-2', 1, 'ok');
+  const ended = { ...turn('a', 0, 'ok'), outcome: { kind: 'done' as const } };
+  const { store, internal } = await opened([ended]);
+  internal._endedBeforeLive = new Set(['a']);
+  internal.session = { activeTurn: replica<TranscriptTurn | null>(live) };
+  host.show([ended, turn('s:node-8', 1, 'ok')]);
+  expect(committedIds(store)).toEqual(['a']);
 });
 
 it('puts an owner notification made by the running turn into that turn', async () => {

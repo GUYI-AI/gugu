@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { TranscriptFileRef } from './models/turn-files';
+import { HOST_PROMPT_HASH } from './native-prompt-key.ts';
 
 /**
  * The text an agent records for a prompt: its text blocks (resources as their text) joined by line, as Hermes submits it
@@ -18,8 +19,7 @@ export function nativePromptText(blocks: unknown): { text: string; images: { dat
   return { text: texts.join('\n'), images };
 }
 
-// The key predates Codex receipts: stored Hermes rows already carry it.
-export const HOST_PROMPT_HASH = 'gugu.hermesNativePromptSha256';
+export { HOST_PROMPT_HASH };
 const hash = (text: string) => createHash('sha256').update(text).digest('hex');
 /**
  * The receipt a host prompt carries for the native text its agent recorded for it. The host keeps the person's words;
