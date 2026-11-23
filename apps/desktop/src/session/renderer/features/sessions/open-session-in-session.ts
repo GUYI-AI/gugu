@@ -13,7 +13,10 @@ interface OpenSessionInSessionOptions {
   projectId: string;
   sessionId: string;
   timeout?: number;
-  /** Commit navigation or layout only after the task workspace can be opened. */
+  /**
+   * Commit navigation or layout only after the task workspace can be opened. Given = nothing is on screen until then, so a
+   * timeout is told as a toast; without it the caller already showed the task and its page tells every state.
+   */
   onReady?: () => void;
   /**
    * behavior session-page「键盘导航」: keyboard ↑↓ walks the sidebar and the main area follows every
@@ -100,6 +103,9 @@ export function openSessionInSessionWhenReady({
           sessionId,
           error,
         });
+        // Already on screen (no onReady): SessionContentGate says loading, offline or the failure in place (❌ a toast over
+        // a page still saying it is loading). Placement held back until ready: nothing is on screen, this is the answer.
+        if (!onReady) return;
         toast({
           title: translateSessionMessage('sidebar.conversationNotOpenable'),
           description: machineUnavailableLabel(projectId) ?? translateSessionMessage('sidebar.workspaceNotReady'),

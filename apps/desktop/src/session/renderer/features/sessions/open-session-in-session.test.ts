@@ -111,7 +111,7 @@ describe('task entry keeps the workspace failure reason', () => {
     }
   });
 
-  it('keeps the original unavailable reason when the target machine id is missing', async () => {
+  it('placement held back: keeps the original unavailable reason when the target machine id is missing', async () => {
     vi.useFakeTimers();
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(toast).mockClear();
@@ -119,7 +119,7 @@ describe('task entry keeps the workspace failure reason', () => {
     opened.reason = null;
     opened.machineReason = 'Remote host is offline. Resumes when it is back';
     opened.deviceId = null;
-    const dispose = openSessionInSessionWhenReady({ projectId: 'p', sessionId: 's' });
+    const dispose = openSessionInSessionWhenReady({ projectId: 'p', sessionId: 's', onReady: vi.fn() });
     try {
       await vi.advanceTimersByTimeAsync(10_000);
       expect(toast).toHaveBeenCalledWith(expect.objectContaining({
@@ -162,7 +162,7 @@ describe('task entry keeps the workspace failure reason', () => {
     }
   });
 
-  it('no reason known when readiness times out: the toast says the workspace is not ready', async () => {
+  it('placement held back, no reason known at the timeout: the toast says the workspace is not ready', async () => {
     vi.useFakeTimers();
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
     vi.mocked(toast).mockClear();
@@ -176,6 +176,30 @@ describe('task entry keeps the workspace failure reason', () => {
     } finally {
       dispose();
       opened.provisioned = true;
+      logged.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  // owner msg 0a4871f7: a sidebar click already shows the task; its page was still saying 「正在通过远程隧道连接此设备…」
+  // when 「会话暂时无法打开」 popped over it.
+  it('already on screen (no onReady): a timeout is not toasted over the page, which says it in place', async () => {
+    vi.useFakeTimers();
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(toast).mockClear();
+    opened.provisioned = false;
+    opened.machineReason = 'host did not respond. Check that it is online and retry.';
+    opened.deviceId = null;
+    const dispose = openSessionInSessionWhenReady({ projectId: 'p', sessionId: 's' });
+    try {
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(logged).toHaveBeenCalled();
+      expect(toast).not.toHaveBeenCalled();
+    } finally {
+      dispose();
+      opened.provisioned = true;
+      opened.machineReason = null;
+      opened.deviceId = 'host';
       logged.mockRestore();
       vi.useRealTimers();
     }
