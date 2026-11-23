@@ -45,8 +45,12 @@ export const APP_PAGE_PACKAGES: readonly string[] = ['@playwright/mcp']
  */
 export const APP_ROOT_PACKAGE_FILES: readonly string[] = ['@gugu-acp/compat/package.json', 'npm/package.json']
 
+/** The server's image preview decoder (core local/files/nodeImagePreview): its install picks this platform's libvips. */
+export const IMAGE_PREVIEW_PACKAGES: readonly string[] = ['sharp']
+
 export const RUNTIME_PACKAGES: readonly string[] = [
   ...NATIVE_EXTERNAL_PACKAGES,
+  ...IMAGE_PREVIEW_PACKAGES,
   ...ADAPTER_PACKAGES,
   ...APP_ROOT_PACKAGE_FILES.map((file) => packageNameOf(file)),
   ...APP_PAGE_PACKAGES,
