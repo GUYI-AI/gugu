@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { activateCodexAccount, codexAuthIdentity, copyCodexUpgradeSignIn, restoreCodexTerminalForMigration, type CodexAuthSlotPaths } from './codex-auth-slot';
 import { activateClaudeAccount, restoreClaudeTerminalForMigration, type ClaudeAuthSlotPaths } from './claude-auth-slot';
 import { createClaudeCredentialStore } from './claude-credential-store';
 
 const roots: string[] = [];
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
+afterEach(async () => {
+  vi.restoreAllMocks();
+  for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
+});
 async function root() {
   const path = await mkdtemp(join(tmpdir(), 'managed-account-migration-'));
   roots.push(path); return path;
@@ -27,6 +30,83 @@ function codexPaths(root: string): CodexAuthSlotPaths {
   return { nativeRoot: join(root, 'terminal'), vaultRoot: (id) => join(root, 'vaults', id),
     backupDir: join(root, 'backup'), liveStateFile: join(root, 'old-live.json') };
 }
+
+it('leaves the accurate Codex ownership record on disk during concurrent launch preparation', async () => {
+  const paths = codexPaths(await root());
+  const ids = ['native', 'gugu-a'];
+  const auth = codexAuth('gugu-a', 'rotated');
+  await put(paths.nativeRoot, 'auth.json', auth);
+  const record = { connectionId: 'gugu-a', identity: codexAuthIdentity(JSON.parse(auth)) };
+  await writeFile(paths.liveStateFile, JSON.stringify(record));
+  await utimes(paths.liveStateFile, new Date(0), new Date(0));
+  const before = await stat(paths.liveStateFile);
+
+  vi.spyOn(Date, 'now').mockReturnValue(1000);
+  const prepare = () => activateCodexAccount(paths, ids, 'gugu-a', 'gugu-a');
+  expect(await Promise.allSettled([prepare(), prepare(), prepare()])).toEqual(
+    Array.from({ length: 3 }, () => ({ status: 'fulfilled', value: 'gugu-a' })),
+  );
+
+  expect((await stat(paths.liveStateFile)).mtimeMs).toBe(before.mtimeMs);
+  expect(await readFile(join(paths.nativeRoot, 'auth.json'), 'utf8')).toBe(auth);
+});
+
+it('repairs missing Codex ownership metadata without replacing the live sign-in', async () => {
+  const paths = codexPaths(await root());
+  const ids = ['native', 'gugu-a'];
+  const auth = codexAuth('gugu-a', 'rotated');
+  await put(paths.nativeRoot, 'auth.json', auth);
+  await put(paths.vaultRoot('gugu-a'), 'auth.json', codexAuth('gugu-a', 'old'));
+  vi.spyOn(Date, 'now').mockReturnValue(1000);
+  const prepare = () => activateCodexAccount(paths, ids, 'gugu-a', 'gugu-a');
+
+  expect(await Promise.allSettled([prepare(), prepare()])).toEqual([
+    { status: 'fulfilled', value: 'gugu-a' },
+    { status: 'fulfilled', value: 'gugu-a' },
+  ]);
+  expect(JSON.parse(await readFile(paths.liveStateFile, 'utf8'))).toEqual({
+    connectionId: 'gugu-a', identity: codexAuthIdentity(JSON.parse(auth)),
+  });
+  expect(await readFile(join(paths.nativeRoot, 'auth.json'), 'utf8')).toBe(auth);
+});
+
+it('activates a saved Codex account once when launch preparations run concurrently', async () => {
+  const paths = codexPaths(await root());
+  const ids = ['native', 'gugu-a'];
+  const native = codexAuth('terminal', 'latest');
+  const incoming = codexAuth('gugu-a', 'saved');
+  await put(paths.nativeRoot, 'auth.json', native);
+  await put(paths.vaultRoot('gugu-a'), 'auth.json', incoming);
+  vi.spyOn(Date, 'now').mockReturnValue(1000);
+  const prepare = () => activateCodexAccount(paths, ids, 'gugu-a', 'native');
+
+  const results = await Promise.allSettled([prepare(), prepare(), prepare()]);
+  expect(results).toEqual([
+    { status: 'fulfilled', value: 'native' },
+    { status: 'fulfilled', value: 'gugu-a' },
+    { status: 'fulfilled', value: 'gugu-a' },
+  ]);
+  expect(await readFile(join(paths.nativeRoot, 'auth.json'), 'utf8')).toBe(incoming);
+  expect(await readFile(join(paths.vaultRoot('native'), 'auth.json'), 'utf8')).toBe(native);
+});
+
+it('publishes concurrent Codex migration records with independent temporary files', async () => {
+  const previous = codexPaths(await root());
+  const managed = codexPaths(await root());
+  const auth = { auth_mode: 'apikey', OPENAI_API_KEY: 'fixture-key' };
+  await put(previous.nativeRoot, 'auth.json', JSON.stringify(auth));
+  await put(managed.nativeRoot, 'auth.json', JSON.stringify(auth));
+
+  vi.spyOn(Date, 'now').mockReturnValue(1000);
+  const migrate = () => copyCodexUpgradeSignIn(previous, managed, 'native');
+  expect(await Promise.allSettled([migrate(), migrate(), migrate()])).toEqual(
+    Array.from({ length: 3 }, () => ({ status: 'fulfilled', value: 'api-key' })),
+  );
+  expect(JSON.parse(await readFile(managed.liveStateFile, 'utf8'))).toEqual({
+    connectionId: 'native', identity: codexAuthIdentity(auth),
+  });
+});
+
 it('moves the latest Gugu Codex token through its vault while restoring the terminal account', async () => {
   const dir = await root(), old = codexPaths(dir), ids = ['native', 'gugu-a'];
   await put(old.nativeRoot, 'auth.json', codexAuth('terminal-b', 'b-current'));

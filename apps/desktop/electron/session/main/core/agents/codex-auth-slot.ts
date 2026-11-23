@@ -1,6 +1,7 @@
-import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
+import { copyFile, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { KeyedMutex } from '@gugu/session-core/lib';
 import { parse as parseTOML } from 'smol-toml';
 
 /**
@@ -26,6 +27,7 @@ export type CodexAuthSlotPaths = {
 };
 
 type LiveState = { connectionId: string; identity: string; nativeVaultCleanup?: true };
+const activationLock = new KeyedMutex();
 
 async function readLiveState(path: string): Promise<LiveState | null> {
   try {
@@ -39,11 +41,8 @@ async function readLiveState(path: string): Promise<LiveState | null> {
   }
 }
 
-async function recordLiveState(path: string, state: LiveState): Promise<void> {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const temporary = `${path}.gugu-${process.pid}-${Date.now()}`;
-  await writeFile(temporary, `${JSON.stringify(state)}\n`, { mode: 0o600 });
-  await rename(temporary, path);
+function recordLiveState(path: string, state: LiveState): Promise<void> {
+  return replacePrivateFile(path, `${JSON.stringify(state)}\n`);
 }
 
 const AUTH_FILE = 'auth.json';
@@ -98,16 +97,24 @@ async function readAuth(root: string): Promise<{ text: string; identity: string 
   }
 }
 
-/** 先写临时文件再改名:换到一半崩了,活动根里要么是旧账号、要么是新账号,❌ 半个文件。 */
-async function writeAuth(root: string, text: string): Promise<void> {
-  await mkdir(root, { recursive: true, mode: 0o700 });
-  const target = join(root, AUTH_FILE);
-  const temporary = `${target}.gugu-${process.pid}-${Date.now()}`;
-  await writeFile(temporary, text, { mode: 0o600 });
+function writeAuth(root: string, text: string): Promise<void> {
+  return replacePrivateFile(join(root, AUTH_FILE), text);
+}
+
+/** Publish a complete file by renaming a temporary file owned by this write. */
+async function replacePrivateFile(target: string, text: string): Promise<void> {
+  await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+  const temporary = `${target}.gugu-${randomUUID()}`;
+  const file = await open(temporary, 'wx', 0o600);
   try {
+    try {
+      await file.writeFile(text);
+    } finally {
+      await file.close();
+    }
     await rename(temporary, target);
   } catch (error) {
-    await rm(temporary, { force: true });
+    await rm(temporary, { force: true }).catch(() => undefined);
     throw error;
   }
 }
@@ -147,27 +154,37 @@ export async function assertCodexFileCredentialStore(nativeRoot: string): Promis
  *    同一个账号既是原生又是某个连接时也归原生:两边的凭据本来就是同一个人的。
  * 3. 否则按身份在所有连接里找。
  */
-export async function codexLiveOwner(
+async function resolveLiveOwner(
   paths: CodexAuthSlotPaths,
   connectionIds: readonly string[],
-  selectedId: string | null
+  selectedId: string | null,
+  identity: string | null,
+  recorded: LiveState | null,
 ): Promise<string | null> {
-  const live = await readAuth(paths.nativeRoot);
-  const recorded = await readLiveState(paths.liveStateFile);
-  if (live?.identity && recorded?.identity === live.identity && connectionIds.includes(recorded.connectionId)) {
+  if (identity && recorded?.identity === identity && connectionIds.includes(recorded.connectionId)) {
     return recorded.connectionId;
   }
-  if (selectedId && selectedId !== 'native' && live?.identity) {
-    if ((await readAuth(paths.vaultRoot(selectedId)))?.identity === live.identity) return selectedId;
+  if (selectedId && selectedId !== 'native' && identity) {
+    if ((await readAuth(paths.vaultRoot(selectedId)))?.identity === identity) return selectedId;
   }
   const native = await readAuth(paths.vaultRoot('native'));
   if (!native) return 'native';
-  if (!live?.identity) return null;
-  if (native.identity === live.identity) return 'native';
+  if (!identity) return null;
+  if (native.identity === identity) return 'native';
   for (const id of connectionIds) {
-    if (id !== 'native' && (await readAuth(paths.vaultRoot(id)))?.identity === live.identity) return id;
+    if (id !== 'native' && (await readAuth(paths.vaultRoot(id)))?.identity === identity) return id;
   }
   return null;
+}
+
+export async function codexLiveOwner(
+  paths: CodexAuthSlotPaths,
+  connectionIds: readonly string[],
+  selectedId: string | null,
+): Promise<string | null> {
+  const live = await readAuth(paths.nativeRoot);
+  const recorded = await readLiveState(paths.liveStateFile);
+  return resolveLiveOwner(paths, connectionIds, selectedId, live?.identity ?? null, recorded);
 }
 
 /** 读某个连接的凭据该去哪个根:它的账号此刻在活动根里就读活动根(那份才是最新的),否则读它的保管目录。 */
@@ -192,59 +209,66 @@ export async function activateCodexAccount(
   now: () => Date = () => new Date(),
   migration?: { allowEmptyNative: true; verifySource: () => Promise<void> }
 ): Promise<string | null> {
-  await assertCodexFileCredentialStore(paths.nativeRoot);
-  const owner = await codexLiveOwner(paths, connectionIds, currentId);
-  if (migration && owner !== currentId) throw new Error('Codex is in use; retry migration later');
-  // 已经在活动根里(含「用户从没登录过,原生连接就是空的」):什么都不用搬,把记录对齐即可。
-  if (owner === targetId) {
-    const identity = (await readAuth(paths.nativeRoot))?.identity;
-    if (identity) await recordLiveState(paths.liveStateFile, { connectionId: targetId, identity });
-    return owner;
-  }
-  const incoming = await readAuth(paths.vaultRoot(targetId));
-  const restoringTerminal = Boolean(migration && targetId === 'native');
-  if ((!incoming && !restoringTerminal) || (restoringTerminal && incoming && !incoming.identity)) {
-    throw new Error('The selected Codex account has no saved sign-in; sign in to it again');
-  }
-  const live = await readAuth(paths.nativeRoot);
-  const savedOwner = owner ? await readAuth(paths.vaultRoot(owner)) : null;
-  const savedState = await readFile(paths.liveStateFile, 'utf8').catch((error: unknown) => {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw error;
-  });
-  let changedLive = false;
-  try {
-    if (live) {
-      if (owner) {
-        await writeAuth(paths.vaultRoot(owner), live.text);
-      } else {
-        await mkdir(paths.backupDir, { recursive: true, mode: 0o700 });
-        await copyFile(join(paths.nativeRoot, AUTH_FILE), join(paths.backupDir, `auth-${now().toISOString().replace(/[:.]/g, '-')}.json`));
+  // Startup and model probes share the same slot. Decide ownership inside the
+  // lock so a second caller sees the credentials and record committed by the first.
+  return activationLock.runExclusive(paths.liveStateFile, async () => {
+    await assertCodexFileCredentialStore(paths.nativeRoot);
+    const identity = (await readAuth(paths.nativeRoot))?.identity ?? null;
+    const recorded = await readLiveState(paths.liveStateFile);
+    const owner = await resolveLiveOwner(paths, connectionIds, currentId, identity, recorded);
+    if (migration && owner !== currentId) throw new Error('Codex is in use; retry migration later');
+    if (owner === targetId) {
+      // Older installs may have the right credentials without a matching ownership record.
+      if (identity && (recorded?.connectionId !== targetId || recorded.identity !== identity)) {
+        await recordLiveState(paths.liveStateFile, { connectionId: targetId, identity });
       }
+      return owner;
     }
-    await migration?.verifySource();
-    if (incoming) await writeAuth(paths.nativeRoot, incoming.text);
-    else await rm(join(paths.nativeRoot, AUTH_FILE), { force: true });
-    changedLive = true;
-    if (incoming?.identity || restoringTerminal) {
-      await recordLiveState(paths.liveStateFile, { connectionId: targetId, identity: incoming?.identity ?? '',
-        ...(restoringTerminal && incoming ? { nativeVaultCleanup: true } : {}) });
-    } else await rm(paths.liveStateFile, { force: true });
-  } catch (error) {
-    if (savedState !== null) await writeFile(paths.liveStateFile, savedState, { mode: 0o600 });
-    else await rm(paths.liveStateFile, { force: true });
-    // A source guard rejection happened before changing the terminal slot.
-    if (changedLive && (await readAuth(paths.nativeRoot))?.text === incoming?.text) {
-      if (live) await writeAuth(paths.nativeRoot, live.text);
+    const incoming = await readAuth(paths.vaultRoot(targetId));
+    const restoringTerminal = Boolean(migration && targetId === 'native');
+    if ((!incoming && !restoringTerminal) || (restoringTerminal && incoming && !incoming.identity)) {
+      throw new Error('The selected Codex account has no saved sign-in; sign in to it again');
+    }
+    const live = await readAuth(paths.nativeRoot);
+    const savedOwner = owner ? await readAuth(paths.vaultRoot(owner)) : null;
+    const savedState = await readFile(paths.liveStateFile, 'utf8').catch((error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    });
+    let changedLive = false;
+    try {
+      if (live) {
+        if (owner) {
+          await writeAuth(paths.vaultRoot(owner), live.text);
+        } else {
+          await mkdir(paths.backupDir, { recursive: true, mode: 0o700 });
+          await copyFile(join(paths.nativeRoot, AUTH_FILE), join(paths.backupDir, `auth-${now().toISOString().replace(/[:.]/g, '-')}.json`));
+        }
+      }
+      await migration?.verifySource();
+      if (incoming) await writeAuth(paths.nativeRoot, incoming.text);
       else await rm(join(paths.nativeRoot, AUTH_FILE), { force: true });
+      changedLive = true;
+      if (incoming?.identity || restoringTerminal) {
+        await recordLiveState(paths.liveStateFile, { connectionId: targetId, identity: incoming?.identity ?? '',
+          ...(restoringTerminal && incoming ? { nativeVaultCleanup: true } : {}) });
+      } else await rm(paths.liveStateFile, { force: true });
+    } catch (error) {
+      if (savedState !== null) await replacePrivateFile(paths.liveStateFile, savedState);
+      else await rm(paths.liveStateFile, { force: true });
+      // A source guard rejection happened before changing the terminal slot.
+      if (changedLive && (await readAuth(paths.nativeRoot))?.text === incoming?.text) {
+        if (live) await writeAuth(paths.nativeRoot, live.text);
+        else await rm(join(paths.nativeRoot, AUTH_FILE), { force: true });
+      }
+      if (owner) {
+        if (savedOwner) await writeAuth(paths.vaultRoot(owner), savedOwner.text);
+        else await rm(join(paths.vaultRoot(owner), AUTH_FILE), { force: true });
+      }
+      throw error;
     }
-    if (owner) {
-      if (savedOwner) await writeAuth(paths.vaultRoot(owner), savedOwner.text);
-      else await rm(join(paths.vaultRoot(owner), AUTH_FILE), { force: true });
-    }
-    throw error;
-  }
-  return owner;
+    return owner;
+  });
 }
 
 async function cleanRestoredCodexVault(paths: CodexAuthSlotPaths, recorded: LiveState): Promise<boolean> {
