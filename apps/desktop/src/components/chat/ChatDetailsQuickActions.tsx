@@ -24,7 +24,7 @@ export function ChatDetailsQuickActions({ chatId, isGroup }: { chatId: string; i
   const [appsOpen, setAppsOpen] = useState(false)
   return (
     <DetailsTiles>
-      <DetailsTile icon={<Search />} label={t(isGroup ? 'header.searchHistory' : 'header.searchChat')} testId="chat-details-search" onClick={() => searchInChat(chatId)} />
+      <DetailsTile icon={<Search />} label={t(isGroup ? 'groupDetails.searchHistory' : 'groupDetails.searchChat')} testId="chat-details-search" onClick={() => searchInChat(chatId)} />
       <DetailsTile icon={<Folder />} label={folderName} testId="chat-details-folder" onClick={() => openPanelItem(chatId, folderItem())} />
       <Popover.Root open={appsOpen} modal={false} onOpenChange={setAppsOpen}>
         <Popover.Trigger ref={appsAnchor} render={<DetailsTile icon={<LayoutGrid />} label={t('header.apps')} testId="chat-details-apps" />} />

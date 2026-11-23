@@ -82,7 +82,7 @@ const SessionDetails = observer(function SessionDetails({ sessionId }: { session
         name={editing
           ? <InlineNameInput name={store.data.title ?? ''} onCommit={(next) => sessionRegistry.get(sessionId)!.renameSession(sessionId, next)} onClose={() => setEditing(false)} testId="session-details-name-input" />
           : <DetailsName name={name} onEdit={() => setEditing(true)} testId="session-details-name" />}
-        sub={local ? <DetailsChip><span className="size-1.5 rounded-full bg-[var(--live)]" />{translate('task.deviceLocal')}</DetailsChip> : null}
+        sub={local ? <DetailsChip><span className="size-1.5 rounded-full bg-[var(--green)]" />{translate('task.deviceLocal')}</DetailsChip> : null}
       />
       <LiveWindowDetailsCard projectId={projectId} sessionId={sessionId} />
       <DetailsTiles>
@@ -93,7 +93,7 @@ const SessionDetails = observer(function SessionDetails({ sessionId }: { session
           <Popover.Trigger ref={appsAnchor} render={<DetailsTile icon={<LayoutGrid />} label={translate('details.apps')} testId="session-details-apps" />} />
           {appsOpen ? <ChatAppsPicker chatId={null} anchor={appsAnchor} onOpen={(app) => view.paneLayout.openBeside(app.kind, {})} onClose={() => setAppsOpen(false)} /> : null}
         </Popover.Root>
-        <DetailsTile icon={<AppWindow />} label={translate('screen.openInWindow')} testId="session-details-window" onClick={() => openInWindow({ kind: 'session', projectId, sessionId })} />
+        <DetailsTile icon={<AppWindow />} label={translate('details.window')} testId="session-details-window" onClick={() => openInWindow({ kind: 'session', projectId, sessionId })} />
       </DetailsTiles>
       <DetailsList>
         {command('pin') ? <DetailsRow icon={<Pin />} label={translate('details.pin')} testId="session-details-pin"

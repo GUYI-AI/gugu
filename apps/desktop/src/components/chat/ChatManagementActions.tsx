@@ -146,7 +146,7 @@ export function ChatManagementActions({ activeChat, onClose, onClearMessages, on
   if (appearance === 'details') return (
     <DetailsList>
       {actionError ? <div role="alert" style={look.error}>{actionError}</div> : null}
-      <DetailsRow icon={<Bell />} label={t('chatArea.management.notifications')} testId="chat-details-notifications"
+      <DetailsRow icon={<Bell />} label={t('conversationCard.notifications')} testId="chat-details-notifications"
         end={<DetailsSegmented value={notificationLevel} onChange={(level) => { if (!settingNotificationLevel) setLevel(level) }}
           options={NOTIFICATION_LEVELS.map((level) => ({ value: level, label: t(`chatArea.notificationLevel.${level}`) }))} />} />
       <DetailsRow icon={<Pin />} label={t('chatArea.management.pin')} testId={AUTOMATION_TEST_IDS.chatDrawerPinSwitch}

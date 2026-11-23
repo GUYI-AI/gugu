@@ -140,7 +140,7 @@ export const ChatTabChip = observer(function ChatTabChip({
     // 第 16 版 #8:对话卡片顶上只剩这一颗胶囊;名字由 ChatBlockHead 画进 labelSlot(点它出名片),胶囊里不放头像。
     return (
       <div className="flex h-full min-w-0 flex-1 items-center justify-center" {...data}>
-        <div className={`${CONVERSATION_CAPSULE_CLASS} [&_[data-chat-block-avatar]]:hidden`} data-chat-workspace-title="">
+        <div className={`${CONVERSATION_CAPSULE_CLASS} !px-0 [&_[data-chat-block-avatar]]:hidden [&_[data-chat-block-title]]:px-4`} data-chat-workspace-title="">
           {labelSlot ?? <span className="truncate" title={label}>{label}</span>}
         </div>
       </div>

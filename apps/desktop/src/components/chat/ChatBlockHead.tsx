@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { isRoomChat } from '@gugu/core/shared/ui/chatModels'
@@ -21,9 +21,10 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
 }) {
   const room = isRoomChat(chat.kind)
   const [open, setOpen] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
   return host.title ? createPortal(
     <Popover.Root open={open} modal={false} onOpenChange={setOpen}>
-      <Popover.Trigger nativeButton={false} data-testid="conversation-capsule" render={<span className="flex h-full min-w-0 items-center gap-1" data-chat-block-title="" />}>
+      <Popover.Trigger ref={trigger} nativeButton={false} data-testid="conversation-capsule" render={<span className="flex h-full min-w-0 items-center gap-1" data-chat-block-title="" />}>
         <span className="flex" data-chat-block-avatar=""><Avatar
           name={name}
           avatarUrl={avatar}
@@ -35,7 +36,8 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
         /></span>
         <span className="min-w-0 truncate">{name}</span>
       </Popover.Trigger>
-      {open ? <Popover.Portal><Popover.Positioner side="bottom" align="center" sideOffset={14} collisionPadding={8}>
+      {open ? <Popover.Portal><Popover.Positioner side="bottom" align="center" sideOffset={3} collisionPadding={8}
+        anchor={() => trigger.current?.closest<HTMLElement>('[data-chat-workspace-title]') ?? trigger.current}>
         <Popover.Popup aria-label={name}>
           <ChatConversationCard chat={chat} name={name} avatar={avatar} isAgent={isAgent} onClose={() => setOpen(false)} />
         </Popover.Popup>

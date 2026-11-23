@@ -75,7 +75,10 @@ export function GroupFolderRow({ chatId }: { chatId: string }) {
  * 详情页(第 16 版设计稿 .memb)的群成员块:叠着的头像、「群成员」、人数、「+」(GroupAddMenu)、›;点它进成员页。
  * 和 GroupMembersRow 同一份数据、同一个「+」、同一个去处,只是画法不同。
  */
-export function GroupMembersBlock({ chatId, settings, memberIds, total, onOpen }: Parameters<typeof GroupMembersRow>[0]) {
+export function GroupMembersBlock({ chatId, settings, memberIds, total, people, agents, onOpen }: Parameters<typeof GroupMembersRow>[0] & {
+  /** People and agents in it; null until the roster is read (then only the total is said). */
+  people: number | null; agents: number | null
+}) {
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
   const contain = (event: MouseEvent | KeyboardEvent) => event.stopPropagation()
@@ -91,9 +94,10 @@ export function GroupMembersBlock({ chatId, settings, memberIds, total, onOpen }
         ))}
       </span>
       <span>{t('group.settings.members')}</span>
-      <span className="text-[12.5px] text-[var(--muted-fg)]">{total === null ? <Unknown className="w-[2ch]" /> : t('group.settings.memberCount', { count: total })}</span>
+      <span className="text-[12.5px] text-[var(--muted-fg)]">{people !== null && agents !== null ? t('groupDetails.memberSummary', { people, agents })
+        : total === null ? <Unknown className="w-[2ch]" /> : t('group.settings.memberCount', { count: total })}</span>
       <span className="ms-auto flex items-center" onClick={contain} onKeyDown={contain}>
-        <GroupAddMenu chatId={chatId} canAddMembers={groupInviteAccess(chatId, 'group', settings).showInvite} size="sm" />
+        <GroupAddMenu chatId={chatId} canAddMembers={groupInviteAccess(chatId, 'group', settings).showInvite} labeled />
       </span>
       <ChevronRight className="size-3.5 text-[var(--faint-fg)]" />
     </div>

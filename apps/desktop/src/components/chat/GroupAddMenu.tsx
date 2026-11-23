@@ -14,13 +14,15 @@ const newAgentInGroup = (chatId: string) => window.dispatchEvent(new CustomEvent
  * 「新建 Agent」 = the group's new-agent entry. An item the viewer cannot use is not drawn; with neither, no 「+」.
  * The picker opens over whatever page the 「+」 is on, so closing it lands back there.
  */
-export function GroupAddMenu({ chatId, canAddMembers, onNewAgent = () => newAgentInGroup(chatId), size = 'md', className }: {
+export function GroupAddMenu({ chatId, canAddMembers, onNewAgent = () => newAgentInGroup(chatId), size = 'md', className, labeled = false }: {
   chatId: string
   /** groupInviteAccess(...).showInvite where the settings are at hand. */
   canAddMembers: boolean
   onNewAgent?: () => void
   size?: 'sm' | 'md'
   className?: string
+  /** 详情页的群成员块(第 16 版):「+ 添加」一枚小字钮,同一个菜单。 */
+  labeled?: boolean
 }) {
   const { t } = useTranslation('messaging')
   const canNewAgent = platform.capabilities.sessionHost
@@ -29,8 +31,9 @@ export function GroupAddMenu({ chatId, canAddMembers, onNewAgent = () => newAgen
   return (
     <DropdownMenu.Root modal={false}>
       <Tooltip>
-        <DropdownMenu.Trigger render={<TooltipTrigger render={
-          <IconButton size={size} tone="strong" aria-label={label} data-group-add-menu="" className={className}><Plus /></IconButton>
+        <DropdownMenu.Trigger render={<TooltipTrigger render={labeled
+          ? <button type="button" aria-label={label} data-group-add-menu="" className="inline-flex h-[22px] items-center gap-[5px] rounded-full px-2 text-[12px] text-[var(--muted-fg)] hover:bg-row-hover"><Plus size={12} />{label}</button>
+          : <IconButton size={size} tone="strong" aria-label={label} data-group-add-menu="" className={className}><Plus /></IconButton>
         } />} />
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>

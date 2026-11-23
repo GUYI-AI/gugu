@@ -115,7 +115,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   const menuCommands = card ? [] : kindCommands;
   const cardPopover = card ? (
     <Popover.Root open={cardOpen} modal={false} onOpenChange={setCardOpen}>
-      {cardOpen ? <Popover.Portal><Popover.Positioner side="bottom" align={workspaceRole === 'capsule' ? 'center' : 'start'} sideOffset={8} collisionPadding={8}
+      {cardOpen ? <Popover.Portal><Popover.Positioner side="bottom" align={workspaceRole === 'capsule' ? 'center' : 'start'} sideOffset={workspaceRole === 'capsule' ? 3 : 8} collisionPadding={8}
         anchor={() => document.querySelector(`[data-tabid="${CSS.escape(tab.tabId)}"]`)}>
         <Popover.Popup aria-label={label}>{card(() => setCardOpen(false))}</Popover.Popup>
       </Popover.Positioner></Popover.Portal> : null}

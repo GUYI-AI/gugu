@@ -18,6 +18,9 @@ export interface GroupDetailsMainProps {
   manager: boolean
   memberIds: readonly string[]
   total: number | null
+  /** People and agents in it (the roster); null until it is read. */
+  people: number | null
+  agents: number | null
   avatar: { uploading: boolean; onFile: (file: File | undefined) => Promise<void>; onReset: () => Promise<void> }
   onRename: (name: string) => Promise<void>
   onOpenPage: (page: 'members' | 'announcement' | 'manage') => void
@@ -65,7 +68,7 @@ export function GroupDetailsMain(props: GroupDetailsMainProps) {
       />
       {editingAvatar ? <GroupAvatarEditor chatId={chat.id} groupName={name ?? ''} avatarUrl={settings?.avatar_url ?? null} busy={avatar.uploading}
         onFile={(file) => avatar.onFile(file)} onReset={avatar.onReset} onClose={() => setEditingAvatar(false)} /> : null}
-      <GroupMembersBlock chatId={chat.id} settings={settings} memberIds={memberIds} total={total} onOpen={() => props.onOpenPage('members')} />
+      <GroupMembersBlock chatId={chat.id} settings={settings} memberIds={memberIds} total={total} people={props.people} agents={props.agents} onOpen={() => props.onOpenPage('members')} />
       <ChatDetailsQuickActions chatId={chat.id} isGroup />
       <DetailsList>
         <DetailsRow icon={<FileText />} label={t('header.announcement')} testId="group-settings-announcement" chevron onClick={() => props.onOpenPage('announcement')} />
