@@ -8,7 +8,14 @@ import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 
 const editors = vi.hoisted(() => ({ ids: [] as string[], read: Promise.resolve() }))
-vi.mock('@/lib/citedFileEditors', () => ({ citedFileEditorIds: vi.fn(async () => { await editors.read; return editors.ids }) }))
+// The cited file's makers, as the workspace reads answer them: none by the item row, every id among its versions' authors.
+vi.mock('@/lib/supabase', async (original) => {
+  const actual = await original<typeof import('@/lib/supabase')>()
+  const rpc = (fn: string) => fn === 'workspace_get_as'
+    ? { select: () => ({ single: async () => ({ data: { created_by: null, updated_by: null }, error: null }) }) }
+    : editors.read.then(() => ({ data: editors.ids.map((made_by) => ({ made_by })), error: null }))
+  return { ...actual, chatDb: new Proxy(actual.chatDb, { get: (target, key, receiver) => key === 'rpc' ? rpc : Reflect.get(target, key, receiver) }) }
+})
 
 const FILE = 'gugu-file://0b6f6c1e-58a4-4a39-9a37-3f1f4c7a2d10?v=2#L3'
 const members = [{ id: 'cite-agent', name: 'Cite agent', type: 'agent' as const }, { id: 'cite-peer', name: 'Cite peer', type: 'human' as const }]

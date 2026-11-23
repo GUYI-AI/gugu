@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { buildRosterNameIndex, resolveOpeningAgentCall } from '@gugu/core/shared/rosterNameMatching.mjs'
 import { firstMentionedUserId, resolveMentionUserIds, type MentionCandidate } from '@/lib/mention'
 import { rememberGroupMention } from '@/lib/groupMentionRecall'
-import { citedFileEditorIds } from '@/lib/citedFileEditors'
+import { citeRecipientIds } from '@/lib/citedFileEditors'
 import { scheduleComposerFocus } from '@/lib/focusComposer'
 import { rendererLogger } from '@/lib/log'
 import { chatSendFailureNotice } from './chatSendFailureNotice'
@@ -65,11 +65,8 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     sendingRef.current = true
     setSending(true)
     // A message that cites chat files and names no one goes to the members who made those files.
-    const citeRecipientIds = undirected && rosterRecipientIds.length === 0 && currentUserId
-      ? (await citedFileEditorIds(typed, currentUserId).catch((error: unknown) => {
-          rendererLogger('chat/send').error({ chatId, error: String(error) }, 'cited file editors unreadable')
-          return []
-        })).filter((id) => id !== currentUserId && props.groupMembers?.some((member) => member.id === id))
+    const citedRecipientIds = undirected && rosterRecipientIds.length === 0 && currentUserId && chatId
+      ? await citeRecipientIds(chatId, typed, currentUserId, (props.groupMembers ?? []).map((member) => member.id))
       : []
     const sendOptions = whisperTarget
       ? {
@@ -84,7 +81,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
           // @mention hard-triggers identically to a picked one.
           // #1641 human-only send adapter: an opening call resolved against the already-subscribed group
           // roster becomes the same structural recipient as @. The DB trigger still reads no message text.
-          toUserIds: [...new Set(explicitRecipientIds.length ? explicitRecipientIds : rosterRecipientIds.length ? rosterRecipientIds : citeRecipientIds)],
+          toUserIds: [...new Set(explicitRecipientIds.length ? explicitRecipientIds : rosterRecipientIds.length ? rosterRecipientIds : citedRecipientIds)],
           replyToMessageId,
         }
 
