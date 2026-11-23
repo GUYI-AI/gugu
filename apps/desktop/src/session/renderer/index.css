@@ -1578,13 +1578,19 @@ html[data-gugu-dragging] :is(webview, iframe) {
 }
 
 /* 稿子 .tabs:页签之间 4px、没有分隔竖线(选中页签是浮在灰条上的白块,不靠线分)。 */
-[data-chat-tool-strip] [data-tabstrip-scroller] {
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tabstrip-scroller] {
   gap: 4px;
 }
 
-[data-chat-tool-strip] .session-tab-slot::before,
-[data-chat-tool-strip] .session-tab-slot::after {
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) .session-tab-slot::before,
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) .session-tab-slot::after {
   display: none;
+}
+
+/* 合成一条(窄窗、完整视图)也是稿子的 .strip:左缘 8。 */
+[data-chat-workspace-header][data-chat-tool-shared] {
+  --tab-strip-edge: 8px;
+  --tab-slot-max-width: 240px;
 }
 
 /* 卡片的角(yangchichi 14:09 img56/57/61):卡头和工具页签条自己是圆角,但里面那层画底色的页签条(.session-tab-bar,
