@@ -30,8 +30,9 @@
 .msg-sender > .gg-chip { display: block; flex-shrink: 1; font-weight: var(--font-weight-regular); }
 /* Preserve the label’s intrinsic contribution so hiding it cannot shrink the bubble and lock it hidden. */
 .msg-sender[data-owner-hidden] > .gg-chip { visibility: hidden; padding-inline: 0; margin-left: -6px; }
-/* 「xx 的 agent」平时不显示,悬停在这条消息上才浮出(设计稿 #67);留着它的宽度,浮出时气泡不跳。 */
-.msg-sender > [data-message-agent-owner] { visibility: hidden; margin-left: 2px; min-height: 14px; line-height: 14px; border-radius: 6px; color: var(--faint-fg); }
+/* 「xx 的 agent」平时不显示,悬停在这条消息上才浮出(设计稿 #67);留着它的宽度,浮出时气泡不跳。
+   形状照稿子;稿子的灰底放在白底上,这里在气泡里,底色取气泡色的下一档才读得出是标签。 */
+.msg-sender > [data-message-agent-owner] { visibility: hidden; margin-left: 2px; min-height: 14px; line-height: 14px; border-radius: 6px; color: var(--faint-fg); background: var(--bubble-own); }
 :is(:hover, :focus-within) > [data-message-bubble-column] .msg-sender:not([data-owner-hidden]) > [data-message-agent-owner] { visibility: visible; }
 
 /* 时间:标注字号的灰字,钉在气泡右下角。 */
