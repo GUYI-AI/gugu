@@ -3,9 +3,6 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
-import { groupSettings } from '@/components/chat/useGroupChatSettings';
-import { followRendererSession, queryClient } from '@/lib/replica';
-import { UI_EVENTS } from '@/lib/uiEvents';
 import { observable, runInAction } from 'mobx';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -296,7 +293,7 @@ describe('inner sidebar', () => {
     expect(rows.every((row) => row.dataset.agentAvatar === 'true')).toBe(true);
   });
 
-  it('opens the group root, keeps group creation separate, and shows the shared conversation menu', async () => {
+  it('opens the group root and keeps group creation separate; no ⋯ on the head', async () => {
     publishChatSummaries([{ id: 'group', kind: 'group', name: 'Planning', unread_count: 5, member_user_ids: ['agent-a'] }, { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] }]);
     openChat('group');
     await render();
@@ -320,40 +317,13 @@ describe('inner sidebar', () => {
     expect(state.openInfoTab).not.toHaveBeenCalled();
     expect(state.closeInfoTab).not.toHaveBeenCalled();
     state.infoShown = false;
-    const more = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-hover] [data-testid="inner-head-more"]')!;
-    expect(more).not.toBeNull();
-
-    // The menu has the same items as the conversation header, with creation in its own button.
+    // v16: the head block is avatar, name and create only; no ⋯ (the group's items live on its details page).
+    expect(host.querySelector('[data-inner-head="group"] [data-testid="inner-head-more"]')).toBeNull();
     const trailing = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.parentElement!;
-    expect([...trailing.children].map((child) => (child as HTMLElement).dataset.innerHeadHover !== undefined ? 'more' : 'fold')).toEqual(['more', 'fold']);
+    expect(trailing.children).toHaveLength(1);
     const create = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-create]')!;
     expect(create, 'the group head has a direct creation entry').not.toBeNull();
     expect(create.parentElement).toBe(head().parentElement);
-    const addMembers = vi.fn();
-    window.addEventListener(UI_EVENTS.addGroupMembers, addMembers);
-    await act(async () => {
-      followRendererSession('SIGNED_IN', 'group-header-test');
-      groupSettings.set(['group'], { my_role: 'member' } as Parameters<typeof groupSettings.set>[1]);
-      followRendererSession('INITIAL_SESSION', null);
-    });
-    try {
-      await act(async () => more.click());
-      const menu = document.querySelector('[data-testid="group-header-menu"]')!;
-      expect(menu.querySelector('[data-testid="group-add-new-agent"]')).toBeNull();
-      expect(menu.querySelector('[data-testid="chat-header-search-button"]')).not.toBeNull();
-      const invite = menu.querySelector<HTMLElement>('[data-testid="group-add-members"]')!;
-      expect(invite).not.toBeNull();
-      await act(async () => invite.click());
-      expect(addMembers).toHaveBeenCalledOnce();
-      expect(addMembers.mock.calls[0]?.[0].detail).toEqual({ chatId: 'group' });
-      expect(state.navigateToGroupRoot).toHaveBeenCalledTimes(2);
-    } finally {
-      window.removeEventListener(UI_EVENTS.addGroupMembers, addMembers);
-      await act(async () => {
-        followRendererSession('SIGNED_OUT', null);
-        queryClient.clear();
-      });
-    }
     await act(async () => create.click());
     expect(readComposerVerb('group')).toBe('task');
     // The create flow brings up its composer itself. It must not also fire the heading.
@@ -461,10 +431,8 @@ describe('inner sidebar', () => {
     expect(restore.querySelector('button')).toBeNull();
     const fold = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!;
     expect(fold.getAttribute('aria-label')).toBe('sidebar.collapseInner');
-    // The fold button sits at the row's far end, right of the hover 「+」.
-    const ends = [...fold.parentElement!.children];
-    expect(ends.at(-1)).toBe(fold);
-    expect(ends.at(-2)?.matches('[data-inner-head-hover]')).toBe(true);
+    // The fold button sits at the row's far end.
+    expect([...fold.parentElement!.children].at(-1)).toBe(fold);
 
     await act(async () => fold.click());
     expect(innerFrame.folded, 'folded: its slot closes, the content is the card alone').toBe(true);

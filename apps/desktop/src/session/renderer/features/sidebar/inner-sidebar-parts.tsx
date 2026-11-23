@@ -24,9 +24,8 @@ export const innerSectionEmptyClass = 'ms-[9px] px-2 py-1 text-[12.5px] leading-
  * 头一行:这个群 / 项目自己 —— 头像 + 名字(+ 标签,示例的「示例」),点它做什么由调用方给(群 / 项目 = 回到它的主群聊)。
  * 群 / 项目的两行头部共用一块悬停底，创建按钮和行尾按钮是独立入口。标题用 aria-current 表示当前页。
  * 标题用面板的粗体字号 --font-title。
- * 行尾的钮(群菜单、收起这一列)由调用方给,摆在行的右端,是左边列表顶上那一行(«、会话历史)那一种;
- * 名字给它们让出 `trailingButtons` 枚 28px 钮、钮间 4px、右边 8px。`hoverButton`(群的「⋯」)静止时不占地方,
- * 指针落到这一行、键盘停在里面或它的菜单开着时才展开,名字再让出它那一格。
+ * 行尾的钮(收起这一列)由调用方给,摆在行的右端,是左边列表顶上那一行(«、会话历史)那一种;
+ * 名字给它们让出 `trailingButtons` 枚 28px 钮、钮间 4px、右边 8px。❌ 悬停「⋯」(第 16 版稿:栏顶块只有头像、名字、创建;群的那些项在详情页里)。
  * 没有创建入口时是这一列顶上那条 40px 的带(#2548 提议稿:和左边列表顶上那一行、正文的页签条平齐),❌ 再在上面垫一条空带;
  * 带里空着的地方照样拖得动窗口(同页签条,按钮自己退订,index.css @@@titlebar-no-drag)。
  */
@@ -42,7 +41,6 @@ export function InnerHeadRowLayout({
   active,
   onOpen,
   trailingButtons,
-  hoverButton,
   createAction,
   children,
 }: {
@@ -54,18 +52,15 @@ export function InnerHeadRowLayout({
   onOpen: () => void;
   /** 行尾的钮有几枚,名字给它们让出的宽度按它算。 */
   trailingButtons: number;
-  /** 悬停才出、排在行尾最前的那一枚(不算进 `trailingButtons`)。 */
-  hoverButton?: ReactNode;
   createAction?: { label: string; onClick: () => void };
   children: ReactNode;
 }) {
   const reserve = 8 + HEAD_BUTTON_PX * trailingButtons + HEAD_BUTTON_GAP_PX * Math.max(0, trailingButtons - 1);
-  const reserveShown = hoverButton ? reserve + HEAD_BUTTON_PX + HEAD_BUTTON_GAP_PX : reserve;
   return (
     <SidebarMenu className={cn("flex h-10 shrink-0 items-center [-webkit-app-region:drag]", createAction && "gg-inner-head-double")}>
       <div
-        className="group/head relative w-full [--head-reserve:var(--head-reserve-rest)] focus-within:[--head-reserve:var(--head-reserve-shown)] hover:[--head-reserve:var(--head-reserve-shown)] has-[[aria-expanded=true]]:[--head-reserve:var(--head-reserve-shown)]"
-        style={{ '--head-reserve-rest': `${reserve}px`, '--head-reserve-shown': `${reserveShown}px` } as CSSProperties}
+        className="group/head relative w-full"
+        style={{ '--head-reserve': `${reserve}px` } as CSSProperties}
         data-inner-head={headKey}
       >
         <SidebarMenuButton
@@ -84,11 +79,6 @@ export function InnerHeadRowLayout({
         </SidebarMenuButton>
         {createAction ? <Button variant="ghost" size="sm" className="gg-inner-head-create window-no-drag-region" data-inner-head-create="" onClick={createAction.onClick}><SquarePen size={14} /><span>{createAction.label}</span></Button> : null}
         <span className="absolute inset-y-0 right-2 flex items-center gap-1" data-inner-head-actions="">
-          {hoverButton ? (
-            <span data-inner-head-hover="" className="-me-1 flex w-0 overflow-hidden opacity-0 transition-[width,margin,opacity] group-focus-within/head:me-0 group-focus-within/head:w-7 group-focus-within/head:opacity-100 group-hover/head:me-0 group-hover/head:w-7 group-hover/head:opacity-100 has-[[aria-expanded=true]]:me-0 has-[[aria-expanded=true]]:w-7 has-[[aria-expanded=true]]:opacity-100">
-              {hoverButton}
-            </span>
-          ) : null}
           {children}
         </span>
       </div>
