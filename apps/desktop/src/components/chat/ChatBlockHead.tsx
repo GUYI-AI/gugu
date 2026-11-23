@@ -21,7 +21,7 @@ export function ChatBlockHead({ host, chat, name, avatar, isAgent }: {
 }) {
   const room = isRoomChat(chat.kind)
   const [open, setOpen] = useState(false)
-  const trigger = useRef<HTMLSpanElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
   return host.title ? createPortal(
     <Popover.Root open={open} modal={false} onOpenChange={setOpen}>
       <Popover.Trigger ref={trigger} nativeButton={false} data-testid="conversation-capsule" render={<span className="flex h-full min-w-0 items-center gap-1" data-chat-block-title="" />}>
