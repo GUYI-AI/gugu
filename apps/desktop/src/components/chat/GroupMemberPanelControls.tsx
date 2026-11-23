@@ -6,7 +6,8 @@ import { MoreHorizontal } from '@/lib/icons'
 import { chatService } from '../../lib/chat'
 import { groupAgentDisplayStatus } from '../../lib/groupAgentStatus'
 import { useShownAgentStatus } from './useAgentsOnCloudComputer'
-import { canEditAgentListenMode, groupInviteAccess } from '../../lib/groupMemberPermissions'
+import { canEditAgentListenMode, groupInviteAccess, isProjectGroupChat } from '../../lib/groupMemberPermissions'
+import { transferGroupOwner } from '../../lib/groupAdmin'
 import type { DisplayIdentity } from '../../lib/displayIdentity'
 import { MemberProfilePopover, MemberProfileRoot } from '../MemberProfilePopover'
 import { Popover } from '../ui/Popover'
@@ -103,6 +104,15 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   const setListenMode = useCallback((profile: MemberProfileCardModel, mode: ListenMode) => (
     runMutation(() => chatService.setAgentListenMode(chatId, profile.id, mode))
   ), [chatId, runMutation])
+  // Only the owner sees it, only for another human (the database also requires both). Project groups say why it is closed.
+  const canTransferOwner = useCallback((profile: MemberProfileCardModel) => (
+    isGroup && settings?.my_role === 'owner' && profile.type === 'human' && profile.id !== currentUserId
+  ), [currentUserId, isGroup, settings?.my_role])
+  const transferOwner = useCallback(async (profile: MemberProfileCardModel) => {
+    const title = t('group.memberList.transferOwner')
+    if (!(await confirmDanger({ title, description: t('group.memberList.transferOwnerConfirm', { name: profile.displayName }), confirmLabel: title }))) return
+    await runMutation(() => transferGroupOwner(chatId, profile.id))
+  }, [chatId, runMutation, t])
   // Removing someone from a group or topic (or leaving it) asks first, from the member menu and the profile card alike.
   const remove = useCallback(async (profile: MemberProfileCardModel) => {
     const title = !isGroup ? topicRemovalLabel(profile) : ownsAgent(profile) ? t('group.memberList.agentLeave') : t('group.settings.removeMemberTitle')
@@ -120,6 +130,9 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
       canChangeRole: isGroup && manageable,
       onChangeRole: isGroup && manageable ? (role) => { void setRole(profile, role) } : undefined,
       onChangeListenMode: canEditListenMode(profile) ? (mode) => { void setListenMode(profile, mode) } : undefined,
+      transferOwner: canTransferOwner(profile)
+        ? isProjectGroupChat(chatId) ? { blockedReason: t('group.memberList.transferOwnerProjectGroup') } : { onTransfer: () => { void transferOwner(profile) } }
+        : undefined,
       canRemove: manageable || owned || self,
       removeLabel: !isGroup ? topicRemovalLabel(profile) : undefined,
       removeHint: !isGroup ? topicRemovalHint(profile) : undefined,
@@ -127,7 +140,7 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
       busy,
       editError: error,
     }
-  }, [busy, canEditListenMode, canManage, error, isGroup, isSelfLeaving, ownsAgent, remove, setListenMode, setRole, topicRemovalHint, topicRemovalLabel])
+  }, [busy, canEditListenMode, canManage, canTransferOwner, chatId, error, isGroup, isSelfLeaving, ownsAgent, remove, setListenMode, setRole, t, topicRemovalHint, topicRemovalLabel, transferOwner])
 
   const profileTrigger = useCallback((memberId: string): { handle: MemberProfileHandle; payload: ActiveMemberProfile } | null => {
     const profile = profileOf(memberId)

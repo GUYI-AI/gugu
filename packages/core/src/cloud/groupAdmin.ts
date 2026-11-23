@@ -76,6 +76,10 @@ export function createGroupAdmin(client: GroupAdminRpcClient, actor: string) {
     async setRole(chatId: string, member: string, role: GroupMemberRole) {
       return object('set_group_member_role_as', client.rpc('set_group_member_role_as', { p_chat_id: chatId, p_member_user_id: member, p_role: role, p_as_user_id: actor }), { chat_id: chatId, user_id: member, role })
     },
+    /** Only the current owner, acting as themself, hands the group to a live human member; they become an admin. */
+    async transferOwner(chatId: string, newOwner: string) {
+      return object('transfer_group_owner_as', client.rpc('transfer_group_owner_as', { p_chat_id: chatId, p_new_owner_user_id: newOwner, p_as_user_id: actor }), { chat_id: chatId, owner_user_id: newOwner })
+    },
     async setListenMode(chatId: string, agent: string, mode: 'active' | 'passive') {
       return object('set_agent_listen_mode_as', client.rpc('set_agent_listen_mode_as', { p_chat_id: chatId, p_agent_user_id: agent, p_mode: mode, p_as_user_id: actor }), { chat_id: chatId, user_id: agent, listen_mode: mode })
     },

@@ -151,6 +151,8 @@ export interface MemberProfileEditControls {
   onChangeRole?: (role: GroupMemberRole) => Promise<void> | void
   // @@@1208 (#857 收尾) listen-mode 变更:agent 的主人看它时父级才给这个回调,分段控件变可交互(否则只读镜像)。
   onChangeListenMode?: (mode: ListenMode) => Promise<void> | void
+  /** The group owner looking at another human: hand the group over (asks first), or why this group cannot be handed over. */
+  transferOwner?: { onTransfer: () => void } | { blockedReason: string }
   canRemove?: boolean
   removeLabel?: string
   /** What the removal does, shown under the button (topics: the person can still read it). */
@@ -291,7 +293,7 @@ export function MemberProfileCard({
   const canOpenChat = !!onOpenChat && (!isAgent || (member.ownerUserId === user?.id && !!session))
   const editBusy = !!editControls?.busy
   const rosterUnknown = member.membership === 'unknown'
-  const showEdits = isGroupProfile && !rosterUnknown && (editControls?.canChangeRole || editControls?.canRemove)
+  const showEdits = isGroupProfile && !rosterUnknown && (editControls?.canChangeRole || editControls?.canRemove || editControls?.transferOwner)
   const roleLabel = rosterUnknown ? <Unknown /> : member.role === 'owner' ? t('profile.roles.owner') : member.role === 'admin' ? t('profile.roles.admin') : t('profile.roles.member')
 
   // Listen-mode (收听模式): agent-only, group scope.
@@ -496,9 +498,24 @@ export function MemberProfileCard({
                 disabled={editBusy}
                 onChange={(event) => editControls.onChangeRole?.(event.target.value as GroupMemberRole)}
               >
-                {(['owner', 'admin', 'member'] as const).map((role) => <option key={role} value={role}>{role === 'owner' ? t('profile.roles.owner') : role === 'admin' ? t('profile.roles.admin') : t('profile.roles.member')}</option>)}
+                {/* Ownership is not a role pick: it moves through the transfer action below. */}
+                {(['admin', 'member'] as const).map((role) => <option key={role} value={role}>{role === 'admin' ? t('profile.roles.admin') : t('profile.roles.member')}</option>)}
               </select>
             </div>
+          ) : null}
+          {editControls?.transferOwner ? (
+            <button
+              type="button"
+              data-profile-transfer-owner={member.id}
+              className={profileManageDangerClass}
+              onClick={'onTransfer' in editControls.transferOwner ? editControls.transferOwner.onTransfer : undefined}
+              disabled={editBusy || !('onTransfer' in editControls.transferOwner)}
+            >
+              {t('group.memberList.transferOwner', { ns: 'messaging' })}
+            </button>
+          ) : null}
+          {editControls?.transferOwner && 'blockedReason' in editControls.transferOwner ? (
+            <div className="text-[length:var(--font-caption)] leading-[1.4] text-[var(--faint-fg)]" data-profile-transfer-owner-hint={member.id}>{editControls.transferOwner.blockedReason}</div>
           ) : null}
           {editControls?.canRemove ? (
             <button
