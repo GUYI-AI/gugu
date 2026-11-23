@@ -10,7 +10,6 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { NAV_COLUMN_WIDTH } from '@/lib/uiRuler';
 import { clamp01, PANEL_LANDED_PX, PanelTrack, type SlotTarget } from './panel-track';
 import { PANEL_SNAP_RATIO } from './panel-resize-handle';
 import { setSidebarFold, sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
@@ -18,7 +17,8 @@ import { setSidebarFold, sidebarFolds } from '@renderer/features/sidebar/sidebar
 /** 侧栏宽度的边界与默认值。min 沿用改造前的 200px;max 取 Codex 同款 520。 */
 export const SIDEBAR_MIN_WIDTH_PX = 200;
 export const SIDEBAR_MAX_WIDTH_PX = 520;
-export const SIDEBAR_DEFAULT_WIDTH_PX = NAV_COLUMN_WIDTH;
+// 第 16 版稿:零级栏展开 236 宽(一级侧边栏另有自己的默认宽)。
+export const SIDEBAR_DEFAULT_WIDTH_PX = 236;
 
 const SIDEBAR_PANE = definePaneWidth({ id: 'gugu.taskpage.sidebarWidth', initial: SIDEBAR_DEFAULT_WIDTH_PX, min: SIDEBAR_MIN_WIDTH_PX, max: SIDEBAR_MAX_WIDTH_PX });
 
