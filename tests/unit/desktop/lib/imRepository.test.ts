@@ -276,7 +276,7 @@ describe('account-scoped normalized IM repository', () => {
     expect(() => { selected.display_name = 'Mutated' }).toThrow()
     expect(selected.display_name).toBe('Original')
   })
-  it('hands identities and chats back unchanged when a write does not touch their tables', async () => {
+  it('does not call identity and chat subscribers again when a write leaves their tables unchanged', async () => {
     const repository = await openImRepository('account-a', { adapter, storage: window.localStorage })
     await replaceChatRowsAndIdentities(repository, [chat('chat-1')], [identity('identity-1')])
     const identities: unknown[] = []
@@ -289,19 +289,19 @@ describe('account-scoped normalized IM repository', () => {
       transaction.putView('active-chat', 'chat-1')
     })
     await repository.transaction((transaction) => transaction.putView('other', 1))
-    expect(identities).toHaveLength(3)
-    expect(identities[1]).toBe(identities[0])
-    expect(identities[2]).toBe(identities[0])
-    expect(chats[2]).toBe(chats[0])
+    expect(identities).toHaveLength(1)
+    expect(chats).toHaveLength(1)
+    expect(imSelectors.identitiesById(repository.snapshot())).toBe(identities[0])
     // writing a row again with the same value is not a change (every message re-puts its sender)
     await repository.transaction((transaction) => transaction.putIdentity(identity('identity-1')))
-    expect(identities).toHaveLength(4)
-    expect(identities[3]).toBe(identities[0])
+    expect(identities).toHaveLength(1)
     // writing the table again yields a new value
     await repository.transaction((transaction) => transaction.putIdentity(identity('identity-2')))
-    expect(identities[4]).not.toBe(identities[0])
-    expect(Object.keys(identities[4] as object)).toEqual(['identity-1', 'identity-2'])
-    expect(chats[4]).toBe(chats[0])
+    expect(identities).toHaveLength(2)
+    expect(identities[1]).not.toBe(identities[0])
+    expect(Object.keys(identities[1] as object)).toEqual(['identity-1', 'identity-2'])
+    expect(chats).toHaveLength(1)
+    expect(imSelectors.chats(repository.snapshot())).toBe(chats[0])
   })
   it('keeps an equal row source fresh without replacing the table and removes confirmed rows inside publication', async () => {
     const repository = await openImRepository('account-a', { adapter })
@@ -382,7 +382,7 @@ describe('account-scoped normalized IM repository', () => {
     expect(commit.mock.calls[2][0]).toEqual([
       { type: 'put', store: 'chat', value: expect.objectContaining({ id: 'a', value: expect.objectContaining({ name: 'Last' }) }) },
     ])
-    expect(observed).toEqual([[], ['a'], ['a'], ['Last']])
+    expect(observed).toEqual([[], ['a'], ['Last']])
     const reopened = await openImRepository('account-a', { adapter, storage: window.localStorage })
     expect(readChatRows(reopened)[0].name).toBe('Last')
   })
