@@ -24,8 +24,8 @@ export function DetailsHero({ avatar, name, sub }: { avatar: ReactNode; name: Re
 export function DetailsName({ name, onEdit, testId }: { name: string; onEdit?: () => void; testId?: string }) {
   return (
     <button type="button" data-testid={testId} disabled={!onEdit} onClick={onEdit}
-      className="-ms-1 flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-1 leading-[26px] enabled:cursor-text enabled:hover:bg-row-hover">
-      <span className="truncate">{name}</span>
+      className="flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-1 leading-[26px] enabled:cursor-text enabled:hover:bg-row-hover">
+      <span className="min-w-0 truncate">{name}</span>
       {onEdit ? <PencilMark /> : null}
     </button>
   )
@@ -36,7 +36,7 @@ function PencilMark() {
 }
 
 export function DetailsChip({ children, onClick, title }: { children: ReactNode; onClick?: () => void; title?: string }) {
-  return <span title={title} onClick={onClick} className={`inline-flex h-[22px] items-center gap-[5px] rounded-full bg-[var(--muted)] px-2 text-[12px] text-[var(--muted-fg)]${onClick ? ' cursor-pointer' : ''}`}>{children}</span>
+  return <span title={title} onClick={onClick} className={`inline-flex h-[22px] items-center gap-[5px] rounded-full bg-[var(--muted)] px-2 text-[12px] text-[var(--muted-fg)] ${onClick ? 'cursor-pointer' : ''}`}>{children}</span>
 }
 
 export function DetailsTiles({ children }: { children: ReactNode }) {
@@ -72,8 +72,8 @@ export function DetailsRow({ icon, label, end, chevron, onClick, danger, testId,
     <div role={onClick ? 'button' : undefined} tabIndex={onClick && !disabled ? 0 : undefined} data-testid={testId} aria-disabled={disabled || undefined}
       onClick={disabled ? undefined : onClick}
       onKeyDown={onClick && !disabled ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } } : undefined}
-      className={`flex min-h-10 items-center gap-x-[11px] border-b border-[var(--border)] px-1 text-[13.5px]${text ? '' : ' flex-wrap py-[5px]'}${onClick && !disabled ? ' cursor-pointer' : ''}${disabled ? ' opacity-50' : ''}${danger ? ' border-b-0 text-[var(--danger-fg)]' : ''}`}>
-      <span className={`flex shrink-0 [&_svg]:size-4${danger ? '' : ' text-[var(--muted-fg)]'}`}>{icon}</span>
+      className={`flex min-h-10 items-center gap-x-[11px] border-b border-[var(--border)] px-1 text-[13.5px] ${text ? '' : 'flex-wrap py-[5px]'} ${onClick && !disabled ? 'cursor-pointer' : ''} ${disabled ? 'opacity-50' : ''} ${danger ? 'border-b-0 text-[var(--danger-fg)]' : ''}`}>
+      <span className={`flex shrink-0 [&_svg]:size-4 ${danger ? '' : 'text-[var(--muted-fg)]'}`}>{icon}</span>
       <span className="shrink-0 whitespace-nowrap">{label}</span>
       {end !== undefined && end !== null || chevron ? (
         <span className={`ms-auto flex items-center justify-end gap-1 text-[12.5px] text-[var(--faint-fg)] ${text ? 'min-w-0 flex-1' : 'shrink-0'}`}>

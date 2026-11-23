@@ -89,7 +89,7 @@ export function GroupMembersBlock({ chatId, settings, memberIds, total, people, 
       <span className="flex shrink-0 ps-1.5">
         {/* 窄了先让头像:详情页(@container/details)不到 380 只留 3 个,不到 300 不留。 */}
         {memberIds.slice(0, 4).map((id, index) => (
-          <span key={id} className={`-ms-1.5 flex rounded-full ring-2 ring-[var(--muted)] @max-[300px]/details:hidden${index >= 3 ? ' @max-[380px]/details:hidden' : ''}`}>
+          <span key={id} className={`-ms-1.5 flex rounded-full ring-2 ring-[var(--muted)] @max-[300px]/details:hidden ${index >= 3 ? '@max-[380px]/details:hidden' : ''}`}>
             <Avatar name={identitiesById[id]?.display_name ?? ''} avatarUrl={identitiesById[id]?.avatar ?? null} seed={id} size={22} />
           </span>
         ))}

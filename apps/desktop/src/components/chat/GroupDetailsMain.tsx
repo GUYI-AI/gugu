@@ -64,7 +64,7 @@ export function GroupDetailsMain(props: GroupDetailsMainProps) {
             onDragOver={manager ? (event) => { event.preventDefault(); setDragOver(true) } : undefined}
             onDragLeave={manager ? () => setDragOver(false) : undefined}
             onDrop={manager ? (event) => { event.preventDefault(); setDragOver(false); void avatar.onFile(event.dataTransfer.files?.[0]) } : undefined}
-            className={`relative grid size-16 place-items-center overflow-hidden rounded-full${manager && !avatar.uploading ? ' cursor-pointer' : ''}${dragOver ? ' outline-1 outline-dashed outline-[var(--primary)]' : ''}`}>
+            className={`relative grid size-16 place-items-center overflow-hidden rounded-full ${manager && !avatar.uploading ? 'cursor-pointer' : ''} ${dragOver ? 'outline-1 outline-dashed outline-[var(--primary)]' : ''}`}>
             <Avatar variant="group" name={shownName} avatarUrl={settings?.avatar_url ?? null} seed={chat.id} size={64} />
             {avatar.uploading ? <div className="absolute inset-0 grid place-items-center bg-[var(--bg-overlay-modal)] text-[length:var(--font-caption)] text-[var(--color-white)]">{t('group.settings.uploading')}</div> : null}
           </div>

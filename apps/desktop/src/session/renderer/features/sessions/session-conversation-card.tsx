@@ -18,7 +18,9 @@ import { sessionRegistry } from './stores/session-registry';
  * My agent's card (第 16 版): its name (click to rename, ❌ the harness mark before it, #39), 重启会话 — the tab's own
  * restart command, which asks 「中断并重启」 first (#41) — and 「详情 ›」 beside the conversation.
  */
-export const SessionConversationCard = observer(function SessionConversationCard({ page, sessionId, surface, commands, onClose }: {
+export const SessionConversationCard = observer(function SessionConversationCard({ page, sessionId, surface, live, commands, onClose }: {
+  /** A live chat's own model and effort (its store), as its composer shows them. */
+  live?: { model: string | null; effort: string | null }
   /** Which model catalog its composer reads (acp chat / terminal). */
   surface: SessionpageSessionSurface
   /** The session page the tab is in: 详情 opens beside it there. */
@@ -35,7 +37,7 @@ export const SessionConversationCard = observer(function SessionConversationCard
   // 消息通知 = 聊天列表里这个 agent 那一行(它的私聊)的通知档位,同一个设置(壳经 chatSummariesBridge 登记)。
   useChatSummaries();
   const chat = agentId ? agentChatOf(agentId) : null;
-  const modelLabel = useSessionModelLabel(sessionId, surface);
+  const modelLabel = useSessionModelLabel(sessionId, surface, live);
   const reload = commands.find((command) => command.id === 'session:reload');
   if (!store) return null;
   return <ConversationCard
