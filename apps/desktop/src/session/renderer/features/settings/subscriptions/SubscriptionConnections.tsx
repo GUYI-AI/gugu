@@ -53,7 +53,7 @@ import {
   SUBSCRIPTIONS,
   useSubscriptionUsage
 } from './subscription-queries'
-import { NEARLY_USED_PERCENT, payerLine, windowLabel } from './subscription-view'
+import { NEARLY_USED_PERCENT, payerLine, planText, windowLabel } from './subscription-view'
 import { nativeConfigured, useConnectionDetails, useListedConnections } from './listed-connections'
 import { SwitchNoticeLine } from './SwitchNoticeLine'
 import './subscriptions.css'
@@ -628,7 +628,7 @@ function ConnectionOption({
           <span className="subscription-connection-name">
             {name}
             {details?.plan?.plan && (
-              <span className="subscription-plan-badge">{details.plan.plan}</span>
+              <span className="subscription-plan-badge">{planText(details.plan)}</span>
             )}
           </span>
           <span className="subscription-connection-description block">{description}</span>

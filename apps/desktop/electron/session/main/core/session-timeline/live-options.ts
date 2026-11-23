@@ -12,6 +12,8 @@ import { getSessions } from '@main/core/sessions/getSessions';
 import { recordLiveModelSwitch } from '@main/core/sessions/live-model-switch';
 import { recordLiveSessionSetting } from '@main/core/sessions/record-live-session-setting';
 import { log } from '@main/lib/logger';
+import { sessionHostCopy } from '@main/core/host-copy';
+import { hostText } from '../../../../../shared/host-localization';
 import { platformModelIdFromNativeOption } from '@shared/platform-model-id';
 
 /**
@@ -105,7 +107,7 @@ async function readConfig(sessionId: string): Promise<SessionConfigState> {
   const client = await peekAcpRuntimeClient();
   if (!client) {
     // fail loud：区别于「有运行时、但这条会话什么都不可改」（那种回三个 null）。
-    throw new SessionOptionsError('session_not_live', '这台机器上没有运行中的 ACP 会话，无法修改选项');
+    throw new SessionOptionsError('session_not_live', sessionHostCopy().sessionOptions.noRuntime);
   }
 
   // 先看这条会话此刻的 lifecycle。`sessions.list` 里**有记录 ≠ 还活着** —— 已经结束的会话
@@ -118,7 +120,7 @@ async function readConfig(sessionId: string): Promise<SessionConfigState> {
     await live.ready;
     const lifecycle = live.current()[sessionId]?.lifecycle;
     if (!lifecycle || lifecycle === 'closed') {
-      throw new SessionOptionsError('session_not_live', '这条会话没在跑，跑起来才有选项可改');
+      throw new SessionOptionsError('session_not_live', sessionHostCopy().sessionOptions.notRunning);
     }
   } finally {
     live.dispose();
@@ -136,7 +138,7 @@ async function readConfig(sessionId: string): Promise<SessionConfigState> {
     // `Unknown live topic 'session.config|{...}'`。那串东西直接进了手机屏幕（实测），
     // 既看不懂又把内部主题名泄了出去 —— 它的真实含义就是上面那句人话。
     if (String((error as Error)?.message ?? error).includes('Unknown live topic')) {
-      throw new SessionOptionsError('session_not_live', '这条会话没在跑，跑起来才有选项可改');
+      throw new SessionOptionsError('session_not_live', sessionHostCopy().sessionOptions.notRunning);
     }
     throw error;
   } finally {
@@ -153,7 +155,7 @@ const defaultIo: SessionOptionsIo = {
   apply: async (input) => {
     const client = await peekAcpRuntimeClient();
     if (!client) {
-      throw new SessionOptionsError('session_not_live', '这台机器上没有运行中的 ACP 会话，无法修改选项');
+      throw new SessionOptionsError('session_not_live', sessionHostCopy().sessionOptions.noRuntime);
     }
     return input.dimension === 'mode'
       ? client.setModeOption({ sessionId: input.conversationId, value: input.value })
@@ -188,7 +190,7 @@ export async function setSessionOption(input: {
   if (input.dimension === 'fast' || options.fast) {
     if (!(await (ops.canUseFast ?? defaultIo.canUseFast!)(input.conversationId))) {
       options.fast = null;
-      if (input.dimension === 'fast') throw new SessionOptionsError('option_unsupported', '当前模型不支持 Fast 模式');
+      if (input.dimension === 'fast') throw new SessionOptionsError('option_unsupported', sessionHostCopy().sessionOptions.fastUnsupported);
     }
   }
   if (input.dimension === 'fast' && input.value === 'off' && !options.fast) {
@@ -197,10 +199,10 @@ export async function setSessionOption(input: {
   }
   const group = options[input.dimension];
   if (!group) {
-    throw new SessionOptionsError('option_unsupported', `这条会话没有可改的${input.dimension}`);
+    throw new SessionOptionsError('option_unsupported', hostText(sessionHostCopy().sessionOptions.dimensionUnsupported, { dimension: input.dimension }));
   }
   if (!group.available.some((choice) => choice.id === input.value)) {
-    throw new SessionOptionsError('option_not_available', `${input.value} 不在可选清单里`);
+    throw new SessionOptionsError('option_not_available', hostText(sessionHostCopy().sessionOptions.valueUnavailable, { value: input.value }));
   }
 
   const result = await ops.apply(input);
@@ -218,7 +220,7 @@ export async function setSessionOption(input: {
 function describeFailure(error: { type: string; message?: string } | undefined): string {
   // 原话优先,没有原话时至少把类型报出去 —— ❌ 不折成一句「改选项失败」:
   // 那样手机上看到的和什么都没说是一样的。
-  if (!error) return '改选项失败（provider 没说原因）';
+  if (!error) return sessionHostCopy().sessionOptions.failedWithoutReason;
   return error.message ?? error.type;
 }
 

@@ -20,7 +20,7 @@ import { fileChangesChannel } from '@shared/core/fs/fsEvents';
 import { workspaceBackend, workspaceEvents, workspaceRpc } from '../workspace-backend/workspace-backend';
 import { watchWorkspaceDirectory } from '../workspace-backend/watch-directory';
 import { parentOf } from '@/components/remoteFolderPath';
-import { readWorkspaceFileBytes } from '../workspace-backend/read-workspace-bytes';
+import { readWorkspaceFileBytes, type BegunRead } from '../workspace-backend/read-workspace-bytes';
 import { openPathWithFailureToast } from '../stores/open-file-in-file-editor';
 import { fileBaseName } from '../stores/workspace-path';
 import { getSessionView } from '../stores/session-selectors';
@@ -32,7 +32,7 @@ import { OpenWithSystemButton } from './open-with-system-button';
  * A file of a workspace in the preview a chat's file opens in: its bytes through that workspace (whichever machine it is
  * on), read again when the file changes there. A session's file tab and an App's peek both draw this.
  */
-export function WorkspaceFileView({ root, tabId, projectId, workspaceId, sessionId, chatId, path, absolutePath, inWorkspace, onClose }: {
+export function WorkspaceFileView({ root, tabId, projectId, workspaceId, sessionId, chatId, path, absolutePath, inWorkspace, takeBegunRead, onClose }: {
   /** The working copy's root: a folder of it in the path is a way to its list. */
   root?: string;
   /** The tab it is drawn in: editing goes to the folder App in this tab, and reading comes back to it. */
@@ -47,6 +47,8 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
   absolutePath: string;
   /** Inside the workspace, main also lets the system open it outside home. */
   inWorkspace: boolean;
+  /** The read begun as the file opened (`@@@first-read-early`), taken by its first read. */
+  takeBegunRead?: () => BegunRead | undefined;
   onClose: () => void;
 }) {
   const { translate } = useSessionMessages();
@@ -89,7 +91,7 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
       source: {
         kind: 'hosted',
         key: `${workspaceId}:${path}@${revision}`,
-        read: () => readWorkspaceFileBytes(projectId, workspaceId, path, inWorkspace),
+        read: () => readWorkspaceFileBytes(projectId, workspaceId, path, inWorkspace, takeBegunRead?.()),
         registerHtml: (documentHtml) => registerHtmlPreview(documentHtml, (content) => workspaceRpc(projectId).files.createPreview(projectId, workspaceId, absolutePath, content)),
         // One cite for a selection and the file menu's 引用: the session's draft, the file named by its path on its machine.
         quote: (selection) => conversation ? citeIntoConversation(conversation, selectionCite(conversation, reference, selection && viewerPick(selection))) : Promise.resolve(),
@@ -118,7 +120,7 @@ export function WorkspaceFileView({ root, tabId, projectId, workspaceId, session
         download,
       },
     };
-  }, [root, tabId, projectId, workspaceId, sessionId, chatId, path, absolutePath, inWorkspace, revision, translate, toast, openInApps]);
+  }, [root, tabId, projectId, workspaceId, sessionId, chatId, path, absolutePath, inWorkspace, takeBegunRead, revision, translate, toast, openInApps]);
   return <MessageFilePreview fill tabbed readOnly={!sessionId} file={file} onClose={onClose} />;
 }
 

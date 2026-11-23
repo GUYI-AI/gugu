@@ -10,6 +10,8 @@
 // 边界(照实):存的是**咕咕自己的**通行密钥,跟着这台 Mac 的安全隔区、不进 iCloud 钥匙串;Safari / Chrome
 // 里已有的那批调不出来(苹果只让网站授权过的应用读,Google 不会授权咕咕)。
 
+import { hostText } from '../shared/host-localization'
+
 export interface WebAuthnAccountLike {
   credentialId: string
   name?: string
@@ -50,8 +52,8 @@ export async function chooseWebAuthnAccount(
   if (accounts.length === 0) return null
   const buttons = [...accounts.map(webAuthnAccountLabel), copy.cancel]
   const picked = await ask({
-    message: copy.message.replace('{site}', relyingPartyId),
-    detail: copy.detail.replace('{site}', relyingPartyId),
+    message: hostText(copy.message, { site: relyingPartyId }),
+    detail: hostText(copy.detail, { site: relyingPartyId }),
     buttons,
     cancelId: buttons.length - 1,
   })

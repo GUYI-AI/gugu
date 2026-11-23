@@ -52,6 +52,27 @@ describe('a recorded journal turn gives its outcome to the record turn it is', (
     expect(out[0]).toMatchObject({ outcome: error, endedAt: 40 });
     expect(out[1]!.outcome).toBeUndefined();
   });
+  it('each turn is read once, however many outcomes the journal holds', () => {
+    let reads = 0;
+    const counted = (one: TranscriptTurn): TranscriptTurn => {
+      const { items, ...rest } = one;
+      return Object.defineProperty(rest, 'items', { enumerable: true, get: () => { reads += 1; return items; } }) as TranscriptTurn;
+    };
+    const readsFor = (size: number) => {
+      const record = Array.from({ length: size }, (_, index) => counted(said(`r${index}`, index * 10, `m${index}`)));
+      const outcomes = Array.from({ length: size }, (_, index) => counted(failed(`runtime-${index}`, index * 10 - 1, `m${index}`)));
+      reads = 0;
+      const out = withJournalTurns(record, [], outcomes);
+      expect(out.every((one) => one.outcome?.kind === 'error')).toBe(true);
+      return reads;
+    };
+    expect(readsFor(400)).toBe(readsFor(100) * 4);
+  });
+  it('a turn that took a journaled end is the same object on the next read, so a timeline sees it unchanged', () => {
+    const record = [said('r1', 10, 'a'), said('r2', 20, 'b')];
+    const outcomes = [failed('runtime-9', 19, 'b')];
+    expect(withJournalTurns(record, [], outcomes)[1]).toBe(withJournalTurns(record, [], outcomes)[1]);
+  });
   it('one the record does not hold is shown whole, by when it started', () => {
     expect(ids(withJournalTurns([said('r1', 10, 'a'), said('r2', 30, 'b')], [turn('j1', 40)], [failed('runtime-9', 20, 'never-written')]))).toEqual(['r1', 'runtime-9', 'r2', 'j1']);
   });

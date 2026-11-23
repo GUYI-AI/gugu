@@ -88,7 +88,7 @@ async function fetchImageAsPngBlob(url: string): Promise<Blob> {
   })
 }
 
-type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean }
+type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean; original?: string }
 
 function slideFor(item: ImageViewerItem, view: ViewerWindow): ViewerSlide {
   // 另有原图可取时,缩略图的 natural 尺寸不是原图的:不拿它排版
@@ -209,12 +209,13 @@ function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, o
         }
         if (pswp.isDestroying || !pswp.isOpen) return
       }
-      if (current && data.item.full) replace(await data.item.full())
+      if (current && data.item.full) replace(data.original = await data.item.full())
     })().catch((error: unknown) => {
       if (!current || pswp.isDestroying || !pswp.isOpen) return
       log.warn({ error: String(error) }, 'image bytes unavailable')
-      if (data.item.preview) {
-        if (!data.src) {
+      // An image laid out by no pixels yet (@@@thumb-is-not-the-size) says so rather than staying an empty black slide.
+      if (data.item.preview || !data.sizeKnown) {
+        if (!data.src || !data.sizeKnown) {
           const content = pswp.contentLoader.getContentByIndex(index)
           if (content) { content.state = 'error'; content.displayError() }
         }
@@ -245,6 +246,10 @@ function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, o
     const data = content.data as ViewerSlide
     const img = content.element
     if (data.sizeKnown || pswp.isDestroying || isError || !(img instanceof view.HTMLImageElement)) return
+    // @@@thumb-is-not-the-size - a thumbnail's pixels are smaller than its original: laid out by them, the picture opened
+    // at thumbnail size and stayed there once the original came. With an original to come and no recorded size, the
+    // geometry waits for the original's own pixels.
+    if (!data.item.size && data.item.full && data.src !== data.original) return
     // Shown from here on (@@@unsized-first-frame): in its real box set below, in this same task, or as it is when it has none.
     img.style.visibility = ''
     if (!img.naturalWidth || !img.naturalHeight) return

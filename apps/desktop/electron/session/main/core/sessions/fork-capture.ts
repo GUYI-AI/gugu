@@ -359,10 +359,15 @@ async function mtimeOf(filePath: string): Promise<number | null> {
  * ACP 分叉是同一个形状,只是「还没认领」写法不同:ACP 会话出生时 `sessionId = null`,`session/fork`
  * 拿回新 id 之后才写进来 —— 而 claude ACP 适配器写 transcript 与咕咕落这一格之间同样有空档
  * (#6269 实测:forkedSessionId 返回后约 1 秒,一趟扫描把它登记成了来源的外部 fork)。
+ *
+ * 换计费路的分叉(`forkOnStartProviderSessionId` 仍指着本行的会话)也是同一个形状,只是分叉落回**同一行**:
+ * 那条 child 是这一行自己的,认领前同样留到下一趟。
  */
 function unclaimedProductForkSourceIds(rows: SessionRow[]): Set<string> {
   const sources = new Set<string>();
   for (const row of rows) {
+    const pendingSameRowFork = row.config?.forkOnStartProviderSessionId;
+    if (pendingSameRowFork && pendingSameRowFork === row.providerSessionId) sources.add(row.id);
     const forkedFrom = row.config?.forkedFrom?.sessionId;
     if (!forkedFrom) continue;
     const unclaimed = row.runtime === 'acp' ? row.providerSessionId === null : row.providerSessionId === row.id;

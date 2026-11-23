@@ -545,11 +545,9 @@ export function outboxMessagePosition(repository: AccountImRepository, record: O
   return { ...record, preview: { ...record.preview, local_timeline: captureMessagePosition(rows, record.enqueuedAt) } }
 }
 
-/** A confirmed send: the authoritative message, at the place its row held, written where messages are read. */
+/** A confirmed send: the authoritative message, written where messages are read. */
 export async function confirmSentMessage(repository: AccountImRepository, record: OutboxRecord, message: MessageItem): Promise<MessageItem> {
   if (message.id !== record.clientMessageId) throw new Error(`outbox ack id mismatch: ${record.clientMessageId} != ${message.id}`)
-  const position = record.preview?.local_timeline
-  if (position) message = { ...message, local_timeline: position }
   await ingestMessages(repository.accountId, { writes: [{ type: 'put', message }], revisions: [] })
   return message
 }

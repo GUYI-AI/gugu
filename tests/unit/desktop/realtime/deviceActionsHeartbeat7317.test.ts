@@ -45,7 +45,7 @@ describe('#7317 device actions are re-registered the moment they change', () => 
       ...(on ? {} : { switched_off: [{ group: 'computer', detail: 'Computer Use is off' }] }),
     }))
     // Not started: nothing is written and nobody is asked for auth (at boot the renderer cannot answer yet).
-    host.notifyDeviceActionsChanged()
+    host.notifyHostInfoChanged()
     expect(client.upserts).toHaveLength(0)
     expect(auths()).toBe(0)
     host.start()
@@ -54,7 +54,7 @@ describe('#7317 device actions are re-registered the moment they change', () => 
       expect(offList(client).at(-1)).toEqual([{ group: 'computer', detail: 'Computer Use is off' }])
       const written = client.upserts.length
       on = true
-      host.notifyDeviceActionsChanged()
+      host.notifyHostInfoChanged()
       await until('the changed list written', () => client.upserts.length > written)
       expect(offList(client).at(-1)).toBeNull()
     } finally {
@@ -62,7 +62,7 @@ describe('#7317 device actions are re-registered the moment they change', () => 
     }
     // Control: stopped, it writes no more.
     const after = client.upserts.length
-    host.notifyDeviceActionsChanged()
+    host.notifyHostInfoChanged()
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(client.upserts).toHaveLength(after)
   })
@@ -82,7 +82,7 @@ describe('#7317 device actions are re-registered the moment they change', () => 
       expect(written()).toEqual({ v: 1, read_error: 'grants unreadable' })
       const before = client.upserts.length
       broken = false
-      host.notifyDeviceActionsChanged()
+      host.notifyHostInfoChanged()
       await until('the readable list written', () => client.upserts.length > before)
       expect(written()).toEqual({ v: 1, actions: [] })
     } finally {

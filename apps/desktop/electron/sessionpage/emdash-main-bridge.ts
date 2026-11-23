@@ -141,8 +141,8 @@ export {
   emitSessionpageAgentEvent,
   // @@@sessionpage TASKPAGE-FUSION — register a gugu-built MCP injector so session-page codex sessions get
   // the gugu MCP send tool + gugu identity at session start (enables the target agent to reply).
-  // @@@5301 会话页 agent 通知正文的注入口(见 notification-copy.ts)。
-  setSessionAgentNotificationCopy,
+  // 会话页写给人看的字的注入口(见 core/host-copy.ts)。
+  setSessionHostCopy,
   setSystemNotificationsUsable,
   // 宿主的界面语言的注入口(见 host-locale.ts)。
   setSessionHostLocale,

@@ -291,6 +291,11 @@ async function withPills(token: string, text: string, refs: unknown): Promise<{ 
  */
 export interface DispatchHere {
   chat: DispatchAsk['chat'];
+  /**
+   * The conversation the page is drawn in (`chat`) and the chat its files are (`files`): a topic and its group. A draft
+   * whose chat is the page's files' goes into the conversation the person is looking at, not its group's composer.
+   */
+  conversation?: { chat: string; files: string };
   /** API 27+ reads the roster only if the person opens the target picker. */
   readMembers?: () => Promise<NonNullable<DispatchAsk['chat']>['members']>;
   preselect: string | null;
@@ -361,7 +366,8 @@ export async function dispatchFromApp(
   };
   if (call.draft) {
     if (to && 'agent' in to) return { to: { agent: await agents().draft(agentOf(to), text) } };
-    const detail = await composeInChat(platform, { text, chat: to && 'chat' in to ? to.chat : undefined, refs: call.refs, images: call.images });
+    const composed = await composeInChat(platform, { text, chat: to && 'chat' in to ? to.chat : undefined, refs: call.refs, images: call.images });
+    const detail = here.conversation && composed.chatId === here.conversation.files ? { ...composed, chatId: here.conversation.chat } : composed;
     await platform.draftInChat(detail);
     return { to: { chat: detail.chatId } };
   }

@@ -27,6 +27,33 @@ const HOST_CATALOG = {
       },
     },
     teamPaymentTitle: '团队积分充值',
+    fatalBoot: {
+      title: '咕咕无法启动：任务页启动失败',
+    },
+    /** 主进程答给界面、界面原样显示的那一句(electron/main.ts、model-access.ts、macDmgUpdater.ts)。 */
+    hostErrors: {
+      agentNotOnDevice: '这个 Agent 不在当前设备上运行。',
+      modelSessionUnknown: '模型默认已更新，但暂时无法确定该 Agent 的当前会话（{detail}）。请稍后重试。',
+      modelRuntimeUnavailable: '模型默认已更新，但任务页运行时不可用，当前会话未能切换。',
+      agentRuntimeNotConnected: 'Agent 运行时尚未连接。',
+      engineWithoutGuguModels: '这个 Agent 的引擎不支持咕咕提供的模型。',
+      guguModelNotOpen: '这个咕咕模型尚未对当前 Agent 开放（{model} / {protocol}）。',
+      membershipRequired: '咕咕 {model} 需要开通会员。',
+      shareAgentUnavailable: '该任务暂无可分享的 Agent 身份。',
+      taskRuntimeUnavailable: '任务页运行时不可用。',
+      linkedSessionMissing: '映射的任务或会话已不存在。',
+      updateFilesMissing: '没有可用的更新文件信息，请先检查更新。',
+      updateOpenFailed: '无法打开安装包：{detail}',
+      updateUnsupportedArch: '不支持此 Mac 的架构 {arch}，安装包只有 arm64 和 x64 两种。',
+      updateInstallerMissing: '更新清单中没有 {arch} 架构的安装包（{files}）。',
+    },
+    /** 密码本(electron/password-vault)。pullTitle = 另一台设备申请用这里的密码时的系统通知;verifyReason 由 macOS 拼进指纹框。 */
+    passwordVault: {
+      pullTitle: '「{device}」想用你的密码',
+      pullNewDevice: '新设备',
+      pullBody: '打开咕咕，核对两台设备上的数字。',
+      verifyReason: '查看已保存的密码',
+    },
     tray: {
       tooltip: '咕咕',
       show: '打开咕咕',
@@ -74,11 +101,45 @@ const HOST_CATALOG = {
     backgroundWatch: {
       text: '有人需要你回复时及时通知你',
     },
-    /** @@@5301 会话页 agent 的系统通知正文。这条链在 session/main/core/agent-hooks/notification.ts,
-        与上面 notifications 那条(聊天/托盘)彼此独立,但文案同样要跟宿主语言走。 */
-    sessionAgentNotifications: {
-      needsApproval: '智能体需要你批准',
-      needsAnswer: '智能体正在等待你回答',
+    /**
+     * 会话页那一侧(electron/session/main)写给人看的字,由宿主整块注入(session/main/core/host-copy.ts)。
+     * @@@5301 agentNotifications = 会话页 agent 的系统通知正文(agent-hooks/notification.ts),与上面 notifications
+     * 那条(聊天/托盘)彼此独立。integrations / sessionOptions = 设备答给界面、界面原样显示的那一句(设备说的话,
+     * 用设备的语言)。
+     */
+    sessionHost: {
+      agentNotifications: {
+        needsApproval: '智能体需要你批准',
+        needsAnswer: '智能体正在等待你回答',
+      },
+      integrations: {
+        notCommandLine: '这个应用不使用命令行连接。',
+        notImplemented: '这个集成尚未在这台设备上实现，请选择其他设备。',
+        integrityFailed: '下载的工具校验未通过，请重试安装。',
+        permissionDenied: '没有权限访问集成工具的目录，请检查目录权限后重试。',
+        diskFull: '磁盘空间不足，请清理后重试。',
+        secureStorage: '无法保存授权信息，请检查安全存储后重试。',
+        timeout: '连接超时，请检查网络后重试。',
+        installFailed: '集成工具安装失败，请检查网络后重试。',
+        installFailedRetry: '集成工具安装失败，请重试。',
+        loginStartFailed: '未能启动授权，请检查网络后重新连接。',
+        verifyFailed: '未能确认授权状态，请重新连接。',
+        connectionCancelled: '本次连接已取消。',
+        noPendingAuthorization: '没有正在进行的授权，请重新连接。',
+        authorizationCancelled: '授权已取消。',
+        authorizationExpired: '授权已过期，请重新连接。',
+        authorizationIncomplete: '尚未完成授权，请重新连接。',
+        feishuPersonalUnconfirmed: '飞书未能确认个人账号的授权，请重新连接。',
+        authorizationInvalid: '授权已失效，请重新连接。',
+      },
+      sessionOptions: {
+        noRuntime: '这台机器上没有运行中的 ACP 会话，无法修改选项。',
+        notRunning: '这条会话未在运行，运行后才能修改选项。',
+        fastUnsupported: '当前模型不支持 Fast 模式。',
+        dimensionUnsupported: '这条会话没有可修改的选项：{dimension}。',
+        valueUnavailable: '{value} 不在可选清单中。',
+        failedWithoutReason: '修改选项失败，provider 未说明原因。',
+      },
     },
     /** #6387 点了一条 gugu://ext 链接却没打开时,告诉人为什么。{name} = 扩展名(没装时是它的 id)。 */
     extensionLinks: {
@@ -147,6 +208,32 @@ const HOST_CATALOG = {
       },
     },
     teamPaymentTitle: 'Team credit payment',
+    fatalBoot: {
+      title: 'Gugu cannot start: the task page failed to start',
+    },
+    hostErrors: {
+      agentNotOnDevice: 'This agent does not run on this device.',
+      modelSessionUnknown: "The default model was updated, but the agent's current session could not be determined ({detail}). Try again later.",
+      modelRuntimeUnavailable: 'The default model was updated, but the task runtime is not available, so the current session was not switched.',
+      agentRuntimeNotConnected: 'The agent runtime is not connected yet.',
+      engineWithoutGuguModels: "This agent's engine does not support Gugu models.",
+      guguModelNotOpen: 'This Gugu model is not available to this agent ({model} / {protocol}).',
+      membershipRequired: 'Gugu {model} requires a membership.',
+      shareAgentUnavailable: 'This task has no agent identity to share yet.',
+      taskRuntimeUnavailable: 'The task runtime is not available.',
+      linkedSessionMissing: 'The linked task or session no longer exists.',
+      updateFilesMissing: 'No update file information is available. Check for updates first.',
+      updateOpenFailed: 'Could not open the installer: {detail}',
+      updateUnsupportedArch: "This Mac's architecture ({arch}) is not supported. Installers exist only for arm64 and x64.",
+      updateInstallerMissing: 'The update manifest has no installer for {arch} ({files}).',
+    },
+    passwordVault: {
+      // macOS renders `"Gugu" is trying to <this>`, so a lowercase fragment.
+      pullTitle: '"{device}" wants to use your passwords',
+      pullNewDevice: 'A new device',
+      pullBody: 'Open Gugu and compare the numbers on both devices.',
+      verifyReason: 'show saved passwords',
+    },
     tray: {
       tooltip: 'Gugu',
       show: 'Open Gugu',
@@ -187,9 +274,39 @@ const HOST_CATALOG = {
     backgroundWatch: {
       text: 'Notifies you when someone needs your reply',
     },
-    sessionAgentNotifications: {
-      needsApproval: 'Your agent needs your approval',
-      needsAnswer: 'Your agent is waiting for your answer',
+    sessionHost: {
+      agentNotifications: {
+        needsApproval: 'Your agent needs your approval',
+        needsAnswer: 'Your agent is waiting for your answer',
+      },
+      integrations: {
+        notCommandLine: 'This app does not connect through a command-line tool.',
+        notImplemented: 'This integration is not available on this device yet. Choose another device.',
+        integrityFailed: 'The downloaded tool failed verification. Install it again.',
+        permissionDenied: 'Gugu cannot access the integration tool folder. Check the folder permissions, then try again.',
+        diskFull: 'The disk is full. Free up space, then try again.',
+        secureStorage: 'The authorization could not be saved. Check the secure storage, then try again.',
+        timeout: 'The connection timed out. Check the network, then try again.',
+        installFailed: 'The integration tool could not be installed. Check the network, then try again.',
+        installFailedRetry: 'The integration tool could not be installed. Try again.',
+        loginStartFailed: 'The authorization could not start. Check the network, then connect again.',
+        verifyFailed: 'The authorization status could not be confirmed. Connect again.',
+        connectionCancelled: 'This connection was cancelled.',
+        noPendingAuthorization: 'No authorization is in progress. Connect again.',
+        authorizationCancelled: 'The authorization was cancelled.',
+        authorizationExpired: 'The authorization expired. Connect again.',
+        authorizationIncomplete: 'The authorization is not complete. Connect again.',
+        feishuPersonalUnconfirmed: 'Feishu could not confirm the authorization of your personal account. Connect again.',
+        authorizationInvalid: 'The authorization is no longer valid. Connect again.',
+      },
+      sessionOptions: {
+        noRuntime: 'No ACP session is running on this machine, so options cannot be changed.',
+        notRunning: 'This session is not running. Its options can be changed once it runs.',
+        fastUnsupported: 'The current model does not support Fast mode.',
+        dimensionUnsupported: 'This session has no option to change: {dimension}.',
+        valueUnavailable: '{value} is not one of the available options.',
+        failedWithoutReason: 'The option could not be changed. The provider gave no reason.',
+      },
     },
     extensionLinks: {
       title: 'Could not open the link',
@@ -244,6 +361,15 @@ export function isResolvedLocale(value: unknown): value is SupportedLocale {
 
 export function hostCatalog(locale: SupportedLocale): HostCatalog {
   return HOST_CATALOG[locale]
+}
+
+/** Fill `{name}` placeholders of a host catalog sentence. A placeholder without a value is a wiring error. */
+export function hostText(template: string, values: Readonly<Record<string, string>>): string {
+  return template.replace(/\{(\w+)\}/g, (_match, name: string) => {
+    const value = values[name]
+    if (value === undefined) throw new Error(`host text is missing {${name}}`)
+    return value
+  })
 }
 
 export function updateRestartCopy(catalog: HostCatalog, count: number | null) {

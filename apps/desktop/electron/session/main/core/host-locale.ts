@@ -1,5 +1,5 @@
 /**
- * 宿主的界面语言,由宿主注入(同 agent-hooks/notification-copy.ts 的理由:会话页 ❌ import 宿主的语言 store,
+ * 宿主的界面语言,由宿主注入(同 host-copy.ts 的理由:会话页 ❌ import 宿主的语言 store,
  * 跨界只会拿到一份复制品)。会话页这侧替人写字的地方要它:App 的名字按 manifest 的 `localized` 挑那一种语言
  * (`localizedManifestText`),系统横幅、App 页拿到的打开方式、链接打不开的对话框都在这一侧拼。
  *

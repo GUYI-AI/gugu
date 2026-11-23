@@ -1,4 +1,9 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { hostCatalog } from '../../../../../shared/host-localization';
+import { setSessionHostCopy } from '../host-copy';
+
+// The host injects its copy at startup; these cases read the Chinese host's.
+setSessionHostCopy(hostCatalog('zh-CN').sessionHost);
 
 /**
  * #921 资源库的「连接 / 断开 / 查状态」对平台保管凭据的那几家(高德)走平台:key 交给平台,❌ 进本机凭据库、

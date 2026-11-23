@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { hostCatalog } from '../../../../../shared/host-localization';
+import { setSessionHostCopy } from '../host-copy';
+
+// The host injects its copy at startup; these cases read the Chinese host's.
+setSessionHostCopy(hostCatalog('zh-CN').sessionHost);
 
 /**
  * #921 × #926 一家凭据由平台保管的集成,会话里给的是平台转发口的 MCP 工具:助理索引 ❌ 把它说成「只用来关联 issue」。

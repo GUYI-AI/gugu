@@ -34,9 +34,9 @@ vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', () => {
   return { rpc, rpcOn: () => rpc, events: { on: () => () => {} }, onMachineEvent: () => () => {} }
 })
 
-// Native module imports evaluate once per document. A second import resolves without bootstrapping
-// into another element, matching the actual embedded entry rather than concealing a host remount.
-const entry = vi.hoisted(() => ({ evaluated: false, importSessionEntry: vi.fn() }))
+// Native module imports evaluate once per document; the page itself mounts once per account product and stays mounted
+// across the first-run steps (a second mount without an unmount would conceal a host remount).
+const entry = vi.hoisted(() => ({ evaluated: false, mounts: 0, importSessionEntry: vi.fn() }))
 vi.mock('../../../../apps/desktop/src/components/sessionpage/importSessionEntry', () => ({
   importSessionEntry: entry.importSessionEntry,
 }))
@@ -54,12 +54,21 @@ describe('desktop product lifetime across the first-run tour', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
     entry.evaluated = false
+    entry.mounts = 0
     entry.importSessionEntry.mockImplementation(async () => {
-      if (entry.evaluated) return
-      entry.evaluated = true
-      const content = document.createElement('div')
-      content.textContent = 'Task page ready'
-      sessionMount()!.appendChild(content)
+      let filled: HTMLElement | null = null
+      ;(window as unknown as Record<string, unknown>).__EMDASH_SESSION_PAGE__ = {
+        mountSessionPage: async () => {
+          entry.mounts += 1
+          if (entry.evaluated) return
+          entry.evaluated = true
+          const content = document.createElement('div')
+          content.textContent = 'Task page ready'
+          filled = sessionMount()!
+          filled.appendChild(content)
+        },
+        unmountSessionPage: () => { filled?.replaceChildren(); entry.evaluated = false },
+      }
     })
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true, status: 200,
@@ -74,6 +83,7 @@ describe('desktop product lifetime across the first-run tour', () => {
     harness.cleanup()
     vi.unstubAllGlobals()
     delete (window as unknown as { __EMDASH_MOUNT__?: HTMLElement }).__EMDASH_MOUNT__
+    delete (window as unknown as Record<string, unknown>).__EMDASH_SESSION_PAGE__
   })
 
   // Progress saved by an older build on its 「认识咕咕」 page (stage `intro`, agents picked, terminal seen) resumes on the
@@ -103,7 +113,7 @@ describe('desktop product lifetime across the first-run tour', () => {
     expect(mount.isConnected).toBe(true)
     expect(mount.firstElementChild).toBe(content)
     expect(harness.container.querySelector('[data-testid="loading-indicator"]')).toBeNull()
-    expect(entry.importSessionEntry).toHaveBeenCalledOnce()
+    expect(entry.mounts).toBe(1)
 
     // Reopening from Help & tour crosses the same boundary in reverse and must preserve the root too.
     await act(async () => {
@@ -112,7 +122,7 @@ describe('desktop product lifetime across the first-run tour', () => {
     expect(sessionMount()).toBe(mount)
     expect(mount.isConnected).toBe(true)
     expect(mount.firstElementChild).toBe(content)
-    expect(entry.importSessionEntry).toHaveBeenCalledOnce()
+    expect(entry.mounts).toBe(1)
   })
   // #709 最后一页(问导览)两个出口都给新账号记上示例项目,在「走完」之前记。
   it.each(['first-run-tour-start', 'first-run-tour-skip'])('%s enrolls the sample project before finishing', async (choice) => {
@@ -142,7 +152,7 @@ describe('desktop product lifetime across the first-run tour', () => {
     await clickElement(document.querySelector('[data-testid="first-run-tour-skip"]')!)
     expect(sessionMount()).toBe(mount)
     expect(mount.firstElementChild).toBe(content)
-    expect(entry.importSessionEntry).toHaveBeenCalledOnce()
+    expect(entry.mounts).toBe(1)
     expect(harness.container.querySelector('[data-testid="loading-indicator"]')).toBeNull()
   })
 

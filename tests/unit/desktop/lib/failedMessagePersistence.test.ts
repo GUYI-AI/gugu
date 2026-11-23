@@ -18,8 +18,8 @@ const shown = () => messageWindow('sender', 'chat')?.map(item => item.id)
 
 afterEach(() => clearMessageWindows('sender'))
 
-describe('sender-device resend position persistence', () => {
-  it('preserves the original slot across acknowledgement, reopening and a fresh authoritative body', async () => {
+describe('sender-device send position: held until confirmed, then seq', () => {
+  it('a confirmed send is at its seq across reopening and a fresh authoritative body', async () => {
     const adapter = createMemoryLocalSyncDb()
     let repository = await openImRepository('sender', { adapter, storage: window.localStorage })
     await put(row('before', 10, 1))
@@ -31,19 +31,19 @@ describe('sender-device resend position persistence', () => {
     repository.close()
     clearMessageWindows('sender')
     repository = await openImRepository('sender', { adapter, storage: window.localStorage })
-    // A fresh server body carries no position; the stored row keeps the sender's slot.
     await put(row('failed', 12, 4))
-    expect(shown()).toEqual(['before', 'failed', 'later'])
+    expect(shown()).toEqual(['before', 'later', 'failed'])
     repository.close()
   })
 
-  it('uses the observed sequence anchor even when the sending device clock is behind', async () => {
+  it('anchors an unconfirmed row to the seq it was sent below, then orders it by seq once confirmed', async () => {
     const repository = await openImRepository('sender', { adapter: createMemoryLocalSyncDb(), storage: window.localStorage })
     await put(row('before', 10, 5))
     const record = outboxMessagePosition(repository, outbox())
+    expect(record.preview?.local_timeline?.afterSeq).toBe(10)
     await put(row('later', 11, 6))
     await confirmSentMessage(repository, record, row('failed', 12, 7))
-    expect(shown()).toEqual(['before', 'failed', 'later'])
+    expect(shown()).toEqual(['before', 'later', 'failed'])
     repository.close()
   })
 
@@ -55,8 +55,6 @@ describe('sender-device resend position persistence', () => {
     // Queued again (a retry, an import from an older build): the place it was given first stays.
     const again = outboxMessagePosition(repository, { ...record, state: 'pending' })
     expect(again.preview?.local_timeline).toEqual(record.preview?.local_timeline)
-    await confirmSentMessage(repository, again, row('failed', 12, 4))
-    expect(shown()).toEqual(['before', 'failed', 'later'])
     repository.close()
   })
 

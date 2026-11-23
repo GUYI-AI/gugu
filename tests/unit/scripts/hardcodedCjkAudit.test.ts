@@ -101,4 +101,24 @@ describe('hardcoded CJK audit', () => {
       { file: 'apps/desktop/src/half.ts', category: 'user-visible', text: '保存' },
     ])
   })
+
+  it('fails CJK that the main process puts on screen, and leaves its agent text and logs alone', () => {
+    const root = mkdtempSync(join(tmpdir(), 'gugu-cjk-audit-'))
+    directories.push(root)
+    const file = 'apps/desktop/electron/window.ts'
+    mkdirSync(join(root, 'apps/desktop/electron'), { recursive: true })
+    writeFileSync(join(root, 'exceptions.json'), '{}')
+    writeFileSync(join(root, file), `
+      export const TITLE = '咕咕无法启动'
+      export const toolDescription = '列出这台电脑上的文件'
+      dialog.showMessageBox(win, { type: 'error', message: TITLE, detail })
+      new Notification({ title: '后台运行', body: copy.body })
+      Menu.buildFromTemplate([{ label: '打开', click: () => log.info('点了打开') }, { label: labels.quit }])
+      const item: MenuItemConstructorOptions = { label: '退出' }
+      tray.setToolTip(catalog.tray.tooltip)
+      throw new Error('任务页运行时不可用')
+    `)
+    const result = auditHardcodedCjk(root, { roots: [], errorRoots: [], sinkRoots: ['apps/desktop/electron'], exceptionsFile: 'exceptions.json' })
+    expect(result.failures.map(row => row.text)).toEqual(['咕咕无法启动', '后台运行', '打开', '退出'])
+  })
 })

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   GUGU_PLATFORM_BLOCK,
+  GUGU_TERMINAL_PLATFORM_BLOCK,
   GUGU_PLATFORM_PROMPT_TOKEN_BUDGET,
   estimatePromptTokens,
   GUGU_ACKNOWLEDGEMENT, GUGU_OWNER_DM_TRANSPORT, personalAssistantPlatformPrompt,
@@ -16,6 +17,11 @@ import { TOOL_DEFS } from '../../../../apps/desktop/electron/mcp/gugu-im-server.
 describe('GUGU platform prompt budget', () => {
   it('keeps the static platform contract within its paid token budget', () => {
     expect(estimatePromptTokens(GUGU_PLATFORM_BLOCK)).toBeLessThanOrEqual(GUGU_PLATFORM_PROMPT_TOKEN_BUDGET)
+    expect(estimatePromptTokens(GUGU_TERMINAL_PLATFORM_BLOCK)).toBeLessThanOrEqual(GUGU_PLATFORM_PROMPT_TOKEN_BUDGET)
+  })
+
+  it('a terminal session differs only in how the owner is answered', () => {
+    expect(GUGU_TERMINAL_PLATFORM_BLOCK.replace(/^- Your owner reads this terminal.*$/m, GUGU_OWNER_DM_TRANSPORT)).toBe(GUGU_PLATFORM_BLOCK)
   })
 })
 

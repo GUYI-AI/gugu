@@ -21,6 +21,7 @@ import { useAttachmentUploadProgress, type AttachmentUploadProgress } from '../.
 import { useAttachmentChange } from '../../lib/attachmentChanges'
 import { SentMessageSurface } from './sentMessageSurface'
 import { useNearViewport } from './useNearViewport'
+import { originalSize, validSize } from './originalSize'
 import { ExpiredAttachmentCard } from './ExpiredAttachmentCard'
 import { Markdown } from '../markdown/Markdown'
 import './mediaAttachmentBubble.css'
@@ -93,10 +94,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   const upload = useAttachmentUploadProgress(messageId)
   const holder = view.status === 'failed' ? view.holder : null
   useHolderBack(holder, view.retry)
-  // Bytes still on their way: the size their sender declared (owner 11-15), so the bubble does not jump when they arrive.
-  const declared = meta.fileMetadata?.status === 'pending' && meta.fileMetadata.width ? meta.fileMetadata : undefined
-  const dimensions = meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision : declared ?? meta.imageDimensions ?? ('link' in view ? view.link : undefined)
-  const size = originalSize(dimensions)
+  const size = originalSize(meta) ?? validSize('link' in view ? view.link : undefined)
   const imageStyle = inlineImageStyle(size)
   const ready = view.status === 'ready'
   const sourceKey = sourceKeyOf(meta.source)
@@ -104,7 +102,7 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   useEffect(() => {
     if (!ready || !img.current || meta.source.kind === 'url') return
     return registerAttachmentImage(img.current, meta.source, { name: meta.fileName, contentType: meta.mimeType },
-      chatId ? { chatId, messageId } : undefined, size?.width && size.height ? { width: size.width, height: size.height } : undefined)
+      chatId ? { chatId, messageId } : undefined, size)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
   }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, messageId, size?.width, size?.height])
 
@@ -141,12 +139,6 @@ function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachme
   if (view.status === 'pending') return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} data-attachment-pending
     className="chat-inline-image chat-inline-image--pending chat-inline-image--awaiting" style={imageStyle}><span>{failedReason(upload, t) ?? t(pendingLabel(isMine, upload))}</span></div>
   return <div ref={box as RefObject<HTMLDivElement>} aria-label={meta.fileName} className="chat-inline-image chat-inline-image--pending" style={imageStyle} />
-}
-
-/** The file record's pixel size, which the viewer lays the image out by (its thumbnail is smaller). */
-function originalSize(dimensions?: { width?: number | null; height?: number | null }): { width: number; height: number } | undefined {
-  const { width, height } = dimensions ?? {}
-  return typeof width === 'number' && typeof height === 'number' && Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? { width, height } : undefined
 }
 
 function fitInline(width: number, height: number): { width: number; height: number } {

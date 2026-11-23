@@ -1,6 +1,6 @@
-// A file preview mounted again (its group left and come back to, its tab out of the retained window) is authorized again
-// (file-resolve on every opening) and then shows the bytes of that version it already read; one mounted while they are on
-// their way joins that read and its progress instead of reading the version again from the start.
+// @@@local-first: a file preview mounted again (its group left and come back to, its tab out of the retained window) shows
+// the bytes of that version it already read without asking the server; one mounted while they are on their way joins that
+// read and its progress instead of reading the version again from the start. Only bytes that are not here are authorized.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AttachmentSource } from '@gugu/core/shared/ui/attachmentModels'
 import type { FileProgress } from '@gugu/core/shared/fileResolver'
@@ -22,14 +22,14 @@ type Options = { progress?: FileProgress }
 let sha = 0
 const nextSha = () => (++sha).toString(16).padStart(64, '0')
 /** A version's handle: its bytes come when `arrive` is called (at once unless held), saying their progress as they do. */
-function version(digest: string | null, options: { size?: number; acknowledged?: () => Promise<void>; hold?: boolean } = {}) {
+function version(digest: string | null, options: { size?: number; acknowledged?: () => Promise<void>; hold?: boolean; of?: { item_id: string; version: number } } = {}) {
   let arrive!: () => void
   const arrived = new Promise<void>(resolve => { arrive = resolve })
   if (!options.hold) arrive()
   const size = options.size ?? 3
   const handle = (opts: Options) => ({
     status: 'ready', purpose: 'file', reader: { accountId: 'account-1', actorId: 'account-1' },
-    revision: { sha256: digest, size_bytes: size, content_type: 'text/html', source: 'managed-object' as const },
+    revision: { sha256: digest, size_bytes: size, content_type: 'text/html', source: 'managed-object' as const, ...options.of },
     read: async () => new Uint8Array(size), dispose: async () => undefined, fromDisk: async () => false,
     acknowledgement: options.acknowledged ?? (() => Promise.resolve()),
     async *stream() { f.reads += 1; opts.progress?.(1, 3); await arrived; opts.progress?.(3, 3); yield new Uint8Array(size) },
@@ -41,22 +41,28 @@ const serve = (v: ReturnType<typeof version>) => f.resolve.mockImplementation(as
 describe("a preview's bytes across openings", () => {
   beforeEach(() => { f.reads = 0; f.resolve.mockReset() })
 
-  it('every opening is authorized again; the bytes of a version are read once', async () => {
+  it('opened again with its bytes here: neither asks the server nor reads again', async () => {
     serve(version(nextSha()))
     const source: AttachmentSource = { kind: 'item', itemId: 'i-1', version: 2 }
     const first = await attachmentBytes(source, 'shown')
     const again = await attachmentBytes(source, 'shown')
-    expect(f.resolve).toHaveBeenCalledTimes(2)
+    expect(f.resolve).toHaveBeenCalledTimes(1)
     expect(f.reads).toBe(1)
     expect(first.status === 'ready' && again.status === 'ready' && again.blob === first.blob).toBe(true)
   })
 
-  it('an opening refused by its authorization shows nothing of what was read before', async () => {
-    serve(version(nextSha()))
-    const source: AttachmentSource = { kind: 'message', messageId: 'm-refused' }
-    expect((await attachmentBytes(source, 'shown')).status).toBe('ready')
+  it('a version whose bytes are not here is authorized first: refused, nothing is read', async () => {
     f.resolve.mockResolvedValueOnce({ status: 'gone', sha256: null })
-    expect((await attachmentBytes(source, 'shown')).status).toBe('gone')
+    expect((await attachmentBytes({ kind: 'message', messageId: 'm-refused' }, 'shown')).status).toBe('gone')
+    expect(f.reads).toBe(0)
+  })
+
+  it('the same version opened from another source (its message, its chat-folder version) is the same bytes', async () => {
+    serve(version(nextSha(), { of: { item_id: 'i-9', version: 4 } }))
+    await attachmentBytes({ kind: 'message', messageId: 'm-9' }, 'shown')
+    await attachmentBytes({ kind: 'item', itemId: 'i-9', version: 4 }, 'shown')
+    expect(f.resolve).toHaveBeenCalledTimes(1)
+    expect(f.reads).toBe(1)
   })
 
   it('a preview opened during the read joins it, and hears its progress from where it is', async () => {
@@ -67,10 +73,10 @@ describe("a preview's bytes across openings", () => {
     const first = attachmentBytes(source, 'shown', undefined, undefined, firstProgress)
     await vi.waitFor(() => expect(firstProgress).toHaveBeenCalledWith(1, 3))
     const second = attachmentBytes(source, 'shown', undefined, undefined, secondProgress)
-    await vi.waitFor(() => expect(f.resolve).toHaveBeenCalledTimes(2))
-    await new Promise(resolve => setTimeout(resolve, 0)) // its authorization answered: it is waiting on the first read
+    await new Promise(resolve => setTimeout(resolve, 0)) // it found the read on its way and waits on it
     v.arrive()
     const [a, b] = await Promise.all([first, second])
+    expect(f.resolve).toHaveBeenCalledTimes(1)
     expect(f.reads).toBe(1)
     expect(secondProgress).toHaveBeenCalledWith(3, 3)
     expect(a.status === 'ready' && b.status === 'ready' && a.blob === b.blob).toBe(true)

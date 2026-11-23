@@ -32,6 +32,21 @@ vi.mock('../../../../apps/desktop/src/components/sessionpage/importSessionEntry'
   importSessionEntry: entry.importSessionEntry,
 }))
 
+/** The entry evaluated: it published its page pair on window, then its import settled. */
+function evaluate(imported: { resolve: (value?: unknown) => void }, page: ReturnType<typeof sessionPage>) {
+  publishSessionPageEntry(page)
+  imported.resolve()
+}
+/** The page's mount/unmount; each mount waits until the test settles it. */
+function sessionPage() {
+  const mounts: Array<{ resolve: () => void; reject: (error: unknown) => void }> = []
+  return {
+    mounts,
+    mountSessionPage: vi.fn(() => new Promise<void>((resolve, reject) => { mounts.push({ resolve, reject }) })),
+    unmountSessionPage: vi.fn(),
+  }
+}
+
 // The startup wordmark: whether it is still up, and who holds it.
 const startup = vi.hoisted(() => {
   const listeners = new Set<() => void>()
@@ -54,9 +69,8 @@ vi.mock('../../../../apps/desktop/src/lib/startup-motion', () => ({
   retainStartupMotion: startup.retainStartupMotion,
 }))
 
-import { EmdashSessionFrame } from '../../../../apps/desktop/src/components/sessionpage/EmdashSessionFrame'
 import { SESSION_HOST_BRIDGE_KEY } from '../../../../apps/desktop/src/session/renderer/lib/electron-api'
-import { reportSessionRendererBootFailure } from '../../../../apps/desktop/src/session/shared/lib/session-renderer-boot'
+import { publishSessionPageEntry } from '../../../../apps/desktop/src/session/shared/lib/session-page-entry'
 import { createReactHarness } from '../../../support/testHarness'
 
 const MODULE_SRC = './assets/session-embedded-startup-hold.js'
@@ -86,6 +100,7 @@ describe('task page frame on a cold start', () => {
       if (!this.classList.contains('gg-session-frame')) return rect.call(this)
       return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: onScreen ? 900 : 0, height: onScreen ? 700 : 0, toJSON: () => ({}) } as DOMRect
     })
+    vi.resetModules()
     harness = createReactHarness()
   })
 
@@ -94,10 +109,16 @@ describe('task page frame on a cold start', () => {
     harness.cleanup()
     vi.unstubAllGlobals()
     delete (window as unknown as Record<string, unknown>)[SESSION_HOST_BRIDGE_KEY]
+    delete (window as unknown as Record<string, unknown>).__EMDASH_SESSION_PAGE__
   })
 
-  async function renderUntilEntryImported() {
+  async function renderFrame() {
+    const { EmdashSessionFrame } = await import('../../../../apps/desktop/src/components/sessionpage/EmdashSessionFrame')
     await harness.render(createElement(EmdashSessionFrame))
+  }
+
+  async function renderUntilEntryImported() {
+    await renderFrame()
     while (entry.pending.length === 0) await act(async () => { await Promise.resolve() })
     return entry.pending[0]!
   }
@@ -105,7 +126,8 @@ describe('task page frame on a cold start', () => {
   it('holds the wordmark while the task page loads, draws no loader of its own, and lets go once the page has drawn', async () => {
     startup.set(true)
     const imported = await renderUntilEntryImported()
-    await act(async () => { imported.resolve() })
+    const page = sessionPage()
+    await act(async () => { evaluate(imported, page) })
 
     expect(startup.state.holders).toBe(1)
     expect(loader()).toBeNull()
@@ -120,10 +142,11 @@ describe('task page frame on a cold start', () => {
   it('lets go of the wordmark when the task page fails, so its error card is usable', async () => {
     startup.set(true)
     const imported = await renderUntilEntryImported()
-    await act(async () => { imported.resolve() })
+    const page = sessionPage()
+    await act(async () => { evaluate(imported, page) })
     expect(startup.state.holders).toBe(1)
 
-    await act(async () => { reportSessionRendererBootFailure(new Error('bootstrap exploded')) })
+    await act(async () => { page.mounts[0]!.reject(new Error('bootstrap exploded')) })
 
     expect(startup.state.holders).toBe(0)
     expect(errorCard()).not.toBeNull()
@@ -131,7 +154,8 @@ describe('task page frame on a cold start', () => {
 
   it('a load after startup, with no wordmark left, shows the ordinary loader and holds nothing', async () => {
     const imported = await renderUntilEntryImported()
-    await act(async () => { imported.resolve() })
+    const page = sessionPage()
+    await act(async () => { evaluate(imported, page) })
 
     expect(startup.retainStartupMotion).not.toHaveBeenCalled()
     expect(loader()).not.toBeNull()
@@ -140,7 +164,8 @@ describe('task page frame on a cold start', () => {
   it('the ordinary loader takes over if the wordmark goes away while the page is still loading', async () => {
     startup.set(true)
     const imported = await renderUntilEntryImported()
-    await act(async () => { imported.resolve() })
+    const page = sessionPage()
+    await act(async () => { evaluate(imported, page) })
     expect(loader()).toBeNull()
 
     await act(async () => { startup.set(false) })
@@ -153,7 +178,8 @@ describe('task page frame on a cold start', () => {
     onScreen = false
     startup.set(true)
     const imported = await renderUntilEntryImported()
-    await act(async () => { imported.resolve() })
+    const page = sessionPage()
+    await act(async () => { evaluate(imported, page) })
 
     expect(startup.state.holders).toBe(0)
     expect(startup.state.release).toHaveBeenCalledTimes(1)
@@ -163,7 +189,7 @@ describe('task page frame on a cold start', () => {
   it('lets go of the wordmark when the web build cannot reach its session host, so that card is usable', async () => {
     platform.kind = 'web'
     startup.set(true)
-    await harness.render(createElement(EmdashSessionFrame))
+    await renderFrame()
     await act(async () => { await Promise.resolve() })
 
     expect(startup.state.holders).toBe(0)

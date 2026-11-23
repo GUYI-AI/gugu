@@ -118,6 +118,13 @@ describe('a press on Cite or Send', () => {
     expect(JSON.stringify(state.invoke.mock.calls)).not.toContain('payroll');
   });
 
+  it('a page in a topic: its conversation is the topic, the one on screen; its files are still its group\'s', async () => {
+    const TOPIC = '66666666-6666-4666-8666-000000000001';
+    await bind({ conversation: TOPIC, resourceChat: GROUP });
+    await press({ file: { chat: GROUP, id: ITEM } });
+    expect(asked()).toMatchObject({ conversation: { kind: 'chat', chatId: TOPIC }, file: { name: 'proof.md', target: groupFileLink(ITEM, { version: 7 }) } });
+  });
+
   it('a pick on the version the page shows points at that version, though a newer one came in since; no version, the file as it is now', async () => {
     await bind({ conversation: GROUP, resourceChat: GROUP });
     // The page opened v1 and still draws it; the file is at v7 now.

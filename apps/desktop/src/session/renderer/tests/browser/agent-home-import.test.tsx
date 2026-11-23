@@ -14,8 +14,8 @@ import { UI_EVENTS } from '@/lib/uiEvents'
 import '@/i18n/registerMainCatalog'
 import '@/styles/tokens.css'
 
-const calls = vi.hoisted(() => ({ scanHomes: vi.fn(), importHome: vi.fn(), diffHome: vi.fn(), reimportHome: vi.fn(), notice: vi.fn(), machines: [] as (string | null)[], links: new Map<string, () => void>(), linkState: new Map<string, string>(), each: null as null | ((machine: string) => () => void) }))
-vi.mock('@/lib/notices', async (load) => ({ ...await load<typeof import('@/lib/notices')>(), notify: calls.notice }))
+const calls = vi.hoisted(() => ({ scanHomes: vi.fn(), importHome: vi.fn(), diffHome: vi.fn(), reimportHome: vi.fn(), notice: vi.fn(), dismiss: vi.fn(), machines: [] as (string | null)[], links: new Map<string, () => void>(), linkState: new Map<string, string>(), each: null as null | ((machine: string) => () => void) }))
+vi.mock('@/lib/notices', async (load) => ({ ...await load<typeof import('@/lib/notices')>(), notify: calls.notice, dismissNotice: calls.dismiss }))
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async (machine: string | null = null) => { calls.machines.push(machine); return ({
     scanAgentHomes: calls.scanHomes, importAgentHome: calls.importHome, diffAgentHome: calls.diffHome, reimportAgentHome: calls.reimportHome,
@@ -326,6 +326,21 @@ it('resets explicit configuration choices when the target machine changes', asyn
   await expect.poll(() => skills()?.checked).toBe(true)
   expect(calls.machines).toEqual(['form-a', 'form-b'])
   expect(calls.importHome).not.toHaveBeenCalled()
+})
+
+// Sign-out returns to the login page in place: the account's import suggestion leaves with it, and comes back on its next
+// sign-in (it was not handled), as it would after a restart.
+it('withdraws the account\'s notice when its watch stops, and shows it again on the next sign-in', async () => {
+  calls.scanHomes.mockResolvedValue({ success: true, data: [{ ...home, groups: [{ id: 'settings', count: 1 }] }] })
+  const key = 'gugu.firstInstallImport.v1:leaving-account:local'
+  const stop = watchFirstInstallImportNotices('leaving-account')
+  await expect.poll(() => calls.notice.mock.calls.filter(([notice]) => notice.key === key).length).toBe(1)
+  stop()
+  expect(calls.dismiss).toHaveBeenCalledWith(key)
+
+  const again = watchFirstInstallImportNotices('leaving-account')
+  await expect.poll(() => calls.notice.mock.calls.filter(([notice]) => notice.key === key).length).toBe(2)
+  again()
 })
 
 it('does not publish a remote discovery response after its account watcher is disposed', async () => {

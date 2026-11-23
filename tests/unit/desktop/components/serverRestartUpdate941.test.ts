@@ -164,21 +164,22 @@ describe('confirmed server update feedback', () => {
     expect(node('update-now')).not.toBeNull()
   })
 
-  it('confirms once, keeps Restarting after the RPC ack, and finishes on the new version heartbeat', async () => {
+  it('sends the confirmed restart and leaves Restarting to the host’s own report', async () => {
     await render()
     await click('update-now')
-    expect(retry).not.toHaveBeenCalled()
     await click('update-now-yes')
     expect(restart).toHaveBeenCalledExactlyOnceWith('remote', target, true)
     expect(retry).not.toHaveBeenCalled()
+    // The page keeps no copy: until the host reports `waiting`, the row is what the host last said.
+    expect(node('restarting')).toBeNull()
+    expect(node('update-now-confirm')).toBeNull()
+    await render(server({ state: 'switching', version: target, lastOutcome: { kind: 'waiting', request: 42 } }))
     expect(node('restarting')!.textContent).toBe('正在重启…')
     expect(node('update-now')).toBeNull()
-    await render(server(undefined, target))
-    expect(node('restarting')).toBeNull()
     expect(toast).not.toHaveBeenCalled()
   })
 
-  it.each(['refused', 'rejected'])('reports a %s restart request instead of leaving a sent state', async (failure) => {
+  it.each(['refused', 'rejected'])('reports a %s restart request and offers it again', async (failure) => {
     if (failure === 'refused') restart.mockResolvedValue({ requested: false })
     else restart.mockRejectedValue(new Error('remote disconnected'))
     await render(); await click('update-now'); await click('update-now-yes')
@@ -187,37 +188,54 @@ describe('confirmed server update feedback', () => {
     expect(toast).toHaveBeenCalledWith(expect.stringContaining('未能确认'), 'error', failure === 'rejected' ? expect.any(String) : undefined)
   })
 
-  it.each(['switched', 'rolledBack', 'failed', 'refused'] as const)('ends the spinner on this request’s %s result even when the failure tuple is unchanged', async kind => {
-    const at = 1234 // Host request identity; unrelated to the desktop clock.
-    restart.mockResolvedValue({ requested: true, at })
-    const failed = { state: 'failed' as const, version: target, reason: 'boot-failed' as const }
-    await render(server(failed)); await click('match-restart-now'); await click('update-now-yes')
+  it('keeps the question open, without a second send, while the request is on its way', async () => {
+    let answer!: (value: { requested: boolean }) => void
+    restart.mockReturnValue(new Promise(resolve => { answer = resolve }))
+    await render(); await click('update-now'); await click('update-now-yes')
+    expect((node('update-now-yes') as HTMLButtonElement).disabled).toBe(true)
+    expect((node('update-now-no') as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => { answer({ requested: true }) })
+    expect(node('update-now-confirm')).toBeNull()
+    expect(restart).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads Restarting from the host, so leaving the page and coming back keeps it', async () => {
+    const waiting = server({ state: 'switching', version: target, lastOutcome: { kind: 'waiting', request: 42 } })
+    await render(waiting)
     expect(node('restarting')).not.toBeNull()
-    await render(server({ ...failed, lastOutcome: { kind, request: at } }))
+    act(() => root.unmount()); root = createRoot(container)
+    await render(waiting)
+    expect(node('restarting')).not.toBeNull()
+    expect(node('update')).toBeNull()
+    expect(node('update-now')).toBeNull()
+  })
+
+  it.each(['online', 'offline'] as const)('keeps Restarting while the %s host still runs the old version', async state => {
+    const waiting = server({ state: 'switching', version: target })
+    waiting.capabilities.server_update_outcome = { kind: 'waiting', request: 42 }
+    if (state === 'offline') { waiting.is_online = false; waiting.status = 'offline' }
+    await render(waiting)
+    expect(node('restarting')).not.toBeNull()
+    expect(node('update-now')).toBeNull()
+    expect(node('match-restart-now')).toBeNull()
+  })
+
+  it('stops saying Restarting once the host reports the target version, before it writes the result', async () => {
+    // The new package heartbeats before its account boot finishes and records `switched` (minutes on a loaded host).
+    const switched = server({ state: 'switching', version: target, lastOutcome: { kind: 'waiting', request: 42 } }, target)
+    await render(switched)
+    expect(node('restarting')).toBeNull()
+    expect(node('update')).toBeNull()
+    expect(node('update-now')).toBeNull()
+  })
+
+  it.each(['switched', 'rolledBack', 'failed', 'refused'] as const)('ends Restarting on the host’s %s result', async kind => {
+    await render(server({ state: 'failed', version: target, reason: 'boot-failed', lastOutcome: { kind, request: 42 } }))
     expect(node('restarting')).toBeNull()
     expect(node('match-failed')!.textContent).toContain('更新失败')
-    expect(toast).not.toHaveBeenCalled()
   })
 
-  it.each([
-    { kind: 'waiting' as const, request: 1234 },
-    { kind: 'failed' as const, request: 1233 },
-  ])('keeps waiting for a terminal result of this request (%j)', async lastOutcome => {
-    restart.mockResolvedValue({ requested: true, at: 1234 })
-    await render(); await click('update-now'); await click('update-now-yes')
-    await render(server({ state: 'ready', version: target, lastOutcome }))
-    expect(node('restarting')).not.toBeNull()
-    expect(toast).not.toHaveBeenCalled()
-  })
-
-  it('keeps a correlated request pending while the host stages it', async () => {
-    restart.mockResolvedValue({ requested: true, at: 1234 })
-    await render(); await click('update-now'); await click('update-now-yes')
-    await render(server({ state: 'downloading', version: target }))
-    expect(node('restarting')).not.toBeNull()
-  })
-
-  it('continues to display a host-written pending request after the click observer has ended', async () => {
+  it('continues to display a host-written pending request and ends on its result', async () => {
     await render(server({ state: 'ready', version: target, lastOutcome: { kind: 'waiting', request: 42 } }))
     expect(node('restarting')).not.toBeNull()
     expect(node('update-now')).toBeNull()
@@ -226,113 +244,7 @@ describe('confirmed server update feedback', () => {
     expect(node('restarting')).toBeNull()
     expect(toast).not.toHaveBeenCalled()
   })
-  it('ends the exact request on the separate idle receipt without an active update badge', async () => {
-    restart.mockResolvedValue({ requested: true, at: 42 })
-    await render(server({ state: 'ready', version: target, scope: undefined })); await click('update-now'); await click('update-now-yes')
-    const next = server()
-    delete next.capabilities.server_update
-    next.capabilities.server_update_outcome = { request: 41, kind: 'switched' }
-    await render(next)
-    expect(node('restarting')).not.toBeNull()
-    next.capabilities.server_update_outcome = { request: 42, kind: 'switched' }
-    await render(next)
-    expect(node('restarting')).toBeNull()
-    expect(node('update')).toBeNull()
-  })
 
-  const legacyChanges = [
-    { name: 'ready to failure', before: { state: 'ready', version: target }, after: { state: 'failed', version: target } },
-    { name: 'another failed target', before: { state: 'ready', version: target }, after: { state: 'failed', version: '0.3.1' } },
-    { name: 'download progress state', before: { state: 'ready', version: target }, after: { state: 'downloading', version: target } },
-    { name: 'another ready target', before: { state: 'ready', version: target }, after: { state: 'ready', version: '0.3.1' } },
-    { name: 'supervisor ready at the same version', before: { state: 'ready', version: target }, after: { scope: 'supervisor', state: 'ready', version: target } },
-    { name: 'update cleared after rollback', before: { state: 'ready', version: target }, after: null },
-    { name: 'retry failed with another reason', before: { state: 'failed', version: target, reason: 'boot-failed' }, after: { state: 'failed', version: target } },
-    { name: 'retry now downloading', before: { state: 'failed', version: target, reason: 'boot-failed' }, after: { state: 'downloading', version: target } },
-  ] satisfies { name: string; before: NonNullable<Device['capabilities']['server_update']>; after: Device['capabilities']['server_update'] | null }[]
-  it.each(legacyChanges)('legacy ACK yields to the host’s $name', async ({ before, after }) => {
-    await render(server(before)); await click(before.state === 'failed' ? 'match-restart-now' : 'update-now'); await click('update-now-yes')
-    const next = server(after ?? undefined)
-    if (after === null) delete next.capabilities.server_update
-    await render(next)
-    expect(node('restarting')).toBeNull()
-    expect(toast).not.toHaveBeenCalled()
-  })
-
-  it.each(['same state', 'busy count only', 'other installed version', 'same failed retry'] as const)('legacy ACK keeps waiting with no new result: %s', async variant => {
-    const before = variant === 'same failed retry'
-      ? { state: 'failed' as const, version: target, reason: 'boot-failed' as const }
-      : { state: 'ready' as const, version: target }
-    await render(server(before)); await click(before.state === 'failed' ? 'match-restart-now' : 'update-now'); await click('update-now-yes')
-    await render(server({ ...before, ...(variant === 'busy count only' ? { busy_agents: 2 } : {}) }, variant === 'other installed version' ? '0.2.58' : current))
-    expect(node('restarting')).not.toBeNull()
-  })
-
-  it.each([undefined, 1234])('keeps a failed retry pending while the host is offline (request %s)', async at => {
-    restart.mockResolvedValue({ requested: true, at })
-    const failed = { state: 'failed' as const, version: target, reason: 'boot-failed' as const }
-    await render(server(failed)); await click('match-restart-now'); await click('update-now-yes')
-    const offline = server(failed)
-    offline.is_online = false; offline.status = 'offline'
-    await render(offline)
-    expect(node('restarting')).not.toBeNull()
-    expect(node('match-failed')).toBeNull()
-    expect(node('update-now')).toBeNull()
-    expect(node('match-restart-now')).toBeNull()
-    expect(toast).not.toHaveBeenCalled()
-  })
-
-  it('keeps a correlated request pending when only the update scope changes', async () => {
-    restart.mockResolvedValue({ requested: true, at: 1234 })
-    await render(); await click('update-now'); await click('update-now-yes')
-    await render(server({ state: 'ready', version: target, scope: 'supervisor' }))
-    expect(node('restarting')).not.toBeNull()
-    expect(node('update')).toBeNull()
-    expect(node('update-now')).toBeNull()
-    expect(toast).not.toHaveBeenCalled()
-  })
-
-  it('does not restore a spinner when the ACK arrives after the installed version', async () => {
-    let acknowledge!: (value: { requested: boolean; at: number }) => void
-    restart.mockReturnValue(new Promise(resolve => { acknowledge = resolve }))
-    await render(); await click('update-now'); await click('update-now-yes')
-    await render(server(undefined, target))
-    await act(async () => { acknowledge({ requested: true, at: 1234 }) })
-    expect(node('restarting')).toBeNull()
-    expect(toast).not.toHaveBeenCalled()
-  })
-
-  it('bounds the wait for a confirming heartbeat and allows an explicit retry', async () => {
-    await render()
-    vi.useFakeTimers()
-    await click('update-now'); await click('update-now-yes')
-    await act(async () => { await vi.advanceTimersByTimeAsync(120_000) })
-    expect(node('restarting')).toBeNull()
-    expect(node('update-now')).not.toBeNull()
-    expect(toast).toHaveBeenCalledWith(expect.stringContaining(target), 'error')
-    expect(restart).toHaveBeenCalledTimes(1)
-  })
-  it.each(['version', 'outcome', 'no result'] as const)('waits silently beyond the deadline while offline, then handles %s online', async completion => {
-    restart.mockResolvedValue({ requested: true, at: 42 })
-    await render()
-    vi.useFakeTimers()
-    await click('update-now'); await click('update-now-yes')
-    const offline = server()
-    offline.is_online = false; offline.status = 'offline'
-    await render(offline)
-    await act(async () => { await vi.advanceTimersByTimeAsync(180_000) })
-    expect(node('restarting')).not.toBeNull()
-    expect(node('update-now')).toBeNull()
-    expect(node('match-restart-now')).toBeNull()
-    expect(toast).not.toHaveBeenCalled()
-    const online = server(undefined, completion === 'version' ? target : current)
-    if (completion === 'outcome') online.capabilities.server_update_outcome = { request: 42, kind: 'switched' }
-    await render(online)
-    await act(async () => { await vi.advanceTimersByTimeAsync(1) })
-    expect(node('restarting')).toBeNull()
-    if (completion === 'no result') expect(toast).toHaveBeenCalledWith(expect.stringContaining(target), 'error')
-    else expect(toast).not.toHaveBeenCalled()
-  })
   it.each(['ready', 'failed'] as const)('never offers a confirmed restart for an offline %s host', async state => {
     const offline = server({ state, version: target, ...(state === 'failed' ? { reason: 'boot-failed' as const } : {}) })
     offline.is_online = false; offline.status = 'offline'
@@ -359,17 +271,3 @@ describe('confirmed server update feedback', () => {
 
 })
 
-
-it.each(['switched', 'rolledBack', 'failed', 'refused'] as const)('accepts the installation-wide %s receipt without an account scope', async kind => {
-  restart.mockResolvedValue({ requested: true, at: 1234 })
-  await render(server({ state: 'ready', version: target, scope: undefined }))
-  await click('update-now'); await click('update-now-yes')
-  expect(restart).toHaveBeenCalledWith('remote', target, true)
-  expect(node('restarting')).not.toBeNull()
-  await render(server({ state: 'idle', version: current, scope: undefined, lastOutcome: { kind, request: 999 } }))
-  expect(node('restarting')).not.toBeNull()
-  await render(server({ state: 'idle', version: current, scope: undefined, lastOutcome: { kind, request: 1234 } }))
-  expect(node('restarting')).toBeNull()
-  expect(node('update-now')).toBeNull()
-  expect(toast).not.toHaveBeenCalled()
-})

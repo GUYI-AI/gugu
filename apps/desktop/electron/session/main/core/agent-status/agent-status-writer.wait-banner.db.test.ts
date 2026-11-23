@@ -57,7 +57,8 @@ vi.mock('@main/core/pty/controller', () => ({ ptyController: { interrupt: vi.fn(
 
 const { agentHookService } = await import('../agent-hooks/agent-hook-service');
 const { agentStatusWriter } = await import('./agent-status-writer');
-const { setSessionAgentNotificationCopy } = await import('../agent-hooks/notification-copy');
+const { setSessionHostCopy } = await import('../host-copy');
+const { hostCatalog } = await import('../../../../../shared/host-localization');
 const { setSystemNotificationsUsable } = await import('../agent-hooks/system-notifications');
 
 let clock = 1_000;
@@ -79,7 +80,7 @@ describe('desktop agent banners follow the status reading, whatever path it came
   beforeAll(async () => {
     await agentHookService.initialize();
     agentStatusWriter.initialize();
-    setSessionAgentNotificationCopy({ needsApproval: 'needs approval', needsAnswer: 'needs answer' });
+    setSessionHostCopy(hostCatalog('en-US').sessionHost);
     setSystemNotificationsUsable(async () => true);
   });
   afterAll(() => {
@@ -105,7 +106,7 @@ describe('desktop agent banners follow the status reading, whatever path it came
   it('an ACP session stopping for approval raises one banner; the same wait pushed again does not', async () => {
     await deliver(event('start'));
     await deliver(event('wait', { waitKind: 'approval', waitId: 'w1' }));
-    expect(mocks.banners).toEqual([{ title: 'Codex — Fix it', body: 'needs approval', silent: false }]);
+    expect(mocks.banners).toEqual([{ title: 'Codex — Fix it', body: 'Your agent needs your approval', silent: false }]);
     await deliver(event('wait', { waitKind: 'approval', waitId: 'w2' }));
     expect(mocks.banners).toHaveLength(1);
   });
@@ -114,7 +115,7 @@ describe('desktop agent banners follow the status reading, whatever path it came
     mocks.settings.sound = false;
     await deliver(event('start'));
     await deliver(event('wait', { waitKind: 'approval', waitId: 'w1' }));
-    expect(mocks.banners).toEqual([{ title: 'Codex — Fix it', body: 'needs approval', silent: true }]);
+    expect(mocks.banners).toEqual([{ title: 'Codex — Fix it', body: 'Your agent needs your approval', silent: true }]);
   });
 
   it('a disabled notification setting suppresses the wait and its sound', async () => {
@@ -127,7 +128,7 @@ describe('desktop agent banners follow the status reading, whatever path it came
   it('a terminal hook asking for permission raises it the same way', async () => {
     await deliver(event('start', {}, 'source-1'));
     await deliver(event('notification', { notificationType: 'permission_prompt' as NotificationType }, 'source-1'));
-    expect(mocks.banners).toEqual([{ title: 'Codex — Fix it', body: 'needs approval', silent: false }]);
+    expect(mocks.banners).toEqual([{ title: 'Codex — Fix it', body: 'Your agent needs your approval', silent: false }]);
   });
 
   it('finishing or erroring is a state change and raises nothing', async () => {

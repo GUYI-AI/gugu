@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { execFile, spawn } from '@gugu/core/local/childProcess';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { atomicWriteText } from '@gugu/core/local/state/paths';
+import { mkdir, readFile } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
 
@@ -132,15 +133,7 @@ async function readFileCredential(root: string): Promise<string | null> {
 /** 先写临时文件再改名:写到一半崩了,留下的要么是旧凭据、要么是新凭据,❌ 半个文件。 */
 async function writeFileCredential(root: string, text: string): Promise<void> {
   await mkdir(root, { recursive: true, mode: 0o700 });
-  const target = join(root, CREDENTIALS_FILE);
-  const temporary = `${target}.gugu-${process.pid}-${Date.now()}`;
-  await writeFile(temporary, text, { mode: 0o600 });
-  try {
-    await rename(temporary, target);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
+  await atomicWriteText(join(root, CREDENTIALS_FILE), text);
 }
 
 async function updateFileCredential(root: string, update: (text: string) => string): Promise<void> {

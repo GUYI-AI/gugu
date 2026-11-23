@@ -481,6 +481,10 @@ module.exports = {
     // SQLite 13 prefers our verified per-arch Release build; do not ship eight unused npm prebuilds.
     '!**/node_modules/better-sqlite3/prebuilds/**',
     '!**/node_modules/@parcel/watcher-!(${platform}-${arch}*)/**',
+    // sharp draws image previews in plain-Node processes only (the headless server, the phone); the desktop is Electron
+    // and draws with nativeImage (main.ts), so sharp and its libvips never ship in the desktop package.
+    '!**/node_modules/sharp/**',
+    '!**/node_modules/@img/**',
   ],
   // @@@kill-asar (#2299 / 0.2.26 闪退治本) — asar 关闭:整个 app 落地为 Contents/Resources/app/ 一棵
   // 真实目录树,不再有 app.asar(虚拟 fs)+ app.asar.unpacked(真实旁挂)的「双世界」。原本 asarUnpack

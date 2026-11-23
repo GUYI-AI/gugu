@@ -270,6 +270,39 @@ describe('egress contract on a real Node transport', () => {
     expect(hits).toBe(1)
   })
 
+  it('sends every request body as the runtime serializes it, with its length', async () => {
+    type Received = { contentType?: string; contentLength?: string; chunked: boolean; body: string }
+    const received: Received[] = []
+    const port = await listen(createServer((req, res) => {
+      const chunks: Buffer[] = []
+      req.on('data', chunk => chunks.push(chunk)).on('end', () => {
+        received.push({ contentType: req.headers['content-type'], contentLength: req.headers['content-length'],
+          chunked: req.headers['transfer-encoding'] === 'chunked', body: Buffer.concat(chunks).toString('latin1') })
+        res.end('ok')
+      })
+    }))
+    const url = `http://127.0.0.1:${port}/`
+    const bodies: [string, () => RequestInit][] = [
+      ['form', () => { const form = new FormData(); form.append('key', 'k'); form.append('file', new Blob([new Uint8Array(4096).fill(7)], { type: 'image/jpeg' }), 'photo.jpg'); return { method: 'POST', body: form } }],
+      ['blob', () => ({ method: 'PUT', body: new Blob([new Uint8Array(4096).fill(9)]) })],
+      ['string', () => ({ method: 'POST', body: JSON.stringify({ hello: 'world' }), headers: { 'content-type': 'application/json' } })],
+      ['params', () => ({ method: 'POST', body: new URLSearchParams({ a: '1', b: 'two words' }) })],
+    ]
+    const transport = nodeTransport(async () => null)
+    for (const [name, init] of bodies) {
+      received.length = 0
+      await (await fetch(url, init())).text()
+      await (await transport.fetch(url, init())).text()
+      const [runtime, egress] = received
+      // A multipart boundary is random per serialization: compare the body with each request's own boundary.
+      const boundary = (r: Received) => /boundary=(.+)$/.exec(r.contentType ?? '')?.[1] ?? '\0'
+      expect({ ...egress, body: egress!.body.replaceAll(boundary(egress!), 'B') }, name)
+        .toEqual({ ...runtime, body: runtime!.body.replaceAll(boundary(runtime!), 'B'), contentType: runtime!.contentType?.replace(boundary(runtime!), boundary(egress!)) })
+      expect(egress!.chunked, name).toBe(false)
+      expect(Number(egress!.contentLength), name).toBe(Buffer.byteLength(egress!.body, 'latin1'))
+    }
+  })
+
   it('rejects non-network schemes before invoking a backend', async () => {
     const transport = nodeTransport(async () => null)
     await expect(transport.fetch('file:///tmp/private')).rejects.toThrow('HTTP or HTTPS')

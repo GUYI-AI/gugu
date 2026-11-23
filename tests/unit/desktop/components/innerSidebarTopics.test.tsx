@@ -76,6 +76,14 @@ describe('which topics the inner sidebar shows', () => {
     expect(ids(after.shown)).toEqual(ids(before.shown))
     expect(ids(before.shown), 'the chat list order: activity only').toEqual(ids([...before.shown].sort(compareChatsByActivityDesc)))
   })
+
+  it('a pinned topic goes above every unpinned one, however old, and back to its place when unpinned', () => {
+    const pinned = topics.map((row) => (row.id === 't6' || row.id === 'calls-me' ? { ...row, is_pinned: true } : row))
+    expect(ids(topicsOfChat(pinned, 'group'))).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 't3', 't4', 't5', 'news'])
+    expect(ids(innerSidebarTopicRows(topicsOfChat(pinned, 'group'), { all: false }).shown)).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 'news'])
+    const unpinned = pinned.map((row) => ({ ...row, is_pinned: false }))
+    expect(ids(topicsOfChat(unpinned, 'group'))).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 'news', 'calls-me'])
+  })
 })
 
 describe('the inner sidebar topics slot', () => {

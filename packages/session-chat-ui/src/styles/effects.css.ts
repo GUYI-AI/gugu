@@ -80,7 +80,7 @@ export const textShimmer = style({
   '@media': { '(prefers-reduced-motion: reduce)': { color: vars.fgPassive, WebkitTextFillColor: vars.fgPassive } },
 });
 
-/** Same sweep and hold as ShimmerText, as one looping animation: a label that has no row lifecycle to rewind it. */
+/** The sweep and its one-second hold as one infinite compositor animation (ShimmerText, TextShimmer): nothing rewinds it from script. */
 export const textShimmerLoop = style({
   vars: {
     '--text-shimmer-sweep-name': shimmerSweepHeld,
@@ -103,9 +103,8 @@ export const textShimmerClip = style({
 });
 
 // The base glyphs sit still and unmasked; only the light layer moves. It
-// sweeps one repeat in one second at 20 steps, then finishes; ShimmerText
-// waits one second before rewinding the same animations. Opposite glyph
-// transforms keep its text still. One masked layer per label: each masked
+// sweeps one repeat in one second at 20 steps, then holds for one second
+// (textShimmerLoop). Opposite glyph transforms keep its text still. One masked layer per label: each masked
 // layer is composited on every frame while anything on screen animates, so
 // masking the base glyphs as well cost about a third of the GPU time.
 const sweep = {

@@ -1,4 +1,5 @@
-import { mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { atomicWriteText } from '@gugu/core/local/state/paths';
+import { mkdir, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import lockfile from '../../lib/proper-lockfile';
 import type { ClaudeCredentialLocation, ClaudeCredentialStore } from './claude-credential-store';
@@ -164,14 +165,7 @@ async function lockCredentials(root: string, retries: number): Promise<() => Pro
 async function writeJsonAtomic(path: string, value: Json): Promise<void> {
   const target = await realpath(path).catch(() => path);
   await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-  const temporary = `${target}.gugu-${process.pid}-${Date.now()}`;
-  await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
-  try {
-    await rename(temporary, target);
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
-  }
+  await atomicWriteText(target, `${JSON.stringify(value, null, 2)}\n`);
 }
 
 /** 只改账号那两格,其余原样;在 CLI 同一把锁(`<文件>.lock`)里重读再写。 */

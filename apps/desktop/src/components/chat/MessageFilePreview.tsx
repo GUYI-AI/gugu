@@ -28,6 +28,11 @@ import { useFilePlace } from '../preview/file-place'
 import { serverNow } from '@gugu/core/shared/serverClock'
 
 const fileOpenLog = rendererLogger('chat/file-open')
+/**
+ * "Reading file…" is said once a read has taken this long, or as soon as its bytes are coming over the network (progress):
+ * a version already on this machine (@@@local-first) is shown without it (as MessageListSkeleton's delay does for a list).
+ */
+const READING_SAID_AFTER_MS = 500
 
 /** 预览、下载、交给系统应用打开的那个文件:名字、类型、大小,和字节从哪来(消息附件或历史「文件」页)。 */
 export type PreviewFile = Pick<ParsedAttachment, 'kind' | 'fileName' | 'mimeType' | 'sizeBytes' | 'source'> & { document?: boolean }
@@ -159,6 +164,8 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const [fraction, setFraction] = useState<number | undefined>(undefined)
   /** The line carrying them is stuck: said in place of "reading" until bytes flow again. */
   const [stalled, setStalled] = useState(false)
+  /** The read has taken long enough to say so (READING_SAID_AFTER_MS); bytes already on this machine come before it. */
+  const [slow, setSlow] = useState(false)
   // A chat folder's HTML document is given its folder: the files its page names beside it are shown (preview-protocol).
   const [besideOffline, setBesideOffline] = useState<{ machine: string; deviceId: string } | null>(null)
   // The machine a failed read waits for: when the device list sees it go from off to on, the file is read again by itself.
@@ -185,6 +192,8 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
     setRead(null)
     setFraction(undefined)
     setStalled(false)
+    setSlow(false)
+    const saying = setTimeout(() => { if (live) setSlow(true) }, READING_SAID_AFTER_MS)
     const source = file.source
     // A read that lands after the preview closed is released below; a failure then is not read again.
     if (kind !== 'unsupported') void readOnce(async () => {
@@ -211,7 +220,7 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
         setRead(offline !== null ? { content: null, errorStatus: 'failed', error: holderOfflineText(offline) } : previewFailure(error, t))
       },
     )
-    return () => { live = false; void release?.() }
+    return () => { live = false; clearTimeout(saying); void release?.() }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- source kind/id/version and the preview kind identify the bytes; attempt reads them again
   }, [key, kind, file.document, message?.id, message?.chat_id, t, attempt])
   const renewVideo = async (video: HTMLVideoElement) => {
@@ -258,5 +267,5 @@ export function MessageFilePreview({ file, mobile = false, fill = false, tabbed 
   const connection = besideOffline ? <ConnectionStatus state="device_offline" subject={besideOffline.machine || t('attachmentView.holderMachine')} testId="message-file-preview-connection" /> : undefined
   // `key`: a read again (the machine back) gives the HTML preview a new registration, so its files are asked for again.
   const shown = read?.binary ? 'unsupported' : kind
-  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, selectable: file.source.selectable, annotation: readOnly ? undefined : file.source.annotation, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} onReadAgain={read?.retryable && !waitingFor && file.source.kind !== 'hosted' ? () => setAttempt(n => n + 1) : undefined} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} {...(fraction === undefined ? {} : { loadingFraction: fraction })} {...(stalled ? { loadingLabel: t('chatArea.filePreview.stalled') } : {})} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
+  return <MessageFilePreviewPanel key={attempt} {...(file.source.kind === 'hosted' ? { folders: file.source.folders, selectable: file.source.selectable, annotation: readOnly ? undefined : file.source.annotation, unreadableAction: file.source.unreadableAction, ...(file.source.edit ? { onEdit: file.source.edit } : {}) } : {})} connection={connection} onReadAgain={read?.retryable && !waitingFor && file.source.kind !== 'hosted' ? () => setAttempt(n => n + 1) : undefined} registerHtml={registerHtml} at={at} viewerRef={viewerRef} fill={fill} tabbed={tabbed} mobile={mobile} file={file} kind={shown} content={read?.content ?? null} videoUrl={read?.videoUrl} onVideoError={renewVideo} loading={kind !== 'unsupported' && read === null} loadingQuiet={!slow && fraction === undefined && !stalled} {...(fraction === undefined ? {} : { loadingFraction: fraction })} {...(stalled ? { loadingLabel: t('chatArea.filePreview.stalled') } : {})} error={read?.error} onBack={onBack} onClose={onClose} actions={actions} onOpenExternal={missing || file.document || (file.source.kind === 'url' && file.source.url.startsWith('blob:')) || (file.source.kind === 'hosted' ? !file.source.openExternal : shown === 'unsupported') ? undefined : openExternal} />
 }
