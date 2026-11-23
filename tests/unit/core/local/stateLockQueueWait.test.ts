@@ -19,7 +19,7 @@ describe('state lock: waiting in line', () => {
     expect(failed).toBeNull()
     expect(second).toBeNull()
     // The holder that has not let go is the one reported, by name.
-    expect(errors.mock.calls.some(([line]) => String(line).includes('agents lock held for over'))).toBe(true)
+    expect(errors.mock.calls.some((args) => args.some((arg) => String(arg).includes('agents lock held for over')))).toBe(true)
 
     await releaseFirst()
     await vi.advanceTimersByTimeAsync(0)

@@ -1,3 +1,5 @@
+import { coreLogger } from '../../log'
+
 /**
  * 本机状态的**进程内**互斥：按 key 串行化（key 沿用原先的锁路径，粒度一字不变）。
  *
@@ -25,6 +27,8 @@
  * host IPC / 邮箱 —— 仓库既有协议就是这么定的（outbox、command-context 全是「子进程只
  * 写自有文件」的单写者设计）。
  */
+
+const log = coreLogger('state-lock')
 
 /** key → 该 key 上最后一个排队者的完成 promise。空 Map = 全部空闲。 */
 const chains = new Map<string, Promise<void>>()
@@ -62,9 +66,9 @@ export async function acquireStateLock(
   await previous
   const acquiredAt = Date.now()
   const watchdog = setTimeout(() => {
-    console.error(
-      `[state-lock] ${label} lock held for over ${HOLD_REPORT_MS} ms and not released yet (waited ${acquiredAt - queuedAt} ms for it)`,
-      acquiredBy.stack
+    log.error(
+      { lock: label, waitedMs: acquiredAt - queuedAt, holder: acquiredBy.stack },
+      `${label} lock held for over ${HOLD_REPORT_MS} ms and not released yet`
     )
   }, HOLD_REPORT_MS)
   watchdog.unref?.()
@@ -75,7 +79,7 @@ export async function acquireStateLock(
     released = true
     clearTimeout(watchdog)
     const heldMs = Date.now() - acquiredAt
-    if (heldMs > HOLD_REPORT_MS) console.error(`[state-lock] ${label} lock was held for ${heldMs} ms`, acquiredBy.stack)
+    if (heldMs > HOLD_REPORT_MS) log.error({ lock: label, heldMs, holder: acquiredBy.stack }, `${label} lock was held for ${heldMs} ms`)
     releaseHeld()
   }
 }
