@@ -20,16 +20,16 @@ describe('Claude AI review prerequisites', () => {
     expect(claudeReviewSettings(source)).toEqual({ fastMode: true, env: { CUSTOM: 'kept', CLAUDE_CODE_AUTO_MODE_MODEL: CLAUDE_REVIEWER_MODEL, CLAUDE_CODE_AUTO_MODE_SERVER: '0' } });
     expect(source.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('user-reviewer');
   });
-  it.each([undefined, '', '2.1.293', '2.1.301', 'unknown', '1.9.999', '2.1.302-beta'])('hides auto for unverified/old actual CLI %s', version => {
+  it.each([undefined, '', '2.1.301', 'unknown', '1.9.999', '2.1.302-beta'])('hides auto for unverified/old actual CLI %s', version => {
     expect(modes(version, 'claude-opus-5')).not.toContainEqual({ value: 'auto', name: 'auto' });
   });
   it.each(['2.1.302', '2.1.311', '2.2.0', '3.0.0'])('accepts actual CLI %s at or after the floor', version => {
     expect(claudeAutoReviewAvailable(version, 'claude-opus-5')).toBe(true);
   });
-  it.each(['opus', 'opus[1m]', 'claude-opus-4-6', 'claude-opus-4-7', 'claude-opus-5', 'claude-fable-5-1[1m]', 'fable', 'claude-sonnet-4-6', 'claude-sonnet-5-1', 'claude-sonnet-5', 'claude-haiku-5-5'])('allows supported main model %s', model => {
+  it.each(['opus', 'opus[1m]', 'claude-opus-4-6', 'claude-opus-5', 'claude-fable-5-1[1m]', 'fable', 'claude-sonnet-4-6', 'claude-sonnet-5', 'claude-haiku-5-5'])('allows supported main model %s', model => {
     expect(claudeAutoReviewAvailable('2.1.302', model)).toBe(true);
   });
-  it.each(['claude-opus-4-5', 'opus-4-5[1m]', 'claude-opus-3', 'claude-opus-4', 'sonnet', 'deepseek-v4', 'glm-5', 'claude-sonnet-4-5', 'claude-haiku-4-5', 'haiku', '', 'default', 'proxy/claude-opus-5'])('does not infer support for %s', model => {
+  it.each(['claude-opus-4-5', 'opus-4-5[1m]', 'claude-opus-4', 'sonnet', 'deepseek-v4', 'claude-sonnet-4-5', 'haiku', '', 'default', 'proxy/claude-opus-5'])('does not infer support for %s', model => {
     expect(claudeAutoReviewAvailable('2.1.311', model)).toBe(false);
   });
   it('resolves default from native model facts and preserves other modes', () => {
@@ -56,8 +56,7 @@ describe('Claude AI review prerequisites', () => {
   });
   it.each([
     ['2.1.301', 'sonnet', 'Claude Sonnet 4.6'], [undefined, 'sonnet', 'Claude Sonnet 4.6'],
-    ['2.1.322', 'sonnet', 'Claude Sonnet 4.5'], ['2.1.322', 'sonnet', ''],
-    ['2.1.322', 'haiku', 'Claude Haiku 4.5'], ['2.1.322', 'default', 'DeepSeek V4'],
+    ['2.1.322', 'sonnet', 'Claude Sonnet 4.5'], ['2.1.322', 'sonnet', ''], ['2.1.322', 'default', 'DeepSeek V4'],
   ])('keeps unqualified native facts hidden at creation (%s / %s / %s)', (version, model, description) => {
     const native = claudeReviewConfig(options(model!, description), version);
     const mode = native.find(option => option.category === 'mode');

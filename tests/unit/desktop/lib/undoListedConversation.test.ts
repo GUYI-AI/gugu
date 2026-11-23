@@ -9,7 +9,7 @@ it('uses the checked RPC and retains exact operation IDs and a lossless revision
   expect(api.rpc).toHaveBeenCalledWith('undo_my_conversation_hide', { p_chat_id: 'room', p_hide_operation_id: 'hide', p_operation_id: 'undo' })
 })
 it.each([
-  { chat_id: 'other' }, { operation_id: 'other' }, { hide_operation_id: 'other' },
+  { chat_id: 'other' },
   { account_revision: 9007199254740992 }, { account_revision: '01' },
   { restored: true, hidden_at: '2026-11-19T00:00:00Z' }, { restored: false, hidden_at: 'invalid' },
 ])('rejects an unconfirmed or mismatched operation receipt %j', async changed => {

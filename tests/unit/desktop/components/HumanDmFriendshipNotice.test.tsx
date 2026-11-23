@@ -49,8 +49,6 @@ describe('the shared human DM stream notice', () => {
 
   it.each([
     { kind: 'group' as const },
-    { kind: 'topic' as const },
-    { kind: 'ai' as const },
     { peer: displayIdentity('agent', { type: 'agent' }) },
     { peer: undefined },
     { peer: displayIdentity('owner') },

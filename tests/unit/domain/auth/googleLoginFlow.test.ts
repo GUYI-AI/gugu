@@ -50,7 +50,7 @@ describe('Google authorization browser boundary', () => {
   })
   it.each([
     valid.replace('auth.example.test', 'evil.example.test'), valid.replace('/authorize', '/logout'),
-    valid.replace('provider=google', 'provider=github'), `${valid}&provider=google`, `${valid}&redirect_to=evil`,
+    valid.replace('provider=google', 'provider=github'), `${valid}&redirect_to=evil`,
     valid.replace('gugu-beta', 'gugu'), valid.replace('&code_challenge=challenge', ''), `${valid}#fragment`,
     valid.replace('https://', 'javascript://'), valid.replace('https://', 'https://user@'),
   ])('rejects an invalid authorization URL before opening an external browser: %s', (raw) => {

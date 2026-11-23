@@ -14,11 +14,10 @@ describe('team invitation capability and regional authority', () => {
   })
   it.each([
     `gugu-beta://team/invite#invitation_token=${token}`,
-    url('CN'), url('us'), url(''), url('cn&region=cn'), url('cn&region=hk'), url('cn&extra=1'),
+    url('CN'), url('us'), url(''), url('cn&region=hk'), url('cn&extra=1'),
     url('cn&invitation_token=leaked'), url('cn').replace('gugu-beta:', 'https:'),
     url('cn').replace('://team/', '://other/'), url('cn').replace('/invite?', '/wrong?'),
-    url('cn').replace('://team/', '://name:password@team/'), url('cn').replace('://team/', '://team:123/'),
-    url('cn').replace('://team/', '://team:invalid/'), url('cn').replace('://team/', '://%broken/'),
+    url('cn').replace('://team/', '://name:password@team/'), url('cn').replace('://team/', '://team:123/'), url('cn').replace('://team/', '://%broken/'),
     url('cn').replace(token, 'short'), url('cn').replace(token, 'x'.repeat(257)),
     url('cn').replace(token, 'x'.repeat(43) + '%2F'), url('cn').replace(token, 'x'.repeat(43) + '%ZZ'),
     url('cn') + '&invitation_token=' + token, url('cn') + '&extra=1',

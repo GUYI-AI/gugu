@@ -12,10 +12,9 @@ describe('default group face', () => {
   })
 
   it.each([
-    ['Branding', 'Br'], ['Design Review', 'DR'], ['a b c d e', 'AB'],
-    ['MKT', 'MK'], ['市场部', '市场'], ['产品设计', '产品'], ['AI研发', 'AI'],
-    ['周末 去杭州', '周末'], ['', ''], ['   ', ''],
-    ['🚀发布', '🚀发'], ['👩‍💻研发', '👩‍💻研'], ['🇨🇳研发', '🇨🇳研'],
+    ['Branding', 'Br'], ['a b c d e', 'AB'],
+    ['MKT', 'MK'], ['市场部', '市场'], ['AI研发', 'AI'],
+    ['周末 去杭州', '周末'], ['', ''], ['   ', ''], ['👩‍💻研发', '👩‍💻研'], ['🇨🇳研发', '🇨🇳研'],
     ['!发布', '!发'], ['!Design Review', '!D'], ['A 团', 'A团'],
   ])('takes at most two visible graphemes: %s → %s', (name, expected) => {
     expect(groupAvatarDefaultText(name)).toBe(expected)

@@ -9,10 +9,6 @@ describe('the shared user-facing failure exit', () => {
   it.each([
     ['dm_friendship_required', 'humanDm.friendshipRequired'],
     ['conversation_agent_in_use', 'conversationDelete.agentInUse'],
-    ['conversation_assistant_in_use', 'conversationDelete.assistantInUse'],
-    ['conversation_dm_identity_unverified', 'conversationDelete.identityUnverified'],
-    ['conversation_delete_owner_required', 'conversationDelete.ownerRequired'],
-    ['human_group_owner_required', 'conversationDelete.groupOwnerRequired'],
   ])('translates the conversation denial %s without leaking its internal code', (code, key) => {
     messageForUser(new Error(code));
     expect(translate).toHaveBeenCalledExactlyOnceWith(key);

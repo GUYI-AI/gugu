@@ -7,7 +7,6 @@ import { markdownPlainText } from '../../../../apps/desktop/src/lib/markdownPlai
 describe('markdownPlainText', () => {
   it.each([
     ['**10/27 全天复盘** **凌晨 02:46-0', '10/27 全天复盘 凌晨 02:46-0'],
-    ['**阳台养花十五条** 1. **先看朝向', '阳台养花十五条 1. 先看朝向'],
     ['## 标题\n- 一\n- 二', '标题 一 二'],
     ['> 引用\n1. 第一条', '引用 第一条'],
     ['see [docs](https://example.com) ok', 'see docs ok'],

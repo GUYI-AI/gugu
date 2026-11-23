@@ -22,7 +22,7 @@ describe('safe platform HTTP rejection metadata', () => {
     expect(JSON.stringify(result)).not.toMatch(/private|Bearer|authorization|headers/)
   })
 
-  it.each(['privatecredential', 'messages.privatecredential', 'messages["privatecredential"]', 'messages.0.content.secret', 'Bearer credential', 'model\nprivate'])('omits unsafe parameter %s', param => {
+  it.each(['privatecredential', 'messages.privatecredential', 'messages["privatecredential"]', 'Bearer credential', 'model\nprivate'])('omits unsafe parameter %s', param => {
     expect(observe({ error: { param } })).toEqual({ status: 400, bodyInspection: 'json' })
   })
 

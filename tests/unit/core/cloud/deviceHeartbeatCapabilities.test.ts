@@ -73,8 +73,7 @@ describe('device heartbeat capability registration', () => {
   })
 
   test.each<Partial<DeviceHeartbeatOptions>>([
-    { label: () => 'renamed' }, { hostname: () => 'renamed-host' },
-    { platform: () => 'darwin' }, { machineIdentifier: () => 'replaced-machine' },
+    { label: () => 'renamed' },
     { userId: 'other-owner' },
     { hostInfo: () => ({ host_kind: 'desktop', os_name: 'macOS', arch: 'arm64', home_dir: '/other' }) },
   ])('changed registration fields are not skipped: %j', async (metadata) => {

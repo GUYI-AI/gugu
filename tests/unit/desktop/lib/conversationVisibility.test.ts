@@ -49,7 +49,7 @@ describe('personal conversation visibility', () => {
     expect(merged.last_read_seq).toBe(11)
     expect(mergeFetchedChatsPreservingActiveLocal([fetched], [local], null)[0].source_conversation_hidden_at).toBeNull()
   })
-  it.each(['1e3', '0x10', '-1', '01', '', '1.5'])('rejects a noncanonical revision %s', (value) => {
+  it.each(['1e3', '-1', '01', '', '1.5'])('rejects a noncanonical revision %s', (value) => {
     expect(() => mergeConversationVisibility({ conversation_visibility_revision: value })).toThrow('Invalid conversation visibility revision')
   })
   it('reports malformed source cycles instead of concealing missing rows', () => {

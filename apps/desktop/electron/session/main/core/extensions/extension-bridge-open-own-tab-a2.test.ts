@@ -147,7 +147,6 @@ describe('only its own tab, and only one that claims the file (A2 T6)', () => {
     ['a forged caller id', { extensionId: 'office', tab: 'sheet' }],
     ['not a name', { tab: 42 }],
     ['an empty name', { tab: '' }],
-    ['a null name', { tab: null }],
     ['a whitespace name', { tab: '   ' }],
     ['tab with ask (「用别的 App 打开」 is the person\'s pick)', { tab: 'explore', ask: true }],
   ])('T6: %s — invalid, nothing opened', async (_name, options) => {

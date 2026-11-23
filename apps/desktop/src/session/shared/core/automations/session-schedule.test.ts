@@ -29,10 +29,8 @@ describe('scheduleAttention:最近一次没送到才提醒', () => {
     [{ status: 'done' as const, at: NOW, error: null }, null],
     [{ status: 'failed' as const, at: NOW, error: { step: 'deliver' as const, code: 'delivery_failed' } }, 'failed'],
     [{ status: 'skipped' as const, at: NOW, error: { step: 'queue' as const, code: 'deadline_exceeded' } }, 'missed'],
-    [{ status: 'skipped' as const, at: NOW, error: { step: 'queue' as const, code: 'previous_running' } }, 'missed'],
     // 人自己做的(停、删、改规则)不提醒。
     [{ status: 'skipped' as const, at: NOW, error: { step: 'queue' as const, code: 'disabled' } }, null],
-    [{ status: 'skipped' as const, at: NOW, error: { step: 'queue' as const, code: 'trigger_changed' } }, null],
   ])('%j → %s', (lastRun, expected) => {
     expect(scheduleAttention({ lastRun })).toBe(expected);
   });

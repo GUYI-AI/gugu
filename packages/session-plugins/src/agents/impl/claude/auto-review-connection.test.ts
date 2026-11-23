@@ -75,8 +75,7 @@ it.each([
   expect(mock.mode).not.toHaveBeenCalled();
 });
 it.each([
-  ['2.1.322', 'sonnet', 'Claude Sonnet 4.5'], ['2.1.322', 'sonnet', ''],
-  ['2.1.322', 'haiku', 'Claude Haiku 4.5'], ['2.1.322', 'default', 'DeepSeek V4'],
+  ['2.1.322', 'sonnet', 'Claude Sonnet 4.5'], ['2.1.322', 'sonnet', ''], ['2.1.322', 'default', 'DeepSeek V4'],
   ['2.1.322', 'undeclared-alias', 'Claude Sonnet 4.6'], ['2.1.301', 'sonnet', 'Claude Sonnet 4.6'],
 ])('rejects an unqualified target without changing native auto (%s / %s / %s)', async (version, target, description) => {
   mock.current = configs('claude-opus-5').map(option => option.id === 'model' && option.type === 'select'

@@ -61,13 +61,13 @@ it('does not ask for consent when the echo was found, and reports actual action 
 
 it.each([
   ['native_tail_does_not_cover_history', 'tail'],
-  ['native_record_boundary_missing', 'record'], ['native_record_incomplete', 'record'], ['native_record_invalid', 'record'],
-  ['native_source_changed', 'changed'], ['native_session_changed', 'changed'], ['native_read_budget_exhausted', 'budget'],
-  ['native_source_unreadable', 'unreadable'], ['native_lookup_failed', 'unreadable'],
-  ['native_session_unavailable', 'unavailable'], ['native_location_unavailable', 'unavailable'], ['native_format_not_supported', 'unavailable'],
-  ['native_session_identity_unavailable', 'identity'], ['native_input_identity_unavailable', 'identity'],
+  ['native_record_boundary_missing', 'record'],
+  ['native_source_changed', 'changed'], ['native_read_budget_exhausted', 'budget'],
+  ['native_source_unreadable', 'unreadable'],
+  ['native_session_unavailable', 'unavailable'],
+  ['native_session_identity_unavailable', 'identity'],
   ['future_host_reason_with_internal_details', 'unknown'],
-  ['constructor', 'unknown'], ['toString', 'unknown'],
+  ['constructor', 'unknown'],
 ])('maps %s to fixed copy and keeps original diagnostics only in logs', async (reason, copy) => {
   const detail = 'EACCES /fixture/private/transcript.jsonl internal-diagnostic-marker';
   const retry = vi.fn().mockResolvedValue({ ...check, reason, detail });

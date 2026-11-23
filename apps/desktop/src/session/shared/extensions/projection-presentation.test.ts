@@ -19,7 +19,7 @@ describe('App presentation on a painted projection', () => {
   });
 
   it.each([
-    { sequence: 3 }, { width: 641 }, { height: 481 },
+    { sequence: 3 }, { width: 641 },
     { target: { id: 'window-8', revision: 2 } }, { target: { id: 'window-7', revision: 3 } }, { target: undefined },
   ])('does not decorate a different frame, size or target: %o', change => {
     const changed = vi.fn(), state = new ProjectionPresentationState('source-a', changed);

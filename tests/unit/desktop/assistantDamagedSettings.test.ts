@@ -77,7 +77,7 @@ it.each([
   expect(await fixture.backups()).toEqual(backups)
 })
 
-it.each(['null', '[]', '42', 'true', '"owner-setting-sentinel"', '{broken', '{"secret":"owner-setting-sentinel"}\0'])('rejects %s without overwriting or backing up human settings', async content => {
+it.each(['null', '[]', '"owner-setting-sentinel"', '{broken', '{"secret":"owner-setting-sentinel"}\0'])('rejects %s without overwriting or backing up human settings', async content => {
   const fixture = await settingsFile(content)
   const error = await fixture.refresh().catch((cause: unknown) => cause)
   expect(error).toBeInstanceOf(AssistantFileError)

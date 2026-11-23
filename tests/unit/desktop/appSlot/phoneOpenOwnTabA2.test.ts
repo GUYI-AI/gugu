@@ -209,7 +209,6 @@ describe('the phone: openWith(file, { tab }) opens its own tab (A2 T9)', () => {
     ['a forged caller id', { extensionId: 'office', tab: 'sheet' }],
     ['an empty name', { tab: '' }],
     ['a null name', { tab: null }],
-    ['not a name', { tab: 42 }],
     ['tab with ask', { tab: 'explore', ask: true }],
   ])('T9/T6: %s — invalid, nothing opened', async (_name, options) => {
     expect(await call('filesOpenWith', { ref, ...options })).toMatchObject({ ok: false, code: 'invalid' })

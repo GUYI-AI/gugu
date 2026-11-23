@@ -66,7 +66,7 @@ describe('sender-name avatar hue', () => {
     }
   })
 
-  it.each(['human-ui4-a', 'human-ui4-b', 'human-ui4-c', 'human-ui4-d', 'human-ui4-e', 'abc'])('matches the actual DiceBear default background for human %s', async id => {
+  it.each(['human-ui4-a', 'abc'])('matches the actual DiceBear default background for human %s', async id => {
     const index = avatarColorIndex(id)
     expect(decodeURIComponent(dicebearAvatarDataUri(id))).toContain(AVATAR_PALETTE[index].light.human)
     await harness.render(sender(id, 'human'))

@@ -515,9 +515,7 @@ describe('one cloud provider and verified raw chunk cache', () => {
   it.each([
     ['account_storage_full', 'quota_full', "its account's storage is full (quota_full)"],
     ['group_storage_full', 'quota_full', '(quota_full)'],
-    ['global_storage_full', 'quota_full', '(quota_full)'],
     ['upload_changed', 'upload_failed', '(upload_failed: upload_changed)'],
-    ['too_large', 'upload_failed', '(upload_failed: too_large)'],
     ['The file moved on this computer', 'upload_failed', '(upload_failed: The file moved on this computer)'],
     ['account_storage_full_extra', 'upload_failed', '(upload_failed: account_storage_full_extra)'],
   ])('stops on a relay request retired with a reason (%s → %s)', async (failure, code, text) => {

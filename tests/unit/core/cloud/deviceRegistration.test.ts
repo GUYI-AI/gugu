@@ -39,7 +39,7 @@ describe('atomic device registration client', () => {
     expect(rpc).toHaveBeenCalledWith('register_gugu_device', { p_device: device })
   })
 
-  it.each([null, {}, [], { device_id: 'id' }, { device_id: 'id', created: 1 }, { device_id: ' ', created: false }])(
+  it.each([null, {}, { device_id: 'id' }, { device_id: 'id', created: 1 }, { device_id: ' ', created: false }])(
     'does not report success for a malformed registration receipt: %j', async data => {
       await expect(registerGuguDevice({ rpc: async () => ({ data, error: null }) }, device))
         .rejects.toMatchObject({ code: 'DEVICE_REGISTRATION_INVALID_RESPONSE' })

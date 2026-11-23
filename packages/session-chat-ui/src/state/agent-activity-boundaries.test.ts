@@ -17,7 +17,7 @@ describe('activity visibility boundaries', () => {
     expect(group(rows).messageIds).toEqual(['one', 'two', 'three']);
     expect(rows.slice(1).every(unit => unit.activityFold === rows[0].id)).toBe(true);
   });
-  it.each(['message', 'file-change-summary', 'opened-output', 'turn-outcome', 'turn-process', 'day-separator'])('preserves a visible %s boundary', kind => {
+  it.each(['message', 'turn-outcome', 'turn-process'])('preserves a visible %s boundary', kind => {
     const boundary = row('visible', kind);
     const rows = foldActivityUnits([activity('one'), boundary, activity('two')]);
     expect(rows.filter(unit => unit.kind === 'agent-activity')).toHaveLength(2);

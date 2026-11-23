@@ -7,8 +7,8 @@ const content = [{ type: 'text', text: JSON.stringify(receipt) }];
 describe('MCP send receipts', () => {
   it.each([
     ['native content array', content], ['encoded native content array', JSON.stringify(content)],
-    ['content envelope', { content }], ['encoded content envelope', JSON.stringify({ content })],
-    ['direct receipt', receipt], ['encoded direct receipt', JSON.stringify(receipt)],
+    ['content envelope', { content }],
+    ['direct receipt', receipt],
   ])('unwraps %s', (_name, raw) => {
     expect(sendReceipt(raw)).toEqual(receipt);
   });

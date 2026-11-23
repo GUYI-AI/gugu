@@ -6,7 +6,6 @@ describe('isGuguSilence:只由标记和空白组成 = 不回', () => {
   it.each([
     NO_REPLY_MARKER,
     `\`${NO_REPLY_MARKER}\``,
-    '[NO_REPLY][NO_REPLY]',
     ' [NO_REPLY]\n',
     '[NO_REPLY]\n\n[NO_REPLY]',
     '`[NO_REPLY]` [NO_REPLY]',

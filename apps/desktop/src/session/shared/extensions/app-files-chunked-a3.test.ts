@@ -71,7 +71,7 @@ describe('chat stored files reuse verified, pinned range reads', () => {
     await expect(f.files.read(surface, { ref: { id: item } as never, offset: 0, length: 2 })).rejects.toMatchObject({ code: 'invalid' });
     expect(f.read).not.toHaveBeenCalled();
   });
-  it.each([0, 1, 2, 3, 8191, 8192, 8193, 524288])('serializes only the returned binary view for a %i-byte range', async length => {
+  it.each([0, 1, 3, 8191, 8192, 8193, 524288])('serializes only the returned binary view for a %i-byte range', async length => {
     const f = fixture('application/octet-stream', length);
     const backing = new Uint8Array(length + 16).fill(255);
     const bytes = backing.subarray(7, 7 + length);

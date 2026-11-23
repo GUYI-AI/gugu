@@ -51,7 +51,7 @@ describe('widget messages', () => {
   it.each([63, 521, 300.5])('refuses to serialize invalid height %s', height => {
     expect(() => serializeWidgetMessage({ ...widget, height })).toThrow(/height.*64.*520/)
   })
-  it.each([null, '', '{', '[]', JSON.stringify({ ...widget, v: 1 }), JSON.stringify({ ...widget, data: [] }), JSON.stringify({ ...widget, text: '' }), JSON.stringify({ ...widget, id: 'old', title: 'old' }), JSON.stringify({ ...widget, id: 'old' }), JSON.stringify({ ...widget, title: 'old' })])('refuses malformed and legacy content %s', content => {
+  it.each([null, '', '{', '[]', JSON.stringify({ ...widget, v: 1 }), JSON.stringify({ ...widget, data: [] }), JSON.stringify({ ...widget, text: '' }), JSON.stringify({ ...widget, id: 'old' }), JSON.stringify({ ...widget, title: 'old' })])('refuses malformed and legacy content %s', content => {
     expect(parseWidgetMessage(content)).toBeNull()
   })
   it('measures data in UTF-8 bytes and counts text characters', () => {

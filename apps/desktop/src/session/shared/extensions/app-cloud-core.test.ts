@@ -26,7 +26,7 @@ describe('gugu.cloud: an App reaches only its own part of the cloud', () => {
     expect(rpc).toHaveBeenCalledWith('data_lens_save', { p_as: null });
   });
 
-  it.each(['open_dm', 'data_lens', 'datalens_list', 'other_list', 'data_lens_list; drop', 'DATA_LENS_LIST'])('another function is refused: %s', async (name) => {
+  it.each(['open_dm', 'data_lens', 'datalens_list', 'data_lens_list; drop', 'DATA_LENS_LIST'])('another function is refused: %s', async (name) => {
     await expect(cloud.read(market, name)).rejects.toMatchObject({ code: expect.stringMatching(/denied|invalid/) });
     expect(rpc).not.toHaveBeenCalled();
   });

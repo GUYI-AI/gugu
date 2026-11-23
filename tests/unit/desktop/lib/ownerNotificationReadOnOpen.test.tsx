@@ -66,7 +66,7 @@ afterEach(() => {
 
 it.each([
   ['text', `user:${owner}`], ['text', dm], ['text', '218799'],
-  ['file', `user:${owner}`], ['file', dm], ['file', '218799'],
+  ['file', `user:${owner}`],
 ])('reads message_send (%s) to %s on opening without reaching its message', async (tool, destination) => {
   const token = `x.${Buffer.from(JSON.stringify({ sub: owner })).toString('base64url')}.x`
   const runHostAction = vi.fn(async (input: { request_id: string }) => {

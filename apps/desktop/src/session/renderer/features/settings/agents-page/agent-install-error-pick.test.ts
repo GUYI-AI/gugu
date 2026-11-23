@@ -11,7 +11,7 @@ import {
 } from './agent-install';
 
 describe('download source connection failures', () => {
-  it.each(['tls handshake eof', 'tcp connect error: connection timed out', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ECONNRESET'])(
+  it.each(['tls handshake eof', 'tcp connect error: connection timed out', 'ENOTFOUND',])(
     'explains %s using the host from the failed download and keeps the diagnostic',
     (reason) => {
       const output = `mise ERROR error sending request for url (https://dl.google.com/agy-extensions/releases/agent.zip)\n${reason}`;

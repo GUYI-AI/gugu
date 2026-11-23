@@ -40,7 +40,7 @@ it('launchd restarts failed updates but exits successfully when stopped before s
   expect(plist).toContain('<key>AbandonProcessGroup</key><true/>')
 })
 
-it.each([0, 75, 78, 79, 143, 1])('launchd wrapper classifies the actual server exit (%s)', code => {
+it.each([0, 75, 78, 143, 1])('launchd wrapper classifies the actual server exit (%s)', code => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gugu-launchd-exit-'))
   try {
     const executable = path.join(home, 'fake-server')

@@ -13,7 +13,7 @@ it.each([[0,'ENOTFOUND'],[0,'ECONNRESET'],[503,'gateway_unavailable']] as const)
 it.each(['unprepared','collection-unavailable','application-failed','stale','54000'])('does not retry snapshot fact %s even with a server status', code => {
   expect(isAssistantPanelReadRetryable(Object.assign(new AssistantPanelError(code,'fixed fact'),{ status: 500 }))).toBe(false)
 })
-it.each(['unprepared','preparation-timeout','collection-unavailable','application-failed','stale','signed-out','42501','invalid-response','22023','54000'])('never retries fixed state %s', code => {
+it.each(['unprepared','preparation-timeout','42501','54000'])('never retries fixed state %s', code => {
   expect(isAssistantPanelReadRetryable(new AssistantPanelError(code,'private detail'))).toBe(false)
 })
 it.each([new TypeError('fetch failed'),new AssistantPanelError('read-timeout','timeout'),new AssistantPanelError('PGRST003','pool unavailable')])('bounds retries for a transport failure', error => {

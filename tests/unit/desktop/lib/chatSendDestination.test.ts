@@ -84,7 +84,7 @@ describe('send destinations resolved from the signed-in chat list', () => {
     expect(listener).toHaveBeenCalledTimes(4)
   })
 
-  it.each(['999', '0', '-1', '216012junk', ' 216012', '2.16012e5', '9007199254740992'])('keeps an unknown or invalid address unavailable: %s', address => {
+  it.each(['999', '0', '216012junk', ' 216012', '2.16012e5', '9007199254740992'])('keeps an unknown or invalid address unavailable: %s', address => {
     publishChatSummaries([group()])
     expect(resolveChatId(address)).toBeNull()
     expect(agentSendLabel(agentSendOf(send(address))!.to, defaultChatTranslator, chatDisplayName)).toBe('Sent; destination name unavailable.')

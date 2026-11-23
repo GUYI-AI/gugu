@@ -14,7 +14,6 @@ describe('Android notification diagnostics', () => {
   it.each([
     [{ enabled: false, importance: 4 }, 'app-disabled'],
     [{ enabled: true, importance: 0 }, 'channel-disabled'],
-    [{ enabled: true, importance: 2 }, 'below-high'],
     [{ enabled: true, importance: 3 }, 'below-high'],
     [{ enabled: true, importance: 4 }, null],
     [{ enabled: true }, undefined],

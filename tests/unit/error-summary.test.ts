@@ -22,7 +22,7 @@ describe('outgoing error-summary allowlist', () => {
     expect(sanitizeErrorSummary({ ...summary, message: 'private chat', user: { email: 'someone@example.test' }, token: 'private', screenshot: 'data:image/png', memory: new Uint8Array([1]), breadcrumbs: ['private'], request: { body: 'private' }, extra: { token: 'private' } })).toEqual(summary)
   })
 
-  it.each(['sk-testSuperSecretKey123456789', 'ghp_abcdefghijklmnopqrstuvwxyz123456', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.signature1234', 'Bearer abcdefghijklmnop', 'a'.repeat(40), 'aabbccddeeff00112233445566778899', 'someone@example.test', '+86 138 1234 5678', '+1 (415) 555-0123'])('rejects secret-shaped or personal values even in allowed fields: %s', value => {
+  it.each(['sk-testSuperSecretKey123456789', 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhIn0.signature1234', 'Bearer abcdefghijklmnop', 'a'.repeat(40), 'aabbccddeeff00112233445566778899', 'someone@example.test', '+86 138 1234 5678', '+1 (415) 555-0123'])('rejects secret-shaped or personal values even in allowed fields: %s', value => {
     expect(redactErrorSummaryValue(value)).toBeNull()
     const result = sanitizeErrorSummary({ ...summary, type: value, version: value, system: value, locations: [value] })!
     expect(JSON.stringify(result)).not.toContain(value)

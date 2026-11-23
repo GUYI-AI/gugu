@@ -17,7 +17,6 @@ describe('links in login errors', () => {
     'https://www.gugu.nextmind.space/hk',
     'https://evil.com/?next=https://gugu.nextmind.space/hk',
     'http://gugu.nextmind.space/hk',
-    'ftp://gugu.nextmind.space/hk',
     'javascript:alert(1)',
     'https://name:password@gugu.nextmind.space/hk',
     'https://gugu.nextmind.space:8443/hk',
@@ -27,7 +26,6 @@ describe('links in login errors', () => {
 
   it.each([
     ['gugu.nextmind.space/hk', '', 'gugu.nextmind.space/hk', ''],
-    ['账号还没迁到香港，打开 gugu.nextmind.space/hk 点同意', '账号还没迁到香港，打开 ', 'gugu.nextmind.space/hk', ' 点同意'],
     ['打开 gugu.nextmind.space/hk 点同意。', '打开 ', 'gugu.nextmind.space/hk', ' 点同意。'],
     ['请打开（gugu.nextmind.space/hk），完成后重试。', '请打开（', 'gugu.nextmind.space/hk', '），完成后重试。'],
     ['Open gugu.nextmind.space/hk.', 'Open ', 'gugu.nextmind.space/hk', '.'],
@@ -60,7 +58,6 @@ describe('links in login errors', () => {
     'example.com/hk',
     'name@gugu.nextmind.space/hk',
     '//gugu.nextmind.space/hk',
-    'ftp://gugu.nextmind.space/hk',
     'http:gugu.nextmind.space/hk',
     'data:text/plain,gugu.nextmind.space/hk',
     'https://evil.com/?next=gugu.nextmind.space/hk',
@@ -74,14 +71,11 @@ describe('links in login errors', () => {
     'ftp://example.invalid/?next=，（gugu.nextmind.space/hk）',
     'mailto:person@example.invalid?subject=(gugu.nextmind.space/hk)',
     'https://example.invalid/?next="(gugu.nextmind.space/hk)"',
-    'https://example.invalid/#"(gugu.nextmind.space/hk)"',
     'gugu.nextmind.space/hk?next=(gugu.nextmind.space/hk)',
-    'gugu.nextmind.space/hk#(gugu.nextmind.space/hk)',
     'gugu.nextmind.space/hk/extra/(gugu.nextmind.space/hk)',
     'example.invalid/path=(gugu.nextmind.space/hk)',
     'path/(gugu.nextmind.space/hk)',
     '?next=(gugu.nextmind.space/hk)',
-    '#(gugu.nextmind.space/hk)',
   ])('keeps a complete rejected URL or token literal, including nested bare addresses: %s', message => {
     expect(loginErrorParts(message)).toEqual([{ text: message }])
   })

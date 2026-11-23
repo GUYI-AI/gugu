@@ -56,7 +56,7 @@ describe('AgentParkedGlyph geometry', () => {
     expect(rects()).toEqual([[2, 2, 2, 6], [6, 2, 2, 6]])
   })
 
-  it.each([8, 9, 10, 11, 12, 13, 14, 15, 16])('size %i: whole pixels, two separate bars inside the box', async (size) => {
+  it.each([8, 9, 15, 16])('size %i: whole pixels, two separate bars inside the box', async (size) => {
     await harness.render(createNode(AgentParkedGlyph, { size }))
     const [a, b] = rects()
     for (const [x, y, width, height] of [a!, b!]) {

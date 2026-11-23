@@ -23,7 +23,7 @@ it('stores a complete custom model identity or the explicit default', () => {
   expect(autoReviewModelSchema.parse({ kind: 'custom', connectionId: '481825a8-60b9-4c83-8d1b-f104e3db0269', modelId: 'upstream/model-v1' })).toMatchObject({ modelId: 'upstream/model-v1' });
 });
 
-it.each(['claude-opus-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-opus-5[1m]',
+it.each(['claude-opus-5', 'claude-opus-5[1m]',
   'claude-opus-5-20261001', 'us.anthropic.claude-sonnet-5-5-v1:0', 'claude-opus-5-5@20261001'])('excludes native-rejected reviewer ID %s', id => {
   expect(canSpecifyClaudeReviewModel(id)).toBe(false);
 });

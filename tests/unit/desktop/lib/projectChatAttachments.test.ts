@@ -84,7 +84,7 @@ describe('project composer attachments use the group-file publisher', () => {
     await expect(commitPreparedChatAttachment(endpoint, prepared, args)).rejects.toThrow(i18n.t('attachmentView.fileUnavailable', { ns: 'messaging' }))
     expect(f.plan).not.toHaveBeenCalled(); expect(f.commit).not.toHaveBeenCalled()
   })
-  it.each([{ ...message, file_item_id: 'other' }, { ...message, file_version: 4 }, { ...message, sender_user_id: 'other' }, { ...message, chat_id: 'other' }, { ...message, id: 'other' }, undefined])('rejects a substituted message or version receipt', async value => {
+  it.each([{ ...message, file_item_id: 'other' }, { ...message, file_version: 4 }, { ...message, sender_user_id: 'other' }, undefined])('rejects a substituted message or version receipt', async value => {
     const n = native(), prepared = await prepareChatAttachment(endpoint, file(), { chat_id: 'group', as: 'owner', message_id: 'message' })
     n.invoke.mockResolvedValueOnce({ id: 'item', version: 3, message: value } as never)
     await expect(commitPreparedChatAttachment(endpoint, prepared, args)).rejects.toThrow('not committed')

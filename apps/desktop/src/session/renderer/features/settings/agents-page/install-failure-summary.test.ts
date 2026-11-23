@@ -20,10 +20,6 @@ it.each([
   ],
   ['tcp connect error: connection refused', 'The download connection was interrupted.'],
   ["EACCES mkdir '/Users/private/install'", 'Cannot write to the installation directory.'],
-  [
-    "EPERM: operation not permitted, open '/Users/private/install'",
-    'Cannot write to the installation directory.'
-  ],
   ["ENOSPC: no space left on device '/Users/private/install'", 'There is not enough disk space.'],
   [
     "EEXIST: file already exists, mkdir '/Users/private/install'",

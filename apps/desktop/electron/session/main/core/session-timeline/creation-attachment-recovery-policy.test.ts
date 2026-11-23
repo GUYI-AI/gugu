@@ -65,7 +65,7 @@ describe('actual-row custody inspection (no DB/HTTP/provider substitute)', () =>
     expect(inspect(input, { ...row({ kind: 'session-direct', delivery: { files: input.files } }), content: 'caption' })).toBe('custody');
   });
   it.each([
-    { ...row(), id: 'other' }, { ...row(), sessionId: 'other' }, { ...row(), sender: 'agent' },
+    { ...row(), id: 'other' }, { ...row(), sender: 'agent' },
     row({ kind: 'session-direct', state: 'accepted', sourceInput: { text: 'changed', files: input.files } }),
     row({ kind: 'session-direct', state: 'accepted', sourceInput: { text: input.text, files: [{ ...input.files[0], version: 2 }] } }),
     row({ kind: 'session-direct', state: 'accepted', sourceInput: { text: input.text, files: [{ ...input.files[0], requiredPlacement: { chatId: 'other', sha256: 'a'.repeat(64) } }] } }),

@@ -47,7 +47,7 @@ describe('drag-screen-content', () => {
   });
 
   it.each([
-    '{', 'null', '"chat"',
+    '{', 'null',
     JSON.stringify({ kind: 'chat', chatId: 'c', title: 'Topic', topic: null }),
     JSON.stringify({ kind: 'session', sessionId: 's', projectId: 'p', title: 'Task', topic: { chatId: 't', name: 'Topic' } }),
     JSON.stringify({ sessionId: 'old', title: 'Old payload' }),

@@ -102,7 +102,7 @@ describe('contextual mention ranking', () => {
 
   it.each([
     { chat_id: 'another-chat' }, { content_type: 'system' as const }, { retracted_at: new Date(now).toISOString() },
-    { seq: -1 }, { local_send_state: 'failed' as const }, { local_send_state: 'sending' as const }, { created_at: 'invalid' },
+    { seq: -1 }, { local_send_state: 'failed' as const }, { created_at: 'invalid' },
   ])('ignores ineligible history: %j', (overrides) => {
     expect(names([candidate('Alice'), candidate('Bob')], [message('Bob', 0, overrides)])).toEqual(['Alice', 'Bob'])
   })

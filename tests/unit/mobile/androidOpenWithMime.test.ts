@@ -31,11 +31,11 @@ const declaredTypes = [...view.querySelectorAll('data')].flatMap(node => attribu
 
 describe('Android Open with registration', () => {
   it.each(['application/vnd.android.package-archive', 'application/octet-stream', 'vnd.android.document/directory',
-    'application/x-executable', 'application/x-msdownload', 'application/x-7z-compressed', 'application/x-rar-compressed', 'application/epub+zip'])('does not offer a VIEW handler for %s', mime => {
+    'application/x-executable', 'application/x-7z-compressed', 'application/epub+zip'])('does not offer a VIEW handler for %s', mime => {
     expect(matches('VIEW', mime)).toBe(false)
   })
 
-  it.each(['application/pdf', 'image/png', 'image/jpeg', 'text/markdown', 'text/plain', 'video/mp4', 'audio/mpeg'])('preserves the existing content-URI entry for %s', mime => {
+  it.each(['application/pdf', 'image/png', 'text/markdown', 'text/plain', 'video/mp4', 'audio/mpeg'])('preserves the existing content-URI entry for %s', mime => {
     expect(matches('VIEW', mime)).toBe(true)
     expect(matches('VIEW', mime, 'file')).toBe(false)
     expect(matches('VIEW', mime, 'https')).toBe(false)

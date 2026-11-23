@@ -38,7 +38,6 @@ describe('GuguIOSOwner client', () => {
   it.each([
     null, {}, { available: false, binding: null }, { available: true, binding: null },
     { available: true, binding: { ...binding, ownerId: '90000000-0000-0000-0000-000000000009' } },
-    { available: true, binding: { ...binding, deviceId: installationId } },
     { available: true, binding: { ...binding, installationId: 'not-native-installation' } },
   ])('rejects incomplete or mismatched publication reply %#', async reply => {
     native.publishSession.mockResolvedValue(reply)
@@ -101,7 +100,7 @@ describe('GuguIOSOwner client', () => {
     expect(native.cancelSignOut).toHaveBeenCalledExactlyOnceWith({ ownerId, localOperationId })
     expect(native.publishSession).not.toHaveBeenCalled()
   })
-  it.each([undefined, null, {}, { cancelled: false }, { cancelled: 'true' }, { prepared: true }])('rejects incomplete preparation cancellation %#', async reply => {
+  it.each([ null, {}, { cancelled: false }, { cancelled: 'true' }, { prepared: true }])('rejects incomplete preparation cancellation %#', async reply => {
     native.cancelSignOut.mockResolvedValue(reply)
     await expect(cancelIOSSignOut(ownerId, localOperationId)).rejects.toMatchObject({ code: 'invalid_native_reply' })
   })

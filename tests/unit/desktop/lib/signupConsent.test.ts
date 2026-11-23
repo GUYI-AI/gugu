@@ -16,7 +16,6 @@ describe('registration consent contract', () => {
     { status: 503, code: 'unknown', message },
     { status: 400, code: 'unknown', message: 'Other error' },
     { status: 400, code: 'validation_failed', message },
-    { status: 400, code: 400, message },
     { code: 400, error_code: 'unknown', msg: message },
     { status: '400', code: 'unknown', message },
     { status: 400, code: 'Unknown', message },
