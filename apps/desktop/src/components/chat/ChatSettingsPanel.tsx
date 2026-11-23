@@ -18,6 +18,7 @@ import { SettingsPageHead } from './groupSettingsUi'
 import { settingsDangerRowStyle } from './groupSettingsStyles'
 import { useCloseTopic } from './useCloseTopic'
 import { ChatDetailsQuickActions } from './ChatDetailsQuickActions'
+import { TopicDetailsMain } from './TopicDetailsMain'
 import { COLOR_MUTED } from './chatPresentation'
 import { useRoomCollab } from '../../hooks/useRoomCollab'
 import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
@@ -31,6 +32,10 @@ export function ChatSettingsPanel({ mobile = false, topic, ...body }: ChatSettin
   const { activeChat, onClose } = body
   const { t } = useTranslation('messaging')
   if (topic) return <TopicMembers key={topic.topicChatId} topic={topic} sourceChatId={activeChat.id} onClose={onClose} mobile={mobile} />
+  // 第 16 版:话题当主会话时,它的「详情」(手机照旧是成员页)。
+  if (activeChat.kind === 'topic' && !mobile) return <TopicDetailsMain key={activeChat.id} chat={activeChat} currentUserId={body.currentUserId} onClose={onClose}
+    onClearMessages={body.onClearMessages} onSetNotificationLevel={body.onSetNotificationLevel} onTogglePinned={body.onTogglePinned}
+    membersPage={(back) => <TopicMembers topic={{ topicChatId: activeChat.id, name: activeChat.name ?? '' }} sourceChatId={activeChat.source_chat_id ?? activeChat.id} onClose={back} mobile={false} />} />
   return (
     <div data-testid="chat-settings-panel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {activeChat.kind === 'group' || !mobile ? null : <SettingsPageHead title={t('chatArea.settings.conversation')} onClose={onClose} mobile />}

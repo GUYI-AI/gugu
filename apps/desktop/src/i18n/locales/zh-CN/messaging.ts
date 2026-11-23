@@ -744,6 +744,10 @@ export default {
     }
   },
   "groupDetails": {
+    "topicSummary": "话题 · {{count}} 人",
+    "topicSummary_one": "话题 · {{count}} 人",
+    "topicSource": "来自群「{{name}}」",
+    "backToGroup": "回到群",
     "searchHistory": "搜索聊天记录",
     "searchChat": "搜索对话",
     "people": "{{count}} 人",

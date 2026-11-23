@@ -746,6 +746,10 @@ export default {
     }
   },
   "groupDetails": {
+    "topicSummary": "Topic · {{count}} people",
+    "topicSummary_one": "Topic · {{count}} person",
+    "topicSource": "From group “{{name}}”",
+    "backToGroup": "Back to group",
     "searchHistory": "Search",
     "searchChat": "Search",
     "people": "{{count}} people",
