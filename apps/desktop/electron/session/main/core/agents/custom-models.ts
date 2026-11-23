@@ -198,21 +198,30 @@ export async function dropRemovedConnectionKeys(): Promise<void> {
   await registry.dropRetiredSecrets();
 }
 
+/** Where a connection goes and the key it reads with on this machine: its stored record, or a discovered one not stored yet. */
+async function heldConnection(connectionId: string): Promise<{ endpoints: CustomModelMeta['endpoints']; key: string | undefined }> {
+  const row = await registry.getAccount(namespace, connectionId);
+  if (row?.meta?.customModel) return { endpoints: row.meta.customModel.endpoints, key: (await registry.resolveSecret(namespace, connectionId)) ?? undefined };
+  // Trying or showing a discovered connection is not using it: its key is read for this request and nothing is stored.
+  const candidate = (await unstoredCandidates(await registry.listAccounts(namespace), secretReader())).find(({ id }) => id === connectionId);
+  if (!candidate) throw new Error('The custom model no longer exists');
+  return { endpoints: candidate.endpoints, key: discoveredSecret(candidate) };
+}
+
+/** The whole key, for this computer's own window to show (see `CUSTOM_MODEL_KEY_CHANNEL`). */
+export async function readCustomModelKey(connectionId: string): Promise<string> {
+  const { key } = await heldConnection(connectionId);
+  if (!key) throw new Error('The model’s API key is unavailable on this device');
+  return key;
+}
+
 export async function testCustomModel(input: TestCustomModel): Promise<ConnectionModelList> {
   let endpoints = input.endpoints;
   let key = input.apiKey;
   if (input.connectionId) {
-    const row = await registry.getAccount(namespace, input.connectionId);
-    if (row?.meta?.customModel) {
-      endpoints ??= row.meta.customModel.endpoints;
-      key ??= (await registry.resolveSecret(namespace, input.connectionId)) ?? undefined;
-    } else {
-      // Trying a discovered connection is not using it: its key is read for this request and nothing is stored.
-      const candidate = (await unstoredCandidates(await registry.listAccounts(namespace), secretReader())).find(({ id }) => id === input.connectionId);
-      if (!candidate) throw new Error('The custom model no longer exists');
-      endpoints ??= candidate.endpoints;
-      key ??= discoveredSecret(candidate);
-    }
+    const held = await heldConnection(input.connectionId);
+    endpoints ??= held.endpoints;
+    key ??= held.key;
   }
   if (!key) throw new Error('The model’s API key is unavailable on this device');
   const endpoint = endpoints?.find(({ protocol }) => protocol.startsWith('openai-')) ?? endpoints?.[0];

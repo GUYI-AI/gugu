@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { customModelAcceptsImages, normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta } from '@gugu/session-core/models/custom-model';
+import { CUSTOM_MODEL_KEY_CHANNEL, customModelAcceptsImages, normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { vendorName } from '@/i18n/vendorName';
 import { Button } from '@renderer/lib/ui/button';
@@ -14,14 +14,15 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { ConnectionModelPicker, useConnectionModelList, probeModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
-import { connectionProbeMessageKey, heldKeyName } from '@renderer/features/settings/subscriptions/connection-probe-messages';
+import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { retryOf, valueOf } from '@/lib/replica';
 import { SubscriptionConnections } from '@renderer/features/settings/subscriptions/SubscriptionConnections';
 import { Unknown } from '@/components/ui/Unknown';
 import { AppIcon } from '@renderer/lib/components/app-icon';
-import { ChevronDownIcon } from '@/lib/icons';
+import { ChevronDownIcon, Eye, EyeOff } from '@/lib/icons';
+import { IconButton } from '@/components/ui/IconButton';
 import { SettingsNote, Toggle } from './SettingsPrimitives';
 
 export function CustomModelDialog({ machine, connection, group = 'custom', initialAccount, onClose }: {
@@ -42,6 +43,12 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const providerLabel = (id: string) => <span className="flex items-center gap-2">{id === 'claude-subscription' || id === 'chatgpt-subscription' ? <AppIcon id={id === 'claude-subscription' ? 'claude' : 'codex'} size={16} /> : null}{labelOf(id)}</span>;
   const [endpoints, setEndpoints] = useState<CustomModelMeta['endpoints']>(connection?.endpoints ?? initialPreset?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
   const [apiKey, setApiKey] = useState('');
+  // A key this computer holds is read into the field only when the eye is pressed, and only in its own window; the key
+  // of a connection on another device never leaves it. The field still holding that key is not a new key.
+  const [heldKey, setHeldKey] = useState('');
+  const [keyShown, setKeyShown] = useState(false);
+  const keyReadable = machine === null && !!window.electronAPI;
+  const typedKey = apiKey !== heldKey ? apiKey : '';
   // null = the person has not chosen: every model the address lists is selected.
   const [picked, setPicked] = useState<string[] | null>(connection ? connection.models.map(({ id }) => id) : null);
   const [advanced, setAdvanced] = useState(false);
@@ -55,16 +62,24 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   try { normalized = endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })); }
   catch (error) { addressProblem = errorText(error); }
   // A typed address with a new key: the host recognizes which protocols it speaks while it reads the models.
-  const typedAddress = !preset && apiKey && normalized?.[0] ? normalized[0].baseUrl : null;
-  const source: ConnectionModelSource | null = typedAddress ? { apiKey, baseUrl: typedAddress }
-    : normalized && apiKey ? { apiKey, endpoints: normalized }
+  const typedAddress = !preset && typedKey && normalized?.[0] ? normalized[0].baseUrl : null;
+  const source: ConnectionModelSource | null = typedAddress ? { apiKey: typedKey, baseUrl: typedAddress }
+    : normalized && typedKey ? { apiKey: typedKey, endpoints: normalized }
       : normalized && connection?.keySaved ? { connectionId: connection.id, endpoints: normalized } : null;
   const list = useConnectionModelList(machine, source);
   const models = picked ?? (list.kind === 'listed' ? list.models : []);
-  const keyHeld = heldKeyName(translate, connection);
   const keyProblem = list.kind !== 'unlisted' || list.reason === 'no-list' ? ''
-    : keyHeld && !apiKey && list.reason === 'unauthorized' ? translate('customModels.keyInUseRefused', { key: keyHeld })
+    : connection?.keySaved && !typedKey && list.reason === 'unauthorized' ? translate('customModels.heldKeyRefused')
       : translate(connectionProbeMessageKey(list.reason));
+  const toggleKey = async () => {
+    if (!keyShown && !apiKey && connection?.keySaved) {
+      try {
+        const key = await window.electronAPI!.invoke(CUSTOM_MODEL_KEY_CHANNEL, connection.id) as string;
+        setHeldKey(key); setApiKey(key);
+      } catch (error) { setFailure(errorText(error)); return; }
+    }
+    setKeyShown(!keyShown);
+  };
   const setAddress = (baseUrl: string) => {
     setEndpoints((current) => current.map((endpoint, i) => i === 0 ? { ...endpoint, baseUrl } : endpoint));
   };
@@ -81,7 +96,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
         // What the background check found; an address with no model list is checked again with the model named here.
         saved = list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : [];
         if (!saved.length) {
-          const probe = await client.detectCustomModelProtocols({ apiKey, baseUrl: typedAddress, modelId: models[0] });
+          const probe = await client.detectCustomModelProtocols({ apiKey: typedKey, baseUrl: typedAddress, modelId: models[0] });
           if (!probe.success) throw new Error(errorText(probe.error));
           saved = probe.data.endpoints;
           if (!saved.length) {
@@ -94,7 +109,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
         ...(connection ? { id: connection.id } : {}),
         name: connection?.name || preset?.name || new URL(saved[0]!.baseUrl).host,
         preset: preset?.id ?? null, endpoints: saved,
-        ...(apiKey ? { apiKey } : {}),
+        ...(typedKey ? { apiKey: typedKey } : {}),
         models: models.map((id) => {
           const existing = connection?.models.find((model) => model.id === id);
           return featuresChanged ? { ...existing, ...features, id } : existing ?? { ...features, id };
@@ -150,7 +165,8 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
           </label>}
           {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={retryOf(agentsReading)}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form className="subscription-connection-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           {!preset && <label>{translate('customModels.address')}<Input data-testid="custom-model-address-0" type="url" required value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} /></label>}
-          <label>API Key<Input data-testid="custom-model-key" type="password" required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={keyProblem ? true : undefined} placeholder={keyHeld ? translate('customModels.keyInUse', { key: keyHeld }) : undefined} onChange={(event) => setApiKey(event.target.value)} /></label>
+          <label>API Key<span className="relative flex items-center"><Input data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyReadable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={keyProblem ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : undefined} onChange={(event) => setApiKey(event.target.value)} />
+            {keyReadable && (apiKey || connection?.keySaved) && <IconButton size="sm" className="absolute right-1 top-1/2 -translate-y-1/2" aria-label={translate(keyShown ? 'customModels.hideKey' : 'customModels.showKey')} aria-pressed={keyShown} onClick={() => { void toggleKey(); }}>{keyShown ? <EyeOff aria-hidden className="size-4" /> : <Eye aria-hidden className="size-4" />}</IconButton>}</span></label>
           {keyProblem && <p className="subscription-error" role="alert" data-testid="custom-model-key-problem">{keyProblem}</p>}
           <ConnectionModelPicker list={list} value={models} onChange={setPicked} />
           <Button type="button" size="sm" variant="ghost" className="justify-start" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>{advanced ? '⌄' : '›'} {translate('customModels.advanced')}</Button>

@@ -1,4 +1,3 @@
-import type { CustomModelConnection, DiscoverySource } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList } from '@gugu/session-core/workspace-server/agent-config';
 import type { SessionMessageLookupKey } from '@renderer/localization/messages';
 
@@ -19,13 +18,4 @@ const messages = {
 
 export function connectionProbeMessageKey(reason: UnlistedReason) {
   return messages[reason];
-}
-
-const discoveredKeyName = {
-  'codex-auth': 'customModels.keyCodexAuth', 'codex-provider': 'customModels.keyCodexProvider', 'shell-env': 'customModels.keyShellEnv',
-} as const satisfies Record<DiscoverySource, SessionMessageLookupKey>;
-
-/** The key the host uses for a connection when none is typed: one stored here, or one this machine already had (#3422). */
-export function heldKeyName(translate: (key: SessionMessageLookupKey) => string, connection: CustomModelConnection | undefined): string | null {
-  return connection?.keySaved ? translate(connection.discovered ? discoveredKeyName[connection.discovered.source] : 'customModels.keyStored') : null;
 }

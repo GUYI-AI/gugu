@@ -10,7 +10,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { ChatComposer } from '@gugu/session-ui/react/components';
-import type { CustomModelConnection } from '@gugu/session-core/models/custom-model';
+import { CUSTOM_MODEL_KEY_CHANNEL, type CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
 import { composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
@@ -140,22 +140,35 @@ it.each(failures)('the saved connection’s Test connection action preserves %s'
   state.testResult = { kind: 'unlisted', reason };
   render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
   await userEvent.click(page.getByRole('button', { name: 'Test connection', exact: true }));
-  await expect.element(page.getByRole('status')).toHaveTextContent(reason === 'unauthorized' ? 'This address refused the key saved on this device. Enter a new key.' : text);
+  await expect.element(page.getByRole('status')).toHaveTextContent(text);
 });
-it('editing with the key field empty names the key that was read, including one found on this machine', async () => {
-  const found: CustomModelConnection = { ...record(), id: 'found', name: 'OpenAI', preset: 'openai', keySaved: true, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], discovered: { source: 'shell-env', keyLast4: 'abcd' } };
-  state.testResult = { kind: 'unlisted', reason: 'unauthorized' };
-  render(<CustomModelDialog machine={null} group="api" connection={found} onClose={() => {}} />);
-  await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', 'Using OPENAI_API_KEY from your terminal');
-  await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused OPENAI_API_KEY from your terminal. Enter a new key.');
-  expect(state.reads).toContainEqual({ connectionId: 'found', endpoints: found.endpoints });
-  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-typed');
-  await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused the key.');
+const found = (): CustomModelConnection => ({ ...record(), id: 'found', name: 'OpenAI', preset: 'openai', keySaved: true, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], discovered: { source: 'shell-env', keyLast4: 'abcd' } });
+const keyField = () => document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')!;
+it('shows the key this computer holds when the eye is pressed, and reads with it until a new one is typed', async () => {
+  const invoke = vi.fn(async (channel: string, id: unknown) => { if (channel !== CUSTOM_MODEL_KEY_CHANNEL || id !== 'found') throw new Error(channel); return 'sk-found-0000abcd'; });
+  vi.stubGlobal('electronAPI', { invoke });
+  try {
+    state.testResult = { kind: 'unlisted', reason: 'unauthorized' };
+    render(<CustomModelDialog machine={null} group="api" connection={found()} onClose={() => {}} />);
+    await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', '••••••••abcd');
+    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused the key above. Enter a new key.');
+    await userEvent.click(page.getByRole('button', { name: 'Show key' }));
+    await expect.element(page.getByTestId('custom-model-key')).toHaveValue('sk-found-0000abcd');
+    expect(keyField().type).toBe('text');
+    await userEvent.click(page.getByRole('button', { name: 'Hide key' }));
+    expect(keyField().type).toBe('password');
+    expect(state.reads).toEqual([{ connectionId: 'found', endpoints: found().endpoints }]);
+    await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-typed');
+    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused the key.');
+  } finally { vi.unstubAllGlobals(); }
 });
-it('a stored key reads as stored, in both languages', async () => {
-  setLocalePreference('zh-CN');
-  render(<CustomModelDialog machine={null} group="custom" connection={{ ...record(), keySaved: true, models: [{ id: 'm' }] }} onClose={() => {}} />);
-  await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', '使用本设备上保存的 Key');
+it('a connection on another device shows only the end of its key, with no eye', async () => {
+  vi.stubGlobal('electronAPI', { invoke: vi.fn() });
+  try {
+    render(<CustomModelDialog machine="device-1" group="api" connection={found()} onClose={() => {}} />);
+    await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', '••••••••abcd');
+    expect(page.getByRole('button', { name: 'Show key' }).query()).toBeNull();
+  } finally { vi.unstubAllGlobals(); }
 });
 it('preserves a connection failure that first occurs during the save-time named-model probe', async () => {
   state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
