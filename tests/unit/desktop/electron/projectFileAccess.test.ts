@@ -747,7 +747,7 @@ describe('the host’s on-demand client-encrypted transfer', () => {
   })
   it('reports the failures of every round, not only the last', async () => {
     const f = fixture({ late: true, bothFail: true })
-    const both = '2 project file transfer(s) failed; no unverified bytes were committed (transfer: file-commit 503 unavailable; late: file-accept 403 quota)'
+    const both = '2 project file transfer(s) failed; no unverified bytes were committed (transfer: file-commit 503 unavailable: Storage is down; late: file-accept 403 quota: Quota exhausted)'
     await expect(f.drain()).rejects.toThrow(both)
     await expect(f.late()).rejects.toThrow(both) // the event during the round joined it and hears the same outcome
   })
@@ -761,7 +761,7 @@ describe('the host’s on-demand client-encrypted transfer', () => {
   it.each(['quota', 'revision', 'source-sha'])('does not upload or commit when %s fails', async failure => {
     const f = fixture({ denied: failure === 'quota', changed: failure === 'revision' })
     if (failure === 'source-sha') await writeFile(join(root, 'file.bin'), Buffer.alloc(bytes.length, 9))
-    await expect(f.drain()).rejects.toThrow(failure === 'quota' ? '(transfer: file-accept 403 quota)' : failure === 'revision' ? '(transfer: Transfer revision changed)' : '(transfer: integrity_failed)')
+    await expect(f.drain()).rejects.toThrow(failure === 'quota' ? '(transfer: file-accept 403 quota: Quota exhausted)' : failure === 'revision' ? '(transfer: Transfer revision changed)' : '(transfer: integrity_failed)')
     expect(f.calls).not.toContain('object'); expect(f.calls).not.toContain('file-commit')
     if (failure !== 'source-sha') expect(f.read).not.toHaveBeenCalled()
     expect(await readdir(tempRoot).catch(() => [])).toEqual([])
