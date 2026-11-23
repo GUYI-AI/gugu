@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// The spring is played by framer's `animate`; here it runs to the end at once, in the call, so a move is its two ends.
+// The spring is played by the frame clock; here it runs to the end at once, in the call, so a move is its two ends.
 const frames = vi.hoisted(() => ({ played: [] as number[][], hold: false }));
-vi.mock('framer-motion', () => ({
-  animate: (_from: number, _to: number, options: { onUpdate: (value: number) => void; onComplete: () => void }) => {
+vi.mock('./panel-clock', () => ({
+  playSpring: (onUpdate: (value: number) => void, onComplete: () => void) => {
     const stopped = { value: false };
     const steps = [0.25, 0.5, 0.75];
     frames.played.push(steps);
-    for (const step of steps) if (!stopped.value) options.onUpdate(step);
-    if (!frames.hold && !stopped.value) options.onComplete();
+    for (const step of steps) if (!stopped.value) onUpdate(step);
+    if (!frames.hold && !stopped.value) onComplete();
     return { stop: () => (stopped.value = true) };
   },
 }));

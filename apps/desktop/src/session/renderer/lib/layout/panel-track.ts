@@ -1,4 +1,4 @@
-import { animate } from 'framer-motion';
+import { playSpring } from './panel-clock';
 
 /**
  * @@@panel-track — the one place a panel's size moves on screen. A track is a row (or column) of slots before a `fill` that
@@ -11,7 +11,6 @@ import { animate } from 'framer-motion';
  *    that stays and holds its content (the list through a fold) keeps it where it is laid out, clipped at the drawn edge:
  *    its avatars do not move, a rail fades its own text. Any other slot's content is its drawn size.
  */
-export const PANEL_SPRING = { type: 'spring', duration: 0.5, bounce: 0.1 } as const;
 
 /** Every edge this close to where it goes ends the move: the spring's sub-pixel tail would hold the landing layout back. */
 export const PANEL_LANDED_PX = 0.5;
@@ -175,16 +174,12 @@ export class PanelTrack {
     const move = { stop: () => {} };
     this.running = move;
     this.frame(0);
-    const controls = animate(0, 1, {
-      ...PANEL_SPRING,
-      onUpdate: (progress) => {
-        if (this.running !== move) return;
-        if (this.slots.every((slot) => Math.abs(slot.from.size + progress * (slot.target.size - slot.from.size) - slot.target.size) < PANEL_LANDED_PX)) this.land();
-        else this.frame(progress);
-      },
-      onComplete: () => {
-        if (this.running === move) this.land();
-      },
+    const controls = playSpring((progress) => {
+      if (this.running !== move) return;
+      if (this.slots.every((slot) => Math.abs(slot.from.size + progress * (slot.target.size - slot.from.size) - slot.target.size) < PANEL_LANDED_PX)) this.land();
+      else this.frame(progress);
+    }, () => {
+      if (this.running === move) this.land();
     });
     if (this.running === move) move.stop = () => controls.stop();
     else controls.stop();
