@@ -12,6 +12,7 @@ import { layoutAlbum, type AlbumLayout } from './albumLayout'
 import { sendStillArriving } from './messageAlbum'
 import { Button } from '../ui/Button'
 import { MediaAttachmentBubble } from './MediaAttachmentBubble'
+import { originalSize } from './originalSize'
 import { AttachmentUploadOverlay } from './AttachmentUploadOverlay'
 import { useNearViewport } from './useNearViewport'
 import { SentMessageSurface } from './sentMessageSurface'
@@ -63,9 +64,9 @@ export function MessageAlbumBubble({ members, isMine, chatId, senderName, onOpen
 /** `awaited` images of this send have not arrived yet: their places are kept, shaped like the last one that did. */
 function AlbumTiles({ parts, chatId, awaited }: { parts: Part[]; chatId: string; awaited: number }) {
   const layout = useMemo(() => {
-    const ratios = parts.map(({ member, meta }) => {
-      const size = meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision : meta.fileMetadata?.status === 'pending' && meta.fileMetadata.width ? meta.fileMetadata : meta.imageDimensions ?? member.image_dimensions
-      return size?.width && size.height ? size.width / size.height : 1
+    const ratios = parts.map(({ meta }) => {
+      const size = originalSize(meta)
+      return size ? size.width / size.height : 1
     })
     return layoutAlbum([...ratios, ...Array<number>(awaited).fill(ratios.at(-1) ?? 1)], ALBUM_WIDTH)
   }, [parts, awaited])
@@ -85,12 +86,12 @@ function AlbumTile({ part: { member, meta }, chatId, style }: { part: Part; chat
   const img = useRef<HTMLImageElement>(null)
   const ready = view.status === 'ready'
   const sourceKey = sourceKeyOf(meta.source)
-  const size = meta.fileMetadata?.status === 'ready' ? meta.fileMetadata.revision : undefined
+  const size = originalSize(meta)
   // The viewer opens on the thumbnail and swaps in the original when it reaches this image (same as one image).
   useEffect(() => {
     if (!ready || !img.current || meta.source.kind === 'url') return
     return registerAttachmentImage(img.current, meta.source, { name: meta.fileName, contentType: meta.mimeType },
-      { chatId, messageId: member.id }, size?.width && size.height ? { width: size.width, height: size.height } : undefined)
+      { chatId, messageId: member.id }, size)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sourceKey 就是 meta.source 的身份
   }, [ready, sourceKey, meta.fileName, meta.mimeType, chatId, member.id, size?.width, size?.height])
   const failed = member.local_send_state === 'failed'
