@@ -1134,8 +1134,8 @@
 
   [data-chat-workspace-header] [data-chat-tool-strip] [data-tab-active],
   [data-chat-workspace-header][data-chat-tool-shared] [data-tab-active] {
-    background: var(--background-1);
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+    /* 和分段控件的选中块同一条规矩:不是浮层,不加阴影(tokens.css --listen-mode-active-shadow)。 */
+    background: var(--tab-face);
   }
 
   [data-chat-tool-card] {
