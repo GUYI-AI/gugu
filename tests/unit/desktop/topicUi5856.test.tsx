@@ -12,7 +12,7 @@ import * as attachmentReader from '../../../apps/desktop/src/lib/attachmentBytes
 import { followRendererSession, queryClient as attachmentQueryClient } from '../../../apps/desktop/src/lib/replica'
 
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
-import { createNode, createReactHarness, clickElement, deferred, message } from '../../support/testHarness'
+import { createNode, createReactHarness, clickElement, deferred } from '../../support/testHarness'
 
 const listTopicsOfChat = vi.fn<(sourceChatId: string) => Promise<TopicSummary[]>>()
 vi.mock('../../../apps/desktop/src/lib/topics', () => ({

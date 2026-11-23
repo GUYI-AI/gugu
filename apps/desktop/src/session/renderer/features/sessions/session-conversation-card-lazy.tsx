@@ -12,5 +12,5 @@ const TabAvatar = lazy(() => import('./session-tab-avatar').then((module) => ({ 
 
 /** My agent's avatar for its conversation tab (same reason to load late as the card). */
 export function LazySessionTabAvatar(props: ComponentProps<typeof TabAvatar>) {
-  return <Suspense fallback={<span className="inline-block shrink-0" style={{ width: props.size, height: props.size }} />}><TabAvatar {...props} /></Suspense>;
+  return <Suspense fallback={<span className="inline-block size-4 shrink-0" />}><TabAvatar {...props} /></Suspense>;
 }

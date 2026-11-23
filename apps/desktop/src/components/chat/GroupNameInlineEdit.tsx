@@ -5,6 +5,7 @@ import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { Pencil } from '@/lib/icons'
 import { IconButton } from '../ui/IconButton'
 import { InlineNameInput } from '../ui/InlineNameInput'
+import { Button as ButtonPrimitive } from '@base-ui/react/button'
 
 // @@@2070 群名就地编辑:默认显示为文字;canEdit(manager)点名字旁的编辑钮或双击 → 变输入框(回车/失焦确认、Esc 取消)。
 // 编辑钮是触屏上唯一的入口:双击与 title 提示在手机上都不成立。
@@ -73,12 +74,11 @@ export function GroupNameInlineEdit({
       <div data-testid="group-name-display" role={canEdit ? 'button' : undefined} tabIndex={canEdit ? 0 : undefined}
         onClick={canEdit ? startEditing : undefined}
         onKeyDown={canEdit ? (event) => { if (event.key === 'Enter') startEditing() } : undefined}
-        style={{ overflowWrap: 'anywhere' }}
-        className={`flex min-w-0 items-center gap-1.5 rounded-[6px] px-1 text-center text-[19px] leading-[22px] font-semibold ${canEdit ? 'cursor-text hover:bg-row-hover' : ''}`}>
+        className={`flex min-w-0 items-center [overflow-wrap:anywhere] gap-[6px] rounded-[var(--radius-document)] px-1 text-center text-[length:var(--font-heading)] leading-[22px] font-semibold ${canEdit ? 'cursor-text hover:bg-row-hover' : ''}`}>
         {/* #6791 群设置页里群名显示全名:换行,不截断。 */}
         <span className="min-w-0">{resolveOrLoud(name, 'group details title')}</span>
-        {canEdit ? <button type="button" data-testid="group-name-edit" aria-label={labels?.editHint ?? t('group.editName')}
-          onClick={(event) => { event.stopPropagation(); startEditing() }} className="flex shrink-0 text-[var(--faint-fg)]"><Pencil size={13} /></button> : null}
+        {canEdit ? <ButtonPrimitive data-testid="group-name-edit" aria-label={labels?.editHint ?? t('group.editName')}
+          onClick={(event) => { event.stopPropagation(); startEditing() }} className="flex shrink-0 text-[var(--faint-fg)]"><Pencil size={13} /></ButtonPrimitive> : null}
       </div>
     </div>
   )

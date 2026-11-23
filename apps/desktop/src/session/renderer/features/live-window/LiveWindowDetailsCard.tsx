@@ -10,6 +10,7 @@ import { useLiveWindowConversation } from './use-live-window-conversation';
 import { useLiveWindowLabels } from './desktop-labels';
 import type { LiveWindowConversation } from './conversation';
 import { DetailsGroupTitle } from '@/components/details/DetailsParts';
+import { Button as ButtonPrimitive } from '@base-ui/react/button'
 
 /**
  * 第 16 版 #43「它的电脑」:详情开头的一张小卡片 —— 缩略图 + 一行状态,只在 agent 真用到浏览器 / 电脑时出现
@@ -35,18 +36,18 @@ const BoundCard = observer(function BoundCard({ projectId, sessionId, agentId }:
   return (
     <>
     <DetailsGroupTitle>{t('computer')}</DetailsGroupTitle>
-    <button type="button" data-testid="details-computer-card" data-kind={source.kind} title={t('tab')}
+    <ButtonPrimitive data-testid="details-computer-card" data-kind={source.kind} title={t('tab')}
       onClick={() => live.dispatch({ type: 'toggle-window' })}
-      className="mx-auto mb-[22px] block w-[260px] overflow-hidden rounded-[14px] bg-[var(--card)] text-left shadow-[0_0_0_1px_var(--border),var(--shadow-lift)]">
+      className="mx-auto mb-[22px] block w-[260px] overflow-hidden rounded-[var(--radius-surface)] bg-[var(--card)] text-left shadow-[0_0_0_1px_var(--border),var(--shadow-lift)]">
       <span aria-hidden className="relative block h-[146px] overflow-hidden bg-[var(--muted)]">
         <LiveFrameMirror conversation={live.conversation} sourceId={source.id} />
       </span>
-      <span className="flex items-center gap-2 px-3 py-2.5 text-[13px]">
+      <span className="flex items-center gap-2 px-3 py-[10px] text-[length:var(--font-body)]">
         <span className={`size-[7px] shrink-0 rounded-full ${live.connected ? 'bg-[var(--green)]' : 'bg-[var(--faint-fg)]'}`} />
         <span className="min-w-0 flex-1 truncate">{status}</span>
         <Maximize2 className="size-3.5 text-[var(--muted-fg)]" />
       </span>
-    </button>
+    </ButtonPrimitive>
     </>
   );
 });

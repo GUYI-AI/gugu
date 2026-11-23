@@ -117,8 +117,10 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(inside('[data-chat-workspace-header] [data-tab-label]')).toBeNull();
   expect(tool()).toBeNull();
   expect(page.getByRole('button', { name: '单独成窗' }).query()).toBeNull();
-  await userEvent.click(page.getByRole('button', { name: /^(?:More|更多)$/ }));
-  await userEvent.click(page.getByRole('menuitem', { name: '单独成窗' }));
+  // 第 16 版: the capsule row draws no ⋯ (its actions are in the card and Details); the tab's own window command is on right-click.
+  expect(page.getByRole('button', { name: /^(?:More|更多)$/ }).query()).toBeNull();
+  await userEvent.click(page.getByText('聊天标题'), { button: 'right' });
+  await userEvent.click(page.getByRole('menuitem', { name: '在新窗口打开' }));
   expect(openWindow).toHaveBeenCalledOnce();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');

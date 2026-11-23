@@ -16,6 +16,7 @@ import { GroupMembersBlock } from './GroupInfoRows'
 import { GroupNameInlineEdit } from './GroupNameInlineEdit'
 import { groupRoleRevision, useGroupChatSettings } from './useGroupChatSettings'
 import { TopicMark } from './TopicMark'
+import { Button as ButtonPrimitive } from '@base-ui/react/button'
 
 /**
  * 话题(第 16 版:点话题 = 换主会话)的「详情」:圆底消息图标 + 话题名(能改的人点了改)+「来自群「…」」;话题成员块(进话题成员页);
@@ -48,10 +49,10 @@ export function TopicDetailsMain({ chat, currentUserId, membersPage, onClose, on
 
   if (page === 'members') return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <button type="button" data-testid="topic-details-back" onClick={() => setPage('main')}
-        className="flex h-10 shrink-0 items-center gap-1 px-4 text-[13px] text-[var(--muted-fg)] hover:text-[var(--fg)]">
+      <ButtonPrimitive data-testid="topic-details-back" onClick={() => setPage('main')}
+        className="flex h-10 shrink-0 items-center gap-1 px-4 text-[length:var(--font-body)] text-[var(--muted-fg)] hover:text-[var(--fg)]">
         <ChevronLeft className="size-4" />{t('conversationCard.details')}
-      </button>
+      </ButtonPrimitive>
       {membersPage(() => setPage('main'))}
     </div>
   )

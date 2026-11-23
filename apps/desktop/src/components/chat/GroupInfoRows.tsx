@@ -87,7 +87,7 @@ export function GroupMembersBlock({ chatId, settings, memberIds, total, people, 
   return (
     <div role="button" tabIndex={0} data-testid="group-settings-members" onClick={onOpen}
       onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }}
-      className="mb-3 flex h-12 cursor-pointer items-center gap-2.5 rounded-xl bg-[var(--muted)] px-3 text-[13px]">
+      className="mb-3 flex h-12 cursor-pointer items-center gap-[10px] rounded-xl bg-[var(--muted)] px-3 text-[length:var(--font-body)]">
       <span className="flex shrink-0 ps-1.5">
         {/* 窄了先让头像:详情页(@container/details)不到 380 只留 3 个,不到 300 不留。 */}
         {memberIds.slice(0, 4).map((id, index) => (
@@ -97,7 +97,7 @@ export function GroupMembersBlock({ chatId, settings, memberIds, total, people, 
         ))}
       </span>
       <span className="shrink-0 whitespace-nowrap">{t(topic ? 'group.memberList.titleTopic' : 'group.settings.members')}</span>
-      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--muted-fg)]">{topic ? (total === null ? <Unknown className="w-[2ch]" /> : t('groupDetails.people', { count: total }))
+      <span className="min-w-0 flex-1 truncate text-[length:var(--font-caption)] text-[var(--muted-fg)]">{topic ? (total === null ? <Unknown className="w-[2ch]" /> : t('groupDetails.people', { count: total }))
         : people !== null && agents !== null ? `${t('groupDetails.people', { count: people })} · ${t('groupDetails.agents', { count: agents })}`
         : total === null ? <Unknown className="w-[2ch]" /> : t('group.settings.memberCount', { count: total })}</span>
       {/* A topic has no add entry in the product today (its member list only searches): no chip for it. */}
