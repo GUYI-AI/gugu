@@ -24,7 +24,7 @@ export function DetailsHero({ avatar, name, sub }: { avatar: ReactNode; name: Re
 export function DetailsName({ name, onEdit, testId }: { name: string; onEdit?: () => void; testId?: string }) {
   return (
     <button type="button" data-testid={testId} disabled={!onEdit} onClick={onEdit}
-      className="flex max-w-full min-w-0 items-center gap-1.5 rounded-md px-1 leading-[26px] enabled:cursor-text enabled:hover:bg-row-hover">
+      className="flex max-w-full min-w-0 items-center gap-1.5 rounded-[6px] px-1 leading-[22px] enabled:cursor-text enabled:hover:bg-row-hover">
       <span className="min-w-0 truncate">{name}</span>
       {onEdit ? <PencilMark /> : null}
     </button>
@@ -72,7 +72,7 @@ export function DetailsRow({ icon, label, end, chevron, onClick, danger, testId,
     <div role={onClick ? 'button' : undefined} tabIndex={onClick && !disabled ? 0 : undefined} data-testid={testId} aria-disabled={disabled || undefined}
       onClick={disabled ? undefined : onClick}
       onKeyDown={onClick && !disabled ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } } : undefined}
-      className={`flex min-h-10 items-center gap-x-[11px] border-b border-[var(--border)] px-1 text-[13.5px] ${text ? '' : 'flex-wrap py-[5px]'} ${onClick && !disabled ? 'cursor-pointer' : ''} ${disabled ? 'opacity-50' : ''} ${danger ? 'border-b-0 text-[var(--danger-fg)]' : ''}`}>
+      className={`flex min-h-10 items-center gap-[11px] border-b border-[var(--border)] px-1 text-[13.5px] ${text ? '' : 'flex-wrap @max-[380px]/details:gap-y-1 @max-[380px]/details:py-[5px]'} ${onClick && !disabled ? 'cursor-pointer' : ''} ${disabled ? 'opacity-50' : ''} ${danger ? 'border-b-0 text-[var(--danger-fg)]' : ''}`}>
       <span className={`flex shrink-0 [&_svg]:size-4 ${danger ? '' : 'text-[var(--muted-fg)]'}`}>{icon}</span>
       <span className="shrink-0 whitespace-nowrap">{label}</span>
       {end !== undefined && end !== null || chevron ? (
@@ -102,7 +102,7 @@ export function DetailsSegmented<T extends string>({ options, value, onChange }:
     <span role="radiogroup" className="flex gap-0.5 rounded-lg bg-[var(--muted)] p-0.5" onClick={(event) => event.stopPropagation()}>
       {options.map((option) => (
         <button key={option.value} type="button" role="radio" aria-checked={option.value === value} onClick={() => onChange(option.value)}
-          className={`rounded-md px-2 py-[3px] text-[12px] whitespace-nowrap @max-[340px]/details:px-1 @max-[340px]/details:tracking-tight ${option.value === value ? 'bg-[var(--bg)] text-[var(--fg)] shadow-xs' : 'text-[var(--muted-fg)]'}`}>
+          className={`rounded-[6px] px-2 py-[3px] text-[12px] whitespace-nowrap @max-[340px]/details:px-1 @max-[340px]/details:tracking-tight ${option.value === value ? 'bg-[var(--bg)] text-[var(--fg)] shadow-[var(--segment-on-shadow)]' : 'text-[var(--muted-fg)]'}`}>
           {option.label}
         </button>
       ))}

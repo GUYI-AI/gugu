@@ -1,2 +1,2 @@
 /** 第 16 版 .capsule:对话卡片顶上那颗浮动胶囊(34 高、两侧 16、14.5px 粗、最宽 80%、暖色底)。 */
-export const CONVERSATION_CAPSULE_CLASS = 'flex h-[34px] max-w-[80%] min-w-0 cursor-pointer items-center gap-1.5 rounded-full bg-[var(--capsule-bg)] px-4 text-[14.5px] font-semibold whitespace-nowrap text-[var(--fg)] shadow-[0_0_0_.5px_var(--border),0_1px_2px_var(--border)] [-webkit-app-region:no-drag] hover:bg-[var(--capsule-hover)]';
+export const CONVERSATION_CAPSULE_CLASS = 'flex h-[34px] max-w-[80%] min-w-0 cursor-pointer items-center gap-1.5 rounded-full bg-[var(--capsule-bg)] px-4 text-[14.5px] font-semibold whitespace-nowrap text-[var(--fg)] shadow-[var(--capsule-shadow)] [-webkit-app-region:no-drag] hover:bg-[var(--capsule-hover)]';

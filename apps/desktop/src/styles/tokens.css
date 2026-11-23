@@ -696,6 +696,9 @@
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
   --capsule-bg: color-mix(in oklab, var(--fg) 10%, transparent); /* 第 16 版:浮动胶囊;深色下取中性的抬升色 */
   --capsule-hover: color-mix(in oklab, var(--fg) 14%, transparent);
+  --capsule-shadow: 0 0 0 .5px var(--border-strong);
+  --card-pop-shadow: var(--shadow-lift);
+  --segment-on-shadow: none;
   --press: color-mix(in oklab, var(--fg) 6%, transparent); /* @@@1787 按压反馈,比 hover 深一档才可感知 */
   --pinned: color-mix(in oklab, var(--fg) 1%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
   /* @@@state-ladder-mix (#2322) 上面三档的「实色配方」。--hover/--press/--selected 是半透明叠色,
@@ -937,6 +940,9 @@
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
   --capsule-bg: #efe7dc; /* 第 16 版:对话卡片顶上那颗浮动胶囊(设计稿 .capsule) */
   --capsule-hover: #e8dfd2;
+  --capsule-shadow: 0 0 0 .5px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04); /* 设计稿 .capsule */
+  --card-pop-shadow: 0 0 0 .5px rgba(0,0,0,.12), 0 8px 28px rgba(0,0,0,.14), 0 2px 6px rgba(0,0,0,.06); /* 设计稿 .pop:名片 */
+  --segment-on-shadow: 0 1px 2px rgba(0,0,0,.08); /* 设计稿 .seg span.on */
   --press: color-mix(in oklab, var(--fg) 6%, transparent); /* @@@1787 按压反馈,比 hover 深一档才可感知 */
   --pinned: color-mix(in oklab, var(--fg) 1%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
   /* @@@state-ladder-mix 浅色配方(说明见 :root),#7333 起与暗色侧同一组数。 */
