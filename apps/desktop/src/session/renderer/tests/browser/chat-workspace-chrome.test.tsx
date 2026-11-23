@@ -134,29 +134,30 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   const firstTool = tool();
   const chatWidth = width(chat());
 
-  const toolLeft = Math.round(firstTool!.getBoundingClientRect().left);
   await userEvent.click(page.getByRole('button', { name: '隐藏标签页' }));
-  // The tool goes out on the track — live, ❌ blank at once or a picture of it: it stays where it is laid out and the edge
-  // passes over it, while the chat beside it is laid out at every width it is drawn at. The strip's tool tabs leave with
-  // their page, on the same edge (@@@strip-on-track).
+  // The tool goes out on the track — live, ❌ blank at once or a picture of it — sliding with the edge, and the chat beside
+  // it is laid out at every width it is drawn at. Its tabs above move with it on the same edge (@@@strip-on-track).
   const toolLefts = new Set<number>();
   const chatWidths = new Set<number>();
   const strayStrip: string[] = [];
+  const stripOnEdge = () => {
+    const column = inside('[data-chat-workspace-chat-header]');
+    const tools = inside('[data-chat-workspace-header] [data-tab-label="工具页签"]')?.closest<HTMLElement>('.absolute');
+    const toolPage = tool() && !tool()!.closest('[inert]') ? tool()!.getBoundingClientRect().left : null;
+    const header = inside('[data-chat-workspace-header]')!.getBoundingClientRect().right;
+    if (tools && toolPage !== null && toolPage < header - 100 && Math.abs(tools.getBoundingClientRect().left - toolPage) > 2) strayStrip.push(`tabs ${Math.round(tools.getBoundingClientRect().left)}≠page ${Math.round(toolPage)}`);
+    const edge = chat()?.getBoundingClientRect().right ?? 0;
+    if (column && tools && edge < header - 100 && Math.abs(column.getBoundingClientRect().right - edge) > 2) strayStrip.push(`chat ${Math.round(column.getBoundingClientRect().right)}≠${Math.round(edge)}`);
+  };
   for (let frame = 0; frame < 40; frame += 1) {
     await new Promise(requestAnimationFrame);
     if (firstTool && !firstTool.closest('[inert]')) toolLefts.add(Math.round(firstTool.getBoundingClientRect().left));
     chatWidths.add(Math.round(width(chat())));
-    const chip = inside('[data-chat-workspace-header] [data-tab-label="工具页签"]');
-    const column = inside('[data-chat-workspace-chat-header]');
-    const edge = chat()?.getBoundingClientRect().right ?? 0;
-    // While the chat column is narrower than the strip has room for, it ends where the chat page ends.
-    if (column && chip && Math.abs(column.getBoundingClientRect().right - edge) > 2 && edge < inside('[data-chat-workspace-header]')!.getBoundingClientRect().right - 100) {
-      strayStrip.push(`${Math.round(column.getBoundingClientRect().right)}≠${Math.round(edge)}`);
-    }
+    stripOnEdge();
   }
-  expect([...toolLefts], 'the leaving tool does not slide').toEqual([toolLeft]);
+  expect(toolLefts.size, [...toolLefts].join(' ')).toBeGreaterThan(2);
   expect(chatWidths.size, [...chatWidths].join(' ')).toBeGreaterThan(2);
-  expect(strayStrip, 'the strip rides the pages\' edge').toEqual([]);
+  expect(strayStrip, 'the strip and the pages share the edge in every frame').toEqual([]);
   await mode('hidden');
   const showButton = inside('button[aria-label="显示标签页"]')!;
   expect(showButton.getAttribute('aria-pressed')).toBe('false');
@@ -168,17 +169,16 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   await until('the hidden tool is out of reach', () => !!firstTool?.closest('[inert]'));
   await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
   await mode('split');
-  // Shown again, the tool comes in on the track like a new one, ❌ in one frame: the edge opens over it where it lands.
-  const shownWidths = new Set<number>();
+  // Shown again, the tool comes in on the track like a new one, ❌ in one frame, its tabs on the same edge.
   const shownLefts = new Set<number>();
   for (let frame = 0; frame < 20; frame += 1) {
     await new Promise(requestAnimationFrame);
-    shownWidths.add(Math.round(width(chat())));
-    if (tool() && !tool()!.closest('[inert]')) shownLefts.add(Math.round(tool()!.getBoundingClientRect().left));
+    shownLefts.add(Math.round(tool()?.getBoundingClientRect().left ?? -1));
+    stripOnEdge();
   }
-  // Over several frames, ❌ in one (how many a runner catches is the machine's).
-  expect(shownWidths.size, [...shownWidths].join(' ')).toBeGreaterThan(2);
-  expect([...shownLefts], 'the coming tool does not slide').toEqual([toolLeft]);
+  // Over several frames (how many a runner catches is the machine's).
+  expect(shownLefts.size, [...shownLefts].join(' ')).toBeGreaterThan(2);
+  expect(strayStrip, 'the strip and the pages share the edge in every frame').toEqual([]);
   await until('the original split width is restored', () => width(chat()), (size) => size === chatWidth);
 
   await userEvent.click(page.getByRole('button', { name: '进入完整视图' }));
