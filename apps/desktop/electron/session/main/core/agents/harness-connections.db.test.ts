@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { openRegistryFixture, type RegistryFixture } from '@tooling/utils/provider-accounts';
+import * as nativeAuthMigration from './codex-native-auth-migration';
 
 const state = vi.hoisted(() => ({ fixture: null as RegistryFixture | null, home: '', codexRoot: '', claudeRoot: '' }));
 vi.mock('@main/db/client', () => ({
@@ -51,6 +52,7 @@ beforeEach(async () => {
     VALUES ('old', 'project', 'codex', 'pty', '{"version":"1","type":"pty"}');`);
 });
 afterEach(async () => {
+  vi.restoreAllMocks();
   vi.unstubAllEnvs();
   state.fixture?.close();
   state.fixture = null;
@@ -68,6 +70,54 @@ async function writeAuthAt(root: string, text: string): Promise<void> {
 }
 
 const vault = (id: string) => join(state.home, 'harness-connections', 'codex', id === 'native' ? 'managed-native' : id, '.codex');
+
+it('resolves Codex startup against the new default when a switch is publishing its selection', async () => {
+  await writeAuthAt(process.env.CODEX_HOME!, chatgptAuth('terminal'));
+  const a = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'A' });
+  const b = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'B' });
+  await writeAuthAt(vault(a.id), chatgptAuth('a'));
+  await writeAuthAt(vault(b.id), chatgptAuth('b'));
+  await selectHarnessConnection('codex', a.id);
+  const registry = state.fixture!.registry;
+  expect((await registry.getAccount('harness:codex', 'native'))?.meta?.harnessConnection?.nativeOAuth).toBeDefined();
+
+  const reachedCommit = Promise.withResolvers<void>();
+  const allowCommit = Promise.withResolvers<void>();
+  const probeReconciled = Promise.withResolvers<void>();
+  const setDefault = registry.setDefaultAccount.bind(registry);
+  vi.spyOn(registry, 'setDefaultAccount').mockImplementation(async (provider, id) => {
+    reachedCommit.resolve();
+    await allowCommit.promise;
+    return setDefault(provider, id);
+  });
+  const switching = selectHarnessConnection('codex', b.id);
+  await Promise.race([reachedCommit.promise, switching]);
+
+  // Hold any obsolete default snapshot until after the switch publishes B.
+  const getDefault = registry.getDefaultAccountId.bind(registry);
+  vi.spyOn(registry, 'getDefaultAccountId').mockImplementation(async (provider) => {
+    const selected = await getDefault(provider);
+    if (selected === a.id) await switching;
+    return selected;
+  });
+  vi.spyOn(nativeAuthMigration, 'reconcileCodexNativeReference').mockImplementation(async () => {
+    probeReconciled.resolve();
+    return true;
+  });
+  const resolving = resolveHarnessConnection('codex');
+  try {
+    await Promise.race([probeReconciled.promise, resolving]);
+    // Drain the probe's microtasks after its last pre-selection I/O.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  } finally {
+    allowCommit.resolve();
+  }
+
+  const [, context] = await Promise.all([switching, resolving]);
+  expect(context.connectionId).toBe(b.id);
+  expect(await registry.getDefaultAccountId('harness:codex')).toBe(b.id);
+  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('b'));
+});
 
 it('references the terminal account and keeps the former native vault as an independent account without writing the terminal', async () => {
   const work = await createHarnessConnection({ providerId: 'codex', kind: 'account' });

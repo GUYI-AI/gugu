@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { app } from 'electron';
 import { eq } from 'drizzle-orm';
+import { KeyedMutex } from '@gugu/session-core/lib';
 import { pluginRegistry, requireNativeHome } from '@gugu/session-plugins/agents';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
 import type {
@@ -52,6 +53,12 @@ import { CODEX_NATIVE_AUTH_ROOT } from '@gugu/core/local/codex-native-auth.mjs';
 type Provider = 'claude' | 'codex';
 
 const namespace = (providerId: string) => `harness:${providerId}`;
+const codexSelectionLock = new KeyedMutex();
+
+// Hold the Codex default selection through both credential activation and publication.
+function withHarnessSelection<T>(providerId: string, operation: () => Promise<T>): Promise<T> {
+  return providerId === 'codex' ? codexSelectionLock.runExclusive(providerId, operation) : operation();
+}
 
 /** Claude / Codex:账号连接 + API 连接,换凭据的代码逐家写(下面那一整套)。 */
 function isAccountProvider(providerId: string): providerId is Provider {
@@ -141,6 +148,14 @@ export async function selectHarnessConnection(
   supported(providerId);
   await ensureNative(providerId);
   if (providerId === 'codex') await reconcileNativeCodex(options.nativeEnv);
+  return withHarnessSelection(providerId, () => applyHarnessSelection(providerId, connectionId, options.nativeEnv));
+}
+
+async function applyHarnessSelection(
+  providerId: string,
+  connectionId: string,
+  nativeEnv: Record<string, string | undefined> | undefined,
+): Promise<void> {
   const target = await registry.getAccount(namespace(providerId), connectionId);
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
   // 已有会话跟着默认订阅走。账号连接把凭据换进用户根;API 连接靠环境变量起,
@@ -151,10 +166,10 @@ export async function selectHarnessConnection(
     if (providerId === 'codex') {
       const native = await registry.getAccount(namespace(providerId), 'native');
       if (connectionId !== 'native' || !native?.meta?.harnessConnection?.nativeOAuth) {
-        await activateCodexAccount(codexSlotPaths(options.nativeEnv), ids, connectionId, current);
+        await activateCodexAccount(codexSlotPaths(nativeEnv), ids, connectionId, current);
       }
     }
-    else await activateClaudeAccount(claudeSlotPaths(options.nativeEnv), ids, connectionId, current);
+    else await activateClaudeAccount(claudeSlotPaths(nativeEnv), ids, connectionId, current);
   }
   await registry.setDefaultAccount(namespace(providerId), connectionId);
 }
@@ -317,16 +332,18 @@ async function credentialRoot(
     : claudeCredentialRoot(claudeSlotPaths(nativeEnv), ids, connectionId, selected);
 }
 
+type HarnessConnectionInput = {
+  connectionId?: string;
+  sessionId?: string;
+  sourceSessionId?: string;
+  /** 解析「用户自己的配置根」用的 env(含用户 shell 里导出的 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`)。 */
+  nativeEnv?: Record<string, string | undefined>;
+};
+
 /** Resolved exclusively on the credential-owning machine, never in a renderer. */
 export async function resolveHarnessConnection(
   providerId: string,
-  input: {
-    connectionId?: string;
-    sessionId?: string;
-    sourceSessionId?: string;
-    /** 解析「用户自己的配置根」用的 env(含用户 shell 里导出的 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`)。 */
-    nativeEnv?: Record<string, string | undefined>;
-  } = {}
+  input: HarnessConnectionInput = {},
 ): Promise<Partial<AgentRunContext>> {
   if (!isAccountProvider(providerId)) {
     const vendor = vendorKeyOf(providerId);
@@ -342,6 +359,13 @@ export async function resolveHarnessConnection(
   }
   await ensureNative(providerId);
   if (providerId === 'codex') await reconcileNativeCodex(input.nativeEnv);
+  return withHarnessSelection(providerId, () => resolveAccountHarnessConnection(providerId, input));
+}
+
+async function resolveAccountHarnessConnection(
+  providerId: Provider,
+  input: HarnessConnectionInput,
+): Promise<Partial<AgentRunContext>> {
   // 会话(不论哪条、什么时候建的)和不指名的读取跟默认连接走;只有按连接问的(登录、登录状态、用量)才指名。
   const forSession = Boolean(input.sessionId) || !input.connectionId;
   let id = forSession ? await defaultConnectionId(providerId) : input.connectionId!;

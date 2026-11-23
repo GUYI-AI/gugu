@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -7,9 +7,15 @@ import { activateCodexAccount, codexAuthIdentity, copyCodexUpgradeSignIn, restor
 import { activateClaudeAccount, restoreClaudeTerminalForMigration, type ClaudeAuthSlotPaths } from './claude-auth-slot';
 import { createClaudeCredentialStore } from './claude-credential-store';
 
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...fs, rename: vi.fn(fs.rename) };
+});
+
 const roots: string[] = [];
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.mocked(rename).mockReset();
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 async function root() {
@@ -88,6 +94,34 @@ it('activates a saved Codex account once when launch preparations run concurrent
   ]);
   expect(await readFile(join(paths.nativeRoot, 'auth.json'), 'utf8')).toBe(incoming);
   expect(await readFile(join(paths.vaultRoot('native'), 'auth.json'), 'utf8')).toBe(native);
+});
+
+it('restores credentials when the ownership record cannot be published', async () => {
+  const paths = codexPaths(await root());
+  const active = codexAuth('gugu-a', 'rotated');
+  const saved = codexAuth('gugu-a', 'old');
+  const incoming = codexAuth('gugu-b', 'saved');
+  const record = JSON.stringify({ connectionId: 'gugu-a', identity: codexAuthIdentity(JSON.parse(active)) });
+  await put(paths.nativeRoot, 'auth.json', active);
+  await put(paths.vaultRoot('gugu-a'), 'auth.json', saved);
+  await put(paths.vaultRoot('gugu-b'), 'auth.json', incoming);
+  await writeFile(paths.liveStateFile, record);
+  const realRename = (await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises')).rename;
+  const failure = Object.assign(new Error('Cannot replace the ownership record'), { code: 'EIO' });
+  vi.mocked(rename).mockImplementation(async (from, to) => {
+    if (to === paths.liveStateFile) throw failure;
+    return realRename(from, to);
+  });
+
+  const activate = () => activateCodexAccount(paths, ['native', 'gugu-a', 'gugu-b'], 'gugu-b', 'gugu-a');
+  await expect(activate()).rejects.toBe(failure);
+  expect(await readFile(join(paths.nativeRoot, 'auth.json'), 'utf8')).toBe(active);
+  expect(await readFile(join(paths.vaultRoot('gugu-a'), 'auth.json'), 'utf8')).toBe(saved);
+  expect(await readFile(join(paths.vaultRoot('gugu-b'), 'auth.json'), 'utf8')).toBe(incoming);
+  expect(await readFile(paths.liveStateFile, 'utf8')).toBe(record);
+  vi.mocked(rename).mockReset();
+  await expect(activate()).resolves.toBe('gugu-a');
+  expect(await readFile(join(paths.nativeRoot, 'auth.json'), 'utf8')).toBe(incoming);
 });
 
 it('publishes concurrent Codex migration records with independent temporary files', async () => {

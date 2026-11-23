@@ -231,15 +231,13 @@ export async function activateCodexAccount(
     }
     const live = await readAuth(paths.nativeRoot);
     const savedOwner = owner ? await readAuth(paths.vaultRoot(owner)) : null;
-    const savedState = await readFile(paths.liveStateFile, 'utf8').catch((error: unknown) => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      throw error;
-    });
     let changedLive = false;
+    let savedLiveToVault = false;
     try {
       if (live) {
         if (owner) {
           await writeAuth(paths.vaultRoot(owner), live.text);
+          savedLiveToVault = true;
         } else {
           await mkdir(paths.backupDir, { recursive: true, mode: 0o700 });
           await copyFile(join(paths.nativeRoot, AUTH_FILE), join(paths.backupDir, `auth-${now().toISOString().replace(/[:.]/g, '-')}.json`));
@@ -249,21 +247,28 @@ export async function activateCodexAccount(
       if (incoming) await writeAuth(paths.nativeRoot, incoming.text);
       else await rm(join(paths.nativeRoot, AUTH_FILE), { force: true });
       changedLive = true;
+      // Commit the ownership record last. If this fails, the old record is
+      // still in place and only credential changes need to be undone.
       if (incoming?.identity || restoringTerminal) {
         await recordLiveState(paths.liveStateFile, { connectionId: targetId, identity: incoming?.identity ?? '',
           ...(restoringTerminal && incoming ? { nativeVaultCleanup: true } : {}) });
       } else await rm(paths.liveStateFile, { force: true });
     } catch (error) {
-      if (savedState !== null) await replacePrivateFile(paths.liveStateFile, savedState);
-      else await rm(paths.liveStateFile, { force: true });
-      // A source guard rejection happened before changing the terminal slot.
-      if (changedLive && (await readAuth(paths.nativeRoot))?.text === incoming?.text) {
-        if (live) await writeAuth(paths.nativeRoot, live.text);
-        else await rm(join(paths.nativeRoot, AUTH_FILE), { force: true });
-      }
-      if (owner) {
-        if (savedOwner) await writeAuth(paths.vaultRoot(owner), savedOwner.text);
-        else await rm(join(paths.vaultRoot(owner), AUTH_FILE), { force: true });
+      try {
+        if (changedLive) {
+          if ((await readAuth(paths.nativeRoot))?.text !== incoming?.text) {
+            throw new Error('Codex sign-in changed during rollback');
+          }
+          if (live) await writeAuth(paths.nativeRoot, live.text);
+          else await rm(join(paths.nativeRoot, AUTH_FILE), { force: true });
+        }
+        // Keep the up-to-date vault copy if the active sign-in could not be restored.
+        if (owner && savedLiveToVault) {
+          if (savedOwner) await writeAuth(paths.vaultRoot(owner), savedOwner.text);
+          else await rm(join(paths.vaultRoot(owner), AUTH_FILE), { force: true });
+        }
+      } catch (rollbackError) {
+        throw new AggregateError([error, rollbackError], 'Codex account activation failed and credentials could not be rolled back');
       }
       throw error;
     }
