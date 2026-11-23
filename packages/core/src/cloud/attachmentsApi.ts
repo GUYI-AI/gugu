@@ -251,6 +251,8 @@ function isTransientStorageError(error: unknown): boolean {
 /** Retry interrupted transfers and busy services; ordinary authorization refusals stay terminal. */
 export function retryableAttachmentError(error: unknown): boolean {
   return error instanceof TypeError || isTransientStorageError(error) || error instanceof FileDownloadFailure && isTransientFileReadError(error)
+    // Another permit of this account still holds these bytes past the wait bound: a later attempt finds them or uploads.
+    || error instanceof AttachmentsError && error.code === 'upload_in_progress'
 }
 
 async function retryUploadRequest<T extends { status: number }>(upload: () => Promise<T>, attempts: { used: number }, signal?: AbortSignal) {
@@ -481,10 +483,14 @@ async function advanceUploadPermit(upload: DeclaredUploadState): Promise<void> {
  * 409 upload_in_progress: another permit of this account is writing the same bytes (or its leftovers are being removed).
  * Not a failure, from upload, finish or a call that registers the object. `retry_after` is that permit's release,
  * minutes away, while it usually registers in seconds. Wait 1 s, 2 s, 4 s … 15 s, never past retry_after, then ask
- * again. False for any other error.
+ * again, for at most OTHER_UPLOAD_WAIT_MS in all: past it the caller gets the upload_in_progress itself (retryable),
+ * so a send says the upload is still pending instead of hanging. False for any other error.
  */
-async function waitForOtherUpload(error: unknown, wait: { ms: number }, signal?: AbortSignal): Promise<boolean> {
+const OTHER_UPLOAD_WAIT_MS = 60_000
+async function waitForOtherUpload(error: unknown, wait: { ms: number; since?: number }, signal?: AbortSignal): Promise<boolean> {
   if (!(error instanceof AttachmentsError) || error.status !== 409 || error.code !== 'upload_in_progress') return false
+  wait.since ??= Date.now()
+  if (Date.now() - wait.since >= OTHER_UPLOAD_WAIT_MS) return false
   const remaining = (error.retryAfter ?? 0) - serverNow()
   await waitForAttachmentRetry(remaining > 0 ? Math.min(wait.ms, remaining) : wait.ms, signal)
   wait.ms = Math.min(wait.ms * 2, 15_000)
