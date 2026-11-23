@@ -125,8 +125,7 @@ export const appsView = {
   transientParams: ['agentDetail', 'agentDetailFrom'],
   TitlebarSlot: ShellTitlebar,
   MainPanel: AppsMainPanel,
-  withoutSessionSidebar: true,
-  retained: true,
+  modal: true,
 } satisfies ViewDefinition<AppsViewParams>;
 
 type AppViewParams = { appId?: string; tab?: string };
@@ -280,5 +279,5 @@ export const appView = {
   WrapView: AppViewWrapper,
   TitlebarSlot: AppTitlebar,
   MainPanel: AppMainPanel,
-  withoutSessionSidebar: true,
+  modal: true,
 } satisfies ViewDefinition<AppViewParams>;

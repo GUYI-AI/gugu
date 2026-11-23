@@ -1,14 +1,12 @@
 /* #7333: one reading-surface recipe for the desktop shell's two renderer trees.
  * List widths, retained pages and resize handles remain owned by their existing layouts.
- * ContactsPanel's desktop row owns nav first, detail second (including search/request routes).
- * Scope that row here; never apply a window frame to nested detail panes or settings dialogs.
+ * Never apply a window frame to nested detail panes or page modals (设置、联系人).
  */
 :root {
   --desktop-surface-inset: 5px;
 }
 
 [data-desktop-shell] [data-shell-chat-detail],
-[data-desktop-shell] [data-shell-contacts] > div > :nth-child(2),
 .gugu-skin [data-workspace-content-surface] {
   --workspace-chrome-inset: var(--desktop-surface-inset);
   margin: var(--workspace-chrome-inset) var(--workspace-chrome-inset) var(--workspace-chrome-inset) 0;
@@ -45,12 +43,10 @@
 }
 
 /* 正文不再单独画第二层外框。它与侧栏之间的分隔、用户保存的栏宽仍归原布局。
- * #2548 会话页只有不带一级列表的整页(资源库、App)这样平铺;列表在旁边时正文是叠在列表上的那张卡片,群 / 项目的内层栏归列表那一层。
+ * #2548 列表在旁边时正文是叠在列表上的那张卡片,群 / 项目的内层栏归列表那一层。
  */
 :root[data-window-material] :is(
-  [data-desktop-shell] [data-shell-chat-detail],
-  [data-desktop-shell] [data-shell-contacts] > div > :nth-child(2),
-  [data-desktop-shell] .gugu-skin [data-workspace-sidebar-hidden] > [data-workspace-content-surface]
+  [data-desktop-shell] [data-shell-chat-detail]
 ) {
   --workspace-chrome-inset: 0px;
   margin: 0;
@@ -82,4 +78,10 @@
   [data-app-shell-focus-area='right-panel'] .gg-panel-header
 ) {
   background-color: var(--desktop-workspace-bg);
+}
+
+/* @@@page-modal 弹窗的 ✕ 钉在右上角(同设置):联系人、App 市场页头右端的按钮让出它的位置。 */
+[data-contacts-modal] .gg-pane-header,
+[data-page-modal] .mk-market-header {
+  padding-inline-end: 48px;
 }

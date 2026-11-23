@@ -129,7 +129,6 @@ export interface WorkspaceLayoutContextValue {
   /** 会话页根元素量到的宽(WorkspaceLayout 报):内层栏放得下多宽由它推出。 */
   setWorkspaceWidth: (width: number) => void;
   /** A place without the list (App, Library): the list takes no room, ❌ motion either way. */
-  setListHidden: (hidden: boolean) => void;
   setLeftWidth: (width: number, options?: { persist?: boolean }) => void;
   setCollapsed: (side: 'left', collapsed: boolean) => void;
   toggleLeft: () => void;
@@ -180,14 +179,12 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const leftWidth = useMotionValue(readPaneWidth(SIDEBAR_PANE));
   const innerWidth = useMotionValue(readPaneWidth(INNER_SIDEBAR_PANE));
   /** What the targets are derived from (read model inputs); refs, so a drag frame re-renders nothing. */
-  const state = useRef({ open: isLeftOpen, listHidden: false, rootWidth: 0, innerFrames: 0, innerFolded: false });
+  const state = useRef({ open: isLeftOpen, rootWidth: 0, innerFrames: 0, innerFolded: false });
   const [innerSidebarShown, setInnerSidebarShown] = useState(false);
 
   const listTarget = (): SlotTarget => {
-    const { open, listHidden } = state.current;
+    const { open } = state.current;
     const width = leftWidth.get();
-    // Hidden, it keeps its laid-out width (its rows stay as they are) and takes no room.
-    if (listHidden) return { size: 0, content: open ? width : SIDEBAR_RAIL_PX };
     return open ? { size: width, content: width } : { size: SIDEBAR_RAIL_PX, content: SIDEBAR_RAIL_PX };
   };
   // 卡片宽 = 会话页宽 − 列表该占的宽(❌ 读用户选定宽,❌ 读此刻画到哪)。
@@ -197,9 +194,9 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   };
   const innerShownWidth = () => innerSidebarShownWidth(innerWidth.get(), innerCardWidth());
   const innerTarget = (): SlotTarget => {
-    const { innerFrames, innerFolded, listHidden } = state.current;
+    const { innerFrames, innerFolded } = state.current;
     const width = innerShownWidth();
-    return { size: innerFrames > 0 && !innerFolded && !listHidden ? width : 0, content: width };
+    return { size: innerFrames > 0 && !innerFolded ? width : 0, content: width };
   };
   const targets = () => ({ list: listTarget(), inner: innerTarget() });
 
@@ -267,12 +264,6 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const setWorkspaceWidth = useCallback((width: number) => {
     if (state.current.rootWidth === width) return;
     state.current.rootWidth = width;
-    jump();
-  }, [jump]);
-
-  const setListHidden = useCallback((hidden: boolean) => {
-    if (state.current.listHidden === hidden) return;
-    state.current.listHidden = hidden;
     jump();
   }, [jump]);
 
@@ -369,7 +360,6 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     track,
     workspaceRootRef,
     setWorkspaceWidth,
-    setListHidden,
     setLeftWidth,
     setCollapsed,
     toggleLeft,

@@ -1,5 +1,5 @@
 import { messageForUser } from '@/lib/userFacingError';
-import { Sheet } from '../components/ui/Sheet'
+import { PAGE_MODAL_FRAME, Sheet } from '../components/ui/Sheet'
 import { PaneHeader } from '../components/ui/Pane'
 import { RightPanelBackButton } from '../components/chat/RightPanel'
 import { SessionAppFrame } from '../components/appSlot/SessionAppFrame'
@@ -113,7 +113,7 @@ import { CameraPermissionSheet } from '../components/CameraPermissionSheet'
 import { RemoteMachinesHost } from '../components/sessionpage/RemoteMachinesHost'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import { IconButton } from '../components/ui/IconButton'
-import { Settings } from '@/lib/icons'
+import { Settings, X } from '@/lib/icons'
 import { parseExtensionTabKind } from '../session/shared/extensions/manifest'
 import { followLink, openLink } from '../lib/guguLinks'
 import { useMobileShell, readMobileShell } from '../hooks/useMobileShell'
@@ -215,6 +215,11 @@ function InnerLayout({
     setDraftQuote, setDraftWhisper, sendMessageToChat,
   } = useChatStore('activeChatId', 'setActiveChatId', 'refreshChats', 'upsertChat', 'writeDraft', 'setDraftAttachments', 'setDraftQuote', 'setDraftWhisper', 'sendMessageToChat')
   const mobile = useMobileShell()
+  // @@@page-modal 桌面上联系人是盖在原页上的弹窗(同设置):下面那一页照旧在屏上(screenTab),关掉回到它。
+  const pageUnderContacts = useRef<SidebarTab>(sessionHostAvailable ? 'tasks' : 'chats')
+  if (activeTab !== 'contacts') pageUnderContacts.current = activeTab
+  const contactsModal = !mobile && activeTab === 'contacts'
+  const screenTab = contactsModal ? pageUnderContacts.current : activeTab
   // @@@phone-root — 弹层挂在壳外,只能从 <html> 认手机;用属性而不是 `:root:has([data-phone-shell])`:桌面用不到它,不该替它付 :has 失效。
   useLayoutEffect(() => {
     document.documentElement.toggleAttribute('data-phone-root', mobile)
@@ -346,7 +351,7 @@ function InnerLayout({
   const tabs = mobile ? MOBILE_TABS : SIDEBAR_TABS
   // 手机上 'assistant' / 'tasks' / 'settings' 是推在列表首页上的一层(PhoneLayer,没有底栏);底下的分页器停在推它之前那一格,返回回到那里。
   const phoneLayerOpen = mobile && !MOBILE_TABS.includes(activeTab)
-  const pagerTab = phoneChatShown || phoneLayerOpen ? phoneRootTab : activeTab
+  const pagerTab = phoneChatShown || phoneLayerOpen ? phoneRootTab : screenTab
   const phoneChatPage = useRef<PhoneChatPageHandle>(null)
   const exitPhoneLayer = useCallback(() => navigateMobile(() => setActiveTab(phoneRootTab), 'pop'), [setActiveTab, phoneRootTab])
   const exitPhoneSessions = useCallback(() => navigateMobile(() => {
@@ -419,14 +424,14 @@ function InnerLayout({
   // 布尔镜像兜会话页 bundle 尚未加载完的窗口期(embedded 启动时读取)。同一份会话页实例现在也
   // 承载对话页的创建草稿态(#2549),草稿态时它同样是可见/可交互的,不能被判「隐藏」。
   useEffect(() => {
-    const visible = activeTab === 'tasks' || showCreateSurface
+    const visible = screenTab === 'tasks' || showCreateSurface
     const w = window as unknown as {
       __EMDASH_SET_VISIBLE__?: (v: boolean) => void
       __EMDASH_EMBED_VISIBLE__?: boolean
     }
     w.__EMDASH_EMBED_VISIBLE__ = visible
     w.__EMDASH_SET_VISIBLE__?.(visible)
-  }, [activeTab, showCreateSurface])
+  }, [screenTab, showCreateSurface])
 
   // #2549 — the ONE persistent session-page instance (EmdashSessionFrame, mounted once below at a JSX
   // position that NEVER changes) must appear either in the 任务-tab slot or the 对话-draft slot.
@@ -934,7 +939,7 @@ function InnerLayout({
         if (e.key === '1') {
           e.preventDefault()
           selectTab(sessionHostAvailable && !mobile ? 'tasks' : 'chats')
-          if (sessionHostAvailable && !mobile && registeredViews()[appState.navigation.currentViewId].withoutSessionSidebar) returnToScreen()
+          if (sessionHostAvailable && !mobile && registeredViews()[appState.navigation.currentViewId].modal) returnToScreen()
         }
         else if (e.key === '2') { e.preventDefault(); selectTab('contacts') }
       }
@@ -1031,7 +1036,7 @@ function InnerLayout({
         {/* 移动 shell 下这个槽永远 display:none(移动端没有任务 tab)——正是「隐藏槽 = 零 rect =
             overlay 也隐藏」这条规则,让"创建页关掉后 frame 该藏起来"不需要任何额外分支。 */}
         {sessionHostAvailable && (
-          <div ref={sessionSlotRef} style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: !mobile && activeTab === 'tasks' ? 'flex' : 'none' }} />
+          <div ref={sessionSlotRef} style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: !mobile && screenTab === 'tasks' ? 'flex' : 'none' }} />
         )}
 
         <MobileTabPager
@@ -1082,30 +1087,26 @@ function InnerLayout({
                   )}
                 </div>
             ),
-            // 联系人面与聊天面同法常驻(lib/retainedSurface.ts):每次进来都重挂约 1,500 个组件。手机壳里本来就常驻。
-            contacts: (
-              <div key="contacts" style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', ...(activeTab === 'contacts' || mobile ? undefined : RETAINED_SURFACE_HIDDEN_STYLE) }}>
-                <div data-shell-contacts={mobile ? undefined : ''} style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                  {mobile ? (
-                    <PhonePartnersPage
-                      user={user}
-                      active={activeTab === 'contacts' || (phoneChatShown && phoneRootTab === 'contacts') || (activeTab === 'tasks' && watchParentTab === 'contacts')}
-                      externalContactId={externalContactId}
-                      scanSeed={scanSeed}
-                      newProjectRequest={newProjectRequest}
-                      onOpenMe={() => selectTab('settings')}
-                      onPushedChange={setPartnersPushed}
-                      onLeave={() => navigateMobile(() => setActiveTab('chats'), 'pop')}
-                      onSwitchToChat={handleSwitchToChat}
-                      onOpenGroupChat={handleOpenGroupChat}
-                      onOpenProjectGroup={(chatId) => navigateMobile(() => {
-                        openChatTarget(chatId)
-                        closeTopicTab(chatId)
-                      }, 'push')}
-                    />
-                  ) : (
-                    <ContactsPanel externalContactId={externalContactId} mobile={mobile} scanSeed={scanSeed} onSwitchToChat={contactsSwitchToChat} onOpenGroupChat={contactsOpenGroupChat} onOpenAgentCreateDraft={openAgentCreateDraftFromContacts} />
-                  )}
+            // 联系人面与聊天面同法常驻(lib/retainedSurface.ts):手机壳里它是分页器的一页。桌面上是弹窗(@@@page-modal,见下)。
+            contacts: mobile && (
+              <div key="contacts" style={{ flex: 1, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                  <PhonePartnersPage
+                    user={user}
+                    active={activeTab === 'contacts' || (phoneChatShown && phoneRootTab === 'contacts') || (activeTab === 'tasks' && watchParentTab === 'contacts')}
+                    externalContactId={externalContactId}
+                    scanSeed={scanSeed}
+                    newProjectRequest={newProjectRequest}
+                    onOpenMe={() => selectTab('settings')}
+                    onPushedChange={setPartnersPushed}
+                    onLeave={() => navigateMobile(() => setActiveTab('chats'), 'pop')}
+                    onSwitchToChat={handleSwitchToChat}
+                    onOpenGroupChat={handleOpenGroupChat}
+                    onOpenProjectGroup={(chatId) => navigateMobile(() => {
+                      openChatTarget(chatId)
+                      closeTopicTab(chatId)
+                    }, 'push')}
+                  />
                 </div>
               </div>
             ),
@@ -1131,7 +1132,7 @@ function InnerLayout({
         {!chatsAreBlocks && <PhoneChatPage ref={phoneChatPage} mobile={mobile}
           shown={phoneChatShown && !showCreateSurface && !assistantOnPhone}
           covered={phoneLayerOpen}
-          desktopShown={activeTab === 'chats'}
+          desktopShown={screenTab === 'chats'}
           enabled={mobile && !phoneLayerOpen && !showCreateSurface && !shellTab.peekChat()}
           place={activeChatId} onBack={leavePhoneChat}>
           <div className="flex min-h-0 min-w-0 flex-[1_1_auto]" style={showCreateSurface || assistantOnPhone ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
@@ -1228,6 +1229,16 @@ function InnerLayout({
       </div>
 
       <ResourceMonitorHost />
+      {contactsModal && (
+        <Sheet onClose={() => selectTab(pageUnderContacts.current)} {...PAGE_MODAL_FRAME} testId="contacts-modal" ariaLabel={t('shell.contacts')}>
+          <div data-contacts-modal="" className="relative flex min-h-0 flex-1 flex-col">
+            <ContactsPanel externalContactId={externalContactId} mobile={false} scanSeed={scanSeed} onSwitchToChat={contactsSwitchToChat} onOpenGroupChat={contactsOpenGroupChat} onOpenAgentCreateDraft={openAgentCreateDraftFromContacts} />
+            <IconButton shape="pill" size="lg" className="absolute top-2 right-2 bg-foreground/[0.06]" aria-label={t('settings.close')} onClick={() => selectTab(pageUnderContacts.current)}>
+              <X />
+            </IconButton>
+          </div>
+        </Sheet>
+      )}
       {settingsModalOpen && <SettingsPanel mobile={mobile} section={settingsSection} onSectionChange={setSettingsSection}
         addCustomModel={addCustomModel} onCustomModelDialogClose={() => setAddCustomModel(false)}
         onClose={() => { setAddCustomModel(false); setSettingsModalOpen(false) }} />}
@@ -1278,7 +1289,7 @@ function InnerLayout({
           挂最后 ht=1、点最小化窗口收起。❌ 别把它移回上面去。 */}
       <WindowControls activeTab={activeTab} activeChatId={activeChatId} sessionHostAvailable={sessionHostAvailable} onSelectTab={selectTab} onOpenChat={(chatId) => { if (!chatId || !openChatBlock(chatId)) setActiveChatId(chatId) }} onNewAgent={openAgentCreateDraftFromContacts} onOpenSettings={openSettingsSection} />
       {/* #7199 「助理」App 在壳这一侧的那一半:发布云电脑 / 个人助理,把壳的组件画进 App 留的格子(lib/assistantShellBridge.ts)。 */}
-      <AssistantTaskChatOpener visible={mobile ? activeTab === 'assistant' : activeTab === 'tasks'} desktop={!mobile} />
+      <AssistantTaskChatOpener visible={mobile ? activeTab === 'assistant' : screenTab === 'tasks'} desktop={!mobile} />
       <FeedbackHost />
       {/* #7350 关闭咕咕只有一份确认:设置、通讯录、agent 设置都只发一声(lib/assistantClose),这里按它住哪画。 */}
       <AssistantCloseHost />
@@ -1297,11 +1308,11 @@ function InnerLayout({
       {!mobile && sessionHostAvailable && <OfflineSessionSlotHost />}
       {/* #1925 An App's main page beside its bound conversation: the session page leaves the column, the native conversation is drawn here. */}
       {!mobile && sessionHostAvailable && (
-        <AppConversationSurfaceHost visible={activeTab === 'tasks'} onOpenUserChat={slotOpenProfileChat} onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile} />
+        <AppConversationSurfaceHost visible={screenTab === 'tasks'} onOpenUserChat={slotOpenProfileChat} onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile} />
       )}
       {/* #1925 (46) The assistant's work, for an App that lists it; a task it opens is drawn in its panel. */}
       {!mobile && sessionHostAvailable && <AppWorkLedgerHost />}
-      {!mobile && sessionHostAvailable && <AppHostLayerHost visible={activeTab === 'tasks'} />}
+      {!mobile && sessionHostAvailable && <AppHostLayerHost visible={screenTab === 'tasks'} />}
       {/* Entry switch: the trusted assistant App bound to the assistant's chat by the host; every entry asks lib/assistantEntry.ts. */}
       {!mobile && sessionHostAvailable && <AssistantAppEntryHost />}
       {!sessionHostAvailable && <SessionModalHost />}

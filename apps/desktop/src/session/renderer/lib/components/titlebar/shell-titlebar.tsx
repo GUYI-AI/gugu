@@ -1,5 +1,8 @@
 import { observer } from 'mobx-react-lite'
-import { useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+import { IconButton } from '@/components/ui/IconButton'
+import { X } from '@/lib/icons'
 import { publishPanelToggle } from '@/lib/panelToggles'
 import { TITLEBAR_LEFT_EDGE_GAP_PX } from '@/lib/window-chrome'
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts'
@@ -27,6 +30,12 @@ export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
 
   return null
 })
+
+/**
+ * Set by a page shown as a modal (@@@page-modal): its title band is the modal's, not the window's — no window handle, and
+ * the modal's ✕ at its right end, the way Settings closes; the page's own buttons sit left of it.
+ */
+export const PageModalClose = createContext<(() => void) | null>(null)
 
 /** The shared frameless-window handle used by full workspace and composer-only surfaces. */
 export function ShellTitlebarDragRegion() {
@@ -70,6 +79,8 @@ export const ShellTitlebar = observer(function ShellTitlebar({
    */
   dragRegion?: boolean
 }) {
+  const closeModal = useContext(PageModalClose)
+  const { t } = useTranslation()
   return (
     <div className="relative z-40 h-0">
       {/* Keep the shell layout zero-height, but make the full top chrome lane a usable window handle.
@@ -86,7 +97,7 @@ export const ShellTitlebar = observer(function ShellTitlebar({
           `pointer-events-none` ❌ 不会让窗口拖不动:拖拽区由 `app-region` 定义,不经 Blink
           的命中测试。真机实测(真鼠标点击,不是 elementFromPoint):只有 no-drag 时三个按钮
           全部点不到,叠加本行后全部点到,还原后又全部点不到。 */}
-      {dragRegion ? <ShellTitlebarDragRegion /> : null}
+      {dragRegion && !closeModal ? <ShellTitlebarDragRegion /> : null}
       {leftSlot ? (
         <div
           className="absolute top-0 flex h-10 items-center [-webkit-app-region:no-drag]"
@@ -96,7 +107,16 @@ export const ShellTitlebar = observer(function ShellTitlebar({
           {leftSlot}
         </div>
       ) : null}
-      {children}
+      {closeModal ? (
+        <>
+          <div className="absolute inset-x-0 top-0" style={{ right: 44 }}>{children}</div>
+          <div className="absolute top-0 right-0 flex h-10 items-center" style={{ paddingInlineEnd: 8 }}>
+            <IconButton shape="pill" size="lg" className="bg-foreground/[0.06]" aria-label={t('dialog.close')} onClick={closeModal} data-testid="page-modal-close">
+              <X />
+            </IconButton>
+          </div>
+        </>
+      ) : children}
     </div>
   )
 })

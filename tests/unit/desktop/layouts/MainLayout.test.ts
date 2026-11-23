@@ -838,7 +838,7 @@ describe('MainLayout', () => {
     })
     expect(harness.container.querySelectorAll(navSelector)).toHaveLength(1)
   })
-  it('keeps the chats surface mounted and merely hidden while another tab is active (#6158)', async () => {
+  it('keeps the chats surface mounted and shown under the contacts modal (#6158, @@@page-modal)', async () => {
     // 有聊天页的形态(网页:没有会话页宿主);落地就在聊天页。
     platformMock.kind = 'web'
     platformMock.capabilities.sessionHost = false
@@ -853,12 +853,11 @@ describe('MainLayout', () => {
     await clickElement(harness.container.querySelector('[data-testid="mock-chat-area-bump"]') as HTMLElement)
     expect(chatArea.getAttribute('data-bumps')).toBe('2')
     await clickElement(harness.container.querySelector('[data-testid="mock-open-contacts"]') as HTMLElement)
-    expect(harness.container.querySelector('[data-testid="mock-chat-area"]'), 'switching to contacts must not unmount the chat area').toBe(chatArea)
+    expect(harness.container.querySelector('[data-testid="mock-chat-area"]'), 'opening contacts must not unmount the chat area').toBe(chatArea)
+    // 联系人是盖在它上面的弹窗:聊天页照旧画着,只是此刻不归它接快捷键与已读。
     expect(chatArea.getAttribute('data-active-tab')).toBe('contacts')
-    // 藏 = content-visibility:hidden(不画、不可聚焦、find 找不到;浏览器里的判据见 retained-page-stays-hidden)。
-    expect(surface!.style.contentVisibility).toBe('hidden')
-    expect(surface!.style.position).toBe('absolute')
-    expect(surface!.style.pointerEvents).toBe('none')
+    expect(surface!.style.contentVisibility).toBe('')
+    expect(document.querySelector('[data-testid="contacts-modal"]')).not.toBeNull()
     await clickElement(harness.container.querySelector('[data-testid="mock-open-chats"]') as HTMLElement)
     expect(harness.container.querySelector('[data-testid="mock-chat-area"]')).toBe(chatArea)
     expect(chatArea.getAttribute('data-bumps'), 'local UI state survives the contacts round trip').toBe('2')
@@ -877,7 +876,7 @@ describe('MainLayout', () => {
       await clickElement(harness.container.querySelector('[data-testid="mock-open-tasks"]') as HTMLElement)
       const frame = harness.container.querySelector<HTMLElement>('[data-emdash-slot]')!
       expect([frame.style.width, frame.style.height, frame.style.contentVisibility]).toEqual(['900px', '700px', 'visible'])
-      await clickElement(harness.container.querySelector('[data-testid="mock-open-contacts"]') as HTMLElement)
+      await clickElement(harness.container.querySelector('[data-testid="mock-open-chats"]') as HTMLElement)
       expect(frame.style.contentVisibility, 'hidden the retained-surface way').toBe('hidden')
       expect(frame.style.transform).toBe('scale(0)')
       expect([frame.style.width, frame.style.height], 'shrunk to 0×0, every scroller inside is clamped to 0').toEqual(['900px', '700px'])
@@ -1700,7 +1699,8 @@ describe('MainLayout: initial private-chat drafts', () => {
     chatServiceMock.getOrCreateDM.mockResolvedValue('private-chat')
     await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
     await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="mock-open-contacts"]')!)
-    await clickElement(harness.container.querySelector<HTMLElement>('[data-testid="mock-contact-draft"]')!)
+    // 桌面联系人是弹窗(@@@page-modal),画在 document.body 上。
+    await clickElement(document.querySelector<HTMLElement>('[data-testid="mock-contact-draft"]')!)
     expect(chatStoreMock.writeDraft).toHaveBeenCalledWith('private-chat', 'initial private draft')
     expect(draftValues.get('private-chat')).toBe('initial private draft')
   })
