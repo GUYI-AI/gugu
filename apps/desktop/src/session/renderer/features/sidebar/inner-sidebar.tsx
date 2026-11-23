@@ -215,9 +215,9 @@ const InnerSidebarColumn = observer(function InnerSidebarColumn({
     <InnerSidebarFrame kind={anchor.kind} chatId={anchor.chatId}>
       <InnerHeadRow anchor={anchor} summary={summary} active={headActive} />
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
-        {/* 群、项目同一个次序(第 16 版稿):「话题」在上、「智能体」在下。第二级(全部话题)收走下面的「智能体」,「全部 › / ‹ 返回」因此永远在同一个位置。 */}
+        {/* 群、项目同一个次序(第 16 版稿):「话题」在上、「智能体」在下。「全部 ›」开的是主区的话题页,这一列不变。 */}
         {topics}
-        {levelTwo ? null : agentsSection}
+        {agentsSection}
       </div>
     </InnerSidebarFrame>
   );
@@ -287,7 +287,7 @@ const InnerHeadRow = observer(function InnerHeadRow({
   // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
   const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
-    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => navigateToGroupRoot(chatId)} trailingButtons={1}
+    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => { setInnerSidebarTopicsAll(null); navigateToGroupRoot(chatId); }} trailingButtons={1}
       createAction={{ label: translate('sidebar.createAgent'), onClick: newAgent }}>
       <InnerSidebarFoldButton />
     </InnerHeadRowLayout>
@@ -324,7 +324,11 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
             variant="ghost"
             size="xs"
             data-inner-topics-drill={levelTwo ? 'back' : 'all'}
-            onClick={() => setInnerSidebarTopicsAll(levelTwo ? null : chatId)}
+            onClick={() => {
+              // 话题页开在这个群 / 项目那一块里:先回到它本身,再换成那一页;已开着 = 关掉,回到群。
+              if (!levelTwo) navigateToGroupRoot(chatId);
+              setInnerSidebarTopicsAll(levelTwo ? null : chatId);
+            }}
           >
             {levelTwo ? (
               <>

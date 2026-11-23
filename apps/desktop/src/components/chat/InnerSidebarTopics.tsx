@@ -14,7 +14,7 @@ import { clearDraggedScreenContent, startChatDrag } from '@/session/renderer/lib
 import { useChatStore, useChatStoreSelect, useStoreValueBy } from '../../store/chatContext'
 import { useRowContextMenu } from '../../hooks/useRowContextMenu'
 import { useStableHandler } from '../../hooks/useStableHandler'
-import { publishInnerSidebarTopicsView, useInnerSidebarTopicsAll } from '../../lib/innerSidebarBridge'
+import { publishInnerSidebarTopicsView } from '../../lib/innerSidebarBridge'
 import { readSessionpageViewRequestBridge } from '../../lib/sessionpageViewRequestBridge'
 import { useSidebarChatView } from '../../lib/sidebarChatsBridge'
 import { Chip } from '../ui/Chip'
@@ -30,8 +30,9 @@ import { messageForUser } from '../../lib/userFacingError'
  * #2548 内层侧栏「话题」那一格里的行(会话页留格子,ChatListSlotHost 画进来)。
  * 行尾静止时显示未读，悬停时显示与智能体行共用的快捷按钮。右键和打开沿用聊天列表话题子行的行为。
  * 露哪几条、什么次序见 innerSidebarTopicsModel;分区头的「全部 ›」在会话页那一侧。
+ * `page` = 话题页(InnerTopicsPage)里的那一份:全部话题,按 `query` 筛名字;同一套行、同一套动作。
  */
-export function InnerSidebarTopics({ chatId }: { chatId: string }) {
+export function InnerSidebarTopics({ chatId, page = false, query = '' }: { chatId: string; page?: boolean; query?: string }) {
   const { t } = useTranslation('messaging')
   const { toast } = useToast()
   const closeTopic = useCloseTopic()
@@ -41,8 +42,8 @@ export function InnerSidebarTopics({ chatId }: { chatId: string }) {
     (store) => topicsOfChat(store.chats, chatId),
     (store) => [chatId, store.chats.filter((chat) => chat.source_chat_id === chatId)],
   )
-  const all = useInnerSidebarTopicsAll() === chatId
-  const rows = innerSidebarTopicRows(topics, { all })
+  const needle = query.trim().toLocaleLowerCase()
+  const rows = innerSidebarTopicRows(needle ? topics.filter((topic) => (topic.name ?? '').toLocaleLowerCase().includes(needle)) : topics, { all: page })
   const level = innerSidebarTopicRows(topics, { all: false })
   const sourceRole = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.my_role ?? 'unknown')
   const { settings, error } = useGroupChatSettings(rows.shown.length ? chatId : null, sourceRole)
