@@ -1082,16 +1082,22 @@
 :root[data-window-material='opaque'][data-theme='light'] {
   --nav-rail: var(--muted);
 }
-/* 任务页(会话页嵌在壳里):停靠的项目/会话列透出下面的 C 档工作区,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
+/* 界面减法 #10 (yangchichi, design v16): in the light theme the window's ground — under the zero rail, the first-level
+   sidebar and the gaps around the cards — is one warm gradient across the window, on either material. */
+:root[data-theme='light'][data-window-material] {
+  --shell-bg: linear-gradient(90deg, #e9ddcf 0, #ebe3d8 30%, #efe9e1 100%);
+  --nav-rail: transparent;
+}
+/* 任务页(会话页嵌在壳里;界面减法起不分材质):停靠的项目/会话列透出下面的窗口底,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
    正文(WorkspaceContentLayout 的 bg-background)与各块(screen-frame)照旧不透明。
    浮出预览(data-peek,盖在正文上)❌ 透:那一层要稳定的不透明面。拖入文件时的高亮底(bg-background-2)也保留。
    ❌ 把 .bg-background-tertiary 这个通用类一律清空:正文里的分块也用它。
    外框与 .gugu-skin 根只在「这一页真有一列停靠侧栏」时才让(:has):资源库、助理这类整页不在工作区布局里,
    它们靠根的底色当正文底,不能跟着透。 */
-:root[data-window-material='native'] .gg-session-frame:has([data-workspace-left-panel]:not(.hidden)),
-:root[data-window-material='native'] .gugu-skin:has([data-workspace-left-panel]:not(.hidden)),
-:root[data-window-material='native'] .gugu-skin :is([data-workspace-left-panel], [data-region='inner-sidebar']),
-:root[data-window-material='native'] .gugu-skin [data-workspace-left-panel] [data-region='left-sidebar']:not(.bg-background-2) {
+:root[data-window-material] .gg-session-frame:has([data-workspace-left-panel]:not(.hidden)),
+:root[data-window-material] .gugu-skin:has([data-workspace-left-panel]:not(.hidden)),
+:root[data-window-material] .gugu-skin :is([data-workspace-left-panel], [data-region='inner-sidebar']),
+:root[data-window-material] .gugu-skin [data-workspace-left-panel] [data-region='left-sidebar']:not(.bg-background-2) {
   background-color: transparent;
 }
 

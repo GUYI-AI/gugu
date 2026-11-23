@@ -119,7 +119,8 @@ const NAV_HEADER_STYLE: React.CSSProperties = { paddingLeft: 'max(var(--pane-pad
 const LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, overflowY: 'auto', padding: '4px 8px 16px' }
 const MOBILE_LIST_SCROLL_STYLE: React.CSSProperties = { flex: 1, minHeight: 0, overflowY: 'auto', padding: 'var(--spacing-xs) var(--spacing-sm) var(--phone-nav-clearance)' }
 // 侧栏那一份不自己滚:滚的是会话页侧栏那一个滚动容器(置顶 / 项目 / 对话共用)。左右与侧栏的行同一道留白。
-const SIDEBAR_LIST_STYLE: React.CSSProperties = { padding: '0 8px 8px' }
+/** The one list's gutter is its scroll box's (left-sidebar): 14 open, 8 on the rail (界面减法 #48 #53). */
+const SIDEBAR_LIST_STYLE: React.CSSProperties = { padding: '0 0 8px' }
 /** First guess for a sidebar conversation line before it is measured (one row without topics). */
 const SIDEBAR_ENTRY_ESTIMATE = 52
 

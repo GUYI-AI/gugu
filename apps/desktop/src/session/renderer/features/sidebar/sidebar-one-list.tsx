@@ -49,8 +49,8 @@ export const SidebarOneList = observer(function SidebarOneList() {
       })}
       {tail.length > 0 || readError ? (
         // The chat list ends in its 8px bottom padding; these rows continue it (-mt-2), then end the same way, in the
-        // chat list's 8px gutter.
-        <div className="-mt-2 px-2 pb-2" data-sidebar-one-list-tail="">
+        // chat list's gutter (the scroll box's).
+        <div className="-mt-2 pb-2" data-sidebar-one-list-tail="">
           {tail.map((row) =>
             row.kind === 'sample' ? (
               <SampleProjectSidebar key="sample" />

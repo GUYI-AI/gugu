@@ -31,10 +31,12 @@ import { UnfinishedAgentCreates } from './unfinished-agent-creates';
 // the bell) (sidebar-one-list-chrome). Collapsed = a rail of the list's avatars: the same content, not moved, with its text
 // hidden. Desktop only: the task renderer never runs in the phone shell.
 /**
- * #2548 where the names start in the list's scroll box: its inset 8 + the row's padding 6 + the avatar 40 + the row gap 10,
- * open or on the rail. A row's unread count sits on its avatar's corner (left 30 in the row), before that.
+ * #2548 where the names start in the list's scroll box: its inset (14 open, 8 on the rail: 界面减法 #48, the design's 12 + a
+ * row's 8) + the row's padding 6 + the avatar 40 + the row gap 10. A row's unread count sits on its avatar's corner (left 30
+ * in the row), before that.
  */
-const NAMES_START_PX = 64;
+const NAMES_START_PX = 70;
+const RAIL_NAMES_START_PX = 64;
 /** The scroll box's own mask (its class: the last 24px above the window's bottom edge fade out), kept under the names'. */
 const BOTTOM_FADE_MASK = 'linear-gradient(to bottom, black calc(100% - 1.5rem), transparent)';
 
@@ -43,15 +45,16 @@ const BOTTOM_FADE_MASK = 'linear-gradient(to bottom, black calc(100% - 1.5rem), 
  * avatars' column stays, everything right of it takes the names' opacity. One element's own style per frame, ❌ an opacity
  * on every name: that restyled the whole list each frame.
  */
-function followNamesMask(scroll: HTMLElement, progress: number) {
+function followNamesMask(scroll: HTMLElement, progress: number, railLayout: boolean) {
   const text = sidebarRailTextOpacity(progress);
   if (text >= 1) {
     scroll.style.removeProperty('mask-image');
     scroll.style.removeProperty('mask-composite');
     return;
   }
+  const edge = railLayout ? RAIL_NAMES_START_PX : NAMES_START_PX;
   // The names' opacity in 255ths: the 8-bit alpha an rgb() literal painted, so the fade's pixels are unchanged.
-  scroll.style.setProperty('mask-image', `linear-gradient(to right, black ${NAMES_START_PX}px, color-mix(in srgb, black ${(Math.round(text * 255) / 2.55).toFixed(3)}%, transparent) ${NAMES_START_PX}px), ${BOTTOM_FADE_MASK}`);
+  scroll.style.setProperty('mask-image', `linear-gradient(to right, black ${edge}px, color-mix(in srgb, black ${(Math.round(text * 255) / 2.55).toFixed(3)}%, transparent) ${edge}px), ${BOTTOM_FADE_MASK}`);
   scroll.style.setProperty('mask-composite', 'intersect');
 }
 
@@ -162,7 +165,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         // (name, preview) follows the open/close progress through the scroll box's mask (followNamesMask).
         '[&_[data-region=sidebar-scroll]_.gg-list-row]:h-[52px] [&_[data-region=sidebar-scroll]_.gg-list-row]:rounded-[12px] [&_[data-region=sidebar-scroll]_.gg-list-row]:p-1.5 [&_[data-region=sidebar-scroll]_.gg-list-row-body]:gap-0',
         '[&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:absolute [&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:top-1 [&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:left-[30px]',
-        '[&_[data-region=sidebar-scroll]_.gg-chat-row-muted]:hidden'
+        '[&_[data-region=sidebar-scroll]_.gg-chat-row-muted]:hidden',
+        // The list's gutter: 14 open, 8 on the rail (one element restyled when the rail flips).
+        'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:px-2'
       )}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
@@ -193,7 +198,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
             ref={scrollRef}
             data-region="sidebar-scroll"
             // #2548 rows scrolling down fade out over the last 24px above the window's bottom edge instead of being cut off.
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto mask-b-from-[calc(100%-1.5rem)]"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-[14px] mask-b-from-[calc(100%-1.5rem)]"
           >
             <div>
               <SidebarOneList />

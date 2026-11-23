@@ -312,12 +312,12 @@ const InnerSidebarFrame = observer(function InnerSidebarFrame({
   useInnerSidebarFrame(innerSidebarFolded.get());
   return (
     // isolate:分区头、行里那几层 z 序关在这一列里,❌ 压过左边列表那根拖动分隔条。
-    // 底色是列表那一档(同 left-sidebar):这一列归列表那一层,只有正文是叠在上面的卡片(同任务页)。
+    // 底色是窗口底(同 left-sidebar,界面减法 #10):这一列归列表那一层,只有正文是叠在上面的卡片;左边一根细线和零级栏分开(#52)。
     <div
       data-region="inner-sidebar"
       data-inner-sidebar-chat={chatId}
       data-inner-sidebar-kind={kind}
-      className="relative isolate flex h-full w-full flex-col bg-background-tertiary text-foreground-tertiary-muted"
+      className="relative isolate flex h-full w-full flex-col border-l border-border text-foreground-tertiary-muted"
     >
       <SidebarContainer className="min-h-0 w-full flex-1">
         <SidebarContent className="flex flex-col">{children}</SidebarContent>
