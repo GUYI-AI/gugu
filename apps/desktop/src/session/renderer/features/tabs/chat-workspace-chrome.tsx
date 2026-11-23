@@ -103,50 +103,58 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       </PaneProvider>
     </div>
   );
-  const toolTabs = toolsShown && tools && (
-    <div className="min-w-0" style={toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
-      <PaneProvider group={tools} passive isFocusedPane={!sharedStrip || !chatActive}>
-        <ChatWorkspaceTabContext.Provider value={{ role: 'tool', layout }}>
-          <TabBar toolsOnly tabTrailingSlot={addTab}
-            leadingTabsSlot={sharedStrip ? conversationTab : undefined}
-            selectedTabId={sharedStrip ? chatActive ? tab?.tabId : tools.pane.resolvedActiveTabId : undefined}
-            {...(toolsFirst || sharedStrip ? leadingProps : {})} />
-        </ChatWorkspaceTabContext.Provider>
-      </PaneProvider>
-    </div>
-  );
   const show = translate('tabs.showToolTabs');
   const hide = translate('tabs.hideToolTabs');
   const tabsVisible = mode === 'split';
   const toggleLabel = tabsVisible ? hide : show;
   const exit = translate('tabs.exitToolFullView');
   const maximize = translate('tabs.enterToolFullView');
+  const actionRow = (
+    <TabBarActionRow atWindowEdge={!!atWindowEdge}>
+      {mode === 'empty' && <PaneProvider group={chat} passive isFocusedPane>{addTab}</PaneProvider>}
+      {tabsVisible && tools && !sharedStrip && (
+        <Button size="icon-sm" variant="ghost" title={maximize} aria-label={maximize} onClick={() => layout.setChatToolLayout('full')}>
+          <Maximize2 className="size-3.5" />
+        </Button>
+      )}
+      {tools && (tabsVisible || mode === 'hidden') && (
+        <Button size="icon-sm" variant="ghost" title={toggleLabel} aria-label={toggleLabel} aria-pressed={tabsVisible}
+          className="aria-pressed:bg-row-selected aria-pressed:text-foreground"
+          onClick={() => layout.setChatToolLayout(tabsVisible ? 'hidden' : 'split')}>
+          <PanelRight className="size-3.5" />
+        </Button>
+      )}
+      {full && (
+        <Button size="sm" variant="ghost" className="gap-1 text-xs" title={exit} aria-label={exit} onClick={() => layout.setChatToolLayout('split')}>
+          {/* Narrow: icon only, like the tab strip's own exit (index.css), so the conversation and page tabs keep their names. */}
+          <Minimize2 className="size-3.5" />{(layout.dimensions?.width ?? Infinity) >= CHAT_TOOL_COMPACT_HEADER_MAX_WIDTH_PX && exit}
+        </Button>
+      )}
+    </TabBarActionRow>
+  );
+  // Side by side, the tool pane is a browser card of its own: its strip carries its tabs and the view buttons (index.css).
+  const toolCard = divided && !toolsFirst;
+  const toolTabs = toolsShown && tools && (
+    <div className="flex min-w-0" data-chat-tool-strip={divided ? '' : undefined} style={toolsFirst ? { flex: `0 0 ${splitWidth}` } : { flex: 1 }}>
+      <div className="min-w-0 flex-1">
+        <PaneProvider group={tools} passive isFocusedPane={!sharedStrip || !chatActive}>
+          <ChatWorkspaceTabContext.Provider value={{ role: 'tool', layout }}>
+            <TabBar toolsOnly tabTrailingSlot={addTab}
+              leadingTabsSlot={sharedStrip ? conversationTab : undefined}
+              selectedTabId={sharedStrip ? chatActive ? tab?.tabId : tools.pane.resolvedActiveTabId : undefined}
+              {...(toolsFirst || sharedStrip ? leadingProps : {})} />
+          </ChatWorkspaceTabContext.Provider>
+        </PaneProvider>
+      </div>
+      {toolCard && actionRow}
+    </div>
+  );
   return (
-    <div ref={header} className="flex min-w-0 shrink-0 bg-tab-strip" data-chat-workspace-header={mode}>
+    <div ref={header} className="flex min-w-0 shrink-0 bg-tab-strip" data-chat-workspace-header={mode} data-chat-tool-cards={toolCard ? '' : undefined} data-chat-tool-shared={toolsShown && sharedStrip ? '' : undefined}>
       {toolsFirst && toolTabs}
       {chatTitle}
       {!toolsFirst && toolTabs}
-      <TabBarActionRow atWindowEdge={!!atWindowEdge}>
-        {mode === 'empty' && <PaneProvider group={chat} passive isFocusedPane>{addTab}</PaneProvider>}
-        {tabsVisible && tools && !sharedStrip && (
-          <Button size="icon-sm" variant="ghost" title={maximize} aria-label={maximize} onClick={() => layout.setChatToolLayout('full')}>
-            <Maximize2 className="size-3.5" />
-          </Button>
-        )}
-        {tools && (tabsVisible || mode === 'hidden') && (
-          <Button size="icon-sm" variant="ghost" title={toggleLabel} aria-label={toggleLabel} aria-pressed={tabsVisible}
-            className="aria-pressed:bg-row-selected aria-pressed:text-foreground"
-            onClick={() => layout.setChatToolLayout(tabsVisible ? 'hidden' : 'split')}>
-            <PanelRight className="size-3.5" />
-          </Button>
-        )}
-        {full && (
-          <Button size="sm" variant="ghost" className="gap-1 text-xs" title={exit} aria-label={exit} onClick={() => layout.setChatToolLayout('split')}>
-            {/* Narrow: icon only, like the tab strip's own exit (index.css), so the conversation and page tabs keep their names. */}
-            <Minimize2 className="size-3.5" />{(layout.dimensions?.width ?? Infinity) >= CHAT_TOOL_COMPACT_HEADER_MAX_WIDTH_PX && exit}
-          </Button>
-        )}
-      </TabBarActionRow>
+      {!toolCard && actionRow}
     </div>
   );
 });

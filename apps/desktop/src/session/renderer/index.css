@@ -1111,6 +1111,50 @@
     mask-image: linear-gradient(to right, currentColor 75%, transparent);
   }
 
+  /* 右侧栏是一张独立的浏览器卡片(第 16 版 #57–#59):并排时工具那一格离开对话、四周留 8px,圆角 12;
+     页签条是浅灰底,只有选中的页签是白的。合成一条(窄窗、完整视图)时整条页签条同样是浅灰。 */
+  /* 卡片四周的缝露出工作区底色(和对话顶栏同一档),白卡片才看得出是单独一张。 */
+  [data-chat-tool-workspace][data-chat-tool-cards] {
+    background: var(--tab-strip);
+  }
+
+  [data-chat-workspace-header][data-chat-tool-cards] {
+    --chat-tool-card-gap: 8px;
+    height: calc(var(--tab-strip-height) + var(--chat-tool-card-gap));
+    align-items: flex-end;
+  }
+
+  [data-chat-workspace-header][data-chat-tool-cards] [data-chat-tool-strip] {
+    height: var(--tab-strip-height);
+    margin: 0 var(--chat-tool-card-gap);
+    border-radius: 12px 12px 0 0;
+    box-shadow: inset 0 -1px 0 var(--border-color), 0 0 0 0.5px var(--border-color);
+  }
+
+  [data-chat-workspace-header] [data-chat-tool-strip],
+  [data-chat-workspace-header][data-chat-tool-shared] {
+    background: var(--muted);
+    box-shadow: inset 0 -1px 0 var(--border-color);
+  }
+
+  [data-chat-workspace-header] [data-chat-tool-strip] [data-tab-active],
+  [data-chat-workspace-header][data-chat-tool-shared] [data-tab-active] {
+    /* 和分段控件的选中块同一条规矩:不是浮层,不加阴影(tokens.css --listen-mode-active-shadow)。 */
+    background: var(--tab-face);
+  }
+
+  [data-chat-tool-card] {
+    margin: 0 8px 8px;
+    background: var(--tab-face);
+    border-radius: 0 0 12px 12px;
+    overflow: hidden;
+    box-shadow: 0 0 0 0.5px var(--border-color);
+  }
+
+  [data-chat-tool-cards] [data-chat-tool-divider] {
+    background: transparent;
+  }
+
   [data-chat-tool-collapse-preview][data-chat-tool-collapse-ready] {
     background: color-mix(in oklab, var(--foreground) 16%, transparent);
   }

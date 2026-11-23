@@ -59,7 +59,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   const paired = layout.sidePaneId !== null;
   const lifted = layout.groups.some(({ pane }) => tabFullscreen.isOn(pane));
   return <PaneDimensionProvider sink={layout}>
-    <div className="flex h-full min-h-0 min-w-0 flex-col" data-chat-tool-workspace={scopedChrome ? '' : undefined}>
+    <div className="flex h-full min-h-0 min-w-0 flex-col" data-chat-tool-workspace={scopedChrome ? '' : undefined} data-chat-tool-cards={scopedChrome && layout.chatToolCardPaneId ? '' : undefined}>
       {/* A page of the pair in full screen keeps this one strip over it (its exit is on the tab); the row keeps its height, so nothing under it moves. */}
       {scopedChrome && <ChatWorkspaceChrome layout={layout} {...scopedChrome} />}
       {!scopedChrome && paired && <div className="min-w-0 shrink-0" style={{ height: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-pane-strip="">
@@ -71,7 +71,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
         {layout.groups.map(({ paneId }) => {
           const shown = layout.isPaneShown(paneId);
           const anchored = { position: 'absolute', positionAnchor: anchorOf(paneId), top: 'anchor(top)', bottom: 'anchor(bottom)', left: 'anchor(left)', right: 'anchor(right)' } as CSSProperties;
-          return <RetainedTabContent key={paneId} visible={shown} style={anchored} className="min-h-0 min-w-0" inert={!shown || paneId === closing} aria-hidden={!shown || paneId === closing || undefined}>
+          return <RetainedTabContent key={paneId} visible={shown} style={anchored} className="min-h-0 min-w-0" data-chat-tool-card={scopedChrome && paneId === layout.chatToolCardPaneId ? '' : undefined} inert={!shown || paneId === closing} aria-hidden={!shown || paneId === closing || undefined}>
             {renderPane(paneId, alone || paneId === first, alone || paneId === last, (scopedChrome || paired) ? 'body' : 'all')}
           </RetainedTabContent>;
         })}
