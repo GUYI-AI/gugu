@@ -54,6 +54,8 @@ export function currentCategoryResults<T extends CategoryGroup>(groups: readonly
 
 /** Keep the unread history state while showing this interaction's already completed results. */
 export function categoryHistoryReading(completed: readonly CategoryGroup[], reading: CategorySettingsReading, ownerId?: string) {
-  const stored = reading.state === 'value' && ownerId ? reading.value.owners[ownerId]?.categoryResults ?? [] : []
-  return { state: reading.state, items: currentCategoryResults([...completed, ...stored]) }
+  const groups: CategoryGroup[] = [...completed]
+  const stored = reading.state === 'value' && ownerId ? reading.value.owners[ownerId]?.categoryResults : undefined
+  if (stored) groups.push(...stored)
+  return { state: reading.state, items: currentCategoryResults(groups) }
 }
