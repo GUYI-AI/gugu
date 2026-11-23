@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 // GUYI-AI/gugu#2548 the desktop sidebar as one list: the sidebar's chat list with the internal switch on and off.
 import { runInAction } from 'mobx'
-import { act } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListPanel'
 import { oneListProjectSlotKey, publishSidebarChatView } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
