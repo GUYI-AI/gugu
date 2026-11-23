@@ -745,7 +745,13 @@ export default {
       "uploading": "Uploading"
     }
   },
+  "conversationCard": {
+    "rename": "Rename",
+    "notifications": "Notifications",
+    "details": "Details"
+  },
   "header": {
+    "details": "Details",
     "apps": "Apps",
     "members_one": "{{count}} member",
     "members_other": "{{count}} members",
@@ -753,7 +759,6 @@ export default {
     "groupInfoAndSettings": "Group info and settings",
     "noApps": "No Apps available on this device.",
     "announcement": "Group announcement",
-    "groupInfo": "Group info",
     "chatInfo": "Conversation info",
     "memberList": "Members",
     "more": "More actions",
