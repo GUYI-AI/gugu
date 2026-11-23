@@ -28,7 +28,7 @@ export type ChatWorkspaceChromeProps = {
 };
 
 /** The bar the capsule floats in (设计稿 .capbar): 56 high, the card's own white, the capsule centred in it. */
-const CAPSULE_BAR_STYLE = { '--tab-strip-height': '56px', '--tab-strip-inset-start': '0px', '--tab-strip-inset-end': '0px', '--color-tab-strip': 'var(--bg)' } as CSSProperties;
+const CAPSULE_BAR_STYLE = { '--tab-strip-height': '56px', '--tab-strip-inset-start': '0px', '--tab-strip-inset-end': '0px', '--tab-strip': 'var(--bg)', '--color-tab-strip': 'var(--bg)' } as CSSProperties;
 
 export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   layout, actions, addTab, leading, reserveShellRestoreLane, leadingReservePx, atWindowEdge, embedded = false,
