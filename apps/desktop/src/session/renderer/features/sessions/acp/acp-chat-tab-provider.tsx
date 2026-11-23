@@ -69,7 +69,7 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
       renameOnDoubleClick={!!session && !store.isTransient}
       renameValue={rawTitle}
       renameMaxLength={MAX_SESSION_TITLE_LENGTH}
-      card={sessionCommands.length > 0 ? (close) => <SessionConversationCard sessionId={store.sessionId} commands={sessionCommands} onClose={close} /> : undefined}
+      card={sessionCommands.length > 0 ? (close) => <SessionConversationCard page={ctx as SessionTabContext} sessionId={store.sessionId} commands={sessionCommands} onClose={close} /> : undefined}
     />
   );
 });
