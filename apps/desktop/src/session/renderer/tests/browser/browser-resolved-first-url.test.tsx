@@ -39,7 +39,7 @@ const navigations = () => ipc.browser.navigatePage.mock.calls.map(([args]) => (a
 
 async function openRemoteTab(workspaceId: string) {
   let finish!: (resolution: BrowserUrlResolution) => void;
-  const resolve = vi.fn(() => new Promise<BrowserUrlResolution>((done) => { finish = done; }));
+  const resolve = vi.fn((_url: string, _browserId: string) => new Promise<BrowserUrlResolution>((done) => { finish = done; }));
   const session = browserSessionStore.createSession({ projectId: 'chat', workspaceId, sessionId: '', initialUrl: 'http://localhost:8765/' });
   await harness.render(
     <div style={{ position: 'fixed', inset: 0 }}>
