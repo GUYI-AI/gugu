@@ -9,8 +9,7 @@
  *  4. 连上了才算「通了」:之后它与远程 SSH 的机器同一套 —— 设备连接(ssh-link.ts)、端口转发(浏览器 / 端口)都拿这里给的 SshTarget。
  * 任何一步不成:记下原因(界面照实说),退避重试;❌ 退回把终端画面塞进咕咕云的消息通道。
  *
- * 成本:每台通着的机器一个 frpc 访问端(同一个中转的访问端共用一个 frpc 进程,frpc-runner.ts createFrpcVisitorHost)
- * + 一条 ssh 共享连接;只在渲染层要(那台机器在线且中转通着)时才建。
+ * 成本:每台通着的机器一个 frpc 进程 + 一条 ssh 共享连接;只在渲染层要(那台机器在线且中转通着)时才建。
  */
 import { spawn } from '@gugu/core/local/childProcess'
 import fs from 'node:fs'
@@ -22,7 +21,7 @@ import {
   type TunnelOpenResponse,
 } from '@gugu/core/cloud/remoteTunnel'
 import type { DeviceRpcResponse } from '@gugu/core/cloud/deviceRpcProtocol'
-import { createFrpcVisitorHost, killStaleFrpc, type FrpcRunner, type FrpcVisitorHost } from './frpc-runner'
+import { frpcConfig, killStaleFrpc, startFrpc, type FrpcRunner } from './frpc-runner'
 import { buildEnsureMasterArgs, buildMuxControlArgs, type SshTarget } from './ssh-install/logic'
 import { sshBatchArgs } from './ssh-batch'
 import type { TunnelProblem, TunnelState } from '../../src/lib/tunnelMachines'
@@ -149,7 +148,7 @@ export function createTunnelMachines(deps: {
   log(message: string, fields?: Record<string, unknown>): void
   /** 单测替身。 */
   runSsh?: (args: string[], timeoutMs: number) => Promise<{ code: number | null; stderr: string }>
-  startVisitor?: FrpcVisitorHost['start']
+  startFrpc?: typeof startFrpc
   freePort?: () => Promise<number>
 }): TunnelMachines {
   // 同一个桌面 profile 重启后就收掉上次崩溃留下的访问端,不等那台机器再次上线。
@@ -164,8 +163,6 @@ export function createTunnelMachines(deps: {
       fs.rmSync(pidFile, { force: true })
     }
   }
-  const startVisitor = deps.startVisitor
-    ?? createFrpcVisitorHost({ dir: deps.stateDir, freePort: deps.freePort ?? freeLoopbackPort, log: deps.log }).start
   const tunnels = new Map<string, Tunnel>()
   const problems = new Map<string, TunnelProblem>()
   const listeners = new Set<(state: TunnelState) => void>()
@@ -280,17 +277,21 @@ export function createTunnelMachines(deps: {
 
       const localPort = await (deps.freePort ?? freeLoopbackPort)()
       if (!current(tunnel)) return
-      const frpc = startVisitor({
+      const frpc = (deps.startFrpc ?? startFrpc)({
         binary,
-        relay: open.relay,
-        user: userId,
-        visitor: {
-          name: `visit-${tunnel.deviceId}`.slice(0, 128),
-          serverUser: open.relay.user,
-          serverName: open.relay.serverName,
-          secretKey: open.relay.secretKey,
-          bindPort: localPort,
-        },
+        configFile: path.join(dir, `frpc-${tunnel.deviceId}.toml`),
+        config: frpcConfig({
+          relay: open.relay,
+          user: userId,
+          entry: {
+            kind: 'visitor',
+            name: `visit-${tunnel.deviceId}`.slice(0, 128),
+            serverUser: open.relay.user,
+            serverName: open.relay.serverName,
+            secretKey: open.relay.secretKey,
+            bindPort: localPort,
+          },
+        }),
         onState: (up) => {
           // 中转断了:这条路不通了,重建(frpc 自己也在重连;重建时会重新问一次 tunnel.open —— 那台机器可能已经换了密钥)。
           if (!up && tunnel.frpc === frpc && tunnel.ready) {
@@ -300,6 +301,7 @@ export function createTunnelMachines(deps: {
             scheduleRetry(tunnel)
           }
         },
+        log: (message, fields) => deps.log(message, { deviceId: tunnel.deviceId, ...fields }),
       })
       tunnel.frpc = frpc
       const up = await frpc.waitUp(VISITOR_UP_TIMEOUT_MS)
