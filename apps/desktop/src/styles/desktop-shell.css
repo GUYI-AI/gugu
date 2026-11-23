@@ -120,11 +120,13 @@
 [data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header > .gg-pane-actions {
   min-height: var(--control-h-lg);
 }
-[data-contacts-modal] [data-drawer-close] {
+/* 抽屉 = 设置里的二级页:左上是设置那颗返回(ContactsPageFrame DrawerBack),和页名同一行;抽屉里的页头给它让出左边。 */
+[data-drawer-back] {
   top: var(--spacing-2xl);
-  display: flex;
-  align-items: center;
-  height: var(--control-h-lg);
+  left: var(--pane-pad-x);
+}
+[data-drawer] .gg-pane-header {
+  padding-left: calc(var(--pane-pad-x) + var(--control-h-lg) + var(--spacing-sm));
 }
 [data-page-modal] .mk-market-header {
   padding-top: calc(var(--spacing-2xl) + (var(--control-h-lg) - var(--control-h-md)) / 2);

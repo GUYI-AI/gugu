@@ -22,11 +22,9 @@ import { usePanelScroll } from '../session/renderer/features/assistant/use-panel
 import { PhoneDeviceActionsPage } from '../mobile/phone-device/PhoneDeviceActionsPage'
 import { SettingsNav } from './settings/SettingsNav'
 import { SessionSettingsSection } from './sessionpage/SessionSettingsSection'
-import { ChevronLeft } from '@/lib/icons'
 import { PAGE_MODAL_FRAME, Sheet } from './ui/Sheet'
-import { ModalClose } from './ui/ModalClose'
+import { ModalBack, ModalClose } from './ui/ModalClose'
 import { Pane, PaneHeader } from './ui/Pane'
-import { IconButton } from './ui/IconButton'
 import { useBackLayer } from './ui/sheetStack'
 import { platform } from '../platform'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
@@ -195,9 +193,7 @@ export function SettingsPanel({
               title={detailPage?.title ?? sectionTitle}
               titleLevel={mobile ? 'panel' : undefined}
               leading={mobile || detailPage ? (
-                <IconButton shape="pill" className="bg-foreground/[0.06]" size="lg" aria-label={t(detailPage || parentSection ? 'settings.back' : 'settings.backToMy')} onClick={back}>
-                  <ChevronLeft />
-                </IconButton>
+                <ModalBack label={t(detailPage || parentSection ? 'settings.back' : 'settings.backToMy')} onBack={back} />
               ) : undefined}
               actions={!mobile ? (
                 <>
