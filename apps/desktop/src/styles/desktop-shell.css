@@ -138,13 +138,58 @@
   width: calc(var(--nav-col-w) - 24px);
   min-width: calc(var(--nav-col-w) - 24px);
 }
+/* 列表那一层左右各 8px(!px-2,在 utilities 层里,这里改不动);行左右再各让 4px,合起来是设置导航的 --spacing-md:
+   行的 x、宽才和设置一样。width:auto 让外距从行宽里扣,不横向溢出。 */
 [data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row {
+  width: auto;
+  margin-inline: calc(var(--spacing-md) - var(--spacing-sm));
   min-height: var(--control-h-md);
   padding-block: calc((var(--control-h-md) - var(--lh-body)) / 2);
-  margin-inline: 4px;
   gap: var(--spacing-sm);
+}
+/* 行首图标那一格收成图标本身大小(原来是头像格):行高、图标位置才和设置的导航行一样。 */
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row .gg-list-row-leading > span {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 [data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row .gg-list-row-leading svg {
   width: var(--icon-sm);
   height: var(--icon-sm);
+}
+
+/* @@@page-modal 联系人右侧照设置的内容版式(settings-content.css):灰底,内容放在一张白卡片里,卡片和页名同在居中的
+   --settings-col-w 那一列;页头不画分隔线。只认联系人自己的页(data-contacts-page),抽屉不在内。 */
+[data-contacts-modal] [data-contacts-page] {
+  --settings-col-w: 640px;
+  background: var(--sidebar);
+}
+[data-contacts-modal] [data-contacts-page] > .gg-pane-header {
+  border-bottom: 0;
+  padding-inline-start: max(var(--spacing-2xl), calc((100% - var(--settings-col-w)) / 2));
+}
+[data-contacts-modal] [data-contacts-body] {
+  padding: var(--spacing-xs) var(--spacing-2xl) var(--spacing-2xl) !important;
+}
+[data-contacts-modal] [data-contacts-card] {
+  max-width: var(--settings-col-w);
+  margin-inline: auto;
+  padding: var(--spacing-xs) var(--spacing-lg);
+  border-radius: var(--radius-surface);
+  background: var(--card);
+  box-shadow: var(--shadow-lift);
+}
+/* 行字照设置导航:未选中 --muted-fg 常规字重,选中 --fg 中等字重,悬停转 --fg(settings.css .gg-settings-nav-item)。 */
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row .gg-list-row-title {
+  font-weight: var(--font-weight-regular);
+  color: var(--muted-fg);
+}
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row[data-selected] .gg-list-row-title {
+  font-weight: var(--font-weight-medium);
+  color: var(--fg);
+}
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row[data-selected] .gg-list-row-leading > span {
+  color: var(--fg);
+}
+@media (hover: hover) {
+  [data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row:hover .gg-list-row-title { color: var(--fg); }
 }
