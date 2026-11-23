@@ -25,4 +25,5 @@ export const MODAL_HEADER_H = 'calc(var(--spacing-2xl) + var(--control-h-lg) + v
 /** Settings' page title (settings.css: --font-heading, semibold), for a page modal whose title is its own. */
 export const MODAL_TITLE: CSSProperties = { fontSize: 'var(--font-heading)', lineHeight: 'var(--lh-heading)', fontWeight: 'var(--font-weight-semibold)' }
 
-const FLOATING: CSSProperties = { position: 'absolute', zIndex: 1, top: MODAL_CLOSE_TOP, right: 'var(--spacing-lg)' }
+// Above what the page floats in its corner (the contacts drawer, z-20).
+const FLOATING: CSSProperties = { position: 'absolute', zIndex: 30, top: MODAL_CLOSE_TOP, right: 'var(--spacing-lg)' }

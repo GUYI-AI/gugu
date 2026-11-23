@@ -104,19 +104,27 @@
 }
 [data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header {
   height: auto;
-  min-height: 0;
+  min-height: calc(var(--spacing-2xl) + var(--control-h-lg) + var(--spacing-md));
   padding-top: var(--spacing-2xl);
   padding-bottom: var(--spacing-md);
+  align-items: flex-start;
 }
 [data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header .gg-pane-title {
   font-size: var(--font-heading);
   line-height: var(--lh-heading);
 }
+/* 标题(有计数时连同那一行)从 ✕ 那一行里居中的位置起,和设置的页名同一条线。 */
+[data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header > :is(.gg-pane-title, .gg-pane-heading) {
+  margin-top: calc((var(--control-h-lg) - var(--lh-heading)) / 2);
+}
 [data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header > .gg-pane-actions {
-  align-self: flex-start;
+  min-height: var(--control-h-lg);
+}
+[data-contacts-modal] [data-drawer-close] {
+  top: var(--spacing-2xl);
   display: flex;
   align-items: center;
-  min-height: var(--control-h-lg);
+  height: var(--control-h-lg);
 }
 [data-page-modal] .mk-market-header {
   padding-top: calc(var(--spacing-2xl) + (var(--control-h-lg) - var(--control-h-md)) / 2);

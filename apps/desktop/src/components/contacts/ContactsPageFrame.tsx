@@ -18,7 +18,7 @@ const IN_USE = '.gg-row, button, a, input, textarea, select, [role=button], [rol
 
 // The drawer is the window's right column: its close leaves the window controls their room (`--titlebar-controls-width`, Linux).
 export function DrawerClose({ onClose }: { onClose: () => void }) {
-  return <span className="absolute right-[calc(0.75rem+var(--titlebar-controls-width,0px))] top-3 z-10"><IconButton title={ct('common.close')} onClick={onClose}><X size={14} /></IconButton></span>
+  return <span data-drawer-close="" className="absolute right-[calc(0.75rem+var(--titlebar-controls-width,0px))] top-3 z-10"><IconButton title={ct('common.close')} onClick={onClose}><X size={14} /></IconButton></span>
 }
 
 export function ContactsPageFrame({ title, subtitle, actions, drawer, onCloseDrawer, testId, children }: {
