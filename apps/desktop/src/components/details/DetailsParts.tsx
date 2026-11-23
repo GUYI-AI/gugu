@@ -72,7 +72,7 @@ export function DetailsRow({ icon, label, end, chevron, onClick, danger, testId,
     <div role={onClick ? 'button' : undefined} tabIndex={onClick && !disabled ? 0 : undefined} data-testid={testId} aria-disabled={disabled || undefined}
       onClick={disabled ? undefined : onClick}
       onKeyDown={onClick && !disabled ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onClick() } } : undefined}
-      className={`flex min-h-10 items-center gap-x-[11px] border-b border-[var(--border)] px-1 text-[13.5px] ${text ? '' : 'flex-wrap py-[5px]'} ${onClick && !disabled ? 'cursor-pointer' : ''} ${disabled ? 'opacity-50' : ''} ${danger ? 'border-b-0 text-[var(--danger-fg)]' : ''}`}>
+      className={`flex min-h-10 items-center gap-[11px] border-b border-[var(--border)] px-1 text-[13.5px] ${text ? '' : 'flex-wrap @max-[380px]/details:gap-y-1 @max-[380px]/details:py-[5px]'} ${onClick && !disabled ? 'cursor-pointer' : ''} ${disabled ? 'opacity-50' : ''} ${danger ? 'border-b-0 text-[var(--danger-fg)]' : ''}`}>
       <span className={`flex shrink-0 [&_svg]:size-4 ${danger ? '' : 'text-[var(--muted-fg)]'}`}>{icon}</span>
       <span className="shrink-0 whitespace-nowrap">{label}</span>
       {end !== undefined && end !== null || chevron ? (
