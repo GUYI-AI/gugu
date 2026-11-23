@@ -83,7 +83,7 @@ it('edits an address with the saved key and saves multiple manual models without
   expect(state.reads).toContainEqual(expect.objectContaining({ connectionId: existing.id, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }] }));
 });
 
-it('shows the bound provider and model when reopening a migrated Pi task', async () => {
+it('names only the bound model when reopening a migrated Pi task', async () => {
   const existing = { ...record(), keySaved: true, models: [{ id: 'glm-5.3-flash' }] };
   const duplicate = { ...existing, id: '48937c18-1219-460e-9f40-e08d70de94a5', name: 'Other provider' };
   const models = customComposerOptions([duplicate, existing], {
@@ -95,7 +95,7 @@ it('shows the bound provider and model when reopening a migrated Pi task', async
   });
   render(<ChatComposer modelOptions={models} selectedModel={selectedModel} onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}} />);
   await until('the trigger names the bound model', () => document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent === 'glm-5.3-flash');
-  expect(document.querySelector('[data-slot=composer-model-trigger-tag]')?.textContent).toBe('provider');
+  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('provider');
 });
 it('a custom address shows no protocol: the models it lists are all selected and the recognized addresses are saved', async () => {
   state.probe = {
@@ -165,6 +165,8 @@ it('a converted third-party model is selectable and tagged with its vendor; an I
   await userEvent.click(page.getByTestId('composer-model-trigger'));
   await until('the tags render', () => document.querySelectorAll('[data-slot=composer-model-tag]').length === 2);
   expect([...document.querySelectorAll('[data-slot=composer-model-tag]')].map((tag) => tag.textContent)).toEqual(['deepseek', 'bigmodel']);
-  expect(document.querySelector('[data-slot=composer-model-trigger-tag]')?.textContent).toBe('deepseek');
+  // The trigger names only the model: nothing of the vendor besides the model's own label.
+  expect(document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent).toBe('deepseek-v4-flash');
+  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent?.replace('deepseek-v4-flash', '')).not.toContain('deepseek');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('·');
 });
