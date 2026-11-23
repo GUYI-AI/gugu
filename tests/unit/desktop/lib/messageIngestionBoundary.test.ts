@@ -11,13 +11,15 @@ const matches = (pattern: string, ...paths: string[]) => {
 
 it('e3 keeps message SQL and renderer writes at their sole boundaries', () => {
   // POSIX boundary works with Apple Git and GNU Git; both must include the journal tag.
-  const tables = matches('im_messages([^[:alnum:]_]|$)|im_messages_text|im_message_(ranges|tombstones|chats|accounts)', 'apps', 'packages')
+  const tables = matches('im_messages([^[:alnum:]_]|$)|im_messages_text|im_message_(ranges|tombstones|chats|accounts|retired_accounts)', 'apps', 'packages')
     .filter(line => !/\.test\.[^:]+:|\/tests\//.test(line))
     // Generated schema snapshots describe tables; they cannot execute writes.
     .filter(line => !/\/drizzle\/meta\/\d{4}_snapshot\.json:/.test(line))
   const allowed = [
     'apps/desktop/electron/session/drizzle/0046_persistent_im_messages.sql:',
     'apps/desktop/electron/session/drizzle/0053_personal_conversation_history.sql:',
+    // The forward native-retirement fence is an explicit migration boundary.
+    'apps/desktop/electron/session/drizzle/0056_retired_message_accounts.sql:',
     'apps/desktop/electron/session/main/db/schema.ts:',
     'apps/desktop/electron/session/main/core/im-messages/',
   ]
