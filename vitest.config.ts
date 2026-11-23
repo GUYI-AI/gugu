@@ -161,6 +161,11 @@ const browserOptions = (name: string) => ({
   provider: playwright({ contextOptions: { locale: 'en-US' } }),
   headless: true,
   instances: [{ browser: 'chromium' as const, name: `${name}-chromium` }],
+  // @@@pointer-park — the mouse belongs to the page, and the files of one worker run one after another in that page:
+  // where one file's last `userEvent.hover` left it, the next file's rows mount under it and `:hover` reveals what a
+  // test reads at rest (CI: a bubble's time/copy at opacity 1). tests/support/browser-pointer-reset.ts parks it off the
+  // page before every test.
+  commands: { parkPointer: async ({ page }: { page: { mouse: { move: (x: number, y: number) => Promise<void> } } }) => { await page.mouse.move(-1, -1) } },
 })
 
 export default defineConfig({
@@ -435,7 +440,7 @@ export default defineConfig({
           // 字元格尺寸与 resize 时序 —— 旁边只要有个吃 CPU 的组件测试文件,它们就整片超时。
           fileParallelism: false,
           browser: browserOptions('session-browser'),
-          setupFiles: ['tests/support/browser-locale-reset.ts', 'tests/support/browser-replica-reset.ts'],
+          setupFiles: ['tests/support/browser-locale-reset.ts', 'tests/support/browser-replica-reset.ts', 'tests/support/browser-pointer-reset.ts'],
           include: ['apps/desktop/src/session/renderer/tests/browser/**/*.test.{ts,tsx}'],
         },
       },
@@ -482,7 +487,7 @@ export default defineConfig({
           hookTimeout: BROWSER_CASE_CAP_MS,
           browser: browserOptions('session-chat-ui-browser'),
           include: ['packages/session-chat-ui/src/**/*.contract.test.tsx'],
-          setupFiles: ['packages/session-chat-ui/src/tests/contract-setup.ts'],
+          setupFiles: ['packages/session-chat-ui/src/tests/contract-setup.ts', 'tests/support/browser-pointer-reset.ts'],
           benchmark: {
             include: ['packages/session-chat-ui/src/**/*.bench.ts'],
           },
