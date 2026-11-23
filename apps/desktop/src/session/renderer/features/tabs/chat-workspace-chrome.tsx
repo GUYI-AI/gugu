@@ -1,6 +1,6 @@
 import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Maximize2, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
@@ -77,6 +77,19 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     ownerDocument.addEventListener('keydown', keyDown, true);
     return () => ownerDocument.removeEventListener('keydown', keyDown, true);
   }, [dragging, embedded, focused, layout, mode]);
+  // @@@card-head-width - the conversation card's head is as wide as its body is drawn, ❌ its requested share: the cut
+  // holds each page at its minimum, so at a narrow width the share and the drawn width part (the head would overhang).
+  const cardsOn = !!layout.chatToolCardPaneId;
+  const [chatCardWidth, setChatCardWidth] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const card = cardsOn ? header.current?.closest('[data-chat-tool-workspace]')?.querySelector<HTMLElement>('[data-chat-card]') : null;
+    if (!card || typeof ResizeObserver === 'undefined') { setChatCardWidth(null); return; }
+    const measure = () => setChatCardWidth(card.getBoundingClientRect().width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [cardsOn, layout.chatWorkspacePanes?.chat.paneId]);
   if (!panes || !mode) return null;
   const { chat, tools } = panes;
   const tab = chat.pane.resolvedTabs.find(({ tabId }) => tabId === layout.primaryChatTabId);
@@ -99,7 +112,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   </PaneProvider> : null;
   const chatTitle = !sharedStrip && (
     // 第 16 版 #8:对话自己的那条页签条只剩一颗浮动胶囊(设计稿 .capbar 56 高 / .capsule 居中)。
-    <div data-chat-workspace-chat-header="" data-chat-card-head={toolCard ? '' : undefined} className="min-w-0" style={{ ...(toolCard ? { flex: `0 0 calc(${splitWidth} - var(--chat-card-half-gap))` } : { flex: 1 }), ...CAPSULE_BAR_STYLE }}>
+    <div data-chat-workspace-chat-header="" data-chat-card-head={toolCard ? '' : undefined} className="min-w-0" style={{ ...(toolCard ? { flex: chatCardWidth === null ? `0 0 calc(${splitWidth} - var(--chat-card-half-gap))` : `0 0 ${chatCardWidth}px` } : { flex: 1 }), ...CAPSULE_BAR_STYLE }}>
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
         <ChatWorkspaceTabContext.Provider value={{ role: 'capsule', layout }}>
           <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions}>

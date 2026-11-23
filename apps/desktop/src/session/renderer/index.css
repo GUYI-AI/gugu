@@ -1586,3 +1586,35 @@ html[data-gugu-dragging] :is(webview, iframe) {
 [data-chat-tool-strip] .session-tab-slot::after {
   display: none;
 }
+
+/* 卡片的角(yangchichi 14:09 img56/57/61):卡头和工具页签条自己是圆角,但里面那层画底色的页签条(.session-tab-bar,
+   胶囊栏的白、工具条的灰)是方的,盖在圆角上就露出直角。让画底色的那层跟着卡片的角走。 */
+[data-chat-card-head] .session-tab-bar {
+  border-radius: 12px 12px 0 0;
+}
+
+[data-chat-tool-strip] .session-tab-bar {
+  border-top-left-radius: 12px;
+}
+
+/* 拖分隔条的折叠预览(稿子 .preview / .preview.ready):盖住整张卡片(连卡头),圆角 12,6% 的灰,松手就折叠时 15%。
+   卡片之间那半条缝不算在卡片里:用透明边框让出来,底色只画在内边距盒里。 */
+[data-chat-tool-cards] [data-chat-tool-collapse-preview] {
+  top: calc(-1 * var(--chat-card-head-height));
+  border: 0 solid transparent;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--fg) 6%, transparent);
+  background-clip: padding-box;
+}
+
+[data-chat-tool-cards] [data-chat-tool-collapse-preview='left'] {
+  border-right-width: var(--chat-card-half-gap);
+}
+
+[data-chat-tool-cards] [data-chat-tool-collapse-preview='right'] {
+  border-left-width: var(--chat-card-half-gap);
+}
+
+[data-chat-tool-cards] [data-chat-tool-collapse-preview][data-chat-tool-collapse-ready] {
+  background: color-mix(in oklab, var(--fg) 15%, transparent);
+}
