@@ -29,8 +29,9 @@
   box-shadow: 0 0 0 0.5px color-mix(in oklab, var(--fg) 6%, transparent);
 }
 
-.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace][data-chat-tool-cards]),
-.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace][data-chat-tool-cards]) :is([data-workspace-content-page], [data-screen-frame], [data-screen-block]) {
+.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace][data-chat-tool-cards]) {
+  /* 垫在下面的几层(正文页、分块的底、这一块)读这个变量当底色(screen-frame.tsx、workspace-layout.tsx),:has 只放在这一层自己身上。 */
+  --screen-ground: transparent;
   background: transparent;
   box-shadow: none;
   border-radius: 0;
