@@ -183,8 +183,8 @@ export const GenericTabItem = observer(function GenericTabItem({
 
   if (workspaceRole === 'capsule') {
     return (
+      // 第 16 版:胶囊栏里只有这一颗胶囊(❌ ⋯):它的动作在名片和详情里(单独成窗是详情的一格)。
       <>
-      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu>
         <div className="flex h-full min-w-0 flex-1 items-center justify-center">
           <div role="button" tabIndex={0} data-testid="conversation-capsule" data-chat-workspace-title="" data-tabid={tab.tabId} title={tooltip ?? label}
             className={CONVERSATION_CAPSULE_CLASS}
@@ -194,7 +194,6 @@ export const GenericTabItem = observer(function GenericTabItem({
             {editableTitle ?? <span className="truncate">{label}</span>}
           </div>
         </div>
-      </TabContextMenu>
       {cardPopover}
     </>
     );
