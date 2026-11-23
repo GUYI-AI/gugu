@@ -12,7 +12,10 @@ type Gesture =
 const clientPoint = (event: ReactPointerEvent) => ({ x: event.clientX, y: event.clientY })
 const centerOf = (a: Point, b: Point) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
-const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,[contenteditable="true"]')
+// The editor can be drawn in a pop-out window (ImagePreviewProvider @@@viewer-window): its elements are not this window's
+// HTMLElement, so elements are recognised by shape, and the keys are that window's.
+const elementOf = (target: EventTarget | null) => (target && 'closest' in target ? target as HTMLElement : null)
+const editable = (target: EventTarget | null) => !!elementOf(target)?.closest('input,textarea,[contenteditable="true"]')
 const toolKeys: Record<string, AnnotateTool> = { r: 'rect', a: 'arrow', n: 'marker', p: 'pen', t: 'text', m: 'mosaic', c: 'crop' }
 const fitFor = (viewport: { width: number; height: number }, image: Pick<Box, 'width' | 'height'>) =>
   Math.max(.001, Math.min(1, (viewport.width - 32) / image.width, (viewport.height - 32) / image.height))
@@ -83,11 +86,11 @@ export function useAnnotateCanvas(initial: AnnotateDocument, imageBounds?: () =>
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase(), mod = event.metaKey || event.ctrlKey
-      const textUndo = editingText && mod && ['z', 'y'].includes(key)
-        && event.target instanceof HTMLElement && event.target.closest('.ia-text-editor')
-      if (event.isComposing || (editable(event.target) && !textUndo)) return
-      if (!(event.target instanceof HTMLElement) || !event.target.closest('.ia-editor') || event.target.closest('[aria-busy="true"]')) return
-      if (textUndo) event.target.closest<HTMLElement>('.ia-editor')?.focus()
+      const target = elementOf(event.target)
+      const textUndo = editingText && mod && ['z', 'y'].includes(key) && target?.closest('.ia-text-editor')
+      if (event.isComposing || (editable(target) && !textUndo)) return
+      if (!target?.closest('.ia-editor') || target.closest('[aria-busy="true"]')) return
+      if (textUndo) target.closest<HTMLElement>('.ia-editor')?.focus()
       if (key === ' ' || (!mod && toolKeys[key]) || ['Delete', 'Backspace'].includes(event.key) || (mod && ['z', 'y', '+', '=', '-', '0'].includes(key))) {
         event.preventDefault(); event.stopPropagation()
       }
@@ -101,8 +104,9 @@ export function useAnnotateCanvas(initial: AnnotateDocument, imageBounds?: () =>
     }
     const keyup = (event: KeyboardEvent) => { if (event.key === ' ') space.current = false }
     const blur = () => { space.current = false }
-    window.addEventListener('keydown', keydown, true); window.addEventListener('keyup', keyup); window.addEventListener('blur', blur)
-    return () => { window.removeEventListener('keydown', keydown, true); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', blur) }
+    const view = stage.current!.ownerDocument.defaultView!
+    view.addEventListener('keydown', keydown, true); view.addEventListener('keyup', keyup); view.addEventListener('blur', blur)
+    return () => { view.removeEventListener('keydown', keydown, true); view.removeEventListener('keyup', keyup); view.removeEventListener('blur', blur) }
   })
   const pointFor = (event: ReactPointerEvent): Point => {
     const box = vectors.current!.getBoundingClientRect()

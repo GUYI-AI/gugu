@@ -65,6 +65,8 @@ interface Window {
     minimize: () => void
     maximize: () => void
     close: () => void
+    /** Quit the app (File → Exit). close() only hides the window to the tray. */
+    quit: () => void
     /** Synchronous: the first frame draws the right maximize / restore glyph. */
     isMaximizedSync: () => boolean
     /** Windows 标题栏菜单的编辑 / 缩放 / 全屏命令(清单见 electron/window-menu-commands.ts)。 */

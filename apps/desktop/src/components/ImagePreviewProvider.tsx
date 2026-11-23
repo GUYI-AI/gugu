@@ -24,6 +24,7 @@ import { holderOfflineText, offlineHolder } from '../lib/fileHost'
 import { safeFailureLine } from '@/session/renderer/features/sessions/gugu-reason'
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { commandRegistry } from '@renderer/lib/commands/registry'
+import { requestDocument } from '@renderer/app/aux-layers'
 import { useMobileShell } from '../hooks/useMobileShell'
 import { readRendererPlatform, windowTitlebarHeight } from '../lib/window-chrome'
 import { bindFileZoom, showZoomRatio, zoomForCommand } from './preview/file-content-zoom'
@@ -89,7 +90,7 @@ async function fetchImageAsPngBlob(url: string): Promise<Blob> {
 
 type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean }
 
-function slideFor(item: ImageViewerItem): ViewerSlide {
+function slideFor(item: ImageViewerItem, view: ViewerWindow): ViewerSlide {
   // 另有原图可取时,缩略图的 natural 尺寸不是原图的:不拿它排版
   const size = item.size ?? (item.full || item.preview ? null : decodedSizeOf(item.thumb))
   return {
@@ -97,8 +98,8 @@ function slideFor(item: ImageViewerItem): ViewerSlide {
     ...(item.preview ? { type: 'image' } : {}),
     alt: item.alt,
     // 尺寸未知时按视口占位(宽为 0 PhotoSwipe 不加载图),第一份像素到了定一次,之后不再变
-    width: size?.width ?? window.innerWidth,
-    height: size?.height ?? window.innerHeight,
+    width: size?.width ?? view.innerWidth,
+    height: size?.height ?? view.innerHeight,
     msrc: size ? item.url : undefined,
     item,
     sizeKnown: Boolean(size),
@@ -123,10 +124,12 @@ function zoomOption(pick: 'initial' | 'secondary' | 'max'): PhotoSwipeOptions['i
   }
 }
 
-function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: string): PhotoSwipeOptions {
+function viewerOptions(request: ImageViewerRequest, view: ViewerWindow, mobile: boolean, errorMsg: string): PhotoSwipeOptions {
   const safeArea = mobile ? readSafeAreaInsets() : null
   return {
-    dataSource: request.items.map(slideFor),
+    dataSource: request.items.map(item => slideFor(item, view)),
+    // In the window the picture was asked for (patches/photoswipe@5.4.4.patch makes PhotoSwipe live in this element's window).
+    appendToEl: view.document.body,
     index: request.index,
     mainClass: 'gg-image-viewer',
     // 手机上开、关、下拉由 image-viewer-phone-flight 画(#3311),PhotoSwipe 自己瞬开瞬关
@@ -151,14 +154,14 @@ function viewerOptions(request: ImageViewerRequest, mobile: boolean, errorMsg: s
     arrowNext: false,
     preloaderDelay: PRELOADER_DELAY_MS,
     padding: safeArea ? { top: safeArea.top, bottom: safeArea.bottom, left: 0, right: 0 } : { top: 64, bottom: 48, left: 16, right: 16 },
-    getViewportSizeFn: () => ({ x: document.documentElement.clientWidth, y: window.innerHeight - viewerTop() }),
+    getViewportSizeFn: () => ({ x: view.document.documentElement.clientWidth, y: view.innerHeight - viewerTop() }),
     initialZoomLevel: zoomOption('initial'),
     secondaryZoomLevel: zoomOption('secondary'),
     maxZoomLevel: zoomOption('max'),
   }
 }
 
-function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
+function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
   // Every image opens whole: no ratio carries over to the next one (documents still keep theirs). A zoom to read by shows
   // its ratio for a moment (zoom B); the opening and a double click's peek do not.
   pswp.on('beforeZoomTo', ({ destZoomLevel }) => {
@@ -241,7 +244,7 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
   pswp.on('loadComplete', ({ content, isError }) => {
     const data = content.data as ViewerSlide
     const img = content.element
-    if (data.sizeKnown || pswp.isDestroying || isError || !(img instanceof HTMLImageElement)) return
+    if (data.sizeKnown || pswp.isDestroying || isError || !(img instanceof view.HTMLImageElement)) return
     // Shown from here on (@@@unsized-first-frame): in its real box set below, in this same task, or as it is when it has none.
     img.style.visibility = ''
     if (!img.naturalWidth || !img.naturalHeight) return
@@ -264,19 +267,19 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
   pswp.addFilter('thumbBounds', (_bounds, itemData) => {
     const data = itemData as ViewerSlide
     const thumb = data.item.thumb
-    const img = thumb instanceof HTMLImageElement ? thumb : thumb?.querySelector('img')
+    const img = thumb instanceof view.HTMLImageElement ? thumb : thumb?.querySelector('img')
     const box = data.item.thumbRect
     if ((!img && !box) || !data.sizeKnown) return undefined as unknown as Bounds
     const size = { width: data.width ?? 0, height: data.height ?? 0 }
     const rect = img ? img.getBoundingClientRect() : new DOMRect(box!.x, box!.y, box!.width, box!.height)
     const top = viewerTop()
     const inViewer = new DOMRect(rect.x, rect.y - top, rect.width, rect.height)
-    return thumbBoundsFor(inViewer, img ? getComputedStyle(img).objectFit : 'cover', size, { width: innerWidth, height: innerHeight - top }) as Bounds
+    return thumbBoundsFor(inViewer, img ? view.getComputedStyle(img).objectFit : 'cover', size, { width: view.innerWidth, height: view.innerHeight - top }) as Bounds
   })
 
   // 指针点 = pageY - offset.y:根下移了,offset 也跟着下移。PhotoSwipe 的 init 在派发 updateScrollOffset 之后
   // 又直写了一次 offset.y(不派发),所以在紧跟着的 initialLayout 里再对齐一次。
-  const alignPointerOffset = () => { pswp.offset.y = window.pageYOffset + viewerTop() }
+  const alignPointerOffset = () => { pswp.offset.y = view.pageYOffset + viewerTop() }
   pswp.on('updateScrollOffset', alignPointerOffset)
   pswp.on('initialLayout', alignPointerOffset)
 
@@ -305,7 +308,7 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
 
   // 还没有像素的「图」(在下载的 img、空白占位)只是背景:PhotoSwipe 按 class 把它们算成点在图上,点了没反应
   pswp.on('imageClickAction', ({ originalEvent: { target } }) => {
-    if (!(target instanceof HTMLImageElement && target.naturalWidth)) pswp.close()
+    if (!(target instanceof view.HTMLImageElement && target.naturalWidth)) pswp.close()
   })
 
   // 鼠标双击缩放到光标处,连击归系统设置;手机的双击是 PhotoSwipe 自己的 doubleTap,这里不再算一次
@@ -313,7 +316,7 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
     if (!pswp.element) throw new Error('PhotoSwipe bound its events without a root element')
     pswp.events.add(pswp.element, 'click', (event) => {
       const { detail, pointerType, pageX, pageY, target } = event as PointerEvent
-      if (!pswp.opener.isOpen || detail !== 2 || pointerType !== 'mouse' || !(target instanceof Element && target.classList.contains('pswp__img'))) return
+      if (!pswp.opener.isOpen || detail !== 2 || pointerType !== 'mouse' || !(target instanceof view.Element && target.classList.contains('pswp__img'))) return
       pswp.currSlide?.toggleZoom({ x: pageX - pswp.offset.x, y: pageY - pswp.offset.y })
     })
   })
@@ -337,6 +340,24 @@ function wireViewer(pswp: PhotoSwipe, dialogLabel: string, onFileError: (item: I
     root.classList.add('window-no-drag-region')
     markCurrentImage()
   })
+}
+
+type ViewerWindow = Window & typeof globalThis
+
+function windowOf(element: Element): ViewerWindow {
+  const view = element.ownerDocument.defaultView
+  if (!view) throw new Error('image viewer element is not in a window')
+  return view as ViewerWindow
+}
+
+/**
+ * @@@viewer-window - the viewer opens in the window the picture was asked for (aux-layers: the window a request came from).
+ * A pop-out window (aux-window-host) is drawn by this same renderer; a viewer in the main window's body is behind it, and
+ * nothing happens where the person clicked. The thumbnail says which window; without one, the window last used.
+ */
+function viewerWindow(request: ImageViewerRequest): ViewerWindow {
+  const thumb = request.items[request.index]?.thumb
+  return thumb ? windowOf(thumb) : windowOf(requestDocument().documentElement)
 }
 
 interface OpenViewer {
@@ -460,15 +481,17 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
     const unregister = registerImageViewerHost((request) => {
       if (holding) return request.items.forEach(item => item.release?.())
       holding = true
+      const view = viewerWindow(request)
       // What had the keys before (an App page's <webview>, a list): it has them again once the viewer is closed.
-      const focused = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null
+      const { activeElement, body } = view.document
+      const focused = activeElement instanceof view.HTMLElement && activeElement !== body ? activeElement : null
       import('photoswipe')
         .then(({ default: PhotoSwipeCtor }) => {
           if (disposed) return
           const { t: translate, mobile: isMobile } = latest.current
-          const pswp = new PhotoSwipeCtor(viewerOptions(request, isMobile, translate('shell.imagePreview.loadFailed')))
+          const pswp = new PhotoSwipeCtor(viewerOptions(request, view, isMobile, translate('shell.imagePreview.loadFailed')))
           if (usesPhoneFlight(isMobile, request.items[request.index])) wirePhoneFlight(pswp, request.items, request.index)
-          wireViewer(pswp, translate('shell.imagePreview.dialog'), (item, error) => {
+          wireViewer(pswp, view, translate('shell.imagePreview.dialog'), (item, error) => {
             const target = item.resource?.target
             void (async () => {
               const offline = target?.kind === 'file' ? await offlineHolder(target.itemId, target.version) : null
@@ -546,31 +569,33 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
   }, [viewer, editing, t])
   useEffect(() => {
     if (!viewer || editing) return
+    const view = windowOf(viewer.root)
     const editKey = (event: KeyboardEvent) => {
       if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.key.toLowerCase() !== 'e' || !isTopLayer()) return
-      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) return
+      if (event.target instanceof view.HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) return
       event.preventDefault(); event.stopPropagation(); setEditing(viewer.items[viewer.index])
     }
-    window.addEventListener('keydown', editKey, true)
-    return () => window.removeEventListener('keydown', editKey, true)
+    view.addEventListener('keydown', editKey, true)
+    return () => view.removeEventListener('keydown', editKey, true)
   }, [viewer, editing, isTopLayer])
   useEffect(() => {
-    if (!openPswp) return
-    // window 捕获阶段先于 document 上的 Esc 和页签快捷键监听,
+    if (!openPswp?.element) return
+    const view = windowOf(openPswp.element)
+    // 这扇窗(@@@viewer-window)的 window 捕获阶段先于 document 上的 Esc 和页签快捷键监听,
     // 在这里沿同一条路径关闭并截住按键,避免关掉底下的对话框或页签。
     const onCloseCapture = (event: KeyboardEvent) => {
       const closeShortcut = matchesKeyboardEvent(event, 'Mod+W', readRendererPlatform() === 'mac' ? 'mac' : 'windows')
       if ((event.key !== 'Escape' && !closeShortcut) || event.isComposing || !isTopLayer()) return
       event.stopPropagation()
       event.preventDefault()
-      if (editing && event.target instanceof HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) {
+      if (editing && event.target instanceof view.HTMLElement && event.target.closest('input,textarea,[contenteditable="true"]')) {
         event.target.blur()
         viewer?.root.querySelector<HTMLElement>('.ia-editor')?.focus()
       } else if (editing) setEditing(null)
       else openPswp.close()
     }
-    window.addEventListener('keydown', onCloseCapture, { capture: true })
-    return () => window.removeEventListener('keydown', onCloseCapture, { capture: true })
+    view.addEventListener('keydown', onCloseCapture, { capture: true })
+    return () => view.removeEventListener('keydown', onCloseCapture, { capture: true })
   }, [openPswp, editing, isTopLayer, viewer])
 
   // @@@edit-no-flash - until the editor can show the picture, the viewer stays as it was: its chrome while the editor's code

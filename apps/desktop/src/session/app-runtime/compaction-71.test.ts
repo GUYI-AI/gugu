@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { loadPage, until, type FakeService } from './fake-file-service';
+import { loadPage, until, untilAdvancing, type FakeService } from './fake-file-service';
 
 /**
  * 摩擦单 F71, the page's half: the file service compacts a file while it is open (gugu-supabase files-core, #77). The
@@ -37,14 +37,6 @@ const drainedFrom = (service: FakeService, since = 0) =>
 afterEach(() => {
   vi.useRealTimers();
 });
-
-/** On fake timers: advances them a step at a time until `check` holds, or fails after `ms` of them. */
-async function untilAdvancing(check: () => boolean, ms: number): Promise<void> {
-  for (let spent = 0; !check(); spent += 250) {
-    if (spent > ms) throw new Error(`not within ${ms} ms of timers: ${check.toString()}`);
-    await vi.advanceTimersByTimeAsync(250);
-  }
-}
 
 /**
  * A types marks into the file; B (someone else, at the service) writes too. Twice, the service is slow to confirm for a
@@ -291,6 +283,8 @@ describe('a file compacted while it is open (摩擦单 F71, the page)', () => {
   });
 
   it('open for good: moved to a new epoch while it was away, five times, still online — the reopen count starts again at every sync', async () => {
+    // Each `rate-limited` close backs off 1 s before reconnecting: on fake timers, so the five rounds don't idle 5 s.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const { service, open } = await loadPage<TextFile>('text');
     const file = await open();
     file.insert(0, 'kept');
@@ -298,7 +292,7 @@ describe('a file compacted while it is open (摩擦单 F71, the page)', () => {
     for (let epoch = 1; epoch <= 5; epoch += 1) {
       service.closeDocument(`item-1@${epoch}`, 'rate-limited');
       expect(await service.compact(`item-1@${epoch}`, `item-1@${epoch + 1}`)).toBe(true);
-      await until(() => file.status === 'online' && file.saved && service.keysOf(`item-1@${epoch + 1}`).length === 1, 8000);
+      await untilAdvancing(() => file.status === 'online' && file.saved && service.keysOf(`item-1@${epoch + 1}`).length === 1, 8000);
     }
     expect(service.text('item-1@6')).toBe('kept');
   });
@@ -323,6 +317,7 @@ describe('a file compacted while it is open (摩擦单 F71, the page)', () => {
   });
 
   it('a new replica refused (the epoch moved on again before it got there), three times over: none of them stays on the page’s socket — one provider, one connection', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     const { service, open, host } = await loadPage<TextFile>('text');
     const { pageSocket } = await import('./sync-link');
     const file = await open();
@@ -342,7 +337,7 @@ describe('a file compacted while it is open (摩擦单 F71, the page)', () => {
       });
       expect(await service.compact(`item-1@${from}`, `item-1@${from + 1}`)).toBe(true);
       epoch = from + 2;
-      await until(() => file.status === 'online' && file.saved && service.keysOf(`item-1@${epoch}`).length === 1, 8000);
+      await untilAdvancing(() => file.status === 'online' && file.saved && service.keysOf(`item-1@${epoch}`).length === 1, 8000);
     }
     expect(socket.configuration.providerMap.size).toBe(1);
     expect(service.keys.size).toBe(1);

@@ -80,7 +80,7 @@ describe('enabled App commands in the global registry', () => {
     vi.stubGlobal('window', new EventTarget());
     const id = auxWindows.add({ kind: 'app', tabKind: 'board.main' });
     const focus = vi.fn();
-    auxWindows.setHandle(id, { focus } as unknown as Window, {} as HTMLElement);
+    auxWindows.setHandle(id, { focus } as unknown as Window);
     surfaces.setWebContentsId(null, `window:${id}`, 84);
     try {
       provider.getCommands()[0]!.execute();

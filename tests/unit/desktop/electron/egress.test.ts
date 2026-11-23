@@ -20,8 +20,8 @@ async function listen(server: Server): Promise<number> {
   cleanups.push(() => new Promise<void>(resolve => { server.closeAllConnections(); server.close(() => resolve()) }))
   return (server.address() as { port: number }).port
 }
-function nodeTransport(routes: Parameters<typeof nodeEgressBackend>[0]['routes'], ca?: string[], keepAliveTimeoutMs?: number) {
-  const backend = nodeEgressBackend({ name: 'test-node', routes, ca, keepAliveTimeoutMs })
+function nodeTransport(routes: Parameters<typeof nodeEgressBackend>[0]['routes'], ca?: string[], keepAliveTimeoutMs?: number, connectTimeoutMs?: number) {
+  const backend = nodeEgressBackend({ name: 'test-node', routes, ca, keepAliveTimeoutMs, connectTimeoutMs })
   cleanups.push(() => backend.closeConnections?.())
   return createEgress(backend)
 }
@@ -155,14 +155,15 @@ describe('egress contract on a real Node transport', () => {
     const sockets = new WebSocketServer({ server: server as unknown as Server })
     cleanups.push(() => new Promise<void>(resolve => { for (const socket of sockets.clients) socket.terminate(); sockets.close(() => resolve()) }))
     const proxy = await socks5()
-    const transport = nodeTransport(async () => `socks5://127.0.0.1:${proxy.port}`, [TEST_CERT], 60_000) // desktop's pool setting
+    // Desktop's pool setting; the connect bound is shortened from 10 s so the idle wait below can pass it quickly.
+    const transport = nodeTransport(async () => `socks5://127.0.0.1:${proxy.port}`, [TEST_CERT], 60_000, 300)
     const socket = transport.webSocket(`wss://127.0.0.1:${port}`)
     await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }) })
     expect(await (await transport.fetch(`https://localhost:${port}/`)).text()).toBe('ok')
     // A CDN picks its certificate by SNI: the tunnelled TLS hello must name the origin.
     expect(names).toEqual(['localhost'])
-    // Idle past the 10 s connect bound: open connections must not be torn down by it.
-    await new Promise(resolve => setTimeout(resolve, 10_500))
+    // Idle past the connect bound: open connections must not be torn down by it.
+    await new Promise(resolve => setTimeout(resolve, 600))
     const message = new Promise<unknown>((resolve, reject) => {
       socket.addEventListener('message', event => resolve(event.data), { once: true })
       socket.addEventListener('close', () => reject(new Error('closed while idle')), { once: true })
@@ -172,7 +173,7 @@ describe('egress contract on a real Node transport', () => {
     expect(await (await transport.fetch(`https://localhost:${port}/`)).text()).toBe('ok')
     expect(proxy.tunnels()).toBe(2)
     socket.close()
-  }, 20_000)
+  })
 
   it('reaches a local process through loopbackFetch and refuses anything that is not loopback', async () => {
     const { loopbackFetch } = await import('@gugu/core/local/loopback')
@@ -214,10 +215,13 @@ describe('egress contract on a real Node transport', () => {
   })
 
   it('normalizes a truncated response body and preserves response metadata through clones', async () => {
-    const port = await listen(createServer((_request, response) => {
+    const server = createServer((_request, response) => {
       response.writeHead(200, { 'content-length': '100' })
       response.end('short')
-    }))
+    })
+    // The body ends short when the server drops the connection; don't hold it for Node's default 5 s keep-alive.
+    server.keepAliveTimeout = 50
+    const port = await listen(server)
     const response = await nodeTransport(async () => null).fetch(`http://127.0.0.1:${port}/stream`)
     const copy = response.clone()
     expect(copy.url).toBe(response.url)

@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Dialog } from '@/components/ui/Dialog'
+import { InRequestWindow } from '@/components/InRequestWindow'
 import { Button } from '@/components/ui/Button'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { useBackLayer } from '@/components/ui/sheetStack'
@@ -10,7 +11,7 @@ import { readConversationDeleteConfirmation, subscribeConversationDeleteConfirma
 export function ConversationDeleteConfirmationHost() {
   const request = useSyncExternalStore(subscribeConversationDeleteConfirmation, readConversationDeleteConfirmation)
   useEffect(() => () => request?.finish(null), [request])
-  return request ? <Choice key={request.id} request={request} /> : null
+  return request ? <InRequestWindow key={request.id}><Choice request={request} /></InRequestWindow> : null
 }
 
 function Choice({ request }: { request: NonNullable<ReturnType<typeof readConversationDeleteConfirmation>> }) {

@@ -1,5 +1,6 @@
 import { action, makeObservable, observable } from 'mobx';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
+import { auxLayerOf } from './aux-layers';
 import { contentKey, type ScreenBlockContent, type WindowableContent } from './screen-layout';
 
 /** 一条会话的页签存储里管单独成窗那几格的部分(PaneLayoutStore)。 */
@@ -22,8 +23,6 @@ export type AuxWindow = {
   content: AuxWindowContent;
   /** 浏览器给的那扇窗;打开成功之前是 null。 */
   handle: Window | null;
-  /** 这扇窗里给菜单、浮层、对话框落脚的那一层(和 handle 一起到)。 */
-  layer?: HTMLElement;
   /** 拖到窗口外松手的那一点(屏幕坐标):窗开在那里。 */
   at?: { screenX: number; screenY: number };
   /** 开窗之前它在这屏的哪儿(挨着哪块、哪一边):「放回咕咕」回到这里。 */
@@ -66,16 +65,14 @@ export class AuxWindowStore {
     return window;
   }
 
-  setHandle(id: string, handle: Window, layer: HTMLElement): void {
+  setHandle(id: string, handle: Window): void {
     const window = this.windows.get(id);
-    if (window) this.windows.set(id, { ...window, handle, layer });
+    if (window) this.windows.set(id, { ...window, handle });
   }
 
   /** The document an element is drawn in, when that is one of these windows: its layer. The main window = null. */
   layerOf(doc: Document): HTMLElement | null {
-    if (doc === document) return null;
-    for (const window of this.windows.values()) if (window.handle?.document === doc) return window.layer ?? null;
-    return null;
+    return auxLayerOf(doc);
   }
 
   /** Every document drawn now: the main window's, then each open window's. */
