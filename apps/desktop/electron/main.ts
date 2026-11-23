@@ -2,7 +2,6 @@ import { createTeamPaymentCheckout } from './team-payment-checkout'
 import { openTeamPaymentWindow } from './team-payment-window'
 import { releaseCustomModelForwarders } from './session/main/core/agents/custom-model-forwarder'
 import { releaseConversionRouters } from './session/main/core/agents/conversion-routers'
-import { hostAttachmentsEndpoint } from './attachmentUploadTransport'
 import { inspectHtmlPreviewAnnotation } from './session/main/core/browser/html-preview-annotation'
 import { HTML_PREVIEW_ANNOTATION_CHANNEL, type HtmlPreviewAnnotationRequest } from '../src/session/shared/preview/html-preview-annotation'
 import { createAttachmentUploadHost } from './attachmentUploadHost'
@@ -29,7 +28,7 @@ import { createAssistantWorkAvailabilityNotifier } from '@gugu/core/cloud/assist
 import { registerFileViewerMenus } from './file-viewer-context-menu'
 import { registerContentContextMenus } from './content-context-menu'
 import { registerHostLayer } from './host-layer'
-import { configuredEndpoint, drawImagePreviews } from '@gugu/core/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, drawImagePreviews } from '@gugu/core/cloud/attachmentsApi'
 import type { AppInboxPort } from '@gugu/core/local/agent/appInbox'
 import { renderFirstTurn, type FirstTurnRender } from '@gugu/core/local/agent/firstTurnRender'
 import { createDesktopFileAccess, signedInFileRpc } from './desktopFileAccess'
@@ -2544,7 +2543,7 @@ const attachmentUploads = createAttachmentUploadHost({
     return { id: auth.userId, home: resolveGuguHome(process.env), endpoint: async () => {
       const current = await desktopAuthProvider().getAuth()
       if (current?.userId !== auth.userId || !current.accessToken) throw new Error('Attachment upload account changed')
-      return hostAttachmentsEndpoint({
+      return accountAttachmentsEndpoint({
         supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), getAccessToken: async () => current.accessToken,
       })
     } }
@@ -5033,8 +5032,7 @@ app.whenReady().then(async () => {
             if (!agentId) throw new Error(`Session attachment recipient has no Agent identity: session:${target.sessionId}`)
             recipients.push(agentId)
           }
-          // The main process sends signed part PUTs straight to the store (a page cannot).
-          const endpoint = { ...configuredEndpoint(auth.accessToken), signedParts: true }
+          const endpoint = await accountAttachmentsEndpoint({ supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), getAccessToken: async () => auth.accessToken })
           signal.throwIfAborted()
           return uploadSessionFiles(endpoint, files, { agentId: sender.guguAgentUserId, sessionId: context.sessionId, recipients, beforeCommit: async () => signal.throwIfAborted() })
       }

@@ -2,7 +2,8 @@ import type { RuntimeAuth } from '@gugu/core'
 import type { DeviceRpcHandlers } from '@gugu/core/cloud/deviceRpcResponder'
 import { mkdir } from 'node:fs/promises'
 import { readCachedDeviceId } from '@gugu/core/cloud/deviceRuntime'
-import { attachmentRequest, configuredEndpoint, offerImagePreviewOf } from '@gugu/core/cloud/attachmentsApi'
+import { accountAttachmentsEndpoint, attachmentRequest, offerImagePreviewOf } from '@gugu/core/cloud/attachmentsApi'
+import { getSupabaseAnonKey, getSupabaseUrl } from '@gugu/core/cloud/config'
 import { createFileMetadataLoader } from '@gugu/core/cloud/fileMetadata'
 import { cloudFileProviders } from '@gugu/core/cloud/fileProviders'
 import { createFileChunkCache, createFileSink, createFileSaver } from '@gugu/core/local/files/fileSnapshots'
@@ -66,7 +67,7 @@ export function createDesktopFileAccess(deps: {
   const endpoint = async (context?: FileContext) => {
     const auth = await deps.auth()
     if (!auth || context && auth.userId !== context.actor.accountId) throw new Error('File reader account changed')
-    return { ...configuredEndpoint(auth.accessToken), fetch: deps.fetch }
+    return accountAttachmentsEndpoint({ supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), getAccessToken: async () => auth.accessToken }, deps.fetch)
   }
   const later: ProjectFileVersionLookup = async ref => {
     const row = await attachmentRequest(await endpoint(), 'file-resolve', { ref, as: (await identity()).accountId }) as FileRevision & { status?: string }

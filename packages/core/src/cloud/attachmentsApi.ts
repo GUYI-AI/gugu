@@ -18,7 +18,7 @@ import { blobSha256, fileSha256 } from '../shared/fileCipher'
 export type AttachmentByteProgress = { loaded: number; total?: number }
 export type AttachmentUploadTransport = (url: string, init: {
   method: 'POST' | 'PUT'; body: Blob | FormData; headers?: Record<string, string>; signal?: AbortSignal
-}, onProgress?: (progress: AttachmentByteProgress) => void) => Promise<{ status: number }>
+}, onProgress?: (progress: AttachmentByteProgress) => void) => Promise<{ status: number; said?: string }>
 
 export interface AttachmentsEndpoint {
   supabaseUrl: string
@@ -41,9 +41,47 @@ export function configuredEndpoint(token: string): AttachmentsEndpoint {
   return { supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), token }
 }
 
-/** A long-lived account host, including the MCP host, uses the same endpoint and signed-parts capability. */
+/**
+ * Every host process (desktop main, its file host, the headless server, the MCP host) uploads through this one endpoint:
+ * the same signed-parts capability and the same streamed transport, so a proxy, a stall and progress read the same.
+ */
 export async function accountAttachmentsEndpoint(context: { supabaseUrl: string; anonKey: string; getAccessToken(): Promise<string> }, fetchImpl: typeof globalThis.fetch = egress.fetch): Promise<AttachmentsEndpoint> {
-  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
+  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(),
+    fetch: fetchImpl, signedParts: true, upload: streamedAttachmentUpload }
+}
+
+/**
+ * A host's upload: the runtime's Request serializes the body (a form keeps its boundary), its length is sent, and the
+ * bytes go as a stream the HTTP client pulls, so progress counts what was sent. The response header deadline is the
+ * attachment stage's.
+ */
+const streamedAttachmentUpload: AttachmentUploadTransport = async (url, init, onProgress) => {
+  const { method, signal } = init
+  signal?.throwIfAborted()
+  const request = new Request(url, init)
+  const blob = init.body instanceof Blob ? init.body : await request.blob()
+  request.headers.set('content-length', String(blob.size))
+  let loaded = 0
+  // With no prefetch, a pull means the HTTP client is ready for another chunk.
+  const body = new ReadableStream({
+    async pull(controller) {
+      if (loaded === blob.size) return controller.close()
+      signal?.throwIfAborted()
+      const chunk = new Uint8Array(await blob.slice(loaded, loaded + 64 * 1024).arrayBuffer())
+      signal?.throwIfAborted()
+      controller.enqueue(chunk)
+      loaded += chunk.byteLength
+      onProgress?.({ loaded, total: blob.size })
+    },
+  }, { highWaterMark: 0 })
+  const response = await egress.fetch(url, { method, body, headers: request.headers, signal, duplex: 'half', timeoutMs: 0 } as RequestInit & { timeoutMs: number })
+  return { status: response.status, said: response.ok ? (await response.body?.cancel(), undefined) : await storeAnswer(url, response) }
+}
+
+/** What a store said when it refused: its host and the start of its answer (an XML or JSON error code), for the log. */
+async function storeAnswer(url: string, response: Response): Promise<string> {
+  const text = (await response.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200)
+  return `${new URL(url).host}: ${text}`
 }
 
 /** A refusal from the function, with its code (upload_used, version_conflict, too_large, denied, …) — said, never swallowed. */
@@ -269,14 +307,14 @@ async function uploadAttachmentParts(endpoint: AttachmentsEndpoint, key: string,
       const start = (part.n - 1) * plan.part_bytes
       const sent = (async () => {
         if (budget.used >= MAX_STORAGE_ATTEMPTS) throw new AttachmentsError('upload', 409, 'upload_incomplete', `Storage retry limit reached for part ${part.n}`)
-        const { status } = await retryUploadRequest(() => putPart(endpoint, part, blob.slice(start, start + part.bytes), loaded => { sending.set(part.n, loaded); progress() }, signal), budget, signal)
+        const { status, said } = await retryUploadRequest(() => putPart(endpoint, part, blob.slice(start, start + part.bytes), loaded => { sending.set(part.n, loaded); progress() }, signal), budget, signal)
         if (status === 403) {
           // Not stored, not sending, not held: the next answer signs it again.
           if (budget.resigned || budget.used >= MAX_STORAGE_ATTEMPTS) throw new AttachmentsError('upload', 403, 'failed', `Storage refused a fresh part signature for part ${part.n}`)
           budget.resigned = true
           return
         }
-        if (status !== 200) throw new AttachmentsError('upload', status, 'failed', `storing part ${part.n} of ${part.bytes} bytes failed: HTTP ${status}`)
+        if (status !== 200) throw new AttachmentsError('upload', status, 'failed', `storing part ${part.n} of ${part.bytes} bytes failed: HTTP ${status}${said ? ` (${said})` : ''}`)
         done.add(part.n)
         report.push(part.n)
       })().catch(error => { failure ??= error }).finally(() => { sending.delete(part.n); running.delete(sent); progress() })
@@ -315,12 +353,11 @@ async function putPart(endpoint: AttachmentsEndpoint, part: SignedPart, body: Bl
 }
 
 async function sendAttachmentRequest(endpoint: AttachmentsEndpoint, url: string, init: Parameters<AttachmentUploadTransport>[1],
-  size: number, onProgress?: (progress: AttachmentByteProgress) => void): Promise<{ status: number }> {
+  size: number, onProgress?: (progress: AttachmentByteProgress) => void): Promise<{ status: number; said?: string }> {
   const upload = endpoint.upload
   if (!upload) {
     const response = await (endpoint.fetch ?? egress.fetch)(url, init)
-    await response.body?.cancel()
-    return response
+    return { status: response.status, said: response.ok ? (await response.body?.cancel(), undefined) : await storeAnswer(url, response) }
   }
   return runAttachmentStage('upload', (signal, _capDeadline, advance) => upload(url, { ...init, signal }, progress => {
     advance(progress.loaded, progress.total || size)
@@ -385,7 +422,7 @@ async function sendAttachmentPlan(endpoint: AttachmentsEndpoint, form: Attachmen
   // size → upload_changed. Once finish has said the object is missing, a refusal is the store's own: said with its status.
   const exists = isDirectKey(form.staging_key) ? allowExisting && (posted.status === 409 || posted.status === 400) : (allowExisting || attempts.used > 1) && posted.status === 409
   if (posted.status !== 200 && posted.status !== 204 && !exists) {
-    throw new AttachmentsError('upload', posted.status, 'failed', `storing ${file.name} failed: HTTP ${posted.status}`)
+    throw new AttachmentsError('upload', posted.status, 'failed', `storing ${file.name} failed: HTTP ${posted.status}${posted.said ? ` (${posted.said})` : ''}`)
   }
 }
 
