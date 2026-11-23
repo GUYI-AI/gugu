@@ -24,28 +24,32 @@ export const SERVER_LOGIN_ACTION = REMOTE_TUNNEL_OPEN
  * 一个 frps:地址、端口、令牌。令牌随客户端发出去,等于公开值 —— 隔离靠 stcp 密钥与里面那层 SSH。
  * protocol = 'wss':frps 部署在反向代理后面(443),frpc 经 TLS + WebSocket
  * 连过去 —— 不另开端口、出网只要 443;缺席 = frp 自己的 TCP 端口。
+ * quicPort:中转给桌面访问端开的 QUIC(UDP)端口。有 = 桌面每台机器一条自己的 QUIC 会话(登录仍走上面那条);
+ * 缺席 = 每台机器一条自己的 wss 会话。两种都是「每台一条」:一台机器在传大文件、或它那条连接丢包,别的机器不跟着卡。
  */
-export type RelayEndpoint = { serverAddr: string; serverPort: number; token: string; protocol?: 'wss' }
+export type RelayEndpoint = { serverAddr: string; serverPort: number; token: string; protocol?: 'wss'; quicPort?: number }
 
 const RELAY_HOST = /^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$/
 const RELAY_TOKEN = /^[A-Za-z0-9._~-]{1,128}$/
 
 /**
- * `frp://<令牌>@<主机>:<端口>`(frp 自己的 TCP 端口)或 `frp+wss://<令牌>@<主机>[:<端口>]`(nginx 后面,端口缺省 443)
- * → RelayEndpoint。一库一中转(与一库一网关同一条规矩):构建时按库烘进去,开发时可由环境变量 GUGU_RELAY_URL 覆盖。
+ * `frp://<令牌>@<主机>:<端口>`(frp 自己的 TCP 端口)或 `frp+wss://<令牌>@<主机>[:<端口>]`(nginx 后面,端口缺省 443),
+ * 都可以再带 `?quic=<UDP 端口>`(中转为访问端开的 QUIC)→ RelayEndpoint。一库一中转(与一库一网关同一条规矩):构建时按库烘进去,开发时可由环境变量 GUGU_RELAY_URL 覆盖。
  * 看不懂 = null(❌ 猜一个默认中转)。纯函数。
  */
 export function parseRelayUrl(value: string | null | undefined): RelayEndpoint | null {
   const text = value?.trim()
   if (!text) return null
-  const match = text.match(/^frp(\+wss)?:\/\/([^@/]+)@([^:/]+)(?::(\d{1,5}))?\/?$/)
+  const match = text.match(/^frp(\+wss)?:\/\/([^@/]+)@([^:/?]+)(?::(\d{1,5}))?\/?(?:\?quic=(\d{1,5}))?$/)
   if (!match) return null
-  const [, wss, token, host, portText] = match
+  const [, wss, token, host, portText, quicText] = match
   // frp 自己的端口没有约定俗成的缺省,❌ 猜;wss 走 nginx 的 443。
   if (!portText && !wss) return null
   const port = portText ? Number(portText) : 443
   if (!RELAY_TOKEN.test(token) || !RELAY_HOST.test(host) || !Number.isInteger(port) || port <= 0 || port >= 65536) return null
-  return { serverAddr: host, serverPort: port, token, ...(wss ? { protocol: 'wss' as const } : {}) }
+  const quicPort = quicText === undefined ? undefined : Number(quicText)
+  if (quicPort !== undefined && (quicPort <= 0 || quicPort >= 65536)) return null
+  return { serverAddr: host, serverPort: port, token, ...(wss ? { protocol: 'wss' as const } : {}), ...(quicPort ? { quicPort } : {}) }
 }
 
 declare const __GUGU_RELAY_URL__: string | undefined
@@ -95,7 +99,10 @@ export function parseTunnelOpenResponse(value: unknown): TunnelOpenResponse | nu
   // protocol 只认缺席(老 server 的应答 = frp 自己的端口)与 'wss';别的值 = 这台电脑看不懂的连法,❌ 当成 TCP 去连。
   if (relay.protocol !== undefined && relay.protocol !== 'wss') return null
   const scheme = relay.protocol === 'wss' ? 'frp+wss' : 'frp'
-  const endpoint = parseRelayUrl(`${scheme}://${String(relay.token)}@${String(relay.serverAddr)}:${String(relay.serverPort)}`)
+  // quicPort 只认缺席(老 server)与整数端口;别的值 = 看不懂,整份不收。
+  if (relay.quicPort !== undefined && !Number.isInteger(relay.quicPort)) return null
+  const quic = relay.quicPort === undefined ? '' : `?quic=${String(relay.quicPort)}`
+  const endpoint = parseRelayUrl(`${scheme}://${String(relay.token)}@${String(relay.serverAddr)}:${String(relay.serverPort)}${quic}`)
   const hostKey = normalizeOpenSshPublicKey(v.hostKey)
   if (!endpoint || !hostKey) return null
   if (typeof relay.user !== 'string' || !NAME.test(relay.user)) return null

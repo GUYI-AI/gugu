@@ -48,6 +48,8 @@ export function directToolsUnavailableText(
       return translate('remoteWorkspace.tunnel.relayDown');
     case 'visitorFailed':
       return translate('remoteWorkspace.tunnel.visitorFailed');
+    case 'udpBlocked':
+      return translate('remoteWorkspace.tunnel.udpBlocked');
     case 'sshFailed':
       return translate('remoteWorkspace.tunnel.sshFailed');
     case 'local':

@@ -303,7 +303,8 @@ export function createTunnelMachines(deps: {
       })
       tunnel.frpc = frpc
       const up = await frpc.waitUp(VISITOR_UP_TIMEOUT_MS)
-      if (!up.ok) return fail(tunnel, 'visitorFailed', `${up.reason}: ${up.detail}`)
+      // 登录(TCP)通了、这台机器的 QUIC 会话连不上:这个网络挡了 UDP —— 照实说,❌ 悄悄换别的连法。
+      if (!up.ok) return fail(tunnel, up.reason === 'udpBlocked' ? 'udpBlocked' : 'visitorFailed', `${up.reason}: ${up.detail}`)
       if (!current(tunnel)) return teardown(tunnel)
 
       const target = tunnelSshTarget({

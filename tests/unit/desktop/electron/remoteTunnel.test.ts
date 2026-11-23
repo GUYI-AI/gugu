@@ -70,6 +70,24 @@ describe('中转坐标与 tunnel.open 的形状', () => {
     expect(parseTunnelOpenResponse({ ...answer, relay: { ...answer.relay, protocol: 'quic' } })).toBeNull()
   })
 
+  it('?quic=<UDP 端口>:中转给访问端开的 QUIC;看不懂的端口整个不收;应答里原样带给桌面,老 server 不带也照收', () => {
+    expect(parseRelayUrl('frp+wss://t@relay.example.test?quic=443')).toEqual({ serverAddr: 'relay.example.test', serverPort: 443, token: 't', protocol: 'wss', quicPort: 443 })
+    expect(parseRelayUrl('frp://t@h.example.com:30019/?quic=17311')).toEqual({ serverAddr: 'h.example.com', serverPort: 30019, token: 't', quicPort: 17311 })
+    for (const bad of ['frp+wss://t@h?quic=0', 'frp+wss://t@h?quic=70000', 'frp+wss://t@h?quic=', 'frp+wss://t@h?udp=443', 'frp+wss://t@h?quic=443&x=1']) {
+      expect(parseRelayUrl(bad)).toBeNull()
+    }
+    const answer = {
+      relay: { serverAddr: 'relay.example.test', serverPort: 443, token: 't', protocol: 'wss', quicPort: 443, user: 'u-1', serverName: 'ssh-dev-ab12', secretKey: 'Zm9vYmFyYmF6cXV4cXV1eA' }, // gitleaks:allow -- synthetic credential for redaction/protocol regression tests
+      hostKey: 'ssh-ed25519 AAAAC3Nza',
+      sshUser: 'gugu',
+    }
+    expect(parseTunnelOpenResponse(answer)?.relay.quicPort).toBe(443)
+    const { quicPort: _omitted, ...oldServer } = answer.relay
+    expect(parseTunnelOpenResponse({ ...answer, relay: oldServer })?.relay).not.toHaveProperty('quicPort')
+    expect(parseTunnelOpenResponse({ ...answer, relay: { ...answer.relay, quicPort: '443' } })).toBeNull()
+    expect(parseTunnelOpenResponse({ ...answer, relay: { ...answer.relay, quicPort: 0 } })).toBeNull()
+  })
+
   it('公钥只收 `类型 base64`,注释去掉;别的形状 = null', () => {
     expect(normalizeOpenSshPublicKey('ssh-ed25519 AAAAC3Nza  me@mac\n')).toBe('ssh-ed25519 AAAAC3Nza')
     expect(normalizeOpenSshPublicKey('ssh-dss AAAA')).toBeNull()
@@ -153,6 +171,21 @@ describe('frpc:配置、日志、进程', () => {
     expect(config).toContain('webServer.port = 7400')
     expect(config).toContain('webServer.password = "p\\"w"')
     expect(config.indexOf('webServer.port')).toBeLessThan(config.indexOf('[[visitors]]'))
+  })
+
+  it('访问端每台机器一条自己的会话;中转开了 QUIC 就走 QUIC;机器端(proxy)两样都不写', () => {
+    const relay = { serverAddr: 'relay.example.test', serverPort: 443, token: 't', protocol: 'wss' as const, quicPort: 443 }
+    const visitor = { kind: 'visitor' as const, name: 'v', serverUser: 'u-1', serverName: 'ssh-x', secretKey: 'k', bindPort: 5022 }
+    const quic = frpcConfig({ relay, user: 'u-1', entries: [visitor], dedicatedVisitorSessions: true })
+    expect(quic).toContain('transport.protocol = "wss"')
+    expect(quic).toContain('transport.visitorSession = "dedicated"')
+    expect(quic).toContain('transport.visitorSessionQuicPort = 443')
+    const { quicPort: _none, ...wssOnly } = relay
+    const wss = frpcConfig({ relay: wssOnly, user: 'u-1', entries: [visitor], dedicatedVisitorSessions: true })
+    expect(wss).toContain('transport.visitorSession = "dedicated"')
+    expect(wss).not.toContain('visitorSessionQuicPort')
+    const proxy = frpcConfig({ relay, user: 'u-1', entries: [{ kind: 'proxy', name: 'ssh-x', secretKey: 'k', localPort: 4022 }] })
+    expect(proxy).not.toContain('visitorSession')
   })
 
   it('wss 的中转:两份配置都写 transport.protocol = "wss"', () => {
@@ -280,7 +313,7 @@ describe('frpc visitor host: one process per relay, a visitor per machine', () =
     expect(started[0]!.stopped).toBe(true)
   })
 
-  it('state per visitor: its own `visitor added` / named lines; unnamed relay lines reach every visitor', async () => {
+  it('state per visitor: its own session lines / named lines; unnamed relay lines reach every visitor', async () => {
     const { started, visitors } = host()
     const states: Record<string, boolean[]> = { a: [], b: [] }
     const a = visitors.start({ binary: 'frpc', relay: RELAY, user: 'me', visitor: visitor('a', 5001), onState: (up) => states.a!.push(up) })
@@ -288,10 +321,10 @@ describe('frpc visitor host: one process per relay, a visitor per machine', () =
     await settle()
     const proc = started[0]!
     const waitA = a.waitUp(1_000)
-    proc.onLine('[I] [visitor/visitor_manager.go:186] [49e9] visitor added: [visit-a]')
+    proc.onLine('[I] [client/visitor_session.go:105] [49e9] [visit-a] open visitor session over wss to server success')
     await expect(waitA).resolves.toEqual({ ok: true })
     expect([a.isUp(), b.isUp()]).toEqual([true, false])
-    proc.onLine('[I] [visitor/visitor_manager.go:186] [49e9] visitor added: [visit-b]')
+    proc.onLine('[I] [client/visitor_session.go:105] [49e9] [visit-b] open visitor session over wss to server success')
     proc.onLine('[W] [visitor/visitor.go:146] [49e9] [visit-b] stcp internal listener closed')
     expect([a.isUp(), b.isUp()]).toEqual([true, false])
     // A visitor already removed from the set (its listener closing on reload) touches nobody.
@@ -302,10 +335,50 @@ describe('frpc visitor host: one process per relay, a visitor per machine', () =
     const rejected = b.waitUp(1_000)
     proc.onLine("[W] login to the server failed: token in login doesn't match token from configuration")
     await expect(rejected).resolves.toMatchObject({ ok: false, reason: 'rejected' })
-    proc.onLine('[I] [visitor/visitor_manager.go:186] [49e9] visitor added: [visit-a]')
+    proc.onLine('[I] [client/visitor_session.go:105] [49e9] [visit-a] open visitor session over wss to server success')
     proc.onExit()
     expect(states.a).toEqual([true, false, true, false])
     expect(states.b).toEqual([true, false])
+    a.stop()
+    b.stop()
+  })
+
+  it('the config asks for a dedicated session per visitor (QUIC when the relay has a QUIC port; that port is part of the relay identity)', async () => {
+    const { started, visitors } = host()
+    const quicRelay = { ...RELAY, protocol: 'wss' as const, quicPort: 443 }
+    visitors.start({ binary: 'frpc', relay: quicRelay, user: 'me', visitor: visitor('a', 5001) })
+    visitors.start({ binary: 'frpc', relay: { ...quicRelay, quicPort: 17311 }, user: 'me', visitor: visitor('b', 5002) })
+    await settle()
+    expect(started).toHaveLength(2)
+    expect(started[0]!.config).toContain('transport.visitorSession = "dedicated"')
+    expect(started[0]!.config).toContain('transport.visitorSessionQuicPort = 443')
+    expect(started[1]!.config).toContain('transport.visitorSessionQuicPort = 17311')
+  })
+
+  it('a QUIC session that cannot reach the relay while login did: that visitor fails as udpBlocked, the others stay up', async () => {
+    const { started, visitors } = host()
+    const quicRelay = { ...RELAY, protocol: 'wss' as const, quicPort: 443 }
+    const a = visitors.start({ binary: 'frpc', relay: quicRelay, user: 'me', visitor: visitor('a', 5001) })
+    const b = visitors.start({ binary: 'frpc', relay: quicRelay, user: 'me', visitor: visitor('b', 5002) })
+    await settle()
+    const proc = started[0]!
+    proc.onLine('[I] [client/service.go:355] [49e9] login to server success, get run id [49e9]')
+    proc.onLine('[I] [client/visitor_session.go:105] [49e9] [visit-a] open visitor session over quic to server success')
+    const waitB = b.waitUp(1_000)
+    // frpc's own line (patched 0.71.1, measured with UDP blocked): QUIC handshake gives up after 5 s
+    proc.onLine('[W] [client/visitor_session.go:89] [49e9] [visit-b] open visitor session over quic to server error: timeout: no recent network activity')
+    await expect(waitB).resolves.toEqual({
+      ok: false, reason: 'udpBlocked',
+      detail: '[W] [client/visitor_session.go:89] [49e9] [visit-b] open visitor session over quic to server error: timeout: no recent network activity',
+    })
+    expect([a.isUp(), b.isUp()]).toEqual([true, false])
+    // the network lets UDP through again: the next session that opens clears it
+    proc.onLine('[I] [client/visitor_session.go:105] [49e9] [visit-b] open visitor session over quic to server success')
+    await expect(b.waitUp(1_000)).resolves.toEqual({ ok: true })
+    // a wss session that fails is the relay being unreachable, not UDP
+    proc.onLine('[W] [client/visitor_session.go:89] [49e9] [visit-a] open visitor session over wss to server error: dial tcp: i/o timeout')
+    expect(a.isUp()).toBe(false)
+    await expect(a.waitUp(50)).resolves.toMatchObject({ ok: false, reason: 'timeout' })
     a.stop()
     b.stop()
   })

@@ -32,6 +32,8 @@ export function frpcConfig(input: {
   user: string
   entries: ReadonlyArray<FrpcProxy | FrpcVisitor>
   admin?: { port: number; password: string }
+  /** 访问端:每个 visitor 一条自己的会话(见 createFrpcVisitorHost)。 */
+  dedicatedVisitorSessions?: boolean
 }): string {
   const lines = [
     `serverAddr = ${tomlString(input.relay.serverAddr)}`,
@@ -40,6 +42,11 @@ export function frpcConfig(input: {
     `auth.token = ${tomlString(input.relay.token)}`,
     // frps 在反向代理后面(443):TLS + WebSocket,出网只要 443(见 core/cloud/remoteTunnel.ts)。
     ...(input.relay.protocol === 'wss' ? ['transport.protocol = "wss"'] : []),
+    // 补过补丁的 frpc(scripts/frpc-release.json)才认这两项;原版 frpc 见到就拒载 —— 装错了二进制是大声失败,
+    // ❌ 悄悄退回「所有机器挤一条连接」。
+    ...(input.dedicatedVisitorSessions
+      ? ['transport.visitorSession = "dedicated"', ...(input.relay.quicPort ? [`transport.visitorSessionQuicPort = ${input.relay.quicPort}`] : [])]
+      : []),
     'loginFailExit = false',
     'log.to = "console"',
     'log.level = "info"',
@@ -156,7 +163,7 @@ export type FrpcRunner = {
   /** 此刻挂着没有。 */
   isUp(): boolean
   /** 等它挂上(或等到超时 / 被拒 / 被收掉)。 */
-  waitUp(timeoutMs: number): Promise<{ ok: true } | { ok: false; reason: 'timeout' | 'rejected' | 'stopped' | 'spawn'; detail: string }>
+  waitUp(timeoutMs: number): Promise<{ ok: true } | { ok: false; reason: 'timeout' | 'rejected' | 'stopped' | 'spawn' | 'udpBlocked'; detail: string }>
   stop(): void
 }
 
@@ -315,8 +322,14 @@ export function startFrpc(input: {
  * machine, instead of one process per machine (~8–10 MB resident each on macOS; six remote machines were six frpc).
  * Adding or removing a machine rewrites the config and hot-reloads it through frpc's loopback admin port
  * (`frpc reload`): visitors that stay keep their connections (frpc 0.71.1, measured).
- * A visitor's state comes from the lines that name it: `visitor added: [name]` = up; a down / rejected line
- * carrying `[name]` is that visitor's; one with no visitor name (the relay connection) is every visitor's.
+ * Each visitor dials its own session to the relay (`transport.visitorSession = "dedicated"`): one process, but a
+ * machine moving a big file, or losing packets on its connection, does not stall the other machines' terminals —
+ * all visitors on one session did exactly that (1 % loss: other machines' p50 151 → 1493 ms).
+ * With the relay's `quicPort` those sessions are QUIC; login stays on the relay's own transport.
+ * A visitor's state comes from the lines that name it: `[name] open visitor session … success` = up;
+ * `[name] open visitor session over quic … error` = this network blocks UDP (login over TCP got through), reported
+ * as such; a down / rejected line carrying `[name]` is that visitor's; one with no visitor name (the relay connection)
+ * is every visitor's.
  */
 export type FrpcVisitorHost = {
   start(input: {
@@ -334,6 +347,8 @@ type HostedVisitor = {
   stopped: boolean
   rejected: string | null
   failure: string | null
+  /** Its QUIC session could not reach the relay while login (TCP) did: the frpc line that said so. */
+  udpBlocked: string | null
   onState?: (up: boolean) => void
   waiters: Set<() => void>
 }
@@ -351,7 +366,8 @@ type VisitorGroup = {
 }
 
 const VISITOR_NAME = /\[(visit-[^\]]+)\]/
-const VISITOR_ADDED = /visitor added: \[([^\]]+)\]/
+const SESSION_OPENED = /\[(visit-[^\]]+)\] open visitor session over \S+ to server success/
+const SESSION_FAILED = /\[(visit-[^\]]+)\] open visitor session over (\S+) to server error/
 const RELOAD_TIMEOUT_MS = 15_000
 
 function runReload(binary: string, configFile: string): Promise<{ ok: true } | { ok: false; detail: string }> {
@@ -389,10 +405,24 @@ export function createFrpcVisitorHost(deps: {
   }
 
   const onLine = (group: VisitorGroup, line: string) => {
-    const added = VISITOR_ADDED.exec(line)
-    if (added) {
-      const visitor = group.visitors.get(added[1]!)
-      if (visitor) setUp(visitor, true)
+    const opened = SESSION_OPENED.exec(line)
+    if (opened) {
+      const visitor = group.visitors.get(opened[1]!)
+      if (visitor) {
+        visitor.udpBlocked = null
+        setUp(visitor, true)
+      }
+      return
+    }
+    const failed = SESSION_FAILED.exec(line)
+    if (failed) {
+      const visitor = group.visitors.get(failed[1]!)
+      if (!visitor) return
+      if (failed[2] === 'quic') {
+        visitor.udpBlocked = line.trim()
+        wake(visitor)
+      }
+      setUp(visitor, false)
       return
     }
     const event = classifyFrpcLine(line)
@@ -432,7 +462,10 @@ export function createFrpcVisitorHost(deps: {
       return
     }
     group.admin ??= { port: await deps.freePort(), password: crypto.randomBytes(18).toString('base64url') }
-    const config = frpcConfig({ relay: group.relay, user: group.user, entries: [...group.visitors.values()].map((v) => v.entry), admin: group.admin })
+    const config = frpcConfig({
+      relay: group.relay, user: group.user, entries: [...group.visitors.values()].map((v) => v.entry), admin: group.admin,
+      dedicatedVisitorSessions: true,
+    })
     if (!group.runner) return startProcess(group, config)
     fs.writeFileSync(group.configFile, config, { mode: 0o600 })
     const reloaded = await (deps.reload ?? runReload)(group.binary, group.configFile)
@@ -452,7 +485,7 @@ export function createFrpcVisitorHost(deps: {
 
   return {
     start(input) {
-      const key = JSON.stringify([input.binary, input.relay.serverAddr, input.relay.serverPort, input.relay.token, input.relay.protocol ?? 'tcp', input.user])
+      const key = JSON.stringify([input.binary, input.relay.serverAddr, input.relay.serverPort, input.relay.token, input.relay.protocol ?? 'tcp', input.relay.quicPort ?? 0, input.user])
       let group = groups.get(key)
       if (!group) {
         const id = crypto.createHash('sha256').update(key).digest('hex').slice(0, 16)
@@ -467,7 +500,7 @@ export function createFrpcVisitorHost(deps: {
       owner.visitors.get(input.visitor.name)?.waiters.forEach((waiter) => waiter())
       const visitor: HostedVisitor = {
         entry: { kind: 'visitor', ...input.visitor },
-        up: false, stopped: false, rejected: null, failure: null, onState: input.onState, waiters: new Set(),
+        up: false, stopped: false, rejected: null, failure: null, udpBlocked: null, onState: input.onState, waiters: new Set(),
       }
       owner.visitors.set(input.visitor.name, visitor)
       schedule(owner)
@@ -480,6 +513,7 @@ export function createFrpcVisitorHost(deps: {
               if (visitor.stopped) return { ok: false, reason: 'stopped', detail: 'stopped' }
               if (visitor.rejected) return { ok: false, reason: 'rejected', detail: visitor.rejected }
               if (visitor.failure) return { ok: false, reason: 'spawn', detail: visitor.failure }
+              if (visitor.udpBlocked) return { ok: false, reason: 'udpBlocked', detail: visitor.udpBlocked }
               return null
             }
             const timer = setTimeout(() => finish({ ok: false, reason: 'timeout', detail: 'visitor did not come up' }), timeoutMs)

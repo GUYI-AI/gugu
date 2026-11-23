@@ -20,10 +20,10 @@ export type TunnelWant = { deviceId: string; label: string }
 /**
  * 连不上的原因(界面照实说):
  *  unsupported = 那台机器的咕咕 server 太旧 / 没起远程隧道;relayDown = 那台机器连不上中转;
- *  visitorFailed = 这台电脑连不上中转;sshFailed = 中转通了、SSH 进不去;local = 这台电脑缺东西;
- *  unreachable = 经咕咕云问不到它。
+ *  visitorFailed = 这台电脑连不上中转;udpBlocked = 这台电脑登得上中转(TCP),但到中转的 QUIC(UDP)被这个网络挡了;
+ *  sshFailed = 中转通了、SSH 进不去;local = 这台电脑缺东西;unreachable = 经咕咕云问不到它。
  */
-export type TunnelProblem = 'unsupported' | 'relayDown' | 'visitorFailed' | 'sshFailed' | 'local' | 'unreachable'
+export type TunnelProblem = 'unsupported' | 'relayDown' | 'visitorFailed' | 'udpBlocked' | 'sshFailed' | 'local' | 'unreachable'
 
 export type TunnelState = { ready: string[]; problems: Record<string, TunnelProblem> }
 
