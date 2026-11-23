@@ -14,15 +14,15 @@ import { SessionRecordForkDivergedError, SessionRecordNotFoundError } from './sh
 
 // 记下每份记录被「整份读」了几次：打开时间线串分叉链时，无关的记录不许被整份读进来。
 const wholeReads = vi.hoisted(() => new Map<string, number>());
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>();
+vi.mock('@gugu/core/local/agent/transcriptInventory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@gugu/core/local/agent/transcriptInventory')>();
   return {
     ...actual,
-    readFile: (async (...args: Parameters<typeof actual.readFile>) => {
+    readAllLines: ((...args: Parameters<typeof actual.readAllLines>) => {
       const key = String(args[0]);
       wholeReads.set(key, (wholeReads.get(key) ?? 0) + 1);
-      return actual.readFile(...args);
-    }) as typeof actual.readFile
+      return actual.readAllLines(...args);
+    }) as typeof actual.readAllLines
   };
 });
 import {
@@ -332,8 +332,10 @@ describe('claude jsonl 记录源', () => {
     await utimes(forkPath, later, later);
 
     const forkSource = createClaudeJsonlSource({ harness: 'claude', providerSessionId: SESSION_ID, roots: [root] });
+    wholeReads.clear();
     const entries = await start(forkSource);
     await forkSource.catchUp!();
+    expect(wholeReads.get(forkPath)).toBe(1);
     const consumed = (await stat(file)).size + (await stat(forkPath)).size;
     const budget = { remainingBytes: consumed };
     expect(await forkSource.resumePoint!(budget)).not.toBeNull();

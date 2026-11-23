@@ -20,7 +20,8 @@
 //  · 平台路(本地压缩)—— 明文摘要,在 `compacted.message`(替换历史里同样一条)⇒ 带过去;
 //  · 用户自己的 OpenAI(远端压缩)—— 只有一个加密的 `compaction` 条目,别的账号解不开 ⇒ 带不过去。
 // 带不过去时 ❌ 静默丢:返回 `sealedSummaryDropped`,调用方告诉 agent 也告诉人。
-import { readFileSync } from 'node:fs'
+import { createReadStream } from 'node:fs'
+import { readJsonlLines } from '../../../../packages/core/src/local/jsonl.mjs'
 
 /**
  * @param {(method: string, params: unknown) => Promise<any>} rpc 这台 app-server 的请求(失败即抛)
@@ -62,7 +63,7 @@ export const ROUTE_SWITCH_SUMMARY_NOTICE = 'Switched billing route. Earlier cont
 
 /** 一份对话:每条带着它在 rollout 里的条目 id(压缩时按它认「之前那几条」),交出去之前才去掉。 */
 async function historyFromRollout(rpc, path, limit) {
-  const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean).slice(0, limit).map((line) => JSON.parse(line))
+  const lines = await readRollout(path, limit)
   const meta = lines[0]?.type === 'session_meta' ? lines[0].payload : {}
   const inherited = meta.forked_from_id
     ? await historyFromRollout(
@@ -96,4 +97,16 @@ function conversationEntry(payload) {
   const { id, ...item } = payload
   if (item.encrypted_content || item.role === 'developer' || item.type === 'additional_tools') return null
   return { id: id ?? null, item }
+}
+
+/** 逐行读 rollout 的前 `limit` 条：rollout 可以超过 V8 单个字符串的上限（约 512 MiB），不整份读成一个字符串。 */
+async function readRollout(path, limit) {
+  const lines = []
+  if (limit <= 0) return lines
+  for await (const line of readJsonlLines(createReadStream(path))) {
+    if (!line) continue
+    lines.push(JSON.parse(line))
+    if (lines.length >= limit) break
+  }
+  return lines
 }

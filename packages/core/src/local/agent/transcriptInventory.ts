@@ -108,9 +108,9 @@ export async function readFirstLines(
 
 /**
  * The whole file, line by line, in positional 1 MiB blocks. A transcript can outgrow V8's maximum string length
- * (~512 MiB), so it is never decoded as one string.
+ * (~512 MiB), so it is never decoded as one string. `read.bytes` counts the bytes consumed so far.
  */
-async function* readAllLines(path: string, signal?: AbortSignal): AsyncGenerator<string> {
+export async function* readAllLines(path: string, signal?: AbortSignal, read = { bytes: 0 }): AsyncGenerator<string> {
   const buffer = Buffer.alloc(1024 * 1024)
   const frames = new JsonlFramer()
   const handle = await open(path, 'r')
@@ -120,6 +120,7 @@ async function* readAllLines(path: string, signal?: AbortSignal): AsyncGenerator
     while ((bytesRead = (await handle.read(buffer, 0, buffer.length, position)).bytesRead) > 0) {
       signal?.throwIfAborted()
       position += bytesRead
+      read.bytes = position
       yield* frames.write(buffer.subarray(0, bytesRead))
     }
     yield* frames.end()
