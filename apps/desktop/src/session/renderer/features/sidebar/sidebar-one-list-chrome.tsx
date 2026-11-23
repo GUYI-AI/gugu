@@ -103,7 +103,8 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
             had no trigger to give focus back to. The tooltip closes on the press by itself. */}
         <Hint label={menuLabel} side={collapsed ? 'right' : 'bottom'}>
           <DropdownMenu.Trigger
-            className="gg-icon-btn gg-ghost window-no-drag-region"
+            // Design v16: 28 (radius 8) on the rail, 34 (radius 10) beside 创建智能体.
+            className={cn('gg-icon-btn gg-ghost window-no-drag-region', collapsed ? '!size-7 !rounded-lg' : '!size-[34px] !rounded-[10px]')}
             data-size="md"
             data-on={menuOpen || undefined}
             aria-label={menuLabel}
@@ -166,7 +167,7 @@ function SidebarFoldButton() {
   const foldLabel = translate(isLeftOpen ? 'sidebar.collapseSidebar' : 'sidebar.expandSidebar');
   return (
     <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side={isLeftOpen ? 'bottom' : 'right'}>
-      <IconButton size="md" tone="strong" className="window-no-drag-region" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
+      <IconButton size="md" tone="strong" className="window-no-drag-region !h-[26px] !w-[30px] !rounded-[7px]" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
         {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}
       </IconButton>
     </Hint>
@@ -335,6 +336,7 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot() {
             <IconButton
               size="md"
               tone="strong"
+              className="!size-7"
               aria-label={scheduledLabel}
               aria-current={scheduledShown ? 'page' : undefined}
               on={scheduledShown}
@@ -349,6 +351,7 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot() {
             <IconButton
               size="md"
               tone="strong"
+              className="!size-7"
               aria-label={historyLabel}
               aria-pressed={historyShown}
               on={historyShown}
