@@ -13,7 +13,7 @@ import { sessionRegistry } from '../stores/session-registry';
 import { acpChatResources } from './acp-chat-resources';
 import { confirmCloseSessionTab } from '../close-session-tab-flow';
 import { AcpChatTabResource } from './acp-chat-tab-resource';
-import { LazySessionConversationCard } from '../session-conversation-card-lazy';
+import { LazySessionConversationCard, LazySessionTabAvatar } from '../session-conversation-card-lazy';
 import { useSessionTabCommands } from '../view/session-actions';
 
 export interface AcpChatState {
@@ -69,6 +69,7 @@ export const AcpChatTabBarItem = observer(function AcpChatTabBarItem({
       renameOnDoubleClick={!!session && !store.isTransient}
       renameValue={rawTitle}
       renameMaxLength={MAX_SESSION_TITLE_LENGTH}
+      conversationMark={<LazySessionTabAvatar sessionId={store.sessionId} size={16} />}
       card={sessionCommands.length > 0 ? (close) => <LazySessionConversationCard page={ctx as SessionTabContext} surface="acp" live={{ model: store.model, effort: store.effort }} sessionId={store.sessionId} commands={sessionCommands} onClose={close} /> : undefined}
     />
   );

@@ -1,4 +1,4 @@
-import { useContext, useMemo } from 'react';
+import { useContext, useEffect, useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { Maximize2 } from '@/lib/icons';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
@@ -8,6 +8,7 @@ import { remoteHostsStore } from '../remote-hosts/remote-hosts-store';
 import { desktopLiveWindowTransport } from './desktop-transport';
 import { useLiveWindowConversation } from './use-live-window-conversation';
 import { useLiveWindowLabels } from './desktop-labels';
+import type { LiveWindowConversation } from './conversation';
 import { DetailsGroupTitle } from '@/components/details/DetailsParts';
 
 /**
@@ -37,13 +38,8 @@ const BoundCard = observer(function BoundCard({ projectId, sessionId, agentId }:
     <button type="button" data-testid="details-computer-card" data-kind={source.kind} title={t('tab')}
       onClick={() => live.dispatch({ type: 'toggle-window' })}
       className="mx-auto mb-[22px] block w-[260px] overflow-hidden rounded-[14px] bg-[var(--card)] text-left shadow-[0_0_0_1px_var(--border),var(--shadow-lift)]">
-      <span aria-hidden className="relative block h-[146px] bg-[var(--muted)] px-3 pt-2.5">
-        <span className="absolute inset-x-3 top-2.5 bottom-0 rounded-t-[7px] bg-[var(--bg)] shadow-[0_0_0_.5px_var(--border-strong)]">
-          <span className="flex h-4 items-center gap-[3px] border-b border-[var(--border)] px-1.5">
-            <span className="ms-1.5 h-[9px] flex-1 truncate rounded-[5px] bg-[var(--muted)] ps-[5px] text-[7px] leading-[9px] text-[var(--faint-fg)]">{source.title}</span>
-          </span>
-          {[55, 82, 74, 66, 78].map((width, index) => <span key={index} className="mx-2.5 mt-[7px] block h-1.5 rounded-[3px] bg-[var(--muted)]" style={{ width: `${width}%` }} />)}
-        </span>
+      <span aria-hidden className="relative block h-[146px] overflow-hidden bg-[var(--muted)]">
+        <LiveFrameMirror conversation={live.conversation} sourceId={source.id} />
       </span>
       <span className="flex items-center gap-2 px-3 py-2.5 text-[13px]">
         <span className={`size-[7px] shrink-0 rounded-full ${live.connected ? 'bg-[var(--green)]' : 'bg-[var(--faint-fg)]'}`} />
@@ -54,3 +50,25 @@ const BoundCard = observer(function BoundCard({ projectId, sessionId, agentId }:
     </>
   );
 });
+
+/**
+ * The source's real picture, as the chat's small live window shows it (img55): the projection paints each frame into one
+ * <img> inside the conversation's picture element; this reads that <img>'s current frame — ❌ moving the element (the
+ * small window would go blank) or opening a second projection of the same source.
+ */
+function LiveFrameMirror({ conversation, sourceId }: { conversation: LiveWindowConversation; sourceId: string }) {
+  const [frame, setFrame] = useState<string | null>(null);
+  const picture = conversation.picture(sourceId);
+  useEffect(() => {
+    if (!picture) return;
+    const read = () => {
+      const images = picture.querySelectorAll('img');
+      setFrame(images[images.length - 1]?.getAttribute('src') || null);
+    };
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(picture, { subtree: true, childList: true, attributes: true, attributeFilter: ['src'] });
+    return () => observer.disconnect();
+  }, [picture]);
+  return frame ? <img alt="" draggable={false} src={frame} className="block h-full w-full object-cover object-top" /> : null;
+}
