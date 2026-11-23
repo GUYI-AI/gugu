@@ -64,8 +64,8 @@ export const AutomationDeviceGroup = observer(function AutomationDeviceGroup({
   const DeviceIcon = kind === 'cloudComputer' ? Cloud : kind === 'server' ? Server : Monitor;
   const query = search.trim().toLowerCase();
   const matches = data?.filter((automation) => automation.name.toLowerCase().includes(query));
-  const enabled = matches?.filter((automation) => automation.enabled) ?? [];
-  const inactive = matches?.filter((automation) => !automation.enabled) ?? [];
+  const enabled = matches?.filter((automation) => automation.enabled);
+  const inactive = matches?.filter((automation) => !automation.enabled);
   const liveAutomation = params.automationId && params.automationDeviceId === deviceId
     ? data?.find((automation) => automation.id === params.automationId) ?? null
     : null;
@@ -127,7 +127,7 @@ export const AutomationDeviceGroup = observer(function AutomationDeviceGroup({
           </span>
           <span className="min-w-0 flex-1 truncate">{label}</span>
           {status && (
-            <span className="flex shrink-0 items-center gap-1.5 text-xs font-normal text-foreground-muted">
+            <span className="flex shrink-0 items-center gap-2 text-xs font-normal text-foreground-muted">
               <span aria-hidden="true" className="size-1.5 rounded-full bg-foreground-passive" />
               {status}
               {data !== null && <span className="sr-only">{translate('deviceScope.readOnlyCache')}</span>}
@@ -155,15 +155,15 @@ export const AutomationDeviceGroup = observer(function AutomationDeviceGroup({
             </p>
           )
         )}
-        {enabled.length > 0 && (
+        {enabled && enabled.length > 0 && (
           <AutomationsList automations={enabled} readOnly={readOnly} onEdit={openDetails} onToggleEnabled={handleToggleEnabled} />
         )}
-        {inactive.length > 0 && (
+        {inactive && inactive.length > 0 && (
           <>
             <h3 className="mx-3 mt-2 border-t border-border pt-2">
               <button
                 type="button"
-                className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-sm font-medium text-foreground-muted hover:bg-row-hover focus-visible:bg-row-hover aria-expanded:bg-background-secondary"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-medium text-foreground-muted hover:bg-row-hover focus-visible:bg-row-hover aria-expanded:bg-background-secondary"
                 aria-expanded={inactiveExpanded}
                 aria-controls={inactiveId}
                 onClick={() => setInactiveExpanded(!inactiveExpanded)}
@@ -172,7 +172,7 @@ export const AutomationDeviceGroup = observer(function AutomationDeviceGroup({
                   <Power aria-hidden="true" className="size-3.5" />
                 </span>
                 <span className="min-w-0 flex-1">{translate('automations.inactiveGroup')}</span>
-                <span className="rounded-md bg-background-tertiary px-1.5 py-0.5 text-xs tabular-nums">
+                <span className="rounded-md bg-background-tertiary px-2 text-xs tabular-nums">
                   {inactive.length.toLocaleString()}
                 </span>
                 <InactiveChevron aria-hidden="true" className="size-4 shrink-0" />
