@@ -6,9 +6,9 @@ export type MachineChunk = { size: number; etag: string; bytes: Uint8Array };
 
 /**
  * @@@machine-file-reader - the window's one way to read a file of a workspace on another machine, whoever reads it (the
- * file view, a dropped file, voice notes, the assistant's move). On a machine a device link reaches, a read from the start
- * anchors its version with a `readChunk` of no bytes (routed to that machine: one round trip), and every byte comes from
- * one stream over the link (`workspace.files.readStreamed`, main's `@@@machine-file-stream`).
+ * file view, a dropped file, voice notes, the assistant's move). On a machine a device link reaches, every byte comes from
+ * one stream over the link (`workspace.files.readStreamed`, main's `@@@machine-file-stream`): a read from the start names
+ * no version, and the version the machine streams comes back with its first bytes; later ranges name it.
  *
  * Whether the machine streams is main's answer, from its mapping, once per reader (`streamsFrom`): false = no device link
  * reaches it (only its cloud channel, or this window's host has no links), and every read stays a `readChunk`
@@ -30,18 +30,13 @@ export function machineFileReader(deviceId: string | null, projectId: string, wo
         linked = answer.data;
       }
       if (linked && deviceId && there) {
-        // A read from the start anchors its version with no bytes (one round trip through the channel); every byte comes
-        // from the stream, the first ones included.
-        let version = offset === 0 ? undefined : versions.get(path);
-        if (!version) {
-          const anchor = await readChunk(path, 0, 0);
-          version = { size: anchor.size, etag: anchor.etag };
-          versions.set(path, version);
-        }
+        const version = offset === 0 ? undefined : versions.get(path);
         const result = await rpc.workspace.files.readStreamed(deviceId, there.projectId, there.workspaceId, { path, offset, length, ...version });
         if (!result.success) throw new Error(result.error.type === 'content_changed' ? 'The file changed while it was read' : result.error.message);
         if (!result.data.linked) throw new Error('The connection to this machine was lost while the file was read');
-        return { ...version, bytes: base64ToBytes(result.data.data) };
+        const { size, etag } = result.data;
+        if (offset === 0) versions.set(path, { size, etag });
+        return { size, etag, bytes: base64ToBytes(result.data.data) };
       }
       const chunk = await readChunk(path, offset, length);
       if (offset === 0) versions.set(path, { size: chunk.size, etag: chunk.etag });

@@ -402,7 +402,8 @@ export async function readAppFile(page: DesktopFilePage, args: { ref?: unknown; 
  * @@@working-copy-stream - a piece of a working copy's file on another of this account's machines that a device link
  * reaches: read from one stream of that file (`@@@machine-file-stream`) instead of one call per piece. The pieces a
  * reader asks for come front to back (whole-file reads, `f.read` in order); one that jumps starts the stream again there,
- * of the same version. The version is anchored by `filesRead` of no bytes, the same call and gate the pieces had.
+ * of the same version. A new read still asks `filesRead` of no bytes first: that call carries the App's gate on its machine
+ * (manifest, working as an agent), which the stream itself does not repeat; its version pins the stream.
  * null = a machine no device link reaches (or a server below 19): the caller reads its pieces the way its channel goes.
  * A linked machine never comes back null for how its link is doing: a link that will not open, or a stream that cannot
  * go on, fails the read loudly (the stream itself resumes over the link first, `openLinkStream`).
@@ -432,16 +433,15 @@ async function streamedPiece(page: DesktopFilePage, ref: WorkspaceFileRef, offse
     version = { size: value.size, etag: value.etag };
   }
   if (offset >= version.size) return { size: version.size, etag: version.etag, offset, data: '' };
-  const { etag } = version;
   const handed = handedOf(page);
-  let bytes: Uint8Array;
+  let range: Awaited<ReturnType<typeof streamedRange>>;
   try {
-    bytes = await streamedRange(key, deviceId, version, (at, stream) => ({ ref, offset: at, etag, stream, ...(handed ? { handed } : {}) }), offset, length);
+    range = await streamedRange(key, deviceId, version, (at, stream, etag) => ({ ref, offset: at, stream, ...(etag ? { etag } : {}), ...(handed ? { handed } : {}) }), offset, length);
   } catch (error) {
     if (changedOnItsMachine(error)) throw new AppFileError('content-changed', `${pathOfRef(ref)} changed on its computer while it was read`);
     throw error;
   }
-  return { size: version.size, etag, offset, data: Buffer.from(bytes).toString('base64') };
+  return { size: range.size, etag: range.etag, offset, data: Buffer.from(range.bytes).toString('base64') };
 }
 
 /** A piece of a working copy's file, on the machine it is on. */

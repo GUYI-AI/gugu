@@ -43,20 +43,20 @@ export function createProjectFileReader(deps: HeldFileDeps) {
   }
 }
 
-type StreamRequest = { ref: FileRef; offset: number; etag: string; stream: string }
+type StreamRequest = { ref: FileRef; offset: number; etag?: string; stream: string }
 
 /**
  * `file.stream`: a held version's bytes from `offset` to its end, raw, as fast as the line takes them (a device link's `D`
- * frames, `DeviceLinkStream`). Anchored to the etag its reader got from `file.read`: a file changed before or while it streams
- * is refused, never sent mixed. The reader verifies the whole file's sha as it does for parts.
+ * frames, `DeviceLinkStream`). The version on disk is said before the bytes (`head`); one that is not the held size, or not
+ * the `etag` a resuming reader names, or that changes while it streams, is refused, never sent mixed. The reader verifies
+ * the whole file's sha as it does for parts.
  */
 export function createProjectFileStreamer(deps: HeldFileDeps) {
-  return async (payload: unknown, context: { userId: string; write(offset: number, bytes: Uint8Array): Promise<void>; signal: AbortSignal }) => {
+  return async (payload: unknown, context: { userId: string; head(version: { size: number; etag: string }): void; write(offset: number, bytes: Uint8Array): Promise<void>; signal: AbortSignal }) => {
     const request = payload as StreamRequest
-    if (!request || Object.keys(request).some(key => !['ref', 'offset', 'etag', 'stream'].includes(key)) || typeof request.etag !== 'string') throw new Error('Invalid file stream request')
+    if (!request || Object.keys(request).some(key => !['ref', 'offset', 'etag', 'stream'].includes(key)) || (request.etag !== undefined && typeof request.etag !== 'string')) throw new Error('Invalid file stream request')
     const { revision, root, stillBound } = await heldVersion(deps, request.ref, context.userId)
-    await streamFileRange(await inWorkspace(root, revision.relative_path!, true), { size: revision.size_bytes, etag: request.etag }, request.offset, context, stillBound)
-    return { size: revision.size_bytes, etag: request.etag }
+    return streamFileRange(await inWorkspace(root, revision.relative_path!, true), { size: revision.size_bytes, etag: request.etag }, request.offset, context, stillBound)
   }
 }
 

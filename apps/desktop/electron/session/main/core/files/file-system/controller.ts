@@ -193,7 +193,7 @@ export const workspaceFileSystemController = createRPCController({
     }
   },
 
-  readStreamed: async (deviceId: string, projectId: string, workspaceId: string, request: { path: string; offset: number; length: number; size: number; etag: string }) => {
+  readStreamed: async (deviceId: string, projectId: string, workspaceId: string, request: { path: string; offset: number; length: number; size?: number; etag?: string }) => {
     try {
       const range = await workspaceFileRange(deviceId, { projectId, workspaceId }, request);
       return ok(range ? { linked: true as const, ...range } : { linked: false as const });
