@@ -5,7 +5,7 @@ vi.mock('./workspace-backend', () => ({ workspaceRpc: () => ({ files: { readChun
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { workspace: { files: { readStreamed: h.readStreamed, streamsFrom: h.streamsFrom } } } }));
 vi.mock('@renderer/lib/machine-routing', () => ({ machineCodec: () => ({ outbound: (ids: { projectId: string; workspaceId: string }) => ({ projectId: `there-${ids.projectId}`, workspaceId: ids.workspaceId }) }) }));
 
-import { readWorkspaceBytes } from './read-workspace-bytes';
+import { beginWorkspaceRead, readWorkspaceBytes } from './read-workspace-bytes';
 
 const chunk = (size: number, bytes: number) => ({ success: true, data: { size, etag: 'e', data: Buffer.alloc(bytes, 1).toString('base64') } });
 beforeEach(() => { h.readChunk.mockReset(); h.readStreamed.mockReset(); h.streamsFrom.mockReset(); h.streamsFrom.mockResolvedValue({ success: true, data: true }); h.machine = { kind: 'local' }; });
@@ -50,7 +50,7 @@ it('fails, rather than joining two versions, when the file changes size while it
 
 it('takes a first chunk already asked, and asks only the rest', async () => {
   h.readChunk.mockResolvedValueOnce(chunk(700 * 1024, 188 * 1024));
-  const begun = Promise.resolve({ size: 700 * 1024, etag: 'e', bytes: new Uint8Array(512 * 1024), ms: 100 });
+  const begun = { reader: null, first: Promise.resolve({ size: 700 * 1024, etag: 'e', bytes: new Uint8Array(512 * 1024), ms: 100 }) };
   const parts = await readWorkspaceBytes('p', 'w', 'a.png', Infinity, begun);
   expect(new Blob(parts).size).toBe(700 * 1024);
   expect(h.readChunk.mock.calls.map((call) => (call[2] as { offset: number }).offset)).toEqual([512 * 1024]);
@@ -85,4 +85,20 @@ it('a stream that fails fails the read; it does not go on in chunks', async () =
   h.readStreamed.mockResolvedValue({ success: false, error: { type: 'internal_error', message: 'The SSH connection to this machine is not available (unreachable)' } });
   await expect(readWorkspaceBytes('p', 'w', 'a.pdf')).rejects.toThrow(/unreachable/);
   expect(h.readChunk).toHaveBeenCalledOnce();
+});
+
+it('a read begun on a linked machine goes on with the same reader: one anchor, one stream, and requests that name only the version', async () => {
+  const size = 3 * 512 * 1024;
+  h.machine = { kind: 'remote', deviceId: 'dev-b' };
+  h.readChunk.mockResolvedValueOnce(chunk(size, 0));
+  h.readStreamed.mockImplementation(async (_d: string, _p: string, _w: string, request: { offset: number; length: number }) => ({ success: true,
+    data: { linked: true, size, etag: 'e', offset: request.offset, data: Buffer.alloc(Math.min(request.length, size - request.offset), 2).toString('base64') } }));
+  const begun = beginWorkspaceRead('p', 'w', 'a.mp4');
+  await begun.first;
+  const parts = await readWorkspaceBytes('p', 'w', 'a.mp4', Infinity, begun);
+  expect(new Blob(parts).size).toBe(size);
+  expect(h.streamsFrom).toHaveBeenCalledOnce();
+  expect(h.readChunk).toHaveBeenCalledOnce();
+  // The version is its size and etag: the bytes of the first range never go back to main with each request.
+  expect(h.readStreamed.mock.calls.map((call) => Object.keys(call[3] as object).sort())).toEqual(Array.from({ length: 3 }, () => ['etag', 'length', 'offset', 'path', 'size']));
 });

@@ -128,11 +128,14 @@ describe('#3688 Codex app-server run ownership', () => {
       await mkdir(userCodexHome, { recursive: true })
       await writeFile(join(userCodexHome, 'history-sentinel'), 'owner-history')
 
+      // The start fails when the test aborts it, after the fixture has published its processes: the abort takes the
+      // same failure path as the startup timeout. A 500 ms timeout here raced the fixture's own Node startup under load.
       const session = new CodexAppServerSession('agent-3688', codexBin, undefined, {
         platform: process.platform,
-        startupTimeoutMs: 500,
+        startupTimeoutMs: 600_000,
         sessionId: 'conversation-3688',
       })
+      const cancelStart = new AbortController()
       expect(trackedCodexAppServerRunCount()).toBe(0)
       // @@@3890⑬ 台账跟的是**主进程**的 GUGU_HOME，不是 spawn 用的 childEnv —— 收尸 (createReapDeps)
       // 只扫主进程那一份，两者一分叉，附加账号的引擎组就永久泄漏。所以沙箱要设在 process.env 上；
@@ -141,6 +144,7 @@ describe('#3688 Codex app-server run ownership', () => {
       process.env.GUGU_HOME = guguHome
       const failedStart = session.start(root, {
         env: { ...process.env, CODEX_HOME: userCodexHome },
+        signal: cancelStart.signal,
       })
       failedStart.catch(() => undefined)
       const failedStartSettled = startSettledFlag(failedStart)
@@ -153,7 +157,8 @@ describe('#3688 Codex app-server run ownership', () => {
       let appDisposeLedger: { wrapperPid: number; descendantPid: number } | null = null
 
       try {
-        await expect(failedStart).rejects.toThrow('endpoint 未在 500ms 内就绪')
+        cancelStart.abort(new Error('start cancelled before the endpoint was ready'))
+        await expect(failedStart).rejects.toThrow('start cancelled before the endpoint was ready')
         const terminal = await Promise.all([
           waitForTerminal(ledger.wrapperPid),
           waitForTerminal(ledger.descendantPid),

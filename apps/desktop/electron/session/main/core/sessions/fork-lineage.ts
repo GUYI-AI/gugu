@@ -75,7 +75,7 @@ export type SessionTranscriptHead = {
    * 无关,不必再往下读。
    */
   rootUuid: string;
-  /** SDK fork(ACP 会话)直接在记录里写明来源会话;CLI / TUI fork 不写,为 null。 */
+  /** 记录里写明的来源会话(SDK fork,以及 claude 2.1.330 TUI 的 `/branch`);没写的(较早的 CLI fork)为 null,靠锚认父亲。 */
   forkedFromProviderSessionId: string | null;
 };
 

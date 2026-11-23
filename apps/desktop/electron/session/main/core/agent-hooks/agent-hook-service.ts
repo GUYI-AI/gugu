@@ -4,6 +4,7 @@ import { app } from 'electron';
 import { getPlugin } from '@main/core/agents/plugin-registry';
 import { sessionEvents } from '@main/core/sessions/session-events';
 import { setProviderSessionId } from '@main/core/sessions/set-session-id';
+import { captureExternalForks } from '@main/core/sessions/fork-capture';
 import { loadHarnessConfigRoots } from './harness-config-roots';
 import { HookCore, type Hookable } from '@main/lib/hookable';
 import { log } from '@main/lib/logger';
@@ -17,7 +18,7 @@ import {
   sessionUsesHostCredentials,
   type AuthExpiryWriter,
 } from '@main/core/agent-config/auth-expiry-from-turns';
-import { eq } from 'drizzle-orm';
+import { and, eq, ne, or } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
 import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
@@ -88,7 +89,7 @@ export function sessionTuiTurnStartPublishedByHostAdapter(providerId: string): b
   return hostAdapter !== undefined && TURN_LIFECYCLE_RELAY_HOST_ADAPTERS.has(hostAdapter);
 }
 
-async function handleSessionEvent(
+export async function handleSessionEvent(
   ctx: { sessionId: string; projectId: string; providerId: string },
   providerSessionId: string
 ): Promise<string | undefined> {
@@ -96,6 +97,29 @@ async function handleSessionEvent(
   // Amp 'T-' threads). Absent a validator the id is accepted as-is.
   const validateProviderSessionId = getPlugin(ctx.providerId).behavior?.sessions?.validateProviderSessionId;
   if (validateProviderSessionId && !validateProviderSessionId(providerSessionId)) return undefined;
+
+  // @@@hook-fork-id - a TUI fork the person makes (claude `/branch`) moves the terminal onto the child session, and
+  // the hook reports the child's id from this session's terminal. The child is a new conversation with its own row
+  // (fork capture registers it, named by that id); re-pointing this row to it would leave the original conversation
+  // with no row at all. So a new id is first offered to fork capture, and an id another row already holds is not
+  // taken. A new id that is not a fork (`/clear`, this row's own provider-minted id) belongs to no other row.
+  const [row] = await db.select({ providerSessionId: sessions.providerSessionId })
+    .from(sessions).where(eq(sessions.id, ctx.sessionId));
+  if (row && row.providerSessionId !== providerSessionId.trim()) {
+    await captureExternalForks(ctx.projectId, ctx.sessionId);
+    const [owner] = await db.select({ id: sessions.id }).from(sessions).where(and(
+      ne(sessions.id, ctx.sessionId),
+      or(eq(sessions.id, providerSessionId.trim()), eq(sessions.providerSessionId, providerSessionId.trim())),
+    )).limit(1);
+    if (owner) {
+      log.info('AgentHookService: reported session id belongs to another session; this session keeps its own', {
+        sessionId: ctx.sessionId,
+        providerSessionId: providerSessionId.trim(),
+        ownerSessionId: owner.id,
+      });
+      return undefined;
+    }
+  }
 
   const result = await setProviderSessionId(ctx.sessionId, providerSessionId);
   if (!result.success) {

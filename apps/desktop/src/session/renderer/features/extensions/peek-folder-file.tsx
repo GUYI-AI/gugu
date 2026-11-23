@@ -12,6 +12,7 @@ import { pickSessionOpener, type SessionOpener } from './open-with';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
 import { messageForUser } from '@/lib/userFacingError';
 import { log } from '@renderer/utils/logger';
+import { peekStore } from './peek-store';
 
 type FolderPeek = Extract<PeekTarget, { kind: 'folder' }>;
 
@@ -73,6 +74,7 @@ function Reachable({ target, tabId, chatId }: { target: FolderPeek; tabId: strin
       path={target.path}
       absolutePath={target.absolutePath}
       inWorkspace
+      takeBegunRead={() => peekStore.takeBegunRead(target)}
       onClose={() => undefined}
     />
   );
