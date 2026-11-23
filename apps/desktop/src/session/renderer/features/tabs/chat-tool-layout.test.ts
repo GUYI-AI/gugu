@@ -295,14 +295,18 @@ describe('mounted chat workspace', () => {
     }
   });
 
-  it('bounds the size while previewing each collapsing edge only after the pointer passes the threshold', () => {
+  it('previews a fold as soon as the pointer passes a pane minimum and arms it 65 pt further', () => {
     const width = 1001;
     const at = (offset: number) => chatDividerAt(offset, width, 320, 360);
     expect(at(500)).toEqual({ sizes: [50, 50], preview: undefined, collapse: undefined });
-    expect(at(180)).toEqual({ sizes: [32, 68], preview: 'left', collapse: undefined });
-    expect(at(115)).toEqual({ sizes: [32, 68], preview: 'left', collapse: 'left' });
-    expect(at(800)).toEqual({ sizes: [64, 36], preview: undefined, collapse: undefined });
-    expect(at(985)).toEqual({ sizes: [64, 36], preview: 'right', collapse: 'right' });
+    expect(at(320)).toEqual({ sizes: [32, 68], preview: undefined, collapse: undefined });
+    // Right past the chat's minimum: no dead span before the preview.
+    expect(at(319)).toEqual({ sizes: [32, 68], preview: 'left', collapse: undefined });
+    expect(at(256)).toEqual({ sizes: [32, 68], preview: 'left', collapse: undefined });
+    expect(at(255)).toEqual({ sizes: [32, 68], preview: 'left', collapse: 'left' });
+    expect(at(640)).toEqual({ sizes: [64, 36], preview: undefined, collapse: undefined });
+    expect(at(641)).toEqual({ sizes: [64, 36], preview: 'right', collapse: undefined });
+    expect(at(705)).toEqual({ sizes: [64, 36], preview: 'right', collapse: 'right' });
   });
 
   it('retains the existing two-tool pairing when both tool pages are explicitly paired', () => {

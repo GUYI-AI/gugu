@@ -341,9 +341,10 @@ it('resizes and previews each collapse before release, and restores the split on
   expect(inside('[data-chat-tool-collapse-preview]')).toBeNull();
 
   await begin();
-  await mouse('mouseMoved', 173, y, true);
+  // Just past the chat's minimum (324): the fold is previewed at once, ❌ only near the block's edge.
+  await mouse('mouseMoved', 300, y, true);
   await until('the approach previews a collapse without arming it', () => !!inside('[data-chat-tool-collapse-preview="left"]:not([data-chat-tool-collapse-ready])'));
-  await mouse('mouseReleased', 173, y);
+  await mouse('mouseReleased', 300, y);
   await mode('split');
   expect(workspace.paneSizes[0]).toBeCloseTo(324 / 799 * 100);
 
