@@ -39,21 +39,30 @@ async function fixture() {
 const selection = (items: CodexSkillItem[]) => items.flatMap(({ localSourceId, fingerprint }) =>
   fingerprint ? [{ localSourceId, fingerprint }] : []);
 
-it('finds 115 custom skills from 85 + 32 - 2 aliases, excluding built-ins and plugin cache trees', async () => {
+it('finds 83 custom skills from 85 - 2 aliases in the Codex folder, excluding built-ins, plugin cache trees and the shared folder', async () => {
   const f = await fixture();
   for (let i = 0; i < 83; i++) await f.skill(f.codex, 'codex-' + i);
+  // Codex reads the shared folder itself in the managed home: importing it would list each skill twice.
   for (let i = 0; i < 32; i++) await f.skill(f.agents, 'agents-' + i);
-  await fs.symlink('../../.agents/skills/agents-0', join(f.codex, 'alias-a'), 'dir');
-  await fs.symlink('../../.agents/skills/agents-1', join(f.codex, 'alias-b'), 'dir');
+  await fs.symlink('codex-0', join(f.codex, 'alias-a'), 'dir');
+  await fs.symlink('codex-1', join(f.codex, 'alias-b'), 'dir');
   for (let i = 0; i < 5; i++) await f.skill(join(f.codex, '.system'), 'builtin-' + i);
   for (let i = 0; i < 157; i++) await f.skill(join(f.home.userConfigRoot, 'plugins', 'cache', 'plugin', 'skills'), 'plugin-' + i);
   const scan = await scanCodexSkills({ home: f.home });
-  expect(scan.counts).toEqual({ codex: 85, agents: 32, duplicates: 2, custom: 115 });
-  expect(scan.items).toHaveLength(115);
+  expect(scan.counts).toEqual({ codex: 85, duplicates: 2, custom: 83 });
+  expect(scan.items).toHaveLength(83);
   expect(scan.items.every(({ status }) => status === 'ready')).toBe(true);
+  expect(scan.items.some(({ name }) => name.startsWith('agents-'))).toBe(false);
   expect(scan.items.filter(({ aliases }) => aliases.length === 2)).toHaveLength(2);
   expect(JSON.stringify(scan)).not.toContain('Private instructions stay in files');
-  expect(scan.excludedRoots.map(({ reason }) => reason)).toEqual(['built-in', 'plugin-cache']);
+  expect(scan.excludedRoots.map(({ reason }) => reason)).toEqual(['built-in', 'plugin-cache', 'shared']);
+});
+
+it('does not copy a shared skill that a Codex skill folder links to', async () => {
+  const f = await fixture();
+  await f.skill(f.agents, 'shared');
+  await fs.symlink('../../.agents/skills/shared', join(f.codex, 'shared'), 'dir');
+  expect((await scanCodexSkills({ home: f.home })).items).toEqual([expect.objectContaining({ status: 'skipped', reason: 'excluded' })]);
 });
 
 it('publishes complete native skill trees, preserves links/modes/assets, and leaves the home marker and source intact', async () => {
@@ -153,7 +162,7 @@ it('reports invalid YAML, dangling/cyclic roots, cyclic resources and credential
 it('does not peel a plugin-cache skill out through a user skill alias', async () => {
   const f = await fixture();
   const plugin = await f.skill(join(f.home.userConfigRoot, 'plugins', 'cache', 'one'), 'plugin');
-  await fs.symlink(plugin, join(f.agents, 'plugin'), 'dir');
+  await fs.symlink(plugin, join(f.codex, 'plugin'), 'dir');
   expect((await scanCodexSkills({ home: f.home })).items[0]).toMatchObject({ status: 'skipped', reason: 'excluded' });
 });
 
@@ -173,19 +182,19 @@ it('matches native metadata limits while allowing spaced names and long or block
 it('keeps distinct same-name sources as conflicts and protects a differently named existing target folder', async () => {
   const f = await fixture();
   await f.skill(f.codex, 'first', 'same-name');
-  await f.skill(f.agents, 'second', 'same-name');
+  await f.skill(f.codex, 'second', 'same-name');
   const scan = await scanCodexSkills({ home: f.home });
   expect(scan.items).toHaveLength(2);
   expect(new Set(scan.items.map(({ localSourceId }) => localSourceId)).size).toBe(2);
   expect(scan.items.every(({ status, reason }) => status === 'conflict' && reason === 'same-name')).toBe(true);
-  await fs.rm(join(f.agents, 'second'), { recursive: true });
+  await fs.rm(join(f.codex, 'second'), { recursive: true });
   await f.skill(join(f.home.configRoot, 'skills'), 'user-folder', 'same-name');
   expect((await scanCodexSkills({ home: f.home })).items[0]).toMatchObject({ status: 'conflict', reason: 'same-name' });
 });
 
 it('rejects changed source fingerprints and leaves edited targets alone', async () => {
   const f = await fixture();
-  const source = await f.skill(f.agents, 'edit');
+  const source = await f.skill(f.codex, 'edit');
   const scan = await scanCodexSkills({ home: f.home });
   await f.write(join(source, 'resource.txt'), 'added after preview');
   expect((await importCodexSkills({ home: f.home, selection: selection(scan.items) })).items[0])
@@ -218,7 +227,7 @@ it('rejects cancellation with the original reason and removes every unpublished 
 it('checks the whole selected batch and existing staging budget before writing on low disk space', async () => {
   const f = await fixture();
   await f.skill(f.codex, 'one');
-  await f.skill(f.agents, 'two');
+  await f.skill(f.codex, 'two');
   const scan = await scanCodexSkills({ home: f.home });
   vi.spyOn(fs, 'statfs').mockResolvedValue({ bavail: 0, bsize: 4096 } as never);
   await expect(importCodexSkills({ home: f.home, selection: selection(scan.items) }))
