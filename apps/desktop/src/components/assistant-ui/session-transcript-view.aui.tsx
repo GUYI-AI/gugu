@@ -56,7 +56,7 @@ function SessionTranscriptContent({
   layout?: ChatLayout
   commands?: ChatCommands
   composerContent?: ReactNode
-  /** A layer over the messages, under the composer (`onReady`'s `contentOverlay`): loading draws its skeleton there. */
+  /** A layer over the messages, under the composer (`onReady`'s `contentOverlay`): an empty thread's note goes there. */
   contentOverlay?: boolean
   shown?: boolean
   activeTurnId?: string | null

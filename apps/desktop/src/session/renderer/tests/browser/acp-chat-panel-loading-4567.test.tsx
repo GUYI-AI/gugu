@@ -2,7 +2,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { page } from 'vitest/browser';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 
 vi.mock('@renderer/features/tabs/pane-context', () => ({
@@ -101,7 +100,9 @@ afterEach(() => {
 });
 
 describe('ACP task chat loading state (#4567)', () => {
-  it('renders a visible loading surface while the conversation store is attaching', async () => {
+  // #4567: the task surface stays mounted (not a bare null) while the conversation store attaches. owner 11-23: it is
+  // the task's own surface, ❌ a separate skeleton「加载中」picture; the transcript and composer draw once the store is there.
+  it('keeps the task surface mounted, without a skeleton, while the conversation store is attaching', async () => {
     host = document.createElement('div');
     host.className = 'emlight gugu-skin';
     document.body.appendChild(host);
@@ -113,17 +114,14 @@ describe('ACP task chat loading state (#4567)', () => {
       </QueryClientProvider>
     );
 
-    const loading = page.getByRole('status', { name: 'Loading chat', exact: true });
-    await until('loading surface is visible', () => loading.query()?.checkVisibility({ opacityProperty: true, visibilityProperty: true }) === true);
-    await expect.element(loading).toBeVisible();
-    expect(host.querySelectorAll('[data-session-chat-loading="true"] [data-skeleton-bubble]')).toHaveLength(6);
-    expect(host.querySelector('[data-gg-loading]')).toBeNull();
-
-    const element = host.querySelector<HTMLElement>('[data-session-chat-loading="true"]');
-    expect(element).not.toBeNull();
+    await until('task surface is mounted', () => host!.querySelector('[data-session-chat-surface]') !== null);
+    const element = host.querySelector<HTMLElement>('[data-session-chat-surface]');
     expect(getComputedStyle(element!).visibility).toBe('visible');
     expect(getComputedStyle(element!).display).not.toBe('none');
     expect(element!.getBoundingClientRect().width).toBeGreaterThan(0);
     expect(element!.getBoundingClientRect().height).toBeGreaterThan(0);
+    expect(host.querySelector('[data-skeleton-bubble]')).toBeNull();
+    expect(host.querySelector('[role="status"][aria-busy="true"]')).toBeNull();
+    expect(host.querySelector('[data-gg-loading]')).toBeNull();
   });
 });
