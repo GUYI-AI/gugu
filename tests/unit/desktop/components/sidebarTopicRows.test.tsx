@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ChatListSlotHost } from '../../../../apps/desktop/src/components/ChatListSlotHost'
 import { ChatListPanel } from '../../../../apps/desktop/src/components/ChatListPanel'
 import { installAssistantShellBridge, publishAssistantShell, type AssistantShellSnapshot } from '../../../../apps/desktop/src/lib/assistantShellBridge'
-import { useSidebarChatSignals } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
+import { publishSidebarChatView, useSidebarChatSignals } from '../../../../apps/desktop/src/lib/sidebarChatsBridge'
 import { installSessionViewRequestBridge } from '../../../../apps/desktop/src/session/renderer/features/sessions/stores/session-view-requests'
 import { chat, clickElement, createNode, createReactHarness, renderWithAppProviders } from '../../../support/testHarness'
 
@@ -52,6 +52,18 @@ describe('shared sidebar topic branches', () => {
     await render(0)
     expect(rows()).toHaveLength(5)
     expect(rows().at(-1)?.textContent).not.toContain('8')
+  })
+
+  it('an open topic lights its own row, and its source row only while the topic rows are folded away', async () => {
+    publishSidebarChatView({ focusedChatId: 'topic-0', groups: [] })
+    await renderWithAppProviders(harness, createNode(ChatListPanel, { placement: 'sidebar' }), { chat: { chats: [source, ...topics] }, contacts: {} })
+    const sourceRow = () => harness.container.querySelector<HTMLElement>('[data-chat-row="group"]')!
+    expect(rows().find((row) => row.dataset.topicSubrow === 'topic-0')?.getAttribute('aria-selected')).toBe('true')
+    expect(sourceRow().getAttribute('aria-selected')).toBe('false')
+    await clickElement(sourceRow().querySelector<HTMLElement>('button[aria-expanded="true"]')!)
+    expect(rows()).toHaveLength(0)
+    expect(sourceRow().getAttribute('aria-selected')).toBe('true')
+    publishSidebarChatView({ focusedChatId: null, groups: [] })
   })
 
 })
