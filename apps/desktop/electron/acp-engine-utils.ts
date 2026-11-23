@@ -202,6 +202,8 @@ export type GuguMcpContext = GuguMcpContextBase & (
       guguHome: string
       getAccessToken: (signal?: AbortSignal) => Promise<string>
       resolveFile?: (ref: FileRef, actorId: string, options?: { progress?: FileContext['progress'] }) => Promise<ResolvedFile>
+      /** A live text file of a chat's folder, its text now as this agent reads it (the file service's). */
+      readDocument?: (itemId: string, actorId: string) => Promise<string>
       publishFile?: ProjectFilePublish
       attachments?: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
       runHostAction?: (action: unknown, signal?: AbortSignal) => Promise<unknown>
@@ -416,6 +418,8 @@ export type ProjectFilePublish = (chatId: string, file: SelectedProjectFile, act
 export interface BuildSocialBridgeDeps {
   webSearch?: SessionWebSearch
   resolveFile?: (ref: FileRef, actor: FileActor, options?: { progress?: FileContext['progress'] }) => Promise<ResolvedFile>
+  /** The file service's text of a live text file, read with the bound account's token as this agent. */
+  readDocument?: (itemId: string, accessToken: string, actorId: string) => Promise<string>
   /** The host's project file publisher (the composer's): a file of a chat that keeps files on this machine, with its message. */
   publishFile?: ProjectFilePublish
   attachments: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
@@ -485,6 +489,7 @@ export async function buildSocialBridge(
       ...(deps.personalAssistant && deps.assistantWork ? { assistantWork: deps.assistantWork } : {}),
       getAccessToken: async (signal?: AbortSignal) => (await getBoundAuth(signal)).accessToken,
       ...(deps.resolveFile ? { resolveFile: (ref: FileRef, actorId: string, options?: { progress?: FileContext['progress'] }) => deps.resolveFile!(ref, { accountId: expectedOwnerUserId, actorId }, options) } : {}),
+      ...(deps.readDocument ? { readDocument: async (itemId: string, actorId: string) => deps.readDocument!(itemId, (await getBoundAuth()).accessToken, actorId) } : {}),
       ...(deps.publishFile ? { publishFile: async (...args: Parameters<ProjectFilePublish>) => {
         await getBoundAuth()
         return deps.publishFile!(...args)
