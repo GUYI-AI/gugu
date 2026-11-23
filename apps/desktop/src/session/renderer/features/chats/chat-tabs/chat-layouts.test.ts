@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache';
 import { folderItem, type PanelItem } from './chat-panel-item';
-import { askChat, chatAlone, chatBlockContentOf, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, revealChatWorkspaceMessage, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
+import { askChat, chatAlone, chatBlockContentOf, chatTabShown, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, closeTopicTab, focusedChatTab, infoTabOf, memberTopicOf, openInfoTab, openPanelItem, openTopicTab, panelFull, panelTabsOf, revealChatWorkspaceMessage, setPanelFull, showChatOnly, showChatTab, takeChatAsk, topicTabOf, updateFileNames } from './chat-layouts';
 import { CHAT_INFO_TAB_KIND, CHAT_PANEL_TAB_KIND, CHAT_TAB_KIND } from './chat-tab-providers';
 import { openChatWorkspaceNewTab } from '../../tabs/chat-workspace-new-tab';
 import { browserSessionStore } from '../../browser/browser-session-store';
@@ -81,6 +81,21 @@ describe('chat navigation uses the same page history and real panes as tasks', (
     // Explicit new-tab remains an explicit request, and another conversation is isolated.
     expect(openPanelItem(id, file('same-file'), { intent: 'newTab', from: conversation })).not.toBe(first);
     expect(openPanelItem('another-private-repeat-card', file('same-file'))).not.toBe(first);
+  });
+  it('a page in front of the conversation in a narrow strip hides it; showing the chat brings its tab back', () => {
+    const id = 'narrow-cite-target'; const layout = chatLayoutOf(id);
+    layout.setDimensions(390, 620);
+    layout.setSinglePaneHost(true);
+    expect(chatTabShown(id)).toBe(true);
+    openPanelItem(id, file('cited'));
+    expect(chatTabShown(id)).toBe(false);
+    showChatOnly(id);
+    expect(chatTabShown(id)).toBe(true);
+  });
+  it('a page beside the conversation leaves its tab shown', () => {
+    const id = 'pair-cite-target';
+    openPanelItem(id, file('beside'));
+    expect(chatTabShown(id)).toBe(true);
   });
   it('opens from the conversation side by side in the one strip; the next one takes the side, closing it brings A back', () => {
     const id = 'pair-chat'; const layout = chatLayoutOf(id);

@@ -137,6 +137,13 @@ export function chatAlone(chatId: string): boolean {
   return !panelTabsOf(chatId).some((tab) => tab.shown);
 }
 
+/** Whether the chat's own tab is on screen (not behind another tab of its strip). */
+export function chatTabShown(chatId: string): boolean {
+  const layout = chatLayoutOf(chatId);
+  const chatTab = chatTabOf(layout);
+  return tabsOf(layout).some(({ tab, shown }) => tab.tabId === chatTab && shown);
+}
+
 /** The tab holding focus — on the phone and in a window without a strip, the one page shown. */
 export function focusedChatTab(chatId: string): { tabId: string; kind: 'chat' | 'panel' | 'topic' | 'info' } | null {
   const pane = paneOf(chatLayoutOf(chatId));
