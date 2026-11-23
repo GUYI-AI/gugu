@@ -1,4 +1,4 @@
-/* Group/project heads span two lines. Standalone agents and samples keep the 40px head. */
+/* Group/project heads span two lines. The sample keeps the 40px head (it has no create action). */
 .gg-inner-head-double { height: 72px; }
 .gg-inner-head-double [data-inner-head] { height: 56px; }
 .gg-inner-head-double [data-inner-head-open] {
@@ -56,5 +56,6 @@
   font-size: var(--font-caption);
   font-weight: 500;
   line-height: 20px;
+  white-space: nowrap;
 }
 .gg-inner-head-create svg { width: 14px; height: 14px; }

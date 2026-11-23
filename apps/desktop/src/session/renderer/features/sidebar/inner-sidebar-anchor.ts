@@ -4,7 +4,7 @@ import { observable } from 'mobx';
 // 正看着的是那条会话,这一列照旧留着(点别的、开私聊、开不在这个群里的会话就收起)。
 // 一屏几块时这一列是这一屏的,不是焦点那一块的:它挂的群 / 项目还在屏上,焦点去了旁边没有这一列的一块(私聊、别的会话),
 // 它照旧挂着 —— 在哪一块里按下不挪动任何一块。
-// #2574 这一列说的是「这个对话里还有谁在干活」:有子智能体的独立智能体也有这一列(开它就是开它的会话)。
+// #2574 智能体锚(有子智能体的独立智能体)只剩手机会话页的「智能体」选单在用;桌面私聊没有这一列(传 `agentAnchorOf = () => null`)。
 
 /** 群,或项目(项目群的 chat id)。 */
 export type InnerSidebarRoomAnchor = { kind: 'group' | 'project'; chatId: string };
@@ -47,13 +47,13 @@ export function viewAnchor(view: InnerSidebarView): InnerSidebarRoomAnchor | nul
  * `listedIn(anchor, sessionId)` = 这条会话列在那一列的「智能体」里;`agentAnchorOf(sessionId)` = 这条会话开出来的那个智能体的一列,没有 = null;
  * `onScreen(anchor)` = 那个对话此刻是这屏的一块。
  */
-export function followInnerSidebar(
-  entry: InnerSidebarAnchor | null,
+export function followInnerSidebar<A extends InnerSidebarAnchor>(
+  entry: A | null,
   view: InnerSidebarView,
-  listedIn: (anchor: InnerSidebarAnchor, sessionId: string) => boolean,
-  agentAnchorOf: (sessionId: string) => InnerSidebarAnchor | null,
-  onScreen: (anchor: InnerSidebarAnchor) => boolean
-): InnerSidebarAnchor | null {
+  listedIn: (anchor: A, sessionId: string) => boolean,
+  agentAnchorOf: (sessionId: string) => A | null,
+  onScreen: (anchor: A) => boolean
+): InnerSidebarRoomAnchor | A | null {
   const own = viewAnchor(view);
   if (own) return own;
   if (view.kind === 'other') return null;
