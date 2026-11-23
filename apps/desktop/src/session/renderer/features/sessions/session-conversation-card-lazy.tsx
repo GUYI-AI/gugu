@@ -7,3 +7,10 @@ const Card = lazy(() => import('./session-conversation-card').then((module) => (
 export function LazySessionConversationCard(props: ComponentProps<typeof Card>) {
   return <Suspense fallback={null}><Card {...props} /></Suspense>;
 }
+
+const TabAvatar = lazy(() => import('./session-tab-avatar').then((module) => ({ default: module.SessionTabAvatar })));
+
+/** My agent's avatar for its conversation tab (same reason to load late as the card). */
+export function LazySessionTabAvatar(props: ComponentProps<typeof TabAvatar>) {
+  return <Suspense fallback={<span className="inline-block shrink-0" style={{ width: props.size, height: props.size }} />}><TabAvatar {...props} /></Suspense>;
+}

@@ -48,6 +48,8 @@ export interface GenericTabItemProps {
   closeDisabled?: boolean;
   /** The conversation's card (第 16 版名片): clicking its tab once it is showing opens this beside the tab. */
   card?: (close: () => void) => ReactNode;
+  /** The conversation's own face where its tab sits in a shared strip (第 16 版 convTab: avatar + name, ❌ harness mark). */
+  conversationMark?: ReactNode;
 }
 
 /**
@@ -78,6 +80,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   renameOnDoubleClick,
   closeDisabled,
   card,
+  conversationMark,
 }: GenericTabItemProps) {
   const { translate } = useSessionMessages();
   const { isFocusedPane, pane } = usePaneContext();
@@ -221,9 +224,10 @@ export const GenericTabItem = observer(function GenericTabItem({
   if (workspace?.role === 'conversation') {
     const select = () => { workspace.layout.showChatWorkspaceConversation(); pane.focusActiveContent(); };
     return <><TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
-      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu>
+      {/* With a card its actions are in the card and Details: a plain tab, ❌ the ⋯ of a title menu. */}
+      <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands} titleMenu={!card}>
         <TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
-          preSlot={preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={openCardOr(select)}
+          preSlot={conversationMark ?? preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={openCardOr(select)}
           onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}
           onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }} />
       </TabContextMenu>
