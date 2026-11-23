@@ -51,12 +51,25 @@ describe('image previews offered by every upload', () => {
     expect(seen.map(call => call.route)).toEqual(['upload'])
   })
 
-  it('a format the drawer cannot decode uploads without a preview', async () => {
-    draw.mockResolvedValueOnce(null as never)
+  it('a format the drawer cannot decode uploads without a preview, and the failure is warned', async () => {
+    draw.mockRejectedValueOnce(new Error('unsupported image format'))
     const { seen, endpoint } = routes()
     await uploadAttachmentBytes(endpoint, { bytes: original, name: 'a.heic', contentType: 'image/heic' }, { chat_id: 'chat', as: 'agent' })
-    await vi.waitFor(() => expect(draw).toHaveBeenCalled())
-    await new Promise(resolve => setTimeout(resolve, 10))
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledWith(expect.objectContaining({ message: 'unsupported image format' })))
+    expect(seen.map(call => call.route)).toEqual(['upload'])
+  })
+})
+
+describe('a process that registered no preview drawer', () => {
+  it('refuses to send an image before any byte goes up, and still sends other files', async () => {
+    vi.resetModules()
+    const fresh = await import('../../../../packages/core/src/cloud/attachmentsApi')
+    const { seen, endpoint } = routes()
+    const image = { bytes: new Uint8Array([1, 2, 3]), name: 'shot.png', contentType: 'image/png' }
+    await expect(fresh.withUploadedAttachment(endpoint, image, { chat_id: 'chat', as: 'agent' }, async key => key)).rejects.toThrow(/no preview drawer/)
+    await expect(fresh.declareAttachment(endpoint, image, { chat_id: 'chat', as: 'agent' })).rejects.toThrow(/no preview drawer/)
+    expect(seen).toEqual([])
+    await fresh.withUploadedAttachment(endpoint, { ...image, name: 'data.bin', contentType: 'application/octet-stream' }, { chat_id: 'chat', as: 'agent' }, async key => key)
     expect(seen.map(call => call.route)).toEqual(['upload'])
   })
 })

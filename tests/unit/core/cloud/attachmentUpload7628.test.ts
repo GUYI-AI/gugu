@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
-import { withUploadedAttachment } from '../../../../packages/core/src/cloud/attachmentsApi'
+import { drawImagePreviews, withUploadedAttachment } from '../../../../packages/core/src/cloud/attachmentsApi'
+
+// Every uploading process registers a drawer; this one never finishes a preview, so only the upload's own requests are seen.
+drawImagePreviews({ draw: () => new Promise(() => {}), warn: () => {} })
 
 // The upload alone: `use` hands back its key.
 const uploadAttachmentBytes = (...[endpoint, file, scope, options]: [Parameters<typeof withUploadedAttachment>[0], Parameters<typeof withUploadedAttachment>[1], Parameters<typeof withUploadedAttachment>[2], Parameters<typeof withUploadedAttachment>[4]?]) =>

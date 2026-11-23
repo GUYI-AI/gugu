@@ -51,8 +51,8 @@ export const UI_EVENTS = {
   sessionpageReveal: '__sessionpage_reveal',
   // 「在本群打开」(app-redesign §5): an App was opened from a chat (detail = { extensionId, chatId? }) — `useOpenApp`.
   openApp: '__open_app',
-  // 群成员面板里「新建 Agent 并加入本群」(detail = { chatId }):壳打开新建 Agent 的那一页,并带上这个群
-  // —— 建出来的 agent 一出生就进群(与 session_spawn 的 chat_id 同一条 birth-groups 链),建完回到这个群。
+  // 群的「+ → 新建 Agent」(detail = { chatId }):壳打开这个群,把输入框切成派任务并带上进群
+  // —— 建出来的 agent 坐任务座位进群(与 session_spawn 的 chat_id 同一条 birth-groups 链),结果回这个群。
   createAgentInGroup: '__create_agent_in_group',
   // 「添加成员」 (detail = { chatId }): the shell draws the member picker (GroupAddMembersHost).
   addGroupMembers: '__add_group_members',

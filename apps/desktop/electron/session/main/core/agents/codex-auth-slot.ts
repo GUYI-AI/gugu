@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { copyFile, mkdir, open, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { atomicWriteText } from '@gugu/core/local/state/paths';
+import { copyFile, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { KeyedMutex } from '@gugu/session-core/lib';
 import { parse as parseTOML } from 'smol-toml';
@@ -41,8 +42,9 @@ async function readLiveState(path: string): Promise<LiveState | null> {
   }
 }
 
-function recordLiveState(path: string, state: LiveState): Promise<void> {
-  return replacePrivateFile(path, `${JSON.stringify(state)}\n`);
+async function recordLiveState(path: string, state: LiveState): Promise<void> {
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await atomicWriteText(path, `${JSON.stringify(state)}\n`);
 }
 
 const AUTH_FILE = 'auth.json';
@@ -97,26 +99,10 @@ async function readAuth(root: string): Promise<{ text: string; identity: string 
   }
 }
 
-function writeAuth(root: string, text: string): Promise<void> {
-  return replacePrivateFile(join(root, AUTH_FILE), text);
-}
-
-/** Publish a complete file by renaming a temporary file owned by this write. */
-async function replacePrivateFile(target: string, text: string): Promise<void> {
-  await mkdir(dirname(target), { recursive: true, mode: 0o700 });
-  const temporary = `${target}.gugu-${randomUUID()}`;
-  const file = await open(temporary, 'wx', 0o600);
-  try {
-    try {
-      await file.writeFile(text);
-    } finally {
-      await file.close();
-    }
-    await rename(temporary, target);
-  } catch (error) {
-    await rm(temporary, { force: true }).catch(() => undefined);
-    throw error;
-  }
+/** 先写临时文件再改名:换到一半崩了,活动根里要么是旧账号、要么是新账号,❌ 半个文件。 */
+async function writeAuth(root: string, text: string): Promise<void> {
+  await mkdir(root, { recursive: true, mode: 0o700 });
+  await atomicWriteText(join(root, AUTH_FILE), text);
 }
 
 /** 活动根的凭据不在 auth.json 里时,换文件等于什么都没换。 */
