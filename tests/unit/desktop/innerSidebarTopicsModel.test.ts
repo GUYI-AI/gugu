@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ChatItem } from '@gugu/core/shared/types/chat'
-import { INNER_SIDEBAR_TOPIC_LIMIT, innerSidebarTopicRows, topicsOfChat } from './innerSidebarTopicsModel'
+import { INNER_SIDEBAR_TOPIC_LIMIT, innerSidebarTopicRows, topicsOfChat } from '@/components/chat/innerSidebarTopicsModel'
 
 const topic = (id: string, at: number, extra: Partial<ChatItem> = {}) =>
   ({ id, kind: 'topic', source_chat_id: 'g', status: 'active', unread_count: 0, is_pinned: false, last_message_at: new Date(at * 1000).toISOString(), ...extra }) as ChatItem
