@@ -7,6 +7,7 @@ import { sessionAgentBindings } from './stores/session-agent-bindings';
 import { useShownAgentName } from '@/hooks/useShownAgentName';
 import type { TabCommand } from '../tabs/tab-bar/tab-commands';
 import type { SessionTabContext } from '../tabs/core/session-tab-context';
+import { openSessionDetails } from './open-session-details';
 import { sessionRegistry } from './stores/session-registry';
 
 /**
@@ -33,6 +34,6 @@ export const SessionConversationCard = observer(function SessionConversationCard
     onRename={(next) => sessionRegistry.get(sessionId)!.renameSession(sessionId, next)}
     notify={null}
     action={reload ? { icon: <RotateCcw size={16} />, label: reload.label, testId: 'conversation-card-restart', run: () => { onClose(); void reload.run(); } } : null}
-    onDetails={() => { onClose(); void import('./open-session-details').then(({ openSessionDetails }) => openSessionDetails(page, sessionId)); }}
+    onDetails={() => { onClose(); openSessionDetails(page, sessionId); }}
   />;
 });
