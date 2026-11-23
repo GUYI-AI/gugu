@@ -10,6 +10,8 @@ import { useChatFolderName } from './chatFolderName'
 import { GroupAddMenu } from './GroupAddMenu'
 import { SettingsNavRow } from './groupSettingsUi'
 import { Unknown } from '../ui/Unknown'
+import { useMobileShell } from '@/hooks/useMobileShell'
+import { ChatDetailsQuickActions } from './ChatDetailsQuickActions'
 
 // 群信息主页上的两行:群成员(头像、「+」、人数)和这个群的文件夹。从 GroupMembersSection 拆出来,各自只做一件事。
 
@@ -35,7 +37,11 @@ export function GroupMembersRow({ chatId, settings, memberIds, total, onOpen }: 
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
   const contain = (event: MouseEvent | KeyboardEvent) => event.stopPropagation()
+  const mobile = useMobileShell()
   return (
+    <>
+    {/* 第 16 版详情:群名之下、成员行之上是一排快捷操作(搜索 / 应用 / 话题);手机的这几项仍在 ⋯ 里。 */}
+    {mobile ? null : <ChatDetailsQuickActions chatId={chatId} isGroup />}
     <SettingsNavRow
       title={t('group.settings.members')}
       testId="group-settings-members"
@@ -56,6 +62,7 @@ export function GroupMembersRow({ chatId, settings, memberIds, total, onOpen }: 
         </>
       )}
     />
+    </>
   )
 }
 

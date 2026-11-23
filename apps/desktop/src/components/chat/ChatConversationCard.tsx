@@ -29,7 +29,7 @@ export function ChatConversationCard({ chat, name, avatar, isAgent, onClose }: {
   const { settings, update } = useGroupChatSettings(room ? chat.id : null)
   const findHotkey = getEffectiveHotkey('app.find', getAppSettingValueSnapshot('keyboard'))
   return <ConversationCard
-    avatar={<Avatar name={name} avatarUrl={avatar} seed={room ? chat.id : chat.peer_user_id ?? undefined} isAgent={isAgent} variant={room ? 'group' : 'default'} size={44} still />}
+    avatar={<Avatar name={name} avatarUrl={avatar} seed={room ? chat.id : chat.peer_user_id ?? undefined} isAgent={isAgent} harnessBadge={false} variant={room ? 'group' : 'default'} size={44} still />}
     name={name}
     onRename={room && settings?.can_manage ? async (next) => { if (!(await update({ name: next }))) throw new Error('group rename failed') } : null}
     notify={{ on: (chat.notification_level ?? 'all') !== 'none', set: (on) => void setChatNotificationLevel(chat.id, on ? 'all' : 'none') }}

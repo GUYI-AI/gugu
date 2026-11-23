@@ -180,6 +180,7 @@ export const GenericTabItem = observer(function GenericTabItem({
 
   if (workspaceRole === 'title') {
     return (
+      <>
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
         <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title="" data-tabid={card ? tab.tabId : undefined}
           onClick={card ? () => setCardOpen((open) => !open) : undefined}
@@ -187,23 +188,24 @@ export const GenericTabItem = observer(function GenericTabItem({
           {preSlot}
           {editableTitle ?? <span className="truncate" title={tooltip ?? label}>{label}</span>}
           {statusSlot}
-          {cardPopover}
         </div>
       </TabContextMenu>
+      {/* Outside the title: React bubbles a click in the portaled card up to its parent, which would reopen it. */}
+      {cardPopover}
+    </>
     );
   }
 
   if (workspace?.role === 'conversation') {
     const select = () => { workspace.layout.showChatWorkspaceConversation(); pane.focusActiveContent(); };
-    return <TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
+    return <><TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
         <TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
           preSlot={preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={openCardOr(select)}
           onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}
           onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }} />
       </TabContextMenu>
-      {cardPopover}
-    </TabSlot>;
+    </TabSlot>{cardPopover}</>;
   }
 
   const base = tooltip ?? label;
@@ -216,6 +218,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   // 把「+」顶出滚动区裁掉(owner:「这个也得修,还挺严重」);同时 .session-tab-slot 之间的
   // 短分隔线是**相邻兄弟**选择器(index.css),被 trigger 隔开后从来没画出来过。
   return (
+    <>
     <DraggableTab id={tab.tabId} pairRole={tab.pairRole}>
       {/* 并排的一对:两枚中间那根线指上去就是「拆开」(spec session-page「并排」)。 */}
       {tab.pairRole === 'end' ? (
@@ -264,8 +267,9 @@ export const GenericTabItem = observer(function GenericTabItem({
             表格而不是页签。Chrome 的分隔线是 16px 短竖线、且自己或邻居被选中/悬浮时消失 ——
             判据在兄弟节点上，只能用 CSS 表达，见 index.css 的 .session-tab-slot。 */}
       </TabContextMenu>
-      {cardPopover}
     </DraggableTab>
+    {cardPopover}
+    </>
   );
 });
 

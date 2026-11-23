@@ -2,6 +2,8 @@ import { observer } from 'mobx-react-lite';
 import { RotateCcw } from '@/lib/icons';
 import { ConversationCard } from '@/components/chat/ConversationCard';
 import { Avatar } from '@/components/Avatar';
+import { useAvatarIdentity } from '@/lib/avatarIdentity';
+import { sessionAgentBindings } from './stores/session-agent-bindings';
 import { useShownAgentName } from '@/hooks/useShownAgentName';
 import type { TabCommand } from '../tabs/tab-bar/tab-commands';
 import { useWorkspaceViewModel } from './session-view-context';
@@ -19,10 +21,13 @@ export const SessionConversationCard = observer(function SessionConversationCard
   const view = useWorkspaceViewModel();
   const store = sessionRegistry.get(sessionId)?.sessions.get(sessionId);
   const name = useShownAgentName({ name: store?.data.title ?? '', agentType: store?.data.providerId, createdAt: store?.data.createdAt });
+  // The same avatar as its row in the list (SessionAvatar): its identity's picture, ❌ the harness badge (#39).
+  const agentId = sessionAgentBindings.bindingFor(sessionId)?.agentUserId;
+  const identity = useAvatarIdentity(agentId ?? '');
   const reload = commands.find((command) => command.id === 'session:reload');
   if (!store) return null;
   return <ConversationCard
-    avatar={<Avatar name={name} seed={sessionId} isAgent size={44} still />}
+    avatar={<Avatar name={name} seed={agentId || sessionId} avatarUrl={identity?.avatar} isAgent harnessBadge={false} size={44} still />}
     name={name}
     onRename={(next) => sessionRegistry.get(sessionId)!.renameSession(sessionId, next)}
     notify={null}
