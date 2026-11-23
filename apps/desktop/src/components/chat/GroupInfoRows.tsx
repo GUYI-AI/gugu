@@ -75,9 +75,11 @@ export function GroupFolderRow({ chatId }: { chatId: string }) {
  * 详情页(第 16 版设计稿 .memb)的群成员块:叠着的头像、「群成员」、人数、「+」(GroupAddMenu)、›;点它进成员页。
  * 和 GroupMembersRow 同一份数据、同一个「+」、同一个去处,只是画法不同。
  */
-export function GroupMembersBlock({ chatId, settings, memberIds, total, people, agents, onOpen }: Parameters<typeof GroupMembersRow>[0] & {
+export function GroupMembersBlock({ chatId, settings, memberIds, total, people, agents, onOpen, topic = false }: Parameters<typeof GroupMembersRow>[0] & {
   /** People and agents in it; null until the roster is read (then only the total is said). */
   people: number | null; agents: number | null
+  /** A topic's: 「话题成员 N 人」. */
+  topic?: boolean
 }) {
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
@@ -94,12 +96,14 @@ export function GroupMembersBlock({ chatId, settings, memberIds, total, people, 
           </span>
         ))}
       </span>
-      <span className="shrink-0 whitespace-nowrap">{t('group.settings.members')}</span>
-      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--muted-fg)]">{people !== null && agents !== null ? `${t('groupDetails.people', { count: people })} · ${t('groupDetails.agents', { count: agents })}`
+      <span className="shrink-0 whitespace-nowrap">{t(topic ? 'group.memberList.titleTopic' : 'group.settings.members')}</span>
+      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--muted-fg)]">{topic ? (total === null ? <Unknown className="w-[2ch]" /> : t('groupDetails.people', { count: total }))
+        : people !== null && agents !== null ? `${t('groupDetails.people', { count: people })} · ${t('groupDetails.agents', { count: agents })}`
         : total === null ? <Unknown className="w-[2ch]" /> : t('group.settings.memberCount', { count: total })}</span>
-      <span className="ms-auto flex shrink-0 items-center" onClick={contain} onKeyDown={contain}>
+      {/* A topic has no add entry in the product today (its member list only searches): no chip for it. */}
+      {topic ? <span className="ms-auto" /> : <span className="ms-auto flex shrink-0 items-center" onClick={contain} onKeyDown={contain}>
         <GroupAddMenu chatId={chatId} canAddMembers={groupInviteAccess(chatId, 'group', settings).showInvite} labeled />
-      </span>
+      </span>}
       <ChevronRight className="size-3.5 shrink-0 text-[var(--faint-fg)]" />
     </div>
   )

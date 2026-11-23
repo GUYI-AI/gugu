@@ -18,6 +18,7 @@ import { SettingsPageHead } from './groupSettingsUi'
 import { settingsDangerRowStyle } from './groupSettingsStyles'
 import { useCloseTopic } from './useCloseTopic'
 import { ChatDetailsQuickActions } from './ChatDetailsQuickActions'
+import { TopicDetailsMain } from './TopicDetailsMain'
 import { COLOR_MUTED } from './chatPresentation'
 import { useRoomCollab } from '../../hooks/useRoomCollab'
 
@@ -31,7 +32,14 @@ export function ChatSettingsPanel({ mobile = false, ...body }: ChatSettingsPanel
   const { activeChat, onClose } = body
   const { t } = useTranslation('messaging')
   // A topic is a main conversation of its own: its info page is its members (from its source line's roster).
-  if (activeChat.kind === 'topic' && activeChat.source_chat_id) return <TopicMembers key={activeChat.id} topic={{ topicChatId: activeChat.id, name: activeChat.name ?? '' }} sourceChatId={activeChat.source_chat_id} onClose={onClose} mobile={mobile} />
+  if (activeChat.kind === 'topic' && activeChat.source_chat_id) {
+    const sourceChatId = activeChat.source_chat_id
+    const members = (back: () => void) => <TopicMembers key={activeChat.id} topic={{ topicChatId: activeChat.id, name: activeChat.name ?? '' }} sourceChatId={sourceChatId} onClose={back} mobile={mobile} />
+    // 第 16 版:桌面上是话题的「详情」(成员页从它的成员块进);手机照旧直接是成员页。
+    if (mobile) return members(onClose)
+    return <TopicDetailsMain key={activeChat.id} chat={activeChat} currentUserId={body.currentUserId} onClose={onClose}
+      onClearMessages={body.onClearMessages} onSetNotificationLevel={body.onSetNotificationLevel} onTogglePinned={body.onTogglePinned} membersPage={members} />
+  }
   return (
     <div data-testid="chat-settings-panel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {activeChat.kind === 'group' || !mobile ? null : <SettingsPageHead title={t('chatArea.settings.conversation')} onClose={onClose} mobile />}

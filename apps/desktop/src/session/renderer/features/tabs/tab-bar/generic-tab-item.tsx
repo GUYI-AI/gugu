@@ -185,9 +185,10 @@ export const GenericTabItem = observer(function GenericTabItem({
     return (
       // 第 16 版:胶囊栏里只有这一颗胶囊(❌ ⋯):它的动作在名片和详情里(单独成窗是详情的一格)。
       <>
-        <div className="flex h-full min-w-0 flex-1 items-center justify-center">
+        {/* 按整张卡居中(设计稿 .capbar 整卡宽):相对页签条的 padding box 绝对居中,左边留白、右边按钮都不挤偏它。 */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div role="button" tabIndex={0} data-testid="conversation-capsule" data-chat-workspace-title="" data-tabid={tab.tabId} title={tooltip ?? label}
-            className={CONVERSATION_CAPSULE_CLASS}
+            className={`${CONVERSATION_CAPSULE_CLASS} pointer-events-auto`}
             onClick={card ? () => setCardOpen((open) => !open) : undefined}
             onKeyDown={card ? (event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setCardOpen((open) => !open); } } : undefined}
             onDoubleClick={renameOnDoubleClick && !isEditing && !card ? startRename : undefined}>
