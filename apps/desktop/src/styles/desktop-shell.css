@@ -132,3 +132,19 @@
   padding-top: calc(var(--spacing-2xl) + (var(--control-h-lg) - var(--control-h-md)) / 2);
   padding-inline-end: calc(var(--control-h-lg) + var(--spacing-lg) + 4px);
 }
+
+/* @@@page-modal 联系人弹窗的左栏照设置左栏(settings.css .gg-settings-nav-pane):同宽、行高 --control-h-md、行距左右 12、图标 --icon-sm。 */
+[data-contacts-modal] div.gg-pane[data-role='nav'] {
+  width: calc(var(--nav-col-w) - 24px);
+  min-width: calc(var(--nav-col-w) - 24px);
+}
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row {
+  min-height: var(--control-h-md);
+  padding-block: calc((var(--control-h-md) - var(--lh-body)) / 2);
+  margin-inline: 4px;
+  gap: var(--spacing-sm);
+}
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row .gg-list-row-leading svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
