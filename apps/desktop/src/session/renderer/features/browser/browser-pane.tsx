@@ -200,8 +200,8 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
     partition: string;
     src: string;
   } | null>(null);
-  /** 网页还没挂好时要去的地址:挂好立刻载入。 */
-  const pendingLoad = useRef<string | null>(null);
+  /** 要载入的地址:网页挂好(或已经挂着)就载入,载完清掉。地址改写(转发)可能在网页挂好之后才回来,所以走状态、❌ 闭包里的 page。 */
+  const [pendingLoad, setPendingLoad] = useState<string | null>(null);
   const [isRegistered, setIsRegistered] = useState(false);
   const resolveUrl = useContext(BrowserUrlResolverContext);
   /** 有地址改写时,页签自带的首个地址先记在这里,挂好之后经改写再加载(见下方 loadUrl 之后那一段)。 */
@@ -306,21 +306,16 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
         isLoading: true,
         loadError: null,
       });
-      if (page) {
-        void page.loadURL(url);
-        return;
-      }
-      pendingLoad.current = url;
+      setPendingLoad(url);
     },
-    [page, sessionBrowserId]
+    [sessionBrowserId]
   );
 
   useEffect(() => {
-    const url = pendingLoad.current;
-    if (!page || !url) return;
-    pendingLoad.current = null;
-    void page.loadURL(url);
-  }, [page]);
+    if (!page || !pendingLoad) return;
+    setPendingLoad(null);
+    void page.loadURL(pendingLoad);
+  }, [page, pendingLoad]);
 
   // #6264 别的机器上的会话:localhost 先经 SSH 转到那台机器上,再加载转好的地址(见 browser-url-resolver.ts)。
   const loadUrl = useCallback(
