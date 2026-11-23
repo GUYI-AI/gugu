@@ -14,7 +14,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { ConnectionModelPicker, useConnectionModelList, probeModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
-import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';
+import { connectionProbeMessageKey, heldKeyName } from '@renderer/features/settings/subscriptions/connection-probe-messages';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { retryOf, valueOf } from '@/lib/replica';
@@ -61,8 +61,10 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
       : normalized && connection?.keySaved ? { connectionId: connection.id, endpoints: normalized } : null;
   const list = useConnectionModelList(machine, source);
   const models = picked ?? (list.kind === 'listed' ? list.models : []);
-  const keyProblem = list.kind === 'unlisted' && list.reason !== 'no-list'
-    ? translate(connectionProbeMessageKey(list.reason)) : '';
+  const keyHeld = heldKeyName(translate, connection);
+  const keyProblem = list.kind !== 'unlisted' || list.reason === 'no-list' ? ''
+    : keyHeld && !apiKey && list.reason === 'unauthorized' ? translate('customModels.keyInUseRefused', { key: keyHeld })
+      : translate(connectionProbeMessageKey(list.reason));
   const setAddress = (baseUrl: string) => {
     setEndpoints((current) => current.map((endpoint, i) => i === 0 ? { ...endpoint, baseUrl } : endpoint));
   };
@@ -148,7 +150,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
           </label>}
           {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={retryOf(agentsReading)}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form className="subscription-connection-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           {!preset && <label>{translate('customModels.address')}<Input data-testid="custom-model-address-0" type="url" required value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} /></label>}
-          <label>API Key<Input data-testid="custom-model-key" type="password" required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={keyProblem ? true : undefined} placeholder={connection?.keySaved ? translate('customModels.keySaved') : undefined} onChange={(event) => setApiKey(event.target.value)} /></label>
+          <label>API Key<Input data-testid="custom-model-key" type="password" required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={keyProblem ? true : undefined} placeholder={keyHeld ? translate('customModels.keyInUse', { key: keyHeld }) : undefined} onChange={(event) => setApiKey(event.target.value)} /></label>
           {keyProblem && <p className="subscription-error" role="alert" data-testid="custom-model-key-problem">{keyProblem}</p>}
           <ConnectionModelPicker list={list} value={models} onChange={setPicked} />
           <Button type="button" size="sm" variant="ghost" className="justify-start" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>{advanced ? '⌄' : '›'} {translate('customModels.advanced')}</Button>

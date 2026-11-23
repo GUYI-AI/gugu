@@ -140,7 +140,22 @@ it.each(failures)('the saved connection’s Test connection action preserves %s'
   state.testResult = { kind: 'unlisted', reason };
   render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
   await userEvent.click(page.getByRole('button', { name: 'Test connection', exact: true }));
-  await expect.element(page.getByRole('status')).toHaveTextContent(text);
+  await expect.element(page.getByRole('status')).toHaveTextContent(reason === 'unauthorized' ? 'This address refused the key saved on this device. Enter a new key.' : text);
+});
+it('editing with the key field empty names the key that was read, including one found on this machine', async () => {
+  const found: CustomModelConnection = { ...record(), id: 'found', name: 'OpenAI', preset: 'openai', keySaved: true, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], discovered: { source: 'shell-env', keyLast4: 'abcd' } };
+  state.testResult = { kind: 'unlisted', reason: 'unauthorized' };
+  render(<CustomModelDialog machine={null} group="api" connection={found} onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', 'Using OPENAI_API_KEY from your terminal');
+  await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused OPENAI_API_KEY from your terminal. Enter a new key.');
+  expect(state.reads).toContainEqual({ connectionId: 'found', endpoints: found.endpoints });
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-typed');
+  await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused the key.');
+});
+it('a stored key reads as stored, in both languages', async () => {
+  setLocalePreference('zh-CN');
+  render(<CustomModelDialog machine={null} group="custom" connection={{ ...record(), keySaved: true, models: [{ id: 'm' }] }} onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', '使用本设备上保存的 Key');
 });
 it('preserves a connection failure that first occurs during the save-time named-model probe', async () => {
   state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
