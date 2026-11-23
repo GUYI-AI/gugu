@@ -30,7 +30,8 @@ export const clampSidebarWidth = (width: number): number => clampPaneWidth(SIDEB
  */
 export const INNER_SIDEBAR_MIN_WIDTH_PX = 200;
 export const INNER_SIDEBAR_MAX_WIDTH_PX = 520;
-export const INNER_SIDEBAR_DEFAULT_WIDTH_PX = SIDEBAR_DEFAULT_WIDTH_PX;
+// 第 16 版稿:一级侧边栏 220 宽(比零级栏窄)。
+export const INNER_SIDEBAR_DEFAULT_WIDTH_PX = 220;
 /** 内层栏最多占这张卡片(内层栏 + 正文)宽的这个比例 —— 与列表占会话页的比例同一个口径,正文至少留六成。 */
 export const INNER_SIDEBAR_MAX_SHARE = 0.4;
 export const INNER_SIDEBAR_WIDTH_STORAGE_KEY = 'gugu.taskpage.innerSidebarWidth';

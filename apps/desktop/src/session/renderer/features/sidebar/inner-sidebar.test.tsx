@@ -254,14 +254,14 @@ describe('inner sidebar', () => {
     // Only my agents are listed in a group too, but the title reads 「智能体」 (owner 11-12).
     expect(host.querySelector('[data-inner-sidebar-section="agents"]')?.textContent).toContain('sidebar.agents');
     expect(sessionRows()).toEqual(['mine-in-group']);
-    expect(agentsCount()).toBe('1');
+    expect(agentsCount(), 'v16: no count beside Agents').toBeUndefined();
     expect(readShellSlots()!.getSlots().has('inner-topics:group')).toBe(true);
   });
 
-  it('a project: Agents above Topics — its own sessions plus agents created in its group with no project; members living elsewhere are not listed (#2599)', async () => {
+  it('a project: Topics above Agents, as a group (v16) — its own sessions plus agents created in its group with no project; members living elsewhere are not listed (#2599)', async () => {
     openProject('p-shop');
     await render();
-    expect(sections()).toEqual(['agents', 'topics']);
+    expect(sections()).toEqual(['topics', 'agents']);
     expect(host.textContent).toContain('sidebar.agents');
     expect(sessionRows()).toEqual(['shop-chat-agent', 'shop-idle', 'shop-task']);
   });
@@ -383,7 +383,7 @@ describe('inner sidebar', () => {
     openProject('p-shop');
     await render();
     await act(async () => drill().click());
-    expect(sections()).toEqual(['agents', 'topics']);
+    expect(sections()).toEqual(['topics']);
   });
 
   it('no All › when level one already shows every topic', async () => {
@@ -402,7 +402,6 @@ describe('inner sidebar', () => {
     openProject('p-shop');
     await render();
     expect(host.querySelector('[data-agent-group]'), 'no group headers').toBeNull();
-    expect(agentsCount()).toBe('13');
     expect(sessionRows()).toEqual([...Array.from({ length: 5 }, (_, index) => `idle-${index}`), ...Array.from({ length: 5 }, (_, index) => `run-${index}`), 'asks']);
     expect(moreRows()).toEqual(['sidebar.showMore:2']);
     await act(async () => host.querySelector<HTMLElement>('[data-more-row="chat:shop-chat"]')!.click());
@@ -442,7 +441,6 @@ describe('inner sidebar', () => {
     const agents = () => host.querySelector<HTMLElement>('[data-inner-sidebar-section="agents"]')!;
     await act(async () => agents().querySelector<HTMLElement>('button[aria-label="sidebar.collapseAgents"]')!.click());
     expect(sessionRows()).toEqual([]);
-    expect(agentsCount()).toBe('2');
     expect(agents().querySelector('[aria-label="sidebar.unreadCount:1"]')?.textContent).toBe('1');
   });
 

@@ -153,19 +153,20 @@ describe('the inner column for the sample project', () => {
     expect(headRow.textContent).toContain('projects.sample.name');
     expect(headRow.querySelector('[data-slot="chip"]')?.textContent).toBe('projects.sample.tag');
     expect(headRow.querySelector('[aria-haspopup]'), 'no 「…」: removing it is in its row menu in the list').toBeNull();
-    expect(host.querySelector('[data-inner-head-new-agent]'), 'no project yet: nobody to send a new agent to').toBeNull();
+    // v16: the same ✎ Create agent as a project; it goes back to the conversation's new-task box (msg:8e07ad26).
+    expect(headRow.querySelector('[data-inner-head-create]')).not.toBeNull();
     expect(head().getAttribute('aria-current')).toBe('page');
     expect(head().dataset.active, 'the head row is a title, never a selected row').toBeUndefined();
 
-    expect(sections()).toEqual(['agents', 'topics']);
+    expect(sections()).toEqual(['topics', 'agents']);
     const rows = agentRows();
     expect(rows).toHaveLength(1);
     expect(rows[0].querySelector('[data-row-title]')?.textContent).toBe(zhCNSampleProject.agent.name);
     expect(rows[0].querySelector(`[data-row-agent-avatar="${SAMPLE_AGENT_SEED}"]`), 'the face it has in the conversation').not.toBeNull();
     expect(rows[0].dataset.agentTone, 'nothing runs in a frozen sample').toBeUndefined();
-    // A plain count beside the title, as the group / project column (#2548 ⑥): no pill, nothing running.
+    // No count beside Agents, as the group / project column (v16): no pill, nothing running.
     expect(host.querySelector('[data-inner-sidebar-section="agents"] [data-session-branch-count]')).toBeNull();
-    expect(host.querySelector('[data-inner-sidebar-section="agents"] [data-inner-agents-count]')?.textContent).toBe('1');
+    expect(host.querySelector('[data-inner-sidebar-section="agents"] [data-inner-agents-count]')).toBeNull();
 
     const topics = host.querySelector<HTMLElement>('[data-inner-sidebar-section="topics"]')!;
     expect(topics.textContent).toContain('sidebar.topics');
