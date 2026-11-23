@@ -13,6 +13,7 @@ import { TabChip, TabSlot } from './tab-chip';
 import type { TabCommand } from './tab-commands';
 import { TabContextMenu } from './tab-context-menu';
 import { ChatWorkspaceTabContext } from '../chat-workspace-context';
+import { Popover } from '@/components/ui/Popover';
 
 /** Props for GenericTabItem — aligns with TabBarItemProps<any> for convenience. */
 export interface GenericTabItemProps {
@@ -44,6 +45,8 @@ export interface GenericTabItemProps {
   /** Double-clicking the conversation's title (standalone or as the workspace's first tab) starts inline rename; a click keeps selecting it. */
   renameOnDoubleClick?: boolean;
   closeDisabled?: boolean;
+  /** The conversation's card (第 16 版名片): clicking its tab once it is showing opens this beside the tab. */
+  card?: (close: () => void) => ReactNode;
 }
 
 /**
@@ -73,6 +76,7 @@ export const GenericTabItem = observer(function GenericTabItem({
   renameMaxLength,
   renameOnDoubleClick,
   closeDisabled,
+  card,
 }: GenericTabItemProps) {
   const { translate } = useSessionMessages();
   const { isFocusedPane, pane } = usePaneContext();
@@ -104,6 +108,18 @@ export const GenericTabItem = observer(function GenericTabItem({
     },
     [host, label, renameMaxLength, renameValue, tab.tabId]
   );
+
+  const [cardOpen, setCardOpen] = useState(false);
+  const cardPopover = card ? (
+    <Popover.Root open={cardOpen} modal={false} onOpenChange={setCardOpen}>
+      {cardOpen ? <Popover.Portal><Popover.Positioner side="bottom" align="start" sideOffset={8} collisionPadding={8}
+        anchor={() => document.querySelector(`[data-tabid="${CSS.escape(tab.tabId)}"]`)}>
+        <Popover.Popup aria-label={label}>{card(() => setCardOpen(false))}</Popover.Popup>
+      </Popover.Positioner></Popover.Portal> : null}
+    </Popover.Root>
+  ) : null;
+  /** A tab already showing opens its card on click (the 第 16 版 capsule); any other click selects it. */
+  const openCardOr = (select: () => void) => () => { if (card && tab.isActive) setCardOpen((open) => !open); else select(); };
 
   const handleSelect = () => {
     host.setActiveTab(tab.tabId);
@@ -165,11 +181,13 @@ export const GenericTabItem = observer(function GenericTabItem({
   if (workspaceRole === 'title') {
     return (
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
-        <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title=""
+        <div className="flex h-full min-w-0 flex-1 items-center gap-2 px-1 text-sm font-medium" data-chat-workspace-title="" data-tabid={card ? tab.tabId : undefined}
+          onClick={card ? () => setCardOpen((open) => !open) : undefined}
           onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}>
           {preSlot}
           {editableTitle ?? <span className="truncate" title={tooltip ?? label}>{label}</span>}
           {statusSlot}
+          {cardPopover}
         </div>
       </TabContextMenu>
     );
@@ -180,10 +198,11 @@ export const GenericTabItem = observer(function GenericTabItem({
     return <TabSlot data-chat-workspace-conversation-tab="" data-tabid={tab.tabId}>
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={kindCommands} titleMenu>
         <TabChip isActive={tab.isActive} isFocusedPane={isFocusedPane} label={label} title={tooltip ?? label}
-          preSlot={preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={select}
+          preSlot={preSlot} labelSlot={editableTitle} statusSlot={statusSlot} onClick={openCardOr(select)}
           onDoubleClick={renameOnDoubleClick && !isEditing ? startRename : undefined}
           onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(); } }} />
       </TabContextMenu>
+      {cardPopover}
     </TabSlot>;
   }
 
@@ -220,7 +239,7 @@ export const GenericTabItem = observer(function GenericTabItem({
           closeLabel={translate('task.closeTab', { label })}
           onClose={closeDisabled ? undefined : () => host.requestCloseTab(tab.tabId)}
           onMouseEnter={() => host.signalActivateIntent(tab.tabId)}
-          onClick={handleSelect}
+          onClick={openCardOr(handleSelect)}
           onDoubleClick={() => fill?.toggle()}
           onKeyDown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -245,6 +264,7 @@ export const GenericTabItem = observer(function GenericTabItem({
             表格而不是页签。Chrome 的分隔线是 16px 短竖线、且自己或邻居被选中/悬浮时消失 ——
             判据在兄弟节点上，只能用 CSS 表达，见 index.css 的 .session-tab-slot。 */}
       </TabContextMenu>
+      {cardPopover}
     </DraggableTab>
   );
 });

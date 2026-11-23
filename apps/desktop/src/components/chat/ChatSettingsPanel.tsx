@@ -17,6 +17,7 @@ import { ChatManagementActions } from './ChatManagementActions'
 import { SettingsPageHead } from './groupSettingsUi'
 import { settingsDangerRowStyle } from './groupSettingsStyles'
 import { useCloseTopic } from './useCloseTopic'
+import { ChatDetailsQuickActions } from './ChatDetailsQuickActions'
 import { COLOR_MUTED } from './chatPresentation'
 import { useRoomCollab } from '../../hooks/useRoomCollab'
 import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
@@ -33,6 +34,7 @@ export function ChatSettingsPanel({ mobile = false, topic, ...body }: ChatSettin
   return (
     <div data-testid="chat-settings-panel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {activeChat.kind === 'group' || !mobile ? null : <SettingsPageHead title={t('chatArea.settings.conversation')} onClose={onClose} mobile />}
+      {mobile ? null : <ChatDetailsQuickActions chatId={activeChat.id} isGroup={activeChat.kind === 'group'} />}
       <ChatRightPanelBody {...body} />
     </div>
   )

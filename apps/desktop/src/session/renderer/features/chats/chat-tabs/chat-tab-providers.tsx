@@ -247,18 +247,19 @@ export const chatTopicTabProvider = createTabProvider<typeof CHAT_TOPIC_TAB_KIND
   TabContent: TopicTabContent,
 });
 
-const useInfoLabel = (tab: ResolvedTab) => useTranslation('messaging').t(stateOf<ChatInfoState>(tab).topic ? 'group.memberList.titleTopic' : stateOf<ChatInfoState>(tab).group ? 'header.groupInfo' : 'header.chatInfo');
+// 第 16 版 #44:群、私聊、话题的这一页都叫「详情」(❌ 群信息 / 会话信息)。
+const useInfoLabel = () => useTranslation('messaging').t('header.details');
 
 const InfoTabItem = observer(function InfoTabItem({ tab, host, ctx }: TabBarItemProps<TabResource>) {
   return (
     <div className="contents" data-info-tab="">
-      <GenericTabItem tab={tab} host={host} ctx={ctx} label={useInfoLabel(tab)} preSlot={<Users size={14} />} />
+      <GenericTabItem tab={tab} host={host} ctx={ctx} label={useInfoLabel()} preSlot={<Users size={14} />} />
     </div>
   );
 });
 
-const InfoTabDragPreview = observer(function InfoTabDragPreview({ tab }: { tab: ResolvedTab }) {
-  return <GenericTabDragPreview preSlot={<Users size={14} />} label={useInfoLabel(tab)} />;
+const InfoTabDragPreview = observer(function InfoTabDragPreview(_props: { tab: ResolvedTab }) {
+  return <GenericTabDragPreview preSlot={<Users size={14} />} label={useInfoLabel()} />;
 });
 
 function InfoTabContent(props: TabContentProps) {
