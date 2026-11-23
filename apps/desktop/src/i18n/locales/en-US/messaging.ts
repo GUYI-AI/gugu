@@ -748,7 +748,10 @@ export default {
   "groupDetails": {
     "searchHistory": "Search",
     "searchChat": "Search",
-    "memberSummary": "{{people}} people · {{agents}} agents"
+    "people": "{{count}} people",
+    "people_one": "{{count}} person",
+    "agents": "{{count}} agents",
+    "agents_one": "{{count}} agent"
   },
   "conversationCard": {
     "rename": "Rename",

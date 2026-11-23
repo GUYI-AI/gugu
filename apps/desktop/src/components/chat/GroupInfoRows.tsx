@@ -87,14 +87,15 @@ export function GroupMembersBlock({ chatId, settings, memberIds, total, people, 
       onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }}
       className="mb-3 flex h-12 cursor-pointer items-center gap-2.5 rounded-xl bg-[var(--muted)] px-3 text-[13.5px]">
       <span className="flex shrink-0 ps-1.5">
-        {memberIds.slice(0, MEMBER_PREVIEW_COUNT).map((id) => (
-          <span key={id} className="-ms-1.5 flex rounded-full ring-2 ring-[var(--muted)]">
+        {/* 窄了先让头像:详情页(@container/details)不到 380 只留 3 个,不到 300 不留。 */}
+        {memberIds.slice(0, 4).map((id, index) => (
+          <span key={id} className={`-ms-1.5 flex rounded-full ring-2 ring-[var(--muted)] @max-[300px]/details:hidden${index >= 3 ? ' @max-[380px]/details:hidden' : ''}`}>
             <Avatar name={identitiesById[id]?.display_name ?? ''} avatarUrl={identitiesById[id]?.avatar ?? null} seed={id} size={22} />
           </span>
         ))}
       </span>
       <span className="shrink-0 whitespace-nowrap">{t('group.settings.members')}</span>
-      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--muted-fg)]">{people !== null && agents !== null ? t('groupDetails.memberSummary', { people, agents })
+      <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--muted-fg)]">{people !== null && agents !== null ? `${t('groupDetails.people', { count: people })} · ${t('groupDetails.agents', { count: agents })}`
         : total === null ? <Unknown className="w-[2ch]" /> : t('group.settings.memberCount', { count: total })}</span>
       <span className="ms-auto flex shrink-0 items-center" onClick={contain} onKeyDown={contain}>
         <GroupAddMenu chatId={chatId} canAddMembers={groupInviteAccess(chatId, 'group', settings).showInvite} labeled />

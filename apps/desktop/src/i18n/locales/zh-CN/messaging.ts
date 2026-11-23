@@ -746,7 +746,10 @@ export default {
   "groupDetails": {
     "searchHistory": "搜索聊天记录",
     "searchChat": "搜索对话",
-    "memberSummary": "{{people}} 人 · {{agents}} 个智能体"
+    "people": "{{count}} 人",
+    "people_one": "{{count}} 人",
+    "agents": "{{count}} 个智能体",
+    "agents_one": "{{count}} 个智能体"
   },
   "conversationCard": {
     "rename": "改名",
