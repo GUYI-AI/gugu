@@ -154,6 +154,8 @@ state.toggleIdleExpanded.mockImplementation((key: string) => runInAction(() => {
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
 const { readComposerVerb, setComposerVerb } = await import('@/lib/composerVerbBridge');
 const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarPresent } = await import('@/lib/innerSidebarBridge');
+// The open topics page, as the bridge holds it (the chat block reads it through useInnerSidebarTopicsAll).
+const readInnerSidebarTopicsAll = () => ((window as unknown as Record<string, unknown>).__GUGU_INNER_SIDEBAR_TOPICS_ALL__ as string | undefined) ?? null;
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
 const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
@@ -337,7 +339,7 @@ describe('inner sidebar', () => {
     expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('shop-chat');
   });
 
-  it('All › (the only way to every topic: no 「All N topics」 row under them) keeps what sits above Topics and hides what sits below; ‹ Back brings it back', async () => {
+  it('All › (the only way to every topic: no 「All N topics」 row under them) opens the topics page in the group\'s block; the column stays as it is; ‹ Back closes it', async () => {
     topicsView('group', { total: 9, hidden: 6 });
     openChat('group');
     await render();
@@ -345,16 +347,17 @@ describe('inner sidebar', () => {
     expect(drill().dataset.innerTopicsDrill).toBe('all');
     expect(moreRows()).toEqual([]);
     await act(async () => drill().click());
-    expect(sections()).toEqual(['topics']);
+    expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('group');
+    expect(readInnerSidebarTopicsAll()).toBe('group');
+    expect(sections(), 'the column does not change: the page is in the main area').toEqual(['topics', 'agents']);
     expect(drill().dataset.innerTopicsDrill).toBe('back');
     await act(async () => drill().click());
-    expect(sections()).toEqual(['topics', 'agents']);
+    expect(readInnerSidebarTopicsAll()).toBeNull();
 
-    topicsView('shop-chat', { total: 9, hidden: 6 });
-    openProject('p-shop');
-    await render();
+    // The head row goes back to the group itself, closing the page.
     await act(async () => drill().click());
-    expect(sections()).toEqual(['topics']);
+    await act(async () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-slot="button"]')!.click());
+    expect(readInnerSidebarTopicsAll()).toBeNull();
   });
 
   it('no All › when level one already shows every topic', async () => {

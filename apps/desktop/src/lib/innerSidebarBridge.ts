@@ -12,6 +12,9 @@ import { useEffect, useSyncExternalStore } from 'react'
 /** 内层侧栏「话题」那一格在 lib/shellSlots 里的键前缀:会话页登记,壳的 components/ChatListSlotHost.tsx 往里画。 */
 export const INNER_SIDEBAR_TOPICS_SLOT_PREFIX = 'inner-topics:'
 export const innerSidebarTopicsSlotKey = (chatId: string) => `${INNER_SIDEBAR_TOPICS_SLOT_PREFIX}${chatId}`
+/** 「全部 ›」打开的话题页:这个群 / 项目那一块里的格子,壳把全部话题画进来(ChatListSlotHost)。 */
+export const TOPICS_PAGE_SLOT_PREFIX = 'topics-page:'
+export const topicsPageSlotKey = (chatId: string) => `${TOPICS_PAGE_SLOT_PREFIX}${chatId}`
 
 export type InnerSidebarTopicsView = {
   readonly chatId: string
@@ -57,13 +60,13 @@ const subscribeAgentCounts = subscribeTo(AGENT_COUNTS_EVENT)
 const subscribeColumn = subscribeTo(COLUMN_EVENT)
 const subscribeAgentRows = subscribeTo(AGENT_ROWS_EVENT)
 
-/** 摊开这个对话的全部话题;null = 回到第一级。没变不通知。 */
+/** 打开这个对话的话题页(「全部 ›」,开在它那一块里);null = 关掉。没变不通知。 */
 export function setInnerSidebarTopicsAll(chatId: string | null): void {
   if (read<string>(TOPICS_ALL_KEY) === chatId) return
   write(TOPICS_ALL_KEY, TOPICS_ALL_EVENT, chatId)
 }
 
-/** 此刻摊开全部话题的那个对话;没有 = null。 */
+/** 此刻开着话题页的那个对话;没有 = null。 */
 export function useInnerSidebarTopicsAll(): string | null {
   return useSyncExternalStore(subscribeTopicsAll, () => read<string>(TOPICS_ALL_KEY), () => null)
 }
