@@ -641,29 +641,55 @@ async function requireChat(args, deps) {
   throw new Error('chat_id is required; the gugu MCP server never infers a conversation target')
 }
 
-/** A session whose page the owner reads takes their writes there; a DM is only an older spelling of it. Elsewhere it is the DM. */
-async function resolveWriteTarget(args, deps) {
+/**
+ * Where a write lands, by what the owner reads of this session (`context.ownerReads`). A session whose page the owner
+ * reads takes their writes there; a DM is only an older spelling of it. A terminal session's owner reads what it prints,
+ * so a write to them is refused (owner 11-23): the private chat would hold it where the terminal page never shows it.
+ * Elsewhere it is the DM.
+ */
+async function resolveWriteTarget(args, deps, toolName) {
   const address = typeof args?.chat_id === 'string' ? args.chat_id.trim() : ''
   if (!address) throw new Error('chat_id is required; the gugu MCP server never infers a conversation target')
-  if (deps.context.personalAssistant || !deps.context.ownerReadsSession) return { chatId: await requireChat(args, deps) }
+  const ownerReads = deps.context.personalAssistant ? undefined : deps.context.ownerReads
+  if (!ownerReads) return { chatId: await requireChat(args, deps) }
   if (/^(aid|user|gugu):/.test(address)) {
     const decoded = decodeIdentityAddress(address, 'chat_id')
     const userId = decoded.kind === 'user' ? decoded.id : (await lookupGuguNumber(decoded.number, deps)).id
     const owner = await currentAuthUserId(deps)
     if (userId !== owner) throw new Error(`chat_id ${address} is not a chat: an identity address works here only for your owner; for anyone else use an id from message_conversations`)
+    if (ownerReads === 'terminal') throw terminalOwnerWriteError(toolName)
     return { owner }
   }
   const chatId = await requireChat(args, deps)
-  if (UUID_RE.test(chatId)) {
+  // A terminal session checks the owner's chat with the member list the send reads anyway (assertNotTerminalOwnerChat).
+  if (ownerReads === 'session' && UUID_RE.test(chatId)) {
     const kind = await chatKindOf(deps, chatId)
     if (kind === 'dm' || kind === 'ai') {
       const members = await memberRowsOfMyChat(chatId, deps)
-      const ids = new Set(members.map(row => row.user_id))
-      const owner = await currentAuthUserId(deps)
-      if (ids.size === 2 && ids.has(owner) && ids.has(deps.context.agentId)) return { owner, chatId }
+      if (await isOwnerPrivateChat(deps, members)) return { owner: await currentAuthUserId(deps), chatId }
     }
   }
   return { chatId }
+}
+
+/** The private chat of exactly this agent and its owner. */
+async function isOwnerPrivateChat(deps, memberRows) {
+  const ids = new Set(memberRows.map(row => String(row.user_id)))
+  return ids.size === 2 && ids.has(deps.context.agentId) && ids.has(await currentAuthUserId(deps))
+}
+
+function terminalOwnerWriteError(toolName) {
+  return new Error(`${toolName}: your owner reads this terminal session; a message to them here is refused. Answer them in your printed output, and give a file's path there instead of sending it.`)
+}
+
+/**
+ * In a terminal session, refuse the owner's private chat. `memberRows` and the chat kind are what the send reads anyway
+ * (the kind from chat facts its group-rules check has just read), so this adds no request.
+ */
+async function assertNotTerminalOwnerChat(deps, chatId, memberRows, toolName) {
+  if (deps.context.personalAssistant || deps.context.ownerReads !== 'terminal') return
+  const kind = await chatKindOf(deps, chatId)
+  if ((kind === 'dm' || kind === 'ai') && await isOwnerPrivateChat(deps, memberRows)) throw terminalOwnerWriteError(toolName)
 }
 
 async function sendOwnerNotification(args, deps, target, recipients, file) {
@@ -1547,7 +1573,7 @@ async function handleMessage(args, deps) {
   const requestedRecipients = await resolveRecipientAddresses(normToList(args.to_user_ids), deps)
   // `to_user_ids: []` written out: address no one, not even the author of the message replied to.
   const addressesNoOneExplicitly = Array.isArray(normalizeRecipientInput(args.to_user_ids)) && normalizeRecipientInput(args.to_user_ids).length === 0
-  const target = args.action === 'send' ? await resolveWriteTarget(args, deps) : { chatId: await requireChat(args, deps) }
+  const target = args.action === 'send' ? await resolveWriteTarget(args, deps, writerToolName) : { chatId: await requireChat(args, deps) }
   if (target.owner) return sendOwnerNotification(args, deps, target, requestedRecipients, hasFile ? await ownerNotificationFile(args, deps) : undefined)
   const chatId = target.chatId
   if (args.action === 'send') {
@@ -1593,6 +1619,7 @@ async function handleMessage(args, deps) {
         const friendId = await ownerFriendAmong(deps, new Set(memberRows.map((row) => String(row.user_id))))
         if (friendId) throw ownerFriendDmWriteError(chatId, friendId, 'message_send', 'message_send_as_owner')
       }
+      await assertNotTerminalOwnerChat(deps, chatId, memberRows, writerToolName)
       if (kind === 'group' && !memberRows.some((row) => String(row.user_id) === deps.context.agentId)) {
         throw new Error(`message_send: you are not a member of group ${chatId}. Reply in your own session or use session_message to contact another session.`)
       }
@@ -3177,6 +3204,7 @@ export async function sendWidgetOf(context, args, content, injected = {}, state 
   }
   const members = await memberRowsOfMyChat(chatId, deps)
   if (!members.some(member => String(member.user_id) === context.agentId)) throw new Error('widget_send: the agent must be a member of this chat')
+  await assertNotTerminalOwnerChat(deps, chatId, members, 'widget_send')
   const widget = parseWidgetMessage(content)
   if (!widget) throw new Error('widget_send: a valid v2 widget is required')
   const result = await deps.restRpc('send_widget', {

@@ -73,7 +73,7 @@ it.each([
     addNotice(`session:turn:s3:message:${input.request_id}`)
     return { status: 'sent', message_id: input.request_id, session_id: 'session', seq: 3 }
   })
-  const context = { agentId: agent, threadRootId: null, getAccessToken: async () => token, runHostAction, ownerReadsSession: true as const }
+  const context = { agentId: agent, threadRootId: null, getAccessToken: async () => token, runHostAction, ownerReads: 'session' as const }
   const deps = {
     restGet: vi.fn(async (path: string) => path.startsWith('chats?') ? [{ id: dm, public_id: 218799 }] : []),
     restRpc: vi.fn(async (name: string) => name === 'chat_facts' ? [{ kind: 'dm', rules: null }]

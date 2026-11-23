@@ -2570,11 +2570,14 @@ const nativeFiles = createNativeFileHost({ root: remoteFileTempRoot, attachments
 })
 /**
  * The one social bridge every session surface wires (an ACP session, its side-chat fork, a terminal session): the same
- * file resolver and publisher, uploads and session actions, so no surface loses a tool another has.
+ * file resolver and publisher, uploads and session actions, so no surface loses a tool another has. `ownerReads` says what
+ * the owner reads of the session: its record (`session`), its terminal (`terminal`), or neither (a side chat).
  */
-function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAction: BuildSocialBridgeDeps['runHostAction']): BuildSocialBridgeDeps {
+function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAction: BuildSocialBridgeDeps['runHostAction'],
+  ownerReads?: BuildSocialBridgeDeps['ownerReads']): BuildSocialBridgeDeps {
   return {
     host,
+    ...(ownerReads ? { ownerReads } : {}),
     resolveFile: desktopFiles.resolve,
     publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
     attachments: attachmentUploads,
@@ -6044,8 +6047,7 @@ app.whenReady().then(async () => {
           // 它们的宿主侧注入已经闭嘴,这份声明是模型唯一的来路。
           model: sessionBundleModelFor(info.providerId, 'acp', processConfigPlatform, info.fastMode),
           socialBridgeDeps: {
-            ...sessionSocialBridge(primaryGuguMcpHost, info.sessionId, runAction),
-            ownerReadsSession: true,
+            ...sessionSocialBridge(primaryGuguMcpHost, info.sessionId, runAction, 'session'),
             ...(assistantRole ? { personalAssistant: true as const, assistantWork: {
               ...assistantWorkBinding(persistedSessionId, info.cwd, assistantHomeKind(process.env), provisioned.guguAgentUserId),
               currentInput: () => emdashBridge?.readCurrentActivityInput(persistedSessionId) ?? Promise.resolve(undefined),
@@ -6197,7 +6199,7 @@ app.whenReady().then(async () => {
       },
       socialBridge(info, host) {
         const sessionContext = ptySessionCallerContext(info)
-        return sessionSocialBridge(host, info.sessionId, (action, auth, signal) => runLocalSessionAction(auth, sessionContext, action, signal))
+        return sessionSocialBridge(host, info.sessionId, (action, auth, signal) => runLocalSessionAction(auth, sessionContext, action, signal), 'terminal')
       },
       platformRecovery: () => sessionpagePlatformRecovery,
       recordFailedSessionDirectMessage(params, message, error) {

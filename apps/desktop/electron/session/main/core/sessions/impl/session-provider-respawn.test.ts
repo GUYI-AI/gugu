@@ -70,6 +70,13 @@ function currentHookSourceId(): string {
 }
 
 vi.mock('@main/core/sessions/set-session-id', () => ({ setProviderSessionId: setProviderSessionIdMock }));
+const publication = vi.hoisted(() => ({ context: vi.fn(async (): Promise<unknown> => null), queue: vi.fn() }));
+vi.mock('@main/core/sessions/native-publication-host', async (importOriginal) => ({
+  ...(await importOriginal<object>()), nativePublicationContext: publication.context,
+}));
+vi.mock('@main/core/sessions/native-publication-journal', async (importOriginal) => ({
+  ...(await importOriginal<object>()), queueNativeInput: publication.queue,
+}));
 
 vi.mock('../runtime-fork-ownership', () => ({
   recordRuntimeForkOwnership: recordRuntimeForkOwnershipMock,
@@ -605,6 +612,34 @@ describe('conversation provider respawn state', () => {
       session: item,
       message: { id: 'message-stable-1', text: 'ordinary message' },
     });
+  });
+
+  // A terminal task's first line typed on the task page is published to the owner's conversation, like the ACP leg's
+  // first turn, so the task is listed as soon as it starts; lines nobody typed there are not.
+  it('publishes a person\'s first task-page line once, under the creation input id', async () => {
+    const owner = { ownerUserId: 'owner-1', deviceId: 'device-1' };
+    publication.context.mockResolvedValue(owner);
+    const cases: Array<[Partial<Session>, boolean, boolean]> = [
+      [{ startupOrigin: 'session-page' }, false, true],
+      [{ startupOrigin: 'session-page', initialMessageId: 'first-line-1' }, false, true],
+      [{}, false, false],
+      [{ startupOrigin: 'session-page', taskChatId: 'card-chat' }, false, false],
+      [{ startupOrigin: 'session-page' }, true, false],
+    ];
+    for (const [overrides, resuming, published] of cases) {
+      publication.queue.mockClear();
+      spawnLocalPty.mockReturnValue(fakePty([]));
+      const provider = localProvider();
+      await provider.startSession(session({ providerId: 'claude', ...overrides }), undefined, resuming, 'build the report');
+      if (published) {
+        expect(publication.queue).toHaveBeenCalledExactlyOnceWith(owner, 'conversation-1',
+          overrides.initialMessageId ?? 'conversation-1:creation:0', expect.any(String), expect.anything());
+      } else {
+        expect(publication.queue).not.toHaveBeenCalled();
+      }
+      await provider.stopSession?.('conversation-1').catch(() => undefined);
+    }
+    publication.context.mockResolvedValue(null);
   });
 
   it('keystroke bootstrap bypasses command bytes and injects exactly once after ready', async () => {
