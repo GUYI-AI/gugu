@@ -1,8 +1,6 @@
 import { createHash } from 'node:crypto';
 import type BetterSqlite3 from 'better-sqlite3';
 import journal from '@root/drizzle/meta/_journal.json';
-import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
-import { isGuguSilence } from '@gugu/core/local/agent/silenceMarker';
 
 // Vite bundles all migration SQL files at build time — no runtime path resolution needed.
 // Each value is the raw SQL string content of the file.
@@ -159,12 +157,6 @@ function ensureSessionIndex(connection: BetterSqlite3.Database): void {
       INSERT INTO turn_text (turn_text, rowid, text) VALUES ('delete', OLD.id, OLD.text);
     END;
   `);
-}
-
-/** What a person reads in a message, for search: a delivery's body (its envelope is how it arrived), nothing for silence. */
-export function searchText(text: string): string | null {
-  if (isGuguSilence(text)) return null;
-  return readDeliveryEnvelope(text)?.body ?? text;
 }
 
 /**
