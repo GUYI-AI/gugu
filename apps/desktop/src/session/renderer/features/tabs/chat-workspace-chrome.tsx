@@ -150,7 +150,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     </div>
   );
   return (
-    <div ref={header} className={toolCard ? 'flex min-w-0 shrink-0' : 'flex min-w-0 shrink-0 bg-tab-strip'} data-chat-workspace-header={mode} data-chat-tool-cards={toolCard ? '' : undefined} data-chat-tool-shared={toolsShown && sharedStrip ? '' : undefined}>
+    <div ref={header} className={sharedStrip ? 'flex min-w-0 shrink-0 bg-tab-strip' : 'flex min-w-0 shrink-0'} data-chat-workspace-header={mode} data-chat-tool-cards={toolCard ? '' : undefined} data-chat-tool-shared={toolsShown && sharedStrip ? '' : undefined}>
       {toolsFirst && toolTabs}
       {chatTitle}
       {!toolsFirst && toolTabs}

@@ -44,7 +44,7 @@ export function TabBarActionRow({
           marginBlock: `calc((var(--tab-strip-height, ${WINDOW_CONTROL_BAR_HEIGHT_PX}px) - ${TITLEBAR_ACTION_SLOT_WIDTH_PX}px) / 2)`,
           alignSelf: 'flex-start',
           paddingInlineStart: `${TITLEBAR_ACTION_SLOT_GAP_PX * 2}px`,
-          paddingInlineEnd: `${TITLEBAR_ACTION_EDGE_GAP_PX}px`,
+          paddingInlineEnd: `var(--tabbar-actions-edge-gap, ${TITLEBAR_ACTION_EDGE_GAP_PX}px)`,
           gap: `${TITLEBAR_ACTION_SLOT_GAP_PX}px`,
         }}
         data-tabbar-actions=""
