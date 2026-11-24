@@ -1,7 +1,7 @@
 'use client';
 
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
-import { useUiPortalContainer } from '@session-ui/react/lib/portal-container';
+import { useUiPopupZIndex, useUiPortalContainer } from '@session-ui/react/lib/portal-container';
 import { cx } from '@session-ui/styles/utilities/cx';
 import * as React from 'react';
 import type { FixedDataSlotProps } from '../fixed-data-slot';
@@ -39,6 +39,7 @@ function PopoverContent({
         sideOffset={sideOffset}
         anchor={anchor}
         className={styles.positioner}
+        style={{ zIndex: useUiPopupZIndex() }}
       >
         <OpenLayer />
         <PopoverPrimitive.Popup

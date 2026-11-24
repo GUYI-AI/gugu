@@ -19,6 +19,11 @@ export function holdSentFile(messageId: string, file: Blob, previewUrl: string):
   bySource.set(`url:${previewUrl}`, file)
 }
 
+/** A new task's attachment, named before it is placed (`prepareTaskAttachment`): its first turn draws it from here while the task starts. */
+export function holdSentItem(itemId: string, version: number, file: Blob): void {
+  bySource.set(`item:${itemId}@${version}`, file)
+}
+
 /** This device's copy of what a row shows, when this run sent it. A sending row's preview with no copy is a dead URL (a row restored after a restart). */
 export function sentFileCopy(source: AttachmentSource): Blob | null {
   const key = keyOf(source)

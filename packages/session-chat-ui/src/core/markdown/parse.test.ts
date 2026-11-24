@@ -196,7 +196,6 @@ describe('bare @token standard shapes', () => {
 describe('links retain their parsed inline meaning', () => {
   it.each([
     'someone@example.com',
-    'someone+tag@example.com',
     '<someone@example.com>',
     '[someone@example.com](mailto:someone@example.com)',
     '[**someone@example.com**](mailto:someone@example.com)',

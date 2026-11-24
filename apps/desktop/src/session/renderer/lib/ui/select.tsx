@@ -3,7 +3,7 @@
 import { Select as SelectPrimitive } from '@base-ui/react/select';
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from '@/lib/icons'
 import * as React from 'react';
-import { useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives';
+import { useUiPopupZIndex, useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
 
 const Select = SelectPrimitive.Root;
@@ -84,6 +84,7 @@ function SelectContent({
   return (
     <SelectPrimitive.Portal container={useUiPortalContainer()}>
       <SelectPrimitive.Positioner
+        style={{ zIndex: useUiPopupZIndex() }}
         side={side}
         sideOffset={sideOffset}
         align={align}

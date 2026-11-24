@@ -25,7 +25,6 @@ export interface ChatMessageComposerProps {
   isGroupChat?: boolean
   groupMembers?: GroupRosterCandidate[]
   messages?: readonly MessageItem[]
-  participantIds?: readonly string[]
   currentUserId?: string | null; agentStatuses?: AgentStatusById
   disabled?: boolean
   disabledReason?: string
@@ -36,6 +35,6 @@ export interface ChatMessageComposerProps {
   // @@@whisper (#820) — 悄悄话模式：设置后显示 banner + 发送带 isWhisper/toUserIds。
   whisperTarget?: { userId: string; displayName: string } | null
   onExitWhisper?: () => void
-  surface?: 'main' | 'aside'; hidden?: boolean // @@@5856 主输入框还是副栏(话题分栏);只有主的登记全局聚焦落点,因果见 lib/focusComposer.ts
+  hidden?: boolean
   entryActive?: boolean
 }

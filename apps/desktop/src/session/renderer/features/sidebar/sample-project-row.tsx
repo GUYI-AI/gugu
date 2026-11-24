@@ -28,19 +28,18 @@ function openSampleProject(beside: boolean): void {
 
 /**
  * #2548 the sample in the one list, as any project group's row: a project's face, its name, then 「示例」 and the
- * transcript's last message (`<sender>: <text>`) with its time. The face's colour is keyed by the sample's block kind:
+ * transcript's last message (`<sender>: <text>`). The face's colour is keyed by the sample's block kind:
  * the sample is no local project, so it has no project id of its own.
  */
 const OneListSampleRow = observer(function OneListSampleRow({ ownerName }: { ownerName: string }) {
   const { translate, locale } = useSessionMessages();
   const name = translate('projects.sample.name');
-  const { preview, time } = sampleProjectLastLine(sampleProjectContent(locale), ownerName);
+  const preview = sampleProjectLastLine(sampleProjectContent(locale), ownerName);
   return (
     <OneListProjectRow
       name={name}
       faceId="sample-project"
       tag={translate('projects.sample.tag')}
-      time={time}
       preview={preview}
       selected={sampleProjectInView()}
       onOpen={openSampleProject}

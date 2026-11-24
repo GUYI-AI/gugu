@@ -101,15 +101,17 @@ describe('PanelTrack', () => {
     expect(track.drawn('list')).toBe(300);
   });
 
-  it('a slot closed to nothing is inert, and comes back within reach', () => {
+  it('a slot closed to nothing is inert and scaled to nothing (its window drag rects collapse), and comes back within reach', () => {
     const track = new PanelTrack([{ id: 'inner', at: { size: 260 } }]);
     const inner = nodes();
     track.attach('inner', inner);
     track.to({ inner: { size: 0, content: 260 } });
     expect(inner.window.inert).toBe(true);
+    expect(inner.window.style.transform).toBe('scale(0)');
     expect(inner.content.style.width).toBe('260px');
     track.to({ inner: { size: 260 } });
     expect(inner.window.inert).toBe(false);
+    expect(inner.window.style.transform).toBe('');
     expect(inner.window.style.opacity).toBe('');
     expect(inner.window.style.maskImage).toBe('');
   });

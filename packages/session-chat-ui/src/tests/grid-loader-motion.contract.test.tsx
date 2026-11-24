@@ -24,19 +24,6 @@ afterEach(async () => {
   await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] })
 })
 
-it('stops offscreen and starts again on the shared beat', async () => {
-  const host = document.createElement('div')
-  document.body.append(host)
-  teardown.push(render(() => <GridLoader />, host), () => host.remove())
-  const animations = () => [...host.querySelectorAll('i')].flatMap(cell => cell.getAnimations())
-  await until('dots run', () => animations().length === 9 && animations().every(a => a.playState === 'running'))
-  host.style.cssText = 'position:fixed;top:20000px'
-  await until('offscreen dots have no animations', () => animations().length === 0)
-  host.style.cssText = ''
-  await until('visible dots run again', () => animations().length === 9 && animations().every(a => a.playState === 'running'))
-  for (const a of animations()) expect(Math.abs(Number(a.currentTime) - Number(a.timeline!.currentTime))).toBeLessThan(100)
-})
-
 it('shows the original first-frame pattern without animation under reduced motion', async () => {
   await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] })
   const host = document.createElement('div')

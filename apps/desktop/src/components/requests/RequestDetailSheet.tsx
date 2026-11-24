@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { Avatar } from '../Avatar'
 import { Sheet } from '../ui/Sheet'
-import { DrawerClose } from '../contacts/ContactsPageFrame'
+import { DrawerBack } from '../contacts/ContactsPageFrame'
 import { useDrawerPortal } from '../contacts/contactsDrawer'
 import { nameClampClass } from '../contacts/contactsPanelStyles'
 import { cn } from '@/lib/cn'
@@ -39,7 +39,8 @@ export function RequestDetailSheet({ peer, context, message, footer, onClose }: 
       <div className="flex items-center justify-end gap-2 text-[length:var(--font-body)] text-[var(--text-tertiary)]">{footer}</div>
     </div>
   )
-  if (drawer) return drawer(<div data-testid="request-detail" className="flex min-h-0 flex-1 flex-col !pt-8">{body}<DrawerClose onClose={onClose} /></div>)
+  // In the drawer it has no header of its own: it starts under the row its back sits in.
+  if (drawer) return drawer(<div data-testid="request-detail" className="flex min-h-0 flex-1 flex-col !pt-[calc(var(--spacing-2xl)+var(--control-h-lg)+var(--spacing-md))]">{body}<DrawerBack onBack={onClose} /></div>)
   return (
     <Sheet onClose={onClose} ariaLabel={peer.display_name} testId="request-detail" desktopWidth="min(400px, 100%)" mobileFitContent>
       {body}

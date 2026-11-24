@@ -24,7 +24,7 @@ const picked = vi.fn(), opened = vi.fn()
 function Fixture() {
   const [handle] = useState(() => Popover.createHandle<ActiveMemberProfile>())
   return <><PhoneRoomComposerControls chatId="source-room" topics={topics} topicsReady current={null} onPick={picked} members={agents}
-    roster={{ ready: true, failed: false, retry: () => {} }} userId="owner" profileOpener={{ handle, openedFrom: 'main' }} onOpenAgent={opened} />
+    roster={{ ready: true, failed: false, retry: () => {} }} userId="owner" profileOpener={{ handle }} onOpenAgent={opened} />
     <MemberProfileRoot handle={handle}>{profile => <MemberProfilePopover profile={profile} onClose={() => handle.close()} />}</MemberProfileRoot></>
 }
 async function mount() {

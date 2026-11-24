@@ -745,7 +745,25 @@ export default {
       "uploading": "Uploading"
     }
   },
+  "groupDetails": {
+    "topicSummary": "Topic · {{count}} people",
+    "topicSummary_one": "Topic · {{count}} person",
+    "topicSource": "From group “{{name}}”",
+    "backToGroup": "Back to group",
+    "searchHistory": "Search",
+    "searchChat": "Search",
+    "people": "{{count}} people",
+    "people_one": "{{count}} person",
+    "agents": "{{count}} agents",
+    "agents_one": "{{count}} agent"
+  },
+  "conversationCard": {
+    "rename": "Rename",
+    "notifications": "Notifications",
+    "details": "Details"
+  },
   "header": {
+    "details": "Details",
     "apps": "Apps",
     "members_one": "{{count}} member",
     "members_other": "{{count}} members",
@@ -753,7 +771,6 @@ export default {
     "groupInfoAndSettings": "Group info and settings",
     "noApps": "No Apps available on this device.",
     "announcement": "Group announcement",
-    "groupInfo": "Group info",
     "chatInfo": "Conversation info",
     "memberList": "Members",
     "more": "More actions",
@@ -969,15 +986,7 @@ export default {
       "openedBy": "by {{name}}",
       "quiet": "No messages yet"
     },
-    "openFailed": "Could not open the topic. The message may have been deleted. Open the topic from another message.",
-    "pane": {
-      "attachments": "Attachments",
-      "members": "Members",
-      "collapseSplit": "Collapse split view",
-      "collapseSplitHint": "Collapse the split view; the topic stays open",
-      "composerPlaceholder": "Write a message…",
-      "empty": "No messages in this topic yet"
-    }
+    "openFailed": "Could not open the topic. The message may have been deleted. Open the topic from another message."
   },
   "resources": {
     "copyUrl": "Copy gugu URL",

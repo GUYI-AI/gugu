@@ -6,6 +6,8 @@ import { useAgentLook } from '../agentAvatar/useAgentLook'
 import { useIsAssistantAvatar } from '../../lib/avatarIdentity'
 import { memberNameHue } from '../../lib/memberNameHue'
 import type { MemberProfileCardModel } from '../MemberProfileCard'
+import type { ActiveMemberProfile, MemberProfileHandle } from '../memberProfileModels'
+import { Popover } from '../ui/Popover'
 import { fmtMsgTime } from './messageRowTime'
 import './messageBubbleChrome.css'
 import { useMessageSenderTarget } from './MessageSenderContext'
@@ -39,9 +41,10 @@ function ownerLabelOverflows(row: HTMLElement): boolean {
   return available < parseFloat(getComputedStyle(owner).fontSize) + 2 * gap
 }
 
-/** 群里收到的消息、组首那一条:名字 + 归属小标签(「我的 agent」「Alice 的 agent」)。
+/** 群里收到的消息、组首那一条:名字 + 归属小标签(「我的 agent」「Alice 的 agent」),标签悬停在这条消息上才浮出(设计稿 #67)。
+ *  桌面上点名字和点头像一样,打开这个人的名片(名片里写着主人);手机上点名字仍是原来的跳转。
  *  色相来自头像实际身体色;助理沿已保存的形象,亮度/彩度随主题(tokens.css)。 */
-export function BubbleSender({ member, displayName, senderId, replyMark }: { member: MemberProfileCardModel | null; displayName?: string; senderId: string | null; replyMark?: ReactNode }) {
+export function BubbleSender({ member, displayName, senderId, replyMark, profile }: { member: MemberProfileCardModel | null; displayName?: string; senderId: string | null; replyMark?: ReactNode; profile?: { handle: MemberProfileHandle; payload: ActiveMemberProfile } | null }) {
   const { t } = useTranslation('messaging')
   const { user } = useAuth()
   const target = useMessageSenderTarget()
@@ -65,7 +68,8 @@ export function BubbleSender({ member, displayName, senderId, replyMark }: { mem
   }, [tag, name, hasReply, target])
   return (
     <div ref={rowRef} data-message-who="true" data-message-sender-name="true" className="msg-sender" style={{ '--member-hue': hue } as React.CSSProperties}>
-      {target ? <Button variant="ghost" size="sm" className="msg-sender-name msg-sender-link" onClick={event => { event.stopPropagation(); openMessageSender(target) }}><span className="msg-sender-name">{name}</span></Button>
+      {profile ? <Popover.Trigger handle={profile.handle} payload={profile.payload} className="msg-sender-name msg-sender-link" onClick={event => event.stopPropagation()}><span className="msg-sender-name">{name}</span></Popover.Trigger>
+        : target ? <Button variant="ghost" size="sm" className="msg-sender-name msg-sender-link" onClick={event => { event.stopPropagation(); openMessageSender(target) }}><span className="msg-sender-name">{name}</span></Button>
         : <span className="msg-sender-name">{name}</span>}
       {replyMark}
       {tag && <Chip appearance="filled" data-message-agent-owner="true">{tag}</Chip>}

@@ -1,14 +1,12 @@
 /* #7333: one reading-surface recipe for the desktop shell's two renderer trees.
  * List widths, retained pages and resize handles remain owned by their existing layouts.
- * ContactsPanel's desktop row owns nav first, detail second (including search/request routes).
- * Scope that row here; never apply a window frame to nested detail panes or settings dialogs.
+ * Never apply a window frame to nested detail panes or page modals (设置、联系人).
  */
 :root {
   --desktop-surface-inset: 5px;
 }
 
 [data-desktop-shell] [data-shell-chat-detail],
-[data-desktop-shell] [data-shell-contacts] > div > :nth-child(2),
 .gugu-skin [data-workspace-content-surface] {
   --workspace-chrome-inset: var(--desktop-surface-inset);
   margin: var(--workspace-chrome-inset) var(--workspace-chrome-inset) var(--workspace-chrome-inset) 0;
@@ -21,6 +19,23 @@
   overflow: hidden;
 }
 
+/* 界面减法 #57(稿子 .cards / .card):会话页的正文是对话卡片 —— 四周 8px 缝(左边贴着列表那一侧不留)、圆角 12、6% 细描边。
+ * 工具并排时正文拆成两张卡片(index.css [data-chat-card] / [data-chat-tool-card]),这一层和它下面垫着的几层(正文页、分块的底、
+ * 这一块)都让出底色和描边,缝里透出窗口底。 */
+.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace]) {
+  --workspace-chrome-inset: 8px;
+  box-shadow: 0 0 0 0.5px color-mix(in oklab, var(--fg) 6%, transparent);
+}
+
+.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace][data-chat-tool-cards]) {
+  /* 垫在下面的几层(正文页、分块的底、这一块)读这个变量当底色(screen-frame.tsx、workspace-layout.tsx),:has 只放在这一层自己身上。 */
+  --screen-ground: transparent;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+}
+
 /* #2548 群 / 项目的内层栏归列表那一层(整列通高、无卡片);只让出正文卡片的上缝,头一行与正文页头对齐。 */
 .gugu-skin [data-workspace-shell] > [data-panel-slot='inner'] [data-region='inner-sidebar'] {
   padding-top: var(--desktop-surface-inset);
@@ -31,8 +46,7 @@
  * The invisible resize target is kept, including keyboard resizing.
  */
 [data-desktop-shell] .gg-pane[data-role='nav'],
-.gugu-skin [data-workspace-left-panel] [data-region='left-sidebar'],
-:root [data-desktop-shell] > .gg-sidebar-rail {
+.gugu-skin [data-workspace-left-panel] [data-region='left-sidebar'] {
   border-inline-end: 0;
 }
 
@@ -45,28 +59,11 @@
   background: var(--shell-bg);
 }
 
-/* #7610:C 档是一整块工作区(浅色、深色同一结构,只换颜色 token),从 rail 右边开始包住列表、页签条与内容。
- * 桌面主窗都用这一档,不分材质:native 时 rail 透出系统材质,opaque(Windows / Linux / mac 减弱透明度)时 rail 是
- * --nav-rail 实色;选择器只要 data-window-material 存在(只有带主进程桥的主窗才写),网页版与子窗口不在内。
- * MainLayout 这层已有 margin:0 的内联布局;这里只覆盖该值,不搬 DOM 或重建会话。
- * fixed 的会话页 overlay 仍按 viewport 定位,clip-path 只负责把它裁在共同圆角里。
- */
-:root[data-window-material] [data-desktop-shell] > .gg-sidebar-rail + div {
-  --shell-bg: var(--desktop-workspace-bg);
-  --radius-page: var(--radius-surface);
-  margin: var(--desktop-surface-inset) var(--desktop-surface-inset) var(--desktop-surface-inset) 0 !important;
-  clip-path: inset(0 round var(--radius-surface));
-  outline: 0.5px solid var(--border-color);
-  outline-offset: -0.5px;
-}
-
 /* 正文不再单独画第二层外框。它与侧栏之间的分隔、用户保存的栏宽仍归原布局。
- * #2548 会话页只有不带一级列表的整页(资源库、App)这样平铺;列表在旁边时正文是叠在列表上的那张卡片,群 / 项目的内层栏归列表那一层。
+ * #2548 列表在旁边时正文是叠在列表上的那张卡片,群 / 项目的内层栏归列表那一层。
  */
 :root[data-window-material] :is(
-  [data-desktop-shell] [data-shell-chat-detail],
-  [data-desktop-shell] [data-shell-contacts] > div > :nth-child(2),
-  [data-desktop-shell] .gugu-skin [data-workspace-sidebar-hidden] > [data-workspace-content-surface]
+  [data-desktop-shell] [data-shell-chat-detail]
 ) {
   --workspace-chrome-inset: 0px;
   margin: 0;
@@ -98,4 +95,122 @@
   [data-app-shell-focus-area='right-panel'] .gg-panel-header
 ) {
   background-color: var(--desktop-workspace-bg);
+}
+
+/* @@@page-modal-close 联系人弹窗照设置弹窗的两种页头(settings.css / settings-content.css):左栏页头左右 --spacing-2xl;
+   右边的页头上 --spacing-2xl、下 --spacing-md,标题 --font-heading,一行的中线对齐右上角的 ✕(ModalClose)。
+   App 市场的页头(不是 pane header)右端再让出 ✕ 的位置。只在弹窗里:手机的联系人页不受影响。 */
+[data-contacts-modal] .gg-pane[data-role='nav'] > .gg-pane-header {
+  padding-inline: var(--spacing-2xl);
+}
+[data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header {
+  height: auto;
+  min-height: calc(var(--spacing-2xl) + var(--control-h-lg) + var(--spacing-md));
+  padding-top: var(--spacing-2xl);
+  padding-bottom: var(--spacing-md);
+  align-items: flex-start;
+}
+[data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header .gg-pane-title {
+  font-size: var(--font-heading);
+  line-height: var(--lh-heading);
+}
+/* 标题(有计数时连同那一行)从 ✕ 那一行里居中的位置起,和设置的页名同一条线。 */
+[data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header > :is(.gg-pane-title, .gg-pane-heading) {
+  margin-top: calc((var(--control-h-lg) - var(--lh-heading)) / 2);
+}
+[data-contacts-modal] .gg-pane[data-role='detail'] .gg-pane-header > .gg-pane-actions {
+  min-height: var(--control-h-lg);
+}
+/* 抽屉 = 设置里的二级页:左上是设置那颗返回(ContactsPageFrame DrawerBack),和页名同一行;抽屉里的页头给它让出左边。 */
+[data-drawer-back] {
+  top: var(--spacing-2xl);
+  left: var(--pane-pad-x);
+}
+[data-drawer] .gg-pane-header {
+  padding-left: calc(var(--pane-pad-x) + var(--control-h-lg) + var(--spacing-sm));
+}
+[data-page-modal] .mk-market-header {
+  padding-top: calc(var(--spacing-2xl) + (var(--control-h-lg) - var(--control-h-md)) / 2);
+  padding-inline-end: calc(var(--control-h-lg) + var(--spacing-lg) + 4px);
+}
+
+/* @@@page-modal 联系人弹窗的左栏照设置左栏(settings.css .gg-settings-nav-pane):同宽、行高 --control-h-md、行距左右 12、图标 --icon-sm。 */
+[data-contacts-modal] div.gg-pane[data-role='nav'] {
+  width: calc(var(--nav-col-w) - 24px);
+  min-width: calc(var(--nav-col-w) - 24px);
+}
+/* 列表那一层左右各 8px(!px-2,在 utilities 层里,这里改不动);行左右再各让 4px,合起来是设置导航的 --spacing-md:
+   行的 x、宽才和设置一样。width:auto 让外距从行宽里扣,不横向溢出。 */
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row {
+  width: auto;
+  margin-inline: calc(var(--spacing-md) - var(--spacing-sm));
+  min-height: var(--control-h-md);
+  padding-block: calc((var(--control-h-md) - var(--lh-body)) / 2);
+  gap: var(--spacing-sm);
+}
+/* 行首图标那一格收成图标本身大小(原来是头像格):行高、图标位置才和设置的导航行一样。 */
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row .gg-list-row-leading > span {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row .gg-list-row-leading svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+/* @@@page-modal 联系人右侧照设置的内容版式(settings-content.css):灰底,内容放在一张白卡片里,卡片和页名同在居中的
+   --settings-col-w 那一列;页头不画分隔线。只认联系人自己的页(data-contacts-page),抽屉不在内。 */
+[data-contacts-modal] [data-contacts-page] {
+  --settings-col-w: 640px;
+  background: var(--sidebar);
+}
+[data-contacts-modal] [data-contacts-page] > .gg-pane-header {
+  border-bottom: 0;
+  padding-inline-start: max(var(--spacing-2xl), calc((100% - var(--settings-col-w)) / 2));
+}
+[data-contacts-modal] [data-contacts-body] {
+  padding: var(--spacing-xs) var(--spacing-2xl) var(--spacing-2xl) !important;
+}
+[data-contacts-modal] [data-contacts-card] {
+  max-width: var(--settings-col-w);
+  margin-inline: auto;
+  padding: var(--spacing-xs) var(--spacing-lg);
+  border-radius: var(--radius-surface);
+  background: var(--card);
+  box-shadow: var(--shadow-lift);
+}
+/* 行字照设置导航:未选中 --muted-fg 常规字重,选中 --fg 中等字重,悬停转 --fg(settings.css .gg-settings-nav-item)。 */
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row .gg-list-row-title {
+  font-weight: var(--font-weight-regular);
+  color: var(--muted-fg);
+}
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row[data-selected] .gg-list-row-title {
+  font-weight: var(--font-weight-medium);
+  color: var(--fg);
+}
+[data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row[data-selected] .gg-list-row-leading > span {
+  color: var(--fg);
+}
+@media (hover: hover) {
+  [data-contacts-modal] .gg-pane[data-role='nav'] .gg-list-row:hover .gg-list-row-title { color: var(--fg); }
+}
+
+/* @@@page-modal App 市场、App 页照设置的内容版式:灰底(--sidebar),卡片保持白色。
+   App 页的内容是 App 自己的网页:它所在的那一格(data-extension-slot)当作一张白卡片,四周留出灰底;
+   网页按这一格的圆角裁(extension-view-layer pageCorners)。 */
+/* 页的底读 --screen-ground(workspace-layout.tsx WorkspaceContentLayout),在弹窗这一层给它灰底。 */
+[data-page-modal] {
+  --screen-ground: var(--sidebar);
+}
+[data-page-modal] .mk-market-header {
+  background: var(--sidebar);
+}
+[data-page-modal] .mk-market-card {
+  background: var(--card);
+}
+[data-page-modal='app'] [data-extension-slot] {
+  margin: 0 var(--spacing-2xl) var(--spacing-2xl);
+  border-radius: var(--radius-surface);
+  background: var(--card);
+  box-shadow: var(--shadow-lift);
 }

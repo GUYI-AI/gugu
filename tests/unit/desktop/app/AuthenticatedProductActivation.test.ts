@@ -156,16 +156,6 @@ vi.mock('../../../../apps/desktop/src/store/devices', async () => {
   }
 })
 
-vi.mock('../../../../apps/desktop/src/components/Sidebar', async () => {
-  const React = await vi.importActual<typeof import('react')>('react')
-  return {
-    Sidebar: ({ effectsActive }: { effectsActive?: boolean }) => {
-      useOwnerProbe('sidebar-billing', effectsActive !== false)
-      return React.createElement('div', { className: 'gg-sidebar-rail' })
-    },
-  }
-})
-
 vi.mock('../../../../apps/desktop/src/components/StarterContinuationHost', async () => {
   const React = await vi.importActual<typeof import('react')>('react')
   return {
