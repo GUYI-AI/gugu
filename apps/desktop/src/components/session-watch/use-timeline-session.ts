@@ -32,11 +32,12 @@ import { useSelect } from '@/lib/selectStore'
 export type SessionpageTimelineClient = {
   /** `lean`: how much of each page to ask for (`folded-pages`); a whole page when absent. */
   fetchSnapshot(deviceId: string, sessionId: string, limit?: number, lean?: LeanPage): Promise<TimelineSnapshot>
-  fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor): Promise<TimelineAfterResult>
+  /** `lean` on after / subscribe: the form of the snapshot a reset answer carries (`folded-pages`). */
+  fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor, lean?: LeanPage): Promise<TimelineAfterResult>
   fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, lean?: LeanPage): Promise<TimelineOlderResult>
   /** 一张工具交回来的图(时间线里只有它的字数,见 transport-trim)。 */
   fetchToolImage(deviceId: string, sessionId: string, itemId: string, index: number): Promise<ToolImage>
-  subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null): Promise<unknown>
+  subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null, lean?: LeanPage): Promise<unknown>
   unsubscribeSession(deviceId: string, subscriptionId: string): Promise<unknown>
   subscribeSessionEvents(deviceId: string, subscriptionId: string, onResult: (result: TimelineAfterResult) => void): () => void
   /** A transport that reads incrementally itself can expose a precise read failure. */
@@ -507,7 +508,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
     const cursor = follow.cursor
     if (catchUpRunning) return catchUpRunning
     if (cancelled || !follow.ready || !cursor) return Promise.resolve()
-    catchUpRunning = recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor), recoveryAbort.signal)
+    catchUpRunning = recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor, lean), recoveryAbort.signal)
       .then((result) => {
         if (cancelled) return
         write(catchUpReported ? { link: 'ok', error: null, errorCode: null } : { link: 'ok' })
@@ -581,7 +582,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
       // 订阅那一刻那台机器就先推游标之后的那一段(宿主 `deliver`、手机轮询的第一拍),❌ 再另问一遍补差量(同一段读两次);
       // 世代对不上时那一推直接是一份新快照,由 reducer 认出来。
       if (follow.ready && follow.cursor) {
-        await client.subscribeSession(deviceId, sessionId, subscriptionId, follow.cursor)
+        await client.subscribeSession(deviceId, sessionId, subscriptionId, follow.cursor, lean)
         if (cancelled) return
         write({ waitingForRecord: false, error: null, errorCode: null, link: 'ok' })
         attempt = 0
@@ -597,7 +598,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
       follow.synced = true
       setTimeline((current) => applySnapshot(current, snapshot))
       write({ waitingForRecord: false, error: null, phase: 'ready' })
-      await client.subscribeSession(deviceId, sessionId, subscriptionId, snapshot.cursor)
+      await client.subscribeSession(deviceId, sessionId, subscriptionId, snapshot.cursor, lean)
       if (cancelled) return
       attempt = 0
       write({ errorCode: null, link: 'ok' })

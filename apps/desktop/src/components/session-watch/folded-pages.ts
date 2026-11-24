@@ -6,10 +6,12 @@ import { turnHeld } from '@gugu/session-core/session-record/held-turn'
  * @@@folded-pages-reader — the one place a reader of another machine's timeline asks for pages in their folded form
  * (transport-trim `@@@folded-form`: what the conversation view keeps behind a fold is left out and the item marked
  * `held`) and reads a held turn back whole when a row of it comes on screen from behind a fold (`onHeldShown`).
- * Both conversation views of a remote timeline use it: the desktop session page (`AcpTimelineFeed`) and the timeline
- * page the phone and the peek view share (`useTimelineSession` with `folded`). Readers that draw no folds (reply
- * progress, question cards) ask for whole pages. A host that does not know `lean` sends whole pages, which hold nothing
- * back, so nothing is read again.
+ * Pages are a snapshot, an older page, and the snapshot a reset answer to a subscribe / after carries (the stream
+ * passes its `lean` on all of them); the batches pushed as the conversation moves go whole.
+ * Both conversation views of a remote timeline read through it: the session stream the phone, the peek view and the
+ * desktop session page share (`useTimelineSession` with `folded`, `RemoteTimelineFeed`). Readers that draw no folds
+ * (reply progress, question cards) ask for whole pages. A host that does not know `lean` sends whole pages, which hold
+ * nothing back, so nothing is read again.
  */
 export const FOLDED: LeanPage = 'folded'
 

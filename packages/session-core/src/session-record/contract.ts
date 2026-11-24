@@ -1245,7 +1245,8 @@ export type LeanPage = boolean | 'folded';
  * whole with `held-turn`). Only with `trim`. A host that does not know it sends pages whole.
  */
 export type SessionpageSessionSnapshotRequest = { conversationId: string; limit?: number; trim?: boolean; lean?: LeanPage };
-export type SessionpageSessionAfterRequest = { conversationId: string; cursor: RecordCursor; trim?: boolean; terminalPatch?: boolean };
+/** `lean`: as on a snapshot, for the snapshot a reset answer carries; batches go whole. A host that does not know it sends that snapshot whole. */
+export type SessionpageSessionAfterRequest = { conversationId: string; cursor: RecordCursor; trim?: boolean; terminalPatch?: boolean; lean?: LeanPage };
 export type SessionpageSessionOlderRequest = { conversationId: string; beforeTurnId: string; limit?: number; trim?: boolean; lean?: LeanPage };
 /**
  * 手机点开一张附件卡(#7193):agent 用 `session_open_in_tab` 打开给人看的那份文件,从那台机器上按块现读
@@ -1283,6 +1284,8 @@ export type SessionpageSessionSubscribeRequest = {
    * every push, so the whole list is most of a push).
    */
   terminalPatch?: boolean;
+  /** As on `SessionpageSessionAfterRequest`: the snapshot of a reset push comes in that form; batches go whole. */
+  lean?: LeanPage;
 };
 
 /**

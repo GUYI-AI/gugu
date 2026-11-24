@@ -113,7 +113,7 @@ export const sessionTimelineController = createRPCController({
   sessionSnapshot: async (input: SessionpageSessionSnapshotRequest) =>
     trimmed(await service.snapshot(input), input.trim, (page) => trimSnapshotForTransport(page, undefined, undefined, input.lean)),
   sessionAfter: async (input: SessionpageSessionAfterRequest) =>
-    trimmed(await service.after(input), input.trim, trimAfterResultForTransport),
+    trimmed(await service.after(input), input.trim, (result) => trimAfterResultForTransport(result, undefined, input.lean)),
   sessionOlder: async (input: SessionpageSessionOlderRequest) =>
     trimmed(await service.older(input), input.trim, (page) => trimOlderForTransport(page, undefined, undefined, input.lean)),
   /** 一张工具交回来的图(手机那份时间线里只有它的类型和字数)。 */
@@ -122,7 +122,7 @@ export const sessionTimelineController = createRPCController({
     owning(sender, 'timeline', input.subscriptionId, () => service.subscribe(input, (event) =>
       events.emit(
         sessionpageSessionTimelineChannel,
-        input.trim ? { ...event, result: trimAfterResultForTransport(event.result) } : event,
+        input.trim ? { ...event, result: trimAfterResultForTransport(event.result, undefined, input.lean) } : event,
         input.subscriptionId
       )
     ))),

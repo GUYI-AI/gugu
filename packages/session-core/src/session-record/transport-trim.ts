@@ -118,8 +118,8 @@ function stepLineOnly(node: ToolNode): boolean {
  * A finished patch loses the raw input its diff blocks already carry.
  * Left whole: what the agent said, what it sent to a person or to someone this page does not prove an agent, and
  * a delivery whose sender it does not prove one.
- * Pages only (a snapshot, an older page): what the host pushes as the conversation moves (batches, and the snapshot of a
- * reset answer) goes whole, so a turn that moves arrives whole.
+ * Pages only (a snapshot, an older page, the snapshot of a reset answer): the batches the host pushes as the conversation
+ * moves go whole, so a turn that moves arrives whole.
  */
 export type { LeanPage } from './contract';
 export const HELD_BODY_CHARS = 120;
@@ -541,14 +541,16 @@ export function trimOlderForTransport(
   return trimTurnPageForTransport(older, limit, budget, lean);
 }
 
+/** `lean` folds only the snapshot of a reset answer (a page); a batch is the conversation moving and goes whole. */
 export function trimAfterResultForTransport(
   result: TimelineAfterResult,
   limit = TRANSPORT_TEXT_LIMIT,
+  lean: LeanPage = false,
 ): TimelineAfterResult {
   if (result.ok) {
     const batch = trimBatchForTransport(result.batch, limit);
     return batch === result.batch ? result : { ...result, batch };
   }
-  const snapshot = trimSnapshotForTransport(result.snapshot, limit);
+  const snapshot = trimSnapshotForTransport(result.snapshot, limit, undefined, lean);
   return snapshot === result.snapshot ? result : { ...result, snapshot };
 }

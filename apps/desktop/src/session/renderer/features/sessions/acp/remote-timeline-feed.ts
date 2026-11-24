@@ -16,9 +16,9 @@ function machineTimeline(machine: string) {
   const host = rpcOn(machine).sessionTimeline;
   const stream: TimelineStreamClient = {
     fetchSnapshot: (_device, conversationId, limit, lean) => value(host.sessionSnapshot({ conversationId, limit, trim: true, lean })),
-    fetchAfter: (_device, conversationId, cursor) => value(host.sessionAfter({ conversationId, cursor, trim: true, terminalPatch: true })),
-    subscribeSession: (_device, conversationId, subscriptionId, cursor) =>
-      value(host.sessionSubscribe({ conversationId, subscriptionId, cursor, trim: true, terminalPatch: true })),
+    fetchAfter: (_device, conversationId, cursor, lean) => value(host.sessionAfter({ conversationId, cursor, trim: true, terminalPatch: true, lean })),
+    subscribeSession: (_device, conversationId, subscriptionId, cursor, lean) =>
+      value(host.sessionSubscribe({ conversationId, subscriptionId, cursor, trim: true, terminalPatch: true, lean })),
     unsubscribeSession: (_device, subscriptionId) => host.sessionUnsubscribe({ subscriptionId }),
     subscribeSessionEvents: (_device, id, receive) => onMachineEvent<SessionpageSessionEvent>(machine,
       { name: `${sessionpageSessionTimelineChannel.name}.${id}` }, (event) => receive(event.result)),
