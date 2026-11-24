@@ -802,7 +802,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
                           onAction={() => runAction(row)}
                           previewSource={importSourceOf(row.machine)}
                           describePreviewError={(e) => describe(e, 'preview', row.machine)}
-                          machineLabel={spansMachines ? labelOf(row.machine) : null}
+                          machineLabel={spansMachines && !section.machine ? labelOf(row.machine) : null}
                           offline={row.offline}
                           actionDisabled={row.offline && !row.opens}
                         />
