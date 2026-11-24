@@ -13,12 +13,15 @@ describe('inner sidebar topics, level one', () => {
     expect(rows.hidden).toBe(15 - INNER_SIDEBAR_TOPIC_LIMIT)
   })
 
-  it('pinned first, then unread, then most recent; All shows every one in the list order', () => {
-    const topics = topicsOfChat([
-      topic('recent', 100), topic('recent-2', 99), topic('recent-3', 98), topic('recent-4', 97), topic('recent-5', 96),
+  it('pinned first, then most recent, in both levels: unread only marks a topic, it never moves one (reading it leaves it in place)', () => {
+    const chats = [
+      topic('recent', 100), topic('recent-2', 99, { unread_count: 2 }), topic('recent-3', 98),
       topic('old-unread', 10, { unread_count: 3 }), topic('old-pinned', 5, { is_pinned: true }),
-    ], 'g')
-    expect(innerSidebarTopicRows(topics, { all: false }).shown.map((t) => t.id)).toEqual(['old-pinned', 'old-unread', 'recent', 'recent-2', 'recent-3', 'recent-4', 'recent-5'])
-    expect(innerSidebarTopicRows(topics, { all: true }).shown.map((t) => t.id)).toEqual(['old-pinned', 'recent', 'recent-2', 'recent-3', 'recent-4', 'recent-5', 'old-unread'])
+    ]
+    const order = ['old-pinned', 'recent', 'recent-2', 'recent-3', 'old-unread']
+    const levelOne = (list: ChatItem[]) => innerSidebarTopicRows(topicsOfChat(list, 'g'), { all: false }).shown.map((t) => t.id)
+    expect(levelOne(chats)).toEqual(order)
+    expect(innerSidebarTopicRows(topicsOfChat(chats, 'g'), { all: true }).shown.map((t) => t.id)).toEqual(order)
+    expect(levelOne(chats.map((t) => ({ ...t, unread_count: 0 }))), 'after reading them all').toEqual(order)
   })
 })
