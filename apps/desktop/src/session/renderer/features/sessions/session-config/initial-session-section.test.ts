@@ -2034,8 +2034,8 @@ describe('InitialSessionField', () => {
   });
 
   // Chat UI(ACP)与终端(pty)都能用「咕咕提供的模型」,所以这个开关只决定会话类型 ——
-  // 它既不撤走分组,也不动已经选好的模型。
-  it('keeps the platform group selectable while the general view is selected', async () => {
+  // 它既不撤走咕咕模型，也不动已经选好的模型。
+  it('keeps platform models first when switching to the general view', async () => {
     platformCatalog({ models: [GLM], agentDefault: null });
 
     await renderField();
@@ -2049,9 +2049,9 @@ describe('InitialSessionField', () => {
     expect(latestState?.model).toBeNull();
     expect(chatComposerProps().selectedModel).toBe('platform:glm-5.2');
     expect(Object.keys(chatComposerProps().modelOptions ?? {})).toEqual([
+      'platform:glm-5.2',
       'claude-opus-4-8',
       'claude-sonnet-5',
-      'platform:glm-5.2',
     ]);
     // 没有冲突可说了:这行字只留给目录本身取不到的情况。
     expect(latestState?.platformNotice).toBeNull();
