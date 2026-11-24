@@ -568,3 +568,19 @@ it('keeps the view toggle where it lands from the first frame the tools are hidd
   expect(frames.length, 'the tools went off over several frames').toBeGreaterThan(2);
   expect(new Set(frames), 'the toggle moved while the tools went off').toEqual(new Set([frames.at(-1)]));
 });
+
+it('draws the tools\' tabs at their measured density from the first frame they are shown', async () => {
+  const { inside, mode, workspace } = await mountWorkspace();
+  await mode('empty');
+  for (const id of ['a', 'b', 'c']) workspace.open('tool', { id }, { from: null, intent: 'newTab' });
+  await mode('split');
+  await untilStable('the tools have landed', () => inside('[data-chat-tool-strip]')?.getBoundingClientRect().left);
+  const densities = () => [...inside('[data-chat-tool-strip]')?.querySelectorAll<HTMLElement>('[data-tab-density]') ?? []].map((tab) => tab.dataset.tabDensity);
+  const atRest = densities();
+  expect(atRest, 'three tools in the split are narrow enough to draw compact').toContain('compact');
+  workspace.setChatToolLayout('hidden');
+  await until('the tools are off the track', () => !inside('[data-chat-tool-strip]'));
+  workspace.setChatToolLayout('split');
+  await new Promise((frame) => requestAnimationFrame(frame));
+  expect(densities(), 'the first frame drew the tabs before their width was measured').toEqual(atRest);
+});
