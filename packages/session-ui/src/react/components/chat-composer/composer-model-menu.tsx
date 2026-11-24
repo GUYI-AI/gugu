@@ -175,8 +175,9 @@ export function modelTitle(item: ComposerModelItem, locale = 'en-US'): string | 
  * 事实里上下文、速度、智能来自 `modelFeatures`(插件 / 目录真声明过的),其余由宿主翻好递进来(`facts`)。
  * 什么都没有的那几格就不画 —— ❌ 写「未知」占位。
  */
-function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange }: {
+function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffortChange }: {
   item: ComposerModelItem;
+  picker: HTMLElement | null;
   contextThresholds?: ComposerContextThresholds;
   efforts?: ComposerEffortItem[];
   effort?: ComposerEffortItem;
@@ -186,6 +187,8 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange 
   const f = item.modelFeatures;
   const threshold = !item.disabled ? contextThresholds?.(item.id, f?.contextWindowSize) : undefined;
   const [effortMenuOpen, setEffortMenuOpen] = useState(false);
+  const [effortMenuSide, setEffortMenuSide] = useState<'left' | 'right' | 'bottom'>('left');
+  const effortTrigger = useRef<HTMLButtonElement>(null);
   const canEditEffort = !!efforts?.length && !!onEffortChange;
   const effortLabel = translate('composer.effort');
   const facts = [
@@ -222,12 +225,24 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange 
         </dl>
       )}
       {canEditEffort && (
-        <Popover.Root open={effortMenuOpen} onOpenChange={setEffortMenuOpen}>
-          <Popover.Trigger openOnHover delay={100} closeDelay={300} className={styles.contextThresholdTrigger}>
+        <Popover.Root open={effortMenuOpen} onOpenChange={open => {
+          if (open) {
+            const card = effortTrigger.current?.closest('[data-hover-card]')?.getBoundingClientRect();
+            const panel = picker?.getBoundingClientRect();
+            if (card && panel && picker) {
+              const left = card.left < panel.left;
+              const windowWidth = picker.ownerDocument.documentElement.clientWidth;
+              const free = left ? card.left : windowWidth - card.right;
+              setEffortMenuSide(free >= 192 ? (left ? 'left' : 'right') : 'bottom');
+            }
+          }
+          setEffortMenuOpen(open);
+        }}>
+          <Popover.Trigger ref={effortTrigger} openOnHover delay={100} closeDelay={300} className={styles.contextThresholdTrigger}>
             <span>{effortLabel}</span>
             <span className={styles.modelDetailControlValue}>{effort?.name}<ChevronRight size={14} aria-hidden /></span>
           </Popover.Trigger>
-          <Popover.Content side="right" align="start" className={styles.contextThresholdContent}>
+          <Popover.Content side={effortMenuSide} align="start" className={styles.contextThresholdContent}>
             {efforts.map(level => (
               <button type="button" key={level.id} disabled={level.disabled} aria-pressed={effort?.id === level.id}
                 className={styles.contextThresholdOption} title={level.disabledReason}
@@ -740,7 +755,7 @@ export function ComposerModelMenu({
             initialFocus={focusDetail.current}
           >
             {detailItem ? (
-              <ModelDetail key={detailItem.id} item={detailItem} contextThresholds={contextThresholds}
+              <ModelDetail key={detailItem.id} item={detailItem} picker={panelEl} contextThresholds={contextThresholds}
                 efforts={detailItem.id === selectedModel ? effortItems : undefined} effort={effectiveEffortItem}
                 onEffortChange={onEffortChange} />
             ) : modelUpgrade ? (

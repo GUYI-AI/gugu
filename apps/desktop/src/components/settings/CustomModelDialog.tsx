@@ -235,8 +235,8 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
                 placeholder={routeEndpoints.find(({ protocol }) => protocol === route.outgoing)?.baseUrl}
                 onChange={(event) => updateRoute(route.id, { baseUrl: event.target.value })} />
             </label>)}
-            <label className="flex items-center justify-between">{translate('customModels.image')}<Toggle checked={customModelAcceptsImages(features)} onChange={(image) => feature({ image })} ariaLabel={translate('customModels.image')} /></label>
-            <label className="flex items-center justify-between">{translate('customModels.thinking')}<Toggle checked={customModelThinks(features)} onChange={(thinking) => feature({ thinking })} ariaLabel={translate('customModels.thinking')} /></label>
+            <label className="gg-custom-model-feature"><span>{translate('customModels.image')}</span><Toggle checked={customModelAcceptsImages(features)} onChange={(image) => feature({ image })} ariaLabel={translate('customModels.image')} /></label>
+            <label className="gg-custom-model-feature"><span>{translate('customModels.thinking')}</span><Toggle checked={customModelThinks(features)} onChange={(thinking) => feature({ thinking })} ariaLabel={translate('customModels.thinking')} /></label>
             {(['contextWindow', 'maxOutput'] as const).map((key) => <label key={key}>{translate(key === 'contextWindow' ? 'customModels.context' : 'customModels.output')}<Input type="number" min="1" step="1" placeholder={translate('customModels.default')} value={features[key] ?? ''} onChange={(event) => feature({ [key]: event.target.value ? Number(event.target.value) : undefined })} /></label>)}
           </div>}
           {failure && <p className="subscription-error" role="alert">{failure}</p>}
