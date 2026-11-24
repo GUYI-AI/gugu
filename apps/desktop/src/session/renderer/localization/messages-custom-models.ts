@@ -73,7 +73,7 @@ export const enUSCustomModelMessages = {
   'customModels.removeRoute': 'Remove route {index}',
   'customModels.routeAddress': 'Route {index} upstream address',
   'customModels.routeAddressColumn': 'Address',
-  'customModels.sameApiAddress': 'Same as API address',
+  'customModels.sameApiAddress': 'Same as API',
   'customModels.readModels': 'Read models from address',
   'customModels.formDescription': 'Enter an API address and key to read the models or add them by name.',
   'customModels.routeAddressRequired': 'Enter a separate upstream address in Advanced for any outgoing protocol the main address does not support.',
