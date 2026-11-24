@@ -201,7 +201,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
           </ChatWorkspaceTabContext.Provider>
         </PaneProvider>
       </div>
-      {toolCard && actionRow}
+      {/* Only while the tools are shown: hidden, they are on their way off and the buttons are already the header's. */}
+      {toolCard && mode === 'split' && actionRow}
     </div>
   );
   return (
@@ -214,8 +215,10 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
         {!toolsFirst && toolTabs}
       </div>
       {/* The conversation's own head (no tools beside it) is the capsule row: its buttons float at the top right and take
-          no width, so the capsule centres on the whole card. Beside tools or merged into one strip they share the row. */}
-      {!toolCard && (full || mode === 'split' ? actionRow : <div className="absolute inset-y-0 right-0 flex">{actionRow}</div>)}
+          no width, so the capsule centres on the whole card. Beside tools or merged into one strip they share the row.
+          The tools going off (hidden, still on the track) take their strip with them but not these buttons: the toggle is
+          on the header from the frame the tools are hidden, ❌ after they land. */}
+      {(!toolCard || mode !== 'split') && (full || mode === 'split' ? actionRow : <div className="absolute inset-y-0 right-0 flex">{actionRow}</div>)}
     </div>
   );
 });
