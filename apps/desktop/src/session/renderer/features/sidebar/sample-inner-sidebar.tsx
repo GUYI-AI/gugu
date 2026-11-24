@@ -12,7 +12,7 @@ import {
 } from './inner-sidebar-parts';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import { SidebarGroupToggle } from './sidebar-group-toggle';
-import { SidebarGroup, SidebarMenu, sidebarCountClass, sidebarGroupHeaderClass } from './sidebar-primitives';
+import { SidebarGroup, SidebarMenu, sidebarGroupHeaderClass } from './sidebar-primitives';
 import { SessionRowShell } from './sidebar-session-row';
 import { focusSessionComposer } from './session-keyboard-nav';
 
@@ -68,7 +68,6 @@ const SampleAgentsSection = observer(function SampleAgentsSection({ agent, activ
         <span className="flex items-center gap-1">
           <SidebarGroupToggle
             label={translate('sidebar.agents')}
-            count={0}
             collapsed={collapsed}
             onToggle={() => setSidebarFold('inner:agents', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandAgents' : 'sidebar.collapseAgents')}
@@ -115,7 +114,6 @@ const SampleTopicsSection = observer(function SampleTopicsSection() {
             onToggle={() => setSidebarFold('inner:topics', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandTopics' : 'sidebar.collapseTopics')}
           />
-          <span className={sidebarCountClass}>0</span>
         </span>
       </div>
       {collapsed ? null : <div className={innerSectionEmptyClass}>{translate('sidebar.noTopics')}</div>}

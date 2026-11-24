@@ -59,7 +59,6 @@ import {
   SidebarContent,
   SidebarGroup,
   SidebarMenu,
-  sidebarCountClass,
   sidebarGroupHeaderClass,
 } from './sidebar-primitives';
 import { sessionDropTarget } from './session-drop-target';
@@ -313,13 +312,11 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
         <span className="flex items-center gap-1">
           <SidebarGroupToggle
             label={translate('sidebar.topics')}
-            count={0}
+            count={view?.total}
             collapsed={collapsed}
             onToggle={() => setSidebarFold('inner:topics', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandTopics' : 'sidebar.collapseTopics')}
           />
-          {/* 稿子上没有话题也写「0」。 */}
-          {view ? <span className={sidebarCountClass}>{view.total}</span> : null}
           {/* 收起时标题旁挂里面叫到你的(同「对话」分区头那个未读数)。 */}
           {collapsed ? <SidebarUnreadCount count={view?.calling ?? 0} /> : null}
         </span>
@@ -391,7 +388,6 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
         <span className="flex items-center gap-1">
           <SidebarGroupToggle
             label={translate('sidebar.agents')}
-            count={0}
             collapsed={collapsed}
             onToggle={() => setSidebarFold('inner:agents', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandAgents' : 'sidebar.collapseAgents')}

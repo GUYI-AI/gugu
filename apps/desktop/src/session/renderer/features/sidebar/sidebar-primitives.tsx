@@ -35,13 +35,13 @@ export const sidebarGroupInsetX = 'px-3';
 export const sidebarRowContentInsetX = 'pl-2';
 
 /**
- * 分区头(置顶 / 项目 / 任务)的外框。
+ * 分区头(内层侧栏的话题 / 智能体)的外框。
  *
  * `pl-5` = 内容列(list body 12 + 8);`pr-2` 让右侧那枚 size-6 小钮里的 16px 字形右缘
  * 落在 12px 上 —— 与搜索行右端的 ⌘K 键帽、设置行右端的键帽同一条竖线(8 + (24-16)/2 = 12)。
- * 三个分区头引用同一个常量,❌ 各写一遍。`group/ghdr` 是分区头的 hover 组名:折叠箭头(SidebarGroupToggle)悬停整条头才出现。
+ * 分区头都引用同一个常量,❌ 各写一遍。
  */
-export const sidebarGroupHeaderClass = 'group/ghdr flex h-8 items-center justify-between pr-2 pl-5';
+export const sidebarGroupHeaderClass = 'flex h-8 items-center justify-between pr-2 pl-5';
 
 /**
  * 分区头标题(置顶 / 项目 / 任务)的角色 —— MicroLabel 自带 text-xs,咕咕字阶只有 14/12,

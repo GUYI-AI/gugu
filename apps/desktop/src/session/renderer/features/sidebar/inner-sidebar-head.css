@@ -83,9 +83,6 @@
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child,
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child * { font-size: var(--font-body); font-weight: 400; }
 [data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child { gap: 12px; }
-/* The design has the count 12px after the label; the fold chevron hangs in the gutter left of the label instead of between them. */
-[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child > button:first-child { position: relative; }
-[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child > button:first-child > svg { position: absolute; inset-inline-start: -17px; }
 [data-region='inner-sidebar'] [data-inner-rows] { padding-inline: 8px 6px; }
 /*
  * Rows (design .lrow: 9px in, padding 0 8, 7px between icon and text, 18px agent face). A row with no sub-sessions has

@@ -412,7 +412,12 @@ describe('inner sidebar', () => {
     openChat('group');
     await render();
     const agents = () => host.querySelector<HTMLElement>('[data-inner-sidebar-section="agents"]')!;
+    // The head is one button that says it folds: the chevron lives inside it and it reports its state.
+    const toggle = () => agents().querySelector<HTMLElement>('[data-sidebar-group-toggle]')!;
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().querySelector('svg')).not.toBeNull();
     await act(async () => agents().querySelector<HTMLElement>('button[aria-label="sidebar.collapseAgents"]')!.click());
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
     expect(sessionRows()).toEqual([]);
     expect(agents().querySelector('[aria-label="sidebar.unreadCount:1"]')?.textContent).toBe('1');
   });
