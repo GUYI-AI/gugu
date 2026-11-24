@@ -169,12 +169,10 @@ function ReasoningFade({
 }
 
 function ReasoningTrigger({
-  active,
   duration,
   className,
   ...props
 }: React.ComponentProps<typeof CollapsibleTrigger> & {
-  active?: boolean;
   duration?: number;
 }) {
   const durationText = duration ? ` (${duration}s)` : "";
