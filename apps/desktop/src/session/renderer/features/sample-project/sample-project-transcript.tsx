@@ -212,15 +212,7 @@ function SampleAgentSender({ name }: { name: string }) {
   );
 }
 
-/** agent 的头像 + 右下角的引擎角标。角标照 AgentHarnessBadge 的量值自己画:那一枚要按 agent id 去查真 agent 的引擎。 */
+/** The sample agent's avatar: the same face every agent row draws (no corner mark: an agent's engine is not drawn on its avatar). */
 export function SampleAgentAvatar({ name, size = 32 }: { name: string; size?: number }) {
-  const badge = Math.max(10, Math.min(24, Math.round(size * 0.44)));
-  return (
-    <span className="relative inline-flex">
-      <Avatar name={name} avatarUrl={null} seed={SAMPLE_AGENT_SEED} size={size} isAgent harnessBadge={false} still />
-      <span className="agent-harness-badge" style={{ '--agent-harness-size': `${badge}px` } as CSSProperties}>
-        <EngineIcon engine="codex" size={badge - 4} />
-      </span>
-    </span>
-  );
+  return <Avatar name={name} avatarUrl={null} seed={SAMPLE_AGENT_SEED} size={size} isAgent still />;
 }

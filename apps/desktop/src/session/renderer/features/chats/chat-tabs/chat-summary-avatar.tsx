@@ -13,5 +13,5 @@ export const ChatSummaryAvatar = observer(function ChatSummaryAvatar({ chatId, s
   if (!summary || summary.kind === 'group' || summary.kind === 'topic') {
     return <Avatar name={summary?.name ?? ''} avatarUrl={summary?.avatar} seed={chatId} size={size} variant="group" still />;
   }
-  return <Avatar name={summary.name ?? ''} avatarUrl={peer?.avatar} seed={summary.peerUserId ?? chatId} size={size} isAgent={summary.kind === 'ai'} harnessBadge={false} still />;
+  return <Avatar name={summary.name ?? ''} avatarUrl={peer?.avatar} seed={summary.peerUserId ?? chatId} size={size} isAgent={summary.kind === 'ai'} still />;
 });

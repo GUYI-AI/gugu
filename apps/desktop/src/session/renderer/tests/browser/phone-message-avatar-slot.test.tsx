@@ -52,7 +52,7 @@ it.each(['light', 'dark'].flatMap(theme => [360, 390].map(width => ({ theme, wid
         <PhoneAssistantRow state={assistant} onOpen={() => {}} />
         <div data-needs-you-list-slot=""><NeedsYouTaskRow task={waiting} emphasis onClick={() => {}} onKeyDown={() => {}} /></div>
         <ListRow mobile title="task-project" leading={<PhoneProjectChatAvatar chat={projectChat} mobile><Avatar name="group" variant="group" size={48} /></PhoneProjectChatAvatar>} />
-        <ListRow mobile title="ordinary agent" leading={<Avatar name="ordinary agent" seed="codex" size={48} isAgent agentStatus="error" harnessBadge={false} />} />
+        <ListRow mobile title="ordinary agent" leading={<Avatar name="ordinary agent" seed="codex" size={48} isAgent agentStatus="error" />} />
       </div></div></div>,
       { chat: { identitiesById: { codex: displayIdentity('codex', { type: 'agent', display_name: 'Codex 1' }) } } },
     )
@@ -76,10 +76,10 @@ it.each(['light', 'dark'].flatMap(theme => [360, 390].map(width => ({ theme, wid
       expect(badge.x + badge.width / 2 - slots[index].right).toBe(-5)
       expect(badge.y + badge.height / 2 - slots[index].top).toBe(5)
     }
-    // An agent's status takes the bottom-right corner, where its harness badge would be.
-    expect(ordinary.x + ordinary.width / 2 - slots[3].right).toBe(-5)
-    expect(ordinary.y + ordinary.height / 2 - slots[3].bottom).toBe(-5)
-    // The status mark lives in the avatar corner, never at the row's end; an unread row's end is its count badge.
+    // An agent's own status mark is the avatar's bottom-right corner (Avatar.tsx @@@avatar-status-corner).
+    expect(ordinary.right).toBe(slots[3].right + 2)
+    expect(ordinary.bottom).toBe(slots[3].bottom + 2)
+    // The status mark lives on the avatar, never at the row's end; an unread row's end is its count badge.
     expect(rows[1].querySelector('.gg-list-row-trailing [role="img"]')).toBeNull()
     expect(rows[1].querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent).toBe('1')
   },

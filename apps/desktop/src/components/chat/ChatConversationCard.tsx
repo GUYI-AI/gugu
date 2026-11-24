@@ -39,7 +39,7 @@ export function ChatConversationCard({ chat, name, avatar, isAgent, onClose }: {
     {t(chat.kind === 'topic' ? 'groupDetails.topicSummary' : 'group.settings.memberCount', { count: members.length })}
   </> : null
   return <ConversationCard
-    avatar={chat.kind === 'topic' ? <TopicMark size={44} /> : <Avatar name={name} avatarUrl={avatar} seed={room ? chat.id : chat.peer_user_id ?? undefined} isAgent={isAgent} harnessBadge={false} variant={room ? 'group' : 'default'} size={44} still />}
+    avatar={chat.kind === 'topic' ? <TopicMark size={44} /> : <Avatar name={name} avatarUrl={avatar} seed={room ? chat.id : chat.peer_user_id ?? undefined} isAgent={isAgent} variant={room ? 'group' : 'default'} size={44} still />}
     name={name}
     subtitle={subtitle}
     onRename={room && settings?.can_manage ? async (next) => { if (!(await update({ name: next }))) throw new Error('group rename failed') } : null}

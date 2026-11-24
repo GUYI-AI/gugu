@@ -34,7 +34,7 @@ export function PhoneAssistantRow({ state, onOpen }: { state: PhoneAssistantStat
       emphasis={unread > 0}
       onClick={onOpen}
       leading={<PhoneMessageAvatar>{contact
-        ? <Avatar name={name} avatarUrl={contact.avatar} seed={contact.id} size={48} isAgent harnessBadge={false} />
+        ? <Avatar name={name} avatarUrl={contact.avatar} seed={contact.id} size={48} isAgent />
         : <PhoneGuguTabIcon name={name} fresh={state.stage.stage === 'onboarding'} />}</PhoneMessageAvatar>}
       title={name}
       meta={chat ? formatCalendarDay(chatActivityAt(chat)) : undefined}

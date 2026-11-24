@@ -253,7 +253,7 @@ export function PhonePartnersPage({
                 const open = () => push({ kind: 'friend', contactId: friend.id })
                 return (
                   <ListRow key={friend.id} mobile role="button" tabIndex={0} data-testid="phone-partners-friend"
-                    leading={<Avatar name={displayName(friend)} avatarUrl={friend.avatar} seed={friend.id} size="md" harnessBadge={false} />}
+                    leading={<Avatar name={displayName(friend)} avatarUrl={friend.avatar} seed={friend.id} size="md" />}
                     title={displayName(friend)} onClick={open} onKeyDown={rowKeyActivate(open)} />
                 )
               })}

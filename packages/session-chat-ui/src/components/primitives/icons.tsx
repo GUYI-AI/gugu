@@ -12,7 +12,6 @@ export { MentionAtIcon } from './icons/MentionAtIcon';
 export { MentionIssueIcon } from './icons/MentionIssueIcon';
 export { MentionSymbolIcon } from './icons/MentionSymbolIcon';
 export { PlanCompletedIcon } from './icons/PlanCompletedIcon';
-export { PlanInProgressIcon } from './icons/PlanInProgressIcon';
 export { PlanPendingIcon } from './icons/PlanPendingIcon';
 export { FileTile } from './icons/FileTile';
 export { IconChevronDown, IconChevronRight, IconGlobe } from './icons/OutputIcons';

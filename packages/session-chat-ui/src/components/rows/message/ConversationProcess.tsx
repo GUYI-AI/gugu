@@ -5,11 +5,11 @@ import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { formatElapsed } from '@session-chat/lib/format-elapsed';
 import { useViewShown } from '@session-chat/view-visibility';
 import type { ChatMessage } from '@session-chat/model';
-import { GridLoader } from '@session-chat/components/primitives/GridLoader';
-import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
+import { RunningGlyph } from '@session-chat/components/primitives/RunningGlyph';
+import { runningText } from '@session-chat/styles/effects.css';
 import type { MeasureCtx } from '@session-chat/core/define';
 import { processButtonLayout, processSummary } from './process-row-layout';
-import { conversationProcessButton, conversationProcessChevron } from './conversation-message.css';
+import { conversationProcessButton, conversationProcessChevron, processGlyphSlot } from './conversation-message.css';
 
 /** Completed thinking and execution, using the existing ChatRoot disclosure delegation. */
 export function ConversationProcess(props: {
@@ -42,16 +42,16 @@ export function ConversationProcess(props: {
   const summary = () => processSummary(props.process, translate, elapsed()) || null;
   const notice = () => commands().conversationProcessNotice?.(props.process.id);
   const label = () => notice()?.text ?? `${translate(props.process.starting ? `transcript.${props.process.starting}` : 'transcript.thinkingAndExecution')}${summary() ? `${translate('metadata.separator')}${summary()}` : ''}`;
-  // 在跑:点阵代替大脑,字写「执行中 · 1m15s」并带微光(owner 2026-10-27 原型);跑完换回大脑 + 用时。
+  // 在跑:共用的运行字形代替大脑(占大脑那一格),字写「执行中 · 1m15s」;跑完换回大脑 + 用时。
   const collapsible = () => props.collapsible !== false && !props.process.empty;
   const layout = () => processButtonLayout(props.process, props.measureCtx());
   return <button type="button" class={conversationProcessButton} style={{ width: `${layout().width}px`, height: `${layout().height}px` }} data-conversation-process={props.process.id}
     disabled={!collapsible()} data-collapse-id={collapsible() ? props.process.toggleId ?? props.process.id : undefined} data-collapse-anchor={props.anchorId}
     aria-expanded={collapsible() ? props.expanded : undefined} aria-label={label()} title={label()}>
-    <Show when={!props.process.live} fallback={<><GridLoader /><ShimmerText active multiline style={{ display: 'inline-flex', 'flex-wrap': 'wrap', 'min-width': 0, 'line-height': '22px' }}>
+    <Show when={!props.process.live} fallback={<><RunningGlyph class={processGlyphSlot} /><span class={runningText} style={{ display: 'inline-flex', 'flex-wrap': 'wrap', 'min-width': 0, 'line-height': '22px' }}>
       <span style={{ 'white-space': 'pre-wrap', 'overflow-wrap': 'anywhere', 'max-width': '100%' }}>{translate(props.process.starting ? `transcript.${props.process.starting}` : 'transcript.thinkingLive')}{summary() ? ' ' : ''}</span>
       <Show when={summary()}>{value => <span style={{ 'white-space': 'nowrap' }}>{value()}</span>}</Show>
-    </ShimmerText></>}>
+    </span></>}>
       <svg width="17" height="17" viewBox="0 0 24 22" fill="none" stroke="currentColor" stroke-width="1.4"
         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M11.5 4.5C10 2 6 2 5 5c-3-.2-4 3-2.5 5-2 2 .1 5 2.5 4.5-.2 3 4.5 4.5 6.5 2M11.5 4.5C13 2 17 2 18 5c3-.2 4 3 2.5 5 2 2-.1 5-2.5 4.5.2 3-4.5 4.5-6.5 2V4.5Z" />
