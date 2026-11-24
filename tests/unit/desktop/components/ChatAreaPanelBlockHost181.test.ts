@@ -77,9 +77,10 @@ afterEach(() => {
   title.remove()
 })
 
-async function renderPanel(blockHost?: { actions: HTMLElement | null; title: HTMLElement | null; tabs: HTMLElement | null }, kind: 'group' | 'dm' | 'ai' = 'group', mobile = false, project = false) {
+async function renderPanel(blockHost?: { actions: HTMLElement | null; title: HTMLElement | null; tabs: HTMLElement | null }, kind: 'group' | 'dm' | 'ai' = 'group', mobile = false, project = false, hideRunningStatus = false) {
   shell.mobile = mobile
-  const panel = createNode(ChatAreaPanel, { openNonce: 0, blockHost, mobile })
+  const chrome = hideRunningStatus ? { placeholder: 'Chat', attachGlyph: null, hideRunningStatus: true } : undefined
+  const panel = createNode(ChatAreaPanel, { openNonce: 0, blockHost, mobile, ...(chrome ? { chrome } : {}) })
   await renderWithAppProviders(harness, project ? createNode(InChatSlot.Provider, { value: { projectName: 'Settings project' } }, panel) : panel, {
     chat: {
       getImRepository: getImRepositoryMock,
@@ -279,13 +280,22 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
     expect(layer.className).not.toMatch(/\bbg-/)
   })
 
-  // owner shuxue 11-23:输入框上面那一排「xx 运行中」pill 电脑、手机都删掉;底部那一摞只剩回复条和输入框,浮在消息流上。
-  it.each(['group', 'dm', 'ai'] as const)('draws no running row above the composer in a %s chat', async (kind) => {
+  // owner 10-25:运行条那一行在可能有 agent 跑的会话里始终占位(固定高、没有底),所以运行条出现、消失不改变布局;
+  // 底部那一摞浮在消息流上,消息从它后面滚过。和真人的私聊没有运行条,不留这一行。
+  it.each([['group', true], ['dm', false]] as const)('reserves the running bar row in a %s chat: %s', async (kind, reserved) => {
     await renderPanel(undefined, kind)
     const dock = harness.container.querySelector<HTMLElement>('[data-chat-bottom-dock]')!
     expect(dock.classList.contains('absolute!')).toBe(true)
-    expect(dock.querySelector('[data-running-bar-slot], [data-testid="group-agent-running-status"]')).toBeNull()
-    expect(dock.children).toHaveLength(1)
+    const row = dock.querySelector('[data-running-bar-slot]')
+    expect(row !== null).toBe(reserved)
+    if (row) expect(dock.firstElementChild!.contains(row)).toBe(true)
+  })
+
+  // owner 10-26「这些空白空间」:助理和面板里的任务聊天不显示运行条(assistant-app 10-19),那一行就不该留着 ——
+  // 留着就是输入框上面一条 42px 的空带。
+  it('reserves no running bar row when the chat hides running status (assistant)', async () => {
+    await renderPanel(undefined, 'ai', false, false, true)
+    expect(harness.container.querySelector('[data-running-bar-slot]')).toBeNull()
   })
 
   it('keeps the agent avatar and title in the block strip; the folder is in 详情 (第 16 版)', async () => {

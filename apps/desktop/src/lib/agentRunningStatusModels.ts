@@ -43,6 +43,13 @@ export function agentLocationText(
   return location?.deviceName.trim() || null
 }
 
+export function resolveAgentRunningDisplayName(
+  preferredName: string | null | undefined,
+  fallbackName?: string | null,
+): string {
+  return preferredName?.trim() || fallbackName?.trim() || 'Agent'
+}
+
 // 群 thread panel 的「运行中」占位指示器要画谁。群没有单一权威对象,所以按「任一成员在干活即在干活」
 // 挑第一个在跑的成员来画身份 —— 状态仍来自那张按 agentId 的表,❌ 这里不判断谁在跑,只挑一个来画。
 // 纯函数放在这里而不是会话组件里:god file 冻结之外,更重要的是它可被单测直接判。

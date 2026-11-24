@@ -1,5 +1,7 @@
 import { useId, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { composerSlotClass, composerSlotInnerClass } from '@gugu/session-chat-ui/composer-layout'
+import { useMobileShell } from '@/hooks/useMobileShell'
+import './phone-chat-dock.css'
 
 /** 底部那一摞的实测高度,挂在它所在的那一栏上;消息流末尾(MessageList)和空态占位都按它让位。 */
 const CHAT_DOCK_HEIGHT_VAR = '--chat-dock-h'
@@ -18,17 +20,24 @@ function dockRule(column: string): CSSStyleRule {
  * Chat composers use the same slot frame as ACP tasks.
  *
  * 底部那一摞浮在消息流上,自己没有底(owner 10-25「应该是透明的」「用户感受到的这块应该是一个空地」):
- * 消息从回复条后面滚过去,看得见;要底的只有回复条、输入框那几张卡自己。
- * 它把自己的高度写成所在那一栏里 [data-chat-dock-reads] 元素的 --chat-dock-h,消息流在最后一条后面让出同样高的一格,滚到底时最后一条落在输入框上面。
+ * 消息从运行条那一行、回复条后面滚过去,看得见;要底的只有 pill、回复条、输入框那几张卡自己。
+ * 运行条那一行和两侧的空白不接指针,滚轮和点选落到后面的消息流上。
+ * 它把自己的高度写成所在那一栏里 [data-chat-dock-reads] 元素的 --chat-dock-h,消息流在最后一条后面让出同样高的一格,滚到底时最后一条落在运行条上面。
+ * `above` 是运行条那一行:固定高度,里面有没有 pill 都不改变这一摞的高度,所以运行条出现、消失不改变布局。
  * reserve:没有消息流可让(空态、骨架)时,在列底占一格同高的位置,空态的内容不被盖住。
  */
-export function ChatBottomDock({ reserve, children }: { reserve: boolean; children: ReactNode }) {
+export function ChatBottomDock({ reserve, above, running = false, children }: { reserve: boolean; above?: ReactNode; running?: boolean; children: ReactNode }) {
+  const mobile = useMobileShell()
   const ref = useRef<HTMLDivElement | null>(null)
   const columnId = useId()
+  const hasAbove = Boolean(above)
   useLayoutEffect(() => {
     const el = ref.current, column = el?.parentElement
     if (!el || !column) return
+    // The reserved running row stays stable even when empty. Avatars avoid only
+    // the cards that are actually present, using this same height observation.
     const input = el.lastElementChild as HTMLElement
+    const preview = hasAbove ? el.querySelector<HTMLElement>('[data-running-bar-content]') : null
     column.setAttribute('data-chat-dock-column', columnId)
     const rule = dockRule(columnId)
     // @@@dock-rule-writes - a write to the rule re-matches it against the whole document (a stylesheet change), even with the
@@ -36,7 +45,12 @@ export function ChatBottomDock({ reserve, children }: { reserve: boolean; childr
     // changed height, so a fold costs no document-wide pass per frame.
     let written = ''
     const report = () => {
-      const top = input.offsetTop
+      let top = input.offsetTop
+      for (const pill of el.querySelectorAll<HTMLElement>('[data-chat-dock-obstacle]')) {
+        let offset = 0
+        for (let node: HTMLElement | null = pill; node && node !== el; node = node.offsetParent as HTMLElement | null) offset += node.offsetTop
+        top = Math.min(top, offset)
+      }
       const height = el.offsetHeight
       if (written === `${height} ${top}`) return
       written = `${height} ${top}`
@@ -46,12 +60,14 @@ export function ChatBottomDock({ reserve, children }: { reserve: boolean; childr
     report()
     const observer = new ResizeObserver(report)
     observer.observe(el)
+    if (preview) observer.observe(preview)
     return () => { observer.disconnect(); dockSheet!.deleteRule([...dockSheet!.cssRules].indexOf(rule)); column.removeAttribute('data-chat-dock-column') }
-  }, [columnId])
+  }, [hasAbove, columnId])
   return (
     <>
       {reserve && <div aria-hidden data-chat-dock-reads="" className="h-[var(--chat-dock-h,0px)] shrink-0" />}
-      <div ref={ref} data-chat-bottom-dock="" className={`${composerSlotClass} absolute!`}>
+      <div ref={ref} data-chat-bottom-dock="" data-running-status={running || undefined} className={`${composerSlotClass} absolute!${mobile ? ' gg-phone-chat-dock' : ''}`}>
+        <div className={`${composerSlotInnerClass} pb-0! pointer-events-none!`}>{above}</div>
         <div className={composerSlotInnerClass}>{children}</div>
       </div>
     </>

@@ -4,6 +4,7 @@ import { LocalizationProvider, setLocalePreference } from '@/i18n'
 import { ChatMessageComposer } from '@/components/chat/ChatMessageComposer'
 import { ChatBottomDock } from '@/components/chat/ChatBottomDock'
 import { PhoneComposerControl, PhoneComposerControlRow } from '@/mobile/composer/PhoneComposerControls'
+import { RunningBarSlot, RunningTokenBar } from '@/components/RunningTokenBar'
 import { createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import '@gugu/session-ui/styles/global'
@@ -22,9 +23,10 @@ it.each([true])('group=%s: the input composer menu bar collapses fully without m
   await page.viewport(390, 844); setLocalePreference('zh-CN'); document.documentElement.dataset.theme = 'dark'; document.documentElement.setAttribute('data-phone-shell', '')
   harness = createReactHarness()
   Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column' })
+  const tokens = Array.from({ length: 12 }, (_, i) => ({ id: `fixture-${i}`, name: `正在检查图片的智能体 ${i}`, avatarUrl: null, avatarSeed: `fixture-${i}`, stateKey: 'running' as const, toolCount: 0, lastActiveAt: null }))
   await renderWithAppProviders(harness, <LocalizationProvider>
     <div data-testid="message-viewport" style={{ flex: '1', minHeight: 0, overflow: 'auto' }}><div style={{ height: 1500 }} /><img alt="last test image" width="280" height="180" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='280' height='180'%3E%3Crect width='280' height='180' fill='blue'/%3E%3C/svg%3E" /></div>
-    <ChatBottomDock reserve={false}>
+    <ChatBottomDock reserve={false} above={group ? <RunningBarSlot><RunningTokenBar tokens={tokens} previewChatId={null} /></RunningBarSlot> : undefined}>
       <div data-chat-composer="">
         {group && <PhoneComposerControlRow><PhoneComposerControl label="话题" testId="fixture-topics" onClick={() => {}} /></PhoneComposerControlRow>}
         <ChatMessageComposer chatId="menu-bar-test" currentUserId="owner" isGroupChat={group} onSend={vi.fn(async () => {})} onSendAttachments={vi.fn(async () => {})} />
@@ -39,7 +41,7 @@ it.each([true])('group=%s: the input composer menu bar collapses fully without m
   const initialTop = input.getBoundingClientRect().top
   const viewport = harness.container.querySelector<HTMLElement>('[data-testid="message-viewport"]')!
   const dock = harness.container.querySelector<HTMLElement>('[data-chat-bottom-dock]')!
-  // The dock floats over the messages like desktop: they run under the menu.
+  // The dock floats over the messages like desktop: they run under the running row and the menu.
   expect(getComputedStyle(dock).position).toBe('absolute')
   expect(viewport.getBoundingClientRect().bottom).toBe(dock.getBoundingClientRect().bottom)
   expect(harness!.container.querySelector('[data-phone-attachment]')).not.toBeNull()
@@ -52,6 +54,7 @@ it.each([true])('group=%s: the input composer menu bar collapses fully without m
   expect(input.querySelector('[contenteditable]')).toBe(editor)
   expect(document.activeElement).toBe(editor); expect(blur).not.toHaveBeenCalled(); expect(ended).not.toHaveBeenCalled()
   expect(viewport.getBoundingClientRect().bottom).toBe(dock.getBoundingClientRect().bottom)
+  if (group) expect(harness.container.querySelector('[data-running-bar-slot]')!.getBoundingClientRect().bottom).toBeLessThan(viewport.getBoundingClientRect().bottom)
   editor.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '中' })); editor.blur()
   await until('restored menu', () => !row.hasAttribute('data-editing'))
   expect(row.getBoundingClientRect().height).toBeGreaterThan(40)

@@ -180,6 +180,39 @@ export default {
     "title": "Agent templates",
     "use": "Use"
   },
+  "runtime": {
+    "groupMine": "Mine",
+    "groupOthers": "Others",
+    "justNow": "just now",
+    "messagePreview": {
+      "connecting": "Connecting…",
+      "done": "Done",
+      "empty": "No recent activity",
+      "hostMachine": "Runtime device",
+      "hostOffline": "{{machine}} is offline; recent activity cannot be read",
+      "hostSilent": "{{machine}} is not responding; recent activity cannot be read",
+      "promptElsewhere": "A message from another source",
+      "promptFailed": "This message could not be read",
+      "recordNotFound": "This device cannot read this task's record",
+      "toolCount": "{{state}} ×{{count}}",
+      "unavailable": "Recent activity is unavailable right now"
+    },
+    "more": "More running Agents",
+    "stateWord": {
+      "editing": "editing",
+      "executing": "executing",
+      "messaging": "replying",
+      "reading": "reading",
+      "running": "running",
+      "searching": "searching",
+      "thinking": "thinking"
+    },
+    "toolCallUnit": "tool calls",
+    "viewDetails": "{{name}} is {{status}}; view runtime details",
+    "viewMore": "View {{count}} more running Agents",
+    "viewMore_one": "View {{count}} more running Agent",
+    "viewMore_other": "View {{count}} more running Agents",
+  },
   "scheduledTasks": {
     "errors": {
       "intervalMinimum": "The interval must be at least {{seconds}} seconds",
