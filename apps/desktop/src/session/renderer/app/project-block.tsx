@@ -98,6 +98,7 @@ export const ProjectBlock = observer(function ProjectBlock({
           focused={focused}
           data-project-block-tab={projectId}
           label={label}
+          labelSlot={<ChatPartSlot chatId={chatId} part="title" className="flex min-w-0 flex-1" />}
           menu={chatTabHasActions(chatId) ? <ChatTabMenuItems chatId={chatId} /> : undefined}
         />
       )}
