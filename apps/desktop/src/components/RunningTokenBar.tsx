@@ -9,6 +9,7 @@ import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { CLISpinner } from '@renderer/lib/components/cliSpinner'
 import type { MouseEvent } from 'react'
+import { AgentParkedGlyph } from './AgentParkedGlyph'
 import { Avatar } from './Avatar'
 import { useLongPress } from '../hooks/useLongPress'
 import { useMobileShell } from '../hooks/useMobileShell'
@@ -31,6 +32,8 @@ export interface RunningToken {
   lastActiveAt: string | null
   /** The viewer owns this agent: +N groups its panel into Mine / Others. */
   mine?: boolean
+  /** Running in the background (a background command, between turns): the glyph is held still. */
+  parked?: boolean
 }
 
 export interface RunningTokenBarProps {
@@ -108,7 +111,7 @@ function RunningTokenItem({
   const { t } = useTranslation('agents')
   const identity = useAvatarIdentity(token.id)
   const displayName = useShownAgentName({ name: resolveAgentRunningDisplayName(token.name), createdAt: identity?.created_at ?? undefined })
-  const stateWord = t(`runtime.stateWord.${token.stateKey}`)
+  const stateWord = token.parked ? t('agentStatus.parked', { ns: 'common' }) : t(`runtime.stateWord.${token.stateKey}`)
   const triggerId = useId()
   const mobile = useMobileShell()
   const longPress = useLongPress(() => preview.open(triggerId))
@@ -139,7 +142,7 @@ function RunningTokenItem({
         <Avatar name={displayName} avatarUrl={token.avatarUrl} seed={token.avatarSeed} size={overflow ? 16 : 'xs'} isAgent statusLabel="running" />
         <span className="rtb-nm">{displayName}</span>
         {overflow ? <span className="rtb-v">{stateWord}</span> : (
-          <span className="rtb-state"><CLISpinner className="rtb-glyph" /></span>
+          <span className="rtb-state">{token.parked ? <AgentParkedGlyph className="rtb-glyph" /> : <CLISpinner className="rtb-glyph" />}</span>
         )}
       </Chip>
     </Popover.Trigger>

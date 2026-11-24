@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { RunningBarSlot, RunningTokenBar, type RunningToken } from '@/components/RunningTokenBar'
 import { ChatBottomDock } from '@/components/chat/ChatBottomDock'
+import { groupRunningTokens } from '@/lib/groupRunningTokenModels'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { i18n } from '@/i18n'
 import '@/i18n/registerAgentsCatalog'
@@ -200,5 +201,21 @@ describe('running strip: one row, +N opens a grouped, capped, scrolling panel', 
     await userEvent.click(column!.querySelector<HTMLElement>('.rtb-more')!)
     await until('the tapped panel stays open', () => (panel()?.getBoundingClientRect().height ?? 0) > 0)
     expect(panel()!.querySelectorAll('[role="group"]')).toHaveLength(2)
+  })
+})
+
+describe('running strip: an agent running in the background keeps its pill', () => {
+  it('keeps a parked agent with its glyph held still, and drops an idle one', async () => {
+    const list = groupRunningTokens({
+      agents: [{ id: 'turning' }, { id: 'parked' }, { id: 'idle' }],
+      statuses: { turning: 'working', parked: 'parked', idle: 'idle' },
+      identities: {}, currentUserId: null, recentActivity: {},
+    })
+    expect(list.map(token => [token.id, token.parked])).toEqual([['turning', false], ['parked', true]])
+    await mount(1000, list)
+    const pill = (id: string) => column!.querySelector<HTMLElement>(`.rtb-bar > [data-message-preview-trigger="${id}"]`)!
+    expect(pill('turning').querySelector('.rtb-state .gg-running-glyph:not(.gg-running-glyph--still)')).not.toBeNull()
+    expect(pill('parked').querySelector('.rtb-state [data-agent-status-glyph="parked"].gg-running-glyph--still')).not.toBeNull()
+    expect(pill('parked').getAttribute('aria-label')).toContain(i18n.t('agentStatus.parked', { ns: 'common' }))
   })
 })
