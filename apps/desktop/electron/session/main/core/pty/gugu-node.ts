@@ -71,12 +71,12 @@ function windowsCmd(node: string, electron: boolean): string {
     lines.push(...env, run);
   } else {
     lines.push(
-      `for /f "tokens=2 delims=:." %%c in ('chcp') do set "gugu_cp=%%c"`,
-      'chcp 65001 >nul',
+      `for /f "tokens=2 delims=:." %%c in ('"%SystemRoot%\\System32\\chcp.com"') do set "gugu_cp=%%c"`,
+      '"%SystemRoot%\\System32\\chcp.com" 65001 >nul',
       ...env,
       run,
       'set gugu_rc=%ERRORLEVEL%',
-      'chcp %gugu_cp% >nul',
+      '"%SystemRoot%\\System32\\chcp.com" %gugu_cp% >nul',
       'exit /b %gugu_rc%',
     );
   }

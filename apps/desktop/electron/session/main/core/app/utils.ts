@@ -1,4 +1,4 @@
-import { exec, execFile, spawn } from '@gugu/core/local/childProcess';
+import { exec, execFile, spawn, windowsSystemProgram } from '@gugu/core/local/childProcess';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { app } from 'electron';
@@ -140,7 +140,7 @@ const listInstalledFontsWindows = async (): Promise<string[]> => {
     "$props = $fonts.PSObject.Properties | Where-Object { $_.Name -notlike 'PS*' };" +
     "$props | ForEach-Object { ($_.Name -replace '\\s*\\(.*\\)$','').Trim() }";
   // 直接起 powershell.exe,❌ 经 `exec` 的 cmd.exe 壳:超时 kill 只杀得到壳,powershell 会留成孤儿。
-  const stdout = await execFileOutput('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+  const stdout = await execFileOutput(windowsSystemProgram('WindowsPowerShell\\v1.0\\powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', script], {
     timeout: 30_000,
   });
   return dedupeAndSortFonts(

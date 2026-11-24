@@ -1,7 +1,6 @@
 import type { ChildProcess, ChildProcessWithoutNullStreams, SpawnOptions } from 'node:child_process';
 // 相对 `.ts` 路径同下:这份源码会被 node 直接跑。
-import { execFile, spawn } from '../../../core/src/local/childProcess.ts';
-import path from 'node:path';
+import { execFile, spawn, windowsSystemProgram } from '../../../core/src/local/childProcess.ts';
 import type { Readable } from 'node:stream';
 // `.ts` 全路径:codex ACP 桥(runtime/codex-app-server-acp.mjs)在单测里由 node 直接跑这份源码。
 import { planDirectSpawn } from './windows-launcher.ts';
@@ -143,8 +142,7 @@ export function spawnOwnedChild(
 }
 
 function taskkillTree(pid: number): Promise<void> {
-  // 按系统目录取绝对路径:PATH 上同名的别的东西不该被当成 taskkill。
-  const taskkill = path.win32.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
+  const taskkill = windowsSystemProgram('taskkill.exe');
   return new Promise((resolve, reject) => {
     execFile(taskkill, ['/PID', String(pid), '/T', '/F'], { timeout: 5_000 }, (error, _stdout, stderr) => {
       if (error) reject(new Error(`taskkill /T /F ${pid} failed: ${error.message} ${String(stderr).trim()}`));

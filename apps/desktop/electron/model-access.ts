@@ -1,6 +1,6 @@
 import { isUserFacingModelId } from '@gugu/session-core/acp/client'
 import { egress } from '@gugu/core/shared/egress'
-import { execFile } from '@gugu/core/local/childProcess'
+import { execFile, windowsSystemProgram } from '@gugu/core/local/childProcess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -590,7 +590,7 @@ function ownProcessStartedAt(): Promise<number> {
 /** 某个 pid 现在那个进程的启动时刻;进程不在返回 null。读不出(工具失败)就抛,❌ 当成「不在」。 */
 export function processStartedAt(pid: number): Promise<number | null> {
   const [file, args] = process.platform === 'win32'
-    ? ['powershell.exe', ['-NoProfile', '-Command',
+    ? [windowsSystemProgram('WindowsPowerShell\\v1.0\\powershell.exe'), ['-NoProfile', '-Command',
       `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p) { $p.StartTime.ToUniversalTime().ToString('o') }`]]
     : ['ps', ['-o', 'lstart=', '-p', String(pid)]]
   return new Promise((resolve, reject) => {
