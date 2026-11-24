@@ -2,11 +2,9 @@
 // 与 accountRevisionCoordinator / accountRevisionRuntime 同属 revision 总线这一层(❌ 不算进 #3271 要收缩的旧 IM 产品面),
 // 线的持有者只做接线。每个监听器都有一条「载荷不足以单独落地」的退路,退路一律是旧的整读路径,❌ 不猜。
 //
-// @@@6470 「线」= 屏幕上正在显示的一条会话时间线:主区的 activeChat 是一条(store),右侧话题分栏是另一条
-// (话题是一条真的 chat)。线级修订 —— 新消息、删除、表情、送达/已读回执、成员已读水位、成员进出 —— **只在这里**
+// @@@6470 「线」= 屏幕上正在显示的一条会话时间线(话题也是一条真的 chat,打开时就是主区的 activeChat)。线级修订 —— 新消息、删除、表情、送达/已读回执、成员已读水位、成员进出 —— **只在这里**
 // 接一次:每条线交出同一个 ChatLine 端口,subscribeChatLineRevisions 按 line.chatId() 过滤并落地。
-// 此前话题分栏手抄了一份只有两类事件的订阅,漏了 delivery_changed,于是在话题里 @ agent,它读了你也看不到
-// (#6470);端口字段全部必填,哪条线少接一个 sink 就编译不过,再加一类线级事件也只改这一处。
+// 曾有一条线手抄了一份只有两类事件的订阅,漏了 delivery_changed(#6470);端口字段全部必填,哪条线少接一个 sink 就编译不过,再加一类线级事件也只改这一处。
 import type { Dispatch, SetStateAction } from 'react'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { advanceMemberReadSeq, agentReaderUserId, applyDeliveryReceipt } from '@gugu/core/shared/ui/messageState'

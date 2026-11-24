@@ -54,8 +54,15 @@ export function clippedElementBox(element: HTMLElement, bounds: ElementBox): { f
   while (node && clip.width > 0 && clip.height > 0) {
     if (node instanceof Element) {
       const style = getComputedStyle(node)
-      if (style.overflowX !== 'visible' || style.overflowY !== 'visible') {
-        clip = intersect(clip, elementBox(node))
+      // Each axis clips on its own: overflow-x clip with overflow-y visible (the chat workspace's pages, two cards) cuts
+      // only left and right — a page reaching above that box (the tool card's body under its strip) is still drawn there.
+      const clipsX = style.overflowX !== 'visible', clipsY = style.overflowY !== 'visible'
+      if (clipsX || clipsY) {
+        const box = elementBox(node)
+        clip = intersect(clip, {
+          left: clipsX ? box.left : clip.left, width: clipsX ? box.width : clip.width,
+          top: clipsY ? box.top : clip.top, height: clipsY ? box.height : clip.height,
+        })
         // Pins only stick inside a transcript's own scroller (ChatRoot marks it data-chat-scroll); every other clipping ancestor
         // (panes, frames) holds whole conversations, and searching those for pins grew with the mounted messages.
         if (node.hasAttribute('data-chat-scroll')) clip = belowPins(node, clip)

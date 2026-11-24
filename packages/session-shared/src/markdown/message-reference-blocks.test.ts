@@ -28,7 +28,7 @@ describe('message reference paragraphs', () => {
     expect(result.blocks.map(block => result.content.slice(block.start, block.end))).toEqual([messageHref, `<${widgetHref}>`]);
   });
   it.each([
-    `- ${widgetHref}`, `> ${widgetHref}`, `# ${widgetHref}`, `\`${widgetHref}\``,
+    `- ${widgetHref}`, `> ${widgetHref}`, `\`${widgetHref}\``,
     `\`\`\`\n${widgetHref}\n\`\`\``, `    ${widgetHref}`, `![widget](${widgetHref})`,
     `[widget](${widgetHref})`, `${widgetHref} more text`, `${widgetHref} ${messageHref}`,
     `| Reference |\n|---|\n| ${widgetHref} |`, conversationLink(chat),

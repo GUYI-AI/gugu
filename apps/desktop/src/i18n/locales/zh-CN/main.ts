@@ -922,6 +922,8 @@ export default {
     "title": "设置"
   },
   "shell": {
+    "contactsMenu": "联系人",
+    "pinnedApps": "应用",
     "titlebar": {
       "menubar": "应用菜单",
       "goBack": "后退",

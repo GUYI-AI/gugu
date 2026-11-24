@@ -1,5 +1,5 @@
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives';
+import { useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
 import { TOOLTIP_CLOSE_DELAY_MS, TOOLTIP_OPEN_DELAY_MS } from '@/styles/motion';
 
@@ -32,6 +32,7 @@ function TooltipContent({
   return (
     <TooltipPrimitive.Portal container={useUiPortalContainer()}>
       <TooltipPrimitive.Positioner
+        style={{ zIndex: useUiPopupZIndex() }}
         align={align}
         alignOffset={alignOffset}
         side={side}

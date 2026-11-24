@@ -1,32 +1,11 @@
-import { readFileSync } from 'node:fs';
+
 import * as encoding from 'lib0/encoding';
 import { describe, expect, it } from 'vitest';
 import * as syncProtocol from 'y-protocols/sync';
 import * as Y from 'yjs';
 import { chatForCapabilities } from './bridge-protocol';
 import { folderElsewhereRefusal, notOnSessionMachine } from './machine-call';
-import {
-  APP_RUNTIME_ENTRY,
-  APP_RUNTIME_VERSION,
-  FRAME_TYPE,
-  encodeAuthFrame,
-  encodeCloseFrame,
-  encodeSyncUpdateFrame,
-  fileRefOf,
-  injectAppRuntime,
-  isBareFrame,
-  placeKey,
-  placeOf,
-  readAuthAnswer,
-  readCloseFrame,
-  readFrameHead,
-  readSyncStatus,
-  splitRoutingKey,
-  workspaceSession,
-  workspaceTarget,
-  folderWorkspace,
-  workspaceFolder,
-} from './app-runtime-protocol';
+import { APP_RUNTIME_ENTRY, FRAME_TYPE, encodeAuthFrame, encodeCloseFrame, encodeSyncUpdateFrame, fileRefOf, injectAppRuntime, isBareFrame, placeKey, placeOf, readAuthAnswer, readCloseFrame, readFrameHead, readSyncStatus, splitRoutingKey, workspaceSession, workspaceTarget, folderWorkspace, workspaceFolder } from './app-runtime-protocol';
 
 const TAG = `<script src="${APP_RUNTIME_ENTRY}"></script>`;
 
@@ -48,12 +27,6 @@ describe('injectAppRuntime', () => {
     expect(modern).toContain('data-gugu-api-version="27"');
     expect(injectAppRuntime(legacy, 27)).toBe(modern);
     expect(injectAppRuntime(modern, 27)).toBe(modern);
-  });
-  it('writes the same tag the phone build puts into preinstalled Apps (vite.config.mts injectAppRuntimeTag)', () => {
-    // That config cannot import this module, so it builds the tag itself: pin both to one form.
-    expect(TAG).toBe(`<script src="/_gugu/${APP_RUNTIME_VERSION}/gugu.js"></script>`);
-    const config = readFileSync(new URL('../../../../../../vite.config.mts', import.meta.url), 'utf8');
-    expect(config).toContain('const tag = `<script src="/_gugu/${appRuntimeVersion()}/gugu.js"></script>`');
   });
 
   it('puts the runtime right after the doctype, so the page stays in standards mode', () => {

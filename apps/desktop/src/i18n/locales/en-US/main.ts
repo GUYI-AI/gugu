@@ -942,6 +942,8 @@ export default {
     "title": "Settings"
   },
   "shell": {
+    "contactsMenu": "Contacts",
+    "pinnedApps": "Apps",
     "titlebar": {
       "menubar": "Application menu",
       "goBack": "Back",

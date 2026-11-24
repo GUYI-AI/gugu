@@ -19,8 +19,8 @@ const SESSION = '11111111-2222-4333-8444-555555555555';
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 
-/** A record as each agent writes these prompts: Codex joins a run of text into one input, Claude keeps each block. */
-async function record(harness: 'codex' | 'claude', prompts: string[]): Promise<string> {
+/** A record as each agent writes these prompts: Codex joins a run of text into one input, Claude keeps each block. `running`: Codex has not ended the last turn yet. */
+async function record(harness: 'codex' | 'claude', prompts: string[], running = false): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), `host-prompts-${harness}-`));
   roots.push(root);
   const at = (s: number) => `2026-11-23T00:00:${String(s).padStart(2, '0')}.000Z`;
@@ -31,7 +31,7 @@ async function record(harness: 'codex' | 'claude', prompts: string[]): Promise<s
       line('response_item', { type: 'message', role: 'user', content: [{ type: 'input_image', image_url: `data:image/png;base64,${PNG}` },
         { type: 'input_text', text: [words, HINT].filter(Boolean).join('\n') }] }, 2 * i + 1),
       line('response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `reply ${i}` }] }, 2 * i + 2),
-      line('event_msg', { type: 'task_complete', turn_id: `t${i}` }, 2 * i + 2),
+      ...(running && i === prompts.length - 1 ? [] : [line('event_msg', { type: 'task_complete', turn_id: `t${i}` }, 2 * i + 2)]),
     ])];
     const day = join(root, '2026', '11', '23');
     await mkdir(day, { recursive: true });
@@ -78,17 +78,29 @@ describe.each(['codex', 'claude'] as const)('a %s record shows what the person s
 });
 
 describe('a running turn that sent only a picture', () => {
+  // The runtime's copy: the person's (empty) words and the file, with the receipt of what was sent (`cell.ts`).
+  const runtime = { id: 'S:turn:live', seq: 0, initiator: 'user', items: [{ kind: 'message', id: 'S:turn:live:message:client-1', seq: 0,
+    role: 'user', text: '', files: [FILE], _meta: { guguClientMessageId: 'client-1', ...nativePromptMeta(sent('')) } }] } as TranscriptTurn;
+
   it('is shown once, as the runtime holds it, and its record copy reads as sent once it ends', async () => {
-    const root = await record('codex', ['']);
+    const root = await record('codex', [''], true);
     const timeline = await createSessionTimeline(createSessionRecordSource({ harness: 'codex', providerSessionId: THREAD, roots: [root] }), { sessionId: 'S' });
     try {
-      // The runtime's copy: the person's (empty) words and the file, with the receipt of what was sent (`cell.ts`).
-      const runtime = { id: 'S:turn:live', seq: 0, initiator: 'user', items: [{ kind: 'message', id: 'S:turn:live:message:client-1', seq: 0,
-        role: 'user', text: '', files: [FILE], _meta: { guguClientMessageId: 'client-1', ...nativePromptMeta(sent('')) } }] } as TranscriptTurn;
       timeline.syncActiveTurn(runtime);
       expect(timeline.getSnapshot({ limit: 100 }).turns.map((turn) => turn.id)).toEqual(['S:turn:live']);
       timeline.syncActiveTurn(null);
       expect(users(timeline.getSnapshot({ limit: 100 }).turns)).toEqual([{ text: '', files: ['shot.png'] }]);
+    } finally { timeline.dispose(); }
+  });
+
+  it('sent again, leaves the turn the same picture opened before in place', async () => {
+    const root = await record('codex', ['']);
+    const timeline = await createSessionTimeline(createSessionRecordSource({ harness: 'codex', providerSessionId: THREAD, roots: [root] }), { sessionId: 'S' });
+    try {
+      const before = timeline.getSnapshot({ limit: 100 }).turns.map((turn) => turn.id);
+      expect(before).toHaveLength(1);
+      timeline.syncActiveTurn(runtime);
+      expect(timeline.getSnapshot({ limit: 100 }).turns.map((turn) => turn.id)).toEqual([...before, 'S:turn:live']);
     } finally { timeline.dispose(); }
   });
 });

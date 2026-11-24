@@ -38,14 +38,14 @@ afterEach(() => {
   host.remove();
 });
 
-it('is a two-line list row: the session\'s avatar and status, its title, when it was last used; open = selected', async () => {
+it('is a two-line list row: the session\'s avatar and status, its title (no time column: 界面减法 #3 hides the time); open = selected', async () => {
   await act(async () => root.render(<OneListTaskRow projectId="workspace" sessionId="pty-1" />));
   const row = host.querySelector<HTMLElement>('[data-slot="list-row"]')!;
   expect(row.dataset.taskRow).toBe('pty-1');
   expect(row.dataset.selected).toBe('true');
   expect(row.querySelector('.gg-list-row-leading [data-avatar="pty-1"]')!.getAttribute('data-tone')).toBe('running');
   expect(row.querySelector('.gg-list-row-title')!.textContent).toBe('Fix the build');
-  expect(row.querySelector('.gg-list-row-meta')!.textContent).not.toBe('');
+  expect(row.querySelector('.gg-list-row-meta'), 'the one list shows no time').toBeNull();
   expect(row.querySelectorAll('.gg-list-row-line')).toHaveLength(2);
 });
 
@@ -60,4 +60,16 @@ it('a click opens the task, a ⌘ click opens it beside', async () => {
 it('draws nothing once the sidebar no longer holds the session', async () => {
   await act(async () => root.render(<OneListTaskRow projectId="workspace" sessionId="gone" />));
   expect(host.querySelector('[data-slot="list-row"]')).toBeNull();
+});
+
+it('opened from a group / project column: that room\'s row is the lit one, not the task\'s own (#71)', async () => {
+  const { innerSidebarChat } = await import('./inner-sidebar-anchor');
+  const { runInAction } = await import('mobx');
+  runInAction(() => innerSidebarChat.set({ kind: 'group', chatId: 'group' }));
+  try {
+    await act(async () => root.render(<OneListTaskRow projectId="workspace" sessionId="pty-1" />));
+    expect(host.querySelector<HTMLElement>('[data-slot="list-row"]')!.dataset.selected).toBeUndefined();
+  } finally {
+    runInAction(() => innerSidebarChat.set(null));
+  }
 });

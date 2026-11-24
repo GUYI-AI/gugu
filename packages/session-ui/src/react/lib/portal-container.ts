@@ -44,10 +44,19 @@ export function UiPortalContainerProvider({ value, zIndex, children }: {
   }, children);
 }
 
-/** A portaled popup stays immediately above its originating surface. */
-export function useUiPopupZIndex(): string | undefined {
+/**
+ * The one stacking rule for every portaled layer (menu, popover, tooltip, select, sheet, dialog): its own layer (`base`, e.g.
+ * `var(--z-menu)`) when opened on the page, and never below the surface it was opened from — inside a sheet that declared its
+ * layer (a page modal at --z-settings) it goes one above that layer. `undefined` = no surface declared a layer and no base
+ * given: the caller's own class keeps deciding.
+ */
+export function useUiPopupZIndex(base: number | string): string;
+export function useUiPopupZIndex(base?: number | string): string | undefined;
+export function useUiPopupZIndex(base?: number | string): string | undefined {
   const { zIndex } = useContext(UiPortalContainerContext);
-  return zIndex === undefined ? undefined : `calc(${zIndex} + 1)`;
+  if (zIndex === undefined) return base === undefined ? undefined : String(base);
+  const above = `calc(${zIndex} + 1)`;
+  return base === undefined ? above : `max(${base}, ${above})`;
 }
 
 /** `undefined` → Base UI's `<Portal>` falls back to `document.body`. */

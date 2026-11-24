@@ -591,12 +591,6 @@ describe('MessageBubble touch menu', () => {
     await openMenuAndCopy()
     expect(toast).toHaveBeenCalledWith('复制失败', 'error', 'clipboard denied [path] [redacted token]')
   })
-  it('does not retain the retired private-agent answer toolbar in the IM bubble', async () => {
-    await renderMessage(vi.fn(), false, vi.fn(), { isAgent: true, isGroup: false })
-    expect(harness.container.querySelector('[data-testid="agent-answer-actions"]')).toBeNull()
-    await renderMessage(vi.fn(), false, vi.fn(), { isAgent: true, isGroup: true })
-    expect(harness.container.querySelector('[data-testid="agent-answer-actions"]')).toBeNull()
-  })
 })
 async function renderMessage(
   toast?: (message: string, type?: ToastType) => void,

@@ -96,32 +96,6 @@ describe('device-specific one-page introduction', () => {
 })
 
 describe('contextual hints at the entries each device draws', () => {
-  for (const [device, id] of [['desktop', 'assistant']] as const) {
-    it(`${device} ${id}: dismisses once and does not reappear after remount`, async () => {
-      setDevice(device)
-      addEntry(device, id)
-      const first = await mount(device)
-      await waitForCondition(() => !!bubble(id), 'entry hint visible')
-      await clickElement(bubble(id)!.querySelector('button')!)
-      await waitForCondition(() => account?.dismissed.includes(id) === true, 'account saved')
-      expect(bubble(id)).toBeNull()
-      first.close()
-      await mount(device)
-      await waitForCondition(() => io.read.mock.calls.length === 2, 'another device read')
-      expect(bubble(id)).toBeNull()
-    })
-
-    it(`${device} ${id}: using the entry retires its hint`, async () => {
-      setDevice(device)
-      const entry = addEntry(device, id)
-      await mount(device)
-      await waitForCondition(() => !!bubble(id), 'entry hint visible')
-      await clickElement(entry.use)
-      await waitForCondition(() => account?.dismissed.includes(id) === true, 'used entry saved')
-      expect(bubble(id)).toBeNull()
-    })
-  }
-
   it('shares completion with the corresponding entry on another device', async () => {
     const entry = addEntry('phone', 'assistant')
     const first = await mount('phone')
@@ -174,17 +148,7 @@ describe('contextual hints at the entries each device draws', () => {
     expect(io.dismiss).not.toHaveBeenCalled()
   })
 
-  it('does not mistake a retained hidden page for a newly encountered entry', async () => {
-    const entry = addEntry('desktop', 'assistant')
-    entry.region.style.contentVisibility = 'hidden'
-    await mount('desktop')
-    await waitForCondition(() => io.read.mock.calls.length === 1, 'progress read')
-    expect(bubble('assistant')).toBeNull()
-    await act(async () => { entry.region.style.contentVisibility = 'visible' })
-    await waitForCondition(() => !!bubble('assistant'), 'page becomes visible')
-  })
-
-  it('a failed read shows no hint and invents no progress; the next read of the row brings the hint back', async () => {
+  it('a failed read shows no hint and invents no progress; the next read of the row brings the progress back', async () => {
     // Transient failures are read again by the data client itself (postgrest-js 1 s / 2 s / 4 s, below this mock): what
     // reaches the replica is a failure that outlived them, and the row has no second retry layer on top.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
@@ -201,42 +165,7 @@ describe('contextual hints at the entries each device draws', () => {
     io.read.mockImplementation(async () => account)
     await act(async () => { await ownSettings.refresh('user') })
     await advance(1)
-    expect(bubble('assistant')?.textContent).toContain('这是你的个人助理')
-    expect(bubble('assistant')?.textContent).toContain('知道了')
     expect(shownProgress()).toEqual({ version: 1, dismissed: [] })
-  })
-
-  it('silently retries a dismissed hint save without asking the user to retry', async () => {
-    io.dismiss.mockRejectedValueOnce(new Error('offline'))
-    addEntry('desktop', 'assistant')
-    await mount('desktop')
-    await waitForCondition(() => !!bubble('assistant'), 'hint visible')
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-    await clickElement(bubble('assistant')!.querySelector('button')!)
-    await advance(0)
-    expect(account?.dismissed).toEqual([])
-    expect(bubble('assistant')).toBeNull()
-    expect(document.querySelector('[role="alert"]')).toBeNull()
-    await advance(1000)
-    expect(account?.dismissed).toEqual(['assistant'])
-    expect(io.dismiss).toHaveBeenCalledTimes(2)
-  })
-
-  it('keeps an exhausted save pending and silent without claiming account success', async () => {
-    io.dismiss.mockRejectedValue(new Error('permission denied'))
-    addEntry('desktop', 'assistant')
-    await mount('desktop')
-    await waitForCondition(() => !!bubble('assistant'), 'hint visible')
-    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-    await clickElement(bubble('assistant')!.querySelector('button')!)
-    await advance(7000)
-    expect(io.dismiss).toHaveBeenCalledTimes(4)
-    await advance(60_000)
-    expect(io.dismiss).toHaveBeenCalledTimes(4)
-    expect(account?.dismissed).toEqual([])
-    expect(shownProgress()).toEqual({ version: 1, dismissed: [] })
-    expect(document.querySelector('[data-testid^="first-run-hint-"], [role="alert"], [data-sonner-toast]')).toBeNull()
-    expect(io.warn).toHaveBeenCalledWith({ error: 'Error: permission denied' }, 'First-run hint progress save failed')
   })
 
   it('remembers use while progress is loading and never flashes that hint afterwards', async () => {

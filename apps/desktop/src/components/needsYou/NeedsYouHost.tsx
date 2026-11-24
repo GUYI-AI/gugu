@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
 import { observer } from 'mobx-react-lite'
-import type { AgentAttention } from '@gugu/core/shared/agentStatus'
 import { isNeedsYou } from '@gugu/core/shared/agentStatusPresentation'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { sessionPresentation } from '@/lib/agent-wait/watch-status'
@@ -33,10 +32,10 @@ const EMPTY_SLOTS: ReadonlyMap<string, HTMLElement> = new Map()
 const unread = (task: NeedsYouTask) => isNeedsYou(sessionPresentation(task.session, true), task.session.unseen === true)
 
 /** One account-owned notification list, shared by the desktop workspace and phone Messages header. */
-export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }: { onAttentionChange?: (attention: AgentAttention) => void }) {
+export const NeedsYouHost = observer(function NeedsYouHost() {
   const { t } = useTranslation()
   const mobile = useMobileShell()
-  const { tasks, count, attention, error, loading } = useNeedsYouTasks()
+  const { tasks, count, error, loading } = useNeedsYouTasks()
   const vault = usePasswordVault()
   const passwords = passwordNotifications(vault.snapshot)
   const sync = vault.snapshot?.sync
@@ -46,7 +45,6 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
   const deferred = notices.filter(notice => notice.deferred)
   const notificationCount = count + passwords.length + devices.length + deferred.length
   const open = useSidebarNotificationsOpen()
-  useEffect(() => { onAttentionChange?.(attention) }, [onAttentionChange, attention])
   const slots = readShellSlots()
   const entries = useSyncExternalStore(listener => slots?.subscribeSlots(listener) ?? (() => undefined), () => slots?.getSlots() ?? EMPTY_SLOTS)
   const [marking, setMarking] = useState(0)

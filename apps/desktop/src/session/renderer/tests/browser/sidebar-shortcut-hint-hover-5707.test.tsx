@@ -130,11 +130,14 @@ it('fades the settings keycap in when Tab reaches its row', async () => {
   await settledOpacity(cap, 1)
 })
 
-it('shows the search shortcut in a tooltip even in the narrow sidebar', async () => {
+it('shows the search shortcut in the search field even in the narrow sidebar', async () => {
+  // 界面减法 #46: the search is a field with 搜索 and its shortcut written in it, so the shortcut needs no tooltip.
   host.style.width = '200px'
   mount()
-  const search = page.getByTestId('sidebar-search-trigger')
-  await search.hover()
-  await expect.poll(() => document.querySelector('[data-slot="tooltip-popup"][data-open]')?.textContent?.trim() ?? '')
-    .toMatch(/^(?:Search|搜索) (?:⇧⌘F|Ctrl\+Shift\+F)$/)
+  await until('search field mounted', () => !!host.querySelector('[data-testid="sidebar-search-trigger"]'))
+  const search = host.querySelector<HTMLElement>('[data-testid="sidebar-search-trigger"]')!
+  expect(search.textContent?.trim()).toMatch(/^(?:Search|搜索)(?:⇧⌘F|Ctrl\+Shift\+F)$/)
+  const cap = search.lastElementChild!.getBoundingClientRect()
+  expect(cap.width).toBeGreaterThan(0)
+  expect(cap.right).toBeLessThanOrEqual(search.getBoundingClientRect().right)
 })

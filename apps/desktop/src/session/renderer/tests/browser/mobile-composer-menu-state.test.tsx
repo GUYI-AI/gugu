@@ -38,7 +38,7 @@ function Menus() {
 function Room() {
   const [handle] = useState(() => Popover.createHandle<ActiveMemberProfile>())
   return <PhoneRoomComposerControls chatId="room" topics={[]} topicsReady current={null} onPick={() => {}} members={[]}
-    roster={{ ready: true, failed: false, retry: () => {} }} userId="owner" profileOpener={{ handle, openedFrom: 'main' }} />
+    roster={{ ready: true, failed: false, retry: () => {} }} userId="owner" profileOpener={{ handle }} />
 }
 function Skills() {
   const [open, setOpen] = useState(true)

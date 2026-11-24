@@ -19,6 +19,9 @@ import { readArchivedGroups, subscribeArchivedGroups } from './archivedGroupsRea
  * many groups and changes as it joins and leaves, so it cannot say where one agent is; joining a group only makes it a
  * member there.
  */
+/** 界面减法 #53: a row's avatar in the one list, in its 52px square (6px around it) on the rail and open alike. */
+export const ONE_LIST_AVATAR_PX = 40
+
 export type AgentHomes = {
   /**
    * Agents created in a group the list holds (an ordinary group or a project group, or one of its topics) whose top-level
@@ -326,12 +329,12 @@ export function oneListTail(
  * The sample project's row: its transcript's last message as a group row shows one, `<sender>: <text>`. The sender is
  * the sample's agent or the person looking at it (`ownerName`, the sample's other member); a task card is always theirs.
  */
-export function sampleProjectLastLine(content: SampleProjectContent, ownerName: string): { readonly preview: string; readonly time: string } {
+export function sampleProjectLastLine(content: SampleProjectContent, ownerName: string): string {
   const last = content.messages.at(-1)
   if (!last) throw new Error('the sample project has no messages')
   const sender = last.kind !== 'task' && last.from === 'agent' ? content.agent.name : ownerName
-  if (last.kind !== 'file') return { preview: `${sender}: ${markdownPlainText(last.text)}`, time: last.time }
+  if (last.kind !== 'file') return `${sender}: ${markdownPlainText(last.text)}`
   const file = content.files.find((entry) => entry.id === last.file)
   if (!file) throw new Error(`the sample project's last message names a file it does not carry: ${last.file}`)
-  return { preview: `${sender}: ${file.name}`, time: last.time }
+  return `${sender}: ${file.name}`
 }
