@@ -1,5 +1,5 @@
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
-import { useUiPortalContainer } from '@session-ui/react/lib/portal-container';
+import { useUiPopupZIndex, useUiPortalContainer } from '@session-ui/react/lib/portal-container';
 import { Button } from '@session-ui/react/primitives/button';
 import { ScrollContainer } from '@session-ui/react/primitives/scroll-container';
 import { cx } from '@session-ui/styles/utilities/cx';
@@ -43,6 +43,7 @@ function DialogOverlay({
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cx(styles.overlay, className)}
+      style={{ zIndex: useUiPopupZIndex() }}
       {...props}
     />
   );
@@ -59,7 +60,7 @@ function DialogContent({
   return (
     <DialogPortal>
       <DialogOverlay />
-      <div className={styles.positioner}>
+      <div className={styles.positioner} style={{ zIndex: useUiPopupZIndex() }}>
         <DialogPrimitive.Popup
           data-slot="dialog-content"
           className={cx('surface-base', styles.content({ size }), className)}

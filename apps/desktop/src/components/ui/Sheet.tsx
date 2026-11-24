@@ -128,8 +128,9 @@ export function Sheet({
 }: SheetProps) {
   const { t } = useTranslation()
   const mobile = useMobileShell()
-  const aboveParent = useUiPopupZIndex()
-  const zIndex = zIndexProp ?? aboveParent ?? 'var(--z-modal)'
+  // An explicit layer is the caller's choice; the default follows the surface it is opened from (useUiPopupZIndex).
+  const layered = useUiPopupZIndex('var(--z-modal)')
+  const zIndex = zIndexProp ?? layered
   useBackLayer(() => { if (!onEscape?.()) onClose() }, open)
 
   const mobileStyle: CSSProperties = {

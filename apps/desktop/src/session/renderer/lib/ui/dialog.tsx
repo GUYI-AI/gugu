@@ -27,19 +27,10 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
-/**
- * Opened from inside a sheet (a page modal: the Apps page, an App's page), the dialog is drawn just above that sheet's layer,
- * which it tells its content (Sheet → UiPortalContainerProvider); elsewhere the z-50 below holds.
- */
-function useAboveSheet(): React.CSSProperties | undefined {
-  const zIndex = useUiPopupZIndex();
-  return zIndex ? { zIndex } : undefined;
-}
-
 function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) {
   return (
     <DialogPrimitive.Backdrop
-      style={useAboveSheet()}
+      style={{ zIndex: useUiPopupZIndex() }}
       data-slot="dialog-overlay"
       className={cn(
         'fixed inset-0 isolate z-50 bg-[var(--bg-overlay-soft)] duration-[var(--dur-fast)]  data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0',
@@ -55,13 +46,13 @@ function DialogContent({
   children,
   ...props
 }: DialogPrimitive.Popup.Props & { showCloseButton?: boolean }) {
-  const aboveSheet = useAboveSheet();
+  const zIndex = useUiPopupZIndex();
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         finalFocus={false}
-        style={aboveSheet}
+        style={{ zIndex }}
         data-slot="dialog-content"
         onKeyDownCapture={(e) => {
           if ((e.metaKey || e.ctrlKey || e.altKey) && e.key === 'Enter') {

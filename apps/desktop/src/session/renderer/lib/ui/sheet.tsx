@@ -1,7 +1,7 @@
 import { Dialog as SheetPrimitive } from '@base-ui/react/dialog';
 import { XIcon } from '@/lib/icons'
 import * as React from 'react';
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives';
+import { useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
 import { MicroLabel } from './label';
 
@@ -26,6 +26,7 @@ function SheetPortal({ ...props }: SheetPrimitive.Portal.Props) {
 function SheetOverlay({ className, ...props }: SheetPrimitive.Backdrop.Props) {
   return (
     <SheetPrimitive.Backdrop
+      style={{ zIndex: useUiPopupZIndex() }}
       data-slot="sheet-overlay"
       className={cn(
         'fixed inset-0 z-50 bg-[var(--bg-overlay-soft)] transition-opacity duration-[var(--dur-med)] data-ending-style:opacity-0 data-starting-style:opacity-0',
@@ -67,6 +68,7 @@ function SheetContent({
   side?: 'top' | 'right' | 'bottom' | 'left';
   showCloseButton?: boolean;
 }) {
+  const zIndex = useUiPopupZIndex();
   return (
     <SheetPortal>
       <SheetOverlay />
@@ -82,6 +84,8 @@ function SheetContent({
             ...(side === 'bottom' ? {} : { top: 'var(--window-titlebar-height, 0px)' }),
             // 左右抽屉原是 inset-y-0 + h-full;上沿下移后改由上下两沿定高,❌ 让 100% 顶出窗口底。
             ...(side === 'right' || side === 'left' ? { height: 'auto' } : {}),
+            // Opened inside a sheet that declared its layer (a page modal), above it; else the z-50 below.
+            zIndex,
             ...(style as React.CSSProperties | undefined),
           } as React.CSSProperties
         }

@@ -153,6 +153,14 @@ test('main renderer search fields share one visual contract', async ({ page }, t
     await page.keyboard.press('Meta+2')
     await expect(contactsSearch).toBeVisible({ timeout: 2_000 })
   }).toPass({ timeout: 30_000 })
+  // Contacts opens as a modal that scales in (the Sheet's motion): read the field once that has played out, not mid-scale.
+  await contactsSearch.evaluate(async (input) => {
+    const sheet = input.closest('.gg-sheet-content')
+    if (!sheet) throw new Error('the contacts search is not in its modal')
+    await Promise.all(sheet.getAnimations({ subtree: true })
+      .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+      .map((animation) => animation.finished))
+  })
   metrics.push(await readSearchMetrics('contacts', contactsSearch))
   await capture(page, testInfo, 'search-field-contacts')
 
