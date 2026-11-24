@@ -27,23 +27,27 @@ export function copyWindowsVcRuntime(destination, arch, expected) {
   // Microsoft allows licensed users to distribute these files unmodified with their program.
   // https://learn.microsoft.com/visualstudio/releases/2022/redistribution#visual-c-runtime-files
   const powershell = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-  const info = JSON.parse(execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', String.raw`
-    $ErrorActionPreference = 'Stop'
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $vs = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-    if (-not $vs) { throw 'Visual Studio 2022 C++ build tools are required to bundle the app-local VC runtime' }
-    $version = (Get-Content -LiteralPath (Join-Path $vs 'VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt') -Raw).Trim()
-    $runtime = Join-Path $vs "VC\Redist\MSVC\$version\${arch}\Microsoft.VC143.CRT\vcruntime140.dll"
+  const verification = expected ? String.raw`
     $signature = Get-AuthenticodeSignature -LiteralPath $runtime
     if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=Microsoft Corporation(?:,|$)') {
       throw "Expected a valid Microsoft Authenticode signature for $runtime ($($signature.Status))"
     }
     $fileVersion = (Get-Item -LiteralPath $runtime).VersionInfo
-    @{
-      path = $runtime
-      version = '{0}.{1}.{2}.{3}' -f $fileVersion.FileMajorPart, $fileVersion.FileMinorPart, $fileVersion.FileBuildPart, $fileVersion.FilePrivatePart
-    } | ConvertTo-Json -Compress
+    $info.version = '{0}.{1}.{2}.{3}' -f $fileVersion.FileMajorPart, $fileVersion.FileMinorPart, $fileVersion.FileBuildPart, $fileVersion.FilePrivatePart
+  ` : ''
+  const info = JSON.parse(execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', String.raw`
+    $ErrorActionPreference = 'Stop'
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    # CI can inherit a PS7 module path. Use the modules for this Windows PowerShell.
+    $env:PSModulePath = Join-Path $PSHOME 'Modules'
+    $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
+    $vs = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    if (-not $vs) { throw 'Visual Studio 2022 C++ build tools are required to bundle the app-local VC runtime' }
+    $version = (Get-Content -LiteralPath (Join-Path $vs 'VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt') -Raw).Trim()
+    $runtime = Join-Path $vs "VC\Redist\MSVC\$version\${arch}\Microsoft.VC143.CRT\vcruntime140.dll"
+    $info = @{ path = $runtime }
+    ${verification}
+    $info | ConvertTo-Json -Compress
   `], { encoding: 'utf8' }).trim())
   const bytes = readWindowsBinary(info.path, arch)
   if (expected) {
