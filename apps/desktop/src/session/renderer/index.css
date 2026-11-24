@@ -1468,11 +1468,20 @@ html[data-gugu-dragging] :is(webview, iframe) {
   --block-grip-lane: 50px;
   --capsule-grip-lane: calc(var(--block-grip-lane) + 14px);
 }
-/* The capsule stays centred on the card and clear of what floats beside it: the split handle on the left, the row's
-   buttons on the right (--capsule-actions-lane, chat-workspace-chrome.tsx measureFloatingActions). Same lane on both
-   sides, the wider one. */
-[data-chat-workspace-header] [data-chat-workspace-title] {
-  max-width: min(80%, calc(100% - 2 * max(var(--capsule-grip-lane, 0px), var(--capsule-actions-lane, 0px))));
+/* The capsule stays clear of what floats beside it: the split handle on the left, the row's buttons on the right
+   (--capsule-actions-lane, chat-workspace-chrome.tsx measureFloatingActions). Two growing spacers keep it centred on the
+   card while there is room; their minimum widths are those lanes, so when room runs out it moves and shrinks instead of
+   running under a button. */
+.conversation-capsule-layer::before,
+.conversation-capsule-layer::after {
+  content: '';
+  flex: 1 1 0;
+}
+.conversation-capsule-layer::before {
+  min-width: var(--capsule-grip-lane, 0px);
+}
+.conversation-capsule-layer::after {
+  min-width: var(--capsule-actions-lane, 0px);
 }
 .screen-block-grip {
   position: absolute;

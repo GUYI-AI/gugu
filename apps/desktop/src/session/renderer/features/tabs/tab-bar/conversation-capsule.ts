@@ -10,4 +10,4 @@ export const CONVERSATION_CAPSULE_CLASS = 'flex [--capsule-h:34px] h-(--capsule-
  * drawn before it (the split handle at the strip's start). `none` = this layer is no region at all; the strip under it
  * still drags the window and the capsule on it still opts out.
  */
-export const CONVERSATION_CAPSULE_LAYER_CLASS = 'pointer-events-none absolute inset-0 flex items-center justify-center [-webkit-app-region:none]';
+export const CONVERSATION_CAPSULE_LAYER_CLASS = 'conversation-capsule-layer pointer-events-none absolute inset-0 flex items-center justify-center [-webkit-app-region:none]';

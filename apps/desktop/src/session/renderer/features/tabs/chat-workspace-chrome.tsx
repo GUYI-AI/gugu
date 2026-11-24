@@ -227,8 +227,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
 
 /**
  * The capsule row's floating buttons take no width, so the capsule centred on the card could run under them in a narrow
- * block. Their width is written on the header (--capsule-actions-lane); the capsule keeps that much clear on both sides
- * (index.css), so it stays centred and never under a button.
+ * block. Their width is written on the header (--capsule-actions-lane); the capsule's layer keeps that much clear on its right
+ * (index.css .conversation-capsule-layer): centred while there is room, never under a button.
  */
 function measureFloatingActions(row: HTMLDivElement | null): (() => void) | undefined {
   const header = row?.closest<HTMLElement>('[data-chat-workspace-header]');
