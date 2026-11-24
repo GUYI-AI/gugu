@@ -13,7 +13,7 @@ import { historyMessageVisible, historyTime } from '@gugu/core/shared/conversati
 import { IN_FILTER_CHUNK } from '@gugu/core/shared/inChunks'
 import type { SystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import type { ChatItem, ChatKind, ChatStatus, ChatUnreadLocator, GroupMemberRole, NotificationLevel } from '@gugu/core/shared/types/chat'
-import { compareChatsByActivityDesc, fallbackChatName, isRoomChat } from '@gugu/core/shared/ui/chatModels'
+import { compareChatsByActivityDesc, fallbackChatName, isRoomChat, mergeConversationVisibility } from '@gugu/core/shared/ui/chatModels'
 
 /** 实体族 = 批量取数的单位:一个族一波,该族这一轮要的键按**有界批**放进 `in()`(见 FAMILY_BATCH_KEYS)。 */
 export const ENTITY_FAMILIES = [
@@ -618,7 +618,7 @@ export function reassemble(
     if (!row) continue
     const held = previous.get(chatId)
     // This assembly is not published yet; reuse its unchanged nested member arrays as well.
-    if (held) row = replaceEqualDeep(held, row)
+    if (held) row = replaceEqualDeep(held, mergeConversationVisibility(row, held))
     let low = 0, high = next.length
     while (low < high) {
       const middle = (low + high) >> 1
