@@ -1,4 +1,4 @@
-import { harnessPlatform, piProviderApi } from './platform';
+import { harnessPlatform, piProviderApi, piProviderCompat } from './platform';
 import { join } from 'node:path';
 import { customModelAcceptsImages } from '@gugu/session-core/models/custom-model';
 import type {
@@ -373,6 +373,7 @@ function modelArtifact(
       return [`gugu-${provider.connectionId}`, {
         name: provider.name,
         api,
+        ...piProviderCompat(api),
         baseUrl: provider.baseUrl,
         apiKey: '${GUGU_PI_API_KEY}',
         authHeader: true,
@@ -395,6 +396,7 @@ function modelArtifact(
       content: `${JSON.stringify({ providers }, null, 2)}\n`,
     };
   }
+  const api = piProviderApi(model.wireProtocol);
   return {
     path: join(piAgentDir(surface, guguHome), PI_MODELS_RELATIVE),
     mode: 0o600,
@@ -403,14 +405,15 @@ function modelArtifact(
       providers: {
         [piProviderId(model)]: {
           name: model.providerName || 'Gugu platform quota',
-          api: piProviderApi(model.wireProtocol),
+          api,
+          ...piProviderCompat(api),
           baseUrl: model.platformProvider.baseUrl,
           apiKey: '${GUGU_PI_API_KEY}',
           authHeader: true,
           models: entries.map((entry) => ({
             id: entry.id,
             name: entry.name,
-            api: piProviderApi(model.wireProtocol),
+            api,
             // pi `docs/models.md` 的模型字段表:`reasoning` 缺省 **false** = 「不支持扩展思考」。
             // 而 pi 把它当**硬门**:`model.reasoning` 为假时,`setThinkingLevel` 会被它自己钉回
             // `off`(2026-09-13 实测:逐档设、read_back 恒 "off"、上游请求体里根本没有
