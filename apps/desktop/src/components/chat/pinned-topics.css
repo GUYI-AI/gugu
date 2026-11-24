@@ -14,4 +14,3 @@
 .gg-topic-list { max-height: calc(min(400px, var(--available-height)) - 2 * var(--gg-menu-padding, 4px)); overflow-y: auto; overscroll-behavior: contain; mask-image: linear-gradient(to bottom, var(--color-white) calc(100% - var(--gg-topic-fade)), transparent); animation: gg-topic-fade-end linear both; animation-timeline: scroll(self); }
 .gg-topic-empty { display: flex; flex-direction: column; gap: 4px; }
 .gg-topic-empty small { color: var(--faint-fg); font-size: var(--font-caption); }
-.gg-topic-pins-error { padding: 6px 10px; color: var(--text-error); font-size: var(--font-caption); }
