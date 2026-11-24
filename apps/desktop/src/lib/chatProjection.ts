@@ -129,6 +129,8 @@ export type ChatProjection = {
   memberReadSeqs: (chatId: string) => Record<string, number> | undefined
   /** Personal list deletion is authoritative without revoking the retained membership. */
   isConversationDeleted: (chatId: string) => boolean
+  /** The conversation itself read as archived (a closed topic, a dissolved group), by anyone: it is gone for everyone. */
+  isConversationArchived: (chatId: string) => boolean
   ledger: () => readonly ChatProjectionLedgerEntry[]
   reset: () => void
 }
@@ -712,6 +714,9 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       const members = membersByChat.get(chatId)
       if (!members) return undefined
       return Object.fromEntries([...members].filter(([userId]) => userId !== viewerId).map(([userId, member]) => [userId, member.last_read_seq]))
+    },
+    isConversationArchived(chatId) {
+      return (cache.get(entityKey('chat', chatId))?.value as { status?: unknown } | null | undefined)?.status === 'archived'
     },
     isConversationDeleted(chatId) {
       if (confirmedDeletions.has(chatId)) return true
