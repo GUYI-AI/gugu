@@ -10,8 +10,9 @@ import { undoListedConversation, type PersonalConversationUndo } from '../lib/un
 /** Shared phone/desktop actions; hiding preserves the complete addressable directory. */
 export function useConversationHiding(userId: string | null, projection: {
   confirmPersonalHiding: (accountId: string, receipt: PersonalConversationStateReceipt) => Promise<void>
+  isHideReceiptSuperseded: (accountId: string, receipt: PersonalConversationHiding) => boolean
 }) {
-  const confirm = projection.confirmPersonalHiding
+  const { confirmPersonalHiding: confirm, isHideReceiptSuperseded } = projection
   const hide = useMemo(() => createConversationHider<PersonalConversationHiding>({
     hide: chatService.hideConversation,
     confirm: async (accountId, receipt) => {
@@ -19,8 +20,9 @@ export function useConversationHiding(userId: string | null, projection: {
       catch (cause) { throw new Error(i18n.t('chatList.hiddenRefreshFailed', { ns: 'messaging' }), { cause }) }
     },
     boundary: currentAuthSessionSignal, operationId: () => crypto.randomUUID(),
+    isReceiptSuperseded: isHideReceiptSuperseded,
     storage: localStorage, storageKey: 'conversation-hide',
-  }), [confirm])
+  }), [confirm, isHideReceiptSuperseded])
   const clear = useMemo(() => createConversationHider({
     hide: clearListedConversation, confirm, boundary: currentAuthSessionSignal,
     operationId: () => crypto.randomUUID(), storage: localStorage, storageKey: 'conversation-clear',

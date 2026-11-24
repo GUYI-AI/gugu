@@ -22,7 +22,7 @@ Import `mergeConversationVisibility`, `isConversationHidden`, `visibleConversati
 
 `store/useConversationHiding.ts` owns the action through `lib/conversationHider.ts`. `lib/hideListedConversation.ts` validates the RPC's echoed chat and operation IDs, timestamp, and exact decimal revision. For an already projected row, `lib/chatProjection.ts` applies the committed visibility to that row at the returned revision and republishes the full directory. The account journal continues to reconcile membership and unread state. A newer restoration supersedes an older receipt.
 
-Concurrent submissions share one in-flight operation. A transport failure retains the operation UUID for an explicit retry; an acknowledged receipt is retained if reconciliation fails, so that retry performs reconciliation only. There is no automatic hide replay on app start. A later deliberate action after success receives a new UUID.
+Concurrent submissions share one in-flight operation. A transport failure retains the operation UUID for an explicit retry. An acknowledged receipt is retained if local publication fails. On the next click, a newer visible revision supersedes that saved receipt and starts a fresh Hide. Otherwise the click retries publication with the saved receipt.
 
 Hide preserves membership, history, tabs and drafts. Clear chat history and Agent archival have their own menu actions.
 
