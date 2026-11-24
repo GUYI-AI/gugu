@@ -144,11 +144,13 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const focusedChatId = currentView === 'chat' ? viewedChatId : innerChatId ?? viewedChatId;
   // 拼在一屏的几组:壳画的「对话」也把同一组的几行并在一处(同「项目」这边)。
   const joinedGroups = sidebarStore.joinedGroups;
+  // 并排着的几块:壳画的行(内层侧栏的话题)给「取消并排」认这一份(同会话页自己的行)。
+  const splitKey = screenLayout.splitKeys.join('\n');
   // oneList: the desktop one list is mounted. The phone never mounts this sidebar, so the shell's shared components
   // (chat list, composer verbs, rail) read it to tell the desktop list from the phone.
   React.useEffect(
-    () => publishSidebarChatView({ focusedChatId, groups: joinedGroups, oneList: true }),
-    [focusedChatId, joinedGroups]
+    () => publishSidebarChatView({ focusedChatId, groups: joinedGroups, split: splitKey ? splitKey.split('\n') : [], oneList: true }),
+    [focusedChatId, joinedGroups, splitKey]
   );
 
   return (
@@ -168,8 +170,11 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         // tokens.css) are outside the utilities layer, so a plain utility loses to them.
         '[&_[data-region=sidebar-scroll]_.gg-list-row-subtitle]:!text-[length:var(--font-caption)] [&_[data-region=sidebar-scroll]_.gg-list-row-title]:!font-normal',
         '[&_[data-region=sidebar-scroll]_.gg-chat-row-muted]:hidden',
-        // The list's gutter: 14 open, 8 on the rail (one element restyled when the rail flips).
-        'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:px-2'
+        // The list's gutter: 14 open, 8 on the rail (one element restyled when the rail flips). On the rail the 4px scrollbar
+        // (tokens.css @@@scrollbar-autohide, it takes layout width) is always reserved and comes out of the right gutter: a
+        // list long enough to scroll otherwise narrowed every 52px block by 4 while its 40px avatar kept its place, so the
+        // avatar sat off the block's centre (yangchichi 11-24, a Mac with scrollbars shown).
+        'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:pl-2 data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:pr-1 data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:[scrollbar-gutter:stable]'
       )}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}

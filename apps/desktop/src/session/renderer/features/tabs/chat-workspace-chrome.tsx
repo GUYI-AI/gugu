@@ -140,6 +140,9 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const sharedStrip = full || mode === 'split' && layout.narrow;
   const chatActive = layout.activePaneId === chat.paneId;
   const leadingProps = { leadingSlot: leading, reserveShellRestoreLane, leadingReservePx };
+  // The capsule row (no tools shown beside it, also while they go off; nothing merged): every button floats at its top right,
+  // the block's and the view's in one row.
+  const floating = !full && mode !== 'split';
 
   const conversationTab = tab && Title ? <PaneProvider group={chat} passive isFocusedPane={chatActive}>
     <ChatWorkspaceTabContext.Provider value={{ role: 'conversation', layout }}>
@@ -153,7 +156,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       className={toolCard ? 'min-w-0 flex-none' : 'min-w-0 flex-1'} style={CAPSULE_BAR_STYLE}>
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
         <ChatWorkspaceTabContext.Provider value={{ role: 'capsule', layout }}>
-          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions} restWidth={divided ? chatRest : undefined}>
+          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={floating ? undefined : actions} restWidth={divided ? chatRest : undefined}>
             {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
           </TabStripShell>
         </ChatWorkspaceTabContext.Provider>
@@ -201,7 +204,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
           </ChatWorkspaceTabContext.Provider>
         </PaneProvider>
       </div>
-      {toolCard && actionRow}
+      {/* Only while the tools are shown: hidden, they are on their way off and the buttons are already the header's. */}
+      {toolCard && mode === 'split' && actionRow}
     </div>
   );
   return (
@@ -213,9 +217,31 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
         {chatTitle}
         {!toolsFirst && toolTabs}
       </div>
-      {/* The conversation's own head (no tools beside it) is the capsule row: its buttons float at the top right and take
-          no width, so the capsule centres on the whole card. Beside tools or merged into one strip they share the row. */}
-      {!toolCard && (full || mode === 'split' ? actionRow : <div className="absolute inset-y-0 right-0 flex">{actionRow}</div>)}
+      {/* The conversation's own head (no tools beside it) is the capsule row: its buttons — the block's, then the view's —
+          float at the top right as one row and take no width, so the capsule centres on the whole card. Beside tools or
+          merged into one strip they share the row. The tools going off (hidden, still on the track) take their strip with them
+          but not these buttons: they are the header's from the frame the tools are hidden, ❌ after they land. */}
+      {floating ? <div ref={measureFloatingActions} className="absolute inset-y-0 right-0 flex">
+        <div className="flex [--tabbar-actions-edge-gap:0px]">{actions}</div>{actionRow}
+      </div> : !toolCard && actionRow}
     </div>
   );
 });
+
+/**
+ * The capsule row's floating buttons take no width, so the capsule centred on the card could run under them in a narrow
+ * block. Their width is written on the header (--capsule-actions-lane); the capsule's layer keeps that much clear on its right
+ * (index.css .conversation-capsule-layer): centred while there is room, never under a button.
+ */
+function measureFloatingActions(row: HTMLDivElement | null): (() => void) | undefined {
+  const header = row?.closest<HTMLElement>('[data-chat-workspace-header]');
+  if (!row || !header || typeof ResizeObserver === 'undefined') return undefined;
+  const write = () => header.style.setProperty('--capsule-actions-lane', `${row.getBoundingClientRect().width}px`);
+  write();
+  const observer = new ResizeObserver(write);
+  observer.observe(row);
+  return () => {
+    observer.disconnect();
+    header.style.removeProperty('--capsule-actions-lane');
+  };
+}

@@ -12,7 +12,7 @@ type OneListRowProps = {
   preview: string;
   subtitle?: ReactNode;
   selected: boolean;
-  onOpen: (beside: boolean) => void;
+  onOpen: () => void;
 } & Omit<HTMLAttributes<HTMLDivElement>, 'title' | 'onClick' | 'onKeyDown'>;
 
 /**
@@ -28,10 +28,10 @@ export function OneListRow({ leading, name, tag, preview, subtitle, selected, on
       role="button"
       tabIndex={0}
       selected={selected}
-      onClick={(event) => onOpen(event.metaKey || event.ctrlKey)}
+      onClick={() => onOpen()}
       onKeyDown={(event) => {
         if (event.target !== event.currentTarget) return;
-        if (event.key === 'Enter') onOpen(false);
+        if (event.key === 'Enter') onOpen();
       }}
       leading={leading}
       title={name}

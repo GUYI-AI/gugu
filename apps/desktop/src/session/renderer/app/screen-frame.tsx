@@ -1,7 +1,7 @@
 import { tabFullscreen, WORKSPACE_ANCHOR } from '@renderer/features/tabs/tab-fullscreen';
 import { observer } from 'mobx-react-lite';
 import { type CSSProperties, type DragEvent } from 'react';
-import { Settings, X } from '@/lib/icons';
+import { Settings } from '@/lib/icons';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { participantSplitSizes } from '@renderer/features/chats/group-participant-width';
 import { TabKindMark } from '@renderer/features/extensions/extension-mark';
@@ -14,7 +14,7 @@ import type { PaneLayoutNode } from '@renderer/features/tabs/pane-layout-tree';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
-import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
+import { MenuItem } from '@/components/ui/Menu';
 import { TrackCut } from '@renderer/features/tabs/pane-track-cut';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { followLink } from '@/lib/guguLinks';
@@ -29,6 +29,7 @@ import {
   blockMinExtent,
   type MentionDrop,
 } from './screen-layout-actions';
+import { BlockGrip } from './block-grip';
 import { ChatPartSlot, ChatSlot } from '@renderer/lib/chat-slot';
 import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
@@ -37,7 +38,7 @@ import { ComposerVerbDock } from '@renderer/features/sessions/task-dispatch-comp
 import { ProjectBlock } from './project-block';
 import { SampleProjectBlock } from '@renderer/features/sample-project/sample-project-block';
 import { screenLayout, type ScreenBlockContent } from './screen-layout';
-import { clearDraggedScreenContent, getDraggedScreenContent, hasDraggedScreenContent, setDraggedScreenContent } from '@renderer/lib/drag-screen-content';
+import { getDraggedScreenContent, hasDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 
 /**
  * 这一屏的骨架(spec session-page「一屏几块」):几块怎么分、分界在哪,每块一个占位。
@@ -141,14 +142,10 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
     >
       {block?.kind === 'app' ? <AppBlock blockId={blockId} tabKind={block.tabKind} /> : null}
       {block?.kind === 'project' ? (
-        <ProjectBlock
-          blockId={blockId}
-          projectId={block.projectId}
-          blockActions={screenLayout.order.length > 1 ? <CloseBlockButton blockId={blockId} /> : null}
-        />
+        <ProjectBlock blockId={blockId} projectId={block.projectId} />
       ) : null}
       {block?.kind === 'sample-project' ? (
-        <SampleProjectBlock blockId={blockId} blockActions={screenLayout.order.length > 1 ? <CloseBlockButton blockId={blockId} /> : null} />
+        <SampleProjectBlock blockId={blockId} />
       ) : null}
       {block?.kind === 'chat' ? <ChatBlock blockId={blockId} chatId={block.chatId} /> : null}
       {block?.kind === 'chat-app' ? <ChatAppBlock blockId={blockId} content={block} /> : null}
@@ -159,21 +156,18 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
 /**
  * 对话块(gugu-dev#181:对话也是一块,⌘ 点拼到右边):和项目块同一条页签条,第一枚是这个对话(头像 + 名字,关不掉);
  * 对话由壳画进格子,头像和名字、右端那排图标(搜索、群文件夹、成员、历史)也由壳画进页签条留的几格。
- * 公告、设置、在本群打开 App 在这枚页签的右键菜单里(右端没有 ⋯)。
- * 屏上不止一块时右端一枚「关闭这一块」。
+ * 公告、设置、在本群打开 App 在这枚页签的右键菜单里(右端没有 ⋯)。屏上不止一块时左上是它的 ⋮⋮(BlockGrip)。
  */
 const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: string; chatId: string }) {
   const { translate } = useSessionMessages();
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
-  const actions = <>
-    <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />
-    {screenLayout.order.length > 1 ? <CloseBlockButton blockId={blockId} /> : null}
-  </>;
+  const actions = <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />;
   return (
     <ChatPanes
       chatId={chatId}
       blockId={blockId}
+      leading={<BlockGrip blockId={blockId} content={{ kind: 'chat', chatId, title: '' }} label={translate('screen.gripApp')} />}
       reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
       actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{actions}</TabBarActionRow>}
       chromeActionsSlot={<TabBarActionRow atWindowEdge={false}>{actions}</TabBarActionRow>}
@@ -201,13 +195,12 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
 
 /**
  * App 自己占一块:顶上一条页签条,只有它一枚(名字 + 图标 + ×),下面就是它的页。⋮⋮ 按住 = 这一块挪走;
- * × = 收起它(App 照常启用,点左栏它的图标整页打开);屏上不止一块时右端一枚「关闭这一块」。
+ * × = 收起它(App 照常启用,点左栏它的图标整页打开)。
  */
 const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: string; tabKind: string }) {
   const { translate } = useSessionMessages();
   const { contribution, label, tooltip, unknown, failed } = useAppPageTab(extensionSurfaceStore.said(null, `screen:${blockId}`), tabKind);
   const corners = screenLayout.corners(blockId);
-  const multi = screenLayout.order.length > 1;
   const focused = screenLayout.focusedBlockId === blockId;
   const takeAway = () => takeAppOffScreen(tabKind);
   return (
@@ -215,27 +208,15 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
       <TabStripShell
         reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
         leadingSlot={
-          <ContextMenu.Root>
-            <ContextMenu.Trigger className="flex h-full items-center">
-              <BlockGrip
-                label={translate('screen.gripApp')}
-                onDragStart={(event) => setDraggedScreenContent(event.dataTransfer, { kind: 'app', tabKind, title: label }, event.currentTarget.closest<HTMLElement>('.session-tab-bar'))}
-                onDragEnd={(event) => {
-                  if (droppedOutsideWindow(event)) openInWindow({ kind: 'app', tabKind }, { screenX: event.screenX, screenY: event.screenY });
-                }}
-              />
-            </ContextMenu.Trigger>
-            <ContextMenu.Content finalFocus={false}>
+          <BlockGrip
+            blockId={blockId}
+            content={{ kind: 'app', tabKind, title: label }}
+            label={translate('screen.gripApp')}
+            menu={<>
               <MenuItem onClick={() => openInWindow({ kind: 'app', tabKind })}>{translate('screen.openInWindow')}</MenuItem>
               {contribution ? <MenuItem onClick={() => void followLink({ kind: 'app-detail', extensionId: contribution.extensionId })}>{translate('extensions.appSettings')}</MenuItem> : null}
-              {multi ? (
-                <>
-                  <MenuSeparator />
-                  <MenuItem onClick={() => closeScreenBlock(blockId)}>{translate('screen.closeBlock')}</MenuItem>
-                </>
-              ) : null}
-            </ContextMenu.Content>
-          </ContextMenu.Root>
+            </>}
+          />
         }
         actionsSlot={
           <TabBarActionRow atWindowEdge={corners.topRight}>
@@ -246,7 +227,6 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
                 <Settings className="size-3.5" />
               </button>
             ) : contribution === null && !failed ? <Unknown className="size-6" /> : null}
-            {multi ? <CloseBlockButton blockId={blockId} /> : null}
           </TabBarActionRow>
         }
       >
@@ -271,7 +251,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
 });
 
 /**
- * 一个对话里的一张 App 页单独占一块(从那个对话的页签条上拖到一块的边上、页签右键「单独一块」):和 App 那一块一样摆,
+ * 一个对话里的一张 App 页单独占一块(存下来的摆法里有;页签不再开出新的一块):和 App 那一块一样摆,
  * 页仍是那个对话的那张(context 里还是那个群,一辈子不换群,摩擦单 F48)。× = 放回那个对话的页签条。
  */
 const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { blockId: string; content: Extract<ScreenBlockContent, { kind: 'chat-app' }> }) {
@@ -280,7 +260,6 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
   const slot = `screen:${blockId}`;
   const { label, tooltip, unknown } = useAppPageTab(extensionSurfaceStore.said(null, slot), tabKind, itemId ? title : undefined, title);
   const corners = screenLayout.corners(blockId);
-  const multi = screenLayout.order.length > 1;
   const putBack = () => {
     closeScreenBlock(blockId);
     openPanelItem(chatId, { kind: tabKind, title, ...(itemId ? { itemId, fileName: title } : {}) });
@@ -289,17 +268,8 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
     <>
       <TabStripShell
         reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
-        leadingSlot={
-          <BlockGrip
-            label={translate('screen.gripApp')}
-            onDragStart={(event) => setDraggedScreenContent(event.dataTransfer, content, event.currentTarget.closest<HTMLElement>('.session-tab-bar'))}
-          />
-        }
-        actionsSlot={
-          <TabBarActionRow atWindowEdge={corners.topRight}>
-            {multi ? <CloseBlockButton blockId={blockId} /> : null}
-          </TabBarActionRow>
-        }
+        leadingSlot={<BlockGrip blockId={blockId} content={content} label={translate('screen.gripApp')} />}
+        actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight} />}
       >
         <TabSlot data-chat-app-block-tab={tabKind}>
           <TabChip
@@ -320,88 +290,6 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
     </>
   );
 });
-
-/**
- * 每块页签条最左的 ⋮⋮(照 Zen 分屏块的拖柄):平时只留位置,指着页签条才淡淡显出来,指着它时整块描一圈 ——
- * 告诉你抓的是整块。按住拖 = 整块走;右键菜单由调用点给。
- */
-export function BlockGrip({
-  label,
-  onDragStart,
-  onDragEnd,
-  onContextMenu,
-}: {
-  label: string;
-  onDragStart: (event: DragEvent<HTMLElement>) => void;
-  /** 松手之后(落点已经接过了)。拖到窗口外 = 单独成窗,由调用点判。 */
-  onDragEnd?: (event: DragEvent<HTMLElement>) => void;
-  onContextMenu?: (event: React.MouseEvent<HTMLElement>) => void;
-}) {
-  return (
-    <span
-      role="button"
-      tabIndex={0}
-      draggable
-      aria-label={label}
-      title={label}
-      data-block-grip=""
-      className="screen-block-grip"
-      // ❌ 别 stopPropagation:React 19 会把原生 dragstart 停在根容器上,document 上开拖拽遮罩的那条(shieldNativeDrags)
-      // 就听不到 —— 拖着 ⋮⋮ 经过网页(HTML 预览、浏览器页签、App 的页),指针一进去宿主就收不到移动。上面也没有别人接 dragstart。
-      onDragStart={onDragStart}
-      onDragEnd={(event) => {
-        onDragEnd?.(event);
-        clearDraggedScreenContent();
-        setBlockDropPreview(null);
-      }}
-      onContextMenu={onContextMenu}
-    >
-      <span className="screen-block-grip-lines" aria-hidden="true" />
-    </span>
-  );
-}
-
-/**
- * 原生拖拽松手在窗口外:没有任何落点接(dropEffect 是 none),指针又在这扇窗的框外 —— 拖到窗口外 = 单独成窗。
- * 按屏幕坐标和这扇窗的框比(落在咕咕的另一扇窗上也算外面,那扇窗的落点会先接走,这里就不是 none)。
- */
-export function droppedOutsideWindow(event: DragEvent<HTMLElement>): boolean {
-  if (event.dataTransfer.dropEffect !== 'none') return false;
-  const view = event.currentTarget.ownerDocument.defaultView ?? window;
-  const { screenX, screenY } = event;
-  return (
-    screenX < view.screenX ||
-    screenY < view.screenY ||
-    screenX > view.screenX + view.outerWidth ||
-    screenY > view.screenY + view.outerHeight
-  );
-}
-
-/** 一整个会话被拖起来(⋮⋮):载荷与左边一行同一种,落在输入框上照样是一枚 @,落在一块的边上 = 这块挪过去。 */
-export function startSessionBlockDrag(
-  event: DragEvent<HTMLElement>,
-  session: { projectId: string; sessionId: string; title: string }
-): void {
-  setDraggedScreenContent(event.dataTransfer, { kind: 'session', ...session }, event.currentTarget.closest<HTMLElement>('.session-tab-bar'));
-}
-
-/** 屏上不止一块时,每块页签条右端那枚:从这屏拿走(左边列表里还在)。 */
-export function CloseBlockButton({ blockId }: { blockId: string }) {
-  const { translate } = useSessionMessages();
-  const label = translate('screen.closeBlock');
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      title={label}
-      data-close-block=""
-      className="flex size-6 items-center justify-center rounded-md text-foreground-muted hover:bg-row-hover hover:text-foreground"
-      onClick={() => closeScreenBlock(blockId)}
-    >
-      <X className="size-3.5" />
-    </button>
-  );
-}
 
 /**
  * 原生拖放(左边一行、⋮⋮)落在这屏上:一块的边归分块(这里在捕获阶段收走);会话落在另一条会话的正中或输入框上 = 插 @

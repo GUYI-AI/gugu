@@ -500,6 +500,22 @@ describe('inner sidebar', () => {
     act(() => shell.unmount());
   });
 
+  it("a project's task opened from anywhere (a rail avatar, not the column) keeps the project's column, and folded its restore button", async () => {
+    const restore = document.body.appendChild(document.createElement('div'));
+    const restoreRoot = createRoot(restore);
+    await act(async () => restoreRoot.render(<InnerSidebarRestore />));
+    go('session', { session: { sessionId: 'shop-idle', projectId: 'p-shop' } });
+    await render();
+    expect(host.querySelector('[data-inner-sidebar-chat="shop-chat"]'), 'a project task lost its column').not.toBeNull();
+    expect(innerSidebarChat.get()).toEqual({ kind: 'project', chatId: 'shop-chat' });
+    act(() => setInnerSidebarFolded(true));
+    await render();
+    expect(restore.querySelector('button[aria-label="sidebar.expandInner"]'), 'folded, the column had no way back').not.toBeNull();
+    act(() => setInnerSidebarFolded(false));
+    act(() => restoreRoot.unmount());
+    restore.remove();
+  });
+
   it('back to a project after another group: its agent screen comes back with the project, lit and with its fold button; contacts in between change nothing', async () => {
     const restore = document.body.appendChild(document.createElement('div'));
     const restoreRoot = createRoot(restore);

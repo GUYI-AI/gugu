@@ -1,9 +1,10 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect } from 'react';
 import { MessageFilePreviewPanel } from '@/components/chat/MessageFilePreviewPanel';
 import { classifyDocumentPreview } from '@/components/chat/documentPreview';
 import { forgetSampleProjectOnScreen } from '@renderer/app/screen-layout-actions';
 import { screenLayout } from '@renderer/app/screen-layout';
+import { BlockGrip } from '@renderer/app/block-grip';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { TabStripShell } from '@renderer/features/tabs/tab-bar';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
@@ -22,7 +23,7 @@ import { sampleProjectContent, useSampleProject } from './use-sample-project';
  * 底下是和项目里一样的新任务框(#2569):发出第一句,示例就变成这个人自己的项目(SampleComposer)。示例本身全在包里,❌ 读网络、
  * ❌ 调模型。账号上的键读到「不在了」(删了,或已经让给它变成的那个项目),这一块自己收掉。
  */
-export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId, blockActions }: { blockId: string; blockActions?: ReactNode }) {
+export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId }: { blockId: string }) {
   const { translate, locale } = useSessionMessages();
   const sample = useSampleProject();
   const pane = samplePane();
@@ -40,7 +41,8 @@ export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId
     <>
       <TabStripShell
         reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
-        actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{blockActions}</TabBarActionRow>}
+        leadingSlot={<BlockGrip blockId={blockId} content={{ kind: 'sample-project', title: translate('projects.sample.name') }} label={translate('screen.gripApp')} />}
+        actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight} />}
       >
         <TabSlot data-sample-project-tab="">
           <TabChip isActive isFocusedPane={focused} label={translate('projects.sample.name')} hint={translate('projects.sample.tag')} />
