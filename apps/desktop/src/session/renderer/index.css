@@ -1140,6 +1140,12 @@
     background: var(--bg);
   }
 
+  /* The chat drawn in the card is on the card's face: in dark, .emdark lifts --chat-bg to --card, which put a task's
+     chat a shade above its own capsule bar (yangchichi 11-24, dark themes). */
+  [data-chat-card] {
+    --chat-bg: var(--bg);
+  }
+
   [data-chat-card-head] {
     height: 100%;
     border-radius: 12px 12px 0 0;
