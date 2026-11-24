@@ -20,12 +20,16 @@ export class ResourceHistoryStore {
       const id = Number(this.connection.prepare(`INSERT INTO resource_history(timestamp,run_id,cpu,memory,bytes,snapshot,long_frames,slow_interactions,style_layout_ms,page_interval_ms)
         VALUES (?,?,?,?,?,?,?,?,?,?)`).run(snapshot.timestamp, snapshot.runId ?? '', cpu, memory, bytes, json,
         page?.longFrames ?? null, page?.slowInteractions ?? null, page?.styleLayoutMs ?? null, page?.intervalMs ?? null).lastInsertRowid);
-      this.connection.prepare(`DELETE FROM resource_history WHERE id <= (
+      this.connection.prepare('DELETE FROM resource_history WHERE timestamp < ?').run(snapshot.timestamp - this.limits.ageMs);
+      // @@@trim-on-excess - the running window over every row costs ~10x the covered totals; at steady state each sample
+      // only ages one sample out, so the count/byte trim runs only when a cap is actually exceeded.
+      const kept = this.connection.prepare('SELECT count(*) AS count,coalesce(sum(bytes),0) AS bytes FROM resource_history').get() as { count: number; bytes: number };
+      if (kept.count > this.limits.points || kept.bytes > this.limits.bytes) this.connection.prepare(`DELETE FROM resource_history WHERE id <= (
         SELECT max(id) FROM (
-          SELECT id,timestamp,row_number() OVER (ORDER BY id DESC) AS n,
+          SELECT id,row_number() OVER (ORDER BY id DESC) AS n,
             sum(bytes) OVER (ORDER BY id DESC) AS total FROM resource_history
-        ) WHERE n > ? OR total > ? OR timestamp < ?
-      )`).run(this.limits.points, this.limits.bytes, snapshot.timestamp - this.limits.ageMs);
+        ) WHERE n > ? OR total > ?
+      )`).run(this.limits.points, this.limits.bytes);
       return id;
     })();
   }

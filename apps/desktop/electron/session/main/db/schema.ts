@@ -508,6 +508,8 @@ export const sessions = sqliteTable(
     }),
   },
   (table) => ({
+    // Visibility is asked of this column alone (see archivedAt); live sessions are a small slice of the table.
+    archivedAtIdx: index('idx_sessions_archived_at').on(table.archivedAt),
     workspaceIdIdx: index('idx_sessions_workspace_id').on(table.workspaceId),
     parentSessionIdIdx: index('idx_sessions_parent_session_id').on(
       table.parentSessionId
