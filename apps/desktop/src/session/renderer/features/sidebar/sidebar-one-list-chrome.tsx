@@ -233,7 +233,7 @@ function importableTools(locale: string): string {
 export const SidebarOneListHead = observer(function SidebarOneListHead({ innerShownFor = null }: { innerShownFor?: string | null }) {
   const { translate, locale } = useSessionMessages();
   const { navigate } = useNavigate();
-  const { currentView } = useWorkspaceSlots();
+  const { pageView: currentView } = useWorkspaceSlots();
   const { isLeftOpen } = useWorkspaceLayoutContext();
   const keyboard = useShortcutOverrides();
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard);
@@ -318,7 +318,7 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
 export const SidebarOneListFoot = observer(function SidebarOneListFoot() {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
-  const { currentView } = useWorkspaceSlots();
+  const { pageView: currentView } = useWorkspaceSlots();
   const railLayout = useLeftRailLayout();
   const controlsRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   const scheduledLabel = translate('sidebar.scheduled');

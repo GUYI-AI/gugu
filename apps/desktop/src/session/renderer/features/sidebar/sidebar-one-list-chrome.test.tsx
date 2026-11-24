@@ -101,7 +101,7 @@ vi.mock('@/components/chat/useConversationVisibility', async () => {
 });
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({
   useNavigate: () => ({ navigate: state.navigate }),
-  useWorkspaceSlots: () => ({ currentView: state.view }),
+  useWorkspaceSlots: () => ({ currentView: state.view, pageView: state.view }),
   isCurrentView: (current: string, target: string) => current === target,
 }));
 vi.mock('@renderer/lib/commands/registry', () => ({ commandRegistry: { dispatch: state.dispatch } }));

@@ -37,6 +37,8 @@ const item = (id: string, projectId: string, presentation: Item['presentation'] 
 // The column is an observer: what it reads must be observable for a change to redraw it (as in the app).
 type Live = {
   currentViewId: string;
+  /** The page laid out (NavigationStore.pageViewId): the current view, or what is under a modal one. */
+  pageViewId: string | null;
   viewParamsStore: Record<string, unknown>;
   shownMore: Set<string>;
   navigate: (view: string, params: Record<string, unknown>) => void;
@@ -130,10 +132,12 @@ vi.mock('./sidebar-session-item', () => ({
 
 state.live = observable({
   currentViewId: 'chat',
+  pageViewId: 'chat' as string | null,
   viewParamsStore: {} as Record<string, unknown>,
   shownMore: new Set<string>(),
   navigate(view: string, params: Record<string, unknown>) {
     this.currentViewId = view;
+    this.pageViewId = view;
     this.viewParamsStore = { [view]: params };
   },
 });
@@ -235,8 +239,10 @@ const go = (currentViewId: string, viewParamsStore: Record<string, unknown>, fro
     const content = screenContent(currentViewId, viewParamsStore);
     if (content && fromColumn) screenLayout.withinEntry(() => screenLayout.show(content));
     else if (content) screenLayout.show(content);
-    Object.assign(state.live, { currentViewId, viewParamsStore });
+    Object.assign(state.live, { currentViewId, pageViewId: currentViewId, viewParamsStore });
   }));
+/** A modal view (the market, an App's page) over the page: the navigation's current view changes, the page under it does not. */
+const openModal = (viewId: string) => act(() => runInAction(() => { state.live.currentViewId = viewId; }));
 const openChat = (chatId: string) => go('chat', { chat: { chatId } });
 const openProject = (projectId: string) => go('project', { project: { projectId } });
 const openSession = (sessionId: string, fromColumn = false) => go('session', { session: { sessionId } }, fromColumn);
@@ -473,6 +479,16 @@ describe('inner sidebar', () => {
     expect(innerSidebarShownFor.get()).toBe('group');
     act(() => restoreRoot.unmount());
     restore.remove();
+  });
+
+  it('a modal view over the group (the market) keeps the column: it does not change the page behind it', async () => {
+    openChat('group');
+    await render();
+    expect(host.querySelector('[data-inner-sidebar-chat="group"]')).not.toBeNull();
+    openModal('apps');
+    await render();
+    expect(host.querySelector('[data-inner-sidebar-chat="group"]')).not.toBeNull();
+    expect(innerSidebarChat.get()).toEqual({ kind: 'group', chatId: 'group' });
   });
 
   it('opening one of its agents keeps the column; a direct message or another session closes it', async () => {

@@ -75,9 +75,12 @@ import { SidebarSessionItem } from './sidebar-session-item';
 // InnerSidebarTopics,同一个动作行的样子)。这一列里 ❌ 找的框:找东西用列表顶上那个搜索(开着群时先搜这个群,sidebar-search-trigger)。
 // 这一列可以收起(inner-sidebar-fold):收起是全局的,正文左上角浮出展开钮(InnerSidebarRestore)。
 
-/** 导航此刻在哪(读成内层侧栏要的样子)。 */
+/**
+ * 导航此刻在哪一页(读成内层侧栏要的样子)。认的是铺着的那一页(pageViewId),❌ currentViewId:市场、App 页这种浮在页上的
+ * 视图(@@@page-modal)不换背后那一页,这一列也就照旧挂着。
+ */
 function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarView {
-  const { currentViewId, viewParamsStore } = appState.navigation;
+  const { pageViewId: currentViewId, viewParamsStore } = appState.navigation;
   if (currentViewId === 'chat') {
     const chatId = (viewParamsStore.chat as { chatId?: string } | undefined)?.chatId;
     if (!chatId) return { kind: 'other' };
@@ -99,7 +102,7 @@ function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarV
 
 /** 主区此刻打开着的会话(不在会话页 = null)。 */
 function openSessionId(): string | null {
-  const { currentViewId, viewParamsStore } = appState.navigation;
+  const { pageViewId: currentViewId, viewParamsStore } = appState.navigation;
   if (currentViewId !== 'session') return null;
   return (viewParamsStore.session as { sessionId?: string } | undefined)?.sessionId ?? null;
 }

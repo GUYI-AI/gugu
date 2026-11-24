@@ -94,7 +94,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   // #7199 个人助理不住在任务区:它是谁(壳按库里的标记认出来,经助理那座桥发过来),交给 store 去藏它自己的会话。
   const assistantShell = useAssistantShell();
   const assistantAgentId = assistantShell?.assistant?.id ?? null;
-  const activeSessionId = appState.navigation.currentViewId === 'session' ? appState.navigation.viewParamsStore.session?.sessionId : undefined;
+  const activeSessionId = currentView === 'session' ? appState.navigation.viewParamsStore.session?.sessionId : undefined;
   const activeAgentId = activeSessionId ? sessionAgentBindings.bindingFor(activeSessionId)?.agentUserId : undefined;
   React.useEffect(() => {
     sidebarStore.setAssistantAgentId(assistantAgentId);

@@ -98,7 +98,7 @@ vi.mock('@renderer/features/sessions/open-session-in-session', () => ({
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({
   useNavigate: () => ({ navigate: (view: string, params: unknown) => shown.navigation!.navigate(view, params) }),
   useParams: () => ({ params: {} }),
-  useWorkspaceSlots: () => ({ currentView: 'task' }),
+  useWorkspaceSlots: () => ({ currentView: 'task', pageView: 'task' }),
 }))
 
 import { requestArchiveSession } from '@renderer/features/sessions/archive-session-flow'
