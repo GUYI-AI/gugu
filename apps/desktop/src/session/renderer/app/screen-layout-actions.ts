@@ -17,7 +17,7 @@ import { isScreenView } from './screen-views';
 import { contentKey, MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
-import { roomListsSession, roomOfEntry } from '@renderer/features/sidebar/inner-sidebar-scope';
+import { chatViewOf, roomListsSession, roomOfEntry } from '@renderer/features/sidebar/inner-sidebar-scope';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import { dropShapeOf, hideDropHighlight, showDropHighlight, type DropShape } from '@renderer/lib/drop-highlight';
 
@@ -193,8 +193,25 @@ function showNavigationBlock(content: ScreenBlockContent | undefined): void {
   const windowed = content.kind === 'session' ? auxWindows.windowOfSession(content.sessionId) : undefined;
   if (windowed) {
     if (auxWindows.focusedWindowId !== windowed.id) windowed.handle?.focus();
-  } else if (content.kind === 'session' && livesInEntryRoom(content.sessionId)) screenLayout.withinEntry(() => screenLayout.show(content));
-  else screenLayout.show(content);
+  } else showUnderEntry(content);
+}
+
+/** 摆出一样东西,算在它该在的那一行入口下(entryFor):切走时这一屏记在那行名下,再点那行回到这里。 */
+function showUnderEntry(content: ScreenBlockContent): void {
+  screenLayout.openUnder(entryFor(content), () => screenLayout.show(content));
+}
+
+/**
+ * 它算在哪一行入口下:住在这屏群里的智能体 = 这屏的入口;话题 = 它的群(项目群认项目那一行),不管从群里、通知还是链接打开。
+ * 别的 = null(它自己就是入口)。
+ */
+function entryFor(content: ScreenBlockContent): string | null {
+  if (content.kind === 'session') return livesInEntryRoom(content.sessionId) ? screenLayout.currentEntry : null;
+  if (content.kind !== 'chat') return null;
+  const room = chatViewOf(content.chatId, readChatSummaries() ?? new Map()).roomChatId;
+  if (!room) return null;
+  const projectId = projectGroupsStore.rowProjectOfChat(room);
+  return contentKey(projectId ? { kind: 'project', projectId } : { kind: 'chat', chatId: room });
 }
 
 /**
@@ -308,7 +325,7 @@ export function showSessionBeside(target: ScreenSession): void {
 /** 把一样东西摆到这屏上(项目、对话;会话走导航):它在哪组就整组回来,否则单独一屏。 */
 export function showOnScreen(content: ScreenBlockContent): void {
   tabFullscreen.exit();
-  screenLayout.show(content);
+  showUnderEntry(content);
   followFocus();
 }
 
