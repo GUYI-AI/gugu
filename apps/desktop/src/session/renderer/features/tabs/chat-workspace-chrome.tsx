@@ -218,9 +218,27 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       {/* The conversation's own head (no tools beside it) is the capsule row: its buttons — the block's, then the view's —
           float at the top right as one row and take no width, so the capsule centres on the whole card. Beside tools or
           merged into one strip they share the row. */}
-      {floating ? <div className="absolute inset-y-0 right-0 flex">
+      {floating ? <div ref={measureFloatingActions} className="absolute inset-y-0 right-0 flex">
         <div className="flex [--tabbar-actions-edge-gap:0px]">{actions}</div>{actionRow}
       </div> : !toolCard && actionRow}
     </div>
   );
 });
+
+/**
+ * The capsule row's floating buttons take no width, so the capsule centred on the card could run under them in a narrow
+ * block. Their width is written on the header (--capsule-actions-lane); the capsule keeps that much clear on both sides
+ * (index.css), so it stays centred and never under a button.
+ */
+function measureFloatingActions(row: HTMLDivElement | null): (() => void) | undefined {
+  const header = row?.closest<HTMLElement>('[data-chat-workspace-header]');
+  if (!row || !header || typeof ResizeObserver === 'undefined') return undefined;
+  const write = () => header.style.setProperty('--capsule-actions-lane', `${row.getBoundingClientRect().width}px`);
+  write();
+  const observer = new ResizeObserver(write);
+  observer.observe(row);
+  return () => {
+    observer.disconnect();
+    header.style.removeProperty('--capsule-actions-lane');
+  };
+}

@@ -1466,9 +1466,13 @@ html[data-gugu-dragging] :is(webview, iframe) {
    (--block-grip-lane,TabStripShell 读),胶囊栏里的名字也不压到它上面。 */
 .session-tab-bar:has([data-block-grip]) {
   --block-grip-lane: 50px;
+  --capsule-grip-lane: calc(var(--block-grip-lane) + 14px);
 }
-.session-tab-bar:has([data-block-grip]) [data-chat-workspace-title] {
-  max-width: calc(100% - 2 * (var(--block-grip-lane) + 14px));
+/* The capsule stays centred on the card and clear of what floats beside it: the split handle on the left, the row's
+   buttons on the right (--capsule-actions-lane, chat-workspace-chrome.tsx measureFloatingActions). Same lane on both
+   sides, the wider one. */
+[data-chat-workspace-header] [data-chat-workspace-title] {
+  max-width: min(80%, calc(100% - 2 * max(var(--capsule-grip-lane, 0px), var(--capsule-actions-lane, 0px))));
 }
 .screen-block-grip {
   position: absolute;
