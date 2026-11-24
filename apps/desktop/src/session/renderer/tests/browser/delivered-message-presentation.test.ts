@@ -93,10 +93,10 @@ it('reads a queued attachment delivery at once and never draws its stored file l
 
 it("draws a new task's picture from this device before its folder file is placed, and reads it once", async () => {
   // A first message that is a picture alone: its row names the folder file before the folder holds it (`holdSentItem`).
-  holdSentItem('task-picture', 1, new File(['png'], 'shot.png', { type: 'image/png' }));
+  holdSentItem('33333333-4444-4555-8666-777777777777', 1, new File(['png'], 'shot.png', { type: 'image/png' }));
   try {
-    const read = resolveDeliveredAttachment('gugu-file://task-picture?v=1');
+    const read = resolveDeliveredAttachment('gugu-file://33333333-4444-4555-8666-777777777777?v=1');
     expect(await read).toBe(`data:image/png;base64,${btoa('png')}`);
-    expect(resolveDeliveredAttachment('gugu-file://task-picture?v=1'), 'drawn again (its turn committing): the same read').toBe(read);
+    expect(resolveDeliveredAttachment('gugu-file://33333333-4444-4555-8666-777777777777?v=1'), 'drawn again (its turn committing): the same read').toBe(read);
   } finally { forgetSentFiles(); }
 });
