@@ -113,7 +113,7 @@ function ProvidedModelCatalog() {
         : groups === null ? <Unknown className="h-24 w-full" /> : <>
           {catalog.state === 'value' ? <RefreshFailed reading={catalog} /> : null}
           {needle && groups.usable.length === 0 && groups.locked.length === 0 && <SettingsNote>{t('model.noMatch')}</SettingsNote>}
-          <div className="gg-provided-model-list" role="region" aria-label={t('model.provided')} tabIndex={0}>
+          <div className="gg-settings-surface gg-provided-model-list" role="region" aria-label={t('model.provided')} tabIndex={0}>
             <div data-testid="settings-model-usable">
               {groups.usable.map(model => <SettingsRow key={model.id} data-model-id={model.id} title={model.displayName}
                 control={<Toggle checked={!model.hidden} onChange={shown => toggle(model, shown)} ariaLabel={t('model.toggleAria', { model: model.displayName })} />} />)}

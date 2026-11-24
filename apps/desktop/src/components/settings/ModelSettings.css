@@ -44,8 +44,6 @@
   max-height: min(16rem, 45dvh);
   overflow-y: auto;
   overscroll-behavior-y: contain;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
 }
 .gg-provided-model-list div.gg-settings-row { min-height: 36px; padding: 4px 12px; }
 .gg-provided-model-list .gg-settings-note { padding: 8px 12px 4px; }
