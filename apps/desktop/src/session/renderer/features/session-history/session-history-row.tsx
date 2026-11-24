@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
-import { formatCalendarDate } from '@/i18n/format';
+import { ListRow } from '@/components/ui/ListRow';
+import { AgentIcon } from '@renderer/lib/components/agent-icon';
 import type { SessionImportSource } from '@renderer/features/session-import/import-source';
 import { SessionPreviewPane } from '@renderer/features/session-import/session-preview-pane';
 import { Button } from '@renderer/lib/ui/button';
@@ -125,11 +126,19 @@ export function SessionHistoryRow({
   /** 离线机器上点不开的那几行(rowOpens 为假)。 */
   actionDisabled: boolean;
 }) {
-  const { translate, locale } = useSessionMessages();
+  const { translate } = useSessionMessages();
   const title = row.title || translate('sessionHistory.untitled');
+  // 第二行:状态(活跃不写:行本身就是它)· 哪台机器 · 离线 —— 与侧栏行同一种淡色副标题。
+  const subtitle = [
+    row.status === 'active' ? null : row.status === 'archived' ? translate('sessionHistory.statusArchived')
+      : `${translate('sessionHistory.statusNotImported')}${row.local ? ` · ${LOCAL_SESSION_ENGINE_LABEL[row.local.engine]}` : ''}`,
+    machineLabel,
+    offline ? translate('machinePicker.offline') : null,
+  ].filter(Boolean).join(' · ');
   return (
-    <div data-testid="session-history-item">
-      <div
+    <div data-testid="session-history-item" className="border-b border-[var(--border)] last:border-b-0">
+      {/* 行 = 全 app 那一种列表行(ListRow:侧栏 / 联系人 / 成员同一套几何与悬停),❌ 这一页自己的 60px 两行块。 */}
+      <ListRow
         id={historyOptionId(row.key)}
         role="option"
         aria-selected={isSelected}
@@ -139,48 +148,34 @@ export function SessionHistoryRow({
         data-source={row.source}
         data-status={row.status}
         onClick={onSelect}
-        className={cn(
-          '-mx-4 flex min-h-15 cursor-default items-center gap-3 px-4 py-2 hover:bg-row-hover active:bg-row-press',
-          isHighlighted && 'bg-row-selected'
-        )}
-      >
-        <div className="min-w-0 flex-1">
-          <div className={cn('truncate text-sm leading-5', row.title ? 'text-foreground' : 'text-foreground-muted')} title={title}>
-            {title}
-          </div>
-          <div className="flex min-w-0 items-center gap-2 text-sm leading-5 text-foreground-muted">
-            <time className="truncate tabular-nums" dateTime={new Date(row.updatedAt).toISOString()}>
-              {/* 绝对时间、年份总写:列表里一眼要能比先后。 */}
-              {formatCalendarDate(row.updatedAt, locale, { includeYear: true })}
-            </time>
-            {machineLabel ? (
-              <span className="min-w-0 shrink truncate" data-testid="session-history-row-machine">
-                {machineLabel}
-              </span>
-            ) : null}
-            {offline ? (
-              <span className="shrink-0 text-foreground-passive" data-testid="session-history-row-offline">
-                {translate('machinePicker.offline')}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          className="bg-foreground/[0.06] text-foreground hover:bg-foreground/[0.1] active:bg-foreground/[0.14]"
-          data-testid="session-history-action"
-          disabled={actionDisabled}
-          onClick={(event) => {
-            event.stopPropagation();
-            onAction();
-          }}
-        >
-          {translate(ACTION_MESSAGE_KEY[row.status])}
-        </Button>
-      </div>
+        selected={isHighlighted}
+        className="group cursor-default"
+        leading={
+          <span className="flex size-8 items-center justify-center rounded-full bg-[var(--muted)]">
+            {row.providerId ? <AgentIcon id={row.providerId} size={16} /> : null}
+          </span>
+        }
+        title={<span className={row.title ? undefined : 'text-foreground-muted'} title={title}>{title}</span>}
+        meta={<RelativeTime value={row.updatedAt} compact ago />}
+        subtitle={subtitle || undefined}
+        trailing={
+          <Button
+            size="xs"
+            variant="ghost"
+            className="text-foreground-muted opacity-0 group-hover:opacity-100 group-data-[selected]:opacity-100 focus-visible:opacity-100"
+            data-testid="session-history-action"
+            disabled={actionDisabled}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction();
+            }}
+          >
+            {translate(ACTION_MESSAGE_KEY[row.status])}
+          </Button>
+        }
+      />
       {isExpanded ? (
-        <div data-testid="session-history-detail" className="-mx-4 bg-foreground/[0.025]">
+        <div data-testid="session-history-detail" className="bg-foreground/[0.025]">
           <div className="max-h-72 overflow-y-auto">
             {row.local ? (
               <SessionPreviewPane session={row.local} source={previewSource} describeError={describePreviewError} />

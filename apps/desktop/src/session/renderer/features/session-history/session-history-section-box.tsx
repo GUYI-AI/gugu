@@ -49,11 +49,11 @@ export function SessionHistorySectionBox({
   }, [capped, hasMore, isLoadingMore, onReachEnd]);
 
   return (
-    <div className="overflow-hidden rounded-sm bg-foreground/[0.02] dark:bg-foreground/[0.03]">
+    <div>
       <div
         ref={boxRef}
         data-testid="session-history-section-box"
-        className={cn('px-4', capped && 'max-h-80 overflow-y-auto')}
+        className={cn(capped && 'max-h-80 overflow-y-auto')}
       >
         {children}
         {capped && hasMore ? (

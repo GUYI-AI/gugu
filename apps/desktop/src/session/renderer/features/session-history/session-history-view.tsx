@@ -3,7 +3,7 @@ import { useCommandProvider } from '@renderer/lib/commands/use-command-provider'
 import { messageForUser } from '@/lib/userFacingError';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ChevronDown, Folder, ListFilter, Monitor } from '@/lib/icons';
+import { ChevronDown, ListFilter, Monitor } from '@/lib/icons';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { restoreArchivedSession } from '@renderer/features/sessions/restore-session-flow';
 import { isImplicitSessionHomeProject, isWorkspaceProject } from '@renderer/features/sessions/session-home-project-constants';
@@ -19,8 +19,8 @@ import { countOutcomes, runImport, type ImportOutcome } from '@renderer/features
 import { LOCAL_IMPORT_DEVICE, resolveImportSource, type SessionImportSource } from '@renderer/features/session-import/import-source';
 import { ImportSummary } from '@renderer/features/session-import/import-summary';
 import { shortenPath } from '@renderer/features/session-import/session-row';
-import { AgentIcon } from '@renderer/lib/components/agent-icon';
 import { PageContent, PageLayout } from '@renderer/lib/components/page-layout';
+import { PageHeader } from '@renderer/lib/components/page-header';
 import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
@@ -106,8 +106,6 @@ const BATCH_SIZE = 50;
 const SECTION_PREVIEW = 5;
 /** 点开之后,小窗里每次多要这么多(当场一批,滚到窗底再一批)。 */
 const SECTION_BATCH = 50;
-/** 节头最多画几个 agent 图标:再多就成了一排噪音。 */
-const SECTION_AGENT_ICONS = 3;
 /** 搜索词像一个 session id 前缀时(不含空格、够长)才按「id 命中」高亮那一条;短词只是普通关键词。 */
 const SESSION_ID_QUERY_MIN = 6;
 const DEFAULT_SOURCE: SourceFilter = 'gugu';
@@ -578,26 +576,63 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
   const indexing = states.flatMap((state) => (state?.isIndexing && state.page?.local ? [state.page.local] : []));
   const localPage = byMachine[LOCAL_IMPORT_DEVICE]?.page;
 
+  const machineMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            className="max-w-56 justify-start font-normal text-foreground-muted"
+            aria-label={translate('sessionHistory.machineFilter')}
+            data-testid="session-history-machine"
+          />
+        }
+      >
+        <Monitor className="size-4 text-foreground-muted" />
+        <span className="min-w-0 flex-1 truncate text-left">
+          {filterChoice?.label ?? translate('sessionHistory.machineAll')}
+        </span>
+        <ChevronDown className="size-4 text-foreground-muted" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-48 whitespace-nowrap">
+        <DropdownMenuRadioGroup
+          value={machineFilter ?? ''}
+          onValueChange={(value) => setPickedMachine(value ? (value as string) : null)}
+        >
+          <DropdownMenuRadioItem value="" data-testid="session-history-machine-all">
+            {translate('sessionHistory.machineAll')}
+          </DropdownMenuRadioItem>
+          {choices.map((choice) => (
+            <DropdownMenuRadioItem key={choice.id} value={choice.id} data-testid={`session-history-machine-${choice.id}`}>
+              <span className="min-w-0 truncate">{choice.label}</span>
+              {!choice.isLocal && !choice.isOnline ? (
+                <small className="ml-auto pl-3 text-foreground-muted">{translate('machinePicker.offline')}</small>
+              ) : null}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
     <PageLayout>
-      {/* 几何照 设计同事 2026-09-23 的模板图量出来(1728×1050 视口):内容列 768px 居中、标题顶 64px、
-          标题到筛选行 48px、筛选行到第一节 36px、节与节之间 48px。 */}
-      <PageContent className="flex min-h-0 max-w-3xl flex-col pt-16 pb-12">
+      <PageContent className="flex min-h-0 max-w-3xl flex-col pt-10 pb-12">
         <div ref={rootRef} onKeyDown={handleKeyDown} className="flex min-h-0 flex-col">
-          {/* 标题行:左标题,右侧只在批量导入时显示进度(模板右侧是「全部删除」,我们不做删除)。 */}
-          <div className="flex min-h-8 items-center justify-between gap-4 [-webkit-app-region:drag]">
-            <h2 className="shrink-0 font-display text-2xl leading-8 font-normal text-foreground">{translate('sessionHistory.title')}</h2>
-            {isImporting ? (
-              <span className="flex items-center gap-2 text-xs text-foreground-muted" role="status" data-testid="session-history-importing">
-                <Spinner size="sm" />
-                {translate('sessionHistory.importingCount', { count: importedCount })}
-              </span>
-            ) : <LegacyDmArchiveButton />}
-          </div>
-
-          {/* 筛选行(模板):搜索框占满剩余宽度 + 筛选菜单(类型 / 状态 / 排序方式)+ 机器筛选(默认全部机器)。
-              搜索框用输入框统一的圆角矩形(与自动化 / 提示词库 / MCP / Agent 设置的搜索框同形),❌ 单独改胶囊(owner 2026-09-27)。 */}
-          <div className="mt-12 flex flex-wrap items-center gap-2">
+          {/* 页头用全 app 那一个(PageHeader:已安排 / 资源库 / 设置同一个标题字号与位置);机器选择在标题右边(#6264 一个位置)。 */}
+          <PageHeader
+            title={translate('sessionHistory.title')}
+            scope={{ control: machineMenu }}
+            aside={
+              isImporting ? (
+                <span className="flex items-center gap-2 text-xs text-foreground-muted" role="status" data-testid="session-history-importing">
+                  <Spinner size="sm" />
+                  {translate('sessionHistory.importingCount', { count: importedCount })}
+                </span>
+              ) : <LegacyDmArchiveButton />
+            }
+          >
+          <div className="flex flex-wrap items-center gap-2">
             <SearchInput
               ref={searchRef}
               autoFocus
@@ -670,43 +705,8 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    className="w-40 justify-start font-normal text-foreground"
-                    aria-label={translate('sessionHistory.machineFilter')}
-                    data-testid="session-history-machine"
-                  />
-                }
-              >
-                <Monitor className="size-4 text-foreground-muted" />
-                <span className="min-w-0 flex-1 truncate text-left">
-                  {filterChoice?.label ?? translate('sessionHistory.machineAll')}
-                </span>
-                <ChevronDown className="size-4 text-foreground-muted" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-48 whitespace-nowrap">
-                <DropdownMenuRadioGroup
-                  value={machineFilter ?? ''}
-                  onValueChange={(value) => setPickedMachine(value ? (value as string) : null)}
-                >
-                  <DropdownMenuRadioItem value="" data-testid="session-history-machine-all">
-                    {translate('sessionHistory.machineAll')}
-                  </DropdownMenuRadioItem>
-                  {choices.map((choice) => (
-                    <DropdownMenuRadioItem key={choice.id} value={choice.id} data-testid={`session-history-machine-${choice.id}`}>
-                      <span className="min-w-0 truncate">{choice.label}</span>
-                      {!choice.isLocal && !choice.isOnline ? (
-                        <small className="ml-auto pl-3 text-foreground-muted">{translate('machinePicker.offline')}</small>
-                      ) : null}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
+          </PageHeader>
 
           {outcomes ? (
             <div className="mt-6 flex flex-col gap-2">
@@ -739,7 +739,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
             aria-label={translate('sessionHistory.title')}
             aria-busy={isLoading || isIndexing}
             data-testid="session-history-list"
-            className="mt-9 flex flex-col gap-12"
+            className="mt-6 flex flex-col gap-7"
           >
             {holdFirstDraw || (sections.length === 0 && isLoading) ? (
               <div className="flex items-center justify-center gap-2 p-8 text-sm text-foreground-muted">
@@ -766,29 +766,21 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
                 const open = isSectionOpen(section);
                 return (
                   <section key={section.key} data-testid="session-history-section" data-section-key={section.key}>
-                    <div className="mb-3 flex h-7 items-center gap-2 px-2">
-                      <Folder className="size-4 shrink-0 text-foreground-muted" />
+                    {/* 节头 = 详情页的分组标题那一种(淡色小字,❌ 文件夹图标、❌ 正文字号):名字、机器、条数。 */}
+                    <div className="flex h-7 items-center gap-2 px-1 text-[length:var(--font-caption)] text-[var(--faint-fg)]">
                       <span
-                        className="truncate text-sm text-foreground"
+                        className="truncate text-[var(--muted-fg)]"
                         title={section.path ?? undefined}
                         data-testid="session-history-section-name"
                       >
                         {sectionLabel(section)}
                       </span>
                       {section.machine && spansMachines ? (
-                        <span className="shrink-0 text-sm text-foreground-muted" data-testid="session-history-section-machine">
+                        <span className="shrink-0" data-testid="session-history-section-machine">
                           {labelOf(section.machine)}
                         </span>
                       ) : null}
-                      {/* 我们的特色之一:这一节里出现过的 agent,一排图标(最多 3 个)。 */}
-                      {section.providers.length > 0 ? (
-                        <span className="flex shrink-0 items-center gap-1" data-testid="session-history-section-agents">
-                          {section.providers.slice(0, SECTION_AGENT_ICONS).map((providerId) => (
-                            <AgentIcon key={providerId} id={providerId} size={14} />
-                          ))}
-                        </span>
-                      ) : null}
-                      <span className="ml-auto shrink-0 text-sm text-foreground-muted tabular-nums">
+                      <span className="ml-auto shrink-0 tabular-nums">
                         {translate('sessionHistory.sectionCount', { count: sessionCount(section) })}
                       </span>
                       {/* ❌ 节头 ···(owner 2026-09-26):它里面的「查看全部」与小窗下的「显示更多」重复。 */}
@@ -843,7 +835,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
             {/* 等过了首帧那一会儿还没读到的机器:它的行到了并进上面的节、新节接在最后,这里先说一句在读哪台。 */}
             {!holdFirstDraw && sections.length > 0
               ? readingMachines.map((machine) => (
-                  <p key={machine} className="-mt-9 flex items-center gap-2 px-2 text-xs text-foreground-muted" data-testid="session-history-machine-reading">
+                  <p key={machine} className="-mt-5 flex items-center gap-2 px-1 text-xs text-foreground-muted" data-testid="session-history-machine-reading">
                     <Spinner size="sm" />
                     {translate('sessionHistory.machineReading', { device: labelOf(machine) })}
                   </p>
