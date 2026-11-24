@@ -522,7 +522,8 @@ function acpSettingsArtifact(
   //    `set_config_option` 只作用于当前进程 —— 重开就回到启动值。⇒ 宿主先把新档落进会话记录
   //    (`config.effort`),重开时这份 settings 按记录重算,于是新档跟着进新会话。
   //    少了这一行,「点确认 → 重启」会**重启回旧档**,而界面显示的是新档。
-  const thinkingLevel = model?.reasoningEffort?.trim();
+  //    自定义模型的「默认」档不带任何档位参数:pi 缺省是 `medium`,所以这里显式落 `off`(请求里不写 reasoning_effort)。
+  const thinkingLevel = model?.reasoningEffort?.trim() || (model?.customModels ? 'off' : undefined);
   if (thinkingLevel) settings.defaultThinkingLevel = thinkingLevel;
   return {
     path: join(agentDir, PI_ACP_SETTINGS_RELATIVE),
