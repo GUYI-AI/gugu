@@ -674,23 +674,29 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       const read = async (): Promise<ChatItem[] | null> => {
         signal.throwIfAborted()
         const ids = candidates.map(id => membershipId(id, viewerId)).filter(id => !cache.has(entityKey('membership', id)))
-        if (ids.length === 0) return null
-        const batches = batchFamilyKeys('membership', ids), startedAt = Date.now()
-        const facts = { trigger: ['restored-layout'], revisions: [cursor, cursor] as [string, string], keysDirty: ids.length,
-          requestsByFamily: { membership: batches.length }, requests: batches.length, waves: 1 }
+        // The conversation row too: one archived while this app was closed (a closed topic) is gone for everyone.
+        const chatIds = candidates.filter(id => !cache.has(entityKey('chat', id)))
+        if (ids.length === 0 && chatIds.length === 0) return null
+        const batches = batchFamilyKeys('membership', ids), chatBatches = batchFamilyKeys('chat', chatIds), startedAt = Date.now()
+        const facts = { trigger: ['restored-layout'], revisions: [cursor, cursor] as [string, string], keysDirty: ids.length + chatIds.length,
+          requestsByFamily: { membership: batches.length, chat: chatBatches.length }, requests: batches.length + chatBatches.length, waves: 1 }
         try {
-          const reads = await Promise.all(batches.map(batch => readers.membership(batch, signal, () => {})))
+          const [reads, chatReads] = await Promise.all([
+            Promise.all(batches.map(batch => readers.membership(batch, signal, () => {}))),
+            Promise.all(chatBatches.map(batch => readers.chat(batch, signal, () => {}))),
+          ])
           signal.throwIfAborted()
-          const cells = batches.flatMap((batch, index) => batch.map(id => {
+          const cells = [...batches.flatMap((batch, index) => batch.map(id => {
             const value = (reads[index]!.get(id) ?? null) as Cell['value']
             const observed = (value as MembershipValue | null)?.personal_state_observed_revision
             if (observed) assertRevision(observed, 'restored membership observation')
             return [entityKey('membership', id), { value, stamp: observed && compareStamp(observed, cursor) > 0 ? observed : cursor }] as const
-          }))
+          })), ...chatBatches.flatMap((batch, index) => batch.map(id =>
+            [entityKey('chat', id), { value: (chatReads[index]!.get(id) ?? null) as Cell['value'], stamp: cursor }] as const))]
           merge(cells)
           // These reads only settle removal authority; a live row's other cells may still be unread.
           for (const [key] of cells) unpublished.delete(key)
-          rows = rows.filter(row => !owner.isConversationDeleted(row.id) && !owner.isMembershipRevoked(row.id))
+          rows = rows.filter(row => !owner.isConversationDeleted(row.id) && !owner.isMembershipRevoked(row.id) && !owner.isConversationArchived(row.id))
           record({ ...facts, ms: Date.now() - startedAt, ok: true })
           return rows
         } catch (error) {
