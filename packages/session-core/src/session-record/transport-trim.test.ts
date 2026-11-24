@@ -609,6 +609,15 @@ describe('a folded page leaves out what stands behind a fold', () => {
     expect(turnHeld(page.turns[0]!)).toBe(false);
   });
 
+  it('takes a delivery from a session for an agent\'s: only an agent session sends one, and its envelope has no from_type', () => {
+    const SESSION = 'session:33333333-3333-4333-8333-333333333333';
+    const direct = { kind: 'message', id: 'd', seq: 0, role: 'user', text:
+      `<gugu_delivery route="session-direct" from="lead" from_id="${SESSION}" msg="msg:d" at="2026-11-23 06:53 UTC+0">\n<![CDATA[${'b'.repeat(600)}]]>\n  <arrival>reply with session_message</arrival>\n</gugu_delivery>` } as unknown as TranscriptItem;
+    const sent = one([direct]).items[0] as unknown as { text: string; held?: true };
+    expect(sent.held).toBe(true);
+    expect(readDeliveryEnvelope(sent.text)!.segments[0]).toMatchObject({ body: 'b'.repeat(HELD_BODY_CHARS), facts: { fromId: SESSION } });
+  });
+
   it('cuts what the agent sent to agents only, and leaves what it sent to a person', () => {
     const send = (id: string, to: string) => ({ kind: 'mcp-tool-call', id, seq: 1, toolCallId: id, server: 'gugu', tool: 'message_send', status: 'done', title: 'send',
       rawInput: JSON.stringify({ chat_id: 'dm-1', to_user_ids: [to], text: 'w'.repeat(900) }),

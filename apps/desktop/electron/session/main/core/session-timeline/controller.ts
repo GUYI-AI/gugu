@@ -111,11 +111,11 @@ export const sessionTimelineController = createRPCController({
   sessionReadState: (input: { conversationId: string }) => ({ unreadKeys: nativeConversationUnread(input.conversationId), ownerNotificationUnreadKeys: nativeOwnerNotificationUnread(input.conversationId) }),
   sessionVisible: (input: { conversationId: string; itemIds: string[] }) => ({ unreadKeys: markNativeConversationVisible(input.conversationId, input.itemIds) }),
   sessionSnapshot: async (input: SessionpageSessionSnapshotRequest) =>
-    trimmed(await service.snapshot(input), input.trim, trimSnapshotForTransport),
+    trimmed(await service.snapshot(input), input.trim, (page) => trimSnapshotForTransport(page, undefined, undefined, input.lean)),
   sessionAfter: async (input: SessionpageSessionAfterRequest) =>
     trimmed(await service.after(input), input.trim, trimAfterResultForTransport),
   sessionOlder: async (input: SessionpageSessionOlderRequest) =>
-    trimmed(await service.older(input), input.trim, trimOlderForTransport),
+    trimmed(await service.older(input), input.trim, (page) => trimOlderForTransport(page, undefined, undefined, input.lean)),
   /** 一张工具交回来的图(手机那份时间线里只有它的类型和字数)。 */
   sessionToolImage: async (input: SessionpageSessionToolImageRequest) => service.toolImage(input),
   sessionSubscribe: withSender(async (sender: number, input: SessionpageSessionSubscribeRequest) =>

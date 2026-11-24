@@ -1,6 +1,7 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 import type { SessionpageSessionEvent, TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline, prependOlder, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
+import { createHeldTurnReader, FOLDED, withWholeTurns } from '@/components/session-watch/folded-pages';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 import { onMachineReconnected } from '@renderer/lib/machine-clients';
@@ -28,6 +29,8 @@ export class AcpTimelineFeed {
   private readonly trim: boolean;
   private generation = 0;
   private subscription: { id: string; stop: () => void } | null = null;
+  /** A row of a turn this feed was sent folded came on screen from behind a fold: read that turn whole (`folded-pages`). */
+  readonly fillHeld: (itemId: string) => void;
 
   /** `machine` null = this computer. */
   constructor(
@@ -39,6 +42,20 @@ export class AcpTimelineFeed {
   ) {
     this.host = rpcOn(machine).sessionTimeline;
     this.trim = machine !== null;
+    this.fillHeld = createHeldTurnReader({
+      pages: {
+        snapshot: (limit) => value(this.host.sessionSnapshot({ conversationId: this.sessionId, limit, trim: this.trim })),
+        older: (beforeTurnId, limit) => value(this.host.sessionOlder({ conversationId: this.sessionId, beforeTurnId, limit, trim: this.trim })),
+      },
+      turns: () => this.state.turns,
+      land: (whole) => this.apply({ ...this.state, turns: withWholeTurns(this.state.turns, whole) }),
+      failed: this.failed,
+    });
+  }
+
+  /** Another machine's pages come folded (`folded-pages`); this computer's are read whole, nothing to save. */
+  private get lean() {
+    return this.trim ? { lean: FOLDED } : {};
   }
 
   get opened(): boolean {
@@ -63,7 +80,7 @@ export class AcpTimelineFeed {
       if (generation === this.generation) void this.open().catch(this.failed);
     }) : () => undefined;
     this.subscription = { id, stop: () => { stopEvents(); stopLink(); } };
-    const snapshot = await value(this.host.sessionSnapshot({ conversationId, limit: FIRST_PAGE, trim: this.trim }));
+    const snapshot = await value(this.host.sessionSnapshot({ conversationId, limit: FIRST_PAGE, trim: this.trim, ...this.lean }));
     if (generation !== this.generation) return;
     this.state = applySnapshot(this.state, snapshot);
     this.changed();
@@ -84,7 +101,7 @@ export class AcpTimelineFeed {
     const generation = this.generation;
     const first = this.state.turns[0];
     if (!this.state.hasOlder || !first) return [];
-    const page = await value(this.host.sessionOlder({ conversationId: this.sessionId, beforeTurnId: first.id, limit: OLDER_PAGE, trim: this.trim }));
+    const page = await value(this.host.sessionOlder({ conversationId: this.sessionId, beforeTurnId: first.id, limit: OLDER_PAGE, trim: this.trim, ...this.lean }));
     if (generation !== this.generation) return [];
     const held = new Set(this.state.turns.map((turn) => turn.id));
     this.apply(prependOlder(this.state, page));

@@ -3,6 +3,7 @@ import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { recoverTimelineRead } from './timeline-read-recovery'
 import type {
+  LeanPage,
   RecordCursor,
   SettlementResponse,
   SessionpageSessionRespondRequest,
@@ -21,6 +22,7 @@ import {
   withToolImage,
   type AgentWatchTimeline,
 } from './agent-watch-store'
+import { createHeldTurnReader, FOLDED, withWholeTurns } from './folded-pages'
 import { settlePendingSends, userMessageIds, type PendingSend } from './pending-sends'
 import { loadRetryDelay, LOAD_RETRY_DELAYS_MS } from './record-wait'
 import { forgetSessionStream, hydrateCachedTimeline, initialSessionStream, readCachedTimeline, sessionStreamKey, sessionStreams, updateSessionStream, writeCachedTimeline, type AgentWatchPhase, type SessionStreamState, type StreamWrite, type TimelineLink } from './timeline-cache'
@@ -28,9 +30,10 @@ import { useSelect } from '@/lib/selectStore'
 
 /** 读写**另一台机器**上一条会话所需的那几问(手机用 sessionpage-rpc.ts 那一组;单测换成假的)。 */
 export type SessionpageTimelineClient = {
-  fetchSnapshot(deviceId: string, sessionId: string, limit?: number): Promise<TimelineSnapshot>
+  /** `lean`: how much of each page to ask for (`folded-pages`); a whole page when absent. */
+  fetchSnapshot(deviceId: string, sessionId: string, limit?: number, lean?: LeanPage): Promise<TimelineSnapshot>
   fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor): Promise<TimelineAfterResult>
-  fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number): Promise<TimelineOlderResult>
+  fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, lean?: LeanPage): Promise<TimelineOlderResult>
   /** 一张工具交回来的图(时间线里只有它的字数,见 transport-trim)。 */
   fetchToolImage(deviceId: string, sessionId: string, itemId: string, index: number): Promise<ToolImage>
   subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null): Promise<unknown>
@@ -83,6 +86,8 @@ export type AgentWatchSession = {
   loadOlder: () => Promise<void>
   /** 去机器上取一张工具图、写回那条条目(取不到原样抛出:图格画成取不到)。 */
   loadToolImage: (itemId: string, index: number) => Promise<void>
+  /** A row of a folded page came on screen from behind a fold: read its turn whole (`folded-pages`). */
+  fillHeld: (itemId: string) => void
   send: (text: string) => Promise<void>
   /** 已按发送、记录里还没回来的那几句(见 pending-sends.ts),按发送先后。回显到了就不在这里了。 */
   pendingSends: readonly PendingSend[]
@@ -143,7 +148,10 @@ export function useTimelineSession(
    * `id` 是建会话请求里给它铸的那个(宿主以它收下首句):乐观那一行、待发行、原生消息是同一个身份(#2296)。
    */
   firstPrompt?: FirstPrompt,
+  /** A conversation view reading another machine: ask for pages folded and read a held turn whole on `fillHeld` (`folded-pages`). */
+  folded = false,
 ): AgentWatchSession {
+  const lean = folded ? FOLDED : undefined
   /*
    * 会话流 store / 内存里有上次看到的那一份就拿它当**初值**:第一帧就是完整的时间线。❌ 先画一帧空线程、再在 follow 里换上 ——
    * 那一帧(真机几百 ms)里写的是「Nothing in this task yet」,随后整段历史从透明淡入、再跳到底:
@@ -176,13 +184,13 @@ export function useTimelineSession(
   useEffect(() => () => { olderGeneration.current++ }, [client, deviceId, sessionId, enabled])
 
   const reload = useCallback(() => {
-    if (deviceId && sessionId) restartSessionFollow({ client, deviceId, sessionId, enabled })
-  }, [client, deviceId, sessionId, enabled])
+    if (deviceId && sessionId) restartSessionFollow({ client, deviceId, sessionId, enabled, lean })
+  }, [client, deviceId, sessionId, enabled, lean])
 
   useEffect(() => {
     if (!deviceId || !sessionId) return
-    return attachSessionFollow({ client, deviceId, sessionId, enabled }, () => { olderGeneration.current++ })
-  }, [client, deviceId, sessionId, enabled])
+    return attachSessionFollow({ client, deviceId, sessionId, enabled, lean }, () => { olderGeneration.current++ })
+  }, [client, deviceId, sessionId, enabled, lean])
 
   // 世代变了 ⇒ 手里那份接不上,重新走一遍「快照 + 订阅」。
   useEffect(() => {
@@ -217,7 +225,7 @@ export function useTimelineSession(
     if (olderRequest.current?.identity === identity && olderRequest.current.generation === generation) return olderRequest.current.promise
     const reading = (async () => {
       try {
-        const older = await client.fetchOlder(deviceId, sessionId, oldest.id)
+        const older = await client.fetchOlder(deviceId, sessionId, oldest.id, undefined, lean)
         if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return
         setTimeline(current => {
           if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return current
@@ -232,7 +240,7 @@ export function useTimelineSession(
     })()
     olderRequest.current = { identity, generation, promise: reading }
     try { await reading } finally { if (olderRequest.current?.promise === reading) olderRequest.current = null }
-  }, [client, deviceId, sessionId, enabled, setTimeline])
+  }, [client, deviceId, sessionId, enabled, lean, setTimeline])
 
   /**
    * 一张工具图去机器上取一次:取到的写回条目,和时间线一起存在手机上(timeline-cache),重开不重取。
@@ -345,14 +353,25 @@ export function useTimelineSession(
   }, [client, responderId, deviceId, sessionId, setTimeline])
 
   const dismissActionError = useCallback(() => setActionError(null), [])
+  // A row of a turn this page was sent folded came on screen from behind a fold: read that turn whole (`folded-pages`).
+  const fillHeld = useMemo(() => !deviceId || !sessionId ? () => undefined : createHeldTurnReader({
+    pages: {
+      snapshot: (limit) => client.fetchSnapshot(deviceId, sessionId, limit),
+      older: (beforeTurnId, limit) => client.fetchOlder(deviceId, sessionId, beforeTurnId, limit),
+    },
+    turns: () => timelineRef.current.turns,
+    land: (whole) => setTimeline((current) => ({ ...current, turns: withWholeTurns(current.turns, whole) })),
+    failed: (err) => setActionError(describe(err)),
+  }), [client, deviceId, sessionId, setTimeline])
   return {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
-    reload, loadOlder, loadToolImage, send, pendingSends, respond, sending, respondingItemId, cancel, cancelling,
+    reload, loadOlder, loadToolImage, fillHeld, send, pendingSends, respond, sending, respondingItemId, cancel, cancelling,
     link, errorCode,
   }
 }
 
-type FollowParams = { client: SessionpageTimelineClient; deviceId: string; sessionId: string; enabled: boolean }
+/** `lean`: the first page following a session sets it for the stream; folded pages keep what reply progress and question cards read. */
+type FollowParams = { client: SessionpageTimelineClient; deviceId: string; sessionId: string; enabled: boolean; lean?: LeanPage }
 /** One follow of a session's host stream, shared by every page showing it (ref-counted); writes `sessionStreams`. */
 type SessionFollow = {
   params: FollowParams
@@ -414,7 +433,7 @@ function restartSessionFollow(params: FollowParams): void {
 }
 
 function runSessionFollow(follow: SessionFollow): () => void {
-  const { client, deviceId, sessionId, enabled } = follow.params
+  const { client, deviceId, sessionId, enabled, lean } = follow.params
   const { write, setTimeline } = streamWriters({ deviceId, sessionId })
   const applyResult = (result: TimelineAfterResult) => {
     if (!result.ok) follow.resetOlder()
@@ -546,7 +565,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
         catchUp()
         return
       }
-      const snapshot = await client.fetchSnapshot(deviceId, sessionId)
+      const snapshot = await client.fetchSnapshot(deviceId, sessionId, undefined, lean)
       if (cancelled) return
       follow.resetOlder()
       follow.cursor = snapshot.cursor

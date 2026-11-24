@@ -1238,9 +1238,15 @@ export type SessionpageSessionsListResult = {
  * `trim`:要「过长的工具内容裁掉」的那一份(`transport-trim`)。手机给;桌面不给,一个字都不裁 ——
  * 「桌面看完整」靠的就是这一格只由调用方决定。
  */
-export type SessionpageSessionSnapshotRequest = { conversationId: string; limit?: number; trim?: boolean };
+/** How much of a page a reader asks for: whole, `lean` (no unshown tool output), or `'folded'` (transport-trim `@@@folded-form`). */
+export type LeanPage = boolean | 'folded';
+/**
+ * `lean`: the reader asks for pages in their folded form (transport-trim `@@@folded-form`; held items marked, read back
+ * whole with `held-turn`). Only with `trim`. A host that does not know it sends pages whole.
+ */
+export type SessionpageSessionSnapshotRequest = { conversationId: string; limit?: number; trim?: boolean; lean?: LeanPage };
 export type SessionpageSessionAfterRequest = { conversationId: string; cursor: RecordCursor; trim?: boolean; terminalPatch?: boolean };
-export type SessionpageSessionOlderRequest = { conversationId: string; beforeTurnId: string; limit?: number; trim?: boolean };
+export type SessionpageSessionOlderRequest = { conversationId: string; beforeTurnId: string; limit?: number; trim?: boolean; lean?: LeanPage };
 /**
  * 手机点开一张附件卡(#7193):agent 用 `session_open_in_tab` 打开给人看的那份文件,从那台机器上按块现读
  * (不经云,与时间线同一条线)。只读这条会话**真的打开过**的文件 —— 机器拿它自己的记录核对。

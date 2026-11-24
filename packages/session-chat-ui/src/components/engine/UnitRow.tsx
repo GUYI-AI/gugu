@@ -160,6 +160,13 @@ export type UnitRowProps = {
 
 // ── UnitRow ───────────────────────────────────────────────────────────────────
 
+/** Whether this row is on screen from behind a fold, or is drawn from an item its page held back (`onHeldShown`). */
+function shownFromFold(unit: RenderUnit, viewState: ViewState): boolean {
+  // A row of an exchange is mounted while the exchange is folded, at no height: it counts once the exchange is open.
+  if (unit.activityFold && unit.kind !== 'agent-activity') return viewState.isCollapsed(unit.activityFold);
+  return unit.kind === 'conversation-process-steps' || (unit.data as { held?: true } | null | undefined)?.held === true;
+}
+
 export function UnitRow(props: UnitRowProps) {
   const shown = useViewShown();
   const debug = useDebug();
@@ -361,6 +368,11 @@ export function UnitRow(props: UnitRowProps) {
   // one-frame pop where the DOM and displayViewState swap content in the same
   // frame that the compositor lays out the last animation position.
   const [clipReleased, setClipReleased] = createSignal(!untrack(animating));
+
+  createEffect(() => {
+    const unit = renderUnit();
+    if (unit && shownFromFold(unit, props.viewState)) commands().onHeldShown?.(unit.itemId);
+  });
 
   createEffect(() => {
     if (animating()) {

@@ -1030,6 +1030,11 @@ export class AcpChatStore {
     });
   }
 
+  /** A row came on screen from behind a fold of a turn another machine sent folded: read that turn whole (`folded-pages`). */
+  fillHeldTurn(itemId: string): void {
+    this._history?.fillHeld(itemId);
+  }
+
   /** Only unresolved legacy receipts read older pages. The ordinary first-page path never waits for this work. */
   private async _resolveIncomingHistory(inputs: readonly PendingPrompt[]): Promise<void> {
     this._incomingHistoryReading = true;

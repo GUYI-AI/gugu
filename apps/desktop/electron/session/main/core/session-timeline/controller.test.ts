@@ -113,6 +113,18 @@ describe('会话时间线路由(本机、别的电脑、手机同一张)', () =>
     expect(outputOf(pushed('sub-f'))).toHaveLength(20_000);
   });
 
+  it('lean: a reader that asks for folded pages gets them folded; one that does not ask gets them as before', async () => {
+    const page = async (input: object) => ((await call(1_000_001, 'sessionSnapshot', { conversationId: 'c1', trim: true, ...input })) as { value: { turns: Array<{ items: Array<Record<string, unknown>> }> } }).value.turns[0]!.items[0]!;
+    const folded = await page({ lean: 'folded' });
+    expect(folded).toMatchObject({ id: 'a', held: true });
+    expect(folded.outputText).toBeUndefined();
+    const whole = await page({});
+    expect(whole.held).toBeUndefined();
+    expect(whole.outputText).toHaveLength(8_192);
+    // Without `trim` nothing is trimmed, folded or not: the local page reads whole.
+    expect(outputOf(((await call(1, 'sessionSnapshot', { conversationId: 'c1', lean: 'folded' })) as { value: unknown }).value)).toHaveLength(20_000);
+  });
+
   it('订阅归开它的那条线:线断了一并拆(时间线与会话列表),别的线开的不动;退订过的不再拆第二次', async () => {
     await call(3_000_001, 'sessionSubscribe', { conversationId: 'c1', subscriptionId: 'phone-1', cursor: null });
     await call(3_000_001, 'sessionSubscribe', { conversationId: 'c2', subscriptionId: 'phone-2', cursor: null });

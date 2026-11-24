@@ -27,6 +27,7 @@ import {
   sessionpageSessionTimelineChannel,
 } from '@/session/shared/core/session-timeline/sessionTimelineEvents'
 import type {
+  LeanPage,
   SessionpageOpenedFileChunk,
   SessionpageOpenedFileReadRequest,
   SessionpageSessionRespondRequest,
@@ -194,8 +195,8 @@ async function value<T>(pending: Promise<{ ok: true; value: T } | { ok: false; e
   return result.value
 }
 
-export function fetchSnapshot(deviceId: string, sessionId: string, limit?: number): Promise<TimelineSnapshot> {
-  return value(rpc(deviceId).sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit, trim: true }))
+export function fetchSnapshot(deviceId: string, sessionId: string, limit?: number, lean?: LeanPage): Promise<TimelineSnapshot> {
+  return value(rpc(deviceId).sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit, trim: true, lean }))
 }
 
 /** 补齐:一问一答,不等窗口(见 `once`)。 */
@@ -203,8 +204,8 @@ export function fetchAfter(deviceId: string, sessionId: string, cursor: RecordCu
   return value(once(deviceId).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim: true, terminalPatch: true }))
 }
 
-export function fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number): Promise<TimelineOlderResult> {
-  return value(rpc(deviceId).sessionTimeline.sessionOlder({ conversationId: sessionId, beforeTurnId, limit, trim: true }))
+export function fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, lean?: LeanPage): Promise<TimelineOlderResult> {
+  return value(rpc(deviceId).sessionTimeline.sessionOlder({ conversationId: sessionId, beforeTurnId, limit, trim: true, lean }))
 }
 
 /**

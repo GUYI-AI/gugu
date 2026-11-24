@@ -12,6 +12,7 @@ import type {
   TimelineOlderResult,
   TimelineSnapshot,
   TurnPatch,
+  LeanPage,
 } from './contract';
 
 /**
@@ -106,7 +107,8 @@ function stepLineOnly(node: ToolNode): boolean {
  *   - an agent's thinking: its text;
  *   - a delivery whose every sender is an agent (inside an exchange, "N messages with X"): the body past its
  *     opening and the contexts beside it. The exchange's line reads who and how many; a reply that quotes the
- *     delivery shows the opening. An agent is a sender some envelope of the page says is one (`from_type`);
+ *     delivery shows the opening. An agent is a sender some envelope of the page says is one (`from_type`), or a
+ *     session (`session:` address: only an agent session sends one);
  *   - what the agent sent to such agents and nobody else (the same exchange): the text past its opening.
  * Each is marked `held`. The reader reads the turn again, whole, when a row drawn from it comes on screen from
  * behind a fold, or a held item is itself on screen (`turnHeld`) — which is also what makes a wrong guess here
@@ -118,7 +120,7 @@ function stepLineOnly(node: ToolNode): boolean {
  * a delivery whose sender it does not prove one.
  * Pages the reader went back for only: the newest page is read again whenever the conversation moves.
  */
-export type LeanPage = boolean | 'folded';
+export type { LeanPage } from './contract';
 export const HELD_BODY_CHARS = 120;
 /** What the roster does not read of a sub-agent's own call. */
 const ROSTER_UNREAD_FIELDS = ['rawInput', 'rawOutput', 'outputText', 'content', 'contentBlocks', 'locations', 'terminalId', '_meta'] as const;
@@ -128,6 +130,9 @@ const PLAIN_SEND = /(?:^|__)(?:message_send|session_message)$/;
 
 /** What a folded page knows of itself: who its envelopes prove an agent, which sub-agents it shows ended, and the turn at hand. */
 type PageFacts = { agents: ReadonlySet<string>; ended: ReadonlySet<string>; turn?: TranscriptTurn };
+
+/** An agent as the view reads one (`chatActor`): one the page's envelopes prove, or a session address, which is one itself. */
+const provenAgent = (facts: PageFacts, address: string) => facts.agents.has(address) || /^session:./.test(address);
 
 function pageFacts(turns: readonly TranscriptTurn[]): PageFacts {
   const agents = new Set<string>(), ended = new Set<string>();
@@ -162,7 +167,7 @@ function stubOf(node: ToolNode, limit: number, row: boolean, facts?: PageFacts):
 function foldedSend(node: ToolNode, facts: PageFacts): ToolNode | null {
   if (node.kind !== 'mcp-tool-call' || node.status !== 'done' || node.parentToolCallId || !isGuguServer(node.server) || !PLAIN_SEND.test(node.tool)) return null;
   const to = sendAddressesOf(node, facts.turn);
-  if (!to?.confirmed || !to.recipients?.length || !to.recipients.every(address => facts.agents.has(address))) return null;
+  if (!to?.confirmed || !to.recipients?.length || !to.recipients.every(address => provenAgent(facts, address))) return null;
   try {
     const args = JSON.parse(node.rawInput ?? '') as Record<string, unknown> | null;
     if (!args || typeof args.text !== 'string' || args.text.length <= HELD_BODY_CHARS) return null;
@@ -183,7 +188,7 @@ function foldedItem(item: TranscriptItem, facts: PageFacts): TranscriptItem {
   // The view folds a delivery into an exchange only when every sender is an agent: the envelope says so, or, for an
   // envelope from before it said, the reader's directory does (`incomingActivity`) — here, another envelope of the page.
   if (!reading?.segments.every(part => /^(?:user|session):./.test(part.facts?.fromId ?? '')
-    && (part.facts!.fromType ? part.facts!.fromType === 'agent' : facts.agents.has(part.facts!.fromId!)))) return item;
+    && (part.facts!.fromType ? part.facts!.fromType === 'agent' : provenAgent(facts, part.facts!.fromId!)))) return item;
   const folded = foldDeliveryEnvelope(item.text, HELD_BODY_CHARS);
   return folded !== null && folded.length < item.text.length ? { ...item, text: folded, held: true } : item;
 }
@@ -508,9 +513,10 @@ export function trimSnapshotForTransport(
   snapshot: TimelineSnapshot,
   limit = TRANSPORT_TEXT_LIMIT,
   budget = TRANSPORT_PAYLOAD_BUDGET,
+  lean: LeanPage = false,
 ): TimelineSnapshot {
   const terminals = trimTerminals(snapshot.terminals, limit);
-  const page = trimTurnPageForTransport(snapshot, limit, budget);
+  const page = trimTurnPageForTransport(snapshot, limit, budget, lean);
   return terminals === snapshot.terminals ? page : { ...page, ...(terminals !== undefined ? { terminals } : {}) };
 }
 
@@ -527,8 +533,9 @@ export function trimOlderForTransport(
   older: TimelineOlderResult,
   limit = TRANSPORT_TEXT_LIMIT,
   budget = REMOTE_OLDER_PAGE_BUDGET,
+  lean: LeanPage = false,
 ): TimelineOlderResult {
-  return trimTurnPageForTransport(older, limit, budget);
+  return trimTurnPageForTransport(older, limit, budget, lean);
 }
 
 export function trimAfterResultForTransport(

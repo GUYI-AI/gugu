@@ -2073,6 +2073,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const transcriptCommands = useMemo<ChatCommands>(
     () => ({
       ...outputMenu.commands,
+      onHeldShown: (itemId) => store?.fillHeldTurn(itemId),
       onConversationReply: sourceMessage.reveal,
       onMessageTextMount: quotes.onMessageTextMount,
       flashMessageId: sourceMessage.flashMessageId,
