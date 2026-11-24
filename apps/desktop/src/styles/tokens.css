@@ -146,10 +146,17 @@
 :root {
   --titlebar-traffic-lights-width: 0px;
   --sidebar-rail-width: 60px;
+  /* The sidebar's head band (sidebar-one-list-chrome): only where the window's controls sit at the sidebar's top. Windows'
+     are in their own title bar row and Linux's at the content's right, so there it has nothing to hold. */
+  --sidebar-head-height: 0px;
+  /* 「»」 on the rail, lifted into the head band to sit under the traffic lights (design v16: 38 from the window's top). */
+  --sidebar-rail-fold-lift: 0px;
 }
 :root[data-platform='mac'] {
   --titlebar-traffic-lights-width: 60px;
   --sidebar-rail-width: 68px;
+  --sidebar-head-height: 40px;
+  --sidebar-rail-fold-lift: 7px;
 }
 
 /* 最左侧列表头位于 rail 右边，仅为超出 rail 的交通灯宽度预留空间。 */

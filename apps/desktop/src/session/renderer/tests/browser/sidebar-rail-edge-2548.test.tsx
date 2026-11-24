@@ -1,7 +1,7 @@
 // GUYI-AI/gugu#2548: the one-list sidebar collapsed to its rail (界面减法: the window's leftmost column, no icon rail beside
 // it): the rail is painted over its whole occupied width in one colour, the reading surface starts right at its edge, and
-// that edge is the same one the expanded sidebar has. Expanded, 「«」 ends the top band; on the rail 「»」 is the row under
-// it, on the avatars' axis, clear of the macOS traffic lights. The foot holds my avatar, 已安排, 会话历史 and the bell.
+// that edge is the same one the expanded sidebar has. 「«」 / 「»」 are in the row under the top band: expanded at the end of
+// the search field, on the rail on the avatars' axis, clear of the macOS traffic lights. The foot holds my avatar, 已安排, 会话历史 and the bell.
 import { afterEach, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
@@ -95,21 +95,23 @@ it('collapsed, the rail is one colour over its whole width and meets the surface
   expect(lights, 'the mac tokens must be present').toBeGreaterThan(0);
   const inset = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-surface-inset'));
   expect(inset, 'the desktop shell tokens must be present').toBeGreaterThan(0);
-  // Expanded: 「«」 ends the top band (one surface inset down, on one line with the card's own top band), 12 from the
-  // list's right edge; search is the row under it; 已安排 · 会话历史 sit 4 apart in the foot, under the list.
+  // Expanded: 「«」 ends the search row (no row of its own), 12 from the list's right edge, under the top band (one surface
+  // inset down, as tall as the traffic lights need); 已安排 · 会话历史 sit 4 apart in the foot, under the list.
   const panel = aside.getBoundingClientRect();
+  const middle = (element: HTMLElement) => element.getBoundingClientRect().top + element.getBoundingClientRect().height / 2;
   expect(fold.getBoundingClientRect().right).toBe(panel.right - 12);
-  expect(fold.getBoundingClientRect().top + fold.getBoundingClientRect().height / 2 - panel.top).toBeCloseTo(inset + 20);
-  expect(search.getBoundingClientRect().top).toBeGreaterThanOrEqual(fold.getBoundingClientRect().bottom);
+  expect(middle(fold)).toBeCloseTo(middle(search));
+  expect(fold.getBoundingClientRect().left).toBeGreaterThanOrEqual(search.getBoundingClientRect().right);
+  expect(search.getBoundingClientRect().top - panel.top).toBeGreaterThanOrEqual(inset + 40);
   expect(history.getBoundingClientRect().left - scheduled.getBoundingClientRect().right).toBe(4);
   const foot = document.querySelector<HTMLElement>('[data-sidebar-foot]')!;
   expect(foot.contains(history)).toBe(true);
   expect(document.querySelector('[data-region="sidebar-scroll"]')!.getBoundingClientRect().bottom).toBeLessThanOrEqual(foot.getBoundingClientRect().top);
 
   fold.click();
-  // The width lands in the frame loop; 「»」 moves into the rail row with the rows' re-render after it (useLeftRailLayout),
-  // so the wait is for that commit, ❌ the width alone (a slow frame left the faded 「«」 in the head: 41, not 34).
-  await expect.poll(() => document.querySelector('[data-sidebar-rail-row] [data-testid="sidebar-fold"]'), { timeout: 3000 }).not.toBeNull();
+  // The width lands in the frame loop; the row takes the rail's layout (「»」 alone, no search) with the rows' re-render after
+  // it (useLeftRailLayout), so the wait is for that commit, ❌ the width alone (a slow frame left the faded 「«」 beside search).
+  await expect.poll(() => document.querySelector('[data-testid="sidebar-search-trigger"]'), { timeout: 3000 }).toBeNull();
   expect(aside.getBoundingClientRect().width).toBe(68);
   // The rail: 「»」 under the traffic lights, on the avatars' axis (x = 34); no search, 已安排 or 会话历史.
   const railFold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;

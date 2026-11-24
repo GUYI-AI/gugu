@@ -23,7 +23,7 @@ import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
 import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
 import { RailRowHint } from './rail-row-hint';
-import { SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop, SidebarRailRow } from './sidebar-one-list-chrome';
+import { followBelowRailRow, followListOffset, SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop } from './sidebar-one-list-chrome';
 import { UnfinishedAgentCreates } from './unfinished-agent-creates';
 
 // #2548 the desktop left sidebar, one list (界面减法: the zero rail, the window's leftmost column): the head (「«」), the
@@ -70,7 +70,8 @@ function RailHint({ list }: { list: React.RefObject<HTMLElement | null> }) {
 
 export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const { navigate } = useNavigate();
-  const { currentView } = useWorkspaceSlots();
+  // The page laid out, ❌ a modal over it (@@@page-modal): the market opened over a group keeps the group's row lit.
+  const { pageView: currentView } = useWorkspaceSlots();
   const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
   const notificationsOpen = useSidebarNotificationsOpen();
   const { translate } = useSessionMessages();
@@ -120,6 +121,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   // starts (or only on release, for a drag), the progress is what is on screen.
   const listRef = useSidebarProgressFollow<HTMLDivElement>(followRail);
   const scrollRef = useSidebarProgressFollow<HTMLDivElement>(followNamesMask);
+  // The rows move with the fold, ❌ jump where the layout flips (followBelowRailRow, followListOffset).
+  const belowRailRowRef = useSidebarProgressFollow<HTMLDivElement>(followBelowRailRow);
+  const listOffsetRef = useSidebarProgressFollow<HTMLDivElement>(followListOffset);
 
   // 创建智能体 (what 新建任务 did) always lands on the dedicated compose view. Routing to 'project' instead made the
   // button a no-op whenever the user was already sitting on that project's home — which is the default landing view.
@@ -192,8 +196,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       {/* The one-time bubble (C9) on the head comes up when the inner sidebar appears: a group, a project or the sample. */}
       <RailHint list={listRef} />
       <SidebarOneListHead innerShownFor={innerSidebarShownFor.get()} />
-      <SidebarRailRow />
-      <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
+      <SidebarContainer ref={belowRailRowRef} className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
           <SidebarOneListTop collapsed={railed} onCreateAgent={handleNewSession} />
           <UnfinishedAgentCreates collapsed={railed} />
@@ -207,7 +210,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
             // #2548 rows scrolling down fade out over the last 24px above the window's bottom edge instead of being cut off.
             className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-[14px] mask-b-from-[calc(100%-1.5rem)]"
           >
-            <div>
+            <div ref={listOffsetRef}>
               <SidebarOneList />
               <SidebarOneListEmpty />
             </div>
