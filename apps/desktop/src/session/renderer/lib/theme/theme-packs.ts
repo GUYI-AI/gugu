@@ -55,7 +55,8 @@ export type ThemePack = {
   source: ThemePackSource;
 };
 
-export type PaletteRole = 'fg' | 'mutedFg' | 'faintFg' | 'live' | 'dangerFg' | 'warnFg' | 'okFg';
+export type PaletteRole = 'fg' | 'mutedFg' | 'groundMutedFg' | 'faintFg' | 'live' | 'dangerFg' | 'warnFg' | 'okFg';
+export type PaletteSurface = 'page' | 'bg' | 'card' | 'muted' | 'ground' | 'groundSelected' | 'topicMark';
 
 export type ResolvedPalette = {
   page: string;
@@ -71,6 +72,14 @@ export type ResolvedPalette = {
   warn: string;
   warnFg: string;
   okFg: string;
+  /** 窗口底(rail、一级侧栏、卡片之间的缝)从左到右的色标;深色只有一个,= page。 */
+  ground: string[];
+  /** 直接写在窗口底上的次级字(侧栏的预览、计数、分组头)。 */
+  groundMutedFg: string;
+  capsule: string;
+  capsuleHover: string;
+  topicMark: string;
+  topicMarkFg: string;
   ansi: Partial<Record<AnsiName, string>>;
 };
 
@@ -83,14 +92,17 @@ export function packModes(pack: Pick<ThemePack, 'modes'>): ThemeMode[] {
  * 正文 6(长时间读的字,比 AA 留余量);次级字 / 链接(--live 兼做链接色)/ 危险字 / 警告字 4.5(正文 AA);
  * 图标 / 装饰字:3(WCAG 1.4.11,和默认主题 theme-contrast-floors.test.tsx 同一条)。
  */
-export const CONTRAST_FLOORS: Record<PaletteRole, { min: number; on: ReadonlyArray<'page' | 'bg' | 'card' | 'muted'> }> = {
-  fg: { min: 6, on: ['page', 'bg', 'card', 'muted'] },
+export const CONTRAST_FLOORS: Record<PaletteRole, { min: number; on: ReadonlyArray<PaletteSurface> }> = {
+  // ground = 窗口底最深的那个色标(胶囊也是这个色):侧栏的名字、状态、链接都直接写在它上面。
+  fg: { min: 6, on: ['page', 'bg', 'card', 'muted', 'ground'] },
   mutedFg: { min: 4.5, on: ['page', 'bg', 'card', 'muted'] },
-  faintFg: { min: 3, on: ['page', 'bg', 'card', 'muted'] },
-  live: { min: 4.5, on: ['page', 'bg', 'card', 'muted'] },
-  dangerFg: { min: 4.5, on: ['page', 'bg', 'card', 'muted'] },
-  warnFg: { min: 4.5, on: ['page', 'bg', 'card', 'muted'] },
-  okFg: { min: 4.5, on: ['page', 'bg', 'card', 'muted'] },
+  // 侧栏里的次级字另有一档(tokens.css 的 --shell-muted-fg),选中行(7.5% 正文叠在最深色标上)上也要过。
+  groundMutedFg: { min: 4.5, on: ['ground', 'groundSelected', 'topicMark'] },
+  faintFg: { min: 3, on: ['page', 'bg', 'card', 'muted', 'ground'] },
+  live: { min: 4.5, on: ['page', 'bg', 'card', 'muted', 'ground'] },
+  dangerFg: { min: 4.5, on: ['page', 'bg', 'card', 'muted', 'ground'] },
+  warnFg: { min: 4.5, on: ['page', 'bg', 'card', 'muted', 'ground'] },
+  okFg: { min: 4.5, on: ['page', 'bg', 'card', 'muted', 'ground'] },
 };
 
 /** 上游没给时用 tokens.css 的同名默认值(--live-dark / --live-light / --danger / --warn)。 */
@@ -148,6 +160,14 @@ function tameChroma(value: string, mode: ThemeMode): string {
   return toHex(lch);
 }
 
+/**
+ * @@@theme-ground — 界面减法(#3685)起,浅色窗口是一层底上浮着几张卡(--bg):咕咕默认是一条暖色渐变,最深的色标比 bg 低
+ * 0.071 OKLab 亮度,30% 处走到 bg 的 23%,最右走到 48%。主题照这个形状,底取它自己的「低一档」(侧栏色,没有就 bg),
+ * 色相是主题的;只把亮度压到至少这么深,❌ 卡片和底分不开(GitHub 亮的侧栏只比内容低 0.02)。胶囊是最深那个色标,悬停再深一档;
+ * 话题图标的圆底在底和 bg 之间。深色窗口的底就是 page(tokens.css),这些由种子在那边自己推,主题不写。
+ */
+const GROUND = { depth: 0.071, stops: [0, 0.23, 0.48], positions: ['0%', '30%', '100%'], capsuleHover: -0.024, topicMark: 0.26 } as const;
+
 function raiseContrast(color: string, surfaces: string[], min: number, mode: ThemeMode): string {
   let next = color;
   const worst = () => Math.min(...surfaces.map((s) => contrastRatio(next, s)));
@@ -180,7 +200,13 @@ export function resolvePalette(raw: RawPalette, mode: ThemeMode): ResolvedPalett
     && Math.min(...[card, bg].map((s) => (mode === 'dark' ? lighterBy(value, s) : lighterBy(s, value)))) >= 0.025;
   const rawMuted = raw.muted && surface(raw.muted);
   const muted = stepped(rawMuted) ? rawMuted! : stepped(layer) ? layer! : tameChroma(mixOklab(card, fg, mode === 'dark' ? 0.07 : 0.06), mode);
-  const surfaces = { page, bg, card, muted };
+  const groundBase = [rawPage, layer].find(belowBg) ?? bg;
+  const g0 = mode === 'light' ? shiftLightness(groundBase, Math.min(0, lightness(bg) - GROUND.depth - lightness(groundBase))) : page;
+  const ground = mode === 'light' ? GROUND.stops.map((amount) => mixOklab(g0, bg, amount)) : [page];
+  const topicMark = mode === 'light' ? mixOklab(g0, bg, GROUND.topicMark) : muted;
+  const surfaces: Record<PaletteSurface, string> = {
+    page, bg, card, muted, ground: g0, groundSelected: g0, topicMark,
+  };
   const guard = (role: PaletteRole, color: string): string => {
     const { min, on } = CONTRAST_FLOORS[role];
     return raiseContrast(color, on.map((k) => surfaces[k]), min, mode);
@@ -188,15 +214,17 @@ export function resolvePalette(raw: RawPalette, mode: ThemeMode): ResolvedPalett
   const danger = raw.danger ?? FALLBACK.danger;
   const warn = raw.warn ?? FALLBACK.warn;
   const resolvedFg = guard('fg', fg);
-  // 次级字要和正文分得开:上游给成同一个色(Gruvbox 的 descriptionForeground = foreground)时层级就没了,改由 fg/bg 推。
-  const upstreamMuted = raw.mutedFg && Math.abs(lightness(raw.mutedFg) - lightness(fg)) >= MIN_TEXT_STEP ? raw.mutedFg : undefined;
+  // 选中行叠的是最终的正文色。
+  surfaces.groundSelected = mixOklab(g0, resolvedFg, 0.075);
+  const mutedFg = guard('mutedFg', upstreamMutedOf(raw, fg) ?? mixOklab(fg, bg, 0.35));
+  const groundMutedFg = guard('groundMutedFg', mutedFg);
   return {
     page,
     bg,
     card,
     fg: resolvedFg,
     muted,
-    mutedFg: guard('mutedFg', upstreamMuted ?? mixOklab(fg, bg, 0.35)),
+    mutedFg,
     faintFg: guard('faintFg', raw.faintFg ?? mixOklab(fg, bg, 0.55)),
     live: guard('live', raw.live ?? FALLBACK.live[mode]),
     danger,
@@ -205,8 +233,25 @@ export function resolvePalette(raw: RawPalette, mode: ThemeMode): ResolvedPalett
     warnFg: guard('warnFg', warn),
     // 成功字:主题的终端绿(内置和 VS Code 导入都有),没有就是 tokens.css 的 --ok。
     okFg: guard('okFg', raw.ansi?.green ?? FALLBACK.ok),
+    ground,
+    groundMutedFg,
+    capsule: g0,
+    capsuleHover: shiftLightness(g0, GROUND.capsuleHover),
+    topicMark,
+    topicMarkFg: groundMutedFg,
     ansi: raw.ansi ?? {},
   };
+}
+
+/** 次级字要和正文分得开:上游给成同一个色(Gruvbox 的 descriptionForeground = foreground)时层级就没了,改由 fg/bg 推。 */
+function upstreamMutedOf(raw: RawPalette, fg: string): string | undefined {
+  return raw.mutedFg && Math.abs(lightness(raw.mutedFg) - lightness(fg)) >= MIN_TEXT_STEP ? raw.mutedFg : undefined;
+}
+
+/** 窗口底写成 CSS:一个色标是实色,多个是从左到右的渐变。 */
+export function groundCss(stops: string[]): string {
+  if (stops.length === 1) return stops[0];
+  return `linear-gradient(90deg, ${stops.map((c, i) => `${c} ${GROUND.positions[i]}`).join(', ')})`;
 }
 
 /**
@@ -215,10 +260,23 @@ export function resolvePalette(raw: RawPalette, mode: ThemeMode): ResolvedPalett
  */
 export function paletteIsReadable(raw: RawPalette, mode: ThemeMode): boolean {
   const p = resolvePalette(raw, mode);
-  const colorOf: Record<PaletteRole, string> = { fg: p.fg, mutedFg: p.mutedFg, faintFg: p.faintFg, live: p.live, dangerFg: p.dangerFg, warnFg: p.warnFg, okFg: p.okFg };
-  return (Object.keys(CONTRAST_FLOORS) as PaletteRole[]).every((role) => {
+  return contrastFailures(p).length === 0;
+}
+
+/** 解析好的配色上每个角色 × 它落在的每种底色的对比度,低于下限的列出来(兜底之后应当一条都没有)。 */
+export function contrastFailures(p: ResolvedPalette): string[] {
+  const colorOf: Record<PaletteRole, string> = {
+    fg: p.fg, mutedFg: p.mutedFg, groundMutedFg: p.groundMutedFg, faintFg: p.faintFg, live: p.live, dangerFg: p.dangerFg, warnFg: p.warnFg, okFg: p.okFg,
+  };
+  const surfaceOf: Record<PaletteSurface, string> = {
+    page: p.page, bg: p.bg, card: p.card, muted: p.muted, ground: p.ground[0], groundSelected: mixOklab(p.ground[0], p.fg, 0.075), topicMark: p.topicMark,
+  };
+  return (Object.keys(CONTRAST_FLOORS) as PaletteRole[]).flatMap((role) => {
     const { min, on } = CONTRAST_FLOORS[role];
-    return on.every((surface) => contrastRatio(colorOf[role], p[surface]) >= min);
+    return on.flatMap((surface) => {
+      const ratio = contrastRatio(colorOf[role], surfaceOf[surface]);
+      return ratio < min ? [`${role} on ${surface}: ${ratio.toFixed(2)} < ${min}`] : [];
+    });
   });
 }
 
@@ -232,6 +290,13 @@ export function paletteDeclarations(p: ResolvedPalette, mode: ThemeMode): string
     d(mode === 'dark' ? 'live-dark' : 'live-light', p.live),
     d('danger', p.danger), d('danger-fg', p.dangerFg), d('warn', p.warn), d('warn-fg', p.warnFg), d('ok-fg', p.okFg),
   ];
+  // 浅色的窗口底一族在 tokens.css 里是咕咕默认的暖色字面量,主题必须整族换掉;深色那边由种子推,不用写(@@@theme-ground)。
+  if (mode === 'light') {
+    lines.push(
+      d('ground', groundCss(p.ground)), d('shell-muted-fg', p.groundMutedFg),
+      d('capsule-bg', p.capsule), d('capsule-hover', p.capsuleHover), d('topic-mark-bg', p.topicMark), d('topic-mark-fg', p.topicMarkFg),
+    );
+  }
   for (const name of ANSI_NAMES) {
     const value = p.ansi[name];
     if (value) lines.push(d(`xterm-ansi-${name}`, value));
@@ -341,13 +406,13 @@ export const OBSIDIAN_VARIABLES = [
   '--interactive-accent', '--color-accent', '--text-error', '--color-red', '--color-orange', '--color-yellow',
 ] as const;
 
-export type ThemeSwatch = Pick<ResolvedPalette, 'page' | 'bg' | 'card' | 'fg' | 'mutedFg' | 'live'>;
+export type ThemeSwatch = Pick<ResolvedPalette, 'ground' | 'bg' | 'card' | 'fg' | 'mutedFg' | 'live'>;
 
 /**
  * 「咕咕默认」那张卡的预览色:tokens.css 里两套默认值的原样副本。❌ 读 var(--bg):主题生效时根上的变量已经是那一族的了,
  * 默认卡会画成当下的主题。themePacks.test.ts 逐字对齐 tokens.css,那边改了这里跟不上会红。
  */
 export const GUGU_DEFAULT_SWATCH: Record<ThemeMode, ThemeSwatch> = {
-  dark: { page: '#0a0a0a', bg: '#0f0f0f', card: '#191919', fg: '#fafafa', mutedFg: '#a1a1a1', live: 'oklch(0.714 0.143 255)' },
-  light: { page: '#f9f9f9', bg: '#ffffff', card: '#ffffff', fg: '#0a0a0a', mutedFg: '#68696b', live: 'oklch(0.623 0.188 260)' },
+  dark: { ground: ['#0a0a0a'], bg: '#0f0f0f', card: '#191919', fg: '#fafafa', mutedFg: '#a1a1a1', live: 'oklch(0.714 0.143 255)' },
+  light: { ground: ['#eee6dd', '#f1ece4', '#f6f2ec'], bg: '#ffffff', card: '#ffffff', fg: '#0a0a0a', mutedFg: '#68696b', live: 'oklch(0.623 0.188 260)' },
 };
