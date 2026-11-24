@@ -34,7 +34,7 @@ export function useAnnotateActions(item: ImageViewerItem, doc: AnnotateDocument,
   }
   const putInComposer = () => run(async () => {
     if (item.replace) {
-      item.replace(new File([await output()], filename, { type: 'image/png' }), annotateCaption(doc, ''))
+      await item.replace(new File([await output()], filename, { type: 'image/png' }), annotateCaption(doc, ''))
       onDone(); return
     }
     const source = await sourceOf()

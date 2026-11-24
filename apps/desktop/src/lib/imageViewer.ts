@@ -41,7 +41,7 @@ export interface ImageViewerItem {
   /** File previews keep their existing citation producer when opening the shared image viewer. */
   quote?: () => Promise<void> | void
   /** An unsent composer image: the editor's Done hands the edited copy back here, in its place. */
-  replace?: (file: File, caption: string) => void
+  replace?: (file: File, caption: string) => void | Promise<void>
 }
 
 /** 缩略图 <img> → 取它原图的办法(附件进群文件夹 ③:气泡用 CDN 缩略图,原图到看的时候才下)。 */
