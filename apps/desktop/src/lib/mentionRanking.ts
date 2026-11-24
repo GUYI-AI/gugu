@@ -12,16 +12,22 @@ interface MentionRankingContext {
   participantIds?: readonly string[]
   projectMemberIds?: readonly string[]
   replyToMessageId?: string
+  /** The agent order (compareByRecentActivity, useAgentActivityMs): what decides when no signal here does. */
+  activityMs?: (id: string) => number
   now: number
 }
 
 const DAY = 86_400_000
 
-/** Rank only the supplied addressable roster, using known local history, never fetching older messages. */
+/**
+ * Rank only the supplied addressable roster, using known local history, never fetching older messages. Where none of
+ * that tells two apart, the agent order decides (`activityMs`, compareByRecentActivity: last interaction, else when
+ * made); people and agents it does not know (0) keep the roster's order.
+ */
 export function rankMentionCandidates<T extends MentionCandidate>(
   candidates: readonly T[], query: string, context: MentionRankingContext,
 ): T[] {
-  const { chatId, currentUserId, participantIds, projectMemberIds, replyToMessageId, now } = context
+  const { chatId, currentUserId, participantIds, projectMemberIds, replyToMessageId, activityMs, now } = context
   const messages = context.messages.filter((message) => message.chat_id === chatId && message.seq >= 0
     && !message.local_send_state && !message.retracted_at && message.content_type !== 'system'
     && Number.isFinite(Date.parse(message.created_at)))
@@ -46,7 +52,7 @@ export function rankMentionCandidates<T extends MentionCandidate>(
   const decay = (at: number | undefined, halfLife: number) => at === undefined ? 0 : 2 ** (-Math.max(0, now - at) / halfLife)
   return candidates
     .map((candidate, index) => ({
-      candidate, index, match: mentionMatchScore(candidate, query),
+      candidate, index, match: mentionMatchScore(candidate, query), activity: activityMs?.(candidate.id) ?? 0,
       broadcast: candidate.type === 'all' ? 1 : 0,
       participant: participants.has(candidate.id) ? 1 : 0,
       replyTarget: candidate.id === replyTargetId ? 1 : 0,
@@ -56,6 +62,6 @@ export function rankMentionCandidates<T extends MentionCandidate>(
     }))
     .filter((row) => row.match > 0)
     .sort((a, b) => b.match - a.match || a.broadcast - b.broadcast || b.participant - a.participant
-      || b.replyTarget - a.replyTarget || b.relevance - a.relevance || a.index - b.index)
+      || b.replyTarget - a.replyTarget || b.relevance - a.relevance || b.activity - a.activity || a.index - b.index)
     .map((row) => row.candidate)
 }

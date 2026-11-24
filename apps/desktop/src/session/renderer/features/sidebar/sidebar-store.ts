@@ -21,6 +21,7 @@ import { sessionPresentation } from '@/lib/agent-wait/watch-status';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { accountProjectsStore, type AccountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { sidebarStateGroup, type SidebarStateGroup } from './session-groups';
+import { compareAgentEntries } from './chat-agents';
 
 /**
  * behavior session-page「键盘导航」: a station of the keyboard navigation — the New task entry, a project row (= that
@@ -232,7 +233,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     for (const root of forest) index(root);
     for (const [rowId, roots] of familiesByRoot(forest, (root) => home.get(root.id)!))
       for (const root of roots) place(root, rowId);
-    for (const list of entries.values()) list.sort((a, b) => b.time - a.time);
+    for (const list of entries.values()) list.sort(compareAgentEntries);
     return { entries, rowOfSession, nodeById };
   }
 
@@ -288,7 +289,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       const project = this.projectManager.projects.get(id);
       return project ? this.projectSessionEntries(project) : [];
     });
-    return entries.sort((a, b) => b.time - a.time);
+    return entries.sort(compareAgentEntries);
   }
 
   /** Conversation entries of a project's visible tasks, newest interaction first. */
@@ -323,7 +324,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
         });
       }
     }
-    entries.sort((a, b) => b.time - a.time);
+    entries.sort(compareAgentEntries);
     return entries;
   }
 
@@ -341,7 +342,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
       const entry = this.remoteEntry(machine, projectId, session.conversationId);
       if (entry) entries.push(entry);
     }
-    entries.sort((a, b) => b.time - a.time);
+    entries.sort(compareAgentEntries);
     return entries;
   }
 
@@ -442,7 +443,7 @@ export class SidebarStore implements Snapshottable<SidebarSnapshot> {
     return [...this.projectManager.projects.values()]
       .filter((project) => this.isTasksProject(project))
       .flatMap((project) => this.projectSessionEntries(project))
-      .sort((a, b) => b.time - a.time);
+      .sort(compareAgentEntries);
   }
 
   /**

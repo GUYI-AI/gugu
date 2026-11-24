@@ -12,7 +12,8 @@ import { QrImage } from '../QrImage'
 import { SharePosterDialog } from '../SharePosterDialog'
 import { useToast } from '../toastContext'
 import { Button } from '../ui/Button'
-import { buildUnifiedMembers, GROUP_FACES } from './groupMemberModels'
+import { GROUP_FACES } from './groupMemberModels'
+import { useUnifiedMembers } from './useUnifiedMembers'
 import { ProfileCardAction } from '../contacts/ProfileCardAction'
 
 /** Displayed size of a group's own invite QR code. */
@@ -78,6 +79,7 @@ function useGroupInviteShare({ inviteLink, groupName, snapshot }: GroupInviteSha
   const { toast } = useToast()
   const { identitiesById } = useChatStore('identitiesById')
   const [showPoster, setShowPoster] = useState(false)
+  const unifiedMembers = useUnifiedMembers(snapshot)
   // @@@445/#2470 海报 canvas 不走 React Avatar → 按同一口径预解析成员头像;小鸟的定格画好了会重渲染,这里跟着重读。
   useAgentLookPostersVersion()
   const copy = () => {
@@ -92,7 +94,7 @@ function useGroupInviteShare({ inviteLink, groupName, snapshot }: GroupInviteSha
       title={resolveOrLoud(groupName, 'group share poster title')}
       subtitle={t('group.settings.posterSubtitle', { count: totalMembers })}
       qrValue={inviteLink}
-      memberAvatarUrls={buildUnifiedMembers(snapshot).slice(0, GROUP_FACES).map((m) => {
+      memberAvatarUrls={unifiedMembers.slice(0, GROUP_FACES).map((m) => {
         const identity = identitiesById[m.id]
         return identity ? displayAvatarUrl(identity.avatar ?? null, m.id, `poster member "${identity.display_name || m.id}"`, identity.type) : null
       })}

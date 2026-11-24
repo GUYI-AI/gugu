@@ -2,6 +2,7 @@
 import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
 import { egress, EgressError, egressErrorText } from '@gugu/core/shared/egress'
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
+import { compareByName } from '@gugu/core/shared/ui/chatModels'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
@@ -1990,8 +1991,7 @@ async function handleConv(args, deps) {
     // 成员没有活动时间可排:按名字排,翻页才有确定的顺序。
     const items = members
       .map((m) => (m.type === 'agent' ? { ...m, ...status.readings.get(m.user_id) } : m))
-      .sort((a, b) => String(a.display_name ?? '').localeCompare(String(b.display_name ?? ''))
-        || String(a.user_id).localeCompare(String(b.user_id)))
+      .sort((a, b) => compareByName({ id: a.user_id, name: a.display_name }, { id: b.user_id, name: b.display_name }))
     return status.unavailable ? { items, status_unavailable: status.unavailable } : { items }
   }
   if (args.action === 'list') {
@@ -2310,8 +2310,7 @@ async function handleProfile(args, deps) {
         bio: user.bio ?? null,
         pinned: pinnedFriends.has(user.id),
       }))
-      .sort((left, right) => String(left.display_name).localeCompare(String(right.display_name))
-        || String(left.user_id).localeCompare(String(right.user_id)))
+      .sort((left, right) => compareByName({ id: left.user_id, name: left.display_name }, { id: right.user_id, name: right.display_name }))
     return humanFriends
   }
   if (args.action === 'whoami') {

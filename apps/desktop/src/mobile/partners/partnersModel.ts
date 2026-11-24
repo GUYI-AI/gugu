@@ -2,6 +2,7 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/contacts'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
 import { displayName, groupContacts } from '@/lib/contactsListSort'
+import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels'
 import { contactAgents, peopleContacts } from '@/components/contacts/contactSelectors'
 import { safePathSegment } from '@/session/shared/path-name'
 import type { AccountProject } from '@gugu/core/cloud/deviceProjects'
@@ -109,7 +110,8 @@ export function projectAgentTarget(agent: Pick<ProjectAgent, 'latest'>): Project
 
 /**
  * 项目通讯录「Agent」:我在这个项目里的 agent —— 项目群里我的 agent,加上这个项目的会话里有、群里还没有的。
- * 顺序固定(群里的先后,再是会话里多出来的),❌ 按状态排;副标题是它在这里最近那件事的标题,点它打开那条会话。
+ * 按智能体的那一种次序(compareByRecentActivity:它在这里最近那条会话的最后交互,没有就按它建的时刻),❌ 按状态排;
+ * 副标题是它在这里最近那件事的标题,点它打开那条会话。
  */
 export function projectAgents(
   group: Pick<ContactGroupChat, 'member_user_ids'> | null,
@@ -121,14 +123,15 @@ export function projectAgents(
     const agentId = row.session.agent?.userId
     if (!agentId) continue
     const seen = latest.get(agentId)
-    if (!seen || (row.session.lastInteractedAt ?? '') > (seen.session.lastInteractedAt ?? '')) latest.set(agentId, row)
+    if (!seen || activityMs(row.session.lastInteractedAt, null) > activityMs(seen.session.lastInteractedAt, null)) latest.set(agentId, row)
   }
   const ids = [...(group?.member_user_ids ?? []).filter((id) => myAgents.has(id))]
   for (const { session } of sessions) {
     const agentId = session.agent?.userId
     if (agentId && !ids.includes(agentId)) ids.push(agentId)
   }
-  return ids.map((id) => {
+  const stamp = (id: string) => ({ id, activityMs: activityMs(latest.get(id)?.session.lastInteractedAt, myAgents.get(id)?.created_at) })
+  return ids.sort((a, b) => compareByRecentActivity(stamp(a), stamp(b))).map((id) => {
     const row = latest.get(id) ?? null
     return { id, contact: myAgents.get(id) ?? null, work: row?.session.title ?? null, latest: row }
   })

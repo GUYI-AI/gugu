@@ -10,6 +10,7 @@ import { basenameFromAnyPath, shortHome } from '@shared/path-name';
 import { senderAvatarChanges, senderAvatarUrl } from '@renderer/lib/chat/sender-avatar';
 import { useSelect } from '@/lib/selectStore';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
+import { compareAgentEntries } from '@renderer/features/sidebar/chat-agents';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { Button } from '@renderer/lib/ui/button';
 import {
@@ -271,7 +272,7 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
   const runningIds = new Set(sessions.filter((entry) => entry.group === 'working').map((entry) => entry.sessionId));
   const running = runningIds.size;
   const agents = [...sessions]
-    .sort((x, y) => Number(runningIds.has(y.sessionId)) - Number(runningIds.has(x.sessionId)) || y.time - x.time)
+    .sort(compareAgentEntries)
     .map((entry) => {
       const agentId = sessionAgentBindings.bindingFor(entry.sessionId)?.agentUserId;
       const identity = agentId ? readIdentityDirectoryBridge()?.getSnapshot()?.[agentId] : undefined;
