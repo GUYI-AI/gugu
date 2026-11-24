@@ -23,8 +23,6 @@ import { extensionViewStore, residentPageKey, residentPlace } from './extension-
 import { confirmCloseOfUnsaved, reloadAppPage } from './app-page-unsaved';
 import { extensionSurfaceStore, extensionTabTitle, type ExtensionSharedPresentation } from './extension-surface-store';
 import { LOCAL_HOST, peekInstalledAppsTracked, useInstalledApps, type ExtensionTabContributionEntry } from './installed-extensions';
-import { useScreenBlock } from '@renderer/app/screen-block-context';
-import { placeOnScreen } from '@renderer/app/screen-layout-actions';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { followLink } from '@/lib/guguLinks';
 import { fileTabLabels } from '@renderer/features/tabs/file-tab-label';
@@ -221,24 +219,8 @@ export function createExtensionTabProvider(
       // The file this tab was opened for, when a claim opened it.
       const claimedFile =
         tab.resource instanceof ExtensionTabResource ? tab.resource.filePath : undefined;
-      const { blockId } = useScreenBlock();
       const kindCommands = useMemo(
         () => [
-          // 「单独一块」(spec session-page「一屏几块」):它自己占一块,贴在这一块右边;这条会话里就不留它了。
-          // 每个任务一份的不给:离开任务它就不是哪个任务的了。
-          ...(!claimedFile && !perSession && blockId
-            ? [
-                {
-                  id: `${kind}:own-block`,
-                  label: translateSessionMessage('extensions.ownBlock'),
-                  group: 'extension',
-                  run: () => {
-                    placeOnScreen({ kind: 'app', tabKind: kind }, blockId, 'right');
-                  },
-                },
-              ]
-            : []),
-
           // ⚠️ The escape hatch, and the reason a file claim is safe to honour at
           // all: without it, installing an extension could make a file type
           // unopenable — an ability no install may have. Host-provided and first,
@@ -265,7 +247,7 @@ export function createExtensionTabProvider(
             run: () => void followLink({ kind: 'app-detail', extensionId: parseExtensionTabKind(kind)!.extensionId, fromApp: true }),
           },
         ],
-        [blockId, claimedFile, perSession, place, sessionId, tab.tabId]
+        [claimedFile, place, sessionId, tab.tabId]
       );
       // 同一个 App 开着两个不同目录下的同名文件:与文件页签同一条规矩,补上区分它们的那截路径(file-tab-label.ts)。
       const claimedTabs = host.resolvedTabs.filter((t): t is ResolvedTab<ExtensionTabResource> => t.kind === kind && !!(t.resource as ExtensionTabResource).filePath);

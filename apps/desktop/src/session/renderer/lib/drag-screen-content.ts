@@ -51,8 +51,8 @@ export function setDraggedScreenContent(
 }
 
 /**
- * 聊天列表的一行拖起来(会话行、话题子行,#2548 内层侧栏的话题行也是这一条):落在一块的边上分出这个对话
- * (话题也是它自己那一块)。行不可拖(手机)就什么都不写。
+ * 内层侧栏的一行话题拖起来:落在一块的边上分出这个对话(话题也是它自己那一块)。左边那一列(会话列表)的行不拖。
+ * 行不可拖就什么都不写。
  */
 export function startChatDrag(event: React.DragEvent<HTMLElement>, chat: ChatItem, title: string): void {
   if (!event.currentTarget.draggable) return;

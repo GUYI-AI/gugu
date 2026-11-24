@@ -116,6 +116,7 @@ export class ScreenLayoutStore {
       sessions: computed,
       focusedSession: computed,
       joinedGroups: computed,
+      splitKeys: computed,
       show: action,
       replaceWith: action,
       showRoot: action,
@@ -129,7 +130,6 @@ export class ScreenLayoutStore {
       setSplitSizes: action,
       equalizeSplit: action,
       restore: action,
-      dissolve: action,
       release: action,
     });
   }
@@ -259,6 +259,14 @@ export class ScreenLayoutStore {
   corners(blockId: string): { topLeft: boolean; topRight: boolean } {
     if (!this.layout) return { topLeft: true, topRight: true };
     return { topLeft: cornerPane(this.layout, 'top-left') === blockId, topRight: cornerPane(this.layout, 'top-right') === blockId };
+  }
+
+  /**
+   * 「这样东西此刻是并排着的几块里的一块」的唯一真值(contentKey;一块时为空):侧栏里一行的「取消并排」只认它 ——
+   * 会话页自己的行直接读,壳画的行经 sidebarChatView 读同一份。群旁边贴着的那块(group-participant-panes)也算。
+   */
+  get splitKeys(): string[] {
+    return this.order.length > 1 ? this.order.map((blockId) => contentKey(this.blocks.get(blockId)!)) : [];
   }
 
   /**
@@ -415,20 +423,6 @@ export class ScreenLayoutStore {
       this.focus(next && this.blocks.get(next)?.kind === 'session' ? next : (lastSession ?? next ?? this.order[0]));
     }
     return true;
-  }
-
-  /**
-   * 拆开这一组(左边框里一行右键「拆开这一组」):它在这屏 → 只留正看着那块(拆开就是各回各位,正看着的还看着);
-   * 收起来的 → 不再记着。
-   */
-  dissolve(sessionId: string): void {
-    if (this.blockOfSession(sessionId)) {
-      const keep = this.focusedSession ? this.focusedBlockId! : this.blockOfSession(sessionId)!;
-      for (const blockId of this.order) if (blockId !== keep) this.close(blockId);
-      return;
-    }
-    const group = this.parked.find((entry) => Object.values(entry.blocks).some((block) => isSession(block, sessionId)));
-    if (group) this.parked.remove(group);
   }
 
   /** 这条会话没了(归档、删除):它那块收掉(收起来的组里也一样);它是屏上唯一一块就整屏清空,下一次看谁就从谁开始。 */
@@ -599,10 +593,6 @@ function keysOf(group: ScreenGroupSnapshot): string[] {
   });
 }
 
-
-function isSession(block: ScreenBlockContent, sessionId: string): boolean {
-  return block.kind === 'session' && block.sessionId === sessionId;
-}
 
 function sameContent(a: ScreenBlockContent, b: ScreenBlockContent): boolean {
   return contentKey(a) === contentKey(b);

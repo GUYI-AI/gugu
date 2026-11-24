@@ -136,7 +136,7 @@ describe('rows that are not a conversation yet', () => {
 });
 
 describe('they are drawn as a project group\'s conversation row is (ListRow + project cover), not as the old folder row', () => {
-  it('cover, name, no time (界面减法 #66), then the chip and the preview in the list row\'s slots; a click opens, ⌘ click opens beside', async () => {
+  it('cover, name, no time (界面减法 #66), then the chip and the preview in the list row\'s slots; a click opens, so does a ⌘ click (no split from the one list)', async () => {
     const { OneListProjectRow } = await import('./project-row-parts');
     const open = vi.fn();
     await act(async () => root.render(<OneListProjectRow name="Weekend" faceId="sample-project" tag="Sample" preview="Codex 6: Three files" selected onOpen={open} />));
@@ -151,7 +151,7 @@ describe('they are drawn as a project group\'s conversation row is (ListRow + pr
     expect(subtitle.textContent).toBe('Sample Codex 6: Three files');
     await act(async () => row.click());
     await act(async () => { row.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })); });
-    expect(open.mock.calls).toEqual([[false], [true]]);
+    expect(open.mock.calls).toEqual([[], []]);
   });
 
   it('a project with no group chat yet: nothing said, so an empty preview line, same two lines', async () => {

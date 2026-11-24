@@ -151,8 +151,8 @@ export function SidebarRailRow() {
   const fieldRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   return (
     // Design v16: on the rail 「»」 is centred on the avatars' axis (34 of 68), 38 from the window's top, under the traffic
-    // lights; open, the search field is 64 from the top and 17 above 创建智能体.
-    <div className={cn('flex shrink-0 items-start', railLayout ? '-mt-[7px] h-9 justify-center' : 'px-3 pb-[17px] pt-[19px]')} data-sidebar-rail-row="">
+    // lights. Open, the search field keeps its side inset (12) above and below it too (yangchichi 11-24: the gaps were too wide).
+    <div className={cn('flex shrink-0 items-start', railLayout ? '-mt-[7px] h-9 justify-center' : 'p-3')} data-sidebar-rail-row="">
       {railLayout ? <SidebarFoldButton /> : <div ref={fieldRef} className="w-full"><SidebarSearchTrigger /></div>}
     </div>
   );

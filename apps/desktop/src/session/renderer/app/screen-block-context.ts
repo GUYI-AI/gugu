@@ -3,7 +3,7 @@ import { createContext, useContext } from 'react';
 /**
  * 一个会话页此刻摆在这屏的哪一块(spec session-page「一屏几块」)。会话页里要知道的只有这些:
  * 它是不是正看着的那块(document 级快捷键只给它)、在不在左上 / 右上角(让开展开侧栏的钮 / 窗口控制)、
- * 屏上是不是不止一块(页签条右端那枚「关闭这一块」)。
+ * 屏上是不是不止一块。
  */
 export type ScreenBlockPlace = {
   /** 不在任何一块里(没摆在屏上,或这个会话页不在主屏上)= null。 */
