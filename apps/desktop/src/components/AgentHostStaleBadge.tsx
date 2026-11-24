@@ -1,4 +1,4 @@
-import { AlertTriangle } from '@/lib/icons'
+import { AgentMarkGlyph } from './AgentMarkGlyph'
 import { agentPresenceReadable } from '../lib/agentPresenceStore'
 import { useReplica } from '../lib/replica'
 import { runtimeCapabilityPolicy } from '../lib/runtimeCapabilityPolicy'
@@ -33,7 +33,8 @@ export function AgentHostStaleBadge({
       aria-label={hint}
       style={{ display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, whiteSpace: 'nowrap' }}
     >
-      <AlertTriangle size={size} color="var(--warn)" strokeWidth={2.5} />
+      {/* owner 11-24:「主机旧」也用需要你的那个三角。 */}
+      <AgentMarkGlyph kind="warn" size={size} />
       {/* @@@1370 行内短文案：让含义一眼可读（不靠 hover），且明确指「主机」非账号 → 打消「改号」误解。 */}
       <span style={{ fontSize: Math.max(10, size - 2), lineHeight: 1, color: 'var(--text-tertiary)' }}>{label}</span>
     </span>

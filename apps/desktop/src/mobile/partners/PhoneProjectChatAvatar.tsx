@@ -8,6 +8,7 @@ import { needsYouCount } from '@/session/renderer/features/sidebar/session-group
 import { sessionPresentation } from '@/lib/agent-wait/watch-status'
 import { partnerProjects, type PartnerProject } from './partnersModel'
 import { PhoneMessageAvatar } from '../chat/PhoneMessageAvatar'
+import { AgentMarkGlyph } from '@/components/AgentMarkGlyph'
 import { cloudSnapshotOf, useCloudComputer } from '@/lib/cloudComputer'
 
 /**
@@ -39,7 +40,8 @@ function ProjectChatAvatar({ chat, children }: { chat: ChatItem; children: React
   const directory = useLiveDeviceSessions()
   const project = useChatProject(chat.id)
   if (!project) return <PhoneMessageAvatar>{children}</PhoneMessageAvatar>
-  // 角标与桌面项目行的「需要你」点是同一条计数(needsYouCount):那台机器上这个项目的会话,等你操作或失败还没看过的。
+  // 角标与桌面项目行的「需要你」是同一条计数(needsYouCount):那台机器上这个项目的会话,等你操作或失败还没看过的。
+  // 画法同 agent 头像角的「需要你」(AgentMarkGlyph 三角,右下角)。
   const needsYou = needsYouCount(project.members.flatMap(({ deviceId, localProjectId }) => {
     const device = devices.find((row) => row.device_id === deviceId)
     if (!device) return []
@@ -50,7 +52,7 @@ function ProjectChatAvatar({ chat, children }: { chat: ChatItem; children: React
       hostOnline: listed.hostOnline,
     }))
   }))
-  return <PhoneMessageAvatar badge={needsYou > 0 ? <span className="gg-phone-project-attention" data-testid="phone-project-waiting" aria-hidden /> : null}>
+  return <PhoneMessageAvatar badge={needsYou > 0 ? <span className="inline-flex" data-testid="phone-project-waiting" aria-hidden><AgentMarkGlyph kind="warn" size={14} /></span> : null}>
     {children}
   </PhoneMessageAvatar>
 }

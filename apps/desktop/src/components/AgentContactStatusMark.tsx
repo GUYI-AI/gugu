@@ -1,14 +1,17 @@
 import { CLISpinner } from '@renderer/lib/components/cliSpinner'
-import { AgentNeedsUserGlyph } from './AgentNeedsUserGlyph'
+import { AgentMarkGlyph } from './AgentMarkGlyph'
 import { AgentParkedGlyph } from './AgentParkedGlyph'
-import { agentContactRowDotClass, type AgentContactTone } from './contactAgentTone'
+import type { AgentContactTone } from './contactAgentTone'
+import { agentStatusHasMark } from '@/lib/agentStatusMark'
 
-// 同头像角标一套(Avatar.tsx @@@avatar-status-corner):运行中 = 字形在转、后台运行中 = 字形停住、需要你 = 感叹号、
-// 出错了 = 红点;其余(在线、不在线、确认中 …)不画,那一句字已经说了。
-export function AgentContactStatusMark({ tone }: { tone: AgentContactTone | null }) {
-  if (tone === 'working') return <CLISpinner />
-  if (tone === 'parked') return <AgentParkedGlyph />
-  if (tone === 'needs_user') return <AgentNeedsUserGlyph size={8} />
-  if (tone === 'error') return <span className={agentContactRowDotClass(tone)} aria-hidden="true" />
-  return null // #7199 不画状态的那一格(宿主闲时收回着)也走这里
+// An agent's one status mark, wherever a status is drawn (the avatar corner, rows, cards, the session page): running =
+// the glyph turning, parked = the glyph held still, needs you = the triangle, error = the "×" circle, offline = the "−"
+// circle. Every other state (idle, starting …) draws nothing: the words say it.
+export function AgentContactStatusMark({ tone, size = 10, className }: { tone: AgentContactTone | null; size?: number; className?: string }) {
+  if (!agentStatusHasMark(tone)) return null // #7199 不画状态的那一格(宿主闲时收回着)也走这里
+  if (tone === 'working') return <CLISpinner className={className} />
+  if (tone === 'parked') return <AgentParkedGlyph className={className} />
+  if (tone === 'needs_user') return <AgentMarkGlyph kind="warn" size={size} className={className} />
+  if (tone === 'error') return <AgentMarkGlyph kind="error" size={size} className={className} />
+  return <AgentMarkGlyph kind="offline" size={size} className={className} />
 }

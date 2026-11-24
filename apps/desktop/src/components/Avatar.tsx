@@ -7,9 +7,8 @@ import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarThemeColors } from '@gugu/core/shared/ui/groupAvatar'
 import { dicebearAvatarDataUri } from '../lib/dicebearAvatar'
 import { useAvatarTheme } from '../lib/avatarTheme'
-import { AgentNeedsUserGlyph } from './AgentNeedsUserGlyph'
-import { AgentParkedGlyph } from './AgentParkedGlyph'
-import { CLISpinner } from '@renderer/lib/components/cliSpinner'
+import { AgentContactStatusMark } from './AgentContactStatusMark'
+import { agentStatusHasMark } from '@/lib/agentStatusMark'
 import { BoringAgentAvatar } from './BoringAgentAvatar'
 import { AssistantDefaultAvatar } from './assistant/AssistantDefaultAvatar'
 import { useAvatarIdentity, useIsAssistantAvatar } from '../lib/avatarIdentity'
@@ -42,23 +41,20 @@ export interface AvatarProps {
 }
 
 const SIZE_MAP = { xs: 18, sm: 32, md: 40, lg: 64 } as const
-// @@@avatar-status-corner - an agent's one status mark, in the avatar's bottom-right corner, small and on a see-through
-// round backing so it covers little of the face. The marks are one family around the product's running glyph
-// (running-glyph.css): running = the snake turning, parked = the snake held still, needs_user = the exclamation glyph,
-// error = a red dot. Every other state (idle, offline, starting …) draws nothing: the words say it where there is room.
+// @@@avatar-status-corner - an agent's one status mark, in the avatar's bottom-right corner (AgentContactStatusMark).
+// The running glyph sits on a small see-through round backing so it covers little of the face; the solid marks
+// (needs you, error, offline — AgentMarkGlyph) are opaque shapes and have no backing.
+const SOLID_MARKS: ReadonlySet<AgentDisplayStatus> = new Set(['needs_user', 'error', 'offline'])
+
 function AgentStatusCorner({ status, avatarSize }: { status: AgentDisplayStatus; avatarSize: number }) {
   const { t } = useTranslation('common')
   const size = Math.max(8, Math.min(14, Math.round(avatarSize * 0.34)))
-  const mark = status === 'working' ? <CLISpinner className="av-status__glyph" />
-    : status === 'parked' ? <AgentParkedGlyph className="av-status__glyph" />
-    : status === 'needs_user' ? <AgentNeedsUserGlyph size={size - 2} />
-    : status === 'error' ? <span className="av-status__dot" />
-    : null
-  if (!mark) return null
+  if (!agentStatusHasMark(status)) return null
+  const solid = SOLID_MARKS.has(status)
   const text = t(`agentStatus.${labelOfDisplayStatus(status)}`)
   return (
-    <span className={`av-status av-status--${status}`} role="img" aria-label={text} title={text} style={{ '--av-status-size': `${size}px` } as React.CSSProperties}>
-      {mark}
+    <span className={`av-status av-status--${status}${solid ? ' av-status--solid' : ''}`} role="img" aria-label={text} title={text} style={{ '--av-status-size': `${size}px` } as React.CSSProperties}>
+      <AgentContactStatusMark tone={status} size={size} className={solid ? undefined : 'av-status__glyph'} />
     </span>
   )
 }
