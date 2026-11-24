@@ -43,10 +43,16 @@ function Fixture({ supported = true, mobile = false, initial = false, phoneActio
 async function renderMenu(props: Parameters<typeof Fixture>[0] = {}) {
   root.render(<Fixture {...props} />)
   await page.getByTestId('composer-model-trigger').click()
-  await until('thinking slider mounted', () => document.querySelector('[data-slot="composer-effort-indicator"]') != null)
+  await until('model menu mounted', () => document.querySelector('[data-slot="combobox-content"]') != null)
   const panel = document.querySelector<HTMLElement>('[data-slot="combobox-content"]')!
   await until('model menu entered', () => !panel.hasAttribute('data-starting-style'))
   await Promise.all(panel.getAnimations().map(animation => animation.finished))
+  if (props.phoneActions ?? props.mobile) {
+    await until('phone thinking slider mounted', () => document.querySelector('[data-slot="composer-effort-indicator"]') != null)
+  } else {
+    await page.getByRole('option', { name: 'Native model' }).hover()
+    await until('desktop model details mounted', () => document.querySelector('[data-slot="composer-model-detail"]') != null)
+  }
 }
 
 describe('Fast in the real thinking menu', () => {
@@ -86,18 +92,20 @@ describe('Fast in the real thinking menu', () => {
     expect(container.querySelector('button[aria-label="Fast"]')).toBeNull()
   })
 
-  it('renders no Fast control or reserved slider space for an unsupported model', async () => {
+  it('renders no Fast control or reserved row for an unsupported model', async () => {
     await renderMenu({ supported: false })
     expect(fast()).toBeNull()
-    expect(document.querySelector('[data-fast-mode]')).toBeNull()
+    expect(document.querySelector('[data-slot="composer-model-fast"]')).toBeNull()
   })
 
-  it('aligns the icon with the slider and uses the existing desktop hover tooltip', async () => {
+  it('aligns the control below Thinking and uses the existing desktop hover tooltip', async () => {
     await renderMenu({ initial: true })
-    const track = document.querySelector<HTMLElement>('[data-slot="composer-effort-indicator"]')!.parentElement!
-    const trackBox = track.getBoundingClientRect(), buttonBox = fast()!.getBoundingClientRect()
-    expect(Math.abs(trackBox.y + trackBox.height / 2 - buttonBox.y - buttonBox.height / 2)).toBeLessThan(1)
-    expect(Math.abs(buttonBox.x - trackBox.right - 8)).toBeLessThan(0.5)
+    const row = document.querySelector<HTMLElement>('[data-slot="composer-model-fast"]')!
+    const thinking = row.previousElementSibling!
+    const rowBox = row.getBoundingClientRect(), buttonBox = fast()!.getBoundingClientRect()
+    expect(thinking.textContent).toContain('Thinking')
+    expect(Math.abs(rowBox.y + rowBox.height / 2 - buttonBox.y - buttonBox.height / 2)).toBeLessThan(1)
+    expect(Math.abs(buttonBox.x - thinking.getBoundingClientRect().x - 8)).toBeLessThan(0.5)
     expect(buttonBox.height).toBe(24)
     expect(fast()!.firstElementChild!.getBoundingClientRect().height).toBe(24)
     expect(getComputedStyle(fast()!.firstElementChild!).fontSize).toBe('12px')

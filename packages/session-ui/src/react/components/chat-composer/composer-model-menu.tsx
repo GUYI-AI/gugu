@@ -19,7 +19,7 @@ import {
 import { useMessages } from '../../localization/message-provider';
 import * as styles from './chat-composer.css';
 // 圆钮直径的**唯一真源** —— 填充末端要落在圆心上,这里跟着它算,❌ 别再写一遍字面量。
-import type { RenderFastModeHint } from './composer-fast-mode';
+import { ComposerFastMode, type RenderFastModeHint } from './composer-fast-mode';
 import { ComposerThinking } from './composer-thinking';
 import { Popover } from '@session-ui/react/primitives/popover';
 import { ContextThresholdMenu, type ComposerContextThresholds } from './context-threshold';
@@ -175,13 +175,14 @@ export function modelTitle(item: ComposerModelItem, locale = 'en-US'): string | 
  * 事实里上下文、速度、智能来自 `modelFeatures`(插件 / 目录真声明过的),其余由宿主翻好递进来(`facts`)。
  * 什么都没有的那几格就不画 —— ❌ 写「未知」占位。
  */
-function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffortChange }: {
+function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffortChange, fastControl }: {
   item: ComposerModelItem;
   picker: HTMLElement | null;
   contextThresholds?: ComposerContextThresholds;
   efforts?: ComposerEffortItem[];
   effort?: ComposerEffortItem;
   onEffortChange?: (id: string) => void;
+  fastControl?: React.ReactNode;
 }) {
   const { translate } = useMessages();
   const f = item.modelFeatures;
@@ -191,6 +192,9 @@ function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffor
   const effortTrigger = useRef<HTMLButtonElement>(null);
   const canEditEffort = !!efforts?.length && !!onEffortChange;
   const effortLabel = translate('composer.effort');
+  const lockedEffortReasonId = React.useId();
+  const lockedEffortReason = efforts?.length && efforts.every(level => level.disabled)
+    ? efforts[0]?.disabledReason ?? translate('composer.effortLocked') : undefined;
   const facts = [
     ...(!threshold && f?.contextWindowSize !== undefined
       ? [{ label: translate('composer.modelDetailContext'), value: formatContextWindow(f.contextWindowSize) }]
@@ -246,13 +250,16 @@ function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffor
             {efforts.map(level => (
               <button type="button" key={level.id} disabled={level.disabled} aria-pressed={effort?.id === level.id}
                 className={styles.contextThresholdOption} title={level.disabledReason}
+                aria-describedby={lockedEffortReason ? lockedEffortReasonId : undefined}
                 onClick={() => { onEffortChange(level.id); setEffortMenuOpen(false); }}>
                 {level.name}{effort?.id === level.id && <Check size={14} aria-hidden />}
               </button>
             ))}
+            {lockedEffortReason && <p id={lockedEffortReasonId} className={styles.effortMenuLockedReason}>{lockedEffortReason}</p>}
           </Popover.Content>
         </Popover.Root>
       )}
+      {fastControl && <div className={styles.modelDetailFast} data-slot="composer-model-fast">{fastControl}</div>}
       {threshold?.unsupported && (
         <div className={styles.contextThresholdTrigger}>
           <span>{translate('composer.contextWindowThreshold')}</span>
@@ -757,6 +764,9 @@ export function ComposerModelMenu({
             {detailItem ? (
               <ModelDetail key={detailItem.id} item={detailItem} picker={panelEl} contextThresholds={contextThresholds}
                 efforts={detailItem.id === selectedModel ? effortItems : undefined} effort={effectiveEffortItem}
+                fastControl={detailItem.id === selectedModel && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
+                  ? <ComposerFastMode enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
+                  : undefined}
                 onEffortChange={onEffortChange} />
             ) : modelUpgrade ? (
               <div data-slot="composer-model-detail" style={{ display: 'contents' }}>

@@ -772,6 +772,7 @@ export const contextThresholdTrigger = style({
 });
 export const modelSelectedCheck = style({ color: vars.foregroundSuccess, flexShrink: 0, marginLeft: 'auto' });
 export const modelDetailControlValue = style({ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: vars.foregroundMuted });
+export const modelDetailFast = style({ display: 'flex', alignItems: 'center', minHeight: '2rem', paddingInline: '0.5rem' });
 export const contextThresholdContent = style({ width: '11rem', padding: '0.25rem' });
 export const contextThresholdInput = style({
   width: '100%', minHeight: '2rem', borderRadius: tokenVars.radiusMd, background: 'transparent',
@@ -779,8 +780,15 @@ export const contextThresholdInput = style({
   selectors: { '&[aria-invalid="true"]': { color: vars.foregroundDestructive } },
 });
 export const contextThresholdOption = style([contextThresholdTrigger, {
-  selectors: { '&[aria-pressed="true"]': { backgroundColor: vars.surfaceHover } },
+  selectors: {
+    '&[aria-pressed="true"]': { backgroundColor: vars.surfaceHover },
+    '&:disabled': { opacity: 0.55, cursor: 'not-allowed' },
+  },
 }]);
+
+export const effortMenuLockedReason = style({
+  padding: '0.25rem 0.5rem', color: vars.foregroundMuted, fontSize: tokenVars.textTiny,
+});
 
 /** Provider-reported cost. Rendered only for an explicitly known BYOK route. */
 export const usageCostRow = style({
