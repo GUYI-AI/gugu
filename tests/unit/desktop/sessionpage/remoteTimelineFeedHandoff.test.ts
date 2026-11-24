@@ -3,8 +3,9 @@
 // read one stream: the session page continues from the copy the timeline page holds, ❌ reads the first page again.
 import { describe, expect, it, vi } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
+import type { TimelineAfterResult } from '@gugu/session-core/session-record'
 
-const host = vi.hoisted(() => ({ snapshots: 0, afters: 0, subscribedFrom: [] as unknown[], away: false }))
+const host = vi.hoisted(() => ({ snapshots: 0, afters: 0, subscribedFrom: [] as unknown[], reopened: new Set<() => void>(), away: false }))
 const turn = (id: string) => ({ id, role: 'assistant', startedAt: 1, outcome: null, itemIds: [], items: [] }) as unknown as TranscriptTurn
 const snapshot = () => {
   host.snapshots += 1
@@ -23,7 +24,11 @@ vi.mock('@renderer/lib/ipc', () => ({
   } }),
   onMachineEvent: () => () => undefined,
 }))
-vi.mock('@renderer/lib/machine-clients', () => ({ machineLinkState: () => 'open', subscribeMachineLink: () => () => undefined }))
+vi.mock('@renderer/lib/machine-clients', () => ({
+  machineLinkState: () => 'open',
+  subscribeMachineLink: () => () => undefined,
+  onMachineReconnected: (_machine: string, cb: () => void) => { host.reopened.add(cb); return () => host.reopened.delete(cb) },
+}))
 
 const { followSessionStream } = await import('@/components/session-watch/use-timeline-session')
 const { RemoteTimelineFeed } = await import('../../../../apps/desktop/src/session/renderer/features/sessions/acp/remote-timeline-feed')
@@ -71,6 +76,37 @@ describe('the session page of a remote task takes over the timeline page\'s stre
     // The host pushes what came after that cursor when it takes the subscription: ❌ asked for again.
     expect(host.afters).toBe(0)
     expect(feed.state.turns.map((t) => t.id)).toEqual(['t1', 't2'])
+    feed.close()
+  })
+
+  it('a push of another epoch (a stand-in replaced by its record): subscribes again, the copy held stays shown meanwhile', async () => {
+    host.snapshots = 0; host.afters = 0; host.subscribedFrom = []
+    let push: (result: TimelineAfterResult) => void = () => undefined
+    const client = { ...pageClient, subscribeSessionEvents: (_d: string, _id: string, receive: (result: TimelineAfterResult) => void) => { push = receive; return () => undefined } }
+    const page = followSessionStream({ client, deviceId: 'dev', sessionId: 's-replaced', enabled: true, lean: 'folded' }, () => undefined)
+    const key = sessionStreamKey({ deviceId: 'dev', sessionId: 's-replaced' })
+    await vi.waitFor(() => expect(host.subscribedFrom).toHaveLength(1))
+    push({ ok: false, reset: 'epoch_changed', snapshot: { cursor: { epoch: 'e', seq: 4 }, turns: [turn('t1'), turn('t2')], settlements: [], hasOlder: false, runningTurnId: 't2' } })
+    const shown: Array<string | null | undefined> = []
+    const stop = sessionStreams.subscribe(() => { shown.push(sessionStreams.get()[key]?.timeline.runningTurnId) })
+    push({ ok: true, batch: { from: 0, cursor: { epoch: 'e:replaced', seq: 0 }, turns: [], removedTurnIds: [], settlements: [] } })
+    await vi.waitFor(() => expect(host.subscribedFrom).toHaveLength(2))
+    stop()
+    expect(shown.every((id) => id === 't2')).toBe(true)
+    page.detach()
+  })
+
+  it('a new window on that machine (a planned switch of channel, the link says open throughout): subscribes again', async () => {
+    host.snapshots = 0; host.afters = 0; host.subscribedFrom = []
+    const page = await timelinePage('s-switched')
+    page.detach()
+    const feed = new RemoteTimelineFeed('s-switched', 'dev', () => undefined, () => undefined)
+    await feed.open()
+    await vi.waitFor(() => expect(host.subscribedFrom).toHaveLength(2))
+    const before = host.subscribedFrom.length
+    for (const reopened of [...host.reopened]) reopened()
+    // That machine dropped the old window's subscription: ❌ the page waits on it for good.
+    await vi.waitFor(() => expect(host.subscribedFrom.length).toBeGreaterThan(before))
     feed.close()
   })
 })

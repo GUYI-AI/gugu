@@ -46,8 +46,7 @@ it.each(['closed-first', 'active-null-first', 'late-persistence'] as const)('%s:
   const ready = { lifecycle: 'working', activeTurnId: live.id as string | null, queuedPrompts: [], pendingPermissions: [],
     isGenerating: true, backgroundAgentCount: 0, backgroundCommandCount: 0, lastTurnOutcome: 'none', lastStopReason: null };
   const session = {
-    activeTurn: replica<TranscriptTurn | null>(live), sessionState: replica(ready), agents: replica([]), config: replica({}),
-    plan: replica(null), terminals: replica([]), draft: replica(null), onDraftSyncReady: () => () => {},
+    sessionState: replica(ready), agents: replica([]), config: replica({}), plan: replica(null), draft: replica(null), onDraftSyncReady: () => () => {},
     canSyncDraft: () => false, dispose() {}, getHistory: async () => ({ success: true, data: { turns: [], count: 0, cursor: { epoch: 'removed', seq: 0 } } }),
   };
   const store = new AcpChatStore(id, 'project');
@@ -55,7 +54,7 @@ it.each(['closed-first', 'active-null-first', 'late-persistence'] as const)('%s:
   runInAction(() => { internal._bootstrapped = true; store.historyLoading = false;
     store.session = session as unknown as typeof store.session; internal._subscribeLiveSession(session); });
   // The timeline carries the running turn as the runtime has it, until the record's form of it arrives.
-  timeline.show([live]);
+  timeline.show([live], live.id);
   await internal._openHistory(internal._historyGeneration);
   cleanup.push(() => store.dispose());
   const host = document.createElement('div'); host.className = 'gugu-skin emlight';
@@ -70,11 +69,12 @@ it.each(['closed-first', 'active-null-first', 'late-persistence'] as const)('%s:
   expect(promptCards()).toBe(1);
   // The record's form of the turn reaches the timeline: its own id, how it ended.
   const finish = () => timeline.show([{ ...live, id: id + ':record-0', outcome: { kind: 'cancelled', reason: 'cancelled' },
-    items: live.items.map(item => item.kind === 'unknown-tool-call' ? { ...item, status: 'error' as const } : item) }]);
+    items: live.items.map(item => item.kind === 'unknown-tool-call' ? { ...item, status: 'error' as const } : item) }], null);
+  // The runtime lets the turn go: the host keeps its last frame, no longer running, until the record's form arrives.
+  if (order === 'active-null-first') timeline.show([live], null);
   if (order !== 'late-persistence') finish();
-  if (order === 'active-null-first') session.activeTurn.push(null);
   session.sessionState.push({ ...ready, lifecycle: 'closed', activeTurnId: null, isGenerating: false } as typeof ready);
-  session.activeTurn.push(null);
+  if (order === 'late-persistence') timeline.show([live], null);
   const frames: number[] = [];
   for (let frame = 0; frame < 8; frame++) {
     await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));

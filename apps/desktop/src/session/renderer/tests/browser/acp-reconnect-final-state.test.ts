@@ -50,7 +50,7 @@ it('keeps streaming and finished replies cursor-free when a turn finishes while 
     cleanup.push(() => { stop(); port1.close(); port2.close(); });
     window.dispatchEvent(new MessageEvent('message', { data: { kind: 'acp-wire:port' }, ports: [port1] }));
   });
-  const session = await AcpLiveSession.create('offline-session');
+  const session = await AcpLiveSession.create('offline-session', true);
   cleanup.push(() => session.dispose());
   const context = createChatContext({ locale: () => 'en-US' });
   context.setLayout({ preset: 'double', userGutter: 72, agentConversation: true });
@@ -62,8 +62,9 @@ it('keeps streaming and finished replies cursor-free when a turn finishes while 
   cleanup.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
   let reconciliations = 0;
   const disconnect = connectSession(state, {
-    activeTurn: asValueSource(session.activeTurn), plan: asValueSource(session.plan), sessionState: asValueSource(session.sessionState),
+    plan: asValueSource(session.plan), sessionState: asValueSource(session.sessionState),
   }, {
+    activeTurn: asValueSource(session.runtimeTurns!.activeTurn),
     onTurnCommitted: () => {
       reconciliations++;
       void session.getHistory().then(result => {

@@ -5,6 +5,7 @@ import type {
   TimelineSnapshot,
 } from '@gugu/session-core/session-record';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
+import { withRuntimeTurn } from '@gugu/session-core/session-record/runtime-turn';
 
 /**
  * #6264 一条**没有记录可读**的会话的时间线替身:agent 没真正开出会话(建的时候没起来),
@@ -16,6 +17,10 @@ import type { TranscriptTurn } from '@gugu/session-core/acp/client';
  *
  * 真记录出现之后(再试一次成功了):订阅的人收到一批换了世代的空增量 —— 那是客户端「整份重拉」的信号,
  * 重拉时宿主已经换成真时间线。❌ 不把替身和真记录拼成一份。
+ *
+ * A runtime can be running the first turn before its record can be read (its agent has not said which session it is
+ * yet): the stand-in shows that turn as the runtime has it (`syncActiveTurn`, `runningTurnId`), and keeps its last
+ * frame once it ends, until the real record replaces the stand-in.
  */
 export const STAND_IN_EPOCH_PREFIX = 'stand-in:';
 
@@ -27,6 +32,8 @@ export type StandInTimelineInput = {
   createdAt: number | null;
   /** 真记录此刻能读了吗。订阅期间按 `pollMs` 问一次。 */
   recordAvailable: () => boolean;
+  /** Opens the record's timeline from the runtime turn shown here (still running or its last frame), before the replace. */
+  handOver?: (turn: TranscriptTurn, running: boolean) => Promise<void>;
   pollMs?: number;
   setInterval?: (run: () => void, ms: number) => unknown;
   clearInterval?: (handle: unknown) => void;
@@ -63,33 +70,43 @@ export function standInTurns(input: Pick<StandInTimelineInput, 'sessionId' | 'fi
 
 export function createStandInTimeline(input: StandInTimelineInput): SessionTimeline {
   const epoch = `${STAND_IN_EPOCH_PREFIX}${input.sessionId}`;
-  const cursor: RecordCursor = { epoch, seq: 0 };
-  const turns = standInTurns(input);
-  const snapshot = (): TimelineSnapshot => ({ cursor, turns, settlements: [], hasOlder: false });
+  const standIn = standInTurns(input);
+  let seq = 0;
+  let running: TranscriptTurn | null = null;
+  let shown: TranscriptTurn | null = null;
+  const cursor = (): RecordCursor => ({ epoch, seq });
+  const snapshot = (): TimelineSnapshot =>
+    ({ cursor: cursor(), turns: shown ? withRuntimeTurn(standIn, shown) : standIn, settlements: [], hasOlder: false, runningTurnId: running?.id ?? null });
+  const listeners = new Set<(result: TimelineAfterResult) => void>();
   const every = input.setInterval ?? ((run, ms) => setInterval(run, ms));
   const stop = input.clearInterval ?? ((handle) => clearInterval(handle as ReturnType<typeof setInterval>));
   const timers = new Set<unknown>();
 
   return {
     epoch,
-    getCursor: () => cursor,
+    getCursor: cursor,
     getSnapshot: snapshot,
     getAfter: (from) =>
-      from.epoch === epoch
-        ? { ok: true, batch: { from: from.seq, cursor, turns: [], removedTurnIds: [], settlements: [] } }
+      from.epoch === epoch && from.seq === seq
+        ? { ok: true, batch: { from: seq, cursor: cursor(), turns: [], removedTurnIds: [], settlements: [] } }
         : { ok: false, reset: 'epoch_changed', snapshot: snapshot() },
     getOlder: () => ({ epoch, turns: [], hasOlder: false }),
     subscribe: (_from, listener: (result: TimelineAfterResult) => void) => {
       let done = false;
+      listeners.add(listener);
       const handle = every(() => {
         if (done || !input.recordAvailable()) return;
         done = true;
         stop(handle);
         timers.delete(handle);
-        // 换了世代的空增量 = 「整份重拉」:客户端的 reducer 见世代不同就要一份新快照。
-        listener({
-          ok: true,
-          batch: { from: 0, cursor: { epoch: `${epoch}:replaced`, seq: 0 }, turns: [], removedTurnIds: [], settlements: [] },
+        // The page reads the record next: it starts from the turn shown here, ❌ blank until its own runtime watch answers.
+        void Promise.resolve(shown && input.handOver?.(shown, shown === running)).finally(() => {
+          if (!listeners.delete(listener)) return;
+          // 换了世代的空增量 = 「整份重拉」:客户端的 reducer 见世代不同就要一份新快照。
+          listener({
+            ok: true,
+            batch: { from: 0, cursor: { epoch: `${epoch}:replaced`, seq: 0 }, turns: [], removedTurnIds: [], settlements: [] },
+          });
         });
       }, input.pollMs ?? 2_000);
       (handle as { unref?: () => void } | null)?.unref?.();
@@ -98,6 +115,7 @@ export function createStandInTimeline(input: StandInTimelineInput): SessionTimel
         done = true;
         stop(handle);
         timers.delete(handle);
+        listeners.delete(listener);
       };
     },
     settle: () => {
@@ -107,7 +125,13 @@ export function createStandInTimeline(input: StandInTimelineInput): SessionTimel
     syncQueuedPrompts: () => undefined,
     syncTerminals: () => {},
     syncLiveReply: () => undefined,
-    syncActiveTurn: () => undefined,
+    syncActiveTurn: (turn) => {
+      if (turn === running) return;
+      running = turn;
+      shown = turn ?? shown;
+      seq += 1;
+      for (const listener of [...listeners]) listener({ ok: false, reset: 'epoch_changed', snapshot: snapshot() });
+    },
     catchUp: async () => undefined,
     questionOpen: () => false,
     cancelSettlement: () => undefined,
@@ -115,6 +139,7 @@ export function createStandInTimeline(input: StandInTimelineInput): SessionTimel
     dispose: () => {
       for (const handle of timers) stop(handle);
       timers.clear();
+      listeners.clear();
     },
   };
 }

@@ -53,10 +53,16 @@ export class AcpLiveSession {
   readonly config: ReplicaState<z.infer<typeof sessionConfigStateSchema>>;
   readonly usage: ReplicaState<z.infer<typeof sessionUsageSchema> | null>;
   readonly plan: ReplicaState<z.infer<typeof sessionPlansSchema> | null>;
-  readonly activeTurn: ReplicaState<z.infer<typeof transcriptTurnSchema> | null>;
+  /**
+   * The running turn and the terminals as the runtime holds them: only for a page with no timeline (a side chat, a
+   * runtime-only fork with no record). A page with a timeline reads both from it (`runningTurnId`, `terminals`).
+   */
+  readonly runtimeTurns: {
+    activeTurn: ReplicaState<z.infer<typeof transcriptTurnSchema> | null>;
+    terminals: ReplicaState<TerminalState[]>;
+  } | null;
   readonly agents: ReplicaState<z.infer<typeof agentStateSchema>[]>;
   readonly draft: ReplicaState<z.infer<typeof promptDraftSchema> | null>;
-  readonly terminals: ReplicaState<TerminalState[]>;
   private disposed = false;
   private draftStateAttached = false;
   private draftSnapshotAttached = false;
@@ -67,7 +73,8 @@ export class AcpLiveSession {
 
   private constructor(
     readonly sessionId: string,
-    private readonly client: AcpRuntimeRpcClient
+    private readonly client: AcpRuntimeRpcClient,
+    runtimeTurns: boolean,
   ) {
     const key = { sessionId };
     this.agents = createReplicaState(client.session.state(key, 'agents'), z.array(agentStateSchema));
@@ -78,17 +85,13 @@ export class AcpLiveSession {
       sessionUsageSchema.nullable()
     );
     this.plan = createReplicaState(client.session.state(key, 'plan'), sessionPlansSchema.nullable());
-    this.activeTurn = createReplicaState(
-      client.session.state(key, 'activeTurn'),
-      transcriptTurnSchema.nullable()
-    );
+    this.runtimeTurns = runtimeTurns ? {
+      activeTurn: createReplicaState(client.session.state(key, 'activeTurn'), transcriptTurnSchema.nullable()),
+      terminals: createReplicaState(client.session.state(key, 'terminals'), z.array(terminalStateSchema)),
+    } : null;
     this.draft = createReplicaState(
       client.session.state(key, 'draft'),
       promptDraftSchema.nullable()
-    );
-    this.terminals = createReplicaState(
-      client.session.state(key, 'terminals'),
-      z.array(terminalStateSchema)
     );
     this.connectionUnsubs.push(
       client.connection.onDisconnect(() => {
@@ -127,9 +130,9 @@ export class AcpLiveSession {
   }
 
   /** Attach to a session its host's session-life already runs; a page never starts, resumes or stops one. */
-  static async create(sessionId: string): Promise<AcpLiveSession> {
+  static async create(sessionId: string, runtimeTurns = false): Promise<AcpLiveSession> {
     const client = await getAcpRuntimeClient(machineRegistry.machineOf(sessionId));
-    const session = new AcpLiveSession(sessionId, client);
+    const session = new AcpLiveSession(sessionId, client, runtimeTurns);
     try {
       // Attachment waits for its result. A busy runtime delivering snapshots slowly has not failed.
       await Promise.all([
@@ -137,9 +140,8 @@ export class AcpLiveSession {
         session.config.ready,
         session.usage.ready,
         session.plan.ready,
-        session.activeTurn.ready,
         session.draft.ready,
-        session.terminals.ready,
+        ...(session.runtimeTurns ? [session.runtimeTurns.activeTurn.ready, session.runtimeTurns.terminals.ready] : []),
         session.agents.ready,
       ]);
     } catch (error) {
@@ -232,9 +234,9 @@ export class AcpLiveSession {
     void this.config.dispose();
     void this.usage.dispose();
     void this.plan.dispose();
-    void this.activeTurn.dispose();
+    void this.runtimeTurns?.activeTurn.dispose();
+    void this.runtimeTurns?.terminals.dispose();
     void this.draft.dispose();
-    void this.terminals.dispose();
     void this.agents.dispose();
   }
 }

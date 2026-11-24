@@ -107,10 +107,15 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
   let historyTurns: TranscriptTurn[] = [];
   const readyState = { lifecycle: 'ready', activeTurnId: null, queuedPrompts: [], pendingPermissions: [], isGenerating: false,
     backgroundAgentCount: 0, backgroundCommandCount: 0, lastTurnOutcome: 'none', lastStopReason: null, canSubmit: true, canCancel: false };
+  // The runtime's turn reaches the page with the session's timeline: the host says which turn is running.
+  let runningTurn: TranscriptTurn | null = null;
+  const runtimeTurn = {
+    current: () => runningTurn,
+    set(next: TranscriptTurn | null) { runningTurn = next; timeline.show(next ? [...historyTurns, next] : historyTurns, next?.id ?? null); },
+  };
   const session = {
-    activeTurn: replica<TranscriptTurn | null>(null),
     sessionState: replica({ ...readyState, ...(busy ? { lifecycle: 'working', activeTurnId: foreground.id, isGenerating: true } : {}) }),
-    agents: replica([]), config: replica({}), plan: replica(null), terminals: replica([]), draft: replica(null),
+    agents: replica([]), config: replica({}), plan: replica(null), draft: replica(null),
     canSyncDraft: () => true, onDraftSyncReady: () => () => {}, cancelTurn: vi.fn(async () => ({ success: true, data: undefined })),
     setPromptDraft: async () => ({ success: true, data: undefined }),
     changeQueuePromptOrder: vi.fn(async (ids: string[]): Promise<{ success: true; data: undefined }> => {
@@ -284,7 +289,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
       queuedPrompts: [{ id: runtimeQueueId, clientMessageId: q!.id, text: q!.text, origin: 'manual', createdAt: Date.now(), updatedAt: Date.now(), attachments: [] }] } as never);
     await paint('runtime-queue-Q');
   }
-  async function activeA() { eventLabel = 'active-A-inject'; session.activeTurn.set(foreground); await paint('active-A'); }
+  async function activeA() { eventLabel = 'active-A-inject'; runtimeTurn.set(foreground); await paint('active-A'); }
   async function nativeQ(turnId = 'native-Q-turn', itemId = 'native-Q-user') {
     eventLabel = 'native-Q-inject';
     qStarted = true; nativeUserId = itemId;
@@ -293,7 +298,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
     const user = native.items[0];
     if (user?.kind !== 'message' || user.role !== 'user') throw new Error('Fixture user message is missing');
     native.items[0] = { ...user, _meta: { guguClientMessageId: q!.id } };
-    session.activeTurn.set({ ...native, seq: turnId === 'previous-same' ? 0 : 1, startedAt: q!.createdAt - 5_000 });
+    runtimeTurn.set({ ...native, seq: turnId === 'previous-same' ? 0 : 1, startedAt: q!.createdAt - 5_000 });
     session.sessionState.set({ ...session.sessionState.current(), lifecycle: 'working', activeTurnId: turnId, isGenerating: true, queuedPrompts: [] });
     await paint('native-Q-started');
   }
@@ -302,10 +307,10 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
     // The second submit must exclude that first native ID from its new receipt baseline.
     await send(); await lifeRow('accepted'); await accept();
     await nativeQ('previous-same', 'previous-same:user');
-    historyTurns = [{ ...session.activeTurn.current()!, endedAt: Date.now(), outcome: { kind: 'done' } }];
+    historyTurns = [{ ...runtimeTurn.current()!, endedAt: Date.now(), outcome: { kind: 'done' } }];
     timeline.show(historyTurns);
     eventLabel = 'first-turn-commit-inject';
-    session.activeTurn.set(null); session.sessionState.set(readyState);
+    runtimeTurn.set(null); session.sessionState.set(readyState);
     await until('first real input is committed history', () => store.chatState.transcript.state.committedTurns.some(turn => turn.id === firstSame.id));
     await paint('first-turn-committed');
     life = { ...life, version: life.version + 1, pending: { count: 0, items: [] } };
@@ -418,7 +423,7 @@ it.each(cases)('%s: record each actual paint boundary before Q starts', async (n
     }
     historyTurns = [{ ...foreground, outcome: { kind: 'done' }, endedAt: Date.now() }];
     timeline.show(historyTurns);
-    session.activeTurn.set(null); session.sessionState.set(readyState);
+    runtimeTurn.set(null); session.sessionState.set(readyState);
     await until('foreground completion is in real history', () => store.chatState.transcript.state.committedTurns.some(turn => turn.id === foreground.id));
     if (!sentNow) await releaseQueuedSessionInput(sessionId, historyTurns);
     await until('the idle boundary sends exactly this input', () => received.length === 1);

@@ -136,17 +136,17 @@ type LiveReadable<T> = {
 };
 
 export type ConnectSessionSource = {
-  activeTurn: LiveReadable<TranscriptTurn | null>;
   plan: LiveReadable<SessionPlans | null>;
   sessionState: LiveReadable<{
     pendingPermissions: readonly AcpPermissionRequest[];
     /** runtime 投影出来的忙态(见 session-runtime machine `projectSessionState`)。 */
     isGenerating?: boolean;
   }>;
-  terminals?: LiveReadable<readonly TerminalState[]>;
 };
 
-export type ConnectSessionOptions = {
+/** The running turn, for a host that does not draw the transcript itself. */
+export type ConnectSessionTurns = {
+  activeTurn: LiveReadable<TranscriptTurn | null>;
   /**
    * 一轮讲完时调用。**必填**：一轮提交后 `activeTurn` 上保留着最后一帧（见 syncActiveTurn），
    * 而交还这一帧的唯一路径就是这个回调（调用方对完账后清）。设成可选就等于允许某个调用方
@@ -396,9 +396,9 @@ function createSessionState(transcript: TranscriptApi): ChatSessionState {
 export function connectSession(
   state: ChatState,
   source: ConnectSessionSource,
-  options: ConnectSessionOptions
+  turns?: ConnectSessionTurns
 ): () => void {
-  let activeTurnId = source.activeTurn.getSnapshot()?.id ?? null;
+  let activeTurnId = turns?.activeTurn.getSnapshot()?.id ?? null;
 
   const syncSessionState = (): void => {
     const snapshot = source.sessionState.getSnapshot();
@@ -414,7 +414,8 @@ export function connectSession(
   // are a single Solid batch. Two writes let every row observe the turn without its input in between, so
   // the input's row is unmounted and mounted again with new DOM nodes.
   const syncActiveTurn = (): void => batch(() => {
-    const turn = source.activeTurn.getSnapshot() ?? null;
+    if (!turns) return;
+    const turn = turns.activeTurn.getSnapshot() ?? null;
     const pending = state.session.state.pendingPrompt;
     if (turn && pending && (!pending.delivery || pendingPromptLanded(pending, [turn]))) state.session.setPendingPrompt(null);
     if (activeTurnId !== null && activeTurnId !== (turn?.id ?? null)) {
@@ -422,7 +423,7 @@ export function connectSession(
       // 而已提交列表只由对账结果 seed 填充 —— 先抹掉就等于让画面整段空掉一百毫秒：transcript 消失、
       // 输入框退回空会话的占位文案再弹回来。用户看到的是「答完了反而闪一下」。
       // 保留最后这一帧，由对账落地时的 seed 覆盖它（失败也会清，见 acp-chat-store._refreshHistory）。
-      options.onTurnCommitted();
+      turns.onTurnCommitted();
       // 连续排队时,显示节拍可能直接从 A 发到 B,中间没有空帧。同样要对账 A,但立即画 B;
       // 先通知再换帧,让宿主保留 A 的身份,历史请求回来时才不会把仍在流式的 B 清掉。
       if (turn) state.transcript.activeTurn.set(turn);
@@ -431,21 +432,15 @@ export function connectSession(
     }
     activeTurnId = turn?.id ?? null;
   });
-  const syncTerminals = (): void => {
-    if (!source.terminals) return;
-    state.session.setTerminals(source.terminals.getSnapshot() ?? []);
-  };
 
   syncSessionState();
   syncPlan();
   syncActiveTurn();
-  syncTerminals();
 
   const unsubs = [
     source.sessionState.subscribe(syncSessionState),
     source.plan.subscribe(syncPlan),
-    source.activeTurn.subscribe(syncActiveTurn),
-    ...(source.terminals ? [source.terminals.subscribe(syncTerminals)] : []),
+    ...(turns ? [turns.activeTurn.subscribe(syncActiveTurn)] : []),
   ];
   return () => {
     for (const unsub of unsubs) unsub();

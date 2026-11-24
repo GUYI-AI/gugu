@@ -73,7 +73,8 @@ describe.each([
     const activeTurn = live<TranscriptTurn | null>(null)
     const sessionState = live({ pendingPermissions: [], isGenerating: false })
     let committed: TranscriptTurn | null = null
-    const disconnect = connectSession(state, { activeTurn, plan: live(null), sessionState }, {
+    const disconnect = connectSession(state, { plan: live(null), sessionState }, {
+      activeTurn,
       // The host reconciles history, then seeds the finished turn and clears the retained frame together.
       onTurnCommitted: () => queueMicrotask(() => batch(() => {
         state.transcript.history.seed([...prior, committed!])

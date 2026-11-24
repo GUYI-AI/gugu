@@ -44,7 +44,7 @@ export type {
   ChatSessionSnapshot,
   PendingPrompt,
   ConnectSessionSource,
-  ConnectSessionOptions,
+  ConnectSessionTurns,
 } from './state/chat-state';
 
 export { createChatView } from './chat-view';

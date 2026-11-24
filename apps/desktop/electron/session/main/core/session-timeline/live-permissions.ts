@@ -57,7 +57,7 @@ async function watchRunningSessionState(
   if (!client) return null;
 
   let state: SessionState | null = null;
-  let turn: TranscriptTurn | null = null;
+  let turn: TranscriptTurn | null | undefined;
   let terminals: readonly TerminalState[] = [];
   let terminalReplica: ReplicaState<TerminalState[]> | null = null;
   let activeTurn: ReplicaState<TranscriptTurn | null> | null = null;
@@ -67,12 +67,13 @@ async function watchRunningSessionState(
     terminals = [];
   };
   const emitLatest = () => {
-    if (state) onChange(state.pendingPermissions.map(permissionToPendingRequest), state.queuedPrompts, state.isGenerating ? liveReplyOf(turn) : null, terminals, turn);
+    if (state) onChange(state.pendingPermissions.map(permissionToPendingRequest), state.queuedPrompts, state.isGenerating ? liveReplyOf(turn ?? null) : null, terminals, turn);
   };
   const emit = (next: SessionState) => { state = next; emitLatest(); };
 
   let session: ReplicaState<SessionState> | null = null;
   const attachSession = () => {
+    turn = undefined;
     const replica = new ReplicaState<SessionState>(client.session.state({ sessionId }, 'state'), {
       schema: sessionStateSchema,
       onChange: (next) => { if (session === replica) emit(next); },
@@ -121,7 +122,7 @@ async function watchRunningSessionState(
           if (activeTurn === active) activeTurn = null;
           void active.dispose();
           void replica.dispose();
-          onChange([], [], null, []);
+          onChange([], [], null, [], null);
         }
       }
     );
@@ -137,7 +138,7 @@ async function watchRunningSessionState(
     activeTurn = null;
     if (active) void active.dispose();
     void replica.dispose();
-    onChange([], [], null, []);
+    onChange([], [], null, [], null);
   };
   // `sessions.list` 里有记录 ≠ 还活着:结束的会话留在表里、lifecycle 变 closed,它的 session.state
   // 已经没了(同一条判据见 live-options.ts 的 readConfig)。
@@ -170,7 +171,10 @@ async function watchRunningSessionState(
   };
 }
 
-/** A timeline may open before its runtime, or survive a model switch that replaces that runtime. */
+/**
+ * A timeline may open before its runtime, or survive a model switch that replaces that runtime. `activeTurn`: the
+ * runtime's running turn, null when it has none; absent while the watch is (re)attaching and does not know yet.
+ */
 export async function watchSessionState(
   sessionId: string,
   onChange: (requests: PendingRequest[], queuedPrompts: QueuedPrompt[], liveReply: SessionLiveReply | null, terminals: readonly TerminalState[], activeTurn?: TranscriptTurn | null) => void
@@ -191,7 +195,7 @@ export async function watchSessionState(
       else current = next;
     } catch (error) {
       if (!disposed && generation === own) {
-        onChange([], [], null, []);
+        onChange([], [], null, [], null);
         log.warn('sessionTimeline: live runtime watch unavailable', { sessionId, error: String(error) });
       }
     }

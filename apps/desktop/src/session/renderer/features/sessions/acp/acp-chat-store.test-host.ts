@@ -72,14 +72,15 @@ export function replica<T>(initial: T) {
 
 /**
  * A session's timeline as this computer's host serves it (`sessionTimeline.*`): `invoke` answers the reads, `eventOn`
- * carries what it pushes. `show` replaces the turns and pushes them as a fresh snapshot, as a reset does.
+ * carries what it pushes. `show` replaces the turns (and the running one) and pushes them as a fresh snapshot, as a reset does.
  * Pass both to `installAcpChatStoreHost`, `invoke` first in line: it answers `undefined` for other channels.
  */
 export function hostTimeline(initial: TranscriptTurn[] = []) {
   let turns = initial;
+  let running: string | null | undefined;
   let seq = 0;
   const subscribers = new Map<string, (data: unknown) => void>();
-  const snapshot = () => ({ cursor: { epoch: 'host', seq }, turns, settlements: [], hasOlder: false });
+  const snapshot = () => ({ cursor: { epoch: 'host', seq }, turns, settlements: [], hasOlder: false, runningTurnId: running });
   const answer = (value: unknown) => Promise.resolve({ ok: true, value });
   return {
     reads: [] as string[],
@@ -101,8 +102,10 @@ export function hostTimeline(initial: TranscriptTurn[] = []) {
       subscribers.set(channel, callback);
       return () => subscribers.delete(channel);
     },
-    show(next: TranscriptTurn[]) {
+    /** `runningTurnId`: the turn the runtime is in; omitted, the host does not say (an older host). */
+    show(next: TranscriptTurn[], runningTurnId?: string | null) {
       turns = next;
+      running = runningTurnId;
       seq += 1;
       for (const [channel, callback] of [...subscribers]) {
         callback({ subscriptionId: channel.slice('session-timeline:push.'.length), result: { ok: false, reset: 'epoch_changed', snapshot: snapshot() } });

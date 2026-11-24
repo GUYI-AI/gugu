@@ -41,6 +41,8 @@ export type AgentWatchTimeline = {
   /** 已发出、还排着没被 agent 接走的输入:那台机器上的队列,与桌面「Queued prompts」同一份。只读投影。 */
   queuedPrompts: NonNullable<TimelineSnapshot['queuedPrompts']>
   liveReply: SessionLiveReply | null
+  /** The turn the runtime is in now; null when none, undefined when the host does not say (older hosts). */
+  runningTurnId: string | null | undefined
   terminals: NonNullable<TimelineSnapshot['terminals']>
   /** Running subagents with the calls each has made (#2500): beside the turns, not inside the launching turn. */
   subagents: readonly TimelineSubagent[]
@@ -63,6 +65,7 @@ export function emptyAgentWatchTimeline(): AgentWatchTimeline {
     lastActionAt: null,
     queuedPrompts: [],
     liveReply: null,
+    runningTurnId: undefined,
     subagents: [],
     terminals: [],
     lastReset: null,
@@ -119,6 +122,7 @@ export function applySnapshot(
     lastActionAt: snapshot.lastActionAt ?? null,
     queuedPrompts: snapshot.queuedPrompts ?? [],
     liveReply: snapshot.liveReply ?? null,
+    runningTurnId: snapshot.runningTurnId,
     terminals: snapshot.terminals ?? [],
     subagents: snapshot.subagents ?? [],
     lastReset: reset ?? state.lastReset,
@@ -228,6 +232,7 @@ export function applyBatch(state: AgentWatchTimeline, batch: TimelineBatch): Age
     lastActionAt: batch.lastActionAt !== undefined ? batch.lastActionAt : state.lastActionAt,
     queuedPrompts: batch.queuedPrompts !== undefined && current ? batch.queuedPrompts : state.queuedPrompts,
     liveReply: current && batch.liveReply !== undefined ? batch.liveReply : state.liveReply,
+    runningTurnId: current && batch.runningTurnId !== undefined ? batch.runningTurnId : state.runningTurnId,
     terminals,
     subagents: current && batch.subagents !== undefined ? mergeSubagents(state.subagents, batch.subagents) : state.subagents,
     // 一条正常增量到了 = 重载后的那份已经接上了,「时间线已整份重载」的横幅到此为止。

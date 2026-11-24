@@ -7,7 +7,7 @@
  */
 import { autorun, observable, runInAction } from 'mobx';
 import { describe, expect, it, vi } from 'vitest';
-import { installAcpChatStoreHost } from './acp-chat-store.test-host';
+import { host, installAcpChatStoreHost } from './acp-chat-store.test-host';
 
 vi.mock('@renderer/lib/acp/runtime-client', () => ({
   getAcpRuntimeClient: async () => ({}),
@@ -99,19 +99,18 @@ describe('permission band labels', () => {
 });
 
 // The plan card answers the same request in the transcript (#7139). The band steps aside only once that card is there: a
-// request that lands before its tool row would otherwise leave nothing to answer it with. The session's live models are mobx
-// stores (session-wire's createImmutableMobxStore) and the composer is a mobx observer — an autorun stands in for it.
+// request that lands before its tool row would otherwise leave nothing to answer it with. The composer is a mobx
+// observer — an autorun stands in for it — and the row arrives with the session's timeline.
 describe('plan review band', () => {
-  it('stays while the request is ahead of its tool row, and goes the moment the row lands', () => {
+  it('stays while the request is ahead of its tool row, and goes the moment the row lands', async () => {
+    host.show([{ id: 't1', seq: 1, initiator: 'user', items: [] }], 't1');
     const store = new AcpChatStore('conv-plan-band', 'proj-1');
+    const internal = store as unknown as { _historyGeneration: number; _openHistory(generation: number): Promise<void> };
+    await internal._openHistory(internal._historyGeneration);
     const toolCall = { kind: 'unknown-tool-call', id: 't1:tool:toolu_1', toolCallId: 'toolu_1', toolName: 'ExitPlanMode', title: 'Approve Plan', status: 'running' };
     const options = [{ optionId: 'exit-plan-default', name: 'Yes', kind: 'allow_once' }, { optionId: 'reject', name: 'No', kind: 'reject_once' }];
     const sessionState = observable.box<{ pendingPermissions: unknown[] }>({ pendingPermissions: [] }, { deep: false });
-    const activeTurn = observable.box<unknown>({ id: 't1', seq: 1, initiator: 'user', items: [] }, { deep: false });
-    store.session = {
-      sessionState: { current: () => sessionState.get() },
-      activeTurn: { current: () => activeTurn.get() },
-    } as never;
+    store.session = { sessionState: { current: () => sessionState.get() } } as never;
     let band: string | null = null;
     const stop = autorun(() => {
       band = toComposerPermission(store.permissionQueue[0], (key) => key, (id) => store.hasActiveToolCall(id))?.requestId ?? null;
@@ -119,10 +118,10 @@ describe('plan review band', () => {
     runInAction(() => sessionState.set({ pendingPermissions: [{ requestId: 'plan', toolCall, options }] }));
     expect(store.permissionQueue[0]?.waitKind).toBe('plan');
     expect(band).toBe('plan');
-    // The row lands in the session's turn and, as connectSession does, in the chat view's transcript (a Solid store).
-    runInAction(() => activeTurn.set({ id: 't1', seq: 1, initiator: 'user', items: [toolCall] }));
-    store.chatState.transcript.activeTurn.set({ id: 't1', seq: 1, initiator: 'user', items: [toolCall] } as never);
+    host.show([{ id: 't1', seq: 1, initiator: 'user', items: [toolCall] } as never], 't1');
     expect(band, 'the card is in the turn: the band must go without waiting for another change').toBeNull();
     stop();
+    store.session = null;
+    store.dispose();
   });
 });

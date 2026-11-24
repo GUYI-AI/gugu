@@ -19,6 +19,18 @@ export function withRuntimeTurn(turns: readonly TranscriptTurn[], runtime: Trans
 }
 
 /**
+ * The runtime's last frame of a turn it has just ended, in place of the record's copy while that copy is still open: the
+ * runtime ends a turn before the record has all of it, and the open copy can be behind the frame already shown. Null once
+ * the record holds no open copy of it (closed, or none): from then on the record's turns are shown as they are.
+ * `before`: see `withoutCopiesOf`.
+ */
+export function withHeldTurn(turns: readonly TranscriptTurn[], held: TranscriptTurn, before?: ReadonlySet<string>): TranscriptTurn[] | null {
+  const same = sameTurnAs(held);
+  if (!turns.some((turn) => !before?.has(turn.id) && same(turn) && turn.outcome === undefined && turn.endedAt === undefined)) return null;
+  return [...withoutCopiesOf(turns, held, before), held];
+}
+
+/**
  * `turns` without their tail turns that are `turn` as another source holds it (`sameTurnAs`), for whoever draws `turn`
  * itself. `before`: the turns that had ended when `turn` started (`endedTurnIds`, taken then). None of them is a copy
  * of it, whatever it shares: the same words sent again open a turn alike, and their receipt is the same too.

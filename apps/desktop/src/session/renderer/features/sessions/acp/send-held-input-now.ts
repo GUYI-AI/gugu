@@ -1,3 +1,4 @@
+import { reaction } from 'mobx'
 import type { AcpLiveSession } from '@renderer/lib/acp/acp-live-session'
 import type { AcpChatStore } from './acp-chat-store'
 import { releaseQueuedSessionInput, state } from '@/lib/outbox/kinds/sessionInput'
@@ -13,7 +14,7 @@ export async function sendHeldInputNow(store: AcpChatStore, id: string, steers: 
   if (!steers && session?.sessionState.current().queuedPrompts.some(input => !input.clientMessageId)) {
     // First hand over the exact ID, then use the original queue-front/cancel path. Cancelling first
     // would start an older hosted input before this selected input had even reached its host.
-    const waiting = prioritizeHostedInput(session, id, valid)
+    const waiting = prioritizeHostedInput(store, session, id, valid)
     const result = withSessionInputDeadline(waiting.done).then(() => ({ ok: true as const }), error => ({ ok: false as const, error }))
     try {
       const input = await releaseQueuedSessionInput(store.runtimeSessionId, turns, id, false, valid)
@@ -30,11 +31,11 @@ export async function sendHeldInputNow(store: AcpChatStore, id: string, steers: 
   await releaseQueuedSessionInput(store.runtimeSessionId, turns, id, steers, valid)
 }
 
-function prioritizeHostedInput(session: AcpLiveSession, id: string, valid: () => boolean) {
+function prioritizeHostedInput(store: AcpChatStore, session: AcpLiveSession, id: string, valid: () => boolean) {
   let resolve!: () => void, reject!: (error: unknown) => void
   const done = new Promise<void>((yes, no) => { resolve = yes; reject = no })
   let disposed = false, changing = false
-  const started = () => session.activeTurn.current()?.items.some(item => item.kind === 'message' && item.role === 'user'
+  const started = () => store.chatState.transcript.state.activeTurnSnapshot?.items.some(item => item.kind === 'message' && item.role === 'user'
     && (item._meta?.guguClientMessageId === id || item.id === id || item.id.includes(id))) ?? false
   const check = () => {
     if (disposed || changing) return
@@ -60,7 +61,8 @@ function prioritizeHostedInput(session: AcpLiveSession, id: string, valid: () =>
     })().catch(reject)
   }
   const stopState = session.sessionState.onChange(check)
-  const stopActive = session.activeTurn.onChange(check)
+  // The running turn as the page draws it: `transcriptRevision` moves with every draw.
+  const stopActive = reaction(() => store.transcriptRevision, check)
   const stopGone = session.sessionState.onGone(error => reject(error))
   check()
   return { done, dispose() { disposed = true; stopState(); stopActive(); stopGone(); resolve() } }
