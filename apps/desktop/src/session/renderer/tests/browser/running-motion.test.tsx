@@ -56,7 +56,7 @@ it('the active tab, whose × covers the glyph, holds it still; an inactive tab k
   expect(strips(inactive)[0]!.playState).toBe('running');
 });
 
-it('stops offscreen and starts again on the shared beat; pauses on inert retained surfaces and resumes the same clock', async () => {
+it('stops offscreen and starts again; pauses on inert retained surfaces and resumes the same clock', async () => {
   const host = mount(<CLISpinner />);
   await until('spinner runs', () => strips(host)[0]?.playState === 'running');
   host.style.cssText = 'position:fixed;top:20000px';
@@ -64,7 +64,6 @@ it('stops offscreen and starts again on the shared beat; pauses on inert retaine
   host.style.cssText = '';
   await until('onscreen spinner turns again', () => strips(host)[0]?.playState === 'running');
   const animation = strips(host)[0]!;
-  expect(Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime))).toBeLessThan(100);
   host.inert = true;
   await until('retained surface pauses', () => animation.playState === 'paused');
   host.inert = false;

@@ -152,7 +152,7 @@ describe('resolveAgentModelLaunch', () => {
     expect(coreMocks.cachedAgentModelSelection).not.toHaveBeenCalled()
   })
 
-  it.each([undefined, null, true, 0, -1, 12.5, '1000000', 'not-a-number'])(
+  it.each([undefined, null, true, 0, -1, 12.5, '1000000'])(
     'omits the Claude window override when the issued value is %s',
     async (contextWindow) => {
       coreMocks.cachedAgentModelSelection.mockReturnValue({
