@@ -107,7 +107,7 @@ describe('the inner sidebar topics slot', () => {
   })
   const rows = () => Array.from(document.querySelectorAll<HTMLElement>('[data-inner-sidebar-topics] [data-topic-row]')).map((row) => row.dataset.topicRow)
 
-  it('draws level one into the slot (All opens the topics page in the main area, the slot stays) and opens a topic the existing way', async () => {
+  it('draws level one into the slot (All expands every topic in place, with search; Back folds it) and opens a topic the existing way', async () => {
     await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...topics] }, contacts: {} })
     const slot = document.body.appendChild(document.createElement('div'))
     await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
@@ -123,8 +123,11 @@ describe('the inner sidebar topics slot', () => {
     expect(mark('t0')).toBeNull()
 
     await act(async () => setInnerSidebarTopicsAll('group'))
-    expect(rows(), 'the column keeps level one: All is a page of its own').toHaveLength(INNER_SIDEBAR_TOPIC_LIMIT)
+    expect(rows(), 'All expands every topic in the column itself').toHaveLength(topicsOfChat(topics, 'group').length)
+    expect(slot.querySelector('[data-slot="search-field"]'), 'with a search box over the names').not.toBeNull()
     await act(async () => setInnerSidebarTopicsAll(null))
+    expect(rows()).toHaveLength(INNER_SIDEBAR_TOPIC_LIMIT)
+    expect(slot.querySelector('[data-slot="search-field"]')).toBeNull()
 
     await clickElement(slot.querySelector('[data-topic-row="t1"]') as HTMLElement)
     expect(openChat).toHaveBeenCalledWith('t1', false)

@@ -11,7 +11,7 @@ import '@/i18n/registerMessagingCatalog';
 import '@/i18n/registerMainCatalog';
 import '@/styles/tokens.css';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { innerSidebarTopicsSlotKey } from '@/lib/innerSidebarBridge';
+import { innerSidebarTopicsSlotKey, setInnerSidebarTopicsAll } from '@/lib/innerSidebarBridge';
 import { readShellSlots } from '@/lib/shellSlots';
 import { clearDraggedScreenContent, getDraggedScreenContent, SCREEN_CONTENT_DRAG_TYPE } from '@renderer/lib/drag-screen-content';
 
@@ -34,6 +34,7 @@ beforeAll(async () => {
 });
 afterEach(() => {
   act(() => readShellSlots()?.setSlot(innerSidebarTopicsSlotKey('grp-1'), null));
+  act(() => setInnerSidebarTopicsAll(null));
   harness?.cleanup();
   clearDraggedScreenContent();
 });
@@ -65,6 +66,40 @@ it('drags an inner-column topic row into the chat area with the topic sub-row pa
     }]);
   } finally {
     target.remove();
+    slot.remove();
+  }
+});
+
+it('All › expands every topic in the column itself, with a search box over the names; ‹ Back folds it to level one', async () => {
+  const many = [
+    chat({ id: 'grp-1', kind: 'group', name: '产品讨论群', avatar: null, last_message_at: recent }),
+    ...Array.from({ length: 14 }, (_, index) => chat({ id: `t-${index}`, kind: 'topic', name: `话题 ${index}`, source_chat_id: 'grp-1', last_message_at: recent })),
+    chat({ id: 't-price', kind: 'topic', name: '定价页方案', source_chat_id: 'grp-1', last_message_at: recent }),
+  ];
+  harness = createReactHarness();
+  await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: many } });
+  const slot = document.body.appendChild(document.createElement('div'));
+  const rows = () => slot.querySelectorAll('[data-topic-row]').length;
+  try {
+    await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('grp-1'), slot));
+    await until('level one rendered', () => rows() > 0);
+    expect(rows()).toBeLessThan(15);
+    expect(slot.querySelector('[data-slot="search-field"]')).toBeNull();
+
+    await act(async () => setInnerSidebarTopicsAll('grp-1'));
+    await until('every topic rendered', () => rows() === 15);
+    const search = slot.querySelector<HTMLInputElement>('[data-slot="search-field"] input')!;
+    expect(document.activeElement).toBe(search);
+    await userEvent.fill(search, '定价');
+    await until('filtered to the match', () => rows() === 1);
+    expect(slot.querySelector('[data-topic-row="t-price"]')).not.toBeNull();
+    await userEvent.fill(search, '没有这个');
+    await until('the no-match line', () => rows() === 0 && slot.textContent!.includes('未找到'));
+
+    await act(async () => setInnerSidebarTopicsAll(null));
+    await until('back to level one', () => rows() > 0 && rows() < 15);
+    expect(slot.querySelector('[data-slot="search-field"]')).toBeNull();
+  } finally {
     slot.remove();
   }
 });

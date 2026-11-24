@@ -154,7 +154,7 @@ state.toggleIdleExpanded.mockImplementation((key: string) => runInAction(() => {
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
 const { readComposerVerb, setComposerVerb } = await import('@/lib/composerVerbBridge');
 const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarPresent } = await import('@/lib/innerSidebarBridge');
-// The open topics page, as the bridge holds it (the chat block reads it through useInnerSidebarTopicsAll).
+// Which chat has every topic expanded, as the bridge holds it (the shell rows read it through useInnerSidebarTopicsAll).
 const readInnerSidebarTopicsAll = () => ((window as unknown as Record<string, unknown>).__GUGU_INNER_SIDEBAR_TOPICS_ALL__ as string | undefined) ?? null;
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
@@ -338,22 +338,24 @@ describe('inner sidebar', () => {
     expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('shop-chat');
   });
 
-  it('All › (the only way to every topic: no 「All N topics」 row under them) opens the topics page in the group\'s block; the column stays as it is; ‹ Back closes it', async () => {
+  it('All › (the only way to every topic: no 「All N topics」 row under them) expands the topics in place and hides what sits below; the main area stays; ‹ Back brings it back', async () => {
     topicsView('group', { total: 9, hidden: 6 });
     openChat('group');
     await render();
     const drill = () => host.querySelector<HTMLElement>('[data-inner-topics-drill]')!;
     expect(drill().dataset.innerTopicsDrill).toBe('all');
     expect(moreRows()).toEqual([]);
+    const navigations = state.navigateToGroupRoot.mock.calls.length;
     await act(async () => drill().click());
-    expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('group');
+    expect(state.navigateToGroupRoot, 'the main area keeps the current conversation').toHaveBeenCalledTimes(navigations);
     expect(readInnerSidebarTopicsAll()).toBe('group');
-    expect(sections(), 'the column does not change: the page is in the main area').toEqual(['topics', 'agents']);
+    expect(sections()).toEqual(['topics']);
     expect(drill().dataset.innerTopicsDrill).toBe('back');
     await act(async () => drill().click());
     expect(readInnerSidebarTopicsAll()).toBeNull();
+    expect(sections()).toEqual(['topics', 'agents']);
 
-    // The head row goes back to the group itself, closing the page.
+    // The head row goes back to the group itself, back to level one.
     await act(async () => drill().click());
     await act(async () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-slot="button"]')!.click());
     expect(readInnerSidebarTopicsAll()).toBeNull();
