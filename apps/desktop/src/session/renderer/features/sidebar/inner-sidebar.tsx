@@ -20,6 +20,7 @@ import { readShellSlots } from '@/lib/shellSlots';
 import { chatBlockOnScreen } from '@renderer/features/chats/group-participant-actions';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { navigateToGroupRoot } from '@renderer/app/screen-layout-actions';
+import { blockReturnDropTarget } from '@renderer/app/block-grip';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
@@ -239,11 +240,13 @@ const InnerSidebarFrame = observer(function InnerSidebarFrame({
   return (
     // isolate:分区头、行里那几层 z 序关在这一列里,❌ 压过左边列表那根拖动分隔条。
     // 底色是窗口底(同 left-sidebar,界面减法 #10):这一列归列表那一层,只有正文是叠在上面的卡片;左边一根细线和零级栏分开(#52)。
+    // 屏上一块的 ⋮⋮ 拖回这一列 = 那块从这屏拿走(取消并排,block-grip)。
     <div
       data-region="inner-sidebar"
       data-inner-sidebar-chat={chatId}
       data-inner-sidebar-kind={kind}
       className="relative isolate flex h-full w-full flex-col border-l border-border text-foreground-tertiary-muted"
+      {...blockReturnDropTarget()}
     >
       <SidebarContainer className="min-h-0 w-full flex-1">
         <SidebarContent className="flex flex-col">{children}</SidebarContent>

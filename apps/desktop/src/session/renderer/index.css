@@ -1140,6 +1140,12 @@
     background: var(--bg);
   }
 
+  /* The chat drawn in the card is on the card's face: in dark, .emdark lifts --chat-bg to --card, which put a task's
+     chat a shade above its own capsule bar (yangchichi 11-24, dark themes). */
+  [data-chat-card] {
+    --chat-bg: var(--bg);
+  }
+
   [data-chat-card-head] {
     height: 100%;
     border-radius: 12px 12px 0 0;
@@ -1368,9 +1374,9 @@
  *    「Draggable areas ignore all pointer events」)。唯一的退订办法就是 `app-region: no-drag`。
  *  · Blink 层 —— 它还是个覆盖层,已由 shell-titlebar.tsx 的 `pointer-events-none` 让开。
  *
- * ⚠️ `-webkit-app-region` **不继承**:给容器设 no-drag 靠的是**矩形相减**,不是传给子元素。
- * 所以判断一个控件会不会被吞,要看「有没有一个 no-drag 的盒子把它罩住」,
- * ❌ 不能读它自己的计算值(那永远是 `none`)。
+ * ⚠️ `-webkit-app-region` 会继承(11-24 实测:没写它的盒子计算值是 `drag`),而 Electron 按文档顺序做矩形加减:
+ * 后出现的一个铺满的盒子(继承来的 drag)会把前面挖好的 no-drag 洞重新填上。铺满一条的定位层要么写 `none`
+ * (不算区域,见 conversation-capsule.ts CONVERSATION_CAPSULE_LAYER_CLASS),要么排在控件前面。
  *
  * 这条规则曾经是一份**容器白名单**,和上面图标那条共用清单。那样是错的:清单外的东西一律还是死的。
  * owner 在白名单版落地一小时内就撞上了 —— 工作区页签条自己的页签、它的关闭 ✕、新增面板 +
@@ -1454,33 +1460,96 @@ html[data-gugu-dragging] :is(webview, iframe) {
   display: none;
 }
 
-/* 一块左上的 ⋮⋮(spec session-page「一屏几块」,照 Zen 分屏块的拖柄):平时只留位置,指着页签条才淡淡显出来,
-   指着它时深一档,整块描一圈 —— 告诉你抓的是整块。把手用两条横线,静止时隐藏。 */
+/* 一块左上的把手(spec session-page「一屏几块」;yangchichi 11-24 定稿 V2,照 iPadOS 26 窗口左上那颗小胶囊):只在分屏时有,
+   44×22 的胶囊、三颗灰点,距卡片左缘 10、在页签条里垂直居中;平时不显示,指着这一块的页头(粘性,block-grip.tsx @@@grip-sticky-reveal)或聚焦进来才出现。材质是现成的 --glass-* (@@@no-glass:实色面 + hairline + lift,
+   ❌ 半透明 + 模糊)。悬停加全 app 那一档状态色、点变深、整块描一圈;按下再深一档。它所在的页签条让出它那一截
+   (--block-grip-lane,TabStripShell 读),胶囊栏里的名字也不压到它上面。 */
+.session-tab-bar:has([data-block-grip]) {
+  --block-grip-lane: 50px;
+  --capsule-grip-lane: calc(var(--block-grip-lane) + 14px);
+}
+/* The capsule stays clear of what floats beside it: the split handle on the left, the row's buttons on the right
+   (--capsule-actions-lane, chat-workspace-chrome.tsx measureFloatingActions). Two growing spacers keep it centred on the
+   card while there is room; their minimum widths are those lanes, so when room runs out it moves and shrinks instead of
+   running under a button. */
+.conversation-capsule-layer::before,
+.conversation-capsule-layer::after {
+  content: '';
+  flex: 1 1 0;
+}
+.conversation-capsule-layer::before {
+  min-width: var(--capsule-grip-lane, 0px);
+}
+.conversation-capsule-layer::after {
+  min-width: var(--capsule-actions-lane, 0px);
+}
 .screen-block-grip {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  translate: 0 -50%;
   display: flex;
-  height: 24px;
-  width: 20px;
+  width: 44px;
+  height: 22px;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  color: var(--color-foreground);
-  opacity: 0;
+  gap: 5px;
+  border-radius: 11px;
+  background: var(--glass-bg);
+  box-shadow: 0 0 0 0.5px var(--glass-border), var(--shadow-glass);
+  color: var(--faint-fg);
   cursor: grab;
-  transition: opacity var(--dur-fast);
+  -webkit-app-region: no-drag;
+  /* 平时藏着,指着这一块的页头(或键盘聚焦进来)才显出来(yangchichi 11-24);藏着也留着位置和热区。 */
+  opacity: 0;
+  transition: opacity var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
 }
-.session-tab-bar:hover .screen-block-grip,
-.session-tab-bar:focus-within .screen-block-grip {
-  opacity: 0.45;
+.session-tab-bar[data-grip-shown] .screen-block-grip,
+.session-tab-bar:focus-within .screen-block-grip,
+.screen-block-grip:active {
+  opacity: 1;
+}
+.screen-block-grip > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .screen-block-grip:hover,
 .screen-block-grip:focus-visible:not([data-pointer-focus]) {
-  opacity: 1;
+  background: color-mix(in oklab, var(--state-tint) var(--state-hover-amount), var(--glass-bg));
+  color: var(--muted-fg);
 }
-.screen-block-grip-lines {
-  display: block;
-  width: 10px;
-  height: 5px;
-  border-block: 1.5px solid currentColor;
+.screen-block-grip:active {
+  background: color-mix(in oklab, var(--state-tint) var(--state-press-amount), var(--glass-bg));
+  color: var(--fg);
+  cursor: grabbing;
+}
+/* 拖起来跟手的那张图:整块(会话卡 + 它展开的右侧栏,一个单位)缩成一张小图,卡片按真实比例(block-grip.tsx blockDragImage)。 */
+.screen-block-ghost {
+  position: fixed;
+  top: -10000px;
+  left: -10000px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--page);
+  box-shadow: 0 0 0 0.5px var(--border-strong);
+  pointer-events: none;
+}
+.screen-block-ghost > div {
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 0 0 0.5px var(--border);
+}
+.screen-block-ghost > div:first-child {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+  font-size: var(--font-caption);
+  font-weight: 600;
+  color: var(--fg);
 }
 [data-screen-page]:has([data-block-grip]:hover)::after,
 [data-screen-block]:has([data-block-grip]:hover)::after {
