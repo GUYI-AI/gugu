@@ -25,7 +25,6 @@ export type ChatWorkspaceChromeProps = {
   leading?: ReactNode;
   reserveShellRestoreLane?: boolean;
   leadingReservePx?: number;
-  atWindowEdge?: boolean;
   embedded?: boolean;
 };
 
@@ -33,7 +32,7 @@ export type ChatWorkspaceChromeProps = {
 const CAPSULE_BAR_STYLE = { '--tab-strip-height': '56px', '--tab-strip-inset-start': '0px', '--tab-strip-inset-end': '0px', '--tab-strip': 'var(--bg)', '--color-tab-strip': 'var(--bg)' } as CSSProperties;
 
 export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
-  layout, edge, actions, addTab, leading, reserveShellRestoreLane, leadingReservePx, atWindowEdge, embedded = false,
+  layout, edge, actions, addTab, leading, reserveShellRestoreLane, leadingReservePx, embedded = false,
 }: ChatWorkspaceChromeProps & { layout: PaneLayoutStore; edge?: CutEdgeRelay }) {
   const { translate } = useSessionMessages();
   const panes = layout.chatWorkspacePanes;
@@ -170,7 +169,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const exit = translate('tabs.exitToolFullView');
   const maximize = translate('tabs.enterToolFullView');
   const actionRow = (
-    <TabBarActionRow atWindowEdge={!!atWindowEdge}>
+    <TabBarActionRow>
       {mode === 'empty' && <PaneProvider group={chat} passive isFocusedPane>{addTab}</PaneProvider>}
       {tabsVisible && tools && !sharedStrip && (
         <Button size="icon-sm" variant="ghost" title={maximize} aria-label={maximize} onClick={() => layout.setChatToolLayout('full')}>

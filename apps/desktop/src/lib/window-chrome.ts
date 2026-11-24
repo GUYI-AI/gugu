@@ -1,9 +1,7 @@
 export type RendererPlatform = 'mac' | 'win' | 'linux' | 'other'
 
 export const WINDOW_CONTROL_BUTTON_WIDTH_PX = 46
-export const WINDOW_CONTROL_BUTTON_COUNT = 3
 export const WINDOW_CONTROL_BAR_HEIGHT_PX = 40
-export const WINDOW_CONTROLS_WIDTH_PX = WINDOW_CONTROL_BUTTON_WIDTH_PX * WINDOW_CONTROL_BUTTON_COUNT
 
 /**
  * 转瞬层(toast、余额横幅、分享浮层)从这条车道下沿起算 top(`--titlebar-actions-lane`)。
@@ -67,21 +65,16 @@ export function titlebarActionsWidth(slotCount: number): number {
 }
 
 /**
- * Windows 的窗口按钮住在**自己的一行**里 —— 标准 Windows 应用的样子:顶上一条标题栏,
+ * Windows 与 Linux 的窗口按钮住在**自己的一行**里 —— 标准 Windows 应用的样子:顶上一条标题栏,
  * 左边前进/后退与「文件 / 编辑 / 视图 / 帮助」下拉菜单,右边最小化 / 最大化 / 关闭;
  * 内容区整体落在它下面,窗口接壤处用共享表面圆角与透明边线裁切,不另画外框(tokens.css)。
- *
- * Linux 仍是旧形态:三颗钮浮在内容右上角,内容给它们让位(windowControlsWidth)。
- * 两个平台分开是因为这一行只按 Windows 的惯例设计过,❌ 顺手把 Linux 一起换掉。
+ * 两个无边框平台同一行(yangchichi 11-24):按钮从不压在内容上,内容也就不用给它们让位。mac 用原生红绿灯,没有这一行。
  */
 export const WINDOW_TITLEBAR_HEIGHT_PX = 36
 
-export function hasCustomWindowControls(platform: string | undefined): boolean {
-  return platform === 'win' || platform === 'linux'
-}
-
+/** 自绘窗口按钮、住在标题栏行里的平台。平台差异只在这里判。 */
 export function hasWindowTitlebarRow(platform: string | undefined): boolean {
-  return platform === 'win'
+  return platform === 'win' || platform === 'linux'
 }
 
 /**
@@ -110,13 +103,4 @@ export function readRendererPlatform(
 ): RendererPlatform {
   const platform = doc?.documentElement.dataset.platform
   return platform === 'mac' || platform === 'win' || platform === 'linux' ? platform : 'other'
-}
-
-/**
- * 内容区右上角要给窗口按钮**让出**的宽度 —— 只有按钮压在内容上时才非 0(Linux)。
- * Windows 的按钮在标题栏行里,不压内容,所以是 0:main.tsx 写的 `--titlebar-controls-width` 从这里取,
- * 页签条右端那格留白(titlebar-actions.tsx)读的就是那个变量,一处改全处跟。
- */
-export function windowControlsWidth(platform: string | undefined): number {
-  return hasCustomWindowControls(platform) && !hasWindowTitlebarRow(platform) ? WINDOW_CONTROLS_WIDTH_PX : 0
 }

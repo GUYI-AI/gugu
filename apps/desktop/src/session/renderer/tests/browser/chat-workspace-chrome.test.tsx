@@ -70,7 +70,7 @@ async function mountWorkspace(rename?: (name: string) => void) {
     {/* Clipped like the app's shell around the panes (overflow hidden is still scrollable by script). */}
     {shown && <div style={{ width: 800, height: '100%', overflow: 'hidden' }} data-chat-workspace-test-main="">
       <PaneTreeView layout={workspace} chatChrome={{
-        actions: <TabBarActionRow atWindowEdge={false}><span>聊天操作</span></TabBarActionRow>,
+        actions: <TabBarActionRow><span>聊天操作</span></TabBarActionRow>,
         addTab: <Button size="icon-sm" variant="ghost" aria-label="打开测试工具" onClick={() => workspace.open('tool', { id: 'file' }, { from: null, intent: 'newTab' })}><Plus className="size-3.5" /></Button>,
       }} renderPane={(paneId, _first, _last, part) => {
         const group = workspace.groups.find((pane) => pane.paneId === paneId)!;
