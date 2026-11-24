@@ -34,8 +34,10 @@ vi.mock('@gugu/core/cloud/config', async original => ({ ...await original<object
 vi.mock('@/platform', async original => { const actual = await original<typeof import('@/platform')>(); return { ...actual, platform: { ...actual.platform, kind: 'electron', capabilities: { ...actual.platform.capabilities, sessionHost: true } } } })
 vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHostsStore: { hosts: observable.map(), start: vi.fn() } }))
 vi.mock('@renderer/lib/ipc', async original => ({ ...await original<typeof import('@renderer/lib/ipc')>(),
-  rpcOn: () => ({ agents: { listIcons: async () => ({ codex: {} }) } }),
-  rpc: { appSettings: { getWithMeta: async () => ({ value: { owners: {} }, defaults: { owners: {} }, overrides: {} }) } },
+  // Provider ids come from this computer's icon table (`agentIcons`), ❌ the machine's.
+  rpcOn: () => ({ agents: { listIcons: async () => { throw new Error('another machine\'s icon table is not read') } } }),
+  rpc: { appSettings: { getWithMeta: async () => ({ value: { owners: {} }, defaults: { owners: {} }, overrides: {} }) },
+    agents: { listIcons: async () => ({ codex: {} }) } },
 }))
 vi.mock('@/components/settings/data-import/use-external-import-providers', () => ({ useExternalImportProviders: () => ({ providers: [], historyDialog: null }) }))
 vi.mock('@/components/settings/data-import/import-providers', () => ({ importProviders: [], locateImportProvider: () => undefined, registerExtraImportProviders: () => () => {} }))
