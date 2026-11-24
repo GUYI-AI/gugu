@@ -1,3 +1,4 @@
+import { contextCompactionSettings } from '@gugu/session-core/models/context-threshold';
 import { join } from 'node:path';
 import { mcpToggleDirective, type McpToggleServer } from '@gugu/session-core/mcp';
 import type {
@@ -129,7 +130,11 @@ export function materializeOpenCodeFamilySession(
     ? { small_model: config.model }
     : {};
   const env = definedEnv(bundle.env);
-  env[spec.configEnvKey] = JSON.stringify({ ...configWithToggles, ...smallModel });
+  const threshold = spec.configEnvKey === 'OPENCODE_CONFIG_CONTENT'
+    ? contextCompactionSettings(bundle.env, bundle.model?.contextWindow) : undefined;
+  const compaction = threshold
+    ? { compaction: { ...baseConfig.compaction as Record<string, unknown> | undefined, buffer: threshold.reserve } } : {};
+  env[spec.configEnvKey] = JSON.stringify({ ...configWithToggles, ...smallModel, ...compaction });
   const createPatch = brand.sessionCreatePatch(bundle.autonomy);
 
   // @@@no-workspace-plugin-4895 — event module 不再投放到**任何** task surface。

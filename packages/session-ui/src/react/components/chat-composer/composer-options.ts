@@ -137,6 +137,8 @@ export interface ComposerModelOption {
    */
   disabled?: boolean;
   disabledReason?: string;
+  /** Keep the identity of a bound model in the trigger when it cannot be offered on the current device. */
+  hiddenFromPicker?: boolean;
 }
 
 /**
@@ -206,6 +208,8 @@ export interface ComposerModelItem {
   /** 见 `ComposerModelOption` 上同名字段。 */
   disabled?: boolean;
   disabledReason?: string;
+  /** Keep the identity of a bound model in the trigger when it cannot be offered on the current device. */
+  hiddenFromPicker?: boolean;
 }
 
 /**

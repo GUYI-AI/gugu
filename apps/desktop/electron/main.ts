@@ -434,6 +434,7 @@ import {
   setSessionWebSearchBridge,
   setSessionExtensionBridge,
   setSessionLibraryMcpBridge,
+  setSessionContextThresholdReader,
 } from './capability-bundle'
 import { mcpService } from './session/main/core/mcp/services/McpService'
 import { toolsRuntimePath } from './session/main/core/extensions/app-runtime-dir'
@@ -6734,6 +6735,10 @@ app.whenReady().then(async () => {
         })
         // 资源库 → MCP:这条任务带上的那几台,经能力包送进去。包建好以后连同留在外面的(让给这一家自己的、
         // 这条腿收不到的、和咕咕自己的撞了的、资源库里已删的)记成这一次的事实,任务的 `/mcp` 面板读它。
+        setSessionContextThresholdReader(async (id) => {
+          const { sessionContextThreshold } = await import('./session/main/core/agents/context-threshold')
+          return sessionContextThreshold(id)
+        })
         setSessionLibraryMcpBridge(async (sessionId, selectionFrom) => {
           const picked = await emdash.emdashLibraryMcpForSession(selectionFrom ?? sessionId)
           const servers = picked.servers.map((server) => ({

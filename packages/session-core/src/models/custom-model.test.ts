@@ -42,6 +42,23 @@ describe('custom model identity and metadata', () => {
 });
 
 describe('custom model protocol matching', () => {
+  it('uses the first rule matching both model and incoming protocol, including its separate address', () => {
+    const anthropic = { protocol: 'anthropic-messages', baseUrl: 'https://relay.test' } as const;
+    const chat = { protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' } as const;
+    const override = { id: '004e3794-4df0-4598-b438-4967e139ea12', incoming: 'anthropic-messages',
+      outgoing: chat.protocol, modelId: 'special', baseUrl: 'https://relay.test/compatible' } as const;
+    const fallback = { id: '31ba430b-ad77-4405-9d62-9202fe6adb4a', incoming: 'any', outgoing: anthropic.protocol } as const;
+    const input = {
+      nativeProtocol: anthropic.protocol, convertFrom: [chat.protocol], modelId: 'special',
+      connection: { endpoints: [anthropic, chat], keySaved: true, routes: [override, fallback] },
+    };
+    expect(matchCustomModel(input)).toEqual({ routeId: override.id, converted: true,
+      endpoint: { protocol: chat.protocol, baseUrl: override.baseUrl } });
+    expect(matchCustomModel({ ...input, modelId: 'other' })).toEqual({ routeId: fallback.id, endpoint: anthropic });
+    expect(matchCustomModel({ ...input, connection: { ...input.connection, routes: [fallback, override] } }))
+      .toEqual({ routeId: fallback.id, endpoint: anthropic });
+    expect(matchCustomModel({ ...input, nativeProtocol: chat.protocol }).reason).toBe('protocol');
+  });
   it('prefers native protocol regardless of endpoint order', () => {
     const endpoints = [{ protocol: 'openai-chat-completions' as const, baseUrl: 'https://chat.test' }, { protocol: 'openai-responses' as const, baseUrl: 'https://responses.test' }];
     expect(matchCustomModel({ nativeProtocol: 'openai-responses', protocols: ['openai-chat-completions'], connection: { endpoints, keySaved: true } }).endpoint).toEqual(endpoints[1]);

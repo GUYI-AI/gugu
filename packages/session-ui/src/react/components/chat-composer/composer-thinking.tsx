@@ -22,9 +22,10 @@ export interface ComposerThinkingProps {
 }
 
 /** The same native thinking axis is used in the model picker and the phone Work panel. */
-export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, defaultEffort,
+export function ComposerThinking({ effortItems: allEffortItems, selectedEffort, onEffortChange, defaultEffort,
   fastMode, onFastModeChange, renderFastModeHint, disabled, phoneActions, onCommit }: ComposerThinkingProps) {
   const { translate } = useMessages();
+  const effortItems = allEffortItems.filter(({ id }) => id.toLowerCase() !== 'default');
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const effortHintId = `${useId()}-effort-hint`;
   const selectedEffortItem = selectedEffort
@@ -33,7 +34,7 @@ export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, 
   const defaultEffortItem = defaultEffort
     ? (effortItems.find((e) => e.id === defaultEffort) ?? null)
     : null;
-  const resetEffortItem = defaultEffortItem ?? effortItems.find((e) => e.id === 'default');
+  const resetEffortItem = defaultEffortItem;
   // The trigger and the Thinking row must describe the same effective level. A model default is
   // not an explicit user override, but it is still the level currently in effect when no override
   // exists; leaving it out of the radio value makes the trigger say one level while the panel says
@@ -141,7 +142,7 @@ export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, 
                   data-armed={shownEffortItem ? 'true' : 'false'}
                   style={{ opacity: shownIsUserPick || !shownEffortItem ? 1 : 0.6 }}
                 >
-                  {shownEffortItem?.name ?? translate('composer.default')}
+                  {shownEffortItem?.name ?? '—'}
                 </span>
                 {/* 当前这一档是干什么的 —— 跟在档名后面同一行(owner 2026-10-10:「思考那块显得特别大」,
                     原来它独占一行)。见 modelEffortHint 抬头:目录里只要有一档带说明就恒占这一格(空的也占)。

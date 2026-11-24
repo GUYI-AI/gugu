@@ -750,32 +750,37 @@ export const stopIcon = style({
 
 // ── Context usage indicator ────────────────────────────────────────────────────
 
-/**
- * 触发器上那行读数 —— 直接写「用了多少 / 一共多少」。
- *
- * 2026-09-22 按 design.md 统一。原来这里是一枚**百分比圆环**(SVG donut,
- * `strokeDasharray={pct} 100`)。design.md 的 Reject 列表逐字点名了这个形式:
- * 「The stock chat idiom inside our chat: … a percentage context ring」——
- * 它被否的不是配色(那是干净的中性灰 + 警戒橙),是**这个形式本身**:
- * 一圈弧线要人换算才读得出「还剩多少」,而同一份数字写出来就是答案。
- * 圆环删掉之后,弹层里那条线性条成了这个分数唯一的图形表达(从前两者并存)。
- *
- * mono:design.md 里 mono 的一份工作就是 **a count**(见 usageTokenCount 那条)。
- * `tabular-nums` —— 流式推进时数字每秒都在跳,等宽数位让这行不左右抖。
- */
-export const usageReading = style({
-  fontFamily: tokenVars.fontMono,
-  fontSize: tokenVars.textTiny,
-  fontVariantNumeric: 'tabular-nums',
-  lineHeight: 1.25,
-  color: vars.foregroundMuted,
-  whiteSpace: 'nowrap',
+export const usageRing = style({ color: vars.foregroundMuted });
+export const usageRingTrack = style({ stroke: vars.border });
+export const usageRingWarn = style({ color: vars.surfaceWarningForeground });
+export const usageHeader = style({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' });
+export const usageHarness = style({
+  display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: vars.foregroundMuted,
+  fontSize: tokenVars.textTiny, whiteSpace: 'nowrap',
 });
+globalStyle(`${usageHarness} svg, ${usageHarness} img`, { width: 14, height: 14, flexShrink: 0 });
 
-/** 读数的警戒档(>= 90% 满) —— 与弹层里那条线性条同一个色。 */
-export const usageReadingWarn = style({
-  color: vars.surfaceWarningForeground,
+export const contextUsageFooter = style({
+  marginTop: '0.75rem', paddingTop: '0.375rem', borderTop: `1px solid ${vars.border}`,
+  textAlign: 'center', color: vars.foregroundMuted, fontSize: tokenVars.textSm,
 });
+export const contextThresholdTrigger = style({
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem', width: '100%',
+  padding: '0.375rem 0.5rem', borderRadius: tokenVars.radiusMd, color: vars.foreground,
+  fontSize: tokenVars.textSm, textAlign: 'left',
+  selectors: { '&:hover:not(:disabled), &[data-popup-open]': { backgroundColor: vars.surfaceHover } },
+});
+export const modelSelectedCheck = style({ color: vars.foregroundSuccess, flexShrink: 0, marginLeft: 'auto' });
+export const modelDetailControlValue = style({ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: vars.foregroundMuted });
+export const contextThresholdContent = style({ width: '11rem', padding: '0.25rem' });
+export const contextThresholdInput = style({
+  width: '100%', minHeight: '2rem', borderRadius: tokenVars.radiusMd, background: 'transparent',
+  padding: '0.375rem 0.5rem', fontSize: tokenVars.textSm,
+  selectors: { '&[aria-invalid="true"]': { color: vars.foregroundDestructive } },
+});
+export const contextThresholdOption = style([contextThresholdTrigger, {
+  selectors: { '&[aria-pressed="true"]': { backgroundColor: vars.surfaceHover } },
+}]);
 
 /** Provider-reported cost. Rendered only for an explicitly known BYOK route. */
 export const usageCostRow = style({
@@ -797,7 +802,8 @@ export const usageStatsRow = style({
 });
 
 export const usagePercent = style({
-  fontWeight: 500,
+  fontSize: '1.75rem',
+  fontWeight: 600,
   color: vars.foreground,
 });
 
@@ -967,7 +973,10 @@ globalStyle(
 )
 
 /** 上下文用量读数那颗(档 4 起让位)。 */
-export const usageTrigger = style({})
+export const usageTrigger = style({
+  width: '1.75rem', height: '1.75rem', padding: 0, borderRadius: tokenVars.radiusFull,
+  flexShrink: 0, marginRight: '0.25rem',
+})
 /** 任务开始后换不了的 agent —— 静态的那颗图标(档 5 起让位;能选的那颗不收)。 */
 export const agentLockedIndicator = style({})
 
@@ -1704,6 +1713,7 @@ export const modelPanelItemCompact = style({
   paddingBottom: '0.375rem',
   selectors: {
     '&[data-disabled][role="option"]': { pointerEvents: 'auto' },
+    '&[data-selected]': { fontWeight: 600 },
   },
 });
 

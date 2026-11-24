@@ -16,6 +16,7 @@ export function connectionModelLaunch(input: {
   protocol?: ModelProtocol
   capabilities?: CustomModelEntry
   connectionId?: string
+  routeId?: string
   entries?: readonly CustomModelEntry[]
   piProviders?: readonly PiCustomModelProvider[]
   effort?: string
@@ -42,7 +43,7 @@ export function connectionModelLaunch(input: {
     })
     modelCapability = {
       ...declared, providerName: input.name,
-      ...(input.connectionId ? { customModels: { connectionId: input.connectionId, entries: input.entries ?? [], piProviders: input.piProviders } } : {}),
+      ...(input.connectionId ? { customModels: { connectionId: input.connectionId, routeId: input.routeId, entries: input.entries ?? [], piProviders: input.piProviders } } : {}),
       ...(input.protocol === 'openai-responses' || input.protocol === 'openai-chat-completions' ? { wireProtocol: input.protocol } : {}),
       ...(input.protocol === 'anthropic-messages' || input.protocol === 'gemini-generate-content'
         ? { platformSettingsEnv: platformModelAccessEnv(input.protocol, input.endpoint, input.apiKey, input.capabilities?.contextWindow) }

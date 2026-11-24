@@ -72,7 +72,7 @@ import {
   useInitialSessionState,
   type InitialSessionState,
 } from './initial-session-section';
-import { effortSourceFor, platformEffortFacts, resolveCreateEfforts, resolveEffortCatalog } from '@shared/core/agents/create-efforts';
+import { effortSourceFor, platformEffortFacts, resolveCreateEfforts, resolveEffortCatalog, resolveInitialEffort } from '@shared/core/agents/create-efforts';
 
 (
   globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
@@ -754,6 +754,22 @@ function toolbarOpensSignIn(): boolean {
 
 // #6447 —— 一条会话能选的推理档 = 这条调用链路真正兑现的档。平台模型的档由**该模型**在目录里认的那一组
 // 与 harness 的清单取交集(网关对推理档是直通,上游各自校验);新建页(本组件)与会话内共用同一个 resolver。
+describe('initial thinking choice', () => {
+  it('selects medium for a new choice only if the model offers it', () => {
+    const supported = { options: { medium: { name: 'Medium' }, high: { name: 'High' } }, defaultId: null };
+    expect(resolveInitialEffort(supported, undefined)).toBe('medium');
+    expect(resolveInitialEffort(supported, 'high')).toBe('high');
+    expect(resolveInitialEffort(supported, 'default')).toBeNull();
+    expect(resolveInitialEffort(supported, null)).toBeNull();
+    expect(resolveInitialEffort({ options: { high: { name: 'High' } }, defaultId: null }, undefined)).toBeNull();
+  });
+
+  it('does not arm any level for a model without thinking', () => {
+    expect(resolveInitialEffort(null, undefined)).toBeNull();
+    expect(resolveInitialEffort(null, 'medium')).toBeNull();
+  });
+});
+
 describe('推理档目录:平台模型按模型取交集 (#6447)', () => {
   const six = {
     low: { name: 'Low' }, medium: { name: 'Medium' }, high: { name: 'High' },

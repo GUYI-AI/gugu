@@ -1,3 +1,4 @@
+import { CONTEXT_THRESHOLD_ENV, contextCompactionSettings } from '@gugu/session-core/models/context-threshold';
 import { harnessPlatform } from './platform';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
@@ -909,9 +910,12 @@ export function materializeCodexSessionBundle(
   //
   // app-server uses this map; acp uses ACP session/new.
   const usesAcpChannel = ctx.surface === 'acp';
+  const threshold = contextCompactionSettings(bundle.env, bundle.model?.contextWindow);
+  if (usesAcpChannel && threshold) env[CONTEXT_THRESHOLD_ENV] = String(threshold.tokens);
   const threadConfig = ctx.surface === 'app-server'
     ? (() => {
         const entries: Array<readonly [string, unknown]> = [['tools.update_plan.enabled', true]];
+        if (threshold) entries.push(['model_auto_compact_token_limit', threshold.tokens]);
         for (const server of bundle.mcpServers) {
           const key = mcpConfigKey(server.name);
           // 问题 9:咕咕发的 server 不逐次问(Codex 缺省按注解判,没注解就问)。

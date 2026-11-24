@@ -68,3 +68,5 @@ export {
   type MessageTranslator,
   type MessageValues,
 } from '../localization/message-provider';
+
+export type { ComposerContextThresholds } from './chat-composer/context-threshold';
