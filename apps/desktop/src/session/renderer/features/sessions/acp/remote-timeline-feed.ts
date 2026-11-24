@@ -6,7 +6,7 @@ import { sessionStreamKey, sessionStreams, type SessionStreamState } from '@/com
 import { followSessionStream, type TimelineStreamClient } from '@/components/session-watch/use-timeline-session';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
-import { machineLinkState, subscribeMachineLink } from '@renderer/lib/machine-clients';
+import { machineLinkState, onMachineReconnected, subscribeMachineLink } from '@renderer/lib/machine-clients';
 import { value, type TimelineFeed } from './acp-timeline-feed';
 
 const OLDER_PAGE = 100;
@@ -22,13 +22,17 @@ function machineTimeline(machine: string) {
     unsubscribeSession: (_device, subscriptionId) => host.sessionUnsubscribe({ subscriptionId }),
     subscribeSessionEvents: (_device, id, receive) => onMachineEvent<SessionpageSessionEvent>(machine,
       { name: `${sessionpageSessionTimelineChannel.name}.${id}` }, (event) => receive(event.result)),
-    // Open again = that machine dropped this window's subscriptions with the old line: the stream subscribes again.
+    // A new window = that machine dropped this window's subscriptions with the old one: the stream subscribes again. A
+    // planned switch of channel opens one too, while the link state says open throughout (❌ watch only that state).
     onLinkChange: (_device, changed) => {
+      const stopOpened = onMachineReconnected(machine, () => changed(true));
       let open = machineLinkState(machine) === 'open';
-      return subscribeMachineLink(machine, () => {
+      const stopLost = subscribeMachineLink(machine, () => {
         const now = machineLinkState(machine) === 'open';
-        if (now !== open) changed((open = now));
+        if (open && !now) changed(false);
+        open = now;
       });
+      return () => { stopOpened(); stopLost(); };
     },
   };
   return {
@@ -43,7 +47,7 @@ function machineTimeline(machine: string) {
  * The session page's history of a task on another machine: the session stream of that machine's session, the one the
  * page it opened on before its workspace was ready (and the phone) fills (`followSessionStream`). One copy per session:
  * when this page takes over from that one it continues from what that one held, ❌ reads the first page again. Pages
- * come folded (`folded-pages`); the stream re-subscribes after a lost line and reads a snapshot after a reset.
+ * come folded (`folded-pages`); the stream re-subscribes on each new window to that machine and reads a snapshot after a reset.
  */
 export class RemoteTimelineFeed implements TimelineFeed {
   private readonly key: { deviceId: string; sessionId: string };
