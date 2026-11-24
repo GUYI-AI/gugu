@@ -1,6 +1,6 @@
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
-import { customModelAcceptsImages, customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelOptionId, customModelThinks, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica, valueOf } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
@@ -399,7 +399,7 @@ const ComposerForStore = observer(function ComposerForStore({
     ? customReading.value.find((record) => record.id === runningCustomModel.connectionId)?.models.find(({ id }) => id === runningCustomModel.modelId)
     : undefined;
   const acceptsImages = !runningCustomModel || customModelAcceptsImages(customFeatures);
-  const acceptsThinking = !runningCustomModel || customFeatures?.thinking === true;
+  const acceptsThinking = !runningCustomModel || customModelThinks(customFeatures);
   const hostBand = useHostAskBand(store.runtimeSessionId, hostSession, store.hostSettlements);
   const resolveHostAsk = hostBand?.resolve;
   const permissionRequest =
