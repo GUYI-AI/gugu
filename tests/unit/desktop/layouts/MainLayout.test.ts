@@ -490,7 +490,7 @@ describe('MainLayout', () => {
     }))
     const appShell = harness.container.firstElementChild as HTMLElement | null
     const mainShell = appShell?.children[1] as HTMLElement | undefined
-    // #7333 壳根读 --shell-bg:不透明时与导航材质同底,mac 原生材质可见时透明(tokens.css @@@window-material-css)。
+    // #7333 壳根读 --shell-bg:与导航栏同底(tokens.css @@@window-material-css)。
     expect(appShell?.style.background).toBe('var(--shell-bg)')
     const rootShellBg: string[] = []
     postcss.parse(readFileSync('apps/desktop/src/styles/tokens.css', 'utf8')).each((node) => {

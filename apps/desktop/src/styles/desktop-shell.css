@@ -73,7 +73,7 @@
   background: var(--desktop-workspace-bg);
 }
 
-/* 材质只透出最左图标栏;列表与外框之间不重复叠半透明色。 */
+/* 列表直接画在窗口底上;它与外框之间不重复叠半透明色。 */
 :root[data-window-material] [data-desktop-shell][data-gugu-shell-phase] .gg-pane[data-role='nav'],
 :root[data-window-material] [data-desktop-shell] .gugu-skin :is([data-workspace-left-panel], [data-region='inner-sidebar']) {
   background-color: transparent;
