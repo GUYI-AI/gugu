@@ -71,7 +71,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
           the edge here. overflow clip, ❌ hidden or visible: what sticks out must not be scrollable overflow, or a page that
           takes focus while still off the edge (the browser's address bar) has the box around it scrolled, and the page beside
           it pushed past its place. */}
-      <div className="relative min-h-0 min-w-0 flex-1 overflow-clip" data-pane-tree-narrow={alone || undefined} data-chat-tool-dragging={draggingChatTool || undefined}>
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-clip" data-pane-tree-pages="" data-pane-tree-narrow={alone || undefined} data-chat-tool-dragging={draggingChatTool || undefined}>
         {/* The root is a cut even as one pane, so the side page coming and going moves on its track (going, live: @@@closing-pane). */}
         <Cut node={layout.layout} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} anchorOf={anchorOf} single={single} swap={swap} edge={scopedChrome ? edge : undefined} />
         {layout.groups.map(({ paneId }) => {
