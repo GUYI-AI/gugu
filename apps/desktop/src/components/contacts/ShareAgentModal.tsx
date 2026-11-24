@@ -24,12 +24,15 @@ export function ShareAgentModal({
   agent,
   contacts,
   onClose,
-  onOpenGroupChat
+  onOpenGroupChat,
+  zIndex
 }: {
   agent: ContactUser
   contacts: ContactUser[]
   onClose: () => void
   onOpenGroupChat?: (group: ContactGroupChat) => void
+  /** Opened from the member profile popover (--z-popover): pass var(--z-modal-top), as SharePosterDialog does (@@@1862). */
+  zIndex?: string
 }) {
   const { t, i18n } = useTranslation('contacts')
   const { user } = useAuth()
@@ -109,6 +112,7 @@ export function ShareAgentModal({
   return (
     <Sheet
       onClose={onClose}
+      zIndex={zIndex}
       desktopWidth="min(380px, 100%)"
       desktopMaxHeight="min(560px, calc(100dvh - 32px))"
       ariaLabel={t('inviteAgent.dialogLabel')}

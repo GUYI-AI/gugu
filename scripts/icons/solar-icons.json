@@ -62,6 +62,7 @@
     "Expand": "maximize-linear",
     "Eye": "eye-linear",
     "EyeOff": "eye-closed-linear",
+    "FacemaskCircle": "facemask-circle-linear",
     "FileArchive": "zip-file-linear",
     "FileAudio": "music-note-linear",
     "FileCode": "code-file-linear",

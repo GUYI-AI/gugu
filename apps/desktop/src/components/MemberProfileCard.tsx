@@ -14,12 +14,16 @@ import { useTranslation } from 'react-i18next'
 import { resolveMessagingValue } from '@/lib/localizedStoredValue'
 import { useAgentContactStatusLabel } from './contactAgentTone'
 import { useAgentDisplayStatus } from '../hooks/useAgentDisplayStatus'
-import { Button, type ButtonProps } from './ui/Button'
+import { Button } from './ui/Button'
 import { Hint } from './ui/Tooltip'
 import { Unknown } from './ui/Unknown'
 import { FieldList } from './contactsDetailControls'
 import { cn } from '@/lib/cn'
-import { Search } from '@/lib/icons'
+import { FacemaskCircle, MessageCircle, Search, Share } from '@/lib/icons'
+import { ProfileCardAction } from './contacts/ProfileCardAction'
+import { ShareAgentModal } from './contacts/ShareAgentModal'
+import { peopleContacts } from './contacts/contactSelectors'
+import { useContactsStore } from '../store/contactsContext'
 import { useAgentSession } from '@/lib/projectGroupChatsBridge'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { useAgentSessionRow } from '@/components/session-watch/useAgentSessionRow'
@@ -28,21 +32,19 @@ import type { AgentSession } from '@/session/renderer/features/projects/stores/p
 // @@@float-one-edge (Refs #6104) — 名片是浮层:圆角 xl(12) + 一层 lift,❌ 不再叠描边。
 const profileCardClass = 'gg-pop w-[284px] overflow-hidden rounded-xl bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-[var(--shadow-lift)]'
 // 放进底部面板(手机,#6836)时铺满宽度,圆角、底色归面板,卡片不再叠第二层外框。
-const agentProfileCardWidth = 'w-[272px]'
 const profileFillClass = 'gg-pop w-full text-[var(--text-primary)]'
 const profileSingleClass = 'gg-pop--single'
 // @@@panel-chrome 名片内一条左边线 16,头与正文之间只留白;只有管理区上方一条线(与全 app 同一个灰)。
 const profileHeaderClass = 'gg-pop-ph flex items-center gap-3.5 px-4 pb-1 pt-4'
 const profileHeaderTextClass = 'gg-pop-ph-text flex min-w-0 flex-col'
-const profileNameClass = 'gg-pop-pn min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-base font-semibold text-[var(--text-primary)]'
-const profileActionsClass = 'gg-pop-pacts flex flex-wrap gap-2 px-4 pb-3 pt-3'
-const profileButtonClass = 'gg-pop-pbtn flex-[1_1_auto] text-[length:var(--font-body)] [&_svg]:shrink-0'
-const agentProfileActionsClass = 'gg-pop-pacts flex items-start gap-2 px-4 py-4'
-const agentProfileActionsMobileClass = 'flex-wrap'
-const agentPrimaryActionClass = 'h-[var(--control-h-lg)] min-w-0 flex-1 gap-2 px-2'
-const agentPrimaryActionMobileClass = 'h-[var(--control-h-touch)] min-h-[var(--control-h-touch)] basis-full text-base'
-const agentSecondaryActionClass = 'h-[var(--control-h-lg)] w-[var(--control-h-lg)] shrink-0 bg-[var(--muted)] px-0'
-const agentSecondaryActionMobileClass = 'h-16 min-w-0 flex-1 flex-col gap-1 bg-[var(--muted)] px-1 text-center text-xs leading-4 whitespace-normal'
+// 名字最多两行:窄卡里一行放不下的名字(agent 名常是一句话)折行,❌ 截成省略号。
+const profileNameClass = 'gg-pop-pn min-w-0 line-clamp-2 [overflow-wrap:anywhere] text-base font-semibold leading-snug text-[var(--text-primary)]'
+// @@@one-card - 人和 agent 同一套动作区:「发消息」是唯一强调的按钮、独占一行;其下一行等分的次级动作(悄悄话 / 查找 / 分享),
+// 与通讯录名片同一个 ProfileCardAction。❌ 按人 / agent 另排一套(两套曾经并存:人是整宽描边按钮,agent 是灰底图标方块)。
+const profileActionsClass = 'gg-pop-pacts flex flex-col gap-2 px-4 pb-3 pt-3'
+const profilePrimaryActionClass = 'w-full gap-2'
+// 固定三格:某一项不出现(非主人看 agent 没有「分享」)时其余项留在原位,❌ 撑宽占掉它的位置。
+const profileSecondaryRowClass = 'grid grid-cols-3 gap-1'
 const profileFieldsClass = 'gg-pop-fields gap-x-2 gap-y-1.5 px-4 pb-3.5'
 const profileFieldRowClass = 'gg-pop-field-row col-span-2 grid grid-cols-subgrid items-start text-[length:var(--font-caption)] leading-[var(--lh-caption)]'
 const profileFieldLabelClass = 'gg-pop-field-label whitespace-nowrap text-[var(--text-tertiary)]'
@@ -73,36 +75,6 @@ const profileManageErrorClass = 'gg-pop-manage-error mt-0.5 text-[length:var(--f
 function listenModeButtonClass(active: boolean): string {
   return cn(profileListenButtonBaseClass, active ? profileListenButtonActiveClass : profileListenButtonInactiveClass)
 }
-
-// ── SVG icons (design #pop) ───────────────────────────────────────────────
-// 发消息 — chat bubble
-const IconMsg = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24">
-    <path fill="none" stroke="currentColor" strokeWidth="1.5" d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2S2 6.477 2 12c0 1.6.376 3.112 1.043 4.453c.178.356.237.763.134 1.148l-.595 2.226a1.3 1.3 0 0 0 1.591 1.592l2.226-.596a1.63 1.63 0 0 1 1.149.133A9.96 9.96 0 0 0 12 22Z"/>
-  </svg>
-)
-
-// 悄悄话 — whisper / two-person figure
-const IconWhisper = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24">
-    <g fill="none">
-      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5"/>
-      <path stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" d="M16.5 20.5L17 15l-3.143-1.258a5 5 0 0 0-3.714 0L7 15l.5 5.5M7 15l-4.5-2M17 15l4.5-2"/>
-      <ellipse cx="15" cy="10.5" fill="currentColor" rx="1" ry="1.5"/>
-      <ellipse cx="9" cy="10.5" fill="currentColor" rx="1" ry="1.5"/>
-    </g>
-  </svg>
-)
-
-// 分享 — share / upload arrow
-const IconShare = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24">
-    <g fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5">
-      <path d="M4 12a8 8 0 1 0 16 0"/>
-      <path strokeLinejoin="round" d="M12 14V4m0 0l3 3m-3-3L9 7"/>
-    </g>
-  </svg>
-)
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -219,34 +191,6 @@ function DataRow({ field, label, value }: { field: string; label: string; value:
   )
 }
 
-function ProfileSecondaryAction({ isAgent, phone, label, unavailableLabel, children, ...props }: {
-  isAgent: boolean
-  phone: boolean
-  label: string
-  unavailableLabel?: string
-  'data-testid'?: string
-  children: ReactNode
-} & Pick<ButtonProps, 'onClick' | 'disabled'>) {
-  if (!isAgent) {
-    return <Button size="sm" className={profileButtonClass} title={unavailableLabel} {...props}>{children}{label}</Button>
-  }
-
-  const button = (
-    <Button
-      {...props}
-      size="lg"
-      variant="ghost"
-      aria-label={phone ? undefined : label}
-      title={props.disabled ? unavailableLabel : undefined}
-      className={phone ? agentSecondaryActionMobileClass : agentSecondaryActionClass}
-    >
-      {children}{phone ? <span>{label}</span> : null}
-    </Button>
-  )
-
-  return phone || props.disabled ? button : <Hint label={label} side="bottom">{button}</Hint>
-}
-
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function MemberProfileCard({
@@ -304,15 +248,20 @@ export function MemberProfileCard({
   // @@@1208 (#857 收尾) 仅当父级(agent 的主人)接了 onChangeListenMode 才让分段控件可交互;否则只读镜像。
   const canEditListenMode = showListenMode && !!editControls?.onChangeListenMode
 
-  // @@@share (#1111) — 分享按钮复用既有 contact QR 分享卡（SharePosterDialog）。
-  // 由成员的咕咕号生成同款 add-me QR；无咕咕号则无法生成 → 按钮禁用 fail-loud，不出死按钮/假占位。
+  // @@@share — 同一个「分享」,各自用已有的那条路:
+  // 人 (#1111) 复用 contact QR 分享卡(SharePosterDialog),由咕咕号生成 add-me QR;无咕咕号 → 按钮禁用并说明原因。
+  // agent 走通讯录名片同一个 ShareAgentModal(share_agent:选好友 → 发入群邀请)。它是 owner-only,非主人不给入口
+  // (与 ContactsPanel 的 isOwnedAgent 同一条规则);❌ 给 agent 出咕咕号海报(agent 的号是懒分配的,群里那张卡常常没有号)。
   const [showShare, setShowShare] = useState(false)
+  const { contacts } = useContactsStore()
+  const ownedAgentContact = isAgent && member.ownerUserId === user?.id ? contacts.find((c) => c.id === member.id) : undefined
   const shareQrValue =
-    typeof member.guguNumber === 'number' && Number.isInteger(member.guguNumber) && member.guguNumber > 0
+    !isAgent && typeof member.guguNumber === 'number' && Number.isInteger(member.guguNumber) && member.guguNumber > 0
       ? createGuguQrUrl(createContactQrPayload(member.guguNumber))
       : null
-  const canShare = shareQrValue !== null
-  const SelfOrContactShare = !isAgent && member.id === user?.id ? PersonalSharePreview : SharePosterDialog
+  const showShareAction = !isAgent || !!ownedAgentContact
+  const canShare = isAgent ? !!ownedAgentContact : shareQrValue !== null
+  const SelfOrContactShare = member.id === user?.id ? PersonalSharePreview : SharePosterDialog
 
   const handleOpenChat = () => {
     if (!onOpenChat) return
@@ -327,16 +276,15 @@ export function MemberProfileCard({
     })
   }
 
-  // Keep the actual avatar at the card's size; badges must remain outside its bounds.
-  const avatarSize = isAgent ? (phone ? 64 : 60) : 52
-  const agentNameClass = phone ? 'text-xl leading-7 font-semibold' : 'text-lg leading-6 font-semibold'
+  // Keep the actual avatar at the card's size; badges must remain outside its bounds. One size for people and agents.
+  const avatarSize = phone ? 64 : 56
   const listenHeading = t('profile.listenModeDescription')
 
   return (
     <>
-    <div className={cn(fill ? profileFillClass : cn(profileCardClass, isAgent && agentProfileCardWidth), isSingle && profileSingleClass)}>
+    <div className={cn(fill ? profileFillClass : profileCardClass, isSingle && profileSingleClass)}>
       {/* ── Header: avatar + name + tag (prototype .ph, line 445-446) ── */}
-      <div className={cn(profileHeaderClass, isAgent && 'gap-3 pb-0')}>
+      <div className={profileHeaderClass}>
         <div style={{ width: avatarSize, height: avatarSize, flexShrink: 0, position: 'relative' }}>
           <Avatar
             name={shownName}
@@ -348,7 +296,7 @@ export function MemberProfileCard({
           />
         </div>
         <div className={profileHeaderTextClass} style={{ flex: 1, minWidth: 0 }}>
-          {isAgent ? <OwnedAgentNameEditor key={member.id} agentId={member.id} name={member.displayName} ownerUserId={member.ownerUserId} status={status} membership={member.membership} className={cn(agentNameClass, !phone && '[--control-h-sm:24px]')}><span className={cn(profileNameClass, agentNameClass)}>{shownName}</span></OwnedAgentNameEditor> : <div className={profileNameClass}>{member.displayName}</div>}
+          {isAgent ? <OwnedAgentNameEditor key={member.id} agentId={member.id} name={member.displayName} ownerUserId={member.ownerUserId} status={status} membership={member.membership} className={cn('text-base font-semibold', !phone && '[--control-h-sm:24px]')}><span className={profileNameClass}>{shownName}</span></OwnedAgentNameEditor> : <div className={profileNameClass}>{member.displayName}</div>}
           {/* One metadata line, the same cells-with-gap idiom as the agent's row in the member list. */}
           {isAgent ? (
             <div data-profile-agent-meta className={profileAgentMetaClass}>
@@ -359,98 +307,83 @@ export function MemberProfileCard({
         </div>
       </div>
 
-      {/* ── Action buttons (prototype .pacts, lines 450-452) ─────────── */}
-      <div className={isAgent ? cn(agentProfileActionsClass, phone && agentProfileActionsMobileClass) : profileActionsClass}>
+      {/* ── Action buttons (prototype .pacts) — one layout for people and agents, see @@@one-card ── */}
+      <div className={profileActionsClass}>
         {/* 发消息 — wired to existing onOpenChat handler */}
         {canOpenChat ? (
           <Button
-            size={isAgent ? 'lg' : 'sm'}
-            variant={isAgent ? 'primary' : 'secondary'}
+            size="lg"
+            variant="primary"
             data-testid="member-profile-send-message-button"
-            className={isAgent ? cn(agentPrimaryActionClass, phone && agentPrimaryActionMobileClass) : profileButtonClass}
+            className={profilePrimaryActionClass}
             onClick={handleOpenChat}
           >
-            <IconMsg />
+            <MessageCircle size={16} />
             <span className="truncate">{t('common.sendMessage')}</span>
           </Button>
         ) : null}
 
-        {/* 悄悄话 — 群聊模式且父组件提供 onWhisper 时显示（对标设计稿 .pbtn.hide-single）。 */}
-        {isGroupProfile && onWhisper ? (
-          <ProfileSecondaryAction
-            isAgent={isAgent}
-            phone={phone}
-            label={t('profile.whisper')}
-            onClick={() => {
-              onWhisper({
-                id: member.id,
-                displayName: member.displayName,
-                avatar: member.avatar,
-                email: member.email,
-                bio: member.bio ?? null,
-                type: member.type,
-              })
-            }}
-          >
-            <IconWhisper />
-          </ProfileSecondaryAction>
-        ) : null}
+        <div className={profileSecondaryRowClass}>
+          {/* 悄悄话 — 群聊模式且父组件提供 onWhisper 时显示（对标设计稿 .pbtn.hide-single）。 */}
+          {isGroupProfile && onWhisper ? (
+            <ProfileCardAction
+              stacked
+              icon={FacemaskCircle}
+              label={t('profile.whisper')}
+              onClick={() => {
+                onWhisper({
+                  id: member.id,
+                  displayName: member.displayName,
+                  avatar: member.avatar,
+                  email: member.email,
+                  bio: member.bio ?? null,
+                  type: member.type,
+                })
+              }}
+            />
+          ) : null}
 
-        {onFindMessages ? (
-          <ProfileSecondaryAction
-            isAgent={isAgent}
-            phone={phone}
-            label={t('profile.findMessages')}
-            data-testid="member-profile-find-messages-button"
-            onClick={onFindMessages}
-          >
-            <Search size={14} />
-          </ProfileSecondaryAction>
-        ) : null}
+          {onFindMessages ? (
+            <ProfileCardAction
+              stacked
+              icon={Search}
+              label={t('profile.findMessagesShort')}
+              title={t('profile.findMessages')}
+              testId="member-profile-find-messages-button"
+              onClick={onFindMessages}
+            />
+          ) : null}
 
-        {/* 分享 — prototype line 822. #1111: 接既有 contact QR 分享卡（SharePosterDialog）。 */}
-        <ProfileSecondaryAction
-          isAgent={isAgent}
-          phone={phone}
-          label={t('common.share')}
-          disabled={!canShare}
-          unavailableLabel={canShare ? undefined : t('profile.shareUnavailable')}
-          onClick={() => { if (canShare) setShowShare(true) }}
-        >
-          <IconShare />
-        </ProfileSecondaryAction>
+          {showShareAction ? (
+            <ProfileCardAction
+              stacked
+              icon={Share}
+              label={t('common.share')}
+              disabled={!canShare}
+              title={canShare ? undefined : t('profile.shareUnavailable')}
+              onClick={() => { if (canShare) setShowShare(true) }}
+            />
+          ) : null}
+        </div>
       </div>
 
-      {/* ── Data fields (咕咕号 / 群角色 / etc) ─────
-          Not in prototype visual but preserved for existing tests and data display.
-          咕咕号 always rendered — direct profiles need it too (test invariant).
-          @@@1344(a) — group-agent 卡隐藏群语境字段(备注/群角色/咕咕号/任务/动作)，保留身份字段
-          (简介/邮箱)、收听模式与管理区。直接资料卡与群里的人类成员卡保留完整字段。 ─── */}
-      {member.bio || member.email || !(isAgent && isGroupProfile) ? (
-        <FieldList className={profileFieldsClass}>
-          {member.bio ? <DataRow field="bio" label={t('profile.bio')} value={member.bio} /> : null}
-          {member.email ? <DataRow field="email" label={t('profile.email')} value={member.email} /> : null}
-          {!(isAgent && isGroupProfile) ? (
-            <>
-              {aliasControls ? <AliasField controls={aliasControls} /> : null}
-              {isGroupProfile ? (
-                <DataRow field="role" label={t('profile.groupRole')} value={roleLabel} />
-              ) : null}
-              <DataRow field="id" label={t('common.guguNumber')} value={member.guguNumber == null ? t('common.unassigned') : member.guguNumber} />
-              {isAgent ? (
-                <>
-                  {member.agentMeta?.currentTaskTitle ? (
-                    <DataRow field="current-task" label={t('profile.currentTask')} value={member.agentMeta.currentTaskTitle} />
-                  ) : null}
-                  {member.agentMeta?.lastAction ? (
-                    <DataRow field="last-action" label={t('profile.lastAction')} value={resolveMessagingValue(member.agentMeta.lastAction)} />
-                  ) : null}
-                </>
-              ) : null}
-            </>
-          ) : null}
-        </FieldList>
-      ) : null}
+      {/* ── Data fields (咕咕号 / 群角色 / etc) — the same rows for people and agents, in a group and outside one.
+          咕咕号 always rendered (unassigned says so). Agent-only: current task / last action. ─── */}
+      <FieldList className={profileFieldsClass}>
+        {member.bio ? <DataRow field="bio" label={t('profile.bio')} value={member.bio} /> : null}
+        {member.email ? <DataRow field="email" label={t('profile.email')} value={member.email} /> : null}
+        {aliasControls ? <AliasField controls={aliasControls} /> : null}
+        {isGroupProfile ? (
+          <DataRow field="role" label={t('profile.groupRole')} value={roleLabel} />
+        ) : null}
+        <DataRow field="id" label={t('common.guguNumber')} value={member.guguNumber == null ? t('common.unassigned') : member.guguNumber} />
+        {isAgent && member.agentMeta?.currentTaskTitle ? (
+          <DataRow field="current-task" label={t('profile.currentTask')} value={member.agentMeta.currentTaskTitle} />
+        ) : null}
+        {isAgent && member.agentMeta?.lastAction ? (
+          <DataRow field="last-action" label={t('profile.lastAction')} value={resolveMessagingValue(member.agentMeta.lastAction)} />
+        ) : null}
+      </FieldList>
 
       {/* ── 收听模式 segmented control (prototype .lm/.lmseg, lines 453-457)
           Agent-only, room scope. The parent supplies onChangeListenMode for the agent owner
@@ -543,10 +476,13 @@ export function MemberProfileCard({
     {showShare && shareQrValue ? (
       <SelfOrContactShare
         title={member.displayName}
-        subtitle={isAgent ? '咕咕 Agent' : '咕咕'}
+        subtitle="咕咕"
         qrValue={shareQrValue}
         onClose={() => { setShowShare(false) }}
       />
+    ) : null}
+    {showShare && ownedAgentContact ? (
+      <ShareAgentModal agent={ownedAgentContact} contacts={peopleContacts(contacts)} zIndex="var(--z-modal-top)" onClose={() => { setShowShare(false) }} />
     ) : null}
     </>
   )

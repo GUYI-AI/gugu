@@ -85,7 +85,7 @@ export function MemberProfilePopover({
   const { t } = useTranslation('contacts')
   const { user } = useAuth()
   const { identitiesById } = useChatStore('identitiesById')
-  const width = profile.member.type === 'agent' ? 272 : 284
+  const width = 284
   const gap = 10
   const { contacts, updateContactAlias } = useContactsStore()
   const contact = contacts.find((item) => item.id === profile.member.id)

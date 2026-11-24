@@ -407,6 +407,7 @@ export default {
     "source": "来源",
     "unconfigured": "未配置",
     "findMessages": "查找该成员的消息",
+    "findMessagesShort": "查找消息",
     "viewProfile": "查看 {{name}} 的资料",
     "whisper": "悄悄话"
   },
