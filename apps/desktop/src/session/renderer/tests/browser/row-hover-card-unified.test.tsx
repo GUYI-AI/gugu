@@ -131,3 +131,36 @@ it('the rail card and the pill card are one card: same surface, same motion', as
   expect(pillCard()!.className).toBe(rail)
   expect(railCard()).toBeNull()
 })
+
+it('a pill inside +N: the pointer can move into its card, and the panel stays until the pointer leaves both', async () => {
+  harness = createReactHarness()
+  await harness.render(
+    <>
+      <div style={{ position: 'fixed', left: 300, top: 600, width: 300 }}>
+        <RunningTokenBar tokens={['a', 'b', 'c', 'd', 'e'].map((id) => ({ ...token(id), name: `agent-with-a-long-name-${id}` }))} previewChatId="chat-1" />
+      </div>
+      <div data-park="" style={{ position: 'fixed', right: 0, bottom: 0, width: 80, height: 80 }} />
+    </>
+  )
+  const more = () => document.querySelector<HTMLElement>('.rtb-more')
+  const panel = () => document.querySelector<HTMLElement>('.rtb-ov')
+  await until('the bar folds into +N', () => more() !== null)
+  await userEvent.hover(park())
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  await userEvent.hover(more()!)
+  vi.advanceTimersByTime(0)
+  await until('the +N panel opens', () => panel() !== null)
+  await userEvent.hover(panel()!.querySelector<HTMLElement>('[data-message-preview-trigger]')!)
+  vi.advanceTimersByTime(ROW_HOVER_CARD_OPEN_DELAY_MS)
+  await until('the pill in the panel opens its card', pillCard, (card) => card !== null)
+
+  await userEvent.hover(pillCard()!)
+  vi.advanceTimersByTime(1000)
+  await painted()
+  expect(panel(), 'the panel is still there under the card').not.toBeNull()
+  expect(pillCard(), 'the card the pointer is in stays').not.toBeNull()
+
+  await userEvent.hover(park())
+  vi.advanceTimersByTime(1000)
+  await until('card and panel both go', () => pillCard() === null && panel() === null)
+})

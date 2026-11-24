@@ -2,7 +2,7 @@
 // DM = 1 个 token（退化态）；群聊 = 多 token 单行，手机和桌面一样：排不下 → +N（owner 10-30：平时最多一行）。
 // 消除 DM 三跳点 vs GroupAgentStatusBar(群聊竖排文字+工具名) 双轨(两者都已删)。
 // 设计 SSOT: design/agent-running-group-1687.html（.bar/.tok/.state/.pop/.more/.ov/.otok/.opop）。
-import { useLayoutEffect, useRef, useState, type FocusEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type ReactNode, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
@@ -177,12 +177,30 @@ function MoreOverflow({
   ].filter((group) => group.tokens.length > 0)
   // 只有一组时组名是废话,不画。
   const labeled = groups.length > 1
+  const trigger = useRef<HTMLButtonElement | null>(null)
   const closeUnlessInside = (event: FocusEvent) => {
     if (!popup.current?.contains(event.relatedTarget as Node | null)) setOpen(false)
   }
+  // A pill in this panel has its card outside the panel (the card is portaled). The pointer moving into that card leaves the
+  // panel, but it is still looking at one of the panel's agents: the panel stays while that card is open, and goes with it
+  // when the card closes with the pointer outside both (closing the panel unmounted the pill and took its card along).
+  const pillCardOpen = () => card.activeKey?.startsWith('more:') === true
+  useEffect(() => {
+    if (!open) return
+    return card.subscribe(() => {
+      if (!pillCardOpen() && !popup.current?.matches(':hover') && !trigger.current?.matches(':hover')) setOpen(false)
+    })
+  })
   return (
-    <Popover.Root open={open} modal={false} onOpenChange={setOpen}>
+    <Popover.Root open={open} modal={false} onOpenChange={(next, details) => {
+      if (!next && details.reason === 'trigger-hover' && pillCardOpen()) {
+        details.cancel()
+        return
+      }
+      setOpen(next)
+    }}>
       <Popover.Trigger
+        ref={trigger}
         className="rtb-more"
         openOnHover
         delay={0}
