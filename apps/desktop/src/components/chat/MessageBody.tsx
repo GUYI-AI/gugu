@@ -53,7 +53,7 @@ export function MessageBody(props: MessageBodyProps) {
   // Comments sent without words are the whole message: no empty text under them.
   const words = props.message.content_type !== 'text' || !!props.message.content?.trim()
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '6px', minWidth: 0, maxWidth: '100%' }}>
+    <div className="flex min-w-0 max-w-full flex-col items-start gap-2">
       <MessageAnnotationCards annotations={annotations} />
       {words && body}
     </div>

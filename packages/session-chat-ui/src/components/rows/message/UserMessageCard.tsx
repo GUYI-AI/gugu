@@ -296,7 +296,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
 /** A comment sent with the words: a file row naming what it points at, the comment on its second line. Nothing to open. */
 function AnnotationChip(props: { attachment: ChatAttachment }) {
   return (
-    <div data-attachment-chip data-kind="annotation" class="gg-file-row" style={{ cursor: 'default' }}
+    <div data-attachment-chip data-kind="annotation" class="gg-file-row"
       title={[props.attachment.title ?? props.attachment.name, props.attachment.detail].filter(Boolean).join('\n')}>
       <span class="gg-file-row-icon"><IconComment /></span>
       <span class="gg-file-row-text">

@@ -13,7 +13,7 @@ export function MessageAnnotationCards({ annotations }: { annotations: readonly 
   return (
     <div className="gg-file-rows" data-message-annotations="" style={fileRowStyle() as CSSProperties}>
       {annotations.map((annotation) => (
-        <div key={annotation.number} className="gg-file-row" data-kind="annotation" style={{ cursor: 'default' }}
+        <div key={annotation.number} className="gg-file-row" data-kind="annotation"
           title={`${annotation.target}\n${annotation.comment}`}>
           <span className="gg-file-row-icon"><MessageSquare size={20} aria-hidden="true" /></span>
           <span className="gg-file-row-text">
