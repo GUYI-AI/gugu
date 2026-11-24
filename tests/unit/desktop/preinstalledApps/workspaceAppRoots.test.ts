@@ -122,6 +122,24 @@ describe('a session\'s tab: one folder, two roots', () => {
     expect(crumbs()).toBeNull()
   })
 
+  test('the chat\'s top is drawn once 「附件」 is in too: the top alone is another list, never shown first', async () => {
+    switchRoot('workspace')
+    await until('the computer shown', () => names().includes('README.md'))
+    const attachments = { ...chatNote, id: 'att', name: '附件', displayName: '附件', type: 'folder', contentType: 'inode/directory', path: '附件', systemRole: 'attachments' } as unknown as Entry
+    const sent = { ...chatNote, id: 'item-2', name: 'shot.md', displayName: 'shot.md', path: '附件/shot.md', parentId: 'att' }
+    let release: (() => void) | null = null
+    gugu.files.list
+      .mockImplementationOnce(async () => [{ ...chatNote }, attachments])
+      .mockImplementationOnce(() => new Promise((done) => { release = () => done([sent]) }))
+    switchRoot('chat')
+    await until('「附件」 asked', () => release !== null)
+    await new Promise((done) => setTimeout(done, 0))
+    expect(names(), 'the top answered, 「附件」 not yet: nothing drawn').toEqual([])
+    release!()
+    await until('drawn', () => names().length > 0)
+    expect(names()).toEqual(['plan.md', 'shot.md'])
+  })
+
   test('its conversation arriving later keeps the person where they are in the working copy (no jump to the top)', async () => {
     switchRoot('workspace')
     await until('the top drawn', () => names().includes('src'))
