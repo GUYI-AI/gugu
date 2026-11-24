@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ProjectMainPanel } from '@renderer/features/projects/components/main-panel/main-panel';
 import { getProjectStore, projectDisplayName } from '@renderer/features/projects/stores/project-selectors';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
@@ -15,6 +15,7 @@ import { ProjectTaskComposer } from '@renderer/features/projects/components/main
 import { setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
 import { useProjectFolderStage } from '@renderer/features/projects/components/main-panel/project-folder-stage';
 import { useFloatingCardKeys } from './floating-card-keys';
+import { BlockGrip } from './block-grip';
 import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
 import { rpcOn } from '@renderer/lib/ipc';
@@ -33,12 +34,9 @@ import { leaveDissolvedProject } from './screen-layout-actions';
 export const ProjectBlock = observer(function ProjectBlock({
   blockId,
   projectId,
-  blockActions,
 }: {
   blockId: string;
   projectId: string;
-  /** 屏上不止一块时右端那枚「关闭这一块」(由这屏的骨架给)。 */
-  blockActions?: ReactNode;
 }) {
   const { translate } = useSessionMessages();
   const corners = screenLayout.corners(blockId);
@@ -60,6 +58,7 @@ export const ProjectBlock = observer(function ProjectBlock({
       if (!result.success) log.warn('[project-block] 项目群没建成', { projectId, error: result.error });
     }).catch((error: unknown) => log.warn('[project-block] 项目群没建成', { projectId, error: String(error) }));
   }, [projectId]);
+  const grip = <BlockGrip blockId={blockId} content={{ kind: 'project', projectId, title: label }} label={translate('screen.gripApp')} />;
   const projectChip = (
     <TabSlot data-project-block-tab={projectId}>
       <TabChip isActive isFocusedPane={focused} label={label} />
@@ -71,7 +70,8 @@ export const ProjectBlock = observer(function ProjectBlock({
       <>
         <TabStripShell
           reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
-          actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{blockActions}</TabBarActionRow>}
+          leadingSlot={grip}
+          actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight} />}
         >
           {projectChip}
         </TabStripShell>
@@ -81,14 +81,12 @@ export const ProjectBlock = observer(function ProjectBlock({
       </>
     );
   }
-  const actions = <>
-    <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />
-    {blockActions}
-  </>;
+  const actions = <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />;
   return (
     <ChatPanes
       chatId={chatId}
       blockId={blockId}
+      leading={grip}
       reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
       actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{actions}</TabBarActionRow>}
       chromeActionsSlot={<TabBarActionRow atWindowEdge={false}>{actions}</TabBarActionRow>}

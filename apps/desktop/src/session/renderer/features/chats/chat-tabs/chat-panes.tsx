@@ -39,15 +39,18 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
   actionsSlot,
   chromeActionsSlot = actionsSlot,
   reserveShellRestoreLane,
+  leading,
   embedded = false,
 }: Pick<ChatTabHost, 'chip' | 'body'> & {
   chatId: string;
   blockId?: string;
   embedded?: boolean;
-  /** The strip's far end: the chat's icons (search, folder, members), the block's own close. */
+  /** The strip's far end: the chat's icons (search, folder, members). */
   actionsSlot: ReactNode;
   chromeActionsSlot?: ReactNode;
   reserveShellRestoreLane?: boolean;
+  /** The strip's first point: the block's ⋮⋮ (BlockGrip) while the screen is split. */
+  leading?: ReactNode;
 }) {
   const layout = chatLayoutOf(chatId);
   const block = useScreenBlock();
@@ -88,13 +91,14 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
           <PaneTreeView layout={layout} chatChrome={{
             actions: chromeActionsSlot,
             addTab: <ChatWorkspaceNewTab layout={layout} />,
+            leading,
             reserveShellRestoreLane,
             atWindowEdge: !embedded && block.topRight,
             embedded,
           }} renderPane={(paneId, first, last, part) => {
             const group = layout.groups.find((candidate) => candidate.paneId === paneId)!;
             const focused = !embedded && screenLayout.focusedBlockId === blockId && layout.activePaneId === paneId;
-            const strip = { tabTrailingSlot: addTab, actionsSlot: last ? actionsSlot : undefined, reserveShellRestoreLane: first && reserveShellRestoreLane };
+            const strip = { tabLeadingSlot: first ? leading : undefined, tabTrailingSlot: addTab, actionsSlot: last ? actionsSlot : undefined, reserveShellRestoreLane: first && reserveShellRestoreLane };
             if (part === 'bar') return <PaneProvider group={group} isFocusedPane={focused} passive><PaneContent part="bar" {...strip} /></PaneProvider>;
             const edges = dragging === null ? [] : PANE_EDGES.filter((edge) => layout.allowsTabEdgeDrop(paneId, dragging, edge));
             // This React tree owns the pane shell and its blank space; portaled content owns its input in ChatPaneContent.

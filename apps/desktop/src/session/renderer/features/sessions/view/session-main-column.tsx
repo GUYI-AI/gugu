@@ -4,13 +4,12 @@ import { useEffect } from 'react';
 import { SessionMachineStatus } from './session-machine-status';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { auxLeadingReserve, PutBackButton } from '@renderer/app/aux-window-host';
-import { BlockGrip, CloseBlockButton, droppedOutsideWindow, startSessionBlockDrag } from '@renderer/app/screen-frame';
+import { BlockGrip } from '@renderer/app/block-grip';
 import { screenLayout, type WindowableContent } from '@renderer/app/screen-layout';
 import {
   closeScreenBlock,
   openInWindow,
   openTabInWindow,
-  putBackFromWindow,
   revealTabWindow,
 } from '@renderer/app/screen-layout-actions';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
@@ -22,7 +21,7 @@ import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { TabDragOverlay } from '@renderer/features/tabs/tab-bar/tab-drag-preview';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
-import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
+import { MenuItem } from '@/components/ui/Menu';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sessionViewOfRuntime } from '@shared/core/sessions/sessions';
 import { parseExtensionTabKind } from '@shared/extensions/manifest';
@@ -219,7 +218,7 @@ const PaneCell = observer(function PaneCell({
 const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge }: { atScreenEdge: boolean }) {
   const { sessionId: pageSessionId, projectId } = useSessionViewContext();
   const { paneLayout } = useWorkspaceViewModel();
-  const { blockId, multi, windowId } = useScreenBlock();
+  const { windowId } = useScreenBlock();
   const sessionId = activeChatSessionId(paneLayout);
   const session = sessionId ? sessionRegistry.get(pageSessionId)?.sessions.get(sessionId) : undefined;
   const startupFailure = useSessionStartupFailure(sessionId ?? null);
@@ -239,49 +238,24 @@ const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge
           notStarted={!session.data.providerSessionId}
         />
       ) : null}
-      {/* #7167 聊天 / 编程 / 通用 —— 这一块最右(多块时在「关闭这一块」左边)。 */}
-      {/* 屏上不止一块时:从这屏拿走(左边列表里还在)。单独成窗时这里是「放回咕咕」。 */}
-      {multi && blockId ? <CloseBlockButton blockId={blockId} /> : null}
+      {/* 单独成窗时这里是「放回咕咕」。 */}
       {windowId ? <PutBackButton windowId={windowId} /> : null}
     </TabBarActionRow>
   );
 });
 
-/**
- * 这一块左上的 ⋮⋮:按住 = 整个会话连同它分好的格子一起挪(落在别的块边上),落在输入框上照样是一枚 @;
- * 右键 = 关闭这一块(屏上不止一块时)。
- */
+/** 这一块左上的 ⋮⋮(屏上不止一块时才有,BlockGrip):按住 = 整个会话连同它分好的格子一起挪;右键 = 在新窗口打开。 */
 const SessionGrip = observer(function SessionGrip() {
   const { translate } = useSessionMessages();
   const { projectId, sessionId } = useSessionViewContext();
-  const { blockId, multi, windowId } = useScreenBlock();
+  const { blockId } = useScreenBlock();
   const title = sessionRegistry.get(sessionId)?.sessions.get(sessionId)?.data.title ?? '';
-  const content = { kind: 'session', projectId, sessionId } as const;
   return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger className="flex h-full items-center">
-        <BlockGrip
-          label={translate('screen.grip')}
-          onDragStart={(event) => startSessionBlockDrag(event, { projectId, sessionId, title })}
-          // 拖到窗口外松手 = 整个会话单独成窗(已经在窗里的不再开一扇)。
-          onDragEnd={(event) => {
-            if (!windowId && droppedOutsideWindow(event)) openInWindow(content, { screenX: event.screenX, screenY: event.screenY });
-          }}
-        />
-      </ContextMenu.Trigger>
-      <ContextMenu.Content finalFocus={false}>
-        {windowId ? (
-          <MenuItem onClick={() => putBackFromWindow(windowId)}>{translate('screen.putBack')}</MenuItem>
-        ) : (
-          <MenuItem onClick={() => openInWindow(content)}>{translate('screen.openInWindow')}</MenuItem>
-        )}
-        {multi && blockId ? (
-          <>
-            <MenuSeparator />
-            <MenuItem onClick={() => closeScreenBlock(blockId)}>{translate('screen.closeBlock')}</MenuItem>
-          </>
-        ) : null}
-      </ContextMenu.Content>
-    </ContextMenu.Root>
+    <BlockGrip
+      blockId={blockId}
+      content={{ kind: 'session', projectId, sessionId, title }}
+      label={translate('screen.grip')}
+      menu={<MenuItem onClick={() => openInWindow({ kind: 'session', projectId, sessionId })}>{translate('screen.openInWindow')}</MenuItem>}
+    />
   );
 });

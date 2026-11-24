@@ -129,7 +129,6 @@ export class ScreenLayoutStore {
       setSplitSizes: action,
       equalizeSplit: action,
       restore: action,
-      dissolve: action,
       release: action,
     });
   }
@@ -417,20 +416,6 @@ export class ScreenLayoutStore {
     return true;
   }
 
-  /**
-   * 拆开这一组(左边框里一行右键「拆开这一组」):它在这屏 → 只留正看着那块(拆开就是各回各位,正看着的还看着);
-   * 收起来的 → 不再记着。
-   */
-  dissolve(sessionId: string): void {
-    if (this.blockOfSession(sessionId)) {
-      const keep = this.focusedSession ? this.focusedBlockId! : this.blockOfSession(sessionId)!;
-      for (const blockId of this.order) if (blockId !== keep) this.close(blockId);
-      return;
-    }
-    const group = this.parked.find((entry) => Object.values(entry.blocks).some((block) => isSession(block, sessionId)));
-    if (group) this.parked.remove(group);
-  }
-
   /** 这条会话没了(归档、删除):它那块收掉(收起来的组里也一样);它是屏上唯一一块就整屏清空,下一次看谁就从谁开始。 */
   forgetSession(sessionId: string): void {
     this.forgetContent({ kind: 'session', projectId: '', sessionId });
@@ -599,10 +584,6 @@ function keysOf(group: ScreenGroupSnapshot): string[] {
   });
 }
 
-
-function isSession(block: ScreenBlockContent, sessionId: string): boolean {
-  return block.kind === 'session' && block.sessionId === sessionId;
-}
 
 function sameContent(a: ScreenBlockContent, b: ScreenBlockContent): boolean {
   return contentKey(a) === contentKey(b);

@@ -24,6 +24,8 @@ export interface SessionViewRequestBridge {
   unpinFromSidebar?(sessionId: string): void;
   /** #2548 a pinned agent's row in the one list: open the group / project it lives in, the agent selected in its column. */
   openSidebarPin?(sessionId: string, homeChatId: string): void;
+  /** 取消并排 from an inner-column topic row: the conversation's block leaves the split screen. */
+  leaveSplit?(chatId: string): void;
 }
 
 /** 装到宿主文档的 window 上,让 gugu 那棵树读得到。幂等。打开对话那一下由入口接到这屏上(这里不认这屏)。 */

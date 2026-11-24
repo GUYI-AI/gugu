@@ -79,10 +79,9 @@ vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSess
 vi.mock('@renderer/features/sessions/fork-task', () => ({ forkTask: () => {} }));
 vi.mock('@renderer/features/sessions/open-session-in-session', () => ({ openSessionInSessionWhenReady: () => {} }));
 vi.mock('@renderer/app/screen-layout-actions', () => ({
-  dissolveScreenGroup: () => {},
+  closeScreenBlock: () => {},
   isScreenView: () => false,
   showSessionBeside: () => {},
-  takeSessionOutOfGroup: () => {},
 }));
 vi.mock('@renderer/lib/commands/registry', () => ({ commandRegistry: { dispatch: () => {} } }));
 vi.mock('@/platform', () => ({ platform: { writeClipboardText: () => Promise.resolve() } }));
