@@ -29,7 +29,6 @@ export function groupRunningTokens(input: {
       toolCount: activity?.actions.length ?? 0,
       lastActiveAt: activity?.lastActiveAt ?? null,
       mine: isOwnAgent(input, agent.id),
-      parked: input.statuses[agent.id] === 'parked',
     }
   })
 }
@@ -51,8 +50,7 @@ export function selectGroupRunningAgents<T extends { id: string }>(input: {
   const isOwn = (id: string) => isOwnAgent(input, id)
   const spoke = (id: string) => input.spokeAt?.[id] ?? -Infinity
   return input.agents
-    // Running in the background is still running: the pill stays, its glyph held still.
-    .filter((agent) => isTransientAgentConversationStatus(input.statuses[agent.id] ?? 'offline') || input.statuses[agent.id] === 'parked')
+    .filter((agent) => isTransientAgentConversationStatus(input.statuses[agent.id] ?? 'offline'))
     .sort((a, b) => (spoke(b.id) - spoke(a.id) || 0) || Number(isOwn(b.id)) - Number(isOwn(a.id)))
 }
 
