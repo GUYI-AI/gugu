@@ -133,10 +133,12 @@ export const ChatTabChip = observer(function ChatTabChip({
   const workspaceRole = workspace?.role;
   if (workspaceRole === 'capsule') {
     // 第 16 版 #8:对话卡片顶上只剩这一颗胶囊;名字由 ChatBlockHead 画进 labelSlot(点它出名片),胶囊里不放头像。
+    // The name's trigger fills the whole capsule (slot stretched, title flex-1), so a click anywhere on it opens the card,
+    // ❌ only on the text (a short name in the capsule's minimum width left its sides dead).
     return (
       // 按整张卡居中(设计稿 .capbar):相对页签条的 padding box 绝对居中。
       <div className={CONVERSATION_CAPSULE_LAYER_CLASS} {...data}>
-        <div className={`${CONVERSATION_CAPSULE_CLASS} pointer-events-auto !px-0 [&_[data-chat-block-avatar]]:hidden [&_[data-chat-block-title]]:px-4 [&_[data-chat-block-title]]:justify-center [&>[data-chat-part]]:justify-center`} data-chat-workspace-title="">
+        <div className={`${CONVERSATION_CAPSULE_CLASS} pointer-events-auto !px-0 [&_[data-chat-block-avatar]]:hidden [&_[data-chat-block-title]]:flex-1 [&_[data-chat-block-title]]:px-4 [&_[data-chat-block-title]]:justify-center [&>[data-chat-part]]:self-stretch`} data-chat-workspace-title="">
           {labelSlot ?? <span className="truncate" title={label}>{label}</span>}
         </div>
       </div>
