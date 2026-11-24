@@ -85,10 +85,10 @@ export function ContextUsageIndicator({
         }
       />
       <Popover.Content align="end" side="top">
-        <Popover.Header className={styles.usageHeader}>
+        <div className={styles.usageHeader}>
           <Popover.Title>{translate('composer.contextUsage')}</Popover.Title>
           {harness && <span className={styles.usageHarness}>{harness.icon}{harness.name}</span>}
-        </Popover.Header>
+        </div>
         <div className={styles.usagePopoverBody}>
           <div className={styles.usageStatsRow}>
             <span className={styles.usagePercent}>{usage ? `${pct.toFixed(1)}%` : '—'}</span>

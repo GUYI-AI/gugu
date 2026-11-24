@@ -6733,12 +6733,12 @@ app.whenReady().then(async () => {
           extensionCatalog.listedNatively(session.grantKey, gateway.origins.map((origin) => origin.extensionId))
           return { ...gateway, skills, apps }
         })
-        // 资源库 → MCP:这条任务带上的那几台,经能力包送进去。包建好以后连同留在外面的(让给这一家自己的、
-        // 这条腿收不到的、和咕咕自己的撞了的、资源库里已删的)记成这一次的事实,任务的 `/mcp` 面板读它。
         setSessionContextThresholdReader(async (id) => {
           const { sessionContextThreshold } = await import('./session/main/core/agents/context-threshold')
           return sessionContextThreshold(id)
         })
+        // 资源库 → MCP:这条任务带上的那几台,经能力包送进去。包建好以后连同留在外面的(让给这一家自己的、
+        // 这条腿收不到的、和咕咕自己的撞了的、资源库里已删的)记成这一次的事实,任务的 `/mcp` 面板读它。
         setSessionLibraryMcpBridge(async (sessionId, selectionFrom) => {
           const picked = await emdash.emdashLibraryMcpForSession(selectionFrom ?? sessionId)
           const servers = picked.servers.map((server) => ({

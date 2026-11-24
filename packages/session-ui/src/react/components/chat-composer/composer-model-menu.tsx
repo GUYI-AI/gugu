@@ -186,11 +186,13 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange 
   const f = item.modelFeatures;
   const threshold = !item.disabled ? contextThresholds?.(item.id, f?.contextWindowSize) : undefined;
   const [effortMenuOpen, setEffortMenuOpen] = useState(false);
+  const canEditEffort = !!efforts?.length && !!onEffortChange;
+  const effortLabel = translate('composer.effort');
   const facts = [
     ...(!threshold && f?.contextWindowSize !== undefined
       ? [{ label: translate('composer.modelDetailContext'), value: formatContextWindow(f.contextWindowSize) }]
       : []),
-    ...(item.facts ?? []),
+    ...(item.facts ?? []).filter(({ label }) => !canEditEffort || label !== effortLabel),
     ...(f?.speed !== undefined ? [{ label: translate('composer.modelDetailSpeed'), value: `${f.speed}/5` }] : []),
     ...(f?.intelligence !== undefined
       ? [{ label: translate('composer.modelDetailIntelligence'), value: `${f.intelligence}/5` }]
@@ -219,10 +221,10 @@ function ModelDetail({ item, contextThresholds, efforts, effort, onEffortChange 
           ))}
         </dl>
       )}
-      {!!efforts?.length && onEffortChange && (
+      {canEditEffort && (
         <Popover.Root open={effortMenuOpen} onOpenChange={setEffortMenuOpen}>
           <Popover.Trigger openOnHover delay={100} closeDelay={300} className={styles.contextThresholdTrigger}>
-            <span>{translate('composer.effort')}</span>
+            <span>{effortLabel}</span>
             <span className={styles.modelDetailControlValue}>{effort?.name}<ChevronRight size={14} aria-hidden /></span>
           </Popover.Trigger>
           <Popover.Content side="right" align="start" className={styles.contextThresholdContent}>
@@ -632,6 +634,7 @@ export function ComposerModelMenu({
                         <Combobox.Item
                           key={m.id}
                           value={m}
+                          showCheck={false}
                           data-model-option-id={m.id}
                           // 置灰时 title 挂**原因** —— 那一刻用户要问的是「为什么不能选」
                           // (owner 2026-08-21:选不了的那一头要说明原因)。能选的行不挂 title:

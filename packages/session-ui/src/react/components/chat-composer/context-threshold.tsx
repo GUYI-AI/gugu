@@ -18,13 +18,14 @@ export type ComposerContextThresholds = (
 ) => ContextThreshold | undefined;
 
 const PRESETS = [64_000, 128_000, 200_000, 300_000, 600_000, 1_000_000];
+const MINIMUM = 8_000;
 
 export function parseContextThreshold(text: string, maximum: number): number | null {
   const match = /^(\d+(?:\.\d+)?)\s*([km万]?)$/i.exec(text.trim());
   if (!match) return null;
   const factor = { k: 1_000, m: 1_000_000, 万: 10_000 }[match[2]!.toLowerCase()] ?? 1;
   const tokens = Number(match[1]) * factor;
-  return Number.isSafeInteger(tokens) && tokens > 0 && tokens <= maximum ? tokens : null;
+  return Number.isSafeInteger(tokens) && tokens >= Math.min(MINIMUM, maximum) && tokens <= maximum ? tokens : null;
 }
 
 export function ContextThresholdMenu({
