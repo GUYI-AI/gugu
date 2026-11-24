@@ -25,18 +25,18 @@ export type ChatHistory = {
   get(): readonly TranscriptTurn[];
   /**
    * Replace the entire committed history and reset activeTurn.
-   * Rebuilds the id map. Prefer for initial load / session replay.
+   * Indexes only the turns it has not seen before (`indexTurns`).
    */
   seed(turns: readonly TranscriptTurn[]): void;
   /**
    * Prepend older turns before the current committed history (pagination).
    * Stable object references required — identity-keyed caches key by ref.
-   * Rebuilds the id map (O(total)).
+   * Indexes only the new turns (`indexTurns`).
    */
   prepend(turns: readonly TranscriptTurn[]): void;
   /**
    * Append turns after the current committed history (commit path / bulk add).
-   * Patches the id map incrementally (O(new)).
+   * Indexes only the new turns (`indexTurns`).
    */
   append(turns: readonly TranscriptTurn[]): void;
 };
@@ -174,15 +174,22 @@ export function createTranscript(): TranscriptApi {
     },
   };
 
-  // item id → committed item map; rebuilt on history mutations.
+  // item id → committed item map. @@@index-follows-turns — committed turns are immutable after placement, so a turn
+  // is indexed once, when it is first placed; a seed / prepend / append only adds the turns it has not seen and drops
+  // the items of turns that left. The host seeds the whole history on every frame: that costs a lookup per turn, not
+  // a walk over every item.
   const itemMap = new Map<string, ChatItem>();
-
-  const rebuildItemMap = (turns: readonly TranscriptTurn[]): void => {
-    itemMap.clear();
+  let indexed = new Map<TranscriptTurn, readonly ChatItem[]>();
+  const indexTurns = (turns: readonly TranscriptTurn[]): void => {
+    const next = new Map<TranscriptTurn, readonly ChatItem[]>();
+    // Items a new turn object brings along unchanged (a patched turn keeps its other items) stay indexed.
+    const placed = new Set<ChatItem>();
     for (const turn of turns) {
+      const held = indexed.get(turn);
+      if (held) { indexed.delete(turn); next.set(turn, held); continue; }
       assertOrderedItems(turn);
       for (const item of turn.items) {
-        if (import.meta.env.DEV && itemMap.has(item.id)) {
+        if (import.meta.env.DEV && itemMap.has(item.id) && itemMap.get(item.id) !== item) {
           console.error(
             `[chat-ui] duplicate ChatItem id "${item.id}" in turn "${turn.id}" — ` +
               'item ids must be unique across the entire transcript. ' +
@@ -190,8 +197,13 @@ export function createTranscript(): TranscriptApi {
           );
         }
         itemMap.set(item.id, item as ChatItem);
+        placed.add(item as ChatItem);
       }
+      next.set(turn, turn.items as readonly ChatItem[]);
     }
+    // What is left are the turns that are gone: their items leave unless a turn still placed now holds that id.
+    for (const items of indexed.values()) for (const item of items) if (!placed.has(item) && itemMap.get(item.id) === item) itemMap.delete(item.id);
+    indexed = next;
   };
 
   // ── history ─────────────────────────────────────────────────────────────────
@@ -207,7 +219,7 @@ export function createTranscript(): TranscriptApi {
         setCommitted(turns);
         setLive({ activeTurn: null, turnStatus: 'done' });
       });
-      rebuildItemMap(turns);
+      indexTurns(turns);
     },
 
     prepend(turns) {
@@ -217,7 +229,7 @@ export function createTranscript(): TranscriptApi {
         assertOrderedTurns(next, 'history.prepend');
         return next;
       });
-      rebuildItemMap(committed());
+      indexTurns(committed());
     },
 
     append(turns) {
@@ -227,7 +239,7 @@ export function createTranscript(): TranscriptApi {
         assertOrderedTurns(next, 'history.append');
         return next;
       });
-      rebuildItemMap(committed());
+      indexTurns(committed());
     },
   };
 

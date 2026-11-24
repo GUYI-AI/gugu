@@ -26,6 +26,22 @@ function drive(
 }
 
 describe('findItemById', () => {
+  // @@@index-follows-turns — the host seeds the whole history on every frame; only turns not seen before are indexed.
+  it('keeps every placed item findable when a seed replaces one turn and drops the turns that left', () => {
+    const tx = createTranscript();
+    const a = msg('a'), b = msg('b'), c = msg('c');
+    tx.history.seed([turn('t1', 0, a), turn('t2', 1, b)]);
+    // t2 patched by the host: a new turn object that keeps its earlier item and adds one.
+    tx.history.seed([tx.history.get()[0]!, turn('t2', 1, b, c)]);
+    expect(tx.findItemById('a')).toBe(a);
+    expect(tx.findItemById('b')).toBe(b);
+    expect(tx.findItemById('c')).toBe(c);
+    tx.history.seed([turn('t3', 2, msg('d'))]);
+    expect(tx.findItemById('a')).toBeUndefined();
+    expect(tx.findItemById('c')).toBeUndefined();
+    expect(tx.findItemById('d')?.id).toBe('d');
+  });
+
   it('returns undefined for an empty transcript', () => {
     const tx = createTranscript();
     expect(tx.findItemById('x')).toBeUndefined();

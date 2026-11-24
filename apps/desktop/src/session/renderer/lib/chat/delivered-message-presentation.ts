@@ -19,13 +19,17 @@ export function originalMessagePresentation(message: MessageItem): DeliveryMessa
 /** The task page and both DM hosts resolve the same source ID with the current person's permissions. */
 export function connectDeliveredMessagePresentation(state: ChatState, load: (id: string) => Promise<MessageItem | null>, onError: (id: string, error: unknown) => void): () => void {
   const requested = new Set<string>(), results = new Map(state.session.state.deliveredMessages);
+  // A committed turn never changes after it is placed (a changed one is a new object): its deliveries are read once.
+  const read = new WeakSet<object>();
   let live = true;
   const stop = createRoot(dispose => {
     createEffect(() => {
-      const turns = [...state.transcript.history.get(), ...(state.transcript.state.activeTurnSnapshot ? [state.transcript.state.activeTurnSnapshot] : [])];
+      const fresh = state.transcript.history.get().filter(turn => !read.has(turn));
+      for (const turn of fresh) read.add(turn);
+      const active = state.transcript.state.activeTurnSnapshot;
       // A delivery still waiting in its agent's queue is drawn too: it is read from then, not when its turn echoes it.
       const pending = [state.session.state.pendingPrompt, ...state.session.state.pendingMessages];
-      const texts = [...turns.flatMap(turn => turn.items.flatMap(item => item.kind === 'message' && item.role === 'user' ? [item.text] : [])),
+      const texts = [...[...fresh, ...(active ? [active] : [])].flatMap(turn => turn.items.flatMap(item => item.kind === 'message' && item.role === 'user' ? [item.text] : [])),
         ...pending.flatMap(input => input ? [input.text] : [])];
       for (const text of texts) {
         for (const segment of readDeliveryEnvelope(text)?.segments ?? []) {
