@@ -151,20 +151,12 @@ describe('shared group topic navigation (#446, #837, #2797)', () => {
     expect(mainChoice()?.getAttribute('aria-checked')).toBe('true')
   })
 
-  it('desktop: the pinned strip opens a topic as the main conversation', async () => {
+  it('desktop: no topic tab strip under the group head, even with a pinned topic (pins only order the inner sidebar)', async () => {
     await render('g1', false)
-    await vi.waitFor(() => expect(tab('t1')).not.toBeNull())
-    expect(tab('t2')).toBeNull()
-    expect(q('[data-testid="phone-room-composer-controls"]')).toBeNull()
-    await act(async () => { tab('t1')!.click() })
-    expect(opened.chatIds).toEqual(['t1'])
-  })
-
-  it('desktop: hides the pinned strip when no topics are pinned', async () => {
-    pinPrefs.ids = []
-    await render('g1', false)
-    await vi.waitFor(() => expect(queryClient.getQueryData(['chatPins', 'user-1', 'g1'])).toEqual({ topicIds: [] }))
+    await vi.waitFor(() => expect(q('[data-testid="session-chat-panel"]')).not.toBeNull())
     expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
+    expect(tab('t1')).toBeNull()
+    expect(q('[data-testid="phone-room-composer-controls"]')).toBeNull()
   })
 
   it('does not add room navigation to a direct message', async () => {
