@@ -21,6 +21,7 @@ import type { ChatMessage } from '@session-chat/model';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
 import { attachmentEnvelope } from '@gugu/core/shared/ui/attachmentModels';
 import { sentChatMessage } from '@gugu/session-core/session-record/sent-message';
+import { annotationTargetName } from '@gugu/session-core/acp/client';
 import { passwordRequest } from './PasswordRequestCard';
 
 /**
@@ -110,7 +111,7 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   });
   // Each comment sent with the words is a row of its own: what it points at, and the comment.
   const annotations = (item.annotations ?? []).map(annotation => ({ id: `annotation:${annotation.number}`, kind: 'annotation' as const,
-    name: `${annotation.number} · ${annotation.target}`, detail: annotation.comment }));
+    name: `${annotation.number} · ${annotationTargetName(annotation.target)}`, title: annotation.target, detail: annotation.comment }));
   if (files.length || annotations.length) normalized.attachments = [...(normalized.attachments ?? []), ...files, ...annotations];
   return normalized;
 }

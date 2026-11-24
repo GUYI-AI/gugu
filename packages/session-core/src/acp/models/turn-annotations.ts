@@ -17,6 +17,12 @@ export const turnAnnotationSchema = z.object({
 });
 export type TurnAnnotation = z.infer<typeof turnAnnotationSchema>;
 
+/** What a card names: the last part of the target (a file name, a page's last path segment); the whole target is its hover. */
+export function annotationTargetName(target: string): string {
+  const path = target.replace(/[?#].*$/, '').replace(/[\\/]+$/, '');
+  return path.slice(Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')) + 1) || target;
+}
+
 /** The agent's one text block for a message's annotations, ahead of the person's own words. */
 export function annotationPromptText(annotations: readonly TurnAnnotation[] | undefined): string | null {
   return annotations?.length ? annotations.map(annotation => annotation.promptText).join('\n\n') : null;

@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@renderer/lib/ui/popove
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { AnnotationEditor } from './annotation-editor';
 import { annotationPlace, sessionAnnotations, type BrowserAnnotationSelection } from './session-annotations';
+import { annotationTargetName } from '@gugu/session-core/acp/client';
 
 function AnnotationThumbnail({ screenshot, rect, viewport }: BrowserAnnotationSelection) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -69,7 +70,7 @@ export const AnnotationTray = observer(function AnnotationTray({ conversation, o
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
                       <span className="shrink-0 tabular-nums">{item.number}</span>
-                      <span className="min-w-0 truncate" title={place}>{place}</span>
+                      <span className="min-w-0 truncate" title={place}>{annotationTargetName(place)}</span>
                     </div>
                     <span className="block truncate">{position}</span>
                   </div>

@@ -297,7 +297,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
 function AnnotationChip(props: { attachment: ChatAttachment }) {
   return (
     <div data-attachment-chip data-kind="annotation" class="gg-file-row" style={{ cursor: 'default' }}
-      title={[props.attachment.name, props.attachment.detail].filter(Boolean).join('\n')}>
+      title={[props.attachment.title ?? props.attachment.name, props.attachment.detail].filter(Boolean).join('\n')}>
       <span class="gg-file-row-icon"><IconComment /></span>
       <span class="gg-file-row-text">
         <span class="gg-file-row-name">{props.attachment.name}</span>

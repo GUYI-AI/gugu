@@ -63,6 +63,8 @@ export type ChatAttachment = {
   kind?: 'image' | 'file' | 'annotation';
   /** The row's second line: an annotation's comment. */
   detail?: string;
+  /** Hover text when the row's name is a shortened form (an annotation's whole target). */
+  title?: string;
   /** Data URL for inline display; absent when content can't be resolved -> fallback tile. */
   dataUrl?: string;
 };

@@ -257,8 +257,8 @@ describe('a cite stays in the words; the strip draws attachments only', () => {
     const item = normalizeMessage({ kind: 'message', id: 'u-note', role: 'user', text: 'apply each comment', annotations });
     expect(item.text).toBe('apply each comment');
     expect(item.attachments).toEqual([
-      { id: 'annotation:1', kind: 'annotation', name: '1 · docs/index.html', detail: 'Make it red' },
-      { id: 'annotation:2', kind: 'annotation', name: '2 · https://example.org/', detail: 'Shorter' },
+      { id: 'annotation:1', kind: 'annotation', name: '1 · index.html', title: 'docs/index.html', detail: 'Make it red' },
+      { id: 'annotation:2', kind: 'annotation', name: '2 · example.org', title: 'https://example.org/', detail: 'Shorter' },
     ]);
     for (const layout of [DOUBLE, SINGLE]) {
       const mounted = await mountUser(item, layout);
