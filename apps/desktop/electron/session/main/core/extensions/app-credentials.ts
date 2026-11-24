@@ -112,7 +112,8 @@ export function createAppCredentials(deps: AppCredentialDeps) {
       const chosen = (await state(extensionId, site)).chosen;
       if (!chosen) throw fail('unavailable', `No saved credential is chosen for ${site}: choose one in this App's permissions`);
       const value = await fromVault(() => deps.secret(chosen.id));
-      if (!value) throw fail('unavailable', `The saved credential for ${site} is gone: choose another in this App's permissions`);
+      if (value === null) throw fail('unavailable', `The saved credential for ${site} is gone: choose another in this App's permissions`);
+      if (!value) throw fail('unavailable', `The saved credential for ${site} holds no password or single secret field: choose another in this App's permissions`);
       // A value that could end the header line would write more headers: refused, never trimmed.
       if (/[\r\n\0]/.test(value)) throw fail('unavailable', `The saved credential for ${site} cannot go into a header`);
       headers[header] = format.replace('{value}', value);
