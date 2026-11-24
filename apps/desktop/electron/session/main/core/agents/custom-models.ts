@@ -87,7 +87,29 @@ async function unstoredCandidates(rows: StoredRow[], secretOf: (id: string) => P
       if (key) for (const { baseUrl } of meta.endpoints) taken.add(discoveryIdentity(baseUrl, key));
     }
   }));
-  return candidates.filter(({ identity }) => !taken.has(identity));
+  return Promise.all(candidates.filter(({ identity }) => !taken.has(identity)).map(withProbedEndpoints));
+}
+
+const discoveredProbes = new Map<string, Promise<CustomModelMeta['endpoints']>>();
+const PROBE_WAIT_MS = 2_000;
+
+/**
+ * A config file names one protocol for an address that often answers several, so a discovered custom address is probed
+ * the same way a typed one is: once per run, waited for briefly; a slower answer is used from the next read on.
+ */
+async function withProbedEndpoints(candidate: DiscoveredConnection): Promise<DiscoveredConnection> {
+  const key = discoveredSecret(candidate);
+  const baseUrl = candidate.endpoints[0]?.baseUrl;
+  if (candidate.preset || !key || !baseUrl) return candidate;
+  let probe = discoveredProbes.get(candidate.identity);
+  if (!probe) {
+    probe = detectCustomModelProtocols({ baseUrl, apiKey: key, modelId: candidate.models[0]?.id }).then(({ endpoints }) => endpoints, () => []);
+    discoveredProbes.set(candidate.identity, probe);
+  }
+  const endpoints = await Promise.race([probe, new Promise<[]>((resolve) => setTimeout(() => resolve([]), PROBE_WAIT_MS))]);
+  // The secret is keyed by this object, so the probed protocols are written onto it rather than a copy.
+  if (endpoints.length) candidate.endpoints = endpoints;
+  return candidate;
 }
 
 function candidateView(candidate: DiscoveredConnection): CustomModelConnection {
@@ -155,6 +177,7 @@ export async function saveCustomModel(input: SaveCustomModel): Promise<CustomMod
       displayName: input.name,
       customModel: {
         preset: input.preset, endpoints: input.endpoints, models: input.models,
+        ...(input.harnessProtocols && Object.keys(input.harnessProtocols).length ? { harnessProtocols: input.harnessProtocols } : {}),
         ...(discovery ? { discovery: input.apiKey ? { ...discovery, keyLast4: keyLast4(input.apiKey) } : discovery } : {}),
       },
     },
@@ -233,10 +256,12 @@ export async function testCustomModel(input: TestCustomModel): Promise<Connectio
     : result;
 }
 
-/** Probes a typed address and key for the protocols it answers; runs on the machine whose key it is. */
+/** Probes an address for the protocols it answers, with a typed key or the one a saved connection holds; runs on the machine whose key it is. */
 export async function detectCustomModelProtocols(input: DetectCustomModelProtocols): Promise<CustomModelProtocolProbe> {
+  const apiKey = input.apiKey ?? (input.connectionId ? (await heldConnection(input.connectionId)).key : undefined);
+  if (!apiKey) throw new Error('The model’s API key is unavailable on this device');
   const probe = await probeEndpointProtocols({
-    baseUrl: normalizeModelBaseUrl(input.baseUrl), apiKey: input.apiKey, modelId: input.modelId, hint: detectModelProtocol(input.baseUrl), env: connectionProbeEnv(),
+    baseUrl: normalizeModelBaseUrl(input.baseUrl), apiKey, modelId: input.modelId, hint: detectModelProtocol(input.baseUrl), env: connectionProbeEnv(),
   });
   return { ...probe, endpoints: probe.endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })) };
 }
@@ -281,8 +306,8 @@ async function listPiCustomModelProviders(): Promise<PiCustomModelProvider[]> {
     const meta = row.meta?.customModel;
     const bound = boundModels.get(row.accountId);
     if (!meta || (meta.removed && !bound)) continue;
-    const endpoint = meta.endpoints.find(({ protocol }) => protocol === 'openai-responses')
-      ?? meta.endpoints.find(({ protocol }) => protocol === 'openai-chat-completions');
+    const endpoint = [meta.harnessProtocols?.pi, 'openai-responses', 'openai-chat-completions']
+      .map((wanted) => meta.endpoints.find(({ protocol }) => protocol === wanted)).find(Boolean);
     if (!endpoint || (endpoint.protocol !== 'openai-responses' && endpoint.protocol !== 'openai-chat-completions')) continue;
     const models = new Map(meta.models.map((model) => [model.id, model]));
     for (const id of bound ?? []) {
@@ -312,9 +337,9 @@ async function readSelectedCustomModel(providerId: string, ref: CustomModelRef, 
   const platform = descriptor?.platform;
   const nativeProtocol = providerId === 'antigravity' ? 'gemini-generate-content' : platform?.kind === 'supported' ? platform.wireProtocol : undefined;
   const matched = matchCustomModel({
-    nativeProtocol, protocols: platform?.kind === 'supported' ? platform.protocols : undefined,
+    harness: providerId, nativeProtocol, protocols: platform?.kind === 'supported' ? platform.protocols : undefined,
     convertFrom: descriptor?.customModel?.convertFrom,
-    connection: { endpoints: meta.endpoints, keySaved: Boolean(apiKey) },
+    connection: { endpoints: meta.endpoints, harnessProtocols: meta.harnessProtocols, keySaved: Boolean(apiKey) },
     hasModel: Boolean(ref.modelId), allowDefaultModel: descriptor?.customModel?.modelOptional,
   });
   if (matched.reason) throw new Error(`Custom model unavailable: ${matched.reason}`);

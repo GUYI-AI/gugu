@@ -20,7 +20,7 @@ export function customComposerOptions(
   return Object.fromEntries(connections.flatMap((connection) => {
     const tag = vendorTag(connection.endpoints[0]?.baseUrl);
     return connection.models.filter(chatModel).map((model) => {
-      const matched = matchCustomModel({ connection, nativeProtocol: protocols[0], protocols, convertFrom: agent?.capabilities.customModel?.convertFrom });
+      const matched = matchCustomModel({ connection, harness: agent?.id, nativeProtocol: protocols[0], protocols, convertFrom: agent?.capabilities.customModel?.convertFrom });
       const required = protocols.map(protocolName).join(' / ');
       const actual = connection.endpoints.map(({ protocol }) => protocolName(protocol)).join(' / ');
       const reason = matched.reason === 'unsupported' ? translate('customModels.unsupported', { harness: agent?.name ?? '' })

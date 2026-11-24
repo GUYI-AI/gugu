@@ -18,10 +18,10 @@ import { composerModelFooter, composerSelectedOptionId } from '@renderer/feature
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
-const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null }));
+const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null, agents: [] as unknown[] }));
 vi.mock('@renderer/lib/stores/use-agents', async (importOriginal) => ({
   ...await importOriginal<typeof import('@renderer/lib/stores/use-agents')>(),
-  useAgents: () => ({ data: [] }),
+  useAgents: () => ({ state: 'value', value: state.agents, stale: false, error: null }),
 }));
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({ getAgentConfigRuntimeClient: async () => ({
   listCustomModels: async () => ({ success: true, data: state.rows }),
@@ -30,7 +30,7 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({ getAgentConfigRunt
   saveCustomModel: async (input: SaveCustomModel) => { state.saved = input; return { success: true, data: { ...input, id: input.id ?? '481825a8-60b9-4c83-8d1b-f104e3db0269', credentialRef: 'ref', keySaved: true } }; },
 }) }));
 let root: Root, host: HTMLDivElement;
-beforeEach(() => { queryClient.clear(); setLocalePreference('en-US'); state.rows = []; state.saved = null; state.reads = []; state.probe = null; state.probes = []; state.testResult = null; host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host); });
+beforeEach(() => { queryClient.clear(); setLocalePreference('en-US'); state.rows = []; state.saved = null; state.reads = []; state.probe = null; state.probes = []; state.testResult = null; state.agents = []; host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host); });
 afterEach(() => { root.unmount(); host.remove(); });
 const record = (): CustomModelConnection => ({ id: '481825a8-60b9-4c83-8d1b-f104e3db0269', name: 'Existing provider', credentialRef: 'ref', keySaved: false, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }], models: [] });
 const render = (content: React.ReactNode) => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>{content}</SessionLocalizationProvider></QueryClientProvider>);
@@ -86,6 +86,7 @@ it.each([
 });
 it('edits an address with the saved key and saves multiple manual models without returning the key', async () => {
   const existing = { ...record(), keySaved: true, models: [{ id: 'model:a' }] };
+  state.probe = { endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
   const closed = vi.fn(); render(<CustomModelDialog machine={null} connection={existing} onClose={closed} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://edited.test/v1/responses');
   await until('manual fallback is available', () => !!document.querySelector('input[name=models]'));
@@ -94,7 +95,26 @@ it('edits an address with the saved key and saves multiple manual models without
   await until('the form saved', () => state.saved !== null);
   expect(state.saved).toMatchObject({ id: existing.id, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }], models: [{ id: 'model:a' }, { id: 'provider/model:b' }] });
   expect(state.saved).not.toHaveProperty('apiKey'); expect(closed).toHaveBeenCalledOnce();
-  expect(state.reads).toContainEqual(expect.objectContaining({ connectionId: existing.id, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }] }));
+  expect(state.probes).toContainEqual({ connectionId: existing.id, baseUrl: 'https://edited.test/v1' });
+});
+it('advanced shows what a saved address answers and keeps the protocol picked for a harness', async () => {
+  state.agents = [
+    { id: 'claude', name: 'Claude Code', capabilities: { modelProtocols: ['anthropic-messages'], customModel: { convertFrom: ['openai-chat-completions'] } } },
+    { id: 'codex', name: 'Codex', capabilities: { modelProtocols: ['openai-responses'], customModel: { convertFrom: ['openai-chat-completions'] } } },
+  ];
+  state.probe = { endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://provider.test' }, { protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], models: ['m'], failures: [] };
+  render(<CustomModelDialog machine={null} connection={{ ...record(), keySaved: true, models: [{ id: 'm' }] }} onClose={() => {}} />);
+  await userEvent.click(page.getByRole('button', { name: /Advanced/ }));
+  await expect.element(page.getByTestId('custom-model-protocols')).toHaveTextContent('This address answers: Anthropic API / OpenAI Chat');
+  expect(state.probes).toContainEqual({ connectionId: record().id, baseUrl: 'https://provider.test/v1' });
+  // Codex could only use the converted chat address: nothing to choose.
+  expect(page.getByTestId('custom-model-protocol-codex').query()).toBeNull();
+  await expect.element(page.getByTestId('custom-model-protocol-claude')).toHaveTextContent('Automatic (Anthropic API)');
+  await userEvent.click(page.getByTestId('custom-model-protocol-claude'));
+  await userEvent.click(page.getByRole('option', { name: 'OpenAI Chat, converted locally' }));
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, harnessProtocols: { claude: 'openai-chat-completions' } });
 });
 
 it('names only the bound model when reopening a migrated Pi task', async () => {

@@ -64,6 +64,15 @@ describe('custom model protocol matching', () => {
     expect(matchCustomModel({ ...convertible, connection: { endpoints: [{ ...chat, protocol: 'gemini-generate-content' as const }], keySaved: true } }).reason).toBe('protocol');
     expect(matchCustomModel({ ...convertible, connection: { endpoints: [chat], keySaved: false } }).reason).toBe('missing-key');
   });
+  it('takes the protocol the person picked for this harness when the harness can use it', () => {
+    const chat = { protocol: 'openai-chat-completions' as const, baseUrl: 'https://chat.test/v1' };
+    const anthropic = { protocol: 'anthropic-messages' as const, baseUrl: 'https://a.test' };
+    const claude = { harness: 'claude', nativeProtocol: 'anthropic-messages' as const, convertFrom: ['openai-chat-completions' as const] };
+    expect(matchCustomModel({ ...claude, connection: { endpoints: [anthropic, chat], keySaved: true, harnessProtocols: { claude: 'openai-chat-completions' } } })).toEqual({ endpoint: chat, converted: true });
+    expect(matchCustomModel({ ...claude, connection: { endpoints: [anthropic, chat], keySaved: true, harnessProtocols: { codex: 'openai-chat-completions' } } })).toEqual({ endpoint: anthropic });
+    expect(matchCustomModel({ ...claude, connection: { endpoints: [anthropic], keySaved: true, harnessProtocols: { claude: 'openai-chat-completions' } } })).toEqual({ endpoint: anthropic });
+    expect(matchCustomModel({ ...claude, connection: { endpoints: [anthropic, chat], keySaved: true, harnessProtocols: { claude: 'gemini-generate-content' } } })).toEqual({ endpoint: anthropic });
+  });
   it.each([
     ['https://open.bigmodel.cn/api/anthropic', 'anthropic-messages'],
     ['https://relay.test/v1/messages', 'anthropic-messages'],
