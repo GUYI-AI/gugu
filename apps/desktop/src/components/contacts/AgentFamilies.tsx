@@ -10,7 +10,7 @@ import { Avatar } from '../Avatar'
 import { useShownAgentContactStatus } from '../contactAgentTone'
 import { ContactRowContextMenu, type ContactRowMenuActions } from './ContactRowActions'
 import { rowKeyActivate } from './contactsPanelStyles'
-import { agentNodeDrag, type AgentTreeNode } from './contactsAgentTree'
+import { agentHomeLine, agentNodeDrag, type AgentTreeNode } from './contactsAgentTree'
 import { SelectionCheckbox } from './ContactSearch'
 import { ContactsGrid } from './ContactsGrid'
 
@@ -134,7 +134,7 @@ function Family({ root, ...props }: FamiliesProps & { root: AgentTreeNode }) {
   return (
     <div data-testid="agent-family" className="min-w-0">
       {outline(root, open).map((line) => (
-        <div key={line.key} className="flex h-[44px] min-w-0 items-center">
+        <div key={line.key} className="flex h-[44px] min-w-0 items-center" {...(line.node ? agentHomeLine(line.node.contact.id) : undefined)}>
           <Rails line={line} />
           <div className="h-[40px] min-w-0 flex-1">
             {line.fold ? (
@@ -166,7 +166,7 @@ export function AgentFamilies({ forest, ...props }: FamiliesProps & { forest: re
       {families.length > 0 ? <ContactsGrid fill className="items-start gap-y-4">{families.map((root) => <Family key={root.contact.id} root={root} {...props} />)}</ContactsGrid> : null}
       {singles.length > 0 ? (
         <ContactsGrid className={cn(families.length > 0 && '!mt-4 border-t border-[var(--border)] !pt-4')}>
-          {singles.map((node) => <div key={node.contact.id} className="h-[44px] min-w-0"><Node contact={node.contact} {...props} /></div>)}
+          {singles.map((node) => <div key={node.contact.id} className="h-[44px] min-w-0" {...agentHomeLine(node.contact.id)}><Node contact={node.contact} {...props} /></div>)}
         </ContactsGrid>
       ) : null}
     </div>

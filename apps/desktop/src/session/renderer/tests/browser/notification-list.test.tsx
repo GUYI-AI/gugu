@@ -75,6 +75,11 @@ it.each([false, true])('the real list header keeps its bell/badge inside the pan
   await userEvent.click(bell)
   await until('the global notification list is visible', () => !!harness.container.querySelector('[data-testid="notification-list"]'))
   expect(harness.container.querySelector('[data-notification-original-list]')).toBe(original)
+  // Both ways back: the list's own worded button, and the bell again.
+  await userEvent.click(harness.container.querySelector<HTMLButtonElement>('[data-testid="notification-back"]')!)
+  await until('the back button closes the list', () => bell.getAttribute('aria-pressed') === 'false' && !harness.container.querySelector('[data-testid="notification-list"]'))
+  await userEvent.click(bell)
+  await until('the list opens again', () => !!harness.container.querySelector('[data-testid="notification-list"]'))
   await userEvent.click(bell)
   await until('the original list has its viewport again', () => getComputedStyle(original).contentVisibility !== 'hidden')
   expect(scroller.clientHeight).toBe(height)

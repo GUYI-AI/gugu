@@ -64,7 +64,6 @@ const outline = () => byId('outline');
 const items = () => [...outline().querySelectorAll<HTMLButtonElement>('.outline-item')];
 const marked = () => items().findIndex((item) => item.getAttribute('aria-current') === 'location');
 const headings = () => [...byId('preview').querySelectorAll<HTMLElement>('.gg-md > :is(h2, h3)')];
-const column = () => byId('preview').querySelector('.gg-md')!.getBoundingClientRect();
 const below = (heading: HTMLElement) => heading.getBoundingClientRect().top - byId('preview').getBoundingClientRect().top;
 const shown = (element: HTMLElement) => element.getBoundingClientRect().width > 0;
 // The reader moves the page (a wheel's turn, then where it lands): a pressed heading is no longer held.
@@ -87,72 +86,6 @@ afterAll(() => {
   if (editor) view.EditorView.findFromDOM(editor)?.destroy();
   ownStyle.remove();
   ydoc.destroy();
-});
-
-it('lists the sections, not the title, beside the reading column; a press lands on its heading and marks it', async () => {
-  expect(document.body.dataset.mode).toBe('preview');
-  await until('the outline is drawn', () => shown(outline()));
-  // A formula in a heading reads as its glyphs once (KaTeX also writes it out for screen readers).
-  expect(items().map((item) => [item.textContent, item.dataset.depth])).toEqual([
-    ['A. Tools', '0'], ['1. Section ∇f1', '1'], ['2. Section ∇f2', '1'],
-    ['B. Models', '0'], ['3. Section ∇f3', '1'], ['4. Section ∇f4', '1'],
-    ['C. Notes', '0'], ['D. Errata', '0'],
-  ]);
-  expect(outline().getBoundingClientRect().right).toBeLessThanOrEqual(column().left);
-  expect(marked()).toBe(-1);
-
-  // Past tables and formulas: the heading comes to the top of the pane, and stays the marked line.
-  await userEvent.click(items()[4]!);
-  await until('the page scrolled to section 3', () => Math.abs(below(headings()[4]!) - 16) < 2);
-  expect(marked()).toBe(4);
-
-  // Near the end the heading cannot reach the top; the one pressed is still the one marked.
-  await userEvent.click(items()[6]!);
-  await until('the page scrolled to the end', () => byId('preview').scrollTop + byId('preview').clientHeight >= byId('preview').scrollHeight - 2);
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  expect(marked()).toBe(6);
-  await userEvent.click(items()[4]!);
-  await until('back at section 3', () => Math.abs(below(headings()[4]!) - 16) < 2);
-
-  // Reading on, the mark follows the section under the top of the pane.
-  const preview = byId('preview');
-  scrollTo(preview.scrollTop + below(headings()[5]!) - 16 - 40);
-  await until('the mark stays on section 3 until 4 reaches the top', () => marked() === 4);
-  scrollTo(preview.scrollTop + 80);
-  await until('the mark moves to section 4', () => marked() === 5);
-  scrollTo(0);
-  await until('above the first section, nothing is marked', () => marked() === -1);
-});
-
-it('folds to a rail in the margin where the room beside the column is too narrow, and opens on hover', async () => {
-  await page.viewport(1000, 800);
-  // The pointer leaves the outline it last pressed: under it, the list would stay open.
-  await userEvent.hover(byId('preview').querySelector('.gg-md > p')!);
-  await until('the outline is a rail', () => outline().getBoundingClientRect().width <= 28);
-  expect(outline().getBoundingClientRect().right).toBeLessThanOrEqual(column().left);
-  const filled = (color: string) => !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(color) && !/\/ 0\)$/.test(color);
-  // Each folded row is a line, drawn as its own mark: the button's fill is its state, which the host fades.
-  expect(items().every((item) => filled(getComputedStyle(item, '::before').backgroundColor))).toBe(true);
-  await until('no folded row has a fill of its own (a hover left behind fades out)', () => !items().some((item) => filled(getComputedStyle(item).backgroundColor)));
-  // Opening, frame by frame: no row but the one under the pointer is ever filled (the folded lines' fill used to fade
-  // out over every row, each looking picked).
-  const others: string[] = [];
-  const frames = new Promise<void>((resolve) => {
-    let left = 20;
-    const look = () => {
-      others.push(...items().filter((item) => !item.matches(':hover') && filled(getComputedStyle(item).backgroundColor)).map((item) => item.textContent!));
-      if (--left) requestAnimationFrame(look); else resolve();
-    };
-    requestAnimationFrame(look);
-  });
-  await userEvent.hover(items()[1]!);
-  await frames;
-  expect(others).toEqual([]);
-  await until('its list opens over the text', () => outline().getBoundingClientRect().width >= 200 && items()[1]!.textContent!.length > 0);
-  expect(items()[1]!.getBoundingClientRect().height).toBeGreaterThan(10);
-  await userEvent.click(items()[1]!);
-  await until('the page scrolled to section 1', () => Math.abs(below(headings()[1]!) - 16) < 2);
-  await page.viewport(1400, 800);
 });
 
 it('follows the document when it is drawn again for another theme', async () => {

@@ -126,6 +126,7 @@ import {
   type ExtensionInstallConsentResult,
 } from '@shared/extensions/host-actions'
 import { givesAgentTools } from '@shared/extensions/app-places'
+import { readDocumentText } from '@shared/extensions/chat-folder-text'
 import { buildProbePlatformCredentials, buildNativeHistoryProbeCredentials } from './harness-catalog-probe-env'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
@@ -2583,6 +2584,11 @@ function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAct
     host,
     ...(ownerReads ? { ownerReads } : {}),
     resolveFile: desktopFiles.resolve,
+    // A live text file has no stored bytes: its text is the file service's, read as the Files App reads it.
+    readDocument: async (itemId, accessToken, actorId) => {
+      const { fileServiceUrl } = await import('./session/main/core/extensions/file-sync')
+      return readDocumentText({ filesUrl: fileServiceUrl, fetch: (...args) => egress.fetch(...args) }, accessToken, itemId, actorId)
+    },
     publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
     attachments: attachmentUploads,
     grantKey: sessionpageSurfaceKey(sessionId),

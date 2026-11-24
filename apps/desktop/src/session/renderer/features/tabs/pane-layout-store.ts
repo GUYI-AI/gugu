@@ -12,7 +12,7 @@ import type {
 import type { TabPersistenceAdapter } from './persistence';
 import { accountTabPlacementMemory, type TabPlacementMemory } from './tab-placement-memory';
 import { declaredShare } from './side-width';
-import { CHAT_TOOL_BUBBLE_MAX_WIDTH_PX, CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_VISIBLE_PANE_PX, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
+import { CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_VISIBLE_PANE_PX, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
 import {
   equalizeSplit,
   evenSizes,
@@ -218,7 +218,6 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       panesLanded: action,
       closingPaneId: computed,
       attachMotion: action,
-      chatWorkspaceConversationPresentation: computed,
       showChatWorkspaceConversation: action,
       attachChatWorkspace: action,
       moveChatToolGroup: action,
@@ -363,13 +362,6 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     if (this.chatWorkspaceMode === 'hidden') return panes?.chat.paneId;
     if (this.chatWorkspaceMode === 'full') return this.activePaneId === panes?.chat.paneId ? panes.chat.paneId : panes?.tools?.paneId;
     return undefined;
-  }
-
-  get chatWorkspaceConversationPresentation(): 'pane' | 'tab' | 'bubble' {
-    const mode = this.chatWorkspaceMode;
-    const panes = this.chatWorkspacePanes;
-    if (!panes?.tools || (mode !== 'full' && !(mode === 'split' && this.narrow))) return 'pane';
-    return this.dimensions && this.dimensions.width < CHAT_TOOL_BUBBLE_MAX_WIDTH_PX && this.activePaneId !== panes.chat.paneId ? 'bubble' : 'tab';
   }
 
   showChatWorkspaceConversation(): void {

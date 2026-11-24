@@ -2,11 +2,14 @@
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TranscriptTurn } from '@gugu/session-core/acp';
 import type { SessionOutline, SessionOutlineTurn } from '@shared/core/sessions/session-outline';
 
-const mocks = vi.hoisted(() => ({ getOutline: vi.fn() }));
+const mocks = vi.hoisted(() => ({ getOutline: vi.fn(), turns: [] as TranscriptTurn[] }));
 vi.mock('@renderer/lib/ipc', () => ({ rpc: { sessions: { getOutline: mocks.getOutline } } }));
+vi.mock('../../../../../../electron/session/main/core/session-timeline/service', () => ({ historyTurns: async () => mocks.turns }));
 const { resetOutlines, useOutline } = await import('./session-timeline-outline');
+const host = await import('../../../../../../electron/session/main/core/sessions/session-outline');
 
 const turn = (id: string): SessionOutlineTurn => ({ id, inputs: [] });
 const turns = (...ids: string[]) => ids.map(turn);
@@ -59,5 +62,21 @@ describe('the outline when the loaded history moves on', () => {
     await act(async () => answer({ turns: turns('t0', 't1', 't2') }));
     expect(mocks.getOutline).toHaveBeenCalledOnce();
     expect(seen.map((one) => one.id)).toEqual(['t0', 't1', 't2']);
+  });
+});
+
+describe('the machine answering an outline question', () => {
+  const item = (id: string, role: 'user' | 'assistant', text: string) => ({ kind: 'message', id, seq: 0, role, text }) as TranscriptTurn['items'][number];
+  const asked = (id: string) => ({ id, seq: 0, initiator: 'user', items: [item(`${id}:u`, 'user', `ask ${id}`), item(`${id}:a`, 'assistant', 'ok')] }) as TranscriptTurn;
+
+  it('after a turn the reader holds: only the stretch after it, marked; a turn it does not have: the whole outline', async () => {
+    mocks.turns = ['r:0', 'r:1', 'r:2', 'r:3', 'r:4'].map(asked);
+    const delta = await host.getOutline({ sessionId: 'c1', beforeTurnId: 'r:4', afterTurnId: 'r:1' });
+    expect(delta.after).toBe('r:1');
+    expect(delta.turns.map((one) => one.id)).toEqual(['r:2', 'r:3']);
+    const whole = await host.getOutline({ sessionId: 'c1', beforeTurnId: 'r:4', afterTurnId: 'gone' });
+    expect(whole.after).toBeUndefined();
+    expect(whole.turns.map((one) => one.id)).toEqual(['r:0', 'r:1', 'r:2', 'r:3']);
+    expect(await host.getOutline({ sessionId: 'c1', beforeTurnId: 'r:0', afterTurnId: 'r:1' })).toEqual({ turns: [] });
   });
 });

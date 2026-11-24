@@ -3,7 +3,7 @@ import { localizePermissionModeOptions } from '../acp/permission-mode-options';
 import { classifyProviderPermissionMode, type ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import type { SessionOptionGroup } from '@gugu/session-core/session-record/contract';
 import { withAutoReviewHint, type ReviewCostSource } from '../acp/auto-review-permission-hint';
-import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
 import { customModels } from './custom-models';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
@@ -1255,7 +1255,7 @@ export function useInitialSessionState(
   return {
     providerKnown,
     modelKnown,
-    acceptsImageAttachments: !selectedCustom || customFeatures?.image === true,
+    acceptsImageAttachments: !selectedCustom || customModelAcceptsImages(customFeatures),
     provider: providerId,
     setProvider: (next) => {
       setFastModeDraft(false);

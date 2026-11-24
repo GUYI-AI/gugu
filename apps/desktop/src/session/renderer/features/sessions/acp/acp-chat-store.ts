@@ -66,6 +66,7 @@ import { getSharedChatContext } from '@renderer/lib/chat/shared-chat-context';
 import { sideChatOwnTurns } from './history-composition';
 import { AcpTimelineFeed } from './acp-timeline-feed';
 import { projectOwnerNotifications } from '@gugu/session-core/session-record/owner-notifications';
+import { endedTurnIds, withoutCopiesOf } from '@gugu/session-core/session-record/runtime-turn';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import type { SessionMessageKey } from '@renderer/localization/messages';
@@ -284,6 +285,8 @@ export class AcpChatStore {
   private _historyDrawn = false;
   /** The turn the runtime just committed, kept on screen until the timeline holds its recorded form. */
   private _committedFrameId: string | null = null;
+  /** The timeline's turns that had ended when the drawn running turn started (`endedTurnIds`). */
+  private _endedBeforeLive: ReadonlySet<string> = new Set();
   /** A side chat's turns as its runtime has them: the page read when it attached, then each change (@@@history-change-cursor). */
   private _runtimeTurns: TranscriptTurn[] = [];
   private _runtimeCursor: HistoryCursor | null = null;
@@ -2431,12 +2434,25 @@ export class AcpChatStore {
       this._syncRuntimeBackgroundTaskIds(initialState);
       this._syncLiveSubagentIds(session.agents.current());
     });
+    let drawnLiveId = session.activeTurn.current()?.id ?? null;
+    if (drawnLiveId !== null) this._endedBeforeLive = endedTurnIds(this._history?.state.turns ?? []);
     const disconnectChatSession = connectSession(
       this.chatState,
       {
         activeTurn: {
           getSnapshot: () => this._historyView(session.activeTurn.current()).activeTurn,
-          subscribe: cb => session.activeTurn.onChange(() => cb()),
+          // The host timeline and this runtime replica report the same running turn on two channels, in either order.
+          // Both tiers are drawn from both in one batch, so neither channel's lead draws that turn in both (@@@turn-one-owner).
+          subscribe: cb => session.activeTurn.onChange(() => batch(() => {
+            cb();
+            // A streaming patch keeps the turn: only a turn starting or ending moves it between the tiers.
+            const id = session.activeTurn.current()?.id ?? null;
+            if (id === drawnLiveId) return;
+            // A turn starting now is no copy of one that had already ended (`withoutCopiesOf`); the frame kept after it keeps that.
+            if (id !== null) this._endedBeforeLive = endedTurnIds(this._history?.state.turns ?? []);
+            drawnLiveId = id;
+            this._seedFromTimeline();
+          })),
         },
         plan: asValueSource(session.plan),
         sessionState: asValueSource(session.sessionState),
@@ -2652,7 +2668,10 @@ export class AcpChatStore {
       // 分叉重放进来的来源历史是给模型的上下文,不画;挂上之前就从这个视图开出来的那一轮照画(#6762)。
       return { turns: sideChatOwnTurns([...this._olderHistoryTurns, ...this._runtimeTurns]), activeTurn: live };
     }
-    const turns = this._history.state.turns.filter(turn => turn.id !== live?.id && turn.id !== frame?.id);
+    // The drawn running turn (live) and the frame kept after it ended own that turn: the timeline's copies of it step
+    // aside, whether the runtime's copy (same id) or the record's (another turn id, `sameTurnAs`) when the record is ahead.
+    let turns = this._history.state.turns.filter(turn => turn.id !== live?.id && turn.id !== frame?.id);
+    for (const drawn of [live, frame]) if (drawn) turns = withoutCopiesOf(turns, drawn, this._endedBeforeLive);
     return projectOwnerNotifications(turns, live);
   }
 

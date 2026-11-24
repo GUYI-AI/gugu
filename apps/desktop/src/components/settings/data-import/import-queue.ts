@@ -6,6 +6,7 @@ import { notify } from '@/lib/notices'
 import { sessionCoordinator } from '@/lib/sessionCoordinator'
 import type { ImportPreparation, ImportOutcome, ImportedEntity, ImportedSession, ImportProvider } from './import-providers'
 import { importFailureDescription } from './import-failure-copy'
+import { currentCategoryResults } from './environment-import-view'
 
 export type ImportDevice = { deviceId: string | null; deviceName: string; count: number }
 export type ImportedEntry = ImportedSession & { deviceId: string | null; deviceName?: string }
@@ -140,7 +141,7 @@ async function runNext(): Promise<void> {
         ...before,
         sources: [...new Set([...before.sources, job.provider.id])],
         categoryAttempts: { ...before.categoryAttempts, [job.provider.id]: { ...before.categoryAttempts?.[job.provider.id], ...result.attempts } },
-        categoryResults: result.details.length ? [{ providerId: job.provider.id, finishedAt, items: result.details }, ...(before.categoryResults ?? [])].slice(0, 50) : before.categoryResults,
+        categoryResults: currentCategoryResults([{ providerId: job.provider.id, finishedAt, items: result.details }, ...(before.categoryResults ?? [])]),
       })).catch(() => notify({ tier: 'error', title: t('settings.dataImport.syncSaveFailed') }))
     }
     if (ownsImport() && (!job.automatic || count > 0 || failed > 0)) {

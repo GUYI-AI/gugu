@@ -1,5 +1,6 @@
-import { withRuntimeTurn } from './runtime-turn';
+import { endedTurnIds, withRuntimeTurn } from './runtime-turn';
 import { withJournalTurns } from './journal-turns';
+import { HostPrompts, type HostPromptReceipts } from './host-prompts';
 import type { TerminalState } from '../acp/models/terminals';
 import type { SessionLiveReply } from './live-reply';
 import { applyHostTurnEnd, type HostTurnEnds, type HostTurnEnd } from './host-turn-end';
@@ -118,6 +119,8 @@ export type SessionTimelineDeps = {
   answerableQuestions?: boolean;
   /** Gugu's journal of this session (`sources/gugu-journal.ts`): its whole turns go among the record's by start time. */
   journal?: SessionRecordSource | null;
+  /** What the person sent with the prompts the record holds as sent natively (`host-prompts.ts`), kept by the host. */
+  hostPrompts?: HostPromptReceipts;
   /** Called after every applied batch, including the initial read (before `createSessionTimeline` returns). A fill drains here. */
   onApplied?: (timeline: SessionTimeline) => void;
   /** Where the source starts when no archive is restored (a fill from the tail, `SessionRecordSource.startingAt`). */
@@ -245,6 +248,8 @@ class RecordTimeline implements SessionTimeline {
   private liveReply: SessionLiveReply | null = null;
   /** The runtime's turn in progress (`syncActiveTurn`): live like the rest of the side channels, never archived. */
   private runtimeTurn: TranscriptTurn | null = null;
+  /** The turns that had ended when the runtime's turn started: none of them is a copy of it (`withoutCopiesOf`). */
+  private endedBeforeRuntime: ReadonlySet<string> = new Set();
   /** The journal's turns by key, in journal order; read again with the journal, never archived. */
   private journalTurns = new Map<string, { turn: TranscriptTurn; recorded: boolean }>();
   private liveReplyDirty = false;
@@ -279,6 +284,7 @@ class RecordTimeline implements SessionTimeline {
   private stopHostTurnEnds: (() => void) | undefined;
   private hostEnds: readonly HostTurnEnd[] = [];
   private hostEnded = new WeakMap<TranscriptTurn, TranscriptTurn>();
+  private readonly sent: HostPrompts;
   private placed = new WeakMap<TranscriptTurn, TranscriptTurn>();
   /** Turns handed out by `drainSettled`, and the ids of what they own. */
   private retainedFrom = 0;
@@ -298,6 +304,7 @@ class RecordTimeline implements SessionTimeline {
     this.epochValue = this.newEpoch();
     this.parser = new AcpTranscriptParser({ sessionId: deps.sessionId });
     this.hostEnds = deps.hostTurnEnds?.read() ?? [];
+    this.sent = new HostPrompts(deps.hostPrompts);
   }
 
   async begin(): Promise<void> {
@@ -508,11 +515,13 @@ class RecordTimeline implements SessionTimeline {
     return this.epochValue;
   }
 
+  getCursor(): RecordCursor { return { epoch: this.epochValue, seq: this.seq }; }
+
   getRecordLineage() { return this.source.getLineage?.() ?? null; }
 
   getSnapshot(options?: { limit?: number; committedOnly?: boolean }): TimelineSnapshot {
     const limit = options?.limit ?? this.defaultLimit;
-    const all = options?.committedOnly ? this.withHostEnds([...this.parser.history]) : this.currentTurns();
+    const all = options?.committedOnly ? this.recordTurns([...this.parser.history]) : this.currentTurns();
     const turns = limit >= all.length ? all : all.slice(all.length - limit);
     return {
       cursor: { epoch: this.epochValue, seq: this.seq },
@@ -688,7 +697,9 @@ class RecordTimeline implements SessionTimeline {
 
   syncActiveTurn(turn: TranscriptTurn | null): void {
     if (this.disposed || this.runtimeTurn === turn) return;
+    if (turn && turn.id !== this.runtimeTurn?.id) this.endedBeforeRuntime = endedTurnIds(this.recordedTurns().turns);
     this.runtimeTurn = turn;
+    this.sent.learn(turn);
     this.publish();
   }
 
@@ -978,12 +989,18 @@ class RecordTimeline implements SessionTimeline {
   }
 
   private currentTurns(): TranscriptTurn[] {
+    const { turns, base } = this.recordedTurns();
+    return this.inPlace(withRuntimeTurn(turns, this.runtimeTurn, this.endedBeforeRuntime), base);
+  }
+
+  /** The record's turns with the journal's, before the runtime's turn in progress takes its place; `base`: the first record seq. */
+  private recordedTurns(): { turns: TranscriptTurn[]; base: number } {
     const active = this.parser.activeTurn;
-    const folded = this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]);
+    const folded = this.recordTurns(active ? [...this.parser.history, active] : [...this.parser.history]);
     const journal = [...this.journalTurns.values()];
-    return this.inPlace(withRuntimeTurn(withJournalTurns(folded,
+    return { turns: withJournalTurns(folded,
       journal.filter((line) => !line.recorded).map((line) => line.turn),
-      journal.filter((line) => line.recorded).map((line) => line.turn)), this.runtimeTurn), folded[0]?.seq ?? 0);
+      journal.filter((line) => line.recorded).map((line) => line.turn)), base: folded[0]?.seq ?? 0 };
   }
 
   /**
@@ -1001,6 +1018,11 @@ class RecordTimeline implements SessionTimeline {
       this.placed.set(turn, placed);
       return placed;
     });
+  }
+
+  /** The record's turns with what only the host knows of them: how a turn ended, and what its person sent. */
+  private recordTurns(turns: TranscriptTurn[]): TranscriptTurn[] {
+    return this.sent.restore(this.withHostEnds(turns));
   }
 
   private withHostEnds(turns: TranscriptTurn[]): TranscriptTurn[] {

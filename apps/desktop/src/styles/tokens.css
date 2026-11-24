@@ -1284,20 +1284,6 @@ input {
   }
 }
 
-.gg-message-skeleton { flex: 1; padding: 8px 16px; display: flex; flex-direction: column; gap: 12px; overflow: hidden; }
-.gg-message-skeleton-bubble { position: relative; overflow: hidden; contain: paint; }
-.gg-message-skeleton-bubble::before {
-  content: ''; position: absolute; inset: 0 auto 0 -400%; width: 600%;
-  background: linear-gradient(90deg, var(--bg-elevated) 0%, var(--bg-secondary) 50%, var(--bg-elevated) 100%);
-  background-size: calc(100% / 3) 100%;
-  animation: skeleton-shimmer 1.4s ease-in-out infinite;
-}
-
-@keyframes skeleton-shimmer {
-  from { transform: translateX(0); }
-  to { transform: translateX(calc(200% / 3)); }
-}
-
 /* @@@typing-dots (#1102) — agent「运行中 ●●●」内联指示器的跳动圆点,逐值抄设计稿 .typing .tdots i 的 tbounce。 */
 @keyframes tbounce {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
@@ -1503,8 +1489,10 @@ body.barcode-scanner-active #root {
    (paint containment 不分跳没跳过),让出的宽度取头像栏的触控宽。 */
 /* 头像栏宽(GroupAvatarSlot):桌面与头像按钮同宽;触控宽 = 手机的点击目标,已读环在手机上的点击区也用它。 */
 :root { --msg-avatar-gutter: 32px; --msg-avatar-gutter-touch: 44px; }
-/* 记真实大小(auto)要在可跳过之前就开着:浏览器只在这条属性在场时记,data-laid-out 那一刻才开就没记下,屏幕外的行先按占位排。 */
-.gg-msg-row > [data-row-body] { contain-intrinsic-size: auto 160px; }
+/* 记真实大小(auto)要在可跳过之前就开着:浏览器只在这条属性在场时记,data-laid-out 那一刻才开就没记下,屏幕外的行先按占位排。
+   @@@row-style-scope — contain: style 也从一挂上就开着(content-visibility:auto 本来就带它,跳过之后的样子不变):Blink 给后来才打开的
+   style containment 建的引号作用域(OrderedScope<LayoutQuote>)在行卸载后不收,每行留一个,开关一次会话 / 查看器就涨几十个。 */
+.gg-msg-row > [data-row-body] { contain-intrinsic-size: auto 160px; contain: style; }
 .gg-msg-row[data-laid-out] > [data-row-body] { content-visibility: auto; overflow-clip-margin: var(--msg-avatar-gutter-touch); }
 
 /* ── theme batch A:助理 App(.ta-*)的颜色取值 ───────────────────────────────────────────────
