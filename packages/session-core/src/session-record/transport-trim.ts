@@ -131,8 +131,10 @@ const PLAIN_SEND = /(?:^|__)(?:message_send|session_message)$/;
 /** What a folded page knows of itself: who its envelopes prove an agent, which sub-agents it shows ended, and the turn at hand. */
 type PageFacts = { agents: ReadonlySet<string>; ended: ReadonlySet<string>; turn?: TranscriptTurn };
 
-/** An agent as the view reads one (`chatActor`): one the page's envelopes prove, or a session address, which is one itself. */
-const provenAgent = (facts: PageFacts, address: string) => facts.agents.has(address) || /^session:./.test(address);
+/** The sender of a delivery the view folds into an exchange: one the page's envelopes prove an agent, or a session (a
+ *  session-direct envelope has no `from_type`; only an agent session sends one). Not used for sends: the view draws
+ *  what the agent sends to a session as a said line. */
+const provenSender = (facts: PageFacts, address: string) => facts.agents.has(address) || /^session:./.test(address);
 
 function pageFacts(turns: readonly TranscriptTurn[]): PageFacts {
   const agents = new Set<string>(), ended = new Set<string>();
@@ -167,7 +169,7 @@ function stubOf(node: ToolNode, limit: number, row: boolean, facts?: PageFacts):
 function foldedSend(node: ToolNode, facts: PageFacts): ToolNode | null {
   if (node.kind !== 'mcp-tool-call' || node.status !== 'done' || node.parentToolCallId || !isGuguServer(node.server) || !PLAIN_SEND.test(node.tool)) return null;
   const to = sendAddressesOf(node, facts.turn);
-  if (!to?.confirmed || !to.recipients?.length || !to.recipients.every(address => provenAgent(facts, address))) return null;
+  if (!to?.confirmed || !to.recipients?.length || !to.recipients.every(address => facts.agents.has(address))) return null;
   try {
     const args = JSON.parse(node.rawInput ?? '') as Record<string, unknown> | null;
     if (!args || typeof args.text !== 'string' || args.text.length <= HELD_BODY_CHARS) return null;
@@ -188,7 +190,7 @@ function foldedItem(item: TranscriptItem, facts: PageFacts): TranscriptItem {
   // The view folds a delivery into an exchange only when every sender is an agent: the envelope says so, or, for an
   // envelope from before it said, the reader's directory does (`incomingActivity`) — here, another envelope of the page.
   if (!reading?.segments.every(part => /^(?:user|session):./.test(part.facts?.fromId ?? '')
-    && (part.facts!.fromType ? part.facts!.fromType === 'agent' : provenAgent(facts, part.facts!.fromId!)))) return item;
+    && (part.facts!.fromType ? part.facts!.fromType === 'agent' : provenSender(facts, part.facts!.fromId!)))) return item;
   const folded = foldDeliveryEnvelope(item.text, HELD_BODY_CHARS);
   return folded !== null && folded.length < item.text.length ? { ...item, text: folded, held: true } : item;
 }

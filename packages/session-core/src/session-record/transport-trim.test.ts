@@ -616,6 +616,11 @@ describe('a folded page leaves out what stands behind a fold', () => {
     const sent = one([direct]).items[0] as unknown as { text: string; held?: true };
     expect(sent.held).toBe(true);
     expect(readDeliveryEnvelope(sent.text)!.segments[0]).toMatchObject({ body: 'b'.repeat(HELD_BODY_CHARS), facts: { fromId: SESSION } });
+    // What the agent sends back to that session is a said line in the view, not part of an exchange: it stays whole.
+    const reply = { kind: 'mcp-tool-call', id: 'r', seq: 1, toolCallId: 'r', server: 'gugu', tool: 'session_message', status: 'done', title: 'send',
+      rawInput: JSON.stringify({ to: [SESSION], text: 'w'.repeat(900) }),
+      outputText: JSON.stringify({ recipients: [{ to: SESSION, status: 'delivered', message_id: 'msg:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }] }) } as unknown as ToolNode;
+    expect(one([direct, reply]).items[1]).toEqual(reply);
   });
 
   it('cuts what the agent sent to agents only, and leaves what it sent to a person', () => {
