@@ -35,7 +35,7 @@ describe('assistant App binding reads across upgrades', () => {
   it('reports an unreadable binding as an error, not an absent assistant', async () => {
     followRendererSession('SIGNED_IN', OWNER)
     rpc.mockResolvedValue({ data: null, error: { message: 'permission denied', code: '42501' }, status: 403 })
-    await expect(queryClient.fetchQuery({ ...myAssistant.options(myAssistant.key()!), retry: false }))
+    await expect(queryClient.fetchQuery({ ...myAssistant.options(myAssistant.key()!), queryKey: myAssistant.key()!, retry: false }))
       .rejects.toMatchObject({ message: 'permission denied', code: '42501', status: 403 })
     expect(myAssistant.peek().state).toBe('error')
   })
