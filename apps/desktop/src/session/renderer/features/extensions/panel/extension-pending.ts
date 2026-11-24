@@ -19,7 +19,7 @@ export type ExtensionOperation = {
   result?: { version: string; error?: string };
 };
 export const createExtensionOperations = () => observable.map<string, ExtensionOperation>([], { deep: false });
-export const ExtensionOperationsContext = createContext(createExtensionOperations());
+export const ExtensionOperationsContext = createContext<ReturnType<typeof createExtensionOperations> | null>(null);
 
 /**
  * `percent` is only meaningful while `pending === 'downloading'` — it comes from

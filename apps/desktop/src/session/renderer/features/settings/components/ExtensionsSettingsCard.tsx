@@ -60,7 +60,7 @@ import { AppProductPage, type ExtensionDetailSubject } from '@renderer/features/
 import { AppPromptsSection } from '@renderer/features/library/prompts/prompt-library-view';
 import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
 import type { InstalledRowNotice } from '@renderer/features/extensions/panel/installed-extension-row';
-import { ExtensionOperationsContext, pendingLabel, type ExtensionPendingAction } from '@renderer/features/extensions/panel/extension-pending';
+import { createExtensionOperations, ExtensionOperationsContext, pendingLabel, type ExtensionPendingAction } from '@renderer/features/extensions/panel/extension-pending';
 import { ExtensionMonogram } from '@renderer/features/extensions/panel/extension-monogram';
 import { ShelfSkeleton } from '@renderer/features/extensions/panel/extension-skeletons';
 import '@renderer/features/extensions/panel/extensions-panel.css';
@@ -266,7 +266,9 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     if (previousAppsLocation()) navigateBack(true);
     else moveAppsLocation(() => home);
   };
-  const operations = useContext(ExtensionOperationsContext);
+  const libraryOperations = useContext(ExtensionOperationsContext);
+  const [panelOperations] = useState(() => libraryOperations ?? createExtensionOperations());
+  const operations = libraryOperations ?? panelOperations;
   const operationKey = (id: string) => JSON.stringify([host.key, id]);
   const operation = (id: string) => operations.get(operationKey(id));
   const beginPending = action((id: string, phase: ExtensionPendingAction, percent?: number) => {
