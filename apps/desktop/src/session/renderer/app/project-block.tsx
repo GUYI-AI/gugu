@@ -14,7 +14,7 @@ import { composerDrafts, projectDraftKey } from '@renderer/features/sessions/com
 import { ProjectTaskComposer } from '@renderer/features/projects/components/main-panel/project-home';
 import { setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
 import { useProjectFolderStage } from '@renderer/features/projects/components/main-panel/project-folder-stage';
-import { useFloatingCardKeys } from './floating-card-keys';
+import { useFloatingCardKeys, useFloatingCardShown } from './floating-card-keys';
 import { BlockGrip } from './block-grip';
 import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
@@ -129,10 +129,11 @@ const ProjectTaskDock = observer(function ProjectTaskDock({ chatId, projectId }:
     return null;
   });
   // 框里已经有字(群里写着带过来的、新建会话页选项目带过来的)也照样浮着:打字不收卡,带过来的字同理(owner 10-26)。
-  const [cardShown, setCardShown] = useState(true);
-  const stage = useProjectFolderStage(projectId, { floating: true, onChosen: () => setCardShown(false) });
+  // 收起只收这一次:再选一次「新任务」(已经在新任务里也算)卡又浮上来。
+  const [cardShown, hideCard] = useFloatingCardShown(chatId);
+  const stage = useProjectFolderStage(projectId, { floating: true, onChosen: hideCard });
   const dockRef = useRef<HTMLDivElement>(null);
-  useFloatingCardKeys(cardShown, () => setCardShown(false), dockRef);
+  useFloatingCardKeys(cardShown, hideCard, dockRef);
   const close = () => setComposerVerb(chatId, null);
   return (
     <>

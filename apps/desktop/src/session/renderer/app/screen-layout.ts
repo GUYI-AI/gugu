@@ -330,13 +330,17 @@ export class ScreenLayoutStore {
     const key = contentKey(target);
     for (const group of this.parked.filter((entry) => entry.entry === key && Object.keys(entry.blocks).length < 2)) this.parked.remove(group);
     for (const group of this.parked.filter((entry) => entry.entry === key)) delete group.entry;
+    // Already alone on its own screen: that block stays (a new block id would remount its whole conversation).
+    const at = this.blockOf(target);
+    if (at && this.order.length === 1 && (this.entry === key || this.entry === null)) {
+      this.entry = key;
+      return this.focus(at);
+    }
     if (this.entry === key && this.order.length < 2) this.clearScreen();
     else {
       if (this.entry === key) this.entry = null;
       this.park();
     }
-    const at = this.blockOf(target);
-    if (at) return this.focus(at);
     this.showAlone(target, key);
   }
 
