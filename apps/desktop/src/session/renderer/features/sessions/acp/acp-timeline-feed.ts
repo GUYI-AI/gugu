@@ -1,6 +1,7 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 import type { SessionpageSessionEvent, TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline, prependOlder, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
+import { recordWaitDelay } from '@/components/session-watch/record-wait';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 
@@ -73,11 +74,30 @@ export class AcpTimelineFeed implements TimelineFeed {
       if (generation === this.generation && this.opened) this.apply(applyTimelineResult(this.state, event.result));
     });
     this.subscription = { id, stop: stopEvents };
-    const snapshot = await value(this.host.sessionSnapshot({ conversationId, limit: FIRST_PAGE }));
-    if (generation !== this.generation) return;
+    const snapshot = await this.firstSnapshot(generation);
+    if (!snapshot || generation !== this.generation) return;
     this.state = applySnapshot(this.state, snapshot);
     this.changed();
     await value(this.host.sessionSubscribe({ conversationId, subscriptionId: id, cursor: snapshot.cursor, terminalPatch: true }));
+  }
+
+  /**
+   * A new session's record exists only once its agent writes the first line, so `record_not_found` is a wait for a
+   * while, as for every reader of a timeline (`record-wait.ts`). null = a newer open took over.
+   */
+  private async firstSnapshot(generation: number) {
+    const started = Date.now();
+    for (;;) {
+      try {
+        return await value(this.host.sessionSnapshot({ conversationId: this.sessionId, limit: FIRST_PAGE }));
+      } catch (error) {
+        if (generation !== this.generation) return null;
+        const delay = recordWaitDelay((error as { code?: string }).code ?? null, Date.now() - started);
+        if (delay === null) throw error;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (generation !== this.generation) return null;
+      }
+    }
   }
 
   /** Asks for what came after the cursor now, instead of waiting for the next push. */
