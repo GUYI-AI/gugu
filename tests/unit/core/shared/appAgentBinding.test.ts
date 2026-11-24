@@ -11,8 +11,10 @@ describe('account App binding identity', () => {
   it.each([null, undefined, {}, [null], [false], ['agent'], [{}],
     [{ agent_user_id: '', device_id: 'host' }], [{ agent_user_id: 'agent', device_id: ' ' }],
     [{ agent_user_id: 'agent', device_id: null }],
-    [{ agent_user_id: 'one', device_id: 'host' }, { agent_user_id: 'two', device_id: 'host' }]].map(rows => ({ rows })))
-  ('refuses unreadable or ambiguous results instead of treating them as unbound: %j', ({ rows }) => {
-    expect(() => pickAssistant(rows)).toThrow('Could not verify');
-  });
+    [{ agent_user_id: 'one', device_id: 'host' }, { agent_user_id: 'two', device_id: 'host' }]].map(rows => ({ rows })))(
+    'refuses unreadable or ambiguous results instead of treating them as unbound: %j',
+    ({ rows }) => {
+      expect(() => pickAssistant(rows)).toThrow('Could not verify');
+    },
+  );
 });
