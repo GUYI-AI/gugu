@@ -29,16 +29,17 @@ async function card(member: MemberProfileCardModel) {
   }
 }
 
-it('a person and an agent in a group get the same card: width, action layout, icons and rows', async () => {
+it('a person and an agent in a group get the same card: width, action layout and icons', async () => {
   await page.viewport(1100, 800)
   const p = await card(person)
   const a = await card(agent)
   expect(a.width).toBe(p.width)
   // Whisper and Find messages are the same buttons, same size and same glyphs, for both kinds.
   expect(a.actions.slice(0, 2)).toEqual(p.actions.slice(0, 2))
-  // Group role and Gugu ID show for the agent too.
-  expect(a.fields).toEqual(expect.arrayContaining(['role', 'id']))
+  // Rows stay per kind (@@@1344(a)): a person in a group shows Group role and Gugu ID, an agent in a group does not.
   expect(p.fields).toEqual(expect.arrayContaining(['role', 'id']))
+  expect(a.fields).not.toContain('role')
+  expect(a.fields).not.toContain('id')
 })
 
 it("someone else's agent has no Share; a person's Share is the same third button", async () => {

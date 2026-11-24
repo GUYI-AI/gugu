@@ -367,23 +367,36 @@ export function MemberProfileCard({
         </div>
       </div>
 
-      {/* ── Data fields (咕咕号 / 群角色 / etc) — the same rows for people and agents, in a group and outside one.
-          咕咕号 always rendered (unassigned says so). Agent-only: current task / last action. ─── */}
-      <FieldList className={profileFieldsClass}>
-        {member.bio ? <DataRow field="bio" label={t('profile.bio')} value={member.bio} /> : null}
-        {member.email ? <DataRow field="email" label={t('profile.email')} value={member.email} /> : null}
-        {aliasControls ? <AliasField controls={aliasControls} /> : null}
-        {isGroupProfile ? (
-          <DataRow field="role" label={t('profile.groupRole')} value={roleLabel} />
-        ) : null}
-        <DataRow field="id" label={t('common.guguNumber')} value={member.guguNumber == null ? t('common.unassigned') : member.guguNumber} />
-        {isAgent && member.agentMeta?.currentTaskTitle ? (
-          <DataRow field="current-task" label={t('profile.currentTask')} value={member.agentMeta.currentTaskTitle} />
-        ) : null}
-        {isAgent && member.agentMeta?.lastAction ? (
-          <DataRow field="last-action" label={t('profile.lastAction')} value={resolveMessagingValue(member.agentMeta.lastAction)} />
-        ) : null}
-      </FieldList>
+      {/* ── Data fields (咕咕号 / 群角色 / etc) ─────
+          Not in prototype visual but preserved for existing tests and data display.
+          咕咕号 always rendered — direct profiles need it too (test invariant).
+          @@@1344(a) — group-agent 卡隐藏群语境字段(备注/群角色/咕咕号/任务/动作)，保留身份字段
+          (简介/邮箱)、收听模式与管理区。直接资料卡与群里的人类成员卡保留完整字段。 ─── */}
+      {member.bio || member.email || !(isAgent && isGroupProfile) ? (
+        <FieldList className={profileFieldsClass}>
+          {member.bio ? <DataRow field="bio" label={t('profile.bio')} value={member.bio} /> : null}
+          {member.email ? <DataRow field="email" label={t('profile.email')} value={member.email} /> : null}
+          {!(isAgent && isGroupProfile) ? (
+            <>
+              {aliasControls ? <AliasField controls={aliasControls} /> : null}
+              {isGroupProfile ? (
+                <DataRow field="role" label={t('profile.groupRole')} value={roleLabel} />
+              ) : null}
+              <DataRow field="id" label={t('common.guguNumber')} value={member.guguNumber == null ? t('common.unassigned') : member.guguNumber} />
+              {isAgent ? (
+                <>
+                  {member.agentMeta?.currentTaskTitle ? (
+                    <DataRow field="current-task" label={t('profile.currentTask')} value={member.agentMeta.currentTaskTitle} />
+                  ) : null}
+                  {member.agentMeta?.lastAction ? (
+                    <DataRow field="last-action" label={t('profile.lastAction')} value={resolveMessagingValue(member.agentMeta.lastAction)} />
+                  ) : null}
+                </>
+              ) : null}
+            </>
+          ) : null}
+        </FieldList>
+      ) : null}
 
       {/* ── 收听模式 segmented control (prototype .lm/.lmseg, lines 453-457)
           Agent-only, room scope. The parent supplies onChangeListenMode for the agent owner
