@@ -1,12 +1,11 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 import type { SessionpageSessionEvent, TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline, prependOlder, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
-import { createHeldTurnReader, FOLDED, withWholeTurns } from '@/components/session-watch/folded-pages';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
-import { onMachineReconnected } from '@renderer/lib/machine-clients';
+import type { ToolImage } from '@gugu/session-core/acp/client';
 
-async function value<T>(result: Promise<{ ok: true; value: T } | { ok: false; error: { code: string; message: string } }>): Promise<T> {
+export async function value<T>(result: Promise<{ ok: true; value: T } | { ok: false; error: { code: string; message: string } }>): Promise<T> {
   const next = await result;
   if (!next.ok) throw Object.assign(new Error(next.error.message), { code: next.error.code });
   return next.value;
@@ -18,45 +17,45 @@ const OLDER_PAGE = 100;
 
 /**
  * A session page's history: the session's timeline, the one fold of its record (with the Gugu journal and the running
- * turn of its runtime) that every reader of a session uses. Read the way the session-watch page reads it: a snapshot,
- * then the batches the host pushes, older pages on demand. Nothing here knows whether the session runs: the timeline
+ * turn of its runtime) that every reader of a session uses. Nothing here knows whether the session runs: the timeline
  * goes on while the runtime starts, stops or is attached again.
  */
-export class AcpTimelineFeed {
+export interface TimelineFeed {
+  readonly state: AgentWatchTimeline;
+  readonly opened: boolean;
+  readonly hasOlder: boolean;
+  /** Reads the timeline and follows it. A failed read rejects; what was shown stays. */
+  open(): Promise<void>;
+  /** Asks for what came after the cursor now, instead of waiting for the next push. */
+  catchUp(): Promise<void>;
+  /** The page before the oldest turn held, oldest first; empty at the top. */
+  older(): Promise<TranscriptTurn[]>;
+  toolImage(itemId: string, index: number): Promise<ToolImage>;
+  /** A row of a turn sent folded came on screen from behind a fold: read that turn whole (`folded-pages`). */
+  readonly fillHeld: (itemId: string) => void;
+  /** Stops following. */
+  close(): void;
+}
+
+/**
+ * The history of a session on this computer, read from its own host: a snapshot, then the batches the host pushes,
+ * older pages on demand, every tool row whole (nothing crosses a link). A session on another machine reads the stream
+ * its machine's pages share instead (`RemoteTimelineFeed`).
+ */
+export class AcpTimelineFeed implements TimelineFeed {
   state: AgentWatchTimeline = emptyAgentWatchTimeline();
-  private readonly host: ReturnType<typeof rpcOn>['sessionTimeline'];
-  /** This computer reads whole tool rows; another machine trims what it sends over the wire (`transport-trim`). */
-  private readonly trim: boolean;
+  private readonly host = rpcOn(null).sessionTimeline;
   private generation = 0;
   private subscription: { id: string; stop: () => void } | null = null;
-  /** A row of a turn this feed was sent folded came on screen from behind a fold: read that turn whole (`folded-pages`). */
-  readonly fillHeld: (itemId: string) => void;
+  /** Pages of this computer are whole: nothing is held back, nothing to read again. */
+  readonly fillHeld = (): void => undefined;
 
-  /** `machine` null = this computer. */
   constructor(
     private readonly sessionId: string,
-    private readonly machine: string | null,
     private readonly changed: () => void,
-    /** A read the feed started itself (a new snapshot after a gap or a reconnect) failed. */
+    /** A read the feed started itself (a new snapshot after a gap) failed. */
     private readonly failed: (error: unknown) => void,
-  ) {
-    this.host = rpcOn(machine).sessionTimeline;
-    this.trim = machine !== null;
-    this.fillHeld = createHeldTurnReader({
-      pages: {
-        snapshot: (limit) => value(this.host.sessionSnapshot({ conversationId: this.sessionId, limit, trim: this.trim })),
-        older: (beforeTurnId, limit) => value(this.host.sessionOlder({ conversationId: this.sessionId, beforeTurnId, limit, trim: this.trim })),
-      },
-      turns: () => this.state.turns,
-      land: (whole) => this.apply({ ...this.state, turns: withWholeTurns(this.state.turns, whole) }),
-      failed: this.failed,
-    });
-  }
-
-  /** Another machine's pages come folded (`folded-pages`); this computer's are read whole, nothing to save. */
-  private get lean() {
-    return this.trim ? { lean: FOLDED } : {};
-  }
+  ) {}
 
   get opened(): boolean {
     return this.state.cursor !== null;
@@ -72,19 +71,15 @@ export class AcpTimelineFeed {
     const id = globalThis.crypto.randomUUID();
     const conversationId = this.sessionId;
     // Listen before subscribing: a batch pushed between the answer and the listener would be lost.
-    const stopEvents = onMachineEvent<SessionpageSessionEvent>(this.machine, { name: `${sessionpageSessionTimelineChannel.name}.${id}` }, (event) => {
+    const stopEvents = onMachineEvent<SessionpageSessionEvent>(null, { name: `${sessionpageSessionTimelineChannel.name}.${id}` }, (event) => {
       if (generation === this.generation && this.opened) this.apply(applyTimelineResult(this.state, event.result));
     });
-    // Another machine's host drops its subscriptions with the link: follow again once it is back.
-    const stopLink = this.machine ? onMachineReconnected(this.machine, () => {
-      if (generation === this.generation) void this.open().catch(this.failed);
-    }) : () => undefined;
-    this.subscription = { id, stop: () => { stopEvents(); stopLink(); } };
-    const snapshot = await value(this.host.sessionSnapshot({ conversationId, limit: FIRST_PAGE, trim: this.trim, ...this.lean }));
+    this.subscription = { id, stop: stopEvents };
+    const snapshot = await value(this.host.sessionSnapshot({ conversationId, limit: FIRST_PAGE }));
     if (generation !== this.generation) return;
     this.state = applySnapshot(this.state, snapshot);
     this.changed();
-    await value(this.host.sessionSubscribe({ conversationId, subscriptionId: id, cursor: snapshot.cursor, trim: this.trim, terminalPatch: true }));
+    await value(this.host.sessionSubscribe({ conversationId, subscriptionId: id, cursor: snapshot.cursor, terminalPatch: true }));
   }
 
   /** Asks for what came after the cursor now, instead of waiting for the next push. */
@@ -92,7 +87,7 @@ export class AcpTimelineFeed {
     const generation = this.generation;
     const cursor = this.state.cursor;
     if (!cursor) return;
-    const result: TimelineAfterResult = await value(this.host.sessionAfter({ conversationId: this.sessionId, cursor, trim: this.trim, terminalPatch: true }));
+    const result: TimelineAfterResult = await value(this.host.sessionAfter({ conversationId: this.sessionId, cursor, terminalPatch: true }));
     if (generation === this.generation) this.apply(applyTimelineResult(this.state, result));
   }
 
@@ -101,7 +96,7 @@ export class AcpTimelineFeed {
     const generation = this.generation;
     const first = this.state.turns[0];
     if (!this.state.hasOlder || !first) return [];
-    const page = await value(this.host.sessionOlder({ conversationId: this.sessionId, beforeTurnId: first.id, limit: OLDER_PAGE, trim: this.trim, ...this.lean }));
+    const page = await value(this.host.sessionOlder({ conversationId: this.sessionId, beforeTurnId: first.id, limit: OLDER_PAGE }));
     if (generation !== this.generation) return [];
     const held = new Set(this.state.turns.map((turn) => turn.id));
     this.apply(prependOlder(this.state, page));

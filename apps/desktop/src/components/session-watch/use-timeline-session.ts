@@ -371,7 +371,10 @@ export function useTimelineSession(
 }
 
 /** `lean`: the first page following a session sets it for the stream; folded pages keep what reply progress and question cards read. */
-type FollowParams = { client: SessionpageTimelineClient; deviceId: string; sessionId: string; enabled: boolean; lean?: LeanPage }
+/** What following a session's stream asks of its machine: pages, the subscription and its pushes, the link. */
+export type TimelineStreamClient = Pick<SessionpageTimelineClient, 'fetchSnapshot' | 'fetchAfter' | 'subscribeSession' | 'unsubscribeSession'
+  | 'subscribeSessionEvents' | 'subscribeSessionErrors' | 'onLinkChange'>
+export type FollowParams = { client: TimelineStreamClient; deviceId: string; sessionId: string; enabled: boolean; lean?: LeanPage }
 /** One follow of a session's host stream, shared by every page showing it (ref-counted); writes `sessionStreams`. */
 type SessionFollow = {
   params: FollowParams
@@ -386,6 +389,8 @@ type SessionFollow = {
   synced: boolean
   olderResets: Set<() => void>
   resetOlder: () => void
+  /** Ask now for what came after the cursor (a revert, read at once); settles when it has landed or failed. */
+  catchUp: () => Promise<void>
 }
 // One follow per session stream (the entry it writes): ❌ per client object or `enabled`.
 const follows = new Map<string, SessionFollow>()
@@ -402,7 +407,7 @@ function attachSessionFollow(params: FollowParams, onOlderReset: () => void): ()
   if (!follow) {
     const created: SessionFollow = {
       params, followers: 0, stop: () => undefined, cursor: null, ready: false, synced: false, olderResets: new Set(),
-      resetOlder: () => { for (const reset of [...created.olderResets]) reset() },
+      resetOlder: () => { for (const reset of [...created.olderResets]) reset() }, catchUp: async () => undefined,
     }
     follows.set(key, created)
     created.stop = runSessionFollow(created)
@@ -422,6 +427,21 @@ function attachSessionFollow(params: FollowParams, onOlderReset: () => void): ()
     active.stop()
     // Its link, phase and error were this follow's (❌ the next open's first frame).
     forgetSessionStream(params)
+  }
+}
+
+/**
+ * A reader outside React following the same stream the timeline page fills (the desktop session page of a task on
+ * another machine): one copy of a session's timeline in this window, whoever shows it. A reader that comes after
+ * another continues from the copy that one held (subscribe from its cursor, read what came after: see `loadSnapshot`),
+ * ❌ reads the first page again. `onOlderReset` hears a reset / resolution (an older page asked before it is void).
+ */
+export function followSessionStream(params: FollowParams, onOlderReset: () => void) {
+  const detach = attachSessionFollow(params, onOlderReset)
+  return {
+    detach,
+    setTimeline: streamWriters(params).setTimeline,
+    catchUp: () => follows.get(sessionStreamKey(params))?.catchUp() ?? Promise.resolve(),
   }
 }
 
@@ -482,12 +502,12 @@ function runSessionFollow(follow: SessionFollow): () => void {
    * 补上一次就算和那台机器对过账了(follow.synced)。
    */
   let catchUpReported = false
-  let catchUpRunning = false
-  const catchUp = () => {
+  let catchUpRunning: Promise<void> | null = null
+  const catchUp = (): Promise<void> => {
     const cursor = follow.cursor
-    if (cancelled || catchUpRunning || !follow.ready || !cursor) return
-    catchUpRunning = true
-    void recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor), recoveryAbort.signal)
+    if (catchUpRunning) return catchUpRunning
+    if (cancelled || !follow.ready || !cursor) return Promise.resolve()
+    catchUpRunning = recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor), recoveryAbort.signal)
       .then((result) => {
         if (cancelled) return
         write(catchUpReported ? { link: 'ok', error: null, errorCode: null } : { link: 'ok' })
@@ -499,8 +519,10 @@ function runSessionFollow(follow: SessionFollow): () => void {
         if (cancelled) return
         catchUpReported = true
         write({ link: 'lost', error: messageForUser(err), errorCode: rpcErrorCode(err) })
-      }).finally(() => { catchUpRunning = false })
+      }).finally(() => { catchUpRunning = null })
+    return catchUpRunning
   }
+  follow.catchUp = catchUp
 
   /*
    * 内存里没有 ⇒ 这是**冷启动后第一次**进这条会话，去本地库里捞上次那份。
@@ -531,7 +553,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
   const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, () => {
     if (cancelled) return
     write({ link: 'lost' })
-    catchUp()
+    void catchUp()
   })
   // 窗口断了:标断开;又通了:那台机器已经拆了这条订阅(订阅跟着窗口生灭),整个重来 —— 手里有游标就只重订 + 补差量。
   const stopLink = client.onLinkChange(deviceId, (open) => {
@@ -541,7 +563,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
   })
 
   const onVisible = () => {
-    if (document.visibilityState === 'visible') catchUp()
+    if (document.visibilityState === 'visible') void catchUp()
   }
   document.addEventListener('visibilitychange', onVisible)
 
@@ -555,14 +577,16 @@ function runSessionFollow(follow: SessionFollow): () => void {
       await hydrated
       if (cancelled) return
       // 先给本地那份一个装上的机会,再决定要不要整份拉(重试时它早已完成,await 是白拿的)。
-      // 手里已经有本地那份 ⇒ 只订阅 + 补差量,❌ 不再整份拉一次快照(那正是「加载很久」的来处)。
-      // 世代对不上时机器会在订阅的第一推里直接回一份新快照,由 reducer 认出来。
+      // 手里已经有本地那份 ⇒ 只从它的游标订阅,❌ 不再整份拉一次快照(那正是「加载很久」的来处)。
+      // 订阅那一刻那台机器就先推游标之后的那一段(宿主 `deliver`、手机轮询的第一拍),❌ 再另问一遍补差量(同一段读两次);
+      // 世代对不上时那一推直接是一份新快照,由 reducer 认出来。
       if (follow.ready && follow.cursor) {
         await client.subscribeSession(deviceId, sessionId, subscriptionId, follow.cursor)
         if (cancelled) return
         write({ waitingForRecord: false, error: null, errorCode: null, link: 'ok' })
         attempt = 0
-        catchUp()
+        // The host pushes what came after the cursor (or a reset) before it answers the subscribe, on the same window.
+        follow.synced = true
         return
       }
       const snapshot = await client.fetchSnapshot(deviceId, sessionId, undefined, lean)
