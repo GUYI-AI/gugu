@@ -62,7 +62,8 @@ export function openCodeFamilyConfigContent(
     const context = custom?.contextWindow ?? window
     return {
       ...(positiveWindow(context) ? { limit: { output: custom?.maxOutput ?? OPENCODE_PLATFORM_OUTPUT_LIMIT, context } } : {}),
-      ...(!model.customModels || customModelThinks(custom) ? openCodeFamilyReasoningEntry(reasoning, model.reasoningEffort) : {}),
+      // 自定义模型在「默认」档整个不声明 variants:opencode 的 ACP 腿会把第一个 variant(low)当成当前档送出去。
+      ...(!model.customModels || (customModelThinks(custom) && model.reasoningEffort) ? openCodeFamilyReasoningEntry(reasoning, model.reasoningEffort) : {}),
     }
   }
   /**
