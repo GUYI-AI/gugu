@@ -713,6 +713,8 @@ export const enUSSessionWorkflowMessages = {
   // #7103 通用形态里一件事没做成时那条弹窗的标题(说没做成哪件事);正文按原因表说,原文只进日志。
   'acpFailure.sendMessage': 'Could not send the message',
   'acpFailure.changeSetting': 'Could not change the setting',
+  'acpFailure.thinkingRejected': 'The model rejected the thinking level',
+  'acpFailure.disableThinking': 'Turn off thinking',
   'acpFailure.changeModel': 'Could not change the model',
   'acpFailure.attachment': 'Could not process the attachment',
   'acpFailure.stop': 'Could not stop',
@@ -1413,6 +1415,8 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'taskError.provisionTimeout': '准备会话文件超时（{timeoutMs}ms）。',
   'acpFailure.sendMessage': '消息发送失败',
   'acpFailure.changeSetting': '设置更改失败',
+  'acpFailure.thinkingRejected': '模型拒绝了所选思考档位',
+  'acpFailure.disableThinking': '关闭思考',
   'acpFailure.changeModel': '模型切换失败',
   'acpFailure.attachment': '附件处理失败',
   'acpFailure.stop': '无法停止',

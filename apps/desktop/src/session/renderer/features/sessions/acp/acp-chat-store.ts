@@ -71,6 +71,7 @@ import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import type { SessionMessageKey } from '@renderer/localization/messages';
 import { failureReason, failureText } from '../gugu-reason';
+import { requestSessionReload } from '../request-session-reload';
 import { modelSettingRejection, type ModelSettingRejection } from '../session-config/model-setting-rejection';
 import { rpc } from '@renderer/lib/ipc';
 import { log } from '@renderer/utils/logger';
@@ -210,6 +211,8 @@ export class AcpChatStore {
    * 顶层条数不变 ⇒ `messageCount` 不动;后台列表的步数与悬停时间线跟它走就一直停在打开会话那一刻。
    */
   transcriptRevision = 0;
+  thinkingRetryTurn: string | null = null;
+  private _thinkingRetryInFlight = false;
   draftText = '';
   queuedEditDraft: { id: string; text: string } | null = null;
   queueEditPending = false;
@@ -368,6 +371,7 @@ export class AcpChatStore {
       startupChoice: observable.ref,
       messageCount: observable,
       transcriptRevision: observable,
+      thinkingRetryTurn: observable,
       draftText: observable,
       queuedEditDraft: observable.ref,
       queueEditPending: observable,
@@ -1411,6 +1415,41 @@ export class AcpChatStore {
       // The one toast of a failed send; the caller keeps its words.
       this._toastError('acpFailure.sendMessage', error, undefined, attempt);
       throw error;
+    }
+  }
+
+  get rejectedThinkingTurnId(): string | null {
+    // The transcript has its own reactive store. Its revision publishes changes to this composer.
+    if (!this.transcriptRevision || this.runtimeView || !this._sessionRecord()?.effort || this.affordances.isBusy || this.queuedPrompts.length) return null;
+    const turn = this.chatState.transcript.state.committedTurns.at(-1);
+    if (turn?.outcome?.kind !== 'error' || !turn.outcome.thinkingRejected || turn.id === this.thinkingRetryTurn) return null;
+    if (turn.initiator !== 'user' || (turn.trigger && turn.trigger.kind !== 'owner')) return null;
+    const prompts = turn.items.filter(item => item.kind === 'message' && item.role === 'user');
+    const prompt = prompts[0];
+    return prompts.length === 1 && prompt?.kind === 'message' && !prompt.held ? turn.id : null;
+  }
+
+  async retryWithoutThinking(turnId: string): Promise<void> {
+    if (this.rejectedThinkingTurnId !== turnId || this._thinkingRetryInFlight) return;
+    const turn = this.chatState.transcript.state.committedTurns.at(-1);
+    const prompt = turn?.items.find(item => item.kind === 'message' && item.role === 'user');
+    if (!turn || prompt?.kind !== 'message' || prompt.held || this.affordances.isBusy || this.queuedPrompts.length) return;
+    const attachments: AcpPromptAttachment[] = (prompt.attachments ?? []).map(attachment => ({
+      ref: { type: 'attachment', ...attachmentRefSchema.parse(attachment) },
+    }));
+    this._thinkingRetryInFlight = true;
+    runInAction(() => { this.thinkingRetryTurn = turnId; });
+    try {
+      const result = await requestSessionReload({ sessionId: this.sessionId, reason: 'thinking-retry', effort: null });
+      if (!result.ok || result.notStarted) throw new Error(result.error ?? 'Unable to reload without a thinking level');
+      const latest = this.chatState.transcript.state.committedTurns.at(-1);
+      if (this._disposed || !latest || !sameTurnAs(turn)(latest) || this.affordances.isBusy || this.queuedPrompts.length) return;
+      await this.submitPrompt(prompt.text, attachments, prompt.files, undefined, prompt.annotations);
+    } catch (error) {
+      runInAction(() => { this.thinkingRetryTurn = null; });
+      throw error;
+    } finally {
+      this._thinkingRetryInFlight = false;
     }
   }
 

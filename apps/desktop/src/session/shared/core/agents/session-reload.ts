@@ -22,7 +22,7 @@ export const SESSIONPAGE_SESSION_RELOAD_CHANNEL = 'sessionpage-session:reload';
  * 它是枚举而不是自由文本:自由文本会让两条车道各写各的措辞,而这个值最终会出现在事故排查里,
  * 那时「reason 有几种取值」必须是能穷举的。
  */
-export type SessionReloadReasonCode = 'model-switch' | 'mcp-toggle' | 'permission-switch' | 'manual';
+export type SessionReloadReasonCode = 'model-switch' | 'mcp-toggle' | 'permission-switch' | 'thinking-retry' | 'manual';
 
 export interface SessionReloadRequest {
   sessionId: string;
@@ -49,7 +49,7 @@ export interface SessionReloadRequest {
   modelSource?: 'platform' | 'own';
   /**
    * 思考档位,三态:字符串 = 换成这一档;`null` = 清掉、回 harness 默认;**缺席 = 不碰**。
-   * 只给终端会话用 —— 通用模式的档位在活会话里当场改,不需要重开。
+   * 通用模式只在上游拒档后的 thinking-retry 清除覆盖；正常改档仍在活会话内完成。
    * 与 `model` 同一条纪律:由宿主先写进会话记录、再重开,spawn 按记录重算。
    */
   effort?: string | null;

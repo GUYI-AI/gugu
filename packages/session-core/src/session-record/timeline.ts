@@ -11,7 +11,7 @@ import { toolCallName, type ToolImage, type ToolImageRef } from '../acp/models/t
 import type { TranscriptItem, TranscriptTurn, TranscriptTurnOutcome } from '../acp/models/turns/turn';
 import { RECENT_ACTION_MAX_ENTRIES, RECENT_ACTION_WINDOW_MS, recentActionName } from '../acp/recent-actions';
 import { AcpTranscriptParser } from '../acp/reducer';
-import { upstreamSaid } from '../acp/upstream-said';
+import { upstreamRejectedThinking, upstreamSaid } from '../acp/upstream-said';
 import { redactSecrets } from '@gugu/session-shared/logger';
 import type { ParserState } from '../acp/reducer/reducer';
 import type { TurnStart,
@@ -1304,7 +1304,10 @@ function outcomeOf(boundary: RecordBoundary): TranscriptTurnOutcome {
       ? '{"error":{"code":"credits_exhausted","message":"Gugu credits"}}'
       : boundary.detail && redactSecrets(boundary.detail);
     const said = boundary.detail ? upstreamSaid(boundary.detail) : undefined;
-    return { kind: 'error', reason: 'prompt_failed', ...(detail ? { detail } : {}), ...(said ? { said } : {}) };
+    return {
+      kind: 'error', reason: 'prompt_failed', ...(detail ? { detail } : {}), ...(said ? { said } : {}),
+      ...(boundary.detail && upstreamRejectedThinking(boundary.detail) ? { thinkingRejected: true } : {}),
+    };
   }
   return { kind: 'done', reason: boundary.stopReason ?? 'end_turn' };
 }

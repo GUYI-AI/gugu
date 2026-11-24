@@ -1255,8 +1255,7 @@ async function reloadEmdashSessionNow(input: {
   resetModel?: boolean
   /**
    * 思考档位,三态:字符串 = 换成这一档;`null` = 删键、回 harness 默认;缺席 = 不碰。
-   * 只收终端会话 —— 终端的档位在 spawn 那一刻进 argv(claude `--effort`、codex
-   * `model_reasoning_effort`),活进程改不了;通用模式在活会话里当场改,不走重开。
+   * 终端的档位在 spawn 那一刻进 argv。通用模式只有拒档后的清除走重开。
    */
   effort?: string | null
   /**
@@ -1452,7 +1451,8 @@ async function reloadEmdashSessionNow(input: {
     }
   }
 
-  if (input.effort !== undefined) {
+  const clearRejectedEffort = reason === 'thinking-retry' && input.effort === null
+  if (input.effort !== undefined && !clearRejectedEffort) {
     throw new Error(
       `session ${sessionId} ACP reload does not take an effort change; `
       + 'set it on the live session instead',
@@ -1481,7 +1481,7 @@ async function reloadEmdashSessionNow(input: {
    */
   let configBeforePatch: typeof sessions.$inferSelect.config | null = null
   const providerSessionIdBeforeReload = session.providerSessionId
-  if (Object.keys(configPatch).length > 0 || (nextModel && input.modelSource === 'platform')) {
+  if (Object.keys(configPatch).length > 0 || clearRejectedEffort || (nextModel && input.modelSource === 'platform')) {
     // ⚠️ 模型**不是 conversations 的列**,它住在 `config` 那份 JSON 里(见 build-session-row:121)。
     //    ⇒ 读-改-写,而且只动 `model` 一个键:整份覆盖会把 permissionMode /
     //    firstUtterance 这些同住一份 JSON 的事实一起抹掉,而症状要等下一次重开才显形。
@@ -1493,6 +1493,7 @@ async function reloadEmdashSessionNow(input: {
     }
     configBeforePatch = current
     const nextConfig = { ...current, ...configPatch }
+    if (clearRejectedEffort) delete nextConfig.effort
     if (nextModel && input.modelSource === 'platform') {
       // `config.model` is the harness-native half of the record; the platform model lives only in
       // the per-conversation platform KV below. The host hands that KV to the runtime as
@@ -1551,7 +1552,8 @@ async function reloadEmdashSessionNow(input: {
               status: 'restart_failed' as const,
               dimension: reason === 'mcp-toggle'
                 ? 'mcp' as const
-                : input.permissionMode !== undefined ? 'permission' as const : 'model' as const,
+                : clearRejectedEffort ? 'effort' as const
+                  : input.permissionMode !== undefined ? 'permission' as const : 'model' as const,
               ...(nextModel ? { targetModel: nextModel } : {}),
               ...(input.modelSource ? { targetModelSource: input.modelSource } : {}),
               error: failure,
@@ -1639,6 +1641,10 @@ async function reloadEmdashSessionNow(input: {
       + await restoreConfig(message),
     )
   }
+  if (clearRejectedEffort && fresh.effort) {
+    const message = 'record still contains the rejected thinking level'
+    throw new Error(`session ${sessionId} ${message}` + await restoreConfig(message))
+  }
   const recordedModel = recordedSessionModelOption(fresh)
   if (input.resetModel && recordedModel) {
     // #5276 清模型:写了删键却读回来还有 = 记录层没生效。响亮停,❌ 带着旧模型重开。
@@ -1662,6 +1668,7 @@ async function reloadEmdashSessionNow(input: {
     )
   }
   if (nextModel || input.resetModel) announceSessionModel(sessionId, session.projectId, recordedModel)
+  if (clearRejectedEffort) events.emit(sessionChangedChannel, { sessionId, projectId: session.projectId, changes: { effort: null } })
   life.start(sessionId, 'reconfigure')
   const currentConfigRows = await db.select({ config: sessions.config })
     .from(sessions).where(eq(sessions.id, sessionId))

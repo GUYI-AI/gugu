@@ -22,6 +22,37 @@ function parseJsonObject(text: string): Record<string, unknown> | undefined {
   }
 }
 
+function object(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+}
+
+function httpBody(text: string): string {
+  const trimmed = text.trim().replace(JSON_RPC_INTERNAL_ERROR, '');
+  const status = STATUS_LINE.exec(trimmed);
+  return status ? (status[1] ?? status[2]!).trim() : trimmed;
+}
+
+const EFFORT_PARAMETERS = new Set(['reasoning_effort', 'reasoning.effort', 'thinking.budget_tokens']);
+const PARAMETER_REJECTIONS = new Set(['unsupported_value', 'unsupported_parameter', 'invalid_value', 'invalid_parameter', 'unknown_parameter']);
+
+/** A provider must explicitly reject the thinking parameter before a send can be offered again. */
+export function upstreamRejectedThinking(text: string, data?: unknown): boolean {
+  const details = object(data);
+  const candidates = [
+    details,
+    typeof details?.message === 'string' ? parseJsonObject(httpBody(details.message)) : undefined,
+    parseJsonObject(httpBody(text)),
+  ];
+  return candidates.some((candidate) => {
+    const error = object(candidate?.error) ?? candidate;
+    const code = error?.code;
+    const parameter = error?.param;
+    return code === 'reasoning_effort_not_supported' || code === 'unsupported_reasoning_effort'
+      || (typeof code === 'string' && PARAMETER_REJECTIONS.has(code)
+        && typeof parameter === 'string' && EFFORT_PARAMETERS.has(parameter));
+  });
+}
+
 /**
  * The sentence the failing side said, as one line for the failed-turn row (#7103). **The only reader of failure text**:
  * the live `session/prompt` rejection and a turn failure decoded from any harness's record both go through it, so the
@@ -34,9 +65,7 @@ function parseJsonObject(text: string): Record<string, unknown> | undefined {
  */
 export function upstreamSaid(text: string, data?: unknown): string | undefined {
   const message = data && typeof data === 'object' ? (data as Record<string, unknown>).message : undefined;
-  const trimmed = (typeof message === 'string' ? message : text).trim().replace(JSON_RPC_INTERNAL_ERROR, '');
-  const status = STATUS_LINE.exec(trimmed);
-  const body = status ? (status[1] ?? status[2]!).trim() : trimmed;
+  const body = httpBody(typeof message === 'string' ? message : text);
   const json = body.startsWith('{') ? parseJsonObject(body) : undefined;
   const nested = json?.error && typeof json.error === 'object' ? (json.error as Record<string, unknown>).message : undefined;
   const said = !json ? body

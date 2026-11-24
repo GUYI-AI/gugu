@@ -2700,7 +2700,7 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
       ? 'manual'
       : row.reason === 'permission-switch'
         ? 'permission-switch'
-        : 'model-switch'
+        : row.reason === 'thinking-retry' ? 'thinking-retry' : 'model-switch'
   const emdash = loadEmdashBridge()
   // 桥没装载 = 会话页模块根本没起来。❌ 不静默返回 ok:那会让确认框显示「重开完成」,
   // 而实际上一个字节都没发生。

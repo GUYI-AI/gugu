@@ -131,6 +131,8 @@ export const transcriptTurnOutcomeSchema = z.discriminatedUnion('kind', [
      * 由 session-runtime 的 `classifyTurnFailure` 定。老版本剥掉它,照旧显示「回合未能完成」。
      */
     said: z.string().optional(),
+    /** The upstream explicitly rejected the requested reasoning level. */
+    thinkingRejected: z.literal(true).optional(),
   }),
 ]);
 export type TranscriptTurnOutcome = z.infer<typeof transcriptTurnOutcomeSchema>;

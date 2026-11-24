@@ -1,4 +1,4 @@
-import { isSignInFailure, isCodexRefreshTokenRevoked, upstreamSaid, type AdapterExit, type SessionFailure, type TranscriptTurnOutcome } from '@gugu/session-core/acp';
+import { isSignInFailure, isCodexRefreshTokenRevoked, upstreamRejectedThinking, upstreamSaid, type AdapterExit, type SessionFailure, type TranscriptTurnOutcome } from '@gugu/session-core/acp';
 import { guguReasonInText } from '@gugu/session-core/session-record/contract';
 import { errorDetail, type SerializedError } from '@gugu/session-shared';
 import { redactSecrets } from '@gugu/session-shared/logger';
@@ -165,7 +165,9 @@ export function classifyTurnFailure(fact: TurnFailureFact): ClassifiedTurnFailur
       // 并让宿主把这家标成「登录已失效」。判据见 `isSignInFailure`。
       const signInRequired = !fact.hostCredentials && isSignInFailure(fact.cause);
       // #7103 The failing side's own sentence goes on the row, never just "could not be completed".
-      const said = signInRequired || !providerAuthored(fact.cause) ? undefined : upstreamSaid(fact.cause.message, fact.cause.data);
+      const upstream = !signInRequired && providerAuthored(fact.cause);
+      const said = upstream ? upstreamSaid(fact.cause.message, fact.cause.data) : undefined;
+      const thinkingRejected = upstream && upstreamRejectedThinking(fact.cause.message, fact.cause.data);
       return {
         outcome: {
           kind: 'error',
@@ -174,6 +176,7 @@ export function classifyTurnFailure(fact: TurnFailureFact): ClassifiedTurnFailur
           ...(signInRequired ? { signInRequired: true } : {}),
           ...(signInRequired && isCodexRefreshTokenRevoked(fact.cause) ? { signInReason: 'revoked' as const } : {}),
           ...(said ? { said } : {}),
+          ...(thinkingRejected ? { thinkingRejected: true as const } : {}),
         },
         provisional: !providerAuthored(fact.cause),
       };

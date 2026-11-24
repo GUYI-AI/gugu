@@ -318,6 +318,18 @@ const ComposerForStore = observer(function ComposerForStore({
   const reportInputFailure = useCallback((title: string, diagnostic?: unknown, description?: string) => {
     setInputFailure({ title, description: description ?? (isCodexStartupFailure(diagnostic) ? sessionStartupFailureCopy(diagnostic, translate) : translate('taskError.settingFailedRetry')), diagnostic });
   }, [translate]);
+  const thinkingRejected = store.rejectedThinkingTurnId;
+  useSessionInputNotice(`session-thinking:${store.sessionId}`, thinkingRejected ? {
+    title: translate('acpFailure.thinkingRejected'),
+    attempt: thinkingRejected,
+    action: {
+      label: translate('acpFailure.disableThinking'),
+      onClick: () => {
+        void store.retryWithoutThinking(thinkingRejected).catch(error =>
+          reportInputFailure(translate('acpFailure.changeSetting'), error));
+      },
+    },
+  } : null);
   const [sendHold, setSendHold] = useState<'waiting' | 'blocked' | null>(null);
   const sendingRef = useRef(false);
   const promptEditor = useSessionPromptEditor(store, editorApiRef);
