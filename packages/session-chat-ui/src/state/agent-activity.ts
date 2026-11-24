@@ -1,8 +1,8 @@
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
-import { turnPlaces } from '@gugu/session-core/session-record/reply-process';
+import type { TurnPlaces } from '@gugu/session-core/session-record/reply-process';
 import { sendAddressesOf, type SendAddresses } from '@gugu/session-core/session-record/send-addresses';
 import type { RenderUnit, SegmentCtx } from '../core/units';
-import type { ChatMessage, TranscriptItem, TranscriptTurn, TurnCompletionItem } from '../model';
+import type { ChatMessage, TranscriptItem, TurnCompletionItem } from '../model';
 import type { MessageSenderTarget } from '../lib/sender-target';
 
 export type ActivityActor = { id: string; name: string; target: MessageSenderTarget };
@@ -81,13 +81,13 @@ export function outgoingActivity(id: string, addresses: SendAddresses | undefine
     ...(group ? { group } : {}), count: addresses.confirmed ? count : 0, live: !addresses.confirmed };
 }
 
-export function pendingActivity(items: readonly TranscriptItem[], turn: TranscriptTurn, ctx: SegmentCtx): AgentActivityEvent | null {
+export function pendingActivity(items: readonly TranscriptItem[], places: TurnPlaces, ctx: SegmentCtx): AgentActivityEvent | null {
   const pending = items.findLast(item => item.kind === 'mcp-tool-call' && item.status === 'running');
-  return pending ? outgoingActivity(pending.id, sendAddressesOf(pending, turnPlaces(turn)), ctx) : null;
+  return pending ? outgoingActivity(pending.id, sendAddressesOf(pending, places), ctx) : null;
 }
 
-export function hasUnconfirmedSend(items: readonly TranscriptItem[], turn: TranscriptTurn): boolean {
-  const places = turnPlaces(turn);
+/** `places` are the whole turn's (`turnPlaces`), made once per turn: `items` is one segment of it. */
+export function hasUnconfirmedSend(items: readonly TranscriptItem[], places: TurnPlaces): boolean {
   return items.some(item => {
     if (item.kind !== 'mcp-tool-call' || item.status !== 'done') return false;
     const addresses = sendAddressesOf(item, places);

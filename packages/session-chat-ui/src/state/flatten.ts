@@ -445,7 +445,7 @@ export function flattenTier(
     if (absorbed[turnIndex]) continue;
     // A hidden agent response must not leave an orphan date/name/duration row.
     if (hidden[turnIndex] && turnItems[turnIndex].length === 0) continue;
-    sendPlaces = turnPlaces(turn as TranscriptTurn);
+    const places = sendPlaces = turnPlaces(turn as TranscriptTurn);
     // Day boundary (#3334 row 20). A turn with no `startedAt` came from provider
     // replay and carries no authentic clock, so it neither opens a new day nor
     // closes the current one — it is simply not evidence about the calendar.
@@ -529,7 +529,7 @@ export function flattenTier(
           ? outgoingActivity(output.reply.id.replace(/:sent:[^:]+$/, ''), output.reply.sentAddresses, ctx,
             output.reply.sentAttachments?.length ? new Set(output.reply.sentAttachments.map(file => file.messageId)).size : 1,
             /:sent:([^:]+)$/.exec(output.reply.id)?.[1]) ?? undefined
-          : pendingActivity(block.items as TranscriptItem[], turn, ctx) ?? inputActivity;
+          : pendingActivity(block.items as TranscriptItem[], places, ctx) ?? inputActivity;
         // A successful send closes its segment before the trailing silence.
         // Keep that empty tail with its proven A2A owner, not a new process.
         if (!activityEvent && !block.live && output.silent && !output.stopReason && ops.length === 0) activityEvent = sentActivity;
@@ -537,7 +537,7 @@ export function flattenTier(
         if (activityEvent && live && block === blocks.at(-1)) activityEvent.live = true;
         const replyActivity = activityEvent;
         // Failure and permission rows must remain discoverable without opening a historical A2A fold.
-        if (hasUnconfirmedSend(block.items as TranscriptItem[], turn) || block.items.some(item => 'status' in item && item.status === 'error'
+        if (hasUnconfirmedSend(block.items as TranscriptItem[], places) || block.items.some(item => 'status' in item && item.status === 'error'
           || 'toolCallId' in item && ctx.pendingToolCallIds().has(item.toolCallId))) activityEvent = undefined;
         // The line stays outside the fold but its send folds into it: under that line the agent's own last words are
         // the bubble, ❌ a line with nothing under it (owner 2026-11-13, #2593). The send stays in the A2A row.
