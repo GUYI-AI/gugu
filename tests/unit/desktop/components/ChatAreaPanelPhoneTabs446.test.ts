@@ -9,9 +9,8 @@ import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localS
 import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { captureOpenedChats } from '../../../support/openedChats'
 
-const { getImRepositoryMock, TOPICS, pinPrefs } = vi.hoisted(() => ({
+const { getImRepositoryMock, TOPICS } = vi.hoisted(() => ({
   getImRepositoryMock: vi.fn(),
-  pinPrefs: { ids: ['t1'] },
   TOPICS: [
     { chat_id: 't1', name: '把登录页的报错改成中文并补上测试', source_message_id: 'm1', creator_user_id: 'user-1', last_message_at: null, message_count: 3, participant_count: 2, is_participant: true },
     { chat_id: 't2', name: '周报', source_message_id: 'm2', creator_user_id: 'user-1', last_message_at: null, message_count: 1, participant_count: 2, is_participant: true },
@@ -19,11 +18,6 @@ const { getImRepositoryMock, TOPICS, pinPrefs } = vi.hoisted(() => ({
 }))
 
 vi.mock('../../../../apps/desktop/src/platform', () => import('../../../support/capacitorPlatformTestDouble'))
-vi.mock('../../../../apps/desktop/src/lib/chatPinSettings', () => ({
-  readChatPinSettings: vi.fn(async () => ({ topicIds: [...pinPrefs.ids] })),
-  setChatPinPreference: vi.fn(),
-  watchChatPinSettings: () => () => {},
-}))
 // A closing panel retained for its exit animation must not count as an open panel.
 vi.mock('framer-motion', async (importOriginal) => ({
   ...await importOriginal<typeof import('framer-motion')>(),
@@ -60,7 +54,6 @@ let repository: AccountImRepository
 let opened: ReturnType<typeof captureOpenedChats>
 
 beforeEach(async () => {
-  pinPrefs.ids = ['t1']
   queryClient.clear()
   harness = createReactHarness()
   opened = captureOpenedChats()
@@ -106,8 +99,7 @@ async function pickTopic(id: string | null) {
 }
 
 describe('shared group topic navigation (#446, #837, #2797)', () => {
-  it('phone: the composer topic sheet contains Group chat and every topic without pinning', async () => {
-    pinPrefs.ids = []
+  it('phone: the composer topic sheet contains Group chat and every topic', async () => {
     await render('g1')
     expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
     await openTopics()
@@ -151,20 +143,12 @@ describe('shared group topic navigation (#446, #837, #2797)', () => {
     expect(mainChoice()?.getAttribute('aria-checked')).toBe('true')
   })
 
-  it('desktop: the pinned strip opens a topic as the main conversation', async () => {
+  it('desktop: no topic tab strip under the group head (pinning a topic only orders the inner sidebar)', async () => {
     await render('g1', false)
-    await vi.waitFor(() => expect(tab('t1')).not.toBeNull())
-    expect(tab('t2')).toBeNull()
-    expect(q('[data-testid="phone-room-composer-controls"]')).toBeNull()
-    await act(async () => { tab('t1')!.click() })
-    expect(opened.chatIds).toEqual(['t1'])
-  })
-
-  it('desktop: hides the pinned strip when no topics are pinned', async () => {
-    pinPrefs.ids = []
-    await render('g1', false)
-    await vi.waitFor(() => expect(queryClient.getQueryData(['chatPins', 'user-1', 'g1'])).toEqual({ topicIds: [] }))
+    await vi.waitFor(() => expect(q('[data-testid="session-chat-panel"]')).not.toBeNull())
     expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
+    expect(tab('t1')).toBeNull()
+    expect(q('[data-testid="phone-room-composer-controls"]')).toBeNull()
   })
 
   it('does not add room navigation to a direct message', async () => {

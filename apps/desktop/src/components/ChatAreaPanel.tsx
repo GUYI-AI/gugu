@@ -48,7 +48,7 @@ import { ChatMessageComposer, type ChatMessageComposerProps, type ComposerAttach
 import { ChatMessageList, type MessageListRowProps } from './chat/ChatMessageList'
 import { useTaskChatRows } from './assistant/useTaskChatRows'
 import { MessageLoadFailure } from './chat/MessageLoadFailure'
-import { ChatBottomDock } from './chat/ChatBottomDock'; import { PinnedTopicTabs } from './chat/PinnedTopicTabs'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'; import { PhoneMessagesEmpty } from '../mobile/chat/PhoneMessagesEmpty'
+import { ChatBottomDock } from './chat/ChatBottomDock'; import { PhoneRoomComposerControls } from '../mobile/chat/PhoneRoomComposerControls'; import { PhoneProjectEmpty } from '../mobile/chat/PhoneProjectEmpty'; import { PhoneMessagesEmpty } from '../mobile/chat/PhoneMessagesEmpty'
 import { ChatHeaderActions } from './chat/ChatHeaderActions'
 import { useFollowingTail, useTailPinning } from './chat/useFollowingTail'
 import { useConversationScrollMemory } from './chat/useConversationScrollMemory'
@@ -494,7 +494,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         />}
         subtitle={sourceName ? <span data-phone-header-source="">{sourceName}</span> : undefined}
         actions={headerActions}
-      />}{isGroupChat && !mobile ? <PinnedTopicTabs chatId={activeChat.id} topics={topicSurface.topics} messages={messages} current={null} onPick={(topic) => { if (topic) openTopicChat(topic.chat_id) }} /> : null}
+      />}
 
       <div
         style={{

@@ -13,14 +13,12 @@ const client = identityDb as unknown as SettingsTableClient & VersionedSettingsT
 type Scope = GuguSettingsScope
 
 const readRow = (userId: string, scope: Scope) => readUserSettingsConfig(client, userId, scope)
-const isChatScope = (scope: Scope) => scope.startsWith('chat:')
 
 /**
  * The signed-in account's own settings rows (identity.user_settings), one reading per scope. Occupation, first-run
  * progress and hints, file storage, the product tour and the sample project are keys of the same rows: their readers
  * share one read (a read on its way serves everyone who asks meanwhile), and a write puts the row the server saved back,
- * so the next reader needs no read at all. A group's own row (`chat:<id>`, its pinned topics) is the replica `chatPins`'s
- * (components/chat/useChatPinSettings): read and kept there, ❌ a second copy of it here.
+ * so the next reader needs no read at all.
  */
 export const ownSettings = replica({
   name: 'ownSettings',
@@ -29,20 +27,20 @@ export const ownSettings = replica({
   fresh: 10_000,
   // ❌ A retry here: the data client already reads a failed request again quietly (postgrest-js, 1 s / 2 s / 4 s); a second
   // layer multiplies how long a failure takes to be said (the account page: about 32 s instead of 4 s).
-  // Display values (an occupation, which hints were seen, pinned topics): their first frame after a restart.
+  // Display values (an occupation, which hints were seen): their first frame after a restart.
   persist: { maxBytes: 1024, maxEntries: 4 },
 })
 
-/** The replica holds the signed-in account's own rows except a group's (that one is `chatPins`'s). */
-const held = (userId: string, scope: Scope) => replicaAccount().id === userId && !isChatScope(scope)
+/** The replica holds the signed-in account's own rows. */
+const held = (userId: string) => replicaAccount().id === userId
 
-/** One row's config. The replica holds the signed-in account's rows; any other id (or a group's row) reads the table. */
+/** One row's config. The replica holds the signed-in account's rows; any other id reads the table. */
 export function readOwnSettings(userId: string, scope: Scope): Promise<Record<string, unknown>> {
-  return held(userId, scope) ? ownSettings.fetch(scope) : readRow(userId, scope)
+  return held(userId) ? ownSettings.fetch(scope) : readRow(userId, scope)
 }
 
 function saved(userId: string, row: GuguSettingsRow): GuguSettingsRow {
-  if (held(userId, row.scope)) ownSettings.set([row.scope], row.config)
+  if (held(userId)) ownSettings.set([row.scope], row.config)
   return row
 }
 

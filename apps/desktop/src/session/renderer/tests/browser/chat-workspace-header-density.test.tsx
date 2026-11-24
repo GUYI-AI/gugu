@@ -17,11 +17,6 @@ vi.mock('@gugu/core/cloud/config', async (original) => ({
   getSupabaseAnonKey: () => 'test-anon-key',
 }));
 vi.mock('@/lib/chat', () => import('../../../../../../../tests/support/contactsChatServiceTestDouble'));
-vi.mock('@/lib/chatPinSettings', () => ({
-  readChatPinSettings: async () => ({ topicIds: [] }),
-  setChatPinPreference: vi.fn(),
-  watchChatPinSettings: () => () => {},
-}));
 
 const { ChatHeaderActions } = await import('@/components/chat/ChatHeaderActions');
 const groupId = 'toolbar-group';
