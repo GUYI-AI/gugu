@@ -1,38 +1,27 @@
-import { columnAgents, standaloneAgentAnchor } from './inner-sidebar-column';
+import { columnAgents } from './inner-sidebar-column';
 import { ChevronLeft, ChevronRight } from '@/lib/icons';
 import { observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, type ReactNode } from 'react';
 import { Avatar } from '@/components/Avatar';
 import { ListColumnToggle } from '@/components/PanelToggleButtons';
-import { openApp } from '@/components/appSlot/useOpenApp';
-import { ChatHeaderMenu } from '@/components/chat/ChatHeaderMenu';
-import { useShownAgentName } from '@/hooks/useShownAgentName';
 import { useChatSummaries, type ChatSummary } from '@/lib/chatSummariesBridge';
 import { setComposerVerb } from '@/lib/composerVerbBridge';
 import {
   innerSidebarTopicsSlotKey,
   publishInnerSidebarPresent,
-  publishMyChatAgentCounts,
   setInnerSidebarTopicsAll,
   useInnerSidebarTopicsAll,
   useInnerSidebarTopicsView,
-  useOneListAgentRows,
-  type ChatAgentCounts,
   type InnerSidebarTopicsView,
-  type OneListAgentRow,
 } from '@/lib/innerSidebarBridge';
 import { publishPanelToggle } from '@/lib/panelToggles';
 import { readShellSlots } from '@/lib/shellSlots';
 import { chatBlockOnScreen } from '@renderer/features/chats/group-participant-actions';
-import { openInfoTab } from '@renderer/features/chats/chat-tabs/chat-layouts';
-import { WORKSPACE_APP_ID } from '@shared/extensions/app-runtime-protocol';
-import { searchInChat } from '@renderer/features/global-search/search-session';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { navigateToGroupRoot } from '@renderer/app/screen-layout-actions';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
-import { openSessionInSessionWhenReady } from '@renderer/features/sessions/open-session-in-session';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
 import { useInnerSidebarCrowded, useInnerSidebarFrame } from '@renderer/lib/layout/layout-provider';
@@ -45,19 +34,16 @@ import {
   chatAgentNeedsYou,
   chatAgentSection,
   openSessionAncestors,
-  myAgentsInChat,
   type ChatAgentEntry,
 } from './chat-agents';
 import {
   followInnerSidebar,
   innerSidebarChat,
-  type InnerSidebarAgentAnchor,
-  type InnerSidebarAnchor,
   type InnerSidebarRoomAnchor,
   type InnerSidebarView,
 } from './inner-sidebar-anchor';
 import { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarCrowded, setInnerSidebarFolded } from './inner-sidebar-fold';
-import { chatScope, isProjectChat, listedProjectIds, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
+import { chatScope, chatViewOf, roomOfEntry, sidebarFamilies } from './inner-sidebar-scope';
 import { setSidebarFold, sidebarFolds } from './sidebar-folds';
 import {
   InnerHeadRowLayout,
@@ -81,7 +67,7 @@ import { SampleInnerSidebar } from './sample-inner-sidebar';
 import { SidebarSessionItem } from './sidebar-session-item';
 
 // #2548 内层侧栏:桌面上打开一个用户群或一个项目时,左边列表与对话之间多出来的一列(手机永不出现)。分区顺序:群里「话题」在上、「我的智能体」在下;项目里「智能体」在上、「话题」在下。
-// #2574 有子智能体的独立智能体也有这一列:头一行是它自己,下面只有「智能体」(它的子智能体);没有子智能体就照旧没有这一列。
+// 私聊(连派过子会话的智能体)没有这一列(推翻 #2574):子会话从它的详情页进。
 // 手机永不出现是结构上的:这一列住在会话页的工作区里,手机壳不画工作区(check-ui-visual-spec 守着「任务渲染层只在桌面」)。
 // 这一列只重排现有的组件:头一行是侧栏顶上那几行动作行(SidebarMenuButton)画这个群 / 项目自己,分区头是侧栏分区头,
 // 智能体行是任务区那一行(SidebarSessionItem,行首换成 agent 自己的头像:agentAvatar),话题行由壳画进「话题」那一格(components/ChatListSlotHost.tsx →
@@ -94,12 +80,7 @@ function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarV
   if (currentViewId === 'chat') {
     const chatId = (viewParamsStore.chat as { chatId?: string } | undefined)?.chatId;
     if (!chatId) return { kind: 'other' };
-    return {
-      kind: 'chat',
-      chatId,
-      chatKind: summaries.get(chatId)?.kind ?? null,
-      projectGroup: isProjectChat(chatId),
-    };
+    return chatViewOf(chatId, summaries);
   }
   if (currentViewId === 'project') {
     const projectId = (viewParamsStore.project as { projectId?: string } | undefined)?.projectId;
@@ -134,20 +115,14 @@ export const innerSidebarShownFor = observable.box<string | null>(null);
 export const InnerSidebar = observer(function InnerSidebar() {
   const { translate } = useSessionMessages();
   const summaries = useChatSummaries();
-  const agentRows = useOneListAgentRows();
   const families = sidebarFamilies.get();
-  const agents = families.entries;
   const view = currentView(summaries);
-  // 这一屏挂在哪,只认这一屏自己记着的入口(screen-layout `entry`):从群 / 项目里点开的智能体、切走再回来摆回的那一屏,都挂回那个群;
-  // 入口是一个有子智能体的独立智能体的会话 = 它那一列(#2574)。
-  const agentAnchorOf = (sessionId: string) => standaloneAgentAnchor(sessionId, families, agentRows);
-  const entry = screenLayout.currentEntry;
-  const entryAnchor = roomOfEntry(entry, summaries) ?? (entry?.startsWith('session:') ? agentAnchorOf(entry.slice('session:'.length)) : null);
+  // 这一屏挂在哪,只认这一屏自己记着的入口(screen-layout `entry`):从群 / 项目里点开的智能体、切走再回来摆回的那一屏,都挂回那个群。
   const next = followInnerSidebar(
-    entryAnchor,
+    roomOfEntry(screenLayout.currentEntry, summaries),
     view,
-    (anchor, sessionId) => columnAgents(anchor, families, summaries, agentRows, chatScope).some((agent) => agent.id === sessionId),
-    agentAnchorOf,
+    (anchor, sessionId) => columnAgents(anchor, families, summaries, null, chatScope).some((agent) => agent.id === sessionId),
+    () => null,
     (anchor) => chatBlockOnScreen(anchor.chatId) !== undefined
   );
   // 换了对话就回到第一级(「全部」只对那一个对话)。
@@ -158,12 +133,8 @@ export const InnerSidebar = observer(function InnerSidebar() {
     publishInnerSidebarPresent(true);
     return () => publishInnerSidebarPresent(false);
   }, []);
-  // 头一行是这一列自己:群 / 项目开着它的对话时,智能体开着它自己的(顶层)会话时(❌ 它的子智能体)。
-  const ownSessions = next?.kind === 'agent' ? (families.topLevelOf.get(next.agentUserId) ?? []) : [];
-  const headActive =
-    next?.kind === 'agent'
-      ? view.kind === 'session' && ownSessions.some((entry) => entry.id === view.sessionId)
-      : (view.kind === 'chat' || view.kind === 'project') && view.chatId === next?.chatId;
+  // 头一行是这一列自己:群 / 项目开着它的对话时。
+  const headActive = (view.kind === 'chat' || view.kind === 'project') && view.chatId === next?.chatId;
   // 示例项目(#709)那一块正看着:这一列画示例自己(打包在 app 里的内容,❌ 群、❌ 网络)。它不是哪一个对话,所以 ❌ 进 innerSidebarChat;
   // 账号上的键说它不在了(刚移除),这一列跟那一行同时收。
   const sample = useSampleProject();
@@ -193,24 +164,14 @@ export const InnerSidebar = observer(function InnerSidebar() {
 
   return (
     <>
-      <MyChatAgentCountsPublisher agents={agents} summaries={summaries} />
-      {next?.kind === 'agent' ? (
-        <InnerAgentColumn
-          key={next.chatId}
-          anchor={next}
-          row={agentRows?.get(next.agentUserId) ?? null}
-          ownSession={ownSessions[0] ?? null}
-          headActive={headActive}
-          agents={columnAgents(next, families, summaries, agentRows, chatScope)}
-        />
-      ) : next ? (
+      {next ? (
         // 换一个对话 = 新的一列(分区收起都是这一个对话的);同一个对话里切「全部 / 返回」不重建,滚动位置留着。
         <InnerSidebarColumn
           key={next.chatId}
           anchor={next}
           summary={summaries.get(next.chatId) ?? null}
           headActive={headActive}
-          agents={columnAgents(next, families, summaries, agentRows, chatScope)}
+          agents={columnAgents(next, families, summaries, null, chatScope)}
         />
       ) : sampleOwnerId ? (
         <InnerSidebarFrame kind="sample">
@@ -234,33 +195,6 @@ export const InnerSidebarRestore = observer(function InnerSidebarRestore() {
   );
 });
 
-/**
- * 项目行、群行头像角上那个数(#2548;群行 #2599:群也是 agent 住的地方):每个项目群 / 用户群里住着的我的智能体,
- * 与这一列「智能体」分区头同一个推导(chatScope),❌ 群里所有是成员的 agent。
- */
-const MyChatAgentCountsPublisher = observer(function MyChatAgentCountsPublisher({
-  agents,
-  summaries,
-}: {
-  agents: readonly ChatAgentEntry[];
-  summaries: ReadonlyMap<string, ChatSummary>;
-}) {
-  const counts = new Map<string, ChatAgentCounts>();
-  const projects = listedProjectIds();
-  const count = (anchor: InnerSidebarRoomAnchor) =>
-    counts.set(anchor.chatId, chatAgentCounts(myAgentsInChat(agents, chatScope(anchor, summaries, projects))));
-  for (const ref of sidebarStore.sidebarProjects) {
-    if (!counts.has(ref.chatId)) count({ kind: 'project', chatId: ref.chatId });
-  }
-  for (const [chatId, summary] of summaries) {
-    if (summary.kind === 'group' && !counts.has(chatId) && !isProjectChat(chatId)) count({ kind: 'group', chatId });
-  }
-  // 依赖是序列化后的数:每次渲染新建的 Map 不算变化(publish 自己也只在数变了时才通知)。
-  const key = JSON.stringify([...counts]);
-  useEffect(() => publishMyChatAgentCounts(counts), [key]);
-  return null;
-});
-
 const InnerSidebarColumn = observer(function InnerSidebarColumn({
   anchor,
   summary,
@@ -280,55 +214,16 @@ const InnerSidebarColumn = observer(function InnerSidebarColumn({
     <InnerSidebarFrame kind={anchor.kind} chatId={anchor.chatId}>
       <InnerHeadRow anchor={anchor} summary={summary} active={headActive} />
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
-        {/* 第二级(全部话题):「话题」上面的分区原样留着,下面的收走 —— 「全部 › / ‹ 返回」因此永远在同一个位置。 */}
-        {anchor.kind === 'project' ? (
-          <>
-            {agentsSection}
-            {topics}
-          </>
-        ) : (
-          <>
-            {topics}
-            {levelTwo ? null : agentsSection}
-          </>
-        )}
+        {/* 群、项目同一个次序(第 16 版稿):「话题」在上、「智能体」在下。「全部 ›」开的是主区的话题页,这一列不变。 */}
+        {topics}
+        {agentsSection}
       </div>
     </InnerSidebarFrame>
   );
 });
 
 /**
- * #2574 一个独立智能体的那一列:头一行是它自己,下面只有「智能体」 —— 它的子智能体,规矩同群 / 项目那一个分区
- * (同一个 InnerAgentsSection)。❌「话题」:它的对话是它的会话,话题长在聊天里,不在这里。
- */
-const InnerAgentColumn = observer(function InnerAgentColumn({
-  anchor,
-  row,
-  ownSession,
-  headActive,
-  agents,
-}: {
-  anchor: InnerSidebarAgentAnchor;
-  /** 一个列表里它那一行(这一列只开在那一行上,所以一定有)。 */
-  row: OneListAgentRow | null;
-  /** 它自己最近的那条顶层会话:头一行点回去的地方。 */
-  ownSession: ChatAgentEntry | null;
-  headActive: boolean;
-  agents: readonly ChatAgentEntry[];
-}) {
-  if (!row || !ownSession) throw new Error(`The agent column of ${anchor.agentUserId} is open without its list row or its own session`);
-  return (
-    <InnerSidebarFrame kind="agent" chatId={anchor.chatId}>
-      <InnerAgentHeadRow anchor={anchor} row={row} ownSession={ownSession} active={headActive} />
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
-        <InnerAgentsSection anchor={anchor} agents={agents} />
-      </div>
-    </InnerSidebarFrame>
-  );
-});
-
-/**
- * 这一列本身(群 / 项目 / 智能体 / 示例都是它):列表与正文之间的一列;里面是头一行(这一列顶上那条带)与分区。
+ * 这一列本身(群 / 项目 / 示例都是它):列表与正文之间的一列;里面是头一行(这一列顶上那条带)与分区。
  * 宽度由工作区的那一格给(PanelSlot「inner」,拖它右边缘调 #2642),这一列只铺满它;收起时它照旧挂着,只报给那一格。
  */
 const InnerSidebarFrame = observer(function InnerSidebarFrame({
@@ -336,19 +231,19 @@ const InnerSidebarFrame = observer(function InnerSidebarFrame({
   chatId,
   children,
 }: {
-  kind: InnerSidebarAnchor['kind'] | 'sample';
+  kind: InnerSidebarRoomAnchor['kind'] | 'sample';
   chatId?: string;
   children: ReactNode;
 }) {
   useInnerSidebarFrame(innerSidebarFolded.get());
   return (
     // isolate:分区头、行里那几层 z 序关在这一列里,❌ 压过左边列表那根拖动分隔条。
-    // 底色是列表那一档(同 left-sidebar):这一列归列表那一层,只有正文是叠在上面的卡片(同任务页)。
+    // 底色是窗口底(同 left-sidebar,界面减法 #10):这一列归列表那一层,只有正文是叠在上面的卡片;左边一根细线和零级栏分开(#52)。
     <div
       data-region="inner-sidebar"
       data-inner-sidebar-chat={chatId}
       data-inner-sidebar-kind={kind}
-      className="relative isolate flex h-full w-full flex-col bg-background-tertiary text-foreground-tertiary-muted"
+      className="relative isolate flex h-full w-full flex-col border-l border-border text-foreground-tertiary-muted"
     >
       <SidebarContainer className="min-h-0 w-full flex-1">
         <SidebarContent className="flex flex-col">{children}</SidebarContent>
@@ -359,12 +254,12 @@ const InnerSidebarFrame = observer(function InnerSidebarFrame({
 
 /** 群或项目的脸:自己设的头像,没设就是默认头像(同聊天列表那一行)。 */
 function GroupHeadAvatar({ chatId, summary }: { chatId: string; summary: ChatSummary | null }) {
-  return <Avatar name={summary?.name ?? ''} avatarUrl={summary?.avatar} seed={chatId} size={32} variant="group" />;
+  return <Avatar name={summary?.name ?? ''} avatarUrl={summary?.avatar} seed={chatId} size={40} variant="group" />;
 }
 
 /**
- * 头一行就是这个群 / 项目自己:头像 + 名字,点它回到它的主群聊(owner 11-14;信息与设置在页头「成员 N」与「⋯」里)。
- * 第二行直接在群 / 项目里创建智能体。行尾悬停时显示会话页头的「⋯」，最右常驻收起按钮。
+ * 头一行就是这个群 / 项目自己:头像 + 名字,点它回到它的主群聊(owner 11-14)。
+ * 第二行直接在群 / 项目里创建智能体;收起按钮常驻在块外最右。❌ 悬停「⋯」(第 16 版稿):群的那些项在详情页里。
  * 项目那份菜单在项目页签的右键里。
  * ❌ 未读数(#2548 提议稿 state0):这个群的数挂在左边列表它那一行上(叫到你的才是红数,其余一颗灰点),这里再挂一份就是两处。
  */
@@ -379,7 +274,6 @@ const InnerHeadRow = observer(function InnerHeadRow({
 }) {
   const { translate } = useSessionMessages();
   const { chatId } = anchor;
-  const [menuOpen, setMenuOpen] = useState(false);
   const name = summary?.name ?? '';
   // 项目的代表本地项目(与侧栏那一行同一个);一个文件夹都没有的项目没有 —— 新智能体走群那一条,封面按群取色(同 partnerProjects)。
   const rowProjectId = anchor.kind === 'project' ? accountProjectsStore.representativeOf(chatId) : undefined;
@@ -392,53 +286,8 @@ const InnerHeadRow = observer(function InnerHeadRow({
   // #2600 项目群和别的群一样戴群自己的头像(没设 = 成员拼图),❌ 文件夹封面。
   const avatar: ReactNode = <GroupHeadAvatar chatId={chatId} summary={summary} />;
   return (
-    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => navigateToGroupRoot(chatId)} trailingButtons={1}
-      createAction={{ label: translate('sidebar.createAgent'), onClick: newAgent }}
-      hoverButton={<ChatHeaderMenu chatId={chatId} isGroupChat isRoomChat sidebar open={menuOpen} onOpenChange={setMenuOpen}
-        onSearch={() => searchInChat(chatId)}
-        onOpenFolder={() => openApp(WORKSPACE_APP_ID, chatId)}
-        onOpenInfo={() => {
-          if (!active) navigateToGroupRoot(chatId);
-          openInfoTab(chatId, 'main');
-        }}
-      />}>
-      <InnerSidebarFoldButton />
-    </InnerHeadRowLayout>
-  );
-});
-
-/**
- * #2574 独立智能体那一列的头一行:它自己 —— 左边列表它那一行的名字与头像(同一份,同一层「起名中」),点它直接回到它自己的会话
- * (❌ 绕道打开私聊:那一下若落成聊天视图,这一列就跟着收了)。
- * 行尾只有收起这一列(最右,同群 / 项目)。❌ 新智能体那支笔:子智能体是它自己派出去的,这里没有「在它里面新建」这件事;
- * 新建一个智能体是列表顶上那一行。
- */
-const InnerAgentHeadRow = observer(function InnerAgentHeadRow({
-  anchor,
-  row,
-  ownSession,
-  active,
-}: {
-  anchor: InnerSidebarAgentAnchor;
-  row: OneListAgentRow;
-  ownSession: ChatAgentEntry;
-  active: boolean;
-}) {
-  const name = useShownAgentName({ name: row.name, createdAt: row.createdAt ?? undefined });
-  const openOwnSession = () => {
-    const target = { projectId: ownSession.projectId, sessionId: ownSession.id };
-    appState.navigation.navigate('session', target);
-    openSessionInSessionWhenReady(target);
-  };
-  return (
-    <InnerHeadRowLayout
-      headKey={anchor.chatId}
-      name={name}
-      avatar={<Avatar name={name} avatarUrl={row.avatar} seed={anchor.agentUserId} size={24} isAgent still />}
-      active={active}
-      onOpen={openOwnSession}
-      trailingButtons={1}
-    >
+    <InnerHeadRowLayout headKey={chatId} name={name} avatar={avatar} active={active} onOpen={() => { setInnerSidebarTopicsAll(null); navigateToGroupRoot(chatId); }} trailingButtons={1}
+      createAction={{ label: translate('sidebar.createAgent'), onClick: newAgent }}>
       <InnerSidebarFoldButton />
     </InnerHeadRowLayout>
   );
@@ -463,7 +312,8 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
             onToggle={() => setSidebarFold('inner:topics', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandTopics' : 'sidebar.collapseTopics')}
           />
-          {view && view.total > 0 ? <span className={sidebarCountClass}>{view.total}</span> : null}
+          {/* 稿子上没有话题也写「0」。 */}
+          {view ? <span className={sidebarCountClass}>{view.total}</span> : null}
           {/* 收起时标题旁挂里面叫到你的(同「对话」分区头那个未读数)。 */}
           {collapsed ? <SidebarUnreadCount count={view?.calling ?? 0} /> : null}
         </span>
@@ -473,7 +323,11 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
             variant="ghost"
             size="xs"
             data-inner-topics-drill={levelTwo ? 'back' : 'all'}
-            onClick={() => setInnerSidebarTopicsAll(levelTwo ? null : chatId)}
+            onClick={() => {
+              // 话题页开在这个群 / 项目那一块里:先回到它本身,再换成那一页;已开着 = 关掉,回到群。
+              if (!levelTwo) navigateToGroupRoot(chatId);
+              setInnerSidebarTopicsAll(levelTwo ? null : chatId);
+            }}
           >
             {levelTwo ? (
               <>
@@ -491,7 +345,7 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
       </div>
       {/* 话题行画进这一格(壳那棵树);格子里的东西归壳管,这一侧 ❌ 往里放子元素。左右留白归 list body(SidebarMenu)。 */}
       {collapsed ? null : (
-        <SidebarMenu>
+        <SidebarMenu data-inner-rows="">
           <div ref={slot} data-region="inner-sidebar-topics" className="min-h-0" />
         </SidebarMenu>
       )}
@@ -503,10 +357,10 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
 });
 
 /**
- * 「智能体」:标题旁一个数(总数,连子会话),❌ 药丸、❌「需要你 / 运行中」组头(#2548 ⑥):一张平的表(chatAgentSection),
- * 按最近的动静排,状态只看行尾那几个记号。群里也只列我的,标题照样写「智能体」(owner 11-12)。
+ * 「智能体」:标题旁 ❌ 数(第 16 版稿只有「话题」挂数),❌ 药丸、❌「需要你 / 运行中」组头(#2548 ⑥):一张平的表(chatAgentSection),
+ * 按最近的动静排,状态只看行尾那几个记号。群里也只列我的(owner 11-12),所以标题写「我的智能体」;「话题」只列我加入了的,标题写「我的话题」(界面减法 yangchichi 11-23)。
  */
-const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents }: { anchor: InnerSidebarAnchor; agents: readonly ChatAgentEntry[] }) {
+const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents }: { anchor: InnerSidebarRoomAnchor; agents: readonly ChatAgentEntry[] }) {
   const { translate } = useSessionMessages();
   const collapsed = sidebarFolds.has('inner:agents');
   // 「展开显示」点开了没有,记在侧栏同一张表里,键与项目 / 任务分区分开。
@@ -536,14 +390,13 @@ const InnerAgentsSection = observer(function InnerAgentsSection({ anchor, agents
             onToggle={() => setSidebarFold('inner:agents', !collapsed)}
             ariaLabel={translate(collapsed ? 'sidebar.expandAgents' : 'sidebar.collapseAgents')}
           />
-          {total > 0 ? <span className={sidebarCountClass} data-inner-agents-count="">{total}</span> : null}
           {collapsed ? <SidebarUnreadCount count={chatAgentNeedsYou(agents)} /> : null}
         </span>
       </div>
       {collapsed ? null : total === 0 ? (
         <div className={innerSectionEmptyClass}>{translate('sidebar.noAgents')}</div>
       ) : (
-        <SidebarMenu className="pb-1">
+        <SidebarMenu className="pb-1" data-inner-rows="">
           {list.rows.map((row) => (
             <SidebarSessionItem
               key={row.sessionId}

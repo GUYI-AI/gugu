@@ -113,12 +113,15 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   const neighbourBefore = neighbour().getBoundingClientRect().toJSON();
   await mode('empty');
   expect(inside('[data-chat-workspace-title]')?.textContent).toContain('聊天标题');
-  expect(inside('[data-chat-workspace-header]')?.getBoundingClientRect().height).toBe(44);
+  // The conversation's own head is the design's 56px capsule row (.capbar).
+  expect(inside('[data-chat-workspace-header]')?.getBoundingClientRect().height).toBe(56);
   expect(inside('[data-chat-workspace-header] [data-tab-label]')).toBeNull();
   expect(tool()).toBeNull();
   expect(page.getByRole('button', { name: '单独成窗' }).query()).toBeNull();
-  await userEvent.click(page.getByRole('button', { name: /^(?:More|更多)$/ }));
-  await userEvent.click(page.getByRole('menuitem', { name: '单独成窗' }));
+  // 第 16 版: the capsule row draws no ⋯ (its actions are in the card and Details); the tab's own window command is on right-click.
+  expect(page.getByRole('button', { name: /^(?:More|更多)$/ }).query()).toBeNull();
+  await userEvent.click(page.getByText('聊天标题'), { button: 'right' });
+  await userEvent.click(page.getByRole('menuitem', { name: '在新窗口打开' }));
   expect(openWindow).toHaveBeenCalledOnce();
   await userEvent.click(page.getByRole('button', { name: '打开测试工具' }));
   await mode('split');
@@ -127,9 +130,14 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   await untilStable('the split comes to rest', () => width(chat()));
   const chip = inside('[data-chat-workspace-header] [data-tab-label="工具页签"]')!;
   const hideButton = inside('button[aria-label="隐藏标签页"]')!;
-  expect(chip.getBoundingClientRect().height).toBe(32);
-  expect(getComputedStyle(chip).borderBottomLeftRadius).toBe('8px');
-  expect(hideButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 8 });
+  // The tools' strip follows the design's .tab: 34px tall, 9px corners.
+  expect(chip.getBoundingClientRect().height).toBe(34);
+  expect(getComputedStyle(chip).borderBottomLeftRadius).toBe('9px');
+  // Side by side the tools are a card of their own: its 46px strip (the design's .strip) carries the view buttons.
+  expect(hideButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 9 });
+  expect(hideButton.closest('[data-chat-tool-strip]')).not.toBeNull();
+  expect(getComputedStyle(inside('[data-chat-tool-strip]')!).borderTopLeftRadius).toBe('12px');
+  expect(inside('[data-chat-tool-card]')).not.toBeNull();
   expect(getComputedStyle(hideButton).borderRadius).toBe('8px');
   expect(hideButton.getAttribute('aria-pressed')).toBe('true');
   const panelIcon = hideButton.querySelector('svg')?.innerHTML;
@@ -165,7 +173,10 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   const showButton = inside('button[aria-label="显示标签页"]')!;
   expect(showButton.getAttribute('aria-pressed')).toBe('false');
   expect(showButton.querySelector('svg')?.innerHTML).toBe(panelIcon);
-  expect(showButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 8 });
+  // Folded, the button sits on the capsule row's middle line (.capbar .rt: 28px box in the 56px row).
+  expect(showButton.getBoundingClientRect()).toMatchObject({ width: 28, height: 28, y: 14 });
+  // …and floats there: the capsule row keeps the whole card's width, so the capsule centres on the card.
+  expect(inside('[data-chat-workspace-chat-header]')!.getBoundingClientRect().width).toBe(inside('[data-chat-workspace-header]')!.getBoundingClientRect().width);
   expect(getComputedStyle(showButton).borderRadius).toBe('8px');
   await until('the chat uses the full width of its own block', () => width(chat()), (size) => size === 800);
   // The tool goes out on the track and is out of reach once it lands.
@@ -498,7 +509,8 @@ it('resizes and previews each collapse before release, and restores the split on
   expect(workspace.paneSizes[0]).toBeCloseTo(324 / 799 * 100);
   await userEvent.click(page.getByRole('button', { name: '退出全屏' }));
   await mode('split');
-  await until('restoring yields the last usable chat width', () => width(chat()), (w) => Math.abs(w - 324) < 2);
+  // Side by side the conversation is a card that gives its half of the 10px gutter (5px) out of its share.
+  await until('restoring yields the last usable chat width', () => width(chat()), (w) => Math.abs(w - (324 - 5)) < 2);
 
   await begin();
   await mouse('mouseMoved', 749, y, true);
@@ -508,6 +520,7 @@ it('resizes and previews each collapse before release, and restores the split on
   await mode('hidden');
   await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
   await mode('split');
-  await until('restoring yields the last usable tool width', () => width(chat()), (w) => Math.abs(w - 475) < 2);
+  // (The conversation card is 5px inside its share: half the 10px gutter.)
+  await until('restoring yields the last usable tool width', () => width(chat()), (w) => Math.abs(w - (475 - 5)) < 2);
   expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
 });

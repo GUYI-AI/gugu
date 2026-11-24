@@ -1,7 +1,7 @@
 import { Popover } from '@base-ui/react/popover'
 import { Button as ButtonPrimitive } from '@base-ui/react/button'
-import { useCallback, useLayoutEffect, useRef, useState } from 'react'
-import { useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives'
+import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { useUiPortalContainer, useUiPopupZIndex, OpenLayer } from '@gugu/session-ui/react/primitives'
 import { cn } from '@/lib/cn'
 import type { ContentMenuItem } from '@/session/shared/content-context-menu'
 import { menuRowClassName, menuRowLabelClassName, menuSurfaceClassName } from './ui/Menu'
@@ -19,6 +19,7 @@ export function SelectedTextMenu({ range, item, onClose, onCopy }: {
   onCopy: () => void
 }) {
   const container = useUiPortalContainer()
+  const positionerStyle: CSSProperties = { zIndex: useUiPopupZIndex('var(--z-menu)') }
   const doc = range.startContainer.ownerDocument ?? document
   const scope = range.commonAncestorContainer
   const contextElement = scope.nodeType === Node.ELEMENT_NODE ? scope as Element : scope.parentElement
@@ -61,7 +62,8 @@ export function SelectedTextMenu({ range, item, onClose, onCopy }: {
     <Popover.Positioner
       anchor={anchor} positionMethod="fixed" side="top" align="start" sideOffset={selectionGap}
       collisionPadding={8} collisionAvoidance={{ side: 'flip', align: 'shift', fallbackAxisSide: 'none' }}
-      className="gg-selected-text-menu gg-menu-positioner z-[var(--z-menu)] outline-none"
+      className="gg-selected-text-menu gg-menu-positioner outline-none"
+      style={positionerStyle}
     >
       <OpenLayer />
       <Popover.Popup ref={popup} role="menu" aria-label={item.label} initialFocus={false} finalFocus={false}

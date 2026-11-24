@@ -1,5 +1,5 @@
 import { isDmFriendshipRequired, messageForUser } from '../lib/userFacingError'
-import { openTopicTab } from '../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { openTopicChat } from '../hooks/useTopicSurface'
 import type { AppForwardFilesDetail } from '../session/shared/extensions/app-runtime-protocol'
 import { AttachmentsError, commitAttachment, forwardAttachment, shareAttachment, type CommitArgs } from '@gugu/core/cloud/attachmentsApi'
 import { messageItemFromRow } from '@gugu/core/cloud/messageItem'
@@ -384,7 +384,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
     onSent: (record, acknowledged) => {
       if (record.operation?.kind === 'topic') {
         const topic = acknowledged as CreatedTopic
-        if (!topicResults.has(record.clientMessageId)) openTopicTab(record.chatId, { topicChatId: topic.chat_id, name: topic.name })
+        if (!topicResults.has(record.clientMessageId)) openTopicChat(topic.chat_id)
         removeRow(record)
         return
       }

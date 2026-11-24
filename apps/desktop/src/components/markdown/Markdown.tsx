@@ -39,7 +39,6 @@ import { LINK_PILL_CLASS, linkPillTarget, rehypeLinkPills } from './linkPills'
 import { useAuth } from '../../store/auth'
 import { useChatStore } from '../../store/chatContext'
 import { MentionPill } from './MentionPill'
-import { Bot } from '@/lib/icons'
 // Lazy: a link pill reads through the chat's readers (file metadata, messages, topics); Markdown itself stays free of them.
 const LinkPill = lazy(() => import('./LinkPill').then(module => ({ default: module.LinkPill })))
 import { GroupFileName } from './GroupFileName'
@@ -151,16 +150,9 @@ function LinkPillGate({ plain, ...props }: { plain: ReactNode } & Omit<Component
   return <Suspense fallback={plain}><LinkPill {...props} accountId={user.id} /></Suspense>
 }
 
-/**
- * An `@` mention backed by the message's recipients stays the bold name it always was; an agent's carries the agent mark
- * before it (owner 2026-11-16), so an agent and a person read apart. A person needs nothing: the `@` already says it.
- */
+/** An `@` mention backed by the message's recipients stays the bold name it always was, an agent's the same as a person's (#68). */
 function MemberMention({ children }: { children: ReactNode }) {
-  const { identitiesById } = useChatStore('identitiesById')
-  const name = (onlyText(children) ?? '').replace(/^@/, '')
-  const matches = Object.values(identitiesById).filter((identity) => identity.display_name === name)
-  const agent = matches.length === 1 && matches[0]!.type === 'agent'
-  return <span data-mention="true">{agent ? <Bot className="gg-md-mention-mark" aria-hidden="true" /> : null}{children}</span>
+  return <span data-mention="true">{children}</span>
 }
 
 /**

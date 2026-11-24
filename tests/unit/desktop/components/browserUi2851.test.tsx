@@ -57,9 +57,8 @@ it.each([{ phone: true, loading: false }, { phone: true, loading: true }, { phon
   await harness.render(createNode(SessionLocalizationProvider, null, createNode(phone ? PhoneBrowserToolbar : BrowserToolbar, { session: current, adapter: null, remote: true, onGoBack: back, onGoForward: forward, onReload: reload })))
   const buttons = [...harness.container.querySelectorAll('button')].slice(0, 3)
   expect(buttons).toHaveLength(3)
-  for (const button of buttons) {
-    expect(button.querySelector('svg')?.classList.contains('size-4')).toBe(true)
-  }
+  // The design's browser row (.addr .nav): back and forward 16px, reload / stop 15px.
+  expect(buttons.map((button) => button.querySelector('svg')?.getAttribute('class')?.match(/size-\S+/)?.[0])).toEqual(['size-4', 'size-4', 'size-[15px]'])
   expect(buttons[2]!.getAttribute('aria-label')).toBe(translateSessionMessage(loading ? 'browser.stop' : 'browser.reload'))
   await act(async () => { for (const button of buttons) button.click() })
   expect(back).toHaveBeenCalledTimes(1)
