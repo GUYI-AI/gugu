@@ -16,6 +16,11 @@ import type { MarketListItem } from '@shared/extensions/market'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
 import type { PhoneMarketInstallRow } from './PhoneMarketInstallSheet'
 import { marketDeviceHost } from './marketDeviceHost'
+import { runPhoneAgentInstall } from './phoneAgentInstall'
+import { rendererLogger } from '@/lib/log'
+import { messageForUser } from '@/lib/userFacingError'
+
+const log = rendererLogger('phone-market')
 
 type Target = { device: Device; host: LibraryHost }
 type Reading = Pick<PhoneMarketInstallRow, 'status' | 'install'> & { present?: boolean }
@@ -51,8 +56,12 @@ function usePhoneMarketTargets<T>(devices: readonly Device[], plans: Plans<T>) {
         const installed = await reading.install!()
         if (installed) {
           // What the reading is made of first (the device's installed list, its agents), then the reading.
-          await Promise.all([installedExtensions.refresh(target.host.extensions.key), refreshAgentReadings(device.device_id)])
-          await marketDeviceReading.refresh(readKey, device.device_id)
+          try {
+            await Promise.all([installedExtensions.refresh(target.host.extensions.key), refreshAgentReadings(device.device_id)])
+            await marketDeviceReading.refresh(readKey, device.device_id)
+          } catch (error) {
+            log.warn({ item: plans.key, deviceId: device.device_id, error: messageForUser(error) }, 'Install completed but refreshing device readings failed')
+          }
         }
         return installed
       } : undefined,
@@ -106,7 +115,7 @@ export function usePhoneAgentInstallTargets(id: string, devices: readonly Device
   return usePhoneMarketTargets(devices, {
     key: `agent:${id}`,
     read: ({ device }) => managementAgent.fetch(device.device_id, id),
-    describe: (agent: AgentPayload | null, { host }) => {
+    describe: (agent: AgentPayload | null, { device, host }) => {
       if (!agent?.reading) return { status: 'unavailable' }
       const present = isInstalledAgent(agent)
       const plan = marketAgentInstallPlan(agent)
@@ -114,10 +123,7 @@ export function usePhoneAgentInstallTargets(id: string, devices: readonly Device
       return {
         present,
         status: present ? 'update' : undefined,
-        install: async () => {
-          const result = await host.agents[plan.kind](agent.id, plan.method, plan.registry) as { success?: boolean } | null
-          return result?.success === true
-        },
+        install: () => runPhoneAgentInstall(host.agents, device.device_id, agent.id, plan),
       }
     },
   })

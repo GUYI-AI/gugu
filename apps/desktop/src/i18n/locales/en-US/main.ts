@@ -696,6 +696,7 @@ export default {
     "latestVersion": "Latest version",
     "publisher": "Publisher",
     "chooseComputers": "Choose computers",
+    "retry": "Retry",
     "noComputers": "No computers available",
     "deviceState": {
       "offline": "Offline",

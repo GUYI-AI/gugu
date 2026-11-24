@@ -678,6 +678,7 @@ export default {
     "latestVersion": "最新版本",
     "publisher": "发布者",
     "chooseComputers": "选择要安装的电脑",
+    "retry": "重试",
     "noComputers": "没有可选电脑",
     "deviceState": {
       "offline": "离线",
