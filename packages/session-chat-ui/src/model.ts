@@ -60,7 +60,11 @@ export type ChatAttachment = {
    * ⚠️ 两种都长在**同一条附件条**上 —— owner 2026-09-10:「这里的逻辑和创建任务时候保持
    * 一致才对」。此前非图片附件是正文里一枚裸的文字 pill,同一条消息里两件附件长成两个样子。
    */
-  kind?: 'image' | 'file';
+  kind?: 'image' | 'file' | 'annotation';
+  /** The row's second line: an annotation's comment. */
+  detail?: string;
+  /** Hover text when the row's name is a shortened form (an annotation's whole target). */
+  title?: string;
   /** Data URL for inline display; absent when content can't be resolved -> fallback tile. */
   dataUrl?: string;
 };
@@ -85,6 +89,8 @@ export type ChatMessage = {
   /** Image attachments rendered as a thumbnail strip above the text (user messages). */
   attachments?: ChatAttachment[];
   files?: import('@gugu/session-core/session-record/contract').TurnFileRef[];
+  /** The comments sent with a user message; drawn as rows on its attachment strip. */
+  annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[];
   /**
    * 这条消息**开始**到达的时刻（epoch ms）。缺席 = 不知道（回放来的历史没有真时刻，
    * 与 `TranscriptTurn.startedAt` 同一条合同）。折叠头拿它当段与段的边界（#5350）。

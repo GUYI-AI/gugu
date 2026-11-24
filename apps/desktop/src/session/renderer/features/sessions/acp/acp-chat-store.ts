@@ -32,6 +32,7 @@ import type {
   ComposerNotice,
   ComposerQueuedPrompt,
 } from '@gugu/session-ui/react/components';
+import type { TurnAnnotation } from '@gugu/session-core/acp/client';
 import { commandToken } from '@gugu/session-core/acp/commands';
 import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
 import type { AgentState, HistoryPage, LiveSettingResult, PermissionWaitKind } from '@gugu/session-core/acp';
@@ -772,8 +773,8 @@ export class AcpChatStore {
     const session = this.session;
     if (!await this.revertMessage(itemId, false, edit.restoreFiles === true && this.canRestoreFiles(itemId)) || this.session !== session) return;
     runInAction(() => { this.messageEdit = null; });
-    // History is already cut back: a send that fails keeps the edited words in the draft.
-    await this.submitPrompt(edit.text, attachments, item.files).catch(() => this.setDraftText([edit.text, this.draftText].filter(Boolean).join('\n')));
+    // History is already cut back: a send that fails keeps the edited words in the draft. Its comments go again with it.
+    await this.submitPrompt(edit.text, attachments, item.files, undefined, item.annotations).catch(() => this.setDraftText([edit.text, this.draftText].filter(Boolean).join('\n')));
   }
 
   async revertMessage(itemId: string, restoreDraft = true, restoreFiles = false): Promise<boolean> {
@@ -1034,7 +1035,8 @@ export class AcpChatStore {
       // Same origin as the turn that takes this row over (`SessionCell`): the send, or the end of the turn it waited behind.
       const row = view!.pending.items.find(item => item.messageId === head.id)!;
       const sentAt = row.sentAt === undefined ? undefined : Math.max(row.sentAt, this.chatState.transcript.state.committedTurns.at(-1)?.endedAt ?? 0);
-      session.setPendingPrompt({ id: head.id, text: head.text, ...(row.files?.length ? { files: row.files } : {}), ...(sentAt !== undefined ? { sentAt } : {}), starting, held: true });
+      session.setPendingPrompt({ id: head.id, text: head.text, ...(row.files?.length ? { files: row.files } : {}),
+        ...(row.annotations?.length ? { annotations: row.annotations } : {}), ...(sentAt !== undefined ? { sentAt } : {}), starting, held: true });
       this._syncMessageCount();
     });
   }
@@ -1398,12 +1400,12 @@ export class AcpChatStore {
    * Both sends take the one custody path (sender outbox → host session_pending), persisted session or side chat;
    * the host decides whether the input runs now or queues.
    */
-  async submitPrompt(text: string, attachments: AcpPromptAttachment[] = [], files: TurnFileRef[] = [], submissionId: string = crypto.randomUUID()): Promise<void> {
+  async submitPrompt(text: string, attachments: AcpPromptAttachment[] = [], files: TurnFileRef[] = [], submissionId: string = crypto.randomUUID(), annotations: TurnAnnotation[] = []): Promise<void> {
     const failure = messageFailureNotice(['acp', machineRegistry.machineOf(this.runtimeSessionId) ?? 'local', this.runtimeSessionId, submissionId]);
     const attempt = failure.begin();
     try {
       if (this.reverting || this.messageEdit) throw new Error('A message is being edited; send or cancel the edit first');
-      await sendThroughCustody(this, text, attachments, files);
+      await sendThroughCustody(this, text, attachments, files, annotations);
       attempt.succeeded();
     } catch (error) {
       // The one toast of a failed send; the caller keeps its words.
@@ -1670,7 +1672,7 @@ export class AcpChatStore {
     const existing = session.sessionState.current().queuedPrompts.find((prompt) => prompt.id === id);
     if (!existing) return false;
     const input: PromptInput = {
-      text: editedConversationQueueText(existing.text, text), hiddenContext: existing.hiddenContext, attachments: existing.attachments, files: existing.files,
+      text: editedConversationQueueText(existing.text, text), hiddenContext: existing.hiddenContext, attachments: existing.attachments, files: existing.files, annotations: existing.annotations,
       ...(existing.origin ? { origin: existing.origin } : {}),
     };
     try {
@@ -2312,6 +2314,7 @@ export class AcpChatStore {
       ...this._senderInputs.filter(input => input.sendQueue).sort((a, b) => a.sendQueue!.order - b.sendQueue!.order).map(input => ({
         id: input.id, text: input.text, origin: 'manual' as const, createdAt: input.createdAt, updatedAt: input.createdAt,
         ...(input.files ? { files: input.files } : {}), ...(input.attachments ? { attachments: input.attachments } : {}),
+        ...(input.annotations ? { annotations: input.annotations } : {}),
         ...(input.sendQueue!.edit ? { queueEdit: input.sendQueue!.edit } : {}),
       }))];
   }
@@ -3140,6 +3143,7 @@ function queuedPromptTurn(prompt: QueuedPrompt): TranscriptTurn {
         role: 'user',
         text: prompt.text,
         ...(prompt.files?.length ? { files: prompt.files } : {}),
+        ...(prompt.annotations?.length ? { annotations: prompt.annotations } : {}),
         ...(prompt.attachments?.length
           ? {
               attachments: prompt.attachments.map((attachment, index) => ({

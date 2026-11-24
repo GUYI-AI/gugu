@@ -144,7 +144,8 @@ export const sessionTimelineController = createRPCController({
   sessionBackgroundTasks: (input: { conversationId: string }) => service.backgroundTasks(input),
   sessionStopBackgroundTask: (input: { conversationId: string; stopId: string }) => service.stopBackgroundTask(input),
   sessionQueue: (input: Parameters<typeof service.changeQueue>[0]) => service.changeQueue(input),
-  sessionSend: (input: SessionpageSessionSendRequest) => service.send(input.conversationId, input.text, input.clientMessageId, input.files, input.attachments, input.steerIfBusy),
+  sessionSend: ({ conversationId, text, clientMessageId, files, attachments, annotations, steerIfBusy }: SessionpageSessionSendRequest) =>
+    service.send({ conversationId, text, clientMessageId, files, attachments, annotations, steerIfBusy }),
   sessionRespond: (input: SessionpageSessionRespondRequest) => service.respond(input),
   sessionCancel: (input: SessionpageSessionCancelRequest) => service.cancel(input.conversationId),
   sessionUpdate: (input: SessionpageSessionUpdateRequest) => service.updateSession(input),

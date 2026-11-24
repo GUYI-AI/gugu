@@ -2,6 +2,7 @@
 export { FileMark } from './icons/FileMark';
 export { IconCheck } from './icons/IconCheck';
 export { IconContinueTurn } from './icons/IconContinueTurn';
+export { IconComment } from './icons/IconComment';
 export { IconCopy } from './icons/IconCopy';
 export { IconEdit } from './icons/IconEdit';
 export { IconError } from './icons/IconError';

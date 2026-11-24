@@ -226,10 +226,16 @@ export function unsubscribeSession(deviceId: string, subscriptionId: string): Pr
   return rpc(deviceId).sessionTimeline.sessionUnsubscribe({ subscriptionId })
 }
 
-export async function sendSessionText(deviceId: string, sessionId: string, text: string, clientMessageId?: string, files?: import('@gugu/session-core/session-record/contract').TurnFileRef[], attachments?: import('@gugu/session-core/acp/client').PromptAttachment[], steerIfBusy?: true) {
-  const result = await rpc(deviceId).sessionTimeline.sessionSend({ conversationId: sessionId, text, ...(clientMessageId ? { clientMessageId } : {}), ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}) })
+export function sendSessionText(deviceId: string, sessionId: string, text: string) {
+  return sendSessionInput(deviceId, { conversationId: sessionId, text })
+}
+
+/** One input to a session on that machine, as its host takes it (`SessionpageSessionSendRequest`). */
+export async function sendSessionInput(deviceId: string, request: import('@gugu/session-core/session-record/contract').SessionpageSessionSendRequest) {
+  const result = await rpc(deviceId).sessionTimeline.sessionSend(request)
   if (!result.ok) throw new SessionInputAdmissionError(result.error.message, sessionInputAdmission(result.error), result.error.code)
   const receipt = result.value
+  const { clientMessageId } = request
   if (clientMessageId && receipt.clientMessageId !== clientMessageId) throw new Error(i18n.t('composer.sessionInput.notConfirmed', { ns: 'messaging' }))
   return receipt
 }

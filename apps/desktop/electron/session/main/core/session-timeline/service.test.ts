@@ -778,10 +778,10 @@ describe('session timeline service', () => {
     startCalls.length = 0;
     state.deliverText.mockResolvedValue({ accepted: 'started' });
     state.rows = [row({ providerSessionId: null, config: { type: 'acp', initialQueue: [{ text: 'hi' }] } })];
-    expect(await service.send('conv-1', '在吗')).toEqual({ ok: true, value: { accepted: 'started', admission: 'accepted' } });
+    expect(await service.send({ conversationId: 'conv-1', text: '在吗' })).toEqual({ ok: true, value: { accepted: 'started', admission: 'accepted' } });
     expect(startCalls).toEqual([]);
     expect(state.deliverText).toHaveBeenCalledTimes(1);
-    expect(state.deliverText.mock.calls[0]?.[1]).toBe('在吗');
+    expect(state.deliverText.mock.calls[0]?.[1]).toMatchObject({ text: '在吗' });
     expect(await service.sessionOptions({ conversationId: 'conv-1' })).toEqual({
       ok: true,
       value: {
@@ -1153,55 +1153,55 @@ describe('session timeline service', () => {
     state.deliverText = vi.fn(async () => {
       throw new SessionWriteError('session_not_live', '这条终端会话此刻没有活着的 PTY');
     });
-    expect(await service.send('conv-1', '你好')).toMatchObject({
+    expect(await service.send({ conversationId: 'conv-1', text: '你好' })).toMatchObject({
       ok: false,
       error: { code: 'session_not_live', admission: 'uncertain' },
     });
-    expect(await service.send('missing', '你好')).toMatchObject({
+    expect(await service.send({ conversationId: 'missing', text: '你好' })).toMatchObject({
       ok: false,
       error: { code: 'session_not_found', admission: 'rejected' },
     });
   });
 
   it('reports admission from the refusing boundary, never from a diagnostic code', async () => {
-    expect(await service.send('conv-1', 'hello', 'input', [{}] as never)).toMatchObject({ ok: false,
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input', files: [{}] as never })).toMatchObject({ ok: false,
       error: { code: 'invalid_request', admission: 'rejected' } });
     for (const admission of ['rejected', 'uncertain'] as const) {
       state.deliverText = vi.fn(async () => { throw new SessionWriteError('identical-code', 'identical reason', admission); });
-      expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: false,
+      expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: false,
         error: { code: 'identical-code', admission } });
     }
     // An arbitrary failure may occur after a durable insert; neither its code nor its words prove rejection.
     state.deliverText = vi.fn(async () => { throw Object.assign(new Error('permission denied'), { code: 'not_granted' }); });
-    expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
     state.deliverText = vi.fn(async () => ({ accepted: 'queued' as const }));
-    expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: true,
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: true,
       value: { admission: 'accepted', clientMessageId: 'input' } });
   });
 
   it.each(['ordinary-message', 'session-direct'])('confirms prior %s custody after a lost ACK instead of refusing an already owned input', async kind => {
     state.rows[0]!.session.provider = '';
     state.acceptedMessage.mockReturnValue({ id: 'input', sessionId: 'conv-1', sender: 'user', content: 'hello', metadata: JSON.stringify({ kind }) });
-    expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: true, value: { admission: 'accepted', clientMessageId: 'input' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: true, value: { admission: 'accepted', clientMessageId: 'input' } });
     expect(state.deliverText).not.toHaveBeenCalled();
-    expect(await service.send('conv-1', 'changed text', 'input')).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'changed text', clientMessageId: 'input' })).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
     state.acceptedMessage.mockReturnValue(undefined);
-    expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: false, error: { admission: 'rejected' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: false, error: { admission: 'rejected' } });
   });
 
   it('does not infer rejection when custody storage cannot be read', async () => {
     state.rows[0]!.session.provider = '';
     state.acceptedMessage.mockImplementation(() => { throw new Error('receipt storage unavailable'); });
-    expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: false, error: { admission: 'uncertain', message: 'receipt storage unavailable' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: false, error: { admission: 'uncertain', message: 'receipt storage unavailable' } });
   });
 
   it('joins the original admission while its result is uncertain and never dispatches twice', async () => {
     let finish!: (value: { accepted: 'queued' }) => void;
     state.deliverText = vi.fn(() => new Promise(resolve => { finish = resolve; }));
-    const first = service.send('conv-1', 'hello', 'input');
+    const first = service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' });
     state.rows[0]!.session.provider = '';
-    const replay = service.send('conv-1', 'hello', 'input');
-    expect(await service.send('conv-1', 'changed text', 'input')).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
+    const replay = service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' });
+    expect(await service.send({ conversationId: 'conv-1', text: 'changed text', clientMessageId: 'input' })).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
     finish({ accepted: 'queued' });
     expect(await replay).toEqual(await first);
     expect((await replay).ok).toBe(true);
@@ -1211,9 +1211,9 @@ describe('session timeline service', () => {
   it('retains explicit steering through admission and rejects a replay that changes that intent', async () => {
     let finish!: (value: { accepted: 'queued' }) => void;
     state.deliverText = vi.fn(() => new Promise(resolve => { finish = resolve; }));
-    const first = service.send('conv-1', 'hello', 'steered-input', undefined, undefined, true);
-    expect(state.deliverText).toHaveBeenCalledWith(expect.objectContaining({ id: 'conv-1' }), 'hello', 'steered-input', undefined, undefined, true);
-    expect(await service.send('conv-1', 'hello', 'steered-input')).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
+    const first = service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'steered-input', steerIfBusy: true });
+    expect(state.deliverText).toHaveBeenCalledWith(expect.objectContaining({ id: 'conv-1' }), expect.objectContaining({ text: 'hello', clientMessageId: 'steered-input', steerIfBusy: true }), undefined);
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'steered-input' })).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
     finish({ accepted: 'queued' });
     expect(await first).toMatchObject({ ok: true, value: { clientMessageId: 'steered-input', admission: 'accepted' } });
     expect(state.deliverText).toHaveBeenCalledTimes(1);
@@ -1222,9 +1222,9 @@ describe('session timeline service', () => {
   it('recognizes a durable steered input after a lost ACK without admitting it a second time', async () => {
     state.acceptedMessage.mockReturnValue({ id: 'steered-input', sessionId: 'conv-1', sender: 'user', content: 'hello',
       metadata: JSON.stringify({ kind: 'session-direct', delivery: { queue: true, steerIfBusy: true } }) });
-    expect(await service.send('conv-1', 'hello', 'steered-input', undefined, undefined, true))
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'steered-input', steerIfBusy: true }))
       .toMatchObject({ ok: true, value: { admission: 'accepted' } });
-    expect(await service.send('conv-1', 'hello', 'steered-input')).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'steered-input' })).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
     expect(state.deliverText).not.toHaveBeenCalled();
   });
 
