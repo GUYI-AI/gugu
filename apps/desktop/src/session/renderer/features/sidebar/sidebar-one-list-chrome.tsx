@@ -1,4 +1,4 @@
-import { Archive, ChevronsLeft, ChevronsRight, Clock, FolderPlus, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
+import { Archive, Clock, FolderPlus, PanelLeft, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
@@ -209,7 +209,7 @@ function SidebarRailRow({ visibilityRef }: { visibilityRef: RefObject<HTMLDivEle
   );
 }
 
-/** Folds / unfolds the sidebar: 「«」 at the end of the search row expanded, 「»」 on the rail (SidebarRailRow). */
+/** Folds / unfolds the sidebar: the fold button in the fold row (SidebarRailRow), both states. */
 function SidebarFoldButton() {
   const { translate } = useSessionMessages();
   const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
@@ -220,8 +220,7 @@ function SidebarFoldButton() {
   return (
     <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side={isLeftOpen ? 'bottom' : 'right'}>
       <IconButton size="md" tone="strong" className="window-no-drag-region !h-[26px] !w-[30px] !rounded-[7px]" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
-        {/* 「«」 folds to the rail, 「»」 opens it again (yangchichi 11-24): this column only; the inner column keeps PanelLeft. */}
-        {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}
+        <PanelLeft />
       </IconButton>
     </Hint>
   );
