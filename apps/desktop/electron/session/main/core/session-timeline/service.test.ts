@@ -485,6 +485,49 @@ describe('session timeline service', () => {
     await expect(service.sessionHasRecordedTurn('conv-1')).resolves.toBe(true);
   });
 
+  it('a reader that merges terminals by id gets only the changed ones and ends up holding what the whole list says', async () => {
+    const { createSessionRecordSource, createSessionTimeline } = await import('@gugu/session-core/session-record');
+    const { applyBatch, applySnapshot, emptyAgentWatchTimeline } = await import('../../../../../src/components/session-watch/agent-watch-store');
+    const root = await mkdtemp(join(tmpdir(), 'claude-terminal-patch-'));
+    await writeFile(join(root, 'record.jsonl'), JSON.stringify({ type: 'user', uuid: 'q', parentUuid: null, sessionId: 'record',
+      timestamp: '2026-10-31T00:00:00Z', message: { id: 'q', role: 'user', content: [{ type: 'text', text: 'run things' }] } }) + '\n');
+    const timeline = await createSessionTimeline(createSessionRecordSource({ harness: 'claude', providerSessionId: 'record', roots: [root] }), { sessionId: 'conv-t' });
+    try {
+      const terminal = (terminalId: string, output: string) => ({ terminalId, owner: 'agent' as const, canKill: false,
+        command: 'echo', args: [], cwd: '/w', output, truncated: false, exitStatus: null });
+      timeline.syncTerminals([terminal('a', 'one'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+      const snapshot = timeline.getSnapshot();
+      let held = applySnapshot(emptyAgentWatchTimeline(), snapshot);
+
+      // Only `a` grows: the merging reader is sent `a` and the order; one that does not merge, the whole list.
+      timeline.syncTerminals([terminal('a', 'one two'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+      const patch = timeline.getAfter(snapshot.cursor, { terminalPatch: true });
+      expect(patch).toMatchObject({ ok: true, batch: { terminalIds: ['a', 'b'], terminals: [terminal('a', 'one two')] } });
+      const whole = timeline.getAfter(snapshot.cursor);
+      expect(whole.ok && whole.batch.terminals?.map((one) => one.terminalId)).toEqual(['a', 'b']);
+      expect(whole.ok && 'terminalIds' in whole.batch).toBe(false);
+      held = applyBatch(held, (patch as Extract<typeof patch, { ok: true }>).batch);
+      expect(held.terminals).toEqual([terminal('a', 'one two'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+
+      // Nothing changed since: nothing travels (absent = unchanged). `b` goes away: the order says so.
+      const now = timeline.getSnapshot().cursor;
+      timeline.syncQueuedPrompts([{ id: 'q1', clientMessageId: 'c1', text: 'next' }]);
+      const quiet = timeline.getAfter(now, { terminalPatch: true });
+      expect(quiet.ok && quiet.batch.terminals).toBeUndefined();
+      timeline.syncTerminals([terminal('a', 'one two')]);
+      const gone = timeline.getAfter(now, { terminalPatch: true });
+      expect(gone).toMatchObject({ ok: true, batch: { terminalIds: ['a'], terminals: [] } });
+      held = applyBatch(held, (gone as Extract<typeof gone, { ok: true }>).batch);
+      expect(held.terminals.map((one) => one.terminalId)).toEqual(['a']);
+      // A name the reader neither holds nor is sent: a batch was lost in between, read the snapshot again.
+      expect(applyBatch(held, { from: 9, cursor: { epoch: now.epoch, seq: 10 }, turns: [], removedTurnIds: [], settlements: [],
+        terminalIds: ['a', 'lost'], terminals: [] }).needsSnapshot).toBe('gap');
+    } finally {
+      timeline.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('follows a settling record on its own live reader until the last turn lands, without interactive effects', async () => {
     const { createSessionRecordSource, createSessionTimeline } = await import('@gugu/session-core/session-record');
     const root = await mkdtemp(join(tmpdir(), 'claude-settling-watch-'));

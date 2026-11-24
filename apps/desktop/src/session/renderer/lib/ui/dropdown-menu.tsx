@@ -1,7 +1,7 @@
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { CheckIcon, ChevronRightIcon } from '@/lib/icons'
 import * as React from 'react';
-import { useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives';
+import { useUiPopupZIndex, useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
@@ -35,6 +35,7 @@ function DropdownMenuContent({
   return (
     <MenuPrimitive.Portal container={useUiPortalContainer()}>
       <MenuPrimitive.Positioner
+        style={{ zIndex: useUiPopupZIndex() }}
         className="isolate z-50 outline-none"
         align={align}
         alignOffset={alignOffset}

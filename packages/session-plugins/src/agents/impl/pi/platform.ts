@@ -49,3 +49,17 @@ const PI_API_BY_PROTOCOL = {
 export function piProviderApi(protocol: keyof typeof PI_API_BY_PROTOCOL = harnessPlatform.wireProtocol) {
   return PI_API_BY_PROTOCOL[protocol];
 }
+
+/**
+ * Provider-level `compat` of a pi `models.json` provider speaking `api`.
+ *
+ * OpenAI Responses treats a function tool without a `strict` field as strict, and strict sampling makes every
+ * property required: the model then fills each optional MCP parameter with a placeholder (`reply_to_message_id: "/"`),
+ * which the tool rejects, and it retries the same call for minutes. pi-ai only writes `strict` when
+ * `supportsStrictMode` is set (`openai-responses-shared.js` convertResponsesTools; default false for custom
+ * providers), and then writes `strict: false`. Chat Completions defaults to non-strict and pi already sends
+ * `strict: false` there, so only Responses needs it.
+ */
+export function piProviderCompat(api: ReturnType<typeof piProviderApi>) {
+  return api === 'openai-responses' ? { compat: { supportsStrictMode: true } } : {};
+}

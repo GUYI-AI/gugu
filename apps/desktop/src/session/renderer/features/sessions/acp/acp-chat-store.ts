@@ -1,7 +1,7 @@
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput';
 import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice';
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice';
-import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
+import type { Settlement, TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type {
   ChatContext,
   ChatState,
@@ -64,9 +64,10 @@ import {
 } from '@renderer/lib/chat/advertised-command-provider';
 import { getSharedChatContext } from '@renderer/lib/chat/shared-chat-context';
 import { sideChatOwnTurns } from './history-composition';
-import { AcpTimelineFeed } from './acp-timeline-feed';
+import { AcpTimelineFeed, type TimelineFeed } from './acp-timeline-feed';
+import { RemoteTimelineFeed } from './remote-timeline-feed';
 import { projectOwnerNotifications } from '@gugu/session-core/session-record/owner-notifications';
-import { endedTurnIds, withoutCopiesOf } from '@gugu/session-core/session-record/runtime-turn';
+import { endedTurnIds, sameTurnAs, withoutCopiesOf } from '@gugu/session-core/session-record/runtime-turn';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import type { SessionMessageKey } from '@renderer/localization/messages';
@@ -148,12 +149,23 @@ function failedTurnId(rowId: string): string {
   return `${rowId}:failed`;
 }
 
+/** The timeline's copies of a turn drawn from the runtime: the same id, or `sameTurnAs` it and not ended before it. */
+function copyOf(turn: TranscriptTurn, endedBefore: ReadonlySet<string>): (other: TranscriptTurn) => boolean {
+  const same = sameTurnAs(turn);
+  return other => other.id === turn.id || (!endedBefore.has(other.id) && same(other));
+}
+
 export class AcpChatStore {
   readonly chatContext: ChatContext;
   readonly chatState: ChatState;
 
   session: AcpLiveSession | null = null;
   historyLoading = true;
+  /**
+   * The asks this session's timeline keeps (its settlements), as the page's own feed reads them; null when the page has
+   * no feed (a runtime view). The bands above the composer read these instead of following the timeline a second time.
+   */
+  hostSettlements: Readonly<Record<string, Settlement>> | null = null;
   /**
    * 一轮讲完后的对账撞上断线:那一轮原样留在屏上,等线回来再对一次账(`_refreshHistory`)。true 时消息列表末尾说
    * 「连接断了,连上后补全这一轮」。
@@ -271,15 +283,15 @@ export class AcpChatStore {
   private _forkOpened: Promise<void> | null = null;
   private _lastActiveTurnId: string | null = null;
   /**
-   * The history on screen: the session's timeline (`AcpTimelineFeed`), opened with the page and followed until the
+   * The history on screen: the session's timeline (`AcpTimelineFeed`; `RemoteTimelineFeed` for a session on another machine), opened with the page and followed until the
    * transcript is released. It goes on while the runtime starts, stops or is attached again, so attaching reads none.
    * A side chat is a runtime-only fork with no record: its history is what its runtime holds (the fields below).
    */
-  private readonly _history: AcpTimelineFeed | null;
+  private readonly _history: TimelineFeed | null;
   /** The timeline's first read (and the pages to the reader's row) has landed: until then nothing of it is drawn. */
   private _historyDrawn = false;
-  /** The turn the runtime just committed, kept on screen until the timeline holds its recorded form. */
-  private _committedFrameId: string | null = null;
+  /** The turn the runtime just committed, kept on screen while the timeline holds it open (`_seedFromTimeline`). */
+  private _committedFrame: TranscriptTurn | null = null;
   /** The timeline's turns that had ended when the drawn running turn started (`endedTurnIds`). */
   private _endedBeforeLive: ReadonlySet<string> = new Set();
   /** A side chat's turns as its runtime has them: the page read when it attached, then each change (@@@history-change-cursor). */
@@ -315,8 +327,17 @@ export class AcpChatStore {
     if (runtimeView && sourceMachine) machineRegistry.register(sourceMachine, [runtimeView.id]);
     this.chatContext = getSharedChatContext();
     this.chatState = createChatState(this.chatContext, { uri: runtimeSessionId });
-    this._history = runtimeView ? null : new AcpTimelineFeed(sessionId, machineRegistry.machineOf(sessionId),
-      () => this._seedFromTimeline(), (error) => this._toastError('acpFailure.refreshHistory', error));
+    const historyChanged = () => {
+      this._seedFromTimeline();
+      const settlements = this._history!.state.settlements;
+      if (settlements !== this.hostSettlements) runInAction(() => { this.hostSettlements = settlements; });
+    };
+    const historyFailed = (error: unknown) => this._toastError('acpFailure.refreshHistory', error);
+    const historyMachine = machineRegistry.machineOf(sessionId);
+    this._history = runtimeView ? null : historyMachine
+      ? new RemoteTimelineFeed(sessionId, historyMachine, historyChanged, historyFailed)
+      : new AcpTimelineFeed(sessionId, historyChanged, historyFailed);
+    if (this._history) this.hostSettlements = this._history.state.settlements;
     registerSessionCommands(runtimeSessionId, () =>
       this.commands.map((command) => command.name)
     );
@@ -335,6 +356,7 @@ export class AcpChatStore {
       pendingPermissionMode: observable.ref,
       modelSettingError: observable,
       historyLoading: observable,
+      hostSettlements: observable.ref,
       reconcileAwaitingLink: observable,
       _loadError: observable.ref,
       _lifeRetriedVersion: observable,
@@ -1014,9 +1036,14 @@ export class AcpChatStore {
       // Same origin as the turn that takes this row over (`SessionCell`): the send, or the end of the turn it waited behind.
       const row = view!.pending.items.find(item => item.messageId === head.id)!;
       const sentAt = row.sentAt === undefined ? undefined : Math.max(row.sentAt, this.chatState.transcript.state.committedTurns.at(-1)?.endedAt ?? 0);
-      session.setPendingPrompt({ id: head.id, text: head.text, ...(sentAt !== undefined ? { sentAt } : {}), starting, held: true });
+      session.setPendingPrompt({ id: head.id, text: head.text, ...(row.files?.length ? { files: row.files } : {}), ...(sentAt !== undefined ? { sentAt } : {}), starting, held: true });
       this._syncMessageCount();
     });
+  }
+
+  /** A row came on screen from behind a fold of a turn another machine sent folded: read that turn whole (`folded-pages`). */
+  fillHeldTurn(itemId: string): void {
+    this._history?.fillHeld(itemId);
   }
 
   /** Only unresolved legacy receipts read older pages. The ordinary first-page path never waits for this work. */
@@ -2453,7 +2480,7 @@ export class AcpChatStore {
             { projectId: this.projectId, sessionId: this.sessionId },
             this.chatState.transcript.state.activeTurnSnapshot
           );
-          this._committedFrameId = this.chatState.transcript.state.activeTurnSnapshot?.id ?? null;
+          this._committedFrame = this.chatState.transcript.state.activeTurnSnapshot;
           void this._refreshHistory();
         },
       }
@@ -2595,7 +2622,7 @@ export class AcpChatStore {
   private async _openHistory(generation: number): Promise<void> {
     const history = this._history!;
     this._historyDrawn = false;
-    this._committedFrameId = null;
+    this._committedFrame = null;
     await history.open();
     const mode = this.chatState.scroll.get();
     if (mode.kind === 'anchor') {
@@ -2617,8 +2644,8 @@ export class AcpChatStore {
 
   /**
    * Draws the timeline. The running turn is the live session's (`connectSession`), so the timeline's copy of it is left
-   * out. A turn just committed stays as it was drawn until the timeline holds its recorded form — that is, until the
-   * timeline no longer carries the runtime's copy (`withRuntimeTurn`) — ❌ a blank between the two.
+   * out. A turn just committed stays as it was drawn while the timeline holds it open — ❌ a blank between the two, and
+   * ❌ the next turn drawn in its place meanwhile.
    */
   private _seedFromTimeline(): void {
     if (!this._history || !this._historyDrawn || this._transcriptReleased || this._visualEvidenceOverride) return;
@@ -2626,18 +2653,21 @@ export class AcpChatStore {
       const transcript = this.chatState.transcript;
       const frame = transcript.state.activeTurnSnapshot;
       const live = this.session?.activeTurn.current() ?? null;
-      // The committed frame gives way once the timeline holds that turn ended: in its recorded form (another id), or
-      // under the same id where the journal keeps it. The runtime's running copy is not that.
-      const held = frame === null ? undefined : this._history!.state.turns.find(turn => turn.id === frame.id);
-      const recorded = frame !== null && frame.id === this._committedFrameId && (!held || held.outcome !== undefined);
-      const shown = recorded ? null : frame;
+      // The committed turn gives way once the timeline holds no open copy of it: the runtime's running copy (same id), or the
+      // record's (another id, `sameTurnAs`) that has its prompt and not yet its reply. Ended where the journal or the record
+      // keeps it, or not held at all, the timeline draws that turn itself.
+      const kept = this._committedFrame;
+      const copy = kept && copyOf(kept, this._endedBeforeLive);
+      const recorded = copy !== null && !this._history!.state.turns.some(turn => copy(turn) && turn.outcome === undefined && turn.endedAt === undefined);
+      if (recorded) this._committedFrame = null;
+      const released = recorded && frame !== null && frame.id === kept?.id;
+      const shown = released ? null : frame;
       const view = this._historyView(live, shown);
       transcript.history.seed(view.turns);
       // history.seed resets activeTurn by contract: put back what is drawn there.
-      transcript.activeTurn.set(live ? view.activeTurn : shown);
+      transcript.activeTurn.set(live ? view.activeTurn : view.behind ? null : shown);
       const pending = this.chatState.session.state.pendingPrompt;
-      if (recorded) this._committedFrameId = null;
-      if (pending && ((recorded && !pending.delivery) || (pending.delivery && pendingPromptLanded(pending, view.turns)))) {
+      if (pending && ((released && !pending.delivery) || (pending.delivery && pendingPromptLanded(pending, view.turns)))) {
         this.chatState.session.setPendingPrompt(null);
       }
       this._syncMessageCount();
@@ -2655,13 +2685,26 @@ export class AcpChatStore {
   private _historyView(live = this.session?.activeTurn.current() ?? null, frame = this.chatState.transcript.state.activeTurnSnapshot) {
     if (!this._history) {
       // 分叉重放进来的来源历史是给模型的上下文,不画;挂上之前就从这个视图开出来的那一轮照画(#6762)。
-      return { turns: sideChatOwnTurns([...this._olderHistoryTurns, ...this._runtimeTurns]), activeTurn: live };
+      return { turns: sideChatOwnTurns([...this._olderHistoryTurns, ...this._runtimeTurns]), activeTurn: live, behind: false };
     }
     // The drawn running turn (live) and the frame kept after it ended own that turn: the timeline's copies of it step
     // aside, whether the runtime's copy (same id) or the record's (another turn id, `sameTurnAs`) when the record is ahead.
     let turns = this._history.state.turns.filter(turn => turn.id !== live?.id && turn.id !== frame?.id);
     for (const drawn of [live, frame]) if (drawn) turns = withoutCopiesOf(turns, drawn, this._endedBeforeLive);
-    return projectOwnerNotifications(turns, live);
+    // A turn just committed that the timeline holds open stays as it was drawn: in the running slot while
+    // nothing follows it; once the next turn is in the timeline or running, in place of the timeline's first copy of it
+    // (`behind`) — ❌ the next turn drawn before it or in its place.
+    const kept = this._committedFrame;
+    let behind = false;
+    if (kept && kept.id !== live?.id) {
+      const copy = copyOf(kept, this._endedBeforeLive);
+      const at = turns.findIndex(copy);
+      if (live !== null || kept.id !== frame?.id || (at >= 0 && turns.slice(at + 1).some(turn => !copy(turn)))) {
+        behind = true;
+        turns = at < 0 ? [...turns, kept] : [...turns.slice(0, at), kept, ...turns.slice(at + 1).filter(turn => !copy(turn))];
+      }
+    }
+    return { ...projectOwnerNotifications(turns, live), behind };
   }
 
   /** 还能不能往上翻。到头或还没读到第一页时都是 false。 */
@@ -2872,7 +2915,7 @@ export class AcpChatStore {
     this._unsubs.splice(0).forEach((unsub) => unsub());
     this.session = null;
     // What the closed turn came to is in the record: the timeline goes on and draws it, as for a stopped session.
-    this._committedFrameId = this.chatState.transcript.state.activeTurnSnapshot?.id ?? null;
+    this._committedFrame = this.chatState.transcript.state.activeTurnSnapshot;
     this._seedFromTimeline();
     this._unsubs.push(
       // 等它起完(重放过往回合)再挂:挂在 starting / replaying 上,读到的引擎历史缺一截,补上来的回合会再画一遍。

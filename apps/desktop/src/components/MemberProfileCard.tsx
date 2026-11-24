@@ -47,7 +47,7 @@ const profileFieldsClass = 'gg-pop-fields gap-x-2 gap-y-1.5 px-4 pb-3.5'
 const profileFieldRowClass = 'gg-pop-field-row col-span-2 grid grid-cols-subgrid items-start text-[length:var(--font-caption)] leading-[var(--lh-caption)]'
 const profileFieldLabelClass = 'gg-pop-field-label whitespace-nowrap text-[var(--text-tertiary)]'
 const profileFieldValueClass = 'gg-pop-field-value min-w-0 [overflow-wrap:anywhere] text-[var(--text-secondary)]'
-const profileAgentMetaClass = 'mt-1 flex min-w-0 items-center gap-2 text-xs leading-4 text-[var(--text-tertiary)]'
+const profileAgentMetaClass = 'mt-1 flex min-w-0 items-start gap-2 text-xs leading-4 text-[var(--text-tertiary)]'
 const profileListenClass = 'gg-pop-lm mx-4 border-t border-[var(--border-subtle)] pb-4 pt-3'
 const profileListenLabelClass = 'gg-pop-lml flex min-w-0 items-center gap-2 text-sm leading-5 text-[var(--text-primary)]'
 const profileListenSegmentClass = 'gg-pop-lmseg ml-auto flex h-8 w-32 shrink-0 rounded-[var(--radius-control)] bg-[var(--listen-mode-bg)] p-[2px]'
@@ -353,7 +353,7 @@ export function MemberProfileCard({
           {isAgent ? (
             <div data-profile-agent-meta className={profileAgentMetaClass}>
               {statusLabel ? <span className="shrink-0">{statusLabel}</span> : null}
-              <span className="min-w-0 truncate" data-profile-agent-owner><AgentOwnerLabel ownerUserId={member.ownerUserId} ownerDisplayName={member.ownerDisplayName} /></span>
+              <span className="min-w-0 line-clamp-2 [overflow-wrap:anywhere]" data-profile-agent-owner><AgentOwnerLabel ownerUserId={member.ownerUserId} ownerDisplayName={member.ownerDisplayName} /></span>
             </div>
           ) : null}
         </div>

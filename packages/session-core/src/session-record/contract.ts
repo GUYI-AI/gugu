@@ -459,8 +459,16 @@ export type TimelineBatch = {
   liveReply?: SessionLiveReply | null;
   /** Running subagents, each with the calls changed since `from`; absent on older hosts. See `TimelineSubagent`. */
   subagents?: TimelineSubagent[];
-  /** Live presentation only; not serialized into the native-record archive. */
+  /**
+   * Live presentation only; not serialized into the native-record archive. Without `terminalIds`: the whole list. With
+   * `terminalIds`: only the terminals changed since `from` (asked for with `terminalPatch`). Absent: unchanged.
+   */
   terminals?: readonly TerminalState[];
+  /**
+   * Every terminal of the session now, in order, when the reader asked for `terminalPatch`: an id in `terminals` takes the
+   * new state, any other keeps the one the reader holds. A host that does not know `terminalPatch` never sends it.
+   */
+  terminalIds?: string[];
 };
 
 export type TimelineAfterResult =
@@ -522,12 +530,12 @@ export interface SessionTimeline {
   getCursor(): RecordCursor;
   getRecordLineage?(): readonly RecordLineageNode[] | null;
   getSnapshot(options?: { limit?: number; committedOnly?: boolean }): TimelineSnapshot;
-  /** 从 cursor 之后取；epoch 不对或 cursor 超前 → reset + 快照。 */
-  getAfter(cursor: RecordCursor): TimelineAfterResult;
+  /** 从 cursor 之后取；epoch 不对或 cursor 超前 → reset + 快照。`terminalPatch`: see `TimelineBatch.terminalIds`. */
+  getAfter(cursor: RecordCursor, options?: { terminalPatch?: boolean }): TimelineAfterResult;
   /** 取 `beforeTurnId` 之前的若干轮。那一轮不在手里这份里（已被分叉掉）时按「没有更早的」回。 */
   getOlder(input: { beforeTurnId: string; limit?: number }): TimelineOlderResult;
   /** 从 cursor 之后持续推；订阅那一刻先补一次缺口。 */
-  subscribe(cursor: RecordCursor | null, listener: (result: TimelineAfterResult) => void): () => void;
+  subscribe(cursor: RecordCursor | null, listener: (result: TimelineAfterResult) => void, options?: { terminalPatch?: boolean }): () => void;
   /** compare-and-set：pending → resolved 只成功一次。终端提问的认领没有 optionId(答案写进终端,不记在这里)。 */
   settle(input: { itemId: string; optionId: string | null; by: string }): SettleResult;
   /** 把记录读到此刻的文件尾(读完才返回)。判「选择器还开着没有」之前先调它。 */
@@ -552,8 +560,11 @@ export interface SessionTimeline {
   syncQueuedPrompts(prompts: readonly Pick<QueuedPrompt, 'id' | 'text' | 'queueEdit' | 'clientMessageId'>[]): void;
   syncLiveReply(reply: SessionLiveReply | null): void;
   syncTerminals(terminals: readonly TerminalState[]): void;
-  /** The runtime's turn in progress (null when none): shown in place of the record's copy of it (`runtime-turn.ts`). */
-  syncActiveTurn(turn: TranscriptTurn | null): void;
+  /**
+   * The runtime's turn in progress (null when none): shown in place of the record's copy of it (`runtime-turn.ts`).
+   * The runtime hands it over trimmed for transport, its pictures as `imageRefs`; `pictures` reads one from the runtime.
+   */
+  syncActiveTurn(turn: TranscriptTurn | null, pictures?: RuntimeTurnPictures): void;
 
   /** 一个 item 已由 provider 侧了结（超时、取消）时由宿主调用。终态，❌ 不能再答。 */
   cancelSettlement(itemId: string): void;
@@ -1230,9 +1241,16 @@ export type SessionpageSessionsListResult = {
  * `trim`:要「过长的工具内容裁掉」的那一份(`transport-trim`)。手机给;桌面不给,一个字都不裁 ——
  * 「桌面看完整」靠的就是这一格只由调用方决定。
  */
-export type SessionpageSessionSnapshotRequest = { conversationId: string; limit?: number; trim?: boolean };
-export type SessionpageSessionAfterRequest = { conversationId: string; cursor: RecordCursor; trim?: boolean };
-export type SessionpageSessionOlderRequest = { conversationId: string; beforeTurnId: string; limit?: number; trim?: boolean };
+/** How much of a page a reader asks for: whole, `lean` (no unshown tool output), or `'folded'` (transport-trim `@@@folded-form`). */
+export type LeanPage = boolean | 'folded';
+/**
+ * `lean`: the reader asks for pages in their folded form (transport-trim `@@@folded-form`; held items marked, read back
+ * whole with `held-turn`). Only with `trim`. A host that does not know it sends pages whole.
+ */
+export type SessionpageSessionSnapshotRequest = { conversationId: string; limit?: number; trim?: boolean; lean?: LeanPage };
+/** `lean`: as on a snapshot, for the snapshot a reset answer carries; batches go whole. A host that does not know it sends that snapshot whole. */
+export type SessionpageSessionAfterRequest = { conversationId: string; cursor: RecordCursor; trim?: boolean; terminalPatch?: boolean; lean?: LeanPage };
+export type SessionpageSessionOlderRequest = { conversationId: string; beforeTurnId: string; limit?: number; trim?: boolean; lean?: LeanPage };
 /**
  * 手机点开一张附件卡(#7193):agent 用 `session_open_in_tab` 打开给人看的那份文件,从那台机器上按块现读
  * (不经云,与时间线同一条线)。只读这条会话**真的打开过**的文件 —— 机器拿它自己的记录核对。
@@ -1249,6 +1267,9 @@ export const OPENED_FILE_MAX_BYTES = 20 * 1024 * 1024;
  */
 export type SessionpageSessionToolImageRequest = { conversationId: string; itemId: string; index: number };
 
+/** Reads picture `index` of a tool item in the runtime's turn in progress, from the runtime that holds the turn whole. */
+export type RuntimeTurnPictures = (itemId: string, index: number) => Promise<ToolImageLookup>;
+
 /**
  * 手机取一张工具交回来的图时,宿主答的上限(base64 字数)。超过就回 `too_large`,手机说「在桌面上看」。
  *
@@ -1263,6 +1284,14 @@ export type SessionpageSessionSubscribeRequest = {
   subscriptionId: string;
   cursor: RecordCursor | null;
   trim?: boolean;
+  /**
+   * The reader merges terminals by id (`TimelineBatch.terminalIds`): batches then carry only the terminals that changed.
+   * Without it every batch carries the whole list, as hosts before it always did (a running command grows its output on
+   * every push, so the whole list is most of a push).
+   */
+  terminalPatch?: boolean;
+  /** As on `SessionpageSessionAfterRequest`: the snapshot of a reset push comes in that form; batches go whole. */
+  lean?: LeanPage;
 };
 
 /**

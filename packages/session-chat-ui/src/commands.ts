@@ -45,6 +45,12 @@ export const CHAT_VIEW_COMMANDS = [
  * via `view.setCommands(commands)`.
  */
 export type ChatCommands = {
+  /**
+   * A row has come on screen from behind a fold (an opened process, an opened exchange), or is drawn from an item its
+   * page held back (`held`). A host whose pages carry turns in their folded form reads that row's turn again, whole, and
+   * puts it in place; the row shows what it has until then. `itemId` is the row's; it starts with its turn's id.
+   */
+  onHeldShown?: (itemId: string) => void;
   /** Mounted rows and reading intent for residency; never an unread acknowledgement. */
   onViewportProtection?: (protection: ViewportProtection) => void;
   /** Open the host's credit page after an authoritative credit exhaustion failure. */

@@ -4,10 +4,6 @@
     1
   ],
   [
-    "packages/session-core/src/session-record/sources/claude-jsonl.ts:readFile:0508bf99ee347eff93d0591c48855c29d9f3fa7e9ee15d3244828589a3558deb",
-    1
-  ],
-  [
     "packages/session-core/src/session-record/sources/jsonl-tail-source.ts:readSnapshot:3c9320f67785ac205a8e1096c6ce38a7294fa638755b43b31bcbfcb3e047d62a",
     1
   ],

@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { TranscriptTurn } from '../acp/models/turns/turn';
 import { HOST_PROMPT_HASH, nativePromptMeta, type HostPrompt } from '../acp/native-prompt';
 import { createSessionRecordSource, createSessionTimeline } from './index';
@@ -91,6 +91,18 @@ describe('a running turn that sent only a picture', () => {
       timeline.syncActiveTurn(null);
       expect(users(timeline.getSnapshot({ limit: 100 }).turns)).toEqual([{ text: '', files: ['shot.png'] }]);
     } finally { timeline.dispose(); }
+  });
+
+  it('a prompt the host had not seen restores the record once; the next update compares none of its turns again', async () => {
+    const root = await record('claude', Array.from({ length: 20 }, (_, i) => `prompt ${i}`));
+    const timeline = await createSessionTimeline(createSessionRecordSource({ harness: 'claude', providerSessionId: SESSION, roots: [root] }), { sessionId: 'S' });
+    const stringify = vi.spyOn(JSON, 'stringify');
+    try {
+      timeline.syncActiveTurn(runtime);
+      stringify.mockClear();
+      timeline.syncActiveTurn({ ...runtime });
+      expect(stringify.mock.calls.length).toBeLessThan(20);
+    } finally { stringify.mockRestore(); timeline.dispose(); }
   });
 
   it('sent again, leaves the turn the same picture opened before in place', async () => {

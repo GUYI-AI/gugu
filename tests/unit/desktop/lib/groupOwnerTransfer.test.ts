@@ -3,8 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const rpc = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/lib/supabase', () => ({ chatDb: { rpc }, getCurrentAuthUserId: async () => 'owner' }))
 
+import { createGroupAdmin } from '../../../../packages/core/src/cloud/groupAdmin'
+import { parseSystemNotice } from '../../../../packages/core/src/shared/ui/systemNotice'
 import { setLocalePreference } from '../../../../apps/desktop/src/i18n'
 import { transferGroupOwner } from '../../../../apps/desktop/src/lib/groupAdmin'
+import { systemNoticeText } from '../../../../apps/desktop/src/lib/systemNoticeText'
 
 describe('transferGroupOwner', () => {
   beforeEach(() => { rpc.mockReset(); setLocalePreference('en-US') })
@@ -27,5 +30,21 @@ describe('transferGroupOwner', () => {
     await expect(transferGroupOwner('group', 'heir')).rejects.toThrow("A project group's owner is the project's owner")
     rpc.mockResolvedValue({ data: null, error: { code: '42501', message: 'group_owner_required' } })
     await expect(transferGroupOwner('group', 'heir')).rejects.toThrow('group_owner_required')
+  })
+})
+
+describe('the shared transport and the notice', () => {
+  it('core transferOwner accepts only a receipt naming the new owner', async () => {
+    const rpc = vi.fn(async () => ({ data: { chat_id: 'group', owner_user_id: 'owner' }, error: null }))
+    await expect(createGroupAdmin({ rpc }, 'owner').transferOwner('group', 'heir')).rejects.toThrow('database did not confirm owner_user_id')
+    expect(rpc).toHaveBeenCalledWith('transfer_group_owner_as', { p_chat_id: 'group', p_new_owner_user_id: 'heir', p_as_user_id: 'owner' })
+  })
+
+  it('reads the server notice "A 将群主转让给 B" in the reader language', () => {
+    const message = { id: 'm1', content_type: 'system' as const, sender_user_id: null, client_message_id: 'member-managed:m1:u1,u2', content: 'Ann 将群主转让给 Leo Park' }
+    setLocalePreference('en-US')
+    expect(systemNoticeText(parseSystemNotice(message), message.content)).toBe('Ann transferred group ownership to Leo Park')
+    setLocalePreference('zh-CN')
+    expect(systemNoticeText(parseSystemNotice(message), message.content)).toBe('Ann 将群主转让给 Leo Park')
   })
 })

@@ -437,14 +437,14 @@ function disposeEntry(entry: TimelineEntry): void {
  * 一起拖死。接不上就 warn 一句，时间线照常可读，只是没有审批卡（与接这条之前的行为一致）。
  */
 function attachPendingRequests(entry: TimelineEntry): void {
-  void watchSessionState(entry.conversationId, (requests, queuedPrompts, liveReply, terminals, activeTurn) => {
+  void watchSessionState(entry.conversationId, (requests, queuedPrompts, liveReply, terminals, activeTurn, pictures) => {
     if (entry.disposed) return;
     entry.runtimeRequests = requests;
     syncPending(entry);
     entry.timeline.syncQueuedPrompts(queuedPrompts.filter(isVisibleQueuedPrompt).map(prompt => ({ ...prompt, text: conversationQueueText(prompt.text) })));
     entry.timeline.syncLiveReply(liveReply ?? null);
     entry.timeline.syncTerminals(terminals);
-    entry.timeline.syncActiveTurn(activeTurn ?? null);
+    entry.timeline.syncActiveTurn(activeTurn ?? null, pictures);
   })
     .then((watch) => {
       if (!watch) return;
@@ -857,12 +857,14 @@ export function snapshot(input: {
 export function after(input: {
   conversationId: string;
   cursor: RecordCursor;
+  terminalPatch?: boolean;
 }): Promise<SessionTimelineResult<TimelineAfterResult>> {
   return withTimeline(input.conversationId, async (timeline, floor) => {
     // Asked for now (a revert just landed, say): the record as written by now, wherever it now is.
     await timeline.catchUp();
     if (floor && !input.cursor.epoch.endsWith(historyClearEpoch(floor))) return { ok: false as const, reset: 'epoch_changed' as const, snapshot: timeline.getSnapshot() };
-    return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor);
+    const options = { terminalPatch: input.terminalPatch === true };
+    return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor, options);
   });
 }
 
@@ -1311,7 +1313,7 @@ export async function subscribe(
     const unsubscribeTimeline = entry.timeline.subscribe(input.cursor, (result) => {
       if (stopped) return;
       emit({ subscriptionId, result });
-    });
+    }, { terminalPatch: input.terminalPatch === true });
     teardown = () => {
       try {
         unsubscribeTimeline();

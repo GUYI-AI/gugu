@@ -14,7 +14,10 @@ const confirmDangerMock = vi.hoisted(() => vi.fn(async (_args: unknown) => true)
 vi.mock('../../../apps/desktop/src/lib/confirmDanger', () => ({ confirmDanger: confirmDangerMock, confirmConversationAction: vi.fn(async () => true) }))
 import type { GroupChatSettings, GroupAgentItem, GroupCollabSnapshot, GroupMemberItem } from '../../../packages/core/src/shared/types/chat'
 import type { DisplayIdentity } from '../../../apps/desktop/src/lib/displayIdentity'
-import { createNode, createReactHarness, device, displayIdentity, renderWithAppProviders, typeInto, waitForCondition } from '../../support/testHarness'
+import { chat, createNode, createReactHarness, device, displayIdentity, renderWithAppProviders, typeInto, waitForCondition } from '../../support/testHarness'
+import { notifyManager } from '@tanstack/react-query'
+import type { ActiveMemberProfile } from '../../../apps/desktop/src/components/memberProfileModels'
+import type { MemberProfileCardModel } from '../../../apps/desktop/src/components/MemberProfileCard'
 import { closeInfoTab, infoTabOf, openInfoTab } from '../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { publishProjectGroupChats } from '../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
 import { projectGroupsStore } from '../../../apps/desktop/src/session/renderer/features/projects/stores/project-groups-store'
@@ -606,5 +609,76 @@ describe('source-group listen-mode authority boundaries', () => {
     expect(active).toBeDefined()
     await click(active!)
     expect(setListenMode).not.toHaveBeenCalled()
+  })
+})
+
+const { useTopicScopedMemberProfile } = await import('../../../apps/desktop/src/hooks/useTopicScopedMemberProfile')
+const { followRendererSession, queryClient } = await import('../../../apps/desktop/src/lib/replica')
+const { openImRepository } = await import('../../../apps/desktop/src/lib/imRepository')
+const { createMemoryLocalSyncDb } = await import('../../../apps/desktop/src/lib/localSyncDb')
+const { ChatSettingsPanel } = await import('../../../apps/desktop/src/components/chat/ChatSettingsPanel')
+// #62 a topic is a main conversation: a card opened in it shows the topic's listen mode and writes to the topic; its Details
+// read the topic's own roster (not the source group's) and, on the desktop, open them from a members block.
+describe('a topic open as the main conversation', () => {
+  const topicCollab = (agents: GroupAgentItem[], humans: GroupMemberItem[]): GroupCollabSnapshot => ({ ...collab(agents, humans), scheduler: { ...collab(agents, humans).scheduler, chat_id: 'topic-1' } })
+  // In the group's roster a1 is active: the number a card in the topic used to show.
+  const groupMember: MemberProfileCardModel = {
+    id: 'a1', guguNumber: null, displayName: 'Claude 28', avatar: null, bio: null, email: null, type: 'agent',
+    role: 'member', profileScope: 'group', listenMode: 'active', ownerUserId: 'owner-1',
+  }
+  const opened: ActiveMemberProfile = { member: groupMember, preferredSide: 'right' }
+  const groupEdit = { onChangeListenMode: vi.fn(async () => {}), busy: false }
+  let result: ReturnType<typeof useTopicScopedMemberProfile>
+  function Probe({ mainTopicChatId }: { mainTopicChatId: string | null }) {
+    result = useTopicScopedMemberProfile({ profile: opened, mainTopicChatId, currentUserId: 'owner-1', groupEditControlsFor: () => groupEdit })
+    return null
+  }
+  const settle = () => act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
+  let repository: Awaited<ReturnType<typeof openImRepository>>
+  beforeEach(async () => {
+    notifyManager.setScheduler((callback) => { callback() })
+    followRendererSession('SIGNED_IN', 'owner-1')
+    repository = await openImRepository('owner-1', { adapter: createMemoryLocalSyncDb() })
+    getSettings.mockResolvedValue({ id: 'topic-1', my_role: 'member', can_manage: false } as GroupChatSettings)
+    getGroupCollab.mockResolvedValue({ snapshot: topicCollab([agentItem('a1', { listen_mode: 'passive' })], [humanItem('owner-1', 'owner')]), identities: [] })
+  })
+  afterEach(() => { queryClient.clear(); repository.close() })
+
+  it('a card opened in a topic shows the topic\'s listen mode and writes it to the topic id', async () => {
+    await harness.render(createNode(Probe, { mainTopicChatId: 'topic-1' }))
+    await settle()
+    expect(getGroupCollab).toHaveBeenCalledWith('topic-1')
+    expect(result?.profile.member.listenMode).toBe('passive')
+    expect(result?.editControls).not.toBe(groupEdit)
+    await act(async () => { await result?.editControls?.onChangeListenMode?.('active') })
+    expect(setListenMode).toHaveBeenCalledWith('topic-1', 'a1', 'active')
+  })
+
+  it('counter-example: a card opened in a group keeps the group\'s listen mode and edit controls', async () => {
+    await harness.render(createNode(Probe, { mainTopicChatId: null }))
+    await settle()
+    expect(result?.profile.member.listenMode).toBe('active')
+    expect(result?.editControls).toBe(groupEdit)
+    expect(getGroupCollab).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('its Details read the topic roster, not the source group (mobile=%s)', async (mobile) => {
+    shell.mobile = mobile
+    await renderWithAppProviders(harness, createNode(ChatSettingsPanel, {
+      activeChat: chat({ id: 'topic-1', kind: 'topic', name: 'Current topic', source_chat_id: 'source' }), mobile,
+      messages: [], onClose: vi.fn(), onClearMessages: vi.fn(),
+      onSetNotificationLevel: vi.fn(), onTogglePinned: vi.fn(), memberProfiles: [], currentUserId: 'owner-1',
+      groupCollabSnapshot: SNAPSHOT, groupAgentStatuses: {}, onReloadGroupCollab: vi.fn(),
+      onLeaveGroup: vi.fn(), onDissolveGroup: vi.fn(),
+    } as never), { auth: { id: 'owner-1' }, contacts: { contacts: [] }, chat: { chats: [chat({ id: 'topic-1', kind: 'topic', name: 'Current topic', source_chat_id: 'source' })], getImRepository: async () => repository } })
+    if (!mobile) {
+      const members = harness.container.querySelector<HTMLElement>('[data-testid="group-settings-members"]')
+      expect(members, 'the desktop Details page has the topic members block').not.toBeNull()
+      await act(async () => { members!.click() })
+    }
+    await settle()
+    expect(getGroupCollab.mock.calls.map((call) => call[0])).toContain('topic-1')
+    expect(getGroupCollab.mock.calls.map((call) => call[0])).not.toContain('source')
+    expect(harness.container.querySelector('[data-testid="member-list-panel"]')?.getAttribute('data-chat-kind')).toBe('topic')
   })
 })

@@ -1,11 +1,11 @@
 import type { ToolImage } from '@gugu/session-core/acp/client'
-import type { RecordCursor, SessionpageSessionRespondRequest, SessionpageSessionRespondResult, TimelineAfterResult, TimelineOlderResult, TimelineSnapshot } from '@gugu/session-core/session-record/contract'
+import type { LeanPage, RecordCursor, SessionpageSessionRespondRequest, SessionpageSessionRespondResult, TimelineAfterResult, TimelineOlderResult, TimelineSnapshot } from '@gugu/session-core/session-record/contract'
 import type { SessionpageTimelineClient } from '../../components/session-watch/use-timeline-session'
 import { invokePhoneHost } from './phoneHostRpc'
 import { sendPhoneTaskText } from './phoneTaskSend'
 import { reconnectDelayMs } from '@/session/shared/remote-reconnect'
 
-type Poll = { deviceId: string; sessionId: string; cursor: RecordCursor | null; timer?: ReturnType<typeof setTimeout>; running: boolean; failures: number }
+type Poll = { deviceId: string; sessionId: string; cursor: RecordCursor | null; lean?: LeanPage; timer?: ReturnType<typeof setTimeout>; running: boolean; failures: number }
 const POLL_MS = 800
 
 /** Phone timelines use the shared reducer and cursor contract over the existing native/RPC calls. */
@@ -30,7 +30,7 @@ export function createPhoneTimelineClient(invoke = invokePhoneHost): Sessionpage
     poll.running = true
     if (poll.timer) clearTimeout(poll.timer)
     try {
-      const result = await invoke<TimelineAfterResult>(poll.deviceId, 'sessionTimeline.sessionAfter', [{ conversationId: poll.sessionId, cursor: poll.cursor, trim: true }])
+      const result = await invoke<TimelineAfterResult>(poll.deviceId, 'sessionTimeline.sessionAfter', [{ conversationId: poll.sessionId, cursor: poll.cursor, trim: true, terminalPatch: true, ...(poll.lean ? { lean: poll.lean } : {}) }])
       if (polls.get(id) !== poll) return
       poll.cursor = result.ok ? result.batch.cursor : result.snapshot.cursor
       poll.failures = 0
@@ -48,13 +48,13 @@ export function createPhoneTimelineClient(invoke = invokePhoneHost): Sessionpage
     }
   }
   const client: SessionpageTimelineClient = {
-    fetchSnapshot: (deviceId, sessionId, limit) => invoke<TimelineSnapshot>(deviceId, 'sessionTimeline.sessionSnapshot', [{ conversationId: sessionId, ...(limit === undefined ? {} : { limit }), trim: true }]),
-    fetchAfter: (deviceId, sessionId, cursor) => invoke<TimelineAfterResult>(deviceId, 'sessionTimeline.sessionAfter', [{ conversationId: sessionId, cursor, trim: true }]),
-    fetchOlder: (deviceId, sessionId, beforeTurnId, limit) => invoke<TimelineOlderResult>(deviceId, 'sessionTimeline.sessionOlder', [{ conversationId: sessionId, beforeTurnId, ...(limit === undefined ? {} : { limit }), trim: true }]),
+    fetchSnapshot: (deviceId, sessionId, limit, lean) => invoke<TimelineSnapshot>(deviceId, 'sessionTimeline.sessionSnapshot', [{ conversationId: sessionId, ...(limit === undefined ? {} : { limit }), trim: true, ...(lean ? { lean } : {}) }]),
+    fetchAfter: (deviceId, sessionId, cursor, lean) => invoke<TimelineAfterResult>(deviceId, 'sessionTimeline.sessionAfter', [{ conversationId: sessionId, cursor, trim: true, terminalPatch: true, ...(lean ? { lean } : {}) }]),
+    fetchOlder: (deviceId, sessionId, beforeTurnId, limit, lean) => invoke<TimelineOlderResult>(deviceId, 'sessionTimeline.sessionOlder', [{ conversationId: sessionId, beforeTurnId, ...(limit === undefined ? {} : { limit }), trim: true, ...(lean ? { lean } : {}) }]),
     fetchToolImage: (deviceId, sessionId, itemId, index) => invoke<ToolImage>(deviceId, 'sessionTimeline.sessionToolImage', [{ conversationId: sessionId, itemId, index }]),
-    subscribeSession: async (deviceId, sessionId, subscriptionId, cursor) => {
+    subscribeSession: async (deviceId, sessionId, subscriptionId, cursor, lean) => {
       stop(subscriptionId)
-      const poll: Poll = { deviceId, sessionId, cursor, running: false, failures: 0 }
+      const poll: Poll = { deviceId, sessionId, cursor, lean, running: false, failures: 0 }
       polls.set(subscriptionId, poll)
       try { poll.cursor ??= (await client.fetchSnapshot(deviceId, sessionId)).cursor }
       catch (error) { if (polls.get(subscriptionId) === poll) stop(subscriptionId); throw error }

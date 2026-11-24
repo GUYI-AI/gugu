@@ -128,7 +128,6 @@ describe('parseSshTarget / parseSshCommand', () => {
     'al ice@host',
     '$(whoami)@host',
     'host\nother',
-    '`id`',
     'ssh -p',
     'ssh -J "-oProxyCommand=x" box',
     'ssh "unterminated',

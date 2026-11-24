@@ -44,14 +44,6 @@ export interface TabResource {
 }
 
 /**
- * Controls which pane a programmatic open targets.
- *   'active'           – focused pane (default)
- *   'right' | 'left'   – adjacent pane (split if needed)
- *   { paneId: string } – explicit pane by ID
- */
-export type OpenTarget = 'active' | 'left' | 'right' | { paneId: string };
-
-/**
  * Capability handle given to resources at initialize time.
  * Resources use this to drive programmatic close and source-aware page
  * opens — without holding a direct store reference.
@@ -67,7 +59,7 @@ export interface TabHandle {
   /**
    * Open a tab in the view that owns this handle.
    * `kind` selects the provider; `args` are the domain open-args (the "searchParams");
-   * `config` carries the explicit navigation intent and optional host target pane.
+   * `config` carries the explicit navigation intent.
    */
   open(
     kind: string,

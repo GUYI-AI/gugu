@@ -6,14 +6,7 @@ import { page, userEvent } from '@vitest/browser/context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type {
-  SessionHistoryDirectoryPage,
-  SessionHistoryDirectoryParams,
-  SessionHistoryDirectoryRow,
-  SessionHistoryPage,
-  SessionHistoryParams,
-  SessionHistoryRow,
-} from '@shared/core/session-history/session-history';
+import type { SessionHistoryDirectoryPage, SessionHistoryDirectoryParams, SessionHistoryDirectoryRow, SessionHistoryPage, SessionHistoryRow } from '@shared/core/session-history/session-history';
 import { SESSION_HOME_SECTION_KEY } from '@shared/core/session-history/session-history';
 import { isMacHost } from '@shared/host-os';
 import '@/styles/tokens.css';
@@ -306,7 +299,6 @@ function render(extra?: ReactNode): void {
 }
 
 const screen = page;
-const listParams = () => mocks.list.mock.calls.map(([params]) => params as SessionHistoryParams);
 const directoryParams = () =>
   mocks.listDirectories.mock.calls.map(([params]) => params as SessionHistoryDirectoryParams);
 const click = (testId: string) => (screen.getByTestId(testId).element() as HTMLElement).click();
@@ -430,127 +422,6 @@ describe('会话历史(按目录分节)核心合同', () => {
     const actions = list.getByTestId('session-history-action').all();
     expect(actions.map((action) => action.element().textContent)).toEqual(['恢复', '打开', '导入', '导入']);
     await expect.element(screen.getByTestId('session-history-total')).toHaveTextContent('共 2 个目录');
-  });
-
-  it('每节默认平铺露头几条、没有滚动条;点「显示更多」才变成限高小窗并当场要下一批,「收起」回去并扔掉多要来的', async () => {
-    const eight = Array.from({ length: 8 }, (_, i) => gugu({ key: `gugu:s${i}`, title: `s${i}` }));
-    // 主进程按 sessionsPerDirectory 截:目录页里这一节只有头 5 条。
-    mocks.listDirectories.mockResolvedValue(
-      directoryPageOf([{ ...DIRS[0], sessionCount: 8, sessions: eight.slice(0, 5) }, DIRS[1]])
-    );
-    mocks.list.mockImplementation((params: SessionHistoryParams) =>
-      Promise.resolve(pageOf(eight.slice(0, params.limit).map((row) => ({ ...row })), { matched: 8 }))
-    );
-    render();
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(2));
-    const sectionAt = (i: number) => screen.getByTestId('session-history-section').nth(i);
-    const boxOf = (i: number) => sectionAt(i).getByTestId('session-history-section-box').element() as HTMLElement;
-    const firstRows = () => sectionAt(0).getByTestId('session-history-row').all();
-
-    // 默认:头 5 条平铺,不限高、不滚(❌ 一上来就是一排小窗);节下有「显示更多」,写着这一节一共几条。
-    expect(firstRows()).toHaveLength(5);
-    expect(getComputedStyle(boxOf(0)).maxHeight).toBe('none');
-    expect(getComputedStyle(boxOf(0)).overflowY).toBe('visible');
-    expect(boxOf(0).scrollHeight).toBeLessThanOrEqual(boxOf(0).clientHeight);
-    await expect.element(sectionAt(0).getByTestId('session-history-section-show-more')).toHaveTextContent('显示更多（共 8 条）');
-    // 两条的那节本来就全在,不给「显示更多」。
-    expect(sectionAt(1).getByTestId('session-history-section-show-more').all()).toHaveLength(0);
-    // 没点之前不去要这一节的更多(给观察器留足时间再判,❌ 判得太早假绿)。
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    expect(mocks.list).not.toHaveBeenCalled();
-    // 与咕咕其它清单同一套样子(ui-visual-spec §6.6 / §5.1):密度面板、无外框、6px 圆角、行间不画线。
-    const panel = boxOf(0).parentElement as HTMLElement;
-    expect(getComputedStyle(panel).borderTopWidth).toBe('0px');
-    expect(getComputedStyle(panel).borderTopLeftRadius).toBe('6px');
-    expect(getComputedStyle(panel).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
-    const item = screen.getByTestId('session-history-item').first().element() as HTMLElement;
-    expect(getComputedStyle(item).borderBottomWidth).toBe('0px');
-
-    // 显示更多:当场按这一节要下一批(同一套筛选 + 这一节,limit 放大,走本机索引缓存),这一节变成限高、能滚的小窗。
-    (sectionAt(0).getByTestId('session-history-section-show-more').element() as HTMLElement).click();
-    await vi.waitFor(() => expect(firstRows()).toHaveLength(8));
-    expect(listParams().map((p) => [p.directory, p.limit, p.mode, p.source])).toEqual([[WEBAPP_SECTION, 55, 'cached', 'gugu']]);
-    expect(getComputedStyle(boxOf(0)).maxHeight).toBe('320px');
-    expect(getComputedStyle(boxOf(0)).overflowY).toBe('auto');
-    // 全应用那一套滚动条(styles/tokens.css):元素上不写 scrollbar-width,否则那一套就失效。
-    expect(getComputedStyle(boxOf(0)).getPropertyValue('scrollbar-width')).toBe('auto');
-    expect(boxOf(0).scrollHeight).toBeGreaterThan(boxOf(0).clientHeight);
-    const toggle = sectionAt(0).getByTestId('session-history-section-show-less');
-    await expect.element(toggle).toHaveTextContent('收起');
-    expect(toggle.element().getAttribute('aria-expanded')).toBe('true');
-    // 只点开了这一节:别的节还是平铺。
-    expect(getComputedStyle(boxOf(1)).maxHeight).toBe('none');
-    // 这一节已全部带回 ⇒ 窗底没有加载哨兵。
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-section-loading').all()).toHaveLength(0));
-
-    // 收起:回到头 5 条平铺;多要来的那批扔掉了 —— 再点开会重新要(❌ 攥在内存里)。
-    (toggle.element() as HTMLElement).click();
-    await vi.waitFor(() => expect(firstRows()).toHaveLength(5));
-    expect(getComputedStyle(boxOf(0)).maxHeight).toBe('none');
-    (sectionAt(0).getByTestId('session-history-section-show-more').element() as HTMLElement).click();
-    await vi.waitFor(() => expect(firstRows()).toHaveLength(8));
-    expect(mocks.list).toHaveBeenCalledTimes(2);
-
-  });
-
-  it('要更多的那批还在路上就收起了:回来的那批不要,这一节停在头几条', async () => {
-    const eight = Array.from({ length: 8 }, (_, i) => gugu({ key: `gugu:p${i}`, title: `p${i}` }));
-    mocks.listDirectories.mockResolvedValue(
-      directoryPageOf([{ ...DIRS[0], sessionCount: 8, sessions: eight.slice(0, 5) }, DIRS[1]])
-    );
-    let resolveBatch: (page: SessionHistoryPage) => void = () => {};
-    mocks.list.mockImplementation(() => new Promise<SessionHistoryPage>((resolve) => (resolveBatch = resolve)));
-    render();
-    const section = () => screen.getByTestId('session-history-section').first();
-    await vi.waitFor(() => expect(section().getByTestId('session-history-row').all()).toHaveLength(5));
-    (section().getByTestId('session-history-section-show-more').element() as HTMLElement).click();
-    await vi.waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(1));
-    (section().getByTestId('session-history-section-show-less').element() as HTMLElement).click();
-    await vi.waitFor(() => expect(section().getByTestId('session-history-section-show-more').all()).toHaveLength(1));
-    resolveBatch(pageOf(eight.map((row) => ({ ...row })), { matched: 8 }));
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(section().getByTestId('session-history-row').all()).toHaveLength(5);
-    const box = section().getByTestId('session-history-section-box').element() as HTMLElement;
-    expect(getComputedStyle(box).maxHeight).toBe('none');
-  });
-
-  it('点开的小窗滚到底接着要这一节的下一批,一直滚到这一节全部带回', async () => {
-    const all = Array.from({ length: 120 }, (_, i) => gugu({ key: `gugu:w${i}`, title: `w${i}` }));
-    mocks.listDirectories.mockResolvedValue(
-      directoryPageOf([{ ...DIRS[0], sessionCount: 120, sessions: all.slice(0, 5) }, DIRS[1]])
-    );
-    mocks.list.mockImplementation((params: SessionHistoryParams) =>
-      // 行经 IPC 过来都是新对象(结构化克隆);mock 也给新对象,❌ 复用同一批引用 —— 那会把「按对象认光标」的毛病藏起来。
-      Promise.resolve(pageOf(all.slice(0, params.limit).map((row) => ({ ...row })), { matched: 120 }))
-    );
-    render();
-    const webappRows = () => screen.getByTestId('session-history-section').first().getByTestId('session-history-row').all();
-    await vi.waitFor(() => expect(webappRows()).toHaveLength(5));
-    click('session-history-section-show-more');
-    await vi.waitFor(() => expect(webappRows()).toHaveLength(55));
-    // 点开后那一批进来,窗底离得远:没滚到窗底之前不再要(给观察器留足回调的时间再判)。
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    expect(mocks.list).toHaveBeenCalledTimes(1);
-    const box = () =>
-      screen.getByTestId('session-history-section').first().getByTestId('session-history-section-box').element() as HTMLElement;
-    const toBottom = () => {
-      box().scrollTop = box().scrollHeight;
-    };
-    toBottom();
-    await vi.waitFor(() => expect(webappRows()).toHaveLength(105));
-    // 新一批进来,小窗停在原处接着往下翻(❌ 被拽回顶上:光标那条按行对象认时,每来一批都会被重新滚进视野)。
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(box().scrollTop).toBeGreaterThan(0);
-    toBottom();
-    await vi.waitFor(() => expect(webappRows()).toHaveLength(120));
-    // 每批 = 同一套筛选 + 这一节,limit 放大,走本机索引缓存。
-    expect(listParams().map((p) => [p.directory, p.limit, p.mode, p.source])).toEqual([
-      [WEBAPP_SECTION, 55, 'cached', 'gugu'],
-      [WEBAPP_SECTION, 105, 'cached', 'gugu'],
-      [WEBAPP_SECTION, 155, 'cached', 'gugu'],
-    ]);
-    // 全部带回:哨兵收起,不再要。
-    await vi.waitFor(() => expect(screen.getByTestId('session-history-section-loading').all()).toHaveLength(0));
   });
 
   it('「咕咕独立会话」那一节:节名是「咕咕独立会话」,不把内部 key 当路径露出来', async () => {

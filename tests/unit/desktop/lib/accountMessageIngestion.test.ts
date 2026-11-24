@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
-import { message, deferred } from '../../../support/testHarness'
+import { message, deferred, displayIdentity } from '../../../support/testHarness'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
-import { confirmSentMessage, openImRepository, type OutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
+import { confirmSentMessage, imSelectors, openImRepository, type OutboxRecord } from '../../../../apps/desktop/src/lib/imRepository'
 import { createAccountRevisionCoordinator, type AccountRevisionCoordinator } from '../../../../apps/desktop/src/lib/accountRevisionCoordinator'
 import type { AccountRevisionOperation } from '../../../../apps/desktop/src/lib/accountRevisionRuntime'
 import { ingestMessages, readMessagePage } from '../../../../apps/desktop/src/lib/messageIngest'
@@ -215,4 +215,18 @@ it('a store re-read of unchanged rows keeps the published rows and does not publ
   expect(messageWindow('viewer', 'room')![0]).toBe(first)
   setMessageWindow('viewer', 'room', null, [{ ...first, content: 'edited' }])
   expect(publish).toHaveBeenCalledTimes(2)
+})
+
+// @@@selected-change: a write to other tables (every message write touches cursors and views) must not call an identities
+// subscriber again with the same map. The chat store feeds it to a React setter, which keeps every same-value call queued
+// until the provider renders again.
+it('calls a repository subscriber again only when what it selected changed', async () => {
+  const repository = await openImRepository('viewer', { adapter: createMemoryLocalSyncDb() })
+  const seen: string[][] = []
+  repository.subscribe(imSelectors.identitiesById, (identities) => seen.push(Object.keys(identities)))
+  await repository.transaction(tx => tx.putSyncState('account-revision-cursor', { revision: '1' }))
+  await repository.transaction(tx => tx.putView('active-chat', 'room'))
+  await repository.transaction(tx => tx.putIdentity(displayIdentity('peer')))
+  await repository.transaction(tx => tx.putIdentity(displayIdentity('peer')))
+  expect(seen).toEqual([[], ['peer']])
 })

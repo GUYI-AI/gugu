@@ -61,7 +61,7 @@ it('drags an inner-column topic row into the chat area with the topic sub-row pa
     expect(drops).toEqual([{
       trusted: true,
       types: [SCREEN_CONTENT_DRAG_TYPE],
-      content: { kind: 'chat', chatId: 'grp-1', title: '定价页方案', topic: { chatId: 't-1', name: '定价页方案' } },
+      content: { kind: 'chat', chatId: 't-1', title: '定价页方案' },
     }]);
   } finally {
     target.remove();

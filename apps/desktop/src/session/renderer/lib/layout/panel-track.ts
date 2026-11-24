@@ -42,7 +42,12 @@ export interface SlotPaint {
   offset: number;
   opacity: number;
   soft: boolean;
-  /** Drawn at nothing: inert (❌ visibility, which would restyle its whole subtree). */
+  /**
+   * Drawn at nothing: inert, and scaled to nothing (❌ visibility, which would restyle its whole subtree). Its content is
+   * still laid out at its open size, off to the side under its neighbour, and inert does not take back the window
+   * app-region rects it hands the window (a folded inner sidebar's drag band swallowed the click on the rail's 「»」 under
+   * it); scale(0) collapses them, as a retained page does (MainLayout).
+   */
   hidden: boolean;
 }
 
@@ -233,6 +238,7 @@ export class PanelTrack {
       nodes.window.style.opacity = p.opacity < 1 ? String(p.opacity) : '';
       nodes.window.style.maskImage = p.soft ? SOFT_EDGE[this.axis] : '';
       nodes.window.inert = p.hidden;
+      nodes.window.style.transform = p.hidden ? 'scale(0)' : '';
     });
     if (this.fill) {
       // A fill coming from or going to nothing keeps its open size, its near edge on the last slot's edge.
