@@ -10,7 +10,8 @@ import { closeScreenBlock, openInWindow, screenBlockElement, setBlockDropPreview
  * 每块页签条最左的 ⋮⋮(照 Zen 分屏块的拖柄):只在这屏分成几块时有,一块时没有 —— 只为挪动、拿走一块而在。
  * 它的样子只在这里和 index.css 的 .screen-block-grip:换样式只动这两处。
  * 按住拖:落在一块的边上 = 这一块挪过去;落在输入框上 = 插一枚 @(会话);拖到窗口外 = 单独成窗(会话、App);
- * 拖回内层侧栏(blockReturnDropTarget),或离开自己那块、松在哪儿都不收的地方 = 这一块从这屏拿走(取消并排)。
+ * 拖回内层侧栏(blockReturnDropTarget),或离开自己那块、松在哪儿都不收的地方 = 这一块从这屏拿走(取消并排);
+ * 按 Esc 取消拖拽 = 什么都不变(@@@grip-drop-vs-cancel)。
  * 右键菜单由调用点给。不在这屏上的块(单独成窗的会话页)没有它。
  */
 export const BlockGrip = observer(function BlockGrip({
@@ -37,7 +38,7 @@ export const BlockGrip = observer(function BlockGrip({
       // ❌ 别 stopPropagation:React 19 会把原生 dragstart 停在根容器上,document 上开拖拽遮罩的那条(shieldNativeDrags)
       // 就听不到 —— 拖着 ⋮⋮ 经过网页(HTML 预览、浏览器页签、App 的页),指针一进去宿主就收不到移动。上面也没有别人接 dragstart。
       onDragStart={(event) => startBlockDrag(event, blockId, content)}
-      onDragEnd={(event) => endBlockDrag(event, blockId, content)}
+      onDragEnd={(event) => endBlockDrag(event, content)}
     >
       <span className="screen-block-grip-lines" aria-hidden="true" />
     </span>
@@ -51,11 +52,16 @@ export const BlockGrip = observer(function BlockGrip({
   );
 });
 
-/** 正被 ⋮⋮ 拖着的那一块,和指针最后在窗口里的位置(dragend 的坐标各平台不可靠,拖的过程中记下来)。 */
-let blockDrag: { blockId: string; x: number; y: number; stop: () => void } | null = null;
+/**
+ * 正被 ⋮⋮ 拖着的那一块。
+ * @@@grip-drop-vs-cancel - 松手和按 Esc 取消,源上的 dragend 一模一样(都是 dropEffect none,拖拽中页面也收不到按键)。
+ * 所以拖着 ⋮⋮ 时整页都收(dragover 一律 preventDefault):真松手一定在这页上触发一次 drop,取消则一次都没有。
+ * 真落点照旧自己办(preventDefault / stopPropagation);一路冒到 document 还没人办的 drop = 松在了不收的地方。
+ */
+let blockDrag: { blockId: string; stop: () => void } | null = null;
 
 /**
- * 拖完:有落点接了(drop 先到)或源上的 dragend 到了,哪个先到都收掉。落点把这一块挪走、拿走时 ⋮⋮ 跟着卸了,
+ * 拖完:有过一次 drop、或源上的 dragend 到了,哪个先到都收掉。落点把这一块挪走、拿走时 ⋮⋮ 跟着卸了,
  * 它的 dragend 就不会再来 —— 只等 dragend 会留下一条过期的「正在拖」。
  */
 function finishBlockDrag(): void {
@@ -66,19 +72,25 @@ function finishBlockDrag(): void {
 function startBlockDrag(event: DragEvent<HTMLElement>, blockId: string, content: DraggedScreenContent): void {
   setDraggedScreenContent(event.dataTransfer, content, event.currentTarget.closest<HTMLElement>('.session-tab-bar'));
   const view = event.currentTarget.ownerDocument;
-  const track = (over: globalThis.DragEvent) => {
-    if (blockDrag) Object.assign(blockDrag, { x: over.clientX, y: over.clientY });
+  const accept = (over: globalThis.DragEvent) => over.preventDefault();
+  // 冒到 document 还没人办:松在了不收的地方。离开了自己那块才拿走它(在自己那块上松手 = 没挪)。
+  const unclaimed = (drop: globalThis.DragEvent) => {
+    if (drop.defaultPrevented) return;
+    drop.preventDefault();
+    const own = screenBlockElement(blockId)?.getBoundingClientRect();
+    const stayed = own && drop.clientX >= own.left && drop.clientX <= own.right && drop.clientY >= own.top && drop.clientY <= own.bottom;
+    if (!stayed && screenLayout.blocks.has(blockId)) closeScreenBlock(blockId);
   };
   // 捕获阶段先看到每一次 drop(落点会 stopPropagation);等这次分发走完、落点办完再收。
   const dropped = () => setTimeout(finishBlockDrag, 0);
-  view.addEventListener('dragover', track, true);
+  view.addEventListener('dragover', accept, true);
+  view.addEventListener('drop', unclaimed);
   view.addEventListener('drop', dropped, true);
   blockDrag = {
     blockId,
-    x: event.clientX,
-    y: event.clientY,
     stop: () => {
-      view.removeEventListener('dragover', track, true);
+      view.removeEventListener('dragover', accept, true);
+      view.removeEventListener('drop', unclaimed);
       view.removeEventListener('drop', dropped, true);
     },
   };
@@ -87,20 +99,14 @@ function startBlockDrag(event: DragEvent<HTMLElement>, blockId: string, content:
 const windowable = (content: DraggedScreenContent): content is DraggedScreenContent & WindowableContent =>
   content.kind === 'session' || content.kind === 'app';
 
-function endBlockDrag(event: DragEvent<HTMLElement>, blockId: string, content: DraggedScreenContent): void {
-  const drag = blockDrag;
+/** 源上的 dragend:拖到窗口外 = 单独成窗;别的(落点办过了、松在不收的地方已经在 drop 里办了、Esc 取消)什么都不做。 */
+function endBlockDrag(event: DragEvent<HTMLElement>, content: DraggedScreenContent): void {
   finishBlockDrag();
   clearDraggedScreenContent();
   setBlockDropPreview(null);
-  if (droppedOutsideWindow(event)) {
-    if (windowable(content)) openInWindow(content.kind === 'session' ? { kind: 'session', projectId: content.projectId, sessionId: content.sessionId } : { kind: 'app', tabKind: content.tabKind }, { screenX: event.screenX, screenY: event.screenY });
-    return;
+  if (droppedOutsideWindow(event) && windowable(content)) {
+    openInWindow(content.kind === 'session' ? { kind: 'session', projectId: content.projectId, sessionId: content.sessionId } : { kind: 'app', tabKind: content.tabKind }, { screenX: event.screenX, screenY: event.screenY });
   }
-  // 有落点接了(一块的边、输入框、内层侧栏):那边已经办了。没人接、指针又离开了自己那块 = 拿走这一块。
-  if (event.dataTransfer.dropEffect !== 'none' || !drag) return;
-  const own = screenBlockElement(blockId)?.getBoundingClientRect();
-  const stayed = own && drag.x >= own.left && drag.x <= own.right && drag.y >= own.top && drag.y <= own.bottom;
-  if (!stayed && screenLayout.blocks.has(blockId)) closeScreenBlock(blockId);
 }
 
 /** 内层侧栏接 ⋮⋮ 拖回来的那一块:松手 = 这一块从这屏拿走(取消并排)。别的拖拽照旧交给侧栏里的行。 */

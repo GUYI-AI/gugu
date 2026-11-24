@@ -424,7 +424,6 @@ describe('⋮⋮ 只在并排时有;拖走 = 取消并排', () => {
     </>);
     await nextFrames(2);
   };
-  const dragOverAt = (x: number, y: number) => document.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: new DataTransfer() }));
   const twoBlocks = async (sidebar = false) => {
     screenLayout.show(s('a'));
     screenLayout.showBeside(s('b'));
@@ -445,13 +444,22 @@ describe('⋮⋮ 只在并排时有;拖走 = 取消并排', () => {
     expect(grip()).toBeNull();
   });
 
+  const dropAt = (x: number, y: number, dataTransfer: DataTransfer) => {
+    const target = document.elementFromPoint(x, y)!;
+    const over = new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer });
+    target.dispatchEvent(over);
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer }));
+    return over;
+  };
+
   it('松在没人接的地方、指针离开了自己那块 = 这块从屏上拿走', async () => {
     const blockId = await twoBlocks();
     const dataTransfer = new DataTransfer();
     grip()!.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
     const other = document.querySelector<HTMLElement>(`[data-screen-block]:not([data-screen-block="${blockId}"])`)!.getBoundingClientRect();
-    dragOverAt(other.left + other.width / 2, other.top + other.height / 2);
-    grip()!.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
+    // 拖着 ⋮⋮ 整页都收,松手才一定有一次 drop(@@@grip-drop-vs-cancel)。
+    expect(dropAt(other.left + other.width / 2, other.top + other.height / 2, dataTransfer).defaultPrevented).toBe(true);
+    grip()?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
     expect(screenLayout.blockOfSession('a')).toBeUndefined();
     expect(screenLayout.order).toHaveLength(1);
   });
@@ -461,9 +469,26 @@ describe('⋮⋮ 只在并排时有;拖走 = 取消并排', () => {
     const dataTransfer = new DataTransfer();
     grip()!.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
     const own = document.querySelector<HTMLElement>(`[data-screen-block="${blockId}"]`)!.getBoundingClientRect();
-    dragOverAt(own.left + 20, own.top + 20);
+    dropAt(own.left + 20, own.top + 20, dataTransfer);
     grip()!.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
     expect(screenLayout.order).toHaveLength(2);
+  });
+
+  it('按 Esc 取消拖拽(没有 drop,只有 dragend)= 什么都不变,哪怕指针已经在别的块上', async () => {
+    const blockId = await twoBlocks();
+    const dataTransfer = new DataTransfer();
+    grip()!.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+    const other = document.querySelector<HTMLElement>(`[data-screen-block]:not([data-screen-block="${blockId}"])`)!.getBoundingClientRect();
+    const x = other.left + other.width / 2;
+    const y = other.top + other.height / 2;
+    document.elementFromPoint(x, y)!.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer }));
+    grip()!.dispatchEvent(new DragEvent('dragend', { bubbles: true, clientX: x, clientY: y, dataTransfer }));
+    expect(screenLayout.order).toHaveLength(2);
+    expect(screenLayout.blockOfSession('a')).toBe(blockId);
+    // 取消之后整页不再替它收拖拽。
+    const later = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() });
+    document.body.dispatchEvent(later);
+    expect(later.defaultPrevented).toBe(false);
   });
 
   it('拖回内层侧栏松手 = 这块从屏上拿走,侧栏里的行收不到这次拖放', async () => {
