@@ -2306,6 +2306,11 @@ body.barcode-scanner-active #root {
    四周各让 5px:占一枚一位数计数(18×18)的位置、落在它正中 —— 与上下行的数同一列,收起成头像列时也落在数落的那个角上。
    它不装字:❌ 吃 .gg-chip 那条按字号长高的 min-height(吃了就被撑成 8×18 的竖长条)。 */
 .gg-chip[data-shape='dot'] { flex: none; width: 8px; height: 8px; min-height: 0; margin: 5px; padding: 0; background: var(--faint-fg); }
+/* A row's unread mark on its avatar's top-right corner (AvatarUnread): the count's left edge 12px in from the avatar's
+   right edge, its top 2px above the avatar. */
+.gg-avatar-unread { position: relative; display: inline-flex; flex: none; }
+.gg-avatar-unread > .gg-avatar-unread-mark { position: absolute; top: -2px; left: calc(100% - 12px); margin: 0; }
+.gg-avatar-unread > .gg-avatar-unread-mark[data-shape='dot'] { top: 3px; left: calc(100% - 7px); }
 
 /* #5111 设置→账户 头像上传钮的**内容**。钮本身是 ui/Button variant=ghost(hover/press/disabled
    全部由那份变体表出,这里不重复一遍);这三条只管钮里面那块 40px 的头像与上传中的遮罩。 */

@@ -3,6 +3,7 @@ import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/cont
 import { useRowContextMenu } from '@/hooks/useRowContextMenu'
 import { displayName } from '@/lib/contactsListSort'
 import { Avatar } from '../Avatar'
+import { AvatarUnread } from '../AvatarUnread'
 import { ListRow } from '../ui/ListRow'
 import { Chip } from '../ui/Chip'
 import { Folder } from '@/lib/icons'
@@ -91,13 +92,12 @@ export function GroupSectionRow({
         data-group-id={group.id}
         selected={selected}
         pinned={pinned}
-        emphasis={facts.unread > 0}
-        leading={<ContactGroupAvatar group={group} size="sm" />}
+        emphasis={facts.calls > 0 || facts.news}
+        leading={<AvatarUnread calls={facts.calls} news={facts.news}><ContactGroupAvatar group={group} size="sm" /></AvatarUnread>}
         title={groupDisplayName(group)}
         accessory={facts.project ? <Chip className="gap-1"><Folder size={12} aria-hidden="true" />{facts.project.project.name}</Chip> : undefined}
         meta={facts.activityAt ? formatCalendarDay(facts.activityAt) : undefined}
         subtitle={<GroupMembersLine facts={facts} />}
-        trailing={facts.unread > 0 ? <Chip tone="accent" shape="count">{facts.unread > 99 ? '99+' : facts.unread}</Chip> : undefined}
         onClick={onSelect}
         onKeyDown={rowKeyActivate(onSelect)}
         onContextMenu={menu ? onContextMenu : undefined}

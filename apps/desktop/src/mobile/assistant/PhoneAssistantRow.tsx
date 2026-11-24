@@ -1,14 +1,14 @@
 import { useTranslation } from 'react-i18next'
-import { chatActivityAt } from '@gugu/core/shared/ui/chatModels'
+import { chatActivityAt, chatAttention } from '@gugu/core/shared/ui/chatModels'
 import { Avatar } from '@/components/Avatar'
-import { Chip } from '@/components/ui/Chip'
+import { AvatarUnread } from '@/components/AvatarUnread'
+import { chatLineNews } from '@/lib/chatLineUnread'
 import { ListRow } from '@/components/ui/ListRow'
 import { chatPreviewText } from '@/lib/systemNoticeText'
 import { AUTOMATION_TEST_IDS } from '@/lib/automationDom'
 import { formatCalendarDay } from '@/i18n/format'
 import { useChatStore } from '@/store/chatContext'
 import { PhoneGuguTabIcon } from './PhoneGuguTabIcon'
-import { PhoneMessageAvatar } from '../chat/PhoneMessageAvatar'
 import type { PhoneAssistantState } from './usePhoneAssistant'
 
 /**
@@ -22,7 +22,9 @@ export function PhoneAssistantRow({ state, onOpen }: { state: PhoneAssistantStat
   const chat = state.chatId ? chats.find((candidate) => candidate.id === state.chatId) : undefined
   const contact = state.assistant
   const name = contact?.display_name ?? t('rail')
-  const unread = chat?.unread_count ?? 0
+  // 同会话行一个口径(AvatarUnread):叫到你的数,其余新消息一个灰点;私聊每一条都叫到你。
+  const calls = chat ? chatAttention(chat).callsYou : 0
+  const news = !!chat && chatLineNews(chat, calls)
   return (
     <ListRow
       mobile
@@ -31,15 +33,14 @@ export function PhoneAssistantRow({ state, onOpen }: { state: PhoneAssistantStat
       role="option"
       aria-selected={false}
       data-testid={AUTOMATION_TEST_IDS.mobileAssistantNav}
-      emphasis={unread > 0}
+      emphasis={calls > 0 || news}
       onClick={onOpen}
-      leading={<PhoneMessageAvatar>{contact
+      leading={<AvatarUnread calls={calls} news={news}>{contact
         ? <Avatar name={name} avatarUrl={contact.avatar} seed={contact.id} size={48} isAgent />
-        : <PhoneGuguTabIcon name={name} fresh={state.stage.stage === 'onboarding'} />}</PhoneMessageAvatar>}
+        : <PhoneGuguTabIcon name={name} fresh={state.stage.stage === 'onboarding'} />}</AvatarUnread>}
       title={name}
       meta={chat ? formatCalendarDay(chatActivityAt(chat)) : undefined}
       subtitle={chat ? chatPreviewText(chat) : undefined}
-      trailing={unread > 0 ? <Chip tone="accent" shape="count">{unread > 99 ? '99+' : unread}</Chip> : undefined}
     />
   )
 }
