@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
@@ -14,6 +14,7 @@ import { AssistantDefaultAvatar } from './assistant/AssistantDefaultAvatar'
 import { useAvatarIdentity, useIsAssistantAvatar } from '../lib/avatarIdentity'
 import { isBuiltinAgentAvatarUrl, parseAgentLook } from './agentAvatar/look'
 import { agentLookPoster } from './agentAvatar/posters'
+import { avatarRetryGeneration, subscribeAvatarRetry, subscribeNoAvatarRetry } from '../lib/avatarRetry'
 
 export interface AvatarProps {
   name: string
@@ -74,7 +75,11 @@ export function Avatar({
   imageMatteColor,
 }: AvatarProps) {
   const theme = useAvatarTheme()
-  const [imgFailed, setImgFailed] = useState(false)
+  // The retry generation the picture failed in (null = it has not failed). A later generation (@@@avatar-retry: the
+  // network back, the window focused) draws the picture again once; failing again records the new generation.
+  const [failedAt, setFailedAt] = useState<number | null>(null)
+  const retryGeneration = useSyncExternalStore(failedAt === null ? subscribeNoAvatarRetry : subscribeAvatarRetry, avatarRetryGeneration, avatarRetryGeneration)
+  const imgFailed = failedAt !== null && failedAt === retryGeneration
   const identityKey = (seed ?? '').trim()
   const identity = useAvatarIdentity(isAgent === undefined && variant !== 'group' ? identityKey : '')
   const agent = isAgent ?? (identity ? identity.type === 'agent' : undefined)
@@ -92,7 +97,7 @@ export function Avatar({
   const [trackedUrl, setTrackedUrl] = useState(url)
   if (url !== trackedUrl) {
     setTrackedUrl(url)
-    setImgFailed(false)
+    setFailedAt(null)
   }
   const px = typeof size === 'number' ? size : SIZE_MAP[size]
   // Every identity uses the same circular picture, matte and unavailable state.
@@ -175,7 +180,8 @@ export function Avatar({
               src={url!}
               alt={name}
               style={imgStyle}
-              onError={() => { console.error(`[Avatar] failed to load canonical avatar for "${name || 'unknown'}"`); setImgFailed(true) }}
+              onLoad={() => { if (failedAt !== null) setFailedAt(null) }}
+              onError={() => { console.error(`[Avatar] failed to load canonical avatar for "${name || 'unknown'}"`); setFailedAt(avatarRetryGeneration()) }}
             />
           </span>
         ) : (
@@ -183,7 +189,8 @@ export function Avatar({
             src={url!}
             alt={name}
             style={imgStyle}
-            onError={() => { console.error(`[Avatar] failed to load canonical avatar for "${name || 'unknown'}"`); setImgFailed(true) }}
+            onLoad={() => { if (failedAt !== null) setFailedAt(null) }}
+              onError={() => { console.error(`[Avatar] failed to load canonical avatar for "${name || 'unknown'}"`); setFailedAt(avatarRetryGeneration()) }}
           />
         )
       ) : groupFace ? (
