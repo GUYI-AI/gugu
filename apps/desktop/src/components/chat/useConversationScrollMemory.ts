@@ -131,7 +131,10 @@ export function useConversationScrollMemory({
   // 整页已卸载的消息行。mac1 2026-09-25:每切一次会话多留 ~905 个脱离文档的节点,97% 经由这里。
   const [scrollerEl, setScrollerEl] = useState<HTMLElement | null>(null)
   const scrollerRef = useRef<HTMLElement | null>(null)
-  const [, rerender] = useReducer((n: number) => n + 1, 0)
+  // @@@restore-ends — 恢复结束(落定、让位给读者、放弃、忘掉)是一次状态变化:isPreservingPosition 换身份,
+  // useFollowingTail 按列表电平重算跟尾。从前落定时硬写「不跟尾」,落定在最底(偏移摆不下被夹住)时电平一直是
+  // 「在底部」不再翻转,跟尾就再也回不来:画面贴着底,每条新消息却都记进「N 条新消息」。
+  const [restoreEnds, restoreEnded] = useReducer((n: number) => n + 1, 0)
   // revealMessage: a message someone asked to see (#1708 来源消息). It travels the restore path below, and this
   // settles with it: resolved when the row has settled in place, rejected when it cannot be loaded or never settles.
   const revealRef = useRef<{ chatId: string; messageId: string; commit?: UnreadLocatorCommit; resolve: () => void; reject: (error: Error) => void } | null>(null)
@@ -193,7 +196,8 @@ export function useConversationScrollMemory({
 
   const isPreservingPosition = useCallback(() => (
     completedActivationRef.current !== activationKey && hasSavedOffBottomPosition()
-  ), [activationKey, hasSavedOffBottomPosition])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- restoreEnds is the gate opening (@@@restore-ends)
+  ), [activationKey, hasSavedOffBottomPosition, restoreEnds])
 
   const setScrollerRef = useCallback((value: HTMLElement | Window | null) => {
     const element = value instanceof HTMLElement ? value : null
@@ -236,9 +240,11 @@ export function useConversationScrollMemory({
 
   const forgetSavedPosition = useCallback(() => {
     if (chatId) positions.delete(positionKey)
+    const ending = completedActivationRef.current !== activationKey
     completedActivationRef.current = activationKey
     restoringActivationRef.current = null
     restoreDeadlineRef.current = null
+    if (ending) restoreEnded() // every pin to the bottom forgets; only the first one ends this opening's restore
   }, [activationKey, chatId, positionKey])
 
   // Show one message of this conversation, loaded or not: it becomes the position to restore, so a window
@@ -275,7 +281,7 @@ export function useConversationScrollMemory({
       settleReveal(position.messageId, new Error(`The message ${reason}`))
       positions.delete(positionKey)
       if (restoreDeadlineRef.current?.activationKey === activationKey) restoreDeadlineRef.current = null
-      rerender() // 列表可能正按 openLocation() === null 藏着等锚点;放弃了就重算一次,露出最新处
+      restoreEnded() // 列表可能正按 openLocation() === null 藏着等锚点;放弃了就重算一次,露出最新处
     }
     const location = resolveConversationRestoreLocation(position, messageIds)
     if (!location) {
@@ -287,8 +293,7 @@ export function useConversationScrollMemory({
           if (lastActivationRef.current !== activationKey) return
           log.error({ chatId, messageId: position.messageId, error }, 'loading saved message anchor failed')
           settleReveal(position.messageId, error instanceof Error ? error : new Error(String(error)))
-          forgetSavedPosition()
-          rerender() // the list is hidden while it waits for the anchor (openLocation() === null): show it again
+          forgetSavedPosition() // ends the restore: the list hidden while it waits for the anchor (openLocation() === null) shows again
         })
       }
       const timeout = window.setTimeout(() => abandon('is not in the loaded window'), Math.max(0, deadline.expiresAt - performance.now()))
@@ -317,8 +322,7 @@ export function useConversationScrollMemory({
             completedActivationRef.current = activationKey
             restoringActivationRef.current = null
             restoreDeadlineRef.current = null
-            isAtBottomRef.current = false
-            setFollowingTail(false)
+            restoreEnded()
             settleReveal(position.messageId)
             return
           }
@@ -343,6 +347,7 @@ export function useConversationScrollMemory({
       completedActivationRef.current = activationKey
       restoringActivationRef.current = null
       restoreDeadlineRef.current = null
+      restoreEnded()
       settleReveal(position.messageId)
     }
     const inputs = ['wheel', 'touchstart', 'pointerdown'] as const

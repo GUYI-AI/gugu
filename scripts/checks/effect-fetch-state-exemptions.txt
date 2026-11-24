@@ -17,7 +17,6 @@ components/chat/DocumentPreviewContent.tsx: effect-flow(render) - renders the xl
 components/chat/MessageFilePreview.tsx: effect-flow(lifecycle) - reads the bytes this opening shows once (readOnce; each opening reads again) and releases them when it closes
 components/chat/PdfPreview.tsx: effect-flow(render) - renders the pdf bytes in hand with pdf.js
 components/chat/messageActionModules.tsx: effect-flow(code) - loads a code chunk for a secondary surface, not data
-components/chat/useConversationScrollMemory.ts: effect-flow(view-state) - restores the saved scroll anchor (loads its message window, measures rows); the message window engine is its own module
 components/imageAnnotate/AnnotateEditor.tsx: effect-flow(render) - opens the annotation editor: decodes the viewer item's original bytes into its canvas
 components/preview/HtmlPreviewFrame.tsx: effect-flow(lifecycle) - registers a preview URL for the editor buffer in hand and releases it on cleanup
 components/preview/HtmlPreviewFrame.tsx: effect-flow(command) - pushes the edited buffer to the registered preview (debounced)
