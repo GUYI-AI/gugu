@@ -19,7 +19,6 @@ import type { ResolvedTab } from '@renderer/features/tabs/core/tab-provider';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { ContextMenu } from '@/components/ui/Menu';
-import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { ChatWorkspaceNewTab } from '@renderer/features/tabs/chat-workspace-new-tab';
 import { ChatWorkspaceTabContext } from '@renderer/features/tabs/chat-workspace-context';
 import { chatLayoutOf } from './chat-layouts';
@@ -37,7 +36,6 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
   chip,
   body,
   actionsSlot,
-  chromeActionsSlot = actionsSlot,
   reserveShellRestoreLane,
   leading,
   embedded = false,
@@ -47,13 +45,11 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
   embedded?: boolean;
   /** The strip's far end: the chat's icons (search, folder, members). */
   actionsSlot: ReactNode;
-  chromeActionsSlot?: ReactNode;
   reserveShellRestoreLane?: boolean;
   /** The strip's first point: the block's ⋮⋮ (BlockGrip) while the screen is split. */
   leading?: ReactNode;
 }) {
   const layout = chatLayoutOf(chatId);
-  const block = useScreenBlock();
   const host = useMemo<ChatTabHost>(() => ({ chip, body }), [chip, body]);
   // 页签右键「在新窗口打开」:除了这个对话自己那一枚,哪一枚都能单独成窗(和任务里的附页一样);它在窗里 = 把窗提到前面。
   useEffect(() => {
@@ -78,13 +74,10 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
       <PaneLayoutProvider paneLayout={layout}>
         <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
           <PaneTreeView layout={layout} chatChrome={{
-            actions: chromeActionsSlot,
+            actions: actionsSlot,
             addTab: <ChatWorkspaceNewTab layout={layout} />,
             leading,
             reserveShellRestoreLane,
-            // A chat or project block on the screen has no ScreenBlockContext of its own (its default is the whole window):
-            // its corner is read from the screen, or every such block would keep the window controls' room at its right.
-            atWindowEdge: !embedded && (blockId ? screenLayout.corners(blockId).topRight : block.topRight),
             embedded,
           }} renderPane={(paneId, first, last, part) => {
             const group = layout.groups.find((candidate) => candidate.paneId === paneId)!;

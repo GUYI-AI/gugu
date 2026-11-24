@@ -35,8 +35,6 @@ import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/ch
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
 import { openPanelItem } from '@renderer/features/chats/chat-tabs/chat-layouts';
 import { ComposerVerbDock } from '@renderer/features/sessions/task-dispatch-composer';
-import { TopicsPageSlot } from '@renderer/features/sidebar/topics-page-slot';
-import { useInnerSidebarTopicsAll } from '@/lib/innerSidebarBridge';
 import { ProjectBlock } from './project-block';
 import { SampleProjectBlock } from '@renderer/features/sample-project/sample-project-block';
 import { screenLayout, type ScreenBlockContent } from './screen-layout';
@@ -162,7 +160,6 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
  */
 const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: string; chatId: string }) {
   const { translate } = useSessionMessages();
-  const topicsPage = useInnerSidebarTopicsAll() === chatId;
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
   const actions = <ChatPartSlot chatId={chatId} part="actions" className="flex items-center" />;
@@ -172,8 +169,7 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
       blockId={blockId}
       leading={<BlockGrip blockId={blockId} content={{ kind: 'chat', chatId, title: '' }} label={translate('screen.gripApp')} />}
       reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
-      actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{actions}</TabBarActionRow>}
-      chromeActionsSlot={<TabBarActionRow atWindowEdge={false}>{actions}</TabBarActionRow>}
+      actionsSlot={<TabBarActionRow>{actions}</TabBarActionRow>}
       chip={({ tab, host }) => (
         <ChatTabChip
           tab={tab}
@@ -187,12 +183,9 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
       )}
       body={
         <>
-          {/* 「全部 ›」打开了这个群 / 项目的话题页:这一块换成那一页(主区,❌ 右侧栏)。对话照旧挂着只是藏起来 ——
-              页签条上的名字和右端那排图标是它画的,卸掉它们也就没了。 */}
-          {topicsPage ? <TopicsPageSlot chatId={chatId} /> : null}
-          <ChatSlot chatId={chatId} className={topicsPage ? 'hidden' : 'flex min-h-0 min-w-0 flex-1 flex-col'} />
+          <ChatSlot chatId={chatId} className="flex min-h-0 min-w-0 flex-1 flex-col" />
           {/* 对话的输入框选了「新任务 / 定时任务」:那个框收起,这里换上对应的框(结果回这个对话)。 */}
-          {topicsPage ? null : <ComposerVerbDock chatId={chatId} />}
+          <ComposerVerbDock chatId={chatId} />
         </>
       }
     />
@@ -225,7 +218,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
           />
         }
         actionsSlot={
-          <TabBarActionRow atWindowEdge={corners.topRight}>
+          <TabBarActionRow>
             {contribution ? (
               <button type="button" aria-label={translate('extensions.appSettings')} title={translate('extensions.appSettings')} data-testid="app-block-settings"
                 className="flex size-6 items-center justify-center rounded-md text-foreground-muted hover:bg-row-hover hover:text-foreground"
@@ -275,7 +268,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
       <TabStripShell
         reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
         leadingSlot={<BlockGrip blockId={blockId} content={content} label={translate('screen.gripApp')} />}
-        actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight} />}
+        actionsSlot={<TabBarActionRow />}
       >
         <TabSlot data-chat-app-block-tab={tabKind}>
           <TabChip

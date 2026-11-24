@@ -1228,9 +1228,9 @@ function InnerLayout({
       <ResourceMonitorHost />
       {contactsModal && (
         <Sheet onClose={() => selectTab(pageUnderContacts.current)} {...PAGE_MODAL_FRAME} testId="contacts-modal" ariaLabel={t('shell.contacts')}>
-          {/* The ✕ takes the top-right corner the window controls take on a page (--titlebar-controls-width): headers at the
-              edge and the drawer's close leave it that room (tokens.css, ContactsPageFrame). */}
-          <div data-contacts-modal="" className="relative flex min-h-0 flex-1 flex-col [--titlebar-controls-width:calc(var(--control-h-lg)+var(--spacing-lg)+4px-var(--pane-pad-x))]">
+          {/* The ✕ takes the modal's top-right corner (--pane-corner-reserve): headers at the edge and the drawer's close leave
+              it that room (tokens.css, ContactsPageFrame). */}
+          <div data-contacts-modal="" className="relative flex min-h-0 flex-1 flex-col [--pane-corner-reserve:calc(var(--control-h-lg)+var(--spacing-lg)+4px-var(--pane-pad-x))]">
             <ContactsPanel externalContactId={externalContactId} mobile={false} scanSeed={scanSeed} onSwitchToChat={contactsSwitchToChat} onOpenGroupChat={contactsOpenGroupChat} onOpenAgentCreateDraft={openAgentCreateDraftFromContacts} />
             <ModalClose floating onClose={() => selectTab(pageUnderContacts.current)} />
           </div>

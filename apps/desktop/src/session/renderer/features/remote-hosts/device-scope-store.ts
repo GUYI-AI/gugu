@@ -1,6 +1,6 @@
 // #6264 分机器的模块各自的机器选择(owner:「整个资源库或者其他的都是分设备的」)。
 //
-// 一个窗口、一个账号;资源库、已安排、存储这类模块里的东西都是**某一台机器的**,模块顶上一个选择器,默认本机。
+// 一个窗口、一个账号;资源库、存储这类模块里的东西都是**某一台机器的**,模块顶上一个选择器,默认本机。
 // 选的是**整个模块**看哪台机器 —— 资源库里切到 d22,提示词、智能体、集成、扩展全是 d22 的;❌ 按页各选各的。
 //
 // 记在视图状态表里、只放内存(每个模块一格,persist: false):这次打开里一直停在那台机器上,重开回到本机;❌ 不跟账号走
@@ -56,8 +56,6 @@ export class DeviceScopeStore {
 
 /** 资源库(提示词、智能体、集成、扩展一起跟着它)。 */
 export const libraryDeviceStore = new DeviceScopeStore('gugu.library.device');
-/** 已安排:列的、建的、跑的都是这台机器上的,由这台机器自己的调度器按时跑。 */
-export const automationsDeviceStore = new DeviceScopeStore('gugu.automations.device');
 /** 设置(通用 → 默认 tmux、仓库):左栏列头下一个选择,整个设置一起跟;界面、浏览器两页跟着这个窗口。 */
 export const settingsDeviceStore = new DeviceScopeStore('gugu.settings.device');
 

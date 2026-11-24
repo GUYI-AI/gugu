@@ -42,7 +42,7 @@ export const SampleProjectBlock = observer(function SampleProjectBlock({ blockId
       <TabStripShell
         reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
         leadingSlot={<BlockGrip blockId={blockId} content={{ kind: 'sample-project', title: translate('projects.sample.name') }} label={translate('screen.gripApp')} />}
-        actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight} />}
+        actionsSlot={<TabBarActionRow />}
       >
         <TabSlot data-sample-project-tab="">
           <TabChip isActive isFocusedPane={focused} label={translate('projects.sample.name')} hint={translate('projects.sample.tag')} />

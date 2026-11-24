@@ -1,4 +1,4 @@
-/* @@@win-titlebar-row — Windows 独立标题栏行(WindowTitleBar.tsx)。
+/* @@@win-titlebar-row — Windows / Linux 独立标题栏行(WindowTitleBar.tsx)。
    ⚠️ 选择器都带 `:root`:tokens.css 那条 `*:not(.gugu-skin, …){margin:0;padding:0}` 与单个类同特指度,
    谁后加载谁赢;带上 `:root` 才稳压(与 Sidebar.css 的 @@@rail-inset 同一处方)。 */
 

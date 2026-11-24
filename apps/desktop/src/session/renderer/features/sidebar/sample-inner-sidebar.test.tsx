@@ -52,7 +52,7 @@ vi.mock('@renderer/app/screen-layout', () => ({
   screenLayout: {
     get focusedBlockId() { return state.live.screen.focusedBlockId; },
     get blocks() { return state.live.screen.blocks; },
-    corners: () => ({ topLeft: false, topRight: false }),
+    corners: () => ({ topLeft: false }),
   },
 }));
 vi.mock('@renderer/app/screen-layout-actions', () => ({ forgetSampleProjectOnScreen: vi.fn() }));

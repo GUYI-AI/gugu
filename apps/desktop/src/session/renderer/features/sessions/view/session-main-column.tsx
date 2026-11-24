@@ -145,13 +145,12 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
       >
         <div className="h-full min-h-0 min-w-0" data-session-panes="">
           <PaneTreeView layout={paneLayout} chatChrome={{
-            actions: <SessionBlockActions atScreenEdge={false} />,
+            actions: <SessionBlockActions />,
             addTab: <ChatWorkspaceNewTab layout={paneLayout} />,
             leading: <SessionGrip />,
-            atWindowEdge: place.topRight,
             reserveShellRestoreLane: place.topLeft && !windowId && shellRestoreLaneTaken(),
             leadingReservePx: windowId ? auxLeadingReserve() : undefined,
-          }} renderPane={(paneId, first, last, part) => <PaneCell paneId={paneId} part={part} atLeftEdge={first} atWindowEdge={last} draggingTabId={drag.dragging} />} />
+          }} renderPane={(paneId, first, last, part) => <PaneCell paneId={paneId} part={part} atLeftEdge={first} atBlockEdge={last} draggingTabId={drag.dragging} />} />
         </div>
         <TabDragOverlay />
       </DndContext>
@@ -164,7 +163,7 @@ const PaneCell = observer(function PaneCell({
   paneId,
   part,
   atLeftEdge,
-  atWindowEdge,
+  atBlockEdge,
   draggingTabId,
 }: {
   paneId: string;
@@ -172,8 +171,8 @@ const PaneCell = observer(function PaneCell({
   part: 'all' | 'bar' | 'body';
   /** 这一块左上那一格 —— 它的页签条最左是 ⋮⋮;这一块又在屏的左上时,侧栏收起要让开那枚浮动的「展开侧栏」钮。 */
   atLeftEdge: boolean;
-  /** 这一块右上那一格 —— 托管这一块自己的控制(在哪打开、输出、分享、关闭这一块);这一块又在屏的右上时让开窗口控制条。 */
-  atWindowEdge: boolean;
+  /** 这一块右上那一格 —— 托管这一块自己的控制(在哪打开、输出、分享)。 */
+  atBlockEdge: boolean;
   draggingTabId: string | null;
 }) {
   const sessionView = useWorkspaceViewModel();
@@ -187,7 +186,7 @@ const PaneCell = observer(function PaneCell({
   const strip = {
     tabLeadingSlot: atLeftEdge ? <SessionGrip /> : undefined,
     tabTrailingSlot: <TabBarAddMenu />,
-    actionsSlot: atWindowEdge ? <SessionBlockActions atScreenEdge={block.topRight} /> : undefined,
+    actionsSlot: atBlockEdge ? <SessionBlockActions /> : undefined,
     reserveShellRestoreLane: atLeftEdge && block.topLeft && !block.windowId && shellRestoreLaneTaken(),
     leadingReservePx: atLeftEdge && block.windowId ? auxLeadingReserve() : undefined,
   };
@@ -212,7 +211,7 @@ const PaneCell = observer(function PaneCell({
  * 对话成了页签之后它们落在这一块右上那条页签条的右端(spec「页签条右端只放这一块自己的控制」)。
  * 动作对着这一块正在看的那条会话(子会话的页签在前面就是子会话)。
  */
-const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge }: { atScreenEdge: boolean }) {
+const SessionBlockActions = observer(function SessionBlockActions() {
   const { sessionId: pageSessionId, projectId } = useSessionViewContext();
   const { paneLayout } = useWorkspaceViewModel();
   const { windowId } = useScreenBlock();
@@ -220,7 +219,7 @@ const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge
   const session = sessionId ? sessionRegistry.get(pageSessionId)?.sessions.get(sessionId) : undefined;
   const startupFailure = useSessionStartupFailure(sessionId ?? null);
   return (
-    <TabBarActionRow atWindowEdge={atScreenEdge}>
+    <TabBarActionRow>
       <SessionMachineStatus />
       <DesktopLiveWindowHeader projectId={projectId} sessionId={sessionId} paneLayout={paneLayout} iconless />
       {/* spec session-terminal-model-switch:终端会话看不到输入框,换模型的入口在这里;通用模式的输入框里已经有一颗。

@@ -7,7 +7,6 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ConnectionStatus } from '@/components/connection/ConnectionStatus';
 import type { ConnectionState } from '@/components/connection/connectionState';
-import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { headerConnectionState } from '@renderer/features/remote-hosts/header-connection-state';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -91,12 +90,11 @@ function useCompactWhenTabsSqueezed(ref: RefObject<HTMLSpanElement | null>): boo
 /** A cold session block (no tabs yet): the same strip position, holding only the machine's state. */
 export const ColdSessionStrip = observer(function ColdSessionStrip({ children }: { children: ReactNode }) {
   const { projectId } = useSessionViewContext();
-  const block = useScreenBlock();
   if (!machineRegistry.machineOf(projectId)) return <>{children}</>;
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
       <div className="flex shrink-0 justify-end [-webkit-app-region:drag]" data-slot="cold-session-strip">
-        <TabBarActionRow atWindowEdge={block.topRight || Boolean(block.windowId)}>
+        <TabBarActionRow>
           <SessionMachineStatus />
         </TabBarActionRow>
       </div>

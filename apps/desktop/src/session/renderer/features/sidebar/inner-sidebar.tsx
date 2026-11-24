@@ -221,9 +221,10 @@ const InnerSidebarColumn = observer(function InnerSidebarColumn({
     <InnerSidebarFrame kind={anchor.kind} chatId={anchor.chatId}>
       <InnerHeadRow anchor={anchor} summary={summary} active={headActive} />
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
-        {/* 群、项目同一个次序(第 16 版稿):「话题」在上、「智能体」在下。「全部 ›」开的是主区的话题页,这一列不变。 */}
+        {/* 群、项目同一个次序(第 16 版稿):「话题」在上、「智能体」在下。「全部 ›」在这一列里原地摊开全部话题(带搜索),
+            收走下面的「智能体」,「全部 › / ‹ 返回」因此永远在同一个位置;主区照旧是当前会话。 */}
         {topics}
-        {agentsSection}
+        {levelTwo ? null : agentsSection}
       </div>
     </InnerSidebarFrame>
   );
@@ -332,11 +333,7 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
             variant="ghost"
             size="xs"
             data-inner-topics-drill={levelTwo ? 'back' : 'all'}
-            onClick={() => {
-              // 话题页开在这个群 / 项目那一块里:先回到它本身,再换成那一页;已开着 = 关掉,回到群。
-              if (!levelTwo) navigateToGroupRoot(chatId);
-              setInnerSidebarTopicsAll(levelTwo ? null : chatId);
-            }}
+            onClick={() => setInnerSidebarTopicsAll(levelTwo ? null : chatId)}
           >
             {levelTwo ? (
               <>

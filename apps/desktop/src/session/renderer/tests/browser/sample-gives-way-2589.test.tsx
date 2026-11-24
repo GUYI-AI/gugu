@@ -58,7 +58,6 @@ vi.mock('@/components/ChatListPanel', async () => {
   };
 });
 vi.mock('@/components/chat/InnerSidebarTopics', () => ({ InnerSidebarTopics: () => null }));
-vi.mock('@/components/chat/InnerTopicsPage', () => ({ InnerTopicsPage: () => null }));
 vi.mock('@/hooks/useNativeAgentChats', () => ({ useNativeAgentChats: <T,>(chats: T) => chats }));
 vi.mock('@/hooks/useMarkChatsRead', () => ({ useMarkChatsRead: () => () => {} }));
 vi.mock('@/lib/projectGroupChatsBridge', () => ({ useProjectGroupChats: () => NO_GROUPS }));

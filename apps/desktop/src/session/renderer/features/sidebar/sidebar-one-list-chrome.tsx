@@ -1,4 +1,4 @@
-import { Archive, ChevronsLeft, ChevronsRight, Clock, FolderPlus, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
+import { Archive, Clock, FolderPlus, PanelLeft, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
@@ -146,7 +146,7 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
  * is under them is moved by the difference times the progress (followBelowRailRow, followListOffset), so between the two
  * ends the rows move with the fold and land where the rail draws them, ❌ jump when the layout flips.
  */
-/** The fold row: 12 + the 32px search field + 12 expanded; 「»」's 36 on the rail. */
+/** The fold row: 12 + the 32px search field + 12 expanded; the fold button's 36 on the rail. */
 const RAIL_ROW_OPEN_PX = 56;
 const RAIL_ROW_RAIL_PX = 36;
 /** Under 创建智能体 and its 「+」 (followTopRow). */
@@ -176,18 +176,19 @@ export function followListOffset(element: HTMLElement, progress: number, railLay
 }
 
 /**
- * The fold row, under the head: 「«」 at the end of the search field expanded (界面减法 #46: search is at the top only while
- * the sidebar is open), 「»」 on the avatars' axis on the rail — the fold button is in this row in both states, ❌ a row of its
- * own. Each changes where the rows take the rail's layout (@@@panel-track); the field and 「«」 fade with the names before that.
+ * The fold row, under the head: the fold button at the end of the search field expanded (界面减法 #46: search is at the top only
+ * while the sidebar is open), on the avatars' axis on the rail — the fold button is in this row in both states, ❌ a row of
+ * its own. Each changes where the rows take the rail's layout (@@@panel-track); the field and the button fade with the names
+ * before that.
  */
 function SidebarRailRow({ visibilityRef }: { visibilityRef: RefObject<HTMLDivElement | null> }) {
   const railLayout = useLeftRailLayout();
   const fieldRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   const rowRef = useSidebarProgressFollow<HTMLDivElement>(followRailRowHeight);
   return (
-    // Design v16: on the rail 「»」 is centred on the avatars' axis (34 of 68), 38 from the window's top on macOS (lifted into
-    // the head band by --sidebar-rail-fold-lift; the row keeps its height, so nothing under it moves). Open, the search field keeps its side inset
-    // (12) above and below it too (yangchichi 11-24: the gaps were too wide).
+    // Design v16: on the rail the fold button is centred on the avatars' axis (34 of 68), 38 from the window's top on macOS
+    // (lifted into the head band by --sidebar-rail-fold-lift; the row keeps its height, so nothing under it moves). Open, the
+    // search field keeps its side inset (12) above and below it too (yangchichi 11-24: the gaps were too wide).
     <div
       ref={(row) => {
         rowRef.current = row;
@@ -206,7 +207,7 @@ function SidebarRailRow({ visibilityRef }: { visibilityRef: RefObject<HTMLDivEle
   );
 }
 
-/** Folds / unfolds the sidebar: 「«」 / 「»」 in the fold row (SidebarRailRow). */
+/** Folds / unfolds the sidebar: the fold button in the fold row (SidebarRailRow), both states. */
 function SidebarFoldButton() {
   const { translate } = useSessionMessages();
   const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
@@ -217,7 +218,7 @@ function SidebarFoldButton() {
   return (
     <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side={isLeftOpen ? 'bottom' : 'right'}>
       <IconButton size="md" tone="strong" className="window-no-drag-region !h-[26px] !w-[30px] !rounded-[7px]" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
-        {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}
+        <PanelLeft />
       </IconButton>
     </Hint>
   );
@@ -412,5 +413,5 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot() {
   );
 });
 
-/** Each step's button: 「«」 in the head, 会话历史 in the foot. */
+/** Each step's button: the fold button in the head, 会话历史 in the foot. */
 const SIDEBAR_INTRO_ANCHOR = { collapse: 'sidebar-fold', history: 'sidebar-session-history' } as const;
