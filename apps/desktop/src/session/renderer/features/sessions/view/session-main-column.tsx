@@ -21,7 +21,6 @@ import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { TabDragOverlay } from '@renderer/features/tabs/tab-bar/tab-drag-preview';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
-import { MenuItem } from '@/components/ui/Menu';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sessionViewOfRuntime } from '@shared/core/sessions/sessions';
 import { parseExtensionTabKind } from '@shared/extensions/manifest';
@@ -91,13 +90,14 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
   };
 
   /**
-   * 页签右键「在新窗口打开」:会话自己那枚 = 整个会话单独成窗(已经在窗里的不再开一扇),App 那枚 = 这个 App,
-   * 别的附页 = 这一枚单独成窗。要打开的那枚正在某扇窗里 = 把那扇窗提到前面。
+   * 页签右键「在新窗口打开」:App 那枚 = 这个 App,别的附页 = 这一枚单独成窗。要打开的那枚正在某扇窗里 = 把那扇窗提到前面。
+   * 会话自己那枚没有这一项:整个会话单独成窗只在内层侧栏它那一行的右键里(一处入口)。
    */
   useEffect(() => {
     paneLayout.setWindowOpener((tabId) => {
       if (ownedByTask(tabId)) return null;
       const content = windowContentOf(tabId);
+      if (content?.kind === 'session') return null;
       if (content) return windowId ? null : () => openInWindow(content);
       return () => openTabInWindow({ projectId, sessionId: pageSessionId }, paneLayout, tabId);
     });
@@ -241,18 +241,11 @@ const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge
   );
 });
 
-/** 这一块左上的 ⋮⋮(屏上不止一块时才有,BlockGrip):按住 = 整个会话连同它分好的格子一起挪;右键 = 在新窗口打开。 */
+/** 这一块左上的 ⋮⋮(屏上不止一块时才有,BlockGrip):按住 = 整个会话连同它分好的格子一起挪,拖出窗外 = 单独成窗。 */
 const SessionGrip = observer(function SessionGrip() {
   const { translate } = useSessionMessages();
   const { projectId, sessionId } = useSessionViewContext();
   const { blockId } = useScreenBlock();
   const title = sessionRegistry.get(sessionId)?.sessions.get(sessionId)?.data.title ?? '';
-  return (
-    <BlockGrip
-      blockId={blockId}
-      content={{ kind: 'session', projectId, sessionId, title }}
-      label={translate('screen.grip')}
-      menu={<MenuItem onClick={() => openInWindow({ kind: 'session', projectId, sessionId })}>{translate('screen.openInWindow')}</MenuItem>}
-    />
-  );
+  return <BlockGrip blockId={blockId} content={{ kind: 'session', projectId, sessionId, title }} label={translate('screen.grip')} />;
 });

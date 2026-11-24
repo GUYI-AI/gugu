@@ -23,6 +23,7 @@ export type SessionMenuAction =
   | 'reload'
   | 'legacy-history'
   | 'leave-split'
+  | 'open-window'
 
 export type SessionMenuEntry = 'tab' | 'sidebar-row' | 'one-list-task' | 'phone' | 'contacts'
 
@@ -46,6 +47,8 @@ export type SessionMenuState = {
   hasLegacyHistory?: boolean
   /** The task is a block of a split screen: 取消并排 takes it off the screen. */
   inSplit?: boolean
+  /** The whole task can open in a window of its own (screen-layout openInWindow): the one entry for it, on its row. */
+  canOpenWindow?: boolean
 }
 
 /**
@@ -146,6 +149,8 @@ function allItems(state: SessionMenuState): SessionMenuItem[] {
   // 更多 — copy the session id: a tool for reporting a problem.
   items.push({ id: 'copy-id', label: session('sidebar.copySessionId'), icon: 'copy', fold: true })
   // 更多 — the legacy history: read once, after the move to tasks.
+  // A window of its own: now and then, to keep an eye on a task beside the main window. The task's only such entry.
+  if (state.canOpenWindow) items.push({ id: 'open-window', label: session('screen.openInWindow'), icon: 'window', fold: true })
   if (state.hasLegacyHistory) items.push({ id: 'legacy-history', label: session('legacyDm.history'), icon: 'history', fold: true })
   return items
 }

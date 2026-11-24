@@ -15,4 +15,9 @@ describe('取消并排 in the row menus', () => {
     expect(personalConversationMenu({ canDelete: true, hasUnread: false, inSplit: true })[0]).toMatchObject({ id: 'leave-split', label: { ns: 'session', key: 'screen.leaveSplit' } });
     expect(personalConversationMenu({ canDelete: true, hasUnread: false }).some((item) => item.id === 'leave-split')).toBe(false);
   });
+
+  it('an agent row: 在新窗口打开 is in its 更多, the task\'s one entry for a window of its own', () => {
+    const items = sessionMenu('sidebar-row', { pinned: false, sidebarPin: null, canOpenWindow: true }, new Set([...handled, 'open-window' as const]));
+    expect(items.find((item) => item.id === 'open-window')).toMatchObject({ label: { ns: 'session', key: 'screen.openInWindow' }, icon: 'window', fold: true });
+  });
 });
