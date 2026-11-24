@@ -202,7 +202,7 @@ export type MemberListPanelProps = {
   chatId: string
   /** 群和话题都用这一个面板;话题的成员名单可以比来源窄。 */
   chatKind: 'group' | 'topic'
-  /** 页头归宿主画(群设置栈 / 👥 右栏 / 话题分栏各画各的);这里只给标题与标题旁的动作。 */
+  /** 页头归宿主画(群设置栈 / 👥 右栏各画各的);这里只给标题与标题旁的动作。 */
   head: (title: ReactNode, actions: ReactNode) => ReactNode
   /**
    * 名片显示的群或话题名。话题还用这份名字做就地改名。spec 把「名字可改」当成「建立只有一步」的**理由**

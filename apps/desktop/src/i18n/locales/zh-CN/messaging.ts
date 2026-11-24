@@ -743,14 +743,31 @@ export default {
       "uploading": "上传中"
     }
   },
+  "groupDetails": {
+    "topicSummary": "话题 · {{count}} 人",
+    "topicSummary_one": "话题 · {{count}} 人",
+    "topicSource": "来自群「{{name}}」",
+    "backToGroup": "回到群",
+    "searchHistory": "搜索聊天记录",
+    "searchChat": "搜索对话",
+    "people": "{{count}} 人",
+    "people_one": "{{count}} 人",
+    "agents": "{{count}} 个智能体",
+    "agents_one": "{{count}} 个智能体"
+  },
+  "conversationCard": {
+    "rename": "改名",
+    "notifications": "消息通知",
+    "details": "详情"
+  },
   "header": {
+    "details": "详情",
     "apps": "应用",
     "members": "{{count}} 位成员",
     "searchHistory": "搜索聊天记录",
     "groupInfoAndSettings": "群信息与设置",
     "noApps": "本设备暂无可用的应用。",
     "announcement": "群公告",
-    "groupInfo": "群信息",
     "chatInfo": "会话信息",
     "memberList": "成员列表",
     "more": "更多操作",
@@ -966,15 +983,7 @@ export default {
       "openedBy": "由 {{name}} 创建",
       "quiet": "暂无消息"
     },
-    "openFailed": "无法打开话题。该消息可能已被删除，请从其他消息开启话题。",
-    "pane": {
-      "attachments": "附件",
-      "members": "成员",
-      "collapseSplit": "收起分栏",
-      "collapseSplitHint": "收起分栏，话题不会关闭",
-      "composerPlaceholder": "输入消息",
-      "empty": "此话题暂无消息"
-    }
+    "openFailed": "无法打开话题。该消息可能已被删除，请从其他消息开启话题。"
   },
   "resources": {
     "copyUrl": "复制咕咕 URL",

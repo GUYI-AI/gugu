@@ -1,7 +1,7 @@
 import { type CSSProperties, type ReactNode } from 'react'
 import type { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 import { useTranslation } from 'react-i18next'
-import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
+import { UiPortalContainerProvider, useUiPopupZIndex } from '@gugu/session-ui/react/primitives'
 import { cn } from '@/lib/cn'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { Dialog } from './Dialog'
@@ -29,6 +29,22 @@ const visuallyHidden =
 //
 // Base UI supplies the behavior engine (focus trap/restore, inert background, nested Escape stack,
 // accessible dialog semantics). Gugu keeps the public API, responsive geometry, motion, and tokens.
+
+/**
+ * @@@page-modal-frame — the frame of a whole page shown as a modal over the shell (设置、联系人、App 市场、一个 App 的页):
+ * one size for all of them, so they read as one kind of place.
+ * owner:「设置页太小了,可以大一点」→ 1000x680;10-16「设置页偏小,放大一点」→ 1080x760。宽度不写视口兜底:Sheet 自带
+ * maxWidth:100%。高度必须自己兜 —— desktopHeight 是硬高度,矮窗口不给 maxHeight 就会顶出屏幕。
+ * ❌ 别写成 min(1000px, ...):jsdom 的 cssstyle 不解析 min(),整条声明会被丢成空,尺寸回归就没人守了。
+ * --z-settings:高于所有工作区弹窗,低于 --z-overlay(图片预览)与提示条 —— 页里弹出的提示 / 图片仍要可见(#1182)。
+ */
+export const PAGE_MODAL_FRAME = {
+  fullScreenMobile: true,
+  desktopWidth: '1080px',
+  desktopMaxHeight: 'calc(100dvh - 64px)',
+  desktopHeight: '760px',
+  zIndex: 'var(--z-settings)',
+} as const satisfies Partial<SheetProps>
 
 export interface SheetProps {
   open?: boolean
@@ -82,7 +98,11 @@ export interface SheetProps {
   closeOnBackdrop?: boolean
   /** Add the standard scrim when this sheet opens inside another dialog. */
   dimNested?: boolean
-  /** Stacking order. Default var(--z-modal)；非常规层传 var(--z-*) token（#1899），❌ 魔数。 */
+  /**
+   * Stacking order. Default: just above the sheet it is opened from (each Sheet tells its content its layer), else
+   * var(--z-modal) —— a dialog opened inside Settings or a page modal (--z-settings) is never drawn under it.
+   * 非常规层传 var(--z-*) token（#1899），❌ 魔数。
+   */
   zIndex?: number | string
 }
 
@@ -104,10 +124,13 @@ export function Sheet({
   titleId,
   closeOnBackdrop = true,
   dimNested = false,
-  zIndex = 'var(--z-modal)',
+  zIndex: zIndexProp,
 }: SheetProps) {
   const { t } = useTranslation()
   const mobile = useMobileShell()
+  // An explicit layer is the caller's choice; the default follows the surface it is opened from (useUiPopupZIndex).
+  const layered = useUiPopupZIndex('var(--z-modal)')
+  const zIndex = zIndexProp ?? layered
   useBackLayer(() => { if (!onEscape?.()) onClose() }, open)
 
   const mobileStyle: CSSProperties = {

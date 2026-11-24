@@ -21,13 +21,13 @@ beforeEach(async () => {
 });
 afterEach(() => { harness?.cleanup(); delete document.documentElement.dataset.theme; delete document.documentElement.dataset.platform; });
 
-it.each(['light', 'dark'])('real contacts selected detail keeps the same %s inset frame without full-height navigation borders', async (theme) => {
+it.each(['light', 'dark'])('real contacts in the %s page modal open a selected detail without full-height navigation borders', async (theme) => {
   document.documentElement.dataset.theme = theme;
   harness = createReactHarness();
   harness.container.style.cssText = 'position:fixed;inset:0;display:flex';
   await renderWithAppProviders(harness,
     <div data-desktop-shell="" style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-      <div data-shell-contacts="" style={{ flex: 1, minHeight: 0 }}>
+      <div data-contacts-modal="" style={{ flex: 1, minHeight: 0 }}>
         <ContactsPanel mobile={false} />
       </div>
     </div>, {
@@ -36,21 +36,13 @@ it.each(['light', 'dark'])('real contacts selected detail keeps the same %s inse
       contacts: { contacts: [contact({ id: 'alice', display_name: 'Alice' })], groupChats: [] },
       chat: { chats: [] },
     });
-  const region = harness.container.querySelector<HTMLElement>('[data-shell-contacts]')!;
+  const region = harness.container.querySelector<HTMLElement>('[data-contacts-modal]')!;
   const getDetail = () => region.querySelector<HTMLElement>(':scope > div > :nth-child(2)')!;
-  const geometry = () => {
-    const detail = getDetail();
-    const a = region.getBoundingClientRect(); const b = detail.getBoundingClientRect();
-    expect(b.width, 'real CSS geometry must be present').toBeGreaterThan(600);
-    expect(b.top - a.top).toBeCloseTo(5);
-    expect(a.bottom - b.bottom).toBeCloseTo(5);
-    expect(a.right - b.right).toBeCloseTo(5);
-    expect(getComputedStyle(detail).borderRadius).toBe('12px');
-  };
-  geometry();
+  expect(getDetail().getBoundingClientRect().width, 'real CSS geometry must be present').toBeGreaterThan(600);
   const nav = region.querySelector<HTMLElement>('[data-role="nav"]')!;
   expect(getComputedStyle(nav).borderInlineEndWidth).toBe('0px');
-  expect(getComputedStyle(getDetail().querySelector('.gg-pane-header')!).borderBottomWidth).toBe('1px');
+  // The contacts modal follows Settings' content layout: the page header draws no rule (desktop-shell.css @@@page-modal).
+  expect(getComputedStyle(getDetail().querySelector('.gg-pane-header')!).borderBottomWidth).toBe('0px');
   // 人在「个人」分组:先在左栏点开它,右边铺开这一组。
   await page.elementLocator(region.querySelector<HTMLElement>('[data-testid="contacts-section-nav"][data-section-key="people"]')!).click();
   await until('people group spreads on the right', () => !!region.querySelector('[data-contact-id="alice"]'));
@@ -58,23 +50,21 @@ it.each(['light', 'dark'])('real contacts selected detail keeps the same %s inse
   // Match the stable contact name while still exercising the real browser click.
   await page.getByRole('button', { name: /Alice/ }).click();
   await until('real contact profile opens', () => getDetail().textContent!.includes('Alice'));
-  geometry();
   // 资料在右边那一列抽屉里(ContactsPageFrame),外框还是同一张卡片。
   expect(getDetail().querySelector('[data-testid="contacts-detail-drawer"] .gg-pane-title')?.textContent).toBe('Alice');
 });
 
-it('an empty contacts page keeps the inset frame, a titled header with its rule, and the empty-state call to action', async () => {
+it('an empty contacts page keeps a titled header (no rule in the modal) and the empty-state call to action', async () => {
   harness = createReactHarness();
   harness.container.style.cssText = 'position:fixed;inset:0;display:flex';
   await renderWithAppProviders(harness,
     <div data-desktop-shell="" style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-      <div data-shell-contacts="" style={{ flex: 1, minHeight: 0 }}><ContactsPanel mobile={false} onOpenAgentCreateDraft={() => {}} /></div>
+      <div data-contacts-modal="" style={{ flex: 1, minHeight: 0 }}><ContactsPanel mobile={false} onOpenAgentCreateDraft={() => {}} /></div>
     </div>, { shellTab: 'contacts', contacts: { contacts: [], groupChats: [], sharedGroupAgents: [] }, chat: { chats: [] } });
-  const detail = harness.container.querySelector<HTMLElement>('[data-shell-contacts] > div > :nth-child(2)')!;
-  expect(detail.getBoundingClientRect().height).toBe(750);
-  // 右边恒是一个分组页(ContactsPageFrame):页头有标题、有分隔线,❌ 空白页头。
+  const detail = harness.container.querySelector<HTMLElement>('[data-contacts-modal] > div > :nth-child(2)')!;
+  // 右边恒是一个分组页(ContactsPageFrame):页头有标题,❌ 空白页头。弹窗里照设置的版式,页头不画分隔线(@@@page-modal)。
   const header = detail.querySelector<HTMLElement>('.gg-pane-header')!;
   expect(header.querySelector('.gg-pane-title')?.textContent).toBeTruthy();
-  expect(getComputedStyle(header).borderBottomWidth).toBe('1px');
+  expect(getComputedStyle(header).borderBottomWidth).toBe('0px');
   expect(detail.querySelector('[data-testid="contacts-agent-empty"]')).not.toBeNull();
 });

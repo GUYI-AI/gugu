@@ -21,6 +21,7 @@ import type { TurnStart,
   RecordEntry,
   RecordImageRef,
   RecordResetReason,
+  RuntimeTurnPictures,
   SessionRecordResume,
   SessionRecordSource,
   SessionTimeline,
@@ -246,6 +247,8 @@ class RecordTimeline implements SessionTimeline {
   private liveReply: SessionLiveReply | null = null;
   /** The runtime's turn in progress (`syncActiveTurn`): live like the rest of the side channels, never archived. */
   private runtimeTurn: TranscriptTurn | null = null;
+  /** Where the runtime turn's pictures are: with the runtime (its turn arrives with `imageRefs` only). */
+  private runtimePictures: RuntimeTurnPictures | null = null;
   /** The turns that had ended when the runtime's turn started: none of them is a copy of it (`withoutCopiesOf`). */
   private endedBeforeRuntime: ReadonlySet<string> = new Set();
   /** The journal's turns by key, in journal order; read again with the journal, never archived. */
@@ -486,6 +489,14 @@ class RecordTimeline implements SessionTimeline {
 
   async toolImage(input: { itemId: string; index: number; maxChars?: number }): Promise<ToolImageLookup> {
     const maxChars = input.maxChars ?? TOOL_IMAGE_FETCH_LIMIT;
+    const runtime = this.runtimeTurn;
+    const pictures = this.runtimePictures;
+    if (runtime && pictures && findToolItem([runtime], input.itemId)) {
+      const found = await pictures(input.itemId, input.index);
+      return found.ok && found.image.data.length > maxChars
+        ? { ok: false, code: 'too_large', message: `picture #${input.index} is ${found.image.data.length} chars; over ${maxChars}` }
+        : found;
+    }
     const turns = this.currentTurns();
     const found = findToolImage(turns, input.itemId, input.index, maxChars);
     if (found.ok || found.code !== 'no_such_image') return found;
@@ -688,8 +699,10 @@ class RecordTimeline implements SessionTimeline {
     this.publish();
   }
 
-  syncActiveTurn(turn: TranscriptTurn | null): void {
-    if (this.disposed || this.runtimeTurn === turn) return;
+  syncActiveTurn(turn: TranscriptTurn | null, pictures?: RuntimeTurnPictures): void {
+    if (this.disposed) return;
+    this.runtimePictures = turn && pictures ? pictures : null;
+    if (this.runtimeTurn === turn) return;
     if (turn && turn.id !== this.runtimeTurn?.id) this.endedBeforeRuntime = endedTurnIds(this.recordedTurns().turns);
     this.runtimeTurn = turn;
     this.sent.learn(turn);

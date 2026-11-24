@@ -22,7 +22,7 @@ const { i18n } = await import('../../../../apps/desktop/src/i18n/runtime')
 
 const box = (x: number, y: number, width: number, height: number) => () => ({ width, height, x, y, top: y, left: x, right: x + width, bottom: y + height, toJSON() {} }) as DOMRect
 const place = <T extends HTMLElement>(element: T, rect: () => DOMRect) => { element.getBoundingClientRect = rect; element.scrollIntoView = vi.fn(); return element }
-let rail: HTMLElement
+let me: HTMLElement
 /** The task page's one-list sidebar (#2548): 创建智能体 on top, the list's scroller under it. */
 let sidebar: HTMLElement
 let createAgent: HTMLElement
@@ -30,24 +30,19 @@ let list: HTMLElement
 beforeEach(async () => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} })
   await i18n.changeLanguage('zh-CN')
-  rail = document.createElement('nav')
-  rail.className = 'gg-sidebar-rail'
-  for (const [i, name] of ['assistant', 'chats', 'contacts', 'apps', 'settings'].entries()) {
-    const button = place(document.createElement('button'), box(0, 20 + i * 48, 40, 40))
-    button.dataset.rail = name
-    rail.append(button)
-  }
-  document.body.append(rail)
   sidebar = place(document.createElement('div'), box(60, 0, 260, 700))
   sidebar.dataset.region = 'left-sidebar'
   createAgent = place(document.createElement('button'), box(72, 52, 200, 32))
   createAgent.dataset.testid = 'sidebar-create-agent'
   list = place(document.createElement('div'), box(60, 92, 260, 560))
   list.dataset.region = 'sidebar-scroll'
-  sidebar.append(createAgent, list)
+  // 界面减法 #51: the assistant, 联系人, 市场 and 设置 steps point at my avatar at the sidebar's foot.
+  me = place(document.createElement('button'), box(70, 656, 200, 36))
+  me.dataset.testid = 'me-menu-trigger'
+  sidebar.append(createAgent, list, me)
   document.body.append(sidebar)
 })
-afterEach(() => { rail.remove(); sidebar.remove(); document.querySelector('[data-tour="sample-project"]')?.remove(); vi.clearAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { sidebar.remove(); document.querySelector('[data-tour="sample-project"]')?.remove(); vi.clearAllMocks(); vi.unstubAllGlobals() })
 /** Where the spotlight's ring is: the target's box, PAD + 1 outside it. */
 const ring = () => {
   const rect = document.querySelector('.product-tour-ring rect')!
@@ -140,7 +135,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
   it('returns keyboard focus to the card after advancing from an activated ordinary target', async () => {
     const h = await mount()
     try {
-      const target = rail.querySelector<HTMLElement>('[data-rail="assistant"]')!
+      const target = me
       await clickElement(target)
       target.focus()
       expect(h.card().textContent).toContain('1 / 6')
@@ -249,22 +244,15 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       expect(h.card().dataset.testid).toBe('product-tour-step-chats')
     } finally { h.cleanup() }
   })
-  it('the sidebar on screen without the entry: ❌ 消息 (on the task page it folds the sidebar), the step goes', async () => {
+  it('the sidebar on screen without the entry: the step goes', async () => {
     createAgent.remove()
-    const messages = rail.querySelector<HTMLElement>('[data-rail="chats"]')!
-    const clicked = vi.fn()
-    messages.addEventListener('click', clicked)
     const h = await mount('tasks')
     try {
       await settleTargets()
       await waitForCondition(() => document.querySelector('[data-testid="product-tour-step-chats"]') !== null, 'went on without 创建智能体')
-      expect(clicked).not.toHaveBeenCalled()
     } finally { h.cleanup() }
   })
-  it('the sidebar collapsed: unfolds it by its own controller, ❌ 消息', async () => {
-    const messages = rail.querySelector<HTMLElement>('[data-rail="chats"]')!
-    const clicked = vi.fn()
-    messages.addEventListener('click', clicked)
+  it('the sidebar collapsed: unfolds it by its own controller', async () => {
     let open = false
     const release = publishPanelToggle('list:sessions', { open: false, label: 'Expand sidebar', toggle: () => { open = true; republish() } })
     let releaseOpen = () => {}
@@ -273,7 +261,6 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       const h = await mount('tasks')
       try {
         expect(open).toBe(true)
-        expect(clicked).not.toHaveBeenCalled()
         expect(h.card().dataset.testid).toBe('product-tour-step-tasks')
       } finally { h.cleanup() }
     } finally { release(); releaseOpen() }
@@ -297,18 +284,7 @@ describe('feature-bar coach marks (onboarding spec §2)', () => {
       expect(document.querySelector('[data-testid="product-tour-step-tasks"]')!.textContent).toContain('2 / 6')
     } finally { harness.cleanup(); release() }
   })
-  it('the sidebar off screen (another tab is up): 消息 brings the task page up', async () => {
-    sidebar.remove()
-    const messages = rail.querySelector<HTMLElement>('[data-rail="chats"]')!
-    messages.addEventListener('click', () => document.body.append(sidebar))
-    const h = await mount('tasks')
-    try {
-      expect(h.card().dataset.testid).toBe('product-tour-step-tasks')
-      expect(ring()).toEqual({ x: 72, y: 52 })
-    } finally { h.cleanup() }
-  })
   it('finishes once when no supplied step has a real anchor', async () => {
-    rail.remove()
     sidebar.remove()
     const harness = createReactHarness()
     const done = vi.fn()

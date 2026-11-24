@@ -22,7 +22,7 @@ import { findMentionSpans } from '../../../../packages/core/src/shared/mentionTo
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
 import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey, isFileIntegrityError } from '@gugu/core/shared/fileResolver'
-import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
+import { TYPED_ID_KINDS, decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { matchIdPrefix, uuidPrefixRange } from '../../../../packages/core/src/shared/idPrefix'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
@@ -628,6 +628,13 @@ async function resolveChatIdInput(chatId, deps) {
   const publicId = String(chatId ?? '').trim()
   if (!publicId) return null
   if (/^(aid|user|gugu):/.test(publicId)) return await ownerDirectChatId(publicId, deps)
+  // A typed id names its kind: `chat:` is a chat, any other kind (an agent's own `session:` id) is not one, and
+  // passed on as an opaque id it would only fail later as an unreadable member list.
+  const kind = publicId.slice(0, Math.max(0, publicId.indexOf(':')))
+  if (kind === 'chat') return decodeTypedId('chat', publicId, 'chat_id')
+  if (TYPED_ID_KINDS.includes(kind)) {
+    throw new Error(`chat_id: got a ${kind}: id ("${publicId}"), and a ${kind} is not a chat; pass the chat= value of your gugu_delivery envelope, an id from message_conversations, or your owner's address for your private chat with them`)
+  }
   // Production public_id values are numeric. Preserve non-production/internal opaque ids
   // used by injected callers; the schema description still directs agents to UUID ids.
   if (!/^\d+$/.test(publicId)) return publicId
@@ -637,6 +644,19 @@ async function resolveChatIdInput(chatId, deps) {
     throw new Error(`chat_id ${publicId} is ambiguous as public_id; use the UUID from message_conversations (id)`)
   }
   throw new Error(`chat_id ${publicId} looks like a public_id, but no conversation matched it; use the UUID from message_conversations (id)`)
+}
+
+/**
+ * A `chat_id` from any other tool domain (session_*, app_*), read the way message tools read it: one resolver, so a
+ * public_id or an owner address names the same chat everywhere, and one that names none fails here.
+ */
+export async function resolveChatIdOf(context, chatId, injected = {}) {
+  const resolved = await requireChat({ chat_id: String(chatId) }, createDeps(context, injected))
+  // The resolver keeps an opaque non-numeric id for injected callers; a host action can only use a real chat's UUID.
+  if (!UUID_RE.test(String(resolved))) {
+    throw new Error(`chat_id ${chatId} names no conversation; give its UUID (message_conversations id) or its public_id number, nothing around it`)
+  }
+  return resolved
 }
 
 async function requireChat(args, deps) {

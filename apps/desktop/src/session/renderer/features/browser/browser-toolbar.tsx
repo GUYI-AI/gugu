@@ -48,7 +48,6 @@ import {
 } from './browser-toolbar-actions';
 import { browserUrlInputText } from './browser-url-input';
 import type { BrowserWebviewAdapter } from './browser-webview-types';
-import { panelHeaderBarClass } from '@renderer/lib/ui/panel-header-bar';
 
 // Selection is conveyed by the checkmark alone (matching SelectItem); the base
 // radio item pins a background on the checked row and mutes unchecked rows.
@@ -171,7 +170,8 @@ export function BrowserToolbar({
 
   return (
     <div className={cn('shrink-0', className)}>
-    <div className={cn(panelHeaderBarClass, 'gap-1')}>
+    {/* The browser's own row (design .addr): 44px, no rule under it, the address a 30px pill — not the 41px panel header. */}
+    <div className="flex h-11 shrink-0 items-center gap-2 px-[10px]">
       <ToolbarIconButton
         label={translate('browser.back')}
         disabled={(!adapter && !remote) || !session.canGoBack}
@@ -190,7 +190,7 @@ export function BrowserToolbar({
         label={translate(session.isLoading ? 'browser.stop' : 'browser.reload')}
         onClick={() => onReload?.()}
       >
-        {session.isLoading ? <Square className="size-4" /> : <Reload className="size-4" />}
+        {session.isLoading ? <Square className="size-[15px]" /> : <Reload className="size-[15px]" />}
       </ToolbarIconButton>
       {annotationAction}
       <form
@@ -220,8 +220,8 @@ export function BrowserToolbar({
               if (urlError) setUrlError(null);
             }}
             onFocus={(event) => event.currentTarget.select()}
-            className={cn('h-7 truncate border-0 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0',
-              workspaceStart && 'rounded-full bg-background-3 text-center')}
+            className={cn('h-[30px] truncate rounded-full border-0 bg-background-3 pr-8 pl-7 text-sm shadow-none hover:border-0 focus-visible:border-0 focus-visible:ring-0',
+              workspaceStart && 'text-center')}
             aria-label={translate('browser.urlLabel')}
             aria-invalid={urlError ? true : undefined}
             aria-describedby={urlError ? urlErrorId : undefined}
@@ -244,7 +244,7 @@ export function BrowserToolbar({
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="size-7 shrink-0"
+                className="size-[22px] shrink-0 rounded-sm text-foreground-passive"
                 aria-label={translate('browser.actions')}
               />
             }
@@ -396,7 +396,7 @@ function ToolbarIconButton({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-7 shrink-0"
+            className="size-[22px] shrink-0 rounded-sm text-foreground-passive"
             disabled={disabled}
             aria-label={label}
             onClick={onClick}

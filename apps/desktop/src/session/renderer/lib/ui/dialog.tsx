@@ -1,7 +1,7 @@
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { XIcon } from '@/lib/icons'
 import * as React from 'react';
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives';
+import { useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives';
 import { Button } from '@renderer/lib/ui/button';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { cn } from '@renderer/utils/utils';
@@ -30,6 +30,7 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
 function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) {
   return (
     <DialogPrimitive.Backdrop
+      style={{ zIndex: useUiPopupZIndex() }}
       data-slot="dialog-overlay"
       className={cn(
         'fixed inset-0 isolate z-50 bg-[var(--bg-overlay-soft)] duration-[var(--dur-fast)]  data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0',
@@ -45,11 +46,13 @@ function DialogContent({
   children,
   ...props
 }: DialogPrimitive.Popup.Props & { showCloseButton?: boolean }) {
+  const zIndex = useUiPopupZIndex();
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Popup
         finalFocus={false}
+        style={{ zIndex }}
         data-slot="dialog-content"
         onKeyDownCapture={(e) => {
           if ((e.metaKey || e.ctrlKey || e.altKey) && e.key === 'Enter') {

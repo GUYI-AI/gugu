@@ -2,11 +2,8 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it } from 'vitest';
 import { useFirstRunHintTargets, type HintDevice, type HintTarget } from '@/components/firstRun/firstRunHintTargets';
-import { until } from '../../../../../../../tests/support/awaitCondition';
 
-// The hint locator asks the rendering step (IntersectionObserver) whether an entry is on screen. In real Chromium:
-// an entry inside a retained hidden surface (content-visibility:hidden), under display:none or scrolled out is not a
-// target; showing the surface makes it one. And a list update elsewhere on the page costs no forced style recalc.
+// The hint locator asks the rendering step (IntersectionObserver) whether an entry is on screen, in real Chromium.
 const cleanup: Array<() => void> = [];
 afterEach(() => cleanup.splice(0).reverse().forEach((stop) => stop()));
 
@@ -19,9 +16,8 @@ function mountProbe(seen: { targets: readonly HintTarget[] }, device: HintDevice
   cleanup.push(() => { act(() => root.unmount()); host.remove(); });
 }
 
-function addEntry() {
+function addEntry(): void {
   const surface = document.createElement('section');
-  surface.className = 'gg-sidebar-rail';
   surface.style.position = 'relative';
   const entry = document.createElement('div');
   entry.dataset.rail = 'assistant';
@@ -30,22 +26,14 @@ function addEntry() {
   surface.append(entry);
   document.body.append(surface);
   cleanup.push(() => surface.remove());
-  return { surface, entry };
 }
 
-it('an entry added after mount is found, and a removed one is dropped', async () => {
-  const seen = { targets: [] as readonly HintTarget[] };
-  mountProbe(seen);
-  const { surface } = addEntry();
-  await until('the added entry is located', () => seen.targets.length === 1);
-  surface.remove();
-  await until('the removed entry is dropped', () => seen.targets.length === 0);
-});
-
-it('has no hint targets on the phone when the observer is enabled', async () => {
+// 界面减法 #51: the assistant's entry moved into my menu (closed until opened), so no device has a place to draw a hint
+// by: an entry on screen is never a target.
+it.each(['phone', 'desktop'] as const)('has no hint targets on the %s when the observer is enabled', async (device) => {
   const seen = { targets: [] as readonly HintTarget[] };
   addEntry();
-  mountProbe(seen, 'phone');
+  mountProbe(seen, device);
   await new Promise((resolve) => requestAnimationFrame(resolve));
   expect(seen.targets).toEqual([]);
 });

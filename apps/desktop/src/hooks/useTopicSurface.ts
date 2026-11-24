@@ -1,11 +1,7 @@
-// 聊天区的「话题」这一面 —— product spec。
+// 聊天区的「话题」这一面:锚点卡数据、从消息开话题、话题线追更。
 //
-// 为什么单独一个 hook:ChatAreaPanel 是冻结的 god 文件(CI 有行数闸),而话题要在它身上加四样东西
-// (锚点卡数据、分栏、开话题动作、成员列表开关)。把状态收在这里,面板那边只剩渲染。
-//
-// 分栏里的那条话题**是一条真的 chat**,所以它有自己的一条「线」(useChatConversation:消息窗口 + 已读水位),
-// 与老 thread 面板的根本差别就在这:老面板是同一个 chat 里的一段过滤视图,新分栏是另一条线。
-// 线的实时与主区 activeChat 走同一份 subscribeChatLineRevisions(#6470),❌ 在这里另听线级事件。
+// 话题是一条真的 chat,点它就把主会话换成它(和点群、点私聊同一条路:openLinkTarget → openChatTarget)。
+// ❌ 不另开分栏/右栏 —— 纠正清单 #62「点话题 = 换主会话,不开在右侧栏」。
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ChatItem, MessageItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { parseComposerCard } from '@gugu/core/shared/ui/taskCardModels'
@@ -13,157 +9,66 @@ import type { AccountRevisionEvent, AccountRevisionListener } from '@/lib/accoun
 import { topicService } from '@/lib/topics'
 import { useChatStore } from '@/store/chatContext'
 import { topicsSourceChatId, useTopicsOfChat } from './useTopics'
-import { useChatConversation, type ChatConversation } from '@/store/useChatConversation'
 import { rendererLogger } from '@/lib/log'
 import { topicNameFromMessage } from '@/components/chat/topicAnchorModels'
-import { useMobxReading } from '@/lib/mobxReadable'
-import { closeTopicTab, focusedChatTab, hideTopicTab, openTopicTab, topicTabOf, updateTopicNames } from '@/session/renderer/features/chats/chat-tabs/chat-layouts'
+import { openLinkTarget } from '@/lib/guguLinks'
 
 const topicSurfaceLog = rendererLogger('chat/topic-surface')
 
-export type OpenTopic = { chatId: string; name: string }
+/** Topics open as the main conversation, the same way any chat does. */
+export function openTopicChat(chatId: string): void {
+  openLinkTarget({ kind: 'chat', chatId }).catch((error: unknown) => topicSurfaceLog.error({ error, chatId }, 'open topic failed'))
+}
 
 type UseTopicSurfaceArgs = {
-  /** 当前打开的那条线。它自己是话题时,不再往下长话题(单层不嵌套,由 topicsSourceChatId 守)。 */
-  chat: Pick<ChatItem, 'id' | 'kind'> | null | undefined
-  userId: string | null
-  messages: readonly Pick<MessageItem, 'id' | 'content' | 'content_type'>[]
-  /** 打开右侧槽位前先让别的右栏让位(ChatAreaPanel 的 closeRightSurfaces)。 */
-  closeRightSurfaces: () => void
-  /**
-   * 开不出话题时叫一声。**必填**:原来这里把错误存进一个没人读的 state,于是右键「开话题」
-   * 失败时界面上什么都不发生 —— 静默失败比报错难查得多,所以把「谁来喊」做成调用方必须给的东西。
-   */
+  /** 当前打开的那条线。它自己是话题时,读的是来源线的话题清单(手机的话题条、追更都要),但不长锚点卡。 */
+  chat: Pick<ChatItem, 'id' | 'kind' | 'source_chat_id'> | null | undefined
+  messages: readonly Pick<MessageItem, 'id' | 'content' | 'content_type' | 'seq' | 'created_at'>[]
+  /** The open line has nothing newer to page in: only then is its tail its server tail. */
+  lineSettled: boolean
+  refreshLine: (chatId: string) => Promise<unknown>
+  /** 开不出话题时叫一声(必填:静默失败比报错难查)。 */
   onCreateFailed: (error: unknown) => void
   subscribeAccountRevision: (event: AccountRevisionEvent, listener: AccountRevisionListener) => () => void
-  /**
-   * The chat is drawn in a block, whose strip has the topic as a tab beside the group's (on screen when either half of
-   * the pair is it); else (the phone) the topic is up only while it is the page in front.
-   */
-  embedded: boolean
 }
 
 export type TopicSurface = {
   /** 这条线上长出来的话题,按来源消息分组 —— 锚点卡读它。 */
   anchorsByMessageId: Map<string, TopicSummary[]> | null
+  /** The source line's topics (the line itself, or a topic's source). */
   topics: TopicSummary[]
   topicsReady: boolean
   reloadTopics: () => void
-  /** The open tab's conversation, retained while another tab is shown. */
-  topic: OpenTopic | null
-  /** 右侧分栏里那条话题(null = 没开分栏)。 */
-  splitTopic: OpenTopic | null
-  splitLine: ChatConversation
-  openSplit: (topic: OpenTopic, toggle?: boolean) => void
-  closeSplit: () => void
-  /** @param toUserIds 正文里 @ 到的人 —— 被 @ 就是被拉进来(服务端触发器只认来源线成员)。 */
-  /** @param replyToMessageId 引用的那条消息 —— 结构化回复,与主线同口径(group-routing:回复穿透档位)。 */
-  sendInSplit: (text: string, toUserIds?: readonly string[] | null, replyToMessageId?: string | null, isWhisper?: boolean, submittedAt?: number, dependsOn?: string) => Promise<void>
-  /**
-   * 分栏里发附件。不接它不等于「分栏不支持附件」—— InputArea 的回形针/拖放/粘贴
-   * 三条入队路径都是无条件的,而 handleSend 在没有这个回调时会先清空队列再跳过发送 ⇒
-   * 文件凭空消失、一声不响。所以这一口必须接上。
-   */
-  sendAttachmentsInSplit: (files: File[], opts?: { toUserIds?: string[] | null; replyToMessageId?: string | null; isWhisper?: boolean; caption?: string }) => Promise<string | undefined | void>
-  /** 从一条消息开一条话题:建完直接分栏打开,这就是 spec 的「建立是一步」。 */
+  /** 从一条消息开一条话题:建完直接换成主会话,这就是 spec 的「建立是一步」。 */
   openTopicFromMessage: (sourceMessageId: string) => Promise<void>
 }
 
-export function useTopicSurface({
-  chat,
-  userId,
-  messages,
-  closeRightSurfaces,
-  subscribeAccountRevision,
-  onCreateFailed,
-  embedded,
-}: UseTopicSurfaceArgs): TopicSurface {
-  const { conversations, createTopic } = useChatStore('conversations', 'createTopic')
+export function useTopicSurface({ chat, messages, lineSettled, refreshLine, subscribeAccountRevision, onCreateFailed }: UseTopicSurfaceArgs): TopicSurface {
+  const { createTopic } = useChatStore('createTopic')
   const chatId = chat?.id ?? null
+  const topicChatId = chat?.kind === 'topic' ? chat.id : null
   const sourceMessages = useRef(messages)
   sourceMessages.current = messages
-  // 调用方传的是内联箭头;直接进依赖会让 openTopicFromMessage 每次渲染换身份 ——
-  // 它原样下传给每条消息气泡,于是任何一次面板重渲都打穿全部气泡的 memo。只在事件时刻取最新的那个。
   const onCreateFailedRef = useRef(onCreateFailed)
   onCreateFailedRef.current = onCreateFailed
   // 清单只有一个属主:useTopicsOfChat。锚点卡与顶栏话题面板读的是同一份,❌ 不各拉各的。
   const { topics: read, bySourceMessageId, reload: reloadTopics } = useTopicsOfChat(
-    topicsSourceChatId(chat),
+    topicChatId ? chat?.source_chat_id ?? null : topicsSourceChatId(chat),
     subscribeAccountRevision,
   )
-  // The line's topics not read yet: no anchor card, no tab and no count drawn for them (the surface's decision, here).
   const topics = useMemo(() => read ?? [], [read])
-  useEffect(() => { if (chatId) updateTopicNames(chatId, topics) }, [chatId, topics])
-  // 分栏是这条线页签条上的一枚(chat-tabs/chat-layouts):开着哪条话题、在不在屏上都由那里说,按来源线各记各的
-  // (@@@3922 的 subject-scoped 由此而来:换了来源线读的就是另一条页签条)。
-  const tab = useMobxReading(() => {
-    if (!chatId) return null
-    const tab = topicTabOf(chatId)
-    if (!tab) return null
-    const up = embedded ? tab.shown : focusedChatTab(chatId)?.tabId === tab.tabId
-    return { topic: { chatId: tab.topic.topicChatId, name: tab.topic.name }, shown: up }
-  }, [chatId, embedded])
-  const topic = tab?.topic ?? null
-  const splitTopic = tab?.shown ? topic : null
-  const chatIdRef = useRef<string | null>(null)
-  chatIdRef.current = chatId
-  const splitChatId = topic?.chatId ?? null
-  const splitChatIdRef = useRef<string | null>(null)
-  splitChatIdRef.current = splitTopic?.chatId ?? null
-  const line = useChatConversation(splitChatId, conversations)
-  const sendSplitMessage = line.sendMessage
-
-  // Covers normal opening and an outbox retry opening the existing tab.
-  useEffect(() => { if (splitChatId) reloadTopics() }, [splitChatId, reloadTopics])
 
   // message_created for a topic row reaches only the topic's members; every source-line member gets the source
-  // chat_changed that re-reads this topic in `topics`. So the open line catches up to its own summary whenever the summary is
-  // newer than the line's tail -- one rule for whoever is reading, member or not.
-  const summaryAt = Date.parse(topics.find((summary) => summary.chat_id === splitChatId)?.last_message_at ?? '')
+  // chat_changed that re-reads this topic in `topics`. So the open topic catches up to its own summary whenever the
+  // summary is newer than the line's tail -- one rule for whoever is reading, member or not.
+  const summaryAt = Date.parse(topics.find((summary) => summary.chat_id === topicChatId)?.last_message_at ?? '')
   // Unsent rows sit at their send-time slot or last (orderMessages), so the last confirmed row is the line's server tail.
-  const tail = line.messages.findLast((row) => row.seq > 0)
+  const tail = messages.findLast((row) => row.seq > 0)
   const lineAt = tail ? Date.parse(tail.created_at) : -Infinity
-  const lineSettled = !line.loadingMessages && !line.messageWindow.hasNewer
-  const refreshSplit = line.refreshMessages
   useEffect(() => {
-    if (!splitChatId || !lineSettled || !(summaryAt > lineAt)) return
-    refreshSplit(splitChatId).catch((error: unknown) => topicSurfaceLog.error({ error, topicChatId: splitChatId }, 'topic catch-up failed'))
-  }, [splitChatId, summaryAt, lineAt, lineSettled, refreshSplit])
-
-  const openSplit = useCallback(
-    (topic: OpenTopic, toggle = false) => {
-      const source = chatIdRef.current
-      if (!source) return
-      // Sidebar reactivation puts the split away; other open requests only update its name.
-      // ❌ 不走 closeRightSurfaces(#6404:那一路曾把分栏的消息清空、
-      // 而同一批里又设回同一条 ⇒ 拉取不重跑 ⇒ 分栏开着但一条消息都没有)。
-      if (splitChatIdRef.current === topic.chatId) {
-        if (toggle) hideTopicTab(source)
-        else openTopicTab(source, { topicChatId: topic.chatId, name: topic.name })
-        return
-      }
-      closeRightSurfaces()
-      openTopicTab(source, { topicChatId: topic.chatId, name: topic.name })
-    },
-    [closeRightSurfaces],
-  )
-
-  const closeSplit = useCallback(() => {
-    if (chatIdRef.current) closeTopicTab(chatIdRef.current)
-  }, [])
-
-  const sendInSplit = useCallback(
-    async (text: string, toUserIds?: readonly string[] | null, replyToMessageId?: string | null, isWhisper?: boolean, submittedAt?: number, dependsOn?: string) => {
-      const body = text.trim()
-      if (!body || !splitChatId || !userId) return
-      await sendSplitMessage(body, {
-        toUserIds: toUserIds?.length ? [...toUserIds] : null,
-        replyToMessageId: replyToMessageId ?? null,
-        isWhisper, ...(submittedAt === undefined ? {} : { submittedAt }), ...(dependsOn ? { dependsOn } : {}),
-      })
-    },
-    [splitChatId, userId, sendSplitMessage],
-  )
+    if (!topicChatId || !lineSettled || !(summaryAt > lineAt)) return
+    refreshLine(topicChatId).catch((error: unknown) => topicSurfaceLog.error({ error, topicChatId }, 'topic catch-up failed'))
+  }, [topicChatId, summaryAt, lineAt, lineSettled, refreshLine])
 
   const openTopicFromMessage = useCallback(
     async (sourceMessageId: string) => {
@@ -173,7 +78,7 @@ export function useTopicSurface({
         if (!source) throw new Error('Topic source message is not in the current message window')
         if (source.content_type === 'card' && parseComposerCard(source.content)?.type === 'task') {
           const existing = (await topicService.listTopicsOfChat(chatId)).find((topic) => topic.source_message_id === sourceMessageId)
-          if (existing) { openSplit({ chatId: existing.chat_id, name: existing.name }); return }
+          if (existing) { openTopicChat(existing.chat_id); return }
         }
         const created = await createTopic({
           sourceChatId: chatId,
@@ -183,29 +88,21 @@ export function useTopicSurface({
             : source.content_type === 'card' ? topicNameFromMessage(parseComposerCard(source.content)?.text) : null,
         })
         if (!created) return // retained outbox failure already exposes retry/discard
-        openSplit({ chatId: created.chat_id, name: created.name })
+        openTopicChat(created.chat_id)
       } catch (error) {
-        // fail loud:开不出来必须当场告诉用户。原因进日志(用户拿内部失败描述做不了任何事),
-        // 文案只留他能照做的下一步。
+        // fail loud:开不出来必须当场告诉用户。原因进日志,文案只留他能照做的下一步。
         topicSurfaceLog.error({ error, chatId, sourceMessageId }, 'open topic failed')
         onCreateFailedRef.current(error)
       }
     },
-    [chatId, openSplit, createTopic],
+    [chatId, createTopic],
   )
 
   return {
-    anchorsByMessageId: bySourceMessageId,
+    anchorsByMessageId: topicChatId ? null : bySourceMessageId,
     topics,
     topicsReady: read !== null,
     reloadTopics,
-    topic,
-    splitTopic,
-    splitLine: line,
-    openSplit,
-    closeSplit,
-    sendInSplit,
-    sendAttachmentsInSplit: (files, opts) => line.sendAttachments(files, opts),
     openTopicFromMessage,
   }
 }

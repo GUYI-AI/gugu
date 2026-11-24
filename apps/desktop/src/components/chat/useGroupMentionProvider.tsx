@@ -26,14 +26,13 @@ import type { MentionTarget } from './useChatDraft'
  * suggestion makes. One implementation for every editor that writes into a chat (the composer, a forward's note).
  * `enabled: false` (a whisper, a forward into several chats) offers no one.
  */
-export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, currentUserId, agentStatuses = {}, messages, participantIds, replyToMessageId, enabled = true }: {
+export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, currentUserId, agentStatuses = {}, messages, replyToMessageId, enabled = true }: {
   chatId: string | null | undefined
   isGroupChat: boolean
   groupMembers: NonNullable<ChatMessageComposerProps['groupMembers']>
   currentUserId: string | null
   agentStatuses?: ChatMessageComposerProps['agentStatuses']
   messages?: ChatMessageComposerProps['messages']
-  participantIds?: ChatMessageComposerProps['participantIds']
   replyToMessageId?: string
   enabled?: boolean
 }) {
@@ -63,7 +62,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
     isQueryActive: (query: string) => offered && isMentionQueryActive(query, members),
     async search(query: string) {
       if (!offered || !isMentionQueryActive(query, members)) return []
-      return rankMentionCandidates(members, query, { chatId, currentUserId, messages: messages ?? [], participantIds, projectMemberIds,
+      return rankMentionCandidates(members, query, { chatId, currentUserId, messages: messages ?? [], projectMemberIds,
         replyToMessageId, now: Date.now() }).map((member): MentionItem => ({
         id: member.type === 'all' ? MENTION_ALL_USER_ID : member.id,
         label: member.name, name: member.name, kind: 'custom', role: member.type === 'all' ? undefined : member.type,
@@ -81,7 +80,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
       const item = await localProvider.resolveSession(id)
       return item ? decorate(item) : null
     },
-  }), [offered, members, agentStatuses, decorate, localProvider, t, chatId, currentUserId, messages, participantIds, projectMemberIds, replyToMessageId])
+  }), [offered, members, agentStatuses, decorate, localProvider, t, chatId, currentUserId, messages, projectMemberIds, replyToMessageId])
   /** The pick a chosen suggestion makes, or null when it is not a member. */
   const pickOf = useCallback((item: MentionItem): MentionTarget | null => {
     const member = members.find((candidate) => candidate.id === item.id || `aid:${candidate.id}` === item.label)

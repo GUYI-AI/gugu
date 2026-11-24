@@ -5,6 +5,7 @@ import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels';
 import { createEffect, createRoot } from 'solid-js';
 import { parseSentAttachmentLink } from '@gugu/session-core/session-record/send-receipt';
 import { parseGroupFileLink } from '@gugu/core/shared/ui/guguLink';
+import { sentFileCopy } from '@/lib/sentFileCopies';
 
 export function originalMessagePresentation(message: MessageItem): DeliveryMessagePresentation | null {
   if (message.content_type !== 'attachment' || message.retracted_at) return null;
@@ -50,19 +51,37 @@ export function connectDeliveredMessagePresentation(state: ChatState, load: (id:
   return () => { live = false; stop(); };
 }
 
-export async function resolveDeliveredAttachment(id: string): Promise<string | null> {
+// A message's file and a folder version never change: read once per run, so a row drawn again (its turn committing) has
+// its picture in its first frame instead of reading it anew.
+const deliveredReads = new Map<string, Promise<string | null>>();
+export function resolveDeliveredAttachment(id: string): Promise<string | null> {
+  const known = deliveredReads.get(id);
+  if (known) return known;
+  const read = readDeliveredAttachment(id).catch((error: unknown) => { deliveredReads.delete(id); throw error; });
+  deliveredReads.set(id, read);
+  void read.then(url => { if (!url) deliveredReads.delete(id); }, () => {});
+  return read;
+}
+
+async function readDeliveredAttachment(id: string): Promise<string | null> {
   const messageId = parseSentAttachmentLink(id)?.messageId;
   const file = messageId ? null : parseGroupFileLink(id);
   const source = messageId ? { kind: 'message' as const, messageId }
     : file?.version !== undefined ? { kind: 'item' as const, itemId: file.itemId, version: file.version } : null;
   if (!source) return null;
-  const { attachmentBytes } = await import('@/lib/attachmentBytes');
-  const result = await attachmentBytes(source, 'thumb');
-  if (result.status !== 'ready') return null;
+  // Sent from here: read on this device, even before the folder has it (`holdSentItem`).
+  const blob = sentFileCopy(source) ?? await thumbOf(source);
+  if (!blob) return null;
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null);
     reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(result.blob);
+    reader.readAsDataURL(blob);
   });
+}
+
+async function thumbOf(source: Parameters<typeof sentFileCopy>[0]): Promise<Blob | null> {
+  const { attachmentBytes } = await import('@/lib/attachmentBytes');
+  const result = await attachmentBytes(source, 'thumb');
+  return result.status === 'ready' ? result.blob : null;
 }

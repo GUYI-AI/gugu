@@ -94,7 +94,6 @@ it('shows the context tools, opens recent resources, and removes them only from 
     { kind: 'web', id: 'web:news', url: 'https://example.com/news', title: '公告' },
   ];
   writeViewState(recentToolPanel(group), { items: recent });
-  const focusUrl = vi.fn();
   const openUrl = vi.fn();
   const openRecent = vi.fn();
   const openFolder = vi.fn();
@@ -106,22 +105,22 @@ it('shows the context tools, opens recent resources, and removes them only from 
         { id: 'browser', label: '浏览器', icon: <Globe />, onClick: () => {} },
         { id: 'browser-app', label: '浏览器', icon: <Globe />, section: 'extensions', onClick: openApp },
       ]}
-      onOpenUrl={openUrl} onFocusUrl={focusUrl}
+      onOpenUrl={openUrl}
     />
   ));
   await render(group);
   await expect.element(page.getByRole('heading', { name: '最近' })).toBeVisible();
   // One row of tiles: built-ins, then Apps, then Add App.
   await userEvent.click(page.getByRole('button', { name: '文件', exact: true }));
-  await userEvent.click(page.getByRole('button', { name: '浏览器', exact: true }).nth(0));
-  await userEvent.click(page.getByRole('button', { name: '浏览器', exact: true }).nth(1));
+  // The page is the browser: the built-in browser tile is not on it, only the Browser App.
+  await expect.poll(() => page.getByRole('button', { name: '浏览器', exact: true }).elements().length).toBe(1);
+  await userEvent.click(page.getByRole('button', { name: '浏览器', exact: true }));
   expect(openApp).toHaveBeenCalledOnce();
   await userEvent.click(page.getByRole('button', { name: '添加应用', exact: true }));
   // Add App goes to the Apps tab of the Apps page, wherever that page was left.
   expect(appState.navigation.currentViewId).toBe('apps');
   expect(appState.navigation.viewParamsStore.apps?.location).toEqual({ tab: 'market' });
   expect(openFolder).toHaveBeenCalledOnce();
-  expect(focusUrl).toHaveBeenCalledOnce();
   await userEvent.click(page.getByRole('button', { name: '行程.md', exact: true }));
   await userEvent.click(page.getByRole('button', { name: '公告', exact: true }));
   expect(openRecent).toHaveBeenCalledWith(recent[0]);
@@ -154,8 +153,8 @@ it('opens the actual group tab from the header and reveals explicitly requested 
     await expect.element(page.getByPlaceholder('搜索或输入网址')).toBeVisible();
     await expect.element(page.getByRole('heading', { name: '最近' })).toBeVisible();
     await expect.element(page.getByRole('button', { name: '审阅', exact: true })).not.toBeInTheDocument();
-    await userEvent.click(page.getByRole('button', { name: '浏览器', exact: true }));
-    await expect.element(page.getByPlaceholder('搜索或输入网址')).toHaveFocus();
+    // The page is the browser: no tile on it opens one (its address bar is right above).
+    await expect.element(page.getByRole('button', { name: '浏览器', exact: true })).not.toBeInTheDocument();
 
     await act(() => userEvent.click(page.getByRole('button', { name: '隐藏标签页' })));
     await expect.poll(() => header('hidden')).not.toBeNull();

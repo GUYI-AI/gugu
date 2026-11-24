@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { ChatListPanel } from '@/components/ChatListPanel'
 import { NeedsYouHost } from '@/components/needsYou/NeedsYouHost'
-import { SidebarOneListHead } from '@renderer/features/sidebar/sidebar-one-list-chrome'
+import { SidebarOneListFoot } from '@renderer/features/sidebar/sidebar-one-list-chrome'
 import { installShellSlots } from '@/lib/shellSlots'
 import { i18n } from '@/i18n'
 import { chat, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
@@ -86,11 +86,11 @@ it.each([false, true])('the real list header keeps its bell/badge inside the pan
   expect(scroller.scrollTop).toBe(87)
 })
 
-it('the desktop sidebar\'s head (the window\'s top band) keeps the bell badge inside the window', async () => {
+it('the desktop sidebar\'s foot keeps the bell badge inside the window', async () => {
   state.mobile = false
   await page.viewport(1000, 800)
   harness.container.style.cssText = 'position:relative;width:1000px;height:700px'
-  await renderWithAppProviders(harness, <><div className="gugu-skin" style={{ width: 280 }}><SidebarOneListHead /></div><NeedsYouHost /></>)
+  await renderWithAppProviders(harness, <><div className="gugu-skin" style={{ width: 280 }}><SidebarOneListFoot /></div><NeedsYouHost /></>)
   const badge = harness.container.querySelector<HTMLElement>('[data-testid="notification-count"]')!
   await until('the workspace badge is laid out', () => badge?.getBoundingClientRect().width > 0)
   const box = badge.getBoundingClientRect()

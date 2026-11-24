@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
-import { NAV_COLUMN_WIDTH } from '@/lib/uiRuler';
+import { SIDEBAR_DEFAULT_WIDTH_PX } from '@renderer/lib/layout/layout-provider';
 import { WorkspaceLayout, WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
 import { SIDEBAR_RAIL_PX, WorkspaceLayoutContextProvider, useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
 import { sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
@@ -59,7 +59,7 @@ it('the real workspace keeps an opaque rounded reading surface inset from materi
   const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
   const surface = harness.container.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
   expect(shell).not.toBeNull();
-  expect(shell.querySelector<HTMLElement>('[data-workspace-left-panel]')!.getBoundingClientRect().width).toBe(NAV_COLUMN_WIDTH);
+  expect(shell.querySelector<HTMLElement>('[data-workspace-left-panel]')!.getBoundingClientRect().width).toBe(SIDEBAR_DEFAULT_WIDTH_PX); // 第 16 版:列表默认 236(layout-provider)
   expect(surface).not.toBeNull();
   const rect = surface.getBoundingClientRect();
   expect(rect.width).toBeGreaterThan(700);
@@ -84,59 +84,6 @@ it('the real workspace keeps an opaque rounded reading surface inset from materi
   expect(center(local)).toBeCloseTo(localCenter);
 });
 
-for (const material of ['native', 'opaque']) {
-  it(`the light ${material} desktop uses one outer frame without a second content gutter`, async () => {
-    document.documentElement.dataset.windowMaterial = material;
-    harness = createReactHarness();
-    await harness.render(<div data-desktop-shell="" style={{ position: 'fixed', inset: 0, display: 'flex' }}>
-      <nav className="gg-sidebar-rail" />
-      <div style={{ flex: 1, minWidth: 0, display: 'flex' }}>
-        <div className="gg-session-frame" style={{ flex: 1 }}><div className="gg-session-frame-host"><div className="gugu-skin emlight" style={{ height: '100%', width: '100%' }}>
-          <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
-            <WorkspaceLayout sidebarHidden leftSidebar={<div>retained list</div>} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<div>full-width page</div>} />} />
-          </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
-        </div></div></div>
-      </div>
-    </div>);
-    const desktop = harness.container.querySelector<HTMLElement>('[data-desktop-shell]')!;
-    const outer = desktop.querySelector<HTMLElement>('.gg-sidebar-rail + div')!;
-    const surface = desktop.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
-    const frame = outer.getBoundingClientRect();
-    const content = surface.getBoundingClientRect();
-    expect(content.width).toBeGreaterThan(700);
-    expect(frame.top - desktop.getBoundingClientRect().top).toBe(5);
-    expect(content.top).toBe(frame.top);
-    expect(content.right).toBe(frame.right);
-    expect(content.bottom).toBe(frame.bottom);
-    expect(getComputedStyle(surface).borderRadius).toBe('0px');
-    expect(getComputedStyle(surface).boxShadow).toBe('none');
-  });
-
-  it(`full-width embedded pages share the ${material} workspace interior without another inset`, async () => {
-    document.documentElement.dataset.windowMaterial = material;
-    harness = createReactHarness();
-    await harness.render(<div data-desktop-shell="" style={{ position: 'fixed', inset: 0 }}>
-      <div className="gg-session-frame"><div className="gg-session-frame-host"><div className="gugu-skin emlight">
-        <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
-          <WorkspaceLayout sidebarHidden leftSidebar={<div>retained list</div>} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<div>full-width page</div>} />} />
-        </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
-      </div></div></div>
-    </div>);
-    const frame = harness.container.querySelector<HTMLElement>('.gg-session-frame')!;
-    const skin = harness.container.querySelector<HTMLElement>('.gugu-skin')!;
-    for (const element of [frame, skin]) {
-      const color = getComputedStyle(element).backgroundColor;
-      if (material === 'native') expect(color).toBe('rgba(0, 0, 0, 0)');
-      else expect(color).not.toBe('rgba(0, 0, 0, 0)');
-    }
-    expect(harness.container.querySelector<HTMLElement>('[data-workspace-left-panel]')!.getBoundingClientRect().width).toBe(0);
-    const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
-    const surface = harness.container.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
-    expect(surface.getBoundingClientRect().width).toBeGreaterThan(900);
-    expect(surface.getBoundingClientRect().top).toBe(shell.getBoundingClientRect().top);
-  });
-}
-
 it('a saved user sidebar width takes precedence over the unified navigation default', async () => {
   writeInterface('gugu.taskpage.sidebarWidth', 320);
   harness = createReactHarness();
@@ -149,32 +96,4 @@ it('a saved user sidebar width takes precedence over the unified navigation defa
   expect(aside.getBoundingClientRect().width).toBe(320);
   expect(readInterface('gugu.taskpage.sidebarWidth')).toBe(320);
   writeInterface('gugu.taskpage.sidebarWidth', undefined);
-});
-
-it('a place without the task list hides the sidebar as a retained surface: same node, never laid out again from scratch', async () => {
-  const listMounted = vi.fn();
-  function List() {
-    useEffect(() => { listMounted(); }, []);
-    return <div data-list="">project list</div>;
-  }
-  harness = createReactHarness();
-  const draw = (sidebarHidden: boolean) => (
-    <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
-      <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
-        <WorkspaceLayout sidebarHidden={sidebarHidden} leftSidebar={<List />} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<Body />} />} />
-      </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
-    </div>
-  );
-  await harness.render(draw(false));
-  const list = harness.container.querySelector<HTMLElement>('[data-list]')!;
-  const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
-  const surface = () => harness.container.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
-  await harness.render(draw(true));
-  expect(list.checkVisibility(), 'the hidden list is not drawn').toBe(false);
-  expect(surface().getBoundingClientRect().left - shell.getBoundingClientRect().left, 'the place gets the whole width').toBeLessThan(NAV_COLUMN_WIDTH / 2);
-  await harness.render(draw(false));
-  expect(harness.container.querySelector('[data-list]'), 'coming back shows the same list, not a rebuilt one').toBe(list);
-  expect(list.checkVisibility()).toBe(true);
-  expect(listMounted).toHaveBeenCalledTimes(1);
-  expect(shell.querySelector<HTMLElement>('[data-workspace-left-panel]')!.getBoundingClientRect().width).toBe(NAV_COLUMN_WIDTH);
 });

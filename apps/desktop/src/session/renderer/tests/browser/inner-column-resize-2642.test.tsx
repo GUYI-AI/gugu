@@ -11,6 +11,7 @@ import {
   INNER_SIDEBAR_DEFAULT_WIDTH_PX,
   INNER_SIDEBAR_MIN_WIDTH_PX,
   INNER_SIDEBAR_WIDTH_STORAGE_KEY,
+  SIDEBAR_DEFAULT_WIDTH_PX,
   useInnerSidebarFrame,
   WorkspaceLayoutContextProvider,
 } from '@renderer/lib/layout/layout-provider';
@@ -19,6 +20,9 @@ import '@/styles/tokens.css';
 import '@/components/sessionpage/EmdashSessionFrame.css';
 import '@renderer/index.css';
 import { readInterface, writeInterface } from '@/lib/viewStateTable'
+
+// The column may take 40% of the card (the window less the list at its default width).
+const capAt = (windowWidth: number) => 0.4 * (windowWidth - SIDEBAR_DEFAULT_WIDTH_PX);
 
 /**
  * GUYI-AI/gugu#2642 the inner column (a group's / project's agents and topics, between the one list and the content) is
@@ -148,15 +152,15 @@ it('dragging resizes the column live; the width is stored on release under its o
   const start = centreX(handle);
   pointer('pointerdown', handle, start);
   pointer('pointermove', handle, start + 60);
-  await expect.poll(() => width(ui.column()!)).toBe(300);
+  await expect.poll(() => width(ui.column()!)).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX + 60);
   expect(ui.surface().getBoundingClientRect().left, 'the content gives way at once').toBeCloseTo(ui.column()!.getBoundingClientRect().right);
   await nextPaint();
   expect(centreX(handle), 'the handle moves with the edge').toBeCloseTo(ui.column()!.getBoundingClientRect().right);
   expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY), 'nothing is stored mid-drag').toBeUndefined();
   pointer('pointerup', handle, start + 60);
-  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(300);
+  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(INNER_SIDEBAR_DEFAULT_WIDTH_PX + 60);
   expect(readInterface(LIST_KEY), 'the list keeps its own width').toBeUndefined();
-  expect(width(ui.list())).toBe(240);
+  expect(width(ui.list())).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
 });
 
 it('dragging past the minimum stops there (no collapse); past the cap it stops at 40% of the card', async () => {
@@ -170,13 +174,13 @@ it('dragging past the minimum stops there (no collapse); past the cap it stops a
   expect(ui.column(), 'the column is still there').not.toBeNull();
   expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(INNER_SIDEBAR_MIN_WIDTH_PX);
 
-  // 1100 wide, list 240: the card is 860, 40% of it is 344.
+  // 1100 wide: the column stops at 40% of the card.
   const again = centreX(handle);
   pointer('pointerdown', handle, again);
   pointer('pointermove', handle, again + 800);
-  await expect.poll(() => width(ui.column()!)).toBe(344);
+  await expect.poll(() => Math.abs(width(ui.column()!) - capAt(1100)) < 0.5).toBe(true);
   pointer('pointerup', handle, again + 800);
-  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBe(344);
+  expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY)).toBeCloseTo(capAt(1100), 0);
   const card = ui.surface().getBoundingClientRect().right - ui.column()!.getBoundingClientRect().left;
   expect(width(ui.surface()) / card, 'the content keeps at least 60% of the card').toBeGreaterThanOrEqual(0.6 - 0.01);
 });
@@ -209,11 +213,12 @@ it('a narrower window or a wider list makes the column give way; the stored widt
   const ui = await renderWorkspace();
   expect(width(ui.column()!)).toBe(500);
 
-  // 1000 wide, list 240: the card is 760, 40% of it is 304.
+  // 1000 wide: 40% of the card.
   await page.viewport(1000, 700);
-  await expect.poll(() => width(ui.column()!)).toBe(304);
+  await expect.poll(() => Math.abs(width(ui.column()!) - capAt(1000)) < 0.5).toBe(true);
   await nextPaint();
-  expect(centreX(ui.innerHandle()!)).toBeCloseTo(ui.column()!.getBoundingClientRect().right);
+  // The cap is fractional (40% of the card): the handle lands on the edge within a pixel's rounding.
+  expect(centreX(ui.innerHandle()!)).toBeCloseTo(ui.column()!.getBoundingClientRect().right, 1);
 
   // The list dragged to its own cap (40% of 1000): the card is 600, 40% of it is 240.
   const listHandle = ui.handles()[0];
@@ -235,14 +240,15 @@ it('while the window holds the column narrower than chosen, a press without a mo
   writeInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY, 500);
   await page.viewport(1000, 700);
   const ui = await renderWorkspace();
-  await expect.poll(() => width(ui.column()!)).toBe(304);
+  await expect.poll(() => Math.abs(width(ui.column()!) - capAt(1000)) < 0.5).toBe(true);
+  const held = width(ui.column()!);
   const handle = ui.innerHandle()!;
   const x = centreX(handle);
   pointer('pointerdown', handle, x);
   pointer('pointerup', handle, x);
   handle.focus();
   await userEvent.keyboard('{ArrowRight}');
-  expect(width(ui.column()!)).toBe(304);
+  expect(width(ui.column()!)).toBe(held);
   expect(readInterface(INNER_SIDEBAR_WIDTH_STORAGE_KEY), 'nothing the drawn width did not change is stored').toBe(500);
   await page.viewport(1700, 700);
   await expect.poll(() => width(ui.column()!)).toBe(500);
