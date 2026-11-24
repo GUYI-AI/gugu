@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { restartPhoneAgentHost, stopPhoneAgentHost, usePhoneDevice } from '../phone-device/phoneDeviceRuntime'
-import { setPhoneAgentHostEnabled, usePhoneDeviceSettings } from '../phone-device/phoneDeviceSettings'
+import { enablePhoneAgentHost, restartPhoneAgentHost, stopPhoneAgentHost, usePhoneDevice } from '../phone-device/phoneDeviceRuntime'
+import { usePhoneDeviceSettings } from '../phone-device/phoneDeviceSettings'
 import { phoneAgentAvailable } from './nativeAgent'
 import { Capacitor } from '@capacitor/core'
 import { platform } from '@/platform'
@@ -47,9 +47,17 @@ function AndroidPhoneAgentHostControl({ ownerId, setup, summary }: { ownerId: st
 
   if (!phoneAgentAvailable()) return null
 
+  const enable = async () => {
+    if (changing) return
+    setChanging('restart'); setError(null)
+    try { await enablePhoneAgentHost(ownerId) }
+    catch { setError(t('devices.phoneActions.host.operationFailed')) }
+    finally { setChanging(null) }
+  }
+
   return <PhoneAgentHostView setup={setup} summary={summary} enabled={settings.hostEnabled} ready={!!ready} failed={!!failed}
     changing={changing} error={error} hostError={hostError} statusText={statusText} changeHost={changeHost}
-    enable={() => { setError(null); setPhoneAgentHostEnabled(ownerId, true) }} />
+    enable={() => { void enable() }} />
 }
 
 export function PhoneAgentHostControl(props: { ownerId: string; setup?: boolean; summary?: boolean }) {
