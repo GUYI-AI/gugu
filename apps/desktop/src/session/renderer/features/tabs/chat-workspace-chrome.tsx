@@ -140,8 +140,9 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const sharedStrip = full || mode === 'split' && layout.narrow;
   const chatActive = layout.activePaneId === chat.paneId;
   const leadingProps = { leadingSlot: leading, reserveShellRestoreLane, leadingReservePx };
-  // The capsule row (no tools beside it, nothing merged): every button floats at its top right, the block's and the view's in one row.
-  const floating = !toolCard && !full && mode !== 'split';
+  // The capsule row (no tools shown beside it, also while they go off; nothing merged): every button floats at its top right,
+  // the block's and the view's in one row.
+  const floating = !full && mode !== 'split';
 
   const conversationTab = tab && Title ? <PaneProvider group={chat} passive isFocusedPane={chatActive}>
     <ChatWorkspaceTabContext.Provider value={{ role: 'conversation', layout }}>
@@ -203,7 +204,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
           </ChatWorkspaceTabContext.Provider>
         </PaneProvider>
       </div>
-      {toolCard && actionRow}
+      {/* Only while the tools are shown: hidden, they are on their way off and the buttons are already the header's. */}
+      {toolCard && mode === 'split' && actionRow}
     </div>
   );
   return (
@@ -217,7 +219,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       </div>
       {/* The conversation's own head (no tools beside it) is the capsule row: its buttons — the block's, then the view's —
           float at the top right as one row and take no width, so the capsule centres on the whole card. Beside tools or
-          merged into one strip they share the row. */}
+          merged into one strip they share the row. The tools going off (hidden, still on the track) take their strip with them
+          but not these buttons: they are the header's from the frame the tools are hidden, ❌ after they land. */}
       {floating ? <div ref={measureFloatingActions} className="absolute inset-y-0 right-0 flex">
         <div className="flex [--tabbar-actions-edge-gap:0px]">{actions}</div>{actionRow}
       </div> : !toolCard && actionRow}

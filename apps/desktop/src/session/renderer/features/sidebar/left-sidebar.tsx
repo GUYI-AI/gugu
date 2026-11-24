@@ -170,8 +170,11 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         // tokens.css) are outside the utilities layer, so a plain utility loses to them.
         '[&_[data-region=sidebar-scroll]_.gg-list-row-subtitle]:!text-[length:var(--font-caption)] [&_[data-region=sidebar-scroll]_.gg-list-row-title]:!font-normal',
         '[&_[data-region=sidebar-scroll]_.gg-chat-row-muted]:hidden',
-        // The list's gutter: 14 open, 8 on the rail (one element restyled when the rail flips).
-        'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:px-2'
+        // The list's gutter: 14 open, 8 on the rail (one element restyled when the rail flips). On the rail the 4px scrollbar
+        // (tokens.css @@@scrollbar-autohide, it takes layout width) is always reserved and comes out of the right gutter: a
+        // list long enough to scroll otherwise narrowed every 52px block by 4 while its 40px avatar kept its place, so the
+        // avatar sat off the block's centre (yangchichi 11-24, a Mac with scrollbars shown).
+        'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:pl-2 data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:pr-1 data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:[scrollbar-gutter:stable]'
       )}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
