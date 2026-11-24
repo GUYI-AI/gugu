@@ -101,15 +101,15 @@ it.each(['state', 'draft'])('allows draft synchronization only after both reconn
 
 it('reopens the local state port and replaces both stale streaming messages with the authoritative completed turn', async () => {
   const runtime = runtimePorts();
-  const session = await AcpLiveSession.create('local-completed');
+  const session = await AcpLiveSession.create('local-completed', true);
   cleanup.push(() => session.dispose());
   expect(session.sessionState.current().isGenerating).toBe(true);
-  expect(session.activeTurn.current()?.items).toHaveLength(2);
+  expect(session.runtimeTurns!.activeTurn.current()?.items).toHaveLength(2);
   runtime.finishWhileDisconnected();
   await vi.waitFor(() => {
     expect(runtime.opens, 'a closed local port must be reacquired without a user retry').toBe(2);
     expect(session.sessionState.current()).toMatchObject({ lifecycle: 'ready', isGenerating: false, activeTurnId: null });
-    expect(session.activeTurn.current()).toBeNull();
+    expect(session.runtimeTurns!.activeTurn.current()).toBeNull();
   });
 });
 
