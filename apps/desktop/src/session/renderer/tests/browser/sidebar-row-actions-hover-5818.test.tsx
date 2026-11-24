@@ -137,7 +137,7 @@ afterEach(() => {
   // store 是模块单例:上一条 note 进去的身份会跨用例留着,而「没有身份」正是另一条要判的状态。
   sessionAgentBindings.bindings.clear()
   registry.loaded.clear()
-  sidebarIdentityCard.close(sidebarIdentityCard.activeSessionId ?? '')
+  sidebarIdentityCard.close(sidebarIdentityCard.activeKey ?? '')
 })
 
 function mount(): void {
@@ -175,7 +175,7 @@ async function mounted(): Promise<void> {
   await until('sidebar row mounted', () => host.querySelectorAll('[data-row-hover-actions]').length === 1)
 }
 
-const identityCard = () => document.querySelector<HTMLElement>('[data-sidebar-identity-card]')
+const identityCard = () => document.querySelector<HTMLElement>('[data-row-hover-card="sidebar-session"]')
 
 /**
  * 开卡要停够一段时长、离开要过一段宽限 —— 那是产品的延时策略,判它就把时间当输入:假时钟下
@@ -312,7 +312,7 @@ it('keeps the copyable addressing name raw while the sidebar row shows the namin
   const clipboard = stubClipboard()
   registry.loaded.set('conv-1', { providerId: 'codex', title: 'Codex 5', createdAt })
   try {
-    sidebarIdentityCard.release('conv-1')
+    sidebarIdentityCard.leave('conv-1', null)
     await userEvent.hover(park())
     mount()
     await mounted()
@@ -362,9 +362,9 @@ it('#7334 指针停在行上,右侧弹出身份卡:Agent 名 / 设备 / 文件�
   // 指针停上来:要停够开卡的时长,扫过去不该闪。时间是输入:没推时间就没开;把那次开卡的倒计时推过去才开。
   fakeTimers()
   await hovered(row)
-  expect(sidebarIdentityCard.activeSessionId, '指针刚落上来、时长还没到:不该开').toBeNull()
+  expect(sidebarIdentityCard.activeKey, '指针刚落上来、时长还没到:不该开').toBeNull()
   vi.runOnlyPendingTimers()
-  expect(sidebarIdentityCard.activeSessionId).toBe('conv-1')
+  expect(sidebarIdentityCard.activeKey).toBe('conv-1')
   vi.useRealTimers()
   await until('identity card renders', () => identityCard() !== null)
   const card = identityCard()!
@@ -416,7 +416,7 @@ it('#7334 指针停在行上,右侧弹出身份卡:Agent 名 / 设备 / 文件�
   expect(card.matches(':hover'), '指针此刻在卡上').toBe(true)
   fakeTimers()
   await userEvent.hover(park())
-  expect(sidebarIdentityCard.activeSessionId, '离开卡:当场收').toBeNull()
+  expect(sidebarIdentityCard.activeKey, '离开卡:当场收').toBeNull()
   vi.useRealTimers()
   await until('identity card is gone', () => identityCard() === null)
 
@@ -424,9 +424,9 @@ it('#7334 指针停在行上,右侧弹出身份卡:Agent 名 / 设备 / 文件�
   fakeTimers()
   await hovered(row)
   vi.runOnlyPendingTimers()
-  expect(sidebarIdentityCard.activeSessionId).toBe('conv-1')
+  expect(sidebarIdentityCard.activeKey).toBe('conv-1')
   await userEvent.hover(park())
-  expect(sidebarIdentityCard.activeSessionId, '离开行、没进卡:当场收').toBeNull()
+  expect(sidebarIdentityCard.activeKey, '离开行、没进卡:当场收').toBeNull()
   vi.useRealTimers()
   await until('identity card is gone', () => identityCard() === null)
 })
@@ -496,7 +496,7 @@ it('#6092 设置里关掉之后,悬浮不再弹卡 —— 开关是真的接着�
     fakeTimers()
     await hovered(row)
     vi.runOnlyPendingTimers()
-    expect(sidebarIdentityCard.activeSessionId).toBeNull()
+    expect(sidebarIdentityCard.activeKey).toBeNull()
     vi.useRealTimers()
     expect(identityCard()).toBeNull()
     expect(row.innerText).toContain('软件更新')
@@ -518,7 +518,7 @@ it('点击不是悬浮:进行就点、停够了再点,点完都没有卡;离开�
   await userEvent.click(row)
   await until('pointer is over the row', () => row.matches(':hover'))
   vi.runOnlyPendingTimers()
-  expect(sidebarIdentityCard.activeSessionId, '进来就点:点完不该冒出卡').toBeNull()
+  expect(sidebarIdentityCard.activeKey, '进来就点:点完不该冒出卡').toBeNull()
   vi.useRealTimers()
   expect(identityCard()).toBeNull()
 
@@ -527,14 +527,14 @@ it('点击不是悬浮:进行就点、停够了再点,点完都没有卡;离开�
   fakeTimers()
   await hovered(row)
   vi.runOnlyPendingTimers()
-  expect(sidebarIdentityCard.activeSessionId).toBe('conv-1')
+  expect(sidebarIdentityCard.activeKey).toBe('conv-1')
   vi.useRealTimers()
   await until('identity card renders', () => identityCard() !== null)
   fakeTimers()
   await userEvent.click(row)
-  expect(sidebarIdentityCard.activeSessionId, '停够再点:卡当场收').toBeNull()
+  expect(sidebarIdentityCard.activeKey, '停够再点:卡当场收').toBeNull()
   vi.runOnlyPendingTimers()
-  expect(sidebarIdentityCard.activeSessionId, '停够再点:点完卡不该重开').toBeNull()
+  expect(sidebarIdentityCard.activeKey, '停够再点:点完卡不该重开').toBeNull()
   vi.useRealTimers()
   await until('identity card is gone', () => identityCard() === null)
 
@@ -543,7 +543,7 @@ it('点击不是悬浮:进行就点、停够了再点,点完都没有卡;离开�
   fakeTimers()
   await hovered(row)
   vi.runOnlyPendingTimers()
-  expect(sidebarIdentityCard.activeSessionId).toBe('conv-1')
+  expect(sidebarIdentityCard.activeKey).toBe('conv-1')
   vi.useRealTimers()
   await until('identity card renders', () => identityCard() !== null)
 })

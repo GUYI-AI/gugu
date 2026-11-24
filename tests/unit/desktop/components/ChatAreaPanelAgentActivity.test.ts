@@ -169,7 +169,7 @@ describe('ChatAreaPanel agent activity placement', () => {
       const runningBar = harness.container.querySelector('[data-testid="group-agent-running-status"]')!
       const names = (root: ParentNode, selector: string) => Array.from(root.querySelectorAll<HTMLElement>(selector), (node) => node.querySelector('.rtb-nm')!.textContent)
       // 360px fits three 100px pills plus +N.
-      expect(Array.from(runningBar.querySelectorAll<HTMLElement>('.rtb-bar > [data-message-preview-trigger]')).filter((node) => node.style.visibility !== 'hidden').map((node) => node.querySelector('.rtb-nm')!.textContent)).toEqual(['mine-1', 'mine-2', 'mine-3'])
+      expect(Array.from(runningBar.querySelectorAll<HTMLElement>('.rtb-bar > [data-message-preview-trigger]')).filter((node) => !node.hasAttribute('data-folded')).map((node) => node.querySelector('.rtb-nm')!.textContent)).toEqual(['mine-1', 'mine-2', 'mine-3'])
       expect(runningBar.querySelector('.rtb-more')?.textContent).toBe('+3')
       await clickElement(runningBar.querySelector<HTMLButtonElement>('.rtb-more')!)
       const panel = document.body.querySelector('.rtb-ov')!

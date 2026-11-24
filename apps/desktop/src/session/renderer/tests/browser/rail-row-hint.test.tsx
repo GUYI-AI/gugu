@@ -9,7 +9,7 @@ import '@/styles/tokens.css';
 
 /**
  * The collapsed sidebar is a rail of avatars: pointing at one says the row's own name and second line in the product's
- * tooltip (never the browser's `title`). Real Chromium: the pointer and the popup's place are the engine's own.
+ * row hover card (never the browser's `title`). Real Chromium: the pointer and the popup's place are the engine's own.
  */
 
 let harness: ReturnType<typeof createReactHarness>;
@@ -21,7 +21,7 @@ afterEach(() => harness?.cleanup());
 function Rail({ enabled }: { enabled: boolean }) {
   const list = useRef<HTMLDivElement>(null);
   return (
-    <div ref={list} style={{ position: 'fixed', left: 0, top: 0, width: 72 }}>
+    <div ref={list} data-sidebar-rail="" style={{ position: 'fixed', left: 0, top: 0, width: 72 }}>
       <RailRowHint list={list} enabled={enabled} />
       <ListRow data-row="group" leading={<span style={{ display: 'block', width: 32, height: 32 }} />} title="Weekend hikers" subtitle="See you at eight" />
       <ListRow data-row="person" leading={<span style={{ display: 'block', width: 32, height: 32 }} />} title="Lin" />
@@ -29,7 +29,7 @@ function Rail({ enabled }: { enabled: boolean }) {
   );
 }
 
-const hint = () => document.querySelector<HTMLElement>('[data-rail-row-hint]');
+const hint = () => document.querySelector<HTMLElement>('[data-row-hover-card="sidebar-rail"]');
 const row = (name: string) => harness.container.querySelector<HTMLElement>(`[data-row="${name}"]`)!;
 
 it('pointing at a row on the rail shows its name and second line beside it; the next row changes it; no native title', async () => {
@@ -40,7 +40,9 @@ it('pointing at a row on the rail shows its name and second line beside it; the 
 
   await userEvent.hover(row('group'));
   await until('the hint comes up', hint, (popup) => popup?.textContent === 'Weekend hikersSee you at eight');
-  const popup = hint()!.getBoundingClientRect();
+  // Measure the card's face once its entrance has played: the popup's own box includes its transparent bridge to the row.
+  await until('the card has settled', () => hint()!.getAnimations({ subtree: true }).length === 0);
+  const popup = hint()!.firstElementChild!.getBoundingClientRect();
   const target = row('group').getBoundingClientRect();
   expect(popup.left, 'beside the row, not over it').toBeGreaterThanOrEqual(target.right);
   expect(popup.top).toBeLessThan(target.bottom);
