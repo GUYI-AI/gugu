@@ -94,10 +94,16 @@ interface SurfaceBinding {
    * Where this surface is (真源原则 13), the one shape every host keeps (`AppWhere`): the working copy it works on — a
    * session's (`session:<id>`, a session's tab) or a project's root folder (`project:<id>`, a page opened on a file of it)
    * — and the conversation it is in: a group, a topic, a private chat; in a session's tab, the person's private chat with
-   * that session's agent. Facts for `getContext().workspace` / `.chat`, never a target a call falls back on.
+   * that session's agent. Facts for `getContext().workspace`, never a target a call falls back on. What the page sends into
+   * (a draft, a cite, a Send) goes to `conversation`, where it is drawn.
    */
   workspace: string | null;
   conversation: string | null;
+  /**
+   * The chat whose files and members the page reads (`surfaceResourceChat`): the conversation itself, or a topic's group.
+   * `getContext().chat`, file places, members and folders are its.
+   */
+  resourceChat: string | null;
   widget?: AppWhere['widget'];
   tabId: string;
   viewState?: Record<string, unknown>;
@@ -233,7 +239,7 @@ function pageCaller(binding: SurfaceBinding, webContentsId: number, gesture: boo
     extensionId: binding.extensionId,
     handed: handedFileOf(binding),
     ...(binding.personOpened ? { personOpened: true as const } : {}),
-    boundChat: binding.conversation,
+    boundChat: binding.resourceChat,
     ...(agentOf(binding) ? { asAgent: agentOf(binding)! } : {}),
   });
   return {
@@ -706,17 +712,19 @@ export async function bindExtensionSurface(input: {
   const filePath = await workspaceRelativeFile(workspace ? { workspace } : null, input.filePath).catch(recover);
   // Bound again for another group or file (the host normally retargets instead): the open files the
   // page holds were granted under the old binding, so they go, as in `retargetExtensionSurface`.
-  const conversation = await surfaceResourceChat(input.conversation ?? undefined, input.operator, input.resourceChat).catch(recover);
+  const resourceChat = await surfaceResourceChat(input.conversation ?? undefined, input.operator, input.resourceChat).catch(recover);
   if (bindingChanges.get(input.webContentsId) !== change) throw new Error('That surface binding changed');
   const previous = bindings.get(input.webContentsId);
-  if (previous && (previous.conversation !== conversation || previous.itemId !== (input.itemId ?? null))) {
+  if (previous && (previous.resourceChat !== resourceChat || previous.itemId !== (input.itemId ?? null))) {
     fileSync.revoke(input.webContentsId, 'unbound');
   }
   bindings.set(input.webContentsId, {
     ...(input.opening ? { opening: input.opening } : {}),
     extensionId: sessionExtensionId,
     workspace,
-    conversation,
+    // Where it is drawn (a topic stays a topic), and the chat its files and members are (a topic's group).
+    conversation: input.conversation ?? null,
+    resourceChat,
     ...(input.widget ? { widget: structuredClone(input.widget) } : {}),
     tabId: input.tabId,
     viewState: input.viewState,
@@ -761,8 +769,8 @@ export type OpenedPlace = AppPlace | { session: string } | 'own';
 /** A gugu link or a banner names a session's tab as `{ session }`: it is at that session's working copy. */
 const whereKey = (opened: OpenedPlace) => (opened === 'own' ? 'own' : 'session' in opened ? sessionWorkspace(opened.session) : placeKey(opened));
 function isAt(binding: SurfaceBinding, where: string): boolean {
-  if (where === 'own') return !binding.workspace && !binding.conversation;
-  return where === binding.workspace || (binding.conversation !== null && where === placeKey({ chat: binding.conversation }));
+  if (where === 'own') return !binding.workspace && !binding.resourceChat;
+  return where === binding.workspace || (binding.resourceChat !== null && where === placeKey({ chat: binding.resourceChat }));
 }
 
 /**
@@ -869,7 +877,7 @@ export function deliverToOpeningPage(extensionId: string, event: ExtensionHostEv
 export function deliverToChatFilePage(extensionId: string, event: ExtensionHostEvent, chatId: string, itemId: string): void {
   let told = 0;
   for (const [webContentsId, binding] of bindings) {
-    if (binding.extensionId !== extensionId || binding.conversation !== chatId || binding.itemId !== itemId) continue;
+    if (binding.extensionId !== extensionId || binding.resourceChat !== chatId || binding.itemId !== itemId) continue;
     if (event.type === 'link' && event.tab !== binding.tabName) continue;
     const contents = webContents.fromId(webContentsId);
     if (contents && !contents.isDestroyed()) { sendEvent(contents, event); told += 1; }
@@ -948,7 +956,8 @@ export async function retargetExtensionSurface(input: {
   }
   const recover = (error: unknown) => restoreBindingChange(input.webContentsId, binding, change, error);
   const filePath = await workspaceRelativeFile(workspace ? { workspace } : null, input.filePath).catch(recover);
-  const conversation = await surfaceResourceChat(input.conversation ?? undefined, binding.operator, input.resourceChat).catch(recover);
+  const resourceChat = await surfaceResourceChat(input.conversation ?? undefined, binding.operator, input.resourceChat).catch(recover);
+  const conversation = input.conversation ?? null;
   if (binding.widget && conversation !== binding.conversation) throw new Error('A widget cannot move to another conversation');
   if (bindings.get(input.webContentsId) !== binding || bindingChanges.get(input.webContentsId) !== change) throw new Error('That surface binding changed');
   // Another handed-over file: the one it could open without a capability was the old one, so its open files go (it is
@@ -957,9 +966,10 @@ export async function retargetExtensionSurface(input: {
     fileSync.revoke(input.webContentsId, 'unbound');
   }
   const was = fileOf(binding);
-  const folderChanged = binding.conversation !== conversation || binding.itemId !== (input.itemId ?? null);
+  const folderChanged = binding.resourceChat !== resourceChat || binding.itemId !== (input.itemId ?? null);
   binding.workspace = workspace;
   binding.conversation = conversation;
+  binding.resourceChat = resourceChat;
   binding.tabId = input.tabId;
   binding.viewState = input.viewState;
   binding.navigation = input.navigation;
@@ -1072,7 +1082,7 @@ const groupReads = coalescedReads((key, error) =>
 export function notifyGroupWorkspaceChanged(changes: readonly GroupFilesChange[]): Promise<void> {
   const reads: Promise<void>[] = [];
   for (const { chatId, itemIds } of changes) {
-    for (const binding of bindings.values()) if (binding.conversation === chatId) openingFolders.delete(binding);
+    for (const binding of bindings.values()) if (binding.resourceChat === chatId) openingFolders.delete(binding);
     const key = placeKey({ chat: chatId });
     const readers = new Set<string | null>();
     for (const places of pageWatches.values()) for (const watch of places.values()) {
@@ -1268,7 +1278,7 @@ export async function bringSessionUp(session: { sessionId: string; projectId: st
 const chatsDrawnIn = new Map<string, { chat: ExtensionChat | null; members?: ExtensionMember[] }>();
 const contextHasMembers = (binding: SurfaceBinding) => !(extensionsService().get(binding.extensionId).manifest.apiVersion >= 27);
 const chatIsRead = (binding: SurfaceBinding) => {
-  const read = binding.conversation ? chatsDrawnIn.get(binding.conversation) : undefined;
+  const read = binding.resourceChat ? chatsDrawnIn.get(binding.resourceChat) : undefined;
   return read !== undefined && (!contextHasMembers(binding) || read.members !== undefined);
 };
 
@@ -1279,10 +1289,10 @@ const chatIsRead = (binding: SurfaceBinding) => {
 const OPENING_FOLDERS = ['', '附件'] as const;
 const openingFolders = new WeakMap<SurfaceBinding, { lists: Map<string, Promise<AppFileEntry[]>>; preferences?: Promise<{ showAppData: boolean }> }>();
 function preloadFolder(binding: SurfaceBinding, pageId: number): void {
-  if (binding.extensionId !== 'workspace' || binding.tabName !== 'main' || !binding.conversation || binding.workspace || binding.itemId || binding.modal
+  if (binding.extensionId !== 'workspace' || binding.tabName !== 'main' || !binding.resourceChat || binding.workspace || binding.itemId || binding.modal
     || binding.operator.kind !== 'person' || contextHasMembers(binding) || !extensionsService().hasCapability(binding.extensionId, 'files:read')) return;
   const page = pageCaller(binding, pageId, false).filePage({});
-  const args = { place: { chat: binding.conversation } };
+  const args = { place: { chat: binding.resourceChat } };
   const files = import('@main/core/extensions/app-files');
   const lists = new Map(OPENING_FOLDERS.map((folder) => [folder, files.then((files) => files.listAppFiles(page, { ...args, folder }))] as const));
   const preferences = files.then((files) => files.appFileViewPreferences(page, args));
@@ -1294,7 +1304,7 @@ function preloadFolder(binding: SurfaceBinding, pageId: number): void {
 /** A page's own chat is bound as its resource container (`surfaceResourceChat`); any other is looked up, as whoever works the call. */
 function resourceChatFor(caller: BridgeCaller, chat: string): Promise<string> {
   const asAgent = caller.callingAgent ?? caller.filePage({ place: { chat } }, true).asAgent ?? null;
-  return !asAgent && caller.binding?.conversation === chat ? Promise.resolve(chat) : resourceChatOf(chat, { asAgent });
+  return !asAgent && caller.binding?.resourceChat === chat ? Promise.resolve(chat) : resourceChatOf(chat, { asAgent });
 }
 
 /** A person's live chat context already names its resource container. Agent membership is checked as that agent. */
@@ -1307,7 +1317,7 @@ async function surfaceResourceChat(chatId: string | undefined, operator?: Extens
 }
 
 async function readChatMembers(chatId: string, includeMembers = true): Promise<void> {
-  if (![...bindings.values()].some((binding) => binding.conversation === chatId)) {
+  if (![...bindings.values()].some((binding) => binding.resourceChat === chatId)) {
     chatsDrawnIn.delete(chatId);
     return;
   }
@@ -1340,14 +1350,14 @@ export function projectFoldersPublished(): void {
     const drawn = chatsDrawnIn.get(chatId);
     if (drawn?.chat?.kind !== 'group') continue;
     void chatRead(chatId, drawn.members !== undefined).then(() => {
-      for (const [id, binding] of bindings) if (binding.conversation === chatId) pushContext(id);
+      for (const [id, binding] of bindings) if (binding.resourceChat === chatId) pushContext(id);
     }, unread(chatId));
   }
 }
 
 /** The chats some page is drawn in: where a change to a person, which names no chat, may move who is shown. */
 export function chatsWithPages(): string[] {
-  return [...new Set([...bindings.values()].flatMap((binding) => (binding.conversation ? [binding.conversation] : [])))];
+  return [...new Set([...bindings.values()].flatMap((binding) => (binding.resourceChat ? [binding.resourceChat] : [])))];
 }
 
 /** A row of this chat's members changed: if that moved who is in it (`rosterMoved`), read them again and tell its pages. */
@@ -1359,17 +1369,17 @@ export async function chatMembersChanged(chatId: string, changes: readonly Membe
     const token = await currentAccountAccessToken();
     const person = token ? userIdFromSupabaseAccessToken(token) : null;
     for (const [id, binding] of bindings) {
-      if (binding.conversation === chatId && left.has(agentOf(binding) ?? person ?? '')) void fileSync.revoke(id, 'removed-from-group');
+      if (binding.resourceChat === chatId && left.has(agentOf(binding) ?? person ?? '')) void fileSync.revoke(id, 'removed-from-group');
     }
     for (const agent of left) endCallsIn(chatId, agent);
   }
   // No page drawn for it: nobody keeps its members current, so they are forgotten — read afresh when a page is (`pushContext`).
-  if (![...bindings.values()].some((binding) => binding.conversation === chatId)) {
+  if (![...bindings.values()].some((binding) => binding.resourceChat === chatId)) {
     chatsDrawnIn.delete(chatId);
     return;
   }
   if (!rosterMoved(chatsDrawnIn.get(chatId)?.members ?? null, changes)) return;
-  const pages = [...bindings].filter(([, binding]) => binding.conversation === chatId && contextHasMembers(binding));
+  const pages = [...bindings].filter(([, binding]) => binding.resourceChat === chatId && contextHasMembers(binding));
   if (pages.length === 0) {
     const read = chatsDrawnIn.get(chatId);
     if (read) delete read.members;
@@ -1442,7 +1452,7 @@ async function sessionMachineOf(sessionId: string): Promise<SessionMachine | nul
 
 /** The file this page was opened for (`ctx.file`), named where it lives. */
 function handedFileOf(binding: SurfaceBinding): (AppFileRef & { id: string }) | null {
-  if (binding.conversation && binding.itemId) return { chat: binding.conversation, id: binding.itemId, ...(binding.opening ? { version: binding.opening.entry.version } : {}) };
+  if (binding.resourceChat && binding.itemId) return { chat: binding.resourceChat, id: binding.itemId, ...(binding.opening ? { version: binding.opening.entry.version } : {}) };
   if (binding.workspace && binding.filePath) return { workspace: binding.workspace, id: binding.filePath };
   return null;
 }
@@ -1451,7 +1461,7 @@ function handedFileOf(binding: SurfaceBinding): (AppFileRef & { id: string }) | 
 async function pageFrom(binding: SurfaceBinding): Promise<ExtensionPageFrom> {
   const workspace = await workspaceOf(binding);
   // Where a project's folders are is the page's own to know (`contextFor`), not told with what it says.
-  const { folders: _folders, ...drawn } = (binding.conversation ? chatsDrawnIn.get(binding.conversation)?.chat : undefined) ?? {};
+  const { folders: _folders, ...drawn } = (binding.resourceChat ? chatsDrawnIn.get(binding.resourceChat)?.chat : undefined) ?? {};
   const chat = 'id' in drawn ? drawn as ExtensionChat : undefined;
   const file = handedFileOf(binding);
   return { tabId: binding.tabId, ...(workspace ? { workspace } : {}), ...(chat ? { chat } : {}), ...(file ? { file } : {}), operator: binding.operator };
@@ -1465,7 +1475,7 @@ function personOperator(): ExtensionContextOperator {
 function contextFor(binding: SurfaceBinding, workspace: ExtensionWorkspace | undefined): ExtensionHostContext {
   const capabilities = extensionsService().grantedCapabilities(binding.extensionId);
   const { locale, themeMode, themeColors, fullscreen } = requireHost().presentation();
-  const drawnIn = binding.conversation ? chatsDrawnIn.get(binding.conversation) : undefined;
+  const drawnIn = binding.resourceChat ? chatsDrawnIn.get(binding.resourceChat) : undefined;
   const file = handedFileOf(binding);
   return {
     apiVersion: EXTENSION_API_VERSION,
@@ -1520,7 +1530,7 @@ export function shownTabWidth(extensionId: string, tabName: string, sessionId: s
 export function pushContext(webContentsId: number): void {
   const binding = bindings.get(webContentsId);
   if (!binding) return;
-  const chatId = binding.conversation;
+  const chatId = binding.resourceChat;
   if (chatId && !chatIsRead(binding)) {
     // Never pushed without its chat: no `chat` would read as not in a chat. Unread, `getContext` says so.
     void chatRead(chatId, contextHasMembers(binding)).then(() => chatsDrawnIn.has(chatId) && pushContext(webContentsId), unread(chatId));
@@ -1934,10 +1944,10 @@ const selectionNames = new WeakMap<SurfaceBinding, Map<string, FileReference | n
 /** The page's conversation, and whether a file is one this page shows: its own working copy's, its chat's folders', its chat's. */
 function selectionPlace(page: SurfaceBinding, ref: AppFileRef) {
   const conversation = selectionConversationOf({ session: sessionOfBinding(page), chat: page.conversation });
-  const folders = (page.conversation ? chatsDrawnIn.get(page.conversation)?.chat?.folders : undefined) ?? [];
+  const folders = (page.resourceChat ? chatsDrawnIn.get(page.resourceChat)?.chat?.folders : undefined) ?? [];
   const own = 'workspace' in ref
     ? ref.workspace === page.workspace || folders.some((folder) => folder.workspace === ref.workspace)
-    : Boolean(ref.chat ?? page.conversation);
+    : Boolean(ref.chat ?? page.resourceChat);
   return { conversation, folders, own };
 }
 
@@ -1969,7 +1979,7 @@ async function selectionTarget(page: SurfaceBinding, ref: AppFileRef, version?: 
   selectionNames.set(page, named);
   if (!named.has(key)) {
     const { fileReferenceOf } = await import('./file-selection-reference');
-    named.set(key, await fileReferenceOf(ref, version, { chat: page.conversation, folders }));
+    named.set(key, await fileReferenceOf(ref, version, { chat: page.resourceChat, folders }));
   }
   const file = named.get(key);
   if (!file) throw Object.assign(new Error('Where this file is cannot be named from this computer'), { code: 'not-found' });
@@ -2072,7 +2082,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (!binding) return contextOutside(extensionId);
       // Through API 26, the members come with the first answer. Newer Apps ask for them explicitly. An unread chat is said (the
       // files API's own error), never left out: no `chat` would tell the App it is not in one.
-      if (binding.conversation && !chatIsRead(binding)) await chatRead(binding.conversation, contextHasMembers(binding));
+      if (binding.resourceChat && !chatIsRead(binding)) await chatRead(binding.resourceChat, contextHasMembers(binding));
       return contextFor(binding, await workspaceOf(binding));
 
     case 'getAppState':
@@ -2162,7 +2172,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
         throw Object.assign(new Error('A binding is the person\'s: a page an agent works puts no draft into it'), { code: 'denied' });
       }
       const { dispatchForApp } = await import('@main/core/extensions/extension-send');
-      const drawnIn = page?.conversation ? chatsDrawnIn.get(page.conversation) : undefined;
+      const drawnIn = page?.resourceChat ? chatsDrawnIn.get(page.resourceChat) : undefined;
       const operator = page?.operator;
       return await dispatchForApp(
         extensionId,
@@ -2174,6 +2184,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
             return chatMembersOf(drawnIn.chat!.id, { asAgent: operator?.kind === 'agent' ? operator.id.replace(/^user:/, '') : null });
           } } : {}),
           session: page ? sessionOfBinding(page) : null,
+          ...(page?.conversation && page.resourceChat ? { conversation: { chat: page.conversation, files: page.resourceChat } } : {}),
           folders: drawnIn?.chat?.folders ?? [],
           ...(operator?.kind === 'agent' ? { as: operator.id.replace(/^user:/, '') } : {}),
         },
@@ -2496,7 +2507,7 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
           if (opening) delete opening.preferences;
         }
         const place = args.place as Record<string, unknown> | undefined;
-        if (read && place?.chat === binding.conversation && Object.keys(place).length === 1 && args.showAppData === undefined) return await read;
+        if (read && place?.chat === binding.resourceChat && Object.keys(place).length === 1 && args.showAppData === undefined) return await read;
       }
       const listsWorkingCopy = method === 'filesList' && Boolean((args.place as { workspace?: unknown } | null)?.workspace);
       if (listsWorkingCopy || method === 'filesReadText' || method === 'filesWriteText') workingCopyPages.add(caller.pageId);
@@ -2599,14 +2610,14 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
         const ref = fileRefOf(args.ref);
         // Ordinary opens show an authorized live replica before refreshing metadata; an explicit tab must first claim it.
         const opened = !ask && !peek && !args.at && !isWorkspace(ref) && 'id' in ref && shown.operator.kind === 'person'
-          ? [...bindings.entries()].filter(([id, binding]) => binding.itemId === ref.id && binding.conversation === shown.conversation
+          ? [...bindings.entries()].filter(([id, binding]) => binding.itemId === ref.id && binding.resourceChat === shown.resourceChat
             && (tab === undefined || (binding.extensionId === page.extensionId && binding.tabName === tab))
-            && (ref.chat === undefined || ref.chat === binding.conversation)
+            && (ref.chat === undefined || ref.chat === binding.resourceChat)
             && binding.embedderId === shown.embedderId && binding.operator.kind === 'person' && fileSync.openCount(id) > 0)
           : [];
         const current = opened.length === 1 ? opened[0] : undefined;
-        const present = () => current && current[1].conversation ? deliver(shown, {
-          kind: 'openChatFile', chatId: current[1].conversation, itemId: current[1].itemId!,
+        const present = () => current && current[1].resourceChat ? deliver(shown, {
+          kind: 'openChatFile', chatId: current[1].resourceChat, itemId: current[1].itemId!,
           onlyIfOpen: `${current[1].extensionId}.${current[1].tabName}`, intent,
         }) : undefined;
         let resumed = tab === undefined ? await present() : undefined;
@@ -2759,6 +2770,7 @@ export function registerExtensionBridge(): void {
                   tabId: source.tabId, tabKind: `${source.extensionId}.${source.tabName}`,
                   workspace: source.workspace,
                   conversation: source.conversation,
+                  ...(source.resourceChat ? { resourceChat: source.resourceChat } : {}),
                   ...(source.widget ? { widget: source.widget } : {}),
                   ...(source.itemId ? { itemId: source.itemId } : {}),
                   ...(source.filePath ? { filePath: source.filePath } : {}),

@@ -10,6 +10,7 @@ import { useChatFolderName } from './chatFolderName'
 import { GroupAddMenu } from './GroupAddMenu'
 import { SettingsNavRow } from './groupSettingsUi'
 import { Unknown } from '../ui/Unknown'
+import { ChevronRight } from '@/lib/icons'
 
 // 群信息主页上的两行:群成员(头像、「+」、人数)和这个群的文件夹。从 GroupMembersSection 拆出来,各自只做一件事。
 
@@ -68,4 +69,42 @@ export function GroupMemberCount({ total, style }: { total: number | null; style
 /** 文件夹那一行:页头「…」里「文件」那一项的同一个动作(开这个群的文件夹页签),名字也是同一个(useChatFolderName)。 */
 export function GroupFolderRow({ chatId }: { chatId: string }) {
   return <SettingsNavRow title={useChatFolderName()} testId="group-settings-folder" onClick={() => openPanelItem(chatId, folderItem())} />
+}
+
+/**
+ * 详情页(第 16 版设计稿 .memb)的群成员块:叠着的头像、「群成员」、人数、「+」(GroupAddMenu)、›;点它进成员页。
+ * 和 GroupMembersRow 同一份数据、同一个「+」、同一个去处,只是画法不同。
+ */
+export function GroupMembersBlock({ chatId, settings, memberIds, total, people, agents, onOpen, topic = false }: Parameters<typeof GroupMembersRow>[0] & {
+  /** People and agents in it; null until the roster is read (then only the total is said). */
+  people: number | null; agents: number | null
+  /** A topic's: 「话题成员 N 人」. */
+  topic?: boolean
+}) {
+  const { t } = useTranslation('messaging')
+  const { identitiesById } = useChatStore('identitiesById')
+  const contain = (event: MouseEvent | KeyboardEvent) => event.stopPropagation()
+  return (
+    <div role="button" tabIndex={0} data-testid="group-settings-members" onClick={onOpen}
+      onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }}
+      className="mb-3 flex h-12 cursor-pointer items-center gap-[10px] rounded-xl bg-[var(--muted)] px-3 text-[length:var(--font-body)]">
+      <span className="flex shrink-0 ps-1.5">
+        {/* 窄了先让头像:详情页(@container/details)不到 380 只留 3 个,不到 300 不留。 */}
+        {memberIds.slice(0, 4).map((id, index) => (
+          <span key={id} className={`-ms-1.5 flex rounded-full ring-2 ring-[var(--muted)] @max-[300px]/details:hidden ${index >= 3 ? '@max-[380px]/details:hidden' : ''}`}>
+            <Avatar name={identitiesById[id]?.display_name ?? ''} avatarUrl={identitiesById[id]?.avatar ?? null} seed={id} size={22} />
+          </span>
+        ))}
+      </span>
+      <span className="shrink-0 whitespace-nowrap">{t(topic ? 'group.memberList.titleTopic' : 'group.settings.members')}</span>
+      <span className="min-w-0 flex-1 truncate text-[length:var(--font-caption)] text-[var(--muted-fg)]">{topic ? (total === null ? <Unknown className="w-[2ch]" /> : t('groupDetails.people', { count: total }))
+        : people !== null && agents !== null ? `${t('groupDetails.people', { count: people })} · ${t('groupDetails.agents', { count: agents })}`
+        : total === null ? <Unknown className="w-[2ch]" /> : t('group.settings.memberCount', { count: total })}</span>
+      {/* A topic has no add entry in the product today (its member list only searches): no chip for it. */}
+      {topic ? <span className="ms-auto" /> : <span className="ms-auto flex shrink-0 items-center" onClick={contain} onKeyDown={contain}>
+        <GroupAddMenu chatId={chatId} canAddMembers={groupInviteAccess(chatId, 'group', settings).showInvite} labeled />
+      </span>}
+      <ChevronRight className="size-3.5 shrink-0 text-[var(--faint-fg)]" />
+    </div>
+  )
 }

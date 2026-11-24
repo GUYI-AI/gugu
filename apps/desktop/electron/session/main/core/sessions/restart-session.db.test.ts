@@ -19,7 +19,10 @@ vi.mock('@main/db/client', () => ({
   get sqlite() { return mocks.sqlite; },
 }));
 // The session index is what these read; the tests write it themselves.
-vi.mock('../session-timeline/service', () => ({ ensureSessionIndexed: async () => {} }));
+vi.mock('../session-timeline/service', async () => {
+  const { indexedTurnCount } = await import('../session-index/session-index');
+  return { sessionHasRecordedTurn: async (id: string) => indexedTurnCount(id) > 0 };
+});
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 const restartStatus = vi.hoisted(() => vi.fn(async () => {}));
@@ -36,7 +39,6 @@ vi.mock('./session-life', async () => {
 });
 
 import { restartSession } from './restart-session';
-import { writeSessionIndex } from '../session-index/session-index';
 
 describe('restartSession on a session-life session', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -95,7 +97,7 @@ describe('restartSession on a session-life session', () => {
 
   it('a session whose first turn ran is not replayed: nothing is queued, nothing runs, its first-turn payload is gone', async () => {
     fixture.sqlite.prepare("UPDATE sessions SET config = json_set(config, '$.initialPrompt', '把测试跑一遍', '$.initialMessageId', 'm1') WHERE id = 's'").run();
-    writeSessionIndex('s', [{ id: 't0', seq: 0, initiator: 'user', items: [{ kind: 'message', id: 'm1', seq: 0, role: 'user', text: '把测试跑一遍' }] }]);
+    fixture.sqlite.prepare('INSERT INTO session_index_turns (session_id, turn_id, initiator) VALUES (?, ?, ?)').run('s', 't0', 'user');
     await restartSession('p', 's');
     expect(mocks.calls).toEqual(['reconfigure:s', 'forget:s']);
     expect(fixture.sqlite.prepare("SELECT count(*) AS n FROM session_pending WHERE session_id = 's'").get()).toEqual({ n: 0 });

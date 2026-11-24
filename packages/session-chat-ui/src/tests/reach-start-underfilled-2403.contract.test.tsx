@@ -15,7 +15,7 @@ const turn = (seq: number): TranscriptTurn => ({ id: `turn-${seq}`, seq, initiat
   { kind: 'message', id: `message-${seq}`, seq: 0, role: 'assistant', text: `Short reply ${seq}` },
 ] });
 
-async function mount(pages: number) {
+async function mount(pages: number, seed: readonly TranscriptTurn[] = [turn(1000), turn(1001)]) {
   const context = createChatContext({ locale: () => 'en-US' });
   const state = createChatState(context);
   const host = document.createElement('div');
@@ -32,25 +32,37 @@ async function mount(pages: number) {
     queueMicrotask(() => view.loadOlder(page));
   } });
   cleanups.push(() => { view.dispose(); state.dispose(); context.dispose(); host.remove(); });
-  state.transcript.history.seed([turn(1000), turn(1001)]);
-  await until('the newest page is rendered', () => host.querySelector('[data-item-id="message-1001"]') !== null);
+  state.transcript.history.seed([...seed]);
+  const newest = seed.at(-1)!.items[0]!.id;
+  await until('the newest page is rendered', () => host.querySelector(`[data-item-id="${newest}"]`) !== null);
   const scroller = host.querySelector<HTMLElement>('[data-chat-scroll]')!;
   await untilStable('older pages stop arriving', () => [calls, scroller.scrollHeight, scroller.scrollTop]);
   return { scroller, calls: () => calls, remaining: () => remaining };
 }
 
-it('keeps loading older pages while the loaded history does not fill the viewport', async () => {
+it('keeps loading older pages while the loaded history does not fill the viewport, and no further while the reader stays at the newest end', async () => {
   const { scroller, remaining } = await mount(200);
   expect(scroller.scrollHeight).toBeGreaterThan(scroller.clientHeight);
-  // Not the whole history: loading stops once enough history is above the reader.
   expect(remaining()).toBeGreaterThan(0);
-  expect(scroller.scrollTop).toBeGreaterThanOrEqual(scroller.clientHeight);
+  // @@@older-pages-for-a-reader: nobody has gone up, so no screens are kept above.
+  expect(scroller.scrollTop).toBeLessThan(scroller.clientHeight);
+});
+
+it('asks for no older page when the newest page already fills the viewport', async () => {
+  const seed = Array.from({ length: 60 }, (_, index) => turn(1000 + index));
+  const { scroller, calls } = await mount(200, seed);
+  expect(scroller.scrollHeight).toBeGreaterThan(2 * scroller.clientHeight);
+  expect(calls()).toBe(0);
 });
 
 // A page is a number of bytes, not of rows (here three short rows). One page ahead of the reader would be a fraction
 // of a screen, and the reader would catch up with the top on every page.
-it('keeps three screens of loaded history above the reader, however little each page holds', async () => {
-  const { scroller, remaining } = await mount(200);
+it('keeps three screens of loaded history above a reader who goes up, however little each page holds', async () => {
+  const { scroller, remaining, calls } = await mount(200);
+  const before = calls();
+  scroller.scrollTop = scroller.scrollTop - 40;
+  await until('the reader going up asks for older pages', () => calls() > before);
+  await untilStable('older pages stop arriving', () => [calls(), scroller.scrollHeight, scroller.scrollTop]);
   expect(remaining()).toBeGreaterThan(0);
   expect(scroller.scrollTop).toBeGreaterThanOrEqual(3 * scroller.clientHeight);
   // And no more than that plus the page that crossed the line.

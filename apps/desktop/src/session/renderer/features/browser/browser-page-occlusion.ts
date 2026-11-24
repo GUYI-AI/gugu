@@ -42,7 +42,10 @@ const OCCLUDER_ATTRIBUTES = ['data-slot', 'role', 'data-sonner-toast', 'data-occ
 /**
  * @@@occluder-set 文档里此刻带浮层标记的元素。❌ 每次检测都按选择器扫整个文档:页签每帧(跟随移动)和每 250ms 都要问一次,
  * 长对话挂着十万级节点时一次扫描就是几十毫秒,开着 App 页签的长私聊连空闲都在扫。这里只在第一次扫一遍,之后由
- * MutationObserver 只看新加进来的子树、被改了标记的元素;拆掉的、不再匹配的在用到时剔掉。代价跟 DOM 的变化量走,不跟文档大小走。
+ * MutationObserver 只看新加进来的子树、被改了标记的元素。代价跟 DOM 的变化量走,不跟文档大小走。
+ * 拆掉的、不再匹配的,观察者每批变化后就剔掉,读的时候再剔一次(读可能赶在这批变化的回调之前)。❌ 只在读的时候剔:
+ * 集合只在有网页页签在屏上时才被读,没人读时它就成了唯一还拿着这些浮层的东西 —— 每开关一次看图、每个提示框、菜单、
+ * 弹窗都连着整棵子树和上面的监听留下来。
  */
 const occluderSets = new WeakMap<Document, Set<Element>>();
 function trackedOccluders(doc: Document): Element[] {
@@ -62,12 +65,16 @@ function trackedOccluders(doc: Document): Element[] {
           for (const inner of element.querySelectorAll(PAGE_OCCLUDER_SELECTOR)) tracked.add(inner);
         }
       }
+      dropStale(tracked);
     }).observe(doc, { subtree: true, childList: true, attributes: true, attributeFilter: OCCLUDER_ATTRIBUTES });
     occluderSets.set(doc, tracked);
     set = tracked;
   }
-  for (const element of set) if (!element.isConnected || !element.matches(PAGE_OCCLUDER_SELECTOR)) set.delete(element);
+  dropStale(set);
   return [...set];
+}
+function dropStale(set: Set<Element>): void {
+  for (const element of set) if (!element.isConnected || !element.matches(PAGE_OCCLUDER_SELECTOR)) set.delete(element);
 }
 
 /** 分栏拖动条(见 isBrowserPageOccluded 的采样那段)。 */

@@ -82,30 +82,25 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 describe('DevicesSection interaction', () => {
-  it.each(['outcome', 'version'])('keeps restarting across offline heartbeats until the matching %s arrives', async completion => {
-    restartNow.mockImplementationOnce(async () => ({ requested: true, at: 42 }))
+  it.each(['outcome', 'version'])('shows Restarting from the host’s report, offline included, until its %s arrives', async completion => {
     const capabilities: Device['capabilities'] = { terminals: [], runtimes: [], host_kind: 'server',
       app_version: '0.3.0', server_confirmed_restart: true,
-      server_update: { state: 'ready', version: '0.3.1', scope: 'supervisor' } }
+      server_update: { state: 'switching', version: '0.3.1' }, server_update_outcome: { kind: 'waiting', request: 42 } }
     const render = async (patch: Partial<Device> = {}) => {
       const value = store({ devices: [device({ device_id: 'srv', last_seen_at: new Date().toISOString(), capabilities, ...patch })] })
       await act(async () => { root.render(createElement(DevicesContext.Provider, { value }, createElement(DevicesSection))) })
       await flush()
     }
     await render()
-    await act(async () => { container.querySelector<HTMLElement>('[data-testid="settings-device-update-now"]')!.click() })
-    await act(async () => { container.querySelector<HTMLElement>('[data-testid="settings-device-update-now-yes"]')!.click() })
-    await flush()
     expect(container.querySelector('[data-testid="settings-device-restarting"]')).not.toBeNull()
     await render({ is_online: false, status: 'offline' })
     expect(container.querySelector('[data-testid="settings-device-restarting"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="settings-device-update-now"]')).toBeNull()
-    await render({ capabilities: { ...capabilities, server_update_outcome: { kind: 'switched', request: 41 } } })
-    expect(container.querySelector('[data-testid="settings-device-restarting"]')).not.toBeNull()
     await render({ capabilities: completion === 'version'
       ? { ...capabilities, app_version: '0.3.1' }
       : { ...capabilities, server_update_outcome: { kind: 'switched', request: 42 } } })
     expect(container.querySelector('[data-testid="settings-device-restarting"]')).toBeNull()
+    expect(restartNow).not.toHaveBeenCalled()
   })
 
   it('uses the same device name in Attach and the version dialog, with the tier in the description', async () => {
@@ -430,6 +425,12 @@ describe('DevicesSection interaction', () => {
     })
     await flush()
     expect(restartNow).toHaveBeenCalledWith('srv', '0.3.1', true)
+    // 「正在更新」读那台机器自己报的「已接下、等结果」(它接下请求时随即发一拍心跳),❌ 页面记的点击。
+    const accepted = { ...value.devices[0]!, capabilities: { ...value.devices[0]!.capabilities, server_update_outcome: { kind: 'waiting' as const, request: 42 } } }
+    await act(async () => {
+      root.render(createElement(DevicesContext.Provider, { value: { ...value, devices: [accepted] } }, createElement(DevicesSection)))
+    })
+    await flush()
     const status = container.querySelector<HTMLElement>('[data-testid="settings-device-match-failed"]')!
     expect(status.textContent).toContain('正在更新')
     expect(status.className).not.toContain('danger')

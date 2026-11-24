@@ -242,7 +242,7 @@ export function MachinePicker({
           sidebar ? (
             <button
               type="button"
-              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left outline-none transition-colors hover:bg-row-hover active:bg-row-press focus-visible:bg-row-hover data-popup-open:bg-row-selected"
+              className="flex w-full cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-left outline-none hover:bg-row-hover active:bg-row-press focus-visible:bg-row-hover data-popup-open:bg-row-selected"
               data-testid={testId}
               data-size="sidebar"
               data-selected-id={selected?.id ?? ''}

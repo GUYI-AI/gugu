@@ -23,7 +23,7 @@ import { groupUpdateFor } from '../../session/shared/extensions/app-card-state'
 import { isInstallRefused } from '../../session/shared/extensions/attachment-install'
 import { groupPageSlot, isFolderItem, isWaitingItem, type PanelItem } from '../../session/renderer/features/chats/chat-tabs/chat-panel-item'
 import { PageLoading } from '../../lib/loading/PageLoading'
-import { closeChatTab, panelFull, replacePanelItem, chatPaneOf, setPanelFull, showChatOnly } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
+import { closeChatTab, panelFull, replacePanelItem, chatPaneOf, chatTabShown, setPanelFull, showChatOnly } from '../../session/renderer/features/chats/chat-tabs/chat-layouts'
 import { refusedLine } from '../extensionBundle/installedHere'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
@@ -172,10 +172,12 @@ export const GroupTabContent = observer(function GroupTabContent({ chatId, tabId
 
   // On the phone the tab is a whole page (#6815): its way out is the top-left back, and the back key is that back.
   useBackLayer(back, mobile)
-  // An App took the person to this chat (`gugu.compose`): out from over the chat, so what it pointed at is seen.
+  // An App took the person to this chat (`gugu.compose`): out from over the chat, so what it pointed at is seen — out of
+  // fullscreen, or, when this tab sits in front of the chat's own tab in one strip (a topic's), the chat's tab brought forward.
   useSlotMakesWay(chatId, () => {
     if (mobile) showChatOnly(chatId)
     else if (panelFull(chatId, tabId)) setPanelFull(chatId, tabId, false)
+    else if (!chatTabShown(chatId)) showChatOnly(chatId)
   })
 
   const installOffer = async () => {

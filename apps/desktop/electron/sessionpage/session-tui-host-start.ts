@@ -14,7 +14,7 @@ import {
   loadSessionTuiCapabilities,
 } from '../capability-bundle'
 import { writeCapabilityLoadReport } from '../capability-report-store'
-import { GUGU_PLATFORM_BLOCK, buildSessionpageProjectContextBlock } from '../product-platform-prompt'
+import { GUGU_TERMINAL_PLATFORM_BLOCK, buildSessionpageProjectContextBlock } from '../product-platform-prompt'
 import { applySessionMaterialization } from '../session-materialization'
 import {
   claudeRendezvousEnv,
@@ -159,17 +159,20 @@ const startClaudeRendezvous: HostStart = async (ctx, info, platformPromise, { st
       // pty / TUI 腿:这一维过去就恒为 null —— 这条腿的档不经会话包(各家走自己的
       // argv / settings)。显式写出来,好让「这条腿不带它」与「有人忘了接」不再同形。
       autonomy: null,
-      promptBlocks: info.resumeProviderSessionId
-        ? {}
-        : {
-            identity: await buildAgentIdentityBootstrap(
-              runtime,
-              provisioned.guguAgentUserId,
-              // #5331 与 ACP 腿同一笔:刚铸出来的身份,persona 就在手里,
-              // ❌ 别回头再读一趟 `identity.users`(实测 416 ms,挡在用户面前)。
-              provisioned.agentIdentityFacts,
-            ),
-          },
+      promptBlocks: {
+        platform: GUGU_TERMINAL_PLATFORM_BLOCK,
+        ...(info.resumeProviderSessionId
+          ? {}
+          : {
+              identity: await buildAgentIdentityBootstrap(
+                runtime,
+                provisioned.guguAgentUserId,
+                // #5331 与 ACP 腿同一笔:刚铸出来的身份,persona 就在手里,
+                // ❌ 别回头再读一趟 `identity.users`(实测 416 ms,挡在用户面前)。
+                provisioned.agentIdentityFacts,
+              ),
+            }),
+      },
       socialBridgeDeps,
     })
     step('session-bundle')
@@ -319,7 +322,7 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
       autonomy: { permissionMode: resolveSessionPermissionMode(info) },
       additionalEnv: { ...platform.env, ...platform.spawnEnv },
       promptBlocks: {
-        platform: `${GUGU_PLATFORM_BLOCK}${buildSessionpageProjectContextBlock(provisioned.projectContext)}`,
+        platform: `${GUGU_TERMINAL_PLATFORM_BLOCK}${buildSessionpageProjectContextBlock(provisioned.projectContext)}`,
       },
     },
     identity: {
@@ -471,7 +474,7 @@ const startProviderSessionBundle: HostStart = async (ctx, info, platformPromise)
     // (宿主刻意不发),模型声明整份从这里下去 —— 判据与理由见 `sessionBundleModelFor`。
     model: sessionBundleModelFor(info.providerId, 'tui', platformForBundle),
     promptBlocks: {
-      platform: `${GUGU_PLATFORM_BLOCK}${buildSessionpageProjectContextBlock(provisioned?.projectContext)}`,
+      platform: `${GUGU_TERMINAL_PLATFORM_BLOCK}${buildSessionpageProjectContextBlock(provisioned?.projectContext)}`,
     },
   }
   let identity: Parameters<typeof buildSessionTuiSessionBundle>[0]['identity'] = null
@@ -565,7 +568,7 @@ const startCodexAppServer: HostStart = async (ctx, info, platformPromise, { step
           additionalEnv: platformForCodex.env,
           promptBlocks: includePromptBlocks
             ? {
-                platform: `${GUGU_PLATFORM_BLOCK}${buildSessionpageProjectContextBlock(projectContext)}`,
+                platform: `${GUGU_TERMINAL_PLATFORM_BLOCK}${buildSessionpageProjectContextBlock(projectContext)}`,
                 identity: await buildAgentIdentityBootstrap(runtime, agentUserId, identityFacts),
               }
             : {},

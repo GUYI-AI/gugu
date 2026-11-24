@@ -4,7 +4,7 @@ import { accountProjectsStore } from '@renderer/features/projects/stores/account
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { sidebarStore } from '@renderer/lib/stores/app-state';
 import { agentFamilies, myAgentsInChat, type ChatAgentEntry, type ChatAgentScope } from './chat-agents';
-import { viewAnchor, type InnerSidebarRoomAnchor } from './inner-sidebar-anchor';
+import { viewAnchor, type InnerSidebarRoomAnchor, type InnerSidebarView } from './inner-sidebar-anchor';
 
 // 哪些智能体住在哪个群 / 项目里(#2599),以及一屏的入口是哪个群 / 项目:内层侧栏和导航(从群的屏里点开它的智能体)读同一份。
 
@@ -68,11 +68,19 @@ export const sidebarFamilies = computed(() => agentFamilies(mySidebarAgents()));
 export function roomOfEntry(entry: string | null, summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarRoomAnchor | null {
   const [, kind, id] = /^(project|chat):(.+)$/.exec(entry ?? '') ?? [];
   if (kind === 'project') return viewAnchor({ kind: 'project', chatId: accountProjectsStore.projectOfLocal(id)?.chatId });
-  if (kind === 'chat') return viewAnchor({ kind: 'chat', chatId: id, chatKind: summaries.get(id)?.kind ?? null, projectGroup: isProjectChat(id) });
+  if (kind === 'chat') return viewAnchor(chatViewOf(id, summaries));
   return null;
 }
 
 /** 这条会话住在这个群 / 项目里:列在它那一列的「智能体」里。 */
 export function roomListsSession(room: InnerSidebarRoomAnchor, sessionId: string, summaries: ReadonlyMap<string, ChatSummary>): boolean {
   return myAgentsInChat(sidebarFamilies.get().entries, chatScope(room, summaries)).some((entry) => entry.id === sessionId);
+}
+
+/** A chat as the inner column reads it: a topic stands in its source line's column (group or project), as its own row. */
+export function chatViewOf(chatId: string, summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarView & { kind: 'chat' } {
+  const summary = summaries.get(chatId);
+  const room = summary?.kind === 'topic' ? summary.sourceChatId : null;
+  if (!room) return { kind: 'chat', chatId, chatKind: summary?.kind ?? null, projectGroup: isProjectChat(chatId) };
+  return { kind: 'chat', chatId, chatKind: summaries.get(room)?.kind ?? null, projectGroup: isProjectChat(room), roomChatId: room };
 }

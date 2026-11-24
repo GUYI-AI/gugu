@@ -1,19 +1,18 @@
 // #2548 内层侧栏「话题」:一个群 / 项目群自己的话题。
-//   次序和会话列表同一条:最近活动在前。未读只挂角标,不挪位置 —— 点开读完,它还在原处。
-//   · 第一级:同会话列表的话题子行(splitSunkTopics):前 5 条,有未读的一律露。
-//   · 第二级(分区头的「全部 ›」):全部,同一个次序。
+//   第二级(「全部 ›」)的次序和会话列表同一条:置顶的在前,再按最近活动。
+//   · 第一级:最多 5 条,有未读也不突破(yangchichi msg:616413ff:个人项目里话题多半没点开过,原来「有未读一律露」就全量展开了);
+//     置顶的在前,再是有未读的,再按最近活动 —— 有未读的排到前面,不另外多露。
 import type { ChatItem } from '@gugu/core/shared/types/chat'
-import { chatAttention, compareChatsByActivityDesc } from '@gugu/core/shared/ui/chatModels'
-import { splitSunkTopics } from '../chatListTopicNesting'
+import { chatAttention, compareChatsByActivityDesc, comparePinnedFirst } from '@gugu/core/shared/ui/chatModels'
 
-/** 第一级最多露几条(有未读的不受它限)。 */
+/** 第一级最多露几条。 */
 export const INNER_SIDEBAR_TOPIC_LIMIT = 5
 
-/** 这个对话的话题,最近活动的在前;归档的不算(同话题菜单 topicPinGroups)。 */
+/** 这个对话的话题,置顶的在前、再按最近活动(同会话列表);归档的不算(同话题菜单 topicPinGroups)。 */
 export function topicsOfChat(chats: readonly ChatItem[], chatId: string): ChatItem[] {
   return chats
     .filter((chat) => chat.kind === 'topic' && chat.source_chat_id === chatId && chat.status !== 'archived')
-    .sort(compareChatsByActivityDesc)
+    .sort((a, b) => comparePinnedFirst(a, b) || compareChatsByActivityDesc(a, b))
 }
 
 export type InnerSidebarTopicRows = {
@@ -24,9 +23,10 @@ export type InnerSidebarTopicRows = {
   calling: number
 }
 
-/** `topics` 是 topicsOfChat 排好的(最近活动在前)。 */
+/** `topics` 是 topicsOfChat 排好的(置顶的在前,再按最近活动)。 */
 export function innerSidebarTopicRows(topics: readonly ChatItem[], { all }: { all: boolean }): InnerSidebarTopicRows {
   const calling = topics.reduce((sum, topic) => sum + chatAttention(topic).forYou, 0)
-  const { live: shown, sunk } = splitSunkTopics(topics, () => false, INNER_SIDEBAR_TOPIC_LIMIT, all)
-  return { shown, hidden: sunk.length, calling }
+  if (all) return { shown: [...topics], hidden: 0, calling }
+  const unreadFirst = [...topics].sort((a, b) => comparePinnedFirst(a, b) || Number(b.unread_count > 0) - Number(a.unread_count > 0))
+  return { shown: unreadFirst.slice(0, INNER_SIDEBAR_TOPIC_LIMIT), hidden: Math.max(0, topics.length - INNER_SIDEBAR_TOPIC_LIMIT), calling }
 }

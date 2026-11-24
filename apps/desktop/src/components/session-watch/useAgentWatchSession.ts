@@ -15,5 +15,5 @@ export function useAgentWatchSession(
   phoneHost = false,
   local = false,
 ): AgentWatchSession {
-  return useTimelineSession(phoneHost ? phoneTimelineClient : local ? assistantTimelineClient(true) : sessionpageRpc, MOBILE_RESPONDER_ID, deviceId, sessionId, enabled, firstPrompt)
+  return useTimelineSession(phoneHost ? phoneTimelineClient : local ? assistantTimelineClient(true) : sessionpageRpc, MOBILE_RESPONDER_ID, deviceId, sessionId, enabled, firstPrompt, !local)
 }

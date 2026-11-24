@@ -1600,6 +1600,8 @@ export class CodexAppServerSession {
       /** #6387 Installed Apps' skills as extra skill roots of this app-server (see codex session-bundle extensionSkillRoot). */
       skillRoots?: readonly string[]
       env?: NodeJS.ProcessEnv
+      /** Gives up waiting for the engine to come up (the person cancelled the start): the same failure and cleanup as the startup timeout. */
+      signal?: AbortSignal
       developerInstructions?: string
       forkFromThreadId?: string
       resumeThreadId?: string
@@ -1719,7 +1721,7 @@ export class CodexAppServerSession {
         }, this.tmuxBackendDeps)
         this.backend = backend
         trackedCodexAppServerSessions.add(this)
-        await waitForCodexAppServerEndpointWhileAlive(endpoint, () => backend.isAlive(), this.startupTimeoutMs)
+        await waitForCodexAppServerEndpointWhileAlive(endpoint, () => backend.isAlive(), this.startupTimeoutMs, opts?.signal)
       } else {
         const appServer = spawnOwnedChild(launch.command, launch.args, {
           cwd,
@@ -1773,7 +1775,7 @@ export class CodexAppServerSession {
           })
         await this.pidfileWritePromise
         }
-        await waitForCodexAppServerEndpoint(endpoint, proc, this.startupTimeoutMs)
+        await waitForCodexAppServerEndpoint(endpoint, proc, this.startupTimeoutMs, opts?.signal)
       }
 
       const client = new CodexRpcClient()

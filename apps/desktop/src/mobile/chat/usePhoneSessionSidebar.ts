@@ -10,7 +10,7 @@ import { accountProjectsStore } from '@renderer/features/projects/stores/account
 import { agentFamilies, type ChatAgentScope } from '@renderer/features/sidebar/chat-agents'
 import { followInnerSidebar, viewAnchor, type InnerSidebarRoomAnchor } from '@renderer/features/sidebar/inner-sidebar-anchor'
 import { columnAgents, standaloneAgentAnchor } from '@renderer/features/sidebar/inner-sidebar-column'
-import { isProjectChat } from '@renderer/features/sidebar/inner-sidebar-scope'
+import { chatViewOf } from '@renderer/features/sidebar/inner-sidebar-scope'
 
 export function usePhoneSessionSidebar({ sessionId, entry }: { sessionId: string; entry: string | null }) {
   const { chats, identitiesById, drafts, subscribeAccountRevision } = useChatStore('chats', 'identitiesById', 'drafts', 'subscribeAccountRevision')
@@ -36,7 +36,7 @@ export function usePhoneSessionSidebar({ sessionId, entry }: { sessionId: string
     inProject: id => projectIds.has(id) })
   const agentAnchor = (id: string) => standaloneAgentAnchor(id, families, rows)
   const entryId = entry?.startsWith('chat:') ? entry.slice(5) : null
-  const entryAnchor = entryId ? viewAnchor({ kind: 'chat', chatId: entryId, chatKind: summaries.get(entryId)?.kind ?? null, projectGroup: isProjectChat(entryId) })
+  const entryAnchor = entryId ? viewAnchor(chatViewOf(entryId, summaries))
     : entry?.startsWith('session:') ? agentAnchor(entry.slice(8)) : null
   const anchor = followInnerSidebar(entryAnchor, { kind: 'session', sessionId },
     (room, id) => columnAgents(room, families, summaries, rows, scope).some(agent => agent.id === id), agentAnchor, () => false)

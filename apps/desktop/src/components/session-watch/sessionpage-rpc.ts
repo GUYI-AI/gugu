@@ -27,6 +27,7 @@ import {
   sessionpageSessionTimelineChannel,
 } from '@/session/shared/core/session-timeline/sessionTimelineEvents'
 import type {
+  LeanPage,
   SessionpageOpenedFileChunk,
   SessionpageOpenedFileReadRequest,
   SessionpageSessionRespondRequest,
@@ -194,17 +195,17 @@ async function value<T>(pending: Promise<{ ok: true; value: T } | { ok: false; e
   return result.value
 }
 
-export function fetchSnapshot(deviceId: string, sessionId: string, limit?: number): Promise<TimelineSnapshot> {
-  return value(rpc(deviceId).sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit, trim: true }))
+export function fetchSnapshot(deviceId: string, sessionId: string, limit?: number, lean?: LeanPage): Promise<TimelineSnapshot> {
+  return value(rpc(deviceId).sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit, trim: true, lean }))
 }
 
 /** 补齐:一问一答,不等窗口(见 `once`)。 */
-export function fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor): Promise<TimelineAfterResult> {
-  return value(once(deviceId).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim: true }))
+export function fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor, lean?: LeanPage): Promise<TimelineAfterResult> {
+  return value(once(deviceId).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim: true, terminalPatch: true, lean }))
 }
 
-export function fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number): Promise<TimelineOlderResult> {
-  return value(rpc(deviceId).sessionTimeline.sessionOlder({ conversationId: sessionId, beforeTurnId, limit, trim: true }))
+export function fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, lean?: LeanPage): Promise<TimelineOlderResult> {
+  return value(rpc(deviceId).sessionTimeline.sessionOlder({ conversationId: sessionId, beforeTurnId, limit, trim: true, lean }))
 }
 
 /**
@@ -217,8 +218,8 @@ export function fetchToolImage(deviceId: string, sessionId: string, itemId: stri
   return value(once(deviceId).sessionTimeline.sessionToolImage({ conversationId: sessionId, itemId, index }))
 }
 
-export function subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null): Promise<unknown> {
-  return value(rpc(deviceId).sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor, trim: true }))
+export function subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null, lean?: LeanPage): Promise<unknown> {
+  return value(rpc(deviceId).sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor, trim: true, terminalPatch: true, lean }))
 }
 
 export function unsubscribeSession(deviceId: string, subscriptionId: string): Promise<unknown> {

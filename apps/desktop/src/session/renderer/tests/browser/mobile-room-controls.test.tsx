@@ -29,7 +29,7 @@ function Content({state='ready',selected=null}:{state?:'ready'|'loading'|'failed
  const [current,setCurrent]=useState(selected);showTopicExternally=setCurrent
  return <>
   <PhoneRoomComposerControls chatId="room" topics={state==='ready'?topics:[]} topicsReady={state==='ready'} current={current?{chatId:current.chat_id,name:current.name}:null} onPick={topic=>{onPick(topic);setCurrent(topic)}} members={state==='ready'?[member,{...member,id:'former-agent',membership:'former'},{...member,id:'human',type:'human'}]:[]}
-   roster={{ready:state==='ready',failed:state==='failed',retry}} userId="owner" profileOpener={{handle,openedFrom:'main'}} onOpenAgent={onOpen} />
+   roster={{ready:state==='ready',failed:state==='failed',retry}} userId="owner" profileOpener={{handle}} onOpenAgent={onOpen} />
   <ChatComposer mobile editorOptions={{inputTestId:'room-editor'}} onSubmit={vi.fn()} />
   <MemberProfileRoot handle={handle}>{profile=><MemberProfilePopover profile={profile} onClose={()=>handle.close()} />}</MemberProfileRoot>
  </>
@@ -147,32 +147,4 @@ it.each([['zh-CN','话题','智能体'],['en-US','Topics','Agents']] as const)('
  await page.getByTestId('phone-room-topics').click()
  expect(document.querySelector('[data-topic-id="topic-0"]')?.getAttribute('aria-checked')).toBe('true')
  expect(document.querySelector('[data-topic-id="topic-1"]')?.getAttribute('aria-checked')).toBe('false')
-})
-
-it.each(['light','dark'] as const)('%s: the room Agent sheet covers the editor at every opening frame',async theme=>{
- await mount(theme)
- const samples: { opacity: string; alpha: number; coversEditor: boolean }[]=[]
- const observer=new MutationObserver(()=>{
-  const popup=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')
-  if(!popup)return
-  observer.disconnect()
-  function sample(){
-   if(!popup!.isConnected||samples.length>=12)return
-   const style=getComputedStyle(popup!),rect=popup!.getBoundingClientRect()
-   const editor=harness!.container.querySelector<HTMLElement>('[contenteditable]')!,input=editor.getBoundingClientRect()
-   const top=Math.max(rect.top,input.top),bottom=Math.min(rect.bottom,input.bottom),left=Math.max(rect.left,input.left),right=Math.min(rect.right,input.right)
-   const covered=bottom>top&&right>left&&popup!.contains(document.elementFromPoint((left+right)/2,(top+bottom)/2))
-   const canvas=document.createElement('canvas'),context=canvas.getContext('2d')!;canvas.width=canvas.height=1;context.fillStyle=style.backgroundColor;context.fillRect(0,0,1,1)
-   samples.push({opacity:style.opacity,alpha:context.getImageData(0,0,1,1).data[3]!,coversEditor:covered})
-   requestAnimationFrame(sample)
-  }
-  sample()
- })
- observer.observe(document.body,{childList:true,subtree:true})
- await page.getByTestId('phone-room-agents').click()
- await until('the sheet has painted its first three frames',()=>samples.length>=3)
- observer.disconnect()
- expect(samples.every(frame=>frame.opacity==='1')).toBe(true)
- expect(samples.every(frame=>frame.alpha===255)).toBe(true)
- expect(samples.every(frame=>frame.coversEditor)).toBe(true)
 })

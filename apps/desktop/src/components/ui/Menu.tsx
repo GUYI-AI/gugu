@@ -18,7 +18,7 @@ import { Check, ChevronRight, Search } from '@/lib/icons'
 import { popupMotion } from './variants'
 import { useBackLayer } from './sheetStack'
 import { useMobileShell } from '../../hooks/useMobileShell'
-import { useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives'
+import { useUiPortalContainer, useUiPopupZIndex, OpenLayer } from '@gugu/session-ui/react/primitives'
 import { Switch } from './Switch'
 
 // @@@menu-variants - 菜单样式的唯一真相。`gg-menu*` 类名保留但不再承载样式:
@@ -90,7 +90,7 @@ export type MenuAnchorProps =
 
 export type MenuProps = MenuAnchorProps & {
   minWidth?: number
-  /** Stacking order. Default var(--z-menu). */
+  /** Stacking order. An explicit layer is used as given; the default is var(--z-menu), above the sheet it is opened in. */
   zIndex?: number | string
   style?: CSSProperties
   children: ReactNode
@@ -114,7 +114,7 @@ export function Menu({
   y,
   anchor: elementAnchor,
   minWidth = 160,
-  zIndex = 'var(--z-menu)',
+  zIndex: zIndexProp,
   style,
   children,
   onClose,
@@ -124,6 +124,8 @@ export function Menu({
   backdropClassName,
 }: MenuProps) {
   const portalContainer = useUiPortalContainer()
+  const layered = useUiPopupZIndex('var(--z-menu)')
+  const zIndex = zIndexProp ?? layered
   const pointAnchor = useMemo(() => (
     elementAnchor || x === undefined || y === undefined
       ? null
@@ -262,7 +264,6 @@ export function MenuSwitchItem({ icon, label, checked, onCheckedChange, disabled
 }
 
 const submenuRowStyle: CSSProperties = { padding: menuRowPadding }
-const submenuPositionerStyle: CSSProperties = { zIndex: 'var(--z-menu)' }
 // 子菜单与父菜单同一个高度上限(@@@menu-height):群页头 ⋯ →「话题」话题一多就一直往下撑出窗口(owner 10-28)。
 const submenuPopupStyle: CSSProperties = { minWidth: 160, maxWidth: 320, padding: menuSurfacePadding }
 // A searchable list stops at about ten rows even in a tall window: the field finds the rest.
@@ -326,6 +327,7 @@ export function MenuSubmenu({ icon, label, 'data-testid': testId, popupStyle, po
 }) {
   const style = { ...submenuPopupStyle, ...(search ? searchableSubmenuPopupStyle : null), ...popupStyle }
   const portalContainer = useUiPortalContainer()
+  const submenuPositionerStyle: CSSProperties = { zIndex: useUiPopupZIndex('var(--z-menu)') }
   return (
     <MenuPrimitive.SubmenuRoot>
       <MenuPrimitive.SubmenuTrigger className={cn('group/menu-item', menuItem)} style={submenuRowStyle} data-testid={testId}>
@@ -411,10 +413,12 @@ function DropdownMenuContent({
   align = 'start',
   sideOffset = 6,
   alignOffset = 0,
-  zIndex = 'var(--z-menu)',
+  zIndex: zIndexProp,
   ...props
 }: DropdownMenuContentProps) {
   const portalContainer = useUiPortalContainer()
+  const layered = useUiPopupZIndex('var(--z-menu)')
+  const zIndex = zIndexProp ?? layered
   return (
     <MenuPrimitive.Portal container={portalContainer}>
       <MenuPrimitive.Positioner

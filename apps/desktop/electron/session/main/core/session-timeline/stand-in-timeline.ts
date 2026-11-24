@@ -72,6 +72,7 @@ export function createStandInTimeline(input: StandInTimelineInput): SessionTimel
 
   return {
     epoch,
+    getCursor: () => cursor,
     getSnapshot: snapshot,
     getAfter: (from) =>
       from.epoch === epoch

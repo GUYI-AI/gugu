@@ -54,6 +54,7 @@ import {
 import type { Result } from '@gugu/session-shared';
 import { errorDetail, ok, toSerializedError } from '@gugu/session-shared';
 import { invokesCommand } from '@gugu/session-core/acp/commands';
+import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
 import { classifyTurnFailure, refusedTurnOutcome } from './turn-failure';
 import {
   type Command,
@@ -2233,12 +2234,10 @@ export class SessionCell {
           ? [...textBlocks, ...contextBlocks, ...turnContextBlocks, ...attachmentBlocks, ...trailingBlocks]
           : [...contextBlocks, ...turnContextBlocks, ...attachmentBlocks, ...textBlocks, ...trailingBlocks],
       };
-      const promptMeta = this.deps.historyRecovery?.promptMeta?.(promptRequest.prompt);
-      if (promptMeta) {
-        // Bind the exact native bytes to our original prompt, without putting any marker on the wire.
-        submittedMessage._meta = { ...submittedMessage._meta, ...promptMeta };
-        if (!nativeSteer) this.push({ ...submittedMessage, steering: true, trigger: undefined }, true);
-      }
+      // Bind the exact native bytes to the person's own prompt, without putting any marker on the wire: a record holds
+      // the native prompt, and the host restores what the person sent from this receipt (`host-prompts.ts`).
+      submittedMessage._meta = { ...submittedMessage._meta, ...nativePromptMeta(promptRequest.prompt) };
+      if (!nativeSteer) this.push({ ...submittedMessage, steering: true, trigger: undefined }, true);
       this.rawLog.record({
         kind: 'prompt',
         sessionId: this.acpSessionId,

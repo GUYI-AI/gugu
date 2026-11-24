@@ -644,7 +644,7 @@ describe('single Gugu MCP surface (session_* + app_* atomic tools)', () => {
     })
     const refused = await client.callTool({ name: 'app_pack', arguments: { source_dir: '/tmp/x', chat_id: 'c1' } })
     expect(refused.isError).toBe(true)
-    expect(responseText(refused)).toContain('app_pack: chat_id needs a session with a Gugu identity')
+    expect(responseText(refused)).toContain('chat_id c1: naming a chat needs a session with a Gugu identity')
     expect(seen).toEqual([])
     // 对照:不带 chat_id 就照旧打包,回包原样。
     const packed = await client.callTool({ name: 'app_pack', arguments: { source_dir: '/tmp/x' } })

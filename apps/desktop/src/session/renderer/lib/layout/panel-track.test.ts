@@ -1,15 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-// The spring is played by framer's `animate`; here it runs to the end at once, in the call, so a move is its two ends.
+// The spring is played by the frame clock; here it runs to the end at once, in the call, so a move is its two ends.
 const frames = vi.hoisted(() => ({ played: [] as number[][], hold: false }));
-vi.mock('framer-motion', () => ({
-  animate: (_from: number, _to: number, options: { onUpdate: (value: number) => void; onComplete: () => void }) => {
+vi.mock('./panel-clock', () => ({
+  playSpring: (onUpdate: (value: number) => void, onComplete: () => void) => {
     const stopped = { value: false };
     const steps = [0.25, 0.5, 0.75];
     frames.played.push(steps);
-    for (const step of steps) if (!stopped.value) options.onUpdate(step);
-    if (!frames.hold && !stopped.value) options.onComplete();
+    for (const step of steps) if (!stopped.value) onUpdate(step);
+    if (!frames.hold && !stopped.value) onComplete();
     return { stop: () => (stopped.value = true) };
   },
 }));
@@ -31,9 +31,10 @@ describe('the size is the state', () => {
     expect(contentAt(156, { size: 240, content: 240 }, { size: 72, content: 72, reflows: false })).toBe(240);
   });
 
-  it('a slot is clipped at its drawn edge with its far edge on it, and fades only to or from nothing', () => {
-    expect(paintSlot({ drawn: 156, content: 240 }, false)).toEqual({ offset: -84, opacity: 1, soft: false, hidden: false });
-    expect(paintSlot({ drawn: 130, content: 260 }, true)).toMatchObject({ offset: -130, opacity: 0.5, soft: true, hidden: false });
+  it('a slot is clipped at its drawn edge; only to or from nothing it slides with the edge and fades', () => {
+    // the list folding to its rail: its avatars stay where they are, the rest is clipped
+    expect(paintSlot({ drawn: 156, content: 240 }, false)).toEqual({ offset: 0, opacity: 1, soft: false, hidden: false });
+    expect(paintSlot({ drawn: 130, content: 260 }, true)).toEqual({ offset: -130, opacity: 0.5, soft: true, hidden: false });
     expect(paintSlot({ drawn: 0, content: 260 }, true)).toMatchObject({ opacity: 0, hidden: true });
   });
 });
@@ -58,7 +59,7 @@ describe('PanelTrack', () => {
     expect(track.drawn('list')).toBe(72);
   });
 
-  it('mid-move the content keeps the larger size, its far edge on the drawn edge', () => {
+  it("mid-move held content keeps the larger size where it is laid out (the list's avatars do not move)", () => {
     frames.hold = true;
     const track = new PanelTrack([{ id: 'list', at: { size: 240 } }]);
     const list = nodes();
@@ -68,7 +69,7 @@ describe('PanelTrack', () => {
     expect(track.drawn('list')).toBe(114);
     expect(list.place.style.width).toBe('114px');
     expect(list.content.style.width).toBe('240px');
-    expect(list.content.style.left).toBe('-126px');
+    expect(list.content.style.left).toBe('');
   });
 
   it('a fill coming from nothing keeps its open size while it moves, and takes the rest when it lands', () => {
@@ -79,9 +80,12 @@ describe('PanelTrack', () => {
     const content = document.createElement('div');
     track.attachFill(place, content);
     track.to({ chat: { size: 600, reflows: true } });
+    // its near edge on the chat's drawn edge, the rest clipped at the track's end
     expect(content.style.width).toBe('400px');
+    expect(content.style.left).toBe('');
     track.jump({ chat: { size: 600, reflows: true } });
     expect(content.style.width).toBe('');
+    expect(content.style.left).toBe('');
   });
 
   it('a move to where it already goes does nothing; a jump stops a move and writes the target at once', () => {
@@ -97,15 +101,17 @@ describe('PanelTrack', () => {
     expect(track.drawn('list')).toBe(300);
   });
 
-  it('a slot closed to nothing is inert, and comes back within reach', () => {
+  it('a slot closed to nothing is inert and scaled to nothing (its window drag rects collapse), and comes back within reach', () => {
     const track = new PanelTrack([{ id: 'inner', at: { size: 260 } }]);
     const inner = nodes();
     track.attach('inner', inner);
     track.to({ inner: { size: 0, content: 260 } });
     expect(inner.window.inert).toBe(true);
+    expect(inner.window.style.transform).toBe('scale(0)');
     expect(inner.content.style.width).toBe('260px');
     track.to({ inner: { size: 260 } });
     expect(inner.window.inert).toBe(false);
+    expect(inner.window.style.transform).toBe('');
     expect(inner.window.style.opacity).toBe('');
     expect(inner.window.style.maskImage).toBe('');
   });

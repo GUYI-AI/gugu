@@ -110,6 +110,19 @@ describe('task preparation while its machine is unavailable', () => {
     expect(fill).not.toHaveBeenCalled();
   });
 
+  // owner 11-23: a task on another machine opens on its own page while its workspace prepares, its machine answering or
+  // not (❌ a separate 「正在准备文件…」 page); the panel takes over once it is ready.
+  it.each(['project-mounting', 'idle', 'provisioning'])('opens on its own page while the workspace prepares, machine connected: %s', kind => {
+    state.kind = kind; state.reach = null; state.link = 'open';
+    render();
+    expect(container.querySelector('[data-offline-session="s"]')).not.toBeNull();
+    expect(container.textContent).not.toContain('task.settingUpWorkspace');
+    state.kind = 'ready';
+    render();
+    expect(container.textContent).toBe('Task workspace');
+    expect(fill).toHaveBeenCalledExactlyOnceWith({ projectId: 'p', sessionId: 's', onlyIfNoTabs: true });
+  });
+
   it('keeps an ordinary failure actionable when the machine is connected', () => {
     state.reach = null; state.link = 'open';
     render();

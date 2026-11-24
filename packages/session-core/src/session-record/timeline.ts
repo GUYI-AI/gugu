@@ -1,5 +1,6 @@
-import { withRuntimeTurn } from './runtime-turn';
+import { endedTurnIds, withRuntimeTurn } from './runtime-turn';
 import { withJournalTurns } from './journal-turns';
+import { HostPrompts, type HostPromptReceipts } from './host-prompts';
 import type { TerminalState } from '../acp/models/terminals';
 import type { SessionLiveReply } from './live-reply';
 import { applyHostTurnEnd, type HostTurnEnds, type HostTurnEnd } from './host-turn-end';
@@ -20,6 +21,7 @@ import type { TurnStart,
   RecordEntry,
   RecordImageRef,
   RecordResetReason,
+  RuntimeTurnPictures,
   SessionRecordResume,
   SessionRecordSource,
   SessionTimeline,
@@ -118,6 +120,8 @@ export type SessionTimelineDeps = {
   answerableQuestions?: boolean;
   /** Gugu's journal of this session (`sources/gugu-journal.ts`): its whole turns go among the record's by start time. */
   journal?: SessionRecordSource | null;
+  /** What the person sent with the prompts the record holds as sent natively (`host-prompts.ts`), kept by the host. */
+  hostPrompts?: HostPromptReceipts;
   /** Called after every applied batch, including the initial read (before `createSessionTimeline` returns). A fill drains here. */
   onApplied?: (timeline: SessionTimeline) => void;
   /** Where the source starts when no archive is restored (a fill from the tail, `SessionRecordSource.startingAt`). */
@@ -180,6 +184,8 @@ export async function createSessionTimeline(
 type Subscriber = {
   cursor: RecordCursor;
   listener: (result: TimelineAfterResult) => void;
+  /** Merges terminals by id: batches carry only the changed ones (`TimelineBatch.terminalIds`). */
+  terminalPatch: boolean;
 };
 
 type PublishedItem = { item: TranscriptItem; seq: number };
@@ -243,11 +249,19 @@ class RecordTimeline implements SessionTimeline {
   private liveReply: SessionLiveReply | null = null;
   /** The runtime's turn in progress (`syncActiveTurn`): live like the rest of the side channels, never archived. */
   private runtimeTurn: TranscriptTurn | null = null;
+  /** Where the runtime turn's pictures are: with the runtime (its turn arrives with `imageRefs` only). */
+  private runtimePictures: RuntimeTurnPictures | null = null;
+  /** The turns that had ended when the runtime's turn started: none of them is a copy of it (`withoutCopiesOf`). */
+  private endedBeforeRuntime: ReadonlySet<string> = new Set();
   /** The journal's turns by key, in journal order; read again with the journal, never archived. */
   private journalTurns = new Map<string, { turn: TranscriptTurn; recorded: boolean }>();
   private liveReplyDirty = false;
   private terminals: readonly TerminalState[] = [];
   private terminalsDirty = false;
+  /** Per terminal: its published JSON and the seq it last changed at; the order of ids, and the seq it last changed at. */
+  private publishedTerminals = new Map<string, { json: string; seq: number }>();
+  private terminalOrder = '';
+  private terminalOrderSeq = 0;
   private liveReplyTimer: ReturnType<typeof setTimeout> | null = null;
   private subscribers = new Set<Subscriber>();
   /** 最近一条记录的 provider 时钟。没有时钟的记录跟着上一条走，❌ 别拿 Date.now() 冒充。 */
@@ -273,6 +287,7 @@ class RecordTimeline implements SessionTimeline {
   private stopHostTurnEnds: (() => void) | undefined;
   private hostEnds: readonly HostTurnEnd[] = [];
   private hostEnded = new WeakMap<TranscriptTurn, TranscriptTurn>();
+  private readonly sent: HostPrompts;
   private placed = new WeakMap<TranscriptTurn, TranscriptTurn>();
   /** Turns handed out by `drainSettled`, and the ids of what they own. */
   private retainedFrom = 0;
@@ -292,6 +307,7 @@ class RecordTimeline implements SessionTimeline {
     this.epochValue = this.newEpoch();
     this.parser = new AcpTranscriptParser({ sessionId: deps.sessionId });
     this.hostEnds = deps.hostTurnEnds?.read() ?? [];
+    this.sent = new HostPrompts(deps.hostPrompts);
   }
 
   async begin(): Promise<void> {
@@ -479,6 +495,14 @@ class RecordTimeline implements SessionTimeline {
 
   async toolImage(input: { itemId: string; index: number; maxChars?: number }): Promise<ToolImageLookup> {
     const maxChars = input.maxChars ?? TOOL_IMAGE_FETCH_LIMIT;
+    const runtime = this.runtimeTurn;
+    const pictures = this.runtimePictures;
+    if (runtime && pictures && findToolItem([runtime], input.itemId)) {
+      const found = await pictures(input.itemId, input.index);
+      return found.ok && found.image.data.length > maxChars
+        ? { ok: false, code: 'too_large', message: `picture #${input.index} is ${found.image.data.length} chars; over ${maxChars}` }
+        : found;
+    }
     const turns = this.currentTurns();
     const found = findToolImage(turns, input.itemId, input.index, maxChars);
     if (found.ok || found.code !== 'no_such_image') return found;
@@ -502,11 +526,13 @@ class RecordTimeline implements SessionTimeline {
     return this.epochValue;
   }
 
+  getCursor(): RecordCursor { return { epoch: this.epochValue, seq: this.seq }; }
+
   getRecordLineage() { return this.source.getLineage?.() ?? null; }
 
   getSnapshot(options?: { limit?: number; committedOnly?: boolean }): TimelineSnapshot {
     const limit = options?.limit ?? this.defaultLimit;
-    const all = options?.committedOnly ? this.withHostEnds([...this.parser.history]) : this.currentTurns();
+    const all = options?.committedOnly ? this.recordTurns([...this.parser.history]) : this.currentTurns();
     const turns = limit >= all.length ? all : all.slice(all.length - limit);
     return {
       cursor: { epoch: this.epochValue, seq: this.seq },
@@ -557,7 +583,7 @@ class RecordTimeline implements SessionTimeline {
     };
   }
 
-  getAfter(cursor: RecordCursor): TimelineAfterResult {
+  getAfter(cursor: RecordCursor, options: { terminalPatch?: boolean } = {}): TimelineAfterResult {
     if (cursor.epoch !== this.epochValue) {
       return {
         ok: false,
@@ -569,7 +595,7 @@ class RecordTimeline implements SessionTimeline {
       // 游标比我还新 = 对面记着一段我没有的历史（宿主重开过、状态回退过）。
       return { ok: false, reset: 'cursor_ahead', snapshot: this.getSnapshot() };
     }
-    const batch = this.batchAfter(cursor.seq);
+    const batch = this.batchAfter(cursor.seq, options.terminalPatch === true);
     // spec「补不上（…缺口太大）就整份重载」：缺口大过一份快照时，补缺口既不更省，
     // 拼接面还更大 —— 直接给整份，让对面换掉手里那份。
     if (batch.turns.length > this.defaultLimit) {
@@ -580,10 +606,11 @@ class RecordTimeline implements SessionTimeline {
 
   subscribe(
     cursor: RecordCursor | null,
-    listener: (result: TimelineAfterResult) => void
+    listener: (result: TimelineAfterResult) => void,
+    options: { terminalPatch?: boolean } = {}
   ): () => void {
     const start = cursor ?? { epoch: this.epochValue, seq: 0 };
-    const subscriber: Subscriber = { cursor: start, listener };
+    const subscriber: Subscriber = { cursor: start, listener, terminalPatch: options.terminalPatch === true };
     this.subscribers.add(subscriber);
     // 订阅那一刻先补缺口：不补的话订阅者要一直等到下一条记录才看得到任何东西。
     this.deliver(subscriber);
@@ -679,9 +706,13 @@ class RecordTimeline implements SessionTimeline {
     this.publish();
   }
 
-  syncActiveTurn(turn: TranscriptTurn | null): void {
-    if (this.disposed || this.runtimeTurn === turn) return;
+  syncActiveTurn(turn: TranscriptTurn | null, pictures?: RuntimeTurnPictures): void {
+    if (this.disposed) return;
+    this.runtimePictures = turn && pictures ? pictures : null;
+    if (this.runtimeTurn === turn) return;
+    if (turn && turn.id !== this.runtimeTurn?.id) this.endedBeforeRuntime = endedTurnIds(this.recordedTurns().turns);
     this.runtimeTurn = turn;
+    this.sent.learn(turn);
     this.publish();
   }
 
@@ -971,12 +1002,18 @@ class RecordTimeline implements SessionTimeline {
   }
 
   private currentTurns(): TranscriptTurn[] {
+    const { turns, base } = this.recordedTurns();
+    return this.inPlace(withRuntimeTurn(turns, this.runtimeTurn, this.endedBeforeRuntime), base);
+  }
+
+  /** The record's turns with the journal's, before the runtime's turn in progress takes its place; `base`: the first record seq. */
+  private recordedTurns(): { turns: TranscriptTurn[]; base: number } {
     const active = this.parser.activeTurn;
-    const folded = this.withHostEnds(active ? [...this.parser.history, active] : [...this.parser.history]);
+    const folded = this.recordTurns(active ? [...this.parser.history, active] : [...this.parser.history]);
     const journal = [...this.journalTurns.values()];
-    return this.inPlace(withRuntimeTurn(withJournalTurns(folded,
+    return { turns: withJournalTurns(folded,
       journal.filter((line) => !line.recorded).map((line) => line.turn),
-      journal.filter((line) => line.recorded).map((line) => line.turn)), this.runtimeTurn), folded[0]?.seq ?? 0);
+      journal.filter((line) => line.recorded).map((line) => line.turn)), base: folded[0]?.seq ?? 0 };
   }
 
   /**
@@ -994,6 +1031,11 @@ class RecordTimeline implements SessionTimeline {
       this.placed.set(turn, placed);
       return placed;
     });
+  }
+
+  /** The record's turns with what only the host knows of them: how a turn ended, and what its person sent. */
+  private recordTurns(turns: TranscriptTurn[]): TranscriptTurn[] {
+    return this.sent.restore(this.withHostEnds(turns));
   }
 
   private withHostEnds(turns: TranscriptTurn[]): TranscriptTurn[] {
@@ -1111,6 +1153,7 @@ class RecordTimeline implements SessionTimeline {
     for (const id of settledSubagents) this.publishedSteps.delete(id);
     for (const id of this.dirtySettlements) this.settlementSeq.set(id, nextSeq);
     this.dirtySettlements.clear();
+    if (this.terminalsDirty) this.stampTerminals(nextSeq);
     this.queuedDirty = false;
     this.liveReplyDirty = false;
     this.terminalsDirty = false;
@@ -1119,8 +1162,31 @@ class RecordTimeline implements SessionTimeline {
     for (const subscriber of [...this.subscribers]) this.deliver(subscriber);
   }
 
+  /** Which terminals changed in this publish (by content), and whether their order or membership did. */
+  private stampTerminals(seq: number): void {
+    const alive = new Set<string>();
+    for (const terminal of this.terminals) {
+      alive.add(terminal.terminalId);
+      const json = JSON.stringify(terminal);
+      if (this.publishedTerminals.get(terminal.terminalId)?.json !== json) this.publishedTerminals.set(terminal.terminalId, { json, seq });
+    }
+    for (const id of [...this.publishedTerminals.keys()]) if (!alive.has(id)) this.publishedTerminals.delete(id);
+    const order = this.terminals.map((terminal) => terminal.terminalId).join('\u0000');
+    if (order !== this.terminalOrder) {
+      this.terminalOrder = order;
+      this.terminalOrderSeq = seq;
+    }
+  }
+
+  /** A batch's terminals for a reader that merges by id: the changed ones and the order, or nothing when none changed. */
+  private terminalsAfter(seq: number): Pick<TimelineBatch, 'terminals' | 'terminalIds'> {
+    const changed = this.terminals.filter((terminal) => (this.publishedTerminals.get(terminal.terminalId)?.seq ?? 0) > seq);
+    if (changed.length === 0 && this.terminalOrderSeq <= seq) return {};
+    return { terminalIds: this.terminals.map((terminal) => terminal.terminalId), terminals: changed };
+  }
+
   private deliver(subscriber: Subscriber): void {
-    const result = this.getAfter(subscriber.cursor);
+    const result = this.getAfter(subscriber.cursor, { terminalPatch: subscriber.terminalPatch });
     if (result.ok) {
       if (this.isEmptyBatch(result.batch) && result.batch.cursor.seq === subscriber.cursor.seq) {
         return;
@@ -1140,7 +1206,7 @@ class RecordTimeline implements SessionTimeline {
     );
   }
 
-  private batchAfter(seq: number): TimelineBatch {
+  private batchAfter(seq: number, terminalPatch: boolean): TimelineBatch {
     const turns: TurnPatch[] = [];
     for (const entry of this.published.values()) {
       if (entry.touchedSeq <= seq) continue;
@@ -1176,7 +1242,7 @@ class RecordTimeline implements SessionTimeline {
       ...this.recentActionsSnapshot(),
       queuedPrompts: [...this.queued],
       liveReply: this.liveReply,
-      terminals: this.terminals,
+      ...(terminalPatch ? this.terminalsAfter(seq) : { terminals: this.terminals }),
       subagents: this.subagentSteps(seq)
     };
   }

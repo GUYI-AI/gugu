@@ -14,7 +14,7 @@
  * on highlight and text-foreground-muted descriptions.
  */
 
-import { useUiPortalContainerOrBody } from '@session-ui/react/lib/portal-container';
+import { useUiPopupZIndex, useUiPortalContainerOrBody } from '@session-ui/react/lib/portal-container';
 import { cx } from '@session-ui/styles/utilities/cx';
 import { XIcon } from '../../../icons'
 import * as React from 'react';
@@ -146,6 +146,7 @@ export const ComboboxPopup = React.forwardRef<ComboboxPopupHandle, ComboboxPopup
     const fallbackId = React.useId();
     const listboxId = id ?? fallbackId;
     const portalContainer = useUiPortalContainerOrBody();
+    const zIndex = useUiPopupZIndex();
 
     /**
      * 列表**内容**变了才把高亮拨回第一条。
@@ -262,7 +263,7 @@ export const ComboboxPopup = React.forwardRef<ComboboxPopupHandle, ComboboxPopup
         // 这里只有开着才渲染,所以它恒为 true —— 但仍然要写出来:样式与判据按属性选,
         // 不该去猜「这个节点存在就是开着」。
         data-open="true"
-        style={style}
+        style={zIndex ? { zIndex, ...style } : style}
         className={cx('surface-elevated', styles.popupRoot, className)}
       >
         {header && <div className={styles.popupHeader}>{header}</div>}

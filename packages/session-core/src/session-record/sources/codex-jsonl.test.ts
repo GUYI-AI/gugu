@@ -18,6 +18,7 @@ import {
 } from '../test-support';
 import { toolDisplayName, type ToolCallItem } from '../../acp/models/turns/tool-calls';
 import { createCodexJsonlSource } from './codex-jsonl';
+import { sentMessageOf } from '../sent-message';
 import { SessionRecordNotFoundError } from './shared';
 import { TailReader } from './tail-reader';
 
@@ -584,6 +585,18 @@ describe('codex rollout 记录源', () => {
       expect(pictures.outputText).toBe('Wall time: 3.7 seconds\nOutput:\nPicture: 952 wide, light');
       expect(words.outputText).toBe('only words');
       expect(words).not.toHaveProperty('images');
+    });
+
+    // Code mode (11-23, a real record): the model's call is `exec` and its script output; the MCP call the script made,
+    // with its server, tool, arguments and result, is only in the `McpToolCall` item. A widget_send there is drawn on the
+    // task page from that receipt, so it must come out of the record as the same MCP call the live stream shows.
+    it('a code-mode MCP call is read from its McpToolCall item: a widget_send there is a sent widget message', async () => {
+      const lines = (await readFile(new URL('../__fixtures__/codex-code-mode-widget-send.jsonl', import.meta.url), 'utf8')).split('\n').filter(Boolean);
+      const { timeline } = await build(lines);
+      const tools = collectItems(timeline.getSnapshot().turns).filter((item): item is ToolCallItem => item.kind.endsWith('-tool-call'));
+      expect(tools.map((tool) => tool.kind)).toEqual(['unknown-tool-call', 'mcp-tool-call']);
+      expect(tools[1]).toMatchObject({ server: 'gugu', tool: 'catalog_call', status: 'done' });
+      expect(sentMessageOf(tools[1]!)).toMatchObject({ id: '00000000-0000-4000-8000-0000000000b1', chat_id: '00000000-0000-4000-8000-0000000000d1', content_type: 'widget' });
     });
 
     // 复核 10f3ea946c:同一批图别存两份(rawOutput 一份、images 一份 —— 真记录里存档 6.7 → 13.4 MB)。

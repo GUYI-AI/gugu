@@ -2,20 +2,18 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { createPortal } from 'react-dom'
 import { observer } from 'mobx-react-lite'
-import type { AgentAttention } from '@gugu/core/shared/agentStatus'
 import { isNeedsYou } from '@gugu/core/shared/agentStatusPresentation'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { sessionPresentation } from '@/lib/agent-wait/watch-status'
 import { followLink } from '@/lib/guguLinks'
 import { readAssistantShellBridge } from '@/lib/assistantShellBridge'
-import { Bell } from '@/lib/icons'
+import { Bell, ChevronLeft } from '@/lib/icons'
 import { installShellSlots, readShellSlots } from '@/lib/shellSlots'
 import { setSidebarNotificationsOpen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge'
 import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { RefreshFailed } from '../ui/RefreshFailed'
 import { IconButton } from '../ui/IconButton'
-import { SectionLabel } from '../ui/SectionLabel'
 import { PaneEmptyState } from '../ui/PaneEmptyState'
 import { Illustration } from '../ui/Illustration'
 import { Hint } from '../ui/Tooltip'
@@ -34,10 +32,10 @@ const EMPTY_SLOTS: ReadonlyMap<string, HTMLElement> = new Map()
 const unread = (task: NeedsYouTask) => isNeedsYou(sessionPresentation(task.session, true), task.session.unseen === true)
 
 /** One account-owned notification list, shared by the desktop workspace and phone Messages header. */
-export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }: { onAttentionChange?: (attention: AgentAttention) => void }) {
+export const NeedsYouHost = observer(function NeedsYouHost() {
   const { t } = useTranslation()
   const mobile = useMobileShell()
-  const { tasks, count, attention, error, loading } = useNeedsYouTasks()
+  const { tasks, count, error, loading } = useNeedsYouTasks()
   const vault = usePasswordVault()
   const passwords = passwordNotifications(vault.snapshot)
   const sync = vault.snapshot?.sync
@@ -47,7 +45,6 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
   const deferred = notices.filter(notice => notice.deferred)
   const notificationCount = count + passwords.length + devices.length + deferred.length
   const open = useSidebarNotificationsOpen()
-  useEffect(() => { onAttentionChange?.(attention) }, [onAttentionChange, attention])
   const slots = readShellSlots()
   const entries = useSyncExternalStore(listener => slots?.subscribeSlots(listener) ?? (() => undefined), () => slots?.getSlots() ?? EMPTY_SLOTS)
   const [marking, setMarking] = useState(0)
@@ -82,7 +79,11 @@ export const NeedsYouHost = observer(function NeedsYouHost({ onAttentionChange }
     const showEmpty = !loading && !error && !readError && tasks.length === 0 && passwords.length === 0 && devices.length === 0 && deferred.length === 0
     return createPortal(<>
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-2">
-        <SectionLabel>{title}</SectionLabel>
+        {/* The list takes the chats' place: its header is the way back to them, the usual "‹ parent" back. */}
+        <Button size="sm" variant="ghost" className="-ml-2 gap-1 font-medium text-[var(--fg)]" data-testid="notification-back"
+          aria-label={t('chatArea.backToList', { ns: 'messaging' })} title={t('chatArea.backToList', { ns: 'messaging' })} onClick={() => setSidebarNotificationsOpen(false)}>
+          <ChevronLeft className="size-4" />{t('shell.chats', { ns: 'main' })}
+        </Button>
         {unreadFailures.length > 0 && <Button size="sm" variant="ghost" data-testid="notification-mark-all-read" disabled={marking > 0} onClick={() => { void markRead(unreadFailures) }}>{t('chatList.markAllRead', { ns: 'messaging' })}</Button>}
       </div>
       {showEmpty ? <div className="grid min-h-0 flex-1 place-items-center px-4 pb-4" data-testid="notification-list">

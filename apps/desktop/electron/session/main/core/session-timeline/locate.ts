@@ -113,6 +113,7 @@ export type LocateSessionRecordInput = {
    * 而这一层如果不认它，手机上会看到「会话在、时间线空」。
    */
   managedConfigRoot?: string | null;
+  managedOnly?: boolean;
   /** 排在所有默认根之后的兜底根:旧位置上可能还留着一份,但新的(还在长的)那份在前面的根里。 */
   fallbackConfigRoots?: readonly string[];
 };
@@ -155,7 +156,8 @@ export function locateSessionRecord(input: LocateSessionRecordInput): SessionRec
 
   const env = input.env ?? process.env;
   const where: Where = { env, home: input.homeDir ?? homedir(), guguHome: resolveGuguHome(env) };
-  const dirs = candidates([...homesOf(row, where, input.managedConfigRoot?.trim() || null), ...(input.fallbackConfigRoots ?? [])]);
+  const managed = input.managedConfigRoot?.trim() || null;
+  const dirs = input.managedOnly ? candidates([managed]) : candidates([...homesOf(row, where, managed), ...(input.fallbackConfigRoots ?? [])]);
   if (!row.opencode) {
     return { supported: true, locator: { harness: row.format, providerSessionId, roots: dirs.map((dir) => join(dir, row.sub)) } };
   }

@@ -280,7 +280,8 @@ export function useCreateSessionCallback({
         initialSession: session,
       },
       workspaceConfig: resolvedWorkspaceConfig,
-      // 对话里派的新任务(taskChatId)进群坐任务座位:不发入群提示;群成员里「新建 Agent」照常提示。
+      // 对话里派的新任务(taskChatId)进群坐任务座位:不发入群提示。群里「+ → 新建 Agent」也走派任务,同样是任务座位;
+      // 只给出生群、不带 taskChatId 的调用方现在没有,那时按普通座位进群(发入群提示)。
       ...(birthChatId ? { birthGroup: { chatId: birthChatId, asTask: Boolean(taskChatId) } } : {}),
     };
 

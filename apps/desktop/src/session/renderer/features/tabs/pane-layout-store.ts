@@ -12,7 +12,7 @@ import type {
 import type { TabPersistenceAdapter } from './persistence';
 import { accountTabPlacementMemory, type TabPlacementMemory } from './tab-placement-memory';
 import { declaredShare } from './side-width';
-import { CHAT_TOOL_BUBBLE_MAX_WIDTH_PX, CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_VISIBLE_PANE_PX, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
+import { CHAT_TOOL_DROP_PREFIX, CHAT_TOOL_MIN_VISIBLE_PANE_PX, chatToolDropId, type ChatToolSide } from './chat-tool-geometry';
 import {
   equalizeSplit,
   evenSizes,
@@ -218,7 +218,6 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
       panesLanded: action,
       closingPaneId: computed,
       attachMotion: action,
-      chatWorkspaceConversationPresentation: computed,
       showChatWorkspaceConversation: action,
       attachChatWorkspace: action,
       moveChatToolGroup: action,
@@ -358,18 +357,20 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     return true;
   }
 
+  /** Side by side with the tools on the right, the conversation and the tools are two cards (index.css `[data-chat-tool-card]`). */
+  get chatToolCardPaneId(): string | undefined {
+    const mode = this.chatWorkspaceMode;
+    const tools = this.chatWorkspacePanes?.tools;
+    if (!tools || this.narrow || this.groups[0] === tools) return undefined;
+    // Hidden but still on the track, the tools are on their way off (@@@leaving-panes): the two cards stay until they are.
+    return mode === 'split' || (mode === 'hidden' && this.isPaneShown(tools.paneId)) ? tools.paneId : undefined;
+  }
+
   get chatWorkspaceSinglePaneId(): string | undefined {
     const panes = this.chatWorkspacePanes;
     if (this.chatWorkspaceMode === 'hidden') return panes?.chat.paneId;
     if (this.chatWorkspaceMode === 'full') return this.activePaneId === panes?.chat.paneId ? panes.chat.paneId : panes?.tools?.paneId;
     return undefined;
-  }
-
-  get chatWorkspaceConversationPresentation(): 'pane' | 'tab' | 'bubble' {
-    const mode = this.chatWorkspaceMode;
-    const panes = this.chatWorkspacePanes;
-    if (!panes?.tools || (mode !== 'full' && !(mode === 'split' && this.narrow))) return 'pane';
-    return this.dimensions && this.dimensions.width < CHAT_TOOL_BUBBLE_MAX_WIDTH_PX && this.activePaneId !== panes.chat.paneId ? 'bubble' : 'tab';
   }
 
   showChatWorkspaceConversation(): void {
@@ -682,7 +683,11 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   dimensions: { width: number; height: number } | null = null;
 
   setDimensions(width: number, height: number): void {
+    const first = !this.dimensions;
     this.dimensions = { width, height };
+    // A layout restored before it was measured keeps its saved cut only until now: the first measurement seats the side
+    // page like any other way it comes there (@@@seat-side) — a dragged width wins, else the page's own, else half.
+    if (first) this._seatShown();
   }
 
   /**
@@ -1263,7 +1268,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     this._displaced.replace(Object.entries(snapshot.displaced ?? {}).filter(([tabId, record]) => open.has(tabId) && open.has(record.tabId)));
     this._sideShares.replace(Object.entries(snapshot.sideShares ?? {}).filter(([tabId, share]) => open.has(tabId) && Number.isFinite(share)));
     this._restoreChatToolLayout(snapshot.chatToolLayout);
-    // Not measured yet: the saved cut stands (it was seated before the restart); a declared width needs the extent.
+    // Not measured yet: the first measurement seats it (setDimensions); a declared width needs the extent.
     if (this._pairExtent()) this._seatShown();
   }
 

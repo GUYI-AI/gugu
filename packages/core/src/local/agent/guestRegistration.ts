@@ -102,16 +102,7 @@ export async function activateGuestAgent(
   await mkdir(stateDir(env), { recursive: true })
   let release: (() => Promise<void>) | null = null
   try {
-    try {
-      release = await acquireStateLock(lockDir, 'agent-activation')
-    } catch {
-      // Timed out (~2 s) — re-read the record; if it is already active, return the identity.
-      const timedOutRecord = await getAgent({ providerSessionId }, env)
-      if (timedOutRecord && !isGuestAgentRecord(timedOutRecord) && timedOutRecord.gugu_user_id) {
-        return { name: timedOutRecord.name, agentUserId: timedOutRecord.gugu_user_id }
-      }
-      throw new Error(`Timed out waiting for agent-activation lock for session ${providerSessionId}`)
-    }
+    release = await acquireStateLock(lockDir, 'agent-activation')
 
     // 1. RE-READ the record inside the lock to detect a concurrent activation.
     const agent = await getAgent({ providerSessionId }, env)

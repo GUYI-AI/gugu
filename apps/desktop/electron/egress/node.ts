@@ -69,7 +69,9 @@ class RouteDispatcher extends Dispatcher {
 export function nodeEgressBackend(options: NodeBackendOptions): EgressBackend & { closeConnections(): Promise<void> } {
   // The egress owns the header deadline; undici bounds only the connection (proxy, SOCKS handshake and TLS included).
   const tls = options.ca ? { ca: options.ca } : {}
-  const pool = { keepAliveTimeout: options.keepAliveTimeoutMs ?? 60_000, keepAliveMaxTimeout: 600_000, headersTimeout: 0, bodyTimeout: 0, connectTimeout: options.connectTimeoutMs ?? 10_000 }
+  // HTTP/1.1 only: undici 8 offers h2 by default and then puts every request to an origin on one connection, whose 512 KB
+  // flow-control window all its streams share: a file read as three ranged GETs at once got one window per round trip.
+  const pool = { keepAliveTimeout: options.keepAliveTimeoutMs ?? 60_000, keepAliveMaxTimeout: 600_000, headersTimeout: 0, bodyTimeout: 0, connectTimeout: options.connectTimeoutMs ?? 10_000, allowH2: false }
   const dispatchers = new Map<string, Dispatcher>()
   const via = (route: ProxyRoute): Dispatcher => {
     const key = route ?? 'direct'
@@ -96,17 +98,19 @@ export function nodeEgressBackend(options: NodeBackendOptions): EgressBackend & 
     },
     async fetch(input, init) {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-      // Normalize Request inputs once; the bundled undici cannot consume the runtime's own Request class.
+      // @@@runtime-body - the runtime's own Request reads the input once: its headers, and the body serialized to match
+      // them (FormData with its boundary, URLSearchParams, strings, Blobs). The bundled undici only recognizes its own
+      // FormData class and sends any other as the text "[object FormData]". Serialized bodies go as bytes, so their
+      // length is sent as Content-Length; a caller's stream is passed on as it is (its caller sets any length).
       const request = new Request(input, { ...init, duplex: 'half' } as RequestInit)
-      const hasBody = request.body !== null
+      const body = request.body === null ? undefined : init.body instanceof ReadableStream ? init.body : await request.blob()
       const route = await options.routes(url)
       init.signal?.throwIfAborted()
       try {
         const response = await undiciFetch(url, {
-          method: request.method, headers: Object.fromEntries(request.headers),
-          body: hasBody ? (init.body ?? request.body) as never : undefined,
+          method: request.method, headers: Object.fromEntries(request.headers), body: body as never,
           redirect: request.redirect, credentials: request.credentials,
-          signal: init.signal, dispatcher: via(route), ...(hasBody ? { duplex: 'half' as const } : {}),
+          signal: init.signal, dispatcher: via(route), ...(body instanceof ReadableStream ? { duplex: 'half' as const } : {}),
         })
         return response as unknown as Response
       } catch (error) {

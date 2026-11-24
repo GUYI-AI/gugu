@@ -495,11 +495,6 @@ export function ComposerModelMenu({
               ? <span aria-busy="true" data-unknown="" className="gg-unknown" style={UNKNOWN_MODEL_NAME} />
               : translate('composer.model')}
           </span>
-          {!settingNotice && selectedModelItem?.tag && (
-            <span data-slot="composer-model-trigger-tag" className={styles.modelPanelItemTag}>
-              {selectedModelItem.tag}
-            </span>
-          )}
           {/* 强度就地显示(如「5.6 Sol 轻度」)。armed 的用 muted;
               没 armed 时退回该模型自己的默认档,再压一档不透明度 —— 那是目录里的出厂
               默认,用户写在 ~/.codex/config.toml 里的值会盖过它,我们读不到。 */}
