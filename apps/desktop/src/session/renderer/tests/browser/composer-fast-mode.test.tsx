@@ -51,7 +51,9 @@ async function renderMenu(props: Parameters<typeof Fixture>[0] = {}) {
     await until('phone thinking slider mounted', () => document.querySelector('[data-slot="composer-effort-indicator"]') != null)
   } else {
     await page.getByRole('option', { name: 'Native model' }).hover()
-    await until('desktop model details mounted', () => document.querySelector('[data-slot="composer-model-detail"]') != null)
+    const detailSelector = '[data-hover-card]:has([data-slot="composer-model-detail"])'
+    await until('desktop model details entered', () => document.querySelector(`${detailSelector}:not([data-starting-style])`) != null)
+    await Promise.all(document.querySelector(detailSelector)!.getAnimations({ subtree: true }).map(animation => animation.finished))
   }
 }
 
