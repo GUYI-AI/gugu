@@ -72,7 +72,7 @@ function followNames(element: HTMLElement, progress: number) {
 }
 
 /**
- * 创建智能体 (what 新建任务 does) and the 「+」 menu. Collapsed, the 「+」 is all the top keeps, so its menu leads with
+ * 创建智能体 (what 新建任务 does), search and the 「+」 menu. Collapsed, the 「+」 is all the top keeps, so its menu leads with
  * 创建智能体 (the same action, the same icon).
  */
 export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boolean; onCreateAgent: () => void }) {
@@ -80,9 +80,10 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
   const [menuOpen, setMenuOpen] = useState(false);
   const rowRef = useSidebarProgressFollow<HTMLDivElement>(followTopRow);
   const createRef = useSidebarProgressFollow<HTMLButtonElement>(followNames);
+  const searchRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   const menuLabel = [...(collapsed ? [translate('sidebar.createAgent')] : []), ...ONE_LIST_CREATE_MENU.map((action) => translate(CREATE_MENU_LABEL[action]))].join(' / ');
   return (
-    <div ref={rowRef} className={cn('flex shrink-0 items-center', collapsed ? 'pb-2' : 'pb-[17px]')} data-sidebar-one-list-top="">
+    <div ref={rowRef} className={cn('flex shrink-0 items-center', collapsed ? 'pb-2' : 'pb-[17px] pt-2')} data-sidebar-one-list-top="">
       {/* Fades with the sidebar's text (followNames) and narrows to nothing: no side padding or border
           of its own (its label is centred, so expanded it looks the same), and its overflow is clipped on the way. Collapsed
           it is inert: out of the tab order and the pointer's way. */}
@@ -98,6 +99,7 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
         <SquarePen className="size-4 shrink-0" />
         <span className="truncate">{translate('sidebar.createAgent')}</span>
       </Button>
+      {!collapsed && <div ref={searchRef} className="-mr-1 shrink-0"><SidebarSearchTrigger /></div>}
       <DropdownMenu.Root open={menuOpen} modal={false} onOpenChange={setMenuOpen}>
         {/* The chat list header's 「+」 (ChatListPanel): the same trigger on the same icon-button skin. */}
         {/* A constant label: an empty one renders the bare button (Hint), so blanking it while open remounted the 「+」 and Esc
@@ -140,20 +142,13 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
   );
 }
 
-/**
- * The row under the head, 40px in both states so nothing under it moves when the sidebar folds: on the rail it holds
- * 「»」 on the avatars' axis (the head's band is the traffic lights' there), expanded the search field (界面减法 #46:
- * search is at the top only while the sidebar is open). Each changes where the rows take the rail's layout
- * (@@@panel-track); the field fades with the names before that.
- */
+/** Below the traffic lights, the folded sidebar keeps 「»」 on the avatars' axis. */
 export function SidebarRailRow() {
   const railLayout = useLeftRailLayout();
-  const fieldRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
+  if (!railLayout) return null;
   return (
-    // Design v16: on the rail 「»」 is centred on the avatars' axis (34 of 68), 38 from the window's top, under the traffic
-    // lights. Open, the search field keeps its side inset (12) above and below it too (yangchichi 11-24: the gaps were too wide).
-    <div className={cn('flex shrink-0 items-start', railLayout ? '-mt-[7px] h-9 justify-center' : 'p-3')} data-sidebar-rail-row="">
-      {railLayout ? <SidebarFoldButton /> : <div ref={fieldRef} className="w-full"><SidebarSearchTrigger /></div>}
+    <div className="-mt-[7px] flex h-9 shrink-0 items-start justify-center" data-sidebar-rail-row="">
+      <SidebarFoldButton />
     </div>
   );
 }

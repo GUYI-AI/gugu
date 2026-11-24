@@ -1,7 +1,7 @@
 import { createRoot, type Root } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { i18n } from '@/i18n'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import { GlobalSearch } from '@renderer/features/global-search/global-search'
@@ -75,3 +75,21 @@ for (const language of ['en-US', 'zh-CN']) {
     })
   }
 }
+
+it('lets keyboard users reach and open the compact desktop filters', async () => {
+  await page.viewport(900, 800)
+  await i18n.changeLanguage('zh-CN')
+  container.className = 'gugu-skin emdark rounded-xl bg-popover text-foreground'
+  container.style.width = '672px'
+  resetSearchSession({ chips: [{ kind: 'in', chatId: 'fixture-chat' }] })
+  draw(true, null)
+
+  const input = page.getByTestId('global-search-input')
+  const toggle = page.getByTestId('global-search-filter-toggle')
+  await expect.element(input).toHaveFocus()
+  expect(document.querySelector('[data-testid="global-search-quick"]')).toBeNull()
+  await userEvent.keyboard('{Tab}')
+  await expect.element(toggle).toHaveFocus()
+  await userEvent.keyboard('{Enter}')
+  await expect.element(page.getByTestId('global-search-quick')).toBeVisible()
+})

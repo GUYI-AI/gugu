@@ -3,7 +3,7 @@ import { chatActor } from '@renderer/lib/chat/actor-identity'
 import { chatDisplayName } from '@renderer/lib/chat/chat-name'
 import { readChatSummary, resolveChatId } from '@/lib/chatSummariesBridge'
 import { translateSessionMessage } from '../../localization/locale-store'
-import { refreshFailure, replica, useReplica, valueOf } from '@/lib/replica'
+import { refreshFailure, replica, retryOf, useReplica, valueOf } from '@/lib/replica'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
@@ -42,7 +42,7 @@ export interface SearchView {
   /** With an in: chip: how many hits the same words have in every other conversation (null: not counted yet). */
   elsewhere: { count: number; capped: boolean } | null
   loading: boolean
-  error: Error | null
+  error: { message: string; retry?: () => void } | null
   taskIndex?: TaskTurnIndexStatus
   /** Hits and counts are the previous words' while these words' are on their way. */
   stale: boolean
@@ -226,9 +226,19 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
   const shown = facet === 'all' ? all : all.filter((hit) => facet === 'task' ? hit.kind === 'task' : hit.kind === 'message' && (facet === 'message' || hit.file))
   // Only results with rows are held: an empty one held would say 「nothing found」 for words not searched yet.
   const known = !runnable || (!pending && !(stale && all.length === 0))
+  const failedMessages = messagesApply && facet !== 'task' && refreshFailure(messages)
+  const failedTasks = turnsApply && (facet === 'all' || facet === 'task') && refreshFailure(turns)
+  const error = unasked && facet !== 'task' ? { message: translateSessionMessage(unasked) }
+    : failedMessages || failedTasks ? {
+      message: translateSessionMessage(failedMessages ? 'globalSearch.messagesFailed' : 'globalSearch.tasksFailed'),
+      retry: () => {
+        if (failedMessages) retryOf(messages)?.()
+        if (failedTasks) retryOf(turns)?.()
+      },
+    } : null
   return {
     query, scopes, unresolved,
-    hits: !runnable ? [] : known ? shown : null,
+    hits: !runnable ? [] : known || shown.length > 0 ? shown : null,
     counts: !runnable ? { all: 0, message: 0, task: 0, file: 0 } : known ? counts : null,
     capped: messageRows.length >= SEARCH_LIMIT || turnHits.length >= SEARCH_LIMIT,
     elsewhere: runnable && query && inChat && everywhere.state === 'value' ? {
@@ -236,8 +246,8 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
       capped: everywhere.value.length >= SEARCH_LIMIT,
     } : null,
     loading: (runnable && (pending || stale)) || text !== typed,
-    error: unasked ? new Error(translateSessionMessage(unasked)) : (messagesApply ? refreshFailure(messages) : null) ?? refreshFailure(everywhere) ?? (turnsApply ? refreshFailure(turns) : null),
+    error,
     taskIndex: turnsApply && turns.state === 'value' ? turns.value.index : undefined,
-    stale: runnable && known && stale,
+    stale: runnable && shown.length > 0 && stale,
   }
 }

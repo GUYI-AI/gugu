@@ -25,6 +25,7 @@ const SIZE_CLASSES: Record<ModalSize, string> = {
 const POSITION_CLASSES: Record<ModalPosition, string> = {
   center: 'top-1/2 -translate-y-1/2',
   top: 'top-[15%] translate-y-0',
+  upper: 'top-[20dvh] max-h-[calc(80dvh-1rem)] translate-y-0',
 };
 
 export const ModalRenderer = observer(function ModalRenderer() {

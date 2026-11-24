@@ -1,3 +1,4 @@
+import '@/lib/engine-polyfills';
 import { installLocalRendererDiagnostics } from '@/lib/localRendererDiagnostics';
 import { MotionConfig } from 'framer-motion';
 // gugu-embedded entry: mount the session-page <App/> into a host-provided container

@@ -6,9 +6,10 @@ import { Avatar } from '@/components/Avatar'
 import { ListRowContent } from '@/components/ui/ListRow'
 import { SectionLabel } from '@/components/ui/SectionLabel'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { AtSign, Clock, FileText, History, Image, Link, Search, Users, X } from '@/lib/icons'
+import { AtSign, Clock, FileText, FolderOpen, History, Image, Link, MessageSquare, Users, X } from '@/lib/icons'
 import { FileMark } from '@gugu/session-ui/file-mark'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
+import { openMessageSender } from '@/lib/openMessageSender'
 import { followLink } from '@/lib/guguLinks'
 import { UI_EVENTS } from '@/lib/uiEvents'
 import { messageForUser } from '@/lib/userFacingError'
@@ -16,14 +17,19 @@ import { askTaskReveal } from '@/hooks/useSourceMessageReveal'
 import { askFlashWords } from '@/lib/sourceMessageReveal'
 import { conversationLink } from '@gugu/core/shared/ui/guguLink'
 import { messageQuoteLink } from '@gugu/core/shared/ui/messageQuote'
+import { refreshFailure, retryOf, useReplica, valueOf } from '@/lib/replica'
+import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line'
 import { matchRanges } from '@shared/core/search'
 import { Shortcut } from '@renderer/lib/ui/shortcut'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { cn } from '@renderer/utils/utils'
 import { Unknown } from '@/components/ui/Unknown'
 import { EVERYWHERE, forgetSearches, recentSearches, rememberSearch, updateSearchSession, useSearchSession, type SearchChip, type SearchFacet, type SearchKind } from './search-session'
+import { SearchIcon } from './search-icon'
 import { firstMessageOn, instant, SEARCH_LIMIT, useGlobalSearch, type SearchHit } from './use-global-search'
 import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
+import { commandPaletteSearch, usePaletteTasks } from '../command-palette/palette-search-data'
+import { rankPaletteMatches } from '../command-palette/palette-rank'
 import { openGroup, openPerson, useNameMatches } from '../command-palette/palette-chats'
 
 const ResultAvatar = observer(function ResultAvatar({ hit, name }: { hit: SearchHit; name: string }) {
@@ -41,16 +47,17 @@ const ResultAvatar = observer(function ResultAvatar({ hit, name }: { hit: Search
   )
 })
 
-/** A group (`groupAvatar`: its picture, null when unset) or person (`userId`) found by name. The phone has no quick switcher, so its panel answers names too. */
-const NameRow = observer(function NameRow({ id, userId, groupAvatar, name, query, onOpen }: { id: string; userId: string; groupAvatar?: string | null; name: string; query: string; onOpen: () => void }) {
+type NameMatch = {
+  id: string
+  name: string
+  leading: ReactNode
+  subtitle?: string
+  open: () => void
+}
+
+const PersonAvatar = observer(function PersonAvatar({ userId, name }: { userId: string; name: string }) {
   const identity = useAvatarIdentity(userId)
-  return (
-    <button type="button" data-testid="global-search-name" data-id={id} onClick={onOpen} className="gg-list-row gg-row max-sm:min-h-11">
-      <ListRowContent leading={groupAvatar !== undefined ? <Avatar name={name} avatarUrl={groupAvatar} seed={id} size={20} variant="group" />
-        : <Avatar name={identity?.display_name ?? name} avatarUrl={identity?.avatar} seed={id} size={20} isAgent={identity?.type === 'agent'} still />}
-        title={<Highlighted text={name} query={query} />} />
-    </button>
-  )
+  return <Avatar name={identity?.display_name ?? name} avatarUrl={identity?.avatar} seed={userId} size={20} isAgent={identity?.type === 'agent'} still />
 })
 
 // @@@search-line-height - where the lines not mounted yet go (every mounted line is measured). A scope line is 34 px; a hit is
@@ -93,18 +100,20 @@ export function openHit(hit: SearchHit, words = ''): void {
   window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked))
 }
 
-/**
- * The global search panel (the desktop modal and the phone's full-screen page). One filter row, newest first, the
- * matched sentence leading each row; scope by typing in: / from:, or by a group's header. `tasks`: this device has
- * local tasks to search (the phone has none, so it has no task filter). `onOpen` closes the panel because a result was
- * opened (done, not dismissed: focus goes to the result, not back to the box that opened the panel). `names`: no quick
- * switcher beside this panel (the phone), so unscoped words also list the groups and people they name, above the messages.
- */
-export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks: boolean; names?: boolean; onClose: () => void; onOpen: () => void }) {
+/** Desktop searches names and content together. Mobile keeps its existing chat search and named contacts. */
+export function GlobalSearch({ tasks, names = false, desktop = false, currentGroupId, onClose, onOpen }: {
+  tasks: boolean
+  names?: boolean
+  desktop?: boolean
+  currentGroupId?: string
+  onClose: () => void
+  onOpen: () => void
+}) {
   const { translate } = useSessionMessages()
   const { text, chips, facet, selectedId } = useSearchSession()
   const summaries = useChatSummaries()
   const view = useGlobalSearch(text, chips, facet, tasks)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [composition, setComposition] = useState<string | null>(null)
   const [list, setList] = useState<HTMLDivElement | null>(null)
   const lineWindowRef = useRef<GrowingListWindow | null>(null)
@@ -127,16 +136,51 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
   const scoped = view.scopes.some((chip) => chip.kind === 'in' || chip.kind === 'in-task')
   // @@@growing-list: the results mount around the visible part of the panel; a group's scope line heads its hits.
   const lines = groups.flatMap((group) => [...(scoped ? [] : [{ kind: 'scope' as const, group }]), ...group.hits.map((hit) => ({ kind: 'hit' as const, hit }))])
-  const named = useNameMatches(view.query, NAMED_LIMIT, names && !!view.query && facet === 'all' && chips.length === 0)
-  const nameRows = [...named.groups.map(([id, chat]) => ({ id, userId: '', groupAvatar: chat.avatar ?? null, name: chat.name ?? '', open: () => openGroup(id) })),
-      ...named.people.map((person) => ({ id: person.id, userId: person.id, groupAvatar: undefined, name: person.name, open: () => openPerson(person.id, person.chatId) }))]
-  const selected = ordered.find((hit) => hit.id === selectedId) ?? ordered[0] ?? null
+  const showNames = (desktop || names) && !!view.query && !view.unresolved && facet === 'all' && view.scopes.length === 0
+  const named = useNameMatches(view.query, desktop ? 20 : NAMED_LIMIT, showNames)
+  // The shared search query is already debounced. Send title and content reads in parallel.
+  const titleQuery = view.query
+  const readingTitles = desktop && showNames
+  const titles = useReplica(commandPaletteSearch, readingTitles ? [titleQuery] : null)
+  const titleResults = readingTitles ? valueOf(titles) ?? null : null
+  const titleError = readingTitles ? refreshFailure(titles) : null
+  const titlePending = desktop && showNames && !titleError && titleResults === null
+  const taskMatches = usePaletteTasks(titleResults, titleQuery)
+  const projectMatches = rankPaletteMatches(titleResults?.filter((item) => item.kind === 'project') ?? [], titleQuery, (item) => [item.title], { recallOnly: true })
+  const nameRows: NameMatch[] = [
+    ...named.groups.map(([id, chat]) => ({ id: `chat:${id}`, name: chat.alias || chat.name || '',
+      leading: <Avatar name={chat.alias || chat.name || ''} avatarUrl={chat.avatar} seed={id} size={20} variant="group" />,
+      open: () => openGroup(id) })),
+    ...named.people.map((person) => ({ id: `person:${person.id}`, name: person.name,
+      leading: <PersonAvatar userId={person.id} name={person.name} />,
+      open: () => {
+        if (desktop && !person.chatId) openMessageSender({ kind: 'sender', userId: person.id })
+        else openPerson(person.id, person.chatId)
+      } })),
+    ...projectMatches.map((item) => ({ id: `project:${item.id}`, name: item.title,
+      leading: <FolderOpen size={16} />, subtitle: translate('palette.projects'),
+      open: () => followLink({ kind: 'project', projectId: item.id }) })),
+    ...(taskMatches ?? []).flatMap((item) => {
+      const { id, projectId, deviceId } = item
+      if (!projectId) return []
+      return [{ id: `task:${id}`, name: item.title, leading: <MessageSquare size={16} />,
+        subtitle: item.deviceLabel || translate('palette.tasks'),
+        open: () => followLink({ kind: 'session', sessionId: id, projectId, deviceId }) }]
+    }),
+  ]
+  const resultIds = [...(desktop ? nameRows.map((row) => row.id) : []), ...ordered.map((hit) => hit.id)]
+  const selection = selectedId && resultIds.includes(selectedId) ? selectedId : resultIds[0]
+  const selected = ordered.find((hit) => hit.id === selection)
+  const selectedName = nameRows.find((row) => row.id === selection)
   // Words, a sender or a kind of message: any of them is a search; with none the panel shows the quick filters.
   const hasQuery = !!text.trim() || chips.some((chip) => chip.kind === 'from' || chip.kind === 'type')
   const inChat = chips.find((chip) => chip.kind === 'in')?.chatId ?? null
+  const canScopeToGroup = !!currentGroupId && !view.scopes.some((chip) => chip.kind === 'in' || chip.kind === 'in-task')
   const inputRef = useRef<HTMLInputElement>(null)
   const [dateNote, setDateNote] = useState<string | null>(null)
 
+  const selectedNameRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => { selectedNameRef.current?.scrollIntoView({ block: 'nearest' }) }, [selectedName?.id])
   const selectedLine = lines.findIndex((line) => line.kind === 'hit' && line.hit.id === selected?.id)
   useEffect(() => { if (selectedLine >= 0) lineWindowRef.current?.scrollToIndex(selectedLine, { align: 'auto' }) }, [selectedLine])
 
@@ -166,10 +210,15 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
   const recentScope = inChat ?? EVERYWHERE
   const [, setForgotten] = useState(0)
   const recent = recentSearches(recentScope)
+  const openName = (row: NameMatch) => {
+    rememberSearch(recentScope, view.query)
+    onOpen()
+    row.open()
+  }
   const move = (direction: 1 | -1) => {
-    if (!ordered.length) return
-    const at = selected ? ordered.indexOf(selected) : -1
-    updateSearchSession({ selectedId: ordered[Math.min(ordered.length - 1, Math.max(0, at + direction))]!.id })
+    if (!resultIds.length) return
+    const at = selection ? resultIds.indexOf(selection) : -1
+    updateSearchSession({ selectedId: resultIds[Math.min(resultIds.length - 1, Math.max(0, at + direction))]! })
   }
   const setChips = (next: SearchChip[]) => updateSearchSession({ chips: next, selectedId: null })
   const cycleFacet = (direction: 1 | -1) =>
@@ -181,7 +230,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
       {/* The phone page: the field is a filled capsule, roomier than the desktop modal's bare row. */}
       <div className="flex h-12 shrink-0 items-center gap-2 px-4 max-sm:h-16 max-sm:gap-3">
         <div className="flex h-full min-w-0 flex-1 items-center gap-2 max-sm:h-11 max-sm:rounded-full max-sm:bg-foreground/[0.06] max-sm:px-4">
-        <Search className="h-4 w-4 shrink-0 text-foreground/40 max-sm:h-5 max-sm:w-5" />
+        <SearchIcon className="size-4 shrink-0 text-foreground/40 max-sm:size-5" />
         {chips.map((chip, index) => (
           <span key={`${chip.kind}:${index}`} className="flex h-6 min-w-0 max-w-40 items-center gap-1 rounded-md bg-foreground/[0.06] pl-2 pr-1 text-xs text-foreground/75">
             <span className="truncate">{chipLabel(chip)}</span>
@@ -189,8 +238,8 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
               className="grid h-5 w-5 place-items-center rounded text-foreground/40 hover:bg-foreground/10 hover:text-foreground"><X className="h-3 w-3" /></button>
           </span>
         ))}
-        <input ref={inputRef} autoFocus enterKeyHint="search" value={composition ?? text} data-testid="global-search-input" aria-label={translate(names ? 'globalSearch.placeholderNames' : 'globalSearch.placeholder')}
-          placeholder={translate(chips.length ? 'globalSearch.placeholderScoped' : names ? 'globalSearch.placeholderNames' : 'globalSearch.placeholder')}
+        <input ref={inputRef} autoFocus enterKeyHint="search" value={composition ?? text} data-testid="global-search-input" aria-label={translate(names || desktop ? 'globalSearch.placeholderNames' : 'globalSearch.placeholder')}
+          placeholder={translate(chips.length ? 'globalSearch.placeholderScoped' : names || desktop ? 'globalSearch.placeholderNames' : 'globalSearch.placeholder')}
           className="h-full min-w-24 flex-1 bg-transparent text-[length:var(--font-title)] outline-none placeholder:text-foreground/35"
           onCompositionStart={(event) => setComposition(event.currentTarget.value)}
           onCompositionEnd={(event) => { setComposition(null); updateSearchSession({ text: event.currentTarget.value, selectedId: null }) }}
@@ -198,11 +247,25 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
           onKeyDown={(event) => {
             if (composition !== null || event.nativeEvent.isComposing || event.keyCode === 229) return
             if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); move(event.key === 'ArrowDown' ? 1 : -1) }
-            else if (event.key === 'Enter') { event.preventDefault(); if (selected) open(selected) }
-            else if (event.key === 'Tab') { event.preventDefault(); cycleFacet(event.shiftKey ? -1 : 1) }
+            else if (event.key === 'Enter') { event.preventDefault(); if (selectedName) openName(selectedName); else if (selected) open(selected) }
+            else if (event.key === 'Tab' && (hasQuery || names)) { event.preventDefault(); cycleFacet(event.shiftKey ? -1 : 1) }
             else if (event.key === 'Backspace' && !event.currentTarget.value && chips.length) { event.preventDefault(); setChips(chips.slice(0, -1)) }
           }} />
         </div>
+        {canScopeToGroup && (
+          <button type="button" data-testid="global-search-current-group"
+            className="h-8 shrink-0 rounded-md px-2 text-sm text-foreground/60 hover:bg-foreground/[0.06] hover:text-foreground"
+            onClick={() => { setChips([...chips, { kind: 'in', chatId: currentGroupId }]); inputRef.current?.focus() }}>
+            {translate('globalSearch.currentGroup')}
+          </button>
+        )}
+        {!names && !hasQuery && (
+          <button type="button" aria-expanded={filtersOpen} data-testid="global-search-filter-toggle"
+            className="h-8 shrink-0 rounded-md px-2 text-sm text-foreground/60 hover:bg-foreground/[0.06] hover:text-foreground aria-expanded:bg-foreground/[0.06] aria-expanded:text-foreground"
+            onClick={() => setFiltersOpen(!filtersOpen)}>
+            {translate('globalSearch.filters')}
+          </button>
+        )}
         <button type="button" onClick={onClose} className="-mr-2 min-h-11 shrink-0 px-2 text-[length:var(--font-title)] text-foreground sm:hidden">{translate('globalSearch.cancel')}</button>
       </div>
 
@@ -232,7 +295,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
       {/* The previous words' results while these words' are on their way: kept in place and dimmed after 150 ms (.gg-stale, the unknown slot's rule), ❌ emptied per keystroke. */}
       <div ref={setList} data-growing-list="" data-stale={view.stale || undefined} aria-busy={view.stale || undefined}
         className={cn('flex-1 overflow-y-auto px-2', hasQuery && 'min-h-48 pb-2', view.stale && 'gg-stale')} role="listbox" aria-label={translate('globalSearch.results')}>
-        {view.error && <div role="alert" className="px-3 py-3 text-sm text-[var(--em-foreground-destructive)]">{messageForUser(view.error)}</div>}
+        {view.error && <ReadFailedLine className="px-3 py-2" message={view.error.message} onRetry={view.error.retry} />}
         {hasQuery && view.taskIndex?.state === 'preparing' && (facet === 'all' || facet === 'task') && (
           <div role="status" className="px-3 py-3 text-sm text-foreground/50">{view.taskIndex.total
             ? translate('globalSearch.indexingTasksProgress', { percent: Math.floor(100 * (view.taskIndex.done ?? 0) / view.taskIndex.total) })
@@ -241,7 +304,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
         {hasQuery && view.taskIndex?.state === 'failed' && (facet === 'all' || facet === 'task') && (
           <div role="alert" className="px-3 py-3 text-sm text-[var(--em-foreground-destructive)]">{translate('globalSearch.indexingTasksFailed')}</div>
         )}
-        {!hasQuery && (
+        {!hasQuery && (names || filtersOpen) && (
           <>
           {/* The phone page lists the types one per row, every label on one line. */}
           {names && <SectionLabel className="px-3 pt-4">{translate('globalSearch.byType')}</SectionLabel>}
@@ -275,19 +338,24 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
             ))}
           </div>
         )}
-        {!hasQuery && (
-          <div className="px-3 pb-4 pt-3 text-[length:var(--font-body)] leading-6 text-foreground/50 max-sm:hidden">
-            <div>{translate(tasks ? 'globalSearch.introWhat' : 'globalSearch.introWhatChats')}</div>
-            <div>{translate('globalSearch.introScope')} <code className="rounded bg-foreground/[0.06] px-1 font-mono text-xs text-foreground/70">in:</code> <code className="rounded bg-foreground/[0.06] px-1 font-mono text-xs text-foreground/70">from:</code></div>
-          </div>
-        )}
         {hasQuery && view.unresolved && <div className="px-3 py-8 text-center text-sm text-foreground/45">{translate('globalSearch.unresolved', { text: view.unresolved })}</div>}
         {nameRows.length > 0 && (
           <div data-testid="global-search-names">
-            <SectionLabel>{translate('globalSearch.names')}</SectionLabel>
-            {nameRows.map((row) => <NameRow key={row.id} id={row.id} userId={row.userId} groupAvatar={row.groupAvatar} name={row.name} query={view.query} onOpen={() => { rememberSearch(recentScope, view.query); onOpen(); row.open() }} />)}
+            <SectionLabel>{translate(desktop ? 'globalSearch.nameMatches' : 'globalSearch.names')}</SectionLabel>
+            {nameRows.map((row) => (
+              <button key={row.id} type="button" data-testid="global-search-name" data-id={desktop ? row.id : row.id.slice(row.id.indexOf(':') + 1)}
+                role={desktop ? 'option' : undefined} aria-selected={desktop ? row.id === selection : undefined}
+                ref={row.id === selection ? selectedNameRef : undefined}
+                onMouseMove={desktop ? () => { if (row.id !== selection) updateSearchSession({ selectedId: row.id }) } : undefined}
+                onClick={() => openName(row)}
+                className={cn('gg-list-row gg-row max-sm:min-h-11', row.id === selection && 'bg-foreground/[0.06]')}>
+                <ListRowContent leading={row.leading} title={<Highlighted text={row.name} query={view.query} />} />
+                {row.subtitle && <span className="ml-auto shrink-0 pr-1 text-xs text-foreground/45">{row.subtitle}</span>}
+              </button>
+            ))}
           </div>
         )}
+        {titleError && <ReadFailedLine className="px-3 py-2" message={translate('palette.searchFailed')} onRetry={retryOf(titles)} />}
         {hasQuery && !view.unresolved && view.hits === null && !view.error && (
           <div data-testid="global-search-pending">
             {[0, 1, 2].map((row) => (
@@ -298,7 +366,7 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
             ))}
           </div>
         )}
-        {hasQuery && !view.unresolved && !view.loading && !view.error && view.hits !== null && ordered.length === 0 && nameRows.length === 0 && (
+        {hasQuery && !view.unresolved && !view.loading && !view.error && view.hits !== null && !titlePending && !titleError && ordered.length === 0 && nameRows.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-3 py-10 text-center text-sm text-foreground/45">
             <span>{view.query ? translate('globalSearch.emptyFor', { text: view.query }) : translate('globalSearch.typeWords')}</span>
             {view.query && (facet !== 'all' || chips.length > 0) && (
@@ -355,12 +423,6 @@ export function GlobalSearch({ tasks, names = false, onClose, onOpen }: { tasks:
           {translate('globalSearch.elsewhere', { count: view.elsewhere.capped ? `${view.elsewhere.count}+` : String(view.elsewhere.count) })}
         </button>
       )}
-
-      <div className="flex shrink-0 items-center gap-4 border-t border-foreground/[0.08] px-4 py-2 text-xs text-foreground/40 max-sm:hidden">
-        <span className="flex items-center gap-1"><Shortcut hotkey="ArrowUp" variant="keycaps" /><Shortcut hotkey="ArrowDown" variant="keycaps" />{translate('globalSearch.hintSelect')}</span>
-        <span className="flex items-center gap-1"><Shortcut hotkey="Tab" variant="keycaps" />{translate('globalSearch.hintFilter')}</span>
-        <span className="ml-auto flex items-center gap-1"><Shortcut hotkey="Escape" variant="keycaps" />{translate('globalSearch.hintClose')}</span>
-      </div>
     </div>
   )
 }

@@ -77,9 +77,12 @@ describe('engine floor gate', () => {
     const imported = [...readFileSync(resolve(process.cwd(), 'apps/desktop/src/lib/engine-polyfills.ts'), 'utf8')
       .matchAll(/^import '(.+?)'/gm)].map(m => m[1]).sort()
     expect(imported).toEqual([...new Set(Object.values(ENGINE_APIS).flatMap(api => api.polyfill ?? []))].sort())
-    for (const entry of ['apps/desktop/index.html', 'apps/desktop/session-embedded.html']) {
-      const modules = [...readFileSync(resolve(process.cwd(), entry), 'utf8').matchAll(/<script type="module"[^>]*src="([^"]+)"/g)]
-      expect(modules[0]?.[1], entry).toMatch(/src\/lib\/engine-polyfills\.ts$/)
-    }
+    const shell = readFileSync(resolve(process.cwd(), 'apps/desktop/index.html'), 'utf8')
+    const embedded = readFileSync(resolve(process.cwd(), 'apps/desktop/session-embedded.html'), 'utf8')
+    const moduleScripts = /<script type="module"[^>]*src="([^"]+)"/g
+    expect([...shell.matchAll(moduleScripts)][0]?.[1]).toMatch(/src\/lib\/engine-polyfills\.ts$/)
+    expect([...embedded.matchAll(moduleScripts)].map(match => match[1])).toEqual(['./src/session/renderer/embedded.tsx'])
+    const embeddedEntry = readFileSync(resolve(process.cwd(), 'apps/desktop/src/session/renderer/embedded.tsx'), 'utf8')
+    expect(embeddedEntry.startsWith("import '@/lib/engine-polyfills';")).toBe(true)
   })
 })

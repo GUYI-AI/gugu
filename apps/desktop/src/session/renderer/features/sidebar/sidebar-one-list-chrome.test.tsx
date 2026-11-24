@@ -147,12 +147,13 @@ vi.mock('@/components/ui/Popover', () => {
 });
 
 const { SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop, SidebarRailRow } = await import('./sidebar-one-list-chrome');
-/** The sidebar's chrome as LeftSidebar stacks it: the head, the row under it, the foot (the list between is not needed). */
+/** The sidebar's chrome as LeftSidebar stacks it: the head, the controls above the list, the foot (the list between is not needed). */
 function Chrome({ innerShownFor }: { innerShownFor?: string }) {
   return (
     <div data-region="left-sidebar">
       <SidebarOneListHead innerShownFor={innerShownFor} />
       <SidebarRailRow />
+      <SidebarOneListTop collapsed={!state.open} onCreateAgent={vi.fn()} />
       <SidebarOneListFoot />
     </div>
   );
@@ -277,14 +278,16 @@ describe('the sidebar head', () => {
     expect(state.toggleLeft).toHaveBeenCalledTimes(1);
   });
 
-  it('open: the head ends in 「«」, the search field is the row under it, 已安排 · 会话历史 · the bell are in the foot after my avatar', async () => {
+  it('open: the head ends in 「«」, search sits between 创建智能体 and 「+」, 已安排 · 会话历史 · the bell are in the foot after my avatar', async () => {
     await render(<Chrome />);
     const head = document.querySelector<HTMLElement>('[data-sidebar-head]')!;
     // The sidebar's 40px top band (the window's drag handle), its controls at its end.
     expect(head.hasAttribute('data-sidebar-space')).toBe(true);
     expect(head.className).toMatch(/\bjustify-end\b/);
     expect(head.contains(q('sidebar-fold'))).toBe(true);
-    expect(document.querySelector('[data-sidebar-rail-row]')!.contains(q('sidebar-search-trigger'))).toBe(true);
+    expect(document.querySelector('[data-sidebar-rail-row]')).toBeNull();
+    expect(q('sidebar-create-agent')!.nextElementSibling!.contains(q('sidebar-search-trigger'))).toBe(true);
+    expect(q('sidebar-search-trigger')!.parentElement!.nextElementSibling!.contains(q('sidebar-create-menu'))).toBe(true);
     const foot = document.querySelector<HTMLElement>('[data-sidebar-foot]')!;
     const order = [foot.querySelector('[data-me-slot]')!, q('sidebar-scheduled')!, q('sidebar-session-history')!, foot.querySelector('[data-notification-slot="toggle"]')!];
     const all = [...foot.querySelectorAll('*')];

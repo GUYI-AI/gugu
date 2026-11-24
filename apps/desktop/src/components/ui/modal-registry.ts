@@ -6,7 +6,7 @@ export interface BaseModalProps<TResult = unknown> {
 }
 export type ModalComponent<TProps = unknown, TResult = unknown> = (props: TProps & BaseModalProps<TResult>) => ReactNode | Promise<ReactNode>;
 export type ModalSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
-export type ModalPosition = 'center' | 'top';
+export type ModalPosition = 'center' | 'top' | 'upper';
 export type ModalRegistryEntry<TProps = unknown, TResult = unknown> = {
   component: ModalComponent<TProps, TResult>;
   size?: ModalSize;

@@ -92,16 +92,18 @@ for (const material of ['native', 'opaque'] as const) {
     const scheduled = document.querySelector<HTMLElement>('[data-testid="sidebar-scheduled"]')!;
     const history = document.querySelector<HTMLElement>('[data-testid="sidebar-session-history"]')!;
     const search = document.querySelector<HTMLElement>('[data-testid="sidebar-search-trigger"]')!;
+    const plus = document.querySelector<HTMLElement>('[data-testid="sidebar-create-menu"]')!;
     const lights = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-traffic-lights-width'));
     expect(lights, 'the mac tokens must be present').toBeGreaterThan(0);
     const inset = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-surface-inset'));
     expect(inset, 'the desktop shell tokens must be present').toBeGreaterThan(0);
     // Expanded: 「«」 ends the top band (one surface inset down, on one line with the card's own top band), 12 from the
-    // list's right edge; search is the row under it; 已安排 · 会话历史 sit 4 apart in the foot, under the list.
+    // list's right edge; search is next to 「+」; 已安排 · 会话历史 sit 4 apart in the foot, under the list.
     const panel = aside.getBoundingClientRect();
     expect(fold.getBoundingClientRect().right).toBe(panel.right - 12);
     expect(fold.getBoundingClientRect().top + fold.getBoundingClientRect().height / 2 - panel.top).toBeCloseTo(inset + 20);
-    expect(search.getBoundingClientRect().top).toBeGreaterThanOrEqual(fold.getBoundingClientRect().bottom);
+    expect(search.getBoundingClientRect().top).toBe(plus.getBoundingClientRect().top);
+    expect(plus.getBoundingClientRect().left - search.getBoundingClientRect().right).toBe(0);
     expect(history.getBoundingClientRect().left - scheduled.getBoundingClientRect().right).toBe(4);
     const foot = document.querySelector<HTMLElement>('[data-sidebar-foot]')!;
     expect(foot.contains(history)).toBe(true);

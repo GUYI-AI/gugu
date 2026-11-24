@@ -7,7 +7,6 @@ import { getSessionPageStore } from '@renderer/features/sessions/stores/session-
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { getEffectiveHotkey, isHostCommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
-import { rpc } from '@renderer/lib/ipc';
 import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { Shortcut } from '@renderer/lib/ui/shortcut';
@@ -20,28 +19,13 @@ import { PaletteProjectsGroup } from './palette-projects-group';
 import { PaletteChatGroups } from './palette-chats';
 import { openGlobalSearch } from '@renderer/features/global-search/search-session';
 import { PaletteSessionItem } from './palette-session-item';
+import { commandPaletteSearch, usePaletteTasks } from './palette-search-data';
 import { rankPaletteMatches } from './palette-rank';
 import { followLink } from '@/lib/guguLinks';
-import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
-import { sidebarStore } from '@renderer/lib/stores/app-state';
-import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
-import { isAssistantSession } from '@renderer/features/assistant/assistant-lineage';
-import { paletteTasks } from './palette-tasks';
-import { recentTaskIds } from './recent-tasks';
-import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
-import { machineRegistry } from '@renderer/lib/machine-routing';
-import { refreshFailure, replica, useReplica, retryOf, valueOf } from '@/lib/replica';
+import { refreshFailure, useReplica, retryOf, valueOf } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { ReadFailedLine } from '@renderer/lib/ui/read-failed-line';
-import type { SearchItem } from '@shared/core/search';
 
-const commandPaletteSearch = replica({
-  name: 'commandPaletteSearch',
-  scope: 'device',
-  read: (_owner, query: string): Promise<SearchItem[]> => rpc.search.commandPalette({ query }),
-  fresh: 5_000,
-  keep: 5_000,
-});
 
 interface CommandPaletteProps {
   initialQuery?: string;
@@ -49,7 +33,7 @@ interface CommandPaletteProps {
 
 const GROUP_CLASS = '[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-foreground/50';
 
-/** O and P differ only in their initial input; the prefix is the mode's only state. Each opening starts fresh (ModalRenderer keys it). */
+/** Mod+P opens in command mode. The prefix controls the mode within this palette. */
 export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPaletteProps & BaseModalProps) {
   // Picking a row is the palette doing its job: close it as done (focus goes where the row leads; see @@@modal-focus-return).
   const done = () => onSuccess(undefined);
@@ -88,22 +72,7 @@ export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPal
     , search, ({ title, description }) => [title, description]));
   // 本机索引负责召回(短查询的 LIKE 没有分数);排序与 @ 选人同一套,同分保留索引给的顺序。
   const ranked = results ? rankPaletteMatches(results, search, (item) => [item.title], { recallOnly: true }) : null;
-  const tasks = useObserver(() => {
-    if (!results) return null;
-    const recent = commandsMode || search ? [] : recentTaskIds();
-    // Recall opened local tasks beyond the search RPC's newest ten, from existing task rows only.
-    const remembered = recent.flatMap(id => {
-      const data = sessionRegistry.get(id)?.sessions.get(id)?.data;
-      return data && !data.archivedAt && !data.automationRunId && !machineRegistry.machineOf(data.projectId)
-        ? [{ kind: 'session' as const, id, projectId: data.projectId, title: data.title, subtitle: '', score: 0, lastInteractedAt: data.lastInteractedAt }] : [];
-    });
-    return paletteTasks([...results, ...remembered].filter(item => {
-      const binding = sessionAgentBindings.bindingFor(item.id);
-      return !isAssistantSession({ agent: binding ? { userId: binding.agentUserId } : null }, sidebarStore.assistantAgentId);
-    }), remoteHostsStore.allListedSessions().map(item => ({
-      ...item, deviceLabel: remoteHostsStore.device(item.deviceId)!.label,
-    })), search, sidebarStore.assistantAgentId, recent);
-  });
+  const tasks = usePaletteTasks(results, search);
   const projects = ranked ? ranked.filter((item) => item.kind === 'project') : null;
 
   return (

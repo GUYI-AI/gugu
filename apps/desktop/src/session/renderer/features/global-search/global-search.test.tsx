@@ -25,11 +25,11 @@ import { sessionAgentBindings } from '../sessions/stores/session-agent-bindings'
 import { installPhoneImeDismiss } from '@/mobile/usePhoneImeDismiss'
 import { viewStateCache } from '@renderer/lib/stores/view-state-cache'
 
-const remote = vi.hoisted(() => ({ opened: [] as unknown[], turns: vi.fn(), indexStatus: vi.fn(), messages: vi.fn(), firstOfDay: vi.fn(), viewFilters: [] as unknown[][], local: vi.fn(), desktop: false }))
+const remote = vi.hoisted(() => ({ opened: [] as unknown[], titles: vi.fn(), turns: vi.fn(), indexStatus: vi.fn(), messages: vi.fn(), firstOfDay: vi.fn(), viewFilters: [] as unknown[][], local: vi.fn(), desktop: false }))
 vi.mock('@/lib/guguLinks', () => ({ followLink: (target: unknown) => { remote.opened.push(target); return true } }))
 vi.mock('@renderer/lib/ipc', async (original) => ({
   ...await original<typeof import('@renderer/lib/ipc')>(),
-  rpc: { search: { taskTurns: remote.turns, taskTurnIndexStatus: remote.indexStatus } },
+  rpc: { search: { commandPalette: remote.titles, taskTurns: remote.turns, taskTurnIndexStatus: remote.indexStatus } },
 }))
 vi.mock('@/lib/supabase', () => ({ chatDb: { rpc: remote.messages, from: (table: string) => {
   // The one REST read: messages_view, filtered and ordered, first row (firstMessageOn). Records the filters it was given.
@@ -75,6 +75,7 @@ beforeEach(() => {
   remote.desktop = false
   remote.local.mockReset().mockResolvedValue([])
   closed = 0
+  remote.titles.mockReset().mockResolvedValue([])
   remote.turns.mockReset().mockResolvedValue([turn])
   remote.indexStatus.mockReset().mockResolvedValue({ state: 'ready' })
   focusManager.setFocused(true)
@@ -87,6 +88,7 @@ beforeEach(() => {
   installIdentityDirectoryBridge()
   publishIdentityDirectory({}, ensureIdentity.mockReset())
   runInAction(() => sessionAgentBindings.bindings.clear())
+  publishContactSummaries([])
   publishChatSummaries([
     { id: GROUP, kind: 'group', unread_count: 0, name: '搜索测试群甲', last_message_at: '2026-10-31T00:00:00Z' },
     { id: OTHER, kind: 'group', unread_count: 0, name: '设计组', last_message_at: '2026-10-31T00:00:00Z' },
@@ -115,8 +117,8 @@ afterEach(async () => {
 
 // The typed text settles after the panel's debounce; the two queries answer on the next turns.
 const settle = async () => { for (let round = 0; round < 3; round++) await act(async () => { await vi.advanceTimersByTimeAsync(120) }) }
-async function render(text: string, tasks = true, names = false) {
-  await act(async () => root.render(<QueryClientProvider client={replicaClient}><GlobalSearch tasks={tasks} names={names} onClose={() => {}} onOpen={() => { closed++ }} /><SessionProbe /></QueryClientProvider>))
+async function render(text: string, tasks = true, names = false, desktop = false, currentGroupId?: string) {
+  await act(async () => root.render(<QueryClientProvider client={replicaClient}><GlobalSearch tasks={tasks} names={names} desktop={desktop} currentGroupId={currentGroupId} onClose={() => {}} onOpen={() => { closed++ }} /><SessionProbe /></QueryClientProvider>))
   await act(async () => updateSearchSession({ text }))
   await settle()
 }
@@ -129,6 +131,8 @@ const setDate = (input: HTMLInputElement, value: string) => {
 let latestSession: SearchSession | null = null
 function SessionProbe() { latestSession = useSearchSession(); return null }
 const sessionSnapshot = () => latestSession
+const filterToggle = () => host.querySelector<HTMLButtonElement>('[data-testid=global-search-filter-toggle]')!
+const toggleFilters = () => act(async () => filterToggle().click())
 const options = () => [...host.querySelectorAll<HTMLElement>('[role=option]')]
 const recentWords = () => [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-recent] button:not([data-testid=global-search-recent-clear])')].map((button) => button.textContent)
 const headers = () => [...host.querySelectorAll<HTMLElement>('[role=listbox] [data-search-scope]')].map((button) => button.textContent)
@@ -319,11 +323,11 @@ describe('global search panel', () => {
     expect(remote.turns).not.toHaveBeenCalled()
   })
 
-  it('holds the results while a search is on its way: no "nothing found", no 0 beside a filter', async () => {
+  it('shows task hits while chat search is pending without presenting a final count', async () => {
     let answer!: (value: { data: typeof rows; error: null }) => void
     remote.messages.mockImplementation(() => new Promise((resolve) => { answer = resolve }))
     await render('回滚')
-    expect(host.querySelector('[data-testid="global-search-pending"]')).not.toBeNull()
+    expect(options().map((option) => option.textContent)).toEqual([expect.stringContaining('已经把回滚开关打开了')])
     expect(host.textContent).not.toContain('globalSearch.emptyFor')
     expect(host.querySelector('[role=tablist] [data-unknown]')).not.toBeNull()
     await act(async () => answer({ data: rows, error: null }))
@@ -378,11 +382,18 @@ describe('global search panel', () => {
   })
 
   it('a failed message search says so and lists what the tasks found, ❌ "nothing found"', async () => {
-    remote.messages.mockResolvedValue({ data: null, error: { message: 'search is down' } })
+    remote.messages.mockResolvedValue({ data: null, error: { message: 'canceling statement due to statement timeout' } })
     await render('回滚')
-    expect(host.querySelector('[role=alert]')?.textContent).toContain('search is down')
+    const notice = host.querySelector('[data-read-failed]')!
+    expect(notice.textContent).toMatch(/Couldn’t search chat messages|聊天消息搜索失败|globalSearch.messagesFailed/)
+    expect(host.textContent).not.toContain('statement timeout')
     expect(host.querySelector('[data-testid="global-search-pending"]')).toBeNull()
     expect(options().map((option) => option.textContent)).toEqual([expect.stringContaining('已经把回滚开关打开了')])
+    remote.messages.mockResolvedValue({ data: rows, error: null })
+    await act(async () => notice.querySelector('button')!.click())
+    await settle()
+    expect(host.querySelector('[data-read-failed]')).toBeNull()
+    expect(options()).toHaveLength(3)
   })
 
   it('keeps unscoped cloud search paused while offline', async () => {
@@ -558,9 +569,17 @@ describe('global search panel', () => {
     expect(headers()).toEqual(['搜索测试群甲', '发布排查 globalSearch.task', '设计组'])
   })
 
-  it('with nothing typed in one conversation it offers the quick filters; a kind of message is a search with no words', async () => {
+  it('keeps quick filters collapsed by default and can search by message kind without words', async () => {
     await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
     await render('')
+    expect(document.activeElement).toBe(host.querySelector('[data-testid=global-search-input]'))
+    expect(filterToggle().getAttribute('aria-expanded')).toBe('false')
+    expect(host.querySelector('[data-testid=global-search-quick]')).toBeNull()
+    await toggleFilters()
+    expect(filterToggle().getAttribute('aria-expanded')).toBe('true')
+    await toggleFilters()
+    expect(host.querySelector('[data-testid=global-search-quick]')).toBeNull()
+    await toggleFilters()
     const quick = [...host.querySelectorAll<HTMLElement>('[data-testid=global-search-quick] button')].map((button) => button.dataset.quick)
     expect(quick).toEqual(['member', 'date', 'media', 'file', 'link', 'mention'])
     await act(async () => host.querySelector<HTMLElement>('[data-quick=file]')!.click())
@@ -575,6 +594,7 @@ describe('global search panel', () => {
     remote.messages.mockResolvedValue({ data: [mention, ...rows], error: null })
     await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
     await render('')
+    await toggleFilters()
     await act(async () => host.querySelector<HTMLElement>('[data-quick=mention]')!.click())
     await settle()
     expect(options().map((option) => option.textContent)).toEqual([expect.stringContaining('@srchu 回滚之前看一下')])
@@ -583,6 +603,7 @@ describe('global search panel', () => {
 
   it('without a conversation in scope the member and date filters are not offered', async () => {
     await render('')
+    await toggleFilters()
     expect([...host.querySelectorAll<HTMLElement>('[data-testid=global-search-quick] button')].map((button) => button.dataset.quick)).toEqual(['media', 'file', 'link', 'mention'])
   })
 
@@ -590,6 +611,7 @@ describe('global search panel', () => {
     remote.firstOfDay.mockResolvedValue({ data: [{ id: OLD }], error: null })
     await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
     await render('')
+    await toggleFilters()
     const input = host.querySelector<HTMLInputElement>('input[type=date]')!
     await act(async () => setDate(input, '2026-10-30'))
     await settle()
@@ -604,6 +626,7 @@ describe('global search panel', () => {
     remote.firstOfDay.mockResolvedValue({ data: [], error: null })
     await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
     await render('')
+    await toggleFilters()
     const input = host.querySelector<HTMLInputElement>('input[type=date]')!
     await act(async () => setDate(input, '2026-11-04'))
     await settle()
@@ -640,6 +663,43 @@ describe('global search panel', () => {
     await render('回滚', false)
     expect(remote.turns).not.toHaveBeenCalled()
     expect([...host.querySelectorAll('[role=tab]')].map((button) => button.textContent!.replace(/\d+$/, ''))).toEqual(['globalSearch.facet.all', 'globalSearch.facet.message', 'globalSearch.facet.file'])
+  })
+})
+
+describe('merged desktop search', () => {
+  const nameRows = () => [...host.querySelectorAll<HTMLButtonElement>('[data-testid=global-search-name]')]
+
+  it('ranks an existing private conversation above message results and opens it with Enter in a group', async () => {
+    publishContactSummaries([{ id: 'agent-1', name: '回滚助手' }])
+    publishChatSummaries([{ id: OTHER, kind: 'ai', name: '回滚助手', peer_user_id: 'agent-1', unread_count: 0 }])
+    await render('回滚', true, false, true, GROUP)
+    expect(nameRows()[0]?.textContent).toContain('回滚助手')
+    expect(options()[0]).toBe(nameRows()[0])
+    expect(sessionSnapshot()?.chips).toEqual([])
+    await act(async () => host.querySelector('input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
+    expect(remote.opened).toEqual([conversationLink(OTHER)])
+  })
+
+  it('scopes content to the current group only when asked', async () => {
+    await render('回滚', true, false, true, GROUP)
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid=global-search-current-group]')!.click())
+    await settle()
+    expect(remote.messages).toHaveBeenCalledWith('message_search_as', { p_chat_id: GROUP, p_query: '回滚', p_limit: 100 })
+    expect(sessionSnapshot()?.chips).toEqual([{ kind: 'in', chatId: GROUP }])
+  })
+
+  it('opens the project and task title matches from the existing quick switcher index', async () => {
+    remote.titles.mockResolvedValue([
+      { kind: 'project', id: 'index-project', title: '合并验证项目' },
+      { kind: 'session', id: 'index-task', projectId: 'index-project', title: '合并验证任务' },
+    ])
+    await render('合并验证', true, false, true)
+    expect(remote.titles).toHaveBeenCalledWith({ query: '合并验证' })
+    for (const row of nameRows()) await act(async () => row.click())
+    expect(remote.opened).toEqual([
+      { kind: 'project', projectId: 'index-project' },
+      { kind: 'session', sessionId: 'index-task', projectId: 'index-project', deviceId: undefined },
+    ])
   })
 })
 

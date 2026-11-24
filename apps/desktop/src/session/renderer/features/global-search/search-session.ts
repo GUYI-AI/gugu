@@ -42,7 +42,7 @@ export function resetSearchSession(options: { text?: string; chips?: SearchChip[
 }
 
 /**
- * Every entry point opens this one panel: the sidebar box, Mod+Shift+F, the quick switcher's last row, and every search
+ * Every entry point opens this one panel: the sidebar icon, Mod+O, Mod+Shift+F, the command palette, and every search
  * inside a conversation (⌘F, the header's and settings' 「搜索聊天记录」, a member's 「查找 TA 的消息」), which come
  * scoped with an in: chip the user can remove. The panel's host answers app.globalSearch: the task workspace's modal,
  * or the sheet on the phone shell and wherever there is no workspace.

@@ -17,7 +17,7 @@ export type InnerSidebarAnchor = InnerSidebarRoomAnchor | InnerSidebarAgentAncho
 
 /**
  * 内层侧栏此刻挂在哪个对话上(没有 = null;收起着也照旧挂着)。左边列表据此让那个群 / 项目 / 智能体那一行保持高亮 —— 从这一列点开一个智能体时,
- * 正看着的是那条会话,列表里却没有它自己的一行;列表顶上的搜索据此先搜这个群。InnerSidebar 写。
+ * 正看着的是那条会话,列表里却没有它自己的一行;全局搜索据此提供「当前群」筛选。InnerSidebar 写。
  */
 export const innerSidebarChat = observable.box<InnerSidebarAnchor | null>(null, { deep: false });
 

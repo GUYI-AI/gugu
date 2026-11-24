@@ -1,3 +1,4 @@
+import { openGlobalSearch } from '@renderer/features/global-search/search-session';
 import { useEffect } from 'react';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { useWorkspaceLayoutContext } from '@renderer/lib/layout/layout-provider';
@@ -32,7 +33,7 @@ export function AppKeyboardShortcuts() {
   useCommandProvider({
     scopeId: 'app',
     getCommands: () => [
-      { id: 'app.quickSwitcher', execute: () => openPalette('') },
+      { id: 'app.quickSwitcher', execute: () => openGlobalSearch() },
       { id: 'app.commandPalette', execute: () => openPalette('> ') },
       // Mod+Shift+F reopens the last search; the other entry points set their query first (openGlobalSearch).
       { id: 'app.globalSearch', execute: () => showGlobalSearch({}) },

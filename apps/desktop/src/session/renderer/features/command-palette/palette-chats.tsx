@@ -16,14 +16,16 @@ export function useNameMatches(query: string, limit: number, enabled = true) {
   if (!enabled) return { groups: [], people: [] };
   const groups = rankPaletteMatches([...summaries].filter(([id, chat]) => chat.kind === 'group'
     && !!chat.name && !projectGroupsStore.rowProjectOfChat(id)), query, ([, chat]) => [chat.name, chat.alias]).slice(0, limit);
-  const named = new Map<string, { id: string; name: string; chatId?: string }>(contacts.map(contact => [contact.id, contact]));
+  const named = new Map<string, { id: string; name: string; chatId?: string; chatName?: string }>(contacts.map(contact => [contact.id, contact]));
   for (const [chatId, chat] of summaries) {
-    const name = chat.alias || chat.name;
-    if ((chat.kind === 'dm' || chat.kind === 'ai') && chat.peerUserId && name && !named.has(chat.peerUserId)) {
-      named.set(chat.peerUserId, { id: chat.peerUserId, name, chatId });
-    }
+    if ((chat.kind !== 'dm' && chat.kind !== 'ai') || !chat.peerUserId) continue;
+    const existing = named.get(chat.peerUserId);
+    if (existing?.chatId) continue;
+    const chatName = chat.alias || chat.name;
+    const name = existing?.name || chatName;
+    if (name) named.set(chat.peerUserId, { id: chat.peerUserId, name, chatId, chatName: chatName ?? undefined });
   }
-  const people = rankPaletteMatches([...named.values()], query, (contact) => [contact.name]).slice(0, limit);
+  const people = rankPaletteMatches([...named.values()], query, (contact) => [contact.name, contact.chatName]).slice(0, limit);
   return { groups, people };
 }
 

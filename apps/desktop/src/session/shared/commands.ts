@@ -295,8 +295,8 @@ export const COMMANDS = defineCommands({
   'app.quickSwitcher': {
     capture: true,
     defaultHotkey: 'Mod+O',
-    label: 'Quick Switcher',
-    description: 'Switch between tasks, groups, projects, and contacts',
+    label: 'Search',
+    description: 'Search conversations, projects, tasks, and messages',
     category: 'Navigation',
   },
   'app.globalSearch': {

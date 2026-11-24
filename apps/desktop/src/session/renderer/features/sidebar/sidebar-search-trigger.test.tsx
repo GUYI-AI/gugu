@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
-// #2548 ⑦ the inner column has no find box: the list's top search searches the open group first (a removable in: chip),
-// and stays unscoped for a project or with no group open.
+// The sidebar opens a fresh global search even while viewing a group.
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { runInAction } from 'mobx';
@@ -12,7 +11,7 @@ vi.mock('@renderer/localization/use-session-messages', () => ({ useSessionMessag
 vi.mock('@renderer/lib/hooks/useKeyboardShortcuts', () => ({ useShortcutOverrides: () => null, getEffectiveHotkey: () => null }));
 
 const { commandRegistry } = await import('@renderer/lib/commands/registry');
-const { useSearchSession } = await import('@renderer/features/global-search/search-session');
+const { updateSearchSession, useSearchSession } = await import('@renderer/features/global-search/search-session');
 const { innerSidebarChat } = await import('./inner-sidebar-anchor');
 const { SidebarSearchTrigger } = await import('./sidebar-search-trigger');
 
@@ -38,10 +37,11 @@ afterEach(() => {
 });
 const click = () => act(async () => host.querySelector<HTMLElement>('[data-testid="sidebar-search-trigger"]')!.click());
 
-it('with a group open, the panel opens scoped to that group', async () => {
+it('with a group open, clears the last search scope and opens globally', async () => {
   runInAction(() => innerSidebarChat.set({ kind: 'group', chatId: 'grp-1' }));
+  await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: 'prior-group' }] }));
   await click();
-  expect(chips).toEqual([{ kind: 'in', chatId: 'grp-1' }]);
+  expect(chips).toEqual([]);
 });
 
 it('a project, or no group, opens it unscoped', async () => {
