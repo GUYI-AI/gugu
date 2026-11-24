@@ -1,4 +1,4 @@
-import { endedTurnIds, withRuntimeTurn } from './runtime-turn';
+import { endedTurnIds, withHeldTurn, withRuntimeTurn } from './runtime-turn';
 import { withJournalTurns } from './journal-turns';
 import { HostPrompts, type HostPromptReceipts } from './host-prompts';
 import type { TerminalState } from '../acp/models/terminals';
@@ -253,6 +253,10 @@ class RecordTimeline implements SessionTimeline {
   private runtimePictures: RuntimeTurnPictures | null = null;
   /** The turns that had ended when the runtime's turn started: none of them is a copy of it (`withoutCopiesOf`). */
   private endedBeforeRuntime: ReadonlySet<string> = new Set();
+  /** The runtime's last frame of the turn it ended, shown until the record holds that turn closed (`withHeldTurn`). */
+  private heldTurn: { turn: TranscriptTurn; endedBefore: ReadonlySet<string> } | null = null;
+  /** The running turn as last published (`runningTurnId`). */
+  private publishedRunningId: string | null = null;
   /** The journal's turns by key, in journal order; read again with the journal, never archived. */
   private journalTurns = new Map<string, { turn: TranscriptTurn; recorded: boolean }>();
   private liveReplyDirty = false;
@@ -542,6 +546,7 @@ class RecordTimeline implements SessionTimeline {
       ...this.recentActionsSnapshot(),
       queuedPrompts: [...this.queued],
       liveReply: this.liveReply,
+      runningTurnId: options?.committedOnly ? null : this.runtimeTurn?.id ?? null,
       terminals: this.terminals,
       subagents: this.subagentSteps(null)
     };
@@ -710,7 +715,12 @@ class RecordTimeline implements SessionTimeline {
     if (this.disposed) return;
     this.runtimePictures = turn && pictures ? pictures : null;
     if (this.runtimeTurn === turn) return;
-    if (turn && turn.id !== this.runtimeTurn?.id) this.endedBeforeRuntime = endedTurnIds(this.recordedTurns().turns);
+    const ended = this.runtimeTurn;
+    if (ended && ended.id !== turn?.id) this.heldTurn = { turn: ended, endedBefore: this.endedBeforeRuntime };
+    if (turn && turn.id !== ended?.id) {
+      // The held turn has ended too: the next one is no copy of it, whatever they share.
+      this.endedBeforeRuntime = new Set([...endedTurnIds(this.recordedTurns().turns), ...(this.heldTurn ? [this.heldTurn.turn.id] : [])]);
+    }
     this.runtimeTurn = turn;
     this.sent.learn(turn);
     this.publish();
@@ -1003,7 +1013,9 @@ class RecordTimeline implements SessionTimeline {
 
   private currentTurns(): TranscriptTurn[] {
     const { turns, base } = this.recordedTurns();
-    return this.inPlace(withRuntimeTurn(turns, this.runtimeTurn, this.endedBeforeRuntime), base);
+    const held = this.heldTurn && withHeldTurn(turns, this.heldTurn.turn, this.heldTurn.endedBefore);
+    if (!held) this.heldTurn = null;
+    return this.inPlace(withRuntimeTurn(held ?? turns, this.runtimeTurn, this.endedBeforeRuntime), base);
   }
 
   /** The record's turns with the journal's, before the runtime's turn in progress takes its place; `base`: the first record seq. */
@@ -1065,7 +1077,9 @@ class RecordTimeline implements SessionTimeline {
       if (ended?.hostEnd) this.putSettlement({ ...settlement, state: 'cancelled', resolvedAt: ended.hostEnd.at });
     }
     const nextSeq = this.seq + 1;
-    let changed = this.needsPublish || this.dirtySettlements.size > 0 || this.queuedDirty || this.liveReplyDirty || this.terminalsDirty;
+    const runningId = this.runtimeTurn?.id ?? null;
+    let changed = this.needsPublish || this.dirtySettlements.size > 0 || this.queuedDirty || this.liveReplyDirty || this.terminalsDirty
+      || runningId !== this.publishedRunningId;
 
     // 先把要变的都算出来放一边，确认真有变化才提交 —— seq 只在有变化时前进。
     const staged = new Map<string, PublishedTurn>();
@@ -1163,6 +1177,7 @@ class RecordTimeline implements SessionTimeline {
     this.liveReplyDirty = false;
     this.terminalsDirty = false;
     this.needsPublish = false;
+    this.publishedRunningId = runningId;
 
     for (const subscriber of [...this.subscribers]) this.deliver(subscriber);
   }
@@ -1247,6 +1262,7 @@ class RecordTimeline implements SessionTimeline {
       ...this.recentActionsSnapshot(),
       queuedPrompts: [...this.queued],
       liveReply: this.liveReply,
+      runningTurnId: this.runtimeTurn?.id ?? null,
       ...(terminalPatch ? this.terminalsAfter(seq) : { terminals: this.terminals }),
       subagents: this.subagentSteps(seq)
     };

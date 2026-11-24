@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TranscriptTurn } from '../acp/models/turns/turn';
-import { endedTurnIds, withRuntimeTurn } from './runtime-turn';
+import { endedTurnIds, withHeldTurn, withRuntimeTurn } from './runtime-turn';
 
 const turn = (id: string, prompt: string, extra: { ended?: boolean; tool?: string; message?: string } = {}): TranscriptTurn => ({
   id, seq: 0, initiator: 'user', ...(extra.ended === false ? {} : { outcome: { kind: 'done' as const } }),
@@ -45,6 +45,22 @@ describe('the runtime turn in progress replaces the record copy of it', () => {
   });
 });
 
+describe('the runtime\'s last frame of a turn it ended stays until the record holds that turn closed', () => {
+  const older = turn('rec-1', 'first');
+  const ended = turn('S:turn:2', 'second', { ended: false, message: 'msg_2' });
+  it('in place of the record\'s open copy, which can be behind it', () => {
+    expect(withHeldTurn([older, turn('rec-2', 'second', { ended: false })], ended)?.map((t) => t.id)).toEqual(['rec-1', 'S:turn:2']);
+  });
+  it('lets go once the record holds it closed, or holds no copy of it', () => {
+    expect(withHeldTurn([older, turn('rec-2', 'second', { message: 'msg_2' })], ended)).toBeNull();
+    expect(withHeldTurn([older], ended)).toBeNull();
+  });
+  it('is not taken for an open copy by a turn that had ended before it, though it opens with the same words', () => {
+    const again = turn('rec-0', 'second', { ended: false });
+    expect(withHeldTurn([again], ended, new Set(['rec-0']))).toBeNull();
+  });
+});
+
 describe('a timeline shows the runtime turn in progress', () => {
   it('in its snapshot and in the batch a subscriber gets, until the turn ends', async () => {
     const { mkdtemp, mkdir, readFile, writeFile, rm } = await import('node:fs/promises');
@@ -61,16 +77,54 @@ describe('a timeline shows the runtime turn in progress', () => {
       try {
         const recorded = timeline.getSnapshot({ limit: 100 }).turns.map((t) => t.id);
         const cursor = timeline.getSnapshot().cursor;
+        expect(timeline.getSnapshot().runningTurnId).toBeNull();
         timeline.syncActiveTurn(turn('S:turn:9', 'a prompt the record has not seen yet', { ended: false }));
         expect(timeline.getSnapshot({ limit: 100 }).turns.map((t) => t.id)).toEqual([...recorded, 'S:turn:9']);
+        expect(timeline.getSnapshot().runningTurnId).toBe('S:turn:9');
         const after = timeline.getAfter(cursor);
         expect(after.ok && after.batch.turns.map((t) => t.id)).toEqual(['S:turn:9']);
+        expect(after.ok && after.batch.runningTurnId).toBe('S:turn:9');
         const next = timeline.getSnapshot().cursor;
+        // The record holds no copy of it: nothing to hold the last frame against, the record is shown as it is.
         timeline.syncActiveTurn(null);
         expect(timeline.getSnapshot({ limit: 100 }).turns.map((t) => t.id)).toEqual(recorded);
         const removed = timeline.getAfter(next);
         expect(removed.ok && removed.batch.removedTurnIds).toEqual(['S:turn:9']);
+        expect(removed.ok && removed.batch.runningTurnId).toBeNull();
 
+      } finally { timeline.dispose(); }
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('keeps the runtime\'s last frame of a turn it ended while the record holds that turn open', async () => {
+    const { mkdtemp, mkdir, readFile, writeFile, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { createSessionRecordSource, createSessionTimeline } = await import('./index');
+    const text = await readFile(new URL('./__fixtures__/claude-session.jsonl', import.meta.url), 'utf8');
+    const id = text.split('\n').map((line) => { try { return (JSON.parse(line) as { sessionId?: string }).sessionId; } catch { return undefined; } }).find(Boolean)!;
+    const root = await mkdtemp(join(tmpdir(), 'runtime-turn-'));
+    try {
+      await mkdir(join(root, 'project'), { recursive: true });
+      await writeFile(join(root, 'project', `${id}.jsonl`), text);
+      const timeline = await createSessionTimeline(createSessionRecordSource({ harness: 'claude', providerSessionId: id, roots: [root] }), { sessionId: 'S' });
+      try {
+        const recorded = timeline.getSnapshot({ limit: 100 }).turns;
+        const open = recorded.at(-1)!;
+        expect(open.outcome === undefined && open.endedAt === undefined, 'the record keeps its last turn open').toBe(true);
+        // The runtime's copy of that turn, further along than the record's.
+        const live: TranscriptTurn = { ...open, id: 'S:turn:9', items: [...open.items,
+          { kind: 'message', id: 'S:turn:9:message:not-yet-recorded', seq: 99, role: 'assistant', text: 'the last words' }] };
+        timeline.syncActiveTurn(live);
+        const next = timeline.getSnapshot().cursor;
+        timeline.syncActiveTurn(null);
+        const shown = timeline.getSnapshot({ limit: 100 });
+        expect(shown.turns.map((t) => t.id)).toEqual([...recorded.slice(0, -1).map((t) => t.id), 'S:turn:9']);
+        expect(shown.turns.at(-1)?.items.at(-1)).toMatchObject({ text: 'the last words' });
+        expect(shown.runningTurnId).toBeNull();
+        const batch = timeline.getAfter(next);
+        expect(batch.ok && batch.batch.turns, 'the frame itself did not change').toEqual([]);
+        expect(batch.ok && batch.batch.runningTurnId).toBeNull();
       } finally { timeline.dispose(); }
     } finally { await rm(root, { recursive: true, force: true }); }
   });

@@ -444,7 +444,8 @@ function attachPendingRequests(entry: TimelineEntry): void {
     entry.timeline.syncQueuedPrompts(queuedPrompts.filter(isVisibleQueuedPrompt).map(prompt => ({ ...prompt, text: conversationQueueText(prompt.text) })));
     entry.timeline.syncLiveReply(liveReply ?? null);
     entry.timeline.syncTerminals(terminals);
-    entry.timeline.syncActiveTurn(activeTurn ?? null, pictures);
+    // Undefined: the runtime's watch is (re)attaching and does not know yet, so the turn shown stays.
+    if (activeTurn !== undefined) entry.timeline.syncActiveTurn(activeTurn, pictures);
   })
     .then((watch) => {
       if (!watch) return;
@@ -648,7 +649,7 @@ function journalOnly(row: SessionRow): boolean {
 }
 
 function standInEntry(row: SessionRow): TimelineEntry {
-  return {
+  const entry: TimelineEntry = {
     conversationId: row.id,
     timeline: createStandInTimeline({
       sessionId: row.id,
@@ -658,6 +659,16 @@ function standInEntry(row: SessionRow): TimelineEntry {
         const current = readSessionRow(row.id);
         return current !== null && (locateRow(current).supported || journalOnly(current));
       },
+      handOver: async (turn, running) => {
+        const opened = await acquire(row.id);
+        if (!opened.ok) return;
+        // A record timeline that already names a running turn has its own watch's, newer than this one.
+        if (!opened.value.timeline.getSnapshot({ limit: 1 }).runningTurnId) {
+          opened.value.timeline.syncActiveTurn(turn);
+          if (!running) opened.value.timeline.syncActiveTurn(null);
+        }
+        release(opened.value);
+      },
     }),
     refs: 1,
     idleTimer: null,
@@ -666,6 +677,9 @@ function standInEntry(row: SessionRow): TimelineEntry {
     disposed: false,
     standIn: true,
   };
+  // The runtime may already be running the first turn: the stand-in shows it (its record cannot be read yet).
+  if (summaryRuntime(row.runtime) === 'acp') attachPendingRequests(entry);
+  return entry;
 }
 
 function openFailure<T>(error: unknown): SessionTimelineResult<T> {
@@ -679,10 +693,7 @@ function openFailure<T>(error: unknown): SessionTimelineResult<T> {
 function release(entry: TimelineEntry): void {
   entry.refs -= 1;
   if (entry.standIn) {
-    if (entry.refs <= 0 && !entry.disposed) {
-      entry.disposed = true;
-      entry.timeline.dispose();
-    }
+    if (entry.refs <= 0 && !entry.disposed) disposeEntry(entry);
     return;
   }
   if (entry.refs > 0) return;

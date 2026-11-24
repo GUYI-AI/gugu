@@ -409,6 +409,8 @@ export type TimelineSnapshot = {
   queuedPrompts?: Pick<QueuedPrompt, 'id' | 'text' | 'queueEdit' | 'clientMessageId'>[];
   /** Actual in-flight reply stage; absent on older hosts, null when no live reply is present. */
   liveReply?: SessionLiveReply | null;
+  /** The turn the runtime is in now (its id among `turns`); null when none, absent on older hosts. */
+  runningTurnId?: string | null;
   /** Live presentation only; not serialized into the native-record archive. */
   terminals?: readonly TerminalState[];
   /** Running subagents with their calls; absent on older hosts. See `TimelineSubagent`. */
@@ -457,6 +459,8 @@ export type TimelineBatch = {
   queuedPrompts?: Pick<QueuedPrompt, 'id' | 'text' | 'queueEdit' | 'clientMessageId'>[];
   /** Actual in-flight reply stage; absent on older hosts, null when no live reply is present. */
   liveReply?: SessionLiveReply | null;
+  /** Same as the snapshot's `runningTurnId`: each batch carries it. */
+  runningTurnId?: string | null;
   /** Running subagents, each with the calls changed since `from`; absent on older hosts. See `TimelineSubagent`. */
   subagents?: TimelineSubagent[];
   /**
