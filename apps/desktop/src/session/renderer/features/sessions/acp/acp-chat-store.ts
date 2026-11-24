@@ -33,7 +33,7 @@ import type {
   ComposerQueuedPrompt,
 } from '@gugu/session-ui/react/components';
 import { findToolItem } from '@gugu/session-core/session-record/tool-image';
-import { toolImageUrl, transcriptAnnotation, type PromptAnnotation } from '@gugu/session-core/acp/client';
+import { toolImageUrl, type TurnAnnotation } from '@gugu/session-core/acp/client';
 import { commandToken } from '@gugu/session-core/acp/commands';
 import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
 import type { AgentState, HistoryPage, LiveSettingResult, PermissionWaitKind } from '@gugu/session-core/acp';
@@ -774,8 +774,8 @@ export class AcpChatStore {
     const session = this.session;
     if (!await this.revertMessage(itemId, false, edit.restoreFiles === true && this.canRestoreFiles(itemId)) || this.session !== session) return;
     runInAction(() => { this.messageEdit = null; });
-    // History is already cut back: a send that fails keeps the edited words in the draft.
-    await this.submitPrompt(edit.text, attachments, item.files).catch(() => this.setDraftText([edit.text, this.draftText].filter(Boolean).join('\n')));
+    // History is already cut back: a send that fails keeps the edited words in the draft. Its comments go again with it.
+    await this.submitPrompt(edit.text, attachments, item.files, undefined, item.annotations).catch(() => this.setDraftText([edit.text, this.draftText].filter(Boolean).join('\n')));
   }
 
   async revertMessage(itemId: string, restoreDraft = true, restoreFiles = false): Promise<boolean> {
@@ -1426,7 +1426,7 @@ export class AcpChatStore {
    * Both sends take the one custody path (sender outbox → host session_pending), persisted session or side chat;
    * the host decides whether the input runs now or queues.
    */
-  async submitPrompt(text: string, attachments: AcpPromptAttachment[] = [], files: TurnFileRef[] = [], submissionId: string = crypto.randomUUID(), annotations: PromptAnnotation[] = []): Promise<void> {
+  async submitPrompt(text: string, attachments: AcpPromptAttachment[] = [], files: TurnFileRef[] = [], submissionId: string = crypto.randomUUID(), annotations: TurnAnnotation[] = []): Promise<void> {
     const failure = messageFailureNotice(['acp', machineRegistry.machineOf(this.runtimeSessionId) ?? 'local', this.runtimeSessionId, submissionId]);
     const attempt = failure.begin();
     try {
@@ -3169,7 +3169,7 @@ function queuedPromptTurn(prompt: QueuedPrompt): TranscriptTurn {
         role: 'user',
         text: prompt.text,
         ...(prompt.files?.length ? { files: prompt.files } : {}),
-        ...(prompt.annotations?.length ? { annotations: prompt.annotations.map(transcriptAnnotation) } : {}),
+        ...(prompt.annotations?.length ? { annotations: prompt.annotations } : {}),
         ...(prompt.attachments?.length
           ? {
               attachments: prompt.attachments.map((attachment, index) => ({

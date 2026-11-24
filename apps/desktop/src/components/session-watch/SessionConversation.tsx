@@ -9,7 +9,7 @@ import { useNativeConversationRead } from '@/hooks/useNativeConversationRead'
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { toolImageUrl, type PromptAnnotation } from '@gugu/session-core/acp/client'
+import { toolImageUrl, type TurnAnnotation } from '@gugu/session-core/acp/client'
 import { openImageViewer } from '@/lib/imageViewer'
 import { PhoneTaskDraftRecovery } from '../../mobile/local-agent/PhoneTaskDraftRecovery'
 import { usePhoneInterruptedRetry } from './usePhoneInterruptedRetry'
@@ -95,7 +95,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   appPanel?: boolean
   startupPrompt?: import('@gugu/session-chat-ui').PendingPrompt | null
   sessionRuntime: SessionpageSessionSummary['runtime']; respondingItemId: string | null
-  onRespond: (input: SettlementResponse) => Promise<SessionpageSessionRespondResult>; onSend: (text: string, files?: TurnFileRef[], annotations?: PromptAnnotation[]) => Promise<void>
+  onRespond: (input: SettlementResponse) => Promise<SessionpageSessionRespondResult>; onSend: (text: string, files?: TurnFileRef[], annotations?: TurnAnnotation[]) => Promise<void>
   onBeforeSend?: () => void
   pendingSends: readonly PendingSend[]; sending: boolean; agentWorking: boolean
   headerRunning?: boolean

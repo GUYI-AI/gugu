@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { TranscriptFileRef } from './models/turn-files';
-import type { TranscriptAnnotation } from './models/turn-annotations';
+import type { TurnAnnotation } from './models/turn-annotations';
 import { HOST_PROMPT_HASH } from './native-prompt-key.ts';
 
 /**
@@ -39,11 +39,11 @@ export function recordedPromptDigest(message: { text: string; content?: readonly
 }
 
 /** What the person sent with a prompt: their own words, the files they attached and the comments they left. */
-export type HostPrompt = { text: string; files?: TranscriptFileRef[]; annotations?: TranscriptAnnotation[] };
+export type HostPrompt = { text: string; files?: TranscriptFileRef[]; annotations?: TurnAnnotation[] };
 export type NativePromptIndex = ReadonlyMap<string, HostPrompt | null>;
 
 /** Only host-persisted user rows supply a boundary; a provider row or a tag name cannot supply one. */
-export function indexNativePrompts(messages: Iterable<{ kind: string; role?: string; text?: string; files?: TranscriptFileRef[]; annotations?: TranscriptAnnotation[]; _meta?: Record<string, unknown> }>): NativePromptIndex {
+export function indexNativePrompts(messages: Iterable<{ kind: string; role?: string; text?: string; files?: TranscriptFileRef[]; annotations?: TurnAnnotation[]; _meta?: Record<string, unknown> }>): NativePromptIndex {
   const index = new Map<string, HostPrompt | null>();
   for (const item of messages) {
     const digest = item._meta?.[HOST_PROMPT_HASH];

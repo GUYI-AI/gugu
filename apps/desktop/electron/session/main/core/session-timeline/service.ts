@@ -5,7 +5,7 @@ import { nativeConversationHistoryFloor } from '../sessions/native-publication-h
 import { nativePromptReceipt } from '../sessions/native-prompt-receipts';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
-import { promptAnnotationSchema, promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
+import { turnAnnotationSchema, promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
@@ -1510,7 +1510,7 @@ async function sendOnce(input: InputAdmissionPayload, admissionFence?: () => voi
   if (steerIfBusy !== undefined && steerIfBusy !== true) return rejected('invalid_request', '插话意图无效');
   if (files !== undefined && !turnFileRefSchema.array().safeParse(files).success) return rejected('invalid_request', '附件引用无效');
   if (attachments !== undefined && !promptAttachmentSchema.array().safeParse(attachments).success) return rejected('invalid_request', '附件引用无效');
-  if (annotations !== undefined && !promptAnnotationSchema.array().safeParse(annotations).success) return rejected('invalid_request', '批注无效');
+  if (annotations !== undefined && !turnAnnotationSchema.array().safeParse(annotations).success) return rejected('invalid_request', '批注无效');
   if (clientMessageId !== undefined && (!clientMessageId.trim() || clientMessageId.length > 256)) return rejected('invalid_request', '消息标识无效');
   if (!text.trim() && !files?.length && !attachments?.length && !annotations?.length) return rejected('empty_text', '消息是空的');
   // Confirm custody before re-reading a provider or resolving files whose permissions may have changed.

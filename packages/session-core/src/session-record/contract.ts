@@ -1314,7 +1314,7 @@ export type SessionpageSessionSendRequest = {
   /** Existing runtime-store images, used only when replaying an edited turn. */
   attachments?: import('../acp/models/attachments').PromptAttachment[];
   /** Comments left on what the person was looking at (only to a host whose device row reports `task_annotations`). */
-  annotations?: import('../acp/models/turn-annotations').PromptAnnotation[];
+  annotations?: import('../acp/models/turn-annotations').TurnAnnotation[];
 };
 /**
  * A task turn's attachment (P3): a version of a file in the agent's DM folder, placed there by the owner. `path`: the file

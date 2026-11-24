@@ -2,7 +2,7 @@ import { enqueueSessionInput, queuedSessionInputs, releaseQueuedSessionInput, se
 import { machineRegistry } from '@renderer/lib/machine-routing'
 import { machineLinkState } from '@renderer/lib/machine-clients'
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract'
-import type { PromptAnnotation } from '@gugu/session-core/acp/client'
+import type { TurnAnnotation } from '@gugu/session-core/acp/client'
 import type { AcpChatStore, AcpPromptAttachment } from './acp-chat-store'
 import { sessionInputBaseline } from '@/lib/pendingSessionInput'
 import { sessionLifeView } from '../stores/session-life-views'
@@ -17,7 +17,7 @@ export function canQueueNativeInput(store: AcpChatStore): boolean {
  * session_pending accepts it, then the host row is its only owner. A side chat sends to its fork entry by its own id.
  * A failure throws; the store's `submitPrompt` says it and its caller keeps the words.
  */
-export async function sendThroughCustody(store: AcpChatStore, text: string, attachments: readonly AcpPromptAttachment[], files: readonly TurnFileRef[] = [], annotations: readonly PromptAnnotation[] = []): Promise<void> {
+export async function sendThroughCustody(store: AcpChatStore, text: string, attachments: readonly AcpPromptAttachment[], files: readonly TurnFileRef[] = [], annotations: readonly TurnAnnotation[] = []): Promise<void> {
   if (!sessionInputOutboxAvailable()) throw new Error('Task input needs a signed-in account')
   const transcript = store.chatState.transcript.state
   const turns = [...transcript.committedTurns, ...(transcript.activeTurnSnapshot ? [transcript.activeTurnSnapshot] : [])]

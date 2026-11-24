@@ -293,6 +293,17 @@ describe('native input shell lifecycle', () => {
     expect(scope.send.mock.calls[0][0]).toMatchObject({ text: 'apply', annotations })
   })
 
+  it('tells the person to update a phone host that does not take comments (iOS), instead of dropping them', async () => {
+    signIn('annotations-ios')
+    scope.phones = [{ device_id: 'phone-ios', is_online: true, capabilities: { host_kind: 'phone', remote_protocol: 18 } }]
+    await harness.render(<SessionInputOutboxHost accountId={scope.owner} />)
+    const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: 'Comment:\nMake it red' }]
+    await act(async () => { await expect(enqueueSessionInput({ deviceId: 'phone-ios', sessionId: 'ios-task', text: 'apply', annotations })).rejects.toThrow('Update the task host to send comments') })
+    expect(rows()).toEqual([])
+    expect(scope.send).not.toHaveBeenCalled()
+    scope.phones = []
+  })
+
   it('sends to this computer over IPC when the input names its own device id', async () => {
     signIn('account-own-id')
     scope.devices = [{ device_id: 'this-computer', is_online: false, is_current_device: true, capabilities: {} } as never]

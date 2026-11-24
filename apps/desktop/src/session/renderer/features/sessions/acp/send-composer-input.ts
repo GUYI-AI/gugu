@@ -1,5 +1,5 @@
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
-import type { PromptAnnotation } from '@gugu/session-core/acp/client';
+import type { TurnAnnotation } from '@gugu/session-core/acp/client';
 import type { AnnotatedSend } from '../annotations/session-annotations';
 
 type ComposerSendPort = {
@@ -9,7 +9,7 @@ type ComposerSendPort = {
   hasFailedAttachments(): boolean;
   files(): TurnFileRef[];
   status(value: 'waiting' | 'blocked' | null): void;
-  deliver(text: string, files: TurnFileRef[], annotations?: PromptAnnotation[]): void | Promise<void>;
+  deliver(text: string, files: TurnFileRef[], annotations?: TurnAnnotation[]): void | Promise<void>;
   committed(): void;
 };
 

@@ -17,7 +17,7 @@ import { PhoneTaskSkills } from '../../mobile/local-agent/PhoneTaskSkillsButton'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
 import { remoteFailureKind, type SessionpageSessionSummary, type TurnFileRef } from '@gugu/session-core/session-record/contract'
-import type { PromptAnnotation } from '@gugu/session-core/acp/client'
+import type { TurnAnnotation } from '@gugu/session-core/acp/client'
 import { AgentFailureSlot } from '@/components/AgentFailureSlot'
 import { Button } from '@/components/ui/Button'
 import { useBackLayer } from '@/components/ui/sheetStack'
@@ -172,7 +172,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       throw new Error(t('settings:devices.notice.serverTooOldHint'))
     }
   }
-  const send = async (text: string, files?: TurnFileRef[], annotations?: PromptAnnotation[]) => {
+  const send = async (text: string, files?: TurnFileRef[], annotations?: TurnAnnotation[]) => {
     beforeSend()
     const request = { deviceId: device.device_id, sessionId: session.conversationId, text, composer: true as const,
       ...phoneInputQueueIntent(foregroundWorking, queuedInputs), ...sessionInputBaseline(conversation.turns), ...(files?.length ? { files } : {}),

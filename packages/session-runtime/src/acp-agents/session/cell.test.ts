@@ -3274,7 +3274,7 @@ describe('task file context stays separate from the person words', () => {
     } finally { cell.dispose(); }
   });
 
-  it('sends the comments as one block ahead of the words while the transcript keeps only their cards', async () => {
+  it('sends the comments as one block ahead of the words and keeps them with the message', async () => {
     const { cell, agent } = makeCell();
     agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
     cell.push({ kind: 'commands', commands: [{ name: 'review', description: '' }] });
@@ -3289,10 +3289,8 @@ describe('task file context stays separate from the person words', () => {
         { type: 'text', text: 'Apply each comment' },
       ]);
       const item = cell.history().committed[0].items[0];
-      expect(item).toMatchObject({ kind: 'message', role: 'user', text: 'Apply each comment', annotations: [
-        { number: 1, target: 'docs/index.html', comment: 'Make it red' }, { number: 2, target: 'src/a.ts', comment: 'Why?' },
-      ] });
-      expect(JSON.stringify(item)).not.toContain('promptText');
+      // The sender's own text stays with the message (never drawn), so a resend carries it again.
+      expect(item).toMatchObject({ kind: 'message', role: 'user', text: 'Apply each comment', annotations });
       // A command still leads its prompt: the comments follow it.
       await cell.prompt({ text: '/review', origin: 'manual', annotations: [annotations[0]] });
       expect(agent.prompt.mock.calls[1][0].prompt).toEqual([

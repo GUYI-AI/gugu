@@ -3,7 +3,6 @@ import { STAGES } from '@gugu/core/local/session-life/types';
 import { isSqliteBusy } from '@gugu/core/shared/sqliteBusy';
 import { toSerializedError } from '@gugu/session-shared/result';
 import { randomUUID } from 'node:crypto';
-import { transcriptAnnotation } from '@gugu/session-core/acp/client';
 import type {
   Attempt, AuthEpoch, Effect, Event, Gen, Hold, InterruptEvent, Life,
   PendingView, Receipt, RunStageEffect, Seq, SerializedError, StageResult,
@@ -734,7 +733,7 @@ export class SessionLife {
       pending: { count: rows.filter(row => row.state === 'queued' || row.state === 'dispatching').length,
         items: rows.map(row => ({ seq: row.seq, messageId: row.message.id, preview: row.message.text.slice(0, 160), text: row.message.text, kind: row.kind, sentAt: row.sentAt,
           ...(row.message.delivery?.files?.length ? { files: row.message.delivery.files } : {}),
-          ...(row.message.delivery?.annotations?.length ? { annotations: row.message.delivery.annotations.map(transcriptAnnotation) } : {}), discardable: discardable(row) || settledByHand(row),
+          ...(row.message.delivery?.annotations?.length ? { annotations: row.message.delivery.annotations } : {}), discardable: discardable(row) || settledByHand(row),
           resendable: (row.state === 'unknown' || (row.state === 'failed' && settledByHand(row))) && life.kind !== 'archived' && life.kind !== 'stopping', state: row.state, failure: row.state === 'failed' ? row.failure?.message ?? null : null })) },
       hold: hold?.reason ?? null,
       failure: life.kind === 'failed' ? { at: life.hold.reason === 'start-failed' ? life.hold.stage : null, message: life.hold.cause.message, cause: life.hold.cause } : null,

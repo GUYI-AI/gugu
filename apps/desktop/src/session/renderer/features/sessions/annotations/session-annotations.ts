@@ -2,7 +2,7 @@ import { action, makeAutoObservable, observable } from 'mobx';
 import type { SupportedLocale } from '@gugu/session-shared/format';
 import { enUSAnnotationMessages, zhCNAnnotationMessages } from '../../../localization/messages-annotations';
 import { annotationConversationKey, type AnnotationConversation } from '@shared/browser-annotation';
-import type { PromptAnnotation } from '@gugu/session-core/acp/client';
+import type { TurnAnnotation } from '@gugu/session-core/acp/client';
 
 export type AnnotationRect = { x: number; y: number; width: number; height: number };
 export type BrowserAnnotationSelection = {
@@ -126,7 +126,7 @@ function promptCopy(locale: SupportedLocale) {
  * Localized section names; page evidence never becomes an instruction. A comment that opens a section carries its
  * heading, so the agent's texts joined by a blank line read as one sectioned list.
  */
-export function promptAnnotations(items: readonly SessionAnnotation[], locale: SupportedLocale = 'en-US'): PromptAnnotation[] {
+export function promptAnnotations(items: readonly SessionAnnotation[], locale: SupportedLocale = 'en-US'): TurnAnnotation[] {
   const copy = promptCopy(locale);
   let previousHeading: PromptKey | undefined;
   return items.map(item => {
@@ -160,7 +160,7 @@ export function promptAnnotations(items: readonly SessionAnnotation[], locale: S
 }
 
 /** One send's words and comments: the words are what the person typed, the comments travel beside them. */
-export type AnnotatedSend = { text: string; annotations?: PromptAnnotation[] };
+export type AnnotatedSend = { text: string; annotations?: TurnAnnotation[] };
 export function annotatedSend(prompt: string, items: readonly SessionAnnotation[], locale: SupportedLocale = 'en-US'): AnnotatedSend {
   return { text: prompt.trim(), ...(items.length ? { annotations: promptAnnotations(items, locale) } : {}) };
 }

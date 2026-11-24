@@ -156,7 +156,7 @@ export type SessionMessage = {
  * added to. Only the ACP adapter reads it — a terminal session is refused before anything is sent.
  */
 export type SessionMessageDelivery = { queue: true; steerIfBusy?: true; coalesceKey?: string; origin?: 'manual'; files?: import('@gugu/session-core/session-record/contract').TurnFileRef[]; attachments?: import('@gugu/session-core/acp/client').PromptAttachment[];
-  annotations?: import('@gugu/session-core/acp/client').PromptAnnotation[] };
+  annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[] };
 
 export type PendingRestart = {
   status: 'restart_failed';

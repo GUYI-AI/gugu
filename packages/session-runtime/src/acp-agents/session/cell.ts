@@ -55,7 +55,7 @@ import type { Result } from '@gugu/session-shared';
 import { errorDetail, ok, toSerializedError } from '@gugu/session-shared';
 import { invokesCommand } from '@gugu/session-core/acp/commands';
 import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
-import { annotationPromptText, transcriptAnnotation } from '@gugu/session-core/acp/client';
+import { annotationPromptText } from '@gugu/session-core/acp/client';
 import { classifyTurnFailure, refusedTurnOutcome } from './turn-failure';
 import {
   type Command,
@@ -2103,7 +2103,7 @@ export class SessionCell {
           ...(steered ? { guguOwnerInput: isOwnerOrigin(prompt.origin) } : {}),
         },
         ...(prompt.files?.length ? { files: prompt.files.map(({ itemId, version, name, mimeType, sizeBytes }) => ({ itemId, version, name, mimeType, sizeBytes })) } : {}),
-        ...(prompt.annotations?.length ? { annotations: prompt.annotations.map(transcriptAnnotation) } : {}),
+        ...(prompt.annotations?.length ? { annotations: prompt.annotations } : {}),
         content: [{ type: 'text', text: prompt.text }],
         contentMode: 'replace',
         attachmentsMode: 'replace',

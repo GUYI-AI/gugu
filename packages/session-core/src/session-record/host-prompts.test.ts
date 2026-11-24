@@ -70,7 +70,7 @@ describe.each(['codex', 'claude'] as const)('a %s record shows what the person s
 
   it('the comments the person sent beside their words, as cards, never the text the agent got for them', async () => {
     const root = await record(harness, ['apply each comment']);
-    const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red' }];
+    const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: '# All comments\n\nComment:\nMake it red' }];
     const [digest, prompt] = receipt('apply each comment');
     const timeline = await createSessionTimeline(createSessionRecordSource({ harness, providerSessionId, roots: [root] }),
       { sessionId: 'S', hostPrompts: (asked) => asked === digest ? { ...prompt, annotations } : undefined });

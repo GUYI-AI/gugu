@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { attachmentRefSchema } from '../attachments';
 import { transcriptFileRefSchema } from '../turn-files';
-import { transcriptAnnotationSchema } from '../turn-annotations';
+import { turnAnnotationSchema } from '../turn-annotations';
 import { entityContentSchema } from '../entity-content';
 
 export const transcriptMessageSchema = z.object({
@@ -32,7 +32,7 @@ export const transcriptMessageSchema = z.object({
   /** Attachment metadata only; bytes are served separately by the runtime. */
   attachments: z.array(attachmentRefSchema).optional(),
   files: z.array(transcriptFileRefSchema).optional(),
-  annotations: z.array(transcriptAnnotationSchema).optional(),
+  annotations: z.array(turnAnnotationSchema).optional(),
   /**
    * Epoch ms when this message **started** arriving (first chunk). Later chunks do not move it.
    *

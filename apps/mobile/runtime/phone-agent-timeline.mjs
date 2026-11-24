@@ -93,7 +93,7 @@ export function createPhoneTimelineRuntime({ root, store, authorize, historyFloo
         const match = /^pi:([^#]+)#(\d+)$/.exec(entry.key)
         const original = match && agent.fileInputs?.[match[1]]
         if (!original) return [entry]
-        return match[2] === '0' ? [{ ...entry, event: { ...entry.event, text: original.text, files: original.files, content: [{ type: 'text', text: original.text }], contentMode: 'replace' } }] : []
+        return match[2] === '0' ? [{ ...entry, event: { ...entry.event, text: original.text, files: original.files, ...(original.annotations?.length ? { annotations: original.annotations } : {}), content: [{ type: 'text', text: original.text }], contentMode: 'replace' } }] : []
       })
       const projected = live.project(agent, visible)
       const before = new Map()
@@ -154,7 +154,7 @@ export function createPhoneTimelineRuntime({ root, store, authorize, historyFloo
     cached.timeline.syncPendingRequests(pending.map(asRequest))
     for (const settlement of pending) if (settlement.state === 'resolved') cached.settle(settlement)
     cached.timeline.syncPendingRequests(pending.filter((settlement) => settlement.state !== 'cancelled').map(asRequest))
-    cached.timeline.syncQueuedPrompts(Object.values(store.state.jobs).filter((job) => job.agentUserId === agent.agentUserId && job.status === 'queued' && (!job.contextEpoch || job.contextEpoch === agent.contextEpoch)).map((job) => ({ id: job.id, text: job.prompt, ...(job.clientMessageId ? { clientMessageId: job.clientMessageId } : {}), ...(job.files?.length ? { files: job.files } : {}), ...(job.queueEdit ? { queueEdit: job.queueEdit } : {}) })))
+    cached.timeline.syncQueuedPrompts(Object.values(store.state.jobs).filter((job) => job.agentUserId === agent.agentUserId && job.status === 'queued' && (!job.contextEpoch || job.contextEpoch === agent.contextEpoch)).map((job) => ({ id: job.id, text: job.prompt, ...(job.clientMessageId ? { clientMessageId: job.clientMessageId } : {}), ...(job.files?.length ? { files: job.files } : {}), ...(job.annotations?.length ? { annotations: job.annotations } : {}), ...(job.queueEdit ? { queueEdit: job.queueEdit } : {}) })))
     return cached.timeline
   }
   const serialized = async (agent, work) => {

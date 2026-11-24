@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { SessionpageSessionSendRequest } from '@gugu/session-core/session-record/contract';
-import type { PromptAnnotation, PromptAttachment } from '@gugu/session-core/acp/client';
+import type { TurnAnnotation, PromptAttachment } from '@gugu/session-core/acp/client';
 import { readAcceptedMessage } from '../sessions/sendMessage';
 import { runtimeForkInput } from '../sessions/session-life-forks';
 import { inspectCreationInputCustody, type CreationCustodyEvidence } from './creation-attachment-recovery';
@@ -11,7 +11,7 @@ export type InputAdmissionPayload = {
   clientMessageId?: string;
   files?: SessionpageSessionSendRequest['files'];
   attachments?: PromptAttachment[];
-  annotations?: PromptAnnotation[];
+  annotations?: TurnAnnotation[];
   steerIfBusy?: true;
 };
 

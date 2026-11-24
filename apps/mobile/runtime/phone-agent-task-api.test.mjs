@@ -46,6 +46,21 @@ test('admission retains raw caption and files without resolving bytes, permits r
   assert.equal(inputs[1].prompt, 'following text')
 })
 
+test('admission keeps comments beside the words, refuses a malformed one, and a replay with other comments is not the same input', async () => {
+  const store = { state: { jobs: {} }, save: async () => {} }
+  const agent = { sessionId: randomUUID(), agentUserId: randomUUID() }
+  const inputs = []
+  const api = createPhoneTaskApi({ ownerId: randomUUID(), store, findSession: () => agent, verifyAgent: async () => {},
+    admit: async input => { if (!store.state.jobs[input.id]) { store.state.jobs[input.id] = input; inputs.push(input) } } })
+  const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: 'Comment:\nMake it red' }]
+  const input = { conversationId: agent.sessionId, text: '', annotations, clientRequestId: randomUUID() }
+  await api('sessionTimeline.sessionSend', [input], randomUUID())
+  assert.equal(inputs[0].prompt, '')
+  assert.deepEqual(inputs[0].annotations, annotations)
+  await assert.rejects(api('sessionTimeline.sessionSend', [{ ...input, annotations: [{ ...annotations[0], comment: 'changed' }] }], randomUUID()), { admission: 'uncertain' })
+  await assert.rejects(api('sessionTimeline.sessionSend', [{ ...input, clientRequestId: randomUUID(), annotations: [{ number: 1 }] }], randomUUID()), { code: 'invalid_args' })
+})
+
 test('the same seen action persists the phone host read bit, preserves the error and fails without dismissing it', async () => {
   const root = await mkdtemp(join(tmpdir(), 'gugu-phone-seen-'))
   try {

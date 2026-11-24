@@ -189,7 +189,7 @@ import {
   type McpSessionPanelAdapterSkill,
 } from '@renderer/features/mcp/components/mcp-session-panel-adapter';
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
-import { classifyProviderPermissionMode, type PromptAnnotation } from '@gugu/session-core/acp/client';
+import { classifyProviderPermissionMode, type TurnAnnotation } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sessionFastMode } from '../session-config/fast-mode';
 import { renderFastModeHint } from '../session-config/fast-mode-hint';
@@ -346,7 +346,7 @@ const ComposerForStore = observer(function ComposerForStore({
    * 那一件的 chip 上写着为什么、能重试。正文在等的时候留在输入框里,❌ 先清掉再说。
    */
   const sendWhenReady = useCallback(
-    async (value: string, deliver: (text: string, files: TurnFileRef[], annotations?: PromptAnnotation[]) => void | Promise<void>) => {
+    async (value: string, deliver: (text: string, files: TurnFileRef[], annotations?: TurnAnnotation[]) => void | Promise<void>) => {
       if (sendingRef.current) return;
       sendingRef.current = true;
       const annotated = annotationDraft.items;
