@@ -13,13 +13,13 @@ test('local history remains readable without live identity ownership while mutat
   const api = createPhoneTaskApi({ ownerId: randomUUID(), store: { state: { jobs: {} } }, findSession: () => agent,
     verifyAgent: async () => { verified++; throw Object.assign(new Error('not owner'), { code: 'not_granted' }) },
     admit: async () => { admitted++ },
-    timelines: Object.fromEntries(['snapshot', 'after', 'older', 'image'].map(method => [method, async row => { assert.equal(row, agent); reads++; return 'local history' }])),
+    timelines: Object.fromEntries(['snapshot', 'after', 'older'].map(method => [method, async row => { assert.equal(row, agent); reads++; return 'local history' }])),
   })
-  for (const method of ['sessionSnapshot', 'sessionAfter', 'sessionOlder', 'sessionToolImage']) {
+  for (const method of ['sessionSnapshot', 'sessionAfter', 'sessionOlder']) {
     assert.equal((await api(`sessionTimeline.${method}`, [{ conversationId: agent.sessionId }])).value, 'local history')
   }
   assert.equal(verified, 0)
-  assert.equal(reads, 4)
+  assert.equal(reads, 3)
   await assert.rejects(api('sessionTimeline.sessionSend', [{ conversationId: agent.sessionId, text: 'new input', clientRequestId: randomUUID() }]), { code: 'not_granted' })
   assert.equal(verified, 1)
   assert.equal(admitted, 0)

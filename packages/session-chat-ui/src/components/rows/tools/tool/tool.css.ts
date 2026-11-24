@@ -5,7 +5,6 @@ import { sx } from '@session-chat/styles/sprinkles.css';
 import { vars } from '@session-chat/styles/theme.css';
 import { summaryChip } from '@session-chat/components/primitives/summary-chip.css';
 import { createVariableThemeContract } from '@session-chat/styles/variable-theme-contract.css';
-import { TOOL_THUMB_GAP, TOOL_THUMB_H, TOOL_THUMB_PAD_TOP, TOOL_THUMB_W } from './tool-images';
 
 // ── Runtime geometry contract ─────────────────────────────────────────────────
 
@@ -116,59 +115,6 @@ export const toolErrorIcon = style([
 // 「做完了」那个绿勾已退休(#4981):这一格只留需要读者看一眼的记号。
 // 理由写在 `Tool.tsx` 的渲染处 —— 上游 tool-call 与 tool-timeline 在这一格上说的不是
 // 一件事,gugu 的工具行两个身份都当,只能取一个,取的是 timeline。
-
-// ── Picture strip (tool-images.ts) ────────────────────────────────────────────
-
-// Every number here is the one tool-images.ts measured with: the strip's height is set inline from the strip, the
-// boxes are fixed, and the picture is contained in its box — so no picture, of any size, moves the row.
-export const toolThumbs = style({
-  display: 'flex',
-  alignItems: 'flex-start',
-  gap: `${TOOL_THUMB_GAP}px`,
-  paddingTop: `${TOOL_THUMB_PAD_TOP}px`,
-  boxSizing: 'border-box',
-  flexShrink: 0,
-  overflow: 'hidden',
-});
-
-export const toolThumb = style({
-  position: 'relative',
-  flex: '0 0 auto',
-  width: `${TOOL_THUMB_W}px`,
-  maxWidth: '100%',
-  height: `${TOOL_THUMB_H}px`,
-  padding: 0,
-  border: 'none',
-  borderRadius: vars.radiusMd,
-  background: vars.bgHover,
-  overflow: 'hidden',
-  cursor: 'zoom-in',
-  // The strip clips its boxes, so the focus ring is drawn inside the box.
-  selectors: { '&:focus-visible:not([data-pointer-focus])': { outlineOffset: '-2px' } },
-});
-
-globalStyle(`${toolThumb}:hover`, { background: vars.bgPress });
-
-export const toolThumbImage = style({
-  display: 'block',
-  width: '100%',
-  height: '100%',
-  objectFit: 'contain',
-});
-
-/** 「还有几张」:一枚小片压在最后一个框的右下角,❌ 盖住整张图。 */
-export const toolThumbMore = style({
-  position: 'absolute',
-  right: '4px',
-  bottom: '4px',
-  padding: '0 6px',
-  borderRadius: vars.radiusFull,
-  background: vars.bg,
-  color: vars.fg,
-  // 标记档 12/18(#7333)。
-  fontSize: vars.typeChromeTinyFontSize,
-  lineHeight: '18px',
-});
 
 // ── Payload panel ─────────────────────────────────────────────────────────────
 

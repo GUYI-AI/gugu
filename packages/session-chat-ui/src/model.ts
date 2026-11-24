@@ -192,13 +192,6 @@ export type ChatToolCall = {
   result?: string;
   /** A measured disclosure explaining transport-shortened tool content. */
   transportNote?: string;
-  /**
-   * 工具交回来的图(画图用的地址),在头下面画成一条缩略图 —— 不用点开就看得见,见 tool-images.ts。
-   * 缺席 = 这次调用没交图,行和从前一样。
-   */
-  images?: string[];
-  /** Includes pictures represented by lazy transport references. */
-  imageCount?: number;
   /** Id of the parent tool call (for hierarchical rendering). */
   parentId?: string;
 };
@@ -610,8 +603,6 @@ export type ToolRunItem = {
   live?: boolean;
   /** 跑着的这一段此刻在做什么(`toolRunNow`):在跑的命令或在思考;只在活动层、只在有的时候写。 */
   now?: ToolRunNow;
-  /** Folded only: the last step that handed back pictures, so its strip shows without opening the line. */
-  pictureStep?: ToolNode;
 };
 
 /**

@@ -6,7 +6,7 @@ import { retryInterruptedPhoneJob } from './phone-agent-retry.mjs'
 import { turnAnnotationSchema } from '../../../packages/session-core/src/acp/models/turn-annotations.ts'
 
 const failure = (code, message) => new SessionInputAdmissionError(message, 'rejected', code)
-const methods = new Set(['prefetchFiles', 'sessionQueue', 'sessionSnapshot', 'sessionAfter', 'sessionOlder', 'sessionToolImage', 'sessionSend', 'sessionRetry', 'sessionRespond', 'sessionOptions', 'sessionSetOption', 'sessionReloadModel'])
+const methods = new Set(['prefetchFiles', 'sessionQueue', 'sessionSnapshot', 'sessionAfter', 'sessionOlder', 'sessionSend', 'sessionRetry', 'sessionRespond', 'sessionOptions', 'sessionSetOption', 'sessionReloadModel'])
 
 const inputId = (ownerId, sessionId, clientId) => stableId('phone-task-input', ownerId, sessionId, clientId)
 // Comments join the fingerprint only when sent, so inputs admitted before them keep their fingerprints.
@@ -91,7 +91,6 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
     if (method === 'sessionSnapshot') return { value: await timelines.snapshot(agent, input) }
     if (method === 'sessionAfter') return { value: await timelines.after(agent, input) }
     if (method === 'sessionOlder') return { value: await timelines.older(agent, input) }
-    if (method === 'sessionToolImage') return { value: await timelines.image(agent, input) }
     await verifyAgent(agent.agentUserId)
     let value
     if (method === 'sessionRetry') value = await retryInterruptedPhoneJob({ ownerId, store, agent, jobId: input.jobId, admit })

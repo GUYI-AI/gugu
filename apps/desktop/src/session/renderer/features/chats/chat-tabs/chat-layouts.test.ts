@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { folderItem, type PanelItem } from './chat-panel-item';
-import { askChat, chatAlone, chatBlockContentOf, chatTabShown, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, focusedChatTab, infoTabOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, showChatTab, takeChatAsk, updateFileNames } from './chat-layouts';
+import { askChat, chatAlone, chatTabShown, chatLayoutOf, chatPaneOf, closeChatTab, closeInfoTab, focusedChatTab, infoTabOf, openInfoTab, openPanelItem, panelFull, panelTabsOf, setPanelFull, showChatOnly, showChatTab, takeChatAsk, updateFileNames } from './chat-layouts';
 import { openChatWorkspaceNewTab } from '../../tabs/chat-workspace-new-tab';
 import { browserSessionStore } from '../../browser/browser-session-store';
 import type { BrowserState } from '../../browser/browser-tab-provider';
@@ -105,7 +105,7 @@ describe('chat navigation uses the same page history and real panes as tasks', (
     const id = 'rename-chat'; const page = openPanelItem(id, file('README'))!;
     updateFileNames([{ id: 'README', filename: 'renamed.md', content_type: 'text/markdown' }], []);
     expect(panelTabsOf(id).find((tab) => tab.tabId === page)?.item.fileName).toBe('renamed.md');
-    expect(chatBlockContentOf(id, page)?.itemId).toBe('README');
+    expect(panelTabsOf(id).find((tab) => tab.tabId === page)?.item.itemId).toBe('README');
     closeChatTab(id, page);
     updateFileNames([{ id: 'README', filename: 'later.md', content_type: 'text/markdown' }], []);
     expect(panelTabsOf(id)).toEqual([]);

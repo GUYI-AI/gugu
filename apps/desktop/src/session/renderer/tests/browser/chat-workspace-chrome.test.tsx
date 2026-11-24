@@ -41,9 +41,9 @@ let layout: PaneLayoutStore | undefined;
 afterEach(() => { harness?.cleanup(); layout?.dispose(); harness = undefined; layout = undefined; });
 
 function WorkspaceDrag({ layout, children }: { layout: PaneLayoutStore; children: ReactNode }) {
-  const drag = useTabDrag({ layout, blockId: null, contentOf: () => null, openWindow: () => null });
+  const drag = useTabDrag({ layout, openWindow: () => null });
   return <PaneLayoutProvider paneLayout={layout}>
-    <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragMove={drag.onDragMove} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
+    <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
       {children}
       <TabDragOverlay />
     </DndContext>
@@ -526,4 +526,23 @@ it('resizes and previews each collapse before release, and restores the split on
   // (The conversation card is 5px inside its share: half the 10px gutter.)
   await until('restoring yields the last usable tool width', () => width(chat()), (w) => Math.abs(w - (475 - 5)) < 2);
   expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
+});
+
+it('puts the view toggle on the header in the frame the tools are hidden, while they are still going off', async () => {
+  const { inside, mode, workspace } = await mountWorkspace();
+  await mode('empty');
+  workspace.open('tool', { id: 'file' }, { from: null, intent: 'newTab' });
+  await mode('split');
+  await untilStable('the tools have landed', () => inside('[data-chat-tool-strip]')?.getBoundingClientRect().left);
+  const onHeader = () => {
+    const header = inside('[data-chat-workspace-header]')!.getBoundingClientRect();
+    return [...inside('[data-chat-workspace-header]')!.querySelectorAll('button[aria-pressed]')].some((button) => {
+      const box = button.getBoundingClientRect();
+      return !button.closest('[data-chat-tool-strip]') && box.width > 0 && box.right <= header.right + 0.5;
+    });
+  };
+  workspace.setChatToolLayout('hidden');
+  // The first animation frame after hiding, before the tools' track lands: no gap without the toggle.
+  await new Promise((frame) => requestAnimationFrame(frame));
+  expect(onHeader(), 'the toggle left with the tools and came back only after they landed').toBe(true);
 });

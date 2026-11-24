@@ -349,7 +349,8 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
   estimate(item, ctx, baseVars): number {
     const scheduled = ctx.theme.layout.agentConversation ? scheduledPromptParts(item) : [];
     if (scheduled.length) return measureMessage(item, ctx, baseVars);
-    if (isConversationMessage(item, ctx)) return conversationMessageHeight(item, ctx, baseVars);
+    // Every row of a landing page is estimated at once; a measured body lays each html block out in the DOM.
+    if (isConversationMessage(item, ctx)) return conversationMessageHeight(item, ctx, baseVars, estimateUserMessage);
     const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
     if (messageQuestionAnswer(item)) return QUESTION_ANSWER_H;
     if (item.role === 'user' && item.guguDelivery) {

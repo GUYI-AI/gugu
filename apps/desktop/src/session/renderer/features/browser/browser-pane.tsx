@@ -472,7 +472,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-tab-face">
       <BrowserToolbar
         session={session}
         adapter={adapter}

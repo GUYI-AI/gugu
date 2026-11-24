@@ -54,6 +54,7 @@ import { setupExtensionCommandProvider } from '@renderer/features/extensions/ext
 import { setupViewCommandProvider } from '@renderer/lib/commands/view-command-provider';
 import { wireExternalLinkRequests } from '@renderer/lib/external-link-requests';
 import { wireSessionsOnScreenReport } from '@renderer/app/sessions-on-screen';
+import { leaveSplit } from '@renderer/app/screen-layout-actions';
 import { rpc, rpcOn } from '@renderer/lib/ipc';
 import { wireModelRegistryInvalidation } from '@renderer/lib/text-model/invalidation-bridges';
 import { modelRegistry } from '@renderer/lib/text-model/model-registry';
@@ -172,6 +173,7 @@ function wireProcess(): void {
     prepareGroupSession: (sourceChatId, target) => groupParticipantRequests.prepare(sourceChatId, target),
     unpinFromSidebar: unpinSessionFromSidebar,
     openSidebarPin,
+    leaveSplit,
   });
   installRemoteHostSessionpageBridges(window, () => appState.navigation.navigate('new-session'));
   if (hasEntryRoot(container)) {

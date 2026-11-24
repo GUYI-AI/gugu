@@ -14,7 +14,7 @@ import type { TabCommand } from './tab-commands';
 import { TabContextMenu } from './tab-context-menu';
 import { ChatWorkspaceTabContext } from '../chat-workspace-context';
 import { Popover } from '@/components/ui/Popover';
-import { CONVERSATION_CAPSULE_CLASS } from './conversation-capsule';
+import { CONVERSATION_CAPSULE_CLASS, CONVERSATION_CAPSULE_LAYER_CLASS } from './conversation-capsule';
 
 /** Props for GenericTabItem — aligns with TabBarItemProps<any> for convenience. */
 export interface GenericTabItemProps {
@@ -191,7 +191,7 @@ export const GenericTabItem = observer(function GenericTabItem({
       <>
       <TabContextMenu tab={tab} host={host} ctx={ctx} kindCommands={menuCommands}>
         {/* 按整张卡居中(设计稿 .capbar 整卡宽):相对页签条的 padding box 绝对居中,左边留白、右边按钮都不挤偏它。 */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+        <div className={CONVERSATION_CAPSULE_LAYER_CLASS}>
           <div role="button" tabIndex={0} data-testid="conversation-capsule" data-chat-workspace-title="" data-tabid={tab.tabId} title={tooltip ?? label}
             className={`${CONVERSATION_CAPSULE_CLASS} pointer-events-auto`}
             onClick={card ? () => setCardOpen((open) => !open) : undefined}

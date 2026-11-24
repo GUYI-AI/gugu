@@ -27,7 +27,7 @@ export interface IOSHostState {
 export type IOSHostChannel =
   | `appSettings.${'get' | 'getWithMeta' | 'update'}`
   | `sessionTimeline.${'sessionsList' | 'sessionOfAgent' | 'sessionCreateOptions' | 'sessionCreateModels'
-    | 'sessionSnapshot' | 'sessionAfter' | 'sessionOlder' | 'sessionToolImage' | 'sessionOptions'
+    | 'sessionSnapshot' | 'sessionAfter' | 'sessionOlder' | 'sessionOptions'
     | 'sessionCreate' | 'sessionSend' | 'sessionRespond' | 'sessionQueue' | 'sessionCancel'
     | 'sessionSetOption' | 'sessionReloadModel' | 'prefetchFiles'}`
   | 'sessions.markSessionSeen'

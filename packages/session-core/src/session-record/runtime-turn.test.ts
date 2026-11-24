@@ -74,26 +74,4 @@ describe('a timeline shows the runtime turn in progress', () => {
       } finally { timeline.dispose(); }
     } finally { await rm(root, { recursive: true, force: true }); }
   });
-
-  it('reads a picture of the runtime turn from the runtime, which holds the turn whole', async () => {
-    const { createSessionTimeline, emptyRecordSource, trimItemsForTransport } = await import('./index');
-    const picture = { mimeType: 'image/png', data: 'iVBORw0KGgo=' };
-    const whole = turn('S:turn:0', 'look at this', { ended: false, tool: 'read-1' });
-    const read = { ...whole.items[1], images: [picture] };
-    // What the runtime publishes: its turn trimmed for transport, the picture left as a ref.
-    const published = { ...whole, items: trimItemsForTransport([whole.items[0], read] as TranscriptTurn['items']) } as TranscriptTurn;
-    expect(published.items[1]).toMatchObject({ imageRefs: [{ mimeType: 'image/png', chars: picture.data.length }] });
-    expect(published.items[1]).not.toHaveProperty('images');
-    const asked: string[] = [];
-    const timeline = await createSessionTimeline(emptyRecordSource({ harness: 'claude', providerSessionId: 'S', roots: [] }), { sessionId: 'S' });
-    try {
-      timeline.syncActiveTurn(published, async (itemId, index) => {
-        asked.push(`${itemId}#${index}`);
-        return { ok: true, image: picture };
-      });
-      expect(await timeline.toolImage!({ itemId: read.id, index: 0 })).toEqual({ ok: true, image: picture });
-      expect(asked).toEqual([`${read.id}#0`]);
-      expect(await timeline.toolImage!({ itemId: read.id, index: 0, maxChars: 4 })).toMatchObject({ ok: false, code: 'too_large' });
-    } finally { timeline.dispose(); }
-  });
 });
