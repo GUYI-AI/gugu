@@ -11,7 +11,7 @@ import { PaneContent } from '@renderer/features/tabs/pane-content';
 import { PaneProvider } from '@renderer/features/tabs/pane-context';
 import { PaneLayoutProvider } from '@renderer/features/tabs/pane-layout-context';
 import { RetainedTabContent } from '@renderer/features/tabs/retained-tab-content';
-import { GenericTabItem } from '@renderer/features/tabs/tab-bar/generic-tab-item';
+import { GenericTabDragPreview, GenericTabItem } from '@renderer/features/tabs/tab-bar/generic-tab-item';
 import '@renderer/index.css';
 import '@/styles/tokens.css';
 import '@/styles/desktop-shell.css';
@@ -30,6 +30,7 @@ const provider = (kind: string) => createTabProvider({
   dispose() {},
   TabContent: () => <div>{kind}</div>,
   TabBarItem: ({ tab, host, ctx }) => <GenericTabItem tab={tab} host={host} ctx={ctx} label={kind} />,
+  TabBarItemDragPreview: () => <GenericTabDragPreview label={kind} />,
 });
 
 let harness: ReturnType<typeof createReactHarness> | undefined;
