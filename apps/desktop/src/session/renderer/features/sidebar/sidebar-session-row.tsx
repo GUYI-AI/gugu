@@ -82,7 +82,7 @@ export type SessionRowShellProps = {
   /** ⌘ / Ctrl 点 = 并排打开(spec session-page「一屏几块」);键盘 Enter 不带它。 */
   onOpen: (options?: { beside?: boolean }) => void;
   /** 行上额外的属性(拖成 @、身份卡指针事件……),原样挂到行上。 */
-  rowProps?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
+  rowProps?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean; 'data-row-hover-trigger'?: string };
   /** 挂在行后面、同一个右键触发区里的东西(身份卡)。 */
   after?: React.ReactNode;
   /** 右键菜单的条目;没有就不出菜单。 */

@@ -2,7 +2,7 @@
 // DM = 1 个 token（退化态）；群聊 = 多 token 单行，手机和桌面一样：排不下 → +N（owner 10-30：平时最多一行）。
 // 消除 DM 三跳点 vs GroupAgentStatusBar(群聊竖排文字+工具名) 双轨(两者都已删)。
 // 设计 SSOT: design/agent-running-group-1687.html（.bar/.tok/.state/.pop/.more/.ov/.otok/.opop）。
-import { useId, useLayoutEffect, useRef, useState, type FocusEvent, type ReactNode, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type FocusEvent, type ReactNode, type RefObject } from 'react'
 import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
@@ -14,7 +14,10 @@ import { useLongPress } from '../hooks/useLongPress'
 import { useMobileShell } from '../hooks/useMobileShell'
 import { resolveAgentRunningDisplayName } from '../lib/agentRunningStatusModels'
 import type { AgentRunningStateKey } from '../lib/agentRunningVerb'
+import { Button as ButtonPrimitive } from '@base-ui/react/button'
 import { Popover } from './ui/Popover'
+import { RowHoverCard } from './ui/RowHoverCard'
+import { RowHoverCardController, useRowHoverCardOpen, useRowHoverCardTrigger } from './ui/rowHoverCardController'
 import { Chip } from './ui/Chip'
 import { MessagePreviewCard } from './MessagePreviewCard'
 import { settleRunningTokenFit } from './runningTokenFit'
@@ -47,6 +50,7 @@ const STYLE = `
 .rtb-bar{position:relative;display:flex;align-items:center;gap:8px;padding:var(--spacing-sm) 0;font-size:var(--font-caption);color:var(--faint-fg);white-space:nowrap;flex-shrink:0}
 .rtb-tok{display:inline-flex;align-items:center;gap:7px;flex-shrink:0;min-width:0;border:0;padding:0;background:transparent;color:inherit;font:inherit;white-space:nowrap;cursor:default}
 .rtb-tok[data-clickable=true]{cursor:pointer}
+.rtb-tok[data-folded]{position:absolute;left:0;top:0;visibility:hidden}
 .rtb-pill{height:auto;gap:7px;padding:4px 8px;max-width:168px;min-width:0;background:var(--bg-elevated);box-shadow:var(--shadow-lift);color:inherit;font-weight:inherit}
 .rtb-tok:focus-visible:not([data-pointer-focus]),.rtb-more:focus-visible:not([data-pointer-focus]),.rtb-otok:focus-visible:not([data-pointer-focus]){outline:none}
 .rtb-nm{color:var(--faint-fg);min-width:0;overflow:hidden;text-overflow:ellipsis}
@@ -54,8 +58,6 @@ const STYLE = `
    Masks move 264% of the label width; glyphs move back by the same distance. */
 .rtb-state{flex-shrink:0;display:inline-flex;align-items:center;gap:3px;font-weight:500;color:var(--faint-fg)}
 @media(prefers-reduced-motion:reduce){.rtb-state{flex-shrink:0;display:inline-flex;align-items:center;gap:3px;font-weight:500;color:var(--faint-fg)}}
-/* @@@float-one-edge (Refs #6104) — 浮条去掉 1px 描边:浮层只留 lift 那一层。 */
-.rtb-mp{outline:none}
 .rtb-more{color:var(--text-tertiary);flex-shrink:0;border:0;padding:0;background:transparent;font:inherit;cursor:pointer}
 .rtb-ov{pointer-events:auto;display:flex;flex-direction:column;gap:8px;width:var(--anchor-width);max-width:var(--available-width);max-height:min(40dvh,var(--available-height));overflow-y:auto;overscroll-behavior:contain;background:var(--popover);border-radius:var(--radius-surface);box-shadow:var(--shadow-lift);padding:8px;font-size:var(--font-caption);color:var(--faint-fg)}
 .rtb-og{display:flex;flex-wrap:wrap;gap:8px}
@@ -88,58 +90,67 @@ function fitCount(width: number, pills: number[], more: number): number {
   return pills.length
 }
 
-type PreviewControl = ReturnType<typeof Popover.createHandle<RunningToken>>
-
-// 所有 token 共用一张 MessagePreview;溢出列表只负责展开,不拥有 preview 开合状态。
+// 每条运行条一张悬停卡(产品统一的行悬浮卡,components/ui/RowHoverCard.tsx):停够才开、换 pill 即换、离开即收、移进卡不收。
+// 溢出列表里的 pill 是另一枚触发点(key 带 more: 前缀):同一个 agent 在运行条里还留着一枚折叠起来量宽度的,两枚 ❌ 同时认领一张卡。
 function RunningTokenItem({
   token,
   overflow = false,
   folded = false,
   onTokenClick,
-  preview,
+  card,
+  previewChatId,
 }: {
   token: RunningToken
   overflow?: boolean
   folded?: boolean
   onTokenClick?: (id: string) => void
-  preview: PreviewControl
+  card: RowHoverCardController
+  previewChatId: string | null
 }) {
   const { t } = useTranslation('agents')
   const identity = useAvatarIdentity(token.id)
   const displayName = useShownAgentName({ name: resolveAgentRunningDisplayName(token.name), createdAt: identity?.created_at ?? undefined })
   const stateWord = t(`runtime.stateWord.${token.stateKey}`)
-  const triggerId = useId()
+  const key = overflow ? `more:${token.id}` : token.id
   const mobile = useMobileShell()
-  const longPress = useLongPress(() => preview.open(triggerId))
+  const pill = useRef<HTMLButtonElement | null>(null)
+  const { dismiss, ...hover } = useRowHoverCardTrigger(card, key, !mobile && previewChatId !== null)
+  const open = useRowHoverCardOpen(card, key) && previewChatId !== null
+  const longPress = useLongPress(() => card.open(key))
+  // 单击仍然是 @;卡只由悬停、键盘焦点或手机长按打开。
   const pressHandlers = mobile
     ? { ...longPress, onContextMenu: (event: MouseEvent) => event.preventDefault() }
     : {
-        onFocus: () => preview.open(triggerId),
-        onBlur: () => preview.close(),
+        ...hover,
+        onFocus: (event: FocusEvent<HTMLButtonElement>) => { if (previewChatId !== null && event.currentTarget.matches(':focus-visible')) card.open(key) },
+        onBlur: dismiss,
       }
   return (
-    <Popover.Trigger
-      id={triggerId}
-      handle={preview}
-      openOnHover={!mobile}
-      closeDelay={150}
-      payload={token}
-      className={overflow ? 'rtb-otok' : 'rtb-tok'}
-      // A folded pill stays only to be measured: it is hidden, so its highlight would animate where nothing can show it.
-      style={folded ? { position: 'absolute', left: 0, top: 0, visibility: 'hidden' } : undefined}
-      data-animation-off={folded ? '' : undefined}
-      data-clickable={onTokenClick ? 'true' : 'false'}
-      data-message-preview-trigger={token.id}
-      aria-label={t('runtime.viewDetails', { name: displayName, status: stateWord })}
-      {...pressHandlers}
-      onClick={() => onTokenClick?.(token.id)}
-    >
-      <Chip appearance="filled" className="rtb-pill" data-chat-dock-obstacle="">
-        <Avatar name={displayName} avatarUrl={token.avatarUrl} seed={token.avatarSeed} size={overflow ? 16 : 'xs'} isAgent statusLabel="running" />
-        <span className="rtb-nm">{displayName}</span>
-        <span className="rtb-state"><CLISpinner className="rtb-glyph" /></span>
-      </Chip>
-    </Popover.Trigger>
+    <>
+      <ButtonPrimitive
+        ref={pill}
+        className={overflow ? 'rtb-otok' : 'rtb-tok'}
+        // A folded pill stays only to be measured: it is hidden, so its highlight would animate where nothing can show it.
+        data-folded={folded ? '' : undefined}
+        data-animation-off={folded ? '' : undefined}
+        data-clickable={onTokenClick ? 'true' : 'false'}
+        data-message-preview-trigger={token.id}
+        aria-label={t('runtime.viewDetails', { name: displayName, status: stateWord })}
+        {...pressHandlers}
+        onClick={() => onTokenClick?.(token.id)}
+      >
+        <Chip appearance="filled" className="rtb-pill" data-chat-dock-obstacle="">
+          <Avatar name={displayName} avatarUrl={token.avatarUrl} seed={token.avatarSeed} size={overflow ? 16 : 'xs'} isAgent statusLabel="running" />
+          <span className="rtb-nm">{displayName}</span>
+          <span className="rtb-state"><CLISpinner className="rtb-glyph" /></span>
+        </Chip>
+      </ButtonPrimitive>
+      {open && previewChatId ? (
+        <RowHoverCard card={card} rowKey={key} anchor={() => pill.current} side="top" align={overflow ? 'center' : 'start'} label={displayName}>
+          <MessagePreviewCard chatId={previewChatId} token={token} displayName={resolveAgentRunningDisplayName(token.name)} open />
+        </RowHoverCard>
+      ) : null}
+    </>
   )
 }
 
@@ -148,12 +159,14 @@ function MoreOverflow({
   anchor,
   tokens,
   onTokenClick,
-  preview,
+  card,
+  previewChatId,
 }: {
   anchor: RefObject<HTMLDivElement | null>
   tokens: RunningToken[]
   onTokenClick?: (id: string) => void
-  preview: PreviewControl
+  card: RowHoverCardController
+  previewChatId: string | null
 }) {
   const { t } = useTranslation('agents')
   const [open, setOpen] = useState(false)
@@ -164,12 +177,30 @@ function MoreOverflow({
   ].filter((group) => group.tokens.length > 0)
   // 只有一组时组名是废话,不画。
   const labeled = groups.length > 1
+  const trigger = useRef<HTMLButtonElement | null>(null)
   const closeUnlessInside = (event: FocusEvent) => {
     if (!popup.current?.contains(event.relatedTarget as Node | null)) setOpen(false)
   }
+  // A pill in this panel has its card outside the panel (the card is portaled). The pointer moving into that card leaves the
+  // panel, but it is still looking at one of the panel's agents: the panel stays while that card is open, and goes with it
+  // when the card closes with the pointer outside both (closing the panel unmounted the pill and took its card along).
+  const pillCardOpen = () => card.activeKey?.startsWith('more:') === true
+  useEffect(() => {
+    if (!open) return
+    return card.subscribe(() => {
+      if (!pillCardOpen() && !popup.current?.matches(':hover') && !trigger.current?.matches(':hover')) setOpen(false)
+    })
+  })
   return (
-    <Popover.Root open={open} modal={false} onOpenChange={setOpen}>
+    <Popover.Root open={open} modal={false} onOpenChange={(next, details) => {
+      if (!next && details.reason === 'trigger-hover' && pillCardOpen()) {
+        details.cancel()
+        return
+      }
+      setOpen(next)
+    }}>
       <Popover.Trigger
+        ref={trigger}
         className="rtb-more"
         openOnHover
         delay={0}
@@ -195,7 +226,7 @@ function MoreOverflow({
               <div key={group.label} className="rtb-og" role="group" aria-label={labeled ? group.label : undefined}>
                 {labeled && <div className="rtb-oh">{group.label}</div>}
                 {group.tokens.map((token) => (
-                  <RunningTokenItem key={token.id} token={token} overflow onTokenClick={onTokenClick} preview={preview} />
+                  <RunningTokenItem key={token.id} token={token} overflow onTokenClick={onTokenClick} card={card} previewChatId={previewChatId} />
                 ))}
               </div>
             ))}
@@ -207,7 +238,7 @@ function MoreOverflow({
 }
 
 export function RunningTokenBar({ tokens, onTokenClick, testId, previewChatId }: RunningTokenBarProps) {
-  const [handle] = useState(() => Popover.createHandle<RunningToken>())
+  const [card] = useState(() => new RowHoverCardController('running-agent'))
   const boxRef = useRef<HTMLDivElement | null>(null)
   const [fitted, setFitted] = useState(Number.POSITIVE_INFINITY)
   const empty = tokens.length === 0
@@ -239,27 +270,12 @@ export function RunningTokenBar({ tokens, onTokenClick, testId, previewChatId }:
   return (
     <div ref={boxRef} data-testid={testId} style={{ flexShrink: 0, width: '100%', minWidth: 0 }}>
       <style>{STYLE}</style>
-      <Popover.Root handle={handle} modal={false} onOpenChange={(_open, details) => {
-        // 单击仍然是 @;预览只由悬停、键盘焦点或手机长按打开。
-        if (details.reason === 'trigger-press') details.cancel()
-      }}>
-        {({ payload: token }) => <>
-          <div className="rtb-bar">
-            {tokens.map((t, i) => (
-              <RunningTokenItem key={t.id} token={t} folded={i >= visible} onTokenClick={onTokenClick} preview={handle} />
-            ))}
-            {overflow.length > 0 && <MoreOverflow anchor={boxRef} tokens={overflow} onTokenClick={onTokenClick} preview={handle} />}
-          </div>
-          {previewChatId && token ? <Popover.Portal>
-            <Popover.Positioner positionMethod="fixed" side="top" align={overflow.some((item) => item.id === token.id) ? 'center' : 'start'} sideOffset={8} collisionPadding={8}>
-              {/* 只读预览不移动或归还焦点,避免 token blur/focus 导致循环开合。 */}
-              <Popover.Popup className="rtb-mp" initialFocus={false} finalFocus={false}>
-                <MessagePreviewCard chatId={previewChatId} token={token} displayName={resolveAgentRunningDisplayName(token.name)} open={handle.isOpen} />
-              </Popover.Popup>
-            </Popover.Positioner>
-          </Popover.Portal> : null}
-        </>}
-      </Popover.Root>
+      <div className="rtb-bar">
+        {tokens.map((t, i) => (
+          <RunningTokenItem key={t.id} token={t} folded={i >= visible} onTokenClick={onTokenClick} card={card} previewChatId={previewChatId} />
+        ))}
+        {overflow.length > 0 && <MoreOverflow anchor={boxRef} tokens={overflow} onTokenClick={onTokenClick} card={card} previewChatId={previewChatId} />}
+      </div>
     </div>
   )
 }

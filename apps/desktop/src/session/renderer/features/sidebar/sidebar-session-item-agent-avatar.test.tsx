@@ -29,10 +29,9 @@ vi.mock('@renderer/lib/stores/use-agents', () => ({
 }));
 vi.mock('@renderer/lib/components/agent-icon', () => ({ AgentIcon: ({ id }: { id: string }) => <span data-harness-icon={id} /> }));
 vi.mock('./sidebar-session-title', () => ({ SidebarSessionTitle: ({ title }: { title: string }) => <span>{title}</span> }));
-vi.mock('./sidebar-identity-card', () => ({
+vi.mock('./sidebar-identity-card', async () => ({
   SidebarIdentityCard: () => null,
-  sidebarIdentityCard: { activeSessionId: null },
-  useSidebarIdentityCardTrigger: () => ({ dismiss: () => {}, onPointerEnter: () => {}, onPointerLeave: () => {}, onPointerDown: () => {} }),
+  sidebarIdentityCard: new (await import('@/components/ui/rowHoverCardController')).RowHoverCardController('sidebar-session'),
 }));
 vi.mock('./sidebar-store', () => ({ mountedSessionPresentation: () => null }));
 vi.mock('./session-drop-target', () => ({ sessionDropTarget: () => ({}), nestVerdict: () => true }));

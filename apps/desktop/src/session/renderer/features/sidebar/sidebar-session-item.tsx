@@ -41,7 +41,8 @@ import type { SessionBranchSummary } from './sidebar-session-branch';
 import { nestVerdict, sessionDropTarget } from './session-drop-target';
 import { ProjectBadge } from './remote-host-chip';
 import { machineRegistry } from '@renderer/lib/machine-routing';
-import { SidebarIdentityCard, sidebarIdentityCard, useSidebarIdentityCardTrigger } from './sidebar-identity-card';
+import { useRowHoverCardOpen, useRowHoverCardTrigger } from '@/components/ui/rowHoverCardController';
+import { SidebarIdentityCard, sidebarIdentityCard } from './sidebar-identity-card';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import type { SidebarJoin } from '@/lib/sidebarJoinedGroups';
 import { mountedSessionPresentation, type RemoteSidebarSession } from './sidebar-store';
@@ -134,8 +135,8 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   const identityCardEnabled = sidebarStore.agentNameOnHoverEnabled;
   const rowRef = useRef<HTMLDivElement | null>(null);
   const rowAnchor = useCallback(() => rowRef.current, []);
-  const identityCard = useSidebarIdentityCardTrigger(sessionId, identityCardEnabled);
-  const identityCardOpen = identityCardEnabled && sidebarIdentityCard.activeSessionId === sessionId;
+  const identityCard = useRowHoverCardTrigger(sidebarIdentityCard, sessionId, identityCardEnabled);
+  const identityCardOpen = useRowHoverCardOpen(sidebarIdentityCard, sessionId) && identityCardEnabled;
   const agentBinding = sessionAgentBindings.bindingFor(sessionId);
   // 挂着的会话读它自己的 store;别的机器上还没挂的读会话目录那一行(列出不挂载,见 sidebar-store)。
   const session = sessionRegistry.get(sessionId)?.sessions.get(sessionId);
@@ -379,6 +380,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
         },
         onDragEnd: clearDraggedScreenContent,
         ...nestHere,
+        'data-row-hover-trigger': identityCard['data-row-hover-trigger'],
         onPointerEnter: identityCard.onPointerEnter,
         onPointerLeave: identityCard.onPointerLeave,
         onPointerDown: identityCard.onPointerDown,
@@ -392,7 +394,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
             title={row.title}
             displayTitle={title}
             anchor={rowAnchor}
-            onDismiss={identityCard.dismiss}
           />
         ) : null
       }

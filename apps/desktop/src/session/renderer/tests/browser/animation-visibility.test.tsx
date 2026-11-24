@@ -118,9 +118,9 @@ it('gives the hidden copies a narrow running bar keeps for measuring no animatio
     id, name: `Agent ${id}`, avatarSeed: id, avatarUrl: avatar, stateKey: 'running', toolCount: 1, lastActiveAt: null,
   }))} />);
   const pills = () => [...host.querySelectorAll<HTMLElement>('.rtb-bar > [data-message-preview-trigger]')];
-  const folded = () => pills().filter((pill) => pill.style.visibility === 'hidden');
+  const folded = () => pills().filter((pill) => pill.hasAttribute('data-folded'));
   await until('the bar folds some pills behind +N and the shown ones animate', () => folded().length > 0 && folded().length < pills().length
-    && pills().filter((pill) => pill.style.visibility !== 'hidden').every((pill) => pill.getAnimations({ subtree: true }).length === 1));
+    && pills().filter((pill) => !pill.hasAttribute('data-folded')).every((pill) => pill.getAnimations({ subtree: true }).length === 1));
   for (const pill of folded()) expect(pill.getAnimations({ subtree: true })).toHaveLength(0);
 });
 
