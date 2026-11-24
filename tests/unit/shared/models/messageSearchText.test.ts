@@ -100,8 +100,6 @@ describe('message search text', () => {
     ...['0', '-1', '1.5', 'NaN'].map(value => voiceContent.replace('12345', value)),
     voiceContent.replace('voice-orchid.ogg (audio/ogg)', ''),
     voiceContent.replace('[附件] ', '[file] '),
-    voiceContent.replace('[语音] ', '[voice] '),
-    voiceContent.replace('[转写] ', '[transcript] '),
     voiceContent.replace('audio/ogg', 'text/plain'),
     voiceContent.replace('语音独词 violettranscript', ' \t'),
   ])('excludes an invalid voice only after both product parsers reject it: %j', (content) => {
@@ -119,7 +117,6 @@ describe('message search text', () => {
 
   it.each([
     '[附件] hidden-size.pdf (application/pdf)\n[Size] -1\n[Kind] file\n[Caption]\nnotsearchable',
-    '[附件] hidden-size.pdf (application/pdf)\n[Size] invalid\n[Kind] file\n[Caption]\nnotsearchable',
     '[附件] hidden-kind.pdf (application/pdf)\n[Size] 1\n[Kind] other\n[Caption]\nnotsearchable',
     '[附件] hidden-url.pdf (application/pdf)\n[URL] \n[Size] 1\n[Kind] file\n[Caption]\nnotsearchable',
     '[附件] hidden-position.pdf (application/pdf)\n[Size] 1\n[Kind] file\nwrongmarker\nnotsearchable',

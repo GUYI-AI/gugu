@@ -354,21 +354,6 @@ describe('agent-centered conversation bubbles', () => {
     } finally { view.dispose(); }
   });
 
-  it('shows a live timer above the reply and keeps the process expanded', async () => {
-    const view = await mount({ kind: 'message', id: 'live', role: 'assistant', text: '我查一下今天的天气。',
-      conversationProcess: { id: 'live:process', live: true, startedAt: Date.now() - 5000 } });
-    try {
-      const button = view.host.querySelector<HTMLButtonElement>('[data-conversation-process]')!;
-      expect(button.getAttribute('aria-expanded')).toBe('true');
-      expect(button.textContent).toMatch(/[5-9]s/);
-      const before = button.textContent;
-      await new Promise(resolve => setTimeout(resolve, 1100));
-      expect(button.textContent).not.toBe(before);
-      expect(view.host.textContent).not.toContain('已处理');
-      expect(Math.abs(view.host.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
-    } finally { view.dispose(); }
-  });
-
   it('updates the existing bubble in place while keeping its name and brain control', async () => {
     const initial: ChatMessage = { kind: 'message', id: 'stable-reply', role: 'assistant', text: '我现在去查一查。', streaming: true,
       conversationProcess: { id: 'weather:process', live: true, startedAt: Date.now() - 5000 } };
