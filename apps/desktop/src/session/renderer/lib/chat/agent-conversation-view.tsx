@@ -123,7 +123,7 @@ export function AgentConversationView({ layout, composerContent, shown = true, o
       seen = new WeakSet();
       observer = new IntersectionObserver(entries => {
         report(entries.filter(entry => entry.isIntersecting && entry.intersectionRect.height > 0).map(entry => entry.target));
-      }, { root: host, rootMargin: `0px 0px -${Math.max(0, rect.bottom - bottom)}px 0px` });
+      }, { root: host, rootMargin: `0px 0px -${Math.max(0, rect.bottom - bottom)}px 0px`, threshold: Number.EPSILON });
       observe();
       schedule();
     };
