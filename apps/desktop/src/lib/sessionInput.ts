@@ -6,6 +6,7 @@ export type SessionInput = {
   id: string; accountId: string; deviceId: string | null; sessionId: string; text: string; createdAt: number
   attachments?: import('@gugu/session-core/session-record/contract').SessionpageSessionSendRequest['attachments']
   files?: import('@gugu/session-core/session-record/contract').TurnFileRef[]
+  annotations?: import('@gugu/session-core/session-record/contract').SessionpageSessionSendRequest['annotations']
   failure?: SessionInputFailure
   /** Only the receiving boundary can stop automatic recovery: a refused input waits for the person. */
   admission?: Exclude<SessionInputAdmission, 'accepted'>

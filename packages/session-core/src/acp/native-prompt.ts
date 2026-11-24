@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { TranscriptFileRef } from './models/turn-files';
+import type { TranscriptAnnotation } from './models/turn-annotations';
 import { HOST_PROMPT_HASH } from './native-prompt-key.ts';
 
 /**
@@ -37,17 +38,17 @@ export function recordedPromptDigest(message: { text: string; content?: readonly
   return hash(texts ? texts.join('\n') : message.text);
 }
 
-/** What the person sent with a prompt: their own words and the files they attached. */
-export type HostPrompt = { text: string; files?: TranscriptFileRef[] };
+/** What the person sent with a prompt: their own words, the files they attached and the comments they left. */
+export type HostPrompt = { text: string; files?: TranscriptFileRef[]; annotations?: TranscriptAnnotation[] };
 export type NativePromptIndex = ReadonlyMap<string, HostPrompt | null>;
 
 /** Only host-persisted user rows supply a boundary; a provider row or a tag name cannot supply one. */
-export function indexNativePrompts(messages: Iterable<{ kind: string; role?: string; text?: string; files?: TranscriptFileRef[]; _meta?: Record<string, unknown> }>): NativePromptIndex {
+export function indexNativePrompts(messages: Iterable<{ kind: string; role?: string; text?: string; files?: TranscriptFileRef[]; annotations?: TranscriptAnnotation[]; _meta?: Record<string, unknown> }>): NativePromptIndex {
   const index = new Map<string, HostPrompt | null>();
   for (const item of messages) {
     const digest = item._meta?.[HOST_PROMPT_HASH];
     if (item.kind !== 'message' || item.role !== 'user' || typeof item.text !== 'string' || typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest)) continue;
-    const prompt: HostPrompt = { text: item.text, ...(item.files?.length ? { files: item.files } : {}) };
+    const prompt: HostPrompt = { text: item.text, ...(item.files?.length ? { files: item.files } : {}), ...(item.annotations?.length ? { annotations: item.annotations } : {}) };
     // Identical flattened bytes can have two original block boundaries. Do not guess in that case.
     if (index.has(digest) && !sameHostPrompt(index.get(digest), prompt)) index.set(digest, null);
     else index.set(digest, prompt);

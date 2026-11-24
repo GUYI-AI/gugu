@@ -108,7 +108,10 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
     const href = `gugu-file://${file.itemId}?v=${file.version}`;
     return { id: href, href, name: file.name, kind: attachmentKind({ fileName: file.name, mimeType: file.mimeType }) };
   });
-  if (files.length) normalized.attachments = [...(normalized.attachments ?? []), ...files];
+  // Each comment sent with the words is a row of its own: what it points at, and the comment.
+  const annotations = (item.annotations ?? []).map(annotation => ({ id: `annotation:${annotation.number}`, kind: 'annotation' as const,
+    name: `${annotation.number} · ${annotation.target}`, detail: annotation.comment }));
+  if (files.length || annotations.length) normalized.attachments = [...(normalized.attachments ?? []), ...files, ...annotations];
   return normalized;
 }
 

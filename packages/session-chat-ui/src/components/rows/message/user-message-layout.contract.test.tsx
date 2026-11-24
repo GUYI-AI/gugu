@@ -248,6 +248,24 @@ describe('a cite stays in the words; the strip draws attachments only', () => {
       expect(only.computed).toBe(only.dom);
     }
   });
+
+  it('draws each comment sent beside the words as a row naming its place and comment; measure === offsetHeight', async () => {
+    const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red' }, { number: 2, target: 'https://example.org/', comment: 'Shorter' }];
+    const item = normalizeMessage({ kind: 'message', id: 'u-note', role: 'user', text: 'apply each comment', annotations });
+    expect(item.text).toBe('apply each comment');
+    expect(item.attachments).toEqual([
+      { id: 'annotation:1', kind: 'annotation', name: '1 · docs/index.html', detail: 'Make it red' },
+      { id: 'annotation:2', kind: 'annotation', name: '2 · https://example.org/', detail: 'Shorter' },
+    ]);
+    for (const layout of [DOUBLE, SINGLE]) {
+      const mounted = await mountUser(item, layout);
+      expect([mounted.chips, mounted.cards]).toEqual([2, 1]);
+      expect(mounted.computed).toBe(mounted.dom);
+      const only = await mountUser(normalizeMessage({ kind: 'message', id: 'u-note-only', role: 'user', text: '', annotations }), layout);
+      expect([only.chips, only.cards]).toEqual([2, 0]);
+      expect(only.computed).toBe(only.dom);
+    }
+  });
 });
 
 it('projects a task file reference as a file row that opens through its folder link, without changing the raw caption', () => {

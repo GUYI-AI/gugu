@@ -1,6 +1,6 @@
 import { useObserver } from 'mobx-react-lite'
 import { AnnotationTray } from '@renderer/features/sessions/annotations/annotation-tray'
-import { annotationPrompt, sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
+import { annotatedSend, sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '@renderer/features/sessions/annotations/annotation-images'
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection'
 import { useRejectedSessionInputCommands } from '@/hooks/useRejectedSessionInputCommands'
@@ -9,7 +9,7 @@ import { useNativeConversationRead } from '@/hooks/useNativeConversationRead'
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { toolImageUrl } from '@gugu/session-core/acp/client'
+import { toolImageUrl, type PromptAnnotation } from '@gugu/session-core/acp/client'
 import { openImageViewer } from '@/lib/imageViewer'
 import { PhoneTaskDraftRecovery } from '../../mobile/local-agent/PhoneTaskDraftRecovery'
 import { usePhoneInterruptedRetry } from './usePhoneInterruptedRetry'
@@ -95,7 +95,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   appPanel?: boolean
   startupPrompt?: import('@gugu/session-chat-ui').PendingPrompt | null
   sessionRuntime: SessionpageSessionSummary['runtime']; respondingItemId: string | null
-  onRespond: (input: SettlementResponse) => Promise<SessionpageSessionRespondResult>; onSend: (text: string, files?: TurnFileRef[]) => Promise<void>
+  onRespond: (input: SettlementResponse) => Promise<SessionpageSessionRespondResult>; onSend: (text: string, files?: TurnFileRef[], annotations?: PromptAnnotation[]) => Promise<void>
   onBeforeSend?: () => void
   pendingSends: readonly PendingSend[]; sending: boolean; agentWorking: boolean
   headerRunning?: boolean
@@ -262,12 +262,12 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       setAttachmentWaiting(false)
       const sentAttachments = attachmentsRef.current.filter(file => submission.attachments.has(file.id))
       const files = uploads.files(sentAttachments.map(file => file.id))
-      const text = annotationPrompt(value, annotated, resolvedLocale)
-      if ((!text && !files.length) || !checkBeforeSend(attempt)) return
+      const { text, annotations } = annotatedSend(value, annotated, resolvedLocale)
+      if ((!text && !files.length && !annotations) || !checkBeforeSend(attempt)) return
       try {
         // A later reader gesture supersedes this local send, including while its commit waits.
         view.current?.setScrollMode({ kind: 'tail' })
-        await currentSendTarget().onSend(text, files)
+        await currentSendTarget().onSend(text, files, annotations)
         if (getRendererSession()?.user.id !== ownerId) return
         if (attempt.succeeded() && submissionFailures.current.get(scope) === failure) submissionFailures.current.delete(scope)
         annotationDraft.submitted(annotated)

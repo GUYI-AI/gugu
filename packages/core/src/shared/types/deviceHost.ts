@@ -96,4 +96,6 @@ export interface DeviceHostInfo {
   assistant_home?: true
   /** Account process implements durable first assistant setup and remote home cleanup. */
   assistant_home_setup?: 1
+  /** This host takes a task input's `annotations` as their own field (shown as cards, sent to the agent as their text). */
+  task_annotations?: 1
 }

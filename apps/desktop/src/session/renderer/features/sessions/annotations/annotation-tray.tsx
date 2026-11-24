@@ -7,7 +7,7 @@ import { Button } from '@renderer/lib/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/lib/ui/popover';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { AnnotationEditor } from './annotation-editor';
-import { sessionAnnotations, type BrowserAnnotationSelection } from './session-annotations';
+import { annotationPlace, sessionAnnotations, type BrowserAnnotationSelection } from './session-annotations';
 
 function AnnotationThumbnail({ screenshot, rect, viewport }: BrowserAnnotationSelection) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -58,7 +58,7 @@ export const AnnotationTray = observer(function AnnotationTray({ conversation, o
           </PopoverTrigger>
           <PopoverContent side="top" align="start" className="max-h-[60vh] w-80 max-w-[calc(100vw-32px)] gap-0 overflow-y-auto p-0">
             {draft.items.map(item => {
-              const place = item.kind === 'browser' ? item.filePath ?? item.url : item.path;
+              const place = annotationPlace(item);
               const position = item.kind === 'browser' ? item.elementTag ? `<${item.elementTag}>` : item.selector ?? translate('annotations.region')
                 : [item.oldLine === undefined ? null : translate('annotations.oldLine', { line: item.oldLine }),
                   item.newLine === undefined ? null : translate('annotations.newLine', { line: item.newLine })].filter(Boolean).join(' · ');

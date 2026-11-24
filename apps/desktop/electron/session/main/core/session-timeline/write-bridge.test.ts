@@ -99,14 +99,14 @@ beforeEach(() => {
 // #6546 冷着的终端腿由 session-direct 的路由自己唤醒再投;写侧只走 sendMessage 这一条路。
 describe('终端腿(pty)回话:唤醒归 session-direct 的路由', () => {
   it('活着 → 一次投出去', async () => {
-    const result = await bridge.deliverSessionText(ptyTarget, '继续');
+    const result = await bridge.deliverSessionText(ptyTarget, { text: '继续' });
     expect(state.calls).toEqual(['send']);
     expect(result.accepted).toBe('started');
   });
 
   it('路由唤醒过仍不活 → 原样抛(带原因),❌ 写侧再拉一遍', async () => {
     state.ptyNotLiveTimes = 1;
-    await expect(bridge.deliverSessionText(ptyTarget, '继续')).rejects.toMatchObject({
+    await expect(bridge.deliverSessionText(ptyTarget, { text: '继续' })).rejects.toMatchObject({
       code: 'SESSION_DIRECT_NOT_LIVE',
     });
     expect(state.calls).toEqual(['send']);
@@ -115,29 +115,29 @@ describe('终端腿(pty)回话:唤醒归 session-direct 的路由', () => {
 
 describe('mobile ACP replies go into the session queue (custody)', () => {
   it('keeps explicit send-now steering in the same durable input without changing ordinary sends', async () => {
-    await bridge.deliverSessionText(target, 'now', 'steered-input', undefined, undefined, true);
-    await bridge.deliverSessionText(target, 'later', 'ordinary-input');
+    await bridge.deliverSessionText(target, { text: 'now', clientMessageId: 'steered-input', steerIfBusy: true });
+    await bridge.deliverSessionText(target, { text: 'later', clientMessageId: 'ordinary-input' });
     expect(state.enqueued).toEqual([
       expect.objectContaining({ messageId: 'steered-input', delivery: { queue: true, origin: 'manual', steerIfBusy: true } }),
       expect.objectContaining({ messageId: 'ordinary-input', delivery: { queue: true, origin: 'manual' } }),
     ]);
-    await expect(bridge.deliverSessionText(ptyTarget, 'now', 'no-terminal-steering', undefined, undefined, true))
+    await expect(bridge.deliverSessionText(ptyTarget, { text: 'now', clientMessageId: 'no-terminal-steering', steerIfBusy: true }))
       .rejects.toMatchObject({ code: 'unsupported_runtime', admission: 'rejected' });
     expect(state.calls).toEqual([]);
   });
   it('admits a caption and its image as one manual input, including image-only input', async () => {
     const attachments = [{ type: 'attachment' as const, id: 'image-a', mimeType: 'image/png' as const, name: 'a.png' }];
-    await bridge.deliverSessionText(target, 'caption', 'input-with-image', undefined, attachments);
+    await bridge.deliverSessionText(target, { text: 'caption', clientMessageId: 'input-with-image', attachments });
     expect(state.enqueued).toEqual([{ sessionId: 'conv-1', messageId: 'input-with-image', text: 'caption', kind: 'session-direct',
       delivery: { queue: true, origin: 'manual', attachments } }]);
-    await bridge.deliverSessionText(target, '', 'image-only', undefined, attachments);
+    await bridge.deliverSessionText(target, { text: '', clientMessageId: 'image-only', attachments });
     expect(state.enqueued).toHaveLength(2);
-    await expect(bridge.deliverSessionText(ptyTarget, 'caption', 'bad-terminal-image', undefined, attachments)).rejects.toMatchObject({ code: 'unsupported_runtime' });
+    await expect(bridge.deliverSessionText(ptyTarget, { text: 'caption', clientMessageId: 'bad-terminal-image', attachments })).rejects.toMatchObject({ code: 'unsupported_runtime' });
   });
 
   it('keeps the caller input ID when the same send is retried after reconnecting (the queue dedupes it)', async () => {
-    await bridge.deliverSessionText(target, 'one input', 'input-request-1');
-    await bridge.deliverSessionText(target, 'one input', 'input-request-1');
+    await bridge.deliverSessionText(target, { text: 'one input', clientMessageId: 'input-request-1' });
+    await bridge.deliverSessionText(target, { text: 'one input', clientMessageId: 'input-request-1' });
     expect(state.enqueued).toEqual([
       expect.objectContaining({ messageId: 'input-request-1', text: 'one input' }),
       expect.objectContaining({ messageId: 'input-request-1', text: 'one input' }),
@@ -148,7 +148,7 @@ describe('mobile ACP replies go into the session queue (custody)', () => {
     state.summaries = { s: summary(lifecycle) };
     bridge.setSessionWake(async () => { throw new Error('session-life starts ACP sessions'); });
     const text = 'Check this result.\nKeep the original wording.';
-    expect(await bridge.deliverSessionText(target, `  ${text}  `)).toEqual({ accepted: 'queued' });
+    expect(await bridge.deliverSessionText(target, { text: `  ${text}  ` })).toEqual({ accepted: 'queued' });
     expect(state.calls).toEqual([]);
     expect(state.enqueued).toEqual([expect.objectContaining({ sessionId: 'conv-1', text, kind: 'session-direct' })]);
   });
@@ -305,8 +305,8 @@ describe('终端提问:取消键 + 把回答当消息发回', () => {
 it('ACP custody retains the original caption and unresolved file references until Life admits them', async () => {
   const files = [{ itemId: 'gone', version: 1, name: 'gone.txt', mimeType: 'text/plain', sizeBytes: 1 }];
   state.missingFile = true;
-  await bridge.deliverSessionText(target, 'original caption', 'queued-file', files);
-  await bridge.deliverSessionText(target, 'following text', 'queued-text');
+  await bridge.deliverSessionText(target, { text: 'original caption', clientMessageId: 'queued-file', files });
+  await bridge.deliverSessionText(target, { text: 'following text', clientMessageId: 'queued-text' });
   expect(state.enqueued).toEqual([
     expect.objectContaining({ text: 'original caption', delivery: { queue: true, origin: 'manual', files } }),
     expect.objectContaining({ text: 'following text' }),

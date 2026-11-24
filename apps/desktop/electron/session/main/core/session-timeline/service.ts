@@ -5,7 +5,7 @@ import { nativeConversationHistoryFloor } from '../sessions/native-publication-h
 import { nativePromptReceipt } from '../sessions/native-prompt-receipts';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
-import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
+import { promptAnnotationSchema, promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
 import { SessionInputAdmissionError, sessionInputAdmission, type SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
 import { priorInputAdmission, sameInput, type InputAdmissionPayload } from './input-admission';
 import { ask, withdrawAll } from '../asks';
@@ -1480,17 +1480,9 @@ function writeTargetFrom(row: SessionRow): SessionWriteTarget {
 type InputAdmissionResult = SessionTimelineResult<{ accepted: 'started' | 'queued'; clientMessageId?: string; admission: 'accepted' }>;
 const admittingInputs = new Map<string, { input: InputAdmissionPayload; result: Promise<InputAdmissionResult> }>();
 
-export async function send(
-  conversationId: string,
-  text: string,
-  clientMessageId?: string,
-  files?: import('@gugu/session-core/session-record/contract').SessionpageSessionSendRequest['files'],
-  attachments?: import('@gugu/session-core/acp/client').PromptAttachment[],
-  steerIfBusy?: true,
-  admissionFence?: () => void
-): Promise<InputAdmissionResult> {
+export async function send(input: InputAdmissionPayload, admissionFence?: () => void): Promise<InputAdmissionResult> {
   admissionFence?.();
-  const input = { conversationId, text, clientMessageId, files, attachments, steerIfBusy };
+  const { conversationId, clientMessageId } = input;
   if (!clientMessageId) return sendOnce(input, admissionFence);
   const key = JSON.stringify([conversationId, clientMessageId]);
   const pending = admittingInputs.get(key);
@@ -1503,10 +1495,11 @@ export async function send(
   finally { admittingInputs.delete(key); }
 }
 
-async function sendOnce({ conversationId, text, clientMessageId, files, attachments, steerIfBusy }: InputAdmissionPayload, admissionFence?: () => void): Promise<InputAdmissionResult> {
+async function sendOnce(input: InputAdmissionPayload, admissionFence?: () => void): Promise<InputAdmissionResult> {
+  const { conversationId, text, clientMessageId, files, attachments, annotations, steerIfBusy } = input;
   const rejected = (code: string, message: string): InputAdmissionResult => {
     try {
-      const prior = priorInputAdmission({ conversationId, text, clientMessageId, files, attachments, steerIfBusy });
+      const prior = priorInputAdmission(input);
       return prior === 'accepted'
         ? { ok: true, value: { accepted: 'queued', admission: 'accepted', clientMessageId } }
         : { ok: false, error: { code, message, admission: prior ?? 'rejected' } };
@@ -1517,11 +1510,12 @@ async function sendOnce({ conversationId, text, clientMessageId, files, attachme
   if (steerIfBusy !== undefined && steerIfBusy !== true) return rejected('invalid_request', '插话意图无效');
   if (files !== undefined && !turnFileRefSchema.array().safeParse(files).success) return rejected('invalid_request', '附件引用无效');
   if (attachments !== undefined && !promptAttachmentSchema.array().safeParse(attachments).success) return rejected('invalid_request', '附件引用无效');
+  if (annotations !== undefined && !promptAnnotationSchema.array().safeParse(annotations).success) return rejected('invalid_request', '批注无效');
   if (clientMessageId !== undefined && (!clientMessageId.trim() || clientMessageId.length > 256)) return rejected('invalid_request', '消息标识无效');
-  if (!text.trim() && !files?.length && !attachments?.length) return rejected('empty_text', '消息是空的');
+  if (!text.trim() && !files?.length && !attachments?.length && !annotations?.length) return rejected('empty_text', '消息是空的');
   // Confirm custody before re-reading a provider or resolving files whose permissions may have changed.
   try {
-    const prior = priorInputAdmission({ conversationId, text, clientMessageId, files, attachments, steerIfBusy });
+    const prior = priorInputAdmission(input);
     if (prior === 'accepted') return { ok: true, value: { accepted: 'queued', admission: 'accepted', clientMessageId } };
     if (prior === 'uncertain') return { ok: false, error: { code: 'input_conflict', message: '原消息的接管记录尚无法确认', admission: 'uncertain' } };
   } catch (error) {
@@ -1532,7 +1526,8 @@ async function sendOnce({ conversationId, text, clientMessageId, files, attachme
     try {
       admissionFence?.();
       sessionLife().enqueue({ sessionId: conversationId, messageId: clientMessageId ?? crypto.randomUUID(), text: text.trim(), kind: 'ordinary',
-        delivery: { queue: true, origin: 'manual', ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}) } });
+        delivery: { queue: true, origin: 'manual', ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}),
+          ...(annotations?.length ? { annotations } : {}) } });
       return { ok: true, value: { accepted: 'queued', admission: 'accepted', ...(clientMessageId ? { clientMessageId } : {}) } };
     } catch (error) {
       return { ok: false, error: { code: error instanceof SessionInputAdmissionError ? error.code ?? 'send_failed' : 'send_failed',
@@ -1549,9 +1544,7 @@ async function sendOnce({ conversationId, text, clientMessageId, files, attachme
   // 再发这一句。❌ 直接唤醒:唤醒不带第一句,agent 会只看到后来这一句。
   // A never-started session is ACP only (neverStarted), and its delivery itself starts it (session-life row 1).
   try {
-    const accepted = admissionFence
-      ? await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy, admissionFence)
-      : await deliverSessionText(writeTargetFrom(row), text, clientMessageId, files, attachments, steerIfBusy);
+    const accepted = await deliverSessionText(writeTargetFrom(row), input, admissionFence);
     return { ok: true, value: { ...accepted, admission: 'accepted', ...(clientMessageId ? { clientMessageId } : {}) } };
   } catch (error) {
     if (sessionInputAdmission(error) === 'rejected') return rejected(error instanceof SessionWriteError || error instanceof SessionInputAdmissionError ? error.code ?? 'send_failed' : 'send_failed', (error as Error)?.message ?? String(error));

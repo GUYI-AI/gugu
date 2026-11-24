@@ -56,8 +56,9 @@ export class HostPrompts {
     const sent = this.lookup(digest);
     const marked = { ...item, _meta: { ...item._meta, [HOST_PROMPT_HASH]: digest } };
     if (!sent) return { item: marked, unknown: sent === undefined };
-    const { files: _recorded, ...rest } = marked;
-    return { item: { ...rest, text: sent.text, content: [{ type: 'text', text: sent.text }], ...(sent.files?.length ? { files: sent.files } : {}) }, unknown: false };
+    const { files: _recorded, annotations: _annotations, ...rest } = marked;
+    return { item: { ...rest, text: sent.text, content: [{ type: 'text', text: sent.text }], ...(sent.files?.length ? { files: sent.files } : {}),
+      ...(sent.annotations?.length ? { annotations: sent.annotations } : {}) }, unknown: false };
   }
 
   private lookup(digest: string): HostPrompt | null | undefined {

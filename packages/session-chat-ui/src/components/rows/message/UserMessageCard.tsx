@@ -3,7 +3,7 @@ import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { useTurnState } from '@session-chat/components/contexts/TurnStateContext';
 import { BlockStackView } from '@session-chat/components/primitives/BlockStackView';
 import { clipTrackedHeight, isCardAnimating } from '@session-chat/components/primitives/card-clip';
-import { FileMark, IconStop } from '@session-chat/components/primitives/icons';
+import { FileMark, IconComment, IconStop } from '@session-chat/components/primitives/icons';
 import type { StackLayout } from '@session-chat/core/compose';
 import type { Measured, MeasureCtx, RenderCtx } from '@session-chat/core/define';
 import { layoutBlockStack } from '@session-chat/core/layout/block-stack';
@@ -209,7 +209,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
           }}
         >
           <For each={props.data.attachments}>
-            {(att) => <AttachmentChip attachment={att} itemId={props.data.id} />}
+            {(att) => att.kind === 'annotation' ? <AnnotationChip attachment={att} /> : <AttachmentChip attachment={att} itemId={props.data.id} />}
           </For>
         </div>
       </Show>
@@ -292,6 +292,20 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   );
 }
 
+
+/** A comment sent with the words: a file row naming what it points at, the comment on its second line. Nothing to open. */
+function AnnotationChip(props: { attachment: ChatAttachment }) {
+  return (
+    <div data-attachment-chip data-kind="annotation" class="gg-file-row" style={{ cursor: 'default' }}
+      title={[props.attachment.name, props.attachment.detail].filter(Boolean).join('\n')}>
+      <span class="gg-file-row-icon"><IconComment /></span>
+      <span class="gg-file-row-text">
+        <span class="gg-file-row-name">{props.attachment.name}</span>
+        <Show when={props.attachment.detail}>{detail => <span class="gg-file-row-detail">{detail()}</span>}</Show>
+      </span>
+    </div>
+  );
+}
 
 /**
  * 一枚附件 = 一条文件行(`@gugu/session-shared/file-row`):文件是图标 + 名字 + 扩展名,图片是同高的缩略图。
