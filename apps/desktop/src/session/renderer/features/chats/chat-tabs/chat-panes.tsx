@@ -82,7 +82,9 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
             addTab: <ChatWorkspaceNewTab layout={layout} />,
             leading,
             reserveShellRestoreLane,
-            atWindowEdge: !embedded && block.topRight,
+            // A chat or project block on the screen has no ScreenBlockContext of its own (its default is the whole window):
+            // its corner is read from the screen, or every such block would keep the window controls' room at its right.
+            atWindowEdge: !embedded && (blockId ? screenLayout.corners(blockId).topRight : block.topRight),
             embedded,
           }} renderPane={(paneId, first, last, part) => {
             const group = layout.groups.find((candidate) => candidate.paneId === paneId)!;
