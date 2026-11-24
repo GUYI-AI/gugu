@@ -61,7 +61,10 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   const lifted = layout.groups.some(({ pane }) => tabFullscreen.isOn(pane));
   const [edge] = useState(() => new CutEdgeRelay());
   return <PaneDimensionProvider sink={layout}>
-    <div className="flex h-full min-h-0 min-w-0 flex-col" data-chat-tool-workspace={scopedChrome ? '' : undefined} data-chat-tool-cards={scopedChrome && layout.chatToolCardPaneId ? '' : undefined}>
+    {/* What the content surface around it reads (desktop-shell.css): only while this workspace is on screen. A retained page
+        hidden under it keeps its own two marks, and the surface took a hidden task's cards for the shown chat's (square corners). */}
+    <div className="flex h-full min-h-0 min-w-0 flex-col" data-chat-tool-workspace={scopedChrome ? '' : undefined} data-chat-tool-cards={scopedChrome && layout.chatToolCardPaneId ? '' : undefined}
+      data-surface-chat={scopedChrome && workspaceShown ? layout.chatToolCardPaneId ? 'cards' : 'tools' : undefined}>
       {/* A page of the pair in full screen keeps this one strip over it (its exit is on the tab); the row keeps its height, so nothing under it moves. */}
       {scopedChrome && <ChatWorkspaceChrome layout={layout} edge={edge} {...scopedChrome} />}
       {!scopedChrome && paired && <div className="min-w-0 shrink-0" style={{ height: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-pane-strip="">
