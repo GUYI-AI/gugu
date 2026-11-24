@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 // 一条会话在会话页里的那一份:ready ⇔ provisioned 且挂着工作区(闲置回收把它挂起成 unprovisioned、清掉工作区)。
-const store = vi.hoisted(() => ({ current: null as null | { state: string; workspaceId: string | null; viewModel: unknown } }));
+const store = vi.hoisted(() => ({ current: null as null | { state: string; workspaceId: string | null; viewModel: unknown; data: { projectId: string } } }));
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
   getSessionPageStore: () => store.current ?? undefined,
   sessionViewKind: (s: { state: string } | undefined) => (!s ? 'missing' : s.state === 'provisioned' ? 'ready' : 'idle'),
@@ -57,7 +57,7 @@ describe('a tab opened in its own window, while its session leaves ready', () =>
     vi.stubGlobal('document', dom.window.document);
     const group = { pane: { tabOrder: ['t1'], reorderTabs: vi.fn() } };
     store.current = observable(
-      { state: 'provisioned', workspaceId: 'ws-1', viewModel: { paneLayout: { windowPanes: new Map([['pane-1', group]]) } } },
+      { state: 'provisioned', workspaceId: 'ws-1', data: { projectId: 'p' }, viewModel: { paneLayout: { windowPanes: new Map([['pane-1', group]]) } } },
       { viewModel: observable.ref }
     );
     root = createRoot(dom.window.document.getElementById('root')!);
