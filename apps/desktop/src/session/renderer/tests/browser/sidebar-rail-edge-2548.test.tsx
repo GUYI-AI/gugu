@@ -108,7 +108,10 @@ for (const material of ['native', 'opaque'] as const) {
     expect(document.querySelector('[data-region="sidebar-scroll"]')!.getBoundingClientRect().bottom).toBeLessThanOrEqual(foot.getBoundingClientRect().top);
 
     fold.click();
-    await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(68);
+    // The width lands in the frame loop; 「»」 moves into the rail row with the rows' re-render after it (useLeftRailLayout),
+    // so the wait is for that commit, ❌ the width alone (a slow frame left the faded 「«」 in the head: 41, not 34).
+    await expect.poll(() => document.querySelector('[data-sidebar-rail-row] [data-testid="sidebar-fold"]'), { timeout: 3000 }).not.toBeNull();
+    expect(aside.getBoundingClientRect().width).toBe(68);
     // The rail: 「»」 under the traffic lights, on the avatars' axis (x = 34); no search, 已安排 or 会话历史.
     const railFold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
     const box = railFold.getBoundingClientRect();
