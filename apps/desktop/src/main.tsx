@@ -15,7 +15,6 @@ import { notifyHostTheme } from '@renderer/lib/theme/host-theme'
 import { renderEntryRoot } from './lib/renderer-entry-root'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { installScrollbarAutoHide } from './lib/scrollbarAutoHide'
-import { installWindowMaterialAttribute } from './lib/windowMaterial'
 import {
   hasWindowTitlebarRow,
   rendererPlatformFor,
@@ -81,8 +80,9 @@ document.documentElement.style.setProperty(
 if (hasWindowTitlebarRow(rendererPlatform)) document.documentElement.dataset.windowTitlebar = 'row'
 document.documentElement.style.setProperty('--window-titlebar-height', `${windowTitlebarHeight(rendererPlatform)}px`)
 document.documentElement.style.setProperty('--titlebar-actions-lane', `${titlebarActionsLane(rendererPlatform)}px`)
-// @@@window-material (#7333) — 系统材质透不透,由主进程读系统信号判定;这里只落属性(CSS 只认它)。
-installWindowMaterialAttribute(document.documentElement, window.desktopWindow)
+// @@@window-material (#7333) — 桌面主进程的窗口一律是不透明面;dev:web 与手机没有这座桥,不落属性。
+// 壳的样式拿这个属性认「桌面窗口」(tokens.css @@@window-material-css、desktop-shell.css)。
+if (window.desktopWindow) document.documentElement.dataset.windowMaterial = 'opaque'
 
 // @@@window-tone — 开机也同步一次。运行期改主题由 `host-theme.ts` 的 applyEffectiveTheme 负责,
 // 但**开机那一次**属性是 index.html 的引导脚本直接落的,不经过它 —— 不补这一下,

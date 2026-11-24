@@ -30,7 +30,7 @@ beforeEach(async () => {
   writeInterface('gugu.taskpage.sidebarWidth', undefined);
   document.documentElement.dataset.platform = 'mac';
   document.documentElement.dataset.theme = 'light';
-  document.documentElement.dataset.windowMaterial = 'native';
+  document.documentElement.dataset.windowMaterial = 'opaque';
   mounted.mockClear();
 });
 afterEach(() => {
@@ -41,7 +41,7 @@ afterEach(() => {
   delete document.documentElement.dataset.windowMaterial;
 });
 
-it('the real workspace keeps an opaque rounded reading surface inset from material, with local chrome retained through collapse', async () => {
+it('the real workspace keeps an opaque rounded reading surface inset from the window ground, with local chrome retained through collapse', async () => {
   harness = createReactHarness();
   await harness.render(
     <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>

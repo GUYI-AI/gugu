@@ -59,80 +59,78 @@ const surfaceEdge = (surface: HTMLElement) => {
   return { radius: style.borderTopLeftRadius, shadow: style.boxShadow, margin: style.marginLeft, border: style.borderLeftWidth };
 };
 
-for (const material of ['native', 'opaque'] as const) {
-  it(`collapsed, the rail is one colour over its whole width and meets the surface with the expanded edge (${material})`, async () => {
-    await page.viewport(1000, 700);
-    document.documentElement.dataset.theme = 'light';
-    document.documentElement.dataset.windowMaterial = material;
-    // The macOS window: its traffic lights sit at the top-left, over the list's top band.
-    document.documentElement.dataset.platform = 'mac';
-    harness = createReactHarness();
-    // MainLayout's desktop shell: the workspace that paints --shell-bg (layouts/MainLayout.tsx).
-    await harness.render(
-      <div data-desktop-shell="" data-gugu-shell-phase="active" style={{ display: 'flex', width: '100vw', height: '100vh', background: 'var(--shell-bg)' }}>
-        <div style={{ flex: 1, minWidth: 0, position: 'relative', overflow: 'hidden', display: 'flex', borderRadius: 'var(--radius-page)', background: 'var(--shell-bg)' }}>
-          <div className="gg-session-frame">
-            <div className="gg-session-frame-host">
-              <div className="gugu-skin emlight" style={{ height: '100%' }}>
-                <SessionLocalizationProvider>
-                  <WorkspaceLayoutContextProvider>
-                    <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full bg-background">history</div>} />
-                  </WorkspaceLayoutContextProvider>
-                </SessionLocalizationProvider>
-              </div>
+it('collapsed, the rail is one colour over its whole width and meets the surface with the expanded edge', async () => {
+  await page.viewport(1000, 700);
+  document.documentElement.dataset.theme = 'light';
+  document.documentElement.dataset.windowMaterial = 'opaque';
+  // The macOS window: its traffic lights sit at the top-left, over the list's top band.
+  document.documentElement.dataset.platform = 'mac';
+  harness = createReactHarness();
+  // MainLayout's desktop shell: the workspace that paints --shell-bg (layouts/MainLayout.tsx).
+  await harness.render(
+    <div data-desktop-shell="" data-gugu-shell-phase="active" style={{ display: 'flex', width: '100vw', height: '100vh', background: 'var(--shell-bg)' }}>
+      <div style={{ flex: 1, minWidth: 0, position: 'relative', overflow: 'hidden', display: 'flex', borderRadius: 'var(--radius-page)', background: 'var(--shell-bg)' }}>
+        <div className="gg-session-frame">
+          <div className="gg-session-frame-host">
+            <div className="gugu-skin emlight" style={{ height: '100%' }}>
+              <SessionLocalizationProvider>
+                <WorkspaceLayoutContextProvider>
+                  <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full bg-background">history</div>} />
+                </WorkspaceLayoutContextProvider>
+              </SessionLocalizationProvider>
             </div>
           </div>
         </div>
       </div>
-    );
-    const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
-    const surface = document.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
-    const expandedEdge = surfaceEdge(surface);
-    const fold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
-    const scheduled = document.querySelector<HTMLElement>('[data-testid="sidebar-scheduled"]')!;
-    const history = document.querySelector<HTMLElement>('[data-testid="sidebar-session-history"]')!;
-    const search = document.querySelector<HTMLElement>('[data-testid="sidebar-search-trigger"]')!;
-    const lights = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-traffic-lights-width'));
-    expect(lights, 'the mac tokens must be present').toBeGreaterThan(0);
-    const inset = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-surface-inset'));
-    expect(inset, 'the desktop shell tokens must be present').toBeGreaterThan(0);
-    // Expanded: 「«」 ends the top band (one surface inset down, on one line with the card's own top band), 12 from the
-    // list's right edge; search is the row under it; 已安排 · 会话历史 sit 4 apart in the foot, under the list.
-    const panel = aside.getBoundingClientRect();
-    expect(fold.getBoundingClientRect().right).toBe(panel.right - 12);
-    expect(fold.getBoundingClientRect().top + fold.getBoundingClientRect().height / 2 - panel.top).toBeCloseTo(inset + 20);
-    expect(search.getBoundingClientRect().top).toBeGreaterThanOrEqual(fold.getBoundingClientRect().bottom);
-    expect(history.getBoundingClientRect().left - scheduled.getBoundingClientRect().right).toBe(4);
-    const foot = document.querySelector<HTMLElement>('[data-sidebar-foot]')!;
-    expect(foot.contains(history)).toBe(true);
-    expect(document.querySelector('[data-region="sidebar-scroll"]')!.getBoundingClientRect().bottom).toBeLessThanOrEqual(foot.getBoundingClientRect().top);
+    </div>
+  );
+  const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+  const surface = document.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
+  const expandedEdge = surfaceEdge(surface);
+  const fold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
+  const scheduled = document.querySelector<HTMLElement>('[data-testid="sidebar-scheduled"]')!;
+  const history = document.querySelector<HTMLElement>('[data-testid="sidebar-session-history"]')!;
+  const search = document.querySelector<HTMLElement>('[data-testid="sidebar-search-trigger"]')!;
+  const lights = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--titlebar-traffic-lights-width'));
+  expect(lights, 'the mac tokens must be present').toBeGreaterThan(0);
+  const inset = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--desktop-surface-inset'));
+  expect(inset, 'the desktop shell tokens must be present').toBeGreaterThan(0);
+  // Expanded: 「«」 ends the top band (one surface inset down, on one line with the card's own top band), 12 from the
+  // list's right edge; search is the row under it; 已安排 · 会话历史 sit 4 apart in the foot, under the list.
+  const panel = aside.getBoundingClientRect();
+  expect(fold.getBoundingClientRect().right).toBe(panel.right - 12);
+  expect(fold.getBoundingClientRect().top + fold.getBoundingClientRect().height / 2 - panel.top).toBeCloseTo(inset + 20);
+  expect(search.getBoundingClientRect().top).toBeGreaterThanOrEqual(fold.getBoundingClientRect().bottom);
+  expect(history.getBoundingClientRect().left - scheduled.getBoundingClientRect().right).toBe(4);
+  const foot = document.querySelector<HTMLElement>('[data-sidebar-foot]')!;
+  expect(foot.contains(history)).toBe(true);
+  expect(document.querySelector('[data-region="sidebar-scroll"]')!.getBoundingClientRect().bottom).toBeLessThanOrEqual(foot.getBoundingClientRect().top);
 
-    fold.click();
-    // The width lands in the frame loop; 「»」 moves into the rail row with the rows' re-render after it (useLeftRailLayout),
-    // so the wait is for that commit, ❌ the width alone (a slow frame left the faded 「«」 in the head: 41, not 34).
-    await expect.poll(() => document.querySelector('[data-sidebar-rail-row] [data-testid="sidebar-fold"]'), { timeout: 3000 }).not.toBeNull();
-    expect(aside.getBoundingClientRect().width).toBe(68);
-    // The rail: 「»」 under the traffic lights, on the avatars' axis (x = 34); no search, 已安排 or 会话历史.
-    const railFold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
-    const box = railFold.getBoundingClientRect();
-    expect(box.left + box.width / 2 - aside.getBoundingClientRect().left).toBe(34);
-    // Design v16: 38 from the window's top, under the traffic lights (they end at 30).
-    expect(box.top - panel.top).toBeCloseTo(38);
-    for (const testId of ['sidebar-scheduled', 'sidebar-session-history', 'sidebar-search-trigger']) expect(document.querySelector(`[data-testid="${testId}"]`)).toBeNull();
+  fold.click();
+  // The width lands in the frame loop; 「»」 moves into the rail row with the rows' re-render after it (useLeftRailLayout),
+  // so the wait is for that commit, ❌ the width alone (a slow frame left the faded 「«」 in the head: 41, not 34).
+  await expect.poll(() => document.querySelector('[data-sidebar-rail-row] [data-testid="sidebar-fold"]'), { timeout: 3000 }).not.toBeNull();
+  expect(aside.getBoundingClientRect().width).toBe(68);
+  // The rail: 「»」 under the traffic lights, on the avatars' axis (x = 34); no search, 已安排 or 会话历史.
+  const railFold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
+  const box = railFold.getBoundingClientRect();
+  expect(box.left + box.width / 2 - aside.getBoundingClientRect().left).toBe(34);
+  // Design v16: 38 from the window's top, under the traffic lights (they end at 30).
+  expect(box.top - panel.top).toBeCloseTo(38);
+  for (const testId of ['sidebar-scheduled', 'sidebar-session-history', 'sidebar-search-trigger']) expect(document.querySelector(`[data-testid="${testId}"]`)).toBeNull();
 
-    const rail = aside.getBoundingClientRect();
-    for (const layer of [aside.closest('[data-panel-slot]')!, document.querySelector('[data-region="left-sidebar"]')!]) {
-      const box = layer.getBoundingClientRect();
-      expect([box.left, box.width]).toEqual([rail.left, rail.width]);
-    }
-    expect(surface.getBoundingClientRect().left).toBe(rail.right);
-    const y = rail.top + rail.height / 2;
-    // The rail's own colour from its left edge to the last pixel before the surface: no band of another colour.
-    const railColor = paintedAt(rail.left + 4, y);
-    for (const x of [rail.left + 34, rail.right - 12, rail.right - 3]) expect(paintedAt(x, y)).toBe(railColor);
-    expect(surfaceEdge(surface)).toEqual(expandedEdge);
-  });
-}
+  const rail = aside.getBoundingClientRect();
+  for (const layer of [aside.closest('[data-panel-slot]')!, document.querySelector('[data-region="left-sidebar"]')!]) {
+    const box = layer.getBoundingClientRect();
+    expect([box.left, box.width]).toEqual([rail.left, rail.width]);
+  }
+  expect(surface.getBoundingClientRect().left).toBe(rail.right);
+  const y = rail.top + rail.height / 2;
+  // The rail's own colour from its left edge to the last pixel before the surface: no band of another colour.
+  const railColor = paintedAt(rail.left + 4, y);
+  for (const x of [rail.left + 34, rail.right - 12, rail.right - 3]) expect(paintedAt(x, y)).toBe(railColor);
+  expect(surfaceEdge(surface)).toEqual(expandedEdge);
+});
 
 // A fold moves the names, the head's buttons and the top row each frame. A custom property written for that on the sidebar's
 // layer is inherited by every element under it, so the whole list restyled each frame (~37k elements with the rows mounted),

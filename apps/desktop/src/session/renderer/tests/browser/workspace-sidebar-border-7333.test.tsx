@@ -45,7 +45,7 @@ it('the actual project sidebar has no full-height border behind the inset readin
   await page.viewport(1000, 700);
   localStorage.removeItem('gugu.taskpage.sidebarWidth');
   document.documentElement.dataset.theme = 'light';
-  document.documentElement.dataset.windowMaterial = 'native';
+  document.documentElement.dataset.windowMaterial = 'opaque';
   harness = createReactHarness();
   await harness.render(<div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
     <SessionLocalizationProvider><WorkspaceLayoutContextProvider>

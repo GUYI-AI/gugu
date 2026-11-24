@@ -80,7 +80,7 @@ import { captureReading, currentReading, historyReading } from './session/main/c
 import { setMacFootprintReader } from './session/main/core/resource-monitor/footprint'
 import { clearTraceLeftovers } from './session/main/core/resource-monitor/capture'
 import { createScreenCapture } from './device-actions/screen-capture'
-import { applyNativeThemePreference, installWindowMaterial, type WindowMaterialHost } from './window-material'
+import { applyNativeThemePreference } from './native-appearance'
 import { createDeviceActionCaller, type DeviceActionCaller } from '@gugu/core/cloud/deviceActionCaller'
 import type { DeviceActionResult } from '@gugu/core/shared/deviceActions'
 import {
@@ -1463,12 +1463,11 @@ const readAppState = (): Record<string, unknown> => readStateFile(appStatePath()
 const writeAppState = (state: Record<string, unknown>): void => writeStateFile(appStatePath(), state)
 
 /**
- * @@@window-tone — 无边框窗口(Windows/Linux)在网页内容画出来之前露出来的那块底色。
+ * @@@window-tone — 主窗在网页内容画出来之前露出来的那块底色。
  *
  * 从前这里写死 `#111114`(深色),而**咕咕的默认主题是浅色**(见 index.html 的引导脚本与
  * `session/renderer/lib/theme/host-theme.ts` 的 `DEFAULT_PREFERENCE = 'light'`)⇒ 浅色用户每次
- * 启动、每次拖动窗口都会看到一块与产品无关的深色。mac 那支走 vibrancy,没有这个问题 ——
- * 于是这成了一条只在 Windows/Linux 上存在的差异。
+ * 启动、每次拖动窗口都会看到一块与产品无关的深色。
  *
  * 真值在渲染层(`<html data-theme>` 是它的唯一写入者),主进程**问不到**,所以:
  * 建窗时用上次记住的色调(首次启动 = 产品默认的浅色),渲染层一落属性就同步过来改写并记住。
@@ -1484,23 +1483,13 @@ function readWindowTone(): WindowTone {
   return saved === 'dark' ? 'dark' : 'light'
 }
 
-/**
- * @@@window-material (#7333) — mac 主窗材质可见时,窗口底色必须是透明的:不透明的窗口底色会把 vibrancy 整块盖住
- * (从前这里对所有窗口一律写主题色,mac 主窗的材质因此从来没露出来过)。材质不可见(减弱透明度 / 增强对比度)
- * 或别的窗口,照旧写主题色。⚠️ 透明底色对 vibrancy 的实际效果要 Mac 真机核。
- */
-let windowMaterial: WindowMaterialHost | null = null
-function windowBackgroundFor(win: BrowserWindow, tone: WindowTone): string {
-  return win === mainWindow && windowMaterial?.current() === 'native' ? '#00000000' : WINDOW_TONE_BG[tone]
-}
-
 function syncWindowTone(value: unknown): void {
   const tone: WindowTone = value === 'dark' ? 'dark' : 'light'
   if (readWindowTone() !== tone) {
     writeAppState({ ...readAppState(), windowTone: tone })
     tellHostPresentationChanged()
   }
-  for (const win of BrowserWindow.getAllWindows()) win.setBackgroundColor(windowBackgroundFor(win, tone))
+  for (const win of BrowserWindow.getAllWindows()) win.setBackgroundColor(WINDOW_TONE_BG[tone])
 }
 
 async function maybeShowCloseToTrayHint(): Promise<void> {
@@ -1660,17 +1649,10 @@ function createWindow(loadContents = true): void {
     //   由 renderer 的 <WindowControls> 自绘 min/max/close — 不再露原生 GTK/系统标题栏。
     //   (titleBarStyle:hiddenInset 仅 mac 生效;旧版无条件设 → Win/Linux 回落原生边框 = 本 issue 根因。)
     ...(isMac
-      ? {
-          titleBarStyle: 'hiddenInset' as const,
-          trafficLightPosition: TRAFFIC_LIGHT_POSITION,
-          vibrancy: 'sidebar' as const,
-          visualEffectState: 'active' as const
-        }
-      : {
-          frame: false,
-          // @@@window-tone — 见上面那段:默认浅色,渲染层落 data-theme 后同步改写。
-          backgroundColor: WINDOW_TONE_BG[readWindowTone()]
-        }),
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: TRAFFIC_LIGHT_POSITION }
+      : { frame: false }),
+    // @@@window-tone — 见上面那段:默认浅色,渲染层落 data-theme 后同步改写。
+    backgroundColor: WINDOW_TONE_BG[readWindowTone()],
     // @@@devtools-lock — 锁定态下把 devTools 关到 Electron 层(openDevTools 直接不生效)。
     webPreferences: hardenWebPreferences({
       preload: join(__dirname, 'preload.js'),
@@ -4831,14 +4813,6 @@ app.whenReady().then(async () => {
   // renderer navigation until the session-page IPC router has registered. Otherwise the embedded renderer
   // races boot and its first dot-RPC calls fail with "No handler registered".
   if (!SERVER_MODE) {
-    // 只有 mac 主窗建窗时挂了 vibrancy(见 createWindow);别的窗问到的都是 opaque。
-    windowMaterial = installWindowMaterial({
-      platform: process.platform,
-      nativeTheme,
-      ipcMain,
-      materialWindow: () => (process.platform === 'darwin' ? mainWindow : null),
-    })
-    windowMaterial.onChange(() => syncWindowTone(readWindowTone()))
     createWindow(false)
   }
   // PATH 补救不再挑启动方式（曾经只在「mac 且已打包」时跑 → ssh/agent 起的验证流程、以及
