@@ -1,0 +1,71 @@
+{
+  "original": {
+    "messages": {
+      "x": 181,
+      "y": 63,
+      "width": 918,
+      "height": 740,
+      "bottom": 803
+    },
+    "composer": {
+      "x": 181,
+      "y": 803,
+      "width": 918,
+      "height": 80,
+      "bottom": 883
+    },
+    "preview": {
+      "x": 843,
+      "y": 603,
+      "width": 240,
+      "height": 184,
+      "bottom": 787
+    }
+  },
+  "browser": {
+    "messages": {
+      "x": 181,
+      "y": 63,
+      "width": 381.109375,
+      "height": 740,
+      "bottom": 803
+    },
+    "composer": {
+      "x": 181,
+      "y": 803,
+      "width": 381.109375,
+      "height": 80,
+      "bottom": 883
+    },
+    "preview": {
+      "x": 578.09375,
+      "y": 79,
+      "width": 504.890625,
+      "height": 391.765625,
+      "bottom": 470.765625
+    }
+  },
+  "computer": {
+    "messages": {
+      "x": 181,
+      "y": 63,
+      "width": 381.109375,
+      "height": 740,
+      "bottom": 803
+    },
+    "composer": {
+      "x": 181,
+      "y": 803,
+      "width": 381.109375,
+      "height": 80,
+      "bottom": 883
+    },
+    "preview": {
+      "x": 578.09375,
+      "y": 79,
+      "width": 504.890625,
+      "height": 391.765625,
+      "bottom": 470.765625
+    }
+  }
+}
