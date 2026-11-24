@@ -202,7 +202,7 @@ export const ExtensionPage = observer(function ExtensionPage({
   // @@@widget-ready - a widget whose App declares this interface says itself when its content is drawn (gugu.ready()):
   // its snapshot stays over it until then, and the snapshot is taken again at that moment.
   const waitsForReadyRef = useRef(false);
-  waitsForReadyRef.current = isInline && (manifest?.apiVersion ?? 0) >= EXTENSION_WIDGET_READY_API_VERSION;
+  waitsForReadyRef.current = isInline && manifest !== undefined && manifest.apiVersion >= EXTENSION_WIDGET_READY_API_VERSION;
   const accountIdRef = useRef(accountId);
   accountIdRef.current = accountId;
   const onPaintedRef = useRef(onPainted);

@@ -2,7 +2,7 @@
 
 Declare a normal tab with widget: { height: 240 } (integer 64–520) as its default height. It still appears in the App's tabs; handle getContext() without widget there. A widget tab cannot also declare hostPage, perSession, opensFiles or chatFile.
 
-After the widget has drawn its content, call gugu.ready() (App API 64). On desktop the widget's last picture stays in its place until then, so a person scrolling back sees the card as they left it; the picture is taken again at that moment.
+Free (API 64): after the widget has drawn its content, call `ready()` (gugu.ready()). On desktop the widget's last picture stays in its place until then, so a person scrolling back sees the card as they left it; the picture is taken again at that moment.
 
 Find an enabled App with app_search; widgetViews lists its declared views and default heights. Call widget_send { chat_id, app, view, text, height?, data?, reply_to_message_id? }. Optional height (integer 64–520) sets this message's immutable height instead of the manifest default. text is 1–200 plain characters, used in previews, notifications, quotes and the task timeline. data must be a JSON object, serialized to at most 4096 UTF-8 bytes; the complete message is at most 6144. Errors report byte sizes. The result contains both the original message id and the server-assigned widget_id. Repeating the same specification creates a different widget; to show the same one again, send its gugu-widget://<widget_id> link. widget_get { widget_id } reads one back (chat, original message, app, view, text, data, sender) with your own permissions. There are no recipients and sending does not wake agents. Group rules and the session's thread still apply.
 
