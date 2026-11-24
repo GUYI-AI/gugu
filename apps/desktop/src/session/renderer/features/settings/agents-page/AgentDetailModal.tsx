@@ -89,8 +89,7 @@ const AgentDetailModalContent = observer(function AgentDetailModalContent({
  * `Sheet side="right"`,形态上是抽屉、行为上却已经是模态的(遮罩、点外面关、下面不能操作),
  * 而同一页的 `AgentSignInModal` 早就是居中模态框。❌ 别改回 Sheet。
  *
- * `sheet.tsx` 里那条 `SHEET_SAFE_INSET_RIGHT`(#6034,让开自绘窗口按钮那条车道)对居中模态框
- * 不再适用:它是「贴着窗口右上角」才有的问题,而这个弹窗离右缘还有半个屏。**但 Sheet 还有别的
+ * `sheet.tsx` 里那条 `SHEET_SAFE_INSET_RIGHT` 是抽屉头部的右内距,居中模态框用不上。**但 Sheet 还有别的
  * 消费者**(automations、IntegrationsCard)⇒ ❌ 别顺手把它从 `sheet.tsx` 里删掉。
  */
 export function AgentDetailModal({ agentId, onClose }: AgentDetailModalProps) {

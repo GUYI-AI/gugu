@@ -71,7 +71,7 @@ export const ProjectBlock = observer(function ProjectBlock({
         <TabStripShell
           reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
           leadingSlot={grip}
-          actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight} />}
+          actionsSlot={<TabBarActionRow />}
         >
           {projectChip}
         </TabStripShell>
@@ -88,8 +88,7 @@ export const ProjectBlock = observer(function ProjectBlock({
       blockId={blockId}
       leading={grip}
       reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
-      actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{actions}</TabBarActionRow>}
-      chromeActionsSlot={<TabBarActionRow atWindowEdge={false}>{actions}</TabBarActionRow>}
+      actionsSlot={<TabBarActionRow>{actions}</TabBarActionRow>}
       // 项目群那一枚写项目名;点它 = 看群(并排着的那一页照旧在旁边)。它和别的群页签一样没有右键菜单:项目的文件夹在「文件」的电脑文件里打开,移除项目在侧栏那一行的右键里。
       chip={({ tab, host }) => (
         <ChatTabChip

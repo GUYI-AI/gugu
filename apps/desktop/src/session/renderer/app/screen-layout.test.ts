@@ -252,15 +252,15 @@ describe('一屏几块(spec session-page,#7052)', () => {
     expect(sessionsOn(screen)).toEqual(['c']);
   });
 
-  it('角:左上那块让开展开侧栏的钮,右上那块让开窗口控制', () => {
+  it('角:只有左上那块让开展开侧栏的钮', () => {
     const screen = new ScreenLayoutStore();
     screen.show(s('a'));
     const a = screen.blockOfSession('a')!;
     screen.placeAt({ kind: 'session', ...s('b') }, a, 'right');
     screen.placeAt({ kind: 'session', ...s('c') }, screen.blockOfSession('b')!, 'bottom');
-    expect(screen.corners(a)).toEqual({ topLeft: true, topRight: false });
-    expect(screen.corners(screen.blockOfSession('b')!)).toEqual({ topLeft: false, topRight: true });
-    expect(screen.corners(screen.blockOfSession('c')!)).toEqual({ topLeft: false, topRight: false });
+    expect(screen.corners(a)).toEqual({ topLeft: true });
+    expect(screen.corners(screen.blockOfSession('b')!)).toEqual({ topLeft: false });
+    expect(screen.corners(screen.blockOfSession('c')!)).toEqual({ topLeft: false });
   });
 
   it('对半放不下(调用方量过):这一排一起均分', () => {

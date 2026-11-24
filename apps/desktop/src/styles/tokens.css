@@ -166,7 +166,7 @@
   --titlebar-actions-lane: 40px;
 }
 
-/* @@@win-titlebar-row — Windows 的独立标题栏行(WindowTitleBar.tsx)。高度由 main.tsx 从 window-chrome
+/* @@@win-titlebar-row — Windows / Linux 的独立标题栏行(WindowTitleBar.tsx)。高度由 main.tsx 从 window-chrome
    写入(没有这一行的平台是 0);`data-window-titlebar='row'` 也由它落,CSS ❌ 自己再按平台名判一遍。
    标题栏行只是窗口外框多出的一行:壳根让出它的高度(标题栏是 fixed 的),其下的区域关系与 mac 同一套 ——
    rail、列表与标题栏同在窗口底层(--shell-bg),阅读面是 desktop-shell.css 的内缩圆角面。
@@ -187,7 +187,7 @@
    third_party/blink/renderer/platform/graphics/compositing/content_layer_client_impl.cc:205 从绘制区域推导这个标志。
    2026-10-20 的同实例矩阵实测证明:边线或圆角单独都不够,
    透明 1px 边线 + 共享 12px 圆角能恢复灰阶,撤销又回彩边;底色与 OverlayScrollbar 均已排除。
-   这是独立标题行与不透明内容的窗口接壤边界,不属于列表组件。mac 与 Linux 都没有这条独立行,
+   这是独立标题行与不透明内容的窗口接壤边界,不属于列表组件(Linux 的标题栏行同一条边界)。mac 没有这条独立行,
    沿用原来的几何;阅读面仍是 desktop-shell.css 的唯一可见轮廓。 */
 :root[data-window-titlebar='row'][data-window-material='opaque'] [data-gugu-shell-phase] > div:first-child {
   border-top: 1px solid transparent;
@@ -225,10 +225,10 @@
   -webkit-app-region: no-drag;
 }
 
-/* @@@822-titlebar-controls — main.tsx 从 window-chrome SSOT 写入实际宽度。
-   这里的 0 只负责 JS 执行前和 web 的安全默认值。 */
+/* A page modal's ✕ in its top-right corner (MainLayout's contacts modal sets it): pane headers at that edge leave it this
+   room. 0 everywhere else — the window's own buttons are in the title-bar row (Windows / Linux) or are the traffic lights. */
 :root {
-  --titlebar-controls-width: 0px;
+  --pane-corner-reserve: 0px;
 }
 
 :root {
@@ -2001,11 +2001,11 @@ body.barcode-scanner-active #root {
 }
 .gg-pane-header[data-mobile] { height: var(--pane-header-h-touch); }
 .gg-pane-header[data-divider] { border-bottom: 1px solid var(--border); }
-/* At the window's right edge the controls drawn over content (Linux; a page modal's ✕) keep their room; 0 where they are not
-   over it. A column at that edge (the contacts drawer, data-pane-close) has every header inside it leave that room too — so a
-   long title ends in an ellipsis before the controls instead of running under them. */
+/* At a page modal's right edge its ✕ keeps its room (--pane-corner-reserve); 0 elsewhere. A column at that edge (the contacts
+   drawer, data-pane-close) has every header inside it leave that room too — so a long title ends in an ellipsis before the ✕
+   instead of running under it. */
 .gg-pane-header[data-window-edge], [data-pane-close] .gg-pane-header {
-  padding-right: calc(var(--pane-pad-x) + var(--titlebar-controls-width, 0px));
+  padding-right: calc(var(--pane-pad-x) + var(--pane-corner-reserve, 0px));
 }
 .gg-pane-title {
   flex: 1 1 auto;

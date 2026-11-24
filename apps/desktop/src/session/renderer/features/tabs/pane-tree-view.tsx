@@ -7,7 +7,7 @@ import { PaneDimensionProvider } from './pane-dimension-provider';
 import { RetainedTabContent } from './retained-tab-content';
 import { MIN_PANE_HEIGHT_PX, type PaneLayoutStore } from './pane-layout-store';
 import { cornerPane, minExtent, paneOrder, type PaneLayoutNode } from './pane-layout-tree';
-import { fullscreenCover, OverFullscreenStrip, tabFullscreen } from './tab-fullscreen';
+import { fullscreenCover, tabFullscreen } from './tab-fullscreen';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
 import { useChatWorkspaceDivider } from './use-chat-workspace-divider';
 import { TrackCut } from './pane-track-cut';
@@ -65,7 +65,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
       {/* A page of the pair in full screen keeps this one strip over it (its exit is on the tab); the row keeps its height, so nothing under it moves. */}
       {scopedChrome && <ChatWorkspaceChrome layout={layout} edge={edge} {...scopedChrome} />}
       {!scopedChrome && paired && <div className="min-w-0 shrink-0" style={{ height: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-pane-strip="">
-        <div style={lifted ? STRIP_OVER_FULLSCREEN : undefined}><OverFullscreenStrip.Provider value={lifted}>{renderPane(layout.mainGroup.paneId, true, true, 'bar')}</OverFullscreenStrip.Provider></div>
+        <div style={lifted ? STRIP_OVER_FULLSCREEN : undefined}>{renderPane(layout.mainGroup.paneId, true, true, 'bar')}</div>
       </div>}
       {/* The pages are laid over the cut on its anchors (❌ inside the track's clipped boxes): a page sliding in sticks out past
           the edge here. overflow clip, ❌ hidden or visible: what sticks out must not be scrollable overflow, or a page that

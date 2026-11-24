@@ -255,10 +255,10 @@ export class ScreenLayoutStore {
     return this.layout ? visit(this.layout) : null;
   }
 
-  /** 这一块在屏的哪个角上:左上那块让开展开侧栏的钮,右上那块让开窗口控制。 */
-  corners(blockId: string): { topLeft: boolean; topRight: boolean } {
-    if (!this.layout) return { topLeft: true, topRight: true };
-    return { topLeft: cornerPane(this.layout, 'top-left') === blockId, topRight: cornerPane(this.layout, 'top-right') === blockId };
+  /** 这一块在不在屏的左上角:左上那块让开展开侧栏的钮。 */
+  corners(blockId: string): { topLeft: boolean } {
+    if (!this.layout) return { topLeft: true };
+    return { topLeft: cornerPane(this.layout, 'top-left') === blockId };
   }
 
   /**

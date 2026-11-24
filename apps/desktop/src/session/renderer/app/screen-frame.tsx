@@ -172,8 +172,7 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
       blockId={blockId}
       leading={<BlockGrip blockId={blockId} content={{ kind: 'chat', chatId, title: '' }} label={translate('screen.gripApp')} />}
       reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
-      actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight}>{actions}</TabBarActionRow>}
-      chromeActionsSlot={<TabBarActionRow atWindowEdge={false}>{actions}</TabBarActionRow>}
+      actionsSlot={<TabBarActionRow>{actions}</TabBarActionRow>}
       chip={({ tab, host }) => (
         <ChatTabChip
           tab={tab}
@@ -225,7 +224,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
           />
         }
         actionsSlot={
-          <TabBarActionRow atWindowEdge={corners.topRight}>
+          <TabBarActionRow>
             {contribution ? (
               <button type="button" aria-label={translate('extensions.appSettings')} title={translate('extensions.appSettings')} data-testid="app-block-settings"
                 className="flex size-6 items-center justify-center rounded-md text-foreground-muted hover:bg-row-hover hover:text-foreground"
@@ -275,7 +274,7 @@ const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { bloc
       <TabStripShell
         reserveShellRestoreLane={corners.topLeft && shellRestoreLaneTaken()}
         leadingSlot={<BlockGrip blockId={blockId} content={content} label={translate('screen.gripApp')} />}
-        actionsSlot={<TabBarActionRow atWindowEdge={corners.topRight} />}
+        actionsSlot={<TabBarActionRow />}
       >
         <TabSlot data-chat-app-block-tab={tabKind}>
           <TabChip
