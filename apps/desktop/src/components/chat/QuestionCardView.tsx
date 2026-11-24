@@ -8,6 +8,7 @@ import { useDevicesStore } from '../../store/devicesContext'
 import { useChatStore } from '../../store/chatContext'
 import { useAuth } from '../../store/auth'
 import { questionAnsweredText } from '../../lib/questionCardAnswer'
+import { AgentMarkGlyph } from '../AgentMarkGlyph'
 import { composerCardCopy } from '../../lib/composerCardCopy'
 import { useAvatarIdentity } from '../../lib/avatarIdentity'
 import { unknownMemberName } from '../../lib/memberFallbackName'
@@ -79,7 +80,7 @@ export function QuestionCardView({ card, chatId, messageId, agentUserId, time, m
   if (card.questions?.length) return <div className="question-message-card" data-testid="composer-card" data-card-type="question">
     <div className="question-message-card__head"><AgentHarnessIcon agentId={agentUserId} size={16} /><span>{head}</span><span>{time}</span></div>
     <ReadonlyAgentQuestions questions={card.questions} mobile={mobile} />
-    {!readOnly && <p className="question-message-card__waiting"><span aria-hidden="true" />{t('question.waitingForOwner', { name: ownerName })}</p>}
+    {!readOnly && <p className="question-message-card__waiting"><AgentMarkGlyph kind="warn" />{t('question.waitingForOwner', { name: ownerName })}</p>}
   </div>
   const openable = mine && device?.is_current_device === true && card.options.length === 0
   const interactiveTime = typeof time !== 'string'
@@ -145,14 +146,14 @@ function QuestionCardOptions({ card, chatId, messageId, answerable }: { card: Qu
   )
 }
 
-/** 一行状态:待你回答 = 琥珀点(与侧栏「需要你」同一个色调);答了 =「已回答：X」;收回了 = 这次提问已结束。 */
+/** 一行状态:待你回答 = 需要你的三角(AgentMarkGlyph,同头像角);答了 =「已回答：X」;收回了 = 这次提问已结束。 */
 function QuestionCardState({ settlement, inSession }: { settlement: Settlement | null; inSession: boolean }) {
   const { t } = useTranslation('assistant')
   if (!settlement) return null
   if (settlement.state === 'pending') {
     return (
       <span className="flex h-5 items-center gap-2 text-[var(--font-caption)] text-[var(--muted-fg)]">
-        <span aria-hidden className="mx-[3px] size-2 shrink-0 rounded-full bg-[var(--agent-tone-needs-user)]" />
+        <AgentMarkGlyph kind="warn" className="mx-[3px]" />
         {inSession ? t('message.taskCard.questionInSession', { ns: 'messaging' }) : t('question.waiting')}
       </span>
     )

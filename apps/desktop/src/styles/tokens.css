@@ -545,9 +545,9 @@
      --danger(#ef4444)/ --color-danger(#FF3B30,iOS 系统红)/ --badge-red(#FA5151)/
      --text-error(#FF6B6B),明暗两侧还各分叉一次 —— 同屏能同时出现三种红,而它们说的是同一句话。
      ⇒ 只留 --danger 一个定义处,其余三个降为别名(名字留着:消费点与判据都按名字写,
-     agent 状态经 `--agent-tone-removed` 引它)。
+     agent 的出错标识另有 --agent-mark-error)。
      ⚠️ 别把 needs_user 与 removed 这两个**状态**并掉 —— 它们靠形状/字号分,不只靠色相分
-     (agentContactRowDotClass:needs_user 是 8px 黄色字形、removed 是 5px 色点)。 */
+     (AgentContactStatusMark:needs_user 是三角,removed 不画标识)。 */
   --color-danger: var(--danger);
   --color-draft: #FA8C16;
   /* 搜索命中的底色:mark 的字跟着正文(color: inherit),深色上用琥珀的淡染,❌ 一块亮黄压着浅色字(深色巡检 10-27)。 */
@@ -1337,8 +1337,8 @@ input {
   }
 }
 
-/* An agent's status mark in its avatar's corner (Avatar.tsx, AgentStatusCorner): one glyph on a small see-through
-   round backing. */
+/* An agent's status mark in its avatar's corner (Avatar.tsx, AgentStatusCorner): the running glyph on a small
+   see-through round backing; the solid marks without one (.av-status--solid). */
 .av-status {
   position: absolute;
   right: -2px;
@@ -1356,11 +1356,9 @@ input {
   pointer-events: none;
 }
 
-.av-status__dot {
-  width: 60%;
-  height: 60%;
-  border-radius: 50%;
-  background: var(--agent-tone-error);
+/* The solid marks (needs you, error, offline) are opaque shapes of their own: no backing. */
+.av-status--solid {
+  background: none;
 }
 
 @keyframes gg-thread-up {
@@ -1676,23 +1674,28 @@ body.barcode-scanner-active #root {
   --warn: #f59e0b;
   --ok-tint: color-mix(in srgb, var(--ok) 12%, transparent);
   --warn-tint: color-mix(in srgb, var(--warn) 14%, transparent);
-  /* #6448 agent 状态的颜色只在这里定义一次(owner 2026-09-25 定表),会话页、聊天、手机都经
-     `agentStatusColorVar`(packages/core/src/shared/agentStatusPresentation.ts)取这几个名字:
-     在跑 = 橙(聊天侧沿用的那个),后台在跑 = 停住的运行字形(AgentParkedGlyph,不是点,不上色),需要你 = --warn 黄,
-     出错 = --danger 红,在线 = 绿(可达)。做完只加粗不上色,空闲不上色。 */
-  --agent-tone-running: #ff5f1f;
-  --agent-tone-parked: var(--warn);
-  --agent-tone-needs-user: var(--warn);
-  --agent-tone-error: var(--danger);
-  --agent-tone-online: var(--green);
-  --agent-tone-removed: var(--color-danger);
-  --agent-tone-muted: var(--text-tertiary);
+  /* An agent's status marks (AgentContactStatusMark, one component for every surface): running and parked are the running
+     glyph (uncoloured); needs you, error and offline are solid shapes with a sign knocked out (AgentMarkGlyph, owner 11-24
+     design sheet), coloured only here. One pair per theme — the dark theme takes the lighter step and knocks the sign
+     out in the ground colour. */
+  --agent-mark-warn: #fbbf24;
+  --agent-mark-warn-ink: #0f0f0f;
+  --agent-mark-error: #f87171;
+  --agent-mark-error-ink: #0f0f0f;
+  --agent-mark-offline: #8f8f8f;
+  --agent-mark-offline-ink: #0f0f0f;
   /* 版本控制里的「冲突」「已合并」:会话页 diff 视图的两种状态字,两套主题同值(从 session/renderer/index.css 搬来)。 */
   --vcs-conflict: color(display-p3 0.9 0.45 0.2);
   --vcs-merged: color(display-p3 0.523 0.318 0.751);
 }
 [data-theme='light'] {
   --danger-fg: #b91c1c;
+  --agent-mark-warn: #f59e0b;
+  --agent-mark-warn-ink: #451a03;
+  --agent-mark-error: #dc2626;
+  --agent-mark-error-ink: #ffffff;
+  --agent-mark-offline: #8a8b8c;
+  --agent-mark-offline-ink: #ffffff;
   --danger-tint: #ef444414;
   --danger-tint-press: #ef444424;
 }

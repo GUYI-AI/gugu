@@ -92,9 +92,6 @@ export const profileCardStyles = {
   statusBase:
     'gg-c-cpane-status mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]',
   statusStandby: 'standby',
-  // @@@5588 needs_user uses a Solar exclamation glyph; every other tone's color comes from the one table in
-  // contactAgentTone (`--agent-tone-*`), the same the contacts row and the avatar badge use.
-  statusDotBase: 'gg-c-cpane-status-dot h-[6px] w-[6px] shrink-0 rounded-full',
   guguNumber:
     'gg-c-cpane-gugu mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]',
   guguNumberLabel: 'gg-c-cpane-gugu-label text-[var(--text-secondary)]',
