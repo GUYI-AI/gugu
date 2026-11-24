@@ -4,8 +4,9 @@ import { cn } from '@renderer/utils/utils';
 import { sidebarCountClass, sidebarGroupTitleClass } from './sidebar-primitives';
 
 // 内层侧栏分区头(话题 / 智能体)的收起开关,只写这一处。
-// 它是一颗按钮,就要看得出是按钮(刘威 msg:179d0226):箭头常显(展开朝下、收起朝右),整颗(箭头 + 标题 + 数)
-// 悬停是侧栏行的那层底(row-hover)、按下是 row-press,光标是手形 —— 与同一列里的行、分区头右端的小钮同一族反馈。
+// 它是一颗按钮,就要看得出是按钮(刘威 msg:179d0226、6f560538 选 A):箭头常显(展开朝下、收起朝右),整颗(箭头 + 标题 + 数)
+// 静止就有一层很浅的胶囊底,三档全是侧栏行已有的 token:静止 row-pinned(置顶行的常驻底,1%)→ 悬停 row-hover(4%)
+// → 按下 row-press(6%);光标是手形 —— 与同一列里的行、分区头右端的小钮同一族反馈。
 // `count` 给了就画在标题后(话题:稿子上没有也写「0」);不给 = 不画。
 export function SidebarGroupToggle({
   label,
@@ -24,7 +25,7 @@ export function SidebarGroupToggle({
     <button
       type="button"
       data-sidebar-group-toggle=""
-      className="group/glabel -ml-[18px] flex h-6 cursor-pointer items-center gap-1 rounded-md pr-2 pl-0.5 transition-colors hover:bg-row-hover active:bg-row-press"
+      className="group/glabel -ml-[18px] flex h-6 cursor-pointer items-center gap-1 rounded-md bg-row-pinned pr-2 pl-0.5 transition-colors hover:bg-row-hover active:bg-row-press"
       onClick={onToggle}
       aria-label={ariaLabel}
       aria-expanded={!collapsed}

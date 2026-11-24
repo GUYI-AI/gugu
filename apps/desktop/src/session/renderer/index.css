@@ -221,6 +221,8 @@
   --color-row-hover: var(--hover);
   --color-row-selected: var(--selected);
   --color-row-press: var(--press);
+  /* 行的静息底色(置顶行常驻那一层,1%):压在 hover / press 之下。 */
+  --color-row-pinned: var(--pinned);
 
   --color-foreground: var(--foreground, var(--fg));
   --color-foreground-inverse: var(--foreground-inverse);
