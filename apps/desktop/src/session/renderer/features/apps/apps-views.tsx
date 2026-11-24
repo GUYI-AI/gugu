@@ -28,7 +28,7 @@ import { appState } from '@renderer/lib/stores/app-state';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
-import { appsLocation, moveAppsLocation, previousAppsLocation, type AppsLocation } from './apps-location';
+import { appsLocation, moveAppsLocation, type AppsLocation } from './apps-location';
 import { AgentAppDetailDialog } from './agent-app-detail-dialog';
 import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
@@ -37,16 +37,10 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const { params, setParams } = useParams('apps');
   const { navigate } = useNavigate();
-  const currentViewId = appState.navigation.currentViewId;
   const { agentDetail, agentDetailFrom } = params;
   const location = appsLocation(params);
   const marketHost = location.deviceId ? deviceDetailHost(location.deviceId) : LOCAL_LIBRARY_HOST;
   const installed = location.installed;
-  // The sheet is a place of its own: closing it is going back to where it was opened from.
-  const closeInstalled = () => {
-    if (previousAppsLocation()) navigateBack(true);
-    else moveAppsLocation((here) => ({ ...here, installed: undefined }));
-  };
 
   const closeAgentDetail = () => {
     if (agentDetailFrom !== 'apps' && appState.history.canGoBack) {
@@ -68,16 +62,16 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
                   agentDetail: { kind: 'agent-app-detail', agentId, ...(marketHost.remote && { deviceId: marketHost.remote.deviceId }) },
                   agentDetailFrom: 'apps',
                 })}
+                installedPage={installed && <InstalledManager place={installed}
+                  section={location.tab === 'market' ? 'apps' : location.tab}
+                  onPlace={(next) => moveAppsLocation((here) => ({ ...here, installed: next }))}
+                  onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
+                  onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
               />
             </LibraryHostProvider>
           </PageContent>
         </PageLayout>
       </div>
-      {installed && currentViewId === 'apps' && <InstalledManager place={installed}
-        onPlace={(next) => moveAppsLocation((here) => ({ ...here, installed: next }))}
-        onClose={closeInstalled}
-        onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
-        onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
       {agentDetail && (
         <AgentDetailHost key={`${agentDetail.deviceId ?? 'local'}:${agentDetail.agentId}`} target={agentDetail}>
           <AgentAppDetailDialog

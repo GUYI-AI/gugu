@@ -126,7 +126,7 @@ export interface CloudMarketEntry {
   firstRun: boolean;
 }
 
-/** 首页精选那一排几张(owner 10-19「按建议」)。看多近、多久减半写在库函数 `chat.market_install_ranking` 里(14 天、7 天)。 */
+/** 市场首页排在最前、按装机数挑的那几个(owner 10-19「按建议」)。看多近、多久减半写在库函数 `chat.market_install_ranking` 里(14 天、7 天)。 */
 export const FEATURED_COUNT = 3;
 
 /** 下载站上 `market/` 根里的一个文件:相对路径,❌ `..`、❌ 绝对地址 —— 只能落在 market 根下面。 */

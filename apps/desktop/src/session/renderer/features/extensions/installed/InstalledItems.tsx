@@ -1,18 +1,23 @@
-import { useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlignJustify, ArrowUp, Check, LayoutGrid, X } from '@/lib/icons'
 import { notify } from '@/lib/notices'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '@/components/ui/Button'
 import { IconButton } from '@/components/ui/IconButton'
-import { SegmentedTabs } from '@/components/ui/SegmentedTabs'
 import { Sheet } from '@/components/ui/Sheet'
 import { Switch } from '@/components/ui/Switch'
 import { SearchInput } from '@renderer/lib/ui/search-input'
 import type { InstalledItem, InstalledSection } from './installed-item'
 
 export type InventoryView = 'grid' | 'list'
-const sections: readonly InstalledSection[] = ['agents', 'apps', 'connectors']
+
+/** The page scroller the list sits in (the Apps page's own): how far down the list is, is how far down it is. */
+export function pageScroller(node: HTMLElement | null | undefined): HTMLElement | null {
+  let at = node?.parentElement ?? null
+  while (at && !/(auto|scroll)/.test(getComputedStyle(at).overflowY)) at = at.parentElement
+  return at
+}
 
 function ItemTile({ item, layout, selected, managing, onSelect }: {
   item: InstalledItem; layout: InventoryView; selected: boolean; managing: boolean; onSelect: () => void
@@ -51,14 +56,13 @@ function ItemTile({ item, layout, selected, managing, onSelect }: {
   )
 }
 
-export function InstalledItems({ items, loading, error, offline, section, layout, setSection, setLayout, remoteLabel, itemsRef, scroll }: {
+export function InstalledItems({ items, loading, error, offline, section, layout, setLayout, remoteLabel, itemsRef, scroll }: {
   items: readonly InstalledItem[]
   loading?: boolean
   error?: boolean
   offline?: boolean
   section: InstalledSection
   layout: InventoryView
-  setSection: (next: InstalledSection) => void
   setLayout: (next: InventoryView) => void
   remoteLabel?: string
   itemsRef?: RefObject<HTMLDivElement | null>
@@ -66,7 +70,6 @@ export function InstalledItems({ items, loading, error, offline, section, layout
   scroll?: number
 }) {
   const { t } = useTranslation('main')
-  const panelId = useId()
   const [query, setQuery] = useState('')
   const [managing, setManaging] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
@@ -76,9 +79,10 @@ export function InstalledItems({ items, loading, error, offline, section, layout
   const shown = items.filter(({ name }) => name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
   const restored = useRef(false)
   useLayoutEffect(() => {
-    if (restored.current || !scroll || shown.length === 0 || !itemsRef?.current) return
+    const page = pageScroller(itemsRef?.current)
+    if (restored.current || !scroll || shown.length === 0 || !page) return
     restored.current = true
-    itemsRef.current.scrollTop = scroll
+    page.scrollTop = scroll
   }, [scroll, shown.length, itemsRef])
   const picked = shown.filter(({ id }) => selected.has(id))
   const updateable = picked.filter((item) => item.update && !item.busy)
@@ -121,19 +125,7 @@ export function InstalledItems({ items, loading, error, offline, section, layout
   return (
     <section className="gg-installed-inventory">
       <div className="gg-installed-bar">
-        <SegmentedTabs<InstalledSection> ariaLabel={t('installedManager.title')} value={section} onChange={setSection}
-          items={sections.map((value) => ({ value, label: t(`installedManager.section.${value}`), panelId }))} />
-        <div className="gg-installed-tools">
-          {!managing && <Button size="sm" variant="secondary" disabled={offline || loading || error || items.length === 0}
-            onClick={() => { setQuery(''); setManaging(true) }}>{t('installedManager.manage')}</Button>}
-          <div className="gg-installed-toggle">
-            <IconButton aria-label={t('installedManager.grid')} aria-pressed={layout === 'grid'} onClick={() => setLayout('grid')}><LayoutGrid size={16} /></IconButton>
-            <IconButton aria-label={t('installedManager.list')} aria-pressed={layout === 'list'} onClick={() => setLayout('list')}><AlignJustify size={16} /></IconButton>
-          </div>
-        </div>
-      </div>
-      {managing ? (
-        <div className="gg-installed-bar">
+        {managing ? (<>
           <span role="status">{t('installedManager.selected', { count: picked.length })}</span>
           <Button size="sm" variant="ghost" disabled={busy || shown.length === 0}
             onClick={() => setSelected(allSelected ? new Set() : new Set(shown.map(({ id }) => id)))}>
@@ -148,12 +140,18 @@ export function InstalledItems({ items, loading, error, offline, section, layout
               {t('installedManager.done')}
             </Button>
           </div>
+        </>) : (<>
+          <SearchInput type="search" value={query} onChange={(event) => setQuery(event.target.value)} containerClassName="min-w-0 flex-1"
+            placeholder={searchLabel} aria-label={searchLabel} disabled={offline || busy} />
+          <Button size="sm" variant="secondary" disabled={offline || loading || error || items.length === 0}
+            onClick={() => { setQuery(''); setManaging(true) }}>{t('installedManager.manage')}</Button>
+        </>)}
+        <div className="gg-installed-toggle">
+          <IconButton aria-label={t('installedManager.grid')} aria-pressed={layout === 'grid'} onClick={() => setLayout('grid')}><LayoutGrid size={16} /></IconButton>
+          <IconButton aria-label={t('installedManager.list')} aria-pressed={layout === 'list'} onClick={() => setLayout('list')}><AlignJustify size={16} /></IconButton>
         </div>
-      ) : (
-        <SearchInput type="search" value={query} onChange={(event) => setQuery(event.target.value)}
-          placeholder={searchLabel} aria-label={searchLabel} disabled={offline || busy} />
-      )}
-      <div id={panelId} ref={itemsRef} role="tabpanel" aria-label={phrase} className="gg-installed-items">
+      </div>
+      <div ref={itemsRef}>
         {loading ? <div className="gg-installed-empty"><LoadingIndicator size="inline" /></div>
           : offline ? <p className="gg-installed-empty">{t('installedManager.offline')}</p>
           : error ? <p className="gg-installed-empty">{t('installedManager.readFailed')}</p>
