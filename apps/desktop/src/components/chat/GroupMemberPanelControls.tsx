@@ -108,18 +108,25 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
   const canTransferOwner = useCallback((profile: MemberProfileCardModel) => (
     isGroup && settings?.my_role === 'owner' && profile.type === 'human' && profile.id !== currentUserId
   ), [currentUserId, isGroup, settings?.my_role])
+  // @@@ask-from-card - the profile card is a popover (--z-popover) above the confirmation dialog, so a confirmation
+  // asked while it is open is drawn under it and its buttons cannot be clicked. Close the card first, then ask;
+  // a failure is then shown on the panel's error line. The row ⋯ menu already closes itself on click.
+  const ask = useCallback((args: Parameters<typeof confirmDanger>[0]) => {
+    profileCard.close()
+    return confirmDanger(args)
+  }, [profileCard])
   const transferOwner = useCallback(async (profile: MemberProfileCardModel) => {
     const title = t('group.memberList.transferOwner')
-    if (!(await confirmDanger({ title, description: t('group.memberList.transferOwnerConfirm', { name: profile.displayName }), confirmLabel: title }))) return
+    if (!(await ask({ title, description: t('group.memberList.transferOwnerConfirm', { name: profile.displayName }), confirmLabel: title }))) return
     await runMutation(() => transferGroupOwner(chatId, profile.id))
-  }, [chatId, runMutation, t])
+  }, [ask, chatId, runMutation, t])
   // Removing someone from a group or topic (or leaving it) asks first, from the member menu and the profile card alike.
   const remove = useCallback(async (profile: MemberProfileCardModel) => {
     const title = !isGroup ? topicRemovalLabel(profile) : ownsAgent(profile) ? t('group.memberList.agentLeave') : t('group.settings.removeMemberTitle')
     const description = !isGroup ? topicRemovalHint(profile) : t('group.settings.removeMember', { name: profile.displayName })
-    if (!(await confirmDanger({ title, description, confirmLabel: title }))) return
-    if (await runMutation(() => chatService.removeGroupMember(chatId, profile.id))) profileCard.close()
-  }, [chatId, isGroup, ownsAgent, profileCard, runMutation, t, topicRemovalHint, topicRemovalLabel])
+    if (!(await ask({ title, description, confirmLabel: title }))) return
+    await runMutation(() => chatService.removeGroupMember(chatId, profile.id))
+  }, [ask, chatId, isGroup, ownsAgent, runMutation, t, topicRemovalHint, topicRemovalLabel])
 
   const editControlsFor = useCallback((profile: MemberProfileCardModel): MemberProfileEditControls | undefined => {
     const manageable = canManage(profile)

@@ -326,6 +326,8 @@ describe('#6418 群成员面板 —— 资料卡与管理', () => {
     expect(String((confirmDangerMock.mock.calls[0]![0] as { description: string }).description)).toContain('成员乙')
     expect(transferGroupOwnerMock).toHaveBeenCalledWith('chat-1', 'member-1')
     await waitForCondition(() => getGroupCollab.mock.calls.length > readsBefore, 'roster reloaded')
+    // The card (a popover above dialogs) closed before asking, so the confirmation is not drawn under it.
+    await waitForCondition(() => q('[data-testid="group-member-profile-menu"]') === null, 'profile card closed')
   })
 
   it('没确认就不转;agent 和非群主都没有这个动作', async () => {
