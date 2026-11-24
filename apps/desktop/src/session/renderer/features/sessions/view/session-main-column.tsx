@@ -66,16 +66,16 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
   }, [paneLayout, blockId, projectId, pageSessionId]);
 
   /**
-   * 拖到别的块边上的,只有两种页签:会话自己那枚(= 整个会话挪过去)和一个 App 为自己开的那枚(= 它单独占一块)。
-   * 其余附页(审阅、终端、浏览器、文件、侧边聊天)只属于这个会话,❌ 拖进别的会话。
+   * 单独成窗时是一整样东西的,只有两种页签:会话自己那枚(= 整个会话)和一个 App 为自己开的那枚(= 这个 App)。
+   * 其余附页(审阅、终端、浏览器、文件、侧边聊天)成窗时只是这一枚。
    */
-  const blockContentOf = (tabId: string): WindowableContent | null => {
+  const windowContentOf = (tabId: string): WindowableContent | null => {
     for (const { pane } of paneLayout.groups) {
       const entry = pane.entries.get(tabId);
       if (!entry) continue;
       const state = entry.state as { sessionId?: string; filePath?: string } | undefined;
       if (CHAT_TAB_KINDS.has(entry.kind) && state?.sessionId === pageSessionId) return { kind: 'session', projectId, sessionId: pageSessionId };
-      // A tab that is one per task (#7317) is this task's own page: it never leaves for a block or a window of its own.
+      // A tab that is one per task (#7317) is this task's own page: it never leaves for a window of its own.
       if (parseExtensionTabKind(entry.kind) && !state?.filePath && !isTaskOwnedTab(entry)) return { kind: 'app', tabKind: entry.kind };
       return null;
     }
@@ -97,7 +97,7 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
   useEffect(() => {
     paneLayout.setWindowOpener((tabId) => {
       if (ownedByTask(tabId)) return null;
-      const content = blockContentOf(tabId);
+      const content = windowContentOf(tabId);
       if (content) return windowId ? null : () => openInWindow(content);
       return () => openTabInWindow({ projectId, sessionId: pageSessionId }, paneLayout, tabId);
     });
@@ -106,17 +106,15 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
       paneLayout.setWindowOpener(null);
       paneLayout.setWindowRevealer(null);
     };
-    // blockContentOf 每次被调用时现读页签;它闭包里认的只有这几样。
+    // windowContentOf 每次被调用时现读页签;它闭包里认的只有这几样。
   }, [paneLayout, projectId, pageSessionId, windowId]);
 
   const drag = useTabDrag({
     layout: paneLayout,
-    blockId,
-    contentOf: blockContentOf,
     // 拖到窗口外松手 = 单独成窗:会话自己那枚 = 整个会话(已经在窗里的除外),App 那枚 = 这个 App,别的附页 = 这一枚;
     // 一个任务一份的 App 页签不成窗(#7317)。
     openWindow: (tabId) => {
-      const content = blockContentOf(tabId);
+      const content = windowContentOf(tabId);
       if (ownedByTask(tabId) || (content && windowId)) return null;
       return (at) => (content ? openInWindow(content, at) : openTabInWindow({ projectId, sessionId: pageSessionId }, paneLayout, tabId, at));
     },
@@ -142,7 +140,6 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
         sensors={drag.sensors}
         collisionDetection={edgeFirst}
         onDragStart={drag.onDragStart}
-        onDragMove={drag.onDragMove}
         onDragEnd={drag.onDragEnd}
         onDragCancel={drag.onDragCancel}
       >

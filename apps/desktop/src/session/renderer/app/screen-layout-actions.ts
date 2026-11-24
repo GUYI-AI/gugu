@@ -337,7 +337,7 @@ export function showBesideOnScreen(content: ScreenBlockContent): void {
   followFocus();
 }
 
-/** 贴着 `targetId` 那块的一条边分出一块放它(拖到边上松手、页签右键「单独一块」)。 */
+/** 贴着 `targetId` 那块的一条边分出一块放它(内层侧栏的一行、一块的 ⋮⋮ 拖到边上松手)。 */
 export function placeOnScreen(content: ScreenBlockContent, targetId: string, edge: PaneEdge): boolean {
   if (!screenLayout.canPlaceAt(content, targetId)) {
     if (screenLayout.isFull && !blockOf(content)) fullToast();

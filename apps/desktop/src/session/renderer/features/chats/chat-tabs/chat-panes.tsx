@@ -5,7 +5,7 @@ import { observer } from 'mobx-react-lite';
 import { makesPaneCurrent } from '../../tabs/pane-activation';
 import { useContext, useEffect, useMemo, type ReactNode, type ComponentProps } from 'react';
 import { screenLayout } from '@renderer/app/screen-layout';
-import { openChatTabInWindow, placeOnScreen, revealTabWindow } from '@renderer/app/screen-layout-actions';
+import { openChatTabInWindow, revealTabWindow } from '@renderer/app/screen-layout-actions';
 import { ChatPartSlot } from '@renderer/lib/chat-slot';
 import { edgeFirst, PANE_EDGES, PaneEdgeDropZones } from '@renderer/features/tabs/pane-edge-drop';
 import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
@@ -22,7 +22,7 @@ import { ContextMenu } from '@/components/ui/Menu';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { ChatWorkspaceNewTab } from '@renderer/features/tabs/chat-workspace-new-tab';
 import { ChatWorkspaceTabContext } from '@renderer/features/tabs/chat-workspace-context';
-import { chatBlockContentOf, chatLayoutOf, closeChatTab } from './chat-layouts';
+import { chatLayoutOf } from './chat-layouts';
 import { CHAT_TAB_KIND, ChatTabHostContext, type ChatTabHost } from './chat-tab-providers';
 
 /**
@@ -54,14 +54,7 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
 }) {
   const layout = chatLayoutOf(chatId);
   const block = useScreenBlock();
-  const host = useMemo<ChatTabHost>(() => ({
-    chip,
-    body,
-    ownBlock: (tabId) => {
-      const content = chatBlockContentOf(chatId, tabId);
-      if (content && blockId && placeOnScreen(content, blockId, 'right')) closeChatTab(chatId, tabId);
-    },
-  }), [chip, body, chatId, blockId]);
+  const host = useMemo<ChatTabHost>(() => ({ chip, body }), [chip, body]);
   // 页签右键「在新窗口打开」:除了这个对话自己那一枚,哪一枚都能单独成窗(和任务里的附页一样);它在窗里 = 把窗提到前面。
   useEffect(() => {
     layout.setWindowOpener((tabId) => (layout.groups.find(({ pane }) => pane.entries.has(tabId))?.pane.entries.get(tabId)?.kind === CHAT_TAB_KIND ? null : () => openChatTabInWindow(chatId, layout, tabId)));
@@ -73,10 +66,6 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
   }, [layout, chatId]);
   const drag = useTabDrag({
     layout,
-    blockId: blockId ?? null,
-    // An App page of this chat is a block of its own on another block's edge, and leaves the chat's strip.
-    contentOf: (tabId) => embedded ? null : chatBlockContentOf(chatId, tabId),
-    landed: (tabId) => closeChatTab(chatId, tabId),
     // Out of the window, any but the chat's own tab opens in a window of its own.
     openWindow: (tabId) => (layout.groups.find(({ pane }) => pane.entries.has(tabId))?.pane.entries.get(tabId)?.kind === CHAT_TAB_KIND ? null : (at) => openChatTabInWindow(chatId, layout, tabId, at)),
   });
@@ -87,7 +76,7 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
   return (
     <ChatTabHostContext.Provider value={host}>
       <PaneLayoutProvider paneLayout={layout}>
-        <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragMove={drag.onDragMove} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
+        <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
           <PaneTreeView layout={layout} chatChrome={{
             actions: chromeActionsSlot,
             addTab: <ChatWorkspaceNewTab layout={layout} />,

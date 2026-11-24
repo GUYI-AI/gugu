@@ -257,7 +257,7 @@ const AppBlock = observer(function AppBlock({ blockId, tabKind }: { blockId: str
 });
 
 /**
- * 一个对话里的一张 App 页单独占一块(从那个对话的页签条上拖到一块的边上、页签右键「单独一块」):和 App 那一块一样摆,
+ * 一个对话里的一张 App 页单独占一块(存下来的摆法里有;页签不再开出新的一块):和 App 那一块一样摆,
  * 页仍是那个对话的那张(context 里还是那个群,一辈子不换群,摩擦单 F48)。× = 放回那个对话的页签条。
  */
 const ChatAppBlock = observer(function ChatAppBlock({ blockId, content }: { blockId: string; content: Extract<ScreenBlockContent, { kind: 'chat-app' }> }) {

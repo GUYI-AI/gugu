@@ -6,7 +6,6 @@ import type { AppOpenWithDetail } from '@shared/extensions/app-runtime-protocol'
 import { displayNameOf, fileOpenersFor } from '@shared/extensions/file-openers';
 import type { ExtensionManifest } from '@shared/extensions/manifest';
 import { typedFileName } from '@shared/extensions/app-runtime-protocol';
-import type { ScreenBlockContent } from '@renderer/app/screen-layout';
 import type { PaneLayoutStore } from '@renderer/features/tabs/pane-layout-store';
 import { browserTabProvider } from '@renderer/features/browser/browser-tab-provider';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
@@ -182,16 +181,6 @@ export const replacePanelItem = action(function replacePanelItem(chatId: string,
 /** The tab whose history holds this waiting page. */
 function waitingTabOf(chatId: string, waitId: string): string | undefined {
   return panelTabsOf(chatId).find((tab) => chatPaneOf(chatId, tab.tabId)?.navigationOf(tab.tabId)?.pages.some((page) => (page.state as PanelItem | undefined)?.waitId === waitId))?.tabId;
-}
-
-/**
- * What an App tab of this chat is as a block of its own (dragged to a block's edge, its menu's 「单独一块」): that chat's
- * page of the App, or the page made for its file; the host's preview and the chat's own tab stay in the chat.
- */
-export function chatBlockContentOf(chatId: string, tabId: string): Extract<ScreenBlockContent, { kind: 'chat-app' }> | null {
-  const tab = panelTabOf(chatId, tabId);
-  if (!tab?.item.kind) return null;
-  return { kind: 'chat-app', chatId, tabKind: tab.item.kind, title: tab.item.title, ...(tab.item.itemId ? { itemId: tab.item.itemId } : {}) };
 }
 
 /** Leave a tab (its ×, the page's 「返回」, its App quit): to its 上一页 if open, else the engine's neighbour; the chat stays. */
