@@ -63,7 +63,7 @@ function upstreamHeaders(headers: IncomingHttpHeaders, options: CredentialProxyO
 }
 
 /** Managed inference routes can omit a setting reintroduced by the native engine on resume. */
-function withoutThinkingOverride(body: Buffer): Buffer {
+function withoutThinkingOverride(body: Buffer<ArrayBuffer>): Buffer<ArrayBuffer> {
   let value: unknown
   try { value = JSON.parse(body.toString('utf8')) }
   catch { return body }
