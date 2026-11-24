@@ -1,4 +1,5 @@
 import { messageForUser } from '@/lib/userFacingError';
+import { platform } from '@/platform'
 import { useTheme } from '@/store/theme'
 import { SessionUiTheme } from '../sessionpage/SessionUiTheme'
 import { useState } from 'react'
@@ -69,14 +70,14 @@ export function ModelSection({ addRequested, onAddClose }: { addRequested?: bool
 
   return (
     <SettingsPage className="gg-model-page" data-testid={AUTOMATION_TEST_IDS.settingsModelPane}>
-      <SessionUiTheme theme={theme} skin>
+      {platform.capabilities.modelSettings && <SessionUiTheme theme={theme} skin>
       <div className="flex min-w-0 items-center gap-2" data-testid="settings-model-machine">
         <DeviceScopePicker store={settingsDeviceStore} />
         <DeviceScopeStatus store={settingsDeviceStore} />
       </div>
-      </SessionUiTheme>
+      </SessionUiTheme>}
       <CustomModelsGroup addRequested={addRequested} onAddClose={onAddClose} />
-      <SessionSettingsSection section="auxiliary-models" />
+      {platform.capabilities.modelSettings && <SessionSettingsSection section="auxiliary-models" />}
       <SettingsGroup data-platform-models="" data-expanded={String(showProvided)} title={<Button variant="ghost" size="option" className="gg-provided-model-toggle"
         aria-expanded={showProvided} data-testid="settings-model-provided-toggle" onClick={() => setShowProvided(open => !open)}>
         <span><span className="gg-model-card-title">{t('model.provided')}</span><span className="gg-model-card-description">{t('model.description')}</span></span>

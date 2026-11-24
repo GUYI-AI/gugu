@@ -1,4 +1,5 @@
 import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';
+import { platform } from '@/platform';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { Unknown } from '@/components/ui/Unknown';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
@@ -37,7 +38,13 @@ const groupOf = (connection: CustomModelConnection): ModelGroup => providerPrese
 
 type AddRequest = { addRequested?: boolean; onAddClose?: () => void };
 
-export const CustomModelsGroup = observer(function CustomModelsGroup({ addRequested, onAddClose }: AddRequest) {
+export function CustomModelsGroup(props: AddRequest) {
+  const { translate } = useSessionMessages();
+  if (!platform.capabilities.modelSettings) return <SettingsNote data-testid="settings-models-desktop-only">{translate('customModels.desktopOnly')}</SettingsNote>;
+  return <AvailableCustomModelsGroup {...props} />;
+}
+
+const AvailableCustomModelsGroup = observer(function AvailableCustomModelsGroup({ addRequested, onAddClose }: AddRequest) {
   const { theme } = useTheme();
   const selected = useSelectedRemoteDevice(settingsDeviceStore);
   const machine = selected?.deviceId ?? null;
