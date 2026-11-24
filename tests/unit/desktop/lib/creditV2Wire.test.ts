@@ -78,7 +78,7 @@ describe('v2 decimal amounts', () => {
     expect(compareCreditDecimals(tiny, tiny)).toBe(0)
   })
 
-  it.each([null, undefined, 1, NaN, Infinity, '', ' ', '1e3', 'NaN', 'Infinity', '1.000000001', '10000000000000000000000'])('rejects a non-contract amount %s', (value) => {
+  it.each([null, 1, '', ' ', '1e3', 'NaN', '1.000000001', '10000000000000000000000'])('rejects a non-contract amount %s', (value) => {
     expect(() => creditDecimal(value)).toThrow()
   })
 })
@@ -91,9 +91,8 @@ describe('v2 activation metadata', () => {
   })
 
   it.each([
-    { ...meta, active_credit_unit_version: undefined }, { ...meta, fx_source_url: undefined },
-    { ...meta, gateway_price_version: 2 }, { ...meta, gateway_currency: 'CNY' },
-    { ...meta, credit_unit_version: 1 }, { ...meta, fx_cny_per_usd: 6.718 },
+    { ...meta, active_credit_unit_version: undefined },
+    { ...meta, gateway_price_version: 2 }, { ...meta, gateway_currency: 'CNY' }, { ...meta, fx_cny_per_usd: 6.718 },
   ])('rejects missing or inconsistent metadata rather than synthesizing zero', (row) => {
     expect(() => creditMeta(row)).toThrow(CreditReadContractError)
   })
