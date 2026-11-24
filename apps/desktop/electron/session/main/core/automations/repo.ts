@@ -341,8 +341,16 @@ export function listSessionSchedules(sessionIds?: readonly string[], now = Date.
   }
 
   const lastRun = new Map<string, SessionSchedule['lastRun']>();
-  for (const { run } of db
-    .select({ run: automationRuns })
+  // Only the columns a last run shows: a run row also carries its config snapshots, which spill onto overflow pages.
+  for (const run of db
+    .select({
+      automationId: automationRuns.automationId,
+      status: automationRuns.status,
+      scheduledAt: automationRuns.scheduledAt,
+      startedAt: automationRuns.startedAt,
+      finishedAt: automationRuns.finishedAt,
+      error: automationRuns.error,
+    })
     .from(automations)
     .innerJoin(
       automationRuns,

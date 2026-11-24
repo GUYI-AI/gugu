@@ -2536,7 +2536,7 @@ export function sessionpageSessionDigest(limit: number): Array<{
 }> {
   refreshDigestAgents()
   const agents = digestAgents
-  const { projects, sessions } = listSessionStates(limit)
+  const { projects, sessions } = listSessionStates(limit, { schedules: false })
   // #609 workspace(任务工作区、替人登记的 ~)不是项目:摘要里不带它的名字,读方据此把它的会话列进「任务」。
   const projectName = new Map(projects.filter((project) => project.kind !== 'workspace').map((project) => [project.id, project.name]))
   return sessions
