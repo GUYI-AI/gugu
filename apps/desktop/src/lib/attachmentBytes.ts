@@ -382,8 +382,8 @@ function decodedImage(url: string): Promise<void> {
 function attachmentImageItem(source: AttachmentSource, fileName: string, origin?: ImageViewerItem['source']): ImageViewerItem {
   const file: NonNullable<ImageViewerItem['file']> = { name: fileName }
   const readers = new Map<AttachmentVariant, ReturnType<typeof createImageRead>>()
-  const read = async (variant: AttachmentVariant) => {
-    const bytes = await (variant === 'thumb' ? sessionThumb(source) : attachmentBytes(source, 'full'))
+  const read = async (variant: AttachmentVariant, progress: FileProgress) => {
+    const bytes = await (variant === 'thumb' ? sessionThumb(source) : attachmentBytes(source, 'full', undefined, undefined, progress))
     if (bytes.status !== 'ready') throw new Error(bytes.status)
     file.contentType = bytes.link.content_type
     // The record's size reaches the viewer with the first pixels, so the thumbnail is laid out as the original.
@@ -391,10 +391,10 @@ function attachmentImageItem(source: AttachmentSource, fileName: string, origin?
     if (!item.size && width && height) item.size = { width, height }
     return bytes.blob
   }
-  for (const variant of ['thumb', 'full'] as const) readers.set(variant, createImageRead(() => read(variant)))
+  for (const variant of ['thumb', 'full'] as const) readers.set(variant, createImageRead(progress => read(variant, progress)))
   const item: ImageViewerItem = {
     url: '', alt: fileName, file, source: origin,
-    preview: () => readers.get('thumb')!.load(), full: () => readers.get('full')!.load(),
+    preview: readers.get('thumb')!.load, full: readers.get('full')!.load,
     release: () => { for (const reader of readers.values()) reader.release() },
     resource: source.kind === 'item' ? { kind: 'file', target: { kind: 'file', itemId: source.itemId, version: source.version } } : undefined,
   }
@@ -431,25 +431,29 @@ export function openAttachmentImages(images: readonly ViewedImage[], index: numb
   return openViewerFromClick(images.map((image) => attachmentImageItem({ kind: 'item', itemId: image.itemId, version: image.version }, image.name, origin)), index, box)
 }
 
+let latestClick = 0
+
 /** Images a page showed, opened from the clicked one's picture (`box`, on the window) once its first pixels are here — or soon. */
 export async function openViewerFromClick(items: ImageViewerItem[], index: number, box?: ViewBox): Promise<void> {
   const clicked = items[index]
   if (!clicked?.preview) throw new Error('The clicked image is not among the images to open')
+  const click = ++latestClick
   if (box) clicked.thumbRect = box
-  const thumb = await Promise.race([clicked.preview().catch(() => null), new Promise<null>((done) => setTimeout(done, VIEWER_THUMB_WAIT_MS, null))])
-  if (thumb) clicked.url = thumb
-  // Its first pixels are the original (a working copy's): their size is the one to open at.
-  if (thumb && !clicked.size && !clicked.full) {
+  const firstFrame = clicked.preview().then(async url => {
+    if (clicked.size || clicked.full) return { url, size: clicked.size }
     const image = new Image()
-    image.src = thumb
-    await image.decode().catch(() => undefined)
-    if (image.naturalWidth && image.naturalHeight) clicked.size = { width: image.naturalWidth, height: image.naturalHeight }
-  }
+    image.src = url
+    await image.decode()
+    return { url, size: { width: image.naturalWidth, height: image.naturalHeight } }
+  }).catch(() => null)
+  const ready = await Promise.race([firstFrame, new Promise<null>((done) => setTimeout(done, VIEWER_THUMB_WAIT_MS, null))])
+  if (click !== latestClick) return items.forEach(item => item.release?.())
+  if (ready) Object.assign(clicked, ready)
   openImageViewer(items, index)
 }
 
 /** A working copy's image in the shared viewer: its bytes read when shown (`read`), its size from them. */
-export function workingCopyImageItem(name: string, read: () => Promise<Blob>): ImageViewerItem {
+export function workingCopyImageItem(name: string, read: (progress: FileProgress) => Promise<Blob>): ImageViewerItem {
   const reader = createImageRead(read)
   return {
     url: '', alt: name, file: { name },
