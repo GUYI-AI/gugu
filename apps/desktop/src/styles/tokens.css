@@ -147,16 +147,16 @@
   --titlebar-traffic-lights-width: 0px;
   --sidebar-rail-width: 60px;
   /* The sidebar's head band (sidebar-one-list-chrome): only where the window's controls sit at the sidebar's top. Windows'
-     are in their own title bar row and Linux's at the content's right, so there it has nothing to hold. */
+     and Linux's are in their own title bar row, so there it has nothing to hold. */
   --sidebar-head-height: 0px;
-  /* The fold button on the rail, lifted into the head band to sit under the traffic lights (design v16: 38 from the window's top). */
-  --sidebar-rail-fold-lift: 0px;
 }
 :root[data-platform='mac'] {
   --titlebar-traffic-lights-width: 60px;
   --sidebar-rail-width: 68px;
-  --sidebar-head-height: 40px;
-  --sidebar-rail-fold-lift: 7px;
+  /* Just the traffic lights: their top 14 (TRAFFIC_LIGHT_POSITION.y, window-chrome-native.ts) + 14 tall + 4 below, less the
+     5 the band starts down (--desktop-surface-inset). The fold row (search field open, the fold button on the rail) sits
+     right under them, ❌ under an empty strip (owner 11-24: the 40px band had nothing left in it). */
+  --sidebar-head-height: 27px;
 }
 
 /* 最左侧列表头位于 rail 右边，仅为超出 rail 的交通灯宽度预留空间。 */

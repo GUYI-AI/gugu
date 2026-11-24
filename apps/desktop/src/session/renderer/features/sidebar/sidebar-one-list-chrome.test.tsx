@@ -296,6 +296,17 @@ describe('the sidebar head', () => {
     expect(q('sidebar-session-history')!.closest<HTMLElement>('[data-hint]')!.dataset.hintSide).toBe('top');
   });
 
+  it('collapsing to the rail: the fold button is not left in the faded search field\'s element (it showed invisible on the rail)', async () => {
+    await render(<Chrome />);
+    // Halfway the search field has faded out (followNames writes its opacity inline)…
+    await change(() => (state.progress = 0.5));
+    // …then the rail lands: the fold button must sit in an element of its own, not in the field's faded one.
+    await change(() => { state.open = false; state.progress = 0; });
+    const faded: Element[] = [];
+    for (let e: Element | null = q('sidebar-fold'); e; e = e.parentElement) if ((e as HTMLElement).style?.opacity === '0') faded.push(e);
+    expect(faded, 'the rail\'s fold button inherited the field\'s opacity 0').toHaveLength(0);
+  });
+
   it('on the rail: 「»」 in the row under the head, no search, 已安排 or 会话历史; the foot is the bell above my avatar', async () => {
     state.open = false;
     state.progress = 0;

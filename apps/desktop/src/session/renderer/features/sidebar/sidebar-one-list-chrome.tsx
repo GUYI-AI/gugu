@@ -186,9 +186,9 @@ function SidebarRailRow({ visibilityRef }: { visibilityRef: RefObject<HTMLDivEle
   const fieldRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   const rowRef = useSidebarProgressFollow<HTMLDivElement>(followRailRowHeight);
   return (
-    // Design v16: on the rail the fold button is centred on the avatars' axis (34 of 68), 38 from the window's top on macOS
-    // (lifted into the head band by --sidebar-rail-fold-lift; the row keeps its height, so nothing under it moves). Open, the
-    // search field keeps its side inset (12) above and below it too (yangchichi 11-24: the gaps were too wide).
+    // Design v16: on the rail the fold button is centred on the avatars' axis (34 of 68), right under the head band (on macOS
+    // just under the traffic lights). Open, the search field keeps its side inset (12) above and below it too (yangchichi
+    // 11-24: the gaps were too wide).
     <div
       ref={(row) => {
         rowRef.current = row;
@@ -197,8 +197,10 @@ function SidebarRailRow({ visibilityRef }: { visibilityRef: RefObject<HTMLDivEle
       className={cn('flex shrink-0', railLayout ? 'items-start justify-center' : 'items-center gap-1 p-3')}
       data-sidebar-rail-row=""
     >
-      {railLayout ? <div className="-mt-[var(--sidebar-rail-fold-lift)] flex"><SidebarFoldButton /></div> : (
-        <div ref={fieldRef} className="flex min-w-0 flex-1 items-center gap-1">
+      {/* Keyed: the two are different elements. Unkeyed, React kept the field's div for the rail's, and with it the inline
+          opacity the fold had faded the field to (followNames writes it): the rail's fold button was there but invisible. */}
+      {railLayout ? <div key="rail" className="flex"><SidebarFoldButton /></div> : (
+        <div key="field" ref={fieldRef} className="flex min-w-0 flex-1 items-center gap-1">
           <div className="min-w-0 flex-1"><SidebarSearchTrigger /></div>
           <SidebarFoldButton />
         </div>
