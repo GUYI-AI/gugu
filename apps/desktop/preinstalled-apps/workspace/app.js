@@ -878,32 +878,32 @@ function forgetListed() {
 
 /**
  * Chat folders ('' the top, else a folder's id), all read at once: what is directly in each goes into the list in place of
- * what was there, drawn as it arrives. The top brings 「附件」 with it (the top shows what was sent in the chat), unless
+ * what was there, drawn once every answer is in — the top without 「附件」 is another list (none of what was sent, no 「聊天附件」
+ * block), drawn and then replaced. The top brings 「附件」 with it (the top shows what was sent in the chat), unless
  * `withAttachments` is false (a file's own folder read again for its keep).
  */
 async function readFolders(folders, asked, withAttachments = true) {
   const chat = state.ctx.chat.id
   const named = [...new Set(withAttachments && folders.includes('') ? [...folders, ATTACHMENTS] : folders)]
-  await Promise.all(named.map(async (folder) => {
-    let listed
-    try {
-      listed = await gugu.files.list({ chat, folder })
-    } catch (error) {
-      if (folder === ATTACHMENTS && error.code === 'not-found') return // a chat nothing was sent in has none
-      throw error
-    }
-    // Another chat by now, or a newer refresh: this one's answer is dropped.
-    if (state.ctx?.chat?.id !== chat || inWorkspace() || (asked && state.listing !== asked)) return
+  const answers = await Promise.all(named.map((folder) => gugu.files.list({ chat, folder }).catch((error) => {
+    if (folder === ATTACHMENTS && error.code === 'not-found') return null // a chat nothing was sent in has none
+    throw error
+  })))
+  // Another chat by now, or a newer refresh: this one's answer is dropped.
+  if (state.ctx?.chat?.id !== chat || inWorkspace() || (asked && state.listing !== asked)) return
+  named.forEach((folder, at) => {
+    const listed = answers[at]
+    if (!listed) return
+    // The top is read first: 「附件」 with nothing in it is found by its row there.
     const parent = folder === ATTACHMENTS ? listed[0]?.parentId ?? state.entries.find((e) => e.systemRole === 'attachments')?.id : folder || null
     if (parent === undefined) return
-    const key = parent ?? ''
     state.entries = [...state.entries.filter((entry) => (entry.parentId ?? null) !== parent), ...listed]
-    state.listed.add(key)
-    showList()
-  }))
+    state.listed.add(parent ?? '')
+  })
   // 「附件」 with nothing in it yet: known empty, once the top has named it.
   const attachments = state.entries.find((e) => e.systemRole === 'attachments' && e.parentId === null)
   if (attachments && named.includes(ATTACHMENTS)) state.listed.add(attachments.id)
+  showList()
 }
 
 /**
