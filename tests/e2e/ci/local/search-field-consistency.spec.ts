@@ -111,7 +111,7 @@ async function login(page: Page): Promise<void> {
   await page.getByRole('button', { name: '继续', exact: true }).click()
   await page.getByPlaceholder('6 位验证码').fill('123456')
   await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page.getByTestId('sidebar-settings-nav')).toBeVisible()
+  await expect(page.getByPlaceholder('邮箱地址')).toBeHidden()
 }
 
 async function readSearchMetrics(name: string, input: Locator) {
@@ -146,8 +146,13 @@ test('main renderer search fields share one visual contract', async ({ page }, t
 
   // 宽屏上已经没有单独的聊天页(对话列表在会话页侧栏里),这一面没有聊天列表的搜索框;
   // 手机保留聊天页,它的搜索框在下面量。
-  await page.getByTestId('sidebar-contacts-nav').click()
+  // The far-left rail is gone; Contacts is a row in my menu, which the session page's sidebar draws. This run has no
+  // session host (GUGU_TASK_HOST=0), so it opens Contacts by the main window's own shortcut (⌘2), as a user can.
   const contactsSearch = page.getByPlaceholder(CONTACTS_SEARCH)
+  await expect(async () => {
+    await page.keyboard.press('Meta+2')
+    await expect(contactsSearch).toBeVisible({ timeout: 2_000 })
+  }).toPass({ timeout: 30_000 })
   metrics.push(await readSearchMetrics('contacts', contactsSearch))
   await capture(page, testInfo, 'search-field-contacts')
 
