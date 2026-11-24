@@ -33,6 +33,7 @@ export function BrowserPageSurface({
   partition,
   initialUrl,
   visible,
+  covered = false,
   onHandle,
 }: {
   browserId: string;
@@ -41,11 +42,15 @@ export function BrowserPageSurface({
   initialUrl: string;
   /** 页签此刻在屏上(激活的页签、会话页在屏上)。 */
   visible: boolean;
+  /** 页签自己的起始页 / 加载失败页正盖着网页:不用采样就知道被盖着(侧栏滑进来的头一帧,采样还点不到它)。 */
+  covered?: boolean;
   onHandle: (handle: BrowserPageHandle | null) => void;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+  const coveredRef = useRef(covered);
+  coveredRef.current = covered;
   const onHandleRef = useRef(onHandle);
   onHandleRef.current = onHandle;
   const initialUrlRef = useRef(initialUrl);
@@ -117,9 +122,9 @@ export function BrowserPageSurface({
         rect.width > 0 &&
         rect.height > 0 &&
         isElementVisible(element, { opacity: true });
-      if (onScreen && now - lastOcclusionCheck >= OCCLUSION_CHECK_MS) {
+      if (onScreen && (coveredRef.current || now - lastOcclusionCheck >= OCCLUSION_CHECK_MS)) {
         lastOcclusionCheck = now;
-        occluded = isBrowserPageOccluded(element, rect);
+        occluded = coveredRef.current || isBrowserPageOccluded(element, rect);
       }
       const mode: BrowserPageMode = !onScreen ? 'background' : occluded ? 'occluded' : 'shown';
       const key = `${mode}:${Math.round(rect.left)},${Math.round(rect.top)},${Math.round(rect.width)},${Math.round(rect.height)}`;
