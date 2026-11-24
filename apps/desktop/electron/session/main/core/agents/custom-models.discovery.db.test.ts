@@ -29,6 +29,8 @@ beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'codex-home-'));
   vi.stubEnv('CODEX_HOME', home);
   for (const name of ['OPENAI_API_KEY', 'OPENAI_BASE_URL', 'ACME_API_KEY']) vi.stubEnv(name, '');
+  // Listing probes a discovered custom address; these tests stay off the network unless one answers for itself.
+  installEnvironmentFetch(async () => { throw new TypeError('offline'); });
 });
 afterEach(async () => {
   releaseCustomModelForwarders(); state.fixture?.close(); state.fixture = null;
@@ -193,6 +195,20 @@ it('editing a discovered connection saves it as that connection and keeps its di
   expect(list.map(connection => connection.name).sort()).toEqual(['Acme renamed', 'OpenAI']);
   expect(rows()).toHaveLength(1);
   expect(rows()[0]!.meta?.customModel?.discovery).toMatchObject({ source: 'codex-provider', keyLast4: 'QRST' });
+});
+
+it('a discovered custom address is listed with every protocol it answers, not only the one its config names', async () => {
+  await acmeConfig();
+  vi.stubEnv('ACME_API_KEY', 'sk-live-probedprobedprobedPRBD');
+  installEnvironmentFetch(async (_env, url) => {
+    const path = new URL(String(url)).pathname;
+    if (path === '/v1/models') return Response.json({ data: [{ id: 'acme-large' }] });
+    return new Response('{}', { status: path === '/v1/messages' || path === '/v1/responses' ? 200 : 404 });
+  });
+  expect((await named('Acme Gateway')).endpoints).toEqual([
+    { protocol: 'anthropic-messages', baseUrl: 'https://acme.example.test' },
+    { protocol: 'openai-responses', baseUrl: ACME },
+  ]);
 });
 
 it('testing a discovered connection uses its key only in the host request', async () => {

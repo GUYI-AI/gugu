@@ -54,6 +54,8 @@ export const customModelMetaSchema = z.object({
     .refine((entries) => new Set(entries.map(({ protocol }) => protocol)).size === entries.length, 'Use one address per protocol'),
   models: z.array(customModelEntrySchema).max(200)
     .refine((entries) => new Set(entries.map(({ id }) => id)).size === entries.length, 'Model IDs must be unique'),
+  /** The protocol the person picked for a harness (harness id → protocol); a harness not named here takes `matchCustomModel`'s order. */
+  harnessProtocols: z.record(z.string(), modelProtocolSchema).optional(),
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
@@ -124,26 +126,30 @@ export function runtimeModelId(value: string | undefined | null): string | undef
 export type CustomModelUnavailableReason = 'protocol' | 'missing-key' | 'unsupported' | 'no-model';
 
 /**
- * Native protocol wins, then the writer's other explicitly supported protocols, then a protocol the harness declares the
- * bundled local router can convert (`converted: true`).
+ * The protocol the person picked for this harness wins when the harness can use it; otherwise native protocol, then the
+ * writer's other explicitly supported protocols, then a protocol the harness declares the bundled local router can
+ * convert (`converted: true`).
  */
 export function matchCustomModel(input: {
+  harness?: string;
   nativeProtocol?: HarnessWireProtocol;
   protocols?: readonly HarnessWireProtocol[];
   convertFrom?: readonly HarnessWireProtocol[];
   allowDefaultModel?: boolean;
   hasModel?: boolean;
-  connection: Pick<CustomModelConnection, 'endpoints' | 'keySaved'>;
+  connection: Pick<CustomModelConnection, 'endpoints' | 'keySaved' | 'harnessProtocols'>;
 }): { endpoint: CustomModelMeta['endpoints'][number]; converted?: true; reason?: never } | { endpoint?: never; converted?: never; reason: CustomModelUnavailableReason } {
   if (!input.nativeProtocol) return { reason: 'unsupported' };
+  const direct = [input.nativeProtocol, ...(input.protocols ?? [])];
+  const convertible = input.convertFrom ?? [];
   const find = (protocols: readonly HarnessWireProtocol[]) =>
     protocols.map((protocol) => input.connection.endpoints.find((item) => item.protocol === protocol)).find(Boolean);
-  const direct = find([input.nativeProtocol, ...(input.protocols ?? [])]);
-  const endpoint = direct ?? find(input.convertFrom ?? []);
+  const chosen = input.harness ? input.connection.harnessProtocols?.[input.harness] : undefined;
+  const endpoint = (chosen && [...direct, ...convertible].includes(chosen) ? find([chosen]) : undefined) ?? find(direct) ?? find(convertible);
   if (!endpoint) return { reason: 'protocol' };
   if (!input.connection.keySaved) return { reason: 'missing-key' };
   if (input.hasModel === false && !input.allowDefaultModel) return { reason: 'no-model' };
-  return direct ? { endpoint } : { endpoint, converted: true };
+  return direct.includes(endpoint.protocol) ? { endpoint } : { endpoint, converted: true };
 }
 
 /** Resolve only within the provider addressing reported by this running custom session. */
