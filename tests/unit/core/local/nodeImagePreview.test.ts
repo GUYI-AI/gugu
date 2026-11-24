@@ -2,7 +2,7 @@ import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 import { nodeImagePreview } from '../../../../packages/core/src/local/files/nodeImagePreview'
 
-// Real bytes through the real decoder: the one drawer desktop main, the server and the phone register.
+// Real bytes through the real decoder: the drawer a plain-Node host (the gugu server) registers.
 const encoded = async (width: number, height: number, as: 'png' | 'jpeg', orientation?: number) => {
   const image = sharp({ create: { width, height, channels: 4, background: { r: 200, g: 40, b: 40, alpha: 0.5 } } })
   const bytes = await (as === 'png' ? image.png() : image.jpeg()).withMetadata(orientation ? { orientation } : {}).toBuffer()

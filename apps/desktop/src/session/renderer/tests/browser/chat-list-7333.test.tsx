@@ -232,7 +232,7 @@ describe('the IM chat list in the master\'s roles (#7333)', () => {
     expect(source().hasAttribute('aria-expanded')).toBe(false);
     expect(source().querySelector('button[aria-expanded]')).toBeNull();
     expect(root.querySelector('[data-topic-subrow]')).toBeNull();
-    expect(source().querySelector('.gg-chip[data-tone="accent"]')?.textContent).toBe('1');
+    expect(source().querySelector('.gg-avatar-unread-mark[data-tone="danger"]')?.textContent).toBe('1');
     expect(onChatSelected).toHaveBeenCalledExactlyOnceWith('composer');
 
     await userEvent.click(title());
@@ -257,18 +257,18 @@ describe('the IM chat list in the master\'s roles (#7333)', () => {
     await until('restored topic receives focus', () => document.activeElement?.getAttribute('data-chat-row') === 't-live');
   });
 
-  it('a row is avatar + two lines: name and preview 14/20, time 12/18, the unread count an 18px ink chip; corners 8, not a capsule', async () => {
+  it('a row is avatar + two lines: name and preview 14/20, time 12/18, the unread count an 18px red chip on the avatar top-right; corners 8, not a capsule', async () => {
     const root = await renderList();
     const row = root.querySelector<HTMLElement>('[data-chat-row="dm-1"]')!;
     expect(tier(row.querySelector('.gg-list-row-title'))).toEqual(COMPACT);
     expect(getComputedStyle(row.querySelector('.gg-list-row-title')!).fontWeight, 'an unread row\'s name is not emphasised').toBe('600');
     expect(tier(row.querySelector('.gg-list-row-subtitle'))).toEqual(COMPACT);
     expect(tier(row.querySelector('.gg-list-row-meta'))).toEqual(CAPTION);
-    const count = row.querySelector<HTMLElement>('.gg-chip[data-tone="accent"]')!;
+    const count = row.querySelector<HTMLElement>('.gg-list-row-leading .gg-avatar-unread-mark[data-tone="danger"]')!;
     expect(count.textContent).toBe('3');
     expect(tier(count)).toEqual(CAPTION);
     expect(Math.round(count.getBoundingClientRect().height)).toBe(18);
-    expect(getComputedStyle(count).backgroundColor).toBe(token('--primary'));
+    expect(getComputedStyle(count).backgroundColor).toBe(token('--danger-solid'));
     expect(getComputedStyle(row).borderRadius, 'the row became a capsule').toBe('8px');
     expect(row.querySelector('.gg-list-row-leading img, .gg-list-row-leading svg, .gg-list-row-leading [class*="avatar"]'), 'the row lost its avatar').not.toBeNull();
     const lines = row.querySelectorAll('.gg-list-row-line');

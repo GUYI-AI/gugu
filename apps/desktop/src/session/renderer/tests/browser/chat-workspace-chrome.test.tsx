@@ -279,17 +279,20 @@ it('a move held back by a long frame goes on from where it was drawn, ❌ skippe
   await mode('hidden');
   await until('the hidden tool is out of reach', () => !!tool()?.closest('[inert]'));
   // A first open mounts its pages: the frames right after the move starts are held back. The window hears the click after
-  // the app (which starts the move), in the same task.
+  // the app (which starts the move), in the same task. The frames are counted from there, ❌ from when the click's round
+  // trip to the test driver returns: on a slow runner a few frames have gone by then.
+  const lefts: number[] = [];
+  const sample = () => {
+    lefts.push(Math.round(tool()!.getBoundingClientRect().left));
+    if (lefts.length < 30) requestAnimationFrame(sample);
+  };
   window.addEventListener('click', () => {
     const held = performance.now();
     while (performance.now() - held < 300) { /* a long task */ }
+    requestAnimationFrame(sample);
   }, { once: true });
   await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
-  const lefts: number[] = [];
-  for (let frame = 0; frame < 30; frame += 1) {
-    await new Promise(requestAnimationFrame);
-    lefts.push(Math.round(tool()!.getBoundingClientRect().left));
-  }
+  await until('30 frames of the move are sampled', () => lefts.length === 30);
   const travel = 800 - landing;
   // The first frame shown is near the start (a frame's step, ❌ 300 ms of a 500 ms move), and the rest still slides.
   expect(800 - lefts[0], JSON.stringify(lefts)).toBeLessThan(travel / 4);

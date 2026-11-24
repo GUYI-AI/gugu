@@ -29,7 +29,7 @@ export function ChannelAgentPicker({
         aria-haspopup="menu"
         render={(
           <Button size="sm" variant={current ? 'secondary' : 'primary'} className="max-w-[220px] shrink-0">
-            {current ? <Avatar name={current.display_name} avatarUrl={current.avatar} seed={current.id} size="xs" isAgent harnessBadge={false} /> : null}
+            {current ? <Avatar name={current.display_name} avatarUrl={current.avatar} seed={current.id} size="xs" isAgent /> : null}
             <span className="truncate">{current ? current.display_name : t('channels.pickAgent')}</span>
             <ChevronDown aria-hidden className="size-3.5 shrink-0 opacity-60" />
           </Button>
@@ -47,7 +47,7 @@ export function ChannelAgentPicker({
               }}
             >
               <span className="flex min-w-0 items-center gap-2">
-                <Avatar name={agent.display_name} avatarUrl={agent.avatar} seed={agent.id} size="xs" isAgent harnessBadge={false} />
+                <Avatar name={agent.display_name} avatarUrl={agent.avatar} seed={agent.id} size="xs" isAgent />
                 <span className="truncate">{agent.display_name}</span>
                 {agent.id === agentId ? <Check aria-hidden className="ml-auto size-4 shrink-0 text-[var(--muted-fg)]" /> : null}
               </span>

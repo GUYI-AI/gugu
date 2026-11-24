@@ -11,5 +11,5 @@ export const SessionTabAvatar = observer(function SessionTabAvatar({ sessionId, 
   const agentId = sessionAgentBindings.bindingFor(sessionId)?.agentUserId;
   const identity = useAvatarIdentity(agentId ?? '');
   const name = useShownAgentName({ name: store?.data.title ?? '', agentType: store?.data.providerId, createdAt: store?.data.createdAt });
-  return <Avatar name={name} seed={agentId || sessionId} avatarUrl={identity?.avatar} isAgent harnessBadge={false} size={size} still />;
+  return <Avatar name={name} seed={agentId || sessionId} avatarUrl={identity?.avatar} isAgent size={size} still />;
 });

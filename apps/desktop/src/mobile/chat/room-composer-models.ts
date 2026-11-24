@@ -1,6 +1,6 @@
 import type { ChatItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { activityMs, chatAttention, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels'
-import { oneListNewsDot } from '@/lib/chatLineUnread'
+import { chatLineNews } from '@/lib/chatLineUnread'
 import type { MemberProfileCardModel } from '@/components/MemberProfileCard'
 
 /** Each row's mark follows the chat-list rule: calls you (red @N, chatAttention.callsYou), else news (grey dot). */
@@ -10,7 +10,7 @@ export function roomTopicChoices(chatId: string, topics: readonly TopicSummary[]
   const mark = (id: string) => {
     const chat = byId.get(id)
     const calls = chat ? chatAttention(chat).callsYou : 0
-    return { calls, news: !!chat && oneListNewsDot(chat, calls) }
+    return { calls, news: !!chat && chatLineNews(chat, calls) }
   }
   const main = mark(chatId)
   const rows = [...topics].sort((a, b) => Number(asking(b.chat_id) > 0) - Number(asking(a.chat_id) > 0))

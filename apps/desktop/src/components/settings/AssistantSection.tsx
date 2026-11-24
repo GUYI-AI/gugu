@@ -111,7 +111,7 @@ export function AssistantSection({ available, onOpenSection, onOpenAssistantPage
         {contact ? (
           <SettingsRow
             data-testid="settings-assistant-who"
-            leading={<Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size={44} isAgent harnessBadge={false} />}
+            leading={<Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size={44} isAgent />}
             title={<AssistantNameInline key={contact.id} name={contact.display_name} activation="double-click" onCommit={(next) => updateAgentProfile(contact.id, { name: next })} />}
             description={t('settingsPage.whoNote')}
             control={<Button size="sm" onClick={() => setLookOpen(true)} data-testid="settings-assistant-look">{t('settingsPage.look')}</Button>}

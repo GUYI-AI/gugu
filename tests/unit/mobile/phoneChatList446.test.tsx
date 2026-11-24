@@ -59,7 +59,9 @@ it('phone shows one source row, aggregates topic unread, and updates after readi
   expect([...h.container.querySelectorAll<HTMLElement>('[data-chat-row]')].map(el => el.dataset.chatRow)).toEqual(['group'])
   expect(row().textContent).toContain('10')
   expect(row().querySelectorAll('.gg-list-row-line')).toHaveLength(1)
-  expect(row().querySelector('.gg-list-row-line .gg-list-row-trailing')?.textContent).toContain('10')
+  // The count sits on the avatar's top-right corner (AvatarUnread), not at the row end.
+  expect(row().querySelector('.gg-avatar-unread-mark')?.textContent).toBe('10')
+  expect(row().querySelector('.gg-list-row-trailing')).toBeNull()
   expect(h.container.querySelector('[data-topic-subrow]')).toBeNull()
   await render(true, [source, { ...topic, unread_count: 0 }, orphan])
   expect(row().textContent).not.toContain('10')
@@ -68,12 +70,11 @@ it('phone shows one source row, aggregates topic unread, and updates after readi
   expect(source.unread_count).toBe(2)
 })
 
-it('desktop keeps the indented topic and separate unread counts', async () => {
+it('desktop keeps the indented topic with its own count; the source row counts as the phone does (owner 11-24)', async () => {
   await render(false)
   expect(row().querySelectorAll('.gg-list-row-line')).toHaveLength(2)
   expect(h.container.querySelector('[data-topic-subrow="task-topic"]')?.textContent).toContain('8')
-  expect(row().textContent).toContain('2')
-  expect(row().textContent).not.toContain('10')
+  expect(row().querySelector('.gg-avatar-unread-mark')?.textContent).toBe('10')
 })
 
 const task = (id: string, status: 'needs_user' | 'error' | 'working' | 'idle', unseen: boolean, projectId = 'local'): SessionpageSessionSummary => ({

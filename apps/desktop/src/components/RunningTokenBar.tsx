@@ -1,4 +1,4 @@
-// @@@1696 统一运行态运行条：单聊/群聊共用同一「运行 token」= [头像]{名}{流光状态词}。
+// @@@1696 统一运行态运行条：单聊/群聊共用同一「运行 token」= [头像]{名}{运行字形}；状态词只在读屏名里(owner 11-24「把 running 换成字形」)。
 // DM = 1 个 token（退化态）；群聊 = 多 token 单行，手机和桌面一样：排不下 → +N（owner 10-30：平时最多一行）。
 // 消除 DM 三跳点 vs GroupAgentStatusBar(群聊竖排文字+工具名) 双轨(两者都已删)。
 // 设计 SSOT: design/agent-running-group-1687.html（.bar/.tok/.state/.pop/.more/.ov/.otok/.opop）。
@@ -7,7 +7,7 @@ import { flushSync } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
-import { TextShimmer } from '@gugu/session-ui/react/text-shimmer'
+import { CLISpinner } from '@renderer/lib/components/cliSpinner'
 import type { MouseEvent } from 'react'
 import { Avatar } from './Avatar'
 import { useLongPress } from '../hooks/useLongPress'
@@ -52,8 +52,8 @@ const STYLE = `
 .rtb-nm{color:var(--faint-fg);min-width:0;overflow:hidden;text-overflow:ellipsis}
 /* Three static 220%-wide repeats cover the original 160% → -60% sweep.
    Masks move 264% of the label width; glyphs move back by the same distance. */
-.rtb-state{flex-shrink:0;font-weight:500;--text-shimmer-base:var(--faint-fg);--text-shimmer-light:var(--text-primary);--text-shimmer-light-mask:linear-gradient(100deg,transparent 36%,white 50%,transparent 64%);--text-shimmer-left:-412%;--text-shimmer-width:660%;--text-shimmer-mask-size:calc(100% / 3) 100%;--text-shimmer-ink-width:calc(100% / 6.6);--text-shimmer-ink-left:calc(412% / 6.6);--text-shimmer-sweep-end:40%;--text-shimmer-ink-end:-264%;--text-shimmer-idle-sweep:calc(192% / 6.6);--text-shimmer-idle-ink:-192%}
-@media(prefers-reduced-motion:reduce){.rtb-state{background:linear-gradient(100deg,var(--faint-fg) 36%,var(--text-primary) 50%,var(--faint-fg) 64%);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}}
+.rtb-state{flex-shrink:0;display:inline-flex;align-items:center;gap:3px;font-weight:500;color:var(--faint-fg)}
+@media(prefers-reduced-motion:reduce){.rtb-state{flex-shrink:0;display:inline-flex;align-items:center;gap:3px;font-weight:500;color:var(--faint-fg)}}
 /* @@@float-one-edge (Refs #6104) — 浮条去掉 1px 描边:浮层只留 lift 那一层。 */
 .rtb-mp{outline:none}
 .rtb-more{color:var(--text-tertiary);flex-shrink:0;border:0;padding:0;background:transparent;font:inherit;cursor:pointer}
@@ -94,14 +94,12 @@ type PreviewControl = ReturnType<typeof Popover.createHandle<RunningToken>>
 // 所有 token 共用一张 MessagePreview;溢出列表只负责展开,不拥有 preview 开合状态。
 function RunningTokenItem({
   token,
-  index = 0,
   overflow = false,
   folded = false,
   onTokenClick,
   preview,
 }: {
   token: RunningToken
-  index?: number
   overflow?: boolean
   folded?: boolean
   onTokenClick?: (id: string) => void
@@ -141,7 +139,7 @@ function RunningTokenItem({
         <Avatar name={displayName} avatarUrl={token.avatarUrl} seed={token.avatarSeed} size={overflow ? 16 : 'xs'} isAgent statusLabel="running" />
         <span className="rtb-nm">{displayName}</span>
         {overflow ? <span className="rtb-v">{stateWord}</span> : (
-          <TextShimmer className="rtb-state" style={{ animationDelay: `${index * 0.5}s` }}>{stateWord}</TextShimmer>
+          <span className="rtb-state"><CLISpinner className="rtb-glyph" /></span>
         )}
       </Chip>
     </Popover.Trigger>
@@ -251,7 +249,7 @@ export function RunningTokenBar({ tokens, onTokenClick, testId, previewChatId }:
         {({ payload: token }) => <>
           <div className="rtb-bar">
             {tokens.map((t, i) => (
-              <RunningTokenItem key={t.id} token={t} index={i} folded={i >= visible} onTokenClick={onTokenClick} preview={handle} />
+              <RunningTokenItem key={t.id} token={t} folded={i >= visible} onTokenClick={onTokenClick} preview={handle} />
             ))}
             {overflow.length > 0 && <MoreOverflow anchor={boxRef} tokens={overflow} onTokenClick={onTokenClick} preview={handle} />}
           </div>

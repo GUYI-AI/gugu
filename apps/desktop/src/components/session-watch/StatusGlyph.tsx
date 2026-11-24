@@ -20,7 +20,7 @@ export function SessionAvatar({
   const identity = useAvatarIdentity(agentId ?? '')
   const name = useShownAgentName({ name: identity?.display_name ?? (presentation ? agentStatusText(presentation.label) : agentStatusText('none')), createdAt: identity?.created_at ?? undefined })
   return (
-    <Avatar seed={agentId || sessionId} avatarUrl={identity?.avatar} isAgent harnessBadge={false} size={size}
+    <Avatar seed={agentId || sessionId} avatarUrl={identity?.avatar} isAgent size={size}
         name={name}
         statusLabel={presentation?.label ?? 'none'} agentStatus={presentation ? displayStatusOf(presentation.tone) : undefined} />
   )

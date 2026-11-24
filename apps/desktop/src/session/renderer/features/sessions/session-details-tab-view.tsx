@@ -80,7 +80,7 @@ const SessionDetails = observer(function SessionDetails({ sessionId }: { session
   return (
     <DetailsPage testId="session-details">
       <DetailsHero
-        avatar={<Avatar name={name} seed={agentId || sessionId} avatarUrl={identity?.avatar} isAgent harnessBadge={false} size={64} still />}
+        avatar={<Avatar name={name} seed={agentId || sessionId} avatarUrl={identity?.avatar} isAgent size={64} still />}
         name={editing
           ? <InlineNameInput name={store.data.title ?? ''} onCommit={(next) => sessionRegistry.get(sessionId)!.renameSession(sessionId, next)} onClose={() => setEditing(false)} testId="session-details-name-input" />
           : <DetailsName name={name} onEdit={() => setEditing(true)} testId="session-details-name" />}

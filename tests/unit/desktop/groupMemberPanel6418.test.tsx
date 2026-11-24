@@ -20,6 +20,7 @@ import type { ActiveMemberProfile } from '../../../apps/desktop/src/components/m
 import type { MemberProfileCardModel } from '../../../apps/desktop/src/components/MemberProfileCard'
 import { closeInfoTab, infoTabOf, openInfoTab } from '../../../apps/desktop/src/session/renderer/features/chats/chat-tabs/chat-layouts'
 import { publishProjectGroupChats } from '../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
+import { projectGroupsStore } from '../../../apps/desktop/src/session/renderer/features/projects/stores/project-groups-store'
 import type { MemberProfileChatTarget } from '../../../apps/desktop/src/components/MemberProfileCard'
 import { DevicesContext } from '../../../apps/desktop/src/store/devicesContext'
 import { removeDeviceSessions, updateDeviceSessions } from '../../../apps/desktop/src/session/shared/remote-sessions/session-directory'
@@ -42,6 +43,8 @@ vi.mock('../../../apps/desktop/src/lib/chat', () => ({
   },
   GroupCollabEmptyError: class GroupCollabEmptyError extends Error {},
 }))
+const transferGroupOwnerMock = vi.hoisted(() => vi.fn(async (_chatId: string, _userId: string) => {}))
+vi.mock('../../../apps/desktop/src/lib/groupAdmin', () => ({ transferGroupOwner: transferGroupOwnerMock }))
 vi.mock('../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => import('../../support/agentDisplayStatusTestDouble'))
 vi.mock('../../../apps/desktop/src/lib/identityReadAdapter', () => ({
   readRequiredDisplayIdentities: vi.fn(async (ids: string[]) => ids.map((id) => ({ id, type: 'human', display_name: `申请人-${id}` }))),
@@ -312,6 +315,58 @@ describe('#6418 群成员面板 —— 资料卡与管理', () => {
     await waitForCondition(() => q('[data-testid="group-member-profile-menu"]') !== null, 'profile card open')
     expect(q('[data-testid="group-member-profile-menu"] select')).not.toBeNull()
     expect(q('[data-testid="group-member-profile-menu"]')?.textContent).toContain('移出群聊')
+  })
+
+  it('群主不能在角色下拉里选「群主」:转让是单独的动作,先确认、说清自己变成管理员,再转并重读名册', async () => {
+    await renderPanel('owner-1')
+    await click(q('[data-member-row="member-1"]'))
+    await waitForCondition(() => q('[data-profile-transfer-owner="member-1"]') !== null, 'transfer action shown')
+    expect([...document.querySelectorAll('[data-profile-role-select="member-1"] option')].map((option) => (option as HTMLOptionElement).value)).toEqual(['admin', 'member'])
+    const readsBefore = getGroupCollab.mock.calls.length
+    await click(q('[data-profile-transfer-owner="member-1"]'))
+    await waitForCondition(() => transferGroupOwnerMock.mock.calls.length === 1, 'transfer called')
+    expect(confirmDangerMock).toHaveBeenCalledWith(expect.objectContaining({ title: '转让群主', description: expect.stringContaining('你将成为管理员') }))
+    expect(String((confirmDangerMock.mock.calls[0]![0] as { description: string }).description)).toContain('成员乙')
+    expect(transferGroupOwnerMock).toHaveBeenCalledWith('chat-1', 'member-1')
+    await waitForCondition(() => getGroupCollab.mock.calls.length > readsBefore, 'roster reloaded')
+    // The card (a popover above dialogs) closed before asking, so the confirmation is not drawn under it.
+    await waitForCondition(() => q('[data-testid="group-member-profile-menu"]') === null, 'profile card closed')
+  })
+
+  it('没确认就不转;agent 和非群主都没有这个动作', async () => {
+    confirmDangerMock.mockResolvedValueOnce(false)
+    await renderPanel('owner-1')
+    await click(q('[data-member-row="member-1"]'))
+    await waitForCondition(() => q('[data-profile-transfer-owner="member-1"]') !== null, 'transfer action shown')
+    await click(q('[data-profile-transfer-owner="member-1"]'))
+    await waitForCondition(() => confirmDangerMock.mock.calls.length === 1, 'asked')
+    expect(transferGroupOwnerMock).not.toHaveBeenCalled()
+    await click(q('[data-member-row="codex"]'))
+    await waitForCondition(() => q('[data-profile-role-select="codex"]') !== null, 'agent card open')
+    expect(q('[data-profile-transfer-owner]')).toBeNull()
+  })
+
+  it('a non-owner manager has role controls but no transfer action', async () => {
+    getSettings.mockResolvedValue({ ...authority(), my_role: 'admin' })
+    await renderWithAppProviders(harness, createNode(MemberListPanel, { chatId: 'chat-1', chatKind: 'group', head }),
+      { auth: { id: 'member-2' }, chat: { identitiesById: {}, getImRepository: async () => ({ putIdentities: vi.fn(async () => {}) }) as never,
+        subscribeAccountRevision: (() => () => {}) as never }, contacts: { contacts: [] } })
+    await waitForCondition(() => q('[data-member-row="member-1"]') !== null, 'rows')
+    await click(q('[data-member-row="member-1"]'))
+    await waitForCondition(() => q('[data-profile-role-select="member-1"]') !== null, 'role select shown')
+    expect(q('[data-profile-transfer-owner]')).toBeNull()
+  })
+
+  it('项目群:转让钮不可点,并写明项目群的群主就是项目主人', async () => {
+    // The one project-group predicate (isProjectGroupChat) reads this store.
+    const projectOf = vi.spyOn(projectGroupsStore, 'projectOfChat').mockImplementation((chatId) => (chatId === 'chat-1' ? 'project-1' : undefined))
+    try {
+      await renderPanel('owner-1')
+      await click(q('[data-member-row="member-1"]'))
+      await waitForCondition(() => q('[data-profile-transfer-owner="member-1"]') !== null, 'transfer action shown')
+      expect((q('[data-profile-transfer-owner="member-1"]') as HTMLButtonElement).disabled).toBe(true)
+      expect(q('[data-profile-transfer-owner-hint="member-1"]')?.textContent).toContain('项目群的群主就是项目主人')
+    } finally { projectOf.mockRestore() }
   })
 
   it('群主行尾 ⋯ → 移出群聊:调到 removeGroupMember 并重读名册;群主自己那行没有 ⋯', async () => {

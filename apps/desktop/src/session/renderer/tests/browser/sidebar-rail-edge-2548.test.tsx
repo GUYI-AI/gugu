@@ -108,7 +108,10 @@ for (const material of ['native', 'opaque'] as const) {
     expect(document.querySelector('[data-region="sidebar-scroll"]')!.getBoundingClientRect().bottom).toBeLessThanOrEqual(foot.getBoundingClientRect().top);
 
     fold.click();
-    await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(68);
+    // The width lands in the frame loop; 「»」 moves into the rail row with the rows' re-render after it (useLeftRailLayout),
+    // so the wait is for that commit, ❌ the width alone (a slow frame left the faded 「«」 in the head: 41, not 34).
+    await expect.poll(() => document.querySelector('[data-sidebar-rail-row] [data-testid="sidebar-fold"]'), { timeout: 3000 }).not.toBeNull();
+    expect(aside.getBoundingClientRect().width).toBe(68);
     // The rail: 「»」 under the traffic lights, on the avatars' axis (x = 34); no search, 已安排 or 会话历史.
     const railFold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
     const box = railFold.getBoundingClientRect();
@@ -159,10 +162,11 @@ it('a fold writes no custom property and swaps no class: the names fade as one m
   observer.observe(aside, { subtree: true, attributes: true, attributeFilter: ['style'] });
   const sidebar = document.querySelector<HTMLElement>('[data-region="left-sidebar"]')!;
   const listClasses = sidebar.className;
-  // A row's trailing slot as ChatListPanel draws it (the rows themselves are stubbed here): the muted bell, the count.
+  // A row's trailing slot as ChatListPanel draws it (the rows themselves are stubbed here): the muted bell; the count is on
+  // the avatar (AvatarUnread), not here.
   const trailing = document.createElement('span');
   trailing.className = 'gg-list-row-trailing';
-  trailing.innerHTML = '<span class="gg-chat-row-muted">bell</span><span class="gg-chip">3</span><span>other</span>';
+  trailing.innerHTML = '<span class="gg-chat-row-muted">bell</span><span>other</span>';
   scroll.append(trailing);
   document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
   await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(68);
@@ -172,9 +176,9 @@ it('a fold writes no custom property and swaps no class: the names fade as one m
   // inherited pointer-events on every row body).
   await expect.poll(() => sidebar.hasAttribute('data-sidebar-rail'), { timeout: 1000 }).toBe(true);
   expect(sidebar.className).toBe(listClasses);
-  // The rules end in the count's own elements: the bell by its class; ❌ by tag (a span rule restyled every span in the rows).
-  const [bell, chip, other] = [...trailing.children].map((child) => getComputedStyle(child).display);
-  expect([getComputedStyle(trailing).position, bell, chip, other]).toEqual(['absolute', 'none', 'flex', 'block']);
+  // The rule ends in the bell's own class; ❌ by tag (a span rule restyled every span in the rows).
+  const [bell, other] = [...trailing.children].map((child) => getComputedStyle(child).display);
+  expect([bell, other]).toEqual(['none', 'block']);
   // The avatars' column stays; right of it the names' opacity, 0 on the rail.
   expect(masks.length).toBeGreaterThan(2);
   expect(scroll.style.maskImage).toMatch(/^linear-gradient\(to right, black 64px, color-mix\(in srgb, black 0(?:\.0+)?%, transparent\) 64px\)/);

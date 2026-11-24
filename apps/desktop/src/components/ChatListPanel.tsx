@@ -32,8 +32,8 @@ import { CreateGroupChatForm, MEMBER_PICKER_SHEET } from './CreateGroupChatModal
 import { AddFriendSearch } from './AddFriendSearch'
 import { Avatar } from './Avatar'
 import { PhoneProjectChatAvatar } from '@/mobile/partners/PhoneProjectChatAvatar'
-import { phoneChatUnread } from '@/mobile/chat/phoneChatUnread'
-import { oneListCalls, oneListNewsDot } from '@/lib/chatLineUnread'
+import { chatLineCalls, chatLineNews } from '@/lib/chatLineUnread'
+import { AvatarUnread } from './AvatarUnread'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
@@ -211,10 +211,10 @@ export interface ChatRowActions {
 
 interface ChatRowProps {
   chat: ChatItem
-  /** 这一行显示的未读数(手机上并进了话题的未读,见 phoneChatUnread;桌面一个列表上是叫到你的,见 oneListCalls)。 */
+  /** 这一行叫到你的数(chatLineCalls,话题并进来源行);其余新消息是头像右上的小灰点(chatLineNews)。 */
   unreadCount: number
-  /** #2548 desktop one list: the number is red and counts only the calls; other news is a grey dot (oneListNewsDot). */
-  callsOnly?: boolean
+  /** #2548 the desktop one list's layout: the bigger avatar, no time. */
+  oneList?: boolean
   agentStatus?: AgentDisplayStatus
   isActive: boolean
   topicsExpanded?: boolean
@@ -315,7 +315,7 @@ export function TopicSubRows({ topics, isSunk, expanded, onExpand, children }: {
 
 // @@@chat-row-memo - 一条消息只重画它那一行:props 只有这一行自己的数据(store 里没变的会话行是同一个对象,
 // 见 applyFetchedChatList 的结构共享) + 一份稳定的动作。❌ 每次渲染新建的闭包 / 对象 props —— 那会让一次更新重画整列。
-const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, agentStatus, isActive, topicsExpanded, draft, mobile = false, tabIndex, actions, joinPos, joinOnScreen, pinnedHome, pinnedSessionId }: ChatRowProps) {
+const ChatRow = memo(function ChatRow({ chat, unreadCount, oneList = false, agentStatus, isActive, topicsExpanded, draft, mobile = false, tabIndex, actions, joinPos, joinOnScreen, pinnedHome, pinnedSessionId }: ChatRowProps) {
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
   const menu = useRowContextMenu()
@@ -330,7 +330,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
   const displayName = chatDisplayName(chat, peerName)
   const shownName = useShownAgentName({ name: displayName, createdAt: isAgentChat ? peerIdentity?.created_at ?? undefined : undefined })
   const preview = chatPreviewText(chat)
-  const newsDot = callsOnly && oneListNewsDot(chat, unreadCount)
+  const newsDot = chatLineNews(chat, unreadCount)
   const unavailable = useUnavailableProjects(!mobile)?.find(project => project.chatId === chat.id)
 
   return (
@@ -359,16 +359,15 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
         leading={
           // Avatar — agent status lives in the corner badge (AvatarStatusBadge); the old
           // top-right dot was consolidated into it (#793 follow-up).
-          <PhoneProjectChatAvatar chat={chat} mobile={mobile}><Avatar
+          <AvatarUnread calls={unreadCount} news={newsDot}><PhoneProjectChatAvatar chat={chat} mobile={mobile}><Avatar
             name={shownName}
             avatarUrl={isRoom ? chat.avatar : peerIdentity?.avatar}
             seed={isRoom ? chat.id : chat.peer_user_id ?? undefined}
-            size={mobile ? 48 : callsOnly ? ONE_LIST_AVATAR_PX : 'sm'}
+            size={mobile ? 48 : oneList ? ONE_LIST_AVATAR_PX : 'sm'}
             isAgent={isAgentChat}
-            harnessBadge={!mobile}
             agentStatus={agentStatus}
             variant={isRoom ? 'group' : 'default'}
-          /></PhoneProjectChatAvatar>
+          /></PhoneProjectChatAvatar></AvatarUnread>
         }
         title={
           <>
@@ -391,8 +390,8 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
             )}
           </>
         }
-        // 界面减法 #66: the one list (callsOnly) shows no time; a row pinned to it keeps the menu item's sidebar glyph.
-        meta={pinnedSessionId !== undefined ? <PanelLeft size={13} strokeWidth={1.8} aria-hidden="true" /> : callsOnly ? undefined : formatCalendarDay(chatActivityAt(chat))}
+        // 界面减法 #66: the one list shows no time; a row pinned to it keeps the menu item's sidebar glyph.
+        meta={pinnedSessionId !== undefined ? <PanelLeft size={13} strokeWidth={1.8} aria-hidden="true" /> : oneList ? undefined : formatCalendarDay(chatActivityAt(chat))}
         subtitle={
           unavailable ? <ProjectRecoverySubtitle project={unavailable} /> : draft ? (
             <>
@@ -402,21 +401,11 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
             </>
           ) : pinnedHome !== undefined ? [pinnedHome, preview].filter(Boolean).join(' · ') : preview
         }
-        trailing={(!mobile || chat.is_muted || unreadCount > 0) ? (
-          <>
-            {/* owner 10-28:agent 行不再标它在哪台机器上(「本机」/ 设备名);机器只在悬停卡与对话标题栏里说。 */}
-            {chat.is_muted && (
-              <span className="gg-chat-row-muted" aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
-                <BellOff size={13} strokeWidth={1.8} aria-hidden="true" />
-              </span>
-            )}
-            {unreadCount > 0 && (
-              <Chip tone={callsOnly ? 'danger' : 'accent'} shape="count">
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </Chip>
-            )}
-            {newsDot && <Chip shape="dot" role="img" aria-label={t('chatList.newsNotCallingYou')} title={t('chatList.newsNotCallingYou')} />}
-          </>
+        // owner 10-28:agent 行不再标它在哪台机器上(「本机」/ 设备名);机器只在悬停卡与对话标题栏里说。未读在头像右上(AvatarUnread)。
+        trailing={chat.is_muted ? (
+          <span className="gg-chat-row-muted" aria-label={t('chatList.muted')} title={t('chatList.muted')} style={{ color: 'var(--text-tertiary)' }}>
+            <BellOff size={13} strokeWidth={1.8} aria-hidden="true" />
+          </span>
         ) : undefined}
       />
 
@@ -749,8 +738,8 @@ export function ChatListPanel({
   // @@@5856 一条线 + 挂在它底下的话题子行。置顶段与常规段共用这一份 ——
   // ❌ 不在两处各抄一遍「记得也画子行」,那种东西漏一处就只在某一段里话题消失。
   // 并在一组里的那一行:框画在它最外面那一层上 —— 有话题子行时是连同子行的那一层,框把子行一起圈住。
-  // 手机:话题并进来源行(主聊天全算);桌面一个列表(#2548):同一个并法,只算叫到你的,其余新消息挂小灰点。
-  const lineUnread = useMemo(() => mobile ? phoneChatUnread(chats) : oneList ? oneListCalls(chats) : null, [mobile, oneList, chats])
+  // 话题并进来源行,只数叫到你的,其余新消息挂小灰点(手机、桌面同一个口径,owner 11-24)。
+  const lineCalls = useMemo(() => chatLineCalls(chats), [chats])
   // 这些处理函数在下面定义、每次渲染新建;行拿到的是调它们最新那一版的稳定入口。
   const activate = useStableHandler((chat: ChatItem) => activateChatRow(chat))
   const openTopic = useStableHandler((topic: ChatItem) => selectChat(topic, 'composer'))
@@ -775,8 +764,8 @@ export function ChatListPanel({
       <ChatRow
         key={chat.id}
         chat={chat}
-        unreadCount={lineUnread ? lineUnread.get(chat.id) ?? 0 : chat.unread_count}
-        callsOnly={oneList}
+        unreadCount={lineCalls.get(chat.id) ?? 0}
+        oneList={oneList}
         joinPos={hasTopics ? undefined : join?.pos}
         joinOnScreen={hasTopics ? undefined : join?.onScreen}
         agentStatus={rowAgentStatus(chat, identitiesById, agentStatuses, shownAgent)}

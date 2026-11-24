@@ -128,20 +128,21 @@ it.each([false, true])('opening the bell reads nothing; a read failure stays lis
   const failure = { ...task('error-a', 'error'), lastInteractedAt: '2026-11-05T01:00:00.000Z' }
   const wait = { ...task('approval', 'needs_user', false), lastInteractedAt: '2026-11-05T00:00:00.000Z' }
   state.sessions = [failure, wait]
-  const marks = () => rows().map(row => ({ badge: row.querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent ?? null, muted: !!row.querySelector('.gg-list-row-title .text-\\[var\\(--muted-fg\\)\\]'), status: !!row.querySelector('.gg-phone-message-avatar-badge') }))
+  const marks = () => rows().map(row => ({ badge: row.querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent ?? null, muted: !!row.querySelector('.gg-list-row-title .text-\\[var\\(--muted-fg\\)\\]'), status: !!row.querySelector('.av-status') }))
   await mount(mobile); await open()
   await see('error-a'); await see('approval')
   expect(markSeen, 'looking at the list is not reading the task').not.toHaveBeenCalled()
   expect(rows().map(row => row.querySelector('.gg-list-row-subtitle')?.textContent), 'the second line says why, not the name again').toEqual(['出错了', '等你批准'])
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('2')
   expect(rows().map(row => row.dataset.emphasis)).toEqual(['true', 'true'])
-  expect(marks(), 'unread rows carry the chat list unread badge').toEqual([{ badge: '1', muted: false, status: true }, { badge: '1', muted: false, status: true }])
+  // The status mark in the avatar's corner says it needs you; there is no count beside it (owner 11-24).
+  expect(marks(), 'unread rows carry the status mark, not a count').toEqual([{ badge: null, muted: false, status: true }, { badge: null, muted: false, status: true }])
   // The host read bit lands (the task was opened); the person closes the bell and opens it again.
   state.sessions = [{ ...failure, unseen: false }, wait]
   await mount(mobile); await act(async () => toggle()!.click()); await open()
   expect(rows().map(row => row.dataset.sessionLine), 'a read failure is still a failure: it stays listed').toEqual(['error-a', 'approval'])
   expect(rows().map(row => row.dataset.emphasis)).toEqual([undefined, 'true'])
-  expect(marks(), 'a read row is muted, with no badge and no status mark: its state stays in words').toEqual([{ badge: null, muted: true, status: false }, { badge: '1', muted: false, status: true }])
+  expect(marks(), 'a read row is muted, with no badge and no status mark: its state stays in words').toEqual([{ badge: null, muted: true, status: false }, { badge: null, muted: false, status: true }])
   expect(rows()[0].querySelector('.gg-list-row-subtitle')?.textContent).toBe('出错了')
   expect(document.querySelector('[data-testid="notification-count"]')?.textContent).toBe('1')
   expect(document.querySelector('[data-testid="notification-mark-all-read"]'), 'nothing unread left to mark').toBeNull()

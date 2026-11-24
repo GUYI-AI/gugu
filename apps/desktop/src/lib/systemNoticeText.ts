@@ -10,7 +10,7 @@ import { markdownPlainText } from './markdownPlainText'
 // the names, and for member-managed which sentence, come from content. A sentence not recognised stays as written.
 // The sentences matched here are written by these gugu-supabase functions: member-joined by chat.insert_group_member,
 // agent-flood by chat.apply_agent_flood_rule and chat.enforce_agent_flood_passive, member-managed (left / removed /
-// made admin / admin revoked) by chat.announce_group_management, topic-opened by chat.create_topic.
+// made admin / admin revoked / owner transferred) by chat.announce_group_management, topic-opened by chat.create_topic.
 const say = (key: Parameters<typeof i18n.t>[0], values?: Record<string, string>) => i18n.t(key, { ns: 'messaging', ...values })
 
 const JOINED = ' 加入了群聊'
@@ -30,6 +30,7 @@ function memberManagedText(content: string): string {
   if ((m = content.match(/^(.*) 将 (.*) 移出了群聊$/s))) return say('group.notice.removed', { actor: m[1]!, target: m[2]! })
   if ((m = content.match(/^(.*) 将 (.*) 设为管理员$/s))) return say('group.notice.madeAdmin', { actor: m[1]!, target: m[2]! })
   if ((m = content.match(/^(.*) 撤销了 (.*) 的管理员身份$/s))) return say('group.notice.revokedAdmin', { actor: m[1]!, target: m[2]! })
+  if ((m = content.match(/^(.*) 将群主转让给 (.*)$/s))) return say('group.notice.transferredOwner', { actor: m[1]!, target: m[2]! })
   return content
 }
 

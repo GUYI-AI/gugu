@@ -1,16 +1,14 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { stopAnimationsOffscreen } from '@gugu/session-shared/animation-visibility'
+import { useState, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { colorOfDisplayStatus, labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
+import { labelOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentStatusLabel } from '@gugu/core/shared/agentStatusPresentation'
 import { normalizeAvatarUrl, reportInvalidAvatarUrl } from '@gugu/core/shared/ui/avatarUrl'
 import type { AgentDisplayStatus } from '@gugu/core/shared/types/chat'
 import { groupAvatarColorIndex, groupAvatarDefaultText, groupAvatarSvg, groupAvatarThemeColors } from '@gugu/core/shared/ui/groupAvatar'
 import { dicebearAvatarDataUri } from '../lib/dicebearAvatar'
 import { useAvatarTheme } from '../lib/avatarTheme'
-import { AgentNeedsUserGlyph } from './AgentNeedsUserGlyph'
-import { AgentParkedGlyph } from './AgentParkedGlyph'
-import { AgentHarnessBadge } from './AgentHarnessIdentity'
+import { AgentContactStatusMark } from './AgentContactStatusMark'
+import { agentStatusHasMark } from '@/lib/agentStatusMark'
 import { BoringAgentAvatar } from './BoringAgentAvatar'
 import { AssistantDefaultAvatar } from './assistant/AssistantDefaultAvatar'
 import { useAvatarIdentity, useIsAssistantAvatar } from '../lib/avatarIdentity'
@@ -27,12 +25,9 @@ export interface AvatarProps {
   // @@@1323-m6 兼收数字 px：少数对齐 SSOT 的一次性尺寸(如账户头像 46×46，命名档无 46)，向后兼容。
   size?: 'xs' | 'sm' | 'md' | 'lg' | number
   isAgent?: boolean
-  // Runtime status takes the bottom-right corner; the harness badge is drawn there only when no status is shown.
   agentStatus?: AgentDisplayStatus
   // The assistant expresses the precise status with its 3D figure; other agents use the status badge.
   statusLabel?: AgentStatusLabel
-  // 右下角的 harness 品牌小图标。默认画;单聊头部那只大头像不画(头栏那句「状态 · 位置 · 引擎」已经说了引擎)。
-  harnessBadge?: boolean
   // 鼠标移上去小鸟就被拍一拍(只对会动的小鸟生效;照片 / 真人 / 群不变)。单聊头栏那只大头像用。
   hoverPoke?: boolean
   /** Extra drawing room for the assistant figure; layout and custom-photo size stay unchanged. */
@@ -46,66 +41,21 @@ export interface AvatarProps {
 }
 
 const SIZE_MAP = { xs: 18, sm: 32, md: 40, lg: 64 } as const
-const AVATAR_STATUS_DOT_CLASS = 'av-status__dot relative motion-reduce:animate-none'
-const AVATAR_STATUS_PULSE_CLASS = 'av-status__pulse pointer-events-none absolute -inset-0.5 rounded-full border-2 border-solid animate-[av-status-pulse_1.4s_steps(14,end)_infinite] motion-reduce:animate-none'
-const AVATAR_STATUS_PULSE_DELAY_CLASS = `${AVATAR_STATUS_PULSE_CLASS} av-status__pulse--delay [animation-delay:0.7s]`
+// @@@avatar-status-corner - an agent's one status mark, in the avatar's bottom-right corner (AgentContactStatusMark).
+// The running glyph sits on a small see-through round backing so it covers little of the face; the solid marks
+// (needs you, error, offline — AgentMarkGlyph) are opaque shapes and have no backing.
+const SOLID_MARKS: ReadonlySet<AgentDisplayStatus> = new Set(['needs_user', 'error', 'offline'])
 
-// @@@avatar-status-badge - bottom-right status indicator; it takes the harness badge's corner (the top-right is the
-// unread dot's). Color and words come from the shared presentation
-// (packages/core/src/shared/agentStatusPresentation.ts — one table for the session page, chat and phone). Motion uses
-// Tailwind animation utilities plus global keyframes. working = solid dot + two staggered pulse rings; parked = the
-// two bars of AgentParkedGlyph; needs_user = Solar exclamation glyph; idle/offline/removed = static dot.
-function AgentStatusBadge({ status, size }: { status: AgentDisplayStatus; size: number }) {
+function AgentStatusCorner({ status, avatarSize }: { status: AgentDisplayStatus; avatarSize: number }) {
   const { t } = useTranslation('common')
-  const color = colorOfDisplayStatus(status) ?? 'transparent'
-  const label = t(`agentStatus.${labelOfDisplayStatus(status)}`)
-  const running = status === 'working'
-  // Pulses on avatars scrolled out of the message list stop; the ones on screen keep pulsing.
-  const badge = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (running && badge.current) return stopAnimationsOffscreen(badge.current)
-  }, [running])
+  const size = Math.max(8, Math.min(14, Math.round(avatarSize * 0.34)))
+  if (!agentStatusHasMark(status)) return null
+  const solid = SOLID_MARKS.has(status)
+  const text = t(`agentStatus.${labelOfDisplayStatus(status)}`)
   return (
-    <div
-      ref={badge}
-      className={`av-status av-status--${status}`}
-      role="img"
-      aria-label={label}
-      title={label}
-      style={{
-        position: 'absolute',
-        bottom: -2,
-        right: -2,
-        width: size,
-        height: size,
-        borderRadius: 'var(--radius-circle)',
-        background: 'transparent',
-        border: '1.5px solid transparent',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: Math.max(2, Math.round(size * 0.14)),
-        boxSizing: 'border-box',
-      }}
-    >
-      {status === 'needs_user' ? (
-        <AgentNeedsUserGlyph size={Math.max(8, size)} />
-      ) : status === 'parked' ? (
-        <AgentParkedGlyph size={Math.max(8, size)} />
-      ) : (
-        <span
-          className={AVATAR_STATUS_DOT_CLASS}
-          style={{ width: '100%', height: '100%', borderRadius: 'var(--radius-circle)', background: color }}
-        >
-          {running && (
-            <>
-              <span className={AVATAR_STATUS_PULSE_CLASS} style={{ borderColor: color }} />
-              <span className={AVATAR_STATUS_PULSE_DELAY_CLASS} style={{ borderColor: color }} />
-            </>
-          )}
-        </span>
-      )}
-    </div>
+    <span className={`av-status av-status--${status}${solid ? ' av-status--solid' : ''}`} role="img" aria-label={text} title={text} style={{ '--av-status-size': `${size}px` } as React.CSSProperties}>
+      <AgentContactStatusMark tone={status} size={size} className={solid ? undefined : 'av-status__glyph'} />
+    </span>
   )
 }
 
@@ -117,7 +67,6 @@ export function Avatar({
   isAgent,
   agentStatus,
   statusLabel,
-  harnessBadge = true,
   hoverPoke = false,
   canvasPaddingX = 0,
   still = false,
@@ -153,8 +102,6 @@ export function Avatar({
   useEffect(() => {
     reportInvalidAvatarUrl(avatarUrl, `main avatar "${name || 'unknown'}"`)
   }, [avatarUrl, name])
-
-  const badgeSize = Math.max(8, Math.min(16, Math.round(px * 0.3)))
 
   const base: React.CSSProperties = {
     position: 'relative',
@@ -210,7 +157,6 @@ export function Avatar({
   const groupFaceMarkup = useMemo(() => (groupFace ? { __html: groupAvatarSvg({ ...groupAvatarThemeColors(groupAvatarColorIndex(identityKey)), text: groupAvatarDefaultText(name), px, label: name }) } : undefined), [groupFace, identityKey, name, px])
   const agentDefault = variant !== 'group' && agent === true && wantsGeneratedFace && !!identityKey
   const animatedAssistant = agentDefault && assistant && !still
-  const statusBadge = agentStatus && !animatedAssistant ? agentStatus : null
   const generatedUrl = variant !== 'group' && wantsGeneratedFace && agent === false && identityKey ? dicebearAvatarDataUri(identityKey, theme) : null
   const missingIdentityKey = wantsGeneratedFace && !identityKey
   useEffect(() => {
@@ -266,8 +212,9 @@ export function Avatar({
           style={emptyStyle}
         />
       )}
-      {statusBadge ? <AgentStatusBadge status={statusBadge} size={badgeSize} />
-        : agent && harnessBadge && variant !== 'group' ? <AgentHarnessBadge agentId={seed} avatarSize={px} /> : null}
+      {agentStatus && !animatedAssistant ? (
+        <AgentStatusCorner status={agentStatus} avatarSize={px} />
+      ) : null}
     </div>
   )
 }

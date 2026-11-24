@@ -18,7 +18,7 @@ import { ContactsGrid } from './ContactsGrid'
 // 每个有子 agent 的顶层 agent 连同子孙是一个「家族」,只占一格,在格里从上往下画成大纲 —— 父在上,子缩进一级,
 // ├ / └ 连接线与 │ 竖线是纯 CSS 边框;一行家族没排满时,剩下的宽度分给这一行的家族(ContactsGrid fill),名字截在可用宽度上。
 // 没有子 agent 的 agent 各占一格,排在家族后面。正文再窄也不横向滚动。
-// 节点 = 头像 + 名字;状态只在头像角上的状态点(Avatar 自带的 AgentStatusBadge:聊天列表、成员列表、消息头像同一套)。
+// 节点 = 头像 + 名字;状态只在头像角上的那一枚(Avatar 自带的 AgentStatusCorner:聊天列表、成员列表、消息头像同一套)。
 
 // 一个 agent 的子 agent 超过 FOLD_OVER 个时只露前 FOLD_SHOW 个,其余收成一个「…+N」行,点开就地展开。
 const FOLD_OVER = 5

@@ -17,7 +17,7 @@ import { ConversationProcess } from './ConversationProcess';
 import { SenderName } from './SenderName';
 import { conversationAgentTarget, messageSenderTarget, type MessageSenderTarget } from '@session-chat/lib/sender-target';
 import { BackgroundTasksList, measuredBackgroundListHeight } from '../background-tasks/background-tasks-parts';
-import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
+import { runningText } from '@session-chat/styles/effects.css';
 import { BACKGROUND_TASKS_TOGGLE } from '@session-chat/state/flatten';
 import { segmentItem } from './DeliveryCard';
 import { isMessageEditing } from './message-editor-metrics';
@@ -195,7 +195,7 @@ export function ProcessBackgroundPill(props: { ownerId: string; ctx: RenderCtx }
         {/* The text slot is the measured width and nothing more: it must not shrink below its own content. A rendering a
             hair wider than the canvas measure (another font, another pixel ratio) would otherwise wrap the last glyph, and
             the second line spills out of this one-line box over the process header above it. */}
-        <ShimmerText active multiline style={{ 'white-space': 'pre-wrap', 'line-height': '22px', 'flex-shrink': 0 }}>{backgroundPillLayout(props.ownerId, props.ctx.measureCtx!())!.text}</ShimmerText>
+        <span class={runningText} style={{ 'white-space': 'pre-wrap', 'line-height': '22px', 'flex-shrink': 0 }}>{backgroundPillLayout(props.ownerId, props.ctx.measureCtx!())!.text}</span>
         <span class={conversationProcessChevron} aria-hidden="true">›</span>
       </button>
     </span>

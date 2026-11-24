@@ -505,6 +505,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
             partition={pageMount.partition}
             initialUrl={pageMount.src}
             visible={visible}
+            covered={startPageCovers || !!(loadError && loadErrorPresentation)}
             onHandle={onPageHandle}
           />
         ) : (

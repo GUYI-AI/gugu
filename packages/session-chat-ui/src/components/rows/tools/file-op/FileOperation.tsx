@@ -20,7 +20,7 @@ import {
   monoRunning,
 } from './file-op.css';
 import { fileOpCardVars } from './file-op.css';
-import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
+import { runningText } from '@session-chat/styles/effects.css';
 import { useChatTranslator } from '@session-chat/localization';
 
 // ── Verb map ──────────────────────────────────────────────────────────────────
@@ -143,12 +143,12 @@ export function FileOpRow(props: FileOpRowProps) {
           when={props.item.ops[0]}
           fallback={
             <div class={fileRow({ clickable: false })} style={{ height: `${props.rowH}px` }}>
-              <ShimmerText
+              <span
                 class={monoRunning}
-                active={props.item.status === 'running' && !props.item.awaitingPermission}
+                classList={{ [runningText]: props.item.status === 'running' && !props.item.awaitingPermission }}
               >
                 {verb()}…
-              </ShimmerText>
+              </span>
               <FileOpStatus item={props.item} />
             </div>
           }

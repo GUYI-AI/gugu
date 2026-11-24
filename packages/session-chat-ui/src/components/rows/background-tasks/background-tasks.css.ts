@@ -197,7 +197,7 @@ export const subagentStepDetail = style({
   color: `color-mix(in srgb, ${vars.fg} 70%, transparent)`,
 });
 
-/** 记号格:一行字高,与 GridLoader 同宽(17)。 */
+/** 记号格:一行字高,与过程行的大脑图标同宽(17)。 */
 export const subagentTimelineMarker = style({
   width: 17,
   height: 20,

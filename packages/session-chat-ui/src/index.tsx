@@ -24,6 +24,7 @@
 
 import './styles/global.css';
 import '@gugu/session-shared/animation-visibility.css';
+import '@gugu/session-shared/running-glyph.css';
 
 // ── Core API ──────────────────────────────────────────────────────────────────
 

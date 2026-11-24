@@ -7,6 +7,9 @@ import { ANIMATION_WINDOW_SEEN_EVENT } from '@gugu/session-shared/animation-visi
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@renderer/index.css';
 import '@gugu/session-shared/animation-visibility.css';
+import '@gugu/session-shared/running-glyph.css';
+// The loop joins the document clock when it starts (animationstart), a frame after it reports running.
+const onBeat = (animation: Animation) => Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime)) < 50;
 
 // Root contract: the running glyph turns on the compositor (a stepped transform of its glyph strip); no timer steps it,
 // and it holds still whenever it cannot be seen — including the tab's own glyph while the × covers it.
@@ -27,17 +30,18 @@ function mount(node: React.ReactNode): HTMLElement {
   roots.push(root); hosts.push(host);
   return host;
 }
-const strips = (host: HTMLElement) => [...host.querySelectorAll('.cli-spinner__strip')].flatMap((strip) => strip.getAnimations());
+const strips = (host: HTMLElement) => [...host.querySelectorAll('.gg-running-glyph__strip')].flatMap((strip) => strip.getAnimations());
 
 it('turns with one infinite stepped animation and no timer, and stops with its window', async () => {
   const timers = vi.spyOn(window, 'setInterval');
-  const host = mount(<CLISpinner variant="2" />);
+  const host = mount(<CLISpinner />);
   await until('spinner mounts', () => !!host.firstElementChild);
   expect(timers).not.toHaveBeenCalled();
   await until('the strip turns', () => strips(host).length === 1 && strips(host)[0]!.playState === 'running');
   const timing = strips(host)[0]!.effect!.getComputedTiming();
   expect(timing.iterations).toBe(Infinity);
-  expect(timing.duration).toBe(24 * 80);
+  expect(timing.duration).toBe(3000);
+  expect(getComputedStyle(host.querySelector('.gg-running-glyph__strip')!).animationTimingFunction).toBe('steps(24)');
   expect(timers).not.toHaveBeenCalled();
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }));
   await until('it stops with the window', () => strips(host).length === 0);
@@ -64,6 +68,7 @@ it('stops offscreen and starts again; pauses on inert retained surfaces and resu
   host.style.cssText = '';
   await until('onscreen spinner turns again', () => strips(host)[0]?.playState === 'running');
   const animation = strips(host)[0]!;
+  await until('it is back on the shared beat', () => onBeat(animation));
   host.inert = true;
   await until('retained surface pauses', () => animation.playState === 'paused');
   host.inert = false;
@@ -76,9 +81,9 @@ it('keeps the first glyph still under reduced motion, including a live preferenc
   await until('spinner runs', () => strips(host).length === 1);
   await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
   await until('motion is disabled', () => strips(host).length === 0);
-  const strip = host.querySelector<HTMLElement>('.cli-spinner__strip')!;
+  const strip = host.querySelector<HTMLElement>('.gg-running-glyph__strip')!;
   expect(getComputedStyle(strip).transform).toBe('none');
-  expect(strip.firstElementChild!.textContent).toBe('⠋');
+  expect(getComputedStyle(strip, '::before').content.replace(/[^\u2800-\u28ff]/gu, '')).toBe('⠈⠉⠋⠓⠒⠐⠐⠒⠖⠦⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈');
   await cdp().send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }] });
   await until('motion resumes', () => strips(host)[0]?.playState === 'running');
 });
