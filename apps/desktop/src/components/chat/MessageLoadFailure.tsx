@@ -14,7 +14,7 @@ import { Check } from '@/lib/icons'
  * 那是在说「你们从没聊过」);手上已有行(缓存)时只在列表上方压一条,已读到的照常可见。
  * 原因原文(库报错之类)不直接摆给人看,点「查看详情」才展开、可复制;原文另进日志(读的那一处记)。
  */
-export function MessageLoadFailure({ error, onRetry, inline }: { error: Error; onRetry: () => Promise<void>; inline: boolean }) {
+export function MessageLoadFailure({ error, onRetry, inline, newestId }: { error: Error; onRetry: () => Promise<void>; inline: boolean; newestId?: string }) {
   const { t } = useTranslation('messaging')
   const [retrying, setRetrying] = useState(false)
   const [details, setDetails] = useState(false)
@@ -34,6 +34,14 @@ export function MessageLoadFailure({ error, onRetry, inline }: { error: Error; o
   const retryRef = useRef(onRetry)
   retryRef.current = onRetry
   useEffect(() => subscribeBackendRecovered(() => { void retryRef.current().catch(() => undefined) }), [])
+  // A message landing on this line reads it again too: the account sync that delivered it was answering all along, so
+  // that edge never comes, and ❌ the banner stands over a list that keeps receiving messages.
+  const newestRef = useRef(newestId)
+  useEffect(() => {
+    if (newestRef.current === newestId) return
+    newestRef.current = newestId
+    void retryRef.current().catch(() => undefined)
+  }, [newestId])
   const retry = () => {
     setRetrying(true)
     // 重试的结果由线自己记(成了清掉、又失败换成新原因),这里只管按钮别连点。

@@ -541,7 +541,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
       {/* #7199 没读出来 ≠ 没聊过:读失败时说读不到 + 重试,❌ 往下落进首次对话欢迎页 / 「暂无消息」。 */}
       {messagesError && !(loadingMessages && chatListRows.length === 0) && (
-        <MessageLoadFailure error={messagesError} inline={chatListRows.length > 0} onRetry={() => refreshMessages(activeChatId ?? undefined)} />
+        <MessageLoadFailure error={messagesError} inline={chatListRows.length > 0} newestId={messages.at(-1)?.id} onRetry={() => refreshMessages(activeChatId ?? undefined)} />
       )}
 
       {chatListRows.length === 0 && (loadingMessages || !messagesError) && (
