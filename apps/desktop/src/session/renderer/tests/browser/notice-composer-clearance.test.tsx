@@ -72,3 +72,21 @@ it('does not re-read the composers for inline writes that neither show nor hide 
   query.mockRestore()
   expect(reads, 'composer reads caused by style writes that change no visibility').toBe(0)
 })
+
+// A pane moving sideways (a fold, a resize) leaves the composer's height alone, so no read follows it. The notice shown
+// afterwards is centred on where the composer is now, not where it was at the last read.
+it('centres a notice on the composer it sits above after the composer moved sideways', async () => {
+  await page.viewport(1200, 800)
+  harness = createReactHarness()
+  await harness.render(<Layout />)
+  await act(async () => { notify({ key: 'clearance', title: 'Saved.', duration: 600_000 }) })
+  await until('notice is 8px above the composer', () => !!card() && Math.abs(gap() - 8) < 1)
+  await act(async () => { dismissNotice('clearance') })
+  await until('notice gone', () => !card())
+  composer().parentElement!.style.left = '20px'
+  composer().parentElement!.style.right = '600px'
+  await new Promise(requestAnimationFrame)
+  await act(async () => { notify({ key: 'clearance', title: 'Applied.', duration: 600_000 }) })
+  const centre = (box: DOMRect) => box.left + box.width / 2
+  await until('the notice is centred on the moved composer', () => !!card() && Math.abs(centre(card().getBoundingClientRect()) - centre(composer().getBoundingClientRect())) < 2)
+})
