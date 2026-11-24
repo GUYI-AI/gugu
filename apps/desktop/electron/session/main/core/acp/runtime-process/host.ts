@@ -98,6 +98,7 @@ type SessionInjectionFacts = {
    * runtime views inherit it from their source.
    */
   effort: string | null | undefined;
+  thinkingDisabled?: boolean;
   fastMode: boolean;
   /**
    * 会话记录里**自己的模型**那一半(`config.model`,harness 自家 id)—— 启动时 runtime 断言的就是它(#6196)。
@@ -161,6 +162,7 @@ export async function readSessionInjectionFacts(input: {
     // 的路径,codex 按目录逐模型的 catalog 就近落档。#6199 曾在这里按一张全局三档表过滤 —— 那会把用户在
     // GPT/Claude 上选的 xhigh/max 悄悄改回默认。
     effort: session ? session.effort : undefined,
+    thinkingDisabled: session?.thinkingDisabled,
     fastMode: session?.fastMode === true,
     model: platformModel ? null : (runtimeModelId(session?.model) ?? null),
     // 缺席(运行时视图没有自己的行,或行刚被删)= 没有可续的 provider 会话 ⇒ `null`,与「新开一条」同义。
@@ -499,7 +501,12 @@ export async function withEmdashMcpInjection<T extends { input: { sessionId: str
     firstTurn: injection.firstTurn,
     mcpServers: injection.mcpServers,
     // #6264 咕咕 server 上:这条会话的 agent 打开网页,推给正看着它的桌面(server-browser-env.ts;桌面版上是空的)。
-    capabilitySpawnEnv: withSessionBrowserEnv(input.input.sessionId, injection.spawnEnv),
+    capabilitySpawnEnv: withSessionBrowserEnv(input.input.sessionId,
+      facts.thinkingDisabled && input.input.providerId === 'codex' ? {
+        ...injection.spawnEnv,
+        GUGU_CODEX_REASONING_SUMMARY: 'none',
+        GUGU_CODEX_REASONING_SUMMARIES_SUPPORTED: 'false',
+      } : injection.spawnEnv),
     capabilitySpawnArgs: injection.spawnArgs,
     sessionPrompt: injection.sessionPrompt,
     sessionMeta: injection.sessionMeta,

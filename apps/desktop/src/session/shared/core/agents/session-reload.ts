@@ -49,7 +49,7 @@ export interface SessionReloadRequest {
   modelSource?: 'platform' | 'own';
   /**
    * 思考档位,三态:字符串 = 换成这一档;`null` = 清掉、回 harness 默认;**缺席 = 不碰**。
-   * 通用模式只在上游拒档后的 thinking-retry 清除覆盖；正常改档仍在活会话内完成。
+   * 通用模式用 thinking-retry 关掉被拒的档位，或在关闭后恢复显式档位。
    * 与 `model` 同一条纪律:由宿主先写进会话记录、再重开,spawn 按记录重算。
    */
   effort?: string | null;

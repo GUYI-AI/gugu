@@ -1451,8 +1451,10 @@ async function reloadEmdashSessionNow(input: {
     }
   }
 
-  const clearRejectedEffort = reason === 'thinking-retry' && input.effort === null
-  if (input.effort !== undefined && !clearRejectedEffort) {
+  const changingThinkingAfterRejection = reason === 'thinking-retry' && input.effort !== undefined
+    && (input.effort === null || session.thinkingDisabled === true)
+  const clearRejectedEffort = changingThinkingAfterRejection && input.effort === null
+  if (input.effort !== undefined && !changingThinkingAfterRejection) {
     throw new Error(
       `session ${sessionId} ACP reload does not take an effort change; `
       + 'set it on the live session instead',
@@ -1481,7 +1483,7 @@ async function reloadEmdashSessionNow(input: {
    */
   let configBeforePatch: typeof sessions.$inferSelect.config | null = null
   const providerSessionIdBeforeReload = session.providerSessionId
-  if (Object.keys(configPatch).length > 0 || clearRejectedEffort || (nextModel && input.modelSource === 'platform')) {
+  if (Object.keys(configPatch).length > 0 || changingThinkingAfterRejection || (nextModel && input.modelSource === 'platform')) {
     // ⚠️ 模型**不是 conversations 的列**,它住在 `config` 那份 JSON 里(见 build-session-row:121)。
     //    ⇒ 读-改-写,而且只动 `model` 一个键:整份覆盖会把 permissionMode /
     //    firstUtterance 这些同住一份 JSON 的事实一起抹掉,而症状要等下一次重开才显形。
@@ -1493,7 +1495,15 @@ async function reloadEmdashSessionNow(input: {
     }
     configBeforePatch = current
     const nextConfig = { ...current, ...configPatch }
-    if (clearRejectedEffort) delete nextConfig.effort
+    if (changingThinkingAfterRejection && nextConfig.type === 'acp') {
+      if (clearRejectedEffort) {
+        delete nextConfig.effort
+        nextConfig.thinkingDisabled = true
+      } else {
+        nextConfig.effort = input.effort ?? undefined
+        delete nextConfig.thinkingDisabled
+      }
+    }
     if (nextModel && input.modelSource === 'platform') {
       // `config.model` is the harness-native half of the record; the platform model lives only in
       // the per-conversation platform KV below. The host hands that KV to the runtime as
@@ -1552,7 +1562,7 @@ async function reloadEmdashSessionNow(input: {
               status: 'restart_failed' as const,
               dimension: reason === 'mcp-toggle'
                 ? 'mcp' as const
-                : clearRejectedEffort ? 'effort' as const
+                : changingThinkingAfterRejection ? 'effort' as const
                   : input.permissionMode !== undefined ? 'permission' as const : 'model' as const,
               ...(nextModel ? { targetModel: nextModel } : {}),
               ...(input.modelSource ? { targetModelSource: input.modelSource } : {}),
@@ -1641,8 +1651,8 @@ async function reloadEmdashSessionNow(input: {
       + await restoreConfig(message),
     )
   }
-  if (clearRejectedEffort && fresh.effort) {
-    const message = 'record still contains the rejected thinking level'
+  if (changingThinkingAfterRejection && ((fresh.effort ?? null) !== input.effort || Boolean(fresh.thinkingDisabled) !== clearRejectedEffort)) {
+    const message = 'record still contains the previous thinking setting'
     throw new Error(`session ${sessionId} ${message}` + await restoreConfig(message))
   }
   const recordedModel = recordedSessionModelOption(fresh)
@@ -1668,7 +1678,9 @@ async function reloadEmdashSessionNow(input: {
     )
   }
   if (nextModel || input.resetModel) announceSessionModel(sessionId, session.projectId, recordedModel)
-  if (clearRejectedEffort) events.emit(sessionChangedChannel, { sessionId, projectId: session.projectId, changes: { effort: null } })
+  if (changingThinkingAfterRejection) events.emit(sessionChangedChannel, {
+    sessionId, projectId: session.projectId, changes: { effort: input.effort, thinkingDisabled: clearRejectedEffort },
+  })
   life.start(sessionId, 'reconfigure')
   const currentConfigRows = await db.select({ config: sessions.config })
     .from(sessions).where(eq(sessions.id, sessionId))

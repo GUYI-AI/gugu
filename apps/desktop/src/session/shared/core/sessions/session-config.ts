@@ -172,6 +172,7 @@ const acpConfigV1 = z.object({
   model: z.string().optional(),
   /** Reasoning-effort level for the model above. Absent = the CLI's own default for it. */
   effort: z.string().optional(),
+  thinkingDisabled: z.literal(true).optional(),
   /** Per-session Fast intent; absent means off. */
   fastMode: z.boolean().optional(),
   /**

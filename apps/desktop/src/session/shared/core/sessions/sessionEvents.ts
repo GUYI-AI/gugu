@@ -55,6 +55,7 @@ export const sessionChangedChannel = defineEvent<{
      * `null` = 回 harness 默认,理由同上。
      */
     effort?: string | null;
+    thinkingDisabled?: boolean;
     /**
      * #7342 引擎最后一次报的上下文读数(ACP 状态桥在一轮落定时写)。`null` = 作废了(换了模型),理由同上。
      * 输入框在没有活会话时画的就是渲染层手里这一份。

@@ -13,14 +13,14 @@ const { sessionRegistry } = await import('../stores/session-registry');
 
 function prepare(effort?: string, outcome: TranscriptTurn['outcome'] = {
   kind: 'error', reason: 'prompt_failed', thinkingRejected: true,
-}) {
+}, thinkingDisabled = false) {
   const store = new AcpChatStore('conversation', 'project');
   const turn: TranscriptTurn = {
     id: 'turn', seq: 1, initiator: 'user', trigger: { kind: 'owner' }, outcome,
     items: [{ id: 'prompt', seq: 0, kind: 'message', role: 'user', text: 'The original prompt' }],
   };
   vi.spyOn(sessionRegistry, 'get').mockReturnValue({ sessions: new Map([
-    [store.sessionId, { data: { effort } }],
+    [store.sessionId, { data: { effort, thinkingDisabled } }],
   ]) } as unknown as ReturnType<typeof sessionRegistry.get>);
   store.chatState.transcript.history.seed([turn]);
   runInAction(() => { store.transcriptRevision += 1; });
@@ -54,5 +54,14 @@ describe('retry without the rejected thinking level', () => {
   it('offers no recovery for an absent level or an unrelated failure', () => {
     expect(prepare().store.rejectedThinkingTurnId).toBeNull();
     expect(prepare('medium', { kind: 'error', reason: 'prompt_failed' }).store.rejectedThinkingTurnId).toBeNull();
+  });
+
+  it('restores an explicit level when the user selects one after turning thinking off', async () => {
+    const { store, submit } = prepare(undefined, undefined, true);
+    reload.mockResolvedValue({ ok: true });
+    expect(store.effort).toBeNull();
+    await expect(store.setEffort('high')).resolves.toEqual({ kind: 'applied', effectiveValue: 'high' });
+    expect(reload).toHaveBeenCalledExactlyOnceWith({ sessionId: store.sessionId, reason: 'thinking-retry', effort: 'high' });
+    expect(submit).not.toHaveBeenCalled();
   });
 });

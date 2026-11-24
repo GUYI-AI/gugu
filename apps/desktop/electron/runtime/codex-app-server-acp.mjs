@@ -830,10 +830,11 @@ async function startAppAttempt(servers) {
     }
     appServerThreadConfig.model_reasoning_summary = reasoningSummary
   }
-  if (process.env.GUGU_CODEX_REASONING_SUMMARIES_SUPPORTED === 'true') {
+  const reasoningSupported = process.env.GUGU_CODEX_REASONING_SUMMARIES_SUPPORTED
+  if (reasoningSupported === 'true' || reasoningSupported === 'false') {
     // Codex documents this as the explicit override for models whose catalog
     // does not advertise reasoning metadata support.
-    appServerThreadConfig.model_supports_reasoning_summaries = true
+    appServerThreadConfig.model_supports_reasoning_summaries = reasoningSupported === 'true'
   }
   if (hasGuguServer(servers)) {
     // 咕咕工具只走 MCP 这一份。首轮一定带上咕咕工具:

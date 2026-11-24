@@ -523,6 +523,7 @@ export class AcpChatStore {
   }
 
   get effort(): string | null {
+    if (this._sessionRecord()?.thinkingDisabled) return null;
     if (this.session) return this.session.config.current().efforts?.selected ?? null;
     // 同 `model`:还在起、停下了都答下一次起用的那一档。
     return this.startupChoice.effort ?? this._sessionRecord()?.effort ?? null;
@@ -1655,6 +1656,17 @@ export class AcpChatStore {
   }
 
   async setEffort(effort: string): Promise<LiveSettingOutcome> {
+    if (effort && !this.runtimeView && this._sessionRecord()?.thinkingDisabled) {
+      if (this.affordances.isBusy || this.queuedPrompts.length) return { kind: 'restart-required', requestedValue: effort };
+      try {
+        const result = await requestSessionReload({ sessionId: this.sessionId, reason: 'thinking-retry', effort });
+        if (!result.ok || result.notStarted) throw new Error(result.error ?? 'Unable to restore a thinking level');
+        return { kind: 'applied', effectiveValue: effort };
+      } catch (error: unknown) {
+        this._toastError('acpFailure.changeSetting', error);
+        return null;
+      }
+    }
     if (!this.session && this.starting) {
       const outcome = await this._chooseAtStartup('effort', effort, 'acpFailure.changeSetting');
       if (outcome?.kind === 'applied') {
