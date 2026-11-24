@@ -200,7 +200,7 @@ export const MessageBubble = memo(function MessageBubble({
   const bubbleStyle = card ? { maxWidth: '100cqw' } : buildBubbleStyle(msg.is_mine, !!msg.is_whisper, compactMobile, groupedWithPrev)
 
   const avatarIsAgent = memberProfile?.type === 'agent' || (!msg.is_mine && isAgent)
-  const senderIdentity = useAvatarIdentity(avatarIsAgent ? msg.sender_user_id ?? '' : '')
+  const senderIdentity = useAvatarIdentity(msg.is_mine ? '' : msg.sender_user_id ?? '') // any sender: a departed one's dropped identity is re-read here
   const avatarName = useShownAgentName({ name: memberProfile?.displayName ?? '', createdAt: avatarIsAgent ? senderIdentity?.created_at ?? undefined : undefined })
   const avatarUrl = memberProfile?.avatar ?? null
   // @@@avatar-status-badge (#793 rollout) - the agent sender's status lives on its memberProfile
