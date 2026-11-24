@@ -78,7 +78,7 @@ export async function resolveCustomModelRunContext(providerId: string, sessionId
     });
     const selected = custom.entries.find(({ id }) => id === model);
     const catalog: Record<string, string> = model && selected ? { [GUGU_PLATFORM_MODELS_ENV]: codexPlatformModelFacts({ model, contextWindow: selected.contextWindow, reasoningEfforts: facts(selected).reasoningEfforts, models: custom.entries.filter(chatModel).map(facts) }) } : {};
-    return { ...marker, credentialEnv: { OPENAI_API_KEY: custom.apiKey, ...catalog }, unsetEnv: [...CODEX_CONNECTION_UNSET_ENV], extraArgs: codexApiKeyConnectionArgs(custom.name, custom.endpoint, model) };
+    return { ...marker, credentialEnv: { OPENAI_API_KEY: custom.apiKey, ...catalog }, unsetEnv: [...CODEX_CONNECTION_UNSET_ENV], extraArgs: codexApiKeyConnectionArgs(custom.name, custom.endpoint, custom.upstreamEndpoint, model) };
   }
   if (providerId === 'antigravity') {
     const launch = antigravityCustomModelLaunch({ apiKey: custom.apiKey, endpoint: custom.endpoint, model });

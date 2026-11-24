@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { mcpToggleDirective } from '@gugu/session-core/mcp';
 import { assertSessionMcpStdioEnv, sessionMcpAuthorization } from '../../helpers/session-mcp';
 import { codexNotifyConfigValue, isLegacyCodexTrustFile, stripLegacyCodexNotify } from './hooks';
-import { codexPlatformProviderConfigArgs } from './platform-provider-args';
+import { CODEX_PLATFORM_PROVIDER_ID, codexPlatformProviderConfigArgs } from './platform-provider-args';
 import { codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV } from './platform-models';
 import { CODEX_AUTONOMY_BY_MODE, CODEX_PERMISSION_MODES, type CodexPermissionMode } from './permission-modes';
 
@@ -604,9 +604,8 @@ function modelArgs(
     args.push('-c', `model_context_window=${model.contextWindow}`);
   }
   if (model.platformProvider) {
-    const provider = 'gugu_platform';
     args.push(...codexPlatformProviderConfigArgs({
-      providerId: provider,
+      providerId: CODEX_PLATFORM_PROVIDER_ID,
       providerName: 'Gugu 平台额度',
       baseUrl: model.platformProvider.baseUrl,
       // #6921 令牌能调 codex 写死的出图模型 ⇒ 打开它自己的出图工具(ACP 腿同一个函数,见 index.ts)。
