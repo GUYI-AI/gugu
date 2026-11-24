@@ -1504,8 +1504,8 @@ const ComposerForStore = observer(function ComposerForStore({
         onModelMenuOpen={onModelMenuOpen}
         modelUnlock={ownCatalogRetry}
         onModelUnlock={ownCatalogRetry ? harnessCatalog.retry : undefined}
-        // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
-        {...composerModelFooter(platformCatalog.models)}
+        // 底部「管理模型」(#7056),三个模型菜单同一份。
+        {...composerModelFooter()}
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}

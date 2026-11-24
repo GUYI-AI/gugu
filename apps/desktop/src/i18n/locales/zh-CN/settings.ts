@@ -1100,6 +1100,7 @@ export default {
     "loadFailed": "无法读取模型列表",
     "membersOnly": "开通会员后可用",
     "noMatch": "没有匹配的模型",
+    "providerName": "咕咕",
     "provided": "咕咕提供的模型",
     "retry": "重试",
     "saveFailed": "保存失败，请重试",

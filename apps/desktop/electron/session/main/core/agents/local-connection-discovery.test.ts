@@ -256,3 +256,21 @@ it('names the unreadable sources in a form the log redactor leaves alone', () =>
   expect(signature).toBe('incompatible:config.toml:query key-missing:config.toml:acme invalid-config:config.toml unreadable:auth.json unsupported-store:auth.json');
   expect(redactAll(signature)).toBe(signature);
 });
+
+
+it('pairs the selected Codex relay with the file API key without generating an official OpenAI entry', async () => {
+  await config('model_provider = "relay"\nmodel = "example-model"\n[model_providers.relay]\nbase_url = "https://relay.example.test/v1"\nrequires_openai_auth = true\n');
+  await auth({ OPENAI_API_KEY: KEY });
+  const found = await scan({});
+  expect(found.connections).toHaveLength(1);
+  expect(found.connections[0]).toMatchObject({ nativeHarnesses: ['codex'], models: [{ id: 'example-model' }], endpoints: [{ baseUrl: 'https://relay.example.test/v1', protocol: 'openai-responses' }] });
+  expect(discoveredSecret(found.connections[0]!)).toBe(KEY);
+});
+
+
+it('recognizes a dedicated Coding Plan endpoint and leaves a shared endpoint unclassified', async () => {
+  await config('[model_providers.dedicated]\nbase_url = "https://api.kimi.com/coding/v1"\nenv_key = "K"\n[model_providers.shared]\nbase_url = "https://open.bigmodel.cn/api/anthropic"\nenv_key = "K"\n');
+  const found = await scan({ K: KEY });
+  expect(found.connections.find(connection => connection.name === 'dedicated')?.preset).toBe('kimi-coding');
+  expect(found.connections.find(connection => connection.name === 'shared')?.preset).toBeNull();
+});

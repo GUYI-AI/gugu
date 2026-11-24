@@ -136,6 +136,7 @@ export type AgentCapabilities = {
   modelProtocols?: readonly import('@gugu/session-core/models/custom-model').ModelProtocol[];
   customModel?: { modelOptional?: true; convertFrom?: readonly import('@gugu/session-core/models/custom-model').ModelProtocol[] };
   hostDependency: AgentHostDependencyInfo;
+  subscription?: boolean;
   models: AgentModelsCapability;
   effort: AgentEffortCapability;
   prompt: { kind: string; startupDelivery?: 'startup-prompt' | 'delivery-bridge' };

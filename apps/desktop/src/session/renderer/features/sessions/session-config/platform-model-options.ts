@@ -88,7 +88,9 @@ function platformComposerOption(model: PlatformModelRow): ComposerModelOption {
     ...(model.contextWindow === null
       ? {}
       : { modelFeatures: { contextWindowSize: model.contextWindow } }),
-    groupLabel: translateSessionMessage(PLATFORM_GROUP_HEADING_KEY),
+    groupId: 'platform',
+    groupLabel: translateSessionMessage('composer.platformModelSource'),
+    groupDetail: translateSessionMessage(PLATFORM_GROUP_HEADING_KEY),
     // 底栏那颗按钮和设置面板的「模型」行都用 shortName,那两处看不见组头;留一个「咕咕」
     // 前缀,收起状态下也看得出这条会话在花积分。
     shortName: translateSessionMessage('composer.platformModelShortName', {

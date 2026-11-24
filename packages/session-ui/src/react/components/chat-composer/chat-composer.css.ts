@@ -1023,62 +1023,6 @@ export const modelFilterRow = style({
 });
 
 /**
- * 厂商过滤条本身:**一样大、各自分开**的几块(owner 2026-10-10:「按钮块的大小能保持一致,
- * 有时候智谱那块太小了,不好点」)。原来是一排按字宽收缩的药丸,`智谱` 两个字只有 40px 宽,
- * 旁边 `DeepSeek` 75px。
- *
- * ❌ 别做成一条底色里的分段控件:试过,owner 同日:「不同厂家怎么连在一块了」—— 几家共用一条底,
- * 看着像一个控件而不是几个能各自按下的开关。
- *
- * 为什么去掉每颗的描边:四颗都撑到最宽那颗(75px)要 312px,面板内容区只有 264px;
- * 每块 63px 时描边会贴着 `Anthropic` 的字,换成铺底就不显挤。
- * 列数由 tsx 按家数算(`providerFilterColumns`),这里只管格子等宽。
- */
-export const modelProviderFilter = style({
-  display: 'grid',
-  flex: '1 1 auto',
-  minWidth: 0,
-  gap: '0.25rem',
-});
-
-/**
- * 一块过滤片:静息铺浅底,按下换成选中色。
- *
- * ⚠️ 按下态**必须比 hover 强**:hover 只把字压深,按下才换底 —— 底色取 surfaceSelected,
- * 与清单里**选中那一行**同一个色,整张面板里「选中」只有一种说法。
- *
- * 左右内距只留 2px:63px 的块里 `Anthropic`(11px)占 57px。放不下时省略号收尾,tsx 挂了全名的 title。
- */
-export const modelFilterChip = style({
-  minWidth: 0,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  textAlign: 'center',
-  borderRadius: tokenVars.radiusMd,
-  border: 'none',
-  paddingLeft: '0.125rem',
-  paddingRight: '0.125rem',
-  paddingTop: '0.1875rem',
-  paddingBottom: '0.1875rem',
-  fontSize: tokenVars.textTiny,
-  lineHeight: 1.5,
-  color: vars.foregroundMuted,
-  backgroundColor: vars.surfaceHover,
-  cursor: 'default',
-  outline: 'none',
-  transition: `color ${durFast} ${easeStandard}, background-color ${durFast} ${easeStandard}`,
-  selectors: {
-    '&:hover': { color: vars.foreground },
-    '&:focus-visible:not([data-pointer-focus])': { outline: `1px solid ${vars.borderPrimary}`, outlineOffset: '-1px' },
-    '&[data-pressed]': {
-      backgroundColor: vars.surfaceSelected,
-      color: vars.foreground,
-    },
-  },
-});
-
-/**
  * 底部「思考」那一段 —— 档位控件(owner 2026-09-17 指定)。
  *
  * ## 2026-10-10 缩小一号(下面那张实测表是 09-17 的原尺寸,形状照旧、只是整体变小)
@@ -1710,26 +1654,22 @@ export const modelPanelItemCompact = style({
 // 单行之后 logo 跟名字同一条中线,`composerPanelItemIcon` 那 3px 下压只属于两段式的行。
 globalStyle(`${modelPanelItemCompact} [data-slot="composer-model-icon"]`, { marginTop: 0 });
 
-/** 名字只占自己的宽度,标签(`modelPanelItemTag`)紧跟其后;超长名字截成省略号。 */
+/** 超长模型名截成省略号，悬停查看全名。 */
 export const modelPanelItemName = style([
   composerPanelItemName,
   { flex: '0 1 auto', minWidth: 0 },
 ]);
 
-/** The vendor tag after a person's own model (`ComposerModelOption.tag`): 10px on a light grey, darker on the row in focus. */
-export const modelPanelItemTag = style({
-  flexShrink: 0,
-  paddingLeft: '0.25rem',
-  paddingRight: '0.25rem',
-  borderRadius: tokenVars.radiusSm,
-  background: vars.background1,
-  color: vars.foregroundMuted,
-  fontSize: '10px',
-  lineHeight: '14px',
-  whiteSpace: 'nowrap',
+export const modelSourceGroup = style({
   selectors: {
-    '[data-highlighted] &, [data-selected] &': { background: vars.background2 },
+    '& + &': { marginTop: '0.375rem' },
   },
+});
+
+globalStyle(`${modelSourceGroup} [data-slot="combobox-label"]`, {
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  whiteSpace: 'nowrap',
 });
 
 /** 悬浮详情卡本体。宽度随内容、但夹在一个窄区间里:卡跟着鼠标换行时不该忽宽忽窄得太厉害。 */
@@ -1787,17 +1727,6 @@ export const modelDetailFacts = style({
 
 export const modelDetailFactLabel = style({ color: vars.foregroundMuted });
 
-/** 「开通会员后可用」那张卡里的模型名:一行一个,好扫。 */
-export const modelDetailList = style({
-  margin: 0,
-  padding: 0,
-  listStyle: 'none',
-  display: 'grid',
-  rowGap: '0.125rem',
-  fontSize: tokenVars.textTiny,
-  lineHeight: tokenVars.textTinyLineHeight,
-});
-
 export const modelDetailFactValue = style({
   margin: 0,
   minWidth: 0,
@@ -1837,16 +1766,6 @@ export const modelPanelFooterAction = style({
     '&:hover, &:focus-visible:not([data-pointer-focus])': { backgroundColor: vars.surfaceHover, color: vars.foreground },
   },
 });
-
-/**
- * 「升级解锁更多模型」用 info 前景,与「去登录」同一色:一眼看得出是去路。
- * 面板是定宽(18rem):这一枚要能收窄、折行,❌ 跟着 nowrap 把自己撑到面板外被裁掉(#7123,英文
- * 「Manage models」+「Upgrade to unlock more models」比面板宽约 19px,裁成「…more mode」)。
- */
-export const modelPanelUpgrade = style([
-  modelPanelFooterAction,
-  { color: vars.surfaceInfoForeground, whiteSpace: 'normal', textAlign: 'end', minWidth: 0 },
-]);
 
 /** 触发器上那枚,不需要 `mt` —— 触发器是单行、垂直居中。 */
 export const modelTriggerIcon = style({

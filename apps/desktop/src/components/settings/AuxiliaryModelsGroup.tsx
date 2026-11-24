@@ -22,7 +22,7 @@ export function AuxiliaryModelsGroup() {
   const options = models.state === 'value' ? autoReviewModelOptions(models.value) : null;
   const preference = reviewer.settings.state === 'value' ? reviewer.settings.value.value : null;
   return <SettingsGroup className="gg-auxiliary-models" data-testid="settings-auxiliary-models"
-    title={translate('customModels.auxiliaryTitle')} note={translate('customModels.auxiliaryDescription')}>
+    title={translate('customModels.auxiliaryTitle')}>
     <SessionTitleModelRow auxiliary />
     <SettingsRow title={<span className="flex items-center gap-2">{translate('customModels.reviewerModel')}
       <InfoTooltip label={translate('customModels.reviewerModel')} content={translate('customModels.auxiliaryFallback')} />

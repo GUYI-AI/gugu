@@ -4,7 +4,9 @@ import { notifyManager as readModelNotify } from '@tanstack/react-query'
 import { followRendererSession, queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { clickElement, createNode, createReactHarness, typeInto, waitForCondition } from '../../../support/testHarness'
 
-vi.mock('../../../../apps/desktop/src/components/sessionpage/SessionSettingsSection', () => ({ SessionSettingsSection: () => null }))
+vi.mock('../../../../apps/desktop/src/components/sessionpage/SessionSettingsSection', () => ({
+  SessionSettingsSection: () => createNode('div', { 'data-testid': 'settings-auxiliary-models' }),
+}))
 
 vi.mock('@renderer/lib/stores/use-agents', () => ({ useAgents: () => ({ data: [] }) }))
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
@@ -56,40 +58,51 @@ beforeEach(() => { readModelNotify.setScheduler((callback) => { callback() }); q
 afterEach(() => { harness.cleanup() })
 
 const switchOf = (modelId: string) =>
-  harness.container.querySelector<HTMLElement>(`[data-model-id="${modelId}"] [role="switch"]`)
+  document.querySelector<HTMLElement>(`[data-model-id="${modelId}"] [role="switch"]`)
 const loaded = async () => {
-  const toggle = harness.container.querySelector<HTMLElement>('[data-testid="settings-model-provided-toggle"]')!
-  if (toggle.getAttribute('aria-expanded') === 'false') await clickElement(toggle)
+  const manage = harness.container.querySelector<HTMLElement>('[data-testid="settings-model-provided-manage"]')!
+  await clickElement(manage)
   await waitForCondition(() => switchOf('glm-5.3-flash') !== null, 'model rows did not load')
 }
 
 describe('设置「模型」页', () => {
-  it('keeps platform models collapsed on each new visit', async () => {
+  it('opens the platform catalog dialog from its provider row in Your Models', async () => {
     await harness.render(createNode(ModelSection))
-    expect(harness.container.querySelector('[data-testid="settings-model-search"]')).toBeNull()
+    expect(harness.container.querySelector('[data-testid="settings-auxiliary-models"]')).toBeNull()
+    const custom = harness.container.querySelector('[data-testid="settings-custom-models"]')!
+    expect(custom.querySelector('[data-testid="settings-model-provided-manage"]')).not.toBeNull()
+    expect(document.querySelector('[data-testid="settings-model-search"]')).toBeNull()
     expect(switchOf('glm-5.3-flash')).toBeNull()
     await loaded()
     expect(switchOf('glm-5.3-flash')).not.toBeNull()
+  })
+  it('opens billing from the icon on the Gugu provider row', async () => {
+    await harness.render(createNode(ModelSection))
+    const findUpgrade = () => harness.container.querySelector<HTMLElement>('[data-testid="settings-model-provided-upgrade"]')
+    await waitForCondition(() => !!findUpgrade(), 'upgrade icon did not appear')
+    await clickElement(findUpgrade()!)
+    expect(openBillingPage).toHaveBeenCalledTimes(1)
   })
   it('lists usable models with switches reflecting what he hid, and members-only ones apart without switches', async () => {
     await harness.render(createNode(ModelSection))
     await loaded()
 
-    const usable = harness.container.querySelector('[data-testid="settings-model-usable"]')!
+    const usable = document.querySelector('[data-testid="settings-model-usable"]')!
     expect(usable.textContent).toContain('GLM 5.3 Flash')
     expect(usable.textContent).toContain('Grok 4.5')
     expect(usable.textContent).not.toContain('Claude Opus 5.5')
     // 下架的(enabled=false)哪一组都不列。
-    expect(harness.container.textContent).not.toContain('Retired')
+    expect(document.body.textContent).not.toContain('Retired')
     expect(switchOf('glm-5.3-flash')!.getAttribute('aria-checked')).toBe('true')
     expect(switchOf('grok-4.5')!.getAttribute('aria-checked')).toBe('false')
 
-    const locked = harness.container.querySelector('[data-testid="settings-model-locked"]')!
+    const locked = document.querySelector('[data-testid="settings-model-locked"]')!
     expect(locked.textContent).toContain('Claude Opus 5.5')
     expect(switchOf('claude-opus-5-5')).toBeNull()
-    const upgrade = [...locked.querySelectorAll('button')].find((button) => button.textContent === '升级解锁')!
-    await clickElement(upgrade)
-    expect(openBillingPage).toHaveBeenCalledTimes(1)
+    const upgrade = harness.container.querySelector<HTMLElement>('[data-testid="settings-model-provided-upgrade"]')!
+    expect(upgrade.textContent).toBe('')
+    expect(upgrade.getAttribute('aria-label')).toBe('升级')
+    expect(upgrade.hasAttribute('title')).toBe(false)
   })
 
   it('saves a switch flip as hidden / shown', async () => {
@@ -111,27 +124,27 @@ describe('设置「模型」页', () => {
 
     await clickElement(switchOf('glm-5.3-flash')!)
     await waitForCondition(() => switchOf('glm-5.3-flash')!.getAttribute('aria-checked') === 'true', 'switch did not flip back')
-    expect(harness.container.textContent).toContain('boom')
+    expect(document.body.textContent).toContain('boom')
   })
 
   it('filters both groups by the search box', async () => {
     await harness.render(createNode(ModelSection))
     await loaded()
-    const search = harness.container.querySelector<HTMLInputElement>('[data-testid="settings-model-search"]')!
+    const search = document.querySelector<HTMLInputElement>('[data-testid="settings-model-search"]')!
     await typeInto(search, 'grok')
     await waitForCondition(() => switchOf('glm-5.3-flash') === null, 'search did not filter')
     expect(switchOf('grok-4.5')).not.toBeNull()
-    expect(harness.container.querySelector('[data-testid="settings-model-locked"]')).toBeNull()
+    expect(document.querySelector('[data-testid="settings-model-locked"]')).toBeNull()
 
     await typeInto(search, 'nothing-like-this')
-    await waitForCondition(() => harness.container.textContent?.includes('没有匹配的模型') === true, 'no-match note missing')
+    await waitForCondition(() => document.body.textContent?.includes('没有匹配的模型') === true, 'no-match note missing')
   })
 
   it('has no members-only group for a member', async () => {
     fetchPlatformModelCatalog.mockResolvedValue([model('glm-5.3-flash', 'GLM 5.3 Flash'), model('claude-opus-5-5', 'Claude Opus 5.5')])
     await harness.render(createNode(ModelSection))
     await loaded()
-    expect(harness.container.querySelector('[data-testid="settings-model-locked"]')).toBeNull()
+    expect(document.querySelector('[data-testid="settings-model-locked"]')).toBeNull()
     expect(switchOf('claude-opus-5-5')).not.toBeNull()
   })
 })

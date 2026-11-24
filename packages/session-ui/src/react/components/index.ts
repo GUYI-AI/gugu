@@ -25,7 +25,6 @@ export type {
   ComposerModelOption,
   ComposerModelItem,
   ComposerModelFact,
-  ComposerModelUpgrade,
   ComposerEffortItem,
   ComposerEffortOption,
   ComposerPermissionModeOption,

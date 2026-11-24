@@ -149,7 +149,6 @@ export type {
   ComposerModelItem,
   ComposerModelOption,
   ComposerModelUnlock,
-  ComposerModelUpgrade,
   ComposerNotice,
   ComposerNoticeVariant,
   ComposerPermissionModeItem,
@@ -188,7 +187,6 @@ import type {
   ComposerModelItem,
   ComposerModelOption,
   ComposerModelUnlock,
-  ComposerModelUpgrade,
   ComposerNotice,
   ComposerPermissionModeItem,
   ComposerPermissionModeOption,
@@ -265,9 +263,6 @@ export interface ChatComposerProps {
   onModelUnlock?: (anchor?: HTMLElement) => void;
   /** 模型面板底部「管理模型」—— 宿主打开设置里的「模型」那一页(#7056)。不给 = 不画。 */
   onManageModels?: () => void;
-  /** 模型面板底部「升级解锁更多模型」(免费档才有,见 `ComposerModelUpgrade`)。 */
-  modelUpgrade?: ComposerModelUpgrade | null;
-  onModelUpgrade?: () => void;
 
   effortOptions?: Record<string, ComposerEffortOption> | null;
   selectedEffort?: string;
@@ -452,8 +447,6 @@ export function ChatComposer({
   modelUnlock,
   onModelUnlock,
   onManageModels,
-  modelUpgrade,
-  onModelUpgrade,
   effortOptions,
   selectedEffort,
   onEffortChange,
@@ -803,8 +796,6 @@ export function ChatComposer({
                 modelUnlock={modelUnlock}
                 onModelUnlock={onModelUnlock}
                 onManageModels={onManageModels}
-                modelUpgrade={modelUpgrade}
-                onModelUpgrade={onModelUpgrade}
                 effortItems={effortItems}
                 selectedEffort={selectedEffort}
                 onEffortChange={onEffortChange}

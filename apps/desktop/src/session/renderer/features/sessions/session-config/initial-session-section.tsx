@@ -1804,8 +1804,8 @@ export function InitialSessionField({
           //    人在模型那里找不到任何交代(owner 2026-08-26 实测)。
           modelUnlock={state.harnessModelUnlock}
           onModelUnlock={state.harnessSignIn ?? undefined}
-          // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
-          {...composerModelFooter(state.platformModels)}
+          // 底部「管理模型」(#7056),三个模型菜单同一份。
+          {...composerModelFooter()}
           effortOptions={state.effortOptions}
           selectedEffort={state.effort ?? undefined}
           onEffortChange={(effortId) => state.setEffort(effortId || null)}

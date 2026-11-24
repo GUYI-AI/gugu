@@ -1,7 +1,7 @@
 import { useReplica } from '@/lib/replica';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { customModels } from './custom-models';
-import { customComposerOptions } from './custom-model-options';
+import { customComposerOptions, managedHarnessOptions } from './custom-model-options';
 import { customModelOptionId, type CustomModelConnection, type CustomModelRef } from '@gugu/session-core/models/custom-model';
 import { useMemo } from 'react';
 import { vendorName } from '@/i18n/vendorName';
@@ -15,8 +15,7 @@ import { platformModelIdFromOption, platformOptionId } from '@/session/shared/pl
 import { PLATFORM_GROUP_HEADING_KEY } from '@/session/shared/platform-model-labels';
 import { composerModelOptions, type PlatformModelRow } from './platform-model-options';
 import { modelProviderIcon } from './model-provider-icon';
-import { billingLinksAvailable, openBillingPage } from '@/lib/appLinks';
-import type { ComposerModelUpgrade } from '@gugu/session-ui/react/components';
+import { openBillingPage } from '@/lib/appLinks';
 import { openShellSettings } from '@renderer/lib/open-shell-settings';
 
 /**
@@ -61,13 +60,14 @@ export function useComposerModelOptions(
   const records = custom.state !== 'value' ? undefined
     : !remote ? custom.value
       : own.state === 'value' ? withOwnRecords(custom.value, own.value) : undefined;
+  const deviceRecords = custom.state === 'value' ? custom.value : undefined;
   const error = (custom.state === 'unknown' ? null : custom.error) ?? (remote && own.state !== 'unknown' ? own.error : null) ?? null;
   const agent = agentList?.find((entry) => entry.id === providerId);
 
   return useMemo(
     () => {
       if (agentName === null) return undefined;
-      const base = assembleComposerModelOptions(harnessOptions, platformModels, agentName, translate, currentPlatformModelId);
+      const base = assembleComposerModelOptions(managedHarnessOptions(harnessOptions, providerId, deviceRecords), platformModels, agentName, translate, currentPlatformModelId);
       if (!providerId) return base;
       const options = records && customComposerOptions(records, agent, remote?.deviceLabel ?? translate('customModels.device'), translate);
       if (!records || error) {
@@ -79,7 +79,7 @@ export function useComposerModelOptions(
       }
       return base || Object.keys(options ?? {}).length ? { ...base, ...options } : null;
     },
-    [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, records, error, agent, providerId, remote?.deviceLabel]
+    [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, records, deviceRecords, error, agent, providerId, remote?.deviceLabel]
   );
 }
 
@@ -145,28 +145,9 @@ export function openMembershipPage(): void {
   openBillingPage();
 }
 
-/**
- * 模型面板底部的两条去路(#7056,对齐 Cursor):三个模型菜单(新建页、Chat UI 会话、终端会话)共用这一份。
- *  - 「配置自定义模型」打开设置里的模型列表;
- *  - 「升级解锁更多模型」只给这一档有用不了的模型的人(免费档),悬停列出是哪几个,点了去网页面板。
- * 这一档用不了的模型**不进清单**:列出来点了才说要会员「像是埋雷」(owner 2026-10-10)。
- */
-export function composerModelFooter(
-  platformModels: readonly PlatformModelRow[],
-  translate: Translate = translateSessionMessage
-): { onManageModels: () => void; modelUpgrade: ComposerModelUpgrade | null; onModelUpgrade: () => void } {
-  const locked = platformModels.filter((model) => model.requiresMembership).map((model) => model.displayName);
-  return {
-    onManageModels: () => openShellSettings('model'),
-    modelUpgrade: locked.length && billingLinksAvailable()
-      ? {
-          label: translate('composer.platformModelUpgrade'),
-          title: translate('composer.platformModelUpgradeTitle'),
-          models: locked,
-        }
-      : null,
-    onModelUpgrade: openMembershipPage,
-  };
+/** 打开设置里的模型管理页。 */
+export function composerModelFooter(): { onManageModels: () => void } {
+  return { onManageModels: () => openShellSettings('model') };
 }
 
 /** 一条 option id 指的是哪一路计费。 */

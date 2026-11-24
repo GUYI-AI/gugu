@@ -1,4 +1,4 @@
-import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options'
+import { customComposerOptions, managedHarnessOptions } from '@renderer/features/sessions/session-config/custom-model-options'
 import { buildComposerModelGroups, type ComposerModelItem, type ComposerModelOption } from '@gugu/session-ui/react/components'
 import type { SessionOptionGroup, SessionpageSessionCreateModels } from '@gugu/session-core/session-record/contract'
 import type { SessionModelMenu } from '@main/core/session-timeline/session-model-menu'
@@ -39,7 +39,7 @@ export function createModelOptions(
       requiresMembership: model.requires_membership === true,
       hidden: model.hidden === true,
     }))
-  return { ...assembleComposerModelOptions(own, gugu, agentName), ...customComposerOptions(models.customModels ?? [], { id: models.harness, name: agentName, capabilities: { modelProtocols: models.modelProtocols, customModel: models.customModel } }, translateSessionMessage('customModels.device'), translateSessionMessage) }
+  return { ...assembleComposerModelOptions(managedHarnessOptions(own, models.harness, models.customModels), gugu, agentName), ...customComposerOptions(models.customModels ?? [], { id: models.harness, name: agentName, capabilities: { modelProtocols: models.modelProtocols, customModel: models.customModel } }, translateSessionMessage('customModels.device'), translateSessionMessage) }
 }
 
 /** 选完收起时写什么(桌面触发器同一格:咕咕的写「咕咕 X」)。 */
@@ -77,7 +77,7 @@ export function sessionModelView(menu: SessionModelMenu, live: SessionOptionGrou
   )
   // 正在用的那条要会员了、或被他在设置里关掉了也照列(与桌面会话菜单同一条,见 `composerModelOptions`)。
   const base = assembleComposerModelOptions(
-    own, menu.platformModels, menu.agentName, undefined, runningPlatformModel
+    managedHarnessOptions(own, menu.providerId, menu.customModels), menu.platformModels, menu.agentName, undefined, runningPlatformModel
   ) ?? {}
   const options = { ...base, ...customComposerOptions(menu.customModels ?? [], { id: menu.providerId ?? '', name: menu.agentName, capabilities: { modelProtocols: menu.modelProtocols, customModel: menu.customModelCapability } }, translateSessionMessage('customModels.device'), translateSessionMessage) }
   const advertised = live.available.map((choice) => choice.id)

@@ -27,9 +27,7 @@ import '@renderer/index.css'
 //   - 新实现里「选完收起」是调用点显式 `setModelPanelOpen(false)` —— 一句可以被删掉的代码,
 //     所以更需要这条守卫。
 //
-// ⚠️ 推理强度那条是**刻意偏离上游**的:assistant-ui 那版选完档位不关面板(原文
-// the picker stays open so you can compare levels),而 #3249 明写「推理强度那组同样收起
-// (与模型同一个毛病,别只修一半)」。套上游是套形状,不是套掉 owner 修过的 bug。
+// 调整思考深度后面板保持打开，方便连续调档。
 //
 // 这条只能用**真 Chromium + 真 Base UI 弹层**判:
 //   - 类型检查照不出 —— 少调一次 setState 不是类型错误。
@@ -187,7 +185,7 @@ describe('#3249 composer 模型下拉', () => {
   })
 
   /**
-   * 打开模型面板。**没有二级了** —— 上游那版是一层:搜索框 → 厂商药丸 → 分组清单 → 底部 Thinking 行。
+   * 打开模型面板。**没有二级了** —— 上游那版是一层:搜索框 → 分组清单 → 底部 Thinking 行。
    */
   async function openPanel(): Promise<void> {
     // @@@6301 前提:面板此刻是关着的。触发器是开关 —— 面板已开时再点一下是**关掉**它,而关闭动画期间
@@ -324,18 +322,13 @@ describe('#3249 composer 模型下拉', () => {
     })
   }
 
-  it('思考那一段同样收起(与模型同一个毛病,别只修一半)', async () => {
+  it('点击思考滑杆后可以继续调档', async () => {
     await openPanel()
-
     await clickEffortAt('xhigh')
-
-    expect(onEffortChange.mock.calls).toEqual([['xhigh']])
-    // ⚠️ 刻意偏离上游(它选完档位**不关**,让你比档位)。删掉调用点那句
-    // `setModelPanelOpen(false)`,这条必红 —— 那正是它存在的意义。
-    // ⚠️ 收在 `onValueCommitted` 而不是 `onValueChange`:拖动时每跨一格都关一次面板,
-    //    手还没松控件就没了。改回 onValueChange,这条仍绿而手感坏掉 —— 所以下面那条拖动用例
-    //    才是它的搭档。
-    await until('model panel closed', () => openMenuParts() === 0)
+    expect(openMenuParts()).toBe(1)
+    await clickEffortAt('max')
+    expect(onEffortChange.mock.calls).toEqual([['xhigh'], ['max']])
+    expect(openMenuParts()).toBe(1)
   })
 
   it('键盘也调得动档位 —— 左右键是滑杆的手,上下键仍然归模型清单', async () => {
@@ -355,15 +348,10 @@ describe('#3249 composer 模型下拉', () => {
     // prop 还没回传,组件看到的仍是旧档(2026-09-18 自审时发现,当时两边都发)。
     expect(onEffortChange.mock.calls, '一次按键发了不止一次').toEqual([['high']])
 
-    // ⚠️ 键盘这条路**不许跟着关面板**。Base UI 的方向键每按一下都会 commit,
-    // 若照指针那条一样关掉,键盘用户一次只调得动一格 —— 六档从最低调到最高要开五次面板。
-    // 药丸那版一次按键 = 一个决定,滑杆的心智模型是"滑到想要的位置",这是换控件带进来的
-    // 新毛病(2026-09-17 找茬审查实测:按一下 ArrowRight 面板当场关闭)。
-    expect(openMenuParts(), '键盘按一下面板就关了 —— 剩下五档得重新开五次').toBe(1)
-
-    // 指针那条照旧收起 —— #3249 要的就是这个,别把它一起修没了。
-    clickEffortAt('max')
-    await until('model panel closed', () => openMenuParts() === 0)
+    expect(openMenuParts()).toBe(1)
+    await clickEffortAt('max')
+    expect(onEffortChange.mock.calls).toEqual([['high'], ['max']])
+    expect(openMenuParts()).toBe(1)
   })
 
   it('一档都没选时,读屏器听到的与看到的是同一件事', async () => {
@@ -577,7 +565,7 @@ describe('#3249 composer 模型下拉', () => {
     await openPanel()
     await page.getByTestId('composer-effort-reset').click()
     expect(onEffortChange.mock.calls).toEqual([['high']])
-    await until('model panel closed', () => openMenuParts() === 0)
+    expect(openMenuParts()).toBe(1)
   })
 
   it('复位钮使用目录提供的 default 项,回到该项后隐藏', async () => {
@@ -585,11 +573,11 @@ describe('#3249 composer 模型下拉', () => {
     await openPanel()
     await page.getByTestId('composer-effort-reset').click()
     expect(onEffortChange.mock.calls).toEqual([['default']])
-    await until('model panel closed', () => openMenuParts() === 0)
+    expect(openMenuParts()).toBe(1)
 
     renderComposer('platform:glm-5.2', { selected: 'default' }, LONG_EFFORTS)
-    await openPanel()
-    expect(document.querySelector('[data-testid="composer-effort-reset"]')).toBeNull()
+    await until('reset disappears after the default is applied', () => !document.querySelector('[data-testid="composer-effort-reset"]'))
+    expect(openMenuParts()).toBe(1)
   })
 
   it.each([undefined, 'missing'])('没有合法默认项时不显示复位钮(default=%s)', async (defaultId) => {
@@ -626,31 +614,11 @@ describe('#3249 composer 模型下拉', () => {
     expect(visibleOptions()).toEqual(['GLM 5.2', 'GPT-5.6 Sol'])
   })
 
-  it('一级是「谁的」,厂商不分组 —— 厂商只在药丸和行内 logo 上', async () => {
+  it('puts Gugu first and keeps source-grouped rows text-only', async () => {
     await openPanel()
-
-    // owner 2026-09-06:「你的和咕咕的这个分类是一级分类,二标签是筛选」「你这个分类层次反了」。
-    // ⇒ 组头只有两段(两档),即使里面混着 OpenAI 与智谱两家。
-    // ⚠️ 这条同时是**回归守卫**:我第一版把厂商当组头,那时这里会读出三段。
-    expect(visibleGroups()).toEqual([
-      '你的 Codex 模型',
-      'Gugu models are billed in credits'
-    ])
-    // 组头里既然没有厂商,行内那枚 logo 就是认厂商的唯一线索。
-    // 图标**位**每行都有(5 行),真图标只有认得出厂商的那 4 行 —— 认不出的那条留白,不占位地收掉。
-    const slots = document.querySelectorAll(
-      '[data-slot="combobox-content"] [data-slot="composer-model-icon"]'
-    )
-    expect(slots.length).toBe(5)
-    expect([...slots].filter((el) => el.childElementCount > 0).length).toBe(4)
-    // 药丸才是厂商那根轴(二级 = 筛选)。
-    // ⚠️ 按 testid 前缀取,不按 `[role="button"]`:Base UI 的 Toggle 渲染的是原生 `<button>`,
-    // role 是**隐式**的,属性选择器一个都抓不到(实测读出空数组)。
-    expect(
-      [...document.querySelectorAll('[data-testid^="composer-model-provider-"]')].map((el) =>
-        el.textContent?.trim()
-      )
-    ).toEqual(['OpenAI', '智谱'])
+    expect(visibleGroups()).toEqual(['Gugu', '你的 Codex 模型'])
+    expect(visibleOptions().slice(0, 2)).toEqual(['GLM 5.2', 'GPT-5.6 Sol'])
+    expect(document.querySelector('[data-slot="combobox-content"] [data-slot="composer-model-icon"]')).toBeNull()
   })
 
   it('认不出厂商的那一行,名字仍与其它行左对齐', async () => {
@@ -666,42 +634,5 @@ describe('#3249 composer 模型下拉', () => {
     ].map((el) => Math.round(el.getBoundingClientRect().left))
     expect(lefts.length).toBe(5)
     expect(new Set(lefts).size, `各行名字左边缘: ${lefts.join(', ')}`).toBe(1)
-  })
-
-  it('厂商药丸:不选=不过滤,选一家只剩那一家(两档一起留下)', async () => {
-    await openPanel()
-
-    // 阳性对照:静息态五条都在 —— 否则下面「筛掉了」平凡为真。
-    expect(visibleOptions().length).toBe(5)
-
-    // 取证图:这是**唯一**带完整产品形状 fixture 的用例(两级分类 + 厂商 logo + 六档 Thinking),
-    // 所以组头、药丸、图标只有在这里才拍得到。
-    // composer-surface 那四张拍不出它们(那边的 fixture 没有分组,一家时药丸按设计不渲染)。
-    // ⚠️ 先等弹层的入场动画走完再拍:点开就拍会拍到半透明的中间帧,那张图会让人以为
-    //    面板本身是灰的(第一版正是这么拍出一张"看着像坏了"的图)。
-    // 等的是「入场动画已播完」这件事:弹层带 data-open 时挂一段 `both` 填充的入场动画
-    // (packages/session-ui/src/styles/recipes/popup-surface.css.ts 的 `&[data-open]` 那几条),
-    // 播完后它仍在 getAnimations() 里、playState 为 finished。❌ 按固定毫秒等。
-    await until('panel entry animation finished', () => {
-      const popup = document.querySelector<HTMLElement>('[data-slot="combobox-content"][data-open]')
-      return popup != null && popup.getAnimations().every((a) => a.playState === 'finished')
-    })
-    await page.screenshot({ path: 'composer-model-panel-providers.png' })
-
-    await page.getByTestId('composer-model-provider-OpenAI').click()
-    // 筛的是**厂商**,而厂商横切在两档之上 ⇒ 两档里的 OpenAI 条目都留下,两个组头也都还在。
-    // 三条:你自己的 codex 与 Sol,加上咕咕代付的那条 Sol —— 同名不同档,两条都得在。
-    await until('provider pill filters to OpenAI', () =>
-      sameList(visibleOptions(), ['gpt-5.6-codex', 'GPT-5.6 Sol', 'GPT-5.6 Sol'])
-    )
-    expect(visibleOptions()).toEqual(['gpt-5.6-codex', 'GPT-5.6 Sol', 'GPT-5.6 Sol'])
-    expect(visibleGroups()).toEqual([
-      '你的 Codex 模型',
-      'Gugu models are billed in credits'
-    ])
-
-    // 再点一次取消 ⇒ 回到「一个都没选」= 不过滤(上游原话:An empty filter means no filtering)。
-    await page.getByTestId('composer-model-provider-OpenAI').click()
-    await until('clearing the pill restores all five', () => visibleOptions().length === 5)
   })
 })

@@ -1,14 +1,21 @@
-import { customModelOptionId, matchCustomModel, type CustomModelConnection, type ModelProtocol } from '@gugu/session-core/models/custom-model';
+import { customModelApiUrl, customModelOptionId, matchCustomModel, type CustomModelConnection, type ModelProtocol } from '@gugu/session-core/models/custom-model';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import type { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { getDomainWithoutSuffix } from 'tldts';
+import { vendorName } from '@/i18n/vendorName';
 import { modelProviderIcon } from './model-provider-icon';
 
-/** Which vendor an address belongs to: its registrable domain without the public suffix (`api.deepseek.com` → `deepseek`). An IP or a local name has none. */
-export function vendorTag(baseUrl: string | undefined): string | undefined {
-  return (baseUrl && getDomainWithoutSuffix(baseUrl)) || undefined;
+/** Codex uses settings-managed entries. An imported Claude API connection also replaces its native catalog. */
+export function managedHarnessOptions(
+  options: Record<string, ComposerModelOption> | null,
+  providerId: string | null | undefined,
+  connections: readonly CustomModelConnection[] | undefined,
+): Record<string, ComposerModelOption> | null {
+  if (providerId === 'codex') return null;
+  if (providerId === 'claude' && connections?.some(connection => connection.managedNativeHarnesses?.includes('claude'))) return null;
+  return options;
 }
 
 export function customComposerOptions(
@@ -17,8 +24,17 @@ export function customComposerOptions(
 ): Record<string, ComposerModelOption> {
   const protocols = agent?.capabilities.modelProtocols ?? [];
   const protocolName = (protocol: ModelProtocol) => translate(`customModels.${protocol}`);
-  return Object.fromEntries(connections.flatMap((connection) => {
-    const tag = vendorTag(connection.endpoints[0]?.baseUrl);
+  const sources = connections.filter(connection => !connection.keyConflict &&
+    (connection.models.length || (!connection.discovered && !connection.disabledModels?.length))).map(connection => {
+    const url = customModelApiUrl(connection);
+    const preset = providerPresets.find(({ id }) => id === connection.preset);
+    const label = preset ? vendorName(preset.name) : connection.name || new URL(url).host;
+    return { connection, url, preset, label };
+  });
+  const labelCounts = new Map<string, number>();
+  for (const { label } of sources) labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+  return Object.fromEntries(sources.flatMap(({ connection, url, preset, label }) => {
+    const groupLabel = (labelCounts.get(label) ?? 0) > 1 ? `${label} · ${url.replace(/^https?:\/\//, '')}` : label;
     const entries = connection.models.length ? connection.models : [{ id: undefined }];
     return entries.map((model) => {
       const matched = matchCustomModel({ connection, nativeProtocol: protocols[0], protocols, convertFrom: agent?.capabilities.customModel?.convertFrom,
@@ -29,16 +45,14 @@ export function customComposerOptions(
         : matched.reason === 'missing-key' ? translate('customModels.missingKey', { device })
           : matched.reason === 'no-model' ? translate('customModels.noModel')
             : matched.reason === 'protocol' ? translate(connection.preset ? 'customModels.protocolPreset' : 'customModels.protocolCustom', { harness: agent?.name ?? '', required, actual, provider: connection.name }) : undefined;
-      const preset = providerPresets.find(({ id }) => id === connection.preset);
       const name = model.id ? ('label' in model && model.label || model.id) : translate('customModels.cliDefault', { provider: connection.name });
       return [customModelOptionId({ connectionId: connection.id, modelId: model.id }), {
         name,
-        // No group heading: the vendor tag already says this one is the person's own (owner 11-19).
-        // The filter pill reads like the tag; a record whose address has no vendor keeps its own name.
-        providerLabel: tag ?? connection.name,
-        ...(tag ? { tag } : {}),
+        groupId: `connection:${connection.id}`,
+        groupLabel,
+        providerLabel: getDomainWithoutSuffix(url) || label,
         icon: modelProviderIcon(preset ? { id: preset.id, name: preset.name, iconKey: preset.icon } : null),
-        description: connection.name,
+        description: url,
         ...(reason ? { disabled: true, disabledReason: reason } : {}),
         ...('contextWindow' in model && model.contextWindow ? { modelFeatures: { contextWindowSize: model.contextWindow } } : {}),
         ...('maxOutput' in model && model.maxOutput ? { facts: [{ label: translate('customModels.output'), value: model.maxOutput.toLocaleString() }] } : {}),

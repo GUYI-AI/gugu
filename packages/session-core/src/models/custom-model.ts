@@ -16,6 +16,11 @@ export function normalizeModelBaseUrl(value: string): string {
   return url.toString().replace(/\/+$/, '');
 }
 
+/** The entered URL is the identity; detected protocol routes may use other paths. */
+export function customModelApiUrl(connection: Pick<CustomModelMeta, 'apiUrl' | 'endpoints'>): string {
+  return normalizeModelBaseUrl(connection.apiUrl ?? connection.endpoints[0]!.baseUrl);
+}
+
 /**
  * The protocol an address names by its own path, before any network request: the vendor's documented route tail or
  * prefix. `undefined` when the path doesn't say (a bare `/v1` is served by several protocols), so the person chooses.
@@ -49,11 +54,15 @@ export const customModelEntrySchema = z.object({
 });
 
 export const customModelMetaSchema = z.object({
+  apiUrl: modelEndpointSchema.shape.baseUrl.optional(),
   preset: z.string().nullable(),
   endpoints: z.array(modelEndpointSchema).min(1).max(4)
     .refine((entries) => new Set(entries.map(({ protocol }) => protocol)).size === entries.length, 'Use one address per protocol'),
   models: z.array(customModelEntrySchema).max(200)
     .refine((entries) => new Set(entries.map(({ id }) => id)).size === entries.length, 'Model IDs must be unique'),
+  // Keep per-model settings when a model is switched off. Runtime pickers read only `models`.
+  disabledModels: z.array(customModelEntrySchema).max(200)
+    .refine(entries => new Set(entries.map(({ id }) => id)).size === entries.length, 'Model IDs must be unique').optional(),
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
@@ -85,7 +94,7 @@ export type SessionModelSelection = z.infer<typeof sessionModelSelectionSchema>;
 export type CustomModelRef = Extract<SessionModelSelection, { kind: 'custom' }>;
 
 /** Where a connection was found on this machine. Never carries the key or its fingerprint. */
-export const discoverySourceSchema = z.enum(['codex-auth', 'codex-provider', 'shell-env']);
+export const discoverySourceSchema = z.enum(['codex-auth', 'codex-provider', 'shell-env', 'claude-settings']);
 export type DiscoverySource = z.infer<typeof discoverySourceSchema>;
 
 export const customModelConnectionSchema = z.object({
@@ -93,6 +102,9 @@ export const customModelConnectionSchema = z.object({
   name: z.string(),
   credentialRef: z.string(),
   keySaved: z.boolean(),
+  managedNativeHarnesses: z.array(z.enum(['codex', 'claude'])).optional(),
+  keyConflict: z.boolean().optional(),
+  keyLast4: z.string().max(4).optional(),
   ...customModelMetaSchema.shape,
   /**
    * Present when this machine already had the connection configured; `keyLast4` is all the wire carries of the key.

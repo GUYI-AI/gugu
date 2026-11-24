@@ -13,7 +13,7 @@ import { providerPresets } from '@gugu/session-core/models/provider-presets';
  */
 export type DiscoveryIssue = {
   code: 'key-missing' | 'invalid-config' | 'unreadable' | 'unsupported-store' | 'incompatible';
-  where: 'auth.json' | 'config.toml';
+  where: 'auth.json' | 'config.toml' | 'settings.json';
   provider?: string;
 };
 
@@ -30,6 +30,7 @@ export type DiscoveredConnection = {
   keyLast4: string;
   /** Codex provider ids that resolved to this connection. */
   aliases: string[];
+  nativeHarnesses?: Array<'claude' | 'codex'>;
 };
 
 export type LocalDiscovery = { connections: DiscoveredConnection[]; issues: DiscoveryIssue[] };
@@ -97,17 +98,24 @@ function hostName(baseUrl: string): string {
   try { return new URL(baseUrl).host; } catch { return baseUrl; }
 }
 
-export async function discoverLocalConnections(input: { root: string; env: Record<string, string | undefined> }): Promise<LocalDiscovery> {
+export async function discoverLocalConnections(input: { root: string; claudeRoot?: string; env: Record<string, string | undefined> }): Promise<LocalDiscovery> {
   const issues: DiscoveryIssue[] = [];
   const found = new Map<string, DiscoveredConnection>();
 
   function add(candidate: Omit<DiscoveredConnection, 'id' | 'identity' | 'keyLast4'> & { baseUrl: string; key: string }) {
     const { baseUrl, key, ...rest } = candidate;
+    if (!rest.preset) {
+      const matches = providerPresets.filter(preset => preset.endpoints.some(endpoint => rest.endpoints.some(route =>
+        endpoint.protocol === route.protocol && normalizeModelBaseUrl(endpoint.baseUrl) === route.baseUrl)));
+      // Some official APIs share an endpoint with a Coding Plan. The URL cannot identify its payer there.
+      if (matches.length === 1 && matches[0]!.group === 'coding-plan') rest.preset = matches[0]!.id;
+    }
     const identity = discoveryIdentity(baseUrl, key);
     const existing = found.get(identity);
     if (existing) {
       for (const endpoint of rest.endpoints) if (!existing.endpoints.some(({ protocol }) => protocol === endpoint.protocol)) existing.endpoints.push(endpoint);
       for (const model of rest.models) if (!existing.models.some(({ id }) => id === model.id)) existing.models.push(model);
+      existing.nativeHarnesses = [...new Set([...(existing.nativeHarnesses ?? []), ...(rest.nativeHarnesses ?? [])])];
       for (const alias of rest.aliases) if (!existing.aliases.includes(alias)) existing.aliases.push(alias);
       return;
     }
@@ -124,9 +132,19 @@ export async function discoverLocalConnections(input: { root: string; env: Recor
     try { config = parseTOML(configFile.text); } catch { issues.push({ code: 'invalid-config', where: 'config.toml' }); }
   }
 
+  const providers = isRecord(config.model_providers) ? config.model_providers : {};
+  const defaultProvider = text(config.model_provider) ?? 'openai';
+  const selected = providers[defaultProvider];
+  const selectedUsesAuth = defaultProvider !== 'openai' && isRecord(selected) && selected.requires_openai_auth === true;
+  let fileKey: string | undefined;
+
   // Where a key aimed at "OpenAI" really goes: the user's own override if there is one. Reported once, not per key.
   let officialAddress: string | null | undefined;
+  let subscriptionLogin = false;
   const official = (key: string, source: DiscoverySource) => {
+    const nativeCodex = (config.model_provider === undefined || config.model_provider === 'openai') && !subscriptionLogin;
+    const model = nativeCodex ? text(config.model) : undefined;
+    const models = model ? [{ id: model }] : [];
     if (officialAddress === undefined) {
       const written = text(config.openai_base_url) ?? text(input.env.OPENAI_BASE_URL);
       officialAddress = written === undefined ? OFFICIAL_BASE : holdableAddress(written);
@@ -135,10 +153,10 @@ export async function discoverLocalConnections(input: { root: string; env: Recor
     const address = officialAddress;
     if (!address) return;
     if (address === OFFICIAL_BASE) {
-      add({ source, name: OFFICIAL.name, preset: OFFICIAL.id, baseUrl: address, key, models: [], aliases: [],
+      add({ source, name: OFFICIAL.name, preset: OFFICIAL.id, baseUrl: address, key, models, aliases: [], nativeHarnesses: nativeCodex ? ['codex'] : [],
         endpoints: OFFICIAL.endpoints.map(({ protocol, baseUrl }) => ({ protocol, baseUrl })) });
     } else {
-      add({ source, name: `${OFFICIAL.name} (${hostName(address)})`, preset: null, baseUrl: address, key, models: [], aliases: [],
+      add({ source, name: `${OFFICIAL.name} (${hostName(address)})`, preset: null, baseUrl: address, key, models, aliases: [], nativeHarnesses: nativeCodex ? ['codex'] : [],
         endpoints: endpointsFor(address, ['openai-responses']) });
     }
   };
@@ -153,27 +171,29 @@ export async function discoverLocalConnections(input: { root: string; env: Recor
     if (!isRecord(auth)) issues.push({ code: 'invalid-config', where: 'auth.json' });
     else if (store !== undefined && store !== 'file') issues.push({ code: 'unsupported-store', where: 'auth.json' });
     else {
+      subscriptionLogin = auth.auth_mode === 'chatgpt' || auth.tokens != null;
       const key = text(auth.OPENAI_API_KEY);
       const active = auth.auth_mode === undefined ? key !== undefined && auth.tokens == null : auth.auth_mode === 'apikey';
-      if (key && active) official(key, 'codex-auth');
+      if (key && active) {
+        fileKey = key;
+        if (!selectedUsesAuth) official(key, 'codex-auth');
+      }
     }
   }
 
   // 2. The key in the login shell, aimed at the official address unless the user's own settings say otherwise.
   const shellKey = text(input.env.OPENAI_API_KEY);
-  if (shellKey) official(shellKey, 'shell-env');
+  if (shellKey && !selectedUsesAuth) official(shellKey, 'shell-env');
 
   // 3. Every provider Codex was explicitly told about.
-  const providers = isRecord(config.model_providers) ? config.model_providers : {};
   const profiles = isRecord(config.profiles) ? Object.values(config.profiles).filter(isRecord) : [];
-  const defaultProvider = text(config.model_provider) ?? 'openai';
   const modelsFor = (provider: string) => {
     const ids = [{ provider: defaultProvider, model: text(config.model) }, ...profiles.map(profile => ({ provider: text(profile.model_provider) ?? defaultProvider, model: text(profile.model) }))]
       .filter(entry => entry.provider === provider && entry.model).map(entry => entry.model!);
     return [...new Set(ids)].map(id => ({ id }));
   };
   for (const [id, raw] of Object.entries(providers)) {
-    if (!isRecord(raw) || id === 'openai' || raw.requires_openai_auth === true) continue;
+    if (!isRecord(raw) || id === 'openai') continue;
     const baseUrl = text(raw.base_url);
     if (!baseUrl) continue;
     const wire = raw.wire_api === undefined ? 'responses' : raw.wire_api;
@@ -181,12 +201,40 @@ export async function discoverLocalConnections(input: { root: string; env: Recor
     const customised = [raw.query_params, raw.http_headers, raw.env_http_headers].some(value => isRecord(value) && Object.keys(value).length > 0);
     if (!address || customised || (wire !== 'responses' && wire !== 'chat')) { issues.push({ code: 'incompatible', where: 'config.toml', provider: id }); continue; }
     const envKey = text(raw.env_key);
-    const key = (envKey ? text(input.env[envKey]) : undefined) ?? text(raw.experimental_bearer_token);
+    const explicitKey = (envKey ? text(input.env[envKey]) : undefined) ?? text(raw.experimental_bearer_token);
+    const key = explicitKey ?? (raw.requires_openai_auth === true && !envKey ? fileKey : undefined);
     if (!key) { if (envKey) issues.push({ code: 'key-missing', where: 'config.toml', provider: id }); continue; }
     add({
-      source: 'codex-provider', name: text(raw.name) ?? id, preset: address === OFFICIAL_BASE ? OFFICIAL.id : null, baseUrl: address, key, aliases: [id], models: modelsFor(id),
+      source: 'codex-provider', name: text(raw.name) ?? id, preset: address === OFFICIAL_BASE ? OFFICIAL.id : null, baseUrl: address, key, aliases: [id], models: modelsFor(id), nativeHarnesses: id === defaultProvider ? ['codex'] : [],
       endpoints: endpointsFor(address, [wire === 'chat' ? 'openai-chat-completions' : 'openai-responses']),
     });
+  }
+
+  if (input.claudeRoot) {
+    const settingsFile = await readSmall(join(input.claudeRoot, 'settings.json'));
+    let settings: Record<string, unknown> = {};
+    let readable = !settingsFile.ok && settingsFile.reason === 'missing';
+    if (settingsFile.ok) {
+      try {
+        const parsed: unknown = JSON.parse(settingsFile.text);
+        if (isRecord(parsed)) { settings = parsed; readable = true; }
+      } catch { /* Invalid settings cannot establish the address paired with an environment key. */ }
+    }
+    if (!readable) issues.push({ code: settingsFile.ok ? 'invalid-config' : 'unreadable', where: 'settings.json' });
+    if (readable) {
+      const env = { ...input.env, ...(isRecord(settings.env) ? settings.env : {}) };
+      const key = text(env.ANTHROPIC_API_KEY);
+      const token = text(env.ANTHROPIC_AUTH_TOKEN);
+      const rawAddress = text(env.ANTHROPIC_BASE_URL);
+      const address = rawAddress ? holdableAddress(rawAddress) : 'https://api.anthropic.com';
+      if (key && (!token || token === key) && address && !settings.apiKeyHelper &&
+        ![env.CLAUDE_CODE_USE_BEDROCK, env.CLAUDE_CODE_USE_VERTEX, env.CLAUDE_CODE_USE_FOUNDRY].some(value => value === '1' || value === 'true')) {
+        const model = text(env.ANTHROPIC_MODEL) ?? text(settings.model);
+        const models = model && !['default', 'opus', 'sonnet', 'haiku', 'opusplan'].includes(model) ? [{ id: model }] : [];
+        add({ source: 'claude-settings', name: hostName(address), preset: null, baseUrl: address, key, models,
+          aliases: [], nativeHarnesses: ['claude'], endpoints: endpointsFor(address, ['anthropic-messages']) });
+      }
+    }
   }
 
   // Two different keys can carry the same name (an official key in the file and another in the shell); the list shows names only.

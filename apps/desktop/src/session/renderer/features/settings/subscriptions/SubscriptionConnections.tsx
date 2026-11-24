@@ -134,6 +134,17 @@ export function SubscriptionConnections({
   const { listed, connections, native, form, cliSignIn } = useListedConnections(machine, agent)
   const connectionsError = refreshFailure(connections)
   const nativeError = refreshFailure(native)
+  const nativeDetails = native.state === 'value' ? native.value : undefined
+  const nativePayer = nativeDetails?.plan?.payer
+  const nativeStatus = nativeDetails?.status
+  // Coding Plan only lists the existing CLI connection when there is subscription evidence.
+  const nativeHasPlan = nativePayer !== 'api-key' && nativePayer !== 'custom-endpoint' && (
+    nativeStatus?.kind === 'authenticated' && nativeStatus.credentialKind === 'api-key' ? false
+      : nativePayer === 'subscription' ||
+        (nativeStatus?.kind === 'authenticated' && nativeStatus.credentialKind === 'subscription') ||
+        (nativeStatus?.kind === 'unauthenticated' && nativeStatus.reason === 'expired')
+  )
+  const planRows = listed?.filter(connection => connection.kind !== 'native' || nativeHasPlan)
   const empty = listed?.length === 0
   const changeOpen = (next: boolean, details?: { reason?: string; event?: Event }) => {
     if (next && empty) setAdding(true)
@@ -415,7 +426,7 @@ export function SubscriptionConnections({
     ))
   return (
     <>
-      {modelRows ? <SubscriptionModelRows notice={failure ? <SwitchNoticeLine notice={{ tone, text: failure, ...(refusedId ? { closeAndSwitch } : {}), ...(closing ? { progress } : {}) }} /> : undefined} agent={agent} machine={machine} connections={listed} busy={action.isPending || rename.isPending}
+      {modelRows ? <SubscriptionModelRows notice={failure ? <SwitchNoticeLine notice={{ tone, text: failure, ...(refusedId ? { closeAndSwitch } : {}), ...(closing ? { progress } : {}) }} /> : undefined} agent={agent} machine={machine} connections={planRows} busy={action.isPending || rename.isPending}
         onSignIn={id => signIn(id)} onRemove={id => action.mutate({ kind: 'remove', id })} onSelect={select} onRename={(id, name) => rename.mutateAsync({ id, name })}
         onRetry={refresh} error={rename.error ? translate('mcpLibrary.saveFailed') : connectionsError || nativeError ? translate('customModels.connectionsReadFailed', { provider: agent.name }) : null} /> : modelAccount ? <ConnectionForm
           agent={agent} machine={machine} account={accountMethod} vendorKey={false}

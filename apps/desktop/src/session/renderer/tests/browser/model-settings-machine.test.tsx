@@ -112,26 +112,26 @@ it('uses the existing settings selection for local → A → B → local and cap
   await expect.element(heading()).toHaveTextContent('本机'); await capture('local');
   await click(heading().getByTestId('machine-picker')); await expect.element(page.getByRole('menuitem', { name: /开发机 A/ })).toBeVisible(); await capture('menu');
   await click(page.getByRole('menuitem', { name: /开发机 A/ }));
-  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('remote-a');
+  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('远端 A 模型');
   expect(settingsDeviceStore.selected).toBe('remote-a'); await capture('remote-a');
   await choose('开发机 B');
-  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('remote-b');
+  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('远端 B 模型');
   expect(settingsDeviceStore.selected).toBe('remote-b');
   await choose('本机');
-  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('local-model');
+  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('本机模型');
   expect(settingsDeviceStore.selected).toBe('local');
   expect(state.calls.filter(call => call.action === 'list').map(call => call.machine)).toEqual(expect.arrayContaining([null, 'remote-a', 'remote-b']));
 });
 it('routes testing, editing and deleting to the selected device and drops an open edit on external scope change', async () => {
   await choose('开发机 A');
-  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('remote-a');
+  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('远端 A 模型');
+  await click(page.getByRole('button', { name: '管理模型', exact: true }));
   await click(page.getByRole('button', { name: '测试连接', exact: true }));
   expect(state.calls).toContainEqual({ machine: 'remote-a', action: 'test', input: { connectionId: 'remote-a', modelId: 'remote-a' } });
-  await click(page.getByRole('button', { name: '编辑模型', exact: true }));
   await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
   await act(async () => settingsDeviceStore.select('remote-b'));
   await expect.element(page.getByTestId('custom-model-dialog')).not.toBeInTheDocument();
-  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('remote-b');
+  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('远端 B 模型');
   await click(page.getByRole('button', { name: '删除', exact: true }));
   expect(state.calls).toContainEqual({ machine: 'remote-b', action: 'remove', input: { connectionId: 'remote-b' } });
 });
@@ -153,9 +153,9 @@ it('does not let a slow reply from A overwrite B after a scope change', async ()
     await choose('开发机 A');
     await until('A request is pending', () => state.calls.some(call => call.machine === 'remote-a' && call.action === 'list'));
     await choose('开发机 B');
-    await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('remote-b');
+    await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('远端 B 模型');
   } finally { release(); }
   await customModels.fetch('remote-a');
-  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('remote-b');
+  await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('远端 B 模型');
   expect(document.querySelector('[data-custom-connection="remote-a"]')).toBeNull();
 });

@@ -13,7 +13,7 @@ import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { ChatComposer } from '@gugu/session-ui/react/components';
 import { CUSTOM_MODEL_KEY_CHANNEL, type CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
-import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
+import { customComposerOptions, managedHarnessOptions } from '@renderer/features/sessions/session-config/custom-model-options';
 import { composerModelFooter, composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
@@ -38,7 +38,7 @@ it('opens model settings from the composer without requesting the add-model dial
   const onOpen = vi.fn<(event: Event) => void>();
   window.addEventListener(UI_EVENTS.openSettings, onOpen, { once: true });
   try {
-    composerModelFooter([]).onManageModels();
+    composerModelFooter().onManageModels();
     expect(onOpen).toHaveBeenCalledTimes(1);
     const event = onOpen.mock.calls[0]?.[0];
     expect(event).toBeInstanceOf(CustomEvent);
@@ -59,23 +59,98 @@ it('shows migrated records with no model or key and a repair entrypoint', async 
   expect(document.querySelector('[data-testid=custom-model-provider]')).toBeNull();
   expect(document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')?.value).toBe('');
 });
-it('separates coding plans, official API keys and custom endpoints, including migrated providers', async () => {
+it('groups official and migrated relay models under their collapsed connections', async () => {
   state.rows = [
-    { ...record(), id: 'plan', preset: 'kimi-coding', keySaved: true, models: [{ id: 'plan-model' }] },
-    { ...record(), id: 'api', preset: 'deepseek', keySaved: true, models: [{ id: 'api-model' }] },
+    { ...record(), id: 'plan', preset: 'kimi-coding', keySaved: true, endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://plan.test' }], models: [{ id: 'plan-model' }] },
+    { ...record(), id: 'api', preset: 'deepseek', keySaved: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://api.test' }], models: [{ id: 'api-model' }] },
     { ...record(), id: 'custom', preset: 'old-relay', keySaved: true, models: [{ id: 'relay-model' }] },
   ];
   render(<CustomModelsGroup />);
   await until('all three existing connections render', () => document.querySelectorAll('[data-custom-connection]').length === 3);
   expect(document.querySelector('[data-custom-connection="plan"]')?.closest('section')?.getAttribute('data-testid')).toBe('settings-coding-plans');
-  expect(document.querySelector('[data-custom-connection="api"]')?.closest('section')?.getAttribute('data-testid')).toBe('settings-api-models');
+  expect(document.querySelector('[data-custom-connection="api"]')?.closest('section')?.getAttribute('data-testid')).toBe('settings-custom-models');
   const custom = document.querySelector('[data-custom-connection="custom"]')!;
   expect(custom.closest('section')?.getAttribute('data-testid')).toBe('settings-custom-models');
-  expect(custom.textContent).toContain('provider.test');
+  expect(custom.querySelector('[aria-expanded]')).toBeNull();
+  expect(custom.textContent).not.toContain('relay-model');
+  await userEvent.click(page.getByRole('button', { name: 'Manage models', exact: true }).last());
+  await expect.element(page.getByRole('switch', { name: 'Enable relay-model' })).toHaveAttribute('aria-checked', 'true');
+});
+it('distinguishes different API paths on the same relay and shows a test action for each model', async () => {
+  state.rows = [
+    { ...record(), id: 'first', keySaved: true, models: [{ id: 'first-model' }] },
+    { ...record(), id: 'second', keySaved: true, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/other' }], models: [{ id: 'second-model' }] },
+  ];
+  render(<CustomModelsGroup />);
+  await expect.element(page.getByText('https://provider.test/other', { exact: false })).toBeVisible();
+  await userEvent.click(page.getByRole('button', { name: 'Manage models', exact: true }).nth(1));
+  await expect.element(page.getByText('second-model', { exact: true })).toBeVisible();
+  await userEvent.click(page.getByRole('button', { name: 'Test connection', exact: true }));
+  expect(state.reads).toContainEqual({ connectionId: 'second', modelId: 'second-model' });
+});
+it('asks which saved key to keep for configurations that share an API URL', async () => {
+  state.rows = [
+    { ...record(), id: 'first', keySaved: true, keyLast4: '1111', models: [{ id: 'one' }] },
+    { ...record(), id: 'second', keySaved: true, keyLast4: '2222', models: [{ id: 'two' }] },
+  ];
+  render(<CustomModelsGroup />);
+  await userEvent.click(page.getByRole('button', { name: 'Choose API key' }));
+  await expect.element(page.getByText('••••2222')).toBeVisible();
+  await userEvent.click(page.getByRole('button', { name: 'Keep this key' }).nth(1));
+  await until('the selected saved key was submitted', () => state.saved !== null);
+  expect(state.saved).toMatchObject({ id: 'second', resolveUrlConflict: true, apiUrl: 'https://provider.test/v1' });
+  expect(state.saved).not.toHaveProperty('apiKey');
+});
+it('reuses a saved URL from Add model and retains enabled models', async () => {
+  const saved = { ...record(), keySaved: true, models: [{ id: 'model-a' }] };
+  state.testResult = { kind: 'listed', models: ['model-a', 'model-b'] };
+  render(<CustomModelDialog machine={null} availableConnections={[saved]} onClose={() => {}} />);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://provider.test/v1/');
+  await expect.element(page.getByText('Uses the API key already saved for this address.')).toBeVisible();
+  const picker = page.getByRole('searchbox', { name: /search models/i });
+  await expect.element(picker).toBeEnabled();
+  await userEvent.click(picker);
+  await userEvent.click(page.getByRole('switch', { name: 'Enable model-b', exact: true }));
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved).toMatchObject({ id: saved.id, apiUrl: 'https://provider.test/v1', models: [{ id: 'model-a' }, { id: 'model-b' }] });
+  expect(state.saved).not.toHaveProperty('apiKey');
+});
+it('filters the catalog and keeps per-model settings when switching a model off', async () => {
+  const saved = { ...record(), keySaved: true, models: [{ id: 'model-b' }] };
+  state.testResult = { kind: 'listed', models: ['model-a', 'model-b'] };
+  render(<CustomModelDialog machine={null} connection={saved} onClose={() => {}} />);
+  const search = page.getByRole('searchbox', { name: /search models/i });
+  const catalog = page.getByRole('region', { name: 'Models', exact: true });
+  await expect.element(catalog).toBeVisible();
+  expect(page.getByRole('button', { name: 'Models', exact: true }).query()).toBeNull();
+  await expect.element(catalog.getByRole('switch').first()).toHaveAccessibleName('Enable model-b');
+  await userEvent.fill(search, 'model-a');
+  await expect.element(catalog.getByRole('switch', { name: 'Enable model-a' })).toBeVisible();
+  expect(catalog.getByRole('switch', { name: 'Enable model-b' }).query()).toBeNull();
+  await userEvent.click(catalog.getByRole('button', { name: 'Edit model-a' }));
+  const advanced = page.getByRole('dialog', { name: 'Advanced', exact: true });
+  await expect.element(advanced).toHaveTextContent('model-a');
+  const image = advanced.getByRole('switch', { name: /image/i });
+  await expect.element(image).toHaveAttribute('aria-checked', 'true');
+  await userEvent.click(image);
+  await userEvent.click(advanced.getByRole('button', { name: 'Cancel', exact: true }));
+  await userEvent.click(catalog.getByRole('button', { name: 'Edit model-a' }));
+  await expect.element(image).toHaveAttribute('aria-checked', 'true');
+  await userEvent.click(image);
+  await userEvent.click(advanced.getByRole('button', { name: 'Confirm', exact: true }));
+  expect(state.saved).toBeNull();
+  await expect.element(search).toHaveValue('model-a');
+  await userEvent.click(catalog.getByRole('switch', { name: 'Enable model-a' }));
+  await userEvent.fill(search, '');
+  await userEvent.click(catalog.getByRole('switch', { name: 'Enable model-b' }));
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved).toMatchObject({ models: [{ id: 'model-a', image: false }], disabledModels: [{ id: 'model-b' }] });
 });
 it.each([
   ['coding-plan', 'Add plan', 'Claude subscription', 'ChatGPT subscription', 'DeepSeek'],
-  ['api', 'Add API key', 'DeepSeek', 'OpenAI', 'Claude subscription'],
+  ['api', 'Add model', 'DeepSeek', 'OpenAI', 'Claude subscription'],
 ] as const)('the %s dialog offers only providers from its own card', async (group, title, first, second, absent) => {
   render(<CustomModelDialog machine={null} group={group} onClose={() => {}} />);
   await expect.element(page.getByRole('dialog', { name: title, exact: true })).toBeVisible();
@@ -83,6 +158,13 @@ it.each([
   await expect.element(page.getByRole('option', { name: first, exact: true })).toBeVisible();
   await expect.element(page.getByRole('option', { name: second, exact: true })).toBeVisible();
   expect(page.getByRole('option', { name: absent, exact: true }).query()).toBeNull();
+  if (group === 'api') {
+    const relay = page.getByRole('option', { name: 'Third-party relay' });
+    await expect.element(relay).toBeVisible();
+    expect(relay.element()).toBe(Array.from(document.querySelectorAll('[role=option]')).at(-1));
+    await userEvent.click(relay);
+    await expect.element(page.getByTestId('custom-model-address-0')).toBeVisible();
+  }
 });
 it('edits an address with the saved key and saves multiple manual models without returning the key', async () => {
   const existing = { ...record(), keySaved: true, models: [{ id: 'model:a' }] };
@@ -111,7 +193,7 @@ it('names only the bound model when reopening a migrated Pi task', async () => {
   await until('the trigger names the bound model', () => document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent === 'glm-5.3-flash');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('provider');
 });
-it('a custom address shows no protocol: the models it lists are all selected and the recognized addresses are saved', async () => {
+it('a custom address shows no protocol: only explicitly selected models and the recognized addresses are saved', async () => {
   state.probe = {
     endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }, { protocol: 'openai-responses', baseUrl: 'https://relay.test' }],
     models: ['model-a', 'model-b'], failures: [{ step: 'anthropic-messages', reason: 'refused' }],
@@ -119,13 +201,17 @@ it('a custom address shows no protocol: the models it lists are all selected and
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test');
   await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
-  await until('both listed models are selected', () => document.querySelectorAll('[data-testid=connection-models] [data-slot=combobox-chip]').length === 2);
+  const picker = page.getByRole('searchbox', { name: /search models/i });
+  await expect.element(picker).toBeEnabled();
+  await expect.element(page.getByTestId('custom-model-save')).toBeDisabled();
+  await userEvent.click(picker);
+  await userEvent.click(page.getByRole('switch', { name: 'Enable model-b', exact: true }));
   expect(document.querySelector('[data-testid^=custom-model-protocol]')).toBeNull();
   expect(page.getByRole('button', { name: 'Test connection', exact: true }).query()).toBeNull();
   expect(state.probes).toContainEqual({ apiKey: 'sk-test', baseUrl: 'https://relay.test' });
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
-  expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, models: [{ id: 'model-a' }, { id: 'model-b' }], apiKey: 'sk-test' });
+  expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, models: [{ id: 'model-b' }], apiKey: 'sk-test' });
 });
 const failures = [
   ['unauthorized', 'This address refused the key.', '该地址拒绝了此 Key。'],
@@ -153,8 +239,9 @@ it.each(failures)('the saved connection’s Test connection action preserves %s'
   state.rows = [{ ...record(), keySaved: true, models: [{ id: 'model' }] }];
   state.testResult = { kind: 'unlisted', reason };
   render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
+  await userEvent.click(page.getByRole('button', { name: 'Manage models', exact: true }));
   await userEvent.click(page.getByRole('button', { name: 'Test connection', exact: true }));
-  await expect.element(page.getByRole('status')).toHaveTextContent(text);
+  await expect.element(page.getByTestId('custom-model-dialog').getByRole('status').filter({ hasText: text })).toBeVisible();
 });
 const found = (): CustomModelConnection => ({ ...record(), id: 'found', name: 'OpenAI', preset: 'openai', keySaved: true, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], discovered: { source: 'shell-env', keyLast4: 'abcd' } });
 const keyField = () => document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')!;
@@ -195,20 +282,38 @@ it('preserves a connection failure that first occurs during the save-time named-
   await expect.element(page.getByRole('alert')).toHaveTextContent('Cannot resolve this address. Check the hostname and DNS settings.');
   expect(state.saved).toBeNull();
 });
-it('a converted third-party model is selectable and tagged with its vendor; an IP address gets no tag', async () => {
-  const chat = (id: string, baseUrl: string, model: string): CustomModelConnection => ({ ...record(), id, name: id, keySaved: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl }], models: [{ id: model }] });
+it('same-name models search and select by their access source', async () => {
+  const chat = (id: string, name: string, baseUrl: string): CustomModelConnection => ({
+    ...record(), id, name, keySaved: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl }], models: [{ id: 'shared-model' }],
+  });
   const models = customComposerOptions([
-    chat('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0001', 'https://api.deepseek.com/v1', 'deepseek-v4-flash'),
-    chat('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0002', 'https://open.bigmodel.cn/api/paas/v4', 'glm-5.3'),
-    chat('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0003', 'http://10.0.0.8:8000/v1', 'local-model'),
+    chat('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0001', 'First relay', 'https://api.deepseek.com/v1'),
+    chat('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0002', 'Second relay', 'https://open.bigmodel.cn/api/paas/v4'),
   ], { id: 'claude', name: 'Claude', capabilities: { modelProtocols: ['anthropic-messages'], customModel: { convertFrom: ['openai-chat-completions'] } } }, 'This device', translateSessionMessage);
-  expect(Object.values(models).map(({ tag, disabled }) => [tag, disabled])).toEqual([['deepseek', undefined], ['bigmodel', undefined], [undefined, undefined]]);
-  render(<ChatComposer modelOptions={models} selectedModel={Object.keys(models)[0]} onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}} />);
+  const onModelChange = vi.fn();
+  render(<ChatComposer modelOptions={models} selectedModel={Object.keys(models)[0]} onModelChange={onModelChange} onSubmit={() => {}} onStop={() => {}} />);
   await userEvent.click(page.getByTestId('composer-model-trigger'));
-  await until('the tags render', () => document.querySelectorAll('[data-slot=composer-model-tag]').length === 2);
-  expect([...document.querySelectorAll('[data-slot=composer-model-tag]')].map((tag) => tag.textContent)).toEqual(['deepseek', 'bigmodel']);
-  // The trigger names only the model: nothing of the vendor besides the model's own label.
-  expect(document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent).toBe('deepseek-v4-flash');
-  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent?.replace('deepseek-v4-flash', '')).not.toContain('deepseek');
-  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('·');
+  const groupLabels = () => [...document.querySelectorAll('[data-slot="combobox-label"]')].map(el => el.textContent);
+  await until('both access sources render', () => groupLabels().length === 2);
+  expect(groupLabels()).toEqual(['First relay', 'Second relay']);
+  await page.getByTestId('composer-model-search').fill('Second relay');
+  await until('the matching group is retained', () => groupLabels().length === 1);
+  expect(groupLabels()).toEqual(['Second relay']);
+  await page.getByRole('option', { name: 'shared-model' }).click();
+  expect(onModelChange).toHaveBeenCalledWith(Object.keys(models)[1]);
+});
+
+
+it('uses the settings selection for a managed Codex connection, including when every model is disabled', () => {
+  const native = { disabled: { name: 'disabled' }, enabled: { name: 'enabled' } };
+  const connection: CustomModelConnection = { ...record(), keySaved: true, managedNativeHarnesses: ['codex'],
+    models: [{ id: 'enabled' }], disabledModels: [{ id: 'disabled' }] };
+  const agent = { id: 'codex', name: 'Codex', capabilities: { modelProtocols: ['openai-responses' as const], customModel: undefined } };
+  expect(managedHarnessOptions(native, 'codex', [connection])).toBeNull();
+  expect(managedHarnessOptions(native, 'codex', undefined)).toBeNull();
+  expect(managedHarnessOptions(native, 'codex', [])).toBeNull();
+  expect(managedHarnessOptions(native, 'claude', [connection])).toBe(native);
+  expect(Object.values(customComposerOptions([connection], agent, 'This device', translateSessionMessage)).map(option => option.name)).toEqual(['enabled']);
+  expect(customComposerOptions([{ ...connection, models: [] }], agent, 'This device', translateSessionMessage)).toEqual({});
+  expect(customComposerOptions([{ ...connection, keyConflict: true }], agent, 'This device', translateSessionMessage)).toEqual({});
 });
