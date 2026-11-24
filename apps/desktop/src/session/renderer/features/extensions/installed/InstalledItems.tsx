@@ -55,7 +55,7 @@ function ItemTile({ item, layout, selected, managing, onSelect }: {
         </span>
         {!grid && managing && <span className="gg-installed-selection" data-selected={selected || undefined} aria-hidden>{selected && <Check size={12} />}</span>}
       </Button>
-      {!managing && (!grid || item.updateVersion) && (
+      {!managing && (!grid || item.updateVersion || item.busyLabel) && (
         <div className="gg-installed-actions">
           {item.busy && !item.busyLabel && <LoadingIndicator size="inline" />}
           {(item.update || item.busyLabel) && <Button size="sm" variant="secondary" aria-disabled={item.busy || undefined}
