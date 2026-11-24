@@ -1,5 +1,5 @@
 import type { TranscriptItem, TranscriptTurn } from '../acp/models/turns/turn';
-import { HOST_PROMPT_HASH } from '../acp/native-prompt';
+import { HOST_PROMPT_HASH } from '../acp/native-prompt-key';
 
 /**
  * The turn a running agent is in, as its runtime holds it, shown in place of the record's copy of that turn.
@@ -11,14 +11,28 @@ import { HOST_PROMPT_HASH } from '../acp/native-prompt';
  * (records that number their lines themselves share no ids with the runtime). Being still open says nothing: a
  * record without turn ends keeps its last turn open until the next prompt is written. The first turn from the end
  * that is neither stays, and so does everything before it. Once the runtime's turn ends (`runtime` null), the
- * record's turns are shown as they are.
+ * record's turns are shown as they are. `before`: see `withoutCopiesOf`.
  */
-export function withRuntimeTurn(turns: readonly TranscriptTurn[], runtime: TranscriptTurn | null): TranscriptTurn[] {
+export function withRuntimeTurn(turns: readonly TranscriptTurn[], runtime: TranscriptTurn | null, before?: ReadonlySet<string>): TranscriptTurn[] {
   if (!runtime) return [...turns];
-  const same = sameTurnAs(runtime);
+  return [...withoutCopiesOf(turns, runtime, before), runtime];
+}
+
+/**
+ * `turns` without their tail turns that are `turn` as another source holds it (`sameTurnAs`), for whoever draws `turn`
+ * itself. `before`: the turns that had ended when `turn` started (`endedTurnIds`, taken then). None of them is a copy
+ * of it, whatever it shares: the same words sent again open a turn alike, and their receipt is the same too.
+ */
+export function withoutCopiesOf(turns: readonly TranscriptTurn[], turn: TranscriptTurn, before?: ReadonlySet<string>): TranscriptTurn[] {
+  const same = sameTurnAs(turn);
   let end = turns.length;
-  while (end > 0 && same(turns[end - 1]!)) end -= 1;
-  return [...turns.slice(0, end), runtime];
+  while (end > 0 && !before?.has(turns[end - 1]!.id) && same(turns[end - 1]!)) end -= 1;
+  return turns.slice(0, end);
+}
+
+/** The turns that have ended: what a turn starting now cannot be a copy of (`withoutCopiesOf`). */
+export function endedTurnIds(turns: readonly TranscriptTurn[]): Set<string> {
+  return new Set(turns.filter((turn) => turn.outcome !== undefined || turn.endedAt !== undefined).map((turn) => turn.id));
 }
 
 /**

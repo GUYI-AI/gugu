@@ -1,7 +1,7 @@
 import { useDndContext } from '@dnd-kit/core';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { trackRecentTools } from '../browser/workspace-recent-tools';
-import { useContext, useEffect, useId, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from 'react';
+import { useContext, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { observer } from 'mobx-react-lite';
 import { PaneDimensionProvider } from './pane-dimension-provider';
 import { RetainedTabContent } from './retained-tab-content';
@@ -13,6 +13,7 @@ import { useChatWorkspaceDivider } from './use-chat-workspace-divider';
 import { TrackCut } from './pane-track-cut';
 import { ChatWorkspaceDropZones } from './chat-workspace-drop-zones';
 import { ChatWorkspaceChrome, type ChatWorkspaceChromeProps } from './chat-workspace-chrome';
+import { CutEdgeRelay } from './chat-workspace-edge';
 
 /** `part`: 'all' = the pane's strip over its page; while paired the main pane's 'bar' is drawn above both 'body's. */
 type RenderPane = (paneId: string, first: boolean, last: boolean, part: 'all' | 'bar' | 'body') => ReactNode;
@@ -58,16 +59,21 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   // 并排(spec session-page「并排」):一条会话只有一条页签条 —— 横跨两页画在上面,两页各自的内容在下面。
   const paired = layout.sidePaneId !== null;
   const lifted = layout.groups.some(({ pane }) => tabFullscreen.isOn(pane));
+  const [edge] = useState(() => new CutEdgeRelay());
   return <PaneDimensionProvider sink={layout}>
     <div className="flex h-full min-h-0 min-w-0 flex-col" data-chat-tool-workspace={scopedChrome ? '' : undefined} data-chat-tool-cards={scopedChrome && layout.chatToolCardPaneId ? '' : undefined}>
       {/* A page of the pair in full screen keeps this one strip over it (its exit is on the tab); the row keeps its height, so nothing under it moves. */}
-      {scopedChrome && <ChatWorkspaceChrome layout={layout} {...scopedChrome} />}
+      {scopedChrome && <ChatWorkspaceChrome layout={layout} edge={edge} {...scopedChrome} />}
       {!scopedChrome && paired && <div className="min-w-0 shrink-0" style={{ height: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-pane-strip="">
         <div style={lifted ? STRIP_OVER_FULLSCREEN : undefined}><OverFullscreenStrip.Provider value={lifted}>{renderPane(layout.mainGroup.paneId, true, true, 'bar')}</OverFullscreenStrip.Provider></div>
       </div>}
-      <div className="relative min-h-0 min-w-0 flex-1" data-pane-tree-narrow={alone || undefined} data-chat-tool-dragging={draggingChatTool || undefined}>
+      {/* The pages are laid over the cut on its anchors (❌ inside the track's clipped boxes): a page sliding in sticks out past
+          the edge here. overflow clip, ❌ hidden or visible: what sticks out must not be scrollable overflow, or a page that
+          takes focus while still off the edge (the browser's address bar) has the box around it scrolled, and the page beside
+          it pushed past its place. */}
+      <div className="relative min-h-0 min-w-0 flex-1 overflow-clip" data-pane-tree-narrow={alone || undefined} data-chat-tool-dragging={draggingChatTool || undefined}>
         {/* The root is a cut even as one pane, so the side page coming and going moves on its track (going, live: @@@closing-pane). */}
-        <Cut node={layout.layout} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} anchorOf={anchorOf} single={single} swap={swap} />
+        <Cut node={layout.layout} layout={layout} narrow={narrow} visiblePaneId={visiblePaneId} anchorOf={anchorOf} single={single} swap={swap} edge={scopedChrome ? edge : undefined} />
         {layout.groups.map(({ paneId }) => {
           const shown = layout.isPaneShown(paneId);
           const anchored = { position: 'absolute', positionAnchor: anchorOf(paneId), top: 'anchor(top)', bottom: 'anchor(bottom)', left: 'anchor(left)', right: 'anchor(right)' } as CSSProperties;
@@ -81,7 +87,7 @@ export const PaneTreeView = observer(function PaneTreeView({ layout, renderPane,
   </PaneDimensionProvider>;
 });
 
-type TreeProps = { node: PaneLayoutNode; layout: PaneLayoutStore; narrow: boolean; visiblePaneId: string; anchorOf: (paneId: string) => string; single?: string; swap?: boolean };
+type TreeProps = { node: PaneLayoutNode; layout: PaneLayoutStore; narrow: boolean; visiblePaneId: string; anchorOf: (paneId: string) => string; single?: string; swap?: boolean; edge?: CutEdgeRelay };
 
 const Tree = observer(function Tree({ node, ...rest }: TreeProps) {
   if (node.type === 'pane') return <div className="relative h-full min-h-0 min-w-0" style={{ anchorName: rest.anchorOf(node.paneId) } as CSSProperties} />;
@@ -114,6 +120,7 @@ const Cut = observer(function Cut({ node, ...rest }: TreeProps) {
     shares={only ? split.children.map((child) => (paneOrder(child).includes(only) ? 100 : 0)) : closing && kept > 0 ? split.sizes.map((size, at) => (gone(split.children[at]) ? 0 : (size * 100) / kept)) : split.sizes}
     disabled={!!only || !!closing}
     onLanded={root ? () => layout.panesLanded() : undefined}
+    onEdge={root && rest.edge ? (at) => rest.edge!.write(at) : undefined}
     items={split.children.map((child) => ({ id: childId(child), min: only || gone(child) ? 0 : horizontal ? minExtent(child, 'width', layout.paneMinWidth) : minExtent(child, 'height', MIN_PANE_HEIGHT_PX), node: tree(child) }))}
     // The outermost cut is the pair's: the side page coming to another width (a tab of another kind in front) moves.
     animate={root && !rest.swap}

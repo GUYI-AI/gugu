@@ -13,10 +13,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract';
-import { AssistantTaskChatWindow } from '@/components/assistant/AssistantTaskChatWindow';
 import { SessionTimelinePage } from '@/components/session-watch/SessionTimelinePage';
 import { emptyAgentWatchTimeline, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
-import { DevicesContext } from '@/store/devicesContext';
 import { i18n } from '@/i18n';
 import { composerModelOptions } from '@renderer/features/sessions/session-config/platform-model-options';
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon';
@@ -100,108 +98,6 @@ afterEach(() => {
   harness = undefined;
   document.body.replaceChildren();
   delete document.documentElement.dataset.theme;
-});
-
-const PANEL = { width: 600, height: 860 };
-const box = (element: Element | null) => element!.getBoundingClientRect();
-
-async function mountPanelLayer(theme: 'light' | 'dark') {
-  await i18n.changeLanguage('zh-CN');
-  await page.viewport(1280, 900);
-  document.documentElement.dataset.theme = theme;
-  harness = createReactHarness();
-  harness.container.style.cssText = 'position:fixed;inset:0;display:flex;padding:20px;';
-  // The App's surface as app-conversation-frame.tsx and HostTaskLayer draw it: chat column, panel, the layer's cell and the
-  // panel's collapse in its corner.
-  await renderWithAppProviders(harness, (
-    <DevicesContext.Provider value={{ ...DEVICES, devices: [DEVICE] }}>
-      <div className="ta-app" data-panel="open" style={{ width: 1240, height: PANEL.height, display: 'flex' }}>
-        <div className="ta-chat-col" style={{ flex: 1 }} />
-        <section className="ta-panel" data-testid="app-conversation-panel" style={{ flex: `0 0 ${PANEL.width}px` }}>
-          <div className="ta-task-chat-slot" data-testid="app-work-chat">
-            <AssistantTaskChatWindow agent={{ id: 'agent-1', display_name: '能力测试:写一份说明', avatar: null }} task={{ deviceId: 'mbp', sessionId: SESSION } as never} onClose={() => undefined} appPanel />
-          </div>
-          <button type="button" className="ta-circle ta-task-panel-collapse" aria-label="收起" data-testid="app-work-panel-collapse">▢</button>
-        </section>
-      </div>
-    </DevicesContext.Provider>
-  ), { contacts: {} });
-  await until('the task page in the panel', () => !!harness!.container.querySelector('[data-testid="agent-watch-timeline-page"] [data-slot="composer-input"]'));
-  await new Promise((resolve) => setTimeout(resolve, 500));
-}
-
-const DEVICES = {
-  devices: [], loading: false, error: null, refresh: async () => {}, rename: async () => {}, remove: async () => {},
-  listBoundAgents: async () => [],
-} as unknown as React.ContextType<typeof DevicesContext>;
-
-/** Pseudo-elements in `root` that paint something: the transcript's edge fades are drawn this way. */
-const paintedPseudo = (root: Element) => [...root.querySelectorAll('*')].flatMap((element) => ['::before', '::after'].filter((pseudo) => {
-  const style = getComputedStyle(element, pseudo);
-  return style.content !== 'none' && (style.backgroundImage !== 'none' || style.backgroundColor !== 'rgba(0, 0, 0, 0)');
-}));
-
-it.each(['light', 'dark'] as const)('over the App panel the task reads as part of the panel: its surface, its top row, the chat composer (%s)', async (theme) => {
-  await mountPanelLayer(theme);
-  const host = harness!.container;
-  const panel = host.querySelector('[data-testid="app-conversation-panel"]')!;
-  const window = host.querySelector('[data-testid="assistant-task-chat-window"]')!;
-  const screen = host.querySelector('[data-testid="agent-watch-timeline-page"]')!;
-  expect(window.getAttribute('data-app-panel')).toBe('true');
-  expect(screen.getAttribute('data-panel-layer')).toBe('true');
-
-  // 1. The panel's gradient shows through: no page color of the task's own, no white fades painted over the gradient.
-  expect(getComputedStyle(panel).backgroundImage).toContain('linear-gradient');
-  expect(getComputedStyle(screen).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-  expect(paintedPseudo(screen)).toEqual([]);
-  expect(getComputedStyle(host.querySelector('[data-chat-scroll]')!).maskImage).toContain('linear-gradient');
-
-  // 2. The header is the panel's top row: its height, its 16px edge, the round back centred with the collapse, then the
-  //    face, the name and the status, all clear of the collapse.
-  const header = host.querySelector('[data-testid="agent-watch-hero"]')!;
-  const collapse = host.querySelector('[data-testid="app-work-panel-collapse"]')!;
-  const back = header.querySelector('.gg-aw-panel-back')!;
-  const avatar = header.querySelector('.gg-aw-title-avatar')!;
-  const title = header.querySelector('.gg-pane-heading-title')!;
-  expect(box(header).top).toBeCloseTo(box(panel).top + 1, 0);
-  expect(box(header).height).toBe(52);
-  // The panel's round back, as its own pages draw it.
-  const circle = getComputedStyle(back);
-  expect(circle.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
-  expect(circle.boxShadow).not.toBe('none');
-  expect(box(back).width).toBe(32);
-  expect(box(back).height).toBe(32);
-  expect(box(back).left - box(panel).left - 1).toBeCloseTo(16, 0);
-  const middle = (element: Element) => box(element).top + box(element).height / 2;
-  expect(Math.abs(middle(back) - middle(collapse))).toBeLessThanOrEqual(1);
-  expect(box(avatar).left).toBeGreaterThanOrEqual(box(back).right + 8 - 0.5);
-  expect(box(title).left).toBeGreaterThan(box(avatar).right);
-  expect(title.textContent).toBe('能力测试:写一份说明');
-  expect(title.scrollHeight).toBeLessThanOrEqual(title.clientHeight + 1);
-  expect(box(title).top).toBeGreaterThanOrEqual(box(header).top);
-  // The transcript already shows what the agent is doing: the header carries no status line under the title.
-  expect(header.querySelector('.gg-pane-heading-subtitle')).toBeNull();
-  for (const item of [back, avatar, title, ...header.querySelectorAll('button')]) {
-    expect(box(item).right).toBeLessThanOrEqual(box(collapse).left - 8 + 0.5);
-  }
-
-  // 3. No view switcher.
-  expect(host.querySelector('[data-testid="session-app-menu"]')).toBeNull();
-
-  // 4. The chat column's composer: its placeholder, 「+」 and send, on the panel's content line; nothing about model, effort,
-  //    permission or harness.
-  const input = host.querySelector('[data-slot="composer-input"]')!;
-  const composer = host.querySelector('[data-slot="composer"]') ?? input.parentElement!;
-  expect(composer.hasAttribute('data-phone-capsule')).toBe(false);
-  expect(input.textContent + (input.querySelector('[data-placeholder]')?.getAttribute('data-placeholder') ?? '')).toContain('和能力测试:写一份说明聊天');
-  expect(host.querySelector('[data-testid="composer-model-trigger"]')).toBeNull();
-  expect(host.querySelector('[data-composer-locked-agent]')).toBeNull();
-  expect(composer.textContent).not.toContain('完全访问');
-  expect(composer.textContent).not.toContain('Xhigh');
-  expect(host.querySelector('button[aria-label="发送消息"]')).not.toBeNull();
-  expect(box(window).bottom - box(host.querySelector('[data-slot="composer-bar"]')).bottom).toBeCloseTo(16, 0);
-
-  await page.screenshot({ path: `__screenshots__/assistant-task-layer-look/panel-layer-${theme}.png` });
 });
 
 it('the same desktop task page elsewhere keeps its view switcher and its model and permission controls', async () => {

@@ -67,14 +67,21 @@ it('a fold moves the page with the list\'s edge in every frame, the same way in 
   await harness.render(
     <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
       <SessionLocalizationProvider><WorkspaceLayoutContextProvider>
-        <WorkspaceLayout leftSidebar={<div>project list</div>} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<Body />} />} />
+        <WorkspaceLayout leftSidebar={<div data-test-list-row="">project list</div>} mainContent={<WorkspaceContentLayout titlebarSlot={null} mainPanel={<Body />} />} />
       </WorkspaceLayoutContextProvider></SessionLocalizationProvider>
     </div>
   );
   const shell = harness.container.querySelector<HTMLElement>('[data-workspace-shell]')!;
+  const row = shell.querySelector<HTMLElement>('[data-test-list-row]')!;
   const folds: { before: { width: number; edge: number }; end: { width: number; edge: number } }[] = [];
   for (const direction of ['collapse', 'expand'] as const) {
+    // The list's rows stay where they are laid out (its avatars on their axis), the edge passes over them: ❌ slid off.
+    const rowLeft = row.getBoundingClientRect().left;
+    const rowLefts = new Set<number>();
+    const watch = (async () => { for (let at = 0; at < 60; at += 1) { await new Promise(requestAnimationFrame); rowLefts.add(Math.round(row.getBoundingClientRect().left)); } })();
     const { before, frames } = await foldFrames(shell);
+    await watch;
+    expect([...rowLefts], `${direction}: the list's rows do not move`).toEqual([Math.round(rowLeft)]);
     const end = frames.at(-1)!;
     folds.push({ before, end });
     const gaps = frames.map((frame) => Math.round(frame.gap));

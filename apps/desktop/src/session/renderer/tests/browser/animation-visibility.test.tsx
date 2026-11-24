@@ -1,3 +1,4 @@
+import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Avatar } from '@/components/Avatar';
@@ -29,7 +30,10 @@ async function mount(doc = document) {
   cleanup.push(() => host.remove());
   const root = createRoot(host);
   roots.push(root);
-  root.render(<Avatar name="Running agent" seed="animation-agent" avatarUrl={avatar} isAgent agentStatus="working" harnessBadge={false} />);
+  // @@@mount-after-effects - the motion is watched from an effect (stopAnimationsOffscreen). Right after the commit
+  // the DOM already animates with no attribute, which also meets the wait below, so a poll landing before the
+  // effects ran handed the tests motion nobody watched. A synchronous render runs its effects before flushSync returns.
+  flushSync(() => root.render(<Avatar name="Running agent" seed="animation-agent" avatarUrl={avatar} isAgent agentStatus="working" harnessBadge={false} />));
   await until('the two avatar pulse rings animate', () => host.getAnimations({ subtree: true }).length === 2);
   const animations = host.getAnimations({ subtree: true });
   expect(animations.filter((animation) => (animation as CSSAnimation).animationName === 'av-status-pulse')).toHaveLength(2);

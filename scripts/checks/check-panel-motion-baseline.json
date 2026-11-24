@@ -45,7 +45,7 @@
     "apps/desktop/src/session/renderer/lib/drop-highlight.tsx": "drop-target highlight following its target, an overlay out of the flow, not a panel",
     "apps/desktop/src/session/renderer/lib/layout/layout-provider.tsx": "motion values the track publishes (edges, progress), no animation",
     "apps/desktop/src/session/renderer/lib/layout/panel-resize-handle.tsx": "motion values for the handles' offsets, no animation",
-    "apps/desktop/src/session/renderer/lib/layout/panel-track.ts": "the track itself",
+    "apps/desktop/src/session/renderer/lib/layout/panel-clock.ts": "the track's frame clock (its spring, played by the frame loop)",
     "apps/desktop/src/session/renderer/lib/ui/animated-height.tsx": "in-panel disclosure height; vertical disclosures are out of scope (owner 11-21)"
   }
 }

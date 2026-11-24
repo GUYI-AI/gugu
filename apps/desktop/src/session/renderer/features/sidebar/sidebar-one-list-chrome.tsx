@@ -52,16 +52,17 @@ const CREATE_MENU_LABEL = { 'create-group': 'sidebar.newGroupChat', 'new-project
 /**
  * The top row (mock v19: 「创建智能体」收窄淡出,+ 从右边滑到这条竖线上). Its layout is the expanded one (side padding 12, gap 4)
  * or the rail's (18, 0, 创建智能体 at 0), taken where the rows take the rail's layout (@@@panel-track: one layout at each end
- * of the fold). In between the 「+」 (32) slides from the row's right end onto the avatars' axis (18 + 16 = 34) by a
- * transform, with the same progress as everything else; 创建智能体 fades (followNames).
+ * of the fold). In between the 「+」 (32) slides from the row's right end onto the avatars' axis (18 + 16 = 34 of the 68 rail)
+ * by a transform, in the half of the fold where 创建智能体 has faded (followNames), so the two never cross.
  */
 function followTopRow(row: HTMLElement, progress: number, railLayout: boolean) {
   row.style.paddingInline = railLayout ? '18px' : '12px';
   row.style.gap = railLayout ? '0px' : '4px';
   const plus = row.lastElementChild as HTMLElement | null;
   if (!plus) return;
-  // From its expanded place (12 from the right end) to the rail's (18 from the left); a read of a clean layout.
-  const travel = railLayout ? 0 : (1 - progress) * (row.clientWidth - 12 - plus.offsetWidth - 18);
+  // From its expanded place (12 from the right end) to the rail's (18 from the left); a read of a clean layout. It moves in
+  // the half of the fold where the text is gone (the mirror of sidebarRailTextOpacity), ❌ across 创建智能体 still fading.
+  const travel = railLayout ? 0 : sidebarRailTextOpacity(1 - progress) * (row.clientWidth - 12 - plus.offsetWidth - 18);
   plus.style.transform = travel > 0 ? `translateX(${-travel}px)` : '';
 }
 
