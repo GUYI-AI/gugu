@@ -18,11 +18,3 @@
   border-radius: var(--radius-document);
   background: var(--muted);
 }
-
-/* 图带字(照 Telegram;一张图和一次发的几张图同一条,MessageAlbumBubble):图定气泡宽,字在图下面按图宽折行;字的长短不再把气泡撑到整列宽、只在左上角留一小块图。
-   小图不至于把字挤成一窄条:宽度至少 200px(不超过气泡)。长串(网址)按任意处折,不撑宽。 */
-.chat-image-with-caption {
-  width: min-content;
-  min-width: min(200px, calc(100cqw - 24px));
-  overflow-wrap: anywhere;
-}
