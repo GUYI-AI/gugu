@@ -16,6 +16,7 @@ import { UpdateBanner } from '../UpdateBanner'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../../lib/automationDom'
 import { ChevronDown, ChevronRight, Settings, UserRound } from '@/lib/icons'
 import { ASSISTANT_APP_ID, assistantEntryUnread, openAssistantEntry, useAssistantEntryTarget } from '../../lib/assistantEntry'
+import { ASSISTANT_PROMOTED } from '@shared/extensions/assistant-entry'
 import { useChatStore } from '../../store/chatContext'
 import { cn } from '@/lib/cn'
 import { Menu, MenuItem as DropdownMenuItem, MenuSeparator } from '../ui/Menu'
@@ -200,7 +201,7 @@ const MeApps = observer(function MeApps({ showSessions, close }: { showSessions:
   const target = useAssistantEntryTarget()
   const installed = useInstalledApps(LOCAL_HOST)
   const apps = installed.state === 'value' ? installed.value : null
-  const assistantApp = apps && target.kind === 'app' ? apps.appsIn('page').find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
+  const assistantApp = ASSISTANT_PROMOTED && apps && target.kind === 'app' ? apps.appsIn('page').find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
   const docked = apps ? apps.dockedApps.filter((app) => !(assistantApp && app.extensionId === ASSISTANT_APP_ID)) : []
   if (!apps || (!assistantApp && docked.length === 0)) return null
   const open = (appId: string) => { showSessions(); openApp(appId); close() }

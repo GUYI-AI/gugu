@@ -26,7 +26,7 @@ import { LISTED_HOST } from '../components/appSlot/hereHost'
 import { readsWork } from '../components/appSlot/appWorkLedger'
 
 /** 产品自己的助理 App(GUYI-AI/gugu-assistant):两端同一个常量(assistant-entry.ts)。 */
-import { ASSISTANT_APP_ID } from '../session/shared/extensions/assistant-entry'
+import { ASSISTANT_APP_ID, ASSISTANT_PROMOTED } from '../session/shared/extensions/assistant-entry'
 import { requestAssistantSettingsSection, type AssistantSettingsSection } from './assistantSettingsSection'
 export { ASSISTANT_APP_ID }
 
@@ -198,9 +198,10 @@ export function openAssistantEntry(purpose: AssistantEntryPurpose = 'open', fall
  * asks for (an entry, a reminder, an old 资料 route) opens the Apps page on the assistant App — its market page to install it,
  * or its own page to switch it on — since setting it up is in the App (owner 11-12), never nothing. Only where Apps are
  * (a task host): the web build has no Apps page. A refused link (that App gone from the market) is said once.
+ * Not while the assistant is not promoted (assistant-entry.ts): then nothing sends a person to set one up.
  */
 function openAssistantAppToInstall(): boolean {
-  if (!platform.capabilities.sessionHost) return false
+  if (!ASSISTANT_PROMOTED || !platform.capabilities.sessionHost) return false
   window.dispatchEvent(new Event(UI_EVENTS.sessionpageReveal))
   void openLinkTarget({ kind: 'app-detail', extensionId: ASSISTANT_APP_ID })
     .catch((error: unknown) => notify({ tier: 'error', title: error instanceof Error ? error.message : String(error) }))

@@ -9,7 +9,7 @@ import { ChevronRight } from '@/lib/icons'
 import type { InstalledApps, MarketUpdates } from '../../session/renderer/features/extensions/installed-extensions'
 import type { Reading } from '../../lib/replica'
 import { translateSessionMessage } from '../../session/renderer/localization/locale-store'
-import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry'
+import { isPromotedAssistantApp } from '@shared/extensions/assistant-entry'
 import { localizedManifestText } from '../../session/shared/extensions/catalog'
 import type { ExtensionManifest } from '../../session/shared/extensions/manifest'
 import { phoneApps } from '../appSlot/phoneApps'
@@ -24,7 +24,7 @@ import { SettingsGroup, SettingsNote, SettingsPage, SettingsRow } from './Settin
  */
 const installedApps = (installed: InstalledApps, assistant: boolean): { manifest: ExtensionManifest; from: string | null; enabled: boolean }[] =>
   installed.manifests
-    .filter((manifest) => !installed.isPreinstalled(manifest.id) && (manifest.id === ASSISTANT_APP_ID) === assistant)
+    .filter((manifest) => !installed.isPreinstalled(manifest.id) && isPromotedAssistantApp(manifest.id) === assistant)
     .map((manifest) => ({
       manifest,
       from: installed.publishers[manifest.id]?.name ?? null,
