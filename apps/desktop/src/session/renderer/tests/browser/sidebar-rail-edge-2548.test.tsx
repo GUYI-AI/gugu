@@ -102,7 +102,10 @@ it('collapsed, the rail is one colour over its whole width and meets the surface
   expect(fold.getBoundingClientRect().right).toBe(panel.right - 12);
   expect(middle(fold)).toBeCloseTo(middle(search));
   expect(fold.getBoundingClientRect().left).toBeGreaterThanOrEqual(search.getBoundingClientRect().right);
-  expect(search.getBoundingClientRect().top - panel.top).toBeGreaterThanOrEqual(inset + 40);
+  // The traffic lights end at 28 (top 14 + 14 tall, TRAFFIC_LIGHT_POSITION): the field starts just under them, ❌ under an empty strip.
+  const lightsBottom = 28;
+  expect(search.getBoundingClientRect().top - panel.top).toBeGreaterThanOrEqual(lightsBottom + 4);
+  expect(search.getBoundingClientRect().top - panel.top).toBeLessThan(lightsBottom + 4 + 16);
   expect(history.getBoundingClientRect().left - scheduled.getBoundingClientRect().right).toBe(4);
   const foot = document.querySelector<HTMLElement>('[data-sidebar-foot]')!;
   expect(foot.contains(history)).toBe(true);
@@ -117,8 +120,10 @@ it('collapsed, the rail is one colour over its whole width and meets the surface
   const railFold = document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!;
   const box = railFold.getBoundingClientRect();
   expect(box.left + box.width / 2 - aside.getBoundingClientRect().left).toBe(34);
-  // Design v16: 38 from the window's top, under the traffic lights (they end at 30).
-  expect(box.top - panel.top).toBeCloseTo(38);
+  // Right under the traffic lights (they end at 28): the head band is just their height + 4.
+  expect(box.top - panel.top).toBeCloseTo(lightsBottom + 4);
+  // …and drawn: the fold button is not left in the faded search field's element.
+  expect(getComputedStyle(railFold.parentElement!).opacity).toBe('1');
   for (const testId of ['sidebar-scheduled', 'sidebar-session-history', 'sidebar-search-trigger']) expect(document.querySelector(`[data-testid="${testId}"]`)).toBeNull();
 
   const rail = aside.getBoundingClientRect();
