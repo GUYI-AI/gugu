@@ -105,8 +105,7 @@ type PanelCondition = Omit<ChatSessionCondition, 'actions'> & {
 import { rpc } from '@renderer/lib/ipc';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
-import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
-import { machineUnavailableReason } from '@renderer/features/remote-hosts/connection-status';
+import { machineUnavailableLabel } from '../machine-unavailable-label';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { readConversationFile } from '@/components/assistant/assistantTimelineClient';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
@@ -1773,13 +1772,9 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const [restarting, setRestarting] = useState(false);
   const birthGroup = useBirthGroupJoin(store?.sessionId);
   const conditionRuns = useRef<readonly ((anchor?: HTMLElement) => void)[]>([]);
-  // The line to the machine this session is on, said as the sidebar dot and the new-task box say it (connection-status):
-  // while it is not up, that is what holds the page (「正在连接 X…」, offline, sign-in, too old), not the session.
-  const machineConnection = machine ? remoteHostsStore.connectionState(machine) : null;
-  const machineDevice = machine ? remoteHostsStore.device(machine) : null;
-  const machineLinkLabel = machine && machineConnection !== 'connected'
-    ? machineUnavailableReason(machineConnection, machineDevice?.label ?? null, translate, null, machineDevice?.signInExpiredAt)
-    : null;
+  // The line to the machine this session is on, said as the page before it and the sidebar dot say it: while it is not
+  // open, that is what holds the page (「正在连接 X…」, offline, sign-in, too old), not the session.
+  const machineLinkLabel = store ? machineUnavailableLabel(store.projectId) : null;
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
   }, [store, store?.loadError]);
@@ -1797,7 +1792,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       return {
         code: 'machine-unreachable',
         label: machineLinkLabel,
-        detail: `machine-${machineConnection ?? 'unknown'}`,
+        detail: 'machine-link-not-open',
         ...(error ? { actions: [{ label: translate('transcript.condition.retry'), run: () => store.retry() }] } : {}),
       };
     }
@@ -1993,7 +1988,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     return condition;
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry, machineLinkLabel, machineConnection]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry, machineLinkLabel]);
   useEffect(() => {
     if (!store) return;
     conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];
