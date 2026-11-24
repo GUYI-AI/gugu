@@ -1,5 +1,4 @@
 import { Button } from '@renderer/lib/ui/button';
-import { cn } from '@renderer/utils/utils';
 import type { SessionTranslate } from '../extension-consent';
 import { pendingLabel, type ExtensionPendingAction } from './extension-pending';
 

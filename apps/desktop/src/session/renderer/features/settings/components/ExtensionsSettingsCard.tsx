@@ -170,15 +170,20 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   // Where on the Apps page (apps-location): the tab, the open App page; changes go through apps-location.
   const location = currentAppsLocation();
   const tab = location.tab;
-  const setTab = (next: AppsTab) => next !== tab && moveAppsLocation((place) => ({
-    ...place, tab: next, detail: undefined, scroll: undefined, installed: place.installed && { ...place.installed, scroll: undefined, query: undefined, focusId: undefined },
-  }));
-  const lastInstalled = useRef(location.installed);
+  const installedPlace = location.installed ?? (location.detail ? previousAppsLocation()?.installed : undefined);
+  const lastInstalled = useRef(installedPlace);
+  const setTab = (next: AppsTab) => {
+    if (next === tab) return;
+    moveAppsLocation((place) => ({
+      ...place, tab: next, detail: undefined, scroll: undefined,
+      installed: installedPlace && { ...installedPlace, scroll: undefined, query: undefined, focusId: undefined },
+    }));
+  };
   const selectScope = (value?: string) => {
-    if (value === 'installed' && !location.installed) {
+    if (value === 'installed' && !installedPlace) {
       moveAppsLocation((here) => ({ ...here, detail: undefined, installed: lastInstalled.current ?? { deviceId: here.deviceId } }));
-    } else if (value === 'market' && location.installed) {
-      lastInstalled.current = { ...location.installed, focusId: undefined };
+    } else if (value === 'market' && installedPlace) {
+      lastInstalled.current = { ...installedPlace, focusId: undefined };
       moveAppsLocation((here) => ({ ...here, installed: undefined, detail: undefined }));
     }
   };
@@ -992,6 +997,53 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     return renderInstalledApps(items, { loading: installed.state === 'unknown', error: installed.state === 'error' });
   }
 
+  const search = (
+    <SearchInput
+      ref={searchRef}
+      type="search"
+      containerClassName="w-[180px] min-w-0 [@container(max-width:600px)]:w-32"
+      placeholder={searchPlaceholder}
+      aria-label={searchPlaceholder}
+      value={query}
+      onChange={(event) => setQuery(event.target.value)}
+    />
+  );
+
+  const toolbar = (
+    <div className="mk-bar mk-market-header">
+      <ToggleGroup
+        className="gap-6 overflow-visible border-none bg-transparent"
+        aria-label={translate('extensions.tabMarket')}
+        value={[tab]}
+        onValueChange={([value]) => {
+          if (value === 'agents' || value === 'market' || value === 'connectors') setTab(value);
+        }}
+      >
+        <ToggleGroupItem value="agents" data-testid="extensions-section-agents">
+          <SquareTerminal className="size-4" aria-hidden />
+          {translate('extensions.tabAgents')}
+        </ToggleGroupItem>
+        <ToggleGroupItem value="market" data-testid="extensions-section-market">
+          <LayoutGrid className="size-4" aria-hidden />
+          {translate('extensions.tabExtensions')}
+        </ToggleGroupItem>
+        <ToggleGroupItem value="connectors" data-testid="extensions-section-connectors">
+          <Plug className="size-4" aria-hidden />
+          {translate('extensions.tabConnectors')}
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <div className="mk-market-actions">
+        {!installedPlace && (!detail || browsing) && search}
+        <ToggleGroup className="mk-scope" size="sm" aria-label={translate('extensions.tabMarket')}
+          value={[installedPlace ? 'installed' : 'market']} onValueChange={([value]) => selectScope(value)}>
+          <ToggleGroupItem value="market" data-testid="extensions-open-market">{translate('extensions.tabMarket')}</ToggleGroupItem>
+          <ToggleGroupItem value="installed" data-testid="extensions-open-installed">{translate('extensions.tabInstalled')}</ToggleGroupItem>
+        </ToggleGroup>
+        {tab === 'connectors' && !detail && <AddConnectorButton />}
+      </div>
+    </div>
+  );
+
   const header = (aside?: ReactNode) => (
     <PageHeader sticky title={translate('extensions.tabMarket')} aside={aside} />
   );
@@ -1050,6 +1102,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   if (detail?.page === 'market' && !browsing) {
     return (
       <div className="mk" data-testid="extensions-product" ref={rootRef}>
+        {toolbar}
         {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} noHeading />}
         <div className="pt-10 pb-14">{productPage(detail)}</div>
       </div>
@@ -1062,6 +1115,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   if (detail?.page === 'manage' && managed && apps && !revoked) {
     return (
       <div className="mk" data-testid="extensions-manage" ref={rootRef}>
+        {!detail.fromApp && toolbar}
         {revokedReading.state === 'error' ? (
           <div className="mk-status" role="alert">
             <CircleAlert className="size-4 shrink-0" />
@@ -1086,6 +1140,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     const hiddenTabs = apps.hiddenTabsOf(managed.id);
     return (
       <div className="mk" data-testid="extensions-manage" ref={rootRef}>
+        {!detail.fromApp && toolbar}
         {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} />}
         <AppManagePage
           key={managed.id}
@@ -1096,6 +1151,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           lifecycle={lifecycle}
           updateError={updateError}
           updated={result?.version === managed.version && !result.error}
+          upToDate={inMarket && managed.version === subjectOf(managed.id)?.manifest.version}
           onOpen={lifecycle?.kind === 'update' && onRail(managed) ? () => openApp(managed.id) : undefined}
           focusHeading={!!previousAppsLocation()?.installed}
           pending={operation(managed.id)?.phase}
@@ -1152,55 +1208,11 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   }
 
   const shownTab = location.installed ? null : tab;
-  const search = (
-    <SearchInput
-      ref={searchRef}
-      type="search"
-      containerClassName="w-[180px] min-w-0 [@container(max-width:600px)]:w-32"
-      placeholder={searchPlaceholder}
-      aria-label={searchPlaceholder}
-      value={query}
-      onChange={(event) => setQuery(event.target.value)}
-    />
-  );
-
   return (
     <div className="mk" data-testid="extensions-store" ref={rootRef}>
       {notice && <DeviceScopeNoticeLine notice={notice} onRetry={() => void refresh()} />}
+      {toolbar}
       <fieldset disabled={!!notice?.readOnly} className="contents">
-        <div className="mk-bar mk-market-header">
-          <ToggleGroup
-            className="gap-6 overflow-visible border-none bg-transparent"
-            aria-label={translate('extensions.tabMarket')}
-            value={[tab]}
-            onValueChange={([value]) => {
-              if (value === 'agents' || value === 'market' || value === 'connectors') setTab(value);
-            }}
-          >
-            <ToggleGroupItem value="agents" data-testid="extensions-section-agents">
-              <SquareTerminal className="size-4" aria-hidden />
-              {translate('extensions.tabAgents')}
-            </ToggleGroupItem>
-            <ToggleGroupItem value="market" data-testid="extensions-section-market">
-              <LayoutGrid className="size-4" aria-hidden />
-              {translate('extensions.tabExtensions')}
-            </ToggleGroupItem>
-            <ToggleGroupItem value="connectors" data-testid="extensions-section-connectors">
-              <Plug className="size-4" aria-hidden />
-              {translate('extensions.tabConnectors')}
-            </ToggleGroupItem>
-          </ToggleGroup>
-          <div className="mk-market-actions">
-            {!location.installed && search}
-            <ToggleGroup className="mk-scope" size="sm" aria-label={translate('extensions.tabMarket')}
-              value={[location.installed ? 'installed' : 'market']} onValueChange={([value]) => selectScope(value)}>
-              <ToggleGroupItem value="market" data-testid="extensions-open-market">{translate('extensions.tabMarket')}</ToggleGroupItem>
-              <ToggleGroupItem value="installed" data-testid="extensions-open-installed">{translate('extensions.tabInstalled')}</ToggleGroupItem>
-            </ToggleGroup>
-            {tab === 'connectors' && <AddConnectorButton />}
-          </div>
-        </div>
-
         {location.installed && installedPage}
 
         {shownTab === 'connectors' && <ConnectorMarketPage query={query} />}

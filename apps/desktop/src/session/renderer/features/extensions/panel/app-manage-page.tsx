@@ -54,6 +54,7 @@ export function AppManagePage({
   switching = false,
   lifecycle,
   updated,
+  upToDate,
   updateError,
   onOpen,
   focusHeading,
@@ -104,6 +105,7 @@ export function AppManagePage({
   enabled: boolean;
   switching?: boolean;
   updated?: boolean;
+  upToDate?: boolean;
   updateError?: string;
   onOpen?: () => void;
   focusHeading?: boolean;
@@ -395,6 +397,8 @@ export function AppManagePage({
   const [current, setCurrent] = useState(sections[0]!.id);
   const anchors = sections.map((section) => section.id).join(' ');
   const pageRef = useRef<HTMLDivElement>(null);
+  const enteredVersion = useRef(manifest.version);
+  const justUpdated = updated && enteredVersion.current !== manifest.version;
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (focusHeading) headingRef.current?.focus({ preventScroll: true }); }, [focusHeading]);
   const clicked = useRef(false);
@@ -437,7 +441,7 @@ export function AppManagePage({
               <p>{[`v${manifest.version}`, machine, origin === 'preinstalled' ? translate('extensions.manageBuiltIn') : enabled ? undefined : translate('extensions.switchedOff')].filter(Boolean).join(metadataSeparator())}</p>
             </div>
             <fieldset disabled={readOnly} className="mg-head-acts">
-              <AppLifecycleButton primary={lifecycle?.kind === 'update' || updated} retry={!!updateError} state={lifecycle} pending={pending} percent={pendingPercent} disabled={readOnly} translate={translate} onClick={onLifecycle} testId="app-manage-action" />
+              <AppLifecycleButton primary={lifecycle?.kind === 'update' || justUpdated} retry={!!updateError} state={lifecycle} pending={pending} percent={pendingPercent} disabled={readOnly} translate={translate} onClick={onLifecycle} testId="app-manage-action" />
               {onOpen && <Button data-testid="app-manage-open" type="button" variant="outline" size="sm" disabled={!!pending || readOnly} onClick={onOpen}>{translate('extensions.open')}</Button>}
               <AppMoreMenu name={text.name} enabled={enabled} docked={docked} disabled={readOnly || pending !== undefined} translate={translate} resource={resource} onOpenInWindow={onOpenInWindow} onForward={onForward} testId="app-manage-more" />
             </fieldset>
@@ -445,7 +449,9 @@ export function AppManagePage({
         </ResourceMenu>
         {!enabled && onToggleEnabled ? <div className="mk-banner" data-testid="app-manage-off">{translate('extensions.manageEnabledOffNote')}</div> : null}
         {updateError ? <div className="mk-banner is-warn" role="alert">{updateError}</div>
-          : updated && !notice ? <div className="mk-banner" role="status">{translate('extensions.updatedTo', { version: manifest.version })}</div> : null}
+          : !notice && (justUpdated || upToDate) ? <div className="mk-banner" role="status">
+            {justUpdated ? translate('extensions.updatedTo', { version: manifest.version }) : translate('extensions.upToDate')}
+          </div> : null}
         {notice ? (
           <fieldset disabled={readOnly && notice.kind !== 'forkBehind'} className="contents">
             <div className={cn('mk-banner', notice.kind !== 'forkBehind' && notice.kind !== 'update' && notice.kind !== 'gone' && 'is-warn')} data-testid="app-manage-notice">

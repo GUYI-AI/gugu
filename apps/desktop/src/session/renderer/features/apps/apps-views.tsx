@@ -29,7 +29,7 @@ import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { createExtensionOperations, ExtensionOperationsContext } from '@renderer/features/extensions/panel/extension-pending';
 import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
-import { appsLocation, moveAppsLocation, type AppsLocation } from './apps-location';
+import { appsLocation, currentAppsLocation, moveAppsLocation, previousAppsLocation, type AppsLocation } from './apps-location';
 import { AgentAppDetailDialog } from './agent-app-detail-dialog';
 import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
@@ -125,6 +125,11 @@ export const appsView = {
   TitlebarSlot: ShellTitlebar,
   MainPanel: AppsMainPanel,
   modal: true,
+  onModalEscape: () => {
+    if (!currentAppsLocation().detail || !previousAppsLocation()) return false;
+    navigateBack(true);
+    return true;
+  },
 } satisfies ViewDefinition<AppsViewParams>;
 
 type AppViewParams = { appId?: string; tab?: string };
