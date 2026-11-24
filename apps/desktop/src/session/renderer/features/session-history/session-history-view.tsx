@@ -60,6 +60,7 @@ import {
   digestEntry,
   entryOf,
   historyProjectSection,
+  keepDrawnOrder,
   mergeSorted,
   type HistoryEntry,
   type HistorySection,
@@ -110,6 +111,12 @@ const SECTION_AGENT_ICONS = 3;
 /** 搜索词像一个 session id 前缀时(不含空格、够长)才按「id 命中」高亮那一条;短词只是普通关键词。 */
 const SESSION_ID_QUERY_MIN = 6;
 const DEFAULT_SOURCE: SourceFilter = 'gugu';
+/**
+ * 冷进页(这几台在这套筛选下还没读过)时,等所有问得到的机器的第一页最多这么久再一起画,❌ 先画先到的那台、
+ * 第二台一到整页重排(owner 2026-11-24)。gpu 实测(远端经 50ms 单程、76 KB/s 的链路)远端第一页约 430ms 到,
+ * 留一倍多的余量;再慢的那台不再拦着别的机器,它的行到了按「已画的节不动」并进来。读过的走 replica,首帧就有,不等。
+ */
+const FIRST_DRAW_WAIT_MS = 1000;
 
 const SORT_KEY: Record<SessionHistorySort, SessionMessageKey> = {
   updated: 'sessionHistory.sortUpdated',
@@ -201,9 +208,17 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
   });
 
   const moreRef = useRef<HTMLDivElement>(null);
+  const [firstDrawWaitOver, setFirstDrawWaitOver] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setFirstDrawWaitOver(true), FIRST_DRAW_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, []);
+  /** 这一次进页画出来的节的先后(keepDrawnOrder);换筛选就重新按排序来。 */
+  const drawnOrder = useRef<readonly string[]>([]);
 
   // 换任何筛选条件都从头要一批、收起详情。
   useEffect(() => {
+    drawnOrder.current = [];
     setLimit(BATCH_SIZE);
     setExpandedKey(null);
     sectionGeneration.current += 1;
@@ -259,7 +274,10 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
   const offlineEntries = unreachable
     .flatMap((machine) => remoteHostsStore.sessionsOf(machine).sessions.map((session) => digestEntry(machine, session)))
     .filter((entry) => matchesSessionHistoryFilters(entry, filters));
-  const sections = buildSections({
+  const states = reachable.map((machine) => byMachine[machine]);
+  const readingMachines = reachable.filter((machine) => !byMachine[machine] || byMachine[machine].isLoading);
+  const holdFirstDraw = readingMachines.length > 0 && !firstDrawWaitOver;
+  const built = buildSections({
     sort,
     pages: reachable.flatMap((machine) => {
       const page = byMachine[machine]?.page;
@@ -269,6 +287,9 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
     keyOfEntry,
     sectionOf,
   });
+  const sections = keepDrawnOrder(built, drawnOrder.current);
+  // 上一套筛选的页(新的还没到)不记先后:新的一到照它自己的排序画。
+  if (!holdFirstDraw && !states.some((state) => state?.isPrevious)) drawnOrder.current = sections.map((section) => section.key);
   // 只有一台机器的行时不标机器(与侧栏「跟上面那一行比」同一个道理:全是一台就不用说)。
   const spansMachines =
     new Set(sections.flatMap((section) => [...section.members.map((member) => member.machine), ...section.offlineMachines])).size > 1;
@@ -290,7 +311,6 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
   };
   // 眼前的会话行(所有节拼起来):键盘光标与 session id 命中都对着它们。
   const rows = sections.flatMap(sectionSessions);
-  const states = reachable.map((machine) => byMachine[machine]);
   const isLoading = states.some((state) => !state || state.isLoading);
   const isIndexing = states.some((state) => state?.isIndexing);
   const loaded = Math.max(0, ...states.map((state) => state?.page?.rows.length ?? 0));
@@ -721,7 +741,7 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
             data-testid="session-history-list"
             className="mt-9 flex flex-col gap-12"
           >
-            {sections.length === 0 && isLoading ? (
+            {holdFirstDraw || (sections.length === 0 && isLoading) ? (
               <div className="flex items-center justify-center gap-2 p-8 text-sm text-foreground-muted">
                 <Spinner size="sm" />
                 {translate('sessionImport.loading')}
@@ -820,6 +840,15 @@ export const SessionHistoryMainPanel = observer(function SessionHistoryMainPanel
                 );
               })
             )}
+            {/* 等过了首帧那一会儿还没读到的机器:它的行到了并进上面的节、新节接在最后,这里先说一句在读哪台。 */}
+            {!holdFirstDraw && sections.length > 0
+              ? readingMachines.map((machine) => (
+                  <p key={machine} className="-mt-9 flex items-center gap-2 px-2 text-xs text-foreground-muted" data-testid="session-history-machine-reading">
+                    <Spinner size="sm" />
+                    {translate('sessionHistory.machineReading', { device: labelOf(machine) })}
+                  </p>
+                ))
+              : null}
           </div>
 
           {/* 脚部:滚动加载的哨兵 + 索引进度。模板上没有总计行 —— 总计只给读屏。 */}
