@@ -400,6 +400,13 @@
       "when": 1794700300000,
       "tag": "0057_sessions_archived_at_covering",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1794700400000,
+      "tag": "0058_run_interval_reconcile_indexes",
+      "breakpoints": true
     }
   ]
 }
