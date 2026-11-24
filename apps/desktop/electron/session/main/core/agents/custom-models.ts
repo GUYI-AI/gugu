@@ -395,10 +395,11 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
   });
   const models = ref.modelId ? [ref.modelId, ...entries.map(({ id }) => id).filter((id) => id !== ref.modelId)] : [];
   const local = await customModelForwarder(resolveCustomRoute);
-  const route = customModelRoute(local.endpoint, ref.connectionId, protocol, routeId);
+  const omitThinking = config?.type === 'acp' && config.thinkingDisabled === true;
+  const route = customModelRoute(local.endpoint, ref.connectionId, protocol, routeId, omitThinking);
   // The router speaks the harness's protocol on loopback and calls the forwarder route in the record's protocol.
   const endpoint = selected.harnessProtocol
-    ? await (await import('./conversion-routers')).convertedBaseUrl(providerId, `${ref.connectionId}-${routeId ?? protocol}`, route, local.apiKey)
+    ? await (await import('./conversion-routers')).convertedBaseUrl(providerId, `${ref.connectionId}-${routeId ?? protocol}${omitThinking ? '-no-thinking' : ''}`, route, local.apiKey)
     : route;
   return {
     connectionId: ref.connectionId, name,

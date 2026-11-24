@@ -23,6 +23,7 @@ export interface CredentialProxyOptions {
   refresh?: (rejected: string) => Promise<string>
   credentialHeaders?: (token: string) => Record<string, string>
   maxRequestBytes?: number
+  omitThinking?: boolean
   refreshForbidden?: boolean
   refusal?: (status: number, retried: boolean) => Promise<{ code: string; reason_code?: string; message: string } | null>
   refusalError?: (error: unknown) => { code: string; reason_code?: string; message: string } | null
@@ -61,6 +62,28 @@ function upstreamHeaders(headers: IncomingHttpHeaders, options: CredentialProxyO
   return result
 }
 
+/** Managed inference routes can omit a setting reintroduced by the native engine on resume. */
+function withoutThinkingOverride(body: Buffer): Buffer {
+  let value: unknown
+  try { value = JSON.parse(body.toString('utf8')) }
+  catch { return body }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return body
+  const payload = value as Record<string, unknown>
+  let changed = false
+  for (const key of ['reasoning', 'reasoning_effort', 'thinking']) {
+    if (!Object.hasOwn(payload, key)) continue
+    delete payload[key]
+    changed = true
+  }
+  for (const [parent, key] of [['output_config', 'effort'], ['generationConfig', 'thinkingConfig']] as const) {
+    const nested = payload[parent]
+    if (!nested || typeof nested !== 'object' || !Object.hasOwn(nested, key)) continue
+    delete (nested as Record<string, unknown>)[key]
+    changed = true
+  }
+  return changed ? Buffer.from(JSON.stringify(payload)) : body
+}
+
 /**
  * Forwards one harness request to the gateway through egress, using the installed host's proxy and trust policy.
  * Replay only an unaccepted 401, once. Request bytes are retained; response SSE is never buffered.
@@ -75,7 +98,9 @@ export async function proxyPlatformCredentialRequest(
     if (options.maxRequestBytes !== undefined && bytes > options.maxRequestBytes) { response.writeHead(413).end(); return }
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
   }
-  const body = Buffer.concat(chunks)
+  const original = Buffer.concat(chunks)
+  const body = options.omitThinking && request.method === 'POST' && !request.headers['content-encoding']
+    ? withoutThinkingOverride(original) : original
   let upstreamAbort: AbortController | undefined
   let harnessGone = response.destroyed
   let gatewayCut = false

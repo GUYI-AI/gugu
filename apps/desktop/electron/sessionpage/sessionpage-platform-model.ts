@@ -96,6 +96,8 @@ const activeAccessSessions = new Map<string, {
   credentialConfigPath?: string
   helperPath?: string
   credentialRoute?: string
+  /** An explicit turn-off decision applies to this session's managed inference requests. */
+  omitThinking?: boolean
   /** Current upstream credential and relay; loopback proxy consumers never receive either directly. */
   token: string
   relayUrl: string
@@ -439,6 +441,7 @@ async function proxyPlatformRequest(
   await proxyPlatformCredentialRequest(request, response, {
     upstream: () => new URL(`${held.relayUrl.replace(/\/$/, '')}${suffix}${search}`),
     localOnlyHeaders: LOCAL_ONLY_REQUEST_HEADERS,
+    omitThinking: held.omitThinking,
     credential: async () => {
       const token = await credential()
       await tellCredentialRefusal(sessionId, null)
@@ -1763,9 +1766,8 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
   // Runtime-only views have no conversation row of their own and must resolve from their source.
   const identitySessionId = input.identitySessionId ?? input.sessionId
   // 武装哪一档要等签发之后才定:要看**这个模型**在目录里认哪些档(#6447),见下面 platformArmedEffort。
-  const recordedEffort = (await getSessions())
-    .find((session) => session.id === identitySessionId)
-    ?.effort?.trim() || null
+  const recordedSession = (await getSessions()).find((session) => session.id === identitySessionId)
+  const recordedEffort = recordedSession?.effort?.trim() || null
 
   // @@@2503 先释放旧的,再签新的。反过来会自锁:同一条会话重启时,签发那一刻旧会话仍然 live 并
   // 持有它那份预留,而额度窗口是把在途预留扣掉之后算的 —— 一条会话因此会被自己上一轮挡在门外。
@@ -2013,6 +2015,7 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
     credentialConfigPath: credentialFiles?.credentialConfigPath,
     helperPath: credentialFiles?.helperPath,
     credentialRoute: credentialFiles?.credentialRoute ?? credentialProxyRoute ?? undefined,
+    omitThinking: recordedSession?.thinkingDisabled,
     agentUserId,
     providerId: input.providerId,
     modelId: selection?.source === 'platform' ? selection.modelId : launch.access.modelId,

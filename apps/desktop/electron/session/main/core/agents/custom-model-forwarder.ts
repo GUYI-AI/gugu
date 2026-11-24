@@ -9,8 +9,8 @@ type Forwarder = { server: Server; endpoint: string; apiKey: string };
 let pending: Promise<Forwarder> | undefined;
 
 /** One address per stored endpoint for the life of this app process. */
-export function customModelRoute(root: string, connectionId: string, protocol: ModelProtocol, routeId?: string): string {
-  return `${root}/r/${connectionId}/${protocol}${routeId ? `~${routeId}` : ''}`;
+export function customModelRoute(root: string, connectionId: string, protocol: ModelProtocol, routeId?: string, omitThinking?: boolean): string {
+  return `${root}${omitThinking ? '/no-thinking' : ''}/r/${connectionId}/${protocol}${routeId ? `~${routeId}` : ''}`;
 }
 
 export async function customModelForwarder(resolveTarget: TargetResolver): Promise<{ endpoint: string; apiKey: string }> {
@@ -43,8 +43,8 @@ async function start(resolveTarget: TargetResolver): Promise<Forwarder> {
 
 async function forward(request: IncomingMessage, response: ServerResponse, token: string, resolveTarget: TargetResolver): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://127.0.0.1');
-  const route = url.pathname.match(/^\/r\/([^/]+)\/([^/]+)(.*)$/);
-  const [protocolName, routeId, ...unexpected] = (route?.[2] ?? '').split('~');
+  const route = url.pathname.match(/^(\/no-thinking)?\/r\/([^/]+)\/([^/]+)(.*)$/);
+  const [protocolName, routeId, ...unexpected] = (route?.[3] ?? '').split('~');
   const protocol = modelProtocolSchema.safeParse(protocolName);
   const gemini = protocol.success && protocol.data === 'gemini-generate-content';
   const auth = request.headers.authorization ?? request.headers['x-api-key'] ?? request.headers['x-goog-api-key']
@@ -56,12 +56,12 @@ async function forward(request: IncomingMessage, response: ServerResponse, token
     return;
   }
   if (!route || !protocol.success || unexpected.length || (routeId !== undefined && !/^[0-9a-f-]{36}$/i.test(routeId))) { response.writeHead(404).end(); return; }
-  const target = await resolveTarget(route[1]!, protocol.data, routeId);
+  const target = await resolveTarget(route[2]!, protocol.data, routeId);
   if (!target) { response.writeHead(404).end(); return; }
 
   url.searchParams.delete('key');
   const endpoint = target.endpoint.replace(/\/$/, '');
-  const suffix = route[3] ?? '';
+  const suffix = route[4] ?? '';
   // Native Gemini writers supply the version path themselves.
   const path = gemini && endpoint.endsWith('/v1beta') && suffix.startsWith('/v1beta/')
     ? suffix.slice('/v1beta'.length) : suffix;
@@ -73,6 +73,7 @@ async function forward(request: IncomingMessage, response: ServerResponse, token
       : protocol.data === 'anthropic-messages' ? { authorization: `Bearer ${key}`, 'x-api-key': key }
         : { authorization: `Bearer ${key}` },
     maxRequestBytes: 50 * 1024 * 1024,
+    omitThinking: route[1] !== undefined,
     warn: () => {}, // The caller receives the transport failure without logging provider data.
   });
 }

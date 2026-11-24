@@ -52,3 +52,21 @@ it('accepts a Gemini local query key and joins a versioned endpoint once', async
   const response = await fetch(route + '/v1beta/models/m:streamGenerateContent?alt=sse&key=' + local.apiKey);
   expect(await response.json()).toEqual({ path: '/prefix/v1beta/models/m:streamGenerateContent?alt=sse', key: 'provider-key' });
 });
+
+it('strips thinking settings only on the route created for the explicit turn-off', async () => {
+  const endpoint = await upstream(async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    response.end(Buffer.concat(chunks));
+  });
+  const local = await customModelForwarder(async () => ({ endpoint, apiKey: 'provider-key' }));
+  const regular = customModelRoute(local.endpoint, 'record', 'openai-responses');
+  const disabled = customModelRoute(local.endpoint, 'record', 'openai-responses', undefined, true);
+  const request = { model: 'm', reasoning: { effort: 'medium' }, input: 'The original prompt', stream: true };
+  const post = (address: string) => fetch(address + '/responses', {
+    method: 'POST', headers: { authorization: `Bearer ${local.apiKey}`, 'content-type': 'application/json' }, body: JSON.stringify(request),
+  }).then(response => response.json());
+  const [unchanged, stripped] = await Promise.all([post(regular), post(disabled)]);
+  expect(unchanged).toEqual(request);
+  expect(stripped).toEqual({ model: 'm', input: 'The original prompt', stream: true });
+});
