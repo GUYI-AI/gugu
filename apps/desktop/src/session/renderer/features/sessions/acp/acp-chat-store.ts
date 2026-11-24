@@ -522,8 +522,12 @@ export class AcpChatStore {
     );
   }
 
+  get thinkingDisabled(): boolean {
+    return this._sessionRecord()?.thinkingDisabled === true;
+  }
+
   get effort(): string | null {
-    if (this._sessionRecord()?.thinkingDisabled) return null;
+    if (this.thinkingDisabled) return null;
     if (this.session) return this.session.config.current().efforts?.selected ?? null;
     // 同 `model`:还在起、停下了都答下一次起用的那一档。
     return this.startupChoice.effort ?? this._sessionRecord()?.effort ?? null;
@@ -1656,7 +1660,7 @@ export class AcpChatStore {
   }
 
   async setEffort(effort: string): Promise<LiveSettingOutcome> {
-    if (effort && !this.runtimeView && this._sessionRecord()?.thinkingDisabled) {
+    if (effort && !this.runtimeView && this.thinkingDisabled) {
       if (this.affordances.isBusy || this.queuedPrompts.length) return { kind: 'restart-required', requestedValue: effort };
       try {
         const result = await requestSessionReload({ sessionId: this.sessionId, reason: 'thinking-retry', effort });

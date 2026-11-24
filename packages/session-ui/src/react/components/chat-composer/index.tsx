@@ -272,6 +272,7 @@ export interface ChatComposerProps {
 
   effortOptions?: Record<string, ComposerEffortOption> | null;
   selectedEffort?: string;
+  thinkingDisabled?: boolean;
   onEffortChange?: (effortId: string) => void;
   /**
    * Level the agent would pick for itself when none is armed. Named in the 「默认」 row so the
@@ -458,6 +459,7 @@ export function ChatComposer({
   onModelUpgrade,
   effortOptions,
   selectedEffort,
+  thinkingDisabled,
   onEffortChange,
   defaultEffort,
   fastMode,
@@ -816,6 +818,7 @@ export function ChatComposer({
                 contextThresholds={findContextThreshold}
                 effortItems={effortItems}
                 selectedEffort={selectedEffort}
+                thinkingDisabled={thinkingDisabled}
                 onEffortChange={onEffortChange}
                 defaultEffort={defaultEffort}
                 fastMode={fastMode}

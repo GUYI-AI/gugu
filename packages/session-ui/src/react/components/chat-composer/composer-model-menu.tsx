@@ -175,12 +175,13 @@ export function modelTitle(item: ComposerModelItem, locale = 'en-US'): string | 
  * 事实里上下文、速度、智能来自 `modelFeatures`(插件 / 目录真声明过的),其余由宿主翻好递进来(`facts`)。
  * 什么都没有的那几格就不画 —— ❌ 写「未知」占位。
  */
-function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffortChange, fastControl, onDisabledAction }: {
+function ModelDetail({ item, picker, contextThresholds, efforts, effort, thinkingDisabled, onEffortChange, fastControl, onDisabledAction }: {
   item: ComposerModelItem;
   picker: HTMLElement | null;
   contextThresholds?: ComposerContextThresholds;
   efforts?: ComposerEffortItem[];
   effort?: ComposerEffortItem;
+  thinkingDisabled?: boolean;
   onEffortChange?: (id: string) => void;
   fastControl?: React.ReactNode;
   onDisabledAction?: () => void;
@@ -245,7 +246,9 @@ function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffor
         }}>
           <Popover.Trigger ref={effortTrigger} openOnHover delay={100} closeDelay={300} className={styles.contextThresholdTrigger}>
             <span>{effortLabel}</span>
-            <span className={styles.modelDetailControlValue}>{effort?.name}<ChevronRight size={14} aria-hidden /></span>
+            <span className={styles.modelDetailControlValue}>
+              {thinkingDisabled ? translate('composer.thinkingOff') : effort?.name}<ChevronRight size={14} aria-hidden />
+            </span>
           </Popover.Trigger>
           <Popover.Content side={effortMenuSide} sideOffset={effortMenuSide === 'bottom' ? 4 : 16} align="start" className={styles.contextThresholdContent}>
             {efforts.map(level => (
@@ -321,6 +324,7 @@ export interface ComposerModelMenuProps {
   contextThresholds?: ComposerContextThresholds;
   effortItems: ComposerEffortItem[];
   selectedEffort?: string;
+  thinkingDisabled?: boolean;
   onEffortChange?: (effortId: string) => void;
   defaultEffort?: string;
   /** Undefined means the current model/route does not offer Fast. */
@@ -356,6 +360,7 @@ export function ComposerModelMenu({
   contextThresholds,
   effortItems: allEffortItems,
   selectedEffort,
+  thinkingDisabled,
   onEffortChange,
   defaultEffort,
   fastMode,
@@ -538,13 +543,13 @@ export function ComposerModelMenu({
           {/* 强度就地显示(如「5.6 Sol 轻度」)。armed 的用 muted;
               没 armed 时退回该模型自己的默认档,再压一档不透明度 —— 那是目录里的出厂
               默认,用户写在 ~/.codex/config.toml 里的值会盖过它,我们读不到。 */}
-          {effectiveEffortItem && !modelUnknown ? (
+          {(effectiveEffortItem || thinkingDisabled) && !modelUnknown ? (
             <span
               data-slot="composer-effort"
               className={styles.modelTriggerEffort}
-              style={{ opacity: selectedEffortItem ? 1 : 0.6 }}
+              style={{ opacity: selectedEffortItem || thinkingDisabled ? 1 : 0.6 }}
             >
-              {effectiveEffortItem.name}
+              {thinkingDisabled ? translate('composer.thinkingOff') : effectiveEffortItem?.name}
             </span>
           ) : null}
           {/* @@@composer-no-chevron — ❌ 不画下拉箭头(owner 2026-09-07:「下拉按钮这个 icon
@@ -777,6 +782,7 @@ export function ComposerModelMenu({
             {detailItem ? (
               <ModelDetail key={detailItem.id} item={detailItem} picker={panelEl} contextThresholds={contextThresholds}
                 efforts={detailItem.id === selectedModel ? effortItems : undefined} effort={effectiveEffortItem}
+                thinkingDisabled={thinkingDisabled && detailItem.id === selectedModel}
                 fastControl={detailItem.id === selectedModel && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
                   ? <ComposerFastMode detailRow enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
                   : undefined}

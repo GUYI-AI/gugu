@@ -1524,6 +1524,7 @@ const ComposerForStore = observer(function ComposerForStore({
         {...composerModelFooter(platformCatalog.models)}
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
         selectedEffort={store.effort ?? undefined}
+        thinkingDisabled={store.thinkingDisabled}
         defaultEffort={detachedDefaultEffort}
         onEffortChange={handleEffortChange}
         fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
