@@ -34,6 +34,7 @@ export const BlockGrip = observer(function BlockGrip({
       aria-label={label}
       title={label}
       data-block-grip=""
+      ref={stickyReveal}
       className="screen-block-grip"
       // ❌ 别 stopPropagation:React 19 会把原生 dragstart 停在根容器上,document 上开拖拽遮罩的那条(shieldNativeDrags)
       // 就听不到 —— 拖着 ⋮⋮ 经过网页(HTML 预览、浏览器页签、App 的页),指针一进去宿主就收不到移动。上面也没有别人接 dragstart。
@@ -51,6 +52,38 @@ export const BlockGrip = observer(function BlockGrip({
     </ContextMenu.Root>
   );
 });
+
+/**
+ * @@@grip-sticky-reveal - 把手指着这一块的页头才显出来,但页头的空白是窗口拖拽区(app-region drag),那里页面收不到任何
+ * 指针事件:只靠 :hover,指针从胶囊移向把手的半路就进了拖拽区,把手就没了(yangchichi 11-24)。所以一旦指到页头里收得到
+ * 事件的东西(胶囊、按钮、把手)就挂上 data-grip-shown,直到页面看见一次落在这条页头之外的移动、指针离开窗口或窗口失焦
+ * 才摘掉 —— 拖拽区里没有事件,半路也就没有什么能把它藏掉。
+ */
+function stickyReveal(grip: HTMLElement | null): (() => void) | undefined {
+  const bar = grip?.closest<HTMLElement>('.session-tab-bar');
+  if (!grip || !bar) return undefined;
+  const doc = bar.ownerDocument;
+  const view = doc.defaultView ?? window;
+  const show = () => { bar.dataset.gripShown = ''; };
+  const hide = () => { delete bar.dataset.gripShown; };
+  const moved = (event: PointerEvent) => {
+    if (!('gripShown' in bar.dataset)) return;
+    const r = bar.getBoundingClientRect();
+    if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) hide();
+  };
+  const left = (event: PointerEvent) => { if (!event.relatedTarget) hide(); };
+  bar.addEventListener('pointerover', show);
+  doc.addEventListener('pointermove', moved, true);
+  doc.addEventListener('pointerout', left, true);
+  view.addEventListener('blur', hide);
+  return () => {
+    bar.removeEventListener('pointerover', show);
+    doc.removeEventListener('pointermove', moved, true);
+    doc.removeEventListener('pointerout', left, true);
+    view.removeEventListener('blur', hide);
+    hide();
+  };
+}
 
 /**
  * 正被 ⋮⋮ 拖着的那一块。

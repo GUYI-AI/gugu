@@ -1517,7 +1517,7 @@ html[data-gugu-dragging] :is(webview, iframe) {
 }
 
 /* 一块左上的把手(spec session-page「一屏几块」;yangchichi 11-24 定稿 V2,照 iPadOS 26 窗口左上那颗小胶囊):只在分屏时有,
-   44×22 的胶囊、三颗灰点,距卡片左缘 10、在页签条里垂直居中;平时不显示,指着这一块的页头或聚焦进来才出现。材质是现成的 --glass-* (@@@no-glass:实色面 + hairline + lift,
+   44×22 的胶囊、三颗灰点,距卡片左缘 10、在页签条里垂直居中;平时不显示,指着这一块的页头(粘性,block-grip.tsx @@@grip-sticky-reveal)或聚焦进来才出现。材质是现成的 --glass-* (@@@no-glass:实色面 + hairline + lift,
    ❌ 半透明 + 模糊)。悬停加全 app 那一档状态色、点变深、整块描一圈;按下再深一档。它所在的页签条让出它那一截
    (--block-grip-lane,TabStripShell 读),胶囊栏里的名字也不压到它上面。 */
 .session-tab-bar:has([data-block-grip]) {
@@ -1547,7 +1547,7 @@ html[data-gugu-dragging] :is(webview, iframe) {
   opacity: 0;
   transition: opacity var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
 }
-.session-tab-bar:hover .screen-block-grip,
+.session-tab-bar[data-grip-shown] .screen-block-grip,
 .session-tab-bar:focus-within .screen-block-grip,
 .screen-block-grip:active {
   opacity: 1;
