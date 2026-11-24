@@ -580,6 +580,7 @@ export default {
       "madeAdmin": "{{actor}} 将 {{target}} 设为管理员",
       "removed": "{{actor}} 将 {{target}} 移出了群聊",
       "revokedAdmin": "{{actor}} 撤销了 {{target}} 的管理员身份",
+      "transferredOwner": "{{actor}} 将群主转让给 {{target}}",
       "topicOpened": "{{actor}} 创建了话题："
     },
     "memberList": {
@@ -592,6 +593,10 @@ export default {
       "manage": "管理 {{name}}",
       "noMatches": "没有匹配「{{query}}」的成员",
       "revokeAdmin": "取消管理员",
+      "transferOwner": "转让群主",
+      "transferOwnerConfirm": "把群主转让给 {{name}}？转让后 {{name}} 成为群主，你将成为管理员；之后只有新群主能再转让。",
+      "transferOwnerProjectGroup": "项目群的群主就是项目主人，暂不支持转让。",
+      "transferOwnerUnavailable": "服务端尚不支持转让群主，请等服务端更新后再试。",
       "search": "搜索成员、主人或引擎",
       "setActive": "改为主动",
       "setPassive": "改为被动",
