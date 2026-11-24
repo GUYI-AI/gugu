@@ -688,12 +688,12 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
 
   const outboxActions = useMemo(() => bindOutboxActions(outboxRef, userId), [userId])
 
-  // A reaction is the person's wish, shown at once and sent through the outbox; its confirmation re-reads the counts.
+  // A reaction is the person's wish, shown at once, stored, and sent through the outbox; its answer re-reads the counts.
   const toggleReaction = useCallback(async (messageId: string, emoji: string, chatId = activeChatIdRef.current) => {
     if (!userId || !chatId) return
     const wish = wishReaction(messageId, emoji, cache.rows(chatId) ?? [], cache.view(chatId).threadMessages)
     setMessagesAndCache((rows) => rows.map(wish.apply), chatId); setThreadMessagesFor(chatId, (rows) => rows.map(wish.apply))
-    await enqueueReaction({ chatId, messageId, userId, emoji, on: wish.on })
+    await enqueueReaction({ chatId, messageId, userId, emoji, on: wish.on }, wish.reactions)
   }, [cache, setMessagesAndCache, setThreadMessagesFor, userId])
   const revalidateOverlaysRef = useRef(revalidateWindowOverlays); revalidateOverlaysRef.current = revalidateWindowOverlays
   useEffect(() => registerReactions((wish) => { void revalidateOverlaysRef.current(wish.chatId) }), [])

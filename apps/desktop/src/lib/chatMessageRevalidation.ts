@@ -18,7 +18,8 @@ export async function persistMessagePatches(userId: string, patches: { chatId: s
 // @@@reaction-read-order - reactions are last-writer-wins and a change only invalidates (the revision names the message,
 // not the new value). A read that began before the latest change of a message cannot speak for that message's reactions:
 // its answer may predate the change (a removed 👍 would come back). The read started for that change lands it instead.
-// Reads go to the primary database, so a read begun after the change sees it.
+// Reads go to the primary database, so a read begun after the change sees it. This device's own toggle is a change from
+// the tap on, and no read speaks for its message until the server has answered the write.
 let reactionClock = 0
 let reactionReads = 0
 const reactionChangedAt = new Map<string, number>()
@@ -26,6 +27,14 @@ const reactionChangedAt = new Map<string, number>()
 /** A reaction of these messages changed (a revision, or this device's own toggle): earlier reads no longer speak for them. */
 export function invalidateReactions(messageIds: readonly string[]): void {
   for (const id of messageIds) reactionChangedAt.set(id, ++reactionClock)
+}
+
+// A wish of this device that the server has not answered yet speaks for its message: a read landing meanwhile may predate
+// the write, whenever it began. The reaction kind (outbox/kinds/reaction) knows which wishes are unanswered.
+let wishUnanswered: (messageId: string) => boolean = () => false
+export function readReactionsBehindWishes(unanswered: (messageId: string) => boolean): () => void {
+  wishUnanswered = unanswered
+  return () => { if (wishUnanswered === unanswered) wishUnanswered = () => false }
 }
 
 export interface MessageOverlay {
@@ -138,7 +147,7 @@ async function fetchMessageOverlays(
   reactionReads += 1
   try {
     const overlays = await readMessageOverlays(messageIds, userId)
-    for (const [id, overlay] of overlays) if ((reactionChangedAt.get(id) ?? 0) > startedAt) delete overlay.reactions
+    for (const [id, overlay] of overlays) if (wishUnanswered(id) || (reactionChangedAt.get(id) ?? 0) > startedAt) delete overlay.reactions
     return overlays
   } finally {
     // With no read in flight no start can predate a recorded change; the table only ever spans live reads.
