@@ -59,7 +59,7 @@ async function agent(first: string) {
   const client = new Client({ name: 'f31', version: '1' })
   clients.push(client)
   await client.connect(new StreamableHTTPClientTransport(new URL(grant.url), { requestInit: { headers: { Authorization: `Bearer ${grant.capability}` } } }))
-  const call = async (tool: string, args: Record<string, unknown> = { source_dir: '/tmp/vote', chat_id: 'chat-1' }) => {
+  const call = async (tool: string, args: Record<string, unknown> = { source_dir: '/tmp/vote', chat_id: '77777777-7777-4777-8777-777777777777' }) => {
     // app_install is in the catalog (#7335) but still answers to its own name; app_pack goes through catalog_call.
     const result = tool === 'app_install'
       ? await client.callTool({ name: tool, arguments: args })
@@ -76,9 +76,9 @@ describe('app_install { chat_id }: the answer carries the card, typed once (F31)
     const answer = await install()
     expect(answer.isError, answer.body).toBe(false)
     expect(JSON.parse(answer.body)).toMatchObject({ installed: true, message_id: `msg:${CARD}`, next: 'It is in the chat as a card now.' })
-    expect(seen).toEqual([{ action: 'install', source_dir: '/tmp/vote', chat_id: 'chat-1' }, { action: 'pack', source_dir: '/tmp/vote' }])
+    expect(seen).toEqual([{ action: 'install', source_dir: '/tmp/vote', chat_id: '77777777-7777-4777-8777-777777777777' }, { action: 'pack', source_dir: '/tmp/vote' }])
     expect(sendCard).toHaveBeenCalledWith(expect.anything(), {
-      chatId: 'chat-1', filePath: '/tmp/dinner-vote-1.0.0.guguext', fileName: 'dinner-vote-1.0.0.guguext', sha256: 'f'.repeat(64),
+      chatId: '77777777-7777-4777-8777-777777777777', filePath: '/tmp/dinner-vote-1.0.0.guguext', fileName: 'dinner-vote-1.0.0.guguext', sha256: 'f'.repeat(64),
     })
   })
 
@@ -101,10 +101,10 @@ describe('app_install { chat_id }: the answer carries the card, typed once (F31)
     const { install, seen } = await agent('1.0.0')
     const body = JSON.parse((await install()).body)
     expect(seen).toEqual([
-      { action: 'install', source_dir: '/tmp/vote', chat_id: 'chat-1' },
+      { action: 'install', source_dir: '/tmp/vote', chat_id: '77777777-7777-4777-8777-777777777777' },
       { action: 'pack', source_dir: '/tmp/vote' },
       { action: 'bump', source_dir: '/tmp/vote' },
-      { action: 'install', source_dir: '/tmp/vote', chat_id: 'chat-1' },
+      { action: 'install', source_dir: '/tmp/vote', chat_id: '77777777-7777-4777-8777-777777777777' },
       { action: 'pack', source_dir: '/tmp/vote' },
     ])
     expect(sendCard.mock.calls[1][1]).toMatchObject({ fileName: 'dinner-vote-1.0.1.guguext' })
@@ -138,7 +138,7 @@ describe('app_install { chat_id }: the answer carries the card, typed once (F31)
     const answer = await pack()
     expect(answer.isError, answer.body).toBe(false)
     expect(JSON.parse(answer.body)).toMatchObject({ file_name: 'dinner-vote-1.0.0.guguext', message_id: `msg:${CARD}` })
-    expect(seen).toEqual([{ action: 'pack', source_dir: '/tmp/vote', chat_id: 'chat-1' }])
+    expect(seen).toEqual([{ action: 'pack', source_dir: '/tmp/vote', chat_id: '77777777-7777-4777-8777-777777777777' }])
   })
 
   // 副作用已经发生的,回包绝不能是 error:装上了、卡没发出去,是一句话,不是一次失败的调用。
@@ -163,9 +163,9 @@ describe('app_install { chat_id }: the answer carries the card, typed once (F31)
   it('an App installed here (app): its installed copy is packed for the card; never bumped, it has no folder', async () => {
     sendCard.mockResolvedValue({ messageId: CARD, alreadyThere: true, differs: true })
     const { install, seen } = await agent('1.0.0')
-    const answer = await install({ app: 'dinner-vote', chat_id: 'chat-1' })
+    const answer = await install({ app: 'dinner-vote', chat_id: '77777777-7777-4777-8777-777777777777' })
     expect(answer.isError, answer.body).toBe(false)
-    expect(seen).toEqual([{ action: 'install', app: 'dinner-vote', chat_id: 'chat-1' }, { action: 'pack_installed', id: 'dinner-vote' }])
+    expect(seen).toEqual([{ action: 'install', app: 'dinner-vote', chat_id: '77777777-7777-4777-8777-777777777777' }, { action: 'pack_installed', id: 'dinner-vote' }])
     expect(JSON.parse(answer.body).next).toMatch(/with other contents too, so nothing new was sent/)
   })
 
