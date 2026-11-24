@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 import { summaryChip } from '@session-chat/components/primitives/summary-chip.css';
 import { useChatTranslator } from '@session-chat/localization';
-import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
+import { runningText } from '@session-chat/styles/effects.css';
 import { useCaches } from '@session-chat/components/contexts/CachesContext';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
 import { FileMark, IconError, IconShieldAlert } from '@session-chat/components/primitives/icons';
@@ -32,7 +32,7 @@ export function DiffHeader(props: DiffHeaderProps) {
       const label = () => ('oldPath' in change && typeof change.oldPath === 'string' ? `${basename(change.oldPath)} → ` : '') + (path() ? basename(path()!) : change.operation);
       return <button type="button" data-pane-opener="" class={css.diffFileName} title={path()} data-patch-path={path()} disabled={!path() || !commands().onOpenFile} onClick={() => {
         const target = path(); if (target) commands().onOpenFile?.({ path: target, itemId: props.item.id, source: 'diff' });
-      }}><ShimmerText active={running()}>{label()}</ShimmerText></button>;
+      }}><span classList={{ [runningText]: running() }}>{label()}</span></button>;
     }}</For>
     <Show when={stats()}><span class={css.diffAddsCount}>+{props.section?.adds}</span><span class={css.diffDelsCount}>−{props.section?.dels}</span></Show>
     <Show when={props.item.awaitingPermission} fallback={<Show when={props.item.status === 'error'}>

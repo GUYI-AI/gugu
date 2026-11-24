@@ -11,15 +11,17 @@ import { spawn } from '@gugu/core/local/childProcess'
 import type { BrowserWindow } from 'electron'
 import {
   SSH_LINK_CHANNELS,
+  sshPathFailed,
   type SshLinkAnswer,
   type SshLinkFailure,
   type SshLinkOpenResult,
   type SshUpgradeEvent,
 } from '../../src/lib/sshLink'
+import type { TunnelMachines } from './tunnel-machines'
 import type { SshKeyInstallOutcome } from '../../src/session/shared/ssh-prompt'
 import type { DirectTerminalAskpass } from '../session/main/core/pty/direct-terminal/ssh-connect'
 import { createSshAutoUpgrader, sshServerUpgradeRunner, type SshAutoUpgrader } from './ssh-install/auto-upgrade'
-import { buildEnsureMasterArgs, classifySshFailure, type SshTarget } from './ssh-install/logic'
+import { buildEnsureMasterArgs, classifySshFailure } from './ssh-install/logic'
 import { systemSpawnSsh } from './ssh-install/system'
 import type { DeviceCapabilities } from '@gugu/core/shared/types/chat'
 import type { DeviceRpcRequester } from '@gugu/core/cloud/deviceRpcRequester'
@@ -75,7 +77,7 @@ export function registerSshLinkIpc(options: {
    * 远程隧道:这台电脑没有它的 SSH 映射、但经中转连通了的机器(tunnel-machines.ts)。设备连接照样开在它上面;
    * 不替它升级(它自己经咕咕云升级)、不问登录(只用咕咕钥匙)。
    */
-  tunnels?: { linkMachine(deviceId: string): { target: SshTarget; accountUserId: string } | null; reportBroken(deviceId: string): void }
+  tunnels?: Pick<TunnelMachines, 'linkMachine' | 'reportBroken' | 'linkRefused' | 'linkOpened'>
 }): SshLinkManager & SharedSshLinks & HeldFileSshLinks {
   const send = (channel: string, payload: unknown) => {
     const win = options.getWindow()
@@ -84,6 +86,12 @@ export function registerSshLinkIpc(options: {
   const machineFor = async (deviceId: string): Promise<SshMachine | null> => {
     const userId = (await options.currentUserId().catch(() => null)) ?? null
     return userId ? findSshMachine(options.store.list(), deviceId, userId) : null
+  }
+  // A tunnel's link that failed: the SSH path itself (rebuild the route now), or the machine's server said no (the route
+  // works; the tunnel steps aside for Gugu Cloud and tries again on its backoff).
+  const reportTunnelLink = (deviceId: string, reason: SshLinkFailure, detail?: string) => {
+    if (sshPathFailed(reason)) options.tunnels?.reportBroken(deviceId)
+    else options.tunnels?.linkRefused(deviceId, detail ? `${reason}: ${detail}` : reason)
   }
   // 同一条连接,窗口之外主进程也在用(agent 的 session_* 跨机器,main.ts):它们按机器挂在这里,❌ 各开一条。
   const taps = new Map<string, Set<Parameters<SharedSshLinks['tap']>[1]>>()
@@ -106,8 +114,9 @@ export function registerSshLinkIpc(options: {
       const viaTunnel = !!options.tunnels?.linkMachine(deviceId)
       send(SSH_LINK_CHANNELS.closed, { deviceId, reason: failure.reason, ...(viaTunnel ? { via: 'tunnel' } : {}) })
       for (const tap of [...(taps.get(deviceId) ?? [])]) tap.onClosed(failure.reason)
-      // 经中转的那条断了(中转、那台机器、网络):让远程隧道重新连一遍(❌ 留着一个看起来通着的映射)。
-      if (viaTunnel) options.tunnels?.reportBroken(deviceId)
+      // 经中转的那条 SSH 断了(中转、网络):让远程隧道重新连一遍(❌ 留着一个看起来通着的映射)。
+      // 那台机器的 server 自己答「不行」(没装、没在跑、没登这个账号…)时路是通的:重建只会再撞一次同一个答案,按退避再试。
+      if (viaTunnel) reportTunnelLink(deviceId, failure.reason, failure.detail)
     },
     log: options.log,
   })
@@ -183,9 +192,10 @@ export function registerSshLinkIpc(options: {
     if (updating && !links.isOpen(deviceId)) return { ok: false, reason: 'updating' }
     // 原因的原文只进日志(ssh-link.ts 已记),渲染层只拿原因码。
     const result = await links.open(deviceId)
-    // 经远程隧道的机器:不替它升级(它自己经咕咕云换版本);连不上 = 中转那条路坏了,让远程隧道重连。
+    // 经远程隧道的机器:不替它升级(它自己经咕咕云换版本);SSH 这一段连不上 = 中转那条路坏了,让远程隧道重连。
     if (!(await machineFor(deviceId)) && options.tunnels?.linkMachine(deviceId)) {
-      if (!result.ok && result.reason !== 'outdated') options.tunnels.reportBroken(deviceId)
+      if (result.ok) options.tunnels.linkOpened(deviceId)
+      else reportTunnelLink(deviceId, result.reason, result.detail)
       return result.ok ? result : { ...result, via: 'tunnel' }
     }
     const outcome: SshLinkOpenResult = updating ? { ok: false, reason: 'updating' } : openOutcome(deviceId, result, upgrader)

@@ -36,7 +36,6 @@ vi.mock('@main/core/agent-hooks/notification', () => ({ maybeShowNotification: v
 const { agentHookService } = await import('../agent-hooks/agent-hook-service');
 const { statusWritesSettled } = await import('./_support/status-writes-settled');
 const { agentStatusWriter } = await import('./agent-status-writer');
-const { writeSessionIndex } = await import('../session-index/session-index');
 
 describe('acknowledged persistent quota errors', () => {
   let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -69,7 +68,7 @@ describe('acknowledged persistent quota errors', () => {
   it.each([0, 1])('recognizes a stored quota error from before the upgrade (seen=%s)', async seen => {
     fixture.sqlite.prepare("UPDATE sessions SET agent_status = 'error', agent_status_seen = ?, config = ? WHERE id = 'c1'")
       .run(seen, JSON.stringify({ version: '1', type: 'acp', model: 'model-a' }));
-    writeSessionIndex('c1', [{ id: 't1', seq: 0, initiator: 'user', items: [], outcome: { kind: 'error', reason: 'prompt_failed', detail: weekly } }]);
+    fixture.sqlite.prepare('INSERT INTO session_index_turns (session_id, turn_id, initiator, outcome_kind, outcome_message) VALUES (?, ?, ?, ?, ?)').run('c1', 't1', 'user', 'error', weekly);
     if (!seen) await agentStatusWriter.markSeen('c1');
     await fail(); expect(row()).toEqual({ status: 'error', seen: 1 });
   });

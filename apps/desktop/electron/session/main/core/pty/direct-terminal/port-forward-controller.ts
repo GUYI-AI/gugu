@@ -8,7 +8,7 @@ import { err, ok } from '@gugu/session-shared';
 import { events } from '@main/lib/events';
 import { createRPCController } from '@shared/lib/ipc/rpc';
 import { remotePortKey, remotePortLinkChannel } from '@shared/remote-port-link';
-import { remotePortDetectedChannel, remotePortsChangedChannel, type RemotePortsSnapshot } from '@shared/remote-ports';
+import { remotePortsChangedChannel, type RemotePortsSnapshot } from '@shared/remote-ports';
 import { bindRemoteBrowser, setRemoteLoopbackForwarding, unbindRemoteBrowser } from '../../browser/remote-loopback-requests';
 import { directSshResolver } from './controller';
 import { createDetectedPorts } from './detected-ports';
@@ -94,7 +94,6 @@ export const portForwards = createPortForwards({
 /** #6264 终端 / agent 输出里发现的端口(detected-ports.ts)。 */
 export const detectedPorts = createDetectedPorts({
   onChanged: (deviceId) => events.emit(remotePortsChangedChannel, { deviceId }, deviceId),
-  onDetected: (entry) => events.emit(remotePortDetectedChannel, entry),
 });
 
 // 远端浏览器页签里页面自己的 localhost 请求(remote-loopback-requests.ts)走同一套转发。

@@ -1,21 +1,15 @@
 /**
- * The background-running marker (base status `working`, detail `parked`): two upright bars, like a pause sign, in the
- * parked tone. A shape, not a dot, so it never reads as the red error dot. Every surface that draws this state uses
- * it: the avatar badge, the session page row, the contact row and detail, and the agent settings header.
- *
- * The bars sit on whole pixels (width w, gap w, height size − 2⌊size/5⌋, integer offsets, crisp edges), so at the list
- * badge size (10) they are 2 + 2 + 2 px by 6 px and stay two separate bars on 1× and 2× screens.
+ * The background-running marker (base status `working`, detail `parked`): the product's running glyph held still
+ * (running-glyph.css, `gg-running-glyph--still`), in the same ink. Turning says it is working; held still, that it
+ * is running out of sight. Every surface that draws this state uses it: the avatar corner, the session page row, the
+ * contact row and detail, and the agent settings header. `size` sets its font size; without it, the glyph takes the
+ * text size around it.
  */
-export function AgentParkedGlyph({ size = 8, className }: { size?: number; className?: string }) {
-  const w = Math.max(2, Math.floor(size / 5))
-  const h = size - 2 * Math.floor(size / 5)
-  const x = Math.floor((size - 3 * w) / 2)
-  const y = Math.floor((size - h) / 2)
+export function AgentParkedGlyph({ size, className }: { size?: number; className?: string }) {
   return (
-    <svg aria-hidden="true" data-agent-status-glyph="parked" width={size} height={size} viewBox={`0 0 ${size} ${size}`}
-      shapeRendering="crispEdges" className={`shrink-0 text-[var(--agent-tone-parked)] ${className ?? ''}`.trim()}>
-      <rect x={x} y={y} width={w} height={h} fill="currentColor" />
-      <rect x={x + 2 * w} y={y} width={w} height={h} fill="currentColor" />
-    </svg>
+    <span aria-hidden="true" data-agent-status-glyph="parked" className={`gg-running-glyph gg-running-glyph--still ${className ?? ''}`.trim()}
+      style={size === undefined ? undefined : { fontSize: size, lineHeight: 1 }}>
+      <span className="gg-running-glyph__strip" />
+    </span>
   )
 }

@@ -1,43 +1,12 @@
 /**
  * effects.css.ts — ports the @utility effects from the old tokens.css §3.
  *
- * text-shimmer, fade-overlay-top/bottom, and plan-spinner are now typed VE
- * style objects. Components import the class names directly instead of using
- * Tailwind utility strings.
- *
- * The keyframe names are scoped by VE so they never collide in the host app.
+ * running-text and fade-overlay-top/bottom are typed VE style objects. Components
+ * import the class names directly instead of using Tailwind utility strings.
  */
 
-import { globalStyle, keyframes, style } from '@vanilla-extract/css';
+import { style } from '@vanilla-extract/css';
 import { vars } from './theme.css';
-
-// ── Keyframes ─────────────────────────────────────────────────────────────────
-
-const shimmerSweep = keyframes({
-  from: { transform: 'translateX(0)' },
-  to: { transform: 'translateX(var(--text-shimmer-sweep-end, 50%))' },
-});
-const shimmerInk = keyframes({
-  from: { transform: 'translateX(0)' },
-  to: { transform: 'translateX(var(--text-shimmer-ink-end, -200%))' },
-});
-
-// The running bar loops without a timer: the sweep takes the first half of each cycle at the same
-// 20 steps as above, then the value stays still until the next cycle.
-const shimmerSweepHeld = keyframes({
-  '0%': { transform: 'translateX(0)' },
-  '50%': { transform: 'translateX(var(--text-shimmer-sweep-end, 50%))' },
-  '100%': { transform: 'translateX(var(--text-shimmer-sweep-end, 50%))' },
-});
-const shimmerInkHeld = keyframes({
-  '0%': { transform: 'translateX(0)' },
-  '50%': { transform: 'translateX(var(--text-shimmer-ink-end, -200%))' },
-  '100%': { transform: 'translateX(var(--text-shimmer-ink-end, -200%))' },
-});
-
-const planSpin = keyframes({
-  to: { transform: 'rotate(360deg)' },
-});
 
 // ── artifact surface ──────────────────────────────────────────────────────────
 
@@ -66,85 +35,15 @@ export const artifactSurface = {
   borderRadius: vars.radiusMd,
 } as const;
 
-// ── text-shimmer ──────────────────────────────────────────────────────────────
+// ── running text ──────────────────────────────────────────────────────────────
 
 /**
- * 「有名字的动作正在跑」这个记号。5 个调用点共用（tool / file-op / subagent / diff /
- * CollapseHeader），它是 transcript「agent 在动」的那一个动效 —— 一轮还什么都没有时，
- * 在动的是这一轮的时间头（turn-process 行，同样经 CollapseHeader 微光）。
+ * 「有名字的动作正在跑」时那段字的墨色:静止的次级墨色。动的只有同一行(或同一轮)的那枚共用字形
+ * (@gugu/session-shared/running-glyph);字本身不扫光 —— 一道扫光每个 vsync 都要整窗出一帧。
  */
-export const textShimmer = style({
-  position: 'relative',
-  color: 'transparent',
-  WebkitTextFillColor: 'transparent',
-  '@media': { '(prefers-reduced-motion: reduce)': { color: vars.fgPassive, WebkitTextFillColor: vars.fgPassive } },
-});
-
-/** The sweep and its one-second hold as one infinite compositor animation (ShimmerText, TextShimmer): nothing rewinds it from script. */
-export const textShimmerLoop = style({
-  vars: {
-    '--text-shimmer-sweep-name': shimmerSweepHeld,
-    '--text-shimmer-ink-name': shimmerInkHeld,
-    '--text-shimmer-duration': '2s',
-    '--text-shimmer-iterations': 'infinite',
-  },
-});
-
-export const textShimmerClip = style({
-  position: 'absolute',
-  inset: 0,
-  overflow: 'hidden',
-  pointerEvents: 'none',
-  isolation: 'isolate',
-  contain: 'paint',
-  animationDelay: 'inherit',
-  // Reduced motion keeps the same flat passive text as before, with no frozen band.
-  '@media': { '(prefers-reduced-motion: reduce)': { display: 'none' } },
-});
-
-// The base glyphs sit still and unmasked; only the light layer moves. It
-// sweeps one repeat in one second at 20 steps, then holds for one second
-// (textShimmerLoop). Opposite glyph transforms keep its text still. One masked layer per label: each masked
-// layer is composited on every frame while anything on screen animates, so
-// masking the base glyphs as well cost about a third of the GPU time.
-const sweep = {
-  position: 'absolute',
-  top: 0,
-  bottom: 0,
-  left: 'var(--text-shimmer-left, -200%)',
-  width: 'var(--text-shimmer-width, 400%)',
-  transform: 'translateX(var(--text-shimmer-idle-sweep, 0%))',
-} as const;
-
-export const textShimmerBaseSweep = style(sweep);
-
-export const textShimmerSweep = style({
-  ...sweep,
-  maskImage: 'var(--text-shimmer-light-mask, linear-gradient(90deg, transparent 30%, white 50%, transparent 70%))',
-  maskSize: 'var(--text-shimmer-mask-size, 50% 100%)',
-  maskRepeat: 'repeat',
-  animation: `var(--text-shimmer-sweep-name, ${shimmerSweep}) var(--text-shimmer-duration, 1s) var(--text-shimmer-easing, steps(20, end)) var(--text-shimmer-iterations, 1) forwards`,
-  animationDelay: 'inherit',
-});
-
-export const textShimmerInk = style({
-  display: 'block',
-  width: 'var(--text-shimmer-ink-width, 25%)',
-  marginLeft: 'var(--text-shimmer-ink-left, 50%)',
-  transform: 'translateX(var(--text-shimmer-idle-ink, 0%))',
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-  color: `var(--text-shimmer-base, ${vars.fgPassive})`,
-  WebkitTextFillColor: `var(--text-shimmer-base, ${vars.fgPassive})`,
-  '::before': { content: 'attr(data-shimmer-text)' },
-});
-
-export const textShimmerLightInk = style({
-  color: `var(--text-shimmer-light, ${vars.fgMuted})`,
-  WebkitTextFillColor: `var(--text-shimmer-light, ${vars.fgMuted})`,
-  animation: `var(--text-shimmer-ink-name, ${shimmerInk}) var(--text-shimmer-duration, 1s) var(--text-shimmer-easing, steps(20, end)) var(--text-shimmer-iterations, 1) forwards`,
-  animationDelay: 'inherit',
+export const runningText = style({
+  color: vars.fgPassive,
+  WebkitTextFillColor: vars.fgPassive,
 });
 
 /** Shared with the host message viewport; paint only, never intercept selection or scrolling. */
@@ -175,20 +74,3 @@ export const fadeOverlayBottom = style({
     color-mix(in oklab, ${vars.bg}, transparent 100%) 100%
   )`,
 });
-
-// ── plan-spinner ──────────────────────────────────────────────────────────────
-
-export const planSpinner = style({
-  transformOrigin: 'center',
-  transformBox: 'fill-box',
-  animation: `${planSpin} 1s linear infinite`,
-  '@media': {
-    '(prefers-reduced-motion: reduce)': {
-      animation: 'none',
-    },
-  },
-});
-
-/** Multiline labels use the same measured line breaks in the composited glyph texture. */
-export const textShimmerMultiline = style({});
-globalStyle(`${textShimmerMultiline} ${textShimmerInk}`, { whiteSpace: 'inherit', overflowWrap: 'inherit', textOverflow: 'clip' });

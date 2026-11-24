@@ -11,7 +11,7 @@ import { customModelOptionId } from '@gugu/session-core/models/custom-model';
 import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { AgentPluginHost, createPluginRegistry, type CLIAgentPluginProvider } from '@gugu/session-core/agents/plugins';
 import { createLocalPluginFs } from '@gugu/session-core/agents/plugins/helpers';
 import { NodeExecutionContext } from '@gugu/session-core/exec';
@@ -19,6 +19,8 @@ import { pluginRegistry } from '@gugu/session-plugins/agents';
 import { noopLogger } from '@gugu/session-shared/logger';
 import { createScope } from '@gugu/session-wire/util';
 import { openRegistryFixture, type RegistryFixture } from '@tooling/utils/provider-accounts';
+import { requestNativeCodexAccess } from '@gugu/core/local/codex-native-auth.mjs';
+import { releaseNativeCodexAuthSources } from './codex-native-auth-source';
 
 const state = vi.hoisted(() => ({ fixture: null as RegistryFixture | null, home: '', userHome: '', clis: {} as Record<string, string> }));
 vi.mock('@main/db/client', () => ({
@@ -42,14 +44,17 @@ vi.mock('@main/core/pty/pty-env', () => ({
     CLAUDE_CONFIG_DIR: join(state.userHome, '.claude'),
   }),
 }));
-vi.mock('@main/core/agents/agent-home', () => ({ resolveAgentHomeEnv: async () => ({}) }));
+vi.mock('@main/core/agents/agent-home', () => ({
+  resolveAgentHomeEnv: async (providerId: string) => providerId === 'codex'
+    ? { CODEX_HOME: join(process.env.GUGU_HOME!, 'agent-homes', 'codex', '.codex') } : {},
+}));
 vi.mock('@main/core/acp/transport/local-acp-process-host', () => ({ resolveLocalAgentCli: async (providerId: string) => state.clis[providerId] }));
 vi.mock('@main/core/agents/acp-bridge', () => ({ resolveHostAcpAdapterEntry: async (providerId: string) => `/bridge/${providerId}-acp.mjs` }));
 vi.mock('@main/core/settings/provider-settings-service', () => ({ providerOverrideSettings: { getItem: () => undefined } }));
 
 const { appSettingsService } = await import('../settings/settings-service');
 const { resolveLocalAgentRunContext } = await import('./agent-run-context');
-const { createHarnessConnection } = await import('./harness-connections');
+const { createHarnessConnection, managedConfigRoot, selectHarnessConnection } = await import('./harness-connections');
 const { saveCustomModel, resolveCustomModelLaunch } = await import('./custom-models');
 const { connectionModelLaunch } = await import('../../../../sessionpage/connection-model-launch');
 const { claudeCustomModelSessionMeta } = await import('./custom-model-run-context');
@@ -90,6 +95,8 @@ beforeEach(async () => {
     exec: new NodeExecutionContext({ env: { PATH: process.env.PATH ?? '' } }),
   });
 });
+afterAll(releaseNativeCodexAuthSources);
+
 afterEach(async () => {
   await appSettingsService.reset('autoReviewModel');
   vi.unstubAllEnvs();
@@ -144,8 +151,22 @@ it('a Gugu platform model still wins over the selected key: its provider only, i
 it('the native configuration and an account connection add no provider (codex uses its own sign-in)', async () => {
   expect(providerArgs((await acpSpawn('codex')).args)).toEqual([]);
   const account = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'Work' });
-  // An account connection moves its sign-in into the managed root without adding a provider.
+  // Account routing does not change the Codex model provider.
   expect((await resolveLocalAgentRunContext('codex', { role: 'acp', connectionId: account.id })).connectionArgs).toBeUndefined();
+});
+
+it('passes the selected account to Codex while retaining the history directory', async () => {
+  const account = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'Named' });
+  const idToken = Buffer.from(JSON.stringify({ sub: 'named-user' })).toString('base64url');
+  const authPath = join(state.home, 'harness-connections', 'codex', account.id, '.codex', 'auth.json');
+  await writeFile(authPath, JSON.stringify({
+    auth_mode: 'chatgpt',
+    tokens: { id_token: `h.${idToken}.s`, access_token: 'fixture-account-token', account_id: 'workspace' },
+  }));
+  await selectHarnessConnection('codex', account.id);
+  const spawn = await acpSpawn('codex');
+  expect(spawn.env?.CODEX_HOME).toBe(managedConfigRoot('codex'));
+  expect(await requestNativeCodexAccess(spawn.env!)).toMatchObject({ accessToken: 'fixture-account-token' });
 });
 
 it('Claude keeps its ACP options and receives the selected upstream model through a protected settings file', async () => {

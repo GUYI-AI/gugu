@@ -4,7 +4,7 @@
 // 是我做的:话题名默认**截自来源消息的开头**(spec:「建立是一步」的理由之一),而锚点就挂在那条消息底下 ⇒
 // 同一句话在屏幕上连着出现两遍。名字本身没错,错的是**把它再念一遍**。
 // 所以:名字还是自动截出来的那一份时,锚点不写名字,只写「话题」;用户改过名才写名字。
-import type { TopicSummary } from '@gugu/core/shared/types/chat'
+import type { MessageItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { displayAgentReferences } from '@/lib/mentionMdast'
 
 /** The chat UI passes this default to create_topic and uses it to recognize an unchanged automatic name. */
@@ -65,4 +65,15 @@ export function topicAnchorLine(
   // 一条都还没有、也说不出谁开的 ⇒ 至少说一句,❌ 不留一个光秃秃的「话题」。
   if (segments.length === 0) segments.push(opts.labels.quiet)
   return { lead, segments }
+}
+
+/** Source eligibility matches server privacy rules; outbox waits for local sources. */
+export type TopicSourceCandidate =
+  Pick<MessageItem, 'id' | 'seq' | 'local_send_state' | 'is_whisper' | 'retracted_at' | 'content_type'>
+
+export function canSourceTopic(message: TopicSourceCandidate): boolean {
+  // 话题名截自来源正文且对全线可见 ⇒ 悄悄话与撤回不许当来源
+  // (20260919001500 / 20260919003000 两条迁移硬拒)。
+  if (message.is_whisper || message.retracted_at || message.local_send_state === 'failed') return false
+  return true
 }

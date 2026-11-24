@@ -131,6 +131,19 @@ export type TunnelMachines = {
   linkMachine(deviceId: string): { target: SshTarget; accountUserId: string } | null
   /** 设备连接 / 转发发现这条路断了:重建。 */
   reportBroken(deviceId: string): void
+  /**
+   * The route works but the machine's server refused the device link (not installed for this desktop's channel, not
+   * running, another account, too old). The tunnel is of no use until that changes: it stops counting as linked, so calls
+   * go through Gugu Cloud, and it is tried again on the backoff.
+   */
+  linkRefused(deviceId: string, detail: string): void
+  /** A device link opened over it: the route is proven, the backoff starts over. */
+  linkOpened(deviceId: string): void
+  /**
+   * 这台电脑登着的账号变了(登上、换号、登出;刷新令牌也会来):没在为此刻这个账号通着的那几台当场重连,❌ 等退避 ——
+   * 开机时窗口还没把登录递过来,第一次建连必然是「没登录」,登录一到就该连上。
+   */
+  accountChanged(): void
   closeAll(): void
 }
 
@@ -327,7 +340,8 @@ export function createTunnelMachines(deps: {
       if (!current(tunnel)) return teardown(tunnel)
       tunnel.accountUserId = open.relay.user
       tunnel.ready = true
-      tunnel.retryDelay = RETRY_MIN_MS
+      // The backoff restarts when a device link opens over it (`linkOpened`), not here: a machine whose server refuses the
+      // link connects this far every time.
       problems.delete(tunnel.deviceId)
       deps.log('tunnel: connected', { deviceId: tunnel.deviceId, localPort })
       emit()
@@ -390,6 +404,26 @@ export function createTunnelMachines(deps: {
       tunnel.ready = false
       emit()
       void establish(tunnel)
+    },
+    linkRefused(deviceId, detail) {
+      const tunnel = tunnels.get(deviceId)
+      if (!tunnel || tunnel.establishing || !tunnel.ready) return
+      fail(tunnel, 'linkRefused', detail)
+    },
+    linkOpened(deviceId) {
+      const tunnel = tunnels.get(deviceId)
+      if (tunnel?.ready) tunnel.retryDelay = RETRY_MIN_MS
+    },
+    accountChanged() {
+      void deps.currentUserId().then((userId) => {
+        for (const tunnel of tunnels.values()) {
+          if (tunnel.establishing || (tunnel.ready && tunnel.accountUserId === userId)) continue
+          if (tunnel.retryTimer) clearTimeout(tunnel.retryTimer)
+          tunnel.retryTimer = null
+          tunnel.retryDelay = RETRY_MIN_MS
+          void establish(tunnel)
+        }
+      })
     },
     closeAll() {
       wanted = new Set()

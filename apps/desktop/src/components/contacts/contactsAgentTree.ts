@@ -4,8 +4,9 @@ import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { moveSessionUnder } from '@renderer/features/sessions/set-session-parent-flow'
 import type { ChatAgentEntry } from '@renderer/features/sidebar/chat-agents'
 import { sidebarFamilies } from '@renderer/features/sidebar/inner-sidebar-scope'
-import { nestVerdict, sessionDropTarget } from '@renderer/features/sidebar/session-drop-target'
+import { nestVerdict, sessionDropTarget, type DraggedSessionRef } from '@renderer/features/sidebar/session-drop-target'
 import { clearDraggedScreenContent, getDraggedScreenContent, setDraggedScreenContent } from '@renderer/lib/drag-screen-content'
+import { hideDropHighlight } from '@renderer/lib/drop-highlight'
 import { sidebarStore } from '@renderer/lib/stores/app-state'
 
 // 通讯录里一个设备段的 agent 按「谁派生了谁」画成树。父子这条边 ❌ 另存一份:就是侧栏建树用的那条
@@ -73,6 +74,11 @@ function sessionToNestUnder(agentUserId: string): ChatAgentEntry | null {
   return topLevelOf.get(agentUserId)?.[0] ?? entries.find((entry) => entry.agentUserId === agentUserId) ?? null
 }
 
+/** 拖着的是不是这个 agent(它的哪一条会话都算)。 */
+function isDraggingAgent(dragged: DraggedSessionRef, agentUserId: string): boolean {
+  return sidebarFamilies.get().byId.get(dragged.sessionId)?.agentUserId === agentUserId
+}
+
 /**
  * agent 节点的拖与放:拖起 = 拖它的会话(只有自己的 agent 拖得起);落在它上面 = 挂到它下面,挂不上的就地说为什么。
  * 节点在「回到顶层」那块里面:拖着会话经过节点,这件事归节点 —— 连它不收的(拖到它自己上)也 ❌ 冒到外面那块,
@@ -105,6 +111,20 @@ export function agentNodeDrag(agentUserId: string, name: string, mine: boolean) 
     onDragLeave: drop.onDragLeave,
     onDrop: own(drop.onDrop),
   }
+}
+
+/**
+ * 大纲里 agent 那一整行(连接线、缩进、名字右边的空)是它的原位:拖着它自己在这一行里松手 = 放回(什么都不改),
+ * ❌ 冒到外面那块回到顶层。拖别的 agent 经过这一行照旧(落在节点上挂到它下面,落在空处回到顶层)。
+ */
+export function agentHomeLine(agentUserId: string) {
+  const claim = (event: DragEvent<HTMLElement>) => {
+    const dragged = getDraggedScreenContent(event.dataTransfer)
+    if (dragged?.kind !== 'session' || !isDraggingAgent(dragged, agentUserId)) return
+    event.stopPropagation()
+    hideDropHighlight()
+  }
+  return { onDragOver: claim, onDrop: claim }
 }
 
 /** 落在 agent 区的空白处或「智能体」标题上 = 回到顶层(同侧栏「智能体」分区头)。 */

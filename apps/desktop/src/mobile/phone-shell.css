@@ -82,13 +82,13 @@
   object-fit: contain;
 }
 .gg-phone-message-avatar { display: inline-flex; position: relative; }
-/* Match the visible centre of Avatar's 48px status corner (5px in from its edges). */
+/* The same corner as Avatar's status mark (.av-status): bottom-right, 2px outside the edges, 14px at the phone's 48px. */
 .gg-phone-message-avatar-badge {
   position: absolute;
-  top: 1px;
-  right: 1px;
-  width: 8px;
-  height: 8px;
+  right: -2px;
+  bottom: -2px;
+  width: 14px;
+  height: 14px;
   display: flex;
   align-items: center;
   justify-content: center;

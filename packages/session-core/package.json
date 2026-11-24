@@ -33,7 +33,7 @@
     "./session-record/native-read": "./src/session-record/native-read.ts",
     "./session-record/picture-elider": "./src/session-record/sources/picture-elider.ts",
     "./session-record/owner-notifications": "./src/session-record/owner-notifications.ts",
-    "./session-record/tool-image": "./src/session-record/tool-image.ts",
+    "./session-record/runtime-turn": "./src/session-record/runtime-turn.ts",
     "./session-record/held-turn": "./src/session-record/held-turn.ts",
     "./session-record/transport-trim": "./src/session-record/transport-trim.ts",
     "./session-record/tool-input-summary": "./src/session-record/tool-input-summary.ts",

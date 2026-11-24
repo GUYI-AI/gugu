@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '@main/db/client'
 import { projects, sessions } from '@main/db/schema'
 import { boundTaskName, knownTaskName } from './task-name'
@@ -34,8 +34,7 @@ export interface PasswordGrantCandidate { subject: string; name: string; kind: '
 export function passwordGrantCandidates(ownerId: string): PasswordGrantCandidate[] {
   const names = new Map(db.select({ id: projects.id, name: projects.name }).from(projects).all().map(row => [row.id, row.name]))
   const out = new Map<string, PasswordGrantCandidate>()
-  for (const row of db.select({ id: sessions.id, projectId: sessions.projectId, runtime: sessions.runtime, archivedAt: sessions.archivedAt }).from(sessions).all()) {
-    if (row.archivedAt || row.runtime !== 'acp') continue
+  for (const row of db.select({ id: sessions.id, projectId: sessions.projectId }).from(sessions).where(and(isNull(sessions.archivedAt), eq(sessions.runtime, 'acp'))).all()) {
     const bound = boundTaskName(row.id)
     if (!bound || bound.pending || bound.ownerUserId !== ownerId) continue
     const subject = `agent:${bound.agentUserId}`

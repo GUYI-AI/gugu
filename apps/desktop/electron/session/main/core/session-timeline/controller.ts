@@ -12,7 +12,6 @@ import type {
   SessionpageSessionSetOptionRequest,
   SessionpageSessionSnapshotRequest,
   SessionpageSessionSubscribeRequest,
-  SessionpageSessionToolImageRequest,
   SessionpageSessionUnsubscribeRequest,
   SessionpageSessionUpdateRequest,
 } from '@gugu/session-core/session-record';
@@ -111,18 +110,16 @@ export const sessionTimelineController = createRPCController({
   sessionReadState: (input: { conversationId: string }) => ({ unreadKeys: nativeConversationUnread(input.conversationId), ownerNotificationUnreadKeys: nativeOwnerNotificationUnread(input.conversationId) }),
   sessionVisible: (input: { conversationId: string; itemIds: string[] }) => ({ unreadKeys: markNativeConversationVisible(input.conversationId, input.itemIds) }),
   sessionSnapshot: async (input: SessionpageSessionSnapshotRequest) =>
-    trimmed(await service.snapshot(input), input.trim, trimSnapshotForTransport),
+    trimmed(await service.snapshot(input), input.trim, (page) => trimSnapshotForTransport(page, undefined, undefined, input.lean)),
   sessionAfter: async (input: SessionpageSessionAfterRequest) =>
-    trimmed(await service.after(input), input.trim, trimAfterResultForTransport),
+    trimmed(await service.after(input), input.trim, (result) => trimAfterResultForTransport(result, undefined, input.lean)),
   sessionOlder: async (input: SessionpageSessionOlderRequest) =>
-    trimmed(await service.older(input), input.trim, trimOlderForTransport),
-  /** 一张工具交回来的图(手机那份时间线里只有它的类型和字数)。 */
-  sessionToolImage: async (input: SessionpageSessionToolImageRequest) => service.toolImage(input),
+    trimmed(await service.older(input), input.trim, (page) => trimOlderForTransport(page, undefined, undefined, input.lean)),
   sessionSubscribe: withSender(async (sender: number, input: SessionpageSessionSubscribeRequest) =>
     owning(sender, 'timeline', input.subscriptionId, () => service.subscribe(input, (event) =>
       events.emit(
         sessionpageSessionTimelineChannel,
-        input.trim ? { ...event, result: trimAfterResultForTransport(event.result) } : event,
+        input.trim ? { ...event, result: trimAfterResultForTransport(event.result, undefined, input.lean) } : event,
         input.subscriptionId
       )
     ))),

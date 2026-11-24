@@ -1111,6 +1111,100 @@
     mask-image: linear-gradient(to right, currentColor 75%, transparent);
   }
 
+  /* 右侧栏是一张独立的浏览器卡片(第 16 版 #57–#59,稿子 .cards / .card / .strip / .tab):并排时对话、工具各是一张白卡片,
+     圆角 12、6% 细描边,中间 10px 缝(分隔条在缝正中),缝里透出窗口底(外框见 desktop-shell.css)。
+     头这一行 56 高(对话卡片顶上的胶囊栏);工具卡片的页签条 46 高贴顶,正文往上接住它。
+     页签条是浅灰底,只有选中的页签是白的。合成一条(窄窗、完整视图)时整条页签条同样是浅灰。 */
+  [data-chat-tool-workspace][data-chat-tool-cards] {
+    --chat-card-ring: color-mix(in oklab, var(--fg) 6%, transparent);
+    --chat-card-half-gap: 5px;
+    --chat-card-head-height: 56px;
+    --chat-tool-strip-height: 46px;
+  }
+
+  [data-chat-workspace-header][data-chat-tool-cards] {
+    height: var(--chat-card-head-height);
+    align-items: flex-start;
+  }
+
+  /* 对话卡片顶上是 56 高的胶囊栏(稿子 .capbar):收起右侧栏时那颗打开按钮和胶囊同一条中线、离卡片右缘 10(.capbar .rt)。 */
+  [data-chat-workspace-header]:not([data-chat-tool-shared], [data-chat-tool-cards]) {
+    --tab-strip-height: 56px;
+    --tabbar-actions-edge-gap: 10px;
+  }
+
+  [data-chat-card-head],
+  [data-chat-card] {
+    /* The right gap closes as the tools come on or go off the track (chat-workspace-chrome @@@card-head-width). */
+    margin-right: var(--chat-card-right-gap, var(--chat-card-half-gap));
+    background: var(--bg);
+  }
+
+  [data-chat-card-head] {
+    height: 100%;
+    border-radius: 12px 12px 0 0;
+    box-shadow: -0.5px 0 0 var(--chat-card-ring), 0.5px 0 0 var(--chat-card-ring), 0 -0.5px 0 var(--chat-card-ring);
+  }
+
+  [data-chat-card] {
+    border-radius: 0 0 12px 12px;
+    overflow: hidden;
+    box-shadow: -0.5px 0 0 var(--chat-card-ring), 0.5px 0 0 var(--chat-card-ring), 0 0.5px 0 var(--chat-card-ring);
+  }
+
+  [data-chat-workspace-header] [data-chat-tool-strip],
+  [data-chat-workspace-header][data-chat-tool-shared] {
+    --chat-tool-tab-height: 34px;
+    /* 页签条自己(TabBar 根、头这一行)的 bg-tab-strip 直接读 --tab-strip:就地换成稿子的浅灰,❌ 两层灰叠着。 */
+    --tab-strip: var(--muted);
+    background: var(--muted);
+    box-shadow: inset 0 -1px 0 var(--border);
+  }
+
+  [data-chat-workspace-header][data-chat-tool-cards] [data-chat-tool-strip] {
+    /* 稿子 .strip 左右各 8,页签之间 4,页签最宽 240(.tab max-width)。 */
+    --tab-strip-edge: 8px;
+    --tab-slot-max-width: 240px;
+    --tab-strip-height: var(--chat-tool-strip-height);
+    /* 稿子 .strip:46 高、底下 1px 线,34 高的页签离顶 5。 */
+    --tab-strip-inset-start: calc((var(--chat-tool-strip-height) - 1px - var(--chat-tool-tab-height)) / 2);
+    --tab-strip-inset-end: var(--tab-strip-inset-start);
+    height: var(--chat-tool-strip-height);
+    margin-left: var(--chat-card-half-gap);
+    border-radius: 12px 12px 0 0;
+    box-shadow: inset 0 -1px 0 var(--border), -0.5px 0 0 var(--chat-card-ring), 0.5px 0 0 var(--chat-card-ring), 0 -0.5px 0 var(--chat-card-ring);
+  }
+
+  /* 合成一条(窄窗、完整视图)也是稿子的 .strip:46 高。 */
+  [data-chat-workspace-header][data-chat-tool-shared] {
+    --tab-strip-height: 46px;
+  }
+
+  :is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] {
+    border-radius: 9px;
+  }
+
+  [data-chat-workspace-header] [data-chat-tool-strip] [data-tab-active],
+  [data-chat-workspace-header][data-chat-tool-shared] [data-tab-active] {
+    background: var(--tab-face);
+    box-shadow: 0 1px 2px color-mix(in oklab, var(--fg) 8%, transparent);
+  }
+
+  [data-chat-tool-card] {
+    /* 分隔条那 1px 算在对话那一格里、最后一格又多出右缘 1px:左让 4、右收 1,正文才和页签条两边对齐。 */
+    margin-left: calc(var(--chat-card-half-gap) - 1px);
+    margin-right: 1px;
+    margin-top: calc(var(--chat-tool-strip-height) - var(--chat-card-head-height));
+    background: var(--tab-face);
+    border-radius: 0 0 12px 12px;
+    overflow: hidden;
+    box-shadow: -0.5px 0 0 var(--chat-card-ring), 0.5px 0 0 var(--chat-card-ring), 0 0.5px 0 var(--chat-card-ring);
+  }
+
+  [data-chat-tool-cards] [data-chat-tool-divider] {
+    background: transparent;
+  }
+
   [data-chat-tool-collapse-preview][data-chat-tool-collapse-ready] {
     background: color-mix(in oklab, var(--foreground) 16%, transparent);
   }
@@ -1227,62 +1321,6 @@
     );
   }
 
-  .logo-shimmer-container {
-    position: relative;
-    display: inline-block;
-    height: 2.25rem;
-  }
-
-  .logo-shimmer-image {
-    display: block;
-    height: 100%;
-    width: auto;
-  }
-
-  .logo-shimmer-overlay {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    overflow: hidden;
-  }
-
-  .logo-shimmer-overlay::before {
-    content: '';
-    position: absolute;
-    inset: -20% 0;
-    width: 70%;
-    background: linear-gradient(
-      120deg,
-      transparent 0%,
-      color-mix(in srgb, var(--background) 28%, transparent) 30%,
-      color-mix(in srgb, var(--background) 75%, transparent) 50%,
-      color-mix(in srgb, var(--background) 28%, transparent) 70%,
-      transparent 100%
-    );
-    transform: skewX(-15deg) translateX(-150%);
-    animation: logo-shimmer-move 5s linear infinite;
-    will-change: transform;
-  }
-
-
-  @keyframes logo-shimmer-move {
-    0% {
-      transform: skewX(-15deg) translateX(-150%);
-    }
-    50% {
-      transform: skewX(-15deg) translateX(250%);
-    }
-    100% {
-      transform: skewX(-15deg) translateX(250%);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .logo-shimmer-overlay::before {
-      animation: none;
-      opacity: 0;
-    }
-  }
   .gg-progress-indeterminate {
     animation: gg-indeterminate 1.1s ease-in-out infinite;
   }
@@ -1452,4 +1490,88 @@ html[data-gugu-dragging] :is(webview, iframe) {
   z-index: 45;
   pointer-events: none;
   box-shadow: inset 0 0 0 1.5px color-mix(in oklab, var(--color-foreground) 16%, transparent);
+}
+
+/* 界面减法(稿子 .tab):工具卡片页签条里的页签内部 —— 图标 15、和标题隔 8,选中页签的图标跟字同色;关闭钮 18 方、圆角 5、12 的叉、浅灰。
+   页签内部是 TabChip 的工具类,工具类压得过分层规则,所以这一段不进 @layer,只在工具页签条(和合成一条)里生效。 */
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div {
+  gap: 8px;
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div > span:first-child > svg {
+  width: 15px;
+  height: 15px;
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-active] > div > span:first-child {
+  color: inherit;
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div > div:last-child {
+  width: 18px;
+  height: 18px;
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div > div:last-child > button {
+  border-radius: 5px;
+  color: var(--faint-fg);
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tab-label] > div > div:last-child > button > svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* 稿子 .tabs:页签之间 4px、没有分隔竖线(选中页签是浮在灰条上的白块,不靠线分)。 */
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) [data-tabstrip-scroller] {
+  gap: 4px;
+}
+
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) .session-tab-slot::before,
+:is([data-chat-tool-strip], [data-chat-workspace-header][data-chat-tool-shared]) .session-tab-slot::after {
+  display: none;
+}
+
+/* 合成一条(窄窗、完整视图)也是稿子的 .strip:左缘 8。 */
+[data-chat-workspace-header][data-chat-tool-shared] {
+  --tab-strip-edge: 8px;
+  --tab-slot-max-width: 240px;
+}
+
+/* 卡片的角(yangchichi 14:09 img56/57/61):卡头和工具页签条自己是圆角,但里面那层画底色的页签条(.session-tab-bar,
+   胶囊栏的白、工具条的灰)是方的,盖在圆角上就露出直角。让画底色的那层跟着卡片的角走。 */
+[data-chat-card-head] .session-tab-bar {
+  border-radius: 12px 12px 0 0;
+}
+
+[data-chat-tool-strip] .session-tab-bar {
+  border-top-left-radius: 12px;
+}
+
+/* 拖分隔条的折叠预览(稿子 .preview / .preview.ready):盖住整张卡片(连卡头),圆角 12,6% 的灰,松手就折叠时 15%。
+   卡片之间那半条缝不算在卡片里:用透明边框让出来,底色只画在内边距盒里。 */
+[data-chat-tool-cards] [data-chat-tool-collapse-preview] {
+  top: calc(-1 * var(--chat-card-head-height));
+  border: 0 solid transparent;
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--fg) 6%, transparent);
+  background-clip: padding-box;
+}
+
+[data-chat-tool-cards] [data-chat-tool-collapse-preview='left'] {
+  border-right-width: var(--chat-card-half-gap);
+}
+
+[data-chat-tool-cards] [data-chat-tool-collapse-preview='right'] {
+  border-left-width: var(--chat-card-half-gap);
+}
+
+[data-chat-tool-cards] [data-chat-tool-collapse-preview][data-chat-tool-collapse-ready] {
+  background: color-mix(in oklab, var(--fg) 15%, transparent);
+}
+
+/* 两张卡片时,工具卡片的正文往上接住它 46 高的页签条,伸进 56 高的头那一行(@@@card-head-width)。页面那层的 clip 只为左右
+   滑进滑出的页面(pane-tree-view @@@leaving-panes),竖直方向没有东西在动:卡片模式下只裁左右,❌ 把正文顶上那 10px 裁掉。 */
+[data-chat-tool-workspace][data-chat-tool-cards] > [data-pane-tree-pages] {
+  overflow-y: visible;
 }

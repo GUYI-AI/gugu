@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { createContext, useCallback, useContext, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MessageSquare, Users } from '@/lib/icons';
+import { Users } from '@/lib/icons';
 import { AppFileMark } from '@renderer/features/extensions/app-file-mark';
 import { chatTabSlotKey, readShellSlots } from '@/lib/shellSlots';
 import { useChatFolderName } from '@/components/chat/chatFolderName';
@@ -18,32 +18,29 @@ import type { TabHost } from '@renderer/features/tabs/core/tab-host';
 import type { ResolvedTab, TabBarItemProps, TabContentProps, TabEntry, TabResource, TabViewContext } from '@renderer/features/tabs/core/tab-provider';
 import { createTabProvider } from '@renderer/features/tabs/core/tab-provider-registry';
 import { GenericTabDragPreview, GenericTabItem } from '@renderer/features/tabs/tab-bar/generic-tab-item';
+import { ChatSummaryAvatar } from './chat-summary-avatar';
 import { parseExtensionTabKind } from '@shared/extensions/manifest';
 import { groupPageSlot, isFolderItem, panelItemKey, WORKSPACE_APP_KIND, type PanelItem } from './chat-panel-item';
 import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { takeRestore } from './chat-tab-restores';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { RetainedTabContent, useRetainedTabs } from '@renderer/features/tabs/retained-tab-content';
-import { SIDE_PAGE_WIDTH_PX } from '@renderer/features/tabs/side-width';
 
 /** The chat itself: its messages and composer, first in its strip, never closed. */
 export const CHAT_TAB_KIND = 'chat';
 /** Something open beside the messages (`PanelItem`): an App's page, a file in the App that opens it, the host's preview. */
 export const CHAT_PANEL_TAB_KIND = 'chat-panel';
-/** The topic open beside its group (topics.md): one at a time; opening another shows that one in its place. */
-export const CHAT_TOPIC_TAB_KIND = 'chat-topic';
 /**
  * The chat's info (owner 10-26: one place for what the chat is — its members, announcement, settings): a tab like the
  * folder's, one a chat; `page` is where it was opened at (the members' button: their list), `at` tells two opens apart.
  */
 export const CHAT_INFO_TAB_KIND = 'chat-info';
 
-/** The narrowest a conversation (the chat, a topic beside it) is drawn: under it, messages are not readable. */
+/** The narrowest a conversation is drawn: under it, messages are not readable. */
 export const CHAT_MIN_WIDTH_PX = 360;
 
 export type ChatTabState = { chatId: string };
-export type ChatTopicState = { topicChatId: string; name: string };
-export type ChatInfoState = { group: boolean; page?: 'main' | 'members' | 'announcement'; at?: number; topic?: ChatTopicState };
+export type ChatInfoState = { group: boolean; page?: 'main' | 'members' | 'announcement'; at?: number };
 
 /** The chat a strip belongs to (its place, `chat-layouts`). */
 export const chatIdOfView = (ctx: TabViewContext): string => (ctx.place?.kind === 'chat' ? ctx.place.chatId : '');
@@ -169,8 +166,8 @@ const PanelTabDragPreview = observer(function PanelTabDragPreview({ tab }: { tab
 
 /**
  * One stable slot per recently viewed tab (either half of a pair): the shell draws what the tab shows into it
- * (components/chat/ChatTabPortals.tsx), in its own tree and contexts — the chat's state, the App's offer and update bar,
- * the topic's line. The task pane's bounded retention keeps its React tree and state when another tab is shown.
+ * (components/chat/ChatTabPortals.tsx), in its own tree and contexts — the chat's state, the App's offer and update bar.
+ * The task pane's bounded retention keeps its React tree and state when another tab is shown.
  */
 const ShellTabSlots = observer(function ShellTabSlots({ host, ctx, kind }: TabContentProps & { kind: string }) {
   const chatId = chatIdOfView(ctx);
@@ -204,7 +201,7 @@ export const chatPanelTabProvider = createTabProvider<typeof CHAT_PANEL_TAB_KIND
   // The host's preview holds a message and a file version of this moment: gone with the window, as before.
   isPersistent: (item) => item.kind !== null,
   initialize: stateResource,
-  // Closing hands back what it was opened from (a link's message, a topic's attachment: the topic again) — once the tab is
+  // Closing hands back what it was opened from (a link's message) — once the tab is
   // gone (the engine removes it after this answer), as closeChatTab does.
   onBeforeClose: (entry, _resource, ctx, request) => {
     if (request.navigation) return true;
@@ -219,46 +216,19 @@ export const chatPanelTabProvider = createTabProvider<typeof CHAT_PANEL_TAB_KIND
   TabContent: PanelTabContent,
 });
 
-const TopicTabItem = observer(function TopicTabItem({ tab, host, ctx }: TabBarItemProps<TabResource>) {
-  const topic = stateOf<ChatTopicState>(tab);
-  return (
-    <div className="contents" data-topic-tab={topic.topicChatId}>
-      <GenericTabItem tab={tab} host={host} ctx={ctx} label={topic.name} preSlot={<MessageSquare size={14} />} />
-    </div>
-  );
-});
-
-function TopicTabContent(props: TabContentProps) {
-  return <ShellTabSlots {...props} kind={CHAT_TOPIC_TAB_KIND} />;
-}
-
-export const chatTopicTabProvider = createTabProvider<typeof CHAT_TOPIC_TAB_KIND, ChatTopicState, TabResource>({
-  kind: CHAT_TOPIC_TAB_KIND,
-  // A topic is a conversation of its source group (owner 11-05 §6.6): what is opened from it goes beside it.
-  conversation: true,
-  resourceKey: (state) => state.topicChatId,
-  minWidth: CHAT_MIN_WIDTH_PX,
-  // As before: the topic beside a group is this window's; a restart opens the group alone.
-  isPersistent: () => false,
-  initialize: stateResource,
-  dispose: () => {},
-  TabBarItem: TopicTabItem,
-  TabBarItemDragPreview: ({ tab }) => <GenericTabDragPreview preSlot={<MessageSquare size={14} />} label={stateOf<ChatTopicState>(tab).name} />,
-  TabContent: TopicTabContent,
-});
-
-const useInfoLabel = (tab: ResolvedTab) => useTranslation('messaging').t(stateOf<ChatInfoState>(tab).topic ? 'group.memberList.titleTopic' : stateOf<ChatInfoState>(tab).group ? 'header.groupInfo' : 'header.chatInfo');
+// 第 16 版 #44:群、私聊、话题的这一页都叫「详情」(❌ 群信息 / 会话信息)。
+const useInfoLabel = () => useTranslation('messaging').t('header.details');
 
 const InfoTabItem = observer(function InfoTabItem({ tab, host, ctx }: TabBarItemProps<TabResource>) {
   return (
     <div className="contents" data-info-tab="">
-      <GenericTabItem tab={tab} host={host} ctx={ctx} label={useInfoLabel(tab)} preSlot={<Users size={14} />} />
+      <GenericTabItem tab={tab} host={host} ctx={ctx} label={useInfoLabel()} preSlot={<ChatSummaryAvatar chatId={chatIdOfView(ctx)} size={16} />} />
     </div>
   );
 });
 
-const InfoTabDragPreview = observer(function InfoTabDragPreview({ tab }: { tab: ResolvedTab }) {
-  return <GenericTabDragPreview preSlot={<Users size={14} />} label={useInfoLabel(tab)} />;
+const InfoTabDragPreview = observer(function InfoTabDragPreview(_props: { tab: ResolvedTab }) {
+  return <GenericTabDragPreview preSlot={<Users size={14} />} label={useInfoLabel()} />;
 });
 
 function InfoTabContent(props: TabContentProps) {
@@ -267,10 +237,9 @@ function InfoTabContent(props: TabContentProps) {
 
 export const chatInfoTabProvider = createTabProvider<typeof CHAT_INFO_TAB_KIND, ChatInfoState, TabResource>({
   kind: CHAT_INFO_TAB_KIND,
-  isPersistent: (state) => !state.topic,
-
-  resourceKey: (state) => `${state.topic?.topicChatId ?? ''}:${state.page}:${state.at ?? ''}`,
-  sideWidth: () => SIDE_PAGE_WIDTH_PX,
+  isPersistent: () => true,
+  resourceKey: (state) => `${state.page}:${state.at ?? ''}`,
+  // No sideWidth: the chat's Details are the browser card's peer, half each until dragged (界面减法, design S.frac = .5).
   initialize: stateResource,
   dispose: () => {},
   TabBarItem: InfoTabItem,

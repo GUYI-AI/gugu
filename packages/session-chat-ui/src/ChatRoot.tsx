@@ -1729,7 +1729,12 @@ export function ChatRoot(props: ChatRootProps) {
     const rendered = units();
     const rows = `${rendered.length}\u0000${rendered.at(0)?.id ?? ''}`;
     if (rows !== reachStartRows) { reachStartRows = rows; reachStartFired = false; }
-    if (st <= Math.max(REACH_START_THRESHOLD_PX, OLDER_PAGE_AHEAD_SCREENS * shadowViewHeight)) {
+    // @@@older-pages-for-a-reader — the pages above are for a reader who goes up. One who stays on the newest end
+    // (just opened, following the tail) asks for none; over a device link that page is half a megabyte competing with
+    // the first screen. Rows that do not fill the viewport still ask: there is nothing to scroll (#2403).
+    // Fill is read from the canvas (estimates included), not scrollHeight: before the first layout that equals the viewport.
+    const readingUp = anchor().kind !== 'tail' || (rendered.length > 0 && virt.total() <= shadowViewHeight);
+    if (readingUp && st <= Math.max(REACH_START_THRESHOLD_PX, OLDER_PAGE_AHEAD_SCREENS * shadowViewHeight)) {
       if (!reachStartFired) {
         reachStartFired = true;
         showOlderPageLoading(props.onReachStart?.());

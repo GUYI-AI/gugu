@@ -133,13 +133,13 @@ for (const mobile of [false, true]) for (const quoted of [false, true]) {
       expect(mark.getBoundingClientRect().right).toBeLessThanOrEqual(row.getBoundingClientRect().right + 0.5)
     }
     harness.container.style.width = '160px'
-    await expect.poll(() => getComputedStyle(tag).visibility).toBe('hidden')
+    await expect.poll(() => row.hasAttribute('data-owner-hidden')).toBe(true)
     expect(name.getBoundingClientRect().left).toBeCloseTo(text.getBoundingClientRect().left, 0)
     expect(getComputedStyle(name).textOverflow).toBe('ellipsis')
     if (quoted) expect(name.scrollWidth).toBeGreaterThan(name.clientWidth)
     if (mark) expect(mark.getBoundingClientRect().right).toBeLessThanOrEqual(row.getBoundingClientRect().right + 0.5)
     harness.container.style.width = `${width}px`
-    await expect.poll(() => getComputedStyle(tag).visibility).toBe('visible')
+    await expect.poll(() => row.hasAttribute('data-owner-hidden')).toBe(false)
     expect(text.getBoundingClientRect().right).toBeLessThanOrEqual(name.getBoundingClientRect().right + 0.5)
   })
 }

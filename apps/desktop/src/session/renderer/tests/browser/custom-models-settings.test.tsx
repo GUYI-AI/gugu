@@ -10,7 +10,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { ChatComposer } from '@gugu/session-ui/react/components';
-import type { CustomModelConnection } from '@gugu/session-core/models/custom-model';
+import { CUSTOM_MODEL_KEY_CHANNEL, type CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
 import { composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
@@ -83,7 +83,7 @@ it('edits an address with the saved key and saves multiple manual models without
   expect(state.reads).toContainEqual(expect.objectContaining({ connectionId: existing.id, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }] }));
 });
 
-it('shows the bound provider and model when reopening a migrated Pi task', async () => {
+it('names only the bound model when reopening a migrated Pi task', async () => {
   const existing = { ...record(), keySaved: true, models: [{ id: 'glm-5.3-flash' }] };
   const duplicate = { ...existing, id: '48937c18-1219-460e-9f40-e08d70de94a5', name: 'Other provider' };
   const models = customComposerOptions([duplicate, existing], {
@@ -95,7 +95,7 @@ it('shows the bound provider and model when reopening a migrated Pi task', async
   });
   render(<ChatComposer modelOptions={models} selectedModel={selectedModel} onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}} />);
   await until('the trigger names the bound model', () => document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent === 'glm-5.3-flash');
-  expect(document.querySelector('[data-slot=composer-model-trigger-tag]')?.textContent).toBe('provider');
+  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('provider');
 });
 it('a custom address shows no protocol: the models it lists are all selected and the recognized addresses are saved', async () => {
   state.probe = {
@@ -142,6 +142,34 @@ it.each(failures)('the saved connection’s Test connection action preserves %s'
   await userEvent.click(page.getByRole('button', { name: 'Test connection', exact: true }));
   await expect.element(page.getByRole('status')).toHaveTextContent(text);
 });
+const found = (): CustomModelConnection => ({ ...record(), id: 'found', name: 'OpenAI', preset: 'openai', keySaved: true, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], discovered: { source: 'shell-env', keyLast4: 'abcd' } });
+const keyField = () => document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')!;
+it('shows the key this computer holds when the eye is pressed, and reads with it until a new one is typed', async () => {
+  const invoke = vi.fn(async (channel: string, id: unknown) => { if (channel !== CUSTOM_MODEL_KEY_CHANNEL || id !== 'found') throw new Error(channel); return 'sk-found-0000abcd'; });
+  vi.stubGlobal('electronAPI', { invoke });
+  try {
+    state.testResult = { kind: 'unlisted', reason: 'unauthorized' };
+    render(<CustomModelDialog machine={null} group="api" connection={found()} onClose={() => {}} />);
+    await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', '••••••••abcd');
+    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused the key above. Enter a new key.');
+    await userEvent.click(page.getByRole('button', { name: 'Show key' }));
+    await expect.element(page.getByTestId('custom-model-key')).toHaveValue('sk-found-0000abcd');
+    expect(keyField().type).toBe('text');
+    await userEvent.click(page.getByRole('button', { name: 'Hide key' }));
+    expect(keyField().type).toBe('password');
+    expect(state.reads).toEqual([{ connectionId: 'found', endpoints: found().endpoints }]);
+    await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-typed');
+    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused the key.');
+  } finally { vi.unstubAllGlobals(); }
+});
+it('a connection on another device shows only the end of its key, with no eye', async () => {
+  vi.stubGlobal('electronAPI', { invoke: vi.fn() });
+  try {
+    render(<CustomModelDialog machine="device-1" group="api" connection={found()} onClose={() => {}} />);
+    await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', '••••••••abcd');
+    expect(page.getByRole('button', { name: 'Show key' }).query()).toBeNull();
+  } finally { vi.unstubAllGlobals(); }
+});
 it('preserves a connection failure that first occurs during the save-time named-model probe', async () => {
   state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
@@ -165,6 +193,8 @@ it('a converted third-party model is selectable and tagged with its vendor; an I
   await userEvent.click(page.getByTestId('composer-model-trigger'));
   await until('the tags render', () => document.querySelectorAll('[data-slot=composer-model-tag]').length === 2);
   expect([...document.querySelectorAll('[data-slot=composer-model-tag]')].map((tag) => tag.textContent)).toEqual(['deepseek', 'bigmodel']);
-  expect(document.querySelector('[data-slot=composer-model-trigger-tag]')?.textContent).toBe('deepseek');
+  // The trigger names only the model: nothing of the vendor besides the model's own label.
+  expect(document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent).toBe('deepseek-v4-flash');
+  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent?.replace('deepseek-v4-flash', '')).not.toContain('deepseek');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('·');
 });

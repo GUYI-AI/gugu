@@ -3,6 +3,7 @@ import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { recoverTimelineRead } from './timeline-read-recovery'
 import type {
+  LeanPage,
   RecordCursor,
   SettlementResponse,
   SessionpageSessionRespondRequest,
@@ -11,16 +12,15 @@ import type {
   TimelineOlderResult,
   TimelineSnapshot,
 } from '@gugu/session-core/session-record/contract'
-import type { ToolImage } from '@gugu/session-core/acp/client'
 import {
   applyLocalSettlement,
   applySnapshot,
   applyTimelineResult,
   emptyAgentWatchTimeline,
   prependOlder,
-  withToolImage,
   type AgentWatchTimeline,
 } from './agent-watch-store'
+import { createHeldTurnReader, FOLDED, withWholeTurns } from './folded-pages'
 import { settlePendingSends, userMessageIds, type PendingSend } from './pending-sends'
 import { loadRetryDelay, LOAD_RETRY_DELAYS_MS } from './record-wait'
 import { forgetSessionStream, hydrateCachedTimeline, initialSessionStream, readCachedTimeline, sessionStreamKey, sessionStreams, updateSessionStream, writeCachedTimeline, type AgentWatchPhase, type SessionStreamState, type StreamWrite, type TimelineLink } from './timeline-cache'
@@ -28,12 +28,12 @@ import { useSelect } from '@/lib/selectStore'
 
 /** 读写**另一台机器**上一条会话所需的那几问(手机用 sessionpage-rpc.ts 那一组;单测换成假的)。 */
 export type SessionpageTimelineClient = {
-  fetchSnapshot(deviceId: string, sessionId: string, limit?: number): Promise<TimelineSnapshot>
-  fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor): Promise<TimelineAfterResult>
-  fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number): Promise<TimelineOlderResult>
-  /** 一张工具交回来的图(时间线里只有它的字数,见 transport-trim)。 */
-  fetchToolImage(deviceId: string, sessionId: string, itemId: string, index: number): Promise<ToolImage>
-  subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null): Promise<unknown>
+  /** `lean`: how much of each page to ask for (`folded-pages`); a whole page when absent. */
+  fetchSnapshot(deviceId: string, sessionId: string, limit?: number, lean?: LeanPage): Promise<TimelineSnapshot>
+  /** `lean` on after / subscribe: the form of the snapshot a reset answer carries (`folded-pages`). */
+  fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor, lean?: LeanPage): Promise<TimelineAfterResult>
+  fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, lean?: LeanPage): Promise<TimelineOlderResult>
+  subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null, lean?: LeanPage): Promise<unknown>
   unsubscribeSession(deviceId: string, subscriptionId: string): Promise<unknown>
   subscribeSessionEvents(deviceId: string, subscriptionId: string, onResult: (result: TimelineAfterResult) => void): () => void
   /** A transport that reads incrementally itself can expose a precise read failure. */
@@ -81,8 +81,8 @@ export type AgentWatchSession = {
   reload: () => void
   /** 往前翻更早的轮（懒加载）。手里一轮都没有时是空操作。 */
   loadOlder: () => Promise<void>
-  /** 去机器上取一张工具图、写回那条条目(取不到原样抛出:图格画成取不到)。 */
-  loadToolImage: (itemId: string, index: number) => Promise<void>
+  /** A row of a folded page came on screen from behind a fold: read its turn whole (`folded-pages`). */
+  fillHeld: (itemId: string) => void
   send: (text: string) => Promise<void>
   /** 已按发送、记录里还没回来的那几句(见 pending-sends.ts),按发送先后。回显到了就不在这里了。 */
   pendingSends: readonly PendingSend[]
@@ -143,7 +143,10 @@ export function useTimelineSession(
    * `id` 是建会话请求里给它铸的那个(宿主以它收下首句):乐观那一行、待发行、原生消息是同一个身份(#2296)。
    */
   firstPrompt?: FirstPrompt,
+  /** A conversation view reading another machine: ask for pages folded and read a held turn whole on `fillHeld` (`folded-pages`). */
+  folded = false,
 ): AgentWatchSession {
+  const lean = folded ? FOLDED : undefined
   /*
    * 会话流 store / 内存里有上次看到的那一份就拿它当**初值**:第一帧就是完整的时间线。❌ 先画一帧空线程、再在 follow 里换上 ——
    * 那一帧(真机几百 ms)里写的是「Nothing in this task yet」,随后整段历史从透明淡入、再跳到底:
@@ -176,13 +179,13 @@ export function useTimelineSession(
   useEffect(() => () => { olderGeneration.current++ }, [client, deviceId, sessionId, enabled])
 
   const reload = useCallback(() => {
-    if (deviceId && sessionId) restartSessionFollow({ client, deviceId, sessionId, enabled })
-  }, [client, deviceId, sessionId, enabled])
+    if (deviceId && sessionId) restartSessionFollow({ client, deviceId, sessionId, enabled, lean })
+  }, [client, deviceId, sessionId, enabled, lean])
 
   useEffect(() => {
     if (!deviceId || !sessionId) return
-    return attachSessionFollow({ client, deviceId, sessionId, enabled }, () => { olderGeneration.current++ })
-  }, [client, deviceId, sessionId, enabled])
+    return attachSessionFollow({ client, deviceId, sessionId, enabled, lean }, () => { olderGeneration.current++ })
+  }, [client, deviceId, sessionId, enabled, lean])
 
   // 世代变了 ⇒ 手里那份接不上,重新走一遍「快照 + 订阅」。
   useEffect(() => {
@@ -217,7 +220,7 @@ export function useTimelineSession(
     if (olderRequest.current?.identity === identity && olderRequest.current.generation === generation) return olderRequest.current.promise
     const reading = (async () => {
       try {
-        const older = await client.fetchOlder(deviceId, sessionId, oldest.id)
+        const older = await client.fetchOlder(deviceId, sessionId, oldest.id, undefined, lean)
         if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return
         setTimeline(current => {
           if (generation !== olderGeneration.current || identity !== olderIdentityRef.current) return current
@@ -232,36 +235,7 @@ export function useTimelineSession(
     })()
     olderRequest.current = { identity, generation, promise: reading }
     try { await reading } finally { if (olderRequest.current?.promise === reading) olderRequest.current = null }
-  }, [client, deviceId, sessionId, enabled, setTimeline])
-
-  /**
-   * 一张工具图去机器上取一次:取到的写回条目,和时间线一起存在手机上(timeline-cache),重开不重取。
-   * 要不要取由图格看时间线定(共享转录的工具图格,和时间线同一次提交);这里只记**正在取的那一问**,
-   * 同一张的问合成一问。这一问活到答复被用掉:写回的 updater 里放手 —— 写进去了,图格在同一次提交里就看到它;
-   * 写不进去(取的途中条目离开了手里这份:换了会话、换代快照没带那一轮),答复作废,条目回来时那一格再取。
-   * ❌ 回包一到就放手:写回还排在下一次渲染里的那一小段,图格照旧没有它,会再问一遍(2026-10-15 mac1 实测每阶段
-   * 4–7 张)。❌ 写不进去还留着:条目回来时会被当成正在取,那几格就一直空着(复核·二代 10-16:回来以后问 0 次)。
-   * 取不到当场放手,点一下再取。
-   */
-  const toolImageLoads = useRef(new Map<string, Promise<void>>())
-  const loadToolImage = useCallback((itemId: string, index: number): Promise<void> => {
-    if (!deviceId || !sessionId) return Promise.reject(new Error('no session to fetch a picture from'))
-    const key = `${deviceId}\n${sessionId}\n${itemId}\n${index}`
-    const known = toolImageLoads.current.get(key)
-    if (known) return known
-    const loading = client.fetchToolImage(deviceId, sessionId, itemId, index).then(
-      (image) => {
-        toolImageLoads.current.delete(key)
-        setTimeline((current) => withToolImage(current, itemId, index, image))
-      },
-      (err: unknown) => {
-        toolImageLoads.current.delete(key)
-        throw err
-      },
-    )
-    toolImageLoads.current.set(key, loading)
-    return loading
-  }, [client, deviceId, sessionId, setTimeline])
+  }, [client, deviceId, sessionId, enabled, lean, setTimeline])
 
   /*
    * 回显到了的那几句在**渲染时**就让位(派生,❌ 等下面那个 effect:那样记录里那一行与乐观那一行
@@ -345,14 +319,28 @@ export function useTimelineSession(
   }, [client, responderId, deviceId, sessionId, setTimeline])
 
   const dismissActionError = useCallback(() => setActionError(null), [])
+  // A row of a turn this page was sent folded came on screen from behind a fold: read that turn whole (`folded-pages`).
+  const fillHeld = useMemo(() => !deviceId || !sessionId ? () => undefined : createHeldTurnReader({
+    pages: {
+      snapshot: (limit) => client.fetchSnapshot(deviceId, sessionId, limit),
+      older: (beforeTurnId, limit) => client.fetchOlder(deviceId, sessionId, beforeTurnId, limit),
+    },
+    turns: () => timelineRef.current.turns,
+    land: (whole) => setTimeline((current) => ({ ...current, turns: withWholeTurns(current.turns, whole) })),
+    failed: (err) => setActionError(describe(err)),
+  }), [client, deviceId, sessionId, setTimeline])
   return {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
-    reload, loadOlder, loadToolImage, send, pendingSends, respond, sending, respondingItemId, cancel, cancelling,
+    reload, loadOlder, fillHeld, send, pendingSends, respond, sending, respondingItemId, cancel, cancelling,
     link, errorCode,
   }
 }
 
-type FollowParams = { client: SessionpageTimelineClient; deviceId: string; sessionId: string; enabled: boolean }
+/** `lean`: the first page following a session sets it for the stream; folded pages keep what reply progress and question cards read. */
+/** What following a session's stream asks of its machine: pages, the subscription and its pushes, the link. */
+export type TimelineStreamClient = Pick<SessionpageTimelineClient, 'fetchSnapshot' | 'fetchAfter' | 'subscribeSession' | 'unsubscribeSession'
+  | 'subscribeSessionEvents' | 'subscribeSessionErrors' | 'onLinkChange'>
+export type FollowParams = { client: TimelineStreamClient; deviceId: string; sessionId: string; enabled: boolean; lean?: LeanPage }
 /** One follow of a session's host stream, shared by every page showing it (ref-counted); writes `sessionStreams`. */
 type SessionFollow = {
   params: FollowParams
@@ -367,6 +355,8 @@ type SessionFollow = {
   synced: boolean
   olderResets: Set<() => void>
   resetOlder: () => void
+  /** Ask now for what came after the cursor (a revert, read at once); settles when it has landed or failed. */
+  catchUp: () => Promise<void>
 }
 // One follow per session stream (the entry it writes): ❌ per client object or `enabled`.
 const follows = new Map<string, SessionFollow>()
@@ -383,7 +373,7 @@ function attachSessionFollow(params: FollowParams, onOlderReset: () => void): ()
   if (!follow) {
     const created: SessionFollow = {
       params, followers: 0, stop: () => undefined, cursor: null, ready: false, synced: false, olderResets: new Set(),
-      resetOlder: () => { for (const reset of [...created.olderResets]) reset() },
+      resetOlder: () => { for (const reset of [...created.olderResets]) reset() }, catchUp: async () => undefined,
     }
     follows.set(key, created)
     created.stop = runSessionFollow(created)
@@ -406,6 +396,21 @@ function attachSessionFollow(params: FollowParams, onOlderReset: () => void): ()
   }
 }
 
+/**
+ * A reader outside React following the same stream the timeline page fills (the desktop session page of a task on
+ * another machine): one copy of a session's timeline in this window, whoever shows it. A reader that comes after
+ * another continues from the copy that one held (subscribe from its cursor, read what came after: see `loadSnapshot`),
+ * ❌ reads the first page again. `onOlderReset` hears a reset / resolution (an older page asked before it is void).
+ */
+export function followSessionStream(params: FollowParams, onOlderReset: () => void) {
+  const detach = attachSessionFollow(params, onOlderReset)
+  return {
+    detach,
+    setTimeline: streamWriters(params).setTimeline,
+    catchUp: () => follows.get(sessionStreamKey(params))?.catchUp() ?? Promise.resolve(),
+  }
+}
+
 function restartSessionFollow(params: FollowParams): void {
   const follow = follows.get(sessionStreamKey(params))
   if (!follow) return
@@ -414,7 +419,7 @@ function restartSessionFollow(params: FollowParams): void {
 }
 
 function runSessionFollow(follow: SessionFollow): () => void {
-  const { client, deviceId, sessionId, enabled } = follow.params
+  const { client, deviceId, sessionId, enabled, lean } = follow.params
   const { write, setTimeline } = streamWriters({ deviceId, sessionId })
   const applyResult = (result: TimelineAfterResult) => {
     if (!result.ok) follow.resetOlder()
@@ -463,12 +468,12 @@ function runSessionFollow(follow: SessionFollow): () => void {
    * 补上一次就算和那台机器对过账了(follow.synced)。
    */
   let catchUpReported = false
-  let catchUpRunning = false
-  const catchUp = () => {
+  let catchUpRunning: Promise<void> | null = null
+  const catchUp = (): Promise<void> => {
     const cursor = follow.cursor
-    if (cancelled || catchUpRunning || !follow.ready || !cursor) return
-    catchUpRunning = true
-    void recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor), recoveryAbort.signal)
+    if (catchUpRunning) return catchUpRunning
+    if (cancelled || !follow.ready || !cursor) return Promise.resolve()
+    catchUpRunning = recoverTimelineRead(() => client.fetchAfter(deviceId, sessionId, cursor, lean), recoveryAbort.signal)
       .then((result) => {
         if (cancelled) return
         write(catchUpReported ? { link: 'ok', error: null, errorCode: null } : { link: 'ok' })
@@ -480,8 +485,10 @@ function runSessionFollow(follow: SessionFollow): () => void {
         if (cancelled) return
         catchUpReported = true
         write({ link: 'lost', error: messageForUser(err), errorCode: rpcErrorCode(err) })
-      }).finally(() => { catchUpRunning = false })
+      }).finally(() => { catchUpRunning = null })
+    return catchUpRunning
   }
+  follow.catchUp = catchUp
 
   /*
    * 内存里没有 ⇒ 这是**冷启动后第一次**进这条会话，去本地库里捞上次那份。
@@ -512,7 +519,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
   const stopErrors = client.subscribeSessionErrors?.(deviceId, subscriptionId, () => {
     if (cancelled) return
     write({ link: 'lost' })
-    catchUp()
+    void catchUp()
   })
   // 窗口断了:标断开;又通了:那台机器已经拆了这条订阅(订阅跟着窗口生灭),整个重来 —— 手里有游标就只重订 + 补差量。
   const stopLink = client.onLinkChange(deviceId, (open) => {
@@ -522,7 +529,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
   })
 
   const onVisible = () => {
-    if (document.visibilityState === 'visible') catchUp()
+    if (document.visibilityState === 'visible') void catchUp()
   }
   document.addEventListener('visibilitychange', onVisible)
 
@@ -536,17 +543,19 @@ function runSessionFollow(follow: SessionFollow): () => void {
       await hydrated
       if (cancelled) return
       // 先给本地那份一个装上的机会,再决定要不要整份拉(重试时它早已完成,await 是白拿的)。
-      // 手里已经有本地那份 ⇒ 只订阅 + 补差量,❌ 不再整份拉一次快照(那正是「加载很久」的来处)。
-      // 世代对不上时机器会在订阅的第一推里直接回一份新快照,由 reducer 认出来。
+      // 手里已经有本地那份 ⇒ 只从它的游标订阅,❌ 不再整份拉一次快照(那正是「加载很久」的来处)。
+      // 订阅那一刻那台机器就先推游标之后的那一段(宿主 `deliver`、手机轮询的第一拍),❌ 再另问一遍补差量(同一段读两次);
+      // 世代对不上时那一推直接是一份新快照,由 reducer 认出来。
       if (follow.ready && follow.cursor) {
-        await client.subscribeSession(deviceId, sessionId, subscriptionId, follow.cursor)
+        await client.subscribeSession(deviceId, sessionId, subscriptionId, follow.cursor, lean)
         if (cancelled) return
         write({ waitingForRecord: false, error: null, errorCode: null, link: 'ok' })
         attempt = 0
-        catchUp()
+        // The host pushes what came after the cursor (or a reset) before it answers the subscribe, on the same window.
+        follow.synced = true
         return
       }
-      const snapshot = await client.fetchSnapshot(deviceId, sessionId)
+      const snapshot = await client.fetchSnapshot(deviceId, sessionId, undefined, lean)
       if (cancelled) return
       follow.resetOlder()
       follow.cursor = snapshot.cursor
@@ -554,7 +563,7 @@ function runSessionFollow(follow: SessionFollow): () => void {
       follow.synced = true
       setTimeline((current) => applySnapshot(current, snapshot))
       write({ waitingForRecord: false, error: null, phase: 'ready' })
-      await client.subscribeSession(deviceId, sessionId, subscriptionId, snapshot.cursor)
+      await client.subscribeSession(deviceId, sessionId, subscriptionId, snapshot.cursor, lean)
       if (cancelled) return
       attempt = 0
       write({ errorCode: null, link: 'ok' })

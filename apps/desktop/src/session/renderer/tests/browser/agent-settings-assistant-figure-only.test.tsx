@@ -72,44 +72,29 @@ it('another agent keeps its rail and panes (资料 / 分享 / 定时任务 / AI 
   expect(modal.querySelector('[data-testid="agent-settings-figure-only"]')).toBeNull();
 });
 
-const resolved = (value: string) => {
-  const probe = document.createElement('span');
-  probe.style.color = value;
-  document.body.append(probe);
-  const color = getComputedStyle(probe).color;
-  probe.remove();
-  return color;
-};
-const dot = (status: HTMLElement) => getComputedStyle(status, '::before');
+// The mark beside 「状态 · 本机 · 引擎」 is the avatar corner's (AgentContactStatusMark, owner 11-24): the running glyph turning or
+// held still, the needs-you triangle, the error and offline circles; idle, starting and pending draw no mark — never a dot.
+const markOf = (status: HTMLElement) =>
+  status.querySelector('[data-agent-mark]')?.getAttribute('data-agent-mark')
+  ?? (status.querySelector('[data-agent-status-glyph="parked"]') ? 'parked' : status.querySelector('.gg-running-glyph') ? 'running' : null);
 
-// The dot beside 「状态 · 本机 · 引擎」: 出错了 / 需要你 / 在跑 take the shared tone colours (出错了 was green, for every agent);
-// every other state keeps its dot exactly as before — green, offline / removed grey — and no dot disappears.
 it.each([
-  ['error', 'var(--agent-tone-error)'],
-  ['needs_user', 'var(--agent-tone-needs-user)'],
-  ['working', 'var(--agent-tone-running)'],
-  ['idle', 'var(--green)'],
-  ['starting', 'var(--green)'],
-  ['pending', 'var(--green)'],
-  ['offline', 'var(--faint-fg)'],
-] as const)('the header dot for %s is that tone\'s colour', async (status, token) => {
+  ['error', 'error'],
+  ['needs_user', 'warn'],
+  ['working', 'running'],
+  ['parked', 'parked'],
+  ['offline', 'offline'],
+  ['idle', null],
+  ['starting', null],
+  ['pending', null],
+] as const)('the header mark for %s is the avatar corner\'s mark', async (status, mark) => {
   for (const agent of [fixture.assistant, fixture.other]) {
     setAgentDisplayStatusOverride(agent.id, status);
     const modal = await open(agent);
     const shown = modal.querySelector<HTMLElement>('[data-testid="agent-settings-header-status"]')!;
-    expect(dot(shown).display).not.toBe('none');
-    expect(dot(shown).backgroundColor).toBe(resolved(token));
-    if (status === 'error' || status === 'needs_user' || status === 'working') expect(dot(shown).backgroundColor).not.toBe(resolved('var(--green)'));
+    expect(markOf(shown)).toBe(mark);
+    expect(getComputedStyle(shown, '::before').content).toBe('none');
     harness.cleanup();
     harness = createReactHarness();
   }
-});
-
-// Background running is drawn as AgentParkedGlyph's two bars, not a dot: no ::before dot beside it.
-it('the header for parked shows the two-bar glyph instead of a dot', async () => {
-  setAgentDisplayStatusOverride(fixture.other.id, 'parked');
-  const modal = await open(fixture.other);
-  const shown = modal.querySelector<HTMLElement>('[data-testid="agent-settings-header-status"]')!;
-  expect(dot(shown).display).toBe('none');
-  expect(shown.querySelector('[data-agent-status-glyph="parked"]')).not.toBeNull();
 });

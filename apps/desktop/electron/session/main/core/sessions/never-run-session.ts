@@ -1,8 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
-import { indexedTurnCount } from '../session-index/session-index';
-import { ensureSessionIndexed } from '../session-timeline/service';
+import { sessionHasRecordedTurn } from '../session-timeline/service';
 
 /**
  * 云端 `agent.create` 不带首句建出来的常驻 agent,从前行上记的首轮就是这一句占位(新建会话必须带首轮,
@@ -29,8 +28,7 @@ export async function isResidentNeverRun(sessionId: string): Promise<boolean> {
   const [row] = await db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
   const config = row?.config;
   if (!config) return false;
-  await ensureSessionIndexed(sessionId);
-  if (indexedTurnCount(sessionId) > 0) return false;
+  if (await sessionHasRecordedTurn(sessionId)) return false;
   if (config.type === 'acp' && config.initialQueue?.some((prompt) => prompt.text.trim() || prompt.files?.length)) return false;
   if (config.initialPrompt?.trim()) return false;
   const said = config.firstUtterance?.trim();

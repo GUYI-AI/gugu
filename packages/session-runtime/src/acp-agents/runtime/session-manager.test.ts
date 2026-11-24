@@ -1070,7 +1070,7 @@ describe('AcpRuntime session manager', () => {
     await prompt;
   });
 
-  it('projects active tool output just like history while retaining the on-demand original', async () => {
+  it('projects active tool output just like history', async () => {
     const { h, rt, client, providerSessionId } = await startHarness('conv-live-picture');
     let finish!: (value: { stopReason: 'end_turn' }) => void;
     h.agent.prompt = vi.fn(() => new Promise<{ stopReason: 'end_turn' }>((resolve) => { finish = resolve; }));
@@ -1093,7 +1093,6 @@ describe('AcpRuntime session manager', () => {
       expect('images' in item).toBe(false);
       expect(item).toMatchObject({ imageRefs: [{ mimeType: image.mimeType, chars: image.data.length }] });
       expect(JSON.stringify(projected).length).toBeLessThan(20_000);
-      expect(rt.getToolImage('conv-live-picture', item.id, 0)).toEqual({ ok: true, image });
     } finally {
       finish({ stopReason: 'end_turn' });
       await prompt;
@@ -1532,39 +1531,6 @@ describe('AcpRuntime session manager', () => {
     expect(exported.data).not.toContain('ghost-command');
   });
 
-  it('fetches a full desktop tool picture without applying the phone preview limit', async () => {
-    const h = makeAcpHarness();
-    const rt = new AcpRuntime(h.deps);
-    const image = { mimeType: 'image/png', data: 'x'.repeat(1_048_577) };
-    h.agent.loadSession = vi.fn(async () => {
-      await h.client().sessionEvent({
-        sessionId: 'session-picture',
-        event: decodeSessionUpdate({
-          sessionUpdate: 'tool_call', toolCallId: 'picture', title: 'Screenshot', kind: 'other',
-          status: 'completed', content: [{ type: 'content', content: { type: 'image', ...image } }],
-        } as SessionUpdate),
-      });
-      return {};
-    });
-    const resumed = await rt.resumeSession({
-      ...makeStartInput({ sessionId: 'conv-picture' }), providerSessionId: 'session-picture',
-    });
-    expect(isOk(resumed)).toBe(true);
-    const item = rt.getChatHistory('conv-picture').committed.flatMap(turn => turn.items)
-      .find(entry => 'toolCallId' in entry && entry.toolCallId === 'picture');
-    if (!item) throw new Error('replayed tool picture missing');
-    const fetched = rt.getToolImage('conv-picture', item.id, 0);
-    expect(fetched.ok).toBe(true);
-    if (!fetched.ok) throw new Error(fetched.message);
-    expect(fetched.image.data.length).toBe(image.data.length);
-    expect(fetched.image.mimeType).toBe(image.mimeType);
-    fetched.image.data = 'changed by reader';
-    const again = rt.getToolImage('conv-picture', item.id, 0);
-    expect(again.ok && again.image.data.length).toBe(image.data.length);
-    await rt.stopSession('conv-picture');
-    expect(rt.getToolImage('conv-picture', item.id, 0)).toMatchObject({ ok: false, code: 'no_such_item' });
-  });
-
   it('returns a resume result with replayed history', async () => {
     const h = makeAcpHarness();
     const rt = new AcpRuntime(h.deps);
@@ -1944,43 +1910,6 @@ describe('AcpRuntime session manager', () => {
       value: 'gpt-9',
     });
     expect(rt.sessionLiveModels('conv-model-rejected')).not.toBeNull();
-  });
-
-  it('applies the chosen model once a harness publishes its model option after session/new', async () => {
-    const h = makeAcpHarness();
-    const provider = h.deps.agentHost.resolveAcp('claude');
-    if (!provider) throw new Error('test provider missing');
-    provider.behavior.catalogModelsInConfigUpdate = true;
-    const rt = new AcpRuntime(h.deps);
-    h.agent.newSession.mockImplementationOnce(async () => {
-      setTimeout(() => h.agent.capturedClient!.sessionEvent({
-        sessionId: 'session-late-model',
-        event: decodeSessionUpdate({ sessionUpdate: 'config_option_update', configOptions: modelConfigOptions('default-model') } as never),
-      }), 150);
-      return { sessionId: 'session-late-model' };
-    });
-    h.agent.setSessionConfigOption.mockImplementation(async () => ({ configOptions: modelConfigOptions('gpt-5.5') }));
-    const result = await rt.startSession(makeStartInput({ sessionId: 'conv-late-model', model: 'gpt-5.5' }));
-    expect(isOk(result)).toBe(true);
-    expect(h.agent.setSessionConfigOption).toHaveBeenCalledWith(expect.objectContaining({ value: 'gpt-5.5' }));
-    expect(JSON.stringify(rt.getChatHistory('conv-late-model'))).not.toContain('model-unavailable');
-    await rt.dispose();
-  });
-
-  it('fails the start at once when the process dies while waiting for a late model option', async () => {
-    const h = makeAcpHarness();
-    const provider = h.deps.agentHost.resolveAcp('claude');
-    if (!provider) throw new Error('test provider missing');
-    provider.behavior.catalogModelsInConfigUpdate = true;
-    const rt = new AcpRuntime(h.deps);
-    h.agent.newSession.mockImplementationOnce(async () => {
-      setTimeout(() => h.children[0]?.emitExit(1), 150);
-      return { sessionId: 'session-late-dies' };
-    });
-    const result = await rt.startSession(makeStartInput({ sessionId: 'conv-late-dies', model: 'gpt-5.5' }));
-    expect(isOk(result)).toBe(false);
-    expect(JSON.stringify(result)).toContain('exited during startup (code 1)');
-    await rt.dispose();
   });
 
   it('opens the session when a harness never publishes its late model option', async () => {

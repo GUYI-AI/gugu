@@ -37,8 +37,8 @@ export type CodexSkillSelection = { localSourceId: string; fingerprint: string }
 export type CodexSkillScan = {
   count: number;
   items: CodexSkillItem[];
-  counts: { codex: number; agents: number; duplicates: number; custom: number };
-  excludedRoots: { path: string; reason: 'built-in' | 'plugin-cache' }[];
+  counts: { codex: number; duplicates: number; custom: number };
+  excludedRoots: { path: string; reason: 'built-in' | 'plugin-cache' | 'shared' }[];
 };
 type Options = { home: ResolvedAgentHome; signal?: AbortSignal };
 type Candidate = { item: CodexSkillItem; source: string };
@@ -47,16 +47,20 @@ function inside(root: string, path: string): boolean {
   const part = relative(root, path);
   return !part || (part !== '..' && !part.startsWith('..' + sep) && !isAbsolute(part));
 }
-function sourceRoots(home: ResolvedAgentHome) {
+/**
+ * Codex's own skills folder. The shared `~/.agents/skills` is not a source: Codex reads it itself in the managed home too,
+ * so a copy would list each of its skills twice.
+ */
+function sourceRoot(home: ResolvedAgentHome) {
   if (home.providerId !== 'codex' || !isAbsolute(home.shadowHome) || !isAbsolute(home.configRoot)
     || home.shadowHome === home.configRoot || !inside(home.shadowHome, home.configRoot)) {
     throw new Error('A resolved managed Codex home is required');
   }
-  const sources = [join(home.userConfigRoot, 'skills'), join(home.osHomeDir, '.agents', 'skills')];
-  if (sources.some((source) => inside(source, home.configRoot) || inside(home.configRoot, source))) {
-    throw new Error('Managed skills must be separate from their sources');
+  const source = join(home.userConfigRoot, 'skills');
+  if (inside(source, home.configRoot) || inside(home.configRoot, source)) {
+    throw new Error('Managed skills must be separate from their source');
   }
-  return sources;
+  return source;
 }
 async function names(path: string): Promise<string[]> {
   try { return (await disk.readdir(path)).sort(); }
@@ -113,11 +117,13 @@ async function metadata(root: string, snapshot: AgentHomeDirectorySnapshot, sign
 
 async function inspect({ home, signal }: Options) {
   signal?.throwIfAborted();
-  const roots = sourceRoots(home);
+  const root = sourceRoot(home);
   const targetRoot = join(home.configRoot, 'skills');
   const excludedRoots: CodexSkillScan['excludedRoots'] = [
-    { path: join(roots[0]!, '.system'), reason: 'built-in' },
+    { path: join(root, '.system'), reason: 'built-in' },
     { path: join(home.userConfigRoot, 'plugins', 'cache'), reason: 'plugin-cache' },
+    // A Codex skill folder that links into the shared folder is already read from there.
+    { path: join(home.osHomeDir, '.agents', 'skills'), reason: 'shared' },
   ];
   const excluded = await Promise.all(excludedRoots.map(async ({ path }) => disk.realpath(path).catch((error: unknown) => {
     if (missing(error)) return resolve(path);
@@ -125,14 +131,14 @@ async function inspect({ home, signal }: Options) {
   })));
   const candidates = new Map<string, Candidate>();
   const bySource = new Map<string, CodexSkillItem>();
-  const counts = { codex: 0, agents: 0, duplicates: 0, custom: 0 };
-  for (const [index, root] of roots.entries()) for (const folder of await names(root)) {
+  const counts = { codex: 0, duplicates: 0, custom: 0 };
+  for (const folder of await names(root)) {
     signal?.throwIfAborted();
     if (folder.startsWith('.')) continue;
     const path = join(root, folder);
     const stat = await disk.lstat(path).catch((error: unknown) => { if (missing(error)) return null; throw error; });
     if (!stat || (!stat.isDirectory() && !stat.isSymbolicLink())) continue;
-    counts[index === 0 ? 'codex' : 'agents']++;
+    counts.codex++;
     let canonical = path;
     const item: CodexSkillItem = {
       localSourceId: '', kind: 'skill', scope: 'global', name: folder, description: '', aliases: [path],

@@ -125,33 +125,3 @@ export function presentAgentStatus(input: AgentStatusInput & { hostOnline?: bool
       return reading.detail === 'done' && unseen ? { tone: 'done', label: 'done', animate: false, emphasis: true } : idle
   }
 }
-
-/**
- * 一格状态的颜色:设计 token 名(`tokens.css` 的 `--agent-tone-*`);`null` = 不上色(做完、空闲、没有状态源)。
- * 在跑 = 橙,后台在跑 = 黄(画成双竖线,不是点),需要你 = --warn 黄,出错 = --danger 红,在线 = 绿(可达,聊天侧)。
- */
-export function agentStatusColorVar(tone: AgentStatusTone): string | null {
-  switch (tone) {
-    case 'running':
-      return 'var(--agent-tone-running)'
-    case 'parked':
-      return 'var(--agent-tone-parked)'
-    case 'needs_user':
-      return 'var(--agent-tone-needs-user)'
-    case 'error':
-      return 'var(--agent-tone-error)'
-    case 'online':
-      return 'var(--agent-tone-online)'
-    case 'removed':
-      return 'var(--agent-tone-removed)'
-    case 'offline':
-    case 'archived':
-    case 'pending':
-    case 'starting':
-      return 'var(--agent-tone-muted)'
-    case 'done':
-    case 'idle':
-    case 'none':
-      return null
-  }
-}

@@ -45,7 +45,7 @@ const LOCAL_PROJECTS_ONLY = `NOT EXISTS (SELECT 1 FROM projects p
     AND p.workspace_provider != 'local')`;
 
 class SearchService {
-  taskTurnIndexStatus() { return taskTurnIndexStatus(sqlite); }
+  taskTurnIndexStatus() { return taskTurnIndexStatus(); }
   initialize(): void {
     projectEvents.on('project:created', (project) => this.upsertProject(project));
     projectEvents.on('project:deleted', (projectId) => this.removeByType('project', projectId));

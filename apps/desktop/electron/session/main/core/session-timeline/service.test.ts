@@ -69,6 +69,8 @@ const state = vi.hoisted(() => ({
   wake: vi.fn(async (_id: string): Promise<void> => {
     throw new Error('❌ 没开起来的会话不许走唤醒');
   }),
+  /** The session life's pending rows, by message id (`sessionLife().read`); none unless a case queues some. */
+  lifePending: [] as string[],
 }));
 
 const persistedQuestions = vi.hoisted(() => new Map<string, Settlement[]>());
@@ -106,7 +108,12 @@ vi.mock('../sessions/session-conversation-activity', () => ({ nativeConversation
 
 
 // The session index has tests of its own (session-index.db.test.ts); here the timelines it follows are fakes.
-vi.mock('../session-index/session-index', () => ({ followSessionIndex: () => () => {}, sessionIndexed: () => true, writeSessionIndex: () => {} }));
+const index = vi.hoisted(() => ({ prepare: vi.fn(async () => {}), count: vi.fn(() => 0) }));
+vi.mock('../session-index/session-index', () => ({
+  followSessionIndex: () => () => {},
+  prepareSessionIndex: index.prepare,
+  indexedTurnCount: index.count,
+}));
 vi.mock('@main/db/client', () => ({
   db: {
     select: () => ({
@@ -123,6 +130,7 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 
+vi.mock('@main/core/sessions/session-life', () => ({ sessionLife: () => ({ read: () => ({ pending: { items: state.lifePending.map((messageId) => ({ messageId })) } }) }) }));
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 const openedOutputs = vi.hoisted(() => new Map<string, ({ kind: 'file'; path: string } | { kind: 'page'; url: string })[]>());
 vi.mock('../sessions/session-outputs', () => ({
@@ -307,6 +315,7 @@ function makeTimeline(onCatchUp: () => void = () => undefined) {
     epoch: 'e1',
     disposed: 0,
     listenerCount: () => listeners.size,
+    getCursor: () => ({ epoch: 'e1', seq: 0 }),
     getSnapshot: (): TimelineSnapshot => ({
       cursor: { epoch: 'e1', seq: 0 },
       turns: [],
@@ -438,6 +447,7 @@ describe('session timeline service', () => {
     state.emitPending = null;
     state.nativeUnread = [];
     state.rows = [row()];
+    state.lifePending = [];
     state.projects = [];
     state.deliverText = vi.fn(async () => ({ accepted: 'started' as const }));
     state.deliverPermission = vi.fn(async () => undefined);
@@ -451,6 +461,71 @@ describe('session timeline service', () => {
       throw new Error('❌ 没开起来的会话不许走唤醒');
     });
     state.readOptions.mockClear();
+  });
+
+  it('waits for the current turn facts before deciding whether a cold session already ran', async () => {
+    let ready!: () => void;
+    index.count.mockClear().mockReturnValueOnce(1);
+    index.prepare.mockImplementationOnce(() => new Promise<void>(resolve => { ready = resolve; }));
+
+    const ran = service.sessionHasRecordedTurn('conv-1');
+    expect(index.count).not.toHaveBeenCalled();
+    ready();
+    await expect(ran).resolves.toBe(true);
+  });
+
+  it('uses the open record to detect an already-started session while indexing is pending', async () => {
+    const { timeline } = makeTimeline();
+    const base = timeline.getSnapshot();
+    timeline.getSnapshot = () => ({ ...base, turns: [{ id: 'first', seq: 1, initiator: 'user', items: [] }] });
+    service.setSessionTimelineFactory(async () => timeline);
+
+    const opened = await service.snapshot({ conversationId: 'conv-1' });
+    expect(opened.ok).toBe(true);
+    await expect(service.sessionHasRecordedTurn('conv-1')).resolves.toBe(true);
+  });
+
+  it('a reader that merges terminals by id gets only the changed ones and ends up holding what the whole list says', async () => {
+    const { createSessionRecordSource, createSessionTimeline } = await import('@gugu/session-core/session-record');
+    const { applyBatch, applySnapshot, emptyAgentWatchTimeline } = await import('../../../../../src/components/session-watch/agent-watch-store');
+    const root = await mkdtemp(join(tmpdir(), 'claude-terminal-patch-'));
+    await writeFile(join(root, 'record.jsonl'), JSON.stringify({ type: 'user', uuid: 'q', parentUuid: null, sessionId: 'record',
+      timestamp: '2026-10-31T00:00:00Z', message: { id: 'q', role: 'user', content: [{ type: 'text', text: 'run things' }] } }) + '\n');
+    const timeline = await createSessionTimeline(createSessionRecordSource({ harness: 'claude', providerSessionId: 'record', roots: [root] }), { sessionId: 'conv-t' });
+    try {
+      const terminal = (terminalId: string, output: string) => ({ terminalId, owner: 'agent' as const, canKill: false,
+        command: 'echo', args: [], cwd: '/w', output, truncated: false, exitStatus: null });
+      timeline.syncTerminals([terminal('a', 'one'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+      const snapshot = timeline.getSnapshot();
+      let held = applySnapshot(emptyAgentWatchTimeline(), snapshot);
+
+      // Only `a` grows: the merging reader is sent `a` and the order; one that does not merge, the whole list.
+      timeline.syncTerminals([terminal('a', 'one two'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+      const patch = timeline.getAfter(snapshot.cursor, { terminalPatch: true });
+      expect(patch).toMatchObject({ ok: true, batch: { terminalIds: ['a', 'b'], terminals: [terminal('a', 'one two')] } });
+      const whole = timeline.getAfter(snapshot.cursor);
+      expect(whole.ok && whole.batch.terminals?.map((one) => one.terminalId)).toEqual(['a', 'b']);
+      expect(whole.ok && 'terminalIds' in whole.batch).toBe(false);
+      held = applyBatch(held, (patch as Extract<typeof patch, { ok: true }>).batch);
+      expect(held.terminals).toEqual([terminal('a', 'one two'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+
+      // Nothing changed since: nothing travels (absent = unchanged). `b` goes away: the order says so.
+      const now = timeline.getSnapshot().cursor;
+      timeline.syncQueuedPrompts([{ id: 'q1', clientMessageId: 'c1', text: 'next' }]);
+      const quiet = timeline.getAfter(now, { terminalPatch: true });
+      expect(quiet.ok && quiet.batch.terminals).toBeUndefined();
+      timeline.syncTerminals([terminal('a', 'one two')]);
+      const gone = timeline.getAfter(now, { terminalPatch: true });
+      expect(gone).toMatchObject({ ok: true, batch: { terminalIds: ['a'], terminals: [] } });
+      held = applyBatch(held, (gone as Extract<typeof gone, { ok: true }>).batch);
+      expect(held.terminals.map((one) => one.terminalId)).toEqual(['a']);
+      // A name the reader neither holds nor is sent: a batch was lost in between, read the snapshot again.
+      expect(applyBatch(held, { from: 9, cursor: { epoch: now.epoch, seq: 10 }, turns: [], removedTurnIds: [], settlements: [],
+        terminalIds: ['a', 'lost'], terminals: [] }).needsSnapshot).toBe('gap');
+    } finally {
+      timeline.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('follows a settling record on its own live reader until the last turn lands, without interactive effects', async () => {
@@ -643,6 +718,25 @@ describe('session timeline service', () => {
     ).resolves.toMatchObject({ ok: false, error: { code: 'session_not_started' } });
   });
 
+  it('a first message the session life still holds is drawn from that pending row, not a second time by the stand-in', async () => {
+    const factory = vi.fn(async () => makeTimeline().timeline);
+    service.setSessionTimelineFactory(factory);
+    const firstTurnText = async () => {
+      const read = await service.snapshot({ conversationId: 'conv-1' });
+      return read.ok ? read.value.turns.flatMap((turn) => turn.items.map((item) => (item as { text?: string }).text)) : read;
+    };
+    state.rows = [row({ providerSessionId: null, config: { type: 'acp', initialQueue: [{ text: 'hi' }], firstUtterance: 'hi' } })];
+    state.lifePending = ['conv-1:creation:0'];
+    expect(await firstTurnText()).toEqual([]);
+    state.rows = [row({ providerSessionId: null, config: { type: 'acp', initialQueue: [{ text: 'hi' }], firstUtterance: 'hi', initialMessageId: 'msg-1' } })];
+    state.lifePending = ['msg-1'];
+    expect(await firstTurnText()).toEqual([]);
+    // Nothing holds it (never admitted, or withdrawn): the stand-in is the only place it is shown.
+    state.lifePending = ['another-input'];
+    expect(await firstTurnText()).toEqual(['hi']);
+    expect(factory).not.toHaveBeenCalled();
+  });
+
   it('单一目录之前绑在非原生连接上的会话:用户根优先,那条连接自己的配置根排最后兜底;原生会话不带它', async () => {
     const factory = vi.fn(async () => makeTimeline().timeline);
     service.setSessionTimelineFactory(factory);
@@ -800,36 +894,6 @@ describe('session timeline service', () => {
       service.snapshot({ conversationId: 'conv-1' }),
     ]);
     expect(factory).toHaveBeenCalledTimes(1);
-  });
-
-  // owner 10-15:手机那份时间线里图只有类型和字数,图滚到了才来这里取(transport-trim)。和翻页同一条路。
-  it('手机取一张工具图:按条目 id 和第几张找(工具组里的子调用也认);找不到如实说是哪一样没有', async () => {
-    const fake = makeTimeline();
-    const shot = { mimeType: 'image/jpeg', data: '/9j/AAAA' };
-    const tool = (id: string, extra: Record<string, unknown> = {}) => ({ kind: 'mcp-tool-call', id, seq: 1, toolCallId: id, title: 'app_check', status: 'done', ...extra });
-    const snapshot = fake.timeline.getSnapshot();
-    fake.timeline.getSnapshot = () => ({
-      ...snapshot,
-      turns: [{ id: 't1', seq: 1, initiator: 'user', items: [tool('tool-1', { images: [shot] }), tool('group-1', { kind: 'tool-group', children: [tool('child-1', { images: [shot, shot] })] })] }],
-    }) as unknown as TimelineSnapshot;
-    service.setSessionTimelineFactory(async () => fake.timeline);
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'tool-1', index: 0 })).toEqual({ ok: true, value: shot });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'child-1', index: 1 })).toEqual({ ok: true, value: shot });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'tool-1', index: 1 })).toMatchObject({ ok: false, error: { code: 'no_such_image' } });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'gone', index: 0 })).toMatchObject({ ok: false, error: { code: 'no_such_item' } });
-    expect(await service.toolImage({ conversationId: 'no-such-conv', itemId: 'tool-1', index: 0 })).toMatchObject({ ok: false, error: { code: 'session_not_found' } });
-  });
-
-  // #980:存档装回来的轮里图只剩位置,快照里找不到;有 `toolImage` 口的时间线由它从记录里读回来,读不回来照实转达。
-  it('时间线自己会取图(存档里只存位置)⇒ 问它,不在快照里找', async () => {
-    const fake = makeTimeline();
-    const shot = { mimeType: 'image/png', data: 'iVBORAAAA' };
-    fake.timeline.toolImage = async ({ itemId, index }) => itemId === 'restored' && index === 0
-      ? { ok: true, image: shot }
-      : { ok: false, code: 'no_such_image', message: `picture #${index} of tool item ${itemId} could not be read back from its record` };
-    service.setSessionTimelineFactory(async () => fake.timeline);
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'restored', index: 0 })).toEqual({ ok: true, value: shot });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'restored', index: 1 })).toMatchObject({ ok: false, error: { code: 'no_such_image' } });
   });
 
   it('结算只成功一次：后答的一端拿到那条既有结算，provider 只被调一次', async () => {

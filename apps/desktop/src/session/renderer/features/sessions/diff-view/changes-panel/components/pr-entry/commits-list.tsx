@@ -110,7 +110,7 @@ export const CommitRangeCommitsList = observer(function CommitRangeCommitsList({
           ) : (loadingMore || more) && (
             <div className="flex justify-center py-2">
               <button
-                className="hover:bg-row-hover active:bg-row-press rounded-md px-3 py-1 text-xs text-foreground-muted transition-colors hover:text-foreground"
+                className="hover:bg-row-hover active:bg-row-press rounded-md px-3 py-1 text-xs text-foreground-muted hover:text-foreground"
                 onClick={more ?? undefined}
                 disabled={loadingMore}
               >

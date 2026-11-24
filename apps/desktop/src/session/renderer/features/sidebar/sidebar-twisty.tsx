@@ -38,7 +38,7 @@ export function SidebarTwistyLane({
       {onToggle ? (
         <button
           type="button"
-          className={cn("flex size-4 items-center justify-center rounded-sm text-foreground-tertiary-passive transition-opacity duration-[var(--dur-fast,120ms)] ease-out group-hover/row:opacity-100 group-data-[nav-cursor=true]/row:opacity-100 focus:opacity-100 hover:bg-row-hover hover:text-foreground active:bg-row-press", alwaysVisible ? 'opacity-100' : 'opacity-0')}
+          className={cn("flex size-4 items-center justify-center rounded-sm text-foreground-tertiary-passive group-hover/row:opacity-100 group-data-[nav-cursor=true]/row:opacity-100 focus:opacity-100 hover:bg-row-hover hover:text-foreground active:bg-row-press", alwaysVisible ? 'opacity-100' : 'opacity-0')}
           aria-label={label}
           aria-expanded={expanded}
           onMouseDown={(event) => event.stopPropagation()}

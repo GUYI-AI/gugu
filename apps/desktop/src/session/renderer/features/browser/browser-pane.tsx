@@ -505,6 +505,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
             partition={pageMount.partition}
             initialUrl={pageMount.src}
             visible={visible}
+            covered={startPageCovers || !!(loadError && loadErrorPresentation)}
             onHandle={onPageHandle}
           />
         ) : (
@@ -529,7 +530,7 @@ const BrowserPaneContent = observer(function BrowserPaneContent({
         {startPageCovers ? (
           <div className="absolute inset-0 bg-background">
             {workspaceStart
-              ? <BrowserWorkspaceStartContent config={workspaceStart} actions={startPageActions ?? []} onOpenUrl={navigateTo} onFocusUrl={() => focusUrlRef.current()} />
+              ? <BrowserWorkspaceStartContent config={workspaceStart} actions={startPageActions ?? []} onOpenUrl={navigateTo} />
               : <BrowserStartPage actions={startPageActions} devServerUrls={devServerUrls} onOpenUrl={navigateTo} />}
           </div>
         ) : null}

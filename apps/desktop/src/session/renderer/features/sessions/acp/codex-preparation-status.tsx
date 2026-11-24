@@ -24,8 +24,9 @@ export function CodexPreparationStatus({ sessionId }: { sessionId: string }) {
     const timer = setInterval(() => setNow(Date.now()), 1_000);
     return () => clearInterval(timer);
   }, [preparation?.startedAt]);
-  if (!preparation) return null;
-  const seconds = Math.max(0, Math.floor((now - preparation.startedAt) / 1_000));
+  const seconds = preparation ? Math.max(0, Math.floor((now - preparation.startedAt) / 1_000)) : 0;
+  // A start that is over within its first second gets no band: drawn, it pushes the transcript up and back for a few frames.
+  if (!preparation || seconds < 1) return null;
   const elapsed = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
   const label = translate(preparation.phase === 'history' ? 'transcript.historyPreparing' : 'transcript.preparing');
   return <div role="status" aria-label={label} aria-live="polite" data-codex-preparing={preparation.phase} className="flex items-center gap-2 px-3 py-1 text-[length:var(--font-caption)] opacity-60">

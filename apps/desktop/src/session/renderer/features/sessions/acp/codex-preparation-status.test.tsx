@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { expect, it, vi } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import type { AcpStartProgress } from '@gugu/session-core/acp';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -35,4 +35,18 @@ it('shows 整理历史 with elapsed time during lease recovery and removes it af
     expect(host.querySelector('[role="status"]')).toBeNull();
   } finally { await act(async () => root.unmount()); }
   expect(state.dispose).toHaveBeenCalledTimes(1);
+});
+
+afterEach(() => { vi.useRealTimers(); });
+
+it('draws no band for a start that is over within its first second, and draws it once one has passed', async () => {
+  vi.useFakeTimers();
+  const host = document.createElement('div'); const root = createRoot(host);
+  state.progress = { phase: 'preparing', startedAt: Date.now(), attempt: 1 };
+  try {
+    await act(async () => root.render(<CodexPreparationStatus sessionId="test-session" />));
+    expect(host.querySelector('[role="status"]')).toBeNull();
+    await act(async () => { vi.advanceTimersByTime(1_000); });
+    expect(host.textContent).toContain('0:01');
+  } finally { await act(async () => root.unmount()); }
 });

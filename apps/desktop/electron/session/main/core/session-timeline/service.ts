@@ -2,6 +2,7 @@ import { buildSessionPermissionOptions } from '@shared/session-permission-option
 import { ptyTurnEnds, recordPtyEngineEnd } from '../sessions/pty-turn-ends';
 import { sessionEngine, sessionProcess } from '../sessions/session-process';
 import { nativeConversationHistoryFloor } from '../sessions/native-publication-host';
+import { nativePromptReceipt } from '../sessions/native-prompt-receipts';
 import { clearedHistoryResult, historyClearEpoch } from '@gugu/session-core/session-record/conversation-history-clear';
 import { runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { promptAttachmentSchema, turnFileRefSchema } from '@gugu/session-core/acp/client';
@@ -14,7 +15,8 @@ import { askSourceSpec } from '../asks/sources';
 import { readAgentQuestionRecords, rememberAgentQuestion } from '../sessions/agent-question-store';
 import { nativeConversationAliases, nativeConversationUnread, nativeOwnerNotificationUnread } from '../sessions/session-conversation-read';
 import { ownerNotificationFile } from '../sessions/owner-notifications';
-import { followSessionIndex, sessionIndexed, writeSessionIndex } from '../session-index/session-index';
+import { followSessionIndex, indexedTurnCount, indexSessionRecord, prepareSessionIndex } from '../session-index/session-index';
+import type { IndexSource } from '../session-index/worker';
 import { nativeConversationListActivity } from '../sessions/session-conversation-live';
 import { deliverAgentQuestionAnswer, restoredAgentQuestion } from '../sessions/agent-question-delivery';
 import { and, desc, eq, inArray, isNull, notInArray, type SQL } from 'drizzle-orm';
@@ -23,9 +25,8 @@ import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-ho
 import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
 import { isVisibleQueuedPrompt } from '@shared/core/sessions/visible-queued-prompt';
 import { conversationQueueText } from '@shared/core/sessions/conversation-queue-text';
-import type { OpenedOutput, ToolImage } from '@gugu/session-core/acp/client';
+import type { OpenedOutput } from '@gugu/session-core/acp/client';
 import {
-  findToolImage,
   type RecordCursor,
   type RecordLineageNode,
   type SessionRecordLocator,
@@ -50,7 +51,6 @@ import {
   type SessionpageSessionReloadModelRequest,
   type SessionpageOpenedFileReadRequest,
   type SessionpageOpenedFileChunk,
-  type SessionpageSessionToolImageRequest,
   type TimelineAfterResult,
   type TimelineOlderResult,
   type TimelineSnapshot,
@@ -103,6 +103,7 @@ import { createStandInTimeline } from './stand-in-timeline';
 import { readStartFailure } from './start-failures';
 import { knownHarnessConfigRoots } from '@main/core/agent-hooks/harness-config-roots';
 import { sessionLife } from '@main/core/sessions/session-life';
+import { creationMessageId } from '@main/core/sessions/session-life-creation';
 import { runtimeFork } from '@main/core/sessions/session-life-forks';
 import { notStartedSessionOptions } from './not-started-options';
 import { readSessionModelMenu, readSessionPermissionAgentName, type SessionpageSessionOptionsWithMenu } from './session-model-menu';
@@ -179,6 +180,7 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal
     archive,
     ...(journal ? { journal: createSessionRecordSource(journal) } : {}),
     ...(answerableQuestions ? { answerableQuestions } : {}),
+    hostPrompts: (digest) => nativePromptReceipt(sessionId, digest),
   });
   try {
     // Observe only an uncovered native turn. Reopening an ended record must not create new end facts.
@@ -394,14 +396,15 @@ function pinnedConnectionId(row: SessionRow): string | undefined {
   return undefined;
 }
 
-export function locateRow(row: SessionRow): SessionRecordLocation {
+export function locateRow(row: SessionRow, managedOnly = false): SessionRecordLocation {
   const managed = managedConfigRootFor(row.provider);
   if (managed.problem) return { supported: false, reason: managed.problem };
-  const legacy = connectionRootFor(row);
+  const legacy = managedOnly && managed.root ? null : connectionRootFor(row);
   return locateSessionRecord({
     provider: row.provider,
     providerSessionId: row.providerSessionId,
     managedConfigRoot: managed.root,
+    managedOnly: managedOnly && !!managed.root,
     // 这一家在本机 hook 里报过的配置目录(包装器在进程里改过的那种)排在默认根之后一起找。
     fallbackConfigRoots: [...(legacy ? [legacy] : []), ...knownHarnessConfigRoots(row.provider)],
   });
@@ -592,7 +595,10 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
       disposed: false,
     };
     entries.set(conversationId, entry);
-    try { attachInteractive(entry, row); entry.stopIndex = followSessionIndex(conversationId, timeline); }
+    try {
+      attachInteractive(entry, row);
+      if (!row.archivedAt) entry.stopIndex = followSessionIndex(conversationId, timeline, () => indexSource(row, location));
+    }
     catch (error) { entries.delete(conversationId); timeline.dispose(); throw error; }
     return entry;
   });
@@ -621,10 +627,17 @@ function rowCreatedAt(row: SessionRow): number | null {
   return Number.isFinite(at) ? at : null;
 }
 
-/** 这个人发出去的第一句话:还没投出去的首轮(聊天腿),或者建会话时记下的那句(终端腿)。 */
+/**
+ * 这个人发出去的第一句话:还没投出去的首轮(聊天腿),或者建会话时记下的那句(终端腿)。
+ * 聊天腿的首轮一入队就是会话的 pending 行,各端从那一行画它(连同发送、启动、失败的状态);那一行还在时,
+ * 替身 ❌ 再带一份 —— 同一句话会画成两个气泡。
+ */
 function firstMessageOf(row: SessionRow): string | null {
   const session = mapSessionRowToSession(row);
-  return session.initialQueue?.[0]?.text ?? session.firstUtterance ?? null;
+  const first = session.initialQueue?.[0];
+  if (!first) return session.firstUtterance ?? null;
+  const messageId = creationMessageId(session, 0);
+  return sessionLife().read(row.id).pending.items.some((item) => item.messageId === messageId) ? null : first.text;
 }
 
 /** Its agent keeps no record gugu reads, and gugu's journal has its turns. */
@@ -738,9 +751,12 @@ export async function sessionOfAgent(agentUserId: string): Promise<{ projectId: 
   return row ?? null;
 }
 
-/** 同一份列表(最近动过的在前),同步、不读名录(行上不带 agent):心跳的离线摘要只要前 `limit` 条,在库里截(#3340)。 */
-export function listSessionStates(limit?: number): SessionpageSessionsListResult {
-  return sessionList(null, limit);
+/**
+ * 同一份列表(最近动过的在前),同步、不读名录(行上不带 agent):心跳的离线摘要只要前 `limit` 条,在库里截(#3340)。
+ * `schedules: false`:行上不带定时标记 —— 心跳的摘要不报它,❌ 每一拍替它读一遍这批会话的定时与最近一次运行。
+ */
+export function listSessionStates(limit?: number, { schedules = true }: { schedules?: boolean } = {}): SessionpageSessionsListResult {
+  return sessionList(null, limit, schedules);
 }
 
 /** 可能在忙的会话(状态既不是空闲也不是出错):换版忙不忙只看这几行,每一拍不随闲着的会话数长(#3340)。 */
@@ -749,13 +765,13 @@ export function activeSessionStates(): Array<Pick<SessionpageSessionSummary, 'co
     .map((row) => ({ conversationId: row.id, runtime: summaryRuntime(row.runtime), status: statusFieldsOf(row).status }));
 }
 
-function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: string | null }> | null, limit?: number): SessionpageSessionsListResult {
+function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: string | null }> | null, limit?: number, withSchedules = true): SessionpageSessionsListResult {
   const visibleProjects = readLocalProjects();
   const rows = readSessionRows(false, inArray(sessions.projectId, visibleProjects.map(project => project.id)), limit);
   const projectById = new Map<string, SessionpageProjectSummary>();
   const summaries: SessionpageSessionSummary[] = [];
   const ids = limit === undefined ? undefined : rows.map(({ session }) => session.id);
-  const schedules = schedulesBySession(listSessionSchedules(ids));
+  const schedules = withSchedules ? schedulesBySession(listSessionSchedules(ids)) : new Map<string, SessionSchedule[]>();
   const answered = readAnsweredAsks(ids);
 
   for (const { session, project } of rows) {
@@ -842,12 +858,14 @@ export function snapshot(input: {
 export function after(input: {
   conversationId: string;
   cursor: RecordCursor;
+  terminalPatch?: boolean;
 }): Promise<SessionTimelineResult<TimelineAfterResult>> {
   return withTimeline(input.conversationId, async (timeline, floor) => {
     // Asked for now (a revert just landed, say): the record as written by now, wherever it now is.
     await timeline.catchUp();
     if (floor && !input.cursor.epoch.endsWith(historyClearEpoch(floor))) return { ok: false as const, reset: 'epoch_changed' as const, snapshot: timeline.getSnapshot() };
-    return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor);
+    const options = { terminalPatch: input.terminalPatch === true };
+    return timeline.getAfter(floor ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -historyClearEpoch(floor).length) } : input.cursor, options);
   });
 }
 
@@ -999,23 +1017,6 @@ export function older(input: {
   );
 }
 
-/**
- * 手机取一张工具交回来的图:发给手机的时间线里图只有类型和字数(transport-trim),图本身它滚到了才来这里取。
- * 走的是和 `older` 同一条路(设备 RPC → 会话时间线的口),server 宿主上也是这一份。
- */
-export async function toolImage(input: SessionpageSessionToolImageRequest): Promise<SessionTimelineResult<ToolImage>> {
-  // 存档装回来的轮里图只剩位置,要由时间线从记录里读回来(#980);没有这个口的(代读时间线)照旧在快照里找。
-  const found = await withTimeline(input.conversationId, (timeline, floor) => {
-    if (floor && !clearedHistoryResult(timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }), floor).turns.some(turn => turn.items.some(item => item.id === input.itemId)))
-      return { ok: false as const, code: 'not_found' as const, message: 'This image was cleared from the conversation' };
-    return timeline.toolImage
-      ? timeline.toolImage({ itemId: input.itemId, index: input.index })
-      : findToolImage(timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns, input.itemId, input.index);
-  });
-  if (!found.ok) return found;
-  return found.value.ok ? { ok: true, value: found.value.image } : fail(found.value.code, found.value.message);
-}
-
 /** One page of a session's conversation, oldest turn first. */
 export type RecordHistoryPage = { turns: TimelineSnapshot['turns']; hasOlder: boolean };
 
@@ -1103,29 +1104,34 @@ export async function historyTurns(conversationId: string): Promise<TimelineSnap
   }
 }
 
-/**
- * The session index holds this session's turns (`core/session-index`): read its timeline once if nobody has had it
- * open since the index was built. A session with no record to read has none.
- */
-export async function ensureSessionIndexed(conversationId: string): Promise<void> {
-  if (sessionIndexed(conversationId) || entries.has(conversationId)) return;
+function indexSource(row: SessionRow, location: SessionRecordLocation): IndexSource {
+  const locator = location.supported ? location.locator : null;
+  const acp = summaryRuntime(row.runtime) === 'acp';
+  return {
+    locator,
+    journal: acp && journalHasTurns(row.id) ? journalLocator(row.id) : null,
+    ...(!acp && locator ? { hostEnds: ptyTurnEnds(row.id, locator.providerSessionId).read() } : {}),
+  };
+}
+
+export async function backfillSessionIndex(conversationId: string, respectRetry = true) {
+  const row = readSessionRow(conversationId);
+  if (!row || entries.has(conversationId)) return 'unchanged';
+  return indexSessionRecord(conversationId, indexSource(row, locateRow(row, true)), { backfill: true, respectRetry });
+}
+
+/** Runtime decisions use the authoritative open timeline before falling back to the derived facts. */
+export async function sessionHasRecordedTurn(conversationId: string): Promise<boolean> {
+  const entry = entries.get(conversationId);
+  if (entry && !entry.standIn) return entry.timeline.getSnapshot({ limit: 1 }).turns.length > 0;
+  await prepareSessionIndex();
+  if (indexedTurnCount(conversationId) > 0) return true;
   const row = readSessionRow(conversationId, { includeArchived: true });
-  if (!row) return;
-  const location = locateRow(row);
-  const journal = summaryRuntime(row.runtime) === 'acp' ? journalLocator(conversationId) : null;
-  if (!location.supported && !(journal && journalOnly(row))) {
-    writeSessionIndex(conversationId, []);
-    return;
-  }
-  if (!timelineFactory) throw new Error('session index: no timeline factory installed');
-  if (journal) await ensureJournal(conversationId);
-  // A reader of its own, outside the interactive cache: read once and let go, like the settling watch.
-  const timeline = await timelineFactory({ locator: location.supported ? location.locator : null, journal, conversationId });
-  try {
-    writeSessionIndex(conversationId, timeline.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }).turns);
-  } finally {
-    timeline.dispose();
-  }
+  if (!row) return false;
+  const source = indexSource(row, locateRow(row));
+  if (!source.locator && !source.journal) return false;
+  await indexSessionRecord(conversationId, source);
+  return indexedTurnCount(conversationId) > 0;
 }
 
 /** The settling watch owns this reader. It cannot populate or dispose the interactive cache. */
@@ -1291,7 +1297,7 @@ export async function subscribe(
     const unsubscribeTimeline = entry.timeline.subscribe(input.cursor, (result) => {
       if (stopped) return;
       emit({ subscriptionId, result });
-    });
+    }, { terminalPatch: input.terminalPatch === true });
     teardown = () => {
       try {
         unsubscribeTimeline();

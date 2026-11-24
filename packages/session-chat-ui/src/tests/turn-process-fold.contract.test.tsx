@@ -18,6 +18,7 @@ import type { ChatMessage, TranscriptTurn } from '@session-chat/model';
 import { createChatState } from '@session-chat/state/chat-state';
 import { turnProcessId } from '@session-chat/state/flatten';
 import { until, untilStable } from '../../../../tests/support/awaitCondition';
+import { runningText } from '@session-chat/styles/effects.css';
 
 const canvasRowCount = (host: HTMLElement): number =>
   host.querySelector('[data-chat-canvas]')?.childElementCount ?? 0;
@@ -386,7 +387,7 @@ describe('#4981 #12 活动层的过程也折', () => {
       // 底下摊着内容时「在动」由那些行负责,头只数秒、不带微光(同屏两处一起扫就是闪);
       // 微光回到头上只在它是这一轮唯一动静的时候(见下面「一轮开始了、还什么都没有」)。
       const label = h!.querySelector('[data-slot="collapse-header"] > span') as HTMLElement;
-      expect(label.querySelector('[data-shimmer-text]')).toBeNull();
+      expect(label.classList.contains(runningText)).toBe(false);
       // 点头:跑着也要收得起来、再点又摊开,箭头跟着转(owner 2026-10-22「怎么点都保持向下」)。
       const chevron = () => h!.querySelector('[data-slot="collapse-header"] > span:last-child') as HTMLElement;
       (h!.querySelector('[data-collapse-id]') as HTMLElement).click();
@@ -394,7 +395,7 @@ describe('#4981 #12 活动层的过程也折', () => {
       await settled(host);
       expect(canvas().textContent ?? '').not.toContain('Checking the latest numbers first.');
       // 收起来时下面什么都看不见,头是这一轮唯一的动静 ⇒ 微光回到头上(#124 review)
-      const shimmering = () => header()?.querySelector('[data-slot="collapse-header"] > span [data-shimmer-text]') != null;
+      const shimmering = () => header()?.querySelector(`[data-slot="collapse-header"] > span.${runningText}`) != null;
       expect(shimmering()).toBe(true);
       // 箭头有 150ms 的转动过渡:等它转到「向右」(收起时不带 rotate)。
       await until('chevron turns right', () => getComputedStyle(chevron()).transform, (t) => t === 'none');
@@ -442,7 +443,7 @@ describe('#4981 #12 活动层的过程也折', () => {
       const settledLabel = settledHeader!.querySelector(
         '[data-slot="collapse-header"] > span'
       ) as HTMLElement;
-      expect(settledLabel.querySelector('[data-shimmer-text]')).toBeNull();
+      expect(settledLabel.classList.contains(runningText)).toBe(false);
     } finally {
       view.dispose();
       ctx.dispose();
@@ -491,7 +492,7 @@ describe('一轮开始了、还没有可折的过程:头占位', () => {
       // 占位下面没有可展开的东西:❌ 一个点了没反应的箭头
       expect(h.querySelector('[data-collapse-id]')).toBeNull();
       const label = h.querySelector('[data-slot="collapse-header"] > span') as HTMLElement;
-      expect(label.querySelector('[data-shimmer-text]')).not.toBeNull();
+      expect(label.classList.contains(runningText)).toBe(true);
       const mctx: MeasureCtx = { theme: ctx.theme, width: 640, isCollapsed: () => false, expanded: () => false, caches: createChatCaches(), expandedId: null };
       const item = { kind: 'turn-process' as const, id: turnProcessId(ONLY_PROMPT.id), turnId: ONLY_PROMPT.id, live: true, placeholder: true };
       expect(h.offsetHeight).toBe(turnProcessUnitDef.measure(item, mctx, turnProcessUnitDef.vars!));
@@ -526,7 +527,7 @@ describe('一轮开始了、还没有可折的过程:头占位', () => {
     document.body.appendChild(host);
     const view = createChatView({ context: ctx, state, parent: host });
     const header = () => host.querySelector<HTMLElement>('[data-slot="turn-process"]');
-    const shimmering = () => header()?.querySelector('[data-slot="collapse-header"] > span [data-shimmer-text]') != null;
+    const shimmering = () => header()?.querySelector(`[data-slot="collapse-header"] > span.${runningText}`) != null;
     type Item = TranscriptTurn['items'][number];
     const step = (...rest: Item[]) =>
       state.transcript.activeTurn.set({ ...ONLY_PROMPT, items: [...ONLY_PROMPT.items, ...rest] } as TranscriptTurn);

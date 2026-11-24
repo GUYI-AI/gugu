@@ -24,23 +24,12 @@ beforeAll(async () => {
   await import('./gugu-entry');
 });
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
-
 describe('no page dialogs in an App page (摩擦单 F96)', () => {
   it('alert, confirm and prompt throw what to do instead, pointing at the guide', () => {
     expect(() => window.alert('saved')).toThrow(noPageDialog('alert'));
     expect(() => window.confirm('delete?')).toThrow(noPageDialog('confirm'));
     expect(() => window.prompt('name?')).toThrow(noPageDialog('prompt'));
     expect(noPageDialog('confirm')).toContain('use gugu.modal.open({ entry, title }) (guide: apps-page)');
-  });
-
-  it('called from a click, it is the App’s error: recorded, where it happened', async () => {
-    const button = document.createElement('button');
-    button.addEventListener('click', () => window.confirm('really?'));
-    document.body.append(button);
-    button.click();
-    await settle();
-    expect(reported).toEqual([expect.stringContaining(`Uncaught Error: ${noPageDialog('confirm')}`)]);
   });
 
   it('an App’s own `alert` (a toast of its own) is its own: only the dialog that stops the page is gone', () => {

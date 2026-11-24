@@ -59,6 +59,14 @@ export const customModelMetaSchema = z.object({
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
 export type CustomModelEntry = z.infer<typeof customModelEntrySchema>;
 
+/**
+ * Whether a custom model takes image input. Only the person can say a model doesn't: no model list or Codex config
+ * carries the fact, so an undeclared model is not refused here and the provider answers for itself.
+ */
+export function customModelAcceptsImages(entry: Pick<CustomModelEntry, 'image'> | undefined): boolean {
+  return entry?.image !== false;
+}
+
 export type PiCustomModelProvider = {
   connectionId: string;
   name: string;
@@ -86,10 +94,16 @@ export const customModelConnectionSchema = z.object({
   credentialRef: z.string(),
   keySaved: z.boolean(),
   ...customModelMetaSchema.shape,
-  /** Present when this machine already had the connection configured; `keyLast4` is all the renderer learns of the key. */
+  /**
+   * Present when this machine already had the connection configured; `keyLast4` is all the wire carries of the key.
+   * Only this computer's own window reads the whole key, through `CUSTOM_MODEL_KEY_CHANNEL`.
+   */
   discovered: z.object({ source: discoverySourceSchema, keyLast4: z.string().max(4) }).optional(),
 });
 export type CustomModelConnection = z.infer<typeof customModelConnectionSchema>;
+
+/** Electron IPC from this computer's own window: the key a connection reads with, to show it. Never on the device wire. */
+export const CUSTOM_MODEL_KEY_CHANNEL = 'custom-models:key';
 
 /** Option IDs retain both identities even when two providers use the same model ID. */
 export function customModelOptionId(ref: Pick<CustomModelRef, 'connectionId' | 'modelId'>): string {

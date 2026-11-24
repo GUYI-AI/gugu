@@ -14,6 +14,7 @@ export declare function createJsonlReader(options: {
   onError?: (error: Error) => void
 }): JsonlReader
 export declare function readJsonlLines(input: Readable): AsyncGenerator<string>
+export declare function readAllLines(path: string, signal?: AbortSignal, read?: { bytes: number }): AsyncGenerator<string>
 export declare function jsonlParseError(source: string, line: string): Error
 
 export declare class JsonlFramer {

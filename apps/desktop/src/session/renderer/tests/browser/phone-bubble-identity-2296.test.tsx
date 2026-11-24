@@ -151,7 +151,7 @@ it('restart startup row: the starting prompt, the host row and the native messag
 
 const idle: SessionpageTimelineClient = {
   fetchSnapshot: () => new Promise(() => {}), fetchAfter: () => new Promise(() => {}), fetchOlder: () => new Promise(() => {}),
-  fetchToolImage: () => new Promise(() => {}), subscribeSession: async () => null, unsubscribeSession: async () => null,
+  subscribeSession: async () => null, unsubscribeSession: async () => null,
   subscribeSessionEvents: () => () => {}, onLinkChange: () => () => {}, sendSessionText: async () => null,
   cancelSessionTurn: async () => ({ cancelled: false }), respondToSettlement: () => new Promise(() => {}),
 };

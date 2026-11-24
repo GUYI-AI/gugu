@@ -64,7 +64,7 @@ export function SessionRow({
       // 三态走 @theme 里登记的 row-* 色标（见 index.css）：色值仍是 gugu 皮肤的交互 token，
       // 但走 Tailwind 工具类而不是手写 CSS 规则。方向键连按时渐变会把「选中的是哪条」糊成一片，
       // 所以 motion-reduce 下直接取消过渡。
-      className="flex cursor-default items-start gap-2.5 px-3 py-2 transition-colors hover:bg-row-hover active:bg-row-press aria-selected:bg-row-selected motion-reduce:transition-none"
+      className="flex cursor-default items-start gap-2.5 px-3 py-2 hover:bg-row-hover active:bg-row-press aria-selected:bg-row-selected"
     >
       {/* 勾选框独立于行的点击：点行只是「看看这条」，勾选才决定导不导。
           两者分开，单条导入仍然是「点一下 + 回车」，不必先学会多选。 */}

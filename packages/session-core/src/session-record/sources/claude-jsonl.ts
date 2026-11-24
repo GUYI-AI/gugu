@@ -1,6 +1,7 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { readFirstLines } from '@gugu/core/local/agent/transcriptInventory';
+import { readAllLines } from '@gugu/core/local/jsonl.mjs';
 
 import { claudeFilePatch } from '../../acp/transport/claude-file-patch';
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
@@ -10,14 +11,13 @@ import {
   type RecordEntry,
   type RecordArchiveBudget,
   type RecordLineageNode,
-  type RecordImageRef,
   type SessionRecordLocator,
   type SessionRecordResume,
   type SessionRecordSource,
   type SessionRecordSourceEvents
 } from '../contract';
 import { findUnder, isFile } from './find-file';
-import { jsonlCheckAt, locateImages, readRecordImage } from './record-images';
+import { jsonlCheckAt, locateImages } from './record-images';
 import {
   SessionRecordNotFoundError,
   SessionRecordForkDivergedError,
@@ -333,10 +333,6 @@ class ClaudeJsonlSource implements SessionRecordSource {
 
   getLineage(): readonly RecordLineageNode[] | null { return this.lineageValid ? this.lineage : null; }
 
-  readImage(ref: RecordImageRef): Promise<string | null> {
-    return readRecordImage(ref);
-  }
-
   stop(): void {
     this.stopped = true;
     this.reader?.stop();
@@ -591,20 +587,18 @@ class ClaudeJsonlSource implements SessionRecordSource {
       // 「更新、更大」的无关记录都要整份读一遍（真实目录实测：打开一条小会话读 17 份、约 125MB）。
       const head = await readFirstMessageUuid(candidate.path);
       if (!head || !this.anchors.has(head)) continue;
-      let text: string;
-      let bytes: number;
-      try {
-        const buffer = await readFile(candidate.path);
-        bytes = buffer.length;
-        text = buffer.toString('utf8');
-      } catch {
-        continue;
+      // 逐行读：续写文件可以超过 V8 单个字符串的上限（约 512 MiB）。读失败照常抛出，不当成「不是续写」跳过。
+      const read = { bytes: 0 };
+      const lines: string[] = [];
+      let continues = false;
+      for await (const line of readAllLines(candidate.path, undefined, read)) {
+        if (line.trim().length === 0) continue;
+        lines.push(line);
+        // 先做一次子串预判：leaf 不在这一行里，就不用解析它。
+        if (!continues && line.includes(leaf) && parseJson(line)?.uuid === leaf) continues = true;
       }
-      // 先做一次子串预判：leaf 不在文本里，连行都不用解析。
-      if (!text.includes(leaf)) continue;
-      const lines = text.split('\n').filter((line) => line.trim().length > 0);
-      if (!lines.some((line) => parseJson(line)?.uuid === leaf)) continue;
-      return { path: candidate.path, lines, bytes };
+      if (!continues) continue;
+      return { path: candidate.path, lines, bytes: read.bytes };
     }
     return null;
   }

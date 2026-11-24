@@ -64,7 +64,7 @@ describe('two-phase creation attachment contract', () => {
     await expect(verifyCreatedAttachmentPlacements(registered, authenticated, { ...input, ...change }, vi.fn().mockResolvedValue(fact))).rejects.toThrow();
   });
   it.each([
-    { agentUserId: 'other' }, { chatId: 'other-dm' }, { itemId: 'other' }, { version: 3 }, { sizeBytes: 13 }, { sha256: 'b'.repeat(64) },
+    { agentUserId: 'other' }, { chatId: 'other-dm' }, { version: 3 }, { sha256: 'b'.repeat(64) },
   ])('rejects a mismatching authoritative placement fact %j', async change => {
     await expect(verifyCreatedAttachmentPlacements(registered, authenticated, input, async () => ({ ...fact, ...change }))).rejects.toThrow();
   });

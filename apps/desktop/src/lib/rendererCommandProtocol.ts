@@ -5,9 +5,12 @@
 // `extensions` 是第二条活腿:扩展桥在主进程里判权限(身份只能从 session 取),但改 tab 标题、
 // 打 badge、开浏览器 tab、把选中内容投进对话,都发生在渲染层。复用这条既有通道,而不是给扩展
 // 另开一套 main→renderer 推送 —— 两套并存必然漂,而且第二套不会有人记得维护。
-export type RendererCommandDomain = 'auth' | 'extensions'
+//
+// `images` 是第三条:主进程要缩的图(发图的预览、设备动作回给模型的照片)交给窗口的渲染层画,
+// createImageBitmap 不在任何人的主线程上解码;主进程自己解一张 12 MP 照片要停 0.2–0.5 s。
+export type RendererCommandDomain = 'auth' | 'extensions' | 'images'
 
-export const RENDERER_COMMAND_DOMAINS: RendererCommandDomain[] = ['auth', 'extensions']
+export const RENDERER_COMMAND_DOMAINS: RendererCommandDomain[] = ['auth', 'extensions', 'images']
 
 export function rendererCommandChannel(domain: RendererCommandDomain): string {
   return `${domain}:cmd`

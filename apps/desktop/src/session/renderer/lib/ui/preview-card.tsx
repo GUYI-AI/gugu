@@ -1,7 +1,7 @@
 'use client';
 
 import { PreviewCard as PreviewCardPrimitive } from '@base-ui/react/preview-card';
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives';
+import { useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
 
 /**
@@ -29,6 +29,7 @@ function PreviewCardContent({
   return (
     <PreviewCardPrimitive.Portal container={useUiPortalContainer()}>
       <PreviewCardPrimitive.Positioner
+        style={{ zIndex: useUiPopupZIndex() }}
         align={align}
         side={side}
         sideOffset={sideOffset}

@@ -12,6 +12,7 @@ import type {
   TimelineOlderResult,
   TimelineSnapshot,
   TurnPatch,
+  LeanPage,
 } from './contract';
 
 /**
@@ -30,12 +31,11 @@ export const TRANSPORT_TEXT_LIMIT = 8_192;
 const TRIMMED_FIELDS = ['outputText', 'rawOutput', 'rawInput', 'content'] as const;
 
 /**
- * 工具交回来的图**不随记录走**:每张只留 `{ mimeType, chars }`(`imageRefs`),手机等那张图滚进视口、那一轮
- * 展开了,再按 (会话, 条目, 第几张) 去机器上取(`sessionTimeline.sessionToolImage`)。
+ * 工具交回来的图**不随记录走**:每张只留 `{ mimeType, chars }`(`imageRefs`)。No view draws or fetches them.
  *
  * 为什么(owner 10-15「手机上看的话每张图传过去岂不是很 costly」,155 定):随记录下发时,app_check 的四张约
  * 120K 字跟着冷开那一份一起下来,可轮次默认是折叠的,人还没看见(2026-10-15 实抓手机流量)。
- * 图不算裁掉的字 —— 它没丢,取得到,❌ 记进 `trimmedChars`。
+ * 图不算裁掉的字 —— 它没丢,还在记录里,❌ 记进 `trimmedChars`。
  */
 function imageRefsOf(images: readonly ToolImage[]): ToolImageRef[] {
   return images.map((image) => ({ mimeType: image.mimeType, chars: image.data.length }));
@@ -106,7 +106,8 @@ function stepLineOnly(node: ToolNode): boolean {
  *   - an agent's thinking: its text;
  *   - a delivery whose every sender is an agent (inside an exchange, "N messages with X"): the body past its
  *     opening and the contexts beside it. The exchange's line reads who and how many; a reply that quotes the
- *     delivery shows the opening. An agent is a sender some envelope of the page says is one (`from_type`);
+ *     delivery shows the opening. An agent is a sender some envelope of the page says is one (`from_type`), or a
+ *     session (`session:` address: only an agent session sends one);
  *   - what the agent sent to such agents and nobody else (the same exchange): the text past its opening.
  * Each is marked `held`. The reader reads the turn again, whole, when a row drawn from it comes on screen from
  * behind a fold, or a held item is itself on screen (`turnHeld`) — which is also what makes a wrong guess here
@@ -116,9 +117,10 @@ function stepLineOnly(node: ToolNode): boolean {
  * A finished patch loses the raw input its diff blocks already carry.
  * Left whole: what the agent said, what it sent to a person or to someone this page does not prove an agent, and
  * a delivery whose sender it does not prove one.
- * Pages the reader went back for only: the newest page is read again whenever the conversation moves.
+ * Pages only (a snapshot, an older page, the snapshot of a reset answer): the batches the host pushes as the conversation
+ * moves go whole, so a turn that moves arrives whole.
  */
-export type LeanPage = boolean | 'folded';
+export type { LeanPage } from './contract';
 export const HELD_BODY_CHARS = 120;
 /** What the roster does not read of a sub-agent's own call. */
 const ROSTER_UNREAD_FIELDS = ['rawInput', 'rawOutput', 'outputText', 'content', 'contentBlocks', 'locations', 'terminalId', '_meta'] as const;
@@ -128,6 +130,11 @@ const PLAIN_SEND = /(?:^|__)(?:message_send|session_message)$/;
 
 /** What a folded page knows of itself: who its envelopes prove an agent, which sub-agents it shows ended, and the turn at hand. */
 type PageFacts = { agents: ReadonlySet<string>; ended: ReadonlySet<string>; turn?: TranscriptTurn };
+
+/** The sender of a delivery the view folds into an exchange: one the page's envelopes prove an agent, or a session (a
+ *  session-direct envelope has no `from_type`; only an agent session sends one). Not used for sends: the view draws
+ *  what the agent sends to a session as a said line. */
+const provenSender = (facts: PageFacts, address: string) => facts.agents.has(address) || /^session:./.test(address);
 
 function pageFacts(turns: readonly TranscriptTurn[]): PageFacts {
   const agents = new Set<string>(), ended = new Set<string>();
@@ -183,7 +190,7 @@ function foldedItem(item: TranscriptItem, facts: PageFacts): TranscriptItem {
   // The view folds a delivery into an exchange only when every sender is an agent: the envelope says so, or, for an
   // envelope from before it said, the reader's directory does (`incomingActivity`) — here, another envelope of the page.
   if (!reading?.segments.every(part => /^(?:user|session):./.test(part.facts?.fromId ?? '')
-    && (part.facts!.fromType ? part.facts!.fromType === 'agent' : facts.agents.has(part.facts!.fromId!)))) return item;
+    && (part.facts!.fromType ? part.facts!.fromType === 'agent' : provenSender(facts, part.facts!.fromId!)))) return item;
   const folded = foldDeliveryEnvelope(item.text, HELD_BODY_CHARS);
   return folded !== null && folded.length < item.text.length ? { ...item, text: folded, held: true } : item;
 }
@@ -508,9 +515,10 @@ export function trimSnapshotForTransport(
   snapshot: TimelineSnapshot,
   limit = TRANSPORT_TEXT_LIMIT,
   budget = TRANSPORT_PAYLOAD_BUDGET,
+  lean: LeanPage = false,
 ): TimelineSnapshot {
   const terminals = trimTerminals(snapshot.terminals, limit);
-  const page = trimTurnPageForTransport(snapshot, limit, budget);
+  const page = trimTurnPageForTransport(snapshot, limit, budget, lean);
   return terminals === snapshot.terminals ? page : { ...page, ...(terminals !== undefined ? { terminals } : {}) };
 }
 
@@ -527,18 +535,21 @@ export function trimOlderForTransport(
   older: TimelineOlderResult,
   limit = TRANSPORT_TEXT_LIMIT,
   budget = REMOTE_OLDER_PAGE_BUDGET,
+  lean: LeanPage = false,
 ): TimelineOlderResult {
-  return trimTurnPageForTransport(older, limit, budget);
+  return trimTurnPageForTransport(older, limit, budget, lean);
 }
 
+/** `lean` folds only the snapshot of a reset answer (a page); a batch is the conversation moving and goes whole. */
 export function trimAfterResultForTransport(
   result: TimelineAfterResult,
   limit = TRANSPORT_TEXT_LIMIT,
+  lean: LeanPage = false,
 ): TimelineAfterResult {
   if (result.ok) {
     const batch = trimBatchForTransport(result.batch, limit);
     return batch === result.batch ? result : { ...result, batch };
   }
-  const snapshot = trimSnapshotForTransport(result.snapshot, limit);
+  const snapshot = trimSnapshotForTransport(result.snapshot, limit, undefined, lean);
   return snapshot === result.snapshot ? result : { ...result, snapshot };
 }

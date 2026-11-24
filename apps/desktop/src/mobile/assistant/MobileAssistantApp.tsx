@@ -274,7 +274,7 @@ function MobileAssistantAppContent({
               </IconButton>
             ) : null}
             <Button variant="ghost" className="ta-phone-identity" aria-pressed={tab === 'profile'} onClick={() => open({ tab: 'profile' })} aria-label={t('top.profile', { name })} data-testid="mobile-assistant-pill">
-              <Avatar name={name} avatarUrl={assistant.avatar} seed={assistant.id} size={28} isAgent harnessBadge={false} />
+              <Avatar name={name} avatarUrl={assistant.avatar} seed={assistant.id} size={28} isAgent />
             </Button>
           </>
         }

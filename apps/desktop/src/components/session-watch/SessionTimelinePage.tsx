@@ -50,7 +50,6 @@ import { useMobileShell } from '@/hooks/useMobileShell'
 import { hostedInputIds } from './local-queued-inputs'
 import { canResumePhoneInput, phoneInputQueueIntent } from './phone-input-queue'
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
-import { SessionChatLoading } from '@renderer/features/sessions/acp/session-chat-loading'
 
 /**
  * owner 10-16 The App tabs a session offers on the phone: installed, switched on, opening no file — the session page's 「+」
@@ -78,6 +77,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   innerSidebarEntry,
   local = false,
   appPanel = false,
+  unreachable = false,
   onBack,
 }: {
   device: Device
@@ -94,6 +94,11 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
    * view switcher is not offered there — the panel is the task's conversation, nothing else.
    */
   appPanel?: boolean
+  /**
+   * The desktop already found this machine not answering (SessionContentGate): until this page's own link has had an
+   * answer, the header says 「连接中」 like the block's strip (❌ a green dot claiming it online under that strip).
+   */
+  unreachable?: boolean
   onBack: () => void
 }) {
   const { t } = useTranslation('main')
@@ -129,7 +134,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
-    reload, loadOlder, loadToolImage, pendingSends, respond, sending, respondingItemId, cancel, cancelling, link, errorCode,
+    reload, loadOlder, fillHeld, pendingSends, respond, sending, respondingItemId, cancel, cancelling, link, errorCode,
   } =
     useAgentWatchSession(device.device_id, session.conversationId, online, firstPrompt, phoneHost, local)
 
@@ -140,7 +145,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   useTimelineFailureNotice(`${device.device_id}/${session.conversationId}`, error, recovery)
   // The directory says a crashed / unplugged machine is online until its lease runs out (about two minutes): its not
   // answering is the earlier fact: the header says 「连接中」 (❌ 「设备离线」); the reads keep trying and the page comes back by itself.
-  const hostSilent = !local && online && link === 'lost' && (!error || remoteFailureKind(errorCode) === 'machine-unreachable')
+  const hostSilent = !local && online && (link === 'lost' || (unreachable && link !== 'ok'))
+    && (!error || remoteFailureKind(errorCode) === 'machine-unreachable')
   const answering = online && !hostSilent
   // Header state (owner 11-08: 「连接中」/「设备离线」 in the header, ❌ a banner, ❌ 「未连接」). The directory saying
   // the machine is off and this page's link not answering are separate facts: only the first is 「设备离线」.
@@ -327,19 +333,15 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           stopping={cancelling}
           footerNotice={<>{agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}<SessionInputQueue sessionId={session.conversationId} waitingForConnection={!answering} inTranscript={drawnInputIds} />{actionErrorNotice}</>}
           onLoadOlder={loadOlder}
-          onLoadToolImage={loadToolImage}
-          emptyNote={answering && (phase === 'loading' || timeline.turns.length > 0) ? (
+          onHeldShown={fillHeld}
+          emptyNote={answering && waitingForRecord && (phase === 'loading' || timeline.turns.length > 0) ? (
             /* 刚建的会话:记录要等 agent 写下第一行才有。那时说「正在等它开口」,❌ 不说「正在读取」——
                读取早就成功了,是对面还没写。线上已画着刚发的那句时不说(线程有内容就不画空态):那句本身就是「发出去了」。
-               画在线程自己的空态位上,❌ 在线程上方另起一行:那样空着的线程还会再说一句「Nothing in this task yet」
-               (对一条有历史的任务是错话),撤掉上方那一行时整条线程跟着上移(owner 10-12「进去就颤两下」)。
-               时间线已经到手、线程还没画出来的那一两帧(运行时下一拍才收到)也是这一句,❌ 退回官方空态闪一下。
-               读取中画骨架屏,和桌面会话页一样画在消息区上、输入框下(owner 11-12:❌ 输入框下面多一行「正在读取时间线…」)。 */
-            waitingForRecord ? (
-              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                <div className="gg-aw-placeholder" data-testid="agent-watch-waiting-record">{t('agentWatch.timeline.waitingRecord')}</div>
-              </div>
-            ) : <SessionChatLoading label={t('agentWatch.timeline.loading')} />
+               画在线程自己的空态位上,❌ 在线程上方另起一行(撤掉时整条线程跟着上移,owner 10-12「进去就颤两下」)。
+               还在读的时候什么都不另画:页头、输入框照常,读到什么画什么(owner 11-23:❌ 骨架屏这一档单独的「加载中」)。 */
+            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+              <div className="gg-aw-placeholder" data-testid="agent-watch-waiting-record">{t('agentWatch.timeline.waitingRecord')}</div>
+            </div>
           ) : null}
         />
       )}

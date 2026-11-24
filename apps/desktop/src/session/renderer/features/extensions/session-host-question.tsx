@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { QuestionAnswer } from '@gugu/session-core/session-record/contract';
+import type { QuestionAnswer, Settlement } from '@gugu/session-core/session-record/contract';
 import { AgentQuestionCard } from '@/components/chat/AgentQuestionCard';
 import { rpcOn } from '@renderer/lib/ipc';
 import { machineRegistry } from '@renderer/lib/machine-routing';
@@ -14,11 +14,14 @@ const AGENT_QUESTION = ['agent-question'] as const;
  */
 export function SessionHostQuestion({
   sessionId,
+  settlements,
 }: {
   sessionId: string | null;
   session: { status: string | null; detail: string | null } | null | undefined;
+  /** What the page's own feed already holds of this session's asks; absent = follow the timeline here. */
+  settlements?: Readonly<Record<string, Settlement>> | null;
 }) {
-  const ask = useSessionHostAsk(sessionId, AGENT_QUESTION, true);
+  const ask = useSessionHostAsk(sessionId, AGENT_QUESTION, true, settlements);
   const onDiscuss = useCallback(async () => {
     if (!sessionId || !ask) throw new Error('No question is asked here');
     const result = await rpcOn(machineRegistry.machineOf(sessionId)).sessionTimeline.sessionRespond({ conversationId: sessionId, itemId: ask.itemId, kind: 'question', discuss: true, by: 'desktop' });

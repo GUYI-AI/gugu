@@ -13,9 +13,9 @@ import '@/i18n/registerContactsCatalog';
 import '@/i18n/registerMainCatalog';
 import '@/styles/tokens.css';
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
-import { drainTopicSplitRequest } from '@/lib/topicSplitRequest';
 import { clearDraggedScreenContent, getDraggedScreenContent, SCREEN_CONTENT_DRAG_TYPE } from '@renderer/lib/drag-screen-content';
 import { publishSidebarChatView } from '@/lib/sidebarChatsBridge';
+import { installSessionViewRequestBridge, SESSION_VIEW_REQUEST_BRIDGE_KEY } from '@renderer/features/sessions/stores/session-view-requests';
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@/store/devicesContext', async (original) => ({ ...(await original<object>()), useDevicesStore: () => ({ devices: [] }) }));
@@ -107,9 +107,7 @@ describe('the IM chat list in the master\'s roles (#7333)', () => {
     document.body.appendChild(target);
     try {
       await userEvent.dragAndDrop(root.querySelector<HTMLElement>(`[data-chat-row="${chatId}"]`)!, target);
-      expect(drops).toEqual([{ trusted: true, types: [SCREEN_CONTENT_DRAG_TYPE], content: { kind: 'chat', chatId: chatId === 't-live' ? 'grp-1' : chatId, title: chatId === 'dm-1' ? '林知夏' : chats.find((chat) => chat.id === chatId)!.name, ...(chatId === 't-live' ? { topic: { chatId, name: '去哪儿' } } : {}) } }]);
-      // An arbitrary accepting target is not a workspace split: it must not open a topic.
-      expect(drainTopicSplitRequest('grp-1')).toBeNull();
+      expect(drops).toEqual([{ trusted: true, types: [SCREEN_CONTENT_DRAG_TYPE], content: { kind: 'chat', chatId, title: chatId === 'dm-1' ? '林知夏' : chats.find((chat) => chat.id === chatId)!.name } }]);
     } finally { target.remove(); }
   });
 
@@ -148,12 +146,39 @@ describe('the IM chat list in the master\'s roles (#7333)', () => {
     } finally { target.remove(); }
   });
 
-  it('a sidebar topic activation requests a split toggle on its source', async () => {
-    const root = await renderList();
-    await userEvent.click(root.querySelector<HTMLElement>('[data-topic-subrow="t-live"]')!);
-    expect(drainTopicSplitRequest('grp-1')).toEqual({
-      chatId: 't-live', name: '去哪儿', sourceChatId: 'grp-1', focusComposer: true, toggle: true,
-    });
+  // #62 in the sidebar a topic row opens the topic itself; while it is open its own row is lit, and its source row only when the
+  // topic rows are folded away (nothing else on screen says where the open conversation lives).
+  it('sidebar: a topic row opens the topic itself; the open topic lights its row, and its source row once the topics fold', async () => {
+    const openChat = vi.fn();
+    installSessionViewRequestBridge(window, { openChat });
+    try {
+      publishSidebarChatView({ focusedChatId: 't-live', groups: [] });
+      const root = await renderList('t-live', vi.fn(), false, null, 'sidebar');
+      const source = () => root.querySelector<HTMLElement>('[data-chat-row="grp-1"]')!;
+      await until('the topic sub-row rendered', () => root.querySelector('[data-topic-subrow="t-live"]') !== null);
+      expect(root.querySelector('[data-topic-subrow="t-live"]')?.getAttribute('aria-selected')).toBe('true');
+      expect(source().getAttribute('aria-selected')).toBe('false');
+      await userEvent.click(root.querySelector<HTMLElement>('[data-topic-subrow="t-live"]')!);
+      expect(openChat).toHaveBeenCalledWith('t-live', false);
+      await userEvent.click(source().querySelector<HTMLElement>('button[aria-expanded="true"]')!);
+      await until('the topic rows folded', () => root.querySelector('[data-topic-subrow="t-live"]') === null);
+      expect(source().getAttribute('aria-selected')).toBe('true');
+    } finally {
+      delete (window as unknown as Record<string, unknown>)[SESSION_VIEW_REQUEST_BRIDGE_KEY];
+    }
+  });
+
+  it('a topic activation opens the topic itself as the main conversation', async () => {
+    const setActiveChatId = vi.fn();
+    const onChatSelected = vi.fn();
+    harness = createReactHarness();
+    harness.container.style.cssText = 'width: 320px; height: 640px; display: flex;';
+    await renderWithAppProviders(harness, createNode(ChatListPanel, { activeTab: 'chats', mobile: false, placement: 'page', onChatSelected }),
+      { chat: { chats, activeChatId: 'grp-1', setActiveChatId, identitiesById: { 'peer-lin': displayIdentity('peer-lin', { display_name: '林知夏' }) } } });
+    await until('the topic row rendered', () => harness.container.querySelector('[data-topic-subrow="t-live"]') !== null);
+    await userEvent.click(harness.container.querySelector<HTMLElement>('[data-topic-subrow="t-live"]')!);
+    expect(setActiveChatId).toHaveBeenCalledExactlyOnceWith('t-live');
+    expect(onChatSelected).toHaveBeenCalledExactlyOnceWith('composer');
   });
 
   it('#7589 only a source with topics has a chevron; repeated clicks fold all its subrows without navigating', async () => {
@@ -250,7 +275,7 @@ describe('the IM chat list in the master\'s roles (#7333)', () => {
     expect(source().hasAttribute('aria-expanded')).toBe(false);
     expect(source().querySelector('button[aria-expanded]')).toBeNull();
     expect(root.querySelector('[data-topic-subrow]')).toBeNull();
-    expect(source().querySelector('.gg-chip[data-tone="accent"]')?.textContent).toBe('1');
+    expect(source().querySelector('.gg-avatar-unread-mark[data-tone="danger"]')?.textContent).toBe('1');
     expect(onChatSelected).toHaveBeenCalledExactlyOnceWith('composer');
 
     await userEvent.click(title());
@@ -275,18 +300,18 @@ describe('the IM chat list in the master\'s roles (#7333)', () => {
     await until('restored topic receives focus', () => document.activeElement?.getAttribute('data-chat-row') === 't-live');
   });
 
-  it('a row is avatar + two lines: name and preview 14/20, time 12/18, the unread count an 18px ink chip; corners 8, not a capsule', async () => {
+  it('a row is avatar + two lines: name and preview 14/20, time 12/18, the unread count an 18px red chip on the avatar top-right; corners 8, not a capsule', async () => {
     const root = await renderList();
     const row = root.querySelector<HTMLElement>('[data-chat-row="dm-1"]')!;
     expect(tier(row.querySelector('.gg-list-row-title'))).toEqual(COMPACT);
     expect(getComputedStyle(row.querySelector('.gg-list-row-title')!).fontWeight, 'an unread row\'s name is not emphasised').toBe('600');
     expect(tier(row.querySelector('.gg-list-row-subtitle'))).toEqual(COMPACT);
     expect(tier(row.querySelector('.gg-list-row-meta'))).toEqual(CAPTION);
-    const count = row.querySelector<HTMLElement>('.gg-chip[data-tone="accent"]')!;
+    const count = row.querySelector<HTMLElement>('.gg-list-row-leading .gg-avatar-unread-mark[data-tone="danger"]')!;
     expect(count.textContent).toBe('3');
     expect(tier(count)).toEqual(CAPTION);
     expect(Math.round(count.getBoundingClientRect().height)).toBe(18);
-    expect(getComputedStyle(count).backgroundColor).toBe(token('--primary'));
+    expect(getComputedStyle(count).backgroundColor).toBe(token('--danger-solid'));
     expect(getComputedStyle(row).borderRadius, 'the row became a capsule').toBe('8px');
     expect(row.querySelector('.gg-list-row-leading img, .gg-list-row-leading svg, .gg-list-row-leading [class*="avatar"]'), 'the row lost its avatar').not.toBeNull();
     const lines = row.querySelectorAll('.gg-list-row-line');

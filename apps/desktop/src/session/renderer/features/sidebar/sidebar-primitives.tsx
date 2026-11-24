@@ -70,7 +70,7 @@ export const sidebarHeaderIconButtonClass =
   'flex size-6 shrink-0 items-center justify-center rounded-md text-foreground-muted transition-colors hover:bg-row-hover hover:text-foreground-tertiary active:bg-row-press aria-expanded:bg-row-selected aria-expanded:hover:bg-row-selected aria-expanded:active:bg-row-selected aria-expanded:hover:state-hover-layer aria-expanded:active:state-press-layer aria-expanded:text-foreground-tertiary [&_svg]:size-4';
 
 /**
- * 行尾键帽的显隐 —— 指针落到这一行(或键盘停在这一行)才淡入,静止态不画。
+ * 行尾键帽的显隐 —— 指针落到这一行(或键盘停在这一行)才出现,静止态不画。
  *
  * 为什么不常驻:侧栏里挂键帽的是搜索、资源库、设置三行,三行同时在屏上,于是同一副 ⌘ 方块
  * 在一条竖线上重复三遍,成了永久家具。而键帽回答的那个问题(「这一项的键位是什么」)只在
@@ -84,7 +84,7 @@ export const sidebarHeaderIconButtonClass =
  * ⚠️ 用它的行必须自己声明 `group/row`,与会话行 / 项目行同一个组名,❌ 别另起一个。
  */
 export const sidebarRowShortcutClass =
-  'opacity-0 transition-opacity duration-[var(--dur-fast,120ms)] ease-out group-hover/row:opacity-100 group-row-kbd-focus:opacity-100';
+  'opacity-0 group-hover/row:opacity-100 group-row-kbd-focus:opacity-100';
 
 /**
  * 行尾动作(置顶 / 归档)与它底下那格时间的显隐 —— **两者互为补集**,所以配方写在一起。
@@ -108,10 +108,10 @@ export const sidebarRowActionsSlotClass =
   'group/row-actions relative ml-2 flex h-6 shrink-0 items-center justify-end';
 
 export const sidebarRowHoverActionsClass =
-  'pointer-events-none absolute inset-y-0 right-0 z-10 flex translate-x-1 items-center justify-end gap-1 opacity-0 transition-opacity duration-[var(--dur-fast,120ms)] ease-out group-hover/row:relative group-hover/row:pointer-events-auto group-hover/row:translate-x-0 group-hover/row:opacity-100 group-focus-within/row-actions:relative group-focus-within/row-actions:pointer-events-auto group-focus-within/row-actions:translate-x-0 group-focus-within/row-actions:opacity-100';
+  'pointer-events-none absolute inset-y-0 right-0 z-10 flex translate-x-1 items-center justify-end gap-1 opacity-0 group-hover/row:relative group-hover/row:pointer-events-auto group-hover/row:translate-x-0 group-hover/row:opacity-100 group-focus-within/row-actions:relative group-focus-within/row-actions:pointer-events-auto group-focus-within/row-actions:translate-x-0 group-focus-within/row-actions:opacity-100';
 
 export const sidebarRowRestActionsClass =
-  'pointer-events-none inset-y-0 right-0 flex shrink-0 items-center justify-end opacity-100 transition-opacity duration-[var(--dur-fast,120ms)] group-hover/row:absolute group-hover/row:opacity-0 group-focus-within/row-actions:absolute group-focus-within/row-actions:opacity-0';
+  'pointer-events-none inset-y-0 right-0 flex shrink-0 items-center justify-end opacity-100 group-hover/row:absolute group-hover/row:opacity-0 group-focus-within/row-actions:absolute group-focus-within/row-actions:opacity-0';
 
 export const SidebarContainer = React.forwardRef<
   HTMLDivElement,
@@ -199,8 +199,10 @@ SidebarItemMiniButton.displayName = 'SidebarItemMiniButton';
 // 叠色还顺带解决「行已选中时行内小钮要不要再深一档」——叠色天然叠加,不需要特例。
 // #7333 视觉规范:侧栏是导航 ⇒ 行是胶囊(rounded-full = --radius-capsule);键盘焦点走全局 :focus-visible 环,
 // 不再在这里压掉(outline 跟着胶囊圆角走)。
+// 行的悬浮底色、行尾钮的显隐都即时切换,❌ 别加 transition:指针扫过一列行时,每换一行就是几帧过渡,
+// 主线程跟着连续出帧,每帧再把在跑的转圈指示器全部重算一遍样式(Air 实测占侧栏悬浮时样式失效的 22%)。
 const sidebarMenuItemClass =
-  'flex w-full font-normal h-8 text-foreground-tertiary-rest rounded-full items-center hover:bg-row-hover active:bg-row-press hover:text-foreground-tertiary gap-2 text-sm transition-colors data-[active=true]:bg-row-selected data-[active=true]:hover:bg-row-selected data-[active=true]:active:bg-row-selected data-[active=true]:text-foreground-tertiary data-[active=true]:hover:state-hover-layer data-[active=true]:active:state-press-layer';
+  'flex w-full font-normal h-8 text-foreground-tertiary-rest rounded-full items-center hover:bg-row-hover active:bg-row-press hover:text-foreground-tertiary gap-2 text-sm data-[active=true]:bg-row-selected data-[active=true]:hover:bg-row-selected data-[active=true]:active:bg-row-selected data-[active=true]:text-foreground-tertiary data-[active=true]:hover:state-hover-layer data-[active=true]:active:state-press-layer';
 
 interface SidebarMenuButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   isActive?: boolean;

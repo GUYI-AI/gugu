@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import type { ChatCommands, ChatContext, ChatLayout, ChatState } from '@gugu/session-chat-ui'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { loadChatUi } from '@renderer/lib/chat/chat-transcript'
@@ -56,7 +56,7 @@ function SessionTranscriptContent({
   layout?: ChatLayout
   commands?: ChatCommands
   composerContent?: ReactNode
-  /** A layer over the messages, under the composer (`onReady`'s `contentOverlay`): loading draws its skeleton there. */
+  /** A layer over the messages, under the composer (`onReady`'s `contentOverlay`): an empty thread's note goes there. */
   contentOverlay?: boolean
   shown?: boolean
   activeTurnId?: string | null
@@ -75,10 +75,7 @@ function SessionTranscriptContent({
 }): ReactElement | null {
   const defaultLayout = useSessionChatLayout()
   const mobileShell = useMobileShell()
-  // On the phone a tool call's pictures are not drawn or fetched (#2594); the desktop keeps them, however narrow.
-  // Gated on the shell, not on `mobile`: desktop windows (the assistant's task window, a peek) draw this same page.
-  const baseLayout = layout ?? defaultLayout
-  const shownLayout = useMemo(() => mobileShell ? { ...baseLayout, hideToolPictures: true } : baseLayout, [baseLayout, mobileShell])
+  const shownLayout = layout ?? defaultLayout
   const [model, setModel] = useState<Model | null>(null)
   const written = useRef<readonly TranscriptTurn[]>([])
   useEffect(() => {

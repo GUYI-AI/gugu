@@ -2,7 +2,7 @@
 
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import * as React from 'react';
-import { useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives';
+import { useUiPopupZIndex, useUiPortalContainer, OpenLayer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
 import { noteOverlayRequest } from '@/lib/localRendererDiagnostics';
 
@@ -32,6 +32,7 @@ function PopoverContent({
   return (
     <PopoverPrimitive.Portal container={useUiPortalContainer()}>
       <PopoverPrimitive.Positioner
+        style={{ zIndex: useUiPopupZIndex() }}
         align={align}
         alignOffset={alignOffset}
         side={side}

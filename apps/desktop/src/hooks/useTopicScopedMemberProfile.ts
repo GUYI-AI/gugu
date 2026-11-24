@@ -7,21 +7,18 @@ import { groupRoleRevision, useGroupChatSettings } from '../components/chat/useG
 import { groupRoster } from './useRoomCollab'
 
 /**
- * A message avatar can open its card in the main conversation or the topic pane.
+ * A message avatar opens its card in the main conversation, which may be a topic.
  * A topic card reads its room's roster and writes its own membership row. Until
  * that roster confirms membership, the card only shows the agent's identity.
  */
 export function useTopicScopedMemberProfile(opts: {
   profile: ActiveMemberProfile | null
   mainTopicChatId: string | null
-  asideTopicChatId: string | null
   authorityRevision?: number
   currentUserId: string | null
   groupEditControlsFor: (profile: MemberProfileCardModel) => MemberProfileEditControls | undefined
 }): { profile: ActiveMemberProfile; editControls: MemberProfileEditControls | undefined } | null {
-  const { profile, mainTopicChatId, asideTopicChatId, currentUserId, groupEditControlsFor, authorityRevision = 0 } = opts
-  const fromAside = profile?.openedFrom === 'aside'
-  const topicChatId = (fromAside ? asideTopicChatId : mainTopicChatId) ?? null
+  const { profile, mainTopicChatId: topicChatId, currentUserId, groupEditControlsFor, authorityRevision = 0 } = opts
   const roster = useReplica(groupRoster, topicChatId ? [topicChatId, 'topic'] : null)
   const load = () => topicChatId ? groupRoster.refresh(topicChatId) : Promise.resolve()
 
@@ -40,7 +37,7 @@ export function useTopicScopedMemberProfile(opts: {
   })
 
   return useMemo(() => {
-    if (!profile || (fromAside && !topicChatId)) return null
+    if (!profile) return null
     if (!topicChatId) return { profile, editControls: groupEditControlsFor(profile.member) }
     const agent = topicSnapshot?.agents.find((a) => a.id === profile.member.id)
     const human = topicSnapshot?.humans.find((h) => h.id === profile.member.id)
@@ -50,5 +47,5 @@ export function useTopicScopedMemberProfile(opts: {
         ? { ...profile.member, profileScope: 'group', membership: 'current', role: human.role, listenMode: undefined }
         : { ...profile.member, profileScope: 'direct', listenMode: undefined }
     return { profile: { ...profile, member }, editControls: agent ? topicEditControlsFor(member) : undefined }
-  }, [fromAside, groupEditControlsFor, profile, topicChatId, topicEditControlsFor, topicSnapshot])
+  }, [groupEditControlsFor, profile, topicChatId, topicEditControlsFor, topicSnapshot])
 }
