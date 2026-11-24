@@ -33,7 +33,7 @@ import type { TerminalState } from '@gugu/session-core/acp/client';
  * conversationId in AcpChatPanel) — this assumption is intentional.
  */
 
-import { batch, createMemo, createRoot, createSignal } from 'solid-js';
+import { batch, createMemo, createRoot, createSignal, untrack } from 'solid-js';
 import type { BackgroundCommandEntry } from '@session-chat/lib/background-command-roster';
 import type { SubagentRosterEntry } from '@session-chat/lib/subagent-roster';
 import type { ChatContext } from '../chat-context';
@@ -333,16 +333,25 @@ function createSessionState(transcript: TranscriptApi): ChatSessionState {
     equals: sameBackgroundTasks,
   });
   const [terminals, setTerminals] = createSignal<ReadonlyMap<string, TerminalState>>(new Map());
+  // @@@unchanged-is-silent — every host snapshot sets permissions and terminals again; a row that read them draws again
+  // only when what it read changed (committed runs in ChatRoot are redrawn by exactly what they read).
   const recordedTerminals = createMemo(() => new Map(
     transcript.state.committedTurns.flatMap(turn => turn.terminals ?? []).map(terminal => [terminal.terminalId, terminal])
-  ));
+  ), undefined, { equals: (a, b) => a.size === b.size && [...a].every(([id, terminal]) => b.get(id) === terminal) });
   const pendingToolCallIds = createMemo(() => {
     const ids = new Set<string>();
     for (const request of permissions()) {
       if (request.toolCall) ids.add(request.toolCall.toolCallId);
     }
     return ids;
-  });
+  }, undefined, { equals: (a, b) => a.size === b.size && [...a].every(id => b.has(id)) });
+  // One terminal per read: a row showing one terminal does not draw again because another one streamed.
+  const terminalReads = new Map<string, ReturnType<typeof createSignal<TerminalState | undefined>>>();
+  const terminalRead = (terminalId: string): TerminalState | undefined => {
+    let read = terminalReads.get(terminalId);
+    if (!read) terminalReads.set(terminalId, read = createSignal(untrack(terminals).get(terminalId)));
+    return read[0]();
+  };
 
   const state: ChatSessionSnapshot = {
     get permissions() {
@@ -370,7 +379,7 @@ function createSessionState(transcript: TranscriptApi): ChatSessionState {
       return backgroundTasks();
     },
     terminalSnapshot(terminalId) {
-      return terminals().get(terminalId) ?? recordedTerminals().get(terminalId) ?? null;
+      return terminalRead(terminalId) ?? recordedTerminals().get(terminalId) ?? null;
     },
   };
 
@@ -389,7 +398,11 @@ function createSessionState(transcript: TranscriptApi): ChatSessionState {
       if (known && known.width === size.width && known.height === size.height) return;
       setBodySizes(new Map(bodySizes()).set(messageId, size));
     },
-    setTerminals: (next) => setTerminals(new Map(next.map(terminal => [terminal.terminalId, terminal]))),
+    setTerminals: (next) => batch(() => {
+      const byId = new Map(next.map(terminal => [terminal.terminalId, terminal]));
+      setTerminals(byId);
+      for (const [terminalId, [, set]] of terminalReads) set(() => byId.get(terminalId));
+    }),
   };
 }
 

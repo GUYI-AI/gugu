@@ -1,7 +1,7 @@
 import { decorateConversationDensity } from './conversation-density';
 import { toolActivationNames } from '../lib/tool-activation';
 import { conversationOutput } from './conversation-process';
-import { conversationMessages } from './conversation-messages';
+import { conversationIndex, conversationMessages, earlierAnchors, type ConversationEarlier, type ConversationIndex } from './conversation-messages';
 import { sentMessagesOf, withSentReplies, withSettledSentReplies } from './sent-replies';
 import { activityArtifacts } from './activity-artifacts';
 import { joinContinuedTurns, planConversationSegments } from './conversation-segments';
@@ -193,6 +193,20 @@ function withoutSentRepliesOfAgentSends(turn: TranscriptTurn): TranscriptTurn {
   return turn.items.some(drawnAsSend) ? { ...turn, items: turn.items.filter((item) => !drawnAsSend(item)) } : turn;
 }
 
+/**
+ * The reply anchors a stretch of turns contributes, and the ones it reads from the turns before it, both read off the
+ * same turns `flattenTier` draws (with the sends' reply copies, which carry the `:sent:` ids). The committed tier keeps
+ * them per run of turns (`committedBuild`).
+ */
+export function conversationIndexOf(turns: readonly TranscriptTurn[], ctx: SegmentCtx, earlier?: ConversationEarlier): {
+  index: ConversationIndex; anchors: { messages: string[]; groups: string[] };
+} {
+  const sentReplies = ctx.settled ? withSettledSentReplies : withSentReplies;
+  const drawn = turns.map(turn => sentReplies(turn, { allDestinations: ctx.agentConversation }));
+  const index = conversationIndex(drawn, earlier);
+  return { index, anchors: earlierAnchors(drawn, index) };
+}
+
 export function flattenTier(
   turns: readonly TranscriptTurn[],
   ctx: SegmentCtx,
@@ -203,11 +217,14 @@ export function flattenTier(
   previousConversation?: ChatMessage,
   previousActivity?: AgentActivityGroup,
   previousRow?: RenderUnit,
+  conversation?: { index?: ConversationIndex; earlier?: ConversationEarlier },
 ): RenderUnit[] {
   const sentReplies = ctx.settled ? withSettledSentReplies : withSentReplies;
   turns = turns.map(turn => sentReplies(turn, { allDestinations: ctx.agentConversation }));
   // A turn the agent opened because one of its own tasks finished continues the turn before it (#2587).
-  if (ctx.agentConversation) turns = joinContinuedTurns(conversationMessages(turns));
+  // Reply anchors resolve in these turns first, then in the turns before them (`conversation.earlier`, committed runs).
+  if (ctx.agentConversation) turns = joinContinuedTurns(conversationMessages(turns,
+    conversation?.index ?? conversationIndex(turns, conversation?.earlier), conversation?.earlier));
   // One send, drawn once. On the session page the call itself is drawn as the agent's words (agent-send, below), so the
   // reply copied out of it goes. In the agent conversation the copy is the reply bubble that carries the turn's process
   // footer and the quote anchor, so there the call stays an ordinary tool call (`sentReplyCalls`).

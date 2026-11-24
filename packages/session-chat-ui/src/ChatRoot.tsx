@@ -1,5 +1,5 @@
 /** @jsxImportSource solid-js */
-import { appendActivityUnits, preserveActivityIds, trailingActivity } from './state/agent-activity';
+import { preserveActivityIds, trailingActivity, type AgentActivityGroup } from './state/agent-activity';
 import { activityLanes, joinedActivityLanes } from './state/activity-lanes';
 import { latestViewerInput, resetActivityOnInput } from './state/activity-boundary';
 /**
@@ -38,6 +38,8 @@ import {
   createEffect,
   createComputed,
   createMemo,
+  createReaction,
+  createRoot,
   createSignal,
   on,
   onCleanup,
@@ -77,7 +79,7 @@ import type { ThemeVarKey } from './core/config';
 import type { MeasureCtx } from './core/define';
 import { genericEstimate } from './core/layout/generic-estimate';
 import { SCROLL_END_EPSILON_PX } from './core/stick-to-bottom';
-import { keepUnchangedUnits, unitContainsItem, unitItemIds, unitReservedHeight } from './core/units';
+import { keepUnchangedUnits, unitContainsItem, unitItemIds, unitReservedHeight, type RenderUnit } from './core/units';
 import { Virtualizer } from './core/virtualizer';
 import { collectViewportProtection, sameViewportProtection, type ViewportProtection } from './core/viewport-protection';
 import type { ChatItem, ChatMessage, TranscriptTurn } from './model';
@@ -87,6 +89,7 @@ import { isEmptyAgentTurn, joinsFoldRunAt } from './state/turn-fold';
 import { canBeContinued, continuesPreviousTurn, withContinuedActiveTurn } from './state/conversation-segments';
 import {
   flattenTier, lastConversationMessage,
+  conversationIndexOf,
   isDeliveredFromAgent,
   makeUnitsView,
   collectUserTurnUnits,
@@ -95,6 +98,8 @@ import {
   backgroundTasksView,
 } from './state/flatten';
 import type { UnitsView } from './state/flatten';
+import type { ConversationEarlier, ConversationIndex } from './state/conversation-messages';
+import { conversationSpeaker } from './state/conversation-density';
 import { segmentCtxFor } from './state/segment-ctx';
 import type { LayoutSnapshot } from './state/geometry';
 import { sameRange } from './state/geometry';
@@ -560,12 +565,8 @@ export function ChatRoot(props: ChatRootProps) {
   // Stable empty array passed to makeUnitsView when we need a committed-only
   // view. Must not change identity so memos don't re-run on each access.
   const NO_ACTIVE_UNITS: ReturnType<typeof flattenTier> = [];
-  // An incremental append only reads the new tail's fold keys. Keep the full
-  // fold snapshot reactive so older headers still rebuild their hidden rows.
-  const committedFolds = createMemo(() => viewState().snapshot());
-
   /**
-   * One build of the committed tier, derived from the previous build.
+   * The committed tier, derived from the previous one.
    *
    * `units` is the committed prefix of `units()`. `indexById` maps an itemId to
    * the index of its FIRST committed unit (active-tier items are handled by a
@@ -579,14 +580,81 @@ export function ChatRoot(props: ChatRootProps) {
   type CommittedBuild = {
     state: ChatState;
     source: readonly TranscriptTurn[];
-    folds: Record<string, boolean>;
     units: ReturnType<typeof flattenTier>;
     indexById: ReadonlyMap<string, number>;
     dayKey: string | undefined;
     reseed: boolean;
+    /** Pin anchors of the tier (`collectUserTurnUnits`): the viewer's own inputs, and every input incl. deliveries. */
+    userUnits: number[];
+    inputUnits: number[];
+    /** Separately delivered panel replies outside an activity: each starts its own reading boundary (pinEnds). */
+    replyUnits: number[];
   };
 
-  // ── Committed tier: pure derivation ─────────────────────────────────────────
+  // ── Committed tier: drawn run by run ────────────────────────────────────────
+  // @@@committed-runs — the committed turns are cut into runs: a turn starts a new run unless it is drawn together with
+  // the one before it (it joins that turn's fold run, #4981, or continues it, #2587). A run is drawn by `flattenTier`
+  // from its own turns and the seam the run before it ends on (prevKind, dayKey, the last conversation message, the
+  // trailing activity, the last row) — the same seam the committed tier hands the active tier. A run draws again only
+  // when its turns are new objects, the seam it starts from changed in what `flattenTier` reads of it (`sameSeam`), or
+  // something its drawing read changed: Solid watches each drawing (`createReaction`) — a fold of one of its ids, a
+  // permission, the latest turn, the theme — with no list of inputs kept by hand. A turn the host replaces, a turn that
+  // steps out while it is the live one, a page prepended: each makes its own run new and leaves the others as they are,
+  // so a frame costs the runs that changed, not the conversation's length.
+  type CommittedRun = { id: string; turns: readonly TranscriptTurn[] };
+  type RunSeam = {
+    kind: string | undefined;
+    dayKey: string | undefined;
+    conversation: ChatMessage | undefined;
+    activity: AgentActivityGroup | undefined;
+    row: RenderUnit | undefined;
+  };
+  const NO_SEAM: RunSeam = { kind: undefined, dayKey: undefined, conversation: undefined, activity: undefined, row: undefined };
+  const sameIds = (a: readonly string[] | undefined, b: readonly string[] | undefined) =>
+    a === b || (!!a && !!b && a.length === b.length && a.every((id, i) => id === b[i]));
+  // What `flattenTier` reads of a seam is all that has to match: two seams that agree there draw the same run.
+  const sameSeam = (a: RunSeam, b: RunSeam) => a.kind === b.kind && a.dayKey === b.dayKey
+    && (a.conversation && conversationSpeaker(a.conversation)) === (b.conversation && conversationSpeaker(b.conversation))
+    && a.row?.conversationUtterance === b.row?.conversationUtterance
+    && a.activity?.id === b.activity?.id
+    && sameIds(a.activity?.events.map(event => event.id), b.activity?.events.map(event => event.id))
+    && sameIds(a.activity?.messageIds, b.activity?.messageIds);
+  const committedRuns = createMemo<readonly CommittedRun[]>((previous = []) => {
+    const turns = projectedCommitted();
+    const ctx = segmentCtxFor(props.context, state(), caches(), false, '');
+    const held = new Map(previous.map(run => [run.id, run]));
+    const runs: CommittedRun[] = [];
+    for (let start = 0, end = 1; start < turns.length; end++) {
+      if (end < turns.length && (joinsFoldRunAt(turns, end, ctx.foldTurnProcess === true) || (ctx.agentConversation === true
+        && canBeContinued(turns[end - 1]!) && continuesPreviousTurn(turns[end]!, turns[end - 1]!)))) continue;
+      const own = turns.slice(start, end), kept = held.get(own[0]!.id);
+      runs.push(kept && kept.turns.length === own.length && kept.turns.every((turn, i) => turn === own[i]) ? kept : { id: own[0]!.id, turns: own });
+      start = end;
+    }
+    return runs;
+  });
+  /** What a run last drew, from which seam, and Solid's watch over everything that drawing read. */
+  type DrawnRun = {
+    seamIn: RunSeam | undefined; latest: string | undefined; units: ReturnType<typeof flattenTier>; seam: RunSeam;
+    /** The run's pin anchors, as offsets into its own units (taken when it is drawn). */
+    userUnits: readonly number[]; inputUnits: readonly number[]; replyUnits: readonly number[];
+    index: ConversationIndex | undefined; readsEarlier: boolean; stale: boolean;
+    watch: (drawing: () => void) => void; dispose: () => void;
+  };
+  const drawnRuns = new Map<CommittedRun, DrawnRun>();
+  // The runs of the last build, in order (the map keeps the order runs were first drawn in, not their place).
+  let drawnOrder: readonly CommittedRun[] = [];
+  // A drawing's reads changed: that run is stale, and the tier is built again (only stale runs draw).
+  const [runRead, setRunRead] = createSignal(0, { equals: false });
+  onCleanup(() => { for (const drawn of drawnRuns.values()) drawn.dispose(); drawnRuns.clear(); });
+  const startRun = (): DrawnRun => createRoot((dispose) => {
+    const drawn: DrawnRun = { seamIn: undefined, latest: undefined, units: [], seam: NO_SEAM, userUnits: [], inputUnits: [], replyUnits: [], index: undefined, readsEarlier: false, stale: true,
+      watch: () => {}, dispose };
+    drawn.watch = createReaction(() => { drawn.stale = true; setRunRead(0); });
+    return drawn;
+  });
+
+  // ── Committed tier: the runs joined ─────────────────────────────────────────
   // @@@committed-tier-same-pass (#2296) — the committed tier is a memo, not an
   // effect. `units()` concatenates it with the active tier (also a memo). When a
   // turn commits, history.append and activeTurn.set(null) land in one batch; if
@@ -595,64 +663,95 @@ export function ChatRoot(props: ChatRootProps) {
   // read `undefined` at the just-committed indices and unmount those rows, then
   // remount them with new DOM one pass later. As a memo it is pulled in the same
   // pass as the active tier, so no row ever observes the half-updated list.
-  // This memo only derives values; it writes nothing. The virtualizer/heightmap
-  // side effects of a swap or a reseeding rebuild live in the createComputed
-  // below.
+  // Its writes stay inside the runs it owns (`drawnRuns`); the virtualizer/heightmap
+  // side effects of a swap or a reseeding rebuild live in the createComputed below.
   const committedBuild = createMemo<CommittedBuild | undefined>((previous) => {
     const s = state();
-    const next = projectedCommitted();
-    const ctx = { ...segmentCtx(false), settled: true };
-    const folds = committedFolds();
-    // A model swap (view.setModel) starts from an empty incremental cache.
-    const prev = previous && previous.state === s ? previous : undefined;
-    const prevSource = prev?.source ?? [];
-    const prevUnits = prev?.units ?? [];
-
-    if (
-      prev &&
-      folds === prev.folds &&
-      next.length > prevSource.length &&
-      (prevSource.length === 0 || next[prevSource.length - 1] === prevSource[prevSource.length - 1]) &&
-      // The previous acknowledgement stops being the latest when another turn arrives.
-      (prevSource.length === 0 || !isEmptyAgentTurn(prevSource[prevSource.length - 1])) &&
-      // 新来的那一轮要并进上一条还没收尾的折叠(#4981)时,只 flatten 新的画不出合并,走整条重建。
-      !joinsFoldRunAt(next, prevSource.length, ctx.foldTurnProcess === true) &&
-      // 新来的那一轮接续上一轮(#2587)时同理:只 flatten 新的画不出接续,走整条重建。
-      !(ctx.agentConversation && prevSource.length > 0 && next[prevSource.length] !== undefined
-        && canBeContinued(prevSource[prevSource.length - 1]!) && continuesPreviousTurn(next[prevSource.length]!, prevSource[prevSource.length - 1]))
-    ) {
-      // Incremental append: only process the new tail.
-      const tail = next.slice(prevSource.length);
-      const prevKind = prevUnits.length > 0 ? prevUnits[prevUnits.length - 1].kind : undefined;
-      const newUnits = flattenTier(tail, ctx, SEGMENTERS, UNIT_REGISTRY, prevKind, prev.dayKey, lastConversationMessage(prevUnits), trailingActivity(prevUnits), prevUnits.at(-1));
-      const indexById = new Map(prev.indexById);
-      const base = prevUnits.length;
-      for (let j = 0; j < newUnits.length; j++) {
-        const u = newUnits[j];
-        if (u) for (const id of unitItemIds(u)) {
-          if (!indexById.has(id)) indexById.set(id, base + j);
-        }
-      }
-      return {
-        state: s, source: next, folds, units: appendActivityUnits(prevUnits, newUnits), indexById,
-        dayKey: trailingDayKey(tail, prev.dayKey, ctx.latestTurnId), reseed: false,
-      };
+    const runs = committedRuns();
+    runRead();
+    // Runs that are gone: a later run that quoted from one of them (not the last one, which is the run being replaced
+    // as a turn goes on) reads its anchors again.
+    const kept = new Set(runs), lastBefore = drawnOrder.at(-1);
+    drawnOrder = runs;
+    let earlierGone = false;
+    for (const [run, drawn] of drawnRuns) {
+      if (kept.has(run)) continue;
+      if (run !== lastBefore) earlierGone = true;
+      drawn.dispose();
+      drawnRuns.delete(run);
     }
-
-    // Full rebuild (seed, model swap, prepend, non-append structural change, or an append that joins the previous fold run).
-    const units = preserveActivityIds(prevUnits, flattenTier(next, ctx, SEGMENTERS, UNIT_REGISTRY));
+    const order: DrawnRun[] = [];
+    const earlierOf = (at: number): ConversationEarlier => ({
+      message: (id) => { for (let i = at - 1; i >= 0; i--) { const hit = order[i]!.index?.messages.get(id); if (hit) return hit; } return undefined; },
+      group: (chatId) => { for (let i = at - 1; i >= 0; i--) { const hit = order[i]!.index?.groups.get(chatId); if (hit) return hit; } return undefined; },
+    });
+    const units: RenderUnit[] = [], userUnits: number[] = [], inputUnits: number[] = [], replyUnits: number[] = [];
+    let seam = NO_SEAM, header = -1;
+    // The latest turn only changes how the run holding it is drawn (an empty acknowledgement stays visible while it is
+    // the latest): every other run is drawn with a latest id that matches none of its turns.
+    const latest = committedLatestTurnId();
+    runs.forEach((run, at) => {
+      const ownLatest = latest && run.turns.some(turn => turn.id === latest) ? latest : '';
+      let drawn = drawnRuns.get(run);
+      if (!drawn) { drawn = startRun(); drawnRuns.set(run, drawn); }
+      order.push(drawn);
+      if (drawn.stale || !drawn.seamIn || !sameSeam(drawn.seamIn, seam) || drawn.latest !== ownLatest || (earlierGone && drawn.readsEarlier)) {
+        const into = seam, own = drawn, earlier = earlierOf(at);
+        own.watch(() => {
+          const ctx = { ...segmentCtxFor(props.context, state(), caches(), false, ownLatest), settled: true };
+          const read = ctx.agentConversation ? conversationIndexOf(run.turns, ctx, earlier) : undefined;
+          const next = flattenTier(run.turns, ctx, SEGMENTERS, UNIT_REGISTRY, into.kind, into.dayKey, into.conversation, into.activity, into.row,
+            read ? { index: read.index, earlier } : undefined);
+          own.units = next;
+          const view = makeUnitsView(next, NO_ACTIVE_UNITS);
+          own.userUnits = collectUserTurnUnits(run.turns, view, { viewerId: ctx.viewerId });
+          own.inputUnits = collectUserTurnUnits(run.turns, view, { delivered: true });
+          own.replyUnits = next.flatMap((row, at) => !row.activityFold && (row.data as ChatMessage).role === 'assistant'
+            && (row.data as ChatMessage).conversationPart === 'body' && row.itemId.includes(':sent:') ? [at] : []);
+          own.index = read?.index;
+          own.readsEarlier = !!read && (read.anchors.messages.length > 0 || read.anchors.groups.length > 0);
+          const dayKey = trailingDayKey(run.turns, into.dayKey, ctx.latestTurnId);
+          own.seam = own.units.length === 0 ? { ...into, dayKey } : {
+            kind: own.units.at(-1)!.kind, dayKey,
+            conversation: lastConversationMessage(own.units) ?? into.conversation,
+            activity: trailingActivity(own.units),
+            row: own.units.at(-1),
+          };
+        });
+        own.seamIn = into;
+        own.latest = ownLatest;
+        own.stale = false;
+      }
+      // An activity the run before this one left open goes on here: its one header, earlier in the list, takes the
+      // summary of its last child (the header keeps its DOM identity; only its data changes).
+      const first = drawn.units[0];
+      if (first?.activityFold && first.kind !== 'agent-activity' && header >= 0 && units[header]!.id === first.activityFold) {
+        let data = first.activityGroup!;
+        for (const child of drawn.units) { if (child.activityFold !== data.id) break; data = child.activityGroup!; }
+        units[header] = { ...units[header]!, data };
+      }
+      const base = units.length;
+      for (const at of drawn.userUnits) userUnits.push(base + at);
+      for (const at of drawn.inputUnits) inputUnits.push(base + at);
+      for (const at of drawn.replyUnits) replyUnits.push(base + at);
+      for (const unit of drawn.units) { if (unit.kind === 'agent-activity') header = units.length; units.push(unit); }
+      seam = drawn.seam;
+    });
+    const prevUnits = previous && previous.state === s ? previous.units : [];
+    // An activity group keeps the id it was opened under when older activity joins it (a page prepended): the ids are
+    // matched across the whole tier, as one group can now start in an earlier run than before.
+    const joined = preserveActivityIds(prevUnits, units);
     const indexById = new Map<string, number>();
-    for (let i = 0; i < units.length; i++) {
-      const u = units[i];
+    for (let i = 0; i < joined.length; i++) {
+      const u = joined[i];
       if (u) for (const id of unitItemIds(u)) {
         if (!indexById.has(id)) indexById.set(id, i);
       }
     }
     return {
-      state: s, source: next, folds, units, indexById,
-      dayKey: trailingDayKey(next, undefined, ctx.latestTurnId),
+      state: s, source: projectedCommitted(), units: joined, indexById, dayKey: seam.dayKey, userUnits, inputUnits, replyUnits,
       // Folding, prepending and tail replacement can all move units between numeric slots.
-      reseed: prevUnits.some((unit, index) => units[index]?.id !== unit.id),
+      reseed: prevUnits.some((unit, index) => joined[index]?.id !== unit.id),
     };
   });
   const committedUnits = () => committedBuild()!.units;
@@ -1048,13 +1147,7 @@ export function ChatRoot(props: ChatRootProps) {
   // [0, committedUnits().length) prefix of the full units() view, so the
   // returned absolute indices remain valid. The active tier's anchors are added
   // in pinAnchors.
-  const userTurns = createMemo(() => {
-    committedBuild();
-    return collectUserTurnUnits(
-      state().transcript.state.committedTurns,
-      makeUnitsView(committedUnits(), NO_ACTIVE_UNITS), { viewerId: props.context.selfIdentity()?.userId }
-    );
-  });
+  const userTurns = createMemo(() => committedBuild()!.userUnits);
 
   // ── Last user message unit index ──────────────────────────────────────────
   // Finds the first unit index (in the full units() view) for the last user-
@@ -1223,7 +1316,7 @@ export function ChatRoot(props: ChatRootProps) {
       const s = state();
       const pending = s.session.state.pendingPrompt;
       const active = activeTurnWithInputs(projectedInputs().active, pending, projectedInputs().waiting, s.transcript.state.committedTurns);
-      const committed = collectUserTurnUnits(s.transcript.state.committedTurns, makeUnitsView(committedUnits(), NO_ACTIVE_UNITS), { delivered: true });
+      const committed = committedBuild()!.inputUnits;
       const base = committedUnits().length;
       let ends = active
         ? [...committed, ...collectUserTurnUnits([active], makeUnitsView(activeUnits(), NO_ACTIVE_UNITS), { delivered: true }).map((i) => base + i)]
@@ -1232,10 +1325,13 @@ export function ChatRoot(props: ChatRootProps) {
       // Only another visible input releases it.
       const all = makeUnitsView(committedUnits(), active ? activeUnits() : NO_ACTIVE_UNITS);
       ends = ends.filter(index => !all.at(index)?.activityFold);
-      // A separately delivered panel reply starts its own reading boundary.
-      for (let i = 0; i < all.length; i++) {
-        const row = all.at(i)!, data = row.data as ChatMessage;
-        if (!row.activityFold && data.role === 'assistant' && data.conversationPart === 'body' && row.itemId.includes(':sent:')) ends.push(i);
+      // A separately delivered panel reply starts its own reading boundary: the committed tier lists its own (per run,
+      // as each is drawn); the active tier is read here.
+      ends.push(...committedBuild()!.replyUnits);
+      const activeRows = active ? activeUnits() : NO_ACTIVE_UNITS;
+      for (let i = 0; i < activeRows.length; i++) {
+        const row = activeRows[i]!, data = row.data as ChatMessage;
+        if (!row.activityFold && data.role === 'assistant' && data.conversationPart === 'body' && row.itemId.includes(':sent:')) ends.push(base + i);
       }
       return [...new Set(ends)].sort((a, b) => a - b);
     },
