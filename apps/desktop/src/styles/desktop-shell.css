@@ -21,13 +21,13 @@
 
 /* 界面减法 #57(稿子 .cards / .card):会话页的正文是对话卡片 —— 四周 8px 缝(左边贴着列表那一侧不留)、圆角 12、6% 细描边。
  * 工具并排时正文拆成两张卡片(index.css [data-chat-card] / [data-chat-tool-card]),这一层和它下面垫着的几层(正文页、分块的底、
- * 这一块)都让出底色和描边,缝里透出窗口底。 */
-.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace]) {
+ * 这一块)都让出底色和描边,缝里透出窗口底。只认屏上那一个工作区的 data-surface-chat(pane-tree-view.tsx):藏着的保留页 ❌ 算数。 */
+.gugu-skin [data-workspace-content-surface]:has([data-surface-chat]) {
   --workspace-chrome-inset: 8px;
   box-shadow: 0 0 0 0.5px color-mix(in oklab, var(--fg) 6%, transparent);
 }
 
-.gugu-skin [data-workspace-content-surface]:has([data-chat-tool-workspace][data-chat-tool-cards]) {
+.gugu-skin [data-workspace-content-surface]:has([data-surface-chat='cards']) {
   /* 垫在下面的几层(正文页、分块的底、这一块)读这个变量当底色(screen-frame.tsx、workspace-layout.tsx),:has 只放在这一层自己身上。 */
   --screen-ground: transparent;
   background: transparent;
