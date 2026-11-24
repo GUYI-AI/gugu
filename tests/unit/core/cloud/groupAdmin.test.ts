@@ -28,6 +28,13 @@ describe('the common group transport', () => {
     expect(rpc).toHaveBeenNthCalledWith(1, 'add_group_agent', { p_chat_id: 'group', p_agent_user_id: 'agent-1', p_message: null, p_as_user_id: 'owner', p_as_task: true })
     expect(rpc).toHaveBeenNthCalledWith(2, 'add_group_agent', { p_chat_id: 'group', p_agent_user_id: 'agent-2', p_message: null, p_as_user_id: 'owner', p_as_task: false })
   })
+  it('transfers ownership as the trusted actor and accepts only a receipt naming the new owner', async () => {
+    const rpc = vi.fn(async () => ({ data: { chat_id: 'group', owner_user_id: 'heir', previous_owner_user_id: 'owner' }, error: null }))
+    await createGroupAdmin({ rpc }, 'owner').transferOwner('group', 'heir')
+    expect(rpc).toHaveBeenCalledWith('transfer_group_owner_as', { p_chat_id: 'group', p_new_owner_user_id: 'heir', p_as_user_id: 'owner' })
+    await expect(createGroupAdmin({ rpc: async () => ({ data: { chat_id: 'group', owner_user_id: 'owner' }, error: null }) }, 'owner')
+      .transferOwner('group', 'heir')).rejects.toThrow('database did not confirm owner_user_id')
+  })
   it('propagates the database permission error without inventing success', async () => {
     await expect(createGroupAdmin({ rpc: async () => ({ data: null, error: { message: 'group_manager_required' } }) }, 'agent')
       .setRole('group', 'human', 'admin')).rejects.toThrow('group_manager_required')

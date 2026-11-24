@@ -22,6 +22,7 @@ const ROWS = [
   [row('member-managed:m1:u1,u2', 'Ann 将 Leo Park 移出了群聊'), 'Ann removed Leo Park from the group', 'Ann 将 Leo Park 移出了群聊'],
   [row('member-managed:m1:u1,u2', 'Ann 将 Leo Park 设为管理员'), 'Ann made Leo Park an admin', 'Ann 将 Leo Park 设为管理员'],
   [row('member-managed:m1:u1,u2', 'Ann 撤销了 Leo Park 的管理员身份'), 'Ann removed Leo Park as an admin', 'Ann 撤销了 Leo Park 的管理员身份'],
+  [row('member-managed:m1:u1,u2', 'Ann 将群主转让给 Leo Park'), 'Ann transferred group ownership to Leo Park', 'Ann 将群主转让给 Leo Park'],
   [row('topic-opened:t1', 'Claude 开了话题:Launch plan', 'u1'), 'Claude opened a topic: Launch plan', 'Claude 创建了话题：Launch plan'],
 ] as const
 
