@@ -965,9 +965,7 @@ export default {
     "leave": "退出话题",
     "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
     "removeHint": "对方仍可阅读，只是不再收到这个话题的通知",
-    "pins": {
-      "pin": "置顶“{{name}}”",
-      "unpin": "取消置顶“{{name}}”",
+    "menu": {
       "emptyHint": "在任意消息上选择“开话题”。"
     },
     "anchor": {
