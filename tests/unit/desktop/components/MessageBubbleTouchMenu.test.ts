@@ -677,12 +677,22 @@ function pressInsideWord(text: string) {
   Object.defineProperty(document, 'caretRangeFromPoint', { configurable: true, value: vi.fn(() => range) })
 }
 function selectTextIn(element: Element, text: string) {
-  const node = element.firstChild!
-  const start = node.textContent!.indexOf(text)
+  // The text may span several nodes (a web link leads with its site icon and first letters in their own span).
+  const nodes: Text[] = []
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text)
+  const start = element.textContent!.indexOf(text)
   expect(start).toBeGreaterThanOrEqual(0)
+  const at = (offset: number): [Text, number] => {
+    for (const node of nodes) {
+      if (offset <= node.length) return [node, offset]
+      offset -= node.length
+    }
+    throw new Error(`offset past the text of ${element.tagName}`)
+  }
   const range = document.createRange()
-  range.setStart(node, start)
-  range.setEnd(node, start + text.length)
+  range.setStart(...at(start))
+  range.setEnd(...at(start + text.length))
   window.getSelection()!.removeAllRanges()
   window.getSelection()!.addRange(range)
 }

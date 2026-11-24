@@ -291,6 +291,27 @@
 /* A ```svg figure (session-chat-ui `svgFigure`): its viewBox is its natural size, never wider than the column. */
 .gg-md .gg-md-svg { display: block; max-width: 100%; height: auto; margin: var(--md-gap) 0; }
 .gg-md .gg-md-svg-failed { margin-top: var(--md-gap); font-size: 0.86em; color: var(--text-secondary); }
+/* A ```html-render page (HtmlRenderFrame): the frame is as tall as its page, on the message's own background. The expand
+   button shows while the page is hovered or focused, always on touch. */
+.gg-md .gg-md-html-render { position: relative; margin: var(--md-gap) 0; }
+.gg-md .gg-md-html-render__expand {
+  position: absolute; top: 6px; right: 6px;
+  background: var(--bg-primary, Canvas);
+  opacity: 0; transition: opacity 150ms;
+}
+.gg-md .gg-md-html-render:is(:hover, :focus-within) .gg-md-html-render__expand { opacity: 1; }
+@media (pointer: coarse) { .gg-md .gg-md-html-render__expand { opacity: 1; } }
+/* A web link led by its site's icon (link-icons.ts); the icon never wraps away from the first letters. One that cannot
+   load, or a host with no public name, is the globe, drawn in the link's colour. */
+.gg-md .gg-md-link-lead { white-space: nowrap; }
+.gg-md .gg-md-link-icon { display: inline-block; width: 14px; height: 14px; margin-inline: 0.15em 0.25em; vertical-align: -0.125em; }
+.gg-md .gg-md-link-icon img { display: block; width: 14px; height: 14px; border-radius: 2px; }
+.gg-md .gg-md-link-icon[data-failed] img { display: none; }
+.gg-md .gg-md-link-icon[data-failed] {
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20'/%3E%3Cpath d='M2 12h20'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20'/%3E%3Cpath d='M2 12h20'/%3E%3C/svg%3E") center / contain no-repeat;
+}
 .gg-md .gg-md-mention {
   display: inline-flex;
   align-items: center;
@@ -384,15 +405,31 @@
    dual-theme vars. A host page says dark with `data-theme`, an App page with `data-gugu-theme`. */
 .gg-md pre code span[style*='--shiki-light'] { color: var(--shiki-light); }
 :is([data-theme='dark'], [data-gugu-theme='dark']) .gg-md pre code span[style*='--shiki-light'] { color: var(--shiki-dark); }
-/* Streaming: text appended since the last paint fades in. Opacity only — the run was measured without it. */
+/* Streaming: text appended since the last paint fades in letter by letter, each at the delay its paint stamped
+   (ArcMD's answer stream: 180 ms, cubic-bezier(0.33, 0, 0.67, 1)). Opacity only — the run was measured without it. */
 .gg-md .gg-md-fresh {
-  animation: gg-md-fresh var(--gg-md-fresh-duration, 200ms) cubic-bezier(0.215, 0.61, 0.355, 1) both;
+  animation: gg-md-fresh var(--gg-md-fresh-duration, 180ms) cubic-bezier(0.33, 0, 0.67, 1) var(--gg-md-fresh-delay, 0ms) both;
 }
 @keyframes gg-md-fresh {
   from { opacity: 0; }
 }
+/* A live reply in a chat bubble (Markdown's stream animation, Streamdown's `animated`): each letter fades in at the delay
+   the plugin stamps on it. Streamdown's own sheet, keyframes renamed under our scope; list markers fade by colour. */
+.gg-md [data-sd-animate] {
+  animation: var(--sd-animation, sd-fadeIn) var(--sd-duration, 180ms) var(--sd-easing, ease) var(--sd-delay, 0ms) both;
+}
+@keyframes sd-fadeIn {
+  from { opacity: 0; }
+}
+.gg-md [data-sd-animate-marker]::marker {
+  animation: sd-markerIn var(--sd-marker-duration, 180ms) var(--sd-marker-easing, ease) var(--sd-marker-delay, 0ms) both;
+}
+@keyframes sd-markerIn {
+  from { color: transparent; }
+}
 @media (prefers-reduced-motion: reduce) {
-  .gg-md .gg-md-fresh { animation: none; }
+  .gg-md :is(.gg-md-fresh, [data-sd-animate]),
+  .gg-md [data-sd-animate-marker]::marker { animation: none; }
 }
 
 /* ── documents (comfortable only: chat, transcript and cards keep the compact look) ──

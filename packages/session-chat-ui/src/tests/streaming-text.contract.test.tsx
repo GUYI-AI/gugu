@@ -19,10 +19,10 @@
  * ① is NOT measured by the row height. A message row carries its measured height
  * as an inline style, and every block frame inside it is given its height too —
  * so `offsetHeight` equals `measure()` by construction however badly a span
- * reflows. What can move is the text: its boxes are read one text node at a
- * time (a Range per node), so the fade spans' own element boxes stay out of the
- * sums, and the run element's height is compared as the one box that grows if
- * the text wraps differently.
+ * reflows. What can move is the text: its boxes are read one character at a
+ * time (a Range per character), so the fade spans' own element boxes stay out of
+ * the reading, and the run element's height is compared as the one box that
+ * grows if the text wraps differently.
  *
  * ① also needs a positive control or it is not a reading: if the streaming
  * render wrapped nothing, "both modes agree" would be trivially true. The faded
@@ -80,20 +80,25 @@ function inspectRun(host: HTMLElement): Record<string, number> {
   }
 
   const hostRect = host.getBoundingClientRect()
+  // Each character's box, by its place in the run (`l3`, `t3`, `w3`): per character, not per text node, since the fade
+  // splits the text into a span per word.
+  const charBoxes: Record<string, number> = {}
   let boxes = 0
-  let leftSum = 0
-  let topSum = 0
-  let widthSum = 0
   if (run) {
     const walker = document.createTreeWalker(run, NodeFilter.SHOW_TEXT)
     const range = document.createRange()
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      range.selectNodeContents(node)
-      for (const rect of Array.from(range.getClientRects())) {
-        boxes += 1
-        leftSum += rect.left - hostRect.left
-        topSum += rect.top - hostRect.top
-        widthSum += rect.width
+    for (let node = walker.nextNode() as Text | null; node; node = walker.nextNode() as Text | null) {
+      for (let at = 0; at < node.length; at += 1) {
+        // A space draws nothing; one ending a text node at a wrap measures one box instead of two.
+        if (!node.data[at]!.trim()) continue
+        range.setStart(node, at)
+        range.setEnd(node, at + 1)
+        for (const rect of Array.from(range.getClientRects())) {
+          charBoxes[`l${boxes}`] = rect.left - hostRect.left
+          charBoxes[`t${boxes}`] = rect.top - hostRect.top
+          charBoxes[`w${boxes}`] = rect.width
+          boxes += 1
+        }
       }
     }
   }
@@ -107,15 +112,21 @@ function inspectRun(host: HTMLElement): Record<string, number> {
     fullyOpaque,
     matchesReduce: window.matchMedia(REDUCE_QUERY).matches ? 1 : 0,
     boxes,
-    leftSum: Math.round(leftSum * 100),
-    topSum: Math.round(topSum * 100),
-    widthSum: Math.round(widthSum * 100)
+    ...charBoxes
   }
 }
 
-function textGeometry(reading: HeightContractReading): Record<string, number> {
-  const { runHeight, boxes, leftSum, topSum, widthSum } = reading.inspected
-  return { runHeight, boxes, leftSum, topSum, widthSum }
+/** Where the two renders put a character apart by more than layout rounding (Chrome lays out in 1/64 px). */
+function movedText(a: HeightContractReading, b: HeightContractReading): string[] {
+  const moved = a.inspected.runHeight === b.inspected.runHeight && a.inspected.boxes === b.inspected.boxes
+    ? []
+    : [`run ${a.inspected.runHeight}px/${a.inspected.boxes} boxes vs ${b.inspected.runHeight}px/${b.inspected.boxes} boxes`]
+  for (let i = 0; i < a.inspected.boxes!; i += 1) {
+    for (const key of [`l${i}`, `t${i}`, `w${i}`]) {
+      if (Math.abs(a.inspected[key]! - b.inspected[key]!) > 0.1) moved.push(`${key}: ${a.inspected[key]} vs ${b.inspected[key]}`)
+    }
+  }
+  return moved
 }
 
 async function emulateReducedMotion(value: 'reduce' | 'no-preference'): Promise<void> {
@@ -148,10 +159,10 @@ describe('streaming fade', () => {
     expect(streaming.inspected.freshText).toBe(streaming.inspected.runText)
     expect(committed.inspected.freshSpans).toBe(0)
 
-    // ② The proof: every text box sits where it sat without the spans, at the
-    //    same width, and the run is the same height. Exact — the spans wrap
-    //    whole text nodes on a first render, so nothing is re-shaped.
-    expect(textGeometry(streaming), 'the fade moved text').toEqual(textGeometry(committed))
+    // ② The proof: every character sits where it sat without the spans, at the
+    //    same width, and the run is the same height — to layout rounding: a span
+    //    holds whole words, and text is never shaped across a space.
+    expect(movedText(streaming, committed), 'the fade moved text').toEqual([])
     expect(streaming.spill).toBe(committed.spill)
 
     // ③ House invariant: each mode agrees with the height the engine reserved
@@ -209,7 +220,7 @@ describe('streaming fade', () => {
     // Reduced motion may remove paint. It may not remove layout: the row height
     // was reserved offscreen and does not know about the reader's preference.
     expect(withoutMotion.inspected.freshSpans).toBe(withMotion.inspected.freshSpans)
-    expect(textGeometry(withoutMotion), 'reduced motion moved text').toEqual(textGeometry(withMotion))
+    expect(movedText(withoutMotion, withMotion), 'reduced motion moved text').toEqual([])
     expect(withoutMotion.dom).toBe(withMotion.dom)
     expect(withoutMotion.dom).toBe(withoutMotion.computed)
   })

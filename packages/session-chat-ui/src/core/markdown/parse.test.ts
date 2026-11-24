@@ -273,6 +273,22 @@ describe('text runs', () => {
     expect(blockPlainText(blocks[6]!)).toBe('<svg/>');
   });
 
+  it('gives a closed html-render fence a page block, and keeps one still streaming as code', () => {
+    const closed = parseMarkdownToBlocks('t', 'a\n\n```html-render\n<div>bars</div>\n```');
+    expect(closed.map((block) => block.kind)).toEqual(['html', 'html-render']);
+    expect(blockPlainText(closed[1]!)).toBe('<div>bars</div>');
+    const streaming = parseMarkdownToBlocks('t', 'a\n\n```html-render\n<div>ba');
+    expect(streaming.map((block) => block.kind)).toEqual(['html', 'code']);
+  });
+
+  it('leads a web link with its site icon, and a private address with the globe and no request', () => {
+    const root = rendered('[docs](https://example.org/a) [box](http://192.168.1.2/x)');
+    const icons = [...root.querySelectorAll<HTMLElement>('a .gg-md-link-icon')];
+    expect(icons.map((icon) => icon.querySelector('img')?.getAttribute('src') ?? null)).toEqual(['https://example.org/favicon.ico', null]);
+    expect(icons[1]!.hasAttribute('data-failed')).toBe(true);
+    expect(root.textContent).toBe('docs box');
+  });
+
   it('reads like the chat bubble: raw HTML stays text, a typed newline is a line break', () => {
     const root = rendered('<details><span id="gg-mention-0">x</span></details>\none\ntwo');
     expect(root.querySelector('details, span[id]')).toBeNull();
