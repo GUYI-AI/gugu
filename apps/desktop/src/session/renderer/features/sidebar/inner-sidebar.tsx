@@ -89,7 +89,10 @@ function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarV
   }
   if (currentViewId === 'session') {
     const sessionId = openSessionId();
-    return sessionId ? { kind: 'session', sessionId } : { kind: 'other' };
+    if (!sessionId) return { kind: 'other' };
+    const projectId = (viewParamsStore.session as { projectId?: string } | undefined)?.projectId;
+    const projectChatId = projectId ? accountProjectsStore.projectOfLocal(projectId)?.chatId : undefined;
+    return { kind: 'session', sessionId, ...(projectChatId ? { projectChatId } : {}) };
   }
   return { kind: 'other' };
 }
