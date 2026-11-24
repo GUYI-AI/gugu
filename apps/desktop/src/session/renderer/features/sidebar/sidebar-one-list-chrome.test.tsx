@@ -101,7 +101,7 @@ vi.mock('@/components/chat/useConversationVisibility', async () => {
 });
 vi.mock('@renderer/lib/layout/navigation-provider', () => ({
   useNavigate: () => ({ navigate: state.navigate }),
-  useWorkspaceSlots: () => ({ currentView: state.view }),
+  useWorkspaceSlots: () => ({ currentView: state.view, pageView: state.view }),
   isCurrentView: (current: string, target: string) => current === target,
 }));
 vi.mock('@renderer/lib/commands/registry', () => ({ commandRegistry: { dispatch: state.dispatch } }));
@@ -146,13 +146,12 @@ vi.mock('@/components/ui/Popover', () => {
   };
 });
 
-const { SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop, SidebarRailRow } = await import('./sidebar-one-list-chrome');
-/** The sidebar's chrome as LeftSidebar stacks it: the head, the row under it, the foot (the list between is not needed). */
+const { SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop } = await import('./sidebar-one-list-chrome');
+/** The sidebar's chrome as LeftSidebar stacks it: the head (its band and the fold row), the foot (the list between is not needed). */
 function Chrome({ innerShownFor }: { innerShownFor?: string }) {
   return (
     <div data-region="left-sidebar">
       <SidebarOneListHead innerShownFor={innerShownFor} />
-      <SidebarRailRow />
       <SidebarOneListFoot />
     </div>
   );
@@ -277,14 +276,16 @@ describe('the sidebar head', () => {
     expect(state.toggleLeft).toHaveBeenCalledTimes(1);
   });
 
-  it('open: the head ends in 「«」, the search field is the row under it, 已安排 · 会话历史 · the bell are in the foot after my avatar', async () => {
+  it('open: 「«」 ends the search field\'s row, 已安排 · 会话历史 · the bell are in the foot after my avatar', async () => {
     await render(<Chrome />);
     const head = document.querySelector<HTMLElement>('[data-sidebar-head]')!;
-    // The sidebar's 40px top band (the window's drag handle), its controls at its end.
+    // The window's drag band, as tall as the window's controls need (--sidebar-head-height); it holds no control.
     expect(head.hasAttribute('data-sidebar-space')).toBe(true);
-    expect(head.className).toMatch(/\bjustify-end\b/);
-    expect(head.contains(q('sidebar-fold'))).toBe(true);
-    expect(document.querySelector('[data-sidebar-rail-row]')!.contains(q('sidebar-search-trigger'))).toBe(true);
+    expect(head.className).toMatch(/!h-\(--sidebar-head-height\)/);
+    expect(head.children).toHaveLength(0);
+    const row = document.querySelector('[data-sidebar-rail-row]')!;
+    expect(row.contains(q('sidebar-search-trigger'))).toBe(true);
+    expect(row.contains(q('sidebar-fold'))).toBe(true);
     const foot = document.querySelector<HTMLElement>('[data-sidebar-foot]')!;
     const order = [foot.querySelector('[data-me-slot]')!, q('sidebar-scheduled')!, q('sidebar-session-history')!, foot.querySelector('[data-notification-slot="toggle"]')!];
     const all = [...foot.querySelectorAll('*')];
@@ -300,7 +301,7 @@ describe('the sidebar head', () => {
     state.progress = 0;
     await render(<Chrome />);
     const head = document.querySelector<HTMLElement>('[data-sidebar-head]')!;
-    expect(head.contains(q('sidebar-fold'))).toBe(false);
+    expect(head.children).toHaveLength(0);
     expect(document.querySelector('[data-sidebar-rail-row]')!.contains(q('sidebar-fold'))).toBe(true);
     expect(q('sidebar-fold')!.closest<HTMLElement>('[data-hint]')!.dataset.hint).toBe('sidebar.expandSidebar ([Mod+Shift+S])');
     for (const testId of ['sidebar-search-trigger', 'sidebar-scheduled', 'sidebar-session-history']) expect(q(testId)).toBeNull();

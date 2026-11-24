@@ -12,7 +12,7 @@ import { observable, runInAction } from 'mobx';
 const io = vi.hoisted(() => ({ rows: new Map<string, Record<string, unknown>>(), failWrite: false, toast: vi.fn() }));
 // Observable like the app's stores, so the observers redraw when they change.
 type Live = {
-  navigation: { currentViewId: string; viewParamsStore: Record<string, unknown> };
+  navigation: { currentViewId: string; pageViewId: string; viewParamsStore: Record<string, unknown> };
   screen: { focusedBlockId: string | null; blocks: Map<string, { kind: string; chatId?: string }> };
 };
 const state = vi.hoisted(() => ({ live: null as unknown as Live }));
@@ -84,7 +84,7 @@ vi.mock('@renderer/features/sample-project/sample-task-pane', () => ({
 
 state.live = observable(
   {
-    navigation: { currentViewId: 'screen', viewParamsStore: {} as Record<string, unknown> },
+    navigation: { currentViewId: 'screen', pageViewId: 'screen', viewParamsStore: {} as Record<string, unknown> },
     screen: { focusedBlockId: 'sample-block' as string | null, blocks: new Map<string, { kind: string; chatId?: string }>() },
   },
   undefined,
@@ -116,6 +116,7 @@ const look = (blocks: [string, { kind: string; chatId?: string }][], focused: st
     state.live.screen.blocks = new Map(blocks);
     state.live.screen.focusedBlockId = focused;
     state.live.navigation.currentViewId = currentViewId;
+    state.live.navigation.pageViewId = currentViewId;
     state.live.navigation.viewParamsStore = viewParamsStore;
   }));
 const lookAtSample = () => look([['sample-block', { kind: 'sample-project' }]], 'sample-block', 'screen');

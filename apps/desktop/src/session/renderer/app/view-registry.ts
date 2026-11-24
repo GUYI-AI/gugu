@@ -82,7 +82,7 @@ export function setupNavigationGuards(): void {
   for (const [viewId, view] of Object.entries(views) as Array<
     [ViewId, ViewDefinition<Record<string, unknown>>]
   >) {
-    appState.navigation.registerView(viewId, { transientParams: view.transientParams, placeParams: view.placeParams });
+    appState.navigation.registerView(viewId, { transientParams: view.transientParams, placeParams: view.placeParams, modal: view.modal });
     if (view.canActivate) {
       appState.navigation.registerGuard(viewId, view.canActivate);
     }

@@ -43,11 +43,9 @@ import { isEmbedVisible, subscribeEmbedVisibility } from '@renderer/lib/portal-c
 
 export function Workspace() {
   useTheme();
-  const { modal, currentView } = useWorkspaceSlots();
+  const { modal, currentView, pageView } = useWorkspaceSlots();
   // @@@page-modal — a modal view is drawn over the page you were on: that page stays the workspace's under it.
-  const pageUnder = useRef<string | null>(null);
-  if (!modal) pageUnder.current = currentView;
-  const page = pageUnder.current ?? (screenLayout.layout ? 'screen' : 'home');
+  const page = pageView ?? (screenLayout.layout ? 'screen' : 'home');
   // 看哪条会话 → 这屏怎么摆:要赶在下面任何一个会话页渲染之前(同上面两件的理由)。
   ensureScreenLayoutSync();
   // gugu-embedded: while the frame is display-hidden (user on another gugu tab) the document-level

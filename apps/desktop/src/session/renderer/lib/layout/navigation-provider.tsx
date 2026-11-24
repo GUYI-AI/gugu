@@ -20,6 +20,8 @@ export type SlotsContextValue = {
   MainPanel: ComponentType;
   currentView: ViewId;
   modal: boolean;
+  /** The page laid out under a modal view, or the current view (NavigationStore.pageViewId, @@@page-modal). */
+  pageView: ViewId | null;
 };
 
 export type WrapParamsContextValue = {
@@ -45,6 +47,7 @@ export function useWorkspaceSlots(): SlotsContextValue {
       MainPanel: def.MainPanel,
       currentView: resolvedViewId,
       modal: def.modal === true,
+      pageView: appState.navigation.pageViewId,
     };
   });
 }
