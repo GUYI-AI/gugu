@@ -1,4 +1,4 @@
-import { isNotNull, sql } from 'drizzle-orm';
+import { isNotNull, isNull, sql } from 'drizzle-orm';
 import type { CanonicalPath } from '@gugu/session-shared/canonical-path';
 import {
   index,
@@ -399,7 +399,8 @@ export const automations = sqliteTable(
   },
   (table) => ({
     projectIdIdx: index('idx_automations_project_id').on(table.projectId),
-    agentSessionIdx: index('idx_automations_agent_session_id').on(table.agentSessionId),
+    // With deleted_at the scheduler's per-minute "which sessions have live schedules" read stays inside the index.
+    agentSessionIdx: index('idx_automations_agent_session_deleted').on(table.agentSessionId, table.deletedAt),
   })
 );
 
@@ -511,6 +512,8 @@ export const sessions = sqliteTable(
     // Visibility is asked of this column alone (see archivedAt); live sessions are a small slice of the table. The id
     // makes it covering: the archival inventory reads every session's id and archivedAt without the rows' config pages.
     archivedAtIdx: index('idx_sessions_archived_at_id').on(table.archivedAt, table.id),
+    // The run-interval reconcile asks every minute which sessions are working; few are, so it reads only those rows.
+    agentStatusIdx: index('idx_sessions_agent_status').on(table.agentStatus),
     workspaceIdIdx: index('idx_sessions_workspace_id').on(table.workspaceId),
     parentSessionIdIdx: index('idx_sessions_parent_session_id').on(
       table.parentSessionId
@@ -615,6 +618,8 @@ export const sessionRunIntervals = sqliteTable(
       table.sessionId,
       table.endedAt
     ),
+    // The reconcile reads the open intervals every minute; closed ones pile up forever, so index only the open few.
+    openIdx: index('idx_session_run_intervals_open').on(table.endedAt).where(isNull(table.endedAt)),
   })
 );
 

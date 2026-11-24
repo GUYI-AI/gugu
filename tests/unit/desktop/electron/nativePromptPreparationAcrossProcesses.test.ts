@@ -4,7 +4,7 @@ import { prepareAgentScheduleChanges } from '../../../../apps/desktop/electron/s
 import { createResourceChanges } from '../../../../apps/desktop/electron/sessionpage/assistant-resource-changes'
 
 // The assistant's main session has schedules, so the minute scheduler prepares it too.
-vi.mock('../../../../apps/desktop/electron/session/main/core/automations/repo', () => ({ listAutomations: async () => [{ agentSessionId: 'session-a' }] }))
+vi.mock('../../../../apps/desktop/electron/session/main/core/automations/repo', () => ({ listAgentScheduleSessionIds: () => ['session-a'] }))
 
 // Loaded once, in the host's module graph (before any reset). Absent before #881's bridge existed,
 // so the same file shows what a runtime turn received without it.
