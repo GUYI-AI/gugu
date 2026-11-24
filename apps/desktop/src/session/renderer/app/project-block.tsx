@@ -14,7 +14,7 @@ import { composerDrafts, projectDraftKey } from '@renderer/features/sessions/com
 import { ProjectTaskComposer } from '@renderer/features/projects/components/main-panel/project-home';
 import { setComposerVerb, takeComposerCarry, useComposerVerb } from '@/lib/composerVerbBridge';
 import { useProjectFolderStage } from '@renderer/features/projects/components/main-panel/project-folder-stage';
-import { useFloatingCardKeys } from './floating-card-keys';
+import { useFloatingCardKeys, useFloatingCardShown } from './floating-card-keys';
 import { BlockGrip } from './block-grip';
 import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
@@ -116,7 +116,7 @@ export const ProjectBlock = observer(function ProjectBlock({
 
 /**
  * 在项目里开新任务(gugu-dev#181「输入框」):框原地换成新任务的框(与项目首页同一个,ProjectTaskComposer),项目的文件夹卡
- * 浮到群聊上面 —— 整片统一淡下去、虚一点,卡和输入框在最上面同一层(输入框不被盖住)。点一张文件夹 = 新任务从那里开工,
+ * 浮到群聊上面 —— 整片统一淡下去(只淡不虚:整栏的模糊每帧都要重算,悬停卡片时掉帧),卡和输入框在最上面同一层(输入框不被盖住)。点一张文件夹 = 新任务从那里开工,
  * 卡让开;按 Esc 卡也让开。打字不让开(owner 10-26「一打字，彩色文件夹就消失了，这不对」),框里本来就有字也照样浮着。
  * 点卡旁边的空白不让开(owner 10-23:点空了不该把这一页退掉)。卡就是项目首页那一张(useProjectFolderStage),❌ 另画一份。
  */
@@ -129,16 +129,17 @@ const ProjectTaskDock = observer(function ProjectTaskDock({ chatId, projectId }:
     return null;
   });
   // 框里已经有字(群里写着带过来的、新建会话页选项目带过来的)也照样浮着:打字不收卡,带过来的字同理(owner 10-26)。
-  const [cardShown, setCardShown] = useState(true);
-  const stage = useProjectFolderStage(projectId, { floating: true, onChosen: () => setCardShown(false) });
+  // 收起只收这一次:再选一次「新任务」(已经在新任务里也算)卡又浮上来。
+  const [cardShown, hideCard] = useFloatingCardShown(chatId);
+  const stage = useProjectFolderStage(projectId, { floating: true, onChosen: hideCard });
   const dockRef = useRef<HTMLDivElement>(null);
-  useFloatingCardKeys(cardShown, () => setCardShown(false), dockRef);
+  useFloatingCardKeys(cardShown, hideCard, dockRef);
   const close = () => setComposerVerb(chatId, null);
   return (
     <>
       {cardShown ? (
         <div
-          className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-(--em-surface-base)/65 px-4 pb-32 backdrop-blur-[2px]"
+          className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-(--em-surface-base)/65 px-4 pb-32"
           data-project-task-card=""
         >
           {stage.card}

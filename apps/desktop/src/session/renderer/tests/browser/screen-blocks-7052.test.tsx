@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
 import { ScreenFrame, screenDropHandlers } from '@renderer/app/screen-frame';
 import { BlockGrip, blockReturnDropTarget } from '@renderer/app/block-grip';
-import { blockDropPreview, resolveBlockDrop, setBlockDropPreview } from '@renderer/app/screen-layout-actions';
+import { blockDropPreview, navigateToGroupRoot, resolveBlockDrop, setBlockDropPreview } from '@renderer/app/screen-layout-actions';
 import { clearDraggedScreenContent, hasDraggedScreenContent, setDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { shieldNativeDrags } from '@renderer/lib/drag-shield';
 import { DropHighlightLayer } from '@renderer/lib/drop-highlight';
@@ -191,6 +191,32 @@ describe('一屏几块的骨架 (#7052)', () => {
     expect(slot(), '2 → 1').toBe(original);
     expect(blockWidths()).toEqual([1000]);
     expect(JSON.stringify(screenLayout.snapshot), '1 → 2 → 1 存下来的一个字节不差').toBe(saved);
+  });
+
+  // A group already alone on its screen: its name in the inner sidebar, or 「新任务」 there, goes back to the group itself.
+  // That is the block on screen: a new block id would remount the conversation behind the folder card (every message
+  // row and image fetched and decoded again).
+  it('going back to a group that is already alone on screen keeps its block and the conversation slot in it', async () => {
+    screenLayout.show({ kind: 'chat', chatId: 'chat-root' });
+    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /></WorkspaceLayoutContextProvider>);
+    await until('chat block rendered', () => blockWidths().length === 1);
+    const blockId = screenLayout.order[0];
+    const original = document.querySelector(`[data-screen-block="${blockId}"]`);
+    expect(original).not.toBeNull();
+
+    navigateToGroupRoot('chat-root');
+    navigateToGroupRoot('chat-root');
+    await nextFrames(5);
+    expect(screenLayout.order).toEqual([blockId]);
+    expect(document.querySelector(`[data-screen-block="${blockId}"]`)).toBe(original);
+    expect(original!.isConnected).toBe(true);
+
+    // With something beside it, going back to the group still leaves it alone (the pair is put away).
+    screenLayout.showBeside(s('b'));
+    await until('两块铺开', () => blockWidths().length === 2);
+    navigateToGroupRoot('chat-root');
+    await until('one block again', () => blockWidths().length === 1);
+    expect(screenLayout.order.map((id) => screenLayout.blocks.get(id))).toEqual([{ kind: 'chat', chatId: 'chat-root' }]);
   });
 
   // 只有一块时是「一格的组」,不重挂:从群里点 agent 的名字,参与者在右边分出一块,同一组从 1 格变 2 格
