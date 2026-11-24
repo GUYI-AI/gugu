@@ -14,7 +14,7 @@ import type { CredentialUseBinding } from '../session/main/core/browser/credenti
 import type { UseOutcomeContext, PostUseAuditResult } from '../session/main/core/browser/credential-settlement-contract'
 import type { LocalPasswordVault } from './service'
 import type { VaultBrowserSink, VaultFillPlan, VaultFillValue } from './contracts'
-import { postPasswordRequest } from './beta-messages'
+import { openPasswordRequest } from './beta-messages'
 import { credentialWebsiteOrigin } from '../session/main/core/browser/credential-website'
 import { invalid, resolveFill, type FillInvalid, type FillRequest, type FillSource } from './fill-plan'
 export type { FillEntry, FillInvalid, FillRequest } from './fill-plan'
@@ -190,7 +190,7 @@ export class BetaPasswordLogin {
           ...(resolved.secret[index] && !review.passwordInputs[index] ? { plain: true } : {}) })), ...(remember ? { remember } : {}) } }
       this.attempts.set(view.requestId, attempt)
       registered = attempt
-      if (!granted) await postPasswordRequest(context, attempt.view)
+      if (!granted) await openPasswordRequest(attempt.view)
       assertCurrent()
       const expired = setTimeout(() => {
         if (attempt?.execution.status().status === 'expired') {

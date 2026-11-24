@@ -29,12 +29,27 @@ export interface PasswordApproval { kind?: 'login'; requestId: string; origin: s
 /** An Agent asking the person to save a new credential, or to change one it may not write. Metadata only. */
 export interface PasswordSaveRequest { kind: 'save'; requestId: string; origin: string; credentialId?: string; agent: string; agentName: string; sessionTitle: string; sessionId: string; deviceId: string; maskedAccount?: string; expiresAt: number
   /** What the card asks the person to fill, in order (names only): `account` / `password`, or a field's id. */
-  inputs?: PasswordSaveInput[]; saveKey?: string }
+  inputs?: PasswordSaveInput[]; saveKey?: string
+  /** What the Agent says to enter and where to get it ("A GitHub fine-grained token: Pull requests read/write"), and an
+   * https page that makes one. Shown on the card; never a value. */
+  hint?: string; help?: string }
 export interface PasswordSaveInput { key: string; name: string; secret: boolean }
 export type PasswordRequestView = PasswordApproval | PasswordSaveRequest
 /** What the Agent proposed. Shown only in the person's own add/edit form, never in a message. */
 export interface PasswordSaveDraft { origin: string; name?: string; account: string; accountSecret?: boolean; password: string; fields: PasswordField[]; credentialId?: string; agentName: string }
+/** Cards posted as owner notifications before requests became Asks: still drawn where they are in older sessions. */
 export const PASSWORD_REQUEST_PREFIX = 'gugu-password-request-v1\n'
+/** A pending request is an Ask of its Agent's session with this source; its payload is the `PasswordRequestView`. */
+export const PASSWORD_ASK_SOURCE = 'password'
+/** The Ask's one option, for surfaces that do not draw the card: refused, it says where to answer. */
+export const PASSWORD_ASK_OPEN = 'open'
+/** The request a session's `password` Ask carries, when it is one. */
+export function passwordAskOf(origin: { source: string; payload?: unknown } | undefined): PasswordRequestView | null {
+  if (origin?.source !== PASSWORD_ASK_SOURCE) return null
+  const view = origin.payload as Partial<PasswordRequestView> | null
+  return view && typeof view.requestId === 'string' && typeof view.origin === 'string' && typeof view.sessionId === 'string' && typeof view.agent === 'string'
+    ? view as PasswordRequestView : null
+}
 export interface PasswordGrantCandidate { subject: string; name: string; kind: 'agent' | 'project'; project?: string }
 /** Cross-device sync (#2481). joining: this device waits for approval on another device, `code` once both sides are
  * ready · blocked: this device joined before with a key it no longer has · ready: the account's devices and requests. */

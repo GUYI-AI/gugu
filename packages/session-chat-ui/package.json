@@ -29,7 +29,8 @@
     "./mermaid": "./src/core/mermaid/render.ts",
     "./svg": "./src/core/svg/figure.ts",
     "./composer-layout": "./src/chat-root.css.ts",
-    "./styles/effects": "./src/styles/effects.css.ts"
+    "./styles/effects": "./src/styles/effects.css.ts",
+    "./password-card": "./src/password-card-mount.tsx"
   },
   "scripts": {
     "storybook": "storybook dev -p 6007",

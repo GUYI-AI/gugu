@@ -3,6 +3,7 @@ import { useContext, useEffect, useRef, useState } from 'react';
 import { PermissionBand } from '@gugu/session-ui/react/components';
 import { useHostAskBand } from '@renderer/features/extensions/use-session-host-ask';
 import { SessionHostQuestion } from '@renderer/features/extensions/session-host-question';
+import { SessionPasswordRequest } from '@renderer/features/extensions/session-password-request';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { composerLayerHoldsFocus, sessionNavigationFocus } from '@renderer/features/sidebar/session-navigation-focus';
 import { usePaneContext } from '@renderer/features/tabs/pane-context';
@@ -307,6 +308,7 @@ export const SessionsPanel = observer(function SessionsPanel() {
             </div>
           ) : null}
           <SessionHostQuestion sessionId={activeSessionStoreId} session={activeSession} />
+          <SessionPasswordRequest sessionId={activeSessionStoreId} session={activeSession} />
           <ContextBar
             sessionId={activeSessionId(pane)}
             hideTrigger={hideContextBarTrigger}

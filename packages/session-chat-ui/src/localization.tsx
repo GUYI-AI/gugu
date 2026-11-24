@@ -384,6 +384,7 @@ const fallbackMessages = {
   'transcript.password.saveDescription': "In the vault, agents can only fill in secret values and cannot view them.",
   'transcript.password.storedKeep': "Saved. Leave blank to keep it",
   'transcript.password.editInSettings': "Edit in Settings",
+  'transcript.password.help': "How to get one",
   'transcript.password.reject': "Decline",
   'transcript.password.save': "Save",
   'transcript.password.plain': "Plain text",
