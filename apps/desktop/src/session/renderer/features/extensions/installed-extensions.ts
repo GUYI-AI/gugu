@@ -306,20 +306,23 @@ export async function fetchInstalledApps(hostKey: string = LOCAL_HOST): Promise<
   return appsOf(await installedExtensions.fetch(hostKey), getLocaleSnapshot().resolvedLocale);
 }
 
-const ticks = new Map<string, IObservableValue<number>>();
+const held = new Map<string, IObservableValue<InstalledApps | null>>();
 
-/** For a MobX computed/reaction: a tick per host, no data held. */
+/**
+ * For a MobX computed/reaction, or a render: the installed apps as of the last change. The box is set when the apps or
+ * the locale change, so a read is a box read — renders read this many times per frame, and looking the apps up in the
+ * replica each time hashed its key every time.
+ */
 export function peekInstalledAppsTracked(hostKey: string = LOCAL_HOST): InstalledApps | null {
-  let tick = ticks.get(hostKey);
-  if (!tick) {
-    const box = observable.box(0);
-    const bump = () => runInAction(() => box.set(box.get() + 1));
-    installedExtensions.subscribe([hostKey], bump);
-    subscribeLocale(bump);
-    ticks.set(hostKey, (tick = box));
+  let box = held.get(hostKey);
+  if (!box) {
+    const apps = observable.box(peekInstalledApps(hostKey), { deep: false });
+    const refresh = () => runInAction(() => apps.set(peekInstalledApps(hostKey)));
+    installedExtensions.subscribe([hostKey], refresh);
+    subscribeLocale(refresh);
+    held.set(hostKey, (box = apps));
   }
-  tick.get();
-  return peekInstalledApps(hostKey);
+  return box.get();
 }
 
 export function writeInstalled<R>(
