@@ -3,17 +3,19 @@ import { AutomationRow } from './AutomationRow';
 
 interface AutomationsListProps {
   automations: Automation[];
+  readOnly: boolean;
   onEdit: (automation: Automation) => void;
   onToggleEnabled: (automation: Automation, enabled: boolean) => void;
 }
 
-export function AutomationsList({ automations, onEdit, onToggleEnabled }: AutomationsListProps) {
+export function AutomationsList({ automations, readOnly, onEdit, onToggleEnabled }: AutomationsListProps) {
   return (
     <div className="space-y-1 py-1">
       {automations.map((automation) => (
         <AutomationRow
           key={automation.id}
           automation={automation}
+          readOnly={readOnly}
           onToggleEnabled={(enabled) => onToggleEnabled(automation, enabled)}
           onClick={() => onEdit(automation)}
         />

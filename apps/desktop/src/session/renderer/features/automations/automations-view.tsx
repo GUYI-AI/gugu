@@ -9,6 +9,7 @@ export function AutomationsViewWrapper({
 }: {
   children: ReactNode;
   automationId?: string;
+  automationDeviceId?: string;
 }) {
   return <>{children}</>;
 }
