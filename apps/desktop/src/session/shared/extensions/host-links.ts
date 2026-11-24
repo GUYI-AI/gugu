@@ -14,7 +14,7 @@ const HOST_LINK_TARGETS = {
   'library:prompts': { view: 'settings', section: 'prompts' },
   'library:agents': { view: 'apps', params: { location: { tab: 'agents' } } },
   'library:integrations': { view: 'apps', params: { location: { tab: 'connectors' } } },
-  'library:mcp': { view: 'apps', params: { location: { tab: 'connectors', installed: { section: 'connectors', direct: true } } } },
+  'library:mcp': { view: 'apps', params: { location: { tab: 'connectors', installed: { direct: true } } } },
   'library:themes': { view: 'settings', section: 'general' },
 } as const satisfies Record<HostLink, unknown>;
 

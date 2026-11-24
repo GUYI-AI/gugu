@@ -2,8 +2,8 @@ import { beforeEach, expect, it, vi } from 'vitest'
 const state = vi.hoisted(() => ({
   owner: 'owner', devices: [{ device_id: 'here', is_current_device: true }, { device_id: 'other', is_current_device: false }],
   known: true, variants: vi.fn(), navigate: vi.fn(), reveal: vi.fn(), rpcOn: vi.fn(),
-  // Where the Apps page was last: the market tab, sorted, with the Installed sheet open.
-  here: { tab: 'market', sort: 'newest', installed: { section: 'apps' } },
+  // Where the Apps page was last: the market tab, with the Installed page open.
+  here: { tab: 'market', installed: {} },
 }))
 vi.mock('@/store/devicesCache', () => ({ cachedDevicesAccount: () => state.owner, readCachedDevices: () => state.devices }))
 vi.mock('@/hooks/useSessionpageReveal', () => ({ revealSessionpage: state.reveal }))
@@ -22,8 +22,8 @@ it('opens the named device detail without switching its variant', async () => {
   await openAppDetailLink(target, 'owner')
   expect(state.rpcOn).toHaveBeenCalledWith('other')
   expect(state.variants).toHaveBeenCalledWith('kanban')
-  // The page goes from where it was, the sheet closed (a step; back reopens it), on that device, with the variant to show.
-  expect(state.navigate).toHaveBeenCalledWith('apps', { location: { tab: 'market', sort: 'newest', installed: undefined, deviceId: 'other', detail: { extensionId: 'kanban', variant: 'mine' } } })
+  // The page goes from where it was, Installed left (a step; back reopens it), on that device, with the variant to show.
+  expect(state.navigate).toHaveBeenCalledWith('apps', { location: { tab: 'market', installed: undefined, deviceId: 'other', detail: { extensionId: 'kanban', variant: 'mine' } } })
 })
 it('uses local RPC only when the registered target really is this device', async () => {
   await openAppDetailLink({ ...target, deviceId: 'here' }, 'owner')
