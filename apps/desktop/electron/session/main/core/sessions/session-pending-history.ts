@@ -1,8 +1,10 @@
 import type { NativeInputLookup } from '@gugu/core/local/agent/deliveryIdentity';
 import { readNativeInputTail, type NativeInputTail } from '@gugu/session-core/session-record';
 
-/** A projection (including an optimistic user row) is not evidence of native receipt. Read one native suffix per pass. */
-export function nativePendingInputLookup(sessionId: string): NativeInputLookup {
+/** A projection (including an optimistic user row) is not evidence of native receipt. Read one native suffix per pass.
+ * `history` walks older record pages (bounded by the shared read budget) so an explicit resend can settle a delivery
+ * verdict for a message the tail no longer covers; reconciliation keeps the tail alone. */
+export function nativePendingInputLookup(sessionId: string, options: { history?: boolean } = {}): NativeInputLookup {
   let tail: Promise<NativeInputTail> | undefined;
   let isCurrent = () => true;
   const lookup: NativeInputLookup = async input => {
@@ -20,7 +22,7 @@ export function nativePendingInputLookup(sessionId: string): NativeInputLookup {
       const { acpAgentStatusBridge } = await import('../acp/agent-status-bridge');
       const summary = acpAgentStatusBridge.current().get(sessionId);
       const path = summary?.providerId === row.provider ? summary.transcriptPath ?? undefined : undefined;
-      return readNativeInputTail(location.locator, { path });
+      return readNativeInputTail(location.locator, { path, history: options.history });
     })();
     const checked = await tail;
     return isCurrent() ? checked.find(input) : { state: 'incomplete', reason: 'native_session_changed' };

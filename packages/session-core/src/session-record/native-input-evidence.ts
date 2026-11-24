@@ -7,7 +7,7 @@ import { resolveSessionFile } from './sources/claude-jsonl';
 import { resolveRolloutFile } from './sources/codex-jsonl';
 import { readBytePage } from './window-cache/byte-page';
 import { openWindowByteSource } from './window-cache/file-source';
-import { createWindowBudget, WindowBudgetExceeded } from './window-cache/read-budget';
+import { createWindowBudget, WINDOW_LIMITS, WindowBudgetExceeded } from './window-cache/read-budget';
 import type { WindowBudget, WindowByteSource } from './window-cache/types';
 
 type Input = { id: string; text: string };
@@ -15,9 +15,13 @@ type NativeMessage = { id: string; text: string; clientMessageId?: string | null
 export type NativeInputTail = { find(input: Input): NativeInputEvidence };
 const incomplete = (reason: string, detail?: string): NativeInputTail => ({ find: () => ({ state: 'incomplete', reason, ...(detail ? { detail } : {}) }) });
 
-/** One pinned 64 KiB suffix, shared by every pending input in this reconciliation. No timeline is acquired. */
+/** A person-driven resend may read the whole record once; still bounded so a giant transcript cannot stall it. */
+const HISTORY_LIMITS = Object.freeze({ ...WINDOW_LIMITS, sourceBytes: 8 * 1024 * 1024, decodedBytes: 8 * 1024 * 1024, examinedRecords: 4096 });
+
+/** One pinned 64 KiB suffix, shared by every pending input in this reconciliation. No timeline is acquired.
+ * `history` walks older pages to the record's start so an explicit resend can reach a verdict; reconciliation keeps the suffix. */
 export async function readNativeInputTail(locator: SessionRecordLocator, options: {
-  budget?: WindowBudget; signal?: AbortSignal; path?: string;
+  budget?: WindowBudget; signal?: AbortSignal; path?: string; history?: boolean;
 } = {}): Promise<NativeInputTail> {
   if (locator.harness !== 'claude' && locator.harness !== 'codex') return incomplete('native_format_not_supported');
   let source: Awaited<ReturnType<typeof openWindowByteSource>> | undefined;
@@ -36,26 +40,50 @@ export async function readNativeInputTail(locator: SessionRecordLocator, options
 
 /** The production byte-source boundary is injectable so tests can meter real offsets without giant fixtures. */
 export async function inspectNativeInputTail(source: WindowByteSource, locator: Pick<SessionRecordLocator, 'harness' | 'providerSessionId'>,
-  options: { budget?: WindowBudget; signal?: AbortSignal } = {}): Promise<NativeInputTail> {
+  options: { budget?: WindowBudget; signal?: AbortSignal; history?: boolean } = {}): Promise<NativeInputTail> {
   if (locator.harness !== 'claude' && locator.harness !== 'codex') return incomplete('native_format_not_supported');
-  const budget = options.budget ?? createWindowBudget();
+  // An explicit resend walks the whole record under its own larger bound; the reconciliation budget serves many rows on one pass.
+  const budget = options.budget ?? createWindowBudget(options.history ? HISTORY_LIMITS : undefined);
   const page = await readBytePage(source, { budget, signal: options.signal });
   if (page.kind === 'reset') return incomplete('native_source_changed');
+  let start = page.start;
+  let bytes = page.bytes;
+  let budgetExhausted = false;
+  if (options.history && page.older) {
+    const chunks = [page.bytes];
+    let cursor = page;
+    try {
+      while (cursor.older) {
+        const older = await readBytePage(source, { budget, cursor: cursor.older, signal: options.signal });
+        if (older.kind === 'reset') return incomplete('native_source_changed');
+        chunks.unshift(older.bytes);
+        cursor = older;
+      }
+    } catch (error) {
+      if (!(error instanceof WindowBudgetExceeded)) throw error;
+      budgetExhausted = true;
+    }
+    start = cursor.start;
+    const merged = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.length, 0));
+    let at = 0;
+    for (const chunk of chunks) { merged.set(chunk, at); at += chunk.length; }
+    bytes = merged;
+  }
   // The first LF is the only proven record boundary when the suffix starts inside a record/UTF-8 character.
-  const first = page.start === 0 ? 0 : page.bytes.indexOf(10) + 1;
-  if (page.start > 0 && first === 0) return incomplete('native_record_boundary_missing');
-  const lastLf = page.bytes.lastIndexOf(10);
+  const first = start === 0 ? 0 : bytes.indexOf(10) + 1;
+  if (start > 0 && first === 0) return incomplete('native_record_boundary_missing');
+  const lastLf = bytes.lastIndexOf(10);
   const messages: NativeMessage[] = [];
   let identityProven = false;
-  let reason = page.start > 0 ? 'native_tail_does_not_cover_history' : null;
-  if (page.bytes.length && lastLf !== page.bytes.length - 1) reason = 'native_record_incomplete';
+  let reason = budgetExhausted ? 'native_read_budget_exhausted' : start > 0 ? 'native_tail_does_not_cover_history' : null;
+  if (bytes.length && lastLf !== bytes.length - 1) reason = 'native_record_incomplete';
   let boundary = lastLf;
   while (boundary >= first) {
     options.signal?.throwIfAborted();
-    const offset = boundary === 0 ? 0 : page.bytes.lastIndexOf(10, boundary - 1) + 1;
+    const offset = boundary === 0 ? 0 : bytes.lastIndexOf(10, boundary - 1) + 1;
     if (offset < first) break;
-    const line = page.bytes.subarray(offset, boundary);
-    const position = page.start + offset;
+    const line = bytes.subarray(offset, boundary);
+    const position = start + offset;
     boundary = offset - 1;
     if (line.length === 0) continue;
     try {

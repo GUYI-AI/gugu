@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { mergeDeliveryEnvelopes, renderDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { inspectNativeInputTail } from './native-input-evidence';
 import { WINDOW_FRAME_BYTES } from './window-cache/byte-page';
+import { createWindowBudget, WINDOW_LIMITS } from './window-cache/read-budget';
 import type { SourceSnapshot, WindowByteSource } from './window-cache/types';
 import { meteredSource } from '../../../../tests/helpers/native-history-io';
 
@@ -88,5 +89,28 @@ describe('native input evidence after an admission timeout', () => {
       .toEqual({ state: 'received', nativeReceiptId: 'native-input' });
     expect((await inspectNativeInputTail(source(jsonl(claude)).api, { harness: 'claude', providerSessionId: 'other' })).find(input))
       .toEqual({ state: 'incomplete', reason: 'native_session_changed' });
+  });
+});
+
+describe('an explicit resend searching history beyond the tail', () => {
+  const padding = (rows: number) => Array.from({ length: rows }, (_, i) => user(`filler-${i} ${'x'.repeat(200)}`));
+
+  it('finds an input recorded before the 64 KiB suffix and never resends it', async () => {
+    const text = jsonl(meta, user(input.text), ...padding(400));
+    const tail = await inspectNativeInputTail(source(text).api, locator, { history: true });
+    expect(tail.find(input)).toMatchObject({ state: 'received' });
+    expect((await inspectNativeInputTail(source(text).api, locator)).find(input))
+      .toEqual({ state: 'incomplete', reason: 'native_read_budget_exhausted' });
+  });
+
+  it('settles absent only after the whole record was searched', async () => {
+    const tail = await inspectNativeInputTail(source(jsonl(meta, ...padding(400))).api, locator, { history: true });
+    expect(tail.find(input)).toEqual({ state: 'absent', reason: 'native_input_absent' });
+  });
+
+  it('stays bounded: older pages stop at the resend read budget', async () => {
+    const budget = createWindowBudget({ ...WINDOW_LIMITS, sourceBytes: 96 * 1024 });
+    const tail = await inspectNativeInputTail(source(jsonl(meta, user(input.text), ...padding(400))).api, locator, { history: true, budget });
+    expect(tail.find(input)).toEqual({ state: 'incomplete', reason: 'native_read_budget_exhausted' });
   });
 });
