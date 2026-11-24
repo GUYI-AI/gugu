@@ -252,6 +252,8 @@ export type ResolvedCustomModel = {
   entries: CustomModelMeta['models'];
   upstreamEndpoint: string;
   removed?: boolean;
+  /** The session's recorded reasoning level. */
+  effort?: string;
 };
 
 async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol) {
@@ -331,8 +333,8 @@ export async function validateCustomModelSelection(providerId: string, ref: Cust
 
 export async function resolveCustomModel(providerId: string, sessionId: string, sourceSessionId?: string): Promise<ResolvedCustomModel | null> {
   migrateCustomModelConnections();
-  const ref = customModelRefFromOption(db.select({ config: sessions.config }).from(sessions)
-    .where(eq(sessions.id, sourceSessionId ?? sessionId)).get()?.config?.model);
+  const config = db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sourceSessionId ?? sessionId)).get()?.config;
+  const ref = customModelRefFromOption(config?.model);
   if (!ref) return null;
   const selected = await readSelectedCustomModel(providerId, ref, 'bound');
   const { meta, name, model, protocol } = selected;
@@ -348,6 +350,7 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
     apiKey: local.apiKey, endpoint,
     models, protocol: selected.harnessProtocol ?? protocol, capabilities: model, entries: meta.models,
     upstreamEndpoint: meta.endpoints.find(entry => entry.protocol === protocol)!.baseUrl, removed: meta.removed,
+    ...(config?.effort ? { effort: config.effort } : {}),
   };
 }
 

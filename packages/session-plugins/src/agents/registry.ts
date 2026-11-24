@@ -574,3 +574,4 @@ export {
 } from './impl/codex/platform-provider-args';
 
 export { antigravityCustomModelLaunch } from './impl/antigravity/api-key-connection';
+export { codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV } from './impl/codex/platform-models';

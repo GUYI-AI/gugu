@@ -1,4 +1,4 @@
-import type { ModelProtocol } from '@gugu/session-core/models/custom-model';
+import { chatModel, type ModelProtocol } from '@gugu/session-core/models/custom-model';
 import { requestEndpoint } from './connection-endpoint-request';
 import type { ConnectionModelList, CustomModelProtocolProbe } from '@gugu/session-core/workspace-server/agent-config';
 
@@ -48,9 +48,9 @@ export async function listEndpointModels(
     const models = [
       ...new Set(
         data
-          .map((entry) => entry && typeof entry === 'object' ? Reflect.get(entry, gemini ? 'name' : 'id') as unknown : undefined)
-          .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-          .map((id) => gemini ? id.trim().replace(/^models\//, '') : id.trim())
+          .map((entry) => entry && typeof entry === 'object' ? { ...entry, id: Reflect.get(entry, gemini ? 'name' : 'id') as unknown } : undefined)
+          .filter((entry): entry is { id: string } => typeof entry?.id === 'string' && entry.id.trim().length > 0 && chatModel(entry))
+          .map(({ id }) => gemini ? id.trim().replace(/^models\//, '') : id.trim())
       ),
     ].sort((a, b) => a.localeCompare(b));
     return models.length > 0 ? { kind: 'listed', models } : { kind: 'unlisted', reason: 'no-list' };

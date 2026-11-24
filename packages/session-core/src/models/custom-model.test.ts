@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { customModelAcceptsImages, customModelMetaSchema, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
+import { chatModel, customModelAcceptsImages, customModelEfforts, customModelMetaSchema, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
 import { providerPresets } from './provider-presets';
 
 const connectionId = '481825a8-60b9-4c83-8d1b-f104e3db0269';
@@ -100,5 +100,28 @@ describe('custom model image input', () => {
     expect(customModelAcceptsImages(undefined)).toBe(true);
     expect(customModelAcceptsImages({ image: true })).toBe(true);
     expect(customModelAcceptsImages({ image: false })).toBe(false);
+  });
+});
+
+describe('relay model lists', () => {
+  it('offers only chat models: metadata first, then known non-chat families by id', () => {
+    const listed = [
+      { id: 'gpt-5.5-relay' }, { id: 'deepseek-v4', supported_endpoint_types: ['openai'] },
+      { id: 'doubao-seedance-2-0-260128' }, { id: 'doubao-seedream-5-0' }, { id: 'text-embedding-3-large' },
+      { id: 'veo-4', supported_endpoint_types: ['openai-video'] }, { id: 'custom-rerank', supported_endpoint_types: ['jina-rerank'] },
+      { id: 'models/gemini-3-pro', supportedGenerationMethods: ['generateContent', 'countTokens'] },
+      { id: 'models/text-embedding-005', supportedGenerationMethods: ['embedContent'] },
+    ];
+    expect(listed.filter(chatModel).map(({ id }) => id)).toEqual(['gpt-5.5-relay', 'deepseek-v4', 'models/gemini-3-pro']);
+  });
+});
+
+describe('custom model thinking levels', () => {
+  const harness = { kind: 'selectable', effortOptions: { low: {}, medium: {}, high: {} } };
+  it('offers the harness ladder unless the person turned thinking off', () => {
+    expect(customModelEfforts({}, harness)).toEqual(['low', 'medium', 'high']);
+    expect(customModelEfforts({ thinking: true }, harness)).toEqual(['low', 'medium', 'high']);
+    expect(customModelEfforts({ thinking: false }, harness)).toBeNull();
+    expect(customModelEfforts({ thinking: true }, { kind: 'none' })).toBeNull();
   });
 });
