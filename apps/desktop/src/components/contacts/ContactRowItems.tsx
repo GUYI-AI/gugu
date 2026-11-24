@@ -117,7 +117,7 @@ function GroupMembersLine({ facts }: { facts: GroupRowFacts }) {
       <span className="inline-flex shrink-0">
         {facts.members.slice(0, 4).map((member, index) => (
           <span key={member.id} className={cn('inline-flex rounded-full ring-2 ring-[var(--bg)]', index > 0 && '-ml-1')}>
-            <Avatar name={member.display_name} avatarUrl={member.avatar} seed={member.id} size="xs" isAgent={member.type === 'agent'} harnessBadge={false} />
+            <Avatar name={member.display_name} avatarUrl={member.avatar} seed={member.id} size="xs" isAgent={member.type === 'agent'} />
           </span>
         ))}
       </span>

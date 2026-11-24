@@ -30,13 +30,13 @@
  * chevron, no toggle, no panel — because a disclosure control that reveals
  * nothing is a promise the row cannot keep.
  *
- * Shimmer applies while status === 'running'.
+ * The label takes the still running ink (runningText) while status === 'running'.
  *
  * Outer geometry (height, padding) is applied by tool.def.tsx Render; this
  * component only describes inner content.
  */
 
-import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
+import { runningText } from '@session-chat/styles/effects.css';
 import { IconError, IconShieldAlert } from '@session-chat/components/primitives/icons';
 import { applySoftWraps } from '@session-chat/core/measure/soft-wrap';
 import { For, Show } from 'solid-js';
@@ -136,9 +136,9 @@ export function Tool(props: ToolProps) {
             </span>
           </span>
         </Show>
-        <ShimmerText class={toolName} active={isRunning()}>
+        <span class={toolName} classList={{ [runningText]: isRunning() }}>
           {props.item.name}
-        </ShimmerText>
+        </span>
         <Show when={props.item.inputSummary}>
           <span class={toolSummary} data-slot="tool-call-query">
             {props.item.inputSummary}
@@ -152,7 +152,7 @@ export function Tool(props: ToolProps) {
             其余读作已完成」表达状态。gugu 的工具行两个身份都当：单独一行时是
             tool-call，折进「过程」里时是 timeline 的一步 —— 只能取一个，取 timeline。
             一屏十几个一模一样的绿勾信息量是零，还把真正要找的那个红记号淹了。
-            ⇒「做完了」由「没有微光」表达（`toolName` 上的 textShimmer）。 */}
+            ⇒「做完了」由名字回到常态墨色表达（`toolName` 上的 runningText）。 */}
         <Show
           when={props.item.awaitingPermission}
           fallback={

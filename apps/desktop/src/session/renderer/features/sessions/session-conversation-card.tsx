@@ -41,7 +41,7 @@ export const SessionConversationCard = observer(function SessionConversationCard
   const reload = commands.find((command) => command.id === 'session:reload');
   if (!store) return null;
   return <ConversationCard
-    avatar={<Avatar name={name} seed={agentId || sessionId} avatarUrl={identity?.avatar} isAgent harnessBadge={false} size={44} still />}
+    avatar={<Avatar name={name} seed={agentId || sessionId} avatarUrl={identity?.avatar} isAgent size={44} still />}
     name={name}
     subtitle={modelLabel}
     onRename={(next) => sessionRegistry.get(sessionId)!.renameSession(sessionId, next)}

@@ -45,7 +45,7 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
   const assistant = useIsAssistantAvatar(agent.id)
   const { presence } = useAgentDisplayStatus(agent.id)
   const headerStatus = useAgentHeaderStatus(agent.id)
-  // 点与那一句状态读同一格:出错、需要你、在跑取共用色表(agentStatusColorVar)的红 / 黄 / 橙;后台在跑不画点,画双竖线 ——
+  // 点与那一句状态读同一格:出错、需要你、在跑取共用色表(agentStatusColorVar)的红 / 黄 / 橙;后台在跑不画点,画停住的运行字形 ——
   // ❌ 出错了还画绿点。其余照旧:不在线 / 已移除灰,别的绿。
   const dotColor = headerStatus.tone && ALERT_DOT_TONES.has(headerStatus.tone) ? agentStatusColorVar(headerStatus.tone) : null
   const headerOffline = headerStatus.tone === 'offline' || headerStatus.tone === 'removed'

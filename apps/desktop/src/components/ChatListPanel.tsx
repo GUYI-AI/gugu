@@ -374,7 +374,6 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
             seed={isRoom ? chat.id : chat.peer_user_id ?? undefined}
             size={mobile ? 48 : callsOnly ? ONE_LIST_AVATAR_PX : 'sm'}
             isAgent={isAgentChat}
-            harnessBadge={!mobile}
             agentStatus={agentStatus}
             variant={isRoom ? 'group' : 'default'}
           /></PhoneProjectChatAvatar>

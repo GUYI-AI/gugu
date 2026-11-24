@@ -104,7 +104,7 @@ function PersonRow({ item, onAction }: { item: Row; onAction: (id: string) => vo
   const identity = useAvatarIdentity(id)
   const name = useShownAgentName({ name: identity?.display_name ?? item.label.trim(), createdAt: identity?.type === 'agent' ? identity.created_at ?? undefined : undefined })
   return <MenuItem checked={item.checked} disabled={item.enabled === false} title={item.title} onClick={() => onAction(item.id)}
-    icon={<Avatar name={name} avatarUrl={identity?.avatar} seed={id} size={20} isAgent={identity ? identity.type === 'agent' : undefined} harnessBadge={false} still />}>
+    icon={<Avatar name={name} avatarUrl={identity?.avatar} seed={id} size={20} isAgent={identity ? identity.type === 'agent' : undefined} still />}>
     {name}
   </MenuItem>
 }

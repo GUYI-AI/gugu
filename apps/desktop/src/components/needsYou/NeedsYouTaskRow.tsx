@@ -53,7 +53,7 @@ export const NeedsYouTaskRow = observer(function NeedsYouTaskRow({ task, onClick
     onClick={onClick}
     onKeyDown={onKeyDown}
     leading={<PhoneMessageAvatar badge={emphasis && presentation && <span className="inline-flex" role="img" aria-label={agentStatusText(presentation.label)}><AgentContactStatusMark tone={displayStatusOf(presentation.tone)} /></span>}>
-      <Avatar name={name!} avatarUrl={agent?.avatar ?? null} seed={agentId} size={mobile ? 48 : 'sm'} isAgent harnessBadge={false} />
+      <Avatar name={name!} avatarUrl={agent?.avatar ?? null} seed={agentId} size={mobile ? 48 : 'sm'} isAgent />
     </PhoneMessageAvatar>}
     title={emphasis ? name : <span className="font-normal text-[var(--muted-fg)]">{name}</span>}
     meta={Number.isFinite(time) ? formatCalendarDay(new Date(time).toISOString()) : undefined}

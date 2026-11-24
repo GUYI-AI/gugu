@@ -1,7 +1,7 @@
 /** @jsxImportSource solid-js */
 /**
- * shimmer-row-removal.contract — a running tool row whose shimmer has swept at
- * least once must leave nothing behind when its row goes away.
+ * running-row-removal.contract — a running tool row must leave nothing behind
+ * when its row goes away.
  *
  * ## What broke
  *
@@ -10,21 +10,8 @@
  * the timeline. On the desktop app that write threw
  * `Cannot read properties of undefined (reading 'data')` out of the Solid
  * update, the pass was dropped and the whole transcript pane went blank until a
- * reload.
- *
- * The throwing computation had no owner. The shimmer's `animationend` handler
- * read the `active` prop; the execute row passes it as
- * `status === 'running' && …`, which the compiler turns into a getter that
- * builds a memo on every read. Read from a DOM event, that memo is created
- * outside any owner: no `<Show>` disposes it, and it keeps tracking the row's
- * unit through `units().at(index)` until that index is gone.
- *
- * ## Why the test dispatches the event itself
- *
- * The leak needs one finished sweep. Real sweeps depend on CSS timing and on
- * the viewport observer, so the test fires the event the browser fires, on the
- * element whose handler the product registers. The control without it pins that
- * the frame swap alone was never the trigger.
+ * reload. (The ownerless computation lived in the label's sweep `animationend`
+ * handler; running labels no longer animate, and this pins the swap itself.)
  */
 
 import { createChatContext } from '@session-chat/chat-context';
@@ -32,6 +19,7 @@ import { createChatView } from '@session-chat/chat-view';
 import { DEFAULT_THEME } from '@session-chat/core/theme';
 import type { TranscriptTurn } from '@session-chat/model';
 import { createChatState } from '@session-chat/state/chat-state';
+import { runningText } from '@session-chat/styles/effects.css';
 import { afterEach, describe, expect, it } from 'vitest';
 import { until } from '../../../../tests/support/awaitCondition';
 
@@ -77,18 +65,10 @@ async function mount() {
   return { host, state };
 }
 
-/** The element the shimmer's `onAnimationEnd` is registered on: parent of the first sweep ink. */
-function sweepElement(host: HTMLElement): HTMLElement | null {
-  return host.querySelector<HTMLElement>('[data-shimmer-text]')?.parentElement ?? null;
-}
-
-async function dequeueAfterRunningTool(sweeps: number) {
+async function dequeueAfterRunningTool() {
   const { host, state } = await mount();
   state.transcript.activeTurn.set(frame([userAsk, sleepCall('running')]));
-  await until('the running tool row shimmers', () => sweepElement(host) !== null);
-  for (let i = 0; i < sweeps; i++) {
-    sweepElement(host)!.dispatchEvent(new AnimationEvent('animationend', { bubbles: true }));
-  }
+  await until('the running tool row is drawn', () => host.querySelector(`.${runningText}`) !== null);
   state.transcript.activeTurn.set(frame([userAsk, sleepCall('done'), echoCall, reply]));
   await until('the finished turn is on screen', () => host.innerText.includes('FIRSTDONE'));
 
@@ -101,15 +81,9 @@ async function dequeueAfterRunningTool(sweeps: number) {
   return { host, thrown };
 }
 
-describe('a shimmering row leaves nothing behind when it is removed', () => {
-  it('control: without a finished sweep the frame swap is clean', async () => {
-    const { host, thrown } = await dequeueAfterRunningTool(0);
-    expect(thrown).toBeNull();
-    await until('the queued message is drawn', () => host.innerText.includes(QUEUED_TEXT));
-  });
-
-  it('after a finished sweep the frame swap does not throw and the pane keeps drawing', async () => {
-    const { host, thrown } = await dequeueAfterRunningTool(3);
+describe('a running row leaves nothing behind when it is removed', () => {
+  it('the frame swap does not throw and the pane keeps drawing', async () => {
+    const { host, thrown } = await dequeueAfterRunningTool();
     expect(thrown, `the swap threw: ${String((thrown as Error | null)?.message)}`).toBeNull();
     await until('the queued message is drawn', () => host.innerText.includes(QUEUED_TEXT));
   });

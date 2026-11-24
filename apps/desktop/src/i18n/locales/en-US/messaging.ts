@@ -582,6 +582,7 @@ export default {
       "madeAdmin": "{{actor}} made {{target}} an admin",
       "removed": "{{actor}} removed {{target}} from the group",
       "revokedAdmin": "{{actor}} removed {{target}} as an admin",
+      "transferredOwner": "{{actor}} transferred group ownership to {{target}}",
       "topicOpened": "{{actor}} opened a topic: "
     },
     "memberList": {
@@ -594,6 +595,10 @@ export default {
       "manage": "Manage {{name}}",
       "noMatches": "No members match \"{{query}}\"",
       "revokeAdmin": "Remove admin",
+      "transferOwner": "Transfer ownership",
+      "transferOwnerConfirm": "Transfer group ownership to {{name}}? {{name}} becomes the owner and you become an admin; only the new owner can transfer it again.",
+      "transferOwnerProjectGroup": "A project group's owner is the project's owner, so its ownership cannot be transferred yet.",
+      "transferOwnerUnavailable": "The server does not support transferring group ownership yet. Try again after it is updated.",
       "search": "Search members, owners or engines",
       "setActive": "Switch to proactive",
       "setPassive": "Switch to passive",

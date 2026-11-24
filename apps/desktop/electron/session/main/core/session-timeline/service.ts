@@ -751,9 +751,12 @@ export async function sessionOfAgent(agentUserId: string): Promise<{ projectId: 
   return row ?? null;
 }
 
-/** 同一份列表(最近动过的在前),同步、不读名录(行上不带 agent):心跳的离线摘要只要前 `limit` 条,在库里截(#3340)。 */
-export function listSessionStates(limit?: number): SessionpageSessionsListResult {
-  return sessionList(null, limit);
+/**
+ * 同一份列表(最近动过的在前),同步、不读名录(行上不带 agent):心跳的离线摘要只要前 `limit` 条,在库里截(#3340)。
+ * `schedules: false`:行上不带定时标记 —— 心跳的摘要不报它,❌ 每一拍替它读一遍这批会话的定时与最近一次运行。
+ */
+export function listSessionStates(limit?: number, { schedules = true }: { schedules?: boolean } = {}): SessionpageSessionsListResult {
+  return sessionList(null, limit, schedules);
 }
 
 /** 可能在忙的会话(状态既不是空闲也不是出错):换版忙不忙只看这几行,每一拍不随闲着的会话数长(#3340)。 */
@@ -762,13 +765,13 @@ export function activeSessionStates(): Array<Pick<SessionpageSessionSummary, 'co
     .map((row) => ({ conversationId: row.id, runtime: summaryRuntime(row.runtime), status: statusFieldsOf(row).status }));
 }
 
-function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: string | null }> | null, limit?: number): SessionpageSessionsListResult {
+function sessionList(agents: ReadonlyMap<string, { agentId: string; chatId: string | null }> | null, limit?: number, withSchedules = true): SessionpageSessionsListResult {
   const visibleProjects = readLocalProjects();
   const rows = readSessionRows(false, inArray(sessions.projectId, visibleProjects.map(project => project.id)), limit);
   const projectById = new Map<string, SessionpageProjectSummary>();
   const summaries: SessionpageSessionSummary[] = [];
   const ids = limit === undefined ? undefined : rows.map(({ session }) => session.id);
-  const schedules = schedulesBySession(listSessionSchedules(ids));
+  const schedules = withSchedules ? schedulesBySession(listSessionSchedules(ids)) : new Map<string, SessionSchedule[]>();
   const answered = readAnsweredAsks(ids);
 
   for (const { session, project } of rows) {
