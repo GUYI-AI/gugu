@@ -193,11 +193,6 @@ export function useTimelineSession(
     return attachSessionFollow({ client, deviceId, sessionId, enabled, lean }, () => { olderGeneration.current++ })
   }, [client, deviceId, sessionId, enabled, lean])
 
-  // 世代变了 ⇒ 手里那份接不上,重新走一遍「快照 + 订阅」。
-  useEffect(() => {
-    if (timeline.needsSnapshot) reload()
-  }, [timeline.needsSnapshot, reload])
-
   /*
    * 边看边存。**防抖**:一条流式消息每秒推好几次,每次都整份序列化 + 写库
    * 会把这点开销叠成卡顿 —— 那正是这一批要消灭的那种卡。
@@ -456,17 +451,22 @@ function restartSessionFollow(params: FollowParams): void {
 function runSessionFollow(follow: SessionFollow): () => void {
   const { client, deviceId, sessionId, enabled, lean } = follow.params
   const { write, setTimeline } = streamWriters({ deviceId, sessionId })
+  // Out of the stack that asks for it (a callback of this very follow): start over once it has returned.
+  const reload = () => { queueMicrotask(() => { if (follows.get(sessionStreamKey(follow.params)) === follow) restartSessionFollow(follow.params) }) }
   const applyResult = (result: TimelineAfterResult) => {
     if (!result.ok) follow.resetOlder()
+    let broken = false
     setTimeline((current) => {
       const next = applyTimelineResult(current, result)
       follow.cursor = next.cursor
+      broken = next.needsSnapshot !== null
       return next
     })
     if (!result.ok) timelineLog.info({ reason: result.reset }, 'Timeline snapshot reset')
+    // What is held cannot be continued (another epoch, a gap): snapshot and subscribe again, for every reader of this
+    // follow — the page and the readers outside React alike. The host's subscription may be gone with its old timeline.
+    if (broken) reload()
   }
-  // Out of the stack that asks for it (a callback of this very follow): start over once it has returned.
-  const reload = () => { queueMicrotask(() => { if (follows.get(sessionStreamKey(follow.params)) === follow) restartSessionFollow(follow.params) }) }
   if (!enabled) {
     // Its machine is away: what this phone saw last time is still true, so it is still shown — ❌ a blank page.
     let cancelled = false
@@ -489,7 +489,9 @@ function runSessionFollow(follow: SessionFollow): () => void {
    * owner 2026-09-08 拍板要这一层:以前每次进页都得等机器把整份快照送过来才有东西看,
    * 于是首屏永远是「正在读取时间线…」。底稿不是事实源 —— 它只活到下面第一次对账为止。
    */
-  const cached = readCachedTimeline(cacheKey)
+  // A restart goes on from the copy this window holds (it names the running turn); the cache is for a first open.
+  const held = sessionStreams.get()[sessionStreamKey(cacheKey)]?.timeline
+  const cached = held?.cursor ? held : readCachedTimeline(cacheKey)
   if (cached) {
     follow.cursor = cached.cursor
     follow.ready = true
