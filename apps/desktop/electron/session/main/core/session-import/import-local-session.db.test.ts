@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   createLocalProject: vi.fn(),
   ensureRepositoryWorkspace: vi.fn(() => 'workspace-repo-1'),
   openProject: vi.fn(),
+  ensureRegisteredProjectGroup: vi.fn(),
   preview: vi.fn(),
   warn: vi.fn(),
 }));
@@ -33,6 +34,9 @@ vi.mock('@main/core/projects/operations/ensure-repository-workspace', () => ({
 }));
 vi.mock('@main/core/projects/operations/openProject', () => ({
   openProject: mocks.openProject,
+}));
+vi.mock('@main/core/projects/operations/project-groups', () => ({
+  ensureRegisteredProjectGroup: mocks.ensureRegisteredProjectGroup,
 }));
 vi.mock('@main/lib/logger', () => ({ log: { warn: mocks.warn } }));
 vi.mock('./host-source', () => ({
@@ -267,6 +271,8 @@ describe('importLocalSession', () => {
       });
 
       expect(mocks.openProject).toHaveBeenCalledWith('project-new');
+      // The sidebar knows a project by its group: without one the session stood outside every project.
+      expect(mocks.ensureRegisteredProjectGroup).toHaveBeenCalledWith(expect.objectContaining({ id: 'project-new' }));
     });
 
     it('复用已存在的项目时同样要挂载（否则重试永远失败）', async () => {
@@ -284,6 +290,7 @@ describe('importLocalSession', () => {
       });
 
       expect(mocks.openProject).toHaveBeenCalledWith('project-existing');
+      expect(mocks.ensureRegisteredProjectGroup).toHaveBeenCalledWith(expect.objectContaining({ id: 'project-existing' }));
       expect(mocks.createLocalProject).not.toHaveBeenCalled();
     });
 
