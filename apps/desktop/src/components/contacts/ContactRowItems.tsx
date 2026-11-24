@@ -11,7 +11,7 @@ import { formatCalendarDay } from '@/i18n/format'
 import type { GroupRowFacts } from './groupRowFacts'
 import { ContactGroupAvatar, SelectionCheckbox } from './ContactSearch'
 import { ContactRowContextMenu, type ContactRowMenuActions } from './ContactRowActions'
-import { ct, rowAvatarClass, rowKeyActivate } from './contactsPanelStyles'
+import { ct, rowKeyActivate } from './contactsPanelStyles'
 import { cn } from '@/lib/cn'
 
 // 通讯录分组里的人 / 群行(原样从 ContactsPanel 搬出);分组页与搜索共用,动作由 ContactRows 的 useContactRowRenderers 给。
@@ -50,9 +50,7 @@ export function PersonContactRow({
         leading={
           <>
             {selectionMode ? <SelectionCheckbox checked={multiSelected} /> : null}
-            <div className={rowAvatarClass}>
-              <Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size="sm" />
-            </div>
+            <Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size="sm" />
           </>
         }
         title={displayName(contact)}
