@@ -21,7 +21,7 @@ export function customComposerOptions(
     const tag = vendorTag(connection.endpoints[0]?.baseUrl);
     const entries = connection.models.length ? connection.models : [{ id: undefined }];
     return entries.map((model) => {
-      const matched = matchCustomModel({ connection, nativeProtocol: protocols[0], protocols, convertFrom: agent?.capabilities.customModel?.convertFrom,
+      const matched = matchCustomModel({ connection, harness: agent?.id, nativeProtocol: protocols[0], protocols, convertFrom: agent?.capabilities.customModel?.convertFrom,
         hasModel: Boolean(model.id), allowDefaultModel: agent?.capabilities.customModel?.modelOptional });
       const required = protocols.map(protocolName).join(' / ');
       const actual = connection.endpoints.map(({ protocol }) => protocolName(protocol)).join(' / ');
