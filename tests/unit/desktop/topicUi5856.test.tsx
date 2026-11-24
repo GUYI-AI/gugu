@@ -12,7 +12,9 @@ import * as attachmentReader from '../../../apps/desktop/src/lib/attachmentBytes
 import { followRendererSession, queryClient as attachmentQueryClient } from '../../../apps/desktop/src/lib/replica'
 
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
-import { createNode, createReactHarness, clickElement, deferred } from '../../support/testHarness'
+import { createNode, createReactHarness, clickElement, deferred, message, renderWithAppProviders } from '../../support/testHarness'
+import { chatWindowStub } from '../../support/chatWindowStub'
+import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 
 const listTopicsOfChat = vi.fn<(sourceChatId: string) => Promise<TopicSummary[]>>()
 vi.mock('../../../apps/desktop/src/lib/topics', () => ({
@@ -28,6 +30,7 @@ vi.mock('../../../apps/desktop/src/lib/chatMessageRevalidation', async (importOr
 }))
 
 const { useTopicsOfChat, topicsSourceChatId } = await import('../../../apps/desktop/src/hooks/useTopics')
+const { useTopicSurface } = await import('../../../apps/desktop/src/hooks/useTopicSurface')
 const { TopicAnchorCard } = await import('../../../apps/desktop/src/components/chat/TopicAnchorCard')
 const { canSourceTopic } = await import('../../../apps/desktop/src/components/chat/topicAnchorModels')
 const { chatDisplayName } = await import('@gugu/core/shared/ui/chatModels')
@@ -527,4 +530,62 @@ describe('会话列表:话题是来源线的子行,不是一行平级的会话',
     expect(splitSunkTopics(rows as never, () => true, undefined, true)).toEqual({ live: rows, sunk: [] })
   })
 
+})
+
+// #62 a topic is a main conversation: the open topic catches up to its own summary for every reader. A source-line member who
+// never spoke in it gets no message_created for its rows, only the source line's chat_changed naming the topic.
+describe('an open topic follows its summary for every reader, member or not', () => {
+  beforeEach(() => followRendererSession('SIGNED_IN', 'user-1'))
+  type RevisionListener = (operations: readonly { revision: string; event: string; payload: unknown }[]) => void | Promise<void>
+  let listeners: Map<string, Set<RevisionListener>>
+  const subscribeAccountRevision = (event: string, listener: RevisionListener) => {
+    let bucket = listeners.get(event)
+    if (!bucket) { bucket = new Set(); listeners.set(event, bucket) }
+    bucket.add(listener)
+    return () => { bucket.delete(listener) }
+  }
+  async function emit(event: string, chatId: string, extra: Record<string, unknown> = {}) {
+    await act(async () => {
+      for (const listener of listeners.get(event) ?? []) await listener([{ revision: '1', event, payload: { chat_id: chatId, tombstone: false, ...extra } }])
+      await Promise.resolve()
+    })
+  }
+  const refreshLine = vi.fn<(chatId: string) => Promise<unknown>>()
+  let lineMessages: MessageItem[]
+  let surface: ReturnType<typeof useTopicSurface> | null
+  function Probe({ chat }: { chat: Pick<ChatItem, 'id' | 'kind' | 'source_chat_id'> }) {
+    surface = useTopicSurface({ chat, messages: lineMessages, lineSettled: true, refreshLine, subscribeAccountRevision, onCreateFailed: vi.fn() })
+    return null
+  }
+  async function mount(chat: Pick<ChatItem, 'id' | 'kind' | 'source_chat_id'>) {
+    await renderWithAppProviders(harness, createNode(Probe, { chat }), { chat: chatWindowStub() })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  }
+  beforeEach(() => {
+    listeners = new Map()
+    lineMessages = []
+    surface = null
+    refreshLine.mockReset().mockResolvedValue(undefined)
+  })
+
+  it('refreshes the open topic once for a newer summary, however often the source line repeats it', async () => {
+    const first = message({ id: 't1', chat_id: 'topic-1', seq: 1, created_at: '2026-09-18T00:00:00.000Z' })
+    listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: first.created_at })])
+    lineMessages = [first]
+    await mount({ id: 'topic-1', kind: 'topic', source_chat_id: 'chat-A' })
+    expect(listTopicsOfChat).toHaveBeenCalledWith('chat-A')
+    expect(surface?.anchorsByMessageId).toBeNull()
+    await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
+    expect(refreshLine).not.toHaveBeenCalled()
+    listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: '2026-09-18T00:01:00.000Z', message_count: 2 })])
+    for (let i = 0; i < 3; i++) await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
+    expect(refreshLine).toHaveBeenCalledExactlyOnceWith('topic-1')
+  })
+
+  it('a group line never refreshes itself from its topics\' summaries', async () => {
+    listTopicsOfChat.mockResolvedValue([topic({ last_message_at: '2026-09-18T00:05:00.000Z' })])
+    await mount({ id: 'chat-A', kind: 'group', source_chat_id: null })
+    await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
+    expect(refreshLine).not.toHaveBeenCalled()
+  })
 })

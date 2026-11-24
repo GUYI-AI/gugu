@@ -15,6 +15,7 @@ import '@/styles/tokens.css';
 import { until, untilStable } from '../../../../../../../tests/support/awaitCondition';
 import { clearDraggedScreenContent, getDraggedScreenContent, SCREEN_CONTENT_DRAG_TYPE } from '@renderer/lib/drag-screen-content';
 import { publishSidebarChatView } from '@/lib/sidebarChatsBridge';
+import { installSessionViewRequestBridge, SESSION_VIEW_REQUEST_BRIDGE_KEY } from '@renderer/features/sessions/stores/session-view-requests';
 
 vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<object>()), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }));
 vi.mock('@/store/devicesContext', async (original) => ({ ...(await original<object>()), useDevicesStore: () => ({ devices: [] }) }));
@@ -143,6 +144,28 @@ describe('the IM chat list in the master\'s roles (#7333)', () => {
       expect(drops[0].types.includes(SCREEN_CONTENT_DRAG_TYPE)).toBe(!mobile);
       expect(drops[0].content).toEqual(mobile ? null : { kind: 'chat', chatId: 'dm-1', title: '林知夏' });
     } finally { target.remove(); }
+  });
+
+  // #62 in the sidebar a topic row opens the topic itself; while it is open its own row is lit, and its source row only when the
+  // topic rows are folded away (nothing else on screen says where the open conversation lives).
+  it('sidebar: a topic row opens the topic itself; the open topic lights its row, and its source row once the topics fold', async () => {
+    const openChat = vi.fn();
+    installSessionViewRequestBridge(window, { openChat });
+    try {
+      publishSidebarChatView({ focusedChatId: 't-live', groups: [] });
+      const root = await renderList('t-live', vi.fn(), false, null, 'sidebar');
+      const source = () => root.querySelector<HTMLElement>('[data-chat-row="grp-1"]')!;
+      await until('the topic sub-row rendered', () => root.querySelector('[data-topic-subrow="t-live"]') !== null);
+      expect(root.querySelector('[data-topic-subrow="t-live"]')?.getAttribute('aria-selected')).toBe('true');
+      expect(source().getAttribute('aria-selected')).toBe('false');
+      await userEvent.click(root.querySelector<HTMLElement>('[data-topic-subrow="t-live"]')!);
+      expect(openChat).toHaveBeenCalledWith('t-live', false);
+      await userEvent.click(source().querySelector<HTMLElement>('button[aria-expanded="true"]')!);
+      await until('the topic rows folded', () => root.querySelector('[data-topic-subrow="t-live"]') === null);
+      expect(source().getAttribute('aria-selected')).toBe('true');
+    } finally {
+      delete (window as unknown as Record<string, unknown>)[SESSION_VIEW_REQUEST_BRIDGE_KEY];
+    }
   });
 
   it('a topic activation opens the topic itself as the main conversation', async () => {
