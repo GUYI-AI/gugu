@@ -674,11 +674,6 @@ export function ComposerModelMenu({
                               {m.icon}
                             </span>
                           )}
-                          {/* 单行(#7056,owner 2026-10-10 看着 Cursor:「表达密度可以更丰富、更紧凑一点」):
-                              只有名字。说明、倍率、上下文、推理档都在悬浮详情卡里 —— 行尾曾经写过倍率,
-                              owner 同日:「卡片里已经展示过了,右侧就不要再展示了」。
-                              ⚠️ 这里替掉的是 09-05 照 assistant-ui 做的两段式:那一版一屏只放得下五六条,
-                              第二行又被 288px 截成省略号。要翻回去,连悬浮卡一起想。 */}
                           <span data-slot="composer-model-name" className={styles.modelPanelItemName}>
                             {m.name}
                           </span>
@@ -687,7 +682,12 @@ export function ComposerModelMenu({
                               {m.tag}
                             </span>
                           )}
-                          {m.id === selectedModel && <Check className={styles.modelSelectedCheck} size={14} aria-hidden />}
+                          <span className={styles.modelPanelItemTrailing}>
+                            {m.creditRate && <span className={styles.modelPanelItemRate} data-slot="composer-model-rate">{m.creditRate}</span>}
+                            <span className={styles.modelPanelItemCheck} aria-hidden="true">
+                              {m.id === selectedModel && <Check className={styles.modelSelectedCheck} size={14} />}
+                            </span>
+                          </span>
                         </Combobox.Item>
                       )}
                     </Combobox.Collection>

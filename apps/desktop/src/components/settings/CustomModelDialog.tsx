@@ -5,7 +5,7 @@ import { vendorName } from '@/i18n/vendorName';
 import { Button } from '@renderer/lib/ui/button';
 import { Input } from '@renderer/lib/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/lib/ui/select';
-import { Dialog, DialogContent, DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
+import { Dialog, DialogContent, DialogContentArea, DialogDescription, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import {
   Combobox, ComboboxTrigger, ComboboxContent, ComboboxInput, ComboboxList, ComboboxGroup,
   ComboboxCollection, ComboboxItem, ComboboxEmpty,
@@ -53,6 +53,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   // null = the person has not chosen: every model the address lists is selected.
   const [picked, setPicked] = useState<string[] | null>(connection ? connection.models.map(({ id }) => id) : null);
   const [advanced, setAdvanced] = useState(false);
+  const [modelListRefresh, setModelListRefresh] = useState(0);
   const [features, setFeatures] = useState<Omit<CustomModelEntry, 'id' | 'label'>>((() => { const model = connection?.models[0]; return { image: model?.image, thinking: model?.thinking, contextWindow: model?.contextWindow, maxOutput: model?.maxOutput }; }));
   const [featuresChanged, setFeaturesChanged] = useState(false);
   const [routes, setRoutes] = useState<CustomModelRoute[]>(connection?.routes ?? []);
@@ -68,9 +69,13 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const address = !preset && normalized?.[0] ? normalized[0].baseUrl : null;
   const keySource = typedKey ? { apiKey: typedKey } : connection?.keySaved ? { connectionId: connection.id } : null;
   const source: ConnectionModelSource | null = !keySource || !normalized ? null : address ? { ...keySource, baseUrl: address } : { ...keySource, endpoints: normalized };
-  const list = useConnectionModelList(machine, source);
+  const list = useConnectionModelList(machine, source, modelListRefresh);
   const probed = address ? (list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : []) : normalized ?? [];
   const routeEndpoints = probed.length ? probed : normalized ?? [];
+  const routeAddressPlaceholder = (outgoing: ModelProtocol) => {
+    const endpoint = routeEndpoints.find(({ protocol }) => protocol === outgoing);
+    return endpoint?.baseUrl === normalized?.[0]?.baseUrl ? translate('customModels.sameApiAddress') : endpoint?.baseUrl;
+  };
   const protocolLabel = (protocol: ModelProtocol) => translate(`customModels.${protocol}`);
   const updateRoute = (id: string, patch: Partial<CustomModelRoute>) => setRoutes(current =>
     current.map(route => route.id === id ? { ...route, ...patch } : route));
@@ -139,7 +144,10 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   };
   return <Dialog open onOpenChange={(open) => { if (!open && !busy && !accountCreating) onClose(); }}>
     <DialogContent className="gg-model-dialog sm:max-w-[640px]" data-testid="custom-model-dialog">
-      <DialogHeader><DialogTitle>{translate(connection ? 'customModels.edit' : group === 'coding-plan' ? 'customModels.addPlan' : group === 'api' ? 'customModels.addApi' : 'customModels.add')}</DialogTitle></DialogHeader>
+      <DialogHeader>
+        <DialogTitle>{translate(connection ? 'customModels.edit' : group === 'coding-plan' ? 'customModels.addPlan' : group === 'api' ? 'customModels.addApi' : 'customModels.add')}</DialogTitle>
+        {group === 'custom' && <DialogDescription>{translate('customModels.formDescription')}</DialogDescription>}
+      </DialogHeader>
       <DialogContentArea>
         <div className="subscription-connection-form">
           {group !== 'custom' && <label className="flex flex-col gap-2">
@@ -188,10 +196,16 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
             setPicked(next);
             setRoutes(current => current.filter(({ modelId }) => !modelId || next.includes(modelId)));
           }} />
+          {!preset && <Button type="button" size="sm" variant="outline" className="self-start" data-testid="custom-model-read-list"
+            disabled={!source || list.kind === 'reading' || !!busy} onClick={() => setModelListRefresh(current => current + 1)}>
+            {translate('customModels.readModels')}
+          </Button>}
           <fieldset className="flex min-w-0 flex-col gap-2">
             <legend className="mb-2">{translate('customModels.routing')}</legend>
             {routes.map((route, index) => (
-              <div key={route.id} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-end gap-2">
+              <div key={route.id} className={`grid items-end gap-2 ${advanced
+                ? 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)_auto]'
+                : 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(0,1fr)_auto]'}`}>
                 <label>{translate('customModels.incoming')}
                   <Select value={route.incoming} onValueChange={(value) => { if (value) updateRoute(route.id, { incoming: value }); }}>
                     <SelectTrigger data-testid={`custom-model-route-incoming-${index}`}><SelectValue>{route.incoming === 'any' ? translate('customModels.anyProtocol') : protocolLabel(route.incoming)}</SelectValue></SelectTrigger>
@@ -209,7 +223,6 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
                     </SelectContent>
                   </Select>
                 </label>
-                <span className="self-end pb-2 text-foreground-muted" aria-hidden="true">→</span>
                 <label>{translate('customModels.applicableModel')}
                   <Select value={route.modelId ?? ''} onValueChange={(value) => updateRoute(route.id, { modelId: value || undefined })}>
                     <SelectTrigger data-testid={`custom-model-route-model-${index}`}><SelectValue>{route.modelId ?? translate('customModels.allModels')}</SelectValue></SelectTrigger>
@@ -218,6 +231,12 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
                     </SelectContent>
                   </Select>
                 </label>
+                {advanced && <label>{translate('customModels.routeAddressColumn')}
+                  <Input type="url" aria-label={translate('customModels.routeAddress', { index: index + 1 })}
+                    data-testid={`custom-model-route-address-${index}`} value={route.baseUrl ?? ''}
+                    placeholder={routeAddressPlaceholder(route.outgoing)}
+                    onChange={(event) => updateRoute(route.id, { baseUrl: event.target.value })} />
+                </label>}
                 <IconButton size="sm" aria-label={translate('customModels.removeRoute', { index: index + 1 })}
                   onClick={() => setRoutes(current => current.filter(({ id }) => id !== route.id))}>×</IconButton>
               </div>
@@ -230,11 +249,6 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
           <Button type="button" size="sm" variant="ghost" className="justify-start" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>{advanced ? '⌄' : '›'} {translate('customModels.advanced')}</Button>
           {advanced && <div className="flex flex-col gap-3">
             {probed.length > 0 && <p data-testid="custom-model-protocols">{translate('customModels.protocols', { protocols: probed.map(({ protocol }) => translate(`customModels.${protocol}`)).join(' / ') })}</p>}
-            {routes.map((route, index) => <label key={route.id}>{translate('customModels.routeAddress', { index: index + 1 })}
-              <Input type="url" data-testid={`custom-model-route-address-${index}`} value={route.baseUrl ?? ''}
-                placeholder={routeEndpoints.find(({ protocol }) => protocol === route.outgoing)?.baseUrl}
-                onChange={(event) => updateRoute(route.id, { baseUrl: event.target.value })} />
-            </label>)}
             <label className="gg-custom-model-feature"><span>{translate('customModels.image')}</span><Toggle checked={customModelAcceptsImages(features)} onChange={(image) => feature({ image })} ariaLabel={translate('customModels.image')} /></label>
             <label className="gg-custom-model-feature"><span>{translate('customModels.thinking')}</span><Toggle checked={customModelThinks(features)} onChange={(thinking) => feature({ thinking })} ariaLabel={translate('customModels.thinking')} /></label>
             {(['contextWindow', 'maxOutput'] as const).map((key) => <label key={key}>{translate(key === 'contextWindow' ? 'customModels.context' : 'customModels.output')}<Input type="number" min="1" step="1" placeholder={translate('customModels.default')} value={features[key] ?? ''} onChange={(event) => feature({ [key]: event.target.value ? Number(event.target.value) : undefined })} /></label>)}

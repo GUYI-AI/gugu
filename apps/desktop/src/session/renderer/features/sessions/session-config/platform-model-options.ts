@@ -78,6 +78,7 @@ export function platformOptionRowDescription(model: PlatformModelRow): string | 
 
 function platformComposerOption(model: PlatformModelRow): ComposerModelOption {
   const description = platformOptionRowDescription(model);
+  const creditRate = description && model.creditMultiplier !== null ? `${model.creditMultiplier.toFixed(2)}x` : undefined;
   const efforts = model.reasoningEfforts ? effortNamesLine(model.reasoningEfforts, translateSessionMessage) : null;
   return {
     name: platformOptionRowLabel(model),
@@ -94,8 +95,8 @@ function platformComposerOption(model: PlatformModelRow): ComposerModelOption {
     shortName: translateSessionMessage('composer.platformModelShortName', {
       model: model.displayName,
     }),
-    // 倍率只在悬浮详情卡里说一次(#7056)。行尾曾经也写过,owner 2026-10-10:「卡片里已经展示过了,右侧就不要再展示了」。
     ...(description ? { description } : {}),
+    ...(creditRate ? { creditRate } : {}),
     ...(efforts ? { facts: [{ label: translateSessionMessage('composer.effort'), value: efforts }] } : {}),
   };
 }

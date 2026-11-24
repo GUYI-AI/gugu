@@ -1726,6 +1726,10 @@ export const modelPanelItemName = style([
   { flex: '0 1 auto', minWidth: 0 },
 ]);
 
+export const modelPanelItemTrailing = style({ display: 'flex', alignItems: 'center', gap: '8px', marginLeft: 'auto', flexShrink: 0 });
+export const modelPanelItemRate = style({ color: vars.foregroundMuted, fontVariantNumeric: 'tabular-nums', fontSize: '12px' });
+export const modelPanelItemCheck = style({ display: 'flex', width: '14px' });
+
 /** The vendor tag after a person's own model (`ComposerModelOption.tag`): 10px on a light grey, darker on the row in focus. */
 export const modelPanelItemTag = style({
   flexShrink: 0,

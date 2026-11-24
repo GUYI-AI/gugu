@@ -85,6 +85,8 @@ export interface ComposerModelOption {
   shortName?: string;
   /** 一句话说明。桌面清单的行里不画,进悬浮详情卡;手机清单(没有悬停)画在第二行。 */
   description?: string;
+  /** Formatted credit multiplier supplied by the model catalog. */
+  creditRate?: string;
   /** 悬浮详情卡里的事实行(宿主翻好的「标签 → 值」,如 推理档 → 低 · 高),排在上下文窗口之后。 */
   facts?: readonly ComposerModelFact[];
   /** Optional capability metadata shown in the hover card detail. */
@@ -198,6 +200,7 @@ export interface ComposerModelItem {
   name: string;
   shortName?: string;
   description?: string;
+  creditRate?: string;
   facts?: readonly ComposerModelFact[];
   icon?: ReactNode;
   modelFeatures?: ComposerModelOption['modelFeatures'];

@@ -90,6 +90,9 @@ it('edits an address with the saved key and saves multiple manual models without
   const closed = vi.fn(); render(<CustomModelDialog machine={null} connection={existing} onClose={closed} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://edited.test/v1/responses');
   await until('manual fallback is available', () => !!document.querySelector('input[name=models]'));
+  const probes = state.probes.length;
+  await userEvent.click(page.getByTestId('custom-model-read-list'));
+  await until('the explicit read refreshes the model list with the saved key', () => state.probes.length > probes && !!document.querySelector('input[name=models]'));
   await userEvent.fill(page.getByRole('textbox', { name: 'Models', exact: true }), 'model:a, provider/model:b');
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
@@ -110,6 +113,9 @@ it('edits the protocol and model in one row and saves the optional address from 
   expect(page.getByTestId('custom-model-route-address-0').query()).toBeNull();
   await userEvent.click(page.getByRole('button', { name: /Advanced/ }));
   await expect.element(page.getByTestId('custom-model-protocols')).toHaveTextContent('This address answers: Anthropic API / OpenAI Chat');
+  expect(document.querySelector('[data-testid=custom-model-route-address-0]')?.closest('.grid')).toBe(
+    document.querySelector('[data-testid=custom-model-route-model-0]')?.closest('.grid'),
+  );
   await userEvent.fill(page.getByTestId('custom-model-route-address-0'), 'https://provider.test/compat/v1');
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
