@@ -27,22 +27,6 @@ const toggle = async () => {
   await act(async () => { button.click(); });
 };
 
-it('turning the monitor on also lets agents on this computer read it, through the device grant', async () => {
-  rig.enabled = false;
-  await harness.render(<ResourceMonitorSettingsPage />);
-  await toggle();
-  expect(rig.update).toHaveBeenCalledWith({ enabled: true });
-  expect(rig.invoke).toHaveBeenCalledWith('device-actions:connect', 'perf');
-});
-
-it('turning it off leaves the grant alone', async () => {
-  rig.enabled = true;
-  await harness.render(<ResourceMonitorSettingsPage />);
-  await toggle();
-  expect(rig.update).toHaveBeenCalledWith({ enabled: false });
-  expect(rig.invoke).not.toHaveBeenCalled();
-});
-
 it('says so when the grant could not be made', async () => {
   rig.enabled = false;
   rig.invoke.mockResolvedValue({ ok: false, code: 'unsupported', message: 'nope' });

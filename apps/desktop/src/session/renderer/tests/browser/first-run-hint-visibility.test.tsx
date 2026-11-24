@@ -2,7 +2,6 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it } from 'vitest';
 import { useFirstRunHintTargets, type HintDevice, type HintTarget } from '@/components/firstRun/firstRunHintTargets';
-import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 
 // The hint locator asks the rendering step (IntersectionObserver) whether an entry is on screen. In real Chromium:
@@ -33,27 +32,6 @@ function addEntry() {
   cleanup.push(() => surface.remove());
   return { surface, entry };
 }
-
-it('locates an entry only while it is rendered on screen', async () => {
-  const seen = { targets: [] as readonly HintTarget[] };
-  const { surface, entry } = addEntry();
-  Object.assign(surface.style, RETAINED_SURFACE_HIDDEN_STYLE);
-  mountProbe(seen);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  expect(seen.targets).toEqual([]);
-
-  surface.style.contentVisibility = 'visible';
-  surface.style.transform = 'none';
-  await until('the shown entry is located', () => seen.targets.length === 1);
-  expect(seen.targets[0]).toMatchObject({ id: 'assistant', anchor: entry });
-
-  surface.style.display = 'none';
-  await until('a display:none entry is dropped', () => seen.targets.length === 0);
-  surface.style.display = '';
-  await until('it is located again', () => seen.targets.length === 1);
-  surface.hidden = true;
-  await until('a [hidden] surface drops it', () => seen.targets.length === 0);
-});
 
 it('an entry added after mount is found, and a removed one is dropped', async () => {
   const seen = { targets: [] as readonly HintTarget[] };

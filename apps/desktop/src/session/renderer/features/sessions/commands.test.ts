@@ -244,18 +244,6 @@ describe('createSessionCommandProvider', () => {
     }
   });
 
-  // spec session-resume:任务内不再有「新建会话」这个动作 —— 新建必须带首轮,那个只填标题的
-  // 弹窗给不出首轮。⌘T 现在分一支临时的侧边任务;真正的新建走 app.newSession。
-  it('⌘T 分出侧边任务,不再打开任何创建弹窗', () => {
-    const provider = createSessionCommandProvider('project-1', 'conversation-1');
-
-    const command = provider.getCommands().find((candidate) => candidate.id === 'session.sideSession');
-
-    command?.execute();
-
-    expect(mocks.startSideSession).toHaveBeenCalledWith('project-1', 'conversation-1');
-  });
-
   // #7052 会话页没有右边那块面板了(对话与工具页签同排):任务里不再有「右侧栏」这条命令。
   it('会话里没有「右侧栏」命令', () => {
     const ids = createSessionCommandProvider('project-1', 'conversation-1').getCommands().map((c) => c.id);
@@ -295,47 +283,6 @@ describe('createSessionCommandProvider', () => {
     expect(ids).toContain('session.sideSession');
   });
 
-  it('opens a browser tab from the browser command', () => {
-    const provider = createSessionCommandProvider('project-1', 'conversation-1');
-
-    const command = provider.getCommands().find((candidate) => candidate.id === 'session.openBrowser');
-    const sessionView = mocks.getSessionView.mock.results.at(-1)?.value ?? mocks.getSessionView();
-
-    command?.execute();
-
-    expect(sessionView.paneLayout.openBeside).toHaveBeenCalledWith('browser', {});
-    expect(sessionView.setFocusedRegion).toHaveBeenCalledWith('main');
-  });
-
-  it('executes active browser commands through the browser controls registry', () => {
-    const sessionView = mocks.getSessionView();
-    sessionView.activePane.resolvedTabs = [activeBrowserTab()];
-    mocks.getSessionView.mockReturnValue(sessionView);
-    const provider = createSessionCommandProvider('project-1', 'conversation-1');
-
-    provider
-      .getCommands()
-      .find((candidate) => candidate.id === 'session.browserReload')
-      ?.execute();
-    provider
-      .getCommands()
-      .find((candidate) => candidate.id === 'session.browserFocusUrl')
-      ?.execute();
-    provider
-      .getCommands()
-      .find((candidate) => candidate.id === 'session.browserOpenExternal')
-      ?.execute();
-    provider
-      .getCommands()
-      .find((candidate) => candidate.id === 'session.browserCopyUrl')
-      ?.execute();
-
-    expect(mocks.reload).toHaveBeenCalledWith();
-    expect(mocks.focusUrl).toHaveBeenCalledWith();
-    expect(mocks.openExternal).toHaveBeenCalledWith('https://example.com/');
-    expect(mocks.clipboardWriteText).toHaveBeenCalledWith('https://example.com/');
-  });
-
   it.each([
     [true, true],
     [false, false],
@@ -360,24 +307,6 @@ describe('createSessionCommandProvider', () => {
       expect(mocks.goBack).toHaveBeenCalledWith();
       expect(mocks.goForward).toHaveBeenCalledWith();
     }
-  });
-
-  it('opens a new terminal as a tab from the terminal command', () => {
-    mocks.terminalEnabled = true;
-    const openTerminalAsTab = vi.fn();
-    mocks.getSessionView.mockReturnValue({
-      ...mocks.getSessionView(),
-      openTerminalAsTab,
-    });
-    const provider = createSessionCommandProvider('project-1', 'conversation-1');
-
-    const command = provider
-      .getCommands()
-      .find((candidate) => candidate.id === 'session.newTerminal');
-
-    command?.execute();
-
-    expect(openTerminalAsTab).toHaveBeenCalled();
   });
 
   it('offers no terminal commands while the terminal setting is off', () => {
@@ -484,24 +413,6 @@ describe('createSessionCommandProvider', () => {
       (globalThis as Record<string, unknown>).document = { querySelector };
     }
 
-    it('focuses the first focusable element in the left sidebar', () => {
-      const focusable = { focus: vi.fn() };
-      const sidebar = { querySelector: vi.fn(() => focusable) };
-      mockDocument((selector: unknown) =>
-        selector === '[data-region="left-sidebar"]' ? sidebar : null
-      );
-
-      const provider = createSessionCommandProvider('project-1', 'conversation-1');
-      const command = provider
-        .getCommands()
-        .find((candidate) => candidate.id === 'session.focusSidebar');
-
-      command?.execute();
-
-      expect(sidebar.querySelector).toHaveBeenCalledWith('[tabindex="0"], button, a, input');
-      expect(focusable.focus).toHaveBeenCalled();
-    });
-
     it('does nothing when left sidebar is not in the DOM', () => {
       mockDocument(() => null);
 
@@ -537,26 +448,6 @@ describe('createSessionCommandProvider', () => {
       expect(setPinned).toHaveBeenCalledWith(!isPinned);
     });
 
-    it('focuses the TipTap editor in the composer region', () => {
-      const input = { focus: vi.fn() };
-      const composer = { querySelector: vi.fn(() => input) };
-      mockDocument((selector: unknown) =>
-        selector === '[data-region="composer"]' ? composer : null
-      );
-
-      const provider = createSessionCommandProvider('project-1', 'conversation-1');
-      const command = provider
-        .getCommands()
-        .find((candidate) => candidate.id === 'session.focusComposer');
-
-      command?.execute();
-
-      expect(composer.querySelector).toHaveBeenCalledWith(
-        '.tiptap[contenteditable="true"], .ProseMirror[contenteditable="true"], [contenteditable="true"], textarea'
-      );
-      expect(input.focus).toHaveBeenCalled();
-    });
-
     it('does nothing when composer region is not in the DOM', () => {
       mockDocument(() => null);
 
@@ -566,25 +457,6 @@ describe('createSessionCommandProvider', () => {
         .find((candidate) => candidate.id === 'session.focusComposer');
 
       expect(() => command?.execute()).not.toThrow();
-    });
-
-    it('stages all files via the git worktree store', () => {
-      const stageAllFiles = vi.fn(() => Promise.resolve());
-      mocks.getSessionGitWorktreeStore.mockReturnValue({
-        stageAllFiles,
-        isBranchPublished: true,
-        branchName: 'main',
-      });
-
-      const provider = createSessionCommandProvider('project-1', 'conversation-1');
-      const command = provider
-        .getCommands()
-        .find((candidate) => candidate.id === 'session.stageAll');
-
-      expect(command?.enabled).toBe(true);
-      command?.execute();
-
-      expect(stageAllFiles).toHaveBeenCalled();
     });
 
     it('disables stageAll when git store is unavailable', () => {

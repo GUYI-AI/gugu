@@ -2,7 +2,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { createChatContext, createChatState, createChatView, type TranscriptTurn } from '@gugu/session-chat-ui';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
 import { renderDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
-import { connectDeliveredMessagePresentation } from '@renderer/lib/chat/delivered-message-presentation';
+import { connectDeliveredMessagePresentation, resolveDeliveredAttachment } from '@renderer/lib/chat/delivered-message-presentation';
+import { forgetSentFiles, holdSentItem } from '@/lib/sentFileCopies';
 import { nativeChatAppearance } from '@renderer/lib/chat/native-chat-appearance.css';
 
 const id = '11111111-2222-4333-8444-555555555555';
@@ -88,4 +89,14 @@ it('reads a queued attachment delivery at once and never draws its stored file l
   expect(host.textContent).not.toContain('[附件]');
   expect(host.textContent).not.toContain('31531f626a2');
   expect(host.textContent).not.toContain('[Size]');
+});
+
+it("draws a new task's picture from this device before its folder file is placed, and reads it once", async () => {
+  // A first message that is a picture alone: its row names the folder file before the folder holds it (`holdSentItem`).
+  holdSentItem('task-picture', 1, new File(['png'], 'shot.png', { type: 'image/png' }));
+  try {
+    const read = resolveDeliveredAttachment('gugu-file://task-picture?v=1');
+    expect(await read).toBe(`data:image/png;base64,${btoa('png')}`);
+    expect(resolveDeliveredAttachment('gugu-file://task-picture?v=1'), 'drawn again (its turn committing): the same read').toBe(read);
+  } finally { forgetSentFiles(); }
 });
