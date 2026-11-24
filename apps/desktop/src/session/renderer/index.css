@@ -1377,8 +1377,9 @@
  *  · Blink 层 —— 它还是个覆盖层,已由 shell-titlebar.tsx 的 `pointer-events-none` 让开。
  *
  * ⚠️ `-webkit-app-region` 会继承(11-24 实测:没写它的盒子计算值是 `drag`),而 Electron 按文档顺序做矩形加减:
- * 后出现的一个铺满的盒子(继承来的 drag)会把前面挖好的 no-drag 洞重新填上。铺满一条的定位层要么写 `none`
- * (不算区域,见 conversation-capsule.ts CONVERSATION_CAPSULE_LAYER_CLASS),要么排在控件前面。
+ * 后出现的一个铺满的盒子(继承来的 drag)会把前面挖好的 no-drag 洞重新填上。铺满一条的定位层要排在控件前面
+ * (见 conversation-capsule.ts CONVERSATION_CAPSULE_LAYER_CLASS)。❌ 写 `none`:Chromium 把它算成 `no-drag`,
+ * 整条带就拖不动窗口了。
  *
  * 这条规则曾经是一份**容器白名单**,和上面图标那条共用清单。那样是错的:清单外的东西一律还是死的。
  * owner 在白名单版落地一小时内就撞上了 —— 工作区页签条自己的页签、它的关闭 ✕、新增面板 +
