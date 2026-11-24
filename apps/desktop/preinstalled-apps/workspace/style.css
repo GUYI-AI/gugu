@@ -8,9 +8,7 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 /* One line per entry at every width: its mark, its name, and at the end one value — a file's time, a folder's count; from
    560px wide, Size and Modified as columns under a head (owner 11-21). The phone keeps its taller two-line rows (below). */
 .files { display: flex; flex-direction: column; min-height: 0; }
-.files-head { flex-wrap: nowrap; padding: var(--em-spacing-lg); flex: none; }
 .select-files { display: none; }
-.files.has-picks .files-head { display: none; }
 .file-list { margin: 0; padding: 0 var(--em-spacing-sm) var(--em-spacing-sm); gap: 0; overflow: auto; flex: 1; min-height: 0; }
 .file { position: relative; min-height: 30px; padding: 0 var(--em-spacing-sm); border-radius: 6px; }
 .file-open {
@@ -147,7 +145,7 @@ img.details-picture { object-fit: contain; }
 @media (hover: none) and (pointer: coarse) {
 
   .select-files { display: inline-block; font-size: var(--em-font-caption); }
-  .files.has-picks .files-head { display: flex; }
+  .files.has-picks .files-toolbar { display: none; }
   .file:not(.cell) { min-height: 56px; padding-block: var(--em-row-pad); }
   .file:not(.cell) .file-open { grid-template-columns: 32px minmax(0, 1fr); column-gap: var(--em-spacing-md); row-gap: 2px; }
   .file:not(.cell) .file-mark { grid-row: span 2; width: 24px; height: 24px; justify-self: center; }
@@ -418,7 +416,15 @@ body[data-state='doc'] .doc-message, body.gone .modes { display: none; }
   .search-field { height: 32px; max-width: none; }
   .search-cancel { flex: none; border: 0; background: none; padding: 2px 6px; }
 }
-.files.has-picks .files-toolbar { display: none; }
+/* While files are picked, the toolbar row says what is picked and what to do with it: the bar lies over the row, which
+   keeps its height, so the list under a marquee drag never moves (owner 11-24). The phone's bar is at the bottom (above). */
+@media not all and (hover: none) and (pointer: coarse) {
+  .files { position: relative; }
+  .files.has-picks .files-toolbar > * { visibility: hidden; }
+  .pick-bar { position: absolute; z-index: 1; top: 2px; inset-inline: 8px; height: 32px; box-sizing: border-box; margin: 0; padding: 0 0 0 var(--em-spacing-sm); flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  /* Where the actions do not fit they scroll sideways (all of them are also in the selection's context menu); ✕ stays at the end. */
+  .pick-bar > .pick-close { position: sticky; inset-inline-end: 0; margin-inline-start: auto; background: linear-gradient(var(--em-selected), var(--em-selected)) var(--em-background); }
+}
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 /* One row by priority: the way back, the name, Read/Edit and ⋯ keep their room (the name shrinks to an ellipsis, the
    actions never below their own width); who and when give theirs up first, and go when there is no room for them to
