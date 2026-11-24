@@ -82,7 +82,7 @@ export const AutomationRow = observer(function AutomationRow({
       role="button"
       tabIndex={0}
       onClick={onClick}
-      className="group flex cursor-pointer items-center gap-4 rounded-lg px-4 py-3 text-left transition-colors hover:bg-row-hover"
+      className="group flex cursor-pointer items-center gap-4 rounded-lg px-4 py-3 text-left hover:bg-row-hover"
     >
       <div
         onClick={(e) => e.stopPropagation()}

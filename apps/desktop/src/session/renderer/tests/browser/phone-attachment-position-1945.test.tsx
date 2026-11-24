@@ -80,8 +80,7 @@ function Composer({ surface }: { surface: Surface }) {
     respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false}
     agentWorking={false} onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />
   if (surface === 'new-task') return <ProjectTaskComposer />
-  return <ChatMessageComposer chatId={`position-${surface}`} isGroupChat={surface !== 'single'}
-    surface={surface === 'topic' ? 'aside' : 'main'} placeholder={surface === 'topic' ? '回复话题…' : undefined} onSend={vi.fn()} />
+  return <ChatMessageComposer chatId={`position-${surface}`} isGroupChat={surface !== 'single'} onSend={vi.fn()} />
 }
 
 beforeEach(async () => {

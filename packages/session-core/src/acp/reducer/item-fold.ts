@@ -45,6 +45,7 @@ import type {
   NormalizedToolStatus,
 } from './normalized-event';
 import { foldMessageContent } from './message-fold';
+import { parseMcpToolName } from '../models/turns/opened-outputs';
 import { patchToolEntity } from './tool-patch';
 import { projectToolContent } from '../models/tool-payload';
 
@@ -103,30 +104,6 @@ function isExecuteKind(toolKind: string | null | undefined): boolean {
 
 function isMcpToolKind(toolKind: string | null | undefined): boolean {
   return toolKind === 'mcp-tool' || toolKind === 'mcp_tool';
-}
-
-/**
- * 按**名字**认出一次 MCP 调用,并把它拆成 server + tool。
- *
- * 为什么不能只看 `toolKind`:上面那个 `isMcpToolKind` 要的 `'mcp-tool'` / `'mcp_tool'`
- * **不在 ACP 的 kind 枚举里**(那份枚举是 read/edit/delete/move/search/execute/think/
- * fetch/switch_mode/other)。走 ACP 的 agent 因此永远命中不了它,每一次 MCP 调用都掉进
- * `unknown-tool-call`,行上印出一整条 `mcp__playwright__browser_navigate`。
- * 真机验收截图里就是这个样子(owner,2026-09-05)。
- *
- * `mcp__<server>__<tool>` 是这些宿主给 MCP 工具起名的约定,名字本身就带着分解所需的
- * 全部信息。⚠️ 只在名字**真的**长这样时才认:对不上就老老实实留在 unknown,
- * ❌ 不猜 —— 把一个普通工具错认成 MCP 会凭空造出一个不存在的 server 名。
- */
-function parseMcpToolName(title: string): { server: string; tool: string } | null {
-  if (!title.startsWith('mcp__')) return null;
-  const rest = title.slice('mcp__'.length);
-  const sep = rest.indexOf('__');
-  if (sep <= 0) return null;
-  const server = rest.slice(0, sep);
-  const tool = rest.slice(sep + 2);
-  if (!server || !tool) return null;
-  return { server, tool };
 }
 
 function isWebFetchKind(toolKind: string | null | undefined): boolean {

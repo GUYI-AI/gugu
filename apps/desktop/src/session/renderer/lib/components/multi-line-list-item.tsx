@@ -20,7 +20,7 @@ export function MultiLineListItem({
     <div className="flex flex-col gap-2 py-1">
       <div
         className={cn(
-          'flex relative items-start gap-3 rounded-lg p-3 py-4 hover:bg-row-hover transition-colors group',
+          'flex relative items-start gap-3 rounded-lg p-3 py-4 hover:bg-row-hover group',
           className
         )}
       >

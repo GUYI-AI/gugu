@@ -13,11 +13,9 @@ import { machineRegistry } from '@renderer/lib/machine-routing';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { sessionKeyboardNav } from './session-keyboard-nav';
 import { OneListProjectRow } from './project-row-parts';
-import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { useSidebarChatSignals } from '@/lib/sidebarChatsBridge';
 import { openChatOnScreen } from '@renderer/features/chats/open-chat';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { formatCalendarDay } from '@/i18n/format';
 import { useUnavailableProjects } from '@/lib/projectRecovery';
 import { ProjectRecoverySubtitle } from '@/components/projects/ProjectRecoverySubtitle';
 import type { UnavailableProject } from '@shared/projects';
@@ -25,7 +23,7 @@ import type { UnavailableProject } from '@shared/projects';
 /**
  * #2548 a project in the one list is its project group's conversation row. `projectId` is a row of the account project
  * list (sidebarStore.sidebarProjects) whose group is not a conversation of the chat list yet, so it is drawn as that row
- * would be (OneListProjectRow: the project cover, name, the time that row will show, no preview); same click, same menu,
+ * would be (OneListProjectRow: the project cover, name, no preview); same click, same menu,
  * in the place that row will take (the chat list's slot, sidebar-one-list). The cover is keyed by the
  * row's representative local project, as partnerProjects keys every project group's cover. #6264 a project on another
  * machine is this row too; that machine not connected = the row reads offline (data-offline), the project stays listed.
@@ -70,7 +68,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
   const projectLabel = projectName ?? 'project';
   const openProject = (beside = false) => {
     // 行尾的数里有话题叫到你:话题不是项目行的子行,这一下就是去读它的入口(owner 11-07「红点消不掉」)。
-    if (callingTopic && groupChatId) requestTopicSplit({ chatId: callingTopic.chatId, name: callingTopic.name, sourceChatId: groupChatId, focusComposer: true });
+    if (callingTopic && groupChatId) return openChatOnScreen(callingTopic.chatId, beside);
     // behavior session-page「键盘导航」: the project row is a station too, so a click moves the cursor
     // onto it — ↓ afterwards continues from here.
     sessionKeyboardNav.syncCursorFromPointer({ kind: 'project', projectId });
@@ -101,7 +99,6 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
       <OneListProjectRow
         name={projectLabel}
         faceId={groupChatId ?? rowId}
-        time={ref?.activeAt ? formatCalendarDay(ref.activeAt) : undefined}
         preview=""
         subtitle={unavailable ? <ProjectRecoverySubtitle project={unavailable} /> : undefined}
         selected={isProjectActive}
@@ -120,7 +117,7 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
  * not loaded yet): its row is still there and opens its project group (openChatOnScreen, as a group row of the list does).
  * Its face is its group's.
  */
-const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, activeAt, unavailable }: { projectId: string; chatId: string; name: string; activeAt: string | null; unavailable?: UnavailableProject }) {
+const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, unavailable }: { projectId: string; chatId: string; name: string; activeAt: string | null; unavailable?: UnavailableProject }) {
   const { translate } = useSessionMessages();
   const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
   const open = (beside: boolean) => {
@@ -131,7 +128,6 @@ const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projec
     <OneListProjectRow
       name={name}
       faceId={chatId}
-      time={activeAt === null ? undefined : formatCalendarDay(activeAt)}
       preview=""
       subtitle={unavailable ? <ProjectRecoverySubtitle project={unavailable} /> : undefined}
       selected={focused?.kind === 'chat' && focused.chatId === chatId}

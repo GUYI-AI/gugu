@@ -26,10 +26,15 @@ function setup() {
     ...(sideWidth ? { sideWidth: () => sideWidth } : {}),
   });
   const registry = createTabRegistry([provider('conversation'), provider('folder'), provider('file'), provider('info', 360), provider('wide', 480)]);
-  const make = () => {
+  /** A layout not measured yet: how the app restores one, before its tree has been laid out. */
+  const unmeasured = () => {
     const layout = new PaneLayoutStore(registry, { viewId: 'side-width' }, undefined, { placementMemory: { read: () => undefined, write() {} } });
-    layout.setDimensions(EXTENT, 800);
     layouts.push(layout);
+    return layout;
+  };
+  const make = () => {
+    const layout = unmeasured();
+    layout.setDimensions(EXTENT, 800);
     return layout;
   };
   const layout = make();
@@ -49,7 +54,7 @@ function setup() {
     const share = (px / EXTENT) * 100;
     layout.setSplitSizes(cut.id, cut.children.map((child) => (child.type === 'pane' && child.paneId === layout.sidePaneId ? share : 100 - share)));
   };
-  return { layout, make, open, close, sideWidth, drag };
+  return { layout, make, unmeasured, open, close, sideWidth, drag };
 }
 
 describe('every page on the side comes at its own width', () => {
@@ -139,6 +144,23 @@ describe('every page on the side comes at its own width', () => {
     const restarted = make();
     restarted.restoreSnapshot(JSON.parse(JSON.stringify(layout.snapshot)));
     expect(sideWidth(restarted)).toBe(360);
+  });
+
+  it('restored before it is measured (the app\'s order), an undragged side comes at its own width, a dragged one at its drag', () => {
+    const { layout, unmeasured, open, sideWidth, drag } = setup();
+    open('folder');
+    const saved = JSON.parse(JSON.stringify(layout.snapshot));
+    // A cut saved under another rule (or another build): nothing dragged, yet not the page's own width.
+    saved.layout.sizes = [64, 36];
+    const undragged = unmeasured();
+    undragged.restoreSnapshot(saved);
+    undragged.setDimensions(EXTENT, 800);
+    expect(sideWidth(undragged)).toBe(600);
+    drag(420);
+    const dragged = unmeasured();
+    dragged.restoreSnapshot(JSON.parse(JSON.stringify(layout.snapshot)));
+    dragged.setDimensions(EXTENT, 800);
+    expect(sideWidth(dragged)).toBe(420);
   });
 
   it('a page on the side turned into another in place comes at the new page\'s width, dragged or not', () => {

@@ -1,51 +1,3 @@
-/* ⚠️ 选择器**必须**带 `:root`:见 tokens.css 的 @@@rail-inset —— 只写 `.gg-sidebar-rail`
-   会被同特指度的全局重置清零,而那个缺陷只在没有平台覆盖的平台上露出来。 */
-:root .gg-sidebar-rail {
-  width: var(--sidebar-rail-width);
-  min-width: var(--sidebar-rail-width);
-  height: 100%;
-  padding: var(--sidebar-rail-pad-top) 0 var(--sidebar-rail-pad-bottom);
-  background: var(--nav-rail);
-  border-inline-end: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  flex-shrink: 0;
-  position: relative;
-  user-select: none;
-  -webkit-app-region: drag;
-}
-
-.gg-sidebar-primary {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  flex: 1 1 0;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-
-/* 更新入口(有更新时)在设置齿轮上方。 */
-.gg-sidebar-bottom {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  flex: none;
-}
-
-.gg-sidebar-nav {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 0;
-  min-height: 0;
-}
-
 .gg-sidebar-item {
   width: 40px;
   height: 40px;
@@ -234,36 +186,6 @@
   85% {
     rotate: -2deg;
   }
-}
-
-.gg-sidebar-spacer {
-  flex: 0 0 16px;
-  min-height: 16px;
-}
-
-/* 「App」与钉上去的 App 之间一道细线:上面是咕咕自带的,下面是你钉的(#7046)。没钉就不画。 */
-.gg-sidebar-rail-sep {
-  display: block;
-  width: 24px;
-  height: 1px;
-  margin: 4px auto;
-  background: var(--border);
-  flex: none;
-}
-
-/* Fixed navigation and the footer reserve their own space. Apps share what is
-   left; a More menu owns overflow rather than growing or scrolling this list. */
-.gg-sidebar-dock {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 0;
-  min-height: 40px;
-  overflow: hidden;
-  /* 左右各让出一截:这个盒子自己会滚,超出它的都被裁掉,而开着的小点就画在格子左边(.gg-sidebar-running)。 */
-  padding-inline: 12px;
-  margin-inline: -12px;
 }
 
 /* An App's own icon at the rail's icon size, or its first letter on a tinted square. */

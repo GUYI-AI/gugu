@@ -19,24 +19,6 @@ vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({
 let harness: ReturnType<typeof createReactHarness>;
 afterEach(() => { harness?.cleanup(); markSessionSeen.mockClear(); });
 
-it('a shown phone task clears the host read bit once, and only while it is unread', async () => {
-  await page.viewport(390, 844);
-  harness = createReactHarness();
-  harness.container.style.cssText = 'height:800px;width:390px;display:flex;flex-direction:column';
-  const conversation = (unseen: boolean) => <SessionConversation timeline={emptyAgentWatchTimeline()} deviceId="host" sessionId="session" agentName="Agent" unseen={unseen}
-    sessionRuntime="acp" respondingItemId={null} onRespond={vi.fn()} onSend={vi.fn()} pendingSends={[]} sending={false} agentWorking={false}
-    onStop={vi.fn()} stopping={false} onLoadOlder={vi.fn()} />;
-  await renderWithAppProviders(harness, conversation(false), { contacts: {} });
-  await new Promise(resolve => setTimeout(resolve, 100));
-  expect(markSessionSeen).not.toHaveBeenCalled();
-  harness.cleanup();
-  harness = createReactHarness();
-  harness.container.style.cssText = 'height:800px;width:390px;display:flex;flex-direction:column';
-  await renderWithAppProviders(harness, conversation(true), { contacts: {} });
-  await until('the shown unread task is marked read', () => markSessionSeen.mock.calls.length > 0);
-  expect(markSessionSeen.mock.calls).toEqual([['session']]);
-});
-
 it('reports the real phone transcript tail to the shared DM read host as well as history pagination', async () => {
   await page.viewport(390, 844);
   const timeline = emptyAgentWatchTimeline();

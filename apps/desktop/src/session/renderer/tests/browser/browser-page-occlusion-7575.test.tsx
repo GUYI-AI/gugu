@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { StrictMode } from 'react';
 import { page } from 'vitest/browser';
+import { cdp } from '@vitest/browser/context';
 import { createReactHarness } from '../../../../../../../tests/support/testHarness';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { BuildTagBadge } from '@/components/BuildTagBadge';
@@ -97,4 +98,28 @@ it('sees an unclickable overlay that appears, is re-marked or goes after the fir
   expect(isBrowserPageOccluded(placeholder, rect)).toBe(true);
   toast.remove();
   expect(isBrowserPageOccluded(placeholder, rect)).toBe(false);
+});
+
+/** Shows an image-viewer-like overlay for a moment, then removes it; only a weak reference leaves this function. */
+async function openAndCloseViewer(): Promise<WeakRef<HTMLElement>> {
+  const viewer = document.createElement('div');
+  viewer.className = 'pswp';
+  viewer.innerHTML = '<div><img alt=""><button>close</button></div>';
+  document.body.append(viewer);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  viewer.remove();
+  return new WeakRef(viewer);
+}
+
+// @@@occluder-set: the set must not be what keeps a closed overlay alive. It is only read while a page tab is on screen, so an
+// overlay that comes and goes in between (the image viewer, a menu, a tooltip) has to be let go by the observer itself.
+it('does not keep overlays that left the document while no page was being checked', async () => {
+  await harness.render(<div data-browser-page="released" style={{ position: 'fixed', left: 400, top: 100, width: 400, height: 300 }} />);
+  const placeholder = harness.container.querySelector<HTMLElement>('[data-browser-page]')!;
+  expect(isBrowserPageOccluded(placeholder, placeholder.getBoundingClientRect())).toBe(false);
+  const closed: WeakRef<HTMLElement>[] = [];
+  for (let n = 0; n < 20; n++) closed.push(await openAndCloseViewer());
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  for (let i = 0; i < 3; i++) { await cdp().send('HeapProfiler.collectGarbage'); await new Promise((resolve) => setTimeout(resolve, 20)); }
+  expect(closed.filter((ref) => ref.deref() !== undefined).length).toBe(0);
 });

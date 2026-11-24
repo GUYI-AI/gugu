@@ -32,7 +32,7 @@ const rowsBetween = (from: number, to: number) => Array.from({ length: to - from
   id: `m${from + i}`, seq: from + i, chat_id: 'long-chat', sender_user_id: 'sender',
   created_at: '2026-10-24T08:00:00Z', content: `Message ${from + i}. ${'A long conversation. '.repeat(i % 5 + 1)}`,
 }))
-async function renderConversation(width: number, naturallySeen = false, surface: 'main' | 'aside' = 'main') {
+async function renderConversation(width: number, naturallySeen = false) {
   const target = naturallySeen ? 340 : 310
   await page.viewport(width, 760)
   harness = createReactHarness()
@@ -54,7 +54,7 @@ async function renderConversation(width: number, naturallySeen = false, surface:
   const subscribers = new Set<() => void>()
   const registerSlot = (element: HTMLDivElement | null) => { slot = element; subscribers.forEach((listener) => listener()) }
   const surfaceRoot = () => slot ?? harness!.container
-  const scroller = () => surfaceRoot().querySelector<HTMLElement>(`[data-unread-stream-surface="${surface}"]`)!
+  const scroller = () => surfaceRoot().querySelector<HTMLElement>('[data-unread-stream-surface="main"]')!
   function Slot() { return <div ref={registerSlot} /> }
   function Host() {
     const chatsRef = useRef([chat({ id: 'long-chat', unread_count: 341 - target, last_read_seq: target - 1, next_message_seq: 341, unread_locator: { stream_id: 'main:long-chat', stream_kind: 'main', thread_root_id: null,
@@ -109,7 +109,7 @@ async function renderConversation(width: number, naturallySeen = false, surface:
       <button onClick={() => setEmptySearch(!emptySearch)}>Toggle empty search</button>
       <button onClick={() => setHidden(!hidden)}>Toggle workspace</button>
       <div data-window-head={messages[0]?.id} style={{ height: 560, width: '100%', display: hidden ? 'none' : 'flex', flexDirection: 'column' }}>
-      {!emptySearch && <MessageList rows={rows} rowProps={rowProps} resetKey={resetKey} listRef={listRef} scrollerRef={memory.setScrollerRef} surface={surface}
+      {!emptySearch && <MessageList rows={rows} rowProps={rowProps} resetKey={resetKey} listRef={listRef} scrollerRef={memory.setScrollerRef}
         initialTopMostItemIndex={memory.openLocation()} followTail={!pending && !window.hasNewer} onAtBottomChange={onAtBottomChange}
         unreadAbove={entry ? { messageId: entry.locator.message_id, messageSeq: entry.locator.message_seq, label: 'Jump to first unread', onJump: jump, onSeen: entry.consume } : null} />}
     </div></>
@@ -129,8 +129,8 @@ async function renderConversation(width: number, naturallySeen = false, surface:
 }
 
 describe('consumed first-unread entry', () => {
-  it.each(['main', 'aside'] as const)('does not revive a naturally seen entry after empty search, workspace hiding or a retained %s slot remount', async (surface) => {
-    const view = await renderConversation(1100, true, surface)
+  it('does not revive a naturally seen entry after empty search, workspace hiding or a retained slot remount', async () => {
+    const view = await renderConversation(1100, true)
     const firstUnread = () => view.scroller()?.querySelector<HTMLElement>('[data-msg-id="m340"]')
     await until('the original unread row is actually visible', () => {
       const row = firstUnread()?.getBoundingClientRect(), bounds = view.scroller()?.getBoundingClientRect()

@@ -97,6 +97,17 @@ function decodeAction(action: SessionDispatchAction): SessionDispatchAction {
 }
 
 /**
+ * The chat_id boundary of the session_* / app_* domains: an action's `chat_id` reaches the host as the chat's UUID, read by
+ * the message tools' own resolver (public_id, owner address); one it cannot name fails at the tool, never further down.
+ */
+export function withResolvedChatId(dispatch: SessionDispatcher, resolveChatId: (chatId: string) => Promise<string>): SessionDispatcher {
+  return async (action, signal) => {
+    const chatId = (action as { chat_id?: unknown } | null)?.chat_id
+    return dispatch(typeof chatId === 'string' ? { ...(action as object), chat_id: await resolveChatId(chatId) } : action, signal)
+  }
+}
+
+/**
  * Test-only evidence for the real ACP path. The provider's raw ACP export keeps the tool title and
  * status, but not the MCP arguments or error body. Keep this opt-in and out of normal logs because a
  * delegation prompt can contain user data.

@@ -1,5 +1,5 @@
 import { log } from '@renderer/utils/logger';
-import type { OpenTarget, TabProvider, TabResource } from './tab-provider';
+import type { TabProvider, TabResource } from './tab-provider';
 import type { TabOpenIntent } from '@shared/view-state';
 
 // ── Type aliases ──────────────────────────────────────────────────────────────
@@ -57,8 +57,6 @@ export interface TabOpenOptions {
   intent?: TabOpenIntent;
   /** Agent requests can navigate without bringing the result forward. */
   activate?: boolean;
-  /** An explicit pane for a root or a host-created page. */
-  target?: OpenTarget;
 }
 
 // ── Registry interface ────────────────────────────────────────────────────────

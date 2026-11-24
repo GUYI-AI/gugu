@@ -33,8 +33,9 @@ import { ChatPartSlot, ChatSlot } from '@renderer/lib/chat-slot';
 import { ChatTabMenuItems, chatTabHasActions } from '@renderer/features/chats/chat-tab-menu-items';
 import { ChatPanes, ChatTabChip } from '@renderer/features/chats/chat-tabs/chat-panes';
 import { openPanelItem } from '@renderer/features/chats/chat-tabs/chat-layouts';
-import { requestTopicSplit } from '@/lib/topicSplitRequest';
 import { ComposerVerbDock } from '@renderer/features/sessions/task-dispatch-composer';
+import { TopicsPageSlot } from '@renderer/features/sidebar/topics-page-slot';
+import { useInnerSidebarTopicsAll } from '@/lib/innerSidebarBridge';
 import { ProjectBlock } from './project-block';
 import { SampleProjectBlock } from '@renderer/features/sample-project/sample-project-block';
 import { screenLayout, type ScreenBlockContent } from './screen-layout';
@@ -52,7 +53,7 @@ export const ScreenFrame = observer(function ScreenFrame() {
   if (!layout) return null;
   return (
     // 工作区的锚点:页签全屏(tab-fullscreen.ts)的那一格贴到这里的四条边上。
-    <div className="flex h-full min-h-0 min-w-0 flex-1 bg-background-tertiary" data-screen-frame="" style={{ anchorName: WORKSPACE_ANCHOR } as CSSProperties}>
+    <div className="flex h-full min-h-0 min-w-0 flex-1 bg-[var(--screen-ground,var(--color-background-tertiary))]" data-screen-frame="" style={{ anchorName: WORKSPACE_ANCHOR } as CSSProperties}>
       <BlockCut node={layout.type === 'pane' ? soleBlock(layout) : layout} />
     </div>
   );
@@ -135,7 +136,7 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
   const block = screenLayout.blocks.get(blockId);
   return (
     <div
-      className="relative flex h-full w-full min-h-0 min-w-0 flex-1 flex-col bg-background"
+      className="relative flex h-full w-full min-h-0 min-w-0 flex-1 flex-col bg-[var(--screen-ground,var(--color-background))]"
       style={{ anchorName: blockAnchorName(blockId) } as CSSProperties}
       data-screen-block={blockId}
       onPointerDownCapture={() => focusScreenBlock(blockId)}
@@ -165,6 +166,7 @@ const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) 
  */
 const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: string; chatId: string }) {
   const { translate } = useSessionMessages();
+  const topicsPage = useInnerSidebarTopicsAll() === chatId;
   const corners = screenLayout.corners(blockId);
   const focused = screenLayout.focusedBlockId === blockId;
   const actions = <>
@@ -191,9 +193,12 @@ const ChatBlock = observer(function ChatBlock({ blockId, chatId }: { blockId: st
       )}
       body={
         <>
-          <ChatSlot chatId={chatId} className="flex min-h-0 min-w-0 flex-1 flex-col" />
+          {/* 「全部 ›」打开了这个群 / 项目的话题页:这一块换成那一页(主区,❌ 右侧栏)。对话照旧挂着只是藏起来 ——
+              页签条上的名字和右端那排图标是它画的,卸掉它们也就没了。 */}
+          {topicsPage ? <TopicsPageSlot chatId={chatId} /> : null}
+          <ChatSlot chatId={chatId} className={topicsPage ? 'hidden' : 'flex min-h-0 min-w-0 flex-1 flex-col'} />
           {/* 对话的输入框选了「新任务 / 定时任务」:那个框收起,这里换上对应的框(结果回这个对话)。 */}
-          <ComposerVerbDock chatId={chatId} />
+          {topicsPage ? null : <ComposerVerbDock chatId={chatId} />}
         </>
       }
     />
@@ -443,7 +448,6 @@ export function screenDropHandlers(enabled: boolean) {
       event.preventDefault();
       event.stopPropagation();
       dropOnScreen(hit.drop, hit.content);
-      if (hit.content.kind === 'chat' && hit.content.topic) requestTopicSplit({ ...hit.content.topic, sourceChatId: hit.content.chatId, focusComposer: true });
     },
     onDragLeave: (event: DragEvent<HTMLElement>) => {
       if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBlockDropPreview(null);

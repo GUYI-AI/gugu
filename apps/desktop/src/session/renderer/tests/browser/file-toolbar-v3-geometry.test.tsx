@@ -45,7 +45,7 @@ it.each([250, 390].flatMap(width => ['private-card', 'group-folder'].map(origin 
   const from = origin === 'group-folder' ? openPanelItem(chatId, folderItem(), { intent: 'newTab' }) : undefined;
   openPanelItem(chatId, { kind: null, itemId: 'notes', title: 'notes.txt' }, from ? { from } : undefined);
   Object.assign(host.style, { position: 'absolute', left: '210px', top: '45px', width: `${width}px`, height: '620px' });
-  await act(async () => root.render(<><ChatPanes chatId={chatId} /><ChatTabPortals chatId={chatId} panel={tab => <MessageFilePreviewPanel fill tabbed file={{ fileName: tab.item.title, mimeType: 'text/plain', sizeBytes: 38 }} kind="text" content="File body" loading={false} onClose={() => {}} />} topic={() => null} info={() => null} /></>));
+  await act(async () => root.render(<><ChatPanes chatId={chatId} /><ChatTabPortals chatId={chatId} panel={tab => <MessageFilePreviewPanel fill tabbed file={{ fileName: tab.item.title, mimeType: 'text/plain', sizeBytes: 38 }} kind="text" content="File body" loading={false} onClose={() => {}} />} info={() => null} /></>));
   await until('the portal has its own shared toolbar', () => host.querySelector('[data-file-toolbar]') !== null);
   const panel = host.querySelector('[data-testid="message-file-preview-panel"]')!;
   expect(panel.querySelectorAll('[role="toolbar"]')).toHaveLength(1);

@@ -105,7 +105,10 @@ vi.mock('@renderer/lib/components/page-layout', () => ({
   PageContent: ({ children }: { children: ReactNode }) => children,
   PageLayout: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock('@renderer/lib/components/titlebar/shell-titlebar', () => ({ ShellTitlebar: ({ leftSlot, children }: { leftSlot?: ReactNode; children?: ReactNode }) => <>{leftSlot}{children}</> }));
+vi.mock('@renderer/lib/components/titlebar/shell-titlebar', async () => ({
+  ShellTitlebar: ({ leftSlot, children }: { leftSlot?: ReactNode; children?: ReactNode }) => <>{leftSlot}{children}</>,
+  PageModalClose: (await import('react')).createContext(null),
+}));
 // The chat panel's own mark (AppErrorMark): this file judges where it is put and that it opens, not how it looks.
 vi.mock('@/components/appSlot/AppErrorMark', () => ({
   AppErrorMark: (props: { error: string; onToggle: () => void; testId: string }) => {
@@ -312,8 +315,8 @@ describe('an App opened from the far-left rail', () => {
     expect(mocks.navigate).toHaveBeenLastCalledWith('new-session', { agentId: 'codex', deviceId: 'studio' });
   });
 
-  it('both places of the rail are drawn without the task list beside them', () => {
-    expect(appView.withoutSessionSidebar).toBe(true);
-    expect(appsView.withoutSessionSidebar).toBe(true);
+  it('the Apps page and an App\'s page are modals over the page you were on', () => {
+    expect(appView.modal).toBe(true);
+    expect(appsView.modal).toBe(true);
   });
 });

@@ -6,16 +6,17 @@ import { forgetPageFocus, guardHostFocus, notePageFocus } from './browser-host-f
 import { BrowserPageHandle } from './browser-page-handle';
 import { isBrowserPageOccluded, type PageRect } from './browser-page-occlusion';
 import { isElementVisible } from '@/lib/elementVisibility';
+import { followBox } from '@renderer/lib/layout/follow-box';
 
 const surfaceLog = rendererLogger('browser/page-surface');
 
-/** 多久看一眼网页那一块上有没有浮层(见 browser-page-occlusion.ts)。 */
+/** 跟着挪的那一串量里,最多多久看一眼网页那一块上有没有浮层(见 browser-page-occlusion.ts)。 */
 const OCCLUSION_CHECK_MS = 100;
 /**
- * 窗口被挡住、锁屏时界面不再出帧(requestAnimationFrame 停了),位置照样要量、照样要报 ——
- * agent 这时候也可能在操作这张网页,网页得有正确的大小。帧停了就由这个间隔接着量。
+ * 页签在屏上时每隔这么久量一次:没挂到 body 上、也没换掉占位旁边那一层的浮层(采样才看得见),要靠它看到;
+ * 窗口被挡住、锁屏时界面不再出帧,观察器也跟着停,agent 这时候也可能在操作这张网页,网页得有正确的大小。
  */
-const FALLBACK_TICK_MS = 250;
+const SAMPLE_MS = 250;
 /** 浮层压上来时先换上一张网页截图,最多等它这么久。 */
 const SNAPSHOT_WAIT_MS = 250;
 
@@ -23,7 +24,7 @@ const SNAPSHOT_WAIT_MS = 250;
  * #7274 页签里网页那一块:界面里只是一块占位,网页本身是主进程持有的 WebContentsView,摆在这一块的位置上
  * (browser-page-views.ts)。这里负责:
  * - 挂上 / 卸下时请主进程建 / 收那张网页(页签挪位置时主进程接着用原来那张,❌ 重新载入);
- * - 每一帧量这块占位在窗口里的位置报过去,网页跟着挪、跟着缩放;
+ * - 这块占位挪了、缩放了(followBox 看着它),量它在窗口里的位置报过去,网页跟着挪;❌ 常驻逐帧量;
  * - 页签不在屏上(切走、整条会话页藏起来)报 `background`;界面的浮层压上来报 `occluded`,这时占位上换成一张网页截图;
  * - 主进程报来的网页事件交给 handle(地址栏、前进后退据此更新)。
  */
@@ -48,6 +49,7 @@ export function BrowserPageSurface({
   const onHandleRef = useRef(onHandle);
   onHandleRef.current = onHandle;
   const initialUrlRef = useRef(initialUrl);
+  const tickRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const element = ref.current;
@@ -64,9 +66,8 @@ export function BrowserPageSurface({
       handle.apply(event);
     });
 
-    // ---- 位置与样子:每帧量一次占位,变了才报(浮层每 OCCLUSION_CHECK_MS 看一次)。
+    // ---- 位置与样子:占位一动就量,变了才报(浮层最多每 OCCLUSION_CHECK_MS 看一次)。
     let lastSent = '';
-    let frame = 0;
     let occluded = false;
     let lastOcclusionCheck = -Infinity;
     let snapshotToken = 0;
@@ -106,14 +107,9 @@ export function BrowserPageSurface({
     };
     handle.addEventListener('did-stop-loading', refreshLoadedSnapshot);
 
-    let lastTickAt = 0;
-    const onFrame = (now: number) => {
-      frame = win.requestAnimationFrame(onFrame);
-      tick(now);
-    };
-    const tick = (now: number) => {
-      lastTickAt = now;
+    const tick = () => {
       if (!mounted) return;
+      const now = win.performance.now();
       const box = element.getBoundingClientRect();
       const rect: PageRect = { left: box.left, top: box.top, width: box.width, height: box.height };
       const onScreen =
@@ -163,18 +159,16 @@ export function BrowserPageSurface({
         handle.mounted(result);
         mounted = true;
         onHandleRef.current(handle);
+        tick();
       });
-    frame = win.requestAnimationFrame(onFrame);
-    const fallback = win.setInterval(() => {
-      const now = win.performance.now();
-      if (now - lastTickAt >= FALLBACK_TICK_MS) tick(now);
-    }, FALLBACK_TICK_MS);
+    tickRef.current = tick;
+    const stopFollowing = followBox(element, tick);
     // 弹层挂到 body 上、页签自己那一层里的起始页 / 加载失败页挂上或撤下、拖拽开始 / 结束:当场看一眼,❌ 等下一个
     // OCCLUSION_CHECK_MS(菜单在网页底下晚出来一下;起始页闪一下撤掉时,采样落没落进那一两帧决定网页露不露出来)。
     const doc = element.ownerDocument;
     const recheck = new MutationObserver(() => {
       lastOcclusionCheck = -Infinity;
-      tick(win.performance.now());
+      tick();
     });
     recheck.observe(doc.body, { childList: true });
     if (element.parentElement) recheck.observe(element.parentElement, { childList: true });
@@ -182,9 +176,9 @@ export function BrowserPageSurface({
 
     return () => {
       disposed = true;
+      tickRef.current = null;
       recheck.disconnect();
-      win.cancelAnimationFrame(frame);
-      win.clearInterval(fallback);
+      stopFollowing();
       stopEvents();
       handle.removeEventListener('did-stop-loading', refreshLoadedSnapshot);
       forgetPageFocus(browserId);
@@ -192,6 +186,16 @@ export function BrowserPageSurface({
       void rpc.browser.releasePage(browserId);
     };
   }, [browserId, partition]);
+
+  // 切到 / 切走这个页签:当场报;只在屏上时按 SAMPLE_MS 量,后台页签什么都不跑。
+  useEffect(() => {
+    tickRef.current?.();
+    if (!visible) return;
+    const win = ref.current?.ownerDocument.defaultView;
+    if (!win) return;
+    const timer = win.setInterval(() => tickRef.current?.(), SAMPLE_MS);
+    return () => win.clearInterval(timer);
+  }, [visible]);
 
   return (
     <div

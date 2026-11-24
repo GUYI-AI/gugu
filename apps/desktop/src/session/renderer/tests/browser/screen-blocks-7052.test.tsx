@@ -10,7 +10,6 @@ import { screenLayout } from '@renderer/app/screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
-import { drainTopicSplitRequest } from '@/lib/topicSplitRequest';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { WorkspaceLayoutContextProvider } from '@renderer/lib/layout/layout-provider';
 
@@ -101,25 +100,6 @@ describe('一屏几块的骨架 (#7052)', () => {
     composer.remove();
   });
 
-  it('opens a topic only after its source chat lands in a workspace split', async () => {
-    screenLayout.show(s('a'));
-    root!.render(<ScreenFrame />);
-    await until('one block', () => blockWidths().length === 1);
-    const rect = host!.querySelector('[data-screen-block]')!.getBoundingClientRect();
-    const dataTransfer = new DataTransfer();
-    setDraggedScreenContent(dataTransfer, { kind: 'chat', chatId: 'group', title: 'Topic', topic: { chatId: 'topic', name: 'Topic' } });
-    const handlers = screenDropHandlers(true);
-    const event = { dataTransfer, target: host, clientX: rect.left + 5, clientY: rect.top + rect.height / 2, preventDefault: vi.fn(), stopPropagation: vi.fn() };
-    const composer = document.createElement('div');
-    composer.dataset.slot = 'composer-bar';
-    handlers.onDropCapture({ ...event, target: composer } as never);
-    expect(drainTopicSplitRequest('group')).toBeNull();
-    handlers.onDropCapture(event as never);
-    expect(screenLayout.order).toHaveLength(2);
-    expect(drainTopicSplitRequest('group')).toEqual({ chatId: 'topic', name: 'Topic', sourceChatId: 'group', focusComposer: true });
-    screenLayout.close(screenLayout.order.find((id) => screenLayout.blocks.get(id)?.kind === 'chat')!);
-    clearDraggedScreenContent();
-  });
 
   it('can move an existing block beside its neighbour using the space its old block releases', async () => {
     host!.style.width = '800px';

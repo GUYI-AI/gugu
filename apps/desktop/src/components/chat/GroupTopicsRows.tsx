@@ -7,7 +7,8 @@ import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
 import { MenuItem, MenuSeparator } from '../ui/Menu'
 import { ListRowContent } from '../ui/ListRow'
-import { openPinnedTopic, topicMenuGroups, type SourceTopic } from './topicPinsModel'
+import { topicMenuGroups, type SourceTopic } from './topicPinsModel'
+import { openTopicChat } from '@/hooks/useTopicSurface'
 import { useChatTopicPins } from './useChatTopicPins'
 import { ConversationRowContextMenu } from './ConversationRowContextMenu'
 import { useRowContextMenu } from '../../hooks/useRowContextMenu'
@@ -57,7 +58,7 @@ function TopicMenuRow({ topic, pinned, pins }: { topic: SourceTopic; pinned: boo
     {menu.menuPos && <ConversationRowContextMenu {...menu.menuPos} onClose={menu.closeMenu} entry="topic-popup"
       state={{ kind: 'topic', hasUnread: hasUnreadInRows([topic]), hasTopicsUnread: hasUnreadInRows(pins.topics) }}
       run={{ 'mark-read': () => markRead(topic.id), 'mark-topics-read': () => markRead(pins.topics.map((row) => row.id)) }} />}
-    <MenuItem data-testid="group-menu-topic" data-pane-opener="" className="gg-topic-menu-open" style={topicRowStyle} render={<div data-emphasis={topic.unread_count > 0 || undefined} />} onClick={() => openPinnedTopic(topic)}>
+    <MenuItem data-testid="group-menu-topic" data-pane-opener="" className="gg-topic-menu-open" style={topicRowStyle} render={<div data-emphasis={topic.unread_count > 0 || undefined} />} onClick={() => openTopicChat(topic.id)}>
       <ListRowContent title={<>{pinned && <Pin size={12} aria-hidden className="gg-topic-pin-mark" />}{topic.name}</>}
         meta={topic.unread_count > 0 ? (calls > 0 ? <TopicCallChip count={calls} at /> : <TopicUnreadChip count={topic.unread_count} muted={topic.is_muted} />) : undefined} />
     </MenuItem>

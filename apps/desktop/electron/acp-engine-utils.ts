@@ -18,7 +18,7 @@ import { makeIdentityClient } from './supabase'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { GuguMcpHost, type GuguMcpHostPersistence, type GuguMcpServerFactory } from './gugu-mcp-host'
 // @ts-expect-error -- the MCP tool implementation is an untyped ESM module.
-import { advertisedTool, createGuguImServer, createSessionState, sendWidgetOf, serveToolsList, widgetGetOf } from './mcp/gugu-im-server.mjs'
+import { advertisedTool, createGuguImServer, createSessionState, resolveChatIdOf, sendWidgetOf, serveToolsList, widgetGetOf } from './mcp/gugu-im-server.mjs'
 import type { RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import { guguToolGroupOf, type GuguToolsOff } from '../src/session/shared/gugu-tool-groups'
@@ -29,6 +29,7 @@ import { registerGuguProjectTools } from './mcp/gugu-project-tool'
 import { registerAssistantResource } from './mcp/gugu-assistant-resource'
 import type { AssistantLocalSource } from './sessionpage/assistant-local-index'
 import { registerGuguSessionTools, type SessionDispatcher } from './mcp/gugu-session-tool'
+import { withResolvedChatId } from './mcp/sessionpage-tool-registrar'
 import { registerGuguExtensionTools } from './mcp/gugu-extension-tool'
 import { runAppAction } from './mcp/app-tool-host'
 import { registerGuguGuideTools } from './mcp/gugu-guide-tool'
@@ -280,8 +281,14 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
   // 同角色的 grant 变,否则每种组合都是一份新的模型前缀。助理常驻派活、叫停和活动回顾;
   // 两种固定角色工具面各自复用前缀,不是按会话的动态授权清单。
   if (getContext().runSessionAction || getContext().runExtensionAction) {
+    // A chat named to session_* / app_* is resolved as message tools resolve it; without a Gugu identity there is no one to ask.
+    const resolveChatId = async (chatId: string) => {
+      const context = getContext()
+      if (context.kind !== 'social') throw new Error(`chat_id ${chatId}: naming a chat needs a session with a Gugu identity`)
+      return await resolveChatIdOf({ ...context, getAccessToken: () => context.getAccessToken(grantSignal) }, chatId)
+    }
     const sessionDispatcher: SessionDispatcher | undefined = getContext().runSessionAction
-      ? async (action, requestSignal) => {
+      ? withResolvedChatId(async (action, requestSignal) => {
           const run = getContext().runSessionAction
           if (!run) throw new Error('session_* tools are unavailable for this grant')
           const dispatch = (input: unknown) => run(input, anySignal([grantSignal, requestSignal]))
@@ -291,7 +298,7 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
           const { rules } = await assistantRules().available()
           const work = assistantExecutionAction(action, rules)
           return initial.assistantWork ? coordinateAssistantAction(initial.assistantWork, work, dispatch, rules) : dispatch(work)
-        }
+        }, resolveChatId)
       : undefined
     registerGuguSessionTools(server, sessionDispatcher, trackRequest, initial.personalAssistant === true)
     registerGuguProjectTools(server, sessionDispatcher, trackRequest)
@@ -315,7 +322,7 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
     registerGuguExtensionTools(
       server,
       getContext().runExtensionAction
-        ? (action, requestSignal) => {
+        ? withResolvedChatId((action, requestSignal) => {
             const run = getContext().runExtensionAction
             if (!run) throw new Error('app_* tools are unavailable for this grant')
             const signal = anySignal([grantSignal, requestSignal])
@@ -327,7 +334,7 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
               runSession ? (session, lifetime) => runSession(session, lifetime ?? signal) : undefined,
               signal,
             )
-          }
+          }, resolveChatId)
         : undefined,
       trackRequest,
     )
