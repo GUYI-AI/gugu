@@ -16,6 +16,7 @@ import { GroupMembersBlock } from './GroupInfoRows'
 import { GroupNameInlineEdit } from './GroupNameInlineEdit'
 import { groupRoleRevision, useGroupChatSettings } from './useGroupChatSettings'
 import { TopicMark } from './TopicMark'
+import { useUnifiedMembers } from './useUnifiedMembers'
 import { Button as ButtonPrimitive } from '@base-ui/react/button'
 
 /**
@@ -44,7 +45,7 @@ export function TopicDetailsMain({ chat, currentUserId, membersPage, onClose, on
   const [leaving, setLeaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const name = chat.name || t('topic.untitled')
-  const memberIds = snapshot ? [...snapshot.humans.map((member) => member.id), ...snapshot.agents.map((member) => member.id)] : []
+  const memberIds = useUnifiedMembers(snapshot).map((member) => member.id)
   const total = snapshot ? snapshot.humans.length + snapshot.agents.length : null
 
   if (page === 'members') return (

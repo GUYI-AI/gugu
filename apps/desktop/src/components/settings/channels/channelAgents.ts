@@ -6,15 +6,20 @@ import { useEntry, useReplica } from '@/lib/replica'
 import { chatChannels } from '@/components/connections/connection-replicas'
 import { useAuth } from '../../../store/auth'
 import { useContactsStore } from '../../../store/contactsContext'
+import { compareByRecentActivity } from '@gugu/core/shared/ui/chatModels'
+import { useAgentActivityMs } from '@/hooks/useAgentActivityMs'
 
-/** 自己名下的 agent;聊天渠道只能对接自己的(管家那边也验)。 */
+/** 自己名下的 agent,按智能体的那一种次序(compareByRecentActivity);聊天渠道只能对接自己的(管家那边也验)。 */
 export function useOwnedAgents(): ContactUser[] {
   const { user } = useAuth()
   const { contacts } = useContactsStore()
-  return useMemo(
+  const owned = useMemo(
     () => contacts.filter((contact) => contact.type === 'agent' && user?.id && contact.owner_user_id === user.id),
     [contacts, user?.id],
   )
+  const byId = useMemo(() => Object.fromEntries(owned.map((agent) => [agent.id, agent])), [owned])
+  const activityMs = useAgentActivityMs(useMemo(() => owned.map((agent) => agent.id), [owned]), byId)
+  return useMemo(() => [...owned].sort((a, b) => compareByRecentActivity({ id: a.id, activityMs: activityMs(a.id) }, { id: b.id, activityMs: activityMs(b.id) })), [owned, activityMs])
 }
 
 /** The account's chat channels for a surface that connects WeChat: the channels client, the reading, its list and `apply`. */

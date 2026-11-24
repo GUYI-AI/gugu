@@ -14,6 +14,7 @@ import {
   type SessionPageStore,
 } from './session-store';
 import { terminalRegistry } from './terminal-registry';
+import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels';
 import { workspaceRegistry } from './workspace-registry';
 import type { WorkspaceViewModel } from './workspace-view-model';
 import { describeSessionFailure, type SessionTranslate } from './session-failure-message';
@@ -64,16 +65,13 @@ export function sessionAgentStatusDetail(store: SessionPageStore): AgentStatusDe
   return mgr?.sessionStatusDetail ?? null;
 }
 
-// @@@sessionpage otty-state — the session's conversation rows (the session itself), ordered by lastInteractedAt
-// desc; this is the enumeration the sidebar buckets from.
+// @@@sessionpage otty-state — the session's conversation rows (the session itself), in the agent order
+// (compareByRecentActivity); this is the enumeration the sidebar buckets from.
 export function pageSessions(store: SessionPageStore): SessionStore[] {
   const mgr = sessionRegistry.get(store.data.id);
   if (!mgr) return [];
-  return Array.from(mgr.sessions.values()).sort((a, b) => {
-    const aTime = a.data.lastInteractedAt ? new Date(a.data.lastInteractedAt).getTime() : 0;
-    const bTime = b.data.lastInteractedAt ? new Date(b.data.lastInteractedAt).getTime() : 0;
-    return bTime - aTime;
-  });
+  const stamp = (session: SessionStore) => ({ id: session.data.id, activityMs: activityMs(session.data.lastInteractedAt, session.data.createdAt) });
+  return Array.from(mgr.sessions.values()).sort((a, b) => compareByRecentActivity(stamp(a), stamp(b)));
 }
 
 export type SessionViewKind =

@@ -1,4 +1,5 @@
 import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
+import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels';
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary';
 import { taskName, taskNameFor } from './task-name';
 import { sessionHostLocale } from '@main/core/host-locale';
@@ -478,13 +479,10 @@ function sessionMetadata(row: SessionRow, outward: (localProjectId: string) => s
 /**
  * 列表工具的默认顺序:最近活动在前(侧栏同一列 `last_interacted_at`,侧栏也按解析后的时间比)。从没交互过的排在最后。
  */
-function byLastActiveDesc(a: { last_active_at: string | null }, b: { last_active_at: string | null }): number {
-  return activeMs(b.last_active_at) - activeMs(a.last_active_at);
-}
-
-function activeMs(at: string | null): number {
-  const ms = at ? Date.parse(at) : Number.NaN;
-  return Number.isNaN(ms) ? 0 : ms;
+function byLastActiveDesc(a: { session_id: string; last_active_at: string | null }, b: { session_id: string; last_active_at: string | null }): number {
+  // 同一刻(含从没交互过的)按会话 id:次序稳定,翻页、跨机器合并后都一样(compareByRecentActivity)。
+  const stamp = (row: typeof a) => ({ id: row.session_id, activityMs: activityMs(row.last_active_at, null) });
+  return compareByRecentActivity(stamp(a), stamp(b));
 }
 
 /**

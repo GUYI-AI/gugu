@@ -256,6 +256,14 @@ export function compareByRecentActivity(a: { id: string; activityMs: number }, b
   return b.activityMs - a.activityMs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }
 
+/**
+ * 名单接口(App 的 `chats.members`、MCP 的 message_members / 好友名单)交出成员时的次序:按名字,同名按 id。名单没有活动时间,
+ * 接口只保证次序稳定(翻页、重读都一样);界面上怎么排由显示它的地方定(列表 compareByRecentActivity,选人框 rankMentionCandidates)。
+ */
+export function compareByName(a: { id: string; name: string | null | undefined }, b: { id: string; name: string | null | undefined }): number {
+  return String(a.name ?? '').localeCompare(String(b.name ?? '')) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+}
+
 // 解析比较(非字典序):服务端时间戳带 +00:00 后缀、客户端 toISOString 带 Z,字符串序会错判。
 export function compareChatsByActivityDesc(
   a: Pick<ChatItem, 'id' | 'last_message_at' | 'created_at'>,

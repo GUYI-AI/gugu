@@ -12,6 +12,7 @@
 // the session backend's ACP runtime internals from gugu main.
 
 import { isImplicitSessionHomeProjectId } from '@gugu/core/shared/sessionProject'
+import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels'
 import type { AgentStatusView } from '@gugu/core/shared/agentStatus'
 import { DisclosedFailure, type AgentInboxSource } from '@gugu/core/local/agent/agentInboxReader'
 
@@ -162,13 +163,9 @@ export function resolveLocalSessionPeers(
       last_active_at: session.lastInteractedAt,
     }
   })
-  return peers.sort((a, b) => activeMs(b.last_active_at) - activeMs(a.last_active_at))
-}
-
-/** 侧栏按解析后的时间排;从没交互过的排最后。 */
-function activeMs(at: string | null): number {
-  const ms = at ? Date.parse(at) : Number.NaN
-  return Number.isNaN(ms) ? 0 : ms
+  // 侧栏那一种次序(compareByRecentActivity):最后交互新的在前,从没交互过的排最后,同一刻按会话 id ⇒ 次序稳定。
+  const stamp = (peer: (typeof peers)[number]) => ({ id: peer.sessionId, activityMs: activityMs(peer.last_active_at, null) })
+  return peers.sort((a, b) => compareByRecentActivity(stamp(a), stamp(b)))
 }
 
 /**

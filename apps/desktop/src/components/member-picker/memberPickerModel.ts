@@ -5,10 +5,12 @@ import { IMPLICIT_SESSION_HOME_PROJECT_ID } from '@gugu/core/shared/sessionProje
 import { deviceSessionsOf, type DeviceSessions } from '@/session/shared/remote-sessions/session-directory'
 import type { ContactSearchField } from '../../lib/contactSearch'
 import { groupContacts } from '../../lib/contactsListSort'
+import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels'
 import { partitionContactsByDevice, type ContactsDeviceSection } from '../contacts/contactsByDevice'
 
 // 选成员(新建群聊与添加成员共用)的候选与来源。只读已经在手的三份:通讯录(getContacts)、跨设备任务目录、聊天列表。
-// 一行的「最近」= 它那条任务最后一次交互与和它的聊天里较晚的那个。Agent 只按这一条排:不分父子、不置顶、不折叠。
+// 一行的「最近」= 它那条任务最后一次交互与和它的聊天里较晚的那个。按它排,同智能体的那一种次序(compareByRecentActivity:
+// 没打过交道的按建的时刻,再按 id):不分父子、不置顶、不折叠。
 // 来源 = 最近(7 天内,人和 Agent 混排)、人(首字母序)、每台设备(那台上的 Agent);人多时靠来源与搜索,❌ 一条竖列翻到底。
 
 export const RECENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
@@ -64,7 +66,8 @@ const folderName = (path: string | null | undefined) => {
   const name = path?.split(/[\\/]/).filter(Boolean).pop() ?? null
   return name === 'task-home' ? null : name
 }
-const byRecent = (a: PickerEntry, b: PickerEntry) => b.lastAt - a.lastAt
+const stamp = (entry: PickerEntry) => ({ id: entry.contact.id, activityMs: entry.lastAt || activityMs(null, entry.contact.created_at) })
+const byRecent = (a: PickerEntry, b: PickerEntry) => compareByRecentActivity(stamp(a), stamp(b))
 
 export function pickerModel({ contacts, currentUserId, devices, live, recentChats, now, withPeople = true }: {
   contacts: ContactUser[]

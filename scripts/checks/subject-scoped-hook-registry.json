@@ -30,6 +30,10 @@
     "how": "keyed-map",
     "why": "activity 按 agentUserId 存 map。"
   },
+  "apps/desktop/src/hooks/useAgentActivityMs.ts::useAgentActivityMs": {
+    "how": "keyed-map",
+    "why": "没有自己的 state:返回的函数在调用时按传入的 agentUserId 读 useAgentRecentActivity 的 map(按 id 存)和 identitiesById;id 还没读到就是 created_at 或 0(排在后面),不会拿另一个 agent 的读数。"
+  },
   "apps/desktop/src/hooks/useAgentHarnessIdentity.ts::useAgentHarnessIdentity": {
     "how": "keyed-map",
     "why": "#6002:useSyncExternalStore 在渲染期用当前 agentId 读取 presence map 的 harness 原始值;切换身份同步更换 snapshot 与订阅,不靠 effect 将上一个 agent 的答案追到新主体。"

@@ -73,6 +73,8 @@ export interface SessionShellPeer {
   title: string
   identity: { users: { id: string; display_name: string; gugu_number: number | null; session_archived_at?: string | null } }
   engine: string
+  /** Its session's last interaction (the sidebar's lastInteractedAt): what the agent order reads (compareByRecentActivity). */
+  last_active_at: string | null
 }
 
 /**
