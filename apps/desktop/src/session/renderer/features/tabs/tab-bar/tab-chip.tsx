@@ -219,7 +219,11 @@ function useTabDensity(hasIcon: boolean): { ref: (el: HTMLDivElement | null) => 
   const ref = useCallback((el: HTMLDivElement | null) => {
     observer.current?.disconnect();
     observer.current = null;
-    if (!el || typeof ResizeObserver === 'undefined') return;
+    if (!el) return;
+    // The first paint already has its width: measured as the chip is attached (a commit-phase update, drawn in the same
+    // frame), ❌ only when the observer first reports — until then it drew 'full' (every close shown, wider padding).
+    setWidth(el.offsetWidth);
+    if (typeof ResizeObserver === 'undefined') return;
     const next = new ResizeObserver((entries) => {
       const box = entries[0]?.contentRect;
       if (box) setWidth(Math.round(box.width));
