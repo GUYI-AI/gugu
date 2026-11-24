@@ -407,6 +407,13 @@
       "when": 1794700400000,
       "tag": "0058_run_interval_reconcile_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1794700500000,
+      "tag": "0059_automations_agent_session_deleted",
+      "breakpoints": true
     }
   ]
 }

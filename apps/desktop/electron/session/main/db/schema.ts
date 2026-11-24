@@ -399,7 +399,8 @@ export const automations = sqliteTable(
   },
   (table) => ({
     projectIdIdx: index('idx_automations_project_id').on(table.projectId),
-    agentSessionIdx: index('idx_automations_agent_session_id').on(table.agentSessionId),
+    // With deleted_at the scheduler's per-minute "which sessions have live schedules" read stays inside the index.
+    agentSessionIdx: index('idx_automations_agent_session_deleted').on(table.agentSessionId, table.deletedAt),
   })
 );
 
