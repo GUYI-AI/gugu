@@ -177,7 +177,9 @@ export class SessionLife {
     await this.ownerDrain.drain(userId);
   }
 
-  signIn(userId: string): Promise<void> { return this.transition(() => this.enter(userId)); }
+  signIn(userId: string, qualify?: () => Promise<void>): Promise<void> {
+    return this.transition(async () => { await qualify?.(); await this.enter(userId); });
+  }
 
   /**
    * The account's credentials under these sessions change (a subscription switch, v3.2): the sign-out window, scoped to

@@ -51,6 +51,11 @@ export const imMessageAccounts = sqliteTable('im_message_accounts', {
   throughRevision: text('through_revision').notNull(),
 });
 
+/** Permanent native deletion fence; ordinary cache clearing never removes it. */
+export const imMessageRetiredAccounts = sqliteTable('im_message_retired_accounts', {
+  accountId: text('account_id').primaryKey().notNull(),
+});
+
 /** Permission facts for histories, including observer topics absent from the published chat list. */
 export const imMessageChats = sqliteTable('im_message_chats', {
   accountId: text('account_id').notNull(),
