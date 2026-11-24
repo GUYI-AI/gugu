@@ -644,7 +644,12 @@ async function resolveChatIdInput(chatId, deps) {
  * public_id or an owner address names the same chat everywhere, and one that names none fails here.
  */
 export async function resolveChatIdOf(context, chatId, injected = {}) {
-  return await requireChat({ chat_id: String(chatId) }, createDeps(context, injected))
+  const resolved = await requireChat({ chat_id: String(chatId) }, createDeps(context, injected))
+  // The resolver keeps an opaque non-numeric id for injected callers; a host action can only use a real chat's UUID.
+  if (!UUID_RE.test(String(resolved))) {
+    throw new Error(`chat_id ${chatId} names no conversation; give its UUID (message_conversations id) or its public_id number, nothing around it`)
+  }
+  return resolved
 }
 
 async function requireChat(args, deps) {

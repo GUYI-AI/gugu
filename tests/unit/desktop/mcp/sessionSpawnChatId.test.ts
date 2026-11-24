@@ -57,6 +57,16 @@ describe('session_spawn chat_id', () => {
     expect(calls).toEqual([expect.objectContaining({ name: 'add_group_agent', p_chat_id: GROUP, p_agent_user_id: 'agent-1', p_as_task: true })])
   })
 
+  // The live run: an agent told to pass the number "as a string" sent it with its quotes; that went to the join unchanged.
+  it.each([['"229808"', 'a quoted public_id'], ['chat-229808', 'an opaque value']])('%s (%s) fails at the tool instead of reaching the join', async (chatId) => {
+    const { result, dispatched } = await spawn({ prompt: 'go', chat_id: chatId })
+    const answer = await result as { isError?: boolean; content: { text: string }[] }
+    expect(answer.isError).toBe(true)
+    expect(answer.content[0]!.text).toContain(`chat_id ${chatId} names no conversation`)
+    expect(dispatched).toEqual([])
+    expect(calls).toEqual([])
+  })
+
   it('a public_id that names no chat fails at the tool: nothing is spawned or joined', async () => {
     const { result, dispatched } = await spawn({ prompt: 'go', chat_id: '999999' })
     const answer = await result as { isError?: boolean; content: { text: string }[] }
