@@ -51,7 +51,13 @@ export function sessionInputKind(deps: {
   prepare(input: SessionInput): Promise<SessionInput>
   /** Hands the input to its host; throws SessionInputFailureError / an admission error when it is not taken. */
   send(input: SessionInput): Promise<void>
+  onState?(input: SessionInput, state: OutboxItem['state']): void
+  onSettled?(input: SessionInput): void
 }): OutboxKind<SessionSend> {
+  const settled = (item: OutboxItem<SessionSend>) => {
+    publishRows()
+    deps.onSettled?.(inputOf(item))
+  }
   return {
     name: SESSION_INPUT,
     lane: (send) => `session:${send.deviceId ?? 'local'}/${send.sessionId}`,
@@ -70,9 +76,12 @@ export function sessionInputKind(deps: {
       // Only the receiving boundary can refuse: anything else is sent again.
       return { reason: sessionInputAdmission(error) === 'rejected' || error instanceof OutboxRejected ? 'rejected' : 'unreachable', message, code: 'send-failed' }
     },
-    onState: () => publishRows(),
-    onAck: () => publishRows(),
-    onDiscard: () => publishRows(),
+    onState: (item) => {
+      publishRows()
+      deps.onState?.(inputOf(item), item.state)
+    },
+    onAck: settled,
+    onDiscard: settled,
   }
 }
 

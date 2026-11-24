@@ -19,6 +19,8 @@ import { ensureKind, outbox } from '@/lib/outbox'
 import { readOutboxKind } from '@/lib/outbox/kinds/read'
 import { assistantNoticeOutboxKind } from '@/lib/outbox/kinds/assistantNotice'
 import { importLegacyWrites } from '@/lib/outbox/legacy'
+import { nativeInputFailureNotice, runNativeInputAction } from '@/lib/nativeInputFailureNotice'
+import { sessionInputFailureText } from '@/lib/pendingSessionInput'
 
 /**
  * Runs with the signed-in shell, including while the conversation itself is closed: the account's outbox kinds that
@@ -51,6 +53,11 @@ export function OutboxHost({ accountId }: { accountId: string }) {
       return !!device && !device.is_current_device && device.capabilities.task_annotations !== 1
     }
     const box = outbox()
+    const failures = new Map<string, { description: string | null; notice: ReturnType<typeof nativeInputFailureNotice> }>()
+    const clearFailure = (id: string) => {
+      failures.get(id)?.notice.discard()
+      failures.delete(id)
+    }
     // Static kinds stay registered: what a previous run queued drains from the start.
     ensureKind(box, readOutboxKind)
     ensureKind(box, assistantNoticeOutboxKind)
@@ -58,6 +65,26 @@ export function OutboxHost({ accountId }: { accountId: string }) {
       box.register(sessionInputKind({
         // A queued file sent to an old host keeps its caption and explains what was omitted.
         prepare: async input => oldAttachmentHost(input) ? withoutQueuedAttachments(input, input.files!.length) : input,
+        onState: (input, status) => {
+          if (!own.valid() || input.accountId !== accountId) return
+          const previous = failures.get(input.id)
+          if (status === 'queued' && previous) previous.description = null
+          if (status !== 'failed' || !input.failure) return
+          const description = sessionInputFailureText(input.failure)
+          if (previous?.description === description) return
+          const notice = previous?.notice ?? nativeInputFailureNotice(accountId, input.sessionId, input.id, input.deviceId)
+          failures.set(input.id, { description, notice })
+          notice.begin().failed({
+            title: translateSessionMessage('acpFailure.sendMessage'),
+            description,
+            tier: 'error',
+            action: { label: translateSessionMessage('transcript.retrySend'), onClick: () => {
+              if (!own.valid()) return
+              void runNativeInputAction(input.sessionId, input.id, input.deviceId, () => box.retry(input.id))
+            } },
+          })
+        },
+        onSettled: input => clearFailure(input.id),
         send: async input => {
           if (input.steerIfBusy && !sessionInputSteeringAvailable(input.sessionId)) throw new SessionInputFailureError({ code: 'host-not-ready' })
           const device = hosts.current.find(device => device.device_id === input.deviceId)
@@ -100,6 +127,7 @@ export function OutboxHost({ accountId }: { accountId: string }) {
     return () => {
       active = false
       for (const stop of stops) stop()
+      for (const id of failures.keys()) clearFailure(id)
       if (own.accountId === accountId) { own.accountId = null; own.rows = EMPTY; changed() }
     }
   }, [accountId])
