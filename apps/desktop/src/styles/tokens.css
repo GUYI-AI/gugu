@@ -1099,8 +1099,19 @@
 /* 界面减法 #10 (yangchichi, design v16): in the light theme the window's ground — under the zero rail, the first-level
    sidebar and the gaps around the cards — is one warm gradient across the window, on either material. */
 :root[data-theme='light'][data-window-material] {
-  --shell-bg: linear-gradient(90deg, #e9ddcf 0, #ebe3d8 30%, #efe9e1 100%);
+  /* owner 11-24 (option B): the v16 stops lifted ~3 L* with a third less chroma (L* 91.7 → 95.6, C 5.5 → 3.4). */
+  --shell-bg: linear-gradient(90deg, #eee6dd 0, #f1ece4 30%, #f6f2ec 100%);
   --nav-rail: transparent;
+  /* Secondary text drawn straight on that ground (the sidebars' previews, counts, headers): ≥ 5.38:1 on every stop and
+     ≥ 4.57:1 on a selected row (7.5% over the darkest stop), WCAG 1.4.3. The neutral --muted-fg is 4.45 / 3.78 there. */
+  --shell-muted-fg: #605c55;
+}
+/* The two sidebars lie on the window ground, not on a card: their secondary text, whichever renderer's name it goes by,
+   is the ground's. */
+:root[data-theme='light'][data-window-material] :is([data-region='left-sidebar'], [data-region='inner-sidebar']) {
+  --muted-fg: var(--shell-muted-fg);
+  --foreground-muted: var(--shell-muted-fg);
+  --foreground-tertiary-muted: var(--shell-muted-fg);
 }
 /* 任务页(会话页嵌在壳里;界面减法起不分材质):停靠的项目/会话列透出下面的窗口底,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
    正文(WorkspaceContentLayout 的 bg-background)与各块(screen-frame)照旧不透明。
