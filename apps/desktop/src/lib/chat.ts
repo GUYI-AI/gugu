@@ -429,7 +429,7 @@ export const chatService = {
       isThreadRoot?: boolean
       // @@@whisper (#820) — true = 定向私密消息（仅 sender + to_user_ids 可见）。DB CHECK 要求 whisper 必定向。
       isWhisper?: boolean
-      forwardedFromMessageId?: string
+      forwardedFromMessageId?: string; annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[]
     } = {}
   ): Promise<MessageItem> {
     if (opts.threadRootId != null || opts.isThreadRoot === true) await requireThreadCapableChat(chatId, 'sendMessage')
@@ -444,7 +444,7 @@ export const chatService = {
       threadRootId: opts.threadRootId ?? null,
       isThreadRoot: opts.isThreadRoot ?? false,
       isWhisper: opts.isWhisper ?? false,
-      forwardedFromMessageId: opts.forwardedFromMessageId,
+      forwardedFromMessageId: opts.forwardedFromMessageId, annotations: opts.annotations,
     })
   },
 

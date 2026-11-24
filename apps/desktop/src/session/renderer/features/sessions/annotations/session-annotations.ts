@@ -164,11 +164,3 @@ export type AnnotatedSend = { text: string; annotations?: TurnAnnotation[] };
 export function annotatedSend(prompt: string, items: readonly SessionAnnotation[], locale: SupportedLocale = 'en-US'): AnnotatedSend {
   return { text: prompt.trim(), ...(items.length ? { annotations: promptAnnotations(items, locale) } : {}) };
 }
-
-/** Group chat (until its messages carry comments beside the words): the comments and the request folded into one text. */
-export function annotationPrompt(prompt: string, items: readonly SessionAnnotation[], locale: SupportedLocale = 'en-US'): string {
-  if (!items.length) return prompt.trim();
-  const sections = promptAnnotations(items, locale).map(annotation => annotation.promptText);
-  if (prompt.trim()) sections.push(`${promptCopy(locale)('annotations.prompt.request')}\n${prompt.trim()}`);
-  return sections.join('\n\n');
-}

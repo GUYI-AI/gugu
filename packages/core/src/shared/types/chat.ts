@@ -138,6 +138,8 @@ export interface MessageItem {
   send_group_id?: string | null
   /** #2581 How many files that send holds (2–10), so a reader knows when it has them all. */
   send_group_size?: number | null
+  /** Comments sent beside the words (a page, an HTML file, a diff): drawn as cards; agents read their promptText. */
+  annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[] | null
   seq: number
   content: string | null
   content_type: MessageContentType

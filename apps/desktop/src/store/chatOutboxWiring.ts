@@ -1,3 +1,4 @@
+import type { TurnAnnotation } from '@gugu/session-core/acp/client'
 import { isDmFriendshipRequired, messageForUser } from '../lib/userFacingError'
 import { openTopicChat } from '../hooks/useTopicSurface'
 import type { AppForwardFilesDetail } from '../session/shared/extensions/app-runtime-protocol'
@@ -87,6 +88,7 @@ export interface OutboxWiring {
     /** A message that must be delivered first (the files sent with this text); else the replied-to message. */
     dependsOn?: string
     contentType?: 'text' | 'card'
+    annotations?: TurnAnnotation[]
   }): Promise<void>
   /** 启动恢复:重建乐观行注入主线缓存 + 开始投递;并挂后端恢复 kick(backendReachability)。返回清理函数。 */
   restoreAndWatch(): () => void
@@ -170,7 +172,7 @@ export function outboxRecordForMessage(message: MessageItem, operation: OutboxOp
     clientMessageId: message.id, chatId: message.chat_id, senderUserId: message.sender_user_id,
     preview: { file_item_id: message.file_item_id, file_version: message.file_version, file_blob_id: message.file_blob_id,
       file_metadata: message.file_metadata, image_dimensions: message.image_dimensions,
-      send_group_id: message.send_group_id, send_group_size: message.send_group_size },
+      send_group_id: message.send_group_id, send_group_size: message.send_group_size, annotations: message.annotations },
     operation, dependsOn: dependsOn ?? (operation.kind === 'forward' && operation.source.kind === 'message' ? operation.source.id : message.reply_to_message_id ?? undefined),
     payload: { content: message.content ?? '', contentType: message.content_type, toUserIds: message.to_user_ids ?? null,
       replyToMessageId: message.reply_to_message_id ?? null, threadRootId: message.thread_root_id ?? null,
@@ -378,6 +380,7 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
           toUserIds: record.payload.toUserIds, replyToMessageId: record.payload.replyToMessageId,
           threadRootId: record.payload.threadRootId, isThreadRoot: record.payload.isThreadRoot, isWhisper: record.payload.isWhisper,
           ...(operation?.kind === 'forward' && operation.source.kind === 'message' ? { forwardedFromMessageId: operation.source.id } : {}),
+          ...(record.preview?.annotations?.length ? { annotations: record.preview.annotations } : {}),
         })
     },
     onState: reflectState,
@@ -563,6 +566,8 @@ export function createOutboxWiring(io: OutboxWiringIo): OutboxWiring {
           ...(input.resolveDmPeer ? { resolveDmPeer: true } : {}),
         },
         dependsOn: input.dependsOn ?? input.replyToMessageId ?? undefined,
+        // The comments are the message's, as its files are: kept with the record, sent with it, drawn while it waits.
+        ...(input.annotations?.length ? { preview: { annotations: input.annotations } } : {}),
         state: 'pending',
         attempts: 0,
         lastError: null,

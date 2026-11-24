@@ -704,6 +704,8 @@ export interface CommitArgs {
   /** #2581 Files sent at once: one id for the send and how many files it holds (2–SEND_GROUP_MAX_FILES). Not given, a file sent on its own. */
   send_group_id?: string
   send_group_size?: number
+  /** The comments sent beside the caption, on the captioned file only. */
+  annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[]
 }
 /** The most files one send holds (the backend refuses a larger send_group_size); more files at once go as consecutive sends. */
 export const SEND_GROUP_MAX_FILES = 10

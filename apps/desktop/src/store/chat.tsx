@@ -611,7 +611,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
       opts: SendMessageOptions = {},
       viewport?: ConversationViewport
     ) => {
-      if (!targetChatId || !userId || !content.trim()) return
+      if (!targetChatId || !userId || (!content.trim() && !opts.annotations?.length)) return
       const targetChat = chatsRef.current.find((chat) => chat.id === targetChatId) ?? null
       const explicitToUserIds = opts.toUserIds?.length ? opts.toUserIds : null
       const isDirectChat = targetChat?.kind === 'dm' || targetChat?.kind === 'ai'
@@ -633,7 +633,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
         is_whisper: !!opts.isWhisper,
         seq: -1,
         content: content.trim(),
-        content_type: opts.contentType ?? 'text',
+        content_type: opts.contentType ?? 'text', ...(opts.annotations?.length ? { annotations: opts.annotations } : {}),
         ...optimisticReplyFields(cache.rows(targetChatId), opts.replyToMessageId ?? null), // @@@2015 乐观回复带全引用预览,回声前空名会触发 #1624
         thread_root_id: threadRootId,
         is_thread_root: !!opts.isThreadRoot, // @@@threads (#1531) 乐观显 tanchor，不等 openThread 异步补
@@ -666,7 +666,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
           id, chatId: targetChatId, senderUserId: userId, content: content.trim(),
           toUserIds, replyToMessageId: opts.replyToMessageId ?? null,
           threadRootId, isThreadRoot: !!opts.isThreadRoot, isWhisper: !!opts.isWhisper,
-          resolveDmPeer, beforeDeliver: opts.beforeDeliver, submittedAt: opts.submittedAt, dependsOn: opts.dependsOn, contentType: opts.contentType,
+          resolveDmPeer, beforeDeliver: opts.beforeDeliver, submittedAt: opts.submittedAt, dependsOn: opts.dependsOn, contentType: opts.contentType, annotations: opts.annotations,
         })
       } catch (error) {
         if (threadRootId) {
