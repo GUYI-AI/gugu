@@ -140,6 +140,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   const sharedStrip = full || mode === 'split' && layout.narrow;
   const chatActive = layout.activePaneId === chat.paneId;
   const leadingProps = { leadingSlot: leading, reserveShellRestoreLane, leadingReservePx };
+  // The capsule row (no tools beside it, nothing merged): every button floats at its top right, the block's and the view's in one row.
+  const floating = !toolCard && !full && mode !== 'split';
 
   const conversationTab = tab && Title ? <PaneProvider group={chat} passive isFocusedPane={chatActive}>
     <ChatWorkspaceTabContext.Provider value={{ role: 'conversation', layout }}>
@@ -153,7 +155,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       className={toolCard ? 'min-w-0 flex-none' : 'min-w-0 flex-1'} style={CAPSULE_BAR_STYLE}>
       <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
         <ChatWorkspaceTabContext.Provider value={{ role: 'capsule', layout }}>
-          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={actions} restWidth={divided ? chatRest : undefined}>
+          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={floating ? undefined : actions} restWidth={divided ? chatRest : undefined}>
             {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
           </TabStripShell>
         </ChatWorkspaceTabContext.Provider>
@@ -213,9 +215,12 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
         {chatTitle}
         {!toolsFirst && toolTabs}
       </div>
-      {/* The conversation's own head (no tools beside it) is the capsule row: its buttons float at the top right and take
-          no width, so the capsule centres on the whole card. Beside tools or merged into one strip they share the row. */}
-      {!toolCard && (full || mode === 'split' ? actionRow : <div className="absolute inset-y-0 right-0 flex">{actionRow}</div>)}
+      {/* The conversation's own head (no tools beside it) is the capsule row: its buttons — the block's, then the view's —
+          float at the top right as one row and take no width, so the capsule centres on the whole card. Beside tools or
+          merged into one strip they share the row. */}
+      {floating ? <div className="absolute inset-y-0 right-0 flex">
+        <div className="flex [--tabbar-actions-edge-gap:0px]">{actions}</div>{actionRow}
+      </div> : !toolCard && actionRow}
     </div>
   );
 });
