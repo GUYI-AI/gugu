@@ -16,7 +16,6 @@ import { ContactsSectionState } from './contacts/ContactsSectionState'
 import { SearchField } from './ui/SearchField'
 import { Pane, PaneHeader } from './ui/Pane'
 import { ListRow } from './ui/ListRow'
-import { clearDraggedScreenContent, startChatDrag } from '../session/renderer/lib/drag-screen-content'
 import { Chip } from './ui/Chip'
 import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
@@ -197,9 +196,9 @@ const SUNK_SECTION_STYLE: React.CSSProperties = {
 
 /** 一列会话行共用的那一份动作:身份不随列表重渲染而换,行(memo)才认得出「我这一行没变」。 */
 export interface ChatRowActions {
-  activate: (chat: ChatItem, beside: boolean) => void
+  activate: (chat: ChatItem) => void
   /** 点话题子行:换成它这条主会话(selectChat),❌ 不走来源行的「重复点击收起」。 */
-  openTopic: (topic: ChatItem, beside: boolean) => void
+  openTopic: (topic: ChatItem) => void
   toggleTopics: (chatId: string) => void
   pin: (chat: ChatItem) => void
   /** #2548 取消固定到左侧栏: the pinned session of an agent pinned to the one list. */
@@ -231,8 +230,6 @@ interface ChatRowProps {
   pinnedHome?: string
   /** …and the pinned session, which its menu unpins. */
   pinnedSessionId?: string
-  /** #2548 a row of the one list is a place to open, ❌ dragged beside to split (the inner column's rows still are). */
-  noDrag?: boolean
 }
 
 // @@@5856 会话列表里的话题子行。
@@ -266,15 +263,12 @@ export const TopicSubRow = memo(function TopicSubRow({ topic, mobile, isActive, 
       data-chat-id={topic.id}
       data-chat-row={topic.id}
       data-topic-subrow={topic.id}
-      draggable={!mobile}
-      onDragStart={(event) => startChatDrag(event, topic, topic.name)}
-      onDragEnd={clearDraggedScreenContent}
       selected={isActive}
       emphasis={topic.unread_count > 0}
       role="option"
       aria-selected={isActive}
       tabIndex={tabIndex}
-      onClick={(event) => actions.openTopic(topic, event.metaKey || event.ctrlKey)}
+      onClick={() => actions.openTopic(topic)}
       onFocus={() => actions.focus(topic.id)}
       onKeyDown={(event) => actions.keyDown(event, topic)}
       onContextMenu={menu.onContextMenu} onPointerEnter={() => warmRowAuthority(topic.id)}
@@ -321,7 +315,7 @@ export function TopicSubRows({ topics, isSunk, expanded, onExpand, children }: {
 
 // @@@chat-row-memo - 一条消息只重画它那一行:props 只有这一行自己的数据(store 里没变的会话行是同一个对象,
 // 见 applyFetchedChatList 的结构共享) + 一份稳定的动作。❌ 每次渲染新建的闭包 / 对象 props —— 那会让一次更新重画整列。
-const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, agentStatus, isActive, topicsExpanded, draft, mobile = false, tabIndex, actions, joinPos, joinOnScreen, pinnedHome, pinnedSessionId, noDrag = false }: ChatRowProps) {
+const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, agentStatus, isActive, topicsExpanded, draft, mobile = false, tabIndex, actions, joinPos, joinOnScreen, pinnedHome, pinnedSessionId }: ChatRowProps) {
   const { t } = useTranslation('messaging')
   const { identitiesById } = useChatStore('identitiesById')
   const menu = useRowContextMenu()
@@ -345,9 +339,6 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
         data-chat-id={chat.id}
         data-chat-row={chat.id}
         data-unavailable-project={unavailable?.id}
-        draggable={!mobile && !noDrag}
-        onDragStart={noDrag ? undefined : (event) => startChatDrag(event, chat, displayName)}
-        onDragEnd={noDrag ? undefined : clearDraggedScreenContent}
         data-join={joinPos}
         data-join-on={joinOnScreen || undefined}
         data-unread-stream-id={chat.unread_locator?.stream_id ?? undefined}
@@ -360,7 +351,7 @@ const ChatRow = memo(function ChatRow({ chat, unreadCount, callsOnly = false, ag
         aria-selected={isActive}
         aria-expanded={topicsExpanded}
         tabIndex={tabIndex}
-        onClick={(event) => actions.activate(chat, event.metaKey || event.ctrlKey)}
+        onClick={() => actions.activate(chat)}
         onFocus={() => actions.focus(chat.id)}
         onKeyDown={(event) => { if (event.target === event.currentTarget) actions.keyDown(event, chat) }}
         onContextMenu={menu.onContextMenu} onPointerEnter={chat.kind === 'group' ? () => warmRowAuthority(chat.id) : undefined}
@@ -761,8 +752,8 @@ export function ChatListPanel({
   // 手机:话题并进来源行(主聊天全算);桌面一个列表(#2548):同一个并法,只算叫到你的,其余新消息挂小灰点。
   const lineUnread = useMemo(() => mobile ? phoneChatUnread(chats) : oneList ? oneListCalls(chats) : null, [mobile, oneList, chats])
   // 这些处理函数在下面定义、每次渲染新建;行拿到的是调它们最新那一版的稳定入口。
-  const activate = useStableHandler((chat: ChatItem, beside: boolean) => activateChatRow(chat, beside))
-  const openTopic = useStableHandler((topic: ChatItem, beside: boolean) => selectChat(topic, 'composer', beside))
+  const activate = useStableHandler((chat: ChatItem) => activateChatRow(chat))
+  const openTopic = useStableHandler((topic: ChatItem) => selectChat(topic, 'composer'))
   const toggle = useStableHandler((chatId: string) => toggleTopics(chatId))
   const pin = useStableHandler((chat: ChatItem) => pinChat(chat.id, !chat.is_pinned))
   // The session is the task page's to write (session-view-requests); a pinned row exists only because that page published it.
@@ -797,7 +788,6 @@ export function ChatListPanel({
         actions={rowActions}
         pinnedHome={pinOf.get(chat.id)?.home.name}
         pinnedSessionId={pinOf.get(chat.id)?.sessionId}
-        noDrag={oneList}
       />
     )
     if (!hasTopics) return row
@@ -866,13 +856,13 @@ export function ChatListPanel({
     })
   })
 
-  const selectChat = useCallback((chat: ChatItem, focusTarget: 'composer' | 'sidebar' = 'composer', beside = false) => {
+  const selectChat = useCallback((chat: ChatItem, focusTarget: 'composer' | 'sidebar' = 'composer') => {
     if ((chat.kind === 'dm' || chat.kind === 'ai') && openOwnedAgentEntry(chat.id, chat.peer_user_id ?? undefined, drafts[chat.id])) return
     // gugu-dev#181 侧栏那一份:对话是会话页这屏的一块,请会话页摆出来(话题和群一样是一条主会话,#62)。
     if (inSidebar) {
       const sessionPage = readSessionpageViewRequestBridge()
       if (!sessionPage) throw new Error('sessionpage view request bridge is not installed')
-      sessionPage.openChat(chat.id, beside)
+      sessionPage.openChat(chat.id, false)
       if (chat.unread_locator) void openUnreadChat(chat.id, selectedChatId === chat.id).catch((error) => {
         chatListLog.error({ error: String(error) }, 'unread locator open failed')
       })
@@ -903,8 +893,8 @@ export function ChatListPanel({
     })
   }
 
-  // 手机整行只导航;桌面重复激活当前来源行才收起/展开,⌘ 点照常拼到右边。
-  const activateChatRow = (chat: ChatItem, beside = false) => {
+  // 手机整行只导航;桌面重复激活当前来源行才收起/展开。
+  const activateChatRow = (chat: ChatItem) => {
     // #2548 a pinned agent's row opens the group / project it lives in, the agent selected in its column (task page).
     const pin = pinOf.get(chat.id)
     if (pin) {
@@ -913,8 +903,8 @@ export function ChatListPanel({
       sessionPage.openSidebarPin(pin.sessionId, pin.home.chatId)
       return
     }
-    if (chat.unread_locator || mobile || beside || chat.id !== selectedChatId || !topicNesting.bySource.get(chat.id)?.length) {
-      selectChat(chat, 'composer', beside)
+    if (chat.unread_locator || mobile || chat.id !== selectedChatId || !topicNesting.bySource.get(chat.id)?.length) {
+      selectChat(chat, 'composer')
       return
     }
     toggleTopics(chat.id)

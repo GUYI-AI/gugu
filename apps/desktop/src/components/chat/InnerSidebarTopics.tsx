@@ -94,7 +94,7 @@ const InnerTopicRow = memo(function InnerTopicRow({ topic, active, onOpen, onPin
   const calls = chatAttention(topic).callsYou
   const unread = calls > 0 ? <TopicCallChip count={calls} at />
     : topic.unread_count > 0 ? <Chip shape="dot" role="img" aria-label={t('chatList.newsNotCallingYou')} title={t('chatList.newsNotCallingYou')} /> : null
-  // 拖进聊天区 = 开成一块:与聊天列表话题子行(TopicSubRow)同一个拖拽源;行里那枚按钮因此放开原生拖拽。
+  // 拖进聊天区 = 开成一块(startChatDrag);行里那枚按钮因此放开原生拖拽。
   return (
     <>
       <SidebarMenuRow

@@ -3,8 +3,8 @@ import { useCallback, useEffect } from 'react';
 import { useConfirmDeleteProject } from '@renderer/features/projects/hooks/use-confirm-delete-project';
 import { getProjectStore, getGitRepositoryStore } from '@renderer/features/projects/stores/project-selectors';
 import { useNavigate, useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
-import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
-import { isScreenView, showBesideOnScreen, showOnScreen } from '@renderer/app/screen-layout-actions';
+import { sidebarStore } from '@renderer/lib/stores/app-state';
+import { isScreenView, showOnScreen } from '@renderer/app/screen-layout-actions';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { readComposerVerb, setComposerVerb } from '@/lib/composerVerbBridge';
 import { composerDrafts, projectDraftKey } from '@renderer/features/sessions/composer-drafts';
@@ -66,17 +66,12 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
   const machineDown = deviceIds.every((id) => id !== null && remoteHostsStore.connectionState(id) !== 'connected');
   const projectName = ref?.name || project.name;
   const projectLabel = projectName ?? 'project';
-  const openProject = (beside = false) => {
+  const openProject = () => {
     // 行尾的数里有话题叫到你:话题不是项目行的子行,这一下就是去读它的入口(owner 11-07「红点消不掉」)。
-    if (callingTopic && groupChatId) return openChatOnScreen(callingTopic.chatId, beside);
+    if (callingTopic && groupChatId) return openChatOnScreen(callingTopic.chatId, false);
     // behavior session-page「键盘导航」: the project row is a station too, so a click moves the cursor
     // onto it — ↓ afterwards continues from here.
     sessionKeyboardNav.syncCursorFromPointer({ kind: 'project', projectId });
-    // ⌘ 点 = 项目块拼到正看着那块右边(gugu-dev#181:项目是一块,和会话行同一个手势)。
-    if (beside && isScreenView(appState.navigation.currentViewId)) {
-      showBesideOnScreen({ kind: 'project', projectId: rowId });
-      return;
-    }
     if (isProjectActive) {
       // gugu-dev#181 正在开新任务时点这一行 = 回到群聊:还没打字,「新任务」一起撤掉;打了字就留着。
       if (groupChatId && readComposerVerb(groupChatId) === 'task' && !composerDrafts.get(projectDraftKey(projectId)).trim()) setComposerVerb(groupChatId, null);
@@ -120,9 +115,9 @@ export const SidebarProjectItem = observer(function SidebarProjectItem({ project
 const OneListGroupProjectRow = observer(function OneListGroupProjectRow({ projectId, chatId, name, unavailable }: { projectId: string; chatId: string; name: string; activeAt: string | null; unavailable?: UnavailableProject }) {
   const { translate } = useSessionMessages();
   const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
-  const open = (beside: boolean) => {
+  const open = () => {
     sessionKeyboardNav.syncCursorFromPointer({ kind: 'project', projectId });
-    openChatOnScreen(chatId, beside);
+    openChatOnScreen(chatId, false);
   };
   return (
     <OneListProjectRow
