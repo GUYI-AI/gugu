@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const peMachines = { x64: 0x8664, arm64: 0xaa64 }
 
-export function assertPeMachine(file, arch) {
+function readWindowsBinary(file, arch) {
   const bytes = readFileSync(file)
   const header = bytes.length >= 0x40 ? bytes.readUInt32LE(0x3c) : 0
   const isPe = header >= 0x40 && bytes.length >= header + 6 && bytes.toString('latin1', header, header + 4) === 'PE\0\0'
@@ -12,16 +13,21 @@ export function assertPeMachine(file, arch) {
   if (machine === undefined || machine !== peMachines[arch]) {
     throw new Error(`Expected a Windows ${arch} binary: ${file} (PE Machine: ${machine === undefined ? 'missing' : '0x' + machine.toString(16)})`)
   }
+  return bytes
 }
 
-export function copyWindowsVcRuntime(destination, arch) {
+export function assertPeMachine(file, arch) {
+  readWindowsBinary(file, arch)
+}
+
+export function copyWindowsVcRuntime(destination, arch, expected) {
   if (process.platform !== 'win32') throw new Error('Bundling the Windows VC runtime requires a Windows build host')
   if (!Object.hasOwn(peMachines, arch)) throw new Error(`Unsupported Windows VC runtime architecture: ${arch}`)
   // Use the redistributable supplied by the same VS 2022 toolchain as the native build.
   // Microsoft allows licensed users to distribute these files unmodified with their program.
   // https://learn.microsoft.com/visualstudio/releases/2022/redistribution#visual-c-runtime-files
   const powershell = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
-  const runtime = execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', String.raw`
+  const info = JSON.parse(execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-Command', String.raw`
     $ErrorActionPreference = 'Stop'
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     $vswhere = Join-Path ([Environment]::GetFolderPath('ProgramFilesX86')) 'Microsoft Visual Studio\Installer\vswhere.exe'
@@ -33,8 +39,18 @@ export function copyWindowsVcRuntime(destination, arch) {
     if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(?:^|,\s*)O=Microsoft Corporation(?:,|$)') {
       throw "Expected a valid Microsoft Authenticode signature for $runtime ($($signature.Status))"
     }
-    $runtime
-  `], { encoding: 'utf8' }).trim()
-  assertPeMachine(runtime, arch)
-  copyFileSync(runtime, join(destination, 'vcruntime140.dll'))
+    $fileVersion = (Get-Item -LiteralPath $runtime).VersionInfo
+    @{
+      path = $runtime
+      version = '{0}.{1}.{2}.{3}' -f $fileVersion.FileMajorPart, $fileVersion.FileMinorPart, $fileVersion.FileBuildPart, $fileVersion.FilePrivatePart
+    } | ConvertTo-Json -Compress
+  `], { encoding: 'utf8' }).trim())
+  const bytes = readWindowsBinary(info.path, arch)
+  if (expected) {
+    const sha256 = createHash('sha256').update(bytes).digest('hex')
+    if (info.version !== expected.version || sha256 !== expected.sha256) {
+      throw new Error(`Unexpected app-local VC runtime at ${info.path}: version ${info.version}, SHA-256 ${sha256}. Expected version ${expected.version}, SHA-256 ${expected.sha256}.`)
+    }
+  }
+  writeFileSync(join(destination, 'vcruntime140.dll'), bytes)
 }
