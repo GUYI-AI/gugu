@@ -147,7 +147,7 @@ export function openMembershipPage(): void {
 
 /**
  * 模型面板底部的两条去路(#7056,对齐 Cursor):三个模型菜单(新建页、Chat UI 会话、终端会话)共用这一份。
- *  - 「配置自定义模型」直达添加模型对话框;
+ *  - 「配置自定义模型」打开设置里的模型列表;
  *  - 「升级解锁更多模型」只给这一档有用不了的模型的人(免费档),悬停列出是哪几个,点了去网页面板。
  * 这一档用不了的模型**不进清单**:列出来点了才说要会员「像是埋雷」(owner 2026-10-10)。
  */
@@ -157,7 +157,7 @@ export function composerModelFooter(
 ): { onManageModels: () => void; modelUpgrade: ComposerModelUpgrade | null; onModelUpgrade: () => void } {
   const locked = platformModels.filter((model) => model.requiresMembership).map((model) => model.displayName);
   return {
-    onManageModels: () => openShellSettings('model', 'add-custom-model'),
+    onManageModels: () => openShellSettings('model'),
     modelUpgrade: locked.length && billingLinksAvailable()
       ? {
           label: translate('composer.platformModelUpgrade'),
