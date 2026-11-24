@@ -50,8 +50,7 @@ export function MessageAlbumBubble({ members, isMine, chatId, senderName, onOpen
     && !(meta.source.kind === 'url' && meta.source.url.startsWith('blob:') && !sentFileCopy(meta.source)))
   const listed = parts.filter(part => !tiled.includes(part))
   const caption = parts.findLast(({ meta }) => meta.caption)?.meta.caption
-  // Words under tiled pictures wrap at the tiles' width, as under one picture (.chat-image-with-caption).
-  return <div className={`flex max-w-full flex-col items-start gap-1${caption && tiled.length ? ' chat-image-with-caption' : ''}`} data-message-album={members.length}>
+  return <div className="flex max-w-full flex-col items-start gap-1" data-message-album={members.length}>
     {tiled.length > 0 && <AlbumTiles parts={tiled} chatId={chatId} awaited={sendStillArriving(members) && !listed.length ? members[0]!.send_group_size! - members.length : 0} />}
     {listed.map(({ member, meta }) => <div key={member.id} className="relative max-w-full" data-album-failed={member.local_send_state === 'failed' || undefined}>
       <MediaAttachmentBubble meta={{ ...meta, caption: undefined }} messageId={member.id} isMine={isMine} chatId={chatId} senderName={senderName}

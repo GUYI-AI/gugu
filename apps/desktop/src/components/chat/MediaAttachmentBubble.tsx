@@ -76,7 +76,7 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
     return <div className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} details={t('attachmentView.fileGone')} onOpen={() => undefined} />{caption}</div>
   }
   // One image stays one InlineImage from sending to committed (its folder name may still change); another attachment is another one.
-  if (renderable) return <div ref={box} className={caption ? `${FIT_BUBBLE} chat-image-with-caption` : FIT_BUBBLE}><InlineImage key={`${messageId}:${meta.sizeBytes}`} meta={meta} messageId={messageId} chatId={chatId} isMine={isMine} />{caption}</div>
+  if (renderable) return <div ref={box} className={FIT_BUBBLE}><InlineImage key={`${messageId}:${meta.sizeBytes}`} meta={meta} messageId={messageId} chatId={chatId} isMine={isMine} />{caption}</div>
   // Pin the group file version; the first version does not need a label.
   const versionLabel = meta.source.kind === 'item' && meta.source.version > 1 ? t('attachmentView.fileVersion', { n: meta.source.version }) : undefined
   return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} versionLabel={versionLabel} onOpen={() => onOpenFile?.(meta)} onDownload={onDownload} downloadLabel={t('chatArea.filePreview.download')} />{caption}</div>
