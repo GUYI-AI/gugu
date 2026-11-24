@@ -450,6 +450,7 @@ const enUSCoreMessages = {
   'marketDetail.disconnectFailed': 'Could not disconnect {name}',
   'extensions.installedMark': 'Installed',
   'extensions.updateTo': 'Update to v{version}',
+  'extensions.updatedTo': 'Updated to v{version}',
   'extensions.useVersion': 'Use v{version} instead',
   // Market Apps update by themselves (owner 10-19); an older version picked stays (VS Code's pinned).
   'extensions.autoUpdate': 'Auto update',
@@ -1780,6 +1781,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'marketDetail.disconnectFailed': '未能断开 {name}',
   'extensions.installedMark': '已安装',
   'extensions.updateTo': '更新到 v{version}',
+  'extensions.updatedTo': '已更新到 v{version}',
   'extensions.useVersion': '改用 v{version}',
   'extensions.autoUpdate': '自动更新',
   'extensions.rowGone': '市场中已没有此应用，不再提供更新',

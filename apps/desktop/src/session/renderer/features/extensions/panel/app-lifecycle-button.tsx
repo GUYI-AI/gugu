@@ -25,6 +25,7 @@ export function AppLifecycleButton({
   percent,
   primary = false,
   disabled = false,
+  retry = false,
   translate,
   onClick,
   testId,
@@ -36,22 +37,14 @@ export function AppLifecycleButton({
   /** 这一屏唯一的主按钮(产品页头上那一颗):实底;更新写全「更新到 vX」。行上的是描边小号。 */
   primary?: boolean;
   disabled?: boolean;
+  retry?: boolean;
   translate: SessionTranslate;
   onClick: () => void;
   testId?: string;
 }) {
-  if (pending && pending !== 'uninstalling') {
-    // 下载那一段有百分比就画一圈进度;读包、解包、装那几段只说在做什么。
-    const ring = pending === 'downloading' && percent !== undefined;
-    return (
-      <span className={cn('mk-busy', primary && 'is-primary')} role="status" data-testid={testId}>
-        {ring ? <i className="mk-ring" style={{ '--p': percent } as React.CSSProperties} aria-hidden /> : null}
-        {pendingLabel(pending, translate, percent)}
-      </span>
-    );
-  }
-  if (!state) return null;
-  if (state.kind === 'word') {
+  const busy = pending && pending !== 'uninstalling';
+  if (!state && !busy) return null;
+  if (state?.kind === 'word' && !busy) {
     return (
       <span className="mk-word" title={state.title} data-testid={testId}>
         {state.text}
@@ -59,13 +52,14 @@ export function AppLifecycleButton({
     );
   }
   const label =
-    state.kind === 'get'
+    busy ? pendingLabel(pending, translate, percent) : retry ? translate('extensions.retry') :
+    state?.kind === 'get'
       ? translate('extensions.installAction')
-      : state.kind === 'update'
+      : state?.kind === 'update'
         ? primary
           ? translate('extensions.updateTo', { version: state.version })
           : translate('extensions.updateAction')
-        : state.kind === 'enable'
+        : state?.kind === 'enable'
           ? translate('extensions.enable')
           : translate('extensions.open');
   return (
@@ -78,14 +72,16 @@ export function AppLifecycleButton({
       className={primary ? 'mk-primary-action' : 'min-w-14'}
       disabled={disabled || pending === 'uninstalling'}
       data-testid={testId}
-      data-lifecycle={state.kind}
+      aria-disabled={busy || undefined}
+      data-lifecycle={state?.kind}
       onClick={(event) => {
         // 行本身点了是开产品页;按钮是它自己的事。
         event.stopPropagation();
-        onClick();
+        if (!busy) onClick();
       }}
     >
-      {label}
+      {pending === 'downloading' && percent !== undefined && <i className="mk-ring" style={{ '--p': percent } as React.CSSProperties} aria-hidden />}
+      <span aria-live="polite">{label}</span>
     </Button>
   );
 }
