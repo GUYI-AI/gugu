@@ -170,7 +170,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   // Where on the Apps page (apps-location): the tab, the open App page; changes go through apps-location.
   const location = currentAppsLocation();
   const tab = location.tab;
-  const installedPlace = location.installed ?? (location.detail ? previousAppsLocation()?.installed : undefined);
+  const installedPlace = location.installed ?? (location.detail?.page === 'manage' ? { deviceId: location.deviceId } : undefined);
   const lastInstalled = useRef(installedPlace);
   const setTab = (next: AppsTab) => {
     if (next === tab) return;
@@ -256,7 +256,8 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   // An App page is a step of the back stack (apps-location): leaving the list records how far down it was.
   const openPage = (next: NonNullable<AppsLocation['detail']>) => {
     if (!location.detail) moveAppsLocation((here) => ({ ...here, scroll: scroller()?.scrollTop ?? 0 }));
-    openAppsLocation({ ...currentAppsLocation(), detail: next });
+    const here = currentAppsLocation();
+    openAppsLocation({ ...here, installed: next.page === 'market' ? undefined : here.installed, detail: next });
   };
   const replacePage = (next: NonNullable<AppsLocation['detail']>) => moveAppsLocation((here) => ({ ...here, detail: next }));
   const clearPage = () => moveAppsLocation((here) => ({ ...here, detail: undefined }));
@@ -1153,7 +1154,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           completedUpdate={result?.version === managed.version && !result.error ? result : undefined}
           upToDate={inMarket && managed.version === subjectOf(managed.id)?.manifest.version}
           onOpen={lifecycle?.kind === 'update' && onRail(managed) ? () => openApp(managed.id) : undefined}
-          focusHeading={!!previousAppsLocation()?.installed}
+          focusHeading={!!location.installed || !!previousAppsLocation()?.installed}
           pending={operation(managed.id)?.phase}
           pendingPercent={operation(managed.id)?.percent}
           locale={locale}
@@ -1161,7 +1162,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           machine={remote?.deviceLabel}
           api={api}
           readOnly={!!notice?.readOnly}
-          backLabel={detail.fromApp ? localizedManifestText(managed, locale).name : translate(previousAppsLocation()?.installed ? 'extensions.tabInstalled' : 'extensions.title')}
+          backLabel={detail.fromApp ? localizedManifestText(managed, locale).name : translate((previousAppsLocation()?.installed ?? location.installed) ? 'extensions.tabInstalled' : 'extensions.title')}
           notice={noticeOf(managed)}
           origin={origin}
           variants={apps.variants[managed.id]}
@@ -1184,7 +1185,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
               openApp(managed.id);
               return;
             }
-            closePage({ ...location, tab: 'market', detail: undefined, installed: { deviceId: location.deviceId } });
+            closePage({ ...location, tab: 'market', detail: undefined, installed: installedPlace });
           }}
           onLifecycle={() => runLifecycle(managed.id, lifecycle)}
           onInstallVersion={inMarket ? (ref) => void installFromShelf(ref, managed.id) : undefined}

@@ -126,8 +126,11 @@ export const appsView = {
   MainPanel: AppsMainPanel,
   modal: true,
   onModalEscape: () => {
-    if (!currentAppsLocation().detail || !previousAppsLocation()) return false;
-    navigateBack(true);
+    const location = currentAppsLocation();
+    if (!location.detail) return false;
+    if (previousAppsLocation()) navigateBack(true);
+    else if (location.installed) moveAppsLocation((here) => ({ ...here, detail: undefined }));
+    else return false;
     return true;
   },
 } satisfies ViewDefinition<AppsViewParams>;

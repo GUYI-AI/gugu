@@ -37,9 +37,10 @@ export async function openAppDetailLink(target: AppDetailLink, ownerId: string, 
       ...(overPage ? { agentDetailFrom: 'apps' } : {}),
     });
   } else {
+    const fromInventory = appState.navigation.currentViewId === 'apps' && !here.detail && here.installed?.deviceId === device;
     openAppsLocation({
       ...here,
-      installed: undefined,
+      installed: fromInventory ? here.installed : undefined,
       deviceId: device,
       detail: { extensionId: target.extensionId, ...(target.variant ? { variant: target.variant } : {}), ...(target.fromApp ? { fromApp: true } : {}) },
     });
