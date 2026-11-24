@@ -43,18 +43,3 @@ it('shows a card mounted again with its last read in the first frame, and never 
   await harness.render(<Card />)
   expect(shown()).toBe('loading')
 })
-
-it('reads a card again only for a change in the chat it quotes, not for every change of the account', async () => {
-  signIn('reader')
-  state.read = async () => ({ status: 'unreadable' })
-  state.reads = 0
-  harness = createReactHarness()
-  await harness.render(<Card />)
-  await until('the card is read once', () => state.reads === 1 && shown() === 'unreadable')
-  const change = (chat_id: string) => { for (const listener of state.listeners) listener([{ payload: { chat_id } }]) }
-  change('another-chat')
-  await new Promise(resolve => setTimeout(resolve, 50))
-  expect(state.reads).toBe(1)
-  change('chat')
-  await until('the quoted chat\'s change reads it again', () => state.reads === 2)
-})

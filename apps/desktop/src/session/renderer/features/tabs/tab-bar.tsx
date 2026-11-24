@@ -75,19 +75,25 @@ export const TabBar = observer(function TabBar({
   // Pair identity can point at two hidden main-pane tabs while the old side is still displayed.
   const stripOrder = start && end ? combined.filter((id) => id !== end).flatMap((id) => id === start ? [id, end] : [id]) : combined;
 
-  // 放不下了没有:滚动区尺寸变了、页签数变了才重算(ResizeObserver,❌ 定时量)。
+  // 放不下了没有:滚动区尺寸变了、页签数变了才重算(ResizeObserver,❌ 定时量)。工具那条变窄时(它那页落定)
+  // 选中的页签留在视野里;挂上时每条都先把它带进视野。
   const [overflowing, setOverflowing] = useState(false);
   const tabCount = entries.length;
+  const motion = useRef<TabStripMotion>(null);
   useEffect(() => {
     const scroller = scrollContainerRef.current;
     if (!scroller) return;
-    const measure = () => setOverflowing(isStripOverflowing(scroller));
+    const measure = () => {
+      setOverflowing(isStripOverflowing(scroller));
+      if (toolsOnly) motion.current?.revealActiveTab();
+    };
+    motion.current?.revealActiveTab();
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
     observer.observe(scroller);
     return () => observer.disconnect();
-  }, [tabCount]);
+  }, [tabCount, toolsOnly]);
 
   // 竖着拨滚轮也横着走(VS Code 的贴条);原生 wheel 监听才能 preventDefault(React 的是 passive)。
   useEffect(() => {
@@ -131,7 +137,7 @@ export const TabBar = observer(function TabBar({
       leadingReservePx={leadingReservePx}
       leadingSlot={leadingSlot}
     >
-      <TabStripMotion scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={selectedTabId ?? pane.activeTabId} keepActiveOnResize={toolsOnly}>
+      <TabStripMotion ref={motion} scroller={scrollContainerRef} order={stripOrder.join('\0')} activeTabId={selectedTabId ?? pane.activeTabId}>
       {leadingTabsSlot}
       {stripOrder.map((id) => {
         const entry = tabsById.get(id);
@@ -216,7 +222,13 @@ export function TabStripShell({
   leadingReservePx = 0,
   leadingSlot,
   testId,
+  restWidth,
 }: {
+  /**
+   * 这条页签条在轨道上跟着边走时,它落定后的宽度:窄不窄按它判,❌ 按移动中每一帧画出来的宽度判(否则半路越过门槛,
+   * 右端那组控制在动画中途变样)。不在轨道上时不给,照常量整条。
+   */
+  restWidth?: number;
   /** 左端还要让出多宽:单独成窗的那条页签条就是标题栏,mac 的红绿灯压在它左端。 */
   leadingReservePx?: number;
   /**
@@ -264,7 +276,7 @@ export function TabStripShell({
       // 页签、按钮这些可交互的东西由 index.css 的 @@@4259 规则默认退订,照常能点。
       className="session-tab-bar relative flex shrink-0 items-stretch justify-between bg-tab-strip [-webkit-app-region:drag]"
       data-testid={testId}
-      data-strip-narrow={narrow ? '' : undefined}
+      data-strip-narrow={(restWidth === undefined ? narrow : restWidth < TAB_STRIP_NARROW_PX) ? '' : undefined}
       style={{
         height: `var(--tab-strip-height, ${WINDOW_CONTROL_BAR_HEIGHT_PX}px)`,
         paddingInlineStart: `${leading}px`,

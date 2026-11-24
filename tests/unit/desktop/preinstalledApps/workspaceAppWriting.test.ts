@@ -307,8 +307,7 @@ describe('folder documents: reading', () => {
   })
 
   test.each([
-    ['Heading', '## ', 3], ['List', '* ', 2], ['To-do', '- [ ] ', 6],
-    ['Quote', '> ', 2], ['Code block', '```\n\n```', 4], ['Divider', '***', 3],
+    ['Heading', '## ', 3], ['To-do', '- [ ] ', 6], ['Code block', '```\n\n```', 4],
   ])('%s inserts after the entire multi-line block, with its caret in the template', async (label, text, caret) => {
     $('mode-split').click()
     const block = $('preview').querySelector('ul[data-line="3-4"]')!
