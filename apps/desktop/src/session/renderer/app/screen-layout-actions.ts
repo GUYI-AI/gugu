@@ -14,7 +14,7 @@ import { auxWindows, type TabWindowHome } from './aux-windows';
 import { readChatSummaries } from '@/lib/chatSummariesBridge';
 import { subscribeChatRemovals } from '@/lib/chatRemovalBridge';
 import { isScreenView } from './screen-views';
-import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
+import { contentKey, MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { roomListsSession, roomOfEntry } from '@renderer/features/sidebar/inner-sidebar-scope';
@@ -259,7 +259,7 @@ export function focusScreenBlock(blockId: string): void {
   followFocus();
 }
 
-/** 从这屏拿走一块(⋮⋮ 右键「关闭这一块」、页签条右端那枚、一块最后一格关掉)。 */
+/** 从这屏拿走一块(⋮⋮ 拖回内层侧栏或松在不收的地方、侧栏一行右键「取消并排」、一块最后一格关掉)。 */
 export function closeScreenBlock(blockId: string): void {
   const participantOf = groupParticipantPanes.ownerOf(blockId);
   if (participantOf) {
@@ -270,17 +270,11 @@ export function closeScreenBlock(blockId: string): void {
   if (screenLayout.close(blockId)) followFocus();
 }
 
-/** 左边框里一行右键「从这一组拿出来」:它在这屏 = 那块拿走;在收起来的组里 = 从那组拿出来。它回到列表原位。 */
-export function takeSessionOutOfGroup(sessionId: string): void {
-  const blockId = screenLayout.blockOfSession(sessionId);
+/** 取消并排(侧栏一行右键):`key` 那样东西(contentKey)是并排着的一块,就把那块从这屏拿走。 */
+export function leaveSplit(key: string): void {
+  if (!screenLayout.splitKeys.includes(key)) return;
+  const blockId = screenLayout.order.find((id) => contentKey(screenLayout.blocks.get(id)!) === key);
   if (blockId) closeScreenBlock(blockId);
-  else screenLayout.release({ kind: 'session', projectId: '', sessionId });
-}
-
-/** 左边框里一行右键「拆开这一组」:各回各位;这组正在屏上 = 只留正看着那块。 */
-export function dissolveScreenGroup(sessionId: string): void {
-  screenLayout.dissolve(sessionId);
-  followFocus();
 }
 
 function fullToast(): void {
@@ -343,7 +337,7 @@ export function showBesideOnScreen(content: ScreenBlockContent): void {
   followFocus();
 }
 
-/** 贴着 `targetId` 那块的一条边分出一块放它(拖到边上松手、页签右键「单独一块」)。 */
+/** 贴着 `targetId` 那块的一条边分出一块放它(内层侧栏的一行、一块的 ⋮⋮ 拖到边上松手)。 */
 export function placeOnScreen(content: ScreenBlockContent, targetId: string, edge: PaneEdge): boolean {
   if (!screenLayout.canPlaceAt(content, targetId)) {
     if (screenLayout.isFull && !blockOf(content)) fullToast();

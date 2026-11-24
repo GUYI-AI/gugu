@@ -1,4 +1,4 @@
-import type { ToolImage, ToolNode, TranscriptItem, TranscriptTurn } from '@gugu/session-core/acp/client'
+import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { RecordCursor, Settlement } from '@gugu/session-core/session-record/contract'
 import type { AgentWatchTimeline } from './agent-watch-store'
 import { emptyAgentWatchTimeline } from './agent-watch-store'
@@ -128,12 +128,9 @@ export async function hydrateCachedTimeline(key: TimelineCacheKey): Promise<Agen
 /**
  * 存。内存同步落，库异步落 —— 调用方在流式更新里按 1.5 秒防抖调它。
  *
- * 单条超上限时先从最旧的轮起**一张张**拿掉手机取回来的工具图(`images`;`imageRefs` 留着,翻到那儿再去机器上取),
- * 拿够就停 —— ❌ 一轮的图整轮拿:最新那一轮两次 4×512K 只要拿掉 2 张就装得下,整轮拿冷启动就要重取 8 张(复核 10-16)。
- * 还装不下再**从头砍**（丢最早的轮），并如实把 `hasOlder` 置真：
+ * 单条超上限时**从头砍**（丢最早的轮），并如实把 `hasOlder` 置真：
  * ❌ 不把裁剪说成「这就是全部」，那会让界面收起"加载更早"的入口，用户再也翻不上去。
- * 图先走:它能按张再取,一轮字丢了要整段重翻;不先拿图,几张图就能把几十轮字挤出去。
- * 各轮大小只量一次(拿掉图的那一轮重量它自己):每丢一轮就整份 `JSON.stringify` 一次,超限时一次写要 40 多 ms。
+ * 各轮大小只量一次:每丢一轮就整份 `JSON.stringify` 一次,超限时一次写要 40 多 ms。
  */
 export function writeCachedTimeline(key: TimelineCacheKey, timeline: AgentWatchTimeline): void {
   if (!timeline.cursor || timeline.turns.length === 0) return
@@ -142,12 +139,6 @@ export function writeCachedTimeline(key: TimelineCacheKey, timeline: AgentWatchT
   const sizes = turns.map(sizeOf)
   // 从第 start 轮起整份的 JSON 长度 = 两个括号 + 各轮 + 轮间逗号。
   const bytesFrom = (start: number) => sizes.slice(start).reduce((sum, size) => sum + size + 1, 1)
-  for (let i = 0; i < turns.length && bytesFrom(0) > MAX_ENTRY_BYTES; i++) {
-    const bare = withoutFetchedImages(turns[i], bytesFrom(0) - MAX_ENTRY_BYTES)
-    if (bare === turns[i]) continue
-    sizes[i] = sizeOf(bare)
-    turns[i] = bare
-  }
   let start = 0
   while (turns.length - start > 1 && bytesFrom(start) > MAX_ENTRY_BYTES) start++
   const bytes = bytesFrom(start)
@@ -164,38 +155,6 @@ export function writeCachedTimeline(key: TimelineCacheKey, timeline: AgentWatchT
   }
   memory.set(id, entry)
   void persist(entry)
-}
-
-/**
- * 一轮里手机取回来写进条目的图,按条目、按张从前往后拿掉,拿够 `excess` 字就停(只拿有 `imageRefs` 的 —— 没有 refs
- * 的图拿掉就再也取不回来)。拿掉的那一格空着(存出去是 null),一条的图都拿光了就去掉 `images`。没拿就原样返回。
- */
-function withoutFetchedImages(turn: TranscriptTurn, excess: number): TranscriptTurn {
-  let freed = 0
-  const strip = (item: TranscriptItem): TranscriptItem => {
-    if (freed >= excess || item.kind === 'message' || item.kind === 'thinking') return item
-    let out = item as ToolNode
-    if (out.kind !== 'tool-group' && out.images && out.imageRefs) {
-      const images: (ToolImage | undefined)[] = [...out.images]
-      let taken = false
-      for (let i = 0; i < images.length && freed < excess; i++) {
-        const image = images[i]
-        if (!image) continue
-        // 这一格存出去成了 null:省下的就是它自己那一段。
-        freed += JSON.stringify(image).length - 'null'.length
-        images[i] = undefined
-        taken = true
-      }
-      if (taken) {
-        const { images: _images, ...rest } = out
-        out = (images.some(Boolean) ? { ...rest, images } : rest) as ToolNode
-      }
-    }
-    const children = out.children?.map((child) => strip(child) as ToolNode)
-    return children && children.some((child, i) => child !== out.children?.[i]) ? ({ ...out, children } as ToolNode) : out
-  }
-  const items = turn.items.map(strip)
-  return items.some((item, i) => item !== turn.items[i]) ? { ...turn, items } : turn
 }
 
 function sizeOf(value: TranscriptTurn): number {

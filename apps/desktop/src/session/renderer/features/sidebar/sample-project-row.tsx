@@ -1,10 +1,9 @@
 import { observer } from 'mobx-react-lite';
-import { isScreenView, showBesideOnScreen, showOnScreen } from '@renderer/app/screen-layout-actions';
+import { showOnScreen } from '@renderer/app/screen-layout-actions';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
 import { SampleProjectRowMenu } from '@renderer/features/sample-project/sample-project-row-menu';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { sampleProjectContent } from '@renderer/features/sample-project/use-sample-project';
-import { appState } from '@renderer/lib/stores/app-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sampleProjectLastLine } from '@/lib/sidebarOneList';
 import { OneListProjectRow } from './project-row-parts';
@@ -20,10 +19,9 @@ export const SampleProjectSidebar = observer(function SampleProjectSidebar() {
   ) : null;
 });
 
-/** Open the sample's block; ⌘ 点 = 拼到正看着那块右边,和项目行同一个手势。 */
-function openSampleProject(beside: boolean): void {
-  if (beside && isScreenView(appState.navigation.currentViewId)) showBesideOnScreen({ kind: 'sample-project' });
-  else showOnScreen({ kind: 'sample-project' });
+/** Open the sample's block. */
+function openSampleProject(): void {
+  showOnScreen({ kind: 'sample-project' });
 }
 
 /**

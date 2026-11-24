@@ -1,4 +1,3 @@
-import type { ToolImage } from '@gugu/session-core/acp/client'
 import type { LeanPage, RecordCursor, SessionpageSessionRespondRequest, SessionpageSessionRespondResult, TimelineAfterResult, TimelineOlderResult, TimelineSnapshot } from '@gugu/session-core/session-record/contract'
 import type { SessionpageTimelineClient } from '../../components/session-watch/use-timeline-session'
 import { invokePhoneHost } from './phoneHostRpc'
@@ -51,7 +50,6 @@ export function createPhoneTimelineClient(invoke = invokePhoneHost): Sessionpage
     fetchSnapshot: (deviceId, sessionId, limit, lean) => invoke<TimelineSnapshot>(deviceId, 'sessionTimeline.sessionSnapshot', [{ conversationId: sessionId, ...(limit === undefined ? {} : { limit }), trim: true, ...(lean ? { lean } : {}) }]),
     fetchAfter: (deviceId, sessionId, cursor, lean) => invoke<TimelineAfterResult>(deviceId, 'sessionTimeline.sessionAfter', [{ conversationId: sessionId, cursor, trim: true, terminalPatch: true, ...(lean ? { lean } : {}) }]),
     fetchOlder: (deviceId, sessionId, beforeTurnId, limit, lean) => invoke<TimelineOlderResult>(deviceId, 'sessionTimeline.sessionOlder', [{ conversationId: sessionId, beforeTurnId, ...(limit === undefined ? {} : { limit }), trim: true, ...(lean ? { lean } : {}) }]),
-    fetchToolImage: (deviceId, sessionId, itemId, index) => invoke<ToolImage>(deviceId, 'sessionTimeline.sessionToolImage', [{ conversationId: sessionId, itemId, index }]),
     subscribeSession: async (deviceId, sessionId, subscriptionId, cursor, lean) => {
       stop(subscriptionId)
       const poll: Poll = { deviceId, sessionId, cursor, lean, running: false, failures: 0 }

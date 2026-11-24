@@ -245,7 +245,7 @@ describe('首屏总量预算', () => {
 
 /**
  * owner 10-15「手机上看的话每张图传过去岂不是很 costly」:图不随记录下发。发给手机的那一份里每张图只留
- * `{ mimeType, chars }`(`imageRefs`),手机滚到它、那一轮展开了再按 (会话, 条目, 第几张) 去取。
+ * `{ mimeType, chars }`(`imageRefs`)。
  */
 describe('工具交回来的图只带类型和字数', () => {
   const snapshotOf = (turns: TranscriptTurn[]): TimelineSnapshot =>

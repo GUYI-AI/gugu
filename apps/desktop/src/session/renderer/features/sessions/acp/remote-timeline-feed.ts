@@ -35,7 +35,6 @@ function machineTimeline(machine: string) {
     stream,
     older: (conversationId: string, beforeTurnId: string, limit?: number, lean?: LeanPage) =>
       value(host.sessionOlder({ conversationId, beforeTurnId, limit, trim: true, lean })),
-    toolImage: (conversationId: string, itemId: string, index: number) => value(host.sessionToolImage({ conversationId, itemId, index })),
   };
 }
 
@@ -133,10 +132,6 @@ export class RemoteTimelineFeed implements TimelineFeed {
     const held = new Set(this.state.turns.map((turn) => turn.id));
     this.reader.setTimeline((current) => (current.turns[0]?.id === first.id ? prependOlder(current, page) : current));
     return page.turns.filter((turn) => !held.has(turn.id));
-  }
-
-  toolImage(itemId: string, index: number) {
-    return this.machine.toolImage(this.key.sessionId, itemId, index);
   }
 
   /** Stops reading the stream; the stream keeps its copy for the next reader of this session. */

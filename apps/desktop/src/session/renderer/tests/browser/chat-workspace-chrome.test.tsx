@@ -41,9 +41,9 @@ let layout: PaneLayoutStore | undefined;
 afterEach(() => { harness?.cleanup(); layout?.dispose(); harness = undefined; layout = undefined; });
 
 function WorkspaceDrag({ layout, children }: { layout: PaneLayoutStore; children: ReactNode }) {
-  const drag = useTabDrag({ layout, blockId: null, contentOf: () => null, openWindow: () => null });
+  const drag = useTabDrag({ layout, openWindow: () => null });
   return <PaneLayoutProvider paneLayout={layout}>
-    <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragMove={drag.onDragMove} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
+    <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
       {children}
       <TabDragOverlay />
     </DndContext>

@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from '../../acp/reducer/normalized-event';
-import type { RecordEntry, RecordImageRef, SessionRecordResume, SessionRecordSource, SessionRecordSourceEvents } from '../contract';
+import type { RecordEntry, SessionRecordResume, SessionRecordSource, SessionRecordSourceEvents } from '../contract';
 import { deliverInSlices, readSlices, type SessionRecordSourceOptions } from './shared';
 
 /** Follow native child records through the same lifecycle and stream projection as Codex. */
@@ -120,8 +120,6 @@ export function withSubagentSources(
       }
     },
     async catchUp() { if (replacement) return replacement.catchUp?.(); await root.catchUp?.(); await Promise.all(starting.values()); await Promise.all([...children.values()].map((child) => child.catchUp?.())); },
-    // The position names its own file (a child's pictures are in the child's record), so any reader of this harness reads it.
-    ...(root.readImage ? { readImage: (ref: RecordImageRef) => root.readImage!(ref) } : {}),
     ...(root.getLineage ? { getLineage: () => root.getLineage!() } : {}),
     // resume-tail: the root record decides where a fill from the tail starts; children are read whole as they appear.
     // A read from a turn inside the record also reads, whole, the children its decoder state already knows, as a read

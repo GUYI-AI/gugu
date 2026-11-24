@@ -18,8 +18,8 @@ import { withMountedSession } from './with-mounted-session';
 /**
  * #2548 a top-level task outside every project whose session has no 咕咕 identity (sidebarStore.tasksWithoutAgent): no
  * agent conversation stands for it, so it is drawn as the conversation row it would be (OneListRow) wearing the session's
- * own avatar and status, with its title and when it was last used. A click opens the task as its sidebar row always did;
- * ⌘ click beside. Right click = the session menu (session/shared/session-menu.ts, entry 'one-list-task'): the same
+ * own avatar and status, with its title and when it was last used. A click opens the task as its sidebar row always did.
+ * Right click = the session menu (session/shared/session-menu.ts, entry 'one-list-task'): the same
  * rename / archive / copy id, through the same flows, as the task's sidebar row.
  */
 export const OneListTaskRow = observer(function OneListTaskRow({ projectId, sessionId }: { projectId: string; sessionId: string }) {
@@ -46,7 +46,7 @@ export const OneListTaskRow = observer(function OneListTaskRow({ projectId, sess
         name={name}
         preview=""
         selected={open}
-        onOpen={(beside) => openSidebarSession(projectId, sessionId, beside)}
+        onOpen={() => openSidebarSession(projectId, sessionId)}
         data-task-row={sessionId}
       />
       {menu.menuPos ? (

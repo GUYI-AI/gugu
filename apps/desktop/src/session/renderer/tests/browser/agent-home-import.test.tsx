@@ -14,15 +14,17 @@ import { UI_EVENTS } from '@/lib/uiEvents'
 import '@/i18n/registerMainCatalog'
 import '@/styles/tokens.css'
 
-const calls = vi.hoisted(() => ({ scanHomes: vi.fn(), importHome: vi.fn(), diffHome: vi.fn(), reimportHome: vi.fn(), notice: vi.fn(), dismiss: vi.fn(), machines: [] as (string | null)[], links: new Map<string, () => void>(), linkState: new Map<string, string>(), each: null as null | ((machine: string) => () => void) }))
+const calls = vi.hoisted(() => ({ scanHomes: vi.fn(), importHome: vi.fn(), diffHome: vi.fn(), reimportHome: vi.fn(), notice: vi.fn(), dismiss: vi.fn(), machines: [] as (string | null)[], links: new Map<string, () => void>(), linkState: new Map<string, string>(), each: null as null | ((machine: string) => () => void), remoteIcons: [] as string[] }))
 vi.mock('@/lib/notices', async (load) => ({ ...await load<typeof import('@/lib/notices')>(), notify: calls.notice, dismissNotice: calls.dismiss }))
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
   getAgentConfigRuntimeClient: async (machine: string | null = null) => { calls.machines.push(machine); return ({
     scanAgentHomes: calls.scanHomes, importAgentHome: calls.importHome, diffAgentHome: calls.diffHome, reimportAgentHome: calls.reimportHome,
   }); },
 }))
+// The provider ids come from this computer's icon table; another machine's (every icon, read over its link) is not asked.
 vi.mock('@renderer/lib/ipc', async original => ({ ...await original<typeof import('@renderer/lib/ipc')>(),
-  rpcOn: () => ({ agents: { listIcons: async () => ({ codex: {}, qwen: {} }) } }),
+  rpc: { agents: { listIcons: async () => ({ codex: {}, qwen: {} }) } },
+  rpcOn: (machine: string | null) => ({ agents: { listIcons: async () => { calls.remoteIcons.push(String(machine)); return { codex: {}, qwen: {} } } } }),
 }))
 vi.mock('@renderer/lib/machine-clients', async original => ({ ...await original<typeof import('@renderer/lib/machine-clients')>(),
   machineLabel: (machine: string) => machine,
@@ -36,8 +38,8 @@ const home: AgentHomeScan = {
   groups: [], issues: [], mcpSecrets: [], projectMcpCount: 0,
 }
 let harness: ReturnType<typeof createReactHarness>
-beforeEach(() => { calls.machines = []; calls.links.clear(); calls.linkState.clear(); settingsDeviceStore.select('local') })
-afterEach(() => { harness?.cleanup(); settingsDeviceStore.select('local'); vi.clearAllMocks() })
+beforeEach(() => { calls.remoteIcons = []; calls.machines = []; calls.links.clear(); calls.linkState.clear(); settingsDeviceStore.select('local') })
+afterEach(() => { expect(calls.remoteIcons).toEqual([]); harness?.cleanup(); settingsDeviceStore.select('local'); vi.clearAllMocks() })
 
 it('lets a person choose Qwen configuration groups and keeps hooks unchecked initially', async () => {
   const qwen = { ...home, providerId: 'qwen', name: 'Qwen Code', groups: [
