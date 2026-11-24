@@ -657,7 +657,7 @@ describe('ChatMessageComposer', () => {
     expect(document.body.textContent).toContain('新入群 Agent')
   })
   it.each([
-    ['offline', '当前不在线，可能无法及时回复'],
+    ['offline', '当前离线，可能无法及时回复'],
     ['archived', '对方已归档'],
   ] as const)('#1987 keeps the %s picker warning without a selected-Agent banner', async (status, warning) => {
     const offlineAgent = rosterMember('offline-agent', '设备离线 Agent', 'agent')

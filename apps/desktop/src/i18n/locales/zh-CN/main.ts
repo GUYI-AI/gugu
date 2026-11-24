@@ -1081,7 +1081,7 @@ export default {
     "agents": "Agent（{{count}}）",
     "groupChat": "群聊",
     "assistant": "个人助理",
-    "groupOffline": "项目所在的电脑不在线",
+    "groupOffline": "项目所在的电脑离线",
     "groupUnavailable": "无法打开项目群",
     "newProject": {
       "title": "新项目",
