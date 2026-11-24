@@ -49,10 +49,10 @@ describe('which topics the inner sidebar shows', () => {
     expect(ids(topicsOfChat(topics, 'group'))).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11', 't12', 'news', 'calls-me'])
   })
 
-  it('level one: at most 12, unread ones first, then the latest by activity (yangchichi msg:616413ff, msg:b3d2bd56)', () => {
+  it('level one: the first 12 of the chat-list order; unread does not lift an old topic (yangchichi msg:616413ff, msg:b3d2bd56)', () => {
     const level = innerSidebarTopicRows(topicsOfChat(topics, 'group'), { all: false })
     expect(INNER_SIDEBAR_TOPIC_LIMIT).toBe(12)
-    expect(ids(level.shown)).toEqual(['news', 'calls-me', 't0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9'])
+    expect(ids(level.shown)).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11'])
     expect(level).toMatchObject({ hidden: 3, calling: 1 })
   })
 
@@ -69,10 +69,12 @@ describe('which topics the inner sidebar shows', () => {
     expect(all.hidden).toBe(0)
   })
 
-  it('reading an unread topic does not move it: unread only wears the badge', () => {
-    const before = innerSidebarTopicRows(topicsOfChat(topics, 'group'), { all: true })
-    const read = topics.map((row) => (row.id === 'news' || row.id === 'calls-me' ? { ...row, unread_count: 0, unread_locator: null } : row))
-    const after = innerSidebarTopicRows(topicsOfChat(read, 'group'), { all: true })
+  it.each([false, true])('reading an unread topic does not move it: unread only wears the badge (all: %s)', (all) => {
+    const recent = topics.map((row) => (row.id === 'news' ? { ...row, last_message_at: at(4.5) } : row))
+    const before = innerSidebarTopicRows(topicsOfChat(recent, 'group'), { all })
+    const read = recent.map((row) => (row.id === 'news' || row.id === 'calls-me' ? { ...row, unread_count: 0, unread_locator: null } : row))
+    const after = innerSidebarTopicRows(topicsOfChat(read, 'group'), { all })
+    expect(ids(before.shown)).toContain('news')
     expect(ids(after.shown)).toEqual(ids(before.shown))
     expect(ids(before.shown), 'the chat list order: activity only').toEqual(ids([...before.shown].sort(compareChatsByActivityDesc)))
   })
@@ -80,7 +82,7 @@ describe('which topics the inner sidebar shows', () => {
   it('a pinned topic goes above every unpinned one, however old, and back to its place when unpinned', () => {
     const pinned = topics.map((row) => (row.id === 't6' || row.id === 'calls-me' ? { ...row, is_pinned: true } : row))
     expect(ids(topicsOfChat(pinned, 'group'))).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 't3', 't4', 't5', 't7', 't8', 't9', 't10', 't11', 't12', 'news'])
-    expect(ids(innerSidebarTopicRows(topicsOfChat(pinned, 'group'), { all: false }).shown)).toEqual(['calls-me', 't6', 'news', 't0', 't1', 't2', 't3', 't4', 't5', 't7', 't8', 't9'])
+    expect(ids(innerSidebarTopicRows(topicsOfChat(pinned, 'group'), { all: false }).shown)).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 't3', 't4', 't5', 't7', 't8', 't9', 't10'])
     const unpinned = pinned.map((row) => ({ ...row, is_pinned: false }))
     expect(ids(topicsOfChat(unpinned, 'group'))).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11', 't12', 'news', 'calls-me'])
   })
@@ -108,10 +110,12 @@ describe('the inner sidebar topics slot', () => {
   const rows = () => Array.from(document.querySelectorAll<HTMLElement>('[data-inner-sidebar-topics] [data-topic-row]')).map((row) => row.dataset.topicRow)
 
   it('draws level one into the slot (All opens the topics page in the main area, the slot stays) and opens a topic the existing way', async () => {
-    await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...topics] }, contacts: {} })
+    // The two unread topics had activity just after t0, so level one shows them (in activity order) and their marks.
+    const recent = topics.map((row) => (row.id === 'news' ? { ...row, last_message_at: at(0.5) } : row.id === 'calls-me' ? { ...row, last_message_at: at(0.6) } : row))
+    await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...recent] }, contacts: {} })
     const slot = document.body.appendChild(document.createElement('div'))
     await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
-    expect(rows()).toEqual(['news', 'calls-me', 't0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9'])
+    expect(rows()).toEqual(['t0', 'news', 'calls-me', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9'])
     // #2548 a topic that calls me (3 unread, 1 addressed) says 「@1」 in red; one with news that does not call me (2 unread,
     // 0 addressed) only wears the grey dot, without a number; one with nothing new wears nothing.
     const mark = (id: string) => {
