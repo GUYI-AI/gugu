@@ -1196,19 +1196,32 @@ export function ChatRoot(props: ChatRootProps) {
   // Each anchor follows its own message: when that message changes (its attachments arrive, its text is edited) its summary
   // moves with the bubble in the same frame, instead of staying where the bubble was and covering what took its place.
   // A streaming patch rebuilds `units()` but not these messages, so it re-lays out no summary.
-  const pinAnchorGeometry = mapArray(pinAnchors, index => {
+  // @@@pin-geometry-of-mounted-lanes — only the anchors whose rows are mounted keep a live geometry: those are the lanes
+  // drawn and placed. Laid out for every anchor, a width change (a panel dragged) re-laid out every user message of the
+  // history in each frame. An anchor off screen (a scroll target's lane) is laid out when asked.
+  const mountedAnchors = createMemo(() => {
+    const shown = new Set(visible());
+    return pinAnchors().filter(index => shown.has(index));
+  }, [], { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) });
+  const pinGeometryOf = (index: number, data: ChatMessage) => {
+    const s = pinSummary(data, measureContext(), UNIT_REGISTRY.message!.vars as MessageVars);
+    return { height: s.height + PIN_SUMMARY_GAP, rest: (untrack(() => units().at(index)?.gapBefore) ?? 0) + s.rest };
+  };
+  const pinAnchorGeometry = mapArray(mountedAnchors, index => {
     const message = createMemo(() => units().at(index)?.data);
     return [index, createMemo<{ height: number; rest: number }>(previous => {
       // Rows and anchors change in one batch; an anchor about to be dropped keeps its place until it is.
       const data = message();
-      if (!data) return previous;
-      const s = pinSummary(data as ChatMessage, measureContext(), UNIT_REGISTRY.message!.vars as MessageVars);
-      return { height: s.height + PIN_SUMMARY_GAP, rest: (untrack(() => units().at(index)?.gapBefore) ?? 0) + s.rest };
+      return data ? pinGeometryOf(index, data as ChatMessage) : previous;
     }, { height: 0, rest: 0 }, { equals: (a, b) => a.height === b.height && a.rest === b.rest })] as const;
   });
   const pinGeometry = createMemo(() => new Map(pinAnchorGeometry().map(([index, geometry]) => [index, geometry()])));
-  const pinHeight = (idx: number) => pinGeometry().get(idx)?.height ?? 0;
-  const pinRest = (idx: number) => pinGeometry().get(idx)?.rest ?? 0;
+  const anchorGeometry = (idx: number) => pinGeometry().get(idx) ?? untrack(() => {
+    const data = units().at(idx)?.data;
+    return data && pinAnchorSet().has(idx) ? pinGeometryOf(idx, data as ChatMessage) : undefined;
+  });
+  const pinHeight = (idx: number) => anchorGeometry(idx)?.height ?? 0;
+  const pinRest = (idx: number) => anchorGeometry(idx)?.rest ?? 0;
 
   /**
    * Where a lane ends. Normally the next anchor. In the agent conversation a delivered message is a bubble of
@@ -1243,15 +1256,24 @@ export function ChatRoot(props: ChatRootProps) {
     { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) }
   );
 
-  /** Each lane end's card top below its row's top, laid out once per message like `pinAnchorGeometry`. */
-  const pinEndCardTops = mapArray(pinEnds, index => {
+  /** Each lane end's card top below its row's top, laid out once per message like `pinAnchorGeometry`, for the mounted lanes. */
+  const mountedEnds = createMemo(() => {
+    const ends = pinEnds();
+    return [...new Set(mountedAnchors().flatMap(anchor => ends.find(end => end > anchor) ?? []))];
+  }, [], { equals: (a, b) => a.length === b.length && a.every((v, i) => v === b[i]) });
+  const cardTopOf = (index: number, data: ChatMessage) => (untrack(() => units().at(index)?.gapBefore) ?? 0) + cardTop(data, measureContext());
+  const pinEndCardTops = mapArray(mountedEnds, index => {
     const message = createMemo(() => units().at(index)?.data);
     return [index, createMemo(() => {
       const data = message();
-      return data ? (untrack(() => units().at(index)?.gapBefore) ?? 0) + cardTop(data as ChatMessage, measureContext()) : 0;
+      return data ? cardTopOf(index, data as ChatMessage) : 0;
     })] as const;
   });
   const pinEndCardTop = createMemo(() => new Map(pinEndCardTops().map(([index, top]) => [index, top()])));
+  const endCardTop = (idx: number) => pinEndCardTop().get(idx) ?? untrack(() => {
+    const data = units().at(idx)?.data;
+    return data ? cardTopOf(idx, data as ChatMessage) : 0;
+  });
 
   /**
    * Lane height of an anchor: up to the card of the next anchor (or delivered bubble, see `pinEnds`), or to the end of
@@ -1260,7 +1282,7 @@ export function ChatRoot(props: ChatRootProps) {
    */
   function laneHeight(idx: number): number {
     const next = pinEnds().find((end) => end > idx);
-    return Math.max(virt.size(idx), (next !== undefined ? virt.top(next) + pinEndCardTop().get(next)! : virt.total()) - virt.top(idx));
+    return Math.max(virt.size(idx), (next !== undefined ? virt.top(next) + endCardTop(next) : virt.total()) - virt.top(idx));
   }
 
   /** The anchor whose lane covers the viewport top (its row is the stuck one), or -1. */

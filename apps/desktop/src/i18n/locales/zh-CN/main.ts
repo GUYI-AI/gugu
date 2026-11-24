@@ -95,7 +95,6 @@ export default {
   },
   "installedManager": {
     "confirmRemove": "确认卸载",
-    "title": "已安装",
     "thisComputer": "这台电脑",
     "grid": "网格",
     "list": "列表",
@@ -107,11 +106,6 @@ export default {
     "selectAll": "全选",
     "clearSelection": "取消全选",
     "selected_other": "已选 {{count}} 项",
-    "section": {
-      "agents": "智能体",
-      "apps": "应用",
-      "connectors": "连接器"
-    },
     "names": {
       "agents": "智能体",
       "apps": "应用",
@@ -1081,7 +1075,7 @@ export default {
     "agents": "Agent（{{count}}）",
     "groupChat": "群聊",
     "assistant": "个人助理",
-    "groupOffline": "项目所在的电脑不在线",
+    "groupOffline": "项目所在的电脑离线",
     "groupUnavailable": "无法打开项目群",
     "newProject": {
       "title": "新项目",

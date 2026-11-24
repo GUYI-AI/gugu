@@ -1,5 +1,4 @@
 import type { AnnotationConversation } from '@shared/browser-annotation';
-import { useAuth } from '@/store/auth';
 import { MessageSquare, Pencil, Trash2, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, useState } from 'react';
@@ -7,7 +6,8 @@ import { Button } from '@renderer/lib/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@renderer/lib/ui/popover';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { AnnotationEditor } from './annotation-editor';
-import { sessionAnnotations, type BrowserAnnotationSelection } from './session-annotations';
+import { annotationPlace, sessionAnnotations, type BrowserAnnotationSelection } from './session-annotations';
+import { annotationTargetName } from '@gugu/session-core/acp/client';
 
 function AnnotationThumbnail({ screenshot, rect, viewport }: BrowserAnnotationSelection) {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -42,8 +42,7 @@ function AnnotationThumbnail({ screenshot, rect, viewport }: BrowserAnnotationSe
 export const AnnotationTray = observer(function AnnotationTray({ conversation, onSend, enabled, onRemove }: {
   conversation: AnnotationConversation; onSend: () => void; enabled: boolean; onRemove?: (id: string) => void;
 }) {
-  const { user } = useAuth();
-  const draft = sessionAnnotations.forConversation(conversation, user?.id);
+  const draft = sessionAnnotations.forConversation(conversation);
   const { translate } = useSessionMessages();
   const [editing, setEditing] = useState<string | null>(null);
   useEffect(() => enabled ? draft.bindSend(onSend) : undefined, [draft, onSend, enabled]);
@@ -58,7 +57,7 @@ export const AnnotationTray = observer(function AnnotationTray({ conversation, o
           </PopoverTrigger>
           <PopoverContent side="top" align="start" className="max-h-[60vh] w-80 max-w-[calc(100vw-32px)] gap-0 overflow-y-auto p-0">
             {draft.items.map(item => {
-              const place = item.kind === 'browser' ? item.filePath ?? item.url : item.path;
+              const place = annotationPlace(item);
               const position = item.kind === 'browser' ? item.elementTag ? `<${item.elementTag}>` : item.selector ?? translate('annotations.region')
                 : [item.oldLine === undefined ? null : translate('annotations.oldLine', { line: item.oldLine }),
                   item.newLine === undefined ? null : translate('annotations.newLine', { line: item.newLine })].filter(Boolean).join(' · ');
@@ -69,7 +68,7 @@ export const AnnotationTray = observer(function AnnotationTray({ conversation, o
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-2">
                       <span className="shrink-0 tabular-nums">{item.number}</span>
-                      <span className="min-w-0 truncate" title={place}>{place}</span>
+                      <span className="min-w-0 truncate" title={place}>{annotationTargetName(place)}</span>
                     </div>
                     <span className="block truncate">{position}</span>
                   </div>

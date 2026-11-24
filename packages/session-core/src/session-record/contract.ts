@@ -26,7 +26,6 @@ import type { NormalizedEvent } from '../acp/reducer/normalized-event';
 import type { TranscriptItem, TranscriptTurn } from '../acp/models/turns/turn';
 import type { ToolNode } from '../acp/models/turns/tool-calls';
 import type { QueuedPrompt } from '../acp/models/prompt';
-import type { ToolImageLookup } from '../acp/models/turns/tool-calls';
 import type { SessionLiveReply } from './live-reply';
 export type { SessionLiveReply } from './live-reply';
 
@@ -185,8 +184,9 @@ export type TurnStart = { position: number; state?: unknown; timeline?: unknown 
  * 的 `images` 一一对齐(找不到原文的那一张是 null)。
  *
  * 为什么(#980):图本来就在记录里,时间线存档再抄一份,存档 72–96% 是 base64(一份 50MB 的存档里 36MB 是图),
- * 每次冷开都要整份读进来再解析。存档只记位置,图要看时再按位置从记录里读回来。
- * 读回来先核首尾各一小段:对不上(文件被改写过)就当取不到,❌ 不许把别的字节当图交出去。
+ * 每次冷开都要整份读进来再解析。存档只记位置。
+ * Nothing reads a picture back by its place any more (tool pictures are not drawn); the archive keeps the field so its
+ * format does not change.
  */
 export type RecordImageRef = {
   readonly path: string;
@@ -244,8 +244,6 @@ export interface SessionRecordSource {
   resumePoint?(budget?: RecordArchiveBudget): Promise<SessionRecordResume | null>;
   /** 立刻把尾读追到文件尾,读完(行已交给 onEntries)才返回。不支持的源没有这个口。 */
   catchUp?(): Promise<void>;
-  /** 按 `imageOrigins` 给的位置把一张图从记录里读回来;读不到或核对不上回 null。不支持的源没有这个口。 */
-  readImage?(ref: RecordImageRef): Promise<string | null>;
   getLineage?(): readonly RecordLineageNode[] | null;
   stop(): void;
   /**
@@ -566,9 +564,9 @@ export interface SessionTimeline {
   syncTerminals(terminals: readonly TerminalState[]): void;
   /**
    * The runtime's turn in progress (null when none): shown in place of the record's copy of it (`runtime-turn.ts`).
-   * The runtime hands it over trimmed for transport, its pictures as `imageRefs`; `pictures` reads one from the runtime.
+   * The runtime hands it over trimmed for transport.
    */
-  syncActiveTurn(turn: TranscriptTurn | null, pictures?: RuntimeTurnPictures): void;
+  syncActiveTurn(turn: TranscriptTurn | null): void;
 
   /** 一个 item 已由 provider 侧了结（超时、取消）时由宿主调用。终态，❌ 不能再答。 */
   cancelSettlement(itemId: string): void;
@@ -582,11 +580,6 @@ export interface SessionTimeline {
    */
   releaseSettlement(itemId: string): void;
   dispose(): void;
-  /**
-   * 某个工具条目交回来的第 `index` 张图。存档装回来的轮里图只剩类型和字数(`imageRefs`),这里按位置从记录里读回来;
-   * 读不回来如实回 `no_such_image`,与图不在了是同一种降级。没有这个口的时间线,调用方自己在快照里找(`findToolImage`)。
-   */
-  toolImage?(input: { itemId: string; index: number; maxChars?: number }): Promise<ToolImageLookup>;
   /**
    * 交出此刻的存档，供宿主存盘、下次开这条会话时直接装回来。
    * 返回 null = 这条时间线存不了（记录源不支持续读）——那只是慢，不是错。
@@ -1265,24 +1258,6 @@ export type SessionpageOpenedFileChunk = { size: number; etag: string; data: str
 /** 手机一次看的文件最多这么大:附件卡指的是给人看的汇报、网页、文档,不是任意大文件。 */
 export const OPENED_FILE_MAX_BYTES = 20 * 1024 * 1024;
 
-/**
- * 手机取一张工具交回来的图。发给手机的那一份里图只有类型和字数(`imageRefs`,transport-trim),图本身等它滚进
- * 视口、那一轮展开了再按 (会话, 条目, 第几张) 来取。`itemId` 是时间线里工具条目的 id(工具组里的子调用也认)。
- */
-export type SessionpageSessionToolImageRequest = { conversationId: string; itemId: string; index: number };
-
-/** Reads picture `index` of a tool item in the runtime's turn in progress, from the runtime that holds the turn whole. */
-export type RuntimeTurnPictures = (itemId: string, index: number) => Promise<ToolImageLookup>;
-
-/**
- * 手机取一张工具交回来的图时,宿主答的上限(base64 字数)。超过就回 `too_large`,手机说「在桌面上看」。
- *
- * 依据:这一问走一问一答的设备 RPC(components/session-watch/sessionpage-rpc.ts 的 `once`),回包是**一条**广播、不拆片,
- * 手机等 12 秒。一条广播的上限是库的 Realtime 单包上限 3000KB:共享测试库 2026-10-15 实测,单条 2.9M 字到、3.2M 字
- * 被拒。1M 字留出三倍余量;慢网(约 1 Mbps)上约 8 秒到齐,还在 12 秒里。app_check 交回的图最大约 0.5M 字(噪点页
- * 实测 512K/张)。手机手里有每张图的字数(`imageRefs`),超过的不去问。
- */
-export const TOOL_IMAGE_FETCH_LIMIT = 1_048_576;
 export type SessionpageSessionSubscribeRequest = {
   conversationId: string;
   subscriptionId: string;
@@ -1317,6 +1292,8 @@ export type SessionpageSessionSendRequest = {
   files?: TurnFileRef[];
   /** Existing runtime-store images, used only when replaying an edited turn. */
   attachments?: import('../acp/models/attachments').PromptAttachment[];
+  /** Comments left on what the person was looking at (only to a host whose device row reports `task_annotations`). */
+  annotations?: import('../acp/models/turn-annotations').TurnAnnotation[];
 };
 /**
  * A task turn's attachment (P3): a version of a file in the agent's DM folder, placed there by the owner. `path`: the file

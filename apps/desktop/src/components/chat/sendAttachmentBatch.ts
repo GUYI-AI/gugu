@@ -1,5 +1,6 @@
 import type { OutboxWiring } from '../../store/chatOutboxWiring'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
+import type { TurnAnnotation } from '@gugu/session-core/acp/client'
 import { formatAttachmentMetadata, inferAttachmentKind, resolveFileMimeType, sniffFileMimeType } from '@gugu/core/shared/ui/attachmentModels'
 import { rendererLogger } from '../../lib/log'
 import { SEND_GROUP_MAX_FILES, type AttachmentsEndpoint } from '@gugu/core/cloud/attachmentsApi'
@@ -21,7 +22,10 @@ function prepareAll(files: File[], endpoint: Promise<AttachmentsEndpoint>, scope
   })
 }
 
-export async function placeholderRow(file: File, caption: string | undefined, args: { chatId: string; senderId: string; toUserIds: string[] | null; isWhisper?: boolean; replyToMessageId?: string | null; threadRootId?: string | null; isThreadRoot?: boolean }, sendGroup?: SendGroup) {
+/** What the send says beside its files, carried by the last one: the typed caption and the comments. */
+type Words = { caption?: string; annotations?: TurnAnnotation[] }
+
+export async function placeholderRow(file: File, words: Words | undefined, args: { chatId: string; senderId: string; toUserIds: string[] | null; isWhisper?: boolean; replyToMessageId?: string | null; threadRootId?: string | null; isThreadRoot?: boolean }, sendGroup?: SendGroup) {
   let dimensions: MessageItem['image_dimensions']
   if (inferAttachmentKind(file) === 'image') {
     try {
@@ -43,7 +47,7 @@ export async function placeholderRow(file: File, caption: string | undefined, ar
       mimeType: resolveFileMimeType(file),
       url: previewUrl,
       sizeBytes: file.size,
-      caption,
+      caption: words?.caption,
     }),
     content_type: 'attachment',
     reply_to_message_id: args.replyToMessageId ?? null,
@@ -58,6 +62,7 @@ export async function placeholderRow(file: File, caption: string | undefined, ar
     local_send_state: 'sending',
     ...(dimensions ? { image_dimensions: dimensions } : {}),
     ...(sendGroup ? { send_group_id: sendGroup.id, send_group_size: sendGroup.size } : {}),
+    ...(words?.annotations?.length ? { annotations: words.annotations } : {}),
   }
   // The row reads its file from this device until it is delivered (then under its committed address) or discarded.
   holdSentFile(message.id, file, previewUrl)
@@ -75,6 +80,7 @@ type BatchArgs = {
   threadRootId?: string | null
   isThreadRoot?: boolean
   caption?: string
+  annotations?: TurnAnnotation[]
   outbox: Pick<OutboxWiring, 'stageAttachment' | 'commitAttachment' | 'failAttachmentUpload'> & { outbox: Pick<OutboxWiring['outbox'], 'discard'> }
   appendMessage: (message: MessageItem) => void
 }
@@ -105,11 +111,12 @@ export async function sendAttachmentBatch(args: BatchArgs): Promise<string | und
   await Promise.all(args.files.map(sniffFileMimeType))
   // The text is the message's, written under all of it: it rides on the last file, whatever kind it is.
   const captionIndex = args.files.length - 1
+  const words: Words = { caption: args.caption, ...(args.annotations?.length ? { annotations: args.annotations } : {}) }
   const sendGroups = sendGroupsOf(args.files.length)
   const rows: StagedRow[] = []
   try {
     for (const [fileIndex, file] of args.files.entries()) {
-      const row = await placeholderRow(file, fileIndex === captionIndex ? args.caption : undefined, args, sendGroups[fileIndex])
+      const row = await placeholderRow(file, fileIndex === captionIndex ? words : undefined, args, sendGroups[fileIndex])
       rows.push(row)
       // Durable ownership precedes visibility; uploading does not block the lane.
       await args.outbox.stageAttachment(row.message)
@@ -130,19 +137,19 @@ export async function sendAttachmentBatch(args: BatchArgs): Promise<string | und
   void (async () => {
     // Commits keep the files' order: a later file never reaches the conversation before an earlier one that is ready.
     for (const [index, row] of rows.entries()) {
-      await commitWhenPrepared(args, args.files[index], row, prepared[index], timings[index], index === captionIndex ? args.caption : undefined, sendGroups[index])
+      await commitWhenPrepared(args, args.files[index], row, prepared[index], timings[index], index === captionIndex ? words : undefined, sendGroups[index])
     }
   })().catch((error) => rendererLogger('chat/send').error({ chatId: args.chatId, error: String(error) }, 'attachment failure not recorded'))
   return rows.at(-1)?.message.id
 }
 
-async function commitWhenPrepared(args: BatchArgs, file: File, row: StagedRow, preparing: Promise<PreparedChatAttachment>, timing: AttachmentSendTiming, caption: string | undefined, sendGroup: SendGroup | undefined): Promise<void> {
+async function commitWhenPrepared(args: BatchArgs, file: File, row: StagedRow, preparing: Promise<PreparedChatAttachment>, timing: AttachmentSendTiming, words: Words | undefined, sendGroup: SendGroup | undefined): Promise<void> {
   // Declares the same file again under the same row, signed in afresh (it may be much later): a resend after it failed,
   // or after the commit found the upload's permit lapsed.
   const uploadAgain = () => {
     const again = attachmentSendTiming(row.message.id, args.chatId)
     const [retried] = prepareAll([file], attachmentsEndpoint(), { chat_id: args.chatId, as: args.senderId, is_whisper: args.isWhisper }, [again])
-    void commitWhenPrepared(args, file, row, retried, again, caption, sendGroup)
+    void commitWhenPrepared(args, file, row, retried, again, words, sendGroup)
       .catch((failure) => rendererLogger('chat/send').error({ chatId: args.chatId, error: String(failure) }, 'attachment failure not recorded'))
   }
   try {
@@ -152,7 +159,8 @@ async function commitWhenPrepared(args: BatchArgs, file: File, row: StagedRow, p
       file_name: file.name || 'file', content_type: resolveFileMimeType(file), to_user_ids: args.toUserIds ?? [],
       reply_to_message_id: args.replyToMessageId ?? null, thread_root_id: args.threadRootId ?? null,
       is_thread_root: !!args.isThreadRoot, is_whisper: !!args.isWhisper,
-      ...(caption ? { caption } : {}),
+      ...(words?.caption ? { caption: words.caption } : {}),
+      ...(words?.annotations?.length ? { annotations: words.annotations } : {}),
       ...(sendGroup ? { send_group_id: sendGroup.id, send_group_size: sendGroup.size } : {}),
     }, timing, undefined, uploadAgain)
   } catch (error) {

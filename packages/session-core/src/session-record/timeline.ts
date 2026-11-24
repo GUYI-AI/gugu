@@ -7,7 +7,7 @@ import { applyHostTurnEnd, type HostTurnEnds, type HostTurnEnd } from './host-tu
 import type { NormalizedEvent } from '../acp/reducer/normalized-event';
 
 import type { QueuedPrompt } from '../acp/models/prompt';
-import { toolCallName, type ToolImage, type ToolImageLookup, type ToolImageRef } from '../acp/models/turns/tool-calls';
+import { toolCallName, type ToolImage, type ToolImageRef } from '../acp/models/turns/tool-calls';
 import type { TranscriptItem, TranscriptTurn, TranscriptTurnOutcome } from '../acp/models/turns/turn';
 import { RECENT_ACTION_MAX_ENTRIES, RECENT_ACTION_WINDOW_MS, recentActionName } from '../acp/recent-actions';
 import { AcpTranscriptParser } from '../acp/reducer';
@@ -21,7 +21,6 @@ import type { TurnStart,
   RecordEntry,
   RecordImageRef,
   RecordResetReason,
-  RuntimeTurnPictures,
   SessionRecordResume,
   SessionRecordSource,
   SessionTimeline,
@@ -34,7 +33,7 @@ import type { TurnStart,
   TimelineSubagent,
   TurnPatch
 } from './contract';
-import { TIMELINE_SUBAGENT_STEPS, TIMELINE_SUBAGENT_TEXT, TOOL_IMAGE_FETCH_LIMIT } from './contract';
+import { TIMELINE_SUBAGENT_STEPS, TIMELINE_SUBAGENT_TEXT } from './contract';
 
 type PublishedSubagent = {
   source: readonly ToolNode[];
@@ -46,7 +45,6 @@ type PublishedSubagent = {
 };
 const NO_STEPS: readonly ToolNode[] = [];
 import { questionAnswered, readQuestion } from './sources/question-tools';
-import { findToolImage, findToolItem } from './tool-image';
 import { SESSION_PLAN_ID } from '../acp/models/plan';
 import type { ToolNode } from '../acp/models/turns/tool-calls';
 
@@ -84,8 +82,9 @@ export type TimelineArchive = {
   readonly published: readonly TurnPublishArchive[];
   /**
    * 工具图只存位置(#980):条目 id → 它每一张图在记录里的原文位置,与那一条的 `imageRefs` 一一对齐。
-   * 这些条目在上面的 `parser` 里没有 `images`、只有 `imageRefs`(与传输投影同一个形状),图要看时按位置从记录里读回来
-   * (`toolImage`)。原先图随存档存原样:存档 72–96% 是 base64,一份 545MB 的 codex 记录折出 108MB 的存档,超上限存不下。
+   * 这些条目在上面的 `parser` 里没有 `images`、只有 `imageRefs`(与传输投影同一个形状)。原先图随存档存原样:存档 72–96%
+   * 是 base64,一份 545MB 的 codex 记录折出 108MB 的存档,超上限存不下。Nothing reads the pictures back by these places any
+   * more (tool pictures are not drawn); they stay so the archive format does not change.
    */
   readonly images: readonly (readonly [string, readonly RecordImageRef[]])[];
 };
@@ -249,8 +248,6 @@ class RecordTimeline implements SessionTimeline {
   private liveReply: SessionLiveReply | null = null;
   /** The runtime's turn in progress (`syncActiveTurn`): live like the rest of the side channels, never archived. */
   private runtimeTurn: TranscriptTurn | null = null;
-  /** Where the runtime turn's pictures are: with the runtime (its turn arrives with `imageRefs` only). */
-  private runtimePictures: RuntimeTurnPictures | null = null;
   /** The turns that had ended when the runtime's turn started: none of them is a copy of it (`withoutCopiesOf`). */
   private endedBeforeRuntime: ReadonlySet<string> = new Set();
   /** The runtime's last frame of the turn it ended, shown until the record holds that turn closed (`withHeldTurn`). */
@@ -497,35 +494,6 @@ class RecordTimeline implements SessionTimeline {
     return { parser: { ...state, transcript: { ...state.transcript, committed } }, images };
   }
 
-  async toolImage(input: { itemId: string; index: number; maxChars?: number }): Promise<ToolImageLookup> {
-    const maxChars = input.maxChars ?? TOOL_IMAGE_FETCH_LIMIT;
-    const runtime = this.runtimeTurn;
-    const pictures = this.runtimePictures;
-    if (runtime && pictures && findToolItem([runtime], input.itemId)) {
-      const found = await pictures(input.itemId, input.index);
-      return found.ok && found.image.data.length > maxChars
-        ? { ok: false, code: 'too_large', message: `picture #${input.index} is ${found.image.data.length} chars; over ${maxChars}` }
-        : found;
-    }
-    const turns = this.currentTurns();
-    const found = findToolImage(turns, input.itemId, input.index, maxChars);
-    if (found.ok || found.code !== 'no_such_image') return found;
-    // 存档装回来的条目:图只剩类型和字数,位置在 `archivedImages` 里。
-    const node = findToolItem(turns, input.itemId)?.node;
-    const shown = node && node.kind !== 'tool-group' && !node.images ? node.imageRefs?.[input.index] : undefined;
-    const ref = shown ? this.archivedImages.get(input.itemId)?.[input.index] : undefined;
-    if (!shown || !ref) return found;
-    if (ref.chars > maxChars) {
-      return { ok: false, code: 'too_large', message: `picture #${input.index} is ${ref.chars} chars; over ${maxChars}` };
-    }
-    const data = (await this.source.readImage?.(ref)) ?? null;
-    // 读不回来(记录被改写、被删)与图不在了是同一种降级:端上画「取不到」,❌ 不交一张坏图。
-    if (data === null) {
-      return { ok: false, code: 'no_such_image', message: `picture #${input.index} of tool item ${input.itemId} could not be read back from its record` };
-    }
-    return { ok: true, image: { mimeType: shown.mimeType, data } };
-  }
-
   get epoch(): string {
     return this.epochValue;
   }
@@ -711,9 +679,8 @@ class RecordTimeline implements SessionTimeline {
     this.publish();
   }
 
-  syncActiveTurn(turn: TranscriptTurn | null, pictures?: RuntimeTurnPictures): void {
+  syncActiveTurn(turn: TranscriptTurn | null): void {
     if (this.disposed) return;
-    this.runtimePictures = turn && pictures ? pictures : null;
     if (this.runtimeTurn === turn) return;
     const ended = this.runtimeTurn;
     if (ended && ended.id !== turn?.id) this.heldTurn = { turn: ended, endedBefore: this.endedBeforeRuntime };

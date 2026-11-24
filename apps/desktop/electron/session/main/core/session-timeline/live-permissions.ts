@@ -9,7 +9,7 @@ import {
   type SessionState,
   type SessionSummary,
 } from '@gugu/session-core/acp';
-import type { PendingRequest, RuntimeTurnPictures } from '@gugu/session-core/session-record/contract';
+import type { PendingRequest } from '@gugu/session-core/session-record/contract';
 import { permissionToPendingRequest } from '@gugu/session-core/session-record/live-requests';
 import { ReplicaState } from '@gugu/session-wire';
 import { z } from 'zod';
@@ -51,7 +51,7 @@ export type SessionStateWatch = { dispose(): void };
  */
 async function watchRunningSessionState(
   sessionId: string,
-  onChange: (requests: PendingRequest[], queuedPrompts: QueuedPrompt[], liveReply: SessionLiveReply | null, terminals: readonly TerminalState[], activeTurn?: TranscriptTurn | null, pictures?: RuntimeTurnPictures) => void
+  onChange: (requests: PendingRequest[], queuedPrompts: QueuedPrompt[], liveReply: SessionLiveReply | null, terminals: readonly TerminalState[], activeTurn?: TranscriptTurn | null) => void
 ): Promise<SessionStateWatch | null> {
   const client = await peekAcpRuntimeClient();
   if (!client) return null;
@@ -66,13 +66,8 @@ async function watchRunningSessionState(
     terminalReplica = null;
     terminals = [];
   };
-  // The published turn is trimmed for transport (its pictures are `imageRefs`); the runtime reads one whole.
-  const pictures: RuntimeTurnPictures = (itemId, index) => client.getToolImage({ sessionId, itemId, index }).then((result) => {
-    if (!result.success) throw result.error;
-    return result.data;
-  });
   const emitLatest = () => {
-    if (state) onChange(state.pendingPermissions.map(permissionToPendingRequest), state.queuedPrompts, state.isGenerating ? liveReplyOf(turn ?? null) : null, terminals, turn, pictures);
+    if (state) onChange(state.pendingPermissions.map(permissionToPendingRequest), state.queuedPrompts, state.isGenerating ? liveReplyOf(turn ?? null) : null, terminals, turn);
   };
   const emit = (next: SessionState) => { state = next; emitLatest(); };
 
@@ -182,7 +177,7 @@ async function watchRunningSessionState(
  */
 export async function watchSessionState(
   sessionId: string,
-  onChange: (requests: PendingRequest[], queuedPrompts: QueuedPrompt[], liveReply: SessionLiveReply | null, terminals: readonly TerminalState[], activeTurn?: TranscriptTurn | null, pictures?: RuntimeTurnPictures) => void
+  onChange: (requests: PendingRequest[], queuedPrompts: QueuedPrompt[], liveReply: SessionLiveReply | null, terminals: readonly TerminalState[], activeTurn?: TranscriptTurn | null) => void
 ): Promise<SessionStateWatch> {
   let disposed = false;
   let generation = 0;
@@ -193,8 +188,8 @@ export async function watchSessionState(
     current = null;
     if (!disposed) onChange([], [], null, []);
     try {
-      const next = await watchRunningSessionState(sessionId, (requests, queue, reply, terminals, activeTurn, pictures) => {
-        if (!disposed && generation === own) onChange(requests, queue, reply, terminals, activeTurn, pictures);
+      const next = await watchRunningSessionState(sessionId, (requests, queue, reply, terminals, activeTurn) => {
+        if (!disposed && generation === own) onChange(requests, queue, reply, terminals, activeTurn);
       });
       if (disposed || generation !== own) next?.dispose();
       else current = next;

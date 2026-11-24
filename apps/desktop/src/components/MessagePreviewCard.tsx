@@ -19,9 +19,10 @@ import type { RunningToken } from './RunningTokenBar'
 import { useActivityPreviewText } from '../hooks/useActivityPreviewText'
 import { hasPreviewActivity } from '@gugu/session-core/session-record/preview-activity'
 
-// Base UI supplies the anchor/visual-viewport budget for both phone presses and desktop hover.
+// Base UI supplies the anchor/visual-viewport budget for both phone presses and desktop hover. The surface (face, radius,
+// lift) is the row hover card's (components/ui/RowHoverCard.tsx); this only lays out what is on it.
 const STYLE = `
-.mp-card{max-height:min(60dvh,calc(var(--available-height) - env(safe-area-inset-top) - env(safe-area-inset-bottom)));width:340px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;overflow:hidden;white-space:normal;background:var(--popover);border-radius:var(--radius-surface);box-shadow:var(--shadow-lift);color:var(--text-primary)}
+.mp-card{max-height:min(60dvh,calc(var(--available-height) - env(safe-area-inset-top) - env(safe-area-inset-bottom)));width:340px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;overflow:hidden;white-space:normal;color:var(--text-primary)}
 .mp-mono{font-family:var(--font-mono,ui-monospace,SFMono-Regular,Menlo,Consolas,monospace);font-size:var(--font-caption);letter-spacing:-0.01em;color:var(--text-secondary)}
 .mp-hd{flex-shrink:0;display:flex;align-items:center;gap:10px;padding:14px 16px 12px}
 .mp-hd-col{display:flex;flex-direction:column;min-width:0;flex:1}

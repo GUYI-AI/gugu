@@ -49,6 +49,11 @@ vi.mock('../../../../apps/desktop/src/components/chat/NoteEditor', async () => {
 })
 vi.mock('../../../../apps/desktop/src/components/chat/useGroupMentionProvider', () => ({ useGroupMentionProvider: () => ({}) }))
 vi.mock('../../../../apps/desktop/src/store/auth', () => ({ useAuth: () => ({ user: null }) }))
+// Each agent's session's last interaction (presence): the agent order the sheet falls back to (compareByRecentActivity).
+const lastInteractedAt: Record<string, string> = {}
+vi.mock('../../../../apps/desktop/src/hooks/useAgentDisplayStatus', () => ({
+  useAgentRecentActivity: (ids: readonly string[]) => Object.fromEntries(ids.map((id) => [id, { actions: [], lastActiveAt: null, lastInteractedAt: lastInteractedAt[id] ?? null }])),
+}))
 
 const { DispatchSheet } = await import('../../../../apps/desktop/src/components/chat/DispatchSheet')
 const { pickDispatchTarget } = await import('../../../../apps/desktop/src/components/chat/dispatchAsk')
@@ -191,7 +196,8 @@ describe('DispatchSheet', () => {
 
   it('the chat\'s members come in the chat\'s @ order: who spoke there lately first, and a search matches as @ does', async () => {
     store.activeChatId = 'c-group'
-    store.messages = [{ id: 'm1', chat_id: 'c-group', seq: 1, sender_user_id: 'user:lin', to_user_ids: [], content_type: 'text', created_at: new Date().toISOString() }]
+    // As they are: a message's sender is the bare uuid; the App's members come as `user:<uuid>` (personId).
+    store.messages = [{ id: 'm1', chat_id: 'c-group', seq: 1, sender_user_id: 'lin', to_user_ids: [], content_type: 'text', created_at: new Date().toISOString() }]
     await act(async () => {
       void ask({ draft: false, offers: ['agent-in-chat'], chat: { id: 'c-group', name: 'Reading group', members: [{ id: 'user:kip', name: 'Kip', kind: 'agent' }, { id: 'user:lin', name: 'Lin', kind: 'agent' }] } })
     })
@@ -200,6 +206,22 @@ describe('DispatchSheet', () => {
     expect(rowIds()).toEqual(['member:user:kip'])
     store.activeChatId = null
     store.messages = []
+  })
+
+  it('Assign to: with nothing said in the chat, its agents come in the agent order (last interaction, else when made), not the roster\'s', async () => {
+    Object.assign(lastInteractedAt, { mid: '2026-11-23T10:00:00.000Z', new: '2026-11-24T07:00:00.000Z' })
+    // Out of order, as list_member_ids gives them; `old` has never been worked with.
+    const members = [{ id: 'user:old', name: 'Old', kind: 'agent' }, { id: 'user:mid', name: 'Mid', kind: 'agent' }, { id: 'user:new', name: 'New', kind: 'agent' }]
+    await act(async () => { void ask({ draft: false, offers: ['agent-in-chat'], chat: { id: 'c-group', name: 'Reading group', members } }) })
+    expect(rowIds()).toEqual(['member:user:new', 'member:user:mid', 'member:user:old'])
+    // Who spoke in the chat on screen still comes first (the @ order), the rest in the agent order.
+    store.activeChatId = 'c-group'
+    store.messages = [{ id: 'm1', chat_id: 'c-group', seq: 1, sender_user_id: 'old', to_user_ids: [], content_type: 'text', created_at: new Date().toISOString() }]
+    await act(async () => { void ask({ draft: false, offers: ['agent-in-chat'], chat: { id: 'c-group', name: 'Reading group', members } }) })
+    expect(rowIds()).toEqual(['member:user:old', 'member:user:new', 'member:user:mid'])
+    store.activeChatId = null
+    store.messages = []
+    for (const id of Object.keys(lastInteractedAt)) delete lastInteractedAt[id]
   })
 
   it('a pick: the App\'s words, what it is about read only, the person\'s own agents; the pick is the agent', async () => {

@@ -19,7 +19,7 @@ import { WindowControls } from '@/components/WindowControls';
 import { Sheet } from '@/components/ui/Sheet';
 import '@/i18n';
 import {
-  windowControlsWidth,
+  hasWindowTitlebarRow,
   windowTitlebarHeight,
   type RendererPlatform,
 } from '@/lib/window-chrome';
@@ -37,9 +37,8 @@ let host: HTMLElement | null = null;
 function applyPlatform(platform: RendererPlatform): void {
   const html = document.documentElement;
   html.dataset.platform = platform;
-  if (platform === 'win') html.dataset.windowTitlebar = 'row';
+  if (hasWindowTitlebarRow(platform)) html.dataset.windowTitlebar = 'row';
   else delete html.dataset.windowTitlebar;
-  html.style.setProperty('--titlebar-controls-width', `${windowControlsWidth(platform)}px`);
   html.style.setProperty('--window-titlebar-height', `${windowTitlebarHeight(platform)}px`);
 }
 
@@ -71,12 +70,11 @@ afterEach(() => {
   const html = document.documentElement;
   delete html.dataset.platform;
   delete html.dataset.windowTitlebar;
-  html.style.removeProperty('--titlebar-controls-width');
   html.style.removeProperty('--window-titlebar-height');
   Reflect.deleteProperty(window, 'desktopWindow');
 });
 
-it.each(['win', 'other'] as const)('%s: an open Sheet lies below the title bar row and leaves the whole row reachable', async (platform) => {
+it.each(['win', 'linux', 'other'] as const)('%s: an open Sheet lies below the title bar row and leaves the whole row reachable', async (platform) => {
   applyPlatform(platform);
   host = document.createElement('div');
   document.body.appendChild(host);
@@ -110,7 +108,7 @@ it.each(['win', 'other'] as const)('%s: an open Sheet lies below the title bar r
   expect(backdrop.getBoundingClientRect().bottom, 'backdrop still reaches the window bottom').toBe(innerHeight);
   expect(card.getBoundingClientRect().top, 'card stays inside its layer').toBeGreaterThanOrEqual(row);
 
-  if (platform === 'win') {
+  if (hasWindowTitlebarRow(platform)) {
     const bar = document.querySelector<HTMLElement>('.gg-titlebar')!;
     for (const x of [innerWidth * 0.3, innerWidth * 0.5, innerWidth * 0.7]) {
       expect(hitInside(x, row / 2, bar), `title bar row is topmost at x=${Math.round(x)}`).toBe(true);

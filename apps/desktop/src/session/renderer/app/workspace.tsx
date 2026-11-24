@@ -43,11 +43,9 @@ import { isEmbedVisible, subscribeEmbedVisibility } from '@renderer/lib/portal-c
 
 export function Workspace() {
   useTheme();
-  const { modal, currentView } = useWorkspaceSlots();
+  const { modal, currentView, pageView } = useWorkspaceSlots();
   // @@@page-modal — a modal view is drawn over the page you were on: that page stays the workspace's under it.
-  const pageUnder = useRef<string | null>(null);
-  if (!modal) pageUnder.current = currentView;
-  const page = pageUnder.current ?? (screenLayout.layout ? 'screen' : 'home');
+  const page = pageView ?? (screenLayout.layout ? 'screen' : 'home');
   // 看哪条会话 → 这屏怎么摆:要赶在下面任何一个会话页渲染之前(同上面两件的理由)。
   ensureScreenLayoutSync();
   // gugu-embedded: while the frame is display-hidden (user on another gugu tab) the document-level
@@ -146,7 +144,7 @@ const ScreenArea = observer(function ScreenArea({
         // Beside an App the page is where the App is: on another of gugu's tabs this screen is not drawn, its blocks with it.
         const peeked = peek?.sessionId === sessionId && (!embedVisible || !onSessionView || !screenLayout.blockOfSession(sessionId));
         const blockId = onSessionView && !peeked ? (screenLayout.blockOfSession(sessionId) ?? null) : null;
-        const corners = blockId ? screenLayout.corners(blockId) : { topLeft: false, topRight: false };
+        const corners = blockId ? screenLayout.corners(blockId) : { topLeft: false };
         return (
           <RetainedSessionPage
             key={sessionId}
@@ -156,7 +154,6 @@ const ScreenArea = observer(function ScreenArea({
             peekBox={peeked && peek ? peek.box : null}
             focused={peeked || (blockId !== null && mainFocused && screenLayout.focusedBlockId === blockId)}
             topLeft={corners.topLeft}
-            topRight={corners.topRight}
             multi={multi}
           />
         );
@@ -198,15 +195,14 @@ const RetainedSessionPage = memo(function RetainedSessionPage({
   peekBox,
   focused,
   topLeft,
-  topRight,
   multi,
-}: SessionParams & { blockId: string | null; peekBox: HTMLElement | null; focused: boolean; topLeft: boolean; topRight: boolean; multi: boolean }) {
+}: SessionParams & { blockId: string | null; peekBox: HTMLElement | null; focused: boolean; topLeft: boolean; multi: boolean }) {
   // A block is drawn only while the frame is; a page peeked beside an App is drawn over the shell even when the frame is hidden.
   const embedVisible = useSyncExternalStore(subscribeEmbedVisibility, isEmbedVisible);
   const shown = (blockId !== null && embedVisible) || peekBox !== null;
   const pageRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => (pageRef.current && peekBox ? followBox(pageRef.current, peekBox) : undefined), [peekBox]);
-  const place = useMemo(() => ({ blockId, focused, topLeft, topRight, multi }), [blockId, focused, topLeft, topRight, multi]);
+  const place = useMemo(() => ({ blockId, focused, topLeft, multi }), [blockId, focused, topLeft, multi]);
   return (
     <div
       className="flex min-h-0 min-w-0 flex-col"

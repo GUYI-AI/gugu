@@ -42,6 +42,7 @@ const RUN_STATUS_ICON: Record<
 
 interface AutomationRowProps {
   automation: Automation;
+  readOnly?: boolean;
   onToggleEnabled?: (enabled: boolean) => void;
   onClick?: () => void;
 }
@@ -49,6 +50,7 @@ interface AutomationRowProps {
 export const AutomationRow = observer(function AutomationRow({
   automation,
   onToggleEnabled,
+  readOnly = false,
   onClick,
 }: AutomationRowProps) {
   const { translate } = useSessionMessages();
@@ -92,7 +94,7 @@ export const AutomationRow = observer(function AutomationRow({
         <Switch
           checked={automation.enabled}
           // #7221 一次性的那一刻过了就不会再响,打开它没有意义(服务端也拒)。
-          disabled={isSpentOneTimeAutomation(automation)}
+          disabled={readOnly || isSpentOneTimeAutomation(automation)}
           onCheckedChange={(checked) => onToggleEnabled?.(checked)}
         />
       </div>

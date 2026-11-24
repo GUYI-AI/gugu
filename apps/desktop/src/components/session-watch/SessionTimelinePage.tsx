@@ -17,6 +17,7 @@ import { PhoneTaskSkills } from '../../mobile/local-agent/PhoneTaskSkillsButton'
 import type { Device } from '@gugu/core/shared/types/chat'
 import { isAgentHostDevice, isPhoneDevice } from '@gugu/core/cloud/devices'
 import { remoteFailureKind, type SessionpageSessionSummary, type TurnFileRef } from '@gugu/session-core/session-record/contract'
+import type { TurnAnnotation } from '@gugu/session-core/acp/client'
 import { AgentFailureSlot } from '@/components/AgentFailureSlot'
 import { Button } from '@/components/ui/Button'
 import { useBackLayer } from '@/components/ui/sheetStack'
@@ -134,7 +135,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
-    reload, loadOlder, loadToolImage, fillHeld, pendingSends, respond, sending, respondingItemId, cancel, cancelling, link, errorCode,
+    reload, loadOlder, fillHeld, pendingSends, respond, sending, respondingItemId, cancel, cancelling, link, errorCode,
   } =
     useAgentWatchSession(device.device_id, session.conversationId, online, firstPrompt, phoneHost, local)
 
@@ -171,10 +172,11 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
       throw new Error(t('settings:devices.notice.serverTooOldHint'))
     }
   }
-  const send = async (text: string, files?: TurnFileRef[]) => {
+  const send = async (text: string, files?: TurnFileRef[], annotations?: TurnAnnotation[]) => {
     beforeSend()
     const request = { deviceId: device.device_id, sessionId: session.conversationId, text, composer: true as const,
-      ...phoneInputQueueIntent(foregroundWorking, queuedInputs), ...sessionInputBaseline(conversation.turns), ...(files?.length ? { files } : {}) }
+      ...phoneInputQueueIntent(foregroundWorking, queuedInputs), ...sessionInputBaseline(conversation.turns), ...(files?.length ? { files } : {}),
+      ...(annotations?.length ? { annotations } : {}) }
     await enqueueSessionInput(request)
     if (canResumePhoneInput(queueReady, foregroundWorking, conversation.turns)) {
       const head = [...queuedSessionInputs(session.conversationId)].filter(input => input.sendQueue).sort((a, b) => a.sendQueue!.order - b.sendQueue!.order)[0]
@@ -333,7 +335,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           stopping={cancelling}
           footerNotice={<>{agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}<SessionInputQueue sessionId={session.conversationId} waitingForConnection={!answering} inTranscript={drawnInputIds} />{actionErrorNotice}</>}
           onLoadOlder={loadOlder}
-          onLoadToolImage={loadToolImage}
           onHeldShown={fillHeld}
           emptyNote={answering && waitingForRecord && (phase === 'loading' || timeline.turns.length > 0) ? (
             /* 刚建的会话:记录要等 agent 写下第一行才有。那时说「正在等它开口」,❌ 不说「正在读取」——

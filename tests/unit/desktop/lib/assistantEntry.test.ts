@@ -320,7 +320,7 @@ describe('openAssistantPageInApp', () => {
     opened.length = 0
     expect(openAssistantPageInApp('connected-apps')).toBe(true)
     expect(appState.navigation.currentViewId).toBe('apps')
-    expect(appState.navigation.viewParamsStore.apps).toMatchObject({ location: { tab: 'connectors', installed: { section: 'connectors', direct: true } } })
+    expect(appState.navigation.viewParamsStore.apps).toMatchObject({ location: { tab: 'connectors', installed: { direct: true } } })
     expect(opened).toEqual([])
     expect(layer()).toBeNull()
     appState.navigation.navigate('home')

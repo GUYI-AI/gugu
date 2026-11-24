@@ -103,7 +103,7 @@ const TaskPageScreen = observer(function TaskPageScreen({ resource, visible }: {
     } });
   const session = resource.session;
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background">
+    <div className="flex h-full min-h-0 flex-col bg-tab-face">
       {session && (
         <BrowserToolbar
           session={session}

@@ -162,7 +162,7 @@ describe('warm start adopts the stored list', () => {
     expect(calls).toEqual([])
   })
 
-  it.each(['personal-delete', 'membership-removed'] as const)('verifies a stale restored layout id after %s was already committed', async (kind) => {
+  it.each(['personal-delete', 'membership-removed', 'archived'] as const)('verifies a stale restored layout id after %s was already committed', async (kind) => {
     const complete = await storedList()
     const stored = { ...complete, rows: complete.rows.filter(row => row.id !== 'g-1') }
     const projection = createChatProjection(VIEWER, { rows: () => stored.rows, identity: () => undefined, durable: () => stored })
@@ -171,13 +171,15 @@ describe('warm start adopts the stored list', () => {
     rowsByKey.set('active_members', kind === 'membership-removed'
       ? members.filter(row => row.chat_id !== 'g-1' || row.user_id !== VIEWER)
       : members.map(row => row.chat_id === 'g-1' && row.user_id === VIEWER
-        ? { ...row, conversation_deleted_at: '2026-11-19T00:00:00Z' } : row))
+        ? { ...row, conversation_deleted_at: kind === 'personal-delete' ? '2026-11-19T00:00:00Z' : null } : row))
+    if (kind === 'archived') rowsByKey.set('chats', (rowsByKey.get('chats') as Array<Record<string, unknown>>).map(row => row.id === 'g-1' ? { ...row, status: 'archived' } : row))
     await projection.readRestoredLayoutMemberships(['g-1', 'g-1'], '10', signal())
     expect(projection.isConversationDeleted('g-1')).toBe(kind === 'personal-delete')
     expect(projection.isMembershipRevoked('g-1')).toBe(kind === 'membership-removed')
-    expect(calls).toEqual([{ key: 'active_members', ids: ['g-1'] }])
+    expect(projection.isConversationArchived('g-1')).toBe(kind === 'archived')
+    expect(calls).toEqual([{ key: 'active_members', ids: ['g-1'] }, expect.objectContaining({ key: 'chats', ids: ['g-1'] })])
     await projection.readRestoredLayoutMemberships(['g-1'], '10', signal())
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(2)
   })
 
   it('a failed restored-id read retains the unknown block and is not retried on publication or unrelated journal work', async () => {

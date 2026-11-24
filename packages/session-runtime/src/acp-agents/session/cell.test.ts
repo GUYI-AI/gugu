@@ -3273,6 +3273,31 @@ describe('task file context stays separate from the person words', () => {
       expect(JSON.stringify(item)).not.toContain('promptText');
     } finally { cell.dispose(); }
   });
+
+  it('sends the comments as one block ahead of the words and keeps them with the message', async () => {
+    const { cell, agent } = makeCell();
+    agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+    cell.push({ kind: 'commands', commands: [{ name: 'review', description: '' }] });
+    const annotations = [
+      { number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: '# All comments\n\n## User Comment 1\nHTML preview\nComment:\nMake it red' },
+      { number: 2, target: 'src/a.ts', comment: 'Why?', promptText: '## User Comment 2\nCode diff\nComment:\nWhy?' },
+    ];
+    try {
+      await cell.prompt({ text: 'Apply each comment', origin: 'manual', annotations });
+      expect(agent.prompt.mock.calls[0][0].prompt).toEqual([
+        { type: 'text', text: '# All comments\n\n## User Comment 1\nHTML preview\nComment:\nMake it red\n\n## User Comment 2\nCode diff\nComment:\nWhy?' },
+        { type: 'text', text: 'Apply each comment' },
+      ]);
+      const item = cell.history().committed[0].items[0];
+      // The sender's own text stays with the message (never drawn), so a resend carries it again.
+      expect(item).toMatchObject({ kind: 'message', role: 'user', text: 'Apply each comment', annotations });
+      // A command still leads its prompt: the comments follow it.
+      await cell.prompt({ text: '/review', origin: 'manual', annotations: [annotations[0]] });
+      expect(agent.prompt.mock.calls[1][0].prompt).toEqual([
+        { type: 'text', text: '/review' }, { type: 'text', text: annotations[0].promptText },
+      ]);
+    } finally { cell.dispose(); }
+  });
 });
 
 it.each(['platform', 'unknown', undefined] as const)('hides and refuses an own-only reviewer on route %s', async billingRoute => {

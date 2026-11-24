@@ -559,8 +559,8 @@ describe('问题 13:扩展起的 agent 是一条独立会话(#5665),在这个扩
     expect(listed.map((agent) => [agent.agentId, agent.model, agent.modelLabel])).toEqual([
       ['user:chat-a', 'platform:glm-5.3-flash', 'GLM 5.3 Flash'],
       ['user:chat-b', 'platform:glm-5.3-flash', 'GLM 5.3 Flash'],
-      ['user:tui', 'platform:glm-5.3-flash', 'GLM 5.3 Flash'],
       ['user:own', null, null],
+      ['user:tui', 'platform:glm-5.3-flash', 'GLM 5.3 Flash'],
     ]);
   });
 
@@ -571,8 +571,8 @@ describe('问题 13:扩展起的 agent 是一条独立会话(#5665),在这个扩
     contextTokensOf.set('open', 412_345);
     const { agents: listed } = await listAgentsForExtension(everyone);
     expect(listed.map((agent) => [agent.agentId, agent.contextTokens])).toEqual([
-      ['user:open', 412_345],
       ['user:cold', null],
+      ['user:open', 412_345],
     ]);
     contextTokensOf.clear();
   });
@@ -586,9 +586,9 @@ describe('问题 13:扩展起的 agent 是一条独立会话(#5665),在这个扩
     rateLimitOf.set('open', { status: 'rejected', resetsAt: Date.UTC(2026, 9, 1, 14, 40), window: 'five_hour', utilization: null });
     const { agents: listed } = await listAgentsForExtension(everyone);
     expect(listed.map((agent) => [agent.agentId, agent.rateLimit])).toEqual([
+      ['user:cold', null],
       ['user:open', { status: 'rejected', resetsAt: '2026-10-01T14:40:00.000Z', window: 'five_hour', utilization: null }],
       ['user:quiet', null],
-      ['user:cold', null],
     ]);
     rateLimitOf.clear();
   });
@@ -600,10 +600,10 @@ describe('问题 13:扩展起的 agent 是一条独立会话(#5665),在这个扩
     agentRow('silent');
     const { agents: listed } = await listAgentsForExtension(everyone);
     expect(listed.map((agent) => [agent.agentId, agent.status, agent.detail])).toEqual([
-      ['user:waits', 'needs_user', 'approval'],
-      ['user:done', 'idle', 'done'],
       ['user:broke', 'error', null],
+      ['user:done', 'idle', 'done'],
       ['user:silent', null, null],
+      ['user:waits', 'needs_user', 'approval'],
     ]);
   });
 
@@ -617,10 +617,10 @@ describe('问题 13:扩展起的 agent 是一条独立会话(#5665),在这个扩
     failureOf.set('never', { kind: 'start-failed', message: 'claude: not logged in', error: { code: 'AUTH_REQUIRED', detail: 'x' } });
     const { agents: listed } = await listAgentsForExtension(everyone);
     expect(listed.map((agent) => [agent.agentId, agent.failure])).toEqual([
-      ['user:exited', { kind: 'adapter-exit', message: 'ACP adapter exited unexpectedly (signal SIGKILL)', exitCode: null, signal: 'SIGKILL' }],
-      ['user:never', { kind: 'start-failed', message: 'claude: not logged in', exitCode: null, signal: null }],
-      ['user:fine', null],
       ['user:cold', null],
+      ['user:exited', { kind: 'adapter-exit', message: 'ACP adapter exited unexpectedly (signal SIGKILL)', exitCode: null, signal: 'SIGKILL' }],
+      ['user:fine', null],
+      ['user:never', { kind: 'start-failed', message: 'claude: not logged in', exitCode: null, signal: null }],
     ]);
     failureOf.clear();
   });
@@ -635,8 +635,8 @@ describe('问题 13:扩展起的 agent 是一条独立会话(#5665),在这个扩
     const { agents: listed } = await listAgentsForExtension(everyone);
     expect(listed.map((agent) => [agent.agentId, agent.lastActionAt])).toEqual([
       ['user:busy', '2026-10-08T13:05:00.000Z'],
-      ['user:quiet', null],
       ['user:cold', null],
+      ['user:quiet', null],
     ]);
     lastActionAtOf.clear();
   });

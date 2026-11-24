@@ -194,10 +194,9 @@ function TabOverflowMenu({ read, onPick }: { read: () => StripTabEntry[]; onPick
  *    页签和它装的内容切断,那正是改版前「像分段控件、不像页签」的根。
  *  · 左内缩 12px 不是随手取的:活动页签的左耳朵要往外探 9px(见 index.css .session-tab-ears),
  *    而滚动区是 overflow-x-auto 的裁剪盒 —— 小于 9px,首个页签的耳朵会被切掉。
- *  · 这条带的左端和右端一样,可能贴着另一层 chrome:侧栏收起时,主内容区左上角浮着那枚
+ *  · 这条带的左端可能贴着另一层 chrome:侧栏收起时,主内容区左上角浮着那枚
  *    「展开侧栏」按钮(零高度浮层里的 absolute 元素,**不占版面**)。所以最左那条页签条要
- *    `reserveShellRestoreLane`,和右端的 `atWindowEdge` 是同一件事的两侧 —— ❌ 别所有分栏都留,
- *    中间那些左边是聊天栏或拖拽把手,留了就在版面中间开一道洞。
+ *    `reserveShellRestoreLane` —— ❌ 别所有分栏都留,中间那些左边是聊天栏或拖拽把手,留了就在版面中间开一道洞。
  */
 export const TAB_STRIP_LEADING_PX = 12;
 
@@ -280,7 +279,8 @@ export function TabStripShell({
       style={{
         height: `var(--tab-strip-height, ${WINDOW_CONTROL_BAR_HEIGHT_PX}px)`,
         // The plain edge is a variable (default 12px, the first tab's ears): a strip without ears (the tool card's) sets its own.
-        paddingInlineStart: leading === TAB_STRIP_LEADING_PX ? `var(--tab-strip-edge, ${TAB_STRIP_LEADING_PX}px)` : `${leading}px`,
+        // A split block's handle sits at the strip's start: the strip gives it its lane (--block-grip-lane, index.css).
+        paddingInlineStart: `calc(${leading === TAB_STRIP_LEADING_PX ? `var(--tab-strip-edge, ${TAB_STRIP_LEADING_PX}px)` : `${leading}px`} + var(--block-grip-lane, 0px))`,
       }}
       onClick={onClick}
     >

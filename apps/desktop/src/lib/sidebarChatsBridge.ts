@@ -32,6 +32,8 @@ export type SidebarChatView = {
   readonly focusedChatId: string | null
   /** 拼在一屏的几组(这屏那一组和收起来的那些):「对话」里同一组的几行并在一处。 */
   readonly groups: readonly JoinedGroup[]
+  /** 并排着的几块各装的什么(blockKey;一块时为空,screen-layout `splitKeys`):壳画的行据此给「取消并排」。 */
+  readonly split?: readonly string[]
   /**
    * #2548 the task page's desktop sidebar (one list) is mounted and published this view. The phone never mounts it, so
    * absent = the phone: shared components (chat list, composer verbs, the rail's 消息) read this to tell, never settings.
@@ -170,6 +172,7 @@ export function publishSidebarChatView(next: SidebarChatView): void {
     current &&
     current.focusedChatId === next.focusedChatId &&
     JSON.stringify(current.groups) === JSON.stringify(next.groups) &&
+    JSON.stringify(current.split ?? []) === JSON.stringify(next.split ?? []) &&
     (current.oneList ?? false) === (next.oneList ?? false)
   ) return
   write(VIEW_KEY, VIEW_EVENT, next)

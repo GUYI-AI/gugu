@@ -14,7 +14,7 @@ export default {
       "hint": "Agent 所在设备的咕咕版本较旧，部分运行信息可能缺失。",
       "label": "主机旧"
     },
-    "offlineWarning": "当前不在线，可能无法及时回复",
+    "offlineWarning": "当前离线，可能无法及时回复",
     "archivedWarning": "对方已归档",
     "wakeRefused": "{{name}} 无法上线：",
     "dm": {
@@ -965,17 +965,10 @@ export default {
     "leave": "退出话题",
     "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
     "removeHint": "对方仍可阅读，只是不再收到这个话题的通知",
-    "calledYou": "有人 @ 你",
     "pins": {
-      "pin": "将“{{name}}”置顶到主群",
+      "pin": "置顶“{{name}}”",
       "unpin": "取消置顶“{{name}}”",
-      "emptyHint": "在任意消息上选择“开话题”。",
-      "loadFailed": "无法读取置顶话题。",
-      "saveFailed": "未能保存置顶话题。"
-    },
-    "phoneTabs": {
-      "group": "群聊",
-      "label": "群聊和话题"
+      "emptyHint": "在任意消息上选择“开话题”。"
     },
     "anchor": {
       "lead": "话题",

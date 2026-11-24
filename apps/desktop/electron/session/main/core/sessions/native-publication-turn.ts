@@ -5,7 +5,7 @@ import { nativeInputPublication, queueNativePublication, readPublicationValue, w
 
 type TurnJournal = { context: NativePublicationContext | null; messages: Record<string, { id: string; at: string; context: NativePublicationContext }> };
 const visible = (item: TranscriptMessage) => item.text.trim() !== '[NO_REPLY]'
-  && Boolean(item.text.trim() || item.attachments?.length || item.files?.length || item.ownerNotification?.files?.length);
+  && Boolean(item.text.trim() || item.attachments?.length || item.files?.length || item.annotations?.length || item.ownerNotification?.files?.length);
 
 /**
  * A UUID is generated once at durable live admission. The immutable turn reference and reducer item

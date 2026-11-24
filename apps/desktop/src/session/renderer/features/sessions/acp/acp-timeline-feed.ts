@@ -3,7 +3,6 @@ import type { SessionpageSessionEvent, TimelineAfterResult } from '@gugu/session
 import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline, prependOlder, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
-import type { ToolImage } from '@gugu/session-core/acp/client';
 
 export async function value<T>(result: Promise<{ ok: true; value: T } | { ok: false; error: { code: string; message: string } }>): Promise<T> {
   const next = await result;
@@ -30,7 +29,6 @@ export interface TimelineFeed {
   catchUp(): Promise<void>;
   /** The page before the oldest turn held, oldest first; empty at the top. */
   older(): Promise<TranscriptTurn[]>;
-  toolImage(itemId: string, index: number): Promise<ToolImage>;
   /** A row of a turn sent folded came on screen from behind a fold: read that turn whole (`folded-pages`). */
   readonly fillHeld: (itemId: string) => void;
   /** Stops following. */
@@ -101,10 +99,6 @@ export class AcpTimelineFeed implements TimelineFeed {
     const held = new Set(this.state.turns.map((turn) => turn.id));
     this.apply(prependOlder(this.state, page));
     return page.turns.filter((turn) => !held.has(turn.id));
-  }
-
-  toolImage(itemId: string, index: number) {
-    return value(this.host.sessionToolImage({ conversationId: this.sessionId, itemId, index }));
   }
 
   /** Stops following and forgets what was read. */

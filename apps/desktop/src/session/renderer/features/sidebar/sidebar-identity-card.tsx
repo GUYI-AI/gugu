@@ -1,12 +1,10 @@
 import { platform } from '@/platform';
 import { safeFailureLine } from '../sessions/gugu-reason';
 import { log } from '@renderer/utils/logger';
-import { PreviewCard as PreviewCardPrimitive } from '@base-ui/react/preview-card';
-import { makeAutoObservable } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
-import { getPortalContainer } from '@renderer/lib/portal-container';
+import { useEffect, useRef, useState } from 'react';
+import { RowHoverCard } from '@/components/ui/RowHoverCard';
+import { RowHoverCardController } from '@/components/ui/rowHoverCardController';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
 import { useReplica, valueOf } from '@/lib/replica';
@@ -30,11 +28,11 @@ import { TailValue } from './sidebar-identity-tail';
  * (owner 2026-10-16)。每行各复制各的,❌ 合成一次复制(owner 同日:「复制任务名就是复制任务名」)。
  *
  * 形状(assistant-ui design.md 的浮层与行规):
- *  · 浮层是**举起来的物件**:圆角 --radius-surface(10px)+ **一层 lift 影,没有环也没有边**。
+ *  · 浮层是**举起来的物件**:圆角 --radius-surface+ **一层 lift 影,没有环也没有边**。
  *    ⚠️ 2026-09-22 裁决(Refs #6104):原配方在这一行写的是「+ 一圈 ring-foreground/10」,而下一行
  *    自己就写着「❌ 边框、ring、影三样叠在一条边上」—— 自述与配方互相打脸,代码照着配方写了环。
  *    design.md:「Do not stack a border, a ring, and a shadow on one edge.」浮起来这件事由 lift
- *    一个人说完。底色走仓里 popover 同一格 background-quaternary。
+ *    一个人说完。底色走仓里 popover 那一格(--popover)。
  *  · 行之间**没有分隔线**:行靠节奏与 hover 底(row-hover)呼吸。
  *  · 标签与值都是正文字(sans),标签 muted;卡上没有标识符,所以没有 mono。
  *  · **没有复制图标**:整行 hover 底就说明它能点,点了就地把值换成「已复制」,1.6s 后收回,❌ 飞到角上的 toast。
@@ -42,147 +40,16 @@ import { TailValue } from './sidebar-identity-tail';
  *    要么浮在行尾盖住值的结尾 —— 两头都是看得见的毛病,所以不摆。
  *  · 单一点缀色:没有。卡上没有任何一处是「活的」,所以没有蓝。
  *
- * 开合:
- *  · **只认指针**。指针在行上停够 OPEN_DELAY_MS 才开(扫过一列行时不闪);键盘焦点、选中态都不开 ——
- *    与行尾那两枚钮同一条纪律(#5818:点一行就成了键盘光标,认它等于选中的行常驻一张卡)。
- *  · 已经有一张卡开着时,指针换到另一行**立即**换卡(warm swap),不再重等一遍。
- *  · **点击不是悬浮**:在行上按下 = 收卡(连同还没到点的倒计时),并且指针离开这一行之前不再开。
- *    原来点击不碰卡,指针停在被点的行上倒计时照跑 —— 进行后 400ms 内点的,卡在点完之后弹出来;
- *    停够了才点的,卡点完还挂着 —— 同一个点击时弹时不弹(owner 2026-09-24:「点击这个动作没必要触发悬浮」)。
- *  · 收:指针离开就收,不等(owner 2026-10-08:「应该是立即消失,而不是过一会儿才消失」)。
- *    行与卡在命中上**贴着**(卡左侧那 8px 间隙是卡自己的透明边),所以「走进卡里」就是离开行的那一下
- *    直接落进卡 —— 判 pointerleave 的去向(`staysOnCard`)就够,❌ 安全三角、❌ 宽限计时器。
- *    点外 / Esc 由 Base UI 出。
- *  · 右键菜单开了、行开始被拖了,卡当场收:那两件事都是「不在看这张卡了」。
+ * 开合、动效、贴边与「移进卡不收」都是产品统一的行悬浮卡(components/ui/RowHoverCard.tsx),这里只画卡上的三行。
+ * 右键菜单开了、行开始被拖了,行自己收卡(sidebar-session-item):那两件事都是「不在看这张卡了」。
  *
  * 显示沿用起名占位投影；复制始终取同一个原名真源。❌ 不挂原生 title。
  */
 
-const OPEN_DELAY_MS = 400;
 const COPIED_MS = 1600;
 
-/**
- * 全侧栏同一时刻只有一张卡。行自己不记「我开着」——它只问这张表「现在开的是不是我」,
- * 于是换行时旧卡关、新卡开是同一次赋值,❌ 换行那一下两张卡叠在一起。
- */
-class SidebarIdentityCardStore {
-  activeSessionId: string | null = null;
-  /**
-   * 刚被点过、指针还没离开的那一行:它的悬浮不开卡。记在全局而不是行的 ref 上 —— 点开会话会让侧栏
-   * 重渲,行节点可能换掉,新节点在指针下一动就收到一次 pointerenter,ref 记的会跟着旧节点丢掉。
-   * 单格:进了别的行就作废,所以滚走、卸载都不会留下一条永远不弹的行。
-   */
-  suppressedSessionId: string | null = null;
-
-  constructor() {
-    makeAutoObservable(this);
-  }
-
-  get isWarm(): boolean {
-    return this.activeSessionId !== null;
-  }
-
-  open(sessionId: string): void {
-    this.activeSessionId = sessionId;
-  }
-
-  suppress(sessionId: string): void {
-    this.suppressedSessionId = sessionId;
-    this.close(sessionId);
-  }
-
-  /** 进了别的行:上一条「点过」作废。 */
-  releaseOthers(sessionId: string): void {
-    if (this.suppressedSessionId !== sessionId) this.suppressedSessionId = null;
-  }
-
-  release(sessionId: string): void {
-    if (this.suppressedSessionId === sessionId) this.suppressedSessionId = null;
-  }
-
-  /** 只收自己那张:A 行卸载、开关被关掉或点按收卡时,开着的可能已经是 B 行的卡,❌ 把 B 的关掉。 */
-  close(sessionId: string): void {
-    if (this.activeSessionId === sessionId) this.activeSessionId = null;
-  }
-}
-
-export const sidebarIdentityCard = new SidebarIdentityCardStore();
-
-/**
- * 指针离开行或卡时,去的地方还算不算「在看卡」:进了卡、回到行、或者走到另一条会话行(那一行进来就换卡)。
- * 去向为 null(指针出了窗口)或别处 ⇒ 收。
- */
-function staysOnCard(event: ReactPointerEvent): boolean {
-  const target = event.relatedTarget;
-  return target instanceof Element && target.closest('[data-sidebar-identity-card], [role="treeitem"][data-session-id]') !== null;
-}
-
-/**
- * 行侧的触发:指针停够时长才开,已有卡开着时换行即开。
- * 返回挂到行上的那几个 handler;开关状态在 store 上,行通过 `sidebarIdentityCard.activeSessionId` 读。
- */
-export function useSidebarIdentityCardTrigger(sessionId: string, enabled: boolean) {
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const cancel = useCallback(() => {
-    if (timer.current === null) return;
-    clearTimeout(timer.current);
-    timer.current = null;
-  }, []);
-
-  useEffect(() => cancel, [cancel]);
-  // 设置里关掉时,开着的那张也得收 —— 开关是真的接着这一行的,不是只拦下一次。
-  useEffect(() => {
-    if (!enabled) sidebarIdentityCard.close(sessionId);
-  }, [enabled, sessionId]);
-  // 行卸载(虚拟列表滚出窗口 / 项目折叠)时也收:store 里那格 id 是全侧栏共享的,不收就悬着,
-  // 行一重新挂载,卡会在指针从没碰过它的情况下自己弹出来。
-  useEffect(() => () => sidebarIdentityCard.close(sessionId), [sessionId]);
-
-  const onPointerEnter = useCallback(
-    (event: React.PointerEvent) => {
-      if (!enabled || event.pointerType === 'touch') return;
-      cancel();
-      if (sidebarIdentityCard.suppressedSessionId === sessionId) return;
-      sidebarIdentityCard.releaseOthers(sessionId);
-      if (sidebarIdentityCard.isWarm) {
-        sidebarIdentityCard.open(sessionId);
-        return;
-      }
-      timer.current = setTimeout(() => {
-        timer.current = null;
-        sidebarIdentityCard.open(sessionId);
-      }, OPEN_DELAY_MS);
-    },
-    [enabled, sessionId, cancel]
-  );
-
-  // 离开:没开的倒计时作废;开着的卡,除非指针正落进卡里(或换到别的会话行),当场收。
-  // 离开也是「点过」的终点:下一次进来才算重新悬浮。
-  const onPointerLeave = useCallback(
-    (event: ReactPointerEvent) => {
-      cancel();
-      sidebarIdentityCard.release(sessionId);
-      if (!staysOnCard(event)) sidebarIdentityCard.close(sessionId);
-    },
-    [cancel, sessionId]
-  );
-  // 按下(鼠标任一键、笔)= 在操作这一行,不是在看它是谁。
-  const onPointerDown = useCallback(
-    (event: React.PointerEvent) => {
-      if (event.pointerType === 'touch') return;
-      cancel();
-      sidebarIdentityCard.suppress(sessionId);
-    },
-    [cancel, sessionId]
-  );
-  const dismiss = useCallback(() => {
-    cancel();
-    sidebarIdentityCard.close(sessionId);
-  }, [cancel, sessionId]);
-
-  return { onPointerEnter, onPointerLeave, onPointerDown, dismiss };
-}
+/** 侧栏会话行这一列的悬浮卡:全列同一时刻只有一张。 */
+export const sidebarIdentityCard = new RowHoverCardController('sidebar-session');
 
 type RowSpec = {
   key: 'sessionName' | 'device' | 'folder';
@@ -203,7 +70,6 @@ export const SidebarIdentityCard = observer(function SidebarIdentityCard({
   title,
   displayTitle = title,
   anchor,
-  onDismiss,
 }: {
   projectId: string;
   sessionId: string;
@@ -211,7 +77,6 @@ export const SidebarIdentityCard = observer(function SidebarIdentityCard({
   displayTitle?: string;
   /** 取行本体。传取值函数:虚拟列表重渲染会换掉行节点,拿着旧节点定位是对着脱离文档的元素算坐标。 */
   anchor: () => Element | null;
-  onDismiss: () => void;
 }) {
   const { translate } = useSessionMessages();
   const rows: RowSpec[] = [{ key: 'sessionName', label: translate('identityCard.sessionName'), value: title, display: displayTitle }];
@@ -238,46 +103,19 @@ export const SidebarIdentityCard = observer(function SidebarIdentityCard({
   );
 
   return (
-    <PreviewCardPrimitive.Root
-      open
-      onOpenChange={(open) => {
-        if (!open) onDismiss();
-      }}
+    <RowHoverCard
+      card={sidebarIdentityCard}
+      rowKey={sessionId}
+      anchor={anchor}
+      label={translate('identityCard.dialog', { name: displayTitle })}
+      className="flex w-max max-w-80 flex-col py-1"
     >
-      <PreviewCardPrimitive.Portal container={getPortalContainer()}>
-        <PreviewCardPrimitive.Positioner
-          anchor={anchor}
-          side="right"
-          align="start"
-          collisionPadding={8}
-          className="isolate z-50"
-        >
-          {/* 贴着行开(sideOffset 0),看得见的 8px 间隙是 Popup 朝行那一侧的透明边 —— 它算卡,
-              所以指针从行走进卡,中间没有一个「两边都不是」的像素。 */}
-          <PreviewCardPrimitive.Popup
-            data-sidebar-identity-card
-            data-session-id={sessionId}
-            role="dialog"
-            aria-label={translate('identityCard.dialog', { name: displayTitle })}
-            onPointerLeave={(event) => {
-              if (!staysOnCard(event)) onDismiss();
-            }}
-            className={cn(
-              'z-50 origin-(--transform-origin) outline-hidden data-[side=right]:pl-2 data-[side=left]:pr-2',
-              'duration-[var(--dur-fast)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 data-[side=right]:slide-in-from-left-2 data-[side=left]:slide-in-from-right-2 motion-reduce:animate-none motion-reduce:transition-none'
-            )}
-          >
-            {/* 宽度跟内容走,封顶 20rem:短名字不再拖着一大截空白(owner 2026-10-16 实看:「占的留白太多了」);
-                16rem 时文件夹那一行只剩「~/Codebase/idcard…」,看不到是哪个目录(2026-10-27 实机),放宽一档。 */}
-            <div className="flex w-max max-w-80 flex-col overflow-hidden rounded-surface bg-background-quaternary py-1 text-sm text-foreground shadow-lift">
-              {rows.map((row) => (
-                <IdentityRow key={row.key} row={row} />
-              ))}
-            </div>
-          </PreviewCardPrimitive.Popup>
-        </PreviewCardPrimitive.Positioner>
-      </PreviewCardPrimitive.Portal>
-    </PreviewCardPrimitive.Root>
+      {/* 宽度跟内容走,封顶 20rem:短名字不再拖着一大截空白(owner 2026-10-16 实看:「占的留白太多了」);
+          16rem 时文件夹那一行只剩「~/Codebase/idcard…」,看不到是哪个目录(2026-10-27 实机),放宽一档。 */}
+      {rows.map((row) => (
+        <IdentityRow key={row.key} row={row} />
+      ))}
+    </RowHoverCard>
   );
 });
 

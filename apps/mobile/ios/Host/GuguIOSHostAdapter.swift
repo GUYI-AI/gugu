@@ -20,7 +20,7 @@ final class GuguIOSHostAdapter {
     private static let reads: Set<String> = [
         "sessionTimeline.sessionsList", "sessionTimeline.sessionOfAgent", "sessionTimeline.sessionCreateOptions",
         "sessionTimeline.sessionCreateModels", "sessionTimeline.sessionSnapshot", "sessionTimeline.sessionAfter",
-        "sessionTimeline.sessionOlder", "sessionTimeline.sessionToolImage", "sessionTimeline.sessionOptions",
+        "sessionTimeline.sessionOlder", "sessionTimeline.sessionOptions",
         "appSettings.get", "appSettings.getWithMeta",
     ]
     private static let mutations: Set<String> = [

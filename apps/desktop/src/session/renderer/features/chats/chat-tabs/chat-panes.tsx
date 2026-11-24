@@ -1,11 +1,11 @@
-import { CONVERSATION_CAPSULE_CLASS } from '../../tabs/tab-bar/conversation-capsule';
+import { CONVERSATION_CAPSULE_CLASS, CONVERSATION_CAPSULE_LAYER_CLASS } from '../../tabs/tab-bar/conversation-capsule';
 import { OwnedAgentChatBoundary } from '../owned-agent-chat-boundary';
 import { DndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
 import { makesPaneCurrent } from '../../tabs/pane-activation';
 import { useContext, useEffect, useMemo, type ReactNode, type ComponentProps } from 'react';
 import { screenLayout } from '@renderer/app/screen-layout';
-import { openChatTabInWindow, placeOnScreen, revealTabWindow } from '@renderer/app/screen-layout-actions';
+import { openChatTabInWindow, revealTabWindow } from '@renderer/app/screen-layout-actions';
 import { ChatPartSlot } from '@renderer/lib/chat-slot';
 import { edgeFirst, PANE_EDGES, PaneEdgeDropZones } from '@renderer/features/tabs/pane-edge-drop';
 import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
@@ -19,10 +19,9 @@ import type { ResolvedTab } from '@renderer/features/tabs/core/tab-provider';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { TabChip, TabSlot } from '@renderer/features/tabs/tab-bar/tab-chip';
 import { ContextMenu } from '@/components/ui/Menu';
-import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { ChatWorkspaceNewTab } from '@renderer/features/tabs/chat-workspace-new-tab';
 import { ChatWorkspaceTabContext } from '@renderer/features/tabs/chat-workspace-context';
-import { chatBlockContentOf, chatLayoutOf, closeChatTab } from './chat-layouts';
+import { chatLayoutOf } from './chat-layouts';
 import { CHAT_TAB_KIND, ChatTabHostContext, type ChatTabHost } from './chat-tab-providers';
 
 /**
@@ -37,28 +36,21 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
   chip,
   body,
   actionsSlot,
-  chromeActionsSlot = actionsSlot,
   reserveShellRestoreLane,
+  leading,
   embedded = false,
 }: Pick<ChatTabHost, 'chip' | 'body'> & {
   chatId: string;
   blockId?: string;
   embedded?: boolean;
-  /** The strip's far end: the chat's icons (search, folder, members), the block's own close. */
+  /** The strip's far end: the chat's icons (search, folder, members). */
   actionsSlot: ReactNode;
-  chromeActionsSlot?: ReactNode;
   reserveShellRestoreLane?: boolean;
+  /** The strip's first point: the block's ⋮⋮ (BlockGrip) while the screen is split. */
+  leading?: ReactNode;
 }) {
   const layout = chatLayoutOf(chatId);
-  const block = useScreenBlock();
-  const host = useMemo<ChatTabHost>(() => ({
-    chip,
-    body,
-    ownBlock: (tabId) => {
-      const content = chatBlockContentOf(chatId, tabId);
-      if (content && blockId && placeOnScreen(content, blockId, 'right')) closeChatTab(chatId, tabId);
-    },
-  }), [chip, body, chatId, blockId]);
+  const host = useMemo<ChatTabHost>(() => ({ chip, body }), [chip, body]);
   // 页签右键「在新窗口打开」:除了这个对话自己那一枚,哪一枚都能单独成窗(和任务里的附页一样);它在窗里 = 把窗提到前面。
   useEffect(() => {
     layout.setWindowOpener((tabId) => (layout.groups.find(({ pane }) => pane.entries.has(tabId))?.pane.entries.get(tabId)?.kind === CHAT_TAB_KIND ? null : () => openChatTabInWindow(chatId, layout, tabId)));
@@ -70,10 +62,6 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
   }, [layout, chatId]);
   const drag = useTabDrag({
     layout,
-    blockId: blockId ?? null,
-    // An App page of this chat is a block of its own on another block's edge, and leaves the chat's strip.
-    contentOf: (tabId) => embedded ? null : chatBlockContentOf(chatId, tabId),
-    landed: (tabId) => closeChatTab(chatId, tabId),
     // Out of the window, any but the chat's own tab opens in a window of its own.
     openWindow: (tabId) => (layout.groups.find(({ pane }) => pane.entries.has(tabId))?.pane.entries.get(tabId)?.kind === CHAT_TAB_KIND ? null : (at) => openChatTabInWindow(chatId, layout, tabId, at)),
   });
@@ -84,17 +72,17 @@ const LegacyChatPanes = observer(function LegacyChatPanes({
   return (
     <ChatTabHostContext.Provider value={host}>
       <PaneLayoutProvider paneLayout={layout}>
-        <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragMove={drag.onDragMove} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
+        <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
           <PaneTreeView layout={layout} chatChrome={{
-            actions: chromeActionsSlot,
+            actions: actionsSlot,
             addTab: <ChatWorkspaceNewTab layout={layout} />,
+            leading,
             reserveShellRestoreLane,
-            atWindowEdge: !embedded && block.topRight,
             embedded,
           }} renderPane={(paneId, first, last, part) => {
             const group = layout.groups.find((candidate) => candidate.paneId === paneId)!;
             const focused = !embedded && screenLayout.focusedBlockId === blockId && layout.activePaneId === paneId;
-            const strip = { tabTrailingSlot: addTab, actionsSlot: last ? actionsSlot : undefined, reserveShellRestoreLane: first && reserveShellRestoreLane };
+            const strip = { tabLeadingSlot: first ? leading : undefined, tabTrailingSlot: addTab, actionsSlot: last ? actionsSlot : undefined, reserveShellRestoreLane: first && reserveShellRestoreLane };
             if (part === 'bar') return <PaneProvider group={group} isFocusedPane={focused} passive><PaneContent part="bar" {...strip} /></PaneProvider>;
             const edges = dragging === null ? [] : PANE_EDGES.filter((edge) => layout.allowsTabEdgeDrop(paneId, dragging, edge));
             // This React tree owns the pane shell and its blank space; portaled content owns its input in ChatPaneContent.
@@ -138,10 +126,12 @@ export const ChatTabChip = observer(function ChatTabChip({
   const workspaceRole = workspace?.role;
   if (workspaceRole === 'capsule') {
     // 第 16 版 #8:对话卡片顶上只剩这一颗胶囊;名字由 ChatBlockHead 画进 labelSlot(点它出名片),胶囊里不放头像。
+    // The name's trigger fills the whole capsule (slot stretched, title flex-1), so a click anywhere on it opens the card,
+    // ❌ only on the text (a short name in the capsule's minimum width left its sides dead).
     return (
       // 按整张卡居中(设计稿 .capbar):相对页签条的 padding box 绝对居中。
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center" {...data}>
-        <div className={`${CONVERSATION_CAPSULE_CLASS} pointer-events-auto !px-0 [&_[data-chat-block-avatar]]:hidden [&_[data-chat-block-title]]:px-4`} data-chat-workspace-title="">
+      <div className={CONVERSATION_CAPSULE_LAYER_CLASS} {...data}>
+        <div className={`${CONVERSATION_CAPSULE_CLASS} pointer-events-auto !px-0 [&_[data-chat-block-avatar]]:hidden [&_[data-chat-block-title]]:flex-1 [&_[data-chat-block-title]]:px-4 [&_[data-chat-block-title]]:justify-center [&>[data-chat-part]]:self-stretch`} data-chat-workspace-title="">
           {labelSlot ?? <span className="truncate" title={label}>{label}</span>}
         </div>
       </div>

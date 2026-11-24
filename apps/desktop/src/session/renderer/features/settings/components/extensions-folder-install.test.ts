@@ -295,7 +295,7 @@ describe('Desktop marketplace tabs and app details', () => {
       } as never);
       h.api.list.mockResolvedValueOnce({ success: true, data: { extensions: [here.manifest], invalid: [], icons: {}, disabled: [], origins } } as never);
       await render();
-      await press('[data-testid="featured-extension-card-pomo"]');
+      await press('[data-testid="extension-card-pomo"]');
       const action = dom.window.document.querySelector('[data-testid="app-product-action"]')?.textContent ?? null;
       // The product page is drawn either way (a missing button would make the arm without an offer pass on nothing).
       expect(action).not.toBeNull();

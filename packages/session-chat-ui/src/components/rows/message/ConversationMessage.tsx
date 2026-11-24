@@ -57,8 +57,11 @@ function segments(item: ChatMessage): ChatMessage[] {
   }) : [item];
 }
 
-export function conversationMessageHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): number {
-  return segments(item).reduce((height, segment, index) => height + singleHeight(segment, ctx, vars) + (index ? CONVERSATION_UTTERANCE_GAP : 0), 0);
+type BodyHeight = (item: ChatMessage, ctx: MeasureCtx, vars: MessageVars) => number;
+
+/** `bodyHeight` sizes each bubble's body: measured for the row's height, or the row's cheap estimate (estimateUserMessage). */
+export function conversationMessageHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars, bodyHeight: BodyHeight = measureUserMessage): number {
+  return segments(item).reduce((height, segment, index) => height + singleHeight(segment, ctx, vars, bodyHeight) + (index ? CONVERSATION_UTTERANCE_GAP : 0), 0);
 }
 
 /** Only an explicit IM reply or persisted timeline source gets a clickable quote. */
@@ -93,11 +96,11 @@ export function conversationBubbleTop(item: ChatMessage, ctx: MeasureCtx): numbe
   return item.conversationPart === 'body' ? 0 : headerLayout(item, ctx).height;
 }
 
-function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): number {
+function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars, bodyHeight: BodyHeight): number {
   if (item.conversationNarration) return conversationNarrationHeight(item, ctx);
   if (item.conversationPart === 'head') {
     const head = headerLayout(item, ctx);
-    return head.height + backgroundHeight(item, ctx) + (head.referenceInFooter ? measureUserMessage(item, conversationContext(ctx, item), conversationVars(item, vars)) : 0);
+    return head.height + backgroundHeight(item, ctx) + (head.referenceInFooter ? bodyHeight(item, conversationContext(ctx, item), conversationVars(item, vars)) : 0);
   }
   const header = conversationBubbleTop(item, ctx);
   const password = passwordRequest(item);
@@ -105,9 +108,9 @@ function singleHeight(item: ChatMessage, ctx: MeasureCtx, vars: MessageVars): nu
   const bodyVars = conversationVars(item, vars);
   // 时间、复制、编辑那一行照原气泡画在气泡下面(owner 定稿 0 号图);没有正文就没有气泡,也不留这一行。
   const bodyCtx = conversationContext(ctx, item);
-  const body = measureUserMessage(item, bodyCtx, bodyVars);
+  const body = bodyHeight(item, bodyCtx, bodyVars);
   // 折着 ⇔ 展开量出来比现在高;那时气泡下面多一行「展开全文」。
-  const folded = bodyCtx.expandedId !== item.id && !isMessageEditing(item.id, ctx) && measureUserMessage(item, { ...bodyCtx, expandedId: item.id }, bodyVars) > body;
+  const folded = bodyCtx.expandedId !== item.id && !isMessageEditing(item.id, ctx) && bodyHeight(item, { ...bodyCtx, expandedId: item.id }, bodyVars) > body;
   const lane = conversationTailLane(item, conversationCanCollapse(item, ctx), headerLayout(item, ctx).referenceInFooter);
   const actions = lane !== 'none' || isMessageEditing(item.id, ctx) ? 0 : userMessageActionsHeight(bodyVars, actionGap(bodyCtx.theme.layout));
   return header + body - actions + (folded ? CONVERSATION_EXPAND_H : 0) + (item.role === 'assistant' && item.conversationProcess ? backgroundHeight(item, ctx) : 0);

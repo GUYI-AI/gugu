@@ -61,7 +61,7 @@ import { useChatStore } from '../../store/chatContext'
 import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
 import { agentOwnerDisplayName, toAgentProfile } from '../memberProfileModels'
-import { buildUnifiedMembers } from './groupMemberModels'
+import { useUnifiedMembers } from './useUnifiedMembers'
 import { useListenModeEditControls } from './useListenModeEditControls'
 import { ChevronRight } from '../../lib/icons'
 import type { RoomCollabError } from '../../hooks/useRoomCollab'
@@ -234,10 +234,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const agentIds = useMemo(() => agents.map((agent) => agent.id), [agents])
   const agentStatuses = useAgentDisplayStatuses(agentIds)
   const shownAgent = useShownAgentStatus() // #7199 角标 / 资料画的那一格:宿主闲时收回着 ≠ 不在线
-  const unified = useMemo(
-    () => (snapshot ? buildUnifiedMembers(snapshot) : []),
-    [snapshot],
-  )
+  const unified = useUnifiedMembers(snapshot)
   const people = useMemo(() => unified.filter((member) => member.type === 'human'), [unified])
   const agentMembers = useMemo(() => unified.filter((member) => member.type === 'agent'), [unified])
 

@@ -69,16 +69,19 @@ export function createDesktopClosureService(ports: DesktopClosureServicePorts) {
   }
   return {
     native, underAuth,
-    async prepare(input: AccountClosureScope): Promise<{ prepared: true }> {
+    async prepare(input: AccountClosureScope, nativeGeneration?: string): Promise<{ prepared: true }> {
+      // The optional generation is supplied only by native V2 custody. Legacy
+      // renderer IPC forwards the scope alone and cannot assert this argument.
+      if (nativeGeneration !== undefined && !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(nativeGeneration)) throw new ClosureFailure('invalid_scope')
       const scope = scopeOf(input)
       const epoch = await underAuth(async () => {
         await own(scope)
         if (await native.receipt.get(scope) === null) throw new ClosureFailure('receipt_missing')
         let fence = await readFence(scope.ownerId)
         if (fence?.erasing) throw new ClosureFailure('closure_not_prepared')
-        if (fence?.active && fence.operation !== scope.localOperationId) return conflict()
+        if (fence?.active && (fence.operation !== scope.localOperationId || nativeGeneration !== undefined && fence.epoch !== nativeGeneration)) return conflict()
         if (!fence?.active) {
-          fence = { version: 1, operation: scope.localOperationId, epoch: randomUUID(), active: true, ready: false, paused: true, erasing: false }
+          fence = { version: 1, operation: scope.localOperationId, epoch: nativeGeneration ?? randomUUID(), active: true, ready: false, paused: true, erasing: false }
           await writeFence(scope.ownerId, fence)
         }
         // Capture may precede preparation (the challenge already returned its
@@ -108,6 +111,59 @@ export function createDesktopClosureService(ports: DesktopClosureServicePorts) {
         if (!fence || fence.erasing || fence.operation !== scope.localOperationId || fence.epoch !== epoch) return conflict()
         await writeFence(scope.ownerId, { ...fence, active: false, ready: false })
         return { cancelled: true }
+      })
+    },
+    /** Separate explicit user intent, never normal startup/reconciliation.
+     * A later captured/cancelled operation does not discard an older pause. */
+    async resumeCancelledOwner(ownerId: string): Promise<void> {
+      await underAuth(async () => {
+        if (await ports.currentOwner() !== ownerId) throw new ClosureFailure('wrong_local_owner')
+        const fence = await readFence(ownerId)
+        if (!fence) return
+        if (fence.active || fence.erasing) throw new ClosureFailure('closure_not_prepared')
+        if (fence.paused) await writeFence(ownerId, { ...fence, paused: false })
+      })
+    },
+    /** Trusted-deleted V2 receiver only. Requalify ownership/runtime exit
+     * before even the first cache purge, and fence late same-owner Auth writes. */
+    async beginNativeErasure(input: AccountClosureScope, epoch: string): Promise<void> {
+      const scope = scopeOf(input)
+      await underAuth(async () => {
+        const owner = await ports.currentOwner()
+        if (owner === undefined) return unavailable()
+        if (owner !== null && owner !== scope.ownerId) throw new ClosureFailure('wrong_local_owner')
+        const fence = await readFence(scope.ownerId)
+        if (!fence?.active || !fence.ready || fence.operation !== scope.localOperationId || fence.epoch !== epoch) throw new ClosureFailure('closure_not_prepared')
+        await ports.recheckStopped?.(scope.ownerId)
+        if (!fence.erasing) await writeFence(scope.ownerId, { ...fence, erasing: true })
+      })
+    },
+    /** Private V2 pre-confirm proof. A restored server preparation cannot
+     * replace this installation's still-current runtime exit evidence. */
+    async requireNativePreparation(input: AccountClosureScope, epoch: string): Promise<void> {
+      const scope = scopeOf(input)
+      await underAuth(async () => {
+        await own(scope)
+        const fence = await readFence(scope.ownerId)
+        if (!fence?.active || !fence.ready || fence.erasing || fence.operation !== scope.localOperationId || fence.epoch !== epoch) throw new ClosureFailure('closure_not_prepared')
+        await ports.recheckStopped?.(scope.ownerId)
+      })
+    },
+    /** Private V2 receiver only: callers have already persisted the exact
+     * authoritative cancellation ACK. Never registered as a renderer command. */
+    async releaseNativePreparation(input: AccountClosureScope, epoch: string): Promise<void> {
+      const scope = scopeOf(input)
+      if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(epoch)) throw new ClosureFailure('invalid_scope')
+      await underAuth(async () => {
+        const owner = await ports.currentOwner()
+        if (owner === undefined) return unavailable()
+        if (owner !== null && owner !== scope.ownerId) throw new ClosureFailure('wrong_local_owner')
+        const fence = await readFence(scope.ownerId)
+        const matching = fence?.operation === scope.localOperationId && fence.epoch === epoch
+        if (fence && (fence.erasing || fence.active && !matching)) return conflict()
+        try { await native.receipt.remove(scope) }
+        catch (error) { if (!(error instanceof ClosureFailure) || error.code !== 'closure_context_missing') throw error }
+        if (fence && matching) await writeFence(scope.ownerId, { ...fence, active: false, ready: false })
       })
     },
     /** Used by main's runtime and session admission, including after restart. */

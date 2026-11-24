@@ -20,6 +20,7 @@ import { readShellSlots } from '@/lib/shellSlots';
 import { chatBlockOnScreen } from '@renderer/features/chats/group-participant-actions';
 import { screenLayout } from '@renderer/app/screen-layout';
 import { navigateToGroupRoot } from '@renderer/app/screen-layout-actions';
+import { blockReturnDropTarget } from '@renderer/app/block-grip';
 import { prepareProjectTask } from '@renderer/features/projects/project-task-entry';
 import { accountProjectsStore } from '@renderer/features/projects/stores/account-projects-store';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
@@ -74,9 +75,12 @@ import { SidebarSessionItem } from './sidebar-session-item';
 // InnerSidebarTopics,同一个动作行的样子)。这一列里 ❌ 找的框:找东西用列表顶上那个搜索(开着群时先搜这个群,sidebar-search-trigger)。
 // 这一列可以收起(inner-sidebar-fold):收起是全局的,正文左上角浮出展开钮(InnerSidebarRestore)。
 
-/** 导航此刻在哪(读成内层侧栏要的样子)。 */
+/**
+ * 导航此刻在哪一页(读成内层侧栏要的样子)。认的是铺着的那一页(pageViewId),❌ currentViewId:市场、App 页这种浮在页上的
+ * 视图(@@@page-modal)不换背后那一页,这一列也就照旧挂着。
+ */
 function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarView {
-  const { currentViewId, viewParamsStore } = appState.navigation;
+  const { pageViewId: currentViewId, viewParamsStore } = appState.navigation;
   if (currentViewId === 'chat') {
     const chatId = (viewParamsStore.chat as { chatId?: string } | undefined)?.chatId;
     if (!chatId) return { kind: 'other' };
@@ -88,14 +92,17 @@ function currentView(summaries: ReadonlyMap<string, ChatSummary>): InnerSidebarV
   }
   if (currentViewId === 'session') {
     const sessionId = openSessionId();
-    return sessionId ? { kind: 'session', sessionId } : { kind: 'other' };
+    if (!sessionId) return { kind: 'other' };
+    const projectId = (viewParamsStore.session as { projectId?: string } | undefined)?.projectId;
+    const projectChatId = projectId ? accountProjectsStore.projectOfLocal(projectId)?.chatId : undefined;
+    return { kind: 'session', sessionId, ...(projectChatId ? { projectChatId } : {}) };
   }
   return { kind: 'other' };
 }
 
 /** 主区此刻打开着的会话(不在会话页 = null)。 */
 function openSessionId(): string | null {
-  const { currentViewId, viewParamsStore } = appState.navigation;
+  const { pageViewId: currentViewId, viewParamsStore } = appState.navigation;
   if (currentViewId !== 'session') return null;
   return (viewParamsStore.session as { sessionId?: string } | undefined)?.sessionId ?? null;
 }
@@ -214,9 +221,10 @@ const InnerSidebarColumn = observer(function InnerSidebarColumn({
     <InnerSidebarFrame kind={anchor.kind} chatId={anchor.chatId}>
       <InnerHeadRow anchor={anchor} summary={summary} active={headActive} />
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto" data-region="inner-sidebar-scroll">
-        {/* 群、项目同一个次序(第 16 版稿):「话题」在上、「智能体」在下。「全部 ›」开的是主区的话题页,这一列不变。 */}
+        {/* 群、项目同一个次序(第 16 版稿):「话题」在上、「智能体」在下。「全部 ›」在这一列里原地摊开全部话题(带搜索),
+            收走下面的「智能体」,「全部 › / ‹ 返回」因此永远在同一个位置;主区照旧是当前会话。 */}
         {topics}
-        {agentsSection}
+        {levelTwo ? null : agentsSection}
       </div>
     </InnerSidebarFrame>
   );
@@ -239,11 +247,13 @@ const InnerSidebarFrame = observer(function InnerSidebarFrame({
   return (
     // isolate:分区头、行里那几层 z 序关在这一列里,❌ 压过左边列表那根拖动分隔条。
     // 底色是窗口底(同 left-sidebar,界面减法 #10):这一列归列表那一层,只有正文是叠在上面的卡片;左边一根细线和零级栏分开(#52)。
+    // 屏上一块的 ⋮⋮ 拖回这一列 = 那块从这屏拿走(取消并排,block-grip)。
     <div
       data-region="inner-sidebar"
       data-inner-sidebar-chat={chatId}
       data-inner-sidebar-kind={kind}
       className="relative isolate flex h-full w-full flex-col border-l border-border text-foreground-tertiary-muted"
+      {...blockReturnDropTarget()}
     >
       <SidebarContainer className="min-h-0 w-full flex-1">
         <SidebarContent className="flex flex-col">{children}</SidebarContent>
@@ -323,11 +333,7 @@ const InnerTopicsSection = observer(function InnerTopicsSection({ chatId, levelT
             variant="ghost"
             size="xs"
             data-inner-topics-drill={levelTwo ? 'back' : 'all'}
-            onClick={() => {
-              // 话题页开在这个群 / 项目那一块里:先回到它本身,再换成那一页;已开着 = 关掉,回到群。
-              if (!levelTwo) navigateToGroupRoot(chatId);
-              setInnerSidebarTopicsAll(levelTwo ? null : chatId);
-            }}
+            onClick={() => setInnerSidebarTopicsAll(levelTwo ? null : chatId)}
           >
             {levelTwo ? (
               <>

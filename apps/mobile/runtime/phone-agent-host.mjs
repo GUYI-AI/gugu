@@ -41,6 +41,7 @@ import { createPhoneAttachmentCreation } from './phone-creation-attachments.mjs'
 import { createPhoneSkillsRuntime } from './phone-agent-skills.mjs'
 import { createPhonePreparation, phonePreparationFailureText, phoneRequestFailure } from './phone-agent-network.mjs'
 import { deferPhonePreparation, phonePreparationExpired, phonePreparationMayRun, phonePreparationWaitError } from './phone-agent-preparation-queue.mjs'
+import { annotationPromptText } from '../../../packages/session-core/src/acp/models/turn-annotations.ts'
 
 const required = (value, name) => { if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} is required`); return value.trim() }
 const parseSession = (value) => {
@@ -478,7 +479,8 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       const attached = job.files?.length ? await turnFiles(agent, job.files, controller.signal, {
         requireComplete: job.requiresCompleteFiles === true, expectedFileDigests: job.expectedFileDigests,
       }) : null
-      const body = [job.prompt, attached?.text].filter(Boolean).join('\n\n')
+      // The person's comments go ahead of their words, as a desktop host sends them (`annotationPromptText`).
+      const body = [annotationPromptText(job.annotations), job.prompt, attached?.text].filter(Boolean).join('\n\n')
       const prompt = job.confirmationResult ? `${body}\n\nThe phone host handled this action on the real owner's confirmation. Below is the trusted result; only explain it, never run the action again:\n${JSON.stringify(job.confirmationResult)}` : body
       checkCancelled()
       const result = await runTurn({ sessionId: agent.sessionId, jobId: job.id, contextEpoch: agent.contextEpoch, agentUserId: agent.agentUserId, prompt, phoneTools: 'catalog', cancelled: job.cancelRequested === true, ...lease.model }, { emit: (event) => {
@@ -495,9 +497,11 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
                 if (agent.inputIdentities?.epoch !== agent.contextEpoch) agent.inputIdentities = { epoch: agent.contextEpoch, records: {} }
                 agent.inputIdentities.records[event.recordId] = job.clientMessageId
               }
-              if (job.files?.length) {
+              // What the person sent, in place of the record's prompt: their words, files and comments.
+              if (job.files?.length || job.annotations?.length) {
                 agent.fileInputs ??= {}
-                agent.fileInputs[event.recordId] = { text: job.prompt, files: job.files.map(({ itemId, version, name, mimeType, sizeBytes }) => ({ itemId, version, name, mimeType, sizeBytes })) }
+                agent.fileInputs[event.recordId] = { text: job.prompt, files: (job.files ?? []).map(({ itemId, version, name, mimeType, sizeBytes }) => ({ itemId, version, name, mimeType, sizeBytes })),
+                  ...(job.annotations?.length ? { annotations: job.annotations } : {}) }
               }
               void store.save().catch(error => warn(error.message))
             }
@@ -768,7 +772,7 @@ export async function startPhoneAgentHost(initialConfig, { runTurn, cancelTurn, 
       // still have to be true before the device advertises a task runtime.
       const available = startupComplete && authenticated && rpcConnected
       // This host's version is known even while startup/auth/RPC readiness is pending.
-      await registerGuguDevice(cloud.identity, { ...row, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: 1, host_kind: 'phone', remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { expectedDeviceId: deviceId, signal: abort.signal })
+      await registerGuguDevice(cloud.identity, { ...row, capabilities: { ...row.capabilities, runtimes: available ? ['pi'] : [], host_runtime_capability: 1, host_kind: 'phone', task_annotations: 1, remote_protocol: REMOTE_PROTOCOL_VERSION, min_client_protocol: MIN_CLIENT_PROTOCOL } }, { expectedDeviceId: deviceId, signal: abort.signal })
       if (stopped || signingOut) return
       if (available && store.state.preparationBackoff) {
         store.state.preparationBackoff.awaitingHeartbeat = false

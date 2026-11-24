@@ -316,6 +316,27 @@ describe('sticky user lanes', () => {
     expect(t.host.querySelectorAll('[data-pin-summary="a-user"]')).toHaveLength(1);
   });
 
+  it('lands a jump into a far lane below its summary, whether or not the lane was on screen', async () => {
+    const t = await mount();
+    await t.scrollTo(t.scrollEl.scrollHeight);
+    // Precondition: the target's lane is far off screen, so its summary geometry is laid out on demand.
+    expect(t.mounted('a-user'), 'lane a is not mounted at the bottom').toBe(false);
+    const rowTop = () => t.host.querySelector('[data-item-id="a-r60"]')!.getBoundingClientRect().top;
+    const land = async () => {
+      t.view.scrollToItem('a-r60', { align: 'start' });
+      // The first write already lands: the lane's geometry is right before the lane is mounted.
+      const first = t.scrollEl.scrollTop;
+      await until('a-r60 on screen', () => t.mounted('a-r60'));
+      await untilStable('a-r60 settled', () => [t.scrollEl.scrollTop, rowTop()]);
+      expect(t.scrollEl.scrollTop, 'no correction after the first write').toBe(first);
+      return rowTop() - t.pinBottom('a-user')!;
+    };
+    const far = await land();
+    expect(far, 'the reply starts below its stuck summary').toBeCloseTo(PIN_SUMMARY_GAP, 0);
+    await t.scrollTo(t.scrollEl.scrollTop + 400);
+    expect(await land(), 'the same place as a jump from inside the lane').toBeCloseTo(far, 1);
+  });
+
   it('is pushed off by the next user message, which then sticks inside its own turn', async () => {
     const t = await mount();
     // Walk down until b's row is on screen below the stuck a.

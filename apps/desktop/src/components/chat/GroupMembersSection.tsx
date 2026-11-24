@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { CSSProperties, ReactNode } from 'react'
 import { useMobileShell } from '../../hooks/useMobileShell'
@@ -8,7 +8,7 @@ import { GroupNameRow } from './GroupNameRow'
 import { GroupDetailsMain } from './GroupDetailsMain'
 import { Avatar } from '../Avatar'
 import { Button } from '../ui/Button'
-import { buildUnifiedMembers } from './groupMemberModels'
+import { useUnifiedMembers } from './useUnifiedMembers'
 import { chatService } from '../../lib/chat'
 import { GroupAvatarEditor } from './GroupAvatarEditor'
 import { useGroupAvatarUpload } from './useGroupAvatarUpload'
@@ -112,7 +112,7 @@ export function GroupMembersSection({
   const [draft, setDraft] = useState('')
   // 成员行的「+」:进成员页时选人页已经开着(成员页自己那一个)。
 
-  const unifiedMembers = useMemo(() => snapshot ? buildUnifiedMembers(snapshot) : [], [snapshot])
+  const unifiedMembers = useUnifiedMembers(snapshot)
   const totalMembers = snapshot ? snapshot.humans.length + snapshot.agents.length : null
 
   // @@@2070 群名就地编辑:只写 name。写失败要抛给 GroupNameInlineEdit —— 它据此留在编辑态并标出失败,

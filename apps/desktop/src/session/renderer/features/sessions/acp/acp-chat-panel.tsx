@@ -4,7 +4,7 @@ import { customModelAcceptsImages, customModelOptionId, customModelRefFromOption
 import { useReplica, valueOf } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
-import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
+import { annotatedSend, sessionAnnotations } from '../annotations/session-annotations';
 import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '../annotations/annotation-images';
 import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
 import { isCodexStartupFailure, sessionStartupFailureCopy } from '../session-input-failure-copy';
@@ -189,7 +189,7 @@ import {
   type McpSessionPanelAdapterSkill,
 } from '@renderer/features/mcp/components/mcp-session-panel-adapter';
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
-import { classifyProviderPermissionMode } from '@gugu/session-core/acp/client';
+import { classifyProviderPermissionMode, type TurnAnnotation } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sessionFastMode } from '../session-config/fast-mode';
 import { renderFastModeHint } from '../session-config/fast-mode-hint';
@@ -346,7 +346,7 @@ const ComposerForStore = observer(function ComposerForStore({
    * 那一件的 chip 上写着为什么、能重试。正文在等的时候留在输入框里,❌ 先清掉再说。
    */
   const sendWhenReady = useCallback(
-    async (value: string, deliver: (text: string, files: TurnFileRef[]) => void | Promise<void>) => {
+    async (value: string, deliver: (text: string, files: TurnFileRef[], annotations?: TurnAnnotation[]) => void | Promise<void>) => {
       if (sendingRef.current) return;
       sendingRef.current = true;
       const annotated = annotationDraft.items;
@@ -355,7 +355,7 @@ const ComposerForStore = observer(function ComposerForStore({
         fileUploads.keepOnly(new Set(retained.map(item => item.id)));
         setAttachments(retained);
         prepareAnnotationImages(annotated, fileUploads);
-        await sendComposerInput(annotationPrompt(value, annotated, locale), {
+        await sendComposerInput(annotatedSend(value, annotated, locale), {
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
           waitForUploads: async () => { await fileUploads.waitForUploads(); },
           hasFailedAttachments: () => attachmentsRef.current.some(att => att.state === 'error'),
@@ -379,7 +379,7 @@ const ComposerForStore = observer(function ComposerForStore({
 
   const handleSubmit = useCallback(
     // The store's one send entry (custody; it toasts a failure); a send that cannot be kept goes back in the draft below.
-    (value: string) => { const id = store.draftSubmissionId; return sendWhenReady(value, (text, files) => store.submitPrompt(text, [], files, id)); },
+    (value: string) => { const id = store.draftSubmissionId; return sendWhenReady(value, (text, files, annotations) => store.submitPrompt(text, [], files, id, annotations)); },
     [store, sendWhenReady]
   );
 
@@ -2152,7 +2152,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       // **一模一样**的打开路径 —— 它已经会先问一句「这条路径有没有副本」(见
       // `openExternalFilePath`),❌ 别在这儿另写一套解析。
       onViewAttachment: (arg: {
-        attachment: { id: string; name: string; kind?: 'image' | 'file'; dataUrl?: string };
+        attachment: { id: string; name: string; kind?: 'image' | 'file' | 'annotation'; dataUrl?: string };
         itemId: string;
         source: 'user-message';
         thumb?: HTMLElement;
@@ -2177,13 +2177,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         }
         void resolveAttachmentDataUrl(store, arg.attachment.id).then(viewImage);
       },
-      // 工具交回来的图:同一个看图器,一次调用的几张图是一组,从被点的那张起。
-      onViewImages: (arg) =>
-        openImageViewer(
-          arg.urls.map((url, index) => ({ url, alt: '', thumb: index === arg.index ? arg.thumb : undefined })),
-          arg.index
-        ),
-      resolveToolImage: (itemId, index) => store?.resolveToolImage(itemId, index) ?? Promise.resolve(null),
       resolveAttachment: (attachment) =>
         store ? resolveAttachmentDataUrl(store, attachment.id) : Promise.resolve(null),
       onViewMermaid: (arg) => {

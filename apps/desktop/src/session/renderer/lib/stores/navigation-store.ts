@@ -10,6 +10,13 @@ type ViewParamsStore = Partial<{ [K in ViewId]: WrapParams<K> }>;
 
 export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   currentViewId: ViewId = 'home';
+  /**
+   * @@@page-modal — the page the workspace shows: the current view, or under a modal view (view-registry `modal`, the
+   * market, an App's page) the last page you were on, which stays drawn and laid out beneath it. null until a page was
+   * navigated to (a snapshot restored onto a modal view). What is laid out reads this, ❌ currentViewId: a modal opened
+   * over a group must not unhang the group's inner sidebar.
+   */
+  pageViewId: ViewId | null = null;
   viewParamsStore: ViewParamsStore = {};
   /**
    * What the restored snapshot held for views this build no longer has (not restored, not saved again): read once by what
@@ -22,13 +29,16 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
   private readonly _registeredViewIds = new Set<ViewId>();
   private readonly _transientParamKeys = new Map<ViewId, readonly string[]>();
   private readonly _placeParamKeys = new Map<ViewId, readonly string[]>();
+  private readonly _modalViewIds = new Set<ViewId>();
 
   constructor() {
     makeAutoObservable(this);
   }
 
-  registerView(viewId: ViewId, options?: { transientParams?: readonly string[]; placeParams?: readonly string[] }): void {
+  registerView(viewId: ViewId, options?: { transientParams?: readonly string[]; placeParams?: readonly string[]; modal?: boolean }): void {
     this._registeredViewIds.add(viewId);
+    if (options?.modal) this._modalViewIds.add(viewId);
+    else if (viewId === this.currentViewId && this.pageViewId === null) this.pageViewId = viewId;
     if (options?.transientParams?.length) {
       this._transientParamKeys.set(viewId, options.transientParams);
     }
@@ -137,6 +147,7 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
       this.currentViewId = viewId;
       this.isNavigating = true;
     }
+    if (!this._modalViewIds.has(viewId)) this.pageViewId = viewId;
     if (params !== undefined) {
       this.viewParamsStore = { ...this.viewParamsStore, [viewId]: params };
     }
@@ -167,6 +178,7 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
     // 一样不还原,留在首页(isRegisteredViewId)。
     if (this.isRegisteredViewId(snapshot.currentViewId)) {
       this.currentViewId = snapshot.currentViewId;
+      this.pageViewId = this._modalViewIds.has(snapshot.currentViewId) ? null : snapshot.currentViewId;
     }
     if (snapshot.viewParams) {
       const filtered: ViewParamsStore = {};
@@ -190,6 +202,7 @@ export class NavigationStore implements Snapshottable<NavigationSnapshot> {
     const guard = this._runGuard(this.currentViewId, this.viewParamsStore[this.currentViewId]);
     if (!guard.ok) {
       this.currentViewId = guard.redirect;
+      if (!this._modalViewIds.has(guard.redirect)) this.pageViewId = guard.redirect;
       if (guard.params !== undefined) {
         this.viewParamsStore = { ...this.viewParamsStore, [guard.redirect]: guard.params };
       }

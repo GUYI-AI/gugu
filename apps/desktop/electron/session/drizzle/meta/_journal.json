@@ -400,6 +400,27 @@
       "when": 1794700300000,
       "tag": "0057_sessions_archived_at_covering",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "6",
+      "when": 1794700400000,
+      "tag": "0058_run_interval_reconcile_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1794700500000,
+      "tag": "0059_automations_agent_session_deleted",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "6",
+      "when": 1794700600000,
+      "tag": "0060_retired_message_accounts",
+      "breakpoints": true
     }
   ]
 }

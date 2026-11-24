@@ -68,6 +68,18 @@ describe.each(['codex', 'claude'] as const)('a %s record shows what the person s
     } finally { timeline.dispose(); }
   });
 
+  it('the comments the person sent beside their words, as cards, never the text the agent got for them', async () => {
+    const root = await record(harness, ['apply each comment']);
+    const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: '# All comments\n\nComment:\nMake it red' }];
+    const [digest, prompt] = receipt('apply each comment');
+    const timeline = await createSessionTimeline(createSessionRecordSource({ harness, providerSessionId, roots: [root] }),
+      { sessionId: 'S', hostPrompts: (asked) => asked === digest ? { ...prompt, annotations } : undefined });
+    try {
+      const [turn] = timeline.getSnapshot({ limit: 100 }).turns;
+      expect(turn.items.find((item) => item.kind === 'message' && item.role === 'user')).toMatchObject({ text: 'apply each comment', annotations });
+    } finally { timeline.dispose(); }
+  });
+
   it('the record as it is where the host kept no receipt', async () => {
     const root = await record(harness, ['']);
     const timeline = await createSessionTimeline(createSessionRecordSource({ harness, providerSessionId, roots: [root] }), { sessionId: 'S' });

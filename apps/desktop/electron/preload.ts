@@ -17,11 +17,6 @@ import { MAIN_UI_EVENTS } from '../src/lib/mainUiEvents'
 import { HOST_SYSTEM_LANGUAGES_CHANNEL } from '../shared/host-localization'
 import { FIRST_FRAME_CHANNEL, FIRST_FRAME_GLOBAL, type FirstFrameAnswer, type FirstFrameGlobal, type FirstFrameRequest } from '../shared/first-frame'
 import { documentStorage, removeStoredPreferences, storedPreferenceStrings } from '../shared/device-preferences'
-import {
-  WINDOW_MATERIAL_CHANGED_CHANNEL,
-  WINDOW_MATERIAL_GET_CHANNEL,
-  type WindowMaterial,
-} from '../shared/window-material'
 
 installProcessMetricsResponder(ipcRenderer, process, 'main-window')
 
@@ -252,13 +247,6 @@ contextBridge.exposeInMainWorld('desktopWindow', {
     const handler = (_event: Electron.IpcRendererEvent, maximized: boolean): void => callback(maximized)
     ipcRenderer.on('window:maximized-changed', handler)
     return () => ipcRenderer.removeListener('window:maximized-changed', handler)
-  },
-  // @@@window-material (#7333) 窗口材质的判定在主进程(shared/window-material.ts);同步读是因为首帧前就要落属性。
-  getMaterial: (): WindowMaterial => ipcRenderer.sendSync(WINDOW_MATERIAL_GET_CHANNEL),
-  onMaterialChange: (callback: (material: WindowMaterial) => void): (() => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, material: WindowMaterial): void => callback(material)
-    ipcRenderer.on(WINDOW_MATERIAL_CHANGED_CHANNEL, handler)
-    return () => ipcRenderer.removeListener(WINDOW_MATERIAL_CHANGED_CHANNEL, handler)
   },
 })
 

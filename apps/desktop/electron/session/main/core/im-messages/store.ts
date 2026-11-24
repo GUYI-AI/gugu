@@ -110,17 +110,33 @@ function sqliteAdapter(connection: MessageSqlDatabase, accountId: string): Messa
 /** All durable messages and their derived index share the existing session connection. */
 export function createImMessageStore(database: MessageSqlDatabase) {
   const connection = reusingStatements(database)
+  const retired = connection.prepare('SELECT 1 FROM im_message_retired_accounts WHERE account_id = ?')
+  const markRetired = connection.prepare('INSERT INTO im_message_retired_accounts(account_id) VALUES (?) ON CONFLICT DO NOTHING')
   const account = (accountId: string) => {
     requireId(accountId)
     return messageStoreOperations(sqliteAdapter(connection, accountId))
   }
+  const ingest = connection.transaction((accountId: string, batch: ImMessageBatch) => {
+    requireId(accountId)
+    // Keep the native retirement fence and the shared store's writes in one
+    // transaction: a late batch is either purged or rejected before any write.
+    if (retired.get(accountId)) throw Object.assign(new Error('im_account_retired'), { code: 'im_account_retired' })
+    return account(accountId).ingest(batch)
+  })
+  const retireAccount = connection.transaction((accountId: string) => {
+    requireId(accountId)
+    markRetired.run(accountId)
+    account(accountId).clear()
+  })
   return {
-    ingest: (accountId: string, batch: ImMessageBatch) => account(accountId).ingest(batch),
+    ingest,
     windows: (accountId: string, chatIds: string[], limit: number): MessageItem[] => account(accountId).windows(chatIds, limit),
     page: (accountId: string, options: ImMessagePage) => account(accountId).page(options),
     throughRevision: (accountId: string) => account(accountId).throughRevision(),
     clearAccount: (accountId: string) => account(accountId).clear(),
     search: (accountId: string, chatId: string, query: string, limit: number, fromUserId?: string) =>
       searchMessages(connection, accountId, chatId, query, limit, fromUserId),
+    /** Native trusted-deletion receiver only; never included in the RPC controller. */
+    retireAccount,
   }
 }

@@ -49,12 +49,12 @@ it('is a two-line list row: the session\'s avatar and status, its title (no time
   expect(row.querySelectorAll('.gg-list-row-line')).toHaveLength(2);
 });
 
-it('a click opens the task, a ⌘ click opens it beside', async () => {
+it('a click opens the task; a ⌘ click opens it the same way (the one list does not split the screen)', async () => {
   await act(async () => root.render(<OneListTaskRow projectId="workspace" sessionId="pty-1" />));
   const row = host.querySelector<HTMLElement>('[data-slot="list-row"]')!;
   await act(async () => row.click());
   await act(async () => { row.dispatchEvent(new MouseEvent('click', { bubbles: true, metaKey: true })); });
-  expect(state.open.mock.calls).toEqual([['workspace', 'pty-1', false], ['workspace', 'pty-1', true]]);
+  expect(state.open.mock.calls).toEqual([['workspace', 'pty-1'], ['workspace', 'pty-1']]);
 });
 
 it('draws nothing once the sidebar no longer holds the session', async () => {

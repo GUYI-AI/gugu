@@ -16,7 +16,7 @@ vi.mock('@renderer/features/remote-hosts/remote-hosts-store', () => ({ remoteHos
 vi.mock('@renderer/features/assistant/assistant-shell', () => ({ useAssistantShell: () => null }));
 vi.mock('@renderer/features/assistant/assistant-home-sessions', () => ({ localHomeSessions: { sessions: [] } }));
 vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const { fakeAppSettings } = await import('../../../../../../../tests/support/appSettingsDouble'); return { useAppSettingsKey: () => fakeAppSettings({}) } });
-vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: () => {} }), useWorkspaceSlots: () => ({ currentView: 'home' }), isCurrentView: (current: string, view: string) => current === view, useParams: () => ({ params: {}, setParams: () => {} }) }));
+vi.mock('@renderer/lib/layout/navigation-provider', () => ({ useNavigate: () => ({ navigate: () => {} }), useWorkspaceSlots: () => ({ currentView: 'home', pageView: 'home' }), isCurrentView: (current: string, view: string) => current === view, useParams: () => ({ params: {}, setParams: () => {} }) }));
 vi.mock('@renderer/lib/stores/app-state', () => ({ appState: { history: { canGoBack: false }, projects: { projects: new Map(), ensureMounted: vi.fn() }, navigation: { currentViewId: 'home', viewParamsStore: {} } }, sidebarStore: { sidebarProjects: [], joinedGroups: [], setAssistantAgentId: () => {}, setAssistantHomeProjectId: () => {}, setAgentNameOnHoverEnabled: () => {} } }));
 vi.mock('@renderer/features/projects/stores/project-groups-store', () => ({ projectGroupsStore: {} }));
 vi.mock('@renderer/features/sidebar/session-keyboard-nav', () => ({ sessionKeyboardNav: { cursor: null, syncCursorFromPointer: () => {} } }));
@@ -45,7 +45,7 @@ it('the actual project sidebar has no full-height border behind the inset readin
   await page.viewport(1000, 700);
   localStorage.removeItem('gugu.taskpage.sidebarWidth');
   document.documentElement.dataset.theme = 'light';
-  document.documentElement.dataset.windowMaterial = 'native';
+  document.documentElement.dataset.windowMaterial = 'opaque';
   harness = createReactHarness();
   await harness.render(<div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
     <SessionLocalizationProvider><WorkspaceLayoutContextProvider>

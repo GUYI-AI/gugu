@@ -69,19 +69,18 @@ it.each(['light', 'dark'].flatMap(theme => [360, 390].map(width => ({ theme, wid
       expect(rect.x + rect.width / 2).toBe(slots[i].x + slots[i].width / 2)
       expect(rect.y + rect.height / 2).toBe(slots[i].y + slots[i].height / 2)
     })
-    const pending = rows[1].querySelector<HTMLElement>('.gg-phone-message-avatar-badge')!.getBoundingClientRect()
+    // Every status mark is the avatar's bottom-right corner (Avatar.tsx @@@avatar-status-corner), 2px outside its edges:
+    // the pending task's own status, a project's needs-you mark and an ordinary agent's status (owner 11-24).
+    const pending = rows[1].querySelector<HTMLElement>('.av-status')!.getBoundingClientRect()
     const project = rows[2].querySelector<HTMLElement>('.gg-phone-message-avatar-badge')!.getBoundingClientRect()
     const ordinary = rows[3].querySelector<HTMLElement>('.av-status')!.getBoundingClientRect()
-    for (const [badge, index] of [[pending, 1], [project, 2]] as const) {
-      expect(badge.x + badge.width / 2 - slots[index].right).toBe(-5)
-      expect(badge.y + badge.height / 2 - slots[index].top).toBe(5)
+    for (const [mark, index] of [[pending, 1], [project, 2], [ordinary, 3]] as const) {
+      expect(mark.right).toBe(slots[index].right + 2)
+      expect(mark.bottom).toBe(slots[index].bottom + 2)
     }
-    // An agent's own status mark is the avatar's bottom-right corner (Avatar.tsx @@@avatar-status-corner).
-    expect(ordinary.right).toBe(slots[3].right + 2)
-    expect(ordinary.bottom).toBe(slots[3].bottom + 2)
-    // The status mark lives on the avatar, never at the row's end; an unread row's end is its count badge.
+    // The status mark lives on the avatar, never at the row's end, and a needs-you row carries no count beside it.
     expect(rows[1].querySelector('.gg-list-row-trailing [role="img"]')).toBeNull()
-    expect(rows[1].querySelector('.gg-list-row-trailing [data-shape="count"]')?.textContent).toBe('1')
+    expect(rows[1].querySelector('[data-shape="count"]')).toBeNull()
   },
 )
 

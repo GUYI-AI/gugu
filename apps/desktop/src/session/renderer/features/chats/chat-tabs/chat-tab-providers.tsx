@@ -23,7 +23,6 @@ import { parseExtensionTabKind } from '@shared/extensions/manifest';
 import { groupPageSlot, isFolderItem, panelItemKey, WORKSPACE_APP_KIND, type PanelItem } from './chat-panel-item';
 import { TabKindMark } from '@renderer/features/extensions/extension-mark';
 import { takeRestore } from './chat-tab-restores';
-import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { RetainedTabContent, useRetainedTabs } from '@renderer/features/tabs/retained-tab-content';
 
 /** The chat itself: its messages and composer, first in its strip, never closed. */
@@ -52,8 +51,6 @@ export const chatIdOfView = (ctx: TabViewContext): string => (ctx.place?.kind ==
 export interface ChatTabHost {
   chip: (props: { tab: ResolvedTab; host: TabHost }) => ReactNode;
   body: ReactNode;
-  /** 「单独一块」 for an App's tab, where the strip is in a block of the screen (a window has none). */
-  ownBlock?: (tabId: string) => void;
 }
 export const ChatTabHostContext = createContext<ChatTabHost | null>(null);
 
@@ -134,15 +131,12 @@ const PanelTabItem = observer(function PanelTabItem({ tab, host, ctx }: TabBarIt
   const chatId = chatIdOfView(ctx);
   const { label, hint, tooltip, unknown } = usePanelPresentation(chatId, tab.tabId, item);
   const surface = extensionSurfaceStore.said(null, groupPageSlot(chatId, tab.tabId));
-  const ownBlock = useContext(ChatTabHostContext)?.ownBlock;
   const { t } = useTranslation('messaging');
   // A project chat's file kept on its machine: the machine mark after the name, as its folder row and its page header put it; its setting one ⋯ away (owner 10-27).
   const fileHost = useFileHost(item.itemId && !isFolderItem(item) ? item.itemId : null);
-  // 「单独一块」(spec session-page「一屏几块」,同任务里 App 那一枚):这张页自己占一块,贴在这一块右边;这个对话里就不留它了。
-  // App 声明的菜单命令跟在后面,同任务里的 App 页签(工具栏那一行去掉了,owner 10-26 选 A)。
+  // App 声明的菜单命令,同任务里的 App 页签(工具栏那一行去掉了,owner 10-26 选 A)。
   const kindCommands = item.kind
     ? [
-        ...(ownBlock ? [{ id: `${tab.tabId}:own-block`, label: translateSessionMessage('extensions.ownBlock'), group: 'extension', run: () => ownBlock(tab.tabId) }] : []),
         ...declaredMenuCommands(item.kind).map((command) => ({
           id: `${tab.tabId}:${command.id}`, label: command.title, group: 'extension', run: () => runExtensionCommand(null, groupPageSlot(chatId, tab.tabId), command.id),
         })),

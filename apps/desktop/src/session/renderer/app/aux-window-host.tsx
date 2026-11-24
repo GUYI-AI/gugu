@@ -160,7 +160,7 @@ const AuxSessionPage = observer(function AuxSessionPage({
 }) {
   const focused = auxWindows.focusedWindowId === windowId;
   const place = useMemo<ScreenBlockPlace>(
-    () => ({ blockId: null, focused, topLeft: true, topRight: true, multi: false, windowId }),
+    () => ({ blockId: null, focused, topLeft: true, multi: false, windowId }),
     [focused, windowId]
   );
   return (
@@ -193,7 +193,7 @@ const AuxTabPage = observer(function AuxTabPage({ windowId, content }: { windowI
   );
   const focused = auxWindows.focusedWindowId === windowId;
   const place = useMemo<ScreenBlockPlace>(
-    () => ({ blockId: null, focused, topLeft: true, topRight: true, multi: false, windowId }),
+    () => ({ blockId: null, focused, topLeft: true, multi: false, windowId }),
     [focused, windowId]
   );
   return (
@@ -249,7 +249,7 @@ const AuxAppPage = observer(function AuxAppPage({ windowId, tabKind }: { windowI
       <TabStripShell
         leadingReservePx={auxLeadingReserve()}
         actionsSlot={
-          <TabBarActionRow atWindowEdge>
+          <TabBarActionRow>
             <PutBackButton windowId={windowId} />
           </TabBarActionRow>
         }

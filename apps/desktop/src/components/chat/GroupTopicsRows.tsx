@@ -2,7 +2,6 @@ import { Fragment } from 'react'
 import { useTranslation } from 'react-i18next'
 import { chatAttention } from '@gugu/core/shared/ui/chatModels'
 import { Pin, PinOff } from '@/lib/icons'
-import { Button } from '../ui/Button'
 import { Chip } from '../ui/Chip'
 import { IconButton } from '../ui/IconButton'
 import { MenuItem, MenuSeparator } from '../ui/Menu'
@@ -29,17 +28,11 @@ export function TopicCallChip({ count, at = false }: { count: number; at?: boole
   return <Chip tone="danger" shape="count">{at ? '@' : ''}{count > 99 ? '99+' : count}</Chip>
 }
 
-export function TopicPinsError({ pins }: { pins: Pick<ReturnType<typeof useChatTopicPins>, 'error' | 'retry'> }) {
-  const { t } = useTranslation('messaging')
-  return pins.error ? <div role="alert" className="gg-topic-pins-error">{t('topic.pins.loadFailed')} <Button variant="ghost" size="sm" onClick={pins.retry}>{t('common.retry')}</Button></div> : null
-}
-
-/** Both the dropdown and pinned strip read the existing live chat/topic projection. */
+/** The header's topic menu: pinned topics first, then by activity (the inner sidebar's order); pin = the topic's own is_pinned. */
 export function GroupTopicsRows({ chatId }: { chatId: string }) {
   const { t } = useTranslation('messaging')
   const pins = useChatTopicPins(chatId)
   return <div className="gg-topic-list">
-    <TopicPinsError pins={pins} />
     {topicMenuGroups(pins).map((group, index) => <Fragment key={group[0]!.id}>
       {index > 0 && <MenuSeparator />}
       {group.map(topic => <TopicMenuRow key={topic.id} topic={topic} pinned={pins.pinned.includes(topic)} pins={pins} />)}
@@ -63,7 +56,7 @@ function TopicMenuRow({ topic, pinned, pins }: { topic: SourceTopic; pinned: boo
         meta={topic.unread_count > 0 ? (calls > 0 ? <TopicCallChip count={calls} at /> : <TopicUnreadChip count={topic.unread_count} muted={topic.is_muted} />) : undefined} />
     </MenuItem>
     <MenuItem render={<IconButton size="sm" aria-label={pinLabel}>{pinned ? <PinOff size={14} /> : <Pin size={14} />}</IconButton>} nativeButton title={pinLabel} data-testid="group-topic-pin" className="gg-topic-menu-pin"
-      style={topicPinStyle} closeOnClick={false} disabled={!pins.ready || pins.saving} onClick={() => pins.set(topic.id, !pinned)}>
+      style={topicPinStyle} closeOnClick={false} onClick={() => pins.set(topic.id, !pinned)}>
       {null}
     </MenuItem>
   </div>

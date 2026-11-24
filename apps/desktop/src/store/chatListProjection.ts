@@ -270,7 +270,7 @@ export function useChatProjectionBinding(deps: {
     const binding = ownerRef.current
     if (binding?.accountId === accountId) publishChatRemovalFacts(accountId, id =>
       ownerRef.current === binding && repositoryRef.current?.accountId === accountId
-      && (binding.owner.isConversationDeleted(id) || binding.owner.isMembershipRevoked(id)), async ids => {
+      && (binding.owner.isConversationDeleted(id) || binding.owner.isMembershipRevoked(id) || binding.owner.isConversationArchived(id)), async ids => {
         if (ownerRef.current !== binding || repositoryRef.current?.accountId !== accountId) return
         const rows = await binding.owner.readRestoredLayoutMemberships(ids, readProjectionCursor(repositoryRef.current), currentAuthSessionSignal())
         if (rows !== null && ownerRef.current === binding && repositoryRef.current?.accountId === accountId) {

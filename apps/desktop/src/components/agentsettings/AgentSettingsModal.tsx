@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import type { AgentSettingsTab } from './types'
@@ -20,11 +20,9 @@ import { AgentTasksPane } from './AgentTasksPane'
 import { AgentAiModelPane } from './AgentAiModelPane'
 import { useAgentDisplayStatus } from '../../hooks/useAgentDisplayStatus'
 import { useAgentHeaderStatus } from '../../hooks/useAgentHeaderStatusText'
-import { agentStatusColorVar, type AgentStatusTone } from '@gugu/core/shared/agentStatusPresentation'
+import { displayStatusOf } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import { useContactsStore } from '../../store/contactsContext'
-import { AgentParkedGlyph } from '../AgentParkedGlyph'
-
-const ALERT_DOT_TONES: ReadonlySet<AgentStatusTone> = new Set(['error', 'needs_user', 'running'])
+import { AgentContactStatusMark } from '../AgentContactStatusMark'
 
 export interface AgentSettingsModalProps {
   agent: ContactUser
@@ -45,10 +43,8 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
   const assistant = useIsAssistantAvatar(agent.id)
   const { presence } = useAgentDisplayStatus(agent.id)
   const headerStatus = useAgentHeaderStatus(agent.id)
-  // 点与那一句状态读同一格:出错、需要你、在跑取共用色表(agentStatusColorVar)的红 / 黄 / 橙;后台在跑不画点,画停住的运行字形 ——
-  // ❌ 出错了还画绿点。其余照旧:不在线 / 已移除灰,别的绿。
-  const dotColor = headerStatus.tone && ALERT_DOT_TONES.has(headerStatus.tone) ? agentStatusColorVar(headerStatus.tone) : null
-  const headerOffline = headerStatus.tone === 'offline' || headerStatus.tone === 'removed'
+  // 标识与那一句状态读同一格,画法同头像角(AgentContactStatusMark):在线不画。
+  const headerMarkTone = headerStatus.tone ? displayStatusOf(headerStatus.tone) : null
   const accountStatus = presence.payload?.accountStatus ?? null
   const closeRequestedRef = useRef(false)
   const requestClose = useCallback(() => {
@@ -143,9 +139,7 @@ export function AgentSettingsModal({ agent: openedAgent, onClose, initialTab = '
               className={asClass.status}
               data-testid="agent-settings-header-status"
               data-tone={headerStatus.tone ?? undefined}
-              data-offline={headerOffline || undefined}
-              style={dotColor ? ({ '--gg-as-status-dot': dotColor } as CSSProperties) : undefined}
-            >{headerStatus.tone === 'parked' ? <AgentParkedGlyph /> : null}{headerStatus.text}</span>
+            ><AgentContactStatusMark tone={headerMarkTone} />{headerStatus.text}</span>
           </div>
           {!mobileShell ? (
           <button className={asClass.close} onClick={requestClose} aria-label={t('settings.close')}>

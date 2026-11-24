@@ -19,7 +19,7 @@ import { fileCiteDraft } from '../../../../packages/session-shared/src/markdown/
 import { documentToHtml } from '../../../../packages/session-chat-ui/src/core/markdown/to-html'
 import { parseMarkdownToBlocks } from '../../../../packages/session-chat-ui/src/core/markdown/parse'
 import { appendToDraft } from '../../../../apps/desktop/src/store/chatDraftWrites'
-import { annotationPrompt } from '../../../../apps/desktop/src/session/renderer/features/sessions/annotations/session-annotations'
+import { annotatedSend } from '../../../../apps/desktop/src/session/renderer/features/sessions/annotations/session-annotations'
 
 const TEXT = ['# 发布计划', '', '目标：十月上线', '负责人：小王', '', '## 风险', '- 支付接口可能延期', '', '- 甲：Api 文档，API 冻结', '- 乙'].join('\n')
 const entry = {
@@ -386,7 +386,7 @@ describe("a session file's selection reaches the chat one way: Cite", () => {
     // Into the session's composer as main writes a working-copy draft, one after the other; the person's note last.
     const drafts = gugu.dispatch.mock.calls.map(([text, options]) => `${fileCiteDraft(text, (options as { refs: { file: { id: string }; label?: unknown }[] }).refs)}\n`)
     const draft = appendToDraft(appendToDraft(drafts[0]!, drafts[1]!), '怎么证明？')
-    const sent = annotationPrompt(draft, [], 'en-US')
+    const sent = annotatedSend(draft, [], 'en-US').text
     expect(sent).toBe([
       '@[proof.md (Lines 3–4)](docs/proof.md)', '', '@[proof.md (Line 6)](docs/proof.md)', '', '怎么证明？',
     ].join('\n'))

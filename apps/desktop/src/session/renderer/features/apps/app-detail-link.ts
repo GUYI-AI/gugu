@@ -29,7 +29,7 @@ export async function openAppDetailLink(target: AppDetailLink, ownerId: string, 
   const here = currentAppsLocation();
   const device = scope === LOCAL_DEVICE_SCOPE ? undefined : scope;
   if (target.kind === 'agent-app-detail') {
-    // Over the page as it stands it closes back to it; over the Installed sheet it is a step, so closing returns to the sheet.
+    // Over the page as it stands it closes back to it; over the Installed page it is a step, so closing returns to it.
     const overPage = appState.navigation.currentViewId === 'apps' && !here.installed;
     appState.navigation.navigate('apps', {
       location: { ...here, installed: undefined },

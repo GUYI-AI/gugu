@@ -2,9 +2,9 @@ import {
   presentAgentStatus,
   type AgentStatusPresentation,
 } from '@gugu/core/shared/agentStatusPresentation';
-import { AgentNeedsUserGlyph } from '@/components/AgentNeedsUserGlyph';
-import { AgentParkedGlyph } from '@/components/AgentParkedGlyph';
-import { CLISpinner } from '@renderer/lib/components/cliSpinner';
+import { displayStatusOf } from '@gugu/core/shared/ui/agentConversationStatusModels';
+import { AgentContactStatusMark } from '@/components/AgentContactStatusMark';
+import { agentStatusHasMark } from '@/lib/agentStatusMark';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { cn } from '@renderer/utils/utils';
@@ -22,10 +22,8 @@ interface AgentStatusIndicatorProps {
 
 /**
  * 会话页一格 agent 状态。画成什么与聊天、手机同一个 `presentAgentStatus`(owner 2026-09-25 定表):
- * 运行中 = 字形在转(不上色)、后台运行中 = 同一个字形停住(AgentParkedGlyph,与头像角标同一个)、需要你 = 感叹号字形
- * (AgentNeedsUserGlyph)、出错了 = 红点;
- * 空闲不画(#6209)。
- * 颜色只引 tokens.css 的 `--agent-tone-*`,❌ 在会话页另拍一个琥珀 / 红。
+ * 标识与头像角同一个组件(AgentContactStatusMark):运行中 = 字形在转、后台运行中 = 字形停住、需要你 = 三角、
+ * 出错了 = 「×」圆;空闲不画(#6209)。❌ 在会话页另拍一套。
  * ❌ 在这里画咕咕小鸟(#7243,owner 2026-10-15):任务页一屏同时在跑的会话多,每只小鸟每帧都要重画,开销随只数涨;
  * 小鸟只留在聊天与手机。
  */
@@ -61,7 +59,7 @@ export function AgentStatusIndicator({
   );
 }
 
-/** 一格状态的字形本身(侧栏行按自己的布局摆它,不带外壳与提示)。 */
+/** 一格状态的字形本身(侧栏行按自己的布局摆它,不带外壳与提示);画法同头像角(AgentContactStatusMark)。 */
 export function AgentStatusGlyph({
   presentation,
   label,
@@ -71,33 +69,11 @@ export function AgentStatusGlyph({
   label: string;
   className?: string;
 }) {
-  switch (presentation.tone) {
-    case 'running':
-      return (
-        <span aria-label={label}>
-          <CLISpinner />
-        </span>
-      );
-    case 'parked':
-      return (
-        <span className={cn('inline-flex', className)} aria-label={label}>
-          <AgentParkedGlyph />
-        </span>
-      );
-    case 'needs_user':
-      return (
-        <span className={cn('inline-flex', className)} aria-label={label}>
-          <AgentNeedsUserGlyph />
-        </span>
-      );
-    case 'error':
-      return (
-        <span
-          className={cn('rounded-full bg-[var(--agent-tone-error)] size-2', className)}
-          aria-label={label}
-        />
-      );
-    default:
-      return null;
-  }
+  const tone = displayStatusOf(presentation.tone);
+  if (!agentStatusHasMark(tone)) return null;
+  return (
+    <span className={cn('inline-flex', className)} aria-label={label}>
+      <AgentContactStatusMark tone={tone} />
+    </span>
+  );
 }

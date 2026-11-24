@@ -305,7 +305,8 @@ export function createAcpLegAdapter(sessionId: string, fork: RuntimeFork | null)
     // A stop during file preparation still precedes every provider byte. Use Life's existing refusal receipt.
     if (signal.aborted) return stopped;
     const images = [...(delivery?.attachments ?? []), ...(turn?.images ?? [])];
-    const attachments = { ...(images.length ? { attachments: images } : {}), ...(turn?.files?.length ? { files: turn.files } : {}) };
+    const attachments = { ...(images.length ? { attachments: images } : {}), ...(turn?.files?.length ? { files: turn.files } : {}),
+      ...(delivery?.annotations?.length ? { annotations: delivery.annotations } : {}) };
     let sent: Awaited<ReturnType<typeof injectEmdashPromptDetached>>;
     switch (pending.turn.kind) {
       case 'prompt': {

@@ -23,7 +23,7 @@ import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
 import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
 import { RailRowHint } from './rail-row-hint';
-import { SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop, SidebarRailRow } from './sidebar-one-list-chrome';
+import { followBelowRailRow, followListOffset, SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop } from './sidebar-one-list-chrome';
 import { UnfinishedAgentCreates } from './unfinished-agent-creates';
 
 // #2548 the desktop left sidebar, one list (界面减法: the zero rail, the window's leftmost column): the head (「«」), the
@@ -70,7 +70,8 @@ function RailHint({ list }: { list: React.RefObject<HTMLElement | null> }) {
 
 export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const { navigate } = useNavigate();
-  const { currentView } = useWorkspaceSlots();
+  // The page laid out, ❌ a modal over it (@@@page-modal): the market opened over a group keeps the group's row lit.
+  const { pageView: currentView } = useWorkspaceSlots();
   const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
   const notificationsOpen = useSidebarNotificationsOpen();
   const { translate } = useSessionMessages();
@@ -94,7 +95,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   // #7199 个人助理不住在任务区:它是谁(壳按库里的标记认出来,经助理那座桥发过来),交给 store 去藏它自己的会话。
   const assistantShell = useAssistantShell();
   const assistantAgentId = assistantShell?.assistant?.id ?? null;
-  const activeSessionId = appState.navigation.currentViewId === 'session' ? appState.navigation.viewParamsStore.session?.sessionId : undefined;
+  const activeSessionId = currentView === 'session' ? appState.navigation.viewParamsStore.session?.sessionId : undefined;
   const activeAgentId = activeSessionId ? sessionAgentBindings.bindingFor(activeSessionId)?.agentUserId : undefined;
   React.useEffect(() => {
     sidebarStore.setAssistantAgentId(assistantAgentId);
@@ -120,6 +121,9 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   // starts (or only on release, for a drag), the progress is what is on screen.
   const listRef = useSidebarProgressFollow<HTMLDivElement>(followRail);
   const scrollRef = useSidebarProgressFollow<HTMLDivElement>(followNamesMask);
+  // The rows move with the fold, ❌ jump where the layout flips (followBelowRailRow, followListOffset).
+  const belowRailRowRef = useSidebarProgressFollow<HTMLDivElement>(followBelowRailRow);
+  const listOffsetRef = useSidebarProgressFollow<HTMLDivElement>(followListOffset);
 
   // 创建智能体 (what 新建任务 did) always lands on the dedicated compose view. Routing to 'project' instead made the
   // button a no-op whenever the user was already sitting on that project's home — which is the default landing view.
@@ -144,11 +148,13 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const focusedChatId = currentView === 'chat' ? viewedChatId : innerChatId ?? viewedChatId;
   // 拼在一屏的几组:壳画的「对话」也把同一组的几行并在一处(同「项目」这边)。
   const joinedGroups = sidebarStore.joinedGroups;
+  // 并排着的几块:壳画的行(内层侧栏的话题)给「取消并排」认这一份(同会话页自己的行)。
+  const splitKey = screenLayout.splitKeys.join('\n');
   // oneList: the desktop one list is mounted. The phone never mounts this sidebar, so the shell's shared components
   // (chat list, composer verbs, rail) read it to tell the desktop list from the phone.
   React.useEffect(
-    () => publishSidebarChatView({ focusedChatId, groups: joinedGroups, oneList: true }),
-    [focusedChatId, joinedGroups]
+    () => publishSidebarChatView({ focusedChatId, groups: joinedGroups, split: splitKey ? splitKey.split('\n') : [], oneList: true }),
+    [focusedChatId, joinedGroups, splitKey]
   );
 
   return (
@@ -161,16 +167,18 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         'relative flex h-full flex-col border-r border-border text-foreground-tertiary-muted transition-colors',
         isDragOver && 'bg-background-2 ring-2 ring-inset ring-border-2',
         // 界面减法 #53 #69: a row is a 52px square block on the rail (padding 6 around its 40px avatar), 52 tall open, 6 apart; its
-        // unread count sits on the avatar's top-right corner in both states (no row end: no time, no muted bell). Its text
-        // (name, preview) follows the open/close progress through the scroll box's mask (followNamesMask).
+        // unread mark sits on the avatar's top-right corner (AvatarUnread) and the row has no end (no time, no muted bell). Its
+        // text (name, preview) follows the open/close progress through the scroll box's mask (followNamesMask).
         '[&_[data-region=sidebar-scroll]_.gg-list-row]:mb-[6px] [&_[data-region=sidebar-scroll]_.gg-list-row]:h-[52px] [&_[data-region=sidebar-scroll]_.gg-list-row]:!rounded-[12px] [&_[data-region=sidebar-scroll]_.gg-list-row]:!p-[6px] [&_[data-region=sidebar-scroll]_.gg-list-row-body]:!gap-0',
-        '[&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:absolute [&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:top-1 [&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:left-[34px] data-[sidebar-rail]:[&_[data-region=sidebar-scroll]_.gg-list-row-trailing]:left-[30px]',
         // Design v16: the name is 14px regular, the preview line the caption size (the design's 12.5 is not on the type scale). `!`: the list row's own rules (.gg-list-row in
         // tokens.css) are outside the utilities layer, so a plain utility loses to them.
         '[&_[data-region=sidebar-scroll]_.gg-list-row-subtitle]:!text-[length:var(--font-caption)] [&_[data-region=sidebar-scroll]_.gg-list-row-title]:!font-normal',
         '[&_[data-region=sidebar-scroll]_.gg-chat-row-muted]:hidden',
-        // The list's gutter: 14 open, 8 on the rail (one element restyled when the rail flips).
-        'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:px-2'
+        // The list's gutters: 14 open; on the rail 8 at the start and 4 at the end, where the 4px scrollbar (tokens.css
+        // @@@scrollbar-autohide, it takes layout width) is always reserved: a list long enough to scroll otherwise narrowed every
+        // 52px block by 4 while its 40px avatar kept its place, so the avatar sat off the block's centre (yangchichi 11-24).
+        // Variables, ❌ padding classes on the box: the content layer spans the same gutters (@@@sidebar-blank-drags-window).
+        'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:[--sidebar-gutter:8px] data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:[--sidebar-gutter-end:4px] data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:[scrollbar-gutter:stable]'
       )}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
@@ -188,8 +196,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       {/* The one-time bubble (C9) on the head comes up when the inner sidebar appears: a group, a project or the sample. */}
       <RailHint list={listRef} />
       <SidebarOneListHead innerShownFor={innerSidebarShownFor.get()} />
-      <SidebarRailRow />
-      <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
+      <SidebarContainer ref={belowRailRowRef} className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
           <SidebarOneListTop collapsed={railed} onCreateAgent={handleNewSession} />
           <UnfinishedAgentCreates collapsed={railed} />
@@ -201,9 +208,13 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
             ref={scrollRef}
             data-region="sidebar-scroll"
             // #2548 rows scrolling down fade out over the last 24px above the window's bottom edge instead of being cut off.
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-[14px] mask-b-from-[calc(100%-1.5rem)]"
+            // @@@sidebar-blank-drags-window - the list's blank space below its rows drags the window, as the head band above
+            // does (yangchichi 11-24): the scroll box is a drag region and its one content layer opts out, gutters included,
+            // so every row keeps its clicks, its HTML5 drag and the wheel. app-region is inherited, so the opt-out is on the
+            // layer itself, ❌ on each row.
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pl-(--sidebar-gutter) pr-(--sidebar-gutter-end) [--sidebar-gutter:14px] [--sidebar-gutter-end:var(--sidebar-gutter)] mask-b-from-[calc(100%-1.5rem)] [-webkit-app-region:drag]"
           >
-            <div>
+            <div ref={listOffsetRef} className="-ml-(--sidebar-gutter) -mr-(--sidebar-gutter-end) pl-(--sidebar-gutter) pr-(--sidebar-gutter-end) [-webkit-app-region:no-drag]">
               <SidebarOneList />
               <SidebarOneListEmpty />
             </div>

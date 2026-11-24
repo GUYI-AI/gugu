@@ -196,6 +196,7 @@ export function resolveDeviceHostInfo(env: NodeJS.ProcessEnv = process.env, deps
     arch: (deps.arch ?? osArch)(),
     remote_protocol: REMOTE_PROTOCOL_VERSION,
     min_client_protocol: MIN_CLIENT_PROTOCOL,
+    task_annotations: 1,
   }
   const osName = osNameOnce(platform, (deps.release ?? osRelease)(), readText)
   if (osName) info.os_name = osName

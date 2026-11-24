@@ -1,6 +1,6 @@
-import { Archive, ChevronsLeft, ChevronsRight, Clock, FolderPlus, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
+import { Archive, Clock, FolderPlus, PanelLeft, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { NotificationSlot } from '@/components/needsYou/NotificationSlot';
 import { Button } from '@/components/ui/Button';
@@ -29,8 +29,8 @@ import { SidebarSpace } from './sidebar-space';
  * GUYI-AI/gugu#2548 the head and the top of the sidebar as one list.
  * Composition only: every control is an existing one (Button, IconButton, DropdownMenu + MenuItem, Hint, the bell's slot, the
  * search button) running an existing action. Collapsed, the sidebar is a rail of the list's avatars (SIDEBAR_RAIL_PX wide,
- * every avatar where it was): what has text fades, as do search, 已安排 and 会话历史. The collapse button, the bell (its rail
- * row, SidebarRailBell) and the 「+」 sit on the avatars' axis, in that order.
+ * every avatar where it was): what has text fades, as do search, 已安排 and 会话历史. The fold button (SidebarRailRow) and the
+ * 「+」 sit on the avatars' axis, in that order; the bell is in the foot.
  */
 
 /** The 「+」 menu, in order. Each runs the action of the same name that exists today. */
@@ -58,6 +58,7 @@ const CREATE_MENU_LABEL = { 'create-group': 'sidebar.newGroupChat', 'new-project
 function followTopRow(row: HTMLElement, progress: number, railLayout: boolean) {
   row.style.paddingInline = railLayout ? '18px' : '12px';
   row.style.gap = railLayout ? '0px' : '4px';
+  row.style.paddingBottom = `${railLayout ? TOP_ROW_GAP_RAIL_PX : TOP_ROW_GAP_OPEN_PX}px`;
   const plus = row.lastElementChild as HTMLElement | null;
   if (!plus) return;
   // From its expanded place (12 from the right end) to the rail's (18 from the left); a read of a clean layout. It moves in
@@ -82,7 +83,7 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
   const createRef = useSidebarProgressFollow<HTMLButtonElement>(followNames);
   const menuLabel = [...(collapsed ? [translate('sidebar.createAgent')] : []), ...ONE_LIST_CREATE_MENU.map((action) => translate(CREATE_MENU_LABEL[action]))].join(' / ');
   return (
-    <div ref={rowRef} className={cn('flex shrink-0 items-center', collapsed ? 'pb-2' : 'pb-[17px]')} data-sidebar-one-list-top="">
+    <div ref={rowRef} className="flex shrink-0 items-center" data-sidebar-one-list-top="">
       {/* Fades with the sidebar's text (followNames) and narrows to nothing: no side padding or border
           of its own (its label is centred, so expanded it looks the same), and its overflow is clipped on the way. Collapsed
           it is inert: out of the tab order and the pointer's way. */}
@@ -141,24 +142,72 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
 }
 
 /**
- * The row under the head, 40px in both states so nothing under it moves when the sidebar folds: on the rail it holds
- * 「»」 on the avatars' axis (the head's band is the traffic lights' there), expanded the search field (界面减法 #46:
- * search is at the top only while the sidebar is open). Each changes where the rows take the rail's layout
- * (@@@panel-track); the field fades with the names before that.
+ * The rows' geometry at either end of the fold (@@@panel-track: each is taken where the rows take the rail's layout). What
+ * is under them is moved by the difference times the progress (followBelowRailRow, followListOffset), so between the two
+ * ends the rows move with the fold and land where the rail draws them, ❌ jump when the layout flips.
  */
-export function SidebarRailRow() {
+/** The fold row: 12 + the 32px search field + 12 expanded; the fold button's 36 on the rail. */
+const RAIL_ROW_OPEN_PX = 56;
+const RAIL_ROW_RAIL_PX = 36;
+/** Under 创建智能体 and its 「+」 (followTopRow). */
+const TOP_ROW_GAP_OPEN_PX = 17;
+const TOP_ROW_GAP_RAIL_PX = 8;
+/** The list's gutter (left-sidebar: 14 open, 8 on the rail). */
+const LIST_GUTTER_OPEN_PX = 14;
+const LIST_GUTTER_RAIL_PX = 8;
+
+/** The fold row's height, written in the same frame as what is under it (followBelowRailRow), ❌ a render later. */
+function followRailRowHeight(row: HTMLElement, _progress: number, railLayout: boolean) {
+  row.style.height = `${railLayout ? RAIL_ROW_RAIL_PX : RAIL_ROW_OPEN_PX}px`;
+}
+
+/** What sits under the fold row, moved up as far as the row would have shrunk at this progress (0 at either end). */
+export function followBelowRailRow(element: HTMLElement, progress: number, railLayout: boolean) {
+  const shift = railLayout ? 0 : (RAIL_ROW_OPEN_PX - RAIL_ROW_RAIL_PX) * (1 - progress);
+  element.style.transform = shift > 0 ? `translateY(${-shift}px)` : '';
+}
+
+/** The list's rows, moved by what the top row's gap and the gutter would have shrunk at this progress (0 at either end). */
+export function followListOffset(element: HTMLElement, progress: number, railLayout: boolean) {
+  const rest = railLayout ? 0 : 1 - progress;
+  element.style.transform = rest > 0
+    ? `translate(${-(LIST_GUTTER_OPEN_PX - LIST_GUTTER_RAIL_PX) * rest}px, ${-(TOP_ROW_GAP_OPEN_PX - TOP_ROW_GAP_RAIL_PX) * rest}px)`
+    : '';
+}
+
+/**
+ * The fold row, under the head: the fold button at the end of the search field expanded (界面减法 #46: search is at the top only
+ * while the sidebar is open), on the avatars' axis on the rail — the fold button is in this row in both states, ❌ a row of
+ * its own. Each changes where the rows take the rail's layout (@@@panel-track); the field and the button fade with the names
+ * before that.
+ */
+function SidebarRailRow({ visibilityRef }: { visibilityRef: RefObject<HTMLDivElement | null> }) {
   const railLayout = useLeftRailLayout();
   const fieldRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
+  const rowRef = useSidebarProgressFollow<HTMLDivElement>(followRailRowHeight);
   return (
-    // Design v16: on the rail 「»」 is centred on the avatars' axis (34 of 68), 38 from the window's top, under the traffic
-    // lights; open, the search field is 64 from the top and 17 above 创建智能体.
-    <div className={cn('flex shrink-0 items-start', railLayout ? '-mt-[7px] h-9 justify-center' : 'px-3 pb-[17px] pt-[19px]')} data-sidebar-rail-row="">
-      {railLayout ? <SidebarFoldButton /> : <div ref={fieldRef} className="w-full"><SidebarSearchTrigger /></div>}
+    // Design v16: on the rail the fold button is centred on the avatars' axis (34 of 68), 38 from the window's top on macOS
+    // (lifted into the head band by --sidebar-rail-fold-lift; the row keeps its height, so nothing under it moves). Open, the
+    // search field keeps its side inset (12) above and below it too (yangchichi 11-24: the gaps were too wide).
+    <div
+      ref={(row) => {
+        rowRef.current = row;
+        visibilityRef.current = row;
+      }}
+      className={cn('flex shrink-0', railLayout ? 'items-start justify-center' : 'items-center gap-1 p-3')}
+      data-sidebar-rail-row=""
+    >
+      {railLayout ? <div className="-mt-[var(--sidebar-rail-fold-lift)] flex"><SidebarFoldButton /></div> : (
+        <div ref={fieldRef} className="flex min-w-0 flex-1 items-center gap-1">
+          <div className="min-w-0 flex-1"><SidebarSearchTrigger /></div>
+          <SidebarFoldButton />
+        </div>
+      )}
     </div>
   );
 }
 
-/** Folds / unfolds the sidebar: 「«」 at the head's right end expanded, 「»」 on the rail (SidebarRailRow). */
+/** Folds / unfolds the sidebar: the fold button in the fold row (SidebarRailRow), both states. */
 function SidebarFoldButton() {
   const { translate } = useSessionMessages();
   const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
@@ -169,7 +218,7 @@ function SidebarFoldButton() {
   return (
     <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side={isLeftOpen ? 'bottom' : 'right'}>
       <IconButton size="md" tone="strong" className="window-no-drag-region !h-[26px] !w-[30px] !rounded-[7px]" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
-        {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}
+        <PanelLeft />
       </IconButton>
     </Hint>
   );
@@ -224,24 +273,22 @@ function importableTools(locale: string): string {
 }
 
 /**
- * The head is the window's drag band. Expanded it ends in 「«」; on the rail the band is left to the traffic lights and
- * 「»」 is the row under it (SidebarRailRow). Over the head, once: C9 (useSidebarIntro), drawn next to the step's button
- * so it never covers it.
+ * The head: the window's drag band, as tall as the window's own controls need it at the sidebar's top (the traffic lights',
+ * `--sidebar-head-height`; 0 where they are elsewhere, as Windows' title bar row), then the fold row (SidebarRailRow). Over
+ * the head, once: C9 (useSidebarIntro), drawn next to the step's button so it never covers it.
  *
  * `innerShownFor`: what the inner sidebar is drawn for (innerSidebarShownFor: a chat, or the sample), null when none.
  */
 export const SidebarOneListHead = observer(function SidebarOneListHead({ innerShownFor = null }: { innerShownFor?: string | null }) {
   const { translate, locale } = useSessionMessages();
   const { navigate } = useNavigate();
-  const { currentView } = useWorkspaceSlots();
+  const { pageView: currentView } = useWorkspaceSlots();
   const { isLeftOpen } = useWorkspaceLayoutContext();
   const keyboard = useShortcutOverrides();
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard);
   const shortcut = hotkey ? formatHotkeyText(hotkey) : null;
   const historyShown = isCurrentView(currentView, 'session-history');
-  const railLayout = useLeftRailLayout();
   const intro = useSidebarIntro(innerShownFor, isLeftOpen);
-  const foldRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   const step = intro.step;
   const end = () => intro.move({ kind: 'end' });
   // 打开看看: the foot button's navigation, then the intro is over. Already on 会话历史 there is nothing to open (❌ the
@@ -273,12 +320,9 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
   return (
     // On one line with the inner column's head and the content's tabs (刘威提议稿 v1: .ltop / .ihead / .mhead share a line):
     // those sit in the card stacked on this list, which starts one surface inset lower, so this band starts there too.
-    <SidebarSpace ref={intro.headRef} controls={0} className="mt-(--desktop-surface-inset) justify-end pr-3" data-sidebar-head="">
-      {!railLayout && (
-        <div ref={foldRef} className="flex shrink-0">
-          <SidebarFoldButton />
-        </div>
-      )}
+    <>
+    <SidebarSpace controls={0} className="mt-(--desktop-surface-inset) !h-(--sidebar-head-height)" data-sidebar-head="" />
+    <SidebarRailRow visibilityRef={intro.headRef} />
       {/* C9 beside the step's button, in the feature tour's card without its shade: it is contextual and blocks nothing,
           so it takes no focus, and a click elsewhere neither closes it nor is swallowed by it. Escape ends it and still
           reaches whatever it was meant for. 会话历史 is in the foot, so its step opens upwards. */}
@@ -306,7 +350,7 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
           {...card}
         />
       )}
-    </SidebarSpace>
+    </>
   );
 });
 
@@ -318,7 +362,7 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
 export const SidebarOneListFoot = observer(function SidebarOneListFoot() {
   const { translate } = useSessionMessages();
   const { navigate } = useNavigate();
-  const { currentView } = useWorkspaceSlots();
+  const { pageView: currentView } = useWorkspaceSlots();
   const railLayout = useLeftRailLayout();
   const controlsRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   const scheduledLabel = translate('sidebar.scheduled');
@@ -369,5 +413,5 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot() {
   );
 });
 
-/** Each step's button: 「«」 in the head, 会话历史 in the foot. */
+/** Each step's button: the fold button in the head, 会话历史 in the foot. */
 const SIDEBAR_INTRO_ANCHOR = { collapse: 'sidebar-fold', history: 'sidebar-session-history' } as const;

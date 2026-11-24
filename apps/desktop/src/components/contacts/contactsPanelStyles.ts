@@ -92,9 +92,6 @@ export const profileCardStyles = {
   statusBase:
     'gg-c-cpane-status mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]',
   statusStandby: 'standby',
-  // @@@5588 needs_user uses a Solar exclamation glyph; every other tone's color comes from the one table in
-  // contactAgentTone (`--agent-tone-*`), the same the contacts row and the avatar badge use.
-  statusDotBase: 'gg-c-cpane-status-dot h-[6px] w-[6px] shrink-0 rounded-full',
   guguNumber:
     'gg-c-cpane-gugu mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]',
   guguNumberLabel: 'gg-c-cpane-gugu-label text-[var(--text-secondary)]',
@@ -116,6 +113,8 @@ export const profileCardStyles = {
   // 原裁决:与 ContactsPanel 行同款的 --bg-secondary 色块。
   action:
     'gg-c-cact inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border-0 bg-transparent px-3 py-2 text-sm font-medium text-[var(--fg)] !transition-[background] !duration-[var(--dur-fast)] [font-family:inherit] hover:[background:var(--hover)] active:[background:var(--press)] disabled:cursor-default disabled:text-[var(--text-tertiary)]',
+  // 名片里一行等分的次级动作(每格约 80px,宽度归外面的格子):图标在上、字在下,放不下时字折行。
+  actionStacked: 'min-w-0 flex-col justify-start gap-1 px-1 text-center text-xs leading-4 [overflow-wrap:anywhere]',
   delete:
     'gg-c-cpane-del !-ml-3 !mt-5 inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border-0 bg-transparent !px-3 !py-2 text-sm font-medium text-[var(--danger-fg)] [font-family:inherit] hover:bg-[var(--danger-tint)]',
 } as const

@@ -64,8 +64,6 @@ interface RailItemProps extends Omit<React.ComponentPropsWithRef<'button'>, 'tit
   title: string
   testId?: AutomationTestId
   badge?: number | null
-  /** 点的颜色:默认红;`warn` = 琥珀(有人在等你,同列表里「需要你」那一色)。 */
-  badgeTone?: 'warn'
   /** Which entry this is (`tasks` / `chats` / …): its own small move on hover hangs off this (Sidebar.css). */
   rail?: string
   /** An App that is running: a dot to the left of its icon, as the macOS dock marks one (#7050). */
@@ -84,7 +82,6 @@ function RailItem({
   title,
   testId,
   badge = 0,
-  badgeTone,
   rail,
   running = false,
   onContextMenu,
@@ -111,7 +108,7 @@ function RailItem({
       >
         {icon}
         {badge != null && badge > 0 && (
-          <span className="gg-sidebar-badge" data-tone={badgeTone} aria-hidden="true" />
+          <span className="gg-sidebar-badge" aria-hidden="true" />
         )}
         {running && <i className="gg-sidebar-running" aria-hidden="true" />}
       </ButtonPrimitive>

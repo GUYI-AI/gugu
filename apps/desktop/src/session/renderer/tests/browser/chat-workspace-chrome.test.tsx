@@ -41,9 +41,9 @@ let layout: PaneLayoutStore | undefined;
 afterEach(() => { harness?.cleanup(); layout?.dispose(); harness = undefined; layout = undefined; });
 
 function WorkspaceDrag({ layout, children }: { layout: PaneLayoutStore; children: ReactNode }) {
-  const drag = useTabDrag({ layout, blockId: null, contentOf: () => null, openWindow: () => null });
+  const drag = useTabDrag({ layout, openWindow: () => null });
   return <PaneLayoutProvider paneLayout={layout}>
-    <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragMove={drag.onDragMove} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
+    <DndContext sensors={drag.sensors} collisionDetection={edgeFirst} onDragStart={drag.onDragStart} onDragEnd={drag.onDragEnd} onDragCancel={drag.onDragCancel}>
       {children}
       <TabDragOverlay />
     </DndContext>
@@ -70,7 +70,7 @@ async function mountWorkspace(rename?: (name: string) => void) {
     {/* Clipped like the app's shell around the panes (overflow hidden is still scrollable by script). */}
     {shown && <div style={{ width: 800, height: '100%', overflow: 'hidden' }} data-chat-workspace-test-main="">
       <PaneTreeView layout={workspace} chatChrome={{
-        actions: <TabBarActionRow atWindowEdge={false}><span>聊天操作</span></TabBarActionRow>,
+        actions: <TabBarActionRow><span>聊天操作</span></TabBarActionRow>,
         addTab: <Button size="icon-sm" variant="ghost" aria-label="打开测试工具" onClick={() => workspace.open('tool', { id: 'file' }, { from: null, intent: 'newTab' })}><Plus className="size-3.5" /></Button>,
       }} renderPane={(paneId, _first, _last, part) => {
         const group = workspace.groups.find((pane) => pane.paneId === paneId)!;
@@ -279,17 +279,20 @@ it('a move held back by a long frame goes on from where it was drawn, ❌ skippe
   await mode('hidden');
   await until('the hidden tool is out of reach', () => !!tool()?.closest('[inert]'));
   // A first open mounts its pages: the frames right after the move starts are held back. The window hears the click after
-  // the app (which starts the move), in the same task.
+  // the app (which starts the move), in the same task. The frames are counted from there, ❌ from when the click's round
+  // trip to the test driver returns: on a slow runner a few frames have gone by then.
+  const lefts: number[] = [];
+  const sample = () => {
+    lefts.push(Math.round(tool()!.getBoundingClientRect().left));
+    if (lefts.length < 30) requestAnimationFrame(sample);
+  };
   window.addEventListener('click', () => {
     const held = performance.now();
     while (performance.now() - held < 300) { /* a long task */ }
+    requestAnimationFrame(sample);
   }, { once: true });
   await userEvent.click(page.getByRole('button', { name: '显示标签页' }));
-  const lefts: number[] = [];
-  for (let frame = 0; frame < 30; frame += 1) {
-    await new Promise(requestAnimationFrame);
-    lefts.push(Math.round(tool()!.getBoundingClientRect().left));
-  }
+  await until('30 frames of the move are sampled', () => lefts.length === 30);
   const travel = 800 - landing;
   // The first frame shown is near the start (a frame's step, ❌ 300 ms of a 500 ms move), and the rest still slides.
   expect(800 - lefts[0], JSON.stringify(lefts)).toBeLessThan(travel / 4);
@@ -523,4 +526,45 @@ it('resizes and previews each collapse before release, and restores the split on
   // (The conversation card is 5px inside its share: half the 10px gutter.)
   await until('restoring yields the last usable tool width', () => width(chat()), (w) => Math.abs(w - (475 - 5)) < 2);
   expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
+});
+
+it('puts the view toggle on the header in the frame the tools are hidden, while they are still going off', async () => {
+  const { inside, mode, workspace } = await mountWorkspace();
+  await mode('empty');
+  workspace.open('tool', { id: 'file' }, { from: null, intent: 'newTab' });
+  await mode('split');
+  await untilStable('the tools have landed', () => inside('[data-chat-tool-strip]')?.getBoundingClientRect().left);
+  const onHeader = () => {
+    const header = inside('[data-chat-workspace-header]')!.getBoundingClientRect();
+    return [...inside('[data-chat-workspace-header]')!.querySelectorAll('button[aria-pressed]')].some((button) => {
+      const box = button.getBoundingClientRect();
+      return !button.closest('[data-chat-tool-strip]') && box.width > 0 && box.right <= header.right + 0.5;
+    });
+  };
+  workspace.setChatToolLayout('hidden');
+  // The first animation frame after hiding, before the tools' track lands: no gap without the toggle.
+  await new Promise((frame) => requestAnimationFrame(frame));
+  expect(onHeader(), 'the toggle left with the tools and came back only after they landed').toBe(true);
+});
+
+it('keeps the view toggle where it lands from the first frame the tools are hidden until they are off the track', async () => {
+  const { inside, mode, workspace } = await mountWorkspace();
+  await mode('empty');
+  workspace.open('tool', { id: 'file' }, { from: null, intent: 'newTab' });
+  await mode('split');
+  await untilStable('the tools have landed', () => inside('[data-chat-tool-strip]')?.getBoundingClientRect().left);
+  const header = inside('[data-chat-workspace-header]')!;
+  const toggle = () => {
+    const box = header.querySelector('button[aria-pressed]')!.getBoundingClientRect();
+    return `${box.x},${box.y}`;
+  };
+  workspace.setChatToolLayout('hidden');
+  const frames: string[] = [];
+  // Every frame while the tools go off (the two cards stay until they land), then the first frame after.
+  do {
+    await new Promise((frame) => requestAnimationFrame(frame));
+    frames.push(toggle());
+  } while (header.hasAttribute('data-chat-tool-cards'));
+  expect(frames.length, 'the tools went off over several frames').toBeGreaterThan(2);
+  expect(new Set(frames), 'the toggle moved while the tools went off').toEqual(new Set([frames.at(-1)]));
 });

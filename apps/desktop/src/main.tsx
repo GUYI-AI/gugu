@@ -15,12 +15,10 @@ import { notifyHostTheme } from '@renderer/lib/theme/host-theme'
 import { renderEntryRoot } from './lib/renderer-entry-root'
 import { AppErrorBoundary } from './components/AppErrorBoundary'
 import { installScrollbarAutoHide } from './lib/scrollbarAutoHide'
-import { installWindowMaterialAttribute } from './lib/windowMaterial'
 import {
   hasWindowTitlebarRow,
   rendererPlatformFor,
   titlebarActionsLane,
-  windowControlsWidth,
   windowTitlebarHeight,
 } from './lib/window-chrome'
 import { LocalizationProvider } from './i18n'
@@ -65,24 +63,19 @@ installScrollbarAutoHide()
 installReadOnReturn()
 installPasswordSaveCards()
 
-// @@@1238-platform-attr / @@@822 — surface the OS to CSS so the frameless title bar can reserve the
-// right window-control inset only where it actually draws controls. Mac keeps native traffic lights
-// (titleBarStyle:hiddenInset) reserved left via --titlebar-traffic-lights-width; Windows/Linux are
-// frameless (frame:false) and self-draw min/max/close on the right (--titlebar-controls-width). Only
-// the desktop renderer has either — the web build stays 'other' (no phantom inset); see rendererPlatformFor.
+// @@@1238-platform-attr / @@@822 — surface the OS to CSS. Mac keeps native traffic lights (titleBarStyle:hiddenInset);
+// Windows/Linux are frameless (frame:false) and self-draw min/max/close in their own title-bar row, above the content.
+// Only the desktop renderer has either — the web build stays 'other'; see rendererPlatformFor.
 // @@@host-os 系统探针只有 `@shared/host-os` 一条;这里把它收窄成「画什么窗口外壳」。
 const rendererPlatform = rendererPlatformFor(detectHostOs(), window.desktopWindow)
 document.documentElement.dataset.platform = rendererPlatform
-document.documentElement.style.setProperty(
-  '--titlebar-controls-width',
-  `${windowControlsWidth(rendererPlatform)}px`,
-)
-// Windows 的窗口按钮在独立的标题栏行里(WindowTitleBar)。CSS 只认这个属性,❌ 不再按平台名自己判一遍。
+// Windows / Linux 的窗口按钮在独立的标题栏行里(WindowTitleBar)。CSS 只认这个属性,❌ 不再按平台名自己判一遍。
 if (hasWindowTitlebarRow(rendererPlatform)) document.documentElement.dataset.windowTitlebar = 'row'
 document.documentElement.style.setProperty('--window-titlebar-height', `${windowTitlebarHeight(rendererPlatform)}px`)
 document.documentElement.style.setProperty('--titlebar-actions-lane', `${titlebarActionsLane(rendererPlatform)}px`)
-// @@@window-material (#7333) — 系统材质透不透,由主进程读系统信号判定;这里只落属性(CSS 只认它)。
-installWindowMaterialAttribute(document.documentElement, window.desktopWindow)
+// @@@window-material (#7333) — 桌面主进程的窗口一律是不透明面;dev:web 与手机没有这座桥,不落属性。
+// 壳的样式拿这个属性认「桌面窗口」(tokens.css @@@window-material-css、desktop-shell.css)。
+if (window.desktopWindow) document.documentElement.dataset.windowMaterial = 'opaque'
 
 // @@@window-tone — 开机也同步一次。运行期改主题由 `host-theme.ts` 的 applyEffectiveTheme 负责,
 // 但**开机那一次**属性是 index.html 的引导脚本直接落的,不经过它 —— 不补这一下,

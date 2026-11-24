@@ -968,17 +968,10 @@ export default {
     "leave": "Leave topic",
     "leaveHint": "You can still read it, but will not get notifications from this topic",
     "removeHint": "They can still read it, but will not get notifications from this topic",
-    "calledYou": "Someone @ you",
     "pins": {
-      "pin": "Pin {{name}} to group",
+      "pin": "Pin {{name}}",
       "unpin": "Unpin {{name}}",
-      "emptyHint": "Choose “Open topic” on any message.",
-      "loadFailed": "Could not load pinned topics.",
-      "saveFailed": "Could not save pinned topics."
-    },
-    "phoneTabs": {
-      "group": "Group",
-      "label": "Group and topics"
+      "emptyHint": "Choose “Open topic” on any message."
     },
     "anchor": {
       "lead": "Topic",

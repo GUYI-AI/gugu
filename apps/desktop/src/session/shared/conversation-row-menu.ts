@@ -122,14 +122,17 @@ export function hasUnreadInRows(rows: readonly { unread_count: number; is_marked
 export function conversationCanHide(kind: string | null): boolean {
   return kind === 'dm' || kind === 'ai' || kind === 'group' || kind === 'topic'
 }
-export type PersonalConversationAction = 'pin' | 'mark-read' | 'notifications' | 'hide-chat' | 'rename-agent' | 'archive' | 'unpin-from-sidebar' | 'delete-chat'
+export type PersonalConversationAction = 'leave-split' | 'pin' | 'mark-read' | 'notifications' | 'hide-chat' | 'rename-agent' | 'archive' | 'unpin-from-sidebar' | 'delete-chat'
 /** `agent`: the DM's peer is an Agent, whose history is its task's: no clearing. `canArchive`: it is my active Agent. */
 export type PersonalConversationMenuState = {
   canDelete: boolean; pinned?: boolean; pinnedToSidebar?: boolean; notificationsMuted?: boolean
   hasUnread: boolean; agent?: boolean; canRenameAgent?: boolean; canArchive?: boolean
+  /** The conversation is a block of a split screen: 取消并排 takes it off the screen (session-menu.ts has the same row). */
+  inSplit?: boolean
 }
 export function personalConversationMenu(state: PersonalConversationMenuState): MenuTableItem<PersonalConversationAction>[] {
   const items: MenuTableItem<PersonalConversationAction>[] = [
+    ...(state.inSplit ? [{ id: 'leave-split', label: { ns: 'session', key: 'screen.leaveSplit' }, icon: 'leave' } as const] : []),
     { id: 'pin', label: messaging(state.pinned ? 'chatList.unpin' : 'chatList.pin'), icon: 'pin' },
     { id: 'mark-read', label: messaging('chatList.markRead'), icon: 'read', disabled: !state.hasUnread },
     { id: 'notifications', label: messaging(state.notificationsMuted ? 'chatList.enableNotifications' : 'chatList.disableNotifications'), icon: 'bell' },

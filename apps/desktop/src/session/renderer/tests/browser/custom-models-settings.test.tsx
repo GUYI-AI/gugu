@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { queryClient } from '@/lib/replica';
+import { UI_EVENTS } from '@/lib/uiEvents';
 import { setLocalePreference } from '@/i18n';
 import { CustomModelsGroup } from '@/components/settings/CustomModelsGroup';
 import { CustomModelDialog } from '@/components/settings/CustomModelDialog';
@@ -13,7 +14,7 @@ import { ChatComposer } from '@gugu/session-ui/react/components';
 import { CUSTOM_MODEL_KEY_CHANNEL, type CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
-import { composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
+import { composerModelFooter, composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
@@ -33,6 +34,19 @@ beforeEach(() => { queryClient.clear(); setLocalePreference('en-US'); state.rows
 afterEach(() => { root.unmount(); host.remove(); });
 const record = (): CustomModelConnection => ({ id: '481825a8-60b9-4c83-8d1b-f104e3db0269', name: 'Existing provider', credentialRef: 'ref', keySaved: false, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }], models: [] });
 const render = (content: React.ReactNode) => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>{content}</SessionLocalizationProvider></QueryClientProvider>);
+it('opens model settings from the composer without requesting the add-model dialog', () => {
+  const onOpen = vi.fn<(event: Event) => void>();
+  window.addEventListener(UI_EVENTS.openSettings, onOpen, { once: true });
+  try {
+    composerModelFooter([]).onManageModels();
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    const event = onOpen.mock.calls[0]?.[0];
+    expect(event).toBeInstanceOf(CustomEvent);
+    expect((event as CustomEvent).detail).toEqual({ section: 'model', action: undefined });
+  } finally {
+    window.removeEventListener(UI_EVENTS.openSettings, onOpen);
+  }
+});
 it('shows migrated records with no model or key and a repair entrypoint', async () => {
   state.rows = [record()];
   render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);

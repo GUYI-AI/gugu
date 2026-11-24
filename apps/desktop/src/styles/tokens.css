@@ -146,10 +146,17 @@
 :root {
   --titlebar-traffic-lights-width: 0px;
   --sidebar-rail-width: 60px;
+  /* The sidebar's head band (sidebar-one-list-chrome): only where the window's controls sit at the sidebar's top. Windows'
+     are in their own title bar row and Linux's at the content's right, so there it has nothing to hold. */
+  --sidebar-head-height: 0px;
+  /* The fold button on the rail, lifted into the head band to sit under the traffic lights (design v16: 38 from the window's top). */
+  --sidebar-rail-fold-lift: 0px;
 }
 :root[data-platform='mac'] {
   --titlebar-traffic-lights-width: 60px;
   --sidebar-rail-width: 68px;
+  --sidebar-head-height: 40px;
+  --sidebar-rail-fold-lift: 7px;
 }
 
 /* 最左侧列表头位于 rail 右边，仅为超出 rail 的交通灯宽度预留空间。 */
@@ -166,7 +173,7 @@
   --titlebar-actions-lane: 40px;
 }
 
-/* @@@win-titlebar-row — Windows 的独立标题栏行(WindowTitleBar.tsx)。高度由 main.tsx 从 window-chrome
+/* @@@win-titlebar-row — Windows / Linux 的独立标题栏行(WindowTitleBar.tsx)。高度由 main.tsx 从 window-chrome
    写入(没有这一行的平台是 0);`data-window-titlebar='row'` 也由它落,CSS ❌ 自己再按平台名判一遍。
    标题栏行只是窗口外框多出的一行:壳根让出它的高度(标题栏是 fixed 的),其下的区域关系与 mac 同一套 ——
    rail、列表与标题栏同在窗口底层(--shell-bg),阅读面是 desktop-shell.css 的内缩圆角面。
@@ -187,7 +194,7 @@
    third_party/blink/renderer/platform/graphics/compositing/content_layer_client_impl.cc:205 从绘制区域推导这个标志。
    2026-10-20 的同实例矩阵实测证明:边线或圆角单独都不够,
    透明 1px 边线 + 共享 12px 圆角能恢复灰阶,撤销又回彩边;底色与 OverlayScrollbar 均已排除。
-   这是独立标题行与不透明内容的窗口接壤边界,不属于列表组件。mac 与 Linux 都没有这条独立行,
+   这是独立标题行与不透明内容的窗口接壤边界,不属于列表组件(Linux 的标题栏行同一条边界)。mac 没有这条独立行,
    沿用原来的几何;阅读面仍是 desktop-shell.css 的唯一可见轮廓。 */
 :root[data-window-titlebar='row'][data-window-material='opaque'] [data-gugu-shell-phase] > div:first-child {
   border-top: 1px solid transparent;
@@ -225,10 +232,10 @@
   -webkit-app-region: no-drag;
 }
 
-/* @@@822-titlebar-controls — main.tsx 从 window-chrome SSOT 写入实际宽度。
-   这里的 0 只负责 JS 执行前和 web 的安全默认值。 */
+/* A page modal's ✕ in its top-right corner (MainLayout's contacts modal sets it): pane headers at that edge leave it this
+   room. 0 everywhere else — the window's own buttons are in the title-bar row (Windows / Linux) or are the traffic lights. */
 :root {
-  --titlebar-controls-width: 0px;
+  --pane-corner-reserve: 0px;
 }
 
 :root {
@@ -510,7 +517,7 @@
   --input-bg: color-mix(in oklab, var(--fg) 6%, transparent);
   --input-card-bg: color-mix(in oklab, var(--fg) 6%, transparent);
   --sidebar-bg: color-mix(in oklab, var(--page) 85%, transparent);
-  --nav-rail: var(--page); /* #7333 rail 与会话列表同在窗口底层(窗口/侧栏材质一层) */
+  --nav-rail: var(--page); /* #7333 rail 与会话列表同在窗口底层 */
   --topbar-bg: color-mix(in oklab, var(--page) 80%, transparent);
 
   /* Overlays / scrims */
@@ -545,9 +552,9 @@
      --danger(#ef4444)/ --color-danger(#FF3B30,iOS 系统红)/ --badge-red(#FA5151)/
      --text-error(#FF6B6B),明暗两侧还各分叉一次 —— 同屏能同时出现三种红,而它们说的是同一句话。
      ⇒ 只留 --danger 一个定义处,其余三个降为别名(名字留着:消费点与判据都按名字写,
-     agent 状态经 `--agent-tone-removed` 引它)。
+     agent 的出错标识另有 --agent-mark-error)。
      ⚠️ 别把 needs_user 与 removed 这两个**状态**并掉 —— 它们靠形状/字号分,不只靠色相分
-     (agentContactRowDotClass:needs_user 是 8px 黄色字形、removed 是 5px 色点)。 */
+     (AgentContactStatusMark:needs_user 是三角,removed 不画标识)。 */
   --color-danger: var(--danger);
   --color-draft: #FA8C16;
   /* 搜索命中的底色:mark 的字跟着正文(color: inherit),深色上用琥珀的淡染,❌ 一块亮黄压着浅色字(深色巡检 10-27)。 */
@@ -940,6 +947,12 @@
   --hover: color-mix(in oklab, var(--fg) 4%, transparent);
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent); /* @@@selected-neutral-7333 */
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
+  /* The warm ground of the light window (界面减法 #10, design v16; owner 11-24 option B: the v16 stops lifted ~3 L* with a
+     third less chroma). It is a seed like --bg: the window-material rule below draws it, and a theme pack replaces it. */
+  --ground: linear-gradient(90deg, #eee6dd 0, #f1ece4 30%, #f6f2ec 100%);
+  /* Secondary text drawn straight on that ground (the sidebars' previews, counts, headers): ≥ 5.38:1 on every stop and
+     ≥ 4.57:1 on a selected row (7.5% over the darkest stop), WCAG 1.4.3. The neutral --muted-fg is 4.45 / 3.78 there. */
+  --shell-muted-fg: #605c55;
   --capsule-bg: #efe7dc; /* 第 16 版:对话卡片顶上那颗浮动胶囊(设计稿 .capsule) */
   --capsule-hover: #e8dfd2;
   --capsule-shadow: 0 0 0 .5px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04); /* 设计稿 .capsule */
@@ -1077,34 +1090,23 @@
   --sidebar: color-mix(in oklab, var(--page) 50%, var(--bg));
 }
 
-/* ── @@@window-material-css (#7333) 窗口底层材质 ─────────────────────────────────────────────
-   真值是 `<html data-window-material>`:只由主进程按系统信号写(electron/window-material.ts,只有 mac 主窗可能是 native),
-   ❌ 在 CSS 里再按平台名或 prefers-reduced-transparency 自己判一遍 —— 两个真值会打架。
-   native 时:只有最左栏让出底色,透出系统 vibrancy(列表在 C 档工作区上,浅色深色同一份,desktop-shell.css);内容表面(聊天、详情、设置卡片)
-   一律保持不透明,正文不受背后变化干扰。浮层仍是不透明面 + 投影 —— 那是当前的可读降级,不等于原生 glass。
-   壳根与内容容器的底色走 --shell-bg(MainLayout 内联读它);它们透明之后,每个内容面得自己画 --bg。 */
+/* ── @@@window-material-css (#7333) 窗口底层 ─────────────────────────────────────────────
+   桌面窗口一律是不透明面;`<html data-window-material>` 由 main.tsx 在有主进程桥时写成 opaque,dev:web 与手机没有。
+   壳根与内容容器的底色走 --shell-bg(MainLayout 内联读它)。 */
 :root {
   --shell-bg: var(--nav-rail);
 }
-:root[data-window-material='native'] {
-  --shell-bg: transparent;
-  --nav-rail: transparent;
-}
-/* 不透明窗口(Windows / Linux / mac 减弱透明度)的浅色:rail(与 Windows 标题栏行)取 --muted,对应 mac 上透出材质的那一圈;
-   rail 右边是 #7610 的 C 档工作区(desktop-shell.css),与 mac 同一份 --desktop-workspace-bg。
+/* 桌面窗口的浅色:rail(与 Windows 标题栏行)取 --muted;
+   rail 右边是 #7610 的 C 档工作区(desktop-shell.css)。
    ❌ 再深一档(gray-fixed-150 #dfdfdf):标题栏菜单文字 --muted-fg 在它上面只有 4.12,不过 AA 4.5。 */
 :root[data-window-material='opaque'][data-theme='light'] {
   --nav-rail: var(--muted);
 }
 /* 界面减法 #10 (yangchichi, design v16): in the light theme the window's ground — under the zero rail, the first-level
-   sidebar and the gaps around the cards — is one warm gradient across the window, on either material. */
+   sidebar and the gaps around the cards — is one warm gradient across the window. */
 :root[data-theme='light'][data-window-material] {
-  /* owner 11-24 (option B): the v16 stops lifted ~3 L* with a third less chroma (L* 91.7 → 95.6, C 5.5 → 3.4). */
-  --shell-bg: linear-gradient(90deg, #eee6dd 0, #f1ece4 30%, #f6f2ec 100%);
+  --shell-bg: var(--ground);
   --nav-rail: transparent;
-  /* Secondary text drawn straight on that ground (the sidebars' previews, counts, headers): ≥ 5.38:1 on every stop and
-     ≥ 4.57:1 on a selected row (7.5% over the darkest stop), WCAG 1.4.3. The neutral --muted-fg is 4.45 / 3.78 there. */
-  --shell-muted-fg: #605c55;
 }
 /* The two sidebars lie on the window ground, not on a card: their secondary text, whichever renderer's name it goes by,
    is the ground's. A var() resolves where it is declared, so the derived names (--color-*, --text-secondary) that were
@@ -1118,7 +1120,7 @@
   --color-foreground-tertiary-muted: var(--shell-muted-fg);
   --color-muted-foreground: var(--shell-muted-fg);
 }
-/* 任务页(会话页嵌在壳里;界面减法起不分材质):停靠的项目/会话列透出下面的窗口底,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
+/* 任务页(会话页嵌在壳里):停靠的项目/会话列透出下面的窗口底,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
    正文(WorkspaceContentLayout 的 bg-background)与各块(screen-frame)照旧不透明。
    浮出预览(data-peek,盖在正文上)❌ 透:那一层要稳定的不透明面。拖入文件时的高亮底(bg-background-2)也保留。
    ❌ 把 .bg-background-tertiary 这个通用类一律清空:正文里的分块也用它。
@@ -1337,8 +1339,8 @@ input {
   }
 }
 
-/* An agent's status mark in its avatar's corner (Avatar.tsx, AgentStatusCorner): one glyph on a small see-through
-   round backing. */
+/* An agent's status mark in its avatar's corner (Avatar.tsx, AgentStatusCorner): the running glyph on a small
+   see-through round backing; the solid marks without one (.av-status--solid). */
 .av-status {
   position: absolute;
   right: -2px;
@@ -1356,11 +1358,9 @@ input {
   pointer-events: none;
 }
 
-.av-status__dot {
-  width: 60%;
-  height: 60%;
-  border-radius: 50%;
-  background: var(--agent-tone-error);
+/* The solid marks (needs you, error, offline) are opaque shapes of their own: no backing. */
+.av-status--solid {
+  background: none;
 }
 
 @keyframes gg-thread-up {
@@ -1676,23 +1676,28 @@ body.barcode-scanner-active #root {
   --warn: #f59e0b;
   --ok-tint: color-mix(in srgb, var(--ok) 12%, transparent);
   --warn-tint: color-mix(in srgb, var(--warn) 14%, transparent);
-  /* #6448 agent 状态的颜色只在这里定义一次(owner 2026-09-25 定表),会话页、聊天、手机都经
-     `agentStatusColorVar`(packages/core/src/shared/agentStatusPresentation.ts)取这几个名字:
-     在跑 = 橙(聊天侧沿用的那个),后台在跑 = 停住的运行字形(AgentParkedGlyph,不是点,不上色),需要你 = --warn 黄,
-     出错 = --danger 红,在线 = 绿(可达)。做完只加粗不上色,空闲不上色。 */
-  --agent-tone-running: #ff5f1f;
-  --agent-tone-parked: var(--warn);
-  --agent-tone-needs-user: var(--warn);
-  --agent-tone-error: var(--danger);
-  --agent-tone-online: var(--green);
-  --agent-tone-removed: var(--color-danger);
-  --agent-tone-muted: var(--text-tertiary);
+  /* An agent's status marks (AgentContactStatusMark, one component for every surface): running and parked are the running
+     glyph (uncoloured); needs you, error and offline are solid shapes with a sign knocked out (AgentMarkGlyph, owner 11-24
+     design sheet), coloured only here. One pair per theme — the dark theme takes the lighter step and knocks the sign
+     out in the ground colour. */
+  --agent-mark-warn: #fbbf24;
+  --agent-mark-warn-ink: #0f0f0f;
+  --agent-mark-error: #f87171;
+  --agent-mark-error-ink: #0f0f0f;
+  --agent-mark-offline: #8f8f8f;
+  --agent-mark-offline-ink: #0f0f0f;
   /* 版本控制里的「冲突」「已合并」:会话页 diff 视图的两种状态字,两套主题同值(从 session/renderer/index.css 搬来)。 */
   --vcs-conflict: color(display-p3 0.9 0.45 0.2);
   --vcs-merged: color(display-p3 0.523 0.318 0.751);
 }
 [data-theme='light'] {
   --danger-fg: #b91c1c;
+  --agent-mark-warn: #f59e0b;
+  --agent-mark-warn-ink: #451a03;
+  --agent-mark-error: #dc2626;
+  --agent-mark-error-ink: #ffffff;
+  --agent-mark-offline: #8a8b8c;
+  --agent-mark-offline-ink: #ffffff;
   --danger-tint: #ef444414;
   --danger-tint-press: #ef444424;
 }
@@ -1998,11 +2003,11 @@ body.barcode-scanner-active #root {
 }
 .gg-pane-header[data-mobile] { height: var(--pane-header-h-touch); }
 .gg-pane-header[data-divider] { border-bottom: 1px solid var(--border); }
-/* At the window's right edge the controls drawn over content (Linux; a page modal's ✕) keep their room; 0 where they are not
-   over it. A column at that edge (the contacts drawer, data-pane-close) has every header inside it leave that room too — so a
-   long title ends in an ellipsis before the controls instead of running under them. */
+/* At a page modal's right edge its ✕ keeps its room (--pane-corner-reserve); 0 elsewhere. A column at that edge (the contacts
+   drawer, data-pane-close) has every header inside it leave that room too — so a long title ends in an ellipsis before the ✕
+   instead of running under it. */
 .gg-pane-header[data-window-edge], [data-pane-close] .gg-pane-header {
-  padding-right: calc(var(--pane-pad-x) + var(--titlebar-controls-width, 0px));
+  padding-right: calc(var(--pane-pad-x) + var(--pane-corner-reserve, 0px));
 }
 .gg-pane-title {
   flex: 1 1 auto;
@@ -2303,6 +2308,11 @@ body.barcode-scanner-active #root {
    四周各让 5px:占一枚一位数计数(18×18)的位置、落在它正中 —— 与上下行的数同一列,收起成头像列时也落在数落的那个角上。
    它不装字:❌ 吃 .gg-chip 那条按字号长高的 min-height(吃了就被撑成 8×18 的竖长条)。 */
 .gg-chip[data-shape='dot'] { flex: none; width: 8px; height: 8px; min-height: 0; margin: 5px; padding: 0; background: var(--faint-fg); }
+/* A row's unread mark on its avatar's top-right corner (AvatarUnread): the count's left edge 12px in from the avatar's
+   right edge, its top 2px above the avatar. */
+.gg-avatar-unread { position: relative; display: inline-flex; flex: none; }
+.gg-avatar-unread > .gg-avatar-unread-mark { position: absolute; top: -2px; left: calc(100% - 12px); margin: 0; }
+.gg-avatar-unread > .gg-avatar-unread-mark[data-shape='dot'] { top: 3px; left: calc(100% - 7px); }
 
 /* #5111 设置→账户 头像上传钮的**内容**。钮本身是 ui/Button variant=ghost(hover/press/disabled
    全部由那份变体表出,这里不重复一遍);这三条只管钮里面那块 40px 的头像与上传中的遮罩。 */

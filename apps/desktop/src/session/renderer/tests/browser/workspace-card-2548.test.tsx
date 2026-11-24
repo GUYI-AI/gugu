@@ -38,9 +38,9 @@ function InnerColumn() {
 
 async function renderDesktop(theme: 'light' | 'dark', inner: boolean) {
   document.documentElement.dataset.theme = theme;
-  // 界面减法 #10: the list is the window's leftmost column and lies on the window's material like the old rail did; both
-  // themes run with a window material like the real main window.
-  document.documentElement.dataset.windowMaterial = 'native';
+  // 界面减法 #10: the list is the window's leftmost column and lies on the window's ground like the old rail did; both
+  // themes run with the desktop window's marker like the real main window.
+  document.documentElement.dataset.windowMaterial = 'opaque';
   harness = createReactHarness();
   await harness.render(<div data-desktop-shell="" style={{ position: 'fixed', inset: 0, display: 'flex' }}>
     <div style={{ flex: 1, minWidth: 0, display: 'flex' }}>

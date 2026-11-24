@@ -4,13 +4,12 @@ import { useEffect } from 'react';
 import { SessionMachineStatus } from './session-machine-status';
 import { useScreenBlock } from '@renderer/app/screen-block-context';
 import { auxLeadingReserve, PutBackButton } from '@renderer/app/aux-window-host';
-import { BlockGrip, CloseBlockButton, droppedOutsideWindow, startSessionBlockDrag } from '@renderer/app/screen-frame';
+import { BlockGrip } from '@renderer/app/block-grip';
 import { screenLayout, type WindowableContent } from '@renderer/app/screen-layout';
 import {
   closeScreenBlock,
   openInWindow,
   openTabInWindow,
-  putBackFromWindow,
   revealTabWindow,
 } from '@renderer/app/screen-layout-actions';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
@@ -22,7 +21,6 @@ import { useTabDrag } from '@renderer/features/tabs/use-tab-drag';
 import { PaneTreeView } from '@renderer/features/tabs/pane-tree-view';
 import { TabDragOverlay } from '@renderer/features/tabs/tab-bar/tab-drag-preview';
 import { shellRestoreLaneTaken } from '@renderer/features/sidebar/inner-sidebar-fold';
-import { ContextMenu, MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sessionViewOfRuntime } from '@shared/core/sessions/sessions';
 import { parseExtensionTabKind } from '@shared/extensions/manifest';
@@ -67,16 +65,16 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
   }, [paneLayout, blockId, projectId, pageSessionId]);
 
   /**
-   * 拖到别的块边上的,只有两种页签:会话自己那枚(= 整个会话挪过去)和一个 App 为自己开的那枚(= 它单独占一块)。
-   * 其余附页(审阅、终端、浏览器、文件、侧边聊天)只属于这个会话,❌ 拖进别的会话。
+   * 单独成窗时是一整样东西的,只有两种页签:会话自己那枚(= 整个会话)和一个 App 为自己开的那枚(= 这个 App)。
+   * 其余附页(审阅、终端、浏览器、文件、侧边聊天)成窗时只是这一枚。
    */
-  const blockContentOf = (tabId: string): WindowableContent | null => {
+  const windowContentOf = (tabId: string): WindowableContent | null => {
     for (const { pane } of paneLayout.groups) {
       const entry = pane.entries.get(tabId);
       if (!entry) continue;
       const state = entry.state as { sessionId?: string; filePath?: string } | undefined;
       if (CHAT_TAB_KINDS.has(entry.kind) && state?.sessionId === pageSessionId) return { kind: 'session', projectId, sessionId: pageSessionId };
-      // A tab that is one per task (#7317) is this task's own page: it never leaves for a block or a window of its own.
+      // A tab that is one per task (#7317) is this task's own page: it never leaves for a window of its own.
       if (parseExtensionTabKind(entry.kind) && !state?.filePath && !isTaskOwnedTab(entry)) return { kind: 'app', tabKind: entry.kind };
       return null;
     }
@@ -92,13 +90,14 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
   };
 
   /**
-   * 页签右键「在新窗口打开」:会话自己那枚 = 整个会话单独成窗(已经在窗里的不再开一扇),App 那枚 = 这个 App,
-   * 别的附页 = 这一枚单独成窗。要打开的那枚正在某扇窗里 = 把那扇窗提到前面。
+   * 页签右键「在新窗口打开」:App 那枚 = 这个 App,别的附页 = 这一枚单独成窗。要打开的那枚正在某扇窗里 = 把那扇窗提到前面。
+   * 会话自己那枚没有这一项:整个会话单独成窗只在内层侧栏它那一行的右键里(一处入口)。
    */
   useEffect(() => {
     paneLayout.setWindowOpener((tabId) => {
       if (ownedByTask(tabId)) return null;
-      const content = blockContentOf(tabId);
+      const content = windowContentOf(tabId);
+      if (content?.kind === 'session') return null;
       if (content) return windowId ? null : () => openInWindow(content);
       return () => openTabInWindow({ projectId, sessionId: pageSessionId }, paneLayout, tabId);
     });
@@ -107,17 +106,15 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
       paneLayout.setWindowOpener(null);
       paneLayout.setWindowRevealer(null);
     };
-    // blockContentOf 每次被调用时现读页签;它闭包里认的只有这几样。
+    // windowContentOf 每次被调用时现读页签;它闭包里认的只有这几样。
   }, [paneLayout, projectId, pageSessionId, windowId]);
 
   const drag = useTabDrag({
     layout: paneLayout,
-    blockId,
-    contentOf: blockContentOf,
     // 拖到窗口外松手 = 单独成窗:会话自己那枚 = 整个会话(已经在窗里的除外),App 那枚 = 这个 App,别的附页 = 这一枚;
     // 一个任务一份的 App 页签不成窗(#7317)。
     openWindow: (tabId) => {
-      const content = blockContentOf(tabId);
+      const content = windowContentOf(tabId);
       if (ownedByTask(tabId) || (content && windowId)) return null;
       return (at) => (content ? openInWindow(content, at) : openTabInWindow({ projectId, sessionId: pageSessionId }, paneLayout, tabId, at));
     },
@@ -143,19 +140,17 @@ export const SessionMainColumn = observer(function SessionMainColumn() {
         sensors={drag.sensors}
         collisionDetection={edgeFirst}
         onDragStart={drag.onDragStart}
-        onDragMove={drag.onDragMove}
         onDragEnd={drag.onDragEnd}
         onDragCancel={drag.onDragCancel}
       >
         <div className="h-full min-h-0 min-w-0" data-session-panes="">
           <PaneTreeView layout={paneLayout} chatChrome={{
-            actions: <SessionBlockActions atScreenEdge={false} />,
+            actions: <SessionBlockActions />,
             addTab: <ChatWorkspaceNewTab layout={paneLayout} />,
             leading: <SessionGrip />,
-            atWindowEdge: place.topRight,
             reserveShellRestoreLane: place.topLeft && !windowId && shellRestoreLaneTaken(),
             leadingReservePx: windowId ? auxLeadingReserve() : undefined,
-          }} renderPane={(paneId, first, last, part) => <PaneCell paneId={paneId} part={part} atLeftEdge={first} atWindowEdge={last} draggingTabId={drag.dragging} />} />
+          }} renderPane={(paneId, first, last, part) => <PaneCell paneId={paneId} part={part} atLeftEdge={first} atBlockEdge={last} draggingTabId={drag.dragging} />} />
         </div>
         <TabDragOverlay />
       </DndContext>
@@ -168,7 +163,7 @@ const PaneCell = observer(function PaneCell({
   paneId,
   part,
   atLeftEdge,
-  atWindowEdge,
+  atBlockEdge,
   draggingTabId,
 }: {
   paneId: string;
@@ -176,8 +171,8 @@ const PaneCell = observer(function PaneCell({
   part: 'all' | 'bar' | 'body';
   /** 这一块左上那一格 —— 它的页签条最左是 ⋮⋮;这一块又在屏的左上时,侧栏收起要让开那枚浮动的「展开侧栏」钮。 */
   atLeftEdge: boolean;
-  /** 这一块右上那一格 —— 托管这一块自己的控制(在哪打开、输出、分享、关闭这一块);这一块又在屏的右上时让开窗口控制条。 */
-  atWindowEdge: boolean;
+  /** 这一块右上那一格 —— 托管这一块自己的控制(在哪打开、输出、分享)。 */
+  atBlockEdge: boolean;
   draggingTabId: string | null;
 }) {
   const sessionView = useWorkspaceViewModel();
@@ -191,7 +186,7 @@ const PaneCell = observer(function PaneCell({
   const strip = {
     tabLeadingSlot: atLeftEdge ? <SessionGrip /> : undefined,
     tabTrailingSlot: <TabBarAddMenu />,
-    actionsSlot: atWindowEdge ? <SessionBlockActions atScreenEdge={block.topRight} /> : undefined,
+    actionsSlot: atBlockEdge ? <SessionBlockActions /> : undefined,
     reserveShellRestoreLane: atLeftEdge && block.topLeft && !block.windowId && shellRestoreLaneTaken(),
     leadingReservePx: atLeftEdge && block.windowId ? auxLeadingReserve() : undefined,
   };
@@ -216,15 +211,15 @@ const PaneCell = observer(function PaneCell({
  * 对话成了页签之后它们落在这一块右上那条页签条的右端(spec「页签条右端只放这一块自己的控制」)。
  * 动作对着这一块正在看的那条会话(子会话的页签在前面就是子会话)。
  */
-const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge }: { atScreenEdge: boolean }) {
+const SessionBlockActions = observer(function SessionBlockActions() {
   const { sessionId: pageSessionId, projectId } = useSessionViewContext();
   const { paneLayout } = useWorkspaceViewModel();
-  const { blockId, multi, windowId } = useScreenBlock();
+  const { windowId } = useScreenBlock();
   const sessionId = activeChatSessionId(paneLayout);
   const session = sessionId ? sessionRegistry.get(pageSessionId)?.sessions.get(sessionId) : undefined;
   const startupFailure = useSessionStartupFailure(sessionId ?? null);
   return (
-    <TabBarActionRow atWindowEdge={atScreenEdge}>
+    <TabBarActionRow>
       <SessionMachineStatus />
       <DesktopLiveWindowHeader projectId={projectId} sessionId={sessionId} paneLayout={paneLayout} iconless />
       {/* spec session-terminal-model-switch:终端会话看不到输入框,换模型的入口在这里;通用模式的输入框里已经有一颗。
@@ -239,49 +234,17 @@ const SessionBlockActions = observer(function SessionBlockActions({ atScreenEdge
           notStarted={!session.data.providerSessionId}
         />
       ) : null}
-      {/* #7167 聊天 / 编程 / 通用 —— 这一块最右(多块时在「关闭这一块」左边)。 */}
-      {/* 屏上不止一块时:从这屏拿走(左边列表里还在)。单独成窗时这里是「放回咕咕」。 */}
-      {multi && blockId ? <CloseBlockButton blockId={blockId} /> : null}
+      {/* 单独成窗时这里是「放回咕咕」。 */}
       {windowId ? <PutBackButton windowId={windowId} /> : null}
     </TabBarActionRow>
   );
 });
 
-/**
- * 这一块左上的 ⋮⋮:按住 = 整个会话连同它分好的格子一起挪(落在别的块边上),落在输入框上照样是一枚 @;
- * 右键 = 关闭这一块(屏上不止一块时)。
- */
+/** 这一块左上的 ⋮⋮(屏上不止一块时才有,BlockGrip):按住 = 整个会话连同它分好的格子一起挪,拖出窗外 = 单独成窗。 */
 const SessionGrip = observer(function SessionGrip() {
   const { translate } = useSessionMessages();
   const { projectId, sessionId } = useSessionViewContext();
-  const { blockId, multi, windowId } = useScreenBlock();
+  const { blockId } = useScreenBlock();
   const title = sessionRegistry.get(sessionId)?.sessions.get(sessionId)?.data.title ?? '';
-  const content = { kind: 'session', projectId, sessionId } as const;
-  return (
-    <ContextMenu.Root>
-      <ContextMenu.Trigger className="flex h-full items-center">
-        <BlockGrip
-          label={translate('screen.grip')}
-          onDragStart={(event) => startSessionBlockDrag(event, { projectId, sessionId, title })}
-          // 拖到窗口外松手 = 整个会话单独成窗(已经在窗里的不再开一扇)。
-          onDragEnd={(event) => {
-            if (!windowId && droppedOutsideWindow(event)) openInWindow(content, { screenX: event.screenX, screenY: event.screenY });
-          }}
-        />
-      </ContextMenu.Trigger>
-      <ContextMenu.Content finalFocus={false}>
-        {windowId ? (
-          <MenuItem onClick={() => putBackFromWindow(windowId)}>{translate('screen.putBack')}</MenuItem>
-        ) : (
-          <MenuItem onClick={() => openInWindow(content)}>{translate('screen.openInWindow')}</MenuItem>
-        )}
-        {multi && blockId ? (
-          <>
-            <MenuSeparator />
-            <MenuItem onClick={() => closeScreenBlock(blockId)}>{translate('screen.closeBlock')}</MenuItem>
-          </>
-        ) : null}
-      </ContextMenu.Content>
-    </ContextMenu.Root>
-  );
+  return <BlockGrip blockId={blockId} content={{ kind: 'session', projectId, sessionId, title }} label={translate('screen.grip')} />;
 });
