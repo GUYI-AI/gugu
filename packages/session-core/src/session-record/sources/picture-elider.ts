@@ -12,7 +12,7 @@ export type ElidedPicture = { chars: number; start: number; head: string; tail: 
 
 /** Shorter runs are passed on as they are: a small picture costs little, and so does telling it from text. */
 const MIN_PICTURE_CHARS = 64 * 1024;
-/** As `record-images.ts` checks a picture read back. */
+/** As `record-images.ts` probes a picture's place. */
 const PROBE_CHARS = 32;
 const PREFIXES = [';base64,', '"data":"'];
 const CARRY = Math.max(...PREFIXES.map((prefix) => prefix.length)) - 1;

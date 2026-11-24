@@ -11,14 +11,13 @@ import {
   type RecordEntry,
   type RecordArchiveBudget,
   type RecordLineageNode,
-  type RecordImageRef,
   type SessionRecordLocator,
   type SessionRecordResume,
   type SessionRecordSource,
   type SessionRecordSourceEvents
 } from '../contract';
 import { findUnder, isFile } from './find-file';
-import { jsonlCheckAt, locateImages, readRecordImage } from './record-images';
+import { jsonlCheckAt, locateImages } from './record-images';
 import {
   SessionRecordNotFoundError,
   SessionRecordForkDivergedError,
@@ -333,10 +332,6 @@ class ClaudeJsonlSource implements SessionRecordSource {
   }
 
   getLineage(): readonly RecordLineageNode[] | null { return this.lineageValid ? this.lineage : null; }
-
-  readImage(ref: RecordImageRef): Promise<string | null> {
-    return readRecordImage(ref);
-  }
 
   stop(): void {
     this.stopped = true;

@@ -68,7 +68,7 @@ A composes begin/connect/finish inside the `GuguCalendarPermissions` native plug
 | sessionRespond | Native owner-only exact approval and one-use claim. Preserve the settlement/request ID; remote origins are rejected. |
 | sessionQueue / sessionCancel | Native durable queue/current-turn cancellation. A timed-out host call is not proof that an admitted operation did not run. |
 | sessionSetOption / sessionReloadModel | Native persisted selection after actual catalog validation; retain the same request identity. Reject a busy task as existing Android does. |
-| prefetchFiles / sessionToolImage | Registered private attachment references and permission checks. No arbitrary filesystem, URL or unregistered data. |
+| prefetchFiles | Registered private attachment references and permission checks. No arbitrary filesystem, URL or unregistered data. |
 | sessions.markSessionSeen | Native persisted seen state after identity verification. |
 
 Unsupported methods return explicit unknown_method/unsupported. Startup reads may retry host_not_ready with the original request ID; that transient response must not be cached as a permanent result. Mutation retries reconcile durable native/cloud custody and cannot blindly execute twice.

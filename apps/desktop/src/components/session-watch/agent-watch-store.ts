@@ -11,7 +11,7 @@ import type {
   TurnPatch,
 } from '@gugu/session-core/session-record/contract'
 import { settlementFromWire } from '@gugu/session-core/session-record/contract'
-import type { ToolImage, ToolNode, TranscriptItem, TranscriptTurn } from '@gugu/session-core/acp/client'
+import type { TranscriptItem, TranscriptTurn } from '@gugu/session-core/acp/client'
 
 /**
  * 手机看管 agent —— 一份会话时间线的纯状态机。
@@ -104,63 +104,15 @@ export function mergeSettlements(
   return next
 }
 
-function isToolNode(item: TranscriptItem): item is ToolNode {
-  return item.kind !== 'message' && item.kind !== 'thinking'
-}
-
-type ImageRefs = readonly { mimeType: string; chars: number }[] | undefined
-
-function sameRefs(a: ImageRefs, b: ImageRefs): boolean {
-  return !!a && !!b && a.length > 0 && a.length === b.length && a.every((ref, i) => ref.mimeType === b[i].mimeType && ref.chars === b[i].chars)
-}
-
-/**
- * 宿主重发一条条目时,把手机取回来写进去的图(`withToolImage`)带到新来的那一份上。
- *
- * 发给手机的条目里图只有 `imageRefs`(transport-trim)。宿主重发一条条目时整条替换(这条或它父节点的 JSON 变了就重发:
- * 读图那一组每多读一张、子代理下的调用一变、换代后的整份快照),取到的图就被冲掉了:格子又空着、要再取、流量再花一遍。
- * 只带**同一组图**:新来的只有 refs 没有图,两边 refs 张数、每张类型和字数都一样。按 id 认,不管它挂在哪 ——
- * 连读第二张时第一张从顶层挪进新建的那一组,也认得出。
- * 没东西可带时原样返回同一个引用(推送路径上每条都过它)。
- */
-function keepFetchedImages(next: TranscriptItem, fetched: ReadonlyMap<string, ToolNode>): TranscriptItem {
-  if (fetched.size === 0 || !isToolNode(next)) return next
-  let out: ToolNode = next
-  const held = fetched.get(next.id)
-  if (held && held.kind !== 'tool-group' && next.kind !== 'tool-group' && !next.images && sameRefs(next.imageRefs, held.imageRefs)) {
-    out = { ...next, images: held.images } as ToolNode
-  }
-  if (next.children?.length) {
-    const children = next.children.map((child) => keepFetchedImages(child, fetched) as ToolNode)
-    if (children.some((child, i) => child !== next.children?.[i])) out = { ...out, children } as ToolNode
-  }
-  return out
-}
-
-/** 手里带着取到的图的工具条目(工具组里的子调用也算),按 id。 */
-function fetchedImagesById(items: readonly TranscriptItem[], into = new Map<string, ToolNode>()): Map<string, ToolNode> {
-  for (const item of items) {
-    if (!isToolNode(item)) continue
-    if (item.kind !== 'tool-group' && item.images?.length) into.set(item.id, item)
-    if (item.children) fetchedImagesById(item.children, into)
-  }
-  return into
-}
-
-/** 整份替换。reset 传原因时同时记进 lastReset 并清掉 needsSnapshot。取到的工具图照样带过去(`keepFetchedImages`)。 */
+/** 整份替换。reset 传原因时同时记进 lastReset 并清掉 needsSnapshot。 */
 export function applySnapshot(
   state: AgentWatchTimeline,
   snapshot: TimelineSnapshot,
   reset: RecordResetReason | null = null,
 ): AgentWatchTimeline {
-  const fetched = fetchedImagesById(state.turns.flatMap((turn) => turn.items))
-  const turns = snapshot.turns.map((turn) => {
-    const items = turn.items.map((item) => keepFetchedImages(item, fetched))
-    return items.some((item, i) => item !== turn.items[i]) ? { ...turn, items } : turn
-  })
   return {
     cursor: snapshot.cursor,
-    turns: sortTurns(turns),
+    turns: sortTurns([...snapshot.turns]),
     settlements: indexSettlements(snapshot.settlements),
     hasOlder: snapshot.hasOlder,
     recentActions: snapshot.recentActions ?? [],
@@ -199,14 +151,13 @@ export function prependOlder(
 }
 
 /**
- * 把一条增量里的一轮并进手里那一轮:id 在 patch.items 里的取新的(取到的工具图照样带过去,`keepFetchedImages`),
+ * 把一条增量里的一轮并进手里那一轮:id 在 patch.items 里的取新的,
  * 不在的沿用手里的。手里也没有 ⇒ 返回 null(中间丢过一批,交给调用方按缺口处理)。
  */
 function mergeTurnPatch(existing: TranscriptTurn | undefined, patch: TurnPatch): TranscriptTurn | null {
   const byId = new Map<string, TranscriptItem>()
   for (const item of existing?.items ?? []) byId.set(item.id, item)
-  const fetched = fetchedImagesById(existing?.items ?? [])
-  for (const item of patch.items) byId.set(item.id, keepFetchedImages(item, fetched))
+  for (const item of patch.items) byId.set(item.id, item)
   const items: TranscriptItem[] = []
   for (const id of patch.itemIds) {
     const item = byId.get(id)
@@ -314,32 +265,6 @@ export function applyLocalSettlement(
   settlement: Settlement,
 ): AgentWatchTimeline {
   return { ...state, settlements: mergeSettlements(state.settlements, [settlement]) }
-}
-
-/**
- * 手机去机器上取到的一张工具图,写回手里那条条目的 `images`(发来的那份里只有 `imageRefs`,transport-trim):
- * 就当它本来就带着图 —— 内存里这份时间线、本地留存(timeline-cache)都跟着它走,重开不重取;宿主重发这条时由
- * `keepFetchedImages` 带过去。
- * 只换那一轮那一条(工具组里的子调用也认);条目已经不在了就原样返回。
- */
-export function withToolImage(state: AgentWatchTimeline, itemId: string, index: number, image: ToolImage): AgentWatchTimeline {
-  const put = (node: ToolNode): ToolNode => {
-    if (node.id === itemId && node.kind !== 'tool-group') {
-      const images = [...(node.images ?? [])]
-      images[index] = image
-      return { ...node, images } as ToolNode
-    }
-    const children = node.children?.map(put)
-    return children && children.some((child, i) => child !== node.children?.[i]) ? ({ ...node, children } as ToolNode) : node
-  }
-  let changed = false
-  const turns = state.turns.map((turn) => {
-    const items = turn.items.map((item) => (isToolNode(item) ? put(item) : item))
-    if (items.every((item, i) => item === turn.items[i])) return turn
-    changed = true
-    return { ...turn, items: items as TranscriptItem[] }
-  })
-  return changed ? { ...state, turns } : state
 }
 
 export function pendingSettlements(state: AgentWatchTimeline): Settlement[] {

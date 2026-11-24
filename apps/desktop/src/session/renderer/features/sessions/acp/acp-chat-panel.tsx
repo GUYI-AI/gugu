@@ -2177,13 +2177,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         }
         void resolveAttachmentDataUrl(store, arg.attachment.id).then(viewImage);
       },
-      // 工具交回来的图:同一个看图器,一次调用的几张图是一组,从被点的那张起。
-      onViewImages: (arg) =>
-        openImageViewer(
-          arg.urls.map((url, index) => ({ url, alt: '', thumb: index === arg.index ? arg.thumb : undefined })),
-          arg.index
-        ),
-      resolveToolImage: (itemId, index) => store?.resolveToolImage(itemId, index) ?? Promise.resolve(null),
       resolveAttachment: (attachment) =>
         store ? resolveAttachmentDataUrl(store, attachment.id) : Promise.resolve(null),
       onViewMermaid: (arg) => {

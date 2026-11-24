@@ -896,36 +896,6 @@ describe('session timeline service', () => {
     expect(factory).toHaveBeenCalledTimes(1);
   });
 
-  // owner 10-15:手机那份时间线里图只有类型和字数,图滚到了才来这里取(transport-trim)。和翻页同一条路。
-  it('手机取一张工具图:按条目 id 和第几张找(工具组里的子调用也认);找不到如实说是哪一样没有', async () => {
-    const fake = makeTimeline();
-    const shot = { mimeType: 'image/jpeg', data: '/9j/AAAA' };
-    const tool = (id: string, extra: Record<string, unknown> = {}) => ({ kind: 'mcp-tool-call', id, seq: 1, toolCallId: id, title: 'app_check', status: 'done', ...extra });
-    const snapshot = fake.timeline.getSnapshot();
-    fake.timeline.getSnapshot = () => ({
-      ...snapshot,
-      turns: [{ id: 't1', seq: 1, initiator: 'user', items: [tool('tool-1', { images: [shot] }), tool('group-1', { kind: 'tool-group', children: [tool('child-1', { images: [shot, shot] })] })] }],
-    }) as unknown as TimelineSnapshot;
-    service.setSessionTimelineFactory(async () => fake.timeline);
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'tool-1', index: 0 })).toEqual({ ok: true, value: shot });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'child-1', index: 1 })).toEqual({ ok: true, value: shot });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'tool-1', index: 1 })).toMatchObject({ ok: false, error: { code: 'no_such_image' } });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'gone', index: 0 })).toMatchObject({ ok: false, error: { code: 'no_such_item' } });
-    expect(await service.toolImage({ conversationId: 'no-such-conv', itemId: 'tool-1', index: 0 })).toMatchObject({ ok: false, error: { code: 'session_not_found' } });
-  });
-
-  // #980:存档装回来的轮里图只剩位置,快照里找不到;有 `toolImage` 口的时间线由它从记录里读回来,读不回来照实转达。
-  it('时间线自己会取图(存档里只存位置)⇒ 问它,不在快照里找', async () => {
-    const fake = makeTimeline();
-    const shot = { mimeType: 'image/png', data: 'iVBORAAAA' };
-    fake.timeline.toolImage = async ({ itemId, index }) => itemId === 'restored' && index === 0
-      ? { ok: true, image: shot }
-      : { ok: false, code: 'no_such_image', message: `picture #${index} of tool item ${itemId} could not be read back from its record` };
-    service.setSessionTimelineFactory(async () => fake.timeline);
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'restored', index: 0 })).toEqual({ ok: true, value: shot });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'restored', index: 1 })).toMatchObject({ ok: false, error: { code: 'no_such_image' } });
-  });
-
   it('结算只成功一次：后答的一端拿到那条既有结算，provider 只被调一次', async () => {
     const { timeline } = makeTimeline();
     service.setSessionTimelineFactory(async () => timeline);

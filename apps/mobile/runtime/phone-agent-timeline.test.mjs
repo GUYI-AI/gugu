@@ -90,7 +90,6 @@ test('actual Pi JSONL uses the shared transcript, cursor increment, pagination a
     assert.equal(restart.ok, false)
     assert.equal(restart.reset, 'epoch_changed')
     assert.match(JSON.stringify(restart.snapshot.turns), /第二件完成/)
-    await assert.rejects(f.api.image(f.agent, { itemId: 'not-a-tool', index: 0 }), { code: 'no_such_item' })
     f.revoke()
     const hidden = await f.api.snapshot(f.agent, {})
     assert.match(JSON.stringify(hidden), /旧记录已隐藏/)
@@ -151,7 +150,7 @@ test('live Pi deltas keep their shared timeline identity when the real JSONL tak
   } finally { await f.close() }
 })
 
-test('a real tool image is fetched from its Pi record instead of returning a placeholder', async () => {
+test('a real tool image stays in the snapshot of its Pi record instead of a placeholder', async () => {
   const f = await fixture()
   const at = 1_700_000_000_000
   try {
@@ -167,8 +166,7 @@ test('a real tool image is fetched from its Pi record instead of returning a pla
     const find = (nodes) => nodes.flatMap((node) => [node, ...(node.children ? find(node.children) : [])]).find((node) => node.images?.length)
     const actual = find(snapshot.turns.flatMap((turn) => turn.items))
     assert.ok(actual)
-    assert.deepEqual(await f.api.image(f.agent, { itemId: actual.id, index: 0 }), { mimeType: 'image/png', data: 'aW1hZ2UtZml4dHVyZQ==' })
-    await assert.rejects(f.api.image(f.agent, { itemId: actual.id, index: 1 }), { code: 'no_such_image' })
+    assert.deepEqual(actual.images, [{ mimeType: 'image/png', data: 'aW1hZ2UtZml4dHVyZQ==' }])
   } finally { await f.close() }
 })
 
@@ -222,7 +220,6 @@ test('explicit permission denial exposes only a stable notice timeline, resets o
       assert.equal(unchanged.ok, true)
       assert.deepEqual(unchanged.batch.turns, [])
       assert.deepEqual(await f.api.older(f.agent, { beforeTurnId: original.turns[0].id }), { epoch: hidden.cursor.epoch, turns: [], hasOlder: false })
-      await assert.rejects(f.api.image(f.agent, { itemId: 'private-photo-tool', index: 0 }), { code })
       assert.equal(f.agent.contextEpoch, contextEpoch)
       assert.equal(f.store.state.jobs[id], queued)
       assert.equal(queued.status, 'queued')
