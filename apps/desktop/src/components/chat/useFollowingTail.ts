@@ -41,8 +41,9 @@ export function useFollowingTail({
   const onAtBottomChange = useCallback((atBottom: boolean) => setLevel({ resetKey, atBottom }), [resetKey])
   const following = viewportAtBottom && !unreadNavigationPending && !hasNewer && !loading
   useEffect(() => {
-    // @@@sticky-pin (#667) - while a saved position is restored the restore owns following (it ends with
-    // false itself); the list's at-bottom reading is transient in the meantime.
+    // @@@sticky-pin (#667) - while a saved position is restored the restore owns following; the list's at-bottom
+    // reading is transient in the meantime. The restore's end changes isPreservingPosition (@@@restore-ends), so
+    // the level read when it ends decides following — a restore clamped onto the bottom follows the tail.
     if (isPreservingPosition()) return
     isAtBottomRef.current = following
     // @@@chat-window (#504) - tell the store whether we're pinned to the tail so it can trim the window.
