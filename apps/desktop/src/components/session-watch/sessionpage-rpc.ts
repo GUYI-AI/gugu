@@ -11,7 +11,8 @@ import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { appCallWaitMs, type AppCallAction, type AppMessageAction, type AppMessageReceipt, type AppSpawnAction } from '@gugu/session-core/session-record/contract'
 import { REMOTE_PROTOCOL_VERSION } from '@gugu/core/cloud/serverMachineHealth'
 import { callDeviceRpc } from '@/lib/deviceRpc'
-import { openMachineSessionHostPipe, openPhoneSessionHostPipe } from '@/lib/remoteSessionHost'
+import { openPhoneSessionHostPipe } from '@/lib/remoteSessionHost'
+import { machineClient } from '@renderer/lib/machine-clients'
 import { desktopIpc } from '@/platform/desktopIpc'
 import { SESSION_HOST_RPC } from '@/session/shared/lib/ipc/session-host-device-frames'
 import { createRPCClient } from '@/session/shared/lib/ipc/rpc'
@@ -76,10 +77,20 @@ function reachable(deviceId: string): boolean {
   })
 }
 
+/**
+ * The window to that machine. On the desktop it is the machine's one session-host client (`machine-clients`), the one the
+ * session page uses: one window per machine, ❌ a second one of these pages' own (both opened at start and both were
+ * closed and reopened when the line moved to ssh). The phone keeps its own, over its pipe.
+ */
 function host(deviceId: string): SessionHostClient {
+  if (desktopIpc()) {
+    const shared = machineClient(deviceId)
+    if (!shared) throw new SessionpageRpcError('unreachable', translateSessionMessage('deviceScope.unreachable', { device: deviceId.slice(0, 8) }))
+    return shared
+  }
   let client = hosts.get(deviceId)
   if (!client) {
-    client = createSessionHostClient(desktopIpc() ? openMachineSessionHostPipe(deviceId) : openPhoneSessionHostPipe(deviceId), {
+    client = createSessionHostClient(openPhoneSessionHostPipe(deviceId), {
       isReachable: () => reachable(deviceId),
       peerVersion: () => readCachedDevices().find(device => device.device_id === deviceId)?.capabilities?.app_version ?? null,
       subscribeReachability: (listener) => {
