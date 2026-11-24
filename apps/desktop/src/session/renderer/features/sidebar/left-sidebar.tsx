@@ -168,8 +168,8 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         // tokens.css) are outside the utilities layer, so a plain utility loses to them.
         '[&_[data-region=sidebar-scroll]_.gg-list-row-subtitle]:!text-[length:var(--font-caption)] [&_[data-region=sidebar-scroll]_.gg-list-row-title]:!font-normal',
         '[&_[data-region=sidebar-scroll]_.gg-chat-row-muted]:hidden',
-        // The list's gutter: 14 open, 8 on the rail (one element restyled when the rail flips).
-        'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:px-2'
+        // The list's gutter: 14 open, 8 on the rail (one variable restyled when the rail flips).
+        'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:[--sidebar-gutter:8px]'
       )}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
@@ -200,9 +200,13 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
             ref={scrollRef}
             data-region="sidebar-scroll"
             // #2548 rows scrolling down fade out over the last 24px above the window's bottom edge instead of being cut off.
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-[14px] mask-b-from-[calc(100%-1.5rem)]"
+            // @@@sidebar-blank-drags-window - the list's blank space below its rows drags the window, as the head band above
+            // does (yangchichi 11-24): the scroll box is a drag region and its one content layer opts out, gutters included,
+            // so every row keeps its clicks, its HTML5 drag and the wheel. app-region is inherited, so the opt-out is on the
+            // layer itself, ❌ on each row.
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-(--sidebar-gutter) [--sidebar-gutter:14px] mask-b-from-[calc(100%-1.5rem)] [-webkit-app-region:drag]"
           >
-            <div>
+            <div className="-mx-(--sidebar-gutter) px-(--sidebar-gutter) [-webkit-app-region:no-drag]">
               <SidebarOneList />
               <SidebarOneListEmpty />
             </div>
