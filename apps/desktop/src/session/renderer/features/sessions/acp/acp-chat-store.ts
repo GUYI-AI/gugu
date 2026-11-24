@@ -9,7 +9,7 @@ import type {
   PendingPrompt,
   TranscriptTurn,
 } from '@gugu/session-chat-ui';
-import { connectSession, createChatState, pendingPromptLanded, pinTopMode, runningBackgroundTaskIds, turnDiscardedId } from '@gugu/session-chat-ui';
+import { connectSession, createChatState, pendingEchoes, pendingPromptLanded, pinTopMode, runningBackgroundTaskIds, turnDiscardedId } from '@gugu/session-chat-ui';
 import {
   attachmentRefSchema,
   permissionTitle,
@@ -951,9 +951,10 @@ export class AcpChatStore {
     const nativeTurns = turns.filter(turn => !projections.has(turn.id));
     const projected = projectSessionPendingDeliveries(session.state.pendingMessages.filter(input => !input.senderRejected), projectionView, nativeTurns, starting)
       .filter(input => !ordinaryIds.has(input.id));
+    const echoes = pendingEchoes(turns);
     const unresolved = projected.filter(input => {
       if (input.delivery?.state !== 'unknown' || this._incomingHistoryResolved.has(input.id)) return false;
-      if (session.state.pendingMessages.some(previous => previous.id === input.id) || pendingPromptLanded(input, turns)) {
+      if (session.state.pendingMessages.some(previous => previous.id === input.id) || pendingPromptLanded(input, echoes)) {
         this._incomingHistoryResolved.add(input.id);
         return false;
       }
@@ -2646,7 +2647,7 @@ export class AcpChatStore {
       // history.seed resets activeTurn by contract: put back what is drawn there.
       transcript.activeTurn.set(live ? view.activeTurn : view.behind ? null : shown);
       const pending = this.chatState.session.state.pendingPrompt;
-      if (pending && ((released && !pending.delivery) || (pending.delivery && pendingPromptLanded(pending, view.turns)))) {
+      if (pending && ((released && !pending.delivery) || (pending.delivery && pendingPromptLanded(pending, pendingEchoes(view.turns))))) {
         this.chatState.session.setPendingPrompt(null);
       }
       this._syncMessageCount();
@@ -3023,7 +3024,7 @@ export class AcpChatStore {
         }
         // Do not clear a prompt that was admitted after this reconciliation started.
         if (this.chatState.session.state.pendingPrompt === retainedPending
-          && (!retainedPending?.delivery || pendingPromptLanded(retainedPending, this._composedHistory()))) {
+          && (!retainedPending?.delivery || pendingPromptLanded(retainedPending, pendingEchoes(this._composedHistory())))) {
           this.chatState.session.setPendingPrompt(null);
         }
       }

@@ -89,52 +89,71 @@ function splitTools(items: readonly ToolNode[], anchor: string, suffix: string):
   }
 }
 
+/**
+ * @@@echo-index — the turns' user messages, read once: every input waiting for its echo is looked for among these.
+ * Each waiting input walking every item of the turns again cost inputs × items on every frame, and an agent with a
+ * backlog of deliveries has both many inputs and a long turn. A user message's source ids and flattened text are read
+ * the first time an input asks for them.
+ */
+type EchoEntry = { turnIndex: number; turnId: string; item: Extract<TranscriptTurn['items'][number], { kind: 'message' }>; key: string;
+  sourceIds?: ReadonlySet<string>; flat?: string };
+export type PendingEchoes = { readonly turns: readonly TranscriptTurn[]; entries(): readonly EchoEntry[] };
+
+export function pendingEchoes(turns: readonly TranscriptTurn[]): PendingEchoes {
+  let entries: EchoEntry[] | undefined;
+  return { turns, entries: () => entries ??= turns.flatMap((turn, turnIndex) => turn.items.flatMap(item =>
+    item.kind === 'message' && item.role === 'user' ? [{ turnIndex, turnId: turn.id, item, key: nativeMessageKey(item.id) }] : [])) };
+}
+
+const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
+
 /** A new history seed or an unrelated active turn is not a receipt for this input. */
-function findPendingPromptEcho(prompt: PendingPrompt, turns: readonly TranscriptTurn[]): PendingPrompt['nativeEcho'] {
+function findPendingPromptEcho(prompt: PendingPrompt, echoes: PendingEchoes): PendingPrompt['nativeEcho'] {
   const deliveryIds = prompt.received ? sourceMessageIds(prompt.text) : [];
   const baseline = new Set((prompt.baselineMessageIds ?? []).map(nativeMessageKey));
-  let anchor = turns.findIndex(turn => turn.id === prompt.afterTurnId);
+  const entries = echoes.entries();
+  let anchor = echoes.turns.findIndex(turn => turn.id === prompt.afterTurnId);
   // Persisting a runtime turn renumbers its display prefix. Its native user identity remains the same anchor.
   if (anchor < 0 && prompt.afterTurnId !== undefined) {
-    turns.forEach((turn, index) => {
-      if (turn.items.some(item => item.kind === 'message' && item.role === 'user' && baseline.has(nativeMessageKey(item.id)))) anchor = index;
-    });
+    for (const entry of entries) if (baseline.has(entry.key)) anchor = entry.turnIndex;
   }
-  const flat = (text: string) => text.replace(/\s+/g, ' ').trim();
+  const nativeKey = prompt.nativeEcho ? nativeMessageKey(prompt.nativeEcho.itemId) : undefined;
+  const text = flat(prompt.text);
   let echo: PendingPrompt['nativeEcho'];
-  turns.forEach((turn, index) => turn.items.forEach(item => {
+  for (const entry of entries) {
+    const { item } = entry;
     const matches = () => {
-      if (item.kind !== 'message' || item.role !== 'user') return false;
-      if (prompt.nativeEcho) return nativeMessageKey(item.id) === nativeMessageKey(prompt.nativeEcho.itemId);
+      if (nativeKey !== undefined) return entry.key === nativeKey;
       if (item._meta?.guguClientMessageId === prompt.id) return true;
       if (item.id === prompt.id || (prompt.id.length >= 16 && item.id.includes(prompt.id))) return true;
       if (deliveryIds.length) {
-        const nativeIds = new Set(sourceMessageIds(item.text));
+        const nativeIds = entry.sourceIds ??= new Set(sourceMessageIds(item.text));
         if (deliveryIds.every(id => nativeIds.has(id))) return true;
       }
-      if (baseline.has(nativeMessageKey(item.id))) return false;
-      if (flat(item.text) !== flat(prompt.text)) return false;
+      if (baseline.has(entry.key)) return false;
+      if ((entry.flat ??= flat(item.text)) !== text) return false;
       // Sender and host clocks are independent. An empty baseline anchors a first input before the first turn.
-      return prompt.afterTurnId === undefined ? baseline.size === 0 : anchor >= 0 && index > anchor;
+      return prompt.afterTurnId === undefined ? baseline.size === 0 : anchor >= 0 && entry.turnIndex > anchor;
     };
-    if (matches()) echo = { turnId: turn.id, itemId: item.id };
-  }));
+    if (matches()) echo = { turnId: entry.turnId, itemId: item.id };
+  }
   return echo;
 }
 
-export function pendingPromptLanded(prompt: PendingPrompt, turns: readonly TranscriptTurn[]): boolean {
-  return findPendingPromptEcho(prompt, turns) !== undefined;
+/** Whether `prompt` has its echo among `echoes` (`pendingEchoes(turns)`, made once for every input asked of the same turns). */
+export function pendingPromptLanded(prompt: PendingPrompt, echoes: PendingEchoes): boolean {
+  return findPendingPromptEcho(prompt, echoes) !== undefined;
 }
 
-export function pendingPromptNativeEcho(prompt: PendingPrompt, turns: readonly TranscriptTurn[]): PendingPrompt['nativeEcho'] {
-  return prompt.nativeEcho ?? findPendingPromptEcho(prompt, turns);
+export function pendingPromptNativeEcho(prompt: PendingPrompt, echoes: PendingEchoes): PendingPrompt['nativeEcho'] {
+  return prompt.nativeEcho ?? findPendingPromptEcho(prompt, echoes);
 }
 
 /** Keep the input visible when a native turn starts before its user-message echo arrives. */
 export function activeTurnWithPending(turn: TranscriptTurn | null, prompt: PendingPrompt | null, committed: readonly TranscriptTurn[] = []): TranscriptTurn | null {
   if (!prompt) return turn;
   if (!turn) return pendingPromptTurn(prompt);
-  if (!prompt.delivery || pendingPromptLanded(prompt, [...committed, turn])) return turn;
+  if (!prompt.delivery || pendingPromptLanded(prompt, pendingEchoes([...committed, turn]))) return turn;
   if (turn.items.some(item => item.kind === 'message' && item.role === 'user')) {
     return { ...turn, items: [...turn.items, ...pendingPromptTurn(prompt).items] };
   }
@@ -145,13 +164,15 @@ export function activeTurnWithPending(turn: TranscriptTurn | null, prompt: Pendi
 export function latestVisibleTurnId(active: TranscriptTurn | null, committed: readonly TranscriptTurn[],
   prompt: PendingPrompt | null, incoming: readonly PendingPrompt[] = []): string | undefined {
   if (active) return active.id
-  const pending = prompt ?? incoming.find(input => !pendingPromptLanded(input, committed))
+  const echoes = pendingEchoes(committed)
+  const pending = prompt ?? incoming.find(input => !pendingPromptLanded(input, echoes))
   return pending ? `pending:${pending.id}:turn` : committed.at(-1)?.id
 }
 
 /** Incoming deliveries occupy their native position after the current turn's already visible items. */
 export function activeTurnWithInputs(turn: TranscriptTurn | null, prompt: PendingPrompt | null, incoming: readonly PendingPrompt[], committed: readonly TranscriptTurn[] = []): TranscriptTurn | null {
-  const waiting = incoming.filter(input => input.id !== prompt?.id && !pendingPromptLanded(input, turn ? [turn] : []));
+  const echoes = pendingEchoes(turn ? [turn] : []);
+  const waiting = incoming.filter(input => input.id !== prompt?.id && !pendingPromptLanded(input, echoes));
   const active = activeTurnWithPending(turn, prompt, committed);
   if (!active) return waiting.length ? { ...pendingPromptTurn(waiting[0]!), items: waiting.flatMap(input => pendingPromptTurn(input).items) } : null;
   if (!waiting.length) return active;
@@ -194,14 +215,15 @@ export function projectPendingMessages(committed: readonly TranscriptTurn[], act
     if (turn !== active && !previous?.native) cache?.set(turn, { inputs: [], turn, ...previous, native: messages });
     return { turn, messages };
   });
+  const echoes = pendingEchoes(all);
   for (const input of incoming) {
     let match: { turnId: string; itemId: string } | undefined;
     const ids = input.received ? sourceMessageIds(input.text) : [];
-    const known = input.nativeEcho ?? remembered?.get(input.id) ?? (ids.length ? undefined : findPendingPromptEcho(input, all));
+    const known = input.nativeEcho ?? remembered?.get(input.id) ?? (ids.length ? undefined : findPendingPromptEcho(input, echoes));
     for (const { turn, messages } of native) for (const { item, sourceIds } of messages) {
       const landed = known ? nativeMessageKey(item.id) === nativeMessageKey(known.itemId)
         : (item.kind === 'message' && item._meta?.guguClientMessageId === input.id) || item.id === input.id || (input.id.length >= 16 && item.id.includes(input.id))
-          || (ids.length ? ids.every(id => sourceIds.has(id)) : pendingPromptLanded(input, [{ ...turn, items: [item] }]));
+          || (ids.length ? ids.every(id => sourceIds.has(id)) : pendingPromptLanded(input, pendingEchoes([{ ...turn, items: [item] }])));
       if (landed) match = { turnId: turn.id, itemId: item.id };
     }
     if (match) { bindings.set(`${match.turnId}\0${match.itemId}`, input); remembered?.set(input.id, match); }

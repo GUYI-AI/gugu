@@ -84,7 +84,7 @@ import { Virtualizer } from './core/virtualizer';
 import { collectViewportProtection, sameViewportProtection, type ViewportProtection } from './core/viewport-protection';
 import type { ChatItem, ChatMessage, TranscriptTurn } from './model';
 import type { ChatState, ScrollMode } from './state/chat-state';
-import { activeTurnWithInputs, latestVisibleTurnId, pendingPromptLanded, projectPendingMessages, type PendingMessageProjectionCache } from './state/pending-prompt';
+import { activeTurnWithInputs, latestVisibleTurnId, pendingEchoes, pendingPromptLanded, projectPendingMessages, type PendingMessageProjectionCache } from './state/pending-prompt';
 import { isEmptyAgentTurn, joinsFoldRunAt } from './state/turn-fold';
 import { canBeContinued, continuesPreviousTurn, withContinuedActiveTurn } from './state/conversation-segments';
 import {
@@ -942,7 +942,7 @@ export function ChatRoot(props: ChatRootProps) {
     const committedTurns = s.transcript.state.committedTurns;
     const hasActiveTurn = s.transcript.state.activeTurnSnapshot !== null;
     if (pendingPrompt && (pendingPrompt.delivery
-      ? pendingPromptLanded(pendingPrompt, [...committedTurns, ...(s.transcript.state.activeTurnSnapshot ? [s.transcript.state.activeTurnSnapshot] : [])])
+      ? pendingPromptLanded(pendingPrompt, pendingEchoes([...committedTurns, ...(s.transcript.state.activeTurnSnapshot ? [s.transcript.state.activeTurnSnapshot] : [])]))
       : hasActiveTurn || (!pendingPrompt.held && committedTurns !== pendingPromptCommittedTurns))) {
       s.session.setPendingPrompt(null);
     }

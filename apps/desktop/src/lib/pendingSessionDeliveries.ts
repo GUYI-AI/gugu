@@ -1,4 +1,4 @@
-import { pendingInputPosition, pendingPromptLanded, pendingPromptNativeEcho, type PendingPrompt } from '@session-chat/state/pending-prompt'
+import { pendingEchoes, pendingInputPosition, pendingPromptLanded, pendingPromptNativeEcho, type PendingPrompt } from '@session-chat/state/pending-prompt'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import type { LifeView } from '@/session/shared/core/sessions/session-life'
 import { lifeHoldIsFailure } from '@/session/shared/core/sessions/session-life'
@@ -19,8 +19,9 @@ export function settledHostRow(view: LifeView | null | undefined, messageId: str
 /** The receiver's host queue and native transcript share one incoming-delivery projection on every surface. */
 export function projectSessionPendingDeliveries(previous: readonly PendingPrompt[], view: LifeView | null,
   turns: readonly TranscriptTurn[], starting?: PendingPrompt['starting']): PendingPrompt[] {
+  const echoes = pendingEchoes(turns)
   if (!view) return previous.filter(input => (input.delivery?.state !== 'accepted' && input.delivery?.state !== 'receiving')
-    || (!input.nativeEcho && !pendingPromptLanded(input, turns)));
+    || (!input.nativeEcho && !pendingPromptLanded(input, echoes)));
   const rows = view?.pending.items.filter(isTranscriptDelivery) ?? []
   const ids = new Set([...previous.map(input => input.id), ...rows.map(row => row.messageId)])
   return [...ids].flatMap(id => {
@@ -42,7 +43,7 @@ export function projectSessionPendingDeliveries(previous: readonly PendingPrompt
         : row?.state === 'accepted' || (!row && view) ? { state: 'receiving' }
           : stopped ? { state: 'accepted' }
           : prior?.delivery?.state === 'accepted' ? prior.delivery : { state: 'receiving' }
-    const next = { ...input, starting, stopped, delivery, nativeEcho: pendingPromptNativeEcho(input, turns) }
+    const next = { ...input, starting, stopped, delivery, nativeEcho: pendingPromptNativeEcho(input, echoes) }
     return !stopped && (delivery.state === 'accepted' || delivery.state === 'receiving') && next.nativeEcho ? [] : [next]
   }).sort((a, b) => (a.hostSequence ?? 0) - (b.hostSequence ?? 0))
 }
@@ -60,7 +61,7 @@ export async function loadPendingDeliveryHistory(newest: readonly TranscriptTurn
   let pages = 0, bytes = 0
   let reason: 'matched' | 'end' | 'pages' | 'bytes' | 'timeout' | 'disposed' = 'matched'
   const started = Date.now()
-  while (more && alive() && unknown.some(input => !pendingPromptLanded(input, [...turns, ...newest]))) {
+  while (more && alive() && unknown.some(input => !pendingPromptLanded(input, pendingEchoes([...turns, ...newest])))) {
     if (pages >= budget.pages) { reason = 'pages'; break }
     const remaining = budget.milliseconds - (Date.now() - started)
     if (remaining <= 0) { reason = 'timeout'; break }

@@ -1,4 +1,4 @@
-import { pendingPromptLanded, type PendingPrompt } from '@session-chat/state/pending-prompt'
+import { pendingEchoes, pendingPromptLanded, type PendingPrompt } from '@session-chat/state/pending-prompt'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { i18n } from '@/i18n'
 import { messageForUser } from './userFacingError'
@@ -49,17 +49,18 @@ export function projectSessionPendingInput(previous: PendingPrompt | null, sende
   } else if (!input || receipt?.state === 'accepted' || (receipt && !input.failure)) {
     prompt = { ...prompt, delivery: { state: 'receiving' } }
   }
-  return pendingPromptLanded(prompt, turns) ? null : prompt
+  return pendingPromptLanded(prompt, pendingEchoes(turns)) ? null : prompt
 }
 
 /** Rejected inputs use ordinary transcript messages, including more than one refusal for a task. */
 export function projectRejectedSessionInputs(sender: readonly SessionInput[], turns: readonly TranscriptTurn[]): PendingPrompt[] {
+  const echoes = pendingEchoes(turns)
   return sender.filter(input => input.admission === 'rejected').flatMap(input => {
     const prompt: PendingPrompt = { id: input.id, text: input.text, sentAt: input.createdAt, held: true, senderRejected: true,
       baselineMessageIds: input.baseline, afterTurnId: input.afterTurnId,
       attachments: input.files?.map(file => ({ id: file.itemId, name: file.name, href: `gugu-file://${file.itemId}?v=${file.version}`, kind: file.mimeType.startsWith('image/') ? 'image' : 'file' })),
       delivery: { state: 'failed', retryable: true, reason: input.failure ? sessionInputFailureText(input.failure) : undefined,
         error: input.failure ? sessionInputFailureText(input.failure) : undefined } }
-    return pendingPromptLanded(prompt, turns) ? [] : [prompt]
+    return pendingPromptLanded(prompt, echoes) ? [] : [prompt]
   })
 }

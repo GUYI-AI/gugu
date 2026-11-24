@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
-import { pendingPromptLanded, type PendingPrompt } from '@session-chat/state/pending-prompt'
+import { pendingEchoes, pendingPromptLanded, type PendingPrompt } from '@session-chat/state/pending-prompt'
 import { assistantTimelineClient } from '@/components/assistant/assistantTimelineClient'
 import { loadPendingDeliveryHistory } from '@/lib/pendingSessionDeliveries'
 import { messageForUser } from '@/lib/userFacingError'
@@ -22,8 +22,9 @@ export function usePendingDeliveryHistory({ deviceId, sessionId, local, enabled,
     const held = new Set(turns.map(turn => turn.id))
     return [...own.extra.filter(turn => !held.has(turn.id)), ...turns]
   }, [turns, own.extra])
+  const echoes = useMemo(() => pendingEchoes(merged), [merged])
   const unknownKey = inputs.filter(input => input.delivery?.state === 'unknown' && !own.resolved.includes(input.id)
-    && !pendingPromptLanded(input, merged)).map(input => input.id).sort().join('\0')
+    && !pendingPromptLanded(input, echoes)).map(input => input.id).sort().join('\0')
   const current = useRef({ inputs, turns: merged, hasOlder })
   current.current = { inputs, turns: merged, hasOlder }
   useEffect(() => {
@@ -53,6 +54,6 @@ export function usePendingDeliveryHistory({ deviceId, sessionId, local, enabled,
     return () => { alive = false }
   }, [key, deviceId, sessionId, local, enabled, ready, unknownKey])
   const visible = useCallback((input: PendingPrompt) => input.delivery?.state !== 'unknown'
-    || (ready && (own.resolved.includes(input.id) || pendingPromptLanded(input, merged))), [ready, own.resolved, merged])
+    || (ready && (own.resolved.includes(input.id) || pendingPromptLanded(input, echoes))), [ready, own.resolved, echoes])
   return { turns: merged, error: own.error, visible }
 }

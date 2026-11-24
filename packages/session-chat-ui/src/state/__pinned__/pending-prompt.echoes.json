@@ -1,0 +1,183 @@
+{
+ "echoes": [
+  [
+   "p-native",
+   {
+    "turnId": "t2",
+    "itemId": "native-7"
+   },
+   true
+  ],
+  [
+   "client-1",
+   {
+    "turnId": "t3",
+    "itemId": "t3:u2"
+   },
+   true
+  ],
+  [
+   "prompt-0123456789abcdef",
+   {
+    "turnId": "t3",
+    "itemId": "t3:prompt-0123456789abcdef"
+   },
+   true
+  ],
+  [
+   "t3:u4",
+   {
+    "turnId": "t3",
+    "itemId": "t3:u4"
+   },
+   true
+  ],
+  [
+   "p-delivery-1",
+   {
+    "turnId": "t3",
+    "itemId": "t3:u1"
+   },
+   true
+  ],
+  [
+   "p-delivery-2",
+   {
+    "turnId": "t3",
+    "itemId": "t3:u5"
+   },
+   true
+  ],
+  [
+   "p-delivery-9",
+   null,
+   false
+  ],
+  [
+   "p-text-after-t2",
+   {
+    "turnId": "t3",
+    "itemId": "t3:u6"
+   },
+   true
+  ],
+  [
+   "p-text-after-renumbered",
+   {
+    "turnId": "t3",
+    "itemId": "t3:u6"
+   },
+   true
+  ],
+  [
+   "p-text-baseline",
+   null,
+   false
+  ],
+  [
+   "p-text-first",
+   {
+    "turnId": "t1",
+    "itemId": "t1:u1"
+   },
+   true
+  ],
+  [
+   "p-text-first-baselined",
+   null,
+   false
+  ],
+  [
+   "p-unmatched",
+   null,
+   false
+  ]
+ ],
+ "activeOnly": [
+  [
+   "p-native",
+   false
+  ],
+  [
+   "client-1",
+   true
+  ],
+  [
+   "prompt-0123456789abcdef",
+   true
+  ],
+  [
+   "t3:u4",
+   true
+  ],
+  [
+   "p-delivery-1",
+   true
+  ],
+  [
+   "p-delivery-2",
+   true
+  ],
+  [
+   "p-delivery-9",
+   false
+  ],
+  [
+   "p-text-after-t2",
+   false
+  ],
+  [
+   "p-text-after-renumbered",
+   false
+  ],
+  [
+   "p-text-baseline",
+   false
+  ],
+  [
+   "p-text-first",
+   false
+  ],
+  [
+   "p-text-first-baselined",
+   false
+  ],
+  [
+   "p-unmatched",
+   false
+  ]
+ ],
+ "withInputs": [
+  "t3:u1",
+  "t3:a1",
+  "t3:u2",
+  "t3:a2",
+  "t3:prompt-0123456789abcdef",
+  "t3:a3",
+  "t3:u4",
+  "t3:a4",
+  "t3:u5",
+  "t3:u6",
+  "p-native",
+  "p-delivery-9",
+  "p-text-after-t2",
+  "p-text-after-renumbered",
+  "p-text-baseline",
+  "p-text-first",
+  "p-text-first-baselined",
+  "p-unmatched"
+ ],
+ "withInputsNoTurn": [
+  "p-delivery-9",
+  "p-text-after-t2",
+  "p-text-after-renumbered",
+  "p-text-baseline",
+  "p-text-first",
+  "p-text-first-baselined",
+  "p-unmatched"
+ ],
+ "latest": [
+  "pending:client-1:turn",
+  "pending:client-1:turn"
+ ]
+}

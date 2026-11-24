@@ -72,7 +72,7 @@ import { useSessionLifeView } from './useSessionLifeView'
 import { usePendingDeliveryHistory } from './usePendingDeliveryHistory'
 import type { LifeView } from '@/session/shared/core/sessions/session-life'
 import type { PendingPrompt } from '@gugu/session-chat-ui'
-import { pendingPromptLanded } from '@session-chat/state/pending-prompt'
+import { pendingEchoes, pendingPromptLanded } from '@session-chat/state/pending-prompt'
 import { useMarkSeenWhenShown } from '@renderer/features/sessions/hooks/use-mark-seen-when-shown'
 import { markNeedsYouTaskSeen } from '@/components/needsYou/useNeedsYouTasks'
 import { rendererLogger } from '@/lib/log'
@@ -327,7 +327,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   const receiptHistory = usePendingDeliveryHistory({ deviceId, sessionId, local, enabled: nativeRecord && !phoneHost,
     ready: timeline.cursor !== null, hasOlder: timeline.hasOlder, turns: nativeTurns, inputs: receivedInputs })
   const turns = receiptHistory.turns
-  const settledInputs = useMemo(() => receivedInputs.filter(input => input.delivery?.state !== 'accepted' || !pendingPromptLanded(input, turns)), [receivedInputs, turns])
+  const settledInputs = useMemo(() => { const echoes = pendingEchoes(turns); return receivedInputs.filter(input => input.delivery?.state !== 'accepted' || !pendingPromptLanded(input, echoes)) }, [receivedInputs, turns])
   received.current = { key: receivedKey, inputs: settledInputs }
   const pendingMessages = useMemo(() => [...settledInputs.filter(receiptHistory.visible), ...projectedInputs.slice(1), ...projectRejectedSessionInputs(senderInputs, nativeTurns), ...pendingSends.slice(1).map(send => ({
     ...send, held: true, baselineMessageIds: [...send.baseline], delivery: { state: 'sending' as const },
