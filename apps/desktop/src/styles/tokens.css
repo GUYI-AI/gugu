@@ -940,6 +940,12 @@
   --hover: color-mix(in oklab, var(--fg) 4%, transparent);
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent); /* @@@selected-neutral-7333 */
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
+  /* The warm ground of the light window (界面减法 #10, design v16; owner 11-24 option B: the v16 stops lifted ~3 L* with a
+     third less chroma). It is a seed like --bg: the window-material rule below draws it, and a theme pack replaces it. */
+  --ground: linear-gradient(90deg, #eee6dd 0, #f1ece4 30%, #f6f2ec 100%);
+  /* Secondary text drawn straight on that ground (the sidebars' previews, counts, headers): ≥ 5.38:1 on every stop and
+     ≥ 4.57:1 on a selected row (7.5% over the darkest stop), WCAG 1.4.3. The neutral --muted-fg is 4.45 / 3.78 there. */
+  --shell-muted-fg: #605c55;
   --capsule-bg: #efe7dc; /* 第 16 版:对话卡片顶上那颗浮动胶囊(设计稿 .capsule) */
   --capsule-hover: #e8dfd2;
   --capsule-shadow: 0 0 0 .5px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04); /* 设计稿 .capsule */
@@ -1099,12 +1105,8 @@
 /* 界面减法 #10 (yangchichi, design v16): in the light theme the window's ground — under the zero rail, the first-level
    sidebar and the gaps around the cards — is one warm gradient across the window, on either material. */
 :root[data-theme='light'][data-window-material] {
-  /* owner 11-24 (option B): the v16 stops lifted ~3 L* with a third less chroma (L* 91.7 → 95.6, C 5.5 → 3.4). */
-  --shell-bg: linear-gradient(90deg, #eee6dd 0, #f1ece4 30%, #f6f2ec 100%);
+  --shell-bg: var(--ground);
   --nav-rail: transparent;
-  /* Secondary text drawn straight on that ground (the sidebars' previews, counts, headers): ≥ 5.38:1 on every stop and
-     ≥ 4.57:1 on a selected row (7.5% over the darkest stop), WCAG 1.4.3. The neutral --muted-fg is 4.45 / 3.78 there. */
-  --shell-muted-fg: #605c55;
 }
 /* The two sidebars lie on the window ground, not on a card: their secondary text, whichever renderer's name it goes by,
    is the ground's. A var() resolves where it is declared, so the derived names (--color-*, --text-secondary) that were
