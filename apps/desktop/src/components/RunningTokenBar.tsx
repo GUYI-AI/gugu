@@ -62,7 +62,6 @@ const STYLE = `
 .rtb-oh{width:100%;padding:0 4px;color:var(--text-tertiary)}
 .rtb-otok{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-width:0;max-width:100%;border:0;padding:0;background:transparent;color:inherit;font:inherit;white-space:nowrap;cursor:default}
 .rtb-otok[data-clickable=true]{cursor:pointer}
-.rtb-otok .rtb-v{color:var(--text-secondary)}
 .rtb-tok,.rtb-otok{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 /* 运行条那一行不接指针(ChatBottomDock),只有 pill 和 +N 接。 */
 .rtb-tok,.rtb-more{pointer-events:auto}
@@ -138,9 +137,7 @@ function RunningTokenItem({
       <Chip appearance="filled" className="rtb-pill" data-chat-dock-obstacle="">
         <Avatar name={displayName} avatarUrl={token.avatarUrl} seed={token.avatarSeed} size={overflow ? 16 : 'xs'} isAgent statusLabel="running" />
         <span className="rtb-nm">{displayName}</span>
-        {overflow ? <span className="rtb-v">{stateWord}</span> : (
-          <span className="rtb-state"><CLISpinner className="rtb-glyph" /></span>
-        )}
+        <span className="rtb-state"><CLISpinner className="rtb-glyph" /></span>
       </Chip>
     </Popover.Trigger>
   )
