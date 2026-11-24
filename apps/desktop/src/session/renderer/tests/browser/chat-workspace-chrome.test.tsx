@@ -546,3 +546,25 @@ it('puts the view toggle on the header in the frame the tools are hidden, while 
   await new Promise((frame) => requestAnimationFrame(frame));
   expect(onHeader(), 'the toggle left with the tools and came back only after they landed').toBe(true);
 });
+
+it('keeps the view toggle where it lands from the first frame the tools are hidden until they are off the track', async () => {
+  const { inside, mode, workspace } = await mountWorkspace();
+  await mode('empty');
+  workspace.open('tool', { id: 'file' }, { from: null, intent: 'newTab' });
+  await mode('split');
+  await untilStable('the tools have landed', () => inside('[data-chat-tool-strip]')?.getBoundingClientRect().left);
+  const header = inside('[data-chat-workspace-header]')!;
+  const toggle = () => {
+    const box = header.querySelector('button[aria-pressed]')!.getBoundingClientRect();
+    return `${box.x},${box.y}`;
+  };
+  workspace.setChatToolLayout('hidden');
+  const frames: string[] = [];
+  // Every frame while the tools go off (the two cards stay until they land), then the first frame after.
+  do {
+    await new Promise((frame) => requestAnimationFrame(frame));
+    frames.push(toggle());
+  } while (header.hasAttribute('data-chat-tool-cards'));
+  expect(frames.length, 'the tools went off over several frames').toBeGreaterThan(2);
+  expect(new Set(frames), 'the toggle moved while the tools went off').toEqual(new Set([frames.at(-1)]));
+});
