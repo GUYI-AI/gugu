@@ -489,7 +489,8 @@ describe('会话历史(按目录分节)核心合同', () => {
     mocks.remoteListDirectories.mockImplementation(() => new Promise((resolve) => { held.push(() => resolve(directoryPageOf([], { directories: [] }))); }));
     try {
       render();
-      await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(50));
+      // The first draw waits a bounded moment for every machine (FIRST_DRAW_WAIT_MS), then draws what is there.
+      await vi.waitFor(() => expect(screen.getByTestId('session-history-section').all()).toHaveLength(50), { timeout: 10_000 });
       // Another machine was asked and has not answered.
       expect(held.length).toBeGreaterThan(0);
       await vi.waitFor(() => {
@@ -687,6 +688,50 @@ describe('会话历史(按目录分节)核心合同', () => {
     expect(screen.getByTestId('session-history-row-machine').all()).toHaveLength(0);
     await pick('session-history-machine', 'session-history-machine-all');
     await vi.waitFor(() => expect(rowKeys()).toHaveLength(5));
+  });
+
+  // owner 2026-11-24「每次点进去都跳」: the pages live in the replica, so coming back draws the last complete page on the
+  // first frame, while the new read is still on its way (❌ a loading frame, then one machine, then the next).
+  it('再进页:首帧就是上次那份完整的页,不等这一次的读', async () => {
+    render();
+    await vi.waitFor(() => expect(rowKeys()).toEqual(ROWS.map((row) => row.key)), { timeout: 10_000 });
+    root?.unmount();
+    container?.remove();
+    // This visit's reads never answer: whatever is drawn comes from the last visit.
+    mocks.listDirectories.mockImplementation(() => new Promise(() => undefined));
+    mocks.remoteListDirectories.mockImplementation(() => new Promise(() => undefined));
+    render();
+    // The list's first commit already carries the rows (❌ a loading frame first).
+    await vi.waitFor(() => expect(container?.querySelector('[data-testid="session-history-list"]')).not.toBeNull());
+    expect(rowKeys()).toEqual(ROWS.map((row) => row.key));
+    expect(screen.getByTestId('session-history-machine-reading').all()).toHaveLength(0);
+  });
+
+  it('晚到的机器:已画的节不动,它带来的新节接在最后,先写一句在读哪台', async () => {
+    const held: Array<() => void> = [];
+    const remoteRow = gugu({ key: 'gugu:late', title: 'd22 上晚到的任务', directory: '/home/alice/late', updatedAt: NOW, gugu: { projectId: 'rlate', sessionId: 'late', runtime: 'acp' } });
+    mocks.remoteListDirectories.mockImplementation((machine: string) =>
+      machine === 'dev-d22'
+        ? new Promise((resolve) => { held.push(() => resolve(directoryPageOf([dir({ key: '/home/alice/late', sessionCount: 1, updatedAt: NOW, sessions: [remoteRow] })]))); })
+        : Promise.resolve(directoryPageOf([], { directories: [] }))
+    );
+    try {
+      render();
+      // a ceiling on waiting, not a speed claim: d22 stays unanswered past the first-draw wait.
+      await vi.waitFor(() => expect(screen.getByTestId('session-history-machine-reading').all()).toHaveLength(1), { timeout: 10_000 });
+      const drawn = screen.getByTestId('session-history-section').all().map((s) => s.element().getAttribute('data-section-key'));
+      expect(drawn).toEqual(['project:chat-webapp', `dir:local:${BILLING}`]);
+      for (const answer of held.splice(0)) answer();
+      // d22's section is the newest by time, yet it lands after the sections already on screen.
+      await vi.waitFor(() =>
+        expect(screen.getByTestId('session-history-section').all().map((s) => s.element().getAttribute('data-section-key'))).toEqual([
+          ...drawn, 'dir:dev-d22:/home/alice/late',
+        ])
+      );
+      expect(screen.getByTestId('session-history-machine-reading').all()).toHaveLength(0);
+    } finally {
+      for (const answer of held) answer();
+    }
   });
 
   it('离线的机器:心跳摘要里的任务按项目归节、行标离线,节尾写哪台离线;点得开的照侧栏的判据打开', async () => {
