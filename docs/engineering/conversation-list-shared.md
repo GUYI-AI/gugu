@@ -2,7 +2,7 @@
 
 Refs #1924. Backend wire protocol: [gugu-supabase#201](https://github.com/GUYI-AI/gugu-supabase/pull/201).
 
-This branch supplies shared client primitives and wires the list/store to the personal-hide RPC. It does not deploy the backend or establish that cross-device restoration passes acceptance. Both clients must ship the final feature together.
+Desktop and phone use the same list and store for personal visibility.
 
 ## Projection and merge
 
@@ -18,21 +18,13 @@ Import `mergeConversationVisibility`, `isConversationHidden`, `visibleConversati
 
 ## Long-press/right-click menu
 
-Import `PersonalConversationRowMenu` from `apps/desktop/src/components/chat/PersonalConversationRowMenu`. Pass the chat, pointer coordinates, existing pin/notification callbacks, and an explicit asynchronous `onHide` callback. It needs the existing auth, chat, contacts and modal providers. Unlike the legacy wrapper, this menu never loads group administration permissions. Every chat kind supports personal removal.
+`ChatRowContextMenu` draws the right-click and long-press menus from `personalConversationMenu`. Pass `onHide={() => hideConversation(chat.id)}` from the chat store. The action resolves to its validated receipt, or `undefined` if the account session ends. The receipt enables the shared Undo notice.
 
-Use `const { hideConversation } = useChatStore('hideConversation')`, then `onHide={() => hideConversation(chat.id)}`. Its signature is `(chatId: string) => Promise<void>`. Desktop and phone import the same store; neither needs a second hide implementation.
+`store/useConversationHiding.ts` owns the action through `lib/conversationHider.ts`. `lib/hideListedConversation.ts` validates the RPC's echoed chat and operation IDs, timestamp, and exact decimal revision. For an already projected row, `lib/chatProjection.ts` applies the committed visibility to that row at the returned revision and republishes the full directory. The account journal continues to reconcile membership and unread state. A newer restoration supersedes an older receipt.
 
-`store/useConversationHiding.ts` owns the action through `lib/conversationHider.ts`. `chatService.hideConversation(chatId, operationId)` delegates to `lib/hideListedConversation.ts`, which validates the echoed chat/operation IDs, timestamp and exact decimal revision. `store/chatListProjection.ts` calls the account-scoped `confirmPersonalHiding(accountId, receipt)` binding; `lib/chatProjection.ts` merges that receipt into the existing stamped membership cache and republishes the full directory. An older receipt cannot override a newer restoration. These internal bindings are shared implementation, not an extra phone-side API.
+Concurrent submissions share one in-flight operation. A transport failure retains the operation UUID for an explicit retry. An acknowledged receipt is retained if local publication fails. On the next click, a newer visible revision supersedes that saved receipt and starts a fresh Hide. Otherwise the click retries publication with the saved receipt.
 
-Concurrent submissions share one in-flight operation. A transport failure retains the operation UUID for an explicit retry; an acknowledged receipt is retained if reconciliation fails, so that retry performs reconciliation only. There is no automatic hide replay on app start. A later deliberate action after success receives a new UUID.
-
-The `onHide` callback calls the personal-hide RPC with its stable operation ID and awaits reconciliation of the returned account revision. It must not call a group archive, remove membership, close the tab, discard a draft or stop an Agent. Retry an uncertain hide with the same operation UUID. The backend owns restoration ordering.
-
-For another menu surface, `conversationCanHide` and the `personalHiding: true` row-menu state provide the same availability and label. `confirmHideConversation({ hide, ownedAgent? })` provides the shared confirmation and partial-failure handling. Offer `ownedAgent` only for a live Agent owned by this account in a DM/AI conversation; its `remove` callback deletes that Agent separately.
-
-The Agent option is **unchecked by default**. Cancelling changes nothing. A failed hide does not delete the Agent. If hiding succeeds and Agent deletion fails, the hide stays committed and a separate persistent retry action is shown. That action only retries Agent deletion: it never hides a conversation again if a new message has restored it. An account-session change invalidates pending confirmation/deletion retries.
-
-The existing `ChatRowContextMenu` delegates to the personal component and takes `onHide` with the same asynchronous signature. `ChatListPanel` now calls the shared store action. Group-wide archival remains a separate settings/contacts management action. The old archived-Agent-only menu rule and client permanent-DM delete RPC dispatch are removed; existing permanent tombstone projection remains for historical records. Agent deletion failure uses the notice action created by `confirmHideConversation`, which calls `removeOwnedAgent` only.
+Hide preserves membership, history, tabs and drafts. Clear chat history and Agent archival have their own menu actions.
 
 ## Release acceptance still required
 

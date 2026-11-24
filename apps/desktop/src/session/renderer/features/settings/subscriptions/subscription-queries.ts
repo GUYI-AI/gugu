@@ -1,4 +1,5 @@
 import type { HarnessConnection } from '@gugu/session-core/workspace-server/agent-config';
+import { messageForUser } from '@/lib/userFacingError';
 import type { AgentAuthStatus, SubscriptionPlanReading, SubscriptionUsageReading } from '@gugu/session-core/agents/plugins';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { replica, useReplica } from '@/lib/replica';
@@ -149,6 +150,6 @@ export function sessionsBusyOf(error: unknown): { providerId: string; count: num
 }
 
 export function errorText(error: unknown): string {
-  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') return error.message;
-  return JSON.stringify(error);
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') return messageForUser(error);
+  return messageForUser(typeof error === 'string' ? error : JSON.stringify(error));
 }

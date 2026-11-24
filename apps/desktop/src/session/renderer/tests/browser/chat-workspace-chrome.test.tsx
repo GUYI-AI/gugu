@@ -568,3 +568,42 @@ it('keeps the view toggle where it lands from the first frame the tools are hidd
   expect(frames.length, 'the tools went off over several frames').toBeGreaterThan(2);
   expect(new Set(frames), 'the toggle moved while the tools went off').toEqual(new Set([frames.at(-1)]));
 });
+
+it('draws the tools\' tabs at their measured density from the first frame they are shown', async () => {
+  const { inside, mode, workspace } = await mountWorkspace();
+  await mode('empty');
+  for (const id of ['a', 'b', 'c']) workspace.open('tool', { id }, { from: null, intent: 'newTab' });
+  await mode('split');
+  await untilStable('the tools have landed', () => inside('[data-chat-tool-strip]')?.getBoundingClientRect().left);
+  const densities = () => [...inside('[data-chat-tool-strip]')?.querySelectorAll<HTMLElement>('[data-tab-density]') ?? []].map((tab) => tab.dataset.tabDensity);
+  const atRest = densities();
+  expect(atRest, 'three tools in the split are narrow enough to draw compact').toContain('compact');
+  workspace.setChatToolLayout('hidden');
+  await until('the tools are off the track', () => !inside('[data-chat-tool-strip]'));
+  workspace.setChatToolLayout('split');
+  await new Promise((frame) => requestAnimationFrame(frame));
+  expect(densities(), 'the first frame drew the tabs before their width was measured').toEqual(atRest);
+});
+
+it('keeps the tools\' strip on their card while it narrows, ❌ its + and buttons past the card until it lands', async () => {
+  const { inside, mode, workspace } = await mountWorkspace();
+  await mode('empty');
+  for (const id of ['a', 'b']) workspace.open('tool', { id }, { from: null, intent: 'newTab' });
+  await mode('split');
+  await untilStable('the tools have landed', () => inside('[data-chat-tool-strip]')?.getBoundingClientRect().left);
+  const strip = () => inside('[data-chat-tool-strip]')!.getBoundingClientRect();
+  const card = () => inside('[data-chat-tool-card]')!.getBoundingClientRect();
+  const toggle = () => inside('[data-chat-tool-strip] button[aria-pressed]')!.getBoundingClientRect();
+  const overhang = () => Math.round(strip().right - card().right);
+  const atRest = overhang();
+  await act(() => { if (workspace.layout.type === 'split') workspace.setSplitSizes(workspace.layout.id, [70, 30]); });
+  const lefts = new Set<number>();
+  const frames: string[] = [];
+  for (let frame = 0; frame < 30; frame += 1) {
+    await new Promise((next) => requestAnimationFrame(next));
+    lefts.add(Math.round(card().left));
+    frames.push(`overhang=${overhang()} toggleIn=${toggle().right <= card().right + 1}`);
+  }
+  expect(lefts.size, 'the tools narrowed over several frames').toBeGreaterThan(2);
+  expect(new Set(frames), 'the strip left its card while the tools narrowed').toEqual(new Set([`overhang=${atRest} toggleIn=true`]));
+});

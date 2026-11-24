@@ -1,3 +1,4 @@
+import type { FileProgress } from '@gugu/core/shared/fileResolver';
 import { observable, runInAction } from 'mobx';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -90,12 +91,12 @@ vi.mock('@renderer/lib/modal/modal-provider', () => ({ showModal: mocks.showModa
 
 /** The shared image viewer and the working copy's byte reads, as the open asks them. */
 const viewer = vi.hoisted(() => ({
-  open: vi.fn(async (_items: Array<{ alt: string; read: () => Promise<Blob> }>, _index: number, _box?: unknown) => {}),
+  open: vi.fn(async (_items: Array<{ alt: string; read: (progress?: FileProgress) => Promise<Blob> }>, _index: number, _box?: unknown) => {}),
   read: vi.fn(async () => new Blob(['png'])),
   first: vi.fn(() => ({ reader: null, first: Promise.resolve({ size: 3, etag: 'e', bytes: new Uint8Array(3), ms: 1 }) })),
 }));
 vi.mock('@/lib/attachmentBytes', () => ({
-  workingCopyImageItem: (alt: string, read: () => Promise<Blob>) => ({ alt, read }),
+  workingCopyImageItem: (alt: string, read: (progress?: FileProgress) => Promise<Blob>) => ({ alt, read }),
   openViewerFromClick: viewer.open,
 }));
 vi.mock('../workspace-backend/read-workspace-bytes', () => ({ readWorkspaceFileBytes: viewer.read, beginWorkspaceRead: viewer.first }));
@@ -211,8 +212,9 @@ describe('task file preview routing', () => {
       const [items, index, box] = viewer.open.mock.calls[0]!;
       expect(items.map((item) => item.alt)).toEqual(['a.png']);
       expect([index, box]).toEqual([0, undefined]);
-      await items[0]!.read();
-      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/a.png', true, expect.objectContaining({ first: expect.any(Promise) }));
+      const progress = vi.fn();
+      await items[0]!.read(progress);
+      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/a.png', true, expect.objectContaining({ first: expect.any(Promise) }), progress);
       expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
       expect(mocks.toastError).not.toHaveBeenCalled();
     });
@@ -239,7 +241,7 @@ describe('task file preview routing', () => {
       expect(items.map((item) => item.alt)).toEqual(['x.png', 'a.png', 'b.webp']);
       expect([index, box]).toEqual([1, origin]);
       await items[2]!.read();
-      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/b.webp', true, undefined);
+      expect(viewer.read).toHaveBeenCalledWith('project-1', 'workspace-1', '/repo/shots/b.webp', true, undefined, undefined);
       expect(mocks.paneLayoutOpen).not.toHaveBeenCalled();
     });
 

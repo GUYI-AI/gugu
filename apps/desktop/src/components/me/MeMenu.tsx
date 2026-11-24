@@ -16,6 +16,7 @@ import { UpdateBanner } from '../UpdateBanner'
 import { AUTOMATION_TEST_IDS, type AutomationTestId } from '../../lib/automationDom'
 import { ChevronDown, ChevronRight, Settings, UserRound } from '@/lib/icons'
 import { ASSISTANT_APP_ID, assistantEntryUnread, openAssistantEntry, useAssistantEntryTarget } from '../../lib/assistantEntry'
+import { ASSISTANT_PROMOTED } from '@shared/extensions/assistant-entry'
 import { useChatStore } from '../../store/chatContext'
 import { cn } from '@/lib/cn'
 import { Menu, MenuItem as DropdownMenuItem, MenuSeparator } from '../ui/Menu'
@@ -200,7 +201,7 @@ const MeApps = observer(function MeApps({ showSessions, close }: { showSessions:
   const target = useAssistantEntryTarget()
   const installed = useInstalledApps(LOCAL_HOST)
   const apps = installed.state === 'value' ? installed.value : null
-  const assistantApp = apps && target.kind === 'app' ? apps.appsIn('page').find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
+  const assistantApp = ASSISTANT_PROMOTED && apps && target.kind === 'app' ? apps.appsIn('page').find((app) => app.extensionId === ASSISTANT_APP_ID) ?? null : null
   const docked = apps ? apps.dockedApps.filter((app) => !(assistantApp && app.extensionId === ASSISTANT_APP_ID)) : []
   if (!apps || (!assistantApp && docked.length === 0)) return null
   const open = (appId: string) => { showSessions(); openApp(appId); close() }
@@ -261,7 +262,7 @@ const MeButton = observer(function MeButton({ rail, onTabChange, pendingContacts
   const close = () => setOpen(false)
   const showSessions = () => onTabChange('tasks')
   const face = (size: number) => <Avatar name={name} avatarUrl={user?.avatarUrl} seed={user?.id} size={size} />
-  return (
+  return (<>
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Hint label={t('shell.accountMenu')} side={rail ? 'right' : 'top'}>
         <Popover.Trigger type="button" className={cn('gg-me-trigger', rail && 'gg-me-trigger-rail')} aria-label={t('shell.accountMenu')} data-on={open || undefined} data-testid="me-menu-trigger">
@@ -297,12 +298,12 @@ const MeButton = observer(function MeButton({ rail, onTabChange, pendingContacts
             <div className="gg-me-sep" />
             <MeRow icon={<Settings size={19} />} label={t('shell.settings')} keyHint="⌘,"
               testId={AUTOMATION_TEST_IDS.sidebarSettingsNav} onClick={() => { close(); onTabChange('settings') }} />
-            <UpdateBanner placement="rail" />
           </div>
         </Popover.Popup>
       </Popover.Positioner></Popover.Portal>
     </Popover.Root>
-  )
+    <UpdateBanner placement="rail" />
+  </>)
 })
 
 const NO_SLOTS: ReadonlyMap<string, HTMLElement> = new Map()

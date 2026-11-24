@@ -82,6 +82,32 @@ describe('warm start adopts the stored list', () => {
     expect(calls).toEqual([])
   })
 
+  it('publishes a committed hide from the stored row when a membership refresh would fail', async () => {
+    const stored = await storedList()
+    const projection = createChatProjection(VIEWER, { rows: () => stored.rows, identity: () => undefined, durable: () => stored })
+    await projection.hydrate('9', signal())
+    errorsByKey.set('active_members', { message: 'offline' })
+    const hiddenAt = '2026-11-24T18:00:00Z'
+    const receipt = { chat_id: 'g-1', hidden_at: hiddenAt, operation_id: 'hide', account_revision: '12' }
+    const result = await projection.confirmPersonalHiding(receipt, signal())
+    const before = stored.rows.find(row => row.id === 'g-1')
+    expect(result.find(row => row.id === 'g-1')).toEqual({
+      ...before, conversation_hidden_at: hiddenAt, conversation_visibility_revision: '12',
+    })
+    expect(projection.isConversationDeleted('g-1')).toBe(false)
+    expect(calls).toEqual([])
+
+    errorsByKey.clear()
+    const operation = { event: 'chat_members_changed', chatId: 'g-1', entityId: VIEWER, own: true } as const
+    const older = await projection.advance([{ ...operation, revision: '10' }], '10', signal())
+    expect(older!.find(row => row.id === 'g-1')!.conversation_hidden_at).toBe(hiddenAt)
+    await projection.advance([{ ...operation, revision: '13' }], '13', signal())
+    const restored = await projection.confirmPersonalHiding(receipt, signal())
+    expect(restored.find(row => row.id === 'g-1')).toMatchObject({
+      conversation_hidden_at: null, conversation_visibility_revision: '13',
+    })
+  })
+
   it('a message reads only its conversation, whole, and keeps every other stored row as it was', async () => {
     const stored = await storedList()
     const projection = createChatProjection(VIEWER, { rows: () => stored.rows, identity: () => undefined, durable: () => stored })

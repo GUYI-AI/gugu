@@ -18,6 +18,7 @@ import { TabBar, TabStripShell } from './tab-bar';
 import { CHAT_TOOL_COMPACT_HEADER_MAX_WIDTH_PX } from './chat-tool-geometry';
 import { ChatWorkspaceTabContext } from './chat-workspace-context';
 import type { CutEdge, CutEdgeRelay } from './chat-workspace-edge';
+import { PANEL_LANDED_PX } from '@renderer/lib/layout/panel-track';
 
 export type ChatWorkspaceChromeProps = {
   actions: ReactNode;
@@ -91,17 +92,20 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   // the gutter out of its slot, and the conversation's slot ends in the divider's pixel.
   const toolCard = !!layout.chatToolCardPaneId;
   // @@@strip-on-track: divided, the strip's columns are placed on the root cut's first edge as it is drawn. The tools' tabs
-  // move as their page beneath does (PanelTrack): at the width they have at rest, on the moving edge, clipped by the strip.
-  // The conversation column ends on the edge, its look (narrow or not) that of its width at rest: nothing in the strip
-  // changes how it looks mid-move.
+  // are laid out as their page beneath is (PanelTrack's slots and fill): coming from or going to nothing, at their open
+  // width on the moving edge, clipped by the strip; between two open widths, at the width drawn, so the strip is its card's
+  // in every frame (❌ the wider end's: its far end, the + and the row's buttons, would sit past the card until it lands).
+  // The conversation column ends on the edge, its look (narrow or not) that of its width at rest.
   useLayoutEffect(() => {
     const chatNode = chatColumn.current;
     const toolNode = toolColumn.current;
     const workspace = header.current?.closest<HTMLElement>('[data-chat-tool-workspace]');
     const halfGap = workspace ? parseFloat(getComputedStyle(workspace).getPropertyValue('--chat-card-half-gap')) || 0 : 0;
     const place = ({ drawn, from, to, extent }: CutEdge) => {
+      // The tools on the right start where the edge is drawn; held open, where it is when they are widest.
+      const toolsStart = Math.max(from, to) > extent - PANEL_LANDED_PX ? Math.min(from, to) : drawn;
       if (toolsFirst) {
-        const open = Math.max(from, to);
+        const open = Math.min(from, to) < PANEL_LANDED_PX ? Math.max(from, to) : drawn;
         if (toolNode) Object.assign(toolNode.style, { left: `${drawn - open}px`, width: `${open}px` });
         if (chatNode) chatNode.style.marginInlineStart = `${drawn}px`;
         setChatRest(extent - open);
@@ -115,11 +119,11 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
         const gap = Math.max(0, Math.min(halfGap, extent - drawn - divider));
         workspace?.style.setProperty('--chat-card-right-gap', `${gap}px`);
         if (chatNode) chatNode.style.flex = `0 0 ${drawn - divider - gap}px`;
-        if (toolNode) Object.assign(toolNode.style, { left: `${drawn - 1}px`, width: `calc(100% - ${Math.min(from, to)}px - var(--chat-card-half-gap))` });
+        if (toolNode) Object.assign(toolNode.style, { left: `${drawn - 1}px`, width: `calc(100% - ${toolsStart}px - var(--chat-card-half-gap))` });
         setChatRest(Math.min(from, to));
       } else {
         if (chatNode) chatNode.style.flex = `0 1 ${drawn}px`;
-        if (toolNode) Object.assign(toolNode.style, { left: `${drawn}px`, width: `calc(100% - ${Math.min(from, to)}px)` });
+        if (toolNode) Object.assign(toolNode.style, { left: `${drawn}px`, width: `calc(100% - ${toolsStart}px)` });
         setChatRest(Math.min(from, to));
       }
     };

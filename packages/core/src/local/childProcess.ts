@@ -1,4 +1,5 @@
 import * as nodeChildProcess from 'node:child_process'
+import { win32 } from 'node:path'
 import { promisify } from 'node:util'
 
 /**
@@ -57,3 +58,16 @@ export const exec = Object.assign(
   (command: unknown, ...rest: Rest) => call(nodeChildProcess.exec, command, shellStyle(rest)),
   { [promisify.custom]: (command: unknown, ...rest: Rest) => call(promisify(nodeChildProcess.exec), command, shellStyle(rest)) },
 ) as unknown as typeof nodeChildProcess.exec
+
+/**
+ * Absolute path of a program that ships with Windows, e.g. `windowsSystemProgram('reg.exe')` or
+ * `windowsSystemProgram('WindowsPowerShell\\v1.0\\powershell.exe')`.
+ *
+ * Start Windows' own programs by this path, never by bare name: other software can corrupt the
+ * system PATH (a user's `%SystemRoot%\system32` entry came back garbled), and a bare `reg` then
+ * fails with `spawn reg ENOENT`. `SystemRoot` is its own variable and is not touched by that. It
+ * also keeps a same-named program earlier on PATH from standing in for the system one.
+ */
+export function windowsSystemProgram(relative: string, env: NodeJS.ProcessEnv = process.env): string {
+  return win32.join(env.SystemRoot || env.windir || 'C:\\Windows', 'System32', relative)
+}

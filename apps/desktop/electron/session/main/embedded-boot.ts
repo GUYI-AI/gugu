@@ -138,7 +138,7 @@ import {
 } from '@main/core/sessions/sendMessage'
 import { claimInterruptedDeferredMessages, installDeferredMessageDelivery } from '@main/core/sessions/session-deferred-messages'
 import { hydrateSession } from '@main/core/sessions/hydrateSession'
-import { recordLiveModelSwitch } from '@main/core/sessions/live-model-switch'
+import { announceSessionModel, recordLiveModelSwitch } from '@main/core/sessions/live-model-switch'
 import { armSwitchedModelMemory } from '@main/core/sessions/switched-model-memory'
 import { readSessionOptions, SessionOptionsError } from '@main/core/session-timeline/live-options'
 import { platformModelIdFromRuntimeOption, runtimeOptionForPlatformModelId } from '@shared/platform-model-id'
@@ -1660,6 +1660,7 @@ async function reloadEmdashSessionNow(input: {
       + await restoreConfig(message),
     )
   }
+  if (nextModel || input.resetModel) announceSessionModel(sessionId, session.projectId, recordedModel)
   life.start(sessionId, 'reconfigure')
   const currentConfigRows = await db.select({ config: sessions.config })
     .from(sessions).where(eq(sessions.id, sessionId))

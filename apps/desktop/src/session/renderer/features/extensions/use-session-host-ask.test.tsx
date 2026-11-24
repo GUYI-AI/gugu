@@ -140,4 +140,22 @@ describe('an ask the page already follows', () => {
     expect(mocks.subscribe).not.toHaveBeenCalled();
     act(() => heldRoot.unmount());
   });
+
+  it('shows the App install the feed holds before the status says it waits, and follows nothing more on the machine', async () => {
+    let held: ReturnType<typeof useHostAskBand> = null;
+    function HeldBand({ settlements }: { settlements: Record<string, Settlement> }) {
+      held = useHostAskBand('session-2', { status: 'working', detail: null }, settlements);
+      return null;
+    }
+    mocks.snapshot.mockClear();
+    mocks.subscribe.mockClear();
+    const heldRoot = createRoot(document.createElement('div'));
+    await act(async () => heldRoot.render(<HeldBand settlements={{ [ask.itemId]: ask }} />));
+    expect(held).toMatchObject({ request: { requestId: 'ask-1' } });
+    await act(async () => heldRoot.render(<HeldBand settlements={{ [ask.itemId]: { ...ask, state: 'resolved', optionId: 'decline' } }} />));
+    expect(held).toBeNull();
+    expect(mocks.snapshot).not.toHaveBeenCalled();
+    expect(mocks.subscribe).not.toHaveBeenCalled();
+    act(() => heldRoot.unmount());
+  });
 });

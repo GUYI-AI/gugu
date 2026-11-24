@@ -36,9 +36,22 @@ describe('各平台取硬件标识', () => {
     expect(exec).toHaveBeenCalledWith('/usr/sbin/ioreg', ['-rd1', '-c', 'IOPlatformExpertDevice'], signal)
   })
 
-  test('Windows 读注册表 MachineGuid', async () => {
+  test('Windows 读注册表 MachineGuid,reg 按 %SystemRoot% 的绝对路径起,PATH 坏了也读得到', async () => {
     const out = `\r\nHKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Cryptography\r\n    MachineGuid    REG_SZ    ${UUID.toLowerCase()}\r\n`
-    await expect(machineHardwareIdentifier(signal, io({ platform: 'win32', exec: async () => out }))).resolves.toBe(UUID.toLowerCase())
+    // 用户的系统 PATH 被别的软件写坏、System32 不在上面:裸 `reg` 会 spawn ENOENT。SystemRoot 是单独的变量。
+    vi.stubEnv('PATH', '')
+    vi.stubEnv('SystemRoot', 'D:\\Win')
+    try {
+      const exec = vi.fn(async () => out)
+      await expect(machineHardwareIdentifier(signal, io({ platform: 'win32', exec }))).resolves.toBe(UUID.toLowerCase())
+      expect(exec).toHaveBeenCalledWith(
+        'D:\\Win\\System32\\reg.exe',
+        ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid'],
+        signal,
+      )
+    } finally {
+      vi.unstubAllEnvs()
+    }
   })
 
   test('Linux 先 /etc/machine-id,缺了退 dbus,都缺退本地随机', async () => {

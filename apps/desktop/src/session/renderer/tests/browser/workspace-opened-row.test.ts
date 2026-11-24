@@ -86,3 +86,18 @@ it('the row an image was opened from keeps the selected fill under the viewer an
   expect(row('two').getAttribute('aria-current')).toBe('true');
   expect(row('one').hasAttribute('aria-current')).toBe(false);
 });
+
+it('shows which image is opening until its own host request finishes', async () => {
+  const first = Promise.withResolvers<void>();
+  const next = Promise.withResolvers<void>();
+  openWith.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => next.promise);
+  const click = (id: string) => page.elementLocator(row(id).querySelector('.file-open')!).click();
+  await click('one');
+  expect(row('one').getAttribute('aria-busy')).toBe('true');
+  await click('two');
+  first.resolve();
+  expect(row('one').hasAttribute('aria-busy')).toBe(false);
+  expect(row('two').getAttribute('aria-busy')).toBe('true');
+  next.resolve();
+  await until('opening is complete', () => !row('two').hasAttribute('aria-busy'));
+});

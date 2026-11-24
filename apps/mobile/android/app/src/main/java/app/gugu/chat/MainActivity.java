@@ -33,6 +33,7 @@ public class MainActivity extends BridgeActivity {
         }
         registerPlugin(GuguAuthStoragePlugin.class);
         registerPlugin(GuguAccountClosurePlugin.class);
+        registerPlugin(GuguAccountClosureV2Plugin.class);
         registerPlugin(GuguPreviewOrigins.class);
         registerPlugin(GuguAppUpdatePlugin.class);
         registerPlugin(GuguSharePlugin.class);
@@ -167,9 +168,8 @@ public class MainActivity extends BridgeActivity {
         if (getBridge() == null || getBridge().getWebView() == null) return;
         float progress = event == null ? 0 : event.getProgress();
         if (Float.isNaN(progress) || Float.isInfinite(progress)) return;
-        int edge = event == null ? 0 : event.getSwipeEdge();
         String detail = "{\"phase\":\"" + phase + "\",\"progress\":"
-                + Math.max(0, Math.min(1, progress)) + ",\"edge\":" + edge + "}";
+                + Math.max(0, Math.min(1, progress)) + "}";
         getBridge().eval("window.dispatchEvent(new CustomEvent('gugu:native-back-progress',{detail:"
                 + detail + "}))", ignored -> {});
     }

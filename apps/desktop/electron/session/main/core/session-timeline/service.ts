@@ -248,6 +248,10 @@ type TimelineEntry = {
   standIn?: boolean;
   /** Stops keeping the session index current from this timeline (`followSessionIndex`). */
   stopIndex?: () => void;
+  /** The agent session whose record this timeline reads; null = journal only. */
+  providerSessionId: string | null;
+  /** Out of the cache because the row moved to another record; disposed when its last holder lets go. */
+  evicted?: boolean;
 };
 
 const entries = new Map<string, TimelineEntry>();
@@ -519,7 +523,7 @@ function scheduleIdleDispose(entry: TimelineEntry): void {
   if (entry.idleTimer) clearTimeout(entry.idleTimer);
   entry.idleTimer = setTimeout(() => {
     if (entry.refs > 0) return;
-    entries.delete(entry.conversationId);
+    if (entries.get(entry.conversationId) === entry) entries.delete(entry.conversationId);
     try {
       disposeEntry(entry);
     } catch (error) {
@@ -536,7 +540,14 @@ function scheduleIdleDispose(entry: TimelineEntry): void {
 async function acquire(conversationId: string): Promise<SessionTimelineResult<TimelineEntry>> {
   const row = readSessionRow(conversationId);
   if (!row) return fail('session_not_found', `这台机器上没有会话 ${conversationId}`);
-  const cached = entries.get(conversationId);
+  let cached = entries.get(conversationId);
+  // @@@record-moved - a model switch across billing routes forks the agent session onto a new record
+  // (reloadEmdashSession); the cached timeline still reads the old one and would never show the next turn.
+  const providerSessionId = row.providerSessionId?.trim();
+  if (cached?.providerSessionId && providerSessionId && cached.providerSessionId !== providerSessionId) {
+    evict(cached);
+    cached = undefined;
+  }
   if (cached) {
     cached.refs += 1;
     if (cached.idleTimer) {
@@ -594,6 +605,7 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
       pendingWatch: null,
       runtimeRequests: [],
       disposed: false,
+      providerSessionId: location.supported ? location.locator.providerSessionId : null,
     };
     entries.set(conversationId, entry);
     try {
@@ -674,6 +686,7 @@ function standInEntry(row: SessionRow): TimelineEntry {
     runtimeRequests: [],
     disposed: false,
     standIn: true,
+    providerSessionId: null,
   };
   // The runtime may already be running the first turn: the stand-in shows it (its record cannot be read yet).
   if (summaryRuntime(row.runtime) === 'acp') attachPendingRequests(entry);
@@ -688,8 +701,20 @@ function openFailure<T>(error: unknown): SessionTimelineResult<T> {
   return fail(code, (error as Error)?.message ?? String(error));
 }
 
+function evict(entry: TimelineEntry): void {
+  entries.delete(entry.conversationId);
+  entry.evicted = true;
+  if (entry.idleTimer) clearTimeout(entry.idleTimer);
+  entry.idleTimer = null;
+  if (entry.refs <= 0) disposeEntry(entry);
+}
+
 function release(entry: TimelineEntry): void {
   entry.refs -= 1;
+  if (entry.evicted) {
+    if (entry.refs <= 0 && !entry.disposed) disposeEntry(entry);
+    return;
+  }
   if (entry.standIn) {
     if (entry.refs <= 0 && !entry.disposed) disposeEntry(entry);
     return;
@@ -1283,32 +1308,40 @@ export async function subscribe(
   unsubscribe(subscriptionId);
   let stopped = false;
   let teardown: (() => void) | null = null;
+  let attached: TimelineEntry | null = null;
+  let stopFollow = () => {};
   const mine = {
     conversationId: input.conversationId,
     stop: () => {
       if (stopped) return;
       stopped = true;
+      stopFollow();
       teardown?.();
     },
   };
   subscriptions.set(subscriptionId, mine);
   const forget = () => { if (subscriptions.get(subscriptionId) === mine) subscriptions.delete(subscriptionId); };
 
-  const acquired = await acquire(input.conversationId);
-  if (!acquired.ok) {
-    forget();
-    return acquired;
-  }
-  const entry = acquired.value;
-  if (stopped) {
-    release(entry);
-    return fail('unsubscribed', '订阅在建好之前就被退掉了');
-  }
-  try {
-    const unsubscribeTimeline = entry.timeline.subscribe(input.cursor, (result) => {
-      if (stopped) return;
-      emit({ subscriptionId, result });
-    }, { terminalPatch: input.terminalPatch === true });
+  const attach = async (cursor: RecordCursor | null): Promise<SessionTimelineResult<null>> => {
+    const acquired = await acquire(input.conversationId);
+    if (!acquired.ok) return acquired;
+    const entry = acquired.value;
+    if (stopped || entry === attached) {
+      release(entry);
+      return stopped ? fail('unsubscribed', '订阅在建好之前就被退掉了') : { ok: true, value: null };
+    }
+    let unsubscribeTimeline: () => void;
+    try {
+      unsubscribeTimeline = entry.timeline.subscribe(cursor, (result) => {
+        if (stopped) return;
+        emit({ subscriptionId, result });
+      }, { terminalPatch: input.terminalPatch === true });
+    } catch (error) {
+      release(entry);
+      return fail('subscribe_failed', (error as Error)?.message ?? String(error));
+    }
+    const previous = teardown;
+    attached = entry;
     teardown = () => {
       try {
         unsubscribeTimeline();
@@ -1316,10 +1349,29 @@ export async function subscribe(
         release(entry);
       }
     };
-  } catch (error) {
-    release(entry);
+    previous?.();
+    return { ok: true, value: null };
+  };
+
+  // The row moved to another agent record (see @@@record-moved): follow it. A cursor from no epoch of the new
+  // timeline makes it answer with a reset and a whole snapshot, which the viewer swaps in for what it holds.
+  stopFollow = tapMainEvents((channel, data) => {
+    if (channel !== sessionChangedChannel.name) return;
+    const { sessionId, changes } = data as { sessionId?: string; changes?: { providerSessionId?: unknown } };
+    const next = changes?.providerSessionId;
+    if (sessionId !== input.conversationId || typeof next !== 'string' || !attached?.providerSessionId || next === attached.providerSessionId) return;
+    void attach({ epoch: 'record-moved', seq: 0 }).then((result) => {
+      if (!result.ok && result.error.code !== 'unsubscribed') {
+        log.warn('sessionTimeline: following the moved record failed', { conversationId: input.conversationId, error: result.error });
+      }
+    });
+  });
+
+  const first = await attach(input.cursor);
+  if (!first.ok) {
+    stopFollow();
     forget();
-    return fail('subscribe_failed', (error as Error)?.message ?? String(error));
+    return first;
   }
   return { ok: true, value: { subscriptionId } };
 }
