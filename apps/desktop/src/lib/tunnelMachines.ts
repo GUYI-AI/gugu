@@ -23,7 +23,7 @@ export type TunnelWant = { deviceId: string; label: string }
  *  visitorFailed = 这台电脑连不上中转;sshFailed = 中转通了、SSH 进不去;local = 这台电脑缺东西;
  *  unreachable = 经咕咕云问不到它。
  */
-export type TunnelProblem = 'unsupported' | 'relayDown' | 'visitorFailed' | 'sshFailed' | 'local' | 'unreachable'
+export type TunnelProblem = 'unsupported' | 'relayDown' | 'visitorFailed' | 'sshFailed' | 'linkRefused' | 'local' | 'unreachable'
 
 export type TunnelState = { ready: string[]; problems: Record<string, TunnelProblem> }
 

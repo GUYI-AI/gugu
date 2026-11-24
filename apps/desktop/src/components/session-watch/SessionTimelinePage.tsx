@@ -134,7 +134,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   const native = !phoneHost && session.runtime === 'acp' && (session.nativeInputVersion === 1 || session.nativeInputVersion === 2)
   const {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
-    reload, loadOlder, loadToolImage, pendingSends, respond, sending, respondingItemId, cancel, cancelling, link, errorCode,
+    reload, loadOlder, loadToolImage, fillHeld, pendingSends, respond, sending, respondingItemId, cancel, cancelling, link, errorCode,
   } =
     useAgentWatchSession(device.device_id, session.conversationId, online, firstPrompt, phoneHost, local)
 
@@ -334,6 +334,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           footerNotice={<>{agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}<SessionInputQueue sessionId={session.conversationId} waitingForConnection={!answering} inTranscript={drawnInputIds} />{actionErrorNotice}</>}
           onLoadOlder={loadOlder}
           onLoadToolImage={loadToolImage}
+          onHeldShown={fillHeld}
           emptyNote={answering && waitingForRecord && (phase === 'loading' || timeline.turns.length > 0) ? (
             /* 刚建的会话:记录要等 agent 写下第一行才有。那时说「正在等它开口」,❌ 不说「正在读取」——
                读取早就成功了,是对面还没写。线上已画着刚发的那句时不说(线程有内容就不画空态):那句本身就是「发出去了」。

@@ -12,13 +12,14 @@ async function value<T>(result: Promise<{ ok: true; value: T } | { ok: false; er
 // Reuse the existing timeline consumer, including cursor recovery and unsubscribe ownership.
 // `trim: false` = whole tool inputs/outputs: an agent DM reads its replies out of `message_send`'s rawInput,
 // which the transport trim would cut at 8 KB (a long reply would then go missing from the DM).
+// It never asks for folded pages (`lean`): nothing crosses a link here, so there is nothing to save by leaving out.
 function localClient(trim: boolean): SessionpageTimelineClient {
   return {
     fetchSnapshot: (_, sessionId, limit) => value(rpcOn(null).sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit: limit ?? 30, trim })),
-    fetchAfter: (_, sessionId, cursor) => value(rpcOn(null).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim })),
+    fetchAfter: (_, sessionId, cursor) => value(rpcOn(null).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim, terminalPatch: true })),
     fetchOlder: (_, sessionId, beforeTurnId, limit) => value(rpcOn(null).sessionTimeline.sessionOlder({ conversationId: sessionId, beforeTurnId, limit, trim })),
     fetchToolImage: (_, sessionId, itemId, index) => value(rpcOn(null).sessionTimeline.sessionToolImage({ conversationId: sessionId, itemId, index })),
-    subscribeSession: (_, sessionId, subscriptionId, cursor) => value(rpcOn(null).sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor, trim })),
+    subscribeSession: (_, sessionId, subscriptionId, cursor) => value(rpcOn(null).sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor, trim, terminalPatch: true })),
     unsubscribeSession: (_, subscriptionId) => rpcOn(null).sessionTimeline.sessionUnsubscribe({ subscriptionId }),
     subscribeSessionEvents: (_, id, receive) => events.on(sessionpageSessionTimelineChannel, (event) => receive(event.result), id),
     onLinkChange: () => () => undefined,
@@ -33,7 +34,7 @@ function localClient(trim: boolean): SessionpageTimelineClient {
 const local = localClient(true)
 const localUntrimmed = localClient(false)
 
-const remoteClient: SessionpageTimelineClient = { ...remote, fetchSnapshot: (device, session, limit) => remote.fetchSnapshot(device, session, limit ?? 30) }
+const remoteClient: SessionpageTimelineClient = { ...remote, fetchSnapshot: (device, session, limit, lean) => remote.fetchSnapshot(device, session, limit ?? 30, lean) }
 
 /** `trim: false` only changes the local client; another machine always trims what it sends over the wire. */
 export function assistantTimelineClient(isLocal: boolean, options?: { trim?: boolean }): SessionpageTimelineClient {

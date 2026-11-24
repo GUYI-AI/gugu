@@ -105,6 +105,7 @@ type PanelCondition = Omit<ChatSessionCondition, 'actions'> & {
 import { rpc } from '@renderer/lib/ipc';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
+import { machineUnavailableLabel } from '../machine-unavailable-label';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { readConversationFile } from '@/components/assistant/assistantTimelineClient';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
@@ -1447,7 +1448,7 @@ const ComposerForStore = observer(function ComposerForStore({
       {/* Every send of a task page is in custody until the transcript has it, so its bubbles always show here. */}
       <SessionInputQueue sessionId={store.runtimeSessionId} waitingForConnection life={life}
         inTranscript={[...store.chatState.session.state.pendingMessages.map(input => input.id), store.transcriptPendingId, store.stoppedRowId, ...store.failedRowIds, ...life?.pending.items.filter(input => isTranscriptDelivery(input)).map(input => input.messageId) ?? []].filter((id): id is string => id !== null)} />
-      <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} />
+      <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} settlements={store.hostSettlements} />
       <ChatComposer
         className={scheduleSlotShown(schedules) ? sessionComposerFrameLiftClassName : undefined}
         // 会话页的标签头不显示 harness,锁着的那颗 agent 标留在模型左边(私聊照旧藏)。
@@ -1771,6 +1772,9 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const [restarting, setRestarting] = useState(false);
   const birthGroup = useBirthGroupJoin(store?.sessionId);
   const conditionRuns = useRef<readonly ((anchor?: HTMLElement) => void)[]>([]);
+  // The line to the machine this session is on, said as the page before it and the sidebar dot say it: while it is not
+  // open, that is what holds the page (「正在连接 X…」, offline, sign-in, too old), not the session.
+  const machineLinkLabel = store ? machineUnavailableLabel(store.projectId) : null;
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
   }, [store, store?.loadError]);
@@ -1783,6 +1787,15 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         .firstUtterance
     );
     const error = store.loadError;
+    // A turn left to reconcile says the same and more (below); a session failure other than the lost line is its own.
+    if (machineLinkLabel && !store.reconcileAwaitingLink && (!error || error.kind === 'connection_lost')) {
+      return {
+        code: 'machine-unreachable',
+        label: machineLinkLabel,
+        detail: 'machine-link-not-open',
+        ...(error ? { actions: [{ label: translate('transcript.condition.retry'), run: () => store.retry() }] } : {}),
+      };
+    }
     if (!error && membershipLock) {
       // #7056 会员中途到期:说清原因、给两条去路;发送键在输入框那一格已经停下了。
       return ({
@@ -1975,7 +1988,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     return condition;
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry, machineLinkLabel]);
   useEffect(() => {
     if (!store) return;
     conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];
@@ -2073,6 +2086,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const transcriptCommands = useMemo<ChatCommands>(
     () => ({
       ...outputMenu.commands,
+      onHeldShown: (itemId) => store?.fillHeldTurn(itemId),
       onConversationReply: sourceMessage.reveal,
       onMessageTextMount: quotes.onMessageTextMount,
       flashMessageId: sourceMessage.flashMessageId,

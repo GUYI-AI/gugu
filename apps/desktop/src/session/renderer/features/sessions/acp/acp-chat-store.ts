@@ -1,7 +1,7 @@
 import { projectRejectedSessionInputs } from '@/lib/pendingSessionInput';
 import { messageFailureNotice, type MessageFailureAttempt } from '@/lib/messageFailureNotice';
 import { runNativeInputAction } from '@/lib/nativeInputFailureNotice';
-import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
+import type { Settlement, TurnFileRef } from '@gugu/session-core/session-record/contract';
 import type {
   ChatContext,
   ChatState,
@@ -64,7 +64,8 @@ import {
 } from '@renderer/lib/chat/advertised-command-provider';
 import { getSharedChatContext } from '@renderer/lib/chat/shared-chat-context';
 import { sideChatOwnTurns } from './history-composition';
-import { AcpTimelineFeed } from './acp-timeline-feed';
+import { AcpTimelineFeed, type TimelineFeed } from './acp-timeline-feed';
+import { RemoteTimelineFeed } from './remote-timeline-feed';
 import { projectOwnerNotifications } from '@gugu/session-core/session-record/owner-notifications';
 import { endedTurnIds, sameTurnAs, withoutCopiesOf } from '@gugu/session-core/session-record/runtime-turn';
 import { toast } from '@renderer/lib/hooks/use-toast';
@@ -160,6 +161,11 @@ export class AcpChatStore {
 
   session: AcpLiveSession | null = null;
   historyLoading = true;
+  /**
+   * The asks this session's timeline keeps (its settlements), as the page's own feed reads them; null when the page has
+   * no feed (a runtime view). The bands above the composer read these instead of following the timeline a second time.
+   */
+  hostSettlements: Readonly<Record<string, Settlement>> | null = null;
   /**
    * 一轮讲完后的对账撞上断线:那一轮原样留在屏上,等线回来再对一次账(`_refreshHistory`)。true 时消息列表末尾说
    * 「连接断了,连上后补全这一轮」。
@@ -277,11 +283,11 @@ export class AcpChatStore {
   private _forkOpened: Promise<void> | null = null;
   private _lastActiveTurnId: string | null = null;
   /**
-   * The history on screen: the session's timeline (`AcpTimelineFeed`), opened with the page and followed until the
+   * The history on screen: the session's timeline (`AcpTimelineFeed`; `RemoteTimelineFeed` for a session on another machine), opened with the page and followed until the
    * transcript is released. It goes on while the runtime starts, stops or is attached again, so attaching reads none.
    * A side chat is a runtime-only fork with no record: its history is what its runtime holds (the fields below).
    */
-  private readonly _history: AcpTimelineFeed | null;
+  private readonly _history: TimelineFeed | null;
   /** The timeline's first read (and the pages to the reader's row) has landed: until then nothing of it is drawn. */
   private _historyDrawn = false;
   /** The turn the runtime just committed, kept on screen while the timeline holds it open (`_seedFromTimeline`). */
@@ -321,8 +327,17 @@ export class AcpChatStore {
     if (runtimeView && sourceMachine) machineRegistry.register(sourceMachine, [runtimeView.id]);
     this.chatContext = getSharedChatContext();
     this.chatState = createChatState(this.chatContext, { uri: runtimeSessionId });
-    this._history = runtimeView ? null : new AcpTimelineFeed(sessionId, machineRegistry.machineOf(sessionId),
-      () => this._seedFromTimeline(), (error) => this._toastError('acpFailure.refreshHistory', error));
+    const historyChanged = () => {
+      this._seedFromTimeline();
+      const settlements = this._history!.state.settlements;
+      if (settlements !== this.hostSettlements) runInAction(() => { this.hostSettlements = settlements; });
+    };
+    const historyFailed = (error: unknown) => this._toastError('acpFailure.refreshHistory', error);
+    const historyMachine = machineRegistry.machineOf(sessionId);
+    this._history = runtimeView ? null : historyMachine
+      ? new RemoteTimelineFeed(sessionId, historyMachine, historyChanged, historyFailed)
+      : new AcpTimelineFeed(sessionId, historyChanged, historyFailed);
+    if (this._history) this.hostSettlements = this._history.state.settlements;
     registerSessionCommands(runtimeSessionId, () =>
       this.commands.map((command) => command.name)
     );
@@ -341,6 +356,7 @@ export class AcpChatStore {
       pendingPermissionMode: observable.ref,
       modelSettingError: observable,
       historyLoading: observable,
+      hostSettlements: observable.ref,
       reconcileAwaitingLink: observable,
       _loadError: observable.ref,
       _lifeRetriedVersion: observable,
@@ -1023,6 +1039,11 @@ export class AcpChatStore {
       session.setPendingPrompt({ id: head.id, text: head.text, ...(row.files?.length ? { files: row.files } : {}), ...(sentAt !== undefined ? { sentAt } : {}), starting, held: true });
       this._syncMessageCount();
     });
+  }
+
+  /** A row came on screen from behind a fold of a turn another machine sent folded: read that turn whole (`folded-pages`). */
+  fillHeldTurn(itemId: string): void {
+    this._history?.fillHeld(itemId);
   }
 
   /** Only unresolved legacy receipts read older pages. The ordinary first-page path never waits for this work. */

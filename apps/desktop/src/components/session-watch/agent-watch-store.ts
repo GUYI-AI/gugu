@@ -263,6 +263,9 @@ export function applyBatch(state: AgentWatchTimeline, batch: TimelineBatch): Age
   const cursor = state.cursor && state.cursor.seq > batch.cursor.seq ? state.cursor : batch.cursor
   // 队列每批都带全集:只认不比手里旧的那一批,❌ 让重放的旧批把已经被接走的那句又排回去。
   const current = !state.cursor || batch.cursor.seq >= state.cursor.seq
+  const terminals = current ? terminalsOf(state.terminals, batch) : state.terminals
+  // A terminal the batch names but neither carries nor finds held: a batch in between was lost, as with turns.
+  if (terminals === null) return { ...state, needsSnapshot: 'gap' }
   const turns = sortTurns([...byId.values()])
 
   return {
@@ -274,13 +277,25 @@ export function applyBatch(state: AgentWatchTimeline, batch: TimelineBatch): Age
     lastActionAt: batch.lastActionAt !== undefined ? batch.lastActionAt : state.lastActionAt,
     queuedPrompts: batch.queuedPrompts !== undefined && current ? batch.queuedPrompts : state.queuedPrompts,
     liveReply: current && batch.liveReply !== undefined ? batch.liveReply : state.liveReply,
-    terminals: current && batch.terminals !== undefined ? batch.terminals : state.terminals,
+    terminals,
     subagents: current && batch.subagents !== undefined ? mergeSubagents(state.subagents, batch.subagents) : state.subagents,
     // 一条正常增量到了 = 重载后的那份已经接上了,「时间线已整份重载」的横幅到此为止。
     // 以前这里原样保留 ⇒ 横幅一旦出现就挂到离开这一页(#3566 审计)。
     lastReset: null,
     needsSnapshot: null,
   }
+}
+
+/**
+ * A batch's terminals over the ones held: absent = unchanged; a whole list replaces them; with `terminalIds` (asked for with
+ * `terminalPatch`) the changed ones are taken by id and the rest kept, in the batch's order. Null = one is missing (a gap).
+ */
+function terminalsOf(held: AgentWatchTimeline['terminals'], batch: TimelineBatch): AgentWatchTimeline['terminals'] | null {
+  if (!batch.terminalIds) return batch.terminals ?? held
+  const changed = new Map((batch.terminals ?? []).map((terminal) => [terminal.terminalId, terminal]))
+  const kept = new Map(held.map((terminal) => [terminal.terminalId, terminal]))
+  const next = batch.terminalIds.map((id) => changed.get(id) ?? kept.get(id))
+  return next.every((terminal) => terminal !== undefined) ? next as AgentWatchTimeline['terminals'] : null
 }
 
 /** 订阅推来的一条结果;`after` 补缺口的返回值也走这里 —— 两条路同一套语义。 */
