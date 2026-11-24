@@ -693,7 +693,7 @@ export function ChatProvider({ children, active = true }: { children: React.Reac
     if (!userId || !chatId) return
     const wish = wishReaction(messageId, emoji, cache.rows(chatId) ?? [], cache.view(chatId).threadMessages)
     setMessagesAndCache((rows) => rows.map(wish.apply), chatId); setThreadMessagesFor(chatId, (rows) => rows.map(wish.apply))
-    await enqueueReaction({ chatId, messageId, userId, emoji, on: wish.on })
+    await enqueueReaction({ chatId, messageId, userId, emoji, on: wish.on }, wish.reactions)
   }, [cache, setMessagesAndCache, setThreadMessagesFor, userId])
   const revalidateOverlaysRef = useRef(revalidateWindowOverlays); revalidateOverlaysRef.current = revalidateWindowOverlays
   useEffect(() => registerReactions((wish) => { void revalidateOverlaysRef.current(wish.chatId) }), [])
