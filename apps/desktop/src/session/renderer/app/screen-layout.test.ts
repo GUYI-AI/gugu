@@ -100,6 +100,16 @@ describe('一屏几块(spec session-page,#7052)', () => {
     expect(screen.joinedGroups).toEqual([]);
   });
 
+  it('splitKeys:并排着的每一块装的什么(一块时为空,收起来的组不算)', () => {
+    const screen = new ScreenLayoutStore();
+    screen.show(s('a'));
+    expect(screen.splitKeys).toEqual([]);
+    screen.showBeside({ kind: 'chat', chatId: 't' });
+    expect(screen.splitKeys).toEqual(['session:a', 'chat:t']);
+    screen.show(s('e'));
+    expect(screen.splitKeys).toEqual([]);
+  });
+
   it('收着的组里的会话没了 / 开成窗:从那组拿走,不到两块就散了', () => {
     const screen = new ScreenLayoutStore();
     screen.show(s('a'));

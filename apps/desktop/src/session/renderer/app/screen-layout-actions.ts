@@ -14,7 +14,7 @@ import { auxWindows, type TabWindowHome } from './aux-windows';
 import { readChatSummaries } from '@/lib/chatSummariesBridge';
 import { subscribeChatRemovals } from '@/lib/chatRemovalBridge';
 import { isScreenView } from './screen-views';
-import { MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
+import { contentKey, MAX_SCREEN_BLOCKS, screenLayout, type ScreenBlockContent, type ScreenLayoutSnapshot, type ScreenSession, type WindowableContent } from './screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { projectGroupsStore } from '@renderer/features/projects/stores/project-groups-store';
 import { roomListsSession, roomOfEntry } from '@renderer/features/sidebar/inner-sidebar-scope';
@@ -268,6 +268,13 @@ export function closeScreenBlock(blockId: string): void {
     return;
   }
   if (screenLayout.close(blockId)) followFocus();
+}
+
+/** 取消并排(侧栏一行右键):`key` 那样东西(contentKey)是并排着的一块,就把那块从这屏拿走。 */
+export function leaveSplit(key: string): void {
+  if (!screenLayout.splitKeys.includes(key)) return;
+  const blockId = screenLayout.order.find((id) => contentKey(screenLayout.blocks.get(id)!) === key);
+  if (blockId) closeScreenBlock(blockId);
 }
 
 function fullToast(): void {

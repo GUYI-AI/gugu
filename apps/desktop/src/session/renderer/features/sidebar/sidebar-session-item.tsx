@@ -1,8 +1,9 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { commandRegistry } from '@renderer/lib/commands/registry';
-import { closeScreenBlock, isScreenView, showSessionBeside } from '@renderer/app/screen-layout-actions';
+import { isScreenView, leaveSplit, showSessionBeside } from '@renderer/app/screen-layout-actions';
 import { screenLayout } from '@renderer/app/screen-layout';
+import { blockKey } from '@/lib/sidebarJoinedGroups';
 import { AlertTriangle, LayoutGrid, PanelLeft, Sparkles } from '@/lib/icons'
 import { GitFork } from '@/lib/icons'
 import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
@@ -229,14 +230,13 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     archive: requestArchive,
     fork: () => forkTask({ projectId, sessionId, navigate, translate }),
     'copy-id': () => void copySessionId(sessionId),
-    'leave-split': () => { if (splitBlockId) closeScreenBlock(splitBlockId); },
+    'leave-split': () => leaveSplit(blockKey.session(sessionId)),
   };
-  // 取消并排:这条会话正是并排着的几块里的一块。
-  const splitBlockId = screenLayout.order.length > 1 ? screenLayout.blockOfSession(sessionId) : undefined;
   const menuItems = sessionMenu('sidebar-row', {
     pinned: isPinned,
     sidebarPin,
-    inSplit: splitBlockId !== undefined,
+    // 取消并排:这条会话是并排着的一块(screen-layout splitKeys,话题行经 sidebarChatView 读同一份)。
+    inSplit: screenLayout.splitKeys.includes(blockKey.session(sessionId)),
     // spec session-fork-share:「任意会话可 fork」—— 问的是**来源那条腿**能不能分叉。
     canFork: agentForksOn(harness?.capabilities, row.runtime),
   }, new Set(Object.keys(menuRun) as SessionMenuAction[]));

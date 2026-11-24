@@ -116,6 +116,7 @@ export class ScreenLayoutStore {
       sessions: computed,
       focusedSession: computed,
       joinedGroups: computed,
+      splitKeys: computed,
       show: action,
       replaceWith: action,
       showRoot: action,
@@ -258,6 +259,14 @@ export class ScreenLayoutStore {
   corners(blockId: string): { topLeft: boolean; topRight: boolean } {
     if (!this.layout) return { topLeft: true, topRight: true };
     return { topLeft: cornerPane(this.layout, 'top-left') === blockId, topRight: cornerPane(this.layout, 'top-right') === blockId };
+  }
+
+  /**
+   * 「这样东西此刻是并排着的几块里的一块」的唯一真值(contentKey;一块时为空):侧栏里一行的「取消并排」只认它 ——
+   * 会话页自己的行直接读,壳画的行经 sidebarChatView 读同一份。群旁边贴着的那块(group-participant-panes)也算。
+   */
+  get splitKeys(): string[] {
+    return this.order.length > 1 ? this.order.map((blockId) => contentKey(this.blocks.get(blockId)!)) : [];
   }
 
   /**

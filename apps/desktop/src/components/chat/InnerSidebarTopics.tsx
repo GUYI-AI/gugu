@@ -55,9 +55,8 @@ export function InnerSidebarTopics({ chatId, page = false, query = '' }: { chatI
     [chatId, topics.length, level.hidden, level.calling],
   )
 
-  // 行高亮 = 屏上聚焦的那条会话(与聊天列表同一个真值)。并排着的那一组(会话页发来的)里有它 = 右键可「取消并排」。
-  const { focusedChatId, groups } = useSidebarChatView()
-  const split = new Set(groups.filter((group) => group.onScreen).flatMap((group) => group.members))
+  // 行高亮 = 屏上聚焦的那条会话(与聊天列表同一个真值)。它是并排着的一块(会话页发来的 split)= 右键可「取消并排」。
+  const { focusedChatId, split = [] } = useSidebarChatView()
   // 与聊天列表侧栏那一份点话题同一条路:话题和群一样是一条主会话,请会话页摆出它自己那一块(#62)。
   const open = useStableHandler((topic: ChatItem, beside: boolean) => {
     const sessionPage = readSessionpageViewRequestBridge()
@@ -75,13 +74,13 @@ export function InnerSidebarTopics({ chatId, page = false, query = '' }: { chatI
   const leaveSplit = useStableHandler((topicId: string) => {
     const sessionPage = readSessionpageViewRequestBridge()
     if (!sessionPage?.leaveSplit) throw new Error('sessionpage view request bridge cannot leave a split')
-    sessionPage.leaveSplit(topicId)
+    sessionPage.leaveSplit(blockKey.chat(topicId))
   })
 
   return (
     <div role="list" aria-label={t('history.tabs.topics')} data-inner-sidebar-topics={chatId}>
       {rows.shown.map((topic) => (
-        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === focusedChatId} onOpen={open} onPin={pin} onClose={canClose ? close : undefined} onSetLevel={setLevel} onRemove={remove} onLeaveSplit={split.has(blockKey.chat(topic.id)) ? leaveSplit : undefined} />
+        <InnerTopicRow key={topic.id} topic={topic} active={topic.id === focusedChatId} onOpen={open} onPin={pin} onClose={canClose ? close : undefined} onSetLevel={setLevel} onRemove={remove} onLeaveSplit={split.includes(blockKey.chat(topic.id)) ? leaveSplit : undefined} />
       ))}
     </div>
   )

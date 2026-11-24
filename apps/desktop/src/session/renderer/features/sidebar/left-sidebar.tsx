@@ -144,11 +144,13 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const focusedChatId = currentView === 'chat' ? viewedChatId : innerChatId ?? viewedChatId;
   // 拼在一屏的几组:壳画的「对话」也把同一组的几行并在一处(同「项目」这边)。
   const joinedGroups = sidebarStore.joinedGroups;
+  // 并排着的几块:壳画的行(内层侧栏的话题)给「取消并排」认这一份(同会话页自己的行)。
+  const splitKey = screenLayout.splitKeys.join('\n');
   // oneList: the desktop one list is mounted. The phone never mounts this sidebar, so the shell's shared components
   // (chat list, composer verbs, rail) read it to tell the desktop list from the phone.
   React.useEffect(
-    () => publishSidebarChatView({ focusedChatId, groups: joinedGroups, oneList: true }),
-    [focusedChatId, joinedGroups]
+    () => publishSidebarChatView({ focusedChatId, groups: joinedGroups, split: splitKey ? splitKey.split('\n') : [], oneList: true }),
+    [focusedChatId, joinedGroups, splitKey]
   );
 
   return (
