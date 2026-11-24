@@ -4,7 +4,7 @@ import {
 } from '../../../electron/assistant-app-ensure'
 import { rendererLogger } from '../../lib/log'
 import { platform } from '../../platform'
-import { ASSISTANT_APP_ID, ASSISTANT_APP_TRUST } from '../../session/shared/extensions/assistant-entry'
+import { ASSISTANT_APP_ID, ASSISTANT_APP_TRUST, ASSISTANT_PROMOTED } from '../../session/shared/extensions/assistant-entry'
 import type { PhoneInstallRecord } from './phoneApps'
 
 /**
@@ -58,7 +58,8 @@ export function createPhoneAssistantAppEnsure(deps: PhoneAssistantAppEnsureDeps,
   }
   const ensurer: AssistantAppEnsurer = assistantAppEnsurer({
     installed: deps.installed,
-    needed: () => hasAssistant,
+    // Not promoted: its App is an ordinary App, put in by the person (assistant-entry.ts).
+    needed: () => ASSISTANT_PROMOTED && hasAssistant,
     install: deps.install,
     afterInstall: deps.ready,
     sleep: deps.sleep,

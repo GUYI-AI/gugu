@@ -78,7 +78,6 @@ import { AppWorkLedgerHost } from '../components/appSlot/AppWorkLedgerHost'
 import { AssistantAppEntryHost } from '../components/appSlot/AssistantAppEntryHost'
 import { openAssistantApp, openAssistantEntry, openAssistantPageInApp, readAssistantEntryTarget } from '../lib/assistantEntry'
 import { appConversationSurfaceShows } from '../lib/appConversationSurfaceBridge'
-import { OfflineSessionSlotHost } from '../components/chat/OfflineSessionSlotHost'
 import { ChatListSlotHost } from '../components/ChatListSlotHost'
 import { AssistantTaskChatOpener } from '../components/assistant/AssistantTaskChatOpener'
 import { FeedbackHost } from '../components/FeedbackHost'
@@ -114,6 +113,7 @@ import type { ContactGroupChat, ContactUser } from '@gugu/core/shared/types/cont
 import { IconButton } from '../components/ui/IconButton'
 import { Settings } from '@/lib/icons'
 import { parseExtensionTabKind } from '../session/shared/extensions/manifest'
+import { ASSISTANT_PROMOTED } from '../session/shared/extensions/assistant-entry'
 import { followLink, openLink } from '../lib/guguLinks'
 import { useMobileShell, readMobileShell } from '../hooks/useMobileShell'
 import { useMobileChatOpenNonce } from '../hooks/useMobileChatOpenNonce'
@@ -1061,7 +1061,7 @@ function InnerLayout({
                     <ChatListPanel
                       mobile={mobile}
                       hidden={chatListHidden}
-                      lead={mobile && phoneAssistant.available ? <PhoneAssistantRow state={phoneAssistant} onOpen={openPhoneAssistant} /> : undefined}
+                      lead={mobile && ASSISTANT_PROMOTED && phoneAssistant.available ? <PhoneAssistantRow state={phoneAssistant} onOpen={openPhoneAssistant} /> : undefined}
                       leadChatId={phoneAssistant.chatId}
                       headerLeading={mobile ? <PhoneMeButton user={user} onOpen={() => selectTab('settings')} /> : undefined}
                       onChatSelected={(focusTarget = 'composer') => navigateMobile(() => {
@@ -1302,7 +1302,6 @@ function InnerLayout({
           onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile}
         />
       )}
-      {!mobile && sessionHostAvailable && <OfflineSessionSlotHost />}
       {/* #1925 An App's main page beside its bound conversation: the session page leaves the column, the native conversation is drawn here. */}
       {!mobile && sessionHostAvailable && (
         <AppConversationSurfaceHost visible={screenTab === 'tasks'} onOpenUserChat={slotOpenProfileChat} onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile} />

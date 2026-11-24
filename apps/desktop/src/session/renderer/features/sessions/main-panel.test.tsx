@@ -3,13 +3,15 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
-const state = vi.hoisted(() => ({ nativeInputVersion: undefined as number | undefined, kind: 'project-error', reach: 'Lab Mac is offline' as string | null, link: 'closed', cloud: false, deviceId: 'mac-1' as string | null, presence: 'present' }));
+const state = vi.hoisted(() => ({ kind: 'project-error', reach: 'Lab Mac is offline' as string | null, link: 'closed', cloud: false, deviceId: 'mac-1' as string | null, presence: 'present' }));
 const ensureMounted = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const fill = vi.hoisted(() => vi.fn());
 vi.mock('./open-session-in-session', () => ({ openSessionInSessionWhenReady: fill }));
-vi.mock('@renderer/lib/offline-session-slot', () => ({ OfflineSessionSlot: ({ sessionId, label }: { sessionId: string; label: string }) => <div data-offline-session={sessionId}>{label}<textarea aria-label="Native message" /></div> }));
 vi.mock('@renderer/features/sessions/stores/session-selectors', () => ({
-  getSessionPageStore: () => ({}), sessionViewKind: () => state.kind,
+  // A listed session's store: unprovisioned until ready; a project that never mounted has none.
+  getSessionPageStore: () => ['idle', 'provisioning', 'provision-error'].includes(state.kind) ? { state: 'unprovisioned', data: { projectId: 'p' } }
+    : state.kind === 'ready' ? { state: 'provisioned', data: { projectId: 'p' } } : undefined,
+  sessionViewKind: () => state.kind,
   getSessionManagerStore: () => ({}), sessionErrorMessage: () => 'Connection lost',
 }));
 vi.mock('@renderer/features/sessions/session-view-context', () => ({
@@ -36,7 +38,7 @@ let root: Root;
 let container: HTMLDivElement;
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 beforeEach(() => {
-  state.nativeInputVersion = undefined; state.kind = 'project-error'; state.reach = 'Lab Mac is offline'; state.link = 'closed'; state.cloud = false; state.deviceId = 'mac-1'; state.presence = 'present'; fill.mockClear(); ensureMounted.mockClear();
+  state.kind = 'project-error'; state.reach = 'Lab Mac is offline'; state.link = 'closed'; state.cloud = false; state.deviceId = 'mac-1'; state.presence = 'present'; fill.mockClear(); ensureMounted.mockClear();
   container = document.body.appendChild(document.createElement('div'));
   root = createRoot(container);
 });
@@ -44,32 +46,37 @@ afterEach(() => { act(() => root.unmount()); container.remove(); });
 const render = () => act(() => root.render(<SessionContentGate><span>Task workspace</span></SessionContentGate>));
 /** What the block says, without its strip (the cold strip carries the machine's connection state, #2301 Q3). */
 const body = () => [...container.querySelectorAll('[data-slot="cold-session-strip"]')].reduce((text, strip) => text.replace(strip.textContent ?? '', ''), container.textContent ?? '');
+const stripState = () => container.querySelector('[data-slot="cold-session-strip"] [data-testid="session-machine-status"]')?.getAttribute('data-state');
 
-describe('task preparation while its machine is unavailable', () => {
-  it.each(['project-error', 'provision-error'])('names the unavailable machine instead of a generic Retry screen: %s', kind => {
+// owner 11-24: one page. A session whose machine does not answer opens as its usual page (the machine's state in its strip),
+// ❌ a separate offline page.
+describe('a session whose machine does not answer', () => {
+  it.each(['idle', 'provisioning', 'provision-error'])('draws its usual page and fills its conversation once: %s', kind => {
     state.kind = kind;
     render();
-    expect(body()).toBe('Lab Mac is offline');
+    expect(container.textContent).toBe('Task workspace');
     expect(container.querySelector('button')).toBeNull();
-    state.reach = null; state.kind = 'ready'; state.link = 'open';
+    expect(fill).toHaveBeenCalledExactlyOnceWith({ projectId: 'p', sessionId: 's', onlyIfNoTabs: true });
+    state.kind = 'ready'; state.reach = null; state.link = 'open';
     render();
     expect(container.textContent).toBe('Task workspace');
+    expect(fill).toHaveBeenCalledOnce();
   });
 
-  it('still names the offline machine before the workspace reach resolver has a status', () => {
-    state.reach = null;
+  it.each(['project-mounting', 'project-error'])('says only that the machine is away when its project never mounted: %s', kind => {
+    state.kind = kind;
     render();
-    expect(body()).toBe('Lab Mac is offline');
-    expect(container.querySelector('[data-slot="cold-session-strip"] [data-testid="session-machine-status"]')?.getAttribute('data-state')).toBe('device_offline');
+    expect(body()).toBe('');
+    expect(stripState()).toBe('device_offline');
     expect(container.querySelector('button')).toBeNull();
   });
 
-  it.each([undefined, 1, 2])('accepts input without requiring native version %s and fills once after recovery', version => {
-    state.kind = 'project-error'; state.nativeInputVersion = version;
+  it('fills the conversation once the machine is back and the session ready', () => {
+    state.reach = null;
     render();
-    expect(container.querySelector('[data-offline-session="s"]')).not.toBeNull();
-    expect(container.querySelector('textarea')).not.toBeNull();
-    state.kind = 'ready'; state.reach = null; state.link = 'open';
+    expect(stripState()).toBe('device_offline');
+    expect(fill).not.toHaveBeenCalled();
+    state.kind = 'ready'; state.link = 'open';
     render();
     expect(container.textContent).toBe('Task workspace');
     expect(fill).toHaveBeenCalledExactlyOnceWith({ projectId: 'p', sessionId: 's', onlyIfNoTabs: true });
@@ -77,50 +84,27 @@ describe('task preparation while its machine is unavailable', () => {
     expect(fill).toHaveBeenCalledOnce();
   });
 
-  it.each(['project-mounting', 'idle', 'provisioning', 'project-error', 'provision-error'])('keeps input available without a directory version: %s', kind => {
-    state.kind = kind;
-    render();
-    expect(body()).toBe('Lab Mac is offline');
-    expect(container.querySelector('textarea')).not.toBeNull();
-    expect(container.querySelector('[data-offline-session]')).not.toBeNull();
-  });
-
-  it.each([undefined, 1, 2])('retains the ready workspace during a disconnect or reconnect: native %s', version => {
-    state.kind = 'ready'; state.nativeInputVersion = version;
+  it('retains the ready workspace during a disconnect or reconnect', () => {
+    state.kind = 'ready';
     render();
     expect(container.textContent).toBe('Task workspace');
     state.link = 'connecting';
     render();
     expect(container.textContent).toBe('Task workspace');
-    expect(container.querySelector('[data-offline-session]')).toBeNull();
     expect(fill).not.toHaveBeenCalled();
   });
 
-  it('keeps cloud wake ahead of the native offline page', () => {
-    state.nativeInputVersion = 2; state.cloud = true;
+  it('keeps cloud wake ahead of it', () => {
+    state.cloud = true;
     render();
     expect(container.textContent).toBe('remoteHost.status.waking');
-    expect(container.querySelector('[data-offline-session]')).toBeNull();
   });
 
   it('does not fill an ordinary online task or a user-emptied layout', () => {
-    state.nativeInputVersion = 2; state.kind = 'ready'; state.reach = null; state.link = 'open';
+    state.kind = 'ready'; state.reach = null; state.link = 'open';
     render(); render();
     expect(container.textContent).toBe('Task workspace');
     expect(fill).not.toHaveBeenCalled();
-  });
-
-  // owner 11-23: a task on another machine opens on its own page while its workspace prepares, its machine answering or
-  // not (❌ a separate 「正在准备文件…」 page); the panel takes over once it is ready.
-  it.each(['project-mounting', 'idle', 'provisioning'])('opens on its own page while the workspace prepares, machine connected: %s', kind => {
-    state.kind = kind; state.reach = null; state.link = 'open';
-    render();
-    expect(container.querySelector('[data-offline-session="s"]')).not.toBeNull();
-    expect(container.textContent).not.toContain('task.settingUpWorkspace');
-    state.kind = 'ready';
-    render();
-    expect(container.textContent).toBe('Task workspace');
-    expect(fill).toHaveBeenCalledExactlyOnceWith({ projectId: 'p', sessionId: 's', onlyIfNoTabs: true });
   });
 
   it('keeps an ordinary failure actionable when the machine is connected', () => {
@@ -129,23 +113,22 @@ describe('task preparation while its machine is unavailable', () => {
     expect(container.textContent).toContain('task.setUpWorkspaceFailed');
     expect(container.querySelector('button')?.textContent).toBe('common.retry');
   });
-});
 
-it('does not create an input target when the machine id is unavailable', () => {
-  state.deviceId = null;
-  render();
-  expect(container.querySelector('[data-offline-session]')).toBeNull();
-  expect(body()).toBe('Lab Mac is offline');
+  it('prepares with the usual progress while the machine answers', () => {
+    state.kind = 'provisioning'; state.reach = null; state.link = 'open';
+    render();
+    expect(container.textContent).toBe('task.settingUpWorkspace');
+  });
 });
 
 // #3425 A project of another machine that the table does not have yet, while only its machine's own list can say whether it exists
 // (the machine's hidden task workspace is in no account copy): the guard lets the view through, and the pane must not be blank.
 describe('a project of another machine that is not in the table yet', () => {
-  it('shows the offline machine screen of an unmounted project, with the native input', () => {
+  it('says the machine is away for an unmounted project', () => {
     state.kind = 'missing'; state.presence = 'unknown';
     render();
-    expect(body()).toBe('Lab Mac is offline');
-    expect(container.querySelector('[data-offline-session="s"] textarea')).not.toBeNull();
+    expect(body()).toBe('');
+    expect(stripState()).toBe('device_offline');
     expect(container.querySelector('button')).toBeNull();
   });
 

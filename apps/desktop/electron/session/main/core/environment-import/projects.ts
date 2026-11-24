@@ -178,8 +178,9 @@ export async function importCodexProjects(
     import('../projects/operations/project-folders'),
     import('../projects/operations/create-local-project'),
     import('../projects/operations/openProject'),
+    import('../projects/operations/project-groups'),
   ]);
-  const [{ getLocalProjectByPath }, { getProjectOwningAttachedFolder }, { createLocalProject }, { openProject }] = operations;
+  const [{ getLocalProjectByPath }, { getProjectOwningAttachedFolder }, { createLocalProject }, { openProject }, { ensureRegisteredProjectGroup }] = operations;
   for (const selected of selection) {
     options.signal?.throwIfAborted();
     const base = { localSourceId: selected.localSourceId, sourceFingerprint: selected.sourceFingerprint,
@@ -233,6 +234,7 @@ export async function importCodexProjects(
       // Once registered, finish the mount and report it even if cancellation
       // arrives. Cancellation is checked before the next item, not after commit.
       const opened = await openProject(project.id);
+      if (opened.success) await ensureRegisteredProjectGroup(project);
       results.push({ ...base, target,
         status: opened.success ? existing ? 'exists' : 'imported' : 'failed',
         ...(opened.success ? {} : { reason: 'open-failed' as const }),

@@ -27,7 +27,7 @@ Calls, from a page only:
 - Extra request headers: `Accept`, `Content-Type`, `If-None-Match` or `X-…-Api-Version` only.
 - On a page an agent works, a read is `unavailable` and a write is handed to the agent: the person's credential is used
   only on a page the person works.
-- `gugu.credentials.choose(site, { hint?, help? })` (API 64) → `{ chosen }`: inside the person's click, opens the host's own
+- `gugu.credentials.choose(site, { hint?, help? })` (API 65) → `{ chosen }`: inside the person's click, opens the host's own
   dialog to pick one of their saved credentials for your App on that site, or save a new one there. `hint` (up to 120
   characters) says what to save (`A GitHub fine-grained token: Pull requests read/write, Contents read`), `help` is the
   `https://` page that makes one. Call it when a request answers

@@ -80,7 +80,7 @@ import type {
 } from '@shared/extensions/market';
 import { marketDownloadProgressChannel, marketRefreshedChannel } from '@shared/extensions/marketEvents';
 import type { MarketRefreshed } from '@shared/extensions/market-snapshot';
-import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry';
+import { ASSISTANT_APP_ID, isPromotedAssistantApp } from '@shared/extensions/assistant-entry';
 import { declaredContexts, type ExtensionManifest } from '@shared/extensions/manifest';
 import { readCachedDevices } from '@/store/devicesCache';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
@@ -876,7 +876,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     ? { status: 'loading' }
     : shelf;
   const marketRows = shelf.status === 'ready' ? shelf.items : [];
-  const assistantMarketItem = marketRows.find((item) => item.manifest.id === ASSISTANT_APP_ID);
+  const assistantMarketItem = marketRows.find((item) => isPromotedAssistantApp(item.manifest.id));
 
   const openInstalledDetail = (manifest: ExtensionManifest) => {
     setJustInstalled(null);

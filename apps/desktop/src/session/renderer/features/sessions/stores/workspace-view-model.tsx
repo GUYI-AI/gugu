@@ -28,6 +28,7 @@ import {
   sessionChangedChannel,
 } from '@shared/core/sessions/sessionEvents';
 import { sessionTabKind } from '@renderer/features/sessions/session-tab-kind';
+import { drawnWithoutWorkspace } from '@renderer/features/sessions/machine-unavailable-label';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { closeTabsOfSession, findChatPaneId, isSessionConversationTab, sessionConversationTabId } from '../view/session-pane-policy';
 import type { OpenedOutput } from '@gugu/session-chat-ui/opened-outputs';
@@ -135,12 +136,13 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
     // 「在屏上」不只是路由那一条(#7052 一屏几块):摆在某一块里(会话页正显示着)、开在单独的窗里,都看得见。
     // 只认路由时,重启后没被选中的那块一直是空的,点它一下对话才出来(owner 2026-10-09 实机截图)。
     // 「在屏上」只在 app/sessions-on-screen.ts 一处定义,这里问的是「它的页在不在屏上」。
+    // 那台机器不应答时没有工作区也画这一页(drawnWithoutWorkspace):对话读它的记录,输入走 outbox 等那台回来。
     const routed = () =>
       appState.navigation.currentViewId === 'session' &&
       (appState.navigation.viewParamsStore['session'] as { sessionId?: string } | undefined)?.sessionId === this.sessionId;
     this._disposers.push(
       reaction(
-        () => _sessionPageStore.state === 'provisioned' && sessionPageOnScreen(this.sessionId),
+        () => (_sessionPageStore.state === 'provisioned' || drawnWithoutWorkspace(_sessionPageStore)) && sessionPageOnScreen(this.sessionId),
         (isActive) => this.paneLayout.setViewActive(isActive),
         { fireImmediately: true }
       )

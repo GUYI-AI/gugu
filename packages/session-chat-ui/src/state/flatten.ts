@@ -549,9 +549,12 @@ export function flattenTier(
             const gapBefore = units[0].gapBefore;
             units[0] = { ...units[0], gapBefore: 0 };
             const id = `${block.id}:steps`;
+            // The viewport is one row of the exchange its steps belong to: without their activity it would split the A2A fold
+            // in two and stay open between the halves.
             out.push({ id, itemId: id, groupId: id, groupRole: 'solo', gapBefore,
               kind: 'conversation-process-steps', data: { id, live: block.live, units },
-              children: units, conversationProcessOwner: conversationOwner, conversationUtterance: conversationOwner });
+              children: units, conversationProcessOwner: conversationOwner, conversationUtterance: conversationOwner,
+              ...(units[0].activityEvent ? { activityEvent: units[0].activityEvent } : {}) });
             lastKind = 'conversation-process-steps';
           }
         };

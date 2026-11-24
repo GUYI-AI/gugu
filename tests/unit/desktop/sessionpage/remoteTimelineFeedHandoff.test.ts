@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 
-const host = vi.hoisted(() => ({ snapshots: 0, afters: 0, subscribedFrom: [] as unknown[] }))
+const host = vi.hoisted(() => ({ snapshots: 0, afters: 0, subscribedFrom: [] as unknown[], away: false }))
 const turn = (id: string) => ({ id, role: 'assistant', startedAt: 1, outcome: null, itemIds: [], items: [] }) as unknown as TranscriptTurn
 const snapshot = () => {
   host.snapshots += 1
@@ -13,7 +13,10 @@ const snapshot = () => {
 // The session page reaches the machine through its own line (`rpcOn`): same host answers as the timeline page's client.
 vi.mock('@renderer/lib/ipc', () => ({
   rpcOn: () => ({ sessionTimeline: {
-    sessionSnapshot: async () => ({ ok: true, value: snapshot() }),
+    sessionSnapshot: async () => {
+      if (host.away) throw Object.assign(new Error('Could not reach dev.'), { code: 'unreachable' })
+      return { ok: true, value: snapshot() }
+    },
     sessionAfter: async () => { host.afters += 1; return { ok: false, error: { code: 'unexpected', message: 'not asked here' } } },
     sessionSubscribe: async (input: { cursor: unknown }) => { host.subscribedFrom.push(input.cursor); return { ok: true, value: null } },
     sessionUnsubscribe: async () => undefined,
@@ -70,4 +73,14 @@ describe('the session page of a remote task takes over the timeline page\'s stre
     expect(feed.state.turns.map((t) => t.id)).toEqual(['t1', 't2'])
     feed.close()
   })
+})
+
+// Its machine does not answer when the page opens: the failure keeps its code, so the page waits for that machine and opens
+// again when it is back (acp-load-error `connection_lost`), ❌ a history failure that stays until someone clicks.
+it('an unreachable machine stays a lost line', async () => {
+  host.away = true
+  const feed = new RemoteTimelineFeed('s-away', 'dev', () => undefined, () => undefined)
+  await expect(feed.open()).rejects.toMatchObject({ code: 'unreachable' })
+  feed.close()
+  host.away = false
 })

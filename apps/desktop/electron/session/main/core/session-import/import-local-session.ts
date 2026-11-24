@@ -8,6 +8,7 @@ import { createLocalProject } from '@main/core/projects/operations/create-local-
 import { ensureRepositoryWorkspace } from '@main/core/projects/operations/ensure-repository-workspace';
 import { getLocalProjectByPath } from '@main/core/projects/operations/getProjects';
 import { openProject } from '@main/core/projects/operations/openProject';
+import { ensureRegisteredProjectGroup } from '@main/core/projects/operations/project-groups';
 import { sessionService } from '@main/core/sessions/session-service';
 import { log } from '@main/lib/logger';
 import { db } from '@main/db/client';
@@ -61,6 +62,7 @@ function importFailure(code: ImportErrorCode, name: string, context: Record<stri
  * 建任务时报成 project-not-found —— 一个指向错误方向的报错（项目明明在）。
  * 更糟的是重试：第二次会走「这个目录已经是项目了」的复用分支，同样不挂 → 永久失败。
  * 所以这里对**两条路**都显式挂一次并检查结果。
+ * 挂上之后再补它的项目群(和人打开这个文件夹时一样):侧栏只按项目群认项目,没有群的项目里的会话全平铺在列表里。
  */
 async function mountImportProject<T extends { id: string; path: string }>(project: T): Promise<T> {
   const opened = await openProject(project.id);
@@ -72,6 +74,7 @@ async function mountImportProject<T extends { id: string; path: string }>(projec
       message,
     });
   }
+  await ensureRegisteredProjectGroup(project);
   return project;
 }
 

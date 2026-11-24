@@ -170,10 +170,14 @@ export const EXTENSION_ASSISTANT_RULES_API_VERSION = 45;
 // says which rows are rare. Presentation only, as 51: an older host draws the rows as given.
 // 63 (ui-entry.ts): `<gugu-file-mark folder [open]>`, a folder from the host's file icon set, in currentColor (ui.css gives it
 // the set's folder colour). Presentation only, as 51: an older host draws the element as a file by its name.
-// 64 (app-credentials.ts): `gugu.credentials.choose(site, { hint?, help? })` opens the host's dialog, in the person's click, to
+// 64: `gugu.ready()`, a message's widget page saying its content is drawn. The host keeps the widget's last picture over
+// the page until then, so a page started again (scrolled back to, its chat opened again) is never seen loading. An App
+// declaring an older version is shown at its first paint, as before.
+export const EXTENSION_WIDGET_READY_API_VERSION = 64;
+// 65 (app-credentials.ts): `gugu.credentials.choose(site, { hint?, help? })` opens the host's dialog, in the person's click, to
 // pick one of their saved credentials for the App on that website or save a new one (`hint`: what to save; `help`: the https
 // page that makes one); answers `{ chosen }`. `typeof gugu.credentials.choose` tells an older host.
-export const EXTENSION_API_VERSION = 64;
+export const EXTENSION_API_VERSION = 65;
 
 /** `gugu.toast(text)`: the longest line, and the least time between two toasts of one App. */
 export const APP_TOAST_MAX = 80;
@@ -997,6 +1001,8 @@ export const BRIDGE_VERBS = {
    * show itself, and only while the person is looking at it.
    */
   toast: { needs: null, only: 'page' },
+  /** 64 A widget page's content is drawn (`gugu.ready()`): the host takes its last picture away and keeps this one. */
+  ready: { needs: null, only: 'page' },
   /**
    * #1925 (46): the work the person's own assistant handed out, each row as the built-in list draws it, when the bound
    * conversation is the person's chat with that assistant — and, in a click, one row's task conversation drawn by the host

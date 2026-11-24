@@ -87,8 +87,8 @@ function useCompactWhenTabsSqueezed(ref: RefObject<HTMLSpanElement | null>): boo
   return compact;
 }
 
-/** A cold session block (no tabs yet): the same strip position, holding only the machine's state. */
-export const ColdSessionStrip = observer(function ColdSessionStrip({ children }: { children: ReactNode }) {
+/** A session block with no session to draw yet (its machine away): the same strip position, holding only the machine's state. */
+export const ColdSessionStrip = observer(function ColdSessionStrip({ children }: { children?: ReactNode }) {
   const { projectId } = useSessionViewContext();
   if (!machineRegistry.machineOf(projectId)) return <>{children}</>;
   return (

@@ -7,6 +7,7 @@ import type { BrowserWebviewElement } from '@renderer/features/browser/browser-w
 import { extensionSurfaceStore } from './extension-surface-store';
 import { extensionViewStore, type ExtensionViewClaim } from './extension-view-store';
 import { sessionWorkspace } from '@shared/extensions/app-runtime-protocol';
+import { EXTENSION_WIDGET_READY_API_VERSION } from '@shared/extensions/bridge-protocol';
 import { LOCAL_HOST, peekInstalledAppsTracked, useInstalledApps } from './installed-extensions';
 import { AppSettingsPage } from './app-settings-page';
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
@@ -197,6 +198,11 @@ export const ExtensionPage = observer(function ExtensionPage({
   const inlineRef = useRef(inline);
   inlineRef.current = inline;
   const isInline = inline !== undefined;
+  const manifest = installed.state === 'value' ? installed.value.manifestFor(extensionId) : undefined;
+  // @@@widget-ready - a widget whose App declares this interface says itself when its content is drawn (gugu.ready()):
+  // its snapshot stays over it until then, and the snapshot is taken again at that moment.
+  const waitsForReadyRef = useRef(false);
+  waitsForReadyRef.current = isInline && manifest !== undefined && manifest.apiVersion >= EXTENSION_WIDGET_READY_API_VERSION;
   const accountIdRef = useRef(accountId);
   accountIdRef.current = accountId;
   const onPaintedRef = useRef(onPainted);
@@ -380,7 +386,11 @@ export const ExtensionPage = observer(function ExtensionPage({
         guestBinding.ready(element.getWebContentsId());
         guestReadyRef.current = element;
         aimAt(claimOf());
-        if (isInline) fallback = setTimeout(painted, 3_000);
+        if (isInline && !waitsForReadyRef.current) fallback = setTimeout(painted, 3_000);
+        else if (isInline) fallback = setTimeout(() => {
+          log.warn('Widget did not call gugu.ready() in 10s; showing it as it is', { kind, extensionId });
+          painted();
+        }, 10_000);
       };
       // guest 崩了:旧的 webContents id 作废,绑定也作废。重载一次,dom-ready 会再来一遍、重新 bind;
       // ❌ 不能留着一个死 id 等下一次认领去 retarget —— 那只会换来一条 warn 和一格永远的空白。
@@ -406,12 +416,13 @@ export const ExtensionPage = observer(function ExtensionPage({
       element.addEventListener('dom-ready', ready);
       element.addEventListener('render-process-gone', gone);
       element.addEventListener('did-fail-load', failed);
-      // Loaded is enough for a widget (its snapshot is waiting); any other page shows at its first contentful paint, or after 3s.
-      const load = () => { if (isInline) frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
+      // Loaded is enough for a widget (its snapshot is waiting) unless it says when it is ready; any other page shows at its
+      // first contentful paint, or after 3s.
+      const load = () => { if (isInline && !waitsForReadyRef.current) frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
       element.addEventListener('did-finish-load', load);
       const signal = (event: Event) => {
         const channel = (event as Event & { channel: string }).channel;
-        if (channel === 'gugu-page-painted') painted();
+        if (channel === (waitsForReadyRef.current ? 'gugu-page-ready' : 'gugu-page-painted')) painted();
         else if (channel === 'gugu-widget-changed') { clearTimeout(changed); changed = setTimeout(capture, 1_000); }
       };
       element.addEventListener('ipc-message', signal);
@@ -558,7 +569,6 @@ export const ExtensionPage = observer(function ExtensionPage({
   }, [marked, pageKey]);
   // Not started yet, its box is still placed: the loading mark shows from the moment the page is asked for.
   if (!surface && !managed && inline) return null;
-  const manifest = installed.state === 'value' ? installed.value.manifestFor(extensionId) : undefined;
   const page = managed && manifest ? <AppSettingsPage key={`${manifest.version}:${JSON.stringify(manifest.settings)}`} manifest={manifest} active={claimOf() !== undefined} /> : surface ? <webview
     key={`${extensionId}:${surface.partition}`}
     ref={attachWebview}

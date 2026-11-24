@@ -4,7 +4,8 @@ import type { MessageReferenceTarget } from '@gugu/session-shared/markdown/diale
 import { chatService } from './chat'
 import { chatDb } from './supabase'
 
-export type WidgetOriginMessage = Pick<MessageItem, 'id' | 'chat_id' | 'sender_user_id' | 'content'>
+/** What reading an original takes: the message's id, its chat and its body. Nothing else of the row changes the read. */
+export type WidgetOriginMessage = Pick<MessageItem, 'id' | 'chat_id' | 'content'>
 export interface RegisteredWidget {
   id: string
   chat_id: string

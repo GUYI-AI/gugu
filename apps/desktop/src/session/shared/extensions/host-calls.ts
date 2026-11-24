@@ -145,6 +145,8 @@ export const HOST_CALLS = {
   notify: { verb: 'notify' },
   // #1925 (44) The host's own toast, a short line while the page is on screen and focused.
   toast: { verb: 'toast', pack: (text: string) => ({ text }) },
+  // 64 A widget page's content is drawn: the host shows the page in place of its last picture.
+  ready: { verb: 'ready', pack: () => ({}) },
   openLink: { verb: 'openLink', pack: (url: string) => ({ url }) },
   linkTo: { verb: 'linkTo', pack: (options: Record<string, unknown> = {}) => options },
   setTabTitle: { verb: 'setTabTitle', pack: (title: string) => ({ title }) },

@@ -53,6 +53,8 @@ async function call(method: string, args?: unknown): Promise<unknown> {
   } satisfies ExtensionBridgeRequest)) as ExtensionBridgeResponse;
   if (response.ok) {
     if (messageView && ['setTabTitle', 'setTabBadge'].includes(method)) ipcRenderer.sendToHost('gugu-widget-changed');
+    // 64 The widget's content is drawn: its host shows the page in place of the last picture (extension-view-layer.tsx).
+    if (messageView && method === 'ready') ipcRenderer.sendToHost('gugu-page-ready');
     return response.value;
   }
   // Carrying the code out means an extension can tell "the user said no" apart

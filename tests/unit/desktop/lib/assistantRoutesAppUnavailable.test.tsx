@@ -72,12 +72,12 @@ describe.each(UNAVAILABLE_APP_STATES)('the assistant App %s', (state) => {
   })
 
   // Owner 11-12: nothing of the assistant is in Settings, so there is no setup page to fall back on there (D9/D10: plain chat).
-  // Setting it up is the App's: with no assistant yet, the entry opens the Apps page on the assistant App (to install or switch
-  // it on), never a chat or Settings.
-  it('with no assistant yet, the same entry opens the Apps page on the assistant App: neither a chat nor a Settings page', () => {
+  // The assistant is not promoted (assistant-entry.ts ASSISTANT_PROMOTED): with no assistant yet, the entry sends nobody to set
+  // one up — not the Apps page, not a chat, not Settings.
+  it('with no assistant yet, the same entry goes nowhere: no Apps page, no chat, no Settings page', () => {
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
     openAssistantEntry()
-    expect(opened).toEqual([{ kind: 'app-detail', extensionId: 'gugu-assistant' }])
+    expect(opened).toEqual([])
     expect(settings).toEqual([])
   })
 

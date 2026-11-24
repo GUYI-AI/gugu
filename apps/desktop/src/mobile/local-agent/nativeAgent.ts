@@ -77,6 +77,7 @@ export const nativeAgent = registerPlugin<{
   hostState(input: { ownerId: string }): Promise<PhoneAgentHostState>
   hostCall(input: PhoneAgentHostCall): Promise<PhoneAgentHostReply>
   stopHost(input: { ownerId: string; clearCredentials?: boolean }): Promise<void>
+  resumeAfterAccountClosure(input: { ownerId: string }): Promise<{ resumed: true }>
   addListener(event: 'webAction', listener: (request: PhoneAgentWebAction) => void): Promise<PluginListenerHandle>
   webActionResult(input: { ownerId: string; id: string; result: DeviceActionOutcome }): Promise<void>
   cancelSession(input: { ownerId: string; sessionId: string }): Promise<void>

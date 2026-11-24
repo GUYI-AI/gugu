@@ -16,8 +16,8 @@ export interface AppCredentialDeclaration {
   format: string;
 }
 
-/** API 64: `gugu.credentials.choose(site)`, the host's own dialog to pick a saved credential for the App or save a new one. */
-export const APP_CREDENTIALS_CHOOSE_API_VERSION = 64;
+/** API 65: `gugu.credentials.choose(site)`, the host's own dialog to pick a saved credential for the App or save a new one. */
+export const APP_CREDENTIALS_CHOOSE_API_VERSION = 65;
 /** What the dialog is asked (main → the window that draws the page). `hint` and `help` are the App's words: what to save
  * (`A fine-grained token: Pull requests read/write, Contents read`) and an https page that makes one. */
 export interface AppCredentialChooseAsk { extensionId: string; appName: string; site: string; hint?: string; help?: string }
