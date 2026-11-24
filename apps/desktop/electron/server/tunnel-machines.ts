@@ -249,6 +249,12 @@ export function createTunnelMachines(deps: {
   const establish = async (tunnel: Tunnel): Promise<void> => {
     if (tunnel.establishing || !current(tunnel)) return
     tunnel.establishing = true
+    // How long each step took (`tunnel: connected`): the cloud round trip that opens the relay, the visitor coming up through
+    // it, the ssh handshake over it. A slow connect says which.
+    const started = Date.now()
+    const ms: Record<string, number> = {}
+    let mark = started
+    const lap = (step: string) => { const now = Date.now(); ms[step] = now - mark; mark = now }
     try {
       teardown(tunnel)
       const userId = await deps.currentUserId()
@@ -266,7 +272,9 @@ export function createTunnelMachines(deps: {
       if (!current(tunnel)) return
       let response: DeviceRpcResponse<unknown>
       try {
+        lap('prepare')
         response = await deps.callCloud(tunnel.deviceId, TUNNEL_OPEN_RPC_TYPE, { publicKey: key.publicKey }, OPEN_RPC_TIMEOUT_MS)
+        lap('open')
       } catch (error) {
         return fail(tunnel, 'unreachable', (error as Error).message)
       }
@@ -318,6 +326,7 @@ export function createTunnelMachines(deps: {
       })
       tunnel.frpc = frpc
       const up = await frpc.waitUp(VISITOR_UP_TIMEOUT_MS)
+      lap('visitor')
       if (!up.ok) return fail(tunnel, 'visitorFailed', `${up.reason}: ${up.detail}`)
       if (!current(tunnel)) return teardown(tunnel)
 
@@ -336,6 +345,7 @@ export function createTunnelMachines(deps: {
         ? ['-o', 'BatchMode=yes', ...buildEnsureMasterArgs(target, controlPath)]
         : sshBatchArgs(target, 'exit 0', null)
       const ssh = await runSsh(args, SSH_READY_TIMEOUT_MS)
+      lap('ssh')
       if (ssh.code !== 0) return fail(tunnel, 'sshFailed', ssh.stderr.trim().split('\n').slice(-2).join(' ') || `ssh 退出码 ${String(ssh.code)}`)
       if (!current(tunnel)) return teardown(tunnel)
       tunnel.accountUserId = open.relay.user
@@ -343,7 +353,7 @@ export function createTunnelMachines(deps: {
       // The backoff restarts when a device link opens over it (`linkOpened`), not here: a machine whose server refuses the
       // link connects this far every time.
       problems.delete(tunnel.deviceId)
-      deps.log('tunnel: connected', { deviceId: tunnel.deviceId, localPort })
+      deps.log('tunnel: connected', { deviceId: tunnel.deviceId, localPort, ms: { ...ms, total: Date.now() - started } })
       emit()
     } catch (error) {
       fail(tunnel, 'local', (error as Error).message)
