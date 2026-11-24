@@ -504,15 +504,16 @@ export function MemberProfileCard({
             </div>
           ) : null}
           {editControls?.transferOwner ? (
-            <button
-              type="button"
+            <Button
+              size="sm"
+              variant="secondary"
               data-profile-transfer-owner={member.id}
-              className={profileManageDangerClass}
+              className="w-full"
               onClick={'onTransfer' in editControls.transferOwner ? editControls.transferOwner.onTransfer : undefined}
               disabled={editBusy || !('onTransfer' in editControls.transferOwner)}
             >
               {t('group.memberList.transferOwner', { ns: 'messaging' })}
-            </button>
+            </Button>
           ) : null}
           {editControls?.transferOwner && 'blockedReason' in editControls.transferOwner ? (
             <div className="text-[length:var(--font-caption)] leading-[1.4] text-[var(--faint-fg)]" data-profile-transfer-owner-hint={member.id}>{editControls.transferOwner.blockedReason}</div>
