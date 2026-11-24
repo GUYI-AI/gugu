@@ -19,7 +19,7 @@ const ModalRenderer = lazy(() => import('@renderer/lib/modal/modal-renderer').th
  * The one host of the global session dialogs (modalStore: archive confirmation, rename). The task page's App renders it,
  * inside its tree and providers; it portals to `<body>`, so a dialog asked for while the task page is kept hidden (contacts,
  * #3366) shows there, ❌ in the hidden page. The phone shell, with no task page, renders it. It wears the task page's skin
- * as the settings sections do (SessionSettingsSection); the settings page only moves where it lands (setPortalContainer).
+ * as the settings sections do (SessionSettingsSection); Settings and a page modal (workspace.tsx PageModal) only move where it lands (setPortalContainer).
  */
 export const SessionModalHost = observer(function SessionModalHost() {
   const theme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme)
