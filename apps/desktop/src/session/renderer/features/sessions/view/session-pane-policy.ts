@@ -104,7 +104,7 @@ export function replaceSessionTab(paneLayout: SessionPaneLayout, sessionId: stri
     const pinnedEntry = pair ? paneLayout.mainGroup.pane.entries.get(pair.pinned) : undefined;
     const keptSide = pinnedEntry && (pinnedEntry.state as { sessionId?: string } | undefined)?.sessionId === sessionId ? pair!.side : undefined;
     const { chatTabAt } = closeTabsOfSession(paneLayout, sessionId);
-    const opened = paneLayout.open(kind, { sessionId }, { from: null, intent: 'newTab', ...(chatTabAt ? { target: { paneId: chatTabAt.paneId } } : {}) });
+    const opened = paneLayout.open(kind, { sessionId }, { from: null, intent: 'newTab' });
     if (opened && keptSide) paneLayout.pairWith(opened, keptSide, { by: 'restore' });
     if (!chatTabAt) return;
     const pane = paneLayout.groups.find((g) => g.paneId === chatTabAt.paneId)?.pane;

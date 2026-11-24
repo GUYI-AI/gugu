@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { openRegistryFixture, type RegistryFixture } from '@tooling/utils/provider-accounts';
-import * as nativeAuthMigration from './codex-native-auth-migration';
+import { CODEX_NATIVE_AUTH_ROOT, requestNativeCodexAccess } from '@gugu/core/local/codex-native-auth.mjs';
+import { releaseNativeCodexAuthSources } from './codex-native-auth-source';
 
 const state = vi.hoisted(() => ({ fixture: null as RegistryFixture | null, home: '', codexRoot: '', claudeRoot: '' }));
 vi.mock('@main/db/client', () => ({
@@ -51,6 +52,8 @@ beforeEach(async () => {
     INSERT INTO sessions (id, project_id, provider, runtime, config)
     VALUES ('old', 'project', 'codex', 'pty', '{"version":"1","type":"pty"}');`);
 });
+afterAll(releaseNativeCodexAuthSources);
+
 afterEach(async () => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
@@ -61,7 +64,7 @@ afterEach(async () => {
 
 function chatgptAuth(subject: string, refresh = 'r1'): string {
   const payload = Buffer.from(JSON.stringify({ sub: subject, 'https://api.openai.com/auth': { chatgpt_account_id: 'ws' } })).toString('base64url');
-  return JSON.stringify({ auth_mode: 'chatgpt', OPENAI_API_KEY: null, tokens: { id_token: `h.${payload}.s`, refresh_token: refresh, account_id: 'ws' } });
+  return JSON.stringify({ auth_mode: 'chatgpt', OPENAI_API_KEY: null, tokens: { id_token: `h.${payload}.s`, access_token: `access-${subject}-${refresh}`, refresh_token: refresh, account_id: 'ws' } });
 }
 
 async function writeAuthAt(root: string, text: string): Promise<void> {
@@ -71,52 +74,34 @@ async function writeAuthAt(root: string, text: string): Promise<void> {
 
 const vault = (id: string) => join(state.home, 'harness-connections', 'codex', id === 'native' ? 'managed-native' : id, '.codex');
 
-it('resolves Codex startup against the new default when a switch is publishing its selection', async () => {
-  await writeAuthAt(process.env.CODEX_HOME!, chatgptAuth('terminal'));
-  const a = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'A' });
-  const b = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'B' });
-  await writeAuthAt(vault(a.id), chatgptAuth('a'));
-  await writeAuthAt(vault(b.id), chatgptAuth('b'));
-  await selectHarnessConnection('codex', a.id);
-  const registry = state.fixture!.registry;
-  expect((await registry.getAccount('harness:codex', 'native'))?.meta?.harnessConnection?.nativeOAuth).toBeDefined();
+async function sessionAuth(sessionId = 'old') {
+  const context = await resolveHarnessConnection('codex', { sessionId });
+  expect(context.configRootEnv).toBeUndefined();
+  const access = await requestNativeCodexAccess(context.credentialEnv ?? {});
+  return { connectionId: context.connectionId, root: context.credentialEnv?.[CODEX_NATIVE_AUTH_ROOT], token: access?.accessToken };
+}
 
-  const reachedCommit = Promise.withResolvers<void>();
-  const allowCommit = Promise.withResolvers<void>();
-  const probeReconciled = Promise.withResolvers<void>();
-  const setDefault = registry.setDefaultAccount.bind(registry);
-  vi.spyOn(registry, 'setDefaultAccount').mockImplementation(async (provider, id) => {
-    reachedCommit.resolve();
-    await allowCommit.promise;
-    return setDefault(provider, id);
-  });
-  const switching = selectHarnessConnection('codex', b.id);
-  await Promise.race([reachedCommit.promise, switching]);
+it('uses only the committed default even when SQLite rejects a switch', async () => {
+  const first = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'A' });
+  const second = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'B' });
+  await writeAuthAt(vault(first.id), chatgptAuth('a'));
+  await writeAuthAt(vault(second.id), chatgptAuth('b'));
+  await selectHarnessConnection('codex', first.id);
 
-  // Hold any obsolete default snapshot until after the switch publishes B.
-  const getDefault = registry.getDefaultAccountId.bind(registry);
-  vi.spyOn(registry, 'getDefaultAccountId').mockImplementation(async (provider) => {
-    const selected = await getDefault(provider);
-    if (selected === a.id) await switching;
-    return selected;
-  });
-  vi.spyOn(nativeAuthMigration, 'reconcileCodexNativeReference').mockImplementation(async () => {
-    probeReconciled.resolve();
-    return true;
-  });
-  const resolving = resolveHarnessConnection('codex');
-  try {
-    await Promise.race([probeReconciled.promise, resolving]);
-    // Drain the probe's microtasks after its last pre-selection I/O.
-    await new Promise<void>((resolve) => setImmediate(resolve));
-  } finally {
-    allowCommit.resolve();
-  }
+  state.fixture!.sqlite.exec(`CREATE TRIGGER reject_selection BEFORE UPDATE OF is_default ON provider_accounts
+    WHEN NEW.account_id = '${second.id}' AND NEW.is_default = 1
+    BEGIN SELECT RAISE(ABORT, 'injected default commit failure'); END`);
+  await expect(selectHarnessConnection('codex', second.id)).rejects.toThrow();
+  expect(await sessionAuth()).toMatchObject({ connectionId: first.id, token: 'access-a-r1' });
+  state.fixture!.sqlite.exec('DROP TRIGGER reject_selection');
 
-  const [, context] = await Promise.all([switching, resolving]);
-  expect(context.connectionId).toBe(b.id);
-  expect(await registry.getDefaultAccountId('harness:codex')).toBe(b.id);
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('b'));
+  await selectHarnessConnection('codex', second.id);
+  expect(await sessionAuth()).toMatchObject({ connectionId: second.id, token: 'access-b-r1' });
+  await selectHarnessConnection('codex', first.id);
+  expect(await sessionAuth()).toMatchObject({ connectionId: first.id, token: 'access-a-r1' });
+  expect(await readFile(join(vault(first.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('a'));
+  expect(await readFile(join(vault(second.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('b'));
+  await expect(stat(join(state.codexRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
 it('references the terminal account and keeps the former native vault as an independent account without writing the terminal', async () => {
@@ -190,13 +175,13 @@ it('carries the active file-backed Codex API key into the managed slot during up
   expect(await readFile(join(terminal, 'auth.json'), 'utf8')).toBe(former);
 });
 
-// #2507 删掉正在用的账号 = 一次切回原生:用户根里换回原来那份登录,删掉的那个号的登录留在它自己的保管目录里。
+// #2507 删掉正在用的账号会切回原生；两份凭据仍在各自的目录。
 it('removing the current Codex account falls back to the existing CLI sign-in and leaves the removed one in its vault', async () => {
   await writeAuthAt(state.codexRoot, chatgptAuth('original'));
   const work = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'Work' });
   await writeAuthAt(vault(work.id), chatgptAuth('work'));
   await selectHarnessConnection('codex', work.id);
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('work'));
+  expect(await sessionAuth()).toMatchObject({ connectionId: work.id, token: 'access-work-r1' });
 
   await removeHarnessConnection('codex', work.id);
   expect(await listHarnessConnections('codex')).toEqual([
@@ -209,64 +194,57 @@ it('removing the current Codex account falls back to the existing CLI sign-in an
   await expect(removeHarnessConnection('codex', 'native')).rejects.toThrow('cannot be removed');
 });
 
-it('switches Codex by moving credentials through the managed root, keeping rotated tokens with their owner', async () => {
-  await writeAuthAt(state.codexRoot, chatgptAuth('original'));
-  const work = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'Work' });
-  await writeAuthAt(vault(work.id), chatgptAuth('work'));
-  // 不在用户根里的账号:按连接问登录态时读它的保管目录。
-  expect(await resolveHarnessConnection('codex', { connectionId: work.id })).toMatchObject({
-    credentialHome: join(state.home, 'harness-connections', 'codex', work.id),
-    configRootEnv: { CODEX_HOME: vault(work.id) },
-  });
+it('leaves a rotated legacy credential in its original root and switches by reference', async () => {
+  const first = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'A' });
+  const second = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'B' });
+  await writeAuthAt(vault(first.id), chatgptAuth('a', 'old'));
+  await writeAuthAt(vault(second.id), chatgptAuth('b'));
+  await writeAuthAt(vault('native'), chatgptAuth('original'));
+  await writeAuthAt(state.codexRoot, chatgptAuth('a', 'rotated'));
+  const liveState = join(state.home, 'harness-connections', 'codex', 'managed-live-account.json');
+  const receipt = JSON.stringify({ connectionId: first.id, identity: 'chatgpt:a|ws' });
+  await writeFile(liveState, receipt);
 
-  await selectHarnessConnection('codex', work.id);
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('work'));
-  expect(await readFile(join(vault('native'), 'auth.json'), 'utf8')).toBe(chatgptAuth('original'));
-  const session = await resolveHarnessConnection('codex', { sessionId: 'old' });
-  expect(session.connectionId).toBe(work.id);
-  expect(session.configRootEnv).toBeUndefined();
-  expect(await sessionHarnessConnectionId('old')).toBe(work.id);
-  expect((await resolveHarnessConnection('codex', { connectionId: work.id })).configRootEnv).toBeUndefined();
-
-  // CLI 在用户根里轮换了 refresh token:换走时这份新的要回到 Work 手里。
-  await writeAuthAt(state.codexRoot, chatgptAuth('work', 'r2'));
+  await selectHarnessConnection('codex', second.id);
+  expect(await sessionAuth()).toMatchObject({ connectionId: second.id, token: 'access-b-r1' });
+  const named = await resolveHarnessConnection('codex', { connectionId: first.id });
+  expect((await requestNativeCodexAccess(named.credentialEnv!))?.accessToken).toBe('access-a-rotated');
   await selectHarnessConnection('codex', 'native');
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('original'));
-  expect(await readFile(join(vault(work.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('work', 'r2'));
-  expect(await sessionHarnessConnectionId('old')).toBe('native');
-  expect(await sessionHarnessConnectionId('deleted')).toBeUndefined();
+  expect(await sessionAuth()).toMatchObject({ connectionId: 'native', token: 'access-original-r1' });
+  await selectHarnessConnection('codex', first.id);
+  expect(await sessionAuth()).toMatchObject({ connectionId: first.id, token: 'access-a-rotated' });
+  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('a', 'rotated'));
+  expect(await readFile(join(vault(first.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('a', 'old'));
+  expect(await readFile(liveState, 'utf8')).toBe(receipt);
 });
 
-it('can always switch back to the native Codex sign-in, even when the same account was also added as a connection', async () => {
-  await writeAuthAt(state.codexRoot, chatgptAuth('original'));
-  const same = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
-  await writeAuthAt(vault(same.id), chatgptAuth('original', 'r-same'));
-  const other = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
-  await writeAuthAt(vault(other.id), chatgptAuth('other'));
-  await selectHarnessConnection('codex', same.id);
-  await selectHarnessConnection('codex', 'native');
-  await selectHarnessConnection('codex', other.id);
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('other'));
-  await selectHarnessConnection('codex', 'native');
-  expect(JSON.parse(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).tokens.id_token).toBe(JSON.parse(chatgptAuth('original')).tokens.id_token);
+it('keeps a legacy connection on the same credential source when explicit re-login changes its identity', async () => {
+  const account = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'Work' });
+  await writeAuthAt(vault(account.id), chatgptAuth('work', 'old'));
+  await writeAuthAt(state.codexRoot, chatgptAuth('work', 'rotated'));
+  await selectHarnessConnection('codex', account.id);
+  expect(await sessionAuth()).toMatchObject({ connectionId: account.id, token: 'access-work-rotated' });
+
+  const login = await resolveHarnessConnection('codex', { connectionId: account.id, forLogin: true });
+  expect(login.configRootEnv?.CODEX_HOME).toBe(state.codexRoot);
+  await writeAuthAt(state.codexRoot, chatgptAuth('new-account'));
+  expect(await sessionAuth()).toMatchObject({ connectionId: account.id, token: 'access-new-account-r1' });
+  expect(await readFile(join(vault(account.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('work', 'old'));
 });
 
-it('keeps a copy of an unrecognized sign-in and refuses keychain-backed Codex credentials', async () => {
-  await writeAuthAt(state.codexRoot, chatgptAuth('original'));
-  const work = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
-  await writeAuthAt(vault(work.id), chatgptAuth('work'));
-  await selectHarnessConnection('codex', work.id);
-  await writeAuthAt(state.codexRoot, chatgptAuth('someone-else'));
-  await selectHarnessConnection('codex', 'native');
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('original'));
-  const backups = join(state.home, 'harness-connections', 'codex', 'unrecognized-sign-ins');
-  const { readdir } = await import('node:fs/promises');
-  const [backup] = await readdir(backups);
-  expect(await readFile(join(backups, backup!), 'utf8')).toBe(chatgptAuth('someone-else'));
+it('keeps a pre-receipt sign-in with its owner across switches', async () => {
+  const first = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'A' });
+  const second = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'B' });
+  await writeAuthAt(vault(first.id), chatgptAuth('a', 'old'));
+  await writeAuthAt(vault(second.id), chatgptAuth('b'));
+  await writeAuthAt(state.codexRoot, chatgptAuth('a', 'rotated'));
 
-  await writeFile(join(state.codexRoot, 'config.toml'), 'cli_auth_credentials_store = "keyring"\n');
-  await expect(selectHarnessConnection('codex', work.id)).rejects.toThrow('keyring');
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('original'));
+  await selectHarnessConnection('codex', second.id);
+  expect(await sessionAuth()).toMatchObject({ connectionId: second.id, token: 'access-b-r1' });
+  await selectHarnessConnection('codex', 'native');
+  expect(await sessionAuth()).toMatchObject({ connectionId: 'native', token: undefined });
+  await selectHarnessConnection('codex', first.id);
+  expect(await sessionAuth()).toMatchObject({ connectionId: first.id, token: 'access-a-rotated' });
 });
 
 it('moves every Codex session, including ones pinned before the fix, onto the default subscription', async () => {
@@ -283,22 +261,7 @@ it('moves every Codex session, including ones pinned before the fix, onto the de
   expect((await resolveHarnessConnection('codex', { sessionId: 'runtime-view', sourceSessionId: 'ran' })).connectionId).toBe('native');
 });
 
-it('files a first Codex account under its own connection when native never had a sign-in', async () => {
-  const first = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
-  const second = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
-  await writeAuthAt(vault(first.id), chatgptAuth('first'));
-  await writeAuthAt(vault(second.id), chatgptAuth('second'));
-  await selectHarnessConnection('codex', first.id);
-  await writeAuthAt(state.codexRoot, chatgptAuth('first', 'r2'));
-  await selectHarnessConnection('codex', second.id);
-  // 轮换过的 token 回到 first 手里,❌ 被存到「原生」名下。
-  expect(await readFile(join(vault(first.id), 'auth.json'), 'utf8')).toBe(chatgptAuth('first', 'r2'));
-  await expect(stat(join(vault('native'), 'auth.json'))).rejects.toThrow();
-  await selectHarnessConnection('codex', first.id);
-  expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('first', 'r2'));
-});
-
-it('checks a switch before anything is stopped: a missing sign-in or keychain storage is refused up front', async () => {
+it('checks the selected account before stopping sessions and ignores another account’s storage setting', async () => {
   await writeAuthAt(state.codexRoot, chatgptAuth('original'));
   const work = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
   await expect(assertHarnessConnectionSelectable('codex', work.id)).rejects.toThrow('no saved sign-in');
@@ -307,6 +270,8 @@ it('checks a switch before anything is stopped: a missing sign-in or keychain st
   await assertHarnessConnectionSelectable('codex', 'native');
   await expect(assertHarnessConnectionSelectable('codex', 'missing')).rejects.toThrow('no longer exists');
   await writeFile(join(state.codexRoot, 'config.toml'), 'cli_auth_credentials_store = "keyring"\n');
+  await assertHarnessConnectionSelectable('codex', work.id);
+  await writeFile(join(vault(work.id), 'config.toml'), 'cli_auth_credentials_store = "keyring"\n');
   await expect(assertHarnessConnectionSelectable('codex', work.id)).rejects.toThrow('keyring');
   // 只是预检:用户根原样。
   expect(await readFile(join(state.codexRoot, 'auth.json'), 'utf8')).toBe(chatgptAuth('original'));

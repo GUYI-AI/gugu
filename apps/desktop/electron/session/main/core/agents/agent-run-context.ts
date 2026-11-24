@@ -41,6 +41,7 @@ export async function resolveLocalAgentRunContext(
     connectionId?: string;
     sessionId?: string;
     sourceSessionId?: string;
+    forLogin?: boolean;
     /**
      * 只有真会话启动传(#6394):这一家配对的 ACP 桥接还在下载就等它,并经回调把这一步报进启动进度。
      * 不传 = 不等 —— 模型目录探针这类调用先用随包的桥接,下载在后台接着跑。
@@ -86,6 +87,7 @@ export async function resolveLocalAgentRunContext(
           connectionId: options.connectionId,
           sessionId: options.sessionId,
           sourceSessionId: options.sourceSessionId,
+          forLogin: options.forLogin,
           // 用户在 shell 里导出的 CLAUDE_CONFIG_DIR / CODEX_HOME 就在这份 env 里:「用户自己的配置根」按它算。
           nativeEnv: env,
         }));

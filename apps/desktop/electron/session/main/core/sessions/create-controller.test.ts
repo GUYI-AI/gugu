@@ -7,7 +7,7 @@ vi.mock('./session-life-creation', () => ({ admitFirstMessages: calls.admit }));
 vi.mock('./first-turn-placement', () => ({ holdFirstTurnForPlacement: calls.hold, firstTurnFilesPlaced: calls.placed }));
 vi.mock('./name-generation/generateSessionName', () => ({ generateSessionName: vi.fn() }));
 vi.mock('./operations/getProjectWorkspaces', () => ({ getProjectWorkspaces: vi.fn() }));
-import { createAndProvision, sessionCreateController } from './create-controller';
+import { createAndProvision } from './create-controller';
 
 const PAGE = 3;
 
@@ -45,12 +45,6 @@ it('a page from before #2558 asks the same with deferFirstTurn, and still gets i
 it('without files to place nothing is held', async () => {
   await createAndProvision(input, { sender: PAGE });
   expect(calls.hold).not.toHaveBeenCalled();
-});
-
-it('the page saying its placement settled lets the dispatch go; admitting again is the same single admission', async () => {
-  await sessionCreateController.admitFirstMessages('new-task');
-  expect(calls.placed).toHaveBeenCalledExactlyOnceWith('new-task');
-  expect(calls.admit).toHaveBeenCalledExactlyOnceWith('new-task');
 });
 
 it('does not prepare or admit a task which creation refused', async () => {

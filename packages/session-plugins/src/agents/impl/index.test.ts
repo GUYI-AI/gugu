@@ -12,7 +12,9 @@ import {
   type SessionCapabilityBundle,
   type SessionMaterialization,
   type SessionMaterializationField,
+  mcpToolNamesOn,
 } from '@gugu/session-core/agents/plugins';
+import { AcpTranscriptParser, decodeSessionUpdate } from '@gugu/session-core/acp';
 import { INSTALL_METHODS } from '@gugu/session-core/deps';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import {
@@ -206,6 +208,25 @@ function probeNativeUnitSurface(
 }
 
 describe('pluginRegistry', () => {
+  // A harness that lists gugu tools under its own spelling has its calls drawn in the task page (tool name, sent card)
+  // only when the timeline folds that spelling into a gugu MCP call.
+  it('folds every declared gugu tool spelling into a gugu MCP call', () => {
+    const declared = pluginRegistry.getAll().flatMap((plugin) => {
+      const mcp = plugin.capabilities.mcp;
+      if (mcp.kind !== 'supported') return [];
+      return (['acp', 'tui'] as const).flatMap((surface) => {
+        const names = mcpToolNamesOn(mcp.toolNames, surface);
+        return names.kind === 'listed' ? [[`${plugin.metadata.id}/${surface}`, names.prefix] as const] : [];
+      });
+    });
+    expect(declared.map(([, prefix]) => prefix)).toEqual(expect.arrayContaining(['mcp__gugu__', 'gugu_', 'gugu-']));
+    for (const [harness, prefix] of declared) {
+      const parser = new AcpTranscriptParser({ sessionId: 's' });
+      parser.pushEvent(decodeSessionUpdate({ sessionUpdate: 'tool_call', toolCallId: 'X', title: `${prefix}widget_send`, kind: 'other', status: 'completed' }));
+      expect(parser.activeTurn?.items, harness).toMatchObject([{ kind: 'mcp-tool-call', server: expect.stringMatching(/^(gugu|plugin_.+_gugu)$/), tool: 'widget_send' }]);
+    }
+  });
+
   // @@@permission-four-rungs — 判据必须打在**真实注册表**上,不是测试自己写的 spec fixture。
   // 上一版只测了 fixture:把 claude 的 planFlag 整行删掉,四档 argv 判据照样全绿 ——
   // 声明和 flag 是两处,漏一处就"界面摆着规划档、发下去却是别的行为"。

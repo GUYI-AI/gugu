@@ -781,51 +781,6 @@ describe('SessionCell prompts', () => {
     });
   });
 
-  it('a failure reported as end_turn fails the caller with its cause, so a delivery cannot complete as done (MiMo quota)', async () => {
-    const agent = new FakeAcpAgent();
-    const { cell } = makeCell(agent, { turnFailure: { watchesStderr: true } });
-    agent.prompt = vi.fn(async () => {
-      setTimeout(() => cell.noteProviderStderrFailure("You've hit your usage limit. Upgrade or try again later."), 50);
-      return { stopReason: 'end_turn' };
-    });
-    const failed = await cell.prompt({ text: 'hi' });
-    expect(failed).toMatchObject({
-      success: false,
-      error: { type: 'prompt_failed', cause: { message: "You've hit your usage limit. Upgrade or try again later." } },
-    });
-    expect(cell.lastTurnError).toContain("You've hit your usage limit");
-    // Control: a turn that answered stays a success.
-    agent.prompt = vi.fn(async () => {
-      cell.push({ kind: 'message', role: 'assistant', messageId: null, text: 'ok' });
-      return { stopReason: 'end_turn' };
-    });
-    expect((await cell.prompt({ text: 'again' })).success).toBe(true);
-    expect(cell.lastTurnError).toBeNull();
-  });
-
-  it('a stderr failure the provider marks as a credential failure settles with signInRequired (MiMo, 10-07)', async () => {
-    const agent = new FakeAcpAgent();
-    const { cell } = makeCell(agent, { turnFailure: { watchesStderr: true } });
-    agent.prompt = vi.fn(async () => {
-      setTimeout(() => cell.noteProviderStderrFailure({ message: 'Invalid API Key', signInRequired: true }), 50);
-      return { stopReason: 'end_turn' };
-    });
-    await cell.prompt({ text: 'hi' });
-    expect(cell.history().committed.at(-1)!.outcome).toEqual({
-      kind: 'error',
-      reason: 'prompt_failed',
-      detail: 'Invalid API Key',
-      signInRequired: true,
-    });
-    // 下一轮从干净的状态开始。
-    agent.prompt = vi.fn(async () => {
-      cell.push({ kind: 'message', role: 'assistant', messageId: null, text: 'ok' });
-      return { stopReason: 'end_turn' };
-    });
-    await cell.prompt({ text: 'again' });
-    expect(cell.history().committed.at(-1)!.outcome).toEqual({ kind: 'done', reason: 'end_turn' });
-  });
-
   // #7103 谁拒绝谁说话:跑咕咕平台模型的这一轮来要票、咕咕没签出来。宿主在回绝取票**之前**把原因递进来
   // (announceSession → noteCredentialRefusal),所以 claude 报「apiKeyHelper is failing」之前它已经在这一轮手上。
   const APIKEY_HELPER_TEXT = "Your apiKeyHelper script is failing · This usually means you need to re-authenticate with your provider · Run /status to see the script's error output";

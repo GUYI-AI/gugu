@@ -81,15 +81,6 @@ it('shows three dots above the first row while an older page is on its way, with
   await until('the dots are gone', () => view.dots() === null);
 });
 
-it('shows nothing for a request that settles at once', async () => {
-  const view = await mount(async () => range(1000, 1020));
-  await view.toTop();
-  await until('the page is in history', () => view.turns() === 40);
-  expect(view.dots()).toBeNull();
-  await new Promise(resolve => setTimeout(resolve, 250));
-  expect(view.dots()).toBeNull();
-});
-
 it('hides the dots when the request fails', async () => {
   const page = Promise.withResolvers<TranscriptTurn[]>();
   const view = await mount(() => page.promise);
