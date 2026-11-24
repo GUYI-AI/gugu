@@ -1,4 +1,4 @@
-// @@@1696 统一运行态运行条：单聊/群聊共用同一「运行 token」= [头像]{名}{运行字形 + 状态词}。
+// @@@1696 统一运行态运行条：单聊/群聊共用同一「运行 token」= [头像]{名}{运行字形}；状态词只在读屏名里(owner 11-24「把 running 换成字形」)。
 // DM = 1 个 token（退化态）；群聊 = 多 token 单行，手机和桌面一样：排不下 → +N（owner 10-30：平时最多一行）。
 // 消除 DM 三跳点 vs GroupAgentStatusBar(群聊竖排文字+工具名) 双轨(两者都已删)。
 // 设计 SSOT: design/agent-running-group-1687.html（.bar/.tok/.state/.pop/.more/.ov/.otok/.opop）。
@@ -139,7 +139,7 @@ function RunningTokenItem({
         <Avatar name={displayName} avatarUrl={token.avatarUrl} seed={token.avatarSeed} size={overflow ? 16 : 'xs'} isAgent statusLabel="running" />
         <span className="rtb-nm">{displayName}</span>
         {overflow ? <span className="rtb-v">{stateWord}</span> : (
-          <span className="rtb-state"><CLISpinner className="rtb-glyph" />{stateWord}</span>
+          <span className="rtb-state"><CLISpinner className="rtb-glyph" /></span>
         )}
       </Chip>
     </Popover.Trigger>

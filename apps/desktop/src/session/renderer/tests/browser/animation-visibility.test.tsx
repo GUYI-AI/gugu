@@ -55,9 +55,9 @@ async function mount(doc = document) {
   return { host, animations };
 }
 
-// @@@running-beat — the running pill says its state word in still ink next to the shared 24-state glyph: the
-// only thing that moves is a stepped transform that changes eight times a second.
-it('keeps the running word still and turns only the shared glyph, eight steps a second', async () => {
+// @@@running-beat — the running pill shows the shared 24-state glyph in place of its state word (the word stays in
+// the pill's accessible name): the only thing that moves is a stepped transform that changes eight times a second.
+it('shows the shared glyph instead of the running word and turns only it, eight steps a second', async () => {
   const { host } = await mount();
   const label = host.querySelector<HTMLElement>('.rtb-state')!;
   const [animation, ...rest] = label.getAnimations({ subtree: true });
@@ -66,9 +66,10 @@ it('keeps the running word still and turns only the shared glyph, eight steps a 
   expect(animation!.effect!.getTiming()).toMatchObject({ duration: 3000, iterations: Infinity });
   expect(getComputedStyle(label.querySelector('.gg-running-glyph__strip')!).animationTimingFunction).toBe('steps(24)');
   expect(getComputedStyle(label.querySelector('.gg-running-glyph__strip')!, '::before').content.replace(/[^\u2800-\u28ff]/gu, '')).toBe('⠈⠉⠋⠓⠒⠐⠐⠒⠖⠦⠤⠠⠠⠤⠦⠖⠒⠐⠐⠒⠓⠋⠉⠈');
-  // The word itself never animates and is not masked; the glyph adds no text to it.
-  expect(label.textContent).toBe(label.querySelector('.gg-running-glyph')!.nextSibling!.textContent);
-  expect(label.textContent!.length).toBeGreaterThan(0);
+  // No visible word: the glyph is the whole label and adds no text; the state is still read out from the pill's name.
+  expect(label.textContent).toBe('');
+  expect(label.children).toHaveLength(1);
+  expect(label.closest('[aria-label]')!.getAttribute('aria-label')).toBeTruthy();
   expect(getComputedStyle(label).maskImage).toBe('none');
 });
 
