@@ -24,8 +24,10 @@ export type AssistantPick = { agentId: string; deviceId: string };
 /** The rows `my_app_agent` returns (none or one) as the assistant; anything else is not a reading. */
 export function pickAssistant(rows: unknown): AssistantPick | null {
   if (!Array.isArray(rows) || rows.length > 1) throw new Error('Could not verify the personal assistant identity');
-  const row = rows[0] as { agent_user_id?: unknown; device_id?: unknown } | undefined;
-  if (!row) return null;
-  if (typeof row.agent_user_id !== 'string' || typeof row.device_id !== 'string') throw new Error('Could not verify the personal assistant identity');
-  return { agentId: row.agent_user_id, deviceId: row.device_id };
+  if (rows.length === 0) return null;
+  const row: unknown = rows[0];
+  if (!row || typeof row !== 'object') throw new Error('Could not verify the personal assistant identity');
+  const { agent_user_id, device_id } = row as { agent_user_id?: unknown; device_id?: unknown };
+  if (typeof agent_user_id !== 'string' || !agent_user_id.trim() || typeof device_id !== 'string' || !device_id.trim()) throw new Error('Could not verify the personal assistant identity');
+  return { agentId: agent_user_id, deviceId: device_id };
 }

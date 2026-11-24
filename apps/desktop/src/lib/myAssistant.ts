@@ -30,7 +30,8 @@ async function readMyAssistant(_owner: string): Promise<MyAssistant> {
  * contacts to change — a move adds no agent). Kept for the first frame.
  */
 export const myAssistant = replica({
-  name: 'myAssistant',
+  // App bindings are a different identity source; do not seed them from the former provision-role cache.
+  name: 'myAssistantAppBinding',
   scope: 'account',
   read: (owner: string): Promise<MyAssistant> => readMyAssistant(owner),
   fresh: 60_000,
