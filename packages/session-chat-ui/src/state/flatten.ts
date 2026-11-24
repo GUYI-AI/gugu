@@ -64,7 +64,7 @@ import { continuedActivityHeader, foldActivityUnits, hasUnconfirmedSend, incomin
  */
 
 import { isDeliveryEnvelope, readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
-import { agentSendOf, replyItems } from '@gugu/session-core/session-record/reply-process';
+import { agentSendOf, replyItems, turnPlaces, type TurnPlaces } from '@gugu/session-core/session-record/reply-process';
 import { CONVERSATION_BLOCK_GAP, CONVERSATION_UTTERANCE_GAP, resolveSeamGap } from '@session-chat/core/spacing';
 import type { FoldGate, ItemSegmenter, Margin, RenderUnit, SegmentCtx } from '@session-chat/core/units';
 import { hasConversationActions } from '@session-chat/components/rows/message/conversation-body';
@@ -184,7 +184,7 @@ const sentReplyCall = (id: string): string | undefined => /^(.*):sent:[^:]+$/.ex
 
 /** Drop the sent replies whose call renders as an agent-send. */
 function withoutSentRepliesOfAgentSends(turn: TranscriptTurn): TranscriptTurn {
-  const sends = new Set(replyItems(turn).filter((item) => agentSendOf(item, turn)).map((item) => item.id));
+  const sends = new Set(replyItems(turn).filter((item) => agentSendOf(item)).map((item) => item.id));
   if (sends.size === 0) return turn;
   const drawnAsSend = (item: TranscriptTurn['items'][number]) => {
     const call = item.kind === 'message' ? sentReplyCall(item.id) : undefined;
@@ -304,7 +304,7 @@ export function flattenTier(
   };
 
   /** 正在发的这一轮:agent 说出去的话发到哪,要看它当时在回哪一条投递(`agentSendOf`)。 */
-  let sendTurn: TranscriptTurn | undefined;
+  let sendPlaces: TurnPlaces | undefined;
 
   /**
    * 对话布局里一轮的回复(owner 0 号图):名字 + 过程行一行,过程展开的步骤在它下面,气泡在最下面 ——
@@ -377,7 +377,7 @@ export function flattenTier(
     for (const op of ops) {
       if (op.kind === 'row') {
         // agent 经 message_send / session_message 说的话:画成它说的话、标明发到了哪里,❌ 一行「调用了 MCP 工具」。
-        const send = !ctx.agentConversation && 'toolCallId' in op.item && !sentReplyCalls.has(op.item.id) ? agentSendOf(op.item as TranscriptItem, sendTurn) : null;
+        const send = !ctx.agentConversation && 'toolCallId' in op.item && !sentReplyCalls.has(op.item.id) ? agentSendOf(op.item as TranscriptItem, sendPlaces) : null;
         processItem(send
           ? { kind: 'agent-send', id: op.item.id, turnId, send, status: (op.item as { status?: string }).status === 'running' ? 'running' : 'done', ...sentMessagesOf(op.item as TranscriptItem) }
           : op.item, folds);
@@ -445,7 +445,7 @@ export function flattenTier(
     if (absorbed[turnIndex]) continue;
     // A hidden agent response must not leave an orphan date/name/duration row.
     if (hidden[turnIndex] && turnItems[turnIndex].length === 0) continue;
-    sendTurn = turn as TranscriptTurn;
+    sendPlaces = turnPlaces(turn as TranscriptTurn);
     // Day boundary (#3334 row 20). A turn with no `startedAt` came from provider
     // replay and carries no authentic clock, so it neither opens a new day nor
     // closes the current one — it is simply not evidence about the calendar.

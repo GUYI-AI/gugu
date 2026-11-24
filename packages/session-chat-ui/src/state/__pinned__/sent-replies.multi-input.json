@@ -1,0 +1,1231 @@
+{
+ "replies": {
+  "id": "turn-1",
+  "seq": 1,
+  "initiator": "user",
+  "outcome": {
+   "kind": "done"
+  },
+  "items": [
+   {
+    "kind": "message",
+    "id": "in-1",
+    "seq": 1,
+    "role": "user",
+    "text": "<gugu_delivery route=\"chat\" from=\"d3\" from_id=\"user:peer\" from_type=\"human\" chat=\"8c2a1660-abda-46f8-8c15-10f515955ffc\" chat_kind=\"group\" msg=\"msg:00000000-0000-4000-8000-000000000001\" source_link=\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000001\" at=\"2026-11-24 01:00 UTC+0\">\n<![CDATA[first question]]>\n  <arrival>Sent to you through Gugu; what you print here does not reach the sender — reply with message_send.</arrival>\n</gugu_delivery>"
+   },
+   {
+    "kind": "message",
+    "id": "a-1",
+    "seq": 2,
+    "role": "assistant",
+    "text": "looking"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "s-1",
+    "seq": 3,
+    "toolCallId": "s-1",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "done",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"text\":\"answer one\",\"reply_to_message_id\":\"msg:00000000-0000-4000-8000-000000000001\"}",
+    "completedAt": 1003,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000503\",\"source_link\":\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000503\"}"
+   },
+   {
+    "kind": "message",
+    "id": "in-2",
+    "seq": 4,
+    "role": "user",
+    "text": "<gugu_delivery route=\"chat\" from=\"Wei (owner)\" from_id=\"user:5e19d60e-d73f-4b24-8808-9e9768b77948\" from_type=\"human\" chat=\"5e19d60e-d73f-4b24-8808-9e9768b77948\" chat_kind=\"dm\" msg=\"msg:00000000-0000-4000-8000-000000000004\" source_link=\"gugu-chat://5e19d60e-d73f-4b24-8808-9e9768b77948/00000000-0000-4000-8000-000000000004\" at=\"2026-11-24 01:00 UTC+0\">\n<![CDATA[a private ask]]>\n  <arrival>Sent to you through Gugu; what you print here does not reach the sender — reply with message_send. After replying through message_send, finish this turn without repeating the answer or adding a separate task summary here.</arrival>\n</gugu_delivery>"
+   },
+   {
+    "kind": "tool-group",
+    "id": "g-1",
+    "seq": 5,
+    "children": [
+     {
+      "kind": "mcp-tool-call",
+      "id": "s-2",
+      "seq": 6,
+      "toolCallId": "s-2",
+      "title": "message_send",
+      "server": "plugin_gugu-product_gugu",
+      "tool": "message_send",
+      "status": "done",
+      "rawInput": "{\"chat_id\":\"5e19d60e-d73f-4b24-8808-9e9768b77948\",\"text\":\"private answer\"}",
+      "completedAt": 1006,
+      "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000506\",\"source_link\":\"gugu-chat://5e19d60e-d73f-4b24-8808-9e9768b77948/00000000-0000-4000-8000-000000000506\"}"
+     },
+     {
+      "kind": "execute-tool-call",
+      "id": "x-1",
+      "seq": 7,
+      "toolCallId": "x-1",
+      "title": "ls",
+      "status": "done"
+     }
+    ]
+   },
+   {
+    "kind": "message",
+    "id": "in-3",
+    "seq": 8,
+    "role": "user",
+    "text": "<gugu_delivery route=\"chat\" from=\"d3\" from_id=\"user:peer\" from_type=\"human\" chat=\"8c2a1660-abda-46f8-8c15-10f515955ffc\" chat_kind=\"group\" thread=\"msg:00000000-0000-4000-8000-000000000001\" msg=\"msg:00000000-0000-4000-8000-000000000008\" source_link=\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000008\" at=\"2026-11-24 01:00 UTC+0\">\n<![CDATA[in a thread]]>\n  <arrival>Sent to you through Gugu; what you print here does not reach the sender — reply with message_send.</arrival>\n</gugu_delivery>"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "f-1",
+    "seq": 9,
+    "toolCallId": "f-1",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "done",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"file_path\":\"/tmp/a.txt\",\"text\":\"two files\"}",
+    "completedAt": 1009,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000601\",\"file_name\":\"a.txt\"}"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "f-2",
+    "seq": 10,
+    "toolCallId": "f-2",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "done",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"file_path\":\"/tmp/b.txt\"}",
+    "completedAt": 1010,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000602\",\"file_name\":\"b.txt\"}"
+   },
+   {
+    "kind": "message",
+    "id": "f-1:sent:00000000-0000-4000-8000-000000000601",
+    "seq": 9,
+    "role": "assistant",
+    "text": "a.txt\nb.txt",
+    "sentAttachment": {
+     "messageId": "00000000-0000-4000-8000-000000000601",
+     "name": "a.txt",
+     "kind": "file",
+     "href": "gugu-message-file://00000000-0000-4000-8000-000000000601",
+     "caption": "two files"
+    },
+    "sentAttachments": [
+     {
+      "messageId": "00000000-0000-4000-8000-000000000601",
+      "name": "a.txt",
+      "kind": "file",
+      "href": "gugu-message-file://00000000-0000-4000-8000-000000000601",
+      "caption": "two files"
+     },
+     {
+      "messageId": "00000000-0000-4000-8000-000000000602",
+      "name": "b.txt",
+      "kind": "file",
+      "href": "gugu-message-file://00000000-0000-4000-8000-000000000602"
+     }
+    ],
+    "at": 1009,
+    "sentTo": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+     "whisper": false
+    },
+    "sentAddresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+      "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+      "whisper": false
+     },
+     "recipients": [],
+     "recipientsExplicit": false,
+     "chatKind": "group",
+     "replyTo": null,
+     "confirmed": true
+    }
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "s-3",
+    "seq": 11,
+    "toolCallId": "s-3",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "done",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"text\":\"same words\"}",
+    "completedAt": 1011,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000511\",\"source_link\":\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000511\"}"
+   },
+   {
+    "kind": "message",
+    "id": "a-2",
+    "seq": 12,
+    "role": "assistant",
+    "text": "same words"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "r-1",
+    "seq": 13,
+    "toolCallId": "r-1",
+    "title": "session_message",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "session_message",
+    "status": "done",
+    "rawInput": "{\"to\":[\"session:abc\"],\"text\":\"relayed\"}",
+    "outputText": "{\"recipients\":[{\"to\":\"session:abc\",\"message_id\":\"00000000-0000-4000-8000-000000000700\",\"status\":\"queued\"}]}"
+   },
+   {
+    "kind": "message",
+    "id": "in-4",
+    "seq": 14,
+    "role": "user",
+    "text": "<gugu_delivery route=\"chat\" from=\"d3\" from_id=\"user:peer\" from_type=\"human\" chat=\"8c2a1660-abda-46f8-8c15-10f515955ffc\" chat_kind=\"group\" msg=\"msg:00000000-0000-4000-8000-000000000014\" source_link=\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000014\" at=\"2026-11-24 01:00 UTC+0\">\n<![CDATA[last one]]>\n  <arrival>Sent to you through Gugu; what you print here does not reach the sender — reply with message_send.</arrival>\n</gugu_delivery>"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "s-4",
+    "seq": 15,
+    "toolCallId": "s-4",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "done",
+    "rawInput": "{\"chat_id\":\"5e19d60e-d73f-4b24-8808-9e9768b77948\",\"text\":\"elsewhere\"}",
+    "completedAt": 1015,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000515\",\"source_link\":\"gugu-chat://5e19d60e-d73f-4b24-8808-9e9768b77948/00000000-0000-4000-8000-000000000515\"}"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "s-5",
+    "seq": 16,
+    "toolCallId": "s-5",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "error",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"text\":\"failed\"}",
+    "completedAt": 1016,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000516\",\"source_link\":\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000516\"}"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "s-6",
+    "seq": 17,
+    "toolCallId": "s-6",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "running",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"text\":\"still going\"}",
+    "completedAt": 1017
+   }
+  ]
+ },
+ "conversationReplies": {
+  "id": "turn-1",
+  "seq": 1,
+  "initiator": "user",
+  "outcome": {
+   "kind": "done"
+  },
+  "items": [
+   {
+    "kind": "message",
+    "id": "in-1",
+    "seq": 1,
+    "role": "user",
+    "text": "<gugu_delivery route=\"chat\" from=\"d3\" from_id=\"user:peer\" from_type=\"human\" chat=\"8c2a1660-abda-46f8-8c15-10f515955ffc\" chat_kind=\"group\" msg=\"msg:00000000-0000-4000-8000-000000000001\" source_link=\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000001\" at=\"2026-11-24 01:00 UTC+0\">\n<![CDATA[first question]]>\n  <arrival>Sent to you through Gugu; what you print here does not reach the sender — reply with message_send.</arrival>\n</gugu_delivery>"
+   },
+   {
+    "kind": "message",
+    "id": "a-1",
+    "seq": 2,
+    "role": "assistant",
+    "text": "looking"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "s-1",
+    "seq": 3,
+    "toolCallId": "s-1",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "done",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"text\":\"answer one\",\"reply_to_message_id\":\"msg:00000000-0000-4000-8000-000000000001\"}",
+    "completedAt": 1003,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000503\",\"source_link\":\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000503\"}"
+   },
+   {
+    "kind": "message",
+    "id": "s-1:sent:00000000-0000-4000-8000-000000000503",
+    "seq": 3,
+    "role": "assistant",
+    "text": "answer one",
+    "sentMessages": [
+     {
+      "sender_user_id": null,
+      "to_user_ids": null,
+      "seq": 0,
+      "reply_to_message_id": null,
+      "retracted_at": null,
+      "created_at": "1970-01-01T00:00:01.003Z",
+      "is_mine": false,
+      "delivered": true,
+      "delivery_status": null,
+      "id": "00000000-0000-4000-8000-000000000503",
+      "chat_id": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+      "content": "answer one",
+      "content_type": "text"
+     }
+    ],
+    "at": 1003,
+    "sentReplyTo": "00000000-0000-4000-8000-000000000001",
+    "sentChat": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+    "sentTo": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": null,
+     "whisper": false
+    },
+    "sentAddresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+      "threadRootId": null,
+      "whisper": false
+     },
+     "recipients": [
+      "user:peer"
+     ],
+     "recipientsExplicit": false,
+     "chatKind": "group",
+     "replyTo": {
+      "fromId": "user:peer",
+      "fromType": "human",
+      "messageId": "msg:00000000-0000-4000-8000-000000000001"
+     },
+     "confirmed": true
+    }
+   },
+   {
+    "kind": "message",
+    "id": "in-2",
+    "seq": 4,
+    "role": "user",
+    "text": "<gugu_delivery route=\"chat\" from=\"Wei (owner)\" from_id=\"user:5e19d60e-d73f-4b24-8808-9e9768b77948\" from_type=\"human\" chat=\"5e19d60e-d73f-4b24-8808-9e9768b77948\" chat_kind=\"dm\" msg=\"msg:00000000-0000-4000-8000-000000000004\" source_link=\"gugu-chat://5e19d60e-d73f-4b24-8808-9e9768b77948/00000000-0000-4000-8000-000000000004\" at=\"2026-11-24 01:00 UTC+0\">\n<![CDATA[a private ask]]>\n  <arrival>Sent to you through Gugu; what you print here does not reach the sender — reply with message_send. After replying through message_send, finish this turn without repeating the answer or adding a separate task summary here.</arrival>\n</gugu_delivery>"
+   },
+   {
+    "kind": "tool-group",
+    "id": "g-1",
+    "seq": 5,
+    "children": [
+     {
+      "kind": "mcp-tool-call",
+      "id": "s-2",
+      "seq": 6,
+      "toolCallId": "s-2",
+      "title": "message_send",
+      "server": "plugin_gugu-product_gugu",
+      "tool": "message_send",
+      "status": "done",
+      "rawInput": "{\"chat_id\":\"5e19d60e-d73f-4b24-8808-9e9768b77948\",\"text\":\"private answer\"}",
+      "completedAt": 1006,
+      "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000506\",\"source_link\":\"gugu-chat://5e19d60e-d73f-4b24-8808-9e9768b77948/00000000-0000-4000-8000-000000000506\"}"
+     },
+     {
+      "kind": "execute-tool-call",
+      "id": "x-1",
+      "seq": 7,
+      "toolCallId": "x-1",
+      "title": "ls",
+      "status": "done"
+     }
+    ]
+   },
+   {
+    "kind": "message",
+    "id": "s-2:sent:00000000-0000-4000-8000-000000000506",
+    "seq": 6,
+    "role": "assistant",
+    "text": "private answer",
+    "sentMessages": [
+     {
+      "sender_user_id": null,
+      "to_user_ids": null,
+      "seq": 0,
+      "reply_to_message_id": null,
+      "retracted_at": null,
+      "created_at": "1970-01-01T00:00:01.006Z",
+      "is_mine": false,
+      "delivered": true,
+      "delivery_status": null,
+      "id": "00000000-0000-4000-8000-000000000506",
+      "chat_id": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+      "content": "private answer",
+      "content_type": "text"
+     }
+    ],
+    "at": 1006,
+    "sentChat": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+    "sentTo": {
+     "kind": "chat",
+     "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+     "threadRootId": null,
+     "whisper": false,
+     "peer": "Wei",
+     "recipientUserId": "5e19d60e-d73f-4b24-8808-9e9768b77948"
+    },
+    "sentAddresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+      "threadRootId": null,
+      "whisper": false,
+      "peer": "Wei",
+      "recipientUserId": "5e19d60e-d73f-4b24-8808-9e9768b77948"
+     },
+     "recipients": [
+      "user:5e19d60e-d73f-4b24-8808-9e9768b77948"
+     ],
+     "recipientsExplicit": false,
+     "chatKind": "dm",
+     "replyTo": null,
+     "confirmed": true
+    }
+   },
+   {
+    "kind": "message",
+    "id": "in-3",
+    "seq": 8,
+    "role": "user",
+    "text": "<gugu_delivery route=\"chat\" from=\"d3\" from_id=\"user:peer\" from_type=\"human\" chat=\"8c2a1660-abda-46f8-8c15-10f515955ffc\" chat_kind=\"group\" thread=\"msg:00000000-0000-4000-8000-000000000001\" msg=\"msg:00000000-0000-4000-8000-000000000008\" source_link=\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000008\" at=\"2026-11-24 01:00 UTC+0\">\n<![CDATA[in a thread]]>\n  <arrival>Sent to you through Gugu; what you print here does not reach the sender — reply with message_send.</arrival>\n</gugu_delivery>"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "f-1",
+    "seq": 9,
+    "toolCallId": "f-1",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "done",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"file_path\":\"/tmp/a.txt\",\"text\":\"two files\"}",
+    "completedAt": 1009,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000601\",\"file_name\":\"a.txt\"}"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "f-2",
+    "seq": 10,
+    "toolCallId": "f-2",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "done",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"file_path\":\"/tmp/b.txt\"}",
+    "completedAt": 1010,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000602\",\"file_name\":\"b.txt\"}"
+   },
+   {
+    "kind": "message",
+    "id": "f-1:sent:00000000-0000-4000-8000-000000000601",
+    "seq": 9,
+    "role": "assistant",
+    "text": "a.txt\nb.txt",
+    "sentAttachment": {
+     "messageId": "00000000-0000-4000-8000-000000000601",
+     "name": "a.txt",
+     "kind": "file",
+     "href": "gugu-message-file://00000000-0000-4000-8000-000000000601",
+     "caption": "two files"
+    },
+    "sentAttachments": [
+     {
+      "messageId": "00000000-0000-4000-8000-000000000601",
+      "name": "a.txt",
+      "kind": "file",
+      "href": "gugu-message-file://00000000-0000-4000-8000-000000000601",
+      "caption": "two files"
+     },
+     {
+      "messageId": "00000000-0000-4000-8000-000000000602",
+      "name": "b.txt",
+      "kind": "file",
+      "href": "gugu-message-file://00000000-0000-4000-8000-000000000602"
+     }
+    ],
+    "at": 1009,
+    "sentTo": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+     "whisper": false
+    },
+    "sentAddresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+      "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+      "whisper": false
+     },
+     "recipients": [],
+     "recipientsExplicit": false,
+     "chatKind": "group",
+     "replyTo": null,
+     "confirmed": true
+    }
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "s-3",
+    "seq": 11,
+    "toolCallId": "s-3",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "done",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"text\":\"same words\"}",
+    "completedAt": 1011,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000511\",\"source_link\":\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000511\"}"
+   },
+   {
+    "kind": "message",
+    "id": "s-3:sent:00000000-0000-4000-8000-000000000511",
+    "seq": 11,
+    "role": "assistant",
+    "text": "same words",
+    "sentMessages": [
+     {
+      "sender_user_id": null,
+      "to_user_ids": null,
+      "seq": 0,
+      "reply_to_message_id": null,
+      "retracted_at": null,
+      "created_at": "1970-01-01T00:00:01.011Z",
+      "is_mine": false,
+      "delivered": true,
+      "delivery_status": null,
+      "id": "00000000-0000-4000-8000-000000000511",
+      "chat_id": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+      "content": "same words",
+      "content_type": "text"
+     }
+    ],
+    "at": 1011,
+    "sentChat": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+    "sentTo": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+     "whisper": false
+    },
+    "sentAddresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+      "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+      "whisper": false
+     },
+     "recipients": [],
+     "recipientsExplicit": false,
+     "chatKind": "group",
+     "replyTo": null,
+     "confirmed": true
+    }
+   },
+   {
+    "kind": "message",
+    "id": "a-2",
+    "seq": 12,
+    "role": "assistant",
+    "text": "same words"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "r-1",
+    "seq": 13,
+    "toolCallId": "r-1",
+    "title": "session_message",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "session_message",
+    "status": "done",
+    "rawInput": "{\"to\":[\"session:abc\"],\"text\":\"relayed\"}",
+    "outputText": "{\"recipients\":[{\"to\":\"session:abc\",\"message_id\":\"00000000-0000-4000-8000-000000000700\",\"status\":\"queued\"}]}"
+   },
+   {
+    "kind": "message",
+    "id": "r-1:sent:00000000-0000-4000-8000-000000000700",
+    "seq": 13,
+    "role": "assistant",
+    "text": "relayed",
+    "sentTo": {
+     "kind": "session",
+     "count": 1
+    },
+    "sentAddresses": {
+     "target": {
+      "kind": "session",
+      "count": 1
+     },
+     "recipients": [
+      "session:abc"
+     ],
+     "recipientsExplicit": true,
+     "chatKind": null,
+     "replyTo": null,
+     "confirmed": true
+    }
+   },
+   {
+    "kind": "message",
+    "id": "in-4",
+    "seq": 14,
+    "role": "user",
+    "text": "<gugu_delivery route=\"chat\" from=\"d3\" from_id=\"user:peer\" from_type=\"human\" chat=\"8c2a1660-abda-46f8-8c15-10f515955ffc\" chat_kind=\"group\" msg=\"msg:00000000-0000-4000-8000-000000000014\" source_link=\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000014\" at=\"2026-11-24 01:00 UTC+0\">\n<![CDATA[last one]]>\n  <arrival>Sent to you through Gugu; what you print here does not reach the sender — reply with message_send.</arrival>\n</gugu_delivery>"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "s-4",
+    "seq": 15,
+    "toolCallId": "s-4",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "done",
+    "rawInput": "{\"chat_id\":\"5e19d60e-d73f-4b24-8808-9e9768b77948\",\"text\":\"elsewhere\"}",
+    "completedAt": 1015,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000515\",\"source_link\":\"gugu-chat://5e19d60e-d73f-4b24-8808-9e9768b77948/00000000-0000-4000-8000-000000000515\"}"
+   },
+   {
+    "kind": "message",
+    "id": "s-4:sent:00000000-0000-4000-8000-000000000515",
+    "seq": 15,
+    "role": "assistant",
+    "text": "elsewhere",
+    "sentMessages": [
+     {
+      "sender_user_id": null,
+      "to_user_ids": null,
+      "seq": 0,
+      "reply_to_message_id": null,
+      "retracted_at": null,
+      "created_at": "1970-01-01T00:00:01.015Z",
+      "is_mine": false,
+      "delivered": true,
+      "delivery_status": null,
+      "id": "00000000-0000-4000-8000-000000000515",
+      "chat_id": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+      "content": "elsewhere",
+      "content_type": "text"
+     }
+    ],
+    "at": 1015,
+    "sentChat": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+    "sentTo": {
+     "kind": "chat",
+     "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+     "threadRootId": null,
+     "whisper": false
+    },
+    "sentAddresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+      "threadRootId": null,
+      "whisper": false
+     },
+     "recipients": null,
+     "recipientsExplicit": false,
+     "chatKind": null,
+     "replyTo": null,
+     "confirmed": true
+    }
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "s-5",
+    "seq": 16,
+    "toolCallId": "s-5",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "error",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"text\":\"failed\"}",
+    "completedAt": 1016,
+    "outputText": "{\"status\":\"sent\",\"message_id\":\"00000000-0000-4000-8000-000000000516\",\"source_link\":\"gugu-chat://8c2a1660-abda-46f8-8c15-10f515955ffc/00000000-0000-4000-8000-000000000516\"}"
+   },
+   {
+    "kind": "mcp-tool-call",
+    "id": "s-6",
+    "seq": 17,
+    "toolCallId": "s-6",
+    "title": "message_send",
+    "server": "plugin_gugu-product_gugu",
+    "tool": "message_send",
+    "status": "running",
+    "rawInput": "{\"chat_id\":\"8c2a1660-abda-46f8-8c15-10f515955ffc\",\"text\":\"still going\"}",
+    "completedAt": 1017
+   }
+  ]
+ },
+ "previewSources": [
+  [
+   "in-1",
+   {
+    "kind": "received",
+    "id": "in-1",
+    "facts": [
+     {
+      "fromId": "user:peer",
+      "from": "d3",
+      "fromType": "human"
+     }
+    ]
+   }
+  ],
+  [
+   "a-1",
+   {
+    "kind": "sent",
+    "id": "s-1:sent:00000000-0000-4000-8000-000000000503",
+    "addresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+      "threadRootId": null,
+      "whisper": false
+     },
+     "recipients": [
+      "user:peer"
+     ],
+     "recipientsExplicit": false,
+     "chatKind": "group",
+     "replyTo": {
+      "fromId": "user:peer",
+      "fromType": "human",
+      "messageId": "msg:00000000-0000-4000-8000-000000000001"
+     },
+     "confirmed": true
+    }
+   }
+  ],
+  [
+   "s-1:sent:00000000-0000-4000-8000-000000000503",
+   {
+    "kind": "sent",
+    "id": "s-1:sent:00000000-0000-4000-8000-000000000503",
+    "addresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+      "threadRootId": null,
+      "whisper": false
+     },
+     "recipients": [
+      "user:peer"
+     ],
+     "recipientsExplicit": false,
+     "chatKind": "group",
+     "replyTo": {
+      "fromId": "user:peer",
+      "fromType": "human",
+      "messageId": "msg:00000000-0000-4000-8000-000000000001"
+     },
+     "confirmed": true
+    }
+   }
+  ],
+  [
+   "in-2",
+   {
+    "kind": "received",
+    "id": "in-2",
+    "facts": [
+     {
+      "fromId": "user:5e19d60e-d73f-4b24-8808-9e9768b77948",
+      "from": "Wei (owner)",
+      "fromType": "human"
+     }
+    ]
+   }
+  ],
+  [
+   "s-2:sent:00000000-0000-4000-8000-000000000506",
+   {
+    "kind": "sent",
+    "id": "s-2:sent:00000000-0000-4000-8000-000000000506",
+    "addresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+      "threadRootId": null,
+      "whisper": false,
+      "peer": "Wei",
+      "recipientUserId": "5e19d60e-d73f-4b24-8808-9e9768b77948"
+     },
+     "recipients": [
+      "user:5e19d60e-d73f-4b24-8808-9e9768b77948"
+     ],
+     "recipientsExplicit": false,
+     "chatKind": "dm",
+     "replyTo": null,
+     "confirmed": true
+    }
+   }
+  ],
+  [
+   "in-3",
+   {
+    "kind": "received",
+    "id": "in-3",
+    "facts": [
+     {
+      "fromId": "user:peer",
+      "from": "d3",
+      "fromType": "human"
+     }
+    ]
+   }
+  ],
+  [
+   "f-1:sent:00000000-0000-4000-8000-000000000601",
+   {
+    "kind": "sent",
+    "id": "f-1:sent:00000000-0000-4000-8000-000000000601",
+    "addresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+      "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+      "whisper": false
+     },
+     "recipients": [],
+     "recipientsExplicit": false,
+     "chatKind": "group",
+     "replyTo": null,
+     "confirmed": true
+    }
+   }
+  ],
+  [
+   "s-3:sent:00000000-0000-4000-8000-000000000511",
+   {
+    "kind": "sent",
+    "id": "s-3:sent:00000000-0000-4000-8000-000000000511",
+    "addresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+      "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+      "whisper": false
+     },
+     "recipients": [],
+     "recipientsExplicit": false,
+     "chatKind": "group",
+     "replyTo": null,
+     "confirmed": true
+    }
+   }
+  ],
+  [
+   "a-2",
+   {
+    "kind": "sent",
+    "id": "r-1:sent:00000000-0000-4000-8000-000000000700",
+    "addresses": {
+     "target": {
+      "kind": "session",
+      "count": 1
+     },
+     "recipients": [
+      "session:abc"
+     ],
+     "recipientsExplicit": true,
+     "chatKind": null,
+     "replyTo": null,
+     "confirmed": true
+    }
+   }
+  ],
+  [
+   "r-1:sent:00000000-0000-4000-8000-000000000700",
+   {
+    "kind": "sent",
+    "id": "r-1:sent:00000000-0000-4000-8000-000000000700",
+    "addresses": {
+     "target": {
+      "kind": "session",
+      "count": 1
+     },
+     "recipients": [
+      "session:abc"
+     ],
+     "recipientsExplicit": true,
+     "chatKind": null,
+     "replyTo": null,
+     "confirmed": true
+    }
+   }
+  ],
+  [
+   "in-4",
+   {
+    "kind": "received",
+    "id": "in-4",
+    "facts": [
+     {
+      "fromId": "user:peer",
+      "from": "d3",
+      "fromType": "human"
+     }
+    ]
+   }
+  ],
+  [
+   "s-4:sent:00000000-0000-4000-8000-000000000515",
+   {
+    "kind": "sent",
+    "id": "s-4:sent:00000000-0000-4000-8000-000000000515",
+    "addresses": {
+     "target": {
+      "kind": "chat",
+      "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+      "threadRootId": null,
+      "whisper": false
+     },
+     "recipients": null,
+     "recipientsExplicit": false,
+     "chatKind": null,
+     "replyTo": null,
+     "confirmed": true
+    }
+   }
+  ]
+ ],
+ "fileGroups": [
+  {
+   "first": "f-1",
+   "last": "f-2",
+   "attachments": [
+    {
+     "messageId": "00000000-0000-4000-8000-000000000601",
+     "name": "a.txt",
+     "kind": "file",
+     "href": "gugu-message-file://00000000-0000-4000-8000-000000000601",
+     "caption": "two files"
+    },
+    {
+     "messageId": "00000000-0000-4000-8000-000000000602",
+     "name": "b.txt",
+     "kind": "file",
+     "href": "gugu-message-file://00000000-0000-4000-8000-000000000602"
+    }
+   ],
+   "to": {
+    "kind": "chat",
+    "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+    "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+    "whisper": false
+   }
+  }
+ ],
+ "perItem": [
+  {
+   "id": "in-1",
+   "send": null,
+   "target": null,
+   "addresses": null
+  },
+  {
+   "id": "a-1",
+   "send": null,
+   "target": null,
+   "addresses": null
+  },
+  {
+   "id": "s-1",
+   "send": {
+    "text": "answer one",
+    "to": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": null,
+     "whisper": false
+    }
+   },
+   "target": {
+    "kind": "chat",
+    "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+    "threadRootId": null,
+    "whisper": false
+   },
+   "addresses": {
+    "target": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": null,
+     "whisper": false
+    },
+    "recipients": [
+     "user:peer"
+    ],
+    "recipientsExplicit": false,
+    "chatKind": "group",
+    "replyTo": {
+     "fromId": "user:peer",
+     "fromType": "human",
+     "messageId": "msg:00000000-0000-4000-8000-000000000001"
+    },
+    "confirmed": true
+   }
+  },
+  {
+   "id": "in-2",
+   "send": null,
+   "target": null,
+   "addresses": null
+  },
+  {
+   "id": "s-2",
+   "send": {
+    "text": "private answer",
+    "to": {
+     "kind": "chat",
+     "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+     "threadRootId": null,
+     "whisper": false,
+     "peer": "Wei",
+     "recipientUserId": "5e19d60e-d73f-4b24-8808-9e9768b77948"
+    }
+   },
+   "target": {
+    "kind": "chat",
+    "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+    "threadRootId": null,
+    "whisper": false,
+    "peer": "Wei",
+    "recipientUserId": "5e19d60e-d73f-4b24-8808-9e9768b77948"
+   },
+   "addresses": {
+    "target": {
+     "kind": "chat",
+     "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+     "threadRootId": null,
+     "whisper": false,
+     "peer": "Wei",
+     "recipientUserId": "5e19d60e-d73f-4b24-8808-9e9768b77948"
+    },
+    "recipients": [
+     "user:5e19d60e-d73f-4b24-8808-9e9768b77948"
+    ],
+    "recipientsExplicit": false,
+    "chatKind": "dm",
+    "replyTo": null,
+    "confirmed": true
+   }
+  },
+  {
+   "id": "x-1",
+   "send": null,
+   "target": null,
+   "addresses": null
+  },
+  {
+   "id": "in-3",
+   "send": null,
+   "target": null,
+   "addresses": null
+  },
+  {
+   "id": "f-1",
+   "send": null,
+   "target": {
+    "kind": "chat",
+    "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+    "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+    "whisper": false
+   },
+   "addresses": {
+    "target": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+     "whisper": false
+    },
+    "recipients": [],
+    "recipientsExplicit": false,
+    "chatKind": "group",
+    "replyTo": null,
+    "confirmed": true
+   }
+  },
+  {
+   "id": "f-2",
+   "send": null,
+   "target": {
+    "kind": "chat",
+    "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+    "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+    "whisper": false
+   },
+   "addresses": {
+    "target": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+     "whisper": false
+    },
+    "recipients": [],
+    "recipientsExplicit": false,
+    "chatKind": "group",
+    "replyTo": null,
+    "confirmed": true
+   }
+  },
+  {
+   "id": "s-3",
+   "send": {
+    "text": "same words",
+    "to": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+     "whisper": false
+    }
+   },
+   "target": {
+    "kind": "chat",
+    "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+    "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+    "whisper": false
+   },
+   "addresses": {
+    "target": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": "msg:00000000-0000-4000-8000-000000000001",
+     "whisper": false
+    },
+    "recipients": [],
+    "recipientsExplicit": false,
+    "chatKind": "group",
+    "replyTo": null,
+    "confirmed": true
+   }
+  },
+  {
+   "id": "a-2",
+   "send": null,
+   "target": null,
+   "addresses": null
+  },
+  {
+   "id": "r-1",
+   "send": {
+    "text": "relayed",
+    "to": {
+     "kind": "session",
+     "count": 1
+    }
+   },
+   "target": null,
+   "addresses": {
+    "target": {
+     "kind": "session",
+     "count": 1
+    },
+    "recipients": [
+     "session:abc"
+    ],
+    "recipientsExplicit": true,
+    "chatKind": null,
+    "replyTo": null,
+    "confirmed": true
+   }
+  },
+  {
+   "id": "in-4",
+   "send": null,
+   "target": null,
+   "addresses": null
+  },
+  {
+   "id": "s-4",
+   "send": {
+    "text": "elsewhere",
+    "to": {
+     "kind": "chat",
+     "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+     "threadRootId": null,
+     "whisper": false
+    }
+   },
+   "target": {
+    "kind": "chat",
+    "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+    "threadRootId": null,
+    "whisper": false
+   },
+   "addresses": {
+    "target": {
+     "kind": "chat",
+     "conversationId": "5e19d60e-d73f-4b24-8808-9e9768b77948",
+     "threadRootId": null,
+     "whisper": false
+    },
+    "recipients": null,
+    "recipientsExplicit": false,
+    "chatKind": null,
+    "replyTo": null,
+    "confirmed": true
+   }
+  },
+  {
+   "id": "s-5",
+   "send": null,
+   "target": null,
+   "addresses": null
+  },
+  {
+   "id": "s-6",
+   "send": {
+    "text": "still going",
+    "to": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": null,
+     "whisper": false
+    }
+   },
+   "target": {
+    "kind": "chat",
+    "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+    "threadRootId": null,
+    "whisper": false
+   },
+   "addresses": {
+    "target": {
+     "kind": "chat",
+     "conversationId": "8c2a1660-abda-46f8-8c15-10f515955ffc",
+     "threadRootId": null,
+     "whisper": false
+    },
+    "recipients": [],
+    "recipientsExplicit": false,
+    "chatKind": "group",
+    "replyTo": null,
+    "confirmed": false
+   }
+  }
+ ]
+}

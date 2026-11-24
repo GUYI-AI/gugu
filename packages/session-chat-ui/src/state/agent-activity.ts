@@ -1,4 +1,5 @@
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
+import { turnPlaces } from '@gugu/session-core/session-record/reply-process';
 import { sendAddressesOf, type SendAddresses } from '@gugu/session-core/session-record/send-addresses';
 import type { RenderUnit, SegmentCtx } from '../core/units';
 import type { ChatMessage, TranscriptItem, TranscriptTurn, TurnCompletionItem } from '../model';
@@ -82,13 +83,14 @@ export function outgoingActivity(id: string, addresses: SendAddresses | undefine
 
 export function pendingActivity(items: readonly TranscriptItem[], turn: TranscriptTurn, ctx: SegmentCtx): AgentActivityEvent | null {
   const pending = items.findLast(item => item.kind === 'mcp-tool-call' && item.status === 'running');
-  return pending ? outgoingActivity(pending.id, sendAddressesOf(pending, turn), ctx) : null;
+  return pending ? outgoingActivity(pending.id, sendAddressesOf(pending, turnPlaces(turn)), ctx) : null;
 }
 
 export function hasUnconfirmedSend(items: readonly TranscriptItem[], turn: TranscriptTurn): boolean {
+  const places = turnPlaces(turn);
   return items.some(item => {
     if (item.kind !== 'mcp-tool-call' || item.status !== 'done') return false;
-    const addresses = sendAddressesOf(item, turn);
+    const addresses = sendAddressesOf(item, places);
     return addresses !== null && !addresses.confirmed;
   });
 }

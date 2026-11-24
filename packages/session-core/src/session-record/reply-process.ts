@@ -99,19 +99,55 @@ export type AgentSend = { text: string; to: AgentSendTarget };
 
 const CONVERSATION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * @@@turn-places — where each item of a turn sits: the user input before it and the top-level item that is or holds
+ * it. Where a send went is read against the delivery it answered, so every send of a turn asks this; each walking the
+ * turn again cost sends × items per read of the turn, and the live turn is read on every frame. One walk answers all
+ * of them, made the first time one is asked.
+ */
+export type TurnPlaces = {
+  readonly turn: TranscriptTurn;
+  /** The turn's items with tool groups opened (`replyItems`). */
+  items(): readonly TranscriptItem[];
+  /** The last user input before the item with this id; `undefined` when no item in the turn has that id. */
+  inputBefore(id: string): TranscriptItem | null | undefined;
+  /** The turn's last user input. */
+  lastInput(): TranscriptItem | null;
+  /** The top-level item that is, or holds, the item with this id. */
+  holder(id: string): TranscriptItem | undefined;
+};
+
+export function turnPlaces(turn: TranscriptTurn): TurnPlaces {
+  let read: { items: TranscriptItem[]; inputs: Map<string, TranscriptItem | null>; last: TranscriptItem | null; holders: Map<string, TranscriptItem> } | undefined;
+  const walk = () => {
+    if (read) return read;
+    const items: TranscriptItem[] = [], inputs = new Map<string, TranscriptItem | null>(), holders = new Map<string, TranscriptItem>();
+    let input: TranscriptItem | null = null;
+    const place = (item: TranscriptItem, top: TranscriptItem): void => {
+      if (item.kind === 'tool-group') { if (!holders.has(item.id)) holders.set(item.id, top); for (const child of item.children) place(child, top); return; }
+      items.push(item);
+      if (!inputs.has(item.id)) inputs.set(item.id, input);
+      if (!holders.has(item.id)) holders.set(item.id, top);
+      if (item.kind === 'message' && item.role === 'user') input = item;
+    };
+    for (const top of turn.items) place(top, top);
+    return read = { items, inputs, last: input, holders };
+  };
+  return { turn, items: () => walk().items, inputBefore: id => walk().inputs.get(id), lastInput: () => walk().last, holder: id => walk().holders.get(id) };
+}
+
 /** The delivery that the agent was answering when it made this call: the last input before it in the turn. */
-function inputFactsBefore(turn: TranscriptTurn, item: TranscriptItem): DeliveryReadFacts | null {
-  const items = replyItems(turn);
-  const end = items.indexOf(item);
-  const input = items.slice(0, end < 0 ? items.length : end).findLast((it) => it.kind === 'message' && it.role === 'user');
+function inputFactsBefore(places: TurnPlaces, item: TranscriptItem): DeliveryReadFacts | null {
+  const before = places.inputBefore(item.id);
+  const input = before === undefined ? places.lastInput() : before;
   if (input?.kind !== 'message') return null;
   const facts = readDeliveryEnvelope(input.text)?.segments.at(-1)?.facts;
   return facts?.route === 'chat' ? facts : null;
 }
 
-function chatSendTarget(args: Record<string, unknown>, item: TranscriptItem, turn?: TranscriptTurn): Extract<AgentSendTarget, { kind: 'chat' }> {
+function chatSendTarget(args: Record<string, unknown>, item: TranscriptItem, places?: TurnPlaces): Extract<AgentSendTarget, { kind: 'chat' }> {
   const whisper = args.whisper === true;
-  const facts = turn ? inputFactsBefore(turn, item) : null;
+  const facts = places ? inputFactsBefore(places, item) : null;
   const receipt = item.kind === 'mcp-tool-call' && item.status === 'done' ? sendReceipt(item.rawOutput || item.outputText) : null;
   const delivered = typeof receipt?.source_link === 'string' ? parseConversationLink(receipt.source_link)?.chatId : null;
   const here = facts !== null && (sourceChatMatches(facts, args.chat_id) || (!!delivered && sourceChatMatches(facts, delivered)));
@@ -126,12 +162,12 @@ function chatSendTarget(args: Record<string, unknown>, item: TranscriptItem, tur
 }
 
 /** Text and file sends share a destination; a captionless file does not have `text` to parse. */
-export function messageSendTargetOf(item: TranscriptItem, turn?: TranscriptTurn): Extract<AgentSendTarget, { kind: 'chat' }> | null {
+export function messageSendTargetOf(item: TranscriptItem, places?: TurnPlaces): Extract<AgentSendTarget, { kind: 'chat' }> | null {
   if (item.kind !== 'mcp-tool-call' || item.status === 'error' || item.parentToolCallId || !isGuguServer(item.server)
     || !/(?:^|__)message_send(?:_file)?$/.test(item.tool)) return null;
   try {
     const args = JSON.parse(item.rawInput ?? '') as Record<string, unknown>;
-    return args && typeof args.chat_id === 'string' && args.chat_id.trim() ? chatSendTarget(args, item, turn) : null;
+    return args && typeof args.chat_id === 'string' && args.chat_id.trim() ? chatSendTarget(args, item, places) : null;
   } catch { return null; }
 }
 
@@ -140,9 +176,9 @@ export function messageSendTargetOf(item: TranscriptItem, turn?: TranscriptTurn)
  * text. The session timeline shows it as the agent speaking, with where it went (desktop flatten and the phone's
  * thread-messages read this one function, like `openedOutputOf`). A failed call, a subagent's, or one whose input was
  * cut in transport (no parsable text) stays an ordinary tool row: its reason or its args are what there is to read.
- * Without `turn` it only answers "is this a send" (tool-run and turn-fold do not need the destination).
+ * Without `places` it only answers "is this a send" (tool-run and turn-fold do not need the destination).
  */
-export function agentSendOf(item: TranscriptItem, turn?: TranscriptTurn): AgentSend | null {
+export function agentSendOf(item: TranscriptItem, places?: TurnPlaces): AgentSend | null {
   if (!('toolCallId' in item) || item.status === 'error') return null;
   const relay = isRootGuguTool(item, 'session_message');
   if (!relay && !isRootSend(item)) return null;
@@ -156,7 +192,7 @@ export function agentSendOf(item: TranscriptItem, turn?: TranscriptTurn): AgentS
     if (item.status === 'done' && (item.rawOutput || item.outputText) && !sent) return null;
     return { text: args.text, to: { kind: 'session', count: sent?.messageIds.length ?? (Array.isArray(args.to) ? args.to.length : 0) } };
   }
-  return { text: args.text, to: chatSendTarget(args, item, turn) };
+  return { text: args.text, to: chatSendTarget(args, item, places) };
 }
 
 /** Every recipient must have a successful delivery receipt; partial failures remain readable as tool output. */

@@ -1,4 +1,4 @@
-import { agentSendOf, replyItems, replySend, replySource, sentMessageId, successfulMessageSend, successfulSessionSend } from '@gugu/session-core/session-record/reply-process';
+import { agentSendOf, replySend, replySource, sentMessageId, successfulMessageSend, successfulSessionSend, turnPlaces } from '@gugu/session-core/session-record/reply-process';
 import { sentAttachmentOf } from '@gugu/session-core/session-record/sent-attachment';
 import { sentFileGroups } from '@gugu/session-core/session-record/sent-file-groups';
 import { sendAddressesOf } from '@gugu/session-core/session-record/send-addresses';
@@ -13,8 +13,7 @@ export function sentMessagesOf(item: TranscriptItem): { sentMessages?: MessageIt
 }
 
 /** A group of file sends is one bubble: drawn by MessageBody only when every file in it can be. */
-function sentFileMessages(items: readonly TranscriptItem[], messageIds: readonly string[]): { sentMessages?: MessageItem[] } {
-  const byId = new Map(items.flatMap(item => { const message = sentMessageOf(item); return message ? [[message.id, message] as const] : []; }));
+function sentFileMessages(byId: ReadonlyMap<string, MessageItem>, messageIds: readonly string[]): { sentMessages?: MessageItem[] } {
   const messages = messageIds.map(id => byId.get(id));
   return messages.every(Boolean) ? { sentMessages: messages as MessageItem[] } : {};
 }
@@ -35,10 +34,15 @@ export function withSettledSentReplies(turn: TranscriptTurn, options: { allDesti
 
 /** Keep successfully delivered replies readable when their tool process is folded. */
 export function withSentReplies(turn: TranscriptTurn, options: { allDestinations?: boolean } = {}): TranscriptTurn {
+  // Every send reads where it sits in the turn (`turnPlaces`): one walk of the turn answers all of them.
+  const places = turnPlaces(turn);
   const source = replySource(turn, undefined, { includeThreads: true });
-  const files = sentFileGroups(turn);
+  const files = sentFileGroups(places);
   if (!source && !options.allDestinations && !files.length) return turn;
-  const items = replyItems(turn);
+  const items = places.items();
+  const fileGroupAt = new Map(files.map(group => [group.first, group]));
+  let sentById: Map<string, MessageItem> | undefined;
+  const sentMessages = () => sentById ??= new Map(items.flatMap(item => { const message = sentMessageOf(item); return message ? [[message.id, message] as const] : []; }));
   const texts = new Set(items.filter(item => item.kind === 'message' && item.role === 'assistant').map(item => item.kind === 'message' ? item.text.trim() : ''));
   const seen = new Set(items.flatMap(item => item.kind === 'message' ? [
     ...(/:sent:([^:]+)$/.exec(item.id)?.slice(1) ?? []), ...((item as import('@session-chat/model').ChatMessage).sentAttachments?.map(file => file.messageId) ?? []),
@@ -47,7 +51,7 @@ export function withSentReplies(turn: TranscriptTurn, options: { allDestinations
   const after = new Map<string, TranscriptTurn['items']>();
   for (const item of items) {
     if (item.kind !== 'mcp-tool-call' || item.status !== 'done') continue;
-    const fileGroup = files.find(group => group.first === item);
+    const fileGroup = fileGroupAt.get(item);
     const attachment = fileGroup?.attachments[0];
     if (!fileGroup && sentAttachmentOf(item)) continue;
     const session = options.allDestinations ? successfulSessionSend(item) : null;
@@ -60,20 +64,20 @@ export function withSentReplies(turn: TranscriptTurn, options: { allDestinations
     const replyTo = 'replyTo' in send ? send.replyTo : undefined;
     const chat = 'chat' in send ? send.chat : undefined;
     const reply = { kind: 'message' as const, id: `${item.id}:sent:${id}`, seq: item.seq, role: 'assistant' as const, text: send.text, ...(attachment ? { sentAttachment: attachment, sentAttachments: fileGroup!.attachments } : {}),
-      ...(fileGroup ? sentFileMessages(items, fileGroup.attachments.map(file => file.messageId)) : sentMessagesOf(item)),
+      ...(fileGroup ? sentFileMessages(sentMessages(), fileGroup.attachments.map(file => file.messageId)) : sentMessagesOf(item)),
       ...(item.completedAt !== undefined ? { at: item.completedAt } : {}),
       ...(replyTo ? { sentReplyTo: replyTo } : {}), ...(chat ? { sentChat: chat } : {}),
       // A send its page held back (transport-trim `folded-form`): the bubble says so too, so that showing it reads the turn again.
       ...(item.held ? { held: true as const } : {}) };
     // 对话布局:气泡下面常驻一小段「发到 群名」(管家 10-28),去向与会话页那一行同一个读法。
-    const to = fileGroup?.to ?? (options.allDestinations ? agentSendOf(item, turn)?.to : undefined);
+    const to = fileGroup?.to ?? (options.allDestinations ? agentSendOf(item, places)?.to : undefined);
     if (to) Object.assign(reply, { sentTo: to });
-    const addresses = sendAddressesOf(item, turn);
+    const addresses = sendAddressesOf(item, places);
     if (addresses) Object.assign(reply, { sentAddresses: addresses });
     replies.push(reply);
     if (options.allDestinations || fileGroup) {
       const last = fileGroup?.last ?? item;
-      const container = turn.items.find(parent => parent.id === last.id || (parent.kind === 'tool-group' && replyItems({ ...turn, items: [parent] }).some(child => child.id === last.id)));
+      const container = places.holder(last.id);
       if (container) after.set(container.id, [...(after.get(container.id) ?? []), reply]);
     }
   }

@@ -1,7 +1,7 @@
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import type { TranscriptTurn } from '@gugu/session-core/acp/client'
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope'
-import { replyItems, successfulMessageSend } from '@gugu/session-core/session-record/reply-process'
+import { replyItems, successfulMessageSend, turnPlaces } from '@gugu/session-core/session-record/reply-process'
 import { sentAttachmentOf } from '@gugu/session-core/session-record/sent-attachment'
 import { sentFileGroups } from '@gugu/session-core/session-record/sent-file-groups'
 
@@ -76,7 +76,7 @@ export function dmMessageIdsByItem(turns: readonly TranscriptTurn[]): Map<string
       if (sent) ids.set(`${item.id}:sent:${sent}`, [sent])
     }
   }
-  for (const turn of turns) for (const group of sentFileGroups(turn)) {
+  for (const turn of turns) for (const group of sentFileGroups(turnPlaces(turn))) {
     ids.set(`${group.first.id}:sent:${group.attachments[0].messageId}`, group.attachments.map(file => file.messageId))
   }
   return ids

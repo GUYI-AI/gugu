@@ -4,6 +4,7 @@ import { isGuguServer } from '../acp/models/turns/opened-outputs';
 import { catalogCall, toolCallName } from '../acp/models/turns/tool-calls';
 import { foldDeliveryEnvelope, readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { isQuestionOrPlanToolName } from './sources/question-tools';
+import { turnPlaces, type TurnPlaces } from './reply-process';
 import { sendAddressesOf } from './send-addresses';
 import { deriveToolInputSummary } from './tool-input-summary';
 import type {
@@ -127,7 +128,7 @@ const STUB_STRINGS: ReadonlySet<string> = new Set(['kind', 'id', 'toolCallId', '
 const PLAIN_SEND = /(?:^|__)(?:message_send|session_message)$/;
 
 /** What a folded page knows of itself: who its envelopes prove an agent, which sub-agents it shows ended, and the turn at hand. */
-type PageFacts = { agents: ReadonlySet<string>; ended: ReadonlySet<string>; turn?: TranscriptTurn };
+type PageFacts = { agents: ReadonlySet<string>; ended: ReadonlySet<string>; places?: TurnPlaces };
 
 function pageFacts(turns: readonly TranscriptTurn[]): PageFacts {
   const agents = new Set<string>(), ended = new Set<string>();
@@ -161,7 +162,7 @@ function stubOf(node: ToolNode, limit: number, row: boolean, facts?: PageFacts):
 /** A confirmed send to agents only, with its text cut to the opening; null when it is not one or has nothing to cut. */
 function foldedSend(node: ToolNode, facts: PageFacts): ToolNode | null {
   if (node.kind !== 'mcp-tool-call' || node.status !== 'done' || node.parentToolCallId || !isGuguServer(node.server) || !PLAIN_SEND.test(node.tool)) return null;
-  const to = sendAddressesOf(node, facts.turn);
+  const to = sendAddressesOf(node, facts.places);
   if (!to?.confirmed || !to.recipients?.length || !to.recipients.every(address => facts.agents.has(address))) return null;
   try {
     const args = JSON.parse(node.rawInput ?? '') as Record<string, unknown> | null;
@@ -343,7 +344,7 @@ function withoutEchoedContent(item: TranscriptItem): TranscriptItem {
  * conversation these two are 3.9MB and 1.0MB.
  */
 function leanTurn(turn: TranscriptTurn, limit: number, lean: LeanPage, facts?: PageFacts): TranscriptTurn {
-  const items = trimItemsForTransport(turn.items, limit, lean, facts && { ...facts, turn });
+  const items = trimItemsForTransport(turn.items, limit, lean, facts && { ...facts, places: turnPlaces(turn) });
   const meta = turn.foreground !== undefined && '_meta' in turn.foreground;
   if (!turn.terminals && !meta) return items === turn.items ? turn : { ...turn, items };
   const { terminals: _captures, ...rest } = turn;
