@@ -359,8 +359,11 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
 
   /** Side by side with the tools on the right, the conversation and the tools are two cards (index.css `[data-chat-tool-card]`). */
   get chatToolCardPaneId(): string | undefined {
-    const tools = this.chatWorkspaceMode === 'split' && !this.narrow ? this.chatWorkspacePanes?.tools : undefined;
-    return tools && this.groups[0] !== tools ? tools.paneId : undefined;
+    const mode = this.chatWorkspaceMode;
+    const tools = this.chatWorkspacePanes?.tools;
+    if (!tools || this.narrow || this.groups[0] === tools) return undefined;
+    // Hidden but still on the track, the tools are on their way off (@@@leaving-panes): the two cards stay until they are.
+    return mode === 'split' || (mode === 'hidden' && this.isPaneShown(tools.paneId)) ? tools.paneId : undefined;
   }
 
   get chatWorkspaceSinglePaneId(): string | undefined {

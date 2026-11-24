@@ -98,6 +98,8 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
   useLayoutEffect(() => {
     const chatNode = chatColumn.current;
     const toolNode = toolColumn.current;
+    const workspace = header.current?.closest<HTMLElement>('[data-chat-tool-workspace]');
+    const halfGap = workspace ? parseFloat(getComputedStyle(workspace).getPropertyValue('--chat-card-half-gap')) || 0 : 0;
     const place = ({ drawn, from, to, extent }: CutEdge) => {
       if (toolsFirst) {
         const open = Math.max(from, to);
@@ -106,9 +108,14 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
         setChatRest(extent - open);
       } else if (toolCard) {
         // @@@card-head-width - the cards' heads ride the same edge as their bodies, in the same frame (the edge is written as
-        // the track draws the slots): the conversation's head ends where its card does (its slot less the divider's pixel and
-        // half the gutter, its margin), the tools' strip starts where their card does (its own margin is the other half).
-        if (chatNode) chatNode.style.flex = `0 0 calc(${drawn - 1}px - var(--chat-card-half-gap))`;
+        // the track draws the slots): the conversation's head ends where its card does (its slot less the divider's pixel —
+        // none is drawn while the tools leave — and its right gap), the tools' strip starts where their card does.
+        // The conversation's right gap is half the gutter, ❌ more than the tools have left: as they come on or go off the
+        // track it closes with them, so the card meets the one-card surface without a jump.
+        const divider = leaving ? 0 : 1;
+        const gap = Math.max(0, Math.min(halfGap, extent - drawn - divider));
+        workspace?.style.setProperty('--chat-card-right-gap', `${gap}px`);
+        if (chatNode) chatNode.style.flex = `0 0 ${drawn - divider - gap}px`;
         if (toolNode) Object.assign(toolNode.style, { left: `${drawn - 1}px`, width: `calc(100% - ${Math.min(from, to)}px - var(--chat-card-half-gap))` });
         setChatRest(Math.min(from, to));
       } else {
@@ -118,6 +125,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       }
     };
     if (divided && edge) return edge.attach(place);
+    workspace?.style.removeProperty('--chat-card-right-gap');
     if (chatNode) Object.assign(chatNode.style, { flex: '', marginInlineStart: '' });
     if (toolNode) Object.assign(toolNode.style, { left: '', width: '' });
     setChatRest(undefined);
