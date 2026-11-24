@@ -284,15 +284,6 @@ export function TabStripShell({
       }}
       onClick={onClick}
     >
-      {leadingSlot ? (
-        <div
-          className="absolute inset-y-0 flex items-center justify-center"
-          style={{ insetInlineStart: `${leading - TAB_STRIP_LEADING_PX}px`, width: `${TAB_STRIP_LEADING_PX}px` }}
-          data-tabstrip-leading=""
-        >
-          {leadingSlot}
-        </div>
-      ) : null}
       <div
         ref={scrollerRef}
         // 页签只占剩下的(基准 0):放不下时右端那一排(TabBarActionRow)才是让位的那个,❌ 两边按比例一起缩。
@@ -322,6 +313,18 @@ export function TabStripShell({
         ) : null}
         {dropZone}
       </div>
+      {/* After the tabs (it is placed absolutely, so only the document order moves): Electron applies the window-drag regions
+          in document order, and the capsule's layer over the whole strip inherits the strip's drag; drawn before it, the
+          handle's and the toggle's no-drag holes would be filled again. */}
+      {leadingSlot ? (
+        <div
+          className="absolute inset-y-0 flex items-center justify-center"
+          style={{ insetInlineStart: `${leading - TAB_STRIP_LEADING_PX}px`, width: `${TAB_STRIP_LEADING_PX}px` }}
+          data-tabstrip-leading=""
+        >
+          {leadingSlot}
+        </div>
+      ) : null}
       {overflowSlot}
       {actionsSlot}
     </div>
