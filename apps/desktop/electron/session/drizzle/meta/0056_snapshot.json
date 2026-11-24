@@ -759,22 +759,6 @@
       },
       "uniqueConstraints": {}
     },
-    "im_message_retired_accounts": {
-      "name": "im_message_retired_accounts",
-      "columns": {
-        "account_id": {
-          "name": "account_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {}
-    },
     "im_message_tombstones": {
       "name": "im_message_tombstones",
       "columns": {
@@ -2385,6 +2369,13 @@
         }
       },
       "indexes": {
+        "idx_sessions_archived_at": {
+          "name": "idx_sessions_archived_at",
+          "columns": [
+            "archived_at"
+          ],
+          "isUnique": false
+        },
         "idx_sessions_workspace_id": {
           "name": "idx_sessions_workspace_id",
           "columns": [
@@ -2907,6 +2898,6 @@
   "internal": {
     "indexes": {}
   },
-  "id": "969578b3-7357-4920-a18f-b57d3073f406",
+  "id": "9bfb4521-c950-4ca5-991c-1ad50bb84ade",
   "prevId": "23058d07-e4d9-4ffe-a6a5-8ad0aacd30b2"
 }

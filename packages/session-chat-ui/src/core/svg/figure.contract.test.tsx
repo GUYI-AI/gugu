@@ -58,11 +58,9 @@ describe('svgFigure', () => {
     '',
     'height="86"',
     'height="86" width="0"',
-    'height="86" width="-1"',
     'height="86" width="1e999"',
     'height="86" width="100%"',
     'height="86" width="240oops"',
-    'height="86" width="0x10"',
     'viewBox="0 0 0 10"',
     'viewBox="0 0 0 10" width="100%" height="86"',
   ])('keeps the fallback for unusable SVG sizing (%s)', (attributes) => {

@@ -69,6 +69,9 @@ describe('a Gugu-model (platform) session: launch values byte-for-byte as before
           "gugu-platform": {
             "name": "Gugu platform quota",
             "api": "openai-responses",
+            "compat": {
+              "supportsStrictMode": true
+            },
             "baseUrl": "https://relay.example/v1",
             "apiKey": "\${GUGU_PI_API_KEY}",
             "authHeader": true,
@@ -108,6 +111,9 @@ describe('a Gugu-model (platform) session: launch values byte-for-byte as before
           "gugu-platform": {
             "name": "Gugu platform quota",
             "api": "openai-responses",
+            "compat": {
+              "supportsStrictMode": true
+            },
             "baseUrl": "https://relay.example/v1",
             "apiKey": "\${GUGU_PI_API_KEY}",
             "authHeader": true,

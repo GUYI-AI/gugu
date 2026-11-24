@@ -3,9 +3,6 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { presentAgentStatus } from '@gugu/core/shared/agentStatusPresentation';
-import { groupSettings } from '@/components/chat/useGroupChatSettings';
-import { followRendererSession, queryClient } from '@/lib/replica';
-import { UI_EVENTS } from '@/lib/uiEvents';
 import { observable, runInAction } from 'mobx';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -157,6 +154,8 @@ state.toggleIdleExpanded.mockImplementation((key: string) => runInAction(() => {
 const { publishChatSummaries } = await import('@/lib/chatSummariesBridge');
 const { readComposerVerb, setComposerVerb } = await import('@/lib/composerVerbBridge');
 const { setInnerSidebarTopicsAll, publishInnerSidebarTopicsView, publishOneListAgentRows, useInnerSidebarPresent } = await import('@/lib/innerSidebarBridge');
+// The open topics page, as the bridge holds it (the chat block reads it through useInnerSidebarTopicsAll).
+const readInnerSidebarTopicsAll = () => ((window as unknown as Record<string, unknown>).__GUGU_INNER_SIDEBAR_TOPICS_ALL__ as string | undefined) ?? null;
 const { installShellSlots, readShellSlots } = await import('@/lib/shellSlots');
 const { InnerSidebar, InnerSidebarRestore, innerSidebarChat, innerSidebarShownFor } = await import('./inner-sidebar');
 const { innerSidebarFolded, innerSidebarFoldedAway, setInnerSidebarFolded, shellRestoreLaneTaken } = await import('./inner-sidebar-fold');
@@ -169,7 +168,6 @@ type ScreenBlockContent = import('@renderer/app/screen-layout').ScreenBlockConte
 
 let host: HTMLDivElement;
 let root: Root;
-const counts = () => (window as unknown as Record<string, unknown>).__GUGU_MY_CHAT_AGENT_COUNTS__ as ReadonlyMap<string, unknown>;
 const sections = () => [...host.querySelectorAll<HTMLElement>('[data-inner-sidebar-section]')].map((section) => section.dataset.innerSidebarSection);
 const sessionRows = () => [...host.querySelectorAll<HTMLElement>('[data-session-row]')].map((row) => row.dataset.sessionRow);
 const moreRows = () => [...host.querySelectorAll<HTMLElement>('[data-more-row]')].map((row) => row.textContent);
@@ -255,14 +253,14 @@ describe('inner sidebar', () => {
     // Only my agents are listed in a group too, but the title reads 「智能体」 (owner 11-12).
     expect(host.querySelector('[data-inner-sidebar-section="agents"]')?.textContent).toContain('sidebar.agents');
     expect(sessionRows()).toEqual(['mine-in-group']);
-    expect(agentsCount()).toBe('1');
+    expect(agentsCount(), 'v16: no count beside Agents').toBeUndefined();
     expect(readShellSlots()!.getSlots().has('inner-topics:group')).toBe(true);
   });
 
-  it('a project: Agents above Topics — its own sessions plus agents created in its group with no project; members living elsewhere are not listed (#2599)', async () => {
+  it('a project: Topics above Agents, as a group (v16) — its own sessions plus agents created in its group with no project; members living elsewhere are not listed (#2599)', async () => {
     openProject('p-shop');
     await render();
-    expect(sections()).toEqual(['agents', 'topics']);
+    expect(sections()).toEqual(['topics', 'agents']);
     expect(host.textContent).toContain('sidebar.agents');
     expect(sessionRows()).toEqual(['shop-chat-agent', 'shop-idle', 'shop-task']);
   });
@@ -297,7 +295,7 @@ describe('inner sidebar', () => {
     expect(rows.every((row) => row.dataset.agentAvatar === 'true')).toBe(true);
   });
 
-  it('opens the group root, keeps group creation separate, and shows the shared conversation menu', async () => {
+  it('opens the group root and keeps group creation separate; no ⋯ on the head', async () => {
     publishChatSummaries([{ id: 'group', kind: 'group', name: 'Planning', unread_count: 5, member_user_ids: ['agent-a'] }, { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: ['agent-a'] }]);
     openChat('group');
     await render();
@@ -321,40 +319,13 @@ describe('inner sidebar', () => {
     expect(state.openInfoTab).not.toHaveBeenCalled();
     expect(state.closeInfoTab).not.toHaveBeenCalled();
     state.infoShown = false;
-    const more = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-hover] [data-testid="inner-head-more"]')!;
-    expect(more).not.toBeNull();
-
-    // The menu has the same items as the conversation header, with creation in its own button.
+    // v16: the head block is avatar, name and create only; no ⋯ (the group's items live on its details page).
+    expect(host.querySelector('[data-inner-head="group"] [data-testid="inner-head-more"]')).toBeNull();
     const trailing = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.parentElement!;
-    expect([...trailing.children].map((child) => (child as HTMLElement).dataset.innerHeadHover !== undefined ? 'more' : 'fold')).toEqual(['more', 'fold']);
+    expect(trailing.children).toHaveLength(1);
     const create = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-create]')!;
     expect(create, 'the group head has a direct creation entry').not.toBeNull();
     expect(create.parentElement).toBe(head().parentElement);
-    const addMembers = vi.fn();
-    window.addEventListener(UI_EVENTS.addGroupMembers, addMembers);
-    await act(async () => {
-      followRendererSession('SIGNED_IN', 'group-header-test');
-      groupSettings.set(['group'], { my_role: 'member' } as Parameters<typeof groupSettings.set>[1]);
-      followRendererSession('INITIAL_SESSION', null);
-    });
-    try {
-      await act(async () => more.click());
-      const menu = document.querySelector('[data-testid="group-header-menu"]')!;
-      expect(menu.querySelector('[data-testid="group-add-new-agent"]')).toBeNull();
-      expect(menu.querySelector('[data-testid="chat-header-search-button"]')).not.toBeNull();
-      const invite = menu.querySelector<HTMLElement>('[data-testid="group-add-members"]')!;
-      expect(invite).not.toBeNull();
-      await act(async () => invite.click());
-      expect(addMembers).toHaveBeenCalledOnce();
-      expect(addMembers.mock.calls[0]?.[0].detail).toEqual({ chatId: 'group' });
-      expect(state.navigateToGroupRoot).toHaveBeenCalledTimes(2);
-    } finally {
-      window.removeEventListener(UI_EVENTS.addGroupMembers, addMembers);
-      await act(async () => {
-        followRendererSession('SIGNED_OUT', null);
-        queryClient.clear();
-      });
-    }
     await act(async () => create.click());
     expect(readComposerVerb('group')).toBe('task');
     // The create flow brings up its composer itself. It must not also fire the heading.
@@ -367,7 +338,7 @@ describe('inner sidebar', () => {
     expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('shop-chat');
   });
 
-  it('All › (the only way to every topic: no 「All N topics」 row under them) keeps what sits above Topics and hides what sits below; ‹ Back brings it back', async () => {
+  it('All › (the only way to every topic: no 「All N topics」 row under them) opens the topics page in the group\'s block; the column stays as it is; ‹ Back closes it', async () => {
     topicsView('group', { total: 9, hidden: 6 });
     openChat('group');
     await render();
@@ -375,16 +346,17 @@ describe('inner sidebar', () => {
     expect(drill().dataset.innerTopicsDrill).toBe('all');
     expect(moreRows()).toEqual([]);
     await act(async () => drill().click());
-    expect(sections()).toEqual(['topics']);
+    expect(state.navigateToGroupRoot).toHaveBeenLastCalledWith('group');
+    expect(readInnerSidebarTopicsAll()).toBe('group');
+    expect(sections(), 'the column does not change: the page is in the main area').toEqual(['topics', 'agents']);
     expect(drill().dataset.innerTopicsDrill).toBe('back');
     await act(async () => drill().click());
-    expect(sections()).toEqual(['topics', 'agents']);
+    expect(readInnerSidebarTopicsAll()).toBeNull();
 
-    topicsView('shop-chat', { total: 9, hidden: 6 });
-    openProject('p-shop');
-    await render();
+    // The head row goes back to the group itself, closing the page.
     await act(async () => drill().click());
-    expect(sections()).toEqual(['agents', 'topics']);
+    await act(async () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-slot="button"]')!.click());
+    expect(readInnerSidebarTopicsAll()).toBeNull();
   });
 
   it('no All › when level one already shows every topic', async () => {
@@ -403,7 +375,6 @@ describe('inner sidebar', () => {
     openProject('p-shop');
     await render();
     expect(host.querySelector('[data-agent-group]'), 'no group headers').toBeNull();
-    expect(agentsCount()).toBe('13');
     expect(sessionRows()).toEqual([...Array.from({ length: 5 }, (_, index) => `idle-${index}`), ...Array.from({ length: 5 }, (_, index) => `run-${index}`), 'asks']);
     expect(moreRows()).toEqual(['sidebar.showMore:2']);
     await act(async () => host.querySelector<HTMLElement>('[data-more-row="chat:shop-chat"]')!.click());
@@ -443,7 +414,6 @@ describe('inner sidebar', () => {
     const agents = () => host.querySelector<HTMLElement>('[data-inner-sidebar-section="agents"]')!;
     await act(async () => agents().querySelector<HTMLElement>('button[aria-label="sidebar.collapseAgents"]')!.click());
     expect(sessionRows()).toEqual([]);
-    expect(agentsCount()).toBe('2');
     expect(agents().querySelector('[aria-label="sidebar.unreadCount:1"]')?.textContent).toBe('1');
   });
 
@@ -464,10 +434,8 @@ describe('inner sidebar', () => {
     expect(restore.querySelector('button')).toBeNull();
     const fold = host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!;
     expect(fold.getAttribute('aria-label')).toBe('sidebar.collapseInner');
-    // The fold button sits at the row's far end, right of the hover 「+」.
-    const ends = [...fold.parentElement!.children];
-    expect(ends.at(-1)).toBe(fold);
-    expect(ends.at(-2)?.matches('[data-inner-head-hover]')).toBe(true);
+    // The fold button sits at the row's far end.
+    expect([...fold.parentElement!.children].at(-1)).toBe(fold);
 
     await act(async () => fold.click());
     expect(innerFrame.folded, 'folded: its slot closes, the content is the card alone').toBe(true);
@@ -530,6 +498,22 @@ describe('inner sidebar', () => {
     act(() => shell.unmount());
   });
 
+  it("a project's task opened from anywhere (a rail avatar, not the column) keeps the project's column, and folded its restore button", async () => {
+    const restore = document.body.appendChild(document.createElement('div'));
+    const restoreRoot = createRoot(restore);
+    await act(async () => restoreRoot.render(<InnerSidebarRestore />));
+    go('session', { session: { sessionId: 'shop-idle', projectId: 'p-shop' } });
+    await render();
+    expect(host.querySelector('[data-inner-sidebar-chat="shop-chat"]'), 'a project task lost its column').not.toBeNull();
+    expect(innerSidebarChat.get()).toEqual({ kind: 'project', chatId: 'shop-chat' });
+    act(() => setInnerSidebarFolded(true));
+    await render();
+    expect(restore.querySelector('button[aria-label="sidebar.expandInner"]'), 'folded, the column had no way back').not.toBeNull();
+    act(() => setInnerSidebarFolded(false));
+    act(() => restoreRoot.unmount());
+    restore.remove();
+  });
+
   it('back to a project after another group: its agent screen comes back with the project, lit and with its fold button; contacts in between change nothing', async () => {
     const restore = document.body.appendChild(document.createElement('div'));
     const restoreRoot = createRoot(restore);
@@ -567,23 +551,11 @@ describe('inner sidebar', () => {
     act(() => restoreRoot.unmount());
     restore.remove();
   });
-
-  it('publishes my agents per project group and per group for the row badge: only those living there', async () => {
-    openChat('dm');
-    await render();
-    // shop-task (running), shop-idle, shop-chat-agent: agent-a and agent-m are members there but live elsewhere (#2599).
-    // Planning: mine-in-group (running) lives there; member-only is running and a member, but was created in a DM.
-    expect([...counts()]).toEqual([
-      ['shop-chat', { total: 3, running: 1 }],
-      ['group', { total: 1, running: 1 }],
-    ]);
-  });
 });
 
-// #2574 my standalone agent (its own row in the list: a DM, in no group or project) spawned sub-agents: opening it opens
-// the inner column, the head row is the agent, 智能体 lists its sub-agents.
+// A private chat has no inner column, even with an agent that spawned sub-agents (overrides #2574): its sub-sessions are
+// reached from its details page.
 describe('a standalone agent with sub-agents', () => {
-  const solo = { kind: 'agent', chatId: 'dm-solo', agentUserId: 'agent-solo' };
   // What the one list draws as my agents' own rows: it alone decides (lib/sidebarOneList oneListAgentRows).
   const soloRow = { chatId: 'dm-solo', name: 'Solo', avatar: null, createdAt: null };
   const beeRow = { chatId: 'dm-b', name: 'Bee', avatar: null, createdAt: null };
@@ -612,181 +584,15 @@ describe('a standalone agent with sub-agents', () => {
       { id: 'dm-a', kind: 'ai', name: 'Ace', peer_user_id: 'agent-a', unread_count: 0 },
     ]);
   });
-  const head = () => host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-slot="button"]');
 
-  it('opening it shows the column: the agent as its head row (fold only), then just 智能体 with its sub-agents, most recent first', async () => {
-    const shell = createRoot(document.createElement('div'));
-    await act(async () => shell.render(<ShellProbe />));
+  it('opening it, or one of its sub-agents, shows no column', async () => {
     openSession('solo-task');
-    await render();
-    const column = host.querySelector<HTMLElement>('[data-region="inner-sidebar"]')!;
-    expect(column.dataset.innerSidebarKind).toBe('agent');
-    expect(column.dataset.innerSidebarChat).toBe('dm-solo');
-    expect(host.querySelector('[data-inner-head="dm-solo"]')?.textContent).toContain('Solo');
-    expect(head()!.getAttribute('aria-current'), 'its own conversation is open').toBe('page');
-    // No 「+」: its sub-agents are its own to spawn, and it is nobody's group.
-    expect(host.querySelector('[data-inner-head="dm-solo"] [data-group-add-menu]'), 'an agent column has no group add menu').toBeNull();
-    const fold = host.querySelector<HTMLElement>('[data-inner-head="dm-solo"] [data-inner-head-fold]')!;
-    expect([...fold.parentElement!.children].at(-1)).toBe(fold);
-    // No 话题: the agent's conversation is its session.
-    expect(sections()).toEqual(['agents']);
-    expect(readShellSlots()!.getSlots().has('inner-topics:dm-solo')).toBe(false);
-    // The grandchild stays folded under its parent; the count is every sub-agent.
-    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy', 'sub-asks']);
-    expect(agentsCount()).toBe('4');
-    expect(innerSidebarChat.get()).toEqual(solo);
-    expect(shellColumnPresent).toBe(true);
-    act(() => shell.unmount());
-  });
-
-  it('a sub-agent opened from it keeps the column and the agent lit in the list; the head goes back to the agent; anything else closes it', async () => {
-    openSession('solo-task');
-    await render();
-    openSession('sub-busy', true);
-    await render();
-    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
-    expect(innerSidebarChat.get()).toEqual(solo);
-    expect(head()!.getAttribute('aria-current')).toBeNull();
-    openSession('grandchild', true);
-    await render();
-    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
-    await act(async () => head()!.click());
-    expect(state.openSessionWhenReady).toHaveBeenLastCalledWith({ projectId: 'p-y', sessionId: 'solo-task' });
-    expect(head()!.getAttribute('aria-current')).toBe('page');
-    openSession('mine-elsewhere');
     await render();
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
     expect(innerSidebarChat.get()).toBeNull();
-  });
-
-  it('no sub-agents, no column: the conversation opens as today', async () => {
-    openSession('mine-elsewhere');
+    openSession('sub-busy', true);
     await render();
     expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
     expect(innerSidebarChat.get()).toBeNull();
-    // Its sub-agents gone, the agent opens without one too.
-    state.items = state.items.filter((entry) => !entry.parentSessionId);
-    openSession('solo-task');
-    await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
-  });
-
-  it('a sub-agent opened on its own opens nothing, even one with sub-agents of its own: it has no row of its own', async () => {
-    openSession('sub-busy');
-    await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
-    openSession('sub-quiet');
-    await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
-  });
-
-  it('opens only on a row the one list draws for the agent: none (its folder still counted as a project, its group not read yet) → no column, whatever the summaries say', async () => {
-    // The summaries say it lives nowhere; the list, which decides, draws no row for it.
-    listRows({ 'agent-b': beeRow });
-    openSession('solo-task');
-    await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
-    // The list has said nothing yet (still reading): unknown, so no column either.
-    act(() => publishOneListAgentRows(null));
-    await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
-    // Its row drawn: the column opens; the row gone: it closes, a sub-agent open or not.
-    listRows({ 'agent-solo': soloRow });
-    await render();
-    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
-    openSession('sub-busy', true);
-    await render();
-    listRows({});
-    await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
-  });
-
-  it('the head row is the list row: its name comes from that row, not the chat summary', async () => {
-    listRows({ 'agent-solo': { ...soloRow, name: 'Solo as the list names it' } });
-    publishChatSummaries([{ id: 'dm-solo', kind: 'dm', name: null, peer_user_id: 'agent-solo', unread_count: 0 }]);
-    openSession('solo-task');
-    await render();
-    expect(host.querySelector('[data-inner-head="dm-solo"]')?.textContent).toContain('Solo as the list names it');
-  });
-
-  it("the head goes straight back to the agent's own session: the column stays even where opening its chat lands on a chat view", async () => {
-    // Opening the DM can fall back to the chat view (its conversation not in the directory): that closes the column.
-    state.openChatOnScreen.mockImplementation((chatId: string) => runInAction(() => state.live.navigate('chat', { chatId })));
-    openSession('solo-task');
-    await render();
-    openSession('sub-busy', true);
-    await render();
-    await act(async () => head()!.click());
-    await render();
-    expect(state.openSessionWhenReady).toHaveBeenCalledWith({ projectId: 'p-y', sessionId: 'solo-task' });
-    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
-    expect(head()!.getAttribute('aria-current')).toBe('page');
-    state.openChatOnScreen.mockReset();
-  });
-
-  it("a fork of the agent under another agent's tree is not its conversation: it opens nothing, and its children are not the agent's", async () => {
-    state.items = [...state.items, item('solo-fork', 'p-y', running, 0, 'mine-elsewhere'), item('fork-kid', 'p-y', running, 0, 'solo-fork')];
-    state.agents.set('solo-fork', 'agent-solo');
-    state.agents.set('fork-kid', 'agent-fk');
-    openSession('solo-fork');
-    await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
-    openSession('solo-task');
-    await render();
-    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy', 'sub-asks']);
-    expect(agentsCount()).toBe('4');
-  });
-
-  it('derives the sessions once per change, not once per render', async () => {
-    openSession('solo-task');
-    await render();
-    const reads = state.placementReads;
-    for (const session of ['sub-busy', 'grandchild', 'sub-asks', 'solo-task']) {
-      openSession(session, true);
-      await render();
-    }
-    expect(state.placementReads).toBe(reads);
-    state.items = state.items.filter((entry) => entry.id !== 'sub-asks');
-    await render();
-    expect(state.placementReads).toBeGreaterThan(reads);
-    expect(sessionRows()).toEqual(['sub-quiet', 'sub-busy']);
-  });
-
-  it('an agent living in a group or a project is no standalone agent: no column of its own, sub-agents or not', async () => {
-    state.items = [...state.items, item('group-sub', 'p-x', running, 0, 'mine-in-group'), item('shop-sub', 'p-z', running, 0, 'shop-idle')];
-    state.agents.set('group-sub', 'agent-gs');
-    state.agents.set('shop-idle', 'agent-shop');
-    state.agents.set('shop-sub', 'agent-ss');
-    publishChatSummaries([
-      { id: 'group', kind: 'group', name: 'Planning', unread_count: 0, member_user_ids: ['agent-a', 'human'] },
-      { id: 'shop-chat', kind: 'group', name: 'Shop', unread_count: 0, member_user_ids: [] },
-      { id: 'dm-a', kind: 'ai', name: 'Ace', peer_user_id: 'agent-a', unread_count: 0 },
-      { id: 'dm-shop', kind: 'dm', name: 'Shopper', peer_user_id: 'agent-shop', unread_count: 0 },
-    ]);
-    openSession('mine-in-group');
-    await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
-    openSession('shop-idle');
-    await render();
-    expect(host.querySelector('[data-region="inner-sidebar"]')).toBeNull();
-  });
-
-  it('folds with every other column (one global fold) and comes back from the restore lane', async () => {
-    const restore = document.body.appendChild(document.createElement('div'));
-    const restoreRoot = createRoot(restore);
-    await act(async () => restoreRoot.render(<InnerSidebarRestore />));
-    openChat('group');
-    await render();
-    await act(async () => host.querySelector<HTMLElement>('[data-inner-head="group"] [data-inner-head-fold]')!.click());
-    openSession('solo-task');
-    await render();
-    expect(innerFrame.folded).toBe(true);
-    expect(innerSidebarFoldedAway.get()).toBe(true);
-    expect(innerSidebarChat.get(), 'still attached: the list keeps the agent lit').toEqual(solo);
-    await act(async () => restore.querySelector<HTMLElement>('button[aria-label="sidebar.expandInner"]')!.click());
-    expect(host.querySelector('[data-inner-sidebar-chat="dm-solo"]')).not.toBeNull();
-    expect(innerSidebarShownFor.get()).toBe('dm-solo');
-    act(() => restoreRoot.unmount());
-    restore.remove();
   });
 });

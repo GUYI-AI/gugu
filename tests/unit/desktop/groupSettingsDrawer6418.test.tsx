@@ -391,17 +391,17 @@ describe('the first page after the header cleanup', () => {
   const text = () => q('[data-group-settings-page]')?.textContent ?? ''
   const picker = () => [...document.querySelectorAll('[role="dialog"]')].find((dialog) => dialog.textContent?.includes('添加群成员')) ?? null
 
-  it('lists members, the folder, then the settings; search is not here; clearing sits with leaving at the bottom', async () => {
+  it('lists members, the folder, then the settings; search is not here; clearing sits with leaving at the bottom (第 16 版: no danger heading)', async () => {
     await renderDrawer('member-1')
     expect(text()).not.toContain('查找聊天记录')
-    const order = ['群成员', '文件', '群公告', '协作规则', '群描述', '消息通知', '置顶对话', '危险操作', '清空聊天记录', '退出群聊'].map((label) => [label, text().indexOf(label)] as const)
+    const order = ['群成员', '文件', '群公告', '协作规则', '群描述', '消息通知', '置顶对话', '清空聊天记录', '退出群聊'].map((label) => [label, text().indexOf(label)] as const)
     expect(order.filter(([, at]) => at < 0), 'every row is on the page').toEqual([])
     expect(order.map(([, at]) => at)).toEqual([...order.map(([, at]) => at)].sort((a, b) => a - b))
   })
 
-  it('the folder row opens this group\'s folder, the same action as the header menu\'s item', async () => {
+  it('the folder tile opens this group\'s folder, the same action as the header menu\'s item', async () => {
     await renderDrawer('member-1')
-    await click(q('[data-testid="group-settings-folder"]'))
+    await click(q('[data-testid="chat-details-folder"]'))
     expect(panels.openPanelItem).toHaveBeenCalledExactlyOnceWith('chat-1', expect.anything())
     expect(page(), 'the info page stays where it was').toBe('main')
   })

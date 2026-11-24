@@ -5,7 +5,6 @@ import { formatBytes, type ServerMachineNotice } from '@gugu/core/cloud/serverMa
 import { cloudComputerFailureKindOf } from '@gugu/core/cloud/cloudComputer';
 import type { CloudComputerPresence, DeviceServerUpdate } from '@gugu/core/shared/types/deviceHost';
 import type { DirectTerminalReason } from '@shared/direct-terminal-link';
-import { secondsUntilRetry, type ReconnectPhase } from '@shared/remote-reconnect';
 import type { SessionMessageValues } from '@renderer/localization/locale-store';
 import type { SessionMessageLookupKey } from '@renderer/localization/messages';
 
@@ -230,79 +229,6 @@ export const GONE_CODES = new Set(['record_not_found', 'not_found', 'conversatio
 /** 一次失败会不会自己好:太旧、会话没了都不会(重试只是把同一句错话说很多遍)。 */
 export function isRetryableRemoteError(code: string | null): boolean {
   return !(code && (code === 'client_outdated' || TOO_OLD_CODES.has(code) || GONE_CODES.has(code)));
-}
-
-export type ChatLinkRow = {
-  label: string;
-  /** 行里那段可点的字:立即重连 / 重新连接 / 登录(远程 SSH 要先登录);没有就只说事实。 */
-  action: { label: string; kind: 'reconnect-now' | 'reconnect' | 'sign-in' } | null;
-} | null;
-
-/**
- * 聊天界面末尾那一行说什么。
- * @param phase 重连节奏(在线时才有意义)
- * @param errorCode 最近一次失败的错误码(决定「太旧」「会话没了」这类专门的说法)
- */
-export function chatLinkRow(input: {
-  device: string;
-  online: boolean;
-  lastSeenAt: string | null | undefined;
-  /** 离线的原因是登录没了(见 RemoteHostDevice.signInExpiredAt)。 */
-  signInExpiredAt?: string | null;
-  phase: ReconnectPhase;
-  errorCode: string | null;
-  now: number;
-  translate: Translate;
-  /** #6264 远程 SSH 的机器要先登录(与侧栏、顶上那张卡片同一个判据)。 */
-  signInRequired?: boolean;
-}): ChatLinkRow {
-  const { device, translate } = input;
-  if (input.signInRequired) {
-    return {
-      label: translate('remoteHost.condition.signInRequired', { device }),
-      action: { label: translate('remoteHost.signIn'), kind: 'sign-in' },
-    };
-  }
-  if (!input.online && input.signInExpiredAt !== undefined) {
-    return { label: translate('remoteHost.condition.signedOut', { device }), action: null };
-  }
-  if (!input.online) {
-    const ago = formatAgo(input.lastSeenAt, input.now, translate);
-    return {
-      label: ago
-        ? translate('remoteHost.condition.offline', { device, ago })
-        : translate('remoteHost.condition.offlineNever', { device }),
-      action: null,
-    };
-  }
-  switch (input.phase.kind) {
-    case 'connected':
-      return null;
-    case 'connecting':
-      // 第一次连:界面上是普通加载态,❌ 在这里再说一遍。
-      return input.phase.attempt > 0
-        ? { label: translate('remoteHost.condition.reconnecting', { device }), action: null }
-        : null;
-    case 'waiting':
-      return {
-        label: translate('remoteHost.condition.waiting', {
-          device,
-          seconds: secondsUntilRetry(input.phase, input.now) ?? 0,
-        }),
-        action: { label: translate('remoteHost.reconnectNow'), kind: 'reconnect-now' },
-      };
-    case 'gave-up': {
-      const code = input.errorCode;
-      if (code === 'client_outdated') return { label: translate('remoteHost.notice.desktopTooOld', { device }), action: null };
-      const label =
-        code && TOO_OLD_CODES.has(code)
-          ? translate('remoteHost.condition.tooOld', { device })
-          : code && GONE_CODES.has(code)
-            ? translate('remoteHost.condition.sessionGone', { device })
-            : translate('remoteHost.condition.gaveUp', { device });
-      return { label, action: { label: translate('remoteHost.reconnect'), kind: 'reconnect' } };
-    }
-  }
 }
 
 // ── 聊天界面:那台机器有件事要人知道 ─────────────────────────────────────────────

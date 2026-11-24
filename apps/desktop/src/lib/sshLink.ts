@@ -65,6 +65,14 @@ export type SshLinkFailure =
   | 'notSignedIn'
   | 'notInstalled'
 
+/**
+ * The SSH path itself failed (handshake, key, network), as opposed to the server on the far side answering it. Only these
+ * say a remote tunnel's route is broken; the others mean the route worked and the machine's server said no.
+ */
+export function sshPathFailed(reason: SshLinkFailure): boolean {
+  return reason === 'unreachable' || reason === 'signInRequired' || reason === 'hostKeyChanged'
+}
+
 /** 界面上一台远程 SSH 机器的设备连接状况(设备行、侧栏、新建页同一个说法;缺席 / null = 连着)。 */
 export type SshLinkState = 'signInRequired' | 'unreachable' | 'outdated' | 'updating'
 

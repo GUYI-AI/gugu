@@ -30,24 +30,21 @@
  * chevron, no toggle, no panel — because a disclosure control that reveals
  * nothing is a promise the row cannot keep.
  *
- * Shimmer applies while status === 'running'.
+ * The label takes the still running ink (runningText) while status === 'running'.
  *
  * Outer geometry (height, padding) is applied by tool.def.tsx Render; this
  * component only describes inner content.
  */
 
-import { ShimmerText } from '@session-chat/components/primitives/ShimmerText';
-import { useCommands } from '@session-chat/components/contexts/CommandsContext';
+import { runningText } from '@session-chat/styles/effects.css';
 import { IconError, IconShieldAlert } from '@session-chat/components/primitives/icons';
 import { applySoftWraps } from '@session-chat/core/measure/soft-wrap';
-import { For, Show, createMemo, createResource, createSignal, onCleanup, onMount } from 'solid-js';
-import { observeAnimationViewport } from '@gugu/session-shared/animation-visibility';
+import { For, Show } from 'solid-js';
 import { useChatTranslator } from '@session-chat/localization';
 import type { ChatToolCall } from '@session-chat/model';
 import { activateToolRow } from '@session-chat/lib/tool-activation';
 import { chevron, chevronExpanded } from '@session-chat/components/primitives/collapse-header.css';
 import type { ToolPayloadGeometry } from './tool.layout';
-import type { ToolThumbStrip } from './tool-images';
 import {
   toolChevronSlot,
   toolErrorIcon,
@@ -61,10 +58,6 @@ import {
   toolRow,
   toolRowCollapsible,
   toolSummary,
-  toolThumb,
-  toolThumbImage,
-  toolThumbMore,
-  toolThumbs,
 } from './tool.css';
 
 export type ToolProps = {
@@ -72,8 +65,6 @@ export type ToolProps = {
   /** True when the row has a payload and is therefore a disclosure control. */
   collapsible: boolean;
   expanded: boolean;
-  /** The strip of pictures the call handed back (tool-images.ts); null when it handed none. */
-  thumbs: ToolThumbStrip | null;
   /** Panel geometry for the current width; null while collapsed or empty. */
   payload: ToolPayloadGeometry | null;
   codeLineH: number;
@@ -145,9 +136,9 @@ export function Tool(props: ToolProps) {
             </span>
           </span>
         </Show>
-        <ShimmerText class={toolName} active={isRunning()}>
+        <span class={toolName} classList={{ [runningText]: isRunning() }}>
           {props.item.name}
-        </ShimmerText>
+        </span>
         <Show when={props.item.inputSummary}>
           <span class={toolSummary} data-slot="tool-call-query">
             {props.item.inputSummary}
@@ -161,7 +152,7 @@ export function Tool(props: ToolProps) {
             其余读作已完成」表达状态。gugu 的工具行两个身份都当：单独一行时是
             tool-call，折进「过程」里时是 timeline 的一步 —— 只能取一个，取 timeline。
             一屏十几个一模一样的绿勾信息量是零，还把真正要找的那个红记号淹了。
-            ⇒「做完了」由「没有微光」表达（`toolName` 上的 textShimmer）。 */}
+            ⇒「做完了」由名字回到常态墨色表达（`toolName` 上的 runningText）。 */}
         <Show
           when={props.item.awaitingPermission}
           fallback={
@@ -194,9 +185,6 @@ export function Tool(props: ToolProps) {
           </span>
         </Show>
       </div>
-      <Show when={props.thumbs}>
-        {(thumbs) => <ToolThumbs item={props.item} strip={thumbs()} />}
-      </Show>
       <Show when={props.payload}>
         {(payload) => <ToolPayloadPanel payload={payload()} codeLineH={props.codeLineH} />}
       </Show>
@@ -204,73 +192,3 @@ export function Tool(props: ToolProps) {
   );
 }
 
-/**
- * The pictures the call handed back, as fixed boxes (tool-images.ts): the first `strip.shown` of them, the last box
- * saying how many more there are. A click opens the host's viewer on all of them from that one. Decoding is the
- * browser's business off the row's paint (`decoding=async`, `loading=lazy`): the box is already its final size.
- */
-export function ToolThumbs(props: { item: Pick<ChatToolCall, 'id' | 'images' | 'imageCount'>; strip: ToolThumbStrip }) {
-  const commands = useCommands();
-  const translate = useChatTranslator();
-  const count = () => props.item.imageCount ?? props.item.images?.length ?? 0;
-  const [visible, setVisible] = createSignal(false);
-  const [openFailed, setOpenFailed] = createSignal(false);
-  let root!: HTMLDivElement;
-  onMount(() => onCleanup(observeAnimationViewport(root, setVisible)));
-  // Like committed attachment thumbnails, a Solid resource owns the fetched bytes.
-  // The product's shared viewport observer delays fetching retained/offscreen rows.
-  // A reseeded transcript hands the same call back as a new object; fetching again then would race the store's history
-  // reload and lose pictures already shown, so only a different call, shown count or inline set fetches again. A reseed
-  // that lands while a fetch is out can make that fetch come back empty: then it is asked again (a few times at most).
-  let reseeds = 0;
-  const source = createMemo(() => (reseeds++, visible() && { id: props.item.id, shown: props.strip.shown, images: props.item.images }),
-    undefined, { equals: (a, b) => !!a && !!b && a.id === b.id && a.shown === b.shown && a.images?.length === b.images?.length });
-  const [resolved] = createResource(source, async ({ id, shown, images }) => {
-    for (let attempt = 0; ; attempt++) {
-      const asked = reseeds;
-      const urls = await Promise.all(Array.from({ length: shown }, (_, index) =>
-        images?.[index] ?? commands().resolveToolImage?.(id, index) ?? null));
-      if (urls.every(Boolean) || reseeds === asked || attempt === 2) return { id, urls };
-    }
-  });
-  const urlAt = (index: number) => props.item.images?.[index]
-    ?? (resolved()?.id === props.item.id ? resolved()?.urls[index] ?? undefined : undefined);
-  return (
-    <div ref={root} class={toolThumbs} data-slot="tool-call-images" style={{ height: `${props.strip.stripH}px` }}>
-      <For each={Array.from({ length: Math.min(count(), props.strip.shown) }, (_, index) => index)}>
-        {(index) => (
-          <button
-            type="button"
-            class={toolThumb}
-            aria-label={translate('transcript.viewImage', { name: `${index + 1}/${count()}` })}
-            title={openFailed() || (!resolved.loading && resolved() && !urlAt(index))
-              ? translate('transcript.imageUnavailable') : undefined}
-            data-image-state={urlAt(index) ? 'ready' : resolved.loading ? 'loading' : 'unavailable'}
-            onClick={(e) => {
-              const itemId = props.item.id;
-              const thumb = e.currentTarget.querySelector('img') ?? undefined;
-              const ready = Array.from({ length: count() }, (_, i) => urlAt(i));
-              const open = (urls: (string | null | undefined)[]) => {
-                if (props.item.id !== itemId) return;
-                setOpenFailed(urls.some(url => !url));
-                if (urls.some(url => !url)) return;
-                commands().onViewImages?.({
-                  urls: urls as string[], index, itemId, source: 'tool-result', thumb,
-                });
-              };
-              if (ready.every(Boolean)) open(ready);
-              else void Promise.all(ready.map((url, i) =>
-                url ?? commands().resolveToolImage?.(itemId, i) ?? null
-              )).then(open);
-            }}
-          >
-            <img class={toolThumbImage} src={urlAt(index)} alt="" loading="lazy" decoding="async" />
-            <Show when={props.strip.more > 0 && index === props.strip.shown - 1}>
-              <span class={toolThumbMore} data-slot="tool-call-images-more">+{props.strip.more}</span>
-            </Show>
-          </button>
-        )}
-      </For>
-    </div>
-  );
-}

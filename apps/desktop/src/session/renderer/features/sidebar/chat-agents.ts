@@ -6,7 +6,7 @@ import { needsYouCount, sidebarStateGroup } from './session-groups';
 import { summarizeSessionBranches, type SessionBranchSummary } from './sidebar-session-branch';
 
 // #2548 内层侧栏的「智能体」(群里也这么写,owner 11-12):**住在**这个群或项目里的我的会话(这台电脑与连着的机器上的,即侧栏里那些),
-// 别人的智能体 ❌ 列在这里(它们在聊天和成员面板里)。项目行头像角上那个数读的是同一个推导(myAgentsInChat → chatAgentCounts)。
+// 别人的智能体 ❌ 列在这里(它们在聊天和成员面板里)。
 // #2599 住在哪按「在哪建的」定,❌ 按它此刻是哪些群的成员:成员关系一对多、随时在变,只在那个群里多一个成员。
 
 /** 侧栏里我的一条会话,外加它背后的那个咕咕身份(会话 → agent 的绑定,sessionAgentBindings)。 */

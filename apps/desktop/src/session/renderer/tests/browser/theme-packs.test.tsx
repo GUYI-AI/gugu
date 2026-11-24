@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest'
 import { evaluateObsidianCss } from '@/session/renderer/lib/theme/theme-pack-import'
 import { chooseThemePack, resetThemePacks } from '@/session/renderer/lib/theme/theme-pack-store'
 import { writeThemePreference } from '@/session/renderer/lib/theme/host-theme'
-import { resolvePalette } from '@/session/renderer/lib/theme/theme-packs'
+import { groundCss, resolvePalette } from '@/session/renderer/lib/theme/theme-packs'
 import { appThemeColors } from '@/session/renderer/lib/theme/app-theme-colors'
 import { applyThemeColors } from '@/session/app-runtime/theme-colors'
 import { BUILTIN_THEME_PACKS } from '@/session/renderer/lib/theme/theme-pack-store'
@@ -40,6 +40,10 @@ it('a chosen pack out-ranks tokens.css on the root, in both modes', () => {
   chooseThemePack(pack.id)
   const read = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
   expect(read('--bg')).toBe(resolvePalette(pack.modes.light!, 'light').bg)
+  // The window ground is drawn by a more specific rule (the window material); it still takes the theme's ground.
+  document.documentElement.dataset.windowMaterial = 'opaque'
+  expect(read('--shell-bg')).toBe(groundCss(resolvePalette(pack.modes.light!, 'light').ground))
+  delete document.documentElement.dataset.windowMaterial
   writeThemePreference('dark')
   expect(read('--bg')).toBe(resolvePalette(pack.modes.dark!, 'dark').bg)
   expect(read('--muted-fg')).toBe(resolvePalette(pack.modes.dark!, 'dark').mutedFg)

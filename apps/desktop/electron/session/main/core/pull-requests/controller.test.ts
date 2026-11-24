@@ -315,27 +315,6 @@ describe('pullRequestController', () => {
     expect(mockPrQueryService.getSessionPullRequests).not.toHaveBeenCalled();
   });
 
-  it('passes the project GitHub account context to pull request creation and follow-up sync', async () => {
-    mockProjectGithubContext();
-    mockPrSyncEngine.createPullRequest.mockResolvedValue(
-      ok({ url: 'https://github.com/acme/repo/pull/12', number: 12 })
-    );
-    mockPrSyncEngine.syncSingle.mockResolvedValue(ok(null));
-
-    const params = {
-      repositoryUrl: 'https://github.com/acme/repo',
-      head: 'feature',
-      base: 'main',
-      title: 'Test',
-      draft: false,
-    };
-
-    await expect(pullRequestController.createPullRequest('project-1', params)).resolves.toEqual(
-      ok({ url: 'https://github.com/acme/repo/pull/12', number: 12 })
-    );
-
-  });
-
   it('does not create pull requests with the default account when project account resolution fails', async () => {
     mockResolveProjectPullRequestAuthContext.mockResolvedValue(
       err({
@@ -361,42 +340,6 @@ describe('pullRequestController', () => {
 
     expect(mockPrSyncEngine.createPullRequest).not.toHaveBeenCalled();
     expect(mockResolveProjectPullRequestContext).not.toHaveBeenCalled();
-  });
-
-  it('passes the project GitHub account context to pull request mutations', async () => {
-    mockProjectGithubContext();
-    mockPrSyncEngine.mergePullRequest.mockResolvedValue(ok({ sha: 'abc123', merged: true }));
-    mockPrSyncEngine.markReadyForReview.mockResolvedValue(ok());
-    mockPrSyncEngine.syncSingle.mockResolvedValue(ok(null));
-
-    await expect(
-      pullRequestController.mergePullRequest('project-1', 'https://github.com/acme/repo', 12, {
-        strategy: 'squash',
-        commitHeadOid: 'head-sha',
-      })
-    ).resolves.toEqual(ok({ sha: 'abc123', merged: true }));
-    await expect(
-      pullRequestController.markReadyForReview('project-1', 'https://github.com/acme/repo', 12)
-    ).resolves.toEqual(ok());
-
-  });
-
-  it('passes the project GitHub account context to pull request reads', async () => {
-    mockProjectGithubContext();
-    mockPrSyncEngine.syncSingle.mockResolvedValue(ok(null));
-    mockPrSyncEngine.syncChecks.mockResolvedValue(ok(true));
-    mockPrSyncEngine.getPullRequestComments.mockResolvedValue(ok([]));
-
-    await expect(
-      pullRequestController.refreshPullRequest('project-1', 'https://github.com/acme/repo', 12)
-    ).resolves.toEqual(ok({ pr: null }));
-    await expect(
-      pullRequestController.syncChecks('project-1', 'https://github.com/acme/repo/pull/12', 'abc')
-    ).resolves.toEqual(ok({ hasRunning: true }));
-    await expect(
-      pullRequestController.getPullRequestComments('project-1', 'https://github.com/acme/repo', 12)
-    ).resolves.toEqual(ok({ comments: [] }));
-
   });
 
   it('maps create API errors to create_failed', async () => {

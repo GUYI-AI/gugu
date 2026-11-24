@@ -132,7 +132,7 @@ describe('permanent native IM retirement', () => {
     expect(createImMessageStore(sql).throughRevision(A)).toBe('19')
     await initializeDatabase(sql)
     expect(sql.prepare('SELECT * FROM __drizzle_migrations').all()).toHaveLength(oldLedger.length+1)
-    expect(bundledMigrations().at(-1)?.tag).toBe('0056_retired_message_accounts')
+    expect(bundledMigrations().at(-1)?.tag).toBe('0060_retired_message_accounts')
     expect(sql.pragma('foreign_key_check')).toEqual([])
   })
   it('refuses an unmigrated connection instead of silently disabling the permanent fence', async () => {

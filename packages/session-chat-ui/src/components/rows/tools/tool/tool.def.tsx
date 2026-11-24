@@ -6,13 +6,11 @@ import { defineUnit } from '@session-chat/core/units';
 import { pxTokens } from '@session-chat/styles/px-tokens';
 import { assignInlineVars } from '@vanilla-extract/dynamic';
 import { createMemo } from 'solid-js';
-import { toolCallLabel, toolImageUrl } from '@gugu/session-core/acp/client';
+import { toolCallLabel } from '@gugu/session-core/acp/client';
 import type { ChatToolCall, ToolNode } from '@session-chat/model';
-import { hasToolPictures } from '@session-chat/state/tool-run';
 import { deriveToolInputSummary } from '@gugu/session-core/session-record/tool-input-summary';
 import { Tool } from './Tool';
 import { toolRoot, toolVars, type ToolStyleVars } from './tool.css';
-import { toolThumbStrip, type ToolThumbStrip } from './tool-images';
 import { toolActivationNames } from '@session-chat/lib/tool-activation';
 import {
   hasToolPayload,
@@ -23,15 +21,6 @@ import {
   type ToolPayloadGeometry,
   type ToolPayloadItem,
 } from './tool.layout';
-
-/** A call's pictures as the strip reads them: inline ones as URLs, ones the history left behind as a count. */
-export function toolPictures(item: ToolNode): Pick<ChatToolCall, 'images' | 'imageCount'> {
-  const base = 'toolCallId' in item && hasToolPictures(item) ? item : null;
-  return {
-    ...(base?.images?.length ? { images: base.images.map(toolImageUrl) } : {}),
-    ...(base?.imageRefs?.length ? { imageCount: base.imageRefs.length } : {}),
-  };
-}
 
 export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
   const base = 'toolCallId' in item ? item : null;
@@ -126,7 +115,6 @@ export function toolFromItem(item: ToolNode, ctx: SegmentCtx): ChatToolCall {
     inputSummary: resolvedSummary,
     ...(base?.rawInput !== undefined ? { request: base.rawInput } : {}),
     ...(result !== undefined ? { result } : {}),
-    ...toolPictures(item),
   };
 }
 
@@ -165,22 +153,8 @@ export function toolPayloadFor(
   return toolPayloadGeometry(sections, ctx.theme.fonts.code.lineHeight, vars);
 }
 
-/**
- * The picture strip under the header (tool-images.ts): there whenever the call handed pictures back, open or closed —
- * unless the host hides them (`ChatLayout.hideToolPictures`, the phone): then no strip, no height, no fetch. Every
- * strip (tool row, conversation step, folded line) is sized here, so this is the one place that decides.
- */
-export function toolThumbsFor(
-  item: Pick<ChatToolCall, 'images' | 'imageCount'>,
-  ctx: Pick<MeasureCtx, 'theme' | 'width'>,
-  width = ctx.width
-): ToolThumbStrip | null {
-  if (ctx.theme.layout?.hideToolPictures) return null;
-  return toolThumbStrip(item.imageCount ?? item.images?.length ?? 0, width);
-}
-
 function toolUnitH(item: ChatToolCall, ctx: MeasureCtx, vars: ToolVars): number {
-  return vars.rowH + (toolThumbsFor(item, ctx)?.stripH ?? 0) + (toolPayloadFor(item, ctx, vars)?.panelH ?? 0);
+  return vars.rowH + (toolPayloadFor(item, ctx, vars)?.panelH ?? 0);
 }
 
 function ToolUnitRender(props: { data: ChatToolCall; ctx: RenderCtx; vars: ToolVars }) {
@@ -197,11 +171,7 @@ function ToolUnitRender(props: { data: ChatToolCall; ctx: RenderCtx; vars: ToolV
   // Derived from the same memo the panel renders from, not from a second call to
   // toolUnitH: two independent computations of one height is exactly the desync
   // `toolRoot { overflow: hidden }` exists to survive.
-  const thumbs = createMemo<ToolThumbStrip | null>(() => {
-    const ctx = mCtx();
-    return ctx ? toolThumbsFor(props.data, ctx) : null;
-  });
-  const totalH = () => props.vars.rowH + (thumbs()?.stripH ?? 0) + (payload()?.panelH ?? 0);
+  const totalH = () => props.vars.rowH + (payload()?.panelH ?? 0);
   const codeLineH = () => mCtx()?.theme.fonts.code.lineHeight ?? 0;
 
   const styleVars = (): ToolStyleVars => ({ rowH: props.vars.rowH, height: totalH() });
@@ -216,7 +186,6 @@ function ToolUnitRender(props: { data: ChatToolCall; ctx: RenderCtx; vars: ToolV
         item={props.data}
         collapsible={hasToolPayload(props.data)}
         expanded={isExpanded()}
-        thumbs={thumbs()}
         payload={payload()}
         codeLineH={codeLineH()}
       />
@@ -249,7 +218,7 @@ export const toolUnitDef = defineUnit<ChatToolCall, ToolVars>({
       (sum, [text, cap]) => (text ? sum + Math.min(text.split('\n').length, cap) : sum),
       0
     );
-    return vars.rowH + (toolThumbsFor(item, ctx)?.stripH ?? 0) + sourceLines * ctx.theme.fonts.code.lineHeight;
+    return vars.rowH + sourceLines * ctx.theme.fonts.code.lineHeight;
   },
 
   measure(item, ctx, vars): number {

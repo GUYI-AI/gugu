@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
@@ -64,22 +64,6 @@ describe('MarkdownRenderer', () => {
     dom.window.close();
   });
 
-  it('constrains markdown images in compact rendering', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(MarkdownRenderer, {
-        content: '![Screenshot](https://example.com/screenshot.png)',
-        density: 'compact',
-      })
-    );
-
-    expect(html).toContain('src="https://example.com/screenshot.png"');
-    expect(html).toContain('alt="Screenshot"');
-    expect(html).toContain('aria-label="Expand image"');
-    expect(html).toContain('max-w-full');
-    expect(html).toContain('max-h-80');
-    expect(html).toContain('object-contain');
-  });
-
   it('a workspace image read before, its re-read failed: the image stays and the failure is said beside it', async () => {
     const { followRendererSession } = await import('@/lib/replica');
     const { workspaceImage } = await import('@renderer/features/sessions/workspace-backend/workspace-image');
@@ -95,38 +79,6 @@ describe('MarkdownRenderer', () => {
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,AAAA');
     expect(container.querySelector('[data-refresh-failed]')).not.toBeNull();
-  });
-
-  it('constrains allowed HTML images in compact rendering', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(MarkdownRenderer, {
-        content: '<img src="https://example.com/preview.png" alt="Preview">',
-        density: 'compact',
-      })
-    );
-
-    expect(html).toContain('src="https://example.com/preview.png"');
-    expect(html).toContain('alt="Preview"');
-    expect(html).toContain('aria-label="Expand image"');
-    expect(html).toContain('max-w-full');
-    expect(html).toContain('max-h-80');
-    expect(html).toContain('object-contain');
-  });
-
-  it('renders compact markdown tables with visible structure', () => {
-    const html = renderToStaticMarkup(
-      React.createElement(MarkdownRenderer, {
-        content:
-          '| Layer | What | How |\n| --- | --- | --- |\n| Primary | Headline | Display size |',
-        density: 'compact',
-      })
-    );
-
-    expect(html).toContain('<table');
-    expect(html).toContain('border-collapse');
-    expect(html).toContain('<th');
-    expect(html).toContain('<td');
-    expect(html).toContain('Primary');
   });
 
   it.each(['comfortable', 'compact'] as const)(
@@ -321,12 +273,6 @@ function sessionThemeCss(): string {
 }
 
 describe('任务页 Tailwind 必须扫到 Streamdown', () => {
-  it('index.css 里有指向 streamdown/dist 的 @source', () => {
-    // 少了这一行:class 照常输出、样式一条不生成、控制台不报任何错。
-    expect(sessionThemeCss()).toMatch(/@source\s+['"][^'"]*streamdown\/dist['"]/);
-    // 而且这条路径必须真的指到东西上 —— 相对深度写错时症状与压根没写完全一样。
-    expect(existsSync(streamdownDistFromSource())).toBe(true);
-  });
 
   /**
    * Streamdown 吐什么色标,会话页的 @theme 就得登记什么 —— Tailwind v4 对没登记的

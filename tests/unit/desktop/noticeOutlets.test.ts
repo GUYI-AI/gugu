@@ -32,9 +32,10 @@ describe('notice outlets', () => {
       'apps/desktop/src/lib/notices.tsx', 'apps/desktop/src/styles/tokens.css']);
     // The one remaining fixed bar on its own layer: sign-in lost (page state that blocks writes; owner 11-22 kept it as is).
     expect(matching(/--z-banner\b/), guide).toEqual(['apps/desktop/src/components/SessionExpiredNotice.tsx', 'apps/desktop/src/styles/tokens.css']);
-    // The embedded browser page reads where a toast is (a native view must not paint over it): a reader, not a drawer.
-    expect(matching(/data-sonner-|<Toaster\b/), guide).toEqual(['apps/desktop/src/components/NoticeHost.tsx', 'apps/desktop/src/components/notice-host.css',
-      'apps/desktop/src/session/renderer/features/browser/browser-page-occlusion.ts']);
+    // The host's own place (notice-host-position.ts reads it again when a notice appears) and the embedded browser page,
+    // which reads where a toast is (a native view must not paint over it): readers, not drawers.
+    expect(matching(/data-sonner-|<Toaster\b/), guide).toEqual(['apps/desktop/src/components/NoticeHost.tsx', 'apps/desktop/src/components/notice-host-position.ts',
+      'apps/desktop/src/components/notice-host.css', 'apps/desktop/src/session/renderer/features/browser/browser-page-occlusion.ts']);
   });
 
   it('the host is mounted once per document: the main app (ToastProvider), and the session page when it is its own document', () => {

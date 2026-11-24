@@ -20,17 +20,7 @@ export const UI_EVENTS = {
   // 聊天页 / 资料卡 / 分享浮层读的都是通讯录那一份,❌ 让它们挂着旧名等 realtime。
   ownedAgentRenamed: '__owned_agent_renamed',
   quoteMessage: '__chat_quote_message',
-  // @@@5856 这是个 **window 级**事件,而同一扇窗里现在有两个输入框(主线 + 话题分栏)。
-  // 两份都听 ⇒ 一次 attach 同时进两个待发队列。所以只有主输入框(InputArea 的 surface='main')登记它 ——
-  // 与 focusComposer 的登记表是同一个形状的坑:单例语义遇上第二个挂载点。
   composerAttachFiles: '__chat_composer_attach_files',
-  // @@@5856 有一条「开成分栏」的请求待取(请求本体在 topicSplitRequest.ts 的盒子里)。
-  // 事件只负责叫醒**已经挂着的**聊天区;没挂载的那种情况靠它挂载时自己去取。
-  openTopicSplit: '__chat_open_topic_split',
-  // @@@5856 分栏现在显示的是哪条话题(关掉时 chatId 为 null)。会话列表据此给话题子行高亮。
-  // 只有这一个方向(聊天区 → 列表):「打开一条话题」不走事件,它就是普通的选中会话,
-  // 由聊天区那个收口当场换成「来源线 + 分栏」(见 ChatAreaPanel 的话题收口)。
-  topicSplitChanged: '__chat_topic_split_changed',
   // @@@sessionpage 分享 — 会话页头部点了分享:main 转达「分享这个 agent」,由 gugu 渲染层用自己的
   // 通讯录数据打开既有的 SharePosterDialog(contact QR 名片)。
   sessionpageShareAgent: '__sessionpage_share_agent',
@@ -51,8 +41,8 @@ export const UI_EVENTS = {
   sessionpageReveal: '__sessionpage_reveal',
   // 「在本群打开」(app-redesign §5): an App was opened from a chat (detail = { extensionId, chatId? }) — `useOpenApp`.
   openApp: '__open_app',
-  // 群成员面板里「新建 Agent 并加入本群」(detail = { chatId }):壳打开新建 Agent 的那一页,并带上这个群
-  // —— 建出来的 agent 一出生就进群(与 session_spawn 的 chat_id 同一条 birth-groups 链),建完回到这个群。
+  // 群的「+ → 新建 Agent」(detail = { chatId }):壳打开这个群,把输入框切成派任务并带上进群
+  // —— 建出来的 agent 坐任务座位进群(与 session_spawn 的 chat_id 同一条 birth-groups 链),结果回这个群。
   createAgentInGroup: '__create_agent_in_group',
   // 「添加成员」 (detail = { chatId }): the shell draws the member picker (GroupAddMembersHost).
   addGroupMembers: '__add_group_members',

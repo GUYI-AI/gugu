@@ -1,10 +1,10 @@
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
-import { customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica, valueOf } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
-import { annotationPrompt, sessionAnnotations } from '../annotations/session-annotations';
+import { annotatedSend, sessionAnnotations } from '../annotations/session-annotations';
 import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '../annotations/annotation-images';
 import { useSessionInputNotice, type SessionInputNotice } from '../session-input-notice';
 import { isCodexStartupFailure, sessionStartupFailureCopy } from '../session-input-failure-copy';
@@ -25,7 +25,6 @@ import { useConversationVisibility } from '@/components/chat/useConversationVisi
 import { useNativeConversationRead } from '@/hooks/useNativeConversationRead';
 import { SessionInputQueue } from '@/components/chat/SessionInputQueue';
 import { sessionLifeView } from '../stores/session-life-views';
-import { lifeIsStarting } from '@shared/core/sessions/session-life';
 import { AgentFailureSlot } from '@/components/AgentFailureSlot';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { useSessionMessageQuotes } from './use-session-message-quotes';
@@ -56,7 +55,7 @@ import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { nativeChatAppearance } from '@renderer/lib/chat/native-chat-appearance.css';
 import { useMarkSeenWhenShown } from '@renderer/features/sessions/hooks/use-mark-seen-when-shown';
 import { createPortal, flushSync } from 'react-dom';
-import { SessionChatLoading, CodexPreparationStatus } from './session-chat-loading';
+import { CodexPreparationStatus } from './codex-preparation-status';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { IntegrationIcon } from '@renderer/features/integrations/integration-icon';
 import { useConnectedIssueProviders } from '@renderer/features/integrations/use-connected-issue-providers';
@@ -106,6 +105,7 @@ type PanelCondition = Omit<ChatSessionCondition, 'actions'> & {
 import { rpc } from '@renderer/lib/ipc';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
+import { machineUnavailableLabel } from '../machine-unavailable-label';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { readConversationFile } from '@/components/assistant/assistantTimelineClient';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
@@ -189,7 +189,7 @@ import {
   type McpSessionPanelAdapterSkill,
 } from '@renderer/features/mcp/components/mcp-session-panel-adapter';
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
-import { classifyProviderPermissionMode } from '@gugu/session-core/acp/client';
+import { classifyProviderPermissionMode, type TurnAnnotation } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sessionFastMode } from '../session-config/fast-mode';
 import { renderFastModeHint } from '../session-config/fast-mode-hint';
@@ -262,7 +262,6 @@ const ComposerForStore = observer(function ComposerForStore({
   store,
   editorApiRef,
   composerSlot,
-  contentOverlaySlot,
   onViewAttachment,
   onScrollToBottom,
   modelMenuRequest,
@@ -272,7 +271,6 @@ const ComposerForStore = observer(function ComposerForStore({
   store: AcpChatStore;
   editorApiRef: RefObject<PromptEditorRef | null>;
   composerSlot: HTMLElement;
-  contentOverlaySlot: HTMLElement | null;
   /** 面板要把模型菜单打开(「这个模型要会员」那一行上的「换模型」):每变一次开一次。 */
   modelMenuRequest: number;
   onModelMenuRequest: () => void;
@@ -348,7 +346,7 @@ const ComposerForStore = observer(function ComposerForStore({
    * 那一件的 chip 上写着为什么、能重试。正文在等的时候留在输入框里,❌ 先清掉再说。
    */
   const sendWhenReady = useCallback(
-    async (value: string, deliver: (text: string, files: TurnFileRef[]) => void | Promise<void>) => {
+    async (value: string, deliver: (text: string, files: TurnFileRef[], annotations?: TurnAnnotation[]) => void | Promise<void>) => {
       if (sendingRef.current) return;
       sendingRef.current = true;
       const annotated = annotationDraft.items;
@@ -357,7 +355,7 @@ const ComposerForStore = observer(function ComposerForStore({
         fileUploads.keepOnly(new Set(retained.map(item => item.id)));
         setAttachments(retained);
         prepareAnnotationImages(annotated, fileUploads);
-        await sendComposerInput(annotationPrompt(value, annotated, locale), {
+        await sendComposerInput(annotatedSend(value, annotated, locale), {
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
           waitForUploads: async () => { await fileUploads.waitForUploads(); },
           hasFailedAttachments: () => attachmentsRef.current.some(att => att.state === 'error'),
@@ -381,7 +379,7 @@ const ComposerForStore = observer(function ComposerForStore({
 
   const handleSubmit = useCallback(
     // The store's one send entry (custody; it toasts a failure); a send that cannot be kept goes back in the draft below.
-    (value: string) => { const id = store.draftSubmissionId; return sendWhenReady(value, (text, files) => store.submitPrompt(text, [], files, id)); },
+    (value: string) => { const id = store.draftSubmissionId; return sendWhenReady(value, (text, files, annotations) => store.submitPrompt(text, [], files, id, annotations)); },
     [store, sendWhenReady]
   );
 
@@ -400,7 +398,7 @@ const ComposerForStore = observer(function ComposerForStore({
   const customFeatures = runningCustomModel && customReading.state === 'value'
     ? customReading.value.find((record) => record.id === runningCustomModel.connectionId)?.models.find(({ id }) => id === runningCustomModel.modelId)
     : undefined;
-  const acceptsImages = !runningCustomModel || customFeatures?.image === true;
+  const acceptsImages = !runningCustomModel || customModelAcceptsImages(customFeatures);
   const acceptsThinking = !runningCustomModel || customFeatures?.thinking === true;
   const hostBand = useHostAskBand(store.runtimeSessionId, hostSession);
   const resolveHostAsk = hostBand?.resolve;
@@ -1447,13 +1445,10 @@ const ComposerForStore = observer(function ComposerForStore({
       {/* This task's agent's failed deliveries (the shell draws the same bar a chat's composer shows). */}
       {agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}
       {providerId === 'codex' ? <CodexPreparationStatus sessionId={store.runtimeSessionId} /> : null}
-      {contentOverlaySlot && life && lifeIsStarting(life) && !store.showHistoryLoading && !store.transcriptPendingId && !store.chatState.session.state.pendingMessages.length ? (
-        createPortal(<SessionChatLoading label={translate(`transcript.${store.startPhaseOf(life) ?? 'starting'}`)} stage={life.stage?.at} />, contentOverlaySlot)
-      ) : null}
       {/* Every send of a task page is in custody until the transcript has it, so its bubbles always show here. */}
       <SessionInputQueue sessionId={store.runtimeSessionId} waitingForConnection life={life}
         inTranscript={[...store.chatState.session.state.pendingMessages.map(input => input.id), store.transcriptPendingId, store.stoppedRowId, ...store.failedRowIds, ...life?.pending.items.filter(input => isTranscriptDelivery(input)).map(input => input.messageId) ?? []].filter((id): id is string => id !== null)} />
-      <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} />
+      <SessionHostQuestion sessionId={store.runtimeSessionId} session={hostSession} settlements={store.hostSettlements} />
       <ChatComposer
         className={scheduleSlotShown(schedules) ? sessionComposerFrameLiftClassName : undefined}
         // 会话页的标签头不显示 harness,锁着的那颗 agent 标留在模型左边(私聊照旧藏)。
@@ -1617,7 +1612,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const sourceMessage = useSessionSourceMessage(store, viewRef, () => toast({ title: translate('transcript.originalMessageMissing'), variant: 'destructive' }));
   const [composerSlot, setComposerSlot] = useState<HTMLElement | null>(null);
   const [heroSlot, setHeroSlot] = useState<HTMLElement | null>(null);
-  const [overlaySlot, setOverlaySlot] = useState<HTMLElement | null>(null);
   // 一个对话框认两种内容:transcript 里的图片走 `src`,输入框里的文本附件走 `text`(#5269)。
   const [viewer, setViewer] = useState<
     { src?: string; alt?: string; text?: string; truncated?: boolean } | null
@@ -1651,7 +1645,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       reading.onReady(view);
       setComposerSlot(view.composerSlot);
       setHeroSlot(view.heroSlot);
-      setOverlaySlot(view.contentOverlay);
     },
     [bindReadyView, reading.onReady]
   );
@@ -1662,7 +1655,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     bindGoneView();
     setComposerSlot(null);
     setHeroSlot(null);
-    setOverlaySlot(null);
   }, [bindGoneView]);
   useSearchedTaskReveal(store, chatView, sourceMessage.reveal);
 
@@ -1721,8 +1713,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const interruptedBy = sessionStore?.status === 'idle' || sessionStore?.status === 'error'
     ? (sessionStore.data.interruptedBy ?? null) : null;
   const agent = agents?.find((candidate) => candidate.id === providerId) ?? null;
-  const startupNotice = agent?.capabilities.acp.startup?.noticeKey;
-  const startupNoticeKey = declaredMessageKey(startupNotice);
   // 与 composer、抽屉的「账号」行共用同一份判据(#6100)—— ❌ 不在这里再抄一个 find。
   // 聊天面板跑的是 `acp` 那条腿的程序(#6335):两条腿是两个程序的家,这里登的是聊天面板那个。
   const cliAuthMethod = resolveSignInTarget(agent, 'acp')?.method ?? null;
@@ -1782,6 +1772,9 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const [restarting, setRestarting] = useState(false);
   const birthGroup = useBirthGroupJoin(store?.sessionId);
   const conditionRuns = useRef<readonly ((anchor?: HTMLElement) => void)[]>([]);
+  // The line to the machine this session is on, said as the page before it and the sidebar dot say it: while it is not
+  // open, that is what holds the page (「正在连接 X…」, offline, sign-in, too old), not the session.
+  const machineLinkLabel = store ? machineUnavailableLabel(store.projectId) : null;
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
   }, [store, store?.loadError]);
@@ -1794,6 +1787,15 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         .firstUtterance
     );
     const error = store.loadError;
+    // A turn left to reconcile says the same and more (below); a session failure other than the lost line is its own.
+    if (machineLinkLabel && !store.reconcileAwaitingLink && (!error || error.kind === 'connection_lost')) {
+      return {
+        code: 'machine-unreachable',
+        label: machineLinkLabel,
+        detail: 'machine-link-not-open',
+        ...(error ? { actions: [{ label: translate('transcript.condition.retry'), run: () => store.retry() }] } : {}),
+      };
+    }
     if (!error && membershipLock) {
       // #7056 会员中途到期:说清原因、给两条去路;发送键在输入框那一格已经停下了。
       return ({
@@ -1986,7 +1988,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     return condition;
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry, machineLinkLabel]);
   useEffect(() => {
     if (!store) return;
     conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];
@@ -2084,6 +2086,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const transcriptCommands = useMemo<ChatCommands>(
     () => ({
       ...outputMenu.commands,
+      onHeldShown: (itemId) => store?.fillHeldTurn(itemId),
       onConversationReply: sourceMessage.reveal,
       onMessageTextMount: quotes.onMessageTextMount,
       flashMessageId: sourceMessage.flashMessageId,
@@ -2149,7 +2152,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       // **一模一样**的打开路径 —— 它已经会先问一句「这条路径有没有副本」(见
       // `openExternalFilePath`),❌ 别在这儿另写一套解析。
       onViewAttachment: (arg: {
-        attachment: { id: string; name: string; kind?: 'image' | 'file'; dataUrl?: string };
+        attachment: { id: string; name: string; kind?: 'image' | 'file' | 'annotation'; dataUrl?: string };
         itemId: string;
         source: 'user-message';
         thumb?: HTMLElement;
@@ -2174,13 +2177,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         }
         void resolveAttachmentDataUrl(store, arg.attachment.id).then(viewImage);
       },
-      // 工具交回来的图:同一个看图器,一次调用的几张图是一组,从被点的那张起。
-      onViewImages: (arg) =>
-        openImageViewer(
-          arg.urls.map((url, index) => ({ url, alt: '', thumb: index === arg.index ? arg.thumb : undefined })),
-          arg.index
-        ),
-      resolveToolImage: (itemId, index) => store?.resolveToolImage(itemId, index) ?? Promise.resolve(null),
       resolveAttachment: (attachment) =>
         store ? resolveAttachmentDataUrl(store, attachment.id) : Promise.resolve(null),
       onViewMermaid: (arg) => {
@@ -2253,17 +2249,14 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   );
 
   // A freshly-created task can publish its tab before the resource manager has finished attaching
-  // the conversation store. Keep the task surface mounted during that hand-off; returning a bare
-  // null leaves the ACP session page visually blank and gives the user no usable empty/loading state.
+  // the conversation store. Keep the task surface mounted (its own background) during that hand-off,
+  // ❌ a bare null and ❌ a separate "loading" picture: the transcript and composer draw as soon as the store is there.
   if (!store) {
     return (
       <div
         className="relative h-full w-full bg-background-secondary-1"
         data-session-chat-surface={tabKind === 'side-chat' ? 'side-chat' : 'source'}
-        data-session-chat-loading="true"
-      >
-        <SessionChatLoading label={translate('chat.loading')} />
-      </div>
+      />
     );
   }
 
@@ -2300,7 +2293,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
             state={store.chatState}
             composer="slot"
             composerPlacement={store.isEmpty ? 'center' : 'bottom'}
-            contentOverlay
             stickToBottom
             pinUserMessages={tabKind !== 'side-chat'}
             onReady={handleReady}
@@ -2319,18 +2311,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       <FindBar {...findBar} />
       {outputMenu.menu}
       {connections.panel}
-
-      {/* 加载态。⚠️ **只在没东西可看时**才盖 —— 库里那份历史是先画出来的(#5381),
-          已经有内容还盖一层不透明底,等于把用户自己说过的话藏起来
-          (spec `session-always-openable`)。
-          ❌ 这里不再有任何错误分支:失败一律是消息列表末尾的一行(session-condition),
-          见本文件 useEffect「把加载失败翻成列表里的一行」。 */}
-      {overlaySlot &&
-        store.showHistoryLoading &&
-        createPortal(
-          <SessionChatLoading label={startupNoticeKey ? translate(startupNoticeKey) : translate('chat.loading')} />,
-          overlaySlot
-        )}
 
       {/* #4900 那条贴顶横幅已退役 —— owner 2026-09-19:「不应该有任何需要横幅性质的 ui 表达,
           有问题就像消息一样贴消息列表才对吧」。它的两颗动作(「去登录」与「我登好了」)
@@ -2355,7 +2335,6 @@ export const AcpChatPanel = observer(function AcpChatPanel({
           store={store}
           editorApiRef={editorApiRef}
           composerSlot={composerSlot}
-          contentOverlaySlot={overlaySlot}
           onViewAttachment={handleAttachmentView}
           onScrollToBottom={() => viewRef.current?.scrollToBottom({ behavior: 'smooth' })}
           modelMenuRequest={modelMenuRequest}

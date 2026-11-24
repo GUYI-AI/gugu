@@ -51,7 +51,7 @@ export async function atomicWriteText(path: string, text: string): Promise<void>
   await mkdir(dirname(path), { recursive: true })
   const tmpPath = `${path}.${process.pid}.${randomUUID()}.tmp`
   try {
-    await writeFile(tmpPath, text, 'utf8')
+    await writeFile(tmpPath, text, { encoding: 'utf8', mode: 0o600 })
     await chmod(tmpPath, 0o600)
     await retryWindowsFileLock(() => rename(tmpPath, path))
   } catch (error) {

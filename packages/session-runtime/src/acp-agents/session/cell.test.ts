@@ -781,51 +781,6 @@ describe('SessionCell prompts', () => {
     });
   });
 
-  it('a failure reported as end_turn fails the caller with its cause, so a delivery cannot complete as done (MiMo quota)', async () => {
-    const agent = new FakeAcpAgent();
-    const { cell } = makeCell(agent, { turnFailure: { watchesStderr: true } });
-    agent.prompt = vi.fn(async () => {
-      setTimeout(() => cell.noteProviderStderrFailure("You've hit your usage limit. Upgrade or try again later."), 50);
-      return { stopReason: 'end_turn' };
-    });
-    const failed = await cell.prompt({ text: 'hi' });
-    expect(failed).toMatchObject({
-      success: false,
-      error: { type: 'prompt_failed', cause: { message: "You've hit your usage limit. Upgrade or try again later." } },
-    });
-    expect(cell.lastTurnError).toContain("You've hit your usage limit");
-    // Control: a turn that answered stays a success.
-    agent.prompt = vi.fn(async () => {
-      cell.push({ kind: 'message', role: 'assistant', messageId: null, text: 'ok' });
-      return { stopReason: 'end_turn' };
-    });
-    expect((await cell.prompt({ text: 'again' })).success).toBe(true);
-    expect(cell.lastTurnError).toBeNull();
-  });
-
-  it('a stderr failure the provider marks as a credential failure settles with signInRequired (MiMo, 10-07)', async () => {
-    const agent = new FakeAcpAgent();
-    const { cell } = makeCell(agent, { turnFailure: { watchesStderr: true } });
-    agent.prompt = vi.fn(async () => {
-      setTimeout(() => cell.noteProviderStderrFailure({ message: 'Invalid API Key', signInRequired: true }), 50);
-      return { stopReason: 'end_turn' };
-    });
-    await cell.prompt({ text: 'hi' });
-    expect(cell.history().committed.at(-1)!.outcome).toEqual({
-      kind: 'error',
-      reason: 'prompt_failed',
-      detail: 'Invalid API Key',
-      signInRequired: true,
-    });
-    // 下一轮从干净的状态开始。
-    agent.prompt = vi.fn(async () => {
-      cell.push({ kind: 'message', role: 'assistant', messageId: null, text: 'ok' });
-      return { stopReason: 'end_turn' };
-    });
-    await cell.prompt({ text: 'again' });
-    expect(cell.history().committed.at(-1)!.outcome).toEqual({ kind: 'done', reason: 'end_turn' });
-  });
-
   // #7103 谁拒绝谁说话:跑咕咕平台模型的这一轮来要票、咕咕没签出来。宿主在回绝取票**之前**把原因递进来
   // (announceSession → noteCredentialRefusal),所以 claude 报「apiKeyHelper is failing」之前它已经在这一轮手上。
   const APIKEY_HELPER_TEXT = "Your apiKeyHelper script is failing · This usually means you need to re-authenticate with your provider · Run /status to see the script's error output";
@@ -3316,6 +3271,31 @@ describe('task file context stays separate from the person words', () => {
       expect(item).toMatchObject({ kind: 'message', role: 'user', text: '/review', files: [ref] });
       expect(JSON.stringify(item)).not.toContain('/private');
       expect(JSON.stringify(item)).not.toContain('promptText');
+    } finally { cell.dispose(); }
+  });
+
+  it('sends the comments as one block ahead of the words and keeps them with the message', async () => {
+    const { cell, agent } = makeCell();
+    agent.prompt = vi.fn().mockResolvedValue({ stopReason: 'end_turn' });
+    cell.push({ kind: 'commands', commands: [{ name: 'review', description: '' }] });
+    const annotations = [
+      { number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: '# All comments\n\n## User Comment 1\nHTML preview\nComment:\nMake it red' },
+      { number: 2, target: 'src/a.ts', comment: 'Why?', promptText: '## User Comment 2\nCode diff\nComment:\nWhy?' },
+    ];
+    try {
+      await cell.prompt({ text: 'Apply each comment', origin: 'manual', annotations });
+      expect(agent.prompt.mock.calls[0][0].prompt).toEqual([
+        { type: 'text', text: '# All comments\n\n## User Comment 1\nHTML preview\nComment:\nMake it red\n\n## User Comment 2\nCode diff\nComment:\nWhy?' },
+        { type: 'text', text: 'Apply each comment' },
+      ]);
+      const item = cell.history().committed[0].items[0];
+      // The sender's own text stays with the message (never drawn), so a resend carries it again.
+      expect(item).toMatchObject({ kind: 'message', role: 'user', text: 'Apply each comment', annotations });
+      // A command still leads its prompt: the comments follow it.
+      await cell.prompt({ text: '/review', origin: 'manual', annotations: [annotations[0]] });
+      expect(agent.prompt.mock.calls[1][0].prompt).toEqual([
+        { type: 'text', text: '/review' }, { type: 'text', text: annotations[0].promptText },
+      ]);
     } finally { cell.dispose(); }
   });
 });

@@ -33,7 +33,6 @@ import { ComposerAboveExtras, ComposerExtras, ComposerInputHeader, ThreadTailExt
 import { useAuiCopy } from "./copy";
 import { TooltipIconButton } from "./tooltip-icon-button";
 import { Button } from "./ui/button";
-import { Skeleton } from "./ui/skeleton";
 import { live } from "./elements/surfaces";
 import { cn } from "@/lib/utils";
 import {
@@ -139,34 +138,6 @@ const isNewChatView = (s: AssistantState) =>
   s.thread.messages.length === 0 &&
   (!s.thread.isLoading || s.threads.isLoading);
 
-// A switched thread that is still fetching its history: skeleton, not welcome.
-const isHistoryLoadingView = (s: AssistantState) =>
-  s.thread.messages.length === 0 &&
-  s.thread.isLoading &&
-  !s.thread.isDisabled &&
-  !s.threads.isLoading;
-
-const ThreadHistorySkeleton: FC = () => (
-  <div
-    data-slot="aui_thread-history-skeleton"
-    role="status"
-    className="animate-in fade-in fill-mode-both flex flex-col gap-y-6 [animation-delay:150ms] [animation-duration:200ms]"
-  >
-    <span className="sr-only">Loading task</span>
-    <Skeleton className="ml-auto h-9 w-2/5 rounded-xl motion-reduce:animate-none" />
-    <div className="flex flex-col gap-y-2">
-      <Skeleton className="h-4 w-11/12 motion-reduce:animate-none" />
-      <Skeleton className="h-4 w-4/5 motion-reduce:animate-none" />
-      <Skeleton className="h-4 w-3/5 motion-reduce:animate-none" />
-    </div>
-    <Skeleton className="ml-auto h-9 w-1/3 rounded-xl motion-reduce:animate-none" />
-    <div className="flex flex-col gap-y-2">
-      <Skeleton className="h-4 w-10/12 motion-reduce:animate-none" />
-      <Skeleton className="h-4 w-2/3 motion-reduce:animate-none" />
-    </div>
-  </div>
-);
-
 export const Thread: FC<ThreadProps> = ({
   components = EMPTY_COMPONENTS,
   autoFocus = true,
@@ -222,9 +193,6 @@ const ThreadRoot: FC<{ isEmpty: boolean; autoFocus: boolean; submitOnEnter: bool
         >
           <AuiIf condition={isNewChatView}>
             <Welcome />
-          </AuiIf>
-          <AuiIf condition={isHistoryLoadingView}>
-            <ThreadHistorySkeleton />
           </AuiIf>
 
           <div
@@ -507,7 +475,7 @@ export const AssistantMessage: FC = () => {
                 const running = part.status.type === "running";
                 return (
                   <ReasoningRoot streaming={running}>
-                    <ReasoningTrigger active={running} />
+                    <ReasoningTrigger />
                     <ReasoningContent aria-busy={running}>
                       <ReasoningText>{children}</ReasoningText>
                     </ReasoningContent>

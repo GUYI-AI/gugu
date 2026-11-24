@@ -15,6 +15,7 @@ import { isNativeAccountSender, registerDesktopClosureIpc } from './account-clos
 import { closureV2Auth } from './account-closure/v2-auth'
 import { registerDesktopClosureAgentResumeIpc, registerDesktopClosureV2Ipc } from './account-closure/v2-ipc'
 import type { createDesktopClosureV2Service } from './account-closure/v2-service'
+import { CUSTOM_MODEL_KEY_CHANNEL } from '@gugu/session-core/models/custom-model'
 import { createClosureAuthChange } from './account-closure/auth-change'
 import { ClosureFailure } from './account-closure/receipts'
 import type { createDesktopClosureService } from './account-closure/service'
@@ -39,7 +40,8 @@ import { PROJECT_FILE_STREAM } from './projectFileHost'
 import { createWorkingCopyStreamer } from './session/main/core/extensions/working-copy-files'
 import { MACHINE_FILE_STREAM, setMachineFileStreams } from './session/main/core/files/machine-file-streams'
 import { remoteFileStreams } from './projectFileSsh'
-import { nativeImagePreview } from './imagePreview'
+import { nodeImagePreview } from '@gugu/core/local/files/nodeImagePreview'
+import { rendererImagePreview, rendererScaleImage } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { localCopy } from '@gugu/core/local/files/fileSnapshots'
 import { registerExternalImportIpc } from './external-import/ipc'
@@ -128,6 +130,7 @@ import {
   type ExtensionInstallConsentResult,
 } from '@shared/extensions/host-actions'
 import { givesAgentTools } from '@shared/extensions/app-places'
+import { readDocumentText } from '@shared/extensions/chat-folder-text'
 import { buildProbePlatformCredentials, buildNativeHistoryProbeCredentials } from './harness-catalog-probe-env'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
@@ -2094,8 +2097,8 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
           if (!item.types.includes('image/png')) continue
           const blob = (await item.getType('image/png')) as Blob
           const png = Buffer.from(await blob.arrayBuffer())
-          const size = nativeImage.createFromBuffer(png).getSize()
-          return { mimeType: 'image/png', data: png.toString('base64'), width: size.width, height: size.height }
+          // A PNG's size is in its header (IHDR: width and height at bytes 16 and 20); decoding the whole image only to read it stops main.
+          return { mimeType: 'image/png', data: png.toString('base64'), width: png.readUInt32BE(16), height: png.readUInt32BE(20) }
         }
         return null
       },
@@ -2111,13 +2114,8 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
         capture: (seconds) => captureReading(seconds),
       },
       shrinkImage: async (image, { maxEdge, quality }) => {
-        const source = nativeImage.createFromBuffer(Buffer.from(image.data, 'base64'))
-        if (source.isEmpty()) throw new Error(`读不懂这张图(${image.mimeType})`)
-        const size = source.getSize()
-        const scale = Math.min(1, maxEdge / Math.max(size.width, size.height))
-        const resized = scale < 1 ? source.resize({ width: Math.round(size.width * scale), height: Math.round(size.height * scale), quality: 'good' }) : source
-        const out = resized.getSize()
-        return { mimeType: 'image/jpeg', data: resized.toJPEG(quality).toString('base64'), width: out.width, height: out.height }
+        const small = await rendererScaleImage(Buffer.from(image.data, 'base64'), image.mimeType, { fit: 'edge', max: maxEdge, type: 'image/jpeg', quality: quality / 100 })
+        return { mimeType: small.type, data: Buffer.from(small.bytes).toString('base64'), width: small.width, height: small.height }
       },
       // 截主屏一张,长边缩到 maxEdge(模型看图的甜区);macOS 上要「屏幕录制」权限,只读真实状态、不向系统要。
       captureScreen: createScreenCapture({
@@ -2134,7 +2132,7 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
     openSystemSettings: (url) => shell.openExternal(url),
     log,
   })
-  runtime.onGrantsChanged(() => deviceRuntimeHost?.notifyDeviceActionsChanged())
+  runtime.onGrantsChanged(() => { void deviceRuntimeHost?.notifyHostInfoChanged() })
   return (deviceActionsRuntimeInstance = runtime)
 }
 
@@ -2537,8 +2535,11 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
 // A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
 setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
-// Every image main uploads (the composer's, an agent's, an App's, a project publication) offers this preview.
-drawImagePreviews({ draw: nativeImagePreview, warn: error => createLogger('files/image-preview').warn({ error: String(error) }, 'Image preview offer failed') })
+// Every image main uploads (the composer's, an agent's, an App's, a project publication) offers a preview. The decoder
+// belongs to the runtime: the desktop is Electron, and its window's renderer draws (main never decodes a photo on its own
+// thread); the headless server is plain Node with no window and draws with sharp. sharp is never loaded into Electron:
+// its libvips clashes with the glib Electron loads on Linux.
+drawImagePreviews({ draw: process.versions.electron ? rendererImagePreview : nodeImagePreview, warn: error => createLogger('files/image-preview').warn({ error: String(error) }, 'Image preview offer failed') })
 const attachmentUploads = createAttachmentUploadHost({
   account: async () => {
     const auth = await desktopAuthProvider().getAuth()
@@ -2582,6 +2583,11 @@ function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAct
     host,
     ...(ownerReads ? { ownerReads } : {}),
     resolveFile: desktopFiles.resolve,
+    // A live text file has no stored bytes: its text is the file service's, read as the Files App reads it.
+    readDocument: async (itemId, accessToken, actorId) => {
+      const { fileServiceUrl } = await import('./session/main/core/extensions/file-sync')
+      return readDocumentText({ filesUrl: fileServiceUrl, fetch: (...args) => egress.fetch(...args) }, accessToken, itemId, actorId)
+    },
     publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
     attachments: attachmentUploads,
     grantKey: sessionpageSurfaceKey(sessionId),
@@ -2790,6 +2796,7 @@ function onHumanAuthSessionChanged(): void {
     createLogger('device-runtime/auth').warn({ error: String(error) }, 'Realtime account auth update failed')
   })
   deviceRuntimeHost?.notifyAuthChanged()
+  tunnelMachines?.accountChanged()
   deviceProjectsPublisher?.notify()
   // 登录一到就认本机(认出即通知窗口重读设备表);登出时答 null,下次登录认出来会再通知一次。
   void localDeviceId()
@@ -2967,6 +2974,11 @@ const humanAuthSessionIpc = createHumanAuthSessionIpc({
       return operation()
     })
   },
+})
+// A model key in plain text goes only to this computer's own window: device and browser connections never reach ipcMain.
+ipcMain.handle(CUSTOM_MODEL_KEY_CHANNEL, async (event, connectionId: unknown) => {
+  if (!isNativeAccountSender(event, mainWindow) || typeof connectionId !== 'string') throw new Error('A model key is shown only in this computer’s own window')
+  return (await import('./session/main/core/agents/custom-models')).readCustomModelKey(connectionId)
 })
 ipcMain.handle('human-auth-session:write', (event, session: unknown) => {
   if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')
@@ -3644,6 +3656,7 @@ if (isSingleServerRun()) singleServerUpdater()?.bindRuntime({
   isBusy: () => serverVersionSwitchActivity()?.busy ?? true,
   versionSwitchActivity: serverVersionSwitchActivity,
   beforeSwitch: () => { stopServerActivity(); return () => startServerActivity() },
+  announce: () => deviceRuntimeHost?.notifyHostInfoChanged() ?? Promise.resolve(),
   shutdown: () => {
     noteExitReason(app.getPath('userData'), 'update')
     exitOnSignal('SIGTERM', EXIT_RESTART)

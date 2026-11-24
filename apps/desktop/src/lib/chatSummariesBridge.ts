@@ -5,6 +5,7 @@
 //   · 最后一句、话题从哪个对话开出来:⌘K 那个面板在会话页一次搜对话和话题(名字、最后一句),打开话题要先开它的源对话。
 //   · 成员:内层侧栏(#2548)列一个群 / 项目里我的智能体 —— 我的会话里 agent 是这个对话成员的那些。
 //   · 头像:内层侧栏头一行画这个群自己(群头像,没设就是成员拼图,同聊天列表那一行)。
+//   · 通知档位:我的 agent 的名片 / 详情(第 16 版)里那一个开关和三档,和聊天列表那一行同一个设置。
 //
 // 壳那棵树知道每个对话(聊天列表那一份),会话页不知道:壳写、会话页读,同一个 window 对象 +
 // 一个 window 事件(谁先起来都接得上)。两边都只 import 这一个文件,❌ 各写一份键名。
@@ -32,6 +33,8 @@ export type ChatSummary = {
   readonly memberUserIds: readonly string[]
   /** 群自己设的头像(chat.avatar);没设 = null。 */
   readonly avatar: string | null
+  /** 这个对话的通知档位(chat.notification_level;没设 = 'all')。 */
+  readonly notificationLevel: 'all' | 'important' | 'none'
 }
 
 const KEY = '__GUGU_CHAT_SUMMARIES__'
@@ -42,7 +45,7 @@ const RESTORED_KEY = '__GUGU_CHAT_LIST_RESTORED__'
 
 type Summaries = ReadonlyMap<string, ChatSummary>
 type SummarySource = {
-  conversation_cleared_at?: string | null; peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; is_pinned?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null; member_user_ids?: readonly string[] | null; avatar?: string | null
+  conversation_cleared_at?: string | null; peer_user_id?: string | null; unread_locator?: { message_id: string | null } | null; id: string; kind: string; unread_count: number; is_marked_unread?: boolean; is_pinned?: boolean; name?: string | null; alias?: string | null; public_id?: number | null; last_message_at?: string | null; last_message_preview?: string | null; source_chat_id?: string | null; member_user_ids?: readonly string[] | null; avatar?: string | null; notification_level?: 'all' | 'important' | 'none' | null
 }
 const summaryOf = memoizeByReference((chat: SummarySource, name: string | null | undefined): ChatSummary =>
   replaceEqualDeep(read()?.get(chat.id), {
@@ -61,6 +64,7 @@ const summaryOf = memoizeByReference((chat: SummarySource, name: string | null |
     sourceChatId: chat.source_chat_id || null,
     memberUserIds: chat.member_user_ids ?? [],
     avatar: chat.avatar || null,
+    notificationLevel: chat.notification_level ?? 'all',
   }))
 
 /** 壳:聊天列表那一份(整份替换;没变不通知)。 */
@@ -138,6 +142,21 @@ export function pinChatRow(chatId: string, pinned: boolean): Promise<void> {
   return pin(chatId, pinned)
 }
 
+const NOTIFICATION_KEY = '__GUGU_CHAT_NOTIFICATION_LEVEL__'
+type SetNotificationLevel = (chatId: string, level: ChatSummary['notificationLevel']) => Promise<void>
+
+/** 壳:登记聊天列表的「通知档位」(同聊天列表那一行、对话详情里那一个)。 */
+export function registerChatNotificationLevel(set: SetNotificationLevel | null): void {
+  (window as unknown as Record<string, unknown>)[NOTIFICATION_KEY] = set
+}
+
+/** 会话页:改聊天列表里这一行的通知档位;壳还没登记 = 响亮失败。 */
+export function setChatRowNotificationLevel(chatId: string, level: ChatSummary['notificationLevel']): Promise<void> {
+  const set = (window as unknown as Record<string, SetNotificationLevel | null | undefined>)[NOTIFICATION_KEY]
+  if (!set) return Promise.reject(new Error('The chat list is not ready to change this conversation\'s notifications'))
+  return set(chatId, level)
+}
+
 /** 会话页:我的这个 agent 在聊天列表里那一行(和它的私聊)。 */
 export function agentChatOf(agentUserId: string): { chatId: string; summary: ChatSummary } | null {
   for (const [chatId, summary] of read() ?? []) if ((summary.kind === 'dm' || summary.kind === 'ai') && summary.peerUserId === agentUserId) return { chatId, summary }
@@ -159,7 +178,7 @@ export function subscribeChatNames(listener: () => void): () => void {
 /** 会话页(不在渲染里):这个对话的摘要;壳还没告诉过 = null,壳的列表里没有它 = 没有过消息、不知道名字。 */
 export function readChatSummary(chatId: string): ChatSummary | null {
   const summaries = read()
-  return summaries ? (summaries.get(chatId) ?? { unreadCount: 0, isMarkedUnread: false, hasMessages: false, name: null, kind: null, lastMessagePreview: null, sourceChatId: null, memberUserIds: [], avatar: null }) : null
+  return summaries ? (summaries.get(chatId) ?? { unreadCount: 0, isMarkedUnread: false, hasMessages: false, name: null, kind: null, lastMessagePreview: null, sourceChatId: null, memberUserIds: [], avatar: null, notificationLevel: 'all' }) : null
 }
 
 /** 会话页:这个对话有没有过消息;壳还没告诉过 = null(还不知道,❌ 当成没有)。 */

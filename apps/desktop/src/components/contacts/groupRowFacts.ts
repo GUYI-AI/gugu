@@ -3,19 +3,23 @@ import type { ChatItem, Device } from '@gugu/core/shared/types/chat'
 import type { DeviceProject } from '@gugu/core/shared/types/deviceProject'
 import type { ContactGroupChat } from '@gugu/core/shared/types/contacts'
 import { chatActivityAt } from '@gugu/core/shared/ui/chatModels'
+import { chatLineCalls, chatLineNews } from '@/lib/chatLineUnread'
 import type { DisplayIdentity } from '@/lib/displayIdentity'
 import { useChatStore } from '../../store/chatContext'
 import { useDevicesStore } from '../../store/devicesContext'
 
 // 通讯录群行与群资料要的那几样事实:谁在里面、绑的哪个项目文件夹、最近一次动静。全是客户端已有的:
-// 会话行(活动时刻、未读)、身份目录(成员是人还是 Agent —— 会话列表保证 member_user_ids 的身份都在)、
+// 会话行(活动时刻、未读:同会话列表一个口径,叫到你的数 + 其余新消息的灰点)、身份目录(成员是人还是 Agent —— 会话列表保证 member_user_ids 的身份都在)、
 // 设备 store 上各台机器记在账号上的项目(chatId → 项目)。❌ 再读一次。
 
 export type GroupProject = { device: Device; project: DeviceProject }
 
 export type GroupRowFacts = {
   activityAt: string | null
-  unread: number
+  /** 叫到你的(chatLineCalls),与会话列表同一个数。 */
+  calls: number
+  /** 其余新消息(chatLineNews)。 */
+  news: boolean
   /** 人在前、Agent 在后。 */
   members: DisplayIdentity[]
   humans: number
@@ -43,21 +47,24 @@ export function useGroupRowFacts(): (group: ContactGroupChat) => GroupRowFacts {
   const { chats, identitiesById } = useChatStore('chats', 'identitiesById')
   const { devices } = useDevicesStore()
   const chatById = useMemo(() => new Map(chats.map((chat) => [chat.id, chat])), [chats])
+  const lineCalls = useMemo(() => chatLineCalls(chats), [chats])
   const projects = useMemo(() => projectsByChat(devices), [devices])
   return useCallback((group) => {
     const chat = chatById.get(group.id)
+    const calls = lineCalls.get(group.id) ?? 0
     const known = (group.member_user_ids ?? []).flatMap((id) => identitiesById[id] ?? [])
     const humans = known.filter((identity) => identity.type !== 'agent')
     const agents = known.filter((identity) => identity.type === 'agent')
     return {
       activityAt: chat ? chatActivityAt(chat) : null,
-      unread: chat?.unread_count ?? 0,
+      calls,
+      news: !!chat && chatLineNews(chat, calls),
       members: [...humans, ...agents],
       humans: humans.length,
       agents: agents.length,
       project: projects.get(group.id) ?? null,
     }
-  }, [chatById, identitiesById, projects])
+  }, [chatById, lineCalls, identitiesById, projects])
 }
 
 /** 置顶在前,其余按最近一次动静排(会话列表同一个键,chatActivityAt @@@2264)。 */

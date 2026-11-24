@@ -2,7 +2,8 @@
 import { act, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useFloatingCardKeys } from './floating-card-keys';
+import { setComposerVerb } from '@/lib/composerVerbBridge';
+import { useFloatingCardKeys, useFloatingCardShown } from './floating-card-keys';
 
 /**
  * #36(81 条核对):卡上写着「直接打字或按 Esc,它就收起」,按 Esc 却不收 —— 输入框里的 Esc 被会话键盘导航
@@ -88,5 +89,25 @@ describe('the floating folder card, typing and Escape', () => {
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true }));
     expect(document.activeElement).toBe(container.querySelector('[data-testid="prompt-editor"]'));
     expect(hideCard).not.toHaveBeenCalled();
+  });
+});
+
+describe('the floating folder card comes back when 「新任务」 is chosen again', () => {
+  function Shown({ chatId }: { chatId: string }) {
+    const [shown, hide] = useFloatingCardShown(chatId);
+    return <button type="button" data-shown={String(shown)} onClick={hide} />;
+  }
+  const shown = () => container.querySelector('button')!.dataset.shown;
+
+  it('hides for the request it was put away on, floats up on the next one (also while the box already is a new task)', () => {
+    act(() => setComposerVerb('chat-card', 'task'));
+    act(() => root.render(<Shown chatId="chat-card" />));
+    expect(shown()).toBe('true');
+    act(() => container.querySelector('button')!.click());
+    expect(shown()).toBe('false');
+    // The sidebar's 「创建智能体」 again: the box is still a new task, the card floats up again.
+    act(() => setComposerVerb('chat-card', 'task'));
+    expect(shown()).toBe('true');
+    act(() => setComposerVerb('chat-card', null));
   });
 });

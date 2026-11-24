@@ -10,7 +10,6 @@ export const MAX_DETECTED_PER_DEVICE = 50;
 export function createDetectedPorts(deps: {
   now?: () => number;
   onChanged(deviceId: string): void;
-  onDetected(entry: DetectedRemotePort & { deviceId: string }): void;
 }) {
   const now = deps.now ?? (() => Date.now());
   const byDevice = new Map<string, Map<number, DetectedRemotePort>>();
@@ -25,7 +24,6 @@ export function createDetectedPorts(deps: {
         table.set(remotePort, entry);
         changed = true;
         while (table.size > MAX_DETECTED_PER_DEVICE) table.delete(table.keys().next().value as number);
-        deps.onDetected({ deviceId, ...entry });
       }
       if (changed) deps.onChanged(deviceId);
     },

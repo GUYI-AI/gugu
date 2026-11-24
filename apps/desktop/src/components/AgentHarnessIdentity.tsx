@@ -42,13 +42,6 @@ function useHarness(agentId: string | undefined) {
   return { type, icon, label }
 }
 
-export function AgentHarnessBadge({ agentId, avatarSize }: { agentId: string | undefined; avatarSize: number }) {
-  const identity = useHarness(agentId)
-  const size = Math.max(10, Math.min(24, Math.round(avatarSize * 0.44)))
-  if (!identity.icon && !FALLBACK_GLYPHS[identity.type]) return null
-  return <span className="agent-harness-badge" style={sizeStyle(size)}><HarnessGlyph {...identity} size={size - 4} /></span>
-}
-
 /** An inline harness glyph for status rows and other surfaces without an avatar. */
 export function AgentHarnessIcon({ agentId, size = 14 }: { agentId: string | undefined; size?: number }) {
   const { type, icon, label } = useHarness(agentId)

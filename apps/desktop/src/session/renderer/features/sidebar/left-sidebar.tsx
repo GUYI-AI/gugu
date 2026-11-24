@@ -23,20 +23,20 @@ import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
 import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
 import { RailRowHint } from './rail-row-hint';
-import { followBelowRailBell, SidebarOneListHead, SidebarOneListTop, SidebarRailBell } from './sidebar-one-list-chrome';
+import { SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop, SidebarRailRow } from './sidebar-one-list-chrome';
 import { UnfinishedAgentCreates } from './unfinished-agent-creates';
 
-// #2548 the desktop left sidebar, one list: the head (collapse, bell, 已安排, 会话历史, search), 创建智能体 + 「+」, then ONE list
-// (SidebarOneList) down to the window's bottom edge (sidebar-one-list-chrome). 资源库 and 设置
-// are on the far-left rail (product spec, #7046) — they belong to the gugu shell. Collapsed = a rail of the list's avatars:
-// the same content, not moved, with its text hidden. Desktop only: the task renderer never runs in the phone shell.
+// #2548 the desktop left sidebar, one list (界面减法: the zero rail, the window's leftmost column): the head (「«」), the
+// search field, 创建智能体 + 「+」, then ONE list (SidebarOneList), then the foot (my avatar and its menu, 已安排, 会话历史,
+// the bell) (sidebar-one-list-chrome). Collapsed = a rail of the list's avatars: the same content, not moved, with its text
+// hidden. Desktop only: the task renderer never runs in the phone shell.
 /**
- * #2548 where the names start in the list's scroll box: its inset 12 + the row's padding 8 + the avatar 32 + the row gap 10.
- * On the rail the title is 0 wide and the time starts one line gap (6) later; the corner count (left 28 + the inset) ends
- * before that.
+ * #2548 where the names start in the list's scroll box: its inset (14 open, 8 on the rail: 界面减法 #48, the design's 12 + a
+ * row's 8) + the row's padding 6 + the avatar 40 + the row gap 10. A row's unread count sits on its avatar's corner (left 30
+ * in the row), before that.
  */
-const NAMES_START_PX = 62;
-const RAIL_NAMES_START_PX = 68;
+const NAMES_START_PX = 70;
+const RAIL_NAMES_START_PX = 64;
 /** The scroll box's own mask (its class: the last 24px above the window's bottom edge fade out), kept under the names'. */
 const BOTTOM_FADE_MASK = 'linear-gradient(to bottom, black calc(100% - 1.5rem), transparent)';
 
@@ -105,8 +105,8 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   React.useEffect(() => {
     sidebarStore.setAgentNameOnHoverEnabled(agentNameOnHoverEnabled);
   }, [agentNameOnHoverEnabled]);
-  // #2548 the rail of avatars has no room for the bell's list: collapsing closes it, and opening it from the rail's bell
-  // (SidebarRailBell) expands the sidebar into it.
+  // #2548 the rail of avatars has no room for the bell's list: collapsing closes it, and opening it from the bell in the
+  // rail's foot expands the sidebar into it.
   const railed = !isLeftOpen;
   const wasRailed = React.useRef(railed);
   React.useEffect(() => {
@@ -120,7 +120,6 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   // starts (or only on release, for a drag), the progress is what is on screen.
   const listRef = useSidebarProgressFollow<HTMLDivElement>(followRail);
   const scrollRef = useSidebarProgressFollow<HTMLDivElement>(followNamesMask);
-  const belowBellRef = useSidebarProgressFollow<HTMLDivElement>(followBelowRailBell);
 
   // 创建智能体 (what 新建任务 did) always lands on the dedicated compose view. Routing to 'project' instead made the
   // button a no-op whenever the user was already sitting on that project's home — which is the default landing view.
@@ -145,11 +144,13 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
   const focusedChatId = currentView === 'chat' ? viewedChatId : innerChatId ?? viewedChatId;
   // 拼在一屏的几组:壳画的「对话」也把同一组的几行并在一处(同「项目」这边)。
   const joinedGroups = sidebarStore.joinedGroups;
+  // 并排着的几块:壳画的行(内层侧栏的话题)给「取消并排」认这一份(同会话页自己的行)。
+  const splitKey = screenLayout.splitKeys.join('\n');
   // oneList: the desktop one list is mounted. The phone never mounts this sidebar, so the shell's shared components
   // (chat list, composer verbs, rail) read it to tell the desktop list from the phone.
   React.useEffect(
-    () => publishSidebarChatView({ focusedChatId, groups: joinedGroups, oneList: true }),
-    [focusedChatId, joinedGroups]
+    () => publishSidebarChatView({ focusedChatId, groups: joinedGroups, split: splitKey ? splitKey.split('\n') : [], oneList: true }),
+    [focusedChatId, joinedGroups, splitKey]
   );
 
   return (
@@ -157,19 +158,23 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       ref={listRef}
       data-region="left-sidebar"
       className={cn(
-        'relative flex h-full flex-col border-r border-border bg-background-tertiary text-foreground-tertiary-muted transition-colors',
+        // 界面减法 #10: the zero rail keeps the shell's warm translucent ground (no fill of its own); a line on its right
+        // edge parts it from the content (#52).
+        'relative flex h-full flex-col border-r border-border text-foreground-tertiary-muted transition-colors',
         isDragOver && 'bg-background-2 ring-2 ring-inset ring-border-2',
-        // #2548 a row's text (name, preview, time, its unread count) follows the open/close progress through the scroll
-        // box's mask (followNamesMask: text only in the second half). On the rail the unread count sits on the avatar's
-        // top-right corner instead (the muted bell stays out) and fades in as it takes that place. The count changes place
-        // only where the edge lands on the rail (sidebarRailLayout: the last frame of a collapse, the first of an expand).
-        // The rail is one attribute (data-sidebar-rail) under fixed rules, each ending in the count's own elements (the muted
-        // bell by its class): turning it on restyles those only. ❌ a rule ending in a tag (`span:not(.gg-chip)` restyled every
-        // span in the rows, 11.6k elements against 2.4k), ❌ a rule ending in `*`, ❌ an inherited property there (the old
-        // pointer-events on every row body restyled all 600 rows and everything in them, ~17k elements).
-        'data-[sidebar-rail]:[&_.gg-list-row-trailing]:absolute data-[sidebar-rail]:[&_.gg-list-row-trailing]:top-1 data-[sidebar-rail]:[&_.gg-list-row-trailing]:left-7',
-        'data-[sidebar-rail]:[&_.gg-list-row-trailing>.gg-chip]:animate-in data-[sidebar-rail]:[&_.gg-list-row-trailing>.gg-chip]:fade-in data-[sidebar-rail]:[&_.gg-list-row-trailing>.gg-chip]:duration-150',
-        'data-[sidebar-rail]:[&_.gg-chat-row-muted]:hidden'
+        // 界面减法 #53 #69: a row is a 52px square block on the rail (padding 6 around its 40px avatar), 52 tall open, 6 apart; its
+        // unread mark sits on the avatar's top-right corner (AvatarUnread) and the row has no end (no time, no muted bell). Its
+        // text (name, preview) follows the open/close progress through the scroll box's mask (followNamesMask).
+        '[&_[data-region=sidebar-scroll]_.gg-list-row]:mb-[6px] [&_[data-region=sidebar-scroll]_.gg-list-row]:h-[52px] [&_[data-region=sidebar-scroll]_.gg-list-row]:!rounded-[12px] [&_[data-region=sidebar-scroll]_.gg-list-row]:!p-[6px] [&_[data-region=sidebar-scroll]_.gg-list-row-body]:!gap-0',
+        // Design v16: the name is 14px regular, the preview line the caption size (the design's 12.5 is not on the type scale). `!`: the list row's own rules (.gg-list-row in
+        // tokens.css) are outside the utilities layer, so a plain utility loses to them.
+        '[&_[data-region=sidebar-scroll]_.gg-list-row-subtitle]:!text-[length:var(--font-caption)] [&_[data-region=sidebar-scroll]_.gg-list-row-title]:!font-normal',
+        '[&_[data-region=sidebar-scroll]_.gg-chat-row-muted]:hidden',
+        // The list's gutter: 14 open, 8 on the rail (one element restyled when the rail flips). On the rail the 4px scrollbar
+        // (tokens.css @@@scrollbar-autohide, it takes layout width) is always reserved and comes out of the right gutter: a
+        // list long enough to scroll otherwise narrowed every 52px block by 4 while its 40px avatar kept its place, so the
+        // avatar sat off the block's centre (yangchichi 11-24, a Mac with scrollbars shown).
+        'data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:pl-2 data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:pr-1 data-[sidebar-rail]:[&_[data-region=sidebar-scroll]]:[scrollbar-gutter:stable]'
       )}
       onDragOver={onDragOver}
       onDragEnter={onDragEnter}
@@ -187,8 +192,8 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
       {/* The one-time bubble (C9) on the head comes up when the inner sidebar appears: a group, a project or the sample. */}
       <RailHint list={listRef} />
       <SidebarOneListHead innerShownFor={innerSidebarShownFor.get()} />
-      <SidebarRailBell />
-      <SidebarContainer ref={belowBellRef} className="min-h-0 w-full flex-1 border-r-0">
+      <SidebarRailRow />
+      <SidebarContainer className="min-h-0 w-full flex-1 border-r-0">
         <SidebarContent className="flex flex-col" data-notification-original-list="" style={notificationsOpen ? RETAINED_SURFACE_HIDDEN_STYLE : undefined}>
           <SidebarOneListTop collapsed={railed} onCreateAgent={handleNewSession} />
           <UnfinishedAgentCreates collapsed={railed} />
@@ -200,7 +205,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
             ref={scrollRef}
             data-region="sidebar-scroll"
             // #2548 rows scrolling down fade out over the last 24px above the window's bottom edge instead of being cut off.
-            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto mask-b-from-[calc(100%-1.5rem)]"
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-[14px] mask-b-from-[calc(100%-1.5rem)]"
           >
             <div>
               <SidebarOneList />
@@ -210,6 +215,7 @@ export const LeftSidebar: React.FC = observer(function LeftSidebar() {
         </SidebarContent>
         <NotificationSlot part="list" active={notificationsOpen} />
       </SidebarContainer>
+      <SidebarOneListFoot />
     </div>
   );
 });

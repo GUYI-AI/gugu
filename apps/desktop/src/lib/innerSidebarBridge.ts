@@ -12,6 +12,9 @@ import { useEffect, useSyncExternalStore } from 'react'
 /** 内层侧栏「话题」那一格在 lib/shellSlots 里的键前缀:会话页登记,壳的 components/ChatListSlotHost.tsx 往里画。 */
 export const INNER_SIDEBAR_TOPICS_SLOT_PREFIX = 'inner-topics:'
 export const innerSidebarTopicsSlotKey = (chatId: string) => `${INNER_SIDEBAR_TOPICS_SLOT_PREFIX}${chatId}`
+/** 「全部 ›」打开的话题页:这个群 / 项目那一块里的格子,壳把全部话题画进来(ChatListSlotHost)。 */
+export const TOPICS_PAGE_SLOT_PREFIX = 'topics-page:'
+export const topicsPageSlotKey = (chatId: string) => `${TOPICS_PAGE_SLOT_PREFIX}${chatId}`
 
 export type InnerSidebarTopicsView = {
   readonly chatId: string
@@ -30,8 +33,6 @@ const TOPICS_ALL_KEY = '__GUGU_INNER_SIDEBAR_TOPICS_ALL__'
 const TOPICS_ALL_EVENT = 'gugu:inner-sidebar-topics-all'
 const TOPICS_VIEW_KEY = '__GUGU_INNER_SIDEBAR_TOPICS_VIEW__'
 const TOPICS_VIEW_EVENT = 'gugu:inner-sidebar-topics-view'
-const AGENT_COUNTS_KEY = '__GUGU_MY_CHAT_AGENT_COUNTS__'
-const AGENT_COUNTS_EVENT = 'gugu:my-chat-agent-counts'
 const COLUMN_KEY = '__GUGU_INNER_SIDEBAR_PRESENT__'
 const COLUMN_EVENT = 'gugu:inner-sidebar-present'
 const AGENT_ROWS_KEY = '__GUGU_ONE_LIST_AGENT_ROWS__'
@@ -53,17 +54,16 @@ const subscribeTo = (event: string) => (listener: () => void) => {
 }
 const subscribeTopicsAll = subscribeTo(TOPICS_ALL_EVENT)
 const subscribeTopicsView = subscribeTo(TOPICS_VIEW_EVENT)
-const subscribeAgentCounts = subscribeTo(AGENT_COUNTS_EVENT)
 const subscribeColumn = subscribeTo(COLUMN_EVENT)
 const subscribeAgentRows = subscribeTo(AGENT_ROWS_EVENT)
 
-/** 摊开这个对话的全部话题;null = 回到第一级。没变不通知。 */
+/** 打开这个对话的话题页(「全部 ›」,开在它那一块里);null = 关掉。没变不通知。 */
 export function setInnerSidebarTopicsAll(chatId: string | null): void {
   if (read<string>(TOPICS_ALL_KEY) === chatId) return
   write(TOPICS_ALL_KEY, TOPICS_ALL_EVENT, chatId)
 }
 
-/** 此刻摊开全部话题的那个对话;没有 = null。 */
+/** 此刻开着话题页的那个对话;没有 = null。 */
 export function useInnerSidebarTopicsAll(): string | null {
   return useSyncExternalStore(subscribeTopicsAll, () => read<string>(TOPICS_ALL_KEY), () => null)
 }
@@ -87,28 +87,6 @@ export function useInnerSidebarTopicsView(chatId: string): InnerSidebarTopicsVie
     const view = read<InnerSidebarTopicsView>(TOPICS_VIEW_KEY)
     return view?.chatId === chatId ? view : null
   }, () => null)
-}
-
-const NO_COUNTS: ReadonlyMap<string, ChatAgentCounts> = new Map()
-
-/** 会话页:每个项目群 / 用户群里住着的我的智能体(整份替换;没变不通知)。开关关着时发一份空的。 */
-export function publishMyChatAgentCounts(next: ReadonlyMap<string, ChatAgentCounts>): void {
-  const current = read<ReadonlyMap<string, ChatAgentCounts>>(AGENT_COUNTS_KEY)
-  if (
-    current &&
-    current.size === next.size &&
-    [...next].every(([chatId, counts]) => current.get(chatId)?.total === counts.total && current.get(chatId)?.running === counts.running)
-  ) return
-  write(AGENT_COUNTS_KEY, AGENT_COUNTS_EVENT, next)
-}
-
-/** 壳:这个对话里我的智能体;不是项目群或用户群、会话页还没说过、或开关关着 = null。 */
-export function useMyChatAgentCounts(chatId: string): ChatAgentCounts | null {
-  return useSyncExternalStore(
-    subscribeAgentCounts,
-    () => (read<ReadonlyMap<string, ChatAgentCounts>>(AGENT_COUNTS_KEY) ?? NO_COUNTS).get(chatId) ?? null,
-    () => null,
-  )
 }
 
 /** 会话页:这一列在这个窗口里有没有(收起着也算有:展开钮就在)。没变不通知。 */

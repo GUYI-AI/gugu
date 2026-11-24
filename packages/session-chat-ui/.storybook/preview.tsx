@@ -4,6 +4,7 @@ import { storyDecorator } from '../src/styles/storybook.css';
 import '../src/chat-fonts.css';
 import '../src/styles/global.css';
 import '@gugu/session-shared/animation-visibility.css';
+import '@gugu/session-shared/running-glyph.css';
 import './preview.css';
 
 const preview: Preview = {

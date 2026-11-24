@@ -57,7 +57,7 @@ export function PageSidebarMenu<T extends string>({
               type="button"
               onClick={() => onSelect(item)}
               className={cn(
-                'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-normal text-foreground-muted transition-colors hover:bg-row-hover active:bg-row-press hover:text-foreground',
+                'flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-normal text-foreground-muted hover:bg-row-hover active:bg-row-press hover:text-foreground',
                 isActive &&
                   `bg-background-2 text-foreground hover:bg-background-2 active:bg-background-2 ${STATE_LAYERS} hover:text-foreground`
               )}

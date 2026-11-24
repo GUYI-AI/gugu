@@ -7,7 +7,7 @@ import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { TOOL_OUTPUT_BYTE_BUDGET } from './mcp-tool-description-budget.mjs'
 import { readFile, stat } from 'node:fs/promises'
 import { openAsBlob } from 'node:fs'
@@ -22,7 +22,7 @@ import { findMentionSpans } from '../../../../packages/core/src/shared/mentionTo
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
 import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey, isFileIntegrityError } from '@gugu/core/shared/fileResolver'
-import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
+import { TYPED_ID_KINDS, decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { matchIdPrefix, uuidPrefixRange } from '../../../../packages/core/src/shared/idPrefix'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
@@ -574,6 +574,10 @@ function createDeps(context, injected = {}, state = createSessionState()) {
       if (!context.resolveFile) throw new Error('Verified file resolver is not installed')
       return context.resolveFile(ref, actor, options)
     },
+    readDocument: (itemId) => {
+      if (!context.readDocument) throw new Error('The file service reader is not installed')
+      return context.readDocument(itemId, context.agentId)
+    },
     ...injected,
     context,
     state,
@@ -624,6 +628,13 @@ async function resolveChatIdInput(chatId, deps) {
   const publicId = String(chatId ?? '').trim()
   if (!publicId) return null
   if (/^(aid|user|gugu):/.test(publicId)) return await ownerDirectChatId(publicId, deps)
+  // A typed id names its kind: `chat:` is a chat, any other kind (an agent's own `session:` id) is not one, and
+  // passed on as an opaque id it would only fail later as an unreadable member list.
+  const kind = publicId.slice(0, Math.max(0, publicId.indexOf(':')))
+  if (kind === 'chat') return decodeTypedId('chat', publicId, 'chat_id')
+  if (TYPED_ID_KINDS.includes(kind)) {
+    throw new Error(`chat_id: got a ${kind}: id ("${publicId}"), and a ${kind} is not a chat; pass the chat= value of your gugu_delivery envelope, an id from message_conversations, or your owner's address for your private chat with them`)
+  }
   // Production public_id values are numeric. Preserve non-production/internal opaque ids
   // used by injected callers; the schema description still directs agents to UUID ids.
   if (!/^\d+$/.test(publicId)) return publicId
@@ -633,6 +644,19 @@ async function resolveChatIdInput(chatId, deps) {
     throw new Error(`chat_id ${publicId} is ambiguous as public_id; use the UUID from message_conversations (id)`)
   }
   throw new Error(`chat_id ${publicId} looks like a public_id, but no conversation matched it; use the UUID from message_conversations (id)`)
+}
+
+/**
+ * A `chat_id` from any other tool domain (session_*, app_*), read the way message tools read it: one resolver, so a
+ * public_id or an owner address names the same chat everywhere, and one that names none fails here.
+ */
+export async function resolveChatIdOf(context, chatId, injected = {}) {
+  const resolved = await requireChat({ chat_id: String(chatId) }, createDeps(context, injected))
+  // The resolver keeps an opaque non-numeric id for injected callers; a host action can only use a real chat's UUID.
+  if (!UUID_RE.test(String(resolved))) {
+    throw new Error(`chat_id ${chatId} names no conversation; give its UUID (message_conversations id) or its public_id number, nothing around it`)
+  }
+  return resolved
 }
 
 async function requireChat(args, deps) {
@@ -2471,6 +2495,27 @@ async function downloadSourceOf(args, deps) {
   return { ref: { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }, reader: deps.context.agentId, item: link.version ? { itemId: link.itemId, version: link.version } : null, echo: {} }
 }
 
+/**
+ * A folder file that is a live text file (a document people and agents edit together): its text now, from the file
+ * service — what the Files App's own download reads (app-files-core downloadSource). It has no stored bytes for the
+ * resolver to find. Stored files, messages and an earlier version (?v= not its current one): null, the resolver's.
+ */
+async function liveTextOf(source, deps) {
+  if (!('item_id' in source.ref)) return null
+  const item = await workspaceRpcItem(deps, 'workspace_get_as', { p_item_id: source.ref.item_id }, 'message_download_file')
+  if (item.kind !== 'document' || source.ref.version !== undefined && source.ref.version !== item.version) return null
+  const bytes = new TextEncoder().encode(await deps.readDocument(item.id))
+  return {
+    status: 'ready', purpose: 'file', reader: source.reader,
+    revision: { source: 'managed-object', item_id: item.id, version: item.version, chat_id: item.chat_id, file_name: item.filename,
+      content_type: item.content_type || resolveAttachmentMimeType(item.filename, undefined), size_bytes: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex') },
+    read: async (offset, length) => bytes.slice(offset, offset + length),
+    async *stream() { yield bytes },
+    dispose: async () => {},
+  }
+}
+
 // @@@downloading - 同一个读者对同一个文件的第二次调用接在第一次后面等结果:一次调用最多等 DOWNLOAD_CALL_BUDGET_MS,
 // 到了就正常返回「还在传」,下载照跑;再调一次就接上。没人等着时失败了,失败留给下一次调用报一次,再下一次重新读。
 const downloading = new Map()
@@ -2494,7 +2539,8 @@ async function downloadFile(args, deps) {
       // A message is delivered with its file's index; the bytes follow it from the sender's device: wait a little for them.
       const until = Date.now() + ATTACHMENT_PENDING_WAIT_MS
       const progress = () => { read.state = 'transferring' }
-      let file = await deps.resolveFile(source.ref, source.reader, { progress })
+      const live = await liveTextOf(source, deps)
+      let file = live ?? await deps.resolveFile(source.ref, source.reader, { progress })
       while (file.status === 'pending' && Date.now() < until) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
         file = await deps.resolveFile(source.ref, source.reader, { progress })

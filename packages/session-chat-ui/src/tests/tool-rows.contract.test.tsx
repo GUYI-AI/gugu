@@ -15,6 +15,7 @@ import { toolGroupUnitDef } from '@session-chat/components/rows/tools/tool-group
 import { toolGroupChildStack } from '@session-chat/components/rows/tools/tool-group/tool-group.css'
 import { toolUnitDef } from '@session-chat/components/rows/tools/tool/tool.def'
 import { toolName } from '@session-chat/components/rows/tools/tool/tool.css'
+import { runningText } from '@session-chat/styles/effects.css'
 import { chevron as collapseChevron } from '@session-chat/components/primitives/collapse-header.css'
 import { DEFAULT_THEME } from '@session-chat/core/theme'
 import type { ItemNode } from '@session-chat/state/flatten'
@@ -1032,12 +1033,12 @@ describe('#4981 状态记号只留需要看一眼的那些', () => {
     expect((await readMarks(awaitingTool)).marks).toBe(1)
   })
 
-  it('跑着的行靠名字微光说话 —— 「做完了」= 没有微光，不是没有任何区别', async () => {
+  it('跑着的行名字用运行墨色(静止)—— 「做完了」= 回到常态墨色，不是没有任何区别', async () => {
     const shimmerOf = (host: HTMLElement): Record<string, number> => {
       const label = host.querySelector<HTMLElement>(`.${toolName}`)
       return {
         labelFound: label ? 1 : 0,
-        sweep: label?.querySelector('[data-shimmer-text]') ? 1 : 0
+        sweep: label?.classList.contains(runningText) ? 1 : 0
       }
     }
     const running = (
@@ -1047,7 +1048,7 @@ describe('#4981 状态记号只留需要看一眼的那些', () => {
       await renderAndMeasureUnit(toolUnitDef, tool, makeContractCtx({ width: WIDTH }), shimmerOf)
     ).inspected
     expect(running.labelFound, '探针没找到名字那一格').toBe(1)
-    expect(running.sweep, '跑着的行也没有微光 ⇒ 两个状态长得一模一样').toBe(1)
+    expect(running.sweep, '跑着的行没有运行墨色 ⇒ 两个状态长得一模一样').toBe(1)
     expect(done.sweep).toBe(0)
   })
 })

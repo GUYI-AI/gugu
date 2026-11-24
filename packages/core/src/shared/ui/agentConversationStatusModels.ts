@@ -1,6 +1,5 @@
 import type { AgentStatusView } from '../agentStatus'
 import {
-  agentStatusColorVar,
   type AgentReachability,
   type AgentStatusLabel,
   type AgentStatusTone,
@@ -111,7 +110,3 @@ export function labelOfDisplayStatus(status: AgentDisplayStatus): AgentStatusLab
   }
 }
 
-/** 粗分类的颜色(同一张 token 表)。 */
-export function colorOfDisplayStatus(status: AgentDisplayStatus): string | null {
-  return agentStatusColorVar(status === 'working' ? 'running' : status === 'idle' ? 'online' : status)
-}

@@ -208,7 +208,7 @@ export class WorkspaceViewModel implements ILifecycle, WorkspaceSurface {
       this.paneLayout.open(
         sessionTabKind(next.data.runtime),
         { sessionId: next.data.id },
-        { from: null, intent: 'newTab', target: { paneId: displayedInPaneId } }
+        { from: null, intent: 'newTab' }
       );
     });
   }

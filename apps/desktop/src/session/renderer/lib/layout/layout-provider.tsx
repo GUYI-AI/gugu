@@ -10,7 +10,6 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import { NAV_COLUMN_WIDTH } from '@/lib/uiRuler';
 import { clamp01, PANEL_LANDED_PX, PanelTrack, type SlotTarget } from './panel-track';
 import { PANEL_SNAP_RATIO } from './panel-resize-handle';
 import { setSidebarFold, sidebarFolds } from '@renderer/features/sidebar/sidebar-folds';
@@ -18,7 +17,8 @@ import { setSidebarFold, sidebarFolds } from '@renderer/features/sidebar/sidebar
 /** 侧栏宽度的边界与默认值。min 沿用改造前的 200px;max 取 Codex 同款 520。 */
 export const SIDEBAR_MIN_WIDTH_PX = 200;
 export const SIDEBAR_MAX_WIDTH_PX = 520;
-export const SIDEBAR_DEFAULT_WIDTH_PX = NAV_COLUMN_WIDTH;
+// 第 16 版稿:零级栏展开 236 宽(一级侧边栏另有自己的默认宽)。
+export const SIDEBAR_DEFAULT_WIDTH_PX = 236;
 
 const SIDEBAR_PANE = definePaneWidth({ id: 'gugu.taskpage.sidebarWidth', initial: SIDEBAR_DEFAULT_WIDTH_PX, min: SIDEBAR_MIN_WIDTH_PX, max: SIDEBAR_MAX_WIDTH_PX });
 
@@ -30,7 +30,8 @@ export const clampSidebarWidth = (width: number): number => clampPaneWidth(SIDEB
  */
 export const INNER_SIDEBAR_MIN_WIDTH_PX = 200;
 export const INNER_SIDEBAR_MAX_WIDTH_PX = 520;
-export const INNER_SIDEBAR_DEFAULT_WIDTH_PX = SIDEBAR_DEFAULT_WIDTH_PX;
+// 第 16 版稿:一级侧边栏 220 宽(比零级栏窄)。
+export const INNER_SIDEBAR_DEFAULT_WIDTH_PX = 220;
 /** 内层栏最多占这张卡片(内层栏 + 正文)宽的这个比例 —— 与列表占会话页的比例同一个口径,正文至少留六成。 */
 export const INNER_SIDEBAR_MAX_SHARE = 0.4;
 export const INNER_SIDEBAR_WIDTH_STORAGE_KEY = 'gugu.taskpage.innerSidebarWidth';
@@ -58,11 +59,11 @@ export function innerSidebarShownWidth(width: number, cardWidth: number | null):
 }
 
 /**
- * #2548 the list collapses to a rail of its avatars, this wide: the list's gutter (12) + row padding (8) + avatar (32) + the
- * same 8 + 12 on the other side, so every avatar sits on its middle (x = 36) without moving. The rail is always there, so the
+ * #2548 the list collapses to a rail of its avatars, this wide: the list's gutter (8) + a row's 52px square (its padding 6
+ * around the 40px avatar, 界面减法 #53) + 8, so every avatar sits on its middle (x = 34) without moving. The rail is always there, so the
  * list never goes away and there is no hover preview of it.
  */
-export const SIDEBAR_RAIL_PX = 72;
+export const SIDEBAR_RAIL_PX = 68;
 
 /** 侧栏占位宽:收起宽 + 进度 × (宽 − 收起宽);#2548 收起宽就是那一列头像。 */
 export function sidebarOccupiedWidth(progress: number, width: number, rail: number): number {
@@ -129,7 +130,6 @@ export interface WorkspaceLayoutContextValue {
   /** 会话页根元素量到的宽(WorkspaceLayout 报):内层栏放得下多宽由它推出。 */
   setWorkspaceWidth: (width: number) => void;
   /** A place without the list (App, Library): the list takes no room, ❌ motion either way. */
-  setListHidden: (hidden: boolean) => void;
   setLeftWidth: (width: number, options?: { persist?: boolean }) => void;
   setCollapsed: (side: 'left', collapsed: boolean) => void;
   toggleLeft: () => void;
@@ -180,14 +180,12 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const leftWidth = useMotionValue(readPaneWidth(SIDEBAR_PANE));
   const innerWidth = useMotionValue(readPaneWidth(INNER_SIDEBAR_PANE));
   /** What the targets are derived from (read model inputs); refs, so a drag frame re-renders nothing. */
-  const state = useRef({ open: isLeftOpen, listHidden: false, rootWidth: 0, innerFrames: 0, innerFolded: false });
+  const state = useRef({ open: isLeftOpen, rootWidth: 0, innerFrames: 0, innerFolded: false });
   const [innerSidebarShown, setInnerSidebarShown] = useState(false);
 
   const listTarget = (): SlotTarget => {
-    const { open, listHidden } = state.current;
+    const { open } = state.current;
     const width = leftWidth.get();
-    // Hidden, it keeps its laid-out width (its rows stay as they are) and takes no room.
-    if (listHidden) return { size: 0, content: open ? width : SIDEBAR_RAIL_PX };
     return open ? { size: width, content: width } : { size: SIDEBAR_RAIL_PX, content: SIDEBAR_RAIL_PX };
   };
   // 卡片宽 = 会话页宽 − 列表该占的宽(❌ 读用户选定宽,❌ 读此刻画到哪)。
@@ -197,9 +195,9 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   };
   const innerShownWidth = () => innerSidebarShownWidth(innerWidth.get(), innerCardWidth());
   const innerTarget = (): SlotTarget => {
-    const { innerFrames, innerFolded, listHidden } = state.current;
+    const { innerFrames, innerFolded } = state.current;
     const width = innerShownWidth();
-    return { size: innerFrames > 0 && !innerFolded && !listHidden ? width : 0, content: width };
+    return { size: innerFrames > 0 && !innerFolded ? width : 0, content: width };
   };
   const targets = () => ({ list: listTarget(), inner: innerTarget() });
 
@@ -267,12 +265,6 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const setWorkspaceWidth = useCallback((width: number) => {
     if (state.current.rootWidth === width) return;
     state.current.rootWidth = width;
-    jump();
-  }, [jump]);
-
-  const setListHidden = useCallback((hidden: boolean) => {
-    if (state.current.listHidden === hidden) return;
-    state.current.listHidden = hidden;
     jump();
   }, [jump]);
 
@@ -369,7 +361,6 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
     track,
     workspaceRootRef,
     setWorkspaceWidth,
-    setListHidden,
     setLeftWidth,
     setCollapsed,
     toggleLeft,

@@ -1,7 +1,6 @@
 // 通讯录(ContactsPanel)和它拆出去的详情页(ContactDetail)共用的样式与小函数:原样从 ContactsPanel.tsx 搬出(那个文件行数冻结、只减不增)。
 import type { KeyboardEvent } from 'react'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
-import { agentContactAvatarBadgeClass, type AgentContactTone } from '../contactAgentTone'
 import { formatDate, i18n } from '../../i18n'
 import { cn } from '@/lib/cn'
 
@@ -38,8 +37,6 @@ export const detailBodyClass = (mobile?: boolean) =>
     'flex-1 overflow-y-auto overflow-x-hidden',
     mobile ? '!px-4 !pt-4 !pb-[max(24px,env(safe-area-inset-bottom))]' : '!px-6 !py-6',
   )
-
-export const agentAvatarClass = (tone: AgentContactTone | null) => cn(rowAvatarClass, agentContactAvatarBadgeClass(tone))
 
 /** ListRow 的根是 div(行里要嵌删除钮,按钮不能嵌按钮),键盘可达性靠 role/tabIndex + Enter/Space 补齐。 */
 export const rowKeyActivate = (activate: () => void) => (event: KeyboardEvent<HTMLDivElement>) => {
@@ -95,9 +92,6 @@ export const profileCardStyles = {
   statusBase:
     'gg-c-cpane-status mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]',
   statusStandby: 'standby',
-  // @@@5588 needs_user uses a Solar exclamation glyph; every other tone's color comes from the one table in
-  // contactAgentTone (`--agent-tone-*`), the same the contacts row and the avatar badge use.
-  statusDotBase: 'gg-c-cpane-status-dot h-[6px] w-[6px] shrink-0 rounded-full',
   guguNumber:
     'gg-c-cpane-gugu mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]',
   guguNumberLabel: 'gg-c-cpane-gugu-label text-[var(--text-secondary)]',

@@ -245,7 +245,7 @@ describe('首屏总量预算', () => {
 
 /**
  * owner 10-15「手机上看的话每张图传过去岂不是很 costly」:图不随记录下发。发给手机的那一份里每张图只留
- * `{ mimeType, chars }`(`imageRefs`),手机滚到它、那一轮展开了再按 (会话, 条目, 第几张) 去取。
+ * `{ mimeType, chars }`(`imageRefs`)。
  */
 describe('工具交回来的图只带类型和字数', () => {
   const snapshotOf = (turns: TranscriptTurn[]): TimelineSnapshot =>
@@ -607,6 +607,20 @@ describe('a folded page leaves out what stands behind a fold', () => {
     const page = { turns: [turn('t', [bare, typed, said])], nextCursor: null };
     expect(trimCursorPageForTransport(page, TRANSPORT_TEXT_LIMIT, TRANSPORT_PAYLOAD_BUDGET, 'folded')).toBe(page);
     expect(turnHeld(page.turns[0]!)).toBe(false);
+  });
+
+  it('takes a delivery from a session for an agent\'s: only an agent session sends one, and its envelope has no from_type', () => {
+    const SESSION = 'session:33333333-3333-4333-8333-333333333333';
+    const direct = { kind: 'message', id: 'd', seq: 0, role: 'user', text:
+      `<gugu_delivery route="session-direct" from="lead" from_id="${SESSION}" msg="msg:d" at="2026-11-23 06:53 UTC+0">\n<![CDATA[${'b'.repeat(600)}]]>\n  <arrival>reply with session_message</arrival>\n</gugu_delivery>` } as unknown as TranscriptItem;
+    const sent = one([direct]).items[0] as unknown as { text: string; held?: true };
+    expect(sent.held).toBe(true);
+    expect(readDeliveryEnvelope(sent.text)!.segments[0]).toMatchObject({ body: 'b'.repeat(HELD_BODY_CHARS), facts: { fromId: SESSION } });
+    // What the agent sends back to that session is a said line in the view, not part of an exchange: it stays whole.
+    const reply = { kind: 'mcp-tool-call', id: 'r', seq: 1, toolCallId: 'r', server: 'gugu', tool: 'session_message', status: 'done', title: 'send',
+      rawInput: JSON.stringify({ to: [SESSION], text: 'w'.repeat(900) }),
+      outputText: JSON.stringify({ recipients: [{ to: SESSION, status: 'delivered', message_id: 'msg:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }] }) } as unknown as ToolNode;
+    expect(one([direct, reply]).items[1]).toEqual(reply);
   });
 
   it('cuts what the agent sent to agents only, and leaves what it sent to a person', () => {

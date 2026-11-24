@@ -2,7 +2,7 @@ import { useReplica } from '@/lib/replica';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { customModels } from './custom-models';
 import { customComposerOptions } from './custom-model-options';
-import { customModelOptionId, type CustomModelRef } from '@gugu/session-core/models/custom-model';
+import { customModelOptionId, type CustomModelConnection, type CustomModelRef } from '@gugu/session-core/models/custom-model';
 import { useMemo } from 'react';
 import { vendorName } from '@/i18n/vendorName';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
@@ -56,8 +56,12 @@ export function useComposerModelOptions(
   const agentName = agents.state === 'unknown' ? null : composerOwnTierAgentName(agentList, providerId);
   const remote = useLibraryHost().remote;
   const custom = useReplica(customModels, [remote?.deviceId ?? null]);
-  const records = custom.state === 'value' ? custom.value : undefined;
-  const error = custom.state === 'unknown' ? null : custom.error;
+  // Records live on the machine that saved them. Another machine still lists this one's, as unusable there (no key).
+  const own = useReplica(customModels, [null]);
+  const records = custom.state !== 'value' ? undefined
+    : !remote ? custom.value
+      : own.state === 'value' ? withOwnRecords(custom.value, own.value) : undefined;
+  const error = (custom.state === 'unknown' ? null : custom.error) ?? (remote && own.state !== 'unknown' ? own.error : null) ?? null;
   const agent = agentList?.find((entry) => entry.id === providerId);
 
   return useMemo(
@@ -77,6 +81,13 @@ export function useComposerModelOptions(
     },
     [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, records, error, agent, providerId, remote?.deviceLabel]
   );
+}
+
+/** The task machine's records, then this machine's that it lacks (same address = it has it), without their key there. */
+export function withOwnRecords(machine: readonly CustomModelConnection[], own: readonly CustomModelConnection[]): CustomModelConnection[] {
+  const addresses = new Set(machine.flatMap((record) => record.endpoints.map((endpoint) => endpoint.baseUrl)));
+  return [...machine, ...own.filter((record) => !record.endpoints.some((endpoint) => addresses.has(endpoint.baseUrl)))
+    .map((record) => ({ ...record, keySaved: false }))];
 }
 
 type Translate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;

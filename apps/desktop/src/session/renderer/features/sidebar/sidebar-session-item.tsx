@@ -1,9 +1,10 @@
 import { useShownAgentName } from '@/hooks/useShownAgentName'
 import { useAvatarIdentity } from '@/lib/avatarIdentity'
 import { commandRegistry } from '@renderer/lib/commands/registry';
-import { dissolveScreenGroup, isScreenView, showSessionBeside, takeSessionOutOfGroup } from '@renderer/app/screen-layout-actions';
+import { isScreenView, leaveSplit, openInWindow, showSessionBeside } from '@renderer/app/screen-layout-actions';
 import { screenLayout } from '@renderer/app/screen-layout';
-import { AlertTriangle, LayoutGrid, PanelLeft, Scissors, Sparkles, SquareMinus } from '@/lib/icons'
+import { blockKey } from '@/lib/sidebarJoinedGroups';
+import { AlertTriangle, LayoutGrid, PanelLeft, Sparkles } from '@/lib/icons'
 import { GitFork } from '@/lib/icons'
 import { LOCAL_HOST, useInstalledApps } from '@renderer/features/extensions/installed-extensions';
 import { spawnedByExtensionLabel as spawnedByExtensionLabelFor } from '@renderer/features/extensions/spawned-by-extension-label';
@@ -29,7 +30,6 @@ import {
 } from '@renderer/lib/layout/navigation-provider';
 import { useAgents } from '@renderer/lib/stores/use-agents';
 import { valueOf } from '@/lib/replica';
-import { MenuItem, MenuSeparator } from '@/components/ui/Menu';
 import { hasStatusSource } from '@shared/core/sessions/initial-agent-status';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/lib/ui/tooltip';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -216,8 +216,6 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
   });
   const isPinned = pin.pinned;
   const setPinned = pin.setPinned;
-  // 右键给不给「从这一组拿出来 / 拆开这一组」= 这一行在不在框里。
-  const grouped = join !== undefined;
   // #2548 固定到左侧栏 sits next to 置顶, same shape; offered per sidebarPinMenuAction (top-level only).
   const sidebarPin = pin.row === 'chat' ? null : sidebarPinMenuAction({
     parentSessionId: row.parentSessionId,
@@ -232,10 +230,15 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
     archive: requestArchive,
     fork: () => forkTask({ projectId, sessionId, navigate, translate }),
     'copy-id': () => void copySessionId(sessionId),
+    'leave-split': () => leaveSplit(blockKey.session(sessionId)),
+    'open-window': () => openInWindow({ kind: 'session', projectId, sessionId }),
   };
   const menuItems = sessionMenu('sidebar-row', {
     pinned: isPinned,
     sidebarPin,
+    // 取消并排:这条会话是并排着的一块(screen-layout splitKeys,话题行经 sidebarChatView 读同一份)。
+    inSplit: screenLayout.splitKeys.includes(blockKey.session(sessionId)),
+    canOpenWindow: true,
     // spec session-fork-share:「任意会话可 fork」—— 问的是**来源那条腿**能不能分叉。
     canFork: agentForksOn(harness?.capabilities, row.runtime),
   }, new Set(Object.keys(menuRun) as SessionMenuAction[]));
@@ -393,25 +396,7 @@ export const SidebarSessionItem = observer(function SidebarSessionItem({
           />
         ) : null
       }
-      menu={
-        <>
-    {/* spec session-page「拼在一屏的几块是一组」:框里一行 = 拿它出来 / 整组拆开(照 Arc「Separate from Split View」)。 */}
-    {grouped ? (
-      <>
-        <MenuItem onClick={() => takeSessionOutOfGroup(sessionId)} icon={<SquareMinus />}>
-          {translate('sidebar.leaveGroup')}
-        </MenuItem>
-        <MenuSeparator />
-      </>
-    ) : null}
-    <MenuTableItems items={menuItems} onAction={(id) => menuRun[id]!()} testIdPrefix="sidebar-session-menu" foldExtra={grouped ? (
-      // 拆开的是这一屏的组,不是这条会话 —— 不在会话动作表里。
-      <MenuItem onClick={() => dissolveScreenGroup(sessionId)} icon={<Scissors />}>
-        {translate('sidebar.dissolveGroup')}
-      </MenuItem>
-    ) : undefined} />
-        </>
-      }
+      menu={<MenuTableItems items={menuItems} onAction={(id) => menuRun[id]!()} testIdPrefix="sidebar-session-menu" />}
     />
   );
 });

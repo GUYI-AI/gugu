@@ -236,14 +236,21 @@ function createAccountRepository(
   let current = freezeSnapshot(initial)
   let closed = false
   let writeChain = Promise.resolve()
-  const subscriptions = new Set<{ selector: Selector<unknown>; listener: Listener<unknown> }>()
+  type Subscription = { selector: Selector<unknown>; listener: Listener<unknown>; selected?: { value: unknown } }
+  const subscriptions = new Set<Subscription>()
 
   const ensureOpen = () => {
     if (closed) throw new Error(`IM repository scope ${accountId} is closed`)
   }
-  const notify = (subscription: { selector: Selector<unknown>; listener: Listener<unknown> }) => {
+  // @@@selected-change — a subscriber hears about a commit only when what it selected changed (Object.is), not on every write
+  // to any table: a React setter fed the same identities map on every message write parks each call on the hook's queue
+  // until the provider renders again, and every call republished the identity directory.
+  const notify = (subscription: Subscription) => {
     try {
-      subscription.listener(subscription.selector(current), current)
+      const value = subscription.selector(current)
+      if (subscription.selected && Object.is(subscription.selected.value, value)) return
+      subscription.selected = { value }
+      subscription.listener(value, current)
     } catch (error) {
       repositoryLog.error({ error }, 'subscriber failed')
     }
@@ -278,7 +285,7 @@ function createAccountRepository(
     },
     subscribe<T>(selector: Selector<T>, listener: Listener<T>) {
       ensureOpen()
-      const subscription = { selector: selector as Selector<unknown>, listener: listener as Listener<unknown> }
+      const subscription: Subscription = { selector: selector as Selector<unknown>, listener: listener as Listener<unknown> }
       subscriptions.add(subscription)
       notify(subscription)
       return () => { subscriptions.delete(subscription) }

@@ -140,7 +140,7 @@ export function SessionRowShell({
   const leadingClass = cn('flex shrink-0 items-center', disabled && 'opacity-60');
   const leadingAvatar = agent ? (
     <span className={leadingClass} data-row-agent-avatar={agent.userId}>
-      <Avatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.userId} size={14} isAgent harnessBadge={false} still />
+      <Avatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.userId} size={14} isAgent still />
     </span>
   ) : null;
   const titleClass = cn(
@@ -245,7 +245,7 @@ export function SessionRowShell({
             <span className={sidebarRowRestActionsClass}>
               {presentation && presentationAttention(presentation) ? (
                 <span className="flex size-5 items-center justify-center">
-                  <AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} variant="2" />
+                  <AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} />
                 </span>
               ) : statusUnavailable ? (
                 <span className="flex size-5 items-center justify-center">
@@ -258,7 +258,7 @@ export function SessionRowShell({
                 </span>
               ) : presentation && (presentation.tone === 'running' || presentation.tone === 'parked') ? (
                 <span className="flex size-5 items-center justify-center">
-                  <AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} variant="2" />
+                  <AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} />
                 </span>
               ) : scheduleAtRest && schedule ? (
                 <SidebarScheduleMark digest={schedule} emphasized={doneUnread} />

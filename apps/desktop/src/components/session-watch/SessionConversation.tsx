@@ -1,6 +1,6 @@
 import { useObserver } from 'mobx-react-lite'
 import { AnnotationTray } from '@renderer/features/sessions/annotations/annotation-tray'
-import { annotationPrompt, sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
+import { annotatedSend, sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 import { annotationImageId, currentAnnotationImages, isAnnotationImage, prepareAnnotationImages } from '@renderer/features/sessions/annotations/annotation-images'
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection'
 import { useRejectedSessionInputCommands } from '@/hooks/useRejectedSessionInputCommands'
@@ -9,13 +9,12 @@ import { useNativeConversationRead } from '@/hooks/useNativeConversationRead'
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { toolImageUrl } from '@gugu/session-core/acp/client'
+import type { TurnAnnotation } from '@gugu/session-core/acp/client'
 import { openImageViewer } from '@/lib/imageViewer'
 import { PhoneTaskDraftRecovery } from '../../mobile/local-agent/PhoneTaskDraftRecovery'
 import { usePhoneInterruptedRetry } from './usePhoneInterruptedRetry'
-import { machineRpc, fetchToolImage } from './sessionpage-rpc'
+import { machineRpc } from './sessionpage-rpc'
 import { assistantTimelineClient, readConversationFile } from '@/components/assistant/assistantTimelineClient'
-import { phoneTimelineClient } from '../../mobile/local-agent/phoneTimelineClient'
 import type { ChatCommands, ChatView } from '@gugu/session-chat-ui'
 import type { ComposerAttachment, PromptEditorRef } from '@gugu/session-ui/react/components'
 import { MessageProvider } from '@gugu/session-ui/react/components'
@@ -80,7 +79,7 @@ import { rendererLogger } from '@/lib/log'
 /** The phone supplies session data and RPC actions to the same project conversation UI. */
 export function SessionConversation({ timeline, deviceId, sessionId, agentName, agentUserId, harness, draft, onDraftApplied, startupPrompt, phoneHost = false, local = false, nativeRecord = false, hostReachable = true, appPanel = false,
   machineLabel, sessionRuntime, respondingItemId, onRespond, onSend, pendingSends, sending, agentWorking,
-  onStop, stopping, footerNotice, composerControls, permissionsInWork = false, onLoadOlder, onAtBottom, emptyNote, onBeforeSend,
+  onStop, stopping, footerNotice, composerControls, permissionsInWork = false, onLoadOlder, onHeldShown, onAtBottom, emptyNote, onBeforeSend,
   queueReady = false, unseen = false,
 }: {
   timeline: AgentWatchTimeline; deviceId: string; sessionId: string; agentName: string; agentUserId?: string | null
@@ -95,14 +94,14 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   appPanel?: boolean
   startupPrompt?: import('@gugu/session-chat-ui').PendingPrompt | null
   sessionRuntime: SessionpageSessionSummary['runtime']; respondingItemId: string | null
-  onRespond: (input: SettlementResponse) => Promise<SessionpageSessionRespondResult>; onSend: (text: string, files?: TurnFileRef[]) => Promise<void>
+  onRespond: (input: SettlementResponse) => Promise<SessionpageSessionRespondResult>; onSend: (text: string, files?: TurnFileRef[], annotations?: TurnAnnotation[]) => Promise<void>
   onBeforeSend?: () => void
   pendingSends: readonly PendingSend[]; sending: boolean; agentWorking: boolean
   headerRunning?: boolean
-  onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: (modelControl: ReactNode, model: ExistingSessionModel, skills: ReturnType<typeof creationSkillInput>) => ReactNode; onLoadOlder: () => Promise<void>
+  onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: (modelControl: ReactNode, model: ExistingSessionModel, skills: ReturnType<typeof creationSkillInput>) => ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
   /** Only the existing Work controls may take ownership of the phone permission selector. */
   permissionsInWork?: boolean
-  onAtBottom?: () => void; onLoadToolImage?: (itemId: string, index: number) => Promise<void>; emptyNote?: ReactNode
+  onAtBottom?: () => void; emptyNote?: ReactNode
   /** A live foreground snapshot, not a cached/offline history window. */
   queueReady?: boolean
 }) {
@@ -262,12 +261,12 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       setAttachmentWaiting(false)
       const sentAttachments = attachmentsRef.current.filter(file => submission.attachments.has(file.id))
       const files = uploads.files(sentAttachments.map(file => file.id))
-      const text = annotationPrompt(value, annotated, resolvedLocale)
-      if ((!text && !files.length) || !checkBeforeSend(attempt)) return
+      const { text, annotations } = annotatedSend(value, annotated, resolvedLocale)
+      if ((!text && !files.length && !annotations) || !checkBeforeSend(attempt)) return
       try {
         // A later reader gesture supersedes this local send, including while its commit waits.
         view.current?.setScrollMode({ kind: 'tail' })
-        await currentSendTarget().onSend(text, files)
+        await currentSendTarget().onSend(text, files, annotations)
         if (getRendererSession()?.user.id !== ownerId) return
         if (attempt.succeeded() && submissionFailures.current.get(scope) === failure) submissionFailures.current.delete(scope)
         annotationDraft.submitted(annotated)
@@ -372,13 +371,12 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     conversationAgentSession: () => sessionId, conversationAgentUserId: () => agentUserId ?? null, readConversationFile: input => readConversationFile(local, deviceId, input),
     ...quotes.commands,
     onDismissBackgroundTask: ({ entryId }) => { dismissSubagent(sessionId, entryId); setDismissals(value => value + 1) },
-    resolveToolImage: async (itemId, index) => toolImageUrl(await (phoneHost ? phoneTimelineClient.fetchToolImage(deviceId, sessionId, itemId, index) : (localClient ?? { fetchToolImage }).fetchToolImage(deviceId, sessionId, itemId, index))),
-    onViewImages: ({ urls, index, thumb }) => { openImageViewer(urls.map(url => ({ url, alt: '', thumb })), index) }, ...outputHandlers, conversationAgentName: () => agentName, onStop,
+    ...outputHandlers, conversationAgentName: () => agentName, onStop, onHeldShown,
     onStopBackgroundTask: ({ stopId }) => {
       setBackgroundError(null)
       void (localClient?.stopBackgroundTask ?? stopBackgroundTask)(deviceId, sessionId, stopId).catch(error => setBackgroundError(messageForUser(error)))
     },
-  }), [rejectedInputCommands, phoneRetryCommands, nativeRecord, phoneHost, userAttachments, openFile, outputHandlers, sessionId, agentUserId, quotes.commands, deviceId, local, localClient, agentName, onStop])
+  }), [rejectedInputCommands, phoneRetryCommands, nativeRecord, phoneHost, userAttachments, openFile, outputHandlers, sessionId, agentUserId, quotes.commands, deviceId, local, localClient, agentName, onStop, onHeldShown])
   const composer = <>
     <ConversationSettlements sessionId={sessionId} settlements={timeline.settlements} runtime={sessionRuntime} mobile machine={machineLabel} busyItemId={respondingItemId} respond={onRespond} />
     {footerNotice}

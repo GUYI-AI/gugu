@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 
-/** Message-list artwork and attention share one square slot, including pending tasks. */
+/** Message-list artwork with an attention mark in the status corner (bottom-right, as Avatar's own status mark). */
 export function PhoneMessageAvatar({ children, badge }: { children: ReactNode; badge?: ReactNode }) {
   return <span className="gg-phone-message-avatar">
     {children}

@@ -23,12 +23,13 @@ vi.mock('../../features/live-window/use-live-window-conversation', () => ({
       conversation: state.model, dispatch: state.model.dispatch.bind(state.model) };
   },
 }));
-vi.mock('../../features/tabs/pane-context', () => ({ usePaneContext: () => ({ paneId: 'pane', pane: {
+const chatPane = vi.hoisted(() => ({ paneId: 'pane', pane: {
   ctx: { projectId: 'project' },
   entries: new Map([['chat', { tabId: 'chat', kind: 'acp-chat', state: { sessionId: 'task' } }]]),
   resolvedTabs: [{ tabId: 'chat', kind: 'acp-chat', isActive: true }],
-} }) }));
-vi.mock('../../features/tabs/pane-layout-context', () => ({ usePaneLayoutContext: () => ({}) }));
+} }));
+vi.mock('../../features/tabs/pane-context', () => ({ usePaneContext: () => chatPane }));
+vi.mock('../../features/tabs/pane-layout-context', () => ({ usePaneLayoutContext: () => ({ groups: [chatPane], windowPanes: new Map(), open() {} }) }));
 
 let root: Root | undefined, host: HTMLDivElement | undefined;
 let dispose = () => {};

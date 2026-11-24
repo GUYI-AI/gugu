@@ -1,21 +1,7 @@
-.agent-harness-badge,
 .agent-harness-icon {
   width: var(--agent-harness-size);
   height: var(--agent-harness-size);
   flex-shrink: 0;
-}
-
-.agent-harness-badge {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text-primary);
 }
 
 .agent-harness-icon {

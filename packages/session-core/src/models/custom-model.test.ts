@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { customModelMetaSchema, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
+import { customModelAcceptsImages, customModelMetaSchema, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
 import { providerPresets } from './provider-presets';
 
 const connectionId = '481825a8-60b9-4c83-8d1b-f104e3db0269';
@@ -91,4 +91,14 @@ it('every preset endpoint has an official source and no frozen model list', () =
     }
     expect(preset).not.toHaveProperty('models');
   }
+});
+
+describe('custom model image input', () => {
+  it('refuses images only when the person declared the model text-only', () => {
+    // A relay model found in Codex config or a model list carries no image fact at all.
+    expect(customModelAcceptsImages({})).toBe(true);
+    expect(customModelAcceptsImages(undefined)).toBe(true);
+    expect(customModelAcceptsImages({ image: true })).toBe(true);
+    expect(customModelAcceptsImages({ image: false })).toBe(false);
+  });
 });

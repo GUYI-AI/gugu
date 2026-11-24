@@ -38,16 +38,24 @@ type StoredCategoryGroup = NonNullable<AppSettings['dataImport']['owners'][strin
 type CategoryGroup = Omit<StoredCategoryGroup, 'items'> & { items: readonly StoredCategoryGroup['items'][number][] }
 type CategorySettingsReading = { state: 'unknown' | 'error' } | { state: 'value'; value: AppSettings['dataImport'] }
 
+/**
+ * Each category's current result, not a log of runs: per category the latest run that changed something. A run that
+ * found every item already here imported nothing, so it is no result. Used where results are kept and where they are shown.
+ */
+export function currentCategoryResults<T extends CategoryGroup>(groups: readonly T[]): T[] {
+  const latest = new Map<string, T>()
+  for (const group of groups) {
+    if (!group.items.some(item => item.status !== 'existing')) continue
+    const kept = latest.get(group.providerId)
+    if (!kept || group.finishedAt > kept.finishedAt) latest.set(group.providerId, group)
+  }
+  return [...latest.values()].sort((a, b) => b.finishedAt - a.finishedAt)
+}
+
 /** Keep the unread history state while showing this interaction's already completed results. */
 export function categoryHistoryReading(completed: readonly CategoryGroup[], reading: CategorySettingsReading, ownerId?: string) {
-  const items = [...completed]
-  if (reading.state === 'value' && ownerId) {
-    const storedHistory = reading.value.owners[ownerId]?.categoryResults
-    if (storedHistory) {
-      for (const stored of storedHistory) {
-        if (!completed.some(job => job.providerId === stored.providerId && job.finishedAt === stored.finishedAt)) items.push(stored)
-      }
-    }
-  }
-  return { state: reading.state, items }
+  const groups: CategoryGroup[] = [...completed]
+  const stored = reading.state === 'value' && ownerId ? reading.value.owners[ownerId]?.categoryResults : undefined
+  if (stored) groups.push(...stored)
+  return { state: reading.state, items: currentCategoryResults(groups) }
 }

@@ -64,7 +64,6 @@ session/renderer/features/settings/components/IntegrationsCard.tsx: reading-defa
 session/renderer/features/settings/subscriptions/ConnectionModelPicker.tsx: effect-flow(command) - probing the key being typed (debounced); the key is never put in a cache.
 session/renderer/features/settings/subscriptions/SubscriptionConnections.tsx: effect-flow(command) - carries out a sign-in press once the readings it acts on have landed; state holds only whether the sheet opens
 session/renderer/lib/codemirror/diff-editor.tsx: effect-flow(render) - mounts the diff editor (lazy language load) for content already in hand
-session/renderer/lib/components/cliSpinner.tsx: effect-flow(dom) - observes whether the spinner is in the viewport (DOM observation)
 session/renderer/lib/components/github-device-flow-modal.tsx: effect-flow(command) - GitHub device-code sign-in (a flow: the code, its expiry and the poll for approval)
 session/renderer/lib/components/github-device-flow-modal.tsx: effect-flow(input) - keyboard shortcuts of the device-code dialog (copy the code, open the page); nothing is read
 session/renderer/lib/stores/use-agent-auth-status.ts: effect-flow(command) - asks the worker to probe each program's sign-in (it runs the CLI's status; the answer lands in the live agent list read above); state holds only this probe's own failures, which settle that row as unknown with its reason

@@ -12,8 +12,10 @@ import { PaneContext } from '../tabs/pane-context';
 import type { PaneLayoutStore } from '../tabs/pane-layout-store';
 
 /** Mounted in the private task's header, never the ChatBlock/ProjectBlock group action slots. */
-export const DesktopLiveWindowHeader = observer(function DesktopLiveWindowHeader({ projectId, sessionId, paneLayout }: {
+export const DesktopLiveWindowHeader = observer(function DesktopLiveWindowHeader({ projectId, sessionId, paneLayout, iconless = false }: {
   projectId: string; sessionId?: string; paneLayout?: PaneLayoutStore;
+  /** 第 16 版:会话块的胶囊栏里不画这颗(它在详情开头的电脑卡片里);仍挂着,让这条对话照旧读画面来源、跟着会话状态。 */
+  iconless?: boolean;
 }) {
   const shown = useContext(SurfaceShownContext);
   const pane = useContext(PaneContext)?.pane;
@@ -25,11 +27,11 @@ export const DesktopLiveWindowHeader = observer(function DesktopLiveWindowHeader
   const privateChatShown = panes.some(pane => pane.resolvedTabs.some(tab => tab.isActive && (tab.kind === 'session' || tab.kind === 'acp-chat')
     && (pane.entries.get(tab.tabId)?.state as { sessionId?: string } | undefined)?.sessionId === sessionId));
   if (!sessionId || !binding || !privateChatShown) return null;
-  return <BoundHeader projectId={projectId} sessionId={sessionId} agentId={binding.agentUserId} shown={shown} />;
+  return <BoundHeader projectId={projectId} sessionId={sessionId} agentId={binding.agentUserId} shown={shown} iconless={iconless} />;
 });
 
-const BoundHeader = observer(function BoundHeader({ projectId, sessionId, agentId, shown }: {
-  projectId: string; sessionId: string; agentId: string; shown: boolean;
+const BoundHeader = observer(function BoundHeader({ projectId, sessionId, agentId, shown, iconless }: {
+  projectId: string; sessionId: string; agentId: string; shown: boolean; iconless: boolean;
 }) {
   const machine = machineRegistry.machineOf(projectId);
   const connected = !machine || remoteHostsStore.connectionState(machine) === 'connected';
@@ -37,5 +39,5 @@ const BoundHeader = observer(function BoundHeader({ projectId, sessionId, agentI
   const live = useLiveWindowConversation({ context: { conversationId: sessionId, sessionId, deviceId: machine ?? 'local', agentId, privateAgentChat: true, shown },
     platform: 'desktop', connected, transport });
   useEffect(() => { bindDesktopLiveWindowActivity(live.conversation); }, [live.conversation]);
-  return <LiveWindowHeaderIcon snapshot={live} dispatch={live.dispatch} />;
+  return iconless ? null : <LiveWindowHeaderIcon snapshot={live} dispatch={live.dispatch} />;
 });

@@ -79,10 +79,9 @@ vi.mock('@renderer/features/sessions/set-session-parent-flow', () => ({ moveSess
 vi.mock('@renderer/features/sessions/fork-task', () => ({ forkTask: () => {} }));
 vi.mock('@renderer/features/sessions/open-session-in-session', () => ({ openSessionInSessionWhenReady: () => {} }));
 vi.mock('@renderer/app/screen-layout-actions', () => ({
-  dissolveScreenGroup: () => {},
+  closeScreenBlock: () => {},
   isScreenView: () => false,
   showSessionBeside: () => {},
-  takeSessionOutOfGroup: () => {},
 }));
 vi.mock('@renderer/lib/commands/registry', () => ({ commandRegistry: { dispatch: () => {} } }));
 vi.mock('@/platform', () => ({ platform: { writeClipboardText: () => Promise.resolve() } }));
@@ -118,7 +117,7 @@ it('the leading slot is the agent avatar at 14px, not the harness logo', async (
   const face = avatar()!.firstElementChild as HTMLElement;
   expect([face.style.width, face.style.height]).toEqual(['14px', '14px']);
   // No harness badge or status badge on the face: the row's own status mark stays the only one.
-  expect(avatar()!.querySelectorAll('.agent-harness-badge, .av-status__dot')).toHaveLength(0);
+  expect(avatar()!.querySelectorAll('.av-status')).toHaveLength(0);
   expect(harnessIcon()).toBeNull();
 });
 

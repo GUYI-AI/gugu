@@ -283,6 +283,7 @@ export function normalizeDeviceCapabilities(value: unknown): DeviceCapabilities 
     ...(row.runs_as_root === true ? { runs_as_root: true } : {}),
     ...(row.assistant_home === true ? { assistant_home: true } : {}),
     ...(row.assistant_home_setup === 1 ? { assistant_home_setup: 1 as const } : {}),
+    ...(row.task_annotations === 1 ? { task_annotations: 1 as const } : {}),
     ...(row.server_confirmed_restart === true ? { server_confirmed_restart: true as const } : {}),
     ...(parseSessionBootFailures(row.server_boot_failures).length ? { server_boot_failures: parseSessionBootFailures(row.server_boot_failures) } : {}),
     ...normalizeServerUpdate(row.server_update),

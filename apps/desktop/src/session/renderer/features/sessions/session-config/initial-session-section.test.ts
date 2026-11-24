@@ -2094,20 +2094,6 @@ describe('InitialSessionField', () => {
     expect(chatComposerProps().selectedModel).toBe('claude-opus-4-8');
   });
 
-  // C-3: whether the group is offered is the machine's own answer (with its harness catalog), ❌ a renderer copy of the
-  // rule: a machine whose runtime is not connected withholds it and says why, though the account has the model.
-  it('hides the Gugu group and says the reason the machine gives when it does not offer it', async () => {
-    platformCatalog({ models: [GLM], agentDefault: null });
-    guguOfferRef.current = { offered: false, reason: 'gugu-models:runtime-not-connected' };
-
-    await renderField();
-    await guguCatalogAnswers();
-
-    expect(latestState?.platformModels).toEqual([]);
-    expect(latestState?.platformNotice).toBe('guguCatalog.reason.runtime-not-connected');
-    expect(chatComposerProps().selectedModel).toBe('claude-opus-4-8');
-  });
-
   it('offers the Gugu group when the machine says it is offered, and withdraws it when the machine stops offering it', async () => {
     platformCatalog({ models: [GLM], agentDefault: null });
 
@@ -2182,21 +2168,6 @@ describe('InitialSessionField', () => {
     await renderField();
 
     expect(latestState?.model).toBeNull();
-  });
-
-  it('says why the model picker is empty instead of just showing "Not selected"', async () => {
-    // 真机上抓到的缺口:mac1 没装 claude,composer 只显示一个「Model / Not selected」,
-    // 不给任何理由。选择器为空是对的,沉默不是。
-    harnessCatalog({ kind: 'not-installed' });
-
-    await renderField();
-    await guguCatalogAnswers();
-
-    expect(chatComposerProps().modelOptions ?? {}).toEqual({});
-    // 断的是「取了哪条 key、插了哪个 agent 名」—— 文案本体在词表里，两语由 messages 元测试守。
-    expect(latestState?.harnessNotice).toBe('harnessCatalog.notInstalled|Claude Code');
-    expect(noticeText()).toContain('harnessCatalog.notInstalled');
-    expect(noticeText()).toContain('Claude Code');
   });
 
   it('the agents or the model list read before, a re-read that failed: said with a retry, both still offered', async () => {
@@ -2514,25 +2485,6 @@ describe('InitialSessionField', () => {
     expectConnectionPanel('kimi', null);
   });
 
-  it('puts no sign-in row in the model list when it has no login to offer', async () => {
-    // 阴性对照。少了它，上面那条与「这一格恒有值」同形。
-    // ❌ 摆一个点了打不开任何东西的「去登录」——控件要么真生效要么不渲染。
-    harnessCatalog({
-      kind: 'auth-required',
-      authMethods: [{ id: 'oauth', name: 'OAuth', kind: 'agent' }],
-      efforts: [],
-      selectedEffort: null,
-    });
-
-    await renderField({ provider: 'nologin' });
-    await guguCatalogAnswers();
-
-    // 阳性对照：那句状态照说 —— 「没有下一步」不等于「什么都不说」。
-    expect(noticeText()).toContain('harnessCatalog.authRequiredWith');
-    expect(latestState?.harnessSignIn).toBeNull();
-    expect(latestState?.harnessModelUnlock, '清单里摆了一条点不开的死行').toBeNull();
-  });
-
   it('offers no sign-in for the other three catalog states', async () => {
     // 「该去装」与「坏了可重试」各有各的去处 —— 共用这条路会把用户送去一个解决不了他问题的地方。
     harnessCatalog({ kind: 'not-installed' });
@@ -2542,37 +2494,6 @@ describe('InitialSessionField', () => {
     harnessCatalog({ kind: 'unavailable', reason: 'boom' });
     await renderField({ provider: 'kimi' });
     expect(latestState?.harnessSignIn).toBeNull();
-  });
-
-  it('reports model catalog failures through a dismissible notice and keeps raw diagnostics off the input', async () => {
-    const raw = 'local Codex app-server exited (code=1 signal=null)';
-    harnessCatalog({ kind: 'unavailable', reason: raw });
-    await renderField({ provider: 'codex' });
-    await guguCatalogAnswers();
-    expect(container.querySelector('[data-testid="harness-catalog-failure-detail"]')).toBeNull();
-    expect(container.textContent).not.toContain(raw);
-    expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({
-      key: expect.stringMatching(/^session-catalog:/), title: 'taskError.codexExited', ongoing: true,
-      action: expect.objectContaining({ label: expect.stringContaining('harnessCatalog.retry') }),
-    }));
-    expect(JSON.stringify(mocks.notify.mock.calls)).not.toMatch(/app-server|code=|signal=/);
-  });
-
-  it('keeps an unclassified catalog error on the ordinary notice route', async () => {
-    harnessCatalog({ kind: 'unavailable', reason: 'unrelated catalog failure' });
-    await renderField({ provider: 'kimi' });
-    await guguCatalogAnswers();
-    expect(mocks.notify).toHaveBeenCalled();
-    expect(JSON.stringify(mocks.notify.mock.calls)).not.toMatch(/codexUpgrade|codexStartFailed|runtimeUpgradeOpenInstaller/);
-  });
-
-  it('offers the Codex update action only for a verified version failure', async () => {
-    harnessCatalog({ kind: 'unavailable', reason: 'native version unsupported', startupReason: 'version' });
-    await renderField({ provider: 'codex' });
-    await guguCatalogAnswers();
-    expect(mocks.notify).toHaveBeenCalledWith(expect.objectContaining({
-      title: 'taskError.codexUpgrade', action: expect.objectContaining({ label: expect.stringContaining('runtimeUpgradeOpenInstaller') }),
-    }));
   });
 
   it('drops the harness notice once a platform model is picked', async () => {

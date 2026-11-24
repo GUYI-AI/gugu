@@ -116,6 +116,7 @@ export class ScreenLayoutStore {
       sessions: computed,
       focusedSession: computed,
       joinedGroups: computed,
+      splitKeys: computed,
       show: action,
       replaceWith: action,
       showRoot: action,
@@ -129,7 +130,6 @@ export class ScreenLayoutStore {
       setSplitSizes: action,
       equalizeSplit: action,
       restore: action,
-      dissolve: action,
       release: action,
     });
   }
@@ -262,6 +262,14 @@ export class ScreenLayoutStore {
   }
 
   /**
+   * 「这样东西此刻是并排着的几块里的一块」的唯一真值(contentKey;一块时为空):侧栏里一行的「取消并排」只认它 ——
+   * 会话页自己的行直接读,壳画的行经 sidebarChatView 读同一份。群旁边贴着的那块(group-participant-panes)也算。
+   */
+  get splitKeys(): string[] {
+    return this.order.length > 1 ? this.order.map((blockId) => contentKey(this.blocks.get(blockId)!)) : [];
+  }
+
+  /**
    * 这屏这一组和收起来的那些组,喂给左边列表(项目、对话各把自己有的那几行并在一处,lib/sidebarJoinedGroups):
    * 组员是每一块装的那样东西,不分种类 —— 哪一样在哪个列表里有一行,由那个列表自己认。
    */
@@ -322,13 +330,17 @@ export class ScreenLayoutStore {
     const key = contentKey(target);
     for (const group of this.parked.filter((entry) => entry.entry === key && Object.keys(entry.blocks).length < 2)) this.parked.remove(group);
     for (const group of this.parked.filter((entry) => entry.entry === key)) delete group.entry;
+    // Already alone on its own screen: that block stays (a new block id would remount its whole conversation).
+    const at = this.blockOf(target);
+    if (at && this.order.length === 1 && (this.entry === key || this.entry === null)) {
+      this.entry = key;
+      return this.focus(at);
+    }
     if (this.entry === key && this.order.length < 2) this.clearScreen();
     else {
       if (this.entry === key) this.entry = null;
       this.park();
     }
-    const at = this.blockOf(target);
-    if (at) return this.focus(at);
     this.showAlone(target, key);
   }
 
@@ -415,20 +427,6 @@ export class ScreenLayoutStore {
       this.focus(next && this.blocks.get(next)?.kind === 'session' ? next : (lastSession ?? next ?? this.order[0]));
     }
     return true;
-  }
-
-  /**
-   * 拆开这一组(左边框里一行右键「拆开这一组」):它在这屏 → 只留正看着那块(拆开就是各回各位,正看着的还看着);
-   * 收起来的 → 不再记着。
-   */
-  dissolve(sessionId: string): void {
-    if (this.blockOfSession(sessionId)) {
-      const keep = this.focusedSession ? this.focusedBlockId! : this.blockOfSession(sessionId)!;
-      for (const blockId of this.order) if (blockId !== keep) this.close(blockId);
-      return;
-    }
-    const group = this.parked.find((entry) => Object.values(entry.blocks).some((block) => isSession(block, sessionId)));
-    if (group) this.parked.remove(group);
   }
 
   /** 这条会话没了(归档、删除):它那块收掉(收起来的组里也一样);它是屏上唯一一块就整屏清空,下一次看谁就从谁开始。 */
@@ -599,10 +597,6 @@ function keysOf(group: ScreenGroupSnapshot): string[] {
   });
 }
 
-
-function isSession(block: ScreenBlockContent, sessionId: string): boolean {
-  return block.kind === 'session' && block.sessionId === sessionId;
-}
 
 function sameContent(a: ScreenBlockContent, b: ScreenBlockContent): boolean {
   return contentKey(a) === contentKey(b);

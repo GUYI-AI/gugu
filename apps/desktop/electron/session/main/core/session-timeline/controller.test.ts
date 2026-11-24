@@ -31,6 +31,8 @@ vi.mock('./create-session', () => ({
 vi.mock('./service', () => ({
   nativeAttachment: vi.fn(),
   snapshot: async () => ({ ok: true, value: { cursor: { epoch: 'e', seq: 1 }, turns: [turnWith(HUGE)], settlements: [], hasOlder: false } }),
+  // A cursor of another epoch (the host restarted): the answer is a reset with a new snapshot.
+  after: async () => ({ ok: true, value: { ok: false, reset: 'epoch_changed', snapshot: { cursor: { epoch: 'e2', seq: 1 }, turns: [turnWith(HUGE)], settlements: [], hasOlder: false } } }),
   subscribe: async (input: { subscriptionId: string }, emit: (event: unknown) => void) => {
     state.legacyStarts(input.subscriptionId);
     state.pushes.set(input.subscriptionId, emit);
@@ -111,6 +113,30 @@ describe('会话时间线路由(本机、别的电脑、手机同一张)', () =>
     const pushed = (topic: string) => (state.emits.find((e) => e.topic === topic)!.data as { result: { batch: unknown } }).result.batch;
     expect(outputOf(pushed('sub-t'))).toHaveLength(8_192);
     expect(outputOf(pushed('sub-f'))).toHaveLength(20_000);
+  });
+
+  it('lean: a reader that asks for folded pages gets them folded; one that does not ask gets them as before', async () => {
+    const page = async (input: object) => ((await call(1_000_001, 'sessionSnapshot', { conversationId: 'c1', trim: true, ...input })) as { value: { turns: Array<{ items: Array<Record<string, unknown>> }> } }).value.turns[0]!.items[0]!;
+    const folded = await page({ lean: 'folded' });
+    expect(folded).toMatchObject({ id: 'a', held: true });
+    expect(folded.outputText).toBeUndefined();
+    const whole = await page({});
+    expect(whole.held).toBeUndefined();
+    expect(whole.outputText).toHaveLength(8_192);
+    // Without `trim` nothing is trimmed, folded or not: the local page reads whole.
+    expect(outputOf(((await call(1, 'sessionSnapshot', { conversationId: 'c1', lean: 'folded' })) as { value: unknown }).value)).toHaveLength(20_000);
+  });
+
+  it('lean: the snapshot of a reset answer (after, or a subscribe push) is folded when asked, whole when not', async () => {
+    const after = async (input: object) => ((await call(1_000_001, 'sessionAfter', { conversationId: 'c1', cursor: { epoch: 'e', seq: 1 }, trim: true, ...input })) as
+      { value: { snapshot: { turns: Array<{ items: Array<Record<string, unknown>> }> } } }).value.snapshot.turns[0]!.items[0]!;
+    expect(await after({ lean: 'folded' })).toMatchObject({ id: 'a', held: true });
+    expect((await after({})).held).toBeUndefined();
+
+    await call(1_000_001, 'sessionSubscribe', { conversationId: 'c1', subscriptionId: 'sub-lean', cursor: null, trim: true, lean: 'folded' });
+    state.pushes.get('sub-lean')!({ subscriptionId: 'sub-lean', result: { ok: false, reset: 'epoch_changed', snapshot: { cursor: { epoch: 'e2', seq: 1 }, turns: [turnWith(HUGE)], settlements: [], hasOlder: false } } });
+    const pushed = state.emits.find((e) => e.topic === 'sub-lean')!.data as { result: { snapshot: { turns: Array<{ items: Array<Record<string, unknown>> }> } } };
+    expect(pushed.result.snapshot.turns[0]!.items[0]).toMatchObject({ id: 'a', held: true });
   });
 
   it('订阅归开它的那条线:线断了一并拆(时间线与会话列表),别的线开的不动;退订过的不再拆第二次', async () => {

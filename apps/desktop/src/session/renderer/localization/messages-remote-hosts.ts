@@ -4,7 +4,6 @@
 export const enUSRemoteHostMessages = {
   // ── 侧栏:机器名旁那颗点 ─────────────────────────────────────────────────
   'remoteHost.status.signInRequired': '{device} needs SSH sign-in',
-  'remoteHost.condition.signInRequired': '{device} needs SSH sign-in.',
   'remoteHost.signIn': 'Sign in',
   'machinePicker.needsSignIn': 'Needs sign-in',
   'machinePicker.updating': 'Updating…',
@@ -44,20 +43,12 @@ export const enUSRemoteHostMessages = {
   'remoteHost.condition.offline': '{device} is offline; last online {ago}. Resumes when it reconnects.',
   'remoteHost.condition.offlineNever': '{device} is offline. Resumes when it reconnects',
   'remoteHost.condition.waking': 'Waking {device}…',
-  'remoteHost.condition.signedOut': 'Signed out on {device}; task paused. Sign in again in Settings → Devices.',
-  'remoteHost.condition.waiting': 'Disconnected from {device}. Reconnecting in {seconds}s',
-  'remoteHost.condition.reconnecting': 'Reconnecting to {device}…',
-  'remoteHost.condition.gaveUp': "Could not reach {device}. Stopped reconnecting",
-  'remoteHost.condition.tooOld':
-    'Gugu on {device} is too old. Update Gugu there',
   'remoteHost.condition.sessionGone': '{device} no longer has this task',
   'remoteHost.notice.diskLow': '{device} has only {free} free; saves and updates may fail',
   'remoteHost.notice.desktopTooOld': 'Gugu on {device} is newer. Update Gugu on this computer',
   'remoteHost.mention.notRead': "Tasks on {device} have not been read yet",
   'remoteHost.notice.serverTooOld': 'Gugu on {device} needs an update. Open Settings → Devices to update it.',
-  'remoteHost.reconnectNow': 'Reconnect now',
   'remoteHost.notice.updateMachine': 'Update the device',
-  'remoteHost.reconnect': 'Reconnect',
   // ── 终端:最后一行状态 ──────────────────────────────────────────────────
   // {headline} 只装 remoteHost.reason.* 翻好的那一整句人话(见 connection-status.ts),❌ 内部错误原文。
   'remoteHost.reason.cancelled': 'You cancelled connecting to {device}.',
@@ -124,6 +115,7 @@ export const enUSRemoteHostMessages = {
   'remoteWorkspace.tunnel.relayDown': "This machine cannot reach the Remote Tunnel relay. Retrying automatically.",
   'remoteWorkspace.tunnel.visitorFailed': "This computer cannot reach the Remote Tunnel relay. Retrying automatically.",
   'remoteWorkspace.tunnel.sshFailed': "Remote Tunnel is up but could not sign in to this machine. Retrying automatically.",
+  'remoteWorkspace.tunnel.linkRefused': "Remote Tunnel is up, but Gugu on this machine did not accept the connection. Using Gugu Cloud and retrying automatically.",
   'remoteWorkspace.tunnel.local': 'Gugu on this computer is missing the Remote Tunnel component. Update Gugu.',
   'remoteWorkspace.tunnel.unreachable': "Could not reach this machine through Gugu cloud. Retrying automatically.",
   'remoteWorkspace.serverTooOld':
@@ -180,7 +172,6 @@ export type RemoteHostMessageKey = keyof typeof enUSRemoteHostMessages;
 
 export const zhCNRemoteHostMessages: Record<RemoteHostMessageKey, string> = {
   'remoteHost.status.signInRequired': '{device} 需要 SSH 登录',
-  'remoteHost.condition.signInRequired': '「{device}」需要 SSH 登录。',
   'remoteHost.signIn': '登录',
   'machinePicker.needsSignIn': '需要登录',
   'machinePicker.updating': '正在更新…',
@@ -219,20 +210,12 @@ export const zhCNRemoteHostMessages: Record<RemoteHostMessageKey, string> = {
   'remoteHost.condition.offline': '{device} 离线，上次在线是 {ago}，上线后自动恢复。',
   'remoteHost.condition.offlineNever': '{device} 离线，上线后自动恢复',
   'remoteHost.condition.waking': '正在唤醒 {device}…',
-  'remoteHost.condition.signedOut': '{device} 上的登录已失效，会话已暂停。请在 设置 → 设备 中重新登录。',
-  'remoteHost.condition.waiting': '与 {device} 断开，{seconds} 秒后重连',
-  'remoteHost.condition.reconnecting': '正在重新连接 {device}…',
-  'remoteHost.condition.gaveUp': '无法连接 {device}，已停止重连',
-  'remoteHost.condition.tooOld':
-    '{device} 上的咕咕版本过旧，请更新该设备上的咕咕',
   'remoteHost.condition.sessionGone': '{device} 上已不存在此会话',
   'remoteHost.notice.diskLow': '{device} 磁盘只剩 {free}，保存和更新可能失败',
   'remoteHost.notice.desktopTooOld': '{device} 的咕咕较新，请更新本机的咕咕',
   'remoteHost.mention.notRead': '尚未读取 {device} 上的会话',
   'remoteHost.notice.serverTooOld': '{device} 上的咕咕需要更新，请在 设置 → 设备 中更新。',
-  'remoteHost.reconnectNow': '立即重连',
   'remoteHost.notice.updateMachine': '更新该设备',
-  'remoteHost.reconnect': '重新连接',
   'remoteHost.reason.cancelled': '你取消了连接 {device}。',
   'remoteHost.reason.promptUnanswered': '{device} 等待回答超时，已断开。',
   'remoteHost.hostKeyChanged.title': '{device} 的身份已变更，咕咕未连接',
@@ -293,6 +276,7 @@ export const zhCNRemoteHostMessages: Record<RemoteHostMessageKey, string> = {
   'remoteWorkspace.tunnel.relayDown': '此设备无法连接远程隧道中转，正在自动重试。',
   'remoteWorkspace.tunnel.visitorFailed': '本机无法连接远程隧道中转，正在自动重试。',
   'remoteWorkspace.tunnel.sshFailed': '远程隧道已连通，但无法登录此设备，正在自动重试。',
+  'remoteWorkspace.tunnel.linkRefused': '远程隧道已连通，但此设备上的咕咕没有接受连接。先经咕咕云连接，并自动重试。',
   'remoteWorkspace.tunnel.local': '本机的咕咕缺少远程隧道组件，请更新咕咕。',
   'remoteWorkspace.tunnel.unreachable': '无法通过咕咕云连接此设备，正在自动重试。',
   'remoteWorkspace.serverTooOld':

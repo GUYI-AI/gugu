@@ -31,7 +31,7 @@ afterEach(() => {
   else delete document.documentElement.dataset.theme
 })
 
-it.each(['light', 'dark'] as const)('keeps the phone project waiting dot visible without a session theme in %s mode', async theme => {
+it.each(['light', 'dark'] as const)('keeps the phone project needs-you mark visible without a session theme in %s mode', async theme => {
   await page.viewport(390, 200)
   document.documentElement.dataset.theme = theme
   document.documentElement.classList.remove('emlight', 'emdark')
@@ -45,15 +45,17 @@ it.each(['light', 'dark'] as const)('keeps the phone project waiting dot visible
   const root = createRoot(mount)
   cleanups.push(() => { act(() => root.unmount()); host.remove() })
   await act(async () => { root.render(<PhoneProjectChatAvatar chat={chat({ id: 'project-chat', kind: 'group', member_user_ids: [] })} mobile><span>Project</span></PhoneProjectChatAvatar>) })
-  await until('project waiting dot renders', () => !!host.querySelector('[data-testid="phone-project-waiting"]'))
-  const dot = host.querySelector<HTMLElement>('[data-testid="phone-project-waiting"]')!
+  await until('project needs-you mark renders', () => !!host.querySelector('[data-testid="phone-project-waiting"]'))
+  // The project's needs-you mark is the agents' needs-you triangle (AgentMarkGlyph), in the theme's own colour (owner 11-24).
+  const mark = host.querySelector<SVGElement>('[data-testid="phone-project-waiting"] [data-agent-mark="warn"]')!
+  const shape = mark.querySelector('path')!
   const reference = host.appendChild(document.createElement('span'))
-  reference.style.backgroundColor = 'var(--agent-tone-needs-user)'
+  reference.style.color = 'var(--agent-mark-warn)'
   const phase = import.meta.env.VITE_OWNER_CAPTURE_PHASE
   if (phase) await page.screenshot({ element: host, path: `__screenshots__/owner-2245-${phase}-attention-${theme}.png` })
   expect(getComputedStyle(mount).getPropertyValue('--foreground-warning')).toBe('')
-  expect(getComputedStyle(dot).backgroundColor).toBe(getComputedStyle(reference).backgroundColor)
-  expect(getComputedStyle(dot).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
-  expect(dot.getBoundingClientRect().width).toBe(8)
-  expect(dot.getBoundingClientRect().height).toBe(8)
+  expect(getComputedStyle(shape).fill).toBe(getComputedStyle(reference).color)
+  expect(getComputedStyle(shape).fill).not.toBe('rgba(0, 0, 0, 0)')
+  expect(mark.getBoundingClientRect().width).toBe(14)
+  expect(mark.getBoundingClientRect().height).toBe(14)
 })
