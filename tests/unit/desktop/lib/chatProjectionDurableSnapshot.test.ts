@@ -179,7 +179,7 @@ describe('warm start adopts the stored list', () => {
     expect(projection.isConversationArchived('g-1')).toBe(kind === 'archived')
     expect(calls).toEqual([{ key: 'active_members', ids: ['g-1'] }, expect.objectContaining({ key: 'chats', ids: ['g-1'] })])
     await projection.readRestoredLayoutMemberships(['g-1'], '10', signal())
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(2)
   })
 
   it('a failed restored-id read retains the unknown block and is not retried on publication or unrelated journal work', async () => {
