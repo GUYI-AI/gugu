@@ -2,8 +2,7 @@ import { when } from 'mobx';
 import { getSessionPageStore, getSessionView, sessionViewKind } from '@renderer/features/sessions/stores/session-selectors';
 import { sessionTabKind } from './session-tab-kind';
 import { sessionPaneReady } from './session-pane-ready';
-import { machineUnavailableLabel } from './machine-unavailable-label';
-import { remoteSessionPageTarget } from './remote-session-page-target';
+import { drawnWithoutWorkspace, machineUnavailableLabel } from './machine-unavailable-label';
 import { sessionRegistry } from './stores/session-registry';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -51,28 +50,23 @@ export function openSessionInSessionWhenReady({
 }: OpenSessionInSessionOptions): () => void {
   const kind = sessionViewKind(getSessionPageStore(projectId, sessionId), projectId);
   if (!onlyIfNoTabs && kind !== 'archived' && kind !== 'missing') rememberTask(sessionId);
-  // A task on another machine without its workspace here opens on its own page (SessionContentGate), now or once that
-  // turns out while we wait: navigation (including a beside block) reaches the gate, which shows it and hands over to the
-  // panel when the workspace is ready (❌ wait for a workspace and time out into a toast over that page).
-  const ownPage = () => Boolean(remoteSessionPageTarget(projectId, sessionViewKind(getSessionPageStore(projectId, sessionId), projectId)));
-  if (ownPage()) {
+  // A session whose machine does not answer opens now (SessionContentGate): its usual page and conversation without a
+  // workspace when it is listed here. Preparing would only fail until that machine is back, when view.tsx prepares it.
+  const withoutWorkspace = () => drawnWithoutWorkspace(getSessionPageStore(projectId, sessionId));
+  if (!withoutWorkspace() && machineUnavailableLabel(projectId) && kind !== 'ready' && kind !== 'archived') {
+    // Not listed here yet (its project mounts when that machine is back): the page says the machine is away.
     onReady?.();
     return () => {};
   }
-  const paneReady = sessionPaneReady(projectId, sessionId, { reviveArchived: false });
+  const paneReady = withoutWorkspace() ? () => false : sessionPaneReady(projectId, sessionId, { reviveArchived: false });
   return when(
     () => {
-      if (ownPage()) return true;
       const session = sessionRegistry
         .get(sessionId)
         ?.sessions.get(sessionId);
-      return Boolean(paneReady() && getSessionView(host?.projectId ?? projectId, host?.sessionId ?? sessionId) && session);
+      return Boolean((paneReady() || withoutWorkspace()) && getSessionView(host?.projectId ?? projectId, host?.sessionId ?? sessionId) && session);
     },
     () => {
-      if (ownPage()) {
-        onReady?.();
-        return;
-      }
       const session = sessionRegistry
         .get(sessionId)
         ?.sessions.get(sessionId);
