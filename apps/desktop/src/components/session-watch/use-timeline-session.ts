@@ -12,14 +12,12 @@ import type {
   TimelineOlderResult,
   TimelineSnapshot,
 } from '@gugu/session-core/session-record/contract'
-import type { ToolImage } from '@gugu/session-core/acp/client'
 import {
   applyLocalSettlement,
   applySnapshot,
   applyTimelineResult,
   emptyAgentWatchTimeline,
   prependOlder,
-  withToolImage,
   type AgentWatchTimeline,
 } from './agent-watch-store'
 import { createHeldTurnReader, FOLDED, withWholeTurns } from './folded-pages'
@@ -35,8 +33,6 @@ export type SessionpageTimelineClient = {
   /** `lean` on after / subscribe: the form of the snapshot a reset answer carries (`folded-pages`). */
   fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor, lean?: LeanPage): Promise<TimelineAfterResult>
   fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, lean?: LeanPage): Promise<TimelineOlderResult>
-  /** 一张工具交回来的图(时间线里只有它的字数,见 transport-trim)。 */
-  fetchToolImage(deviceId: string, sessionId: string, itemId: string, index: number): Promise<ToolImage>
   subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null, lean?: LeanPage): Promise<unknown>
   unsubscribeSession(deviceId: string, subscriptionId: string): Promise<unknown>
   subscribeSessionEvents(deviceId: string, subscriptionId: string, onResult: (result: TimelineAfterResult) => void): () => void
@@ -85,8 +81,6 @@ export type AgentWatchSession = {
   reload: () => void
   /** 往前翻更早的轮（懒加载）。手里一轮都没有时是空操作。 */
   loadOlder: () => Promise<void>
-  /** 去机器上取一张工具图、写回那条条目(取不到原样抛出:图格画成取不到)。 */
-  loadToolImage: (itemId: string, index: number) => Promise<void>
   /** A row of a folded page came on screen from behind a fold: read its turn whole (`folded-pages`). */
   fillHeld: (itemId: string) => void
   send: (text: string) => Promise<void>
@@ -243,35 +237,6 @@ export function useTimelineSession(
     try { await reading } finally { if (olderRequest.current?.promise === reading) olderRequest.current = null }
   }, [client, deviceId, sessionId, enabled, lean, setTimeline])
 
-  /**
-   * 一张工具图去机器上取一次:取到的写回条目,和时间线一起存在手机上(timeline-cache),重开不重取。
-   * 要不要取由图格看时间线定(共享转录的工具图格,和时间线同一次提交);这里只记**正在取的那一问**,
-   * 同一张的问合成一问。这一问活到答复被用掉:写回的 updater 里放手 —— 写进去了,图格在同一次提交里就看到它;
-   * 写不进去(取的途中条目离开了手里这份:换了会话、换代快照没带那一轮),答复作废,条目回来时那一格再取。
-   * ❌ 回包一到就放手:写回还排在下一次渲染里的那一小段,图格照旧没有它,会再问一遍(2026-10-15 mac1 实测每阶段
-   * 4–7 张)。❌ 写不进去还留着:条目回来时会被当成正在取,那几格就一直空着(复核·二代 10-16:回来以后问 0 次)。
-   * 取不到当场放手,点一下再取。
-   */
-  const toolImageLoads = useRef(new Map<string, Promise<void>>())
-  const loadToolImage = useCallback((itemId: string, index: number): Promise<void> => {
-    if (!deviceId || !sessionId) return Promise.reject(new Error('no session to fetch a picture from'))
-    const key = `${deviceId}\n${sessionId}\n${itemId}\n${index}`
-    const known = toolImageLoads.current.get(key)
-    if (known) return known
-    const loading = client.fetchToolImage(deviceId, sessionId, itemId, index).then(
-      (image) => {
-        toolImageLoads.current.delete(key)
-        setTimeline((current) => withToolImage(current, itemId, index, image))
-      },
-      (err: unknown) => {
-        toolImageLoads.current.delete(key)
-        throw err
-      },
-    )
-    toolImageLoads.current.set(key, loading)
-    return loading
-  }, [client, deviceId, sessionId, setTimeline])
-
   /*
    * 回显到了的那几句在**渲染时**就让位(派生,❌ 等下面那个 effect:那样记录里那一行与乐观那一行
    * 会同屏一帧);effect 只负责把 state 收成同一份,免得已认领的留在 state 里被后来的记录再认一次。
@@ -366,7 +331,7 @@ export function useTimelineSession(
   }), [client, deviceId, sessionId, setTimeline])
   return {
     timeline, phase, error, actionError, dismissActionError, waitingForRecord,
-    reload, loadOlder, loadToolImage, fillHeld, send, pendingSends, respond, sending, respondingItemId, cancel, cancelling,
+    reload, loadOlder, fillHeld, send, pendingSends, respond, sending, respondingItemId, cancel, cancelling,
     link, errorCode,
   }
 }

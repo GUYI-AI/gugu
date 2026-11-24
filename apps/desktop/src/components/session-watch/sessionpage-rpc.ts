@@ -2,7 +2,6 @@ import type { RpcRouter } from '@main/rpc'
 import type { RemoteLibraryTransport } from '@renderer/features/extensions/extensions-host'
 import { SessionInputAdmissionError, sessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission'
 import { invokePhoneHost } from '../../mobile/local-agent/phoneHostRpc'
-import type { ToolImage } from '@gugu/session-core/acp/client'
 import { rendererLogger } from '@/lib/log'
 import { devicesModel, readCachedDevices } from '@/store/devicesCache'
 import { cloudComputer, cloudSnapshotOf } from '@/lib/cloudComputer'
@@ -206,16 +205,6 @@ export function fetchAfter(deviceId: string, sessionId: string, cursor: RecordCu
 
 export function fetchOlder(deviceId: string, sessionId: string, beforeTurnId: string, limit?: number, lean?: LeanPage): Promise<TimelineOlderResult> {
   return value(rpc(deviceId).sessionTimeline.sessionOlder({ conversationId: sessionId, beforeTurnId, limit, trim: true, lean }))
-}
-
-/**
- * 一张工具交回来的图:发给手机的时间线里只有它的类型和字数(transport-trim),图滚进视口、那一轮展开了才来取。
- * 同一张路由表(那台机器的会话时间线),❌ 另开通道;取到的写回条目、跟着 timeline-cache 存。
- * 走 `once`、不走窗口:一问一答有 12 秒期限,回包是一条独立的广播,不进窗口的按序队列 —— 一片丢了不会把这条会话的
- * 推送一起压住,手机也不会对着一张图一直等(窗口的问没有期限,要等到线被判死)。单张上限见 `TOOL_IMAGE_FETCH_LIMIT`。
- */
-export function fetchToolImage(deviceId: string, sessionId: string, itemId: string, index: number): Promise<ToolImage> {
-  return value(once(deviceId).sessionTimeline.sessionToolImage({ conversationId: sessionId, itemId, index }))
 }
 
 export function subscribeSession(deviceId: string, sessionId: string, subscriptionId: string, cursor: RecordCursor | null, lean?: LeanPage): Promise<unknown> {

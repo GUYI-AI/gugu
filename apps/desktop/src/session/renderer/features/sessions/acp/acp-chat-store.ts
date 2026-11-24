@@ -32,8 +32,6 @@ import type {
   ComposerNotice,
   ComposerQueuedPrompt,
 } from '@gugu/session-ui/react/components';
-import { findToolItem } from '@gugu/session-core/session-record/tool-image';
-import { toolImageUrl } from '@gugu/session-core/acp/client';
 import { commandToken } from '@gugu/session-core/acp/commands';
 import { permissionWaitKind } from '@gugu/session-core/acp/models/permissions';
 import type { AgentState, HistoryPage, LiveSettingResult, PermissionWaitKind } from '@gugu/session-core/acp';
@@ -1339,31 +1337,6 @@ export class AcpChatStore {
     this.historyLoading = false;
     this.loadError = null;
     this.messageCount = turns.reduce((count, turn) => count + turn.items.length, 0);
-  }
-
-  async resolveToolImage(itemId: string, index: number): Promise<string | null> {
-    const generation = this._historyGeneration;
-    const recorded = this._history && findToolItem([...this._history.state.turns], itemId) ? this._history : null;
-    try {
-      // An image of the running turn is with its runtime; one already recorded, with the timeline.
-      const result = recorded
-        ? { ok: true as const, image: await recorded.toolImage(itemId, index) }
-        : this.session
-          ? await this.session.getToolImage(itemId, index).then(result => {
-              if (!result.success) throw result.error;
-              return result.data;
-            })
-          : null;
-      if (this._disposed || generation !== this._historyGeneration) return null;
-      if (!result?.ok) {
-        if (result) log.warn('Tool image unavailable', { code: result.code });
-        return null;
-      }
-      return toolImageUrl(result.image);
-    } catch (error) {
-      log.warn('Failed to fetch tool image', { error });
-      return null;
-    }
   }
 
   /**

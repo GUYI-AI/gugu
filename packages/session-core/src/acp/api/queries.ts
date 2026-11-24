@@ -36,9 +36,3 @@ export const resumeResultSchema = historyPageSchema.extend({
 });
 export type ResumeResult = z.infer<typeof resumeResultSchema>;
 
-/** Both desktop transports fetch a visible picture by its original item id. */
-export const toolImageInputSchema = z.object({
-  sessionId: z.string(),
-  itemId: z.string(),
-  index: z.number().int().nonnegative(),
-});

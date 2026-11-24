@@ -9,13 +9,11 @@ import { useNativeConversationRead } from '@/hooks/useNativeConversationRead'
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { toolImageUrl } from '@gugu/session-core/acp/client'
 import { openImageViewer } from '@/lib/imageViewer'
 import { PhoneTaskDraftRecovery } from '../../mobile/local-agent/PhoneTaskDraftRecovery'
 import { usePhoneInterruptedRetry } from './usePhoneInterruptedRetry'
-import { machineRpc, fetchToolImage } from './sessionpage-rpc'
+import { machineRpc } from './sessionpage-rpc'
 import { assistantTimelineClient, readConversationFile } from '@/components/assistant/assistantTimelineClient'
-import { phoneTimelineClient } from '../../mobile/local-agent/phoneTimelineClient'
 import type { ChatCommands, ChatView } from '@gugu/session-chat-ui'
 import type { ComposerAttachment, PromptEditorRef } from '@gugu/session-ui/react/components'
 import { MessageProvider } from '@gugu/session-ui/react/components'
@@ -102,7 +100,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: (modelControl: ReactNode, model: ExistingSessionModel, skills: ReturnType<typeof creationSkillInput>) => ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
   /** Only the existing Work controls may take ownership of the phone permission selector. */
   permissionsInWork?: boolean
-  onAtBottom?: () => void; onLoadToolImage?: (itemId: string, index: number) => Promise<void>; emptyNote?: ReactNode
+  onAtBottom?: () => void; emptyNote?: ReactNode
   /** A live foreground snapshot, not a cached/offline history window. */
   queueReady?: boolean
 }) {
@@ -372,8 +370,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
     conversationAgentSession: () => sessionId, conversationAgentUserId: () => agentUserId ?? null, readConversationFile: input => readConversationFile(local, deviceId, input),
     ...quotes.commands,
     onDismissBackgroundTask: ({ entryId }) => { dismissSubagent(sessionId, entryId); setDismissals(value => value + 1) },
-    resolveToolImage: async (itemId, index) => toolImageUrl(await (phoneHost ? phoneTimelineClient.fetchToolImage(deviceId, sessionId, itemId, index) : (localClient ?? { fetchToolImage }).fetchToolImage(deviceId, sessionId, itemId, index))),
-    onViewImages: ({ urls, index, thumb }) => { openImageViewer(urls.map(url => ({ url, alt: '', thumb })), index) }, ...outputHandlers, conversationAgentName: () => agentName, onStop, onHeldShown,
+    ...outputHandlers, conversationAgentName: () => agentName, onStop, onHeldShown,
     onStopBackgroundTask: ({ stopId }) => {
       setBackgroundError(null)
       void (localClient?.stopBackgroundTask ?? stopBackgroundTask)(deviceId, sessionId, stopId).catch(error => setBackgroundError(messageForUser(error)))
