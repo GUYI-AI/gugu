@@ -22,10 +22,9 @@ import { usePanelScroll } from '../session/renderer/features/assistant/use-panel
 import { PhoneDeviceActionsPage } from '../mobile/phone-device/PhoneDeviceActionsPage'
 import { SettingsNav } from './settings/SettingsNav'
 import { SessionSettingsSection } from './sessionpage/SessionSettingsSection'
-import { ChevronLeft, X } from '@/lib/icons'
-import { Sheet } from './ui/Sheet'
+import { PAGE_MODAL_FRAME, Sheet } from './ui/Sheet'
+import { ModalBack, ModalClose } from './ui/ModalClose'
 import { Pane, PaneHeader } from './ui/Pane'
-import { IconButton } from './ui/IconButton'
 import { useBackLayer } from './ui/sheetStack'
 import { platform } from '../platform'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
@@ -194,17 +193,13 @@ export function SettingsPanel({
               title={detailPage?.title ?? sectionTitle}
               titleLevel={mobile ? 'panel' : undefined}
               leading={mobile || detailPage ? (
-                <IconButton shape="pill" className="bg-foreground/[0.06]" size="lg" aria-label={t(detailPage || parentSection ? 'settings.back' : 'settings.backToMy')} onClick={back}>
-                  <ChevronLeft />
-                </IconButton>
+                <ModalBack label={t(detailPage || parentSection ? 'settings.back' : 'settings.backToMy')} onBack={back} />
               ) : undefined}
               actions={!mobile ? (
                 <>
                 {activeSection === 'passwords' && <div ref={passwordActions} />}
                 {/* @@@1787 owner: ✗ 是桌面弹窗逻辑;移动端出口统一为左上返回箭头(SettingsNav onBack),✗ 只留桌面 */}
-                <IconButton shape="pill" size="lg" className="bg-foreground/[0.06]" aria-label={t('settings.close')} onClick={onClose}>
-                  <X />
-                </IconButton>
+                <ModalClose label={t('settings.close')} onClose={() => onClose?.()} />
                 </>
               ) : activeSection === 'apps' && !detailPage ? (
                 <Button size="sm" variant="ghost" data-testid="phone-market-show-installed" onClick={() => setMarketInstalled(true)}>
@@ -235,24 +230,12 @@ export function SettingsPanel({
   }
 
   // 顶层应用模态：Sheet portals 到 document.body，脱离 MainLayout 内 Sidebar/ChatListPanel
-  // 的 stacking context，否则被它们内部的 fixed 高 z 弹窗盖住(#1182)。
-  // --z-settings：高于所有工作区弹窗(modal/menu/banner/popover 全段)，
-  // 低于 --z-overlay(图片预览)与提示条那一层——设置内弹出的提示 / 图片仍要可见。
+  // 的 stacking context，否则被它们内部的 fixed 高 z 弹窗盖住(#1182)。几何见 @@@page-modal-frame。
   return (
     <Sheet
       onClose={() => onClose?.()}
       onEscape={sessionOverlayOpen}
-      fullScreenMobile
-      // @@@settings-size owner:「设置页太小了,可以大一点」——680x480 的卡片在 1440 宽的窗口里
-      // 只占三成,会员档位/邀请链接这类横向内容被挤到换行、截断。放大到 1000x680(≈面积 2.1x)。
-      // 宽度不写视口兜底:Sheet 自带 maxWidth:100%,窄窗口本来就会收缩它。高度必须自己兜——
-      // desktopHeight 是硬高度,矮窗口(<744)不给 maxHeight 就会顶出屏幕(旧的 480 只是撞不上)。
-      // ❌ 别写成 min(1000px, ...):jsdom 的 cssstyle 不解析 min(),整条声明会被丢成空,
-      // 单测里 style.width 读出 '' —— 尺寸回归就没人守了(实测踩过)。
-      // 2026-10-16 owner 又说「设置页偏小,放大一点」:字阶正文 13 → 14(settings.css),整块再放大一档到 1080x760。
-      desktopWidth="1080px"
-      desktopMaxHeight="calc(100dvh - 64px)" desktopHeight="760px"
-      zIndex="var(--z-settings)"
+      {...PAGE_MODAL_FRAME}
       testId={AUTOMATION_TEST_IDS.settingsPanel}
       ariaLabel={t('settings.title')}
     >

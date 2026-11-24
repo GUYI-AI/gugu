@@ -27,7 +27,7 @@ export interface AvatarProps {
   // @@@1323-m6 兼收数字 px：少数对齐 SSOT 的一次性尺寸(如账户头像 46×46，命名档无 46)，向后兼容。
   size?: 'xs' | 'sm' | 'md' | 'lg' | number
   isAgent?: boolean
-  // Runtime status is separate from the persistent bottom-right harness identity.
+  // Runtime status takes the bottom-right corner; the harness badge is drawn there only when no status is shown.
   agentStatus?: AgentDisplayStatus
   // The assistant expresses the precise status with its 3D figure; other agents use the status badge.
   statusLabel?: AgentStatusLabel
@@ -50,7 +50,8 @@ const AVATAR_STATUS_DOT_CLASS = 'av-status__dot relative motion-reduce:animate-n
 const AVATAR_STATUS_PULSE_CLASS = 'av-status__pulse pointer-events-none absolute -inset-0.5 rounded-full border-2 border-solid animate-[av-status-pulse_1.4s_steps(14,end)_infinite] motion-reduce:animate-none'
 const AVATAR_STATUS_PULSE_DELAY_CLASS = `${AVATAR_STATUS_PULSE_CLASS} av-status__pulse--delay [animation-delay:0.7s]`
 
-// @@@avatar-status-badge - top-right status indicator. Color and words come from the shared presentation
+// @@@avatar-status-badge - bottom-right status indicator; it takes the harness badge's corner (the top-right is the
+// unread dot's). Color and words come from the shared presentation
 // (packages/core/src/shared/agentStatusPresentation.ts — one table for the session page, chat and phone). Motion uses
 // Tailwind animation utilities plus global keyframes. working = solid dot + two staggered pulse rings; parked = the
 // two bars of AgentParkedGlyph; needs_user = Solar exclamation glyph; idle/offline/removed = static dot.
@@ -73,7 +74,7 @@ function AgentStatusBadge({ status, size }: { status: AgentDisplayStatus; size: 
       title={label}
       style={{
         position: 'absolute',
-        top: -2,
+        bottom: -2,
         right: -2,
         width: size,
         height: size,
@@ -209,6 +210,7 @@ export function Avatar({
   const groupFaceMarkup = useMemo(() => (groupFace ? { __html: groupAvatarSvg({ ...groupAvatarThemeColors(groupAvatarColorIndex(identityKey)), text: groupAvatarDefaultText(name), px, label: name }) } : undefined), [groupFace, identityKey, name, px])
   const agentDefault = variant !== 'group' && agent === true && wantsGeneratedFace && !!identityKey
   const animatedAssistant = agentDefault && assistant && !still
+  const statusBadge = agentStatus && !animatedAssistant ? agentStatus : null
   const generatedUrl = variant !== 'group' && wantsGeneratedFace && agent === false && identityKey ? dicebearAvatarDataUri(identityKey, theme) : null
   const missingIdentityKey = wantsGeneratedFace && !identityKey
   useEffect(() => {
@@ -264,10 +266,8 @@ export function Avatar({
           style={emptyStyle}
         />
       )}
-      {agent && harnessBadge && variant !== 'group' ? <AgentHarnessBadge agentId={seed} avatarSize={px} /> : null}
-      {agentStatus && !animatedAssistant ? (
-        <AgentStatusBadge status={agentStatus} size={badgeSize} />
-      ) : null}
+      {statusBadge ? <AgentStatusBadge status={statusBadge} size={badgeSize} />
+        : agent && harnessBadge && variant !== 'group' ? <AgentHarnessBadge agentId={seed} avatarSize={px} /> : null}
     </div>
   )
 }

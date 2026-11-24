@@ -152,23 +152,6 @@
   --sidebar-rail-width: 68px;
 }
 
-/* @@@rail-inset — 侧栏 rail 的上下留白,**按平台一个数**。
-   ❌ 别写回 `.gg-sidebar-rail { padding: … }`:那条规则的特指度是 (0,1,0),与本文件
-   `*:not(.gugu-skin, …)` 那条全局重置**相同**,而重置写在后面 ⇒ 组件自己的 padding
-   一次都没生效过(2026-09-19 实测:mac 的 padding-bottom 与 Windows 的上下两侧都是 0px,
-   而声明写的是 `32px 0 14px`)。mac 当时看起来是对的,只因为它另有一条
-   `:root[data-platform='mac'] .gg-sidebar-rail`(0,3,0)把 top 顶了回去 —— 于是同一个缺陷
-   在 mac 上被遮住、在 Windows 上露出来,读成「Windows 忘了让位」。
-   ⇒ 值放这里、规则用 `:root .gg-sidebar-rail`(0,2,0)压过重置,三个平台同一条路径。 */
-:root {
-  --sidebar-rail-pad-top: 32px;
-  --sidebar-rail-pad-bottom: 14px;
-}
-:root[data-platform='mac'] {
-  /* 交通灯在左上角,rail 的第一个元素必须整体下移到它们下面。 */
-  --sidebar-rail-pad-top: 58px;
-}
-
 /* 最左侧列表头位于 rail 右边，仅为超出 rail 的交通灯宽度预留空间。 */
 :root {
   --titlebar-list-header-inset: max(0px, calc(var(--titlebar-traffic-lights-width) - var(--sidebar-rail-width)));
@@ -206,7 +189,7 @@
    透明 1px 边线 + 共享 12px 圆角能恢复灰阶,撤销又回彩边;底色与 OverlayScrollbar 均已排除。
    这是独立标题行与不透明内容的窗口接壤边界,不属于列表组件。mac 与 Linux 都没有这条独立行,
    沿用原来的几何;阅读面仍是 desktop-shell.css 的唯一可见轮廓。 */
-:root[data-window-titlebar='row'][data-window-material='opaque'] [data-gugu-shell-phase] > .gg-sidebar-rail + div {
+:root[data-window-titlebar='row'][data-window-material='opaque'] [data-gugu-shell-phase] > div:first-child {
   border-top: 1px solid transparent;
   border-left: 1px solid transparent;
   /* 压过 MainLayout 的内联 borderRadius:var(--radius-page),不新造 Windows 圆角档。 */
@@ -711,6 +694,13 @@
   /* @@@selected-neutral-7333 — 选中 = 前景 7.5% 的中性层(用户裁决);live 蓝只留给运行/连接/链接这类真实语义。 */
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent);
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
+  --capsule-bg: color-mix(in oklab, var(--fg) 10%, transparent); /* 第 16 版:浮动胶囊;深色下取中性的抬升色 */
+  --capsule-hover: color-mix(in oklab, var(--fg) 14%, transparent);
+  --capsule-shadow: 0 0 0 .5px var(--border-strong);
+  --card-pop-shadow: var(--shadow-lift);
+  --segment-on-shadow: none;
+  --topic-mark-bg: var(--muted);
+  --topic-mark-fg: var(--muted-fg);
   --press: color-mix(in oklab, var(--fg) 6%, transparent); /* @@@1787 按压反馈,比 hover 深一档才可感知 */
   --pinned: color-mix(in oklab, var(--fg) 1%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
   /* @@@state-ladder-mix (#2322) 上面三档的「实色配方」。--hover/--press/--selected 是半透明叠色,
@@ -950,6 +940,13 @@
   --hover: color-mix(in oklab, var(--fg) 4%, transparent);
   --selected: color-mix(in oklab, var(--fg) 7.5%, transparent); /* @@@selected-neutral-7333 */
   --rail-selected: color-mix(in oklab, var(--fg) 5%, transparent); /* 最左栏选中:比列表里的选中行轻一档(gugu-dev#181 原型) */
+  --capsule-bg: #efe7dc; /* 第 16 版:对话卡片顶上那颗浮动胶囊(设计稿 .capsule) */
+  --capsule-hover: #e8dfd2;
+  --capsule-shadow: 0 0 0 .5px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.04); /* 设计稿 .capsule */
+  --card-pop-shadow: 0 0 0 .5px rgba(0,0,0,.12), 0 8px 28px rgba(0,0,0,.14), 0 2px 6px rgba(0,0,0,.06); /* 设计稿 .pop:名片 */
+  --segment-on-shadow: 0 1px 2px rgba(0,0,0,.08); /* 设计稿 .seg span.on */
+  --topic-mark-bg: #f4ece4; /* 设计稿:话题的圆底消息图标 */
+  --topic-mark-fg: #8a6a5a;
   --press: color-mix(in oklab, var(--fg) 6%, transparent); /* @@@1787 按压反馈,比 hover 深一档才可感知 */
   --pinned: color-mix(in oklab, var(--fg) 1%, transparent); /* #2598 置顶行常驻底色(飞书式):静息态可辨,压在 hover/selected 之下 */
   /* @@@state-ladder-mix 浅色配方(说明见 :root),#7333 起与暗色侧同一组数。 */
@@ -1099,16 +1096,38 @@
 :root[data-window-material='opaque'][data-theme='light'] {
   --nav-rail: var(--muted);
 }
-/* 任务页(会话页嵌在壳里):停靠的项目/会话列透出下面的 C 档工作区,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
+/* 界面减法 #10 (yangchichi, design v16): in the light theme the window's ground — under the zero rail, the first-level
+   sidebar and the gaps around the cards — is one warm gradient across the window, on either material. */
+:root[data-theme='light'][data-window-material] {
+  /* owner 11-24 (option B): the v16 stops lifted ~3 L* with a third less chroma (L* 91.7 → 95.6, C 5.5 → 3.4). */
+  --shell-bg: linear-gradient(90deg, #eee6dd 0, #f1ece4 30%, #f6f2ec 100%);
+  --nav-rail: transparent;
+  /* Secondary text drawn straight on that ground (the sidebars' previews, counts, headers): ≥ 5.38:1 on every stop and
+     ≥ 4.57:1 on a selected row (7.5% over the darkest stop), WCAG 1.4.3. The neutral --muted-fg is 4.45 / 3.78 there. */
+  --shell-muted-fg: #605c55;
+}
+/* The two sidebars lie on the window ground, not on a card: their secondary text, whichever renderer's name it goes by,
+   is the ground's. A var() resolves where it is declared, so the derived names (--color-*, --text-secondary) that were
+   resolved at the root are set here too, ❌ only their sources. */
+:root[data-theme='light'][data-window-material] :is([data-region='left-sidebar'], [data-region='inner-sidebar']) {
+  --muted-fg: var(--shell-muted-fg);
+  --text-secondary: var(--shell-muted-fg);
+  --foreground-muted: var(--shell-muted-fg);
+  --foreground-tertiary-muted: var(--shell-muted-fg);
+  --color-foreground-muted: var(--shell-muted-fg);
+  --color-foreground-tertiary-muted: var(--shell-muted-fg);
+  --color-muted-foreground: var(--shell-muted-fg);
+}
+/* 任务页(会话页嵌在壳里;界面减法起不分材质):停靠的项目/会话列透出下面的窗口底,它背后的几层(会话页外框、.gugu-skin 根)跟着让出底色;
    正文(WorkspaceContentLayout 的 bg-background)与各块(screen-frame)照旧不透明。
    浮出预览(data-peek,盖在正文上)❌ 透:那一层要稳定的不透明面。拖入文件时的高亮底(bg-background-2)也保留。
    ❌ 把 .bg-background-tertiary 这个通用类一律清空:正文里的分块也用它。
    外框与 .gugu-skin 根只在「这一页真有一列停靠侧栏」时才让(:has):资源库、助理这类整页不在工作区布局里,
    它们靠根的底色当正文底,不能跟着透。 */
-:root[data-window-material='native'] .gg-session-frame:has([data-workspace-left-panel]:not(.hidden)),
-:root[data-window-material='native'] .gugu-skin:has([data-workspace-left-panel]:not(.hidden)),
-:root[data-window-material='native'] .gugu-skin :is([data-workspace-left-panel], [data-region='inner-sidebar']),
-:root[data-window-material='native'] .gugu-skin [data-workspace-left-panel] [data-region='left-sidebar']:not(.bg-background-2) {
+:root[data-window-material] .gg-session-frame:has([data-workspace-left-panel]:not(.hidden)),
+:root[data-window-material] .gugu-skin:has([data-workspace-left-panel]:not(.hidden)),
+:root[data-window-material] .gugu-skin :is([data-workspace-left-panel], [data-region='inner-sidebar']),
+:root[data-window-material] .gugu-skin [data-workspace-left-panel] [data-region='left-sidebar']:not(.bg-background-2) {
   background-color: transparent;
 }
 
@@ -1965,11 +1984,11 @@ body.barcode-scanner-active #root {
 }
 .gg-pane-header[data-mobile] { height: var(--pane-header-h-touch); }
 .gg-pane-header[data-divider] { border-bottom: 1px solid var(--border); }
-/* At the window's right edge the controls drawn over content (Linux) keep their room; 0 where they are not over it.
-   A column with its own close floating at the top right (the contacts drawer) sets --pane-close-room, and every header
-   inside it leaves that room too — so a long title ends in an ellipsis before the close instead of running under it. */
+/* At the window's right edge the controls drawn over content (Linux; a page modal's ✕) keep their room; 0 where they are not
+   over it. A column at that edge (the contacts drawer, data-pane-close) has every header inside it leave that room too — so a
+   long title ends in an ellipsis before the controls instead of running under them. */
 .gg-pane-header[data-window-edge], [data-pane-close] .gg-pane-header {
-  padding-right: calc(var(--pane-pad-x) + var(--pane-close-room, 0px) + var(--titlebar-controls-width, 0px));
+  padding-right: calc(var(--pane-pad-x) + var(--titlebar-controls-width, 0px));
 }
 .gg-pane-title {
   flex: 1 1 auto;

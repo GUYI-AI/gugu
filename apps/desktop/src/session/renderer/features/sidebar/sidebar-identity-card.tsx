@@ -337,7 +337,7 @@ function IdentityRow({ row }: { row: RowSpec }) {
         event.stopPropagation();
         void copy();
       }}
-      className="flex w-full cursor-pointer items-center gap-2 px-3 py-1 text-left transition-colors duration-[var(--dur-fast)] hover:bg-row-hover active:bg-row-press focus-visible:bg-row-hover"
+      className="flex w-full cursor-pointer items-center gap-2 px-3 py-1 text-left hover:bg-row-hover active:bg-row-press focus-visible:bg-row-hover"
     >
       <span className={labelClass}>{row.label}</span>
       {/* 反馈就地替换值:值与反馈叠在同一格,值只是藏起来仍占着宽,所以点完卡不变窄。 */}

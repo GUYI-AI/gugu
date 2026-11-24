@@ -17,7 +17,6 @@ import { useChatTopicPins } from './useChatTopicPins'
 import { topicCallTotal, topicUnreadTotal } from './topicPinsModel'
 import { useChatWorkspaceHeaderDensity } from '@renderer/features/tabs/use-chat-workspace-header-density'
 import { useStripNarrow } from '../../session/renderer/features/tabs/tab-strip-narrow'
-import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
 import { useInnerSidebarPresent } from '../../lib/innerSidebarBridge'
 import { Unknown } from '../ui/Unknown'
 
@@ -25,8 +24,6 @@ interface ChatHeaderActionsProps {
   chatId?: string
   isGroupChat: boolean
   isRoomChat: boolean
-  memberTopic?: ChatTopicState | null
-  memberTopicCount?: number
   infoShown: boolean
   showHeaderMenu: boolean
   mobile?: boolean
@@ -48,7 +45,7 @@ interface ChatHeaderActionsProps {
 }
 
 export const ChatHeaderActions = observer(function ChatHeaderActions({
-  chatId, isGroupChat, isRoomChat, memberTopic, memberTopicCount, infoShown, showHeaderMenu, mobile, membersInMenu, room, moreButtonRef,
+  chatId, isGroupChat, isRoomChat, infoShown, showHeaderMenu, mobile, membersInMenu, room, moreButtonRef,
   onSearch, onCreateAgent, onOpenFolder, onOpenInfo, onCloseInfo, onToggleHeaderMenu, onCloseHeaderMenu,
 }: ChatHeaderActionsProps) {
   const { t } = useTranslation('messaging')
@@ -63,8 +60,8 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
   if (popup.chatId !== activeChatId) setPopup({ chatId: activeChatId, kind: null })
   const openPopup = (kind: 'apps') => { onCloseHeaderMenu(); setPopup({ chatId: activeChatId, kind }) }
   const closePopup = () => setPopup({ chatId: activeChatId, kind: null })
-  const memberCount = memberTopic ? memberTopicCount : room?.snapshot ? room.snapshot.humans.length + room.snapshot.agents.length : null
-  const hasMembers = isRoomChat || Boolean(memberTopic)
+  const memberCount = room?.snapshot ? room.snapshot.humans.length + room.snapshot.agents.length : null
+  const hasMembers = isRoomChat
   const toggleMembers = () => infoShown ? onCloseInfo() : onOpenInfo('members')
   const folded = density === 'menu'
   const labeled = density === 'labeled' || (density === undefined && !narrow)

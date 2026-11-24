@@ -20,8 +20,21 @@ export function installScrollbarAutoHide(
   target: Document = document,
   hideAfterMs: number = HIDE_AFTER_MS,
 ): () => void {
-  // WeakMap:元素被移出 DOM 后连同它的计时器一起被回收,❌ 不要用 Map(那是一条按滚动次数增长的泄漏)
-  const timers = new WeakMap<Element, ReturnType<typeof setTimeout>>()
+  // WeakMap:元素被移出 DOM 后连同它的记录一起被回收,❌ 不要用 Map(那是一条按滚动次数增长的泄漏)
+  // 每个元素只挂一个计时器:scroll 事件一秒几十次,每次只记一下时间;计时器到点时离最后一次
+  // 滚动还不够 hideAfterMs,就按剩下的时间再挂一次。❌ 别改回每个事件 clearTimeout + setTimeout
+  // (Air 实测每次 0.4 ms,占滚动时主线程 11%)。
+  const lastScrollAt = new WeakMap<Element, number>()
+
+  const hideWhenIdle = (element: Element): void => {
+    const idle = Date.now() - (lastScrollAt.get(element) ?? 0)
+    if (idle < hideAfterMs) {
+      setTimeout(() => hideWhenIdle(element), hideAfterMs - idle)
+      return
+    }
+    element.removeAttribute(SCROLLING_ATTR)
+    lastScrollAt.delete(element)
+  }
 
   const onScroll = (event: Event): void => {
     // 页面级滚动的 target 是 document 本身,它没有 setAttribute —— 那种情况交给根元素
@@ -29,16 +42,11 @@ export function installScrollbarAutoHide(
     const element = node instanceof Element ? node : target.documentElement
     if (element === null) return
 
-    if (!element.hasAttribute(SCROLLING_ATTR)) element.setAttribute(SCROLLING_ATTR, '')
-    const previous = timers.get(element)
-    if (previous !== undefined) clearTimeout(previous)
-    timers.set(
-      element,
-      setTimeout(() => {
-        element.removeAttribute(SCROLLING_ATTR)
-        timers.delete(element)
-      }, hideAfterMs),
-    )
+    const armed = lastScrollAt.has(element)
+    lastScrollAt.set(element, Date.now())
+    if (armed) return
+    element.setAttribute(SCROLLING_ATTR, '')
+    setTimeout(() => hideWhenIdle(element), hideAfterMs)
   }
 
   target.addEventListener('scroll', onScroll, { capture: true, passive: true })

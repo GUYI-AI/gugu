@@ -20,6 +20,32 @@ export function isGuguServer(server: string | undefined): boolean {
   return server === 'gugu' || (server?.startsWith('plugin_') === true && server.endsWith('_gugu'));
 }
 
+/**
+ * How harnesses that do not use the `mcp__<server>__<tool>` convention name the gugu server's tools: opencode, kilocode
+ * and mimocode write `gugu_<tool>`, copilot `gugu-<tool>`. Each harness declares its spelling in
+ * `capabilities.mcp.toolNames`; a session-plugins test checks every declared prefix against `parseMcpToolName`.
+ */
+const GUGU_BARE_TOOL_PREFIXES = ['gugu_', 'gugu-'] as const;
+
+/**
+ * An MCP call's server and tool, from the name the harness gave it: `mcp__<server>__<tool>`, or the gugu server's bare
+ * spellings above. Any other name stays unrecognized: ❌ guessing a server would invent one that does not exist.
+ * It goes by name because ACP's tool kinds have no MCP kind: without this every MCP call folds into an unknown tool
+ * that shows only its raw name (owner, 2026-09-05).
+ */
+export function parseMcpToolName(name: string): { server: string; tool: string } | null {
+  if (name.startsWith('mcp__')) {
+    const rest = name.slice('mcp__'.length);
+    const sep = rest.indexOf('__');
+    if (sep <= 0) return null;
+    const server = rest.slice(0, sep);
+    const tool = rest.slice(sep + 2);
+    return server && tool ? { server, tool } : null;
+  }
+  const prefix = GUGU_BARE_TOOL_PREFIXES.find((candidate) => name.startsWith(candidate) && name.length > candidate.length);
+  return prefix ? { server: 'gugu', tool: name.slice(prefix.length) } : null;
+}
+
 const OPEN_IN_TAB_TOOL = 'session_open_in_tab';
 
 function parseObject(text: string | undefined): Record<string, unknown> | null {

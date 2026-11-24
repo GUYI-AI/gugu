@@ -13,15 +13,15 @@ let host: HTMLDivElement | null = null
 afterEach(() => { root?.unmount(); host?.remove(); root = host = null; requestComposerEntryFocus(null) })
 const settle = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
 
-async function mount(active = true, mobile = false, surface: 'main' | 'aside' = 'main') {
+async function mount(active = true, mobile = false) {
   await page.viewport(mobile ? 390 : 1280, mobile ? 844 : 900)
   expect(window.innerWidth < 720).toBe(mobile)
   host = document.body.appendChild(document.createElement('div'))
   host.style.cssText = 'width:720px'
   root = createRoot(host)
-  const render = (entryActive: boolean) => root!.render(<LocalizationProvider><ChatMessageComposer chatId="entry-group" currentUserId="owner" onSend={vi.fn(async () => {})} isGroupChat surface={surface} entryActive={entryActive} /></LocalizationProvider>)
+  const render = (entryActive: boolean) => root!.render(<LocalizationProvider><ChatMessageComposer chatId="entry-group" currentUserId="owner" onSend={vi.fn(async () => {})} isGroupChat entryActive={entryActive} /></LocalizationProvider>)
   render(active)
-  const editorSelector = `[data-testid="${surface === 'aside' ? 'chat-composer-aside' : 'chat-composer'}"]`
+  const editorSelector = '[data-testid="chat-composer"]'
   await until('the actual group editor is mounted', () => !!host?.querySelector(editorSelector))
   const row = host.appendChild(document.createElement('button'))
   row.textContent = 'Conversation row'
@@ -93,10 +93,3 @@ it('a later resource opening cancels an entry whose composer has not appeared', 
   expect(document.activeElement).toBe(row)
 })
 
-it('a topic aside does not consume a main conversation entry', async () => {
-  const { row } = await mount(true, false, 'aside')
-  row.focus()
-  requestComposerEntryFocus('chat:entry-group')
-  await settle()
-  expect(document.activeElement).toBe(row)
-})
