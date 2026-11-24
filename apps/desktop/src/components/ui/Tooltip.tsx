@@ -3,6 +3,7 @@
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip'
 import type { CSSProperties, ReactElement } from 'react'
 import { cn } from '@/lib/cn'
+import { useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives'
 import { TOOLTIP_CLOSE_DELAY_MS, TOOLTIP_OPEN_DELAY_MS } from '@/styles/motion'
 
 type ClassNameProp = { className?: string }
@@ -70,17 +71,21 @@ function Trigger(props: TooltipPrimitive.Trigger.Props) {
 }
 
 function Portal(props: TooltipPrimitive.Portal.Props) {
-  return <TooltipPrimitive.Portal {...props} />
+  // The surface's portal layer, as Dialog and Menu: a pop-out window's (aux-layers), else Base UI's document.body.
+  return <TooltipPrimitive.Portal container={useUiPortalContainer()} {...props} />
 }
 
 function Positioner({
   className,
+  style,
   ...props
-}: Omit<TooltipPrimitive.Positioner.Props, 'className'> & ClassNameProp) {
+}: Omit<TooltipPrimitive.Positioner.Props, 'className' | 'style'> & ClassNameProp & { style?: CSSProperties }) {
+  const zIndex = useUiPopupZIndex()
   return (
     <TooltipPrimitive.Positioner
       data-slot="tooltip-positioner"
       className={cn(tooltipPositioner, className)}
+      style={zIndex ? { zIndex, ...style } : style}
       {...props}
     />
   )

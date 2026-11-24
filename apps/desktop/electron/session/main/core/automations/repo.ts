@@ -2,6 +2,7 @@ import { activitySignal } from '../activity/signals';
 import { randomUUID } from 'node:crypto';
 import { Cron } from 'croner';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/sqlite-core';
 import { getPlugin, isValidProviderId } from '@main/core/agents/plugin-registry';
 import { generateRandom } from '@main/core/sessions/name-generation/generateSessionName';
 import { db } from '@main/db/client';
@@ -277,6 +278,13 @@ export async function listAutomations(projectId?: string): Promise<Automation[]>
   return mapAutomationRows(await query);
 }
 
+/** The sessions that have live schedules of their own: one index read, no automation rows (the scheduler asks every minute). */
+export function listAgentScheduleSessionIds(): string[] {
+  return db.selectDistinct({ id: automations.agentSessionId }).from(automations)
+    .where(and(isNotNull(automations.agentSessionId), isNull(automations.deletedAt))).all()
+    .flatMap(({ id }) => (id ? [id] : []));
+}
+
 /** Only a missing local identity is orphaned; archived tasks still have their row. */
 export async function listOrphanedAgentScheduleIds(sessionId?: string): Promise<string[]> {
   const rows = await db.select({ id: automations.id }).from(automations)
@@ -300,18 +308,19 @@ export async function listAgentSchedules(agentSessionId: string): Promise<Automa
  * 「最近一次」只认真跑过、或真没送到的那几种:送到了、失败了、错过了(MISSED_RUN_CODES)。人自己造成的跳过
  * (改了时间、停了、删了)不算 —— 否则改一下时间,上一次没送到的那个 ⚠ 就被一行 trigger_changed 冲掉了。
  */
+const latestRun = alias(automationRuns, 'latest_run');
 const MEANINGFUL_LAST_RUN = or(
-  inArray(automationRuns.status, ['done', 'failed']),
+  inArray(latestRun.status, ['done', 'failed']),
   and(
-    eq(automationRuns.status, 'skipped'),
-    inArray(sql`json_extract(${automationRuns.error}, '$.code')`, [...MISSED_RUN_CODES])
+    eq(latestRun.status, 'skipped'),
+    inArray(sql`json_extract(${latestRun.error}, '$.code')`, [...MISSED_RUN_CODES])
   )
 );
 
 /**
  * 这台机器上每条会话给自己排的定时里,任务页要给人看的那些(`scheduleShown`:还会回来的,与最近一次没送到的)。
- * 条目一问、各自排着的下一次一问;最近一次逐条按 (automation_id, scheduled_at) 索引倒着取一行 —— 条数是这台机器上
- * agent 排的定时(每条会话至多 50),不随运行历史长:一个每 5 分钟一次的 cron 攒了几万行也只读一行。
+ * 条目一问、各自排着的下一次一问、最近一次一问:那一问里每条各按 (automation_id, scheduled_at) 索引倒着取一行,
+ * 不随运行历史长:一个每 5 分钟一次的 cron 攒了几万行也只读一行。❌ 逐条各发一问:几百条定时就是几百次主线程同步查询。
  * 同步读:会话列表(含离线心跳的摘要)是同步拼的,摘要里那一格从这里来。`sessionIds`:只要这几条会话的(列表截了前几条时)。
  */
 export function listSessionSchedules(sessionIds?: readonly string[], now = Date.now()): SessionSchedule[] {
@@ -339,15 +348,31 @@ export function listSessionSchedules(sessionIds?: readonly string[], now = Date.
   }
 
   const lastRun = new Map<string, SessionSchedule['lastRun']>();
-  for (const id of ids) {
-    const [run] = db
-      .select()
-      .from(automationRuns)
-      .where(and(eq(automationRuns.automationId, id), MEANINGFUL_LAST_RUN))
-      .orderBy(desc(automationRuns.scheduledAt))
-      .limit(1)
-      .all();
-    if (!run) continue;
+  // Only the columns a last run shows: a run row also carries its config snapshots, which spill onto overflow pages.
+  for (const run of db
+    .select({
+      automationId: automationRuns.automationId,
+      status: automationRuns.status,
+      scheduledAt: automationRuns.scheduledAt,
+      startedAt: automationRuns.startedAt,
+      finishedAt: automationRuns.finishedAt,
+      error: automationRuns.error,
+    })
+    .from(automations)
+    .innerJoin(
+      automationRuns,
+      eq(
+        automationRuns.id,
+        sql`(${db
+          .select({ id: latestRun.id })
+          .from(latestRun)
+          .where(and(eq(latestRun.automationId, automations.id), MEANINGFUL_LAST_RUN))
+          .orderBy(desc(latestRun.scheduledAt))
+          .limit(1)})`
+      )
+    )
+    .where(inArray(automations.id, ids))
+    .all()) {
     lastRun.set(run.automationId, {
       status: run.status as 'done' | 'failed' | 'skipped',
       at: run.finishedAt ?? run.startedAt ?? run.scheduledAt,

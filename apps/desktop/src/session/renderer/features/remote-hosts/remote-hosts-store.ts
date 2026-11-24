@@ -447,6 +447,7 @@ export class RemoteHostsStore {
         identity: { users: { id, display_name: identity.display_name, gugu_number: identity.gugu_number,
           ...(identity.session_archived_at != null ? { session_archived_at: identity.session_archived_at } : {}) } },
         engine: engineOf(session.harness),
+        last_active_at: session.lastInteractedAt,
       }];
     }));
     if (missing.size) identities?.ensure([...missing]);

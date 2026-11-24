@@ -5,7 +5,7 @@ import { ReferralLinkPrompt } from './components/referralPreview/ReferralLinkPro
 import { watchReferralLinks } from './lib/referral'
 import { googleLogin } from './lib/googleLogin'
 import { LoginMethodChangeNotice } from './components/LoginMethodChangeNotice'
-import { logoutAndRelaunch } from './lib/authLogout'
+import { logout } from './lib/authLogout'
 import { MainLayout } from './layouts/MainLayout'
 import { AuthContext, type AuthUser } from './store/auth'
 import { ChatProvider } from './store/chat'
@@ -29,6 +29,7 @@ import { ConversationDeleteConfirmationHost } from './components/chat/Conversati
 import { ContentContextMenuHost } from './components/ContentContextMenuHost'
 import { ThemeProvider } from './store/theme'
 import { rendererCommandEventName } from './lib/rendererCommandProtocol'
+import { imageCommandHandlers } from './lib/imagePreview'
 import { sessionCoordinator } from './lib/sessionCoordinator'
 import { publishSelfIdentity } from './lib/selfIdentityBridge'
 import { installAssistantPanelHost } from './components/assistant/assistant-panel-host'
@@ -114,7 +115,7 @@ export default function App() {
     loading,
     status: session.status,
     updateUser: sessionCoordinator.updateUser,
-    logout: logoutAndRelaunch,
+    logout,
   }
   useEffect(() => {
     document.title = platform.documentTitle
@@ -151,6 +152,9 @@ export default function App() {
   useRendererRpcHandlers(rendererCommandEventName('auth'), 'auth', authRpcHandlers, (reqId, result) => {
     platform.sendRendererCommandResult('auth', reqId, result)
   }, platform.capabilities.rendererCommandBridge, () => platform.sendRendererCommandReady('auth'))
+  useRendererRpcHandlers(rendererCommandEventName('images'), 'images', imageCommandHandlers, (reqId, result) => {
+    platform.sendRendererCommandResult('images', reqId, result)
+  }, platform.capabilities.rendererCommandBridge, () => platform.sendRendererCommandReady('images'))
 
   if (loading) {
     return <FullScreenLoader />

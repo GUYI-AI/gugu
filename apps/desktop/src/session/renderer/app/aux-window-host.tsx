@@ -30,6 +30,7 @@ import { rpc } from '@renderer/lib/ipc';
 import { WorkspaceContentLayout } from '@renderer/lib/layout/workspace-layout';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { log } from '@renderer/utils/logger';
+import { setAuxLayer } from './aux-layers';
 import { auxWindows, type AuxChatTabContent, type AuxTabContent, type AuxWindow } from './aux-windows';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { AUX_WINDOW_TRAFFIC_LIGHTS_PX, ScreenBlockContext, type ScreenBlockPlace } from './screen-block-context';
@@ -94,7 +95,8 @@ const AuxWindowFrame = observer(function AuxWindowFrame({ window: aux }: { windo
     };
     win.addEventListener('focus', onFocus);
     win.addEventListener('pagehide', onGone);
-    auxWindows.setHandle(id, win, layer);
+    const stopLayer = setAuxLayer(doc, layer);
+    auxWindows.setHandle(id, win);
     setMounted({ win, root, layer });
     win.focus();
 
@@ -104,6 +106,7 @@ const AuxWindowFrame = observer(function AuxWindowFrame({ window: aux }: { windo
       win.removeEventListener('pagehide', onGone);
       stopHotkeys();
       stopGuestPress();
+      stopLayer();
       skinObserver.disconnect();
       stopMirror();
       setMounted(null);
@@ -157,7 +160,7 @@ const AuxSessionPage = observer(function AuxSessionPage({
 }) {
   const focused = auxWindows.focusedWindowId === windowId;
   const place = useMemo<ScreenBlockPlace>(
-    () => ({ blockId: null, focused, topLeft: true, topRight: true, multi: false, windowId }),
+    () => ({ blockId: null, focused, topLeft: true, multi: false, windowId }),
     [focused, windowId]
   );
   return (
@@ -190,7 +193,7 @@ const AuxTabPage = observer(function AuxTabPage({ windowId, content }: { windowI
   );
   const focused = auxWindows.focusedWindowId === windowId;
   const place = useMemo<ScreenBlockPlace>(
-    () => ({ blockId: null, focused, topLeft: true, topRight: true, multi: false, windowId }),
+    () => ({ blockId: null, focused, topLeft: true, multi: false, windowId }),
     [focused, windowId]
   );
   return (
@@ -246,7 +249,7 @@ const AuxAppPage = observer(function AuxAppPage({ windowId, tabKind }: { windowI
       <TabStripShell
         leadingReservePx={auxLeadingReserve()}
         actionsSlot={
-          <TabBarActionRow atWindowEdge>
+          <TabBarActionRow>
             <PutBackButton windowId={windowId} />
           </TabBarActionRow>
         }

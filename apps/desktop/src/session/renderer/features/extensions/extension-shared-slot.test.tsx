@@ -30,8 +30,10 @@ describe('ExtensionSharedSlot: the App page goes where the page on screen asks',
     const dom = new JSDOM('<div id="root"></div>');
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
-    // The App page sits on a track cut, which measures its row.
+    // The App page sits on a track cut, which measures its row and waits for its first frame.
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+    vi.stubGlobal('requestAnimationFrame', () => 0);
+    vi.stubGlobal('cancelAnimationFrame', () => {});
     root = createRoot(dom.window.document.getElementById('root')!);
   });
   afterEach(() => {

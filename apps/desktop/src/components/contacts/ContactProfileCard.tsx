@@ -4,13 +4,11 @@ import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { useAgentDisplayStatus } from '../../hooks/useAgentDisplayStatus'
 import {
   agentContactPresentation,
-  agentContactRowToneColorClass,
   useShownAgentContactStatus,
   type AgentContactTone,
 } from '../contactAgentTone'
 import { Avatar } from '../Avatar'
-import { AgentNeedsUserGlyph } from '../AgentNeedsUserGlyph'
-import { AgentParkedGlyph } from '../AgentParkedGlyph'
+import { AgentContactStatusMark } from '../AgentContactStatusMark'
 import { CopyValue } from '../CopyValue'
 import { Button } from '../ui/Button'
 import { useTranslation } from 'react-i18next'
@@ -32,13 +30,11 @@ const avatarClass = () => cn(styles.avatarBase, styles.avatarRound)
 const statusClass = (tone: AgentContactTone) =>
   cn(styles.statusBase, (tone === 'pending' || tone === 'offline') && styles.statusStandby)
 
-const statusDotClass = (tone: AgentContactTone) => cn(styles.statusDotBase, agentContactRowToneColorClass(tone))
-
 function displayName(contact: ContactUser): string {
   return contact.alias?.trim() || contact.display_name
 }
 
-// @@@2166① 文案与其它每一面同一张表(common:agentStatus.*):offline「待命」→「不在线」(owner 拍板)。
+// @@@2166① 文案与其它每一面同一张表(common:agentStatus.*):offline「待命」→「离线」(owner 拍板,11-24 定为「离线」)。
 export function RemovedAgentContactBadge() {
   const { t } = useTranslation('contacts')
   return (
@@ -48,7 +44,6 @@ export function RemovedAgentContactBadge() {
       className="inline-flex items-center gap-1 text-xs"
       style={{ color: 'var(--danger-fg)' }}
     >
-      <span aria-hidden="true" className="h-[6px] w-[6px] shrink-0 rounded-full bg-current" />
       {t('profile.removed')}
     </span>
   )
@@ -96,13 +91,7 @@ export function AgentContactProfileCard({
       </OwnedAgentNameEditor>
       {tone ? (
         <div className={statusClass(tone)}>
-          {tone === 'needs_user' ? (
-            <AgentNeedsUserGlyph size={8} />
-          ) : tone === 'parked' ? (
-            <AgentParkedGlyph />
-          ) : (
-            <span className={statusDotClass(tone)} aria-hidden="true" />
-          )}
+          <AgentContactStatusMark tone={tone} />
           {statusLabel}
         </div>
       ) : null}

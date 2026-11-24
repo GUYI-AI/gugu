@@ -4,6 +4,7 @@ import { queryClient, refreshFailure, replica, useReplica, type Reading } from '
 import { writeOver } from '@/lib/replicaWrite';
 import { keepLibraryHost, libraryHostOf, useLibraryHost } from '@renderer/features/library/library-host';
 import { useManagementAgents } from '@renderer/lib/stores/use-agents';
+import { compareAgents, isInstalledAgent } from '@renderer/features/settings/agents-page/agent-order';
 import { managementAgents } from '@renderer/lib/stores/agent-replicas';
 import type { GuguToolsOff } from '@shared/gugu-tool-groups';
 import type { LibraryMcpCheck, LibraryMcpHarnessServer, LibraryMcpProvided, LibraryMcpServer } from '@shared/mcp-library';
@@ -49,7 +50,7 @@ export function useMcpLibrary() {
   const provided = useReplica(mcpProvided, [host.key], { read: reachable });
   const agents = useManagementAgents();
   const installed = useMemo(
-    () => (agents.state === 'value' ? agents.value : []).filter((agent) => agent.reading !== 'not-detected').sort((a, b) => a.name.localeCompare(b.name)),
+    () => (agents.state === 'value' ? agents.value : []).filter(isInstalledAgent).sort(compareAgents),
     [agents]
   );
   const invalidate = () => void mcpLibraryServers.refresh(host.key);

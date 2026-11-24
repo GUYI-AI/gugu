@@ -192,7 +192,7 @@ describe('ImagePreviewProvider', () => {
     thumb.remove()
   })
 
-  it('without a recorded size, the first pixels set the box once; a later original only repaints it', async () => {
+  it('without a recorded size, a thumbnail sets no box: the original\'s own pixels do, and it opens whole', async () => {
     let finish!: (url: string) => void
     const instances = await capturePhotoSwipe()
     const thumb = document.body.appendChild(document.createElement('img'))
@@ -208,8 +208,9 @@ describe('ImagePreviewProvider', () => {
     expect(shown.style.visibility).toBe('hidden')
     Object.defineProperties(shown, { naturalWidth: { value: 300, configurable: true }, naturalHeight: { value: 200, configurable: true } })
     await act(async () => shown.dispatchEvent(new Event('load')))
-    expect(slide.width).toBe(300)
-    expect(shown.style.visibility).toBe('')
+    // Laid out by these, the picture would open at thumbnail size and stay there once the original came.
+    expect(slide.width).toBe(window.innerWidth)
+    expect(shown.style.visibility).toBe('hidden')
     await act(async () => {
       await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
     })
@@ -217,10 +218,29 @@ describe('ImagePreviewProvider', () => {
     await waitForCondition(() => document.querySelector('img.pswp__img[src="blob:original"]') !== null, 'original bytes were not displayed')
     const image = slide.content.element as HTMLImageElement
     Object.defineProperties(image, { naturalWidth: { value: 3000 }, naturalHeight: { value: 2000 } })
-    const before = { level: slide.currZoomLevel, ...slide.pan }
     await act(async () => image.dispatchEvent(new Event('load')))
-    expect(slide.width).toBe(300)
-    expect({ level: slide.currZoomLevel, ...slide.pan }).toEqual(before)
+    expect(slide.width).toBe(3000)
+    expect(image.style.visibility).toBe('')
+    expect(slide.currZoomLevel).toBe(slide.zoomLevels.initial)
+    expect(slide.currZoomLevel).toBeLessThan(1)
+    await act(async () => pswp.destroy())
+    thumb.remove()
+  })
+
+  it('without a recorded size, an original that cannot be read says so instead of leaving an empty black slide', async () => {
+    let fail!: (error: Error) => void
+    const instances = await capturePhotoSwipe()
+    const thumb = document.body.appendChild(document.createElement('img'))
+    Object.defineProperties(thumb, { complete: { value: true }, naturalWidth: { value: 300 }, naturalHeight: { value: 200 } })
+    const toast = vi.fn()
+    await openViewer({ toast, images: [{ url: 'blob:thumbnail', alt: 'unrecorded', thumb, full: () => new Promise<string>((_, reject) => { fail = reject }) }] })
+    const pswp = instances[0]
+    await act(async () => {
+      await waitForCondition(() => !pswp.opener.isOpening, 'opening never ended')
+    })
+    await act(async () => fail(new Error('network down')))
+    await waitForCondition(() => document.querySelector('.pswp__error-msg') !== null, 'the failure was not shown')
+    expect(toast).toHaveBeenCalled()
     await act(async () => pswp.destroy())
     thumb.remove()
   })
@@ -316,12 +336,17 @@ describe('ImagePreviewProvider', () => {
     expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).toBeNull()
   })
 
-  it('reports the file error when both the thumbnail and original fail', async () => {
-    const full = vi.fn(async () => { throw new Error('original unavailable') }), toast = vi.fn()
+  it('reports a file read failure and retries it in the same viewer', async () => {
+    const full = vi.fn(async () => 'blob:retried').mockRejectedValueOnce(new Error('original unavailable')), toast = vi.fn()
     await openViewer({ toast, images: [{ url: '', alt: 'unavailable', preview: async () => { throw new Error('File preview HTTP 503') }, full }] })
     await waitForCondition(() => toast.mock.calls.length > 0, 'file error was not reported')
     expect(full).toHaveBeenCalledTimes(1)
     expect(document.querySelector('.pswp__error-msg')).not.toBeNull()
+    const retry = document.querySelector<HTMLButtonElement>('.gg-image-viewer__read button')!
+    expect(retry.textContent).toBe('重新读取')
+    await clickElement(retry)
+    await waitForCondition(() => !!document.querySelector('.pswp__img[src="blob:retried"]'), 'retry did not restore the image')
+    expect(full).toHaveBeenCalledTimes(2)
   })
 
   it('closing while the thumbnail is pending never loads the original or reopens the viewer', async () => {
@@ -402,6 +427,27 @@ describe('ImagePreviewProvider', () => {
     await act(async () => openImageViewer(IMAGES, 1))
     await waitForCondition(() => byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)?.textContent?.includes('2 / 2') ?? false, 'viewer did not reopen')
     expect(document.querySelectorAll('.pswp')).toHaveLength(1)
+  })
+
+  // A pop-out window (aux-window-host) is another document drawn by this renderer: the viewer opens there, and its keys
+  // are that window's. Before, it opened in the main window's body, behind the pop-out, and the click looked dead.
+  it('opens in the window its thumbnail is in, and closes by Escape there', async () => {
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const popOut = frame.contentWindow as Window & typeof globalThis
+    Object.assign(popOut, { matchMedia: window.matchMedia })
+    const thumb = popOut.document.createElement('img')
+    popOut.document.body.append(thumb)
+    await renderWithAppProviders(harness, createNode(ImagePreviewProvider, null))
+    await act(async () => openImageViewer([{ ...IMAGES[0], thumb }], 0))
+    const inPopOut = (id: string) => popOut.document.querySelector(`[data-testid="${id}"]`)
+    await waitForCondition(() => inPopOut(AUTOMATION_TEST_IDS.imagePreviewClose) !== null, 'viewer did not open in the pop-out')
+    expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).toBeNull()
+    await act(async () => {
+      popOut.document.body.dispatchEvent(new popOut.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    })
+    await waitForCondition(() => inPopOut(AUTOMATION_TEST_IDS.imagePreviewOverlay) === null, 'Escape in the pop-out did not close the viewer')
+    frame.remove()
   })
 
   it('关闭后整层从 DOM 里拿掉', async () => {

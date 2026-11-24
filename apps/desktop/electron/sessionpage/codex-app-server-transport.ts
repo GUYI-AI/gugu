@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { loopbackRequest } from '@gugu/core/local/loopback'
+import { windowsSystemProgram } from '@gugu/core/local/childProcess'
 import net from 'node:net'
 import type { ChildProcess } from 'node:child_process'
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
@@ -169,10 +170,12 @@ export async function waitForCodexAppServerEndpointWhileAlive(
   endpoint: CodexAppServerEndpoint,
   isAlive: () => boolean,
   timeoutMs = 15_000,
+  signal?: AbortSignal,
 ): Promise<void> {
   const start = Date.now()
   let pollDelayMs = 20
   for (;;) {
+    signal?.throwIfAborted()
     if (await probeWebSocketReadiness(endpoint)) return
     if (!isAlive()) throw new CodexAppServerExitedError('codex app-server exited before endpoint ready (tmux-hosted)')
     if (Date.now() - start > timeoutMs) {
@@ -197,7 +200,9 @@ export function parseCodexAppServerEndpoint(address: string): CodexAppServerEndp
 export function waitForCodexAppServerEndpoint(
   endpoint: CodexAppServerEndpoint,
   child: ChildProcess,
-  timeoutMs = 15_000
+  timeoutMs = 15_000,
+  /** Ends the wait like the timeout does (the caller's failure path is the same); the rejection is the signal's reason. */
+  signal?: AbortSignal,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const start = Date.now()
@@ -207,6 +212,7 @@ export function waitForCodexAppServerEndpoint(
       if (timer) clearTimeout(timer)
       child.off('error', onError)
       child.off('exit', onExit)
+      signal?.removeEventListener('abort', onAbort)
       // @@@unhandled-error-event (#4942) — 为什么摘完还要数一遍监听者:onError 是**一次性**的握手 handler,
       // 摘掉它本身是对的(不摘就泄漏一个会 reject 已 settle 的 Promise 的闭包)。但摘完若一个监听者都不剩,
       // 这条长驻引擎进程此后整个生命周期都没有 'error' 出口,而 Node 对没人接的 'error' 一视同仁地抛成
@@ -233,8 +239,11 @@ export function waitForCodexAppServerEndpoint(
         )
       )
     }
+    const onAbort = () => finish(() => reject(signal!.reason))
     child.once('error', onError)
     child.once('exit', onExit)
+    if (signal?.aborted) return onAbort()
+    signal?.addEventListener('abort', onAbort, { once: true })
     let pollDelayMs = 20
     const tick = async () => {
       if (settled) return
@@ -302,7 +311,7 @@ export function resolveCodexAppServerSpawn(
   }
   if (/\.ps1$/i.test(codexBin)) {
     return {
-      command: 'powershell.exe',
+      command: windowsSystemProgram('WindowsPowerShell\\v1.0\\powershell.exe', env),
       args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', codexBin, ...args]
     }
   }
@@ -322,7 +331,7 @@ export function resolveCodexAppServerSpawn(
     )
   }
   return {
-    command: env.ComSpec ?? env.COMSPEC ?? 'C:\\Windows\\System32\\cmd.exe',
+    command: env.ComSpec ?? env.COMSPEC ?? windowsSystemProgram('cmd.exe', env),
     args: cmdArgs,
     windowsVerbatimArguments: true
   }

@@ -1,7 +1,7 @@
 // @@@no-iteration-listener — React adds a capture and a bubble `animationiteration` listener to every root and portal
 // container. Once any node in a document has one, Blink wakes the main thread at every iteration boundary of every
 // running CSS animation to dispatch the event, compositor-driven ones included, and the flag never clears. With the
-// running-bar shimmer and the avatar pulses that was ~12 whole-page style + layerize frames a second while idle.
+// running-bar highlight and the avatar pulses that was ~12 whole-page style + layerize frames a second while idle.
 // Only React's own registration is dropped: React marks a container `_reactListening<random>` before it adds its
 // listeners, so other code that listens for the event still gets it. Nothing here uses `onAnimationIteration`
 // (guarded by noAnimationIterationListeners.test.ts); a React that stops marking fails no-animation-iteration-listener.test.tsx.

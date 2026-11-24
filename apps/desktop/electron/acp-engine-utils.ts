@@ -18,7 +18,7 @@ import { makeIdentityClient } from './supabase'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { GuguMcpHost, type GuguMcpHostPersistence, type GuguMcpServerFactory } from './gugu-mcp-host'
 // @ts-expect-error -- the MCP tool implementation is an untyped ESM module.
-import { advertisedTool, createGuguImServer, createSessionState, sendWidgetOf, serveToolsList, widgetGetOf } from './mcp/gugu-im-server.mjs'
+import { advertisedTool, createGuguImServer, createSessionState, resolveChatIdOf, sendWidgetOf, serveToolsList, widgetGetOf } from './mcp/gugu-im-server.mjs'
 import type { RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import { guguToolGroupOf, type GuguToolsOff } from '../src/session/shared/gugu-tool-groups'
@@ -29,6 +29,7 @@ import { registerGuguProjectTools } from './mcp/gugu-project-tool'
 import { registerAssistantResource } from './mcp/gugu-assistant-resource'
 import type { AssistantLocalSource } from './sessionpage/assistant-local-index'
 import { registerGuguSessionTools, type SessionDispatcher } from './mcp/gugu-session-tool'
+import { withResolvedChatId } from './mcp/sessionpage-tool-registrar'
 import { registerGuguExtensionTools } from './mcp/gugu-extension-tool'
 import { runAppAction } from './mcp/app-tool-host'
 import { registerGuguGuideTools } from './mcp/gugu-guide-tool'
@@ -170,8 +171,11 @@ interface GuguMcpContextBase {
   grantKey?: string
   /** Raw session ID stamped by the native bridge creator; never parse grantKey for identity. */
   nativeSessionId?: string
-  /** The owner reads this session's own record (a structured session page): a message to the owner is committed there. */
-  ownerReadsSession?: true
+  /**
+   * What the owner reads of this session. `session`: its own record (a structured session page), so a message to the owner
+   * is committed there. `terminal`: what it prints, so a send into the owner's private chat is refused. Absent: the IM chat.
+   */
+  ownerReads?: 'session' | 'terminal'
 }
 
 /** #6615 会话经 catalog_* 够得到的扩展工具,与此刻被排除在外的程序(问题 16);扩展服务就绪后由宿主设上,没设 = 没有。 */
@@ -199,6 +203,8 @@ export type GuguMcpContext = GuguMcpContextBase & (
       guguHome: string
       getAccessToken: (signal?: AbortSignal) => Promise<string>
       resolveFile?: (ref: FileRef, actorId: string, options?: { progress?: FileContext['progress'] }) => Promise<ResolvedFile>
+      /** A live text file of a chat's folder, its text now as this agent reads it (the file service's). */
+      readDocument?: (itemId: string, actorId: string) => Promise<string>
       publishFile?: ProjectFilePublish
       attachments?: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
       runHostAction?: (action: unknown, signal?: AbortSignal) => Promise<unknown>
@@ -275,8 +281,14 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
   // 同角色的 grant 变,否则每种组合都是一份新的模型前缀。助理常驻派活、叫停和活动回顾;
   // 两种固定角色工具面各自复用前缀,不是按会话的动态授权清单。
   if (getContext().runSessionAction || getContext().runExtensionAction) {
+    // A chat named to session_* / app_* is resolved as message tools resolve it; without a Gugu identity there is no one to ask.
+    const resolveChatId = async (chatId: string) => {
+      const context = getContext()
+      if (context.kind !== 'social') throw new Error(`chat_id ${chatId}: naming a chat needs a session with a Gugu identity`)
+      return await resolveChatIdOf({ ...context, getAccessToken: () => context.getAccessToken(grantSignal) }, chatId)
+    }
     const sessionDispatcher: SessionDispatcher | undefined = getContext().runSessionAction
-      ? async (action, requestSignal) => {
+      ? withResolvedChatId(async (action, requestSignal) => {
           const run = getContext().runSessionAction
           if (!run) throw new Error('session_* tools are unavailable for this grant')
           const dispatch = (input: unknown) => run(input, anySignal([grantSignal, requestSignal]))
@@ -286,7 +298,7 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
           const { rules } = await assistantRules().available()
           const work = assistantExecutionAction(action, rules)
           return initial.assistantWork ? coordinateAssistantAction(initial.assistantWork, work, dispatch, rules) : dispatch(work)
-        }
+        }, resolveChatId)
       : undefined
     registerGuguSessionTools(server, sessionDispatcher, trackRequest, initial.personalAssistant === true)
     registerGuguProjectTools(server, sessionDispatcher, trackRequest)
@@ -310,7 +322,7 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
     registerGuguExtensionTools(
       server,
       getContext().runExtensionAction
-        ? (action, requestSignal) => {
+        ? withResolvedChatId((action, requestSignal) => {
             const run = getContext().runExtensionAction
             if (!run) throw new Error('app_* tools are unavailable for this grant')
             const signal = anySignal([grantSignal, requestSignal])
@@ -322,7 +334,7 @@ function buildGuguMcpServer(off: ReadonlySet<string>, ...[getContext, grantSigna
               runSession ? (session, lifetime) => runSession(session, lifetime ?? signal) : undefined,
               signal,
             )
-          }
+          }, resolveChatId)
         : undefined,
       trackRequest,
     )
@@ -413,6 +425,8 @@ export type ProjectFilePublish = (chatId: string, file: SelectedProjectFile, act
 export interface BuildSocialBridgeDeps {
   webSearch?: SessionWebSearch
   resolveFile?: (ref: FileRef, actor: FileActor, options?: { progress?: FileContext['progress'] }) => Promise<ResolvedFile>
+  /** The file service's text of a live text file, read with the bound account's token as this agent. */
+  readDocument?: (itemId: string, accessToken: string, actorId: string) => Promise<string>
   /** The host's project file publisher (the composer's): a file of a chat that keeps files on this machine, with its message. */
   publishFile?: ProjectFilePublish
   attachments: Pick<ReturnType<typeof createAttachmentUploadHost>, 'declare' | 'drop'>
@@ -421,7 +435,7 @@ export interface BuildSocialBridgeDeps {
   host: DesktopGuguMcpHost
   grantKey: string
   nativeSessionId?: string
-  ownerReadsSession?: true
+  ownerReads?: 'session' | 'terminal'
   personalAssistant?: true
   assistantWork?: AssistantWorkBinding
   runHostAction?: (action: unknown, auth: RuntimeAuth, signal: AbortSignal) => Promise<unknown>
@@ -468,7 +482,7 @@ export async function buildSocialBridge(
       guguHome: resolveGuguHome(context.env),
       grantKey: deps.grantKey,
       nativeSessionId: deps.nativeSessionId,
-      ...(deps.ownerReadsSession ? { ownerReadsSession: true as const } : {}),
+      ...(deps.ownerReads ? { ownerReads: deps.ownerReads } : {}),
       ...(deps.webSearch ? { webSearch: {
         available: deps.webSearch.available,
         run: async (query: string, signal: AbortSignal) => {
@@ -482,6 +496,7 @@ export async function buildSocialBridge(
       ...(deps.personalAssistant && deps.assistantWork ? { assistantWork: deps.assistantWork } : {}),
       getAccessToken: async (signal?: AbortSignal) => (await getBoundAuth(signal)).accessToken,
       ...(deps.resolveFile ? { resolveFile: (ref: FileRef, actorId: string, options?: { progress?: FileContext['progress'] }) => deps.resolveFile!(ref, { accountId: expectedOwnerUserId, actorId }, options) } : {}),
+      ...(deps.readDocument ? { readDocument: async (itemId: string, actorId: string) => deps.readDocument!(itemId, (await getBoundAuth()).accessToken, actorId) } : {}),
       ...(deps.publishFile ? { publishFile: async (...args: Parameters<ProjectFilePublish>) => {
         await getBoundAuth()
         return deps.publishFile!(...args)

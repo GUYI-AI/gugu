@@ -38,7 +38,7 @@ export function SidebarGroupToggle({
       <MicroLabel
         className={cn(
           sidebarGroupTitleClass,
-          'transition-colors group-hover/glabel:text-foreground group-active/glabel:text-foreground'
+          'group-hover/glabel:text-foreground group-active/glabel:text-foreground'
         )}
       >
         {label}
@@ -48,7 +48,7 @@ export function SidebarGroupToggle({
       )}
       <ChevronDown
         className={cn(
-          'size-3.5 text-foreground-passive opacity-0 transition-[opacity,rotate] duration-[var(--dur-med)] [transition-timing-function:var(--ease)] group-hover/ghdr:opacity-100',
+          'size-3.5 text-foreground-passive opacity-0 transition-[rotate] duration-[var(--dur-med)] [transition-timing-function:var(--ease)] group-hover/ghdr:opacity-100',
           collapsed && '-rotate-90 opacity-100'
         )}
       />

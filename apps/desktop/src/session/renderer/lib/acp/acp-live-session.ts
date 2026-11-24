@@ -167,10 +167,6 @@ export class AcpLiveSession {
     return this.client.connection.whenConnected(signal);
   }
 
-  getToolImage(itemId: string, index: number) {
-    return this.client.getToolImage({ sessionId: this.sessionId, itemId, index });
-  }
-
   exportTranscript(): Promise<Result<string, unknown>> {
     return this.client.exportACPTranscript({ sessionId: this.sessionId });
   }

@@ -25,6 +25,7 @@ const loaders: Record<string, () => Promise<TabViewModule>> = {
   'remote-ports': () => import('../remote-hosts/workspace/remote-ports-tab-view'),
   'task-page': () => import('../browser/task-page-tab-view'),
   'live-window': () => import('../live-window/live-window-tab-view'),
+  'session-details': () => import('./session-details-tab-view'),
 };
 
 export const SESSION_TAB_VIEW_KINDS = Object.keys(loaders);

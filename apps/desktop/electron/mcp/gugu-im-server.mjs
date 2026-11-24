@@ -2,12 +2,13 @@
 import { serverNow, withServerClock } from '@gugu/core/shared/serverClock'
 import { egress, EgressError, egressErrorText } from '@gugu/core/shared/egress'
 import { conversationLink, groupFileLink, parseGroupFileLink } from '@gugu/core/shared/ui/guguLink'
+import { compareByName } from '@gugu/core/shared/ui/chatModels'
 import { resolveReplyDelivery } from '@gugu/core/shared/replyDelivery'
 import { markdownLiteral } from '@gugu/core/shared/markdownLiteral'
 import { archivedDeliveryReceipt, deliveryRefusalNotes, messageDeliveryBlocks } from './message-delivery-blocks.mjs'
 
 import { requireAgentFileAccess } from '@gugu/core/local/state/agentFileBoundary'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { TOOL_OUTPUT_BYTE_BUDGET } from './mcp-tool-description-budget.mjs'
 import { readFile, stat } from 'node:fs/promises'
 import { openAsBlob } from 'node:fs'
@@ -22,7 +23,7 @@ import { findMentionSpans } from '../../../../packages/core/src/shared/mentionTo
 import { EXTENSION_ARCHIVE_MIME, resolveAttachmentMimeType } from '../../../../packages/core/src/shared/imageMime.mjs'
 import { saveToFileStore } from '@gugu/core/local/files/fileSnapshots'
 import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey, isFileIntegrityError } from '@gugu/core/shared/fileResolver'
-import { decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
+import { TYPED_ID_KINDS, decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { matchIdPrefix, uuidPrefixRange } from '../../../../packages/core/src/shared/idPrefix'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
 import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
@@ -574,6 +575,10 @@ function createDeps(context, injected = {}, state = createSessionState()) {
       if (!context.resolveFile) throw new Error('Verified file resolver is not installed')
       return context.resolveFile(ref, actor, options)
     },
+    readDocument: (itemId) => {
+      if (!context.readDocument) throw new Error('The file service reader is not installed')
+      return context.readDocument(itemId, context.agentId)
+    },
     ...injected,
     context,
     state,
@@ -624,6 +629,13 @@ async function resolveChatIdInput(chatId, deps) {
   const publicId = String(chatId ?? '').trim()
   if (!publicId) return null
   if (/^(aid|user|gugu):/.test(publicId)) return await ownerDirectChatId(publicId, deps)
+  // A typed id names its kind: `chat:` is a chat, any other kind (an agent's own `session:` id) is not one, and
+  // passed on as an opaque id it would only fail later as an unreadable member list.
+  const kind = publicId.slice(0, Math.max(0, publicId.indexOf(':')))
+  if (kind === 'chat') return decodeTypedId('chat', publicId, 'chat_id')
+  if (TYPED_ID_KINDS.includes(kind)) {
+    throw new Error(`chat_id: got a ${kind}: id ("${publicId}"), and a ${kind} is not a chat; pass the chat= value of your gugu_delivery envelope, an id from message_conversations, or your owner's address for your private chat with them`)
+  }
   // Production public_id values are numeric. Preserve non-production/internal opaque ids
   // used by injected callers; the schema description still directs agents to UUID ids.
   if (!/^\d+$/.test(publicId)) return publicId
@@ -635,35 +647,74 @@ async function resolveChatIdInput(chatId, deps) {
   throw new Error(`chat_id ${publicId} looks like a public_id, but no conversation matched it; use the UUID from message_conversations (id)`)
 }
 
+/**
+ * A `chat_id` from any other tool domain (session_*, app_*), read the way message tools read it: one resolver, so a
+ * public_id or an owner address names the same chat everywhere, and one that names none fails here.
+ */
+export async function resolveChatIdOf(context, chatId, injected = {}) {
+  const resolved = await requireChat({ chat_id: String(chatId) }, createDeps(context, injected))
+  // The resolver keeps an opaque non-numeric id for injected callers; a host action can only use a real chat's UUID.
+  if (!UUID_RE.test(String(resolved))) {
+    throw new Error(`chat_id ${chatId} names no conversation; give its UUID (message_conversations id) or its public_id number, nothing around it`)
+  }
+  return resolved
+}
+
 async function requireChat(args, deps) {
   const explicit = args && typeof args.chat_id === 'string' ? args.chat_id.trim() : ''
   if (explicit) return await resolveChatIdInput(explicit, deps)
   throw new Error('chat_id is required; the gugu MCP server never infers a conversation target')
 }
 
-/** A session whose page the owner reads takes their writes there; a DM is only an older spelling of it. Elsewhere it is the DM. */
-async function resolveWriteTarget(args, deps) {
+/**
+ * Where a write lands, by what the owner reads of this session (`context.ownerReads`). A session whose page the owner
+ * reads takes their writes there; a DM is only an older spelling of it. A terminal session's owner reads what it prints,
+ * so a write to them is refused (owner 11-23): the private chat would hold it where the terminal page never shows it.
+ * Elsewhere it is the DM.
+ */
+async function resolveWriteTarget(args, deps, toolName) {
   const address = typeof args?.chat_id === 'string' ? args.chat_id.trim() : ''
   if (!address) throw new Error('chat_id is required; the gugu MCP server never infers a conversation target')
-  if (deps.context.personalAssistant || !deps.context.ownerReadsSession) return { chatId: await requireChat(args, deps) }
+  const ownerReads = deps.context.personalAssistant ? undefined : deps.context.ownerReads
+  if (!ownerReads) return { chatId: await requireChat(args, deps) }
   if (/^(aid|user|gugu):/.test(address)) {
     const decoded = decodeIdentityAddress(address, 'chat_id')
     const userId = decoded.kind === 'user' ? decoded.id : (await lookupGuguNumber(decoded.number, deps)).id
     const owner = await currentAuthUserId(deps)
     if (userId !== owner) throw new Error(`chat_id ${address} is not a chat: an identity address works here only for your owner; for anyone else use an id from message_conversations`)
+    if (ownerReads === 'terminal') throw terminalOwnerWriteError(toolName)
     return { owner }
   }
   const chatId = await requireChat(args, deps)
-  if (UUID_RE.test(chatId)) {
+  // A terminal session checks the owner's chat with the member list the send reads anyway (assertNotTerminalOwnerChat).
+  if (ownerReads === 'session' && UUID_RE.test(chatId)) {
     const kind = await chatKindOf(deps, chatId)
     if (kind === 'dm' || kind === 'ai') {
       const members = await memberRowsOfMyChat(chatId, deps)
-      const ids = new Set(members.map(row => row.user_id))
-      const owner = await currentAuthUserId(deps)
-      if (ids.size === 2 && ids.has(owner) && ids.has(deps.context.agentId)) return { owner, chatId }
+      if (await isOwnerPrivateChat(deps, members)) return { owner: await currentAuthUserId(deps), chatId }
     }
   }
   return { chatId }
+}
+
+/** The private chat of exactly this agent and its owner. */
+async function isOwnerPrivateChat(deps, memberRows) {
+  const ids = new Set(memberRows.map(row => String(row.user_id)))
+  return ids.size === 2 && ids.has(deps.context.agentId) && ids.has(await currentAuthUserId(deps))
+}
+
+function terminalOwnerWriteError(toolName) {
+  return new Error(`${toolName}: your owner reads this terminal session; a message to them here is refused. Answer them in your printed output, and give a file's path there instead of sending it.`)
+}
+
+/**
+ * In a terminal session, refuse the owner's private chat. `memberRows` and the chat kind are what the send reads anyway
+ * (the kind from chat facts its group-rules check has just read), so this adds no request.
+ */
+async function assertNotTerminalOwnerChat(deps, chatId, memberRows, toolName) {
+  if (deps.context.personalAssistant || deps.context.ownerReads !== 'terminal') return
+  const kind = await chatKindOf(deps, chatId)
+  if ((kind === 'dm' || kind === 'ai') && await isOwnerPrivateChat(deps, memberRows)) throw terminalOwnerWriteError(toolName)
 }
 
 async function sendOwnerNotification(args, deps, target, recipients, file) {
@@ -1547,7 +1598,7 @@ async function handleMessage(args, deps) {
   const requestedRecipients = await resolveRecipientAddresses(normToList(args.to_user_ids), deps)
   // `to_user_ids: []` written out: address no one, not even the author of the message replied to.
   const addressesNoOneExplicitly = Array.isArray(normalizeRecipientInput(args.to_user_ids)) && normalizeRecipientInput(args.to_user_ids).length === 0
-  const target = args.action === 'send' ? await resolveWriteTarget(args, deps) : { chatId: await requireChat(args, deps) }
+  const target = args.action === 'send' ? await resolveWriteTarget(args, deps, writerToolName) : { chatId: await requireChat(args, deps) }
   if (target.owner) return sendOwnerNotification(args, deps, target, requestedRecipients, hasFile ? await ownerNotificationFile(args, deps) : undefined)
   const chatId = target.chatId
   if (args.action === 'send') {
@@ -1593,6 +1644,7 @@ async function handleMessage(args, deps) {
         const friendId = await ownerFriendAmong(deps, new Set(memberRows.map((row) => String(row.user_id))))
         if (friendId) throw ownerFriendDmWriteError(chatId, friendId, 'message_send', 'message_send_as_owner')
       }
+      await assertNotTerminalOwnerChat(deps, chatId, memberRows, writerToolName)
       if (kind === 'group' && !memberRows.some((row) => String(row.user_id) === deps.context.agentId)) {
         throw new Error(`message_send: you are not a member of group ${chatId}. Reply in your own session or use session_message to contact another session.`)
       }
@@ -1939,8 +1991,7 @@ async function handleConv(args, deps) {
     // 成员没有活动时间可排:按名字排,翻页才有确定的顺序。
     const items = members
       .map((m) => (m.type === 'agent' ? { ...m, ...status.readings.get(m.user_id) } : m))
-      .sort((a, b) => String(a.display_name ?? '').localeCompare(String(b.display_name ?? ''))
-        || String(a.user_id).localeCompare(String(b.user_id)))
+      .sort((a, b) => compareByName({ id: a.user_id, name: a.display_name }, { id: b.user_id, name: b.display_name }))
     return status.unavailable ? { items, status_unavailable: status.unavailable } : { items }
   }
   if (args.action === 'list') {
@@ -2259,8 +2310,7 @@ async function handleProfile(args, deps) {
         bio: user.bio ?? null,
         pinned: pinnedFriends.has(user.id),
       }))
-      .sort((left, right) => String(left.display_name).localeCompare(String(right.display_name))
-        || String(left.user_id).localeCompare(String(right.user_id)))
+      .sort((left, right) => compareByName({ id: left.user_id, name: left.display_name }, { id: right.user_id, name: right.display_name }))
     return humanFriends
   }
   if (args.action === 'whoami') {
@@ -2444,6 +2494,27 @@ async function downloadSourceOf(args, deps) {
   return { ref: { item_id: link.itemId, ...(link.version ? { version: link.version } : {}) }, reader: deps.context.agentId, item: link.version ? { itemId: link.itemId, version: link.version } : null, echo: {} }
 }
 
+/**
+ * A folder file that is a live text file (a document people and agents edit together): its text now, from the file
+ * service — what the Files App's own download reads (app-files-core downloadSource). It has no stored bytes for the
+ * resolver to find. Stored files, messages and an earlier version (?v= not its current one): null, the resolver's.
+ */
+async function liveTextOf(source, deps) {
+  if (!('item_id' in source.ref)) return null
+  const item = await workspaceRpcItem(deps, 'workspace_get_as', { p_item_id: source.ref.item_id }, 'message_download_file')
+  if (item.kind !== 'document' || source.ref.version !== undefined && source.ref.version !== item.version) return null
+  const bytes = new TextEncoder().encode(await deps.readDocument(item.id))
+  return {
+    status: 'ready', purpose: 'file', reader: source.reader,
+    revision: { source: 'managed-object', item_id: item.id, version: item.version, chat_id: item.chat_id, file_name: item.filename,
+      content_type: item.content_type || resolveAttachmentMimeType(item.filename, undefined), size_bytes: bytes.byteLength,
+      sha256: createHash('sha256').update(bytes).digest('hex') },
+    read: async (offset, length) => bytes.slice(offset, offset + length),
+    async *stream() { yield bytes },
+    dispose: async () => {},
+  }
+}
+
 // @@@downloading - 同一个读者对同一个文件的第二次调用接在第一次后面等结果:一次调用最多等 DOWNLOAD_CALL_BUDGET_MS,
 // 到了就正常返回「还在传」,下载照跑;再调一次就接上。没人等着时失败了,失败留给下一次调用报一次,再下一次重新读。
 const downloading = new Map()
@@ -2467,7 +2538,8 @@ async function downloadFile(args, deps) {
       // A message is delivered with its file's index; the bytes follow it from the sender's device: wait a little for them.
       const until = Date.now() + ATTACHMENT_PENDING_WAIT_MS
       const progress = () => { read.state = 'transferring' }
-      let file = await deps.resolveFile(source.ref, source.reader, { progress })
+      const live = await liveTextOf(source, deps)
+      let file = live ?? await deps.resolveFile(source.ref, source.reader, { progress })
       while (file.status === 'pending' && Date.now() < until) {
         await new Promise((resolve) => setTimeout(resolve, Math.min(1000, until - Date.now())))
         file = await deps.resolveFile(source.ref, source.reader, { progress })
@@ -3177,6 +3249,7 @@ export async function sendWidgetOf(context, args, content, injected = {}, state 
   }
   const members = await memberRowsOfMyChat(chatId, deps)
   if (!members.some(member => String(member.user_id) === context.agentId)) throw new Error('widget_send: the agent must be a member of this chat')
+  await assertNotTerminalOwnerChat(deps, chatId, members, 'widget_send')
   const widget = parseWidgetMessage(content)
   if (!widget) throw new Error('widget_send: a valid v2 widget is required')
   const result = await deps.restRpc('send_widget', {

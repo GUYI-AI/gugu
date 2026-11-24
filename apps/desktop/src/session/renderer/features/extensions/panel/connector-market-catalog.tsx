@@ -3,9 +3,7 @@ import {
   appCategory, connectedAppsCatalog, type AppCategoryId, type CatalogApp,
 } from '@/components/assistant/connected-app-catalog';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { MarketCard, MarketCategoryBar, MarketFeatured, MarketGrid, useMarketFeatured } from './desktop-market-cards';
-
-const featuredIds = ['feishu', 'dingtalk', 'qq-mail'];
+import { MarketCard, MarketCategoryBar, MarketGrid } from './desktop-market-cards';
 
 export type ConnectorMarketProps<T extends CatalogApp> = {
   apps: readonly T[];
@@ -26,21 +24,13 @@ export function ConnectorMarketCatalog<T extends CatalogApp>({
     ...directory.categories.map(({ id, title }) => ({ value: id, label: title })),
   ];
   const active = choices.some(({ value }) => value === category) ? category : 'all';
-  const featured = useMarketFeatured(
-    featuredIds.flatMap((id) => {
-      const app = directory.results.find((item) => item.id === id);
-      return app ? [app] : [];
-    }),
-    directory.results.filter((app) => !featuredIds.includes(app.id))
-  );
-  const featuredOnPage = !directory.searching && active === 'all' ? featured.items : [];
   const visible = directory.results
-    .filter((app) => (active === 'all' || appCategory(app) === active) && !featuredOnPage.includes(app))
+    .filter((app) => active === 'all' || appCategory(app) === active)
     .sort((a, b) => Number(b.state === 'connected') - Number(a.state === 'connected'));
-  const card = (app: T, isFeatured = false) => (
+  const card = (app: T) => (
     <MarketCard
       key={app.id}
-      testId={`${isFeatured ? 'featured-connector' : 'connector-market'}-card-${app.id}`}
+      testId={`connector-market-card-${app.id}`}
       name={app.name}
       description={app.description}
       category={directory.categories.find(({ id }) => id === appCategory(app))?.title}
@@ -52,13 +42,6 @@ export function ConnectorMarketCatalog<T extends CatalogApp>({
   );
   return (
     <>
-      {!directory.searching && active === 'all' && (
-        <MarketFeatured
-          title={translate('extensions.featuredConnectors')}
-          {...featured}
-          renderCard={(app) => card(app, true)}
-        />
-      )}
       {choices.length > 1 && (
         <MarketCategoryBar choices={choices} selected={active} onChange={setCategory} testIdPrefix="connector-market-chip" />
       )}
@@ -66,9 +49,9 @@ export function ConnectorMarketCatalog<T extends CatalogApp>({
         <MarketGrid title={translate(directory.searching ? 'extensions.searchResults' : 'extensions.tabConnectors')} heading={directory.searching} testId="connector-market-grid">
           {visible.map((app) => card(app))}
         </MarketGrid>
-      ) : featuredOnPage.length === 0 ? (
+      ) : (
         <div className="mk-empty" role="status">{translate('extensions.noConnectors')}</div>
-      ) : null}
+      )}
     </>
   );
 }

@@ -123,7 +123,7 @@ extension GuguIOSNativeBackend {
                 let row = try agent(call.arguments.first as? String)
                 guard let store else { throw Self.failure("host_not_ready", "Native registry is unavailable") }
                 try store.update("agents", id: row["agentUserId"] as! String) { $0["agentStatusSeen"] = 1 }; result(NSNull()); publish()
-            case "sessionTimeline.prefetchFiles", "sessionTimeline.sessionToolImage": throw Self.failure("unsupported", "Native private attachment adapter is not connected")
+            case "sessionTimeline.prefetchFiles": throw Self.failure("unsupported", "Native private attachment adapter is not connected")
             default: throw Self.failure("unknown_method", "Native host channel is not implemented")
             }
         } catch { completion(Self.replyError(error, admission: "rejected")) }

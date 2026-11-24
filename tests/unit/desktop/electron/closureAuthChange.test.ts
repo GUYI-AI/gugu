@@ -41,6 +41,10 @@ async function fixture(initial = B, erasing = true) {
   return { life, closure, scope, ipc, persist, set, revoke, changed, enter, prepareChange, projection,
     beforeLeave: (value: () => Promise<void>) => { beforeLeave = value }, current: () => current,
     afterLeave: (value: () => Promise<void>) => { afterLeave = value },
+    resumeCurrent: async () => {
+      const owner = current!
+      await life.owner.signIn(owner, () => closure.underAuth(async () => { generation += 1 }))
+    },
     replaceNative: async (owner: string) => { await closure.underAuth(async () => { current = owner; generation += 1 }); await life.owner.signIn(owner) } }
 }
 describe('native closure auth permit with the real lifecycle owner', () => {
@@ -99,6 +103,27 @@ describe('native closure auth permit with the real lifecycle owner', () => {
     expect(f.current()).toBe(B); expect(lease.signal.aborted).toBe(false); expect(() => lease.assertCurrent()).not.toThrow()
     expect(f.life.trace).toEqual(trace); expect(f.life.owner.read('new-b').kind).toBe('ready'); expect(f.life.owner.read('g').kind).toBe('ready')
     lease.release(); await f.life.owner.signOut()
+  })
+  it('invalidates a permit which drained before a separate explicit resume starts new work', async () => {
+    const f = await fixture(), permit = await f.prepareChange(C)
+    await permit.leave()
+    await f.resumeCurrent()
+    f.life.owner.start('b'); await f.life.owner.quiescent('b')
+    const trace = [...f.life.trace]
+    await expect(permit.mutate(() => f.persist({ access_token: C }))).rejects.toMatchObject({ code: 'scope_conflict' })
+    expect(f.persist).not.toHaveBeenCalled(); expect(f.current()).toBe(B)
+    expect(f.life.trace).toEqual(trace); expect(f.life.owner.read('b').kind).toBe('ready')
+    await f.life.owner.signOut()
+  })
+  it('qualifies an explicit resume inside the lifecycle queue before leaving a newer owner', async () => {
+    const f = await fixture(); f.life.session('d', D); await f.replaceNative(D)
+    f.life.owner.start('d'); await f.life.owner.quiescent('d')
+    const trace = [...f.life.trace]
+    await expect(f.life.owner.signIn(B, async () => {
+      if (f.current() !== B) throw Object.assign(new Error('wrong owner'), { code: 'wrong_local_owner' })
+    })).rejects.toMatchObject({ code: 'wrong_local_owner' })
+    expect(f.life.trace).toEqual(trace); expect(f.life.owner.read('d').kind).toBe('ready')
+    await f.life.owner.signOut()
   })
   it('still notifies and enters the written account when persistence fails after mutation began', async () => {
     const f = await fixture(); f.life.session('d', D)

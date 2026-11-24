@@ -1,0 +1,68 @@
+diff --git a/dist/photoswipe.esm.js b/dist/photoswipe.esm.js
+index 0b278f6..8a8abe4 100644
+--- a/dist/photoswipe.esm.js
++++ b/dist/photoswipe.esm.js
+@@ -2,6 +2,13 @@
+   * PhotoSwipe 5.4.4 - https://photoswipe.com
+   * (c) 2024 Dmytro Semenov
+   */
++// gugu: patched in (pnpm patchedDependencies). PhotoSwipe lives in the window of the element it is appended to
++// (`appendToEl`), not always in the window that loaded this module. A same-renderer child window (window.open of
++// about:blank) draws its UI with this module; the viewer's pointer, key, focus, resize and frame callbacks must be
++// that window's, or nothing done there reaches the viewer. One viewer is open at a time, so the binding is set
++// when one is constructed. Drop patches/photoswipe@5.4.4.patch once upstream takes the window from appendToEl.
++let window = globalThis.window;
++let document = globalThis.document;
+ /** @typedef {import('../photoswipe.js').Point} Point */
+ 
+ /**
+@@ -2448,7 +2455,7 @@ class Gestures {
+ 
+       this._updatePrevPoints();
+ 
+-      this.raf = requestAnimationFrame(this._rafRenderLoop.bind(this));
++      this.raf = window.requestAnimationFrame(this._rafRenderLoop.bind(this));
+     }
+   }
+   /**
+@@ -2561,7 +2568,7 @@ class Gestures {
+ 
+   _rafStopLoop() {
+     if (this.raf) {
+-      cancelAnimationFrame(this.raf);
++      window.cancelAnimationFrame(this.raf);
+       this.raf = null;
+     }
+   }
+@@ -3533,18 +3540,18 @@ class SpringAnimation {
+         } else {
+           prevTime = Date.now();
+           onUpdate(deltaPosition + end);
+-          this._raf = requestAnimationFrame(animationLoop);
++          this._raf = window.requestAnimationFrame(animationLoop);
+         }
+       }
+     };
+ 
+-    this._raf = requestAnimationFrame(animationLoop);
++    this._raf = window.requestAnimationFrame(animationLoop);
+   } // Destroy is called automatically onFinish
+ 
+ 
+   destroy() {
+     if (this._raf >= 0) {
+-      cancelAnimationFrame(this._raf);
++      window.cancelAnimationFrame(this._raf);
+     }
+ 
+     this._raf = 0;
+@@ -6515,6 +6522,9 @@ class PhotoSwipe extends PhotoSwipeBase {
+    */
+   constructor(options) {
+     super();
++    const host = (options && options.appendToEl || globalThis.document.body).ownerDocument.defaultView;
++    window = host;
++    document = host.document;
+     this.options = this._prepareOptions(options || {});
+     /**
+      * offset of viewport relative to document

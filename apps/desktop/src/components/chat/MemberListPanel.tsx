@@ -61,7 +61,7 @@ import { useChatStore } from '../../store/chatContext'
 import { useContactsStore } from '../../store/contactsContext'
 import { useDevicesStore } from '../../store/devicesContext'
 import { agentOwnerDisplayName, toAgentProfile } from '../memberProfileModels'
-import { buildUnifiedMembers } from './groupMemberModels'
+import { useUnifiedMembers } from './useUnifiedMembers'
 import { useListenModeEditControls } from './useListenModeEditControls'
 import { ChevronRight } from '../../lib/icons'
 import type { RoomCollabError } from '../../hooks/useRoomCollab'
@@ -202,7 +202,7 @@ export type MemberListPanelProps = {
   chatId: string
   /** 群和话题都用这一个面板;话题的成员名单可以比来源窄。 */
   chatKind: 'group' | 'topic'
-  /** 页头归宿主画(群设置栈 / 👥 右栏 / 话题分栏各画各的);这里只给标题与标题旁的动作。 */
+  /** 页头归宿主画(群设置栈 / 👥 右栏各画各的);这里只给标题与标题旁的动作。 */
   head: (title: ReactNode, actions: ReactNode) => ReactNode
   /**
    * 名片显示的群或话题名。话题还用这份名字做就地改名。spec 把「名字可改」当成「建立只有一步」的**理由**
@@ -234,10 +234,7 @@ export function MemberListPanel({ chatId, chatKind, head, chatName, snapshot, se
   const agentIds = useMemo(() => agents.map((agent) => agent.id), [agents])
   const agentStatuses = useAgentDisplayStatuses(agentIds)
   const shownAgent = useShownAgentStatus() // #7199 角标 / 资料画的那一格:宿主闲时收回着 ≠ 不在线
-  const unified = useMemo(
-    () => (snapshot ? buildUnifiedMembers(snapshot) : []),
-    [snapshot],
-  )
+  const unified = useUnifiedMembers(snapshot)
   const people = useMemo(() => unified.filter((member) => member.type === 'human'), [unified])
   const agentMembers = useMemo(() => unified.filter((member) => member.type === 'agent'), [unified])
 

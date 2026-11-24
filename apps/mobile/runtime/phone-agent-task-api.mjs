@@ -3,17 +3,20 @@ import { randomUUID } from 'node:crypto'
 import { stableId, uuid } from './phone-agent-store.mjs'
 import { SessionInputAdmissionError } from '../../../packages/core/src/shared/sessionInputAdmission.ts'
 import { retryInterruptedPhoneJob } from './phone-agent-retry.mjs'
+import { turnAnnotationSchema } from '../../../packages/session-core/src/acp/models/turn-annotations.ts'
 
 const failure = (code, message) => new SessionInputAdmissionError(message, 'rejected', code)
-const methods = new Set(['prefetchFiles', 'sessionQueue', 'sessionSnapshot', 'sessionAfter', 'sessionOlder', 'sessionToolImage', 'sessionSend', 'sessionRetry', 'sessionRespond', 'sessionOptions', 'sessionSetOption', 'sessionReloadModel'])
+const methods = new Set(['prefetchFiles', 'sessionQueue', 'sessionSnapshot', 'sessionAfter', 'sessionOlder', 'sessionSend', 'sessionRetry', 'sessionRespond', 'sessionOptions', 'sessionSetOption', 'sessionReloadModel'])
 
 const inputId = (ownerId, sessionId, clientId) => stableId('phone-task-input', ownerId, sessionId, clientId)
-const inputFingerprint = (text, files, complete, digests) => stableId('phone-task-input-body', JSON.stringify([text.trim(), files.map((file) => [file.itemId, file.version]), ...(complete ? [true, digests] : [])]))
+// Comments join the fingerprint only when sent, so inputs admitted before them keep their fingerprints.
+const inputFingerprint = (text, files, complete, digests, annotations = []) => stableId('phone-task-input-body', JSON.stringify([text.trim(), files.map((file) => [file.itemId, file.version]), ...(complete ? [true, digests] : []),
+  ...(annotations.length ? [{ annotations }] : [])]))
 /** Only a matching actual input job proves admission; a renderer upload flag cannot. */
 export function phoneTaskInputReceipt(store, ownerId, agentUserId, input) {
   const existing = store.state.jobs[inputId(ownerId, input.conversationId, input.clientRequestId)]
   if (!existing) return null
-  return existing.agentUserId === agentUserId && existing.inputFingerprint === inputFingerprint(input.text, input.files ?? [], input.requiresCompleteFiles, input.expectedFileDigests) ? 'accepted' : 'uncertain'
+  return existing.agentUserId === agentUserId && existing.inputFingerprint === inputFingerprint(input.text, input.files ?? [], input.requiresCompleteFiles, input.expectedFileDigests, input.annotations ?? []) ? 'accepted' : 'uncertain'
 }
 
 /** Task-page methods share the native and remote taskhost.call transport. No DM or workspace
@@ -23,14 +26,16 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
   const send = async (input, requestId) => {
     if (input.steerIfBusy) throw failure('unsupported', '手机任务当前不支持立即插话，请保留排队消息或取消后再发送')
     const files = Array.isArray(input.files) ? input.files : []
-    if (typeof input.text !== 'string' || (!input.text.trim() && !files.length)) throw failure('invalid_args', '请先填写任务内容')
+    if (input.annotations !== undefined && !turnAnnotationSchema.array().safeParse(input.annotations).success) throw failure('invalid_args', '批注无效')
+    const annotations = input.annotations ?? []
+    if (typeof input.text !== 'string' || (!input.text.trim() && !files.length && !annotations.length)) throw failure('invalid_args', '请先填写任务内容')
     let clientId, sessionId
     try {
       clientId = input.clientRequestId ? uuid(input.clientRequestId, 'clientRequestId') : requestId ?? randomUUID()
       sessionId = uuid(typeof input.conversationId === 'string' ? input.conversationId.replace(/^session:/, '') : input.conversationId, 'session_id')
     } catch (error) { throw failure('invalid_args', error.message) }
     const id = inputId(ownerId, sessionId, clientId)
-    const fingerprint = inputFingerprint(input.text, files, input.requiresCompleteFiles, input.expectedFileDigests)
+    const fingerprint = inputFingerprint(input.text, files, input.requiresCompleteFiles, input.expectedFileDigests, annotations)
     const pending = admitting.get(id)
     if (pending) {
       if (pending.fingerprint !== fingerprint) throw new SessionInputAdmissionError('原消息尚在确认，不能更换内容', 'uncertain', 'invalid_args')
@@ -48,7 +53,7 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
         const agent = findSession(sessionId)
         await verifyAgent(agent.agentUserId)
         // Keep the person's words; resolve files only when this job reaches the model.
-        await admit({ id, agentUserId: agent.agentUserId, clientMessageId: clientId, inputFingerprint: fingerprint, prompt: input.text.trim(), ...(files.length ? { files } : {}), ...(input.requiresCompleteFiles ? { requiresCompleteFiles: true, expectedFileDigests: structuredClone(input.expectedFileDigests) } : {}), route: { kind: 'task', senderUserId: ownerId, personalAdmission: 'owner-input' } })
+        await admit({ id, agentUserId: agent.agentUserId, clientMessageId: clientId, inputFingerprint: fingerprint, prompt: input.text.trim(), ...(files.length ? { files } : {}), ...(annotations.length ? { annotations: structuredClone(annotations) } : {}), ...(input.requiresCompleteFiles ? { requiresCompleteFiles: true, expectedFileDigests: structuredClone(input.expectedFileDigests) } : {}), route: { kind: 'task', senderUserId: ownerId, personalAdmission: 'owner-input' } })
       }
       return { accepted: true, messageId: id, admission: 'accepted' }
     })()
@@ -86,7 +91,6 @@ export function createPhoneTaskApi({ ownerId, store, models, timelines, actions,
     if (method === 'sessionSnapshot') return { value: await timelines.snapshot(agent, input) }
     if (method === 'sessionAfter') return { value: await timelines.after(agent, input) }
     if (method === 'sessionOlder') return { value: await timelines.older(agent, input) }
-    if (method === 'sessionToolImage') return { value: await timelines.image(agent, input) }
     await verifyAgent(agent.agentUserId)
     let value
     if (method === 'sessionRetry') value = await retryInterruptedPhoneJob({ ownerId, store, agent, jobId: input.jobId, admit })

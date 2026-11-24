@@ -91,7 +91,12 @@ it('retains the desktop model groups and their add action when the host supports
 it.each(['zh-CN', 'en-US'] as const)('%s model errors use the shared localized error outlet', locale => {
   setLocalePreference(locale);
   const cause = new Error('[session] host bridge unavailable: the desktop app lacks the preload injection, the web app lacks the task page host connection');
+  const wrappedCause = new Error("Error invoking remote method 'models': Error: [session] host bridge unavailable: missing preload\nprivate stack");
+  const expected = locale === 'zh-CN'
+    ? '暂时无法连接这台设备，请重新打开应用后再试。'
+    : 'Cannot connect to this device right now. Reopen the app and try again.';
   expect(errorText(cause)).toBe(messageForUser(cause));
-  expect(errorText(cause)).toBe(locale === 'zh-CN' ? '暂时无法连接这台设备，请重新打开应用后再试。' : 'Cannot connect to this device right now. Reopen the app and try again.');
+  expect(errorText(cause)).toBe(expected);
+  expect(messageForUser(wrappedCause)).toBe(expected);
   expect(errorText({ message: cause.message })).not.toContain('preload');
 });

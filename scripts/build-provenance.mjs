@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
-import { JSDOM } from 'jsdom'
 import { assertNoUndefinedBindingsInEmdashBundles } from './build/verify-emdash-bundle-no-undef.mts'
 import { assertMainStaticGraphDefersHomeReaders } from './build/verify-main-static-graph.mts'
 
@@ -46,9 +45,19 @@ function sha256(path) {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
 }
 
+/** The first `<script type="module" src=…>` outside comments. A full DOM (jsdom) cost 0.6 s of every run for one tag. */
+function moduleScriptSrc(html) {
+  for (const [, attributes] of html.replace(/<!--[\s\S]*?-->/g, '').matchAll(/<script\b([^>]*)>/gi)) {
+    const values = new Map([...attributes.matchAll(/([^\s"'=<>/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`]+))/g)]
+      .map(([, name, double, single, bare]) => [name.toLowerCase(), double ?? single ?? bare]))
+    if (values.get('type')?.toLowerCase() === 'module' && values.get('src')) return values.get('src')
+  }
+  return undefined
+}
+
 function rendererEntry(indexPath) {
   const index = readFileSync(indexPath, 'utf8')
-  const script = new JSDOM(index).window.document.querySelector('script[type="module"][src]')?.getAttribute('src')
+  const script = moduleScriptSrc(index)
   if (!script) throw new Error(`[build-provenance] renderer entry script missing from ${relative(root, indexPath)}`)
   const normalizedScript = `/${script.replace(/^\.\//, '').replace(/^\//, '').split(/[?#]/, 1)[0]}`
   const path = join(root, 'dist', normalizedScript.slice(1))

@@ -93,12 +93,12 @@ describe.each(subjects)('IM message store contract (%s)', (_name, open) => {
     expect((await store.windows(account, ['chat-a'], 1))[0]).toMatchObject({ reactions: [], delivery_blocks: [] })
   })
 
-  it('retains a sender-device resend position when full server overlays replace the body', async () => {
+  it('drops a send-time position an older build stored on a confirmed row once the server body arrives', async () => {
     await setup()
     const local_timeline = { afterSeq: 4, createdAt: '2026-11-02T00:00:00Z' }
     await store.ingest(account, batch(message('resent', 'first', 8, { local_timeline })))
     await store.ingest(account, batch(message('resent', 'refreshed', 8, { reactions: [], delivery_blocks: [] })))
-    expect((await store.windows(account, ['chat-a'], 10))[0]).toMatchObject({ id: 'resent', seq: 8, content: 'refreshed', local_timeline })
+    expect((await store.windows(account, ['chat-a'], 10))[0]).not.toHaveProperty('local_timeline')
   })
 
   it('keeps the main tail covered through revision arrivals whose sequence skips numbers thread replies took', async () => {

@@ -7,6 +7,8 @@ import { Readable, Transform } from 'node:stream'
 import type { ReadableStream as NodeWebReadableStream } from 'node:stream/web'
 import { pipeline } from 'node:stream/promises'
 import { join } from 'node:path'
+import { hostCopy } from './host-locale-store'
+import { hostText } from '../shared/host-localization'
 
 // @@@663 mac 更新的 dmg 半自动路径:应用内下载 dmg(按架构选 + sha512 校验)→ 下载完自动打开,
 // 用户拖装。它的存在理由是 electron-updater 在 macOS 的 downloadUpdate() 只吃 zip(Squirrel.Mac),
@@ -67,11 +69,11 @@ export function parseCodesignAuthority(output: string): LocalSigning {
 /** 按运行架构选 dmg(仅认 arm64/x64,别的架构直接报错,不猜)。找不到就报错停(fail loud)。 */
 export function pickMacDmgFile(files: UpdateFileEntry[], arch: string): UpdateFileEntry {
   if (arch !== 'arm64' && arch !== 'x64') {
-    throw new Error(`不支持的架构 ${arch}(mac 产物只有 arm64/x64)`)
+    throw new Error(hostText(hostCopy().hostErrors.updateUnsupportedArch, { arch }))
   }
   const match = files.find((f) => f.url.endsWith(`-${arch}.dmg`))
   if (!match) {
-    throw new Error(`更新清单里没有 ${arch} 架构的 dmg(files: ${files.map((f) => f.url).join(', ')})`)
+    throw new Error(hostText(hostCopy().hostErrors.updateInstallerMissing, { arch, files: files.map((f) => f.url).join(', ') }))
   }
   return match
 }
@@ -99,7 +101,7 @@ export async function downloadDmg(opts: {
     const response = await egress.fetch(opts.fileUrl, { redirect: 'follow' })
     if (response.status !== 200 || !response.body) {
       await response.body?.cancel()
-      throw new Error(`下载失败 HTTP ${response.status}: ${opts.fileUrl}`)
+      throw new Error(`download failed: HTTP ${response.status}: ${opts.fileUrl}`)
     }
     const total = Number(response.headers.get('content-length') ?? 0)
     const hash = createHash('sha512')
@@ -115,7 +117,7 @@ export async function downloadDmg(opts: {
     await pipeline(Readable.fromWeb(response.body! as unknown as NodeWebReadableStream<Uint8Array>), observe, createWriteStream(tmp))
     const digest = hash.digest('base64')
     if (opts.expectedSha512 != null && digest !== opts.expectedSha512) {
-      throw new Error(`sha512 校验失败: 期望 ${opts.expectedSha512} 实得 ${digest}`)
+      throw new Error(`sha512 mismatch: expected ${opts.expectedSha512}, got ${digest}`)
     }
   } catch (error) {
     await rm(tmp, { force: true })

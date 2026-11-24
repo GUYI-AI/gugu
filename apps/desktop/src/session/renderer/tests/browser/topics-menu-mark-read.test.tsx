@@ -16,7 +16,7 @@ const topics = vi.hoisted(() => ['new', 'old'].map((id) => ({
   last_message_at: '2026-11-01T00:00:00Z', last_message_preview: null, unread_count: 3, pinned_message_id: null, last_read_seq: 0, next_message_seq: 4,
 })) as unknown as ChatItem[])
 vi.mock('@/components/chat/useChatTopicPins', () => ({
-  useChatTopicPins: () => ({ topics, pinned: [], others: topics, ready: true, saving: false, error: null, retry: () => {}, set: () => {}, topicIds: [] }),
+  useChatTopicPins: () => ({ topics, pinned: [], others: topics, set: () => {} }),
 }))
 
 const { DropdownMenu } = await import('@/components/ui/Menu')

@@ -29,13 +29,14 @@ const turn = (id: string, items: ChatItem[]): TranscriptTurn => ({ id, seq: 0, i
 const cleanup: Array<() => void> = [];
 afterEach(() => { while (cleanup.length) cleanup.pop()?.(); });
 
-async function mount(records: TranscriptTurn[]) {
+async function mount(records: TranscriptTurn[], opened: string[] = []) {
   await page.viewport(800, 720);
   const context = createChatContext({ locale: () => 'en-US', layout: { preset: 'double', agentConversation: true, userGutter: 0 },
     actor: id => id === peer ? { id, type: 'agent', name: 'd3' } : null,
     selfIdentity: () => ({ userId: me, displayName: 'Owner', guguNumber: null }), chatName: () => 'gugu', chatKind: () => 'group' });
   const state = createChatState(context);
   state.transcript.history.seed(records);
+  for (const id of opened) state.viewState.setCollapsed(id, true);
   const host = document.body.appendChild(document.createElement('div'));
   host.style.cssText = 'position:fixed;top:0;left:0;width:800px;height:600px';
   const view = createChatView({ context, state, parent: host });
@@ -66,5 +67,17 @@ describe('a process line left outside the A2A fold keeps a bubble (#2593)', () =
     expect(heads(host)).toHaveLength(0);
     expect(host.innerHTML).not.toContain('Committing and opening the PR now.');
     expect(host.innerHTML).not.toContain('Real reply content');
+  });
+  // A line reads open once it is over when the reader closed it while it ran (a live line reads its toggle inverted).
+  // Its steps viewport is a row of the same exchange: without the exchange's activity it split the fold in two, left
+  // open between the halves.
+  it('keeps an opened line\'s steps inside the one A2A fold and shows them when the fold opens', async () => {
+    const host = await mount([turn('in', [delivery('incoming'), said, command('fine', 'done'), send])], ['in:process']);
+    const rows = () => [...host.querySelectorAll<HTMLElement>('[data-agent-activity]')];
+    expect(rows().map(row => row.textContent)).toEqual(['Exchanged 2 messages with gugu, d3']);
+    const shownSteps = () => [...host.querySelectorAll<HTMLElement>('[data-process-step]')].filter(el => el.getBoundingClientRect().height > 0);
+    expect(shownSteps()).toHaveLength(0);
+    rows()[0]!.querySelector<HTMLButtonElement>('[data-collapse-id]')!.click();
+    await until('the steps open with their exchange', () => shownSteps().some(el => el.textContent?.includes('Ran 1 shell command')));
   });
 });

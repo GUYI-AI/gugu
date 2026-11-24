@@ -15,7 +15,7 @@ import { refreshFailure, useReplica } from '@/lib/replica'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
-import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry'
+import { isPromotedAssistantApp } from '@shared/extensions/assistant-entry'
 import { MARKET_CATEGORIES, localizedManifestText, marketCategoryOf, type MarketCategory } from '@shared/extensions/catalog'
 import type { MarketListItem } from '@shared/extensions/market'
 import { phoneApps } from '../appSlot/phoneApps'
@@ -101,7 +101,7 @@ export const MobileAppsSection = observer(function MobileAppsSection({
     value, label: value === 'all' ? t('phoneMarket.all') : translate(`extensions.category.${value}`),
   }))
   const rows = entries && phoneMarketRows(entries, query)
-    .filter(item => item.manifest.id !== ASSISTANT_APP_ID && (chip === 'all' || marketCategoryOf(item.manifest) === chip))
+    .filter(item => !isPromotedAssistantApp(item.manifest.id) && (chip === 'all' || marketCategoryOf(item.manifest) === chip))
 
   return <>
     {unreadable && mode === 'installed' && <SettingsNote tone="danger" role="alert" data-testid="phone-apps-unreadable">

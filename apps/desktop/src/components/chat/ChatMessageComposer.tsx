@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { observer } from 'mobx-react-lite'
-import { useAuth } from '@/store/auth'
 import { sessionAnnotations } from '@renderer/features/sessions/annotations/session-annotations'
 import { AnnotationTray } from '@renderer/features/sessions/annotations/annotation-tray'
 import { useTranslation } from 'react-i18next'
@@ -50,7 +49,7 @@ const EMPTY_MESSAGES: NonNullable<ChatMessageComposerProps['messages']> = []
 export const ChatMessageComposer = observer(function ChatMessageComposer(props: ChatMessageComposerProps) {
   const { chatId, isGroupChat, groupMembers = EMPTY_MEMBERS, currentUserId, agentStatuses = EMPTY_STATUSES,
     placeholder, attachGlyph, attachMenu, mentionToInsert, onMentionInserted, quoteContent, onExitWhisper: exitWhisper,
-    messages = EMPTY_MESSAGES, participantIds, surface = 'main', hidden = false } = props
+    messages = EMPTY_MESSAGES, hidden = false } = props
   const [publicQuote, setPublicQuote] = useState<typeof quoteContent>(null)
   const replySource = quoteContent?.source
   const { draftWhispers, setDraftWhisper } = useChatStore('draftWhispers', 'setDraftWhisper')
@@ -72,9 +71,8 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
   const { theme } = useTheme()
   const mobile = useMobileShell()
   const draft = useChatDraft(chatId)
-  const { user } = useAuth()
   const annotationConversation = useMemo(() => chatId ? { kind: 'chat' as const, chatId } : undefined, [chatId])
-  const annotationDraft = annotationConversation ? sessionAnnotations.forConversation(annotationConversation, user?.id ?? currentUserId) : undefined
+  const annotationDraft = annotationConversation ? sessionAnnotations.forConversation(annotationConversation) : undefined
   const { text, setText, mentionTargets, setMentionTargets, attachments, setAttachments } = draft
   const fileSelection = useAttachmentFileSelection(attachments, chatId)
   const draftPreview = useDraftAttachmentPreview(chatId, mobile && !hidden, id => attachments.find(item => item.id === id)?.file, (id, file, caption) => replaceAttachment(id, file, caption))
@@ -85,13 +83,12 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
   const cameraInputRef = useRef<HTMLInputElement>(null)
   // 手机附件面板。
   const [attachOpen, setAttachOpen] = useState(false)
-  const isMain = surface === 'main'
   const inChatSlot = useInChatSlot()
   const projectName = useChatSlotProjectName()
   const takenOver = useComposerVerbTakeover(chatId)
   const { identitiesById, registerDraftEditor } = useChatStore('identitiesById', 'registerDraftEditor')
   const { members, mentionProvider, renderMentionIcon, pickOf } = useGroupMentionProvider({ chatId, isGroupChat: !!isGroupChat, groupMembers, currentUserId: currentUserId ?? null,
-    agentStatuses, messages, participantIds, replyToMessageId: quoteContent?.messageId, enabled: !whisperTarget })
+    agentStatuses, messages, replyToMessageId: quoteContent?.messageId, enabled: !whisperTarget })
   const activeTargets = activeMentionPicks(text, mentionTargets, members)
   const { sending, handleSend } = useChatMessageSend({ ...deliveryProps, disabled, disabledReason }, draft, members, activeTargets, inputRef, mobile)
   const receiveInput = useCallback((element: HTMLElement | null) => { inputRef.current = element }, [])
@@ -122,8 +119,8 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
     if (previous.photo) void compressPhoto(file).then((compressed) => { if (compressed !== file) setAttachments((pending) => pending.map((item) => item.id === id && item.file === file ? { ...item, file: compressed, photo: { original: file, compressed } } : item)) })
   }
 
-  useEffect(() => isMain ? registerComposerFocusTarget(() => inputRef.current) : undefined, [isMain])
-  useComposerEntryFocus(chatId ? 'chat:' + chatId : null, isMain && !hidden && props.entryActive === true, () => {
+  useEffect(() => registerComposerFocusTarget(() => inputRef.current), [])
+  useComposerEntryFocus(chatId ? 'chat:' + chatId : null, !hidden && props.entryActive === true, () => {
     if (!disabled) focusComposer('chat-entry', { mobileShell: mobile, target: () => inputRef.current })
   })
   // 面板占的是键盘的位置:一点输入框(键盘要起来)就收起。
@@ -144,14 +141,13 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
     if (quoteContent) scheduleComposerFocus('quote-attached', { target: () => inputRef.current })
   }, [quoteContent])
   useEffect(() => {
-    if (!isMain) return
     const attach = (event: Event) => {
       const files = (event as CustomEvent<{ files?: unknown }>).detail?.files
       if (Array.isArray(files)) enqueueFiles(files.filter((file): file is File => file instanceof File))
     }
     window.addEventListener(UI_EVENTS.composerAttachFiles, attach)
     return () => window.removeEventListener(UI_EVENTS.composerAttachFiles, attach)
-  }, [isMain, enqueueFiles])
+  }, [enqueueFiles])
 
   const composerAttachments: ComposerAttachment[] = attachments.map((attachment) => ({
     id: attachment.id, name: attachment.file.name, kind: attachment.kind === 'image' ? 'image' : 'file',
@@ -163,12 +159,11 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
     const pick = pickOf(item)
     if (pick) setMentionTargets((picks) => picks.some((existing) => existing.userId === pick.userId) ? picks : [...picks, pick])
   }
-  // Aside candidates also include invitees from the source line; only actual topic members may be recalled.
-  const recallMembers = members.filter((member) => !identitiesById[member.id]?.removed_at && (surface !== 'aside' || participantIds?.includes(member.id)))
+  const recallMembers = members.filter((member) => !identitiesById[member.id]?.removed_at)
   const { hint, ...hintEvents } = useGroupMentionHint({ accountId: currentUserId, chatId, members: recallMembers, text,
     enabled: !mobile && !!isGroupChat && !props.conversation && !disabled && !sending && !hidden && !takenOver && !whisperTarget,
     editor: editorApiRef, input: inputRef })
-  const editorOptions = { inputTestId: surface === 'aside' ? AUTOMATION_TEST_IDS.chatComposerAside : AUTOMATION_TEST_IDS.chatComposer,
+  const editorOptions = { inputTestId: AUTOMATION_TEST_IDS.chatComposer,
     inputRef: receiveInput, clearOnSubmit: false, enterBehavior: mobile ? 'newline' as const : 'submit' as const, emptyHint: hint }
   // `/`: the person's prompts and their Apps' (prompt-slash-items.ts, the session composer's same list) — the chat's `/` had nothing.
   const { value: prompts, overrides } = usePromptLibrary()
@@ -192,7 +187,7 @@ export const ChatMessageComposer = observer(function ChatMessageComposer(props: 
           mentionProvider={mentionProvider} renderMentionIcon={renderMentionIcon} queryCommands={queryPrompts} dataDropTypes={dataDropTypes} onDataDropped={onDataDropped}
           onFilesDropped={enqueueFiles} onImageFilesDropped={enqueueFiles} onDirectoriesDropped={onDirectoriesDropped}
           attachments={composerAttachments} onViewAttachment={draftPreview.open} onAttachmentsChange={(next) => { const kept = attachments.filter((file) => next.some((item) => item.id === file.id)); revokeAttachmentPreviewUrls(attachments.filter((file) => !kept.includes(file))); setAttachments(kept) }}
-          attachmentExtra={annotationConversation && annotationDraft?.items.length ? <AnnotationTray conversation={annotationConversation} onSend={() => { void handleSend() }} enabled={!disabled && !sending && !hidden && !takenOver && isMain} /> : null}
+          attachmentExtra={annotationConversation && annotationDraft?.items.length ? <AnnotationTray conversation={annotationConversation} onSend={() => { void handleSend() }} enabled={!disabled && !sending && !hidden && !takenOver} /> : null}
           onAttachmentQualityChange={(id) => setAttachments((pending) => pending.map((item) => item.id === id && item.photo ? { ...item, file: item.file === item.photo.compressed ? item.photo.original : item.photo.compressed } : item))}
           toolbarExtra={mobile
             ? <IconButton shape="pill" size="md" title={t('composer.attach')} aria-label={t('composer.attach')} aria-expanded={attachOpen} disabled={disabled} data-testid="chat-composer-attach-menu"

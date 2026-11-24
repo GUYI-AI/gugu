@@ -1,8 +1,8 @@
 /** @jsxImportSource solid-js */
+import { RunningGlyph } from '@session-chat/components/primitives/RunningGlyph';
 import { BlockStackView } from '@session-chat/components/primitives/BlockStackView';
 import {
   PlanCompletedIcon,
-  PlanInProgressIcon,
   PlanPendingIcon,
 } from '@session-chat/components/primitives/icons';
 import { Match, Switch, For } from 'solid-js';
@@ -80,7 +80,7 @@ export function PlanList(props: PlanListProps) {
                   <PlanCompletedIcon />
                 </Match>
                 <Match when={entry.status === 'in_progress'}>
-                  <PlanInProgressIcon />
+                  <RunningGlyph />
                 </Match>
                 <Match when={entry.status === 'pending'}>
                   <PlanPendingIcon />

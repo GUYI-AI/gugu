@@ -8,18 +8,17 @@ import { AppKeyboardShortcuts } from '@renderer/lib/components/app-keyboard-shor
 import { BrowserAppShortcutEvents } from '@renderer/lib/components/browser-app-shortcut-events';
 import { CodeEditorKeyboardBridge } from '@renderer/lib/components/code-editor-keyboard-bridge';
 import { useTheme } from '@renderer/lib/hooks/useTheme';
-import {
-  useWorkspaceSlots,
-  useWorkspaceWrapParams,
-} from '@renderer/lib/layout/navigation-provider';
+import { useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
+import { PageModalClose } from '@renderer/lib/components/titlebar/shell-titlebar';
+import { PAGE_MODAL_FRAME, Sheet } from '@/components/ui/Sheet';
 import { WorkspaceContentLayout, WorkspaceLayout } from '@renderer/lib/layout/workspace-layout';
 import { NoticeHost } from '@/components/NoticeHost';
 import { SshKeyInstallToasts } from '@renderer/features/remote-hosts/ssh-key-install-toasts';
 import { observer } from 'mobx-react-lite';
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ComponentType, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type CSSProperties, type ReactNode } from 'react';
 import { appState } from '@renderer/lib/stores/app-state';
 import { registeredViews } from '@renderer/lib/layout/registered-views';
-import type { ViewDefinition } from './view-registry';
+import type { ViewDefinition, ViewId } from './view-registry';
 import { useRecentSessions, type SessionParams } from './recent-session-pages';
 import { ScreenBlockContext } from './screen-block-context';
 import { anchoredToBlock, ScreenFrame, screenDropHandlers } from './screen-frame';
@@ -35,6 +34,9 @@ import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { RETAINED_SURFACE_HIDDEN_STYLE, SurfaceShown } from '@/lib/retainedSurface';
 import { sessionView } from '@renderer/features/sessions/view';
+import { runInAction } from 'mobx';
+import { pageModalOpen } from './page-modal';
+import { modalStore } from '@renderer/lib/modal/modal-store';
 import { ensureMachineSessionWiring } from '@renderer/features/remote-hosts/workspace/machine-session-wiring';
 import { ensureMachineWorkspaceBackend } from '@renderer/features/remote-hosts/workspace/machine-workspace-backend';
 import { isEmbedVisible, subscribeEmbedVisibility } from '@renderer/lib/portal-container';
@@ -42,8 +44,9 @@ import { isEmbedVisible, subscribeEmbedVisibility } from '@renderer/lib/portal-c
 
 export function Workspace() {
   useTheme();
-  const { WrapView, withoutSessionSidebar, currentView } = useWorkspaceSlots();
-  const { wrapParams } = useWorkspaceWrapParams();
+  const { modal, currentView, pageView } = useWorkspaceSlots();
+  // @@@page-modal — a modal view is drawn over the page you were on: that page stays the workspace's under it.
+  const page = pageView ?? (screenLayout.layout ? 'screen' : 'home');
   // 看哪条会话 → 这屏怎么摆:要赶在下面任何一个会话页渲染之前(同上面两件的理由)。
   ensureScreenLayoutSync();
   // gugu-embedded: while the frame is display-hidden (user on another gugu tab) the document-level
@@ -71,19 +74,14 @@ export function Workspace() {
       {/* #2548 my agents pinned to the one list (固定到左侧栏), for the shell that draws that list. Draws nothing. */}
       <PinnedSidebarAgentsPublisher />
       <WorkspaceLayout
-        sidebarHidden={withoutSessionSidebar}
         leftSidebar={<LeftSidebar />}
         innerSidebar={<InnerSidebar />}
         innerSidebarRestore={<InnerSidebarRestore />}
         mainContent={
-          <ScreenArea
-            onScreenView={isScreenView(currentView)}
-            current={currentView === 'session' ? (wrapParams as SessionParams) : null}
-          >
-            <WrapViews currentView={currentView} onScreenView={isScreenView(currentView)} WrapView={WrapView} wrapParams={wrapParams} />
-          </ScreenArea>
+          <PageArea page={page} />
         }
       />
+      {modal ? <PageModal viewId={currentView} onClose={() => appState.navigation.navigate(page as ViewId)} /> : null}
       {/* #6264「下次免密」做完的回执(装好了 / 没做成)。 */}
       <SshKeyInstallToasts />
       {/* 提示条:嵌在主 app 里时主 app 画,这里什么也不画;会话页单独成文档时由它画(#137)。 */}
@@ -147,7 +145,7 @@ const ScreenArea = observer(function ScreenArea({
         // Beside an App the page is where the App is: on another of gugu's tabs this screen is not drawn, its blocks with it.
         const peeked = peek?.sessionId === sessionId && (!embedVisible || !onSessionView || !screenLayout.blockOfSession(sessionId));
         const blockId = onSessionView && !peeked ? (screenLayout.blockOfSession(sessionId) ?? null) : null;
-        const corners = blockId ? screenLayout.corners(blockId) : { topLeft: false, topRight: false };
+        const corners = blockId ? screenLayout.corners(blockId) : { topLeft: false };
         return (
           <RetainedSessionPage
             key={sessionId}
@@ -157,7 +155,6 @@ const ScreenArea = observer(function ScreenArea({
             peekBox={peeked && peek ? peek.box : null}
             focused={peeked || (blockId !== null && mainFocused && screenLayout.focusedBlockId === blockId)}
             topLeft={corners.topLeft}
-            topRight={corners.topRight}
             multi={multi}
           />
         );
@@ -199,15 +196,14 @@ const RetainedSessionPage = memo(function RetainedSessionPage({
   peekBox,
   focused,
   topLeft,
-  topRight,
   multi,
-}: SessionParams & { blockId: string | null; peekBox: HTMLElement | null; focused: boolean; topLeft: boolean; topRight: boolean; multi: boolean }) {
+}: SessionParams & { blockId: string | null; peekBox: HTMLElement | null; focused: boolean; topLeft: boolean; multi: boolean }) {
   // A block is drawn only while the frame is; a page peeked beside an App is drawn over the shell even when the frame is hidden.
   const embedVisible = useSyncExternalStore(subscribeEmbedVisibility, isEmbedVisible);
   const shown = (blockId !== null && embedVisible) || peekBox !== null;
   const pageRef = useRef<HTMLDivElement | null>(null);
   useLayoutEffect(() => (pageRef.current && peekBox ? followBox(pageRef.current, peekBox) : undefined), [peekBox]);
-  const place = useMemo(() => ({ blockId, focused, topLeft, topRight, multi }), [blockId, focused, topLeft, topRight, multi]);
+  const place = useMemo(() => ({ blockId, focused, topLeft, multi }), [blockId, focused, topLeft, multi]);
   return (
     <div
       className="flex min-h-0 min-w-0 flex-col"
@@ -231,65 +227,64 @@ const RetainedSessionPage = memo(function RetainedSessionPage({
 /** A shown retained surface lays out as if the wrapper were not there. */
 const SHOWN_IN_PLACE: CSSProperties = { display: 'contents' };
 
-/**
- * @@@retained-places — a view marked `retained` (资源库, App 市场, 助理) stays mounted once visited and is hidden like every
- * retained surface (lib/retainedSurface.ts), so leaving it and coming back is a visibility flip, never a rebuild. Other
- * wrap views are visits and come and go.
- */
-const WrapViews = observer(function WrapViews({
-  currentView,
-  onScreenView,
-  WrapView,
-  wrapParams,
-}: {
-  currentView: string;
-  onScreenView: boolean;
-  WrapView: ComponentType<{ children: ReactNode } & Record<string, unknown>>;
-  wrapParams: Record<string, unknown>;
-}) {
-  const registry = registeredViews() as unknown as Record<string, ViewDefinition<Record<string, unknown>>>;
-  const isPlace = (viewId: string) => registry[viewId]?.retained === true;
-  const places = useRef<string[]>([]);
-  if (isPlace(currentView) && !places.current.includes(currentView)) places.current = [...places.current, currentView];
-  return (
-    <>
-      {places.current.map((viewId) => (
-        <RetainedPlace key={viewId} viewId={viewId} shown={viewId === currentView} />
-      ))}
-      {onScreenView || isPlace(currentView) ? null : (
-        <WrapView {...wrapParams}>
-          <WorkspaceViewContent />
-        </WrapView>
-      )}
-    </>
-  );
-});
+const viewOf = (viewId: string) => (registeredViews() as unknown as Record<string, ViewDefinition<Record<string, unknown>>>)[viewId];
+const paramsOf = (viewId: string) => (appState.navigation.viewParamsStore as Record<string, Record<string, unknown> | undefined>)[viewId] ?? {};
 
-const RetainedPlace = observer(function RetainedPlace({ viewId, shown }: { viewId: string; shown: boolean }) {
-  const embedVisible = useSyncExternalStore(subscribeEmbedVisibility, isEmbedVisible);
-  const def = (registeredViews() as unknown as Record<string, ViewDefinition<Record<string, unknown>>>)[viewId];
-  const params = (appState.navigation.viewParamsStore as Record<string, Record<string, unknown> | undefined>)[viewId] ?? {};
+/** The page the workspace shows: the screen (its blocks), or another view drawn over it in its place. */
+const PageArea = observer(function PageArea({ page }: { page: string }) {
+  const onScreenView = isScreenView(page);
+  const def = viewOf(page);
   const Wrap = (def.WrapView ?? Fragment) as ComponentType<{ children: ReactNode } & Record<string, unknown>>;
   const Titlebar = def.TitlebarSlot ?? NoTitlebar;
   const Main = def.MainPanel;
   return (
-    <div style={shown ? SHOWN_IN_PLACE : RETAINED_SURFACE_HIDDEN_STYLE} data-retained-place={viewId}>
-      <SurfaceShown shown={shown && embedVisible}>
-        <Wrap {...params}>
+    <ScreenArea onScreenView={onScreenView} current={page === 'session' ? (paramsOf(page) as SessionParams) : null}>
+      {onScreenView ? null : (
+        <Wrap {...paramsOf(page)}>
           <WorkspaceContentLayout titlebarSlot={<Titlebar />} mainPanel={<Main />} />
         </Wrap>
-      </SurfaceShown>
-    </div>
+      )}
+    </ScreenArea>
+  );
+});
+
+/** Fixed and zero-size, on the modal layer within the frame: a dialog in it is above the page (its sticky header too) and not clipped by its scroll area. */
+const DIALOG_LAYER: CSSProperties = { position: 'fixed', top: 0, left: 0, width: 0, height: 0, zIndex: 'var(--z-modal)' };
+
+/** A modal view (@@@page-modal), in the same modal frame as Settings (@@@page-modal-frame). */
+const PageModal = observer(function PageModal({ viewId, onClose }: { viewId: string; onClose: () => void }) {
+  useLayoutEffect(() => {
+    runInAction(() => pageModalOpen.set(true));
+    return () => runInAction(() => pageModalOpen.set(false));
+  }, []);
+  // A dialog this page asks for (modalStore, e.g. Add connector's form) lands inside the frame, as from Settings
+  // (SessionSettingsContent). On the modal layer it opened under the frame, which rises above it (--z-settings).
+  const [dialogLayer, setDialogLayer] = useState<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!dialogLayer) return;
+    modalStore.setPortalContainer(dialogLayer);
+    return () => modalStore.setPortalContainer(null);
+  }, [dialogLayer]);
+  const def = viewOf(viewId);
+  const Wrap = (def.WrapView ?? Fragment) as ComponentType<{ children: ReactNode } & Record<string, unknown>>;
+  const Titlebar = def.TitlebarSlot ?? NoTitlebar;
+  const Main = def.MainPanel;
+  return (
+    // In the session page's mount (its skin, and the layer an App's live page is drawn in); the frame rises above the
+    // shell while it is open (MainLayout, pageModalOpen).
+    <Sheet onClose={onClose} {...PAGE_MODAL_FRAME} testId="page-modal" ariaLabel={viewId}>
+      <div className="flex min-h-0 flex-1 flex-col" data-page-modal={viewId}>
+        <PageModalClose.Provider value={onClose}>
+          <Wrap {...paramsOf(viewId)}>
+            <WorkspaceContentLayout titlebarSlot={<Titlebar />} mainPanel={<Main />} />
+          </Wrap>
+        </PageModalClose.Provider>
+      </div>
+      <div ref={setDialogLayer} style={DIALOG_LAYER} />
+    </Sheet>
   );
 });
 
 function NoTitlebar() {
   return null;
-}
-
-function WorkspaceViewContent() {
-  const { TitlebarSlot, MainPanel } = useWorkspaceSlots();
-  return (
-    <WorkspaceContentLayout titlebarSlot={<TitlebarSlot />} mainPanel={<MainPanel />} />
-  );
 }

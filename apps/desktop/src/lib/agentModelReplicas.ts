@@ -12,7 +12,11 @@ export const platformModels = replica({
   read: () => fetchPlatformModelCatalog(),
   fresh: 5 * 60_000,
   watch: { start: () => followCatalogChanges(() => { void platformModels.refresh() }) },
-  persist: { maxBytes: 16384, maxEntries: 1 },
+  // The snapshot keeps the enabled models only: every reader (composer and agent model pickers, settings 「模型」) drops the
+  // rest first, and the catalog lists more disabled models than enabled ones (44 rows, 18 enabled, measured 11-22). An
+  // enabled model is ~360 B, at most 400 (protocols, per-protocol multipliers, efforts: all drawn by the picker's first
+  // frame), so 12 KB holds ~30 of them (18 today: 6.4 KB).
+  persist: { maxBytes: 12288, maxEntries: 1, kept: (models) => models.filter((model) => model.enabled) },
 })
 
 /**

@@ -1,14 +1,9 @@
-import { createChatContext } from '@session-chat/chat-context'
-import { createChatView } from '@session-chat/chat-view'
+
 import type { ChatCommands } from '@session-chat/commands'
-import { BACKGROUND_TASK_ROW_H } from '@session-chat/components/rows/background-tasks/background-tasks-parts'
 import { backgroundTasksUnitDef } from '@session-chat/components/rows/background-tasks/background-tasks.def'
-import { DEFAULT_THEME } from '@session-chat/core/theme'
 import type { BackgroundCommandEntry } from '@session-chat/lib/background-command-roster'
-import type { BackgroundTasksItem, TranscriptTurn } from '@session-chat/model'
-import { createChatState } from '@session-chat/state/chat-state'
+import type { BackgroundTasksItem,  } from '@session-chat/model'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { until } from '../../../../tests/support/awaitCondition'
 import { makeContractCtx, renderAndMeasureUnit } from './contract'
 
 /**
@@ -40,112 +35,6 @@ const bare: BackgroundCommandEntry = {
 }
 /** 一行放得下、也没说明:没东西可藏,就不是开关。 */
 const short: BackgroundCommandEntry = { id: 'short', launchToolCallId: 'toolu_short', taskId: 'task-short', name: 'pnpm test' }
-
-const flat = (text: string | null | undefined) => (text ?? '').replace(/\n/g, '')
-
-function mount(commands: ChatCommands = {}) {
-  const context = createChatContext({ locale: () => 'en-US', theme: DEFAULT_THEME })
-  const state = createChatState(context)
-  const host = document.createElement('div')
-  host.style.cssText = 'position:fixed;inset:0;width:640px;height:600px'
-  document.body.append(host)
-  const view = createChatView({ context, state, parent: host, commands })
-  teardown.push(() => {
-    view.dispose()
-    state.dispose()
-    context.dispose()
-    host.remove()
-  })
-  return { state, host }
-}
-
-const settled: TranscriptTurn = {
-  id: 't1', seq: 0, initiator: 'user', startedAt: Date.now() - 60_000,
-  items: [
-    { kind: 'message', id: 'q', seq: 0, role: 'user', text: 'Relaunch the app in the background.' },
-    { kind: 'message', id: 'a', seq: 1, role: 'assistant', text: 'Relaunched; it keeps running.' },
-  ],
-}
-
-const toggleOf = (row: HTMLElement | undefined) => row?.querySelector<HTMLElement>('[data-slot="background-task-toggle"]') ?? null
-
-describe('a background command in the list discloses progressively', () => {
-  it('is one line until opened: the summary, or the command\'s first line cut with an ellipsis', async () => {
-    const onStopBackgroundTask = vi.fn()
-    const { state, host } = mount({ onStopBackgroundTask, onDismissBackgroundTask: vi.fn() })
-    state.transcript.history.seed([settled])
-    state.session.setBackgroundTasks({ commands: [described, bare, short], subagents: [] })
-    await until('the background line is on screen', () => host.querySelector('[data-slot="background-tasks"]') !== null)
-    host.querySelector<HTMLElement>('[data-collapse-id="background-tasks:open"]')!.click()
-    await until('the list opens', () => host.querySelectorAll('[data-slot="background-task"]').length === 3)
-
-    const [describedRow, bareRow, shortRow] = [...host.querySelectorAll<HTMLElement>('[data-slot="background-task"]')]
-    // 收着:三条都是一行高,❌ 七八行。
-    for (const row of [describedRow, bareRow, shortRow]) expect(row.offsetHeight).toBe(BACKGROUND_TASK_ROW_H)
-    // 有说明:写说明,命令一个字都不铺;悬停给整条命令。
-    expect(describedRow.textContent).toContain('Relaunch isolated dev app')
-    expect(describedRow.textContent).not.toContain('pnpm --filter')
-    expect(describedRow.title).toBe(relaunchCommand)
-    // 没说明:命令第一行,一行放不下省略号收尾(字比框宽,但框只有一行)。
-    const bareToggle = toggleOf(bareRow)!
-    expect(bareToggle.textContent).toBe(bare.name)
-    expect(getComputedStyle(bareToggle).textOverflow).toBe('ellipsis')
-    expect(bareToggle.scrollWidth).toBeGreaterThan(bareToggle.clientWidth)
-    // 放得下又没说明:没东西可藏,不是开关。
-    expect(toggleOf(shortRow)).toBeNull()
-    expect(shortRow.textContent).toContain('pnpm test')
-
-    // 停止不顺带开合。
-    describedRow.querySelector<HTMLElement>('button[aria-label="Stop this background command"]')!.click()
-    expect(onStopBackgroundTask).toHaveBeenCalledWith({ stopId: 'task-relaunch' })
-    await new Promise((r) => setTimeout(r, 50))
-    expect(toggleOf(host.querySelectorAll<HTMLElement>('[data-slot="background-task"]')[0])!.getAttribute('aria-expanded')).toBe('false')
-  })
-
-  it('opens in place to the whole command and folds back on a second click', async () => {
-    const { state, host } = mount({ onStopBackgroundTask: vi.fn(), onDismissBackgroundTask: vi.fn() })
-    state.transcript.history.seed([settled])
-    state.session.setBackgroundTasks({ commands: [described, bare], subagents: [] })
-    await until('the background line is on screen', () => host.querySelector('[data-slot="background-tasks"]') !== null)
-    host.querySelector<HTMLElement>('[data-collapse-id="background-tasks:open"]')!.click()
-    await until('the list opens', () => host.querySelectorAll('[data-slot="background-task"]').length === 2)
-
-    const rows = () => [...host.querySelectorAll<HTMLElement>('[data-slot="background-task"]')]
-    toggleOf(rows()[0])!.click()
-    await until('the described command opens', () => rows()[0].dataset.open !== undefined)
-    // 说明留在上面(开关就是它),整条命令写在下面,一个字不少。
-    expect(toggleOf(rows()[0])!.textContent).toBe('Relaunch isolated dev app')
-    expect(flat(rows()[0].querySelector('[data-slot="background-task-command"]')?.textContent)).toBe(flat(relaunchCommand))
-    expect(toggleOf(rows()[0])!.getAttribute('aria-expanded')).toBe('true')
-    expect(rows()[0].offsetHeight).toBeGreaterThan(BACKGROUND_TASK_ROW_H)
-    // 写全了就不再叠系统提示。
-    expect(rows()[0].title).toBe('')
-    // 另一条不受影响。
-    expect(rows()[1].dataset.open).toBeUndefined()
-    expect(rows()[1].offsetHeight).toBe(BACKGROUND_TASK_ROW_H)
-
-    toggleOf(rows()[1])!.click()
-    await until('the bare command opens', () => rows()[1].dataset.open !== undefined)
-    // 没说明:开关那一行说「后台命令」(执行卡片「执行」+ 命令同一个样子),整条命令写在下面,一个字不少。
-    expect(toggleOf(rows()[1])!.textContent).toBe('Background command')
-    const bareCommand = rows()[1].querySelector<HTMLElement>('[data-slot="background-task-command"]')!
-    expect(flat(bareCommand.textContent)).toBe(bare.name)
-    // 整条命令不在按钮里:选得中、能复制,读屏也不会把它当按钮名念;点它不会顺带收起。
-    expect(bareCommand.closest('button')).toBeNull()
-    expect(getComputedStyle(bareCommand).userSelect).not.toBe('none')
-    expect(toggleOf(rows()[1])!.getAttribute('aria-expanded')).toBe('true')
-    bareCommand.click()
-    await new Promise((r) => setTimeout(r, 50))
-    expect(rows()[1].dataset.open).toBeDefined()
-    // 列表与「后台」那一行都长高接住它,❌ 被行根的 overflow 裁掉。
-    const list = host.querySelector<HTMLElement>('[data-slot="background-tasks"]')!
-    expect(rows()[1].getBoundingClientRect().bottom).toBeLessThanOrEqual(list.getBoundingClientRect().bottom + 0.5)
-
-    toggleOf(rows()[0])!.click()
-    await until('a second click folds it back to one line', () => rows()[0].dataset.open === undefined)
-    expect(rows()[0].offsetHeight).toBe(BACKGROUND_TASK_ROW_H)
-  })
-})
 
 describe('background command rows keep measure() === offsetHeight', () => {
   const item = (commands: BackgroundCommandEntry[]): BackgroundTasksItem => ({

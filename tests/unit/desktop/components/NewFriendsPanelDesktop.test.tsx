@@ -63,7 +63,7 @@ describe('new requests on desktop: sections, single column, drawer', () => {
     expect(row('Ann').hasAttribute('data-selected')).toBe(true)
     expect(document.querySelectorAll('[data-testid="request-detail"]')).toHaveLength(1)
     expect($('[data-testid="contacts-detail-drawer"] [data-testid="request-detail"]')?.textContent).toContain('上次会上聊过')
-    await clickElement($('[data-testid="contacts-detail-drawer"] button[title]')!)
+    await clickElement($('[data-testid="contacts-detail-drawer"] [data-drawer-back] button')!)
     expect(selected()).toHaveLength(0)
   })
 

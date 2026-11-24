@@ -775,8 +775,10 @@ writeFileSync(recordTempPath, '')
 setTimeout(() => {
   writeFileSync(recordTempPath, JSON.stringify({ pid: process.pid }))
   renameSync(recordTempPath, here('record.json'))
-}, ${FIXTURE_SIDE_EFFECT_DELAY_MS})
+}, 20)
 
+// Only this delay is the scenario: stderr arrives later than the 500 ms stderr-close wait that follows the
+// process-group terminal, so the failure text is complete only if gugu waited for that terminal first.
 function delayStderr() {
   process.removeListener('SIGTERM', delayStderr)
   setTimeout(() => {
@@ -795,7 +797,7 @@ function waitForHandlerRequest() {
     const installedTempPath = here('handler-installed.tmp')
     writeFileSync(installedTempPath, 'installed')
     renameSync(installedTempPath, here('handler-installed'))
-  }, 1_000)
+  }, 20)
 }
 waitForHandlerRequest()
 
@@ -1018,7 +1020,7 @@ while :; do sleep 1; done
         'win32'
       )
     ).toEqual({
-      command: 'powershell.exe',
+      command: String.raw`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`,
       args: [
         '-NoProfile',
         '-ExecutionPolicy',

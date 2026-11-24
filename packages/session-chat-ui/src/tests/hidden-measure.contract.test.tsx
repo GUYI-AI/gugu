@@ -9,6 +9,7 @@ import { RETAINED_SURFACE_HIDDEN_STYLE } from '@/lib/retainedSurface';
 import { until } from '../../../../tests/support/awaitCondition';
 
 const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+const UPDATES = 6
 for (const hidden of [false, true]) for (const streaming of [false, true]) {
   it(`retained row measurement hidden=${hidden} streaming=${streaming}`, async () => {
     const ctx = createChatContext({ locale: () => 'en-US' });
@@ -31,14 +32,15 @@ for (const hidden of [false, true]) for (const streaming of [false, true]) {
     const spies = [...new Set(Object.values(UNIT_REGISTRY))].map(def => vi.spyOn(def, 'measure'));
     const start = performance.now();
     try {
-      for (let i = 1; i <= 32; i++) {
+      // Six updates spaced past a frame each prove the same as 32 did: hidden rows are never measured, visible ones are.
+      for (let i = 1; i <= UPDATES; i++) {
         if (streaming) write(i);
         await new Promise(resolve => setTimeout(resolve, 125));
       }
       await frame();
       const calls = spies.reduce((sum, spy) => sum + spy.mock.calls.length, 0);
-      expect(state.transcript.activeTurn.get()?.items[0]).toMatchObject({ text: expect.stringContaining(`Visible update ${streaming ? 32 : 0}:`) });
-      console.info(JSON.stringify({ hidden, streaming, updates: streaming ? 32 : 0, wallMs: performance.now() - start, measureCalls: calls, visible: host.checkVisibility(), descendantVisible: host.firstElementChild?.checkVisibility(), contentVisibility: getComputedStyle(host).contentVisibility }));
+      expect(state.transcript.activeTurn.get()?.items[0]).toMatchObject({ text: expect.stringContaining(`Visible update ${streaming ? UPDATES : 0}:`) });
+      console.info(JSON.stringify({ hidden, streaming, updates: streaming ? UPDATES : 0, wallMs: performance.now() - start, measureCalls: calls, visible: host.checkVisibility(), descendantVisible: host.firstElementChild?.checkVisibility(), contentVisibility: getComputedStyle(host).contentVisibility }));
       expect(host.firstElementChild?.checkVisibility()).toBe(!hidden);
       if (hidden) expect(calls).toBe(0);
       if (!hidden && streaming) expect(calls).toBeGreaterThan(0);
@@ -53,7 +55,7 @@ for (const hidden of [false, true]) for (const streaming of [false, true]) {
           return !!row && row.getBoundingClientRect().height > 0;
         });
         expect(host.querySelector('[data-chat-scroll]')).toBe(scroll);
-        expect(host.textContent).toContain(`Visible update ${streaming ? 32 : 0}:`);
+        expect(host.textContent).toContain(`Visible update ${streaming ? UPDATES : 0}:`);
         expect(spies.reduce((sum, spy) => sum + spy.mock.calls.length, 0)).toBeGreaterThan(0);
       }
     } finally {

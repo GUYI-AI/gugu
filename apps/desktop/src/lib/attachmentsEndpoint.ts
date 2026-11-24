@@ -10,6 +10,7 @@ import { rendererLogger } from './log'
 import { i18n } from '../i18n'
 import type { AttachmentUploadContext } from './taskAttachmentUpload'
 import { pathOfFile } from './fileOnDisk'
+import { holdSentItem } from './sentFileCopies'
 import { prefetchTaskFiles, pushTaskFiles, pushTaskAttachment, taskAttachmentUsesSsh, taskAttachmentWorkspacePath, type TaskAttachmentTarget } from './taskAttachmentTarget'
 
 // Every image this renderer uploads or declares (the phone's and the web's composer, a task's attachment) offers this preview.
@@ -90,7 +91,10 @@ export async function prepareTaskAttachment(file: File): Promise<TurnFileRef | n
   const dropped = pathOfFile(file)
   const own = dropped && !mustCopyRatherThanReference(dropped) && !isHeicLikeFile(file)
   const copy = own ? null : await api.invoke('files:task-copy', { name, data: await file.arrayBuffer(), mimeType }) as { path: string; name: string; size: number; mimeType?: string }
-  return { itemId: crypto.randomUUID(), version: 1, name: copy?.name ?? name, mimeType: copy?.mimeType ?? mimeType, sizeBytes: copy?.size ?? file.size, path: copy?.path ?? dropped }
+  const ref = { itemId: crypto.randomUUID(), version: 1, name: copy?.name ?? name, mimeType: copy?.mimeType ?? mimeType, sizeBytes: copy?.size ?? file.size, path: copy?.path ?? dropped }
+  // The picture shows from this device until the folder can answer for it (a first message that is a picture alone).
+  if (mimeType.startsWith('image/') && !isHeicLikeFile(file)) holdSentItem(ref.itemId, ref.version, file)
+  return ref
 }
 
 /**

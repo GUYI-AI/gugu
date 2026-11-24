@@ -49,21 +49,23 @@ export function createPinoLogger(opts: PinoLoggerOptions = {}): Logger {
 }
 
 function wrapPino(pino: pinoLib.Logger, level: LogLevel): Logger {
-  function emit(fn: pinoLib.LogFn, message: string, fields?: LogFields): void {
+  function emit(at: 'debug' | 'info' | 'warn' | 'error', message: string, fields?: LogFields): void {
+    // A level that is off writes nothing, so its fields are not walked either: a debug line on a hot path costs nothing.
+    if (!pino.isLevelEnabled(at)) return;
     const prepared = fields ? (prepareFields(fields) as object) : undefined;
     if (prepared) {
-      fn.call(pino, prepared, message);
+      pino[at](prepared, message);
     } else {
-      fn.call(pino, message);
+      pino[at](message);
     }
   }
 
   return {
     level,
-    debug: (message, fields) => emit(pino.debug.bind(pino), message, fields),
-    info: (message, fields) => emit(pino.info.bind(pino), message, fields),
-    warn: (message, fields) => emit(pino.warn.bind(pino), message, fields),
-    error: (message, fields) => emit(pino.error.bind(pino), message, fields),
+    debug: (message, fields) => emit('debug', message, fields),
+    info: (message, fields) => emit('info', message, fields),
+    warn: (message, fields) => emit('warn', message, fields),
+    error: (message, fields) => emit('error', message, fields),
     child: (bindings) => {
       const prepared = prepareFields(bindings) as object;
       return wrapPino(pino.child(prepared), level);

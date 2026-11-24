@@ -6,7 +6,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { nativeHomeRoots } from '@gugu/session-core/agents/plugins/helpers';
 import { requireNativeHome } from '@gugu/session-plugins/agents';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions, workspaces } from '@main/db/schema';
 import { events } from '@main/lib/events';
@@ -38,6 +38,7 @@ import { resolveAgentHomeEnv } from '@main/core/agents/agent-home';
 import { inheritSessionPlatformModel } from './platform-model-selection';
 
 type SessionRow = typeof sessions.$inferSelect;
+type LineageRow = Pick<SessionRow, 'id' | 'provider' | 'providerSessionId' | 'lastInteractedAt'>;
 
 const SCAN_MIN_INTERVAL_MS = 5_000;
 const lastScanAt = new Map<string, number>();
@@ -359,10 +360,15 @@ async function mtimeOf(filePath: string): Promise<number | null> {
  * ACP 分叉是同一个形状,只是「还没认领」写法不同:ACP 会话出生时 `sessionId = null`,`session/fork`
  * 拿回新 id 之后才写进来 —— 而 claude ACP 适配器写 transcript 与咕咕落这一格之间同样有空档
  * (#6269 实测:forkedSessionId 返回后约 1 秒,一趟扫描把它登记成了来源的外部 fork)。
+ *
+ * 换计费路的分叉(`forkOnStartProviderSessionId` 仍指着本行的会话)也是同一个形状,只是分叉落回**同一行**:
+ * 那条 child 是这一行自己的,认领前同样留到下一趟。
  */
 function unclaimedProductForkSourceIds(rows: SessionRow[]): Set<string> {
   const sources = new Set<string>();
   for (const row of rows) {
+    const pendingSameRowFork = row.config?.forkOnStartProviderSessionId;
+    if (pendingSameRowFork && pendingSameRowFork === row.providerSessionId) sources.add(row.id);
     const forkedFrom = row.config?.forkedFrom?.sessionId;
     if (!forkedFrom) continue;
     const unclaimed = row.runtime === 'acp' ? row.providerSessionId === null : row.providerSessionId === row.id;
@@ -507,6 +513,12 @@ export async function captureExternalForks(projectId: string, ...sessionIds: str
   const watched = db.select().from(sessions).where(inArray(sessions.id, watchedIds)).all();
   let projectRows: SessionRow[] | undefined;
   const readProjectRows = () => (projectRows ??= db.select().from(sessions).where(eq(sessions.projectId, projectId)).all());
+  // 谱系候选池只要未归档的几条、只要这几列:一个目录里只要有一份不认识的记录(用户自己在那儿开过 claude),
+  // 每一趟都要组一次池 —— 按整行读全项目,就是每 5 秒把每条会话的 config 读一遍。
+  let lineageRows: LineageRow[] | undefined;
+  const readLineageRows = () => (lineageRows ??= db
+    .select({ id: sessions.id, provider: sessions.provider, providerSessionId: sessions.providerSessionId, lastInteractedAt: sessions.lastInteractedAt })
+    .from(sessions).where(and(isNull(sessions.archivedAt), eq(sessions.projectId, projectId))).all());
   // 运行时自己 fork 出、只活在运行时里的会话(#4236)不进侧栏 —— 这一条的、同目录别的会话的都一样。
   // ❌ 以前遇到「别的会话的」就抛错:而一个工作目录挂多条会话是常态,于是每一趟都在半路
   // 抛错退出,外部 fork 永远认领不到(正式版日志每小时 1400+ 条 `forkCapture: scan failed`)。
@@ -519,7 +531,8 @@ export async function captureExternalForks(projectId: string, ...sessionIds: str
   for (const workspace of workspaceRows) {
     if (!workspace.path || isRetiredRemoteWorkspace(workspace)) continue;
     const managed = watched.filter((row) => row.workspaceId === workspace.id);
-    await captureWorkspaceForks(projectId, { id: workspace.id, path: workspace.path }, managed, readProjectRows, knownProviderSessionIds);
+    await captureWorkspaceForks(projectId, { id: workspace.id, path: workspace.path }, managed, readProjectRows, readLineageRows,
+      knownProviderSessionIds);
   }
 }
 
@@ -534,7 +547,7 @@ async function engineEnv(providerId: 'claude' | 'codex'): Promise<NodeJS.Process
 
 /** 一个工作目录里盯着的会话一趟扫完:记录目录只列一次。 */
 async function captureWorkspaceForks(projectId: string, workspace: { id: string; path: string }, managed: SessionRow[],
-  readProjectRows: () => SessionRow[], knownProviderSessionIds: Set<string>): Promise<void> {
+  readProjectRows: () => SessionRow[], readLineageRows: () => LineageRow[], knownProviderSessionIds: Set<string>): Promise<void> {
   // 待认领的产品分叉是别的会话(#6269),它的来源却是盯着的这些 —— 所以按整个项目找。
   const unclaimedForkSourceIds = () => unclaimedProductForkSourceIds(readProjectRows());
   // Claude slugs its transcript dir from the session cwd AFTER resolving symlinks — on
@@ -564,7 +577,7 @@ async function captureWorkspaceForks(projectId: string, workspace: { id: string;
   // 错认成来源的儿子,而 config.forkedFrom 一经写下就是永久的。父亲认准之后**由盯着父亲的那一趟登记**,
   // 别的会话只让它进池(好让它的后代也认对父亲),不替人落行。
   const managedById = new Map(managed.map((row) => [row.id, row]));
-  const lineageRows = readProjectRows().filter((row) => !row.archivedAt).map((row) => managedById.get(row.id) ?? row);
+  const lineageRows = readLineageRows().map((row) => managedById.get(row.id) ?? row);
   const foreignLineageIds = new Set(lineageRows.filter((row) => !managedById.has(row.id)).map((row) => row.id));
   const pool: LineageCandidate[] = [];
   for (const row of lineageRows) {

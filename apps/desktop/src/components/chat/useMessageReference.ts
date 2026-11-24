@@ -42,4 +42,7 @@ function useAccountRead<Q, T>(model: Replica<[Q], T>, request: Q, chatOf: (reque
 const referenceChat = (target: MessageReferenceTarget, read: Awaited<ReturnType<typeof readMessageReference>> | undefined) =>
   target.kind === 'message' ? target.chatId : read?.status === 'readable' ? read.message.chat_id : undefined
 export const useMessageReference = (target: MessageReferenceTarget) => useAccountRead(messageReference, target, referenceChat)
-export const useWidgetOriginal = (message: WidgetOriginMessage) => useAccountRead(widgetOriginal, message, original => original?.chat_id)
+// The read is keyed by these fields alone: a row's receipts, delivery or reactions changing is not a new read, which would
+// drop the widget's page until it is read again.
+export const useWidgetOriginal = ({ id, chat_id, content }: WidgetOriginMessage) =>
+  useAccountRead(widgetOriginal, { id, chat_id, content }, original => original.chat_id)

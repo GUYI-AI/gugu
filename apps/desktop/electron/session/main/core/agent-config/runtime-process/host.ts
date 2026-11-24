@@ -211,10 +211,11 @@ export async function disposeAgentConfigRuntimeProcess(): Promise<void> {
 export function withHostResolvedCli(
   client: ContractClient<AgentConfigRuntimeContract>
 ): AgentConfigRuntimeClient {
-  const runContextFor = (input: { providerId: string; program?: string; connectionId?: string }) =>
+  const runContextFor = (input: { providerId: string; program?: string; connectionId?: string; forLogin?: boolean }) =>
     resolveLocalAgentRunContext(input.providerId, {
       role: input.program === undefined ? 'primary' : authProgramRole(getPlugin(input.providerId), input.program),
       connectionId: input.connectionId,
+      forLogin: input.forLogin,
     });
   return {
     ...client,
@@ -261,6 +262,11 @@ export function withHostResolvedCli(
       if (!refreshed.success) throw new Error('Connection removed, but the sign-in status could not be refreshed');
     }),
     selectConnection: ({ stopBusySessions, ...input }) => connectionOperation(async () => {
+      if (input.providerId === 'codex') {
+        const { switchSubscription } = await import('@main/core/sessions/subscription-switch');
+        await switchSubscription(input.providerId, input.connectionId, {}, { stopBusySessions });
+        return;
+      }
       const status = await client.refreshAuthStatus({ ...input, runContext: await runContextFor(input) });
       if (!status.success) throw new Error('Cannot read the connection’s sign-in status');
       if (input.connectionId !== 'native' && status.data.kind !== 'authenticated') throw new Error('Sign in before using this connection');
@@ -280,7 +286,7 @@ export function withHostResolvedCli(
     // ❌ 默认连接的 key)。renderer 送来什么连接都一样 —— 旧版本的界面没带连接,也不会把选中的 key 带进去。
     startLogin: async (input, options) =>
       client.startLogin(
-        { ...input, runContext: await runContextFor({ ...input, connectionId: harnessLoginConnectionId(input.providerId, input.connectionId) }) },
+        { ...input, runContext: await runContextFor({ ...input, connectionId: harnessLoginConnectionId(input.providerId, input.connectionId), forLogin: true }) },
         options
       ),
     refreshAuthStatus: async (input, options) =>

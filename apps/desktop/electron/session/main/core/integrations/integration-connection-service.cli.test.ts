@@ -6,6 +6,11 @@ import type { CliLoginOutcome, CliLoginRun } from './cli/cli-login';
 import type { CliLoginPrompt } from './cli/cli-tools';
 import type { McpOAuthCredentials } from '@gugu/session-plugins/integrations';
 import { installedCliTool } from './cli/cli-tool-installer';
+import { hostCatalog } from '../../../../../shared/host-localization';
+import { setSessionHostCopy } from '../host-copy';
+
+// The host injects its copy at startup; these cases read the Chinese host's.
+setSessionHostCopy(hostCatalog('zh-CN').sessionHost);
 
 /**
  * 官方命令行的连接:同一家先后点了几次「连接」、中途关了弹窗,每一次只收拾自己起的登录(审查 #7237 实撞的三种)。

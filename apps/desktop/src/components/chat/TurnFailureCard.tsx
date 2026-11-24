@@ -49,7 +49,7 @@ export function TurnFailureCard({ reason, displayName: name, agentId, avatar, cr
         <div className="tfc" data-tone={presentation.tone} role="status" aria-live="polite" aria-label={cause}>
           <AlertTriangle size={16} className="tfc-icon" aria-hidden />
           <div className="tfc-head">
-            {agentId ? <Avatar name={displayName} avatarUrl={avatar} seed={agentId} size="xs" isAgent harnessBadge={false} /> : null}
+            {agentId ? <Avatar name={displayName} avatarUrl={avatar} seed={agentId} size="xs" isAgent /> : null}
             <span className="tfc-name" title={displayName}>{displayName}</span>
             <span className="tfc-title">{title}</span>
             {count > 1 ? <span className="tfc-count">×{count}</span> : null}

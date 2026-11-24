@@ -1,4 +1,4 @@
-import { Eye, EyeOff, MessageSquare, Trash2, X } from '@/lib/icons';
+import { Eye, EyeOff, MousePointer, Trash2, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
 import { annotationConversationKey, type AnnotationConversation, type BrowserAnnotationInspection, type BrowserAnnotationQuery, type BrowserAnnotationTarget } from '@shared/browser-annotation';
@@ -7,7 +7,6 @@ import { events, rpc } from '@renderer/lib/ipc';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { rendererLogger } from '@/lib/log';
-import { useAuth } from '@/store/auth';
 import { AnnotationEditor, AnnotationMarker } from '../sessions/annotations/annotation-editor';
 import { sessionAnnotations } from '../sessions/annotations/session-annotations';
 import { markedAnnotationScreenshot } from './annotation-screenshot';
@@ -24,22 +23,21 @@ export function useBrowserAnnotations({ conversation, browserId, visible, availa
   const [active, setActive] = useState(false);
   const exit = useCallback(() => setActive(false), []);
   const { translate } = useSessionMessages();
-  const accountId = useAuth().user?.id;
   return {
-    toolbar: <Button type="button" variant="ghost" size="sm" disabled={!conversation || !available} className="h-7 shrink-0 gap-2 px-2 aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
+    toolbar: <Button type="button" variant="ghost" size="sm" disabled={!conversation || !available} className="h-[26px] shrink-0 gap-1 rounded-sm px-[6px] text-foreground-passive aria-pressed:bg-[color-mix(in_oklab,var(--live-light)_16%,transparent)] aria-pressed:text-[var(--live-light)]"
       aria-pressed={active} title={active ? `${translate('annotations.hint')}: ${translate('annotations.browse')}` : translate('annotations.annotate')}
-      onClick={() => setActive(!active)}><MessageSquare className="size-3.5" />{translate('annotations.mode')}</Button>,
-    overlay: active && visible && available && conversation ? <BrowserAnnotationOverlay key={`${browserId}:${annotationConversationKey(conversation)}:${accountId ?? ''}`} conversation={conversation} accountId={accountId} browserId={browserId}
+      onClick={() => setActive(!active)}><MousePointer className="size-[15px]" />{translate('annotations.mode')}</Button>,
+    overlay: active && visible && available && conversation ? <BrowserAnnotationOverlay key={`${browserId}:${annotationConversationKey(conversation)}`} conversation={conversation} browserId={browserId}
       inspect={inspect} onExit={exit} filePath={filePath} subscribeSpaceRelease={subscribeSpaceRelease} /> : null,
   };
 }
 
-const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ conversation, accountId, browserId, inspect, onExit, filePath, subscribeSpaceRelease }: {
-  conversation: AnnotationConversation; accountId?: string; browserId: string; inspect: InspectAnnotation; onExit: () => void;
+const BrowserAnnotationOverlay = observer(function BrowserAnnotationOverlay({ conversation, browserId, inspect, onExit, filePath, subscribeSpaceRelease }: {
+  conversation: AnnotationConversation; browserId: string; inspect: InspectAnnotation; onExit: () => void;
   filePath?: string; subscribeSpaceRelease?: SubscribeSpaceRelease;
 }) {
   const { translate } = useSessionMessages();
-  const draft = sessionAnnotations.forConversation(conversation, accountId);
+  const draft = sessionAnnotations.forConversation(conversation);
   const root = useRef<HTMLDivElement>(null);
   const [browsing, setBrowsing] = useState(false);
   const [hover, setHover] = useState<BrowserAnnotationTarget | null>(null);

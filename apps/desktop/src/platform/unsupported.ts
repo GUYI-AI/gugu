@@ -1,3 +1,4 @@
+import { unsupportedAccountClosureV2 } from './desktopAccountClosureV2'
 import { unsupportedAccountClosure } from './accountClosure'
 import type { AppPlatform } from './types'
 import { unavailableCapability } from './errors'
@@ -10,6 +11,7 @@ export function createUnsupportedPlatform(
 
   return {
     accountClosure: unsupportedAccountClosure,
+    accountClosureV2: unsupportedAccountClosureV2,
     kind,
     documentTitle: '咕咕',
     systemPermissions: [],

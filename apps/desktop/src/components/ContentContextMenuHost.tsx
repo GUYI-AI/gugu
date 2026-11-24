@@ -1,5 +1,6 @@
 import { detectPlatform, matchesKeyboardEvent } from '@tanstack/react-hotkeys'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives'
 import { RENDERER_CONTENT_MENU_OPEN, RENDERER_MESSAGE_MENU_OPEN, finishRendererContentMenu, type RendererContentContextMenu, type RendererMessageMenu } from '@/lib/contentContextMenu'
 import { desktopIpc } from '@/platform/desktopIpc'
 import { CONTENT_CONTEXT_MENU_ACTION, CONTENT_CONTEXT_MENU_OPEN, type ContentContextMenu } from '@/session/shared/content-context-menu'
@@ -7,10 +8,15 @@ import { useToast } from './toastContext'
 import { ContentMenu } from './ContentMenu'
 import { MsgMoreMenu } from './chat/MsgMoreMenu'
 import { MobileFileContextMenu } from './preview/MobileFileContextMenu'
+import { useHostLayer } from './HostLayer'
 
 /** Only presentation crosses into the renderer; the host retains the captured action closures. */
 export function ContentContextMenuHost() {
-  const [menu, setMenu] = useState<RendererContentContextMenu | null>(null)
+  // `fromMain`: opened by the main process for content that may be a native web page view (the in-app browser, file
+  // viewers, Apps, terminals). That menu is drawn in the host layer above native views, so the page never steps aside
+  // (a stepped-aside page swapped for a snapshot flashes on Windows). Menus this document opens itself draw in place.
+  const [menu, setMenu] = useState<(RendererContentContextMenu & { fromMain?: boolean }) | null>(null)
+  const layer = useHostLayer(!!menu?.fromMain)
   // A lifted (phone) menu stays mounted closed until the next one: its bubble settles back as it closes.
   const [messageMenu, setMessageMenu] = useState<(RendererMessageMenu & { open: boolean }) | null>(null)
   const { toast } = useToast()
@@ -34,11 +40,13 @@ export function ContentContextMenuHost() {
   }, [])
 
   useEffect(() => desktopIpc()?.eventOn(CONTENT_CONTEXT_MENU_OPEN, data => {
-    setMenu(data as ContentContextMenu)
+    setMenu({ ...(data as ContentContextMenu), fromMain: true })
   }), [])
 
+  // Keys and window blur belong to the document the menu is in: in the layer, this window blurs as the layer takes focus.
+  const menuWindow = menu?.fromMain && layer !== undefined ? layer?.ownerDocument.defaultView ?? null : window
   useEffect(() => {
-    if (!menu) return
+    if (!menu || !menuWindow) return
     const platform = detectPlatform()
     const keydown = (event: KeyboardEvent) => {
       if (event.isComposing) return
@@ -48,18 +56,20 @@ export function ContentContextMenuHost() {
       event.stopImmediatePropagation()
       if (item.enabled !== false) finish(menu.requestId, item.id)
     }
-    window.addEventListener('keydown', keydown, true)
+    menuWindow.addEventListener('keydown', keydown, true)
     const blur = () => finish(menu.requestId)
-    window.addEventListener('blur', blur)
+    menuWindow.addEventListener('blur', blur)
     return () => {
-      window.removeEventListener('keydown', keydown, true)
-      window.removeEventListener('blur', blur)
+      menuWindow.removeEventListener('keydown', keydown, true)
+      menuWindow.removeEventListener('blur', blur)
       finish(menu.requestId)
     }
-  }, [finish, menu])
+  }, [finish, menu, menuWindow])
 
   return <>
-    {menu && <ContentMenu key={menu.requestId} menu={menu} onClose={() => finish(menu.requestId)} onAction={actionId => finish(menu.requestId, actionId)} />}
+    {menu && (!menu.fromMain || layer !== null) && <UiPortalContainerProvider value={menu.fromMain ? layer : undefined}>
+      <ContentMenu key={menu.requestId} menu={menu} onClose={() => finish(menu.requestId)} onAction={actionId => finish(menu.requestId, actionId)} />
+    </UiPortalContainerProvider>}
     {messageMenu && <MessageMenu key={messageMenu.requestId} menu={messageMenu} onClose={() => setMessageMenu(menu => menu?.lift ? { ...menu, open: false } : null)} />}
     <MobileFileContextMenu />
   </>

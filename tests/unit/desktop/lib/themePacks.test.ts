@@ -8,7 +8,7 @@ import { BUILTIN_THEME_PACKS } from '../../../../apps/desktop/src/session/render
 import { parseThemeLink, ThemeImportError } from '../../../../apps/desktop/src/session/renderer/lib/theme/theme-pack-import'
 import { pickVariants, readVsix } from '../../../../apps/desktop/src/session/renderer/lib/theme/theme-pack-vsix'
 import {
-  CONTRAST_FLOORS,
+  contrastFailures,
   MIN_TEXT_STEP,
   GUGU_DEFAULT_SWATCH,
   packModes,
@@ -17,7 +17,6 @@ import {
   paletteIsReadable,
   resolvePalette,
   themePackStylesheet,
-  type PaletteRole,
 } from '../../../../apps/desktop/src/session/renderer/lib/theme/theme-packs'
 
 const root = join(__dirname, '../../../..')
@@ -87,13 +86,9 @@ describe('built-in theme packs', () => {
     '%s (%s): every text role clears its floor on every surface it sits on',
     (_id, mode, pack) => {
       const p = resolvePalette(pack.modes[mode]!, mode)
-      const surfaces = { page: p.page, bg: p.bg, card: p.card, muted: p.muted }
-      const colorOf: Record<PaletteRole, string> = { fg: p.fg, mutedFg: p.mutedFg, faintFg: p.faintFg, live: p.live, dangerFg: p.dangerFg, warnFg: p.warnFg, okFg: p.okFg }
-      for (const [role, { min, on }] of Object.entries(CONTRAST_FLOORS) as Array<[PaletteRole, (typeof CONTRAST_FLOORS)[PaletteRole]]>) {
-        for (const surface of on) {
-          expect(contrastRatio(colorOf[role], surfaces[surface]), `${role} on ${surface}`).toBeGreaterThanOrEqual(min)
-        }
-      }
+      expect(contrastFailures(p)).toEqual([])
+      // 浮在窗口底上的卡片(--bg)和底分得开,和咕咕默认一样深(0.071,色值取整后差一点)(@@@theme-ground)。
+      if (mode === 'light') expect(oklabLightness(p.bg) - oklabLightness(p.ground[0])).toBeGreaterThanOrEqual(0.069)
       // 表面阶梯:窗口底层低于内容;深色时浮层高于内容、浅色时不低于内容;填充面与卡片分得开。
       expect(oklabLightness(p.bg) - oklabLightness(p.page)).toBeGreaterThanOrEqual(0.012)
       if (mode === 'dark') expect(oklabLightness(p.card) - oklabLightness(p.bg)).toBeGreaterThanOrEqual(0.02)
@@ -125,9 +120,12 @@ describe('built-in theme packs', () => {
 
   it('the "Gugu default" preview swatch is a verbatim copy of tokens.css', () => {
     const values = (name: string) => [...tokens.matchAll(new RegExp(`^\\s*--${name}:\\s*(#[0-9a-fA-F]{6})\\b`, 'gm'))].map((m) => m[1].toLowerCase())
-    for (const [key, token] of [['bg', 'bg'], ['page', 'page'], ['card', 'card'], ['fg', 'fg'], ['mutedFg', 'muted-fg']] as const) {
+    for (const [key, token] of [['bg', 'bg'], ['card', 'card'], ['fg', 'fg'], ['mutedFg', 'muted-fg']] as const) {
       expect(values(token).slice(0, 2), token).toEqual([GUGU_DEFAULT_SWATCH.dark[key], GUGU_DEFAULT_SWATCH.light[key]])
     }
+    // 窗口底:深色是 page,浅色是 --ground 那条渐变的三个色标。
+    expect(values('page')[0]).toBe(GUGU_DEFAULT_SWATCH.dark.ground[0])
+    expect(tokens).toContain(`--ground: linear-gradient(90deg, ${GUGU_DEFAULT_SWATCH.light.ground.map((c, i) => `${c} ${['0', '30%', '100%'][i]}`).join(', ')});`)
     expect(tokens).toContain(`--live-dark: ${GUGU_DEFAULT_SWATCH.dark.live};`)
     expect(tokens).toContain(`--live-light: ${GUGU_DEFAULT_SWATCH.light.live};`)
   })
@@ -149,6 +147,14 @@ describe('themePackStylesheet', () => {
     expect(css).toContain('--live-dark:')
     expect(css).toContain('--live-light:')
     expect(css).not.toMatch(/--live:/)
+  })
+
+  it('a light theme replaces the whole warm family of the default light ground; dark leaves it to the seeds', () => {
+    const [dark, light] = themePackStylesheet({ dark: pack, light: pack }).split(":root[data-theme='light']")
+    for (const name of ['--ground', '--shell-muted-fg', '--capsule-bg', '--capsule-hover', '--topic-mark-bg', '--topic-mark-fg']) {
+      expect(light, name).toContain(`${name}:`)
+      expect(dark, name).not.toContain(`${name}:`)
+    }
   })
 
   it('every variable it writes is a variable tokens.css declares', () => {

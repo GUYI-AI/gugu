@@ -1,3 +1,4 @@
+import type { AccountClosureV2Native } from './accountClosureV2'
 import type { AccountClosureNative } from './accountClosure'
 import type { LocalUsageRequest, LocalUsageSnapshot } from '@gugu/core/shared/usage/dailyUsage'
 import type { RendererCommandDomain } from '../lib/rendererCommandProtocol'
@@ -113,6 +114,9 @@ export type ChatNotificationPresentation = {
 
 export interface AppPlatform {
   accountClosure: AccountClosureNative
+  accountClosureV2?: AccountClosureV2Native
+  /** Bind the account captured by an explicit human action; never startup/reconciliation. */
+  resumeAgentsAfterAccountClosure?: (expectedOwnerId: string) => Promise<void>
   kind: 'electron' | 'capacitor' | 'web'
   documentTitle: string
   textSelection?: NativeTextSelection
@@ -235,7 +239,7 @@ export interface AppPlatform {
   /** 渲染层建 / 改 / 删了定时任务:本机设备 runtime 当场重排(表上没有事件)。只有 Electron 有。 */
   notifyScheduledTasksChanged?: () => void
   /**
-   * 重启整个应用。退出登录后调用 —— 理由见 App.tsx 的调用点。
+   * 重启整个应用(设置 → 设备动作里的「重启」)。
    * 由 appRelaunch capability 把门;没有这个能力的平台抛错,❌ 不静默 no-op。
    */
   relaunchApp: () => Promise<void>

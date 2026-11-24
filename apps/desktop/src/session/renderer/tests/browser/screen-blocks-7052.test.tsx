@@ -1,8 +1,9 @@
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { page } from 'vitest/browser';
-import { BlockGrip, ScreenFrame, screenDropHandlers, startSessionBlockDrag } from '@renderer/app/screen-frame';
-import { blockDropPreview, resolveBlockDrop, setBlockDropPreview } from '@renderer/app/screen-layout-actions';
+import { ScreenFrame, screenDropHandlers } from '@renderer/app/screen-frame';
+import { BlockGrip, blockReturnDropTarget } from '@renderer/app/block-grip';
+import { blockDropPreview, navigateToGroupRoot, resolveBlockDrop, setBlockDropPreview } from '@renderer/app/screen-layout-actions';
 import { clearDraggedScreenContent, hasDraggedScreenContent, setDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { shieldNativeDrags } from '@renderer/lib/drag-shield';
 import { DropHighlightLayer } from '@renderer/lib/drop-highlight';
@@ -10,7 +11,6 @@ import { screenLayout } from '@renderer/app/screen-layout';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
-import { drainTopicSplitRequest } from '@/lib/topicSplitRequest';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import { WorkspaceLayoutContextProvider } from '@renderer/lib/layout/layout-provider';
 
@@ -101,25 +101,6 @@ describe('一屏几块的骨架 (#7052)', () => {
     composer.remove();
   });
 
-  it('opens a topic only after its source chat lands in a workspace split', async () => {
-    screenLayout.show(s('a'));
-    root!.render(<ScreenFrame />);
-    await until('one block', () => blockWidths().length === 1);
-    const rect = host!.querySelector('[data-screen-block]')!.getBoundingClientRect();
-    const dataTransfer = new DataTransfer();
-    setDraggedScreenContent(dataTransfer, { kind: 'chat', chatId: 'group', title: 'Topic', topic: { chatId: 'topic', name: 'Topic' } });
-    const handlers = screenDropHandlers(true);
-    const event = { dataTransfer, target: host, clientX: rect.left + 5, clientY: rect.top + rect.height / 2, preventDefault: vi.fn(), stopPropagation: vi.fn() };
-    const composer = document.createElement('div');
-    composer.dataset.slot = 'composer-bar';
-    handlers.onDropCapture({ ...event, target: composer } as never);
-    expect(drainTopicSplitRequest('group')).toBeNull();
-    handlers.onDropCapture(event as never);
-    expect(screenLayout.order).toHaveLength(2);
-    expect(drainTopicSplitRequest('group')).toEqual({ chatId: 'topic', name: 'Topic', sourceChatId: 'group', focusComposer: true });
-    screenLayout.close(screenLayout.order.find((id) => screenLayout.blocks.get(id)?.kind === 'chat')!);
-    clearDraggedScreenContent();
-  });
 
   it('can move an existing block beside its neighbour using the space its old block releases', async () => {
     host!.style.width = '800px';
@@ -210,6 +191,32 @@ describe('一屏几块的骨架 (#7052)', () => {
     expect(slot(), '2 → 1').toBe(original);
     expect(blockWidths()).toEqual([1000]);
     expect(JSON.stringify(screenLayout.snapshot), '1 → 2 → 1 存下来的一个字节不差').toBe(saved);
+  });
+
+  // A group already alone on its screen: its name in the inner sidebar, or 「新任务」 there, goes back to the group itself.
+  // That is the block on screen: a new block id would remount the conversation behind the folder card (every message
+  // row and image fetched and decoded again).
+  it('going back to a group that is already alone on screen keeps its block and the conversation slot in it', async () => {
+    screenLayout.show({ kind: 'chat', chatId: 'chat-root' });
+    root!.render(<WorkspaceLayoutContextProvider><ScreenFrame /></WorkspaceLayoutContextProvider>);
+    await until('chat block rendered', () => blockWidths().length === 1);
+    const blockId = screenLayout.order[0];
+    const original = document.querySelector(`[data-screen-block="${blockId}"]`);
+    expect(original).not.toBeNull();
+
+    navigateToGroupRoot('chat-root');
+    navigateToGroupRoot('chat-root');
+    await nextFrames(5);
+    expect(screenLayout.order).toEqual([blockId]);
+    expect(document.querySelector(`[data-screen-block="${blockId}"]`)).toBe(original);
+    expect(original!.isConnected).toBe(true);
+
+    // With something beside it, going back to the group still leaves it alone (the pair is put away).
+    screenLayout.showBeside(s('b'));
+    await until('两块铺开', () => blockWidths().length === 2);
+    navigateToGroupRoot('chat-root');
+    await until('one block again', () => blockWidths().length === 1);
+    expect(screenLayout.order.map((id) => screenLayout.blocks.get(id))).toEqual([{ kind: 'chat', chatId: 'chat-root' }]);
   });
 
   // 只有一块时是「一格的组」,不重挂:从群里点 agent 的名字,参与者在右边分出一块,同一组从 1 格变 2 格
@@ -413,9 +420,12 @@ describe('一屏几块的骨架 (#7052)', () => {
   // 拖 ⋮⋮ 也要开拖拽遮罩:它的 onDragStart 曾经 stopPropagation,React 19 把原生 dragstart 停在根容器上,document 上的
   // shieldNativeDrags 听不到 —— 拖着经过 HTML 预览时指针进了 iframe(复核 659bafb7f 在真 React 上量到)。真组件、真 React 根。
   it('拖 ⋮⋮ 时遮罩开、拖完关', async () => {
+    screenLayout.show(s('g'));
+    screenLayout.showBeside(s('h'));
+    const blockId = screenLayout.blockOfSession('g')!;
     const stop = shieldNativeDrags(document, hasDraggedScreenContent, () => {});
     try {
-      root!.render(<BlockGrip label="grip" onDragStart={(event) => startSessionBlockDrag(event, { projectId: 'p', sessionId: 'g', title: 'G' })} />);
+      root!.render(<BlockGrip blockId={blockId} content={{ kind: 'session', ...s('g'), title: 'G' }} label="grip" />);
       await nextFrames(2);
       const grip = host!.querySelector<HTMLElement>('[data-block-grip]')!;
       const dataTransfer = new DataTransfer();
@@ -427,5 +437,101 @@ describe('一屏几块的骨架 (#7052)', () => {
       stop();
       clearDraggedScreenContent();
     }
+  });
+});
+
+describe('⋮⋮ 只在并排时有;拖走 = 取消并排', () => {
+  const grip = () => document.querySelector<HTMLElement>(`[data-block-grip]`);
+  const mount = async (blockId: () => string | undefined, sidebar = false) => {
+    root!.render(<>
+      <WorkspaceLayoutContextProvider><ScreenFrame /></WorkspaceLayoutContextProvider>
+      {sidebar ? <div data-test-inner-sidebar="" style={{ position: 'fixed', left: 0, top: 600, width: 200, height: 80 }} {...blockReturnDropTarget()} /> : null}
+      <div style={{ position: 'fixed', left: 0, top: 690 }}><BlockGrip blockId={blockId() ?? null} content={{ kind: 'session', ...s('a'), title: 'A' }} label="grip" /></div>
+    </>);
+    await nextFrames(2);
+  };
+  const twoBlocks = async (sidebar = false) => {
+    screenLayout.show(s('a'));
+    screenLayout.showBeside(s('b'));
+    await mount(() => screenLayout.blockOfSession('a'), sidebar);
+    await until('two blocks drawn', () => blockWidths().length === 2);
+    return screenLayout.blockOfSession('a')!;
+  };
+
+  it('一块时没有,两块时每块都有', async () => {
+    screenLayout.show(s('a'));
+    await mount(() => screenLayout.blockOfSession('a'));
+    expect(grip()).toBeNull();
+    screenLayout.showBeside(s('b'));
+    await until('the grip appears once the screen is split', () => grip() !== null);
+    // 不在这屏上的(单独成窗的会话页 blockId null)也没有。
+    root!.render(<BlockGrip blockId={null} content={{ kind: 'session', ...s('a'), title: 'A' }} label="grip" />);
+    await nextFrames(2);
+    expect(grip()).toBeNull();
+  });
+
+  const dropAt = (x: number, y: number, dataTransfer: DataTransfer) => {
+    const target = document.elementFromPoint(x, y)!;
+    const over = new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer });
+    target.dispatchEvent(over);
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer }));
+    return over;
+  };
+
+  it('松在没人接的地方、指针离开了自己那块 = 这块从屏上拿走', async () => {
+    const blockId = await twoBlocks();
+    const dataTransfer = new DataTransfer();
+    grip()!.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+    const other = document.querySelector<HTMLElement>(`[data-screen-block]:not([data-screen-block="${blockId}"])`)!.getBoundingClientRect();
+    // 拖着 ⋮⋮ 整页都收,松手才一定有一次 drop(@@@grip-drop-vs-cancel)。
+    expect(dropAt(other.left + other.width / 2, other.top + other.height / 2, dataTransfer).defaultPrevented).toBe(true);
+    grip()?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
+    expect(screenLayout.blockOfSession('a')).toBeUndefined();
+    expect(screenLayout.order).toHaveLength(1);
+  });
+
+  it('松手时指针还在自己那块上 = 什么都不变', async () => {
+    const blockId = await twoBlocks();
+    const dataTransfer = new DataTransfer();
+    grip()!.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+    const own = document.querySelector<HTMLElement>(`[data-screen-block="${blockId}"]`)!.getBoundingClientRect();
+    dropAt(own.left + 20, own.top + 20, dataTransfer);
+    grip()!.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
+    expect(screenLayout.order).toHaveLength(2);
+  });
+
+  it('按 Esc 取消拖拽(没有 drop,只有 dragend)= 什么都不变,哪怕指针已经在别的块上', async () => {
+    const blockId = await twoBlocks();
+    const dataTransfer = new DataTransfer();
+    grip()!.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+    const other = document.querySelector<HTMLElement>(`[data-screen-block]:not([data-screen-block="${blockId}"])`)!.getBoundingClientRect();
+    const x = other.left + other.width / 2;
+    const y = other.top + other.height / 2;
+    document.elementFromPoint(x, y)!.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer }));
+    grip()!.dispatchEvent(new DragEvent('dragend', { bubbles: true, clientX: x, clientY: y, dataTransfer }));
+    expect(screenLayout.order).toHaveLength(2);
+    expect(screenLayout.blockOfSession('a')).toBe(blockId);
+    // 取消之后整页不再替它收拖拽。
+    const later = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() });
+    document.body.dispatchEvent(later);
+    expect(later.defaultPrevented).toBe(false);
+  });
+
+  it('拖回内层侧栏松手 = 这块从屏上拿走,侧栏里的行收不到这次拖放', async () => {
+    await twoBlocks(true);
+    const sidebar = document.querySelector<HTMLElement>('[data-test-inner-sidebar]')!;
+    const row = document.createElement('div');
+    const rowDrops = vi.fn();
+    row.addEventListener('drop', rowDrops);
+    sidebar.appendChild(row);
+    const dataTransfer = new DataTransfer();
+    grip()!.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true, dataTransfer }));
+    const over = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer });
+    row.dispatchEvent(over);
+    expect(over.defaultPrevented).toBe(true);
+    row.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+    expect(rowDrops).not.toHaveBeenCalled();
+    expect(screenLayout.blockOfSession('a')).toBeUndefined();
+    grip()?.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
   });
 });

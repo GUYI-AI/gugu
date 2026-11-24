@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Settlement } from '@gugu/session-core/session-record/contract';
 import { i18n } from '@/i18n';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
-import { useHostAskBand } from './use-session-host-ask';
+import { useHostAskBand, useSessionHostAsk } from './use-session-host-ask';
 
 const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(), subscribe: vi.fn(), unsubscribe: vi.fn(), respond: vi.fn(), toast: vi.fn(), sheet: vi.fn(),
@@ -115,5 +115,47 @@ describe('session approval band response feedback', () => {
     await act(async () => band!.resolve('install'));
     expect(mocks.respond).not.toHaveBeenCalled();
     expect(mocks.toast).not.toHaveBeenCalled();
+  });
+});
+
+describe('an ask the page already follows', () => {
+  it('reads the agent question off the settlements it is given and follows nothing more on the machine', async () => {
+    const question = {
+      ...ask, itemId: 'question-1', kind: 'question', origin: { source: 'agent-question', payload: {} },
+      questions: [{ question: 'Which one?', header: 'Pick', multiSelect: false, options: [{ optionId: 'a', label: 'A' }] }],
+    } as unknown as Settlement;
+    let held: Settlement | null = null;
+    function HeldProbe({ settlements }: { settlements: Record<string, Settlement> }) {
+      held = useSessionHostAsk('session-2', ['agent-question'], true, settlements);
+      return null;
+    }
+    mocks.snapshot.mockClear();
+    mocks.subscribe.mockClear();
+    const heldRoot = createRoot(document.createElement('div'));
+    await act(async () => heldRoot.render(<HeldProbe settlements={{ [question.itemId]: question }} />));
+    expect(held).toMatchObject({ itemId: 'question-1' });
+    await act(async () => heldRoot.render(<HeldProbe settlements={{}} />));
+    expect(held).toBeNull();
+    expect(mocks.snapshot).not.toHaveBeenCalled();
+    expect(mocks.subscribe).not.toHaveBeenCalled();
+    act(() => heldRoot.unmount());
+  });
+
+  it('shows the App install the feed holds before the status says it waits, and follows nothing more on the machine', async () => {
+    let held: ReturnType<typeof useHostAskBand> = null;
+    function HeldBand({ settlements }: { settlements: Record<string, Settlement> }) {
+      held = useHostAskBand('session-2', { status: 'working', detail: null }, settlements);
+      return null;
+    }
+    mocks.snapshot.mockClear();
+    mocks.subscribe.mockClear();
+    const heldRoot = createRoot(document.createElement('div'));
+    await act(async () => heldRoot.render(<HeldBand settlements={{ [ask.itemId]: ask }} />));
+    expect(held).toMatchObject({ request: { requestId: 'ask-1' } });
+    await act(async () => heldRoot.render(<HeldBand settlements={{ [ask.itemId]: { ...ask, state: 'resolved', optionId: 'decline' } }} />));
+    expect(held).toBeNull();
+    expect(mocks.snapshot).not.toHaveBeenCalled();
+    expect(mocks.subscribe).not.toHaveBeenCalled();
+    act(() => heldRoot.unmount());
   });
 });

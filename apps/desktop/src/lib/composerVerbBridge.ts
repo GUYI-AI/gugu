@@ -65,10 +65,30 @@ export function setComposerVerb(chatId: string, verb: ComposerVerb | null, carry
   if (carry?.trim()) carries().set(chatId, carry)
   if (verb && chat) chats().set(chatId, chat)
   const map = verbs()
-  if ((map.get(chatId) ?? null) === verb) return
-  if (verb) map.set(chatId, verb)
-  else map.delete(chatId)
+  if (!verb && !map.has(chatId)) return
+  if (verb) {
+    map.set(chatId, verb)
+    // Choosing the word again while it is already chosen is a request of its own (the folder card floats up again).
+    requests().set(chatId, (requests().get(chatId) ?? 0) + 1)
+  } else map.delete(chatId)
   window.dispatchEvent(new Event(EVENT))
+}
+
+const REQUEST_KEY = '__GUGU_COMPOSER_VERB_REQUESTS__'
+
+function requests(): Map<string, number> {
+  const holder = window as unknown as Record<string, unknown>
+  let map = holder[REQUEST_KEY] as Map<string, number> | undefined
+  if (!map) {
+    map = new Map()
+    holder[REQUEST_KEY] = map
+  }
+  return map
+}
+
+/** How many times the word has been chosen in this conversation: each choice counts, also one made while it was already chosen. */
+export function useComposerVerbRequest(chatId: string): number {
+  return useSyncExternalStore(subscribe, () => requests().get(chatId) ?? 0, () => 0)
 }
 
 /** 选词那一刻框里写着的话;取一次就没了。 */

@@ -13,6 +13,10 @@ export type PendingPrompt = {
   id: string;
   text: string;
   attachments?: ChatAttachment[];
+  /** Folder files sent with it, drawn as its turn will draw them. */
+  files?: readonly import('@gugu/session-core/session-record/contract').TurnFileRef[];
+  /** The comments sent with it, drawn as its turn will draw them. */
+  annotations?: readonly import('@gugu/session-core/acp/client').TurnAnnotation[];
   /**
    * 发出的时刻:这一轮唯一的计时起点。真的那一轮开出时带着同一个时刻(`PromptInput.sentAt`),交接时计时不回跳、
    * 那句话也不跳(同一天)。
@@ -255,6 +259,8 @@ export function pendingPromptTurn(prompt: PendingPrompt): TranscriptTurn {
         text: prompt.text,
         _meta: { guguClientMessageId: prompt.id },
         attachments: prompt.attachments,
+        ...(prompt.files?.length ? { files: [...prompt.files] } : {}),
+        ...(prompt.annotations?.length ? { annotations: [...prompt.annotations] } : {}),
         ...(prompt.delivery ? { sendStatus: prompt.delivery } : {}),
       } as TranscriptTurn['items'][number],
     ],

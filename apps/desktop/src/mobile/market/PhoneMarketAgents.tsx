@@ -20,7 +20,7 @@ import { PhoneMarketInstallSheet, PhoneMarketInstallSummary } from './PhoneMarke
 import { usePhoneAgentInstallTargets, usePhoneMarketInstalledAppIds } from './phoneMarketTargets'
 import type { AgentPayload } from '@shared/core/agents/agent-payload'
 import { AppConnectionListPlaceholder } from '@/components/assistant/AppConnectionHero'
-import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry'
+import { ASSISTANT_APP_ID, isPromotedAssistantApp } from '@shared/extensions/assistant-entry'
 import { AGENT_MARKET_CATEGORIES, agentMarketCategoryOf, localizedManifestText, matchesExtensionQuery, type AgentMarketCategory } from '@shared/extensions/catalog'
 import { queryScore } from '@shared/extensions/query-score'
 import { ExtensionMonogram } from '@renderer/features/extensions/panel/extension-monogram'
@@ -51,7 +51,7 @@ export const PhoneMarketAgents = observer(function PhoneMarketAgents({ device, t
   // The assistant's row, once the catalog is read.
   const assistant = !installed && category !== 'coding' && market.state === 'value'
     ? phoneMarketRows(market.value.entries, '').find(item =>
-        item.manifest.id === ASSISTANT_APP_ID && matchesExtensionQuery(item.manifest, query))
+        isPromotedAssistantApp(item.manifest.id) && matchesExtensionQuery(item.manifest, query))
     : undefined
   const assistantText = assistant && localizedManifestText(assistant.manifest, locale)
   const assistantInstalled = usePhoneMarketInstalledAppIds(installed ? [] : targets).has(ASSISTANT_APP_ID)

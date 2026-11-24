@@ -1,38 +1,54 @@
-/* Group/project heads span two lines. Standalone agents and samples keep the 40px head. */
-.gg-inner-head-double { height: 72px; }
-.gg-inner-head-double [data-inner-head] { height: 56px; }
+/*
+ * Inner sidebar, v16 design (group / project / sample columns share it). Numbers are the design's, measured from the left
+ * edge of the 220px column, whose 1px left border is the line between it and the zero list (the design's .list): head block 9px in, 58px tall, radius 12, 40px avatar, collapse button outside the block;
+ * section headers 13px with the label 27px in; empty lines 12.5px, 9px in; 14px between sections.
+ * Scoped to the column so the zero-level list keeps its own rows.
+ */
+[data-region='inner-sidebar'] .gg-inner-head-double {
+  height: 79px;
+  align-items: flex-start;
+  padding: 7px 6px 0 8px;
+}
+.gg-inner-head-double [data-inner-head] { height: 58px; }
 .gg-inner-head-double [data-inner-head-open] {
   position: absolute;
-  inset: 0;
+  inset: 0 32px 0 0;
+  width: auto;
   height: 100%;
   align-items: flex-start;
-  border-radius: var(--radius-control);
+  border-radius: 12px;
   background-color: transparent;
+  /* The block's own 6px end padding; while the hover ⋯ shows, also clear it (it sits over the block's end). */
+  padding-inline-end: calc(var(--head-reserve) - 30px) !important;
 }
-/* Paint the hover independently of the full two-line button. */
+/* .ihl.on in the design: 7% black over the window, translucent so the warm window shows through. */
+.gg-inner-head-double [data-inner-head-open][aria-current='page'] { background-color: color-mix(in oklab, var(--fg) 7%, transparent); }
+/* Paint the hover independently of the two-line button, over the block only (not the collapse button). */
 .gg-inner-head-double [data-inner-head]:is(:hover, :focus-within, :has([aria-expanded='true']))::before {
   content: '';
   position: absolute;
-  inset: 0;
-  border-radius: var(--radius-control);
+  inset: 0 32px 0 0;
+  border-radius: 12px;
   background-color: var(--hover);
   pointer-events: none;
 }
 .gg-inner-head-double [data-inner-head-open] > span {
-  height: 28px;
-  padding-inline-start: 50px;
+  height: 27px;
+  padding-inline-start: 56px;
+  padding-top: 4px;
   gap: 0;
-  line-height: 20px;
+  line-height: 23px;
 }
 .gg-inner-head-double [data-inner-head-open] > span > span:first-child {
   position: absolute;
-  inset-inline-start: 8px;
-  top: 12px;
-  width: 32px;
-  height: 32px;
+  inset-inline-start: 6px;
+  top: 9px;
+  width: 40px;
+  height: 40px;
 }
 .gg-inner-head-double [data-inner-head-actions] {
   top: 0;
+  right: 0;
   bottom: auto;
   z-index: 1;
   height: 28px;
@@ -41,20 +57,48 @@
 .gg-inner-head-double [data-inner-head-actions] button { pointer-events: auto; }
 .gg-inner-head-double .gg-inner-head-create {
   position: absolute;
-  inset-inline-start: 44px;
-  top: 28px;
+  inset-inline-start: 52px;
+  top: 30px;
   z-index: 1;
   display: inline-flex;
   justify-content: flex-start;
-  min-width: 92px;
-  height: 24px;
-  min-height: 24px;
-  padding: 0 6px;
-  gap: 6px;
+  height: 22px;
+  min-height: 22px;
+  padding: 1px 4px;
+  gap: 5px;
   border: 0;
   border-radius: 6px;
-  font-size: var(--font-caption);
-  font-weight: 500;
+  font-size: var(--font-body);
+  font-weight: 400;
   line-height: 20px;
+  white-space: nowrap;
 }
-.gg-inner-head-create svg { width: 14px; height: 14px; }
+.gg-inner-head-create svg { width: 13px; height: 13px; }
+
+[data-region='inner-sidebar'] [data-inner-sidebar-section] { margin-bottom: 14px; }
+[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child {
+  height: 29px;
+  padding: 4px 12px 6px 26px;
+}
+[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child,
+[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child * { font-size: var(--font-body); font-weight: 400; }
+[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child { gap: 12px; }
+/* The design has the count 12px after the label; the fold chevron hangs in the gutter left of the label instead of between them. */
+[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child > button:first-child { position: relative; }
+[data-region='inner-sidebar'] [data-inner-sidebar-section] > :first-child > span:first-child > button:first-child > svg { position: absolute; inset-inline-start: -17px; }
+[data-region='inner-sidebar'] [data-inner-rows] { padding-inline: 8px 6px; }
+/*
+ * Rows (design .lrow: 9px in, padding 0 8, 7px between icon and text, 18px agent face). A row with no sub-sessions has
+ * no expand arrow, so its arrow lane is dropped and it sits flush like the design; a row that can expand keeps the
+ * arrow and its indent.
+ */
+[data-region='inner-sidebar'] [data-inner-rows] [data-session-id]:not([aria-expanded]) > :first-child { display: none; }
+[data-region='inner-sidebar'] [data-inner-rows] [data-session-id][data-depth='0']:not([aria-expanded]) { padding-inline-start: 8px !important; }
+[data-region='inner-sidebar'] [data-inner-rows] [data-session-id] > button { gap: 7px; }
+[data-region='inner-sidebar'] [data-inner-rows] [data-row-agent-avatar] > * { width: 18px !important; height: 18px !important; }
+[data-region='inner-sidebar'] [data-topic-row] { gap: 7px; }
+/* The design's row (.lrow): radius 9 and 8px on both sides, for agent and topic rows alike (the shared row is a pill). */
+[data-region='inner-sidebar'] [data-inner-rows] :is([data-session-id], [role='listitem']) { border-radius: 9px; padding-inline-end: 8px; }
+/* Row hover actions (pin, archive …): the design's two 14px icons 6px apart, flush with the row's 8px end padding. */
+[data-region='inner-sidebar'] [data-inner-rows] [data-row-hover-actions] > * { gap: 6px; }
+[data-region='inner-sidebar'] [data-inner-rows] [data-row-hover-actions] button { width: 14px; min-width: 14px; height: 14px; padding: 0; }

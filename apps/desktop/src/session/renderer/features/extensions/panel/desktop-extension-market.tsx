@@ -4,9 +4,8 @@ import { localizedManifestText, MARKET_CATEGORIES, marketCategoryOf, type Market
 import { marketHome } from '@shared/extensions/market-home';
 import type { MarketListItem } from '@shared/extensions/market';
 import type { ResourceContext } from '@shared/resource-actions';
-import type { AppsSort } from '@renderer/features/apps/apps-location';
 import type { MarketShelfFull } from '../market-replicas';
-import { MarketCard, MarketCategoryBar, MarketFeatured, MarketGrid, useMarketFeatured, type MarketCategoryChoice } from './desktop-market-cards';
+import { MarketCard, MarketCategoryBar, MarketGrid, type MarketCategoryChoice } from './desktop-market-cards';
 import { MarketExtensionIcon } from './market-extension-icon';
 import { ShelfMoreSkeleton } from './extension-skeletons';
 
@@ -15,50 +14,32 @@ type ExtensionMarketFilter = 'all' | MarketCategory;
 export type DesktopMarketShelf = Omit<MarketShelfFull, 'fetchedAt'> & { status: 'ready'; query: string; loadingMore: boolean };
 
 export function DesktopExtensionMarket({
-  shelf, scores, query, category, onCategoryChange, sort = 'recommended', onSortChange, installedIds, onOpen, resourceOf, sentinelRef, stale, selectedId,
+  shelf, scores, query, category, onCategoryChange, installedIds, onOpen, resourceOf, sentinelRef, stale, selectedId,
 }: {
   shelf: DesktopMarketShelf;
-  /** Installs per App, which orders the home (featured, recommended, popular); null = unreadable: the catalog's order. */
+  /** Installs per App, which puts the most installed first (market-home); null = unreadable. */
   scores: ReadonlyMap<string, number> | null;
   query: string;
   category: ExtensionMarketFilter;
   onCategoryChange: (category: ExtensionMarketFilter) => void;
-  /** The order picked, part of where you are on the Apps page (apps-location). */
-  sort?: AppsSort;
-  onSortChange: (sort: AppsSort) => void;
   installedIds?: ReadonlySet<string>;
   onOpen: (item: MarketListItem) => void;
   resourceOf: (id: string) => ResourceContext;
   sentinelRef: Ref<HTMLDivElement>;
   stale: string | null;
-  /** An App's page is open beside the list: no featured row, every App in the one list, this one marked. */
+  /** An App's page is open beside the list: this one is marked. */
   selectedId?: string;
 }) {
   const { translate, locale } = useSessionMessages();
   const home = useMemo(() => {
     if (shelf.query || shelf.hasMore || shelf.items.some(({ cloud }) => !cloud.firstPublishedAt)) return null;
     const byId = new Map(shelf.items.map((item) => [item.manifest.id, item]));
-    const result = marketHome(shelf.items.map(({ manifest, cloud }) => ({ ...cloud, manifest })), scores ?? null);
-    const rows = (entries: typeof result.featured) => entries.map(({ manifest }) => byId.get(manifest.id)!);
-    const extraFeatured = [...new Set([
-      ...(result.popular ?? []),
-      ...result.remaining.filter((entry) => entry.featured),
-    ])].filter((entry) => !entry.firstRun && !result.featured.includes(entry));
-    return {
-      featured: rows(result.featured),
-      moreFeatured: rows(extraFeatured),
-      recommended: rows([...result.featured, ...result.remaining]),
-      newest: rows(result.newest),
-      popular: result.popular && rows(result.popular),
-    };
+    return marketHome(shelf.items.map(({ manifest, cloud }) => ({ ...cloud, manifest })), scores ?? null)
+      .map(({ manifest }) => byId.get(manifest.id)!);
   }, [shelf, scores]);
 
   const categoryLabel = (key: MarketCategory) => translate(`extensions.category.${key}`);
-  const sorts: MarketCategoryChoice<AppsSort>[] = [{ value: 'recommended', label: translate('extensions.recommended') }];
-  if (home?.newest.length) sorts.push({ value: 'newest', label: translate('extensions.newest') });
-  if (home?.popular?.length) sorts.push({ value: 'popular', label: translate('extensions.popular') });
-  const activeSort = sorts.some((choice) => choice.value === sort) ? sort : 'recommended';
-  const entries = query ? shelf.items : home?.[activeSort] ?? shelf.items;
+  const entries = query ? shelf.items : home ?? shelf.items;
   const categories = [...MARKET_CATEGORIES, 'other'] as const;
   const choices: MarketCategoryChoice<ExtensionMarketFilter>[] = [
     { value: 'all', label: translate('extensions.marketCategoryAll') },
@@ -66,22 +47,17 @@ export function DesktopExtensionMarket({
       .map((key) => ({ value: key, label: categoryLabel(key) })),
   ];
   const activeCategory = choices.some((choice) => choice.value === category) ? category : 'all';
-  const featured = useMarketFeatured(home?.featured ?? [], home?.moreFeatured ?? []);
-  const featuredOnPage = !query && !selectedId && activeSort === 'recommended' && activeCategory === 'all' && home
-    ? featured.items : [];
-  const visible = activeCategory === 'all'
-    ? entries.filter((item) => !featuredOnPage.includes(item))
-    : entries.filter((item) => marketCategoryOf(item.manifest) === activeCategory);
+  const visible = activeCategory === 'all' ? entries : entries.filter((item) => marketCategoryOf(item.manifest) === activeCategory);
   const title = query ? translate('extensions.searchResults') : activeCategory === 'all'
     ? translate('extensions.allExtensions') : categoryLabel(activeCategory);
 
-  const card = (item: MarketListItem, featured = false) => {
+  const card = (item: MarketListItem) => {
     const id = item.manifest.id;
     const { name, subtitle } = localizedManifestText(item.manifest, locale);
     return (
       <MarketCard
         key={id}
-        testId={`${featured ? 'featured-extension' : 'extension'}-card-${id}`}
+        testId={`extension-card-${id}`}
         name={name}
         icon={<MarketExtensionIcon name={name} iconUrl={item.cloud.iconUrl} />}
         publisher={translate('extensions.official')}
@@ -98,12 +74,6 @@ export function DesktopExtensionMarket({
 
   return (
     <>
-      {featuredOnPage.length > 0 && (
-        <MarketFeatured title={translate('extensions.featuredApps')} {...featured} renderCard={(item) => card(item, true)} />
-      )}
-      {!query && (
-        <MarketCategoryBar choices={sorts} selected={activeSort} onChange={onSortChange} testIdPrefix="extensions-market-sort" variant="subnav" />
-      )}
       {choices.length > 1 && (
         <MarketCategoryBar choices={choices} selected={activeCategory} onChange={onCategoryChange} testIdPrefix="extensions-market-chip" />
       )}
@@ -111,7 +81,7 @@ export function DesktopExtensionMarket({
         <MarketGrid title={title} heading={!!query} stale={stale} testId={`extensions-market-section-${query ? 'results' : activeCategory}`}>
           {visible.map((item) => card(item))}
         </MarketGrid>
-      ) : !shelf.hasMore && featuredOnPage.length === 0 ? (
+      ) : !shelf.hasMore ? (
         <div className="mk-empty">{query ? translate('extensions.noMatch', { query }) : translate('extensions.extensionMarketEmpty')}</div>
       ) : null}
       {shelf.hasMore && (

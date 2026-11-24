@@ -1,6 +1,7 @@
 name: Dev Linux checks
 on:
-  # Tomorrow, restore push with branches: [dev]; keep workflow_dispatch.
+  # Manual only. Every dev push already runs these six unit shards: ci-cache.yml seeds the Vitest module cache by
+  # running the same command (Seed Vitest). A push trigger here would run them twice on the same hosted runner pool.
   workflow_dispatch:
 permissions:
   contents: read

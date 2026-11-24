@@ -18,10 +18,14 @@ type Node = import('typescript').Node
  * @@@roots - the renderer and the session UI packages. Core is also checked at direct Error message
  * and string-throw sites, where diagnostics can cross IPC into a UI. Its existing exceptions are pinned
  * by file and complete expression in coreErrorDebt, counted separately, and fail when changed or removed.
- * Prompts and ordinary data in core are outside this error-only scan. The main process (`apps/desktop/electron`) is
- * not a root: most CJK there is agent-facing tool text or diagnostics, and its user-visible strings
- * (dialogs, tray, menus, notifications) go through `apps/desktop/shared/host-localization.ts`, whose
- * en-US block is checked here as an English catalog.
+ * Prompts and ordinary data in core are outside this error-only scan.
+ *
+ * @@@main-ui-sinks - the main process (`apps/desktop/electron`) is not a full root: most CJK there is agent-facing
+ * tool text, CLI output or diagnostics. What it puts on screen itself — dialogs, notifications, menus, the tray and
+ * window titles — is scanned at those Electron calls (and at literals typed as their options): a CJK literal in
+ * their arguments, directly or through a same-file variable, fails. That copy goes through
+ * `apps/desktop/shared/host-localization.ts`, whose en-US block is checked here as an English catalog. Main-process
+ * modules whose messages the renderer shows as they are listed in DEFAULT_ROOTS and scanned whole.
  */
 export type HardcodedCjkCategory = 'user-visible' | 'english-catalog' | 'excepted' | 'developer' | 'false-positive' | 'legacy-core-error'
 export type HardcodedCjkExceptionClass = 'C' | 'D' | 'E'
@@ -61,6 +65,7 @@ export interface HardcodedCjkAudit {
 export interface HardcodedCjkOptions {
   roots?: readonly string[]
   errorRoots?: readonly string[]
+  sinkRoots?: readonly string[]
   exceptionsFile?: string
 }
 
@@ -74,9 +79,40 @@ export const DEFAULT_ROOTS = [
   'packages/session-ui/src',
   'packages/session-chat-ui/src',
   'apps/desktop/shared/host-localization.ts',
+  // Main-process modules whose sentences the renderer shows as they are (see @@@main-ui-sinks).
+  'apps/desktop/electron/model-access.ts',
+  'apps/desktop/electron/macDmgUpdater.ts',
+  'apps/desktop/electron/password-vault/pulling.ts',
+  'apps/desktop/electron/password-vault/system-keys.ts',
+  'apps/desktop/electron/sessionpage/fatal-boot.ts',
+  'apps/desktop/electron/session/main/core/integrations/cli/cli-errors.ts',
+  'apps/desktop/electron/session/main/core/integrations/integration-connection-service.ts',
+  'apps/desktop/electron/session/main/core/session-timeline/live-options.ts',
 ] as const
 export const DEFAULT_EXCEPTIONS_FILE = 'scripts/checks/hardcoded-cjk-exceptions.json'
 export const DEFAULT_ERROR_ROOTS = ['packages/core/src'] as const
+export const DEFAULT_SINK_ROOTS = ['apps/desktop/electron'] as const
+
+/** Electron calls whose arguments are put on screen by the main process. */
+const SINK_METHODS: ReadonlySet<string> = new Set([
+  'showMessageBox', 'showMessageBoxSync', 'showErrorBox', 'showOpenDialog', 'showOpenDialogSync',
+  'showSaveDialog', 'showSaveDialogSync', 'showCertificateTrustDialog', 'buildFromTemplate', 'setToolTip', 'setTitle',
+])
+const SINK_CONSTRUCTORS: ReadonlySet<string> = new Set(['Notification', 'MenuItem', 'BrowserWindow', 'BaseWindow'])
+const SINK_TYPES = /\b(?:MenuItemConstructorOptions|MessageBox(?:Sync)?Options|NotificationConstructorOptions|(?:Open|Save)DialogOptions|BrowserWindowConstructorOptions)\b/
+
+/** The part of a node that a main-process UI sink puts on screen, or null when the node is not a sink. */
+function sinkPayload(node: Node): readonly Node[] | null {
+  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && SINK_METHODS.has(node.expression.name.text)) {
+    return node.arguments
+  }
+  if (ts.isNewExpression(node) && ts.isIdentifier(node.expression) && SINK_CONSTRUCTORS.has(node.expression.text)) {
+    return node.arguments ?? []
+  }
+  if (ts.isVariableDeclaration(node) && node.type && node.initializer && SINK_TYPES.test(node.type.getText())) return [node.initializer]
+  if ((ts.isAsExpression(node) || ts.isSatisfiesExpression(node)) && SINK_TYPES.test(node.type.getText())) return [node.expression]
+  return null
+}
 
 /**
  * Catalog files. Inside an `english` block every CJK value fails unless `englishCatalogAllowed` covers it;
@@ -276,6 +312,7 @@ function hasCjkLiteral(node: Node, sourceFile: import('typescript').SourceFile):
 export function auditHardcodedCjk(root: string = process.cwd(), options: HardcodedCjkOptions = {}): HardcodedCjkAudit {
   const roots = options.roots ?? DEFAULT_ROOTS
   const errorRoots = options.errorRoots ?? (options.roots ? [] : DEFAULT_ERROR_ROOTS)
+  const sinkRoots = options.sinkRoots ?? (options.roots ? [] : DEFAULT_SINK_ROOTS)
   const { englishCatalogAllowed, exceptions, coreErrorDebt } = loadExceptions(root, options.exceptionsFile)
   const usedAllowed = new Set<number>()
   const usedExceptions = new Set<number>()
@@ -359,6 +396,47 @@ export function auditHardcodedCjk(root: string = process.cwd(), options: Hardcod
           category: index >= 0 ? 'legacy-core-error' : 'user-visible',
           reason: index >= 0 ? coreErrorDebt[index]!.reason : 'core-error-message' })
       }
+      ts.forEachChild(node, visit)
+    }
+    visit(sourceFile)
+  }
+
+  const scanned = new Set(roots.flatMap((target) => sourceFilesBelow(root, target)))
+  for (const file of [...new Set(sinkRoots.flatMap(target => sourceFilesBelow(root, target)))].filter(file => !scanned.has(file))) {
+    const sourceFile = ts.createSourceFile(file, readFileSync(path.resolve(root, file), 'utf8'), ts.ScriptTarget.Latest, true)
+    const declarations = new Map<string, Node>()
+    const collect = (node: Node): void => {
+      if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) declarations.set(node.name.text, node.initializer)
+      ts.forEachChild(node, collect)
+    }
+    collect(sourceFile)
+    const reported = new Set<Node>()
+    // Text reachable from a sink: its literals, and a same-file variable it names. Handlers inside it (a menu item's
+    // click) are code, not text, and are not entered.
+    const scanPayload = (node: Node, seen: Set<string>): void => {
+      if (ts.isArrowFunction(node) || ts.isFunctionExpression(node) || ts.isMethodDeclaration(node)) return
+      if (ts.isIdentifier(node) && !isStructuralPropertyName(node) && !(ts.isPropertyAccessExpression(node.parent) && node.parent.name === node)) {
+        const target = declarations.get(node.text)
+        if (target && !seen.has(node.text)) scanPayload(target, new Set([...seen, node.text]))
+        return
+      }
+      if (isTextNode(node) && !ts.isRegularExpressionLiteral(node) && !isStructuralPropertyName(node) && !reported.has(node)) {
+        const value = textValue(node, sourceFile)
+        if (CJK.test(value) && classifySource(node, value).category === 'user-visible') {
+          reported.add(node)
+          const text = normalized(value)
+          const exception = excepted(file, text)
+          const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+          rows.push({ file, line: position.line + 1, column: position.character + 1, kind: 'main-ui-sink', text,
+            category: exception ? 'excepted' : 'user-visible',
+            reason: exception ? `${exception.class}: ${exception.reason}` : 'main-ui-sink' })
+        }
+      }
+      ts.forEachChild(node, child => scanPayload(child, seen))
+    }
+    const visit = (node: Node): void => {
+      const payload = sinkPayload(node)
+      if (payload) for (const part of payload) scanPayload(part, new Set())
       ts.forEachChild(node, visit)
     }
     visit(sourceFile)

@@ -395,7 +395,13 @@ module.exports = {
       ...fs.readdirSync(path.join(appDir, 'apps', 'desktop')).filter((name) => name !== 'dist-electron').map((name) => `apps/desktop/${name}`),
     ]
     if (stray.length > 0) throw new Error(`[packed-app] resources/app has entries outside the build output: ${stray.join(', ')}`)
-    if (context.electronPlatformName !== 'darwin') return
+    // @@@short-stage - Windows extraction has a path budget. Linux packs the same tree, so its CI build guards it too.
+    if (context.electronPlatformName !== 'darwin') {
+      const { checkWindowsStagePaths, windowsInstallDirName } = require('./scripts/build/windows-install-paths.cjs')
+      const stagePaths = checkWindowsStagePaths({ appOutDir: context.appOutDir, installDirName: windowsInstallDirName(context.packager.appInfo) })
+      console.log(`[windows-stage-path] deepest extraction path ${stagePaths.length}/${stagePaths.budget}: ${stagePaths.deepest}`)
+      return
+    }
     const fullIcns = path.join(__dirname, 'build-resources', 'icon.icns')
     const packed = path.join(
       context.appOutDir,
@@ -475,6 +481,10 @@ module.exports = {
     // SQLite 13 prefers our verified per-arch Release build; do not ship eight unused npm prebuilds.
     '!**/node_modules/better-sqlite3/prebuilds/**',
     '!**/node_modules/@parcel/watcher-!(${platform}-${arch}*)/**',
+    // sharp draws image previews in plain-Node processes only (the headless server, the phone); the desktop is Electron
+    // and draws with nativeImage (main.ts), so sharp and its libvips never ship in the desktop package.
+    '!**/node_modules/sharp/**',
+    '!**/node_modules/@img/**',
   ],
   // @@@kill-asar (#2299 / 0.2.26 闪退治本) — asar 关闭:整个 app 落地为 Contents/Resources/app/ 一棵
   // 真实目录树,不再有 app.asar(虚拟 fs)+ app.asar.unpacked(真实旁挂)的「双世界」。原本 asarUnpack

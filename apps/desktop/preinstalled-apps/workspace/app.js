@@ -117,6 +117,7 @@ const STRINGS = {
     tooLarge: '这个文件有 {size}，打开可能很慢。',
     grewTooLarge: '这个文件在外面变大了（{size}），这里没有读进来；现在保存会盖掉外面的内容。',
     openAnyway: '仍然打开',
+    openingFile: '正在打开…',
     openingLong: '正在打开 {name}（{size}）…',
     openingProgress: '正在打开 {name}：{done} / {total}',
     retry: '重试',
@@ -367,6 +368,7 @@ const STRINGS = {
     tooLarge: 'This file is {size}: opening it may be slow.',
     grewTooLarge: 'This file grew to {size} outside and was not read in. Saving now writes over what is there.',
     openAnyway: 'Open anyway',
+    openingFile: 'Opening…',
     openingLong: 'Opening {name} ({size})…',
     openingProgress: 'Opening {name}: {done} of {total}',
     retry: 'Retry',
@@ -559,6 +561,7 @@ const state = {
   dragging: null, // the entry being dragged onto a folder (desktop)
   mode: 'preview', // 阅读 first (owner 10-30, folder-docs)
   current: null, // { entry, file, view, unbind, offs: [] }
+  openingImage: null,
   opening: null,
   cm: null,
   md: null,
@@ -878,32 +881,32 @@ function forgetListed() {
 
 /**
  * Chat folders ('' the top, else a folder's id), all read at once: what is directly in each goes into the list in place of
- * what was there, drawn as it arrives. The top brings 「附件」 with it (the top shows what was sent in the chat), unless
+ * what was there, drawn once every answer is in — the top without 「附件」 is another list (none of what was sent, no 「聊天附件」
+ * block), drawn and then replaced. The top brings 「附件」 with it (the top shows what was sent in the chat), unless
  * `withAttachments` is false (a file's own folder read again for its keep).
  */
 async function readFolders(folders, asked, withAttachments = true) {
   const chat = state.ctx.chat.id
   const named = [...new Set(withAttachments && folders.includes('') ? [...folders, ATTACHMENTS] : folders)]
-  await Promise.all(named.map(async (folder) => {
-    let listed
-    try {
-      listed = await gugu.files.list({ chat, folder })
-    } catch (error) {
-      if (folder === ATTACHMENTS && error.code === 'not-found') return // a chat nothing was sent in has none
-      throw error
-    }
-    // Another chat by now, or a newer refresh: this one's answer is dropped.
-    if (state.ctx?.chat?.id !== chat || inWorkspace() || (asked && state.listing !== asked)) return
+  const answers = await Promise.all(named.map((folder) => gugu.files.list({ chat, folder }).catch((error) => {
+    if (folder === ATTACHMENTS && error.code === 'not-found') return null // a chat nothing was sent in has none
+    throw error
+  })))
+  // Another chat by now, or a newer refresh: this one's answer is dropped.
+  if (state.ctx?.chat?.id !== chat || inWorkspace() || (asked && state.listing !== asked)) return
+  named.forEach((folder, at) => {
+    const listed = answers[at]
+    if (!listed) return
+    // The top is read first: 「附件」 with nothing in it is found by its row there.
     const parent = folder === ATTACHMENTS ? listed[0]?.parentId ?? state.entries.find((e) => e.systemRole === 'attachments')?.id : folder || null
     if (parent === undefined) return
-    const key = parent ?? ''
     state.entries = [...state.entries.filter((entry) => (entry.parentId ?? null) !== parent), ...listed]
-    state.listed.add(key)
-    showList()
-  }))
+    state.listed.add(parent ?? '')
+  })
   // 「附件」 with nothing in it yet: known empty, once the top has named it.
   const attachments = state.entries.find((e) => e.systemRole === 'attachments' && e.parentId === null)
   if (attachments && named.includes(ATTACHMENTS)) state.listed.add(attachments.id)
+  showList()
 }
 
 /**
@@ -2455,11 +2458,21 @@ async function copyLink(entry, at) {
 // `ask`: "Open with another App" — the host's picker, every App that opens this file, this one included.
 async function openInHost(entry, ask = false, intent = 'navigate') {
   if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
+  const image = !ask && intent === 'navigate' && /^image\//i.test(entry.contentType || '')
+  if (image && state.openingImage?.id === entry.id) return
+  const attempt = image ? { id: entry.id } : undefined
+  state.openingImage = attempt
+  for (const li of $('file-list').querySelectorAll('li[data-id]')) markOpened(li)
   try {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
     await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}), ...(ask ? {} : viewedWith(entry)) })
   } catch (error) {
-    showBanner(failureText(error), 'error')
+    if (!attempt || state.openingImage === attempt) showBanner(failureText(error), 'error')
+  } finally {
+    if (attempt && state.openingImage === attempt) {
+      state.openingImage = undefined
+      for (const li of $('file-list').querySelectorAll('[data-opening]')) markOpened(li)
+    }
   }
 }
 
@@ -4276,6 +4289,13 @@ function opened(entry) {
 }
 
 function markOpened(li) {
+  if (state.openingImage?.id === li.dataset.id) {
+    li.setAttribute('aria-busy', 'true')
+    li.dataset.opening = state.t.openingFile
+  } else {
+    li.removeAttribute('aria-busy')
+    delete li.dataset.opening
+  }
   if (state.opened === li.dataset.id) li.setAttribute('aria-current', 'true')
   else li.removeAttribute('aria-current')
 }

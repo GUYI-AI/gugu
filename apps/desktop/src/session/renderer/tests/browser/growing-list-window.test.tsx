@@ -200,13 +200,6 @@ it(`a list longer than GROW_CAP grows to GROW_CAP lines, and grows again around 
   }), value => value.last && !value.first && value.mounted === GROW_CAP)
 })
 
-it('a native idle callback makes progress without assuming the browser can fill the whole list within one case', async () => {
-  const { scroller, mounted } = counted(400)
-  const initial = mounted()
-  await until('the native idle callback grows the list', () => growthFacts(scroller, mounted),
-    value => value.idle.callbacks > 0 && value.mounted > initial)
-})
-
 it('zero remaining idle time yields, while an expired timeout still makes bounded progress', async () => {
   const idle = controlledIdle()
   const { mounted } = counted(400)

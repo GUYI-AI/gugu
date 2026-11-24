@@ -13,12 +13,12 @@ import { AttachmentDeadlineError, runAttachmentStage, waitForAttachmentRetry } f
 import { serverNow } from '../shared/serverClock'
 import type { FileKeep } from '../shared/fileStorage'
 import { getSupabaseAnonKey, getSupabaseUrl } from './config'
-import { fileSha256 } from '../shared/fileCipher'
+import { blobSha256, fileSha256 } from '../shared/fileCipher'
 
 export type AttachmentByteProgress = { loaded: number; total?: number }
 export type AttachmentUploadTransport = (url: string, init: {
   method: 'POST' | 'PUT'; body: Blob | FormData; headers?: Record<string, string>; signal?: AbortSignal
-}, onProgress?: (progress: AttachmentByteProgress) => void) => Promise<{ status: number }>
+}, onProgress?: (progress: AttachmentByteProgress) => void) => Promise<{ status: number; said?: string }>
 
 export interface AttachmentsEndpoint {
   supabaseUrl: string
@@ -41,9 +41,47 @@ export function configuredEndpoint(token: string): AttachmentsEndpoint {
   return { supabaseUrl: getSupabaseUrl(), anonKey: getSupabaseAnonKey(), token }
 }
 
-/** A long-lived account host, including the MCP host, uses the same endpoint and signed-parts capability. */
+/**
+ * Every host process (desktop main, its file host, the headless server, the MCP host) uploads through this one endpoint:
+ * the same signed-parts capability and the same streamed transport, so a proxy, a stall and progress read the same.
+ */
 export async function accountAttachmentsEndpoint(context: { supabaseUrl: string; anonKey: string; getAccessToken(): Promise<string> }, fetchImpl: typeof globalThis.fetch = egress.fetch): Promise<AttachmentsEndpoint> {
-  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(), fetch: fetchImpl, signedParts: true }
+  return { supabaseUrl: context.supabaseUrl, anonKey: context.anonKey, token: await context.getAccessToken(),
+    fetch: fetchImpl, signedParts: true, upload: streamedAttachmentUpload }
+}
+
+/**
+ * A host's upload: the runtime's Request serializes the body (a form keeps its boundary), its length is sent, and the
+ * bytes go as a stream the HTTP client pulls, so progress counts what was sent. The response header deadline is the
+ * attachment stage's.
+ */
+const streamedAttachmentUpload: AttachmentUploadTransport = async (url, init, onProgress) => {
+  const { method, signal } = init
+  signal?.throwIfAborted()
+  const request = new Request(url, init)
+  const blob = init.body instanceof Blob ? init.body : await request.blob()
+  request.headers.set('content-length', String(blob.size))
+  let loaded = 0
+  // With no prefetch, a pull means the HTTP client is ready for another chunk.
+  const body = new ReadableStream({
+    async pull(controller) {
+      if (loaded === blob.size) return controller.close()
+      signal?.throwIfAborted()
+      const chunk = new Uint8Array(await blob.slice(loaded, loaded + 64 * 1024).arrayBuffer())
+      signal?.throwIfAborted()
+      controller.enqueue(chunk)
+      loaded += chunk.byteLength
+      onProgress?.({ loaded, total: blob.size })
+    },
+  }, { highWaterMark: 0 })
+  const response = await egress.fetch(url, { method, body, headers: request.headers, signal, duplex: 'half', timeoutMs: 0 } as RequestInit & { timeoutMs: number })
+  return { status: response.status, said: response.ok ? (await response.body?.cancel(), undefined) : await storeAnswer(url, response) }
+}
+
+/** What a store said when it refused: its host and the start of its answer (an XML or JSON error code), for the log. */
+async function storeAnswer(url: string, response: Response): Promise<string> {
+  const text = (await response.text().catch(() => '')).replace(/\s+/g, ' ').slice(0, 200)
+  return `${new URL(url).host}: ${text}`
 }
 
 /** A refusal from the function, with its code (upload_used, version_conflict, too_large, denied, …) — said, never swallowed. */
@@ -116,6 +154,7 @@ export async function withUploadedAttachment<T>(
   use: (uploadKey: string) => Promise<T>,
   options?: UploadOptions,
 ): Promise<T> {
+  previewDrawerFor(file.contentType)
   const sha256 = file.sha256 ?? await attachmentSha256(file.bytes)
   const used = await uploadThen(endpoint, { ...file, sha256 }, scope, use, options)
   offerImagePreviewOf(endpoint, file.bytes, file.contentType, sha256, scope.as)
@@ -167,24 +206,32 @@ async function retryWhileOtherUploads<T>(use: () => Promise<T>, signal?: AbortSi
   }
 }
 
-/** This process's image decoder: an image's preview (560 px wide at most), or null for a format it cannot decode. */
-export type ImagePreviewDrawer = { draw(original: Blob, contentType: string): Promise<Blob | null>; warn(error: unknown): void }
+/** This process's image decoder: an image's preview (560 px wide at most); a format it cannot decode rejects, and is warned. */
+export type ImagePreviewDrawer = { draw(original: Blob, contentType: string): Promise<Blob>; warn(error: unknown): void }
 let previews: ImagePreviewDrawer | null = null
 /**
  * Every image this process uploads or declares offers a preview drawn here, whichever entry sent it (composer, agent,
- * App). A process that registers none uploads images without one, and readers show the original.
+ * App). Each process that uploads registers one, by its runtime: a renderer its canvas, Electron main nativeImage, a
+ * plain-Node process sharp (local/files/nodeImagePreview). Sending an image from a process that registered none throws
+ * before any byte goes up.
  */
 export function drawImagePreviews(drawer: ImagePreviewDrawer): void { previews = drawer }
+
+function previewDrawerFor(contentType: string): ImagePreviewDrawer | null {
+  if (!contentType.startsWith('image/')) return null
+  if (!previews) throw new Error('This process uploads an image but registered no preview drawer (drawImagePreviews)')
+  return previews
+}
 
 /**
  * An image's preview: a small image its sender uploads with no chat and offers for the original's bytes (`sha256`), so
  * any version of those bytes shows it. The upload never waits for it; a failure is warned, never thrown.
  */
 export function offerImagePreviewOf(endpoint: AttachmentsEndpoint, original: Uint8Array | Blob, contentType: string, sha256: string, as: string): void {
-  if (!previews || !contentType.startsWith('image/')) return
-  const { draw, warn } = previews
+  const drawer = previewDrawerFor(contentType)
+  if (!drawer) return
+  const { draw, warn } = drawer
   void draw(original instanceof Blob ? original : new Blob([original as Uint8Array<ArrayBuffer>], { type: contentType }), contentType).then(async preview => {
-    if (!preview) return
     await uploadThen(endpoint, { bytes: preview, name: 'preview', contentType: preview.type, sha256: await attachmentSha256(preview) }, { chat_id: null, as },
       staging_key => call(endpoint, 'file-preview', { staging_key, sha256 }))
   }).catch(warn)
@@ -213,6 +260,8 @@ function isTransientStorageError(error: unknown): boolean {
 /** Retry interrupted transfers and busy services; ordinary authorization refusals stay terminal. */
 export function retryableAttachmentError(error: unknown): boolean {
   return error instanceof TypeError || isTransientStorageError(error) || error instanceof FileDownloadFailure && isTransientFileReadError(error)
+    // Another permit of this account still holds these bytes past the wait bound: a later attempt finds them or uploads.
+    || error instanceof AttachmentsError && error.code === 'upload_in_progress'
 }
 
 async function retryUploadRequest<T extends { status: number }>(upload: () => Promise<T>, attempts: { used: number }, signal?: AbortSignal) {
@@ -269,14 +318,14 @@ async function uploadAttachmentParts(endpoint: AttachmentsEndpoint, key: string,
       const start = (part.n - 1) * plan.part_bytes
       const sent = (async () => {
         if (budget.used >= MAX_STORAGE_ATTEMPTS) throw new AttachmentsError('upload', 409, 'upload_incomplete', `Storage retry limit reached for part ${part.n}`)
-        const { status } = await retryUploadRequest(() => putPart(endpoint, part, blob.slice(start, start + part.bytes), loaded => { sending.set(part.n, loaded); progress() }, signal), budget, signal)
+        const { status, said } = await retryUploadRequest(() => putPart(endpoint, part, blob.slice(start, start + part.bytes), loaded => { sending.set(part.n, loaded); progress() }, signal), budget, signal)
         if (status === 403) {
           // Not stored, not sending, not held: the next answer signs it again.
           if (budget.resigned || budget.used >= MAX_STORAGE_ATTEMPTS) throw new AttachmentsError('upload', 403, 'failed', `Storage refused a fresh part signature for part ${part.n}`)
           budget.resigned = true
           return
         }
-        if (status !== 200) throw new AttachmentsError('upload', status, 'failed', `storing part ${part.n} of ${part.bytes} bytes failed: HTTP ${status}`)
+        if (status !== 200) throw new AttachmentsError('upload', status, 'failed', `storing part ${part.n} of ${part.bytes} bytes failed: HTTP ${status}${said ? ` (${said})` : ''}`)
         done.add(part.n)
         report.push(part.n)
       })().catch(error => { failure ??= error }).finally(() => { sending.delete(part.n); running.delete(sent); progress() })
@@ -315,12 +364,11 @@ async function putPart(endpoint: AttachmentsEndpoint, part: SignedPart, body: Bl
 }
 
 async function sendAttachmentRequest(endpoint: AttachmentsEndpoint, url: string, init: Parameters<AttachmentUploadTransport>[1],
-  size: number, onProgress?: (progress: AttachmentByteProgress) => void): Promise<{ status: number }> {
+  size: number, onProgress?: (progress: AttachmentByteProgress) => void): Promise<{ status: number; said?: string }> {
   const upload = endpoint.upload
   if (!upload) {
     const response = await (endpoint.fetch ?? egress.fetch)(url, init)
-    await response.body?.cancel()
-    return response
+    return { status: response.status, said: response.ok ? (await response.body?.cancel(), undefined) : await storeAnswer(url, response) }
   }
   return runAttachmentStage('upload', (signal, _capDeadline, advance) => upload(url, { ...init, signal }, progress => {
     advance(progress.loaded, progress.total || size)
@@ -385,19 +433,16 @@ async function sendAttachmentPlan(endpoint: AttachmentsEndpoint, form: Attachmen
   // size → upload_changed. Once finish has said the object is missing, a refusal is the store's own: said with its status.
   const exists = isDirectKey(form.staging_key) ? allowExisting && (posted.status === 409 || posted.status === 400) : (allowExisting || attempts.used > 1) && posted.status === 409
   if (posted.status !== 200 && posted.status !== 204 && !exists) {
-    throw new AttachmentsError('upload', posted.status, 'failed', `storing ${file.name} failed: HTTP ${posted.status}`)
+    throw new AttachmentsError('upload', posted.status, 'failed', `storing ${file.name} failed: HTTP ${posted.status}${posted.said ? ` (${posted.said})` : ''}`)
   }
 }
 
 /** The SHA-256 (hex) an upload claims for its file, read in chunks (natively where the host has node:crypto). */
 export async function attachmentSha256(bytes: Uint8Array | Blob): Promise<string> {
+  if (!(bytes instanceof Uint8Array)) return blobSha256(bytes)
   const hash = fileSha256.create()
   try {
-    if (bytes instanceof Uint8Array) hash.update(bytes)
-    else {
-      const reader = bytes.stream().getReader()
-      for (;;) { const chunk = await reader.read(); if (chunk.done) break; hash.update(chunk.value) }
-    }
+    hash.update(bytes)
     return Array.from(hash.digest(), byte => byte.toString(16).padStart(2, '0')).join('')
   } finally { hash.destroy() }
 }
@@ -409,6 +454,7 @@ export async function attachmentSha256(bytes: Uint8Array | Blob): Promise<string
 export type DeclaredAttachment = { staging_key: string; sha256: string; size_bytes: number; plan?: AttachmentUploadPlan }
 export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { bytes: Uint8Array | Blob; contentType: string; sha256?: string },
   scope: { chat_id: string | null; as: string; request_id?: string }, signal?: AbortSignal): Promise<DeclaredAttachment> {
+  previewDrawerFor(file.contentType)
   const size = file.bytes instanceof Uint8Array ? file.bytes.byteLength : file.bytes.size
   const upload = { requestId: scope.request_id ?? crypto.randomUUID(), mayRollOver: !!scope.request_id }
   // A host that already hashed these bytes (to keep them locally under their sha) passes it: one hash per send.
@@ -447,10 +493,14 @@ async function advanceUploadPermit(upload: DeclaredUploadState): Promise<void> {
  * 409 upload_in_progress: another permit of this account is writing the same bytes (or its leftovers are being removed).
  * Not a failure, from upload, finish or a call that registers the object. `retry_after` is that permit's release,
  * minutes away, while it usually registers in seconds. Wait 1 s, 2 s, 4 s … 15 s, never past retry_after, then ask
- * again. False for any other error.
+ * again, for at most OTHER_UPLOAD_WAIT_MS in all: past it the caller gets the upload_in_progress itself (retryable),
+ * so a send says the upload is still pending instead of hanging. False for any other error.
  */
-async function waitForOtherUpload(error: unknown, wait: { ms: number }, signal?: AbortSignal): Promise<boolean> {
+const OTHER_UPLOAD_WAIT_MS = 60_000
+async function waitForOtherUpload(error: unknown, wait: { ms: number; since?: number }, signal?: AbortSignal): Promise<boolean> {
   if (!(error instanceof AttachmentsError) || error.status !== 409 || error.code !== 'upload_in_progress') return false
+  wait.since ??= Date.now()
+  if (Date.now() - wait.since >= OTHER_UPLOAD_WAIT_MS) return false
   const remaining = (error.retryAfter ?? 0) - serverNow()
   await waitForAttachmentRetry(remaining > 0 ? Math.min(wait.ms, remaining) : wait.ms, signal)
   wait.ms = Math.min(wait.ms * 2, 15_000)
@@ -654,6 +704,8 @@ export interface CommitArgs {
   /** #2581 Files sent at once: one id for the send and how many files it holds (2–SEND_GROUP_MAX_FILES). Not given, a file sent on its own. */
   send_group_id?: string
   send_group_size?: number
+  /** The comments sent beside the caption, on the captioned file only. */
+  annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[]
 }
 /** The most files one send holds (the backend refuses a larger send_group_size); more files at once go as consecutive sends. */
 export const SEND_GROUP_MAX_FILES = 10

@@ -9,6 +9,7 @@ import { subscribeDeviceSessions } from '@/session/shared/remote-sessions/sessio
 import { readIdentityDirectoryBridge, type IdentityDirectoryBridge } from '@/lib/identityDirectoryBridge';
 import { agentNamesFromPeers, type SessionShellAgentName } from '@shared/lib/ipc/shell-port';
 import { log } from '@renderer/utils/logger';
+import { onAccountChange } from '@/lib/replica';
 
 /** 一条会话背后的咕咕身份:它的 agent id。名字不在这里 —— 任务只有一个名字,是会话的 `title`。 */
 export interface SessionAgentBinding {
@@ -26,6 +27,8 @@ export interface SessionAgentBindingsSource {
   /** 开户事件(本机与每台机器合流)。 */
   onIdentityEvent(cb: (event: SessionShellAgentName) => void): () => void;
   directory(): IdentityDirectoryBridge | null | undefined;
+  /** 换了登录的人(登出也算):本机那一份是按登录的人答的。 */
+  onAccountChange(cb: () => void): () => void;
 }
 
 const shellSource: SessionAgentBindingsSource = {
@@ -34,6 +37,7 @@ const shellSource: SessionAgentBindingsSource = {
   onRemoteChange: subscribeDeviceSessions,
   onIdentityEvent: onSessionpageIdentityEvent,
   directory: () => readIdentityDirectoryBridge(),
+  onAccountChange: (cb) => onAccountChange(() => cb()),
 };
 
 /**
@@ -46,6 +50,8 @@ const shellSource: SessionAgentBindingsSource = {
  *  · #6264 别的机器上的会话:会话目录的行上带着 agent id;目录一变就再收一遍。那台机器推的事件照样合流。
  *    ❌ 逐台机器去问 —— 掉线又回来的那台会让读的人等到超时(#7016)。
  *  · 查不到就是**没有**:那条会话还没有咕咕身份(从没起过、或这家引擎不可寻址)。
+ *  · 本机那一份按登录的人答(agent 身份属于账号,任务属于机器):换了人就整张忘掉,下一个人的侧栏挂上时再读 ——
+ *    和重启后冷启动读到的是同一份。
  *  · 名字 ❌ 在这里:任务的名字只有一份,是会话的 `title`(宿主的 taskName)。
  */
 export class SessionAgentBindings {
@@ -54,6 +60,10 @@ export class SessionAgentBindings {
   /** 整份读过一次了吗。没读过与「读过、这条没有」在界面上是同一副样子,所以单独记一格备诊断。 */
   isLoaded = false;
   private started = false;
+  /** 这个人的本机那一份读过了(换人后回到 false)。 */
+  private read = false;
+  /** 换一次人加一;读回来时已经换过人的那一份不落表。 */
+  private generation = 0;
 
   constructor(private readonly source: SessionAgentBindingsSource = shellSource) {
     makeAutoObservable<SessionAgentBindings, 'source'>(this, { source: false });
@@ -78,10 +88,13 @@ export class SessionAgentBindings {
    * ❌ 不抛:一层「顺手告诉你这行是谁」的提示,不该把侧栏或启动流程带下去。
    */
   async load(): Promise<void> {
+    const generation = this.generation;
     const reading = this.source.readAll();
     if (!reading) return;
     try {
-      this.adoptRows(await reading);
+      const rows = await reading;
+      if (generation !== this.generation) return;
+      this.adoptRows(rows);
       runInAction(() => {
         this.isLoaded = true;
       });
@@ -95,17 +108,32 @@ export class SessionAgentBindings {
     for (const row of rows) this.note(row.conversationId, row.agentUserId);
   }
 
+  /** 换了登录的人:上一个人的那份整张忘掉,等下一次 start 再读。 */
+  private forget(): void {
+    runInAction(() => {
+      this.generation += 1;
+      this.bindings.clear();
+      this.isLoaded = false;
+      this.read = false;
+    });
+  }
+
   /**
    * 接上事件并整份读一次。**幂等**:侧栏收起再展开会重新挂载,再点一次不该重订阅、也不该
-   * 再把名册读一遍。订阅跟着应用活一辈子,所以不给退订 —— 这张表本身也是全应用一份。
+   * 再把名册读一遍。订阅跟着应用活一辈子,所以不给退订 —— 这张表本身也是全应用一份;
+   * 换了人以后(forget)下一次 start 再读一遍,那是下一个人的侧栏挂上了。
    */
   start(): void {
-    if (this.started) return;
-    this.started = true;
-    this.source.onIdentityEvent((event) => this.note(event.conversationId, event.agentUserId));
-    this.source.onRemoteChange(() => this.adoptRows(this.source.readRemote()));
-    // A remote row is listed once its identity is known to the shared identity directory.
-    this.source.directory()?.subscribe(() => this.adoptRows(this.source.readRemote()));
+    if (!this.started) {
+      this.started = true;
+      this.source.onIdentityEvent((event) => this.note(event.conversationId, event.agentUserId));
+      this.source.onRemoteChange(() => this.adoptRows(this.source.readRemote()));
+      // A remote row is listed once its identity is known to the shared identity directory.
+      this.source.directory()?.subscribe(() => this.adoptRows(this.source.readRemote()));
+      this.source.onAccountChange(() => this.forget());
+    }
+    if (this.read) return;
+    this.read = true;
     this.adoptRows(this.source.readRemote());
     void this.load();
   }

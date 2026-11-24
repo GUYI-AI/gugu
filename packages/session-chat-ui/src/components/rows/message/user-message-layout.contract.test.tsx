@@ -47,6 +47,7 @@ type Reading = {
   cardH: number;
   /** 这一行画出来的附件 chip 数(#5269)。 */
   chips: number;
+  text: string;
   /** 画出来的气泡数:只有附件、没有正文时是 0。 */
   cards: number;
   left: number;
@@ -124,6 +125,7 @@ async function mountUser(item: ChatMessage, layout: ChatLayout, commands: ChatCo
       dom: root.offsetHeight,
       cardH: card.offsetHeight,
       chips: root.querySelectorAll('[data-attachment-chip]').length,
+      text: root.textContent ?? '',
       cards,
       left: rect.left - hostRect.left,
       right: rect.right - hostRect.left,
@@ -245,6 +247,28 @@ describe('a cite stays in the words; the strip draws attachments only', () => {
     for (const layout of [DOUBLE, SINGLE]) {
       const only = await mountUser(normalizeMessage({ kind: 'message', id: 'u-only', role: 'user', text: '', attachments: [image] }), layout);
       expect([only.chips, only.cards]).toEqual([1, 0]);
+      expect(only.computed).toBe(only.dom);
+    }
+  });
+
+  it('draws each comment sent beside the words as a row naming its place and comment; measure === offsetHeight', async () => {
+    const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: 'SELECTOR #hero VIEWPORT 800x600' },
+      { number: 2, target: 'https://example.org/', comment: 'Shorter', promptText: 'PAGE URL https://example.org/' }];
+    const item = normalizeMessage({ kind: 'message', id: 'u-note', role: 'user', text: 'apply each comment', annotations });
+    expect(item.text).toBe('apply each comment');
+    expect(item.attachments).toEqual([
+      { id: 'annotation:1', kind: 'annotation', name: '1 · index.html', title: 'docs/index.html', detail: 'Make it red' },
+      { id: 'annotation:2', kind: 'annotation', name: '2 · example.org', title: 'https://example.org/', detail: 'Shorter' },
+    ]);
+    for (const layout of [DOUBLE, SINGLE]) {
+      const mounted = await mountUser(item, layout);
+      expect([mounted.chips, mounted.cards]).toEqual([2, 1]);
+      expect(mounted.computed).toBe(mounted.dom);
+      // The agent's text for a comment is never drawn.
+      expect(mounted.text).toContain('Make it red');
+      expect(mounted.text).not.toMatch(/SELECTOR|VIEWPORT|PAGE URL/);
+      const only = await mountUser(normalizeMessage({ kind: 'message', id: 'u-note-only', role: 'user', text: '', annotations }), layout);
+      expect([only.chips, only.cards]).toEqual([2, 0]);
       expect(only.computed).toBe(only.dom);
     }
   });

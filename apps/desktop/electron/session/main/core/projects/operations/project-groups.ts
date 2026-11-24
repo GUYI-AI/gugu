@@ -15,6 +15,7 @@ import {
   projectGroupHost,
   type ProjectGroupSubject,
 } from '../project-group-host';
+import { log } from '@main/lib/logger';
 import { getProjectById, getProjects } from './getProjects';
 
 /**
@@ -79,6 +80,22 @@ export async function ensureProjectGroup(
     notifyProjectGroupBindingChanged(projectId);
   }
   return ok({ chatId: result.data.chatId });
+}
+
+/**
+ * A project registered without the person opening it (an import): give it its group the way opening its folder does
+ * (project-block), since the account project list, and so the sidebar, only knows a project by its group. Without one
+ * its sessions stood outside every project. A workspace is no project and gets none. A failure does not undo the
+ * registration: a cloud failure is retried when the backend answers again, and opening the project ensures it too.
+ */
+export async function ensureRegisteredProjectGroup(project: { id: string; kind?: 'workspace' }): Promise<void> {
+  if (project.kind === 'workspace') return;
+  try {
+    const result = await ensureProjectGroup(project.id);
+    if (!result.success) log.warn('[project-groups] registered project has no group yet', { projectId: project.id, error: result.error });
+  } catch (error) {
+    log.warn('[project-groups] registered project has no group yet', { projectId: project.id, error: String(error) });
+  }
 }
 
 /** 建群时云端没答上的项目(见 ensureProjectGroup)。进程内:进程重启后由打开项目块的那次 ensureProjectGroup 再建。 */

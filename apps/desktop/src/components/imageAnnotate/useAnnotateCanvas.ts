@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { pinchZoom } from '@/session/shared/preview/pinch-zoom'
 import { addShape, boundsOf, boxBetween, commit, cropDocument, deleteShape, editShape, hitTest, inside, newHistory, redo, transformShape, undo, type AnnotateColor, type AnnotateDocument, type AnnotateTool, type Box, type Point, type Shape } from './annotateModel'
 
 type View = { zoom: number; x: number; y: number }
@@ -12,7 +13,16 @@ type Gesture =
 const clientPoint = (event: ReactPointerEvent) => ({ x: event.clientX, y: event.clientY })
 const centerOf = (a: Point, b: Point) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y)
-const editable = (target: EventTarget | null) => target instanceof HTMLElement && !!target.closest('input,textarea,[contenteditable="true"]')
+// The editor can be drawn in a pop-out window (ImagePreviewProvider @@@viewer-window): its elements are not this window's
+// HTMLElement, so elements are recognised by shape, and the keys are that window's.
+const elementOf = (target: EventTarget | null) => (target && 'closest' in target ? target as HTMLElement : null)
+const editable = (target: EventTarget | null) => !!elementOf(target)?.closest('input,textarea,[contenteditable="true"]')
+// The view after zooming to `zoom` with the picture point under `from` moved to `to` (client points; the plane sits at the
+// stage centre plus the view offset).
+const zoomAt = (view: View, zoom: number, from: Point, to: Point, stage: DOMRect): View => {
+  const ratio = zoom / view.zoom, cx = stage.left + stage.width / 2, cy = stage.top + stage.height / 2
+  return { zoom, x: to.x - cx - (from.x - cx - view.x) * ratio, y: to.y - cy - (from.y - cy - view.y) * ratio }
+}
 const toolKeys: Record<string, AnnotateTool> = { r: 'rect', a: 'arrow', n: 'marker', p: 'pen', t: 'text', m: 'mosaic', c: 'crop' }
 const fitFor = (viewport: { width: number; height: number }, image: Pick<Box, 'width' | 'height'>) =>
   Math.max(.001, Math.min(1, (viewport.width - 32) / image.width, (viewport.height - 32) / image.height))
@@ -83,11 +93,11 @@ export function useAnnotateCanvas(initial: AnnotateDocument, imageBounds?: () =>
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       const key = event.key.toLowerCase(), mod = event.metaKey || event.ctrlKey
-      const textUndo = editingText && mod && ['z', 'y'].includes(key)
-        && event.target instanceof HTMLElement && event.target.closest('.ia-text-editor')
-      if (event.isComposing || (editable(event.target) && !textUndo)) return
-      if (!(event.target instanceof HTMLElement) || !event.target.closest('.ia-editor') || event.target.closest('[aria-busy="true"]')) return
-      if (textUndo) event.target.closest<HTMLElement>('.ia-editor')?.focus()
+      const target = elementOf(event.target)
+      const textUndo = editingText && mod && ['z', 'y'].includes(key) && target?.closest('.ia-text-editor')
+      if (event.isComposing || (editable(target) && !textUndo)) return
+      if (!target?.closest('.ia-editor') || target.closest('[aria-busy="true"]')) return
+      if (textUndo) target.closest<HTMLElement>('.ia-editor')?.focus()
       if (key === ' ' || (!mod && toolKeys[key]) || ['Delete', 'Backspace'].includes(event.key) || (mod && ['z', 'y', '+', '=', '-', '0'].includes(key))) {
         event.preventDefault(); event.stopPropagation()
       }
@@ -101,9 +111,24 @@ export function useAnnotateCanvas(initial: AnnotateDocument, imageBounds?: () =>
     }
     const keyup = (event: KeyboardEvent) => { if (event.key === ' ') space.current = false }
     const blur = () => { space.current = false }
-    window.addEventListener('keydown', keydown, true); window.addEventListener('keyup', keyup); window.addEventListener('blur', blur)
-    return () => { window.removeEventListener('keydown', keydown, true); window.removeEventListener('keyup', keyup); window.removeEventListener('blur', blur) }
+    const view = stage.current!.ownerDocument.defaultView!
+    view.addEventListener('keydown', keydown, true); view.addEventListener('keyup', keyup); view.addEventListener('blur', blur)
+    return () => { view.removeEventListener('keydown', keydown, true); view.removeEventListener('keyup', keyup); view.removeEventListener('blur', blur) }
   })
+  // The editor sits inside the viewer's root, whose own wheel handler would zoom the hidden picture underneath: the editor
+  // keeps every wheel to itself, and over the picture a wheel or pinch zooms at the cursor as the viewer does.
+  useEffect(() => {
+    const element = stage.current!, editor = element.closest<HTMLElement>('.ia-editor')!
+    const wheel = (event: WheelEvent) => {
+      event.stopPropagation()
+      if (!element.contains(elementOf(event.target))) return
+      event.preventDefault()
+      const at = { x: event.clientX, y: event.clientY }, box = element.getBoundingClientRect()
+      setView(v => zoomAt(v, pinchZoom(v.zoom, event.deltaY, .1, 32), at, at, box))
+    }
+    editor.addEventListener('wheel', wheel, { passive: false })
+    return () => editor.removeEventListener('wheel', wheel)
+  }, [])
   const pointFor = (event: ReactPointerEvent): Point => {
     const box = vectors.current!.getBoundingClientRect()
     return { x: doc.crop.x + (event.clientX - box.left) / scale, y: doc.crop.y + (event.clientY - box.top) / scale }
@@ -159,9 +184,7 @@ export function useAnnotateCanvas(initial: AnnotateDocument, imageBounds?: () =>
       if (pointers.current.size < 2) return
       const [a, b] = [...pointers.current.values()], center = centerOf(a, b)
       const zoom = Math.max(.1, Math.min(32, action.view.zoom * distance(a, b) / action.distance))
-      const box = stage.current!.getBoundingClientRect(), ratio = zoom / action.view.zoom
-      setView({ zoom, x: center.x - box.left - box.width / 2 - (action.center.x - box.left - box.width / 2 - action.view.x) * ratio,
-        y: center.y - box.top - box.height / 2 - (action.center.y - box.top - box.height / 2 - action.view.y) * ratio })
+      setView(zoomAt(action.view, zoom, action.center, center, stage.current!.getBoundingClientRect()))
       return
     }
     if (action.kind === 'pan') {

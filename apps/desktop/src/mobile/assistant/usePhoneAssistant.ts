@@ -13,6 +13,7 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import type { PhoneAssistant } from './MobileAssistantApp'
 import { publishPhoneAssistant } from './phoneAssistantIdentity'
 import { phoneAssistantStage, type PhoneAssistantStage } from './phoneAssistantStage'
+import { ASSISTANT_PROMOTED } from '@/session/shared/extensions/assistant-entry'
 
 export type { PhoneAssistantStage } from './phoneAssistantStage'
 
@@ -21,7 +22,10 @@ const NO_DEVICES: readonly Device[] = []
 const noDevices = () => NO_DEVICES
 
 export type PhoneAssistantState = {
-  /** 手机壳里有这一格:一直有(owner 10-16「没有咕咕的新用户那一格照样在」),没有它时那一格里是给它安家的引导。 */
+  /**
+   * 手机壳里有这一格:推广着它时一直有(owner 10-16「没有咕咕的新用户那一格照样在」),没有它时那一格里是给它安家的引导;
+   * 不推广(assistant-entry.ts `ASSISTANT_PROMOTED`)时只有已经有它的人才有,❌ 再把没有它的人引去安家。
+   */
   available: boolean
   assistant: PhoneAssistant | null
   chatId: string | null
@@ -66,7 +70,7 @@ export function usePhoneAssistant(enabled: boolean): PhoneAssistantState {
   }, [contact, ownerUserId])
   const chatId = contact ? dm.chatId : null
   return {
-    available: enabled,
+    available: enabled && (ASSISTANT_PROMOTED || !!contact),
     assistant: contact ? { id: contact.id, display_name: contact.display_name, avatar: contact.avatar, created_at: contact.created_at ?? null } : null,
     chatId,
     cloudDeviceId,

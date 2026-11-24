@@ -93,10 +93,14 @@ describe('dev verification workflow contracts', () => {
   const job = devMac.jobs['desktop-build-mac']
   const report = job.steps.at(-1)
 
-  it('keeps Mac automatic and Linux manual-only, and never lets a newer run displace an older commit verdict', () => {
+  it('keeps Mac automatic and Linux manual-only (the cache seeder runs its shards on push), and never lets a newer run displace an older commit verdict', () => {
     expect(devMac.on).toEqual({ push: { branches: ['dev'] }, workflow_dispatch: null })
     expect(devLinux.on).toEqual({ workflow_dispatch: null })
-    expect(devLinuxSource).toContain('Tomorrow, restore push with branches: [dev]')
+    // Manual-only is safe because the dev cache seeder runs the very same unit shards on every dev push.
+    const shardRun = (workflow: { jobs: Record<string, { steps: Array<{ run?: string }> }> }) =>
+      Object.values(workflow.jobs).flatMap(seeded => seeded.steps.map(step => step.run)).find(run => run?.startsWith('pnpm exec vitest run --project gugu'))
+    expect(shardRun(devLinux)).toContain('--shard=${{ matrix.shard }}/6')
+    expect(shardRun(YAML.parse(readFileSync('.github/workflows/ci-cache.yml', 'utf8')))).toBe(shardRun(devLinux))
     expect(ci.on).not.toHaveProperty('push')
     expect(devMac.concurrency).toBeUndefined()
     expect(devLinux.concurrency).toBeUndefined()

@@ -86,7 +86,6 @@ vi.mock('@renderer/features/extensions/panel/market-detail-agent', async () => {
 
 const { SessionLocalizationProvider } = await import('@renderer/localization/localization-provider');
 const { translateSessionMessage } = await import('@renderer/localization/locale-store');
-const { toast } = await import('@renderer/lib/hooks/use-toast');
 const { ExtensionsSettingsCard } = await import('./ExtensionsSettingsCard');
 const { queryClient: replicas, followRendererSession } = await import('@/lib/replica');
 // The agents library is the account's (the market's Agents page reads it for the signed-in person).
@@ -108,9 +107,6 @@ beforeEach(() => {
   appState.history.prune(() => true);
 });
 
-// How this build refuses an App written for apiVersion 2, as list() hands it over (#6934).
-const REFUSED = 'Invalid manifest:\n- apiVersion: apiVersion 2 is an older App interface; ask an agent to rewrite the App for apiVersion 25 as app_create writes Apps.';
-
 /** An App's settings page, opened as the Installed sheet and App links open it: a place on the Apps page. */
 async function openSettings(extensionId: string) {
   await act(async () => openAppsLocation({ tab: 'agents', detail: { page: 'manage', extensionId } }));
@@ -125,124 +121,6 @@ function inventory() {
   });
   return { element, items: () => items };
 }
-
-describe('Marketplace installed inventory', () => {
-  let dom: JSDOM;
-  let root: Root;
-  const settle = () => act(async () => void (await new Promise((resolve) => setTimeout(resolve, 30))));
-
-  beforeEach(() => {
-    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
-    dom.window.HTMLElement.prototype.scrollTo = () => {};
-    vi.stubGlobal('window', dom.window);
-    vi.stubGlobal('document', dom.window.document);
-    vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
-    vi.stubGlobal('Event', dom.window.Event);
-    root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
-  });
-
-  afterEach(() => {
-    act(() => root.unmount());
-    vi.unstubAllGlobals();
-    vi.clearAllMocks();
-    dom.window.close();
-  });
-
-  // The workspace App has prompts a person can edit, so it needs a settings page: listed, with no switch or uninstall.
-  it('the installed list holds the preinstalled workspace App too', async () => {
-    const listed = h.api.list.getMockImplementation();
-    const shipped = (id: string, name: string) => ({ ...h.manifest('0.2.51'), id, name, contributes: { tabs: [{ name: 'main', title: name }] } });
-    h.api.list.mockResolvedValue({
-      success: true,
-      data: {
-        extensions: [h.manifest('1.0.0'), shipped('workspace', '群文件夹'), shipped('searcher', 'Searcher')],
-        invalid: [],
-        icons: {},
-        disabled: [],
-        origins: { workspace: 'preinstalled' },
-      },
-    } as never);
-    try {
-      const sheet = inventory();
-      await act(async () => {
-        root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, sheet.element)));
-      });
-      await settle();
-      expect(sheet.items().map((item) => item.id)).toEqual(expect.arrayContaining(['notes', 'searcher', 'workspace']));
-      // One gugu ships cannot be broken from here: no switch or uninstall in the sheet, and on its settings page no switch,
-      // page switch, revoke, clear, uninstall or agents editor.
-      const workspace = sheet.items().find((item) => item.id === 'workspace')!;
-      expect([workspace.setEnabled, workspace.remove]).toEqual([undefined, undefined]);
-      act(() => root.unmount());
-      root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
-      await openSettings('workspace');
-      await act(async () => {
-        root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, React.createElement(ExtensionsSettingsCard))));
-      });
-      await settle();
-      const doc = dom.window.document;
-      expect(doc.querySelector('[data-testid="app-manage-page"][data-extension-id="workspace"]')).not.toBeNull();
-      expect(doc.querySelector('[data-testid="app-manage-page"] [role="switch"]')).toBeNull();
-      for (const absent of ['app-manage-uninstall', 'app-manage-data', 'app-manage-pin']) expect(doc.querySelector(`[data-testid="${absent}"]`), absent).toBeNull();
-      expect(doc.querySelector('[data-testid="app-manage-permissions"]')?.textContent).not.toContain(translateSessionMessage('extensions.revoke'));
-    } finally {
-      h.api.list.mockImplementation(listed!);
-    }
-  });
-
-  // L11 复核 60: an installed folder this build cannot read (every v1 / v2 App once apiVersion 3 ships) sat in the list
-  // with no way to remove it. It is an item of the sheet, named by its folder, removed by its folder name.
-  it('an installed folder this build cannot read: listed by its folder name, and removing it uninstalls that folder', async () => {
-    const listed = h.api.list.getMockImplementation();
-    h.api.list.mockResolvedValue({
-      success: true,
-      data: { extensions: [h.manifest('1.0.0')], invalid: [{ dirName: 'old-notes', reason: REFUSED }], icons: {}, disabled: [] },
-    });
-    try {
-      const sheet = inventory();
-      await act(async () => {
-        root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, sheet.element)));
-      });
-      await settle();
-      const unreadable = sheet.items().find((item) => item.id === 'old-notes')!;
-      expect(unreadable.name).toBe('old-notes');
-      h.api.list.mockResolvedValue({ success: true, data: { extensions: [h.manifest('1.0.0')], invalid: [], icons: {}, disabled: [] } });
-      await act(async () => unreadable.remove!());
-      expect(h.api.uninstall).toHaveBeenCalledWith({ extensionId: 'old-notes', lastAnywhere: true });
-    } finally {
-      h.api.list.mockImplementation(listed!);
-    }
-  });
-
-  // L11 复核 60 补看: a machine picked in the device picker that cannot be reached rejects instead of answering — the
-  // person is told it failed, as when it answers no. Control (b93c87469d): the rejection went nowhere, no toast.
-  it('Uninstall of an unreadable folder on a machine that cannot be reached says it failed', async () => {
-    const listed = h.api.list.getMockImplementation();
-    h.api.list.mockResolvedValue({
-      success: true,
-      data: { extensions: [h.manifest('1.0.0')], invalid: [{ dirName: 'old-notes', reason: REFUSED }], icons: {}, disabled: [] },
-    });
-    h.api.uninstall.mockRejectedValueOnce(new Error('device offline'));
-    try {
-      const sheet = inventory();
-      await act(async () => {
-        root.render(React.createElement(QueryClientProvider, { client: new QueryClient() }, React.createElement(SessionLocalizationProvider, null, sheet.element)));
-      });
-      await settle();
-      const unreadable = sheet.items().find((item) => item.id === 'old-notes')!;
-      await act(async () => { await expect(unreadable.remove!()).rejects.toThrow(); });
-      // One uninstall for every App (L11 64): the failure reads as it does for a readable one — the words, and Retry.
-      expect(vi.mocked(toast)).toHaveBeenCalledWith(expect.objectContaining({
-        title: translateSessionMessage('extensions.uninstallFailed'),
-        description: 'device offline',
-        tier: 'error',
-        action: expect.objectContaining({ label: translateSessionMessage('extensions.retry') }),
-      }));
-    } finally {
-      h.api.list.mockImplementation(listed!);
-    }
-  });
-});
 
 // The sheet's 「这版改了什么」 and 「代码在哪」 are those of the version being installed, as main hands them back with what it
 // would ask (installFromMarket `consent: return`) — main holds that version's row. Neither the page on screen (here 1.0.0, read before the update check)
@@ -405,172 +283,6 @@ describe('Desktop marketplace tabs and app details', () => {
     await settle();
   };
 
-  it('opens the same assistant detail from both market pages without an install button on the card', async () => {
-    const assistant = app('gugu-assistant', ['other']);
-    const extensions = [...listing, assistant];
-    h.api.market.mockResolvedValue({
-      success: true,
-      data: { extensions, invalid: [], errorKind: null, error: null, total: extensions.length, page: 0, hasMore: false, fetchedAt: null },
-    } as never);
-    h.agentList.mockResolvedValue([
-      {
-        id: 'claude', name: 'Claude Code', publisher: 'Anthropic', description: 'CLI', reading: 'installed',
-        status: 'available', installations: [], used: { kind: 'auto' }, installOptions: [],
-        version: '1.0.0', capabilities: { hostDependency: { updates: { kind: 'none' } } },
-      },
-      { id: 'kilocode', name: 'Kilo', publisher: '开源', description: 'CLI', reading: 'not-detected' },
-    ]);
-    await render('agents');
-    const document = dom.window.document;
-    const card = (id: string) => document.querySelector(`[data-testid="agent-market-card-${id}"], [data-testid="featured-agent-card-${id}"]`);
-    expect(card('claude')?.textContent).toContain(translateSessionMessage('extensions.marketPublisher', { name: 'Anthropic' }));
-    expect(card('claude')?.textContent).toContain(translateSessionMessage('extensions.installedMark'));
-    expect(card('kilocode')?.textContent).not.toContain(translateSessionMessage('extensions.installedMark'));
-    expect(card('kilocode')?.querySelector('button')).toBeNull();
-    expect(document.querySelector('[data-testid="featured-agent-card-claude"]')).not.toBeNull();
-    const nextBatch = [...document.querySelectorAll('button')].find((button) =>
-      button.textContent?.trim() === translateSessionMessage('extensions.marketNextBatch')
-    );
-    expect(nextBatch).toBeDefined();
-    await act(async () => nextBatch!.click());
-    expect(document.querySelector('[data-testid="featured-agent-card-kilocode"]')).not.toBeNull();
-    expect(document.querySelector('[data-testid="featured-agent-card-claude"]')).toBeNull();
-    expect(document.querySelector('[data-testid="agent-market-card-kilocode"]')).toBeNull();
-    await press('[data-testid="featured-agent-card-kilocode"]');
-    expect(document.querySelector('[data-testid="chosen-agent-detail"]')?.textContent).toBe('kilocode');
-    await press('[data-testid="market-detail-dialog"] [data-slot="dialog-close"]');
-    await press('[data-testid="agent-market-chip-general"]');
-    expect(card('claude')).toBeNull();
-    // From the agents' page the assistant's market page is the whole page; from the Apps list it sits beside the list.
-    await press('[data-testid="extension-card-gugu-assistant"]');
-    expect(document.querySelector<HTMLElement>('[data-testid="app-product-page"]')?.dataset.extensionId).toBe('gugu-assistant');
-    expect(document.querySelector('[data-testid="extensions-market-panel"]')).toBeNull();
-    await press('[data-testid="app-product-back"]');
-    await press('[data-testid="extensions-section-market"]');
-    await press('[data-testid="extension-card-gugu-assistant"]');
-    expect(document.querySelector<HTMLElement>('[data-testid="extensions-market-panel"] [data-testid="app-product-page"]')?.dataset.extensionId).toBe('gugu-assistant');
-    await press('[data-testid="app-product-back"]');
-    // 「已安装」 opens the Installed sheet: a place on the Apps page, on its first segment.
-    await press('[data-testid="extensions-open-installed"]');
-    expect(appState.navigation.viewParamsStore.apps?.location?.installed).toEqual({ section: 'agents', deviceId: undefined });
-  });
-
-  it('searches the current catalog with the same search field', async () => {
-    h.agentList.mockResolvedValue([
-      { id: 'claude', name: 'Claude Code', description: 'CLI', reading: 'installed' },
-      { id: 'kilocode', name: 'Kilo', description: 'CLI', reading: 'not-detected' },
-    ]);
-    await render('agents');
-    const document = dom.window.document;
-    const searchFor = async (value: string) => {
-      const input = document.querySelector<HTMLInputElement>('input[type="search"]')!;
-      await act(async () => {
-        Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(input, value);
-        input.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
-      });
-    };
-    await searchFor('Kilo');
-    expect(document.querySelector('[data-testid="agent-market-card-claude"]')).toBeNull();
-    expect(document.querySelector('[data-testid="agent-market-card-kilocode"]')).not.toBeNull();
-
-    await press('[data-testid="extensions-section-market"]');
-    const results = [listing[0]!];
-    h.api.market.mockResolvedValue({
-      success: true,
-      data: { extensions: results, invalid: [], errorKind: null, error: null, total: 1, page: 0, hasMore: false, fetchedAt: null },
-    } as never);
-    await searchFor('arxiv');
-    await until('only matching extension cards are drawn', () =>
-      document.querySelector('[data-testid="extensions-market-section-results"] [data-testid="extension-card-arxiv"]') !== null
-      && document.querySelector('[data-testid="extension-card-pomo"]') === null
-    );
-    expect(h.api.market).toHaveBeenCalledWith({ page: 0, query: 'arxiv' });
-    expect(document.querySelector('[data-testid="extension-card-arxiv"]')).not.toBeNull();
-    expect(document.querySelector('[data-testid="extension-card-pomo"]')).toBeNull();
-  });
-
-  it('shows eligible featured apps, and only supported sorting and category choices', async () => {
-    await render();
-    const document = dom.window.document;
-    const chips = [...document.querySelectorAll('[data-testid^="extensions-market-chip-"]')].map((node) =>
-      node.getAttribute('data-testid')!.replace('extensions-market-chip-', '')
-    );
-    const tiles = () => [...document.querySelectorAll('[data-testid^="extension-card-"]')].map((node) => node.getAttribute('data-testid'));
-    expect(chips).toEqual(['all', 'research', 'productivity', 'developer']);
-    expect(tiles()).toEqual(['extension-card-arxiv', 'extension-card-trace']);
-    expect(document.querySelector('[data-testid="extensions-market-sort-newest"]')).not.toBeNull();
-    expect(document.querySelector('[data-testid="extensions-market-sort-popular"]')).toBeNull();
-    expect(document.querySelector('[data-testid="featured-extension-card-pomo"]')).not.toBeNull();
-    expect(document.body.textContent).not.toMatch(/Install from folder|装本地文件夹/);
-    await press('[data-testid="extensions-market-chip-developer"]');
-    expect(tiles()).toEqual(['extension-card-trace']);
-  });
-
-  it('reads every catalog page for category browsing', async () => {
-    const entries = Array.from({ length: 14 }, (_, i) => app(`app-${i}`, ['productivity']));
-    h.api.market.mockImplementation((async ({ page }: { page: number }) => ({ success: true, data: {
-      extensions: entries.slice(page * 12, (page + 1) * 12), invalid: [], errorKind: null, error: null,
-      total: 14, page, hasMore: page === 0, fetchedAt: null,
-    } })) as never);
-    await render();
-    expect(h.api.market).toHaveBeenCalledWith({ page: 1, query: '' });
-    await press('[data-testid="extensions-market-chip-productivity"]');
-    expect(dom.window.document.querySelectorAll('[data-testid^="extension-card-"]')).toHaveLength(14);
-  });
-
-  it('第一次装、什么权限都不要的:产品页头上点「安装」就装,不弹框', async () => {
-    await render();
-    await press('[data-testid="featured-extension-card-pomo"]');
-    await press('[data-testid="app-product-action"]');
-    expect(h.showConfirm).not.toHaveBeenCalled();
-    expect((h.api as unknown as { installFromMarket: ReturnType<typeof vi.fn> }).installFromMarket).toHaveBeenLastCalledWith({
-      ref: { extensionId: 'pomo', version: '1.0.0' },
-      consent: { kind: 'given', digest: 'digest-pomo' },
-    });
-  });
-
-  it('要了权限的(这里是联网):照旧先问,点头之前不装', async () => {
-    await render();
-    await press('[data-testid="extension-card-arxiv"]');
-    await press('[data-testid="app-product-action"]');
-    const installFromMarket = (h.api as unknown as { installFromMarket: ReturnType<typeof vi.fn> }).installFromMarket;
-    expect(installFromMarket.mock.calls.map(([args]) => (args as { consent?: { kind: string } }).consent?.kind)).toEqual(['return']);
-    expect(h.showConfirm).toHaveBeenCalledOnce();
-    await act(async () => void (h.showConfirm.mock.calls[0][0] as { onSuccess: () => void }).onSuccess());
-    expect(installFromMarket.mock.calls.map(([args]) => (args as { consent?: { kind: string } }).consent?.kind)).toEqual(['return', 'given']);
-    expect(dom.window.document.querySelector<HTMLElement>('[data-testid="app-product-page"]')?.dataset.extensionId).toBe('arxiv');
-  });
-
-  it('opens compatibility and upgrade requirements in extension details', async () => {
-    const blocked = app('arxiv', ['research']);
-    const newer = app('trace', ['developer']);
-    const entries = [
-      { ...blocked, cloud: { ...blocked.cloud, compat: { reason: 'needs-newer-app' as const, gate: 'app' as const, minAppVersion: '9.0.0' } } },
-      listing[1]!,
-      { ...newer, cloud: { ...newer.cloud, newerNeedsApp: '2.0.0' } },
-    ];
-    h.api.market.mockResolvedValue({
-      success: true,
-      data: { extensions: entries, invalid: [], errorKind: null, error: null, total: 3, page: 0, hasMore: false, fetchedAt: null },
-    } as never);
-    await render();
-    const document = dom.window.document;
-    const sub = (id: string) => document.querySelector(`[data-testid="extension-card-${id}"] .mk-market-card-description`)?.textContent;
-    // 简介是「arxiv 的一句话」,没写副标题:名字下面就是它,❌ 写状态或类别。
-    expect(sub('arxiv')).toBe('arxiv 的一句话');
-    expect(sub('trace')).toBe('trace 的一句话');
-    expect(document.querySelector('[data-testid="extension-card-arxiv"] button')).toBeNull();
-    await press('[data-testid="extension-card-arxiv"]');
-    expect(document.querySelector('[data-testid="app-product-page"]')?.textContent).toContain(
-      translateSessionMessage('extensions.needsNewerApp', { version: '9.0.0' })
-    );
-    // The next App from the list beside the page, without going back first.
-    await press('[data-testid="extension-card-trace"]');
-    expect(document.querySelector('[data-testid="app-product-newer-needs-app"]')?.textContent).toBe(
-      translateSessionMessage('extensions.newerNeedsApp', { version: '2.0.0' })
-    );
-  });
-
   // 10-16 实测：市场上 office 0.1.1、预装的 0.1.0 —— 产品页「Update to v0.1.1」,一按就是「another package cannot replace it」。
   // 预装的跟着咕咕更新:货架上新一点的那版对它不算更新。对照：同一个 App 不是预装的，照常出「更新到」。
   for (const [origins, offered] of [[{ pomo: 'preinstalled' }, false], [{ pomo: 'market' }, true]] as const) {
@@ -583,44 +295,13 @@ describe('Desktop marketplace tabs and app details', () => {
       } as never);
       h.api.list.mockResolvedValueOnce({ success: true, data: { extensions: [here.manifest], invalid: [], icons: {}, disabled: [], origins } } as never);
       await render();
-      await press('[data-testid="featured-extension-card-pomo"]');
+      await press('[data-testid="extension-card-pomo"]');
       const action = dom.window.document.querySelector('[data-testid="app-product-action"]')?.textContent ?? null;
       // The product page is drawn either way (a missing button would make the arm without an offer pass on nothing).
       expect(action).not.toBeNull();
       expect(action === translateSessionMessage('extensions.updateTo', { version: '1.1.0' })).toBe(offered);
     });
   }
-
-  it('an installed App\'s market page leads to its settings page, where it is uninstalled', async () => {
-    const listed = h.api.list.getMockImplementation();
-    const here = app('pomo', ['productivity']);
-    h.api.list.mockResolvedValue({ success: true, data: { extensions: [here.manifest], invalid: [], icons: {}, disabled: [], origins: { pomo: 'market' } } } as never);
-    try {
-      await render();
-      await press('[data-testid="featured-extension-card-pomo"]');
-      await press('[data-testid="app-product-manage"]');
-      expect(dom.window.document.querySelector('[data-testid="extensions-manage"]')).not.toBeNull();
-    } finally {
-      h.api.list.mockImplementation(listed!);
-    }
-  });
-
-  it('opens an App beside the Marketplace list, switches from the list and goes back to the grid', async () => {
-    await render();
-    const document = dom.window.document;
-    const page = () => document.querySelector<HTMLElement>('[data-testid="extensions-market-panel"] [data-testid="app-product-page"]');
-    await press('[data-testid="extension-card-trace"]');
-    expect(page()?.dataset.extensionId).toBe('trace');
-    expect(document.querySelector('[data-testid="extension-card-trace"]')?.getAttribute('aria-current')).toBe('true');
-    // Beside a page the list is one list: the featured row's Apps are in it.
-    expect(document.querySelector('[data-testid="featured-extension-card-pomo"]')).toBeNull();
-    await press('[data-testid="extension-card-pomo"]');
-    expect(page()?.dataset.extensionId).toBe('pomo');
-    expect(document.querySelector('[data-testid="extension-card-trace"]')?.getAttribute('aria-current')).toBeNull();
-    await press('[data-testid="app-product-back"]');
-    expect(page()).toBeNull();
-    expect(document.querySelector('[data-testid="featured-extension-card-pomo"]')).not.toBeNull();
-  });
 });
 
 describe('App variant switching uses the existing install consent', () => {

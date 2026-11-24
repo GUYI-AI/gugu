@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type PointerEvent, type Reac
 import { useBackLayer } from '../ui/sheetStack'
 import { DrawerContext } from './contactsDrawer'
 import { Pane, PaneHeader } from '../ui/Pane'
-import { X } from '@/lib/icons'
-import { IconButton } from '../contactsDetailControls'
+import { ModalBack } from '../ui/ModalClose'
 import { ct } from './contactsPanelStyles'
 
 // 通讯录桌面右侧的同一副版式:页头(标题 + 计数) · 可滚的正文 · 右边一列抽屉(浮在正文右侧之上,正文宽度不变、不重排)。
@@ -11,14 +10,16 @@ import { ct } from './contactsPanelStyles'
 // 抽屉的内容两种来法:父组件直接给(`drawer`,分组页 / 搜索的联系人资料),或者正文里的某一行把自己的详情送进来
 // (`useDrawerPortal`,见 contactsDrawer;新的请求那几种行各自持有自己的详情与动作)。同一时刻只开着最后打开的那一份。
 
-// data-pane-close + --pane-close-room: headers inside the drawer leave the close (below) its room (tokens.css, next to atWindowEdge).
-const drawerClass = 'absolute inset-y-0 right-0 z-20 flex w-[var(--contacts-drawer-w)] max-w-full flex-col border-l border-[var(--border)] bg-[var(--bg-primary)] shadow-[var(--shadow-overlay-panel)] empty:hidden [--pane-close-room:var(--control-h-md)]'
+// data-pane-close: the drawer is the window's right column, so headers inside it leave the corner its room (tokens.css, next to
+// atWindowEdge). data-drawer: they also leave its back (below) its room on the left (desktop-shell.css).
+const drawerClass = 'absolute inset-y-0 right-0 z-20 flex w-[var(--contacts-drawer-w)] max-w-full flex-col border-l border-[var(--border)] bg-[var(--bg-primary)] shadow-[var(--shadow-overlay-panel)] empty:hidden'
 // 点在正文的空白处才关抽屉:点到行、卡片或任何控件是在用它们(点另一行 = 抽屉直接换成那一份)。
 const IN_USE = '.gg-row, button, a, input, textarea, select, [role=button], [role=option], [contenteditable], [data-contact-id], [data-group-id]'
 
-// The drawer is the window's right column: its close leaves the window controls their room (`--titlebar-controls-width`, Linux).
-export function DrawerClose({ onClose }: { onClose: () => void }) {
-  return <span className="absolute right-[calc(0.75rem+var(--titlebar-controls-width,0px))] top-3 z-10"><IconButton title={ct('common.close')} onClick={onClose}><X size={14} /></IconButton></span>
+// Leaving the drawer is going back, as from a page inside Settings: Settings' back, at the left of the drawer's header row; the
+// top-right corner is the modal's ✕ alone (@@@page-modal-close).
+export function DrawerBack({ onBack }: { onBack: () => void }) {
+  return <span data-drawer-back="" className="absolute z-10"><ModalBack label={ct('common.back')} onBack={onBack} /></span>
 }
 
 export function ContactsPageFrame({ title, subtitle, actions, drawer, onCloseDrawer, testId, children }: {
@@ -54,14 +55,15 @@ export function ContactsPageFrame({ title, subtitle, actions, drawer, onCloseDra
   return (
     // --contacts-drawer-w: the drawer's one width; lists that end in row actions stop short of it (see NewFriendsPanel).
     <div className="relative flex h-full min-w-0 flex-1 overflow-hidden [--contacts-drawer-w:400px]">
-      <Pane paneRole="detail" data-testid={testId}>
+      {/* data-contacts-page / -body / -card: the page in its modal takes Settings' page layout (desktop-shell.css @@@page-modal). */}
+      <Pane paneRole="detail" data-testid={testId} data-contacts-page="">
         <PaneHeader divider atWindowEdge title={title} subtitle={subtitle} actions={actions} />
-        <div className="flex-1 overflow-y-auto !px-6 !pb-6" onPointerDown={closeOnBlank}>
-          <DrawerContext.Provider value={slot}>{children}</DrawerContext.Provider>
+        <div className="flex-1 overflow-y-auto !px-6 !pb-6" data-contacts-body="" onPointerDown={closeOnBlank}>
+          <div data-contacts-card=""><DrawerContext.Provider value={slot}>{children}</DrawerContext.Provider></div>
         </div>
       </Pane>
-      <div ref={setEl} data-testid="contacts-detail-drawer" data-pane-close="" className={drawerClass}>
-        {drawer ? <>{drawer}{onCloseDrawer ? <DrawerClose onClose={onCloseDrawer} /> : null}</> : null}
+      <div ref={setEl} data-testid="contacts-detail-drawer" data-pane-close="" data-drawer="" className={drawerClass}>
+        {drawer ? <>{drawer}{onCloseDrawer ? <DrawerBack onBack={onCloseDrawer} /> : null}</> : null}
       </div>
     </div>
   )

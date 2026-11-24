@@ -19,15 +19,14 @@ import { parseQuotedContent, partialQuotedContent } from './messageQuoteContent'
 import { QuestionCardView } from './QuestionCardView'
 import type { MentionRender } from './useMentionRender'
 import { WidgetBubble } from './WidgetBubble'
+import { MessageAnnotationCards } from './MessageAnnotationCards'
 
 /**
  * What one message says, drawn by its content_type: card, question, widget, attachment (voice / media), text.
  * The frame around it (avatar, sender, time, read receipt, reactions, menus) belongs to whoever hosts it.
  * One kind of message has this one renderer; a new kind is added here, not in a host.
  */
-export function MessageBody({
-  message: msg, compact, isGroup, senderName, time, mention, memberProfiles, onOpenTopic, onOpenFile, onOpenWorkspaceFile, readOnly = false,
-}: {
+type MessageBodyProps = {
   message: MessageItem
   /** Phone layout. */
   compact: boolean
@@ -43,7 +42,27 @@ export function MessageBody({
   onOpenWorkspaceFile?: (link: Extract<ReturnType<typeof classifyFileLink>, { kind: 'workspace-file' }>) => void
   /** History nobody acts on any more (an old private chat): a question takes no answer, a widget is its text, ❌ its live App. */
   readOnly?: boolean
-}) {
+}
+
+/** A message's body; the comments it was sent with (on a send of several files, its captioned file's) are drawn above it. */
+export function MessageBody(props: MessageBodyProps) {
+  const album = useMessageAlbum(props.message.id)
+  const annotations = (album ? album.find((member) => member.annotations?.length)?.annotations : props.message.annotations) ?? null
+  const body = <MessageBodyContent {...props} />
+  if (!annotations?.length) return body
+  // Comments sent without words are the whole message: no empty text under them.
+  const words = props.message.content_type !== 'text' || !!props.message.content?.trim()
+  return (
+    <div className="flex min-w-0 max-w-full flex-col items-start gap-2">
+      <MessageAnnotationCards annotations={annotations} />
+      {words && body}
+    </div>
+  )
+}
+
+function MessageBodyContent({
+  message: msg, compact, isGroup, senderName, time, mention, memberProfiles, onOpenTopic, onOpenFile, onOpenWorkspaceFile, readOnly = false,
+}: MessageBodyProps) {
   const { t } = useTranslation('messaging')
   const album = useMessageAlbum(msg.id)
   const card = msg.content_type === 'card' ? parseComposerCard(msg.content) : null

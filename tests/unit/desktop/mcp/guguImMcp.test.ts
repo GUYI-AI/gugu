@@ -22,6 +22,11 @@ import {
   dollarRunBoundaryFixtures,
   markdownStructureBoundaryFixtures,
 } from '../lib/markdownMathDelimiterRunFixtures'
+import { drawImagePreviews } from '../../../../packages/core/src/cloud/attachmentsApi'
+
+// Main registers its image preview drawer at boot; here it never finishes one, so only the send's own requests are seen.
+drawImagePreviews({ draw: () => new Promise(() => {}), warn: () => {} })
+
 type Call = unknown[]
 // 工作区条目 id 是 uuid(库里按主键查,文件服务的 /:id 也拿它拼),桩也用真 uuid。
 const W_DOC = '0d000000-0000-4000-8000-000000000001'
@@ -1058,6 +1063,20 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(text(r)).toContain('Could not read the member list of chat 00000000-0000-4000-8000-000000000001.')
     expect(text(r)).not.toContain('不在本 chat')
     expect(h.calls.inserts).toHaveLength(0)
+    await client.close()
+  })
+  // An agent that names its own task by its session id gets told a session is not a chat, before any read.
+  test('chat_id refuses a non-chat typed id and decodes a chat: id', async () => {
+    const h = harness(['agent-1', 'alice'])
+    const client = await connect(h.deps)
+    const chat = '00000000-0000-4000-8000-000000000001'
+    const refused = await client.callTool({ name: 'message_send', arguments: { chat_id: `session:${chat}`, text: 'hi', to_user_ids: ['user:alice'] } })
+    expect(refused.isError).toBe(true)
+    expect(text(refused)).toContain('a session is not a chat')
+    expect(h.calls.inserts).toHaveLength(0)
+    const sent = await client.callTool({ name: 'message_send', arguments: { chat_id: `chat:${chat}`, text: 'hi', to_user_ids: ['user:alice'] } })
+    expect(text(sent)).toMatch(/^sent/)
+    expect((h.calls.inserts[0][1] as Record<string, unknown>)).toMatchObject({ chat_id: chat })
     await client.close()
   })
   test('message_send cross-conversation send posts straight into the addressed chat', async () => {

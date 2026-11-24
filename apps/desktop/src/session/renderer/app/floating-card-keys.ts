@@ -1,4 +1,5 @@
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
+import { useComposerVerbRequest } from '@/lib/composerVerbBridge';
 import { focusSessionComposer } from '@renderer/features/sidebar/session-keyboard-nav';
 import { sessionNavContextFor } from '@renderer/features/sidebar/session-keyboard-nav-listener';
 
@@ -27,4 +28,15 @@ export function useFloatingCardKeys(cardShown: boolean, hideCard: () => void, do
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
   }, [cardShown, hideCard, dockRef]);
+}
+
+/**
+ * Whether the floating card is up: it goes away for the request it was put away on (a folder chosen, Esc), and floats
+ * up again when 「新任务」 is chosen again — also while the box already is a new task (the sidebar's 「创建智能体」, the
+ * group's 「+」 menu).
+ */
+export function useFloatingCardShown(chatId: string): [shown: boolean, hide: () => void] {
+  const request = useComposerVerbRequest(chatId);
+  const [hiddenFor, setHiddenFor] = useState<number | null>(null);
+  return [hiddenFor !== request, () => setHiddenFor(request)];
 }

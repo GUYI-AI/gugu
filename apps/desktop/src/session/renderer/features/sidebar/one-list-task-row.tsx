@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { useShownAgentName } from '@/hooks/useShownAgentName';
 import { useRowContextMenu } from '@/hooks/useRowContextMenu';
-import { formatCalendarDay } from '@/i18n/format';
+import { ONE_LIST_AVATAR_PX } from '@/lib/sidebarOneList';
 import { MenuTableItems } from '@/components/MenuTableItems';
 import { Menu } from '@/components/ui/Menu';
 import { SessionAvatar } from '@/components/session-watch/StatusGlyph';
@@ -10,6 +10,7 @@ import { copySessionId } from '@renderer/features/sessions/copy-session-id';
 import { requestArchiveSession } from '@renderer/features/sessions/archive-session-flow';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { appState, sidebarStore } from '@renderer/lib/stores/app-state';
+import { innerSidebarChat } from './inner-sidebar-anchor';
 import { OneListRow } from './project-row-parts';
 import { openSidebarSession } from './sidebar-session-item';
 import { withMountedSession } from './with-mounted-session';
@@ -17,8 +18,8 @@ import { withMountedSession } from './with-mounted-session';
 /**
  * #2548 a top-level task outside every project whose session has no 咕咕 identity (sidebarStore.tasksWithoutAgent): no
  * agent conversation stands for it, so it is drawn as the conversation row it would be (OneListRow) wearing the session's
- * own avatar and status, with its title and when it was last used. A click opens the task as its sidebar row always did;
- * ⌘ click beside. Right click = the session menu (session/shared/session-menu.ts, entry 'one-list-task'): the same
+ * own avatar and status, with its title and when it was last used. A click opens the task as its sidebar row always did.
+ * Right click = the session menu (session/shared/session-menu.ts, entry 'one-list-task'): the same
  * rename / archive / copy id, through the same flows, as the task's sidebar row.
  */
 export const OneListTaskRow = observer(function OneListTaskRow({ projectId, sessionId }: { projectId: string; sessionId: string }) {
@@ -27,7 +28,12 @@ export const OneListTaskRow = observer(function OneListTaskRow({ projectId, sess
   const menu = useRowContextMenu();
   if (!entry) return null;
   const { currentViewId, viewParamsStore } = appState.navigation;
-  const open = currentViewId === 'session' && (viewParamsStore.session as { sessionId?: string } | undefined)?.sessionId === sessionId;
+  // Lit when it is the open session, unless the inner column is attached to a group / project: then that row alone is lit
+  // (left-sidebar's focusedChatId), even when this task was opened from the column.
+  const open =
+    currentViewId === 'session' &&
+    (viewParamsStore.session as { sessionId?: string } | undefined)?.sessionId === sessionId &&
+    innerSidebarChat.get() === null;
   const run: Partial<Record<SessionMenuAction, () => void>> = {
     rename: () => commandRegistry.dispatch('session.rename', { projectId, sessionId }),
     archive: () => withMountedSession(projectId, sessionId, () => requestArchiveSession({ projectId, sessionId })),
@@ -36,12 +42,11 @@ export const OneListTaskRow = observer(function OneListTaskRow({ projectId, sess
   return (
     <div onContextMenu={menu.onContextMenu}>
       <OneListRow
-        leading={<SessionAvatar sessionId={sessionId} presentation={entry.presentation ?? null} />}
+        leading={<SessionAvatar sessionId={sessionId} presentation={entry.presentation ?? null} size={ONE_LIST_AVATAR_PX} />}
         name={name}
-        time={entry.time ? formatCalendarDay(entry.time) : undefined}
         preview=""
         selected={open}
-        onOpen={(beside) => openSidebarSession(projectId, sessionId, beside)}
+        onOpen={() => openSidebarSession(projectId, sessionId)}
         data-task-row={sessionId}
       />
       {menu.menuPos ? (

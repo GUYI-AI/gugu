@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PhoneOsState } from '../../../../apps/desktop/src/mobile/phone-device/phoneActionCatalog'
 
 const native = vi.hoisted(() => ({ requestPermissions: vi.fn(), healthRequest: vi.fn(), openSettings: vi.fn(), dataRequest: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: 'explicit-calendar-owner' } }) }))
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/nativePhoneActions', () => ({ nativePhoneActions: native, HEALTH_TYPES: [] }))
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDataActions', async (original) => ({
   ...await original<typeof import('../../../../apps/desktop/src/mobile/phone-device/phoneDataActions')>(),

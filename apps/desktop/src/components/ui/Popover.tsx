@@ -5,7 +5,7 @@ import type { CSSProperties } from 'react'
 import { cn } from '@/lib/cn'
 import { popupMotion } from './variants'
 import { noteOverlayRequest } from '@/lib/localRendererDiagnostics'
-import { OpenLayer } from '@gugu/session-ui/react/primitives'
+import { OpenLayer, useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives'
 
 type ClassNameProp = { className?: string }
 
@@ -15,7 +15,8 @@ const popoverPositioner = 'z-[var(--z-popover)] outline-none'
 const popoverPopup = cn('box-border outline-none', popupMotion)
 
 function Portal(props: PopoverPrimitive.Portal.Props) {
-  return <PopoverPrimitive.Portal {...props} />
+  // The surface's portal layer, as Dialog and Menu: a pop-out window's (aux-layers), else Base UI's document.body.
+  return <PopoverPrimitive.Portal container={useUiPortalContainer()} {...props} />
 }
 
 function Root<Payload = unknown>({ onOpenChange, ...props }: PopoverPrimitive.Root.Props<Payload>) {
@@ -27,12 +28,15 @@ function Root<Payload = unknown>({ onOpenChange, ...props }: PopoverPrimitive.Ro
 function Positioner({
   className,
   children,
+  style,
   ...props
-}: Omit<PopoverPrimitive.Positioner.Props, 'className'> & ClassNameProp) {
+}: Omit<PopoverPrimitive.Positioner.Props, 'className' | 'style'> & ClassNameProp & { style?: CSSProperties }) {
+  const zIndex = useUiPopupZIndex()
   return (
     <PopoverPrimitive.Positioner
       data-slot="popover-positioner"
       className={cn(popoverPositioner, className)}
+      style={zIndex ? { zIndex, ...style } : style}
       {...props}
     ><OpenLayer />{children}</PopoverPrimitive.Positioner>
   )

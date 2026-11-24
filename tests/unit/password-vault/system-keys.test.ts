@@ -5,6 +5,7 @@ vi.mock('electron', () => ({ app: { isReady: () => true }, safeStorage: {
   encryptString: (text: string) => Buffer.from(`sealed:${text}`), decryptString: (sealed: Buffer) => sealed.toString().slice('sealed:'.length) } }))
 import { systemVaultKeyProtector } from '../../../apps/desktop/electron/password-vault/system-keys'
 import { passwordSaveFailure } from '../../../apps/desktop/electron/password-vault/save-error'
+import { HostLocaleStore, installHostLocaleStore } from '../../../apps/desktop/electron/host-locale-store'
 afterEach(() => { vi.unstubAllGlobals(); state.available = false; state.backend = 'gnome_libsecret' })
 const on = (platform: string) => vi.stubGlobal('process', Object.create(process, { platform: { value: platform }, type: { value: 'browser' } }))
 
@@ -35,9 +36,11 @@ describe('the vault key under the system protection of each platform', () => {
 
   it('reveals plaintext only on macOS, after the owner check; Windows and Linux never do', async () => {
     state.available = true
-    const verify = vi.fn(async () => {})
+    const verify = vi.fn(async (_reason: string) => {})
+    // macOS writes the reason into its prompt: `"Gugu" is trying to <reason>`, in the host's language.
+    installHostLocaleStore(new HostLocaleStore(() => ['en-US']))
     on('darwin'); await expect(systemVaultKeyProtector(verify).verifyPerson()).resolves.toBeUndefined()
-    expect(verify).toHaveBeenCalledOnce()
+    expect(verify).toHaveBeenCalledExactlyOnceWith('show saved passwords')
     for (const platform of ['win32', 'linux']) {
       on(platform); await expect(systemVaultKeyProtector(verify).verifyPerson()).rejects.toMatchObject({ code: 'UNAVAILABLE' })
     }

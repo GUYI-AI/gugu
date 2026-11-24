@@ -7,6 +7,7 @@ import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { isRoomChat } from '@gugu/core/shared/ui/chatModels'
 import { useRoomCollab } from '../../hooks/useRoomCollab'
 import { useAgentDisplayStatuses } from '../../hooks/useAgentDisplayStatus'
+import { useAgentActivityMs } from '../../hooks/useAgentActivityMs'
 import { isMentionQueryActive } from '@/lib/mentionMatch'
 import { rankMentionCandidates } from '@/lib/mentionRanking'
 import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
@@ -26,14 +27,13 @@ import type { MentionTarget } from './useChatDraft'
  * suggestion makes. One implementation for every editor that writes into a chat (the composer, a forward's note).
  * `enabled: false` (a whisper, a forward into several chats) offers no one.
  */
-export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, currentUserId, agentStatuses = {}, messages, participantIds, replyToMessageId, enabled = true }: {
+export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, currentUserId, agentStatuses = {}, messages, replyToMessageId, enabled = true }: {
   chatId: string | null | undefined
   isGroupChat: boolean
   groupMembers: NonNullable<ChatMessageComposerProps['groupMembers']>
   currentUserId: string | null
   agentStatuses?: ChatMessageComposerProps['agentStatuses']
   messages?: ChatMessageComposerProps['messages']
-  participantIds?: ChatMessageComposerProps['participantIds']
   replyToMessageId?: string
   enabled?: boolean
 }) {
@@ -43,6 +43,9 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
   const sourceChatId = useChatStoreSelect((store) => store.chats.find((chat) => chat.id === chatId)?.source_chat_id ?? null)
   const projectMembers = useProjectGroupMembers()
   const projectMemberIds = projectMembers.get(sourceChatId ?? chatId ?? '')
+  const identitiesById = useChatStoreSelect((store) => store.identitiesById)
+  const agentIds = useMemo(() => groupMembers.filter((member) => member.type === 'agent').map((member) => member.id), [groupMembers])
+  const activityMs = useAgentActivityMs(agentIds, identitiesById)
   const members = useMemo<MentionCandidate[]>(() => isGroupChat ? [
     { id: '__all__', name: t('composer.mentionAll'), type: 'all' },
     ...groupMembers.filter((member) => member.id !== currentUserId).map((member) => ({ ...member, alias: contacts.find((contact) => contact.id === member.id)?.alias })),
@@ -63,8 +66,8 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
     isQueryActive: (query: string) => offered && isMentionQueryActive(query, members),
     async search(query: string) {
       if (!offered || !isMentionQueryActive(query, members)) return []
-      return rankMentionCandidates(members, query, { chatId, currentUserId, messages: messages ?? [], participantIds, projectMemberIds,
-        replyToMessageId, now: Date.now() }).map((member): MentionItem => ({
+      return rankMentionCandidates(members, query, { chatId, currentUserId, messages: messages ?? [], projectMemberIds,
+        replyToMessageId, activityMs, now: Date.now() }).map((member): MentionItem => ({
         id: member.type === 'all' ? MENTION_ALL_USER_ID : member.id,
         label: member.name, name: member.name, kind: 'custom', role: member.type === 'all' ? undefined : member.type,
         optionLabel: <span {...mentionOptionStatusProps(member, agentStatuses ?? {})}><AgentMentionOptionLabel member={member} status={agentStatuses?.[member.id]} /></span>,
@@ -81,7 +84,7 @@ export function useGroupMentionProvider({ chatId, isGroupChat, groupMembers, cur
       const item = await localProvider.resolveSession(id)
       return item ? decorate(item) : null
     },
-  }), [offered, members, agentStatuses, decorate, localProvider, t, chatId, currentUserId, messages, participantIds, projectMemberIds, replyToMessageId])
+  }), [offered, members, agentStatuses, decorate, localProvider, t, chatId, currentUserId, messages, projectMemberIds, replyToMessageId, activityMs])
   /** The pick a chosen suggestion makes, or null when it is not a member. */
   const pickOf = useCallback((item: MentionItem): MentionTarget | null => {
     const member = members.find((candidate) => candidate.id === item.id || `aid:${candidate.id}` === item.label)

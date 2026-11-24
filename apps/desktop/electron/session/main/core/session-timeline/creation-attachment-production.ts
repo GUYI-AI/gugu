@@ -78,7 +78,7 @@ const host = createAttachmentCreationHost({
           };
         },
         send: async (assertOwner) => {
-          const result = await send(conversationId, text, clientMessageId, files, undefined, undefined, assertOwner);
+          const result = await send({ conversationId, text, clientMessageId, files }, assertOwner);
           if (!result.ok) throw Object.assign(new Error(result.error.message), { code: result.error.code });
           if (result.value.admission !== 'accepted') throw unverified('The original first input is not confirmed');
         },

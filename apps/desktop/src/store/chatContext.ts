@@ -1,3 +1,4 @@
+import type { TurnAnnotation } from '@gugu/session-core/acp/client'
 import type { PersonalConversationHiding } from '../lib/hideListedConversation'
 import type { PersonalConversationUndo } from '../lib/undoListedConversation'
 import type { AppForwardFilesDetail } from '../session/shared/extensions/app-runtime-protocol'
@@ -60,6 +61,8 @@ export type SendMessageOptions = {
   dependsOn?: string
   /** A card (its JSON as content); text otherwise. */
   contentType?: 'text' | 'card'
+  /** Comments sent beside the words (cards in the bubble; agents read their promptText). */
+  annotations?: TurnAnnotation[]
 }
 
 export type SendAttachmentOptions = {
@@ -67,6 +70,8 @@ export type SendAttachmentOptions = {
   toUserIds?: string[] | null
   isWhisper?: boolean
   caption?: string
+  /** Comments sent beside the caption: they go on the captioned (last) file. */
+  annotations?: TurnAnnotation[]
   threadRootId?: string | null
   isThreadRoot?: boolean
 }

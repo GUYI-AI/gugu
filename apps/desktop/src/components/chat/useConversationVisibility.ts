@@ -10,12 +10,14 @@ export function useConversationVisibility(requested: boolean) {
     let live = true
     let intersecting = false
     const publish = () => { if (live) setIntersects(intersecting && document.visibilityState !== 'hidden') }
+    // Threshold 0 says nothing when an entry intersecting with zero area (exactly at an edge) gains area: notify when the
+    // area turns positive, as the predicate below reads it.
     const observer = new IntersectionObserver(entries => {
       const entry = entries.find(entry => entry.target === element)
       if (!entry) return
       intersecting = entry.isIntersecting && entry.intersectionRect.width > 0 && entry.intersectionRect.height > 0
       publish()
-    })
+    }, { threshold: Number.EPSILON })
     observer.observe(element)
     document.addEventListener('visibilitychange', publish)
     return () => { live = false; observer.disconnect(); document.removeEventListener('visibilitychange', publish) }

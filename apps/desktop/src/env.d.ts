@@ -65,6 +65,8 @@ interface Window {
     minimize: () => void
     maximize: () => void
     close: () => void
+    /** Quit the app (File → Exit). close() only hides the window to the tray. */
+    quit: () => void
     /** Synchronous: the first frame draws the right maximize / restore glyph. */
     isMaximizedSync: () => boolean
     /** Windows 标题栏菜单的编辑 / 缩放 / 全屏命令(清单见 electron/window-menu-commands.ts)。 */
@@ -82,8 +84,5 @@ interface Window {
       close: string
     }) => void) => () => void
     onMaximizedChange: (callback: (maximized: boolean) => void) => () => void
-    /** 窗口底层材质的判定(主进程读系统信号,见 shared/window-material.ts)。 */
-    getMaterial?: () => import('../shared/window-material').WindowMaterial
-    onMaterialChange?: (callback: (material: import('../shared/window-material').WindowMaterial) => void) => () => void
   }
 }

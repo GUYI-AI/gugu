@@ -14,7 +14,7 @@ import type { DesktopWindowBridge } from './WindowControls'
 import './WindowTitleBar.css'
 
 /**
- * @@@win-titlebar-row — Windows 的独立标题栏行:标准 Windows 应用的那条顶栏。
+ * @@@win-titlebar-row — Windows / Linux 的独立标题栏行:标准 Windows 应用的那条顶栏,Linux 同一条。
  *
  *   [← →] [文件 编辑 视图 帮助] ·········(拖拽区)········· [– □ ×]
  *
@@ -121,7 +121,7 @@ export function WindowTitleBar({ desktopWindow: dw, controls, navigation, active
           <MenuSeparator />
           <MenuItem onClick={() => onOpenSettings('account')}>{t('shell.titlebar.items.settings')}</MenuItem>
           <MenuSeparator />
-          <MenuItem onClick={() => dw.close()}>{t('shell.titlebar.items.exit')}</MenuItem>
+          <MenuItem onClick={() => dw.quit()}>{t('shell.titlebar.items.exit')}</MenuItem>
         </TitlebarMenu>
 
         <TitlebarMenu label={t('shell.titlebar.menus.edit')} restoreFocusRef={restoreFocusRef} onClosed={flushWindowCommand}>

@@ -42,8 +42,8 @@ beforeEach(async () => {
   await until('chat entry spring settled', () => detail().style.transform === '')
 })
 afterEach(async () => { await harness?.cleanup(); vi.restoreAllMocks(); document.getSelection()?.removeAllRanges() })
-function native(phase: string, progress = 0, edge = 0) {
-  window.dispatchEvent(new CustomEvent('gugu:native-back-progress', { detail: { phase, progress, edge } }))
+function native(phase: string, progress = 0) {
+  window.dispatchEvent(new CustomEvent('gugu:native-back-progress', { detail: { phase, progress } }))
 }
 function touch(type: string, x: number, y: number, at: number, target: HTMLElement = detail()) {
   const point = new Touch({ identifier: 1, target, clientX: x, clientY: y })
@@ -69,19 +69,24 @@ it('follows Android progress over the real origin, cancels without navigation, a
   expect(list().scrollLeft).toBe(390)
   expect(document.querySelector('[data-mobile-tab-page="contacts"]')?.hasAttribute('inert')).toBe(true)
   native('started'); native('progressed', 0.6)
+  // The system gesture drags the same push the page came in with: right by its share of the width, never scaled or faded.
   const frame = new DOMMatrix(getComputedStyle(detail()).transform)
-  expect(frame.a).toBeCloseTo(0.94, 3)
-  expect(frame.e).toBeGreaterThan(0)
+  expect(frame.a).toBe(1)
+  expect(frame.e).toBeCloseTo(0.6 * detail().offsetWidth, 1)
+  expect(getComputedStyle(detail()).opacity).toBe('1')
   expect(new DOMMatrix(getComputedStyle(list()).transform).e).toBeLessThan(0)
   expect(visible()).toBe(true); expect(backs).toBe(0)
   native('cancelled')
   await until('cancel spring restored the existing page', () => detail().style.transform === '')
   expect(visible()).toBe(true); expect(backs).toBe(0)
-  native('started', 0, 1); native('progressed', 0.8, 1)
-  expect(new DOMMatrix(getComputedStyle(detail()).transform).e).toBeLessThan(0)
+  native('started'); native('progressed', 0.8)
+  expect(new DOMMatrix(getComputedStyle(detail()).transform).e).toBeCloseTo(0.8 * detail().offsetWidth, 1)
   expect(controller.current!.back()).toBe(true)
   expect(controller.current!.back()).toBe(true)
   expect(backs).toBe(0)
+  // It finishes off the right edge at full opacity, so nothing of it is left over the list.
+  await until('native commit leaving to the right', () => new DOMMatrix(getComputedStyle(detail()).transform).e > 0.9 * detail().offsetWidth)
+  expect(getComputedStyle(detail()).opacity).toBe('1')
   await until('native commit returned to the origin', () => backs === 1)
   expect(visible()).toBe(false)
   expect(detail().inert).toBe(true)

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { buildRosterNameIndex, resolveOpeningAgentCall } from '@gugu/core/shared/rosterNameMatching.mjs'
 import { firstMentionedUserId, resolveMentionUserIds, type MentionCandidate } from '@/lib/mention'
 import { rememberGroupMention } from '@/lib/groupMentionRecall'
-import { citedFileEditorIds } from '@/lib/citedFileEditors'
+import { citeRecipientIds } from '@/lib/citedFileEditors'
 import { scheduleComposerFocus } from '@/lib/focusComposer'
 import { rendererLogger } from '@/lib/log'
 import { chatSendFailureNotice } from './chatSendFailureNotice'
@@ -14,9 +14,8 @@ import type { ChatMessageComposerProps } from './chatComposerModels'
 import { useChatStore } from '../../store/chatContext'
 import { messageFailureNotice } from '@/lib/messageFailureNotice'
 import { useLocale } from '@/i18n'
-import { useAuth } from '@/store/auth'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
-import { annotationPrompt, sessionAnnotations, type SessionAnnotation } from '@renderer/features/sessions/annotations/session-annotations'
+import { annotatedSend, sessionAnnotations, type SessionAnnotation } from '@renderer/features/sessions/annotations/session-annotations'
 
 /** Chat delivery owns recipients and rollback; the shared editor only submits its document. */
 export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatDraft, members: MentionCandidate[], activeMentionTargets: MentionTarget[], inputRef: RefObject<HTMLElement | null>, mobile = false) {
@@ -25,8 +24,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
   const { writeDraft } = useChatStore('writeDraft')
   const { t } = useTranslation('messaging')
   const { resolvedLocale } = useLocale()
-  const { user } = useAuth()
-  const annotationDraft = chatId ? sessionAnnotations.forConversation({ kind: 'chat', chatId }, user?.id ?? currentUserId) : undefined
+  const annotationDraft = chatId ? sessionAnnotations.forConversation({ kind: 'chat', chatId }) : undefined
   const { toast } = useToast()
   const [sending, setSending] = useState(false)
   const sendingRef = useRef(false)
@@ -51,7 +49,9 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       toast(translateSessionMessage('annotations.sendUnavailable'), 'info')
       return
     }
-    const content = contentWithQuote(annotationPrompt(typed, annotated, resolvedLocale), quoteContent)
+    // The words stay the words; the comments travel beside them (cards for people, their promptText for agents).
+    const { annotations } = annotatedSend(typed, annotated, resolvedLocale)
+    const content = contentWithQuote(typed, quoteContent)
     // @@@whisper (#820) — 悄悄话模式下覆盖 toUserIds + 附加 isWhisper flag；禁用 @提及。
     const replyToMessageId = quoteContent?.messageId ?? null
     const explicitRecipientIds = resolveMentionUserIds(
@@ -65,11 +65,8 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     sendingRef.current = true
     setSending(true)
     // A message that cites chat files and names no one goes to the members who made those files.
-    const citeRecipientIds = undirected && rosterRecipientIds.length === 0 && currentUserId
-      ? (await citedFileEditorIds(typed, currentUserId).catch((error: unknown) => {
-          rendererLogger('chat/send').error({ chatId, error: String(error) }, 'cited file editors unreadable')
-          return []
-        })).filter((id) => id !== currentUserId && props.groupMembers?.some((member) => member.id === id))
+    const citedRecipientIds = undirected && rosterRecipientIds.length === 0 && currentUserId && chatId
+      ? await citeRecipientIds(chatId, typed, currentUserId, (props.groupMembers ?? []).map((member) => member.id))
       : []
     const sendOptions = whisperTarget
       ? {
@@ -84,7 +81,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
           // @mention hard-triggers identically to a picked one.
           // #1641 human-only send adapter: an opening call resolved against the already-subscribed group
           // roster becomes the same structural recipient as @. The DB trigger still reads no message text.
-          toUserIds: [...new Set(explicitRecipientIds.length ? explicitRecipientIds : rosterRecipientIds.length ? rosterRecipientIds : citeRecipientIds)],
+          toUserIds: [...new Set(explicitRecipientIds.length ? explicitRecipientIds : rosterRecipientIds.length ? rosterRecipientIds : citedRecipientIds)],
           replyToMessageId,
         }
 
@@ -120,10 +117,10 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
 
       // Resolves once the files are on screen; their bytes upload after the composer is free again. The text goes with them.
       if (captionOnFiles && onSendAttachments) {
-        await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: replyToMessageId ?? undefined, isWhisper: !!whisperTarget, caption: content || undefined })
+        await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: replyToMessageId ?? undefined, isWhisper: !!whisperTarget, caption: content || undefined, ...(annotations ? { annotations } : {}) })
         filesOwned = true
-      } else if (content) {
-        await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt })
+      } else if (content || annotations) {
+        await onSend(content, { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt, ...(annotations ? { annotations } : {}) })
       }
       annotationDraft?.submitted(annotated)
       if (attempt.succeeded() && submissions.current.get(scope) === submission) submissions.current.delete(scope)

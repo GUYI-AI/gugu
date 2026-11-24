@@ -10,6 +10,8 @@ import { cn } from '@/lib/cn'
 import { appendToDraft } from '@/store/chatDraftWrites'
 import { useChatStore } from '../../store/chatContext'
 import { rankMentionCandidates } from '@/lib/mentionRanking'
+import { useAgentActivityMs } from '@/hooks/useAgentActivityMs'
+import { personId } from '@/session/shared/extensions/app-runtime-protocol'
 import { useProjectGroupMembers } from '@/lib/projectGroupChatsBridge'
 import { useOwnedAgents } from '../settings/channels/channelAgents'
 import { sendableConversations, sendablePickRows } from './forwardMessageUtils'
@@ -22,6 +24,12 @@ import { DispatchMachine } from './DispatchMachine'
 import { takeDispatchAsks, type DispatchAsked } from './dispatchAsk'
 
 const NEW_AGENT = 'new:agent'
+
+/**
+ * The ask speaks as Apps do (`user:<uuid>`, personId); the chat's messages, members and agents, which the @ order reads,
+ * go by the bare uuid. Rows are ranked and written under that one, and handed back in the App's spelling.
+ */
+const uuidOf = (id: string) => id.replace(/^user:/, '')
 
 /**
  * Whom an App hands something to (`gugu.dispatch` naming no target), drawn by the shell over whatever is on screen
@@ -57,7 +65,9 @@ export const DispatchSheet = observer(function DispatchSheet() {
   }, [])
   const editorRef = useCallback((handle: PromptEditorRef | null) => { editor.current = handle; start() }, [start])
   useEffect(start, [asked, start])
-  const roster = useMemo(() => (asked?.chat?.members ?? []).map((member) => ({ id: member.id, name: member.name, type: member.kind })), [asked])
+  const roster = useMemo(() => (asked?.chat?.members ?? []).map((member) => ({ id: uuidOf(member.id), name: member.name, type: member.kind })), [asked])
+  const agentIds = useMemo(() => [...roster.filter((member) => member.type === 'agent').map((member) => member.id), ...owned.map((agent) => uuidOf(agent.id))], [roster, owned])
+  const activityMs = useAgentActivityMs(agentIds, identitiesById)
   const { mentionProvider, renderMentionIcon } = useGroupMentionProvider({ chatId: asked?.chat?.id, isGroupChat: roster.length > 0, groupMembers: roster,
     currentUserId: user?.id ?? null, messages, enabled: !asked?.pick })
 
@@ -90,23 +100,23 @@ export const DispatchSheet = observer(function DispatchSheet() {
   // Ranked as the chat's @ is: history counts only when the sheet is over that chat (or its topic).
   const here = chats.some((chat) => chat.id === activeChatId && (chat.id === asked.chat?.id || chat.source_chat_id === asked.chat?.id))
   const rank = <T extends { id: string; name: string; type: 'human' | 'agent' }>(rows: T[]) => rankMentionCandidates(rows, query, { chatId: here ? activeChatId : asked.chat?.id, currentUserId: user?.id, messages: here ? messages : [],
-    participantIds: chats.find((chat) => chat.id === asked.chat?.id)?.member_user_ids, projectMemberIds: projectMembers.get(asked.chat?.id ?? ''), now: Date.now() })
-  const memberRows = (kind: 'agent' | 'human'): ChatPickRow[] => rank((asked.chat?.members ?? []).filter((member) => member.kind === kind).map((member) => ({ ...member, type: member.kind })))
+    participantIds: chats.find((chat) => chat.id === asked.chat?.id)?.member_user_ids, projectMemberIds: projectMembers.get(asked.chat?.id ?? ''), activityMs, now: Date.now() })
+  const memberRows = (kind: 'agent' | 'human'): ChatPickRow[] => rank((asked.chat?.members ?? []).filter((member) => member.kind === kind).map((member) => ({ ...member, id: uuidOf(member.id), type: member.kind })))
     .map((member) => ({
-      id: `member:${member.id}`,
+      id: `member:${personId(member.id)}`,
       name: member.name,
-      avatar: { name: member.name, avatarUrl: member.avatar, seed: member.id, isAgent: member.kind === 'agent' },
+      avatar: { name: member.name, avatarUrl: member.avatar, seed: personId(member.id), isAgent: member.kind === 'agent' },
     }))
   // The person's own agents: the one preselected first; a draft only into one whose session is here (its composer).
   const local = asked.local ? new Set(asked.local) : null
   const agentRows = !offers.has('my-agent') ? [] : rank(owned
-    .map((agent) => ({ ...agent, id: `user:${agent.id.replace(/^user:/, '')}`, name: agent.display_name, type: 'agent' as const }))
-    .filter((agent) => !asked.draft || !local || local.has(agent.id)))
-    .sort((a, b) => Number(b.id === asked.preselect) - Number(a.id === asked.preselect))
+    .map((agent) => ({ ...agent, id: uuidOf(agent.id), name: agent.display_name, type: 'agent' as const }))
+    .filter((agent) => !asked.draft || !local || local.has(personId(agent.id))))
+    .sort((a, b) => Number(personId(b.id) === asked.preselect) - Number(personId(a.id) === asked.preselect))
     .map((agent): ChatPickRow => ({
-      id: `agent:${agent.id}`,
+      id: `agent:${personId(agent.id)}`,
       name: agent.display_name,
-      avatar: { name: agent.display_name, avatarUrl: agent.avatar, seed: agent.id, isAgent: true },
+      avatar: { name: agent.display_name, avatarUrl: agent.avatar, seed: personId(agent.id), isAgent: true },
     }))
   const nameOf = (chat: (typeof chats)[number]) => chatDisplayName(chat, identitiesById[chat.peer_user_id ?? '']?.display_name)
   const chatRows = !offers.has('chat') ? [] : sendablePickRows(sendableConversations(chats, { ownerId: user?.id, query, displayName: nameOf, identitiesById }),

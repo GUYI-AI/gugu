@@ -13,6 +13,7 @@
 // 那就是第二个属主在原地 —— #3271 的病只治了增量那一半。
 
 import type { ChatItem, ChatUnreadLocator, GroupMemberRole, NotificationLevel } from '@gugu/core/shared/types/chat'
+import { mergeConversationVisibility } from '@gugu/core/shared/ui/chatModels'
 import { isPendingDelivery, parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import {
   assemble,
@@ -129,6 +130,8 @@ export type ChatProjection = {
   memberReadSeqs: (chatId: string) => Record<string, number> | undefined
   /** Personal list deletion is authoritative without revoking the retained membership. */
   isConversationDeleted: (chatId: string) => boolean
+  /** The conversation itself read as archived (a closed topic, a dissolved group), by anyone: it is gone for everyone. */
+  isConversationArchived: (chatId: string) => boolean
   ledger: () => readonly ChatProjectionLedgerEntry[]
   reset: () => void
 }
@@ -615,11 +618,25 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
 
   const owner: ChatProjection = {
     async confirmPersonalHiding(receipt, signal = new AbortController().signal) {
+      signal.throwIfAborted()
       assertRevision(receipt.account_revision, 'hide receipt')
       const key = entityKey('membership', membershipId(receipt.chat_id, viewerId))
       const current = cache.get(key)
-      // A clear receipt revokes retained bytes before any further IO. Hide and Undo
-      // reconcile through the same bounded family reader after the RPC commits.
+      if (!receipt.cleared_at) {
+        const index = rows.findIndex(row => row.id === receipt.chat_id)
+        if (index !== -1) {
+          const row = rows[index]!
+          // The committed receipt covers personal visibility. The journal still owns the rest of the membership row.
+          const newer = current?.value && compareStamp(current.stamp, receipt.account_revision) >= 0
+          const confirmed = mergeConversationVisibility(row, {
+            conversation_hidden_at: newer ? (current.value as MembershipValue).conversation_hidden_at ?? null : receipt.hidden_at,
+            conversation_visibility_revision: newer ? current.stamp : receipt.account_revision,
+          })
+          if (confirmed !== row) rows = rows.map(item => item === row ? confirmed : item)
+          return rows
+        }
+      }
+      // A clear receipt revokes retained bytes before any further IO.
       if (current?.value && receipt.cleared_at) {
         merge([[key, { stamp: receipt.account_revision,
           value: { ...current.value, conversation_hidden_at: receipt.hidden_at, ...(receipt.cleared_at ? { conversation_cleared_at: receipt.cleared_at } : {}) } }]])
@@ -672,23 +689,29 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       const read = async (): Promise<ChatItem[] | null> => {
         signal.throwIfAborted()
         const ids = candidates.map(id => membershipId(id, viewerId)).filter(id => !cache.has(entityKey('membership', id)))
-        if (ids.length === 0) return null
-        const batches = batchFamilyKeys('membership', ids), startedAt = Date.now()
-        const facts = { trigger: ['restored-layout'], revisions: [cursor, cursor] as [string, string], keysDirty: ids.length,
-          requestsByFamily: { membership: batches.length }, requests: batches.length, waves: 1 }
+        // The conversation row too: one archived while this app was closed (a closed topic) is gone for everyone.
+        const chatIds = candidates.filter(id => !cache.has(entityKey('chat', id)))
+        if (ids.length === 0 && chatIds.length === 0) return null
+        const batches = batchFamilyKeys('membership', ids), chatBatches = batchFamilyKeys('chat', chatIds), startedAt = Date.now()
+        const facts = { trigger: ['restored-layout'], revisions: [cursor, cursor] as [string, string], keysDirty: ids.length + chatIds.length,
+          requestsByFamily: { membership: batches.length, chat: chatBatches.length }, requests: batches.length + chatBatches.length, waves: 1 }
         try {
-          const reads = await Promise.all(batches.map(batch => readers.membership(batch, signal, () => {})))
+          const [reads, chatReads] = await Promise.all([
+            Promise.all(batches.map(batch => readers.membership(batch, signal, () => {}))),
+            Promise.all(chatBatches.map(batch => readers.chat(batch, signal, () => {}))),
+          ])
           signal.throwIfAborted()
-          const cells = batches.flatMap((batch, index) => batch.map(id => {
+          const cells = [...batches.flatMap((batch, index) => batch.map(id => {
             const value = (reads[index]!.get(id) ?? null) as Cell['value']
             const observed = (value as MembershipValue | null)?.personal_state_observed_revision
             if (observed) assertRevision(observed, 'restored membership observation')
             return [entityKey('membership', id), { value, stamp: observed && compareStamp(observed, cursor) > 0 ? observed : cursor }] as const
-          }))
+          })), ...chatBatches.flatMap((batch, index) => batch.map(id =>
+            [entityKey('chat', id), { value: (chatReads[index]!.get(id) ?? null) as Cell['value'], stamp: cursor }] as const))]
           merge(cells)
           // These reads only settle removal authority; a live row's other cells may still be unread.
           for (const [key] of cells) unpublished.delete(key)
-          rows = rows.filter(row => !owner.isConversationDeleted(row.id) && !owner.isMembershipRevoked(row.id))
+          rows = rows.filter(row => !owner.isConversationDeleted(row.id) && !owner.isMembershipRevoked(row.id) && !owner.isConversationArchived(row.id))
           record({ ...facts, ms: Date.now() - startedAt, ok: true })
           return rows
         } catch (error) {
@@ -712,6 +735,9 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       const members = membersByChat.get(chatId)
       if (!members) return undefined
       return Object.fromEntries([...members].filter(([userId]) => userId !== viewerId).map(([userId, member]) => [userId, member.last_read_seq]))
+    },
+    isConversationArchived(chatId) {
+      return (cache.get(entityKey('chat', chatId))?.value as { status?: unknown } | null | undefined)?.status === 'archived'
     },
     isConversationDeleted(chatId) {
       if (confirmedDeletions.has(chatId)) return true

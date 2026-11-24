@@ -12,9 +12,6 @@ export const AUTOMATION_TEST_IDS = {
   sessionExpiredNotice: 'session-expired-notice',
   sessionExpiredReloginButton: 'session-expired-relogin-button',
   chatComposer: 'chat-composer',
-  // @@@5856 话题分栏是同一扇窗里的**第二个**输入框/消息流。两边共用一个 testid ⇒
-  // 自动化拿到的是文档序第一个,到底是哪一栏看运气。副栏单独命名。
-  chatComposerAside: 'chat-composer-aside',
   pendingAttachmentPreview: 'pending-attachment-preview',
   // App 引用 pill: a pill the composer holds, in the row above the input with the files.
   messageAttachmentImage: 'message-attachment-image',
@@ -35,7 +32,6 @@ export const AUTOMATION_TEST_IDS = {
   agentSessionpageStartupFailure: 'agent-sessionpage-startup-failure',
   agentSessionpageStartupFailureRetry: 'agent-sessionpage-startup-failure-retry',
   chatMessageList: 'chat-message-list',
-  chatMessageListAside: 'chat-message-list-aside',
   chatDrawerNotifyLevel: 'chat-drawer-notify-level',
   chatDrawerNotifyLevelAll: 'chat-drawer-notify-level-all',
   chatDrawerNotifyLevelImportant: 'chat-drawer-notify-level-important',
@@ -60,12 +56,10 @@ export const AUTOMATION_TEST_IDS = {
   contactsPersonEmptyAction: 'contacts-person-empty-action',
   contactsGroupEmpty: 'contacts-group-empty',
   contactsGroupEmptyAction: 'contacts-group-empty-action',
-  sidebarMessagesNav: 'sidebar-messages-nav',
   sidebarExploreNav: 'sidebar-explore-nav',
   sidebarContactsNav: 'sidebar-contacts-nav',
   sidebarAppsNav: 'sidebar-apps-nav',
   sidebarDock: 'sidebar-dock',
-  sidebarMoreApps: 'sidebar-more-apps',
   sidebarAssistantNav: 'sidebar-assistant-nav',
   sidebarSettingsNav: 'sidebar-settings-nav',
   mobileAssistantNav: 'mobile-assistant-nav',

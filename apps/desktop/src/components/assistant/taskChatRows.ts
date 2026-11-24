@@ -18,6 +18,7 @@ export function taskChatRows(messages: readonly MessageItem[], exchanges: readon
   const visible = visibleDeliveryMessages(messages)
   const rows: ChatListRowItem[] = projectTurnFailureMessages(visible).map((message) => ({ type: 'message', message }))
   if (!task) return rows
+  const records: ChatListRowItem[] = []
   const original = new Set(messages.map(message => message.id))
   const seen = new Set<string>()
   for (const entry of exchanges) {
@@ -27,7 +28,7 @@ export function taskChatRows(messages: readonly MessageItem[], exchanges: readon
     if (entry.sourceMessageId && original.has(entry.sourceMessageId)) continue
     if (seen.has(entry.id)) continue
     seen.add(entry.id)
-    rows.push({
+    records.push({
       type: 'task-exchange', recipientUserId: fromAssistant ? task.taskAgentId??task.task.sessionId : task.assistantId,
       message: {
         id: `session-direct:${entry.id}`, chat_id: messages[0]?.chat_id ?? '', seq: -1,
@@ -37,6 +38,14 @@ export function taskChatRows(messages: readonly MessageItem[], exchanges: readon
       },
     })
   }
-  return rows.sort((a, b) => Date.parse(a.message.created_at) - Date.parse(b.message.created_at)
-    || (a.type === 'message' && b.type === 'message' ? a.message.seq - b.message.seq : a.message.id.localeCompare(b.message.id)))
+  // Messages keep the conversation's order; a collaboration record (no seq) goes in before the first message sent after it.
+  records.sort((a, b) => Date.parse(a.message.created_at) - Date.parse(b.message.created_at) || a.message.id.localeCompare(b.message.id))
+  const at = (row: ChatListRowItem) => Date.parse(row.message.created_at)
+  const out: ChatListRowItem[] = []
+  let next = 0
+  for (const row of rows) {
+    while (next < records.length && at(records[next]!) < at(row)) out.push(records[next++]!)
+    out.push(row)
+  }
+  return out.concat(records.slice(next))
 }

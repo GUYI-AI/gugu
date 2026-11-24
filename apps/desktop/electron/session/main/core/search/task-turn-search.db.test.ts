@@ -1,3 +1,5 @@
+import { rmSync } from 'node:fs';
+import type Database from 'better-sqlite3';
 import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
@@ -16,14 +18,19 @@ vi.mock('@main/db/client', () => ({
 }));
 vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
 // The matcher runs on a thread of its own in the app (task-turn-search-worker.test.ts); here it reads the fixture.
-vi.mock('./task-turn-search', () => ({ searchTaskTurnMatches: async (query: string, limit?: number, offset?: number) => matchTaskTurns(fixtureRef.current!.sqlite, query, limit, offset) }));
+vi.mock('./task-turn-search', () => ({ searchTaskTurnMatches: async (query: string, limit?: number, offset?: number) => matchTaskTurns(fixtureRef.current!.sqlite, query, limit, offset, 'history_search') }));
 
 const { initializeDatabase } = await import('@main/db/initialize');
 const { searchService } = await import('./search-service');
 const { matchTaskTurns } = await import('./task-turn-matches');
 const { textCondition } = await import('./text-condition');
 const { searchController } = await import('./controller');
-const { writeSessionIndex, updateSessionIndex } = await import('../session-index/session-index');
+const { createSessionIndexStore, openSessionIndex, sessionIndexPath } = await import('../session-index/store');
+const { setSearchBackfillProgress } = await import('@main/db/search-backfill-state');
+let index: Database.Database;
+let store: ReturnType<typeof createSessionIndexStore>;
+const writeSessionIndex = (id: string, turns: TranscriptTurn[]) => store.replace(id, turns, null);
+const updateSessionIndex = (id: string, turns: TranscriptTurn[], removed: string[]) => store.update(id, turns, removed);
 const { resolveConversationMessageReference } = await import('../../../../../../../packages/session-chat-ui/src/state/conversation-messages');
 const { messageQuoteLink } = await import('@gugu/core/shared/ui/messageQuote');
 
@@ -33,8 +40,8 @@ function turn(id: string, items: TranscriptTurn['items'], seq = 0): TranscriptTu
 const said = (id: string, role: 'user' | 'assistant', text: string) => ({ kind: 'message', id, seq: 0, role, text }) as Extract<TranscriptTurn['items'][number], { kind: 'message' }>;
 
 const fixture = () => fixtureRef.current!;
-const indexed = () => fixture().sqlite.prepare('SELECT session_id, turn_id, role, text FROM turn_text_rows ORDER BY session_id, id').all();
-const matches = (query: string) => matchTaskTurns(fixture().sqlite, query);
+const indexed = () => index.prepare('SELECT session_id, turn_id, role, text FROM turn_text_rows ORDER BY session_id, id').all();
+const matches = (query: string) => matchTaskTurns(fixture().sqlite, query, undefined, undefined, 'history_search');
 const found = (query: string) => matches(query).map((hit) => hit.excerpt);
 
 describe('textCondition', () => {
@@ -62,6 +69,11 @@ describe('textCondition', () => {
 describe('task content search (turn_text, written from each session timeline)', () => {
   beforeEach(async () => {
     fixtureRef.current = await openFixture('empty');
+    const path = sessionIndexPath(fixture().sqlite.name);
+    index = openSessionIndex(fixture().sqlite.name);
+    store = createSessionIndexStore(index);
+    fixture().sqlite.prepare('ATTACH DATABASE ? AS history_search').run(path);
+    setSearchBackfillProgress({ state: 'running', total: 2, done: 0 });
     fixture().sqlite.exec(`
       INSERT INTO projects (id, name, path) VALUES ('p1', 'P', '/repo');
       INSERT INTO projects (id, name, path, workspace_provider) VALUES ('p-ssh', 'R', '/srv', 'ssh');
@@ -74,8 +86,11 @@ describe('task content search (turn_text, written from each session timeline)', 
 
   afterEach(() => {
     vi.restoreAllMocks();
+    const path = index.name;
+    index.close();
     fixtureRef.current?.close();
     fixtureRef.current = undefined;
+    rmSync(path, { force: true });
   });
 
   it('searches what is indexed while the rest of the sessions are being read, and says so', async () => {
@@ -85,7 +100,7 @@ describe('task content search (turn_text, written from each session timeline)', 
     expect(searchController.taskTurnIndexStatus().state).toBe('preparing');
     expect(await searchController.taskTurns({ query: 'indexing' })).toHaveLength(1);
     writeSessionIndex('s2', []);
-    writeSessionIndex('s-ssh', []);
+    setSearchBackfillProgress({ state: 'complete', total: 2, done: 2 });
     expect(searchController.taskTurnIndexStatus().state).toBe('ready');
   });
 
@@ -177,8 +192,9 @@ describe('task content search (turn_text, written from each session timeline)', 
     updateSessionIndex('s1', [], ['t1']);
     expect(found('native')).toEqual([]);
     fixture().sqlite.exec("DELETE FROM sessions WHERE id = 's1'");
-    expect(indexed()).toEqual([]);
     expect(found('revised')).toEqual([]);
+    store.drop('s1');
+    expect(indexed()).toEqual([]);
   });
 
   it('keeps remote projects out and returns the newest first, by when the turn started', () => {
