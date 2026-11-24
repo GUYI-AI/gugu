@@ -105,6 +105,8 @@ type PanelCondition = Omit<ChatSessionCondition, 'actions'> & {
 import { rpc } from '@renderer/lib/ipc';
 import { nudgeWorkspace } from '@renderer/features/sessions/stores/workspace-nudges';
 import { machineLabel } from '@renderer/lib/machine-clients';
+import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
+import { machineUnavailableReason } from '@renderer/features/remote-hosts/connection-status';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { readConversationFile } from '@/components/assistant/assistantTimelineClient';
 import { isEmbedVisible } from '@renderer/lib/portal-container';
@@ -1771,6 +1773,13 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   const [restarting, setRestarting] = useState(false);
   const birthGroup = useBirthGroupJoin(store?.sessionId);
   const conditionRuns = useRef<readonly ((anchor?: HTMLElement) => void)[]>([]);
+  // The line to the machine this session is on, said as the sidebar dot and the new-task box say it (connection-status):
+  // while it is not up, that is what holds the page (「正在连接 X…」, offline, sign-in, too old), not the session.
+  const machineConnection = machine ? remoteHostsStore.connectionState(machine) : null;
+  const machineDevice = machine ? remoteHostsStore.device(machine) : null;
+  const machineLinkLabel = machine && machineConnection !== 'connected'
+    ? machineUnavailableReason(machineConnection, machineDevice?.label ?? null, translate, null, machineDevice?.signInExpiredAt)
+    : null;
   useEffect(() => {
     if (store?.loadError) log.error('Session condition failure', { sessionId: store.sessionId, error: store.loadError });
   }, [store, store?.loadError]);
@@ -1783,6 +1792,15 @@ export const AcpChatPanel = observer(function AcpChatPanel({
         .firstUtterance
     );
     const error = store.loadError;
+    // A turn left to reconcile says the same and more (below); a session failure other than the lost line is its own.
+    if (machineLinkLabel && !store.reconcileAwaitingLink && (!error || error.kind === 'connection_lost')) {
+      return {
+        code: 'machine-unreachable',
+        label: machineLinkLabel,
+        detail: `machine-${machineConnection ?? 'unknown'}`,
+        ...(error ? { actions: [{ label: translate('transcript.condition.retry'), run: () => store.retry() }] } : {}),
+      };
+    }
     if (!error && membershipLock) {
       // #7056 会员中途到期:说清原因、给两条去路;发送键在输入框那一格已经停下了。
       return ({
@@ -1975,7 +1993,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       }
     })();
     return condition;
-  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry]);
+  }, [store, store?.loadError, store?.reconcileAwaitingLink, providerId, cliAuthMethod, openAgentAccount, translate, machine, navigate, signInExpired, signInMissing, lastTurnSignIn, signInAgain, agent, connections.signIn, membershipLock, interruptedBy, restarting, birthGroup.join, birthGroup.retrying, birthGroup.retry, machineLinkLabel, machineConnection]);
   useEffect(() => {
     if (!store) return;
     conditionRuns.current = condition?.actions?.map((action) => action.run) ?? [];
