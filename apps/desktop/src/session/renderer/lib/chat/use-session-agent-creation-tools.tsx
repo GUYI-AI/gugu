@@ -14,7 +14,7 @@ function MentionAvatar({ id, name, role }: { id: string; name: string; role?: Me
   const identityId = id.replace(/^(?:aid|user):/, '');
   const identity = useAvatarIdentity(identityId);
   return <Avatar seed={identityId} name={name} avatarUrl={identity?.avatar}
-    isAgent={role ? role === 'agent' : undefined} size={14} harnessBadge={false} still />;
+    isAgent={role ? role === 'agent' : undefined} size={14} still />;
 }
 
 /** The agent tools this computer can create agents with (web and mobile have the static catalog). */

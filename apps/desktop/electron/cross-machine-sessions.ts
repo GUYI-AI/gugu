@@ -8,6 +8,7 @@
  */
 import type { Device } from '@gugu/core/shared/types/chat'
 import { deviceMachines } from '@gugu/core/shared/deviceMachines'
+import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels'
 import { isAgentHostDevice } from '@gugu/core/cloud/devices'
 import { cloudComputerPresence, type CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
 import type { DeviceRpcResponse } from '@gugu/core/cloud/deviceRpcProtocol'
@@ -448,8 +449,12 @@ export function createCrossMachineSessions(deps: CrossMachineDeps) {
         return []
       }
     }))
-    const at = (row: unknown) => Date.parse(String((row as { last_active_at?: unknown }).last_active_at ?? '')) || 0
-    return [...local, ...remote.flat()].sort((a, b) => at(b) - at(a))
+    // The same order each machine lists its own in (byLastActiveDesc): last activity first, then session id.
+    const stamp = (row: unknown) => {
+      const { session_id, last_active_at } = row as { session_id?: unknown; last_active_at?: unknown }
+      return { id: String(session_id ?? ''), activityMs: activityMs(typeof last_active_at === 'string' ? last_active_at : null, null) }
+    }
+    return [...local, ...remote.flat()].sort((a, b) => compareByRecentActivity(stamp(a), stamp(b)))
   }
 
   /** 那台机器上这几个 agent 各自的会话(按 Agent ID 发消息、打开 agent 的会话都按它找)。 */

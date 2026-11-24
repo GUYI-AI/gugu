@@ -19,7 +19,7 @@ export async function retryInterruptedPhoneJob({ ownerId, store, agent, jobId, a
   } else {
     const input = { id, agentUserId: agent.agentUserId, clientMessageId: id, retryOf: jobId,
       prompt: original.prompt, route: structuredClone(original.route ?? { kind: 'task', senderUserId: ownerId }) }
-    for (const key of ['files', 'contextEpoch', 'inputDataProof', 'usedGroups', 'permissionRequirements', 'usedChatIds']) {
+    for (const key of ['files', 'annotations', 'contextEpoch', 'inputDataProof', 'usedGroups', 'permissionRequirements', 'usedChatIds']) {
       if (original[key] !== undefined) input[key] = structuredClone(original[key])
     }
     await admit(input)

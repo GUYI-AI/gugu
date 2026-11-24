@@ -112,13 +112,13 @@ function write<T>(operation: () => Promise<T>): Promise<T> {
 const sessionRows = (sessionId: string) => state().rows.filter(row => row.sessionId === sessionId)
 
 /** Checked before an input is taken (a host too old for its files refuses here, before it is queued). */
-let beforeEnqueue: (input: Pick<SessionInput, 'deviceId' | 'sessionId' | 'text' | 'files' | 'attachments'>) => void = () => {}
+let beforeEnqueue: (input: Pick<SessionInput, 'deviceId' | 'sessionId' | 'text' | 'files' | 'attachments' | 'annotations'>) => void = () => {}
 export function setSessionInputEnqueueCheck(check: typeof beforeEnqueue): () => void {
   beforeEnqueue = check
   return () => { if (beforeEnqueue === check) beforeEnqueue = () => {} }
 }
 
-export function enqueueSessionInput(target: Pick<SessionInput, 'deviceId' | 'sessionId' | 'text' | 'files' | 'attachments' | 'queued' | 'baseline' | 'afterTurnId' | 'sendQueue'> & { composer?: true }): Promise<SessionInput> {
+export function enqueueSessionInput(target: Pick<SessionInput, 'deviceId' | 'sessionId' | 'text' | 'files' | 'attachments' | 'annotations' | 'queued' | 'baseline' | 'afterTurnId' | 'sendQueue'> & { composer?: true }): Promise<SessionInput> {
   return write(async () => {
     beforeEnqueue(target)
     const { composer, ...body } = target

@@ -22,7 +22,7 @@ vi.mock('@renderer/features/settings/use-app-settings-key', async () => { const 
 vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({
   ...(await original<object>()),
   fetchSessionOptions: vi.fn(() => new Promise(() => {})), setSessionOption: vi.fn(),
-  machineRpc: vi.fn(() => ({})), fetchToolImage: vi.fn(), stopBackgroundTask: vi.fn(),
+  machineRpc: vi.fn(() => ({})), stopBackgroundTask: vi.fn(),
   fetchBackgroundTasks: vi.fn(async () => []), readOpenedFileChunk: m.ledger,
 }));
 vi.mock('@/components/appSlot/phoneProgramCall', async original => ({ ...(await original<object>()), callOnComputer: m.call }));

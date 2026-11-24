@@ -41,7 +41,7 @@ vi.mock('@/components/session-watch/useAgentWatchSession', async original => {
   const timeline = emptyAgentWatchTimeline()
   return { ...await original<object>(), useAgentWatchSession: () => ({
     timeline, phase: 'ready', error: null, actionError: null, dismissActionError() {}, waitingForRecord: false, reload() {},
-    loadOlder: async () => undefined, loadToolImage: async () => undefined, pendingSends: [], respond: async () => ({ ok: true }),
+    loadOlder: async () => undefined, pendingSends: [], respond: async () => ({ ok: true }),
     sending: false, respondingItemId: null, cancel() {}, cancelling: false, link: 'lost', errorCode: null,
   }) }
 })

@@ -43,6 +43,7 @@ import { asBroadcast, createDeviceLinkHost } from '../../../../apps/desktop/elec
 import { sshBatchArgs } from '../../../../apps/desktop/electron/server/ssh-batch'
 import { buildForwardSshArgs } from '../../../../apps/desktop/electron/server/ssh-install/logic'
 import { tunnelFacts, wantsTunnel, type TunnelState } from '../../../../apps/desktop/src/lib/tunnelMachines'
+import { sshPathFailed } from '../../../../apps/desktop/src/lib/sshLink'
 
 const RELAY = { serverAddr: 'relay.example.com', serverPort: 30019, token: 'tok_EN-1' }
 
@@ -587,7 +588,7 @@ describe('桌面那一头:状态机', () => {
     }
   })
 
-  it('登录态一时没就绪:过一会儿自己重试连上(❌ 停在「正在连接」)', async () => {
+  it('登录态一时没就绪:登录一到当场连上(❌ 等退避);没人通知也会按退避自己重试', async () => {
     vi.useFakeTimers()
     try {
       let signedIn = false
@@ -597,11 +598,89 @@ describe('桌面那一头:状态机', () => {
       await vi.advanceTimersByTimeAsync(50)
       expect(machines.state()).toEqual({ ready: [], problems: { d1: 'unreachable' } })
       signedIn = true
-      await vi.advanceTimersByTimeAsync(5_000)
+      machines.accountChanged()
+      await vi.advanceTimersByTimeAsync(50)
       expect(machines.state()).toEqual({ ready: ['d1'], problems: {} })
+      machines.closeAll()
+
+      signedIn = false
+      const late = createTunnelMachines(d)
+      late.want([{ deviceId: 'd1', label: 'L' }])
+      await vi.advanceTimersByTimeAsync(50)
+      signedIn = true
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(late.state()).toEqual({ ready: ['d1'], problems: {} })
+      late.closeAll()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('账号没变(刷新令牌):通着的那台不动;换了账号:为新账号重连', async () => {
+    let user = 'me'
+    const { deps: d, configs } = deps({
+      currentUserId: async () => user,
+      callCloud: async () => ({ result: { ...okResponse.result, relay: { ...okResponse.result.relay, user } } }),
+    })
+    const machines = createTunnelMachines(d)
+    try {
+      machines.want([{ deviceId: 'd1', label: 'L' }])
+      await settle()
+      expect(machines.state().ready).toEqual(['d1'])
+      expect(configs).toHaveLength(1)
+      machines.accountChanged()
+      await settle()
+      expect(configs).toHaveLength(1)
+      user = 'other'
+      machines.accountChanged()
+      await settle()
+      expect(configs).toHaveLength(2)
+      expect(machines.linkMachine('d1')?.accountUserId).toBe('other')
+    } finally {
+      machines.closeAll()
+    }
+  })
+
+  it('那台 server 不接设备连接:让给咕咕云,按退避再试(5s、10s…);接上过一次退避才从头算', async () => {
+    vi.useFakeTimers()
+    try {
+      const { deps: d, configs } = deps()
+      const machines = createTunnelMachines(d)
+      machines.want([{ deviceId: 'd1', label: 'L' }])
+      await vi.advanceTimersByTimeAsync(50)
+      expect(machines.state()).toEqual({ ready: ['d1'], problems: {} })
+
+      machines.linkRefused('d1', 'notInstalled')
+      expect(machines.state()).toEqual({ ready: [], problems: { d1: 'linkRefused' } })
+      expect(machines.linkMachine('d1')).toBeNull()
+      await vi.advanceTimersByTimeAsync(4_900)
+      expect(configs).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(200)
+      expect(machines.state().ready).toEqual(['d1'])
+      expect(configs).toHaveLength(2)
+
+      // Refused again: the next try waits twice as long (❌ back to 5 s because the tunnel itself connected).
+      machines.linkRefused('d1', 'notInstalled')
+      await vi.advanceTimersByTimeAsync(9_900)
+      expect(configs).toHaveLength(2)
+      await vi.advanceTimersByTimeAsync(200)
+      expect(configs).toHaveLength(3)
+
+      // A link opened: the route is proven, a later refusal starts from 5 s again.
+      machines.linkOpened('d1')
+      machines.linkRefused('d1', 'notRunning')
+      await vi.advanceTimersByTimeAsync(5_100)
+      expect(configs).toHaveLength(4)
       machines.closeAll()
     } finally {
       vi.useRealTimers()
+    }
+  })
+
+  it('只有 SSH 这一段失败才算中转那条路坏了;那台 server 自己答「不行」时路是通的', () => {
+    for (const reason of ['unreachable', 'signInRequired', 'hostKeyChanged'] as const) expect(sshPathFailed(reason)).toBe(true)
+    for (const reason of ['notInstalled', 'notRunning', 'notSignedIn', 'refused', 'outdated', 'updating', 'waitingIdle', 'unmapped'] as const) {
+      expect(sshPathFailed(reason)).toBe(false)
     }
   })
 })

@@ -10,7 +10,7 @@ import { Avatar } from '../Avatar'
 import { useShownAgentContactStatus } from '../contactAgentTone'
 import { ContactRowContextMenu, type ContactRowMenuActions } from './ContactRowActions'
 import { rowKeyActivate } from './contactsPanelStyles'
-import { agentNodeDrag, type AgentTreeNode } from './contactsAgentTree'
+import { agentHomeLine, agentNodeDrag, type AgentTreeNode } from './contactsAgentTree'
 import { SelectionCheckbox } from './ContactSearch'
 import { ContactsGrid } from './ContactsGrid'
 
@@ -18,7 +18,7 @@ import { ContactsGrid } from './ContactsGrid'
 // 每个有子 agent 的顶层 agent 连同子孙是一个「家族」,只占一格,在格里从上往下画成大纲 —— 父在上,子缩进一级,
 // ├ / └ 连接线与 │ 竖线是纯 CSS 边框;一行家族没排满时,剩下的宽度分给这一行的家族(ContactsGrid fill),名字截在可用宽度上。
 // 没有子 agent 的 agent 各占一格,排在家族后面。正文再窄也不横向滚动。
-// 节点 = 头像 + 名字;状态只在头像角上的状态点(Avatar 自带的 AgentStatusBadge:聊天列表、成员列表、消息头像同一套)。
+// 节点 = 头像 + 名字;状态只在头像角上的那一枚(Avatar 自带的 AgentStatusCorner:聊天列表、成员列表、消息头像同一套)。
 
 // 一个 agent 的子 agent 超过 FOLD_OVER 个时只露前 FOLD_SHOW 个,其余收成一个「…+N」行,点开就地展开。
 const FOLD_OVER = 5
@@ -134,7 +134,7 @@ function Family({ root, ...props }: FamiliesProps & { root: AgentTreeNode }) {
   return (
     <div data-testid="agent-family" className="min-w-0">
       {outline(root, open).map((line) => (
-        <div key={line.key} className="flex h-[44px] min-w-0 items-center">
+        <div key={line.key} className="flex h-[44px] min-w-0 items-center" {...(line.node ? agentHomeLine(line.node.contact.id) : undefined)}>
           <Rails line={line} />
           <div className="h-[40px] min-w-0 flex-1">
             {line.fold ? (
@@ -166,7 +166,7 @@ export function AgentFamilies({ forest, ...props }: FamiliesProps & { forest: re
       {families.length > 0 ? <ContactsGrid fill className="items-start gap-y-4">{families.map((root) => <Family key={root.contact.id} root={root} {...props} />)}</ContactsGrid> : null}
       {singles.length > 0 ? (
         <ContactsGrid className={cn(families.length > 0 && '!mt-4 border-t border-[var(--border)] !pt-4')}>
-          {singles.map((node) => <div key={node.contact.id} className="h-[44px] min-w-0"><Node contact={node.contact} {...props} /></div>)}
+          {singles.map((node) => <div key={node.contact.id} className="h-[44px] min-w-0" {...agentHomeLine(node.contact.id)}><Node contact={node.contact} {...props} /></div>)}
         </ContactsGrid>
       ) : null}
     </div>

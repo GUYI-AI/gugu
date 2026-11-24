@@ -31,17 +31,16 @@ describe('headless electron shim: app logs path', () => {
   })
 })
 
-// No image decoder headless: resizing gives nothing to re-encode (an App's icon falls back), while an image still hands
-// its own bytes back (a picture dropped into a server's terminal is saved through toPNG, persist-dropped-blob.ts).
+// No image decoder headless: every image is empty and encodes to nothing, so no caller takes the input bytes for its own
+// encoding (an upload's preview, a shrunk image, a dropped HEIC saved as .png).
 describe('headless electron shim: nativeImage', () => {
-  it('resize gives an empty image; the image itself keeps its bytes', async () => {
+  it('reads every image as empty and hands no bytes back', async () => {
     const { nativeImage } = await import('./electron-shim')
     const image = nativeImage.createFromBuffer(Buffer.from([1, 2, 3]))
-    const resized = image.resize({ width: 32, height: 32, quality: 'best' })
-    expect(resized.isEmpty()).toBe(true)
-    expect(resized.toPNG().length).toBe(0)
-    expect(image.isEmpty()).toBe(false)
-    expect(image.toPNG()).toEqual(Buffer.from([1, 2, 3]))
+    expect(image.isEmpty()).toBe(true)
+    expect(image.toPNG().length).toBe(0)
+    expect(image.toJPEG().length).toBe(0)
+    expect(image.resize({ width: 32, height: 32, quality: 'best' }).isEmpty()).toBe(true)
   })
 })
 

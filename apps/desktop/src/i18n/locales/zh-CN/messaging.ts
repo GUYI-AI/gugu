@@ -14,7 +14,7 @@ export default {
       "hint": "Agent 所在设备的咕咕版本较旧，部分运行信息可能缺失。",
       "label": "主机旧"
     },
-    "offlineWarning": "当前不在线，可能无法及时回复",
+    "offlineWarning": "当前离线，可能无法及时回复",
     "archivedWarning": "对方已归档",
     "wakeRefused": "{{name}} 无法上线：",
     "dm": {
@@ -580,6 +580,7 @@ export default {
       "madeAdmin": "{{actor}} 将 {{target}} 设为管理员",
       "removed": "{{actor}} 将 {{target}} 移出了群聊",
       "revokedAdmin": "{{actor}} 撤销了 {{target}} 的管理员身份",
+      "transferredOwner": "{{actor}} 将群主转让给 {{target}}",
       "topicOpened": "{{actor}} 创建了话题："
     },
     "memberList": {
@@ -592,6 +593,10 @@ export default {
       "manage": "管理 {{name}}",
       "noMatches": "没有匹配「{{query}}」的成员",
       "revokeAdmin": "取消管理员",
+      "transferOwner": "转让群主",
+      "transferOwnerConfirm": "把群主转让给 {{name}}？转让后 {{name}} 成为群主，你将成为管理员；之后只有新群主能再转让。",
+      "transferOwnerProjectGroup": "项目群的群主就是项目主人，暂不支持转让。",
+      "transferOwnerUnavailable": "服务端尚不支持转让群主，请等服务端更新后再试。",
       "search": "搜索成员、主人或引擎",
       "setActive": "改为主动",
       "setPassive": "改为被动",
@@ -743,14 +748,31 @@ export default {
       "uploading": "上传中"
     }
   },
+  "groupDetails": {
+    "topicSummary": "话题 · {{count}} 人",
+    "topicSummary_one": "话题 · {{count}} 人",
+    "topicSource": "来自群「{{name}}」",
+    "backToGroup": "回到群",
+    "searchHistory": "搜索聊天记录",
+    "searchChat": "搜索对话",
+    "people": "{{count}} 人",
+    "people_one": "{{count}} 人",
+    "agents": "{{count}} 个智能体",
+    "agents_one": "{{count}} 个智能体"
+  },
+  "conversationCard": {
+    "rename": "改名",
+    "notifications": "消息通知",
+    "details": "详情"
+  },
   "header": {
+    "details": "详情",
     "apps": "应用",
     "members": "{{count}} 位成员",
     "searchHistory": "搜索聊天记录",
     "groupInfoAndSettings": "群信息与设置",
     "noApps": "本设备暂无可用的应用。",
     "announcement": "群公告",
-    "groupInfo": "群信息",
     "chatInfo": "会话信息",
     "memberList": "成员列表",
     "more": "更多操作",
@@ -943,17 +965,10 @@ export default {
     "leave": "退出话题",
     "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
     "removeHint": "对方仍可阅读，只是不再收到这个话题的通知",
-    "calledYou": "有人 @ 你",
     "pins": {
-      "pin": "将“{{name}}”置顶到主群",
+      "pin": "置顶“{{name}}”",
       "unpin": "取消置顶“{{name}}”",
-      "emptyHint": "在任意消息上选择“开话题”。",
-      "loadFailed": "无法读取置顶话题。",
-      "saveFailed": "未能保存置顶话题。"
-    },
-    "phoneTabs": {
-      "group": "群聊",
-      "label": "群聊和话题"
+      "emptyHint": "在任意消息上选择“开话题”。"
     },
     "anchor": {
       "lead": "话题",
@@ -966,15 +981,7 @@ export default {
       "openedBy": "由 {{name}} 创建",
       "quiet": "暂无消息"
     },
-    "openFailed": "无法打开话题。该消息可能已被删除，请从其他消息开启话题。",
-    "pane": {
-      "attachments": "附件",
-      "members": "成员",
-      "collapseSplit": "收起分栏",
-      "collapseSplitHint": "收起分栏，话题不会关闭",
-      "composerPlaceholder": "输入消息",
-      "empty": "此话题暂无消息"
-    }
+    "openFailed": "无法打开话题。该消息可能已被删除，请从其他消息开启话题。"
   },
   "resources": {
     "copyUrl": "复制咕咕 URL",

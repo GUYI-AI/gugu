@@ -2190,6 +2190,33 @@ test('resolves files at run time, warns without blocking later text, and persist
   } finally { await fx.close(); }
 });
 
+test('sends comments ahead of the words and restores them beside the words, as a desktop host does', async () => {
+  const prompts = [];
+  const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: '# All comments\n\n## User Comment 1\nHTML preview\nComment:\nMake it red' }];
+  const fx = await fixture(async (command, hooks) => {
+    prompts.push(command.prompt);
+    await recordTurn(command, hooks, 'done');
+    return { status: 'done', text: 'done' };
+  });
+  try {
+    const created = await fx.host.invoke('sessionTimeline.sessionCreate', [{ harness: 'pi', prompt: 'initial plain input' }], randomUUID());
+    await until(() => prompts.length === 1 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events);
+    await fx.host.invoke('sessionTimeline.sessionSend', [{ conversationId: created.conversationId, text: 'apply each comment', annotations, clientRequestId: randomUUID() }], randomUUID());
+    await until(() => prompts.length === 2 && fx.host.state().sessions[0]?.lastJobStatus === 'done', fx.events);
+    assert.equal(prompts[1], `${annotations[0].promptText}\n\napply each comment`);
+    await fx.host.close();
+    const reopened = await openPhoneAgentStore(fx.root, ownerId), agent = Object.values(reopened.state.agents)[0];
+    reopened.state.jobs = {}; await reopened.save();
+    const timeline = createPhoneTimelineRuntime({ root: fx.root, store: reopened, authorize: async () => {} });
+    try {
+      const snapshot = await timeline.snapshot(agent, {});
+      const item = snapshot.turns.flatMap(turn => turn.items).find(item => item.kind === 'message' && item.role === 'user' && item.annotations?.length);
+      assert.equal(item.text, 'apply each comment');
+      assert.deepEqual(item.annotations, annotations);
+    } finally { await timeline.close(); }
+  } finally { await fx.close(); }
+});
+
 test('a delivery from an App is recorded as failed with its reason, and reads no inbox', async () => {
   let nudge
   const fx = await fixture(async () => { throw new Error('no model turn expected') }, { prepare: seedInboxAgents, onRpcStart: ({ onCommand }) => { nudge = onCommand } })

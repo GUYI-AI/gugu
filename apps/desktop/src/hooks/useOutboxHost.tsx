@@ -44,6 +44,12 @@ export function OutboxHost({ accountId }: { accountId: string }) {
       const native = liveDeviceSessions()[input.deviceId]?.sessions.find(row => row.conversationId === input.sessionId)?.nativeInputVersion
       return native === 1
     }
+    // A host that does not report `task_annotations` would take the words and drop the comments: refuse before queueing.
+    const oldAnnotationHost = (input: Pick<SessionInput, 'deviceId' | 'annotations'>) => {
+      if (!input.annotations?.length || !input.deviceId) return false
+      const device = hosts.current.find(row => row.device_id === input.deviceId)
+      return !!device && !device.is_current_device && device.capabilities.task_annotations !== 1
+    }
     const box = outbox()
     // Static kinds stay registered: what a previous run queued drains from the start.
     ensureKind(box, readOutboxKind)
@@ -62,7 +68,8 @@ export function OutboxHost({ accountId }: { accountId: string }) {
             const summary = liveDeviceSessions()[remoteId]?.sessions.find(session => session.conversationId === input.sessionId)
             if (summary?.nativeInputVersion !== 1 && summary?.nativeInputVersion !== 2) throw new SessionInputFailureError({ code: 'host-not-ready' })
           }
-          const request = { conversationId: input.sessionId, text: input.text, ...(input.steerIfBusy ? { steerIfBusy: true as const } : {}), ...(input.files?.length ? { files: input.files } : {}), ...(input.attachments?.length ? { attachments: input.attachments } : {}) }
+          const request = { conversationId: input.sessionId, text: input.text, ...(input.steerIfBusy ? { steerIfBusy: true as const } : {}), ...(input.files?.length ? { files: input.files } : {}), ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+            ...(input.annotations?.length ? { annotations: input.annotations } : {}) }
           if (device && isPhoneDevice(device)) {
             const { invokePhoneHost } = await import('@/mobile/local-agent/phoneHostRpc')
             const result = await invokePhoneHost<{ accepted?: boolean }>(device.device_id, 'sessionTimeline.sessionSend', [{ ...request, clientRequestId: input.id }])
@@ -73,14 +80,15 @@ export function OutboxHost({ accountId }: { accountId: string }) {
             if (!result.ok) throw new SessionInputAdmissionError(result.error.message, sessionInputAdmission(result.error), result.error.code)
             if (result.value.clientMessageId !== input.id) throw new Error('Session host acknowledged another input')
           } else {
-            const { sendSessionText } = await import('@/components/session-watch/sessionpage-rpc')
+            const { sendSessionInput } = await import('@/components/session-watch/sessionpage-rpc')
             if (!input.deviceId) throw new Error('Remote session input has no device')
-            await sendSessionText(input.deviceId, input.sessionId, input.text, input.id, input.files, input.attachments, input.steerIfBusy)
+            await sendSessionInput(input.deviceId, { ...request, clientMessageId: input.id })
           }
         },
       })),
       setSessionInputEnqueueCheck(input => {
         if (oldAttachmentHost(input)) throw new Error(translateSessionMessage('composer.attachmentHostUpdateRequired'))
+        if (oldAnnotationHost(input)) throw new Error(translateSessionMessage('composer.annotationHostUpdateRequired'))
       }),
       box.subscribe(publishRows),
       // A host that came back, or a session that became ready, takes what was waiting for it.

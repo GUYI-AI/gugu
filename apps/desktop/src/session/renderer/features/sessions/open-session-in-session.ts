@@ -2,8 +2,7 @@ import { when } from 'mobx';
 import { getSessionPageStore, getSessionView, sessionViewKind } from '@renderer/features/sessions/stores/session-selectors';
 import { sessionTabKind } from './session-tab-kind';
 import { sessionPaneReady } from './session-pane-ready';
-import { machineUnavailableLabel } from './machine-unavailable-label';
-import { offlineSessionInputTarget } from './offline-session-input-target';
+import { drawnWithoutWorkspace, machineUnavailableLabel } from './machine-unavailable-label';
 import { sessionRegistry } from './stores/session-registry';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -13,7 +12,10 @@ interface OpenSessionInSessionOptions {
   projectId: string;
   sessionId: string;
   timeout?: number;
-  /** Commit navigation or layout only after the task workspace can be opened. */
+  /**
+   * Commit navigation or layout only after the task workspace can be opened. Given = nothing is on screen until then, so a
+   * timeout is told as a toast; without it the caller already showed the task and its page tells every state.
+   */
   onReady?: () => void;
   /**
    * behavior session-page「键盘导航」: keyboard ↑↓ walks the sidebar and the main area follows every
@@ -48,18 +50,21 @@ export function openSessionInSessionWhenReady({
 }: OpenSessionInSessionOptions): () => void {
   const kind = sessionViewKind(getSessionPageStore(projectId, sessionId), projectId);
   if (!onlyIfNoTabs && kind !== 'archived' && kind !== 'missing') rememberTask(sessionId);
-  if (offlineSessionInputTarget(projectId, kind)) {
-    // Navigation (including a beside block) reaches SessionContentGate without a remote workspace.
+  // A session whose machine does not answer opens now (SessionContentGate): its usual page and conversation without a
+  // workspace when it is listed here. Preparing would only fail until that machine is back, when view.tsx prepares it.
+  const withoutWorkspace = () => drawnWithoutWorkspace(getSessionPageStore(projectId, sessionId));
+  if (!withoutWorkspace() && machineUnavailableLabel(projectId) && kind !== 'ready' && kind !== 'archived') {
+    // Not listed here yet (its project mounts when that machine is back): the page says the machine is away.
     onReady?.();
     return () => {};
   }
-  const paneReady = sessionPaneReady(projectId, sessionId, { reviveArchived: false });
+  const paneReady = withoutWorkspace() ? () => false : sessionPaneReady(projectId, sessionId, { reviveArchived: false });
   return when(
     () => {
       const session = sessionRegistry
         .get(sessionId)
         ?.sessions.get(sessionId);
-      return Boolean(paneReady() && getSessionView(host?.projectId ?? projectId, host?.sessionId ?? sessionId) && session);
+      return Boolean((paneReady() || withoutWorkspace()) && getSessionView(host?.projectId ?? projectId, host?.sessionId ?? sessionId) && session);
     },
     () => {
       const session = sessionRegistry
@@ -93,6 +98,9 @@ export function openSessionInSessionWhenReady({
           sessionId,
           error,
         });
+        // Already on screen (no onReady): SessionContentGate says loading, offline or the failure in place (❌ a toast over
+        // a page still saying it is loading). Placement held back until ready: nothing is on screen, this is the answer.
+        if (!onReady) return;
         toast({
           title: translateSessionMessage('sidebar.conversationNotOpenable'),
           description: machineUnavailableLabel(projectId) ?? translateSessionMessage('sidebar.workspaceNotReady'),

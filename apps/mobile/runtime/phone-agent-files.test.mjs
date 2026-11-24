@@ -6,6 +6,10 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import { openPhoneAgentStore } from './phone-agent-store.mjs'
 import { receivePhoneArtifact, phoneFileTools, phoneTurnFiles, registerArtifact } from './phone-agent-files.mjs'
+import { drawImagePreviews } from '../../../packages/core/src/cloud/attachmentsApi.ts'
+
+// agent.mjs registers the phone's preview drawer at start; this one never finishes a preview, so only the send's own requests are seen.
+drawImagePreviews({ draw: () => new Promise(() => {}), warn: () => {} })
 
 const ownerId = '68a158dd-1832-4671-ac02-ebde330d3d7a'
 const agent = { agentUserId: '558fcc98-9d61-4054-8a18-900d969b1849', sessionId: '13226587-813a-4e58-a023-dc419aeab890' }

@@ -29,8 +29,9 @@ export const liveWindowTabProvider: TabProvider<'live-window', LiveWindowTabStat
     return new LiveWindowTabResource(entry.state, conversation, () => {
       const session = ctx as SessionTabContext;
       const view = getSessionView(session.projectId, session.sessionId);
+      // The chat stands in for this screen only where it is shown in this tab's own pane; beside it (a chat workspace) it does not.
       return !!view && [...view.paneLayout.groups, ...view.paneLayout.windowPanes.values()]
-        .some(({ pane }) => pane.resolvedTabs.some(tab => tab.tabId === entry.state.chatTabId && tab.isActive));
+        .some(({ pane }) => pane.entries.has(entry.tabId) && pane.resolvedTabs.some(tab => tab.tabId === entry.state.chatTabId && tab.isActive));
     });
   },
   onBeforeClose: (_entry, resource) => {

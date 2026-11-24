@@ -176,6 +176,8 @@ export type ServerUpdaterRuntime = {
   isBusy: () => boolean
   versionSwitchActivity?: () => { busy: boolean; busyAgents: number } | undefined
   beforeSwitch?: () => (() => void) | void
+  /** Writes one heartbeat now, so other devices read the switch (and a confirmed restart's `waiting`) before this process exits. */
+  announce?: () => Promise<void>
   shutdown: () => void
 }
 export type ServerUpdaterDeps = ServerUpdaterRuntime & {
@@ -338,6 +340,8 @@ export function startServerUpdater(deps: ServerUpdaterDeps): ServerUpdater {
       if (!received?.confirmed && runtime.isBusy()) return schedule(IDLE_POLL_MS)
       // The lifecycle verifies the environment and boot before recording pending/current.
       publish({ state: 'switching', version: target })
+      await runtime.announce?.()
+      if (stopped) return
       const resumeActivity = runtime.beforeSwitch?.()
       try {
         lifecycle!.switchSupervisor({ from: layout!.version, to: target, fromDir: layout!.running,

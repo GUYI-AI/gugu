@@ -88,8 +88,8 @@ export async function reconcileCodexNativeReference(options: {
     }
     let liveOwner = reference ? 'managed-live' : 'native';
     try {
-      const recorded = JSON.parse(await readFile(join(stateRoot, 'managed-live-account.json'), 'utf8')) as { connectionId?: string; identity?: string };
-      if (live && recorded.identity === codexAuthIdentity(JSON.parse(live.text)) && recorded.connectionId !== 'native'
+      const recorded = JSON.parse(await readFile(join(stateRoot, 'managed-live-account.json'), 'utf8')) as { connectionId?: string; identity?: string; boundForLogin?: true };
+      if (live && (recorded.boundForLogin || recorded.identity === codexAuthIdentity(JSON.parse(live.text))) && recorded.connectionId !== 'native'
         && rows.some(row => row.accountId === recorded.connectionId)) {
         liveOwner = recorded.connectionId!;
         if (live.identity) known.set(live.identity, liveOwner);

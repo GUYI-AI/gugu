@@ -54,6 +54,8 @@ import {
 import type { Result } from '@gugu/session-shared';
 import { errorDetail, ok, toSerializedError } from '@gugu/session-shared';
 import { invokesCommand } from '@gugu/session-core/acp/commands';
+import { nativePromptMeta } from '@gugu/session-core/acp/native-prompt';
+import { annotationPromptText } from '@gugu/session-core/acp/client';
 import { classifyTurnFailure, refusedTurnOutcome } from './turn-failure';
 import {
   type Command,
@@ -482,7 +484,7 @@ export class SessionCell {
       if (text === prompt.text) continue;
       const result = text === null ? this.removeQueuedPrompt(prompt.id) : this.editQueuedPrompt(prompt.id, {
         text, origin: prompt.origin, hiddenContext: prompt.hiddenContext,
-        attachments: prompt.attachments, files: prompt.files, coalesceKey: prompt.coalesceKey,
+        attachments: prompt.attachments, files: prompt.files, annotations: prompt.annotations, coalesceKey: prompt.coalesceKey,
       });
       if (!result.success) throw new Error(`Cannot reconcile recovered delivery: ${result.error.type}`);
     }
@@ -2101,6 +2103,7 @@ export class SessionCell {
           ...(steered ? { guguOwnerInput: isOwnerOrigin(prompt.origin) } : {}),
         },
         ...(prompt.files?.length ? { files: prompt.files.map(({ itemId, version, name, mimeType, sizeBytes }) => ({ itemId, version, name, mimeType, sizeBytes })) } : {}),
+        ...(prompt.annotations?.length ? { annotations: prompt.annotations } : {}),
         content: [{ type: 'text', text: prompt.text }],
         contentMode: 'replace',
         attachmentsMode: 'replace',
@@ -2209,6 +2212,9 @@ export class SessionCell {
       }));
       const turnContextBlocks = [prepared?.text, prepared?.beforeText, turnContext]
         .filter((text): text is string => !!text).map(text => ({ type: 'text' as const, text }));
+      // The person's comments on what they were looking at go just ahead of their own words, as one block.
+      const annotationText = annotationPromptText(prompt.annotations);
+      const annotationBlocks = annotationText ? [{ type: 'text' as const, text: annotationText }] : [];
       const textBlocks = prompt.text ? [{ type: 'text' as const, text: prompt.text }] : [];
       // hiddenContext is host context for this message, such as a mentioned or scheduled issue.
       // Typed turns carry someone's words verbatim, without host context beside them.
@@ -2230,15 +2236,13 @@ export class SessionCell {
       const promptRequest = {
         sessionId: this.acpSessionId,
         prompt: leadsWithCommand
-          ? [...textBlocks, ...contextBlocks, ...turnContextBlocks, ...attachmentBlocks, ...trailingBlocks]
-          : [...contextBlocks, ...turnContextBlocks, ...attachmentBlocks, ...textBlocks, ...trailingBlocks],
+          ? [...textBlocks, ...contextBlocks, ...turnContextBlocks, ...attachmentBlocks, ...annotationBlocks, ...trailingBlocks]
+          : [...contextBlocks, ...turnContextBlocks, ...attachmentBlocks, ...annotationBlocks, ...textBlocks, ...trailingBlocks],
       };
-      const promptMeta = this.deps.historyRecovery?.promptMeta?.(promptRequest.prompt);
-      if (promptMeta) {
-        // Bind the exact native bytes to our original prompt, without putting any marker on the wire.
-        submittedMessage._meta = { ...submittedMessage._meta, ...promptMeta };
-        if (!nativeSteer) this.push({ ...submittedMessage, steering: true, trigger: undefined }, true);
-      }
+      // Bind the exact native bytes to the person's own prompt, without putting any marker on the wire: a record holds
+      // the native prompt, and the host restores what the person sent from this receipt (`host-prompts.ts`).
+      submittedMessage._meta = { ...submittedMessage._meta, ...nativePromptMeta(promptRequest.prompt) };
+      if (!nativeSteer) this.push({ ...submittedMessage, steering: true, trigger: undefined }, true);
       this.rawLog.record({
         kind: 'prompt',
         sessionId: this.acpSessionId,

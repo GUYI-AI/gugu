@@ -20,12 +20,13 @@ export const testCustomModelSchema = z.object({
 }).refine(({ connectionId, apiKey, endpoints }) => connectionId || (apiKey && endpoints), 'Choose a saved connection or supply its address and key');
 export type TestCustomModel = z.infer<typeof testCustomModelSchema>;
 
-/** A typed address and key, probed for the protocols it really answers. */
+/** An address, probed for the protocols it really answers with a typed key or the key a saved connection holds. */
 export const detectCustomModelProtocolsSchema = z.object({
   baseUrl: z.string().trim().url(),
-  apiKey: z.string().trim().min(1).max(8192),
+  apiKey: z.string().trim().min(1).max(8192).optional(),
+  connectionId: z.string().min(1).optional(),
   modelId: z.string().trim().min(1).max(200).optional(),
-});
+}).refine(({ apiKey, connectionId }) => apiKey || connectionId, 'Supply a key or a saved connection');
 export type DetectCustomModelProtocols = z.infer<typeof detectCustomModelProtocolsSchema>;
 
 export const customModelProtocolProbeSchema = z.object({

@@ -17,6 +17,17 @@ import { BINDING_ACTION_CAPABILITY } from './unread-binding';
  */
 export const ASSISTANT_APP_ID = 'gugu-assistant';
 
+/**
+ * Whether the personal assistant is promoted as a feature of its own. Off (for now its App is an ordinary App): no pinned
+ * entry (the first slot in my menu, the row atop the agent markets, the phone's first Messages row), nothing sends a person
+ * to set one up, its App is never put in by itself, and it is listed among the Apps like any other. An assistant someone
+ * already has, and its App, keep working.
+ */
+export const ASSISTANT_PROMOTED: boolean = false;
+
+/** The assistant App kept apart from the other Apps (with the agents): only while the assistant is promoted. */
+export const isPromotedAssistantApp = (id: string): boolean => ASSISTANT_PROMOTED && id === ASSISTANT_APP_ID;
+
 /** What a host knows of the installed assistant App. */
 export interface AssistantAppInstall {
   manifest: Pick<ExtensionManifest, 'id' | 'version' | 'apiVersion' | 'platforms' | 'contributes' | 'permissions'>;

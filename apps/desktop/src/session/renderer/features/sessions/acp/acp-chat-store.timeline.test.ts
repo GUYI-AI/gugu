@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The session page draws the session's timeline: what it reads at open, what the host pushes after, and the running
- * turn from the live session. A turn just committed stays on screen until the timeline holds its recorded form.
+ * turn from the live session. A turn just committed stays on screen while the timeline holds it open.
  */
 import { afterEach, expect, it, vi } from 'vitest';
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
@@ -17,7 +17,8 @@ const turn = (id: string, seq: number, text: string, startedAt = seq * 100): Tra
 type Internals = {
   session: { activeTurn: ReturnType<typeof replica<TranscriptTurn | null>> } | null;
   _historyGeneration: number;
-  _committedFrameId: string | null;
+  _committedFrame: TranscriptTurn | null;
+  _endedBeforeLive: ReadonlySet<string>;
   _openHistory(generation: number): Promise<void>;
 };
 const stores: InstanceType<typeof AcpChatStore>[] = [];
@@ -47,7 +48,7 @@ it('lets a committed frame go once the timeline holds that turn ended under the 
   internal.session = { activeTurn: replica<TranscriptTurn | null>(live) };
   host.show([turn('a', 0, 'one'), live]);
   internal.session.activeTurn.push(null);
-  internal._committedFrameId = 'runtime-1';
+  internal._committedFrame = live;
   host.show([turn('a', 0, 'one'), { ...live, endedAt: 300, outcome: { kind: 'done' } }]);
   expect(store.chatState.transcript.state.activeTurnSnapshot).toBeNull();
   expect(committedIds(store)).toEqual(['a', 'runtime-1']);
@@ -63,15 +64,86 @@ it('leaves the running turn to the live session and keeps a committed one until 
 
   // Committed: the live session lets go, the frame stays while the timeline still carries the runtime's copy.
   internal.session.activeTurn.push(null);
-  internal._committedFrameId = 'runtime-1';
+  internal._committedFrame = live;
   host.show([turn('a', 0, 'one'), live]);
   expect(store.chatState.transcript.state.activeTurnSnapshot?.id).toBe('runtime-1');
   expect(committedIds(store)).toEqual(['a']);
 
-  // The recorded form replaces it: one turn, ❌ both.
+  // The record has its prompt and not yet its reply: the frame stays.
   host.show([turn('a', 0, 'one'), turn('s:node-7', 2, 'go')]);
+  expect(store.chatState.transcript.state.activeTurnSnapshot?.id).toBe('runtime-1');
+  expect(committedIds(store)).toEqual(['a']);
+
+  // The recorded form, ended, replaces it: one turn, ❌ both.
+  host.show([turn('a', 0, 'one'), { ...turn('s:node-7', 2, 'go'), outcome: { kind: 'done' } }]);
   expect(store.chatState.transcript.state.activeTurnSnapshot).toBeNull();
   expect(committedIds(store)).toEqual(['a', 's:node-7']);
+});
+
+it('keeps a committed turn where it was while the next one starts, until the record holds it ended', async () => {
+  const first = turn('runtime-1', 1, 'go');
+  const { store, internal } = await opened([turn('a', 0, 'one'), first]);
+  internal.session = { activeTurn: replica<TranscriptTurn | null>(first) };
+  host.show([turn('a', 0, 'one'), first]);
+  internal.session.activeTurn.push(null);
+  internal._committedFrame = first;
+  // The next turn starts while the record holds the first one's prompt only, and already the next one's (the runtime's
+  // copy of it has none yet): ❌ the next one drawn in its place.
+  const next: TranscriptTurn = { ...turn('runtime-2', 2, 'more'), items: [] };
+  internal.session.activeTurn.push(next);
+  host.show([turn('a', 0, 'one'), turn('s:node-7', 1, 'go'), turn('s:node-8', 2, 'more'), next]);
+  expect(committedIds(store)).toEqual(['a', 'runtime-1', 's:node-8']);
+  expect(store.chatState.transcript.state.activeTurnSnapshot?.id).toBe('runtime-2');
+  host.show([turn('a', 0, 'one'), { ...turn('s:node-7', 1, 'go'), outcome: { kind: 'done' } }, turn('s:node-8', 2, 'more'), next]);
+  expect(committedIds(store)).toEqual(['a', 's:node-7', 's:node-8']);
+});
+
+it('lets a committed turn go when the record holds it in a form it cannot be told by', async () => {
+  // Nothing shared yet (the record wrote the prompt as it arrived, with its delivery wrapper): ❌ both drawn.
+  const first = turn('runtime-1', 1, 'go');
+  const { store, internal } = await opened([turn('a', 0, 'one'), first]);
+  internal.session = { activeTurn: replica<TranscriptTurn | null>(first) };
+  host.show([turn('a', 0, 'one'), first]);
+  internal.session.activeTurn.push(null);
+  internal._committedFrame = first;
+  host.show([turn('a', 0, 'one'), turn('s:node-9', 1, '[queued] go')]);
+  expect(store.chatState.transcript.state.activeTurnSnapshot).toBeNull();
+  expect(committedIds(store)).toEqual(['a', 's:node-9']);
+});
+
+it('keeps a committed turn before the next one when the timeline holds the next one first', async () => {
+  // The host timeline has the next turn running before this replica does: the committed one is drawn before it, ❌ after.
+  const first = turn('runtime-1', 1, 'go');
+  const { store, internal } = await opened([turn('a', 0, 'one'), first]);
+  internal.session = { activeTurn: replica<TranscriptTurn | null>(first) };
+  host.show([turn('a', 0, 'one'), first]);
+  internal.session.activeTurn.push(null);
+  internal._committedFrame = first;
+  host.show([turn('a', 0, 'one'), turn('s:node-7', 1, 'go'), turn('runtime-2', 2, 'more')]);
+  expect(committedIds(store)).toEqual(['a', 'runtime-1', 'runtime-2']);
+  expect(store.chatState.transcript.state.activeTurnSnapshot).toBeNull();
+});
+
+it('draws the running turn once when the record already holds its own copy of it', async () => {
+  // The record numbers the turn itself (another turn id) and is ahead of the live session; the agent's reply id is shared.
+  const reply = (id: string): TranscriptTurn['items'][number] => ({ kind: 'message', id: `${id}:message:m-1`, seq: 1, role: 'assistant', text: 'ok', at: 150 });
+  const live = { ...turn('runtime-1', 1, 'go'), items: [...turn('runtime-1', 1, 'go').items, reply('runtime-1')] };
+  const { store, internal } = await opened([turn('a', 0, 'one')]);
+  internal.session = { activeTurn: replica<TranscriptTurn | null>(live) };
+  host.show([turn('a', 0, 'one'), { ...turn('s:node-7', 1, 'go'), items: [...turn('s:node-7', 1, 'go').items, reply('s:node-7')] }]);
+  expect(committedIds(store)).toEqual(['a']);
+  expect(store.chatState.transcript.state.activeTurnSnapshot?.id).toBe('runtime-1');
+});
+
+it('keeps an earlier turn that opens with the same words as the running one', async () => {
+  // `a` had ended when the running turn started (taken as it starts, `_endedBeforeLive`); the record's copy came after.
+  const live = turn('runtime-2', 1, 'ok');
+  const ended = { ...turn('a', 0, 'ok'), outcome: { kind: 'done' as const } };
+  const { store, internal } = await opened([ended]);
+  internal._endedBeforeLive = new Set(['a']);
+  internal.session = { activeTurn: replica<TranscriptTurn | null>(live) };
+  host.show([ended, turn('s:node-8', 1, 'ok')]);
+  expect(committedIds(store)).toEqual(['a']);
 });
 
 it('puts an owner notification made by the running turn into that turn', async () => {

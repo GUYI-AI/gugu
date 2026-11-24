@@ -17,6 +17,7 @@ import { readAssistantProductRules } from './assistant-product-rules'
 import { assistantRulesLastGoodStore, type LastGoodAssistantRules } from './assistant-rules-last-good'
 import { assistantRules, createAssistantRulesResolver, installAssistantRulesResolver } from './assistant-rules-resolver'
 import { ASSISTANT_RULES_PROVIDER_ID, hearAssistantAppChanges, installedAssistantAppHere, installedAssistantRulesProvider } from './assistant-rules-trust'
+import { ASSISTANT_PROMOTED } from '@shared/extensions/assistant-entry'
 import { extensionsService } from './session/main/core/extensions/extensions-root'
 
 export const ASSISTANT_RULES_DIR_NAME = 'assistant-rules'
@@ -102,9 +103,12 @@ async function knownAccountAssistant(): Promise<boolean> {
   }
 }
 
-/** Whether this machine needs the App now: as the rules of an assistant living here, or as the page of the account's assistant. */
+/**
+ * Whether this machine needs the App now: as the rules of an assistant living here, or as the page of the account's assistant
+ * (only while the assistant is promoted: otherwise its App is an ordinary App, put in by the person).
+ */
 async function appNeededHere(): Promise<boolean> {
-  return assistantLivesHere() || accountHasAssistant()
+  return assistantLivesHere() || (ASSISTANT_PROMOTED && accountHasAssistant())
 }
 
 let ensurer: AssistantAppEnsurer | null = null

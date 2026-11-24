@@ -50,6 +50,8 @@ import { turnFailureMarker } from '../../shared/ui/systemNotice'
 import { sessionArchiveRefusesMessage, type SessionArchivalState } from '../../shared/sessionArchival'
 import { beginInboxAttempt, clearInboxReceiptRetry, clearInboxRetry, resetInboxRetries, retryInboxFailure, retryInboxReceipt } from './inboxRetry'
 import { isTransientNetworkError } from '../../shared/networkError'
+import { annotationPromptText } from '@gugu/session-core/acp/client'
+import { annotationsFromRow } from '../../cloud/messageItem'
 
 const log = coreLogger('agent-inbox-reader')
 
@@ -88,6 +90,8 @@ export interface AgentInboxUnreadRow {
   /** #2581 Files sent at once share a send: each of its rows carries it and how many files it holds. */
   sendGroupId?: string | null
   sendGroupSize?: number | null
+  /** Comments sent beside the words: the agent reads each one's promptText after the message. */
+  annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[] | null
   /**
    * The rules in force on a group or topic line ('' when none; a topic without its own takes its source group's), read
    * with the message by pull_agent_inbox_v2. null off rooms.
@@ -330,6 +334,7 @@ export function unreadRowFromRpc(raw: Record<string, unknown>): AgentInboxUnread
     ...fileRefOf(raw),
     sendGroupId: text(raw.send_group_id),
     sendGroupSize: num(raw.send_group_size),
+    annotations: annotationsFromRow(raw.annotations),
     replyToMessageId: text(raw.reply_to_message_id),
     replyToSenderUserId: text(raw.reply_to_sender_user_id),
     replyToContent: text(raw.reply_to_content),
@@ -1002,7 +1007,8 @@ async function prepareMessage(
   const where: AttachmentWhere | null = !attachment ? null
     : attachment.source.kind === 'gone' ? 'gone' : { fetch: { source_message_id: `msg:${row.id}` } }
   const item = attachment?.source.kind === 'item' ? { itemId: attachment.source.itemId, version: attachment.source.version } : null
-  const content = `${row.content}${attachmentLocationLines(item, where)}`
+  // The comments sent beside the words follow the message (its first line stays the message's own head), as one block.
+  const content = [`${row.content}${attachmentLocationLines(item, where)}`, annotationPromptText(row.annotations ?? undefined)].filter(Boolean).join('\n\n')
   const messageContext = buildAgentMentionContext(content, row.toUserIds, identities, agentUserId)
   const chat = { publicId: row.chatPublicId, name: row.chatName, kind: row.chatKind,
     ownDm: (row.chatKind === 'dm' || row.chatKind === 'ai') && !!deps.ownerUserId && row.senderUserId === deps.ownerUserId }

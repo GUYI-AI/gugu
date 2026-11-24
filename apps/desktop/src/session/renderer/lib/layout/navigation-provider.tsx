@@ -19,7 +19,9 @@ export type SlotsContextValue = {
   TitlebarSlot: ComponentType;
   MainPanel: ComponentType;
   currentView: ViewId;
-  withoutSessionSidebar: boolean;
+  modal: boolean;
+  /** The page laid out under a modal view, or the current view (NavigationStore.pageViewId, @@@page-modal). */
+  pageView: ViewId | null;
 };
 
 export type WrapParamsContextValue = {
@@ -44,7 +46,8 @@ export function useWorkspaceSlots(): SlotsContextValue {
       TitlebarSlot: def.TitlebarSlot ?? (() => null),
       MainPanel: def.MainPanel,
       currentView: resolvedViewId,
-      withoutSessionSidebar: def.withoutSessionSidebar === true,
+      modal: def.modal === true,
+      pageView: appState.navigation.pageViewId,
     };
   });
 }

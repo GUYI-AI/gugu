@@ -1,9 +1,7 @@
-import type { InstalledSection } from '@renderer/features/extensions/installed/installed-item';
 import type { InventoryView } from '@renderer/features/extensions/installed/InstalledItems';
 import { appState } from '@renderer/lib/stores/app-state';
 
 export type AppsTab = 'agents' | 'market' | 'connectors';
-export type AppsSort = 'recommended' | 'newest' | 'popular';
 
 /**
  * Where you are on the Apps page, the one source for it: the Apps view's `location` param (apps-views). It is a place
@@ -14,15 +12,13 @@ export type AppsLocation = {
   tab: AppsTab;
   /** Another desktop of this account whose Apps are shown (an App link naming it); absent = this computer. */
   deviceId?: string;
-  /** The Apps tab's order. */
-  sort?: AppsSort;
   /** How far down the list was when it was left for an App's page. */
   scroll?: number;
   /**
-   * The Installed sheet, open on one segment of one device. `direct`: opened straight onto connector management (the
-   * shell's "manage connectors"), which shows its management controls at once.
+   * The Installed page in place of the market: what the tab names, installed on one device. `direct`: opened straight
+   * onto connector management (the shell's "manage connectors"), which shows its management controls at once.
    */
-  installed?: { section: InstalledSection; deviceId?: string; layout?: InventoryView; scroll?: number; direct?: boolean };
+  installed?: { deviceId?: string; layout?: InventoryView; scroll?: number; direct?: boolean };
   /**
    * An App's page: its settings (`manage`) or its market page. Without `page` (a link) the page decides by whether it
    * is installed. `fromApp`: opened from that App's own tab, so its back button is named after the App.

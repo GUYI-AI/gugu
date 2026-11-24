@@ -45,6 +45,12 @@ export const CHAT_VIEW_COMMANDS = [
  * via `view.setCommands(commands)`.
  */
 export type ChatCommands = {
+  /**
+   * A row has come on screen from behind a fold (an opened process, an opened exchange), or is drawn from an item its
+   * page held back (`held`). A host whose pages carry turns in their folded form reads that row's turn again, whole, and
+   * puts it in place; the row shows what it has until then. `itemId` is the row's; it starts with its turn's id.
+   */
+  onHeldShown?: (itemId: string) => void;
   /** Mounted rows and reading intent for residency; never an unread acknowledgement. */
   onViewportProtection?: (protection: ViewportProtection) => void;
   /** Open the host's credit page after an authoritative credit exhaustion failure. */
@@ -126,27 +132,10 @@ export type ChatCommands = {
   }) => void;
 
   /**
-   * 点了工具卡上的一张缩略图:宿主用全 app 那一个看图器打开同一次调用交回来的**全部**图,从被点的这张起
-   * (缩略图只摆前几张,「+N」后面那些靠左右滑到)。
-   */
-  onViewImages?: (arg: {
-    /** 画图用的地址,按交回来的顺序。 */
-    urls: string[];
-    index: number;
-    itemId: string;
-    source: 'tool-result';
-    /** 被点的那张缩略图:看图器从它放大进入。 */
-    thumb?: HTMLElement;
-  }) => void;
-
-  /**
    * Resolve an attachment id to a displayable data URL. Used for committed
    * messages whose transcript stores attachment metadata but not bytes.
    */
   resolveAttachment?: (attachment: { id: string; name: string }) => Promise<string | null>;
-
-  /** Fetch one tool picture from its original history source when its thumbnail is shown. */
-  resolveToolImage?: (itemId: string, index: number) => Promise<string | null>;
 
   /**
    * Called when the user clicks the stop button on the current user message

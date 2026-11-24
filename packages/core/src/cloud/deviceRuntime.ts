@@ -1,6 +1,6 @@
 import { DEVICE_ACTION_PROTOCOL_VERSION, type DeviceActionsCapability, type DeviceActionsReadFailure } from '../shared/deviceActions'
 import { createHash, randomUUID } from 'node:crypto'
-import { execFile } from '../local/childProcess'
+import { execFile, windowsSystemProgram } from '../local/childProcess'
 import { access, link, mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import { hostname, platform } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -562,7 +562,7 @@ export async function machineHardwareIdentifier(signal: AbortSignal, io: Machine
     return io.fallback(signal)
   }
   if (io.platform === 'win32') {
-    const stdout = await io.exec('reg', ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid'], signal)
+    const stdout = await io.exec(windowsSystemProgram('reg.exe'), ['query', 'HKLM\\SOFTWARE\\Microsoft\\Cryptography', '/v', 'MachineGuid'], signal)
     const m = stdout.match(/MachineGuid\s+REG_SZ\s+([\w-]+)/i)
     if (m) return m[1]
     throw new Error('MachineGuid not found')
@@ -1087,7 +1087,7 @@ export async function runDeviceRuntimeTick(
 function defaultCommandExists(runner: CommandRunner, currentPlatform: () => string) {
   return async (command: string, signal?: AbortSignal): Promise<boolean> =>
     (await runner.run(
-      [currentPlatform() === 'win32' ? 'where' : 'which', command],
+      [currentPlatform() === 'win32' ? windowsSystemProgram('where.exe') : 'which', command],
       { signal },
     )).status === 0
 }

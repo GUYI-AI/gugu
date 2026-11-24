@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 import { clearProviderSessionMissing } from './mark-provider-session-missing';
 import { isResidentNeverRun, RESIDENT_AGENT_FIRST_UTTERANCE } from './never-run-session';
-import { writeSessionIndex } from '../session-index/session-index';
 
 // #7223 「建来常驻、一句没聊过」= 时间线里没有回合(会话索引)、也没有真首轮;起来之后陈旧的 missing 标记要去掉。
 // 读写真库(迁移跑到最新)。
@@ -17,7 +16,10 @@ vi.mock('@main/db/client', () => ({
   get sqlite() { return mocks.sqlite; },
 }));
 // The session index is what these read; the tests write it themselves.
-vi.mock('../session-timeline/service', () => ({ ensureSessionIndexed: async () => {} }));
+vi.mock('../session-timeline/service', async () => {
+  const { indexedTurnCount } = await import('../session-index/session-index');
+  return { sessionHasRecordedTurn: async (id: string) => indexedTurnCount(id) > 0 };
+});
 vi.mock('@main/lib/events', () => ({ events: { emit: mocks.emit } }));
 
 let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -32,7 +34,7 @@ function seedSession(config: Record<string, unknown>, providerSessionId: string 
 }
 
 function seedTurn(): void {
-  writeSessionIndex('s', [{ id: 't0', seq: 0, initiator: 'user', items: [] }]);
+  fixture.sqlite.prepare('INSERT INTO session_index_turns (session_id, turn_id, initiator) VALUES (?, ?, ?)').run('s', 't0', 'user');
 }
 
 function config(): Record<string, unknown> {

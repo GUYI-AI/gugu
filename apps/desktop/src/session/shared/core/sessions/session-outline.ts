@@ -27,6 +27,11 @@ export type SessionOutlineInput = {
   reply: string;
 };
 export type SessionOutlineTurn = { id: string; inputs: SessionOutlineInput[] };
+/**
+ * `after`: the answer holds only the turns after that one (the reader asked with `afterTurnId` and the machine has it).
+ * Absent: the whole outline before `beforeTurnId`, which is also what a machine that does not know `afterTurnId` sends.
+ */
+export type SessionOutline = { turns: SessionOutlineTurn[]; after?: string };
 
 /** One message item of a turn, as the outline reads it: in turn order, then item order. */
 export type OutlineMessageRow = {

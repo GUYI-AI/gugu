@@ -6,6 +6,7 @@ import { log } from '@main/lib/logger';
 import { extensionsService } from './extensions-root';
 import { noteFirstRunProfile, readFirstRunRecord, writeFirstRunRecord } from './first-run-record';
 import { ASSISTANT_RULES_PROVIDER_ID } from '../../../../assistant-rules-trust';
+import { ASSISTANT_PROMOTED } from '@shared/extensions/assistant-entry';
 
 /**
  * 首启默认组在这台电脑上(规矩在 @shared/extensions/first-run.ts):main 一起来就开始(embedded-boot.ts),❌ 等登录、
@@ -38,7 +39,9 @@ function deviceDeps(): FirstRunDeps {
         .filter((id) => origins[id] !== undefined);
     },
     usable: () => true,
-    required: [ASSISTANT_RULES_PROVIDER_ID],
+    // Not promoted (assistant-entry.ts): not in every new profile; a machine its assistant lives on still gets it from the
+    // ensure step that follows the set (`firstRunAtBoot`).
+    required: ASSISTANT_PROMOTED ? [ASSISTANT_RULES_PROVIDER_ID] : [],
     install: async (id, version) => {
       const { installExtensionFromMarket } = await import('./extension-market-install');
       const outcome = await installExtensionFromMarket({ ref: { extensionId: id, version }, consent: { kind: 'gugu' } });

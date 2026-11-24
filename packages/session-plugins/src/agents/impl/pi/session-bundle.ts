@@ -1,5 +1,6 @@
-import { harnessPlatform, piProviderApi } from './platform';
+import { harnessPlatform, piProviderApi, piProviderCompat } from './platform';
 import { join } from 'node:path';
+import { customModelAcceptsImages, customModelThinks } from '@gugu/session-core/models/custom-model';
 import type {
   CapabilityPackage,
   Degradation,
@@ -372,6 +373,7 @@ function modelArtifact(
       return [`gugu-${provider.connectionId}`, {
         name: provider.name,
         api,
+        ...piProviderCompat(api),
         baseUrl: provider.baseUrl,
         apiKey: '${GUGU_PI_API_KEY}',
         authHeader: true,
@@ -379,8 +381,8 @@ function modelArtifact(
           id: entry.id,
           name: entry.label || entry.id,
           api,
-          reasoning: entry.thinking === true,
-          input: entry.image === true ? ['text', 'image'] : ['text'],
+          reasoning: customModelThinks(entry),
+          input: customModelAcceptsImages(entry) ? ['text', 'image'] : ['text'],
           ...(entry.contextWindow ? { contextWindow: entry.contextWindow } : {}),
           ...(entry.maxOutput ? { maxTokens: entry.maxOutput } : {}),
         })),
@@ -394,6 +396,7 @@ function modelArtifact(
       content: `${JSON.stringify({ providers }, null, 2)}\n`,
     };
   }
+  const api = piProviderApi(model.wireProtocol);
   return {
     path: join(piAgentDir(surface, guguHome), PI_MODELS_RELATIVE),
     mode: 0o600,
@@ -402,14 +405,15 @@ function modelArtifact(
       providers: {
         [piProviderId(model)]: {
           name: model.providerName || 'Gugu platform quota',
-          api: piProviderApi(model.wireProtocol),
+          api,
+          ...piProviderCompat(api),
           baseUrl: model.platformProvider.baseUrl,
           apiKey: '${GUGU_PI_API_KEY}',
           authHeader: true,
           models: entries.map((entry) => ({
             id: entry.id,
             name: entry.name,
-            api: piProviderApi(model.wireProtocol),
+            api,
             // pi `docs/models.md` 的模型字段表:`reasoning` 缺省 **false** = 「不支持扩展思考」。
             // 而 pi 把它当**硬门**:`model.reasoning` 为假时,`setThinkingLevel` 会被它自己钉回
             // `off`(2026-09-13 实测:逐档设、read_back 恒 "off"、上游请求体里根本没有
@@ -518,7 +522,8 @@ function acpSettingsArtifact(
   //    `set_config_option` 只作用于当前进程 —— 重开就回到启动值。⇒ 宿主先把新档落进会话记录
   //    (`config.effort`),重开时这份 settings 按记录重算,于是新档跟着进新会话。
   //    少了这一行,「点确认 → 重启」会**重启回旧档**,而界面显示的是新档。
-  const thinkingLevel = model?.reasoningEffort?.trim();
+  //    自定义模型的「默认」档不带任何档位参数:pi 缺省是 `medium`,所以这里显式落 `off`(请求里不写 reasoning_effort)。
+  const thinkingLevel = model?.reasoningEffort?.trim() || (model?.customModels ? 'off' : undefined);
   if (thinkingLevel) settings.defaultThinkingLevel = thinkingLevel;
   return {
     path: join(agentDir, PI_ACP_SETTINGS_RELATIVE),

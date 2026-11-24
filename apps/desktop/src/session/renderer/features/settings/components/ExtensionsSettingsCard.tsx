@@ -80,7 +80,7 @@ import type {
 } from '@shared/extensions/market';
 import { marketDownloadProgressChannel, marketRefreshedChannel } from '@shared/extensions/marketEvents';
 import type { MarketRefreshed } from '@shared/extensions/market-snapshot';
-import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry';
+import { ASSISTANT_APP_ID, isPromotedAssistantApp } from '@shared/extensions/assistant-entry';
 import { declaredContexts, type ExtensionManifest } from '@shared/extensions/manifest';
 import { readCachedDevices } from '@/store/devicesCache';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
@@ -128,8 +128,10 @@ type AppDetail =
 
 const appDetailId = (detail: AppDetail) => (detail.page === 'market' ? detail.subject.manifest.id : detail.extensionId);
 
-export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ onOpenAgentDetail, renderInstalledApps, onOpenInstalledApp }: {
+export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({ onOpenAgentDetail, installedPage, renderInstalledApps, onOpenInstalledApp }: {
   onOpenAgentDetail?: (agentId: string) => void;
+  /** What is installed, drawn under the header in place of the market while the location says Installed. */
+  installedPage?: ReactNode;
   renderInstalledApps?: (items: readonly InstalledItem[], state: { loading?: boolean; error?: boolean }) => ReactNode;
   onOpenInstalledApp?: (extensionId: string) => void;
 }) {
@@ -168,7 +170,15 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
   // Where on the Apps page (apps-location): the tab, the open App page; changes go through apps-location.
   const location = currentAppsLocation();
   const tab = location.tab;
-  const setTab = (next: AppsTab) => moveAppsLocation((place) => ({ ...place, tab: next, detail: undefined, scroll: undefined }));
+  const setTab = (next: AppsTab) => moveAppsLocation((place) => ({
+    ...place, tab: next, detail: undefined, scroll: undefined, installed: place.installed && { ...place.installed, scroll: undefined },
+  }));
+  // Installed is a place of its own: leaving it is going back to where it was opened from.
+  const toggleInstalled = () => {
+    if (!location.installed) openAppsLocation({ ...location, installed: { deviceId: location.deviceId } });
+    else if (previousAppsLocation()) navigateBack(true);
+    else moveAppsLocation((here) => ({ ...here, installed: undefined }));
+  };
   const [agentCategory, setAgentCategory] = useState<AgentMarketFilter>('all');
   const [chip, setChip] = useState<'all' | MarketCategory>('all');
   const [agentDetailId, setAgentDetailId] = useState<string | null>(null);
@@ -743,7 +753,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
       // 它的设置页随它一起没了:回到进来的地方(市场页还在,按钮回到「安装」);从别处直接进来的回「已安装」。
       const here = currentAppsLocation();
       if (here.detail?.page === 'manage' && here.detail.extensionId === app.id) {
-        closePage({ ...here, detail: undefined, installed: { section: 'apps', deviceId: here.deviceId } });
+        closePage({ ...here, tab: 'market', detail: undefined, installed: { deviceId: here.deviceId } });
       }
       setJustInstalled((current) => (current === app.id ? null : current));
       // Uninstall is the one irreversible action here. When the bundle is on the
@@ -866,7 +876,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     ? { status: 'loading' }
     : shelf;
   const marketRows = shelf.status === 'ready' ? shelf.items : [];
-  const assistantMarketItem = marketRows.find((item) => item.manifest.id === ASSISTANT_APP_ID);
+  const assistantMarketItem = marketRows.find((item) => isPromotedAssistantApp(item.manifest.id));
 
   const openInstalledDetail = (manifest: ExtensionManifest) => {
     setJustInstalled(null);
@@ -1122,7 +1132,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
               openApp(managed.id);
               return;
             }
-            closePage({ ...location, detail: undefined, installed: { section: 'apps', deviceId: location.deviceId } });
+            closePage({ ...location, tab: 'market', detail: undefined, installed: { deviceId: location.deviceId } });
           }}
           onLifecycle={() => runLifecycle(managed.id)}
           onInstallVersion={inMarket ? (ref) => void installFromShelf(ref, managed.id) : undefined}
@@ -1145,6 +1155,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
     );
   }
 
+  const shownTab = location.installed ? null : tab;
   const search = (
     <SearchInput
       ref={searchRef}
@@ -1184,9 +1195,9 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
             </ToggleGroupItem>
           </ToggleGroup>
           <div className="mk-market-actions">
-            {search}
+            {!location.installed && search}
             <Button type="button" variant="outline" size="sm" data-testid="extensions-open-installed"
-              onClick={() => openAppsLocation({ ...location, installed: { section: 'agents', deviceId: location.deviceId } })}>
+              className="aria-pressed:bg-row-selected aria-pressed:text-foreground" aria-pressed={!!location.installed} onClick={toggleInstalled}>
               <Archive className="size-4" aria-hidden />
               {translate('extensions.tabInstalled')}
               {apps && updates && updateCountOf(updates, apps) > 0 ? <span className="mk-seg-dot" aria-hidden /> : null}
@@ -1195,9 +1206,11 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           </div>
         </div>
 
-        {tab === 'connectors' && <ConnectorMarketPage query={query} />}
+        {location.installed && installedPage}
 
-        {tab === 'agents' && (
+        {shownTab === 'connectors' && <ConnectorMarketPage query={query} />}
+
+        {shownTab === 'agents' && (
           <div className="pb-14" data-testid="agent-market-panel">
             {machineOffline ? (
               <div className="mk-status" role="status">{translate('extensions.marketOfflineUnreachable')}</div>
@@ -1217,7 +1230,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           </div>
         )}
 
-        {tab === 'market' && (
+        {shownTab === 'market' && (
           <div className="pb-14 mk-browse" data-testid="extensions-market-panel" data-browsing={browsing ? '' : undefined}>
             <div className="mk-browse-list">
               {/* 那台机器此刻连不上:清单问不了(问了只会挂满超时),照实说,❌ 一直转骨架。 */}
@@ -1261,8 +1274,6 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
                     query={extensionShelf.query}
                     category={chip}
                     onCategoryChange={setChip}
-                    sort={location.sort}
-                    onSortChange={(sort) => moveAppsLocation((here) => ({ ...here, sort }))}
                     installedIds={installedById ? new Set(installedById.keys()) : undefined}
                     onOpen={openShelfDetail}
                     resourceOf={resourceOf}

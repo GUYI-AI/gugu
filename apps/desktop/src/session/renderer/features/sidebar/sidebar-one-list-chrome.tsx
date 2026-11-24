@@ -1,6 +1,6 @@
-import { Archive, ChevronsLeft, ChevronsRight, Clock, FolderPlus, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
+import { Archive, Clock, FolderPlus, PanelLeft, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
 import { NotificationSlot } from '@/components/needsYou/NotificationSlot';
 import { Button } from '@/components/ui/Button';
@@ -8,6 +8,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { DropdownMenu, MenuItem, MenuSubmenu } from '@/components/ui/Menu';
 import { TourBubble } from '@/components/productTour/TourBubble';
 import { Hint } from '@/components/ui/Tooltip';
+import { MeSlot } from '@/components/me/MeSlot';
 import { requestShellChatAction, useProductTourOnScreen, useSidebarNotificationsOpen } from '@/lib/sidebarChatsBridge';
 import { useAppSettingsKey } from '@renderer/features/settings/use-app-settings-key';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
@@ -17,6 +18,7 @@ import { isCurrentView, useNavigate, useWorkspaceSlots } from '@renderer/lib/lay
 import { appState } from '@renderer/lib/stores/app-state';
 import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { cn } from '@renderer/utils/utils';
 import { LOCAL_SESSION_ENGINE_LABEL } from '@shared/core/session-import/session-import';
 import { AddProjectMenuItems } from './add-project-menu-items';
 import { nextSidebarIntro, SIDEBAR_INTRO_STEPS, sidebarIntroShown, type SidebarIntroEvent } from './sidebar-intro';
@@ -27,8 +29,8 @@ import { SidebarSpace } from './sidebar-space';
  * GUYI-AI/gugu#2548 the head and the top of the sidebar as one list.
  * Composition only: every control is an existing one (Button, IconButton, DropdownMenu + MenuItem, Hint, the bell's slot, the
  * search button) running an existing action. Collapsed, the sidebar is a rail of the list's avatars (SIDEBAR_RAIL_PX wide,
- * every avatar where it was): what has text fades, as do search, 已安排 and 会话历史. The collapse button, the bell (its rail
- * row, SidebarRailBell) and the 「+」 sit on the avatars' axis, in that order.
+ * every avatar where it was): what has text fades, as do search, 已安排 and 会话历史. The fold button (SidebarRailRow) and the
+ * 「+」 sit on the avatars' axis, in that order; the bell is in the foot.
  */
 
 /** The 「+」 menu, in order. Each runs the action of the same name that exists today. */
@@ -44,24 +46,24 @@ export function runOneListCreateAction(action: Exclude<OneListCreateAction, 'new
   requestShellChatAction(action);
 }
 
-/** The bell's row on the rail (SidebarRailBell). */
-const RAIL_BELL_ROW_PX = 40;
 const CREATE_MENU_ICON = { 'create-group': Users, 'new-project': FolderPlus, 'add-contact': UserRound } as const;
 const CREATE_MENU_LABEL = { 'create-group': 'sidebar.newGroupChat', 'new-project': 'task.projectNew', 'add-contact': 'sidebar.addContact' } as const;
 
 /**
  * The top row (mock v19: 「创建智能体」收窄淡出,+ 从右边滑到这条竖线上). Its layout is the expanded one (side padding 12, gap 4)
- * or the rail's (20, 0, 创建智能体 at 0), taken where the rows take the rail's layout (@@@panel-track: one layout at each end
- * of the fold). In between the 「+」 (32) slides from the row's right end onto the avatars' axis (20 + 16 = 36) by a
- * transform, with the same progress as everything else; 创建智能体 fades (followNames).
+ * or the rail's (18, 0, 创建智能体 at 0), taken where the rows take the rail's layout (@@@panel-track: one layout at each end
+ * of the fold). In between the 「+」 (32) slides from the row's right end onto the avatars' axis (18 + 16 = 34 of the 68 rail)
+ * by a transform, in the half of the fold where 创建智能体 has faded (followNames), so the two never cross.
  */
 function followTopRow(row: HTMLElement, progress: number, railLayout: boolean) {
-  row.style.paddingInline = railLayout ? '20px' : '12px';
+  row.style.paddingInline = railLayout ? '18px' : '12px';
   row.style.gap = railLayout ? '0px' : '4px';
+  row.style.paddingBottom = `${railLayout ? TOP_ROW_GAP_RAIL_PX : TOP_ROW_GAP_OPEN_PX}px`;
   const plus = row.lastElementChild as HTMLElement | null;
   if (!plus) return;
-  // From its expanded place (12 from the right end) to the rail's (20 from the left); a read of a clean layout.
-  const travel = railLayout ? 0 : (1 - progress) * (row.clientWidth - 12 - plus.offsetWidth - 20);
+  // From its expanded place (12 from the right end) to the rail's (18 from the left); a read of a clean layout. It moves in
+  // the half of the fold where the text is gone (the mirror of sidebarRailTextOpacity), ❌ across 创建智能体 still fading.
+  const travel = railLayout ? 0 : sidebarRailTextOpacity(1 - progress) * (row.clientWidth - 12 - plus.offsetWidth - 18);
   plus.style.transform = travel > 0 ? `translateX(${-travel}px)` : '';
 }
 
@@ -81,14 +83,14 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
   const createRef = useSidebarProgressFollow<HTMLButtonElement>(followNames);
   const menuLabel = [...(collapsed ? [translate('sidebar.createAgent')] : []), ...ONE_LIST_CREATE_MENU.map((action) => translate(CREATE_MENU_LABEL[action]))].join(' / ');
   return (
-    <div ref={rowRef} className="flex shrink-0 items-center pb-2" data-sidebar-one-list-top="">
+    <div ref={rowRef} className="flex shrink-0 items-center" data-sidebar-one-list-top="">
       {/* Fades with the sidebar's text (followNames) and narrows to nothing: no side padding or border
           of its own (its label is centred, so expanded it looks the same), and its overflow is clipped on the way. Collapsed
           it is inert: out of the tab order and the pointer's way. */}
       <Button
         ref={createRef}
         variant="primary"
-        className="min-w-0 flex-1 overflow-hidden"
+        className="h-[34px] min-w-0 flex-1 overflow-hidden rounded-[10px]"
         style={{ paddingInline: 0, borderInlineWidth: 0 }}
         inert={collapsed}
         onClick={onCreateAgent}
@@ -103,7 +105,8 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
             had no trigger to give focus back to. The tooltip closes on the press by itself. */}
         <Hint label={menuLabel} side={collapsed ? 'right' : 'bottom'}>
           <DropdownMenu.Trigger
-            className="gg-icon-btn gg-ghost window-no-drag-region"
+            // Design v16: 28 (radius 8) on the rail, 34 (radius 10) beside 创建智能体.
+            className={cn('gg-icon-btn gg-ghost window-no-drag-region', collapsed ? '!size-7 !rounded-lg' : '!size-[34px] !rounded-[10px]')}
             data-size="md"
             data-on={menuOpen || undefined}
             aria-label={menuLabel}
@@ -113,7 +116,7 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
           </DropdownMenu.Trigger>
         </Hint>
         {menuOpen ? (
-          <DropdownMenu.Content aria-label={menuLabel} side="bottom" align={collapsed ? 'start' : 'end'} sideOffset={4}>
+          <DropdownMenu.Content aria-label={menuLabel} side={collapsed ? 'right' : 'bottom'} align={collapsed ? 'start' : 'end'} sideOffset={collapsed ? 8 : 4}>
             {collapsed && (
               <MenuItem icon={<SquarePen size={15} />} data-testid="sidebar-create-create-agent" onClick={onCreateAgent}>
                 {translate('sidebar.createAgent')}
@@ -139,31 +142,87 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
 }
 
 /**
- * The bell's place on the rail: a row between 「»」 and the 「+」, on the avatars' axis (20 + 32 / 2 = 36), 40px tall on the
- * rail and 0 expanded. It takes its height where the rows take the rail's layout (the list keeps its width until the fold
- * lands, @@@panel-track); in between, what is under it moves down with the progress by a transform (followBelowRailBell), so the
- * avatars still move, ❌ jump. The bell itself is the head's (the same slot, the same count) and changes place there too,
- * fading in as the rows' counts do. Opening it on the rail expands the sidebar into the same list (LeftSidebar).
+ * The rows' geometry at either end of the fold (@@@panel-track: each is taken where the rows take the rail's layout). What
+ * is under them is moved by the difference times the progress (followBelowRailRow, followListOffset), so between the two
+ * ends the rows move with the fold and land where the rail draws them, ❌ jump when the layout flips.
  */
-function followRailBellRow(row: HTMLElement, _progress: number, railLayout: boolean) {
-  row.style.height = railLayout ? `${RAIL_BELL_ROW_PX}px` : '0px';
+/** The fold row: 12 + the 32px search field + 12 expanded; the fold button's 36 on the rail. */
+const RAIL_ROW_OPEN_PX = 56;
+const RAIL_ROW_RAIL_PX = 36;
+/** Under 创建智能体 and its 「+」 (followTopRow). */
+const TOP_ROW_GAP_OPEN_PX = 17;
+const TOP_ROW_GAP_RAIL_PX = 8;
+/** The list's gutter (left-sidebar: 14 open, 8 on the rail). */
+const LIST_GUTTER_OPEN_PX = 14;
+const LIST_GUTTER_RAIL_PX = 8;
+
+/** The fold row's height, written in the same frame as what is under it (followBelowRailRow), ❌ a render later. */
+function followRailRowHeight(row: HTMLElement, _progress: number, railLayout: boolean) {
+  row.style.height = `${railLayout ? RAIL_ROW_RAIL_PX : RAIL_ROW_OPEN_PX}px`;
 }
 
-/** What sits under the bell's row, moved down as far as the row would be open at this progress (0 at either end). */
-export function followBelowRailBell(element: HTMLElement, progress: number, railLayout: boolean) {
-  const shift = railLayout ? 0 : RAIL_BELL_ROW_PX * (1 - progress);
-  element.style.transform = shift > 0 ? `translateY(${shift}px)` : '';
+/** What sits under the fold row, moved up as far as the row would have shrunk at this progress (0 at either end). */
+export function followBelowRailRow(element: HTMLElement, progress: number, railLayout: boolean) {
+  const shift = railLayout ? 0 : (RAIL_ROW_OPEN_PX - RAIL_ROW_RAIL_PX) * (1 - progress);
+  element.style.transform = shift > 0 ? `translateY(${-shift}px)` : '';
 }
 
-export function SidebarRailBell() {
+/** The list's rows, moved by what the top row's gap and the gutter would have shrunk at this progress (0 at either end). */
+export function followListOffset(element: HTMLElement, progress: number, railLayout: boolean) {
+  const rest = railLayout ? 0 : 1 - progress;
+  element.style.transform = rest > 0
+    ? `translate(${-(LIST_GUTTER_OPEN_PX - LIST_GUTTER_RAIL_PX) * rest}px, ${-(TOP_ROW_GAP_OPEN_PX - TOP_ROW_GAP_RAIL_PX) * rest}px)`
+    : '';
+}
+
+/**
+ * The fold row, under the head: the fold button at the end of the search field expanded (界面减法 #46: search is at the top only
+ * while the sidebar is open), on the avatars' axis on the rail — the fold button is in this row in both states, ❌ a row of
+ * its own. Each changes where the rows take the rail's layout (@@@panel-track); the field and the button fade with the names
+ * before that.
+ */
+function SidebarRailRow({ visibilityRef }: { visibilityRef: RefObject<HTMLDivElement | null> }) {
   const railLayout = useLeftRailLayout();
-  const rowRef = useSidebarProgressFollow<HTMLDivElement>(followRailBellRow);
+  const fieldRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
+  const rowRef = useSidebarProgressFollow<HTMLDivElement>(followRailRowHeight);
   return (
-    <div ref={rowRef} className="flex shrink-0 items-start pl-5" data-sidebar-rail-bell="" inert={!railLayout}>
-      <div className="animate-in fade-in duration-150">
-        <NotificationSlot part="toggle" tone="strong" active={railLayout} />
-      </div>
+    // Design v16: on the rail the fold button is centred on the avatars' axis (34 of 68), right under the head band (on macOS
+    // just under the traffic lights). Open, the search field keeps its side inset (12) above and below it too (yangchichi
+    // 11-24: the gaps were too wide).
+    <div
+      ref={(row) => {
+        rowRef.current = row;
+        visibilityRef.current = row;
+      }}
+      className={cn('flex shrink-0', railLayout ? 'items-start justify-center' : 'items-center gap-1 p-3')}
+      data-sidebar-rail-row=""
+    >
+      {/* Keyed: the two are different elements. Unkeyed, React kept the field's div for the rail's, and with it the inline
+          opacity the fold had faded the field to (followNames writes it): the rail's fold button was there but invisible. */}
+      {railLayout ? <div key="rail" className="flex"><SidebarFoldButton /></div> : (
+        <div key="field" ref={fieldRef} className="flex min-w-0 flex-1 items-center gap-1">
+          <div className="min-w-0 flex-1"><SidebarSearchTrigger /></div>
+          <SidebarFoldButton />
+        </div>
+      )}
     </div>
+  );
+}
+
+/** Folds / unfolds the sidebar: the fold button in the fold row (SidebarRailRow), both states. */
+function SidebarFoldButton() {
+  const { translate } = useSessionMessages();
+  const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
+  const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', useShortcutOverrides());
+  const shortcut = hotkey ? formatHotkeyText(hotkey) : null;
+  // #2548: 收起侧栏 / 展开侧栏 and the product's own shortcut (owner: not the mock's ⌘\).
+  const foldLabel = translate(isLeftOpen ? 'sidebar.collapseSidebar' : 'sidebar.expandSidebar');
+  return (
+    <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side={isLeftOpen ? 'bottom' : 'right'}>
+      <IconButton size="md" tone="strong" className="window-no-drag-region !h-[26px] !w-[30px] !rounded-[7px]" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
+        <PanelLeft />
+      </IconButton>
+    </Hint>
   );
 }
 
@@ -216,38 +275,25 @@ function importableTools(locale: string): string {
 }
 
 /**
- * The head is the window's drag band between the collapse button and the bell, search, 已安排 and 会话历史 at the right.
- * The collapse button (chevrons only; its tooltip says what it does and the shortcut, as
- * the old header toggle's did) is first, centred on the avatars' axis (20 + 32 / 2 = 36), and never moves: collapsed it is
- * 「»」 in the same place. Everything after it hides with the names on the rail (proposal v1, extra 1); the bell moves to its
- * rail row under 「»」 (SidebarRailBell), so the rail keeps 「»」, the bell and the 「+」. There is no foot: the list runs to
- * the window's bottom edge. Over the head, once: C9 (useSidebarIntro), drawn below the row so it never covers the buttons it explains.
+ * The head: the window's drag band, as tall as the window's own controls need it at the sidebar's top (the traffic lights',
+ * `--sidebar-head-height`; 0 where they are elsewhere, as Windows' title bar row), then the fold row (SidebarRailRow). Over
+ * the head, once: C9 (useSidebarIntro), drawn next to the step's button so it never covers it.
  *
  * `innerShownFor`: what the inner sidebar is drawn for (innerSidebarShownFor: a chat, or the sample), null when none.
  */
 export const SidebarOneListHead = observer(function SidebarOneListHead({ innerShownFor = null }: { innerShownFor?: string | null }) {
   const { translate, locale } = useSessionMessages();
   const { navigate } = useNavigate();
-  const { currentView } = useWorkspaceSlots();
-  const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
+  const { pageView: currentView } = useWorkspaceSlots();
+  const { isLeftOpen } = useWorkspaceLayoutContext();
   const keyboard = useShortcutOverrides();
   const hotkey = getEffectiveHotkey('app.toggleLeftSidebar', keyboard);
   const shortcut = hotkey ? formatHotkeyText(hotkey) : null;
-  // #2548: 收起侧栏 / 展开侧栏 and the product's own shortcut (owner: not the mock's ⌘\).
-  const foldLabel = translate(isLeftOpen ? 'sidebar.collapseSidebar' : 'sidebar.expandSidebar');
-  const scheduledLabel = translate('sidebar.scheduled');
-  const scheduledShown = isCurrentView(currentView, 'automations');
-  const historyLabel = translate('sidebar.sessionHistory');
   const historyShown = isCurrentView(currentView, 'session-history');
-  const railed = !isLeftOpen;
-  const railLayout = useLeftRailLayout();
   const intro = useSidebarIntro(innerShownFor, isLeftOpen);
-  // What the rail hides along with the names: faded with them (followNames), and inert there (out of the pointer's way and
-  // the tab order).
-  const controlsRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   const step = intro.step;
   const end = () => intro.move({ kind: 'end' });
-  // 打开看看: the head button's navigation, then the intro is over. Already on 会话历史 there is nothing to open (❌ the
+  // 打开看看: the foot button's navigation, then the intro is over. Already on 会话历史 there is nothing to open (❌ the
   // button's toggle back).
   const openHistory = () => {
     if (!historyShown) navigate('session-history');
@@ -276,59 +322,18 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
   return (
     // On one line with the inner column's head and the content's tabs (刘威提议稿 v1: .ltop / .ihead / .mhead share a line):
     // those sit in the card stacked on this list, which starts one surface inset lower, so this band starts there too.
-    // Keep 4px of drag space at the 200px sidebar minimum. The controls and left inset take 192px.
-    <SidebarSpace
-      ref={intro.headRef}
-      controls={0}
-      className="mt-(--desktop-surface-inset) justify-between pl-5 pr-[clamp(4px,calc(100%_-_196px),12px)]"
-      data-sidebar-head=""
-    >
-      <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side="bottom">
-        <IconButton size="md" tone="strong" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
-          {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}
-        </IconButton>
-      </Hint>
-      <div ref={controlsRef} className="flex shrink-0 items-center gap-1" inert={railed}>
-        <NotificationSlot part="toggle" tone="strong" active={!railLayout} />
-        <SidebarSearchTrigger />
-        <Hint label={scheduledLabel} side="bottom">
-          <IconButton
-            size="md"
-            tone="strong"
-            aria-label={scheduledLabel}
-            aria-current={scheduledShown ? 'page' : undefined}
-            on={scheduledShown}
-            onClick={() => navigate('automations')}
-            data-testid="sidebar-scheduled"
-          >
-            <Clock />
-          </IconButton>
-        </Hint>
-        <Hint label={historyLabel} side="bottom">
-          {/* The button toggles back through the same navigation as the shell's back button and Mod+[. */}
-          <IconButton
-            size="md"
-            tone="strong"
-            aria-label={historyLabel}
-            aria-pressed={historyShown}
-            on={historyShown}
-            onClick={() => (historyShown ? navigateBack(appState.history.canGoBack) : navigate('session-history'))}
-            data-testid="sidebar-session-history"
-          >
-            <Archive />
-          </IconButton>
-        </Hint>
-      </div>
-      {/* C9 under the step's button, in the feature tour's card without its shade: it is contextual and blocks nothing,
+    <>
+    <SidebarSpace controls={0} className="mt-(--desktop-surface-inset) !h-(--sidebar-head-height)" data-sidebar-head="" />
+    <SidebarRailRow visibilityRef={intro.headRef} />
+      {/* C9 beside the step's button, in the feature tour's card without its shade: it is contextual and blocks nothing,
           so it takes no focus, and a click elsewhere neither closes it nor is swallowed by it. Escape ends it and still
-          reaches whatever it was meant for. Below the row, so the row's buttons stay in sight, and running on from the
-          step's button (❌ back from 会话历史: at the default width the card does not fit there and would flip anyway). */}
+          reaches whatever it was meant for. 会话历史 is in the foot, so its step opens upwards. */}
       {step && card && (
         <TourBubble
           key={step}
-          anchor={() => intro.headRef.current?.querySelector(`[data-testid="${SIDEBAR_INTRO_ANCHOR[step]}"]`) ?? null}
-          side="bottom"
-          align="start"
+          anchor={() => document.querySelector(`[data-region="left-sidebar"] [data-testid="${SIDEBAR_INTRO_ANCHOR[step]}"]`)}
+          side={step === 'history' ? 'top' : 'bottom'}
+          align={step === 'history' ? 'start' : 'end'}
           sideOffset={10}
           collisionPadding={8}
           initialFocus={false}
@@ -347,9 +352,68 @@ export const SidebarOneListHead = observer(function SidebarOneListHead({ innerSh
           {...card}
         />
       )}
-    </SidebarSpace>
+    </>
   );
 });
 
-/** Each step's button in the head. */
+/**
+ * The foot (界面减法 #46 #51): expanded, one row — my own avatar and name (the shell draws it, with its menu, into
+ * MeSlot), then 已安排, 会话历史 and the bell; on the rail the bell above my avatar, on the avatars' axis. 已安排 and
+ * 会话历史 are not on the rail. The layout changes where the rows take the rail's (@@@panel-track).
+ */
+export const SidebarOneListFoot = observer(function SidebarOneListFoot() {
+  const { translate } = useSessionMessages();
+  const { navigate } = useNavigate();
+  const { pageView: currentView } = useWorkspaceSlots();
+  const railLayout = useLeftRailLayout();
+  const controlsRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
+  const scheduledLabel = translate('sidebar.scheduled');
+  const scheduledShown = isCurrentView(currentView, 'automations');
+  const historyLabel = translate('sidebar.sessionHistory');
+  const historyShown = isCurrentView(currentView, 'session-history');
+  return (
+    <div
+      className={cn('flex shrink-0 px-3 pb-3 pt-2', railLayout ? 'flex-col-reverse items-center gap-2' : 'items-center gap-1')}
+      data-sidebar-foot=""
+    >
+      <MeSlot rail={railLayout} />
+      {!railLayout && (
+        <div ref={controlsRef} className="flex shrink-0 items-center gap-1">
+          <Hint label={scheduledLabel} side="top">
+            <IconButton
+              size="md"
+              tone="strong"
+              className="!size-7"
+              aria-label={scheduledLabel}
+              aria-current={scheduledShown ? 'page' : undefined}
+              on={scheduledShown}
+              onClick={() => navigate('automations')}
+              data-testid="sidebar-scheduled"
+            >
+              <Clock />
+            </IconButton>
+          </Hint>
+          <Hint label={historyLabel} side="top">
+            {/* The button toggles back through the same navigation as the shell's back button and Mod+[. */}
+            <IconButton
+              size="md"
+              tone="strong"
+              className="!size-7"
+              aria-label={historyLabel}
+              aria-pressed={historyShown}
+              on={historyShown}
+              onClick={() => (historyShown ? navigateBack(appState.history.canGoBack) : navigate('session-history'))}
+              data-testid="sidebar-session-history"
+            >
+              <Archive />
+            </IconButton>
+          </Hint>
+        </div>
+      )}
+      <NotificationSlot part="toggle" tone="strong" />
+    </div>
+  );
+});
+
+/** Each step's button: the fold button in the head, 会话历史 in the foot. */
 const SIDEBAR_INTRO_ANCHOR = { collapse: 'sidebar-fold', history: 'sidebar-session-history' } as const;

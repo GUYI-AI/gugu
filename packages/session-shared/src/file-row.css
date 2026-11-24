@@ -100,6 +100,11 @@
   color: var(--gg-file-row-muted);
 }
 
+/* 批注:一条文件行,指的对象 + 评论;没有可打开的东西。 */
+.gg-file-row[data-kind='annotation'] {
+  cursor: default;
+}
+
 /* 图片:同高的方形缩略图,圆角同文件行,不带名字和说明(名字在 title / aria-label 里)。 */
 .gg-file-row[data-kind='image'] {
   display: block;

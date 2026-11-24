@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { ImportProvider } from '@/components/settings/data-import/import-providers';
 import { codexEnvironmentProviders, withCodexTaskImport } from '@/components/settings/data-import/environment-import-providers';
-import { categoryHistoryReading, groupImportProviders, syncCategoryEnabled } from '@/components/settings/data-import/environment-import-view';
+import { categoryHistoryReading, currentCategoryResults, groupImportProviders, syncCategoryEnabled } from '@/components/settings/data-import/environment-import-view';
 
 const calls = vi.hoisted(() => ({ scan: vi.fn(), run: vi.fn(), cancel: vi.fn(), scanTasks: vi.fn(), tasks: vi.fn(), cancelTasks: vi.fn(), preparation: vi.fn() }));
 vi.mock('@renderer/lib/ipc', () => ({ rpcOn: () => ({ sessionImport: {
@@ -145,13 +145,25 @@ it('only treats a read owner without category results as a confirmed empty histo
   expect(categoryHistoryReading([], { state: 'value', value: { owners: {} } }, 'owner')).toEqual(read)
 })
 
-it('merges history when a background read recovers and prefers current completed results for duplicates', () => {
+it('merges history when a background read recovers and shows one current result per category', () => {
   const earlier = { ...completedHistory, finishedAt: 1 }
+  const memories = { providerId: 'codex:memories', finishedAt: 0, items: [{ id: 'memory', title: 'Memory', category: 'memories' as const, status: 'imported' as const }] }
   const read = categoryHistoryReading([completedHistory], { state: 'value', value: { owners: { owner: {
-    automatic: false, sources: [], categoryResults: [completedHistory, earlier],
+    automatic: false, sources: [], categoryResults: [completedHistory, earlier, memories],
   } } } }, 'owner')
   expect(read.state).toBe('value')
-  expect(read.items).toEqual([completedHistory, earlier])
+  expect(read.items).toEqual([completedHistory, memories])
+})
+
+it('keeps no result for an import that found everything already here, and drops such runs already stored', () => {
+  const nothingNew = { providerId: 'codex:skills', finishedAt: 3, items: [{ ...completedHistory.items[0]!, status: 'existing' as const }] }
+  // Repeating an import that brings nothing new leaves the category's result as it was.
+  expect(currentCategoryResults([nothingNew, completedHistory])).toEqual([completedHistory])
+  expect(currentCategoryResults([nothingNew])).toEqual([])
+  const read = categoryHistoryReading([nothingNew], { state: 'value', value: { owners: { owner: {
+    automatic: false, sources: [], categoryResults: [{ ...nothingNew, finishedAt: 2.5 }, completedHistory],
+  } } } }, 'owner')
+  expect(read.items).toEqual([completedHistory])
 })
 
 it('counts a genuinely absent Codex index as zero without starting an import', async () => {

@@ -119,3 +119,16 @@ it('re-checks occlusion as soon as a cover in the page layer is removed, not on 
   await Promise.resolve();
   expect(modes()).toEqual(['shown']);
 });
+
+it('keeps a page its own start page covers occluded even on a frame where hit testing cannot see the cover', async () => {
+  // A side panel sliding in: on its first frame the start page is not yet hit-testable (here: pointer-events none),
+  // so sampling alone reads the page as uncovered and the native view would show over the start page.
+  ipc.browser.mountPage.mockResolvedValue({ success: true, reused: false, ready: true, state: blank });
+  await harness.render(<div style={{ position: 'fixed', inset: 0 }}>
+    <style>{'[data-browser-page] { width: 100%; height: 100%; }'}</style>
+    <BrowserPageSurface browserId="cover-prop" partition="persist:test" initialUrl="about:blank" visible covered onHandle={() => {}} />
+    <div className="absolute" style={{ position: 'absolute', inset: 0, background: '#fff', pointerEvents: 'none' }}>start page</div>
+  </div>);
+  await until('the covered page is reported occluded', () => modes().includes('occluded'));
+  expect(modes()).not.toContain('shown');
+});

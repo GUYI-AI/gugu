@@ -25,7 +25,7 @@ import { showModal } from '@renderer/lib/modal/modal-provider'
 const log = rendererLogger('chat/row-menu')
 
 /** A chat-list row's menu (desktop right-click, phone long-press). Explicit hide callback prevents a personal menu from accidentally invoking group archival. */
-export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotificationLevel, onHide, ...menu }: {
+export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onLeaveSplit, onSetNotificationLevel, onHide, ...menu }: {
   x: number
   y: number
   chat: ChatItem
@@ -33,6 +33,8 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
   onPin: () => void
   /** #2548 given only for an agent row pinned to the desktop one list: the menu offers 取消固定到左侧栏. */
   onUnpinFromSidebar?: () => void
+  /** Given only while the conversation is a block of a split screen: the menu offers 取消并排. */
+  onLeaveSplit?: () => void
   onSetNotificationLevel: (level: NotificationLevel) => void
   onHide: () => Promise<PersonalConversationHiding | undefined>
 }) {
@@ -52,11 +54,12 @@ export function ChatRowContextMenu({ chat, onPin, onUnpinFromSidebar, onSetNotif
   return <PersonalConversationContextMenu {...menu} state={{
     canDelete: conversationCanHide(chat.kind), pinned: chat.is_pinned, pinnedToSidebar: onUnpinFromSidebar !== undefined,
     notificationsMuted: chat.notification_level === 'none', agent, canRenameAgent: ownedAgent !== undefined, canArchive: archivable !== undefined,
-    hasUnread: hasUnreadInRows(scope) || nativeUnreadTargets(nativeRows, scope, false).length > 0 }}
+    hasUnread: hasUnreadInRows(scope) || nativeUnreadTargets(nativeRows, scope, false).length > 0, inSplit: onLeaveSplit !== undefined }}
     onAction={(action) => {
       if (action === 'mark-read') markRead(chat.id)
       else if (action === 'pin') onPin()
       else if (action === 'unpin-from-sidebar') onUnpinFromSidebar!()
+      else if (action === 'leave-split') onLeaveSplit!()
       else if (action === 'notifications') onSetNotificationLevel(chat.notification_level === 'none' ? 'all' : 'none')
       else if (action === 'hide-chat') {
         const boundary = currentAuthSessionSignal()

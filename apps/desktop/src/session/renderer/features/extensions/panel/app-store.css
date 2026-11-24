@@ -1264,15 +1264,13 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   outline-offset: -4px;
 }
 
-/* Desktop marketplace. The header sits in the window's top band, edge to edge (the Apps view): its end leaves the window
-   controls their room (`--titlebar-controls-width`, the same reserve as the tab strip's, titlebar-actions). */
+/* Desktop marketplace. The header sits in the window's top band, edge to edge (the Apps view). */
 .mk-market-header {
   position: sticky;
   z-index: 2;
   top: 0;
   margin-bottom: 18px;
   padding-block: 12px;
-  padding-inline-end: var(--titlebar-controls-width, 0px);
   background: var(--background);
 }
 .mk-market-actions {
@@ -1288,8 +1286,7 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   font-size: calc(var(--font-title) * 1.125);
   color: var(--foreground-muted);
 }
-.mk-market-header [data-slot='toggle-group-item'][data-pressed],
-.mk-market-subnav [data-slot='toggle-group-item'][data-pressed] {
+.mk-market-header [data-slot='toggle-group-item'][data-pressed] {
   color: var(--foreground);
   font-weight: 600;
   background: transparent;
@@ -1313,29 +1310,10 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   border-radius: var(--radius-control);
   color: var(--foreground-muted);
 }
-.mk-market-chips [data-slot='toggle-group-item'][data-pressed] {
+.mk-market-categories [data-slot='toggle-group-item'][data-pressed] {
   background: var(--selected);
   color: var(--foreground);
 }
-.mk-market-subnav {
-  gap: 20px;
-}
-.mk-market-subnav [data-slot='toggle-group-item'] {
-  font-size: var(--font-title);
-  padding-inline: 0;
-}
-.mk-market-featured {
-  margin-bottom: 24px;
-}
-.mk-market-section-title {
-  display: flex;
-  min-height: 32px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.mk-market-section-title h3,
 .mk-market-section > h3 {
   font-size: var(--font-title);
   font-weight: 600;

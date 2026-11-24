@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { events } from '@renderer/lib/ipc';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import type { Session } from '@shared/core/sessions/sessions';
-import { sessionReclaimedChannel } from '@shared/core/sessions/provisionEvents';
+import { sessionProvisionedChannel, sessionReclaimedChannel } from '@shared/core/sessions/provisionEvents';
 import { ProjectSessionsStore } from './project-sessions-store';
 import { createUnprovisionedSession } from './session-store';
 import { TerminalManagerStore } from '../terminals/terminal-manager';
@@ -457,6 +457,27 @@ describe('ProjectSessionsStore session lifecycle', () => {
     // 「重试」= 再跑一次准备,这次答回来了。
     await manager.provisionSession(session.id);
     expect(store.state).toBe('provisioned');
+    manager.dispose();
+  });
+
+  // The pane and the view ask in the same moment on opening a session; over a device link each extra ask is a round trip.
+  it('provisions once for opens in the same moment (three on a released build), and fetches its pull requests once', async () => {
+    const manager = makeSessionManager();
+    const session = makeSession();
+    const store = createUnprovisionedSession(session);
+    store.transitionToUnprovisioned();
+    manager.sessions.set(session.id, store);
+
+    await Promise.all([manager.provisionSession(session.id), manager.provisionSession(session.id), manager.provisionSession(session.id)]);
+    // The host also broadcasts the provision it just answered.
+    const provisioned = vi.mocked(events.on).mock.calls.find(([channel]) => channel === sessionProvisionedChannel)?.[1] as
+      ((payload: { sessionId: string; projectId: string; path: string; workspaceId: string }) => void) | undefined;
+    provisioned?.({ sessionId: session.id, projectId: 'project-1', path: '/tmp/workspace-1', workspaceId: 'workspace-1' });
+    await vi.waitFor(() => expect(store.state).toBe('provisioned'));
+
+    expect(provisioned).toBeDefined();
+    expect(mocks.provisionWorkspace).toHaveBeenCalledOnce();
+    expect(mocks.getPullRequestsForSession).toHaveBeenCalledOnce();
     manager.dispose();
   });
 

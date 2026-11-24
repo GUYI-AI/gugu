@@ -5,6 +5,8 @@ import { isElementVisible } from '@/lib/elementVisibility'
 const ANCHORS = '[data-slot="composer"], [data-phone-shell] [data-phone-tabbar]'
 // Product spacing: the notice stack ends 8px above every visible composer or phone bar.
 const COMPOSER_GAP = 8
+// One notice of the strip (Sonner's own mark).
+const NOTICE = '[data-sonner-toast]'
 
 /** Where the strip sits: `bottom` = its gap from the viewport bottom, `center` = the x it is centred on. */
 export type NoticeAnchor = { bottom: number; center: number }
@@ -47,7 +49,8 @@ export function useNoticeComposerAnchor(active: boolean): NoticeAnchor | undefin
       setAnchor((previous) => previous?.bottom === value?.bottom && previous?.center === value?.center ? previous : value)
     }
     // Only a height can move the composer's top: a pane narrowing or widening (every frame of a panel's move) is no reason
-    // to read, ❌ a forced layout per frame. A box that rewraps changes its own height, and is observed too.
+    // to read, ❌ a forced layout per frame. A box that rewraps changes its own height, and is observed too. The centre does
+    // move with a pane's width: it is read again when a notice appears (below), so a strip is never drawn on a stale centre.
     const heights = new WeakMap<Element, number>()
     const resize = new ResizeObserver((entries) => {
       let moved = false
@@ -69,6 +72,7 @@ export function useNoticeComposerAnchor(active: boolean): NoticeAnchor | undefin
     let rescan = false
     const schedule = (again: boolean) => { rescan ||= again; if (!frame) frame = requestAnimationFrame(() => { frame = 0; const scanNow = rescan; rescan = false; if (scanNow) scan(); else read() }) }
     const reread = () => schedule(false)
+    const isNotice = (node: Node) => node instanceof Element && (node.matches(NOTICE) || node.querySelector(NOTICE) !== null)
     const containsComposer = (node: Node) => node instanceof Element && (node.matches(ANCHORS) || node.querySelector(ANCHORS) !== null)
     // A scroll moves the composer only if the box scrolled holds it (❌ the transcript beside it, which scrolls as it rewraps).
     const scrolled = (event: Event) => { if (event.target === document || (event.target instanceof Node && containsComposer(event.target))) reread() }
@@ -77,6 +81,8 @@ export function useNoticeComposerAnchor(active: boolean): NoticeAnchor | undefin
       if (records.some((record) => record.type === 'attributes'
         ? (record.attributeName !== 'style' || showsOrHides(record)) && containsComposer(record.target)
         : [...record.addedNodes, ...record.removedNodes].some(containsComposer))) schedule(true)
+      // A notice appearing reads where it sits now: the composer may have moved sideways since the last read.
+      else if (records.some((record) => [...record.addedNodes].some(isNotice))) read()
     })
     mutations.observe(document.body, { childList: true, subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['class', 'style', 'hidden', 'data-state'] })
     window.addEventListener('resize', reread)

@@ -50,7 +50,7 @@ export interface PaneHeaderProps extends Omit<HTMLAttributes<HTMLDivElement>, 't
   mobile?: boolean
   /** 底部分隔线(会话头需要,导航列头不需要——列头下面紧接搜索框)。 */
   divider?: boolean
-  /** The header reaches the window's right edge: its end leaves the window controls their room (`--titlebar-controls-width`). */
+  /** The header reaches a page modal's right edge: its end leaves the modal's ✕ its room (`--pane-corner-reserve`). */
   atWindowEdge?: boolean
   /** Give phone conversation titles identical space on both sides. */
   centered?: boolean

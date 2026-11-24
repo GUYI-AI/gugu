@@ -14,7 +14,7 @@ import type { ReadReceiptHandle } from '@/hooks/useReadReceiptPanel'
 import { useTranslation } from 'react-i18next'
 
 // @@@1345 已读回执弹层：点击消息气泡的已读圆环 → 一列名单，「已读 N」在上、「未读 N」在下（与群成员列表同一种分区）。
-// 全员已读时只有一个「全部已读」分区，不出空的那一栏。名册由 ChatAreaPanel / TopicSplitPane 映射传入。
+// 全员已读时只有一个「全部已读」分区，不出空的那一栏。名册由 ChatAreaPanel 映射传入。
 export interface ReadReceiptMember {
   id: string
   displayName: string

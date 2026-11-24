@@ -95,6 +95,16 @@ async function renderPanel(blockHost?: { actions: HTMLElement | null; title: HTM
 const header = () => harness.container.querySelector('[data-chat-area-header]')
 const membersButtonIn = (root: ParentNode) => root.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.chatHeaderMembersButton}"]`)
 
+/** 第 16 版: the strip holds only the name; clicking it opens the card, whose 「详情 ›」 opens the info tab. */
+async function openDetailsFromCapsule() {
+  const capsule = title.querySelector<HTMLElement>('[data-testid="conversation-capsule"]')
+  expect(capsule, 'the name in the strip is the capsule').not.toBeNull()
+  await clickElement(capsule!)
+  const details = document.querySelector<HTMLElement>('[data-testid="conversation-card-details"]')
+  expect(details, 'the card offers 详情').not.toBeNull()
+  await clickElement(details!)
+}
+
 describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
   it('#492 the owner pencil edits the name inside an info portal outside the chat command surface', async () => {
     const slot = document.body.appendChild(document.createElement('div'))
@@ -122,7 +132,7 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
   })
 
   for (const mobile of [false, true]) {
-    it(`#492 ${mobile ? 'phone' : 'desktop block'}: More > Settings reaches the root of the existing info tab in one action`, async () => {
+    it(`#492 ${mobile ? 'phone' : 'desktop block'}: More (phone) / the card's 详情 (desktop) reaches the root of the existing info tab in one action`, async () => {
       const slot = document.body.appendChild(document.createElement('div'))
       installShellSlots()
       try {
@@ -132,13 +142,16 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
         if (!mobile) await act(async () => { readShellSlots()!.setSlot(chatTabSlotKey('group-1', info.tabId), slot) })
         expect(document.querySelector('[data-group-settings-page="members"]')).not.toBeNull()
         await act(async () => { showChatOnly('group-1') })
-        const root = mobile ? harness.container : actions
-        const more = root.querySelector<HTMLElement>(`[data-testid="${AUTOMATION_TEST_IDS.chatHeaderMoreButton}"]`)
-        expect(more, 'More stays reachable independently of installed Apps').not.toBeNull()
-        await clickElement(more!)
-        const settings = document.querySelector<HTMLElement>(`[data-testid="${AUTOMATION_TEST_IDS.groupMenuSettings}"]`)
-        expect(settings, 'settings is offered independently of installed Apps').not.toBeNull()
-        await clickElement(settings!)
+        if (mobile) {
+          const more = harness.container.querySelector<HTMLElement>(`[data-testid="${AUTOMATION_TEST_IDS.chatHeaderMoreButton}"]`)
+          expect(more, 'More stays reachable independently of installed Apps').not.toBeNull()
+          await clickElement(more!)
+          const settings = document.querySelector<HTMLElement>(`[data-testid="${AUTOMATION_TEST_IDS.groupMenuSettings}"]`)
+          expect(settings, 'settings is offered independently of installed Apps').not.toBeNull()
+          await clickElement(settings!)
+        } else {
+          await openDetailsFromCapsule()
+        }
         expect(infoTabOf('group-1')?.tabId, 'reuse the same info tab').toBe(info.tabId)
         expect(document.querySelector('[data-group-settings-page="main"]'), 'no intermediate members page').not.toBeNull()
         expect(document.querySelector('[data-group-settings-page="members"]')).toBeNull()
@@ -159,7 +172,7 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
       await renderPanel({ actions, title, tabs: null }, 'group', false, true)
       const home = harness.container.querySelector('[data-chat-part="empty"]')
       expect(home, 'the project home has a place inside the same conversation surface').not.toBeNull()
-      await clickElement(membersButtonIn(actions) as HTMLElement)
+      await openDetailsFromCapsule()
       expect(infoTabOf('group-1')?.shown, 'the group info is a tab beside the chat').toBe(true)
       expect(harness.container.contains(home)).toBe(true)
     } finally {
@@ -175,11 +188,10 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
     expect(header()?.textContent, 'the title no longer duplicates the member count').not.toContain('(2)')
   })
 
-  it('in a block draws no header; the icons go to the tab strip slot and the name to the tab slot', async () => {
+  it('in a block draws no header and no icon row; only the name goes to the tab slot (第 16 版 one capsule)', async () => {
     await renderPanel({ actions, title, tabs: null })
     expect(header(), 'the block tab strip is the header').toBeNull()
-    expect(membersButtonIn(actions), 'the action icons are painted into the tab strip').not.toBeNull()
-    expect(membersButtonIn(actions)?.textContent, 'the block uses the same roster-backed member action').toContain('2')
+    expect(actions.childElementCount, 'members, topics, Apps and More moved into 详情').toBe(0)
     expect(title.textContent, 'the block title contains only the conversation name').not.toContain('(2)')
     expect(title.textContent).toContain('设计评审')
   })
@@ -191,8 +203,10 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
         const hosted = layout === 'block'
         try {
           await renderPanel(hosted ? { actions, title, tabs: null } : undefined, kind, layout === 'phone')
-          const root = hosted ? actions : harness.container
-          if (kind === 'group' && layout !== 'phone') {
+          const root = harness.container
+          if (hosted) {
+            await openDetailsFromCapsule()
+          } else if (kind === 'group' && layout !== 'phone') {
             const members = membersButtonIn(root) as HTMLElement | null
             expect(members).not.toBeNull()
             await clickElement(members!)
@@ -207,7 +221,7 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
             expect(entry).toBeTruthy()
             await clickElement(entry!)
           }
-          expect(infoTabOf('group-1')?.info.page).toBe(kind === 'group' ? 'members' : undefined)
+          expect(infoTabOf('group-1')?.info.page).toBe(hosted ? 'main' : kind === 'group' ? 'members' : undefined)
           // Without a strip the tab in front is a page over the chat; in a block it is drawn into its slot (below).
           if (!hosted) expect(harness.container.querySelector('[data-testid="chat-settings-panel"]')).not.toBeNull()
         } finally {
@@ -284,8 +298,9 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
     expect(harness.container.querySelector('[data-running-bar-slot]')).toBeNull()
   })
 
-  it('keeps the agent avatar, title and More (with the folder) in the block strip without a second content header', async () => {
+  it('keeps the agent avatar and title in the block strip; the folder is in 详情 (第 16 版)', async () => {
     const slot = document.body.appendChild(document.createElement('div'))
+    const infoSlot = document.body.appendChild(document.createElement('div'))
     installShellSlots()
     let folder: string | undefined
     try {
@@ -293,10 +308,11 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
       expect(title.textContent).toBe('设计评审')
       expect(title.querySelector('[data-agent]'), 'the tab keeps the agent avatar').not.toBeNull()
       expect(header(), 'the strip is the only header').toBeNull()
-      expect(actions.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.chatHeaderMoreButton}"]`)).not.toBeNull()
-      expect(actions.querySelector('button[aria-label="文件"]'), 'the folder is in More, as in a group').toBeNull()
-      await clickElement(actions.querySelector<HTMLElement>(`[data-testid="${AUTOMATION_TEST_IDS.chatHeaderMoreButton}"]`)!)
-      await clickElement([...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent === '文件')!)
+      expect(actions.childElementCount, 'no icon row beside the name').toBe(0)
+      await openDetailsFromCapsule()
+      const info = infoTabOf('group-1')!
+      await act(async () => { readShellSlots()!.setSlot(chatTabSlotKey('group-1', info.tabId), infoSlot) })
+      await clickElement(infoSlot.querySelector<HTMLElement>('[data-testid="chat-details-folder"]')!)
       const shown = shownPanelTab('group-1')!
       folder = shown.tabId
       expect(isFolderItem(shown.item)).toBe(true)
@@ -305,8 +321,11 @@ describe('ChatAreaPanel hosted in a block (gugu-dev#181)', () => {
     } finally {
       await act(async () => {
         if (folder) { readShellSlots()?.setSlot(chatTabSlotKey('group-1', folder), null); closeChatTab('group-1', folder) }
+        const info = infoTabOf('group-1')
+        if (info) { readShellSlots()?.setSlot(chatTabSlotKey('group-1', info.tabId), null); closeInfoTab('group-1') }
       })
       slot.remove()
+      infoSlot.remove()
     }
   })
 

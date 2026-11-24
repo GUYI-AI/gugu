@@ -1,10 +1,9 @@
 import { observer } from 'mobx-react-lite';
-import { isScreenView, showBesideOnScreen, showOnScreen } from '@renderer/app/screen-layout-actions';
+import { showOnScreen } from '@renderer/app/screen-layout-actions';
 import { useSampleProject } from '@renderer/features/sample-project/use-sample-project';
 import { SampleProjectRowMenu } from '@renderer/features/sample-project/sample-project-row-menu';
 import { sampleProjectInView } from '@renderer/features/sample-project/sample-project-view';
 import { sampleProjectContent } from '@renderer/features/sample-project/use-sample-project';
-import { appState } from '@renderer/lib/stores/app-state';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sampleProjectLastLine } from '@/lib/sidebarOneList';
 import { OneListProjectRow } from './project-row-parts';
@@ -20,27 +19,25 @@ export const SampleProjectSidebar = observer(function SampleProjectSidebar() {
   ) : null;
 });
 
-/** Open the sample's block; ⌘ 点 = 拼到正看着那块右边,和项目行同一个手势。 */
-function openSampleProject(beside: boolean): void {
-  if (beside && isScreenView(appState.navigation.currentViewId)) showBesideOnScreen({ kind: 'sample-project' });
-  else showOnScreen({ kind: 'sample-project' });
+/** Open the sample's block. */
+function openSampleProject(): void {
+  showOnScreen({ kind: 'sample-project' });
 }
 
 /**
  * #2548 the sample in the one list, as any project group's row: a project's face, its name, then 「示例」 and the
- * transcript's last message (`<sender>: <text>`) with its time. The face's colour is keyed by the sample's block kind:
+ * transcript's last message (`<sender>: <text>`). The face's colour is keyed by the sample's block kind:
  * the sample is no local project, so it has no project id of its own.
  */
 const OneListSampleRow = observer(function OneListSampleRow({ ownerName }: { ownerName: string }) {
   const { translate, locale } = useSessionMessages();
   const name = translate('projects.sample.name');
-  const { preview, time } = sampleProjectLastLine(sampleProjectContent(locale), ownerName);
+  const preview = sampleProjectLastLine(sampleProjectContent(locale), ownerName);
   return (
     <OneListProjectRow
       name={name}
       faceId="sample-project"
       tag={translate('projects.sample.tag')}
-      time={time}
       preview={preview}
       selected={sampleProjectInView()}
       onOpen={openSampleProject}

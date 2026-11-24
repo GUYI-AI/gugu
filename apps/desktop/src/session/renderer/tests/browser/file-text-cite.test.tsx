@@ -76,6 +76,6 @@ it('sends a source selection with the person\'s line into the conversation, the 
   await act(async () => { await userEvent.keyboard('Clarify the pricing{Enter}') })
   await until('sent into the chat', () => sendMessageToChat.mock.calls.length === 1)
   // The cite as Cite makes it (a code file's lines whole, fenced; in a chat a computer's file by its path), then the line.
-  expect(sendMessageToChat).toHaveBeenCalledWith(chatId, expect.stringMatching(/^> ```\n> selected words\n> ```\n\npricing\.txt \([^)]+\): \/home\/task\/docs\/pricing\.txt\n\nClarify the pricing$/))
+  expect(sendMessageToChat).toHaveBeenCalledWith(chatId, expect.stringMatching(/^> ```\n> selected words\n> ```\n\npricing\.txt \([^)]+\): \/home\/task\/docs\/pricing\.txt\n\nClarify the pricing$/), { toUserIds: [] })
   await until('the line goes once sent', () => !editor())
 })

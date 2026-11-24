@@ -28,7 +28,7 @@ import { page } from 'vitest/browser';
 import { WindowControls } from '@/components/WindowControls';
 import '@/i18n';
 import {
-  windowControlsWidth,
+  hasWindowTitlebarRow,
   windowTitlebarHeight,
   type RendererPlatform,
 } from '@/lib/window-chrome';
@@ -59,9 +59,8 @@ function mount(className: string, node: ReactNode, style = ''): void {
 function applyPlatform(platform: RendererPlatform): void {
   const html = document.documentElement;
   html.dataset.platform = platform;
-  if (platform === 'win') html.dataset.windowTitlebar = 'row';
+  if (hasWindowTitlebarRow(platform)) html.dataset.windowTitlebar = 'row';
   else delete html.dataset.windowTitlebar;
-  html.style.setProperty('--titlebar-controls-width', `${windowControlsWidth(platform)}px`);
   html.style.setProperty('--window-titlebar-height', `${windowTitlebarHeight(platform)}px`);
 }
 
@@ -96,7 +95,6 @@ afterEach(() => {
   const html = document.documentElement;
   delete html.dataset.platform;
   delete html.dataset.windowTitlebar;
-  html.style.removeProperty('--titlebar-controls-width');
   html.style.removeProperty('--window-titlebar-height');
   Reflect.deleteProperty(window, 'desktopWindow');
 });
@@ -134,7 +132,7 @@ it.each(['win', 'linux', 'other'] as const)('%s: the table fullscreen overlay ke
   expect(getComputedStyle(overlay!).getPropertyValue('-webkit-app-region'), 'overlay opts out of window dragging').toBe('no-drag');
   expect(getComputedStyle(exit!.parentElement!).paddingTop, 'overlay header keeps its own p-4').toBe('16px');
   expect(topmostAtCentre(exit!), 'overlay exit is hit-testable').toBe(true);
-  if (platform === 'win') {
+  if (hasWindowTitlebarRow(platform)) {
     expect(topmostAtCentre(windowClose!), 'window close stays hit-testable').toBe(true);
     expect(intersects(exit!.getBoundingClientRect(), windowClose!.getBoundingClientRect()), 'overlay exit and window close overlap').toBe(false);
   }

@@ -1,6 +1,6 @@
 /** @jsxImportSource solid-js */
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from 'solid-js';
-import { GridLoader } from '@session-chat/components/primitives/GridLoader';
+import { RunningGlyph } from '@session-chat/components/primitives/RunningGlyph';
 import { IconCheck } from '@session-chat/components/primitives/icons';
 import type { SubagentCall } from '@session-chat/lib/subagent-roster';
 import { useChatTranslator } from '@session-chat/localization';
@@ -34,7 +34,7 @@ function SubagentStep(props: { call: SubagentCall }) {
     <button type="button" class={styles.subagentStepTrigger} disabled={!clipped()}
       aria-expanded={clipped() ? open() : undefined} onClick={() => setOpen(value => !value)}>
       <span class={styles.subagentTimelineMarker} data-status={props.call.status}>
-        <Switch fallback={<GridLoader />}>
+        <Switch fallback={<RunningGlyph />}>
           <Match when={props.call.status === 'done'}><IconCheck /></Match>
           <Match when={props.call.status === 'error'}><span class={styles.subagentTimelineErrorDot} /></Match>
         </Switch>

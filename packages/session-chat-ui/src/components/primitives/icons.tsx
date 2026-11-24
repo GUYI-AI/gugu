@@ -2,6 +2,7 @@
 export { FileMark } from './icons/FileMark';
 export { IconCheck } from './icons/IconCheck';
 export { IconContinueTurn } from './icons/IconContinueTurn';
+export { IconComment } from './icons/IconComment';
 export { IconCopy } from './icons/IconCopy';
 export { IconEdit } from './icons/IconEdit';
 export { IconError } from './icons/IconError';
@@ -12,7 +13,6 @@ export { MentionAtIcon } from './icons/MentionAtIcon';
 export { MentionIssueIcon } from './icons/MentionIssueIcon';
 export { MentionSymbolIcon } from './icons/MentionSymbolIcon';
 export { PlanCompletedIcon } from './icons/PlanCompletedIcon';
-export { PlanInProgressIcon } from './icons/PlanInProgressIcon';
 export { PlanPendingIcon } from './icons/PlanPendingIcon';
 export { FileTile } from './icons/FileTile';
 export { IconChevronDown, IconChevronRight, IconGlobe } from './icons/OutputIcons';

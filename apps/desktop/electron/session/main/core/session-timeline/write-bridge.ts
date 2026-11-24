@@ -1,4 +1,6 @@
 import { turnFileText } from './turn-files';
+import { annotationPromptText } from '@gugu/session-core/acp/client';
+import type { InputAdmissionPayload } from './input-admission';
 import type { SessionInputAdmission } from '@gugu/core/shared/sessionInputAdmission';
 import { questionAnswerError } from '@gugu/session-core/session-record';
 import { getAcpRuntimeClient } from '@main/core/acp/runtime-process/host';
@@ -123,14 +125,10 @@ export async function ensureAcpSessionLive(sessionId: string): Promise<void> {
  */
 export async function deliverSessionText(
   target: SessionWriteTarget,
-  text: string,
-  clientMessageId?: string,
-  files?: import('@gugu/session-core/session-record/contract').SessionpageSessionSendRequest['files'],
-  attachments?: import('@gugu/session-core/acp/client').PromptAttachment[],
-  steerIfBusy?: true,
+  { text, clientMessageId, files, attachments, annotations, steerIfBusy }: Omit<InputAdmissionPayload, 'conversationId'>,
   admissionFence?: () => void
 ): Promise<{ accepted: 'started' | 'queued' }> {
-  if (!text.trim() && !files?.length && !attachments?.length) throw new SessionWriteError('empty_text', '消息是空的', 'rejected');
+  if (!text.trim() && !files?.length && !attachments?.length && !annotations?.length) throw new SessionWriteError('empty_text', '消息是空的', 'rejected');
 
 
   // `runtime === null` 就是 pty:终端腿是默认形态,建会话时那一列常常没写。
@@ -150,7 +148,8 @@ export async function deliverSessionText(
     admissionFence?.();
     sessionLife().enqueue({
       sessionId: target.id, messageId: clientMessageId ?? crypto.randomUUID(), text: text.trim(), kind: 'session-direct',
-      delivery: { queue: true, origin: 'manual', ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}) },
+      delivery: { queue: true, origin: 'manual', ...(steerIfBusy ? { steerIfBusy } : {}), ...(files?.length ? { files } : {}), ...(attachments?.length ? { attachments } : {}),
+        ...(annotations?.length ? { annotations } : {}) },
       ...(personalPublication ? { personalPublication } : {}),
     });
     return { accepted: 'queued' };
@@ -159,14 +158,15 @@ export async function deliverSessionText(
     if (steerIfBusy) throw new SessionWriteError('unsupported_runtime', '终端任务不支持立即插话', 'rejected');
     if (attachments?.length) throw new SessionWriteError('unsupported_runtime', '终端任务不能回放图片附件', 'rejected');
     const turn = files?.length ? await turnFileText(target.id, files, false) : null;
-    const body = [text.trim(), turn?.text].filter(Boolean).join('\n\n');
+    // A terminal agent reads one text: the comments go ahead of the person's words, as an ACP agent gets them.
+    const body = [annotationPromptText(annotations), text.trim(), turn?.text].filter(Boolean).join('\n\n');
     admissionFence?.();
     const params = {
       projectId: target.projectId,
       sessionId: target.id,
       clientMessageId: clientMessageId ?? crypto.randomUUID(),
       text: body,
-      sourceInput: { text: text.trim(), ...(files?.length ? { files } : {}) },
+      sourceInput: { text: text.trim(), ...(files?.length ? { files } : {}), ...(annotations?.length ? { annotations } : {}) },
       kind: 'session-direct' as const,
       ...(admissionFence ? { beforeAdmission: admissionFence } : {}),
     };
@@ -327,7 +327,7 @@ export async function deliverQuestionAnswer(
   }
   if (prepared.text === null) return { ok: true };
   try {
-    await deliverSessionText(target, prepared.text);
+    await deliverSessionText(target, { text: prepared.text });
   } catch (error) {
     log.warn('[session-timeline] 终端提问的选择器已关,回答没有发出去', {
       sessionId: target.id,

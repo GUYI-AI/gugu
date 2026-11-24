@@ -336,12 +336,17 @@ describe('ImagePreviewProvider', () => {
     expect(byTestId(AUTOMATION_TEST_IDS.imagePreviewOverlay)).toBeNull()
   })
 
-  it('reports the file error when both the thumbnail and original fail', async () => {
-    const full = vi.fn(async () => { throw new Error('original unavailable') }), toast = vi.fn()
+  it('reports a file read failure and retries it in the same viewer', async () => {
+    const full = vi.fn(async () => 'blob:retried').mockRejectedValueOnce(new Error('original unavailable')), toast = vi.fn()
     await openViewer({ toast, images: [{ url: '', alt: 'unavailable', preview: async () => { throw new Error('File preview HTTP 503') }, full }] })
     await waitForCondition(() => toast.mock.calls.length > 0, 'file error was not reported')
     expect(full).toHaveBeenCalledTimes(1)
     expect(document.querySelector('.pswp__error-msg')).not.toBeNull()
+    const retry = document.querySelector<HTMLButtonElement>('.gg-image-viewer__read button')!
+    expect(retry.textContent).toBe('重新读取')
+    await clickElement(retry)
+    await waitForCondition(() => !!document.querySelector('.pswp__img[src="blob:retried"]'), 'retry did not restore the image')
+    expect(full).toHaveBeenCalledTimes(2)
   })
 
   it('closing while the thumbnail is pending never loads the original or reopens the viewer', async () => {

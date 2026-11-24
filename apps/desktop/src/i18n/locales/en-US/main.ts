@@ -96,7 +96,6 @@ export default {
   },
   "installedManager": {
     "confirmRemove": "Confirm uninstall",
-    "title": "Installed",
     "thisComputer": "This computer",
     "grid": "Grid",
     "list": "List",
@@ -109,11 +108,6 @@ export default {
     "clearSelection": "Clear selection",
     "selected_one": "{{count}} selected",
     "selected_other": "{{count}} selected",
-    "section": {
-      "agents": "Agents",
-      "apps": "Apps",
-      "connectors": "Connectors"
-    },
     "names": {
       "agents": "agents",
       "apps": "apps",
@@ -942,6 +936,8 @@ export default {
     "title": "Settings"
   },
   "shell": {
+    "contactsMenu": "Contacts",
+    "pinnedApps": "Apps",
     "titlebar": {
       "menubar": "Application menu",
       "goBack": "Back",

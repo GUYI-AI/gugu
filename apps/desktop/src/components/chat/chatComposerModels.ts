@@ -12,11 +12,11 @@ export interface ChatMessageComposerProps {
 
   // @@@threads (#957) — opts 加可选 threadRootId：话题视图发送时由 ChatAreaPanel 注入活动话题 id。
   // @@@whisper (#820) — opts 加可选 isWhisper：悄悄话模式下强制设为 true。
-  onSend: (content: string, opts?: { clientMessageId?: string; toUserIds?: string[] | null; replyToMessageId?: string | null; threadRootId?: string | null; isWhisper?: boolean; beforeDeliver?: () => Promise<void>; submittedAt?: number; dependsOn?: string }) => Promise<void>
+  onSend: (content: string, opts?: { clientMessageId?: string; toUserIds?: string[] | null; replyToMessageId?: string | null; threadRootId?: string | null; isWhisper?: boolean; beforeDeliver?: () => Promise<void>; submittedAt?: number; dependsOn?: string; annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[] }) => Promise<void>
   /** 发送前置(agent 私聊的会话就绪)。文字消息把它交给 onSend 的 beforeDeliver,在投递前跑,❌ 挡在上屏之前(C1)。 */
   beforeSend?: () => Promise<void>
   /** Resolves with the last file's message once they are on screen (a text sent with them waits for it); throws if none were kept. */
-  onSendAttachments?: (files: File[], opts?: { toUserIds?: string[] | null; replyToMessageId?: string | null; isWhisper?: boolean; caption?: string }) => Promise<string | undefined | void>
+  onSendAttachments?: (files: File[], opts?: { toUserIds?: string[] | null; replyToMessageId?: string | null; isWhisper?: boolean; caption?: string; annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[] }) => Promise<string | undefined | void>
   quoteContent?: { messageId?: string; senderName: string; content: string; originalContent?: string | null; source?: ReplySource; attachment?: ParsedAttachment } | null
   onQuoteConsumed?: () => void
   mentionToInsert?: { id: string; name: string } | null
@@ -25,7 +25,6 @@ export interface ChatMessageComposerProps {
   isGroupChat?: boolean
   groupMembers?: GroupRosterCandidate[]
   messages?: readonly MessageItem[]
-  participantIds?: readonly string[]
   currentUserId?: string | null; agentStatuses?: AgentStatusById
   disabled?: boolean
   disabledReason?: string
@@ -36,6 +35,6 @@ export interface ChatMessageComposerProps {
   // @@@whisper (#820) — 悄悄话模式：设置后显示 banner + 发送带 isWhisper/toUserIds。
   whisperTarget?: { userId: string; displayName: string } | null
   onExitWhisper?: () => void
-  surface?: 'main' | 'aside'; hidden?: boolean // @@@5856 主输入框还是副栏(话题分栏);只有主的登记全局聚焦落点,因果见 lib/focusComposer.ts
+  hidden?: boolean
   entryActive?: boolean
 }

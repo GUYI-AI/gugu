@@ -11,10 +11,9 @@ import { ROW_H } from '@session-chat/components/engine/row-metrics'
 import { mermaidError, mermaidPlaceholder } from '@session-chat/components/rows/markdown/mermaid/mermaid.css'
 import { FILE_ROW } from '@gugu/session-shared/file-row'
 import { messageUnitDef } from '@session-chat/components/rows/message/message.def'
-import { toolUnitDef } from '@session-chat/components/rows/tools/tool/tool.def'
 import { DETAIL_PAD_Y } from '@session-chat/components/rows/turn-outcome/turn-outcome.css'
 import { turnOutcomeUnitDef } from '@session-chat/components/rows/turn-outcome/turn-outcome.def'
-import type { ChatMessage, ChatToolCall, TurnOutcomeItem } from '@session-chat/model'
+import type { ChatMessage, TurnOutcomeItem } from '@session-chat/model'
 import { turnOutcomeDetailId } from '@session-chat/state/flatten'
 import { describe, expect, it } from 'vitest'
 import { makeContractCtx, renderAndMeasureUnit } from './contract'
@@ -165,35 +164,5 @@ describe('the small marks in the caption tier (#7333 chrome)', () => {
     expect(read.chipWidth, 'the row is fixed-width, not as wide as its name').toBe(FILE_ROW.width)
     expect(read.cut, 'the long name was not cut: the ellipsis is untested').toBe(1)
     expect(reading.dom).toBe(reading.computed)
-  })
-
-  it('the "+N" on the last thumbnail is 12/18, inside that thumbnail', async () => {
-    const picture = (colour: string) => {
-      const canvas = document.createElement('canvas')
-      canvas.width = 40
-      canvas.height = 80
-      const context = canvas.getContext('2d')!
-      context.fillStyle = colour
-      context.fillRect(0, 0, 40, 80)
-      return canvas.toDataURL('image/png')
-    }
-    const many: ChatToolCall = {
-      kind: 'tool',
-      id: 'chrome-thumbs',
-      name: 'MCP',
-      status: 'done',
-      inputSummary: 'gugu · app_check',
-      images: Array.from({ length: 12 }, (_, i) => picture(`hsl(${i * 30} 70% 50%)`)),
-    }
-    const reading = await renderAndMeasureUnit(toolUnitDef, many, makeContractCtx({ width: 720 }), (host): Record<string, number> => {
-      const more = host.querySelector<HTMLElement>('[data-slot="tool-call-images-more"]')
-      const frame = more?.closest('button') ?? null
-      if (!more || !frame) return { more: 0 }
-      const read: Record<string, number> = { more: 1 }
-      readSlot(read, 'more', more, frame.getBoundingClientRect())
-      return read
-    })
-    expect(reading.inspected.more, 'there was no "+N"').toBe(1)
-    expectTier(reading.inspected, 'more', CAPTION)
   })
 })

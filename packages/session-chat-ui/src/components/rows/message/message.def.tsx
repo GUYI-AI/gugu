@@ -21,6 +21,7 @@ import type { ChatMessage } from '@session-chat/model';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
 import { attachmentEnvelope } from '@gugu/core/shared/ui/attachmentModels';
 import { sentChatMessage } from '@gugu/session-core/session-record/sent-message';
+import { annotationTargetName } from '@gugu/session-core/acp/client';
 import { passwordRequest } from './PasswordRequestCard';
 
 /**
@@ -108,7 +109,10 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
     const href = `gugu-file://${file.itemId}?v=${file.version}`;
     return { id: href, href, name: file.name, kind: attachmentKind({ fileName: file.name, mimeType: file.mimeType }) };
   });
-  if (files.length) normalized.attachments = [...(normalized.attachments ?? []), ...files];
+  // Each comment sent with the words is a row of its own: what it points at, and the comment.
+  const annotations = (item.annotations ?? []).map(annotation => ({ id: `annotation:${annotation.number}`, kind: 'annotation' as const,
+    name: `${annotation.number} · ${annotationTargetName(annotation.target)}`, title: annotation.target, detail: annotation.comment }));
+  if (files.length || annotations.length) normalized.attachments = [...(normalized.attachments ?? []), ...files, ...annotations];
   return normalized;
 }
 
@@ -345,7 +349,8 @@ export const messageUnitDef = defineUnit<ChatMessage, MessageVars>({
   estimate(item, ctx, baseVars): number {
     const scheduled = ctx.theme.layout.agentConversation ? scheduledPromptParts(item) : [];
     if (scheduled.length) return measureMessage(item, ctx, baseVars);
-    if (isConversationMessage(item, ctx)) return conversationMessageHeight(item, ctx, baseVars);
+    // Every row of a landing page is estimated at once; a measured body lays each html block out in the DOM.
+    if (isConversationMessage(item, ctx)) return conversationMessageHeight(item, ctx, baseVars, estimateUserMessage);
     const vars = effectiveMessageVars(baseVars, ctx.theme.layout);
     if (messageQuestionAnswer(item)) return QUESTION_ANSWER_H;
     if (item.role === 'user' && item.guguDelivery) {

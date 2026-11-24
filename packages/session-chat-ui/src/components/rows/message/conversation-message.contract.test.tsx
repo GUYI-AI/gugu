@@ -178,9 +178,8 @@ describe('agent-centered conversation bubbles', () => {
           expect(bubble.contains(name)).toBe(false);
           expect(name!.textContent).toBe('Codex 11');
           // 时间、复制那一行在气泡下面占着位置,鼠标停上去才显出来(设计稿 `.acts{opacity:0}`,owner 10-28)。
-          // Read at rest: a fade still running on the control (CI caught one mid-way) ends first.
+          // At rest: no pointer is over the page when a test starts (tests/support/browser-pointer-reset.ts).
           const copy = actions.querySelector('button')!;
-          await Promise.all(copy.getAnimations().map(animation => animation.finished));
           expect(getComputedStyle(copy).opacity).toBe('0');
         } else {
           expect(Math.abs(bubble.getBoundingClientRect().right - row.getBoundingClientRect().right)).toBeLessThanOrEqual(1);
@@ -355,21 +354,6 @@ describe('agent-centered conversation bubbles', () => {
     } finally { view.dispose(); }
   });
 
-  it('shows a live timer above the reply and keeps the process expanded', async () => {
-    const view = await mount({ kind: 'message', id: 'live', role: 'assistant', text: '我查一下今天的天气。',
-      conversationProcess: { id: 'live:process', live: true, startedAt: Date.now() - 5000 } });
-    try {
-      const button = view.host.querySelector<HTMLButtonElement>('[data-conversation-process]')!;
-      expect(button.getAttribute('aria-expanded')).toBe('true');
-      expect(button.textContent).toMatch(/[5-9]s/);
-      const before = button.textContent;
-      await new Promise(resolve => setTimeout(resolve, 1100));
-      expect(button.textContent).not.toBe(before);
-      expect(view.host.textContent).not.toContain('已处理');
-      expect(Math.abs(view.host.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
-    } finally { view.dispose(); }
-  });
-
   it('updates the existing bubble in place while keeping its name and brain control', async () => {
     const initial: ChatMessage = { kind: 'message', id: 'stable-reply', role: 'assistant', text: '我现在去查一查。', streaming: true,
       conversationProcess: { id: 'weather:process', live: true, startedAt: Date.now() - 5000 } };
@@ -524,9 +508,8 @@ describe('agent-centered conversation bubbles', () => {
       // 整行和「发到」都常亮(MBP 验收 10-28:之前整行被原气泡的 hover 规则藏了,「发到」跟着看不见)。
       expect(getComputedStyle(actions).opacity).toBe('1');
       expect(getComputedStyle(note).opacity).toBe('1');
-      // Hidden means at rest: a fade still running on the control (CI caught one at 0.16 and 0.17) ends before it is read.
+      // Hidden at rest: no pointer is over the page when a test starts (tests/support/browser-pointer-reset.ts).
       const copy = actions.querySelector('button')!;
-      await Promise.all(copy.getAnimations().map(animation => animation.finished));
       expect(getComputedStyle(copy).opacity).toBe('0');
       expect(Math.abs(view.host.getBoundingClientRect().height - messageUnitDef.measure(view.item, view.ctx, messageUnitDef.vars!))).toBeLessThanOrEqual(1);
     } finally { view.dispose(); }

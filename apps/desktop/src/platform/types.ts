@@ -113,8 +113,8 @@ export type ChatNotificationPresentation = {
 export interface AppPlatform {
   accountClosure: AccountClosureNative
   accountClosureV2?: AccountClosureV2Native
-  /** Explicit human action only; never startup/reconciliation. */
-  resumeAgentsAfterAccountClosure?: () => Promise<void>
+  /** Bind the account captured by an explicit human action; never startup/reconciliation. */
+  resumeAgentsAfterAccountClosure?: (expectedOwnerId: string) => Promise<void>
   kind: 'electron' | 'capacitor' | 'web'
   documentTitle: string
   textSelection?: NativeTextSelection

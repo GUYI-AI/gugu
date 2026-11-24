@@ -3,7 +3,7 @@ import { noteCodexPreparation } from './codex-preparation-progress';
 import type { SessionCommandDefinition } from '@gugu/session-core/acp';
 import { isAcpAuthRequired, isCodexRefreshTokenRevoked } from '@gugu/session-core/acp';
 import type { AcpPermissionParams } from '@gugu/session-core/agents/plugins';
-import { findToolImage, trimItemsForTransport, type ToolImageLookup } from '@gugu/session-core/session-record';
+import { trimItemsForTransport } from '@gugu/session-core/session-record';
 import { randomUUID } from 'node:crypto';
 import type { HistoryCursor } from '@gugu/session-core/acp/client';
 import { readdir, readFile } from 'node:fs/promises';
@@ -1915,14 +1915,6 @@ export class SessionManager implements InboundRouter {
       committed: structuredClone(this.closedSessionHistories.get(sessionId) ?? []),
       active: null,
     };
-  }
-
-  getToolImage(sessionId: string, itemId: string, index: number): ToolImageLookup {
-    const live = this.cells.get(sessionId);
-    const history = live ? live.cell.transcript.history : (this.closedSessionHistories.get(sessionId) ?? []);
-    const active = live?.cell.transcript.activeTurn;
-    // Inspect the authoritative turn, cloning only the requested image.
-    return structuredClone(findToolImage(active ? [...history, active] : history, itemId, index, Number.POSITIVE_INFINITY));
   }
 
   exportParsedTranscript(sessionId: string): Result<string, AcpExportTranscriptError> {

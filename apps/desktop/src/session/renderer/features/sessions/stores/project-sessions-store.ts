@@ -460,10 +460,19 @@ export class ProjectSessionsStore {
     });
   }
 
-  async provisionSession(sessionId: string): Promise<void> {
+  provisionSession(sessionId: string): Promise<void> {
     // An open of a task still being created or prepared joins that one host operation before any device read.
+    // Registered before the first await: two opens in the same moment (the pane and the view) are one provision.
     const inFlight = this._provisionPromises.get(sessionId);
     if (inFlight) return inFlight;
+    const promise = this._mountAndProvision(sessionId).finally(() => {
+      if (this._provisionPromises.get(sessionId) === promise) this._provisionPromises.delete(sessionId);
+    });
+    this._provisionPromises.set(sessionId, promise);
+    return promise;
+  }
+
+  private async _mountAndProvision(sessionId: string): Promise<void> {
     try {
       await getProjectManagerStore().mountProject(this.projectId);
       await this.loadSessions();
@@ -480,12 +489,7 @@ export class ProjectSessionsStore {
       session.phase = 'provision';
     });
 
-    const promise = this._doProvision(sessionId).finally(() => {
-      this._provisionPromises.delete(sessionId);
-    });
-
-    this._provisionPromises.set(sessionId, promise);
-    return promise;
+    await this._doProvision(sessionId);
   }
 
   private async _doProvision(sessionId: string,
@@ -544,6 +548,7 @@ export class ProjectSessionsStore {
     workspaceId: string
   ): Promise<void> {
     const savedSnapshot = loadSavedSessionView(sessionId);
+    let opened = false;
     runInAction(() => {
       const current = this.sessions.get(sessionId);
       if (current && isUnprovisioned(current)) {
@@ -551,11 +556,13 @@ export class ProjectSessionsStore {
         terminalRegistry.acquire(sessionId, this.projectId);
         current.transitionToProvisioned(path, workspaceId, this._repository, savedSnapshot);
         current.activate();
+        opened = true;
       }
     });
     // 会话的 PR 在它打开时取(会话页里的 PR 视图用);❌ 列出时给每条会话各问一次 —— 381 条就是 381 问。
-    const opened = this.sessions.get(sessionId);
-    if (opened && isProvisioned(opened)) void this._reloadPrsForSession(opened);
+    // 打开只有一次:准备的回包和 sessionProvisioned 广播都会走到这里,只有真正把它转成已准备的那一次去取。
+    const session = this.sessions.get(sessionId);
+    if (opened && session && isProvisioned(session)) void this._reloadPrsForSession(session);
   }
 
   async setSessionPinned(sessionId: string, isPinned: boolean): Promise<void> {

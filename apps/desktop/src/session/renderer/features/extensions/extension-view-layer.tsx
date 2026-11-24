@@ -7,11 +7,13 @@ import type { BrowserWebviewElement } from '@renderer/features/browser/browser-w
 import { extensionSurfaceStore } from './extension-surface-store';
 import { extensionViewStore, type ExtensionViewClaim } from './extension-view-store';
 import { sessionWorkspace } from '@shared/extensions/app-runtime-protocol';
+import { EXTENSION_WIDGET_READY_API_VERSION } from '@shared/extensions/bridge-protocol';
 import { LOCAL_HOST, peekInstalledAppsTracked, useInstalledApps } from './installed-extensions';
 import { AppSettingsPage } from './app-settings-page';
 import { ExtensionGuestBinding, type ExtensionGuestTarget } from './extension-guest-binding';
 import { nativeAppSurfaceMetrics, observeNativeSurfaceOcclusion } from './native-app-surface';
 import { pageCorners } from './page-corners';
+import { ancestorsOf, followBox } from '@renderer/lib/layout/follow-box';
 import { tabFullscreen } from '@renderer/features/tabs/tab-fullscreen';
 import { bindAppPageZoom } from '@/components/preview/file-content-zoom';
 import { clippedElementBox, elementBox, isElementVisible, type ElementBox as Box } from '@/lib/elementVisibility';
@@ -88,9 +90,6 @@ export const ExtensionViewLayer = observer(function ExtensionViewLayer() {
   );
 });
 
-/** Following a claimed slot's box after it appears: until it holds still this many frames, or this long. */
-const FOLLOW_STILL_FRAMES = 10;
-const FOLLOW_MAX_MS = 2_000;
 /** A slot placed by following within this long is still moving. */
 const MOVING_MS = 100;
 
@@ -131,17 +130,6 @@ function boxOf(element: HTMLElement, layer: HTMLElement): { full: Box; clip: Box
   return { full: toLayer(full), clip: toLayer(clip) };
 }
 
-/** 从那一格往上到文档根的每一层(穿过 shadow root):任何一层的尺寸一变,格的位置都可能变。 */
-function ancestorsOf(element: HTMLElement): Element[] {
-  const out: Element[] = [];
-  let node: Node | null = element;
-  while (node) {
-    if (node instanceof Element) out.push(node);
-    const parent: Node | null = node.parentNode;
-    node = parent instanceof ShadowRoot ? parent.host : parent;
-  }
-  return out;
-}
 
 /**
  * One App page in the layer, for one place and optionally one file. It follows whichever slot claims it now.
@@ -210,6 +198,11 @@ export const ExtensionPage = observer(function ExtensionPage({
   const inlineRef = useRef(inline);
   inlineRef.current = inline;
   const isInline = inline !== undefined;
+  const manifest = installed.state === 'value' ? installed.value.manifestFor(extensionId) : undefined;
+  // @@@widget-ready - a widget whose App declares this interface says itself when its content is drawn (gugu.ready()):
+  // its snapshot stays over it until then, and the snapshot is taken again at that moment.
+  const waitsForReadyRef = useRef(false);
+  waitsForReadyRef.current = isInline && manifest !== undefined && manifest.apiVersion >= EXTENSION_WIDGET_READY_API_VERSION;
   const accountIdRef = useRef(accountId);
   accountIdRef.current = accountId;
   const onPaintedRef = useRef(onPainted);
@@ -393,7 +386,11 @@ export const ExtensionPage = observer(function ExtensionPage({
         guestBinding.ready(element.getWebContentsId());
         guestReadyRef.current = element;
         aimAt(claimOf());
-        if (isInline) fallback = setTimeout(painted, 3_000);
+        if (isInline && !waitsForReadyRef.current) fallback = setTimeout(painted, 3_000);
+        else if (isInline) fallback = setTimeout(() => {
+          log.warn('Widget did not call gugu.ready() in 10s; showing it as it is', { kind, extensionId });
+          painted();
+        }, 10_000);
       };
       // guest 崩了:旧的 webContents id 作废,绑定也作废。重载一次,dom-ready 会再来一遍、重新 bind;
       // ❌ 不能留着一个死 id 等下一次认领去 retarget —— 那只会换来一条 warn 和一格永远的空白。
@@ -419,12 +416,13 @@ export const ExtensionPage = observer(function ExtensionPage({
       element.addEventListener('dom-ready', ready);
       element.addEventListener('render-process-gone', gone);
       element.addEventListener('did-fail-load', failed);
-      // Loaded is enough for a widget (its snapshot is waiting); any other page shows at its first contentful paint, or after 3s.
-      const load = () => { if (isInline) frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
+      // Loaded is enough for a widget (its snapshot is waiting) unless it says when it is ready; any other page shows at its
+      // first contentful paint, or after 3s.
+      const load = () => { if (isInline && !waitsForReadyRef.current) frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { loaded = setTimeout(painted, 500); }); }); };
       element.addEventListener('did-finish-load', load);
       const signal = (event: Event) => {
         const channel = (event as Event & { channel: string }).channel;
-        if (channel === 'gugu-page-painted') painted();
+        if (channel === (waitsForReadyRef.current ? 'gugu-page-ready' : 'gugu-page-painted')) painted();
         else if (channel === 'gugu-widget-changed') { clearTimeout(changed); changed = setTimeout(capture, 1_000); }
       };
       element.addEventListener('ipc-message', signal);
@@ -477,14 +475,11 @@ export const ExtensionPage = observer(function ExtensionPage({
             report(false, 0, 0);
             return;
           }
-          const rectOf = () => { const r = claim.element.getBoundingClientRect(); return `${r.left},${r.top},${r.width},${r.height}`; };
-          let placedAt = '';
           let followedAt = -Infinity;
           // `following`: placed because the slot moved (a frame of a panel's motion): the box follows, occlusion is not
           // sampled again — a hit test right after the motion's writes lays out the whole page in that frame.
           const place = (following = false) => {
             if (following) followedAt = performance.now();
-            placedAt = rectOf();
             const { full, clip } = boxOf(claim.element, layer);
             const shown =
               clip.width > 0 &&
@@ -499,9 +494,13 @@ export const ExtensionPage = observer(function ExtensionPage({
             // Rounded where the place it is put in is rounded (the assistant panel's card): clipped as that place clips.
             Object.assign(box.style, pageCorners(getComputedStyle(claim.element), full, clip));
             box.style.visibility = shown ? 'visible' : 'hidden';
-            box.style.zIndex = ancestorsOf(claim.element).some((element) => element.hasAttribute('data-tab-fullscreen'))
-              ? 'var(--z-pane-fullscreen-resident)'
-              : 'var(--z-pane-resident)';
+            // A page shown as a modal (@@@page-modal) is above the whole shell: the page in it is drawn over that modal's layer.
+            const ancestors = ancestorsOf(claim.element);
+            box.style.zIndex = ancestors.some((element) => element.hasAttribute('data-page-modal'))
+              ? 'calc(var(--z-settings) + 1)'
+              : ancestors.some((element) => element.hasAttribute('data-tab-fullscreen'))
+                ? 'var(--z-pane-fullscreen-resident)'
+                : 'var(--z-pane-resident)';
             if (managed) box.style.opacity = shown ? '1' : '0';
             box.inert = !shown;
             const inner = innerRef.current;
@@ -514,47 +513,13 @@ export const ExtensionPage = observer(function ExtensionPage({
             report(shown && document.visibilityState === 'visible', full.width, full.height, following);
           };
           place();
-          // A slot that slides in (a side panel's enter animation) moves by transform, which no
-          // ResizeObserver, resize or scroll reports: measured once, the page stayed drawn where the
-          // slot was mid-slide (desktop #6802 D1). So follow it frame by frame until its box has
-          // held still for a few frames — bounded, for a slot that never settles.
-          let frame = 0;
-          const followUntil = performance.now() + FOLLOW_MAX_MS;
-          let lastBox = '';
-          let still = 0;
-          const follow = () => {
-            const box = rectOf();
-            // A move that writes an ancestor's style (a PanelTrack's transforms, a framer slide) is placed by `restyled` in
-            // that frame already; no need to place twice per frame.
-            if (box !== placedAt) place(true);
-            still = box === lastBox ? still + 1 : 0;
-            lastBox = box;
-            frame = still < FOLLOW_STILL_FRAMES && performance.now() < followUntil ? requestAnimationFrame(follow) : 0;
-          };
-          frame = requestAnimationFrame(follow);
-          const resample = () => place();
-          const observer = new ResizeObserver(resample);
-          // Hidden in place by a class or style above it (a slot covered by what opens beside its page, AppPeekSlot) moves no
-          // box: the page is told to hide by the change itself.
-          const restyled = new MutationObserver(() => place(true));
-          for (const node of ancestorsOf(claim.element)) {
-            observer.observe(node);
-            restyled.observe(node, { attributes: true, attributeFilter: ['style', 'class', 'hidden', 'inert'] });
-          }
-          window.addEventListener('resize', resample);
-          document.addEventListener('scroll', resample, true);
-          document.addEventListener('visibilitychange', resample);
+          const stopFollowing = followBox(claim.element, place);
           // Mid-motion the periodic sample keeps the last one: a hit test there lays out the page in the middle of a frame
           // the motion has written (tens of ms). The first tick after the slot settles samples again.
           const stopOcclusion = observeNativeSurfaceOcclusion(() => place(performance.now() - followedAt < MOVING_MS));
           teardownRef.current = () => {
-            if (frame) cancelAnimationFrame(frame);
-            observer.disconnect();
-            restyled.disconnect();
+            stopFollowing();
             stopOcclusion();
-            window.removeEventListener('resize', resample);
-            document.removeEventListener('scroll', resample, true);
-            document.removeEventListener('visibilitychange', resample);
           };
         },
         { fireImmediately: true }
@@ -604,7 +569,6 @@ export const ExtensionPage = observer(function ExtensionPage({
   }, [marked, pageKey]);
   // Not started yet, its box is still placed: the loading mark shows from the moment the page is asked for.
   if (!surface && !managed && inline) return null;
-  const manifest = installed.state === 'value' ? installed.value.manifestFor(extensionId) : undefined;
   const page = managed && manifest ? <AppSettingsPage key={`${manifest.version}:${JSON.stringify(manifest.settings)}`} manifest={manifest} active={claimOf() !== undefined} /> : surface ? <webview
     key={`${extensionId}:${surface.partition}`}
     ref={attachWebview}

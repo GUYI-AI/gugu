@@ -344,7 +344,7 @@ function PickerOption({ row, index, mobile, active, checked, locked, where, note
       className={cn(locked && 'opacity-60')}
       leading={<>
         <SelectionCheckbox checked={checked} />
-        <Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size={mobile ? 'md' : 'sm'} isAgent={isAgent} harnessBadge={false} />
+        <Avatar name={contact.display_name} avatarUrl={contact.avatar} seed={contact.id} size={mobile ? 'md' : 'sm'} isAgent={isAgent} />
       </>}
       title={nameText}
       accessory={mobile ? marks : <>{marks}{faint ? <span className="min-w-0 flex-1 truncate !pl-1 text-[length:var(--font-caption)] text-[var(--muted-fg)]">{faint}</span> : null}</>}

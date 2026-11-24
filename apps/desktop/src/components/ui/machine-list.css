@@ -28,7 +28,7 @@
   border-radius: var(--radius-circle);
   background: var(--text-secondary);
 }
-.gg-machine-list-dot[data-online] { background: var(--agent-tone-online); }
+.gg-machine-list-dot[data-online] { background: var(--ok); }
 
 .gg-machine-list[data-compact] { padding: var(--spacing-sm); }
 .gg-machine-list[data-compact] .gg-machine-list-row {

@@ -131,6 +131,19 @@ export type TunnelMachines = {
   linkMachine(deviceId: string): { target: SshTarget; accountUserId: string } | null
   /** 设备连接 / 转发发现这条路断了:重建。 */
   reportBroken(deviceId: string): void
+  /**
+   * The route works but the machine's server refused the device link (not installed for this desktop's channel, not
+   * running, another account, too old). The tunnel is of no use until that changes: it stops counting as linked, so calls
+   * go through Gugu Cloud, and it is tried again on the backoff.
+   */
+  linkRefused(deviceId: string, detail: string): void
+  /** A device link opened over it: the route is proven, the backoff starts over. */
+  linkOpened(deviceId: string): void
+  /**
+   * 这台电脑登着的账号变了(登上、换号、登出;刷新令牌也会来):没在为此刻这个账号通着的那几台当场重连,❌ 等退避 ——
+   * 开机时窗口还没把登录递过来,第一次建连必然是「没登录」,登录一到就该连上。
+   */
+  accountChanged(): void
   closeAll(): void
 }
 
@@ -236,6 +249,12 @@ export function createTunnelMachines(deps: {
   const establish = async (tunnel: Tunnel): Promise<void> => {
     if (tunnel.establishing || !current(tunnel)) return
     tunnel.establishing = true
+    // How long each step took (`tunnel: connected`): the cloud round trip that opens the relay, the visitor coming up through
+    // it, the ssh handshake over it. A slow connect says which.
+    const started = Date.now()
+    const ms: Record<string, number> = {}
+    let mark = started
+    const lap = (step: string) => { const now = Date.now(); ms[step] = now - mark; mark = now }
     try {
       teardown(tunnel)
       const userId = await deps.currentUserId()
@@ -253,7 +272,9 @@ export function createTunnelMachines(deps: {
       if (!current(tunnel)) return
       let response: DeviceRpcResponse<unknown>
       try {
+        lap('prepare')
         response = await deps.callCloud(tunnel.deviceId, TUNNEL_OPEN_RPC_TYPE, { publicKey: key.publicKey }, OPEN_RPC_TIMEOUT_MS)
+        lap('open')
       } catch (error) {
         return fail(tunnel, 'unreachable', (error as Error).message)
       }
@@ -305,6 +326,7 @@ export function createTunnelMachines(deps: {
       })
       tunnel.frpc = frpc
       const up = await frpc.waitUp(VISITOR_UP_TIMEOUT_MS)
+      lap('visitor')
       if (!up.ok) return fail(tunnel, 'visitorFailed', `${up.reason}: ${up.detail}`)
       if (!current(tunnel)) return teardown(tunnel)
 
@@ -323,13 +345,15 @@ export function createTunnelMachines(deps: {
         ? ['-o', 'BatchMode=yes', ...buildEnsureMasterArgs(target, controlPath)]
         : sshBatchArgs(target, 'exit 0', null)
       const ssh = await runSsh(args, SSH_READY_TIMEOUT_MS)
+      lap('ssh')
       if (ssh.code !== 0) return fail(tunnel, 'sshFailed', ssh.stderr.trim().split('\n').slice(-2).join(' ') || `ssh 退出码 ${String(ssh.code)}`)
       if (!current(tunnel)) return teardown(tunnel)
       tunnel.accountUserId = open.relay.user
       tunnel.ready = true
-      tunnel.retryDelay = RETRY_MIN_MS
+      // The backoff restarts when a device link opens over it (`linkOpened`), not here: a machine whose server refuses the
+      // link connects this far every time.
       problems.delete(tunnel.deviceId)
-      deps.log('tunnel: connected', { deviceId: tunnel.deviceId, localPort })
+      deps.log('tunnel: connected', { deviceId: tunnel.deviceId, localPort, ms: { ...ms, total: Date.now() - started } })
       emit()
     } catch (error) {
       fail(tunnel, 'local', (error as Error).message)
@@ -390,6 +414,26 @@ export function createTunnelMachines(deps: {
       tunnel.ready = false
       emit()
       void establish(tunnel)
+    },
+    linkRefused(deviceId, detail) {
+      const tunnel = tunnels.get(deviceId)
+      if (!tunnel || tunnel.establishing || !tunnel.ready) return
+      fail(tunnel, 'linkRefused', detail)
+    },
+    linkOpened(deviceId) {
+      const tunnel = tunnels.get(deviceId)
+      if (tunnel?.ready) tunnel.retryDelay = RETRY_MIN_MS
+    },
+    accountChanged() {
+      void deps.currentUserId().then((userId) => {
+        for (const tunnel of tunnels.values()) {
+          if (tunnel.establishing || (tunnel.ready && tunnel.accountUserId === userId)) continue
+          if (tunnel.retryTimer) clearTimeout(tunnel.retryTimer)
+          tunnel.retryTimer = null
+          tunnel.retryDelay = RETRY_MIN_MS
+          void establish(tunnel)
+        }
+      })
     },
     closeAll() {
       wanted = new Set()

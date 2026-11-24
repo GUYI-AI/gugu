@@ -1,5 +1,5 @@
 {
   "repository": "GUYI-AI/gugu-supabase",
-  "ref": "9ed0730043162f3e87dfe0066e490341bd84719c",
-  "status": "Backend #386 merged on dev and deployed: presence carries last_interacted_at and set_agent_runtime_state takes p_last_interacted_at."
+  "ref": "36486a2183284abce3e35817fb800549f2c1c2e5",
+  "status": "Backend #409 merged on dev: chat.messages.annotations, p_annotations on send_message_with_overlays and attachment_commit, annotations in messages_view and pull_agent_inbox_v2."
 }

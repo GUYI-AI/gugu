@@ -3,6 +3,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import { queryClient } from '@/lib/replica';
+import { UI_EVENTS } from '@/lib/uiEvents';
 import { setLocalePreference } from '@/i18n';
 import { CustomModelsGroup } from '@/components/settings/CustomModelsGroup';
 import { CustomModelDialog } from '@/components/settings/CustomModelDialog';
@@ -10,17 +11,17 @@ import { Sheet } from '@/components/ui/Sheet';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { ChatComposer } from '@gugu/session-ui/react/components';
-import type { CustomModelConnection } from '@gugu/session-core/models/custom-model';
+import { CUSTOM_MODEL_KEY_CHANNEL, type CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
-import { composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
+import { composerModelFooter, composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
-const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null }));
+const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null, agents: [] as unknown[] }));
 vi.mock('@renderer/lib/stores/use-agents', async (importOriginal) => ({
   ...await importOriginal<typeof import('@renderer/lib/stores/use-agents')>(),
-  useAgents: () => ({ data: [] }),
+  useAgents: () => ({ state: 'value', value: state.agents, stale: false, error: null }),
 }));
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({ getAgentConfigRuntimeClient: async () => ({
   listCustomModels: async () => ({ success: true, data: state.rows }),
@@ -29,10 +30,23 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({ getAgentConfigRunt
   saveCustomModel: async (input: SaveCustomModel) => { state.saved = input; return { success: true, data: { ...input, id: input.id ?? '481825a8-60b9-4c83-8d1b-f104e3db0269', credentialRef: 'ref', keySaved: true } }; },
 }) }));
 let root: Root, host: HTMLDivElement;
-beforeEach(() => { queryClient.clear(); setLocalePreference('en-US'); state.rows = []; state.saved = null; state.reads = []; state.probe = null; state.probes = []; state.testResult = null; host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host); });
+beforeEach(() => { queryClient.clear(); setLocalePreference('en-US'); state.rows = []; state.saved = null; state.reads = []; state.probe = null; state.probes = []; state.testResult = null; state.agents = []; host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host); });
 afterEach(() => { root.unmount(); host.remove(); });
 const record = (): CustomModelConnection => ({ id: '481825a8-60b9-4c83-8d1b-f104e3db0269', name: 'Existing provider', credentialRef: 'ref', keySaved: false, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }], models: [] });
 const render = (content: React.ReactNode) => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>{content}</SessionLocalizationProvider></QueryClientProvider>);
+it('opens model settings from the composer without requesting the add-model dialog', () => {
+  const onOpen = vi.fn<(event: Event) => void>();
+  window.addEventListener(UI_EVENTS.openSettings, onOpen, { once: true });
+  try {
+    composerModelFooter([]).onManageModels();
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    const event = onOpen.mock.calls[0]?.[0];
+    expect(event).toBeInstanceOf(CustomEvent);
+    expect((event as CustomEvent).detail).toEqual({ section: 'model', action: undefined });
+  } finally {
+    window.removeEventListener(UI_EVENTS.openSettings, onOpen);
+  }
+});
 it('shows migrated records with no model or key and a repair entrypoint', async () => {
   state.rows = [record()];
   render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
@@ -72,6 +86,7 @@ it.each([
 });
 it('edits an address with the saved key and saves multiple manual models without returning the key', async () => {
   const existing = { ...record(), keySaved: true, models: [{ id: 'model:a' }] };
+  state.probe = { endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
   const closed = vi.fn(); render(<CustomModelDialog machine={null} connection={existing} onClose={closed} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://edited.test/v1/responses');
   await until('manual fallback is available', () => !!document.querySelector('input[name=models]'));
@@ -80,10 +95,29 @@ it('edits an address with the saved key and saves multiple manual models without
   await until('the form saved', () => state.saved !== null);
   expect(state.saved).toMatchObject({ id: existing.id, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }], models: [{ id: 'model:a' }, { id: 'provider/model:b' }] });
   expect(state.saved).not.toHaveProperty('apiKey'); expect(closed).toHaveBeenCalledOnce();
-  expect(state.reads).toContainEqual(expect.objectContaining({ connectionId: existing.id, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }] }));
+  expect(state.probes).toContainEqual({ connectionId: existing.id, baseUrl: 'https://edited.test/v1' });
+});
+it('advanced shows what a saved address answers and keeps the protocol picked for a harness', async () => {
+  state.agents = [
+    { id: 'claude', name: 'Claude Code', capabilities: { modelProtocols: ['anthropic-messages'], customModel: { convertFrom: ['openai-chat-completions'] } } },
+    { id: 'codex', name: 'Codex', capabilities: { modelProtocols: ['openai-responses'], customModel: { convertFrom: ['openai-chat-completions'] } } },
+  ];
+  state.probe = { endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://provider.test' }, { protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], models: ['m'], failures: [] };
+  render(<CustomModelDialog machine={null} connection={{ ...record(), keySaved: true, models: [{ id: 'm' }] }} onClose={() => {}} />);
+  await userEvent.click(page.getByRole('button', { name: /Advanced/ }));
+  await expect.element(page.getByTestId('custom-model-protocols')).toHaveTextContent('This address answers: Anthropic API / OpenAI Chat');
+  expect(state.probes).toContainEqual({ connectionId: record().id, baseUrl: 'https://provider.test/v1' });
+  // Codex could only use the converted chat address: nothing to choose.
+  expect(page.getByTestId('custom-model-protocol-codex').query()).toBeNull();
+  await expect.element(page.getByTestId('custom-model-protocol-claude')).toHaveTextContent('Automatic (Anthropic API)');
+  await userEvent.click(page.getByTestId('custom-model-protocol-claude'));
+  await userEvent.click(page.getByRole('option', { name: 'OpenAI Chat, converted locally' }));
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, harnessProtocols: { claude: 'openai-chat-completions' } });
 });
 
-it('shows the bound provider and model when reopening a migrated Pi task', async () => {
+it('names only the bound model when reopening a migrated Pi task', async () => {
   const existing = { ...record(), keySaved: true, models: [{ id: 'glm-5.3-flash' }] };
   const duplicate = { ...existing, id: '48937c18-1219-460e-9f40-e08d70de94a5', name: 'Other provider' };
   const models = customComposerOptions([duplicate, existing], {
@@ -95,7 +129,7 @@ it('shows the bound provider and model when reopening a migrated Pi task', async
   });
   render(<ChatComposer modelOptions={models} selectedModel={selectedModel} onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}} />);
   await until('the trigger names the bound model', () => document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent === 'glm-5.3-flash');
-  expect(document.querySelector('[data-slot=composer-model-trigger-tag]')?.textContent).toBe('provider');
+  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('provider');
 });
 it('a custom address shows no protocol: the models it lists are all selected and the recognized addresses are saved', async () => {
   state.probe = {
@@ -142,6 +176,34 @@ it.each(failures)('the saved connection’s Test connection action preserves %s'
   await userEvent.click(page.getByRole('button', { name: 'Test connection', exact: true }));
   await expect.element(page.getByRole('status')).toHaveTextContent(text);
 });
+const found = (): CustomModelConnection => ({ ...record(), id: 'found', name: 'OpenAI', preset: 'openai', keySaved: true, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], discovered: { source: 'shell-env', keyLast4: 'abcd' } });
+const keyField = () => document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')!;
+it('shows the key this computer holds when the eye is pressed, and reads with it until a new one is typed', async () => {
+  const invoke = vi.fn(async (channel: string, id: unknown) => { if (channel !== CUSTOM_MODEL_KEY_CHANNEL || id !== 'found') throw new Error(channel); return 'sk-found-0000abcd'; });
+  vi.stubGlobal('electronAPI', { invoke });
+  try {
+    state.testResult = { kind: 'unlisted', reason: 'unauthorized' };
+    render(<CustomModelDialog machine={null} group="api" connection={found()} onClose={() => {}} />);
+    await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', '••••••••abcd');
+    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused the key above. Enter a new key.');
+    await userEvent.click(page.getByRole('button', { name: 'Show key' }));
+    await expect.element(page.getByTestId('custom-model-key')).toHaveValue('sk-found-0000abcd');
+    expect(keyField().type).toBe('text');
+    await userEvent.click(page.getByRole('button', { name: 'Hide key' }));
+    expect(keyField().type).toBe('password');
+    expect(state.reads).toEqual([{ connectionId: 'found', endpoints: found().endpoints }]);
+    await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-typed');
+    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused the key.');
+  } finally { vi.unstubAllGlobals(); }
+});
+it('a connection on another device shows only the end of its key, with no eye', async () => {
+  vi.stubGlobal('electronAPI', { invoke: vi.fn() });
+  try {
+    render(<CustomModelDialog machine="device-1" group="api" connection={found()} onClose={() => {}} />);
+    await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', '••••••••abcd');
+    expect(page.getByRole('button', { name: 'Show key' }).query()).toBeNull();
+  } finally { vi.unstubAllGlobals(); }
+});
 it('preserves a connection failure that first occurs during the save-time named-model probe', async () => {
   state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
@@ -165,6 +227,8 @@ it('a converted third-party model is selectable and tagged with its vendor; an I
   await userEvent.click(page.getByTestId('composer-model-trigger'));
   await until('the tags render', () => document.querySelectorAll('[data-slot=composer-model-tag]').length === 2);
   expect([...document.querySelectorAll('[data-slot=composer-model-tag]')].map((tag) => tag.textContent)).toEqual(['deepseek', 'bigmodel']);
-  expect(document.querySelector('[data-slot=composer-model-trigger-tag]')?.textContent).toBe('deepseek');
+  // The trigger names only the model: nothing of the vendor besides the model's own label.
+  expect(document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent).toBe('deepseek-v4-flash');
+  expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent?.replace('deepseek-v4-flash', '')).not.toContain('deepseek');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('·');
 });

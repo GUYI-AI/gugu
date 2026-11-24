@@ -46,7 +46,7 @@ export interface SendSessionMessageParams {
   clientMessageId: string;
   text: string;
   /** Original task-page payload, before provider-specific file text is prepared. */
-  sourceInput?: { text: string; files?: SessionMessageDelivery['files']; attachments?: SessionMessageDelivery['attachments'] };
+  sourceInput?: { text: string; files?: SessionMessageDelivery['files']; attachments?: SessionMessageDelivery['attachments']; annotations?: SessionMessageDelivery['annotations'] };
   kind?: 'ordinary' | 'session-direct';
   /** Only session_spawn's first delegation may use the durable startup outbox exception. */
   queuedStartupDelegation?: boolean;

@@ -12,7 +12,7 @@ import { Popover } from '@/components/ui/Popover'
 import { Check, ChevronRight, Hash, MessageCircle, Users } from '@/lib/icons'
 import { agentDisplayStatusText } from '@/lib/agentStatusText'
 import { useChatStore } from '@/store/chatContext'
-import { useAgentRecentActivity } from '@/hooks/useAgentDisplayStatus'
+import { useAgentActivityMs } from '@/hooks/useAgentActivityMs'
 import { useAgentSessionRow } from '../../components/session-watch/useAgentSessionRow'
 import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } from '../composer/PhoneComposerControls'
 import { preserveComposerFocus } from '../composer/composer-focus'
@@ -47,8 +47,8 @@ function RoomComposerControls({ chatId, topics, topicsReady, current, onPick, me
   const topicsButton = useRef<HTMLButtonElement>(null)
   const choices = roomTopicChoices(chatId, topics, chats)
   const roomAgents = members.filter(member => member.type === 'agent' && member.membership !== 'former')
-  const activity = useAgentRecentActivity(roomAgents.map(agent => agent.id))
-  const agents = roomAgentsByRecentActivity(roomAgents, id => activity[id]?.lastInteractedAt, id => identitiesById[id]?.created_at)
+  const activityMs = useAgentActivityMs(roomAgents.map(agent => agent.id), identitiesById)
+  const agents = roomAgentsByRecentActivity(roomAgents, activityMs)
   const titleCount = view === 'agents' ? (roster.ready ? agents.length : undefined) : (topicsReady ? choices.topics.length : undefined)
   const menu = phoneMenuBar('room', { topics: true, agents: true })
   const choose = (topic: TopicSummary | null) => {
@@ -118,6 +118,6 @@ function RoomAgentChoice({ profile, userId, opener, onOpen }: {
   if (entry === 'session' && session) return <Button {...props} onClick={() => onOpen?.({ id: profile.id,
     displayName: profile.displayName, avatar: profile.avatar, email: profile.email, bio: profile.bio ?? null, type: 'agent',
     session: { projectId: session.session.projectId, sessionId: session.session.conversationId } })}>{body}</Button>
-  return <Popover.Trigger handle={opener.handle} payload={{ member: profile, openedFrom: opener.openedFrom }}
+  return <Popover.Trigger handle={opener.handle} payload={{ member: profile }}
     render={<Button {...props}>{body}</Button>} />
 }

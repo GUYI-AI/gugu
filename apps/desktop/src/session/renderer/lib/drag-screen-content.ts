@@ -6,7 +6,7 @@ import type { ScreenBlockContent } from '@renderer/app/screen-layout';
  * would insert it beside a task mention. Chromium can lose custom MIME data at drop, so keep
  * the same-window payload until dragend; the MIME marker still guards against stale drags. */
 export const SCREEN_CONTENT_DRAG_TYPE = 'application/x-gugu-screen-content';
-export type DraggedScreenContent = ScreenBlockContent & { title: string; topic?: { chatId: string; name: string } };
+export type DraggedScreenContent = ScreenBlockContent & { title: string };
 let draggedContent: DraggedScreenContent | null = null;
 
 /**
@@ -51,12 +51,12 @@ export function setDraggedScreenContent(
 }
 
 /**
- * 聊天列表的一行拖起来(会话行、话题子行,#2548 内层侧栏的话题行也是这一条):落在一块的边上分出这个对话;
- * 话题 = 它的来源对话,话题开成分栏。行不可拖(手机)就什么都不写。
+ * 内层侧栏的一行话题拖起来:落在一块的边上分出这个对话(话题也是它自己那一块)。左边那一列(会话列表)的行不拖。
+ * 行不可拖就什么都不写。
  */
 export function startChatDrag(event: React.DragEvent<HTMLElement>, chat: ChatItem, title: string): void {
   if (!event.currentTarget.draggable) return;
-  setDraggedScreenContent(event.dataTransfer, { kind: 'chat', chatId: chat.kind === 'topic' ? chat.source_chat_id! : chat.id, title, ...(chat.kind === 'topic' ? { topic: { chatId: chat.id, name: chat.name ?? '' } } : {}) }, event.currentTarget);
+  setDraggedScreenContent(event.dataTransfer, { kind: 'chat', chatId: chat.id, title }, event.currentTarget);
 }
 
 /** 在 dragend 上调用;drop 先于源上的 dragend 触发,所以这时清是安全的。 */
@@ -72,7 +72,6 @@ function isDraggedContent(value: unknown): value is DraggedScreenContent {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<DraggedScreenContent>;
   if (typeof candidate.title !== 'string') return false;
-  if (candidate.topic !== undefined && (candidate.kind !== 'chat' || typeof candidate.topic?.chatId !== 'string' || typeof candidate.topic?.name !== 'string')) return false;
   switch (candidate.kind) {
     case 'session': return typeof candidate.sessionId === 'string' && typeof candidate.projectId === 'string';
     case 'app': return typeof candidate.tabKind === 'string';

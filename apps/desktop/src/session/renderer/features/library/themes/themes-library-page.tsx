@@ -13,6 +13,7 @@ import {
 } from '@renderer/lib/theme/theme-pack-store';
 import {
   GUGU_DEFAULT_SWATCH,
+  groundCss,
   packModes,
   resolvePalette,
   type ResolvedPalette,
@@ -40,14 +41,14 @@ function resolvedModes(pack: ThemePack): Partial<Record<ThemeMode, ResolvedPalet
   return out;
 }
 
-/** 一张小咕咕:最左栏、会话列表、内容区里一来一回两个气泡和输入框,全用这族自己的颜色画。 */
+/** 一张小咕咕:窗口底上的最左栏和会话列表、内容区里一来一回两个气泡和输入框,全用这族自己的颜色画。 */
 function ThemeThumb({ colors, translate }: { colors: ThemeSwatch; translate: Translate }) {
   const vars = {
-    '--t-page': colors.page, '--t-bg': colors.bg, '--t-card': colors.card,
+    '--t-ground': groundCss(colors.ground), '--t-bg': colors.bg, '--t-card': colors.card,
     '--t-fg': colors.fg, '--t-muted-fg': colors.mutedFg, '--t-live': colors.live,
   } as CSSProperties;
   return (
-    <div aria-hidden className="flex h-28 overflow-hidden rounded-md bg-[var(--t-page)]" style={vars}>
+    <div aria-hidden className="flex h-28 overflow-hidden rounded-md [background:var(--t-ground)]" style={vars}>
       <div className="flex w-4 flex-col gap-1 px-[3px] py-2">
         {[0, 1, 2].map((i) => <span key={i} className="h-2 rounded-sm bg-[color-mix(in_oklab,var(--t-fg)_10%,transparent)]" />)}
       </div>

@@ -6,13 +6,12 @@ import { useAgentDisplayStatus } from '@/hooks/useAgentDisplayStatus'
 import { useRowContextMenu } from '@/hooks/useRowContextMenu'
 import { displayName } from '@/lib/contactsListSort'
 import { Avatar } from '../Avatar'
-import { AgentContactStatusMark } from '../AgentContactStatusMark'
 import { agentContactPresentation, useShownAgentContactStatus, agentContactRowStatusClass } from '../contactAgentTone'
 import { Chip } from '../ui/Chip'
 import { ListRow } from '../ui/ListRow'
 import { SelectionCheckbox } from './ContactSearch'
 import { ContactRowContextMenu, ContactRowDeleteButton, type ContactRowMenuActions } from './ContactRowActions'
-import { agentAvatarClass, ct, rowKeyActivate } from './contactsPanelStyles'
+import { ct, rowKeyActivate } from './contactsPanelStyles'
 
 // @@@agent-row-memo - 一个 agent 变了只重画那一行:props 只有这一行自己的数据 + 一份稳定的动作,
 // 行里读的也都是按 id 选择的外部 store(在线态、身份目录、设备目录),❌ 整份通讯录 / 设备 context。
@@ -73,9 +72,7 @@ export const AgentContactRow = memo(function AgentContactRow({
         leading={
           <>
             {selectionMode ? <SelectionCheckbox checked={multiSelected} /> : null}
-            <div className={agentAvatarClass(tone)} style={mobile ? { width: 'var(--avatar-md)', height: 'var(--avatar-md)' } : undefined}>
-              <Avatar name={shownName} avatarUrl={contact.avatar} seed={contact.id} size={mobile ? 'md' : 'sm'} isAgent agentStatus={status === 'needs_user' || status === 'parked' ? status : undefined} />
-            </div>
+            <Avatar name={shownName} avatarUrl={contact.avatar} seed={contact.id} size={mobile ? 'md' : 'sm'} isAgent agentStatus={tone ?? undefined} />
           </>
         }
         title={shownName}
@@ -85,10 +82,7 @@ export const AgentContactRow = memo(function AgentContactRow({
           </>
         }
         meta={
-          <span className={agentContactRowStatusClass(tone)}>
-            <AgentContactStatusMark tone={tone} />
-            {statusLabel}
-          </span>
+          <span className={agentContactRowStatusClass(tone)}>{statusLabel}</span>
         }
         onClick={activate}
         onKeyDown={rowKeyActivate(activate)}

@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { lstat as lstatAsync, stat as statAsync } from 'node:fs/promises';
 import path from 'node:path';
+// 相对 `.ts` 路径:owned-child 经它被 node 直接跑,包名解析不到。
+import { windowsSystemProgram } from '../../../core/src/local/childProcess.ts';
 // `.ts` 扩展名:Codex ACP 桥(codex-app-server-acp.mjs)经 owned-child.ts 用 Node 原生的 TS 剥离直接加载这条链,
 // 无扩展名的值导入在那边解析不到,桥当场 exit 1(类型导入会被擦掉,所以从前没事)。
 import { readShimEnv, type WindowsShimReader } from './windows-node-entry.ts';
@@ -100,7 +102,7 @@ export function planDirectSpawn(
   if (extension === '.cmd' || extension === '.bat') {
     const commandLine = [escapeCmdCommand(command), ...args.map(escapeCmdShimArgument)].join(' ');
     return {
-      command: windowsEnvValue(env, 'ComSpec') ?? 'cmd.exe',
+      command: windowsEnvValue(env, 'ComSpec') ?? windowsSystemProgram('cmd.exe'),
       args: ['/d', '/s', '/c', `"${commandLine}"`],
       spawnOverrides: { windowsVerbatimArguments: true },
       wrapsShell: true,
@@ -109,7 +111,7 @@ export function planDirectSpawn(
 
   if (extension === '.ps1') {
     return {
-      command: 'powershell.exe',
+      command: windowsSystemProgram('WindowsPowerShell\\v1.0\\powershell.exe'),
       args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', command, ...args],
       spawnOverrides: {},
       wrapsShell: true,

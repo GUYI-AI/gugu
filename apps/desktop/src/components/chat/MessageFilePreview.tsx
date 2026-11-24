@@ -30,7 +30,7 @@ import { serverNow } from '@gugu/core/shared/serverClock'
 const fileOpenLog = rendererLogger('chat/file-open')
 /**
  * "Reading file…" is said once a read has taken this long, or as soon as its bytes are coming over the network (progress):
- * a version already on this machine (@@@local-first) is shown without it (as MessageListSkeleton's delay does for a list).
+ * a version already on this machine (@@@local-first) is shown without it.
  */
 const READING_SAID_AFTER_MS = 500
 

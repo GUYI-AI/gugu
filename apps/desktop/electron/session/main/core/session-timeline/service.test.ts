@@ -69,6 +69,8 @@ const state = vi.hoisted(() => ({
   wake: vi.fn(async (_id: string): Promise<void> => {
     throw new Error('❌ 没开起来的会话不许走唤醒');
   }),
+  /** The session life's pending rows, by message id (`sessionLife().read`); none unless a case queues some. */
+  lifePending: [] as string[],
 }));
 
 const persistedQuestions = vi.hoisted(() => new Map<string, Settlement[]>());
@@ -106,7 +108,12 @@ vi.mock('../sessions/session-conversation-activity', () => ({ nativeConversation
 
 
 // The session index has tests of its own (session-index.db.test.ts); here the timelines it follows are fakes.
-vi.mock('../session-index/session-index', () => ({ followSessionIndex: () => () => {}, sessionIndexed: () => true, writeSessionIndex: () => {} }));
+const index = vi.hoisted(() => ({ prepare: vi.fn(async () => {}), count: vi.fn(() => 0) }));
+vi.mock('../session-index/session-index', () => ({
+  followSessionIndex: () => () => {},
+  prepareSessionIndex: index.prepare,
+  indexedTurnCount: index.count,
+}));
 vi.mock('@main/db/client', () => ({
   db: {
     select: () => ({
@@ -123,6 +130,7 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 
+vi.mock('@main/core/sessions/session-life', () => ({ sessionLife: () => ({ read: () => ({ pending: { items: state.lifePending.map((messageId) => ({ messageId })) } }) }) }));
 vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 const openedOutputs = vi.hoisted(() => new Map<string, ({ kind: 'file'; path: string } | { kind: 'page'; url: string })[]>());
 vi.mock('../sessions/session-outputs', () => ({
@@ -307,6 +315,7 @@ function makeTimeline(onCatchUp: () => void = () => undefined) {
     epoch: 'e1',
     disposed: 0,
     listenerCount: () => listeners.size,
+    getCursor: () => ({ epoch: 'e1', seq: 0 }),
     getSnapshot: (): TimelineSnapshot => ({
       cursor: { epoch: 'e1', seq: 0 },
       turns: [],
@@ -438,6 +447,7 @@ describe('session timeline service', () => {
     state.emitPending = null;
     state.nativeUnread = [];
     state.rows = [row()];
+    state.lifePending = [];
     state.projects = [];
     state.deliverText = vi.fn(async () => ({ accepted: 'started' as const }));
     state.deliverPermission = vi.fn(async () => undefined);
@@ -451,6 +461,71 @@ describe('session timeline service', () => {
       throw new Error('❌ 没开起来的会话不许走唤醒');
     });
     state.readOptions.mockClear();
+  });
+
+  it('waits for the current turn facts before deciding whether a cold session already ran', async () => {
+    let ready!: () => void;
+    index.count.mockClear().mockReturnValueOnce(1);
+    index.prepare.mockImplementationOnce(() => new Promise<void>(resolve => { ready = resolve; }));
+
+    const ran = service.sessionHasRecordedTurn('conv-1');
+    expect(index.count).not.toHaveBeenCalled();
+    ready();
+    await expect(ran).resolves.toBe(true);
+  });
+
+  it('uses the open record to detect an already-started session while indexing is pending', async () => {
+    const { timeline } = makeTimeline();
+    const base = timeline.getSnapshot();
+    timeline.getSnapshot = () => ({ ...base, turns: [{ id: 'first', seq: 1, initiator: 'user', items: [] }] });
+    service.setSessionTimelineFactory(async () => timeline);
+
+    const opened = await service.snapshot({ conversationId: 'conv-1' });
+    expect(opened.ok).toBe(true);
+    await expect(service.sessionHasRecordedTurn('conv-1')).resolves.toBe(true);
+  });
+
+  it('a reader that merges terminals by id gets only the changed ones and ends up holding what the whole list says', async () => {
+    const { createSessionRecordSource, createSessionTimeline } = await import('@gugu/session-core/session-record');
+    const { applyBatch, applySnapshot, emptyAgentWatchTimeline } = await import('../../../../../src/components/session-watch/agent-watch-store');
+    const root = await mkdtemp(join(tmpdir(), 'claude-terminal-patch-'));
+    await writeFile(join(root, 'record.jsonl'), JSON.stringify({ type: 'user', uuid: 'q', parentUuid: null, sessionId: 'record',
+      timestamp: '2026-10-31T00:00:00Z', message: { id: 'q', role: 'user', content: [{ type: 'text', text: 'run things' }] } }) + '\n');
+    const timeline = await createSessionTimeline(createSessionRecordSource({ harness: 'claude', providerSessionId: 'record', roots: [root] }), { sessionId: 'conv-t' });
+    try {
+      const terminal = (terminalId: string, output: string) => ({ terminalId, owner: 'agent' as const, canKill: false,
+        command: 'echo', args: [], cwd: '/w', output, truncated: false, exitStatus: null });
+      timeline.syncTerminals([terminal('a', 'one'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+      const snapshot = timeline.getSnapshot();
+      let held = applySnapshot(emptyAgentWatchTimeline(), snapshot);
+
+      // Only `a` grows: the merging reader is sent `a` and the order; one that does not merge, the whole list.
+      timeline.syncTerminals([terminal('a', 'one two'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+      const patch = timeline.getAfter(snapshot.cursor, { terminalPatch: true });
+      expect(patch).toMatchObject({ ok: true, batch: { terminalIds: ['a', 'b'], terminals: [terminal('a', 'one two')] } });
+      const whole = timeline.getAfter(snapshot.cursor);
+      expect(whole.ok && whole.batch.terminals?.map((one) => one.terminalId)).toEqual(['a', 'b']);
+      expect(whole.ok && 'terminalIds' in whole.batch).toBe(false);
+      held = applyBatch(held, (patch as Extract<typeof patch, { ok: true }>).batch);
+      expect(held.terminals).toEqual([terminal('a', 'one two'), terminal('b', 'LONG_OUTPUT_OF_B')]);
+
+      // Nothing changed since: nothing travels (absent = unchanged). `b` goes away: the order says so.
+      const now = timeline.getSnapshot().cursor;
+      timeline.syncQueuedPrompts([{ id: 'q1', clientMessageId: 'c1', text: 'next' }]);
+      const quiet = timeline.getAfter(now, { terminalPatch: true });
+      expect(quiet.ok && quiet.batch.terminals).toBeUndefined();
+      timeline.syncTerminals([terminal('a', 'one two')]);
+      const gone = timeline.getAfter(now, { terminalPatch: true });
+      expect(gone).toMatchObject({ ok: true, batch: { terminalIds: ['a'], terminals: [] } });
+      held = applyBatch(held, (gone as Extract<typeof gone, { ok: true }>).batch);
+      expect(held.terminals.map((one) => one.terminalId)).toEqual(['a']);
+      // A name the reader neither holds nor is sent: a batch was lost in between, read the snapshot again.
+      expect(applyBatch(held, { from: 9, cursor: { epoch: now.epoch, seq: 10 }, turns: [], removedTurnIds: [], settlements: [],
+        terminalIds: ['a', 'lost'], terminals: [] }).needsSnapshot).toBe('gap');
+    } finally {
+      timeline.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it('follows a settling record on its own live reader until the last turn lands, without interactive effects', async () => {
@@ -643,6 +718,25 @@ describe('session timeline service', () => {
     ).resolves.toMatchObject({ ok: false, error: { code: 'session_not_started' } });
   });
 
+  it('a first message the session life still holds is drawn from that pending row, not a second time by the stand-in', async () => {
+    const factory = vi.fn(async () => makeTimeline().timeline);
+    service.setSessionTimelineFactory(factory);
+    const firstTurnText = async () => {
+      const read = await service.snapshot({ conversationId: 'conv-1' });
+      return read.ok ? read.value.turns.flatMap((turn) => turn.items.map((item) => (item as { text?: string }).text)) : read;
+    };
+    state.rows = [row({ providerSessionId: null, config: { type: 'acp', initialQueue: [{ text: 'hi' }], firstUtterance: 'hi' } })];
+    state.lifePending = ['conv-1:creation:0'];
+    expect(await firstTurnText()).toEqual([]);
+    state.rows = [row({ providerSessionId: null, config: { type: 'acp', initialQueue: [{ text: 'hi' }], firstUtterance: 'hi', initialMessageId: 'msg-1' } })];
+    state.lifePending = ['msg-1'];
+    expect(await firstTurnText()).toEqual([]);
+    // Nothing holds it (never admitted, or withdrawn): the stand-in is the only place it is shown.
+    state.lifePending = ['another-input'];
+    expect(await firstTurnText()).toEqual(['hi']);
+    expect(factory).not.toHaveBeenCalled();
+  });
+
   it('单一目录之前绑在非原生连接上的会话:用户根优先,那条连接自己的配置根排最后兜底;原生会话不带它', async () => {
     const factory = vi.fn(async () => makeTimeline().timeline);
     service.setSessionTimelineFactory(factory);
@@ -684,10 +778,10 @@ describe('session timeline service', () => {
     startCalls.length = 0;
     state.deliverText.mockResolvedValue({ accepted: 'started' });
     state.rows = [row({ providerSessionId: null, config: { type: 'acp', initialQueue: [{ text: 'hi' }] } })];
-    expect(await service.send('conv-1', '在吗')).toEqual({ ok: true, value: { accepted: 'started', admission: 'accepted' } });
+    expect(await service.send({ conversationId: 'conv-1', text: '在吗' })).toEqual({ ok: true, value: { accepted: 'started', admission: 'accepted' } });
     expect(startCalls).toEqual([]);
     expect(state.deliverText).toHaveBeenCalledTimes(1);
-    expect(state.deliverText.mock.calls[0]?.[1]).toBe('在吗');
+    expect(state.deliverText.mock.calls[0]?.[1]).toMatchObject({ text: '在吗' });
     expect(await service.sessionOptions({ conversationId: 'conv-1' })).toEqual({
       ok: true,
       value: {
@@ -800,36 +894,6 @@ describe('session timeline service', () => {
       service.snapshot({ conversationId: 'conv-1' }),
     ]);
     expect(factory).toHaveBeenCalledTimes(1);
-  });
-
-  // owner 10-15:手机那份时间线里图只有类型和字数,图滚到了才来这里取(transport-trim)。和翻页同一条路。
-  it('手机取一张工具图:按条目 id 和第几张找(工具组里的子调用也认);找不到如实说是哪一样没有', async () => {
-    const fake = makeTimeline();
-    const shot = { mimeType: 'image/jpeg', data: '/9j/AAAA' };
-    const tool = (id: string, extra: Record<string, unknown> = {}) => ({ kind: 'mcp-tool-call', id, seq: 1, toolCallId: id, title: 'app_check', status: 'done', ...extra });
-    const snapshot = fake.timeline.getSnapshot();
-    fake.timeline.getSnapshot = () => ({
-      ...snapshot,
-      turns: [{ id: 't1', seq: 1, initiator: 'user', items: [tool('tool-1', { images: [shot] }), tool('group-1', { kind: 'tool-group', children: [tool('child-1', { images: [shot, shot] })] })] }],
-    }) as unknown as TimelineSnapshot;
-    service.setSessionTimelineFactory(async () => fake.timeline);
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'tool-1', index: 0 })).toEqual({ ok: true, value: shot });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'child-1', index: 1 })).toEqual({ ok: true, value: shot });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'tool-1', index: 1 })).toMatchObject({ ok: false, error: { code: 'no_such_image' } });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'gone', index: 0 })).toMatchObject({ ok: false, error: { code: 'no_such_item' } });
-    expect(await service.toolImage({ conversationId: 'no-such-conv', itemId: 'tool-1', index: 0 })).toMatchObject({ ok: false, error: { code: 'session_not_found' } });
-  });
-
-  // #980:存档装回来的轮里图只剩位置,快照里找不到;有 `toolImage` 口的时间线由它从记录里读回来,读不回来照实转达。
-  it('时间线自己会取图(存档里只存位置)⇒ 问它,不在快照里找', async () => {
-    const fake = makeTimeline();
-    const shot = { mimeType: 'image/png', data: 'iVBORAAAA' };
-    fake.timeline.toolImage = async ({ itemId, index }) => itemId === 'restored' && index === 0
-      ? { ok: true, image: shot }
-      : { ok: false, code: 'no_such_image', message: `picture #${index} of tool item ${itemId} could not be read back from its record` };
-    service.setSessionTimelineFactory(async () => fake.timeline);
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'restored', index: 0 })).toEqual({ ok: true, value: shot });
-    expect(await service.toolImage({ conversationId: 'conv-1', itemId: 'restored', index: 1 })).toMatchObject({ ok: false, error: { code: 'no_such_image' } });
   });
 
   it('结算只成功一次：后答的一端拿到那条既有结算，provider 只被调一次', async () => {
@@ -1085,59 +1149,92 @@ describe('session timeline service', () => {
     expect(timeline.listenerCount()).toBe(0);
   });
 
+  it('follows the session onto the record a model switch forked it to', async () => {
+    const opened = new Map<string, ReturnType<typeof makeTimeline>>();
+    service.setSessionTimelineFactory(async ({ locator }) => {
+      const fake = makeTimeline();
+      opened.set(locator!.providerSessionId, fake);
+      return fake.timeline;
+    });
+    const events: Array<{ result: TimelineAfterResult }> = [];
+    await service.subscribe({ conversationId: 'conv-1', subscriptionId: 'sub-1', cursor: null }, (event) => events.push(event as never));
+    const { sessionChangedChannel } = await import('@shared/core/sessions/sessionEvents');
+
+    // A change that keeps the record keeps the timeline.
+    broadcast(sessionChangedChannel.name, { sessionId: 'conv-1', changes: { title: 'renamed' } });
+    await Promise.resolve();
+    expect([...opened.keys()]).toEqual(['sess-1']);
+
+    state.rows = [row({ providerSessionId: 'sess-2' })];
+    broadcast(sessionChangedChannel.name, { sessionId: 'conv-1', changes: { providerSessionId: 'sess-2' } });
+    await awaitFact('moved record attached', () => opened.get('sess-2')?.timeline.listenerCount() === 1 || undefined);
+    const old = opened.get('sess-1')!.timeline;
+    expect(old.listenerCount()).toBe(0);
+    expect(old.disposed).toBe(1);
+
+    // The next turn lands in the new record and reaches the viewer.
+    opened.get('sess-2')!.emit({ ok: true, batch: { from: 0, cursor: { epoch: 'e1', seq: 1 }, turns: [], removedTurnIds: [], settlements: [] } });
+    expect(events.at(-1)?.result).toMatchObject({ ok: true });
+    // Any reader after the switch gets the new record too, not the cached old one.
+    expect(await service.snapshot({ conversationId: 'conv-1' })).toMatchObject({ ok: true });
+    expect(opened.size).toBe(2);
+    service.unsubscribe('sub-1');
+    expect(opened.get('sess-2')!.timeline.listenerCount()).toBe(0);
+  });
+
   it('send 把写侧的失败 code 原样带出来', async () => {
     state.deliverText = vi.fn(async () => {
       throw new SessionWriteError('session_not_live', '这条终端会话此刻没有活着的 PTY');
     });
-    expect(await service.send('conv-1', '你好')).toMatchObject({
+    expect(await service.send({ conversationId: 'conv-1', text: '你好' })).toMatchObject({
       ok: false,
       error: { code: 'session_not_live', admission: 'uncertain' },
     });
-    expect(await service.send('missing', '你好')).toMatchObject({
+    expect(await service.send({ conversationId: 'missing', text: '你好' })).toMatchObject({
       ok: false,
       error: { code: 'session_not_found', admission: 'rejected' },
     });
   });
 
   it('reports admission from the refusing boundary, never from a diagnostic code', async () => {
-    expect(await service.send('conv-1', 'hello', 'input', [{}] as never)).toMatchObject({ ok: false,
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input', files: [{}] as never })).toMatchObject({ ok: false,
       error: { code: 'invalid_request', admission: 'rejected' } });
     for (const admission of ['rejected', 'uncertain'] as const) {
       state.deliverText = vi.fn(async () => { throw new SessionWriteError('identical-code', 'identical reason', admission); });
-      expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: false,
+      expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: false,
         error: { code: 'identical-code', admission } });
     }
     // An arbitrary failure may occur after a durable insert; neither its code nor its words prove rejection.
     state.deliverText = vi.fn(async () => { throw Object.assign(new Error('permission denied'), { code: 'not_granted' }); });
-    expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
     state.deliverText = vi.fn(async () => ({ accepted: 'queued' as const }));
-    expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: true,
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: true,
       value: { admission: 'accepted', clientMessageId: 'input' } });
   });
 
   it.each(['ordinary-message', 'session-direct'])('confirms prior %s custody after a lost ACK instead of refusing an already owned input', async kind => {
     state.rows[0]!.session.provider = '';
     state.acceptedMessage.mockReturnValue({ id: 'input', sessionId: 'conv-1', sender: 'user', content: 'hello', metadata: JSON.stringify({ kind }) });
-    expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: true, value: { admission: 'accepted', clientMessageId: 'input' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: true, value: { admission: 'accepted', clientMessageId: 'input' } });
     expect(state.deliverText).not.toHaveBeenCalled();
-    expect(await service.send('conv-1', 'changed text', 'input')).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'changed text', clientMessageId: 'input' })).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
     state.acceptedMessage.mockReturnValue(undefined);
-    expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: false, error: { admission: 'rejected' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: false, error: { admission: 'rejected' } });
   });
 
   it('does not infer rejection when custody storage cannot be read', async () => {
     state.rows[0]!.session.provider = '';
     state.acceptedMessage.mockImplementation(() => { throw new Error('receipt storage unavailable'); });
-    expect(await service.send('conv-1', 'hello', 'input')).toMatchObject({ ok: false, error: { admission: 'uncertain', message: 'receipt storage unavailable' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' })).toMatchObject({ ok: false, error: { admission: 'uncertain', message: 'receipt storage unavailable' } });
   });
 
   it('joins the original admission while its result is uncertain and never dispatches twice', async () => {
     let finish!: (value: { accepted: 'queued' }) => void;
     state.deliverText = vi.fn(() => new Promise(resolve => { finish = resolve; }));
-    const first = service.send('conv-1', 'hello', 'input');
+    const first = service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' });
     state.rows[0]!.session.provider = '';
-    const replay = service.send('conv-1', 'hello', 'input');
-    expect(await service.send('conv-1', 'changed text', 'input')).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
+    const replay = service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'input' });
+    expect(await service.send({ conversationId: 'conv-1', text: 'changed text', clientMessageId: 'input' })).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
     finish({ accepted: 'queued' });
     expect(await replay).toEqual(await first);
     expect((await replay).ok).toBe(true);
@@ -1147,9 +1244,9 @@ describe('session timeline service', () => {
   it('retains explicit steering through admission and rejects a replay that changes that intent', async () => {
     let finish!: (value: { accepted: 'queued' }) => void;
     state.deliverText = vi.fn(() => new Promise(resolve => { finish = resolve; }));
-    const first = service.send('conv-1', 'hello', 'steered-input', undefined, undefined, true);
-    expect(state.deliverText).toHaveBeenCalledWith(expect.objectContaining({ id: 'conv-1' }), 'hello', 'steered-input', undefined, undefined, true);
-    expect(await service.send('conv-1', 'hello', 'steered-input')).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
+    const first = service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'steered-input', steerIfBusy: true });
+    expect(state.deliverText).toHaveBeenCalledWith(expect.objectContaining({ id: 'conv-1' }), expect.objectContaining({ text: 'hello', clientMessageId: 'steered-input', steerIfBusy: true }), undefined);
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'steered-input' })).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
     finish({ accepted: 'queued' });
     expect(await first).toMatchObject({ ok: true, value: { clientMessageId: 'steered-input', admission: 'accepted' } });
     expect(state.deliverText).toHaveBeenCalledTimes(1);
@@ -1158,9 +1255,9 @@ describe('session timeline service', () => {
   it('recognizes a durable steered input after a lost ACK without admitting it a second time', async () => {
     state.acceptedMessage.mockReturnValue({ id: 'steered-input', sessionId: 'conv-1', sender: 'user', content: 'hello',
       metadata: JSON.stringify({ kind: 'session-direct', delivery: { queue: true, steerIfBusy: true } }) });
-    expect(await service.send('conv-1', 'hello', 'steered-input', undefined, undefined, true))
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'steered-input', steerIfBusy: true }))
       .toMatchObject({ ok: true, value: { admission: 'accepted' } });
-    expect(await service.send('conv-1', 'hello', 'steered-input')).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
+    expect(await service.send({ conversationId: 'conv-1', text: 'hello', clientMessageId: 'steered-input' })).toMatchObject({ ok: false, error: { admission: 'uncertain' } });
     expect(state.deliverText).not.toHaveBeenCalled();
   });
 
