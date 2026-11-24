@@ -13,14 +13,14 @@ export function installPhoneChatMotion(page: HTMLElement, underlay: HTMLElement,
   let controls: { stop(): void } | undefined
   let generation = 0
   let mode: 'idle' | 'slide' | 'native' | 'ios' = 'idle'
-  let distance = 0, progress = 0, edge = 0, finishing = false
+  let distance = 0, finishing = false
   let touch: { id: number; x: number; y: number; moved: boolean; velocity: GestureVelocity } | null = null
   const canBack = () => state().shown && state().enabled && !isSheetOpen() && document.visibilityState !== 'hidden'
   const width = () => page.offsetWidth || page.parentElement?.clientWidth || window.innerWidth
   const reduced = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const stop = () => { generation++; controls?.stop(); controls = undefined }
   const reset = () => {
-    stop(); mode = 'idle'; finishing = false; touch = null; distance = progress = 0
+    stop(); mode = 'idle'; finishing = false; touch = null; distance = 0
     for (const property of ['border-radius', 'opacity']) page.style.removeProperty(property)
     if (state().shown) page.style.removeProperty('transform')
     else page.style.transform = 'scale(0)'
@@ -36,14 +36,6 @@ export function installPhoneChatMotion(page: HTMLElement, underlay: HTMLElement,
     page.style.opacity = '1'; page.style.borderRadius = '0'
     const ratio = Math.max(0, Math.min(1, x / width()))
     backdrop(-0.3 * width() * (1 - ratio), 1 - ratio)
-  }
-  const paintNative = (q: number, commit = 0) => {
-    progress = q
-    const direction = edge === 0 ? 1 : -1
-    page.style.transform = `translateX(${direction * width() * (0.03 * q + 0.09 * commit)}px) scale(${1 - 0.1 * q - 0.04 * commit})`
-    page.style.borderRadius = `${width() * 0.075 * q}px`
-    page.style.opacity = String(1 - commit)
-    backdrop(-0.3 * width() * (1 - q) * (1 - commit), (1 - q) * (1 - commit))
   }
   const spring = (from: number, to: number, paint: (value: number) => void, done: () => void, velocity = 0) => {
     stop()
@@ -67,25 +59,24 @@ export function installPhoneChatMotion(page: HTMLElement, underlay: HTMLElement,
     if (!canBack()) return false
     if (finishing) return true
     skipMobileTransition()
-    if (mode === 'native') {
-      const place = state().place, initial = progress
-      finishing = true
-      spring(0, 1, value => paintNative(initial, Math.max(0, Math.min(1, value))), () => commit(place))
-    } else { mode = 'slide'; slideBack() }
+    if (mode !== 'native') mode = 'slide'
+    slideBack()
     return true
   }
   const nativeProgress = (event: Event) => {
-    const data = (event as CustomEvent<{ phase?: string; progress?: number; edge?: number }>).detail
+    const data = (event as CustomEvent<{ phase?: string; progress?: number }>).detail
     if (!data) return
     if (data.phase === 'cancelled') {
-      if (mode === 'native' && !finishing) spring(progress, 0, paintNative, reset)
+      if (mode === 'native' && !finishing) spring(distance, 0, paintSlide, reset)
       return
     }
-    if (!canBack() || finishing || typeof data.progress !== 'number' || !Number.isFinite(data.progress) || (data.edge !== 0 && data.edge !== 1)) return
-    if (data.phase === 'started') { reset(); skipMobileTransition(); mode = 'native'; edge = data.edge }
+    if (!canBack() || finishing || typeof data.progress !== 'number' || !Number.isFinite(data.progress)) return
+    if (data.phase === 'started') { reset(); skipMobileTransition(); mode = 'native' }
     if (mode !== 'native' || (data.phase !== 'started' && data.phase !== 'progressed')) return
-    progress = Math.max(0, Math.min(1, data.progress!))
-    if (!reduced()) paintNative(progress)
+    // Either system edge pulls the page the way it came in: back always leaves to the right, as the button does.
+    const x = width() * Math.max(0, Math.min(1, data.progress))
+    if (!reduced()) paintSlide(x)
+    else distance = x
   }
   const startTouch = (event: TouchEvent) => {
     if (!canBack() || finishing || event.touches.length !== 1) return

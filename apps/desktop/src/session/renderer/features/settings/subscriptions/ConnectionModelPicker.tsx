@@ -21,13 +21,13 @@ import { errorText } from './subscription-queries'
 
 /**
  * 从哪读模型清单(#2507):表单里还没存的连接给 key 和地址(地址缺席 = 这家的官方地址);已存的连接(「管理模型」)给它的 id,
- * key 由宿主自己解;只填了一个地址、协议没说的(「自定义」)给 key 和 `baseUrl`,宿主在后台识别协议,一并把识别出的地址带回来。
+ * key 由宿主自己解;只填了一个地址、协议没说的(「自定义」)给 `baseUrl` 和 key(新填的,或已存连接的 id),宿主在后台识别协议,一并把识别出的地址带回来。
  * 读一律在宿主进程里做,key 只到那个地址 —— renderer ❌ 自己去 fetch。
  */
 export type ConnectionModelSource =
   | { apiKey: string; endpoints: CustomModelMeta['endpoints'] }
   | { connectionId: string; endpoints?: CustomModelMeta['endpoints'] }
-  | { apiKey: string; baseUrl: string }
+  | ({ baseUrl: string } & ({ apiKey: string } | { connectionId: string }))
 
 /** `endpoints`: what the background check found the typed address speaks (only for a `baseUrl` source; may be empty). */
 export type ModelList =
@@ -89,7 +89,7 @@ export function useConnectionModelList(
           if (!cancelled) setList({ kind: 'failed', message: errorText(error) })
         }
       },
-      'connectionId' in input ? 0 : 400
+      'connectionId' in input && !('baseUrl' in input) ? 0 : 400
     )
     return () => {
       cancelled = true

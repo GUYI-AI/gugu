@@ -390,8 +390,8 @@ const ComposerForStore = observer(function ComposerForStore({
     store.stop();
   }, [onScrollToBottom, store]);
 
-  // D-31 The host's ask for this agent (an App install) is the session timeline's, not the runtime's: shown first — read only
-  // while the session waits on an approval.
+  // D-31 The host's ask for this agent (an App install) is the session timeline's, not the runtime's: shown first — read off
+  // the settlements this page's feed already holds.
   const hostSession = sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId);
   const runningCustomModel = hostSession?.data.customModel;
   const customReading = useReplica(customModels, runningCustomModel ? [machineRegistry.machineOf(store.projectId) ?? null] : null);
@@ -400,7 +400,7 @@ const ComposerForStore = observer(function ComposerForStore({
     : undefined;
   const acceptsImages = !runningCustomModel || customModelAcceptsImages(customFeatures);
   const acceptsThinking = !runningCustomModel || customFeatures?.thinking === true;
-  const hostBand = useHostAskBand(store.runtimeSessionId, hostSession);
+  const hostBand = useHostAskBand(store.runtimeSessionId, hostSession, store.hostSettlements);
   const resolveHostAsk = hostBand?.resolve;
   const permissionRequest =
     hostBand?.request ?? toComposerPermission(store.permissionQueue[0], translate, (id) => store.hasActiveToolCall(id));

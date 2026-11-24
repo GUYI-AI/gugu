@@ -11,6 +11,11 @@ import { value, type TimelineFeed } from './acp-timeline-feed';
 
 const OLDER_PAGE = 100;
 
+/** The stream's failure with its code: an unreachable machine stays a lost line the page reopens on (acp-load-error). */
+function streamError(stream: SessionStreamState): Error {
+  return Object.assign(new Error(stream.error ?? 'timeline unavailable'), stream.errorCode ? { code: stream.errorCode } : {});
+}
+
 /** That machine's timeline through this window's line to it (`rpcOn`), trimmed for the wire (`transport-trim`). */
 function machineTimeline(machine: string) {
   const host = rpcOn(machine).sessionTimeline;
@@ -109,8 +114,8 @@ export class RemoteTimelineFeed implements TimelineFeed {
         }
         if (!settled && stream.phase !== 'loading') {
           settled = true;
-          if (stream.phase === 'ready') resolve(); else reject(new Error(stream.error ?? 'timeline unavailable'));
-        } else if (settled && stream.error && stream.error !== error) this.failed(new Error(stream.error));
+          if (stream.phase === 'ready') resolve(); else reject(streamError(stream));
+        } else if (settled && stream.error && stream.error !== error) this.failed(streamError(stream));
         error = stream.error;
       };
       this.stopWatch = sessionStreams.subscribe(look);

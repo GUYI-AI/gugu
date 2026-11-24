@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { CUSTOM_MODEL_KEY_CHANNEL, customModelApiUrl, normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta } from '@gugu/session-core/models/custom-model';
+import { CUSTOM_MODEL_KEY_CHANNEL, customModelApiUrl, matchCustomModel, normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta, type ModelProtocol } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { vendorName } from '@/i18n/vendorName';
 import { Button } from '@renderer/lib/ui/button';
 import { Input } from '@renderer/lib/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/lib/ui/select';
 import { Dialog, DialogContent, DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import {
   Combobox, ComboboxTrigger, ComboboxContent, ComboboxInput, ComboboxList, ComboboxGroup,
@@ -54,6 +55,8 @@ export function CustomModelDialog({ machine, connection, availableConnections = 
   const typedKey = apiKey !== heldKey ? apiKey : '';
   const [picked, setPicked] = useState<string[] | null>(null);
   const [modelEdits, setModelEdits] = useState<Record<string, CustomModelEntry>>({});
+  const [harnessProtocols, setHarnessProtocols] = useState<Record<string, ModelProtocol> | null>(null);
+  const [advanced, setAdvanced] = useState(false);
   const [busy, setBusy] = useState<'save' | null>(null);
   const [accountCreating, setAccountCreating] = useState(false);
   const [failure, setFailure] = useState('');
@@ -70,12 +73,23 @@ export function CustomModelDialog({ machine, connection, availableConnections = 
   const held = connection ?? reusable;
   const keyForProbe = reusable?.keySaved ? '' : typedKey;
   const hasConflict = matching.length > 1;
-  // A typed address with a new key: the host recognizes which protocols it speaks while it reads the models.
-  const typedAddress = !preset && keyForProbe && apiUrl ? apiUrl : null;
-  const source: ConnectionModelSource | null = typedAddress ? { apiKey: keyForProbe, baseUrl: typedAddress }
-    : normalized && keyForProbe ? { apiKey: keyForProbe, endpoints: normalized }
-      : normalized && held?.keySaved ? { connectionId: held.id, endpoints: reusable?.endpoints ?? normalized } : null;
+  const harnessProtocolSelection = harnessProtocols ?? held?.harnessProtocols ?? {};
+  const probeAddress = !(held ? held.preset : preset) && apiUrl ? apiUrl : null;
+  const keySource = keyForProbe ? { apiKey: keyForProbe } : held?.keySaved ? { connectionId: held.id } : null;
+  const source: ConnectionModelSource | null = !keySource || !normalized ? null : probeAddress
+    ? { ...keySource, baseUrl: probeAddress } : { ...keySource, endpoints: reusable?.endpoints ?? normalized };
   const list = useConnectionModelList(machine, source);
+  const probed = probeAddress ? (list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : []) : normalized ?? [];
+  // Only a harness that could use more than one of these protocols has a choice to make.
+  const protocolChoices = (agents ?? []).flatMap((agent) => {
+    const direct = agent.capabilities.modelProtocols ?? [];
+    const convertFrom = agent.capabilities.customModel?.convertFrom ?? [];
+    const usable = probed.map(({ protocol }) => protocol).filter((protocol) => direct.includes(protocol) || convertFrom.includes(protocol));
+    if (usable.length < 2) return [];
+    const auto = matchCustomModel({ nativeProtocol: direct[0], protocols: direct, convertFrom, connection: { endpoints: probed, keySaved: true } }).endpoint?.protocol;
+    const label = (protocol: ModelProtocol | undefined) => !protocol ? '' : direct.includes(protocol) ? translate(`customModels.${protocol}`) : translate('customModels.converted', { protocol: translate(`customModels.${protocol}`) });
+    return [{ agent, usable, label, autoLabel: translate('customModels.protocolAuto', { protocol: label(auto) }) }];
+  });
   const models = picked ?? held?.models.map(({ id }) => id) ?? (group === 'coding-plan' && list.kind === 'listed' ? list.models : []);
   const entries = new Map([...(held?.disabledModels ?? []), ...(held?.models ?? []), ...Object.values(modelEdits)].map(entry => [entry.id, entry]));
   const enabled = new Set(models);
@@ -122,11 +136,11 @@ export function CustomModelDialog({ machine, connection, availableConnections = 
     try {
       const client = await getAgentConfigRuntimeClient(machine);
       let saved = reusable?.endpoints ?? normalized;
-      if (typedAddress) {
+      if (probeAddress && keySource) {
         // What the background check found; an address with no model list is checked again with the model named here.
         saved = list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : [];
         if (!saved.length) {
-          const probe = await client.detectCustomModelProtocols({ apiKey: typedKey, baseUrl: typedAddress, modelId: models[0] });
+          const probe = await client.detectCustomModelProtocols({ ...keySource, baseUrl: probeAddress, modelId: models[0] });
           if (!probe.success) throw new Error(errorText(probe.error));
           saved = probe.data.endpoints;
           if (!saved.length) {
@@ -142,6 +156,7 @@ export function CustomModelDialog({ machine, connection, availableConnections = 
         ...(keyForProbe ? { apiKey: keyForProbe } : {}),
         models: models.map(id => entries.get(id) ?? { id }),
         disabledModels: [...entries.values()].filter(({ id }) => !enabled.has(id)),
+        harnessProtocols: Object.fromEntries(Object.entries(harnessProtocolSelection).filter(([, protocol]) => saved.some((endpoint) => endpoint.protocol === protocol))),
       });
       if (!result.success) throw new Error(errorText(result.error));
       await customModels.refresh(machine);
@@ -207,6 +222,17 @@ export function CustomModelDialog({ machine, connection, availableConnections = 
             <CustomModelCatalog key={apiUrl} list={list} enabled={models} entries={entries} onChange={setPicked}
               onTest={connection?.keySaved && !typedKey && apiUrl === customModelApiUrl(connection) ? testSavedModel : undefined}
               onEdit={(id, patch) => setModelEdits(current => ({ ...current, [id]: { ...entries.get(id), ...current[id], ...patch, id } }))} />}
+          {held && <Button type="button" size="sm" variant="ghost" className="justify-start" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>{advanced ? '⌄' : '›'} {translate('customModels.advanced')}</Button>}
+          {held && advanced && <div className="flex flex-col gap-3">
+            {probed.length > 0 && <p data-testid="custom-model-protocols">{translate('customModels.protocols', { protocols: probed.map(({ protocol }) => translate(`customModels.${protocol}`)).join(' / ') })}</p>}
+            {protocolChoices.map(({ agent, usable, label, autoLabel }) => <label key={agent.id} className="flex items-center justify-between">{agent.name}
+              <Select value={(harnessProtocolSelection[agent.id] as string | undefined) ?? 'auto'} onValueChange={(value) => setHarnessProtocols((current) => Object.fromEntries([...Object.entries(current ?? harnessProtocolSelection).filter(([harness]) => harness !== agent.id), ...(value && value !== 'auto' ? [[agent.id, value as ModelProtocol] as const] : [])]))}>
+                <SelectTrigger data-testid={`custom-model-protocol-${agent.id}`}><SelectValue>{harnessProtocolSelection[agent.id] ? label(harnessProtocolSelection[agent.id]) : autoLabel}</SelectValue></SelectTrigger>
+                <SelectContent align="end"><SelectItem value="auto">{autoLabel}</SelectItem>
+                  {usable.map((protocol) => <SelectItem key={protocol} value={protocol}>{label(protocol)}</SelectItem>)}
+                </SelectContent>
+              </Select></label>)}
+          </div>}
           {failure && <p className="subscription-error" role="alert">{failure}</p>}
           <div className="flex items-center justify-between gap-4"><p className="subscription-connection-description">{translate('subscriptions.connections.private')}</p><div className="flex gap-2">
             <Button type="button" variant="outline" size="sm" disabled={!!busy} onClick={onClose}>{translate('common.cancel')}</Button>

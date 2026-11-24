@@ -176,6 +176,7 @@ const PaneCell = observer(function PaneCell({
   draggingTabId: string | null;
 }) {
   const sessionView = useWorkspaceViewModel();
+  const { workspaceId } = useSessionViewContext();
   const block = useScreenBlock();
   const { paneLayout } = sessionView;
   const group = paneLayout.groups.find((g) => g.paneId === paneId);
@@ -197,6 +198,7 @@ const PaneCell = observer(function PaneCell({
       <div className="h-full min-h-0 min-w-0" onPointerDown={(event) => { if (makesPaneCurrent(event.target)) paneLayout.setActiveGroup(paneId); }} onFocusCapture={(event) => { if (makesPaneCurrent(event.target)) paneLayout.setActiveGroup(paneId); }} data-pane-cell={paneId}>
         <PaneContent
           part={part}
+          conversationsOnly={!workspaceId}
           emptyState={<PaneEmptyState />}
           {...strip}
           contentOverlay={splitEdges.length > 0 ? <PaneEdgeDropZones paneId={paneId} edges={splitEdges} /> : null}
