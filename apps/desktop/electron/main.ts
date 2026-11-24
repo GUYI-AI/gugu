@@ -273,7 +273,7 @@ import { assistantWorkCoordinator } from '@gugu/core/cloud/assistantWorkRouting'
 import { createDesktopAssistantWorkReconciler } from './assistant-work-reconciliation'
 import { enqueueAssistantWorkReport } from '@gugu/core/cloud/assistantWorkReports'
 import {withAssistantWorkReply} from '@gugu/core/shared/assistantWorkReply'
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from '@gugu/core/shared/assistantProvision'
 import { assistantHomeKind } from '@gugu/core/shared/assistantPolicy'
 import { landTaskCardFirstTurn } from './sessionpage/task-card-first-turn'
 import { withQuestionCard } from './sessionpage/question-card'
@@ -1797,10 +1797,9 @@ function assistantWorkDeliveryHost(): AssistantWorkOutboxHost {
       if (assistantCache?.ownerId === current.ownerId && assistantCache.until > Date.now()) return assistantCache.value
       const auth = await desktopAuthProvider().getAuth()
       if (!auth?.accessToken || auth.userId !== current.ownerId) return null
-      const {data,error} = await makeIdentityClient(auth.accessToken).from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-        .eq('owner_user_id',current.ownerId).eq('member_key','assistant')
+      const {data,error} = await makeIdentityClient(auth.accessToken).rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
       if (error) throw error
-      const value = pickAssistant((data ?? []) as AssistantProvisionRow[])
+      const value = pickAssistant(data)
       assistantCache = {ownerId:current.ownerId,until:Date.now()+60000,value}
       return value
   }
@@ -5085,10 +5084,9 @@ app.whenReady().then(async () => {
           const current = await assistantWorkDeliveryHost().context()
           if (!current || current.ownerId !== auth.userId) throw new Error('Work account changed')
           const identity = makeIdentityClient(auth.accessToken!)
-          const { data, error } = await identity.from('agent_provisions').select(ASSISTANT_PROVISION_SELECT)
-            .eq('owner_user_id', auth.userId).eq('member_key', 'assistant')
+          const { data, error } = await identity.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
           if (error) throw error
-          const assistant = pickAssistant((data ?? []) as AssistantProvisionRow[])
+          const assistant = pickAssistant(data)
           if (!assistant) throw new Error('Personal assistant is not available')
           const receipt = await enqueueAssistantWorkReport({
             rpc: (name, args) => current.client.rpc(name, args),

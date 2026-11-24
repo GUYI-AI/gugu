@@ -1,29 +1,26 @@
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { identityDb } from './supabase'
 import { rendererLogger } from './log'
-import { ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantProvisionRow } from './assistantProvision'
+import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, pickAssistant } from './assistantProvision'
 import { replica, useReplica, type Reading } from './replica'
 import { subscribePrivateUserEventBus, unsubscribePrivateUserEventBus } from './realtimeChannel'
 import { useAuth } from '../store/auth'
 import type { ContactsLoadStatus } from '../store/contactsContext'
 
-/** 这个人的个人助理是谁(`member_key='assistant'`);`provisionDeviceId` = 库里那一行记的那台;`agentId: null` = 读到了、还没有。 */
+/** 这个人的个人助理是谁(助理 App 在账号上绑定的 agent,`my_app_agent`);`provisionDeviceId` = 它现在住的那台;`agentId: null` = 读到了、还没有。 */
 export type MyAssistant = { agentId: string | null; provisionDeviceId: string | null }
 
 const log = rendererLogger('assistant/identity')
 
-async function readMyAssistant(owner: string): Promise<MyAssistant> {
+async function readMyAssistant(_owner: string): Promise<MyAssistant> {
   const { data, error, status } = await identityDb
-    .from('agent_provisions')
-    .select(ASSISTANT_PROVISION_SELECT)
-    .eq('member_key', 'assistant')
-    .eq('owner_user_id', owner)
+    .rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS)
   if (error) {
     // 读不到 ≠ 没有助理:读数就是错误,由看的一方说「读不到」。带着 code / status(瞬时的还是固定的,看的一方据此说)。
-    log.error({ error: error.message }, 'read assistant provision failed')
+    log.error({ error: error.message }, 'read assistant binding failed')
     throw Object.assign(new Error(error.message), { code: error.code, status })
   }
-  const pick = pickAssistant((data ?? []) as AssistantProvisionRow[])
+  const pick = pickAssistant(data)
   return { agentId: pick?.agentId ?? null, provisionDeviceId: pick?.deviceId ?? null }
 }
 

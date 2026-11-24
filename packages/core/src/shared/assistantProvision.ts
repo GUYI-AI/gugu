@@ -1,5 +1,7 @@
 import type { AgentProvision } from './types/agentProvision';
 
+// The assistant setup flow still creates the agent through a provision marker (`member_key='assistant'`); the database
+// binds the agent it creates to the assistant App. These describe that marker, for the setup and close flows only.
 export const ASSISTANT_PROVISION_SELECT = 'agent_user_id,device_id,member_key,phase,created_at,agent:users!agent_provisions_agent_user_id_fkey(removed_at)';
 type ProvisionIdentity = { removed_at: string | null };
 export type AssistantProvisionRow = Pick<AgentProvision, 'agent_user_id' | 'device_id' | 'member_key' | 'phase' | 'created_at'> & {
@@ -11,20 +13,19 @@ export function provisionIdentityRemovedAt(row: Pick<AssistantProvisionRow, 'age
   const identity = Array.isArray(row.agent) ? row.agent.length === 1 ? row.agent[0] : null : row.agent;
   return identity?.removed_at;
 }
-export type AssistantPick = { agentId: string; deviceId: string };
-const GONE_PHASES = new Set<AgentProvision['phase']>(['failed', 'cancelling', 'cancelled']);
 
-/** Personal identity follows the latest live provision marker, independent of name or host. */
-export function pickAssistant(rows: readonly AssistantProvisionRow[]): AssistantPick | null {
-  const live = rows.filter(row => {
-    if (row.member_key !== 'assistant' || !row.agent_user_id || GONE_PHASES.has(row.phase)) return false;
-    // archive_user retains the identity and its provision for history. A stale
-    // completed marker cannot resurrect a governed-removed personal assistant.
-    const removedAt = provisionIdentityRemovedAt(row);
-    if (removedAt === undefined) throw new Error('Could not verify the personal assistant identity');
-    return removedAt === null;
-  });
-  live.sort((a, b) => b.created_at.localeCompare(a.created_at));
-  const top = live[0];
-  return top?.agent_user_id ? { agentId: top.agent_user_id, deviceId: top.device_id } : null;
+/** The App the personal assistant is: the person's assistant is whichever agent this App is bound to on the account. */
+export const ASSISTANT_APP_ID = 'gugu-assistant';
+/** `identity.my_app_agent` with these args: the caller's live agent bound to the assistant App, and the device it lives on. */
+export const ASSISTANT_BINDING_RPC = 'my_app_agent';
+export const ASSISTANT_BINDING_ARGS = { p_app_id: ASSISTANT_APP_ID } as const;
+export type AssistantPick = { agentId: string; deviceId: string };
+
+/** The rows `my_app_agent` returns (none or one) as the assistant; anything else is not a reading. */
+export function pickAssistant(rows: unknown): AssistantPick | null {
+  if (!Array.isArray(rows) || rows.length > 1) throw new Error('Could not verify the personal assistant identity');
+  const row = rows[0] as { agent_user_id?: unknown; device_id?: unknown } | undefined;
+  if (!row) return null;
+  if (typeof row.agent_user_id !== 'string' || typeof row.device_id !== 'string') throw new Error('Could not verify the personal assistant identity');
+  return { agentId: row.agent_user_id, deviceId: row.device_id };
 }
