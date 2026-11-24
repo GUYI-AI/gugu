@@ -11,6 +11,7 @@ import {
 import { useUiPortalContainer } from '@gugu/session-ui/react/primitives';
 import { Dialog, DialogOverlay, DialogPortal } from '@renderer/lib/ui/dialog';
 import { cn } from '@renderer/utils/utils';
+import { useModalGeometry } from './use-modal-geometry';
 import { modalStore } from './modal-store';
 import { noteOverlayRequest } from '@/lib/localRendererDiagnostics';
 
@@ -106,6 +107,7 @@ export const ModalRenderer = observer(function ModalRenderer() {
   };
 
   const popupRef = useRef<HTMLDivElement>(null);
+  const { frame, cursor, start, move, end } = useModalGeometry(popupRef, lastRequestRef.current, !!displayEntry?.movableAndResizable);
 
   // Restore focus to the element captured by modalStore.setModal when the modal closes.
   useEffect(
@@ -137,12 +139,18 @@ export const ModalRenderer = observer(function ModalRenderer() {
   return (
     <Dialog key={portal.revision} open={modalStore.isOpen} onOpenChange={handleOpenChange}>
       <DialogPortal container={portalContainer}>
-        <DialogOverlay />
+        <DialogOverlay className={cursor === 'grabbing' ? 'cursor-grabbing' : cursor === 'nwse-resize' ? 'cursor-nwse-resize' : undefined} />
         <DialogPrimitive.Popup
           ref={popupRef}
           finalFocus={false}
           initialFocus={initialFocus}
           data-slot="dialog-content"
+          style={frame ? { ...frame, translate: 'none', maxHeight: `calc(100dvh - ${frame.top + 8}px)`, maxWidth: frame.width === undefined ? undefined : 'none' } : undefined}
+          onPointerDown={start}
+          onPointerMove={move}
+          onPointerUp={end}
+          onPointerCancel={end}
+          onLostPointerCapture={end}
           onKeyDownCapture={(e) => {
             if ((e.metaKey || e.ctrlKey || e.altKey) && e.key === 'Enter') {
               e.preventDefault();
@@ -155,6 +163,9 @@ export const ModalRenderer = observer(function ModalRenderer() {
           }}
           className={cn(
             'fixed left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col overflow-hidden rounded-xl bg-background-quaternary text-sm shadow-lift duration-[var(--dur-med,180ms)] data-closed:duration-[var(--dur-fast,120ms)] outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+            displayEntry?.movableAndResizable && 'transition-none',
+            cursor === 'grabbing' && 'cursor-grabbing [&_*]:cursor-grabbing!',
+            cursor === 'nwse-resize' && 'cursor-nwse-resize [&_*]:cursor-nwse-resize!',
             POSITION_CLASSES[displayEntry?.position ?? 'center'],
             SIZE_CLASSES[displayEntry?.size ?? 'md']
           )}

@@ -25,7 +25,7 @@ export type { ModalSize, ModalPosition, ModalRegistryEntry } from '@/components/
 export const modalRegistry = {
   agentHomeReimportModal: createModal(ReimportDialog, { size: 'lg' }),
   commandPaletteModal: createModal(CommandPaletteModal, { size: 'md' }),
-  globalSearchModal: createModal(GlobalSearchModal, { size: 'lg', position: 'upper' }),
+  globalSearchModal: createModal(GlobalSearchModal, { size: 'lg', position: 'upper', movableAndResizable: true }),
   localFolderProjectModal: createModal(LocalFolderProjectModal, { size: 'sm' }),
   createProjectNameModal: createModal(CreateProjectNameModal, { size: 'sm' }),
   githubDeviceFlowModal: createModal(GithubDeviceFlowModal, { size: 'md' }),

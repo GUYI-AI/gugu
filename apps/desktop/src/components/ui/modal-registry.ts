@@ -11,6 +11,7 @@ export type ModalRegistryEntry<TProps = unknown, TResult = unknown> = {
   component: ModalComponent<TProps, TResult>;
   size?: ModalSize;
   position?: ModalPosition;
+  movableAndResizable?: boolean;
   ignoreOutsidePressAfterWindowBlur?: boolean;
 };
 

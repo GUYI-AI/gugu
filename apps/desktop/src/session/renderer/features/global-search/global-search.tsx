@@ -226,9 +226,11 @@ export function GlobalSearch({ tasks, names = false, desktop = false, currentGro
   const countLabel = (count: number) => (view.capped && count >= SEARCH_LIMIT ? `${SEARCH_LIMIT}+` : String(count))
 
   return (
-    <div className="flex max-h-[min(600px,80vh)] flex-col overflow-hidden max-sm:h-full max-sm:max-h-none" data-testid="global-search">
+    <div className={cn('relative flex flex-col overflow-hidden', desktop ? 'min-h-0 flex-1' : 'max-h-[min(600px,80vh)] max-sm:h-full max-sm:max-h-none')} data-testid="global-search">
+      {desktop && <div data-modal-drag="" data-testid="global-search-drag" aria-hidden="true" className="window-no-drag-region h-3 shrink-0 cursor-grab touch-none active:cursor-grabbing" />}
       {/* The phone page: the field is a filled capsule, roomier than the desktop modal's bare row. */}
-      <div className="flex h-12 shrink-0 items-center gap-2 px-4 max-sm:h-16 max-sm:gap-3">
+      <div className={cn('flex h-12 shrink-0 items-center gap-2 max-sm:h-16 max-sm:gap-3',
+        desktop ? 'mx-2 rounded-lg border border-border px-2' : 'px-4')} data-testid="global-search-bar">
         <div className="flex h-full min-w-0 flex-1 items-center gap-2 max-sm:h-11 max-sm:rounded-full max-sm:bg-foreground/[0.06] max-sm:px-4">
         <SearchIcon className="size-4 shrink-0 text-foreground/40 max-sm:size-5" />
         {chips.map((chip, index) => (
@@ -294,7 +296,7 @@ export function GlobalSearch({ tasks, names = false, desktop = false, currentGro
 
       {/* The previous words' results while these words' are on their way: kept in place and dimmed after 150 ms (.gg-stale, the unknown slot's rule), ❌ emptied per keystroke. */}
       <div ref={setList} data-growing-list="" data-stale={view.stale || undefined} aria-busy={view.stale || undefined}
-        className={cn('flex-1 overflow-y-auto px-2', hasQuery && 'min-h-48 pb-2', view.stale && 'gg-stale')} role="listbox" aria-label={translate('globalSearch.results')}>
+        className={cn('flex-1 overflow-y-auto px-2', desktop ? 'min-h-0' : hasQuery && 'min-h-48', hasQuery && 'pb-2', view.stale && 'gg-stale')} role="listbox" aria-label={translate('globalSearch.results')}>
         {view.error && <ReadFailedLine className="px-3 py-2" message={view.error.message} onRetry={view.error.retry} />}
         {hasQuery && view.taskIndex?.state === 'preparing' && (facet === 'all' || facet === 'task') && (
           <div role="status" className="px-3 py-3 text-sm text-foreground/50">{view.taskIndex.total
@@ -422,6 +424,12 @@ export function GlobalSearch({ tasks, names = false, desktop = false, currentGro
           className="flex shrink-0 items-center border-t border-foreground/[0.08] px-4 py-2 text-left text-[length:var(--font-body)] text-foreground/60 hover:text-foreground">
           {translate('globalSearch.elsewhere', { count: view.elsewhere.capped ? `${view.elsewhere.count}+` : String(view.elsewhere.count) })}
         </button>
+      )}
+      {desktop && (
+        <div data-modal-resize="" data-testid="global-search-resize" aria-hidden="true"
+          className="window-no-drag-region group ml-auto flex h-3 w-6 shrink-0 cursor-nwse-resize touch-none items-end justify-end pr-1.5 pb-1">
+          <span className="size-2 rounded-br-sm border-r border-b border-foreground/35 group-hover:border-foreground/70" />
+        </div>
       )}
     </div>
   )
