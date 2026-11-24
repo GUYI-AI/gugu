@@ -103,8 +103,8 @@ export class ScreenLayoutStore {
   readonly parked = observable.array<ScreenGroupSnapshot>([], { deep: false });
   /** 这一屏是从左边哪一行进来的(contentKey);空屏 = null。 */
   entry: string | null = null;
-  /** 正在打开的这一样是从这屏里面点开的(withinEntry),它接着算这一屏的入口。 */
-  private within = false;
+  /** 正在打开的这一样算在哪一行入口下(withinEntry:这屏的入口;openUnder:话题算它的群),不另起入口。 */
+  private under: string | null = null;
 
   constructor() {
     makeObservable(this, {
@@ -297,7 +297,8 @@ export class ScreenLayoutStore {
     const key = contentKey(content);
     // 从这屏里面点开的:换掉这屏,入口不变(只有一块的那屏就是入口的一步,不另记)。
     const entry = this.currentEntry;
-    if (this.within && entry) {
+    const under = this.under;
+    if (under && under === entry) {
       if (this.order.length > 1) this.park();
       else this.clearScreen();
       this.showAlone(content, entry);
@@ -308,9 +309,10 @@ export class ScreenLayoutStore {
       this.showRoot(content);
       return;
     }
+    // 算在别的入口下的(从通知、链接开的话题):那个入口记着的、装着它的那一屏也是它的。
     const group =
       this.parked.find((entry) => entry.entry === key) ??
-      this.parked.find((entry) => Object.keys(entry.blocks).length > 1 && Object.values(entry.blocks).some((block) => contentKey(block) === key));
+      this.parked.find((entry) => (Object.keys(entry.blocks).length > 1 || (!!under && entry.entry === under)) && Object.values(entry.blocks).some((block) => contentKey(block) === key));
     this.park();
     if (group) {
       this.unpark(group);
@@ -319,7 +321,7 @@ export class ScreenLayoutStore {
       if (blockId) this.focus(blockId);
       return;
     }
-    this.showAlone(content, key);
+    this.showAlone(content, under ?? key);
   }
 
   /**
@@ -352,11 +354,17 @@ export class ScreenLayoutStore {
 
   /** 在这屏里面点开(资料卡「发消息」、内层侧栏的智能体):这一下打开的仍算这屏入口的屏。 */
   withinEntry(open: () => void): void {
-    this.within = true;
+    this.openUnder(this.currentEntry, open);
+  }
+
+  /** 这一下打开的算在 `entry` 那一行下:切走时这一屏记在它名下,再点它回到这里(话题的入口永远是它的群)。 */
+  openUnder(entry: string | null, open: () => void): void {
+    const outer = this.under;
+    this.under = entry;
     try {
       open();
     } finally {
-      this.within = false;
+      this.under = outer;
     }
   }
 

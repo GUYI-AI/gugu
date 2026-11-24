@@ -440,6 +440,36 @@ describe('每个入口记着上次停在哪一屏(fe-continuity A16)', () => {
     expect(chatsOn(again)).toEqual(['dm']);
   });
 
+  it('话题的入口永远是它的群:群里进话题、从别处(通知、链接)开话题,切走再点群都回到那个话题;话题没了回主群', () => {
+    const screen = new ScreenLayoutStore();
+    const g1 = contentKey(chat('g1'));
+    screen.show(chat('g1'));
+    screen.openUnder(g1, () => screen.show(chat('t1')));
+    screen.show(chat('dm'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen), 'back to the topic it was left on').toEqual(['t1']);
+    expect(screen.entry).toBe(g1);
+    screen.show(chat('g1'));
+    expect(chatsOn(screen), 'the group row while inside its topic = the group itself').toEqual(['g1']);
+
+    screen.show(chat('dm'));
+    screen.openUnder(g1, () => screen.show(chat('t2')));
+    expect(screen.entry, 'a topic opened from elsewhere still stands under its group').toBe(g1);
+    screen.show(chat('dm'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen)).toEqual(['t2']);
+
+    screen.show(chat('dm'));
+    screen.openUnder(g1, () => screen.show(chat('t2')));
+    expect(chatsOn(screen), 'reopening it brings back the screen kept under its group').toEqual(['t2']);
+    expect(screen.parkedContents).toEqual([]);
+
+    screen.show(chat('dm'));
+    screen.forgetContent(chat('t2'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen), 'its topic is gone: the group itself').toEqual(['g1']);
+  });
+
   it('读回的旧摆法(没记入口)里只有一块:那一块就是入口', () => {
     const before = new ScreenLayoutStore();
     before.show(chat('g1'));
