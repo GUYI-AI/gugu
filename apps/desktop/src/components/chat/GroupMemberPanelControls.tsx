@@ -131,7 +131,7 @@ export function useGroupMemberPanelControls({ chatId, chatKind, settings, snapsh
 
   const profileTrigger = useCallback((memberId: string): { handle: MemberProfileHandle; payload: ActiveMemberProfile } | null => {
     const profile = profileOf(memberId)
-    return profile ? { handle: profileCard, payload: { member: profile, preferredSide: 'left', openedFrom: 'aside' } } : null
+    return profile ? { handle: profileCard, payload: { member: profile, preferredSide: 'left' } } : null
   }, [profileCard, profileOf])
 
 

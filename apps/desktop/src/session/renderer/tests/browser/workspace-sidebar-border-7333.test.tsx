@@ -56,7 +56,7 @@ it('the actual project sidebar has no full-height border behind the inset readin
   const surface = harness.container.querySelector<HTMLElement>('[data-workspace-content-surface]')!;
   expect(sidebar, 'the real inner sidebar must be present').not.toBeNull();
   expect(sidebar.getBoundingClientRect().height).toBe(700);
-  expect(sidebar.getBoundingClientRect().width).toBe(240);
+  expect(sidebar.getBoundingClientRect().width).toBe(236);
   expect(getComputedStyle(sidebar).borderInlineEndWidth).toBe('0px');
   expect(surface.getBoundingClientRect().top - sidebar.getBoundingClientRect().top).toBe(5);
   expect(sidebar.getBoundingClientRect().bottom - surface.getBoundingClientRect().bottom).toBe(5);

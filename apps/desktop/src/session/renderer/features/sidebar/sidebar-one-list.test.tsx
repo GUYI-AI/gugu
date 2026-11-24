@@ -136,16 +136,16 @@ describe('rows that are not a conversation yet', () => {
 });
 
 describe('they are drawn as a project group\'s conversation row is (ListRow + project cover), not as the old folder row', () => {
-  it('cover, name, time, then the chip and the preview in the list row\'s slots; a click opens, ⌘ click opens beside', async () => {
+  it('cover, name, no time (界面减法 #66), then the chip and the preview in the list row\'s slots; a click opens, ⌘ click opens beside', async () => {
     const { OneListProjectRow } = await import('./project-row-parts');
     const open = vi.fn();
-    await act(async () => root.render(<OneListProjectRow name="Weekend" faceId="sample-project" tag="Sample" time="14:34" preview="Codex 6: Three files" selected onOpen={open} />));
+    await act(async () => root.render(<OneListProjectRow name="Weekend" faceId="sample-project" tag="Sample" preview="Codex 6: Three files" selected onOpen={open} />));
     const row = host.querySelector<HTMLElement>('[data-slot="list-row"]')!;
     expect(row.className).toContain('gg-list-row');
     expect(row.dataset.selected).toBe('true');
     expect(row.querySelector('.gg-list-row-leading [data-group-face]'), 'a project wears the face a group does').not.toBeNull();
     expect(row.querySelector('.gg-list-row-title')!.textContent).toBe('Weekend');
-    expect(row.querySelector('.gg-list-row-meta')!.textContent).toBe('14:34');
+    expect(row.querySelector('.gg-list-row-meta')).toBeNull();
     const subtitle = row.querySelector('.gg-list-row-subtitle')!;
     expect(subtitle.querySelector('.gg-chip')!.textContent).toBe('Sample');
     expect(subtitle.textContent).toBe('Sample Codex 6: Three files');
@@ -154,7 +154,7 @@ describe('they are drawn as a project group\'s conversation row is (ListRow + pr
     expect(open.mock.calls).toEqual([[false], [true]]);
   });
 
-  it('a project with no group chat yet: nothing said, so an empty preview line, same two lines (no time given = none shown)', async () => {
+  it('a project with no group chat yet: nothing said, so an empty preview line, same two lines', async () => {
     const { OneListProjectRow } = await import('./project-row-parts');
     await act(async () => root.render(<OneListProjectRow name="App" faceId="project-app" preview="" selected={false} onOpen={vi.fn()} />));
     const row = host.querySelector<HTMLElement>('[data-slot="list-row"]')!;

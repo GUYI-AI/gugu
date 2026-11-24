@@ -81,9 +81,10 @@ it('the two-line group button covers the avatar and lower row, with independent 
   const row = (active: boolean) => (
     <div className="gugu-skin emlight" style={{ position: 'fixed', inset: 0 }}>
       <SessionLocalizationProvider>
-        <div style={{ width: 239 }}>
+        {/* The column's content box (v16: 220 wide less its 1px border to the zero list). */}
+        <div data-region="inner-sidebar" style={{ width: 219 }}>
           <InnerHeadRowLayout headKey="group" name="产品讨论群" active={active} onOpen={open} trailingButtons={1}
-            avatar={<span data-proof-avatar="" className="block size-8" />}
+            avatar={<span data-proof-avatar="" className="block size-10" />}
             createAction={{ label: '创建智能体', onClick: create }}
           >
             <InnerSidebarFoldButton />
@@ -96,8 +97,9 @@ it('the two-line group button covers the avatar and lower row, with independent 
   const button = () => harness.container.querySelector<HTMLElement>('[data-inner-head-open]')!;
   const group = button().getBoundingClientRect();
   const avatar = harness.container.querySelector('[data-proof-avatar]')!.getBoundingClientRect();
-  expect([group.width, group.height, getComputedStyle(button()).borderRadius]).toEqual([215, 56, '8px']);
-  expect([avatar.left - group.left, avatar.top - group.top, avatar.width, avatar.height]).toEqual([8, 12, 32, 32]);
+  // v16 design: the block is 173 × 58, radius 12, its 40px avatar 6 in and 9 down; the collapse button sits outside it.
+  expect([group.width, group.height, getComputedStyle(button()).borderRadius]).toEqual([173, 58, '12px']);
+  expect([avatar.left - group.left, avatar.top - group.top, avatar.width, avatar.height]).toEqual([6, 9, 40, 40]);
   const fold = harness.container.querySelector<HTMLElement>('[data-inner-head-fold]')!;
   const icon = fold.querySelector('svg.lucide-panel-left')!;
   expect([fold.offsetWidth, fold.offsetHeight, getComputedStyle(fold).borderRadius]).toEqual([28, 28, '8px']);
@@ -109,13 +111,14 @@ it('the two-line group button covers the avatar and lower row, with independent 
   await openButton.hover({ position: bottomOfAvatar });
   expect(getComputedStyle(button()).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   expect(hoverLayer().backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
-  expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['0px', '0px', '8px']);
+  // The hover covers the block only, not the collapse button 4px to its right.
+  expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['0px', '32px', '12px']);
   await openButton.click({ position: bottomOfAvatar });
   expect(open).toHaveBeenCalledOnce();
 
   const createButton = page.getByRole('button', { name: '创建智能体', exact: true });
   const createBox = harness.container.querySelector('[data-inner-head-create]')!.getBoundingClientRect();
-  expect([createBox.left - group.left, createBox.top - group.top, createBox.width, createBox.height]).toEqual([44, 28, 92, 24]);
+  expect([createBox.left - group.left, createBox.top - group.top, createBox.height]).toEqual([52, 30, 22]);
   await createButton.click();
   expect(create).toHaveBeenCalledOnce();
   expect(open).toHaveBeenCalledOnce();
@@ -123,8 +126,9 @@ it('the two-line group button covers the avatar and lower row, with independent 
   await page.elementLocator(harness.container.firstElementChild!).hover({ position: { x: 450, y: 100 } });
   await harness.render(row(true));
   expect(button()).toHaveAttribute('aria-current', 'page');
-  expect(getComputedStyle(button()).backgroundColor).toBe('rgba(0, 0, 0, 0)');
-  // Keyboard focus keeps the same complete hover surface on the selected card.
+  // v16: the open group's block wears the selected fill (7% of the foreground).
+  expect(getComputedStyle(button()).backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+  // Keyboard focus keeps the same hover surface on the selected block.
   expect(hoverLayer().content).toBe('""');
-  expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['0px', '0px', '8px']);
+  expect([hoverLayer().left, hoverLayer().right, hoverLayer().borderRadius]).toEqual(['0px', '32px', '12px']);
 });

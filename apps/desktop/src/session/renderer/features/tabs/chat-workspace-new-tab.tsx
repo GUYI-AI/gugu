@@ -15,6 +15,6 @@ export const ChatWorkspaceNewTab = observer(function ChatWorkspaceNewTab({ layou
   const Icon = initial ? PanelRight : Plus;
   return <Button size="icon-sm" variant="ghost" aria-label={name} title={name}
     data-testid="chat-new-workspace-tab" onClick={() => openChatWorkspaceNewTab(layout)}>
-    <Icon className="size-3.5" />
+    <Icon className="size-4" />
   </Button>;
 });

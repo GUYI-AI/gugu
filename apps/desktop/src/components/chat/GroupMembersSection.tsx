@@ -5,6 +5,7 @@ import { useMobileShell } from '../../hooks/useMobileShell'
 import type { ChatItem, GroupCollabSnapshot, NotificationLevel } from '@gugu/core/shared/types/chat'
 import { GroupFolderRow, GroupMemberCount, GroupMembersRow } from './GroupInfoRows'
 import { GroupNameRow } from './GroupNameRow'
+import { GroupDetailsMain } from './GroupDetailsMain'
 import { Avatar } from '../Avatar'
 import { Button } from '../ui/Button'
 import { buildUnifiedMembers } from './groupMemberModels'
@@ -208,14 +209,14 @@ export function GroupMembersSection({
         </div>
       </>
     )
+  } else if (!mobileShell) { // 桌面:第 16 版「详情」页(GroupDetailsMain);手机整页照旧,左上返回 = 关。
+    content = <GroupDetailsMain chat={chat} name={groupName} settings={settings} manager={viewerIsManager} memberIds={unifiedMembers.map((member) => member.id)} total={totalMembers} people={snapshot ? snapshot.humans.length : null} agents={snapshot ? snapshot.agents.length : null} avatar={{ uploading: avatarUploading, onFile: handleAvatarFile, onReset: handleAvatarReset }} onRename={handleRename} onOpenPage={push} onOpenText={openTextPage} onClose={onClose} onClearMessages={onClearMessages} onSetNotificationLevel={onSetNotificationLevel} onTogglePinned={onTogglePinned} exit={canExit ? { owner: viewerRole === 'owner', busy, confirming: confirmExit, setConfirming: setConfirmExit, run: () => { void handleExit() } } : null} errorLine={errorLine} />
   } else {
     content = (
       <>
-        {/* 桌面上群信息是一枚页签:它自己就是标题和 ×,只有二级页画返回;手机整页照旧左上返回 = 关。 */}
-        {mobileShell ? <SettingsPageHead title={t('header.groupInfoAndSettings')} onClose={onClose} mobile /> : null}
+        <SettingsPageHead title={t('header.groupInfoAndSettings')} onClose={onClose} mobile />
         <div style={bodyStyle}>
           <div style={profileRowStyle}>
-            {/* .gi 52px 群头像。@@@group-avatar (#1164 G1):manager 点击打开「修改头像」、拖入图片直接更换;非 manager 只读。 */}
             <div
               data-testid="group-avatar"
               title={viewerIsManager ? t('group.settings.changeAvatar') : undefined}
@@ -245,7 +246,6 @@ export function GroupMembersSection({
           {viewerIsManager && settings ? (
             <SettingsNavRow title={t('group.settings.manage')} testId="group-settings-manage" onClick={() => push('manage')} />
           ) : null}
-
           <div style={settingsSectionLabelStyle}>{t('group.settings.sectionChat')}</div>
           <ChatManagementActions
             activeChat={chat}
