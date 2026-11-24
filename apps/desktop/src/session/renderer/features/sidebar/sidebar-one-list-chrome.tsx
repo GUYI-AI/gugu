@@ -1,4 +1,4 @@
-import { Archive, ChevronsLeft, ChevronsRight, Clock, FolderPlus, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
+import { Archive, Clock, FolderPlus, PanelLeft, Plus, SquarePen, UserRound, Users } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useConversationVisibility } from '@/components/chat/useConversationVisibility';
@@ -142,7 +142,7 @@ export function SidebarOneListTop({ collapsed, onCreateAgent }: { collapsed: boo
 
 /**
  * The row under the head, 40px in both states so nothing under it moves when the sidebar folds: on the rail it holds
- * 「»」 on the avatars' axis (the head's band is the traffic lights' there), expanded the search field (界面减法 #46:
+ * the fold button on the avatars' axis (the head's band is the traffic lights' there), expanded the search field (界面减法 #46:
  * search is at the top only while the sidebar is open). Each changes where the rows take the rail's layout
  * (@@@panel-track); the field fades with the names before that.
  */
@@ -150,7 +150,7 @@ export function SidebarRailRow() {
   const railLayout = useLeftRailLayout();
   const fieldRef = useSidebarProgressFollow<HTMLDivElement>(followNames);
   return (
-    // Design v16: on the rail 「»」 is centred on the avatars' axis (34 of 68), 38 from the window's top, under the traffic
+    // Design v16: on the rail the fold button is centred on the avatars' axis (34 of 68), 38 from the window's top, under the traffic
     // lights. Open, the search field keeps its side inset (12) above and below it too (yangchichi 11-24: the gaps were too wide).
     <div className={cn('flex shrink-0 items-start', railLayout ? '-mt-[7px] h-9 justify-center' : 'p-3')} data-sidebar-rail-row="">
       {railLayout ? <SidebarFoldButton /> : <div ref={fieldRef} className="w-full"><SidebarSearchTrigger /></div>}
@@ -158,7 +158,7 @@ export function SidebarRailRow() {
   );
 }
 
-/** Folds / unfolds the sidebar: 「«」 at the head's right end expanded, 「»」 on the rail (SidebarRailRow). */
+/** Folds / unfolds the sidebar: the fold button at the head's right end expanded, the fold button on the rail (SidebarRailRow). */
 function SidebarFoldButton() {
   const { translate } = useSessionMessages();
   const { isLeftOpen, toggleLeft } = useWorkspaceLayoutContext();
@@ -169,7 +169,7 @@ function SidebarFoldButton() {
   return (
     <Hint label={shortcut ? `${foldLabel} (${shortcut})` : foldLabel} side={isLeftOpen ? 'bottom' : 'right'}>
       <IconButton size="md" tone="strong" className="window-no-drag-region !h-[26px] !w-[30px] !rounded-[7px]" aria-label={foldLabel} aria-expanded={isLeftOpen} onClick={toggleLeft} data-testid="sidebar-fold">
-        {isLeftOpen ? <ChevronsLeft /> : <ChevronsRight />}
+        <PanelLeft />
       </IconButton>
     </Hint>
   );
@@ -224,8 +224,8 @@ function importableTools(locale: string): string {
 }
 
 /**
- * The head is the window's drag band. Expanded it ends in 「«」; on the rail the band is left to the traffic lights and
- * 「»」 is the row under it (SidebarRailRow). Over the head, once: C9 (useSidebarIntro), drawn next to the step's button
+ * The head is the window's drag band. Expanded it ends in the fold button; on the rail the band is left to the traffic lights and
+ * the fold button is the row under it (SidebarRailRow). Over the head, once: C9 (useSidebarIntro), drawn next to the step's button
  * so it never covers it.
  *
  * `innerShownFor`: what the inner sidebar is drawn for (innerSidebarShownFor: a chat, or the sample), null when none.
@@ -369,5 +369,5 @@ export const SidebarOneListFoot = observer(function SidebarOneListFoot() {
   );
 });
 
-/** Each step's button: 「«」 in the head, 会话历史 in the foot. */
+/** Each step's button: the fold button in the head, 会话历史 in the foot. */
 const SIDEBAR_INTRO_ANCHOR = { collapse: 'sidebar-fold', history: 'sidebar-session-history' } as const;
