@@ -1516,33 +1516,76 @@ html[data-gugu-dragging] :is(webview, iframe) {
   display: none;
 }
 
-/* 一块左上的 ⋮⋮(spec session-page「一屏几块」,照 Zen 分屏块的拖柄):平时只留位置,指着页签条才淡淡显出来,
-   指着它时深一档,整块描一圈 —— 告诉你抓的是整块。把手用两条横线,静止时隐藏。 */
+/* 一块左上的把手(spec session-page「一屏几块」;yangchichi 11-24 定稿 V2,照 iPadOS 26 窗口左上那颗小胶囊):只在分屏时有,
+   44×22 的胶囊、三颗灰点,距卡片左缘 10、在页签条里垂直居中。材质是现成的 --glass-* (@@@no-glass:实色面 + hairline + lift,
+   ❌ 半透明 + 模糊)。悬停加全 app 那一档状态色、点变深、整块描一圈;按下再深一档。它所在的页签条让出它那一截
+   (--block-grip-lane,TabStripShell 读),胶囊栏里的名字也不压到它上面。 */
+.session-tab-bar:has([data-block-grip]) {
+  --block-grip-lane: 50px;
+}
+.session-tab-bar:has([data-block-grip]) [data-chat-workspace-title] {
+  max-width: calc(100% - 2 * (var(--block-grip-lane) + 14px));
+}
 .screen-block-grip {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  translate: 0 -50%;
   display: flex;
-  height: 24px;
-  width: 20px;
+  width: 44px;
+  height: 22px;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  color: var(--color-foreground);
-  opacity: 0;
+  gap: 5px;
+  border-radius: 11px;
+  background: var(--glass-bg);
+  box-shadow: 0 0 0 0.5px var(--glass-border), var(--shadow-glass);
+  color: var(--faint-fg);
   cursor: grab;
-  transition: opacity var(--dur-fast);
+  -webkit-app-region: no-drag;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
-.session-tab-bar:hover .screen-block-grip,
-.session-tab-bar:focus-within .screen-block-grip {
-  opacity: 0.45;
+.screen-block-grip > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 .screen-block-grip:hover,
 .screen-block-grip:focus-visible:not([data-pointer-focus]) {
-  opacity: 1;
+  background: color-mix(in oklab, var(--state-tint) var(--state-hover-amount), var(--glass-bg));
+  color: var(--muted-fg);
 }
-.screen-block-grip-lines {
-  display: block;
-  width: 10px;
-  height: 5px;
-  border-block: 1.5px solid currentColor;
+.screen-block-grip:active {
+  background: color-mix(in oklab, var(--state-tint) var(--state-press-amount), var(--glass-bg));
+  color: var(--fg);
+  cursor: grabbing;
+}
+/* 拖起来跟手的那张图:整块(会话卡 + 它展开的右侧栏,一个单位)缩成一张小图,卡片按真实比例(block-grip.tsx blockDragImage)。 */
+.screen-block-ghost {
+  position: fixed;
+  top: -10000px;
+  left: -10000px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--page);
+  box-shadow: 0 0 0 0.5px var(--border-strong);
+  pointer-events: none;
+}
+.screen-block-ghost > div {
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 0 0 0 0.5px var(--border);
+}
+.screen-block-ghost > div:first-child {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg);
 }
 [data-screen-page]:has([data-block-grip]:hover)::after,
 [data-screen-block]:has([data-block-grip]:hover)::after {

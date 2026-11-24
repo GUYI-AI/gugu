@@ -7,7 +7,7 @@ import { screenLayout, type WindowableContent } from './screen-layout';
 import { closeScreenBlock, openInWindow, screenBlockElement, setBlockDropPreview } from './screen-layout-actions';
 
 /**
- * 每块页签条最左的 ⋮⋮(照 Zen 分屏块的拖柄):只在这屏分成几块时有,一块时没有 —— 只为挪动、拿走一块而在。
+ * 每块左上的把手(V2 小胶囊,照 iPadOS 26 窗口左上那颗):只在这屏分成几块时有,一块时没有 —— 只为挪动、拿走一块而在。
  * 它的样子只在这里和 index.css 的 .screen-block-grip:换样式只动这两处。
  * 按住拖:落在一块的边上 = 这一块挪过去;落在输入框上 = 插一枚 @(会话);拖到窗口外 = 单独成窗(会话、App);
  * 拖回内层侧栏(blockReturnDropTarget),或离开自己那块、松在哪儿都不收的地方 = 这一块从这屏拿走(取消并排);
@@ -40,7 +40,7 @@ export const BlockGrip = observer(function BlockGrip({
       onDragStart={(event) => startBlockDrag(event, blockId, content)}
       onDragEnd={(event) => endBlockDrag(event, content)}
     >
-      <span className="screen-block-grip-lines" aria-hidden="true" />
+      <i aria-hidden="true" /><i aria-hidden="true" /><i aria-hidden="true" />
     </span>
   );
   if (!menu) return grip;
@@ -69,8 +69,39 @@ function finishBlockDrag(): void {
   blockDrag = null;
 }
 
+/**
+ * 跟手的那张图是整块,❌ 只有页签条:会话卡和它展开的右侧栏是一个单位,一起浮起、一起落下(yangchichi 11-24)。
+ * 活的页(网页、终端、App)拍不进拖拽图,所以画一张按比例的小图:块里每张卡片一格,第一格写这一块的名字。
+ */
+const GHOST_SCALE = 0.4;
+function blockDragImage(blockId: string, title: string): HTMLElement | null {
+  const block = screenBlockElement(blockId);
+  if (!block) return null;
+  const rect = block.getBoundingClientRect();
+  const cards = [...block.ownerDocument.querySelectorAll<HTMLElement>('[data-chat-card], [data-chat-tool-card]')]
+    .map((card) => card.getBoundingClientRect())
+    .filter((card) => card.left >= rect.left - 1 && card.right <= rect.right + 1 && card.width > 0);
+  const ghost = block.ownerDocument.createElement('div');
+  ghost.className = 'screen-block-ghost';
+  for (const card of cards.length ? cards : [rect]) {
+    const cell = block.ownerDocument.createElement('div');
+    Object.assign(cell.style, { width: `${card.width * GHOST_SCALE}px`, height: `${rect.height * GHOST_SCALE}px` });
+    ghost.appendChild(cell);
+  }
+  ghost.firstElementChild!.textContent = title;
+  block.ownerDocument.body.appendChild(ghost);
+  return ghost;
+}
+
 function startBlockDrag(event: DragEvent<HTMLElement>, blockId: string, content: DraggedScreenContent): void {
-  setDraggedScreenContent(event.dataTransfer, content, event.currentTarget.closest<HTMLElement>('.session-tab-bar'));
+  setDraggedScreenContent(event.dataTransfer, content);
+  const ghost = blockDragImage(blockId, content.title);
+  if (ghost) {
+    // 指针咬在小图左上那颗把手的位置,像拎着它走。
+    event.dataTransfer.setDragImage(ghost, 32 * GHOST_SCALE + 4, 36 * GHOST_SCALE + 4);
+    // 快照要等这一帧画完才能拆(同 drag-screen-content 的 makeDragImage)。
+    requestAnimationFrame(() => ghost.remove());
+  }
   const view = event.currentTarget.ownerDocument;
   const accept = (over: globalThis.DragEvent) => over.preventDefault();
   // 冒到 document 还没人办:松在了不收的地方。离开了自己那块才拿走它(在自己那块上松手 = 没挪)。

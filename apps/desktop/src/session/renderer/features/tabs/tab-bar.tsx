@@ -280,7 +280,8 @@ export function TabStripShell({
       style={{
         height: `var(--tab-strip-height, ${WINDOW_CONTROL_BAR_HEIGHT_PX}px)`,
         // The plain edge is a variable (default 12px, the first tab's ears): a strip without ears (the tool card's) sets its own.
-        paddingInlineStart: leading === TAB_STRIP_LEADING_PX ? `var(--tab-strip-edge, ${TAB_STRIP_LEADING_PX}px)` : `${leading}px`,
+        // A split block's handle sits at the strip's start: the strip gives it its lane (--block-grip-lane, index.css).
+        paddingInlineStart: `calc(${leading === TAB_STRIP_LEADING_PX ? `var(--tab-strip-edge, ${TAB_STRIP_LEADING_PX}px)` : `${leading}px`} + var(--block-grip-lane, 0px))`,
       }}
       onClick={onClick}
     >
