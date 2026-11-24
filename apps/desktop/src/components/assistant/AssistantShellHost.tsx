@@ -6,6 +6,7 @@ import type { Device } from '@gugu/core/shared/types/chat'
 import { useAssistantDm } from './useAssistantDm'
 import { MeetingReminder } from './MeetingReminder'
 import { QuickChatHost } from './QuickChatHost'
+import { ASSISTANT_PROMOTED } from '@/session/shared/extensions/assistant-entry'
 import { AgentSettingsModal } from '../agentsettings/AgentSettingsModal'
 import { Button } from '../ui/Button'
 import { SettingsGroup, SettingsRow } from '../settings/SettingsPrimitives'
@@ -257,14 +258,14 @@ export function AssistantShellHost() {
       <AssistantMoveDialog />
       {/* 会议提醒(语音笔记):有个人助理才看日历 —— 录下的要交给它整理。 */}
       <MeetingReminder enabled={!!contact} />
-      {/* 快速聊天:全局快捷键叫出的那扇小窗(只在桌面版;没有它时小窗里说怎么开通)。 */}
-      <QuickChatHost
+      {/* 快速聊天:全局快捷键叫出的那扇小窗(只在桌面版;没有它时小窗里说怎么开通 —— 只在推广它时,assistant-entry.ts)。 */}
+      {ASSISTANT_PROMOTED || contact ? <QuickChatHost
         assistant={contact ? { id: contact.id, display_name: contact.display_name, avatar: contact.avatar } : null}
         assistantState={assistantState}
         chatId={dm.chatId}
         chatFailed={dm.failed}
         retryChat={dm.retry}
-      />
+      /> : null}
     </>
   )
 }
