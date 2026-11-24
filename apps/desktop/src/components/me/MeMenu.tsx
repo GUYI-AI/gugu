@@ -261,7 +261,7 @@ const MeButton = observer(function MeButton({ rail, onTabChange, pendingContacts
   const close = () => setOpen(false)
   const showSessions = () => onTabChange('tasks')
   const face = (size: number) => <Avatar name={name} avatarUrl={user?.avatarUrl} seed={user?.id} size={size} />
-  return (
+  return (<>
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Hint label={t('shell.accountMenu')} side={rail ? 'right' : 'top'}>
         <Popover.Trigger type="button" className={cn('gg-me-trigger', rail && 'gg-me-trigger-rail')} aria-label={t('shell.accountMenu')} data-on={open || undefined} data-testid="me-menu-trigger">
@@ -297,12 +297,12 @@ const MeButton = observer(function MeButton({ rail, onTabChange, pendingContacts
             <div className="gg-me-sep" />
             <MeRow icon={<Settings size={19} />} label={t('shell.settings')} keyHint="⌘,"
               testId={AUTOMATION_TEST_IDS.sidebarSettingsNav} onClick={() => { close(); onTabChange('settings') }} />
-            <UpdateBanner placement="rail" />
           </div>
         </Popover.Popup>
       </Popover.Positioner></Popover.Portal>
     </Popover.Root>
-  )
+    <UpdateBanner placement="rail" />
+  </>)
 })
 
 const NO_SLOTS: ReadonlyMap<string, HTMLElement> = new Map()

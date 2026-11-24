@@ -15,17 +15,14 @@ export function UpdateRailButton({ label, description, progress, busy, failed, o
   return (
     <Hint label={description ? `${label}: ${description}` : label}>
       <IconButton
-        className="gg-sidebar-item gg-update-rail"
+        className="gg-update-rail"
         aria-label={label}
         aria-disabled={busy || !onClick || undefined}
         aria-busy={busy || undefined}
         data-failed={failed || undefined}
-        data-downloading={progress !== undefined || undefined}
         onClick={busy ? undefined : onClick}
       >
-        <span className="gg-update-rail-icon" aria-hidden="true">
-          {failed ? <AlertTriangle size={18} /> : <Download size={18} />}
-        </span>
+        {failed ? <AlertTriangle aria-hidden="true" /> : <Download aria-hidden="true" />}
         {progress !== undefined && (
           <span
             className="gg-update-rail-progress"
