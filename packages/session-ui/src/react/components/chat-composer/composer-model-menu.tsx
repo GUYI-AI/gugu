@@ -242,7 +242,7 @@ function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffor
             <span>{effortLabel}</span>
             <span className={styles.modelDetailControlValue}>{effort?.name}<ChevronRight size={14} aria-hidden /></span>
           </Popover.Trigger>
-          <Popover.Content side={effortMenuSide} align="start" className={styles.contextThresholdContent}>
+          <Popover.Content side={effortMenuSide} sideOffset={effortMenuSide === 'bottom' ? 4 : 16} align="start" className={styles.contextThresholdContent}>
             {efforts.map(level => (
               <button type="button" key={level.id} disabled={level.disabled} aria-pressed={effort?.id === level.id}
                 className={styles.contextThresholdOption} title={level.disabledReason}
