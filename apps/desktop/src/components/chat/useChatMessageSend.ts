@@ -10,6 +10,7 @@ import { chatSendFailureNotice } from './chatSendFailureNotice'
 import { useToast } from '../toastContext'
 import { revokeAttachmentPreviewUrls, withPreviewUrl, type ChatDraft, type MentionTarget } from './useChatDraft'
 import { contentWithQuote } from './messageQuoteContent'
+import { planInlineImageSend } from './inlineImageSend'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import { useChatStore } from '../../store/chatContext'
 import { messageFailureNotice } from '@/lib/messageFailureNotice'
@@ -105,6 +106,9 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
     let filesOwned = false
     // #2581 文字和文件是一次发出的一条:文字挂在最后一个文件上(什么类型都一样),带引用回复时引用也跟着文件走。
     const captionOnFiles = pendingFiles.length > 0 && !!onSendAttachments
+    // Pictures placed in the words go out in their places (inlineImageSend.ts); without them the send is as before.
+    const inline = onSendAttachments ? planInlineImageSend(typed, attachments, images) : null
+    let leadSent = false
     try {
       // C1:先清空输入框、先上屏乐观气泡。会话就绪不再挡在前面(它可能要重开会话,气泡迟迟不出):
       // 文字消息把它交给 outbox 在投递前 await,失败时气泡变「未送达」可重试,❌ 退回输入框。
@@ -116,7 +120,17 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       if (pendingFiles.length > 0 && onSendAttachments) await beforeSend?.()
 
       // Resolves once the files are on screen; their bytes upload after the composer is free again. The text goes with them.
-      if (captionOnFiles && onSendAttachments) {
+      if (inline && onSendAttachments) {
+        if (inline.lead) {
+          await onSend(contentWithQuote(inline.lead, quoteContent), { ...sendOptions, clientMessageId: submission.id, beforeDeliver: beforeSend, submittedAt, ...(annotations && !inline.files.length ? { annotations } : {}) })
+          leadSent = true
+        }
+        if (inline.files.length) {
+          const runs = inline.lead ? inline.runs : inline.runs.map((run, index) => index === 0 && run.caption ? { ...run, caption: contentWithQuote(run.caption, quoteContent) } : run)
+          await onSendAttachments(inline.files, { toUserIds: sendOptions.toUserIds, replyToMessageId: inline.lead ? undefined : replyToMessageId ?? undefined, isWhisper: !!whisperTarget, runs, ...(annotations ? { annotations } : {}) })
+          filesOwned = true
+        }
+      } else if (captionOnFiles && onSendAttachments) {
         await onSendAttachments(pendingFiles, { toUserIds: sendOptions.toUserIds, replyToMessageId: replyToMessageId ?? undefined, isWhisper: !!whisperTarget, caption: content || undefined, ...(annotations ? { annotations } : {}) })
         filesOwned = true
       } else if (content || annotations) {
@@ -149,11 +163,11 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       if (activeChatIdRef.current === (chatId ?? null)) {
         // Reuse the same File objects but mint fresh preview URLs (the old ones may already be revoked).
         // 合并而非覆盖:多件逐一上传的空档里用户可能又加了附件、又打了字,整体替换会把它们吞掉。
-        writeDraft(chatId, { at: 'start', text: typed })
+        writeDraft(chatId, { at: 'start', text: leadSent && inline ? inline.afterLead : typed })
         setMentionTargets((current) => [...restoredMentions, ...current.filter((m) => !restoredMentions.some((r) => r.userId === m.userId))])
         setAttachments((current) => [...unsentAttachments.map(withPreviewUrl), ...current])
       } else if (chatId) {
-        persistTo(chatId, { text: typed, mentions: restoredMentions, attachments: unsentAttachments })
+        persistTo(chatId, { text: leadSent && inline ? inline.afterLead : typed, mentions: restoredMentions, attachments: unsentAttachments })
       }
       // Drop the now-stale snapshot URLs (replaced by fresh ones above, or unused when persisting to store).
       revokeAttachmentPreviewUrls(snapshotAttachments)

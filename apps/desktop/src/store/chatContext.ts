@@ -70,6 +70,8 @@ export type SendAttachmentOptions = {
   toUserIds?: string[] | null
   isWhisper?: boolean
   caption?: string
+  /** Pictures placed in the words: consecutive runs of the files, each its own send whose caption follows it (inlineImageSend.ts). */
+  runs?: { size: number; caption?: string }[]
   /** Comments sent beside the caption: they go on the captioned (last) file. */
   annotations?: TurnAnnotation[]
   threadRootId?: string | null

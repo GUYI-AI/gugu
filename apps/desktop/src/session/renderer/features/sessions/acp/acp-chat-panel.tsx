@@ -29,6 +29,7 @@ import { AgentFailureSlot } from '@/components/AgentFailureSlot';
 import { sessionAgentBindings } from '@renderer/features/sessions/stores/session-agent-bindings';
 import { useSessionMessageQuotes } from './use-session-message-quotes';
 import { useSessionPromptEditor } from './use-session-prompt-editor';
+import { inlineImageOrder, inlineImageTurnText } from './inline-image-turn';
 import { continueSessionTurn } from './continue-session-turn';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
 import { followConversationLink } from '@/lib/followConversationLink';
@@ -359,9 +360,9 @@ const ComposerForStore = observer(function ComposerForStore({
           started: onScrollToBottom, unsettled: () => fileUploads.unsettled(),
           waitForUploads: async () => { await fileUploads.waitForUploads(); },
           hasFailedAttachments: () => attachmentsRef.current.some(att => att.state === 'error'),
-          files: () => fileUploads.files(attachmentsRef.current.map(att => att.id)),
+          files: () => fileUploads.files(inlineImageOrder(value, attachmentsRef.current.map(att => att.id))),
           status: setSendHold,
-          deliver,
+          deliver: (text, files, annotations) => deliver(inlineImageTurnText(text, id => fileUploads.files([id])[0], translate('composer.inlineImage')), files, annotations),
           committed: () => flushSync(() => {
             annotationDraft.submitted(annotated);
             setAttachments([]);
@@ -374,7 +375,7 @@ const ComposerForStore = observer(function ComposerForStore({
         sendingRef.current = false;
       }
     },
-    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft, locale]
+    [fileUploads, store, onScrollToBottom, editorApiRef, setAttachments, annotationDraft, locale, translate]
   );
 
   const handleSubmit = useCallback(
@@ -1552,6 +1553,7 @@ const ComposerForStore = observer(function ComposerForStore({
         attachmentExtra={annotationDraft.items.length ? <AnnotationTray conversation={{ kind: 'session', sessionId: store.sessionId }} onRemove={id => { if (!sendingRef.current) { const imageId = annotationImageId(id); fileUploads.forget(imageId); setAttachments(current => current.filter(item => item.id !== imageId)); } }} onSend={() => { void handleSubmit(store.draftText); }} enabled={sendHold !== 'waiting' && membershipLockedModel === null && !store.messageEdit && !store.reverting} /> : null}
         attachments={attachments.filter(item => !isAnnotationImage(item.id) || item.state === 'error')}
         onAttachmentsChange={handleAttachmentsChange}
+        inlineImages
         onAttach={handleAttach}
         onImageFilesDropped={(files, source) => {
           attachFiles(files, source).catch((error: unknown) => log.error('Failed to attach dropped files', { error }));

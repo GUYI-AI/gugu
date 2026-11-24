@@ -323,6 +323,11 @@ export interface ChatComposerProps {
    * When supplied, the host owns uploading and adding preview attachments.
    */
   onImageFilesDropped?: (files: File[], source?: 'paste' | 'drop') => void;
+  /**
+   * Images are placed in the text where they were pasted, dropped or attached (a chip with a thumbnail), not on the
+   * attachment strip. The text then carries each one's place as a marker (`inlineImageParts`): only for hosts that send it.
+   */
+  inlineImages?: boolean;
   onAttachmentQualityChange?: (id: string) => void;
   attachmentQualityLocked?: boolean;
   /**
@@ -478,6 +483,7 @@ export function ChatComposer({
   attachmentExtra,
   onAttachmentsChange,
   onImageFilesDropped,
+  inlineImages = false,
   onAttachmentQualityChange,
   attachmentQualityLocked,
   onFilesDropped,
@@ -589,6 +595,35 @@ export function ChatComposer({
       });
     };
   }, []);
+
+  // ── Inline images ───────────────────────────────────────────────────────────
+  // The host's attachment list stays the one ledger; the editor shows each image at its place. A new image goes where
+  // the caret is (or where it was dropped); one the host no longer holds leaves the text.
+  const dropPointRef = useRef<{ left: number; top: number } | null>(null);
+  const inlineImageItems = () => attachmentsRef.current.filter((att) => att.kind === 'image').map((att) => ({ id: att.id, src: att.previewUrl ?? null, name: att.name }));
+  useEffect(() => {
+    const editor = editorRef.current;
+    // A queued prompt being edited borrows this editor; the draft's pictures stay out of it.
+    if (!inlineImages || !editor || queueEdit) return;
+    const images = inlineImageItems();
+    editor.updateInlineImages(images);
+    const placed = new Set(editor.inlineImageIds());
+    const fresh = images.filter((image) => !placed.has(image.id));
+    if (fresh.length) editor.insertInlineImages(fresh, dropPointRef.current ?? undefined);
+    dropPointRef.current = null;
+  }, [attachments, inlineImages, queueEdit]);
+  const removeInlineImages = (ids: string[]) => {
+    const removed = attachments.filter((att) => ids.includes(att.id));
+    if (removed.length === 0) return;
+    for (const att of removed) if (att.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(att.previewUrl);
+    onAttachmentsChange?.(attachments.filter((att) => !ids.includes(att.id)));
+  };
+  const viewInlineImage = (id: string) => {
+    const att = attachments.find((item) => item.id === id);
+    if (att) onViewAttachment?.(att);
+  };
+  // A failed upload keeps its chip on the strip too: that is where its reason and Retry are.
+  const stripAttachments = inlineImages ? attachments.filter((att) => att.kind !== 'image' || att.state === 'error') : attachments;
 
   const hasContent = hasText || attachments.length > 0;
   const canSubmit = (hostCanSubmit ?? true) && (!phoneActions || (hasContent && !phoneSubmitting));
@@ -702,6 +737,7 @@ export function ChatComposer({
 
     const imageFiles = files.filter((file) => isImageFile(file));
     const nonImageFiles = files.filter((file) => !isImageFile(file));
+    if (inlineImages && imageFiles.length > 0) dropPointRef.current = { left: e.clientX, top: e.clientY };
     if (imageFiles.length > 0 && onImageFilesDropped) {
       onImageFilesDropped(imageFiles, 'drop');
     } else if (imageFiles.length > 0 && onAttachmentsChange) {
@@ -821,7 +857,11 @@ export function ChatComposer({
       ref={receiveEditor}
       placeholder={resolvedPlaceholder}
       disabled={disabled || !!queueEdit?.pending}
-      onChange={(text) => { setHasText(!!text.trim()); (queueEdit ? changeQueueEdit : onInputChange)?.(text); }}
+      onChange={(text) => {
+        setHasText(!!text.trim()); (queueEdit ? changeQueueEdit : onInputChange)?.(text);
+        // A draft written back into the editor (its markers) gets its thumbnails, or loses pictures no longer held.
+        if (inlineImages && !queueEdit && text.includes('(gugu-attachment:')) queueMicrotask(() => editorRef.current?.updateInlineImages(inlineImageItems()));
+      }}
       onDocumentClear={phoneCapsule ? phoneEditor.onDocumentClear : undefined}
       onPasteText={queueEdit ? undefined : handlePastedText}
       clearOnSubmit={queueEdit ? false : (editorOptions?.clearOnSubmit ?? true)}
@@ -834,6 +874,8 @@ export function ChatComposer({
       queryCommands={queryCommands}
       onCommand={onCommand}
       getPromptHistory={queueEdit ? undefined : getPromptHistory}
+      onViewInlineImage={inlineImages ? viewInlineImage : undefined}
+      onInlineImagesRemoved={inlineImages ? removeInlineImages : undefined}
     />
   );
 
@@ -892,7 +934,7 @@ export function ChatComposer({
           onDrop={queueEdit ? undefined : handleDrop}
         >
           {/* Attachment chips — anatomy vendored from assistant-ui (#5269), see composer-attachment-chip.tsx */}
-          {!queueEdit && <ComposerAttachmentStrip attachments={attachments} status={attachmentStatus} extra={attachmentExtra}
+          {!queueEdit && <ComposerAttachmentStrip attachments={stripAttachments} status={attachmentStatus} extra={attachmentExtra}
             onView={onViewAttachment} onRemove={onAttachmentsChange ? removeAttachment : undefined} onRetry={onRetryAttachment} onQualityChange={onAttachmentQualityChange} qualityLocked={disabled || attachmentQualityLocked} />}
 
           {/* Editor area */}

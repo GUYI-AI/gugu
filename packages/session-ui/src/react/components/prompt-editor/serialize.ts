@@ -32,6 +32,26 @@ export function mentionInsertContent(item: MentionItem) {
   } }, { type: 'text', text: ' ' }];
 }
 
+/** An inline image in the text: the host's attachment id, at the picture's place (`extensions/inline-image.ts`). */
+export function inlineImageMarker(id: string): string {
+  return `![image](gugu-attachment:${id})`;
+}
+
+const INLINE_IMAGE_MARKER = /!\[image\]\(gugu-attachment:([^)\s]+)\)/g;
+
+/** The text cut at its inline images, in order: what a conversation sends as words and pictures in place. */
+export function inlineImageParts(text: string): Array<{ text: string } | { imageId: string }> {
+  const parts: Array<{ text: string } | { imageId: string }> = [];
+  let cursor = 0;
+  for (const match of text.matchAll(INLINE_IMAGE_MARKER)) {
+    if (match.index > cursor) parts.push({ text: text.slice(cursor, match.index) });
+    parts.push({ imageId: match[1] });
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length) parts.push({ text: text.slice(cursor) });
+  return parts;
+}
+
 /**
  * Serialize a mention to its canonical text form.
  *
@@ -72,6 +92,8 @@ export function serializeNode(node: Node): string {
     return fallbackToken((node.attrs.name as string | null) ?? (node.attrs.id as string | null) ?? '');
   }
 
+  if (node.type.name === 'inlineImage') return inlineImageMarker(node.attrs.id as string);
+
   if (node.type.name === 'hardBreak') {
     return '\n';
   }
@@ -107,6 +129,10 @@ export function serializeDoc(doc: Node): string {
   return paragraphs.join('\n').replace(/\n+$/, '');
 }
 
+function textAndImages(text: string): Array<{ type: string; text?: string; attrs?: Record<string, unknown> }> {
+  return inlineImageParts(text).map((part) => 'imageId' in part ? { type: 'inlineImage', attrs: { id: part.imageId } } : { type: 'text', text: part.text });
+}
+
 /**
  * The inverse of {@link serializeDoc} for plain text: one paragraph per line.
  *
@@ -128,12 +154,12 @@ export function plainTextDoc(text: string, resolve?: ContextMentionProvider['res
         const item = resolve?.(ref.target, ref.label) ?? (/^(?:\/|[A-Za-z]:[\\/]).*[\\/]SKILL\.md$/.test(ref.target)
           ? { id: ref.target, label: ref.target, name: ref.label, kind: 'file' as const } : null);
         if (!item) continue;
-        if (ref.start > offset + cursor) content.push({ type: 'text', text: line.slice(cursor, ref.start - offset) });
+        if (ref.start > offset + cursor) content.push(...textAndImages(line.slice(cursor, ref.start - offset)));
         // Restoring enriches presentation, while preserving the serialized bracket label.
         content.push(mentionInsertContent({ ...item, name: ref.label })[0]);
         cursor = ref.end - offset;
       }
-      if (cursor < line.length) content.push({ type: 'text', text: line.slice(cursor) });
+      if (cursor < line.length) content.push(...textAndImages(line.slice(cursor)));
       offset += line.length + 1;
       return { type: 'paragraph', ...(content.length ? { content } : {}) };
     }),
