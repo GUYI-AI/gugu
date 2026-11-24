@@ -78,7 +78,6 @@ import { AppWorkLedgerHost } from '../components/appSlot/AppWorkLedgerHost'
 import { AssistantAppEntryHost } from '../components/appSlot/AssistantAppEntryHost'
 import { openAssistantApp, openAssistantEntry, openAssistantPageInApp, readAssistantEntryTarget } from '../lib/assistantEntry'
 import { appConversationSurfaceShows } from '../lib/appConversationSurfaceBridge'
-import { OfflineSessionSlotHost } from '../components/chat/OfflineSessionSlotHost'
 import { ChatListSlotHost } from '../components/ChatListSlotHost'
 import { AssistantTaskChatOpener } from '../components/assistant/AssistantTaskChatOpener'
 import { FeedbackHost } from '../components/FeedbackHost'
@@ -1302,7 +1301,6 @@ function InnerLayout({
           onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile}
         />
       )}
-      {!mobile && sessionHostAvailable && <OfflineSessionSlotHost />}
       {/* #1925 An App's main page beside its bound conversation: the session page leaves the column, the native conversation is drawn here. */}
       {!mobile && sessionHostAvailable && (
         <AppConversationSurfaceHost visible={screenTab === 'tasks'} onOpenUserChat={slotOpenProfileChat} onOpenSessionpageAgentFile={handleOpenSessionpageAgentFile} />

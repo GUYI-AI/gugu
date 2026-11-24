@@ -78,7 +78,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   innerSidebarEntry,
   local = false,
   appPanel = false,
-  unreachable = false,
   onBack,
 }: {
   device: Device
@@ -95,11 +94,6 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
    * view switcher is not offered there — the panel is the task's conversation, nothing else.
    */
   appPanel?: boolean
-  /**
-   * The desktop already found this machine not answering (SessionContentGate): until this page's own link has had an
-   * answer, the header says 「连接中」 like the block's strip (❌ a green dot claiming it online under that strip).
-   */
-  unreachable?: boolean
   onBack: () => void
 }) {
   const { t } = useTranslation('main')
@@ -146,7 +140,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
   useTimelineFailureNotice(`${device.device_id}/${session.conversationId}`, error, recovery)
   // The directory says a crashed / unplugged machine is online until its lease runs out (about two minutes): its not
   // answering is the earlier fact: the header says 「连接中」 (❌ 「设备离线」); the reads keep trying and the page comes back by itself.
-  const hostSilent = !local && online && (link === 'lost' || (unreachable && link !== 'ok'))
+  const hostSilent = !local && online && link === 'lost'
     && (!error || remoteFailureKind(errorCode) === 'machine-unreachable')
   const answering = online && !hostSilent
   // Header state (owner 11-08: 「连接中」/「设备离线」 in the header, ❌ a banner, ❌ 「未连接」). The directory saying

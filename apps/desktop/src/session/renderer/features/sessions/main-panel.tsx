@@ -1,5 +1,4 @@
 import { ColdSessionStrip } from './view/session-machine-status';
-import { OfflineSessionSlot } from '@renderer/lib/offline-session-slot';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, type ReactNode } from 'react';
@@ -23,11 +22,10 @@ import { getProjectManagerStore } from '@renderer/features/projects/stores/proje
 import { cloudWakeFailureText } from '@renderer/features/remote-hosts/connection-status';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { useCloudComputerGate } from './use-cloud-computer-gate';
-import { machineUnavailableLabel } from './machine-unavailable-label';
+import { drawnWithoutWorkspace, machineUnavailableLabel } from './machine-unavailable-label';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { projectPresence } from '@renderer/features/projects/project-presence';
 import { openSessionInSessionWhenReady } from './open-session-in-session';
-import { remoteSessionPageTarget } from './remote-session-page-target';
 
 const spinnerLog = rendererLogger('sessionpage/loading-span');
 
@@ -150,20 +148,20 @@ export const SessionContentGate = observer(function SessionContentGate({ childre
   const deviceId = machineRegistry.machineOf(projectId);
   const device = deviceId ? remoteHostsStore.device(deviceId) : null;
   const needsWorkspace = kind === 'project-mounting' || kind === 'provisioning' || kind === 'idle' || kind === 'provision-error' || kind === 'project-error';
-  const remotePage = remoteSessionPageTarget(projectId, kind);
-  const remotePageShown = remotePage !== null;
+  // The machine does not answer and the session is listed here: its usual page, without a workspace.
+  const withoutWorkspace = drawnWithoutWorkspace(sessionPageStore);
   const recovery = useRef({ projectId, sessionId, pending: false });
   useEffect(() => {
     if (recovery.current.projectId !== projectId || recovery.current.sessionId !== sessionId) {
       recovery.current = { projectId, sessionId, pending: false };
     }
-    if (remotePageShown) recovery.current.pending = true;
-    if (!recovery.current.pending || unreachable || kind !== 'ready') return;
+    if (unreachable && needsWorkspace) recovery.current.pending = true;
+    if (!recovery.current.pending || !(withoutWorkspace || (!unreachable && kind === 'ready'))) return;
     recovery.current.pending = false;
-    // The workspace is ready and its machine answers: the panel takes over from the task's own page; fill a single block
-    // too, preserving any restored/user-selected tabs.
+    // Its conversation fills an empty block as soon as there is a session to draw: now without a workspace, or once its
+    // machine is back and it is ready. Restored or user-selected tabs stay.
     return openSessionInSessionWhenReady({ projectId, sessionId, onlyIfNoTabs: true });
-  }, [remotePageShown, unreachable, kind, projectId, sessionId]);
+  }, [withoutWorkspace, unreachable, needsWorkspace, kind, projectId, sessionId]);
   const tunnelProgress = device?.tunnel === 'connecting' && !device.directTerminal
     ? translate('remoteWorkspace.tunnel.connecting') : null;
 
@@ -210,14 +208,9 @@ export const SessionContentGate = observer(function SessionContentGate({ childre
     );
   }
 
-  if (remotePage) return <ColdSessionStrip><OfflineSessionSlot sessionId={sessionId} deviceId={remotePage.deviceId} label={remotePage.label ?? ''} /></ColdSessionStrip>;
-  if (unreachable && needsWorkspace) {
-    return (
-      <ColdSessionStrip>
-        <div className="flex h-full w-full items-center justify-center text-sm text-foreground-muted">{unreachable}</div>
-      </ColdSessionStrip>
-    );
-  }
+  if (withoutWorkspace) return children;
+  // Its project never mounted (that machine was already away): no session here to draw, only the strip saying so.
+  if (unreachable && needsWorkspace) return <ColdSessionStrip />;
 
   if (kind === 'project-mounting' || kind === 'provisioning') {
     // provisionProgressMessage 是主进程推来的实时进度原文，原样显示；缺省时才落到本地化外壳。
