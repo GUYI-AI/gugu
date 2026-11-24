@@ -1,0 +1,11 @@
+/* The phone floats the same dock as desktop; these rules only tighten its rows. */
+/* An empty running row collapses: the spacing is the content's margin, and :empty hides the content (no :has(): WebView < 105 drops it). */
+.gg-phone-chat-dock [data-running-bar-content]:empty { display: none; }
+/* The running strip already owns its spacing. Do not stack a desktop 42px
+   reservation and the composer's separate top inset between these phone rows. */
+.gg-phone-chat-dock [data-running-bar-slot] { height: auto; }
+.gg-phone-chat-dock [data-running-bar-content] { margin-top: var(--spacing-xs); }
+.gg-phone-chat-dock .rtb-bar { padding-block: 0; }
+.gg-phone-chat-dock[data-running-status] :is([data-chat-composer], [data-topic-split-composer]) { padding-top: var(--spacing-sm) !important; }
+.gg-phone-chat-dock[data-running-status] [data-phone-composer-controls]:not([data-editing]) { padding-top: 0; }
+.gg-phone-chat-dock .rtb-more { display: inline-flex; align-items: center; }

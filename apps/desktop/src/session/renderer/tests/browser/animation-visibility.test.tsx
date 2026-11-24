@@ -2,6 +2,7 @@ import { flushSync } from 'react-dom';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, expect, it, vi } from 'vitest';
 import { Avatar } from '@/components/Avatar';
+import { RunningTokenBar } from '@/components/RunningTokenBar';
 import { ANIMATION_WINDOW_SEEN_EVENT, isAnimationWindowVisible } from '@gugu/session-shared/animation-visibility';
 import { mirrorDocument } from '@renderer/lib/aux-document';
 import { until } from '../../../../../../../tests/support/awaitCondition';
@@ -32,16 +33,58 @@ async function mount(doc = document) {
   roots.push(root);
   // @@@mount-after-effects - the motion is watched from an effect (stopAnimationsOffscreen). Right after the commit
   // the DOM already animates with no attribute, which also meets the wait below, so a poll landing before the
-  // effects ran handed the tests motion nobody watched. A synchronous render runs its effects before flushSync returns.
-  flushSync(() => root.render(<Avatar name="Running agent" seed="animation-agent" avatarUrl={avatar} isAgent agentStatus="working" harnessBadge={false} />));
-  await until('the two avatar pulse rings animate', () => host.getAnimations({ subtree: true }).length === 2);
+  // effects ran handed the tests motion nobody watched (it read 4 after hiding). A synchronous render runs its
+  // effects before flushSync returns.
+  flushSync(() => root.render(<>
+    <RunningTokenBar previewChatId={null} tokens={[{
+      id: 'animation-agent', name: 'Agent', avatarSeed: 'animation-agent', avatarUrl: avatar,
+      stateKey: 'running', toolCount: 1, lastActiveAt: null,
+    }]} />
+    <Avatar name="Running agent" seed="animation-agent" avatarUrl={avatar} isAgent agentStatus="working" harnessBadge={false} />
+  </>));
+  expect(host.querySelectorAll('[data-animation-off]'), 'the watched motion starts removed').toHaveLength(2);
+  await until('the real running highlight and two avatar pulse rings animate', () => host.getAnimations({ subtree: true }).length === 4 && host.querySelector<HTMLElement>('.rtb-state')?.hasAttribute('data-animation-off') === false);
   const animations = host.getAnimations({ subtree: true });
   expect(animations.filter((animation) => (animation as CSSAnimation).animationName === 'av-status-pulse')).toHaveLength(2);
+  expect(host.querySelector('.rtb-state')!.getAnimations({ subtree: true })).toHaveLength(2);
   expect(animations.every((animation) => animation.playState === 'running')).toBe(true);
   return { host, animations };
 }
 
-it('stops the avatar pulses on the shared native signal and starts them again on the shared beat', async () => {
+it('keeps one semantic running label and stationary glyphs throughout the composited sweep', async () => {
+  const { host } = await mount();
+  const label = host.querySelector<HTMLElement>('.rtb-state')!;
+  const text = label.textContent;
+  const glyphs = [...label.querySelectorAll<HTMLElement>('[data-shimmer-text]')];
+  expect(glyphs).toHaveLength(2);
+  expect(label.querySelector('[aria-hidden="true"]')!.textContent).toBe('');
+  expect(glyphs.every((glyph) => glyph.dataset.shimmerText === text)).toBe(true);
+  const box = label.getBoundingClientRect();
+  const animations = label.getAnimations({ subtree: true });
+  for (const animation of animations) {
+    expect(animation.effect!.getTiming()).toMatchObject({ duration: 2000, iterations: Infinity });
+    const frames = (animation.effect as KeyframeEffect).getKeyframes();
+    // The transcript's rhythm as one loop: 20 steps in the first second, then still until the next cycle.
+    expect(frames.map((frame) => frame.computedOffset)).toEqual([0, 0.5, 1]);
+    expect(frames[0]!.easing).toBe('steps(20)');
+    expect(frames[1]!.transform).toBe(frames[2]!.transform);
+    for (const frame of frames) {
+      expect(Object.keys(frame).filter((key) => !['offset', 'computedOffset', 'easing', 'composite'].includes(key))).toEqual(['transform']);
+    }
+    animation.pause();
+  }
+  for (const time of [0, 500, 1000, 1999]) {
+    animations.forEach((animation) => { animation.currentTime = time; });
+    for (const glyph of glyphs) {
+      expect(Math.abs(glyph.getBoundingClientRect().left - box.left)).toBeLessThan(0.1);
+      expect(Math.abs(glyph.getBoundingClientRect().width - box.width)).toBeLessThan(0.1);
+    }
+    expect(label.textContent).toBe(text);
+    expect(label.getBoundingClientRect().toJSON()).toEqual(box.toJSON());
+  }
+});
+
+it('stops the running highlight and avatar pulses on the shared native signal and starts them again on the shared beat', async () => {
   const { host } = await mount();
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: false }));
   // Motion watched for visibility is removed while its window is unseen, and nothing is written on <html>.
@@ -49,7 +92,7 @@ it('stops the avatar pulses on the shared native signal and starts them again on
   expect(document.hidden).toBe(false);
   expect(document.documentElement.style.getPropertyValue('--gugu-animation-window-paused')).toBe('');
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }));
-  await until('the animations run again at their own rate', () => host.getAnimations({ subtree: true }).length === 2 && host.getAnimations({ subtree: true }).every((animation) => animation.playbackRate === 1 && animation.playState === 'running'));
+  await until('the animations run again at their own rate', () => host.getAnimations({ subtree: true }).length === 4 && host.getAnimations({ subtree: true }).every((animation) => animation.playbackRate === 1 && animation.playState === 'running'));
   const animations = host.getAnimations({ subtree: true });
   for (const animation of animations) expect(Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime))).toBeLessThan(100);
   // The surface pause still reaches them (pause() / play() would cut it off).
@@ -71,12 +114,31 @@ it('stops avatar pulses scrolled out of view and starts them again on the shared
   expect(frames[1]!.transform).toBe(frames[2]!.transform);
   host.style.cssText = 'position:fixed;left:0;top:-2000px';
   await until('the off-screen pulses are gone', () => pulsesOf().length === 0);
+  // The highlight sits in the same box, so it went too.
   expect(host.getAnimations({ subtree: true })).toHaveLength(0);
   host.style.cssText = '';
   await until('the pulses run again on screen', () => pulsesOf().length === 2 && pulsesOf().every((animation) => animation.playState === 'running'));
   expect(host.getAnimations({ subtree: true })).toHaveLength(animations.length);
   // Back on the shared beat.
   for (const animation of pulsesOf()) expect(Math.abs(Number(animation.currentTime) - Number(animation.timeline!.currentTime))).toBeLessThan(100);
+});
+
+it('gives the hidden copies a narrow running bar keeps for measuring no animation at all', async () => {
+  isAnimationWindowVisible();
+  const host = document.createElement('div');
+  host.style.width = '200px';
+  document.body.append(host);
+  cleanup.push(() => host.remove());
+  const root = createRoot(host);
+  roots.push(root);
+  root.render(<RunningTokenBar previewChatId={null} tokens={['one', 'two', 'three', 'four'].map((id) => ({
+    id, name: `Agent ${id}`, avatarSeed: id, avatarUrl: avatar, stateKey: 'running', toolCount: 1, lastActiveAt: null,
+  }))} />);
+  const pills = () => [...host.querySelectorAll<HTMLElement>('.rtb-bar > [data-message-preview-trigger]')];
+  const folded = () => pills().filter((pill) => pill.style.visibility === 'hidden');
+  await until('the bar folds some pills behind +N and the shown ones animate', () => folded().length > 0 && folded().length < pills().length
+    && pills().filter((pill) => pill.style.visibility !== 'hidden').every((pill) => pill.getAnimations({ subtree: true }).length === 2));
+  for (const pill of folded()) expect(pill.getAnimations({ subtree: true })).toHaveLength(0);
 });
 
 it('leaves the style pass alone when watched motion goes away', async () => {
@@ -145,7 +207,7 @@ it('holds motion that begins while the window is not seen, and lets it go with t
   cleanup.push(() => { style.remove(); late.remove(); });
   await until('an animation started in a hidden window is held', () => late.getAnimations().length === 1 && held(late.getAnimations()[0]!));
   window.dispatchEvent(new CustomEvent(ANIMATION_WINDOW_SEEN_EVENT, { detail: true }));
-  await until('everything runs again', () => host.getAnimations({ subtree: true }).length === 2 && [...host.getAnimations({ subtree: true }), late.getAnimations()[0]!].every((animation) => animation.playState === 'running' && animation.playbackRate === 1));
+  await until('everything runs again', () => host.getAnimations({ subtree: true }).length === 4 && [...host.getAnimations({ subtree: true }), late.getAnimations()[0]!].every((animation) => animation.playState === 'running' && animation.playbackRate === 1));
 });
 
 // @@@window-pause-by-animation — the flag used to be an inherited custom property on <html>: hiding and showing the

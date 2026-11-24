@@ -300,7 +300,7 @@ function MobileAssistantAppContent({
           navigationTarget={navigationTarget}
           mobile
           hidden={!chatShown}
-          chrome={{ placeholder: t('chat.placeholder', { name }), attachGlyph: <Paperclip />, attachMenu, typing, composerHeader: composerEntries }}
+          chrome={{ placeholder: t('chat.placeholder', { name }), attachGlyph: <Paperclip />, attachMenu, typing, composerHeader: composerEntries, hideRunningStatus: true }}
           {...chatHandlers}
         /></FilePreviewHost.Provider>
       </div>
