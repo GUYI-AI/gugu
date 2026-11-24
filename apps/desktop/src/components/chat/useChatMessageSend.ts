@@ -14,7 +14,6 @@ import type { ChatMessageComposerProps } from './chatComposerModels'
 import { useChatStore } from '../../store/chatContext'
 import { messageFailureNotice } from '@/lib/messageFailureNotice'
 import { useLocale } from '@/i18n'
-import { useAuth } from '@/store/auth'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
 import { annotatedSend, sessionAnnotations, type SessionAnnotation } from '@renderer/features/sessions/annotations/session-annotations'
 
@@ -25,8 +24,7 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
   const { writeDraft } = useChatStore('writeDraft')
   const { t } = useTranslation('messaging')
   const { resolvedLocale } = useLocale()
-  const { user } = useAuth()
-  const annotationDraft = chatId ? sessionAnnotations.forConversation({ kind: 'chat', chatId }, user?.id ?? currentUserId) : undefined
+  const annotationDraft = chatId ? sessionAnnotations.forConversation({ kind: 'chat', chatId }) : undefined
   const { toast } = useToast()
   const [sending, setSending] = useState(false)
   const sendingRef = useRef(false)

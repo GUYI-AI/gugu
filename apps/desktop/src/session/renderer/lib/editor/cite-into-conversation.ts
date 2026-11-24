@@ -34,7 +34,7 @@ export async function citeIntoConversation(conversation: AnnotationConversation,
 
 /** The conversation's annotation draft, as its composer reads it (a chat's is the signed-in account's). */
 export function annotationsOf(conversation: AnnotationConversation): SessionAnnotations {
-  return sessionAnnotations.forConversation(conversation, getRendererSession()?.user.id);
+  return sessionAnnotations.forConversation(conversation);
 }
 
 /**

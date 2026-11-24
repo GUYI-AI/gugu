@@ -1,5 +1,4 @@
 import type { AnnotationConversation } from '@shared/browser-annotation';
-import { useAuth } from '@/store/auth';
 import { MessageSquare, Pencil, Trash2, X } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useEffect, useRef, useState } from 'react';
@@ -43,8 +42,7 @@ function AnnotationThumbnail({ screenshot, rect, viewport }: BrowserAnnotationSe
 export const AnnotationTray = observer(function AnnotationTray({ conversation, onSend, enabled, onRemove }: {
   conversation: AnnotationConversation; onSend: () => void; enabled: boolean; onRemove?: (id: string) => void;
 }) {
-  const { user } = useAuth();
-  const draft = sessionAnnotations.forConversation(conversation, user?.id);
+  const draft = sessionAnnotations.forConversation(conversation);
   const { translate } = useSessionMessages();
   const [editing, setEditing] = useState<string | null>(null);
   useEffect(() => enabled ? draft.bindSend(onSend) : undefined, [draft, onSend, enabled]);

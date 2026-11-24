@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { annotatedSend, SessionAnnotations, sessionAnnotations, type BrowserAnnotationSelection } from './session-annotations';
 import { annotationPromptText } from '@gugu/session-core/acp/client';
 import { sendComposerInput } from '../acp/send-composer-input';
+import { publishRendererSession } from '@/lib/sessionPublication';
 import { annotationImageId, currentAnnotationImages, prepareAnnotationImages } from './annotation-images';
 import type { SupportedLocale } from '@gugu/session-shared/format';
 
@@ -88,11 +89,28 @@ describe('the conversation annotation draft', () => {
 
   it('keeps an unsent group screenshot private when another account opens the same group', () => {
     const conversation = { kind: 'chat' as const, chatId: crypto.randomUUID() };
-    const owner = sessionAnnotations.forConversation(conversation, 'account-a');
-    owner.add(page());
-    expect(sessionAnnotations.forConversation(conversation, 'account-b').items).toHaveLength(0);
-    expect(sessionAnnotations.forConversation(conversation, 'account-a')).toBe(owner);
-    expect(owner.items).toHaveLength(1);
+    const signIn = (id: string) => publishRendererSession('SIGNED_IN', { user: { id } } as never);
+    try {
+      signIn('account-a');
+      const owner = sessionAnnotations.forConversation(conversation);
+      owner.add(page());
+      signIn('account-b');
+      expect(sessionAnnotations.forConversation(conversation).items).toHaveLength(0);
+      signIn('account-a');
+      expect(sessionAnnotations.forConversation(conversation)).toBe(owner);
+      expect(owner.items).toHaveLength(1);
+    } finally { publishRendererSession('SIGNED_OUT', null); }
+  });
+
+  it('files a group draft under the signed-in account wherever it is made, with no auth context passed in', () => {
+    // A group's side-pane browser is drawn outside the app's React tree: it once filed its comments under no account,
+    // and the group composer (signed in) never saw them.
+    const conversation = { kind: 'chat' as const, chatId: crypto.randomUUID() };
+    try {
+      publishRendererSession('SIGNED_IN', { user: { id: 'account-a' } } as never);
+      sessionAnnotations.forConversation(conversation).add(page('from the side-pane browser'));
+      expect(sessionAnnotations.forConversation(conversation).items.map(item => item.annotation)).toEqual(['from the side-pane browser']);
+    } finally { publishRendererSession('SIGNED_OUT', null); }
   });
   it('keeps comments across tab consumers and isolates conversations', () => {
     sessionAnnotations.forSession('one').add(page());

@@ -3,6 +3,7 @@ import type { SupportedLocale } from '@gugu/session-shared/format';
 import { enUSAnnotationMessages, zhCNAnnotationMessages } from '../../../localization/messages-annotations';
 import { annotationConversationKey, type AnnotationConversation } from '@shared/browser-annotation';
 import type { TurnAnnotation } from '@gugu/session-core/acp/client';
+import { getRendererSession } from '@/lib/sessionPublication';
 
 export type AnnotationRect = { x: number; y: number; width: number; height: number };
 export type BrowserAnnotationSelection = {
@@ -96,9 +97,14 @@ export class SessionAnnotations {
 
 const drafts = new Map<string, SessionAnnotations>();
 export const sessionAnnotations = {
-  forConversation(conversation: AnnotationConversation, accountId?: string | null): SessionAnnotations {
+  /**
+   * A chat's draft belongs to the signed-in account (another account opening the same group sees none of it). The
+   * account is read here, from the renderer's session, never passed in: a page drawn outside the app's React tree (a
+   * group's side-pane browser) has no auth context, and a draft filed under no account never reached the composer.
+   */
+  forConversation(conversation: AnnotationConversation): SessionAnnotations {
     const identity = annotationConversationKey(conversation);
-    const key = conversation.kind === 'chat' ? JSON.stringify([accountId ?? null, identity]) : identity;
+    const key = conversation.kind === 'chat' ? JSON.stringify([getRendererSession()?.user.id ?? null, identity]) : identity;
     let draft = drafts.get(key);
     if (!draft) { draft = new SessionAnnotations(); drafts.set(key, draft); }
     return draft;
