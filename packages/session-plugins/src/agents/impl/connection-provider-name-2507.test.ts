@@ -268,3 +268,24 @@ describe('an API key connection: the harness names the provider after the connec
     expect(JSON.stringify(merged)).not.toMatch(PLATFORM_WORDING);
   });
 });
+
+describe('a custom model on Pi: "Default" sends no thinking level', () => {
+  const custom = (reasoningEffort?: string): SessionModelCapability => ({
+    dialect: 'pi-models-json',
+    model: 'deepseek-v4',
+    platformProvider: { baseUrl: 'https://relay.example/v1', apiKey: 'sk-user' },
+    customModels: {
+      connectionId: 'c1',
+      entries: [{ id: 'deepseek-v4' }],
+      piProviders: [{ connectionId: 'c1', name: 'Relay', baseUrl: 'https://relay.example/v1', protocol: 'openai-chat-completions', models: [{ id: 'deepseek-v4' }] }],
+    },
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+  });
+  const level = (model: SessionModelCapability) =>
+    JSON.parse(pi(model).acp.artifacts.find((artifact) => artifact.path.endsWith('settings.json'))!.content).defaultThinkingLevel;
+
+  it('pins pi to off, since pi would otherwise start at medium', () => {
+    expect(level(custom())).toBe('off');
+    expect(level(custom('high'))).toBe('high');
+  });
+});

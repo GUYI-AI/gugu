@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type RefObject } from 'react';
-import { customModelAcceptsImages, type CustomModelEntry } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelThinks, type CustomModelEntry } from '@gugu/session-core/models/custom-model';
 import { Link, Pencil } from '@/lib/icons';
 import { IconButton } from '@/components/ui/IconButton';
 import { SearchField } from '@/components/ui/SearchField';
@@ -108,7 +108,7 @@ function ModelSettingsDialog({ model, entry, finalFocus, onClose, onApply }: {
         }}>
           <div className="flex items-center justify-between">{translate('customModels.image')}<Toggle checked={customModelAcceptsImages(settings)}
             onChange={image => update({ image })} ariaLabel={translate('customModels.image')} /></div>
-          <div className="flex items-center justify-between">{translate('customModels.thinking')}<Toggle checked={settings.thinking === true}
+          <div className="flex items-center justify-between">{translate('customModels.thinking')}<Toggle checked={customModelThinks(settings)}
             onChange={thinking => update({ thinking })} ariaLabel={translate('customModels.thinking')} /></div>
           {(['contextWindow', 'maxOutput'] as const).map(key => <label key={key}>
             {translate(key === 'contextWindow' ? 'customModels.context' : 'customModels.output')}

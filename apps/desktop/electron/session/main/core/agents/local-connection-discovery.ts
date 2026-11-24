@@ -137,14 +137,18 @@ export async function discoverLocalConnections(input: { root: string; claudeRoot
   const selected = providers[defaultProvider];
   const selectedUsesAuth = defaultProvider !== 'openai' && isRecord(selected) && selected.requires_openai_auth === true;
   let fileKey: string | undefined;
+  const profiles = isRecord(config.profiles) ? Object.values(config.profiles).filter(isRecord) : [];
+  const modelsFor = (provider: string) => {
+    const ids = [{ provider: defaultProvider, model: text(config.model) }, ...profiles.map(profile => ({ provider: text(profile.model_provider) ?? defaultProvider, model: text(profile.model) }))]
+      .filter(entry => entry.provider === provider && entry.model).map(entry => entry.model!);
+    return [...new Set(ids)].map(id => ({ id }));
+  };
 
   // Where a key aimed at "OpenAI" really goes: the user's own override if there is one. Reported once, not per key.
   let officialAddress: string | null | undefined;
   let subscriptionLogin = false;
   const official = (key: string, source: DiscoverySource) => {
     const nativeCodex = (config.model_provider === undefined || config.model_provider === 'openai') && !subscriptionLogin;
-    const model = nativeCodex ? text(config.model) : undefined;
-    const models = model ? [{ id: model }] : [];
     if (officialAddress === undefined) {
       const written = text(config.openai_base_url) ?? text(input.env.OPENAI_BASE_URL);
       officialAddress = written === undefined ? OFFICIAL_BASE : holdableAddress(written);
@@ -153,10 +157,10 @@ export async function discoverLocalConnections(input: { root: string; claudeRoot
     const address = officialAddress;
     if (!address) return;
     if (address === OFFICIAL_BASE) {
-      add({ source, name: OFFICIAL.name, preset: OFFICIAL.id, baseUrl: address, key, models, aliases: [], nativeHarnesses: nativeCodex ? ['codex'] : [],
+      add({ source, name: OFFICIAL.name, preset: OFFICIAL.id, baseUrl: address, key, models: modelsFor('openai'), aliases: [], nativeHarnesses: nativeCodex ? ['codex'] : [],
         endpoints: OFFICIAL.endpoints.map(({ protocol, baseUrl }) => ({ protocol, baseUrl })) });
     } else {
-      add({ source, name: `${OFFICIAL.name} (${hostName(address)})`, preset: null, baseUrl: address, key, models, aliases: [], nativeHarnesses: nativeCodex ? ['codex'] : [],
+      add({ source, name: `${OFFICIAL.name} (${hostName(address)})`, preset: null, baseUrl: address, key, models: modelsFor('openai'), aliases: [], nativeHarnesses: nativeCodex ? ['codex'] : [],
         endpoints: endpointsFor(address, ['openai-responses']) });
     }
   };
@@ -186,12 +190,6 @@ export async function discoverLocalConnections(input: { root: string; claudeRoot
   if (shellKey && !selectedUsesAuth) official(shellKey, 'shell-env');
 
   // 3. Every provider Codex was explicitly told about.
-  const profiles = isRecord(config.profiles) ? Object.values(config.profiles).filter(isRecord) : [];
-  const modelsFor = (provider: string) => {
-    const ids = [{ provider: defaultProvider, model: text(config.model) }, ...profiles.map(profile => ({ provider: text(profile.model_provider) ?? defaultProvider, model: text(profile.model) }))]
-      .filter(entry => entry.provider === provider && entry.model).map(entry => entry.model!);
-    return [...new Set(ids)].map(id => ({ id }));
-  };
   for (const [id, raw] of Object.entries(providers)) {
     if (!isRecord(raw) || id === 'openai') continue;
     const baseUrl = text(raw.base_url);

@@ -3,7 +3,7 @@ import { localizePermissionModeOptions } from '../acp/permission-mode-options';
 import { classifyProviderPermissionMode, type ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import type { SessionOptionGroup } from '@gugu/session-core/session-record/contract';
 import { withAutoReviewHint, type ReviewCostSource } from '../acp/auto-review-permission-hint';
-import { customModelAcceptsImages, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
 import { customModels } from './custom-models';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
@@ -1146,12 +1146,13 @@ export function useInitialSessionState(
   );
   // 活目录 → 插件声明 → 静态表三级合成,与手机新建页共用同一个 resolveCreateEfforts(shared),
   // ❌ 别在这里再展开一遍那三步 —— 两处各写一份就会漂。
-  const modelEfforts = selectedCustom && customFeatures?.thinking !== true ? null : resolveCreateEfforts({
+  const customEfforts = selectedCustom ? customModelEfforts(customFeatures, capabilities?.effort) : null;
+  const modelEfforts = selectedCustom && !customEfforts ? null : resolveCreateEfforts({
     state: harnessCatalogState,
     effortCapability: capabilities?.effort,
     staticModelsCapability: staticModelsCapability,
     model: runtimeModel,
-    platformModel: platformEffortFacts(platformModel, platformCatalog.models),
+    platformModel: customEfforts ? { reasoningEfforts: customEfforts } : platformEffortFacts(platformModel, platformCatalog.models),
     leg: sessionpageSurface,
   });
   const effortKey = effortKeyOf(providerId, model, platformModel);

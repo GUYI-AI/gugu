@@ -30,6 +30,13 @@ async function snapshot(): Promise<Record<string, string>> {
   return out;
 }
 
+it('gives the official key the model Codex runs on it, so no placeholder stands in for one', async () => {
+  await auth({ auth_mode: 'apikey', OPENAI_API_KEY: KEY });
+  await config('model = "gpt-5.5"\n[profiles.fast]\nmodel = "gpt-5.5-mini"\n[profiles.other]\nmodel_provider = "relay"\nmodel = "relay-model"\n');
+  const [openai] = (await scan()).connections;
+  expect(openai!.models).toEqual([{ id: 'gpt-5.5' }, { id: 'gpt-5.5-mini' }]);
+});
+
 it('lists the official key kept by Codex as the OpenAI API connection, never its secret', async () => {
   await auth({ auth_mode: 'apikey', OPENAI_API_KEY: KEY });
   const found = await scan();

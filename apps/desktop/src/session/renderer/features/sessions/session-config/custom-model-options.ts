@@ -1,4 +1,4 @@
-import { customModelApiUrl, customModelOptionId, matchCustomModel, type CustomModelConnection, type ModelProtocol } from '@gugu/session-core/models/custom-model';
+import { chatModel, customModelApiUrl, customModelOptionId, matchCustomModel, type CustomModelConnection, type ModelProtocol } from '@gugu/session-core/models/custom-model';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
 import type { AgentPayload } from '@shared/core/agents/agent-payload';
 import type { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -35,17 +35,14 @@ export function customComposerOptions(
   for (const { label } of sources) labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
   return Object.fromEntries(sources.flatMap(({ connection, url, preset, label }) => {
     const groupLabel = (labelCounts.get(label) ?? 0) > 1 ? `${label} · ${url.replace(/^https?:\/\//, '')}` : label;
-    const entries = connection.models.length ? connection.models : [{ id: undefined }];
-    return entries.map((model) => {
-      const matched = matchCustomModel({ connection, harness: agent?.id, nativeProtocol: protocols[0], protocols, convertFrom: agent?.capabilities.customModel?.convertFrom,
-        hasModel: Boolean(model.id), allowDefaultModel: agent?.capabilities.customModel?.modelOptional });
+    return connection.models.filter(chatModel).map((model) => {
+      const matched = matchCustomModel({ connection, harness: agent?.id, nativeProtocol: protocols[0], protocols, convertFrom: agent?.capabilities.customModel?.convertFrom });
       const required = protocols.map(protocolName).join(' / ');
       const actual = connection.endpoints.map(({ protocol }) => protocolName(protocol)).join(' / ');
       const reason = matched.reason === 'unsupported' ? translate('customModels.unsupported', { harness: agent?.name ?? '' })
         : matched.reason === 'missing-key' ? translate('customModels.missingKey', { device })
-          : matched.reason === 'no-model' ? translate('customModels.noModel')
-            : matched.reason === 'protocol' ? translate(connection.preset ? 'customModels.protocolPreset' : 'customModels.protocolCustom', { harness: agent?.name ?? '', required, actual, provider: connection.name }) : undefined;
-      const name = model.id ? ('label' in model && model.label || model.id) : translate('customModels.cliDefault', { provider: connection.name });
+          : matched.reason === 'protocol' ? translate(connection.preset ? 'customModels.protocolPreset' : 'customModels.protocolCustom', { harness: agent?.name ?? '', required, actual, provider: connection.name }) : undefined;
+      const name = model.label || model.id;
       return [customModelOptionId({ connectionId: connection.id, modelId: model.id }), {
         name,
         groupId: `connection:${connection.id}`,

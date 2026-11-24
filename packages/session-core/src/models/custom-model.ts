@@ -78,6 +78,43 @@ export function customModelAcceptsImages(entry: Pick<CustomModelEntry, 'image'> 
   return entry?.image !== false;
 }
 
+/**
+ * Whether a custom model the person has not switched either way gets thinking levels. The one place the default lives.
+ * On: a relay rarely says, and its first level, "Default", sends no level at all, so a model without one is not refused.
+ */
+export const CUSTOM_MODEL_THINKING_DEFAULT = true;
+
+export function customModelThinks(entry: Pick<CustomModelEntry, 'thinking'> | undefined): boolean {
+  return entry?.thinking ?? CUSTOM_MODEL_THINKING_DEFAULT;
+}
+
+/**
+ * A thinking custom model's own levels. No model list we read (OpenAI's or Gemini's shape) declares any, so it offers
+ * the harness's declared ladder; the picker shows and the launch arms this same list.
+ */
+export function customModelEfforts(
+  entry: Pick<CustomModelEntry, 'thinking'> | undefined,
+  harnessEffort: { kind: string; effortOptions?: Record<string, unknown> } | undefined,
+): string[] | null {
+  return customModelThinks(entry) && harnessEffort?.kind === 'selectable' && harnessEffort.effortOptions
+    ? Object.keys(harnessEffort.effortOptions) : null;
+}
+
+const NON_CHAT_MODEL = /embed|rerank|moderation|whisper|tts|speech|transcri|audio|realtime|dall-e|image|seedream|seedance|video|sora|veo|kling|hailuo/i;
+const CHAT_ENDPOINT_TYPES = new Set(['openai', 'openai-response', 'anthropic', 'gemini']);
+
+/**
+ * Whether a relay's model is one a harness can chat with. Metadata the entry carries wins (Gemini's
+ * `supportedGenerationMethods`, a relay's `supported_endpoint_types`); otherwise the id names a known non-chat family.
+ */
+export function chatModel(entry: { id: string; supportedGenerationMethods?: unknown; supported_endpoint_types?: unknown }): boolean {
+  const methods = entry.supportedGenerationMethods;
+  if (Array.isArray(methods) && !methods.includes('generateContent')) return false;
+  const types = entry.supported_endpoint_types;
+  if (Array.isArray(types) && types.length > 0 && !types.some((type) => CHAT_ENDPOINT_TYPES.has(type))) return false;
+  return !NON_CHAT_MODEL.test(entry.id);
+}
+
 export type PiCustomModelProvider = {
   connectionId: string;
   name: string;

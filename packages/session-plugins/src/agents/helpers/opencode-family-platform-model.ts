@@ -6,6 +6,7 @@ import {
   type SessionModelCapability,
 } from '@gugu/session-core/agents/plugins';
 import { openCodeFamilyProvider, openCodeFamilyReasoningEntry } from './opencode-family-model-config';
+import { customModelThinks } from '@gugu/session-core/models/custom-model';
 
 /** The id Gugu gives the provider block it injects into an opencode session. */
 export const OPENCODE_PLATFORM_PROVIDER_ID = 'gugu-platform'
@@ -61,7 +62,7 @@ export function openCodeFamilyConfigContent(
     const context = custom?.contextWindow ?? window
     return {
       ...(positiveWindow(context) ? { limit: { output: custom?.maxOutput ?? OPENCODE_PLATFORM_OUTPUT_LIMIT, context } } : {}),
-      ...(!model.customModels || custom?.thinking === true ? openCodeFamilyReasoningEntry(reasoning, model.reasoningEffort) : {}),
+      ...(!model.customModels || customModelThinks(custom) ? openCodeFamilyReasoningEntry(reasoning, model.reasoningEffort) : {}),
     }
   }
   /**

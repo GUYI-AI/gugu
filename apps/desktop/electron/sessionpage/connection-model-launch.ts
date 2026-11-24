@@ -1,6 +1,6 @@
 import { platformModelAccessEnv } from '@gugu/core'
-import type { SessionModelCapability } from '@gugu/session-core/agents/plugins'
-import type { CustomModelEntry, ModelProtocol, PiCustomModelProvider } from '@gugu/session-core/models/custom-model'
+import { platformArmedEffort, type SessionModelCapability } from '@gugu/session-core/agents/plugins'
+import { customModelEfforts, type CustomModelEntry, type ModelProtocol, type PiCustomModelProvider } from '@gugu/session-core/models/custom-model'
 import { pluginRegistry } from '@gugu/session-plugins/agents'
 import { materializeModelCapability, providerDeliversModelViaConfigFile } from '../capability-bundle'
 import type { SessionpagePlatformModel } from './sessionpage-platform-model'
@@ -18,10 +18,14 @@ export function connectionModelLaunch(input: {
   connectionId?: string
   entries?: readonly CustomModelEntry[]
   piProviders?: readonly PiCustomModelProvider[]
+  effort?: string
 }): SessionpagePlatformModel {
   const [model, ...others] = input.models
   const plugin = pluginRegistry.get(input.providerId)
   if (!model && !plugin?.capabilities.sessionBundle.customModel?.modelOptional) throw new Error(`${input.providerId}: the custom connection names no model`)
+  // The model's levels and the recorded one, armed the way a platform model's are.
+  const efforts = (id: string) => customModelEfforts(input.entries?.find((entry) => entry.id === id), plugin?.capabilities.effort)
+  const reasoningEfforts = model ? efforts(model) : null
   const nativeCredentials = input.providerId === 'claude' || input.providerId === 'codex' || input.providerId === 'antigravity' || (input.providerId === 'dsh' && !model)
   let modelCapability: SessionModelCapability | null = null
   if (!nativeCredentials) {
@@ -30,9 +34,9 @@ export function connectionModelLaunch(input: {
       throw new Error(`${input.providerId}: custom models need this harness's model writer`)
     }
     const declared = writer.declare({
-      explicitModel: model, requestedEffort: undefined, envOverride: () => undefined,
+      explicitModel: model, requestedEffort: platformArmedEffort(input.effort, reasoningEfforts, reasoningEfforts) ?? undefined, envOverride: () => undefined,
       platformProvider: { baseUrl: input.endpoint, apiKey: input.apiKey }, platformAccess: null,
-      platformModels: others.length ? others.map((id) => ({ id, displayName: id })) : undefined,
+      platformModels: others.length ? others.map((id) => ({ id, displayName: id, reasoningEfforts: efforts(id) })) : undefined,
       contextWindow: input.capabilities?.contextWindow, callableRoutes: {},
       protocolEnv: () => { throw new Error(`${input.providerId}: a custom model has no platform protocol environment`) },
     })
@@ -56,7 +60,7 @@ export function connectionModelLaunch(input: {
     spawnEnv, clientArgs: [], adapterArgs: input.surface === 'tui' ? [] : [...(loaded.extraArgs ?? [])],
     settingsDocumentPath: null,
     platformProvider: modelCapability?.platformProvider ?? null,
-    contextWindow: input.capabilities?.contextWindow ?? null, reasoningEfforts: null,
+    contextWindow: input.capabilities?.contextWindow ?? null, reasoningEfforts,
     modelCapability, switchableModels: [],
   }
 }
