@@ -1,4 +1,4 @@
-import { CONVERSATION_CAPSULE_CLASS } from '../../tabs/tab-bar/conversation-capsule';
+import { CONVERSATION_CAPSULE_CLASS, CONVERSATION_CAPSULE_LAYER_CLASS } from '../../tabs/tab-bar/conversation-capsule';
 import { OwnedAgentChatBoundary } from '../owned-agent-chat-boundary';
 import { DndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
@@ -133,7 +133,7 @@ export const ChatTabChip = observer(function ChatTabChip({
     // 第 16 版 #8:对话卡片顶上只剩这一颗胶囊;名字由 ChatBlockHead 画进 labelSlot(点它出名片),胶囊里不放头像。
     return (
       // 按整张卡居中(设计稿 .capbar):相对页签条的 padding box 绝对居中。
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center" {...data}>
+      <div className={CONVERSATION_CAPSULE_LAYER_CLASS} {...data}>
         <div className={`${CONVERSATION_CAPSULE_CLASS} pointer-events-auto !px-0 [&_[data-chat-block-avatar]]:hidden [&_[data-chat-block-title]]:px-4 [&_[data-chat-block-title]]:justify-center [&>[data-chat-part]]:justify-center`} data-chat-workspace-title="">
           {labelSlot ?? <span className="truncate" title={label}>{label}</span>}
         </div>

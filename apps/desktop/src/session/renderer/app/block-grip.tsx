@@ -88,7 +88,7 @@ function blockDragImage(blockId: string, title: string): HTMLElement | null {
     Object.assign(cell.style, { width: `${card.width * GHOST_SCALE}px`, height: `${rect.height * GHOST_SCALE}px` });
     ghost.appendChild(cell);
   }
-  ghost.firstElementChild!.textContent = title;
+  ghost.firstElementChild!.textContent = title || block.querySelector('[data-chat-workspace-title]')?.textContent?.trim() || '';
   block.ownerDocument.body.appendChild(ghost);
   return ghost;
 }
