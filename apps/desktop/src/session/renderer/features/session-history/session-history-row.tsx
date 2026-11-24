@@ -1,6 +1,7 @@
 import { Fragment } from 'react';
 import { ListRow } from '@/components/ui/ListRow';
 import { AgentIcon } from '@renderer/lib/components/agent-icon';
+import { SessionAvatar } from '@/components/session-watch/StatusGlyph';
 import type { SessionImportSource } from '@renderer/features/session-import/import-source';
 import { SessionPreviewPane } from '@renderer/features/session-import/session-preview-pane';
 import { Button } from '@renderer/lib/ui/button';
@@ -151,9 +152,14 @@ export function SessionHistoryRow({
         selected={isHighlighted}
         className="group cursor-default"
         leading={
-          <span className="flex size-8 items-center justify-center rounded-full bg-[var(--muted)]">
-            {row.providerId ? <AgentIcon id={row.providerId} size={16} /> : null}
-          </span>
+          // 咕咕会话 = 侧栏那一张脸(SessionAvatar,同一个种子);还没导入的原件没有脸,画它引擎的图标。
+          row.gugu ? (
+            <SessionAvatar sessionId={row.gugu.sessionId} presentation={null} size={32} />
+          ) : (
+            <span className="flex size-8 items-center justify-center rounded-full bg-[var(--muted)]">
+              {row.providerId ? <AgentIcon id={row.providerId} size={16} /> : null}
+            </span>
+          )
         }
         title={<span className={row.title ? undefined : 'text-foreground-muted'} title={title}>{title}</span>}
         meta={<RelativeTime value={row.updatedAt} compact ago />}
