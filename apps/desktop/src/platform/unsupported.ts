@@ -27,6 +27,7 @@ export function createUnsupportedPlatform(
       localHumanAuthSession: false,
       barcodeScan: false,
       sessionHost: false,
+      modelSettings: false,
       externalFileOpen: false,
       appRelaunch: false,
     logTail: false,
