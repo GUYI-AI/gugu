@@ -119,7 +119,7 @@ describe('permanent native IM retirement', () => {
     expect(store.windows(B, ['chat'], 10)).toHaveLength(1)
   })
   it('upgrades the previous installed schema without changing existing rows or migration receipts', async () => {
-    fixture = await openFixture('empty', { through: '0055_drop_session_turns' })
+    fixture = await openFixture('empty', { through: '0059_automations_agent_session_deleted' })
     const sql = fixture.sqlite
     sql.prepare("INSERT INTO im_messages(account_id,id,chat_id,seq,created_at,content_type,content,is_whisper,to_user_ids,rest) VALUES(?,?,?,1,'2026-11-02T00:00:00Z','text','kept',0,'[]','{}')").run(A,'kept','chat')
     sql.prepare('INSERT INTO im_message_accounts VALUES(?,?)').run(A,'19')
