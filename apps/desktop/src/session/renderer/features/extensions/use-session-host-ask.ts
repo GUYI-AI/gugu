@@ -112,15 +112,17 @@ function askOf(settlements: Readonly<Record<string, Settlement>>, sources: reado
  * under a terminal session's terminal (125 10-06: whoever watches the session on the session page answers it there). Who asks
  * for what; 「不装」 answers at once, 「查看并安装」 opens this device's own sheet (naming the machine the session runs on when
  * that is another one); the answer goes to the session's `respond`, and 「已经不等了」 when the ask was withdrawn first.
- * The timeline is read only while the session waits on an approval (`session`: its status as the host wrote it) — an open
- * panel reads nothing otherwise.
+ * `held`: the settlements the page's own feed already follows — the ask is read off them as soon as they hold it. Without
+ * them the timeline is read only while the session waits on an approval (`session`: its status as the host wrote it) — an
+ * open panel reads nothing otherwise.
  */
 export function useHostAskBand(
   sessionId: string | null,
-  session: { status: string | null; detail: string | null } | null | undefined
+  session: { status: string | null; detail: string | null } | null | undefined,
+  held?: Readonly<Record<string, Settlement>> | null,
 ): { request: ComposerPermissionRequest; resolve: (optionId: string | null) => void } | null {
   const { translate } = useSessionMessages();
-  const ask = useSessionHostAsk(sessionWaitsOnApproval(session) ? sessionId : null, HOST_APPROVALS);
+  const ask = useSessionHostAsk(held || sessionWaitsOnApproval(session) ? sessionId : null, HOST_APPROVALS, false, held);
   const install = appInstallAskOf(ask?.origin);
   const capability = deviceCapabilityAskOf(ask?.origin);
   const itemId = ask?.itemId;
