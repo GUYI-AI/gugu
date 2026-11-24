@@ -1128,7 +1128,9 @@
   }
 
   /* 对话卡片顶上是 56 高的胶囊栏(稿子 .capbar):收起右侧栏时那颗打开按钮和胶囊同一条中线、离卡片右缘 10(.capbar .rt)。 */
-  [data-chat-workspace-header]:not([data-chat-tool-shared], [data-chat-tool-cards]) {
+  /* 浮在胶囊栏上的那排按钮(chat-workspace-chrome floating)自己也认这份几何:工具离场时卡片还在、上一条不生效,❌ 等落定再跳过来。 */
+  [data-chat-workspace-header]:not([data-chat-tool-shared], [data-chat-tool-cards]),
+  [data-chat-capsule-actions] {
     --tab-strip-height: 56px;
     --tabbar-actions-edge-gap: 10px;
   }

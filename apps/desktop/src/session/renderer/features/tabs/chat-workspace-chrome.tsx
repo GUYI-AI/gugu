@@ -220,7 +220,7 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
           float at the top right as one row and take no width, so the capsule centres on the whole card. Beside tools or
           merged into one strip they share the row. The tools going off (hidden, still on the track) take their strip with them
           but not these buttons: they are the header's from the frame the tools are hidden, ❌ after they land. */}
-      {floating ? <div ref={measureFloatingActions} className="absolute inset-y-0 right-0 flex">
+      {floating ? <div ref={measureFloatingActions} className="absolute inset-y-0 right-0 flex" data-chat-capsule-actions="">
         <div className="flex [--tabbar-actions-edge-gap:0px]">{actions}</div>{actionRow}
       </div> : !toolCard && actionRow}
     </div>
