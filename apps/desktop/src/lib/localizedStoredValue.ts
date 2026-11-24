@@ -8,8 +8,16 @@ export function encodeMessagingValue(key: string): string {
 
 export function resolveMessagingValue(value: string): string {
   switch (value) {
+    // Group and topic membership RPCs also store these exact values as plain text.
+    case '已加入群聊':
     case `${MESSAGING_PREFIX}chatService.groupAction.joined`:
       return i18n.t('chatService.groupAction.joined', { ns: 'messaging' })
+    case '已加入话题':
+      return i18n.t('chatService.groupAction.topicJoined', { ns: 'messaging' })
+    case '频道群主':
+      return i18n.t('chatService.groupAction.channelOwner', { ns: 'messaging' })
+    case '迁移旧督导成员角色':
+      return i18n.t('chatService.groupAction.supervisorRoleMigrated', { ns: 'messaging' })
     case `${MESSAGING_PREFIX}chatService.groupAction.roleUpdated`:
       return i18n.t('chatService.groupAction.roleUpdated', { ns: 'messaging' })
     case `${MESSAGING_PREFIX}chatService.scheduler.paused`:

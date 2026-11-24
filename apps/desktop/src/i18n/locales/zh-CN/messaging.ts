@@ -337,6 +337,9 @@ export default {
       "setListenModeFailed": "无法更改收听模式，设置未变更"
     },
     "groupAction": {
+      "channelOwner": "频道群主",
+      "supervisorRoleMigrated": "迁移旧督导成员角色",
+      "topicJoined": "已加入话题",
       "joined": "已加入群聊",
       "roleUpdated": "群角色已更新"
     },
