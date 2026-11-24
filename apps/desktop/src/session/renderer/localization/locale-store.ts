@@ -37,10 +37,14 @@ export function translateSessionMessage(
     ...values,
     interpolation: { prefix: '{', suffix: '}' },
   } as const;
-  if (!i18n.exists(messageKey, options)) {
+  // One resolution, not an `exists` and then a `t`: rows translate on every render. A key that resolves to nothing
+  // comes back as the marker and still fails loudly.
+  const text = i18n.t(messageKey, { ...options, defaultValue: MISSING_SESSION_TRANSLATION });
+  if (text === MISSING_SESSION_TRANSLATION) {
     throw new Error(
       `Missing session translation: ${getLocaleSnapshot().resolvedLocale}:${messageKey}`
     );
   }
-  return i18n.t(messageKey, options);
+  return text;
 }
+const MISSING_SESSION_TRANSLATION = '\u0000missing-session-translation';

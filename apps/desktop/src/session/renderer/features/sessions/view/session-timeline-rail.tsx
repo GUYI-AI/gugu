@@ -1,5 +1,5 @@
 import { metadataSeparator } from '@/i18n/format'
-import { useLayoutEffect, useRef, useState } from 'react';
+import { memo, useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { PreviewCard, PreviewCardContent, PreviewCardTrigger } from '@renderer/lib/ui/preview-card';
 import { cn } from '@renderer/utils/utils';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -60,6 +60,10 @@ export function SessionTimelineRail({
   // 画一帧,矮的窗口那一帧是真的溢出。依赖写 `hasTurns` —— 轨是从 0 轮长出来的,`[]` 会让
   // observer 永远挂不上后来才出现的那个 nav。
   const [railHeight, setRailHeight] = useState(0);
+  // A tick draws again only when what it shows changed (`TimelineTick`); the jump it calls is always the latest one.
+  const latestJump = useRef(onJump);
+  latestJump.current = onJump;
+  const jump = useCallback((anchorItemId: string) => latestJump.current(anchorItemId), []);
   const hasTurns = turns.length > 0;
   useLayoutEffect(() => {
     const rail = navRef.current;
@@ -89,81 +93,109 @@ export function SessionTimelineRail({
       // 轨占满整列后自己不吃指针事件,否则那 36px 宽的空白车道会替 transcript 挡掉点击。
       className="pointer-events-none absolute inset-y-0 left-3 z-10 flex flex-col items-start justify-center"
     >
-      {ticks.map((tick, index) => {
-        const { turn } = tick;
-        const spansMany = tick.to > tick.from;
-        const isCurrent = currentIndex >= 0 && currentIndex + 1 >= tick.from && currentIndex + 1 <= tick.to;
-        const label = senderLabel(turn.sender, translate);
-        const range = translate('task.timelineTurnRange', { from: tick.from, to: tick.to });
-        // design.md:blue 只表示 live/running/connected/**currently selected**;「这一轮是不是
-        // 从别处送进来的」是来源属性,不是活的状态,不该抢那个蓝 —— 2026-09-22 按它改:isCurrent
-        // 一件事拿蓝(foreground-info = --live),delivered 只改墨的填充比例(深浅)分来源。
-        const tone = isCurrent
-          ? 'bg-foreground-info'
-          : tick.delivered
-            ? 'bg-foreground/70 group-hover:bg-foreground group-kbd-focus:bg-foreground'
-            : 'bg-foreground-muted/40 group-hover:bg-foreground-muted group-kbd-focus:bg-foreground-muted';
-        const jumpLabel = tick.delivered
-          ? translate('task.jumpToDelivery', { sender: label, prompt: [...turn.prompt].slice(0, 50).join('') })
-          : translate('task.jumpToTurn', { prompt: [...turn.prompt].slice(0, 50).join('') });
-        return (
-          <PreviewCard key={turn.id}>
-            <PreviewCardTrigger
-              delay={100}
-              closeDelay={100}
-              render={
-                <button
-                  type="button"
-                  // 一格代表多轮时读屏也要说清它覆盖了哪几轮 —— 否则「跳到这一轮」这句是假的。
-                  aria-label={spansMany ? `${range}${metadataSeparator()}${jumpLabel}` : jumpLabel}
-                  aria-current={isCurrent ? 'location' : undefined}
-                  data-tick-index={index}
-                  data-tick-span={`${tick.from}-${tick.to}`}
-                  data-tick-current={isCurrent ? 'true' : undefined}
-                  data-tick-sender={turn.sender?.kind}
-                  className="group pointer-events-auto flex items-center rounded-sm outline-none"
-                  style={{ height: ITEM_SIZE, width: ITEM_SIZE }}
-                  onMouseEnter={() => setHoveredIndex(index)}
-                  onMouseLeave={() => setHoveredIndex(null)}
-                  onFocus={() => setHoveredIndex(index)}
-                  onBlur={() => setHoveredIndex(null)}
-                  onClick={() => onJump(turn.anchorItemId)}
-                />
-              }
-            >
-              <span
-                data-slot="tick"
-                className={cn(
-                  'pointer-events-none rounded-full transition-[width,background-color] duration-[var(--dur-med)] ease-out motion-reduce:transition-none',
-                  tone
-                )}
-                style={{ width: markerWidth(index, hoveredIndex), height: PILL_WIDTH }}
-              />
-            </PreviewCardTrigger>
-            <PreviewCardContent side="right" sideOffset={8} className="w-72">
-              <div
-                data-slot="preview-sender"
-                className={cn(
-                  'flex items-center gap-1 text-xs',
-                  // 同一条法:delivered 是来源,不是活的,不拿蓝 —— 用墨深浅(见上方 tone)。
-                  tick.delivered ? 'text-foreground' : 'text-foreground-muted'
-                )}
-              >
-                {tick.delivered && <span aria-hidden="true" className="size-1.5 rounded-full bg-foreground" />}
-                <span className="truncate">{label}</span>
-                {/* 这一格代表多轮时才写出轮次区间:一格一轮的会话不该多出一行没用的元信息。 */}
-                {spansMany && (
-                  <span data-slot="preview-range" className="ml-auto shrink-0 tabular-nums">
-                    {range}
-                  </span>
-                )}
-              </div>
-              <p className="line-clamp-2 text-sm font-medium">{turn.prompt}</p>
-              {turn.reply && <p className="line-clamp-4 text-xs text-foreground-muted">{turn.reply}</p>}
-            </PreviewCardContent>
-          </PreviewCard>
-        );
-      })}
+      {ticks.map((tick, index) => (
+        <TimelineTick
+          key={tick.turn.id}
+          turn={tick.turn}
+          from={tick.from}
+          to={tick.to}
+          delivered={tick.delivered}
+          index={index}
+          isCurrent={currentIndex >= 0 && currentIndex + 1 >= tick.from && currentIndex + 1 <= tick.to}
+          width={markerWidth(index, hoveredIndex)}
+          onHover={setHoveredIndex}
+          onJump={jump}
+        />
+      ))}
     </nav>
   );
 }
+
+/**
+ * One tick. Its labels (sender, range, jump) are put into words when the tick changes, not on every render of the rail:
+ * a message arriving redraws the rail, and the turns it draws keep their objects (`useTranscriptTimeline`).
+ */
+const TimelineTick = memo(function TimelineTick({ turn, from, to, delivered, index, isCurrent, width, onHover, onJump }: {
+  turn: TimelineTurn;
+  from: number;
+  to: number;
+  delivered: boolean;
+  index: number;
+  isCurrent: boolean;
+  width: number;
+  onHover: (index: number | null) => void;
+  onJump: (anchorItemId: string) => void;
+}) {
+  const { translate } = useSessionMessages();
+  const spansMany = to > from;
+  const label = senderLabel(turn.sender, translate);
+  const range = translate('task.timelineTurnRange', { from, to });
+  // design.md:blue 只表示 live/running/connected/**currently selected**;「这一轮是不是
+  // 从别处送进来的」是来源属性,不是活的状态,不该抢那个蓝 —— 2026-09-22 按它改:isCurrent
+  // 一件事拿蓝(foreground-info = --live),delivered 只改墨的填充比例(深浅)分来源。
+  const tone = isCurrent
+    ? 'bg-foreground-info'
+    : delivered
+      ? 'bg-foreground/70 group-hover:bg-foreground group-kbd-focus:bg-foreground'
+      : 'bg-foreground-muted/40 group-hover:bg-foreground-muted group-kbd-focus:bg-foreground-muted';
+  const jumpLabel = delivered
+    ? translate('task.jumpToDelivery', { sender: label, prompt: [...turn.prompt].slice(0, 50).join('') })
+    : translate('task.jumpToTurn', { prompt: [...turn.prompt].slice(0, 50).join('') });
+  return (
+    <PreviewCard>
+      <PreviewCardTrigger
+        delay={100}
+        closeDelay={100}
+        render={
+          <button
+            type="button"
+            // 一格代表多轮时读屏也要说清它覆盖了哪几轮 —— 否则「跳到这一轮」这句是假的。
+            aria-label={spansMany ? `${range}${metadataSeparator()}${jumpLabel}` : jumpLabel}
+            aria-current={isCurrent ? 'location' : undefined}
+            data-tick-index={index}
+            data-tick-span={`${from}-${to}`}
+            data-tick-current={isCurrent ? 'true' : undefined}
+            data-tick-sender={turn.sender?.kind}
+            className="group pointer-events-auto flex items-center rounded-sm outline-none"
+            style={{ height: ITEM_SIZE, width: ITEM_SIZE }}
+            onMouseEnter={() => onHover(index)}
+            onMouseLeave={() => onHover(null)}
+            onFocus={() => onHover(index)}
+            onBlur={() => onHover(null)}
+            onClick={() => onJump(turn.anchorItemId)}
+          />
+        }
+      >
+        <span
+          data-slot="tick"
+          className={cn(
+            'pointer-events-none rounded-full transition-[width,background-color] duration-[var(--dur-med)] ease-out motion-reduce:transition-none',
+            tone
+          )}
+          style={{ width, height: PILL_WIDTH }}
+        />
+      </PreviewCardTrigger>
+      <PreviewCardContent side="right" sideOffset={8} className="w-72">
+        <div
+          data-slot="preview-sender"
+          className={cn(
+            'flex items-center gap-1 text-xs',
+            // 同一条法:delivered 是来源,不是活的,不拿蓝 —— 用墨深浅(见上方 tone)。
+            delivered ? 'text-foreground' : 'text-foreground-muted'
+          )}
+        >
+          {delivered && <span aria-hidden="true" className="size-1.5 rounded-full bg-foreground" />}
+          <span className="truncate">{label}</span>
+          {/* 这一格代表多轮时才写出轮次区间:一格一轮的会话不该多出一行没用的元信息。 */}
+          {spansMany && (
+            <span data-slot="preview-range" className="ml-auto shrink-0 tabular-nums">
+              {range}
+            </span>
+          )}
+        </div>
+        <p className="line-clamp-2 text-sm font-medium">{turn.prompt}</p>
+        {turn.reply && <p className="line-clamp-4 text-xs text-foreground-muted">{turn.reply}</p>}
+      </PreviewCardContent>
+    </PreviewCard>
+  );
+});
