@@ -53,7 +53,7 @@ export function AppManagePage({
   enabled,
   switching = false,
   lifecycle,
-  updated,
+  completedUpdate,
   upToDate,
   updateError,
   onOpen,
@@ -104,7 +104,7 @@ export function AppManagePage({
   iconDataUrl?: string | null;
   enabled: boolean;
   switching?: boolean;
-  updated?: boolean;
+  completedUpdate?: { version: string };
   upToDate?: boolean;
   updateError?: string;
   onOpen?: () => void;
@@ -397,8 +397,8 @@ export function AppManagePage({
   const [current, setCurrent] = useState(sections[0]!.id);
   const anchors = sections.map((section) => section.id).join(' ');
   const pageRef = useRef<HTMLDivElement>(null);
-  const enteredVersion = useRef(manifest.version);
-  const justUpdated = updated && enteredVersion.current !== manifest.version;
+  const resultOnEntry = useRef(completedUpdate);
+  const justUpdated = !!completedUpdate && completedUpdate !== resultOnEntry.current;
   const headingRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (focusHeading) headingRef.current?.focus({ preventScroll: true }); }, [focusHeading]);
   const clicked = useRef(false);
@@ -441,7 +441,7 @@ export function AppManagePage({
               <p>{[`v${manifest.version}`, machine, origin === 'preinstalled' ? translate('extensions.manageBuiltIn') : enabled ? undefined : translate('extensions.switchedOff')].filter(Boolean).join(metadataSeparator())}</p>
             </div>
             <fieldset disabled={readOnly} className="mg-head-acts">
-              <AppLifecycleButton primary={lifecycle?.kind === 'update' || justUpdated} retry={!!updateError} state={lifecycle} pending={pending} percent={pendingPercent} disabled={readOnly} translate={translate} onClick={onLifecycle} testId="app-manage-action" />
+              <AppLifecycleButton primary={lifecycle?.kind === 'update' || (lifecycle?.kind === 'open' && upToDate) || justUpdated} retry={!!updateError} state={lifecycle} pending={pending} percent={pendingPercent} disabled={readOnly} translate={translate} onClick={onLifecycle} testId="app-manage-action" />
               {onOpen && <Button data-testid="app-manage-open" type="button" variant="outline" size="sm" disabled={!!pending || readOnly} onClick={onOpen}>{translate('extensions.open')}</Button>}
               <AppMoreMenu name={text.name} enabled={enabled} docked={docked} disabled={readOnly || pending !== undefined} translate={translate} resource={resource} onOpenInWindow={onOpenInWindow} onForward={onForward} testId="app-manage-more" />
             </fieldset>

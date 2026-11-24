@@ -1150,7 +1150,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           switching={switching[managed.id] === true}
           lifecycle={lifecycle}
           updateError={updateError}
-          updated={result?.version === managed.version && !result.error}
+          completedUpdate={result?.version === managed.version && !result.error ? result : undefined}
           upToDate={inMarket && managed.version === subjectOf(managed.id)?.manifest.version}
           onOpen={lifecycle?.kind === 'update' && onRail(managed) ? () => openApp(managed.id) : undefined}
           focusHeading={!!previousAppsLocation()?.installed}
