@@ -1547,7 +1547,7 @@ html[data-gugu-dragging] :is(webview, iframe) {
   display: flex;
   justify-content: center;
   padding-top: 8px;
-  font-size: 11px;
+  font-size: var(--font-caption);
   font-weight: 600;
   color: var(--fg);
 }
