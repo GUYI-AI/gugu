@@ -1,5 +1,7 @@
 import { observer } from 'mobx-react-lite'
-import { useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, type CSSProperties, type ReactNode } from 'react'
+import { ModalClose } from '@/components/ui/ModalClose'
+import { MODAL_ROW_CENTER } from '@/components/ui/modalGeometry'
 import { publishPanelToggle } from '@/lib/panelToggles'
 import { TITLEBAR_LEFT_EDGE_GAP_PX } from '@/lib/window-chrome'
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts'
@@ -27,6 +29,16 @@ export const ShellSidebarToggle = observer(function ShellSidebarToggle() {
 
   return null
 })
+
+/**
+ * Set by a page shown as a modal (@@@page-modal): its title band is the modal's header, not the window's — no window handle;
+ * it sits in a pane header's height, the ✕ where Settings has it (@@@page-modal-close), the page's own buttons left of it
+ * on the same row.
+ */
+export const PageModalClose = createContext<(() => void) | null>(null)
+
+/** The 40px title band, centred on the modal header's row (the ✕'s centre line). */
+const MODAL_BAND: CSSProperties = { position: 'absolute', left: 0, top: `calc(${MODAL_ROW_CENTER} - 20px)`, right: 'calc(var(--control-h-lg) + var(--spacing-lg) + 4px)' }
 
 /** The shared frameless-window handle used by full workspace and composer-only surfaces. */
 export function ShellTitlebarDragRegion() {
@@ -70,6 +82,28 @@ export const ShellTitlebar = observer(function ShellTitlebar({
    */
   dragRegion?: boolean
 }) {
+  const closeModal = useContext(PageModalClose)
+  // In a modal the title starts where Settings' page title does; on a page, after the window's own controls.
+  const left = leftSlot ? (
+    <div
+      className="absolute top-0 flex h-10 items-center [-webkit-app-region:no-drag]"
+      style={{ left: closeModal ? 'var(--spacing-2xl)' : TITLEBAR_LEFT_EDGE_GAP_PX }}
+      data-shell-titlebar-left=""
+    >
+      {leftSlot}
+    </div>
+  ) : null
+  if (closeModal) {
+    return (
+      <div className="relative z-40 h-0">
+        <div style={MODAL_BAND}>
+          {left}
+          {children}
+        </div>
+        <ModalClose floating onClose={closeModal} />
+      </div>
+    )
+  }
   return (
     <div className="relative z-40 h-0">
       {/* Keep the shell layout zero-height, but make the full top chrome lane a usable window handle.
@@ -87,15 +121,7 @@ export const ShellTitlebar = observer(function ShellTitlebar({
           的命中测试。真机实测(真鼠标点击,不是 elementFromPoint):只有 no-drag 时三个按钮
           全部点不到,叠加本行后全部点到,还原后又全部点不到。 */}
       {dragRegion ? <ShellTitlebarDragRegion /> : null}
-      {leftSlot ? (
-        <div
-          className="absolute top-0 flex h-10 items-center [-webkit-app-region:no-drag]"
-          style={{ left: TITLEBAR_LEFT_EDGE_GAP_PX }}
-          data-shell-titlebar-left=""
-        >
-          {leftSlot}
-        </div>
-      ) : null}
+      {left}
       {children}
     </div>
   )

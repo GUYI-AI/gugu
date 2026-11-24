@@ -49,7 +49,7 @@ export interface ComposerFocusContext {
   mobileShell?: boolean
   /** 聚焦后把光标放在第几个字符（插入表情/提及后回到插入点）。缺省不动光标。 */
   caret?: number
-  /** 会话内续接动作落在动作发生的那个输入框(话题分栏那份不登记,只能这样指名)。缺省 = 登记的主输入框。 */
+  /** 会话内续接动作落在动作发生的那个输入框。缺省 = 登记的主输入框。 */
   target?: () => HTMLElement | null
 }
 
@@ -67,9 +67,6 @@ const COMPOSER_SELECTOR = `[data-testid="${AUTOMATION_TEST_IDS.chatComposer}"]`
 const MAX_FOCUS_FRAMES = 40
 
 type ComposerTargetResolver = () => HTMLElement | null
-// ⚠️ @@@5856 一扇窗里同一时刻只有一个输入框该接「进入会话」的落点 ——
-// 话题分栏那一份必须传 surface="aside" 不登记,否则分栏一开,「进入会话」那一类的落点就被它接管:
-// 从会话列表点进主线,光标却落在话题输入框里 —— 正是话题要隔离的那个方向,反过来了。
 // #7199 主输入框不止一个(对话页一个、「助理」App 里那条私聊一个),两个都常驻、同一时刻至多一个摆在眼前:
 // 后登记的优先,但藏着的(visibility:hidden / display:none 的面里)跳过 —— ❌ 光标落进看不见的那一个。
 // 会话内续接动作不看登记,由 context.target 指名动作发生的那个输入框。

@@ -111,12 +111,12 @@ describe('chat link pills, drawn in place', () => {
     expect(pills().map(pill => pill.dataset.unavailable)).toEqual([undefined, undefined])
   })
 
-  it('marks an @agent mention with the agent mark and leaves an @person mention the bold name', async () => {
+  it('draws an @agent mention as the same bold name as an @person mention, with no agent mark', async () => {
     const marker = '#ggm-test-marker'
     await render(`[@Helper](${marker}) and [@Alice](${marker}) look`, 'chat', 'chat', marker)
     const mentions = [...container.querySelectorAll<HTMLElement>('[data-mention]')]
     expect(mentions.map(mention => mention.textContent)).toEqual(['@Helper', '@Alice'])
-    expect(mentions.map(mention => !!mention.querySelector('svg'))).toEqual([true, false])
+    expect(mentions.map(mention => !!mention.querySelector('svg'))).toEqual([false, false])
   })
 
   it('names a message that is an attachment by its file, not its envelope', async () => {

@@ -5,18 +5,16 @@
 //   1. 「可见 / 参与 / 通知是三件事」在锚点卡上真的看得出来(is_participant=false ⇒ 「仅可查看」);
 //      判据能判假 —— 同一份数据把 is_participant 翻成 true,那条断言必须反过来。
 //   2. useTopicsOfChat 的竞态守卫:切线之后,上一条线的慢响应 ❌ 不许落进新线的状态。
-import { askReveal } from '../../../apps/desktop/src/hooks/useSourceMessageReveal'
-import { topicHistoryStub } from '../../support/chatWindowStub'
 import { readFile } from 'node:fs/promises'
-import { composerSlotClass, composerSlotInnerClass } from '@gugu/session-chat-ui/composer-layout'
 import { act, createElement, useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as attachmentReader from '../../../apps/desktop/src/lib/attachmentBytes'
-import { queryClient as attachmentQueryClient } from '../../../apps/desktop/src/lib/replica'
+import { followRendererSession, queryClient as attachmentQueryClient } from '../../../apps/desktop/src/lib/replica'
 
 import type { TopicSummary } from '@gugu/core/shared/types/chat'
 import { createNode, createReactHarness, clickElement, deferred, message, renderWithAppProviders } from '../../support/testHarness'
-import { NATIVE_BACK_EVENT } from '../../../apps/desktop/src/components/ui/sheetStack'
+import { chatWindowStub } from '../../support/chatWindowStub'
+import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 
 const listTopicsOfChat = vi.fn<(sourceChatId: string) => Promise<TopicSummary[]>>()
 vi.mock('../../../apps/desktop/src/lib/topics', () => ({
@@ -32,14 +30,10 @@ vi.mock('../../../apps/desktop/src/lib/chatMessageRevalidation', async (importOr
 }))
 
 const { useTopicsOfChat, topicsSourceChatId } = await import('../../../apps/desktop/src/hooks/useTopics')
+const { useTopicSurface } = await import('../../../apps/desktop/src/hooks/useTopicSurface')
 const { TopicAnchorCard } = await import('../../../apps/desktop/src/components/chat/TopicAnchorCard')
-const { TopicSplitPane } = await import('../../../apps/desktop/src/components/chat/TopicSplitPane')
-const { UI_EVENTS } = await import('../../../apps/desktop/src/lib/uiEvents')
-const { commandRegistry } = await import('../../../apps/desktop/src/session/renderer/lib/commands/registry')
-const { resetSearchSession, useSearchSession } = await import('../../../apps/desktop/src/session/renderer/features/global-search/search-session')
-const { quotePrefixOf, canSourceTopic } = await import('../../../apps/desktop/src/components/chat/topicSplitModels')
+const { canSourceTopic } = await import('../../../apps/desktop/src/components/chat/topicAnchorModels')
 const { chatDisplayName } = await import('@gugu/core/shared/ui/chatModels')
-const receiptHeads = () => [...document.querySelectorAll('[data-testid="message-read-receipt-panel"] [data-slot="section-label"]')].map((head) => head.textContent)
 const { withSourceLineCandidates } = await import('../../../apps/desktop/src/lib/mention')
 
 function topic(overrides: Partial<TopicSummary> = {}): TopicSummary {
@@ -226,477 +220,6 @@ describe('锚点是那条消息的附件,所以跟它的气泡同一侧', () => 
   })
 })
 
-describe('TopicSplitPane 是分栏，不是话题的开关', () => {
-  const baseProps = {
-    topic: { chatId: 'topic-1', name: '分片下载失败' },
-    messages: [],
-    loading: false,
-    memberProfiles: {},
-    memberReadSeqs: {},
-    visibleChats: [],
-    onSend: vi.fn(async () => {}),
-    onSendAttachments: vi.fn(async () => {}),
-    onClose: vi.fn(),
-    currentUserId: 'user-1',
-    history: topicHistoryStub(),
-    mentionMembers: [],
-  } satisfies Parameters<typeof TopicSplitPane>[0]
-
-  const receiptProps = {
-    ...baseProps,
-    messages: [message({ id: 'topic-own-message', is_mine: true, seq: 10, to_user_ids: ['read', 'unread', 'source-only'], readers: ['read'] })],
-    memberReadSeqs: { read: 0, unread: 0 },
-    memberProfiles: {
-      read: { id: 'read', displayName: '话题已读成员', avatar: null, email: null, type: 'agent' as const, role: 'member' as const },
-      unread: { id: 'unread', displayName: '话题未读成员', avatar: null, email: null, type: 'human' as const, role: 'member' as const },
-      'source-only': { id: 'source-only', displayName: '仅来源群成员', avatar: null, email: null, type: 'human' as const, role: 'member' as const },
-    },
-  }
-
-  for (const layout of ['desktop', 'phone', 'tab'] as const) {
-    // owner: a "From: <source message>" line next to the topic title was removed long ago; it must not come back in any layout.
-    it(`${layout}: topic header names the topic only, never its source message`, async () => {
-      await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, mobile: layout === 'phone', embedded: layout === 'tab' }))
-      expect(harness.container.querySelector('[data-testid="topic-split-title"]') !== null).toBe(layout === 'desktop')
-      expect(harness.container.textContent).not.toMatch(/引自|From:/)
-      for (const id of ['topic-split-more', 'topic-split-members-toggle', 'topic-split-files-toggle']) {
-        expect(harness.container.querySelector(`[data-testid="${id}"]`)).toBeNull()
-      }
-    })
-  }
-
-  // owner: on the phone topic page a line "hung" above the conversation (the source preview).
-  // With real messages, nothing may sit above the first message; restoring the old source line must turn this red.
-  it('phone: nothing renders above the first topic message', async () => {
-    const messages = [message({ id: 'first', seq: 1, content: 'FIRST-MESSAGE' }), message({ id: 'second', seq: 2, content: 'SECOND-MESSAGE' })]
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, messages, mobile: true }))
-    const pane = harness.container.querySelector<HTMLElement>('[data-testid="topic-split-pane"]')!
-    expect(pane.textContent).toContain('FIRST-MESSAGE')
-    expect(pane.firstElementChild?.getAttribute('data-testid')).toBe('topic-split-messages')
-  })
-
-  it('Mod+F in the topic opens the global search scoped to the topic, with no in-page search', async () => {
-    const openPanel = vi.fn()
-    const unregister = commandRegistry.register({ scopeId: 'app', getCommands: () => [{ id: 'app.globalSearch', execute: openPanel }] })
-    function SearchSnapshot() { return createElement('output', { 'data-search-session': true }, JSON.stringify(useSearchSession())) }
-    await renderWithAppProviders(harness, createElement('div', null, createNode(TopicSplitPane, { ...baseProps, viewportKey: 'review-topic' }), createElement(SearchSnapshot)))
-    const composer = harness.container.querySelector<HTMLElement>('[data-testid="chat-composer-aside"]')!
-    try {
-      await act(async () => {
-        commandRegistry.setContext(composer)
-        expect(commandRegistry.dispatch('app.find')).toBe(true)
-      })
-      expect(openPanel).toHaveBeenCalledTimes(1)
-      expect(JSON.parse(harness.container.querySelector('[data-search-session]')!.textContent!).chips).toEqual([{ kind: 'in', chatId: baseProps.topic.chatId }])
-      expect(harness.container.querySelector('input[placeholder="Find..."], input[placeholder="查找…"]')).toBeNull()
-    } finally { commandRegistry.setContext(document.body); unregister(); resetSearchSession() }
-  })
-
-  // 2026-09-24 shuxue:「我在 topic 里面点不开你发的附件」。分栏复用 MessageList 却没接 onOpenFile ⇒
-  // 文件卡的按钮点了什么都不发生(主线那边是接了的)。反例:不接时确实点不出任何调用 —— 证明这一格判得出缺失。
-  // 用 pdf:png 按扩展名一律内联成图(不看 [Kind]),不画文件卡。
-  it('分栏里的文件卡点得开,走的是传进来的 onOpenAttachment', async () => {
-    const content = ['[附件] 报告.pdf', '[URL] https://example.test/chat-media/a.pdf', '[Size] 94567', '[Kind] file'].join('\n')
-    const attachmentProps = { ...baseProps, messages: [message({ id: 'att-1', content, content_type: 'attachment' })] }
-    const onOpenAttachment = vi.fn()
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...attachmentProps, onOpenAttachment }))
-    const card = harness.container.querySelector('[data-testid="topic-split-pane"] button[aria-label="报告.pdf"]') as HTMLElement
-    expect(card, '分栏里没画出文件卡').toBeTruthy()
-    await clickElement(card)
-    expect(onOpenAttachment).toHaveBeenCalledWith(expect.objectContaining({ source: { kind: 'message', messageId: 'att-1' }, fileName: '报告.pdf' }), attachmentProps.messages[0])
-  })
-
-  it('点击话题已读环显示该消息的已读/未读名单，排除只在来源群里的成员', async () => {
-    // 名单只挂可见那一窗(@@@receipt-window);jsdom 没有布局,给滚动区一个高度,窗口才有行。
-    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(288)
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, receiptProps))
-    await clickElement(harness.container.querySelector('[data-testid="message-read-receipt"]') as HTMLElement)
-    const panel = document.querySelector('[data-testid="message-read-receipt-panel"]')
-    expect(panel?.textContent).toContain('话题已读成员')
-    expect(panel?.textContent).toContain('话题未读成员')
-    expect(panel?.textContent).not.toContain('仅来源群成员')
-    expect(receiptHeads()).toEqual(['已读1', '未读1'])
-
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, {
-      ...receiptProps, memberReadSeqs: { read: 0, unread: 10 },
-    }))
-    expect(receiptHeads()).toEqual(['全部已读'])
-  })
-
-  it('换话题关闭回执名单，切回原话题也不恢复旧弹层', async () => {
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, receiptProps))
-    await clickElement(harness.container.querySelector('[data-testid="message-read-receipt"]') as HTMLElement)
-    expect(document.querySelector('[data-testid="message-read-receipt-panel"]')).not.toBeNull()
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, {
-      ...receiptProps, topic: { chatId: 'topic-other', name: '另一话题' }, messages: [],
-    }))
-    expect(document.querySelector('[data-testid="message-read-receipt-panel"]')).toBeNull()
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, receiptProps))
-    expect(document.querySelector('[data-testid="message-read-receipt-panel"]')).toBeNull()
-  })
-
-  // R A/B 10-06: a topic's App panel covers the topic's list, and its gugu.showMessage of a topic line moved nothing —
-  // no scroll, no flash, no toast (both builds). Control (b22032f777): the panel stays and no row flashes.
-  it('gugu.showMessage keeps the topic address and flashes its line', async () => {
-    const originalCheckVisibility = HTMLElement.prototype.checkVisibility
-    const originalScrollTo = HTMLElement.prototype.scrollTo
-    HTMLElement.prototype.checkVisibility = () => false // jsdom has none; an unseen slot claims no page
-    HTMLElement.prototype.scrollTo = () => {} // jsdom lays nothing out: where the list goes is the A/B's reading
-    try {
-      const messages = ['t-1', 't-2', 't-3'].map((id, index) => message({ id, seq: index + 1, content: `line ${id}` }))
-      await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, messages }))
-      expect(harness.container.querySelector('[data-testid="topic-split-workspace-toggle"]')).toBeNull()
-      await act(async () => {
-        askReveal('topic-1', 't-1', 'topic'); window.dispatchEvent(new CustomEvent(UI_EVENTS.chatAsked))
-      })
-      expect(harness.container.querySelector('[data-testid="topic-split-workspace"]'), 'the panel gave the list back').toBeNull()
-      // The line flashes once the list has settled on it (revealMessage), a few frames later.
-      await vi.waitFor(() => expect(harness.container.querySelector('[data-msg-id="t-1"]')?.className).toContain('msg-src-flash'))
-      expect(harness.container.querySelector('[data-msg-id="t-2"]')?.className).not.toContain('msg-src-flash')
-    } finally {
-      HTMLElement.prototype.checkVisibility = originalCheckVisibility
-      HTMLElement.prototype.scrollTo = originalScrollTo
-    }
-  })
-
-  it('分栏的输入框**就是**主线那一份 ChatMessageComposer,❌ 不是另造的一个', async () => {
-    // @@@5856 owner 2026-09-19 实测:「输入框没有发送键参考一下左边输入框,应该是一致的,
-    // 也是因为你造了一个额外的输入框,导致 @ 等功能失效了」。
-    // 自造的那份症状不是「长得不一样」,是**功能悄悄少了一半**——发送键、@ 候选弹窗、草稿、附件,
-    // 全是原件早就解决过的问题,重写一份把它们统统退回未解决态,而且不报任何错。
-    // 所以这一格钉的是「用的是同一个组件」,而不是「自造的那份也有发送键」。
-    const source = await readFile('apps/desktop/src/components/chat/TopicSplitPane.tsx', 'utf8')
-    expect(source).toContain("import { ChatMessageComposer } from './ChatMessageComposer'")
-    expect(source).not.toContain('function TopicComposer')
-    expect(source).not.toContain('<textarea')
-
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, {
-      ...baseProps,
-      mentionMembers: [{ id: 'agent-9', name: '小柯', type: 'agent' as const }],
-    }))
-    // 渲染出来的就是 ChatMessageComposer 的共享 PromptEditor。
-    // —— 但它报的是**副栏**的 test id:同一扇窗里两个输入框共用一个 id,
-    // 自动化拿到的是文档序第一个,到底是哪一栏看运气(找茵第九轮)。
-    expect(harness.container.querySelector('[data-testid="chat-composer-aside"]')).not.toBeNull()
-    expect(harness.container.querySelector('[data-testid="chat-composer"]')).toBeNull()
-    // 自造那份的 test id 一个都不许还在(留着就是它悄悄回来了)。
-    expect(harness.container.querySelector('[data-testid="topic-split-input"]')).toBeNull()
-    expect(harness.container.querySelector('[data-testid="topic-split-send"]')).toBeNull()
-  })
-
-  // owner 10-25:有运行条的地方,那一行始终占位(固定高、没有底),运行条出现、消失不改变布局。
-  it('reserves the running bar row above the composer when the pane shows running agents', async () => {
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, runningTokens: [] }))
-    const dock = harness.container.querySelector<HTMLElement>('[data-topic-split-composer]')!.closest('[data-chat-bottom-dock]')!
-    expect(dock.firstElementChild?.querySelector('[data-running-bar-slot]')).not.toBeNull()
-  })
-
-  it('uses the same ACP desktop frame as the main composer without a second padding layer', async () => {
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps }))
-    const wrapper = harness.container.querySelector<HTMLElement>('[data-topic-split-composer]')!
-    expect(wrapper.style.padding).toBe('0px')
-    const dock = wrapper.closest('[data-chat-bottom-dock]')!
-    expect(dock.classList.contains(composerSlotClass)).toBe(true)
-    // 桌面分栏不传 runningTokens(旁边群里那一条一直看得见)⇒ 不留运行条那一行;回复条 + 输入框那一层自己没有底。
-    expect(dock.querySelector('[data-running-bar-slot]')).toBeNull()
-    const layer = dock.lastElementChild!
-    expect(layer.contains(wrapper)).toBe(true)
-    expect(layer.classList.contains(composerSlotInnerClass)).toBe(true)
-    expect(layer.className).not.toMatch(/\bbg-/)
-  })
-
-  // 找茵第九轮 —— 「用的是同一个组件」不等于「那个组件被接全了」。
-  // 分栏复用了 MessageList,却一个滚动 prop 都没传 ⇒ owner 报的「消息列表不会滚动」
-  // 在**有历史的**话题上原样还在(新建的空话题看不出来:内容短于视口 ⇒ atBottom 恒真)。
-  // 所以这一格不铉「传没传」,铉的是缺省行为本身。
-  it('分栏的消息列表默认就停在最新一条,且内容一长高还贴着底就重新贴底', async () => {
-    // jsdom 没有布局也没有 ResizeObserver:几何按副栏滚动容器给,ResizeObserver 换成可手动触发的替身。
-    const geometry = { scrollHeight: 1000 }
-    const tops = new WeakMap<Element, number>()
-    const aside = (el: Element) => el instanceof HTMLElement && el.dataset.unreadStreamSurface === 'aside'
-    Object.defineProperties(HTMLElement.prototype, {
-      scrollHeight: { configurable: true, get(this: HTMLElement) { return aside(this) ? geometry.scrollHeight : 0 } },
-      clientHeight: { configurable: true, get(this: HTMLElement) { return aside(this) ? 300 : 0 } },
-      scrollTop: { configurable: true, get(this: HTMLElement) { return tops.get(this) ?? 0 }, set(this: HTMLElement, v: number) { tops.set(this, Math.min(Math.max(0, v), aside(this) ? geometry.scrollHeight - 300 : 0)) } },
-    })
-    const observers: Array<() => void> = []
-    vi.stubGlobal('ResizeObserver', class { constructor(private readonly cb: (entries: ResizeObserverEntry[]) => void) {} observe(target: Element) { observers.push(() => this.cb([{ target, contentRect: target.getBoundingClientRect() } as ResizeObserverEntry])) } disconnect() {} unobserve() {} })
-    try {
-      await renderWithAppProviders(harness, createNode(TopicSplitPane, {
-        ...baseProps,
-        messages: [message({ id: 'm1', content: '第一句' }), message({ id: 'm2', content: '最新一句' })],
-      }))
-      const scroller = harness.container.querySelector('[data-unread-stream-surface="aside"]') as HTMLElement
-      expect(scroller, '副栏的滚动容器不在 DOM 里').toBeTruthy()
-      expect(scroller.scrollTop, '打开就停在最新一条').toBe(700)
-
-      geometry.scrollHeight = 1400
-      await act(async () => { observers.forEach((cb) => cb()) })
-      expect(scroller.scrollTop, '贴着底时内容长高 ⇒ 重新贴底').toBe(1100)
-
-      // 阴控:往上翻开之后内容再长高,不拽回来。
-      scroller.scrollTop = 300
-      await act(async () => { scroller.dispatchEvent(new Event('scroll')); await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) })
-      geometry.scrollHeight = 1600
-      await act(async () => { observers.forEach((cb) => cb()) })
-      expect(scroller.scrollTop).toBe(300)
-    } finally {
-      vi.unstubAllGlobals()
-      for (const key of ['scrollHeight', 'clientHeight', 'scrollTop']) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[key]
-    }
-  })
-
-  // owner 2026-09-19 第二轮:「没改到底的这几个应该改到底」。
-  // 「不会滚动」那条我第一遍只补了「打开停在哪一句」和「新消息钳底」,**往上翻**那一半还是空的:
-  // 分栏一次只拿最新一页,滚到顶什么都不来、也不报错。这一格盯的就是那一半。
-  // ── 复用的那道结构闸 ────────────────────────────────────────────────────────
-  // owner 为同一个形状纠正了两轮:我把组件换成了原件,却没把它的入参接全 ⇒ 用的是同一个组件,
-  // 行为却少一半,而且不报错。第三次不该再靠人眼去对 —— 这一格把「两个调用点的入参差异」本身
-  // 变成判据:主线传了而分栏没传的每一个 prop,要么接上,要么写进下面的名单并说清为什么不需要。
-  // 名单之外出现新的差异 = 红。
-  const JUSTIFIED_OMISSIONS: Record<string, Record<string, string>> = {
-    MessageList: {
-      footer: '#7199 助理的打字气泡，以及 #3252 仅人类旧私聊的好友提示，由主线 ChatMessageList 组合；话题分栏既不是助理也不是人类私聊，不接这两个页尾',
-    },
-    ChatMessageComposer: {
-      entryActive: '#1959 会话列表的具名进入意图只交给主输入框;分栏 surface=aside 沿既有规则不登记全局焦点落点,也不消费主线进入意图',
-      beforeSend: 'agent 私聊专用(任务页会话恢复前置),话题是场所型会话',
-      disabled: 'agent 私聊专用(引擎不可用时禁用输入)',
-      disabledReason: '同上',
-      whisperTarget: '悄悄话入口在成员卡片上,且它落到主线输入框;话题里能不能悄悄话 spec 没说',
-      onExitWhisper: '同上',
-      attachGlyph: '#7199 只有「助理」App 那个聊天面把附件钮换成「+」;分栏不传 = 组件缺省的回形针,与对话页同形',
-      attachMenu: '#7199 「+」里的「录制语音笔记」只在「助理」App 那个聊天面(录下的交给个人助理);分栏不传 = 点了直接选文件,与对话页同形',
-    },
-  }
-  function jsxProps(source: string, tag: string): string[] {
-    // ⚠️ 不能用 indexOf(`<${tag}`):`useMemo<MessageListRowProps>` 这种泛型会先命中。
-    // 要的是真的那个 JSX 开标签 —— 名字后面跟空白 / `/` / `>`。
-    const open = source.search(new RegExp(`<${tag}(?=[\\s/>])`))
-    if (open < 0) return []
-    // ⚠️ 注释要在**找结尾之前**抹掉:主线那段注释里写着 `scrollHeight-clientHeight > 80`,
-    // 那个 `>` 在深度 0 上 —— 先扫结尾的话开标签会在注释中间被截断,后面的 prop 全部看不见,
-    // 于是这道闸对它们永远是绿的。
-    const scan = source.slice(open).replace(/\/\/[^\n]*/g, '')
-    let depth = 0
-    let end = 0
-    while (end < scan.length) {
-      const ch = scan[end]
-      if (ch === '{') depth += 1
-      else if (ch === '}') depth -= 1
-      else if (ch === '>' && depth === 0) break
-      end += 1
-    }
-    const block = scan.slice(tag.length + 1, end)
-    // 只收**深度 0** 上的 `name=` —— 即真的属性名。❌ 不能只认行首:主线那边有一行写了三个 prop
-    // (`groupMembers={…} currentUserId={…} agentStatuses={…}`),按行首扫会把后两个当不存在,
-    // 于是这道闸对它们永远是绿的 —— 一道判不出差别的闸比没有闸更糟。
-    const names: string[] = []
-    let level = 0
-    for (let k = 0; k < block.length; k += 1) {
-      const ch = block[k]
-      if (ch === '{') { level += 1; continue }
-      if (ch === '}') { level -= 1; continue }
-      if (level !== 0) continue
-      const rest = block.slice(k)
-      // `name={…}`、`name="…"` 与**裸布尔** `isGroupChat` 三种写法都要认出来 ——
-      // 分栏那边写的正是裸的那种,只认带等号的会把它误报成「没传」。
-      const hit = /^([a-z][A-Za-z0-9]*)\s*(?:=|(?=\s|\/|$))/.exec(rest)
-      if (hit && (k === 0 || /[\s]/.test(block[k - 1]!))) {
-        names.push(hit[1]!)
-        k += hit[0].length - 1
-      }
-    }
-    return names
-  }
-  // gugu-dev#181 第 ⑤ 步:块里的话题是页签条上和群对话并排的一枚页签(由会话页的页签引擎画,chat-tabs),这一栏不再画自己的收起钮。
-  it('在块里:这一栏没有自己的收起钮(页签的 × 收起分栏)', async () => {
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, embedded: true }))
-    expect(harness.container.querySelector('[data-testid="topic-split-pane"]')).not.toBeNull()
-    expect(harness.container.querySelector('[data-testid="topic-split-close"]'), 'the block tab strip is the header').toBeNull()
-  })
-
-  it('不在块里(对话页):这一栏照旧有自己的头,也不画页签', async () => {
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, baseProps))
-    expect(harness.container.querySelector('[data-testid="topic-split-close"]')).not.toBeNull()
-    expect(document.querySelector('[data-topic-tab]')).toBeNull()
-  })
-
-  it('分栏与主线的入参差异只能是名单上那几条 —— 复用组件不等于接全它的契约', async () => {
-    const panel = await readFile('apps/desktop/src/components/ChatAreaPanel.tsx', 'utf8')
-    const pane = await readFile('apps/desktop/src/components/chat/TopicSplitPane.tsx', 'utf8')
-    const list = await readFile('apps/desktop/src/components/chat/ChatMessageList.tsx', 'utf8')
-    // The conversation wrapper may compose only the footer; every other list prop must reach the generic list unchanged.
-    expect(list).toMatch(/function ChatMessageList\(\{ footer, \.\.\.props \}: ComponentProps<typeof MessageList>\)/)
-    expect(list).toMatch(/<MessageList\s+\{\.\.\.props\}\s+footer=/)
-    expect(jsxProps(list, 'MessageList')).toEqual(['footer'])
-    for (const tag of ['MessageList', 'ChatMessageComposer']) {
-      const main = new Set(jsxProps(panel, tag === 'MessageList' ? 'ChatMessageList' : tag))
-      const aside = new Set(jsxProps(pane, tag))
-      expect(main.size, `${tag}: 主线那个调用点没解析出任何 prop,这一格就判不了事`).toBeGreaterThan(3)
-      const missing = [...main].filter((name) => !aside.has(name) && !(name in JUSTIFIED_OMISSIONS[tag]!))
-      expect(missing, `${tag}: 主线传了而分栏没传,且名单上没写为什么 —— 接上它,或写进 JUSTIFIED_OMISSIONS`).toEqual([])
-      // 反向:名单不许留过期条目(已经接上了还挂在名单里,下次就挡不住真的漏)。
-      const stale = Object.keys(JUSTIFIED_OMISSIONS[tag]!).filter((name) => aside.has(name))
-      expect(stale, `${tag}: 这些已经接上了,把它们从 JUSTIFIED_OMISSIONS 里删掉`).toEqual([])
-    }
-  })
-
-  // 接完一页视口钉在原处:列表在头部插行的那次提交里把读者正看着的那一行放回原处(几何用例见 flowList.test.tsx)。
-  it('分栏滚到顶附近就去要下一页', async () => {
-    const onRevealOlder = vi.fn(async () => {})
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, {
-      ...baseProps,
-      messages: [message({ id: 'm1', seq: 2, content: '第一句' })],
-      history: { ...baseProps.history, loadOlderMessages: onRevealOlder },
-    }))
-    const scroller = harness.container.querySelector('[data-unread-stream-surface="aside"]') as HTMLElement
-    Object.defineProperties(scroller, { scrollHeight: { configurable: true, value: 1000 }, clientHeight: { configurable: true, value: 300 }, scrollTop: { configurable: true, value: 0, writable: true } })
-    await act(async () => { scroller.dispatchEvent(new Event('scroll')); await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve))) }) // read after paint (lib/afterPaint)
-    expect(onRevealOlder).toHaveBeenCalledTimes(1)
-  })
-
-  it('分栏的 @ 候选看得见 agent 在不在线', async () => {
-    // 话题里 @ 就是「把人拉进来」的动作,看不见状态就是盲拉。
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, {
-      ...baseProps,
-      mentionMembers: [{ id: 'agent-9', name: '小柯', type: 'agent' as const }],
-      agentStatuses: { 'agent-9': { online: false, label: '离线' } },
-    }))
-    const source = await readFile('apps/desktop/src/components/chat/TopicSplitPane.tsx', 'utf8')
-    expect(source).toContain('agentStatuses={agentStatuses}')
-  })
-
-  it('window 级的附件入队事件 ❌ 不进副栏的输入框', async () => {
-    // 与焦点登记同一个形状:一个 window 事件,两个输入框都听 ⇒ 一次 attach 同时进两个队列。
-    const onSendAttachments = vi.fn(async () => {})
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, onSendAttachments }))
-    await act(async () => {
-      window.dispatchEvent(new CustomEvent('__chat_composer_attach_files', {
-        detail: { files: [new File(['x'], '不该进来.png', { type: 'image/png' })] },
-      }))
-    })
-    expect(harness.container.querySelector('[data-slot="composer-attachment"]')).toBeNull()
-  })
-
-  it('分栏的回形针发得出去 —— ❌ 不允许「挂得上、发不出、一声不响」', async () => {
-    const onSendAttachments = vi.fn(async () => {})
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, onSendAttachments }))
-    const composer = harness.container.querySelector('[data-testid="chat-composer-aside"]') as HTMLTextAreaElement
-    expect(composer).not.toBeNull()
-    // 走真人那条路:回形针 → 文件选择器 → change。❌ 不走 window 事件那个自动化口 ——
-    // 那一口现在只归主输入框(见下一格),拿它来驱动副栏等于测了个不存在的路径。
-    const picker = harness.container.querySelector('input[type="file"]') as HTMLInputElement
-    expect(picker, '分栏的输入框没有文件选择器').toBeTruthy()
-    Object.defineProperty(picker, 'files', {
-      value: [new File(['x'], '现场图.png', { type: 'image/png' })], configurable: true,
-    })
-    await act(async () => { picker.dispatchEvent(new Event('change', { bubbles: true })) })
-    const send = harness.container.querySelector('[data-testid="chat-composer-send"]') as HTMLButtonElement
-      ?? harness.container.querySelector('button[aria-label="发送消息"]') as HTMLButtonElement
-    expect(send, '找不到发送键').toBeTruthy()
-    await clickElement(send)
-    expect(onSendAttachments).toHaveBeenCalledTimes(1)
-  })
-
-  it('分栏的输入框 ❌ 不抢全局「聚焦输入框」的落点', async () => {
-    // registerComposerFocusTarget 是模块级单例,后挂载的那个赢。分栏一登记,
-    // 主线发完一条后的 scheduleComposerFocus('message-sent') 就把光标送进话题输入框 ⇒
-    // 用户接着打的下一句回车发进了话题。正是话题要隔离的那个方向,反过来了。
-    const { focusComposer, registerComposerFocusTarget } = await import('../../../apps/desktop/src/lib/focusComposer')
-    const main = document.createElement('textarea')
-    document.body.appendChild(main)
-    const release = registerComposerFocusTarget(() => main)
-    try {
-      await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps }))
-      const aside = harness.container.querySelector('[data-testid="chat-composer-aside"]') as HTMLTextAreaElement
-      expect(aside).not.toBeNull()
-      expect(focusComposer('message-sent')).toBe(true)
-      expect(document.activeElement, '光标被分栏抢走了').toBe(main)
-    } finally {
-      release()
-      main.remove()
-    }
-  })
-
-  it('在分栏里发出去的东西落在话题里,引用走结构化 replyToMessageId', async () => {
-    // 老毛病:分栏把主线的 handleQuote 直接透过来,于是在话题里点「引用」,引用条出现在
-    // **左边来源线**的输入框上 —— 发出去就发在源群里,正是话题要隔离掉的那个方向。
-    const source = await readFile('apps/desktop/src/components/chat/TopicSplitPane.tsx', 'utf8')
-    expect(source).not.toMatch(/^\s*onQuote\?: /m)
-    // 整条引用走结构化 replyToMessageId；显式选段保留这个关系，并用既有正文引用格式带选段。
-    // 点击回原消息和 group-routing 的回复穿透档位仍依赖结构化关系。
-    expect(source).toContain("opts?.replyToMessageId ?? null")
-    // 同实例换话题的引用隔离由 topicMessageSelection.test.tsx 实际选字和发送验证。
-
-    expect(quotePrefixOf({ content: '分片那段我看了,是 range 请求被网关吃了' }))
-      .toBe('> 分片那段我看了,是 range 请求被网关吃了')
-    expect(quotePrefixOf({ content: 'x'.repeat(200) })).toBe(`> ${'x'.repeat(60)}…`)
-    expect(quotePrefixOf({ content: '第一行\n第二行' })).toBe('> 第一行')
-  })
-
-  it('收起分栏的文案与话题状态分开;❌ 没有「全宽打开」键,想看大一点拖分割线', async () => {
-    const onClose = vi.fn()
-    await harness.render(createNode(TopicSplitPane, { ...baseProps, onClose }))
-    const pane = harness.container.querySelector('[data-testid="topic-split-pane"]')
-    expect(pane).not.toBeNull()
-    expect(harness.container.querySelector('[data-testid="topic-split-messages"]')).not.toBeNull()
-    expect(harness.container.querySelector('[data-testid="topic-split-title"]')?.textContent).toBe('分片下载失败')
-
-    const close = harness.container.querySelector('[data-testid="topic-split-close"]') as HTMLElement
-    expect(close.getAttribute('aria-label')).toBe('收起分栏')
-    expect(close.getAttribute('title')).toBe('收起分栏，话题不会关闭')
-    // 「没有开关,只有沉降」:界面上 ❌ 不许出现关闭/完成话题。
-    expect(harness.container.textContent).not.toContain('关闭话题')
-    expect(harness.container.textContent).not.toContain('完成话题')
-
-    await clickElement(close)
-    expect(onClose).toHaveBeenCalledTimes(1)
-
-    // @@@5856 owner 2026-09-19:「不应该有这个按钮,你只要保证分割线可分割就行了」。分割线是话题所在侧页那一刀的
-    // (TrackCut,tab-pane-tree-v3 拖它),这一栏自己不画第二根。
-    expect(harness.container.querySelector('[data-testid="topic-split-open-full"]')).toBeNull()
-    expect(harness.container.querySelector('[role="separator"]')).toBeNull()
-  })
-
-  it('手机上放不下两栏:话题是来源页的一枚页签,没有自己的页头,返回键回到来源那一枚', async () => {
-    const onClose = vi.fn()
-    // currentUserId 置空:附件子视图不去拉文件,这一格只判导航。
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, onClose, currentUserId: null, mobile: true }))
-    // 与上一格(桌面)同一份 props:手机上 ❌ 分割线、❌ 收起键,❌ 挤进一条与来源线并排的栏。
-    expect(harness.container.querySelector('[role="separator"]')).toBeNull()
-    expect(harness.container.querySelector('[data-testid="topic-split-close"]')).toBeNull()
-    await act(async () => { window.dispatchEvent(new Event(NATIVE_BACK_EVENT)) })
-    expect(onClose).toHaveBeenCalledTimes(1)
-  })
-
-  it('手机上话题不在前面时不接返回键', async () => {
-    const onClose = vi.fn()
-    await renderWithAppProviders(harness, createNode(TopicSplitPane, { ...baseProps, onClose, currentUserId: null, mobile: true, visible: false }))
-    await act(async () => { window.dispatchEvent(new Event(NATIVE_BACK_EVENT)) })
-    expect(onClose).not.toHaveBeenCalled()
-  })
-
-  it('消息走 MessageRow + MessageBubble 渲染（接住 MessageBubble 的 props 漂移）', async () => {
-    await renderWithAppProviders(
-      harness,
-      createNode(TopicSplitPane, {
-        ...baseProps,
-        messages: [message({ id: 'm1', chat_id: 'topic-1', content: '我先看分片那段' })],
-      }),
-    )
-    const list = harness.container.querySelector('[data-testid="topic-split-messages"]') as HTMLElement
-    expect(list.querySelectorAll('[role="listitem"]').length).toBe(1)
-    expect(list.querySelector('[data-msg-id="m1"]')).not.toBeNull()
-    expect(list.textContent).toContain('我先看分片那段')
-    expect(harness.container.querySelector('[data-testid="topic-split-empty"]')).toBeNull()
-  })
-
-  // @@@5856 '自带的输入框回车发送，发送期间禁用' 已删 —— 分栏不再自带输入框,
-  // 回车发送/发送期间禁用/失败提示全部归 ChatMessageComposer 自己的判据(它本来就有)。
-  // ❌ 不在这里再抄一份:抄一份等于允许两份实现漂开,而那正是这次被 owner 点破的毛病。
-})
-
 describe('@@@5856 「这条消息开得出话题吗」只有一个判据,顶栏与右键共用', () => {
   const base = { id: 'm', seq: 1, local_send_state: undefined, is_whisper: false, retracted_at: null, content_type: 'text' } as Parameters<typeof canSourceTopic>[0]
   it('发送中等来源送达;未送达、悄悄话与已撤回不能开话题', () => {
@@ -715,7 +238,7 @@ describe('@@@5856 「这条消息开得出话题吗」只有一个判据,顶栏�
     // 找茬第八轮:右键那边只挡了悄悄话和撤回,于是在发失败的红气泡上还能点「开话题」,
     // 点完服务端必拒(is not a live message),界面只给一句帮不上忙的 toast。
     const bubble = await readFile('apps/desktop/src/components/chat/MessageBubble.tsx', 'utf8')
-    expect(bubble).toContain("import { canSourceTopic } from './topicSplitModels'")
+    expect(bubble).toContain("import { canSourceTopic } from './topicAnchorModels'")
     // 悬停条 ⋯、右键菜单、手机长按面板三处的动作都出自同一个 messageActions ⇒ 判据只写一次,三处都从它拿。
     expect(bubble.match(/onOpenTopic && canSourceTopic\(msg\)/g)).toHaveLength(1)
     expect(bubble.match(/\{\.\.\.messageActions\(/g)).toHaveLength(3)
@@ -773,6 +296,8 @@ describe('话题里能点名谁', () => {
 })
 
 describe('useTopicsOfChat', () => {
+  // The topics are an account replica: it reads only for a signed-in account, as the product does.
+  beforeEach(() => followRendererSession('SIGNED_IN', 'user-1'))
   let observed: { topics: TopicSummary[]; loading: boolean; error: string | null; byMessage: Map<string, TopicSummary[]> | null }
   let reload: () => void
 
@@ -1007,38 +532,60 @@ describe('会话列表:话题是来源线的子行,不是一行平级的会话',
 
 })
 
-describe('「把这条话题开成分栏」的请求:只有正显示来源线的那一帧才取得走', () => {
-  it('来源线还没切过去时留在盒子里，切过去之后才取得到，且只取一次', async () => {
-    const { requestTopicSplit, drainTopicSplitRequest } =
-      await import('../../../apps/desktop/src/lib/topicSplitRequest')
-    requestTopicSplit({ chatId: 't1', name: '北京天气', sourceChatId: 'g1' })
-    // 点下去那一刻主区显示的还是上一条线 ⇒ 不许取走(取走就会把分栏记到旧线名下,切过去立刻消失)。
-    expect(drainTopicSplitRequest('g0')).toBeNull()
-    expect(drainTopicSplitRequest(null)).toBeNull()
-    expect(drainTopicSplitRequest('g1')).toEqual({ chatId: 't1', name: '北京天气', sourceChatId: 'g1' })
-    // 一次性:聊天区挂载时与收到事件时各取一次,❌ 不许开两回。
-    expect(drainTopicSplitRequest('g1')).toBeNull()
+// #62 a topic is a main conversation: the open topic catches up to its own summary for every reader. A source-line member who
+// never spoke in it gets no message_created for its rows, only the source line's chat_changed naming the topic.
+describe('an open topic follows its summary for every reader, member or not', () => {
+  beforeEach(() => followRendererSession('SIGNED_IN', 'user-1'))
+  type RevisionListener = (operations: readonly { revision: string; event: string; payload: unknown }[]) => void | Promise<void>
+  let listeners: Map<string, Set<RevisionListener>>
+  const subscribeAccountRevision = (event: string, listener: RevisionListener) => {
+    let bucket = listeners.get(event)
+    if (!bucket) { bucket = new Set(); listeners.set(event, bucket) }
+    bucket.add(listener)
+    return () => { bucket.delete(listener) }
+  }
+  async function emit(event: string, chatId: string, extra: Record<string, unknown> = {}) {
+    await act(async () => {
+      for (const listener of listeners.get(event) ?? []) await listener([{ revision: '1', event, payload: { chat_id: chatId, tombstone: false, ...extra } }])
+      await Promise.resolve()
+    })
+  }
+  const refreshLine = vi.fn<(chatId: string) => Promise<unknown>>()
+  let lineMessages: MessageItem[]
+  let surface: ReturnType<typeof useTopicSurface> | null
+  function Probe({ chat }: { chat: Pick<ChatItem, 'id' | 'kind' | 'source_chat_id'> }) {
+    surface = useTopicSurface({ chat, messages: lineMessages, lineSettled: true, refreshLine, subscribeAccountRevision, onCreateFailed: vi.fn() })
+    return null
+  }
+  async function mount(chat: Pick<ChatItem, 'id' | 'kind' | 'source_chat_id'>) {
+    await renderWithAppProviders(harness, createNode(Probe, { chat }), { chat: chatWindowStub() })
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+  }
+  beforeEach(() => {
+    listeners = new Map()
+    lineMessages = []
+    surface = null
+    refreshLine.mockReset().mockResolvedValue(undefined)
   })
 
-  it('请求发出去就叫醒一声 —— 聊天区已经挂着的那种情况靠它，没挂的靠挂载时自己来取', async () => {
-    const { requestTopicSplit } = await import('../../../apps/desktop/src/lib/topicSplitRequest')
-    const { UI_EVENTS } = await import('../../../apps/desktop/src/lib/uiEvents')
-    const heard: string[] = []
-    const listener = () => heard.push('woke')
-    window.addEventListener(UI_EVENTS.openTopicSplit, listener)
-    requestTopicSplit({ chatId: 't2', name: 'x', sourceChatId: 'g2' })
-    window.removeEventListener(UI_EVENTS.openTopicSplit, listener)
-    expect(heard).toEqual(['woke'])
+  it('refreshes the open topic once for a newer summary, however often the source line repeats it', async () => {
+    const first = message({ id: 't1', chat_id: 'topic-1', seq: 1, created_at: '2026-09-18T00:00:00.000Z' })
+    listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: first.created_at })])
+    lineMessages = [first]
+    await mount({ id: 'topic-1', kind: 'topic', source_chat_id: 'chat-A' })
+    expect(listTopicsOfChat).toHaveBeenCalledWith('chat-A')
+    expect(surface?.anchorsByMessageId).toBeNull()
+    await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
+    expect(refreshLine).not.toHaveBeenCalled()
+    listTopicsOfChat.mockResolvedValue([topic({ is_participant: false, last_message_at: '2026-09-18T00:01:00.000Z', message_count: 2 })])
+    for (let i = 0; i < 3; i++) await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
+    expect(refreshLine).toHaveBeenCalledExactlyOnceWith('topic-1')
   })
 
-  it('点完话题又去点了别处：过期的请求作废，❌ 不许日后回到那条线时突然自己弹出来', async () => {
-    const { requestTopicSplit, drainTopicSplitRequest } =
-      await import('../../../apps/desktop/src/lib/topicSplitRequest')
-    const now = Date.now()
-    vi.spyOn(Date, 'now').mockReturnValue(now)
-    requestTopicSplit({ chatId: 't3', name: 'y', sourceChatId: 'g3' })
-    vi.mocked(Date.now).mockReturnValue(now + 15_001)
-    expect(drainTopicSplitRequest('g3')).toBeNull()
-    vi.mocked(Date.now).mockRestore()
+  it('a group line never refreshes itself from its topics\' summaries', async () => {
+    listTopicsOfChat.mockResolvedValue([topic({ last_message_at: '2026-09-18T00:05:00.000Z' })])
+    await mount({ id: 'chat-A', kind: 'group', source_chat_id: null })
+    await emit('chat_changed', 'chat-A', { entity_id: 'topic-1' })
+    expect(refreshLine).not.toHaveBeenCalled()
   })
 })

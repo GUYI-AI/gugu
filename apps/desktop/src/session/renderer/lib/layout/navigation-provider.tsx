@@ -19,7 +19,7 @@ export type SlotsContextValue = {
   TitlebarSlot: ComponentType;
   MainPanel: ComponentType;
   currentView: ViewId;
-  withoutSessionSidebar: boolean;
+  modal: boolean;
 };
 
 export type WrapParamsContextValue = {
@@ -44,7 +44,7 @@ export function useWorkspaceSlots(): SlotsContextValue {
       TitlebarSlot: def.TitlebarSlot ?? (() => null),
       MainPanel: def.MainPanel,
       currentView: resolvedViewId,
-      withoutSessionSidebar: def.withoutSessionSidebar === true,
+      modal: def.modal === true,
     };
   });
 }

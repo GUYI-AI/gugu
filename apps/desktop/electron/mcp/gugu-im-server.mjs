@@ -646,6 +646,19 @@ async function resolveChatIdInput(chatId, deps) {
   throw new Error(`chat_id ${publicId} looks like a public_id, but no conversation matched it; use the UUID from message_conversations (id)`)
 }
 
+/**
+ * A `chat_id` from any other tool domain (session_*, app_*), read the way message tools read it: one resolver, so a
+ * public_id or an owner address names the same chat everywhere, and one that names none fails here.
+ */
+export async function resolveChatIdOf(context, chatId, injected = {}) {
+  const resolved = await requireChat({ chat_id: String(chatId) }, createDeps(context, injected))
+  // The resolver keeps an opaque non-numeric id for injected callers; a host action can only use a real chat's UUID.
+  if (!UUID_RE.test(String(resolved))) {
+    throw new Error(`chat_id ${chatId} names no conversation; give its UUID (message_conversations id) or its public_id number, nothing around it`)
+  }
+  return resolved
+}
+
 async function requireChat(args, deps) {
   const explicit = args && typeof args.chat_id === 'string' ? args.chat_id.trim() : ''
   if (explicit) return await resolveChatIdInput(explicit, deps)
