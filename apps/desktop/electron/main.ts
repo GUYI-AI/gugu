@@ -12,6 +12,7 @@ import { followAppPresence } from './app-presence'
 import { PASSWORD_AGENT_RPC } from './password-vault/server-delivery'
 import { createPasswordBetaPolicyReader } from './password-vault/beta-policy-reader'
 import { isNativeAccountSender, registerDesktopClosureIpc } from './account-closure/ipc'
+import { CUSTOM_MODEL_KEY_CHANNEL } from '@gugu/session-core/models/custom-model'
 import { createClosureAuthChange } from './account-closure/auth-change'
 import { ClosureFailure } from './account-closure/receipts'
 import type { createDesktopClosureService } from './account-closure/service'
@@ -2930,6 +2931,11 @@ const humanAuthSessionIpc = createHumanAuthSessionIpc({
       return operation()
     })
   },
+})
+// A model key in plain text goes only to this computer's own window: device and browser connections never reach ipcMain.
+ipcMain.handle(CUSTOM_MODEL_KEY_CHANNEL, async (event, connectionId: unknown) => {
+  if (!isNativeAccountSender(event, mainWindow) || typeof connectionId !== 'string') throw new Error('A model key is shown only in this computer’s own window')
+  return (await import('./session/main/core/agents/custom-models')).readCustomModelKey(connectionId)
 })
 ipcMain.handle('human-auth-session:write', (event, session: unknown) => {
   if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')

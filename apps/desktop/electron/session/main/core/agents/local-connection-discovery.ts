@@ -56,7 +56,7 @@ const sha256 = (value: string) => createHash('sha256').update(value).digest('hex
 
 /** What makes two connections the same one: where they go and which key they use. Not reversible to the key. */
 export const discoveryIdentity = (baseUrl: string, key: string) => sha256(`${baseUrl}\0${sha256(key)}`);
-/** The only part of a key anything outside the host may see; nothing for a key too short to hide half of itself. */
+/** The only part of a key anything off this machine may see; nothing for a key too short to hide half of itself. */
 export const keyLast4 = (key: string) => key.length >= 12 ? key.slice(-4) : '';
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const text = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined;
