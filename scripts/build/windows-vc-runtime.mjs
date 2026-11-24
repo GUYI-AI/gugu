@@ -44,7 +44,7 @@ export function copyWindowsVcRuntime(destination, arch, expected) {
     $vs = & $vswhere -latest -products '*' -version '[17.0,18.0)' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
     if (-not $vs) { throw 'Visual Studio 2022 C++ build tools are required to bundle the app-local VC runtime' }
     $version = (Get-Content -LiteralPath (Join-Path $vs 'VC\Auxiliary\Build\Microsoft.VCRedistVersion.default.txt') -Raw).Trim()
-    $runtime = Join-Path $vs "VC\Redist\MSVC\$version\${arch}\Microsoft.VC143.CRT\vcruntime140.dll"
+    $runtime = Join-Path $vs ('VC\Redist\MSVC\{0}\{1}\Microsoft.VC143.CRT\vcruntime140.dll' -f $version, '${arch}')
     $info = @{ path = $runtime }
     ${verification}
     $info | ConvertTo-Json -Compress
