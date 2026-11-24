@@ -772,7 +772,23 @@ export const contextThresholdTrigger = style({
 });
 export const modelSelectedCheck = style({ color: vars.foregroundSuccess, flexShrink: 0, marginLeft: 'auto' });
 export const modelDetailControlValue = style({ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: vars.foregroundMuted });
-export const modelDetailFast = style({ display: 'flex', alignItems: 'center', minHeight: '2rem', paddingInline: '0.5rem' });
+export const modelDetailFastSwitch = style({
+  display: 'inline-flex', alignItems: 'center', flexShrink: 0, width: '1.5rem', height: '0.875rem',
+  border: `1px solid ${vars.borderPrimary}`, borderRadius: tokenVars.radiusFull, backgroundColor: vars.background,
+  cursor: 'pointer',
+  selectors: {
+    '&[data-checked]': { backgroundColor: vars.backgroundNeutral },
+    '&[data-disabled]': { opacity: 0.5, cursor: 'not-allowed' },
+  },
+});
+
+export const modelDetailFastThumb = style({
+  width: '0.75rem', height: '0.75rem', borderRadius: tokenVars.radiusFull, backgroundColor: vars.foregroundMuted,
+  transition: `transform ${durFast} ${easeStandard}`,
+  selectors: {
+    '&[data-checked]': { transform: 'translateX(10px)', backgroundColor: vars.background },
+  },
+});
 export const contextThresholdContent = style({ width: '11rem', padding: '0.25rem' });
 export const contextThresholdInput = style({
   width: '100%', minHeight: '2rem', borderRadius: tokenVars.radiusMd, background: 'transparent',

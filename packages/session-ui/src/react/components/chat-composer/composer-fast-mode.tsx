@@ -1,4 +1,5 @@
 import type { ReactElement, ReactNode } from 'react';
+import { Switch } from '@base-ui/react/switch';
 import { FastZap } from '../../../icons';
 import { useMessages } from '../../localization/message-provider';
 import * as styles from './chat-composer.css';
@@ -12,15 +13,31 @@ export function ComposerFastMode({
   onChange,
   renderHint,
   phoneActions = false,
+  detailRow = false,
 }: {
   enabled: boolean;
   disabled?: boolean;
   onChange?: (enabled: boolean) => void;
   renderHint?: RenderFastModeHint;
   phoneActions?: boolean;
+  detailRow?: boolean;
 }) {
   const { translate } = useMessages();
   const label = translate('composer.fastModeLabel');
+  if (detailRow) {
+    const toggle = (
+      <Switch.Root checked={enabled} disabled={disabled || !onChange} aria-label={label}
+        className={styles.modelDetailFastSwitch} data-fast-mode-toggle="" onCheckedChange={onChange}>
+        <Switch.Thumb className={styles.modelDetailFastThumb} />
+      </Switch.Root>
+    );
+    return (
+      <div className={styles.contextThresholdTrigger} data-slot="composer-model-fast">
+        <span>{label}</span>
+        {renderHint ? renderHint(toggle) : toggle}
+      </div>
+    );
+  }
   const button = (
     <button
       type="button"

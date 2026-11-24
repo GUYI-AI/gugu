@@ -21,7 +21,8 @@ let previousLanguage: string
 const changed = vi.fn()
 const effortChanged = vi.fn()
 const modelChanged = vi.fn()
-const fast = () => document.querySelector<HTMLButtonElement>('button[aria-label="Fast"]')
+const fast = () => document.querySelector<HTMLElement>('[data-fast-mode-toggle]')
+const detailSwitch = () => page.getByRole('switch', { name: 'Fast', exact: true })
 
 function Fixture({ supported = true, mobile = false, initial = false, phoneActions = mobile }: {
   supported?: boolean; mobile?: boolean; initial?: boolean; phoneActions?: boolean
@@ -80,18 +81,16 @@ describe('Fast in the real thinking menu', () => {
 
   it('starts off, toggles both ways and leaves model, effort and menu unchanged', async () => {
     await renderMenu()
-    expect(fast()?.getAttribute('aria-pressed')).toBe('false')
-    expect(fast()?.querySelector('svg')?.getAttribute('fill')).toBe('none')
-    await page.getByRole('button', { name: 'Fast', exact: true }).click()
-    await until('Fast accepted', () => fast()?.getAttribute('aria-pressed') === 'true')
+    await expect.element(detailSwitch()).not.toBeChecked()
+    await detailSwitch().click()
+    await expect.element(detailSwitch()).toBeChecked()
     expect(changed.mock.calls).toEqual([[true]])
-    expect(fast()?.querySelector('svg')?.getAttribute('fill')).toBe('currentColor')
-    await page.getByRole('button', { name: 'Fast', exact: true }).click()
-    await until('Fast switched off', () => fast()?.getAttribute('aria-pressed') === 'false')
+    await detailSwitch().click()
+    await expect.element(detailSwitch()).not.toBeChecked()
     expect(changed.mock.calls).toEqual([[true], [false]])
     expect(effortChanged).not.toHaveBeenCalled()
     expect(modelChanged).not.toHaveBeenCalled()
-    expect(container.querySelector('button[aria-label="Fast"]')).toBeNull()
+    expect(container.querySelector('[data-fast-mode-toggle]')).toBeNull()
   })
 
   it('renders no Fast control or reserved row for an unsupported model', async () => {
@@ -104,15 +103,15 @@ describe('Fast in the real thinking menu', () => {
     await renderMenu({ initial: true })
     const row = document.querySelector<HTMLElement>('[data-slot="composer-model-fast"]')!
     const thinking = row.previousElementSibling!
-    const rowBox = row.getBoundingClientRect(), buttonBox = fast()!.getBoundingClientRect()
+    const rowBox = row.getBoundingClientRect(), thinkingBox = thinking.getBoundingClientRect()
+    const switchBox = fast()!.getBoundingClientRect()
+    expect(row.firstElementChild?.textContent).toBe('Fast')
     expect(thinking.textContent).toContain('Thinking')
-    expect(Math.abs(rowBox.y + rowBox.height / 2 - buttonBox.y - buttonBox.height / 2)).toBeLessThan(1)
-    expect(Math.abs(buttonBox.x - thinking.getBoundingClientRect().x - 8)).toBeLessThan(0.5)
-    expect(buttonBox.height).toBe(24)
-    expect(fast()!.firstElementChild!.getBoundingClientRect().height).toBe(24)
-    expect(getComputedStyle(fast()!.firstElementChild!).fontSize).toBe('12px')
-    expect(fast()!.querySelector('svg')!.getBoundingClientRect().width).toBe(12)
-    await page.getByRole('button', { name: 'Fast', exact: true }).hover()
+    expect(rowBox.height).toBe(thinkingBox.height)
+    expect(row.firstElementChild!.getBoundingClientRect().x).toBe(thinking.firstElementChild!.getBoundingClientRect().x)
+    expect(switchBox.right).toBe(thinking.lastElementChild!.getBoundingClientRect().right)
+    expect(Math.abs(rowBox.y + rowBox.height / 2 - switchBox.y - switchBox.height / 2)).toBeLessThan(1)
+    await detailSwitch().hover()
     await expect.element(page.getByText('Faster, uses more quota', { exact: true })).toBeVisible()
   })
 
@@ -137,7 +136,7 @@ describe('Fast in the real thinking menu', () => {
 
   it('keeps the tooltip in a compact desktop conversation', async () => {
     await renderMenu({ mobile: true, phoneActions: false })
-    await page.getByRole('button', { name: 'Fast', exact: true }).hover()
+    await detailSwitch().hover()
     await expect.element(page.getByText('Faster, uses more quota', { exact: true })).toBeVisible()
   })
 })

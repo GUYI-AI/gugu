@@ -259,7 +259,7 @@ function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffor
           </Popover.Content>
         </Popover.Root>
       )}
-      {fastControl && <div className={styles.modelDetailFast} data-slot="composer-model-fast">{fastControl}</div>}
+      {fastControl}
       {threshold?.unsupported && (
         <div className={styles.contextThresholdTrigger}>
           <span>{translate('composer.contextWindowThreshold')}</span>
@@ -765,7 +765,7 @@ export function ComposerModelMenu({
               <ModelDetail key={detailItem.id} item={detailItem} picker={panelEl} contextThresholds={contextThresholds}
                 efforts={detailItem.id === selectedModel ? effortItems : undefined} effort={effectiveEffortItem}
                 fastControl={detailItem.id === selectedModel && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
-                  ? <ComposerFastMode enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
+                  ? <ComposerFastMode detailRow enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
                   : undefined}
                 onEffortChange={onEffortChange} />
             ) : modelUpgrade ? (
