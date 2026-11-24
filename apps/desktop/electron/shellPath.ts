@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from '@gugu/core/local/childProcess'
+import { execFile, execFileSync, windowsSystemProgram } from '@gugu/core/local/childProcess'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path, { win32 as winPath } from 'node:path'
@@ -292,7 +292,7 @@ const WINDOWS_PATH_KEYS = [
 export type RegistryKeyExporter = (key: string, env: NodeJS.ProcessEnv) => Promise<string>
 
 const exportRegistryKey: RegistryKeyExporter = async (key, env) => {
-  const reg = env.SystemRoot ? winPath.join(env.SystemRoot, 'System32', 'reg.exe') : 'reg.exe'
+  const reg = windowsSystemProgram('reg.exe', env)
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'gugu-reg-'))
   try {
     const file = path.join(dir, 'env.reg')

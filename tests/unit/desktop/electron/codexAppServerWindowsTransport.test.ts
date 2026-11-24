@@ -1020,7 +1020,7 @@ while :; do sleep 1; done
         'win32'
       )
     ).toEqual({
-      command: 'powershell.exe',
+      command: String.raw`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`,
       args: [
         '-NoProfile',
         '-ExecutionPolicy',
