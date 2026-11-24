@@ -169,6 +169,11 @@ describe('running strip: one row, +N opens a grouped, capped, scrolling panel', 
     await until('the panel opens', () => (panel()?.getBoundingClientRect().height ?? 0) > 0)
     expect(panel()!.querySelectorAll('[role="group"]')).toHaveLength(1)
     expect(panel()!.querySelector('.rtb-oh')).toBeNull()
+    // An overflow token is the same pill as an inline one: the glyph is drawn, the state word lives only in the aria-label.
+    const overflowToken = panel()!.querySelector<HTMLElement>('.rtb-otok')!
+    expect(overflowToken.querySelector('.rtb-glyph')).not.toBeNull()
+    expect(overflowToken.textContent).not.toContain(i18n.t('runtime.stateWord.running', { ns: 'agents' }))
+    expect(overflowToken.getAttribute('aria-label')).toContain(i18n.t('runtime.stateWord.running', { ns: 'agents' }))
   })
 
   it('a parent re-render reads no layout while it commits', async () => {
