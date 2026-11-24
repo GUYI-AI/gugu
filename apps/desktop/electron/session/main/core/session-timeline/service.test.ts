@@ -1149,6 +1149,39 @@ describe('session timeline service', () => {
     expect(timeline.listenerCount()).toBe(0);
   });
 
+  it('follows the session onto the record a model switch forked it to', async () => {
+    const opened = new Map<string, ReturnType<typeof makeTimeline>>();
+    service.setSessionTimelineFactory(async ({ locator }) => {
+      const fake = makeTimeline();
+      opened.set(locator!.providerSessionId, fake);
+      return fake.timeline;
+    });
+    const events: Array<{ result: TimelineAfterResult }> = [];
+    await service.subscribe({ conversationId: 'conv-1', subscriptionId: 'sub-1', cursor: null }, (event) => events.push(event as never));
+    const { sessionChangedChannel } = await import('@shared/core/sessions/sessionEvents');
+
+    // A change that keeps the record keeps the timeline.
+    broadcast(sessionChangedChannel.name, { sessionId: 'conv-1', changes: { title: 'renamed' } });
+    await Promise.resolve();
+    expect([...opened.keys()]).toEqual(['sess-1']);
+
+    state.rows = [row({ providerSessionId: 'sess-2' })];
+    broadcast(sessionChangedChannel.name, { sessionId: 'conv-1', changes: { providerSessionId: 'sess-2' } });
+    await awaitFact('moved record attached', () => opened.get('sess-2')?.timeline.listenerCount() === 1 || undefined);
+    const old = opened.get('sess-1')!.timeline;
+    expect(old.listenerCount()).toBe(0);
+    expect(old.disposed).toBe(1);
+
+    // The next turn lands in the new record and reaches the viewer.
+    opened.get('sess-2')!.emit({ ok: true, batch: { from: 0, cursor: { epoch: 'e1', seq: 1 }, turns: [], removedTurnIds: [], settlements: [] } });
+    expect(events.at(-1)?.result).toMatchObject({ ok: true });
+    // Any reader after the switch gets the new record too, not the cached old one.
+    expect(await service.snapshot({ conversationId: 'conv-1' })).toMatchObject({ ok: true });
+    expect(opened.size).toBe(2);
+    service.unsubscribe('sub-1');
+    expect(opened.get('sess-2')!.timeline.listenerCount()).toBe(0);
+  });
+
   it('send 把写侧的失败 code 原样带出来', async () => {
     state.deliverText = vi.fn(async () => {
       throw new SessionWriteError('session_not_live', '这条终端会话此刻没有活着的 PTY');
