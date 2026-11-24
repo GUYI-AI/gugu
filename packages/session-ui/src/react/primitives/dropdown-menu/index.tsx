@@ -1,5 +1,5 @@
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
-import { useUiPortalContainer } from '@session-ui/react/lib/portal-container';
+import { useUiPopupZIndex, useUiPortalContainer } from '@session-ui/react/lib/portal-container';
 import { cx } from '@session-ui/styles/utilities/cx';
 import { CheckIcon, ChevronRightIcon } from '../../../icons'
 import * as React from 'react';
@@ -48,6 +48,7 @@ function DropdownMenuContent({
     <MenuPrimitive.Portal container={portalContainer}>
       <MenuPrimitive.Positioner
         className={styles.positioner}
+        style={{ zIndex: useUiPopupZIndex() }}
         align={align}
         alignOffset={alignOffset}
         side={side}

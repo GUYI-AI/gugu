@@ -47,8 +47,8 @@ const settled = () => until('tab movement finishes', () => [...harness.container
 function DropContext() { dropContext = useDndContext(); return null; }
 
 function Strip() {
-  const drag = useTabDrag({ layout, blockId: null, contentOf: () => null, openWindow: () => null });
-  return <PaneLayoutProvider paneLayout={layout}><DndContext sensors={drag.sensors} onDragStart={drag.onDragStart} onDragMove={drag.onDragMove} onDragEnd={event => { orderAtDrop = order(); drag.onDragEnd(event); }} onDragCancel={drag.onDragCancel}>
+  const drag = useTabDrag({ layout, openWindow: () => null });
+  return <PaneLayoutProvider paneLayout={layout}><DndContext sensors={drag.sensors} onDragStart={drag.onDragStart} onDragEnd={event => { orderAtDrop = order(); drag.onDragEnd(event); }} onDragCancel={drag.onDragCancel}>
     <DropContext />
     <PaneContext.Provider value={{ paneId: layout.groups[0].paneId, pane: pane(), isFocusedPane: true }}>
       <div style={{ width: 800, display: 'flex', flexDirection: 'column' }}><TabBar /></div>

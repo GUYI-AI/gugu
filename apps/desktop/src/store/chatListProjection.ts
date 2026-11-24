@@ -19,7 +19,7 @@ import {
   createChatProjection, readProjectionCursor,
   type ChatProjection, type ChatProjectionAttachment,
 } from '../lib/chatProjection'
-import { shareRows } from '../lib/chatProjectionAlgebra'
+import { compareStamp, shareRows } from '../lib/chatProjectionAlgebra'
 import { presentChatMessage } from '../lib/chatNotificationPresentation'
 import { unknownMemberName } from '../lib/memberFallbackName'
 import { rendererLogger } from '@/lib/log'
@@ -270,7 +270,7 @@ export function useChatProjectionBinding(deps: {
     const binding = ownerRef.current
     if (binding?.accountId === accountId) publishChatRemovalFacts(accountId, id =>
       ownerRef.current === binding && repositoryRef.current?.accountId === accountId
-      && (binding.owner.isConversationDeleted(id) || binding.owner.isMembershipRevoked(id)), async ids => {
+      && (binding.owner.isConversationDeleted(id) || binding.owner.isMembershipRevoked(id) || binding.owner.isConversationArchived(id)), async ids => {
         if (ownerRef.current !== binding || repositoryRef.current?.accountId !== accountId) return
         const rows = await binding.owner.readRestoredLayoutMemberships(ids, readProjectionCursor(repositoryRef.current), currentAuthSessionSignal())
         if (rows !== null && ownerRef.current === binding && repositoryRef.current?.accountId === accountId) {
@@ -302,6 +302,13 @@ export function useChatProjectionBinding(deps: {
       notify: false, preserveMissingActive: true })
   }, [publish, requestSeqRef])
 
+  const isHideReceiptSuperseded = useCallback((accountId: string, receipt: PersonalConversationStateReceipt) => {
+    if (repositoryRef.current?.accountId !== accountId) return false
+    const row = chatsRef.current.find(chat => chat.id === receipt.chat_id)
+    return row?.conversation_hidden_at === null && row.conversation_visibility_revision !== undefined
+      && compareStamp(row.conversation_visibility_revision, receipt.account_revision) > 0
+  }, [chatsRef, repositoryRef])
+
   const confirmPersonalDeletion = useCallback(async (accountId: string, receipt: PersonalConversationDeletion): Promise<boolean> => {
     const binding = ownerRef.current
     if (!binding || binding.accountId !== accountId) return false
@@ -329,5 +336,5 @@ export function useChatProjectionBinding(deps: {
 
   // ⚠️ 必须**稳定**:返回新字面量 ⇒ 依赖它的 effect 与 useCallback 每渲染都重建 ⇒ 订阅/渲染循环
   // (实测:第一版返回字面量,chatSelectionIntent4314 直接跑到 heap OOM)。
-  return useMemo(() => ({ hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalHiding, confirmPersonalDeletion }), [hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalHiding, confirmPersonalDeletion])
+  return useMemo(() => ({ hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalHiding, isHideReceiptSuperseded, confirmPersonalDeletion }), [hydrate, identities, publish, attach, hasDeletedConversation, confirmPersonalHiding, isHideReceiptSuperseded, confirmPersonalDeletion])
 }

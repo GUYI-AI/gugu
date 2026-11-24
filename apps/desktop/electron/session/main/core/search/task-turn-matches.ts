@@ -13,13 +13,13 @@ export type TaskTurnMatch = Omit<TaskTurnHit, 'title'> & { agentDisplayName: str
  * Its cost follows what is indexed: a short piece scans the indexed text and a common word ranks every match. So it
  * takes the connection it is given and never runs on the main thread (task-turn-search-worker.ts).
  */
-export function matchTaskTurns(connection: BetterSqlite3.Database, query: string, limit = 30, offset = 0): TaskTurnMatch[] {
+export function matchTaskTurns(connection: BetterSqlite3.Database, query: string, limit = 30, offset = 0, indexSchema: 'main' | 'history_search' = 'main'): TaskTurnMatch[] {
   const condition = textCondition(query, 'turn_text', ['r.text']);
   if (!condition) return [];
-  const where = condition.sql.replace('turn_text MATCH ?', 'r.id IN (SELECT rowid FROM turn_text WHERE turn_text MATCH ?)');
+  const where = condition.sql.replace('turn_text MATCH ?', `r.id IN (SELECT rowid FROM ${indexSchema}.turn_text WHERE turn_text MATCH ?)`);
   const rows = connection.prepare(`SELECT r.session_id, r.item_id, r.role, r.text, r.started_at, r.activity, r.message_time,
       json_extract(s.config, '$.agentDisplayName') AS agent_display_name, s.project_id, s.archived_at
-    FROM turn_text_rows r JOIN sessions s ON s.id = r.session_id
+    FROM ${indexSchema}.turn_text_rows r JOIN sessions s ON s.id = r.session_id
     WHERE ${where} AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = s.project_id AND p.workspace_provider != 'local')
     ORDER BY r.started_at IS NULL, r.started_at DESC, r.id DESC LIMIT ? OFFSET ?`).all(...condition.params, Math.min(Math.max(limit, 1), 100), Math.max(0, offset)) as {
       session_id: string; item_id: string; role: string; text: string; started_at: number | null; activity: string | null; message_time: string | null;

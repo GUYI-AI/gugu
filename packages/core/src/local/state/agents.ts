@@ -1,4 +1,4 @@
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   DEFAULT_AGENT_TYPE,
@@ -73,6 +73,30 @@ async function loadAgentsPayload(env: NodeJS.ProcessEnv = process.env): Promise<
   }
 }
 
+/**
+ * Readers share one parse of the roster per file version: on a machine with many agents the file is large, and
+ * `listAgents` sits under every per-session identity lookup. The version is the file's inode, size and mtime — writes
+ * from any process (atomic rename) change it. The records are shared by every reader until then, so readers don't
+ * mutate them; writers (under the lock) read their own copy with loadAgentsPayload.
+ */
+let rosterCache: { file: string; version: string; agents: Promise<readonly LocalAgentRecord[]> } | null = null
+
+async function readRoster(env: NodeJS.ProcessEnv): Promise<readonly LocalAgentRecord[]> {
+  const file = agentsFile(env)
+  const info = await stat(file).catch((err: unknown) => {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return null
+    throw err
+  })
+  if (!info) return []
+  const version = `${info.ino}:${info.size}:${info.mtimeMs}`
+  if (rosterCache?.file !== file || rosterCache.version !== version) {
+    const agents = loadAgentsPayload(env).then((payload) => payload.agents)
+    rosterCache = { file, version, agents }
+    agents.catch(() => { if (rosterCache?.agents === agents) rosterCache = null })
+  }
+  return rosterCache.agents
+}
+
 type AgentsSavedListener = (agents: readonly LocalAgentRecord[]) => void
 const agentsSavedListeners = new Set<AgentsSavedListener>()
 
@@ -102,7 +126,7 @@ export async function listAgents(
   env: NodeJS.ProcessEnv = process.env,
   options: { includeGuests?: boolean } = {}
 ): Promise<LocalAgentRecord[]> {
-  const all = (await loadAgentsPayload(env)).agents
+  const all = await readRoster(env)
   // By default, exclude guest records (status='guest', no gugu_user_id) so callers that iterate
   // over real agents are never surprised by unactivated placeholders. Pass includeGuests:true
   // for paths that explicitly need to see or manage guest records.

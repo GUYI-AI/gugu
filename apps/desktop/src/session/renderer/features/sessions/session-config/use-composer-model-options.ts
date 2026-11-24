@@ -2,7 +2,7 @@ import { useReplica } from '@/lib/replica';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { customModels } from './custom-models';
 import { customComposerOptions } from './custom-model-options';
-import { customModelOptionId, type CustomModelRef } from '@gugu/session-core/models/custom-model';
+import { customModelOptionId, type CustomModelConnection, type CustomModelRef } from '@gugu/session-core/models/custom-model';
 import { useMemo } from 'react';
 import { vendorName } from '@/i18n/vendorName';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
@@ -56,8 +56,12 @@ export function useComposerModelOptions(
   const agentName = agents.state === 'unknown' ? null : composerOwnTierAgentName(agentList, providerId);
   const remote = useLibraryHost().remote;
   const custom = useReplica(customModels, [remote?.deviceId ?? null]);
-  const records = custom.state === 'value' ? custom.value : undefined;
-  const error = custom.state === 'unknown' ? null : custom.error;
+  // Records live on the machine that saved them. Another machine still lists this one's, as unusable there (no key).
+  const own = useReplica(customModels, [null]);
+  const records = custom.state !== 'value' ? undefined
+    : !remote ? custom.value
+      : own.state === 'value' ? withOwnRecords(custom.value, own.value) : undefined;
+  const error = (custom.state === 'unknown' ? null : custom.error) ?? (remote && own.state !== 'unknown' ? own.error : null) ?? null;
   const agent = agentList?.find((entry) => entry.id === providerId);
 
   return useMemo(
@@ -77,6 +81,13 @@ export function useComposerModelOptions(
     },
     [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, records, error, agent, providerId, remote?.deviceLabel]
   );
+}
+
+/** The task machine's records, then this machine's that it lacks (same address = it has it), without their key there. */
+export function withOwnRecords(machine: readonly CustomModelConnection[], own: readonly CustomModelConnection[]): CustomModelConnection[] {
+  const addresses = new Set(machine.flatMap((record) => record.endpoints.map((endpoint) => endpoint.baseUrl)));
+  return [...machine, ...own.filter((record) => !record.endpoints.some((endpoint) => addresses.has(endpoint.baseUrl)))
+    .map((record) => ({ ...record, keySaved: false }))];
 }
 
 type Translate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;
@@ -136,7 +147,7 @@ export function openMembershipPage(): void {
 
 /**
  * 模型面板底部的两条去路(#7056,对齐 Cursor):三个模型菜单(新建页、Chat UI 会话、终端会话)共用这一份。
- *  - 「配置自定义模型」直达添加模型对话框;
+ *  - 「配置自定义模型」打开设置里的模型列表;
  *  - 「升级解锁更多模型」只给这一档有用不了的模型的人(免费档),悬停列出是哪几个,点了去网页面板。
  * 这一档用不了的模型**不进清单**:列出来点了才说要会员「像是埋雷」(owner 2026-10-10)。
  */
@@ -146,7 +157,7 @@ export function composerModelFooter(
 ): { onManageModels: () => void; modelUpgrade: ComposerModelUpgrade | null; onModelUpgrade: () => void } {
   const locked = platformModels.filter((model) => model.requiresMembership).map((model) => model.displayName);
   return {
-    onManageModels: () => openShellSettings('model', 'add-custom-model'),
+    onManageModels: () => openShellSettings('model'),
     modelUpgrade: locked.length && billingLinksAvailable()
       ? {
           label: translate('composer.platformModelUpgrade'),

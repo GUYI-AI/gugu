@@ -183,6 +183,14 @@ it('Claude / Codex account sign-ins still run on the account connection they nam
   });
 });
 
+it('commits a Codex switch without a separate CLI sign-in status request', async () => {
+  const work = await createHarnessConnection({ providerId: 'codex', kind: 'account', name: 'Work' });
+  expect(await host.selectConnection({ providerId: 'codex', connectionId: work.id })).toEqual({ success: true, data: undefined });
+  expect(state.switches).toEqual([{ providerId: 'codex', connectionId: work.id }]);
+  expect(await state.fixture!.registry.getDefaultAccountId('harness:codex')).toBe(work.id);
+  expect(refreshed).toEqual([]);
+});
+
 it('removing the only, current key goes through the switch: refused while a session is busy, then falls back to native', async () => {
   const keyId = await selectKey('mimocode', 'mimo-secret');
   state.switches = [];

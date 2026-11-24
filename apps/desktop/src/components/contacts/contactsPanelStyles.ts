@@ -1,21 +1,15 @@
 // 通讯录(ContactsPanel)和它拆出去的详情页(ContactDetail)共用的样式与小函数:原样从 ContactsPanel.tsx 搬出(那个文件行数冻结、只减不增)。
 import type { KeyboardEvent } from 'react'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
-import { agentContactAvatarBadgeClass, type AgentContactTone } from '../contactAgentTone'
 import { formatDate, i18n } from '../../i18n'
 import { cn } from '@/lib/cn'
 
 export const ct = i18n.getFixedT(null, 'contacts')
 
-// @@@ui-ruler 本地样式副本(rowBase / meta / name / sharedTag / reqBadge / section* / cpane*)已按角色
-// 收口进原语,这里只剩原语不管的那点:头像壳(agent 状态角标挂在它的 ::after 上)、
-// 详情面排版。几何一律取 tokens,❌ 字面量像素。
 // 名字(人 / Agent / 群)在资料卡与详情标题里最多两行,再长省略号,悬停 title 看全名;页头与列表行是一行(.gg-pane-title / .gg-list-row-title)。
 export const nameClampClass = 'line-clamp-2 [overflow-wrap:anywhere]'
 // 资料卡所在的那块(Agent / 人 / 群同一张卡):居中、上方留白一致,三种对象打开时卡片落在同一处。
 export const profileBodyClass = 'flex flex-1 items-start justify-center overflow-y-auto !px-6 !pb-6 !pt-[calc(var(--spacing-2xl)*2)]'
-export const rowAvatarClass =
-  'gg-c-av flex h-[var(--avatar-sm)] w-[var(--avatar-sm)] shrink-0 items-center justify-center overflow-hidden rounded-full'
 // 行内改名/备注输入:控件高与 Button/Field 同一把尺子(--control-h-md)。
 export const inlineInputClass =
   'h-[var(--control-h-md)] min-w-0 flex-1 rounded-[var(--radius-control)] border border-[var(--border)] bg-[var(--input-bg)] !px-2 text-sm text-[var(--fg)] outline-none'
@@ -38,8 +32,6 @@ export const detailBodyClass = (mobile?: boolean) =>
     'flex-1 overflow-y-auto overflow-x-hidden',
     mobile ? '!px-4 !pt-4 !pb-[max(24px,env(safe-area-inset-bottom))]' : '!px-6 !py-6',
   )
-
-export const agentAvatarClass = (tone: AgentContactTone | null) => cn(rowAvatarClass, agentContactAvatarBadgeClass(tone))
 
 /** ListRow 的根是 div(行里要嵌删除钮,按钮不能嵌按钮),键盘可达性靠 role/tabIndex + Enter/Space 补齐。 */
 export const rowKeyActivate = (activate: () => void) => (event: KeyboardEvent<HTMLDivElement>) => {
@@ -95,9 +87,6 @@ export const profileCardStyles = {
   statusBase:
     'gg-c-cpane-status mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]',
   statusStandby: 'standby',
-  // @@@5588 needs_user uses a Solar exclamation glyph; every other tone's color comes from the one table in
-  // contactAgentTone (`--agent-tone-*`), the same the contacts row and the avatar badge use.
-  statusDotBase: 'gg-c-cpane-status-dot h-[6px] w-[6px] shrink-0 rounded-full',
   guguNumber:
     'gg-c-cpane-gugu mt-2 flex items-center gap-2 text-sm text-[var(--muted-fg)]',
   guguNumberLabel: 'gg-c-cpane-gugu-label text-[var(--text-secondary)]',
@@ -119,6 +108,8 @@ export const profileCardStyles = {
   // 原裁决:与 ContactsPanel 行同款的 --bg-secondary 色块。
   action:
     'gg-c-cact inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border-0 bg-transparent px-3 py-2 text-sm font-medium text-[var(--fg)] !transition-[background] !duration-[var(--dur-fast)] [font-family:inherit] hover:[background:var(--hover)] active:[background:var(--press)] disabled:cursor-default disabled:text-[var(--text-tertiary)]',
+  // 名片里一行等分的次级动作(每格约 80px,宽度归外面的格子):图标在上、字在下,放不下时字折行。
+  actionStacked: 'min-w-0 flex-col justify-start gap-1 px-1 text-center text-xs leading-4 [overflow-wrap:anywhere]',
   delete:
     'gg-c-cpane-del !-ml-3 !mt-5 inline-flex cursor-pointer items-center gap-2 rounded-[var(--radius-control)] border-0 bg-transparent !px-3 !py-2 text-sm font-medium text-[var(--danger-fg)] [font-family:inherit] hover:bg-[var(--danger-tint)]',
 } as const

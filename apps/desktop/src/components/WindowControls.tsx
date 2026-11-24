@@ -3,10 +3,8 @@ import { createSelectStore, useSelect, type Readable, type SelectStore } from '.
 import type { SidebarTab } from '@gugu/core/shared/enums/sidebarTabModels'
 import type { ActiveSection } from '@gugu/core/shared/enums/settingsSectionModels'
 import {
-  hasCustomWindowControls,
   hasWindowTitlebarRow,
   readRendererPlatform,
-  WINDOW_CONTROL_BAR_HEIGHT_PX,
   WINDOW_CONTROL_BUTTON_WIDTH_PX,
   WINDOW_TITLEBAR_HEIGHT_PX,
 } from '../lib/window-chrome'
@@ -22,12 +20,9 @@ import { useChatStoreReader } from '../store/chatContext'
 
 // @@@822 frameless 统一标题栏的自绘窗口控制 —— 仅 Windows/Linux 的 Electron 渲染。
 // Mac 保留原生交通灯(titleBarStyle:hiddenInset),web/非 Electron 无边框控制 → 这些场景返回 null。
-// 窗口控制(46×40 按钮 + min/max/close SVG + close 红 #E81123),配色按 gugu 暗色 token。
+// 窗口控制(46 宽按钮 + min/max/close SVG + close 红 #E81123),配色按 gugu 暗色 token。
 // 通过 window.desktopWindow(preload 桥)驱动 main 的 window:minimize/maximize/close IPC。
-//
-// 两种摆法,同一组按钮(本文件的 WindowControls 是唯一挂载入口):
-//   · Windows —— 住在标题栏行里(WindowTitleBar 收下这组按钮元素),不压内容;
-//   · Linux   —— 浮在内容右上角(fixed),内容按 windowControlsWidth 让位。
+// Windows 与 Linux 同一种摆法:住在标题栏行里(WindowTitleBar 收下这组按钮元素),不压内容。
 
 export type DesktopWindowBridge = NonNullable<Window['desktopWindow']>
 
@@ -140,7 +135,7 @@ export interface WindowControlsProps {
 
 /**
  * 壳里窗口 chrome 的唯一挂载点(MainLayout 把它挂在整棵壳的最后,理由见那里 @@@822 的注释):
- * Windows 画标题栏行,Linux 画浮在内容右上角的三颗钮,mac / 网页 / 手机什么都不画。
+ * Windows / Linux 画标题栏行(三颗钮在它右端),mac / 网页 / 手机什么都不画。
  *
  * 后退 / 前进的壳级历史也住在这里 —— 它只服务于标题栏,❌ 摊进 MainLayout(那个文件在 IM 迁移账本里,
  * 有行数预算)。历史跨 tab 切换一直活着,因为这个组件和壳同生同灭。
@@ -178,8 +173,7 @@ export function WindowControls({
   const chrome = useWindowChromeState()
   const { dw } = chrome
 
-  if (!titlebarRow) return <FloatingWindowControls chrome={chrome} />
-  if (!dw) return null
+  if (!titlebarRow || !dw) return null
   return (
     <WindowTitleBar
       desktopWindow={dw}
@@ -190,32 +184,5 @@ export function WindowControls({
       onNewAgent={onNewAgent}
       onOpenSettings={onOpenSettings}
     />
-  )
-}
-
-/** Linux:三颗钮浮在内容右上角。 */
-function FloatingWindowControls({ chrome }: { chrome: WindowChromeState }) {
-  // 仅 Electron-on-Linux 浮在内容上;data-platform 在 main.tsx 注入(mac/win/linux/other)。
-  const platform = readRendererPlatform(typeof document === 'undefined' ? undefined : document)
-  const { dw } = chrome
-  if (!dw || !hasCustomWindowControls(platform)) return null
-
-  return (
-    <div
-      style={
-        {
-          position: 'fixed',
-          top: 0,
-          right: 0,
-          height: WINDOW_CONTROL_BAR_HEIGHT_PX,
-          display: 'flex',
-          zIndex: 'var(--z-chrome)',
-          WebkitAppRegion: 'no-drag',
-        } as React.CSSProperties
-      }
-      data-window-controls=""
-    >
-      <WindowControlButtons chrome={{ ...chrome, dw }} height={WINDOW_CONTROL_BAR_HEIGHT_PX} />
-    </div>
   )
 }

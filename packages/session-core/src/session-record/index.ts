@@ -34,7 +34,6 @@ export {
   type LeanPage
 } from './transport-trim';
 
-export { findToolImage, findToolItem, type ToolImageLookup } from './tool-image';
 
 export {
   QUESTION_TOOL_NAMES,

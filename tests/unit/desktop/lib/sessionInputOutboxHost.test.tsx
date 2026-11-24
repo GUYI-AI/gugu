@@ -21,8 +21,8 @@ vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRende
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: scope.devices, phones: scope.phones }) }))
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: { get kind() { return scope.platform } } }))
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/ipc', async original => ({ ...await original<object>(), rpcOn: (machine: string | null) => ({ sessionTimeline: { sessionSend: (request: unknown) => { scope.machines.push(machine); return scope.send(request) } } }) }))
-vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ sendSessionText: async (_device: string, sessionId: string, text: string, clientMessageId: string, files?: unknown[]) => {
-  const reply = await scope.send({ conversationId: sessionId, text, clientMessageId, ...(files?.length ? { files } : {}) })
+vi.mock('../../../../apps/desktop/src/components/session-watch/sessionpage-rpc', () => ({ sendSessionInput: async (_device: string, request: { clientMessageId: string }) => {
+  const reply = await scope.send(request)
   if (!reply.ok) throw new SessionInputAdmissionError(reply.error.message, sessionInputAdmission(reply.error), reply.error.code)
   return reply.value
 } }))
@@ -36,7 +36,7 @@ vi.mock('../../../../apps/desktop/src/lib/sessionSendQueueHost', () => ({ watchS
 // The host also registers the App-notice kind; its cloud client is another subject.
 vi.mock('../../../../apps/desktop/src/lib/outbox/kinds/assistantNotice', () => ({ assistantNoticeOutboxKind: { name: 'assistantNotice', lane: () => 'assistant', send: async () => {} } }))
 vi.mock('../../../../apps/desktop/src/lib/outbox/legacy', () => ({ importLegacyWrites: async () => {} }))
-vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', async original => ({ ...await original<object>(), translateSessionMessage: (key: string, values?: { count: number }) => key === 'composer.attachmentHostUpdateRequired' ? 'Update the task host to send attachments' : key === 'composer.attachmentsNotSent' ? `(${values!.count} attachments could not be included after the upgrade. Please send them again.)` : 'Waiting for host; sends automatically' }))
+vi.mock('../../../../apps/desktop/src/session/renderer/localization/locale-store', async original => ({ ...await original<object>(), translateSessionMessage: (key: string, values?: { count: number }) => key === 'composer.attachmentHostUpdateRequired' ? 'Update the task host to send attachments' : key === 'composer.annotationHostUpdateRequired' ? 'Update the task host to send comments' : key === 'composer.attachmentsNotSent' ? `(${values!.count} attachments could not be included after the upgrade. Please send them again.)` : 'Waiting for host; sends automatically' }))
 let harness: ReturnType<typeof createReactHarness>
 let core: ReturnType<typeof installOutboxCore> | undefined
 /** The window's one outbox for the case's account (the app's comes from the replica); OutboxHost registers the kinds. */
@@ -275,6 +275,35 @@ describe('native input shell lifecycle', () => {
   })
   // A session on this computer may be named by this computer's own device id (the assistant task pane does): its own
   // host answers over IPC, even while the cloud presence row says offline and without a remote input advertisement.
+  it.each(['electron', 'web'])('sends comments only to a host that takes them, refusing the rest before queueing (%s)', async platform => {
+    scope.platform = platform
+    signIn(`annotations-${platform}`)
+    const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: '# All comments\n\nComment:\nMake it red' }]
+    scope.devices = [{ device_id: 'host-a', is_online: true, capabilities: { remote_protocol: REMOTE_PROTOCOL_VERSION } }]
+    scope.send.mockImplementation(async (request: { clientMessageId: string }) => ({ ok: true, value: { accepted: 'started', clientMessageId: request.clientMessageId } }))
+    updateDeviceSessions('host-a', { cached: false, sessions: [{ conversationId: 'annotated', nativeInputVersion: 2 } as never] })
+    await harness.render(<SessionInputOutboxHost accountId={scope.owner} />)
+    await act(async () => { await expect(enqueueSessionInput({ deviceId: 'host-a', sessionId: 'annotated', text: 'apply', annotations })).rejects.toThrow('Update the task host to send comments') })
+    expect(rows()).toEqual([])
+    expect(scope.send).not.toHaveBeenCalled()
+    scope.devices = [{ device_id: 'host-a', is_online: true, capabilities: { remote_protocol: REMOTE_PROTOCOL_VERSION, task_annotations: 1 } as never }]
+    await harness.render(<SessionInputOutboxHost accountId={scope.owner} />)
+    await act(async () => { await enqueueSessionInput({ deviceId: 'host-a', sessionId: 'annotated', text: 'apply', annotations }); await kick() })
+    expect(scope.send).toHaveBeenCalledTimes(1)
+    expect(scope.send.mock.calls[0][0]).toMatchObject({ text: 'apply', annotations })
+  })
+
+  it('tells the person to update a phone host that does not take comments (iOS), instead of dropping them', async () => {
+    signIn('annotations-ios')
+    scope.phones = [{ device_id: 'phone-ios', is_online: true, capabilities: { host_kind: 'phone', remote_protocol: 18 } }]
+    await harness.render(<SessionInputOutboxHost accountId={scope.owner} />)
+    const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: 'Comment:\nMake it red' }]
+    await act(async () => { await expect(enqueueSessionInput({ deviceId: 'phone-ios', sessionId: 'ios-task', text: 'apply', annotations })).rejects.toThrow('Update the task host to send comments') })
+    expect(rows()).toEqual([])
+    expect(scope.send).not.toHaveBeenCalled()
+    scope.phones = []
+  })
+
   it('sends to this computer over IPC when the input names its own device id', async () => {
     signIn('account-own-id')
     scope.devices = [{ device_id: 'this-computer', is_online: false, is_current_device: true, capabilities: {} } as never]

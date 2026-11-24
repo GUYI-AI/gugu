@@ -78,7 +78,7 @@ it.each([{ width: 1440, mode: 'light' }, { width: 1440, mode: 'dark' }, { width:
   const lastFact = source.lastElementChild!;
   const strip = background()!;
   const silent = [...host.querySelectorAll<HTMLElement>('[data-slot="turn-process"]')].at(-1)!.lastElementChild as HTMLElement;
-  const label = strip.querySelector<HTMLElement>('[data-shimmer]') ?? strip.firstElementChild as HTMLElement;
+  const label = strip.firstElementChild as HTMLElement;
   const reading = {
     phase: capturePhase ?? 'test', width, mode,
     headerRight: lastFact.getBoundingClientRect().right,
@@ -341,7 +341,6 @@ it.each([390, 1200])('aligns a reply, its artifact and the final actions at %ipx
   expect(host.querySelectorAll('[data-user-message-actions="answer"]')).toHaveLength(1);
   const copy = actions.querySelector<HTMLElement>('[data-slot="message-copy"]')!;
   if (matchMedia('(hover: hover)').matches) {
-    await Promise.all(copy.getAnimations().map(animation => animation.finished));
     expect(getComputedStyle(copy).opacity).toBe('0');
     await userEvent.hover(bubble);
     await until('the reply hover reveals the moved controls', () => getComputedStyle(copy).opacity === '1');

@@ -27,8 +27,6 @@ export interface FlowListHandle {
   autoscrollToBottom(): void
 }
 
-export const isAtListEnd = (element: HTMLElement, threshold: number) => element.scrollHeight - element.clientHeight - element.scrollTop <= threshold
-
 /** 数据下标为 index 的已挂行(行根带 aria-posinset = 下标 + 1,见 MessageRow);没挂上 = null。 */
 const rowAt = (content: HTMLElement, index: number) => content.querySelector<HTMLElement>(`:scope > [aria-posinset="${index + 1}"]`)
 
@@ -83,25 +81,26 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   }, [contentRef])
 
   const rangeRef = useRef({ key: resetKey, rowIds, start: 0, end: rowIds.length })
-  // 上一帧画出来时离底多远、scrollTop、视口顶上那一行在哪(绘制之后读;那一行在底部附近才找,从最后一行往上几行就到;橡皮筋回弹按回弹之后记)。
+  // 上次判电平时离底多远、scrollTop、视口顶上那一行在哪(那一行在底部附近才找,从最后一行往上几行就到;橡皮筋回弹按回弹之后记)。
+  // @@@baseline-at-report - 和电平在同一刻、用同一份几何记下(ResizeObserver 回调、layout effect、滚动的绘制后读数里,布局都是干净的)。
+  // 从前推到下一次绘制之后再读:最新一行恰好在「绘制之后、那次读之前」长高(Streamdown 异步排版、图片解码完),长出来的高度
+  // 被记进基准,ResizeObserver 看到离底「没变远」就不贴底,电平随即报不在底部 —— 读者没动,下一条消息却亮「N 条新消息」。
   const lastFrameRef = useRef<{ key: Slice['key']; gap: number; top: number; at?: { row: Element; top: number } }>({ key: resetKey, gap: 0, top: 0 })
   if (lastFrameRef.current.key !== resetKey) lastFrameRef.current = { key: resetKey, gap: 0, top: 0 }
-  const [lastFrame] = useState(() => afterPaint(() => {
-    const scroller = scrollerRef.current, view = scroller?.getBoundingClientRect().top ?? 0, gap = scroller ? scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop : 0
-    let row = scroller && atBottomRef.current ? contentRef.current?.lastElementChild : null
-    while (row?.previousElementSibling && row.getBoundingClientRect().top > view) row = row.previousElementSibling
-    if (scroller) lastFrameRef.current = { key: rangeRef.current.key, gap: Math.max(0, gap), top: scroller.scrollTop + Math.min(0, gap), at: row ? { row, top: row.getBoundingClientRect().top - view - Math.min(0, gap) } : undefined }
-  }))
   const report = useCallback((scroller: HTMLElement) => {
-    lastFrame.schedule()
     const range = rangeRef.current
-    const atBottom = range.end === range.rowIds.length && isAtListEnd(scroller, atBottomThreshold)
+    const gap = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop
+    const atBottom = range.end === range.rowIds.length && gap <= atBottomThreshold
     atBottomRef.current = atBottom
+    const view = scroller.getBoundingClientRect().top
+    let row = atBottom ? contentRef.current?.lastElementChild : null
+    while (row?.previousElementSibling && row.getBoundingClientRect().top > view) row = row.previousElementSibling
+    lastFrameRef.current = { key: range.key, gap: Math.max(0, gap), top: scroller.scrollTop + Math.min(0, gap), at: row ? { row, top: row.getBoundingClientRect().top - view - Math.min(0, gap) } : undefined }
     if (reportedRef.current !== atBottom) {
       reportedRef.current = atBottom
       callbacksRef.current.onAtBottomChange?.(atBottom)
     }
-  }, [atBottomThreshold, lastFrame])
+  }, [atBottomThreshold, contentRef])
   // 底部离读者变远了(新消息、最后一条长高、视口变矮)且不是读者自己走的,才贴底。离底没比上一帧变大 = 什么都没变的重渲染,或上方变高、补挂被锚定
   // 吸收了(代码块空闲时才高亮,被 content-visibility 跳过的行滚到附近才排出来:「底部有一个范围会被不断吸」)。变大了,谁动的由视口顶上那一行回答:
   // 它往下挪了是读者往上走;scrollTop 只用来排除没有锚定时(WebKit)上方变高把它推下去 —— 那时 scrollTop 没变,照旧贴。那一行被裁掉了也贴。
@@ -160,12 +159,14 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
 
   // 头部插进一页旧消息(或窗口从头部裁掉几行):把读者正看着的那一行放回原处,在这次提交的绘制之前。
   // 浏览器的原生锚定多数时候已经做了(这里读到的差就是 0);它不管的是滚动条正好顶在 0 的时候,以及不支持锚定的 WebKit。
+  // 跟着尾巴时也先放回:头部变化只该由这一步吸收,贴不贴底留给下面按离底距离判 —— 否则 WebKit 上头部补挂被当成
+  // 「上方变高」,把停在阈值以内的读者拽到底。
   useLayoutEffect(() => {
     const scroller = scrollerRef.current, anchor = anchorRef.current
-    if (!scroller || !anchor || !anchor.row.isConnected || followsTail(scroller)) return
+    if (!scroller || !anchor || !anchor.row.isConnected) return
     const delta = anchor.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.top
     if (Math.abs(delta) > 0.5) scroller.scrollTop += delta
-  }, [headKey, dataHead, scrollerRef, followsTail])
+  }, [headKey, dataHead, scrollerRef])
 
   // 初次落点和未挂载目标都先补到真实行,在这次绘制前定位;没有请求时不再重放落点。
   useLayoutEffect(() => {
@@ -210,15 +211,20 @@ export function useFlowList({ scrollerRef, contentRef, resetKey, rowIds, landing
   useLayoutEffect(() => {
     const scroller = scrollerRef.current, content = contentRef.current
     if (!scroller || !content || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => {
+    // 每次读数都先问「离底变远是谁动的」(endMovedAway)再判电平。滚动的绘制后读数也一样:它可能先于 ResizeObserver 看到
+    // 刚长出来的高度(长高落在绘制之后的任务里),直接判电平就把内容长高当成了读者往上走。
+    const settle = () => {
       if (followsTail(scroller)) scroller.scrollTop = scroller.scrollHeight
       report(scroller)
+    }
+    const observer = new ResizeObserver(() => {
+      settle()
       grow(scroller)
     })
     observer.observe(content)
     observer.observe(scroller)
     const scrolled = afterPaint(() => {
-      report(scroller)
+      settle()
       if (!grow(scroller) && rangeRef.current.start === 0 && scroller.scrollTop <= 120) callbacksRef.current.onStartReached?.()
     })
     scroller.addEventListener('scroll', scrolled.schedule, { passive: true })

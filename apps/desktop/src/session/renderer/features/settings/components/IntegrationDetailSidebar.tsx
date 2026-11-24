@@ -57,8 +57,7 @@ export function IntegrationDetailSidebar({
         size="sm"
         onClick={onClose}
         className="absolute top-4 p-0"
-        // 这颗 ✕ 是 `absolute` 钉在抽屉右上角的,不在 header 行里 ⇒ 让开窗口控制条要写 `right`
-        // 而不是 padding;读的仍是同一个数(见 sheet.tsx 的 @@@sheet-window-controls-lane)。
+        // 这颗 ✕ 是 `absolute` 钉在抽屉右上角的,不在 header 行里 ⇒ 写 `right` 而不是 padding,数是 sheet.tsx 那一个。
         style={{ right: SHEET_SAFE_INSET_RIGHT }}
         aria-label={translate('common.close')}
       >

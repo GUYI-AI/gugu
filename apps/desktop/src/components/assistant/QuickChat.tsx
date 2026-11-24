@@ -59,7 +59,7 @@ export function QuickChat({
           <X />
         </IconButton>
         <span className="qc-who">
-          {assistant ? <Avatar name={assistant.display_name} avatarUrl={assistant.avatar} seed={assistant.id} size={24} isAgent harnessBadge={false} /> : null}
+          {assistant ? <Avatar name={assistant.display_name} avatarUrl={assistant.avatar} seed={assistant.id} size={24} isAgent /> : null}
           <span>{name}</span>
         </span>
         <IconButton size="sm" onClick={onOpenMain} aria-label={t('quickChat.openApp')} title={t('quickChat.openApp')} data-testid="quick-chat-open-main">

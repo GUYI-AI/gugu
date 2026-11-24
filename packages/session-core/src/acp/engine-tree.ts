@@ -1,5 +1,4 @@
-import path from 'node:path';
-import { execFileSync } from '@gugu/core/local/childProcess';
+import { execFileSync, windowsSystemProgram } from '@gugu/core/local/childProcess';
 import type { OwnedChild } from '../exec/owned-child';
 import {
   collectDescendantProcesses,
@@ -73,8 +72,7 @@ export function defaultEngineTreeOps(): EngineTreeOps {
 const TASKKILL_NOT_FOUND = 128;
 
 function taskkillTreeSync(pid: number): void {
-  // By system directory: something else named taskkill on PATH is not taskkill.
-  const taskkill = path.win32.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
+  const taskkill = windowsSystemProgram('taskkill.exe');
   try {
     execFileSync(taskkill, ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 5_000 });
   } catch (error) {

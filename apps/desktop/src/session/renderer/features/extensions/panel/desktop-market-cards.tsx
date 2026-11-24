@@ -1,10 +1,8 @@
-import { useState, type ReactNode } from 'react';
-import { Check, Plus, RefreshCw, type IconComponent } from '@/lib/icons';
+import type { ReactNode } from 'react';
+import { Check, Plus, type IconComponent } from '@/lib/icons';
 import { ResourceMenu } from '@/components/ResourceMenu';
 import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { Button } from '@renderer/lib/ui/button';
-import { FEATURED_COUNT } from '@shared/extensions/market';
 import type { ResourceContext } from '@shared/resource-actions';
 
 export type MarketCategoryChoice<T extends string> = {
@@ -14,19 +12,18 @@ export type MarketCategoryChoice<T extends string> = {
 };
 
 export function MarketCategoryBar<T extends string>({
-  choices, selected, onChange, testIdPrefix, variant = 'chips',
+  choices, selected, onChange, testIdPrefix,
 }: {
   choices: readonly MarketCategoryChoice<T>[];
   selected: T;
   onChange: (value: T) => void;
   testIdPrefix: string;
-  variant?: 'chips' | 'subnav';
 }) {
   const { translate } = useSessionMessages();
   return (
     <ToggleGroup
       size="sm"
-      className={`mk-market-categories mk-market-${variant}`}
+      className="mk-market-categories"
       aria-label={translate('extensions.infoCategory')}
       value={[selected]}
       onValueChange={([value]) => {
@@ -56,44 +53,6 @@ export function MarketGrid({ title, heading, stale, testId, children }: {
       {heading && <h3>{title}</h3>}
       {stale && <p className="mk-stale" data-testid="extension-market-stale">{stale}</p>}
       <ul className="mk-market-grid" aria-label={title}>{children}</ul>
-    </section>
-  );
-}
-
-export function useMarketFeatured<T>(featured: readonly T[], more: readonly T[]) {
-  const [batch, setBatch] = useState(0);
-  const batchCount = 1 + Math.ceil(more.length / FEATURED_COUNT);
-  const index = featured.length ? batch % batchCount : 0;
-  const offset = (index - 1) * FEATURED_COUNT;
-  const items = index === 0 ? featured : more.slice(offset, offset + FEATURED_COUNT);
-  return {
-    items,
-    next: featured.length > 0 && batchCount > 1 ? () => setBatch((value) => (value + 1) % batchCount) : undefined,
-  };
-}
-
-export function MarketFeatured<T>({ title, items, next, renderCard }: {
-  title: string;
-  items: readonly T[];
-  next?: () => void;
-  renderCard: (item: T) => ReactNode;
-}) {
-  const { translate } = useSessionMessages();
-  if (items.length === 0) return null;
-  return (
-    <section className="mk-market-featured">
-      <div className="mk-market-section-title">
-        <h3>{title}</h3>
-        {next && (
-          <Button variant="ghost" size="sm" onClick={next}>
-            <RefreshCw className="size-4" aria-hidden />
-            {translate('extensions.marketNextBatch')}
-          </Button>
-        )}
-      </div>
-      <ul className="mk-market-grid" aria-label={title}>
-        {items.map(renderCard)}
-      </ul>
     </section>
   );
 }

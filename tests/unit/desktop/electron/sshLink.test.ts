@@ -30,7 +30,8 @@ import {
   linkProtocolFromPreamble,
   sshLinkArgs,
 } from '../../../../apps/desktop/electron/server/ssh-link'
-import { classifySignInExit } from '../../../../apps/desktop/electron/server/ssh-link-ipc'
+import { classifySignInExit, registerSshLinkIpc } from '../../../../apps/desktop/electron/server/ssh-link-ipc'
+import { SSH_LINK_CHANNELS } from '../../../../apps/desktop/src/lib/sshLink'
 import { writeServerConnectVia, type ServerAccount } from '../../../../apps/desktop/electron/server/server-layout'
 import { readServerConnectVia, serverDeviceLabel } from '../../../../packages/core/src/cloud/serverConnectVia'
 import { REMOTE_PROTOCOL_VERSION, SERVER_UPDATE_CONTROL_RPCS } from '../../../../packages/core/src/cloud/serverMachineHealth'
@@ -512,3 +513,30 @@ describe('桌面主进程:每台机器一条设备连接', () => {
   })
 })
 
+describe('a device link over a remote tunnel', () => {
+  it('a tunnel link the machine’s server refuses steps the tunnel aside; only a failed SSH path rebuilds it', async () => {
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
+    const tunnels = {
+      linkMachine: vi.fn(() => ({ target: { destination: 'tunnel', display: 'tunnel' }, accountUserId: 'owner-1' })),
+      reportBroken: vi.fn(), linkRefused: vi.fn(), linkOpened: vi.fn(),
+    }
+    const links = registerSshLinkIpc({
+      ipcMain: { handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) => handlers.set(channel, fn) } as never,
+      getWindow: () => null, currentUserId: async () => 'owner-1',
+      store: { list: () => [], onChange: () => () => undefined } as never,
+      tunnels,
+    })
+    const open = vi.spyOn(links, 'open')
+    const openForRenderer = () => handlers.get(SSH_LINK_CHANNELS.open)!({}, 'tunnel-device')
+    open.mockResolvedValueOnce({ ok: false, reason: 'notInstalled', detail: 'no such file' })
+    expect(await openForRenderer()).toEqual({ ok: false, reason: 'notInstalled', detail: 'no such file', via: 'tunnel' })
+    expect(tunnels.linkRefused).toHaveBeenCalledExactlyOnceWith('tunnel-device', 'notInstalled: no such file')
+    open.mockResolvedValueOnce({ ok: false, reason: 'unreachable', detail: 'timed out' })
+    await openForRenderer()
+    expect(tunnels.reportBroken).toHaveBeenCalledExactlyOnceWith('tunnel-device')
+    open.mockResolvedValueOnce({ ok: true })
+    expect(await openForRenderer()).toEqual({ ok: true })
+    expect(tunnels.linkOpened).toHaveBeenCalledExactlyOnceWith('tunnel-device')
+    expect(tunnels.linkRefused).toHaveBeenCalledTimes(1)
+  })
+})

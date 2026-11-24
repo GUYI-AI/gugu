@@ -82,7 +82,7 @@ export type SessionRowShellProps = {
   /** ⌘ / Ctrl 点 = 并排打开(spec session-page「一屏几块」);键盘 Enter 不带它。 */
   onOpen: (options?: { beside?: boolean }) => void;
   /** 行上额外的属性(拖成 @、身份卡指针事件……),原样挂到行上。 */
-  rowProps?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean };
+  rowProps?: React.HTMLAttributes<HTMLDivElement> & { draggable?: boolean; 'data-row-hover-trigger'?: string };
   /** 挂在行后面、同一个右键触发区里的东西(身份卡)。 */
   after?: React.ReactNode;
   /** 右键菜单的条目;没有就不出菜单。 */
@@ -140,7 +140,7 @@ export function SessionRowShell({
   const leadingClass = cn('flex shrink-0 items-center', disabled && 'opacity-60');
   const leadingAvatar = agent ? (
     <span className={leadingClass} data-row-agent-avatar={agent.userId}>
-      <Avatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.userId} size={14} isAgent harnessBadge={false} still />
+      <Avatar name={agent.name} avatarUrl={agent.avatarUrl} seed={agent.userId} size={14} isAgent still />
     </span>
   ) : null;
   const titleClass = cn(
@@ -245,7 +245,7 @@ export function SessionRowShell({
             <span className={sidebarRowRestActionsClass}>
               {presentation && presentationAttention(presentation) ? (
                 <span className="flex size-5 items-center justify-center">
-                  <AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} variant="2" />
+                  <AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} />
                 </span>
               ) : statusUnavailable ? (
                 <span className="flex size-5 items-center justify-center">
@@ -258,7 +258,7 @@ export function SessionRowShell({
                 </span>
               ) : presentation && (presentation.tone === 'running' || presentation.tone === 'parked') ? (
                 <span className="flex size-5 items-center justify-center">
-                  <AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} variant="2" />
+                  <AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} />
                 </span>
               ) : scheduleAtRest && schedule ? (
                 <SidebarScheduleMark digest={schedule} emphasized={doneUnread} />

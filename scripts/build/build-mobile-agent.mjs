@@ -2,6 +2,7 @@ import { build } from 'esbuild'
 import { cp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import { copyMobileRuntimeNotices } from './mobile-runtime-notices.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -12,7 +13,7 @@ const built = await build({
   entryPoints: [join(root, 'apps/mobile/runtime/agent.mjs')], outfile: join(out, 'agent.mjs'), bundle: true,
   platform: 'node', target: 'node24', format: 'esm', minify: true,
   banner: { js: "import { createRequire as __guguCreateRequire } from 'node:module'; const require = __guguCreateRequire(import.meta.url);" },
-  external: ['@earendil-works/clipboard', 'quickjs-wasi', '@silvia-odwyer/photon-node'],
+  external: ['@earendil-works/clipboard', 'quickjs-wasi', '@silvia-odwyer/photon-node', 'sharp'],
   alias: { '@capacitor/core': join(root, 'apps/mobile/runtime/phone-capacitor.mjs') }, metafile: true,
 })
 // Keep the license and notice files of every npm package actually included in the embedded bundle.
@@ -35,6 +36,27 @@ for (const name of ['quickjs-wasi', '@silvia-odwyer/photon-node']) {
   if (metadata.name !== name || !metadata.version) throw new Error(`${name}: invalid copied runtime package metadata`)
   externalPackages.set(name, directory)
   packages.set(directory, metadata)
+}
+// sharp draws image previews (core local/files/nodeImagePreview). There is no native build for Android, so sharp loads its
+// wasm32 one: ship both with every package they require, resolved the way Node resolves them.
+// A package's directory the way Node finds it from `from` (sharp exports no ./package.json, so it is not resolved).
+const packageDir = async (name, from) => {
+  for (const base of createRequire(join(from, 'package.json')).resolve.paths(name) ?? []) {
+    const directory = join(base, name)
+    if (await readFile(join(directory, 'package.json'), 'utf8').then(() => true, () => false)) return realpath(directory)
+  }
+  throw new Error(`${name}: not installed (from ${from})`)
+}
+const previewPackages = [['sharp', root], ['@img/sharp-wasm32', join(root, 'apps/mobile')]]
+for (const [name, from] of previewPackages) {
+  const directory = await packageDir(name, from)
+  const metadata = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'))
+  if (metadata.name !== name) throw new Error(`${name}: resolved ${directory} instead`)
+  externalPackages.set(name, directory)
+  packages.set(directory, metadata)
+  for (const dependency of Object.keys(metadata.dependencies ?? {})) {
+    if (!previewPackages.some(([known]) => known === dependency)) previewPackages.push([dependency, directory])
+  }
 }
 const notices = []
 await rm(join(out, 'licenses/npm'), { recursive: true, force: true })

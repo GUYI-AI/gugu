@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { promptAttachmentSchema } from './attachments';
 import { promptFileSchema } from './turn-files';
+import { turnAnnotationSchema } from './turn-annotations';
 export type { PromptAttachment } from './attachments';
 
 export const promptInputSchema = z.object({
@@ -10,6 +11,8 @@ export const promptInputSchema = z.object({
   hiddenContext: z.string().optional(),
   attachments: z.array(promptAttachmentSchema).optional(),
   files: z.array(promptFileSchema).optional(),
+  /** Comments left on what the person was looking at; shown as cards, sent to the agent as their promptText. */
+  annotations: z.array(turnAnnotationSchema).optional(),
   /**
    * Where this message came from.
    *

@@ -100,22 +100,14 @@ describe('一屏几块(spec session-page,#7052)', () => {
     expect(screen.joinedGroups).toEqual([]);
   });
 
-  it('拆开这一组:在屏上 = 只留正看着那块;收着的 = 不再记着', () => {
+  it('splitKeys:并排着的每一块装的什么(一块时为空,收起来的组不算)', () => {
     const screen = new ScreenLayoutStore();
     screen.show(s('a'));
-    screen.showBeside(s('b'));
-    screen.showBeside(s('c'));
-    screen.focus(screen.blockOfSession('b')!);
-    screen.dissolve('a');
-    expect(sessionsOn(screen)).toEqual(['b']);
-    expect(screen.joinedGroups).toEqual([]);
-
-    screen.showBeside(s('d'));
+    expect(screen.splitKeys).toEqual([]);
+    screen.showBeside({ kind: 'chat', chatId: 't' });
+    expect(screen.splitKeys).toEqual(['session:a', 'chat:t']);
     screen.show(s('e'));
-    expect(screen.parked).toHaveLength(1);
-    screen.dissolve('d');
-    expect(screen.parked).toHaveLength(0);
-    expect(sessionsOn(screen)).toEqual(['e']);
+    expect(screen.splitKeys).toEqual([]);
   });
 
   it('收着的组里的会话没了 / 开成窗:从那组拿走,不到两块就散了', () => {
@@ -260,15 +252,15 @@ describe('一屏几块(spec session-page,#7052)', () => {
     expect(sessionsOn(screen)).toEqual(['c']);
   });
 
-  it('角:左上那块让开展开侧栏的钮,右上那块让开窗口控制', () => {
+  it('角:只有左上那块让开展开侧栏的钮', () => {
     const screen = new ScreenLayoutStore();
     screen.show(s('a'));
     const a = screen.blockOfSession('a')!;
     screen.placeAt({ kind: 'session', ...s('b') }, a, 'right');
     screen.placeAt({ kind: 'session', ...s('c') }, screen.blockOfSession('b')!, 'bottom');
-    expect(screen.corners(a)).toEqual({ topLeft: true, topRight: false });
-    expect(screen.corners(screen.blockOfSession('b')!)).toEqual({ topLeft: false, topRight: true });
-    expect(screen.corners(screen.blockOfSession('c')!)).toEqual({ topLeft: false, topRight: false });
+    expect(screen.corners(a)).toEqual({ topLeft: true });
+    expect(screen.corners(screen.blockOfSession('b')!)).toEqual({ topLeft: false });
+    expect(screen.corners(screen.blockOfSession('c')!)).toEqual({ topLeft: false });
   });
 
   it('对半放不下(调用方量过):这一排一起均分', () => {
@@ -446,6 +438,36 @@ describe('每个入口记着上次停在哪一屏(fe-continuity A16)', () => {
     again.restore(screen.snapshot!);
     again.show(chat('g1'));
     expect(chatsOn(again)).toEqual(['dm']);
+  });
+
+  it('话题的入口永远是它的群:群里进话题、从别处(通知、链接)开话题,切走再点群都回到那个话题;话题没了回主群', () => {
+    const screen = new ScreenLayoutStore();
+    const g1 = contentKey(chat('g1'));
+    screen.show(chat('g1'));
+    screen.openUnder(g1, () => screen.show(chat('t1')));
+    screen.show(chat('dm'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen), 'back to the topic it was left on').toEqual(['t1']);
+    expect(screen.entry).toBe(g1);
+    screen.show(chat('g1'));
+    expect(chatsOn(screen), 'the group row while inside its topic = the group itself').toEqual(['g1']);
+
+    screen.show(chat('dm'));
+    screen.openUnder(g1, () => screen.show(chat('t2')));
+    expect(screen.entry, 'a topic opened from elsewhere still stands under its group').toBe(g1);
+    screen.show(chat('dm'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen)).toEqual(['t2']);
+
+    screen.show(chat('dm'));
+    screen.openUnder(g1, () => screen.show(chat('t2')));
+    expect(chatsOn(screen), 'reopening it brings back the screen kept under its group').toEqual(['t2']);
+    expect(screen.parkedContents).toEqual([]);
+
+    screen.show(chat('dm'));
+    screen.forgetContent(chat('t2'));
+    screen.show(chat('g1'));
+    expect(chatsOn(screen), 'its topic is gone: the group itself').toEqual(['g1']);
   });
 
   it('读回的旧摆法(没记入口)里只有一块:那一块就是入口', () => {

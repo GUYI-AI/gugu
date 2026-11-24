@@ -344,8 +344,9 @@ describe('useCreateSessionCallback ordinary messaging', () => {
       .toEqual(expect.objectContaining({ permissionMode: 'read-only' }));
   });
 
-  // 群成员里「新建 Agent」:托盘上那个群原样进建会话的参数(主进程据此在身份建出来时进群);没群就没有这一格。
-  it('从群里建:birthGroup 进落库参数,群成员里建的是普通座位;不从群里建就不出现', async () => {
+  // hook 的通用处理:只给出生群、不带 taskChatId 时,群原样进建会话的参数(主进程据此在身份建出来时进群),坐普通座位。
+  // 产品里现在没有这样的调用方 —— 群里「+ → 新建 Agent」走派任务,两个都带(见下一条)。
+  it('只给出生群(不带 taskChatId):birthGroup 进落库参数,坐普通座位', async () => {
     await act(async () => root.render(React.createElement(Probe, { birthChatId: 'chat-group-1' })));
     act(() => latest?.handleCreateSession());
     await act(async () => {});

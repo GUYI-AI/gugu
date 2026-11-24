@@ -35,44 +35,50 @@ export function watchSessionSendQueues(accountId: string, currentDeviceId: () =>
       const machine = !input.deviceId || input.deviceId === currentDeviceId() ? null : input.deviceId
       void getAcpRuntimeClient(machine).then(async client => {
         if (closed || watch.closed) return
-        const check = async () => {
+        // @@@replica-follows-life - the runtime publishes a session's state only while that session runs. A held input
+        // usually outlives it (a restart interrupted the turn), so the watch lives as long as the input and follows the
+        // session's Life: it opens the state replica when Life is ready and drops only the replica when that goes away.
+        const connect = async (): Promise<ReplicaState<SessionState> | null> => {
+          if (watch.replica) return watch.replica
+          const replica = new ReplicaState(client.session.state({ sessionId: input.sessionId }, 'state'), { schema: sessionStateSchema })
+          watch.replica = replica
+          const drop = (error: unknown) => {
+            report(error); void replica.dispose()
+            if (watch.replica === replica) watch.replica = undefined
+          }
+          replica.onGone(drop)
+          try { await replica.ready } catch (error) { drop(error); return null }
+          if (closed || watch.closed || watch.replica !== replica) return null
+          replica.onChange(() => { void check() })
+          return replica
+        }
+        const check = async (): Promise<void> => {
           if (watch.checking) { watch.again = true; return }
           watch.checking = true
           try {
             do {
               watch.again = false
               if (closed || watch.closed || !own.valid() || own.accountId !== accountId) return
-              const snapshot = watch.replica!.current()
-              // A background child does not hold the composer's foreground queue. A retained native turn does.
-              if (!foregroundQueueReady(snapshot)) return
               const life = await rpcOn(machine).sessions.lifeView(input.sessionId)
               if (life.kind !== 'ready' || life.hold !== null) return
+              const replica = await connect()
+              if (!replica || watch.again) continue
+              // A background child does not hold the composer's foreground queue. A retained native turn does.
+              if (!foregroundQueueReady(replica.current())) return
               const history = await client.getHistory({ sessionId: input.sessionId, limit: 100 })
               if (!history.success) throw new Error('Session history is not available')
               if (closed || watch.closed || !own.valid() || own.accountId !== accountId) return
               if (watch.again) continue
-              const latest = watch.replica!.current()
-              if (!foregroundQueueReady(latest)) return
-              await releaseQueuedSessionInput(input.sessionId, history.data.turns, undefined, false, () => {
-                const current = watch.replica!.current()
-                return !closed && !watch.closed && !watch.again && own.valid() && own.accountId === accountId
-                  && foregroundQueueReady(current)
-              })
+              if (watch.replica !== replica || !foregroundQueueReady(replica.current())) return
+              await releaseQueuedSessionInput(input.sessionId, history.data.turns, undefined, false, () =>
+                !closed && !watch.closed && !watch.again && watch.replica === replica && own.valid() && own.accountId === accountId
+                  && foregroundQueueReady(replica.current()))
             } while (watch.again)
           } catch (error) { report(error) }
           finally { watch.checking = false }
         }
-        const replica = new ReplicaState(client.session.state({ sessionId: input.sessionId }, 'state'), { schema: sessionStateSchema })
-        watch.replica = replica
-        replica.onGone(error => {
-          report(error); watch.closed = true; watch.stopLife?.(); void replica.dispose()
-          if (watches.get(key) === watch) watches.delete(key)
-        })
-        await replica.ready
-        if (closed || watch.closed) { void replica.dispose(); return }
         watch.check = check
         watch.stopLife = onMachineEvent(machine, sessionLifeViewChannel, view => { if (view.sessionId === input.sessionId) void check() })
-        replica.onChange(() => { void check() })
         await check()
       }).catch(error => {
         report(error); watch.closed = true; watch.stopLife?.(); void watch.replica?.dispose()

@@ -2321,6 +2321,9 @@ async function dispatch(caller: BridgeCaller, method: ExtensionBridgeMethod, arg
       if (method === 'bindingsOpenWork') return await work.appOpenWork(caller.extensionId, page, args, act);
       return await work.appCloseWork(caller.extensionId, args, act);
     }
+    // 64 Answered where the page is drawn (the preload tells its host, extension-bridge-preload.ts): nothing to do here.
+    case 'ready':
+      return undefined;
     case 'toast': {
       // #1925 (44) The host's own toast: the person's page, on screen and focused now, at its rate (app-toast.ts).
       const page = thePage(caller);

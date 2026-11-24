@@ -1,80 +1,63 @@
+import { rmSync } from 'node:fs';
 import { openFixture } from '@tooling/utils/db';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it } from 'vitest';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
-import type { SessionTimeline, TimelineAfterResult } from '@gugu/session-core/session-record';
+import { createSessionIndexStore, openSessionIndex, readIndexState, sessionIndexPath } from './store';
+import { matchTaskTurns } from '../search/task-turn-matches';
 
-const fixtureRef = vi.hoisted(() => ({ current: undefined as Awaited<ReturnType<typeof openFixture>> | undefined }));
-vi.mock('@main/db/client', () => ({ get db() { return fixtureRef.current!.db; }, get sqlite() { return fixtureRef.current!.sqlite; } }));
-vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
+let fixture: Awaited<ReturnType<typeof openFixture>>;
+let index: ReturnType<typeof openSessionIndex> | undefined;
 
-const { followSessionIndex, indexedTurnCount, lastIndexedTurn, sessionIndexed } = await import('./session-index');
-
-const turn = (id: string, startedAt: number, outcome?: TranscriptTurn['outcome']): TranscriptTurn => ({
-  id, seq: 0, initiator: 'user', startedAt, ...(outcome ? { outcome } : {}),
-  items: [{ kind: 'message', id: `${id}:message:m`, seq: 0, role: 'user', text: `said in ${id}` }],
-} as TranscriptTurn);
-
-/** A timeline as the index follows it: a snapshot, then the batches it pushes. */
-function timeline(initial: TranscriptTurn[]) {
-  let turns = initial;
-  let listener: ((result: TimelineAfterResult) => void) | null = null;
-  const value = {
-    getSnapshot: () => ({ cursor: { epoch: 'e', seq: 0 }, turns, settlements: [], hasOlder: false }),
-    subscribe: (_cursor: unknown, next: (result: TimelineAfterResult) => void) => { listener = next; return () => { listener = null; }; },
-  } as unknown as SessionTimeline;
-  return {
-    value,
-    push: (changed: TranscriptTurn[], removedTurnIds: string[] = []) => {
-      const byId = new Map(turns.map((one) => [one.id, one]));
-      for (const id of removedTurnIds) byId.delete(id);
-      for (const one of changed) byId.set(one.id, one);
-      turns = [...byId.values()];
-      listener!({ ok: true, batch: { turns: changed, removedTurnIds, settlements: [] } } as unknown as TimelineAfterResult);
-    },
-    reset: (next: TranscriptTurn[]) => {
-      turns = next;
-      listener!({ ok: false, reset: 'epoch_changed', snapshot: value.getSnapshot() } as unknown as TimelineAfterResult);
-    },
-  };
-}
+const turn = (id: string, text: string, endedAt?: number): TranscriptTurn => ({
+  id, seq: 0, initiator: 'user', startedAt: 1, endedAt,
+  items: [{ kind: 'message', id: `${id}:message:m`, seq: 0, role: 'user', text }],
+});
 
 beforeEach(async () => {
-  fixtureRef.current = await openFixture('empty');
-  fixtureRef.current.sqlite.exec(`INSERT INTO projects (id, name, path) VALUES ('p', 'P', '/repo');
-    INSERT INTO sessions (id, project_id, config) VALUES ('s', 'p', '{"version":"1","type":"acp"}');`);
-  vi.useFakeTimers();
+  fixture = await openFixture('empty');
+  fixture.sqlite.exec(`INSERT INTO projects (id, name, path) VALUES ('p', 'P', '/repo');
+    INSERT INTO sessions (id, project_id, archived_at) VALUES ('s', 'p', '2026-11-23');`);
 });
+
 afterEach(() => {
-  vi.useRealTimers();
-  fixtureRef.current?.close();
-  fixtureRef.current = undefined;
+  const path = sessionIndexPath(fixture.sqlite.name);
+  index?.close();
+  index = undefined;
+  fixture.close();
+  rmSync(path, { force: true });
 });
 
-it('writes the whole timeline when it opens, then what each batch changed, a burst at a time', () => {
-  const t = timeline([turn('a', 1), turn('b', 2)]);
-  expect(sessionIndexed('s')).toBe(false);
-  const stop = followSessionIndex('s', t.value);
-  expect(sessionIndexed('s')).toBe(true);
-  expect(indexedTurnCount('s')).toBe(2);
+it('migrates an existing archived index without reopening its record or changing the primary database', () => {
+  fixture.sqlite.exec(`INSERT INTO kv (key, value) VALUES ('session-index:s', '1');
+    INSERT INTO session_index_turns (session_id, turn_id, started_at) VALUES ('s', 'old', 1);
+    INSERT INTO turn_text_rows (session_id, turn_id, item_id, role, text) VALUES ('s', 'old', 'item', 'user', 'archived searchable text');`);
 
-  t.push([turn('c', 3)]);
-  t.push([turn('c', 3, { kind: 'error', reason: 'process_closed', detail: 'signal=SIGKILL' })]);
-  expect(indexedTurnCount('s'), 'a burst is written once it settles').toBe(2);
-  vi.advanceTimersByTime(600);
-  expect(indexedTurnCount('s')).toBe(3);
-  expect(lastIndexedTurn('s')).toMatchObject({ turn_id: 'c', outcome_kind: 'error', outcome_message: 'signal=SIGKILL' });
-
-  t.push([], ['c']);
-  stop();
-  expect(indexedTurnCount('s'), 'what is pending is written when following stops').toBe(2);
+  index = openSessionIndex(fixture.sqlite.name);
+  fixture.sqlite.prepare('ATTACH DATABASE ? AS history_search').run(index.name);
+  expect(readIndexState(index, 's')).toMatchObject({ retry_at: null });
+  expect(matchTaskTurns(fixture.sqlite, 'searchable', undefined, undefined, 'history_search')).toMatchObject([{ archived: true, sessionId: 's' }]);
+  expect(fixture.sqlite.prepare('SELECT count(*) AS n FROM turn_text_rows').get()).toEqual({ n: 1 });
+  index.close();
+  index = openSessionIndex(fixture.sqlite.name);
+  expect(index.prepare('SELECT count(*) AS n FROM turn_text_rows').get()).toEqual({ n: 1 });
 });
 
-it('writes it all again after a reset', () => {
-  const t = timeline([turn('a', 1), turn('b', 2)]);
-  const stop = followSessionIndex('s', t.value);
-  t.reset([turn('x', 5)]);
-  vi.advanceTimersByTime(600);
-  expect(indexedTurnCount('s')).toBe(1);
-  expect(lastIndexedTurn('s')?.turn_id).toBe('x');
-  stop();
+it('writes only changed projections, prunes removed turns and records incomplete reads separately', () => {
+  index = openSessionIndex(fixture.sqlite.name);
+  const store = createSessionIndexStore(index);
+  store.failed('s', 123);
+  expect(readIndexState(index, 's')).toMatchObject({ retry_at: 123 });
+  const first = turn('one', 'some searchable text');
+  store.replace('s', [first, turn('two', 'more history')], 'first');
+  expect(readIndexState(index, 's')).toEqual({ stamp: 'first', retry_at: null });
+  const rowId = index.prepare('SELECT id FROM turn_text_rows WHERE turn_id = ?').pluck();
+  const before = rowId.get('one');
+  store.update('s', [first], []);
+  expect(rowId.get('one')).toBe(before);
+  expect(readIndexState(index, 's')?.stamp).toBe('first');
+  store.replace('s', [first, turn('three', 'third result')], 'second');
+  expect(rowId.get('one')).toBe(before);
+  expect(rowId.get('two')).toBeUndefined();
+  store.failed('s', 999);
+  expect(readIndexState(index, 's')).toEqual({ stamp: 'second', retry_at: null });
 });

@@ -1,7 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { colorOfDisplayStatus } from '@gugu/core/shared/ui/agentConversationStatusModels'
 import type { AgentContactTone } from './contactAgentTone'
-import { AgentParkedGlyph } from './AgentParkedGlyph'
+import { AgentContactStatusMark } from './AgentContactStatusMark'
 import { Chip } from './ui/Chip'
 import { Button } from './ui/Button'
 
@@ -100,16 +99,15 @@ export function IconButton({
   )
 }
 
-/** agent 详情头上那枚状态胶囊(点 + 那一句,从 ContactsPanel 抽出);不画状态(#7199 宿主闲时收回着)= 不出这一枚。 */
+/** agent 详情头上那枚状态胶囊(标识 + 那一句,标识同头像角);不画状态(#7199 宿主闲时收回着)= 不出这一枚。 */
 export function AgentContactStatusChip({ agentId, tone, label }: { agentId: string; tone: AgentContactTone | null; label: string }) {
   if (tone === null || !label) return null
   return (
     <Chip
       data-agent-status-surface="contact-detail"
       data-agent-id={agentId}
-      style={{ color: colorOfDisplayStatus(tone) ?? undefined }}
     >
-      {tone === 'parked' ? <AgentParkedGlyph /> : <span className="h-[6px] w-[6px] shrink-0 rounded-full bg-current" />}
+      <AgentContactStatusMark tone={tone} />
       {label}
     </Chip>
   )

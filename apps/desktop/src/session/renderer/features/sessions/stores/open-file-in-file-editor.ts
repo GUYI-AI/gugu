@@ -160,10 +160,10 @@ async function viewImages(resolvedPath: string, view: ImageView): Promise<void> 
   const shown = index >= 0 ? paths.map((path, i) => (i === index ? resolvedPath : path)) : [resolvedPath];
   // The asked image's read, already begun (`@@@first-read-early`), is taken by its first read only.
   let first = view.first;
-  const items = shown.map((path, i) => workingCopyImageItem(fileBaseName(path), () => {
+  const items = shown.map((path, i) => workingCopyImageItem(fileBaseName(path), (progress) => {
     const begun = i === Math.max(0, index) ? first : undefined;
     if (begun) first = undefined;
-    return readWorkspaceFileBytes(view.projectId, view.workspaceId, path, true, begun);
+    return readWorkspaceFileBytes(view.projectId, view.workspaceId, path, true, begun, progress);
   }));
   await openViewerFromClick(items, Math.max(0, index), view.origin);
 }

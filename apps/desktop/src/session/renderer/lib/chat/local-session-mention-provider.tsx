@@ -2,6 +2,7 @@ import type { ContextMentionProvider, MentionItem } from '@gugu/session-ui/react
 import { AT_BARE_PATTERN } from '@gugu/session-shared/markdown';
 import type { LocalAgentCreationTool } from '@/lib/agentCreationTools';
 import { filterMentionCandidates } from '@/lib/mentionMatch';
+import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { shellPort } from '@renderer/lib/shell-port';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -108,7 +109,10 @@ async function loadLocalSessionMentionCandidates(
 ): Promise<{ candidates: MentionCandidate[]; notRead: readonly { id: string; label: string }[] }> {
   const local = await shellPort().sessionPeers(sessionId);
   const remote = remoteHostsStore.directoryPeers();
-  const candidates = candidatesFromRows([...local, ...remote.peers], options);
+  // This machine's and the others' in one agent order (compareByRecentActivity: last interaction, then session id); a
+  // search keeps it among equal matches (filterMentionCandidates) — the @ order with no chat to read signals from.
+  const stamp = (peer: SessionShellPeer) => ({ id: peer.sessionId, activityMs: activityMs(peer.last_active_at, null) });
+  const candidates = candidatesFromRows([...local, ...remote.peers].sort((a, b) => compareByRecentActivity(stamp(a), stamp(b))), options);
   if (options.mentionUri) {
     registerLocalSessionMentions(options.mentionUri, candidates);
   }

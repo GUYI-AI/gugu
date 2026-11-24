@@ -4,6 +4,7 @@ import { KEYBOARD_STEP_PX } from '@renderer/lib/layout/panel-resize-handle';
 import { PanelSlot } from '@renderer/lib/layout/panel-slot';
 import { PanelTrack } from '@renderer/lib/layout/panel-track';
 import { cn } from '@renderer/utils/utils';
+import type { CutEdge } from './chat-workspace-edge';
 
 export interface TrackCutChild {
   id: string;
@@ -29,6 +30,7 @@ export function TrackCut({
   onShares,
   onEqualize,
   onLanded,
+  onEdge,
   divider,
   children,
 }: {
@@ -44,6 +46,8 @@ export function TrackCut({
   onEqualize: () => void;
   /** The track came to rest (a move landed, or a jump). */
   onLanded?: () => void;
+  /** Every frame: where the first child's far edge is drawn, and where its move goes from and to (the strip above, @@@strip-on-track). */
+  onEdge?: (edge: CutEdge) => void;
   /** A divider with a gesture of its own (the chat workspace's): its index, ref, pointer and extra attributes. */
   divider?: { at: number; ref: React.RefObject<HTMLDivElement | null>; onPointerDown: (event: PointerEvent<HTMLDivElement>) => void; props: Record<string, unknown> };
   /** Drawn over the cut (the chat workspace's collapse preview). */
@@ -70,23 +74,28 @@ export function TrackCut({
   // The person moved a divider: the shares that come of it are placed, ❌ moved on the spring.
   const moved = useRef(false);
   const span = () => Math.max(0, extent.current - (items.length - 1));
+  // The shares and the children (their minimums change with what the cut shows) are read when placed, ❌ as they were
+  // when a callback was made: the resize observer's lives as long as the track.
   const sharesFor = useRef(shares);
   sharesFor.current = shares;
+  const itemsFor = useRef(items);
+  itemsFor.current = items;
   const sharesNow = (): readonly number[] => (typeof sharesFor.current === 'function' ? sharesFor.current(span()) : sharesFor.current);
   /** Each child's px: its share, but at least its minimum, taken from those above theirs (a narrow cut). */
   const sizes = () => {
     const whole = span();
-    const px = items.map((item, at) => (whole * (sharesNow()[at] ?? 0)) / 100);
-    const short = items.reduce((sum, item, at) => sum + Math.max(0, item.min - px[at]), 0);
-    const spare = items.reduce((sum, item, at) => sum + Math.max(0, px[at] - item.min), 0);
+    const now = itemsFor.current;
+    const px = now.map((item, at) => (whole * (sharesNow()[at] ?? 0)) / 100);
+    const short = now.reduce((sum, item, at) => sum + Math.max(0, item.min - px[at]), 0);
+    const spare = now.reduce((sum, item, at) => sum + Math.max(0, px[at] - item.min), 0);
     const give = spare > 0 ? Math.min(1, short / spare) : 0;
-    return px.map((value, at) => Math.max(items[at].min, value - Math.max(0, value - items[at].min) * give));
+    return px.map((value, at) => Math.max(now[at].min, value - Math.max(0, value - now[at].min) * give));
   };
   // A child at nothing has no divider after it (the pixel is its neighbour's). A pane is laid out at its drawn size in
   // every frame of a move.
   const targets = () => {
     const px = sizes();
-    return Object.fromEntries(ids.slice(0, -1).map((id, at) => [id, { size: px[at] + (sharesNow()[at] !== 0 ? 1 : 0), reflows: !items[at].fixed }]));
+    return Object.fromEntries(ids.slice(0, -1).map((id, at) => [id, { size: px[at] + (sharesNow()[at] !== 0 ? 1 : 0), reflows: !itemsFor.current[at].fixed }]));
   };
   const userShares = (next: number[]) => {
     moved.current = true;
@@ -98,6 +107,8 @@ export function TrackCut({
 
   const landedRef = useRef(onLanded);
   landedRef.current = onLanded;
+  const edgeRef = useRef(onEdge);
+  edgeRef.current = onEdge;
   // A write at rest (a slot attaching) is no landing: only the end of a move, or a jump, is.
   const moving = useRef(false);
   // The dividers ride the edges as they are drawn.
@@ -110,6 +121,7 @@ export function TrackCut({
       const handle = handles.current[at];
       if (handle) handle.style.transform = `translate${axis.toUpperCase()}(${edge - 1}px)`;
     });
+    if (ids.length > 1) edgeRef.current?.({ drawn: drawn.get(ids[0]) ?? 0, ...track.ends(ids[0]), extent: extent.current });
   }), [track]);
 
   useLayoutEffect(() => {
@@ -128,6 +140,15 @@ export function TrackCut({
     return () => observer.disconnect();
   }, [track]);
 
+  // @@@mount-lands — a cut not yet on screen has nowhere to move from: every share it gets before its first frame is
+  // placed. A chat workspace learns only on attaching that its tools are hidden; mounted again (its page re-drawn), it
+  // was springing the hidden page shut from the saved split.
+  const drawn = useRef(false);
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(() => { drawn.current = true; });
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
   const sharesKey = sharesNow().join(',');
   const placed = useRef<PanelTrack | null>(null);
   useLayoutEffect(() => {
@@ -135,7 +156,7 @@ export function TrackCut({
     placed.current = track;
     const byHand = moved.current || dragging.current;
     moved.current = false;
-    const moves = animate && (!first || entering) && !byHand && extent.current > 0;
+    const moves = animate && drawn.current && (!first || entering) && !byHand && extent.current > 0;
     if (moves) track.to(targets());
     else {
       track.jump(targets());

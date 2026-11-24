@@ -56,7 +56,7 @@ const sha256 = (value: string) => createHash('sha256').update(value).digest('hex
 
 /** What makes two connections the same one: where they go and which key they use. Not reversible to the key. */
 export const discoveryIdentity = (baseUrl: string, key: string) => sha256(`${baseUrl}\0${sha256(key)}`);
-/** The only part of a key anything outside the host may see; nothing for a key too short to hide half of itself. */
+/** The only part of a key anything off this machine may see; nothing for a key too short to hide half of itself. */
 export const keyLast4 = (key: string) => key.length >= 12 ? key.slice(-4) : '';
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const text = (value: unknown) => typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -124,6 +124,15 @@ export async function discoverLocalConnections(input: { root: string; env: Recor
     try { config = parseTOML(configFile.text); } catch { issues.push({ code: 'invalid-config', where: 'config.toml' }); }
   }
 
+  // The models Codex runs on each provider, from its default and its profiles: what a discovered connection offers.
+  const profiles = isRecord(config.profiles) ? Object.values(config.profiles).filter(isRecord) : [];
+  const defaultProvider = text(config.model_provider) ?? 'openai';
+  const modelsFor = (provider: string) => {
+    const ids = [{ provider: defaultProvider, model: text(config.model) }, ...profiles.map(profile => ({ provider: text(profile.model_provider) ?? defaultProvider, model: text(profile.model) }))]
+      .filter(entry => entry.provider === provider && entry.model).map(entry => entry.model!);
+    return [...new Set(ids)].map(id => ({ id }));
+  };
+
   // Where a key aimed at "OpenAI" really goes: the user's own override if there is one. Reported once, not per key.
   let officialAddress: string | null | undefined;
   const official = (key: string, source: DiscoverySource) => {
@@ -135,10 +144,10 @@ export async function discoverLocalConnections(input: { root: string; env: Recor
     const address = officialAddress;
     if (!address) return;
     if (address === OFFICIAL_BASE) {
-      add({ source, name: OFFICIAL.name, preset: OFFICIAL.id, baseUrl: address, key, models: [], aliases: [],
+      add({ source, name: OFFICIAL.name, preset: OFFICIAL.id, baseUrl: address, key, models: modelsFor('openai'), aliases: [],
         endpoints: OFFICIAL.endpoints.map(({ protocol, baseUrl }) => ({ protocol, baseUrl })) });
     } else {
-      add({ source, name: `${OFFICIAL.name} (${hostName(address)})`, preset: null, baseUrl: address, key, models: [], aliases: [],
+      add({ source, name: `${OFFICIAL.name} (${hostName(address)})`, preset: null, baseUrl: address, key, models: modelsFor('openai'), aliases: [],
         endpoints: endpointsFor(address, ['openai-responses']) });
     }
   };
@@ -165,13 +174,6 @@ export async function discoverLocalConnections(input: { root: string; env: Recor
 
   // 3. Every provider Codex was explicitly told about.
   const providers = isRecord(config.model_providers) ? config.model_providers : {};
-  const profiles = isRecord(config.profiles) ? Object.values(config.profiles).filter(isRecord) : [];
-  const defaultProvider = text(config.model_provider) ?? 'openai';
-  const modelsFor = (provider: string) => {
-    const ids = [{ provider: defaultProvider, model: text(config.model) }, ...profiles.map(profile => ({ provider: text(profile.model_provider) ?? defaultProvider, model: text(profile.model) }))]
-      .filter(entry => entry.provider === provider && entry.model).map(entry => entry.model!);
-    return [...new Set(ids)].map(id => ({ id }));
-  };
   for (const [id, raw] of Object.entries(providers)) {
     if (!isRecord(raw) || id === 'openai' || raw.requires_openai_auth === true) continue;
     const baseUrl = text(raw.base_url);

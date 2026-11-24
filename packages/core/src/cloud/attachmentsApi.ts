@@ -154,6 +154,7 @@ export async function withUploadedAttachment<T>(
   use: (uploadKey: string) => Promise<T>,
   options?: UploadOptions,
 ): Promise<T> {
+  previewDrawerFor(file.contentType)
   const sha256 = file.sha256 ?? await attachmentSha256(file.bytes)
   const used = await uploadThen(endpoint, { ...file, sha256 }, scope, use, options)
   offerImagePreviewOf(endpoint, file.bytes, file.contentType, sha256, scope.as)
@@ -205,24 +206,32 @@ async function retryWhileOtherUploads<T>(use: () => Promise<T>, signal?: AbortSi
   }
 }
 
-/** This process's image decoder: an image's preview (560 px wide at most), or null for a format it cannot decode. */
-export type ImagePreviewDrawer = { draw(original: Blob, contentType: string): Promise<Blob | null>; warn(error: unknown): void }
+/** This process's image decoder: an image's preview (560 px wide at most); a format it cannot decode rejects, and is warned. */
+export type ImagePreviewDrawer = { draw(original: Blob, contentType: string): Promise<Blob>; warn(error: unknown): void }
 let previews: ImagePreviewDrawer | null = null
 /**
  * Every image this process uploads or declares offers a preview drawn here, whichever entry sent it (composer, agent,
- * App). A process that registers none uploads images without one, and readers show the original.
+ * App). Each process that uploads registers one, by its runtime: a renderer its canvas, Electron main nativeImage, a
+ * plain-Node process sharp (local/files/nodeImagePreview). Sending an image from a process that registered none throws
+ * before any byte goes up.
  */
 export function drawImagePreviews(drawer: ImagePreviewDrawer): void { previews = drawer }
+
+function previewDrawerFor(contentType: string): ImagePreviewDrawer | null {
+  if (!contentType.startsWith('image/')) return null
+  if (!previews) throw new Error('This process uploads an image but registered no preview drawer (drawImagePreviews)')
+  return previews
+}
 
 /**
  * An image's preview: a small image its sender uploads with no chat and offers for the original's bytes (`sha256`), so
  * any version of those bytes shows it. The upload never waits for it; a failure is warned, never thrown.
  */
 export function offerImagePreviewOf(endpoint: AttachmentsEndpoint, original: Uint8Array | Blob, contentType: string, sha256: string, as: string): void {
-  if (!previews || !contentType.startsWith('image/')) return
-  const { draw, warn } = previews
+  const drawer = previewDrawerFor(contentType)
+  if (!drawer) return
+  const { draw, warn } = drawer
   void draw(original instanceof Blob ? original : new Blob([original as Uint8Array<ArrayBuffer>], { type: contentType }), contentType).then(async preview => {
-    if (!preview) return
     await uploadThen(endpoint, { bytes: preview, name: 'preview', contentType: preview.type, sha256: await attachmentSha256(preview) }, { chat_id: null, as },
       staging_key => call(endpoint, 'file-preview', { staging_key, sha256 }))
   }).catch(warn)
@@ -445,6 +454,7 @@ export async function attachmentSha256(bytes: Uint8Array | Blob): Promise<string
 export type DeclaredAttachment = { staging_key: string; sha256: string; size_bytes: number; plan?: AttachmentUploadPlan }
 export async function declareAttachment(endpoint: AttachmentsEndpoint, file: { bytes: Uint8Array | Blob; contentType: string; sha256?: string },
   scope: { chat_id: string | null; as: string; request_id?: string }, signal?: AbortSignal): Promise<DeclaredAttachment> {
+  previewDrawerFor(file.contentType)
   const size = file.bytes instanceof Uint8Array ? file.bytes.byteLength : file.bytes.size
   const upload = { requestId: scope.request_id ?? crypto.randomUUID(), mayRollOver: !!scope.request_id }
   // A host that already hashed these bytes (to keep them locally under their sha) passes it: one hash per send.
@@ -694,6 +704,8 @@ export interface CommitArgs {
   /** #2581 Files sent at once: one id for the send and how many files it holds (2–SEND_GROUP_MAX_FILES). Not given, a file sent on its own. */
   send_group_id?: string
   send_group_size?: number
+  /** The comments sent beside the caption, on the captioned file only. */
+  annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[]
 }
 /** The most files one send holds (the backend refuses a larger send_group_size); more files at once go as consecutive sends. */
 export const SEND_GROUP_MAX_FILES = 10

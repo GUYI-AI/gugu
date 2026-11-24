@@ -22,6 +22,8 @@ export type SessionMenuAction =
   | 'copy-id'
   | 'reload'
   | 'legacy-history'
+  | 'leave-split'
+  | 'open-window'
 
 export type SessionMenuEntry = 'tab' | 'sidebar-row' | 'one-list-task' | 'phone' | 'contacts'
 
@@ -43,6 +45,10 @@ export type SessionMenuState = {
   reloading?: boolean
   /** The legacy DM history exists for this agent. */
   hasLegacyHistory?: boolean
+  /** The task is a block of a split screen: 取消并排 takes it off the screen. */
+  inSplit?: boolean
+  /** The whole task can open in a window of its own (screen-layout openInWindow): the one entry for it, on its row. */
+  canOpenWindow?: boolean
 }
 
 /**
@@ -123,6 +129,8 @@ function allItems(state: SessionMenuState): SessionMenuItem[] {
     // Rename: once for many tasks, soon after they start.
     { id: 'rename', label: session('task.rename'), icon: 'rename' },
   ]
+  // Leave the split: only while the task is one of the blocks side by side, the reason to open this menu then.
+  if (state.inSplit) items.unshift({ id: 'leave-split', label: session('screen.leaveSplit'), icon: 'leave' })
   // Archive: how every finished task ends, so as frequent as tasks are started. Undone from its toast or history, so
   // not destructive: the last top-level row.
   if (!state.archived) items.push({ id: 'archive', label: session('task.archiveTaskTitle'), icon: 'archive' })
@@ -141,6 +149,8 @@ function allItems(state: SessionMenuState): SessionMenuItem[] {
   // 更多 — copy the session id: a tool for reporting a problem.
   items.push({ id: 'copy-id', label: session('sidebar.copySessionId'), icon: 'copy', fold: true })
   // 更多 — the legacy history: read once, after the move to tasks.
+  // A window of its own: now and then, to keep an eye on a task beside the main window. The task's only such entry.
+  if (state.canOpenWindow) items.push({ id: 'open-window', label: session('screen.openInWindow'), icon: 'window', fold: true })
   if (state.hasLegacyHistory) items.push({ id: 'legacy-history', label: session('legacyDm.history'), icon: 'history', fold: true })
   return items
 }

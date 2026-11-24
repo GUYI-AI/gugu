@@ -170,7 +170,6 @@ function ToolFallbackTrigger({
         className={cn(
           "aui-tool-fallback-trigger-label-wrapper flex min-w-0 flex-1 items-baseline gap-2 text-start leading-none",
           isCancelled && "text-muted-foreground line-through",
-          isRunning && "shimmer motion-reduce:animate-none",
         )}
       >
         {/*

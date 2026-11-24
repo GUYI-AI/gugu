@@ -15,6 +15,7 @@ import { isNativeAccountSender, registerDesktopClosureIpc } from './account-clos
 import { closureV2Auth } from './account-closure/v2-auth'
 import { registerDesktopClosureAgentResumeIpc, registerDesktopClosureV2Ipc } from './account-closure/v2-ipc'
 import type { createDesktopClosureV2Service } from './account-closure/v2-service'
+import { CUSTOM_MODEL_KEY_CHANNEL } from '@gugu/session-core/models/custom-model'
 import { createClosureAuthChange } from './account-closure/auth-change'
 import { ClosureFailure } from './account-closure/receipts'
 import type { createDesktopClosureService } from './account-closure/service'
@@ -39,7 +40,8 @@ import { PROJECT_FILE_STREAM } from './projectFileHost'
 import { createWorkingCopyStreamer } from './session/main/core/extensions/working-copy-files'
 import { MACHINE_FILE_STREAM, setMachineFileStreams } from './session/main/core/files/machine-file-streams'
 import { remoteFileStreams } from './projectFileSsh'
-import { nativeImagePreview } from './imagePreview'
+import { nodeImagePreview } from '@gugu/core/local/files/nodeImagePreview'
+import { rendererImagePreview, rendererScaleImage } from './imagePreview'
 import { createNativeFileHost, registerNativeFileIpc } from './nativeFileHost'
 import { localCopy } from '@gugu/core/local/files/fileSnapshots'
 import { registerExternalImportIpc } from './external-import/ipc'
@@ -81,7 +83,7 @@ import { captureReading, currentReading, historyReading } from './session/main/c
 import { setMacFootprintReader } from './session/main/core/resource-monitor/footprint'
 import { clearTraceLeftovers } from './session/main/core/resource-monitor/capture'
 import { createScreenCapture } from './device-actions/screen-capture'
-import { applyNativeThemePreference, installWindowMaterial, type WindowMaterialHost } from './window-material'
+import { applyNativeThemePreference } from './native-appearance'
 import { createDeviceActionCaller, type DeviceActionCaller } from '@gugu/core/cloud/deviceActionCaller'
 import type { DeviceActionResult } from '@gugu/core/shared/deviceActions'
 import {
@@ -128,6 +130,7 @@ import {
   type ExtensionInstallConsentResult,
 } from '@shared/extensions/host-actions'
 import { givesAgentTools } from '@shared/extensions/app-places'
+import { readDocumentText } from '@shared/extensions/chat-folder-text'
 import { buildProbePlatformCredentials, buildNativeHistoryProbeCredentials } from './harness-catalog-probe-env'
 import { runWindowMenuCommand } from './window-menu-commands'
 import { isWindowMenuCommand } from '../shared/window-menu-commands'
@@ -1463,12 +1466,11 @@ const readAppState = (): Record<string, unknown> => readStateFile(appStatePath()
 const writeAppState = (state: Record<string, unknown>): void => writeStateFile(appStatePath(), state)
 
 /**
- * @@@window-tone — 无边框窗口(Windows/Linux)在网页内容画出来之前露出来的那块底色。
+ * @@@window-tone — 主窗在网页内容画出来之前露出来的那块底色。
  *
  * 从前这里写死 `#111114`(深色),而**咕咕的默认主题是浅色**(见 index.html 的引导脚本与
  * `session/renderer/lib/theme/host-theme.ts` 的 `DEFAULT_PREFERENCE = 'light'`)⇒ 浅色用户每次
- * 启动、每次拖动窗口都会看到一块与产品无关的深色。mac 那支走 vibrancy,没有这个问题 ——
- * 于是这成了一条只在 Windows/Linux 上存在的差异。
+ * 启动、每次拖动窗口都会看到一块与产品无关的深色。
  *
  * 真值在渲染层(`<html data-theme>` 是它的唯一写入者),主进程**问不到**,所以:
  * 建窗时用上次记住的色调(首次启动 = 产品默认的浅色),渲染层一落属性就同步过来改写并记住。
@@ -1484,23 +1486,13 @@ function readWindowTone(): WindowTone {
   return saved === 'dark' ? 'dark' : 'light'
 }
 
-/**
- * @@@window-material (#7333) — mac 主窗材质可见时,窗口底色必须是透明的:不透明的窗口底色会把 vibrancy 整块盖住
- * (从前这里对所有窗口一律写主题色,mac 主窗的材质因此从来没露出来过)。材质不可见(减弱透明度 / 增强对比度)
- * 或别的窗口,照旧写主题色。⚠️ 透明底色对 vibrancy 的实际效果要 Mac 真机核。
- */
-let windowMaterial: WindowMaterialHost | null = null
-function windowBackgroundFor(win: BrowserWindow, tone: WindowTone): string {
-  return win === mainWindow && windowMaterial?.current() === 'native' ? '#00000000' : WINDOW_TONE_BG[tone]
-}
-
 function syncWindowTone(value: unknown): void {
   const tone: WindowTone = value === 'dark' ? 'dark' : 'light'
   if (readWindowTone() !== tone) {
     writeAppState({ ...readAppState(), windowTone: tone })
     tellHostPresentationChanged()
   }
-  for (const win of BrowserWindow.getAllWindows()) win.setBackgroundColor(windowBackgroundFor(win, tone))
+  for (const win of BrowserWindow.getAllWindows()) win.setBackgroundColor(WINDOW_TONE_BG[tone])
 }
 
 async function maybeShowCloseToTrayHint(): Promise<void> {
@@ -1660,17 +1652,10 @@ function createWindow(loadContents = true): void {
     //   由 renderer 的 <WindowControls> 自绘 min/max/close — 不再露原生 GTK/系统标题栏。
     //   (titleBarStyle:hiddenInset 仅 mac 生效;旧版无条件设 → Win/Linux 回落原生边框 = 本 issue 根因。)
     ...(isMac
-      ? {
-          titleBarStyle: 'hiddenInset' as const,
-          trafficLightPosition: TRAFFIC_LIGHT_POSITION,
-          vibrancy: 'sidebar' as const,
-          visualEffectState: 'active' as const
-        }
-      : {
-          frame: false,
-          // @@@window-tone — 见上面那段:默认浅色,渲染层落 data-theme 后同步改写。
-          backgroundColor: WINDOW_TONE_BG[readWindowTone()]
-        }),
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: TRAFFIC_LIGHT_POSITION }
+      : { frame: false }),
+    // @@@window-tone — 见上面那段:默认浅色,渲染层落 data-theme 后同步改写。
+    backgroundColor: WINDOW_TONE_BG[readWindowTone()],
     // @@@devtools-lock — 锁定态下把 devTools 关到 Electron 层(openDevTools 直接不生效)。
     webPreferences: hardenWebPreferences({
       preload: join(__dirname, 'preload.js'),
@@ -2094,8 +2079,8 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
           if (!item.types.includes('image/png')) continue
           const blob = (await item.getType('image/png')) as Blob
           const png = Buffer.from(await blob.arrayBuffer())
-          const size = nativeImage.createFromBuffer(png).getSize()
-          return { mimeType: 'image/png', data: png.toString('base64'), width: size.width, height: size.height }
+          // A PNG's size is in its header (IHDR: width and height at bytes 16 and 20); decoding the whole image only to read it stops main.
+          return { mimeType: 'image/png', data: png.toString('base64'), width: png.readUInt32BE(16), height: png.readUInt32BE(20) }
         }
         return null
       },
@@ -2111,13 +2096,8 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
         capture: (seconds) => captureReading(seconds),
       },
       shrinkImage: async (image, { maxEdge, quality }) => {
-        const source = nativeImage.createFromBuffer(Buffer.from(image.data, 'base64'))
-        if (source.isEmpty()) throw new Error(`读不懂这张图(${image.mimeType})`)
-        const size = source.getSize()
-        const scale = Math.min(1, maxEdge / Math.max(size.width, size.height))
-        const resized = scale < 1 ? source.resize({ width: Math.round(size.width * scale), height: Math.round(size.height * scale), quality: 'good' }) : source
-        const out = resized.getSize()
-        return { mimeType: 'image/jpeg', data: resized.toJPEG(quality).toString('base64'), width: out.width, height: out.height }
+        const small = await rendererScaleImage(Buffer.from(image.data, 'base64'), image.mimeType, { fit: 'edge', max: maxEdge, type: 'image/jpeg', quality: quality / 100 })
+        return { mimeType: small.type, data: Buffer.from(small.bytes).toString('base64'), width: small.width, height: small.height }
       },
       // 截主屏一张,长边缩到 maxEdge(模型看图的甜区);macOS 上要「屏幕录制」权限,只读真实状态、不向系统要。
       captureScreen: createScreenCapture({
@@ -2134,7 +2114,7 @@ function deviceActionsRuntime(): DeviceActionsRuntime {
     openSystemSettings: (url) => shell.openExternal(url),
     log,
   })
-  runtime.onGrantsChanged(() => deviceRuntimeHost?.notifyDeviceActionsChanged())
+  runtime.onGrantsChanged(() => { void deviceRuntimeHost?.notifyHostInfoChanged() })
   return (deviceActionsRuntimeInstance = runtime)
 }
 
@@ -2537,8 +2517,11 @@ const desktopFiles = createDesktopFileAccess({ auth: () => desktopAuthProvider()
 // A file on another of this account's machines streams over its device link (`@@@machine-file-stream`).
 setMachineFileStreams(remoteFileStreams(() => sshLinks ?? null, async () => (await requireAuth()).userId, linkReaches))
 function drainProjectFiles() { void desktopFiles.drain().catch(error => createLogger('files').warn({ error: String(error) }, 'Project transfer reconciliation failed')) }
-// Every image main uploads (the composer's, an agent's, an App's, a project publication) offers this preview.
-drawImagePreviews({ draw: nativeImagePreview, warn: error => createLogger('files/image-preview').warn({ error: String(error) }, 'Image preview offer failed') })
+// Every image main uploads (the composer's, an agent's, an App's, a project publication) offers a preview. The decoder
+// belongs to the runtime: the desktop is Electron, and its window's renderer draws (main never decodes a photo on its own
+// thread); the headless server is plain Node with no window and draws with sharp. sharp is never loaded into Electron:
+// its libvips clashes with the glib Electron loads on Linux.
+drawImagePreviews({ draw: process.versions.electron ? rendererImagePreview : nodeImagePreview, warn: error => createLogger('files/image-preview').warn({ error: String(error) }, 'Image preview offer failed') })
 const attachmentUploads = createAttachmentUploadHost({
   account: async () => {
     const auth = await desktopAuthProvider().getAuth()
@@ -2582,6 +2565,11 @@ function sessionSocialBridge(host: DesktopGuguMcpHost, sessionId: string, runAct
     host,
     ...(ownerReads ? { ownerReads } : {}),
     resolveFile: desktopFiles.resolve,
+    // A live text file has no stored bytes: its text is the file service's, read as the Files App reads it.
+    readDocument: async (itemId, accessToken, actorId) => {
+      const { fileServiceUrl } = await import('./session/main/core/extensions/file-sync')
+      return readDocumentText({ filesUrl: fileServiceUrl, fetch: (...args) => egress.fetch(...args) }, accessToken, itemId, actorId)
+    },
     publishFile: (chat, file, actor, message, next) => desktopFiles.publish(chat, file, null, actor, undefined, { message, next }),
     attachments: attachmentUploads,
     grantKey: sessionpageSurfaceKey(sessionId),
@@ -2790,6 +2778,7 @@ function onHumanAuthSessionChanged(): void {
     createLogger('device-runtime/auth').warn({ error: String(error) }, 'Realtime account auth update failed')
   })
   deviceRuntimeHost?.notifyAuthChanged()
+  tunnelMachines?.accountChanged()
   deviceProjectsPublisher?.notify()
   // 登录一到就认本机(认出即通知窗口重读设备表);登出时答 null,下次登录认出来会再通知一次。
   void localDeviceId()
@@ -2967,6 +2956,11 @@ const humanAuthSessionIpc = createHumanAuthSessionIpc({
       return operation()
     })
   },
+})
+// A model key in plain text goes only to this computer's own window: device and browser connections never reach ipcMain.
+ipcMain.handle(CUSTOM_MODEL_KEY_CHANNEL, async (event, connectionId: unknown) => {
+  if (!isNativeAccountSender(event, mainWindow) || typeof connectionId !== 'string') throw new Error('A model key is shown only in this computer’s own window')
+  return (await import('./session/main/core/agents/custom-models')).readCustomModelKey(connectionId)
 })
 ipcMain.handle('human-auth-session:write', (event, session: unknown) => {
   if (!isNativeAccountSender(event, mainWindow)) throw new ClosureFailure('wrong_local_owner')
@@ -3644,6 +3638,7 @@ if (isSingleServerRun()) singleServerUpdater()?.bindRuntime({
   isBusy: () => serverVersionSwitchActivity()?.busy ?? true,
   versionSwitchActivity: serverVersionSwitchActivity,
   beforeSwitch: () => { stopServerActivity(); return () => startServerActivity() },
+  announce: () => deviceRuntimeHost?.notifyHostInfoChanged() ?? Promise.resolve(),
   shutdown: () => {
     noteExitReason(app.getPath('userData'), 'update')
     exitOnSignal('SIGTERM', EXIT_RESTART)
@@ -4865,14 +4860,6 @@ app.whenReady().then(async () => {
   // renderer navigation until the session-page IPC router has registered. Otherwise the embedded renderer
   // races boot and its first dot-RPC calls fail with "No handler registered".
   if (!SERVER_MODE) {
-    // 只有 mac 主窗建窗时挂了 vibrancy(见 createWindow);别的窗问到的都是 opaque。
-    windowMaterial = installWindowMaterial({
-      platform: process.platform,
-      nativeTheme,
-      ipcMain,
-      materialWindow: () => (process.platform === 'darwin' ? mainWindow : null),
-    })
-    windowMaterial.onChange(() => syncWindowTone(readWindowTone()))
     createWindow(false)
   }
   // PATH 补救不再挑启动方式（曾经只在「mac 且已打包」时跑 → ssh/agent 起的验证流程、以及

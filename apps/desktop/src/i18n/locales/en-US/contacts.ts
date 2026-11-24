@@ -407,6 +407,7 @@ export default {
     "source": "Source",
     "unconfigured": "Not configured",
     "findMessages": "Find this member's messages",
+    "findMessagesShort": "Search",
     "viewProfile": "View {{name}} profile",
     "whisper": "Whisper"
   },

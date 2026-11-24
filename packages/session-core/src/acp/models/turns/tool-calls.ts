@@ -17,26 +17,7 @@ export const toolImageSchema = z.object({
 });
 export type ToolImage = z.infer<typeof toolImageSchema>;
 
-/** One lazy tool picture, or the existing record lookup's precise refusal. */
-export const toolImageLookupSchema = z.discriminatedUnion('ok', [
-  z.object({ ok: z.literal(true), image: toolImageSchema }),
-  z.object({
-    ok: z.literal(false),
-    code: z.enum(['no_such_item', 'no_such_image', 'too_large']),
-    message: z.string(),
-  }),
-]);
-export type ToolImageLookup = z.infer<typeof toolImageLookupSchema>;
-
-/** 画这张图用的地址(桌面工具卡与手机工具卡同一个)。 */
-export function toolImageUrl(image: ToolImage): string {
-  return `data:${image.mimeType};base64,${image.data}`;
-}
-
-/**
- * 历史传输投影里的一张图:只说有这么一张、多大(base64 字数),图本身不带(transport-trim)。界面滚到它时
- * 按 (会话, 条目, 第几张) 去机器上取(`sessionTimeline.sessionToolImage`)。
- */
+/** 历史传输投影里的一张图:只说有这么一张、多大(base64 字数),图本身不带(transport-trim)。 */
 export const toolImageRefSchema = z.object({
   mimeType: z.string(),
   chars: z.number().int().nonnegative(),
@@ -73,7 +54,7 @@ export interface BaseToolCallItem {
   outputText?: string;
   /** 工具交回来的图(ACP `content` 里的 image 块),见 `ToolImage`。 */
   images?: ToolImage[];
-  /** 历史传输投影里替代 `images` 的那一格:每张图的类型和大小,图要另取。见 `ToolImageRef`。 */
+  /** 历史传输投影里替代 `images` 的那一格:每张图的类型和大小。见 `ToolImageRef`。 */
   imageRefs?: ToolImageRef[];
   /**
    * 这次调用**留下了一个还在跑的后台任务**(claude 的 `run_in_background` Bash、

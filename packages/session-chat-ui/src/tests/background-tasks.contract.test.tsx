@@ -87,17 +87,6 @@ describe('元数据:实时文案 + 最坏宽度预留', () => {
     expect(backgroundTaskMetaLayout(agent({ elapsedMs: 3_600_000 }), ctx, '1h00m').height)
       .toBe(backgroundTaskMetaLayout(agent({ elapsedMs: 3_600_000 }), ctx, '00h00m').height)
   })
-
-  it('行内计时器每秒在跳(评审:不能冻在快照上)', async () => {
-    const { state, host } = mount()
-    state.transcript.history.seed([settled])
-    state.session.setBackgroundTasks({ commands: [], subagents: [agent({ completedSteps: 137, elapsedMs: 599_000, startedAt: Date.now() - 599_000 })] })
-    await until('后台行在屏上', () => row(host) !== null)
-    host.querySelector<HTMLElement>('[data-collapse-id="background-tasks:open"]')?.click()
-    await until('单子展开', () => items(host).length === 1)
-    const meta = items(host)[0].querySelector<HTMLElement>('[data-slot="background-task-meta"]')
-    await until('计时器自己跳到 10m00s', () => meta?.textContent?.includes('10m00s') === true)
-  })
 })
 
 describe('background tasks at the end of the transcript', () => {

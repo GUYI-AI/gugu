@@ -141,4 +141,25 @@ describe('trusted deletion of the separate phone message database', () => {
     expect((await store.windows(f.a, ['room'], 10)).map(row => row.id)).toEqual(['after'])
     expect((await snapshot(f.factory, f.a)).retired_accounts).toEqual([])
   })
+
+  it('upgrades formal dev v5 to v6 by adding retirement without changing existing rows', async () => {
+    const factory = new IDBFactory(), opening = factory.open('gugu.localSync.v1', 5)
+    opening.onupgradeneeded = () => {
+      const keys: Record<string, string[]> = { identity: ['accountId', 'id'], chat: ['accountId', 'id'], membership: ['accountId', 'chatId', 'identityId'],
+        presence: ['accountId', 'identityId'], outbox: ['accountId', 'id'], view: ['accountId', 'key'], sync_state: ['accountId', 'key'] }
+      for (const [name, keyPath] of Object.entries(keys)) {
+        const store = opening.result.createObjectStore(name, { keyPath }); store.createIndex('accountId', 'accountId')
+        if (name === 'membership') store.createIndex('accountChat', ['accountId', 'chatId'])
+      }
+      opening.transaction!.objectStore('sync_state').put({ accountId: 'owner', key: 'account-revision-cursor', value: { revision: '7' } })
+    }
+    await new Promise<void>((resolve, reject) => { opening.onsuccess = () => { opening.result.close(); resolve() }; opening.onerror = () => reject(opening.error) })
+    const adapter = await openLocalSyncDb(factory)
+    try {
+      expect((await adapter.loadAccount('owner')).sync_state).toEqual([{ accountId: 'owner', key: 'account-revision-cursor', value: { revision: '7' } }])
+      await adapter.retireAccount!('owner')
+      await expect(adapter.commit([{ type: 'put', store: 'sync_state', value: { accountId: 'owner', key: 'late', value: {} } }])).rejects.toThrow('retired')
+    } finally { adapter.close() }
+  })
+
 })

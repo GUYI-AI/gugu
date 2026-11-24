@@ -1,7 +1,7 @@
 {
   "name": "gugu",
   "productName": "咕咕",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "description": "Gugu desktop chat client",
   "author": "Gugu",
   "license": "SEE LICENSE IN LICENSE",
@@ -119,6 +119,7 @@
     "pi-acp": "npm:@gugu-acp/pi-acp@1.1.0",
     "picomatch": "^4.0.4",
     "playwright-core": "1.64.0-alpha-1790635538000",
+    "sharp": "0.35.5",
     "tldts": "7.0.28",
     "ws": "^8.20.0",
     "zcode-acp-server": "npm:@gugu-acp/zcode-acp@1.3.1",

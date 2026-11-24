@@ -29,10 +29,12 @@ export function openAgentHomeImportPage(machine: string | null) {
 export const agentConfigImportHomes = replica({
   name: 'agentConfigImportHomes', scope: 'device',
   read: async (_device: string, machine: string | null = null) => {
-    const { rpcOn } = await import('@renderer/lib/ipc')
-    // This existing lookup contains every registered provider, regardless of installation or
-    // availability in the new-task picker. Do not lose an imported home when its CLI is removed.
-    const providers = await rpcOn(machine).agents.listIcons()
+    // Every provider this app registers, regardless of installation or availability in the new-task picker: an imported
+    // home is not lost when its CLI is removed. The ids come from this computer's table (`agentIcons`, read once over
+    // IPC): the same registry, ❌ another machine's table, which carries every icon (~150 KB) for its keys and was read
+    // over the link as each machine connected. A machine skips ids it does not register.
+    const { agentIcons } = await import('@renderer/lib/stores/agent-replicas')
+    const providers = await agentIcons.fetch(null)
     const client = await getAgentConfigRuntimeClient(machine)
     const result = await client.scanAgentHomes({ providerIds: Object.keys(providers) })
     if (!result.success) throw new Error(errorText(result.error))

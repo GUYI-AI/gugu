@@ -4,7 +4,7 @@
  *  · 16 种休息表情：用「眼睛形状 + 眉毛 + 腮红 + 身体姿态 + 性格化的小动作」表达，喙不张开（owner 10-22）；配饰是另一层（outfits.ts），不改表情
  *    有的表情带一个进场动作（act）：进入这个表情时演一次就停（mac 上持续出帧很贵，空闲时不该一直动）
  *  · 14 种展示状态：名字 / 颜色 / 动不动 一律抄咕咕仓里 `presentAgentStatus` 那张表
- *    （packages/core/src/shared/agentStatusPresentation.ts + styles/tokens.css 的 --agent-tone-*），❌ 自己另起
+ *    （packages/core/src/shared/agentStatusPresentation.ts + styles/tokens.css 的 --agent-mark-*），❌ 自己另起
  *
  * 眼睛形状 = 一颗黑豆（椭圆）∩ 上眼睑曲线 ∩ 下眼睑曲线。曲线是抛物线：
  *   v(u') = off + slope·u'inner + bow·(1 − u'²)       u'∈[-1,1] 横跨眼睛，v'∈[-1,1] 竖跨眼睛（下为正）
@@ -533,7 +533,7 @@ export const EXPRESSIONS: (Expression & { id: ExpressionId })[] = [
   }
 ]
 
-/** 睡着：两线并拢成一道向下的弯月 ‿（不在 16 种里，只给"不在线/已移除"用） */
+/** 睡着：两线并拢成一道向下的弯月 ‿（不在 16 种里，只给"离线/已移除"用） */
 export const ASLEEP: Expression = {
   id: 'asleep',
   zh: '睡着',
@@ -598,7 +598,7 @@ export type DisplayStateId =
  *   这样一眼看过去仍是这个状态 / 这只 agent 该有的脸,走神只是让它活着。
  * - 每个状态有自己的**眨眼间隔**;`null` = 这个状态不眨眼(身体变成「!」/ 后台三颗点时,眼睛是符号的一部分)。
  * - 轮换只换眼睛,不重演表情的「进场动作」(蹦、抖、特效)。
- * 不在表里的状态(出错、不在线、已移除、无)保持各自固定的脸,不轮换。
+ * 不在表里的状态(出错、离线、已移除、无)保持各自固定的脸,不轮换。
  */
 export interface Cadence {
   /** 本位脸停多久(秒,[最短, 最长]) */
@@ -695,7 +695,7 @@ export interface DisplayState {
   id: DisplayStateId
   zh: string // 咕咕 zh-CN common.agentStatus.*
   tone: StateTone
-  color: string | null // 抄 tokens.css：在跑/后台=#ff5f1f，需要你=--warn #f59e0b，出错/已移除=--danger #ef4444，在线=--green #16a34a，不在线/确认中=灰；做完/空闲/不可用=不上色
+  color: string | null // 抄 tokens.css：在跑/后台=#ff5f1f，需要你=--warn #f59e0b，出错/已移除=--danger #ef4444，在线=--green #16a34a，离线/确认中=灰；做完/空闲/不可用=不上色
   animate: boolean // 仅"运行中"字形会转
   emphasis: boolean // 仅"做完了"未读加粗
   family: Family
@@ -806,7 +806,7 @@ export const STATES: DisplayState[] = [
   },
   {
     id: 'offline',
-    zh: '不在线',
+    zh: '离线',
     tone: 'offline',
     color: MUTED,
     animate: false,
@@ -885,6 +885,6 @@ export const FAMILIES: { id: Family; zh: string; hint: string }[] = [
   {
     id: 'away',
     zh: '连不上',
-    hint: '不在线=缩成一颗小睡团；确认中=一颗球滚来滚去张望；已移除=同一颗睡团飘起来、变小变淡，一圈星屑；不可用=褪色不动'
+    hint: '离线=缩成一颗小睡团；确认中=一颗球滚来滚去张望；已移除=同一颗睡团飘起来、变小变淡，一圈星屑；不可用=褪色不动'
   }
 ]

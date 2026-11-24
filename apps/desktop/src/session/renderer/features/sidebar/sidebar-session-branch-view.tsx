@@ -25,7 +25,7 @@ export function SidebarSessionBranchCount({ summary, expanded, onToggle, label: 
       <span aria-hidden className="mx-px h-2.5 border-l border-foreground/10" />
       {summary.active.map(({ presentation, count }) => (
         <span key={presentation.tone} className="inline-flex items-center gap-[3px]">
-          <span className="inline-flex size-[9px] shrink-0 items-center justify-center"><AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} variant="2" /></span>
+          <span className="inline-flex size-[9px] shrink-0 items-center justify-center"><AgentStatusGlyph presentation={presentation} label={translate(`agentStatus.${presentation.label}`)} /></span>
           <span data-branch-running>{count}</span>
         </span>
       ))}

@@ -6,7 +6,7 @@ import { needsYouCount, sidebarStateGroup } from './session-groups';
 import { summarizeSessionBranches, type SessionBranchSummary } from './sidebar-session-branch';
 
 // #2548 内层侧栏的「智能体」(群里也这么写,owner 11-12):**住在**这个群或项目里的我的会话(这台电脑与连着的机器上的,即侧栏里那些),
-// 别人的智能体 ❌ 列在这里(它们在聊天和成员面板里)。项目行头像角上那个数读的是同一个推导(myAgentsInChat → chatAgentCounts)。
+// 别人的智能体 ❌ 列在这里(它们在聊天和成员面板里)。
 // #2599 住在哪按「在哪建的」定,❌ 按它此刻是哪些群的成员:成员关系一对多、随时在变,只在那个群里多一个成员。
 
 /** 侧栏里我的一条会话,外加它背后的那个咕咕身份(会话 → agent 的绑定,sessionAgentBindings)。 */
@@ -48,6 +48,15 @@ export type ChatAgentScope = {
 function livesIn(entry: ChatAgentEntry, scope: ChatAgentScope, projects: ReadonlySet<string>): boolean {
   if (projects.has(entry.projectId)) return true;
   return !!entry.bornInChatId && scope.bornHere(entry.bornInChatId) && !scope.inProject(entry.projectId);
+}
+
+/**
+ * 侧栏里我的会话的先后 = 智能体的那一种次序(compareByRecentActivity):最后交互新的在前,没交互过的按建的时刻,同一刻按 id。
+ * 侧栏各处给会话排序都读它,❌ 各写一份 `b.time - a.time`(没交互过的全是 0,就落回谁先列出来)。
+ */
+export function compareAgentEntries(a: Pick<ChatAgentEntry, 'id' | 'time' | 'createdAt'>, b: Pick<ChatAgentEntry, 'id' | 'time' | 'createdAt'>): number {
+  const stamp = (entry: typeof a) => ({ id: entry.id, activityMs: entry.time || activityMs(null, entry.createdAt) });
+  return compareByRecentActivity(stamp(a), stamp(b));
 }
 
 export function myAgentsInChat<T extends ChatAgentEntry>(entries: readonly T[], scope: ChatAgentScope): T[] {
@@ -92,7 +101,7 @@ export function agentFamilies<T extends ChatAgentEntry>(entries: readonly T[]): 
     if (entry.parentSessionId) add(childrenOf, entry.parentSessionId, entry);
     else if (entry.agentUserId) add(topLevelOf, entry.agentUserId, entry);
   }
-  for (const own of topLevelOf.values()) own.sort((a, b) => b.time - a.time);
+  for (const own of topLevelOf.values()) own.sort(compareAgentEntries);
   return { entries, byId, childrenOf, topLevelOf };
 }
 
@@ -170,8 +179,7 @@ export type ChatAgentDisclosure = {
 export function chatAgentSection(entries: readonly ChatAgentEntry[], disclosure: ChatAgentDisclosure): ChatAgentList {
   const forest = buildSessionTree(entries);
   const summaries = summarizeSessionBranches(forest);
-  const stamp = ({ item }: SessionTreeNode<ChatAgentEntry>) => ({ id: item.id, activityMs: item.time || activityMs(null, item.createdAt) });
-  const roots = [...forest].sort((a, b) => compareByRecentActivity(stamp(a), stamp(b)));
+  const roots = [...forest].sort((a, b) => compareAgentEntries(a.item, b.item));
   const rows: ChatAgentRow[] = [];
   const visit = (node: SessionTreeNode<ChatAgentEntry>, depth: number, parentProjectId?: string) => {
     const summary = summaries.get(node.item.id);

@@ -377,27 +377,6 @@ it.each(['claude', 'codex'])('an unsigned native %s connection is not listed; Ad
   expect(thrown).toEqual([]);
 });
 
-// owner 2026-11-12 选 A:「添加连接 → 账号」没登成功(失败或取消)就把这条新连接拿掉;窗口关时已经登上的留着。
-it.each([
-  ['still signed out', true, ['account-1']],
-  ['already signed in', false, []],
-])('a new account connection whose sign-in window closes %s is removed only when it never signed in', async (_label, signedOut, removed) => {
-  control.signedOut = true;
-  root.render(<ConnectionDetailsFixture />);
-  await until('the Claude row has its add action', () => !!addButton('claude'));
-  addButton('claude')!.click();
-  await until('the account form opens', () => !!host.querySelector('.subscription-connection-form button[type="submit"]'));
-  (host.querySelector('.subscription-connection-form button[type="submit"]') as HTMLButtonElement).click();
-  await until('the sign-in window opens for the new connection', () => modalStore.activeModalId === 'agentSignInModal');
-  expect(control.created).toMatchObject({ providerId: 'claude', kind: 'account' });
-  expect(modalStore.activeModalArgs).toMatchObject({ providerId: 'claude', connectionId: 'account-1' });
-  control.signedOut = signedOut;
-  (modalStore.activeModalArgs as { onClose: () => void }).onClose();
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  expect(control.removed).toEqual(removed);
-  expect(thrown).toEqual([]);
-});
-
 // #2507 owner 2026-11-12:「订阅里面说去资源库智能体里登录，但我去看现在根本没有登录选项……本来这里应该点击直接跳转的」。
 // 之后:「所以订阅页那颗单独的『登录』也收进『添加连接』,统一一个入口」——「账号」= 登它 CLI 自己那一份,同一个登录窗口。
 it('another agent that is not signed in signs in through Add connection → Account, opening the same sign-in window; one without any way in gets nothing', async () => {

@@ -70,11 +70,11 @@ import type { FoldGate, ItemSegmenter, Margin, RenderUnit, SegmentCtx } from '@s
 import { hasConversationActions } from '@session-chat/components/rows/message/conversation-body';
 import { stampGroupRoles } from '@session-chat/core/units';
 import { localDayKey } from '@session-chat/lib/day-boundary';
-import type { ChatItem, ChatMessage, FileChangeSummaryItem, SyntheticItem, ToolRunItem, TranscriptItem, TranscriptTurn } from '@session-chat/model';
+import type { ChatItem, ChatMessage, FileChangeSummaryItem, SyntheticItem, TranscriptItem, TranscriptTurn } from '@session-chat/model';
 import type { TranscriptSessionNotice } from '@gugu/session-core/acp';
 import { fileChangeSummary, isListedInSummary, successfulFileDiff } from '@session-chat/state/file-change-summary';
 import { collectOpenedOutputs, openedFilePath, openedOutputKey, outputsOfRun } from '@session-chat/state/opened-outputs';
-import { hasToolPictures, tallyToolRun, toolRunCategory, toolRunLabel, toolRunNow } from '@session-chat/state/tool-run';
+import { tallyToolRun, toolRunCategory, toolRunLabel, toolRunNow } from '@session-chat/state/tool-run';
 import { completedTurnResult, itemIsUser, pendingTurnHeader, placeholderTurnHeader, planTurnFoldRuns, turnFoldView, turnProcessExpanded } from '@session-chat/state/turn-fold';
 import { isEmptyAgentTurn } from './turn-visibility';
 import { processHookNotice } from '@session-chat/lib/hook-notice';
@@ -378,9 +378,6 @@ export function flattenTier(
       // 对话布局不接:owner 0 号图跑着的步骤组只说「跑了 5 条命令」,❌「正在跑 cd … && export PATH=…」原始命令(10-28)。
       const now = live && !ctx.agentConversation ? toolRunNow(op.rows) : null;
       const expanded = ctx.revealAllFolds || (ctx.isTurnProcessExpanded?.(runId) ?? false);
-      // Folded, a step's pictures would be out of sight: the line carries the last ones (tool-images.ts — seen unopened).
-      // Open, each step below draws its own.
-      const pictureStep = expanded ? undefined : op.rows.findLast(hasToolPictures) as ToolRunItem['pictureStep'];
       const toolNames = op.rows.flatMap(row => 'toolCallId' in row || row.kind === 'tool-group' ? toolActivationNames(row) : row.kind === 'tool' ? [...(row.toolNames ?? [])] : []);
       processItem({
         kind: 'tool-run',
@@ -391,7 +388,6 @@ export function flattenTier(
         ...(toolNames.length ? { toolNames } : {}),
         ...(live ? { live: true as const } : {}),
         ...(now ? { now } : {}),
-        ...(pictureStep ? { pictureStep } : {}),
       }, folds);
       if (expanded) {
         for (const row of op.rows) processItem(row, [...folds, { id: runId, stored: true }]);
@@ -553,9 +549,12 @@ export function flattenTier(
             const gapBefore = units[0].gapBefore;
             units[0] = { ...units[0], gapBefore: 0 };
             const id = `${block.id}:steps`;
+            // The viewport is one row of the exchange its steps belong to: without their activity it would split the A2A fold
+            // in two and stay open between the halves.
             out.push({ id, itemId: id, groupId: id, groupRole: 'solo', gapBefore,
               kind: 'conversation-process-steps', data: { id, live: block.live, units },
-              children: units, conversationProcessOwner: conversationOwner, conversationUtterance: conversationOwner });
+              children: units, conversationProcessOwner: conversationOwner, conversationUtterance: conversationOwner,
+              ...(units[0].activityEvent ? { activityEvent: units[0].activityEvent } : {}) });
             lastKind = 'conversation-process-steps';
           }
         };

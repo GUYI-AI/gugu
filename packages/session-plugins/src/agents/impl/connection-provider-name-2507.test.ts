@@ -69,6 +69,9 @@ describe('a Gugu-model (platform) session: launch values byte-for-byte as before
           "gugu-platform": {
             "name": "Gugu platform quota",
             "api": "openai-responses",
+            "compat": {
+              "supportsStrictMode": true
+            },
             "baseUrl": "https://relay.example/v1",
             "apiKey": "\${GUGU_PI_API_KEY}",
             "authHeader": true,
@@ -108,6 +111,9 @@ describe('a Gugu-model (platform) session: launch values byte-for-byte as before
           "gugu-platform": {
             "name": "Gugu platform quota",
             "api": "openai-responses",
+            "compat": {
+              "supportsStrictMode": true
+            },
             "baseUrl": "https://relay.example/v1",
             "apiKey": "\${GUGU_PI_API_KEY}",
             "authHeader": true,
@@ -260,5 +266,46 @@ describe('an API key connection: the harness names the provider after the connec
     const merged = openCodeFamilyModelConfig(OPENCODE_FAMILY_MODEL_SPEC, connectionDeclaration('opencode', '我的 Key'));
     expect(merged).toMatchObject({ model: 'api-key-connection/user-model', provider: { 'api-key-connection': { name: '我的 Key' } } });
     expect(JSON.stringify(merged)).not.toMatch(PLATFORM_WORDING);
+  });
+});
+
+describe('a custom model on Pi: "Default" sends no thinking level', () => {
+  const custom = (reasoningEffort?: string): SessionModelCapability => ({
+    dialect: 'pi-models-json',
+    model: 'deepseek-v4',
+    platformProvider: { baseUrl: 'https://relay.example/v1', apiKey: 'sk-user' },
+    customModels: {
+      connectionId: 'c1',
+      entries: [{ id: 'deepseek-v4' }],
+      piProviders: [{ connectionId: 'c1', name: 'Relay', baseUrl: 'https://relay.example/v1', protocol: 'openai-chat-completions', models: [{ id: 'deepseek-v4' }] }],
+    },
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+  });
+  const level = (model: SessionModelCapability) =>
+    JSON.parse(pi(model).acp.artifacts.find((artifact) => artifact.path.endsWith('settings.json'))!.content).defaultThinkingLevel;
+
+  it('pins pi to off, since pi would otherwise start at medium', () => {
+    expect(level(custom())).toBe('off');
+    expect(level(custom('high'))).toBe('high');
+  });
+});
+
+describe('a custom model on OpenCode: "Default" declares no levels', () => {
+  const custom = (reasoningEffort?: string): SessionModelCapability => ({
+    dialect: 'opencode-config-content',
+    model: 'deepseek-v4',
+    platformProvider: { baseUrl: 'https://relay.example/v1', apiKey: 'sk-user' },
+    customModels: { connectionId: 'c1', entries: [{ id: 'deepseek-v4' }] },
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+  } as SessionModelCapability);
+  const entry = (model: SessionModelCapability) => {
+    const load = pluginRegistry.get('opencode')!.behavior.sessionBundle!.platformModel!.load(model);
+    const [content] = Object.values(load.spawnEnv ?? {});
+    return Object.values(JSON.parse(content!).provider)[0] as { models: Record<string, Record<string, unknown>> };
+  };
+
+  it('writes variants only once a level is chosen, since opencode would otherwise arm the first one', () => {
+    expect(entry(custom()).models['deepseek-v4']).not.toHaveProperty('variants');
+    expect(entry(custom('high')).models['deepseek-v4']).toMatchObject({ options: { reasoningEffort: 'high' } });
   });
 });

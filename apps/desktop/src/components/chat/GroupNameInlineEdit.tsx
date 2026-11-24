@@ -5,6 +5,7 @@ import { resolveOrLoud } from '@gugu/core/shared/resolveOrLoud'
 import { Pencil } from '@/lib/icons'
 import { IconButton } from '../ui/IconButton'
 import { InlineNameInput } from '../ui/InlineNameInput'
+import { Button as ButtonPrimitive } from '@base-ui/react/button'
 
 // @@@2070 群名就地编辑:默认显示为文字;canEdit(manager)点名字旁的编辑钮或双击 → 变输入框(回车/失焦确认、Esc 取消)。
 // 编辑钮是触屏上唯一的入口:双击与 title 提示在手机上都不成立。
@@ -16,6 +17,7 @@ export function GroupNameInlineEdit({
   onCommit,
   labels,
   wrap = false,
+  hero = false,
 }: {
   name: string | null
   canEdit: boolean
@@ -24,6 +26,8 @@ export function GroupNameInlineEdit({
   labels?: { editHint: string; placeholder: string }
   /** 在群自己的设置页里显示全名(换行);页头这类单行位置照旧截断。 */
   wrap?: boolean
+  /** 详情页头部(第 16 版设计稿 .hero .nm):19px、点名字直接改、后面一支小铅笔。 */
+  hero?: boolean
 }) {
   const { t } = useTranslation('messaging')
   const [editing, setEditing] = useState(false)
@@ -58,13 +62,30 @@ export function GroupNameInlineEdit({
     )
   }
 
-  if (canEdit && editing) {
-    return (
-      <InlineNameInput name={name} onCommit={onCommit} onClose={() => setEditing(false)}
-        placeholder={labels?.placeholder ?? t('group.namePlaceholder')} />
-    )
-  }
+  const editor = canEdit && editing ? (
+    <InlineNameInput name={name} onCommit={onCommit} onClose={() => setEditing(false)}
+      placeholder={labels?.placeholder ?? t('group.namePlaceholder')}
+      className={hero ? 'col-start-1 row-start-1 min-w-0 justify-self-stretch text-center leading-[22px]' : undefined} />
+  ) : null
   const startEditing = () => setEditing(true)
+  const canStartEditing = canEdit && !editor
+  if (hero) return (
+    <div className="flex min-w-0 items-center justify-center">
+      <div data-testid={editor ? undefined : 'group-name-display'} role={canStartEditing ? 'button' : undefined} tabIndex={canStartEditing ? 0 : undefined}
+        onClick={canStartEditing ? startEditing : undefined}
+        onKeyDown={canStartEditing ? (event) => { if (event.key === 'Enter') startEditing() } : undefined}
+        className={`flex min-w-0 items-center [overflow-wrap:anywhere] gap-[6px] rounded-[var(--radius-document)] px-1 text-center text-[length:var(--font-heading)] leading-[22px] font-semibold ${canStartEditing ? 'cursor-text hover:bg-row-hover' : ''}`}>
+        <div className="grid min-w-0">
+          {/* Keep the wrapped name and pencil in the layout so the editor shares the same text center. */}
+          <span className={`col-start-1 row-start-1 min-w-0 ${editor ? 'invisible' : ''}`}>{resolveOrLoud(name, 'group details title')}</span>
+          {editor}
+        </div>
+        {canEdit ? <ButtonPrimitive data-testid="group-name-edit" aria-label={labels?.editHint ?? t('group.editName')}
+          onClick={(event) => { event.stopPropagation(); startEditing() }} className={`flex shrink-0 text-[var(--faint-fg)] ${editor ? 'invisible' : ''}`}><Pencil size={13} /></ButtonPrimitive> : null}
+      </div>
+    </div>
+  )
+  if (editor) return editor
   return (
     <div className="flex min-w-0 items-center gap-1">
       <div

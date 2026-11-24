@@ -370,12 +370,10 @@ describe('每个按机器的页面都挂在模块层、没有第二个选择器(
   const renderer = resolve(here, '../..');
   const read = (path: string) => readFileSync(resolve(renderer, path), 'utf8');
 
-  it.each([
-    ['features/automations/components/AutomationsView.tsx', 'automationsDeviceStore', 1],
-  ])('%s 用 DeviceScopeProvider 挂 %s', (file, store, count) => {
-    const source = read(file);
-    const hits = source.match(new RegExp(`<DeviceScopeProvider store=\\{${store}\\}>`, 'g')) ?? [];
-    expect(hits).toHaveLength(count);
+  it('keeps the automation machine picker inside the creation sheet', () => {
+    const source = read('features/automations/components/AutomationsView.tsx');
+    expect(source).not.toMatch(/DeviceScope(Picker|Provider)/);
+    expect(source).toMatch(/<CreateAutomationView[\s\S]*devicePicker=\{[\s\S]*<MachinePicker/);
   });
 
   it('keeps market browsing on the local host without a machine picker', () => {

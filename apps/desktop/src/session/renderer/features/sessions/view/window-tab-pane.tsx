@@ -34,15 +34,15 @@ export const WindowTabPane = observer(function WindowTabPane({ windowId, paneId 
 });
 
 const SessionWindowTabPane = observer(function SessionWindowTabPane({ windowId, paneId }: { windowId: string; paneId: string }) {
-  const { projectId } = useSessionViewContext();
+  const { projectId, workspaceId } = useSessionViewContext();
   const { paneLayout } = useWorkspaceViewModel();
   const active = paneLayout.windowPanes.get(paneId)?.pane.activeEntry;
   const sessionId = active && (active.kind === 'session' || active.kind === 'acp-chat') ? (active.state as { sessionId: string }).sessionId : undefined;
-  return <WindowTabPaneContent windowId={windowId} paneId={paneId} paneLayout={paneLayout} status={<><SessionMachineStatus /><DesktopLiveWindowHeader projectId={projectId} sessionId={sessionId} /></>} />;
+  return <WindowTabPaneContent windowId={windowId} paneId={paneId} paneLayout={paneLayout} status={<><SessionMachineStatus /><DesktopLiveWindowHeader projectId={projectId} sessionId={sessionId} /></>} conversationsOnly={!workspaceId} />;
 });
 
 /** The window's strip and its one tab, from whichever strip it came out of (a task's, a chat's). */
-export const WindowTabPaneContent = observer(function WindowTabPaneContent({ windowId, paneId, paneLayout, status }: { windowId: string; paneId: string; paneLayout: PaneLayoutStore; /** The session's machine state (session tabs only). */ status?: ReactNode }) {
+export const WindowTabPaneContent = observer(function WindowTabPaneContent({ windowId, paneId, paneLayout, status, conversationsOnly }: { windowId: string; paneId: string; paneLayout: PaneLayoutStore; /** The session's machine state (session tabs only). */ status?: ReactNode; conversationsOnly?: boolean }) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const group = paneLayout.windowPanes.get(paneId);
   if (!group) return null;
@@ -64,8 +64,9 @@ export const WindowTabPaneContent = observer(function WindowTabPaneContent({ win
         <div className="h-full min-h-0 min-w-0" data-window-tab-pane={paneId}>
           <PaneContent
             leadingReservePx={auxLeadingReserve()}
+            conversationsOnly={conversationsOnly}
             actionsSlot={
-              <TabBarActionRow atWindowEdge>
+              <TabBarActionRow>
                 {status}
                 <PutBackButton windowId={windowId} />
               </TabBarActionRow>

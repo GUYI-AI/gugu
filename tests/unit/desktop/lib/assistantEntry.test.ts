@@ -159,21 +159,19 @@ describe('openAssistantEntry', () => {
     expect(opened).toEqual([])
   })
 
-  // 11-12 gap: no assistant and no App, a 开通 (an entry, a reminder) went nowhere once Settings lost its 咕咕 group. Setting it
-  // up is the App's: the Apps page on the assistant App — its market page to install it, its own page to switch it on.
+  // The assistant is not promoted (assistant-entry.ts ASSISTANT_PROMOTED): with no assistant and no App, an entry (a reminder,
+  // quick chat's 「open」) sends nobody to set one up — not the Apps page, not Settings. Its App is an ordinary App.
   it.each([
     ['not installed', () => noApps()],
     ['switched off', () => installApp(undefined, [ASSISTANT_APP_ID])],
     ['a copy main does not trust', () => publishAssistantAppWord({ ...word, trusted: false })],
-  ])('no assistant, the App %s: 开通 opens the Apps page on the assistant App, never Settings', (_why, arrange) => {
+  ])('no assistant, the App %s: an entry sends nobody to set it up', (_why, arrange) => {
     arrange()
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
     expect(readAssistantEntryTarget()).toEqual({ kind: 'setup' })
     expect(openAssistantEntry()).toBeNull()
-    expect(opened).toEqual([{ kind: 'app-detail', extensionId: ASSISTANT_APP_ID }])
+    expect(opened).toEqual([])
     expect(settings).toEqual([])
-    // A link caller does it itself; the web build has no Apps page.
-    opened.length = 0
     openAssistantEntry('open', false)
     host.sessionHost = false
     try { openAssistantEntry() } finally { host.sessionHost = true }
@@ -311,16 +309,14 @@ describe('openAssistantPageInApp', () => {
     expect(appState.navigation.currentViewId).toBe('home')
   })
 
-  it('no assistant and the App not usable: 资料 opens the Apps page on the App; 连接应用 the user\'s installed connectors; the web build neither', () => {
+  it('no assistant and the App not usable: 资料 sends nobody to set it up (not promoted); 连接应用 the user\'s installed connectors; the web build neither', () => {
     installApp(undefined, [ASSISTANT_APP_ID])
     publishAssistantShell(shell({ assistant: null, assistantState: 'none', chatId: null }))
-    expect(openAssistantPageInApp('settings')).toBe(true)
-    expect(opened).toEqual([{ kind: 'app-detail', extensionId: ASSISTANT_APP_ID }])
-    expect(revealed).toEqual([true])
-    opened.length = 0
+    expect(openAssistantPageInApp('settings')).toBe(false)
+    expect(opened).toEqual([])
     expect(openAssistantPageInApp('connected-apps')).toBe(true)
     expect(appState.navigation.currentViewId).toBe('apps')
-    expect(appState.navigation.viewParamsStore.apps).toMatchObject({ location: { tab: 'connectors', installed: { section: 'connectors', direct: true } } })
+    expect(appState.navigation.viewParamsStore.apps).toMatchObject({ location: { tab: 'connectors', installed: { direct: true } } })
     expect(opened).toEqual([])
     expect(layer()).toBeNull()
     appState.navigation.navigate('home')

@@ -177,7 +177,7 @@ export function TaskCardHandedTo({ agentName, agentAvatar, agentUserId, note, ma
     <span className="flex h-5 min-w-0 items-center gap-2 text-[var(--font-caption)] text-[var(--muted-fg)]">
       <span className="shrink-0">{t('message.taskCard.handedTo')}</span>
       <span className="flex min-w-0 items-center gap-1">
-        <Avatar name={agentName} avatarUrl={agentAvatar} seed={agentUserId} isAgent harnessBadge={false} size={16} still />
+        <Avatar name={agentName} avatarUrl={agentAvatar} seed={agentUserId} isAgent size={16} still />
         <b className="truncate font-medium text-[var(--text-secondary)]">{agentName}</b>
       </span>
       <span className="min-w-0 truncate">{note}</span>
@@ -187,8 +187,8 @@ export function TaskCardHandedTo({ agentName, agentAvatar, agentUserId, note, ma
 }
 
 /**
- * 行尾那一格,和侧栏会话行同一枚字形(AgentStatusGlyph,同一个 presentAgentStatus):在跑 = 四个点在转、后台在跑 = 黄色双竖线、
- * 需要你 = 琥珀点、出错 = 红点;做完(空闲)= 勾;归档 / 离线不画。
+ * 行尾那一格,和侧栏会话行同一枚字形(AgentStatusGlyph,同一个 presentAgentStatus):在跑 = 字形在转、后台在跑 = 同一个字形停住、
+ * 需要你 = 感叹号字形、出错 = 红点;做完(空闲)= 勾;归档 / 离线不画。
  */
 export function TaskStatusMark({ status }: { status: AgentDisplayStatus | undefined }) {
   const { t } = useTranslation('common')
@@ -197,7 +197,7 @@ export function TaskStatusMark({ status }: { status: AgentDisplayStatus | undefi
   const presentation = presentAgentStatus({
     reading: status === 'parked' ? { status: 'working', detail: 'parked' } : { status, detail: null },
   })
-  return <AgentStatusGlyph presentation={presentation} label={t(`agentStatus.${presentation.label}`)} variant="2" />
+  return <AgentStatusGlyph presentation={presentation} label={t(`agentStatus.${presentation.label}`)} />
 }
 
 /**

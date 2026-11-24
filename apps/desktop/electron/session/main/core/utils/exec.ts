@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from '@gugu/core/local/childProcess';
+import { execFileSync, windowsSystemProgram } from '@gugu/core/local/childProcess';
 import { parseRegExportValue } from '@main/utils/windows-env';
 
 function windowsExecutableExtensions(env: NodeJS.ProcessEnv): string[] {
@@ -38,7 +38,7 @@ function findExecutableOnPath(name: string, env: NodeJS.ProcessEnv = process.env
 }
 
 function readGitForWindowsInstallPath(env: NodeJS.ProcessEnv): string | null {
-  const reg = env.SystemRoot ? path.join(env.SystemRoot, 'System32', 'reg.exe') : 'reg.exe';
+  const reg = windowsSystemProgram('reg.exe', env);
   for (const root of ['HKLM', 'HKCU']) {
     // `reg query` prints in the console code page: decoded as UTF-8, a non-ASCII install path (GBK
     // on zh-CN) came back garbled, and its localized "key not found" error leaked onto our stderr.

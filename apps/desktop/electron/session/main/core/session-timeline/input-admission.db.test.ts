@@ -46,10 +46,10 @@ describe('task input custody from the real write receipts', () => {
       publish: async () => { throw Error('offline'); }, failed: () => {},
     });
     const target = { id: 's', projectId: 'p', runtime, providerId: 'codex' } as SessionWriteTarget;
-    await deliverSessionText(target, 'personal input', 'manual-input');
+    await deliverSessionText(target, { text: 'personal input', clientMessageId: 'manual-input' });
     const admission = nativeInputPublication('s', 'manual-input');
     expect(admission).toMatchObject({ sessionId: 's', ownerUserId: 'owner', deviceId: 'device' });
-    await deliverSessionText(target, 'personal input', 'manual-input');
+    await deliverSessionText(target, { text: 'personal input', clientMessageId: 'manual-input' });
     expect(nativeInputPublication('s', 'manual-input')?.id).toBe(admission!.id);
     const settled = recordNativePublicationTurn({ sessionId: 's', rowId: 'turn', source: 'live', context: null,
       turn: { id: 'turn', seq: 0, initiator: 'user', trigger: { kind: 'owner' }, startedAt: Date.now(),
@@ -68,7 +68,7 @@ describe('task input custody from the real write receipts', () => {
     setSessionMessageRouter(async () => ({ status: 'not-ready', preserve: true, reason: 'provider unavailable' }));
     const files = [{ itemId: 'd01ce639-d1ab-4880-b578-c9cba0ff31d8', version: 1, name: 'a.txt', mimeType: 'text/plain', sizeBytes: 4 }];
     const target = { id: 's', projectId: 'p', runtime: 'pty', providerId: 'codex' } as SessionWriteTarget;
-    await expect(deliverSessionText(target, 'caption', 'input', files)).rejects.toThrow('kept');
+    await expect(deliverSessionText(target, { text: 'caption', clientMessageId: 'input', files })).rejects.toThrow('kept');
     const publication = nativeInputPublication('s', 'input');
     expect(publication).toMatchObject({ sessionId: 's', ownerUserId: 'owner' });
     const input = { conversationId: 's', clientMessageId: 'input', text: 'caption', files };
@@ -87,7 +87,7 @@ describe('task input custody from the real write receipts', () => {
     fixture.sqlite.prepare('UPDATE sessions SET runtime=? WHERE id=?').run(runtime, 's');
     const target = { id: 's', projectId: 'p', runtime, providerId: 'codex' } as SessionWriteTarget;
     const files = withFiles ? [{ itemId: 'd01ce639-d1ab-4880-b578-c9cba0ff31d8', version: 1, name: 'a.txt', mimeType: 'text/plain', sizeBytes: 4 }] : undefined;
-    await deliverSessionText(target, '  original caption  ', 'input', files);
+    await deliverSessionText(target, { text: '  original caption  ', clientMessageId: 'input', files });
     const receipt = readAcceptedMessage('input');
     expect(receipt).toBeTruthy();
     expect(JSON.parse(receipt!.metadata!).kind).toBe('session-direct');

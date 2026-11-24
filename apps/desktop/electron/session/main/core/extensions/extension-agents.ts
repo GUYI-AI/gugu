@@ -1,4 +1,5 @@
 import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
+import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels';
 import { agentIdsBySession } from '@main/core/sessionpage/sessionpage-session-agent';
 import { readAcpSessionSummaries } from '@main/core/acp/session-summary-reader';
 import type { TranscriptTurn } from '@gugu/session-core/acp';
@@ -102,7 +103,10 @@ export async function listAgentsForExtension(
       return {} as Record<string, never>;
     }),
   ]);
-  const rows = [...here, ...elsewhere.rows];
+  // This machine's first, then the others'; each in the sidebar's order (compareByRecentActivity): last activity, then id.
+  const stamp = ({ session }: ListedSession) => ({ id: session.conversationId, activityMs: activityMs(session.lastInteractedAt, null) });
+  const byActivity = (a: ListedSession, b: ListedSession) => compareByRecentActivity(stamp(a), stamp(b));
+  const rows = [...[...here].sort(byActivity), ...[...elsewhere.rows].sort(byActivity)];
   const agentOf = new Map(rows.flatMap(({ session }) => {
     const agentId = agentIdOf(session);
     return agentId ? [[session.conversationId, agentId] as const] : [];

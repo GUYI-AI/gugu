@@ -6,6 +6,7 @@ import { coreLogger } from '@gugu/core/log';
 import { isDeviceOnline } from '@gugu/core/shared/enums/deviceModels';
 import { FILE_CHUNK_BYTES, FileReadRevokedError, MissingFileObjectError, fileBlob, isFileIntegrityError, type FileHandle, type ResolvedFile } from '@gugu/core/shared/fileResolver';
 import { fetchInChunks } from '@gugu/core/shared/inChunks';
+import { compareByName } from '@gugu/core/shared/ui/chatModels';
 import { isRenderableImage, mimeTypeFromName } from '@gugu/core/shared/imageMime.mjs';
 import { opensAsStoredText, workspaceFileText, workspaceUploadKind } from '@gugu/core/shared/workspaceUpload.mjs';
 import type { ErrorDetail, ExtensionChat, ExtensionChatFolder } from './bridge-protocol';
@@ -391,11 +392,12 @@ async function membersOfChat(token: string, chatId: string, platform: Pick<Files
   if (ids.length === 0) return [];
   const byId = new Map((await platform.identities(token, ids)).map((user) => [user.id, user]));
   const faces = await platform.faces(ids.map((id) => ({ id, avatar: byId.get(id)?.avatar ?? null })));
+  // The rpc gives no order: by name, as MCP's message_members does (compareByName), so every read agrees.
   return ids.map((id) => {
     const user = byId.get(id);
     const face = faces[id];
     return { id: personId(id), name: user?.name || id.slice(0, 8), kind: user?.kind ?? 'human', ...(face ? { avatar: face } : {}) };
-  });
+  }).sort(compareByName);
 }
 
 /**

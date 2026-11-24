@@ -43,7 +43,7 @@ function ResourceHost({ ownerId, chatId, projectId, sessionId, mobile }: OwnedAg
   const opener = useChatOpener(chatId, mobile ? undefined : show, () => canTakeOwnedAgentResource(ownerId, chatId))
   if (mobile) return <>
     {opener.overlay}
-    <ChatTabPage chatId={chatId} topic={() => null} info={() => null} panel={tab =>
+    <ChatTabPage chatId={chatId} info={() => null} panel={tab =>
       <RightPanel><GroupTabContent chatId={chatId} tabId={tab.tabId} item={tab.item} tabbed={false} mobile visible onOpenWith={opener.openWith} /></RightPanel>
     } />
   </>

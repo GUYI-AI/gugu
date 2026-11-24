@@ -1,6 +1,6 @@
 import type { ChatItem, MessageItem } from '@gugu/core/shared/types/chat'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
-import { compareChatsByActivityDesc, isChatListed, isRoomChat } from '@gugu/core/shared/ui/chatModels'
+import { compareChatsByActivityDesc, comparePinnedFirst, isChatListed, isRoomChat } from '@gugu/core/shared/ui/chatModels'
 import type { ChatPickRow } from './ChatPickSheet'
 import { groupTopicsBySource, isTopLevelChatRow, isTopicRow, splitSunkTopics } from '../chatListTopicNesting'
 import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels'
@@ -76,7 +76,7 @@ export function sendableConversations(chats: readonly ChatItem[], q: SendableQue
   const offered = (chat: ChatItem) => listed(chat) && matches(chat)
   const nesting = groupTopicsBySource(chats, offered, compareChatsByActivityDesc, (id) => { const group = byId.get(id); return !!group && listed(group) })
   const top = chats.filter((chat) => isTopLevelChatRow(chat, nesting, listed, matches))
-    .sort((a, b) => Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned)) || compareChatsByActivityDesc(a, b))
+    .sort((a, b) => comparePinnedFirst(a, b) || compareChatsByActivityDesc(a, b))
   return { chats: top, topicsOf: nesting.bySource, byId }
 }
 

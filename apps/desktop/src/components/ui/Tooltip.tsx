@@ -3,7 +3,7 @@
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip'
 import type { CSSProperties, ReactElement } from 'react'
 import { cn } from '@/lib/cn'
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives'
+import { useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives'
 import { TOOLTIP_CLOSE_DELAY_MS, TOOLTIP_OPEN_DELAY_MS } from '@/styles/motion'
 
 type ClassNameProp = { className?: string }
@@ -77,12 +77,15 @@ function Portal(props: TooltipPrimitive.Portal.Props) {
 
 function Positioner({
   className,
+  style,
   ...props
-}: Omit<TooltipPrimitive.Positioner.Props, 'className'> & ClassNameProp) {
+}: Omit<TooltipPrimitive.Positioner.Props, 'className' | 'style'> & ClassNameProp & { style?: CSSProperties }) {
+  const zIndex = useUiPopupZIndex()
   return (
     <TooltipPrimitive.Positioner
       data-slot="tooltip-positioner"
       className={cn(tooltipPositioner, className)}
+      style={zIndex ? { zIndex, ...style } : style}
       {...props}
     />
   )

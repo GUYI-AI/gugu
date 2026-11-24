@@ -4,7 +4,7 @@ import { action, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import type { ReactElement, ReactNode } from 'react';
+import { useContext, type ReactElement, type ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
@@ -21,13 +21,14 @@ import { ExtensionsLibraryPage } from '@renderer/features/library/extensions-lib
 import { LibraryHostProvider, LOCAL_LIBRARY_HOST, machineLibraryHost } from '@renderer/features/library/library-host';
 import { TabBarActionRow } from '@renderer/features/sessions/titlebar-actions';
 import { PageContent, PageLayout } from '@renderer/lib/components/page-layout';
-import { ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
+import { PageModalClose, ShellTitlebar } from '@renderer/lib/components/titlebar/shell-titlebar';
+import { MODAL_HEADER_H, MODAL_TITLE } from '@/components/ui/modalGeometry';
 import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider';
 import { appState } from '@renderer/lib/stores/app-state';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
-import { appsLocation, moveAppsLocation, previousAppsLocation, type AppsLocation } from './apps-location';
+import { appsLocation, moveAppsLocation, type AppsLocation } from './apps-location';
 import { AgentAppDetailDialog } from './agent-app-detail-dialog';
 import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
@@ -36,16 +37,10 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const { params, setParams } = useParams('apps');
   const { navigate } = useNavigate();
-  const currentViewId = appState.navigation.currentViewId;
   const { agentDetail, agentDetailFrom } = params;
   const location = appsLocation(params);
   const marketHost = location.deviceId ? deviceDetailHost(location.deviceId) : LOCAL_LIBRARY_HOST;
   const installed = location.installed;
-  // The sheet is a place of its own: closing it is going back to where it was opened from.
-  const closeInstalled = () => {
-    if (previousAppsLocation()) navigateBack(true);
-    else moveAppsLocation((here) => ({ ...here, installed: undefined }));
-  };
 
   const closeAgentDetail = () => {
     if (agentDetailFrom !== 'apps' && appState.history.canGoBack) {
@@ -67,16 +62,16 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
                   agentDetail: { kind: 'agent-app-detail', agentId, ...(marketHost.remote && { deviceId: marketHost.remote.deviceId }) },
                   agentDetailFrom: 'apps',
                 })}
+                installedPage={installed && <InstalledManager place={installed}
+                  section={location.tab === 'market' ? 'apps' : location.tab}
+                  onPlace={(next) => moveAppsLocation((here) => ({ ...here, installed: next }))}
+                  onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
+                  onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
               />
             </LibraryHostProvider>
           </PageContent>
         </PageLayout>
       </div>
-      {installed && currentViewId === 'apps' && <InstalledManager place={installed}
-        onPlace={(next) => moveAppsLocation((here) => ({ ...here, installed: next }))}
-        onClose={closeInstalled}
-        onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
-        onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
       {agentDetail && (
         <AgentDetailHost key={`${agentDetail.deviceId ?? 'local'}:${agentDetail.agentId}`} target={agentDetail}>
           <AgentAppDetailDialog
@@ -125,8 +120,7 @@ export const appsView = {
   transientParams: ['agentDetail', 'agentDetailFrom'],
   TitlebarSlot: ShellTitlebar,
   MainPanel: AppsMainPanel,
-  withoutSessionSidebar: true,
-  retained: true,
+  modal: true,
 } satisfies ViewDefinition<AppsViewParams>;
 
 type AppViewParams = { appId?: string; tab?: string };
@@ -176,6 +170,8 @@ const AppTitlebar = observer(function AppTitlebar() {
   const heading = main ? extensionTabTitle(extensionSurfaceStore.said(null, 'dock'), main.extensionName) : null;
   const openInWindowLabel = translate('tabs.openInWindow');
   const assistantPage = useShownAsAssistant(params.appId, params.tab);
+  // In a modal its name is the modal's title, as Settings' is (@@@page-modal-close).
+  const inModal = useContext(PageModalClose) !== null;
   // The assistant's page: nothing of the App's on the band but a reported error's mark. Its page starts at the top, under
   // this band, so the band is not the window's handle while the page is drawn (a drag band over the App's webview takes
   // real clicks on its tabs, owner 11-12): the conversation's column carries the handle (AppConversationFrame `windowHandle`).
@@ -191,7 +187,7 @@ const AppTitlebar = observer(function AppTitlebar() {
       leftSlot={
         main ? (
           <span className="flex min-w-0 items-center gap-1">
-            <span className="text-sm font-medium" title={heading?.tooltip}>{heading?.label}</span>
+            <span className="text-sm font-medium" style={inModal ? MODAL_TITLE : undefined} title={heading?.tooltip}>{heading?.label}</span>
             {error ? <AppErrorMark error={error} onToggle={() => toggleErrorDetails(main.kind)} testId="app-page-error" /> : null}
           </span>
         ) : null
@@ -199,7 +195,7 @@ const AppTitlebar = observer(function AppTitlebar() {
     >
       {main?.enabled && params.appId ? (
         <div className="absolute top-0 right-0 flex" style={{ height: WINDOW_CONTROL_BAR_HEIGHT_PX }}>
-          <TabBarActionRow atWindowEdge>
+          <TabBarActionRow>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -246,8 +242,10 @@ const AppMainPanel = observer(function AppMainPanel() {
   // The assistant App not here yet (restored while it is being put in, or switched off): the page says it is getting ready, never
   // that the App is switched off, and gives way to the assistant's chat (assistant-page-not-here.ts).
   const assistantNotHere = useAssistantPageNotHere(params.appId, !!main?.enabled);
+  // In a modal the title band is the modal's header, as tall as Settings' (@@@page-modal-close).
+  const inModal = useContext(PageModalClose) !== null;
   return (
-    <div className="flex h-full min-h-0 w-full flex-col" style={assistantPage ? undefined : { paddingTop: WINDOW_CONTROL_BAR_HEIGHT_PX }} data-testid="app-page" data-assistant-page={assistantPage ? '' : undefined}>
+    <div className="flex h-full min-h-0 w-full flex-col" style={assistantPage ? undefined : { paddingTop: inModal ? MODAL_HEADER_H : WINDOW_CONTROL_BAR_HEIGHT_PX }} data-testid="app-page" data-assistant-page={assistantPage ? '' : undefined}>
       {installed.state === 'unknown' ? (
         // ❌ 「已停用」 before the list says so.
         <div className="min-h-0 flex-1" data-testid="app-page-unknown" aria-busy="true" />
@@ -280,5 +278,5 @@ export const appView = {
   WrapView: AppViewWrapper,
   TitlebarSlot: AppTitlebar,
   MainPanel: AppMainPanel,
-  withoutSessionSidebar: true,
+  modal: true,
 } satisfies ViewDefinition<AppViewParams>;

@@ -15,7 +15,8 @@ export const HINT_ENTRIES: Record<HintDevice, readonly HintEntry[]> = {
     { id: 'collaboration', anchor: null, use: '[data-testid="phone-partners-project"], [data-testid="phone-partners-friend"], .gg-partners-navrow' },
   ],
   desktop: [
-    { id: 'assistant', anchor: '.gg-sidebar-rail [data-rail="assistant"]', use: '.gg-sidebar-rail [data-rail="assistant"]' },
+    // 界面减法 #51: the assistant is an App in my menu, closed until opened: no place on screen to draw the note by.
+    { id: 'assistant', anchor: null, use: '[data-rail="assistant"]' },
     // GUYI-AI/gugu#2548 the one-list sidebar has no 「项目」 header to hang this note under, and its design (v33) draws
     // none. Opening a project still counts towards account hint progress.
     { id: 'collaboration', anchor: null, use: '[data-project-row]' },

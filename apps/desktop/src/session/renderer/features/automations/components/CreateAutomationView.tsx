@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { CheckCircle2, ChevronDown } from '@/lib/icons';
 import { observer } from 'mobx-react-lite';
 import { useMemo, useState } from 'react';
@@ -33,6 +34,7 @@ export interface CreateAutomationViewProps {
   onClose: () => void;
   onSaved?: (automation: Automation) => void;
   initialTemplate?: BuiltinAutomationTemplate;
+  devicePicker?: ReactNode;
   /** 那台机器此刻做不了事(离线 / server 太旧,#6264):表单照旧看得到,创建与各项一起灰。 */
   readOnly?: boolean;
 }
@@ -41,6 +43,7 @@ export const CreateAutomationView = observer(function CreateAutomationView({
   onClose,
   onSaved,
   initialTemplate,
+  devicePicker,
   readOnly = false,
 }: CreateAutomationViewProps) {
   const formState = useAutomationFormState(undefined, initialTemplate);
@@ -109,6 +112,12 @@ export const CreateAutomationView = observer(function CreateAutomationView({
   return (
     <div className="flex h-full flex-col">
       <SheetHeader title={translate('automations.createTitle')} onClose={onClose} />
+      {devicePicker && (
+        <div className="flex items-center gap-2 px-4 pb-3 text-sm text-foreground-muted">
+          <span>{translate('automations.executionDevice')}</span>
+          {devicePicker}
+        </div>
+      )}
       <fieldset disabled={readOnly} className="contents" data-testid="automation-create-fields">
         <div className="flex-1 overflow-y-auto">
           <div className="flex flex-col gap-4 px-4">

@@ -38,12 +38,11 @@ function InnerColumn() {
 
 async function renderDesktop(theme: 'light' | 'dark', inner: boolean) {
   document.documentElement.dataset.theme = theme;
-  // The desktop main window lays the list on the rail's workspace frame (#7610) in both themes; the card must survive
-  // that rule, so both themes run with a window material like the real main window.
-  document.documentElement.dataset.windowMaterial = 'native';
+  // 界面减法 #10: the list is the window's leftmost column and lies on the window's ground like the old rail did; both
+  // themes run with the desktop window's marker like the real main window.
+  document.documentElement.dataset.windowMaterial = 'opaque';
   harness = createReactHarness();
   await harness.render(<div data-desktop-shell="" style={{ position: 'fixed', inset: 0, display: 'flex' }}>
-    <nav className="gg-sidebar-rail" />
     <div style={{ flex: 1, minWidth: 0, display: 'flex' }}>
       <div className="gg-session-frame" style={{ flex: 1 }}><div className="gg-session-frame-host">
         <div className={`gugu-skin ${theme === 'light' ? 'emlight' : 'emdark'}`} style={{ height: '100%', width: '100%' }}>
@@ -99,13 +98,11 @@ for (const theme of ['light', 'dark'] as const) {
     expect(getComputedStyle(surface).boxShadow).not.toBe('none');
   });
 
-  it(`${theme}: the list and the inner column lie on the one inset workspace frame, ❌ a veil of their own`, async () => {
+  it(`${theme}: the list and the inner column lie on the window's material (no outer frame), ❌ a veil of their own`, async () => {
     const { column } = await renderDesktop(theme, true);
-    const frame = harness.container.querySelector<HTMLElement>('[data-desktop-shell] > .gg-sidebar-rail + div')!;
+    const frame = harness.container.querySelector<HTMLElement>('[data-desktop-shell] > div')!;
     const list = harness.container.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
-    const frameStyle = getComputedStyle(frame);
-    expect(frameStyle.marginTop).toBe('5px');
-    expect(frameStyle.getPropertyValue('--shell-bg').trim()).not.toBe('transparent');
+    expect(getComputedStyle(frame).marginTop).toBe('0px');
     expect(getComputedStyle(list).backgroundColor).toBe('rgba(0, 0, 0, 0)');
     expect(getComputedStyle(column!).backgroundColor).toBe('rgba(0, 0, 0, 0)');
   });

@@ -11,6 +11,7 @@ export const desktopWorkers = {
     entry: 'main/core/git/status/worker.ts',
     file: 'git-status.js',
   },
+  'session-index': { entry: 'main/core/session-index/worker.ts', file: 'session-index.js' },
   'task-turn-search': {
     entry: 'main/core/search/task-turn-search-worker.ts',
     file: 'task-turn-search.js',

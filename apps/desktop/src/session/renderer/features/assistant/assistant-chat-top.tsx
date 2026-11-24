@@ -39,7 +39,7 @@ export function AssistantChatTop({ testIdPrefix, identity, chatId, onSettings, p
           aria-label={t('top.profile', { name: identity.assistant.display_name })}
           data-testid={`${testIdPrefix}-identity`}
         >
-          <Avatar name={identity.assistant.display_name} avatarUrl={identity.assistant.avatar} seed={identity.assistant.id} size={48} isAgent harnessBadge={false} />
+          <Avatar name={identity.assistant.display_name} avatarUrl={identity.assistant.avatar} seed={identity.assistant.id} size={48} isAgent />
           <span className="ta-identity-name">{identity.assistant.display_name}</span>
         </button>
       ) : identity?.kind === 'state' ? (

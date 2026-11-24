@@ -3,7 +3,6 @@ import { readdir, stat, realpath } from 'node:fs/promises'
 import { join, relative, isAbsolute } from 'node:path'
 import { createPiJsonlSource } from '../../../packages/session-core/src/session-record/sources/pi-jsonl.ts'
 import { createSessionTimeline } from '../../../packages/session-core/src/session-record/timeline.ts'
-import { findToolImage } from '../../../packages/session-core/src/session-record/tool-image.ts'
 import { trimAfterResultForTransport, trimOlderForTransport, trimSnapshotForTransport } from '../../../packages/session-core/src/session-record/transport-trim.ts'
 import { createPhoneLiveProjection } from './phone-agent-live.mjs'
 import { phoneInputIdentity } from './phone-input-identity.mjs'
@@ -93,7 +92,7 @@ export function createPhoneTimelineRuntime({ root, store, authorize, historyFloo
         const match = /^pi:([^#]+)#(\d+)$/.exec(entry.key)
         const original = match && agent.fileInputs?.[match[1]]
         if (!original) return [entry]
-        return match[2] === '0' ? [{ ...entry, event: { ...entry.event, text: original.text, files: original.files, content: [{ type: 'text', text: original.text }], contentMode: 'replace' } }] : []
+        return match[2] === '0' ? [{ ...entry, event: { ...entry.event, text: original.text, files: original.files, ...(original.annotations?.length ? { annotations: original.annotations } : {}), content: [{ type: 'text', text: original.text }], contentMode: 'replace' } }] : []
       })
       const projected = live.project(agent, visible)
       const before = new Map()
@@ -154,7 +153,7 @@ export function createPhoneTimelineRuntime({ root, store, authorize, historyFloo
     cached.timeline.syncPendingRequests(pending.map(asRequest))
     for (const settlement of pending) if (settlement.state === 'resolved') cached.settle(settlement)
     cached.timeline.syncPendingRequests(pending.filter((settlement) => settlement.state !== 'cancelled').map(asRequest))
-    cached.timeline.syncQueuedPrompts(Object.values(store.state.jobs).filter((job) => job.agentUserId === agent.agentUserId && job.status === 'queued' && (!job.contextEpoch || job.contextEpoch === agent.contextEpoch)).map((job) => ({ id: job.id, text: job.prompt, ...(job.clientMessageId ? { clientMessageId: job.clientMessageId } : {}), ...(job.files?.length ? { files: job.files } : {}), ...(job.queueEdit ? { queueEdit: job.queueEdit } : {}) })))
+    cached.timeline.syncQueuedPrompts(Object.values(store.state.jobs).filter((job) => job.agentUserId === agent.agentUserId && job.status === 'queued' && (!job.contextEpoch || job.contextEpoch === agent.contextEpoch)).map((job) => ({ id: job.id, text: job.prompt, ...(job.clientMessageId ? { clientMessageId: job.clientMessageId } : {}), ...(job.files?.length ? { files: job.files } : {}), ...(job.annotations?.length ? { annotations: job.annotations } : {}), ...(job.queueEdit ? { queueEdit: job.queueEdit } : {}) })))
     return cached.timeline
   }
   const serialized = async (agent, work) => {
@@ -218,7 +217,6 @@ export function createPhoneTimelineRuntime({ root, store, authorize, historyFloo
     async snapshot(agent, input) { pageSize(input); return readable(agent, (read) => { const result = read.getSnapshot({ limit: input.limit }); return input.trim ? trimSnapshotForTransport(result) : result }) },
     async after(agent, input) { if (!input.cursor || typeof input.cursor.epoch !== 'string' || !Number.isSafeInteger(input.cursor.seq) || input.cursor.seq < 0) throw failure('invalid_args', '手机任务时间线游标无效'); return readable(agent, (read, floor) => { const suffix = floor ? historyClearEpoch(floor) : ''; const result = floor && !input.cursor.epoch.endsWith(suffix) ? { ok: false, reset: 'epoch_changed', snapshot: read.getSnapshot() } : read.getAfter(suffix ? { ...input.cursor, epoch: input.cursor.epoch.slice(0, -suffix.length) } : input.cursor); return input.trim ? trimAfterResultForTransport(result) : result }) },
     async older(agent, input) { pageSize(input); if (typeof input.beforeTurnId !== 'string') throw failure('invalid_args', '请指定要往前读取的任务轮次'); return readable(agent, (read) => { const result = read.getOlder(input); return input.trim ? trimOlderForTransport(result) : result }) },
-    async image(agent, input) { return deliver(agent, (read, floor) => { const found = findToolImage(clearedHistoryResult(read.getSnapshot({ limit: Number.MAX_SAFE_INTEGER }), floor).turns, input.itemId, input.index); if (!found.ok) throw failure(found.code, found.code === 'too_large' ? '这张工具图片超过单次读取大小限制' : '这条手机任务记录中没有指定的工具图片'); return found.image }) },
     async close() { closed = true; await Promise.allSettled([...opening.values()]); for (const { timeline } of [...open.values(), ...hidden.values()]) timeline.dispose(); open.clear(); hidden.clear(); live.clear() },
   }
 }

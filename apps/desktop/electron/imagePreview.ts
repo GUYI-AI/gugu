@@ -1,14 +1,20 @@
-import { nativeImage } from 'electron'
+import { invokeRendererImages } from './ipc-bridge'
+import { IMAGE_PREVIEW, type ScaleImage } from '../src/lib/imagePreview'
+
+export type MainScaledImage = { bytes: Uint8Array; type: string; width: number; height: number }
 
 /**
- * An image's preview, drawn in main: 560 px wide at most, PNG for a PNG (it may be transparent), JPEG otherwise. Null for
- * a format Electron cannot decode (GIF, WebP, HEIC): readers then show the original.
+ * An image scaled for the desktop's main process by the window's renderer (src/lib/imagePreview.ts scaleImage), where
+ * createImageBitmap decodes off every thread anyone waits on. Main never decodes a photo itself: nativeImage decodes on
+ * main's own thread, and a 12 MP photo stopped it for 0.2–0.5 s. The window lives as long as the app (closing it hides it
+ * to the tray), so main always has a renderer to ask; a renderer that cannot decode the format rejects.
  */
-export async function nativeImagePreview(original: Blob, contentType: string): Promise<Blob | null> {
-  const image = nativeImage.createFromBuffer(Buffer.from(await original.arrayBuffer()))
-  if (image.isEmpty()) return null
-  const small = image.getSize().width > 560 ? image.resize({ width: 560, quality: 'good' }) : image
-  return contentType === 'image/png'
-    ? new Blob([new Uint8Array(small.toPNG())], { type: 'image/png' })
-    : new Blob([new Uint8Array(small.toJPEG(80))], { type: 'image/jpeg' })
+export async function rendererScaleImage(bytes: Uint8Array, contentType: string, options: ScaleImage): Promise<MainScaledImage> {
+  return await invokeRendererImages('scale', { bytes, contentType, ...options }) as MainScaledImage
+}
+
+/** An image's preview for main's uploads: the same preview the renderer draws for its own. */
+export async function rendererImagePreview(original: Blob, contentType: string): Promise<Blob> {
+  const preview = await rendererScaleImage(new Uint8Array(await original.arrayBuffer()), contentType, IMAGE_PREVIEW)
+  return new Blob([new Uint8Array(preview.bytes)], { type: preview.type })
 }

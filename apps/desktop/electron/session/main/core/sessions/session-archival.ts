@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 import { db } from '@main/db/client'
 import { kv, sessions } from '@main/db/schema'
 import { archiveTimestamp, sessionArchiveRefusesMessage, type RemovedSessionIdentity, type SessionArchivalState } from '@gugu/core/shared/sessionArchival'
@@ -21,8 +21,13 @@ export function sessionArchivalState(sessionId: string): SessionArchivalState | 
   const row = db.select({ archivedAt: sessions.archivedAt }).from(sessions).where(eq(sessions.id, sessionId)).get()
   if (!row) return null
   const record = db.select({ value: kv.value }).from(kv).where(eq(kv.key, keyFor(sessionId))).get()
-  if (!record) return { sessionId, archivedAt: row.archivedAt, revision: 0, intervals: [] }
-  const value = JSON.parse(record.value) as SessionArchivalState
+  return archivalStateOf(sessionId, row.archivedAt, record?.value ?? null)
+}
+
+/** A session's state from its row's archivedAt and its journal record (null: never journaled). */
+function archivalStateOf(sessionId: string, archivedAt: string | null, journal: string | null): SessionArchivalState {
+  if (journal === null) return { sessionId, archivedAt, revision: 0, intervals: [] }
+  const value = JSON.parse(journal) as SessionArchivalState
   if (value.sessionId !== sessionId || !Number.isSafeInteger(value.revision) || value.revision < 0 || !Array.isArray(value.intervals)) {
     throw new Error(`Session archival journal is invalid: ${sessionId}`)
   }
@@ -37,7 +42,7 @@ export function sessionArchivalState(sessionId: string): SessionArchivalState | 
     if (!value.removedIdentity.userId) throw new Error(`Removed session identity has no id: ${sessionId}`)
     archiveTimestamp(value.removedIdentity.removedAt)
   }
-  return { ...value, archivedAt: row.archivedAt }
+  return { ...value, archivedAt }
 }
 
 /** The row and its refusal interval commit together, before runtime teardown. */
@@ -68,23 +73,28 @@ export function setSessionArchival(sessionId: string, archived: boolean, at = ne
   })
 }
 
+const journalKey = sql`'session-archival:' || ${sessions.id}`
+
 /** Give pre-upgrade archives a stable interval before the host starts delivery. */
 export function initializeSessionArchival(): void {
   db.transaction((tx) => {
-    for (const row of tx.select({ id: sessions.id, archivedAt: sessions.archivedAt }).from(sessions).all()) {
-      if (!row.archivedAt || tx.select({ key: kv.key }).from(kv).where(eq(kv.key, keyFor(row.id))).get()) continue
-      archiveTimestamp(row.archivedAt)
+    // Only archived rows without a journal: one read of the archived slice, ❌ a lookup per session on every inventory.
+    for (const row of tx.select({ id: sessions.id, archivedAt: sessions.archivedAt }).from(sessions)
+      .leftJoin(kv, eq(kv.key, journalKey)).where(and(isNotNull(sessions.archivedAt), isNull(kv.key))).all()) {
+      archiveTimestamp(row.archivedAt!)
       const state: SessionArchivalState = { sessionId: row.id, archivedAt: row.archivedAt, revision: 1,
-        intervals: [{ id: randomUUID(), archivedAt: row.archivedAt, restoredAt: null }] }
+        intervals: [{ id: randomUUID(), archivedAt: row.archivedAt!, restoredAt: null }] }
       tx.insert(kv).values({ key: keyFor(row.id), value: JSON.stringify(state), updatedAt: Date.now() }).run()
     }
   })
 }
 
-/** Existence inventory, shared by the desktop and server host. */
+/** Existence inventory, shared by the desktop and server host: every session with its journal, in one read. */
 export function sessionArchivalInventory(): SessionArchivalState[] {
   initializeSessionArchival()
-  return db.select({ id: sessions.id }).from(sessions).all().map((row) => sessionArchivalState(row.id)!)
+  return db.select({ id: sessions.id, archivedAt: sessions.archivedAt, journal: kv.value }).from(sessions)
+    .leftJoin(kv, eq(kv.key, journalKey)).all()
+    .map((row) => archivalStateOf(row.id, row.archivedAt, row.journal))
 }
 
 /** A refused message ID is permanent even if a later envelope supplies another time. */

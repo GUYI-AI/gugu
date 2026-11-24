@@ -282,6 +282,7 @@ export type CreateEffortsInput = {
   /**
    * 选中的咕咕平台模型在目录里认的推理档(`PlatformModelOption.reasoningEfforts`,#6447);
    * 选的是 harness 自家模型(或没选)就是 null。平台模型的档位 = harness 清单 ∩ 这一组。
+   * 自定义模型走同一格,这一组是 `customModelEfforts`(启动时武装的也是它)。
    */
   platformModel: { reasoningEfforts: readonly string[] | null } | null;
   /** 这条会话落在会话页哪条腿上 —— 平台档位能否送到网关按腿声明(#6218)。 */

@@ -17,19 +17,37 @@ import { ChatManagementActions } from './ChatManagementActions'
 import { SettingsPageHead } from './groupSettingsUi'
 import { settingsDangerRowStyle } from './groupSettingsStyles'
 import { useCloseTopic } from './useCloseTopic'
+import { ChatDetailsQuickActions } from './ChatDetailsQuickActions'
+import { DetailsGroupTitle, DetailsPage } from '../details/DetailsParts'
+import { TopicDetailsMain } from './TopicDetailsMain'
 import { COLOR_MUTED } from './chatPresentation'
 import { useRoomCollab } from '../../hooks/useRoomCollab'
-import type { ChatTopicState } from '../../session/renderer/features/chats/chat-tabs/chat-tab-providers'
 
 // 从 ChatAreaPanel 拆出来的(那份文件行数冻结,#7199 给它加「吃一个会话 id」时腾的位置)。
 // 群信息 / 会话信息(owner 10-26):成员、公告、设置合成一枚页签(chat-info),桌面在对话旁边、手机是整页。
 // 页签本身就是标题和 ×:桌面上一级页不画页头,手机左上返回 = 关掉这一页。
-export type ChatSettingsPanelProps = ChatRightPanelBodyProps & { mobile?: boolean; topic?: ChatTopicState }
+export type ChatSettingsPanelProps = ChatRightPanelBodyProps & { mobile?: boolean }
+type ChatTopicState = { topicChatId: string; name: string }
 
-export function ChatSettingsPanel({ mobile = false, topic, ...body }: ChatSettingsPanelProps) {
+export function ChatSettingsPanel({ mobile = false, ...body }: ChatSettingsPanelProps) {
   const { activeChat, onClose } = body
   const { t } = useTranslation('messaging')
-  if (topic) return <TopicMembers key={topic.topicChatId} topic={topic} sourceChatId={activeChat.id} onClose={onClose} mobile={mobile} />
+  // A topic is a main conversation of its own: its info page is its members (from its source line's roster).
+  if (activeChat.kind === 'topic' && activeChat.source_chat_id) {
+    const sourceChatId = activeChat.source_chat_id
+    const members = (back: () => void) => <TopicMembers key={activeChat.id} topic={{ topicChatId: activeChat.id, name: activeChat.name ?? '' }} sourceChatId={sourceChatId} onClose={back} mobile={mobile} />
+    // 第 16 版:桌面上是话题的「详情」(成员页从它的成员块进);手机照旧直接是成员页。
+    if (mobile) return members(onClose)
+    return <TopicDetailsMain key={activeChat.id} chat={activeChat} currentUserId={body.currentUserId} onClose={onClose}
+      onClearMessages={body.onClearMessages} onSetNotificationLevel={body.onSetNotificationLevel} onTogglePinned={body.onTogglePinned} membersPage={members} />
+  }
+  // 桌面上私聊的「详情」和群、话题是同一张页(DetailsPage 的边距和部件);手机照旧是带页头的整页。
+  if (!mobile && activeChat.kind !== 'group') return (
+    <DetailsPage testId="chat-settings-panel">
+      <ChatDetailsQuickActions chatId={activeChat.id} isGroup={false} />
+      <ChatRightPanelBody {...body} details />
+    </DetailsPage>
+  )
   return (
     <div data-testid="chat-settings-panel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       {activeChat.kind === 'group' || !mobile ? null : <SettingsPageHead title={t('chatArea.settings.conversation')} onClose={onClose} mobile />}
@@ -53,6 +71,8 @@ export function TopicMembers({ topic, sourceChatId, onClose, mobile }: { topic: 
 
 interface ChatRightPanelBodyProps {
   activeChat: ChatItem
+  /** Drawn inside the desktop 详情 page (DetailsPage): its parts and margins, ❌ the drawer's own. */
+  details?: boolean
   /** Where it opens (the members' button: their list); nothing goes back past it. */
   initialPage?: 'main' | 'members' | 'announcement'
   messages: MessageItem[]
@@ -77,7 +97,7 @@ interface ChatRightPanelBodyProps {
 
 // @@@right-panel-body - One right-side surface for DM + group + mobile. Members section differs by chat
 // kind (group gets the rich role-switching list, DM keeps the simple peer card), then ChatManagementActions.
-function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages, onSetNotificationLevel, onTogglePinned, memberProfiles, currentUserId, onOpenUserChat, onWhisper, groupSettings, groupCollabSnapshot, groupCollabError, onReloadGroupCollab, onLeaveGroup, onDissolveGroup }: ChatRightPanelBodyProps) {
+function ChatRightPanelBody({ activeChat, details = false, initialPage, onClose, onClearMessages, onSetNotificationLevel, onTogglePinned, memberProfiles, currentUserId, onOpenUserChat, onWhisper, groupSettings, groupCollabSnapshot, groupCollabError, onReloadGroupCollab, onLeaveGroup, onDissolveGroup }: ChatRightPanelBodyProps) {
   const { t } = useTranslation('messaging')
   const [profileCard] = useState(() => Popover.createHandle<ActiveMemberProfile>())
   const isGroupChat = activeChat.kind === 'group'
@@ -116,8 +136,9 @@ function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages,
         />
       ) : (
         <>
-          <div style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', fontWeight: 'var(--font-weight-medium)', color: 'var(--muted-fg)', padding: '12px 14px 6px', userSelect: 'none' }}>{t('chatArea.settings.members')}</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '0 14px 10px' }}>
+          {details ? <DetailsGroupTitle>{t('chatArea.settings.members')}</DetailsGroupTitle>
+            : <div style={{ fontSize: 'var(--font-caption)', lineHeight: 'var(--lh-caption)', fontWeight: 'var(--font-weight-medium)', color: 'var(--muted-fg)', padding: '12px 14px 6px', userSelect: 'none' }}>{t('chatArea.settings.members')}</div>}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', padding: details ? '0 4px 16px' : '0 14px 10px' }}>
             {shownMembers.map((m, index) => (
               <div key={m.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px' }}>
                 <MemberProfileAvatarButton
@@ -152,10 +173,12 @@ function ChatRightPanelBody({ activeChat, initialPage, onClose, onClearMessages,
               </div>
             )}
           </div>
-          <div style={{ height: '1px', background: 'var(--border-color)', flexShrink: 0, margin: '4px 0' }} />
-          <div className="px-3"><GroupAgentFloodSettings key={activeChat.id} chatId={activeChat.id} /></div>
+          {details ? null : <div style={{ height: '1px', background: 'var(--border-color)', flexShrink: 0, margin: '4px 0' }} />}
+          <div className={details ? 'px-1' : 'px-3'}><GroupAgentFloodSettings key={activeChat.id} chatId={activeChat.id} /></div>
+          {details ? <DetailsGroupTitle>{t('group.settings.sectionChat')}</DetailsGroupTitle> : null}
           <ChatManagementActions
             activeChat={activeChat}
+            appearance={details ? 'details' : undefined}
             onClose={onClose}
             onClearMessages={onClearMessages}
             onSetNotificationLevel={onSetNotificationLevel}

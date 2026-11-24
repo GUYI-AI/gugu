@@ -1,6 +1,6 @@
 import type { TranscriptTurn } from '../acp/client';
 
-type Held = { kind?: string; held?: true; children?: readonly Held[] };
+type Held = { held?: true; children?: readonly Held[] };
 
 /**
  * Whether a page sent this turn as its folded form (transport-trim `folded-form`): some of what its folds show when
@@ -9,11 +9,5 @@ type Held = { kind?: string; held?: true; children?: readonly Held[] };
  */
 export function turnHeld(turn: TranscriptTurn): boolean {
   const held = (node: Held): boolean => node.held === true || node.children?.some(held) === true;
-  return turn.items.some(item => held(item as Held));
-}
-
-/** MCP detail rows need the original payload, rather than another summary-only projection of the same turn. */
-export function turnHasHeldMcp(turn: TranscriptTurn): boolean {
-  const held = (node: Held): boolean => (node.kind === 'mcp-tool-call' && node.held === true) || node.children?.some(held) === true;
   return turn.items.some(item => held(item as Held));
 }

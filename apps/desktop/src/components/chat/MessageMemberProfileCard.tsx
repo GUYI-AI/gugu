@@ -1,4 +1,3 @@
-import type { OpenTopic } from '../../hooks/useTopicSurface'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { useTopicScopedMemberProfile } from '../../hooks/useTopicScopedMemberProfile'
 import { useActiveChatIdentity } from '../../store/chatContext'
@@ -10,7 +9,6 @@ type LayerProps = {
   card: MemberProfileHandle
   memberProfiles: Record<string, MemberProfileCardModel>
   authorityRevision: number
-  asideTopic: OpenTopic | null
   chatId: string | null
   currentUserId: string | null
   isGroupChat: boolean
@@ -28,17 +26,15 @@ export function MessageMemberProfileLayer(props: LayerProps) {
 }
 
 /** The card a message avatar opened, refreshed from the roster and scoped to the topic it was opened in. */
-function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevision, asideTopic, chatId, currentUserId, isGroupChat, groupEditControlsFor, onOpenUserChat, onWhisper }: LayerProps & { opened: ActiveMemberProfile }) {
+function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevision, chatId, currentUserId, isGroupChat, groupEditControlsFor, onOpenUserChat, onWhisper }: LayerProps & { opened: ActiveMemberProfile }) {
   const latest = memberProfiles[opened.member.id]
   const profile = latest ? { ...opened, member: latest } : opened
   const mainChat = useActiveChatIdentity()
-  const fromAside = opened.openedFrom === 'aside'
   const mainTopicChatId = mainChat?.kind === 'topic' ? mainChat.id : null
   const shown = useTopicScopedMemberProfile({
     profile,
     authorityRevision,
     mainTopicChatId,
-    asideTopicChatId: asideTopic?.chatId ?? null,
     currentUserId,
     groupEditControlsFor,
   })
@@ -46,18 +42,16 @@ function MessageMemberProfileCard({ opened, card, memberProfiles, authorityRevis
   return (
     <MemberProfilePopover
       profile={shown.profile}
-      // @@@5856 从话题分栏点开的卡片 ❌ 不给悄悄话:这个动作落在**主线**的输入框上,
-      // 而用户此刻在看的是话题 —— 发出去会落进源群。要在话题里悄悄话,得先有话题自己的入口。
       onClose={() => card.close()}
       onOpenChat={shown.profile.member.id !== currentUserId && onOpenUserChat ? (target) => {
         card.close()
         onOpenUserChat(target)
       } : undefined}
-      onWhisper={isGroupChat && shown.profile.openedFrom !== 'aside' ? (target) => {
+      onWhisper={isGroupChat ? (target) => {
         card.close()
         onWhisper(target)
       } : undefined}
-      searchChatId={(fromAside ? asideTopic?.chatId : chatId) ?? undefined}
+      searchChatId={chatId ?? undefined}
       editControls={shown.editControls}
       testId={AUTOMATION_TEST_IDS.messageAvatarProfileMenu}
     />

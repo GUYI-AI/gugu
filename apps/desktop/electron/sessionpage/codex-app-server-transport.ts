@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { loopbackRequest } from '@gugu/core/local/loopback'
+import { windowsSystemProgram } from '@gugu/core/local/childProcess'
 import net from 'node:net'
 import type { ChildProcess } from 'node:child_process'
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs'
@@ -310,7 +311,7 @@ export function resolveCodexAppServerSpawn(
   }
   if (/\.ps1$/i.test(codexBin)) {
     return {
-      command: 'powershell.exe',
+      command: windowsSystemProgram('WindowsPowerShell\\v1.0\\powershell.exe', env),
       args: ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', codexBin, ...args]
     }
   }
@@ -330,7 +331,7 @@ export function resolveCodexAppServerSpawn(
     )
   }
   return {
-    command: env.ComSpec ?? env.COMSPEC ?? 'C:\\Windows\\System32\\cmd.exe',
+    command: env.ComSpec ?? env.COMSPEC ?? windowsSystemProgram('cmd.exe', env),
     args: cmdArgs,
     windowsVerbatimArguments: true
   }

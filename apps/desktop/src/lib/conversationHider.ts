@@ -8,6 +8,7 @@ export function createConversationHider<Receipt extends PersonalConversationStat
   confirm: (accountId: string, receipt: Receipt) => Promise<void>
   boundary: () => AbortSignal
   operationId: () => string
+  isReceiptSuperseded?: (accountId: string, receipt: Receipt) => boolean
   storage?: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
   storageKey?: string
 }) {
@@ -23,6 +24,10 @@ export function createConversationHider<Receipt extends PersonalConversationStat
       pending.set(key, entry)
     }
     if (entry.inFlight) return entry.inFlight
+    if (entry.receipt && deps.isReceiptSuperseded?.(accountId, entry.receipt)) {
+      entry = { operationId: deps.operationId(), boundary }
+      pending.set(key, entry)
+    }
     const current = entry
     const request = async () => {
       const save = () => deps.storage?.setItem(`${deps.storageKey}:${key}`, JSON.stringify({ operationId: current.operationId, receipt: current.receipt }))

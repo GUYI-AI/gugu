@@ -7,12 +7,10 @@ import { chat, createNode, createReactHarness, renderWithAppProviders } from '..
 import { openImRepository, type AccountImRepository } from '../../../../apps/desktop/src/lib/imRepository'
 import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localSyncDb'
 import { queryClient } from '../../../../apps/desktop/src/lib/replica'
-import { requestTopicSplit } from '../../../../apps/desktop/src/lib/topicSplitRequest'
-import { pressBack } from '../../../../apps/desktop/src/components/ui/sheetStack'
+import { captureOpenedChats } from '../../../support/openedChats'
 
-const { getImRepositoryMock, TOPICS, pinPrefs } = vi.hoisted(() => ({
+const { getImRepositoryMock, TOPICS } = vi.hoisted(() => ({
   getImRepositoryMock: vi.fn(),
-  pinPrefs: { ids: ['t1'] },
   TOPICS: [
     { chat_id: 't1', name: '把登录页的报错改成中文并补上测试', source_message_id: 'm1', creator_user_id: 'user-1', last_message_at: null, message_count: 3, participant_count: 2, is_participant: true },
     { chat_id: 't2', name: '周报', source_message_id: 'm2', creator_user_id: 'user-1', last_message_at: null, message_count: 1, participant_count: 2, is_participant: true },
@@ -20,11 +18,6 @@ const { getImRepositoryMock, TOPICS, pinPrefs } = vi.hoisted(() => ({
 }))
 
 vi.mock('../../../../apps/desktop/src/platform', () => import('../../../support/capacitorPlatformTestDouble'))
-vi.mock('../../../../apps/desktop/src/lib/chatPinSettings', () => ({
-  readChatPinSettings: vi.fn(async () => ({ topicIds: [...pinPrefs.ids] })),
-  setChatPinPreference: vi.fn(),
-  watchChatPinSettings: () => () => {},
-}))
 // A closing panel retained for its exit animation must not count as an open panel.
 vi.mock('framer-motion', async (importOriginal) => ({
   ...await importOriginal<typeof import('framer-motion')>(),
@@ -58,11 +51,12 @@ vi.mock('../../../../apps/desktop/src/lib/chat', () => ({
 
 let harness: ReturnType<typeof createReactHarness>
 let repository: AccountImRepository
+let opened: ReturnType<typeof captureOpenedChats>
 
 beforeEach(async () => {
-  pinPrefs.ids = ['t1']
   queryClient.clear()
   harness = createReactHarness()
+  opened = captureOpenedChats()
   repository = await openImRepository('user-1', { adapter: createMemoryLocalSyncDb() })
   getImRepositoryMock.mockReset()
   getImRepositoryMock.mockResolvedValue(repository)
@@ -71,16 +65,17 @@ beforeEach(async () => {
 afterEach(() => {
   repository.close()
   harness.cleanup()
+  opened.stop()
   queryClient.clear()
 })
 
 let topicRows: Record<string, Partial<ReturnType<typeof chat>>> = {}
-async function render(chatId: string, mobile = true, kind: 'group' | 'dm' = 'group') {
+async function render(chatId: string, mobile = true, kind: 'group' | 'dm' | 'topic' = 'group') {
   await renderWithAppProviders(harness, createNode(ChatAreaPanel, { activeTab: 'chats', mobile, hidden: false, openNonce: 0 }), {
     chat: {
       getImRepository: getImRepositoryMock,
       activeChatId: chatId,
-      activeChat: chat({ id: chatId, kind, name: '登录改版' }),
+      activeChat: chat({ id: chatId, kind, name: '登录改版', ...(kind === 'topic' ? { source_chat_id: 'g1' } : {}) }),
       chats: TOPICS.map((topic) => chat({ id: topic.chat_id, kind: 'topic', source_chat_id: 'g1', name: topic.name, ...topicRows[topic.chat_id] })),
     },
   })
@@ -104,15 +99,13 @@ async function pickTopic(id: string | null) {
 }
 
 describe('shared group topic navigation (#446, #837, #2797)', () => {
-  it('phone: the composer topic sheet contains Group chat and every topic without pinning', async () => {
-    pinPrefs.ids = []
+  it('phone: the composer topic sheet contains Group chat and every topic', async () => {
     await render('g1')
     expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
     await openTopics()
     expect(mainChoice()?.getAttribute('aria-checked')).toBe('true')
     expect(choice('t1')?.textContent).toContain(TOPICS[0]!.name)
     expect(choice('t2')).not.toBeNull()
-    expect(q('[data-testid="topic-split-pane"]')).toBeNull()
   })
 
   it('phone: topics calling you precede ordinary unread topics, marked red with the call count; other unread is a grey dot', async () => {
@@ -128,25 +121,18 @@ describe('shared group topic navigation (#446, #837, #2797)', () => {
     } finally { topicRows = {} }
   })
 
-  it('selects a topic in the existing message pane and returns to Group chat from the composer', async () => {
+  it('picking a topic opens it as the main conversation; inside it, Group chat opens the group', async () => {
     await render('g1')
     await pickTopic('t1')
-    expect(q('[data-testid="topic-split-pane"]')?.dataset.topicId).toBe('t1')
-    expect(q('[data-testid="topic-split-back"]')).toBeNull()
+    expect(opened.chatIds).toEqual(['t1'])
+    harness.cleanup()
+    harness = createReactHarness()
+    await render('t1', true, 'topic')
     await openTopics()
     expect(choice('t1')?.getAttribute('aria-checked')).toBe('true')
+    expect(mainChoice()?.getAttribute('aria-checked')).toBe('false')
     await act(async () => { mainChoice()!.click() })
-    await vi.waitFor(() => expect(q('[data-testid="topic-split-pane"]')).toBeNull())
-    expect(q('[data-testid="phone-room-topics"]')?.textContent).toContain('话题')
-  })
-
-  it('phone: system back closes the open topic and shows the group', async () => {
-    await render('g1')
-    await pickTopic('t2')
-    await act(async () => { pressBack() })
-    expect(q('[data-testid="topic-split-pane"]')).toBeNull()
-    await openTopics()
-    expect(mainChoice()?.getAttribute('aria-checked')).toBe('true')
+    expect(opened.chatIds).toEqual(['t1', 'g1'])
   })
 
   it('a group without topics still has the main conversation and Agent controls', async () => {
@@ -157,30 +143,12 @@ describe('shared group topic navigation (#446, #837, #2797)', () => {
     expect(mainChoice()?.getAttribute('aria-checked')).toBe('true')
   })
 
-  it('retains the existing pinned right split on desktop', async () => {
+  it('desktop: no topic tab strip under the group head (pinning a topic only orders the inner sidebar)', async () => {
     await render('g1', false)
-    await vi.waitFor(() => expect(tab('t1')).not.toBeNull())
-    expect(tab('t2')).toBeNull()
-    expect(q('[data-testid="phone-room-composer-controls"]')).toBeNull()
-    await act(async () => { tab('t1')!.click() })
-    expect(q('[data-testid="topic-split-pane"]')?.dataset.topicId).toBe('t1')
-    expect(q('[data-testid="topic-split-close"]')).not.toBeNull()
-  })
-
-  it('reflects an externally opened topic in the composer sheet and keeps Group chat reachable', async () => {
-    await render('g1')
-    await act(async () => { requestTopicSplit({ chatId: 't2', name: '周报', sourceChatId: 'g1' }) })
-    await vi.waitFor(() => expect(q('[data-testid="topic-split-pane"]')?.dataset.topicId).toBe('t2'))
-    await openTopics()
-    expect(mainChoice()?.getAttribute('aria-checked')).toBe('false')
-    expect(choice('t2')?.getAttribute('aria-checked')).toBe('true')
-  })
-
-  it('desktop: hides the pinned strip when no topics are pinned', async () => {
-    pinPrefs.ids = []
-    await render('g1', false)
-    await vi.waitFor(() => expect(queryClient.getQueryData(['chatPins', 'user-1', 'g1'])).toEqual({ topicIds: [] }))
+    await vi.waitFor(() => expect(q('[data-testid="session-chat-panel"]')).not.toBeNull())
     expect(q('[data-testid="phone-chat-tabs"]')).toBeNull()
+    expect(tab('t1')).toBeNull()
+    expect(q('[data-testid="phone-room-composer-controls"]')).toBeNull()
   })
 
   it('does not add room navigation to a direct message', async () => {

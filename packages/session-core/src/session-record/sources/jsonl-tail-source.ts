@@ -5,7 +5,7 @@ import type {
   SessionRecordSource,
   SessionRecordSourceEvents
 } from '../contract';
-import { jsonlCheckAt, locateImages, readRecordImage } from './record-images';
+import { jsonlCheckAt, locateImages } from './record-images';
 import { initialTree, keepNode, markTurn, type RecordNode, type TreeState } from './record-tree';
 import { emitJsonLines, pollInterval, warnOf, type SessionRecordSourceOptions } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
@@ -174,7 +174,6 @@ export function createJsonlTailSource<S>(
       await reader?.catchUp();
       await again;
     },
-    readImage: readRecordImage,
     // resume-tail: a plain JSONL record starts at a line start, with the decoder state a read had there (a fill read's
     // `RecordEntry.state`). A `.zst` archive (only found by a snapshot read) starts at its beginning.
     async startingAt(position, at) {

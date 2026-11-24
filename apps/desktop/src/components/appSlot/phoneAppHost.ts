@@ -585,6 +585,9 @@ export function hostAppFrame(
     if (bound) return bound
     if (method === 'dispatch' && args.to && typeof args.to === 'object' && Object.hasOwn(args.to, 'binding')) return phoneBindings.draft(hosted.binding.extensionId, args)
     switch (method) {
+      // 64 A phone keeps no picture of a widget: its placeholder gives way at the page's first paint (`painted`), as before.
+      case 'ready':
+        return undefined
       case 'toast':
         // #1925 (44) The host's own toast, by the desktop's rule (app-toast.ts): a page on a phone is the person's; on screen =
         // this frame laid out, focused = the app in front.

@@ -1,4 +1,5 @@
 import { myAgentsInChat, type ChatAgentEntry, type ChatAgentScope } from './chat-agents';
+import { activityMs, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels';
 
 // #2548 固定到左侧栏 (Pin to sidebar). 置顶 only orders a session first within the list it is in; 固定到左侧栏 gives
 // an agent that lives in a group or a project its own row at the top of the desktop left list, saying where it lives.
@@ -41,6 +42,7 @@ export type SidebarPinCandidate = {
   isPinnedToSidebar?: boolean;
   archivedAt?: string | null;
   lastInteractedAt?: string | null;
+  createdAt?: string | null;
 };
 
 export type PinnedSidebarAgent<T extends SidebarPinCandidate, H extends SidebarAgentHome> = { session: T; home: H };
@@ -64,10 +66,7 @@ export function pinnedSidebarAgents<T extends SidebarPinCandidate, H extends Sid
     const home = homeOf(session);
     if (home) pinned.push({ session, home });
   }
-  return pinned.sort((a, b) => interactedAt(b.session) - interactedAt(a.session));
-}
-
-function interactedAt(session: SidebarPinCandidate): number {
-  const at = session.lastInteractedAt ? Date.parse(session.lastInteractedAt) : Number.NaN;
-  return Number.isNaN(at) ? Number.NEGATIVE_INFINITY : at;
+  // 智能体的那一种次序(compareByRecentActivity),同侧栏「我的智能体」。
+  const stamp = ({ session }: PinnedSidebarAgent<T, H>) => ({ id: session.sessionId, activityMs: activityMs(session.lastInteractedAt, session.createdAt) });
+  return pinned.sort((a, b) => compareByRecentActivity(stamp(a), stamp(b)));
 }

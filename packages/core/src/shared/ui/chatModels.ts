@@ -250,10 +250,18 @@ export function activityMs(lastAt: string | null | undefined, createdAt: string 
 
 /**
  * 「按最近动静排」的唯一次序:会话列表、话题、群 / 项目里的智能体都读它。动静新的在前,同一刻按 id,次序稳定。
- * ❌ 掺状态、置顶:状态只是行上的记号,置顶各列表自己在外面另排。
+ * ❌ 掺状态、置顶:状态只是行上的记号;会话 / 话题的置顶在外面由 comparePinnedFirst 另排一道。
  */
 export function compareByRecentActivity(a: { id: string; activityMs: number }, b: { id: string; activityMs: number }): number {
   return b.activityMs - a.activityMs || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+}
+
+/**
+ * 名单接口(App 的 `chats.members`、MCP 的 message_members / 好友名单)交出成员时的次序:按名字,同名按 id。名单没有活动时间,
+ * 接口只保证次序稳定(翻页、重读都一样);界面上怎么排由显示它的地方定(列表 compareByRecentActivity,选人框 rankMentionCandidates)。
+ */
+export function compareByName(a: { id: string; name: string | null | undefined }, b: { id: string; name: string | null | undefined }): number {
+  return String(a.name ?? '').localeCompare(String(b.name ?? '')) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 }
 
 // 解析比较(非字典序):服务端时间戳带 +00:00 后缀、客户端 toISOString 带 Z,字符串序会错判。
@@ -263,6 +271,11 @@ export function compareChatsByActivityDesc(
 ): number {
   const stamp = (chat: typeof a) => ({ id: chat.id, activityMs: activityMs(chat.last_message_at, chat.created_at) })
   return compareByRecentActivity(stamp(a), stamp(b))
+}
+
+/** 置顶的会话 / 话题排在没置顶的前面;同档的次序交给调用方的下一道(一般是 compareChatsByActivityDesc)。 */
+export function comparePinnedFirst(a: Pick<ChatItem, 'is_pinned'>, b: Pick<ChatItem, 'is_pinned'>): number {
+  return Number(Boolean(b.is_pinned)) - Number(Boolean(a.is_pinned))
 }
 
 export function upsertChatRow(chats: ChatItem[], chat: ChatItem): ChatItem[] {

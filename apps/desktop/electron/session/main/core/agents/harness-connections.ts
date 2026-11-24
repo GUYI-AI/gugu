@@ -25,11 +25,10 @@ import {
 import { createClaudeCredentialStore, type ClaudeCredentialStore } from './claude-credential-store';
 import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
 import {
-  activateCodexAccount,
   copyCodexUpgradeSignIn,
   assertCodexFileCredentialStore,
-  codexCredentialRoot,
-  codexSignInSaved,
+  codexAccountUsesLegacyRoot,
+  bindLegacyCodexRootForLogin,
   ensureCodexVault,
   type CodexAuthSlotPaths,
 } from './codex-auth-slot';
@@ -43,11 +42,11 @@ import { reportAgentHomeMigrationFailure } from '../../../../error-summary-repor
 import { loginShellEnv } from '@main/utils/userEnv';
 import { nativeConfigRoot } from './native-config-root';
 export { nativeConfigRoot };
-import { nativeCodexAuthEnvironment } from './codex-native-auth-source';
+import { nativeCodexAuthEnvironment, readNativeCodexOAuth } from './codex-native-auth-source';
 import { reconcileCodexNativeReference } from './codex-native-auth-migration';
-import { CODEX_NATIVE_AUTH_ROOT } from '@gugu/core/local/codex-native-auth.mjs';
+import { CODEX_NATIVE_AUTH_ROOT, codexOAuthIdentity } from '@gugu/core/local/codex-native-auth.mjs';
 
-/** Account connections hold sign-ins in Gugu's managed root. Custom models keep their own provider credentials. */
+/** Subscription selection and credential routing for installed harnesses. */
 
 type Provider = 'claude' | 'codex';
 
@@ -140,23 +139,22 @@ export async function selectHarnessConnection(
 ): Promise<void> {
   supported(providerId);
   await ensureNative(providerId);
-  if (providerId === 'codex') await reconcileNativeCodex(options.nativeEnv);
+  await applyHarnessSelection(providerId, connectionId, options.nativeEnv);
+}
+
+async function applyHarnessSelection(
+  providerId: string,
+  connectionId: string,
+  nativeEnv: Record<string, string | undefined> | undefined,
+): Promise<void> {
   const target = await registry.getAccount(namespace(providerId), connectionId);
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
-  // 已有会话跟着默认订阅走。账号连接把凭据换进用户根;API 连接靠环境变量起,
-  // 用户根里的账号原样留着(换回那个账号时它就是最新的那份)。
-  if (isAccountProvider(providerId) && (target.meta?.harnessConnection?.kind ?? 'native') !== 'api-key') {
-    const current = await defaultConnectionId(providerId);
-    const ids = await accountConnectionIds(providerId);
-    if (providerId === 'codex') {
-      const native = await registry.getAccount(namespace(providerId), 'native');
-      if (connectionId !== 'native' || !native?.meta?.harnessConnection?.nativeOAuth) {
-        await activateCodexAccount(codexSlotPaths(options.nativeEnv), ids, connectionId, current);
-      }
-    }
-    else await activateClaudeAccount(claudeSlotPaths(options.nativeEnv), ids, connectionId, current);
+  if (providerId === 'claude' && target.meta?.harnessConnection?.kind !== 'api-key') {
+    await activateClaudeAccount(claudeSlotPaths(nativeEnv), await accountConnectionIds(providerId), connectionId, await defaultConnectionId(providerId));
   }
-  await registry.setDefaultAccount(namespace(providerId), connectionId);
+  if (!(await registry.setDefaultAccount(namespace(providerId), connectionId))) {
+    throw new Error('Connection no longer exists');
+  }
 }
 
 /**
@@ -170,25 +168,18 @@ export async function assertHarnessConnectionSelectable(
 ): Promise<void> {
   supported(providerId);
   await ensureNative(providerId);
-  if (providerId === 'codex') {
-    await reconcileNativeCodex(options.nativeEnv);
-    const native = await registry.getAccount(namespace(providerId), 'native');
-    if (connectionId === 'native' && native?.meta?.harnessConnection?.nativeOAuth) return;
-  }
   const target = await registry.getAccount(namespace(providerId), connectionId);
   if (!target || target.meta?.harnessConnection?.removed) throw new Error('Connection no longer exists');
-  if (target.meta?.credentialSource === 'vendor-key') return;
-  // 其余家只有原生与 API Key 连接:原生就是这家 CLI 自己的那份,没有凭据要换。
-  if (!isAccountProvider(providerId)) return;
-  if (providerId === 'codex') await assertCodexFileCredentialStore(managedConfigRoot('codex'));
-  if ((await credentialRoot(providerId, connectionId, options.nativeEnv)) === 'native') return;
-  const saved =
-    providerId === 'codex'
-      ? await codexSignInSaved(codexSlotPaths(options.nativeEnv), connectionId)
-      : await claudeSignInSaved(claudeSlotPaths(options.nativeEnv), connectionId);
-  if (!saved) {
-    throw new Error(`The selected ${providerId === 'codex' ? 'Codex' : 'Claude'} account has no saved sign-in; sign in to it again`);
-  }
+  if (target.meta?.credentialSource === 'vendor-key' || !isAccountProvider(providerId)) return;
+  if (providerId === 'codex') {
+    // Returning to the native connection is also how the user returns to a signed-out state.
+    if (connectionId === 'native') return;
+    const auth = await readNativeCodexOAuth(await codexConnectionCredentialRoot(connectionId));
+    const tokens = auth?.tokens as { access_token?: unknown } | undefined;
+    if (codexOAuthIdentity(auth) && typeof tokens?.access_token === 'string' && tokens.access_token.trim()) return;
+  } else if ((await claudeConnectionCredentialRoot(connectionId, options.nativeEnv)) === 'native'
+    || await claudeSignInSaved(claudeSlotPaths(options.nativeEnv), connectionId)) return;
+  throw new Error(`The selected ${providerId === 'codex' ? 'Codex' : 'Claude'} account has no saved sign-in; sign in to it again`);
 }
 
 /**
@@ -305,28 +296,31 @@ async function accountConnectionIds(providerId: Provider): Promise<string[]> {
     .map((row) => row.accountId);
 }
 
-async function credentialRoot(
-  providerId: Provider,
-  connectionId: string,
-  nativeEnv?: Record<string, string | undefined>
+async function claudeConnectionCredentialRoot(
+  connectionId: string, nativeEnv?: Record<string, string | undefined>
 ): Promise<'native' | 'vault'> {
-  const ids = await accountConnectionIds(providerId);
-  const selected = await defaultConnectionId(providerId);
-  return providerId === 'codex'
-    ? codexCredentialRoot(codexSlotPaths(nativeEnv), ids, connectionId, selected)
-    : claudeCredentialRoot(claudeSlotPaths(nativeEnv), ids, connectionId, selected);
+  return claudeCredentialRoot(claudeSlotPaths(nativeEnv), await accountConnectionIds('claude'), connectionId, await defaultConnectionId('claude'));
 }
+
+async function codexConnectionCredentialRoot(connectionId: string): Promise<string> {
+  const paths = codexSlotPaths();
+  return await codexAccountUsesLegacyRoot(paths, () => accountConnectionIds('codex'), connectionId)
+    ? paths.nativeRoot : paths.vaultRoot(connectionId);
+}
+
+type HarnessConnectionInput = {
+  connectionId?: string;
+  sessionId?: string;
+  sourceSessionId?: string;
+  /** 解析「用户自己的配置根」用的 env(含用户 shell 里导出的 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`)。 */
+  nativeEnv?: Record<string, string | undefined>;
+  forLogin?: boolean;
+};
 
 /** Resolved exclusively on the credential-owning machine, never in a renderer. */
 export async function resolveHarnessConnection(
   providerId: string,
-  input: {
-    connectionId?: string;
-    sessionId?: string;
-    sourceSessionId?: string;
-    /** 解析「用户自己的配置根」用的 env(含用户 shell 里导出的 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`)。 */
-    nativeEnv?: Record<string, string | undefined>;
-  } = {}
+  input: HarnessConnectionInput = {},
 ): Promise<Partial<AgentRunContext>> {
   if (!isAccountProvider(providerId)) {
     const vendor = vendorKeyOf(providerId);
@@ -341,47 +335,67 @@ export async function resolveHarnessConnection(
     return { connectionId: id, credentialEnv: Object.fromEntries(vendor.envVars.map((name) => [name, secret])), unsetEnv: [...vendor.unsetEnv], vendorKeyAccount: true };
   }
   await ensureNative(providerId);
-  if (providerId === 'codex') await reconcileNativeCodex(input.nativeEnv);
+  return resolveAccountHarnessConnection(providerId, input);
+}
+
+async function resolveAccountHarnessConnection(
+  providerId: Provider,
+  input: HarnessConnectionInput,
+): Promise<Partial<AgentRunContext>> {
   // 会话(不论哪条、什么时候建的)和不指名的读取跟默认连接走;只有按连接问的(登录、登录状态、用量)才指名。
   const forSession = Boolean(input.sessionId) || !input.connectionId;
-  let id = forSession ? await defaultConnectionId(providerId) : input.connectionId!;
-  let account = await registry.getAccount(namespace(providerId), id);
-  if (account?.meta?.harnessConnection?.migratedTo) {
-    id = 'native';
-    account = await registry.getAccount(namespace(providerId), id);
+  const scope = namespace(providerId);
+  let account = await registry.getAccount(scope, forSession ? undefined : input.connectionId);
+  if (account?.meta?.harnessConnection?.migratedTo) account = await registry.getAccount(scope, 'native');
+  if (!account) throw new Error(`The session’s subscription connection is unavailable (${scope}/${input.connectionId ?? 'default'})`);
+  const id = account.accountId;
+  if (providerId === 'codex') return resolveCodexConnection(id, account.meta?.harnessConnection, input);
+  const unset = account.meta?.harnessConnection?.kind === 'account' ? { unsetEnv: [...CLAUDE_CONNECTION_UNSET_ENV] } : {};
+  if (forSession || (await claudeConnectionCredentialRoot(id, input.nativeEnv)) === 'native') {
+    return { connectionId: id, ...unset };
   }
-  if (!account) throw new Error(`The session’s subscription connection is unavailable (${namespace(providerId)}/${id})`);
-  const details = account.meta?.harnessConnection ?? { kind: 'native' as const };
-  const unsetEnv = providerId === 'codex' ? [...CODEX_CONNECTION_UNSET_ENV] : [...CLAUDE_CONNECTION_UNSET_ENV];
-  const unset = details.kind === 'account' ? { unsetEnv } : {};
-  const nativeLogin = providerId === 'codex' && id === 'native'
-    ? { loginConfigRootEnv: { CODEX_HOME: nativeConfigRoot('codex', input.nativeEnv ?? { ...process.env, ...loginShellEnv() }) } } : {};
-  if (providerId === 'codex' && id === 'native') {
-    const userEnv = Object.fromEntries(Object.entries(input.nativeEnv ?? { ...process.env, ...loginShellEnv() })
-      .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
-    const root = nativeConfigRoot('codex', userEnv);
-    const nativeAuth = await nativeCodexAuthEnvironment(root, userEnv);
-    if (nativeAuth) return { connectionId: id, credentialEnv: nativeAuth, unsetEnv, ...nativeLogin };
-    // A native login button always invokes the same terminal login, including when no file exists yet.
-    if (details.nativeOAuth) return { connectionId: id, credentialEnv: { [CODEX_NATIVE_AUTH_ROOT]: root }, unsetEnv, ...nativeLogin };
-  }
-  if (providerId === 'codex' && forSession && id !== 'native'
-    && (await registry.getAccount(namespace(providerId), 'native'))?.meta?.harnessConnection?.nativeOAuth) {
-    await activateCodexAccount(codexSlotPaths(), await accountConnectionIds(providerId), id, await defaultConnectionId(providerId));
-  }
-  // Sessions use the managed root. An inactive account is read from its own vault.
-  if (forSession || (await credentialRoot(providerId, id, input.nativeEnv)) === 'native') {
-    return { connectionId: id, ...unset, ...nativeLogin };
-  }
-  if (providerId === 'codex') await ensureCodexVault(vaultRoot(providerId, id));
-  else await ensureClaudeVault(vaultRoot(providerId, id));
+  await ensureClaudeVault(vaultRoot('claude', id));
   return {
-    connectionId: id,
-    credentialHome: connectionHome(providerId, id),
-    configRootEnv: { [requireNativeHome(providerId).envVar]: vaultRoot(providerId, id) },
-    ...unset,
-    ...nativeLogin,
+    connectionId: id, credentialHome: connectionHome('claude', id),
+    configRootEnv: { [requireNativeHome('claude').envVar]: vaultRoot('claude', id) }, ...unset,
   };
+}
+
+async function resolveCodexConnection(
+  id: string, details: StoredConnection, input: HarnessConnectionInput
+): Promise<Partial<AgentRunContext>> {
+  const env = Object.fromEntries(Object.entries(input.nativeEnv ?? { ...process.env, ...loginShellEnv() })
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string'));
+  const unsetEnv = [...CODEX_CONNECTION_UNSET_ENV];
+  const terminal = id === 'native' ? nativeConfigRoot('codex', env) : undefined;
+  if (input.forLogin && terminal) {
+    return { connectionId: id, unsetEnv, configRootEnv: { CODEX_HOME: terminal } };
+  }
+  if (terminal) {
+    const credentialEnv = await nativeCodexAuthEnvironment(terminal, env);
+    if (credentialEnv) return { connectionId: id, credentialEnv, unsetEnv };
+    if (details?.nativeOAuth) {
+      return { connectionId: id, credentialEnv: { [CODEX_NATIVE_AUTH_ROOT]: terminal }, unsetEnv };
+    }
+  }
+
+  const stored = await codexConnectionCredentialRoot(id);
+  const managed = managedConfigRoot('codex');
+  if (input.forLogin) {
+    if (stored === managed) await bindLegacyCodexRootForLogin(codexSlotPaths(), id);
+    else await ensureCodexVault(stored);
+    return {
+      connectionId: id, unsetEnv, configRootEnv: { CODEX_HOME: stored },
+      ...(stored !== managed ? { credentialHome: connectionHome('codex', id) } : {}),
+    };
+  }
+  // Conversations keep the managed history root; only the account-specific auth route changes.
+  const credentialEnv = await nativeCodexAuthEnvironment(stored, env);
+  if (credentialEnv || stored !== managed || id !== 'native') {
+    return { connectionId: id, credentialEnv: credentialEnv ?? { [CODEX_NATIVE_AUTH_ROOT]: stored }, unsetEnv };
+  }
+  // New installations with no saved file can still use the native CLI's usual sign-in flow.
+  return { connectionId: id };
 }
 
 /** An event must be attributed to the account the session actually ran on, never a guess. */
@@ -391,7 +405,7 @@ export async function sessionHarnessConnectionId(sessionId: string | undefined):
   if (!row) return undefined;
   const custom = customModelRefFromOption(row.config?.model);
   if (custom) return custom.connectionId;
-  // The active account in the managed root follows the selected subscription.
+  // Subscription sessions follow the current default; custom-model sessions are handled above.
   if (row.provider === 'codex' || row.provider === 'claude') return defaultConnectionId(row.provider);
   if (row.provider && vendorKeyOf(row.provider)) return (await registry.getDefaultAccountId(namespace(row.provider))) ?? 'native';
   return 'native';

@@ -6,7 +6,7 @@ import { usePaneContext } from './pane-context';
 import { TabBar } from './tab-bar';
 import { isUnavailableTabResource, UnavailableTabContent } from './unavailable-tab';
 import { RetainedTabContent, useRetainedTabs } from './retained-tab-content';
-import { fullscreenCover, OverFullscreenStrip, tabFullscreen } from './tab-fullscreen';
+import { fullscreenCover, tabFullscreen } from './tab-fullscreen';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 
@@ -30,6 +30,8 @@ type PaneContentProps = {
   reserveShellRestoreLane?: boolean;
   leadingReservePx?: number;
   contentOverlay?: ReactNode;
+  /** No workspace yet (its machine does not answer): only conversation pages draw; the others wait in the strip. */
+  conversationsOnly?: boolean;
 };
 
 /** One actual pane: its page, with the session's strip over it unless the strip is drawn above a pair. */
@@ -41,7 +43,7 @@ export const PaneContent = observer(function PaneContent({ part = 'all', ...prop
 
 const PaneBody = observer(function PaneBody({
   emptyState, tabLeadingSlot, tabTrailingSlot, actionsSlot, hideTabBar,
-  reserveShellRestoreLane, leadingReservePx, contentOverlay, underStrip,
+  reserveShellRestoreLane, leadingReservePx, contentOverlay, underStrip, conversationsOnly = false,
 }: Omit<PaneContentProps, 'part'> & { underStrip: boolean }) {
   const { paneId, pane, isFocusedPane } = usePaneContext();
   const shellRef = useRef<HTMLDivElement | null>(null);
@@ -108,11 +110,11 @@ const PaneBody = observer(function PaneBody({
         event.preventDefault();
         void pane.go(id, event.button === 3 ? -1 : 1);
       }}>
-      {pane.resolvedTabs.length > 0 && !hideTabBar && <OverFullscreenStrip.Provider value={fullscreen}><TabBar leadingSlot={tabLeadingSlot} tabTrailingSlot={tabTrailingSlot} actionsSlot={actionsSlot} reserveShellRestoreLane={reserveShellRestoreLane} leadingReservePx={leadingReservePx} /></OverFullscreenStrip.Provider>}
+      {pane.resolvedTabs.length > 0 && !hideTabBar && <TabBar leadingSlot={tabLeadingSlot} tabTrailingSlot={tabTrailingSlot} actionsSlot={actionsSlot} reserveShellRestoreLane={reserveShellRestoreLane} leadingReservePx={leadingReservePx} />}
       <div ref={setContentRef} data-pane-content="" tabIndex={-1} className="relative min-h-0 min-w-0 flex-1 bg-tab-face">
         <PaneDimensionProvider sink={pane}>
           {isOver && <div data-pane-content-drop-preview="" className="pointer-events-none absolute inset-0 z-20 bg-foreground/10" />}
-          {pane.registry.all().filter((provider) => retained.has(provider.kind)).map((provider) => {
+          {pane.registry.all().filter((provider) => retained.has(provider.kind) && (!conversationsOnly || provider.conversation)).map((provider) => {
             const Content = provider.TabContent;
             return (
               <RetainedTabContent key={provider.kind} visible={!unavailable && active?.kind === provider.kind} className="absolute inset-0" data-pane-layer={provider.kind} data-pane-layer-key={provider.kind} data-pane-tab={active?.kind === provider.kind ? active?.tabId : undefined}>

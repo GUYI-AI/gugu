@@ -1,0 +1,48 @@
+/* @@@running-beat - the one "running" mark of the product: a braille snake winding down a six-dot cell
+   and back up (⠈ ⠉ ⠋ ⠓ ⠒ ⠐ … ⠓ ⠋ ⠉ ⠈), twenty-four states, 125 ms each. Every running indicator is this glyph
+   on this beat, and each joins the document timeline (joinSharedBeat), so however many run at once the window
+   changes at most eight times a second. Each change is a whole-window frame on macOS (WindowServer recomposites
+   the window), so the cost of "running" is set by how often anything running changes, not by how small it is: a
+   sweep or a linear loop that changed every vsync kept a fanless laptop hot with nothing else on screen.
+
+   Markup: <span class="gg-running-glyph"><span class="gg-running-glyph__strip"></span></span>. The twenty-four
+   frames are generated content stacked in the strip (no DOM text: nothing to copy, read or measure); a one-line
+   window shows one, and a stepped transform moves the strip on the compositor. The strip's own box is that one
+   line too, the frames overflowing it: a 24-line box reached 23 lines below the glyph for anything that measures
+   the row's boxes. */
+.gg-running-glyph {
+  display: inline-block;
+  flex: none;
+  height: 1lh;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+.gg-running-glyph__strip {
+  display: block;
+  height: 1lh;
+  animation: gg-running-glyph 3s steps(24, end) infinite;
+}
+
+.gg-running-glyph__strip::before {
+  content: '\2808\A\2809\A\280B\A\2813\A\2812\A\2810\A\2810\A\2812\A\2816\A\2826\A\2824\A\2820\A\2820\A\2824\A\2826\A\2816\A\2812\A\2810\A\2810\A\2812\A\2813\A\280B\A\2809\A\2808';
+  white-space: pre;
+}
+
+/* Held still: an agent running out of sight (AgentParkedGlyph) shows one frame of the snake, not its motion. */
+.gg-running-glyph--still > .gg-running-glyph__strip {
+  animation: none;
+  transform: translateY(-200%);
+}
+
+@keyframes gg-running-glyph {
+  to {
+    transform: translateY(-2400%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gg-running-glyph__strip {
+    animation: none;
+  }
+}

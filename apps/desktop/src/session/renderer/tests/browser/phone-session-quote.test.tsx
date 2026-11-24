@@ -19,7 +19,7 @@ vi.mock('@/components/session-watch/sessionpage-rpc', async original => ({
   SessionpageRpcError: class SessionpageRpcError extends Error {},
   fetchSessionOptions: vi.fn(() => new Promise(() => {})),
   setSessionOption: vi.fn(),
-  machineRpc: vi.fn(() => ({})), fetchToolImage: vi.fn(), stopBackgroundTask: vi.fn(), fetchBackgroundTasks: vi.fn(),
+  machineRpc: vi.fn(() => ({})), stopBackgroundTask: vi.fn(), fetchBackgroundTasks: vi.fn(),
 }));
 
 const SESSION = 'phone-quote-task';

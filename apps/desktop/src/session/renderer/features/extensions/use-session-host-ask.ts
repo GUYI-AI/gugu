@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ComposerPermissionRequest } from '@gugu/session-ui/react/components';
 import type { AskSource, RecordCursor, Settlement, SessionpageSessionEvent, TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
@@ -28,18 +28,26 @@ const HOST_APPROVALS: readonly AskSource[] = ['app-install', 'device-capability'
 export function useSessionHostAsk(
   sessionId: string | null,
   sources: readonly AskSource[],
-  includeDiscussion = false
+  includeDiscussion = false,
+  /**
+   * The settlements the page's own feed already follows (`AcpChatStore.hostSettlements`). Given, the ask is read off them
+   * and nothing more is read from the machine; over a device link a second subscription doubles every push of the session.
+   */
+  held?: Readonly<Record<string, Settlement>> | null,
 ): Settlement | null {
   const [ask, setAsk] = useState<Settlement | null>(null);
+  const following = held === undefined || held === null;
+  const heldAsk = useMemo(
+    () => (following || !sessionId ? null : askOf(held, sources, includeDiscussion)),
+    [following, sessionId, held, sources, includeDiscussion],
+  );
   useEffect(() => {
     setAsk(null);
-    if (!sessionId) return;
+    if (!sessionId || !following) return;
     let settlements: Readonly<Record<string, Settlement>> = {};
     const take = (next: Readonly<Record<string, Settlement>>) => {
       settlements = next;
-      setAsk(includeDiscussion
-        ? latestAgentQuestion(Object.fromEntries(Object.entries(settlements).filter(([, item]) => item.origin && sources.includes(item.origin.source))))
-        : pendingHostAsk(settlements, sources));
+      setAsk(askOf(settlements, sources, includeDiscussion));
     };
     const there = rpcOn(machineRegistry.machineOf(sessionId));
     let close = () => undefined as void;
@@ -79,7 +87,7 @@ export function useSessionHostAsk(
         if (!snapshot.ok) throw new Error(`sessionSnapshot refused: ${snapshot.error.code}: ${snapshot.error.message}`);
         cursor = snapshot.value.cursor;
         take(mergeSettlements({}, snapshot.value.settlements));
-        const subscribed = await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor });
+        const subscribed = await there.sessionTimeline.sessionSubscribe({ conversationId: sessionId, subscriptionId, cursor: snapshot.value.cursor, terminalPatch: true });
         // Closed while subscribing: its unsubscribe went first, so this subscription would stay open with nobody listening.
         if (!current) return void await unsubscribe();
         if (!subscribed.ok) throw new Error(`sessionSubscribe refused: ${subscribed.error.code}: ${subscribed.error.message}`);
@@ -89,8 +97,14 @@ export function useSessionHostAsk(
     };
     open();
     return () => close();
-  }, [sessionId, sources, includeDiscussion]);
-  return ask;
+  }, [sessionId, sources, includeDiscussion, following]);
+  return following ? ask : heldAsk;
+}
+
+function askOf(settlements: Readonly<Record<string, Settlement>>, sources: readonly AskSource[], includeDiscussion: boolean): Settlement | null {
+  return includeDiscussion
+    ? latestAgentQuestion(Object.fromEntries(Object.entries(settlements).filter(([, item]) => item.origin && sources.includes(item.origin.source))))
+    : pendingHostAsk(settlements, sources);
 }
 
 /**
@@ -98,15 +112,17 @@ export function useSessionHostAsk(
  * under a terminal session's terminal (125 10-06: whoever watches the session on the session page answers it there). Who asks
  * for what; 「不装」 answers at once, 「查看并安装」 opens this device's own sheet (naming the machine the session runs on when
  * that is another one); the answer goes to the session's `respond`, and 「已经不等了」 when the ask was withdrawn first.
- * The timeline is read only while the session waits on an approval (`session`: its status as the host wrote it) — an open
- * panel reads nothing otherwise.
+ * `held`: the settlements the page's own feed already follows — the ask is read off them as soon as they hold it. Without
+ * them the timeline is read only while the session waits on an approval (`session`: its status as the host wrote it) — an
+ * open panel reads nothing otherwise.
  */
 export function useHostAskBand(
   sessionId: string | null,
-  session: { status: string | null; detail: string | null } | null | undefined
+  session: { status: string | null; detail: string | null } | null | undefined,
+  held?: Readonly<Record<string, Settlement>> | null,
 ): { request: ComposerPermissionRequest; resolve: (optionId: string | null) => void } | null {
   const { translate } = useSessionMessages();
-  const ask = useSessionHostAsk(sessionWaitsOnApproval(session) ? sessionId : null, HOST_APPROVALS);
+  const ask = useSessionHostAsk(held || sessionWaitsOnApproval(session) ? sessionId : null, HOST_APPROVALS, false, held);
   const install = appInstallAskOf(ask?.origin);
   const capability = deviceCapabilityAskOf(ask?.origin);
   const itemId = ask?.itemId;

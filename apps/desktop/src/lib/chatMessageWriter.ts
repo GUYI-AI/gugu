@@ -1,3 +1,4 @@
+import type { TurnAnnotation } from '@gugu/session-core/acp/client'
 import { messageItemFromRow, type RawMessageRow } from '@gugu/core/cloud/messageItem'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { chatDb } from './supabase'
@@ -18,6 +19,7 @@ export interface IdempotentChatMessageInput {
   isThreadRoot: boolean
   isWhisper: boolean
   forwardedFromMessageId?: string
+  annotations?: TurnAnnotation[]
 }
 
 interface MessageWriteRpc {
@@ -43,6 +45,8 @@ export async function writeIdempotentChatMessage(
     p_is_thread_root: input.isThreadRoot,
     p_is_whisper: input.isWhisper,
     ...(input.forwardedFromMessageId ? { p_forwarded_from_message_id: input.forwardedFromMessageId } : {}),
+    // Only when there are comments: a database before them has no p_annotations, and the key would miss the function.
+    ...(input.annotations?.length ? { p_annotations: input.annotations } : {}),
   } as never)
   if (error) throw new Error(error.message, { cause: error })
   const row = data && typeof data === 'object' && !Array.isArray(data) ? data as Record<string, unknown> : null
