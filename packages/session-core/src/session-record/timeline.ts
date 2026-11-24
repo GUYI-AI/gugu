@@ -1093,7 +1093,12 @@ class RecordTimeline implements SessionTimeline {
       const metaSeq = prior && JSON.stringify(turnMeta(prior.turn)) === JSON.stringify(turnMeta(turn)) ? prior.metaSeq : nextSeq;
       const orderSeq = prior && sameOrder(prior.turn.items, turn.items) ? prior.orderSeq : nextSeq;
       if (metaSeq === nextSeq || orderSeq === nextSeq) touched = true;
-      if (!touched && prior) continue;
+      if (!touched && prior) {
+        // The same turn in a new object (restored again, placed again): keep this object, so the next publish skips it
+        // by identity instead of comparing the whole turn as JSON again. Nothing changed, so no seq moves.
+        this.published.set(turn.id, { ...prior, turn, items: nextItems });
+        continue;
+      }
 
       staged.set(turn.id, {
         turn,
