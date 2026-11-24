@@ -1227,62 +1227,6 @@
     );
   }
 
-  .logo-shimmer-container {
-    position: relative;
-    display: inline-block;
-    height: 2.25rem;
-  }
-
-  .logo-shimmer-image {
-    display: block;
-    height: 100%;
-    width: auto;
-  }
-
-  .logo-shimmer-overlay {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    overflow: hidden;
-  }
-
-  .logo-shimmer-overlay::before {
-    content: '';
-    position: absolute;
-    inset: -20% 0;
-    width: 70%;
-    background: linear-gradient(
-      120deg,
-      transparent 0%,
-      color-mix(in srgb, var(--background) 28%, transparent) 30%,
-      color-mix(in srgb, var(--background) 75%, transparent) 50%,
-      color-mix(in srgb, var(--background) 28%, transparent) 70%,
-      transparent 100%
-    );
-    transform: skewX(-15deg) translateX(-150%);
-    animation: logo-shimmer-move 5s linear infinite;
-    will-change: transform;
-  }
-
-
-  @keyframes logo-shimmer-move {
-    0% {
-      transform: skewX(-15deg) translateX(-150%);
-    }
-    50% {
-      transform: skewX(-15deg) translateX(250%);
-    }
-    100% {
-      transform: skewX(-15deg) translateX(250%);
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .logo-shimmer-overlay::before {
-      animation: none;
-      opacity: 0;
-    }
-  }
   .gg-progress-indeterminate {
     animation: gg-indeterminate 1.1s ease-in-out infinite;
   }
