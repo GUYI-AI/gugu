@@ -34,6 +34,11 @@ export type AssistantPanelTransport = (name: string, args: Record<string, unknow
 export class AssistantPanelError extends Error {
   constructor(readonly code: string, message: string, readonly resourceKey?: string, readonly domain?: string, readonly status?: number) { super(message); this.name = 'AssistantPanelError' }
 }
+/** This guard identifies a lost assistant App binding, not a generic permission failure. */
+export function isAssistantPanelBindingRevoked(error: unknown): boolean {
+  const value = error as { code?: unknown; message?: unknown } | null
+  return value?.code === '42501' && value.message === 'Personal assistant is not available to this account'
+}
 const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const revision = (value: unknown): value is string => typeof value === 'string' && /^\d+$/.test(value)
 const nullableString = (value: unknown) => value === null || typeof value === 'string'
