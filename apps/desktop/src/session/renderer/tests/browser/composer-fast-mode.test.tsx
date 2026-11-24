@@ -54,7 +54,7 @@ async function renderMenu(props: Parameters<typeof Fixture>[0] = {}) {
     await page.getByRole('option', { name: 'Native model' }).hover()
     const detailSelector = '[data-hover-card]:has([data-slot="composer-model-detail"])'
     await until('desktop model details entered', () => document.querySelector(`${detailSelector}:not([data-starting-style])`) != null)
-    await Promise.all(document.querySelector(detailSelector)!.getAnimations({ subtree: true }).map(animation => animation.finished))
+    await Promise.all(document.querySelector(detailSelector)!.getAnimations().map(animation => animation.finished))
   }
 }
 

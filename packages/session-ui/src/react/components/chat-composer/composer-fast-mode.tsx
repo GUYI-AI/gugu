@@ -1,5 +1,4 @@
 import type { ReactElement, ReactNode } from 'react';
-import { Switch } from '@base-ui/react/switch';
 import { FastZap } from '../../../icons';
 import { useMessages } from '../../localization/message-provider';
 import * as styles from './chat-composer.css';
@@ -24,27 +23,15 @@ export function ComposerFastMode({
 }) {
   const { translate } = useMessages();
   const label = translate('composer.fastModeLabel');
-  if (detailRow) {
-    const toggle = (
-      <Switch.Root checked={enabled} disabled={disabled || !onChange} aria-label={label}
-        className={styles.modelDetailFastSwitch} data-fast-mode-toggle="" onCheckedChange={onChange}>
-        <Switch.Thumb className={styles.modelDetailFastThumb} />
-      </Switch.Root>
-    );
-    return (
-      <div className={styles.contextThresholdTrigger} data-slot="composer-model-fast">
-        <span>{label}</span>
-        {renderHint ? renderHint(toggle) : toggle}
-      </div>
-    );
-  }
   const button = (
     <button
       type="button"
-      className={styles.modelFastMode}
+      className={detailRow ? styles.modelDetailFastSwitch : styles.modelFastMode}
       aria-label={label}
       data-fast-mode-toggle=""
-      aria-pressed={enabled}
+      role={detailRow ? 'switch' : undefined}
+      aria-checked={detailRow ? enabled : undefined}
+      aria-pressed={detailRow ? undefined : enabled}
       data-phone-fast={phoneActions || undefined}
       disabled={disabled || !onChange}
       onPointerDown={(event) => {
@@ -57,11 +44,17 @@ export function ComposerFastMode({
         onChange?.(!enabled);
       }}
     >
-      <span className={styles.modelFastModePill}>
+      {detailRow ? <span className={styles.modelDetailFastThumb} aria-hidden /> : <span className={styles.modelFastModePill}>
         <FastZap size={phoneActions ? 14 : 12} aria-hidden fill={enabled ? 'currentColor' : 'none'} />
         <span>{label}</span>
-      </span>
+      </span>}
     </button>
   );
-  return renderHint ? renderHint(button) : button;
+  const control = renderHint ? renderHint(button) : button;
+  return detailRow ? (
+    <div className={styles.contextThresholdTrigger} data-slot="composer-model-fast">
+      <span>{label}</span>
+      {control}
+    </div>
+  ) : control;
 }

@@ -777,16 +777,17 @@ export const modelDetailFastSwitch = style({
   border: `1px solid ${vars.borderPrimary}`, borderRadius: tokenVars.radiusFull, backgroundColor: vars.background,
   cursor: 'pointer',
   selectors: {
-    '&[data-checked]': { backgroundColor: vars.backgroundNeutral },
-    '&[data-disabled]': { opacity: 0.5, cursor: 'not-allowed' },
+    '&[aria-checked="true"]': { backgroundColor: vars.backgroundNeutral },
+    '&:disabled': { opacity: 0.5, cursor: 'not-allowed' },
   },
 });
 
 export const modelDetailFastThumb = style({
   width: '0.75rem', height: '0.75rem', borderRadius: tokenVars.radiusFull, backgroundColor: vars.foregroundMuted,
+  pointerEvents: 'none',
   transition: `transform ${durFast} ${easeStandard}`,
   selectors: {
-    '&[data-checked]': { transform: 'translateX(10px)', backgroundColor: vars.background },
+    [`${modelDetailFastSwitch}[aria-checked="true"] &`]: { transform: 'translateX(10px)', backgroundColor: vars.background },
   },
 });
 export const contextThresholdContent = style({ width: '11rem', padding: '0.25rem' });
