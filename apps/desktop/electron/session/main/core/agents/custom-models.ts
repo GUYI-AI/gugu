@@ -344,7 +344,7 @@ async function readSelectedCustomModel(providerId: string, ref: CustomModelRef, 
   });
   if (matched.reason) throw new Error(`Custom model unavailable: ${matched.reason}`);
   return {
-    meta, name: row?.meta?.displayName || ref.connectionId, model, protocol: matched.endpoint.protocol,
+    meta, name: row?.meta?.displayName || ref.connectionId, model, endpoint: matched.endpoint,
     // A converted record reaches the harness in its own wire protocol, through the bundled router.
     harnessProtocol: matched.converted ? nativeProtocol : undefined,
   };
@@ -356,13 +356,19 @@ export async function validateCustomModelSelection(providerId: string, ref: Cust
   return (await readSelectedCustomModel(providerId, ref, 'new')).model;
 }
 
+export async function selectedCustomModelEndpoint(providerId: string, ref: CustomModelRef): Promise<string> {
+  migrateCustomModelConnections();
+  return (await readSelectedCustomModel(providerId, ref, 'new')).endpoint.baseUrl;
+}
+
 export async function resolveCustomModel(providerId: string, sessionId: string, sourceSessionId?: string): Promise<ResolvedCustomModel | null> {
   migrateCustomModelConnections();
   const config = db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sourceSessionId ?? sessionId)).get()?.config;
   const ref = customModelRefFromOption(config?.model);
   if (!ref) return null;
   const selected = await readSelectedCustomModel(providerId, ref, 'bound');
-  const { meta, name, model, protocol } = selected;
+  const { meta, name, model, endpoint: upstream } = selected;
+  const { protocol } = upstream;
   const models = ref.modelId ? [ref.modelId, ...meta.models.map(({ id }) => id).filter((id) => id !== ref.modelId)] : [];
   const local = await customModelForwarder(resolveCustomRoute);
   const route = customModelRoute(local.endpoint, ref.connectionId, protocol);
@@ -374,7 +380,7 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
     connectionId: ref.connectionId, name,
     apiKey: local.apiKey, endpoint,
     models, protocol: selected.harnessProtocol ?? protocol, capabilities: model, entries: meta.models,
-    upstreamEndpoint: meta.endpoints.find(entry => entry.protocol === protocol)!.baseUrl, removed: meta.removed,
+    upstreamEndpoint: upstream.baseUrl, removed: meta.removed,
     ...(config?.effort ? { effort: config.effort } : {}),
   };
 }

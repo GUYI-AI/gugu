@@ -402,6 +402,7 @@ import { openProject } from '@main/core/projects/operations/openProject'
 import { withRpcLogging } from '@main/lib/rpc-logging'
 import { pluginIdForAgentType } from '@gugu/core/agentTypes'
 import { lastModelSource } from '@main/core/usage/model-source-recorder'
+import { codexChannelSwitchNeedsNewThread } from '@main/core/agents/codex-channel-switch'
 
 // The full router, re-exported so the host's renderer IPC bridge can type the surface.
 export const emdashRpcRouter = rpcRouter
@@ -1303,6 +1304,27 @@ async function reloadEmdashSessionNow(input: {
   const sourceChangeSession = resolveSessionpageCredentialLifecycle(session.providerId, reloadSurface)
     ?.sourceChangeSession ?? 'preserve'
 
+  const nextModel = typeof input.model === 'string' && input.model.trim() ? input.model.trim() : null
+  if (nextModel && input.modelSource !== 'platform' && input.modelSource !== 'own') {
+    throw new Error(`session ${sessionId} asked to switch to ${nextModel} without a billing path (modelSource)`)
+  }
+  const targetSource = nextModel ? input.modelSource : input.resetModel ? 'own' : undefined
+  const platformBefore = targetSource ? await sessionPlatformModel(sessionId) : undefined
+  const before = targetSource ? lastModelSource(sessionId) : undefined
+  const sourceChanged = !!targetSource && !!before && (before === 'gugu') !== (targetSource === 'platform')
+  const needsNewThread = sourceChangeSession === 'fork' && !!targetSource && (session.providerId === 'codex'
+    ? await codexChannelSwitchNeedsNewThread({
+        previousPlatform: before ? before === 'gugu' : Boolean(platformBefore),
+        previousCustom: session.customModel,
+        target: targetSource,
+        targetModel: nextModel,
+        customEndpoint: async (ref) => {
+          const { selectedCustomModelEndpoint } = await import('@main/core/agents/custom-models')
+          return selectedCustomModelEndpoint(session.providerId, ref)
+        },
+      })
+    : sourceChanged)
+
   // Both session-page legs use this host-owned stop/start boundary. PTY has no ACP store to
   // reattach, so the renderer reconnects its existing terminal resource after this returns.
   // Keep the runtime recorded on the conversation; changing it here would silently turn a
@@ -1314,20 +1336,11 @@ async function reloadEmdashSessionNow(input: {
     if (input.permissionMode !== undefined) {
       throw new Error(`session ${sessionId} PTY reload does not take a permission change`)
     }
-    const nextModel = typeof input.model === 'string' && input.model.trim() ? input.model.trim() : null
-    if (nextModel && input.modelSource !== 'platform' && input.modelSource !== 'own') {
-      throw new Error(
-        `session ${sessionId} asked to switch to ${nextModel} without saying which `
-        + 'billing path it is on (modelSource)',
-      )
-    }
     const effortChanged = input.effort !== undefined
     const nextEffort = typeof input.effort === 'string' && input.effort.trim() ? input.effort.trim() : null
     let configBeforePatch: typeof sessions.$inferSelect.config | null = null
-    const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
-    const sourceChanged = crossesBillingSource(sessionId, nextModel, input)
     const replaceProviderSession = sourceChanged && sourceChangeSession === 'replace'
-    const forkProviderSession = sourceChanged && sourceChangeSession === 'fork'
+    const forkProviderSession = needsNewThread
     let platformWritten = false
     if (input.resetModel) {
       // 与 ACP 腿同一个决定:两半一起清。
@@ -1449,16 +1462,7 @@ async function reloadEmdashSessionNow(input: {
   //    ❌ 不由渲染层代劳:那条路要么走活 ACP(必然失败,见 `model` 字段的注释),要么多一次
   //    可能与重开之间被打断的往返。
   const configPatch: Record<string, unknown> = {}
-  const nextModel = typeof input.model === 'string' && input.model.trim() ? input.model.trim() : null
-  if (nextModel) {
-    if (input.modelSource !== 'platform' && input.modelSource !== 'own') {
-      throw new Error(
-        `session ${sessionId} asked to switch to ${nextModel} without saying which `
-        + 'billing path it is on (modelSource). 只改模型不改计费路,重开出来的进程会连着旧的端点与票。',
-      )
-    }
-    if (input.modelSource === 'own') configPatch.model = nextModel
-  }
+  if (nextModel && input.modelSource === 'own') configPatch.model = nextModel
   if (Array.isArray(input.mcpDisabledServers)) {
     // 参数**在场**就是「这条会话被显式决定过」——`[]` 也算,所以判的是 `Array.isArray` 而不是长度。
     configPatch.mcpDisabledServers = [...input.mcpDisabledServers]
@@ -1513,9 +1517,6 @@ async function reloadEmdashSessionNow(input: {
    * ⚠️ 它住在另一个 KV(`sessionpage-platform-model`),而 spawn 读的是它。两半不同步的后果不是
    * 「配置不整齐」,是**跑错端点**:见 `modelSource` 字段的注释。
    */
-  const platformBefore = nextModel || input.resetModel ? await sessionPlatformModel(sessionId) : undefined
-  // 原生会话续接还是换新,由 descriptor 的 `sourceChangeSession` 按腿回答。
-  const sourceChanged = crossesBillingSource(sessionId, nextModel, input)
   let platformWritten = false
   if (nextModel) {
     await recordSessionPlatformModel(
@@ -1569,7 +1570,7 @@ async function reloadEmdashSessionNow(input: {
       // ⚠️ 这一步**不能省**:换计费路那一支上面已经 `clearSessionId` 过一次,渲染端此刻以为
       // 这条会话没有可续的 provider 会话;回滚只改库不说话的话,它就一直停在那句作废的话上。
       // 回滚失败由外层 catch 统一报(它本来就会把「回滚也失败了」单独说一句)。
-      if (sourceChanged && providerSessionIdBeforeReload) {
+      if ((sourceChanged || needsNewThread) && providerSessionIdBeforeReload) {
         const restored = await setProviderSessionId(sessionId, providerSessionIdBeforeReload)
         if (!restored.success) throw new Error(`session id rollback failed: ${restored.error.type}`)
       }
@@ -1597,7 +1598,7 @@ async function reloadEmdashSessionNow(input: {
     const message = `could not be stopped for reload (${reason})`
     throw new Error(`session ${sessionId} ${message}` + await restoreConfig(message))
   }
-  if (sourceChanged) {
+  if (sourceChanged || needsNewThread) {
     // Clear transient provider state before the source-change reload. The descriptor decides
     // whether the provider session id is retained or replaced by the new billing route.
     const currentConfig = configBeforePatch
@@ -1608,7 +1609,7 @@ async function reloadEmdashSessionNow(input: {
       if (input.resetModel || (nextModel && input.modelSource === 'platform')) delete configWithoutProviderState.model
       // `fork`:原生会话 id 不动,只记下「下一次起要把它分叉到新路上」。起不来也留着 —— 重试仍得分叉。
       // 起不来时的 `restoreConfig` 写回的是重开前那一份(没有这一格),与把模型选择写回原样同一个回滚。
-      if (sourceChangeSession === 'fork' && providerSessionIdBeforeReload) {
+      if (needsNewThread && providerSessionIdBeforeReload) {
         if (configWithoutProviderState.type !== 'acp') {
           const message = `has no ACP record to fork its provider session from (${reason})`
           throw new Error(`session ${sessionId} ${message}` + await restoreConfig(message))
@@ -1693,21 +1694,6 @@ async function dropRecordedModel(
     .set({ config: rest as typeof current })
     .where(eq(sessions.id, sessionId))
   return current
-}
-
-/**
- * 这次重开换没换计费路:与这条会话**上一次启动实际走的那条路**比(用量底账,见 `lastModelSource`),❌ 与 composer
- * 那份记录比 —— 没经过 composer 的会话(派生、自动化、导入)没有那份记录,走的是 agent 级默认。清模型 = 回到自己
- * 那条路(harness 自家默认 + 用户自己的凭据),与换成一个自己的模型一样是一次换路(#6210)。底账出现之后还没启动过 = 说不出,按没换。
- */
-function crossesBillingSource(
-  sessionId: string,
-  nextModel: string | null,
-  input: { modelSource?: 'platform' | 'own'; resetModel?: boolean },
-): boolean {
-  const target = nextModel ? input.modelSource : input.resetModel ? 'own' : undefined
-  const before = lastModelSource(sessionId)
-  return !!target && !!before && (before === 'gugu') !== (target === 'platform')
 }
 
 /**
