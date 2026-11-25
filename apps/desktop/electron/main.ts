@@ -6042,7 +6042,7 @@ app.whenReady().then(async () => {
           ? assistantChannelDiscovery.createAssistantChatChannelReader({
             accountId: async () => (await getSessionpageAuth())?.userId ?? null,
             expectedOwner: assistantResourceOwner, assistantAgentId: provisioned.guguAgentUserId,
-            list: async () => {
+            list: async signal => {
               const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(),
                 override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
               if (!baseUrl) throw new Error('Chat channel metadata source is unavailable')
@@ -6052,7 +6052,7 @@ app.whenReady().then(async () => {
                   if (!current || current.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
                   return current.accessToken
                 } })
-              return client.list()
+              return client.list(signal)
             },
           }) : undefined
         const readAssistantResources = assistantRole ? async () => {

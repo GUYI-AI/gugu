@@ -31,7 +31,7 @@ export function createAssistantChatChannelReader(options: {
   accountId(): Promise<string | null>
   expectedOwner: string
   assistantAgentId: string
-  list(): Promise<ChatChannelList>
+  list(signal: AbortSignal): Promise<ChatChannelList>
   now?: () => number
   ttlMs?: number
 }): () => Promise<NonNullable<AssistantLocalSource['items']>> {
@@ -43,8 +43,19 @@ export function createAssistantChatChannelReader(options: {
     }
     const now = options.now?.() ?? Date.now()
     if (!cached || now >= cached.expiresAt) {
-      cached = { expiresAt: now + (options.ttlMs ?? 15_000),
-        result: assistantChatChannelItems(options.list, options.assistantAgentId) }
+      const controller = new AbortController()
+      let timer: ReturnType<typeof setTimeout> | undefined
+      // Bound the whole auxiliary read, including token lookup and response parsing.
+      const result = Promise.race([
+        assistantChatChannelItems(() => options.list(controller.signal), options.assistantAgentId),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            controller.abort()
+            reject(new Error('Assistant channel metadata read timed out'))
+          }, ASSISTANT_CHAT_CHANNEL_TIMEOUT_MS)
+        }),
+      ]).finally(() => clearTimeout(timer))
+      cached = { expiresAt: now + (options.ttlMs ?? 15_000), result }
     }
     try {
       const result = await cached.result

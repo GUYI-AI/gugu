@@ -105,17 +105,16 @@ it('drops cached metadata on account changes and checks in-flight replies again'
   await expect(delayed()).rejects.toThrow('owner changed')
 })
 
-it('aborts a cold channel request at the auxiliary metadata deadline', async () => {
-  const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    await new Promise<void>((_resolve, reject) => {
-      init!.signal!.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
-    })
-    throw new Error('unexpected successful response')
-  })
-  const started = Date.now()
-  const client = createChatChannelsClient({ baseUrl: 'http://127.0.0.1:1', accessToken: async () => 'fixture', fetch,
+it('bounds the whole cold read even when token lookup never answers', async () => {
+  const fetch = vi.fn(async (): Promise<Response> => { throw new Error('must not reach fetch') })
+  const client = createChatChannelsClient({ baseUrl: 'http://127.0.0.1:1', accessToken: () => new Promise<string>(() => undefined), fetch,
     requestTimeoutMs: ASSISTANT_CHAT_CHANNEL_TIMEOUT_MS })
-  await expect(client.list()).rejects.toMatchObject({ code: 'network' })
+  let signal: AbortSignal | undefined
+  const read = createAssistantChatChannelReader({ expectedOwner: 'owner', accountId: async () => 'owner', assistantAgentId: 'this-assistant',
+    list: current => { signal = current; return client.list(current) } })
+  const started = Date.now()
+  await expect(read()).rejects.toThrow('metadata read timed out')
   expect(Date.now() - started).toBeGreaterThanOrEqual(ASSISTANT_CHAT_CHANNEL_TIMEOUT_MS - 50)
-  expect(Date.now() - started).toBeLessThan(5_000)
+  expect(signal?.aborted).toBe(true)
+  expect(fetch).not.toHaveBeenCalled()
 })
