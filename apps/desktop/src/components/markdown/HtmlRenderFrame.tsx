@@ -19,6 +19,7 @@ import {
   clampHtmlRenderHeight,
   htmlRenderDocument,
   htmlRenderRootCss,
+  keepHtmlRenderPage,
   HTML_RENDER_MIN_HEIGHT,
   readHtmlRenderContentHeight,
   readHtmlRenderLinkRequest,
@@ -56,7 +57,11 @@ function HtmlRenderDocument({ srcDoc, title, height, onContentHeight }: { srcDoc
       if (url) openLink(url)
     }
     window.addEventListener('message', onMessage)
-    return () => window.removeEventListener('message', onMessage)
+    const unkeep = frame.current ? keepHtmlRenderPage(frame.current) : undefined
+    return () => {
+      window.removeEventListener('message', onMessage)
+      unkeep?.()
+    }
   }, [])
   // An opaque sandbox: scripts run, but the page reaches neither this window, its storage, popups nor top navigation.
   return <iframe ref={frame} title={title} srcDoc={srcDoc} sandbox="allow-scripts" height={height} className="block w-full border-0 bg-transparent" />

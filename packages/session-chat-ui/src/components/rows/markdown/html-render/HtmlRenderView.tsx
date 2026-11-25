@@ -13,13 +13,14 @@ import {
   clampHtmlRenderHeight,
   htmlRenderDocument,
   htmlRenderRootCss,
+  keepHtmlRenderPage,
   readHtmlRenderContentHeight,
   readHtmlRenderLinkRequest,
 } from '@session-chat/core/html-render/page';
 import type { HtmlRenderLeafLayout } from '@session-chat/core/layout/layout-types';
 import { subscribeHostTheme, svgPalette } from '@session-chat/core/svg/figure';
 import { useChatTranslator } from '@session-chat/localization';
-import { createMemo, createSignal, onCleanup, Show } from 'solid-js';
+import { createMemo, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { htmlRenderBackdrop, htmlRenderClose, htmlRenderDialog, htmlRenderFrame } from './html-render.css';
 
@@ -36,6 +37,7 @@ function PageFrame(props: { srcDoc: string; title: string; width?: number; heigh
   };
   window.addEventListener('message', onMessage);
   onCleanup(() => window.removeEventListener('message', onMessage));
+  onMount(() => onCleanup(keepHtmlRenderPage(frame)));
   // An opaque sandbox: scripts run, but the page reaches neither this window, its storage, popups nor top navigation.
   return <iframe ref={frame} title={props.title} srcdoc={props.srcDoc} sandbox="allow-scripts" width={props.width ?? '100%'} height={props.height} class={htmlRenderFrame} />;
 }

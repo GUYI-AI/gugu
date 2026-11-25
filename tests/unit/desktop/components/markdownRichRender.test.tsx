@@ -34,8 +34,9 @@ describe('chat markdown rich rendering', () => {
     const frame = container.querySelector('iframe')
     expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
     const doc = frame?.getAttribute('srcdoc') ?? ''
-    // The exact policy: https assets may load, but the page can open no connection to send what a reader types.
-    expect(doc).toContain(`<meta http-equiv="Content-Security-Policy" content="default-src data: blob: https: 'unsafe-inline' 'unsafe-eval'; connect-src 'none'; form-action 'none'; base-uri 'none'">`)
+    // The exact policy: nothing the page holds may leave (no connection, assets only from three CDNs).
+    const cdns = 'https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com'
+    expect(doc).toContain(`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' ${cdns}; style-src 'unsafe-inline' ${cdns}; font-src data: ${cdns}; img-src data: blob: ${cdns}; connect-src 'none'; form-action 'none'; base-uri 'none'">`)
     expect(doc).toContain('--fg:rgb(1, 2, 3)')
     expect(doc).toContain('<div id="chart">bars</div>')
   })
