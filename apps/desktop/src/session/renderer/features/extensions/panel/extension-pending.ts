@@ -1,3 +1,5 @@
+import { observable } from 'mobx';
+import { createContext } from 'react';
 import type { SessionTranslate } from '../extension-consent';
 
 /**
@@ -9,6 +11,15 @@ import type { SessionTranslate } from '../extension-consent';
  * state-change review). One value, one label, drawn the same in all three places.
  */
 export type ExtensionPendingAction = 'inspecting' | 'downloading' | 'installing' | 'uninstalling';
+
+/** Shared by the inventory and detail views, including when either view remounts for a different device. */
+export type ExtensionOperation = {
+  phase?: ExtensionPendingAction;
+  percent?: number;
+  result?: { version: string; error?: string };
+};
+export const createExtensionOperations = () => observable.map<string, ExtensionOperation>([], { deep: false });
+export const ExtensionOperationsContext = createContext<ReturnType<typeof createExtensionOperations> | null>(null);
 
 /**
  * `percent` is only meaningful while `pending === 'downloading'` — it comes from

@@ -1279,17 +1279,32 @@ button.mk-name:focus-visible:not([data-pointer-focus]) {
   align-items: center;
   gap: 10px;
 }
-.mk-market-header [data-slot='toggle-group-item'] {
+.mk-market-header > [data-slot='toggle-group'] [data-slot='toggle-group-item'] {
   display: inline-flex;
   gap: 6px;
   padding-inline: 0;
   font-size: calc(var(--font-title) * 1.125);
   color: var(--foreground-muted);
 }
-.mk-market-header [data-slot='toggle-group-item'][data-pressed] {
+.mk-market-header > [data-slot='toggle-group'] [data-slot='toggle-group-item'][data-pressed] {
   color: var(--foreground);
   font-weight: 600;
   background: transparent;
+}
+.mk-scope {
+  gap: 0;
+  height: 32px;
+  padding: 2px;
+  background: var(--background-2);
+  overflow: visible;
+}
+.mk-scope [data-slot='toggle-group-item'] {
+  min-width: 65px;
+  border-radius: calc(var(--radius-control) - 2px);
+}
+.mk-scope [data-slot='toggle-group-item'][data-pressed] {
+  background: var(--foreground);
+  color: var(--background);
 }
 .mk-market-categories {
   flex-wrap: wrap;

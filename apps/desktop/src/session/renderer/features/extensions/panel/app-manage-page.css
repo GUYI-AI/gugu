@@ -70,6 +70,7 @@
   align-items: center;
   gap: 8px;
 }
+.mg-head-acts .mk-primary-action { min-width: 0; height: auto; padding: 6px 12px; }
 .mg-sec {
   margin-top: 28px;
   scroll-margin-top: 24px;

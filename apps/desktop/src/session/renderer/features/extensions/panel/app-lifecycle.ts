@@ -1,5 +1,5 @@
 import { shelfRelation } from '@shared/extensions/catalog';
-import type { ExtensionManifest } from '@shared/extensions/manifest';
+import { compareExtensionVersions, type ExtensionManifest } from '@shared/extensions/manifest';
 import { marketCompatText, type MarketListItem } from '@shared/extensions/market';
 import type { SessionTranslate } from '../extension-consent';
 import type { AppLifecycle } from './app-lifecycle-button';
@@ -24,7 +24,7 @@ export function appLifecycle({ installed, enabled, updateVersion, offered, prein
     return { kind: 'get' };
   }
   if (!enabled) return { kind: 'enable' };
-  if (updateVersion) return { kind: 'update', version: updateVersion };
+  if (updateVersion && compareExtensionVersions(updateVersion, installed.version) > 0) return { kind: 'update', version: updateVersion };
   if (offered && !offered.cloud.compat && !preinstalled && shelfRelation(offered.manifest, installed) === 'installed-older') {
     return { kind: 'update', version: offered.manifest.version };
   }

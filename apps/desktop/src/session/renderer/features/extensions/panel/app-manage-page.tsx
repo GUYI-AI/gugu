@@ -53,6 +53,11 @@ export function AppManagePage({
   enabled,
   switching = false,
   lifecycle,
+  completedUpdate,
+  upToDate,
+  updateError,
+  onOpen,
+  focusHeading,
   pending,
   pendingPercent,
   locale,
@@ -99,7 +104,11 @@ export function AppManagePage({
   iconDataUrl?: string | null;
   enabled: boolean;
   switching?: boolean;
-  /** Open, switch on, or only a word: an update is said by `notice`, with its version. */
+  completedUpdate?: { version: string };
+  upToDate?: boolean;
+  updateError?: string;
+  onOpen?: () => void;
+  focusHeading?: boolean;
   lifecycle: AppLifecycle;
   pending?: ExtensionPendingAction;
   pendingPercent?: number;
@@ -388,6 +397,10 @@ export function AppManagePage({
   const [current, setCurrent] = useState(sections[0]!.id);
   const anchors = sections.map((section) => section.id).join(' ');
   const pageRef = useRef<HTMLDivElement>(null);
+  const resultOnEntry = useRef(completedUpdate);
+  const justUpdated = !!completedUpdate && completedUpdate !== resultOnEntry.current;
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { if (focusHeading) headingRef.current?.focus({ preventScroll: true }); }, [focusHeading]);
   const clicked = useRef(false);
   // The box that scrolls outlives this page: arriving from anywhere starts at the top, not where the last page was left.
   useEffect(() => { const scroller = scrollParent(pageRef.current); if (scroller) scroller.scrollTop = 0; }, []);
@@ -424,16 +437,21 @@ export function AppManagePage({
           <header className="mg-head">
             <span className="mk-icon is-56"><ExtensionMonogram name={text.name} iconDataUrl={iconDataUrl} /></span>
             <div className="mg-head-tx">
-              <h2 title={text.name}>{text.name}</h2>
+              <h2 ref={headingRef} tabIndex={-1} title={text.name}>{text.name}</h2>
               <p>{[`v${manifest.version}`, machine, origin === 'preinstalled' ? translate('extensions.manageBuiltIn') : enabled ? undefined : translate('extensions.switchedOff')].filter(Boolean).join(metadataSeparator())}</p>
             </div>
             <fieldset disabled={readOnly} className="mg-head-acts">
-              <AppLifecycleButton state={lifecycle} pending={pending} percent={pendingPercent} disabled={readOnly} translate={translate} onClick={onLifecycle} testId="app-manage-action" />
+              <AppLifecycleButton primary={lifecycle?.kind === 'update' || (lifecycle?.kind === 'open' && upToDate) || justUpdated} retry={!!updateError} state={lifecycle} pending={pending} percent={pendingPercent} disabled={readOnly} translate={translate} onClick={onLifecycle} testId="app-manage-action" />
+              {onOpen && <Button data-testid="app-manage-open" type="button" variant="outline" size="sm" disabled={!!pending || readOnly} onClick={onOpen}>{translate('extensions.open')}</Button>}
               <AppMoreMenu name={text.name} enabled={enabled} docked={docked} disabled={readOnly || pending !== undefined} translate={translate} resource={resource} onOpenInWindow={onOpenInWindow} onForward={onForward} testId="app-manage-more" />
             </fieldset>
           </header>
         </ResourceMenu>
         {!enabled && onToggleEnabled ? <div className="mk-banner" data-testid="app-manage-off">{translate('extensions.manageEnabledOffNote')}</div> : null}
+        {updateError ? <div className="mk-banner is-warn" role="alert">{updateError}</div>
+          : !notice && (justUpdated || upToDate) ? <div className="mk-banner" role="status">
+            {justUpdated ? translate('extensions.updatedTo', { version: manifest.version }) : translate('extensions.upToDate')}
+          </div> : null}
         {notice ? (
           <fieldset disabled={readOnly && notice.kind !== 'forkBehind'} className="contents">
             <div className={cn('mk-banner', notice.kind !== 'forkBehind' && notice.kind !== 'update' && notice.kind !== 'gone' && 'is-warn')} data-testid="app-manage-notice">
@@ -441,7 +459,7 @@ export function AppManagePage({
                 notice={notice}
                 installedVersion={manifest.version}
                 translate={translate}
-                onInstallVersion={onInstallVersion ? (version) => onInstallVersion({ extensionId: manifest.id, version }) : undefined}
+                onInstallVersion={onInstallVersion && !(notice.kind === 'update' && lifecycle?.kind === 'update') ? (version) => onInstallVersion({ extensionId: manifest.id, version }) : undefined}
                 onBrowseReplacement={() => onBrowseReplacement?.(manifest.id)}
               />
             </div>
