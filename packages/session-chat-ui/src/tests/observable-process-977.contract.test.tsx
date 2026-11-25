@@ -35,7 +35,7 @@ describe('observable conversation process', () => {
     expect(header.textContent).toBe('Thinking and working 21s, 1 step›');
   });
 
-  it('keeps other calls grouped while an unfinished MCP send identifies its server and tool', async () => {
+  it('groups an unfinished MCP send with other process steps', async () => {
     const v = mount([
       { kind: 'spawn-subagent-tool-call', id: 'spawn', seq: 0, toolCallId: 'spawn', title: 'Agent', status: 'done', name: 'helper' },
       { kind: 'unknown-tool-call', id: 'other', seq: 1, toolCallId: 'other', title: 'OtherNativeTool', name: 'OtherNativeTool', toolKind: 'other', status: 'done' },
@@ -45,32 +45,29 @@ describe('observable conversation process', () => {
     await v.settle();
     const runs = v.host.querySelectorAll('[data-slot="tool-run"]');
     expect(runs).toHaveLength(1);
-    expect(runs[0].getAttribute('data-step-count')).toBe('2');
-    expect(runs[0].textContent).not.toMatch(/MCP/i);
+    expect(runs[0].getAttribute('data-step-count')).toBe('3');
+    expect(runs[0].textContent).toMatch(/called 1 MCP tool/i);
     expect(runs[0].textContent).toMatch(/launched 1 subagent/i);
     expect(runs[0].textContent).toContain('used 1 tool');
-    expect(v.host.textContent).not.toContain(nativeName);
+    expect(v.host.querySelector('[data-slot="tool-call-trigger"]')).toBeNull();
+    runs[0].querySelector<HTMLButtonElement>('[data-collapse-id]')!.click();
+    await v.settle();
     const tool = v.host.querySelector<HTMLElement>('[data-slot="tool-call-trigger"]')!;
     expect(tool.textContent).toContain('plugin_gugu-product_gugu, message_send');
     expect(tool.getAttribute('aria-expanded')).toBe('false');
     expect(tool.closest('[data-row-kind="tool"]')).not.toBeNull();
-    runs[0].querySelector<HTMLButtonElement>('[data-collapse-id]')!.click();
-    await v.settle();
-    expect(v.host.textContent).not.toContain(nativeName);
   });
 
-  it('shows a single pending MCP identity and discloses its arguments independently of old run state', async () => {
+  it('discloses the pending MCP arguments independently of the run summary', async () => {
     const v = mount([pending]);
     await until('process appears', () => !!v.host.querySelector('[data-conversation-process]'));
     await v.settle();
-    const run = v.host.querySelector('[data-slot="tool-run"]');
-    expect(run).toBeNull();
+    const run = v.host.querySelector<HTMLButtonElement>('[data-slot="tool-run"] [data-collapse-id]')!;
+    expect(run.textContent).toContain('Called 1 MCP tool');
     const tool = () => v.host.querySelector<HTMLElement>('[data-slot="tool-call-trigger"]')!;
-    expect(tool().textContent).toContain('plugin_gugu-product_gugu, message_send');
-    expect(tool().getAttribute('aria-expanded')).toBe('false');
-    v.state.viewState.setCollapsed('live:run:send', true);
-    await v.settle();
-    expect(v.host.textContent).not.toContain(nativeName);
+    expect(tool()).toBeNull();
+    run.click();
+    await until('the pending call is revealed', () => tool()?.textContent?.includes('plugin_gugu-product_gugu, message_send') === true);
     expect(tool().getAttribute('aria-expanded')).toBe('false');
     expect(v.host.querySelector('[data-slot="tool-call-request"]')).toBeNull();
     tool().click();
