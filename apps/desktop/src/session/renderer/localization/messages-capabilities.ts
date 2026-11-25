@@ -340,6 +340,7 @@ export const enUSCapabilityMessages = {
   'browserSettings.saveNewProfile': 'Save new browser profile',
   'browserSettings.cancelAddProfile': 'Cancel adding profile',
   'browserSettings.addProfile': 'Add profile',
+  'browserSettings.profileNameTaken': 'A browser profile with this name already exists. Choose another name.',
   'browserSettings.browsingData': 'Browsing data',
   'browserSettings.browsingDataDescription':
     'Clear cookies, cached files, and site data from the in-app browser.',
@@ -1341,6 +1342,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'browserSettings.saveNewProfile': '保存新浏览器配置',
   'browserSettings.cancelAddProfile': '取消添加配置',
   'browserSettings.addProfile': '添加配置',
+  'browserSettings.profileNameTaken': '已有同名的浏览器配置，请换一个名字。',
   'browserSettings.browsingData': '浏览数据',
   'browserSettings.browsingDataDescription': '清除应用内浏览器的 cookie、缓存文件和站点数据。',
   'browserSettings.clearAllBrowsingData': '清除全部浏览数据',

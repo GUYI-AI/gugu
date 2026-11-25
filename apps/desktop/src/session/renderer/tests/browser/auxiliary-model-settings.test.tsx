@@ -101,3 +101,11 @@ it('does not show a default reviewer until the connection candidates are read', 
   } finally { release(); }
   await expect.element(page.getByTestId('auto-review-model')).toHaveTextContent('Default (recommended)');
 });
+
+it('says the default reviewer without a dropdown when there is nothing else to choose', async () => {
+  state.rows = state.rows.filter(row => !row.keySaved || row.id === 'codex');
+  renderCard();
+  await expect.element(page.getByTestId('auto-review-model')).toHaveTextContent('Default (recommended)');
+  // A plain value, ❌ a trigger that opens onto the one row (B7-F06).
+  expect(page.getByTestId('auto-review-model').query()!.tagName).toBe('SPAN');
+});

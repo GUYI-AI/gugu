@@ -40,7 +40,8 @@ import {
   type BrowserProfile,
   type BrowsingDataKind,
 } from '@shared/browser';
-import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives';
+import { SettingsGroup, SettingsNote, SettingsRow } from '@/components/settings/SettingsPrimitives';
+import { isBrowserProfileNameTaken } from './browser-profile-name';
 
 type Translate = ReturnType<typeof useSessionMessages>['translate'];
 
@@ -60,6 +61,8 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
   const { translate } = useSessionMessages();
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  /** Which name input holds a name another profile already has ('new' = the add row): said under it, the input kept. */
+  const [nameTakenAt, setNameTakenAt] = useState<string | null>(null);
   const [isBrowsingDataExpanded, setIsBrowsingDataExpanded] = useState(false);
   const [isClearingBrowsingData, setIsClearingBrowsingData] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
@@ -74,16 +77,26 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
   const browsingDataCategories = browsingDataCategoryList(translate);
 
   const addProfile = (name: string) => {
-    setIsAdding(false);
     const nextName = name.trim();
+    if (nextName && isBrowserProfileNameTaken(nextName, profiles)) {
+      setNameTakenAt('new');
+      addInputRef.current?.focus();
+      return;
+    }
+    setIsAdding(false);
     if (!nextName) return;
     const profile: BrowserProfile = { id: makeProfileId(nextName, profiles), name: nextName };
     update({ profiles: [...profiles, profile] });
   };
 
   const renameProfile = (profileId: string, name: string) => {
-    setEditingProfileId(null);
     const nextName = name.trim();
+    if (nextName && isBrowserProfileNameTaken(nextName, profiles, profileId)) {
+      setNameTakenAt(profileId);
+      renameInputRef.current?.focus();
+      return;
+    }
+    setEditingProfileId(null);
     if (!nextName) return;
     update({
       profiles: profiles.map((profile) =>
@@ -234,11 +247,13 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
                       name: profile.name,
                     })}
                     className="h-7 min-w-0 flex-1"
+                    aria-invalid={nameTakenAt === profile.id || undefined}
                     onFocus={(event) => event.currentTarget.select()}
+                    onChange={() => setNameTakenAt(null)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter')
                         renameProfile(profile.id, event.currentTarget.value);
-                      if (event.key === 'Escape') setEditingProfileId(null);
+                      if (event.key === 'Escape') { setEditingProfileId(null); setNameTakenAt(null); }
                     }}
                   />
                   <Button
@@ -263,7 +278,7 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
                     aria-label={translate('browserSettings.cancelRenameLabel', {
                       name: profile.name,
                     })}
-                    onClick={() => setEditingProfileId(null)}
+                    onClick={() => { setEditingProfileId(null); setNameTakenAt(null); }}
                   >
                     <X className="size-4" />
                   </Button>
@@ -295,7 +310,7 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
                       className="min-w-40"
                       finalFocus={renameInputRef}
                     >
-                      <DropdownMenuItem onClick={() => setEditingProfileId(profile.id)}>
+                      <DropdownMenuItem onClick={() => { setEditingProfileId(profile.id); setNameTakenAt(null); }}>
                         <Pencil className="size-4" />
                         {translate('browserSettings.rename')}
                       </DropdownMenuItem>
@@ -317,6 +332,9 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
                 </>
               )}
             </div>
+            {editingProfileId === profile.id && nameTakenAt === profile.id ? (
+              <SettingsNote tone="danger" role="alert">{translate('browserSettings.profileNameTaken')}</SettingsNote>
+            ) : null}
             </SettingsRow>
           ))}
 
@@ -331,9 +349,11 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
                 placeholder={translate('browserSettings.newProfilePlaceholder')}
                 aria-label={translate('browserSettings.newProfileLabel')}
                 className="h-7 min-w-0 flex-1"
+                aria-invalid={nameTakenAt === 'new' || undefined}
+                onChange={() => setNameTakenAt(null)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') addProfile(event.currentTarget.value);
-                  if (event.key === 'Escape') setIsAdding(false);
+                  if (event.key === 'Escape') { setIsAdding(false); setNameTakenAt(null); }
                 }}
               />
               <Button
@@ -354,7 +374,7 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
                 className="size-7 shrink-0 text-foreground-muted"
                 disabled={disabled}
                 aria-label={translate('browserSettings.cancelAddProfile')}
-                onClick={() => setIsAdding(false)}
+                onClick={() => { setIsAdding(false); setNameTakenAt(null); }}
               >
                 <X className="size-4" />
               </Button>
@@ -373,6 +393,9 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
             </Button>
           )}
         </div>
+        {isAdding && nameTakenAt === 'new' ? (
+          <SettingsNote tone="danger" role="alert">{translate('browserSettings.profileNameTaken')}</SettingsNote>
+        ) : null}
         </SettingsRow>
       </SettingsGroup>
 
