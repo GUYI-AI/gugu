@@ -295,7 +295,7 @@ export default {
     "avatarUploading": "Uploading…",
     "nameLabel": "Name",
     "namePlaceholder": "Your name",
-    "occupationLabel": "Occupation",
+    "occupationLabel": "Occupation (required)",
     "occupation": {
       "student": "Student",
       "research": "Research",
@@ -1108,7 +1108,7 @@ export default {
       "existingFolder": "Existing folder",
       "pickFolder": "Choose folder",
       "offline": "Offline",
-      "noMachine": "No computer is online",
+      "noMachine": "Sign in on a computer and keep it online",
       "noDefaultDirectory": "This computer has no default projects folder",
       "invalidName": "A project name cannot contain / \\ : * ? \" < > |",
       "pathTaken": "This folder is already used by “{{name}}”",

@@ -20,11 +20,12 @@ export function PhoneNavigationPicker<T>({ kind, items, nameOf, ready = true, ch
   const [query, setQuery] = useState('')
   const term = query.trim().toLocaleLowerCase()
   const shown = items.filter(item => nameOf(item).toLocaleLowerCase().includes(term))
+  // Nothing to search → no search box; the caller's empty state says why the list is empty.
   return <div>
-    <div className="gg-phone-navigation-search">
+    {items.length > 0 && <div className="gg-phone-navigation-search">
       <SearchField value={query} onValueChange={setQuery} placeholder={t(kind)}
         clearLabel={t('clear')} onClear={() => setQuery('')} data-testid={`phone-${kind}-search`} />
-    </div>
+    </div>}
     {children(shown)}
     {ready && term && !shown.length && <p role="status" className="gg-phone-room-empty">{t('noResults')}</p>}
   </div>
