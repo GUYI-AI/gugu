@@ -390,6 +390,7 @@ export class AcpChatStore {
       effort: computed,
       effortOptions: computed,
       fastModeGroup: computed,
+      recordedFastMode: computed,
       commands: computed,
       permissionQueue: computed,
       queuedPrompts: computed,
@@ -537,6 +538,10 @@ export class AcpChatStore {
 
   get fastModeGroup() {
     return this.session?.config.current().fastMode ?? null;
+  }
+
+  get recordedFastMode(): boolean {
+    return this._sessionRecord()?.fastMode === true;
   }
 
   get commands(): CommandItem[] {

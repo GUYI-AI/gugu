@@ -866,6 +866,7 @@ const enUSCoreMessages = {
   'composer.effortUnset': 'No level selected',
   'composer.fastModeHint': 'Faster, uses more quota',
   'composer.fastModeLabel': 'Fast',
+  'composer.standardModeLabel': 'Standard',
   'composer.effortLocked': 'This task cannot change the thinking level right now.',
   // @@@session-options-disabled —— 置灰的那一条必须说明为什么
   // (owner 2026-08-21:选不了的那一头要留在原地并说明原因)。
@@ -2182,6 +2183,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'composer.effortUnset': '未选档位',
   'composer.fastModeHint': '更快，消耗更多额度',
   'composer.fastModeLabel': '快速模式',
+  'composer.standardModeLabel': '普通模式',
   'composer.effortLocked': '此会话当前无法更改思考档位。',
   'composer.modelNotInCatalog':
     '咕咕已不再为此 agent 提供该模型，此会话无法使用它。请选择其他模型。',

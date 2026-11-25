@@ -1514,8 +1514,27 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
         onEffortChange={handleEffortChange}
-        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
-        onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
+        fastMode={sessionFastMode({
+          capabilities: providerCapabilities, route, group: store.fastModeGroup,
+          platformSupported: !store.isTransient && platformCatalog.models.some((entry) =>
+            entry.id === runningPlatformModel && entry.fastSupported && !entry.requiresMembership),
+          recorded: store.recordedFastMode,
+        })}
+        onFastModeChange={(enabled) => {
+          if (route === 'platform') {
+            const target: RestartTarget = {
+              dimension: 'fast', value: enabled,
+              label: translate(enabled ? 'composer.fastModeLabel' : 'composer.standardModeLabel'),
+            };
+            if (!sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data.providerSessionId) {
+              void switchBeforeFirstStart(target);
+            } else {
+              setPendingReload(target);
+            }
+            return;
+          }
+          void store.setFastMode(enabled);
+        }}
         renderFastModeHint={renderFastModeHint}
         permissionModeOptions={withAutoReviewHint(localizePermissionModeOptions(
           sessionPermissionOptions,

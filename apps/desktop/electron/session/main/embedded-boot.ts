@@ -1259,6 +1259,7 @@ async function reloadEmdashSessionNow(input: {
    * `model_reasoning_effort`),活进程改不了;通用模式在活会话里当场改,不走重开。
    */
   effort?: string | null
+  fastMode?: boolean
   /**
    * 换成这一档权限(咕咕四档)再重开 —— 只给权限一维声明 `reload-session` 的家(dsh:档位在 spawn 那刻由会话包
    * 写进进程,活进程经 ACP 改不了)。与 `model` 同一条纪律:宿主先写进会话记录、再停、再起,起不来就写回原样。
@@ -1271,11 +1272,32 @@ async function reloadEmdashSessionNow(input: {
   }
   const session = (await getSessions()).find((candidate) => candidate.id === sessionId)
   if (!session) throw new Error(`session ${sessionId} was not found`)
+  const reloadSurface = session.runtime === 'acp' ? 'acp' : 'tui'
+  const changesModel = Boolean(input.model?.trim() || input.resetModel)
+  const platformBefore = changesModel || input.fastMode !== undefined ? await sessionPlatformModel(sessionId) : undefined
+  if (reason === 'fast-switch' && input.fastMode === undefined) throw new Error('Fast selection is required')
+  if (input.fastMode !== undefined) {
+    if (!platformBefore || changesModel || session.providerId !== 'codex') {
+      throw new Error('Fast requires a selected platform model')
+    }
+    if (input.fastMode) {
+      const { platformCreationFastGroup } = await import('./core/agents/platform-fast-mode')
+      if (!await platformCreationFastGroup(session.providerId, `platform:${platformBefore.modelId}`, reloadSurface)) {
+        throw new Error('Fast is unavailable for the selected platform model')
+      }
+    }
+  }
+  const nextFast = input.fastMode ?? (changesModel && session.fastMode === true
+    && (platformBefore || input.modelSource === 'platform') ? false : undefined)
+  const announceFast = (value: boolean) => events.emit(sessionChangedChannel, {
+    sessionId, projectId: session.projectId, changes: { fastMode: value },
+  })
   const providerSessionId = session.providerSessionId?.trim()
   // 只收模型 / 档位:MCP 开关仍按原样拒 —— 那一维有正在起的会话要跟上,只落记录会变成「记了没生效」。
   const carriesModelChoice = (typeof input.model === 'string' && !!input.model.trim())
     || !!input.resetModel
     || input.effort !== undefined
+    || nextFast !== undefined
   if (!providerSessionId && carriesModelChoice && !Array.isArray(input.mcpDisabledServers)) {
     await recordUnstartedSessionChoice({
       sessionId,
@@ -1285,6 +1307,7 @@ async function reloadEmdashSessionNow(input: {
       modelSource: input.modelSource,
       resetModel: input.resetModel,
       effort: input.effort,
+      fastMode: nextFast,
     })
     return { nativeSession: 'not-started' }
   }
@@ -1298,7 +1321,6 @@ async function reloadEmdashSessionNow(input: {
   const mounted = await sessionService.ensureSessionMounted(sessionId)
   const workspace = await resolveWorkspace(session.projectId, mounted.workspaceId)
   if (!workspace) throw new Error(`session ${sessionId} workspace is not mounted`)
-  const reloadSurface = session.runtime === 'acp' ? 'acp' : 'tui'
   // The leg's declaration as the registry resolves it: a terminal leg carried by a native surface (Codex's TUI rides
   // its app-server) answers with that surface's declaration.
   const sourceChangeSession = resolveSessionpageCredentialLifecycle(session.providerId, reloadSurface)
@@ -1309,7 +1331,6 @@ async function reloadEmdashSessionNow(input: {
     throw new Error(`session ${sessionId} asked to switch to ${nextModel} without a billing path (modelSource)`)
   }
   const targetSource = nextModel ? input.modelSource : input.resetModel ? 'own' : undefined
-  const platformBefore = targetSource ? await sessionPlatformModel(sessionId) : undefined
   const before = targetSource ? lastModelSource(sessionId) : undefined
   const sourceChanged = !!targetSource && !!before && (before === 'gugu') !== (targetSource === 'platform')
   const needsNewThread = sourceChangeSession === 'fork' && !!targetSource && (session.providerId === 'codex'
@@ -1344,10 +1365,10 @@ async function reloadEmdashSessionNow(input: {
     let platformWritten = false
     if (input.resetModel) {
       // 与 ACP 腿同一个决定:两半一起清。
-      configBeforePatch = await dropRecordedModel(sessionId, reason)
+      configBeforePatch = await dropRecordedModel(sessionId, reason, nextFast)
       await forgetSessionPlatformModel(sessionId)
       platformWritten = true
-    } else if (nextModel || effortChanged) {
+    } else if (nextModel || effortChanged || nextFast !== undefined) {
       const rows = await db.select({ config: sessions.config })
         .from(sessions).where(eq(sessions.id, sessionId))
       const current = rows[0]?.config
@@ -1356,6 +1377,7 @@ async function reloadEmdashSessionNow(input: {
       }
       configBeforePatch = current
       const nextConfig = { ...current }
+      if (nextFast !== undefined) nextConfig.fastMode = nextFast
       if (effortChanged) {
         if (nextEffort) nextConfig.effort = nextEffort
         else delete nextConfig.effort
@@ -1422,6 +1444,7 @@ async function reloadEmdashSessionNow(input: {
         const { pendingRestart: _pendingRestart, providerSessionState: _providerSessionState, ...cleanConfig } = currentConfig
         await db.update(sessions).set({ config: cleanConfig }).where(eq(sessions.id, sessionId))
       }
+      if (nextFast !== undefined) announceFast(nextFast)
       return { nativeSession: forkProviderSession ? 'route-switched' : resumed.providerSessionId === providerSessionId ? 'preserved' : 'replaced' }
     } catch (error) {
       if (configBeforePatch) {
@@ -1432,7 +1455,7 @@ async function reloadEmdashSessionNow(input: {
             providerSessionState: 'restart_failed',
             pendingRestart: {
               status: 'restart_failed',
-              dimension: nextModel ? 'model' : 'effort',
+              dimension: nextModel || nextFast !== undefined ? 'model' : 'effort',
               ...(nextModel ? { targetModel: nextModel } : {}),
               ...(input.modelSource ? { targetModelSource: input.modelSource } : {}),
               error: message,
@@ -1462,6 +1485,7 @@ async function reloadEmdashSessionNow(input: {
   //    ❌ 不由渲染层代劳:那条路要么走活 ACP(必然失败,见 `model` 字段的注释),要么多一次
   //    可能与重开之间被打断的往返。
   const configPatch: Record<string, unknown> = {}
+  if (nextFast !== undefined && !input.resetModel) configPatch.fastMode = nextFast
   if (nextModel && input.modelSource === 'own') configPatch.model = nextModel
   if (Array.isArray(input.mcpDisabledServers)) {
     // 参数**在场**就是「这条会话被显式决定过」——`[]` 也算,所以判的是 `Array.isArray` 而不是长度。
@@ -1508,7 +1532,7 @@ async function reloadEmdashSessionNow(input: {
       events.emit(sessionChangedChannel, { sessionId, projectId: session.projectId, changes: { permissionMode: input.permissionMode } })
     }
   } else if (input.resetModel) {
-    configBeforePatch = await dropRecordedModel(sessionId, reason)
+    configBeforePatch = await dropRecordedModel(sessionId, reason, nextFast)
   }
 
   /**
@@ -1662,6 +1686,7 @@ async function reloadEmdashSessionNow(input: {
     )
   }
   if (nextModel || input.resetModel) announceSessionModel(sessionId, session.projectId, recordedModel)
+  if (nextFast !== undefined) announceFast(nextFast)
   life.start(sessionId, 'reconfigure')
   const currentConfigRows = await db.select({ config: sessions.config })
     .from(sessions).where(eq(sessions.id, sessionId))
@@ -1681,6 +1706,7 @@ async function reloadEmdashSessionNow(input: {
 async function dropRecordedModel(
   sessionId: string,
   reason: string,
+  fastMode?: boolean,
 ): Promise<typeof sessions.$inferSelect.config> {
   const rows = await db.select({ config: sessions.config })
     .from(sessions).where(eq(sessions.id, sessionId))
@@ -1690,6 +1716,7 @@ async function dropRecordedModel(
   }
   const { model: _dropped, ...rest } = current as Record<string, unknown> & { model?: unknown }
   void _dropped
+  if (fastMode !== undefined) rest.fastMode = fastMode
   await db.update(sessions)
     .set({ config: rest as typeof current })
     .where(eq(sessions.id, sessionId))

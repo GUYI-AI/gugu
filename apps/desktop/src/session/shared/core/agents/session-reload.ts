@@ -22,7 +22,7 @@ export const SESSIONPAGE_SESSION_RELOAD_CHANNEL = 'sessionpage-session:reload';
  * 它是枚举而不是自由文本:自由文本会让两条车道各写各的措辞,而这个值最终会出现在事故排查里,
  * 那时「reason 有几种取值」必须是能穷举的。
  */
-export type SessionReloadReasonCode = 'model-switch' | 'mcp-toggle' | 'permission-switch' | 'manual';
+export type SessionReloadReasonCode = 'model-switch' | 'mcp-toggle' | 'permission-switch' | 'fast-switch' | 'manual';
 
 export interface SessionReloadRequest {
   sessionId: string;
@@ -53,6 +53,8 @@ export interface SessionReloadRequest {
    * 与 `model` 同一条纪律:由宿主先写进会话记录、再重开,spawn 按记录重算。
    */
   effort?: string | null;
+  /** A platform tier change takes effect when the host reloads with a newly issued ticket. */
+  fastMode?: boolean;
   /**
    * 这次要**关掉**的那几台 MCP server(harness 自己的配置键);不改 MCP 的重开(如换模型)省略。
    *

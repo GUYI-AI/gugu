@@ -1366,6 +1366,7 @@ export interface SessionpagePlatformModel {
    * to the pty afterwards pins the terminal the user watches and nothing else.
    */
   model: string | null
+  serviceTier?: 'priority'
   /**
    * Environment that pins the model for providers configured that way.
    *
@@ -1556,6 +1557,7 @@ export function sessionBundleModelFor(
  */
 export function codexPlatformInjection(input: {
   model: string
+  serviceTier?: 'priority'
   providerId: string
   providerLabel: string
   baseUrl: string
@@ -1577,6 +1579,7 @@ export function codexPlatformInjection(input: {
 }): AcpPlatformInjection {
   return {
     model: input.model,
+    ...(input.serviceTier ? { serviceTier: input.serviceTier } : {}),
     providerId: input.providerId,
     providerLabel: input.providerLabel,
     baseUrl: input.baseUrl,
@@ -1763,9 +1766,8 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
   // Runtime-only views have no conversation row of their own and must resolve from their source.
   const identitySessionId = input.identitySessionId ?? input.sessionId
   // 武装哪一档要等签发之后才定:要看**这个模型**在目录里认哪些档(#6447),见下面 platformArmedEffort。
-  const recordedEffort = (await getSessions())
-    .find((session) => session.id === identitySessionId)
-    ?.effort?.trim() || null
+  const recorded = (await getSessions()).find((session) => session.id === identitySessionId)
+  const recordedEffort = recorded?.effort?.trim() || null
 
   // @@@2503 先释放旧的,再签新的。反过来会自锁:同一条会话重启时,签发那一刻旧会话仍然 live 并
   // 持有它那份预留,而额度窗口是把在途预留扣掉之后算的 —— 一条会话因此会被自己上一轮挡在门外。
@@ -1782,6 +1784,7 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
     env,
     agentUserId,
     engineId: input.providerId,
+    ...(selection?.source === 'platform' && recorded?.fastMode === true ? { serviceTier: 'priority' as const } : {}),
     providerSessionId: null,
     sessionId: input.sessionId,
     // undefined = 存量会话,读 agent 级 model_access(见上面 platformModel 的兼容说明)。
@@ -1985,6 +1988,7 @@ async function resolvePlatformModelForSession(input: PlatformModelForSessionInpu
         ? credentialProxyEnv(launch.env as Record<string, string>, launch.access, platformProvider)
         : launch.env as Record<string, string>,
     model: launch.access.model,
+    ...(launch.access.serviceTier ? { serviceTier: launch.access.serviceTier } : {}),
     spawnEnv: {
       ...(materialized.spawnEnv ?? {}),
     } as Record<string, string>,

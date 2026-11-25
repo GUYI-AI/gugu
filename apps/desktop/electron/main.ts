@@ -2691,6 +2691,7 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
     model?: unknown
     modelSource?: unknown
     effort?: unknown
+    fastMode?: unknown
     mcpDisabledServers?: unknown
     permissionMode?: unknown
   }
@@ -2700,7 +2701,7 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
       ? 'manual'
       : row.reason === 'permission-switch'
         ? 'permission-switch'
-        : 'model-switch'
+        : row.reason === 'fast-switch' ? 'fast-switch' : 'model-switch'
   const emdash = loadEmdashBridge()
   // 桥没装载 = 会话页模块根本没起来。❌ 不静默返回 ok:那会让确认框显示「重开完成」,
   // 而实际上一个字节都没发生。
@@ -2723,6 +2724,7 @@ handleShellChannel(SESSIONPAGE_SESSION_RELOAD_CHANNEL, async (_event, input: unk
       ...(row.effort === null || typeof row.effort === 'string'
         ? { effort: typeof row.effort === 'string' ? row.effort.trim() || null : null }
         : {}),
+      ...(row.reason === 'fast-switch' && typeof row.fastMode === 'boolean' ? { fastMode: row.fastMode } : {}),
       // ⚠️ `Array.isArray` 判在场,❌ 不按长度:`[]` = 用户决定过但一台没关,
       //    它仍要让这条会话独占适配器。按长度判会把那一刻悄悄退回池化。
       ...(Array.isArray(row.mcpDisabledServers)

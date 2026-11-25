@@ -14,4 +14,11 @@ describe('restart targets: one translation per dimension', () => {
     expect(reloadRequestFor(target, 's1')).toEqual({ sessionId: 's1', reason: 'model-switch', model: 'glm-5.3', modelSource: 'platform' });
     expect(confirmReasonFor(target)).toBe('model-switch');
   });
+
+  it('sends explicit Fast on and off choices to the host before it reissues access', () => {
+    for (const value of [true, false]) {
+      const target = { dimension: 'fast', value, label: 'Luna' } as const;
+      expect(reloadRequestFor(target, 's1')).toEqual({ sessionId: 's1', reason: 'fast-switch', fastMode: value });
+    }
+  });
 });

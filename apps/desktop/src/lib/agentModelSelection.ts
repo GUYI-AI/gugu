@@ -41,6 +41,7 @@ export interface PlatformCatalogModel {
   creditMultiplier?: number | null
   /** Per protocol (`credit_multipliers`): the multiplier the composer shows for the protocol an engine speaks. */
   creditMultipliers?: Partial<Record<ModelAccessProtocol, number>>
+  fastProtocols?: readonly ModelAccessProtocol[]
   contextWindow?: number | null
   /** The reasoning levels this model accepts (#6447); null = the catalog does not say. */
   reasoningEfforts?: string[] | null
@@ -89,6 +90,9 @@ export async function fetchPlatformModelCatalog(): Promise<PlatformCatalogModel[
           hidden: row.hidden === true,
           creditMultiplier: typeof row.credit_multiplier === 'number' ? row.credit_multiplier : null,
           creditMultipliers: parsePlatformCreditMultipliers(row.credit_multipliers),
+          ...(Array.isArray(row.fast_protocols) ? {
+            fastProtocols: row.fast_protocols.filter(isModelAccessProtocol),
+          } : {}),
           contextWindow: typeof row.context_window === 'number' ? row.context_window : null,
           reasoningEfforts: parsePlatformReasoningEfforts(row.reasoning_efforts),
         }]

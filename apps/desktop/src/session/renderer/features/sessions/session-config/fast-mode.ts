@@ -19,7 +19,10 @@ export function sessionFastMode(input: {
   capabilities: Pick<AgentCapabilities, 'acp'> | null | undefined;
   route: 'own' | 'platform' | 'unknown';
   group: (SessionOptionGroup & { configId: string }) | null | undefined;
+  platformSupported?: boolean;
+  recorded?: boolean;
 }): boolean | undefined {
+  if (input.route === 'platform') return input.platformSupported ? input.recorded === true : undefined;
   if (input.route === 'unknown' || !agentOffersFastMode(input.capabilities) || input.group?.configId !== 'fast') return undefined;
   return fastModeValue(input.group);
 }
@@ -30,9 +33,11 @@ export function draftFastMode(input: {
   capabilities: Pick<AgentCapabilities, 'acp'> | null | undefined;
   modelId: string | null;
   platformModel: string | null;
+  platformSupported?: boolean;
   catalog: { kind: string; selected?: string | null; fastMode?: (SessionOptionGroup & { configId: string }) | null };
 }): boolean | undefined {
-  if (input.platformModel || !input.modelId || input.catalog.kind !== 'ready' || input.catalog.selected !== input.modelId) return undefined;
+  if (input.platformModel) return input.platformSupported ? input.enabled : undefined;
+  if (!input.modelId || input.catalog.kind !== 'ready' || input.catalog.selected !== input.modelId) return undefined;
   const supported = sessionFastMode({ capabilities: input.capabilities, route: 'own', group: input.catalog.fastMode });
   return supported === undefined ? undefined : input.enabled;
 }

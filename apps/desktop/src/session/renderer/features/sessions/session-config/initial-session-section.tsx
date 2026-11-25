@@ -1297,7 +1297,11 @@ export function useInitialSessionState(
     permissionOptions,
     permissionModeMap,
     autoReviewCostSource,
-    fastMode: unattended || selectedCustom ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
+    fastMode: unattended || selectedCustom ? undefined : draftFastMode({
+      enabled: fastModeDraft, capabilities, modelId: model, platformModel,
+      platformSupported: platformCatalog.models.some((entry) => entry.id === platformModel && entry.fastSupported),
+      catalog: targetFastCatalog ?? harnessCatalogState,
+    }),
     setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {

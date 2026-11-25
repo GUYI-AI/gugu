@@ -73,6 +73,21 @@ describe('recordUnstartedSessionChoice', () => {
     });
   });
 
+  // #3841 the first start reads Fast from this record to ask for the priority ticket.
+  it('records a platform Fast choice on its own and announces it, in both directions', async () => {
+    for (const fastMode of [true, false]) {
+      mocks.emit.mockClear();
+      await recordUnstartedSessionChoice({ sessionId: 'pty-1', runtime: 'pty', reason: 'fast-switch', fastMode });
+      expect(config('pty-1')).toEqual({
+        version: '1', type: 'pty', effort: 'high', initialPrompt: 'hi', permissionMode: 'edit', fastMode,
+      });
+      expect(mocks.emit).toHaveBeenCalledWith(sessionChangedChannel, {
+        sessionId: 'pty-1', projectId: 'project-1', changes: { fastMode },
+      });
+    }
+    await expect(sessionPlatformModel('pty-1')).resolves.toEqual({ modelId: 'glm-5.3' });
+  });
+
   it('refuses what the leg cannot take, and a call that records nothing', async () => {
     await expect(recordUnstartedSessionChoice({
       sessionId: 'acp-1', runtime: 'acp', reason: 'model-switch', effort: 'low',

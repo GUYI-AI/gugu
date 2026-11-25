@@ -352,6 +352,7 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
           id: model.id,
           displayName: model.displayName,
           creditMultiplier: model.creditMultiplier,
+          ...(model.fastSupported ? { fastSupported: true } : {}),
           contextWindow: model.contextWindow,
           reasoningEfforts: model.reasoningEfforts,
           requiresMembership: model.requiresMembership,
@@ -447,6 +448,7 @@ export function createSessionpagePlatformHooks(deps: SessionpagePlatformHooksDep
           platformAccessSessionId,
           platform: codexPlatformInjection({
             model: platform.model,
+            serviceTier: platform.serviceTier,
             providerId: CODEX_PLATFORM_PROVIDER_ID,
             providerLabel: provider.name,
             baseUrl: provider.base_url,

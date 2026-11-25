@@ -828,6 +828,33 @@ describe('#2503 session-page sessions carry the designated model', () => {
     expect(platform.clientArgs.some((arg) => arg.startsWith('model='))).toBe(false)
     expect(platform.clientArgs.join(' ')).not.toContain('sk-session')
   })
+  // #3841 reopen: the Fast choice lives in the session record, so a reopened platform session asks for the
+  // priority ticket again and hands the confirmed tier to the engine; without the record it stays ordinary.
+  it.each([
+    ['recorded on', true, 'priority'],
+    ['recorded off', false, undefined],
+    ['never recorded', undefined, undefined],
+  ] as const)('reopens a codex platform session with Fast %s', async (_case, fastMode, tier) => {
+    agentOnThisSession()
+    platformLaunch('gpt-6-luna')
+    const issued = await resolveAgentModelLaunch.getMockImplementation()!() as { access: Record<string, unknown> }
+    resolveAgentModelLaunch.mockImplementation(async (...args: unknown[]) => {
+      const request = args[0] as { serviceTier?: 'priority' }
+      return { ...issued, access: { ...issued.access, ...(request.serviceTier ? { serviceTier: request.serviceTier } : {}) } }
+    })
+    loadEngine.mockResolvedValue({ id: 'codex', modelConfigInjection: 'codex-config-flags' })
+    getSessions.mockResolvedValue([{ id: SESSION, ...(fastMode === undefined ? {} : { fastMode }) }])
+    const platform = await platformModelForSession({
+      surface: 'cui', sessionId: SESSION, providerId: 'codex', authProvider,
+      platformModel: { modelId: 'gpt-6-luna' },
+    })
+    try {
+      expect((resolveAgentModelLaunch.mock.calls[0]![0] as { serviceTier?: string }).serviceTier).toBe(tier)
+      expect(platform.serviceTier).toBe(tier)
+    } finally {
+      await releasePlatformModelForSession(SESSION)
+    }
+  })
   it('holds the issued launch for reuse and drops it on release', async () => {
     agentOnThisSession()
     platformLaunch('glm-5.2-codex')

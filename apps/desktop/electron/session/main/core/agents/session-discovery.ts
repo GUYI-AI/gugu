@@ -62,6 +62,7 @@ export type SessionModelChoice = HarnessModelChoice & {
    * 手机新建页据此与 harness 的档位取交集 —— 与桌面 composer 同一条规则。
    */
   reasoning_efforts?: string[]
+  fast_supported?: true
   /**
    * 这个用户的会员档用不了它、要开会员(#7056),只有 `gugu` 条目可能有;能用就没有这个字段。
    * agent 读到它就别拿它去 `session_spawn`(会被当场拒);手机清单据此标「会员」、点它去网页开通。
@@ -295,6 +296,7 @@ export async function platformGroupFrom(
       source: 'gugu' as const,
       ...(model.creditMultiplier !== null ? { credit_multiplier: model.creditMultiplier } : {}),
       ...(model.reasoningEfforts ? { reasoning_efforts: [...model.reasoningEfforts] } : {}),
+      ...(model.fastSupported ? { fast_supported: true as const } : {}),
       ...(model.requiresMembership ? { requires_membership: true as const } : {}),
       ...(model.hidden ? { hidden: true as const } : {}),
     })),

@@ -47,7 +47,6 @@ import type { SessionpagePlatformRecoveryCoordinator } from './sessionpage-platf
 import { edgeEndsTurn, type TurnLifecycleEdge } from './turn-lifecycle-relay'
 import { claudeTuiSessionArgs, releaseClaudeTuiSettings } from './claude-tui-settings'
 import { codexStartupFastTier } from './codex-startup-fast-tier'
-import { platformCreationFastGroup } from '@main/core/agents/platform-fast-mode'
 import { probeHarnessModelCatalog } from '@main/core/agents/harness-model-catalog'
 import { wireHarnessModelCatalog } from '@main/core/agents/harness-model-catalog-wiring'
 import { withLoopbackNoProxy } from '@gugu/session-core/agents/agent-env'
@@ -538,14 +537,8 @@ const startCodexAppServer: HostStart = async (ctx, info, platformPromise, { step
     wireHarnessModelCatalog()
     catalog = await probeHarnessModelCatalog('codex', 'tui', info.model ?? undefined)
   }
-  let serviceTier = codexStartupFastTier({ enabled: info.fastMode === true, model: info.model, credits, catalog })
-  if (credits && info.fastMode === true) {
-    const modelId = info.platformModel?.modelId
-    if (!modelId || !await platformCreationFastGroup('codex', `platform:${modelId}`)) {
-      throw new Error('Cannot verify Fast for the selected platform model')
-    }
-    serviceTier = 'priority'
-  }
+  const serviceTier = credits ? platformForCodex.serviceTier ?? 'default'
+    : codexStartupFastTier({ enabled: info.fastMode === true, model: info.model, credits, catalog })
   return codexPtyProvisioning.provisionAndOverride(
     { ...info, ...(platformForCodex.model ? { model: platformForCodex.model } : {}), serviceTier },
     {

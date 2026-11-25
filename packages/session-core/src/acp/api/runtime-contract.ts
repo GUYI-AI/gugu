@@ -16,6 +16,7 @@ import { acpApiContract, acpSessionLifecycleProcedures } from './contract';
  */
 export const acpPlatformInjectionSchema = z.object({
   model: z.string().min(1),
+  serviceTier: z.literal('priority').optional(),
   providerId: z.string().min(1),
   providerLabel: z.string().min(1),
   baseUrl: z.string().min(1),

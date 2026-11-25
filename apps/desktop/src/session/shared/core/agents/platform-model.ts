@@ -47,6 +47,8 @@ export interface PlatformModelOption {
   displayName: string;
   /** 已按 providerId 选定,渲染层不再做协议判断。 */
   protocol: PlatformModelProtocol;
+  /** Gateway-verified Fast eligibility for this model and protocol. */
+  fastSupported?: boolean;
   /** New API ModelRatio 的相对倍率(如 0.7 / 2.5),display-only;取不到 = null。 */
   creditMultiplier: number | null;
   /**

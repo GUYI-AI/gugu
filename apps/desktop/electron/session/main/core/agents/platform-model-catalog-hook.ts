@@ -24,6 +24,7 @@ export interface PlatformCatalogModel {
   displayName: string;
   /** New API ModelRatio 的相对倍率,display-only;取不到 = null。 */
   creditMultiplier: number | null;
+  fastSupported?: boolean;
   contextWindow: number | null;
   /** 这个模型认的推理档(目录逐模型下发,#6447);null = 目录没有这条事实。 */
   reasoningEfforts: readonly string[] | null;

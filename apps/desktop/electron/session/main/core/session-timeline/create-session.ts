@@ -35,7 +35,7 @@ import {
   type AgentPayload,
 } from '@shared/core/agents/agent-payload';
 import { creationFastGroup } from '@shared/core/agents/create-fast-mode';
-import { platformCreationFastGroup } from '../agents/platform-fast-mode';
+import { platformFastGroup } from '../agents/platform-fast-mode';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { SESSION_VIEWS, sessionRuntimeOfView, sessionpageLegOfView } from '@shared/core/sessions/sessions';
 import { buildInitialSessionDocument } from '@shared/core/sessions/initial-session-document';
@@ -322,7 +322,8 @@ export async function createModels(
       leg: sessionpageLegOfView(view.view),
     });
     const fast = customRef ? null : platformModel
-      ? await platformCreationFastGroup(request.harness, requestedModel!)
+      ? platformFastGroup(requestedModel!, catalog.models.some((model) =>
+        model.id === requestedModel && model.fast_supported && !model.requires_membership))
       : creationFastGroup(agent.capabilities, requestedModel ?? catalog.selected, state);
     const reviewQualified = (!customRef || request.harness !== 'claude' || customReview !== null) && catalogAllowsAutoReview(agent.capabilities?.autoApprove?.modes, state,
           platformModel ? 'platform' : customRef ? 'custom' : 'own', runtimeModelId(requestedModel) ?? (state.kind === 'ready' ? state.selected : null));
