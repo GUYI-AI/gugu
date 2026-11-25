@@ -923,6 +923,9 @@ export const settingRowUnlock = style({
  * ❌ 别在这里再挂 maxHeight/overflow:清单自己一滚,去路就又被挤到它外面、像钉死在底下。
  */
 export const modelPanelList = style({ minWidth: '11rem' });
+// A scrollbar that takes room (mac1: 4px) would sit on the right only and break the rows' left/right symmetry
+// (owner 11-25): the model list's scroll area reserves the same gutter on both edges. Overlay scrollbars take none.
+globalStyle(`.scroll-fade__viewport:has(> ${modelPanelList})`, { scrollbarGutter: 'stable both-edges' });
 
 // ── Model trigger（底排右侧「5.6 Sol 轻度 ∨」）─────────────────────────────────
 
@@ -1679,11 +1682,18 @@ export const composerPanelItemIcon = style({
 // ⇒ 一行只放 logo + 名字 + 行尾一小格(咕咕的模型写倍率),说明、上下文、推理档挪进悬浮卡。
 // ❌ 别再回到两段式行:那一版一屏只放得下五六条,说明行又被 288px 的面板截成省略号,两头都没讲清。
 
-/** 单行模型条:在 `composerPanelItem` 之上把上下内距收紧、整行垂直居中。 */
+/**
+ * 单行模型条:在 `composerPanelItem` 之上把上下内距收紧、整行垂直居中。
+ * 左右内距相等(owner 11-25「entry 离右边太远、左边太近」):logo 离面板左边 = 勾离面板右边;
+ * 勾那一列只有 14px,没选中的行不再空出 `composerPanelItem` 那 2.25rem 的勾位。
+ */
+export const MODEL_ROW_INLINE_PADDING = '1rem';
 export const modelPanelItemCompact = style({
   alignItems: 'center',
   paddingTop: '0.375rem',
   paddingBottom: '0.375rem',
+  paddingLeft: MODEL_ROW_INLINE_PADDING,
+  paddingRight: MODEL_ROW_INLINE_PADDING,
   selectors: {
     '&[data-disabled][role="option"]': { pointerEvents: 'auto' },
     '&[data-selected]': { fontWeight: 600 },
@@ -1704,12 +1714,16 @@ export const modelPanelItemTrailing = style({ display: 'flex', alignItems: 'cent
 export const modelPanelItemRate = style({ color: vars.foregroundMuted, fontVariantNumeric: 'tabular-nums', fontSize: '12px' });
 export const modelPanelItemCheck = style({ display: 'flex', width: '14px' });
 
-/** The vendor tag after a person's own model (`ComposerModelOption.tag`): 10px on a light grey, darker on the row in focus. */
+/**
+ * The vendor tag after a person's own model (`ComposerModelOption.tag`): a capsule with a fill and a hairline border,
+ * as in the owner's 11-24 draft. It never shrinks — a long model name truncates, the tag stays whole.
+ */
 export const modelPanelItemTag = style({
   flexShrink: 0,
-  paddingLeft: '0.25rem',
-  paddingRight: '0.25rem',
-  borderRadius: tokenVars.radiusSm,
+  paddingLeft: '0.375rem',
+  paddingRight: '0.375rem',
+  borderRadius: '999px',
+  border: `1px solid ${vars.border}`,
   background: vars.background1,
   color: vars.foregroundMuted,
   fontSize: '10px',
@@ -1836,8 +1850,8 @@ export const modelPanelActionRow = style({
   textAlign: 'start',
   paddingTop: '0.375rem',
   paddingBottom: '0.375rem',
-  paddingLeft: '0.75rem',
-  paddingRight: '0.75rem',
+  paddingLeft: MODEL_ROW_INLINE_PADDING,
+  paddingRight: MODEL_ROW_INLINE_PADDING,
   borderRadius: tokenVars.radiusMd,
   fontSize: fallbackVar(tokenVars.textSm, '13px'),
   fontWeight: 500,

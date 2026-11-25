@@ -262,10 +262,76 @@ describe('#7123 英文界面:底部「Upgrade to unlock more models」整句都�
   })
 })
 
+describe('owner 11-25 21:35:行内左右对称、标签是胶囊、长名字只截名字', () => {
+  // A 14px logo stand-in: the icon column is drawn only when some row has a logo, as in the product.
+  const logo = <span style={{ display: 'block', width: 14, height: 14, background: '#888' }} />
+  const ROWS = {
+    'platform:glm': { name: 'GLM 5.3 Flash', providerLabel: '智谱', creditRate: '0.04x', icon: logo },
+    'platform:ds': { name: 'DeepSeek V4 Flash', providerLabel: 'DeepSeek', creditRate: '0.07x', icon: logo },
+    long: { name: 'A custom model whose name is far too long to fit in this panel', providerLabel: 'OpenAI', tag: 'example-relay', icon: logo },
+  }
+
+  beforeEach(async () => {
+    await page.viewport(1400, 800)
+    container = document.createElement('div')
+    container.className = 'emlight gugu-skin bg-background'
+    container.style.cssText = 'position:fixed;right:24px;bottom:24px;width:640px'
+    document.body.classList.add('emlight', 'gugu-skin')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    root.render(
+      <SessionLocalizationProvider>
+        <ChatComposer modelOptions={ROWS} selectedModel="platform:glm" onModelChange={() => {}} onManageModels={() => {}}
+          onSubmit={() => {}} onStop={() => {}} />
+      </SessionLocalizationProvider>
+    )
+    await until('composer model trigger mounted', () => document.querySelector('[data-testid="composer-model-trigger"]') != null)
+    ;(document.querySelector('[data-testid="composer-model-trigger"]') as HTMLElement).click()
+    await until('model panel lists options', () => (panel()?.querySelectorAll('[role="option"]').length ?? 0) > 0)
+    await until('model panel entry animation finishes', () => panel()!.getAnimations().every((animation) => animation.playState === 'finished'))
+  })
+
+  afterEach(() => {
+    root?.unmount()
+    container?.remove()
+    root = null
+    container = null
+  })
+
+  it('puts the logo as far from the left edge as the check is from the right, and keeps every rate in one column', () => {
+    const box = panel()!.getBoundingClientRect()
+    const rect = (row: HTMLElement, slot: string) => row.querySelector<HTMLElement>(`[data-slot="${slot}"]`)!.getBoundingClientRect()
+    const selected = rowByName('GLM 5.3 Flash')
+    const left = rect(selected, 'composer-model-icon').left - box.left
+    const right = box.right - rect(selected, 'composer-model-check').right
+    expect(Math.abs(left - right), `logo ${left.toFixed(1)}px from the left, check ${right.toFixed(1)}px from the right`).toBeLessThanOrEqual(1)
+    // An unselected row reserves only the narrow check column: its rate ends where the selected row's does.
+    expect(rect(rowByName('DeepSeek V4 Flash'), 'composer-model-rate').right).toBeCloseTo(rect(selected, 'composer-model-rate').right, 0)
+    // The 「配置模型」 row's icon sits in the model rows' icon column.
+    const manage = panel()!.querySelector<HTMLElement>('[data-testid="composer-model-manage"] [aria-hidden="true"]')!
+    expect(manage.getBoundingClientRect().left).toBeCloseTo(rect(selected, 'composer-model-icon').left, 0)
+  })
+
+  it('draws the tag as a capsule and truncates only the name', () => {
+    const row = rowByName('A custom model whose name is far too long to fit in this panel')
+    const name = row.querySelector<HTMLElement>('[data-slot="composer-model-name"]')!
+    const tag = row.querySelector<HTMLElement>('[data-slot="composer-model-tag"]')!
+    const style = getComputedStyle(tag)
+    expect(style.borderTopWidth).toBe('1px')
+    expect(parseFloat(style.borderTopLeftRadius)).toBeGreaterThanOrEqual(tag.getBoundingClientRect().height / 2)
+    expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    expect(name.scrollWidth, 'the long name is cut with an ellipsis').toBeGreaterThan(name.clientWidth)
+    expect(tag.scrollWidth, 'the tag is whole').toBeLessThanOrEqual(tag.clientWidth)
+    expect(tag.textContent).toBe('example-relay')
+    expect(tag.getBoundingClientRect().right).toBeLessThanOrEqual(row.getBoundingClientRect().right)
+  })
+})
+
 describe('owner 11-25:「配置模型」跟着清单滚,❌ 钉在面板底上', () => {
   // 二十条:比 18rem 的滚动区长得多,才看得出它是钉着还是跟着滚。
+  const logo = <span style={{ display: 'block', width: 14, height: 14, background: '#888' }} />
   const LONG = Object.fromEntries(
-    Array.from({ length: 20 }, (_, i) => [`m${i}`, { name: `Model ${i + 1}`, providerLabel: 'OpenAI' }])
+    Array.from({ length: 20 }, (_, i) => [`m${i}`, { name: `Model ${i + 1}`, providerLabel: 'OpenAI', icon: logo }])
   )
 
   beforeEach(async () => {
@@ -293,6 +359,14 @@ describe('owner 11-25:「配置模型」跟着清单滚,❌ 钉在面板底上',
     container?.remove()
     root = null
     container = null
+  })
+
+  it('keeps the logo and the check equally far from the edges while the list scrolls (a scrollbar may take room)', () => {
+    const box = panel()!.getBoundingClientRect()
+    const row = panel()!.querySelector<HTMLElement>('[role="option"]')!
+    const left = row.querySelector('[data-slot="composer-model-icon"]')!.getBoundingClientRect().left - box.left
+    const right = box.right - row.querySelector('[data-slot="composer-model-check"]')!.getBoundingClientRect().right
+    expect(Math.abs(left - right), `logo ${left.toFixed(1)}px from the left, check ${right.toFixed(1)}px from the right`).toBeLessThanOrEqual(1)
   })
 
   it('is below the fold while the list is at the top, and the last thing once it is scrolled to the end', async () => {

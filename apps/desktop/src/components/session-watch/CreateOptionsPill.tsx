@@ -380,12 +380,14 @@ export function ModelChoices({
     name: phoneModelName(id, name, controls),
     description: phoneModelDescription(id, name, description, controls),
   })
-  const sessionRows = Object.entries(sessionOptions ?? {}).map(([id, option]) => ({
+  const sessionRows = Object.entries(sessionOptions ?? {}).filter(([, option]) => !option.hiddenFromPicker).map(([id, option]) => ({
     id, ...option, ...(composerModelSelection(id).source === 'platform' ? {} : ownModelCopy(id, option.name, option.description)),
   })).filter(({ id, name, description }) => matches(id, name, description))
   // 组头、倍率与桌面模型菜单同一份装配(session-model-menu)。
   const options = models ? createModelOptions(models, harnessName) : {}
-  const offeredRows = models?.models.filter((model) => (!platformOnly || model.source === 'gugu') && offeredInCreateMenu(model)) ?? []
+  // A harness row the shared assembly hid or dropped (a `default` placeholder, owner 11-25) stays out of this list too.
+  const listed = (model: { id: string; source: string }) => model.source !== 'harness' || (!!options[model.id] && !options[model.id]!.hiddenFromPicker)
+  const offeredRows = models?.models.filter((model) => (!platformOnly || model.source === 'gugu') && offeredInCreateMenu(model) && listed(model)) ?? []
   const filteredRows = offeredRows.map((model) => {
     const name = options[model.id]?.name ?? model.name
     return model.source === 'harness'

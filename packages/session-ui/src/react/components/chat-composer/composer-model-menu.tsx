@@ -660,7 +660,7 @@ export function ComposerModelMenu({
                           )}
                           <span className={styles.modelPanelItemTrailing}>
                             {m.creditRate && <span className={styles.modelPanelItemRate} data-slot="composer-model-rate">{m.creditRate}</span>}
-                            <span className={styles.modelPanelItemCheck} aria-hidden="true">
+                            <span className={styles.modelPanelItemCheck} data-slot="composer-model-check" aria-hidden="true">
                               {m.id === selectedModel && <Check className={styles.modelSelectedCheck} size={14} />}
                             </span>
                           </span>

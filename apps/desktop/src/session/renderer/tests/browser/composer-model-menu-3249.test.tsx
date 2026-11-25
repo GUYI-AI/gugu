@@ -53,10 +53,10 @@ import '@renderer/index.css'
 const buildModels = () =>
   composerModelOptions(
     {
-      // ⚠️ 这一条**认不出厂商**,而且是产品里真实存在的第一条:claude 的模型目录首项就叫
-      // 「Default (recommended)」(实机取证)。它一进 fixture,「认不出厂商的行怎么排」
-      // 就从一个假想问题变成必须回答的问题 —— 上一版实机上它的名字比其余 18 行左移 22px。
-      default: { name: 'Default (recommended)' },
+      // ⚠️ 这一条**认不出厂商**、名字带括号规格(自己接的中转模型常是这样)。原先这里是 claude 目录首项
+      // 「Default (recommended)」,owner 11-25 起占位模型不进清单(见 placeholder 那条用例),样本换成它:
+      // 「认不出厂商的行怎么排」「括号只在触发器上剥」两个问题仍要它来回答。
+      'relay-model': { name: 'Relay Model (preview)' },
       'gpt-5.6-codex': { name: 'gpt-5.6-codex', description: '400K 上下文' },
       'gpt-5.6-sol': { name: 'GPT-5.6 Sol', description: '400K 上下文' }
     },
@@ -262,11 +262,10 @@ describe('#3249 composer 模型下拉', () => {
     //
     // ⚠️ 这条必须**两头都判**。只判触发器变短的话,把清单也一起剥掉照样绿 ——
     // 而那正是危险的那一种坏法:claude 目录里 `Opus` 与 `Opus (1M context)` 同时存在,
-    // 清单一剥就是两条一模一样的、选不出来。fixture 里 `Default (recommended)` 就是
-    // claude 目录的真实首项(实机取证),不是为这条判据捏的。
+    // 清单一剥就是两条一模一样的、选不出来。fixture 里 `Relay Model (preview)` 是那条带括号的样本。
     await openPanel()
     expect(visibleOptions(), '清单里不该剥括号 —— 那是用户要分辨规格的地方').toContain(
-      'Default (recommended)'
+      'Relay Model (preview)'
     )
 
     // ⚠️ 不能"点一下那条然后看触发器变没变":这颗 composer 是**受控**的,`selectedModel`
@@ -276,7 +275,7 @@ describe('#3249 composer 模型下拉', () => {
     // `composerModelOptions` 的返回类型带 `| null`(没有可用模型时),所以先取窄。
     const catalog = MODELS ?? {}
     const parenthesized = Object.keys(catalog).find((id) =>
-      catalog[id]?.name.includes('(recommended)')
+      catalog[id]?.name.includes('(preview)')
     )
     expect(parenthesized, 'fixture 里那条带括号的模型不见了 —— 这条判据失去了它的样本').toBeTruthy()
 
@@ -290,7 +289,38 @@ describe('#3249 composer 模型下拉', () => {
           .querySelector<HTMLElement>(
             '[data-slot="composer-model"] [data-slot="composer-model-trigger-label"]'
           )
-          ?.innerText?.trim() === 'Default'
+          ?.innerText?.trim() === 'Relay Model'
+    )
+  })
+
+  it('placeholder models never reach the list: default resolves to the model it names, or is dropped (owner 11-25)', async () => {
+    // owner 11-25「我说过不能有 default 这种模糊的东西」:清单里只放具体的模型名。
+    const claude = composerModelOptions(
+      {
+        default: { name: 'Default (recommended)', description: 'Opus 5 with 1M context' },
+        opus: { name: 'Opus 5' },
+        sonnet: { name: 'Sonnet 5' }
+      },
+      []
+    )!
+    const listed = (options: NonNullable<typeof claude>) =>
+      Object.values(options).filter((option) => !option.hiddenFromPicker).map((option) => option.name)
+    expect(listed(claude)).toEqual(['Opus 5', 'Sonnet 5'])
+    // 会话正停在别名上:触发器写它背后那条具体模型的名字。
+    expect(claude.default).toMatchObject({ name: 'Opus 5', hiddenFromPicker: true })
+    // harness 只报了 default:这一行改叫它会用的那条具体模型。
+    expect(listed(composerModelOptions({ default: { name: 'Default (recommended)', description: 'Sonnet 5.5' } }, [])!)).toEqual(['Sonnet 5.5'])
+    // 说不出是谁 ⇒ 不显示,❌ 退回 default。
+    expect(composerModelOptions({ default: { name: 'Default (recommended)' }, sonnet: { name: 'Sonnet 5' } }, [])).not.toHaveProperty('default')
+    expect(composerModelOptions({ auto: { name: '默认模型' } }, [])).toBeNull()
+
+    MODELS = { ...claude }
+    renderComposer('default')
+    await openPanel()
+    expect(visibleOptions().some((name) => /default|默认/i.test(name)), visibleOptions().join(' | ')).toBe(false)
+    await until(
+      'trigger names the concrete model behind default',
+      () => document.querySelector<HTMLElement>('[data-slot="composer-model"] [data-slot="composer-model-trigger-label"]')?.innerText?.trim() === 'Opus 5'
     )
   })
 

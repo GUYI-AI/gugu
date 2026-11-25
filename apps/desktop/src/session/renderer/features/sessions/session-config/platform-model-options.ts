@@ -1,4 +1,4 @@
-import { isUserFacingModelId } from '@gugu/session-core/acp/client';
+import { concreteModelName, isPlaceholderModel, isUserFacingModelId } from '@gugu/session-core/acp/client';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
 import { log } from '@renderer/utils/logger';
 import { offeredInModelPicker, type PlatformModelOption } from '@shared/core/agents/platform-model';
@@ -121,7 +121,9 @@ export function sanitizeHarnessModelOptions(
   options?: { fromStaticTable?: boolean }
 ): Record<string, ComposerModelOption> | null {
   if (!harnessOptions) return null;
-  harnessOptions = Object.fromEntries(Object.entries(harnessOptions).filter(([id]) => isUserFacingModelId(id)));
+  harnessOptions = concreteHarnessModels(
+    Object.fromEntries(Object.entries(harnessOptions).filter(([id]) => isUserFacingModelId(id)))
+  );
   if (Object.keys(harnessOptions).length === 0) return null;
   // 判定住在 `@/session/shared/platform-model-id`,两条用户面共用同一处 —— 这里只决定**怎么报**。
   const offending = platformNamespaceCollisions(Object.keys(harnessOptions));
@@ -136,6 +138,32 @@ export function sanitizeHarnessModelOptions(
   const collided = new Set(offending);
   return Object.fromEntries(
     Object.entries(harnessOptions).filter(([id]) => !collided.has(id))
+  );
+}
+
+/**
+ * 占位模型(`default` /「Default (recommended)」/「默认」)不进清单 —— owner 11-24「openai cli 模型默认的模型」
+ * 离谱、11-25「不能有 default 这种模糊的东西」:清单里只放具体的模型名。
+ *
+ * - 它说得出自己是谁(描述开头是一个具体模型名),而那条具体模型就在清单里 ⇒ 只留一个看不见的同名影子
+ *   (`hiddenFromPicker`):会话正停在这个别名上时,触发器写的是具体名字,清单里不重复出现;
+ * - 说得出、但清单里没有那一条(harness 只报了 default)⇒ 这一行改叫那个具体名字;
+ * - 说不出 ⇒ 整条不要。❌ 退回显示 default。
+ */
+function concreteHarnessModels(options: Record<string, ComposerModelOption>): Record<string, ComposerModelOption> {
+  const entries = Object.entries(options);
+  const concrete = entries.filter(([id, option]) => !isPlaceholderModel(id, option.name));
+  if (concrete.length === entries.length) return options;
+  const names = concrete.map(([, option]) => option.name);
+  return Object.fromEntries(
+    entries.flatMap(([id, option]): [string, ComposerModelOption][] => {
+      if (!isPlaceholderModel(id, option.name)) return [[id, option]];
+      const { description, ...rest } = option;
+      const name = concreteModelName(description, names);
+      if (!name) return [];
+      const same = concrete.find(([, other]) => other.name === name)?.[1];
+      return [[id, same ? { ...same, hiddenFromPicker: true } : { ...rest, name }]];
+    })
   );
 }
 
