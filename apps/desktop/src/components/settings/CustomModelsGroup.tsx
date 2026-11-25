@@ -256,7 +256,7 @@ export function ModelProviderRow({ icon, name, description, manageLabel, onManag
   icon: ReactNode; name: ReactNode; description?: string; manageLabel: string; onManage: () => void; endAction?: ReactNode; manageTestId?: string;
 }) {
   return <SettingsRow className="gg-model-connection-header" leading={icon} stack title={name} description={description}
-    control={<div className="flex items-center gap-1">
+    control={<div className="gg-model-connection-actions">
       <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={manageLabel} title={manageLabel}
         data-testid={manageTestId} onClick={onManage}>
         <Settings2 aria-hidden="true" className="size-4" />
