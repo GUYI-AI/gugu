@@ -1,11 +1,7 @@
 /** Composer model list and its anchored model details. */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ChevronRight, Search } from '../../../icons';
+import { Check, ChevronRight, Pencil, Search, Sparkles } from '../../../icons';
 import { Combobox } from '@session-ui/react/primitives/combobox/combobox';
-// 上游那版的过滤条用的就是 Base UI 的这两件(见 model-selector.tsx 的
-// `import { ToggleGroup } from "@base-ui/react/toggle-group"`)—— 逐件对应,不是另起炉灶。
-import { ToggleGroup } from '@base-ui/react/toggle-group';
-import { Toggle } from '@base-ui/react/toggle';
 // 「思考」那一段是**一条有序标尺**,所以是 Slider 而不是一组单选药丸 ——
 // 见 chat-composer.css.ts 的 modelEffortRow 抬头(owner 2026-09-17 指定)。
 // ❌ 别退回 RadioGroup:并列选项这个语义本身就说不出"深浅"。
@@ -35,17 +31,6 @@ import type {
 
 /** 底部「升级解锁」那一条在悬浮卡控制器里的 key —— 模型 id 都不会是这个串。 */
 const UPGRADE_DETAIL_KEY = '\u0000upgrade';
-
-/** 厂商过滤条一行最多几格 —— 264px 里第五格就放不下 `Anthropic` 了。 */
-const PROVIDER_FILTER_MAX_COLUMNS = 4;
-
-/**
- * 厂商过滤条每行几格:先算要几行,再按行均分 —— 5 家排成 3 + 2,而不是 4 + 1 留一格孤零零挂在第二行。
- */
-export function providerFilterColumns(count: number): number {
-  const rows = Math.ceil(count / PROVIDER_FILTER_MAX_COLUMNS);
-  return Math.ceil(count / rows);
-}
 
 /**
  * @@@composer-model-trigger-label — 常驻触发器上剥掉括号,清单里保留全名。
@@ -361,12 +346,6 @@ export function ComposerModelMenu({
   const { translate, locale } = useMessages();
   const effortItems = allEffortItems.filter(({ id }) => id.toLowerCase() !== 'default');
 
-  /**
-   * 厂商过滤条选了哪几家。**空集 = 不过滤**(上游原话:An empty filter means no
-   * filtering — all providers are shown)。❌ 别把「一个都没选」实现成「一条都不显示」:
-   * 那会让用户一进面板就看见空清单。
-   */
-  const [modelProviderFilter, setModelProviderFilter] = useState<ReadonlySet<string>>(new Set());
   const [modelPanelOpen, setModelPanelOpen] = useState(false);
   const onOpenRef = useRef(onOpen);
   const modelTrigger = useRef<HTMLButtonElement>(null);
@@ -395,13 +374,12 @@ export function ComposerModelMenu({
   if (panel.kind !== 'shown') return null;
 
   /**
-   * 一行(或底部那条)的悬停:记下贴哪一条,再交给控制器去延时开卡。
-   * ⚠️ 卡贴的必须是**和面板一样宽**的那一条(整行 / 整条底栏)—— 贴在右端那枚按钮上,卡会往左压回面板里
-   * (实机截图里盖住了半张清单)。
+   * 一行的悬停:记下贴哪一条,再交给控制器去延时开卡。
+   * ⚠️ 卡贴的必须是**和面板一样宽**的那一条(整行)—— 末尾那两条去路也是整行宽的按钮,同样贴它自己。
    */
   const detailHoverProps = (key: string) => detailCard.getRowHoverProps(key, (element) => {
     focusDetail.current = false;
-    setDetailAnchor(element.closest<HTMLElement>('[data-slot="composer-model-footer"]') ?? element);
+    setDetailAnchor(element);
   });
   const detailItem =
     detailCard.activeKey && detailCard.activeKey !== UPGRADE_DETAIL_KEY
@@ -425,33 +403,58 @@ export function ComposerModelMenu({
     : null;
 
   /**
-   * 这一列要不要留出图标位。
-   *
-   * ⚠️ 判据是「**有没有条目认得出厂商**」,不是「这一条认不认得出」。实机撞到的:claude 的
-   * 「Default (recommended)」不带任何厂商词根 ⇒ 认不出 ⇒ 那一行不画图标位 ⇒ 名字比其余 18 行
-   * **左移 22px**,而它恰好是列表第一条。缺一枚 logo 只是信息少一点,整行错位看着就是坏了。
-   * ⇒ 只要这一列有人有图标,所有行都留位;整列都没有(某些 harness)才不留 —— 那时不存在错位。
+   * 每一行都有图标(owner 11-25):认得出厂商画厂商 logo,认不出的画一枚通用的 ✦ 兜底(淡色,`data-fallback`)。
+   * 以前认不出就留空位 —— 名字不错位,但那一行左边是个洞,看着像没做完。
    */
-  const anyModelIcon = modelItems.some((m) => m.icon);
 
   /**
-   * 药丸 = **厂商**(二级),按它们在清单里的先后(= 屏幕上的先后)。
-   *
-   * ❌ 不排序:顺序是宿主定的产品决定(用户自己那档在前)。
-   * ⚠️ 同一家厂商在两档里各出现一次时**只出一枚药丸** —— 药丸问的是「哪家厂商」,
-   * 一家出两枚会让人以为是两家。
+   * 一张平的清单:❌ 组头、❌ 顶上那排厂商筛选块(owner 11-25:「删掉模型选择列表头上的分组」)。
+   * 每行是谁的由行尾的标签说(咕咕的不带),找某一家用搜索框 —— 它照样匹配厂商名(`providerLabel`)。
    */
-  const modelProviderLabels = [
-    ...new Set(modelItems.map((m) => m.providerLabel).filter((l): l is string => Boolean(l))),
-  ];
-
-  /**
-   * 厂商过滤**作用在条目上,不是整段上** —— 厂商横切在两档之上,筛 OpenAI 要把两档里的
-   * OpenAI 条目都留下。先筛条目再切段,于是空掉的那一档自然消失,留下的组头照旧。
-   */
-  const visibleModels = modelItems.filter((item) => !item.hiddenFromPicker &&
-    (modelProviderFilter.size === 0 || (item.providerLabel && modelProviderFilter.has(item.providerLabel))));
+  const visibleModels = modelItems.filter((item) => !item.hiddenFromPicker);
   const visibleModelGroups = [{ label: '', items: visibleModels }];
+
+  const modelPanelEnd = (
+    <>
+      <Combobox.Empty>{translate('composer.noMatchingModels')}</Combobox.Empty>
+      {/* 末尾两条去路(#7056):「升级解锁更多模型」只给免费档,悬停看得到开会员后多出哪几个;
+          「配置模型」开设置里的「模型」页,永远是最后一行。 */}
+      {(onManageModels || modelUpgrade) && (
+        <div className={styles.modelPanelActions} data-slot="composer-model-footer">
+          {modelUpgrade && (
+            <button
+              type="button"
+              className={styles.modelPanelUpgrade}
+              onClick={() => {
+                detailCard.close();
+                onModelUpgrade?.();
+              }}
+              data-testid="composer-model-upgrade"
+              {...detailHoverProps(UPGRADE_DETAIL_KEY)}
+            >
+              <span className={styles.composerPanelItemIcon} aria-hidden="true" />
+              {modelUpgrade.label}
+            </button>
+          )}
+          {onManageModels && (
+            <button
+              type="button"
+              className={styles.modelPanelActionRow}
+              onClick={() => {
+                detailCard.close();
+                setModelPanelOpen(false);
+                onManageModels();
+              }}
+              data-testid="composer-model-manage"
+            >
+              <span className={styles.composerPanelItemIcon} aria-hidden="true"><Pencil size={14} /></span>
+              {translate('composer.manageModels')}
+            </button>
+          )}
+        </div>
+      )}
+    </>
+  );
 
   return (
     // `display:contents` —— 这层只为寻址存在,不参与布局(工具栏是 flex,
@@ -484,15 +487,16 @@ export function ComposerModelMenu({
         }}
         isItemEqualToValue={(a: ComposerModelItem, b: ComposerModelItem) => a.id === b.id}
         // 上游:匹配 id、name 与 keywords(它的 demo 正是把厂商名放在 keywords 里)。
-        // 本仓没有 keywords 字段,两级分类承担同一职责 —— 打「咕咕」筛得出平台那一档
-        // (一级),打「智谱」筛得出那一家(二级)。
+        // 本仓没有 keywords 字段,同一职责由这几格承担 —— 打「咕咕」筛得出平台那一档,打「智谱」筛得出那一家,
+        // 打行尾标签上的字(「ChatGPT」「deepseek」)筛得出那一份登录 / 那条连接。
         filter={(item: ComposerModelItem, query: string) => {
           const q = query.toLowerCase();
           return (
             item.name.toLowerCase().includes(q) ||
             item.id.toLowerCase().includes(q) ||
             (item.groupLabel ?? '').toLowerCase().includes(q) ||
-            (item.providerLabel ?? '').toLowerCase().includes(q)
+            (item.providerLabel ?? '').toLowerCase().includes(q) ||
+            (item.tag ?? '').toLowerCase().includes(q)
           );
         }}
         autoHighlight
@@ -581,55 +585,6 @@ export function ComposerModelMenu({
                 placeholder={translate('composer.searchModels')}
                 data-testid="composer-model-search"
               />
-              {/* 厂商过滤条 —— 上游那排药丸就是厂商(OpenAI / Google / xAI / DeepSeek
-                  / Groq),本仓照抄这根轴。
-                  ⚠️ 只有一家时不渲染:一枚药丸筛不出任何东西,是纯噪音。
-                  ⚠️ 空选 = 不过滤(上游同款语义:An empty filter means no filtering)。
-                  ⚠️ ❌ 别把「你的 / 咕咕提供的」摆回这排 —— 那是一级分类,组头说。 */}
-              {modelProviderLabels.length > 1 && (
-                <div className={styles.modelFilterRow}>
-                <ToggleGroup
-                  multiple
-                  value={[...modelProviderFilter]}
-                  onValueChange={(next: unknown) =>
-                    setModelProviderFilter(new Set((next as string[]) ?? []))
-                  }
-                  aria-label={translate('composer.filterByProvider')}
-                  className={styles.modelProviderFilter}
-                  // 等分(owner 2026-10-10:「按钮块的大小能保持一致,智谱那块太小了不好点」)。
-                  // 一行最多四格 —— 264px 里放第五格,`Anthropic` 就放不下了;多出来的按行均分(7 家 = 4 + 3)。
-                  style={{ gridTemplateColumns: `repeat(${providerFilterColumns(modelProviderLabels.length)}, minmax(0, 1fr))` }}
-                  onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
-                    // 照上游那三条键盘让路(它对着 cmdk 写,这里对着 Combobox 的输入框):
-                    // Enter/Home/End 不许被列表抢走 —— 否则焦点在药丸上按回车,选中的
-                    // 是高亮那条模型而不是切换这枚药丸。
-                    if (e.key === 'Enter' || e.key === 'Home' || e.key === 'End') {
-                      e.stopPropagation();
-                    }
-                    // 上下键把焦点交还给清单,与上游「matching the packaged Thinking row」同。
-                    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-                      const input = e.currentTarget
-                        .closest('[data-slot="combobox-content"], [role="dialog"]')
-                        ?.querySelector<HTMLInputElement>('input');
-                      input?.focus();
-                    }
-                  }}
-                >
-                  {modelProviderLabels.map((label) => (
-                    <Toggle
-                      key={label}
-                      value={label}
-                      className={styles.modelFilterChip}
-                      // 等分之后长名字可能被截成省略号,悬停读得到全名。
-                      title={label}
-                      data-testid={`composer-model-provider-${label}`}
-                    >
-                      {label}
-                    </Toggle>
-                  ))}
-                </ToggleGroup>
-                </div>
-              )}
               {/* 「去登录」排在清单**最前面**(owner 2026-08-28:放末尾时它躺在咕咕那
                   15 个模型下面,「我翻了半天才找到」)。
                   ❌ 不进 Combobox.List:它不是这份清单里的一个取值,选了它不会变成
@@ -651,12 +606,13 @@ export function ComposerModelMenu({
                   </button>
                 </div>
               ) : null}
-              <Combobox.List className={styles.settingSubContent}>
+              {/* 清单与末尾两条去路在**同一个**滚动区里(owner 11-25:「配置模型」不是钉死的一栏,
+                  是列表最后一行、跟着列表滚)。去路走 `after`:在滚动区里、在 List 元素外 ——
+                  它们不是取值,不该被读屏器报成可选项,也不该被搜索滤掉。 */}
+              <Combobox.List className={styles.modelPanelList} after={modelPanelEnd}>
                 {(group: ComposerModelGroup) => (
                   // key 用首条的模型 id,不用 label:同一个 label 可以出现在两段不相邻
                   // 的条目上(宿主的顺序说了算),用 label 当 key 就会撞。
-                  // 组头(label)= 一级分类(这条是谁的)。与上游一样是一行纯文字。
-                  // 厂商不在这里 —— 它在顶部那排筛选药丸和每行左边那枚 logo 上。
                   <Combobox.Group key={group.items[0]?.id} items={group.items} label={group.label}>
                     <Combobox.Collection>
                       {(m: ComposerModelItem) => (
@@ -674,21 +630,16 @@ export function ComposerModelMenu({
                           className={`${styles.composerPanelItem} ${styles.modelPanelItemCompact}`}
                           {...detailHoverProps(m.id)}
                         >
-                          {/* 上游每一行左边是**厂商 logo**(`ModelIcon`,14px 见方,
-                              与首行基线对齐)。宿主给成品节点 —— 这个包够不到 app 的
-                              图片资源。
-                              ⚠️ 认不出厂商时**位子照留、内容为空**(见 `anyModelIcon`):
-                              ❌ 不画一个通用占位图形(那是假装认得),❌ 也不收掉这一格
-                              (那会让这一行的名字比别行左移 22px,实机上第一行正是如此)。 */}
-                          {anyModelIcon && (
-                            <span
-                              className={styles.composerPanelItemIcon}
-                              data-slot="composer-model-icon"
-                              aria-hidden="true"
-                            >
-                              {m.icon}
-                            </span>
-                          )}
+                          {/* 上游每一行左边是**厂商 logo**(`ModelIcon`,14px 见方)。宿主给成品节点 —— 这个包够不到
+                              app 的图片资源。认不出厂商的行画通用兜底(见上面 owner 11-25),❌ 留空位。 */}
+                          <span
+                            className={m.icon ? styles.composerPanelItemIcon : `${styles.composerPanelItemIcon} ${styles.modelPanelItemIconFallback}`}
+                            data-slot="composer-model-icon"
+                            data-fallback={m.icon ? undefined : ''}
+                            aria-hidden="true"
+                          >
+                            {m.icon ?? <Sparkles size={14} />}
+                          </span>
                           <span data-slot="composer-model-name" className={styles.modelPanelItemName}>
                             {m.name}
                           </span>
@@ -699,8 +650,8 @@ export function ComposerModelMenu({
                           )}
                           <span className={styles.modelPanelItemTrailing}>
                             {m.creditRate && <span className={styles.modelPanelItemRate} data-slot="composer-model-rate">{m.creditRate}</span>}
-                            <span className={styles.modelPanelItemCheck} aria-hidden="true">
-                              {m.id === selectedModel && <Check className={styles.modelSelectedCheck} size={14} />}
+                            <span className={styles.modelPanelItemCheck} data-slot="composer-model-check" aria-hidden="true">
+                              {m.id === (selectedModelItem?.aliasOf ?? selectedModel) && <Check className={styles.modelSelectedCheck} size={14} />}
                             </span>
                           </span>
                         </Combobox.Item>
@@ -709,44 +660,6 @@ export function ComposerModelMenu({
                   </Combobox.Group>
                 )}
               </Combobox.List>
-              <Combobox.Empty>{translate('composer.noMatchingModels')}</Combobox.Empty>
-              {/* 底部两条去路(#7056):「管理模型」开设置里的「模型」页 —— 哪些出现在这张清单里由那一页的开关定;
-                  「升级解锁更多模型」只给免费档,悬停看得到开会员后多出哪几个。
-                  ❌ 不进 Combobox.List:它们不是取值,不该被读屏器报成可选项,也不该被搜索滤掉。 */}
-              {(onManageModels || modelUpgrade) && (
-                <div className={styles.modelPanelFooter} data-slot="composer-model-footer">
-                  {onManageModels ? (
-                    <button
-                      type="button"
-                      className={styles.modelPanelFooterAction}
-                      onClick={() => {
-                        detailCard.close();
-                        setModelPanelOpen(false);
-                        onManageModels();
-                      }}
-                      data-testid="composer-model-manage"
-                    >
-                      {translate('composer.manageModels')}
-                    </button>
-                  ) : (
-                    <span />
-                  )}
-                  {modelUpgrade && (
-                    <button
-                      type="button"
-                      className={styles.modelPanelUpgrade}
-                      onClick={() => {
-                        detailCard.close();
-                        onModelUpgrade?.();
-                      }}
-                      data-testid="composer-model-upgrade"
-                      {...detailHoverProps(UPGRADE_DETAIL_KEY)}
-                    >
-                      {modelUpgrade.label}
-                    </button>
-                  )}
-                </div>
-              )}
             </>
           ) : null}
           {/* 上游那段叫 **Thinking**,在 Content 最底下、清单之外,滚动列表时不跟着走。

@@ -1444,10 +1444,9 @@ export function InitialSessionField({
   // owner:平台额度这件事在 UI 上的核心标志,就是 composer 的模型下拉里多出咕咕提供的模型。
   // 它们与用户自己那档并列在同一个下拉里(不是另开一个选择器),每条自带积分标注。
   //
-  // 分类两级(owner 2026-09-05,照 assistant-ui 那版):**一级是厂商**(组头 / 过滤药丸 /
-  // 行内 logo 都按它),**二级**才是「你的 {厂商} 模型」/「咕咕提供的模型 · 按积分计费」,
-  // 挂在组头厂商名后面。二级那句由这里翻好再递进去 —— `platform-model-options` 自己不碰 i18n
-  // (它同时被黑盒 e2e 引用);图标同理由这里给成品节点,那个模块也够不到 React。
+  // 一张平的清单(owner 11-25):咕咕的模型不带标签,用户自己配的行带标签(Coding Plan 写家名、按量 key 写域名)。
+  // 翻译与图标由装配那边给成品 —— `platform-model-options` 自己不碰 i18n(它同时被黑盒 e2e 引用),
+  // 也够不到 React。
   // 装配在 `useComposerModelOptions` 里(@@@composer-model-assembly),两个入口共用一份。
   const modelOptions = useComposerModelOptions(
     harnessModelOptions,
