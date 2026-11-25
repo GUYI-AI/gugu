@@ -2,7 +2,7 @@
  * An html-render page reads on the bubble it sits in. The page's frame is transparent, so its text lies on the bubble's
  * fill: in an own-message bubble (the transcript's inverts the page, dark in a light theme; the IM one is its own grey)
  * the page once kept the window's text colour and its words vanished into the fill. Reading, through the real CSS:
- * the page's own text and muted text, posted from inside the frame, against the bubble's background, in both themes.
+ * the page's own text, muted text and accent, posted from inside the frame, against the bubble's background, in both themes.
  * Control: the agent's reply bubble, which does not invert.
  */
 import { createChatContext, createChatState } from '@gugu/session-chat-ui';
@@ -16,11 +16,11 @@ import '@/styles/tokens.css';
 import '@renderer/index.css';
 import '@gugu/session-shared/markdown.css';
 
-type Colors = { fg: string; muted: string; scheme: string };
+type Colors = { fg: string; muted: string; accent: string; scheme: string };
 
-const PAGE = `<span class="label">Opus</span> <span class="v">41.2</span>
-<style>.v{color:var(--muted)}</style>
-<script>addEventListener('load',function(){parent.postMessage({probe:'colors',fg:getComputedStyle(document.querySelector('.label')).color,muted:getComputedStyle(document.querySelector('.v')).color,scheme:getComputedStyle(document.documentElement).colorScheme},'*')})</script>`;
+const PAGE = `<span class="label">Opus</span> <span class="v">41.2</span> <span class="a">best</span>
+<style>.v{color:var(--muted)}.a{color:var(--accent)}</style>
+<script>addEventListener('load',function(){parent.postMessage({probe:'colors',fg:getComputedStyle(document.querySelector('.label')).color,muted:getComputedStyle(document.querySelector('.v')).color,accent:getComputedStyle(document.querySelector('.a')).color,scheme:getComputedStyle(document.documentElement).colorScheme},'*')})</script>`;
 const TEXT = `Chart\n\n\`\`\`html-render\n${PAGE}\n\`\`\``;
 
 const cleanups: (() => void)[] = [];
@@ -104,6 +104,7 @@ function expectReadable({ colors, frame, background }: Awaited<ReturnType<typeof
   expect(rgba(background)[3], `${where}: the bubble has a fill`).toBe(255);
   expect(contrast(colors.fg, background), `${where}: page text ${colors.fg} on ${background}`).toBeGreaterThanOrEqual(4.5);
   expect(contrast(colors.muted, background), `${where}: muted text ${colors.muted} on ${background}`).toBeGreaterThanOrEqual(3);
+  expect(contrast(colors.accent, background), `${where}: accent ${colors.accent} on ${background}`).toBeGreaterThanOrEqual(3);
   // The frame stays transparent over the bubble only while it and its page share a scheme.
   expect(getComputedStyle(frame).colorScheme, where).toBe(colors.scheme);
 }

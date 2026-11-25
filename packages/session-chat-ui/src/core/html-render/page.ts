@@ -99,8 +99,9 @@ export type HtmlRenderScheme = 'light' | 'dark'
 
 /**
  * What a page takes from the surface its frame sits on (`element`, the frame's parent, as painted now): the host's
- * palette, with `--fg` the surface's own text colour and `--muted` mixed from it, and the light/dark scheme that text
- * implies. An own-message bubble paints its own text (light on a dark fill in a light theme), so a page in it reads as
+ * palette, with `--fg` the surface's own text colour, `--muted`, `--accent`, `--border` and `--surface` mixed from it as
+ * the host mixes its own from its text (accent is ink, border and surface faint washes of it; tokens.css), and the
+ * light/dark scheme that text implies. The chart colours `--c1`…`--c6` stay the host's: they read on either fill. An own-message bubble paints its own text (light on a dark fill in a light theme), so a page in it reads as
  * the bubble's words do, as a fill inside that bubble is mixed from its text (messageBubbleStyle.ts); the same page
  * expanded over the window takes the window's.
  */
@@ -112,7 +113,14 @@ export function htmlRenderSurface(element: Element, hostPalette: Record<string, 
   if (!rgb) throw new Error(`html-render: cannot read the surface's text colour ${JSON.stringify(fg)}`)
   const [r, g, b] = rgb as [number, number, number]
   return {
-    palette: { ...hostPalette, fg, muted: `color-mix(in oklab, ${fg} 68%, transparent)` },
+    palette: {
+      ...hostPalette,
+      fg,
+      muted: `color-mix(in oklab, ${fg} 68%, transparent)`,
+      accent: fg,
+      border: `color-mix(in oklab, ${fg} 10%, transparent)`,
+      surface: `color-mix(in oklab, ${fg} 6%, transparent)`,
+    },
     scheme: 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5 ? 'dark' : 'light',
   }
 }
