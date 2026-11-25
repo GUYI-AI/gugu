@@ -1,6 +1,7 @@
 import { match } from 'ts-pattern';
 import type { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { AgentInstallError, AgentUpdateError } from '@shared/core/agents/agent-payload';
+import type { InstallCommandError } from '@gugu/session-core/deps/runtime/types';
 
 export type AgentInstallErrorPresentation = {
   message: string;
@@ -166,8 +167,11 @@ function copy(
   );
 }
 
-export function getAgentInstallErrorPresentation(
-  error: AgentInstallError,
+/** Install and update fail the same way while their command runs (and for an unknown id); one wording for both. */
+type CommandRunError = InstallCommandError | Extract<AgentInstallError, { type: 'unknown-dependency' }>;
+
+function commandRunErrorPresentation(
+  error: CommandRunError,
   context?: InstallFailureContext,
 ): AgentInstallErrorPresentation {
   const t = context?.translate;
@@ -208,15 +212,21 @@ export function getAgentInstallErrorPresentation(
       message: copy(t, 'agentsPage.errUnknownDependency', { id: e.id }),
       diagnostic: null,
     }))
-    .with({ type: 'no-install-command' }, (e) => ({
-      message: copy(t, 'agentsPage.errNoInstallCommand', { id: e.id }),
-      diagnostic: null,
-    }))
-    .with({ type: 'not-detected-after-install' }, () => ({
-      message: copy(t, 'agentsPage.errNotDetectedAfterInstall'),
-      diagnostic: null,
-    }))
     .exhaustive();
+}
+
+export function getAgentInstallErrorPresentation(
+  error: AgentInstallError,
+  context?: InstallFailureContext,
+): AgentInstallErrorPresentation {
+  const t = context?.translate;
+  if (error.type === 'no-install-command') {
+    return { message: copy(t, 'agentsPage.errNoInstallCommand', { id: error.id }), diagnostic: null };
+  }
+  if (error.type === 'not-detected-after-install') {
+    return { message: copy(t, 'agentsPage.errNotDetectedAfterInstall'), diagnostic: null };
+  }
+  return commandRunErrorPresentation(error, context);
 }
 
 /** MutationCache 里一次安装的残留:变量、结果、抛出的异常、发起时刻。 */
@@ -316,59 +326,19 @@ export function getAgentUpdateErrorPresentation(
   context?: InstallFailureContext,
 ): AgentInstallErrorPresentation {
   const t = context?.translate;
-  return match(error)
-    .with({ type: 'permission-denied' }, (e) =>
-      e.stage || e.artifacts?.length
-        ? commandFailurePresentation(copy(t, 'agentsPage.errPermissionDenied'), e.output, e)
-        : { message: copy(t, 'agentsPage.errPermissionDenied'), diagnostic: null },
-    )
-    .with({ type: 'command-failed' }, (e) => {
-      const blocked = npmBlockedBinPath(e.output);
-      return blocked
-        ? occupiedBinPathPresentation(blocked, e.output, context)
-        : commandFailurePresentation(copy(t, 'agentsPage.errCommandFailed'), e.output, e, t);
-    })
-    .with({ type: 'cancelled' }, (e) =>
-      commandFailurePresentation(copy(t, 'agentsPage.errInstallCancelled'), e.output, e),
-    )
-    .with({ type: 'stalled' }, (e) =>
-      commandFailurePresentation(
-        copy(t, 'agentsPage.errInstallStalled', {
-          minutes: Math.round(e.idleMs / 60_000),
-        }),
-        e.output,
-        e,
-      ),
-    )
-    .with({ type: 'pty-open-failed' }, (e) => ({
-      message: copy(t, 'agentsPage.errPtyOpenFailed', { detail: e.message }),
-      diagnostic: null,
-    }))
-    // 这儿装不了 —— 一条命令都没跑,所以没有 diagnostic 可给(#6098)。
-    .with({ type: 'unsupported-host' }, () => ({
-      message: copy(t, 'agentsPage.errUnsupportedHost'),
-      diagnostic: null,
-    }))
-    .with({ type: 'unknown-dependency' }, (e) => ({
-      message: copy(t, 'agentsPage.errUnknownDependency', { id: e.id }),
-      diagnostic: null,
-    }))
-    .with({ type: 'no-update-strategy' }, (e) => ({
-      message: copy(t, 'agentsPage.errNoUpdateStrategy', { id: e.id }),
-      diagnostic: null,
-    }))
-    .with({ type: 'not-detected-after-update' }, () => ({
-      message: copy(t, 'agentsPage.errNotDetectedAfterUpdate'),
-      diagnostic: null,
-    }))
-    .with({ type: 'version-unchanged' }, (e) => ({
-      message: copy(t, 'agentsPage.errVersionUnchanged', {
-        version: e.version ?? '?',
-        path: e.path ?? '?',
-      }),
-      diagnostic: e.path ? `${e.path} (v${e.version ?? '?'})` : null,
-    }))
-    .exhaustive();
+  if (error.type === 'no-update-strategy') {
+    return { message: copy(t, 'agentsPage.errNoUpdateStrategy', { id: error.id }), diagnostic: null };
+  }
+  if (error.type === 'not-detected-after-update') {
+    return { message: copy(t, 'agentsPage.errNotDetectedAfterUpdate'), diagnostic: null };
+  }
+  if (error.type === 'version-unchanged') {
+    return {
+      message: copy(t, 'agentsPage.errVersionUnchanged', { version: error.version ?? '?', path: error.path ?? '?' }),
+      diagnostic: error.path ? `${error.path} (v${error.version ?? '?'})` : null,
+    };
+  }
+  return commandRunErrorPresentation(error, context);
 }
 
 export function getAgentUpdateActionState({
