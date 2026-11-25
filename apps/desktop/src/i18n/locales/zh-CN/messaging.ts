@@ -850,7 +850,7 @@ export default {
       "react": "表情回应",
       "reply": "回复",
       "quoteSelection": "引用选中文字",
-      "quoteToComposer": "评论",
+      "quoteToComposer": "引用",
       "quoteSelectionToComposer": "评论",
       "openFile": "打开",
       "editMessage": "编辑重发",

@@ -57,15 +57,15 @@ it('keeps the annotation entry visible on an ordinary group browser and register
   const layout = chatLayoutOf(chatId);
   try {
     await view.render(<ChatPanes chatId={chatId} actionsSlot={null} body={<div>群聊正文</div>}
-      chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label="批注测试群" menu={null} focused />} />);
+      chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label="评论测试群" menu={null} focused />} />);
     await act(() => { layout.open('browser', { initialUrl: 'https://example.org/group' }, { from: null, intent: 'newTab' }); });
-    await expect.element(page.getByRole('button', { name: '批注', exact: true })).toBeVisible();
+    await expect.element(page.getByRole('button', { name: '评论', exact: true })).toBeVisible();
     // Without an Electron page behind this browser fixture, the visible action waits disabled.
-    await expect.element(page.getByRole('button', { name: '批注', exact: true })).toBeDisabled();
+    await expect.element(page.getByRole('button', { name: '评论', exact: true })).toBeDisabled();
     // Registration runs in the pane's effect after the session exists; the disabled action can paint before it fires.
     await until('browser tab registered with its conversation', () => registerBrowser.mock.calls.length, (calls) => calls > 0);
     expect(registerBrowser).toHaveBeenCalledWith(expect.objectContaining({ conversation: { kind: 'chat', chatId } }));
-    const toolbar = page.getByRole('button', { name: '批注', exact: true }).element();
+    const toolbar = page.getByRole('button', { name: '评论', exact: true }).element();
     const address = page.getByPlaceholder('搜索或输入网址').element();
     expect(toolbar.compareDocumentPosition(address) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   } finally {

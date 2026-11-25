@@ -853,7 +853,7 @@ export default {
       "react": "React",
       "reply": "Reply",
       "quoteSelection": "Quote selection",
-      "quoteToComposer": "Comment",
+      "quoteToComposer": "Quote",
       "quoteSelectionToComposer": "Comment",
       "openFile": "Open",
       "editMessage": "Edit and resend",

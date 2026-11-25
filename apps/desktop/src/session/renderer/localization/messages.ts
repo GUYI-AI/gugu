@@ -2221,7 +2221,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'composer.attachmentWaiting': '附件上传完成后发送…',
   'composer.inputKeptInDraft': '消息仍留在输入框，请稍后重试。',
   'composer.attachmentHostUpdateRequired': '请更新运行任务的机器后再发送附件',
-  'composer.annotationHostUpdateRequired': '请更新运行任务的机器后再发送批注',
+  'composer.annotationHostUpdateRequired': '请更新运行任务的机器后再发送评论',
   'composer.attachmentsNotSent': '（任务所在设备需要更新，{count} 个附件未能附带，请更新后重新发送）',
   'conversation.connectionUnavailable': '连接暂不可用。',
   'composer.attachmentBlocked': '有附件上传失败，请移除或重试后再发送。',
