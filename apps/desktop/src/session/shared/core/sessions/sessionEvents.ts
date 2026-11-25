@@ -73,6 +73,8 @@ export const sessionChangedChannel = defineEvent<{
       // 活会话上改过、provider 已确认的设置(record-live-session-setting)。渲染层自己的启动路
       // 读的是它手里这份 Conversation,不跟上的话重开时照旧下发建会话时那一档。
       | 'permissionMode'
+      // Platform Fast recorded by a reload or an unstarted-session choice; the composer reads it from the record.
+      | 'fastMode'
       // spec session-runtime-switch:会话中途换了展示(编程 ⇄ 通用)。渲染端据此重算页签种类
       // 与整条会话的形态,❌ 不必等下一次全量拉取。
       | 'runtime'
