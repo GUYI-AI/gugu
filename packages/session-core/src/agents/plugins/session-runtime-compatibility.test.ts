@@ -204,6 +204,57 @@ function nodeRuntimeDescriptor(): SessionBundleDescriptor {
 }
 
 describe('resolveSessionRuntimeCompatible — 经 node 起的家拿到的必须是 JS 入口 (#6390)', () => {
+  it('uses the Node pinned by a managed Windows launcher even when Node is absent from PATH', async () => {
+    const { context, calls } = recordingContext('v24.21.0');
+    context.findWindowsCommandPaths = async () => [];
+    const exec = context.exec;
+    context.exec = (command, args, options) => command === 'which'
+      ? Promise.resolve({ stdout: '', stderr: '' })
+      : exec(command, args, options);
+    const shim = 'C:\\gugu\\agents\\mise-bin\\pi.cmd';
+    const packageShim = 'C:\\gugu\\agents\\pi\\bin\\pi.cmd';
+    const entry = 'C:\\gugu\\agents\\pi\\dist\\cli.js';
+    const node = 'C:\\gugu\\agents\\mise\\data\\installs\\node\\24.21.0\\node.exe';
+    const shims = new Map([
+      [shim, '@echo off\r\nset "PATH=C:\\gugu\\agents\\mise\\data\\installs\\node\\24.21.0;%PATH%"\r\n"C:\\gugu\\agents\\pi\\bin\\pi.cmd" %*\r\n'],
+      [packageShim, '@echo off\r\nnode "%~dp0..\\dist\\cli.js" %*\r\n'],
+    ]);
+
+    await expect(resolveSessionRuntimeCompatible({
+      providerId: 'pi',
+      surface: 'tui',
+      descriptor: nodeRuntimeDescriptor(),
+      executable: shim,
+      executionContext: context,
+      platform: 'win32',
+      windowsShimReader: {
+        readShim: (path) => shims.get(path) ?? null,
+        exists: (path) => path === node || path === entry || shims.has(path),
+      },
+    })).resolves.toMatchObject({ executable: entry, runtimeExecutable: node });
+    expect(calls).toEqual([{ command: node, args: ['--version'] }]);
+  });
+
+  it('says how to install Node.js when the Windows launcher and PATH cannot supply it', async () => {
+    const { context, calls } = recordingContext('v24.21.0');
+    context.findWindowsCommandPaths = async () => [];
+    const entry = 'C:\\pi\\dist\\cli.js';
+
+    await expect(resolveSessionRuntimeCompatible({
+      providerId: 'pi',
+      surface: 'tui',
+      descriptor: nodeRuntimeDescriptor(),
+      executable: entry,
+      executionContext: context,
+      platform: 'win32',
+      windowsShimReader: { readShim: () => null, exists: (path) => path === entry },
+    })).rejects.toMatchObject({
+      code: 'runtime-node-not-found',
+      message: expect.stringMatching(/Install a supported Node\.js version.*add it to PATH.*retry/),
+    });
+    expect(calls).toEqual([]);
+  });
+
   it('Windows 上读不出壳里 JS 入口的 .cmd:响亮失败,❌ 把壳交给 node,也不去探版本', async () => {
     const { context, calls } = recordingContext('v24.14.0');
     const shim = 'C:\\nonexistent-gugu-6390\\agents\\mise-bin\\pi.cmd';
