@@ -109,6 +109,8 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   const [heldKey, setHeldKey] = useState('');
   const [keyShown, setKeyShown] = useState(false);
   const keyReadable = machine === null && !!window.electronAPI;
+  // A typed key can always be shown; a saved one only where this device can read it back.
+  const keyRevealable = !!apiKey || !connection?.keySaved || keyReadable;
   const typedKey = apiKey !== heldKey ? apiKey : '';
   const [modelName, setModelName] = useState(editedModel?.id ?? '');
   const [routes, setRoutes] = useState<CustomModelRoute[]>(() => {
@@ -188,7 +190,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   };
 
   const toggleKey = async () => {
-    if (!keyShown && !apiKey && connection?.keySaved) {
+    if (!keyShown && !apiKey && connection?.keySaved && keyReadable) {
       try {
         const key = await window.electronAPI!.invoke(CUSTOM_MODEL_KEY_CHANNEL, connection.id) as string;
         setHeldKey(key); setApiKey(key);
@@ -345,8 +347,8 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
           <div className="gg-model-field">
             <label className="gg-model-field-label" htmlFor="custom-model-key">API Key</label>
             <div className="gg-model-key-row">
-              <span className="relative flex min-w-0 flex-1 items-center"><Input id="custom-model-key" ref={keyInput} data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyReadable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={test.kind === 'failed' ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : translate('customModels.keyPlaceholder')} onChange={(event) => { setApiKey(event.target.value); setTest({ kind: 'idle' }); }} />
-                {keyReadable && (apiKey || connection?.keySaved) && <IconButton size="sm" className="absolute right-1 top-1/2 -translate-y-1/2" aria-label={translate(keyShown ? 'customModels.hideKey' : 'customModels.showKey')} aria-pressed={keyShown} onClick={() => { void toggleKey(); }}>{keyShown ? <Eye aria-hidden className="size-4" /> : <EyeOff aria-hidden className="size-4" />}</IconButton>}</span>
+              <span className="relative flex min-w-0 flex-1 items-center"><Input id="custom-model-key" ref={keyInput} data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyRevealable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={test.kind === 'failed' ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : translate('customModels.keyPlaceholder')} onChange={(event) => { setApiKey(event.target.value); setTest({ kind: 'idle' }); }} />
+                {keyRevealable && <IconButton size="sm" className="absolute right-1 top-1/2 -translate-y-1/2" aria-label={translate(keyShown ? 'customModels.hideKey' : 'customModels.showKey')} aria-pressed={keyShown} onClick={() => { void toggleKey(); }}>{keyShown ? <Eye aria-hidden className="size-4" /> : <EyeOff aria-hidden className="size-4" />}</IconButton>}</span>
               <Button type="button" variant="outline" data-testid="custom-model-test" disabled={!source || test.kind === 'testing' || !!busy} onClick={() => { void testConnection(); }}>
                 {translate(test.kind === 'testing' ? 'customModels.testing' : 'customModels.test')}
               </Button>

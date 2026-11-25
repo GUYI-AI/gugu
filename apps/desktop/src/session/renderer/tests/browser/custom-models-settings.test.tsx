@@ -416,6 +416,13 @@ it('shows the key this computer holds when the eye is pressed, and reads with it
     expect(state.reads).toContainEqual({ apiKey: 'sk-typed', endpoints: found().endpoints });
   } finally { vi.unstubAllGlobals(); }
 });
+it('a new model offers the eye on an empty key field and it shows the typed key', async () => {
+  render(<CustomModelDialog machine="device-1" group="custom" onClose={() => {}} />);
+  await expect.element(page.getByRole('button', { name: 'Show key' })).toBeVisible();
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-typed');
+  await userEvent.click(page.getByRole('button', { name: 'Show key' }));
+  await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('type', 'text');
+});
 it('a connection on another device shows only the end of its key, with no eye', async () => {
   vi.stubGlobal('electronAPI', { invoke: vi.fn() });
   try {
