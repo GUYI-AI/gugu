@@ -15,7 +15,8 @@ import { ChatComposer } from '@gugu/session-ui/react/components';
 import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives';
 import { CUSTOM_MODEL_KEY_CHANNEL, type CustomModelConnection, type CustomModelEffortResult } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
-import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
+import { connectionTag, customComposerOptions, ownModelTag } from '@renderer/features/sessions/session-config/custom-model-options';
+import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { composerModelFooter, composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
 import { until } from '../../../../../../../tests/support/awaitCondition';
 import '@gugu/session-ui/styles/global';
@@ -524,4 +525,28 @@ it('a converted third-party model is selectable and tagged with its vendor; an I
   expect(document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent).toBe('deepseek-v4-flash');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent?.replace('deepseek-v4-flash', '')).not.toContain('deepseek');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('·');
+});
+it('owner 11-24: a coding plan says whose plan; pay-as-you-go says its domain, preset or typed', () => {
+  const tag = (id: string, baseUrl?: string) => connectionTag(providerPresets.find((preset) => preset.id === id), baseUrl);
+  // A key does not tell its tier: the vendor only, ❌ 「Coding Plan」, ❌ the domain.
+  expect(['zhipu-coding', 'kimi-coding', 'ark-coding', 'zai-coding'].map((id) => tag(id))).toEqual(['Zhipu', 'Kimi', 'Volcengine Ark', 'Z.ai']);
+  // owner 11-25 20:45: pay-as-you-go is the domain without the suffix, a preset too (❌ the service's name).
+  const domain = (id: string) => tag(id, providerPresets.find((preset) => preset.id === id)?.endpoints[0]?.baseUrl);
+  expect(['openai', 'deepseek', 'zhipu'].map(domain)).toEqual(['openai', 'deepseek', 'bigmodel']);
+  expect(connectionTag(undefined, 'https://api.example-relay.com/v1')).toBe('example-relay');
+  expect(connectionTag(undefined, 'http://10.0.0.8:8000/v1')).toBeUndefined();
+  setLocalePreference('zh-CN');
+  expect(['zhipu-coding', 'ark-coding'].map((id) => tag(id))).toEqual(['智谱', '火山方舟']);
+});
+
+it('owner 11-24: own models say the plan as sold, the vendor while the tier is unread, the API domain on a key', () => {
+  expect(ownModelTag('codex', { credentialKind: 'subscription', plan: { payer: 'subscription', plan: 'ChatGPT Plus' } })).toBe('ChatGPT Plus');
+  expect(ownModelTag('claude', { credentialKind: 'subscription', plan: { payer: 'subscription', plan: 'Claude Max 20x' } })).toBe('Claude Max 20x');
+  // Not read yet, or unreadable: the vendor, ❌ no tag and ❌ 「Coding Plan」.
+  expect(ownModelTag('codex', { credentialKind: 'subscription' })).toBe('ChatGPT');
+  expect(ownModelTag('claude', { plan: { payer: 'unknown' } })).toBe('Claude');
+  expect(ownModelTag('codex', { credentialKind: 'api-key' })).toBe('openai');
+  expect(ownModelTag('claude', { plan: { payer: 'api-key' } })).toBe('anthropic');
+  expect(ownModelTag('claude', { plan: { payer: 'custom-endpoint', endpoint: 'relay.example.com' } })).toBe('example');
+  expect(ownModelTag('pi', { credentialKind: 'subscription' })).toBeUndefined();
 });

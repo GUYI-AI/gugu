@@ -624,7 +624,7 @@ describe('#3249 composer 模型下拉', () => {
     expect(visibleOptions()).toEqual(['GLM 5.2', 'GPT-5.6 Sol'])
   })
 
-  it('咕咕模型优先，列表没有来源分组，厂商图标和筛选仍可用', async () => {
+  it('咕咕模型优先，列表没有来源分组，也没有顶上那排厂商筛选块', async () => {
     await openPanel()
 
     expect(visibleGroups()).toEqual([])
@@ -636,14 +636,8 @@ describe('#3249 composer 模型下拉', () => {
     )
     expect(slots.length).toBe(5)
     expect([...slots].filter((el) => el.childElementCount > 0).length).toBe(4)
-    // 药丸才是厂商那根轴(二级 = 筛选)。
-    // ⚠️ 按 testid 前缀取,不按 `[role="button"]`:Base UI 的 Toggle 渲染的是原生 `<button>`,
-    // role 是**隐式**的,属性选择器一个都抓不到(实测读出空数组)。
-    expect(
-      [...document.querySelectorAll('[data-testid^="composer-model-provider-"]')].map((el) =>
-        el.textContent?.trim()
-      )
-    ).toEqual(['智谱', 'OpenAI'])
+    // owner 11-25:「删掉模型选择列表头上的分组」—— 那排厂商块整个撤掉,找某一家用搜索框(下一条)。
+    expect(document.querySelector('[data-slot="combobox-content"] [data-testid^="composer-model-provider-"]')).toBeNull()
   })
 
   it('认不出厂商的那一行,名字仍与其它行左对齐', async () => {
@@ -661,15 +655,13 @@ describe('#3249 composer 模型下拉', () => {
     expect(new Set(lefts).size, `各行名字左边缘: ${lefts.join(', ')}`).toBe(1)
   })
 
-  it('厂商药丸:不选=不过滤,选一家只剩那一家(两档一起留下)', async () => {
+  it('按厂商找:搜索框打厂商名,两档里那一家都留下;清空回到全部', async () => {
     await openPanel()
 
     // 阳性对照:静息态五条都在 —— 否则下面「筛掉了」平凡为真。
     expect(visibleOptions().length).toBe(5)
 
-    // 取证图:这是**唯一**带完整产品形状 fixture 的用例(两级分类 + 厂商 logo + 六档 Thinking),
-    // 所以组头、药丸、图标只有在这里才拍得到。
-    // composer-surface 那四张拍不出它们(那边的 fixture 没有分组,一家时药丸按设计不渲染)。
+    // 取证图:这是**唯一**带完整产品形状 fixture 的用例(厂商 logo + 六档 Thinking)。
     // ⚠️ 先等弹层的入场动画走完再拍:点开就拍会拍到半透明的中间帧,那张图会让人以为
     //    面板本身是灰的(第一版正是这么拍出一张"看着像坏了"的图)。
     // 等的是「入场动画已播完」这件事:弹层带 data-open 时挂一段 `both` 填充的入场动画
@@ -679,19 +671,18 @@ describe('#3249 composer 模型下拉', () => {
       const popup = document.querySelector<HTMLElement>('[data-slot="combobox-content"][data-open]')
       return popup != null && popup.getAnimations().every((a) => a.playState === 'finished')
     })
-    await page.screenshot({ path: 'composer-model-panel-providers.png' })
+    await page.screenshot({ path: 'composer-model-panel.png' })
 
-    await page.getByTestId('composer-model-provider-OpenAI').click()
-    // 筛的是**厂商**,而厂商横切在两档之上 ⇒ 两档里的 OpenAI 条目都留下,两个组头也都还在。
+    await page.getByTestId('composer-model-search').fill('OpenAI')
+    // 厂商横切在两档之上 ⇒ 两档里的 OpenAI 条目都留下。
     // 三条:你自己的 codex 与 Sol,加上咕咕代付的那条 Sol —— 同名不同档,两条都得在。
-    await until('provider pill filters to OpenAI', () =>
+    await until('search narrows to OpenAI', () =>
       sameList(visibleOptions(), ['GPT-5.6 Sol', 'gpt-5.6-codex', 'GPT-5.6 Sol'])
     )
     expect(visibleOptions()).toEqual(['GPT-5.6 Sol', 'gpt-5.6-codex', 'GPT-5.6 Sol'])
     expect(visibleGroups()).toEqual([])
 
-    // 再点一次取消 ⇒ 回到「一个都没选」= 不过滤(上游原话:An empty filter means no filtering)。
-    await page.getByTestId('composer-model-provider-OpenAI').click()
-    await until('clearing the pill restores all five', () => visibleOptions().length === 5)
+    await page.getByTestId('composer-model-search').fill('')
+    await until('clearing the search restores all five', () => visibleOptions().length === 5)
   })
 })

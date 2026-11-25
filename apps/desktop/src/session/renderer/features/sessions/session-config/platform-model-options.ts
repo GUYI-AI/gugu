@@ -145,12 +145,14 @@ function decorate(
   modelId: string,
   tierLabel: string | null | undefined,
   icon: ComposerModelDecor['icon'],
-  providerName: ComposerModelDecor['providerName']
+  providerName: ComposerModelDecor['providerName'],
+  tag?: string | null
 ): ComposerModelOption {
   const provider = resolveModelProvider(modelId, option.name);
   const node = icon?.(provider);
   return {
     ...option,
+    ...(tag && !option.tag ? { tag } : {}),
     // 已经自带组头的条目不动 —— 平台条目由 `platformComposerOption` 贴过了(走词表),
     // 插件静态表将来若自己分组,那也是它更清楚的分法。
     ...(option.groupLabel || !tierLabel ? {} : { groupLabel: tierLabel }),
@@ -171,6 +173,12 @@ export interface ComposerModelDecor {
   icon?: (provider: ModelProvider | null) => ComposerModelOption['icon'];
   /** 厂商名 → 当前界面语言下的显示名(英文界面里「智谱」显示 Zhipu)。不给 = 原样。 */
   providerName?: (name: string) => string;
+  /**
+   * 用户自己那档每一行的标签:这份登录是谁家的 Coding Plan(ChatGPT / Claude),按量 key 写域名
+   * (owner 11-19「自己配置的模型需要标签」、11-25 定)。组头不画了,它是这一档与咕咕模型的唯一分界。
+   * 不给 = 不贴(咕咕的模型永远不贴)。
+   */
+  ownTag?: string | null;
 }
 
 /**
@@ -186,7 +194,7 @@ export interface ComposerModelDecor {
  *
  * **一级 = 这条是谁的**:「你的 Codex 模型」/「咕咕提供的模型 · 按积分计费」—— 它是组头,
  * 也决定顺序。用户先要定的是**这次调用记在谁账上**(花不花积分、凭据归谁管)。
- * **二级 = 厂商**(OpenAI / Anthropic / 智谱 …):它**不分组**,只做筛选药丸与行内 logo。
+ * **二级 = 厂商**(OpenAI / Anthropic / 智谱 …):它**不分组**,只做行内 logo 与搜索词(顶上那排筛选块 owner 11-25 撤了)。
  *
  * ⚠️ 我第一版把这两级做反了(厂商当组头、来源当副标题),owner 原话「你这个分类层次反了」。
  * ❌ 别再把厂商升成组头:厂商横切在两档之上(同一家可以既有你自己的、又有咕咕代付的),
@@ -223,7 +231,7 @@ export function composerModelOptions(
     ...Object.fromEntries(
       Object.entries(harness ?? {}).map(([id, option]) => [
         id,
-        decorate(option, id, decor?.ownTierLabel, decor?.icon, decor?.providerName),
+        decorate(option, id, decor?.ownTierLabel, decor?.icon, decor?.providerName, decor?.ownTag),
       ])
     ),
   };

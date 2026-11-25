@@ -853,7 +853,6 @@ const enUSCoreMessages = {
   'composer.searchAgents': 'Search agents...',
   // 模型面板(照 assistant-ui「With search, provider filters + groups」)新增的三条。
   'composer.searchModels': 'Search models...',
-  'composer.filterByProvider': 'Filter by provider',
   'composer.noMatchingModels': 'No matching models.',
   'composer.dismissNotice': 'Dismiss notice',
   'composer.addAttachment': 'Add attachment',
@@ -2172,7 +2171,6 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'composer.agentLocked': '{agentName} - 会话开始后无法切换智能体',
   'composer.searchAgents': '搜索智能体...',
   'composer.searchModels': '搜索模型...',
-  'composer.filterByProvider': '按厂商筛选',
   'composer.noMatchingModels': '没有匹配的模型。',
   'composer.dismissNotice': '关闭通知',
   'composer.addAttachment': '添加附件',

@@ -12,6 +12,8 @@ import '@gugu/session-ui/styles/global'
 import '@gugu/session-ui/theme/theme.css'
 import '@gugu/session-ui/theme/semantic.css'
 import '@gugu/session-ui/styles/base.css'
+// 清单外那层滚动区(`.scroll-fade__viewport` 的 overflow)写在这份 CSS 里,app 由 embedded.tsx 引入:不引就量不到它滚。
+import '@gugu/session-ui/styles/overflow-fade.css'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
 
@@ -22,6 +24,8 @@ import '@renderer/index.css'
  * 还有「管理模型」:点了收起面板、交给宿主开设置里的「模型」页(② 的入口)。
  *
  * 同日看实机后又提的三处也钉在这里:行尾不再写倍率、厂商过滤片一样大、「思考」那一段收紧。
+ * owner 11-25 改了两处:顶上那排厂商过滤片撤掉;「升级解锁更多模型」「配置模型」挪进清单末尾、跟着清单滚,
+ * 「配置模型」是最后一行。
  */
 const MODELS = {
   'opus': {
@@ -69,6 +73,14 @@ const onModelChange = vi.fn()
 
 const panel = () => document.querySelector<HTMLElement>('[data-slot="combobox-content"]')
 const detail = () => document.querySelector<HTMLElement>('[data-slot="composer-model-detail"]')
+/** 清单外面那层滚动区(primitive 的 ScrollContainer):从清单往上找第一个能纵向滚的祖先。 */
+const scrollArea = (): HTMLElement => {
+  const list = panel()!.querySelector<HTMLElement>('[data-slot="combobox-list"]')!
+  for (let el = list.parentElement; el; el = el.parentElement) {
+    if (/auto|scroll/.test(getComputedStyle(el).overflowY)) return el
+  }
+  throw new Error('the model list has no scroll area around it')
+}
 const rowByName = (name: string): HTMLElement =>
   ([...(panel()?.querySelectorAll('[data-slot="composer-model-name"]') ?? [])]
     .find((el) => el.textContent?.trim() === name)
@@ -125,22 +137,22 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     expect(rowByName('Opus 5.5').textContent).not.toContain('Best for everyday tasks')
   })
 
-  it('gives every provider filter the same size, four to a row, without cutting off the long names', () => {
-    // owner 2026-10-10:「按钮块的大小能保持一致,有时候智谱那块太小了,不好点」。
-    const chips = [...panel()!.querySelectorAll<HTMLElement>('[data-testid^="composer-model-provider-"]')]
-    expect(chips.map((c) => c.textContent)).toEqual(['Anthropic', '智谱', 'DeepSeek', 'Google'])
-    const boxes = chips.map((c) => c.getBoundingClientRect())
-    for (const box of boxes) {
-      expect(Math.abs(box.width - boxes[0].width), '过滤片宽度不一').toBeLessThan(0.5)
-      expect(Math.abs(box.top - boxes[0].top), '四家没排在同一行').toBeLessThan(0.5)
-    }
-    for (const chip of chips) {
-      expect(chip.scrollWidth, `${chip.textContent} 被截断了`).toBeLessThanOrEqual(chip.clientWidth)
-    }
-    // 各自分开,❌ 连成一条(owner 同日:「不同厂家怎么连在一块了」)。
-    for (let i = 1; i < boxes.length; i++) {
-      expect(boxes[i].left - boxes[i - 1].right, '相邻两块之间没有缝').toBeGreaterThanOrEqual(2)
-    }
+  it('has no vendor filter row; the upgrade row and then 「配置模型」 end the list, inside its scroll area', () => {
+    // owner 11-25:「删掉模型选择列表头上的分组」;「配置模型」不是钉死的一栏,是清单最后一行。
+    expect(panel()!.querySelector('[data-testid^="composer-model-provider-"]')).toBeNull()
+    const scroller = scrollArea()
+    const upgrade = panel()!.querySelector<HTMLElement>('[data-testid="composer-model-upgrade"]')!
+    const manage = panel()!.querySelector<HTMLElement>('[data-testid="composer-model-manage"]')!
+    expect(scroller.contains(upgrade), '升级那一行不在清单的滚动区里').toBe(true)
+    expect(scroller.contains(manage), '「配置模型」不在清单的滚动区里').toBe(true)
+    // 顺序:模型 → 升级 → 配置模型,配置模型之后什么都没有。
+    const rows = [...scroller.querySelectorAll<HTMLElement>('[role="option"], button')]
+    expect(rows.at(-1), '「配置模型」不是最后一行').toBe(manage)
+    expect(rows.at(-2)).toBe(upgrade)
+    expect(rows.slice(0, -2).every((row) => row.getAttribute('role') === 'option')).toBe(true)
+    // 与模型行同宽:读起来是清单的一行,不是一条底栏。
+    const option = rowByName('Opus 5.5').getBoundingClientRect()
+    expect(Math.abs(manage.getBoundingClientRect().width - option.width), '「配置模型」和模型行不一样宽').toBeLessThan(1)
   })
 
   it('opens an explicit thinking submenu from the selected model detail', async () => {
@@ -190,7 +202,7 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     expect(onModelChange).not.toHaveBeenCalled()
   })
 
-  it('closes the panel and hands off to settings from 「管理模型」', async () => {
+  it('closes the panel and hands off to settings from 「配置模型」', async () => {
     document.querySelector<HTMLElement>('[data-testid="composer-model-manage"]')!.click()
     expect(onManageModels).toHaveBeenCalledTimes(1)
     await until('panel closes', () => panel() === null)
@@ -239,12 +251,66 @@ describe('#7123 英文界面:底部「Upgrade to unlock more models」整句都�
     const upgrade = document.querySelector<HTMLElement>('[data-testid="composer-model-upgrade"]')!
     expect(upgrade.textContent).toBe('Upgrade to unlock more models')
     const box = upgrade.getBoundingClientRect()
-    // 判的是底栏的内容区(面板右缘减去底栏右内边距),❌ 只看面板:测试里字体比实机窄,旧写法也只伸进内边距、还没出面板;
+    // 判的是清单滚动区的内容区(右缘减去右内边距),❌ 只看面板:测试里字体比实机窄,旧写法也只伸进内边距、还没出面板;
     // 实机上同一份溢出就到了面板外被裁掉(#7123,约 19px)。
-    const footer = document.querySelector<HTMLElement>('[data-slot="composer-model-footer"]')!
-    const contentRight = footer.getBoundingClientRect().right - parseFloat(getComputedStyle(footer).paddingRight)
-    expect(box.right, '按钮伸出了底栏的内容区').toBeLessThanOrEqual(contentRight + 0.5)
+    const scroller = scrollArea()
+    const contentRight = scroller.getBoundingClientRect().right - parseFloat(getComputedStyle(scroller).paddingRight)
+    expect(box.right, '按钮伸出了清单的内容区').toBeLessThanOrEqual(contentRight + 0.5)
+    expect(scroller.scrollWidth, '清单被它撑出了横向滚动').toBeLessThanOrEqual(scroller.clientWidth)
     expect(upgrade.scrollWidth, '字在按钮里被截断了').toBeLessThanOrEqual(upgrade.clientWidth)
+    expect(document.querySelector('[data-testid="composer-model-manage"]')!.textContent).toBe('Configure custom models')
+  })
+})
+
+describe('owner 11-25:「配置模型」跟着清单滚,❌ 钉在面板底上', () => {
+  // 二十条:比 18rem 的滚动区长得多,才看得出它是钉着还是跟着滚。
+  const LONG = Object.fromEntries(
+    Array.from({ length: 20 }, (_, i) => [`m${i}`, { name: `Model ${i + 1}`, providerLabel: 'OpenAI' }])
+  )
+
+  beforeEach(async () => {
+    await page.viewport(1400, 800)
+    container = document.createElement('div')
+    container.className = 'emlight gugu-skin bg-background'
+    container.style.cssText = 'position:fixed;right:24px;bottom:24px;width:640px'
+    document.body.classList.add('emlight', 'gugu-skin')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    root.render(
+      <SessionLocalizationProvider>
+        <ChatComposer modelOptions={LONG} selectedModel="m0" onModelChange={() => {}} onManageModels={() => {}}
+          onSubmit={() => {}} onStop={() => {}} />
+      </SessionLocalizationProvider>
+    )
+    await until('composer model trigger mounted', () => document.querySelector('[data-testid="composer-model-trigger"]') != null)
+    ;(document.querySelector('[data-testid="composer-model-trigger"]') as HTMLElement).click()
+    await until('model panel lists options', () => (panel()?.querySelectorAll('[role="option"]').length ?? 0) > 0)
+    await until('model panel entry animation finishes', () => panel()!.getAnimations().every((animation) => animation.playState === 'finished'))
+  })
+
+  afterEach(() => {
+    root?.unmount()
+    container?.remove()
+    root = null
+    container = null
+  })
+
+  it('is below the fold while the list is at the top, and the last thing once it is scrolled to the end', async () => {
+    const scroller = scrollArea()
+    const manage = panel()!.querySelector<HTMLElement>('[data-testid="composer-model-manage"]')!
+    // 阳性对照:真的长到要滚 —— 否则「在可视区外」平凡为假、「滚到底看得到」平凡为真。
+    expect(scroller.scrollHeight, '清单没长到要滚').toBeGreaterThan(scroller.clientHeight + 100)
+    expect(scroller.scrollTop).toBe(0)
+    expect(manage.getBoundingClientRect().top, '「配置模型」钉在了可视区里').toBeGreaterThanOrEqual(scroller.getBoundingClientRect().bottom - 1)
+
+    scroller.scrollTop = scroller.scrollHeight
+    await until('scrolled to the end', () => scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1)
+    const view = scroller.getBoundingClientRect()
+    const row = manage.getBoundingClientRect()
+    expect(row.top).toBeGreaterThanOrEqual(view.top)
+    expect(row.bottom).toBeLessThanOrEqual(view.bottom + 0.5)
+    const last = [...scroller.querySelectorAll('[role="option"]')].at(-1)!.getBoundingClientRect()
+    expect(row.top, '「配置模型」没排在最后一个模型下面').toBeGreaterThanOrEqual(last.bottom)
   })
 })
 
