@@ -163,6 +163,14 @@ it('repairs a missing model route from its disabled row and returns to the picke
   await expect.element(page.getByTestId('custom-model-route-outgoing-0')).toHaveTextContent('OpenAI Chat');
   await expect.element(page.getByTestId('custom-model-route-model-0')).toHaveTextContent('repair-target');
   expect(state.saved).toBeNull();
+  await until('the route repair dialog finishes opening with Save above the composer', () => {
+    const dialog = document.querySelector('[data-testid="custom-model-dialog"]');
+    const save = dialog?.querySelector<HTMLButtonElement>('[data-testid="custom-model-save"]');
+    if (!dialog || !save || dialog.getAnimations().some(animation => animation.playState !== 'finished')) return false;
+    const { x, y, width, height } = save.getBoundingClientRect();
+    return save.contains(document.elementFromPoint(x + width / 2, y + height / 2));
+  });
+  await page.screenshot({ path: '../../../../../../../test-results/custom-route-repair-save.png' });
   await userEvent.click(page.getByTestId('custom-model-save'));
   await expect.element(page.getByTestId('composer-model-search')).toBeVisible();
   await expect.element(row).toHaveAttribute('data-route-repair-target', 'true');

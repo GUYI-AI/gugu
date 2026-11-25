@@ -369,6 +369,13 @@ jobs:
           name: coding-plan-single-row-zh-${{ matrix.shard }}
           path: test-results/coding-plan-single-row-zh.png
           retention-days: 14
+      - name: Upload route repair dialog regression screenshot
+        if: ${{ always() && hashFiles('test-results/custom-route-repair-save.png') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-route-repair-save-${{ matrix.shard }}
+          path: test-results/custom-route-repair-save.png
+          retention-days: 14
   web-smoke:
     name: Web E2E (${{ matrix.id }})
     needs: changes
