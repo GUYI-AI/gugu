@@ -173,7 +173,7 @@ export const enUSSessionWorkflowMessages = {
   'sessionHistory.importOffer': 'Used {tools} before?',
   'sessionHistory.importOfferAction': 'Import earlier sessions ›',
 
-  'task.newTask': 'New task',
+  'task.newTask': 'Create agent',
   'task.newTaskHint': 'Describe what you want done. Pick the project and machine below.',
   'task.starterExplain': 'Explain this project',
   'task.starterExplainPrompt': 'Explain how this project is organized: its main parts, how they fit together, and where to start reading.',
@@ -677,6 +677,7 @@ export const enUSSessionWorkflowMessages = {
   'changes.notRepository': "This task's folder is not a git repository.",
   'changes.sessionEditedFiles': 'These are the files on this session\'s Edited cards.',
   'changes.noSessionEdits': 'This session has not edited any files yet.',
+  'changes.reviewInGitProject': 'To see and commit every change, open Review in a project session that uses a Git repository.',
   'changes.olderTurnsNotLoaded': 'Earlier turns are not loaded, so only the loaded ones are listed.',
   'changes.loadFailed': 'Could not read changes.',
   'file.saveFailedOn': '{name} was not saved to {device}.',
@@ -919,7 +920,7 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'sessionHistory.importOffer': '使用过 {tools}？',
   'sessionHistory.importOfferAction': '导入历史会话 ›',
 
-  'task.newTask': '新建任务',
+  'task.newTask': '创建智能体',
   'task.newTaskHint': '说说你想做的事，项目和机器在下面选。',
   'task.starterExplain': '讲讲这个项目',
   'task.starterExplainPrompt': '讲讲这个项目是怎么组织的：主要有哪几块、它们怎么配合、从哪里开始读。',
@@ -1385,6 +1386,7 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'changes.notRepository': '此会话的文件夹不是 git 仓库。',
   'changes.sessionEditedFiles': '下面是本会话「已编辑」卡里的文件。',
   'changes.noSessionEdits': '本会话还没有编辑过文件。',
+  'changes.reviewInGitProject': '要查看和提交全部改动，请在使用 Git 仓库的项目会话中打开审阅。',
   'changes.olderTurnsNotLoaded': '更早的轮次没有载入，这里只列出已载入的部分。',
   'changes.loadFailed': '无法读取更改。',
   'file.saveFailedOn': '无法将 {name} 保存到 {device}。',

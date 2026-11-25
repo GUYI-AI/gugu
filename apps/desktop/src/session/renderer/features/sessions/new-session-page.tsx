@@ -285,6 +285,7 @@ export const NewSessionPage = observer(function NewSessionPage({
               key={remote?.deviceId ?? 'local'}
               preferredProvider={agentSelection && remote?.deviceId === agentSelection.deviceId ? agentSelection.agentId : undefined}
               draftKey={NEW_SESSION_DRAFT_KEY}
+              placeholder={translate('newAgent.placeholder')}
               {...machineComposerProps(machineContext, { projectId: effectiveProjectId })}
               onSessionCreated={onSessionCreated}
             />

@@ -2,7 +2,7 @@ import { dbPayload } from '@gugu/core/cloud/supabase'
 import type { Session, User } from '@supabase/supabase-js'
 import { dataClient, identityDb, supabase } from './supabase'
 import { consumePendingReferrer } from './referral'
-import { userVisibleAuthError } from './authErrors'
+import { isOtpRejectedError, userVisibleAuthError } from './authErrors'
 import { rendererLogger } from './log'
 import { i18n } from '@/i18n'
 import { readDisplayIdentities } from './identityReadAdapter'
@@ -28,6 +28,8 @@ export interface AuthResult {
   userId?: string
   session?: Session
   error?: string
+  /** verifyLoginOtp only: the server refused the code itself (wrong or expired — GoTrue does not say which). */
+  otpRejected?: boolean
 }
 
 export type LoginOtpResult = AuthResult & { status?: number; code?: string; retryAfterSeconds?: number; reason?: 'signup_consent_required' }
@@ -116,7 +118,7 @@ export const authService = {
   async verifyLoginOtp(email: string, token: string): Promise<AuthResult> {
     try {
       const { data, error } = await supabase.auth.verifyOtp({ email, token, type: 'email' })
-      if (error) return { success: false, error: userVisibleAuthError(error) }
+      if (error) return { success: false, error: userVisibleAuthError(error), otpRejected: isOtpRejectedError(error) }
       if (!data.session) return { success: false, error: i18n.t('auth.verifyFailed', { ns: 'main' }) }
       return { success: true, userId: data.user?.id, session: data.session }
     } catch (error) {
