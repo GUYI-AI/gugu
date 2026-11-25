@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import type { ContactUser } from '@gugu/core/shared/types/contacts'
 import { useContactsStore } from '../../store/contactsContext'
 import { rendererLogger } from '../../lib/log'
+import { commitManualAgentDesiredStatus } from '../../lib/manualAgentDesiredStatus'
 import { SettingsRow } from '../settings/SettingsPrimitives'
 import { Switch } from '../ui/Switch'
 import './AgentPauseRow.css'
@@ -17,7 +18,10 @@ export function AgentPauseRow({ agent }: { agent: ContactUser }) {
     if (busy) return
     setBusy(true)
     setFailed(false)
-    try { await setAgentDesiredStatus(agent.id, paused ? 'online' : 'offline') }
+    try {
+      const next = paused ? 'online' : 'offline'
+      await commitManualAgentDesiredStatus(agent, next, () => setAgentDesiredStatus(agent.id, next))
+    }
     catch (error) { rendererLogger('agents/pause').error({ error }, 'pause agent failed'); setFailed(true) }
     finally { setBusy(false) }
   }

@@ -177,8 +177,8 @@ test('v2 upgrade atomically normalizes account rows and removes every legacy sto
   })
 
   // Legacy message windows are a cache the message store rebuilds (v5): they are not carried.
-  expect(result.version).toBe(5)
-  expect(result.stores.sort()).toEqual(['chat', 'identity', 'membership', 'outbox', 'presence', 'sync_state', 'view'])
+  expect(result.version).toBe(6)
+  expect(result.stores.sort()).toEqual(['chat', 'identity', 'membership', 'outbox', 'presence', 'retired_accounts', 'sync_state', 'view'])
   expect(result.accountA).toMatchObject({ identity: 2, membership: 2, view: 0, outbox: 1 })
   expect(result.accountB).toMatchObject({ outbox: 1 })
   expect(result.schema).toEqual({
@@ -187,12 +187,13 @@ test('v2 upgrade atomically normalizes account rows and removes every legacy sto
     membership: { keyPath: ['accountId', 'chatId', 'identityId'], indexes: ['accountChat', 'accountId'] },
     outbox: { keyPath: ['accountId', 'id'], indexes: ['accountId'] },
     presence: { keyPath: ['accountId', 'identityId'], indexes: ['accountId'] },
+    retired_accounts: { keyPath: 'accountId', indexes: [] },
     sync_state: { keyPath: ['accountId', 'key'], indexes: ['accountId'] },
     view: { keyPath: ['accountId', 'key'], indexes: ['accountId'] },
   })
 })
 
-test('published v1 upgrades every legacy row directly to v5', async ({ page }) => {
+test('published v1 upgrades every legacy row directly to v6', async ({ page }) => {
   await seedVersionOne(page)
 
   const result = await page.evaluate(async () => {
@@ -220,14 +221,14 @@ test('published v1 upgrades every legacy row directly to v5', async ({ page }) =
   })
 
   expect(result.error).toBe('')
-  expect(result.version).toBe(5)
-  expect(result.stores.sort()).toEqual(['chat', 'identity', 'membership', 'outbox', 'presence', 'sync_state', 'view'])
+  expect(result.version).toBe(6)
+  expect(result.stores.sort()).toEqual(['chat', 'identity', 'membership', 'outbox', 'presence', 'retired_accounts', 'sync_state', 'view'])
   expect(result.counts).toMatchObject({ identity: 2, membership: 2, view: 0 })
 })
 
 // #7290 v3 → v4:老客户端存下的消息行没有指向字节的列 ⇒ 消息窗口和从它推出来的(stream、view、sync_state 游标)丢掉重取;
 // 会话、身份、成员、在线、发件箱照留。
-test('v3 upgrades to v5 by dropping the cached message tables and its cursors, keeping the rest', async ({ page }) => {
+test('v3 upgrades to v6 by dropping the cached message tables and its cursors, keeping the rest', async ({ page }) => {
   await page.evaluate(async (name) => {
     const keyPaths: Record<string, string[]> = {
       identity: ['accountId', 'id'], chat: ['accountId', 'id'], membership: ['accountId', 'chatId', 'identityId'],
@@ -282,16 +283,16 @@ test('v3 upgrades to v5 by dropping the cached message tables and its cursors, k
     return { version, counts }
   })
 
-  expect(result.version).toBe(5)
-  expect(result.counts).toEqual({ chat: 1, identity: 1, membership: 1, presence: 1, outbox: 1, view: 0, sync_state: 0 })
+  expect(result.version).toBe(6)
+  expect(result.counts).toEqual({ chat: 1, identity: 1, membership: 1, presence: 1, outbox: 1, view: 0, sync_state: 0, retired_accounts: 0 })
 })
 
 for (const version of [1, 2] as const) {
   // A legacy window is a cache: whatever its bounds say, it is dropped, never validated into a failed upgrade.
-  for (const maxSeq of [0, 99]) test(`published v${version} empty window (max seq ${maxSeq}) upgrades to v5 without it`, async ({ page }) => {
+  for (const maxSeq of [0, 99]) test(`published v${version} empty window (max seq ${maxSeq}) upgrades to v6 without it`, async ({ page }) => {
     await seedEmptyLegacy(page, version, maxSeq)
     const result = await openLegacyUpgrade(page)
-    expect(result).toMatchObject({ error: '', version: 5 })
+    expect(result).toMatchObject({ error: '', version: 6 })
     expect(result.view).toBeUndefined()
   })
 }
@@ -333,7 +334,7 @@ test('a confirmed send lands in the message store, main and thread streams apart
 test('a malformed v1 message window is dropped with the legacy cache, not carried or validated', async ({ page }) => {
   await seedVersionOne(page, 'envelope-mismatch')
   const result = await openLegacyUpgrade(page)
-  expect(result).toMatchObject({ error: '', version: 5 })
+  expect(result).toMatchObject({ error: '', version: 6 })
 })
 
 test('a synchronous DataCloneError aborts earlier requests in the same real IDB transaction', async ({ page }) => {
@@ -400,9 +401,9 @@ for (const store of ['identity', 'chat', 'membership', 'presence', 'view', 'sync
 
 // A legacy message window is a cache, dropped at the upgrade: its own malformations never abort it (v5).
 for (const shape of ['envelope-mismatch', 'cursor-mismatch', 'duplicate-id'] as const) {
-  test(`${shape} in a legacy message window upgrades to v5 without the window`, async ({ page }) => {
+  test(`${shape} in a legacy message window upgrades to v6 without the window`, async ({ page }) => {
     await seedVersionTwo(page, shape)
-    expect(await openLegacyUpgrade(page)).toMatchObject({ error: '', version: 5 })
+    expect(await openLegacyUpgrade(page)).toMatchObject({ error: '', version: 6 })
   })
 }
 
