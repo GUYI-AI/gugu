@@ -398,5 +398,6 @@ it('#1456 preserves a replacement note and its index after a 4.7-second delete/a
   expect(f.input.revoke).not.toHaveBeenCalled()
   const noteCalls = f.calls.filter(call => call.key === 'owner-profile.md')
   expect(noteCalls.map(call => call.operation)).toEqual(['save','remove','save'])
+  expect(noteCalls[1]?.expectedRevision).toBe(savedRevision)
   expect(noteCalls.at(-1)?.expectedRevision).toBe(deletedRevision)
 })
