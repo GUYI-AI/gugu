@@ -1,13 +1,18 @@
 import { sessionActionDefault, type ShortcutPlatform } from './shortcuts';
 
+/** The four groups the shortcut settings and the cheat sheet list commands under. */
+export type CommandCategory = 'Navigation' | 'Task View' | 'Tab Navigation' | 'View';
+
 /** The single catalog for built-in command labels and key bindings. */
 export interface CommandDef {
   id: string;
+  /** English name. Shown words come from the session catalog: `labelKey` (a menu's own name) or `command.<id>`. */
   label: string;
   labelKey?: string;
+  /** English help text; shown words come from `commandHelp.<id>`. */
   description: string;
   iconKey?: string;
-  category: string;
+  category: CommandCategory;
   defaultHotkey?: string | ((platform: ShortcutPlatform) => string);
   hideFromSettings?: boolean;
   ignoreInputs?: boolean;
@@ -18,9 +23,12 @@ export interface CommandDef {
   ignoreWhenBrowserFocused?: boolean;
 }
 
+/** Whether a command is named by a menu's own words (`labelKey`) is kept in its type, so the copy catalog can tell. */
+type CommandEntry<K, D> = CommandDef & { id: K } & (D extends { labelKey: infer L extends string } ? { labelKey: L } : { labelKey?: undefined });
+
 function defineCommands<const T extends Record<string, Omit<CommandDef, 'id'>>>(defs: T) {
   return Object.fromEntries(Object.entries(defs).map(([id, def]) => [id, { ...def, id }])) as {
-    [K in keyof T]: CommandDef & { id: K };
+    [K in keyof T]: CommandEntry<K, T[K]>;
   };
 }
 
@@ -555,3 +563,8 @@ export const COMMANDS = defineCommands({
 });
 
 export type CommandId = keyof typeof COMMANDS;
+
+/** Commands whose shown name is a menu's own entry (`labelKey`); every other command is named by `command.<id>`. */
+export type MenuNamedCommandId = {
+  [K in CommandId]: (typeof COMMANDS)[K] extends { labelKey: string } ? K : never;
+}[CommandId];

@@ -13,6 +13,7 @@ import { enUSAgentStatusMessages, zhCNAgentStatusMessages } from './messages-age
 import { enUSResourceKindMessages, zhCNResourceKindMessages } from './messages-resource-kinds';
 import { enUSAppSettingsMessages, zhCNAppSettingsMessages } from './messages-app-settings';
 import { enUSThemeMessages, zhCNThemeMessages } from './messages-themes';
+import { enUSCommandMessages, zhCNCommandMessages } from './messages-commands';
 
 export const zhCNMarketAgentDescriptions: Readonly<Partial<Record<string, string>>> = {
   claude: '在终端中使用 Claude 修改、解释和重构代码',
@@ -61,7 +62,7 @@ const enUSCoreMessages = {
   'sidebar.newTask': 'New task',
   'sidebar.createAgent': 'Create agent',
   'sidebar.sessionHistory': 'Task history',
-  'sidebar.scheduled': 'Scheduled',
+  'sidebar.scheduled': 'Automations',
   'sidebar.searchConversations': 'Search tasks',
   'sidebar.openProject': 'Open project {project}',
   'sidebar.openConversation': 'Open conversation {title}',
@@ -85,8 +86,8 @@ const enUSCoreMessages = {
   'sidebar.agents': 'My agents',
   'sidebar.expandAgents': 'Expand agents',
   'sidebar.collapseAgents': 'Collapse agents',
-  'sidebar.noAgents': 'None of your agents are here',
-  'sidebar.emptyHintCreate': 'Describe a request to create an agent.',
+  'sidebar.noAgents': 'No agents created here yet',
+  'sidebar.emptyHintCreate': 'Click “Create agent” above, then describe your request.',
   'sidebar.emptyHintPlace': 'New agents appear here, alongside your groups and projects.',
   'sidebar.agentsRunning': '{count} running',
   'sidebar.collapseInner': 'Collapse inner sidebar',
@@ -676,7 +677,7 @@ const enUSCoreMessages = {
   'tabs.showToolTabs': 'Show tabs',
   'tabs.hideToolTabs': 'Hide tabs',
   'tabs.enterToolFullView': 'Enter full view',
-  'tabs.exitToolFullView': 'Exit full screen',
+  'tabs.exitToolFullView': 'Exit full view',
   'tabs.openConversationInWindow': 'Open in separate window',
   'tabs.newWorkspaceTab': 'New tab',
   'tabs.moveToolGroupLeft': 'Move to left pane',
@@ -771,6 +772,7 @@ const enUSCoreMessages = {
   'chat.folderDropUnsupportedDescription':
     'This computer has no SSH connection. Attach individual files, or add this computer using SSH to send a folder.',
   'chat.commands': 'Commands',
+  'chat.commandCompactDescription': 'Compact the conversation context',
   'chat.prompts': 'My prompts',
   'chat.thisAgent': 'This agent',
   'chat.signIn': 'Sign in',
@@ -1440,7 +1442,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'sidebar.newTask': '新建任务',
   'sidebar.createAgent': '创建智能体',
   'sidebar.sessionHistory': '会话历史',
-  'sidebar.scheduled': '已安排',
+  'sidebar.scheduled': '自动化',
   'sidebar.searchConversations': '搜索会话',
   'sidebar.openProject': '打开项目 {project}',
   'sidebar.openConversation': '打开任务 {title}',
@@ -1462,8 +1464,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'sidebar.agents': '我的智能体',
   'sidebar.expandAgents': '展开智能体',
   'sidebar.collapseAgents': '收起智能体',
-  'sidebar.noAgents': '此处暂无你的智能体',
-  'sidebar.emptyHintCreate': '输入需求以创建智能体。',
+  'sidebar.noAgents': '还没有在这里创建智能体',
+  'sidebar.emptyHintCreate': '点上方「创建智能体」，然后输入需求。',
   'sidebar.emptyHintPlace': '新建的智能体显示在这里，与群和项目并列。',
   'sidebar.agentsRunning': '{count} 个在运行',
   'sidebar.collapseInner': '收起内层栏',
@@ -2003,7 +2005,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'tabs.showToolTabs': '显示标签页',
   'tabs.hideToolTabs': '隐藏标签页',
   'tabs.enterToolFullView': '进入完整视图',
-  'tabs.exitToolFullView': '退出全屏',
+  'tabs.exitToolFullView': '退出完整视图',
   'tabs.openConversationInWindow': '单独成窗',
   'tabs.newWorkspaceTab': '新建标签页',
   'tabs.moveToolGroupLeft': '移至左侧面板',
@@ -2093,6 +2095,7 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'chat.folderDropUnsupportedDescription':
     '这台电脑没有 SSH 连接，无法发送文件夹。请逐个附加文件，或通过 SSH 添加这台电脑。',
   'chat.commands': '命令',
+  'chat.commandCompactDescription': '压缩对话上下文',
   'chat.prompts': '我的提示词',
   'chat.thisAgent': '此智能体',
   'chat.signIn': '登录',
@@ -2724,6 +2727,7 @@ export const enUSMessages = {
   ...enUSAppSettingsMessages,
   ...enUSSessionScheduleMessages,
   ...enUSThemeMessages,
+  ...enUSCommandMessages,
 } as const;
 
 export type SessionMessageKey = keyof typeof enUSMessages;
@@ -2751,4 +2755,5 @@ export const zhCNMessages: Record<SessionMessageKey, string> = {
   ...zhCNAppSettingsMessages,
   ...zhCNSessionScheduleMessages,
   ...zhCNThemeMessages,
+  ...zhCNCommandMessages,
 };
