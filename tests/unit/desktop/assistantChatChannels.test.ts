@@ -1,6 +1,6 @@
-import { expect, it } from 'vitest'
-import type { ChatChannel, ChatChannelList } from '@gugu/core/cloud/chatChannels'
-import { assistantChatChannelItems } from '../../../apps/desktop/electron/sessionpage/assistant-chat-channel-index'
+import { expect, it, vi } from 'vitest'
+import { createChatChannelsClient, type ChatChannel, type ChatChannelList } from '@gugu/core/cloud/chatChannels'
+import { assistantChatChannelItems, createAssistantChatChannelReader, ASSISTANT_CHAT_CHANNEL_TIMEOUT_MS } from '../../../apps/desktop/electron/sessionpage/assistant-chat-channel-index'
 import { assistantLocalIndex } from '../../../apps/desktop/electron/sessionpage/assistant-local-index'
 import { assistantStartupIndex } from '../../../apps/desktop/electron/sessionpage/assistant-startup-index'
 import { ASSISTANT_INDEX_LIMIT, boundedAssistantIndex } from '../../../apps/desktop/electron/sessionpage/assistant-index-format'
@@ -68,4 +68,54 @@ it('preserves channel routing metadata when large project inventories exceed the
   expect(result).toContain('wechat')
   expect(result).toContain('bound to this assistant')
   expect(result).toContain('omitted_items')
+})
+
+it('coalesces concurrent resource reads and reuses metadata for fifteen seconds', async () => {
+  let now = 0
+  const load = vi.fn(async () => list([channel()]))
+  const read = createAssistantChatChannelReader({ expectedOwner: 'owner', accountId: async () => 'owner', assistantAgentId: 'this-assistant', list: load, now: () => now })
+  await Promise.all([read(), read()])
+  now = 14_999; await read()
+  expect(load).toHaveBeenCalledTimes(1)
+  now = 15_000; await read()
+  expect(load).toHaveBeenCalledTimes(2)
+})
+
+it('does not turn cached request failures into successful empty channel lists', async () => {
+  let now = 0
+  const load = vi.fn(async () => { throw new Error('read unavailable') })
+  const read = createAssistantChatChannelReader({ expectedOwner: 'owner', accountId: async () => 'owner', assistantAgentId: 'this-assistant', list: load, now: () => now })
+  await expect(read()).rejects.toThrow('read unavailable')
+  await expect(read()).rejects.toThrow('read unavailable')
+  expect(load).toHaveBeenCalledTimes(1)
+  now = 15_000
+  await expect(read()).rejects.toThrow('read unavailable')
+  expect(load).toHaveBeenCalledTimes(2)
+})
+
+it('drops cached metadata on account changes and checks in-flight replies again', async () => {
+  let owner = 'owner'
+  const load = vi.fn(async () => list([channel()]))
+  const read = createAssistantChatChannelReader({ expectedOwner: 'owner', accountId: async () => owner, assistantAgentId: 'this-assistant', list: load })
+  await read(); owner = 'other'
+  await expect(read()).rejects.toThrow('owner changed')
+  owner = 'owner'; await read()
+  expect(load).toHaveBeenCalledTimes(2)
+  const delayed = createAssistantChatChannelReader({ expectedOwner: 'owner', accountId: async () => owner, assistantAgentId: 'this-assistant', list: async () => { owner = 'other'; return list([channel()]) } })
+  await expect(delayed()).rejects.toThrow('owner changed')
+})
+
+it('aborts a cold channel request at the auxiliary metadata deadline', async () => {
+  const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+    await new Promise<void>((_resolve, reject) => {
+      init!.signal!.addEventListener('abort', () => reject(new Error('aborted')), { once: true })
+    })
+    throw new Error('unexpected successful response')
+  })
+  const started = Date.now()
+  const client = createChatChannelsClient({ baseUrl: 'http://127.0.0.1:1', accessToken: async () => 'fixture', fetch,
+    requestTimeoutMs: ASSISTANT_CHAT_CHANNEL_TIMEOUT_MS })
+  await expect(client.list()).rejects.toMatchObject({ code: 'network' })
+  expect(Date.now() - started).toBeGreaterThanOrEqual(ASSISTANT_CHAT_CHANNEL_TIMEOUT_MS - 50)
+  expect(Date.now() - started).toBeLessThan(5_000)
 })
