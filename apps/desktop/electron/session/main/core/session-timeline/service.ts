@@ -19,7 +19,7 @@ import { followSessionIndex, indexedTurnCount, indexSessionRecord, prepareSessio
 import type { IndexSource } from '../session-index/worker';
 import { nativeConversationListActivity } from '../sessions/session-conversation-live';
 import { deliverAgentQuestionAnswer, restoredAgentQuestion } from '../sessions/agent-question-delivery';
-import { and, desc, eq, inArray, isNull, notInArray, type SQL } from 'drizzle-orm';
+import { asc, and, desc, eq, inArray, isNull, notInArray, type SQL } from 'drizzle-orm';
 import { readProjects } from '@main/core/projects/operations/getProjects';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
@@ -63,7 +63,7 @@ import { sessionBornInChatId } from '@shared/core/sessions/sessions';
 import { taskName } from '@main/core/sessions/task-name';
 import { agentIdsBySession, sessionAgents } from '@main/core/sessionpage/sessionpage-session-agent';
 import { db } from '@main/db/client';
-import { sessions, projects, type SessionRow } from '@main/db/schema';
+import { sessions, projects, sessionPending, type SessionRow } from '@main/db/schema';
 import { persistedWorkspacePath } from '@main/core/projects/utils';
 import { events, tapMainEvents } from '@main/lib/events';
 import { onNativeMessagePreviewChanged } from './native-preview-events';
@@ -86,6 +86,7 @@ import {
 import {
   sessionChangedChannel,
   sessionCreatedChannel,
+  sessionLifeViewChannel,
   type AgentStatusChange,
 } from '@shared/core/sessions/sessionEvents';
 import {
@@ -147,6 +148,7 @@ function fail<T>(code: string, message: string): SessionTimelineResult<T> {
  * 显式置 null = fail loud（`timeline_unavailable`），❌ 不返回空时间线冒充「这条会话没内容」。
  */
 export type SessionTimelineFactory = (input: {
+  onError?: (error: unknown) => void;
   /** The agent's record; null = it has none gugu reads, and the journal is all there is. */
   locator: SessionRecordLocator | null;
   /** Gugu's journal of the session (`session-journal.ts`), read beside the record. */
@@ -163,7 +165,7 @@ export type SessionTimelineFactory = (input: {
  * 会让每一个只想测服务层记账的用例都替记录源交税（也会把原生模块拖进不需要它的进程）。
  * 真开一份时间线的那一刻才加载。
  */
-const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal, conversationId: sessionId, answerableQuestions, readMode, parentLineage }) => {
+const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal, conversationId: sessionId, answerableQuestions, readMode, parentLineage, onError }) => {
   const { createSessionRecordSource, createSessionTimeline, emptyRecordSource } = await import(
     '@gugu/session-core/session-record'
   );
@@ -175,6 +177,7 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal
   const pty = row && row.runtime !== 'acp';
   const source = locator ? createSessionRecordSource(locator, { readMode, parentLineage }) : emptyRecordSource(own);
   const timeline = await createSessionTimeline(source, {
+    onError,
     sessionId,
     ...(pty && locator ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
     archive,
@@ -262,9 +265,17 @@ let resetGeneration = 0;
 type ActiveSubscription = {
   conversationId: string;
   stop: () => void;
+  fail?: (error: { code: string; message: string }) => void;
 };
 
 const subscriptions = new Map<string, ActiveSubscription>();
+
+function recordSourceFailed(conversationId: string, error: unknown): void {
+  const failure = { code: 'record_watch_failed', message: (error as Error)?.message ?? String(error) };
+  for (const subscription of [...subscriptions.values()]) if (subscription.conversationId === conversationId) subscription.fail?.(failure);
+  const entry = entries.get(conversationId);
+  if (entry) evict(entry);
+}
 
 // ─── 会话行 ────────────────────────────────────────────────────────────────
 
@@ -591,7 +602,8 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
   const generation = resetGeneration;
   // 审批只有 ACP 腿有可结算的请求 id；TUI 腿的审批画在终端里，没有通道
   // （`write-bridge` 对它 fail loud）。所以这条订阅只对 ACP 腿开。
-  const promise = factory({ locator: location.supported ? location.locator : null, journal, conversationId, answerableQuestions: remoteAnswerFor(row) }).then((timeline) => {
+  const promise = factory({ locator: location.supported ? location.locator : null, journal, conversationId, answerableQuestions: remoteAnswerFor(row),
+    onError: error => recordSourceFailed(conversationId, error) }).then((timeline) => {
     if (generation !== resetGeneration) {
       timeline.dispose();
       throw new Error('会话时间线服务在这份记录打开的过程中被重置了');
@@ -1288,7 +1300,8 @@ export async function subscribePreview(
 /** 订阅正文；同一个 subscriptionId 重连会替换前一条。预览使用上面的独立入口。 */
 export async function subscribe(
   input: SessionpageSessionSubscribeRequest,
-  emit: (event: SessionpageSessionEvent) => void
+  emit: (event: SessionpageSessionEvent) => void,
+  status?: (event: import('@gugu/session-core/session-record/contract').SessionpageRecordStatusEvent) => void
 ): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
   const subscriptionId = input.subscriptionId?.trim();
   if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId 是必填的');
@@ -1299,13 +1312,23 @@ export async function subscribe(
   let teardown: (() => void) | null = null;
   let attached: TimelineEntry | null = null;
   let stopFollow = () => {};
+  const readiness = new AbortController();
+  let stopDeadline = () => {};
   const mine = {
     conversationId: input.conversationId,
     stop: () => {
       if (stopped) return;
       stopped = true;
+      stopDeadline();
+      readiness.abort(new Error('Codex record subscription closed'));
       stopFollow();
       teardown?.();
+    },
+    fail: (error: { code: string; message: string }) => {
+      if (stopped) return;
+      status?.({ subscriptionId, error });
+      mine.stop();
+      forget();
     },
   };
   subscriptions.set(subscriptionId, mine);
@@ -1321,7 +1344,7 @@ export async function subscribe(
     }
     let unsubscribeTimeline: () => void;
     try {
-      unsubscribeTimeline = entry.timeline.subscribe(cursor, (result) => {
+      unsubscribeTimeline = entry.timeline.subscribe(cursor ?? (input.recordEvents ? { epoch: 'initial-record', seq: 0 } : null), (result) => {
         if (stopped) return;
         emit({ subscriptionId, result });
       }, { terminalPatch: input.terminalPatch === true });
@@ -1355,6 +1378,77 @@ export async function subscribe(
       }
     });
   });
+
+  const row = readSessionRow(input.conversationId);
+  const location = row && locateRow(row);
+  if (input.recordEvents && row?.provider === 'codex') {
+    // The RPC acknowledges ownership now. A not-yet-persisted first turn stays subscribed, rather than holding
+    // a transport request open until its timeout or repeatedly requesting a snapshot.
+    void (async () => {
+      const { waitForCodexRecord, resolveRolloutFile, CodexRecordDeadline } = await import('@gugu/session-core/session-record');
+      if (stopped) return;
+      let locator = location?.supported ? location.locator : null;
+      const deadline = new CodexRecordDeadline(() => readiness.abort(Object.assign(
+        new Error(`记录没出现：30 秒内未收到 Codex rollout 就绪事件（threadId=${locator?.providerSessionId ?? 'pending'}）`), { code: 'record_not_found' })));
+      let waiting = false;
+      const firstSentAt = () => {
+        const first = db.select({ at: sessionPending.enqueuedAt }).from(sessionPending)
+          .where(eq(sessionPending.sessionId, input.conversationId)).orderBy(asc(sessionPending.seq)).get();
+        return first ? Date.parse(first.at.includes('T') ? first.at : `${first.at.replace(' ', 'T')}Z`) : null;
+      };
+      const stopLife = tapMainEvents((channel, data) => {
+        if (channel !== sessionLifeViewChannel.name) return;
+        const life = data as import('@shared/core/sessions/session-life').LifeView;
+        if (life.sessionId !== input.conversationId) return;
+        if (life.processExited || life.kind === 'failed' || life.kind === 'archived') {
+          readiness.abort(Object.assign(new Error(life.failure?.message ?? 'Codex producer exited before its record became ready'), { code: 'record_producer_exited' }));
+        } else if (waiting) deadline.start(firstSentAt());
+      });
+      let stopLocator = () => {};
+      stopDeadline = () => { deadline.stop(); stopLife(); stopLocator(); };
+      const onWaiting = () => {
+        if (waiting || stopped) return;
+        waiting = true;
+        status?.({ subscriptionId, waiting: true });
+        deadline.start(firstSentAt());
+        const life = sessionLife().read(input.conversationId);
+        if (life.processExited || life.kind === 'failed' || life.kind === 'archived') {
+          readiness.abort(Object.assign(new Error(life.failure?.message ?? 'Codex producer exited before its record became ready'), { code: 'record_producer_exited' }));
+        }
+      };
+      try {
+        if (!locator) {
+          if (row.providerSessionId) throw new Error(location && !location.supported ? location.reason : 'Codex record locator unavailable');
+          onWaiting();
+          locator = await new Promise<SessionRecordLocator>((accept, reject) => {
+            const aborted = () => { stopLocator(); reject(readiness.signal.reason); };
+            const check = () => {
+              const current = readSessionRow(input.conversationId);
+              const found = current && locateRow(current);
+              if (found?.supported) { stopLocator(); accept(found.locator); }
+            };
+            const off = tapMainEvents((channel, data) => {
+              if (channel === sessionChangedChannel.name && (data as { sessionId?: string }).sessionId === input.conversationId) check();
+            });
+            stopLocator = () => { off(); readiness.signal.removeEventListener('abort', aborted); };
+            readiness.signal.addEventListener('abort', aborted, { once: true });
+            if (readiness.signal.aborted) aborted(); else check();
+          });
+        }
+        const record = locator;
+        await waitForCodexRecord(record, () => resolveRolloutFile(record, false), readiness.signal, undefined, onWaiting,
+          readyMs => log.info('codex-record: watch ready', { conversationId: input.conversationId, threadId: record.providerSessionId, readyMs, at: Date.now() }));
+        stopDeadline();
+        if (stopped) return;
+        const result = await attach(input.cursor);
+        if (!result.ok && result.error.code !== 'unsubscribed') mine.fail(result.error);
+      } catch (error) {
+        stopDeadline();
+        if (!stopped) mine.fail({ code: (error as { code?: string }).code ?? 'record_watch_failed', message: (error as Error)?.message ?? String(error) });
+      }
+    })().catch(error => { if (!stopped) mine.fail({ code: 'record_watch_failed', message: String(error) }); });
+    return { ok: true, value: { subscriptionId } };
+  }
 
   const first = await attach(input.cursor);
   if (!first.ok) {

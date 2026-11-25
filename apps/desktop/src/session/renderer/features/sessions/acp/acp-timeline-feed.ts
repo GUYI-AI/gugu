@@ -1,8 +1,7 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
-import type { SessionpageSessionEvent, TimelineAfterResult } from '@gugu/session-core/session-record/contract';
+import type { SessionpageRecordStatusEvent, SessionpageSessionEvent, TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline, prependOlder, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
-import { recordWaitDelay } from '@/components/session-watch/record-wait';
-import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
+import { sessionpageRecordStatusChannel, sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 
 export async function value<T>(result: Promise<{ ok: true; value: T } | { ok: false; error: { code: string; message: string } }>): Promise<T> {
@@ -12,8 +11,8 @@ export async function value<T>(result: Promise<{ ok: true; value: T } | { ok: fa
 }
 
 /** The newest turns read when a page opens; older ones come a page at a time as the reader scrolls up. */
-const FIRST_PAGE = 50;
 const OLDER_PAGE = 100;
+const FIRST_PAGE = 50;
 
 /**
  * A session page's history: the session's timeline, the one fold of its record (with the Gugu journal and the running
@@ -46,6 +45,7 @@ export class AcpTimelineFeed implements TimelineFeed {
   private readonly host = rpcOn(null).sessionTimeline;
   private generation = 0;
   private subscription: { id: string; stop: () => void } | null = null;
+  private abandon: (() => void) | null = null;
   /** Pages of this computer are whole: nothing is held back, nothing to read again. */
   readonly fillHeld = (): void => undefined;
 
@@ -54,6 +54,7 @@ export class AcpTimelineFeed implements TimelineFeed {
     private readonly changed: () => void,
     /** A read the feed started itself (a new snapshot after a gap) failed. */
     private readonly failed: (error: unknown) => void,
+    private readonly eventDriven: () => boolean = () => false,
   ) {}
 
   get opened(): boolean {
@@ -69,35 +70,44 @@ export class AcpTimelineFeed implements TimelineFeed {
     const generation = this.restart();
     const id = globalThis.crypto.randomUUID();
     const conversationId = this.sessionId;
-    // Listen before subscribing: a batch pushed between the answer and the listener would be lost.
-    const stopEvents = onMachineEvent<SessionpageSessionEvent>(null, { name: `${sessionpageSessionTimelineChannel.name}.${id}` }, (event) => {
-      if (generation === this.generation && this.opened) this.apply(applyTimelineResult(this.state, event.result));
-    });
-    this.subscription = { id, stop: stopEvents };
-    const snapshot = await this.firstSnapshot(generation);
-    if (!snapshot || generation !== this.generation) return;
-    this.state = applySnapshot(this.state, snapshot);
-    this.changed();
-    await value(this.host.sessionSubscribe({ conversationId, subscriptionId: id, cursor: snapshot.cursor, terminalPatch: true }));
-  }
-
-  /**
-   * A new session's record exists only once its agent writes the first line, so `record_not_found` is a wait for a
-   * while, as for every reader of a timeline (`record-wait.ts`). null = a newer open took over.
-   */
-  private async firstSnapshot(generation: number) {
-    const started = Date.now();
-    for (;;) {
-      try {
-        return await value(this.host.sessionSnapshot({ conversationId: this.sessionId, limit: FIRST_PAGE }));
-      } catch (error) {
-        if (generation !== this.generation) return null;
-        const delay = recordWaitDelay((error as { code?: string }).code ?? null, Date.now() - started);
-        if (delay === null) throw error;
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        if (generation !== this.generation) return null;
-      }
+    if (!this.eventDriven()) {
+      const stopEvents = onMachineEvent<SessionpageSessionEvent>(null, { name: `${sessionpageSessionTimelineChannel.name}.${id}` }, event => {
+        if (generation === this.generation && this.opened) this.apply(applyTimelineResult(this.state, event.result));
+      });
+      this.subscription = { id, stop: stopEvents };
+      const snapshot = await value(this.host.sessionSnapshot({ conversationId, limit: FIRST_PAGE }));
+      if (generation !== this.generation) return;
+      this.state = applySnapshot(this.state, snapshot);
+      this.changed();
+      await value(this.host.sessionSubscribe({ conversationId, subscriptionId: id, cursor: snapshot.cursor, terminalPatch: true }));
+      return;
     }
+    // Listen before subscribing: a batch pushed between the answer and the listener would be lost.
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    const firstPush = new Promise<void>((accept, fail) => { resolve = accept; reject = fail; });
+    // Install the rejection handler now: the host may fail before its subscribe acknowledgement arrives.
+    void firstPush.catch(() => undefined);
+    this.abandon = resolve;
+    let received = false;
+    const stopEvents = onMachineEvent<SessionpageSessionEvent>(null, { name: `${sessionpageSessionTimelineChannel.name}.${id}` }, (event) => {
+      if (generation !== this.generation) return;
+      this.apply(applyTimelineResult(this.state, event.result));
+      received = true;
+      resolve();
+    });
+    const stopStatus = onMachineEvent<SessionpageRecordStatusEvent>(null, { name: `${sessionpageRecordStatusChannel.name}.${id}` }, event => {
+      if (generation !== this.generation || !event.error) return;
+      const error = Object.assign(new Error(event.error.message), { code: event.error.code });
+      if (received) this.failed(error); else reject(error);
+    });
+    this.subscription = { id, stop: () => { stopEvents(); stopStatus(); } };
+    try {
+      await value(this.host.sessionSubscribe({ conversationId, subscriptionId: id, cursor: null, terminalPatch: true, recordEvents: true }));
+      if (generation === this.generation) await firstPush;
+    } catch (error) {
+      if (generation === this.generation) { this.restart(); throw error; }
+    } finally { if (generation === this.generation) this.abandon = null; }
   }
 
   /** Asks for what came after the cursor now, instead of waiting for the next push. */
@@ -129,6 +139,8 @@ export class AcpTimelineFeed implements TimelineFeed {
 
   private restart(): number {
     const generation = ++this.generation;
+    this.abandon?.();
+    this.abandon = null;
     const previous = this.subscription;
     this.subscription = null;
     if (previous) {

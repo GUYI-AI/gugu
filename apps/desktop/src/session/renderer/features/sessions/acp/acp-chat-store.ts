@@ -335,7 +335,7 @@ export class AcpChatStore {
     const historyMachine = machineRegistry.machineOf(sessionId);
     this._history = runtimeView ? null : historyMachine
       ? new RemoteTimelineFeed(sessionId, historyMachine, historyChanged, historyFailed)
-      : new AcpTimelineFeed(sessionId, historyChanged, historyFailed);
+      : new AcpTimelineFeed(sessionId, historyChanged, historyFailed, () => this._sessionRecord()?.providerId === 'codex');
     if (this._history) this.hostSettlements = this._history.state.settlements;
     registerSessionCommands(runtimeSessionId, () =>
       this.commands.map((command) => command.name)
@@ -2148,7 +2148,9 @@ export class AcpChatStore {
       clientSessionReady.catch(() => {});
 
       // 等它只为下面那条「派出的子会话不该是空的」判据,上屏在上面就做过了。
-      await storedHistoryReady;
+      // Codex may not create a rollout until the first input. Its read-side barrier cannot hold the live client
+      // (and therefore that first input) behind the record it is waiting for.
+      if (providerId !== 'codex') await storedHistoryReady;
       const clientSession = await clientSessionReady;
       bootstrapSession = clientSession;
 
@@ -2176,6 +2178,7 @@ export class AcpChatStore {
         const turnCount = history ? history.data.turns.length : this._history!.state.turns.length;
         if (
           childSession
+          && (providerId !== 'codex' || this._history?.opened)
           && session?.firstUtterance
           && turnCount === 0
           && stateAfterLoad.lifecycle === 'ready'

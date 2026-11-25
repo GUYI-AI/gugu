@@ -238,6 +238,22 @@ const parked = (store: Store) => vi.waitFor(() => {
 });
 
 describe('sender custody uses the ordinary transcript row', () => {
+  it('attaches the Codex live client while its read-side readiness barrier is still pending', async () => {
+    const { store } = storeFor({ providerId: 'codex', providerSessionId: 'codex-new' });
+    let release!: (value: StoredPage) => void;
+    host.storedPending = new Promise<StoredPage>(resolve => { release = resolve; });
+    create.mockImplementationOnce(async () => liveSession());
+    const opening = (store as unknown as { _runBootstrapInner(options: { attachOnly: true }): Promise<void> })._runBootstrapInner({ attachOnly: true });
+    try {
+      await vi.waitFor(() => expect(store.session).not.toBeNull());
+      expect(host.storedReads).toBeGreaterThan(0);
+      expect(create).toHaveBeenCalledWith(store.runtimeSessionId);
+    } finally {
+      release(page());
+      await opening;
+      store.dispose();
+    }
+  });
   it('keeps the normal first page to one history request without a fresh lifecycle read', async () => {
     const { store } = storeFor();
     host.storedPages = [{ turns: [turn('normal', 1)], originTurnIds: ['normal'], nextCursor: 1 }];

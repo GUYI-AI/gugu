@@ -204,6 +204,8 @@ export interface SessionRecordSourceEvents {
   onEntries(entries: RecordEntry[]): void;
   /** 记录整份换掉了（分叉、被删重建、库被重置）。收到后 timeline 必须换 epoch 并整份重读。 */
   onReset(reason: Extract<RecordResetReason, 'source_replaced' | 'source_unreadable'>): void;
+  /** A live source can no longer follow its record. Keep existing history and expose the failure. */
+  onError?(error: unknown): void;
 }
 
 /**
@@ -1255,6 +1257,8 @@ export type SessionpageOpenedFileChunk = { size: number; etag: string; data: str
 export const OPENED_FILE_MAX_BYTES = 20 * 1024 * 1024;
 
 export type SessionpageSessionSubscribeRequest = {
+  /** Local Codex reader: establish the file-event barrier before its initial snapshot. */
+  recordEvents?: true;
   conversationId: string;
   subscriptionId: string;
   cursor: RecordCursor | null;
@@ -1339,6 +1343,11 @@ export type SessionpageSessionEvent = {
   subscriptionId: string;
   result: TimelineAfterResult;
 };
+
+/** Control events for the local Codex record readiness subscription. */
+export type SessionpageRecordStatusEvent = {
+  subscriptionId: string;
+} & ({ waiting: true; error?: never } | { waiting?: never; error: { code: string; message: string } });
 
 /**
  * 整台机器的会话列表推送(事件 `session-list:push`,topic = subscriptionId)。
