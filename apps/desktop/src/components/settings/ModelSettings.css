@@ -88,6 +88,10 @@
 .gg-model-check { display: inline-flex; height: 20px; align-items: center; gap: 8px; font-size: 14px; line-height: 20px; color: var(--text-primary); cursor: pointer; user-select: none; }
 .gg-model-check[data-disabled] { color: var(--text-tertiary); cursor: default; }
 .gg-model-hint { margin-top: 8px; font-size: var(--font-caption); line-height: 18px; color: var(--text-secondary); }
+.gg-model-hint[data-tone='warning'] { color: var(--warn-fg); }
+/* A box with a note under it takes its own row, so the note sits under that box with its text in the labels' column. */
+.gg-model-check-row { display: flex; flex-basis: 100%; flex-direction: column; align-items: flex-start; }
+.gg-model-check-row > .gg-model-hint { margin-top: 2px; padding-left: 24px; }
 .gg-model-thinking > .gg-model-field:first-of-type { margin-top: 11px; }
 .gg-model-thinking > .gg-model-field + .gg-model-field { margin-top: 12px; gap: 8px; }
 .gg-model-levels { display: grid; grid-template-columns: repeat(3, minmax(0, 200px)); row-gap: 6px; }

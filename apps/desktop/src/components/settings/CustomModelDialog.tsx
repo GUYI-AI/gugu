@@ -30,7 +30,6 @@ import { Unknown } from '@/components/ui/Unknown';
 import { AppIcon } from '@renderer/lib/components/app-icon';
 import { Check, ChevronDownIcon, Eye, EyeOff, Sparkles, X } from '@/lib/icons';
 import { IconButton } from '@/components/ui/IconButton';
-import { confirmDanger } from '@/lib/confirmDanger';
 import { SettingsNote } from './SettingsPrimitives';
 import './ModelSettings.css';
 
@@ -242,10 +241,6 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     setFailure('');
     if (!normalized) { setFailure(addressProblem); return; }
     if (!model) { setFailure(translate('subscriptions.connections.modelsRequired')); return; }
-    // Saving with Custom protocol unchecked removes the routes this connection already has: that is asked, not done quietly.
-    const dropping = advanced.customProtocol ? 0 : connection?.routes?.length ?? 0;
-    if (dropping > 0 && !await confirmDanger({ title: translate('customModels.dropRoutes', { count: dropping }),
-      description: translate('customModels.dropRoutesBody'), confirmLabel: translate('customModels.dropRoutesConfirm') })) return;
     setBusy('save');
     try {
       const client = await getAgentConfigRuntimeClient(machine);
@@ -310,6 +305,8 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       </span>
     </label>;
   };
+  // Unchecking Custom protocol drops the routes this connection already has when it saves: said under the box, not asked in a modal.
+  const droppingRoutes = advanced.customProtocol ? 0 : connection?.routes?.length ?? 0;
   const checkbox = (testId: string, label: string, checked: boolean, onChange: (checked: boolean) => void) =>
     <label className="gg-model-check" data-testid={testId}><Checkbox checked={checked} onCheckedChange={onChange} />{label}</label>;
   const fastCheckbox = <label className="gg-model-check" data-testid="custom-model-fast" data-disabled={fastSupported ? undefined : ''}>
@@ -379,7 +376,11 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
               {advanced.thinking && checkbox('custom-model-thinking-only', translate('customModels.thinkingOnly'), advanced.thinkingOnly, checked => check('thinkingOnly', checked))}
               {advanced.thinking && checkbox('custom-model-thinking-optional', translate('customModels.thinkingOptional'), advanced.thinkingOptional, checked => check('thinkingOptional', checked))}
               {fastCheckbox}
-              {checkbox('custom-model-custom-protocol', translate('customModels.customProtocol'), advanced.customProtocol, checkCustomProtocol)}
+              <div className="gg-model-check-row">
+                {checkbox('custom-model-custom-protocol', translate('customModels.customProtocol'), advanced.customProtocol, checkCustomProtocol)}
+                {droppingRoutes > 0 && <p className="gg-model-hint" data-tone="warning" role="status" data-testid="custom-model-drop-routes">
+                  {translate('customModels.dropRoutes', { count: droppingRoutes })}</p>}
+              </div>
             </div>
             {advanced.customProtocol && <fieldset className="gg-model-routes" data-testid="custom-model-routes">
               <legend className="gg-model-field-label">{translate('customModels.routing')}</legend>
