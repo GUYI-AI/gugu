@@ -19,7 +19,7 @@ const MOVED_TO_DOCS = ['apps-agents', 'apps-settings', 'apps-projection', 'apps-
 const GUIDE_MOVED: Readonly<Record<string, string>> = {
   ...Object.fromEntries(MOVED_TO_DOCS.map((topic) => [topic, `It is now ${APP_REFERENCE_DOCS_URL}/${topic === 'widgets' ? 'apps-widgets' : topic}.md`])),
   'apps-together': 'It is now part of apps',
-  visuals: 'Its rules are in your instructions: mermaid for flows, svg for anything drawn by hand, html-render for charts and pages',
+  visuals: 'Its rules are in your instructions: mermaid for flows, svg for anything drawn by hand',
 }
 
 const GUIDE_DESCRIPTIONS = {

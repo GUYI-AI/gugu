@@ -52,11 +52,10 @@ export function parseMarkdownToBlocks(
 ): Block[] {
   if (!markdown.trim()) return [];
   const data: ParseData = { messageId, startN, uri, mentionProvider, commandProvider };
-  const source = normalizeMarkdownSource(markdown);
-  const file = new VFile({ value: source, data: data as unknown as Record<string, unknown> });
+  const file = new VFile({ value: normalizeMarkdownSource(markdown), data: data as unknown as Record<string, unknown> });
   const tree = processor.runSync(processor.parse(file), file) as Root;
   const counter = { n: startN };
-  return treeToBlocks(tree, () => `${messageId}#${counter.n++}`, source);
+  return treeToBlocks(tree, () => `${messageId}#${counter.n++}`);
 }
 
 const flattened = new WeakMap<Block, Block>();

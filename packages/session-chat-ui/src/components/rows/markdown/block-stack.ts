@@ -15,8 +15,6 @@ import { BLOCK_REGISTRY } from './block-registry';
 const blockMemo = new WeakMap<Block, { fingerprint: string; result: Measured<BlockLeafLayout> }>();
 
 export function measureBlockCached(block: Block, ctx: MeasureCtx): Measured<BlockLeafLayout> {
-  // A page's height is its own report (a signal read in measure), so its measure is never memoized; it is one lookup.
-  if (block.kind === 'html-render') return BLOCK_REGISTRY['html-render'].measure(block, ctx);
   const fingerprint = `${ctx.measureEpoch ?? 0}|${ctx.width}|${ctx.isCollapsed(block.id)}`;
   const cached = blockMemo.get(block);
   if (cached?.fingerprint === fingerprint) return cached.result;
@@ -38,8 +36,6 @@ function collapsedLayout(block: Block): BlockLeafLayout {
       return { kind: 'mermaid', id: block.id, top: 0, height: 0, contentWidth: 0, source: block.source, raw: block };
     case 'svg':
       return { kind: 'svg', id: block.id, top: 0, height: 0, contentWidth: 0, raw: block };
-    case 'html-render':
-      return { kind: 'html-render', id: block.id, top: 0, height: 0, contentWidth: 0, raw: block };
     case 'math':
       return {
         kind: 'math',

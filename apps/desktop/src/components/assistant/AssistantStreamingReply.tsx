@@ -2,7 +2,6 @@ import type { SessionLiveReply } from '@gugu/session-core/session-record/contrac
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { isRoomChat } from '@gugu/core/shared/ui/chatModels'
 import { MessageBubble } from '../chat/MessageBubble'
-import { MarkdownStreamingContext } from '../markdown/markdownStreaming'
 import { useChatStore } from '../../store/chatContext'
 import { useAuth } from '../../store/auth'
 import { useMobileShell } from '../../hooks/useMobileShell'
@@ -31,11 +30,10 @@ export function AssistantStreamingReply({ activity }: {
     is_mine: false, delivered: false, delivery_status: null,
   }
   const owner = user ? { id: user.id, displayName: user.nickname, avatar: user.avatarUrl ?? null, email: null, type: 'human' as const, role: 'member' as const } : null
-  // The text is being written as it shows: its letters fade in as they land (Markdown's stream animation).
-  return <div data-testid="assistant-streaming-reply" inert><MarkdownStreamingContext.Provider value>
+  return <div data-testid="assistant-streaming-reply" inert>
     <MessageBubble msg={preview} isAgent hideAvatar hideTime streaming compactMobile={mobile} isGroup={isRoomChat(activeChat.kind)}
       showReplyQuote={visibleReplyQuoteIds([...messages,preview]).has(preview.id)}
       memberProfiles={owner ? { [owner.id]: owner } : undefined}
       onReaction={inactive} onQuote={inactive} onForward={inactive} onDelete={inactive} />
-  </MarkdownStreamingContext.Provider></div>
+  </div>
 }
