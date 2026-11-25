@@ -74,20 +74,27 @@ it('presents a compact queue above a fully rounded composer with separate steer/
 });
 
 // UX 复审 B5-F05: a queued row read alone (原文 + 现在插入) looked already sent; it now says 待发送 before the text.
+// Only where the word cannot fit beside the text and the actions (a pane at its floor) does it give way to the glyph,
+// kept as the slot's title; either way the row never overflows and the text never runs under the actions.
 it.each([
-  { locale: 'zh-CN', label: '待发送' },
-  { locale: 'en-US', label: 'Queued' },
-])('says in words that each queued row is waiting, wide and narrow ($locale)', async ({ locale, label }) => {
-  for (const width of [640, 320]) {
+  { locale: 'zh-CN', label: '待发送', send: '现在插入第 1 条排队消息' },
+  { locale: 'en-US', label: 'Queued', send: 'Insert queued message 1 now' },
+])('says in words that each queued row is waiting, down to a pane at its floor ($locale)', async ({ locale, label, send }) => {
+  for (const width of [194, 240, 272, 288, 320, 640]) {
     const h = await mount(PROMPTS, width, locale);
-    for (const id of ['q1', 'q2']) {
-      const word = [...h.row(id).querySelectorAll<HTMLElement>('span')].find((el) => el.textContent === label);
-      expect(word, `${id} at ${width}px`).toBeDefined();
-      const box = word!.getBoundingClientRect();
-      const text = h.row(id).querySelector<HTMLElement>('button:not([draggable])')!.getBoundingClientRect();
-      expect(box.width, `${id} at ${width}px`).toBeGreaterThan(0);
-      expect(box.right, `${id} at ${width}px`).toBeLessThanOrEqual(text.left);
-    }
+    const at = `${width}px`;
+    const slot = h.row('q1').querySelector<HTMLElement>(`[title="${label}"]`)!;
+    expect(slot, at).not.toBeNull();
+    const word = [...slot.querySelectorAll<HTMLElement>('span')].find((el) => el.textContent === label)!;
+    const glyph = slot.querySelector('svg')!;
+    const shown = (el: Element) => el.getBoundingClientRect().width > 0;
+    expect([shown(word), shown(glyph)], at).toEqual(width > 272 ? [true, false] : [false, true]);
+    const text = h.row('q1').querySelector<HTMLElement>('button:not([draggable])')!.getBoundingClientRect();
+    expect(slot.getBoundingClientRect().right, at).toBeLessThanOrEqual(text.left);
+    const action = page.getByRole('button', { name: send, exact: true }).query()!.getBoundingClientRect();
+    expect(text.right, at).toBeLessThanOrEqual(action.left);
+    const list = host!.querySelector<HTMLElement>('[role="list"]')!;
+    expect(list.scrollWidth, at).toBe(list.clientWidth);
     root?.unmount(); host?.remove(); root = undefined; host = undefined;
   }
 });

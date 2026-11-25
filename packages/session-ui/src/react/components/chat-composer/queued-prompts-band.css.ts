@@ -1,11 +1,14 @@
-import { style } from '@vanilla-extract/css';
+import { createContainer, style } from '@vanilla-extract/css';
 import { vars } from '@session-ui/theme/core/contract/contract.css';
 import { tokenVars } from '@session-ui/theme/tokens.css';
 import { durFast } from '@session-ui/styles/effects/animations.css';
 
 // The queue is a compact card above the composer. The composer stack has no backing of its own
 // (messages scroll past behind it), so the card carries the composer's surface itself.
+const bandContainer = createContainer();
 export const band = style({
+  containerName: bandContainer,
+  containerType: 'inline-size',
   minWidth: 0,
   padding: '0.25rem 0.5rem',
   marginBottom: '0.5rem',
@@ -42,9 +45,18 @@ export const row = style({
 });
 
 // The status word 待发送 / Queued; with more than one entry the drag grip covers it on hover, as it covered the glyph.
+// Too narrow for the word beside the text and the actions (a pane split down to its floor), the word gives way to the
+// queue glyph and stays as the slot's title, as the composer's own labels give way to icons
+// (@@@composer-toolbar-disclosure). 17rem: the widest action set (en 「Insert now」) still leaves the text a few glyphs.
+const NARROW_BAND = `${bandContainer} (max-width: 17rem)`;
 export const leadingSlot = style({ position: 'relative', display: 'flex', alignItems: 'center', height: '1.25rem' });
 export const queueLabel = style({
   color: vars.foregroundMuted, whiteSpace: 'nowrap', lineHeight: '1.25rem',
+  '@container': { [NARROW_BAND]: { display: 'none' } },
+});
+export const queueIcon = style({
+  display: 'none', width: '1rem', height: '1rem', color: vars.foregroundMuted,
+  '@container': { [NARROW_BAND]: { display: 'block' } },
 });
 
 export const dragHandle = style({
