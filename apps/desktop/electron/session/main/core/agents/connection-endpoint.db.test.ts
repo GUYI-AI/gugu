@@ -53,6 +53,15 @@ it('saves one encrypted provider record, lists no secret, keeps existing session
   expect(state.fixture!.secretStore.secrets.size).toBe(0);
   await expect(resolveCustomModel('codex', 'a')).rejects.toThrow('Custom model unavailable');
 });
+it('keeps what the model dialog declares through the IPC contract and the stored record', async () => {
+  const declared = { id: 'model:a', toolCall: false, image: true, thinking: true, thinkingOnly: true, thinkingOptional: false, fast: true, efforts: ['low', 'high'], defaultEffort: 'high', contextWindow: 131072, maxOutput: 16384 };
+  const off = { id: 'model/b', thinking: false, efforts: [] };
+  const input = saveCustomModelSchema.parse({ name: 'Provider', apiKey: 'fixture-secret', preset: null, endpoints, models: [declared, off] });
+  const { id } = await saveCustomModel(input);
+  const [listed] = await listCustomModels();
+  expect(listed?.id).toBe(id);
+  expect(listed?.models).toMatchObject([declared, off]);
+});
 it('migration reuses credential references, restores the original official endpoint, preserves models and is idempotent after downgrade strips the marker', async () => {
   const old = await legacy('dsh');
   session('existing', 'dsh', 'old-model', old.accountId);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chatModel, customModelAcceptsImages, customModelEfforts, customModelMetaSchema, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
+import { chatModel, customModelAcceptsImages, customModelCatalogLevels, customModelDefaultEffort, customModelEfforts, customModelEntrySchema, customModelMetaSchema, proposedDefaultEffort, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
 import { providerPresets } from './provider-presets';
 
 const connectionId = '481825a8-60b9-4c83-8d1b-f104e3db0269';
@@ -154,5 +154,32 @@ describe('custom model thinking levels', () => {
     expect(customModelEfforts({ effortCatalog: { kind: 'not-found' } }, harness)).toBeNull();
     expect(customModelEfforts({ effortCatalog: { kind: 'unavailable' } }, harness)).toBeNull();
     expect(customModelEfforts({ effortCatalog: { ...effortCatalog, efforts: [] } }, harness)).toBeNull();
+  });
+  it('takes the levels the person checked over the catalog, and none while thinking is off', () => {
+    expect(customModelEfforts({ effortCatalog, efforts: ['low', 'medium', 'xhigh'] }, harness)).toEqual(['low', 'medium']);
+    expect(customModelEfforts({ effortCatalog, efforts: [] }, harness)).toBeNull();
+    expect(customModelEfforts({ effortCatalog, thinking: false }, harness)).toBeNull();
+    expect(customModelEfforts({ efforts: ['high'], thinking: false }, harness)).toBeNull();
+  });
+  it('starts a session on the chosen default only when the harness offers it', () => {
+    expect(customModelDefaultEffort({ defaultEffort: 'high' }, ['low', 'high'])).toBe('high');
+    expect(customModelDefaultEffort({ defaultEffort: 'max' }, ['low', 'high'])).toBeUndefined();
+    expect(customModelDefaultEffort({}, ['low', 'high'])).toBeUndefined();
+    expect(customModelDefaultEffort({ defaultEffort: 'high' }, null)).toBeUndefined();
+  });
+  it('checks the catalog levels the dialog lists and proposes High, else the highest checked', () => {
+    expect(customModelCatalogLevels(effortCatalog)).toEqual(['high', 'max']);
+    expect(customModelCatalogLevels({ kind: 'not-found' })).toEqual([]);
+    expect(customModelCatalogLevels(undefined)).toEqual([]);
+    expect(proposedDefaultEffort(['low', 'medium', 'high', 'max'])).toBe('high');
+    expect(proposedDefaultEffort(['low', 'medium'])).toBe('medium');
+    expect(proposedDefaultEffort(['xhigh', 'low'])).toBe('xhigh');
+    expect(proposedDefaultEffort([])).toBeUndefined();
+  });
+  it('stores the declared capabilities and rejects a level the dialog does not offer', () => {
+    const declared = { id: 'm', toolCall: false, thinkingOnly: true, thinkingOptional: false, fast: true, efforts: ['low', 'high'], defaultEffort: 'high' };
+    expect(customModelEntrySchema.parse(declared)).toEqual(declared);
+    expect(customModelEntrySchema.safeParse({ id: 'm', efforts: ['ultra'] }).success).toBe(false);
+    expect(customModelEntrySchema.safeParse({ id: 'm', defaultEffort: 'default' }).success).toBe(false);
   });
 });

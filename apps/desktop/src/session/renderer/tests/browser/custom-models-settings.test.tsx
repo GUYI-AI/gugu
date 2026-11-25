@@ -44,33 +44,151 @@ beforeEach(() => { queryClient.clear(); catalog.results.clear(); setLocalePrefer
 afterEach(() => { root.unmount(); host.remove(); });
 const record = (): CustomModelConnection => ({ id: '481825a8-60b9-4c83-8d1b-f104e3db0269', name: 'Existing provider', credentialRef: 'ref', keySaved: false, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }], models: [] });
 const render = (content: React.ReactNode) => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>{content}</SessionLocalizationProvider></QueryClientProvider>);
-it.each([
-  ['not-found', 'models.dev 未收录'], ['unavailable', '暂无法查询 models.dev'],
-] as const)('shows the models.dev %s state and only saves an explicitly verified match', async (kind, message) => {
-  await page.viewport(1280, 800);
-  setLocalePreference('zh-CN');
-  const connection = { ...record(), keySaved: true, models: [{ id: 'relay/model' }] };
-  state.probe = { endpoints: connection.endpoints, models: ['relay/model'], failures: [] };
-  catalog.results.set('relay/model', { kind });
-  catalog.results.set('openai/example', { kind: 'found', catalogId: 'openai/example', name: 'Example', efforts: ['high'] });
-  render(<UiPortalContainerProvider value={host}><CustomModelDialog machine={null} connection={connection} onClose={() => {}} /></UiPortalContainerProvider>);
-  await expect.element(page.getByTestId('custom-model-effort-status')).toHaveTextContent(message);
-  await until('the model dialog finishes opening', () => {
+const isChecked = (testId: string) => document.querySelector(`[data-testid="${testId}"] [data-slot=checkbox]`)?.hasAttribute('data-checked') ?? false;
+const settled = () => [...document.querySelectorAll('[data-testid="custom-model-dialog"], [data-slot=select-content]')]
+  .every(element => element.getAnimations().every(animation => animation.playState === 'finished'));
+const dialogBody = () => document.querySelector<HTMLElement>('.gg-model-dialog-body')!;
+async function shot(name: string) {
+  await until('the dialog and its menus finish moving', () => {
     const dialog = document.querySelector('[data-testid="custom-model-dialog"]');
-    return !!dialog && getComputedStyle(dialog).backgroundColor !== 'rgba(0, 0, 0, 0)'
-      && dialog.getAnimations().every(animation => animation.playState === 'finished');
+    return !!dialog && getComputedStyle(dialog).backgroundColor !== 'rgba(0, 0, 0, 0)' && settled();
   });
-  await page.screenshot({ path: `../../../../../../../test-results/custom-model-effort-${kind}.png` });
-  if (kind === 'not-found') {
-    await userEvent.fill(page.getByRole('textbox', { name: 'models.dev 模型 ID' }), 'openai/example');
-    await userEvent.click(page.getByRole('button', { name: '查询', exact: true }));
-    await userEvent.click(page.getByRole('button', { name: '使用 openai/example', exact: true }));
-  }
+  await page.screenshot({ path: `../../../../../../../test-results/custom-model-${name}.png` });
+}
+it('starts with thinking on and nothing checked; thinking off hides its settings and turning it on starts over', async () => {
+  setLocalePreference('zh-CN');
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-effort-hint')).toHaveTextContent('当前仅展示思考开关，不展示强度选择；如需调节强度，请在下方选择可用档位。');
+  expect(['tool-call', 'image', 'thinking', 'thinking-only', 'thinking-optional', 'fast', 'custom-protocol'].map(id => isChecked(`custom-model-${id}`)))
+    .toEqual([true, false, true, false, true, false, false]);
+  await expect.element(page.getByTestId('custom-model-default-effort')).toHaveTextContent('自动');
+  expect(page.getByTestId('custom-model-routes').query()).toBeNull();
+  await userEvent.click(page.getByTestId('custom-model-thinking-only'));
+  await userEvent.click(page.getByTestId('custom-model-effort-low'));
+  await userEvent.click(page.getByTestId('custom-model-thinking'));
+  for (const id of ['thinking-levels', 'thinking-only', 'thinking-optional']) expect(page.getByTestId(`custom-model-${id}`).query()).toBeNull();
+  await userEvent.click(page.getByTestId('custom-model-thinking'));
+  expect(['thinking-only', 'thinking-optional', 'effort-low'].map(id => isChecked(`custom-model-${id}`))).toEqual([false, true, false]);
+  await expect.element(page.getByTestId('custom-model-default-effort')).toHaveTextContent('自动');
+  await expect.element(page.getByTestId('custom-model-effort-hint')).toBeVisible();
+});
+it('proposes the default from the checked levels and lists only Automatic and those levels', async () => {
+  setLocalePreference('zh-CN');
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  const level = (id: string) => userEvent.click(page.getByTestId(`custom-model-effort-${id}`));
+  const defaultIs = (text: string) => expect.element(page.getByTestId('custom-model-default-effort')).toHaveTextContent(text);
+  await level('low'); await defaultIs('低');
+  expect(page.getByTestId('custom-model-effort-hint').query()).toBeNull();
+  await level('medium'); await defaultIs('中');
+  await level('high'); await defaultIs('高');
+  await level('max'); await defaultIs('高');
+  await level('high'); await defaultIs('极致');
+  await level('max'); await defaultIs('中');
+  await userEvent.click(page.getByTestId('custom-model-default-effort'));
+  await userEvent.click(page.getByRole('option', { name: '低', exact: true }));
+  await level('medium'); await defaultIs('低');
+  await level('xhigh'); await defaultIs('超高');
+  await userEvent.click(page.getByTestId('custom-model-default-effort'));
+  await until('the default menu lists its options', () => document.querySelectorAll('[role=option]').length > 0);
+  expect([...document.querySelectorAll('[role=option]')].map(option => option.textContent)).toEqual(['自动', '低', '超高']);
+  await userEvent.keyboard('{Escape}');
+  await level('low'); await level('xhigh'); await defaultIs('自动');
+  await expect.element(page.getByTestId('custom-model-effort-hint')).toBeVisible();
+});
+it('checks the levels models.dev knows for the named model until the person checks their own', async () => {
+  catalog.results.set('relay/model', { kind: 'found', catalogId: 'relay/model', name: 'Relay', efforts: ['low', 'high', 'max'] });
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'relay/model');
+  await until('the catalog levels are checked', () => isChecked('custom-model-effort-high'));
+  expect(['low', 'medium', 'high', 'xhigh', 'max'].map(id => isChecked(`custom-model-effort-${id}`))).toEqual([true, false, true, false, true]);
+  await expect.element(page.getByTestId('custom-model-default-effort')).toHaveTextContent('High');
+  expect(document.body.textContent).not.toContain('models.dev');
+});
+it('shows the routes under Custom protocol, hides them when unchecked, and removes them when saved unchecked', async () => {
+  const route = { id: 'd5bd45f0-f968-4df8-bf00-e7d303cab020', incoming: 'any', outgoing: 'openai-chat-completions' } as const;
+  const connection: CustomModelConnection = { ...record(), keySaved: true, models: [{ id: 'm' }], endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], routes: [route] };
+  state.probe = { endpoints: connection.endpoints, models: ['m'], failures: [] };
+  render(<CustomModelDialog machine={null} connection={connection} modelId="m" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-route-incoming-0')).toBeVisible();
+  expect(isChecked('custom-model-custom-protocol')).toBe(true);
+  await userEvent.click(page.getByTestId('custom-model-custom-protocol'));
+  expect(page.getByTestId('custom-model-routes').query()).toBeNull();
+  await userEvent.click(page.getByTestId('custom-model-custom-protocol'));
+  await expect.element(page.getByTestId('custom-model-route-incoming-0')).toBeVisible();
+  expect(document.querySelectorAll('[data-testid^=custom-model-route-incoming-]')).toHaveLength(1);
+  await userEvent.click(page.getByTestId('custom-model-custom-protocol'));
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
-  expect(state.saved?.models).toMatchObject([{ id: 'relay/model', ...(kind === 'not-found' ? { modelsDevId: 'openai/example' } : {}) }]);
-  if (kind === 'unavailable') expect(state.saved?.models[0]?.modelsDevId).toBeUndefined();
+  expect(state.saved?.routes).toEqual([]);
 });
+it('saves every declared field, keeps the other models, and reads them back', async () => {
+  const connection: CustomModelConnection = { ...record(), keySaved: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], models: [{ id: 'old', image: false }, { id: 'kept', maxOutput: 9 }] };
+  state.probe = { endpoints: connection.endpoints, models: [], failures: [] };
+  render(<CustomModelDialog machine={null} connection={connection} modelId="old" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-name')).toHaveValue('old');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'relay/model');
+  for (const id of ['tool-call', 'image', 'thinking-only', 'effort-low', 'effort-high', 'fast']) await userEvent.click(page.getByTestId(`custom-model-${id}`));
+  await userEvent.click(page.getByRole('button', { name: '128K', exact: true }));
+  await userEvent.click(page.getByRole('button', { name: '16K', exact: true }));
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  const declared = { id: 'relay/model', toolCall: false, image: true, thinking: true, thinkingOnly: true, thinkingOptional: true, fast: true, efforts: ['low', 'high'], defaultEffort: 'high', contextWindow: 131_072, maxOutput: 16_384 };
+  expect(state.saved?.models).toEqual([declared, { id: 'kept', maxOutput: 9 }]);
+  expect(state.saved).not.toHaveProperty('apiKey');
+  root.unmount(); root = createRoot(host);
+  render(<CustomModelDialog machine={null} connection={{ ...connection, models: state.saved!.models }} modelId="relay/model" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-default-effort')).toHaveTextContent('High');
+  expect(['tool-call', 'image', 'thinking', 'thinking-only', 'thinking-optional', 'fast', 'effort-low', 'effort-medium', 'effort-high'].map(id => isChecked(`custom-model-${id}`)))
+    .toEqual([false, true, true, true, true, true, true, false, true]);
+  await expect.element(page.getByTestId('custom-model-contextWindow')).toHaveValue(131_072);
+  await expect.element(page.getByRole('button', { name: '16K', exact: true })).toHaveAttribute('aria-pressed', 'true');
+});
+it('offers Fast only for an address that answers OpenAI Chat or Responses', async () => {
+  state.probe = { endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://relay.test' }], models: [], failures: [] };
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-fast')).toBeVisible();
+  expect(page.getByTestId('custom-model-fast').element().hasAttribute('data-disabled')).toBe(false);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
+  await until('Fast turns unavailable for an Anthropic-only address', () => page.getByTestId('custom-model-fast').element().hasAttribute('data-disabled'));
+  expect(isChecked('custom-model-fast')).toBe(false);
+});
+it('choosing another provider puts the advanced configuration back', async () => {
+  render(<CustomModelDialog machine={null} group="api" onClose={() => {}} />);
+  await userEvent.click(page.getByTestId('custom-model-image'));
+  await userEvent.click(page.getByTestId('custom-model-tool-call'));
+  await userEvent.click(page.getByTestId('custom-model-provider'));
+  await userEvent.click(page.getByRole('option', { name: 'OpenAI', exact: true }));
+  expect(['tool-call', 'image', 'thinking', 'custom-protocol'].map(id => isChecked(`custom-model-${id}`))).toEqual([true, false, false, false]);
+  expect(page.getByTestId('custom-model-thinking-levels').query()).toBeNull();
+});
+for (const theme of ['light', 'dark'] as const) {
+  it(`captures the dialog states in the ${theme} theme`, async () => {
+    await page.viewport(1100, 860);
+    setLocalePreference('zh-CN');
+    document.documentElement.dataset.theme = theme;
+    host.className = `gugu-skin em${theme}`;
+    try {
+      state.probe = { endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://api.example.com/v1' }], models: [], failures: [] };
+      render(<UiPortalContainerProvider value={host}><CustomModelDialog machine={null} group="custom" onClose={() => {}} /></UiPortalContainerProvider>);
+      await shot(`${theme}-1-start`);
+      dialogBody().scrollTop = dialogBody().scrollHeight;
+      await userEvent.click(page.getByTestId('custom-model-thinking'));
+      await shot(`${theme}-2-thinking-off`);
+      await userEvent.click(page.getByTestId('custom-model-thinking'));
+      for (const id of ['low', 'medium', 'high']) await userEvent.click(page.getByTestId(`custom-model-effort-${id}`));
+      dialogBody().scrollTop = page.getByTestId('custom-model-advanced').element().getBoundingClientRect().top - dialogBody().getBoundingClientRect().top + dialogBody().scrollTop - 8;
+      await userEvent.click(page.getByTestId('custom-model-default-effort'));
+      await until('the default menu opens', () => document.querySelectorAll('[role=option]').length === 4);
+      await shot(`${theme}-3-levels-menu`);
+      await userEvent.keyboard('{Escape}');
+      await userEvent.click(page.getByTestId('custom-model-custom-protocol'));
+      await expect.element(page.getByTestId('custom-model-route-incoming-0')).toBeVisible();
+      dialogBody().scrollTop = page.getByTestId('custom-model-advanced').element().getBoundingClientRect().top - dialogBody().getBoundingClientRect().top + dialogBody().scrollTop - 8;
+      await shot(`${theme}-4-custom-protocol`);
+    } finally { delete document.documentElement.dataset.theme; }
+  });
+}
 it('opens model settings from the composer without requesting the add-model dialog', () => {
   const onOpen = vi.fn<(event: Event) => void>();
   window.addEventListener(UI_EVENTS.openSettings, onOpen, { once: true });
@@ -94,7 +212,7 @@ it('shows migrated records with no model or key and a repair entrypoint', async 
   await userEvent.click(page.getByRole('button', { name: 'Enter key on this computer', exact: true }));
   await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
   await expect.element(page.getByTestId('custom-model-key')).toHaveFocus();
-  expect(document.querySelector('[data-testid=custom-model-provider]')).toBeNull();
+  await expect.element(page.getByTestId('custom-model-provider')).toHaveTextContent('Custom');
   expect(document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')?.value).toBe('');
 });
 it('separates coding plans, official API keys and custom endpoints, including migrated providers', async () => {
@@ -122,35 +240,36 @@ it.each([
   await expect.element(page.getByRole('option', { name: second, exact: true })).toBeVisible();
   expect(page.getByRole('option', { name: absent, exact: true }).query()).toBeNull();
 });
-it('edits an address with the saved key and saves multiple manual models without returning the key', async () => {
+it('edits an address and model name with the saved key without returning the key', async () => {
   const existing = { ...record(), keySaved: true, models: [{ id: 'model:a' }] };
   state.probe = { endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }], models: [], failures: [{ step: 'models', reason: 'no-list' }] };
-  const closed = vi.fn(); render(<CustomModelDialog machine={null} connection={existing} onClose={closed} />);
+  const closed = vi.fn(); render(<CustomModelDialog machine={null} connection={existing} modelId="model:a" onClose={closed} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://edited.test/v1/responses');
-  await until('manual fallback is available', () => !!document.querySelector('input[name=models]'));
-  const probes = state.probes.length;
-  await userEvent.click(page.getByTestId('custom-model-read-list'));
-  await until('the explicit read refreshes the model list with the saved key', () => state.probes.length > probes && !!document.querySelector('input[name=models]'));
-  await userEvent.fill(page.getByRole('textbox', { name: 'Models', exact: true }), 'model:a, provider/model:b');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'provider/model:b');
+  await until('the address is probed with the saved key', () => state.probes.some(probe => JSON.stringify(probe) === JSON.stringify({ connectionId: existing.id, baseUrl: 'https://edited.test/v1' })));
+  await userEvent.click(page.getByTestId('custom-model-test'));
+  await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('Connected');
+  expect(state.probes).toContainEqual({ connectionId: existing.id, baseUrl: 'https://edited.test/v1', modelId: 'provider/model:b' });
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
-  expect(state.saved).toMatchObject({ id: existing.id, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }], models: [{ id: 'model:a' }, { id: 'provider/model:b' }] });
+  expect(state.saved).toMatchObject({ id: existing.id, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://edited.test/v1' }], models: [{ id: 'provider/model:b' }] });
+  expect(state.saved?.models).toHaveLength(1);
   expect(state.saved).not.toHaveProperty('apiKey'); expect(closed).toHaveBeenCalledOnce();
-  expect(state.probes).toContainEqual({ connectionId: existing.id, baseUrl: 'https://edited.test/v1' });
 });
-it('edits the protocol and model in one row and saves the optional address from Advanced', async () => {
+it('edits the protocol and model in one row and asks for an address only when the main one cannot serve the route', async () => {
   state.probe = { endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://provider.test' }, { protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], models: ['m'], failures: [] };
-  render(<CustomModelDialog machine={null} connection={{ ...record(), keySaved: true, models: [{ id: 'm' }] }} onClose={() => {}} />);
-  await userEvent.click(page.getByRole('button', { name: 'Add route' }));
+  render(<CustomModelDialog machine={null} connection={{ ...record(), keySaved: true, models: [{ id: 'm' }] }} modelId="m" onClose={() => {}} />);
+  await userEvent.click(page.getByTestId('custom-model-custom-protocol'));
   await userEvent.click(page.getByTestId('custom-model-route-incoming-0'));
   await userEvent.click(page.getByRole('option', { name: 'Anthropic API' }));
-  await userEvent.click(page.getByTestId('custom-model-route-outgoing-0'));
-  await userEvent.click(page.getByRole('option', { name: 'OpenAI Chat' }));
   await userEvent.click(page.getByTestId('custom-model-route-model-0'));
   await userEvent.click(page.getByRole('option', { name: 'm', exact: true }));
-  expect(page.getByTestId('custom-model-route-address-0').query()).toBeNull();
-  await userEvent.click(page.getByRole('button', { name: /Advanced/ }));
-  await expect.element(page.getByTestId('custom-model-protocols')).toHaveTextContent('This address answers: Anthropic API / OpenAI Chat');
+  await userEvent.click(page.getByTestId('custom-model-route-outgoing-0'));
+  await userEvent.click(page.getByRole('option', { name: 'OpenAI Chat' }));
+  await until('the main address answers OpenAI Chat, so the route needs no address', () => !document.querySelector('[data-testid=custom-model-route-address-0]'));
+  await userEvent.click(page.getByTestId('custom-model-route-outgoing-0'));
+  await userEvent.click(page.getByRole('option', { name: 'OpenAI Responses' }));
+  await expect.element(page.getByTestId('custom-model-route-address-0')).toBeVisible();
   expect(document.querySelector('[data-testid=custom-model-route-address-0]')?.closest('.grid')).toBe(
     document.querySelector('[data-testid=custom-model-route-model-0]')?.closest('.grid'),
   );
@@ -158,7 +277,7 @@ it('edits the protocol and model in one row and saves the optional address from 
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
   expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, routes: [{
-    incoming: 'anthropic-messages', outgoing: 'openai-chat-completions', modelId: 'm', baseUrl: 'https://provider.test/compat/v1',
+    incoming: 'anthropic-messages', outgoing: 'openai-responses', modelId: 'm', baseUrl: 'https://provider.test/compat/v1',
   }] });
 });
 
@@ -227,7 +346,7 @@ it('names only the bound model when reopening a migrated Pi task', async () => {
   await until('the trigger names the bound model', () => document.querySelector('[data-slot=composer-model-trigger-label]')?.textContent === 'glm-5.3-flash');
   expect(document.querySelector('[data-testid=composer-model-trigger]')?.textContent).not.toContain('provider');
 });
-it('a custom address shows no protocol: the models it lists are all selected and the recognized addresses are saved', async () => {
+it('a custom address shows no protocol and saves the addresses it recognized for the named model', async () => {
   state.probe = {
     endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }, { protocol: 'openai-responses', baseUrl: 'https://relay.test' }],
     models: ['model-a', 'model-b'], failures: [{ step: 'anthropic-messages', reason: 'refused' }],
@@ -235,13 +354,12 @@ it('a custom address shows no protocol: the models it lists are all selected and
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test');
   await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
-  await until('both listed models are selected', () => document.querySelectorAll('[data-testid=connection-models] [data-slot=combobox-chip]').length === 2);
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'model-b');
+  await until('the address is probed', () => state.probes.some(probe => JSON.stringify(probe) === JSON.stringify({ apiKey: 'sk-test', baseUrl: 'https://relay.test' })));
   expect(document.querySelector('[data-testid^=custom-model-protocol]')).toBeNull();
-  expect(page.getByRole('button', { name: 'Test connection', exact: true }).query()).toBeNull();
-  expect(state.probes).toContainEqual({ apiKey: 'sk-test', baseUrl: 'https://relay.test' });
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
-  expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, models: [{ id: 'model-a' }, { id: 'model-b' }], apiKey: 'sk-test' });
+  expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, models: [{ id: 'model-b', toolCall: true, image: false, thinking: true, efforts: [] }], apiKey: 'sk-test', routes: [] });
 });
 const failures = [
   ['unauthorized', 'This address refused the key.', '该地址拒绝了此 Key。'],
@@ -260,9 +378,11 @@ for (const locale of ['en-US', 'zh-CN'] as const) {
     render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
     await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
     await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
-    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent(locale === 'en-US' ? en : zh);
+    expect(page.getByTestId('custom-model-test-result').query()).toBeNull();
+    await userEvent.click(page.getByTestId('custom-model-test'));
+    await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent(locale === 'en-US' ? en : zh);
     expect(document.querySelector('[data-testid=custom-model-key]')?.getAttribute('aria-invalid')).toBe('true');
-    expect(page.getByTestId('custom-model-key-problem').element().textContent).not.toContain('sk-test');
+    expect(page.getByTestId('custom-model-test-result').element().textContent).not.toContain('sk-test');
   });
 }
 it.each(failures)('the saved connection’s Test connection action preserves %s', async (reason, text) => {
@@ -281,15 +401,19 @@ it('shows the key this computer holds when the eye is pressed, and reads with it
     state.testResult = { kind: 'unlisted', reason: 'unauthorized' };
     render(<CustomModelDialog machine={null} group="api" connection={found()} onClose={() => {}} />);
     await expect.element(page.getByTestId('custom-model-key')).toHaveAttribute('placeholder', '••••••••abcd');
-    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused the key above. Enter a new key.');
+    await userEvent.click(page.getByTestId('custom-model-test'));
+    await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('This address refused the key above. Enter a new key.');
     await userEvent.click(page.getByRole('button', { name: 'Show key' }));
     await expect.element(page.getByTestId('custom-model-key')).toHaveValue('sk-found-0000abcd');
     expect(keyField().type).toBe('text');
     await userEvent.click(page.getByRole('button', { name: 'Hide key' }));
     expect(keyField().type).toBe('password');
-    expect(state.reads).toEqual([{ connectionId: 'found', endpoints: found().endpoints }]);
+    expect(state.reads).toContainEqual({ connectionId: 'found', endpoints: found().endpoints });
     await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-typed');
-    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('This address refused the key.');
+    expect(page.getByTestId('custom-model-test-result').query()).toBeNull();
+    await userEvent.click(page.getByTestId('custom-model-test'));
+    await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('This address refused the key.');
+    expect(state.reads).toContainEqual({ apiKey: 'sk-typed', endpoints: found().endpoints });
   } finally { vi.unstubAllGlobals(); }
 });
 it('a connection on another device shows only the end of its key, with no eye', async () => {
@@ -305,7 +429,7 @@ it('preserves a connection failure that first occurs during the save-time named-
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
   await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
-  await userEvent.fill(page.getByRole('textbox', { name: 'Models', exact: true }), 'my-model');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'my-model');
   state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'dns' }, { step: 'openai-chat-completions', reason: 'dns' }] };
   await userEvent.click(page.getByTestId('custom-model-save'));
   await expect.element(page.getByRole('alert')).toHaveTextContent('Cannot resolve this address. Check the hostname and DNS settings.');

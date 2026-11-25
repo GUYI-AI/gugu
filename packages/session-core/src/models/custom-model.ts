@@ -39,12 +39,30 @@ export const modelEndpointSchema = z.object({
   }),
 });
 
+/** The thinking levels a person can declare for a custom model, lowest first. */
+export const CUSTOM_MODEL_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export const customModelEffortLevelSchema = z.enum(CUSTOM_MODEL_EFFORT_LEVELS);
+export type CustomModelEffortLevel = z.infer<typeof customModelEffortLevelSchema>;
+
 export const customModelEntrySchema = z.object({
   id: z.string().trim().min(1).max(200),
   label: z.string().trim().max(200).optional(),
   image: z.boolean().optional(),
-  /** The legacy native engine hint. Effort selection is derived from models.dev. */
+  /** Thinking mode. Off: the model is offered no thinking levels. */
   thinking: z.boolean().optional(),
+  /**
+   * What the person declared about tool calling and whether thinking can be switched off. Stored and shown again;
+   * no harness reads them yet.
+   */
+  toolCall: z.boolean().optional(),
+  thinkingOnly: z.boolean().optional(),
+  thinkingOptional: z.boolean().optional(),
+  /** The provider takes `service_tier: "priority"`; only an OpenAI Chat or Responses address can. */
+  fast: z.boolean().optional(),
+  /** The levels the person checked. Present (even empty) wins over the models.dev catalog. */
+  efforts: z.array(customModelEffortLevelSchema).max(CUSTOM_MODEL_EFFORT_LEVELS.length).optional(),
+  /** The level a new session starts on; absent = the request carries none. */
+  defaultEffort: customModelEffortLevelSchema.optional(),
   /** An explicitly selected models.dev ID for a relay ID that cannot be resolved directly. */
   modelsDevId: z.string().trim().min(1).max(200).optional(),
   contextWindow: z.number().int().positive().optional(),
@@ -103,16 +121,43 @@ export function customModelThinks(entry: Pick<CustomModelEntry, 'thinking'> | un
   return entry?.thinking ?? CUSTOM_MODEL_THINKING_DEFAULT;
 }
 
-/** The relay supplies an ID. The matched catalog entry supplies the model's levels. */
+/**
+ * The levels a session on this model can choose: the ones the person checked, else the matched catalog entry's, kept
+ * to those the harness can send. None while thinking is off.
+ */
 export function customModelEfforts(
-  entry: Pick<CustomModelEntry, 'effortCatalog'> | undefined,
+  entry: Pick<CustomModelEntry, 'effortCatalog' | 'efforts' | 'thinking'> | undefined,
   harnessEffort: { kind: string; effortOptions?: Record<string, unknown> } | undefined,
 ): string[] | null {
   const catalog = entry?.effortCatalog;
   const options = harnessEffort?.kind === 'selectable' ? harnessEffort.effortOptions : undefined;
-  if (catalog?.kind !== 'found' || !options) return null;
-  const levels = catalog.efforts.filter((id) => id.toLowerCase() !== 'default' && Object.hasOwn(options, id));
+  if (!options || !customModelThinks(entry)) return null;
+  const declared = entry?.efforts ?? (catalog?.kind === 'found' ? catalog.efforts : null);
+  const levels = declared?.filter((id) => id.toLowerCase() !== 'default' && Object.hasOwn(options, id)) ?? [];
   return levels.length ? levels : null;
+}
+
+/** The level a new session on this model starts on, when the person chose one this harness offers. */
+export function customModelDefaultEffort(
+  entry: Pick<CustomModelEntry, 'defaultEffort'> | undefined,
+  levels: readonly string[] | null,
+): string | undefined {
+  return entry?.defaultEffort && levels?.includes(entry.defaultEffort) ? entry.defaultEffort : undefined;
+}
+
+/** The protocols whose requests can carry `service_tier`. */
+export const FAST_PROTOCOLS: readonly ModelProtocol[] = ['openai-chat-completions', 'openai-responses'];
+
+/** The catalog's levels the dialog can check. */
+export function customModelCatalogLevels(result: CustomModelEffortResult | undefined): CustomModelEffortLevel[] {
+  if (result?.kind !== 'found') return [];
+  return CUSTOM_MODEL_EFFORT_LEVELS.filter((level) => result.efforts.includes(level));
+}
+
+/** The default a set of checked levels proposes: High when checked, else the highest one; none = automatic. */
+export function proposedDefaultEffort(levels: readonly CustomModelEffortLevel[]): CustomModelEffortLevel | undefined {
+  if (levels.includes('high')) return 'high';
+  return [...CUSTOM_MODEL_EFFORT_LEVELS].reverse().find((level) => levels.includes(level));
 }
 
 const NON_CHAT_MODEL = /embed|rerank|moderation|whisper|tts|speech|transcri|audio|realtime|dall-e|image|seedream|seedance|video|sora|veo|kling|hailuo/i;
