@@ -1,4 +1,3 @@
-import { CONTEXT_THRESHOLD_ENV } from '@gugu/session-core/models/context-threshold';
 import { CODEX_AUTH_CONNECTIONS } from '../../connection-capabilities';
 import { platformModel } from './platform-model';
 import {
@@ -361,12 +360,8 @@ export const provider = registerPluginBehavior(plugin, {
       // MCP is delivered by the app-server thread `config` map in the thin bridge.
       // ⚠️ 没有平台会话时也可能要发这份文档 —— 关闭集合与平台额度是**两件独立的事**。
       //    第一版只在 `platform` 分支里写 `CODEX_CONFIG`,于是 BYOK 会话的开关静默失效。
-      const threshold = Number(ctx.capabilityEnv?.[CONTEXT_THRESHOLD_ENV]);
-      const compaction = Number.isSafeInteger(threshold) && threshold > 0
-        ? { model_auto_compact_token_limit: threshold } : undefined;
       const codexConfig = platform
         ? {
-            ...compaction,
             model: platform.model,
             ...(platform.contextWindow ? { model_context_window: platform.contextWindow } : {}),
             model_provider: platform.providerId,
@@ -379,7 +374,7 @@ export const provider = registerPluginBehavior(plugin, {
               },
             },
           }
-        : compaction;
+        : undefined;
       // 咕咕自己的 app-server 适配器从宿主收到 thread-open config map；
       // ACP 薄桥再把同一语义交给 app-server 的 thread/start|resume|fork。
       // `CODEX_CONFIG` 在这里仅承载平台模型层，不能再拿来伪装 MCP 注入通道。

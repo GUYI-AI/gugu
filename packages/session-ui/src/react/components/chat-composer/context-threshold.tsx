@@ -6,6 +6,7 @@ import { useMessages } from '../../localization/message-provider';
 import * as styles from './chat-composer.css';
 
 export interface ContextThreshold {
+  minimum: number;
   maximum: number;
   value: number | null;
   unsupported?: boolean;
@@ -18,14 +19,13 @@ export type ComposerContextThresholds = (
 ) => ContextThreshold | undefined;
 
 const PRESETS = [64_000, 128_000, 200_000, 300_000, 600_000, 1_000_000];
-const MINIMUM = 8_000;
 
-export function parseContextThreshold(text: string, maximum: number): number | null {
+function parseContextThreshold(text: string, minimum: number, maximum: number): number | null {
   const match = /^(\d+(?:\.\d+)?)\s*([km万]?)$/i.exec(text.trim());
   if (!match) return null;
   const factor = { k: 1_000, m: 1_000_000, 万: 10_000 }[match[2]!.toLowerCase()] ?? 1;
   const tokens = Number(match[1]) * factor;
-  return Number.isSafeInteger(tokens) && tokens >= Math.min(MINIMUM, maximum) && tokens <= maximum ? tokens : null;
+  return Number.isSafeInteger(tokens) && tokens >= minimum && tokens <= maximum ? tokens : null;
 }
 
 export function ContextThresholdMenu({
@@ -34,19 +34,20 @@ export function ContextThresholdMenu({
   const { translate } = useMessages();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState('');
-  const [invalid, setInvalid] = useState(false);
+  const [error, setError] = useState<'input' | 'save' | null>(null);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
-  const current = threshold.value ?? threshold.maximum;
-  const options = [...PRESETS.filter(value => value < threshold.maximum), threshold.maximum];
+  const { minimum, maximum } = threshold;
+  const current = threshold.value ?? maximum;
+  const options = [...PRESETS.filter(value => value >= minimum && value < maximum), maximum];
   const commit = async (value: number) => {
     if (!threshold.set || saving) return;
     setSaving(true);
     try {
-      await threshold.set(value === threshold.maximum ? null : value);
+      await threshold.set(value === maximum ? null : value);
       setOpen(false);
     } catch {
-      setInvalid(true);
+      setError('save');
     } finally {
       setSaving(false);
     }
@@ -59,7 +60,7 @@ export function ContextThresholdMenu({
         return;
       }
       setOpen(next);
-      if (next) { setText(''); setInvalid(false); }
+      if (next) { setText(''); setError(null); }
     }}>
       <Popover.Trigger openOnHover={hover} delay={100} closeDelay={300}
         disabled={!threshold.set} className={styles.contextThresholdTrigger}>
@@ -67,18 +68,21 @@ export function ContextThresholdMenu({
       </Popover.Trigger>
       <Popover.Content side="left" align="end" sideOffset={4} className={styles.contextThresholdContent}
         onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setEditing(false); }}>
-        <input className={styles.contextThresholdInput} aria-label={translate('composer.contextWindowThreshold')}
-          placeholder={translate('composer.contextWindowThreshold')} value={text} aria-invalid={invalid || undefined}
+        {minimum < maximum && <input className={styles.contextThresholdInput} aria-label={translate('composer.contextWindowThreshold')}
+          placeholder={translate('composer.contextWindowThreshold')} value={text} aria-invalid={error ? true : undefined}
           onFocus={() => setEditing(true)}
-          onChange={event => { setText(event.target.value); setInvalid(false); }}
+          onChange={event => { setText(event.target.value); setError(null); }}
           onKeyDown={event => {
             if (event.key !== 'Enter') return;
             event.preventDefault();
             event.stopPropagation();
-            const value = parseContextThreshold(text, threshold.maximum);
-            if (value === null) setInvalid(true);
+            const value = parseContextThreshold(text, minimum, maximum);
+            if (value === null) setError('input');
             else void commit(value);
-          }} />
+          }} />}
+        {error === 'input' && <div role="alert" className={styles.contextThresholdError}>
+          {translate('composer.contextThresholdRange', { minimum: formatTokenCount(minimum), maximum: formatTokenCount(maximum) })}
+        </div>}
         {options.map(value => (
           <button type="button" key={value} disabled={saving} className={styles.contextThresholdOption}
             aria-pressed={current === value} onClick={() => void commit(value)}>

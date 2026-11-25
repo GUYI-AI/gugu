@@ -2,6 +2,7 @@
 import { tagCodexStartupFailure } from '../../../../packages/core/src/local/codex-startup-failure.mjs'
 import { initializeNativeCodexSession, nativeCodexSessionArgs } from '../../../../packages/core/src/local/codex-native-auth.mjs'
 import { isUserFacingModelId } from '../../../../packages/session-core/src/acp/models/model-visibility.ts'
+import { CONTEXT_THRESHOLD_ENV } from '../../../../packages/session-core/src/models/context-threshold.ts'
 import { codexTerminalUpdate } from './codex-terminals.mjs'
 import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex-fast-mode.mjs'
 
@@ -815,6 +816,10 @@ async function startAppAttempt(servers) {
   const mcp = mcpConfig(servers)
   appServerThreadConfig = mcp.config
   appServerThreadConfig['tools.update_plan.enabled'] = true
+  const threshold = Number(process.env[CONTEXT_THRESHOLD_ENV])
+  if (Number.isSafeInteger(threshold) && threshold > 0) {
+    appServerThreadConfig.model_auto_compact_token_limit = threshold
+  }
   const reasoningSummary = process.env.GUGU_CODEX_REASONING_SUMMARY?.trim()
   if (reasoningSummary) {
     // Codex ACP is a thin bridge: argv belongs to the adapter process, while

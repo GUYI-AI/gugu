@@ -7,6 +7,11 @@ export function supportsContextThreshold(harness: string): boolean {
   return harness === 'codex' || harness === 'claude' || harness === 'opencode' || harness === 'pi';
 }
 
+export function contextThresholdMinimum(harness: string): number {
+  // CLAUDE_CODE_AUTO_COMPACT_WINDOW has a native 100K floor.
+  return harness === 'claude' ? 100_000 : 8_000;
+}
+
 export const CONTEXT_THRESHOLD_ENV = 'GUGU_MODEL_CONTEXT_THRESHOLD';
 
 export interface ContextThresholdPreference {

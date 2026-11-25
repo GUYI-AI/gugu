@@ -796,6 +796,9 @@ export const contextThresholdInput = style({
   padding: '0.375rem 0.5rem', fontSize: tokenVars.textSm,
   selectors: { '&[aria-invalid="true"]': { color: vars.foregroundDestructive } },
 });
+export const contextThresholdError = style({
+  padding: '0.25rem 0.5rem', color: vars.foregroundDestructive, fontSize: tokenVars.textTiny,
+});
 export const contextThresholdOption = style([contextThresholdTrigger, {
   selectors: {
     '&[aria-pressed="true"]': { backgroundColor: vars.surfaceHover },

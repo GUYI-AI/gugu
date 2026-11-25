@@ -1,4 +1,4 @@
-import { contextCompactionSettings } from '@gugu/session-core/models/context-threshold';
+import { contextCompactionSettings, contextThresholdMinimum } from '@gugu/session-core/models/context-threshold';
 import { claudeReviewSettings } from './auto-review';
 import { harnessPlatform } from './platform';
 import {
@@ -680,7 +680,9 @@ export function materializeClaudeSessionBundle(
   materializeMcpEnv(bundle, env);
   materializeModel(bundle, env);
   const threshold = contextCompactionSettings(bundle.env, bundle.model?.contextWindow);
-  if (threshold) env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(threshold.tokens);
+  if (threshold && threshold.tokens >= contextThresholdMinimum('claude')) {
+    env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(threshold.tokens);
+  }
   const promptValue = renderPromptBlocks(bundle.promptBlocks);
   const delivered = deliveredPromptBlocks(bundle.promptBlocks);
   const appendTuiPrompt = ctx.lifecycle !== 'resume' && promptValue.length > 0;

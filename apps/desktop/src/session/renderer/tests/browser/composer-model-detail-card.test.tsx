@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { ChatComposer, MessageProvider } from '@gugu/session-ui/react/components'
+import { contextThresholdMinimum } from '@gugu/session-core/models/context-threshold'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import { enUSMessages } from '@renderer/localization/messages'
 // 主题层与同目录 composer-disabled-options 同一套。
@@ -247,7 +248,10 @@ describe('#7123 英文界面:底部「Upgrade to unlock more models」整句都�
   })
 })
 
-it('uses a single editable context threshold in the ring and the model detail', async () => {
+it.each([
+  { id: 'codex', name: 'Codex', invalid: '7k', range: '8k–200k' },
+  { id: 'claude', name: 'Claude Code', invalid: '64k', range: '100k–200k' },
+])('uses the same $name threshold and minimum in the ring and the model detail', async ({ id, name, invalid, range }) => {
   const mount = document.createElement('div')
   mount.style.cssText = 'position:fixed;right:24px;bottom:24px;width:640px'
   document.body.appendChild(mount)
@@ -257,36 +261,43 @@ it('uses a single editable context threshold in the ring and the model detail', 
     return (
       <SessionLocalizationProvider>
         <ChatComposer modelOptions={MODELS} selectedModel="platform:glm-5.3-flash"
-          agentOptions={[{ id: 'codex', name: 'Codex' }]} selectedAgent="codex" agentLocked
+          agentOptions={[{ id, name }]} selectedAgent={id} agentLocked
           onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}}
           contextUsage={{ used: 40_000, size: 200_000, costSource: 'platform' }}
-          contextThresholds={(_id, maximum) => maximum ? { maximum, value, set: async (next) => setValue(next) } : undefined} />
+          contextThresholds={(_id, maximum) => maximum ? {
+            minimum: contextThresholdMinimum(id), maximum, value, set: async (next) => setValue(next),
+          } : undefined} />
       </SessionLocalizationProvider>
     )
   }
   try {
     composer.render(<Fixture />)
-    await page.getByRole('button', { name: /Codex.*Context window/ }).click()
+    const ring = page.getByRole('button', { name: new RegExp(`${name}.*Context window`) })
+    await ring.click()
     await expect.element(page.getByText('Context usage', { exact: true })).toBeVisible()
     await expect.element(page.getByText('20.0%', { exact: true })).toBeVisible()
     const footer = page.getByRole('button', { name: /200.* context/ })
     await expect.element(footer).not.toHaveTextContent('Default')
     await footer.click()
     const input = page.getByRole('textbox', { name: 'Context window', exact: true })
-    await input.fill('7k')
+    await input.fill(invalid)
     await userEvent.keyboard('{Enter}')
     await expect.element(input).toHaveAttribute('aria-invalid', 'true')
+    await expect.element(page.getByRole('alert')).toHaveTextContent(`Enter ${range} tokens.`)
     await expect.element(page.getByText('20.0%', { exact: true })).toBeVisible()
     await input.fill('100k')
     await userEvent.keyboard('{Enter}')
     await expect.element(page.getByText('40.0%', { exact: true })).toBeVisible()
-    await page.getByRole('button', { name: /Codex.*Context window/ }).click()
+    await ring.click()
     await page.getByTestId('composer-model-trigger').click()
     await page.elementLocator(rowByName('GLM 5.3 Flash')).hover()
     const threshold = page.getByRole('button', { name: /Context window.*100K/ })
     await expect.element(threshold).toBeVisible()
     await threshold.hover()
-    await expect.element(page.getByRole('textbox', { name: 'Context window', exact: true })).toBeVisible()
+    await expect.element(input).toBeVisible()
+    await input.fill(invalid)
+    await userEvent.keyboard('{Enter}')
+    await expect.element(page.getByRole('alert')).toHaveTextContent(`Enter ${range} tokens.`)
   } finally {
     composer.unmount()
     mount.remove()
