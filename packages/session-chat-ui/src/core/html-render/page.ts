@@ -95,14 +95,18 @@ const BASE_CSS =
   'html{box-sizing:border-box;padding:8px;color:var(--fg);font-family:var(--font-sans);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;scrollbar-width:none}' +
   'html::-webkit-scrollbar{display:none}body{margin:0}code,kbd,pre,samp{font-family:var(--font-mono)}'
 
+export type HtmlRenderScheme = 'light' | 'dark'
+
 /**
- * The page's `:root`: the palette as `--token` variables, plus the host's fonts and corner radius. No `color-scheme`:
- * a frame whose scheme differs from the host's is painted on an opaque canvas, and the page must sit on the message.
+ * The page's `:root`: the host's light/dark scheme, the palette as `--token` variables, plus the host's fonts and corner
+ * radius. A frame whose page has another `color-scheme` than the frame element is painted on an opaque canvas (white
+ * on a dark host), so the page and its frame element (`style="color-scheme: …"`) both take the host's scheme, and the
+ * page sits on the message.
  */
-export function htmlRenderRootCss(palette: Record<string, string>, fonts: { sans: string; mono: string }): string {
+export function htmlRenderRootCss(palette: Record<string, string>, fonts: { sans: string; mono: string }, scheme: HtmlRenderScheme): string {
   const declarations = Object.entries(palette).map(([token, value]) => `--${token}:${value.replace(/[;{}<>]/g, '')};`).join('')
   const font = (value: string) => value.replace(/[;{}<>]/g, '')
-  return `:root{${declarations}--font-sans:${font(fonts.sans)};--font-mono:${font(fonts.mono)};--radius:0.625rem}`
+  return `:root{color-scheme:${scheme};${declarations}--font-sans:${font(fonts.sans)};--font-mono:${font(fonts.mono)};--radius:0.625rem}`
 }
 
 // Reports the page's height whenever it changes, and hands http(s) link clicks to the host (the frame cannot navigate).

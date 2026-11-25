@@ -53,6 +53,49 @@ describe('html-render page expand', () => {
   });
 });
 
+describe('html-render page scheme', () => {
+  it('gives the page and its frame the host light/dark scheme, so the frame stays transparent on a dark host', async () => {
+    const host = document.documentElement;
+    const theme = host.dataset.theme;
+    const schemes: string[] = [];
+    const onMessage = (event: MessageEvent) => {
+      if (typeof event.data?.scheme === 'string') schemes.push(event.data.scheme);
+    };
+    window.addEventListener('message', onMessage);
+    host.dataset.theme = 'dark';
+    const source = "```html-render\n<script>parent.postMessage({ scheme: getComputedStyle(document.documentElement).colorScheme }, '*')</script>\n```";
+    const block = parseMarkdownToBlocks('t', source)[0] as HtmlRenderBlock;
+    const ctx = makeContractCtx({ width: 480 });
+    root = document.createElement('div');
+    root.style.colorScheme = 'light'; // an inverted surface: the frame follows the host, not this
+    document.body.appendChild(root);
+    const Render = htmlRenderBlockDef.Render;
+    const unrender = render(() => (
+      <ThemeContext.Provider value={() => ctx.theme}>
+        <CachesContext.Provider value={ctx.caches}>
+          <Render node={htmlRenderBlockDef.measure(block, ctx)} />
+        </CachesContext.Provider>
+      </ThemeContext.Provider>
+    ), root);
+    dispose = () => {
+      unrender();
+      window.removeEventListener('message', onMessage);
+      if (theme === undefined) delete host.dataset.theme;
+      else host.dataset.theme = theme;
+    };
+    const frame = root.querySelector('iframe')!;
+
+    await until('the page reports its scheme', () => schemes.length === 1);
+    expect(schemes).toEqual(['dark']);
+    expect(getComputedStyle(frame).colorScheme).toBe('dark');
+
+    host.dataset.theme = 'light';
+    await until('the page reloads on a light flip', () => schemes.length === 2);
+    expect(schemes).toEqual(['dark', 'light']);
+    expect(getComputedStyle(frame).colorScheme).toBe('light');
+  });
+});
+
 /** The page in a sandboxed frame, as both renderers draw it; returns every probe message it posts. */
 function mountPage(page: string, keep = false) {
   const seen: { probe: string; directive?: string }[] = [];

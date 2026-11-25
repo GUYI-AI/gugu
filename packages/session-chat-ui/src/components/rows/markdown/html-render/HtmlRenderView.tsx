@@ -13,6 +13,7 @@ import {
   clampHtmlRenderHeight,
   htmlRenderDocument,
   htmlRenderRootCss,
+  type HtmlRenderScheme,
   keepHtmlRenderPage,
   readHtmlRenderContentHeight,
   readHtmlRenderLinkRequest,
@@ -25,7 +26,7 @@ import { Portal } from 'solid-js/web';
 import { htmlRenderBackdrop, htmlRenderClose, htmlRenderDialog, htmlRenderFrame } from './html-render.css';
 
 /** One frame of the page: reports the page's own height and opens its links in the host. */
-function PageFrame(props: { srcDoc: string; title: string; width?: number; height: number; onHeight: (height: number) => void }) {
+function PageFrame(props: { srcDoc: string; scheme: HtmlRenderScheme; title: string; width?: number; height: number; onHeight: (height: number) => void }) {
   const commands = useCommands();
   let frame!: HTMLIFrameElement;
   const onMessage = (event: MessageEvent) => {
@@ -39,7 +40,7 @@ function PageFrame(props: { srcDoc: string; title: string; width?: number; heigh
   onCleanup(() => window.removeEventListener('message', onMessage));
   onMount(() => onCleanup(keepHtmlRenderPage(frame)));
   // An opaque sandbox: scripts run, but the page reaches neither this window, its storage, popups nor top navigation.
-  return <iframe ref={frame} title={props.title} srcdoc={props.srcDoc} sandbox="allow-scripts" width={props.width ?? '100%'} height={props.height} class={htmlRenderFrame} />;
+  return <iframe ref={frame} title={props.title} srcdoc={props.srcDoc} sandbox="allow-scripts" width={props.width ?? '100%'} height={props.height} class={htmlRenderFrame} style={{ 'color-scheme': props.scheme }} />;
 }
 
 export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
@@ -50,11 +51,11 @@ export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
   const [expandedHeight, setExpandedHeight] = createSignal<number>();
   onCleanup(subscribeHostTheme(() => setThemeFlips((n) => n + 1)));
   // Themed with the same tokens a ```svg figure reads, as the page is now; a light/dark flip reloads it.
+  const scheme = createMemo((): HtmlRenderScheme => (themeFlips(), document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'));
   const srcDoc = createMemo(() => {
-    themeFlips();
     const root = document.documentElement;
     const mono = getComputedStyle(root).getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace';
-    return htmlRenderDocument(props.block.raw.source, htmlRenderRootCss(svgPalette(root), { sans: getComputedStyle(document.body).fontFamily, mono }));
+    return htmlRenderDocument(props.block.raw.source, htmlRenderRootCss(svgPalette(root), { sans: getComputedStyle(document.body).fontFamily, mono }, scheme()));
   });
   let expand!: HTMLButtonElement;
   const close = () => setExpanded(false);
@@ -67,6 +68,7 @@ export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
     <BlockFrame layout={props.block} class={codeGroup}>
       <PageFrame
         srcDoc={srcDoc()}
+        scheme={scheme()}
         title={translate('transcript.htmlRenderTitle')}
         width={props.block.contentWidth}
         height={props.block.height}
@@ -85,6 +87,7 @@ export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
               </button>
               <PageFrame
                 srcDoc={srcDoc()}
+                scheme={scheme()}
                 title={translate('transcript.htmlRenderTitle')}
                 height={clampHtmlRenderHeight(expandedHeight() ?? props.block.height)}
                 onHeight={setExpandedHeight}

@@ -19,6 +19,7 @@ import {
   clampHtmlRenderHeight,
   htmlRenderDocument,
   htmlRenderRootCss,
+  type HtmlRenderScheme,
   keepHtmlRenderPage,
   HTML_RENDER_MIN_HEIGHT,
   readHtmlRenderContentHeight,
@@ -44,7 +45,7 @@ function openLink(url: string) {
 }
 
 /** One frame of the page; reports the page's own height and opens its links in the host. */
-function HtmlRenderDocument({ srcDoc, title, height, onContentHeight }: { srcDoc: string; title: string; height: number; onContentHeight: (height: number) => void }) {
+function HtmlRenderDocument({ srcDoc, scheme, title, height, onContentHeight }: { srcDoc: string; scheme: HtmlRenderScheme; title: string; height: number; onContentHeight: (height: number) => void }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const report = useRef(onContentHeight)
   report.current = onContentHeight
@@ -64,13 +65,13 @@ function HtmlRenderDocument({ srcDoc, title, height, onContentHeight }: { srcDoc
     }
   }, [])
   // An opaque sandbox: scripts run, but the page reaches neither this window, its storage, popups nor top navigation.
-  return <iframe ref={frame} title={title} srcDoc={srcDoc} sandbox="allow-scripts" height={height} className="block w-full border-0 bg-transparent" />
+  return <iframe ref={frame} title={title} srcDoc={srcDoc} sandbox="allow-scripts" height={height} className="block w-full border-0 bg-transparent" style={{ colorScheme: scheme }} />
 }
 
 export function HtmlRenderFrame({ code }: { code: string }) {
   const { t } = useTranslation('messaging')
   // Subscribed so a light/dark flip re-renders: the palette is read from the page as the theme is now.
-  useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
+  const scheme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
   const [contentHeight, setContentHeight] = useState(() => measuredContentHeights.get(code))
   const [expanded, setExpanded] = useState(false)
   const [expandedHeight, setExpandedHeight] = useState<number>()
@@ -79,6 +80,7 @@ export function HtmlRenderFrame({ code }: { code: string }) {
   const rootCss = htmlRenderRootCss(
     svgPalette(root),
     { sans: getComputedStyle(document.body).fontFamily, mono: style.getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace' },
+    scheme,
   )
   const srcDoc = htmlRenderDocument(code, rootCss)
   const title = t('message.htmlRender.title')
@@ -86,6 +88,7 @@ export function HtmlRenderFrame({ code }: { code: string }) {
     <div className="gg-md-html-render">
       <HtmlRenderDocument
         srcDoc={srcDoc}
+        scheme={scheme}
         title={title}
         height={contentHeight === undefined ? HTML_RENDER_MIN_HEIGHT : clampHtmlRenderHeight(contentHeight)}
         onContentHeight={(height) => {
@@ -105,7 +108,7 @@ export function HtmlRenderFrame({ code }: { code: string }) {
                 <Dialog.Title className="sr-only">{title}</Dialog.Title>
                 <Dialog.Close className="absolute right-2 top-2 z-10 inline-flex size-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]" aria-label={t('message.htmlRender.close')}><X size={16} /></Dialog.Close>
                 <div className="max-h-[86vh] overflow-y-auto overscroll-contain p-4 pt-10">
-                  <HtmlRenderDocument srcDoc={srcDoc} title={title} height={expandedHeight === undefined ? HTML_RENDER_MIN_HEIGHT : Math.ceil(expandedHeight)} onContentHeight={setExpandedHeight} />
+                  <HtmlRenderDocument srcDoc={srcDoc} scheme={scheme} title={title} height={expandedHeight === undefined ? HTML_RENDER_MIN_HEIGHT : Math.ceil(expandedHeight)} onContentHeight={setExpandedHeight} />
                 </div>
               </Dialog.Popup>
             </Dialog.Viewport>
