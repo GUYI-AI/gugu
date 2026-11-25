@@ -1,11 +1,25 @@
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, open, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { awaitFact } from '../../../../../tests/support/awaitFact';
+import { awaitFact, awaitPending } from '../../../../../tests/support/awaitFact';
 import { CodexRecordDeadline, waitForCodexRecord, type RecordDirectoryWatch } from './codex-record-events';
 import { SessionRecordNotFoundError } from './shared';
 import { createCodexJsonlSource } from './codex-jsonl';
+import { createSessionTimeline } from '../timeline';
+
+const directoryDelivery = vi.hoisted(() => ({ enabled: true }));
+vi.mock('../../services/fs-watch/impl/directory-watch', async (load) => {
+  const { DirectoryWatch } = await load<typeof import('../../services/fs-watch/impl/directory-watch')>();
+  return {
+    DirectoryWatch: class extends DirectoryWatch {
+      constructor(...[root, deliver, resync, onError, recover]: ConstructorParameters<typeof DirectoryWatch>) {
+        super(root, events => { if (directoryDelivery.enabled) deliver(events); },
+          () => { if (directoryDelivery.enabled) resync(); }, onError, recover);
+      }
+    },
+  };
+});
 
 const THREAD = '01a20e21-ffaf-7ff0-ac0b-9cda461fa5b3';
 const meta = JSON.stringify({ type: 'session_meta', payload: { id: THREAD } }) + '\n';
@@ -138,6 +152,59 @@ describe('Codex record readiness barrier', () => {
     } }) + '\n');
     await reply;
     expect(poll).not.toHaveBeenCalled();
+  });
+
+  it('keeps both rollout appends in the timeline while Codex holds the file open', async () => {
+    // macOS may defer directory events until an existing file's writer closes it. Keep the real file watcher
+    // and hold back directory delivery so the case checks that precise condition on every OS.
+    directoryDelivery.enabled = false;
+    cleanups.push(() => { directoryDelivery.enabled = true; });
+    const s = await setup();
+    await s.create();
+    const writer = await open(s.file, 'a');
+    cleanups.push(() => writer.close());
+
+    const timeline = await createSessionTimeline(createCodexJsonlSource(s.locator), { sessionId: 'codex-held-open' });
+    cleanups.push(() => timeline.dispose());
+    const write = (type: string, payload: object) => JSON.stringify({ type, payload }) + '\n';
+    const message = (role: 'user' | 'assistant', text: string) => write('response_item', {
+      type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }],
+    });
+    const messages = () => timeline.getSnapshot().turns.flatMap(turn => turn.items)
+      .flatMap(item => item.kind === 'message' ? [item.text] : []);
+    const waitForUpdate = (step: string, ready: () => boolean) => awaitPending(step, new Promise<void>(resolve => {
+      const stop = timeline.subscribe(timeline.getSnapshot().cursor, () => {
+        if (ready()) { stop(); resolve(); }
+      });
+      cleanups.push(stop);
+    }));
+
+    expect(messages()).toEqual([]);
+    const first = waitForUpdate('first append delivered to the timeline with the writer open', () => messages().includes('First part.'));
+    await writer.write(write('event_msg', { type: 'task_started', turn_id: 'turn' })
+      + message('user', 'Reply in two parts.') + message('assistant', 'First part.'));
+    await first;
+    expect(messages()).toEqual(['Reply in two parts.', 'First part.']);
+
+    const second = waitForUpdate('second append and completion delivered with the writer open',
+      () => timeline.getSnapshot().turns.at(-1)?.outcome?.kind === 'done');
+    await writer.write(message('assistant', 'Second part.') + write('event_msg', { type: 'task_complete', turn_id: 'turn' }));
+    await second;
+    expect(messages()).toEqual(['Reply in two parts.', 'First part.', 'Second part.']);
+
+    // Returning to the view starts a new subscription without a cursor from this timeline.
+    const returned = vi.fn();
+    const stop = timeline.subscribe({ epoch: 'reopened-view', seq: 0 }, returned);
+    cleanups.push(stop);
+    expect(returned).toHaveBeenCalledWith(expect.objectContaining({
+      snapshot: expect.objectContaining({
+        turns: [expect.objectContaining({ items: expect.arrayContaining([
+          expect.objectContaining({ role: 'user', text: 'Reply in two parts.' }),
+          expect.objectContaining({ role: 'assistant', text: 'First part.' }),
+          expect.objectContaining({ role: 'assistant', text: 'Second part.' }),
+        ]), outcome: expect.objectContaining({ kind: 'done' }) })],
+      }),
+    }));
   });
 
   it('accepts readiness at second 29 and clears the sole failure deadline', async () => {
