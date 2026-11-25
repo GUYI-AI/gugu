@@ -8,6 +8,7 @@ import { setLocalePreference } from '@/i18n';
 import { CustomModelsGroup } from '@/components/settings/CustomModelsGroup';
 import { CustomModelDialog } from '@/components/settings/CustomModelDialog';
 import { CustomModelRouteRepairHost } from '@/components/settings/CustomModelRouteRepairHost';
+import { SessionModalHost } from '@/components/SessionModalHost';
 import { Sheet } from '@/components/ui/Sheet';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -126,11 +127,14 @@ it('draws an unchecked box with a control edge darker than the shared hairline',
   box.parentElement!.append(probe);
   try { expect(getComputedStyle(box).borderTopColor).toBe(getComputedStyle(probe).borderTopColor); } finally { probe.remove(); }
 });
-it('shows the routes under Custom protocol, hides them when unchecked, and removes them when saved unchecked', async () => {
+it('shows the routes under Custom protocol, hides them when unchecked, and asks before saving removes them', async () => {
   const route = { id: 'd5bd45f0-f968-4df8-bf00-e7d303cab020', incoming: 'any', outgoing: 'openai-chat-completions' } as const;
   const connection: CustomModelConnection = { ...record(), keySaved: true, models: [{ id: 'm' }], endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], routes: [route] };
   state.probe = { endpoints: connection.endpoints, models: ['m'], failures: [] };
-  render(<CustomModelDialog machine={null} connection={connection} modelId="m" onClose={() => {}} />);
+  // A desktop-sized light window: the confirmation is the shared modal, drawn by the host in the host's theme.
+  await page.viewport(1100, 860);
+  document.documentElement.dataset.theme = 'light';
+  render(<><CustomModelDialog machine={null} connection={connection} modelId="m" onClose={() => {}} /><SessionModalHost /></>);
   await expect.element(page.getByTestId('custom-model-route-incoming-0')).toBeVisible();
   expect(isChecked('custom-model-custom-protocol')).toBe(true);
   const remove = page.getByRole('button', { name: 'Remove route 1' }).element().getBoundingClientRect();
@@ -142,8 +146,21 @@ it('shows the routes under Custom protocol, hides them when unchecked, and remov
   expect(document.querySelectorAll('[data-testid^=custom-model-route-incoming-]')).toHaveLength(1);
   await userEvent.click(page.getByTestId('custom-model-custom-protocol'));
   await userEvent.click(page.getByTestId('custom-model-save'));
+  const ask = page.getByRole('dialog').filter({ hasText: 'Saving will remove 1 protocol route' });
+  await expect.element(ask).toBeVisible();
+  await expect.element(ask.getByText('Custom protocol is unchecked, so the routes this connection has are removed when you save.')).toBeVisible();
+  await until('the confirmation finished opening', () => document.getAnimations().every(animation => animation.playState === 'finished'));
+  await page.screenshot({ path: '../../../../../../../test-results/custom-model-drop-routes-confirm.png' });
+  await userEvent.click(ask.getByRole('button', { name: 'Cancel' }));
+  await expect.element(ask).not.toBeInTheDocument();
+  expect(state.saved).toBeNull();
+  await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
+  expect(page.getByTestId('custom-model-routes').query()).toBeNull();
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await userEvent.click(ask.getByRole('button', { name: 'Remove and save' }));
   await until('the form saved', () => state.saved !== null);
   expect(state.saved?.routes).toEqual([]);
+  delete document.documentElement.dataset.theme;
 });
 it('saves every declared field, keeps the other models, and reads them back', async () => {
   const connection: CustomModelConnection = { ...record(), keySaved: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], models: [{ id: 'old', image: false }, { id: 'kept', maxOutput: 9 }] };
