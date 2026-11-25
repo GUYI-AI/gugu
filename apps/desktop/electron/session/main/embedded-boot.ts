@@ -107,6 +107,8 @@ import {
 } from '@main/core/extensions/extension-background'
 import { rpcRouter } from '@main/rpc' // ← the complete router, every controller
 import { initializeDatabase } from '@main/db/initialize'
+import { installDatabaseMaintenance } from '@main/core/install-database-maintenance'
+import { noteDatabaseActivity, withDatabaseActivity } from '@main/db/maintenance-activity'
 import { stopTaskTurnSearch } from '@main/core/search/task-turn-search'
 import { indexSessionsInBackground, stopSessionIndexBackfill, type SessionIndexLogger } from '@main/core/session-index/background'
 import { stopSessionIndex } from '@main/core/session-index/session-index'
@@ -491,6 +493,7 @@ export type SessionHostBootOptions = {
  * 宿主无关的 boot 核心:Electron 桌面 app 与无头宿主共用同一序列,只在 browserFeatures 上分叉。
  */
 export async function bootSessionHostCore(options: SessionHostBootOptions): Promise<void> {
+  options = { ...options, hostIpc: withDatabaseActivity(options.hostIpc) }
   setHostIpc(options.hostIpc)
   // 经网络连进来的线(别的电脑、手机)开的时间线 / 会话列表订阅,线断了一并拆:寿命跟着连接走,❌ 另设保活。
   options.hostIpc.onConnectionClosed?.(releaseSubscriptionsOf)
@@ -756,6 +759,7 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
     sessionBootTasks.clearTask('sessionId' in scope ? scope.sessionId : scope.projectId)
   })
   agentStatusWriter.on('agent:status', ({ sessionId, reading }) => {
+    noteDatabaseActivity()
     if (reading.status === 'idle' && reading.detail === 'done') sessionBootTasks.clearTask(sessionId)
   })
   agentHookService.initialize().catch((e) => {
@@ -837,6 +841,8 @@ export async function bootSessionHostCore(options: SessionHostBootOptions): Prom
   // ❌ 别把 reconcile 挪回开机。
 
   await resumeHostUpdate(updateInterrupted, lastExit, app.getVersion())
+  // Only arms a timer after boot: no maintenance SQL, connection or worker here.
+  stopDatabaseMaintenance = installDatabaseMaintenance(options.browserFeatures)
 
 }
 
@@ -847,6 +853,7 @@ let stopActivityCollector: (() => void) | null = null
  * `before-quit` rather than letting the session backend register its own preventDefault quit handler.
  */
 let disposeEmdashModulePromise: Promise<void> | null = null
+let stopDatabaseMaintenance: (() => Promise<void>) | undefined
 
 async function disposeEmdashModuleOnce(): Promise<void> {
   stopTaskTurnSearch()
@@ -867,6 +874,10 @@ async function disposeEmdashModuleOnce(): Promise<void> {
   // @@@5080 先撤掉数据目录的占用宣告:留着它,下一个宿主会看到一个 pid 已死的锁 —— 那种锁不会
   // 误判占用(判据查的是 pid 存活,不是文件在不在),但把自己的东西收干净还是更干净。
   await runPhase('data-dir-release', () => releaseDataDir(app.getPath('userData')))
+  await runPhase('database-maintenance', async () => {
+    await stopDatabaseMaintenance?.()
+    stopDatabaseMaintenance = undefined
+  })
   await runPhase('automations', () => automationsService.stop())
   await runPhase('extension-programs', stopAllExtensionPrograms)
   await runPhase('agent-hooks', () => agentHookService.dispose())

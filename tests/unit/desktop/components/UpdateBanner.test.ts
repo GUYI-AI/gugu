@@ -69,6 +69,11 @@ describe('#7496 left rail update entry', () => {
     await harness.render(createElement(UpdateBanner, { placement: 'rail' }))
     expect(button()?.getAttribute('aria-label')).toBe('下载新版本中… 42%')
     expect(button()?.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('41.6')
+    // The progress is a ring round the glyph, not a number beside it.
+    expect(button()?.textContent).not.toContain('%')
+    const fill = button()?.querySelectorAll('[role="progressbar"] circle')[1]
+    const circumference = Number(fill?.getAttribute('stroke-dasharray'))
+    expect(Number(fill?.getAttribute('stroke-dashoffset')) / circumference).toBeCloseTo(1 - 0.416)
     await act(async () => { button()!.click() })
     expect(downloadUpdate).not.toHaveBeenCalled()
     expect(installUpdate).not.toHaveBeenCalled()

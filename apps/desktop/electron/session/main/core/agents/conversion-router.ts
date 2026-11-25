@@ -1,5 +1,7 @@
 import type { ChildProcess, SpawnOptions } from 'node:child_process';
 import { spawn } from '@gugu/core/local/childProcess';
+import { guguCatalogReasonCode } from '@gugu/session-core/session-record/contract';
+import { log } from '@main/lib/logger';
 import { constants } from 'node:fs';
 import { access, chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
@@ -24,7 +26,27 @@ export type ConversionRouter = {
 
 const formats = { claude: 'openai_chat', codex: 'chat' } satisfies Record<ConversionHarness, string>;
 const startupTimeoutMs = 10_000;
+const windowsProviderSetupBudgetMs = 30_000;
 const stopTimeoutMs = 2_000;
+
+const setupTimeoutReason = {
+  'add-provider': 'conversion-add-provider-timeout',
+  'switch-provider': 'conversion-switch-provider-timeout',
+} as const;
+type SetupPhase = keyof typeof setupTimeoutReason;
+type StartupPhase = SetupPhase | 'listen';
+type StartupReason = (typeof setupTimeoutReason)[SetupPhase] | 'conversion-listen-timeout' | 'conversion-start-failed';
+
+export class ConversionRouterStartError extends Error {
+  constructor(
+    readonly reason: StartupReason,
+    readonly phase: StartupPhase,
+    readonly elapsedMs: number,
+    readonly exitCode: number | null = null,
+  ) {
+    super(guguCatalogReasonCode(reason));
+  }
+}
 
 function isolatedEnv(directory: string): NodeJS.ProcessEnv {
   return {
@@ -46,10 +68,10 @@ function observeExit(child: ChildProcess): Promise<number | null> {
   return new Promise((resolve) => child.once('close', resolve));
 }
 
-async function within<T>(operation: Promise<T>, ms: number, failure: string): Promise<T> {
+async function within<T>(operation: Promise<T>, ms: number, failure: () => Error): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(failure)), ms);
+    timer = setTimeout(() => reject(failure()), ms);
   });
   try {
     return await Promise.race([operation, deadline]);
@@ -62,12 +84,12 @@ async function stopChild(child: ChildProcess, closed: Promise<number | null>): P
   if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
     child.kill('SIGTERM');
     try {
-      await within(closed, stopTimeoutMs, 'Conversion router did not stop');
+      await within(closed, stopTimeoutMs, () => new Error('Conversion router did not stop'));
     } catch {
       if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     }
   }
-  await within(closed, stopTimeoutMs, 'Conversion router could not be stopped');
+  await within(closed, stopTimeoutMs, () => new Error('Conversion router could not be stopped'));
 }
 
 function readBoundEndpoint(stdout: NonNullable<ChildProcess['stdout']>): Promise<string> {
@@ -130,16 +152,28 @@ export async function launchConversionRouter(options: RouterOptions): Promise<Co
   const config: SpawnOptions = { cwd: directory, env: isolatedEnv(directory), windowsHide: true };
   const appArgs = ['--app', options.harness];
   let active: { child: ChildProcess; exit: Promise<number | null> } | undefined;
-  const configure = async (args: string[]) => {
-    const child = spawn(options.executable, [...appArgs, 'provider', ...args], { ...config, stdio: 'ignore' });
-    const exit = observeExit(child);
-    active = { child, exit };
+  const configure = async (phase: SetupPhase, args: string[], deadline: number | null) => {
+    const started = performance.now();
+    const elapsed = () => Math.round(performance.now() - started);
+    const timeout = () => new ConversionRouterStartError(setupTimeoutReason[phase], phase, elapsed());
+    let exitCode: number | null = null;
+    let outcome: 'finished' | 'failed' | 'timeout' = 'failed';
     try {
-      if (await within(exit, startupTimeoutMs, 'Conversion provider setup timed out') !== 0) {
-        throw new Error('Conversion provider setup failed');
-      }
+      if (deadline !== null && deadline <= started) throw timeout();
+      const child = spawn(options.executable, [...appArgs, 'provider', ...args], { ...config, stdio: 'ignore' });
+      const exit = observeExit(child);
+      active = { child, exit };
+      const remaining = deadline === null ? startupTimeoutMs : Math.max(0, deadline - performance.now());
+      exitCode = await within(exit, remaining, timeout);
+      if (exitCode !== 0) throw new ConversionRouterStartError('conversion-start-failed', phase, elapsed(), exitCode);
+      outcome = 'finished';
+    } catch (error) {
+      if (error instanceof ConversionRouterStartError && error.reason === setupTimeoutReason[phase]) outcome = 'timeout';
+      throw error;
     } finally {
-      await stopChild(child, exit);
+      // Standard task logs default to warn. Record both phases without the arguments, settings, or child output.
+      log.warn('Local model protocol converter provider setup', { harness: options.harness, phase, elapsedMs: elapsed(), outcome, exitCode });
+      if (active) await stopChild(active.child, active.exit);
       active = undefined;
     }
   };
@@ -148,14 +182,18 @@ export async function launchConversionRouter(options: RouterOptions): Promise<Co
     // The relay token goes through a private file, never argv, where other local users could read it.
     const settings = join(directory, 'provider.json');
     await writeFile(settings, providerSettings(options.harness, upstream, options.relayKey), { mode: 0o600 });
+    // A cold Windows launch can exceed the original command deadline. Both commands share one bounded setup budget.
+    const setupDeadline = process.platform === 'win32' ? performance.now() + windowsProviderSetupBudgetMs : null;
     try {
-      await configure([
+      await configure('add-provider', [
         'add', '--id', 'gugu-local', '--name', 'Gugu conversion', '--config-file', settings, '--api-format', formats[options.harness],
-      ]);
+      ], setupDeadline);
     } finally {
       await rm(settings, { force: true });
     }
-    await configure(['switch', 'gugu-local']);
+    await configure('switch-provider', ['switch', 'gugu-local'], setupDeadline);
+    const started = performance.now();
+    const elapsed = () => Math.round(performance.now() - started);
     const child = spawn(options.executable, [
       ...appArgs, 'proxy', 'serve', '--listen-address', '127.0.0.1', '--listen-port', '0',
     ], { ...config, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -163,10 +201,10 @@ export async function launchConversionRouter(options: RouterOptions): Promise<Co
     active = { child, exit };
     const endpoint = await within(Promise.race([
       readBoundEndpoint(child.stdout),
-      exit.then(() => { throw new Error('Conversion router exited during startup'); }),
-    ]), startupTimeoutMs, 'Conversion router startup timed out');
+      exit.then((code) => { throw new ConversionRouterStartError('conversion-start-failed', 'listen', elapsed(), code); }),
+    ]), startupTimeoutMs, () => new ConversionRouterStartError('conversion-listen-timeout', 'listen', elapsed()));
     if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) {
-      throw new Error('Conversion router exited during startup');
+      throw new ConversionRouterStartError('conversion-start-failed', 'listen', elapsed(), child.exitCode);
     }
     const closed = exit.then(() => rm(directory, { recursive: true, force: true }));
     // The caller can inspect close failures even if the child exits between requests.

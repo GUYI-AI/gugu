@@ -108,7 +108,8 @@ const subscribeNotifications = subscribeTo(NOTIFICATIONS_EVENT)
 const subscribePinnedAgents = subscribeTo(PINNED_AGENTS_EVENT)
 const NO_PINNED_AGENTS: readonly SidebarPinnedAgent[] = []
 
-/** One ephemeral list-view choice across the shell and workspace roots; layout settings stay separate. */
+/** Whether the bell's notifications are open (the desktop's popover, the phone's list), one ephemeral choice across the shell
+ * and workspace roots; layout settings stay separate. */
 export function setSidebarNotificationsOpen(open: boolean): void {
   if ((read<boolean>(NOTIFICATIONS_KEY) ?? false) === open) return
   write(NOTIFICATIONS_KEY, NOTIFICATIONS_EVENT, open)

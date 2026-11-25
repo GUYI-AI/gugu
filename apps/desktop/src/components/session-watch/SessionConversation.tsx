@@ -80,7 +80,7 @@ import { rendererLogger } from '@/lib/log'
 export function SessionConversation({ timeline, deviceId, sessionId, agentName, agentUserId, harness, draft, onDraftApplied, startupPrompt, phoneHost = false, local = false, nativeRecord = false, hostReachable = true, appPanel = false,
   machineLabel, sessionRuntime, respondingItemId, onRespond, onSend, pendingSends, sending, agentWorking,
   onStop, stopping, footerNotice, composerControls, permissionsInWork = false, onLoadOlder, onHeldShown, onAtBottom, emptyNote, onBeforeSend,
-  queueReady = false, unseen = false,
+  queueReady = false, unseen = false, timelineUnavailable = false,
 }: {
   timeline: AgentWatchTimeline; deviceId: string; sessionId: string; agentName: string; agentUserId?: string | null
   /** 这条会话的 harness(claude-code / codex …):输入框里模型左边那颗锁着的标,同桌面会话页。 */
@@ -98,6 +98,8 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
   onBeforeSend?: () => void
   pendingSends: readonly PendingSend[]; sending: boolean; agentWorking: boolean
   headerRunning?: boolean
+  /** A failed timeline read leaves history visible with no confirmed live turn. */
+  timelineUnavailable?: boolean
   onStop: () => void; stopping: boolean; footerNotice?: ReactNode; composerControls?: (modelControl: ReactNode, model: ExistingSessionModel, skills: ReturnType<typeof creationSkillInput>) => ReactNode; onLoadOlder: () => Promise<void>; onHeldShown?: (itemId: string) => void
   /** Only the existing Work controls may take ownership of the phone permission selector. */
   permissionsInWork?: boolean
@@ -409,7 +411,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       toolbarExtra={mobile ? undefined : <ComposerAttachButton disabled={sending} mobile={false} glyph={appPanel ? <Plus /> : undefined} onPickFile={() => input.current?.click()} />} />
   </>
   return <SessionUiTheme theme={theme}><MessageProvider locale={resolvedLocale} translate={translateSessionMessage}>
-    <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} turns={turns} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
+    <div ref={visibility.ref} className="relative flex min-h-0 flex-1 flex-col"><SessionTranscriptView uri={sessionId} turns={turns} activeTurnId={timelineUnavailable ? null : undefined} pendingPrompt={pendingPrompt ?? startupPrompt ?? pendingSends[0] ?? null} pendingMessages={pendingMessages} mobile commands={commands} backgroundTasks={background}
       onReachStart={quotes.loadOlder} composerContent={composer} shown={visibility.shown} onAtBottomChange={atBottom => { reading.onAtBottomChange(atBottom); if (atBottom) onAtBottom?.() }} onVisibleItems={reading.onVisibleItems} contentOverlay onReady={ready => { view.current = ready; setOverlay(ready.contentOverlay ?? null); reading.onReady(ready) }} className="relative min-h-0 flex-1" />
     {overlay ? createPortal(turns.length === 0 ? emptyNote : null, overlay) : null}</div>{outputs.panel}{options.confirmation}{draftPreview.panel}
   </MessageProvider></SessionUiTheme>
