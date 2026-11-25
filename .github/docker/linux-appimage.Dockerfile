@@ -41,14 +41,36 @@ SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 # 墙内:deb.debian.org 在这台机器上是分钟级/超时,换阿里云源。
 RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org|mirrors.aliyun.com|g' \
       /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list 2>/dev/null || true; \
-    apt-get update && apt-get install -y --no-install-recommends \
-      python3 make g++ pkg-config git ca-certificates curl file xz-utils procps binutils \
-      tmux \
-    && apt-get install -y --no-install-recommends \
-      libnss3 libnspr4 libgtk-3-0 libgbm1 libdrm2 libasound2 libcups2 libdbus-1-3 \
-      libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
-      libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxkbcommon0 \
-    && rm -rf /var/lib/apt/lists/*
+    apt_log=/tmp/gugu-system-apt.log; \
+    if { \
+      echo 'APT phase=update'; \
+      apt-get update && \
+      echo 'APT phase=toolchain-and-badge-extractor' && \
+      apt-get install -y --no-install-recommends \
+        python3 make g++ pkg-config git ca-certificates curl file xz-utils procps binutils \
+        tmux squashfs-tools && \
+      echo 'APT phase=electron-libraries' && \
+      apt-get install -y --no-install-recommends \
+        libnss3 libnspr4 libgtk-3-0 libgbm1 libdrm2 libasound2 libcups2 libdbus-1-3 \
+        libatk1.0-0 libatk-bridge2.0-0 libatspi2.0-0 \
+        libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libxkbcommon0; \
+    } > "$apt_log" 2>&1; then \
+      command -v unsquashfs; \
+      dpkg-query --show --showformat='${Version}\n' squashfs-tools; \
+      rm -f "$apt_log"; \
+      rm -rf /var/lib/apt/lists/*; \
+    else \
+      apt_rc=$?; \
+      echo "::error::Build-image APT failed (exit=$apt_rc); last 50 lines:" >&2; \
+      tail -n 50 "$apt_log" | sed -E 's#(https?://)[^/@[:space:]]+@#\1<redacted>@#g' >&2; \
+      echo 'APT mirror configuration:' >&2; \
+      for apt_source in /etc/apt/sources.list /etc/apt/sources.list.d/*.sources /etc/apt/sources.list.d/*.list; do \
+        [ -f "$apt_source" ] || continue; \
+        printf '\n--- %s ---\n' "$apt_source" >&2; \
+        sed -E 's#(https?://)[^/@[:space:]]+@#\1<redacted>@#g' "$apt_source" >&2; \
+      done; \
+      exit "$apt_rc"; \
+    fi
 
 # node 由基础镜像按 .node-version 钉;pnpm 由 --build-arg 按 package.json 的 packageManager 钉。
 # ❌ corepack 自动写 packageManager(会污染 tracked 的 package.json),显式装。
