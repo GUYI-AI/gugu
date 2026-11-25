@@ -381,6 +381,17 @@ it('repairs a missing model route from its disabled row and returns to the picke
   expect(onModelChange).not.toHaveBeenCalled();
 });
 
+it('draws a logo on every own-connection row: the preset, else the maker of the model it serves (owner 11-25)', () => {
+  const pi = { id: 'pi', name: 'Pi', capabilities: { modelProtocols: ['openai-responses' as const], customModel: undefined } };
+  const relay: CustomModelConnection = { ...record(), keySaved: true, name: 'OpenRouter',
+    endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://openrouter.ai/api/v1' }],
+    models: [{ id: 'qwen/qwen3-coder-480b-a35b-instruct' }, { id: 'house-model-7' }] };
+  const icons = Object.values(customComposerOptions([relay], pi, translateSessionMessage))
+    .map(({ name, icon }) => [name, (icon as React.ReactElement<{ 'data-provider-id'?: string }> | null | undefined)?.props?.['data-provider-id'] ?? null]);
+  // An unknown maker leaves the row to the menu's generic icon (pinned in composer-model-menu-3249).
+  expect(icons).toEqual([['qwen/qwen3-coder-480b-a35b-instruct', 'qwen'], ['house-model-7', null]]);
+});
+
 it('names only the bound model when reopening a migrated Pi task', async () => {
   const existing = { ...record(), keySaved: true, models: [{ id: 'glm-5.3-flash' }] };
   const duplicate = { ...existing, id: '48937c18-1219-460e-9f40-e08d70de94a5', name: 'Other provider' };

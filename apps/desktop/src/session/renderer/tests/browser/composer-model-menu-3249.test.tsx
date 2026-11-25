@@ -665,12 +665,15 @@ describe('#3249 composer 模型下拉', () => {
     expect(visibleGroups()).toEqual([])
     expect(visibleOptions().slice(0, 2)).toEqual(['GLM 5.2', 'GPT-5.6 Sol'])
     // 组头里既然没有厂商,行内那枚 logo 就是认厂商的唯一线索。
-    // 图标**位**每行都有(5 行),真图标只有认得出厂商的那 4 行 —— 认不出的那条留白,不占位地收掉。
-    const slots = document.querySelectorAll(
+    // owner 11-25:每一行都有图标。认得出厂商的 4 行画 logo,认不出的那条画通用兜底(data-fallback),❌ 留空。
+    const slots = [...document.querySelectorAll<HTMLElement>(
       '[data-slot="combobox-content"] [data-slot="composer-model-icon"]'
-    )
+    )]
     expect(slots.length).toBe(5)
-    expect([...slots].filter((el) => el.childElementCount > 0).length).toBe(4)
+    expect(slots.every((el) => el.querySelector('svg, [role="img"]') && el.getBoundingClientRect().width > 0)).toBe(true)
+    expect(slots.filter((el) => el.hasAttribute('data-fallback')).map((el) =>
+      el.closest('[role="option"]')?.querySelector('[data-slot="composer-model-name"]')?.textContent?.trim()
+    )).toEqual(['Relay Model (preview)'])
     // owner 11-25:「删掉模型选择列表头上的分组」—— 那排厂商块整个撤掉,找某一家用搜索框(下一条)。
     expect(document.querySelector('[data-slot="combobox-content"] [data-testid^="composer-model-provider-"]')).toBeNull()
   })

@@ -1701,6 +1701,9 @@ export const modelPanelItemCompact = style({
   },
 });
 
+/** 认不出厂商的行那枚通用兜底图标:淡色,一眼看得出不是某家的 logo。 */
+export const modelPanelItemIconFallback = style({ color: vars.foregroundMuted });
+
 // 单行之后 logo 跟名字同一条中线,`composerPanelItemIcon` 那 3px 下压只属于两段式的行。
 globalStyle(`${modelPanelItemCompact} [data-slot="composer-model-icon"]`, { marginTop: 0 });
 

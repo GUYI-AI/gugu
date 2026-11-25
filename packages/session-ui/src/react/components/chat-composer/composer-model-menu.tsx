@@ -1,6 +1,6 @@
 /** Composer model list and its anchored model details. */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Check, ChevronRight, Pencil, Search } from '../../../icons';
+import { Check, ChevronRight, Pencil, Search, Sparkles } from '../../../icons';
 import { Combobox } from '@session-ui/react/primitives/combobox/combobox';
 // 「思考」那一段是**一条有序标尺**,所以是 Slider 而不是一组单选药丸 ——
 // 见 chat-composer.css.ts 的 modelEffortRow 抬头(owner 2026-09-17 指定)。
@@ -403,14 +403,9 @@ export function ComposerModelMenu({
     : null;
 
   /**
-   * 这一列要不要留出图标位。
-   *
-   * ⚠️ 判据是「**有没有条目认得出厂商**」,不是「这一条认不认得出」。实机撞到的:claude 的
-   * 「Default (recommended)」不带任何厂商词根 ⇒ 认不出 ⇒ 那一行不画图标位 ⇒ 名字比其余 18 行
-   * **左移 22px**,而它恰好是列表第一条。缺一枚 logo 只是信息少一点,整行错位看着就是坏了。
-   * ⇒ 只要这一列有人有图标,所有行都留位;整列都没有(某些 harness)才不留 —— 那时不存在错位。
+   * 每一行都有图标(owner 11-25):认得出厂商画厂商 logo,认不出的画一枚通用的 ✦ 兜底(淡色,`data-fallback`)。
+   * 以前认不出就留空位 —— 名字不错位,但那一行左边是个洞,看着像没做完。
    */
-  const anyModelIcon = modelItems.some((m) => m.icon);
 
   /**
    * 一张平的清单:❌ 组头、❌ 顶上那排厂商筛选块(owner 11-25:「删掉模型选择列表头上的分组」)。
@@ -635,21 +630,16 @@ export function ComposerModelMenu({
                           className={`${styles.composerPanelItem} ${styles.modelPanelItemCompact}`}
                           {...detailHoverProps(m.id)}
                         >
-                          {/* 上游每一行左边是**厂商 logo**(`ModelIcon`,14px 见方,
-                              与首行基线对齐)。宿主给成品节点 —— 这个包够不到 app 的
-                              图片资源。
-                              ⚠️ 认不出厂商时**位子照留、内容为空**(见 `anyModelIcon`):
-                              ❌ 不画一个通用占位图形(那是假装认得),❌ 也不收掉这一格
-                              (那会让这一行的名字比别行左移 22px,实机上第一行正是如此)。 */}
-                          {anyModelIcon && (
-                            <span
-                              className={styles.composerPanelItemIcon}
-                              data-slot="composer-model-icon"
-                              aria-hidden="true"
-                            >
-                              {m.icon}
-                            </span>
-                          )}
+                          {/* 上游每一行左边是**厂商 logo**(`ModelIcon`,14px 见方)。宿主给成品节点 —— 这个包够不到
+                              app 的图片资源。认不出厂商的行画通用兜底(见上面 owner 11-25),❌ 留空位。 */}
+                          <span
+                            className={m.icon ? styles.composerPanelItemIcon : `${styles.composerPanelItemIcon} ${styles.modelPanelItemIconFallback}`}
+                            data-slot="composer-model-icon"
+                            data-fallback={m.icon ? undefined : ''}
+                            aria-hidden="true"
+                          >
+                            {m.icon ?? <Sparkles size={14} />}
+                          </span>
                           <span data-slot="composer-model-name" className={styles.modelPanelItemName}>
                             {m.name}
                           </span>

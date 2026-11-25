@@ -7,6 +7,7 @@ import type { SubscriptionPlanReading } from '@gugu/session-core/agents/plugins'
 import { vendorName } from '@/i18n/vendorName';
 import { getDomainWithoutSuffix } from 'tldts';
 import { modelProviderIcon } from './model-provider-icon';
+import { resolveModelProvider } from './model-provider';
 import { openCustomModelRouteRepair } from '@renderer/lib/open-shell-settings';
 
 /** Which vendor an address belongs to: its registrable domain without the public suffix (`api.deepseek.com` → `deepseek`). An IP or a local name has none. */
@@ -83,7 +84,9 @@ export function customComposerOptions(
         // Search matches it like the tag; a record whose address has no vendor keeps its own name.
         providerLabel: tag ?? connection.name,
         ...(tag ? { tag } : {}),
-        icon: modelProviderIcon(preset ? { id: preset.id, name: preset.name, iconKey: preset.icon } : null),
+        // A preset draws its own logo; an address of the person's own draws the maker of the model it serves
+        // (OpenRouter serving qwen/… → Qwen). Neither → the menu's generic icon (every row has one, owner 11-25).
+        icon: modelProviderIcon(preset ? { id: preset.id, name: preset.name, iconKey: preset.icon } : resolveModelProvider(model.id, model.label)),
         description: connection.name,
         ...(reason ? { disabled: true, disabledReason: reason } : {}),
         ...(disabledAction ? { disabledAction } : {}),
