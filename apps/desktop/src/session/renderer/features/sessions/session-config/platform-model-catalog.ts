@@ -116,6 +116,7 @@ function parseModel(value: unknown): PlatformModelOption | null {
     id,
     displayName: typeof raw.displayName === 'string' && raw.displayName ? raw.displayName : id,
     protocol: protocol as PlatformModelProtocol,
+    ...(raw.fastSupported === true ? { fastSupported: true } : {}),
     // 倍率是 display-only,坏值与缺失同义:省掉数字,不猜、也不拖累整条目录。
     creditMultiplier:
       typeof raw.creditMultiplier === 'number' && Number.isFinite(raw.creditMultiplier)
@@ -220,6 +221,7 @@ function platformModelsFor(providerId: string, catalog: readonly PlatformCatalog
       protocol,
       // null: the catalog has no multiplier for this protocol, no context window, or says nothing of the levels.
       creditMultiplier: model.creditMultipliers?.[protocol] ?? null,
+      ...(providerId === 'codex' && model.fastProtocols?.includes(protocol) ? { fastSupported: true } : {}),
       contextWindow: model.contextWindow ?? null,
       reasoningEfforts: model.reasoningEfforts ?? null,
       requiresMembership: model.requiresMembership,

@@ -47,6 +47,7 @@ export interface PlatformModelCatalogItem {
   id: string
   displayName: string
   protocols: ModelAccessProtocol[]
+  fastProtocols?: ModelAccessProtocol[]
   enabled: boolean
   /**
    * 每条协议路由的积分倍率(New API ratio,基线 1.0 == $2/M),display-only。
@@ -80,6 +81,7 @@ export interface IssuedModelAccess {
   token: string
   model: string
   protocol: ModelAccessProtocol
+  serviceTier?: 'priority'
   expiresAt: string
   /**
    * @@@2503 C6 —— 本次签发模型的总上下文窗口(token),签发时由服务端从 billing.platform_models 读出。
@@ -264,6 +266,7 @@ export async function listPlatformModels(authProvider: RuntimeAuthProvider): Pro
         id,
         displayName,
         protocols,
+        ...(Array.isArray(row.fast_protocols) ? { fastProtocols: row.fast_protocols.filter(isModelAccessProtocol) } : {}),
         enabled: row.enabled === true,
         creditMultipliers: parsePlatformCreditMultipliers(row.credit_multipliers),
         contextWindow: positiveIntOrNull(row.context_window),
@@ -286,6 +289,7 @@ export async function issuePlatformModelAccess(input: {
   engineId: string
   modelId: string
   protocol: ModelAccessProtocol
+  serviceTier?: 'priority'
   providerSessionId?: string | null
   /** The stable local task identity is also the team task_id. Personal requests retain their existing wire shape. */
   sessionId?: string
@@ -318,6 +322,7 @@ export async function issuePlatformModelAccess(input: {
     engine_id: input.engineId,
     model_id: input.modelId,
     protocol: input.protocol,
+    ...(input.serviceTier ? { service_tier: input.serviceTier } : {}),
     provider_session_id: input.providerSessionId ?? null,
     ...(input.keepFromAccessSessionId ? { keep_from_session_id: input.keepFromAccessSessionId } : {}),
     ...(team ? { team_id: team.teamId, member_identity_id: team.memberIdentityId, task_id: taskId, expected_membership_revision: team.membershipRevision } : {}),
@@ -345,6 +350,9 @@ export async function issuePlatformModelAccess(input: {
   const accessSessionId = required(payload.session_id, 'session_id')
   let teamTask: TeamTaskIdentity | undefined
   try {
+    if (input.serviceTier && (payload.service_tier !== input.serviceTier || payload.model_id !== input.modelId)) {
+      throw new Error('The gateway did not issue the selected Fast route')
+    }
     if (team) {
       const funding = parseTeamTaskFunding(payload.funding)
       if (funding.team_id !== team.teamId || funding.member_id !== team.memberId || funding.task_id !== taskId) throw new Error('Team funding does not match the authorized task')
@@ -366,6 +374,7 @@ export async function issuePlatformModelAccess(input: {
     token: required(payload.token, 'token'),
     model: required(payload.model, 'model'),
     protocol,
+    ...(payload.service_tier === 'priority' ? { serviceTier: 'priority' } : {}),
     expiresAt: required(payload.expires_at, 'expires_at'),
     // 缺省即 null → 注入侧按引擎方言处理：能吃自身默认窗口的 harness 省略该键；
     // 配置文档要求 `limit.context` 的 OpenCode 家族在物化时响亮失败，绝不发无效文档。
@@ -875,6 +884,7 @@ export async function resolveAgentModelLaunch(input: {
   engineId: string
   providerSessionId?: string | null
   sessionId?: string
+  serviceTier?: 'priority'
   /**
    * 这次启动的模型决定,由调用方给定;不给则读 agent 级 `model_access`(聊天/ACP 侧的既有用途)。
    *
@@ -902,6 +912,7 @@ export async function resolveAgentModelLaunch(input: {
     engineId: input.engineId,
     modelId: selection.modelId,
     protocol: selection.protocol,
+    serviceTier: input.serviceTier,
     providerSessionId: input.providerSessionId,
     sessionId: input.sessionId,
   })

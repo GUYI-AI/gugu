@@ -413,6 +413,7 @@ export const provider = registerPluginBehavior(plugin, {
           ...(platform
             ? {
                 ...platform.spawnEnv,
+                GUGU_CODEX_PLATFORM_SERVICE_TIER: platform.serviceTier ?? 'default',
                 MODEL_PROVIDER: platform.providerId,
                 OPENAI_API_KEY: platform.apiKey,
                 // 这条会话可用的整组平台模型的事实 —— 咕咕的桥据此写 codex 的 model catalog,

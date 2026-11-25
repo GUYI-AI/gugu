@@ -28,17 +28,19 @@ import type { SessionReloadReason } from './session-reload-confirm';
  */
 export type RestartTarget =
   | { dimension: 'model'; value: string; label: string; source: 'platform' | 'own' }
+  | { dimension: 'fast'; value: boolean; label: string }
   /** 权限一维声明 `reload-session` 的家(dsh):档位只能带着新档重起进程再续接。`value` 是咕咕四档。 */
   | { dimension: 'permission'; value: GuguPermissionMode; label: string };
 
 /** 这次重开在日志与遥测里记成哪一种(枚举,❌ 不是自由文本)。 */
 export function reloadReasonCodeFor(target: RestartTarget): SessionReloadReasonCode {
-  return target.dimension === 'permission' ? 'permission-switch' : 'model-switch';
+  if (target.dimension === 'permission') return 'permission-switch';
+  return target.dimension === 'fast' ? 'fast-switch' : 'model-switch';
 }
 
 /** 确认框的措辞档 —— 组件按它选标题,调用方不写文案。 */
 export function confirmReasonFor(target: RestartTarget): SessionReloadReason {
-  return target.dimension === 'permission' ? 'permission-switch' : 'model-switch';
+  return reloadReasonCodeFor(target);
 }
 
 /**
@@ -56,10 +58,12 @@ export function reloadRequestFor(
   model?: string;
   modelSource?: 'platform' | 'own';
   permissionMode?: GuguPermissionMode;
+  fastMode?: boolean;
 } {
   if (target.dimension === 'permission') {
     return { sessionId, reason: reloadReasonCodeFor(target), permissionMode: target.value };
   }
+  if (target.dimension === 'fast') return { sessionId, reason: reloadReasonCodeFor(target), fastMode: target.value };
   return {
     sessionId,
     reason: reloadReasonCodeFor(target),

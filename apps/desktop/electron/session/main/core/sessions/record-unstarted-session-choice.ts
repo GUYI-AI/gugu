@@ -25,6 +25,7 @@ export async function recordUnstartedSessionChoice(input: {
   resetModel?: boolean;
   /** 三态:字符串 = 换成这一档;`null` = 删键、回 harness 默认;缺席 = 不碰。只收终端会话。 */
   effort?: string | null;
+  fastMode?: boolean;
 }): Promise<void> {
   const { sessionId, reason } = input;
   const model = typeof input.model === 'string' && input.model.trim() ? input.model.trim() : null;
@@ -39,7 +40,7 @@ export async function recordUnstartedSessionChoice(input: {
   if (input.runtime === 'acp' && input.effort !== undefined) {
     throw new Error(`session ${sessionId} ACP session takes effort on the live session, not on the record`);
   }
-  if (!model && !input.resetModel && input.effort === undefined) {
+  if (!model && !input.resetModel && input.effort === undefined && input.fastMode === undefined) {
     throw new Error(`session ${sessionId} has nothing to record (${reason}); start it normally instead`);
   }
 
@@ -64,6 +65,7 @@ export async function recordUnstartedSessionChoice(input: {
     if (effort) next.effort = effort;
     else delete next.effort;
   }
+  if (input.fastMode !== undefined) next.fastMode = input.fastMode;
   await db.update(sessions).set({ config: next as typeof current }).where(eq(sessions.id, sessionId));
   try {
     if (model) {
@@ -77,9 +79,10 @@ export async function recordUnstartedSessionChoice(input: {
   }
 
   // 渲染层通用模式的启动路读的是它手里那份会话(`_startInput` 的 model / effort),不跟上就按旧值起。
-  const changes: { model?: string | null; effort?: string | null } = {};
+  const changes: { model?: string | null; effort?: string | null; fastMode?: boolean } = {};
   if (model || input.resetModel) changes.model = model && input.modelSource === 'own' ? model : null;
   if (input.effort !== undefined) changes.effort = effort;
+  if (input.fastMode !== undefined) changes.fastMode = input.fastMode;
   if (Object.keys(changes).length > 0) {
     events.emit(sessionChangedChannel, { sessionId, projectId: row.projectId, changes });
   }

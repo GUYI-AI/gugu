@@ -70,6 +70,8 @@ let selectedModel = null
 let selectedEffort = null
 // Accepted preference is sampled only when a new turn starts.
 let selectedFastMode = false
+const platformServiceTier = process.env.GUGU_CODEX_PLATFORM_SERVICE_TIER === 'priority' ? 'priority'
+  : process.env.GUGU_CODEX_PLATFORM_SERVICE_TIER === 'default' ? 'default' : null
 /** `model/list` 读成功的结果。对同一个 app-server 进程是常量,缓存住。 */
 let modelCatalog = null
 /**
@@ -545,7 +547,9 @@ function effortConfigOptions(selectedModelId, selectedEffortId, models) {
 /** 把 model / thought_level 两组并进 configOptions(已有同 category 的不覆盖)。 */
 function withModelConfigOptions(existing, modelSelected, effortSelected, models) {
   const list = Array.isArray(existing) ? existing.filter((option) => option?.configId !== 'fast') : []
-  list.push(...codexFastConfigOptions(models.find((model) => model.id === modelSelected), selectedFastMode))
+  if (!platformServiceTier) {
+    list.push(...codexFastConfigOptions(models.find((model) => model.id === modelSelected), selectedFastMode))
+  }
   const has = (category) =>
     list.some((option) => option && typeof option === 'object' && option.category === category)
   if (!has('model')) list.push(...modelConfigOptions(modelSelected, models))
@@ -2563,7 +2567,8 @@ async function handleAcpRequest(message) {
       return
     }
     throwIfInsertionCancelled(insertion)
-    const tier = codexTierForTurn((await modelCatalogOnce()).find((model) => model.id === selectedModel), selectedFastMode)
+    const tier = platformServiceTier
+      ?? codexTierForTurn((await modelCatalogOnce()).find((model) => model.id === selectedModel), selectedFastMode)
     const started = await appRequest('turn/start', { threadId: sessionId, input,
       serviceTierForTurn: tier, clientUserMessageId: insertion.clientId })
     const turnId = String(started?.turn?.id ?? '')
@@ -2584,7 +2589,7 @@ async function handleAcpRequest(message) {
     if (configId === 'fast') {
       const value = String(params.value ?? '')
       const models = await modelCatalogOnce()
-      if (!['on', 'off'].includes(value) || !codexFastTier(models.find((model) => model.id === selectedModel))) {
+      if (platformServiceTier || !['on', 'off'].includes(value) || !codexFastTier(models.find((model) => model.id === selectedModel))) {
         respond(id, null, { code: -32602, message: 'Fast is not available for the current Codex model' })
         return
       }

@@ -174,6 +174,7 @@ export async function sessionpagePlatformCatalog(input: {
         displayName: model.displayName,
         protocol,
         creditMultiplier: model.creditMultipliers[protocol] ?? null,
+        ...(providerId === 'codex' && model.fastProtocols?.includes(protocol) ? { fastSupported: true } : {}),
         // 目录条目本来就带着它(端点 select 了 `context_window`、`model-access.ts` 已解析),
         // 只是一直没往下递 ⇒ 咕咕的模型成了这张下拉里唯一没有能力说明的一档。
         contextWindow: model.contextWindow,

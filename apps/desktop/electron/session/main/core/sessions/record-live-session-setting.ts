@@ -54,8 +54,10 @@ export async function recordLiveSessionSetting(
   sessionId: string,
   setting: LiveSessionSetting
 ): Promise<void> {
-  if (setting.dimension === 'fast' && setting.value && await sessionPlatformModel(sessionId) !== null) {
-    throw new Error('Fast requires an explicit own-account billing route');
+  if (setting.dimension === 'fast') {
+    const platform = await sessionPlatformModel(sessionId);
+    if (platform) throw new Error('Changing a platform tier requires a new access ticket');
+    if (platform === undefined && setting.value) throw new Error('Fast requires a known session billing route');
   }
   // ⚠️ 读与写在同一个**同步**事务里:权限档与思考档是两个控件,连着改两下时,两次调用若各自
   //    `await` 读再写,后写的那次会拿过期的 config 把前一次刚落的那一维盖掉 —— 正是这个函数要防的回退。

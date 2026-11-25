@@ -19,7 +19,7 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
  * (曾经还有一个「额外后果」枚举,唯一的值是 claude 关一台 = 咕咕接管整份 MCP 清单。那条 strict 机制
  * 10-07 换成了 claude 自己的 `disallowedTools`,只摘被关的那台,这句后果连同枚举一起删了。)
  */
-export type SessionReloadReason = 'model-switch' | 'mcp-toggle' | 'permission-switch' | 'manual';
+export type SessionReloadReason = 'model-switch' | 'mcp-toggle' | 'permission-switch' | 'fast-switch' | 'manual';
 
 /**
  * @@@history-not-replayed 已撤(2026-09-07)—— 记着它为什么错,免得下一个人照原样加回来。
@@ -64,6 +64,7 @@ const ACTION_KEYS = {
   'model-switch': 'chat.reloadConfirmActionSwitch',
   'mcp-toggle': 'chat.reloadConfirmActionApply',
   'permission-switch': 'chat.reloadConfirmActionPermission',
+  'fast-switch': 'chat.reloadConfirmActionApply',
   manual: 'chat.reloadConfirmActionRestart',
 } as const satisfies Record<SessionReloadReason, string>;
 
