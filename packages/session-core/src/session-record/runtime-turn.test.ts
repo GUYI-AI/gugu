@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TranscriptTurn } from '../acp/models/turns/turn';
-import { endedTurnIds, recordHolds, withDrawnTurns } from './runtime-turn';
+import { endedTurnIds, recordHolds, sameTurnAs, withDrawnTurns } from './runtime-turn';
 
 const withRuntimeTurn = (turns: readonly TranscriptTurn[], runtime: TranscriptTurn | null, before: ReadonlySet<string> = new Set()) =>
   withDrawnTurns(turns, runtime ? [{ turn: runtime, before }] : []);
@@ -13,6 +13,31 @@ const turn = (id: string, prompt: string, extra: { ended?: boolean; tool?: strin
     ...(extra.tool ? [{ kind: 'tool' as const, id: `${id}:tool:${extra.tool}`, seq: 2, toolCallId: extra.tool, title: 'Read', status: 'completed' as const }] : []),
   ],
 } as TranscriptTurn);
+
+describe('which record turn is the runtime turn', () => {
+  const anchored = (one: TranscriptTurn, anchor: string): TranscriptTurn =>
+    ({ ...one, items: one.items.map((item, index) => index === 0 ? { ...item, revertAnchor: anchor } : item) } as TranscriptTurn);
+  const at = (one: TranscriptTurn, startedAt: number): TranscriptTurn => ({ ...one, startedAt });
+  it('two turns that both name themselves are one turn only by that name, whatever words they share', () => {
+    const live = anchored(turn('S:turn:2', 'continue', { ended: false }), 'turn-b');
+    expect(sameTurnAs(live)(anchored(turn('rec-1', 'continue'), 'turn-a'))).toBe(false);
+    expect(sameTurnAs(live)(anchored(turn('rec-2', 'worded its own way'), 'turn-b'))).toBe(true);
+  });
+  it('a turn that does not name itself yet is told by what it shares, as before', () => {
+    const live = turn('S:turn:2', 'continue', { ended: false });
+    expect(sameTurnAs(live)(anchored(turn('rec-2', 'continue'), 'turn-b'))).toBe(true);
+  });
+  it('a record turn that started before the runtime turn did is not its copy, read late or not', () => {
+    // Read late: nothing had ended when the runtime turn started, so `before` holds nothing.
+    const live = at(turn('S:turn:2', 'continue', { ended: false }), 20_000);
+    const first = at(turn('rec-1', 'continue'), 5_000);
+    const second = at(turn('rec-2', 'continue', { ended: false }), 20_400);
+    expect(withRuntimeTurn([first, second], live).map((t) => t.id)).toEqual(['rec-1', 'S:turn:2']);
+    // A record whose clock counts whole seconds still gives the turn its copy.
+    expect(withRuntimeTurn([first, at(second, 19_000)], live).map((t) => t.id)).toEqual(['rec-1', 'S:turn:2']);
+    expect(recordHolds([first], { turn: at(turn('S:turn:2', 'continue'), 20_000), before: new Set() }, true)).toBe(false);
+  });
+});
 
 describe('a turn its runtime ended is shown until the record holds it', () => {
   const none = new Set<string>();
