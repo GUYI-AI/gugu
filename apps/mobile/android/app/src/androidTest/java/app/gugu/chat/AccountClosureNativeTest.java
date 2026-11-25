@@ -44,6 +44,7 @@ public class AccountClosureNativeTest {
             @Override public File getNoBackupFilesDir() { return backup; }
             @Override public File getCacheDir() { return cache; }
             @Override public SharedPreferences getSharedPreferences(String name, int mode) { return super.getSharedPreferences(prefix + name, mode); }
+            @Override public boolean deleteSharedPreferences(String name) { return super.deleteSharedPreferences(prefix + name); }
         };
         signIn(a);
     }
@@ -52,11 +53,13 @@ public class AccountClosureNativeTest {
             assertTrue(context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit());
     }
     private SharedPreferences auth() { return context.getSharedPreferences("gugu-auth-storage", Context.MODE_PRIVATE); }
+    private String savedAuth() throws Exception { return new AndroidAuthStore(context).get("sb-main"); }
     private String envelope(String owner) throws Exception {
         return new JSONObject().put("state", "SESSION").put("raw", new JSONObject()
+            .put("access_token", "test-access").put("refresh_token", "test-refresh")
             .put("user", new JSONObject().put("id", owner)).toString()).toString();
     }
-    private void signIn(String owner) throws Exception { assertTrue(auth().edit().putString("sb-main", envelope(owner)).commit()); }
+    private void signIn(String owner) throws Exception { new AndroidAuthStore(context).put("sb-main", envelope(owner)); }
     private AccountClosureReceiptStore.Scope scope(String operation) throws Exception { return new AccountClosureReceiptStore.Scope(a, operation); }
     private void ready(AndroidAccountClosure closure) throws Exception {
         closure.prepareSignOut(a).get(5, TimeUnit.SECONDS);
@@ -99,19 +102,19 @@ public class AccountClosureNativeTest {
         assertEquals("B ledger", read(otherLedger)); assertEquals("unattributed export", read(shared));
         assertEquals(b, grants.getString("owner", null)); assertTrue(grants.getBoolean("enabled", false));
         assertEquals(installation, GuguPhoneInstallation.identity(context).key);
-        assertEquals("RETIRED_EMPTY", new JSONObject(auth().getString("sb-main", "")).getString("state"));
+        assertEquals("RETIRED_EMPTY", new JSONObject(savedAuth()).getString("state"));
         assertEquals("opaque-A", closure.receipts.get(scope)); closure.receipts.remove(scope); assertNull(closure.receipts.get(scope));
         assertEquals("complete", closure.erase(scope).status);
     }
     @Test public void switchingToBRejectsEveryOperationUsingAsScope() throws Exception {
         AndroidAccountClosure closure = new AndroidAccountClosure(context); ready(closure);
         AccountClosureReceiptStore.Scope scope = scope("captured-A"); closure.receipts.put(scope, "opaque-A"); signIn(b);
-        String before = auth().getString("sb-main", null);
+        String before = savedAuth();
         reject("wrong_local_owner", () -> closure.receipts.get(scope));
         reject("wrong_local_owner", () -> closure.receipts.remove(scope));
         reject("wrong_local_owner", () -> closure.erase(scope));
         reject("wrong_local_owner", () -> closure.prepareSignOut(a));
-        assertEquals(before, auth().getString("sb-main", null));
+        assertEquals(before, savedAuth());
     }
     @Test public void unpreparedReceiptIsCapturedButCannotEraseAnyData() throws Exception {
         AndroidAccountClosure closure = new AndroidAccountClosure(context); AccountClosureReceiptStore.Scope scope = scope("unprepared");

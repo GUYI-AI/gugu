@@ -18,10 +18,15 @@ import { useTranslation } from 'react-i18next'
 import { AlertTriangle } from '@/lib/icons'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { useSessionWriteBlocked } from '../hooks/useSessionWriteBlocked'
+import { useSyncExternalStore } from 'react'
+import { sessionCoordinator } from '../lib/sessionCoordinator'
+import { authStorageRecoveryAction } from '../lib/authStorageFailure'
 
 export function SessionExpiredNotice() {
   const { t } = useTranslation('main')
   const blocked = useSessionWriteBlocked()
+  const session = useSyncExternalStore(sessionCoordinator.subscribe, sessionCoordinator.getSnapshot, sessionCoordinator.getSnapshot)
+  const storageAction = authStorageRecoveryAction(session.error)
 
   if (!blocked) return null
 
@@ -44,8 +49,10 @@ export function SessionExpiredNotice() {
     >
       <AlertTriangle size={16} aria-hidden="true" style={{ color: 'var(--text-error)', flexShrink: 0 }} />
       <span style={{ minWidth: 0 }}>
-        <strong style={{ fontWeight: 600 }}>{t('shell.sessionExpired.title')}</strong>
-        <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>{t('shell.sessionExpired.description')}</span>
+        {storageAction ?? <>
+          <strong style={{ fontWeight: 600 }}>{t('shell.sessionExpired.title')}</strong>
+          <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>{t('shell.sessionExpired.description')}</span>
+        </>}
       </span>
     </div>
   )

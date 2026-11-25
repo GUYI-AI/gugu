@@ -126,7 +126,7 @@ final class AndroidAccountClosureV2 {
         StoredSession(String owner, String sid, String bearer) { this.owner = owner; this.sid = sid; this.bearer = bearer; }
     }
     static StoredSession storedSession(Context context) throws Exception {
-        String raw = context.getSharedPreferences("gugu-auth-storage", Context.MODE_PRIVATE).getString("sb-main", null);
+        String raw = new AndroidAuthStore(context).get("sb-main");
         String owner = AccountClosureAuthSlot.ownerOf(raw);
         if (owner == null) return null;
         JSONObject session = new JSONObject(new JSONObject(raw).getString("raw"));

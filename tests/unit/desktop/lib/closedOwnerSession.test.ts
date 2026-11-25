@@ -29,6 +29,18 @@ function harness(overrides: Partial<SessionCoordinatorDeps> = {}) {
 }
 
 describe('trusted closure finalization preserves the active owner', () => {
+  it('leaves encrypted-storage failure unresolved without refreshing, publishing or signing out', async () => {
+    const error = Object.assign(new Error('safe storage failure'), { code: 'auth_storage_recovery_required' })
+    const h = harness({ loadPersistedSession: vi.fn(async () => { throw error }) })
+    stops.push(h.coordinator.start())
+    await vi.waitFor(() => expect(h.coordinator.getSnapshot()).toMatchObject({ status: 'degraded', error }))
+    expect(h.deps.getSession).not.toHaveBeenCalled()
+    expect(h.deps.refreshSession).not.toHaveBeenCalled()
+    expect(h.deps.signOut).not.toHaveBeenCalled()
+    expect(h.deps.clearPersistedSession).not.toHaveBeenCalled()
+    expect(h.deps.publishSession).not.toHaveBeenCalled()
+  })
+
   it('finalizes the closed owner locally without another live-auth logout or mirror clear', async () => {
     const h = harness(); stops.push(h.coordinator.start()); await h.login(session())
     vi.mocked(h.deps.clearMirror).mockClear(); vi.mocked(h.deps.clearPersistedSession).mockClear()

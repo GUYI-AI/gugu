@@ -38,6 +38,7 @@ public class AccountClosureV2NativeTest {
             @Override public File getNoBackupFilesDir() { return backup; }
             @Override public File getCacheDir() { return cache; }
             @Override public SharedPreferences getSharedPreferences(String name, int mode) { return super.getSharedPreferences(prefix + name, mode); }
+            @Override public boolean deleteSharedPreferences(String name) { return super.deleteSharedPreferences(prefix + name); }
         };
         signIn(a); GuguPhoneInstallation.identity(context);
     }
@@ -49,13 +50,13 @@ public class AccountClosureV2NativeTest {
         String claims = Base64.encodeToString(new JSONObject().put("sub", owner).put("session_id", sid).toString().getBytes(StandardCharsets.UTF_8),
             Base64.URL_SAFE | Base64.NO_WRAP | Base64.NO_PADDING);
         return new JSONObject().put("state", "SESSION").put("raw", new JSONObject().put("access_token", "local." + claims + ".local")
-            .put("user", new JSONObject().put("id", owner)).toString()).toString();
+            .put("refresh_token", "test-refresh").put("user", new JSONObject().put("id", owner)).toString()).toString();
     }
     private void signIn(String owner) throws Exception {
-        assertTrue(context.getSharedPreferences("gugu-auth-storage", 0).edit().putString("sb-main", envelope(owner)).commit());
+        new AndroidAuthStore(context).put("sb-main", envelope(owner));
     }
     private void retire() throws Exception {
-        assertTrue(context.getSharedPreferences("gugu-auth-storage", 0).edit().putString("sb-main", "{\"state\":\"RETIRED_EMPTY\"}").commit());
+        new AndroidAuthStore(context).put("sb-main", "{\"state\":\"RETIRED_EMPTY\"}");
     }
     private AccountClosureReceiptStore.Scope scope() throws Exception { return new AccountClosureReceiptStore.Scope(a, UUID.randomUUID().toString()); }
     private static File file(File parent, String path, String content) throws Exception {
