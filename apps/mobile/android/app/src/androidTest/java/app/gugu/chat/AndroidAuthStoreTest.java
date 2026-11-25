@@ -15,7 +15,6 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.UUID;
 import static org.junit.Assert.*;
 
@@ -64,7 +63,7 @@ public class AndroidAuthStoreTest {
         assertEquals(original, new AndroidAuthStore(context).get("sb-main"));
         assertEquals(original, new AndroidAuthStore(context).get("sb-main"));
         assertEquals("PRIVATE_NATIVE_PKCE_CANARY&<中文", new AndroidAuthStore(context).get("sb-main-code-verifier"));
-        String bytes = new String(Files.readAllBytes(encrypted().toPath()), StandardCharsets.ISO_8859_1);
+        String bytes = new String(NativeTestFiles.read(encrypted()), StandardCharsets.ISO_8859_1);
         assertFalse(bytes.contains("PRIVATE_NATIVE_"));
         assertEquals(0600, Os.stat(encrypted().getPath()).st_mode & 0777);
         assertEquals(0700, Os.stat(encrypted().getParent()).st_mode & 0777);
@@ -72,22 +71,22 @@ public class AndroidAuthStoreTest {
     }
     @Test public void corruptCiphertextPreservesEvidenceAndDoesNotImportRestoredPlaintext() throws Exception {
         AndroidAuthStore store = new AndroidAuthStore(context); store.put("sb-main", envelope());
-        byte[] bad = Files.readAllBytes(encrypted().toPath()); bad[bad.length - 1] ^= 1;
-        Files.write(encrypted().toPath(), bad);
+        byte[] bad = NativeTestFiles.read(encrypted()); bad[bad.length - 1] ^= 1;
+        NativeTestFiles.write(encrypted(), bad);
         String stale = envelope();
         assertTrue(context.getSharedPreferences(LEGACY, 0).edit().putString("sb-main", stale).commit());
         try { new AndroidAuthStore(context).get("sb-main"); fail("Corruption became absence"); }
         catch (AuthStorageFailure failure) { assertTrue(failure.recovery); assertNull(failure.getCause()); }
-        assertArrayEquals(bad, Files.readAllBytes(encrypted().toPath()));
+        assertArrayEquals(bad, NativeTestFiles.read(encrypted()));
         assertEquals(stale, context.getSharedPreferences(LEGACY, 0).getString("sb-main", null));
     }
     @Test public void malformedLegacyXmlIsNotConvertedIntoAnEmptySignedOutRecord() throws Exception {
         assertTrue(legacyXml().getParentFile().isDirectory() || legacyXml().getParentFile().mkdirs());
         byte[] bad = "<map><string name=\"sb-main\">PRIVATE_BROKEN_CANARY".getBytes(StandardCharsets.UTF_8);
-        Files.write(legacyXml().toPath(), bad);
+        NativeTestFiles.write(legacyXml(), bad);
         try { new AndroidAuthStore(context).get("sb-main"); fail("Malformed XML became a successful empty map"); }
         catch (AuthStorageFailure failure) { assertEquals("legacy_xml_invalid", failure.reason); }
-        assertArrayEquals(bad, Files.readAllBytes(legacyXml().toPath()));
+        assertArrayEquals(bad, NativeTestFiles.read(legacyXml()));
         assertFalse(encrypted().exists());
     }
     @Test public void missingCommittedRecordCannotResurrectLegacyAndRetirementWinsAfterReopen() throws Exception {
@@ -103,4 +102,46 @@ public class AndroidAuthStoreTest {
         catch (AuthStorageFailure failure) { assertEquals("record_missing", failure.reason); }
         assertEquals(stale, context.getSharedPreferences(LEGACY, 0).getString("sb-main", null));
     }
+    @Test public void explicitReloginReplacesOnlyBrokenAuthAndRejectsStaleRecoveryTicket() throws Exception {
+        AndroidAuthStore store = new AndroidAuthStore(context); store.put("sb-main", envelope());
+        byte[] bad = NativeTestFiles.read(encrypted()); bad[bad.length - 1] ^= 1; NativeTestFiles.write(encrypted(), bad);
+        AndroidAuthRecovery.State observed = AndroidAuthRecovery.inspect(context);
+        assertTrue(observed.canReset);
+        File unrelated = new File(context.getNoBackupFilesDir(), "keep-host-evidence");
+        NativeTestFiles.write(unrelated, "KEEP".getBytes(StandardCharsets.UTF_8));
+        AndroidAuthRecovery.reset(context, observed.revision);
+        assertEquals("{\"state\":\"RETIRED_EMPTY\"}", new AndroidAuthStore(context).get("sb-main"));
+        assertEquals("KEEP", new String(NativeTestFiles.read(unrelated), StandardCharsets.UTF_8));
+        assertFalse(new File(encrypted().getParentFile(), "relogin-reset.v1").exists());
+        String next = envelope(); new AndroidAuthStore(context).put("sb-main", next);
+        try { AndroidAuthRecovery.reset(context, observed.revision); fail("Stale UI discarded new login"); }
+        catch (AuthStorageFailure failure) { assertFalse(failure.recovery); }
+        assertEquals(next, new AndroidAuthStore(context).get("sb-main"));
+    }
+    @Test public void missingKeyNeedsConsentAndClosureEvidenceBlocksReset() throws Exception {
+        new AndroidAuthStore(context).put("sb-main", envelope());
+        java.security.KeyStore keys = java.security.KeyStore.getInstance("AndroidKeyStore"); keys.load(null);
+        keys.deleteEntry("gugu-auth-storage-v1");
+        byte[] before = NativeTestFiles.read(encrypted());
+        AndroidAuthRecovery.State observed = AndroidAuthRecovery.inspect(context);
+        assertTrue(observed.canReset); assertArrayEquals(before, NativeTestFiles.read(encrypted()));
+        assertFalse(keys.containsAlias("gugu-auth-storage-v1"));
+        File closure = new File(context.getNoBackupFilesDir(), "account-closure"); assertTrue(closure.mkdir());
+        File receipt = new File(closure, "retained.enc"); NativeTestFiles.write(receipt, new byte[] {1, 2, 3});
+        assertFalse(AndroidAuthRecovery.inspect(context).canReset);
+        try { AndroidAuthRecovery.reset(context, observed.revision); fail("Unfinished closure was erased"); }
+        catch (AuthStorageFailure failure) { assertEquals("closure_recovery_pending", failure.reason); }
+        assertArrayEquals(before, NativeTestFiles.read(encrypted())); assertArrayEquals(new byte[] {1, 2, 3}, NativeTestFiles.read(receipt));
+        assertTrue(receipt.delete()); assertTrue(closure.delete());
+        AndroidAuthRecovery.reset(context, observed.revision);
+        assertEquals("{\"state\":\"RETIRED_EMPTY\"}", new AndroidAuthStore(context).get("sb-main"));
+    }
+    @Test public void interruptedUserResetResumesBeforeAnyLegacyImport() throws Exception {
+        assertTrue(context.getSharedPreferences(LEGACY, 0).edit().putString("sb-main", envelope()).commit());
+        File root = new File(context.getNoBackupFilesDir(), "gugu-auth"); ProtectedFile.directory(root);
+        ProtectedFile.write(new File(root, "relogin-reset.v1"), "gugu-auth-user-relogin-v1\n".getBytes(StandardCharsets.US_ASCII));
+        assertEquals("{\"state\":\"RETIRED_EMPTY\"}", new AndroidAuthStore(context).get("sb-main"));
+        assertFalse(legacyXml().exists()); assertFalse(new File(root, "relogin-reset.v1").exists());
+    }
+
 }

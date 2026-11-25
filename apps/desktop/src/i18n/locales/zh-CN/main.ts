@@ -993,8 +993,11 @@ export default {
     "newTask": "新建任务",
     "usage": "用量",
     "authStorage": {
-      "contactSupport": "请联系支持恢复登录",
-      "restart": "请重启应用后重试"
+      "unreadable": "登录信息无法读取，需要重新登录。",
+      "unavailable": "暂时无法读取登录信息，请重试。",
+      "closurePending": "账号注销记录尚未确认完成，暂时不能清除登录信息。请重试恢复注销进度。",
+      "relogin": "重新登录",
+      "retry": "重试"
     },
     "sessionExpired": {
       "description": "正在自动重试。恢复连接前，无法发送消息或新建 agent。",

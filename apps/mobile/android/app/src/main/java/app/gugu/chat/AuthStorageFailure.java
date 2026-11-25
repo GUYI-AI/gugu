@@ -5,7 +5,7 @@ final class AuthStorageFailure extends Exception {
     final String reason;
     final boolean recovery;
     AuthStorageFailure(String reason, boolean recovery) {
-        super(recovery ? "请联系支持恢复登录" : "请重试");
+        super(recovery ? "登录信息无法读取，需要重新登录" : "请重试");
         this.reason = reason; this.recovery = recovery;
     }
 }

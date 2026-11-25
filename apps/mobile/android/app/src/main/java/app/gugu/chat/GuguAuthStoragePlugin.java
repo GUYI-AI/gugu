@@ -12,12 +12,27 @@ public class GuguAuthStoragePlugin extends Plugin {
     private static void reject(PluginCall call, Exception error) {
         if (error instanceof AuthStorageFailure) {
             AuthStorageFailure failure = (AuthStorageFailure) error;
-            call.reject(failure.getMessage(), failure.recovery ? "auth_storage_recovery_required" : "auth_storage_unavailable");
+            call.reject(failure.getMessage(), "closure_recovery_pending".equals(failure.reason) ? "auth_storage_closure_pending"
+                : failure.recovery ? "auth_storage_recovery_required" : "auth_storage_unavailable");
         } else {
             android.util.Log.e("GuguAuthStorage", "auth_storage_failure operation=bridge reason=request_failed");
             call.reject("请重试", "auth_storage_unavailable");
         }
     }
+    @PluginMethod
+    public void recoveryState(PluginCall call) {
+        try {
+            AndroidAuthRecovery.State state = AndroidAuthRecovery.inspect(getContext());
+            JSObject result = new JSObject(); result.put("canReset", state.canReset); result.put("revision", state.revision);
+            call.resolve(result);
+        } catch (Exception error) { reject(call, error); }
+    }
+    @PluginMethod
+    public void resetUnreadable(PluginCall call) {
+        try { AndroidAuthRecovery.reset(getContext(), call.getString("revision")); call.resolve(); }
+        catch (Exception error) { reject(call, error); }
+    }
+
     @PluginMethod
     public void get(PluginCall call) {
         try {

@@ -1,6 +1,7 @@
 package app.gugu.chat;
 
 import android.content.Context;
+import android.system.Os;
 import android.content.ContextWrapper;
 import android.content.SharedPreferences;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -14,7 +15,6 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -68,9 +68,9 @@ public class AccountClosureNativeTest {
     }
     private static File write(File base, String relative, String value) throws Exception {
         File file = new File(base, relative); assertTrue(file.getParentFile().isDirectory() || file.getParentFile().mkdirs());
-        Files.write(file.toPath(), value.getBytes(StandardCharsets.UTF_8)); return file;
+        NativeTestFiles.write(file, value.getBytes(StandardCharsets.UTF_8)); return file;
     }
-    private static String read(File file) throws Exception { return new String(Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8); }
+    private static String read(File file) throws Exception { return new String(NativeTestFiles.read(file), StandardCharsets.UTF_8); }
     private Set<String> protectedNames() {
         String[] names = new File(context.getNoBackupFilesDir(), "account-closure").list();
         Set<String> result = new HashSet<>(); if (names != null) java.util.Collections.addAll(result, names); return result;
@@ -150,15 +150,15 @@ public class AccountClosureNativeTest {
         AccountClosureReceiptStore.Scope scope = scope("corrupt"); closure.receipts.put(scope, "opaque-corrupt");
         Set<String> after = protectedNames(); after.removeAll(before); assertEquals(1, after.size());
         File file = new File(context.getNoBackupFilesDir(), "account-closure/" + after.iterator().next());
-        byte[] bad = Files.readAllBytes(file.toPath()); bad[bad.length - 1] ^= 1; Files.write(file.toPath(), bad);
+        byte[] bad = NativeTestFiles.read(file); bad[bad.length - 1] ^= 1; NativeTestFiles.write(file, bad);
         reject("closure_storage_unavailable", () -> new AndroidAccountClosure(context).receipts.get(scope));
-        assertArrayEquals(bad, Files.readAllBytes(file.toPath()));
+        assertArrayEquals(bad, NativeTestFiles.read(file));
     }
 
     @Test public void migrationRetiresTheCommittedRegistrationInsteadOfTheInstallationKey() throws Exception {
         String installation = GuguPhoneInstallation.identity(context).key, registration = UUID.randomUUID().toString();
         PhoneRegistrationIdentity.open(context.getNoBackupFilesDir(), installation, () -> registration,
-            (temporary, target) -> Files.move(temporary.toPath(), target.toPath(), java.nio.file.StandardCopyOption.ATOMIC_MOVE));
+            (temporary, target) -> NativeTestFiles.move(temporary, target));
         AndroidAccountClosure closure = new AndroidAccountClosure(context);
         String committed = "phone-" + registration + "-" + a;
         assertNotEquals(installation, registration); assertEquals(committed, closure.deviceId(a));

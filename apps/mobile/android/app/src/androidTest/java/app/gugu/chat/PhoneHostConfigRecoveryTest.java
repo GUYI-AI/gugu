@@ -17,7 +17,6 @@ import org.junit.runner.RunWith;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.UUID;
 import static org.junit.Assert.*;
 
@@ -54,7 +53,7 @@ public class PhoneHostConfigRecoveryTest {
     private File snapshot() { return new File(context.getFilesDir(), "phone-agent/" + owner + "/host-state.json"); }
     private static void write(File file, byte[] bytes) throws IOException {
         if (!file.getParentFile().isDirectory()) assertTrue(file.getParentFile().mkdirs());
-        Files.write(file.toPath(), bytes);
+        NativeTestFiles.write(file, bytes);
     }
     private JSObject config(String session, int revision, long expiresAt) throws Exception {
         String claims = new JSONObject().put("session_id", session).put("revision", revision).toString();
@@ -83,9 +82,9 @@ public class PhoneHostConfigRecoveryTest {
         assertNull(GuguAgentHostStore.read(context, owner));
         GuguAgentHostStore.configure(context, input);
         assertEquals(input.getString("refreshToken"), GuguAgentHostStore.read(context, owner).getString("refreshToken"));
-        byte[] saved = Files.readAllBytes(credentials().toPath());
+        byte[] saved = NativeTestFiles.read(credentials());
         GuguAgentHostStore.read(context, owner);
-        assertArrayEquals(saved, Files.readAllBytes(credentials().toPath()));
+        assertArrayEquals(saved, NativeTestFiles.read(credentials()));
         assertArrayEquals(new String[] { "config.enc" }, credentials().getParentFile().list());
     }
 
@@ -124,7 +123,7 @@ public class PhoneHostConfigRecoveryTest {
             bad[0] = length == 29 ? (byte) 11 : (byte) 12;
             write(credentials(), bad);
             assertUnreadable();
-            assertArrayEquals(bad, Files.readAllBytes(credentials().toPath()));
+            assertArrayEquals(bad, NativeTestFiles.read(credentials()));
         }
     }
 
@@ -132,13 +131,13 @@ public class PhoneHostConfigRecoveryTest {
         JSObject input = config(UUID.randomUUID().toString(), 1, 100);
         commitSession(input, owner);
         GuguAgentHostStore.configure(context, input);
-        byte[] bad = Files.readAllBytes(credentials().toPath());
+        byte[] bad = NativeTestFiles.read(credentials());
         bad[bad.length - 1] ^= 1;
         write(credentials(), bad);
         assertUnreadable();
         try { GuguAgentHostStore.configure(context, input); fail("Corrupt credentials were silently replaced"); }
         catch (SecurityException expected) { }
-        assertArrayEquals(bad, Files.readAllBytes(credentials().toPath()));
+        assertArrayEquals(bad, NativeTestFiles.read(credentials()));
     }
 
     @Test public void fileIoFailureIsNotTreatedAsMissingCredentials() throws Exception {

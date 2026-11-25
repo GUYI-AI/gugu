@@ -170,7 +170,7 @@ export default function App() {
   }
 
   const storageAction = authStorageRecoveryAction(session.error)
-  if (!user && session.status === 'degraded' && storageAction) {
+  if (session.status === 'degraded' && storageAction) {
     return <ThemeProvider><AuthStorageRecovery action={storageAction} /></ThemeProvider>
   }
 

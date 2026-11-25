@@ -1013,8 +1013,11 @@ export default {
     "newTask": "New task",
     "usage": "Usage",
     "authStorage": {
-      "contactSupport": "Contact support to recover your login",
-      "restart": "Restart the app and try again"
+      "unreadable": "Your login information cannot be read. Please sign in again.",
+      "unavailable": "Your login information is temporarily unavailable. Please try again.",
+      "closurePending": "Account deletion records are still retained. Login information cannot be cleared until recovery is complete. Please retry.",
+      "relogin": "Sign in again",
+      "retry": "Retry"
     },
     "sessionExpired": {
       "description": "Retrying automatically. Messages cannot be sent and agents cannot be created until the connection is restored.",

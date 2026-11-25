@@ -126,7 +126,7 @@ public class AuthStorageMigrationTest {
     }
     @Test public void failureMessagesOfferOneActionAndContainNoInternalReasonOrCanary() {
         assertEquals("请重试", new AuthStorageFailure("legacy_clear_failed", false).getMessage());
-        assertEquals("请联系支持恢复登录", new AuthStorageFailure("key_missing", true).getMessage());
+        assertEquals("登录信息无法读取，需要重新登录", new AuthStorageFailure("key_missing", true).getMessage());
         assertNull(new AuthStorageFailure("record_unreadable", true).getCause());
     }
 }

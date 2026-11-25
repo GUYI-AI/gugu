@@ -15,7 +15,6 @@ import org.junit.rules.TemporaryFolder;
 import org.junit.runner.RunWith;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.UUID;
 import static org.junit.Assert.*;
 
@@ -61,7 +60,7 @@ public class AccountClosureV2NativeTest {
     private AccountClosureReceiptStore.Scope scope() throws Exception { return new AccountClosureReceiptStore.Scope(a, UUID.randomUUID().toString()); }
     private static File file(File parent, String path, String content) throws Exception {
         File file = new File(parent, path); assertTrue(file.getParentFile().isDirectory() || file.getParentFile().mkdirs());
-        Files.write(file.toPath(), content.getBytes(StandardCharsets.UTF_8)); return file;
+        NativeTestFiles.write(file, content.getBytes(StandardCharsets.UTF_8)); return file;
     }
     @Test public void protectedIndexAndOriginalOperationSurviveAuthRetirementWithoutReceiptInSnapshot() throws Exception {
         AndroidAccountClosureV2 nativeV2 = new AndroidAccountClosureV2(context, true);
@@ -88,14 +87,14 @@ public class AccountClosureV2NativeTest {
         AccountClosureOperationV2.Metadata captured = store.beginOrRestoreOperation(scope);
         File own = file(context.getFilesDir(), "phone-agent/" + a + "/state", "A");
         File other = file(context.getFilesDir(), "phone-agent/" + b + "/state", "B");
-        File installation = new File(context.getNoBackupFilesDir(), "phone-installation/registration"); byte[] marker = Files.readAllBytes(installation.toPath());
+        File installation = new File(context.getNoBackupFilesDir(), "phone-installation/registration"); byte[] marker = NativeTestFiles.read(installation);
         AccountClosureV2Receiver.Reply deleted = new AccountClosureV2Receiver.Reply();
         deleted.httpStatus = 200; deleted.operationId = UUID.randomUUID().toString(); deleted.state = "deleted"; deleted.revision = 1;
         captured = AccountClosureV2Receiver.accept(store, scope, captured, "result", captured.backendIdentity, deleted);
         AccountClosureOperationV2.Metadata complete = new AndroidAccountClosureV2Facade(context).cleanDeleted(captured);
         assertEquals(4, complete.protocol.cleanupStep); assertFalse(own.exists());
-        assertEquals("B", new String(Files.readAllBytes(other.toPath()), StandardCharsets.UTF_8));
-        assertArrayEquals(marker, Files.readAllBytes(installation.toPath()));
+        assertEquals("B", new String(NativeTestFiles.read(other), StandardCharsets.UTF_8));
+        assertArrayEquals(marker, NativeTestFiles.read(installation));
         assertNull(AndroidAccountClosureV2.storedSession(context));
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
             refuses(() -> AccountClosurePreparation.requireAuthWrite(context, envelope(a)));

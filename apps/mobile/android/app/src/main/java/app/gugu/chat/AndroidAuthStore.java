@@ -20,6 +20,7 @@ final class AndroidAuthStore {
     private <T> T perform(String operation, Action<T> action) throws Exception {
         synchronized (GuguAuthStoragePlugin.STORAGE_LOCK) {
             try {
+                AndroidAuthRecovery.resume(context);
                 return action.run(new AuthStorageMigration(GuguAuthStoragePlugin.STORAGE_LOCK,
                     new AndroidAuthRecords(context), legacy(), AndroidAuthStore::ownerOf));
             } catch (Exception error) {
