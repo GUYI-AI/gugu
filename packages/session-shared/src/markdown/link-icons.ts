@@ -7,7 +7,8 @@
  * (https://github.com/pingdotgg/t3code, MIT, Copyright (c) 2026 T3 Tools Inc.; full notice in
  * packages/session-chat-ui/src/core/html-render/page.ts). The icon is the site's own `/favicon.ico`; a host that is not a
  * public name (an IP, localhost, a private suffix) gets the globe without a request. Changed: the icon stays on the line
- * of the link's first letters; one GitHub icon for both themes. Dropped: source-control brand icons, T3's IP-range
+ * of the link's first letters; GitHub is its mark drawn in the link's colour (markdown.css), no request, so it reads on
+ * a light or dark bubble alike. Dropped: source-control brand icons, T3's IP-range
  * classification (an IP literal simply gets the globe).
  */
 
@@ -18,16 +19,19 @@ export const LINK_ICON_CLASS = 'gg-md-link-icon';
 
 const PRIVATE_SUFFIXES = ['.alt', '.corp', '.example', '.home', '.internal', '.intranet', '.invalid', '.lan', '.local', '.localdomain', '.localhost', '.onion', '.private', '.test', '.home.arpa', '.ts.net'];
 
-const THEMED_FAVICON_BY_HOSTNAME: Readonly<Record<string, string>> = {
-  'github.com': 'https://github.githubassets.com/favicons/favicon.svg',
-};
+/** Hosts whose mark markdown.css draws in the link's colour (`data-mark`), in place of a fetched icon. */
+const MARK_BY_HOSTNAME: Readonly<Record<string, string>> = { 'github.com': 'github' };
+
+function hostName(host: string): string {
+  return host.toLowerCase().replace(/\.+$/, '');
+}
 
 /** The site icon to ask for, or null when the host is not a public name (no request leaves for it). */
 export function faviconUrlForHost(host: string): string | null {
-  const name = host.toLowerCase().replace(/\.+$/, '');
+  const name = hostName(host);
   if (!name.includes('.') || /^[\d.]+$/.test(name) || name.includes(':') || name.startsWith('[')) return null;
   if (PRIVATE_SUFFIXES.some((suffix) => name.endsWith(suffix))) return null;
-  return THEMED_FAVICON_BY_HOSTNAME[name] ?? `https://${name}/favicon.ico`;
+  return `https://${name}/favicon.ico`;
 }
 
 function webHost(href: unknown): string | null {
@@ -47,6 +51,8 @@ function leadingTextLength(text: string): number {
 }
 
 function icon(host: string): Element {
+  const mark = MARK_BY_HOSTNAME[hostName(host)];
+  if (mark) return { type: 'element', tagName: 'span', properties: { className: [LINK_ICON_CLASS], ariaHidden: 'true', dataMark: mark }, children: [] };
   const src = faviconUrlForHost(host);
   return {
     type: 'element',
