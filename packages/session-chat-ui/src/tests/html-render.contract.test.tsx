@@ -83,9 +83,10 @@ describe('html-render page', () => {
 });
 
 describe('html-render link requests', () => {
-  it("opens a link only on the reader's click or key in the frame, never on the page's own message", async () => {
-    // The page forges the host's link message when it loads and whenever the test asks it to; only a real click or
-    // Enter on a link inside the frame may open anything.
+  it("ignores the page's own link message without a click or key in the frame, and opens a clicked or entered link", async () => {
+    // The page forges the host's link message when it loads and whenever the test asks it to. The gate covers exactly
+    // these cases: no activation, or activation from a click elsewhere. Right after a click or key inside the frame the
+    // page's script could still post one (activation and focus both hold); that limit is not tested as closed.
     const source = `<a href="https://example.org/clicked">go</a> <a href="https://example.org/keyed">two</a><script>
 const forge = () => parent.postMessage({ jsonrpc: '2.0', method: 'ui/open-link', params: { url: 'https://example.org/forged' } }, '*');
 window.addEventListener('load', forge);
