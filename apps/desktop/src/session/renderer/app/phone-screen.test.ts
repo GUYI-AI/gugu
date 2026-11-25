@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { publishChatSummaries } from '@/lib/chatSummariesBridge';
 import { clearChatRemovalFacts, publishChatRemovalFacts, publishChatRemoved } from '@/lib/chatRemovalBridge';
-import { installPhoneScreen, showChatOnPhone } from './screen-layout-actions';
+import { installPhoneScreen, phoneChatUnder, showChatOnPhone } from './screen-layout-actions';
 import { screenLayout } from './screen-layout';
 import { createShellTabStore } from '@/lib/shellTab';
 
@@ -102,7 +102,7 @@ describe('手机返回栈:进话题 → 返回到列表 → 再进群,停在话�
   const draw = (chatId: string) => { active = chatId; showChatOnPhone(chatId); for (const listener of listeners) listener(); };
   const tapListRow = (chatId: string) => { draw(showChatOnPhone(chatId, true)); shell.setChatFrom('chats'); };
   /** enterChat + setActiveChatId (openChatTarget: the topic bar, links, notifications). */
-  const enter = (chatId: string) => { shell.openChat(shell.root(), active !== chatId ? active : null); draw(chatId); };
+  const enter = (chatId: string) => { shell.openChat(shell.root(), phoneChatUnder(active, chatId)); draw(chatId); };
   /** leavePhoneChat: true = still on the chat page. */
   const back = () => {
     const under = shell.popChat();
@@ -123,6 +123,34 @@ describe('手机返回栈:进话题 → 返回到列表 → 再进群,停在话�
     uninstall();
     publishChatSummaries([]);
     screenLayout.replaceWith(null);
+  });
+
+  it('同一个群里切话题换掉这一屏、不压返回栈:在话题里按一次返回就回列表(owner 11-25 选 B)', () => {
+    tapListRow('g1');
+    enter('t1');
+    enter('t2');
+    expect(back(), 'one back from the topic').toBe(false);
+    expect(shell.chatShown()).toBe(false);
+  });
+
+  it('话题条选「群聊」回主聊:按一次返回也直接回列表;再进群是主聊', () => {
+    tapListRow('g1');
+    enter('t1');
+    enter('g1');
+    expect(active).toBe('g1');
+    expect(back()).toBe(false);
+    tapListRow('g1');
+    expect(active).toBe('g1');
+  });
+
+  it('从别处(通知)进话题照旧压栈:返回回到原来那条;回列表再进群,停在那个话题上', () => {
+    tapListRow('dm');
+    enter('t1');
+    expect(back(), 'back returns to where it came from').toBe(true);
+    expect(active).toBe('dm');
+    expect(back()).toBe(false);
+    tapListRow('g1');
+    expect(active).toBe('t1');
   });
 
   it('群 → 话题条进话题 → 返回(弹栈)到列表 → 再点这个群:停在话题上', () => {

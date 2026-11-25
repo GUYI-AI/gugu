@@ -232,15 +232,31 @@ function topicRoomOf(chatId: string): string | null {
  */
 export function showChatOnPhone(chatId: string, fromRow = false): string {
   const content = { kind: 'chat', chatId } as const;
-  if (!fromRow || screenLayout.currentEntry !== contentKey(content)) {
-    const room = topicRoomOf(chatId);
-    screenLayout.openUnder(room ? contentKey({ kind: 'chat', chatId: room }) : null, () => screenLayout.show(content));
+  const key = contentKey(content);
+  if (!fromRow || screenLayout.currentEntry !== key) {
+    const entry = phoneEntryOf(chatId);
+    screenLayout.openUnder(entry === key ? null : entry, () => screenLayout.show(content));
   }
   const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
   const shown = focused?.kind === 'chat' ? focused.chatId : null;
   if (fromRow) return shown ?? chatId;
   if (shown !== chatId) screenLayout.showRoot(content);
   return chatId;
+}
+
+/** 手机上一条对话算在哪一行入口下:话题 = 它的群,别的 = 它自己。这屏(showChatOnPhone)和返回栈(phoneChatUnder)都按它判同一个入口。 */
+export function phoneEntryOf(chatId: string): string {
+  return contentKey({ kind: 'chat', chatId: topicRoomOf(chatId) ?? chatId });
+}
+
+/**
+ * 手机会话页上画着 `onPage` 时进 `chatId`,返回要先回到谁(lib/shellTab.ts @@@phone-chat-trail):
+ * 同一个入口下(群和它的话题之间,话题条)= 换掉这一屏,❌ 压返回栈,同桌面 show 的 `under === entry`(owner 11-25 选 B);
+ * 别处(资料卡、群卡片、通知)跳进来的 = 压在下面,返回先回到它。
+ */
+export function phoneChatUnder(onPage: string | null, chatId: string): string | null {
+  if (!onPage || onPage === chatId) return null;
+  return phoneEntryOf(onPage) === phoneEntryOf(chatId) ? null : onPage;
 }
 
 /**
