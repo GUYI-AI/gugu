@@ -3,10 +3,13 @@ import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { HtmlPreviewSurface } from '@/components/preview/HtmlPreviewSurface';
-import { PREVIEW_LINK_MESSAGE_TYPE, PREVIEW_RESTORED_MESSAGE_TYPE, previewDocumentHtml } from '@shared/preview/preview-link-script';
+import { PREVIEW_LINK_MESSAGE_TYPE, previewDocumentHtml } from '@shared/preview/preview-link-script';
 
 // A preview shows HTML anyone in the chat wrote: its own script can post the link message the injected script posts.
-it('opens a preview link only from a person\'s click in the page, not from the page\'s own script', async () => {
+it('opens a preview link only from a person\'s click or key in the page, not from the page\'s own script', async () => {
+  const elsewhere = document.createElement('button');
+  elsewhere.textContent = 'elsewhere';
+  document.body.append(elsewhere);
   const container = document.createElement('div');
   container.style.cssText = 'display:flex;height:400px;position:relative';
   document.body.append(container);
@@ -19,18 +22,34 @@ it('opens a preview link only from a person\'s click in the page, not from the p
   const posted: string[] = [];
   const onMessage = (event: MessageEvent) => {
     if (event.data?.type === PREVIEW_LINK_MESSAGE_TYPE) posted.push(event.data.href);
-    if (event.data?.type === PREVIEW_RESTORED_MESSAGE_TYPE) posted.push('restored');
   };
   window.addEventListener('message', onMessage);
   try {
     await act(async () => root.render(<HtmlPreviewSurface fileName="page.html" url={url} onLink={onLink} />));
-    await vi.waitFor(() => expect(posted.filter(href => href === 'https://forged.example/').length).toBeGreaterThan(5));
+    const forgedSince = async (count: number) => {
+      const start = posted.length;
+      await vi.waitFor(() => expect(posted.slice(start).filter(href => href === 'https://forged.example/').length).toBeGreaterThan(count));
+    };
+    await forgedSince(5);
     expect(onLink).not.toHaveBeenCalled();
 
+    // A click elsewhere in the app activates this window too; the page's posts right after it still open nothing.
+    await userEvent.click(elsewhere);
+    expect(navigator.userActivation.isActive).toBe(true);
+    await forgedSince(3);
+    expect(onLink).not.toHaveBeenCalled();
+
+    // Keyboard: Tab from the host into the page's link, Enter on it.
+    await userEvent.tab();
+    await userEvent.keyboard('{Enter}');
+    await vi.waitFor(() => expect(onLink).toHaveBeenCalledWith('https://clicked.example/'));
+
+    elsewhere.focus();
+    onLink.mockClear();
     await userEvent.click(container.querySelector('iframe')!);
     await vi.waitFor(() => expect(onLink).toHaveBeenCalledWith('https://clicked.example/'));
   } finally {
-    act(() => root.unmount()); container.remove(); window.removeEventListener('message', onMessage);
+    act(() => root.unmount()); container.remove(); elsewhere.remove(); window.removeEventListener('message', onMessage);
     URL.revokeObjectURL(url);
   }
 });
