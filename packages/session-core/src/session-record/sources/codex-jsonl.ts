@@ -136,8 +136,8 @@ export function createCodexJsonlSource(locator: SessionRecordLocator, options?: 
         const steering = ordinals.turn > 0 && ordinals.userSeen;
         ordinals.userSeen = true;
         if (steering) return [{ key: entry.key, at: entry.at, event: { ...event, steering: true } }];
-        // The leading input carries the point a revert steps back to, as its live receipt did: the Codex bridge
-        // reverts to before a turn by its id.
+        // The leading input carries the point a revert steps back to: the turn's own id, which the Codex bridge puts
+        // on the prompt's receipt once `turn/start` answers and reverts to before by.
         if (ordinals.turnId) return [{ key: entry.key, at: entry.at, event: { ...event, revertAnchor: ordinals.turnId } }];
       }
       return entry ? [entry] : [];
