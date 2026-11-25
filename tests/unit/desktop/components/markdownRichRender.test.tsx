@@ -34,7 +34,8 @@ describe('chat markdown rich rendering', () => {
     const frame = container.querySelector('iframe')
     expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
     const doc = frame?.getAttribute('srcdoc') ?? ''
-    expect(doc).toContain('Content-Security-Policy')
+    // The exact policy: https assets may load, but the page can open no connection to send what a reader types.
+    expect(doc).toContain(`<meta http-equiv="Content-Security-Policy" content="default-src data: blob: https: 'unsafe-inline' 'unsafe-eval'; connect-src 'none'; form-action 'none'; base-uri 'none'">`)
     expect(doc).toContain('--fg:rgb(1, 2, 3)')
     expect(doc).toContain('<div id="chart">bars</div>')
   })

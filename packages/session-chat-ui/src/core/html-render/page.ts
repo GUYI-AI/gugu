@@ -38,8 +38,9 @@ export const HTML_RENDER_MAX_HEIGHT = 2000
 /** Source bytes past this stay a code block. */
 export const HTML_RENDER_MAX_BYTES = 256 * 1024
 
-// The file preview's policy: https resources and inline script load, nothing is posted or rebased.
-const HTML_RENDER_CSP = "default-src data: blob: https: 'unsafe-inline' 'unsafe-eval'; connect-src https: wss:; form-action 'none'; base-uri 'none'"
+// Scripts, styles, images and fonts load from https (a chart library from a CDN), but the page opens no connection:
+// a page from another member's agent must not be able to fetch() what a reader types into it to its own server.
+const HTML_RENDER_CSP = "default-src data: blob: https: 'unsafe-inline' 'unsafe-eval'; connect-src 'none'; form-action 'none'; base-uri 'none'"
 
 const OPEN_LINK_METHOD = 'ui/open-link'
 const SIZE_CHANGED_METHOD = 'ui/notifications/size-changed'
@@ -120,12 +121,12 @@ const blankNonMarkup = (html: string) => {
   return parts.join('')
 }
 
-/** The fence's page with the policy, theme and bootstrap first in its head (a fragment gets a document around it). */
 /** A fence closes when its last line is a run of three or more backticks or tildes (CommonMark); a streaming one has not. */
 export function fenceClosed(raw: string): boolean {
   return /\n[ \t]*(?:`{3,}|~{3,})[ \t]*$/.test(raw.trimEnd())
 }
 
+/** The fence's page with the policy, theme and bootstrap first in its head (a fragment gets a document around it). */
 export function htmlRenderDocument(html: string, rootCss: string): string {
   const scan = blankNonMarkup(html)
   const markup = bootstrapMarkup(scan, rootCss)
