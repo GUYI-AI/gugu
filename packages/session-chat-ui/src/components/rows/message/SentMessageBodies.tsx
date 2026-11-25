@@ -6,6 +6,7 @@
  * itself — that would be a second drawing of the same message kind.
  */
 import type { MessageItem } from '@gugu/core/shared/types/chat';
+import { isHtmlPage, parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels';
 import { parseWidgetMessage } from '@gugu/core/shared/ui/widgetModels';
 import { FILE_ROW } from '@gugu/session-shared/file-row';
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
@@ -23,8 +24,13 @@ const WIDGET_H = 240;
 
 function estimate(message: MessageItem, ctx: MeasureCtx, width: number): { width: number; height: number } {
   if (message.content_type === 'widget') return { width: Math.min(width, WIDGET_W), height: parseWidgetMessage(message.content)?.height ?? WIDGET_H };
-  if (message.content_type === 'attachment') return /\((image\/[^)]+)\)/.test(message.content?.split('\n')[0] ?? '')
-    ? { width, height: IMAGE_H } : { width: Math.min(width, FILE_ROW.width), height: FILE_ROW.height }; // the host draws a file row
+  if (message.content_type === 'attachment') {
+    if (/\((image\/[^)]+)\)/.test(message.content?.split('\n')[0] ?? '')) return { width, height: IMAGE_H };
+    // A page sent with its size: the host draws it at that size, narrowed to the row.
+    const file = parseAttachmentContent(message.content ?? null, message), page = message.file_metadata?.status === 'ready' ? message.file_metadata.revision : undefined;
+    if (file && isHtmlPage(file.fileName, file.mimeType) && page?.width && page.height) return { width: Math.min(width, page.width), height: Math.round(page.height * Math.min(1, width / page.width)) };
+    return { width: Math.min(width, FILE_ROW.width), height: FILE_ROW.height }; // the host draws a file row
+  }
   const stack = layoutBlockStack(ctx.caches.parseBlocks(`sent:${message.id}`, message.content ?? ''), { ...ctx, width }, { isCollapsed: ctx.isCollapsed });
   return { width: stack.width, height: stack.height };
 }

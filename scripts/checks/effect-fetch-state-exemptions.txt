@@ -14,6 +14,7 @@ components/assistant/useTaskChatRows.tsx: reading-default(paired) - a work whose
 components/chat/DocumentPreviewContent.tsx: effect-flow(render) - renders the docx bytes in hand into its DOM target
 components/chat/DocumentPreviewContent.tsx: effect-flow(render) - renders the pptx bytes in hand into its DOM target
 components/chat/DocumentPreviewContent.tsx: effect-flow(render) - renders the xlsx bytes in hand into its viewer
+components/chat/InlinePage.tsx: effect-flow(render) - builds the page document from the html bytes in hand (a Blob URL) for its frame
 components/chat/MessageFilePreview.tsx: effect-flow(lifecycle) - reads the bytes this opening shows once (readOnce; each opening reads again) and releases them when it closes
 components/chat/PdfPreview.tsx: effect-flow(render) - renders the pdf bytes in hand with pdf.js
 components/chat/messageActionModules.tsx: effect-flow(code) - loads a code chunk for a secondary surface, not data

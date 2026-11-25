@@ -2,7 +2,7 @@ import { useContext, useEffect, useRef, type RefObject, type CSSProperties, type
 import { useTranslation } from 'react-i18next'
 import type { TFunction } from 'i18next'
 import { ORIGINAL_CHANGED } from '@gugu/core/cloud/declaredUploads'
-import type { ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
+import { isHtmlPage, type ParsedAttachment } from '@gugu/core/shared/ui/attachmentModels'
 import { isRenderableImage } from '@gugu/core/shared/imageMime.mjs'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import { holderOfflineText, useHolderBack } from '../../lib/fileHost'
@@ -23,6 +23,7 @@ import { SentMessageSurface } from './sentMessageSurface'
 import { useNearViewport } from './useNearViewport'
 import { originalSize, validSize } from './originalSize'
 import { ExpiredAttachmentCard } from './ExpiredAttachmentCard'
+import { InlinePage } from './InlinePage'
 import { Markdown } from '../markdown/Markdown'
 import './mediaAttachmentBubble.css'
 
@@ -79,7 +80,11 @@ export function MediaAttachmentBubble({ meta, messageId, isMine, onOpenFile, sen
   if (renderable) return <div ref={box} className={FIT_BUBBLE}><InlineImage key={`${messageId}:${meta.sizeBytes}`} meta={meta} messageId={messageId} chatId={chatId} isMine={isMine} />{caption}</div>
   // Pin the group file version; the first version does not need a label.
   const versionLabel = meta.source.kind === 'item' && meta.source.version > 1 ? t('attachmentView.fileVersion', { n: meta.source.version }) : undefined
-  return <div ref={box} className={FIT_BUBBLE}><FileAttachmentCard file={meta} isMine={isMine} versionLabel={versionLabel} onOpen={() => onOpenFile?.(meta)} onDownload={onDownload} downloadLabel={t('chatArea.filePreview.download')} />{caption}</div>
+  const card = <FileAttachmentCard file={meta} isMine={isMine} versionLabel={versionLabel} onOpen={() => onOpenFile?.(meta)} onDownload={onDownload} downloadLabel={t('chatArea.filePreview.download')} />
+  // An .html file sent with the size it is drawn at is drawn in place; one sent without is a file like any other.
+  const pageSize = isHtmlPage(meta.fileName, meta.mimeType) ? originalSize(meta) : undefined
+  if (pageSize) return <div ref={box} className={FIT_BUBBLE}><InlinePage key={sourceKey} meta={meta} messageId={messageId} size={pageSize} fallback={card} />{caption}</div>
+  return <div ref={box} className={FIT_BUBBLE}>{card}{caption}</div>
 }
 
 function InlineImage({ meta, messageId, chatId, isMine }: { meta: ParsedAttachment; messageId: string; chatId?: string; isMine: boolean }) {
