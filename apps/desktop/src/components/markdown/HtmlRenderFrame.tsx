@@ -7,7 +7,7 @@
  * Dropped: zoom controls in the dialog, fullscreen pinning of the timeline, keyboard shortcut forwarding.
  */
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 import { svgPalette } from '@gugu/session-chat-ui/svg'
 import { readEffectiveHostTheme, subscribeToHostTheme } from '@renderer/lib/theme/host-theme'
@@ -19,7 +19,7 @@ import {
   clampHtmlRenderHeight,
   htmlRenderDocument,
   htmlRenderRootCss,
-  type HtmlRenderScheme,
+  htmlRenderSurface,
   keepHtmlRenderPage,
   HTML_RENDER_MIN_HEIGHT,
   readHtmlRenderContentHeight,
@@ -44,11 +44,18 @@ function openLink(url: string) {
   if (!followLink(url)) window.open(url, '_blank', 'noopener,noreferrer')
 }
 
-/** One frame of the page; reports the page's own height and opens its links in the host. */
-function HtmlRenderDocument({ srcDoc, scheme, title, height, onContentHeight }: { srcDoc: string; scheme: HtmlRenderScheme; title: string; height: number; onContentHeight: (height: number) => void }) {
+/**
+ * One frame of the page: themed from the surface it sits on (re-read on a light/dark flip, which reloads it), reports
+ * the page's own height and opens its links in the host.
+ */
+function HtmlRenderDocument({ code, hostTheme, title, height, onContentHeight }: { code: string; hostTheme: string; title: string; height: number; onContentHeight: (height: number) => void }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const report = useRef(onContentHeight)
   report.current = onContentHeight
+  const [surface, setSurface] = useState<ReturnType<typeof htmlRenderSurface>>()
+  useLayoutEffect(() => {
+    setSurface(htmlRenderSurface(frame.current!.parentElement!, svgPalette(document.documentElement)))
+  }, [hostTheme])
   useEffect(() => {
     function onMessage(event: MessageEvent) {
       if (!frame.current || event.source !== frame.current.contentWindow) return
@@ -64,31 +71,29 @@ function HtmlRenderDocument({ srcDoc, scheme, title, height, onContentHeight }: 
       unkeep?.()
     }
   }, [])
+  const style = getComputedStyle(document.documentElement)
+  const srcDoc = surface && htmlRenderDocument(code, htmlRenderRootCss(
+    surface.palette,
+    { sans: getComputedStyle(document.body).fontFamily, mono: style.getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace' },
+    surface.scheme,
+  ))
   // An opaque sandbox: scripts run, but the page reaches neither this window, its storage, popups nor top navigation.
-  return <iframe ref={frame} title={title} srcDoc={srcDoc} sandbox="allow-scripts" height={height} className={`block w-full border-0 bg-transparent ${scheme === 'dark' ? '[color-scheme:dark]' : '[color-scheme:light]'}`} />
+  return <iframe ref={frame} title={title} srcDoc={srcDoc} sandbox="allow-scripts" height={height} className={`block w-full border-0 bg-transparent ${surface?.scheme === 'dark' ? '[color-scheme:dark]' : '[color-scheme:light]'}`} />
 }
 
 export function HtmlRenderFrame({ code }: { code: string }) {
   const { t } = useTranslation('messaging')
-  // Subscribed so a light/dark flip re-renders: the palette is read from the page as the theme is now.
-  const scheme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
+  // Subscribed so a light/dark flip re-renders: each frame re-reads its surface as the theme is now.
+  const hostTheme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
   const [contentHeight, setContentHeight] = useState(() => measuredContentHeights.get(code))
   const [expanded, setExpanded] = useState(false)
   const [expandedHeight, setExpandedHeight] = useState<number>()
-  const root = document.documentElement
-  const style = getComputedStyle(root)
-  const rootCss = htmlRenderRootCss(
-    svgPalette(root),
-    { sans: getComputedStyle(document.body).fontFamily, mono: style.getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace' },
-    scheme,
-  )
-  const srcDoc = htmlRenderDocument(code, rootCss)
   const title = t('message.htmlRender.title')
   return (
     <div className="gg-md-html-render">
       <HtmlRenderDocument
-        srcDoc={srcDoc}
-        scheme={scheme}
+        code={code}
+        hostTheme={hostTheme}
         title={title}
         height={contentHeight === undefined ? HTML_RENDER_MIN_HEIGHT : clampHtmlRenderHeight(contentHeight)}
         onContentHeight={(height) => {
@@ -108,7 +113,7 @@ export function HtmlRenderFrame({ code }: { code: string }) {
                 <Dialog.Title className="sr-only">{title}</Dialog.Title>
                 <Dialog.Close className="absolute right-2 top-2 z-10 inline-flex size-7 items-center justify-center rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]" aria-label={t('message.htmlRender.close')}><X size={16} /></Dialog.Close>
                 <div className="max-h-[86vh] overflow-y-auto overscroll-contain p-4 pt-10">
-                  <HtmlRenderDocument srcDoc={srcDoc} scheme={scheme} title={title} height={expandedHeight === undefined ? HTML_RENDER_MIN_HEIGHT : Math.ceil(expandedHeight)} onContentHeight={setExpandedHeight} />
+                  <HtmlRenderDocument code={code} hostTheme={hostTheme} title={title} height={expandedHeight === undefined ? HTML_RENDER_MIN_HEIGHT : Math.ceil(expandedHeight)} onContentHeight={setExpandedHeight} />
                 </div>
               </Dialog.Popup>
             </Dialog.Viewport>

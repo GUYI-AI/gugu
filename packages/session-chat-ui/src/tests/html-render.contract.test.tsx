@@ -54,7 +54,7 @@ describe('html-render page expand', () => {
 });
 
 describe('html-render page scheme', () => {
-  it('gives the page and its frame the host light/dark scheme, so the frame stays transparent on a dark host', async () => {
+  it('gives the page and its frame the scheme of the surface it sits on, so the frame stays transparent there', async () => {
     const host = document.documentElement;
     const theme = host.dataset.theme;
     const schemes: string[] = [];
@@ -67,7 +67,7 @@ describe('html-render page scheme', () => {
     const block = parseMarkdownToBlocks('t', source)[0] as HtmlRenderBlock;
     const ctx = makeContractCtx({ width: 480 });
     root = document.createElement('div');
-    root.style.colorScheme = 'light'; // an inverted surface: the frame follows the host, not this
+    root.style.color = '#f5f5f5'; // a dark surface paints light text; the page's scheme follows that text
     document.body.appendChild(root);
     const Render = htmlRenderBlockDef.Render;
     const unrender = render(() => (
@@ -89,6 +89,7 @@ describe('html-render page scheme', () => {
     expect(schemes).toEqual(['dark']);
     expect(getComputedStyle(frame).colorScheme).toBe('dark');
 
+    root.style.color = '#111111';
     host.dataset.theme = 'light';
     await until('the page reloads on a light flip', () => schemes.length === 2);
     expect(schemes).toEqual(['dark', 'light']);

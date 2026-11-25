@@ -11,8 +11,8 @@ vi.mock('@/platform', () => ({ platform: { kind: 'web' } }))
 let container: HTMLDivElement
 let root: Root
 beforeEach(() => {
-  document.documentElement.style.setProperty('--text-primary', 'rgb(1, 2, 3)')
   container = document.createElement('div')
+  container.style.color = 'rgb(1, 2, 3)'
   document.body.appendChild(container)
   root = createRoot(container)
 })

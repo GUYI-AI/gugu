@@ -13,7 +13,7 @@ import {
   clampHtmlRenderHeight,
   htmlRenderDocument,
   htmlRenderRootCss,
-  type HtmlRenderScheme,
+  htmlRenderSurface,
   keepHtmlRenderPage,
   readHtmlRenderContentHeight,
   readHtmlRenderLinkRequest,
@@ -21,14 +21,18 @@ import {
 import type { HtmlRenderLeafLayout } from '@session-chat/core/layout/layout-types';
 import { subscribeHostTheme, svgPalette } from '@session-chat/core/svg/figure';
 import { useChatTranslator } from '@session-chat/localization';
-import { createMemo, createSignal, onCleanup, onMount, Show } from 'solid-js';
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from 'solid-js';
 import { Portal } from 'solid-js/web';
 import { htmlRenderBackdrop, htmlRenderClose, htmlRenderDialog, htmlRenderFrame } from './html-render.css';
 
-/** One frame of the page: reports the page's own height and opens its links in the host. */
-function PageFrame(props: { srcDoc: string; scheme: HtmlRenderScheme; title: string; width?: number; height: number; onHeight: (height: number) => void }) {
+/**
+ * One frame of the page: themed from the surface it sits on (re-read when the host theme flips, which reloads it),
+ * reports the page's own height and opens its links in the host.
+ */
+function PageFrame(props: { source: string; themeFlips: () => number; title: string; width?: number; height: number; onHeight: (height: number) => void }) {
   const commands = useCommands();
   let frame!: HTMLIFrameElement;
+  const [surface, setSurface] = createSignal<ReturnType<typeof htmlRenderSurface>>();
   const onMessage = (event: MessageEvent) => {
     if (event.source !== frame.contentWindow) return;
     const height = readHtmlRenderContentHeight(event.data);
@@ -38,9 +42,18 @@ function PageFrame(props: { srcDoc: string; scheme: HtmlRenderScheme; title: str
   };
   window.addEventListener('message', onMessage);
   onCleanup(() => window.removeEventListener('message', onMessage));
-  onMount(() => onCleanup(keepHtmlRenderPage(frame)));
+  onMount(() => {
+    onCleanup(keepHtmlRenderPage(frame));
+    createEffect(() => (props.themeFlips(), setSurface(htmlRenderSurface(frame.parentElement!, svgPalette(document.documentElement)))));
+  });
+  const srcDoc = createMemo(() => {
+    const theme = surface();
+    if (!theme) return undefined;
+    const mono = getComputedStyle(document.documentElement).getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace';
+    return htmlRenderDocument(props.source, htmlRenderRootCss(theme.palette, { sans: getComputedStyle(document.body).fontFamily, mono }, theme.scheme));
+  });
   // An opaque sandbox: scripts run, but the page reaches neither this window, its storage, popups nor top navigation.
-  return <iframe ref={frame} title={props.title} srcdoc={props.srcDoc} sandbox="allow-scripts" width={props.width ?? '100%'} height={props.height} class={htmlRenderFrame} style={{ 'color-scheme': props.scheme }} />;
+  return <iframe ref={frame} title={props.title} srcdoc={srcDoc()} sandbox="allow-scripts" width={props.width ?? '100%'} height={props.height} class={htmlRenderFrame} style={{ 'color-scheme': surface()?.scheme }} />;
 }
 
 export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
@@ -49,14 +62,8 @@ export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
   const [themeFlips, setThemeFlips] = createSignal(0);
   const [expanded, setExpanded] = createSignal(false);
   const [expandedHeight, setExpandedHeight] = createSignal<number>();
-  onCleanup(subscribeHostTheme(() => setThemeFlips((n) => n + 1)));
   // Themed with the same tokens a ```svg figure reads, as the page is now; a light/dark flip reloads it.
-  const scheme = createMemo((): HtmlRenderScheme => (themeFlips(), document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'));
-  const srcDoc = createMemo(() => {
-    const root = document.documentElement;
-    const mono = getComputedStyle(root).getPropertyValue('--font-mono').trim() || 'ui-monospace, monospace';
-    return htmlRenderDocument(props.block.raw.source, htmlRenderRootCss(svgPalette(root), { sans: getComputedStyle(document.body).fontFamily, mono }, scheme()));
-  });
+  onCleanup(subscribeHostTheme(() => setThemeFlips((n) => n + 1)));
   let expand!: HTMLButtonElement;
   const close = () => setExpanded(false);
   const onKey = (event: KeyboardEvent) => {
@@ -67,8 +74,8 @@ export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
   return (
     <BlockFrame layout={props.block} class={codeGroup}>
       <PageFrame
-        srcDoc={srcDoc()}
-        scheme={scheme()}
+        source={props.block.raw.source}
+        themeFlips={themeFlips}
         title={translate('transcript.htmlRenderTitle')}
         width={props.block.contentWidth}
         height={props.block.height}
@@ -86,8 +93,8 @@ export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
                 <IconX />
               </button>
               <PageFrame
-                srcDoc={srcDoc()}
-                scheme={scheme()}
+                source={props.block.raw.source}
+                themeFlips={themeFlips}
                 title={translate('transcript.htmlRenderTitle')}
                 height={clampHtmlRenderHeight(expandedHeight() ?? props.block.height)}
                 onHeight={setExpandedHeight}

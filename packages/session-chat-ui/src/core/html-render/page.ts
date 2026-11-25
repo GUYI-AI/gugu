@@ -98,10 +98,30 @@ const BASE_CSS =
 export type HtmlRenderScheme = 'light' | 'dark'
 
 /**
- * The page's `:root`: the host's light/dark scheme, the palette as `--token` variables, plus the host's fonts and corner
+ * What a page takes from the surface its frame sits on (`element`, the frame's parent, as painted now): the host's
+ * palette, with `--fg` the surface's own text colour and `--muted` mixed from it, and the light/dark scheme that text
+ * implies. An own-message bubble paints its own text (light on a dark fill in a light theme), so a page in it reads as
+ * the bubble's words do, as a fill inside that bubble is mixed from its text (messageBubbleStyle.ts); the same page
+ * expanded over the window takes the window's.
+ */
+export function htmlRenderSurface(element: Element, hostPalette: Record<string, string>): { palette: Record<string, string>; scheme: HtmlRenderScheme } {
+  const fg = getComputedStyle(element).color
+  // A computed colour from hex, rgb(), hsl() or a name reads `rgb(r, g, b)`; from color(srgb …) it keeps that form.
+  const rgb = /^rgba?\(([\d.]+), ([\d.]+), ([\d.]+)/.exec(fg)?.slice(1).map((channel) => Number(channel) / 255)
+    ?? /^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/.exec(fg)?.slice(1).map(Number)
+  if (!rgb) throw new Error(`html-render: cannot read the surface's text colour ${JSON.stringify(fg)}`)
+  const [r, g, b] = rgb as [number, number, number]
+  return {
+    palette: { ...hostPalette, fg, muted: `color-mix(in oklab, ${fg} 68%, transparent)` },
+    scheme: 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5 ? 'dark' : 'light',
+  }
+}
+
+/**
+ * The page's `:root`: its light/dark scheme, the palette as `--token` variables, plus the host's fonts and corner
  * radius. A frame whose page has another `color-scheme` than the frame element is painted on an opaque canvas (white
- * on a dark host), so the page and its frame element (`style="color-scheme: …"`) both take the host's scheme, and the
- * page sits on the message.
+ * on a dark host), so the page and its frame element (`style="color-scheme: …"`) both take the surface's scheme, and
+ * the page sits on the message.
  */
 export function htmlRenderRootCss(palette: Record<string, string>, fonts: { sans: string; mono: string }, scheme: HtmlRenderScheme): string {
   const declarations = Object.entries(palette).map(([token, value]) => `--${token}:${value.replace(/[;{}<>]/g, '')};`).join('')
