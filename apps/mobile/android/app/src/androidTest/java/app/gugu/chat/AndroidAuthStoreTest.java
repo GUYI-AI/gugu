@@ -59,11 +59,11 @@ public class AndroidAuthStoreTest {
     @Test public void migratesRealXmlWithKeystoreAndColdReopensWithoutPlaintext() throws Exception {
         String original = envelope();
         assertTrue(context.getSharedPreferences(LEGACY, 0).edit().putString("sb-main", original)
-            .putString("sb-main-code-verifier", "PRIVATE_NATIVE_PKCE_CANARY").commit());
+            .putString("sb-main-code-verifier", "PRIVATE_NATIVE_PKCE_CANARY&<中文").commit());
         assertTrue(legacyXml().isFile());
         assertEquals(original, new AndroidAuthStore(context).get("sb-main"));
         assertEquals(original, new AndroidAuthStore(context).get("sb-main"));
-        assertEquals("PRIVATE_NATIVE_PKCE_CANARY", new AndroidAuthStore(context).get("sb-main-code-verifier"));
+        assertEquals("PRIVATE_NATIVE_PKCE_CANARY&<中文", new AndroidAuthStore(context).get("sb-main-code-verifier"));
         String bytes = new String(Files.readAllBytes(encrypted().toPath()), StandardCharsets.ISO_8859_1);
         assertFalse(bytes.contains("PRIVATE_NATIVE_"));
         assertEquals(0600, Os.stat(encrypted().getPath()).st_mode & 0777);

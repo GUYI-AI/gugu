@@ -1012,6 +1012,10 @@ export default {
     "newAgent": "Create agent",
     "newTask": "New task",
     "usage": "Usage",
+    "authStorage": {
+      "contactSupport": "Contact support to recover your login",
+      "restart": "Restart the app and try again"
+    },
     "sessionExpired": {
       "description": "Retrying automatically. Messages cannot be sent and agents cannot be created until the connection is restored.",
       "title": "Cannot connect to the server"

@@ -992,6 +992,10 @@ export default {
     "newAgent": "创建智能体",
     "newTask": "新建任务",
     "usage": "用量",
+    "authStorage": {
+      "contactSupport": "请联系支持恢复登录",
+      "restart": "请重启应用后重试"
+    },
     "sessionExpired": {
       "description": "正在自动重试。恢复连接前，无法发送消息或新建 agent。",
       "title": "无法连接服务器"

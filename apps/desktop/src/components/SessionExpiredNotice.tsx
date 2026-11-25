@@ -49,7 +49,7 @@ export function SessionExpiredNotice() {
     >
       <AlertTriangle size={16} aria-hidden="true" style={{ color: 'var(--text-error)', flexShrink: 0 }} />
       <span style={{ minWidth: 0 }}>
-        {storageAction ?? <>
+        {storageAction ? t(storageAction) : <>
           <strong style={{ fontWeight: 600 }}>{t('shell.sessionExpired.title')}</strong>
           <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>{t('shell.sessionExpired.description')}</span>
         </>}
