@@ -4,6 +4,7 @@ import { publishChatSummaries } from '@/lib/chatSummariesBridge';
 import { clearChatRemovalFacts, publishChatRemovalFacts, publishChatRemoved } from '@/lib/chatRemovalBridge';
 import { installPhoneScreen, showChatOnPhone } from './screen-layout-actions';
 import { screenLayout } from './screen-layout';
+import { createShellTabStore } from '@/lib/shellTab';
 
 vi.mock('@/lib/replica', async (original) => ({ ...(await original<typeof import('@/lib/replica')>()), replicaAccount: () => ({ id: 'me', live: true }) }));
 
@@ -82,5 +83,55 @@ describe('手机会话页 = 只摆一块的那一屏:话题算在它的群下(�
     open('t2');
     publishChatRemoved('me', 't2');
     expect(tapRow('g1'), 'the one on the page').toBe('g1');
+  });
+});
+
+/**
+ * 带上手机的返回栈(lib/shellTab.ts @@@phone-chat-trail),照 MainLayout 的接法:列表点一行 = setChatFrom('chats');
+ * 会话页开着时进另一条 = enterChat 把屏上那条压进栈;返回 = leavePhoneChat 弹栈,弹空了回列表。
+ */
+describe('手机返回栈:进话题 → 返回到列表 → 再进群,停在话题上', () => {
+  let uninstall: () => void = () => {};
+  let active: string | null = null;
+  const listeners = new Set<() => void>();
+  const shell = createShellTabStore('chats', {
+    activeId: () => active,
+    listed: (chatId) => chats.some((chat) => chat.id === chatId),
+    subscribe: (listener) => { listeners.add(listener); return () => listeners.delete(listener); },
+  });
+  const draw = (chatId: string) => { active = chatId; showChatOnPhone(chatId); for (const listener of listeners) listener(); };
+  const tapListRow = (chatId: string) => { draw(showChatOnPhone(chatId, true)); shell.setChatFrom('chats'); };
+  /** enterChat + setActiveChatId (openChatTarget: the topic bar, links, notifications). */
+  const enter = (chatId: string) => { shell.openChat(shell.root(), active !== chatId ? active : null); draw(chatId); };
+  /** leavePhoneChat: true = still on the chat page. */
+  const back = () => {
+    const under = shell.popChat();
+    if (under && 'chatId' in under) { draw(under.chatId); return true; }
+    shell.setChatFrom(null);
+    return false;
+  };
+  const backToList = () => { while (back()); expect(shell.chatShown()).toBe(false); };
+
+  beforeEach(() => {
+    screenLayout.replaceWith(null);
+    active = null;
+    shell.setChatFrom(null);
+    publishChatSummaries(chats);
+    uninstall = installPhoneScreen();
+  });
+  afterEach(() => {
+    uninstall();
+    publishChatSummaries([]);
+    screenLayout.replaceWith(null);
+  });
+
+  it('群 → 话题条进话题 → 返回(弹栈)到列表 → 再点这个群:停在话题上', () => {
+    tapListRow('g1');
+    expect(active).toBe('g1');
+    enter('t1');
+    expect(active).toBe('t1');
+    backToList();
+    tapListRow('g1');
+    expect(active, 'back to the topic it was left on').toBe('t1');
   });
 });
