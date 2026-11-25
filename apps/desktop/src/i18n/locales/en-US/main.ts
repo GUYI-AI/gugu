@@ -748,7 +748,7 @@ export default {
       "notificationsChat": "Chat message notifications",
       "notificationsChatAria": "Enable chat message notifications",
       "notificationsChatDescription": "New direct messages, and group messages addressed to you",
-      "notificationsEmpty": { "title": "No notifications yet", "hint": "Notifications appear here when you receive messages or an agent finishes a task" },
+      "notificationsEmpty": { "title": "No notifications yet", "hint": "Shows up here when an agent is waiting on you or hits an error." },
       "notificationsScope": "These settings cover Gugu messages only. Notifications for agents in projects are set on the Tasks page.",
       "notificationsBlocked": "The system is blocking Gugu's notifications.",
       "notificationsBlockedAction": "Turn on in Device control",
