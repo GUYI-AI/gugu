@@ -40,6 +40,8 @@ export const thumb = style({
   backgroundColor: vars.surfaceBaseEmphasis,
 });
 
+export const thumbIcon = style({ display: 'block', width: '16px', height: '16px', flexShrink: 0, color: vars.foregroundMuted });
+
 export const preview = style({
   position: 'fixed',
   zIndex: 60,

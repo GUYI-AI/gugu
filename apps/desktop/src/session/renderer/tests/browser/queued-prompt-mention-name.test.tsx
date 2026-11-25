@@ -9,7 +9,7 @@
  * 点进去编辑时看到的必须仍是**原文**(那才是真要发出去的东西,❌ 不能拿显示形态骗人)。
  */
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { page, userEvent } from 'vitest/browser'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { QueuedPromptsBand } from '@gugu/session-ui/react/components'
@@ -21,6 +21,13 @@ import { queuedPromptView } from '@renderer/features/sessions/acp/use-session-pr
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
+
+// The band reads a placed picture through the shared attachment reader; here one picture is readable and one is not.
+const READABLE = '44d49788-0000-4000-8000-000000000001'
+const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw=='
+vi.mock('@/lib/attachmentBytes', () => ({
+  useAttachmentObjectUrl: (source: { itemId?: string }) => source.itemId === READABLE ? { status: 'ready', objectUrl: PIXEL, retry: () => {} } : { status: 'failed', retry: () => {} },
+}))
 
 const URI = 'test://conversation-1'
 const ADDRESS = 'aid:d24d4986-40c5-479a-90be-cbc66cbd35e8'
@@ -93,9 +100,15 @@ test('改名之前发出去的老写法(裸 @user:<id>)照样显示成名字', a
 })
 
 test('words with pictures placed in them show each picture as its chip, not its file link', async () => {
-  const text = 'First: ![Image 1](gugu-file://44d49788-aaaa?v=1) then: ![Image 2](gugu-file://5b0c1d2e-bbbb?v=2) ok'
+  const text = 'First: ![Image 1](gugu-file://44d49788-0000-4000-8000-000000000001?v=1) then: ![Image 2](gugu-file://5b0c1d2e-0000-4000-8000-000000000002?v=2) ok'
   mount(text)
   await until('the chips are in the document', () => host!.querySelectorAll('[data-label]').length === 2)
+  await until('the first chip shows its picture', () => host!.querySelector('[data-label] img')?.getAttribute('src') === PIXEL)
+  const [first, second] = host!.querySelectorAll('[data-label]')
+  expect(first.querySelector('svg')).toBeNull()
+  // A picture that cannot be read shows an image icon, never an empty box.
+  expect(second.querySelector('img')).toBeNull()
+  expect(second.querySelector('svg')).not.toBeNull()
 
   expect(host!.innerText).not.toContain('gugu-file')
   expect(host!.innerText).toContain('First:')

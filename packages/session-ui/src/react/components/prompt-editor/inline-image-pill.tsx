@@ -12,19 +12,21 @@ import { cx } from '@session-ui/styles/utilities/cx';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { useState, type HTMLAttributes } from 'react';
 import { useMessages } from '../../localization/message-provider';
+import { ImageIcon } from '../../../icons';
 import * as styles from './inline-image-pill.css';
 
 export type InlineImageOptions = { onView?: (id: string) => void };
 
 /**
  * The chip itself, wherever words that hold a picture are shown: the composer's node, and the queued-prompt band. Its
- * label is "Image N", N counted by the CSS counter `inline-image` of the box that holds the words.
+ * label is "Image N", N counted by the CSS counter `inline-image` of the box that holds the words. Until the picture
+ * can be read (or when it cannot), an image icon stands in its place, never an empty box.
  */
 export function InlineImageChip({ src, className, ...props }: { src?: string | null } & HTMLAttributes<HTMLSpanElement>) {
   const { translate } = useMessages();
   return (
     <span contentEditable={false} data-label={translate('composer.inlineImage')} {...props} className={cx(styles.pill, className)}>
-      {src ? <img src={src} alt="" draggable={false} className={styles.thumb} /> : <span className={styles.thumb} />}
+      {src ? <img src={src} alt="" draggable={false} className={styles.thumb} /> : <ImageIcon className={styles.thumbIcon} aria-hidden />}
     </span>
   );
 }

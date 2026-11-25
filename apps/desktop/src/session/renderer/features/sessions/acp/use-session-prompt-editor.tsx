@@ -2,6 +2,8 @@ import { useLayoutEffect, type MutableRefObject, type ReactNode } from 'react';
 import { InlineImageChip, type PromptEditorRef } from '@gugu/session-ui/react/components';
 import { fileImageLinks } from '@gugu/session-core/acp/inline-file-images';
 import { renderMentionTokens } from '@renderer/lib/chat/render-mention-tokens';
+import { parseGroupFileLink } from '@gugu/core/shared/ui/guguLink';
+import { useAttachmentObjectUrl } from '@/lib/attachmentBytes';
 
 import { sessionPromptBody } from './session-message-quote';
 
@@ -26,14 +28,21 @@ export function useSessionPromptEditor<Edit extends { text: string }>(store: {
 
 /**
  * A queued prompt as the composer showed it: mentions by name (`renderMentionTokens`), and each picture placed in the
- * words as its chip, not its `gugu-file` link. Display only; editing it still edits the words as they will be sent.
+ * words as its chip with the picture, not its `gugu-file` link. Display only; editing it still edits the words as they will be sent.
  */
 export function queuedPromptView(text: string, uri: string): ReactNode {
   const nodes: ReactNode[] = [];
   let at = 0;
   for (const link of fileImageLinks(text)) {
-    nodes.push(renderMentionTokens(text.slice(at, link.index), uri), <InlineImageChip key={link.index} title={link.label} />);
+    nodes.push(renderMentionTokens(text.slice(at, link.index), uri), <QueuedImageChip key={link.index} href={link.href} title={link.label} />);
     at = link.index + link.length;
   }
   return nodes.length ? [...nodes, renderMentionTokens(text.slice(at), uri)] : renderMentionTokens(text, uri);
+}
+
+/** The picture is read the way a sent picture is: this device's copy of what it just sent, else the folder's thumbnail. */
+function QueuedImageChip({ href, title }: { href: string; title: string }) {
+  const file = parseGroupFileLink(href);
+  const view = useAttachmentObjectUrl({ kind: 'item', itemId: file?.itemId ?? '', version: file?.version ?? 0 }, 'thumb', file?.version !== undefined);
+  return <InlineImageChip src={view.status === 'ready' ? view.objectUrl : null} title={title} />;
 }
