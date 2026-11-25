@@ -4,15 +4,15 @@ import { vars } from '@session-chat/styles/theme.css';
 
 export const htmlRenderFrame = style({ display: 'block', border: 0, background: 'transparent' });
 
-/** The expanded page: over the whole window, on the transcript's own surface. */
+/** The expanded page: over the whole window, on the host's modal layer and scrim (tokens.css), as the chat bubble's dialog. */
 export const htmlRenderBackdrop = style({
   position: 'fixed',
   inset: 0,
-  zIndex: 1000,
+  zIndex: 'var(--z-modal)',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  background: 'rgba(0, 0, 0, 0.4)',
+  background: 'var(--bg-overlay-modal)',
 });
 
 export const htmlRenderDialog = style({
