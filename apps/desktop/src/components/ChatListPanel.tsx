@@ -36,6 +36,7 @@ import { chatLineCalls, chatLineNews } from '@/lib/chatLineUnread'
 import { AvatarUnread } from './AvatarUnread'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
 import { readSessionpageViewRequestBridge } from '../lib/sessionpageViewRequestBridge'
+import { showChatOnPhone } from '@/session/renderer/app/screen-layout-actions'
 import { isOwnedAgentPeer, openOwnedAgentEntry, useOwnedAgentEntries } from '../lib/ownedAgentConversation'
 import { useHeldOrder, usePointerHold } from '../lib/heldOrder'
 import { isOneListProjectLine, ONE_LIST_AVATAR_PX, oneListAgentRows, oneListShows, placeProjectLines, sidebarPinnedRows, useAgentHomes, useOneListProjectLines, type OneListProjectLine } from '../lib/sidebarOneList'
@@ -859,9 +860,10 @@ export function ChatListPanel({
       })
       return
     }
-    // A phone's list covers the chat it reopens, so a tap there is an opening (#6530), not a jump inside a chat on screen.
+    // A phone's list covers the chat it reopens, so a tap there is an opening (#6530), not a jump inside a chat on screen;
+    // a group's row reopens the topic standing under it, as on the desktop screen (showChatOnPhone).
     if (chat.unread_locator || mobile) {
-      void (mobile ? openUnreadChat(chat.id, false) : openUnreadChat(chat.id)).catch((error) => {
+      void (mobile ? openUnreadChat(showChatOnPhone(chat.id, true), false) : openUnreadChat(chat.id)).catch((error) => {
         chatListLog.error({ error: String(error) }, 'unread locator open failed')
       })
     } else {
