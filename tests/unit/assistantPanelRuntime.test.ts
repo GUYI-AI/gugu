@@ -287,10 +287,12 @@ it('#1457 skips review only on the first unchanged freshly prepared profile and 
   }finally{await f.cleanup()}
 })
 
-it.each(['profile','index','rules','app rules'] as const)('#1457 reviews a fresh profile when its %s fingerprint changes',async(part)=>{
+it.each(['profile','missing profile','index','index receipt','rules','app rules'] as const)('#1457 reviews a fresh profile when its %s fingerprint changes',async(part)=>{
   const f=await freshlyPreparedProfile()
   try {
     if(part==='profile')await writeFile(join(f.paths.memoryDir,'owner-profile.md'),(await readFile(join(f.paths.memoryDir,'owner-profile.md'))).subarray(0,-1))
+    if(part==='missing profile')await rm(join(f.paths.memoryDir,'owner-profile.md'))
+    if(part==='index receipt')await writeFile(f.paths.memoryIndex,(await readFile(f.paths.memoryIndex,'utf8')).trimEnd()+' profile_rules: 6\n')
     if(part==='index')await writeFile(f.paths.memoryIndex,(await readFile(f.paths.memoryIndex,'utf8'))+' ')
     if(part==='rules')installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:7}}))
     if(part==='app rules')installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,rulesVersion:'99.0.0',defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:6}}))

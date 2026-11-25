@@ -38,7 +38,7 @@ export async function prepareAssistantProfileReview(admission: PanelPreparedAdmi
   let indexBytes: Buffer | undefined
   let unavailable = false, current: string | undefined
   try { await access(profile) }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return admission; unavailable = true }
+  catch (error) { if (!claimed && (error as NodeJS.ErrnoException).code === 'ENOENT') return admission; unavailable = true }
   try {
     indexBytes = await readFile(index)
     const text = indexBytes.toString('utf8')
@@ -47,10 +47,10 @@ export async function prepareAssistantProfileReview(admission: PanelPreparedAdmi
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') unavailable = true }
   const { rules } = await assistantRules().available()
   if (claimed && fresh && !unavailable && indexBytes && fresh.index === digest(indexBytes) && fresh.rules === ruleVersion(rules)) {
-    const bytes = await readFile(profile).catch(() => undefined)
+    const bytes = await readFile(profile).catch(() => { unavailable = true; return undefined })
     if (bytes && fresh.profile === digest(bytes)) return admission
   }
-  if (!unavailable && current === String(rules.defaults.profileRulesVersion)) return admission
+  if (!claimed && !unavailable && current === String(rules.defaults.profileRulesVersion)) return admission
   const review = assistantProfileReviewText(unavailable, rules)
   return { ...admission, beforeText: [admission.beforeText, review].filter(Boolean).join('\n\n') }
 }
