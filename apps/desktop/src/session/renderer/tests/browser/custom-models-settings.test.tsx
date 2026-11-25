@@ -24,6 +24,7 @@ import '@gugu/session-ui/theme/semantic.css';
 import '@gugu/session-ui/styles/base.css';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
+import '@/lib/focus-modality';
 const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null, agents: [] as unknown[] }));
 const catalog = vi.hoisted(() => ({ results: new Map<string, CustomModelEffortResult>() }));
 vi.mock('@renderer/lib/stores/use-agents', async (importOriginal) => ({
@@ -104,6 +105,27 @@ it('checks the levels models.dev knows for the named model until the person chec
   await expect.element(page.getByTestId('custom-model-default-effort')).toHaveTextContent('High');
   expect(document.body.textContent).not.toContain('models.dev');
 });
+it('opened with the pointer, its first focus draws no ring; the keyboard brings the ring back', async () => {
+  document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await until('the dialog takes focus', () => !!document.activeElement?.closest('[data-testid="custom-model-dialog"]'));
+  expect(document.activeElement?.hasAttribute('data-pointer-focus')).toBe(true);
+  await userEvent.keyboard('{Tab}');
+  expect(document.activeElement?.hasAttribute('data-pointer-focus')).toBe(false);
+});
+it('draws an unchecked box with a control edge darker than the shared hairline', async () => {
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  const box = await vi.waitFor(() => {
+    const element = document.querySelector<HTMLElement>('[data-testid="custom-model-image"] [data-slot=checkbox]');
+    if (!element) throw new Error('The image input box is not drawn yet');
+    return element;
+  });
+  const probe = document.createElement('span');
+  probe.style.borderColor = 'color-mix(in oklab, var(--fg) 22%, transparent)';
+  probe.style.borderStyle = 'solid';
+  box.parentElement!.append(probe);
+  try { expect(getComputedStyle(box).borderTopColor).toBe(getComputedStyle(probe).borderTopColor); } finally { probe.remove(); }
+});
 it('shows the routes under Custom protocol, hides them when unchecked, and removes them when saved unchecked', async () => {
   const route = { id: 'd5bd45f0-f968-4df8-bf00-e7d303cab020', incoming: 'any', outgoing: 'openai-chat-completions' } as const;
   const connection: CustomModelConnection = { ...record(), keySaved: true, models: [{ id: 'm' }], endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], routes: [route] };
@@ -111,6 +133,8 @@ it('shows the routes under Custom protocol, hides them when unchecked, and remov
   render(<CustomModelDialog machine={null} connection={connection} modelId="m" onClose={() => {}} />);
   await expect.element(page.getByTestId('custom-model-route-incoming-0')).toBeVisible();
   expect(isChecked('custom-model-custom-protocol')).toBe(true);
+  const remove = page.getByRole('button', { name: 'Remove route 1' }).element().getBoundingClientRect();
+  expect(Math.min(remove.width, remove.height)).toBeGreaterThanOrEqual(24);
   await userEvent.click(page.getByTestId('custom-model-custom-protocol'));
   expect(page.getByTestId('custom-model-routes').query()).toBeNull();
   await userEvent.click(page.getByTestId('custom-model-custom-protocol'));
@@ -170,6 +194,8 @@ for (const theme of ['light', 'dark'] as const) {
     host.className = `gugu-skin em${theme}`;
     try {
       state.probe = { endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://api.example.com/v1' }], models: [], failures: [] };
+      // Opened the way a person opens it: with the pointer, so its first focus carries no keyboard ring.
+      document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
       render(<UiPortalContainerProvider value={host}><CustomModelDialog machine={null} group="custom" onClose={() => {}} /></UiPortalContainerProvider>);
       await shot(`${theme}-1-start`);
       dialogBody().scrollTop = dialogBody().scrollHeight;

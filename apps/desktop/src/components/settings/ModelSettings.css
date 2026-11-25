@@ -73,6 +73,8 @@
 .gg-model-dialog .gg-model-select-trigger,
 .gg-model-dialog [data-slot='select-trigger'] { min-height: 32px; height: 32px; }
 .gg-model-select-trigger { gap: 6px; padding: 0 10px; }
+/* An unchecked box reads as something to check: a control edge one step above the hairline the shared checkbox uses. */
+.gg-model-dialog [data-slot='checkbox']:not([data-checked]) { border-color: color-mix(in oklab, var(--fg) 22%, transparent); }
 .gg-model-provider-option { display: flex; min-width: 0; align-items: center; gap: 6px; }
 .gg-model-provider-option > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gg-model-provider-icon { display: inline-flex; width: 16px; height: 16px; flex: none; }

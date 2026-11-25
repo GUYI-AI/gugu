@@ -28,7 +28,7 @@ import { retryOf, useReplica, valueOf } from '@/lib/replica';
 import { SubscriptionConnections } from '@renderer/features/settings/subscriptions/SubscriptionConnections';
 import { Unknown } from '@/components/ui/Unknown';
 import { AppIcon } from '@renderer/lib/components/app-icon';
-import { Check, ChevronDownIcon, Eye, EyeOff, Sparkles } from '@/lib/icons';
+import { Check, ChevronDownIcon, Eye, EyeOff, Sparkles, X } from '@/lib/icons';
 import { IconButton } from '@/components/ui/IconButton';
 import { SettingsNote } from './SettingsPrimitives';
 import './ModelSettings.css';
@@ -409,7 +409,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
                       onChange={(event) => updateRoute(route.id, { baseUrl: event.target.value })} />
                   </label>}
                   <IconButton size="sm" aria-label={translate('customModels.removeRoute', { index: index + 1 })}
-                    onClick={() => setRoutes(current => current.filter(({ id }) => id !== route.id))}>×</IconButton>
+                    onClick={() => setRoutes(current => current.filter(({ id }) => id !== route.id))}><X aria-hidden className="size-4" /></IconButton>
                 </div>
               ))}
               <Button type="button" size="sm" variant="outline" className="self-start" disabled={routes.length >= 100} onClick={addRoute}>{translate('customModels.addRoute')}</Button>
