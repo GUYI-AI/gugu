@@ -1001,7 +1001,7 @@ export default {
       "titleUnreadable": "需要重新登录",
       "titleUnavailable": "登录暂时遇到问题",
       "titleClosure": "注销还未确认",
-      "localOnly": "只清除这台手机上的登录信息，你的会话和数据都在云端，不会丢"
+      "localOnly": "只清除本机登录信息，会话和数据都在云端"
     },
     "sessionExpired": {
       "description": "正在自动重试。恢复连接前，无法发送消息或新建 agent。",

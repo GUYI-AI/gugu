@@ -41,3 +41,7 @@
 
 /* Storage recovery shares the existing login layout, without the desktop marketing pane. */
 .gugu-auth-recovery-shell { grid-template-columns: minmax(0, 1fr); }
+.gugu-auth-recovery-shell .gugu-auth-heading { margin-bottom: 16px; }
+.gugu-auth-recovery-shell .gugu-auth-heading p { margin-top: 12px; }
+.gugu-auth-recovery-shell .gugu-auth-submit { margin-top: 0; }
+.gugu-auth-recovery-shell .gugu-auth-legal { text-wrap: balance; }

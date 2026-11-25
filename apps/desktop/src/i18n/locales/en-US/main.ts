@@ -1021,7 +1021,7 @@ export default {
       "titleUnreadable": "Sign in again",
       "titleUnavailable": "Unable to restore your login",
       "titleClosure": "Account deletion is not yet confirmed",
-      "localOnly": "Only this phone’s login information is cleared. Your conversations and cloud data will not be deleted."
+      "localOnly": "Only this phone’s login is cleared. Your conversations and data stay in the cloud."
     },
     "sessionExpired": {
       "description": "Retrying automatically. Messages cannot be sent and agents cannot be created until the connection is restored.",
