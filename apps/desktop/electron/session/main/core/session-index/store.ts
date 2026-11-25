@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
-import { closeSync, openSync } from 'node:fs';
+import { closeSync, openSync, statSync } from 'node:fs';
 import { readDeliveryEnvelope } from '@gugu/core/local/agent/deliveryEnvelope';
 import { messageReferenceId } from '@gugu/session-core/acp/client';
 import { isGuguSilence } from '@gugu/core/local/agent/silenceMarker';
@@ -27,8 +27,10 @@ export function openSessionIndex(database: string): Database.Database {
   const path = sessionIndexPath(database);
   try { closeSync(openSync(path, 'wx', 0o600)); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  const empty = statSync(path).size === 0;
   const index = new Database(path, { fileMustExist: true });
   try {
+    if (empty) index.pragma('auto_vacuum = INCREMENTAL');
     index.pragma('journal_mode = WAL');
     if (index.pragma('user_version', { simple: true }) === 1) return index;
     const legacy = new Database(database, { readonly: true });
