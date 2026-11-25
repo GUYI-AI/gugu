@@ -12,6 +12,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { ChatComposer } from '@gugu/session-ui/react/components';
+import { UiPortalContainerProvider } from '@gugu/session-ui/react/primitives';
 import { CUSTOM_MODEL_KEY_CHANNEL, type CustomModelConnection, type CustomModelEffortResult } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
@@ -52,11 +53,12 @@ it.each([
   state.probe = { endpoints: connection.endpoints, models: ['relay/model'], failures: [] };
   catalog.results.set('relay/model', { kind });
   catalog.results.set('openai/example', { kind: 'found', catalogId: 'openai/example', name: 'Example', efforts: ['high'] });
-  render(<CustomModelDialog machine={null} connection={connection} onClose={() => {}} />);
+  render(<UiPortalContainerProvider value={host}><CustomModelDialog machine={null} connection={connection} onClose={() => {}} /></UiPortalContainerProvider>);
   await expect.element(page.getByTestId('custom-model-effort-status')).toHaveTextContent(message);
   await until('the model dialog finishes opening', () => {
     const dialog = document.querySelector('[data-testid="custom-model-dialog"]');
-    return !!dialog && dialog.getAnimations().every(animation => animation.playState === 'finished');
+    return !!dialog && getComputedStyle(dialog).backgroundColor !== 'rgba(0, 0, 0, 0)'
+      && dialog.getAnimations().every(animation => animation.playState === 'finished');
   });
   await page.screenshot({ path: `../../../../../../../test-results/custom-model-effort-${kind}.png` });
   if (kind === 'not-found') {
