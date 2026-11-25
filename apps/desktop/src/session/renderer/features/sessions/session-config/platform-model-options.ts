@@ -146,7 +146,7 @@ export function sanitizeHarnessModelOptions(
  * 离谱、11-25「不能有 default 这种模糊的东西」:清单里只放具体的模型名。
  *
  * - 它说得出自己是谁(描述开头是一个具体模型名),而那条具体模型就在清单里 ⇒ 只留一个看不见的同名影子
- *   (`hiddenFromPicker`):会话正停在这个别名上时,触发器写的是具体名字,清单里不重复出现;
+ *   (`hiddenFromPicker` + `aliasOf`):会话正停在这个别名上时,触发器写具体名字、勾打在那条具体模型上,清单里不重复出现;
  * - 说得出、但清单里没有那一条(harness 只报了 default)⇒ 这一行改叫那个具体名字;
  * - 说不出 ⇒ 整条不要。❌ 退回显示 default。
  */
@@ -161,8 +161,8 @@ function concreteHarnessModels(options: Record<string, ComposerModelOption>): Re
       const { description, ...rest } = option;
       const name = concreteModelName(description, names);
       if (!name) return [];
-      const same = concrete.find(([, other]) => other.name === name)?.[1];
-      return [[id, same ? { ...same, hiddenFromPicker: true } : { ...rest, name }]];
+      const same = concrete.find(([, other]) => other.name === name);
+      return [[id, same ? { ...same[1], hiddenFromPicker: true, aliasOf: same[0] } : { ...rest, name }]];
     })
   );
 }

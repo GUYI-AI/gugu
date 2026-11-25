@@ -307,7 +307,7 @@ describe('#3249 composer 模型下拉', () => {
       Object.values(options).filter((option) => !option.hiddenFromPicker).map((option) => option.name)
     expect(listed(claude)).toEqual(['Opus 5', 'Sonnet 5'])
     // 会话正停在别名上:触发器写它背后那条具体模型的名字。
-    expect(claude.default).toMatchObject({ name: 'Opus 5', hiddenFromPicker: true })
+    expect(claude.default).toMatchObject({ name: 'Opus 5', hiddenFromPicker: true, aliasOf: 'opus' })
     // harness 只报了 default:这一行改叫它会用的那条具体模型。
     expect(listed(composerModelOptions({ default: { name: 'Default (recommended)', description: 'Sonnet 5.5' } }, [])!)).toEqual(['Sonnet 5.5'])
     // 说不出是谁 ⇒ 不显示,❌ 退回 default。
@@ -318,6 +318,11 @@ describe('#3249 composer 模型下拉', () => {
     renderComposer('default')
     await openPanel()
     expect(visibleOptions().some((name) => /default|默认/i.test(name)), visibleOptions().join(' | ')).toBe(false)
+    // The check sits on the concrete row the alias stands for.
+    const checked = [...document.querySelectorAll('[data-slot="combobox-content"] [role="option"]')]
+      .filter((row) => row.querySelector('[data-slot="composer-model-check"] svg'))
+      .map((row) => row.querySelector('[data-slot="composer-model-name"]')?.textContent?.trim())
+    expect(checked).toEqual(['Opus 5'])
     await until(
       'trigger names the concrete model behind default',
       () => document.querySelector<HTMLElement>('[data-slot="composer-model"] [data-slot="composer-model-trigger-label"]')?.innerText?.trim() === 'Opus 5'

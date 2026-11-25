@@ -143,6 +143,8 @@ export interface ComposerModelOption {
   disabledAction?: { label: string; open: (onClose: () => void) => void };
   /** Keep the identity of a bound model in the trigger when it cannot be offered on the current device. */
   hiddenFromPicker?: boolean;
+  /** A hidden alias of the listed model with this id (a harness `default`): that row carries the check while it is selected. */
+  aliasOf?: string;
 }
 
 /**
@@ -216,6 +218,8 @@ export interface ComposerModelItem {
   disabledAction?: ComposerModelOption['disabledAction'];
   /** Keep the identity of a bound model in the trigger when it cannot be offered on the current device. */
   hiddenFromPicker?: boolean;
+  /** 见 `ComposerModelOption` 上同名字段。 */
+  aliasOf?: string;
 }
 
 /**

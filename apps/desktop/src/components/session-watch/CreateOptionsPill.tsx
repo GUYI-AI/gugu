@@ -413,7 +413,7 @@ export function ModelChoices({
   ]
   const choice = (id: string | null, name: string, description?: string, source?: 'harness' | 'gugu', disabled = false) => (
     <PhoneComposerChoice key={id ?? '__default__'} id={id ?? ''} dimension="model" name={name}
-      description={description} selected={selection.model === id} disabled={disabled}
+      description={description} selected={(selection.model !== null && options[selection.model]?.aliasOf || selection.model) === id} disabled={disabled}
       testId="agent-watch-create-choice" source={source} onClick={() => onPick(id)} />
   )
   if (sessionOptions) return <div className="gg-aw-model-choices">{searchField}
