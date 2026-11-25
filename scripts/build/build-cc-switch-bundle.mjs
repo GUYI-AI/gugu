@@ -8,6 +8,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSy
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defaultMiseCacheDir, obtainMiseArchive } from './mise-archive-cache.mts'
+import { assertPeMachine, copyWindowsVcRuntime } from './windows-vc-runtime.mjs'
 
 const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))))
 const release = JSON.parse(readFileSync(join(root, 'scripts', 'cc-switch-release.json'), 'utf8'))
@@ -58,4 +59,16 @@ if (existsSync(join(destination, exe)) && existsSync(join(destination, 'release.
   } finally {
     rmSync(temporary, { recursive: true, force: true })
   }
+}
+
+if (platform === 'win32') {
+  // The x64 converter needs the matching CRT even when it runs under Windows on Arm emulation.
+  // Do this for cached bundles too, including ones prepared before the app-local DLL was added.
+  assertPeMachine(join(destination, exe), arch)
+  const runtime = {
+    version: '14.44.35211.0',
+    sha256: 'd5e4d9a3e835fa679450145d6a7d94e36573a509317111904d9b3712c30d9066',
+  }
+  copyWindowsVcRuntime(destination, arch, runtime)
+  console.log(`[build-cc-switch] bundled Microsoft vcruntime140.dll ${runtime.version} for ${arch}`)
 }
