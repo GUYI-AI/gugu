@@ -88,12 +88,13 @@ export function readHtmlRenderContentHeight(data: unknown): number | undefined {
 }
 
 /**
- * The http(s) link a page asks the host to open, read on the host as the message arrives. Honoured only while this
- * window holds a live user activation: a real click in the frame activates its ancestors too, while the page's own
- * script posting the message unprompted carries none (the frame's `isTrusted` check is the page's to keep or drop).
+ * The http(s) link a page in `frame` asks the host to open, read on the host as the message arrives. Honoured only
+ * while the reader is acting in that frame: the window holds a live user activation and the frame has focus (a click
+ * or key in the frame gives both). The page's own script posting the message unprompted carries no activation, and a
+ * click elsewhere in the app leaves the focus outside the frame.
  */
-export function readHtmlRenderLinkRequest(data: unknown): string | undefined {
-  if (!navigator.userActivation.isActive) return undefined
+export function readHtmlRenderLinkRequest(data: unknown, frame: HTMLIFrameElement): string | undefined {
+  if (!navigator.userActivation.isActive || document.activeElement !== frame) return undefined
   if (typeof data !== 'object' || data === null) return undefined
   const { jsonrpc, method, params } = data as Record<string, unknown>
   if (jsonrpc !== '2.0' || method !== OPEN_LINK_METHOD || typeof params !== 'object' || params === null) return undefined

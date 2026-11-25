@@ -9,7 +9,7 @@ import { parseMarkdownToBlocks } from '@session-chat/core/markdown/parse';
 import { makeContractCtx } from '@session-chat/tests/contract';
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it } from 'vitest';
-import { page } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 import { until } from '../../../../tests/support/awaitCondition';
 
 let dispose: (() => void) | undefined;
@@ -102,22 +102,30 @@ fetch('https://example.org/collect?typed=secret').then(() => parent.postMessage(
 });
 
 describe('html-render link requests', () => {
-  it("opens a link on the reader's click, never on the page's own unprompted message", async () => {
-    // The page forges the host's link message as soon as it loads; only the real click below may open anything.
-    const source = `<a href="https://example.org/clicked">go</a><script>
-window.addEventListener('load', () => parent.postMessage({ jsonrpc: '2.0', method: 'ui/open-link', params: { url: 'https://example.org/forged' } }, '*'));
+  it("opens a link only on the reader's click or key in the frame, never on the page's own message", async () => {
+    // The page forges the host's link message when it loads and whenever the test asks it to; only a real click or
+    // Enter on a link inside the frame may open anything.
+    const source = `<a href="https://example.org/clicked">go</a> <a href="https://example.org/keyed">two</a><script>
+const forge = () => parent.postMessage({ jsonrpc: '2.0', method: 'ui/open-link', params: { url: 'https://example.org/forged' } }, '*');
+window.addEventListener('load', forge);
+window.addEventListener('message', forge);
 </script>`;
     const block = parseMarkdownToBlocks('t', '```html-render\n' + source + '\n```')[0] as HtmlRenderBlock;
     const ctx = makeContractCtx({ width: 480 });
     const measured = htmlRenderBlockDef.measure(block, ctx);
     const opened: string[] = [];
-    let forged = false;
+    let forged = 0;
     const onMessage = (event: MessageEvent) => {
-      if (event.data?.params?.url === 'https://example.org/forged') forged = true;
+      if (event.data?.params?.url === 'https://example.org/forged') forged += 1;
     };
     window.addEventListener('message', onMessage);
     root = document.createElement('div');
+    const elsewhere = document.createElement('button');
+    elsewhere.textContent = 'elsewhere';
+    root.appendChild(elsewhere);
     document.body.appendChild(root);
+    const view = document.createElement('div');
+    root.appendChild(view);
     const Render = htmlRenderBlockDef.Render;
     const unmount = render(() => (
       <ThemeContext.Provider value={() => ctx.theme}>
@@ -127,17 +135,31 @@ window.addEventListener('load', () => parent.postMessage({ jsonrpc: '2.0', metho
           </CommandsContext.Provider>
         </CachesContext.Provider>
       </ThemeContext.Provider>
-    ), root);
+    ), view);
     dispose = () => {
       unmount();
       window.removeEventListener('message', onMessage);
     };
 
-    await until('the page posts its forged link message', () => forged);
+    // Unprompted, on load.
+    await until('the page forges on load', () => forged === 1);
     expect(opened).toEqual([]);
 
-    await page.frameLocator(page.getByTitle('Rendered page')).getByText('go').click();
-    await until('the clicked link opens', () => opened.length > 0);
-    expect(opened).toEqual(['https://example.org/clicked']);
+    // Right after a real click elsewhere in the app: the window is activated, but the frame does not have focus.
+    await page.getByText('elsewhere').click();
+    expect(navigator.userActivation.isActive).toBe(true);
+    view.querySelector('iframe')!.contentWindow!.postMessage('forge', '*');
+    await until('the page forges after the click elsewhere', () => forged === 2);
+    expect(opened).toEqual([]);
+
+    // A real click on a link in the frame.
+    const frame = page.frameLocator(page.getByTitle('Rendered page'));
+    await frame.getByText('go').click();
+    await until('the clicked link opens', () => opened.length === 1);
+    // Enter on the next link, focused from the keyboard.
+    await userEvent.keyboard('{Tab}');
+    await userEvent.keyboard('{Enter}');
+    await until('the keyed link opens', () => opened.length === 2);
+    expect(opened).toEqual(['https://example.org/clicked', 'https://example.org/keyed']);
   });
 });

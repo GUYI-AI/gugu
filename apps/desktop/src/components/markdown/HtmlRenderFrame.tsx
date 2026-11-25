@@ -53,7 +53,7 @@ function HtmlRenderDocument({ srcDoc, title, height, onContentHeight }: { srcDoc
       if (!frame.current || event.source !== frame.current.contentWindow) return
       const height = readHtmlRenderContentHeight(event.data)
       if (height !== undefined) return report.current(height)
-      const url = readHtmlRenderLinkRequest(event.data)
+      const url = readHtmlRenderLinkRequest(event.data, frame.current)
       if (url) openLink(url)
     }
     window.addEventListener('message', onMessage)

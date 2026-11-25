@@ -32,7 +32,7 @@ function PageFrame(props: { srcDoc: string; title: string; width?: number; heigh
     if (event.source !== frame.contentWindow) return;
     const height = readHtmlRenderContentHeight(event.data);
     if (height !== undefined) return props.onHeight(height);
-    const url = readHtmlRenderLinkRequest(event.data);
+    const url = readHtmlRenderLinkRequest(event.data, frame);
     if (url && !commands().onOpenLink?.(url)) window.open(url, '_blank', 'noopener,noreferrer');
   };
   window.addEventListener('message', onMessage);
