@@ -21,7 +21,7 @@ import { screenLayout } from '@renderer/app/screen-layout';
 import { SidebarOneList } from './sidebar-one-list';
 import { innerSidebarChat, innerSidebarShownFor } from './inner-sidebar';
 import { RailRowHint } from './rail-row-hint';
-import { followBelowRailRow, followListOffset, SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop } from './sidebar-one-list-chrome';
+import { followBelowRailRow, followListOffset, listFoldShift, SidebarOneListFoot, SidebarOneListHead, SidebarOneListTop } from './sidebar-one-list-chrome';
 import { UnfinishedAgentCreates } from './unfinished-agent-creates';
 
 // #2548 the desktop left sidebar, one list (界面减法: the zero rail, the window's leftmost column): the head (「«」), the
@@ -50,7 +50,9 @@ function followNamesMask(scroll: HTMLElement, progress: number, railLayout: bool
     scroll.style.removeProperty('mask-composite');
     return;
   }
-  const edge = railLayout ? RAIL_NAMES_START_PX : NAMES_START_PX;
+  // The names move left with the rows through the fold (listFoldShift): the edge goes with them, or the first pixels of
+  // every name sit left of it at full opacity until the rail lands.
+  const edge = (railLayout ? RAIL_NAMES_START_PX : NAMES_START_PX) - listFoldShift(progress, railLayout).x;
   // The names' opacity in 255ths: the 8-bit alpha an rgb() literal painted, so the fade's pixels are unchanged.
   scroll.style.setProperty('mask-image', `linear-gradient(to right, black ${edge}px, color-mix(in srgb, black ${(Math.round(text * 255) / 2.55).toFixed(3)}%, transparent) ${edge}px), ${BOTTOM_FADE_MASK}`);
   scroll.style.setProperty('mask-composite', 'intersect');
