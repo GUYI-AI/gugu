@@ -1,7 +1,7 @@
 import { useContextThresholds } from '../session-config/use-context-thresholds';
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
-import { customModelAcceptsImages, customModelOptionId, customModelThinks, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelEfforts, customModelOptionId, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica, valueOf } from '@/lib/replica';
 import { customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { AnnotationTray } from '../annotations/annotation-tray';
@@ -400,7 +400,6 @@ const ComposerForStore = observer(function ComposerForStore({
     ? customReading.value.find((record) => record.id === runningCustomModel.connectionId)?.models.find(({ id }) => id === runningCustomModel.modelId)
     : undefined;
   const acceptsImages = !runningCustomModel || customModelAcceptsImages(customFeatures);
-  const acceptsThinking = !runningCustomModel || customModelThinks(customFeatures);
   const hostBand = useHostAskBand(store.runtimeSessionId, hostSession, store.hostSettlements);
   const resolveHostAsk = hostBand?.resolve;
   const permissionRequest =
@@ -1317,7 +1316,8 @@ const ComposerForStore = observer(function ComposerForStore({
    * disabled until a reload supplies it.
    */
   const sessionEffortOptions = useMemo(() => {
-    if (!acceptsThinking) return null;
+    const customEfforts = runningCustomModel ? customModelEfforts(customFeatures, providerCapabilities?.effort) : null;
+    if (runningCustomModel && !customEfforts) return null;
     const declaredOptions = declaredEffortOptions;
     const declared = declaredOptions
       ? { options: declaredOptions, defaultId: null }
@@ -1330,8 +1330,8 @@ const ComposerForStore = observer(function ComposerForStore({
     const resolved = resolveEffortCatalog(
       declared,
       live,
-      effortSourceFor(Boolean(runningPlatformModel), providerCapabilities?.effort, 'acp'),
-      platformEffortFacts(runningPlatformModel, platformCatalog.models)?.reasoningEfforts ?? null,
+      customEfforts ? 'platform' : effortSourceFor(Boolean(runningPlatformModel), providerCapabilities?.effort, 'acp'),
+      customEfforts ?? platformEffortFacts(runningPlatformModel, platformCatalog.models)?.reasoningEfforts ?? null,
     );
     if (!resolved) return null;
     const options = live || !declared ? resolved.options : Object.fromEntries(
@@ -1341,7 +1341,7 @@ const ComposerForStore = observer(function ComposerForStore({
       ])
     );
     return liveSettingOptions(options, providerCapabilities?.acp.liveSettings?.effort);
-  }, [acceptsThinking, store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
+  }, [runningCustomModel, customFeatures, store.effort, store.effortOptions, store.starting, declaredEffortOptions, providerCapabilities, runningPlatformModel, platformCatalog.models, translate]);
   // #7342 停下了、记录里也没记档位(= harness 自己那一档默认):用探针目录报的那一档当默认档画(触发器压一档不透明度),
   // 与新建页同一个来源(`harnessCatalogToModelsCapability` 的 defaultEffortId)。活会话报的就是已生效那一档,用不着它。
   const detachedDefaultEffort = detached && !runningPlatformModel && harnessCatalog.state.kind === 'ready'

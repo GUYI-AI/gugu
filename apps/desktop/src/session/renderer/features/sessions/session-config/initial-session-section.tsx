@@ -4,7 +4,7 @@ import { localizePermissionModeOptions } from '../acp/permission-mode-options';
 import { classifyProviderPermissionMode, type ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import type { SessionOptionGroup } from '@gugu/session-core/session-record/contract';
 import { withAutoReviewHint, type ReviewCostSource } from '../acp/auto-review-permission-hint';
-import { customModelAcceptsImages, customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelDefaultEffort, customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
 import { customModels } from './custom-models';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
@@ -1138,6 +1138,9 @@ export function useInitialSessionState(
     leg: sessionpageSurface,
   });
   const effortKey = effortKeyOf(providerId, model, platformModel);
+  // A custom model whose levels the person set starts on the default they chose; "Automatic" starts on none.
+  const customDefaultEffort = selectedCustom && customFeatures?.efforts
+    ? customModelDefaultEffort(customFeatures, customEfforts) ?? null : undefined;
   const effort = resolveInitialEffort(
     selectedCustom || platformModel || runtimeModel ? modelEfforts : null,
     effortKey
@@ -1150,8 +1153,8 @@ export function useInitialSessionState(
         (lastStartedConfiguration.model ?? null) === model &&
         (lastStartedConfiguration.platformModel ?? null) === platformModel
           ? lastStartedConfiguration.effort
-          : undefined))
-      : undefined
+          : customDefaultEffort))
+      : customDefaultEffort
   );
   const { auth: reviewAuth } = useAgentAuthStatus(!platformModel && !selectedCustom ? providerId : null, undefined, { machine });
   const autoReviewCostSource: ReviewCostSource = platformModel ? 'platform' : selectedCustom ? 'api-key'

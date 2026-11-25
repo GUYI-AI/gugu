@@ -28,7 +28,8 @@ import { createLocalDeviceIdResolver, detectDeviceCapabilities, type DeviceCapab
 import { makeIdentityClient } from '../supabase'
 import { setEmdashIdentityProvisioner, setEmdashMcpInjector } from '../session/main/core/acp/emdash-mcp-injector'
 import { setSessionIdentityHost } from '../session/main/core/sessions/session-identity-host'
-import { setPlatformModelCatalogResolver, setPlatformModelGate } from '../session/main/core/agents/platform-model-catalog-hook'
+import { setCustomModelEffortResolver, setPlatformModelCatalogResolver, setPlatformModelGate } from '../session/main/core/agents/platform-model-catalog-hook'
+import { listCustomModelEffortFacts } from '../model-access'
 import {
   notifyProjectGroupBindingChanged,
   setProjectGroupHost,
@@ -144,6 +145,7 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
   // @@@4972 agent 自己用 `session_list_models` 查到的那一组。装进去的**就是**下面 composer 那条
   // 通道调的同一份实现 —— 只接下拉不接这一口,会让「用户看得到、agent 查不到」在网页版变成常态。
   setPlatformModelCatalogResolver((query) => platform.listModels(query))
+  setCustomModelEffortResolver((ids) => listCustomModelEffortFacts(headlessAuthProvider, ids))
   setPlatformModelGate((query) => sessionpagePlatformGate({ ...query, authProvider: headlessAuthProvider }))
 
   // #6396 名字登记时已被占用 ⇒ 在这条会话的对话里画一行告知(与桌面主进程同一份,见 sessionpage-rename-announcement.ts)。
@@ -235,6 +237,7 @@ export function wireHeadlessSessionpageIdentity(hostIpc: HostIpc): { dispose(): 
       setEmdashPlatformRelease(null)
       setEmdashPlatformCheckpoint(null)
       setPlatformModelCatalogResolver(null)
+      setCustomModelEffortResolver(null)
       setPlatformModelGate(null)
     },
   }

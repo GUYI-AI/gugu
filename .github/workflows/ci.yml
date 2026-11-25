@@ -376,6 +376,13 @@ jobs:
           name: custom-route-repair-save-${{ matrix.shard }}
           path: test-results/custom-route-repair-save.png
           retention-days: 14
+      - name: Upload models.dev lookup state screenshots
+        if: ${{ always() && hashFiles('test-results/custom-model-effort-*.png') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: custom-model-effort-states-${{ matrix.shard }}
+          path: test-results/custom-model-effort-*.png
+          retention-days: 14
   web-smoke:
     name: Web E2E (${{ matrix.id }})
     needs: changes
