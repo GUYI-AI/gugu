@@ -1,6 +1,6 @@
 import { refreshFailure } from '@/lib/replica';
 import { vendorName } from '@/i18n/vendorName';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { AppIcon } from '@renderer/lib/components/app-icon';
 import { Button } from '@renderer/lib/ui/button';
 import { Spinner } from '@renderer/lib/ui/spinner';
@@ -72,6 +72,7 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
   const { confirmation, requestUninstall } = useAgentUninstallConfirmation();
   const { installed, runnable, install, update, uninstall, busy, installing, updating, uninstalling, version, source, failure, check } = installation;
   const terminalConfiguration = agent.id === 'claude' || agent.id === 'codex';
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const actions = installing || updating || uninstalling ? (
     <Button disabled aria-busy>
@@ -109,7 +110,15 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
         publisher={agent.publisher ? translate('marketDetail.agentPublisher', { publisher: vendorName(agent.publisher) }) : undefined}
         icon={<AppIcon id={agent.id} size={68} dimmed={!installed} />}
         actions={actions}
-        devices={<MarketAgentDevices agentId={agent.id} />}
+        devices={<>
+          <MarketAgentDevices agentId={agent.id} />
+          {installed && (
+            <Button variant="outline" aria-pressed={advancedOpen} className="aria-pressed:bg-row-selected aria-pressed:text-foreground"
+              onClick={() => setAdvancedOpen(open => !open)} data-testid="agent-advanced-settings">
+              {translate('agentsPage.advancedSettings')}
+            </Button>
+          )}
+        </>}
         facts={[
           { label: translate('extensions.stripVersion'), value: agentVersion(version) ?? '—' },
           { label: translate('agentsPage.sourceHeading'), value: source ? translate(SOURCE_LABELS[source]) : '—' },
@@ -118,12 +127,12 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
         subtitle={marketAgentDescription(agent, locale)}
         notice={<>{notice}{failureNote}{!failure && !busy && !runnable && agent.lookup && <AgentLookupLine lookup={agent.lookup} onCheck={check} />}</>}
         onUninstall={uninstall && !busy ? () => requestUninstall(agent.name, uninstall) : undefined}
+        alternate={installed ? { shown: advancedOpen, view: installation.advanced } : undefined}
       >
         {installed && (terminalConfiguration || installation.managedVersions) && <SettingsGroup>
           {terminalConfiguration && <AgentHomeRow providerId={agent.id} machine={host.remote?.deviceId ?? null} disabled={readOnly || busy} />}
           {installation.managedVersions}
         </SettingsGroup>}
-        {installed && installation.advanced}
       </MarketDetailCard>
       {confirmation}
     </>

@@ -46,7 +46,7 @@ export type AgentInstallationHeader = {
   install: (() => void) | undefined;
   /** Existing cleanup UI for the active managed mise copy, reused by the compact details dialog. */
   managedVersions?: ReactNode;
-  /** The collapsed 高级 section (extra arguments, env, registry), for the compact details dialog. */
+  /** The 高级设置 rows (extra arguments, env, registry), shown by the compact details dialog as its own view. */
   advanced: ReactNode;
   /** Why the last install or update failed; null once a new attempt starts or one succeeds. */
   failure: AgentInstallErrorPresentation | null;
@@ -311,8 +311,8 @@ export const InstallSection = observer(function InstallSection({
   const runnable = vm.status === 'available' && state !== 'broken';
   const busy = vm.isInstalling || vm.isUpdating || vm.isUninstalling;
   const ready = runnable && state !== 'installing' && !vm.isUninstalling && !vm.lastInstallError && !vm.lastUpdateError;
-  const advanced = (
-    <AgentAdvancedSection compact agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange}>
+  const advanced = (panel: boolean) => (
+    <AgentAdvancedSection compact panel={panel} agentId={agentId} registries={registries} registry={selectedSource.registry} onRegistryChange={onRegistryChange}>
       {/* The sources' versions could not be read (again): said where they are listed. */}
       {registries.length > 0 ? <RefreshFailed reading={sourceVersions} /> : null}
     </AgentAdvancedSection>
@@ -323,7 +323,7 @@ export const InstallSection = observer(function InstallSection({
       {/* The installation read before (or the library row standing in), its re-read failed: said with a retry. */}
       <RefreshFailed error={vm.statusFailure} onRetry={vm.refresh} />
       {ready && agentPayload && <AgentAccountSection agent={agentPayload} />}
-      {advanced}
+      {advanced(false)}
     </>
   );
   if (!renderPage) return settings;
@@ -340,7 +340,7 @@ export const InstallSection = observer(function InstallSection({
     uninstall: canUninstall ? vm.uninstall : undefined,
     install: managedInstall ? onInstall : undefined,
     managedVersions,
-    advanced,
+    advanced: advanced(true),
     failure: lastFailureSummary(vm, translate),
     check: vm.refresh,
   });

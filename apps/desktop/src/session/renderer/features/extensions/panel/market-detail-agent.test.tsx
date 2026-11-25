@@ -25,6 +25,8 @@ vi.mock('@renderer/lib/ipc', async original => {
   const agents = {
     listManagement: async () => [current()],
     getManagement: async () => current(),
+    list: async () => [current()],
+    listIcons: async () => ({}),
     listAgentInstallationStatus: async () => [{ id: 'codex', ...installState(), used: { kind: 'auto' }, installations: [] } as unknown as AgentInstallationStatus],
     getSettings: async () => ({ value: { extraArgs: '--search' }, defaults: {}, overrides: {} }),
     getInstallSourceVersions: async () => ({ sources: [] }),
@@ -72,14 +74,36 @@ it('says why the install failed and lets the person retry from the dialog', asyn
 });
 
 // #3287 moved installed agents into this dialog and left 高级 behind: extra arguments and env could no longer be edited.
-it('keeps the extra arguments reachable for an installed agent', async () => {
+it('opens 高级设置 in place of the details for an installed agent, and goes back', async () => {
   f.installed = true;
   await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
     <MarketDetailDialog onClose={() => {}}><MarketAgentDetail agentId='codex' onCreate={() => {}} /></MarketDetailDialog>
   </SessionLocalizationProvider></QueryClientProvider>));
-  const trigger = () => document.querySelector<HTMLButtonElement>('[data-testid=agent-advanced-trigger]');
-  await until('the 高级 section is offered', () => !!trigger());
-  await act(async () => trigger()!.click());
-  await until('the extra arguments field opens', () => !!document.querySelector('#agent-extraArgs'));
-  expect(document.querySelector<HTMLInputElement>('#agent-extraArgs')!.value).toBe('--search');
+  const toggle = () => document.querySelector<HTMLButtonElement>('[data-testid=agent-advanced-settings]');
+  const panel = () => document.querySelector<HTMLElement>('[data-testid=agent-advanced-panel]')!.parentElement!;
+  const details = () => panel().previousElementSibling as HTMLElement;
+  await until('the 高级设置 button is offered', () => !!toggle());
+  expect(toggle()!.textContent).toBe(translateSessionMessage('agentsPage.advancedSettings'));
+  expect(toggle()!.getAttribute('aria-pressed')).toBe('false');
+  expect(panel().hasAttribute('inert')).toBe(true);
+  expect(details().hasAttribute('inert')).toBe(false);
+
+  await act(async () => toggle()!.click());
+  expect(toggle()!.getAttribute('aria-pressed')).toBe('true');
+  expect(panel().hasAttribute('inert')).toBe(false);
+  expect(details().hasAttribute('inert')).toBe(true);
+  await until('the stored extra arguments are shown', () => document.querySelector<HTMLInputElement>('#agent-extraArgs')?.value === '--search');
+
+  await act(async () => toggle()!.click());
+  expect(toggle()!.getAttribute('aria-pressed')).toBe('false');
+  expect(panel().hasAttribute('inert')).toBe(true);
+});
+
+it('offers no 高级设置 before the agent is installed', async () => {
+  await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
+    <MarketDetailDialog onClose={() => {}}><MarketAgentDetail agentId='codex' onCreate={() => {}} /></MarketDetailDialog>
+  </SessionLocalizationProvider></QueryClientProvider>));
+  await until('the Install button is offered', () => [...document.querySelectorAll('button')].some(b => b.textContent === translateSessionMessage('extensions.installAction')));
+  expect(document.querySelector('[data-testid=agent-advanced-settings]')).toBeNull();
+  expect(document.querySelector('[data-testid=agent-advanced-panel]')).toBeNull();
 });
