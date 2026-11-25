@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { CUSTOM_MODEL_KEY_CHANNEL, customModelAcceptsImages, customModelThinks, customModelRouteSchema, modelProtocolSchema, normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta, type CustomModelRoute, type ModelProtocol } from '@gugu/session-core/models/custom-model';
+import { useEffect, useRef, useState } from 'react';
+import { CUSTOM_MODEL_KEY_CHANNEL, customModelAcceptsImages, customModelRouteSchema, modelProtocolSchema, normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEffortResult, type CustomModelEntry, type CustomModelMeta, type CustomModelRoute, type ModelProtocol } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { vendorName } from '@/i18n/vendorName';
 import { Button } from '@renderer/lib/ui/button';
@@ -57,7 +57,11 @@ export function CustomModelDialog({ machine, connection, group = providerPresets
   const [advanced, setAdvanced] = useState(Boolean(initialRoute && (initialRoute.baseUrl ||
     !connection?.endpoints.some(endpoint => endpoint.protocol === initialRoute.outgoing))));
   const [modelListRefresh, setModelListRefresh] = useState(0);
-  const [features, setFeatures] = useState<Omit<CustomModelEntry, 'id' | 'label'>>((() => { const model = connection?.models[0]; return { image: model?.image, thinking: model?.thinking, contextWindow: model?.contextWindow, maxOutput: model?.maxOutput }; }));
+  const [catalogChoices, setCatalogChoices] = useState<Map<string, string | undefined>>(new Map());
+  const [features, setFeatures] = useState<Pick<CustomModelEntry, 'image' | 'contextWindow' | 'maxOutput'>>(() => {
+    const model = connection?.models[0];
+    return { image: model?.image, contextWindow: model?.contextWindow, maxOutput: model?.maxOutput };
+  });
   const [featuresChanged, setFeaturesChanged] = useState(false);
   const [routes, setRoutes] = useState<CustomModelRoute[]>(() => {
     const existing = connection?.routes ?? [];
@@ -86,6 +90,22 @@ export function CustomModelDialog({ machine, connection, group = providerPresets
   const updateRoute = (id: string, patch: Partial<CustomModelRoute>) => setRoutes(current =>
     current.map(route => route.id === id ? { ...route, ...patch } : route));
   const models = picked ?? (list.kind === 'listed' ? list.models : []);
+  const catalogChoice = (id: string) => catalogChoices.has(id) ? catalogChoices.get(id) : connection?.models.find(model => model.id === id)?.modelsDevId;
+  const catalogRequest = JSON.stringify(accountProvider ? [] : [...new Set(models.flatMap(id => {
+    const choice = catalogChoice(id);
+    return choice ? [id, choice] : [id];
+  }))]);
+  const [catalogRead, setCatalogRead] = useState<{ request: string; machine: string | null; facts: Map<string, CustomModelEffortResult> }>();
+  useEffect(() => {
+    const ids: string[] = JSON.parse(catalogRequest);
+    if (!ids.length) return;
+    let canceled = false;
+    void readEffortCatalog(machine, ids).then(facts => {
+      if (!canceled) setCatalogRead({ request: catalogRequest, machine, facts });
+    });
+    return () => { canceled = true; };
+  }, [catalogRequest, machine]);
+  const catalogFacts = catalogRead?.request === catalogRequest && catalogRead.machine === machine ? catalogRead.facts : undefined;
   const keyProblem = list.kind !== 'unlisted' || list.reason === 'no-list' ? ''
     : connection?.keySaved && !typedKey && list.reason === 'unauthorized' ? translate('customModels.heldKeyRefused')
       : translate(connectionProbeMessageKey(list.reason));
@@ -139,7 +159,7 @@ export function CustomModelDialog({ machine, connection, group = providerPresets
         ...(typedKey ? { apiKey: typedKey } : {}),
         models: models.map((id) => {
           const existing = connection?.models.find((model) => model.id === id);
-          return featuresChanged ? { ...existing, ...features, id } : existing ?? { ...features, id };
+          return { ...existing, ...(!existing || featuresChanged ? features : {}), id, modelsDevId: catalogChoice(id) };
         }),
       });
       if (!result.success) throw new Error(errorText(result.error));
@@ -207,6 +227,9 @@ export function CustomModelDialog({ machine, connection, group = providerPresets
             disabled={!source || list.kind === 'reading' || !!busy} onClick={() => setModelListRefresh(current => current + 1)}>
             {translate('customModels.readModels')}
           </Button>}
+          {catalogFacts && models.map(id => <CustomModelEffortStatus key={id} id={id} machine={machine}
+            direct={catalogFacts.get(id)} choice={catalogChoice(id)} resolved={catalogFacts.get(catalogChoice(id) ?? '')}
+            onChoice={choice => setCatalogChoices(current => new Map(current).set(id, choice))} />)}
           <fieldset className="flex min-w-0 flex-col gap-2">
             <legend className="mb-2">{translate('customModels.routing')}</legend>
             {routes.map((route, index) => (
@@ -257,7 +280,6 @@ export function CustomModelDialog({ machine, connection, group = providerPresets
           {advanced && <div className="flex flex-col gap-3">
             {probed.length > 0 && <p data-testid="custom-model-protocols">{translate('customModels.protocols', { protocols: probed.map(({ protocol }) => translate(`customModels.${protocol}`)).join(' / ') })}</p>}
             <label className="gg-custom-model-feature"><span>{translate('customModels.image')}</span><Toggle checked={customModelAcceptsImages(features)} onChange={(image) => feature({ image })} ariaLabel={translate('customModels.image')} /></label>
-            <label className="gg-custom-model-feature"><span>{translate('customModels.thinking')}</span><Toggle checked={customModelThinks(features)} onChange={(thinking) => feature({ thinking })} ariaLabel={translate('customModels.thinking')} /></label>
             {(['contextWindow', 'maxOutput'] as const).map((key) => <label key={key}>{translate(key === 'contextWindow' ? 'customModels.context' : 'customModels.output')}<Input type="number" min="1" step="1" placeholder={translate('customModels.default')} value={features[key] ?? ''} onChange={(event) => feature({ [key]: event.target.value ? Number(event.target.value) : undefined })} /></label>)}
           </div>}
           {failure && <p className="subscription-error" role="alert">{failure}</p>}
@@ -270,4 +292,51 @@ export function CustomModelDialog({ machine, connection, group = providerPresets
       </DialogContentArea>
     </DialogContent>
   </Dialog>;
+}
+
+async function readEffortCatalog(machine: string | null, ids: string[]): Promise<Map<string, CustomModelEffortResult>> {
+  try {
+    const client = await getAgentConfigRuntimeClient(machine);
+    const reading = await client.lookupCustomModelEfforts({ ids });
+    if (reading.success) return new Map(reading.data.map(({ id, result }) => [id, result]));
+  } catch {
+    // An older or disconnected device cannot look up models.dev yet.
+  }
+  return new Map();
+}
+
+function CustomModelEffortStatus({ id, machine, direct, choice, resolved, onChoice }: {
+  id: string; machine: string | null; direct?: CustomModelEffortResult; choice?: string;
+  resolved?: CustomModelEffortResult; onChoice: (id?: string) => void;
+}) {
+  const { translate } = useSessionMessages();
+  const [entry, setEntry] = useState('');
+  const [checked, setChecked] = useState<{ id: string; result: CustomModelEffortResult }>();
+  if (direct?.kind === 'found') return null;
+  const result = resolved ?? direct;
+  if (result?.kind === 'found') return <div className="flex items-center justify-between gap-2 text-sm">
+    <span className="min-w-0 break-words">{id} → {result.catalogId}</span>
+    <Button type="button" variant="ghost" size="sm" onClick={() => onChoice()}>{translate('customModels.clearCatalogMatch')}</Button>
+  </div>;
+  const wanted = entry.trim();
+  const choices = direct?.kind === 'ambiguous' ? direct.candidates : [];
+  const checkResult = checked?.id === wanted ? checked.result : undefined;
+  const status = result?.kind === 'not-found' ? 'customModels.catalogMissing' : result?.kind === 'ambiguous' ? 'customModels.catalogChoose' : 'customModels.catalogUnavailable';
+  return <div className="flex min-w-0 flex-col gap-1 rounded-md border p-2 text-sm" data-testid="custom-model-effort-status">
+    <p className="break-words"><span className="font-medium">{id}</span> <span className="text-foreground-muted">{translate(status)}</span></p>
+    {choices.length > 0 && <div className="flex flex-wrap gap-1">
+      {choices.map(({ catalogId }) => <Button key={catalogId} type="button" size="sm" variant="outline" onClick={() => onChoice(catalogId)}>{catalogId}</Button>)}
+    </div>}
+    {direct && direct.kind !== 'unavailable' && <div className="flex items-center gap-2">
+      <Input aria-label={translate('customModels.catalogId')} placeholder="provider/model" value={entry} maxLength={200} onChange={event => setEntry(event.target.value)} />
+      {checkResult?.kind === 'found'
+        ? <Button type="button" size="sm" variant="outline" onClick={() => { onChoice(checkResult.catalogId); setEntry(''); }}>{translate('customModels.useCatalogMatch', { id: checkResult.catalogId })}</Button>
+        : <Button type="button" size="sm" variant="outline" disabled={!wanted.includes('/')} onClick={async () => {
+          const result = (await readEffortCatalog(machine, [wanted])).get(wanted) ?? { kind: 'unavailable' as const };
+          setChecked({ id: wanted, result });
+        }}>{translate('customModels.lookupCatalogId')}</Button>}
+    </div>}
+    {checkResult && checkResult.kind !== 'found' && <p className="text-foreground-muted">{translate(checkResult.kind === 'unavailable' ? 'customModels.catalogUnavailable' : 'customModels.catalogMissing')}</p>}
+    {choice && <Button type="button" size="sm" variant="ghost" className="self-start" onClick={() => onChoice()}>{translate('customModels.clearCatalogMatch')}</Button>}
+  </div>;
 }

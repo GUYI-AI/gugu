@@ -289,6 +289,7 @@ export { setNativeHistoryProviderResolver } from '@main/core/agents/codex-native
 // session_list_models 只剩 harness 自家模型(与改动前逐字节相同)。
 export {
   setPlatformModelCatalogResolver,
+  setCustomModelEffortResolver,
   setPlatformModelGate,
   type PlatformCatalogModel,
   type PlatformModelCatalogQuery,

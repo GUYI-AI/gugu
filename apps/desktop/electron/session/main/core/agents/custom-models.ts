@@ -3,8 +3,8 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import {
-  customModelRefFromOption, detectModelProtocol, matchCustomModel, normalizeModelBaseUrl,
-  type CustomModelConnection, type CustomModelEntry, type CustomModelMeta, type CustomModelRef, type ModelProtocol, type PiCustomModelProvider,
+  customModelEfforts, customModelRefFromOption, detectModelProtocol, matchCustomModel, normalizeModelBaseUrl,
+  type CustomModelConnection, type CustomModelEffortResult, type CustomModelEntry, type CustomModelMeta, type CustomModelRef, type ModelProtocol, type PiCustomModelProvider,
 } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, DetectCustomModelProtocols, SaveCustomModel, TestCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { providerAccountRegistry as registry } from '@main/core/provider-accounts/provider-account-registry-instance';
@@ -17,6 +17,7 @@ import { describeDiscoveryIssues, discoverLocalConnections, discoveredSecret, di
 import { nativeConfigRoot } from './native-config-root';
 import { connectionProbeEnv } from './connection-endpoint-env';
 import { listEndpointModels, probeEndpointProtocols, verifyEndpointModel } from './connection-endpoint-probe';
+import { getCustomModelEffortResolver } from './platform-model-catalog-hook';
 
 const namespace = 'models:custom';
 const migratedDatabases = new WeakSet<object>();
@@ -35,6 +36,53 @@ export function migrateCustomModelConnections(): void {
 }
 
 type StoredRow = NonNullable<Awaited<ReturnType<typeof registry.getAccount>>>;
+const unavailable: CustomModelEffortResult = { kind: 'unavailable' };
+const effortFactsCache = new Map<string, { until: number; value: CustomModelEffortResult }>();
+
+async function modelEffortFacts(ids: readonly string[]): Promise<Map<string, CustomModelEffortResult>> {
+  const resolve = getCustomModelEffortResolver();
+  const now = Date.now();
+  const unique = [...new Set(ids)];
+  const facts = new Map<string, CustomModelEffortResult>();
+  const missing = unique.filter((id) => {
+    const cached = effortFactsCache.get(id);
+    if (!cached || cached.until <= now) return true;
+    facts.set(id, cached.value);
+    return false;
+  });
+  if (resolve) {
+    for (let from = 0; from < missing.length; from += 200) {
+      const batch = missing.slice(from, from + 200);
+      const results = await resolve(batch).catch(() => new Map<string, CustomModelEffortResult>());
+      for (const id of batch) {
+        const value = results.get(id) ?? unavailable;
+        facts.set(id, value);
+        effortFactsCache.set(id, { value, until: Date.now() + (value.kind === 'unavailable' ? 5_000 : 30_000) });
+      }
+    }
+  }
+  if (effortFactsCache.size > 2000) {
+    for (const id of effortFactsCache.keys()) {
+      if (effortFactsCache.size <= 2000) break;
+      effortFactsCache.delete(id);
+    }
+  }
+  return facts;
+}
+
+export async function lookupCustomModelEfforts(ids: readonly string[]) {
+  const facts = await modelEffortFacts(ids);
+  return [...new Set(ids)].map(id => ({ id, result: facts.get(id) ?? unavailable }));
+}
+
+async function enrichModelEntries(entries: readonly CustomModelEntry[]): Promise<CustomModelEntry[]> {
+  const facts = await modelEffortFacts(entries.flatMap(({ id, modelsDevId }) => modelsDevId ? [id, modelsDevId] : [id]));
+  return entries.map((entry) => {
+    const direct = facts.get(entry.id) ?? unavailable;
+    const chosen = entry.modelsDevId ? facts.get(entry.modelsDevId) : undefined;
+    return { ...entry, effortCatalog: direct.kind === 'found' ? direct : chosen ?? direct };
+  });
+}
 
 /** What a renderer may read of a stored connection: never the key, never the discovery identity. */
 function viewRow(row: StoredRow, keySaved: boolean): CustomModelConnection {
@@ -48,7 +96,8 @@ function viewRow(row: StoredRow, keySaved: boolean): CustomModelConnection {
 async function view(id: string): Promise<CustomModelConnection> {
   const row = await registry.getAccount(namespace, id);
   if (!row?.meta?.customModel) throw new Error('The custom model no longer exists');
-  return viewRow(row, Boolean(await registry.resolveSecret(namespace, id)));
+  const connection = viewRow(row, Boolean(await registry.resolveSecret(namespace, id)));
+  return { ...connection, models: await enrichModelEntries(connection.models) };
 }
 
 let loggedDiscoveryIssues = '';
@@ -158,7 +207,14 @@ export async function listCustomModels(): Promise<CustomModelConnection[]> {
   const secretOf = secretReader();
   const stored = await Promise.all(rows.filter((row) => row.meta?.customModel && !row.meta.customModel.removed)
     .map(async (row) => viewRow(row, Boolean(await secretOf(row.accountId)))));
-  return [...stored, ...(await unstoredCandidates(rows, secretOf)).map(candidateView)];
+  const connections = [...stored, ...(await unstoredCandidates(rows, secretOf)).map(candidateView)];
+  const models = await enrichModelEntries(connections.flatMap((connection) => connection.models));
+  let offset = 0;
+  return connections.map((connection) => {
+    const enriched = { ...connection, models: models.slice(offset, offset + connection.models.length) };
+    offset += connection.models.length;
+    return enriched;
+  });
 }
 
 export async function saveCustomModel(input: SaveCustomModel): Promise<CustomModelConnection> {
@@ -274,8 +330,8 @@ export type ResolvedCustomModel = {
   apiKey: string;
   models: string[];
   protocol: ModelProtocol;
-  capabilities?: CustomModelMeta['models'][number];
-  entries: CustomModelMeta['models'];
+  capabilities?: CustomModelEntry;
+  entries: CustomModelEntry[];
   upstreamEndpoint: string;
   routeId?: string;
   removed?: boolean;
@@ -373,12 +429,23 @@ async function readSelectedCustomModel(providerId: string, ref: CustomModelRef, 
 /** Credential resolution runs only on the machine that will run this session. */
 export async function validateCustomModelSelection(providerId: string, ref: CustomModelRef) {
   migrateCustomModelConnections();
-  return (await readSelectedCustomModel(providerId, ref, 'new')).model;
+  const { model } = await readSelectedCustomModel(providerId, ref, 'new');
+  return model && (await enrichModelEntries([model]))[0];
 }
 
 export async function selectedCustomModelEndpoint(providerId: string, ref: CustomModelRef): Promise<string> {
   migrateCustomModelConnections();
   return (await readSelectedCustomModel(providerId, ref, 'new')).endpoint.baseUrl;
+}
+
+export async function customModelArmedEffort(providerId: string, ref: CustomModelRef | undefined, effort: string | undefined) {
+  if (!effort) return undefined;
+  if (!ref) return effort;
+  if (!ref.modelId) return undefined;
+  const row = await registry.getAccount(namespace, ref.connectionId);
+  const entry = row?.meta?.customModel?.models.find(({ id }) => id === ref.modelId) ?? { id: ref.modelId };
+  const [entryWithCatalog] = await enrichModelEntries([entry]);
+  return customModelEfforts(entryWithCatalog, pluginRegistry.get(providerId)?.capabilities.effort)?.includes(effort) ? effort : undefined;
 }
 
 export async function resolveCustomModel(providerId: string, sessionId: string, sourceSessionId?: string): Promise<ResolvedCustomModel | null> {
@@ -389,10 +456,13 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
   const selected = await readSelectedCustomModel(providerId, ref, 'bound');
   const { meta, name, model, endpoint: upstream, routeId } = selected;
   const { protocol } = upstream;
-  const entries = meta.models.filter(({ id }) => {
+  const routedEntries = meta.models.filter(({ id }) => {
     const { matched } = matchForHarness(providerId, { ...meta, keySaved: true }, id);
     return matched.endpoint?.protocol === protocol && matched.routeId === routeId;
   });
+  const entries = await enrichModelEntries(model || !ref.modelId || routedEntries.some(({ id }) => id === ref.modelId)
+    ? routedEntries : [{ id: ref.modelId }, ...routedEntries]);
+  const selectedEntry = entries.find(({ id }) => id === ref.modelId);
   const models = ref.modelId ? [ref.modelId, ...entries.map(({ id }) => id).filter((id) => id !== ref.modelId)] : [];
   const local = await customModelForwarder(resolveCustomRoute);
   const route = customModelRoute(local.endpoint, ref.connectionId, protocol, routeId);
@@ -403,9 +473,9 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
   return {
     connectionId: ref.connectionId, name,
     apiKey: local.apiKey, endpoint,
-    models, protocol: selected.harnessProtocol ?? protocol, capabilities: model, entries, routeId,
+    models, protocol: selected.harnessProtocol ?? protocol, capabilities: selectedEntry, entries, routeId,
     upstreamEndpoint: upstream.baseUrl, removed: meta.removed,
-    ...(config?.effort ? { effort: config.effort } : {}),
+    ...(config?.effort && customModelEfforts(selectedEntry, pluginRegistry.get(providerId)?.capabilities.effort)?.includes(config.effort) ? { effort: config.effort } : {}),
   };
 }
 

@@ -43,10 +43,23 @@ export const customModelEntrySchema = z.object({
   id: z.string().trim().min(1).max(200),
   label: z.string().trim().max(200).optional(),
   image: z.boolean().optional(),
+  /** The legacy native engine hint. Effort selection is derived from models.dev. */
   thinking: z.boolean().optional(),
+  /** An explicitly selected models.dev ID for a relay ID that cannot be resolved directly. */
+  modelsDevId: z.string().trim().min(1).max(200).optional(),
   contextWindow: z.number().int().positive().optional(),
   maxOutput: z.number().int().positive().optional(),
 });
+
+const modelsDevChoiceSchema = z.object({ catalogId: z.string(), name: z.string() });
+export const customModelEffortResultSchema = z.discriminatedUnion('kind', [
+  modelsDevChoiceSchema.extend({ kind: z.literal('found'), efforts: z.array(z.string()) }),
+  z.object({ kind: z.literal('ambiguous'), candidates: z.array(modelsDevChoiceSchema) }),
+  z.object({ kind: z.literal('not-found') }),
+  z.object({ kind: z.literal('unavailable') }),
+]);
+export type CustomModelEffortResult = z.infer<typeof customModelEffortResultSchema>;
+const customModelViewSchema = customModelEntrySchema.extend({ effortCatalog: customModelEffortResultSchema.optional() });
 
 export const customModelRouteSchema = z.object({
   id: z.string().uuid(),
@@ -70,7 +83,7 @@ export const customModelMetaSchema = z.object({
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
-export type CustomModelEntry = z.infer<typeof customModelEntrySchema>;
+export type CustomModelEntry = z.infer<typeof customModelViewSchema>;
 
 /**
  * Whether a custom model takes image input. Only the person can say a model doesn't: no model list or Codex config
@@ -90,16 +103,16 @@ export function customModelThinks(entry: Pick<CustomModelEntry, 'thinking'> | un
   return entry?.thinking ?? CUSTOM_MODEL_THINKING_DEFAULT;
 }
 
-/**
- * A thinking custom model's own levels. No model list we read (OpenAI's or Gemini's shape) declares any, so it offers
- * the harness's declared ladder; the picker shows and the launch arms this same list.
- */
+/** The relay supplies an ID. The matched catalog entry supplies the model's levels. */
 export function customModelEfforts(
-  entry: Pick<CustomModelEntry, 'thinking'> | undefined,
+  entry: Pick<CustomModelEntry, 'effortCatalog'> | undefined,
   harnessEffort: { kind: string; effortOptions?: Record<string, unknown> } | undefined,
 ): string[] | null {
-  return customModelThinks(entry) && harnessEffort?.kind === 'selectable' && harnessEffort.effortOptions
-    ? Object.keys(harnessEffort.effortOptions) : null;
+  const catalog = entry?.effortCatalog;
+  const options = harnessEffort?.kind === 'selectable' ? harnessEffort.effortOptions : undefined;
+  if (catalog?.kind !== 'found' || !options) return null;
+  const levels = catalog.efforts.filter((id) => id.toLowerCase() !== 'default' && Object.hasOwn(options, id));
+  return levels.length ? levels : null;
 }
 
 const NON_CHAT_MODEL = /embed|rerank|moderation|whisper|tts|speech|transcri|audio|realtime|dall-e|image|seedream|seedance|video|sora|veo|kling|hailuo/i;
@@ -145,6 +158,7 @@ export const customModelConnectionSchema = z.object({
   credentialRef: z.string(),
   keySaved: z.boolean(),
   ...customModelMetaSchema.shape,
+  models: z.array(customModelViewSchema),
   /**
    * Present when this machine already had the connection configured; `keyLast4` is all the wire carries of the key.
    * Only this computer's own window reads the whole key, through `CUSTOM_MODEL_KEY_CHANNEL`.

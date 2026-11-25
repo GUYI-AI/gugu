@@ -12,7 +12,7 @@ import { Sheet } from '@/components/ui/Sheet';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 import { ChatComposer } from '@gugu/session-ui/react/components';
-import { CUSTOM_MODEL_KEY_CHANNEL, type CustomModelConnection } from '@gugu/session-core/models/custom-model';
+import { CUSTOM_MODEL_KEY_CHANNEL, type CustomModelConnection, type CustomModelEffortResult } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
 import { composerModelFooter, composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
@@ -24,21 +24,51 @@ import '@gugu/session-ui/styles/base.css';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null, agents: [] as unknown[] }));
+const catalog = vi.hoisted(() => ({ results: new Map<string, CustomModelEffortResult>() }));
 vi.mock('@renderer/lib/stores/use-agents', async (importOriginal) => ({
   ...await importOriginal<typeof import('@renderer/lib/stores/use-agents')>(),
   useAgents: () => ({ state: 'value', value: state.agents, stale: false, error: null }),
 }));
 vi.mock('@renderer/lib/agent-config/runtime-client', () => ({ getAgentConfigRuntimeClient: async () => ({
   listCustomModels: async () => ({ success: true, data: state.rows }),
+  lookupCustomModelEfforts: async ({ ids }: { ids: string[] }) => ({ success: true, data: ids.map(id => ({
+    id, result: catalog.results.get(id) ?? { kind: 'found', catalogId: id, name: id, efforts: [] },
+  })) }),
   testCustomModel: async (input: unknown) => { state.reads.push(input); return { success: true, data: state.testResult ?? { kind: 'unlisted', reason: 'no-list' } }; },
   detectCustomModelProtocols: async (input: unknown) => { state.probes.push(input); return { success: true, data: state.probe }; },
   saveCustomModel: async (input: SaveCustomModel) => { state.saved = input; return { success: true, data: { ...input, id: input.id ?? '481825a8-60b9-4c83-8d1b-f104e3db0269', credentialRef: 'ref', keySaved: true } }; },
 }) }));
 let root: Root, host: HTMLDivElement;
-beforeEach(() => { queryClient.clear(); setLocalePreference('en-US'); state.rows = []; state.saved = null; state.reads = []; state.probe = null; state.probes = []; state.testResult = null; state.agents = []; host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host); });
+beforeEach(() => { queryClient.clear(); catalog.results.clear(); setLocalePreference('en-US'); state.rows = []; state.saved = null; state.reads = []; state.probe = null; state.probes = []; state.testResult = null; state.agents = []; host = document.createElement('div'); host.className = 'gugu-skin emlight'; document.body.append(host); root = createRoot(host); });
 afterEach(() => { root.unmount(); host.remove(); });
 const record = (): CustomModelConnection => ({ id: '481825a8-60b9-4c83-8d1b-f104e3db0269', name: 'Existing provider', credentialRef: 'ref', keySaved: false, preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://provider.test/v1' }], models: [] });
 const render = (content: React.ReactNode) => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>{content}</SessionLocalizationProvider></QueryClientProvider>);
+it.each([
+  ['not-found', 'models.dev 未收录'], ['unavailable', '暂无法查询 models.dev'],
+] as const)('shows the models.dev %s state and only saves an explicitly verified match', async (kind, message) => {
+  await page.viewport(1280, 800);
+  setLocalePreference('zh-CN');
+  const connection = { ...record(), keySaved: true, models: [{ id: 'relay/model' }] };
+  state.probe = { endpoints: connection.endpoints, models: ['relay/model'], failures: [] };
+  catalog.results.set('relay/model', { kind });
+  catalog.results.set('openai/example', { kind: 'found', catalogId: 'openai/example', name: 'Example', efforts: ['high'] });
+  render(<CustomModelDialog machine={null} connection={connection} onClose={() => {}} />);
+  await expect.element(page.getByTestId('custom-model-effort-status')).toHaveTextContent(message);
+  await until('the model dialog finishes opening', () => {
+    const dialog = document.querySelector('[data-testid="custom-model-dialog"]');
+    return !!dialog && dialog.getAnimations().every(animation => animation.playState === 'finished');
+  });
+  await page.screenshot({ path: `../../../../../../../test-results/custom-model-effort-${kind}.png` });
+  if (kind === 'not-found') {
+    await userEvent.fill(page.getByRole('textbox', { name: 'models.dev 模型 ID' }), 'openai/example');
+    await userEvent.click(page.getByRole('button', { name: '查询', exact: true }));
+    await userEvent.click(page.getByRole('button', { name: '使用 openai/example', exact: true }));
+  }
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the form saved', () => state.saved !== null);
+  expect(state.saved?.models).toMatchObject([{ id: 'relay/model', ...(kind === 'not-found' ? { modelsDevId: 'openai/example' } : {}) }]);
+  if (kind === 'unavailable') expect(state.saved?.models[0]?.modelsDevId).toBeUndefined();
+});
 it('opens model settings from the composer without requesting the add-model dialog', () => {
   const onOpen = vi.fn<(event: Event) => void>();
   window.addEventListener(UI_EVENTS.openSettings, onOpen, { once: true });

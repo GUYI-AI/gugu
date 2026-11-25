@@ -143,11 +143,16 @@ describe('relay model lists', () => {
 });
 
 describe('custom model thinking levels', () => {
-  const harness = { kind: 'selectable', effortOptions: { low: {}, medium: {}, high: {} } };
-  it('offers the harness ladder unless the person turned thinking off', () => {
-    expect(customModelEfforts({}, harness)).toEqual(['low', 'medium', 'high']);
-    expect(customModelEfforts({ thinking: true }, harness)).toEqual(['low', 'medium', 'high']);
-    expect(customModelEfforts({ thinking: false }, harness)).toBeNull();
-    expect(customModelEfforts({ thinking: true }, { kind: 'none' })).toBeNull();
+  const harness = { kind: 'selectable', effortOptions: { default: {}, low: {}, medium: {}, high: {} } };
+  const effortCatalog = { kind: 'found' as const, catalogId: 'example/thinking', name: 'Thinking', efforts: ['default', 'high', 'max'] };
+  it('offers only explicit levels supported by the matched model and the harness', () => {
+    expect(customModelEfforts({ effortCatalog }, harness)).toEqual(['high']);
+    expect(customModelEfforts({ effortCatalog }, { kind: 'none' })).toBeNull();
+  });
+  it('does not guess levels for an unknown or non-thinking model', () => {
+    expect(customModelEfforts({}, harness)).toBeNull();
+    expect(customModelEfforts({ effortCatalog: { kind: 'not-found' } }, harness)).toBeNull();
+    expect(customModelEfforts({ effortCatalog: { kind: 'unavailable' } }, harness)).toBeNull();
+    expect(customModelEfforts({ effortCatalog: { ...effortCatalog, efforts: [] } }, harness)).toBeNull();
   });
 });
