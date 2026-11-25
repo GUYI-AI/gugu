@@ -491,6 +491,7 @@ export default {
     "mentionMembers": "Mention a member",
     "mentionNoMatch": "No matching members",
     "mentionRoleHuman": "Person",
+    "mentionRoleAgent": "Agent",
     "placeholder": "Write a message…",
     "mobilePlaceholder": "Write a message…",
     "projectGroupPlaceholder": "Message {{name}}… @ to mention an agent",
