@@ -1040,6 +1040,10 @@ export type GuguCatalogReason =
   | 'signed-out'
   /** 咕咕这边出错了(服务端 5xx / bad_request / 表外的原因,本机内部故障):原文只进日志(#7103)。 */
   | 'service-unavailable'
+  | 'conversion-add-provider-timeout'
+  | 'conversion-switch-provider-timeout'
+  | 'conversion-listen-timeout'
+  | 'conversion-start-failed'
   | 'unreachable'
   /** 这个咕咕模型要开会员才能用(网关签票回 `membership_required`,#7092):说的是模型,❌「任务没能启动」。 */
   | 'membership-required'
@@ -1069,6 +1073,7 @@ const LEGACY_GUGU_CATALOG_REASONS: ReadonlyArray<[string, GuguCatalogReason]> = 
 const GUGU_CATALOG_REASONS = new Set<GuguCatalogReason>([
   'not-routable', 'no-identity-chat', 'no-identity-terminal', 'runtime-not-connected', 'host-not-ready',
   'none-for-agent', 'signed-out', 'service-unavailable', 'unreachable', 'membership-required', 'model-unavailable',
+  'conversion-add-provider-timeout', 'conversion-switch-provider-timeout', 'conversion-listen-timeout', 'conversion-start-failed',
   'team-monthly-cap-reached', 'team-credits-exhausted',
 ]);
 
