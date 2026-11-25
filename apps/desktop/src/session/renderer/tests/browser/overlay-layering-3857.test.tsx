@@ -41,7 +41,7 @@ const DIALOG_LAYER: CSSProperties = { position: 'fixed', top: 0, left: 0, width:
 let root: Root | undefined;
 const els: HTMLElement[] = [];
 
-beforeEach(async () => { await page.viewport(1280, 900); modalStore.closeModal(); });
+beforeEach(async () => { await page.viewport(1280, 900); modalStore.closeModal(); state.clean.mockReset(); });
 afterEach(() => { modalStore.closeModal(); modalStore.setPortalContainer(null); root?.unmount(); root = undefined; for (const el of els.splice(0)) el.remove(); });
 
 /** The App market frame as workspace.tsx PageModal draws it: the global store is pointed inside the sheet. */
@@ -67,7 +67,9 @@ function mount(node: ReactNode) {
 const confirmation = () => document.querySelector<HTMLElement>('[data-surface-modal="confirmActionModal"]');
 const centerHit = (el: HTMLElement) => { const r = el.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); };
 
-it('the old-versions confirmation opens above the market details, inside the page modal', async () => {
+// 390: the phone shell (web target under 720px) — the page modal is a full-screen phone sheet.
+it.each([1280, 390])('the old-versions confirmation opens above the market details, inside the page modal, at %ipx', async (width) => {
+  await page.viewport(width, width < 720 ? 844 : 900);
   mount(<PageModalFrame><MarketDetailDialog onClose={() => undefined}><ManagedVersionsRow agentId="codex" name="Codex" disabled={false} /></MarketDetailDialog></PageModalFrame>);
   const rowButtons = () => [...document.querySelectorAll<HTMLElement>('[data-testid="managed-old-versions"] button:not([role="checkbox"])')];
   await until('the row is shown', () => rowButtons().length === 1);
@@ -85,7 +87,8 @@ it('the old-versions confirmation opens above the market details, inside the pag
   expect(popup.contains(centerHit(popup)), 'what is under the pointer at its center is the confirmation').toBe(true);
   expect(details.contains(centerHit(popup))).toBe(false);
   expect(findOcclusion(popup, 'test')).toBeNull();
-  await page.screenshot({ path: '__screenshots__/overlay-layering-3857-market.png' });
+  expect(document.querySelector('[data-testid="page-modal"]')?.getAttribute('data-sheet-mobile')).toBe(width < 720 ? 'true' : 'false');
+  await page.screenshot({ path: `__screenshots__/overlay-layering-3857-market-${width}.png` });
   // Confirming runs the clean and closes only the confirmation: the details stay.
   state.clean.mockResolvedValue({ removed: ['0.167.1'], failed: [], snapshot: null });
   await userEvent.click([...popup.querySelectorAll<HTMLElement>('[data-slot="dialog-footer"] button')].at(-1)!);
@@ -145,7 +148,8 @@ it('a dialog taller than the window keeps its header and footer and scrolls its 
   expect(ok.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)), 'the footer button is reachable').toBe(true);
 });
 
-it('a confirmation from a plain function inside Contacts (a PAGE_MODAL_FRAME sheet, no redirect) opens above the sheet', async () => {
+it.each([1280, 390])('a confirmation from a plain function inside Contacts (a PAGE_MODAL_FRAME sheet, no redirect) opens above the sheet at %ipx', async (width) => {
+  await page.viewport(width, width < 720 ? 844 : 900);
   // MainLayout draws Contacts in a Sheet at --z-settings and never points the global store into it; ContactsPanel and
   // ContactRowActions ask through confirmDanger / showModal. The global layer used to sit at --z-modal, under the sheet.
   const host = document.createElement('div'); document.body.append(host); els.push(host);
@@ -166,7 +170,8 @@ it('a confirmation from a plain function inside Contacts (a PAGE_MODAL_FRAME she
   const sheet = document.querySelector<HTMLElement>('[data-testid="contacts-sheet"]')!;
   expect(popup()!.contains(centerHit(popup()!)), 'the confirmation is what is under the pointer').toBe(true);
   expect(sheet.contains(centerHit(popup()!))).toBe(false);
-  await page.screenshot({ path: '__screenshots__/overlay-layering-3857-contacts.png' });
+  expect(sheet.getAttribute('data-sheet-mobile')).toBe(width < 720 ? 'true' : 'false');
+  await page.screenshot({ path: `__screenshots__/overlay-layering-3857-contacts-${width}.png` });
   await userEvent.click([...popup()!.querySelectorAll<HTMLElement>('[data-slot="dialog-footer"] button')].at(-1)!);
   expect(await answer).toBe(true);
 });
