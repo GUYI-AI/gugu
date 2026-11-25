@@ -152,6 +152,19 @@ export interface PromptEditorRef {
   removeMention(id: string): void;
   /** Update the pending state for mention nodes with the given id. */
   setMentionPending(id: string, pending: boolean): void;
+  /** The inline images in the document, in order (their attachment ids). */
+  inlineImageIds(): string[];
+  /** Place pictures at the caret, or at the point under `at` (a drop's client coordinates). */
+  insertInlineImages(images: readonly InlineImageItem[], at?: { left: number; top: number }): void;
+  /** Bring the inline images to the host's list: refresh their thumbnails, remove the ones it no longer holds. */
+  updateInlineImages(images: readonly InlineImageItem[]): void;
+}
+
+/** A picture placed in the text: the host's attachment id and its preview. */
+export interface InlineImageItem {
+  id: string;
+  src?: string | null;
+  name?: string | null;
 }
 
 export interface PromptEditorProps {
@@ -224,5 +237,9 @@ export interface PromptEditorProps {
    * caret movement.
    */
   getPromptHistory?: () => readonly string[];
+  /** A click on an inline image chip (its attachment id). */
+  onViewInlineImage?: (id: string, cell: HTMLElement) => void;
+  /** The person removed inline images from the text (their attachment ids); the host drops those attachments. */
+  onInlineImagesRemoved?: (ids: string[]) => void;
   className?: string;
 }

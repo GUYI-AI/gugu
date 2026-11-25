@@ -22,6 +22,8 @@ export const localFilePromptAttachmentSchema = z.object({
   originalPath: z.string(),
   mimeType: attachmentMimeTypeSchema,
   name: z.string().optional(),
+  /** The folder file it was read from: a `gugu-file://<id>` image in the words puts this picture at that place. */
+  fileItemId: z.string().optional(),
 });
 
 export const attachmentPromptAttachmentSchema = z.object({

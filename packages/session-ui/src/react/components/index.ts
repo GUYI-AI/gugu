@@ -47,6 +47,8 @@ export { ComposerFastMode, type FastModeHintPlacement } from './chat-composer/co
 export { ComposerThinking, type ComposerThinkingProps } from './chat-composer/composer-thinking';
 /** The composer's editor alone, for a field that writes into a chat without the composer's chrome (a forward's note). */
 export { PromptEditor } from './prompt-editor/prompt-editor';
+export { inlineImageParts, withoutInlineImages } from './prompt-editor/serialize';
+export { InlineImageChip } from './prompt-editor/inline-image-pill';
 export { QueuedPromptsBand } from './chat-composer/queued-prompts-band';
 export type {
   QueuedPromptsBandProps,
