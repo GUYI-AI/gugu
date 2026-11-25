@@ -289,6 +289,15 @@ describe('a published image offers its preview', () => {
     expect(sized).toMatchObject({ p_width: 1600, p_height: 400 })
     expect(unread).not.toHaveProperty('p_width')
   })
+  it('names the size a page is drawn at, as its sender gave it; an image\'s size comes from its bytes alone', async () => {
+    const f = fixture()
+    const original = { path: join(root, file.name), size: data.length, width: 640, height: 360 }
+    await f.publish('group', { ...original, name: 'chart.html', contentType: 'text/html' }, null, 'owner', undefined, { message })
+    await f.publish('group', { ...original, name: 'shot.png', contentType: 'image/png' }, null, 'owner', undefined, { message })
+    const [page, unread] = f.rpc.mock.calls.filter(([name]) => name === 'file_device_publish').map(([, args]) => args)
+    expect(page).toMatchObject({ p_width: 640, p_height: 360 })
+    expect(unread).not.toHaveProperty('p_width')
+  })
   it('a refused offer is only logged: the image is still sent', async () => {
     const f = fixture()
     f.preview.mockRejectedValueOnce(new Error('preview refused'))

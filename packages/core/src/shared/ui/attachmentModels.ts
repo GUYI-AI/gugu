@@ -3,6 +3,11 @@ import type { FileMetadata, FileRef } from '../fileResolver'
 
 export type AttachmentKind = 'image' | 'file'
 
+/** An .html file: one sent with the size it is drawn at (message_send `page_size`) is drawn in place as a page. */
+export function isHtmlPage(fileName: string, mimeType: string): boolean {
+  return mimeType.split(';')[0]!.trim().toLowerCase() === 'text/html' || mimeTypeFromName(fileName) === 'text/html'
+}
+
 /** 写进正文的那份(老式发送:字节在 chat-media,正文里带公开 URL)。 */
 export interface AttachmentMeta {
   kind: AttachmentKind

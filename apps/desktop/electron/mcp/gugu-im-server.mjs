@@ -26,7 +26,7 @@ import { ATTACHMENT_PENDING_WAIT_MS, AttachmentUploadPendingError, fileRefKey, i
 import { TYPED_ID_KINDS, decodeIdentityAddress, decodeTypedId, encodeTypedId } from '../../../../packages/core/src/shared/typedId.mjs'
 import { matchIdPrefix, uuidPrefixRange } from '../../../../packages/core/src/shared/idPrefix'
 import { WORKSPACE_TEXT_MAX_BYTES, workspaceUploadKind } from '../../../../packages/core/src/shared/workspaceUpload.mjs'
-import { parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
+import { isHtmlPage, parseAttachmentContent } from '../../../../packages/core/src/shared/ui/attachmentModels'
 import { parseWidgetMessage } from '../../../../packages/core/src/shared/ui/widgetModels'
 import { messageReferenceBlocks } from '@gugu/session-shared/markdown/dialect'
 import { attachmentFolderLine, SHARED_READ_ONLY_COPY } from '../../../../packages/core/src/shared/attachmentFolderLine'
@@ -1543,6 +1543,7 @@ async function handleMessage(args, deps) {
   // message_send carries a file as well: then its text is the file's caption and may be left out.
   const hasFile = requestedAction === 'send' && Boolean(args.file || args.file_path)
   if (requestedAction === 'send' && !hasFile && !String(args.text ?? '').trim()) throw new Error('message_send: give text, a file (file / file_path), or both')
+  if (requestedAction === 'send') pageSizeOf(args)
   if (requestedAction === 'send' || requestedAction === 'contact-friend' || requestedAction === 'topic-invite') {
     assertAgentMessageText(String(args.text ?? ''), writerToolName)
   }
@@ -2391,9 +2392,18 @@ async function publishHere(args, deps, chatId, message, next) {
   await requireAgentFileAccess(target)
   const info = await stat(target).catch((err) => { throw new Error(`message_send: cannot read ${target} (${err?.code || err?.message || 'unknown'})`) })
   if (!info.isFile()) throw new Error(`message_send: ${target} is not a file`)
-  const sent = await publish(chatId, { name: fileName, path: target, size: info.size, contentType }, deps.context.agentId,
+  const sent = await publish(chatId, { name: fileName, path: target, size: info.size, contentType, ...pageSizeOf(args) }, deps.context.agentId,
     { ...message, file_name: fileName, content_type: contentType }, next)
   return sent?.message ?? null
+}
+
+/** The size an .html file is drawn at in the chat (`page_size`): it is then a page in place, not a file card. */
+function pageSizeOf(args) {
+  if (!args.page_size) return {}
+  if (!args.file_path) throw new Error('message_send: page_size goes with the file_path of an .html file; nothing was sent')
+  const contentType = resolveAttachmentMimeType(basename(String(args.file_path)), args.mime_type)
+  if (!isHtmlPage(resolveUploadName(args), contentType)) throw new Error('message_send: page_size is for an .html file; nothing was sent')
+  return { width: args.page_size.width, height: args.page_size.height }
 }
 
 /** A next version that started from a version the file is no longer at: nothing was sent, and what to do. */
@@ -2632,6 +2642,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
   if (folderFile && args.file_path && folderFile.version === undefined) {
     throw new Error(`message_send: file_path as the next version of ${args.file} needs the version you started from: gugu-file://${folderFile.itemId}?v=<n>`)
   }
+  const page = pageSizeOf(args)
   // #2383 收件人合不合格由库判(与文字消息同一条规则);被拒时 recipientRefusal 说清是谁。
   const refused = async (error) => { throw await recipientRefusal(error, chatId, deps) }
   const said = String(caption ?? '').trim()
@@ -2679,6 +2690,7 @@ async function sendFileMessage(args, deps, { chatId, messageId, toUserIds, reply
       sender_user_id: deps.context.agentId,
       file_name: fileName,
       content_type: contentType,
+      ...page,
       ...meta,
       ...(isWhisper ? { is_whisper: true } : {}),
       // 那个文件的下一版:起点版本对不上(有人先存了新版)服务端就拒,什么都不写。
@@ -2825,6 +2837,8 @@ export const TOOL_DEFS = [
       file_path: uploadFilePathSchema.optional().describe('A file on this computer to send.'),
       file_name: uploadFileNameSchema,
       mime_type: uploadMimeTypeSchema,
+      page_size: z.object({ width: z.number().int().min(1).max(4000), height: z.number().int().min(1).max(4000) }).optional()
+        .describe('An .html file_path: its width and height in px; the chat draws the page in place at that size.'),
       temporary: z.boolean().optional().describe('The cloud copy expires: for files sent only to be looked at.'),
     }),
     handler: (args, deps) => handleMessage({ ...args, action: 'send' }, deps),

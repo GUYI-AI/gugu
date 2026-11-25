@@ -17,8 +17,11 @@ import type { FileStorage } from '@gugu/core/shared/fileStorage'
 import type { FilesPlatform } from '../src/session/shared/extensions/app-files-core'
 
 export type ProjectFileMessage = Omit<CommitArgs, 'staging_key'>
-/** `data` carries the bytes of a selection that has no disk path (a clipboard paste); `path` is then empty. */
-export type SelectedProjectFile = { name: string; path: string; size: number; contentType: string; data?: ArrayBuffer }
+/**
+ * `data` carries the bytes of a selection that has no disk path (a clipboard paste); `path` is then empty. `width` and
+ * `height`: the size a file whose bytes give none is drawn at (a page sent with `page_size`); an image's come from its bytes.
+ */
+export type SelectedProjectFile = { name: string; path: string; size: number; contentType: string; data?: ArrayBuffer; width?: number; height?: number }
 /** The file this publication is the next version of, and the version it started from (`file_device_publish`'s `p_expected`). */
 export type ProjectFileNextVersion = { itemId: string; expectedVersion: number }
 /**
@@ -71,7 +74,7 @@ export function createProjectFilePublisher(deps: {
     const path = relative(root, file.path).split(sep).join('/')
     const first = await readWorkspaceChunk(root, { path, offset: 0, length: 0 }), hash = createHash('sha256')
     if (first.size !== file.size) throw new Error('Selected file changed before it was sent')
-    let pixels: { width: number; height: number } | null = null
+    let pixels = !file.contentType.startsWith('image/') && file.width && file.height ? { width: file.width, height: file.height } : null
     for (let offset = 0; offset < first.size; offset += FILE_CHUNK_BYTES) {
       const length = Math.min(FILE_CHUNK_BYTES, first.size - offset), part = await readWorkspaceChunk(root, { path, offset, length })
       const bytes = Buffer.from(part.data, 'base64')

@@ -2167,6 +2167,20 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(String((h.calls.inserts[0][1] as Record<string, unknown>).content)).toContain('[附件] 销售图 v2.0 (image/png)')
   })
 
+  test('message_send page_size: an .html file goes with the size it is drawn at; any other file is refused, nothing sent', async () => {
+    const h = harness(['agent-1'])
+    await callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('chart.html', Buffer.from('<p>chart</p>')), page_size: { width: 640, height: 360 } }, h.deps)
+    expect(h.commitBodies[0]).toMatchObject({ file_name: 'chart.html', content_type: 'text/html', width: 640, height: 360 })
+    await callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('plain.html', Buffer.from('<p>x</p>')) }, h.deps)
+    expect(h.commitBodies[1], 'without page_size an .html is a file like any other').not.toHaveProperty('width')
+    await expect(callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', file_path: fixtureFile('notes.md', Buffer.from('# x')), page_size: { width: 640, height: 360 } }, h.deps))
+      .rejects.toThrow(/page_size is for an \.html file/)
+    await expect(callTool('message_send', { chat_id: '00000000-0000-4000-8000-000000000001', text: 'chart', page_size: { width: 640, height: 360 } }, h.deps))
+      .rejects.toThrow(/page_size goes with the file_path/)
+    expect(h.commitBodies).toHaveLength(2)
+    expect(h.calls.inserts, 'a refused page sends no message').toHaveLength(2)
+  })
+
   test('message_send_file:回答丢了 ⇒ 同一次上传、同一个消息 id 重放,只出一条消息;服务端明确拒的(4xx)不重放', async () => {
     const h = harness(['agent-1'])
     h.loseCommitAnswers(1)
