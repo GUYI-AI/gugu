@@ -172,8 +172,11 @@ export function openImageFromThumb(thumb: HTMLImageElement): void {
 }
 
 /** 输入框里的附件 chip:图片进查看器并返回 true;文本附件返回 false,交回宿主的附件对话框。 */
-export function openComposerImage(attachment: { kind: 'image' | 'file'; name: string; previewUrl?: string; mimeType?: string }): boolean {
+export function openComposerImage(
+  attachment: { kind: 'image' | 'file'; name: string; previewUrl?: string; mimeType?: string },
+  replace?: ImageViewerItem['replace'],
+): boolean {
   if (attachment.kind !== 'image' || !attachment.previewUrl) return false
-  openImageViewer([{ url: attachment.previewUrl, alt: attachment.name, file: { name: attachment.name, contentType: attachment.mimeType } }])
+  openImageViewer([{ url: attachment.previewUrl, alt: attachment.name, file: { name: attachment.name, contentType: attachment.mimeType }, replace }])
   return true
 }

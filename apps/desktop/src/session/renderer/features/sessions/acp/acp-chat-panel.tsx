@@ -1565,7 +1565,15 @@ const ComposerForStore = observer(function ComposerForStore({
         attachmentQualityLocked={sendHold === 'waiting'}
         dataDropTypes={dataDropTypes}
         onDataDropped={onDataDropped}
-        onViewAttachment={onViewAttachment}
+        onViewAttachment={att => {
+          const source = fileUploads.draftFile(att.id);
+          if (openComposerImage(att, source && ((file, caption) => {
+            if (sendingRef.current) throw new Error(translate('composer.attachmentWaiting'));
+            fileUploads.replaceImage(att.id, source, file);
+            if (caption) editorApiRef.current?.insertText(caption, 'end');
+          }))) return;
+          onViewAttachment(att);
+        }}
       />
     </>,
     composerSlot
@@ -2038,9 +2046,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     setViewer({ src, alt });
   }, []);
 
-  /** 输入框里点开一枚 chip:图片进看图查看器,文本给 `text` —— 由 chip 手上有什么决定(#5269)。 */
+  /** 文本附件由面板打开内容预览。 */
   const handleAttachmentView = useCallback((att: ComposerAttachment) => {
-    if (openComposerImage(att)) return;
     setViewer({
       alt: att.name,
       text: att.previewText,

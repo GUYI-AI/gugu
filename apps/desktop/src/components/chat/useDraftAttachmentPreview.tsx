@@ -6,7 +6,7 @@ import { openImageViewer } from '@/lib/imageViewer'
 import { Sheet } from '../ui/Sheet'
 import { MessageFilePreview, type HostedPreviewFile } from './MessageFilePreview'
 
-export type DraftAttachmentReplace = (id: string, file: File, caption: string) => void | Promise<void>
+export type DraftAttachmentReplace = (id: string, file: File, caption: string, original: File) => void | Promise<void>
 
 /** A picked file opens from the draft's own bytes, regardless of its upload state. An image edited there comes back through `replace`. */
 export function useDraftAttachmentPreview(
@@ -22,7 +22,7 @@ export function useDraftAttachmentPreview(
     if (!file) return
     const read = async () => file
     if (isRenderableImage(file.name, file.type)) {
-      openImageViewer([{ ...workingCopyImageItem(file.name, read), ...(replace ? { replace: (edited: File, caption: string) => replace(attachment.id, edited, caption) } : {}) }])
+      openImageViewer([{ ...workingCopyImageItem(file.name, read), ...(replace ? { replace: (edited: File, caption: string) => replace(attachment.id, edited, caption, file) } : {}) }])
       return
     }
     setPreview({ scope, file: {
