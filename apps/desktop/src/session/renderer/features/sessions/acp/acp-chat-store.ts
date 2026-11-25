@@ -2634,12 +2634,16 @@ export class AcpChatStore {
       const transcript = this.chatState.transcript;
       const frame = transcript.state.activeTurnSnapshot;
       const live = this.session?.activeTurn.current() ?? null;
-      // The committed turn gives way once the timeline holds no open copy of it: the runtime's running copy (same id), or the
-      // record's (another id, `sameTurnAs`) that has its prompt and not yet its reply. Ended where the journal or the record
-      // keeps it, or not held at all, the timeline draws that turn itself.
+      // A finished runtime turn still owns its frame while the timeline has no copy or only an open one. A new task's
+      // stand-in timeline can stay empty after the runtime ends, until the native record takes over.
       const kept = this._committedFrame;
-      const copy = kept && copyOf(kept, this._endedBeforeLive);
-      const recorded = copy !== null && !this._history!.state.turns.some(turn => copy(turn) && turn.outcome === undefined && turn.endedAt === undefined);
+      const turns = this._history!.state.turns;
+      const copies = kept ? turns.filter(copyOf(kept, this._endedBeforeLive)) : [];
+      const recorded = kept !== null && (copies.length > 0
+        ? copies.every(turn => turn.outcome !== undefined || turn.endedAt !== undefined)
+        // Some records wrap the input and change its ids. The same order and opening time identify its replacement.
+        : kept.startedAt !== undefined && turns.some(turn => !this._endedBeforeLive.has(turn.id)
+          && turn.seq === kept.seq && turn.startedAt === kept.startedAt));
       if (recorded) this._committedFrame = null;
       const released = recorded && frame !== null && frame.id === kept?.id;
       const shown = released ? null : frame;
