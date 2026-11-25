@@ -98,6 +98,7 @@ export type TurnPublishArchive = {
 };
 
 export type SessionTimelineDeps = {
+  onError?: (error: unknown) => void;
   /** 进 reducer 的 turn id 前缀。同一份记录用同一个值，turn id 才在重开之间稳定。 */
   sessionId: string;
   /** Durable host engine ends supplement missing native boundaries, shared by snapshots and live deltas. */
@@ -176,7 +177,7 @@ export async function createSessionTimeline(
   deps: SessionTimelineDeps
 ): Promise<SessionTimeline> {
   const timeline = new RecordTimeline(source, deps);
-  await timeline.begin();
+  try { await timeline.begin(); } catch (error) { timeline.dispose(); throw error; }
   return timeline;
 }
 
@@ -326,7 +327,8 @@ class RecordTimeline implements SessionTimeline {
       await this.source.start(
         {
           onEntries: (entries) => this.apply(entries),
-          onReset: (reason) => this.reset(reason)
+          onReset: (reason) => this.reset(reason),
+          onError: (error) => this.deps.onError?.(error),
         },
         restored ? (this.deps.archive as TimelineArchive).resume : this.deps.resume ?? undefined
       );

@@ -43,6 +43,7 @@ export function withSubagentSources(
     const source = createChild(id);
     children.set(id, source);
     const read = source.start({
+      onError: error => sink?.onError?.(error),
       onEntries(entries) {
         const mapped: RecordEntry[] = entries.flatMap((entry): RecordEntry | [] => {
           if (entry.boundary) return { key: entry.key, at: entry.at, event: childState(id,
