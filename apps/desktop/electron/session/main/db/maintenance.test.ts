@@ -1,14 +1,18 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { createDatabaseMaintenance, DATABASE_IDLE_MS } from './maintenance';
 import { beginDatabaseMaintenance, databaseRequestsActive, noteDatabaseActivity, withDatabaseActivity } from './maintenance-activity';
-import type { MaintenanceJob } from './maintenance-worker';
+import type { MaintenanceJob, MaintenanceReading } from './maintenance-worker';
 import type { HostIpc, HostIpcInvokeEvent, HostIpcMain } from '../lib/host-ipc';
 
 afterEach(() => { vi.useRealTimers(); });
 
+const target = { path: 'main.sqlite', identity: '1:11' };
+const space = { pageCount: 20_000, freelistCount: 18_000, pageSize: 4096 };
+const legacy = (path: string): MaintenanceReading => ({ path, result: { before: space, after: space, reclaimedPages: 0, state: 'legacy' } });
+
 it('arms no maintenance work on boot, waits for quiet, and skips an occupied host', async () => {
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
-  const idle = vi.fn(() => false), targets = vi.fn(() => []), run = vi.fn(async () => []);
+  const idle = vi.fn(() => false), targets = vi.fn(() => [target]), run = vi.fn(async () => []);
   const maintenance = createDatabaseMaintenance({ idle, targets, run, report: vi.fn() });
   maintenance.start();
   expect(idle).not.toHaveBeenCalled();
@@ -72,7 +76,7 @@ it('stop cancels and drains an in-flight worker before database teardown', async
     flag = new Int32Array(job.cancellation);
     return new Promise<[]>((resolve) => { complete = resolve; });
   });
-  const maintenance = createDatabaseMaintenance({ idle: () => true, targets: () => [], run, report() {} });
+  const maintenance = createDatabaseMaintenance({ idle: () => true, targets: () => [target], run, report() {} });
   maintenance.start();
   await vi.advanceTimersByTimeAsync(DATABASE_IDLE_MS);
   const stopped = vi.fn();
@@ -90,7 +94,7 @@ it('continues a reclaim queue in small idle slices rather than waiting a minute 
   const run = vi.fn<NonNullable<Parameters<typeof createDatabaseMaintenance>[0]['run']>>()
     .mockResolvedValueOnce([{ path: 'main.sqlite', result: { before: space, after: space, reclaimedPages: 128, state: 'reclaimed' } }])
     .mockResolvedValue([]);
-  const maintenance = createDatabaseMaintenance({ idle: () => true, targets: () => [], run, report() {} });
+  const maintenance = createDatabaseMaintenance({ idle: () => true, targets: () => [target], run, report() {} });
   maintenance.start();
   await vi.advanceTimersByTimeAsync(DATABASE_IDLE_MS);
   expect(run).toHaveBeenCalledOnce();
@@ -111,7 +115,7 @@ it('keeps pending requests busy but allows a desktop idle policy between complet
   let complete!: () => void;
   withDatabaseActivity(host).ipcMain.handle('poll', () => new Promise<void>(resolve => { complete = resolve; }));
   const run = vi.fn(async () => []);
-  const maintenance = createDatabaseMaintenance({ idle: () => true, quiet: () => !databaseRequestsActive(), targets: () => [], run, report() {} });
+  const maintenance = createDatabaseMaintenance({ idle: () => true, quiet: () => !databaseRequestsActive(), targets: () => [target], run, report() {} });
   maintenance.start();
   const response = handler({} as HostIpcInvokeEvent);
   expect(databaseRequestsActive()).toBe(true);
@@ -125,5 +129,54 @@ it('keeps pending requests busy but allows a desktop idle policy between complet
   noteDatabaseActivity();
   await vi.advanceTimersByTimeAsync(1);
   expect(run).toHaveBeenCalledOnce();
+  await maintenance.stop();
+});
+
+it('omits legacy identities after one probe and rechecks a replacement at the same path', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  let identity = target.identity;
+  const run = vi.fn(async (_job: MaintenanceJob) => [legacy(target.path)]);
+  const maintenance = createDatabaseMaintenance({
+    idle: () => true, quiet: () => true,
+    targets: () => [{ ...target, identity }], run, report() {},
+  });
+  maintenance.start();
+  await vi.advanceTimersByTimeAsync(DATABASE_IDLE_MS * 5);
+  expect(run).toHaveBeenCalledOnce();
+  // Cached-only cycles must not install a barrier that would defer this request.
+  expect(noteDatabaseActivity()).toBeUndefined();
+  identity = '1:12';
+  await vi.advanceTimersByTimeAsync(DATABASE_IDLE_MS);
+  expect(run).toHaveBeenCalledTimes(2);
+  expect(run.mock.calls[1][0].targets).toEqual([{ ...target, identity }]);
+  await vi.advanceTimersByTimeAsync(DATABASE_IDLE_MS * 3);
+  expect(run).toHaveBeenCalledTimes(2);
+  await maintenance.stop();
+});
+
+it('keeps incremental targets scheduled after caching a legacy sibling', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  const index = { path: 'search.sqlite', identity: '1:22' };
+  const run = vi.fn(async (job: MaintenanceJob) => job.targets.map(entry => entry.path === target.path
+    ? legacy(entry.path)
+    : { path: entry.path, result: { before: space, after: space, reclaimedPages: 0, state: 'below-threshold' as const } }));
+  const maintenance = createDatabaseMaintenance({ idle: () => true, quiet: () => true, targets: () => [target, index], run, report() {} });
+  maintenance.start();
+  await vi.advanceTimersByTimeAsync(DATABASE_IDLE_MS * 4);
+  expect(run).toHaveBeenCalledTimes(4);
+  expect(run.mock.calls[0][0].targets).toEqual([target, index]);
+  for (const [job] of run.mock.calls.slice(1)) expect(job.targets).toEqual([index]);
+  await maintenance.stop();
+});
+
+it.each(['busy', 'cancelled', 'below-threshold', 'error'] as const)('does not cache %s readings as legacy', async state => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  const run = vi.fn(async (): Promise<MaintenanceReading[]> => [state === 'error'
+    ? { path: target.path, error: 'probe failed' }
+    : { path: target.path, result: { before: space, after: space, reclaimedPages: 0, state } }]);
+  const maintenance = createDatabaseMaintenance({ idle: () => true, quiet: () => true, targets: () => [target], run, report() {} });
+  maintenance.start();
+  await vi.advanceTimersByTimeAsync(DATABASE_IDLE_MS * 2);
+  expect(run).toHaveBeenCalledTimes(2);
   await maintenance.stop();
 });

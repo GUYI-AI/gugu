@@ -27,6 +27,10 @@ export function createDatabaseMaintenance(options: {
   let running: Promise<void> | undefined;
   let control: ReturnType<typeof beginDatabaseMaintenance> | undefined;
   let stopped = true;
+  // NONE databases cannot be reclaimed by this queue. Never repeatedly open
+  // them: closing a last connection could checkpoint an unrelated large WAL.
+  // A replacement inode gets a fresh probe even when its pathname is unchanged.
+  const legacyIdentities = new Set<string>();
   const schedule = (delay = DATABASE_IDLE_MS) => {
     if (stopped) return;
     timer = setTimeout(tick, delay);
@@ -35,8 +39,12 @@ export function createDatabaseMaintenance(options: {
   const tick = () => {
     timer = undefined;
     if (stopped) return;
+    let targets: MaintenanceTarget[];
     try {
       if (!(options.quiet?.() ?? databaseQuietFor(DATABASE_IDLE_MS)) || !options.idle()) { schedule(); return; }
+      targets = options.targets().filter(target => !legacyIdentities.has(target.identity));
+      // No worker or admission barrier when every existing file is legacy.
+      if (targets.length === 0) { schedule(); return; }
     } catch (error) {
       options.report([{ path: '', error: String(error) }]);
       schedule();
@@ -46,7 +54,12 @@ export function createDatabaseMaintenance(options: {
     running = (async () => {
       let reclaimed = false;
       try {
-        const readings = await (options.run ?? runWorker)({ targets: options.targets(), cancellation: control!.buffer });
+        const readings = await (options.run ?? runWorker)({ targets, cancellation: control!.buffer });
+        for (const reading of readings) {
+          if (reading.result?.state !== 'legacy') continue;
+          const target = targets.find(candidate => candidate.path === reading.path);
+          if (target) legacyIdentities.add(target.identity);
+        }
         reclaimed = readings.some(reading => reading.result?.state === 'reclaimed');
         options.report(readings);
       }

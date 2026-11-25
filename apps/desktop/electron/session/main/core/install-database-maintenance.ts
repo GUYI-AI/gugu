@@ -6,6 +6,7 @@ import { databaseRequestsActive, databaseQuietFor } from '../db/maintenance-acti
 import { DATABASE_IDLE_MS } from '../db/maintenance';
 import { RECLAIM_MIN_BYTES } from '../db/reclaim';
 import { createDatabaseMaintenance } from '../db/maintenance';
+import { resolveDatabasePath } from '../db/path';
 import { physicalDatabaseBinding } from '../db/physical-connection';
 import { sessionDatabaseConnection } from '../db/client';
 import { takeDatabaseSpaceChanges } from '../db/space';
@@ -40,7 +41,8 @@ export function installDatabaseMaintenance(browserFeatures: boolean) {
       }
       const main = physicalDatabaseBinding(connection);
       const targets = [{ path: main.path, identity: main.identity }];
-      const path = sessionIndexPath(main.path);
+      // The index writer uses the configured path, even if the main DB is a symlink.
+      const path = sessionIndexPath(resolveDatabasePath());
       try { const stat = statSync(path, { bigint: true }); targets.push({ path, identity: `${stat.dev}:${stat.ino}` }); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
       return targets;
