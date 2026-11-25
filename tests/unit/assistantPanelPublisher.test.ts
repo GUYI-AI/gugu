@@ -8,7 +8,7 @@ import { AssistantPanelError } from '@gugu/core/cloud/assistantPanel'
 import { uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies'
 import { assistantHomePaths } from '@gugu/core/shared/assistantPolicy'
 import { collectAssistantPanelFiles, publishAssistantPanelCollection, type PanelObservation } from '../../apps/desktop/electron/sessionpage/assistant-panel-publisher'
-import { createAssistantPanelBodyFailures } from '../../apps/desktop/electron/sessionpage/assistant-panel-body-failures'
+import { createAssistantPanelBodyFailures, type AssistantPanelBodyFailures } from '../../apps/desktop/electron/sessionpage/assistant-panel-body-failures'
 import { createAssistantPanelApplication } from '../../apps/desktop/electron/sessionpage/assistant-panel-application'
 
 const roots: string[] = []
@@ -61,7 +61,7 @@ function transport() {
       retain: async (domain: string,keys: ReadonlySet<string>) => {
         for (const key of failures.keys()) if (key.startsWith(`${domain}:`) && !keys.has(key.slice(domain.length+1))) failures.delete(key)
       },
-    },
+    } as AssistantPanelBodyFailures,
     collect: vi.fn<(previous?: AssistantPanelItem[]) => Promise<PanelObservation[]>>(async () => [{ key: 'note',data: { relativePath: 'note.md' },bytes: new TextEncoder().encode('private note') }]),
     upload: vi.fn(async (row: PanelObservation) => ({ itemId: 'body',sha256: createHash('sha256').update(row.bytes!).digest('hex') })),
     discard: vi.fn(async () => {}),revoke: vi.fn<(item: AssistantPanelItem, observation: PanelObservation) => Promise<void>>(async () => {}),
