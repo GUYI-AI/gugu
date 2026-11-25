@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { CUSTOM_MODEL_KEY_CHANNEL, customModelAcceptsImages, customModelThinks, matchCustomModel, normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta, type ModelProtocol } from '@gugu/session-core/models/custom-model';
+import { useRef, useState } from 'react';
+import { CUSTOM_MODEL_KEY_CHANNEL, customModelAcceptsImages, customModelThinks, customModelRouteSchema, modelProtocolSchema, normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta, type CustomModelRoute, type ModelProtocol } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { vendorName } from '@/i18n/vendorName';
 import { Button } from '@renderer/lib/ui/button';
 import { Input } from '@renderer/lib/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@renderer/lib/ui/select';
-import { Dialog, DialogContent, DialogContentArea, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
+import { Dialog, DialogContent, DialogContentArea, DialogDescription, DialogHeader, DialogTitle } from '@renderer/lib/ui/dialog';
 import {
   Combobox, ComboboxTrigger, ComboboxContent, ComboboxInput, ComboboxList, ComboboxGroup,
   ComboboxCollection, ComboboxItem, ComboboxEmpty,
@@ -26,9 +26,10 @@ import { ChevronDownIcon, Eye, EyeOff } from '@/lib/icons';
 import { IconButton } from '@/components/ui/IconButton';
 import { SettingsNote, Toggle } from './SettingsPrimitives';
 
-export function CustomModelDialog({ machine, connection, group = 'custom', initialAccount, onClose }: {
+export function CustomModelDialog({ machine, connection, group = providerPresets.find(preset => preset.id === connection?.preset)?.group ?? 'custom',
+  initialAccount, initialRoute, onClose }: {
   machine: string | null; connection?: CustomModelConnection; group?: 'coding-plan' | 'api' | 'custom';
-  initialAccount?: 'claude' | 'codex'; onClose: () => void;
+  initialAccount?: 'claude' | 'codex'; initialRoute?: Omit<CustomModelRoute, 'id'>; onClose: () => void;
 }) {
   const { translate } = useSessionMessages();
   const initialPreset = providerPresets.find(preset => preset.group === group);
@@ -44,6 +45,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const providerLabel = (id: string) => <span className="flex items-center gap-2">{id === 'claude-subscription' || id === 'chatgpt-subscription' ? <AppIcon id={id === 'claude-subscription' ? 'claude' : 'codex'} size={16} /> : null}{labelOf(id)}</span>;
   const [endpoints, setEndpoints] = useState<CustomModelMeta['endpoints']>(connection?.endpoints ?? initialPreset?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
   const [apiKey, setApiKey] = useState('');
+  const keyInput = useRef<HTMLInputElement>(null);
   // A key this computer holds is read into the field only when the eye is pressed, and only in its own window; the key
   // of a connection on another device never leaves it. The field still holding that key is not a new key.
   const [heldKey, setHeldKey] = useState('');
@@ -52,10 +54,15 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const typedKey = apiKey !== heldKey ? apiKey : '';
   // null = the person has not chosen: every model the address lists is selected.
   const [picked, setPicked] = useState<string[] | null>(connection ? connection.models.map(({ id }) => id) : null);
-  const [advanced, setAdvanced] = useState(false);
+  const [advanced, setAdvanced] = useState(Boolean(initialRoute && (initialRoute.baseUrl ||
+    !connection?.endpoints.some(endpoint => endpoint.protocol === initialRoute.outgoing))));
+  const [modelListRefresh, setModelListRefresh] = useState(0);
   const [features, setFeatures] = useState<Omit<CustomModelEntry, 'id' | 'label'>>((() => { const model = connection?.models[0]; return { image: model?.image, thinking: model?.thinking, contextWindow: model?.contextWindow, maxOutput: model?.maxOutput }; }));
   const [featuresChanged, setFeaturesChanged] = useState(false);
-  const [harnessProtocols, setHarnessProtocols] = useState<Record<string, ModelProtocol>>(connection?.harnessProtocols ?? {});
+  const [routes, setRoutes] = useState<CustomModelRoute[]>(() => {
+    const existing = connection?.routes ?? [];
+    return initialRoute && existing.length < 100 ? [{ ...initialRoute, id: crypto.randomUUID() }, ...existing] : existing;
+  });
   const [busy, setBusy] = useState<'save' | null>(null);
   const [accountCreating, setAccountCreating] = useState(false);
   const [failure, setFailure] = useState('');
@@ -68,18 +75,16 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const address = !preset && normalized?.[0] ? normalized[0].baseUrl : null;
   const keySource = typedKey ? { apiKey: typedKey } : connection?.keySaved ? { connectionId: connection.id } : null;
   const source: ConnectionModelSource | null = !keySource || !normalized ? null : address ? { ...keySource, baseUrl: address } : { ...keySource, endpoints: normalized };
-  const list = useConnectionModelList(machine, source);
+  const list = useConnectionModelList(machine, source, modelListRefresh);
   const probed = address ? (list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : []) : normalized ?? [];
-  // Only a harness that could use more than one of these protocols has a choice to make.
-  const protocolChoices = (agents ?? []).flatMap((agent) => {
-    const direct = agent.capabilities.modelProtocols ?? [];
-    const convertFrom = agent.capabilities.customModel?.convertFrom ?? [];
-    const usable = probed.map(({ protocol }) => protocol).filter((protocol) => direct.includes(protocol) || convertFrom.includes(protocol));
-    if (usable.length < 2) return [];
-    const auto = matchCustomModel({ nativeProtocol: direct[0], protocols: direct, convertFrom, connection: { endpoints: probed, keySaved: true } }).endpoint?.protocol;
-    const label = (protocol: ModelProtocol | undefined) => !protocol ? '' : direct.includes(protocol) ? translate(`customModels.${protocol}`) : translate('customModels.converted', { protocol: translate(`customModels.${protocol}`) });
-    return [{ agent, usable, label, autoLabel: translate('customModels.protocolAuto', { protocol: label(auto) }) }];
-  });
+  const routeEndpoints = probed.length ? probed : normalized ?? [];
+  const routeAddressPlaceholder = (outgoing: ModelProtocol) => {
+    const endpoint = routeEndpoints.find(({ protocol }) => protocol === outgoing);
+    return endpoint?.baseUrl === normalized?.[0]?.baseUrl ? translate('customModels.sameApiAddress') : endpoint?.baseUrl;
+  };
+  const protocolLabel = (protocol: ModelProtocol) => translate(`customModels.${protocol}`);
+  const updateRoute = (id: string, patch: Partial<CustomModelRoute>) => setRoutes(current =>
+    current.map(route => route.id === id ? { ...route, ...patch } : route));
   const models = picked ?? (list.kind === 'listed' ? list.models : []);
   const keyProblem = list.kind !== 'unlisted' || list.reason === 'no-list' ? ''
     : connection?.keySaved && !typedKey && list.reason === 'unauthorized' ? translate('customModels.heldKeyRefused')
@@ -118,11 +123,19 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
           }
         }
       }
+      const savedRoutes = routes.map((route) => customModelRouteSchema.parse({
+        ...route,
+        baseUrl: route.baseUrl?.trim() || undefined,
+      }));
+      if (savedRoutes.some(({ outgoing, baseUrl }) => !baseUrl && !saved.some(endpoint => endpoint.protocol === outgoing))) {
+        throw new Error(translate('customModels.routeAddressRequired'));
+      }
       const result = await client.saveCustomModel({
         ...(connection ? { id: connection.id } : {}),
         name: connection?.name || preset?.name || new URL(saved[0]!.baseUrl).host,
         preset: preset?.id ?? null, endpoints: saved,
-        harnessProtocols: Object.fromEntries(Object.entries(harnessProtocols).filter(([, protocol]) => saved.some((endpoint) => endpoint.protocol === protocol))),
+        routes: savedRoutes,
+        harnessProtocols: connection?.harnessProtocols,
         ...(typedKey ? { apiKey: typedKey } : {}),
         models: models.map((id) => {
           const existing = connection?.models.find((model) => model.id === id);
@@ -136,8 +149,12 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
     finally { setBusy(null); }
   };
   return <Dialog open onOpenChange={(open) => { if (!open && !busy && !accountCreating) onClose(); }}>
-    <DialogContent className="gg-model-dialog sm:max-w-[640px]" data-testid="custom-model-dialog">
-      <DialogHeader><DialogTitle>{translate(connection ? 'customModels.edit' : group === 'coding-plan' ? 'customModels.addPlan' : group === 'api' ? 'customModels.addApi' : 'customModels.add')}</DialogTitle></DialogHeader>
+    <DialogContent className="gg-model-dialog sm:max-w-[640px]" data-testid="custom-model-dialog"
+      initialFocus={connection && !connection.keySaved ? keyInput : undefined}>
+      <DialogHeader>
+        <DialogTitle>{translate(connection ? 'customModels.edit' : group === 'coding-plan' ? 'customModels.addPlan' : group === 'api' ? 'customModels.addApi' : 'customModels.add')}</DialogTitle>
+        {group === 'custom' && <DialogDescription>{translate('customModels.formDescription')}</DialogDescription>}
+      </DialogHeader>
       <DialogContentArea>
         <div className="subscription-connection-form">
           {group !== 'custom' && <label className="flex flex-col gap-2">
@@ -151,7 +168,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
               itemToStringLabel={labelOf}
               onValueChange={(id) => {
                 if (!id) return;
-                setPresetId(id); setPicked(null);
+                setPresetId(id); setPicked(null); setRoutes([]);
                 const next = providerPresets.find((item) => item.id === id);
                 if (id !== 'claude-subscription' && id !== 'chatgpt-subscription') setEndpoints(next?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
               }}
@@ -179,22 +196,68 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
           </label>}
           {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={retryOf(agentsReading)}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form className="subscription-connection-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           {!preset && <label>{translate('customModels.address')}<Input data-testid="custom-model-address-0" type="url" required value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} /></label>}
-          <label>API Key<span className="relative flex items-center"><Input data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyReadable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={keyProblem ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : undefined} onChange={(event) => setApiKey(event.target.value)} />
+          <label>API Key<span className="relative flex items-center"><Input ref={keyInput} data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyReadable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={keyProblem ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : undefined} onChange={(event) => setApiKey(event.target.value)} />
             {keyReadable && (apiKey || connection?.keySaved) && <IconButton size="sm" className="absolute right-1 top-1/2 -translate-y-1/2" aria-label={translate(keyShown ? 'customModels.hideKey' : 'customModels.showKey')} aria-pressed={keyShown} onClick={() => { void toggleKey(); }}>{keyShown ? <EyeOff aria-hidden className="size-4" /> : <Eye aria-hidden className="size-4" />}</IconButton>}</span></label>
           {keyProblem && <p className="subscription-error" role="alert" data-testid="custom-model-key-problem">{keyProblem}</p>}
-          <ConnectionModelPicker list={list} value={models} onChange={setPicked} />
+          <ConnectionModelPicker list={list} value={models} onChange={(next) => {
+            setPicked(next);
+            setRoutes(current => current.filter(({ modelId }) => !modelId || next.includes(modelId)));
+          }} />
+          {!preset && <Button type="button" size="sm" variant="outline" className="self-start" data-testid="custom-model-read-list"
+            disabled={!source || list.kind === 'reading' || !!busy} onClick={() => setModelListRefresh(current => current + 1)}>
+            {translate('customModels.readModels')}
+          </Button>}
+          <fieldset className="flex min-w-0 flex-col gap-2">
+            <legend className="mb-2">{translate('customModels.routing')}</legend>
+            {routes.map((route, index) => (
+              <div key={route.id} className={`grid items-end gap-2 ${advanced
+                ? 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.15fr)_auto]'
+                : 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_minmax(0,1fr)_auto]'}`}>
+                <label>{translate('customModels.incoming')}
+                  <Select value={route.incoming} onValueChange={(value) => { if (value) updateRoute(route.id, { incoming: value }); }}>
+                    <SelectTrigger data-testid={`custom-model-route-incoming-${index}`}><SelectValue>{route.incoming === 'any' ? translate('customModels.anyProtocol') : protocolLabel(route.incoming)}</SelectValue></SelectTrigger>
+                    <SelectContent><SelectItem value="any">{translate('customModels.anyProtocol')}</SelectItem>
+                      {modelProtocolSchema.options.map(protocol => <SelectItem key={protocol} value={protocol}>{protocolLabel(protocol)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </label>
+                <span className="self-end pb-2 text-foreground-muted" aria-hidden="true">→</span>
+                <label>{translate('customModels.outgoing')}
+                  <Select value={route.outgoing} onValueChange={(value) => { if (value) updateRoute(route.id, { outgoing: value }); }}>
+                    <SelectTrigger data-testid={`custom-model-route-outgoing-${index}`}><SelectValue>{protocolLabel(route.outgoing)}</SelectValue></SelectTrigger>
+                    <SelectContent>
+                      {modelProtocolSchema.options.map(protocol => <SelectItem key={protocol} value={protocol}>{protocolLabel(protocol)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </label>
+                <label>{translate('customModels.applicableModel')}
+                  <Select value={route.modelId ?? ''} onValueChange={(value) => updateRoute(route.id, { modelId: value || undefined })}>
+                    <SelectTrigger data-testid={`custom-model-route-model-${index}`}><SelectValue>{route.modelId ?? translate('customModels.allModels')}</SelectValue></SelectTrigger>
+                    <SelectContent><SelectItem value="">{translate('customModels.allModels')}</SelectItem>
+                      {models.map(id => <SelectItem key={id} value={id}>{id}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </label>
+                {advanced && <label>{translate('customModels.routeAddressColumn')}
+                  <Input type="url" aria-label={translate('customModels.routeAddress', { index: index + 1 })}
+                    data-testid={`custom-model-route-address-${index}`} value={route.baseUrl ?? ''}
+                    placeholder={routeAddressPlaceholder(route.outgoing)}
+                    onChange={(event) => updateRoute(route.id, { baseUrl: event.target.value })} />
+                </label>}
+                <IconButton size="sm" aria-label={translate('customModels.removeRoute', { index: index + 1 })}
+                  onClick={() => setRoutes(current => current.filter(({ id }) => id !== route.id))}>×</IconButton>
+              </div>
+            ))}
+            <Button type="button" size="sm" variant="outline" className="self-start" disabled={routes.length >= 100}
+              onClick={() => setRoutes(current => [{
+                id: crypto.randomUUID(), incoming: 'any', outgoing: routeEndpoints[0]?.protocol ?? 'openai-chat-completions',
+              }, ...current])}>{translate('customModels.addRoute')}</Button>
+          </fieldset>
           <Button type="button" size="sm" variant="ghost" className="justify-start" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>{advanced ? '⌄' : '›'} {translate('customModels.advanced')}</Button>
           {advanced && <div className="flex flex-col gap-3">
             {probed.length > 0 && <p data-testid="custom-model-protocols">{translate('customModels.protocols', { protocols: probed.map(({ protocol }) => translate(`customModels.${protocol}`)).join(' / ') })}</p>}
-            {protocolChoices.map(({ agent, usable, label, autoLabel }) => <label key={agent.id} className="flex items-center justify-between">{agent.name}
-              <Select value={(harnessProtocols[agent.id] as string | undefined) ?? 'auto'} onValueChange={(value) => setHarnessProtocols((current) => Object.fromEntries([...Object.entries(current).filter(([harness]) => harness !== agent.id), ...(value && value !== 'auto' ? [[agent.id, value as ModelProtocol] as const] : [])]))}>
-                <SelectTrigger data-testid={`custom-model-protocol-${agent.id}`}><SelectValue>{harnessProtocols[agent.id] ? label(harnessProtocols[agent.id]) : autoLabel}</SelectValue></SelectTrigger>
-                <SelectContent align="end"><SelectItem value="auto">{autoLabel}</SelectItem>
-                  {usable.map((protocol) => <SelectItem key={protocol} value={protocol}>{label(protocol)}</SelectItem>)}
-                </SelectContent>
-              </Select></label>)}
-            <label className="flex items-center justify-between">{translate('customModels.image')}<Toggle checked={customModelAcceptsImages(features)} onChange={(image) => feature({ image })} ariaLabel={translate('customModels.image')} /></label>
-            <label className="flex items-center justify-between">{translate('customModels.thinking')}<Toggle checked={customModelThinks(features)} onChange={(thinking) => feature({ thinking })} ariaLabel={translate('customModels.thinking')} /></label>
+            <label className="gg-custom-model-feature"><span>{translate('customModels.image')}</span><Toggle checked={customModelAcceptsImages(features)} onChange={(image) => feature({ image })} ariaLabel={translate('customModels.image')} /></label>
+            <label className="gg-custom-model-feature"><span>{translate('customModels.thinking')}</span><Toggle checked={customModelThinks(features)} onChange={(thinking) => feature({ thinking })} ariaLabel={translate('customModels.thinking')} /></label>
             {(['contextWindow', 'maxOutput'] as const).map((key) => <label key={key}>{translate(key === 'contextWindow' ? 'customModels.context' : 'customModels.output')}<Input type="number" min="1" step="1" placeholder={translate('customModels.default')} value={features[key] ?? ''} onChange={(event) => feature({ [key]: event.target.value ? Number(event.target.value) : undefined })} /></label>)}
           </div>}
           {failure && <p className="subscription-error" role="alert">{failure}</p>}

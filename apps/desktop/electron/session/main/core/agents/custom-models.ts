@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import {
   customModelRefFromOption, detectModelProtocol, matchCustomModel, normalizeModelBaseUrl,
-  type CustomModelConnection, type CustomModelMeta, type CustomModelRef, type ModelProtocol, type PiCustomModelProvider,
+  type CustomModelConnection, type CustomModelEntry, type CustomModelMeta, type CustomModelRef, type ModelProtocol, type PiCustomModelProvider,
 } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, DetectCustomModelProtocols, SaveCustomModel, TestCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { providerAccountRegistry as registry } from '@main/core/provider-accounts/provider-account-registry-instance';
@@ -177,6 +177,7 @@ export async function saveCustomModel(input: SaveCustomModel): Promise<CustomMod
       displayName: input.name,
       customModel: {
         preset: input.preset, endpoints: input.endpoints, models: input.models,
+        ...(input.routes ? { routes: input.routes } : {}),
         ...(input.harnessProtocols && Object.keys(input.harnessProtocols).length ? { harnessProtocols: input.harnessProtocols } : {}),
         ...(discovery ? { discovery: input.apiKey ? { ...discovery, keyLast4: keyLast4(input.apiKey) } : discovery } : {}),
       },
@@ -276,17 +277,35 @@ export type ResolvedCustomModel = {
   capabilities?: CustomModelMeta['models'][number];
   entries: CustomModelMeta['models'];
   upstreamEndpoint: string;
+  routeId?: string;
   removed?: boolean;
   /** The session's recorded reasoning level. */
   effort?: string;
 };
 
-async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol) {
+async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol, routeId?: string) {
   const row = await registry.getAccount(namespace, connectionId);
-  const endpoint = row?.meta?.customModel?.endpoints.find((entry) => entry.protocol === protocol);
+  const meta = row?.meta?.customModel;
+  const route = meta?.routes?.find(({ id, outgoing }) => id === routeId && outgoing === protocol);
+  if (routeId && !route) return null;
+  const endpoint = route?.baseUrl ?? meta?.endpoints.find((entry) => entry.protocol === protocol)?.baseUrl;
   if (!endpoint) return null;
   const apiKey = await registry.resolveSecret(namespace, connectionId);
-  return apiKey ? { endpoint: endpoint.baseUrl, apiKey } : null;
+  return apiKey ? { endpoint, apiKey } : null;
+}
+
+function matchForHarness(providerId: string, connection: CustomModelMeta & { keySaved: boolean }, modelId?: string) {
+  const descriptor = pluginRegistry.get(providerId)?.capabilities.sessionBundle;
+  const platform = descriptor?.platform;
+  const nativeProtocol = providerId === 'antigravity' ? 'gemini-generate-content' : platform?.kind === 'supported' ? platform.wireProtocol : undefined;
+  return {
+    nativeProtocol,
+    matched: matchCustomModel({
+      harness: providerId, nativeProtocol, protocols: platform?.kind === 'supported' ? platform.protocols : undefined,
+      convertFrom: descriptor?.customModel?.convertFrom,
+      connection, modelId, hasModel: Boolean(modelId), allowDefaultModel: descriptor?.customModel?.modelOptional,
+    }),
+  };
 }
 
 /** Pi reads one models.json per surface. Its providers describe shared records, independent of the starting session. */
@@ -305,20 +324,29 @@ async function listPiCustomModelProviders(): Promise<PiCustomModelProvider[]> {
   for (const row of [...records].sort((a, b) => a.accountId.localeCompare(b.accountId))) {
     const meta = row.meta?.customModel;
     const bound = boundModels.get(row.accountId);
-    if (!meta || (meta.removed && !bound)) continue;
-    const endpoint = [meta.harnessProtocols?.pi, 'openai-responses', 'openai-chat-completions']
-      .map((wanted) => meta.endpoints.find(({ protocol }) => protocol === wanted)).find(Boolean);
-    if (!endpoint || (endpoint.protocol !== 'openai-responses' && endpoint.protocol !== 'openai-chat-completions')) continue;
+    if (!meta || (meta.removed && !bound) || !await registry.resolveSecret(namespace, row.accountId)) continue;
     const models = new Map(meta.models.map((model) => [model.id, model]));
     for (const id of bound ?? []) {
       if (!models.has(id)) models.set(id, { id });
     }
-    if (models.size === 0) continue;
-    providers.push({
-      connectionId: row.accountId, name: row.meta?.displayName || row.accountId,
-      baseUrl: customModelRoute(root, row.accountId, endpoint.protocol),
-      protocol: endpoint.protocol, models: [...models.values()],
-    });
+    const byRoute = new Map<string, PiCustomModelProvider & { models: CustomModelEntry[] }>();
+    for (const model of models.values()) {
+      const { matched } = matchForHarness('pi', { ...meta, keySaved: true }, model.id);
+      const protocol = matched.endpoint?.protocol;
+      if (protocol !== 'openai-responses' && protocol !== 'openai-chat-completions') continue;
+      const key = matched.routeId ?? protocol;
+      let provider = byRoute.get(key);
+      if (!provider) {
+        provider = {
+          connectionId: row.accountId, routeId: matched.routeId, name: row.meta?.displayName || row.accountId,
+          baseUrl: customModelRoute(root, row.accountId, protocol, matched.routeId),
+          protocol, models: [],
+        };
+        byRoute.set(key, provider);
+      }
+      provider.models.push(model);
+    }
+    providers.push(...byRoute.values());
   }
   return providers;
 }
@@ -333,18 +361,10 @@ async function readSelectedCustomModel(providerId: string, ref: CustomModelRef, 
     throw new Error('Select a model currently listed by this provider');
   }
   const apiKey = await registry.resolveSecret(namespace, ref.connectionId);
-  const descriptor = pluginRegistry.get(providerId)?.capabilities.sessionBundle;
-  const platform = descriptor?.platform;
-  const nativeProtocol = providerId === 'antigravity' ? 'gemini-generate-content' : platform?.kind === 'supported' ? platform.wireProtocol : undefined;
-  const matched = matchCustomModel({
-    harness: providerId, nativeProtocol, protocols: platform?.kind === 'supported' ? platform.protocols : undefined,
-    convertFrom: descriptor?.customModel?.convertFrom,
-    connection: { endpoints: meta.endpoints, harnessProtocols: meta.harnessProtocols, keySaved: Boolean(apiKey) },
-    hasModel: Boolean(ref.modelId), allowDefaultModel: descriptor?.customModel?.modelOptional,
-  });
+  const { matched, nativeProtocol } = matchForHarness(providerId, { ...meta, keySaved: Boolean(apiKey) }, ref.modelId);
   if (matched.reason) throw new Error(`Custom model unavailable: ${matched.reason}`);
   return {
-    meta, name: row?.meta?.displayName || ref.connectionId, model, protocol: matched.endpoint.protocol,
+    meta, name: row?.meta?.displayName || ref.connectionId, model, endpoint: matched.endpoint, routeId: matched.routeId,
     // A converted record reaches the harness in its own wire protocol, through the bundled router.
     harnessProtocol: matched.converted ? nativeProtocol : undefined,
   };
@@ -356,25 +376,35 @@ export async function validateCustomModelSelection(providerId: string, ref: Cust
   return (await readSelectedCustomModel(providerId, ref, 'new')).model;
 }
 
+export async function selectedCustomModelEndpoint(providerId: string, ref: CustomModelRef): Promise<string> {
+  migrateCustomModelConnections();
+  return (await readSelectedCustomModel(providerId, ref, 'new')).endpoint.baseUrl;
+}
+
 export async function resolveCustomModel(providerId: string, sessionId: string, sourceSessionId?: string): Promise<ResolvedCustomModel | null> {
   migrateCustomModelConnections();
   const config = db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sourceSessionId ?? sessionId)).get()?.config;
   const ref = customModelRefFromOption(config?.model);
   if (!ref) return null;
   const selected = await readSelectedCustomModel(providerId, ref, 'bound');
-  const { meta, name, model, protocol } = selected;
-  const models = ref.modelId ? [ref.modelId, ...meta.models.map(({ id }) => id).filter((id) => id !== ref.modelId)] : [];
+  const { meta, name, model, endpoint: upstream, routeId } = selected;
+  const { protocol } = upstream;
+  const entries = meta.models.filter(({ id }) => {
+    const { matched } = matchForHarness(providerId, { ...meta, keySaved: true }, id);
+    return matched.endpoint?.protocol === protocol && matched.routeId === routeId;
+  });
+  const models = ref.modelId ? [ref.modelId, ...entries.map(({ id }) => id).filter((id) => id !== ref.modelId)] : [];
   const local = await customModelForwarder(resolveCustomRoute);
-  const route = customModelRoute(local.endpoint, ref.connectionId, protocol);
+  const route = customModelRoute(local.endpoint, ref.connectionId, protocol, routeId);
   // The router speaks the harness's protocol on loopback and calls the forwarder route in the record's protocol.
   const endpoint = selected.harnessProtocol
-    ? await (await import('./conversion-routers')).convertedBaseUrl(providerId, ref.connectionId, route, local.apiKey)
+    ? await (await import('./conversion-routers')).convertedBaseUrl(providerId, `${ref.connectionId}-${routeId ?? protocol}`, route, local.apiKey)
     : route;
   return {
     connectionId: ref.connectionId, name,
     apiKey: local.apiKey, endpoint,
-    models, protocol: selected.harnessProtocol ?? protocol, capabilities: model, entries: meta.models,
-    upstreamEndpoint: meta.endpoints.find(entry => entry.protocol === protocol)!.baseUrl, removed: meta.removed,
+    models, protocol: selected.harnessProtocol ?? protocol, capabilities: model, entries, routeId,
+    upstreamEndpoint: upstream.baseUrl, removed: meta.removed,
     ...(config?.effort ? { effort: config.effort } : {}),
   };
 }

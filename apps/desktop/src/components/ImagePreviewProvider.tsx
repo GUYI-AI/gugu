@@ -4,6 +4,7 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import { createPortal } from 'react-dom'
 import { matchesKeyboardEvent } from '@tanstack/react-hotkeys'
 import { useTranslation } from 'react-i18next'
+import type { FileProgress } from '@gugu/core/shared/fileResolver'
 import type PhotoSwipe from 'photoswipe'
 import type { Bounds, PhotoSwipeOptions, SlideData } from 'photoswipe'
 import 'photoswipe/style.css'
@@ -14,6 +15,7 @@ import { DUR_SLOW_MS, EASE } from '@/styles/motion'
 import { useToast } from './toastContext'
 import { useBackLayer } from './ui/sheetStack'
 import { IconButton } from './ui/IconButton'
+import { Button } from './ui/Button'
 import { bindFileViewerMenu } from './preview/file-viewer-menu'
 import { quoteChatFile } from './preview/quote-preview-file'
 import { AUTOMATION_TEST_IDS } from '../lib/automationDom'
@@ -88,7 +90,7 @@ async function fetchImageAsPngBlob(url: string): Promise<Blob> {
   })
 }
 
-type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean; original?: string }
+type ViewerSlide = SlideData & { item: ImageViewerItem; sizeKnown: boolean; warmed?: boolean; upgraded?: boolean; original?: string; fraction?: number; stalled?: boolean; retry?: () => void }
 
 function slideFor(item: ImageViewerItem, view: ViewerWindow): ViewerSlide {
   // 另有原图可取时,缩略图的 natural 尺寸不是原图的:不拿它排版
@@ -161,7 +163,7 @@ function viewerOptions(request: ImageViewerRequest, view: ViewerWindow, mobile: 
   }
 }
 
-function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
+function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, redraw: () => void, onFileError: (item: ImageViewerItem, error: unknown) => void): void {
   // Every image opens whole: no ratio carries over to the next one (documents still keep theirs). A zoom to read by shows
   // its ratio for a moment (zoom B); the opening and a double click's peek do not.
   pswp.on('beforeZoomTo', ({ destZoomLevel }) => {
@@ -192,6 +194,12 @@ function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, o
     if (!data || (!data.item.preview && !data.item.full) || data.upgraded || (!current && (data.warmed || !data.item.preview || !data.item.full))) return
     if (current) data.upgraded = true
     else data.warmed = true
+    const progress: FileProgress = (done, total, stalled) => {
+      if (pswp.isDestroying || !pswp.isOpen) return
+      data.fraction = total > 0 && done < total ? done / total : undefined
+      data.stalled = stalled === true
+      if (index === pswp.currIndex) redraw()
+    }
     const replace = (url: string) => {
       if (pswp.isDestroying || !pswp.isOpen) return
       if (data.src === url) return
@@ -202,14 +210,14 @@ function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, o
     }
     void (async () => {
       if (data.item.preview) {
-        try { replace(await data.item.preview()) }
+        try { replace(await data.item.preview(progress)) }
         catch (error) {
           if (!data.item.full) throw error
           log.warn({ error: String(error) }, 'image preview unavailable')
         }
         if (pswp.isDestroying || !pswp.isOpen) return
       }
-      if (current && data.item.full) replace(data.original = await data.item.full())
+      if (current && data.item.full) replace(data.original = await data.item.full(progress))
     })().catch((error: unknown) => {
       if (!current || pswp.isDestroying || !pswp.isOpen) return
       log.warn({ error: String(error) }, 'image bytes unavailable')
@@ -219,7 +227,19 @@ function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, o
           const content = pswp.contentLoader.getContentByIndex(index)
           if (content) { content.state = 'error'; content.displayError() }
         }
-        onFileError(data.item, error)
+        if (data.item.preview) {
+          data.retry = () => {
+            data.retry = undefined
+            data.upgraded = false
+            data.fraction = undefined
+            data.stalled = false
+            pswp.refreshSlideContent(index)
+            upgrade(index)
+            redraw()
+          }
+          if (index === pswp.currIndex) redraw()
+        }
+        if (index === pswp.currIndex) onFileError(data.item, error)
       }
     })
   }
@@ -245,6 +265,7 @@ function wireViewer(pswp: PhotoSwipe, view: ViewerWindow, dialogLabel: string, o
   pswp.on('loadComplete', ({ content, isError }) => {
     const data = content.data as ViewerSlide
     const img = content.element
+    if (data.item.preview && content.index === pswp.currIndex) redraw()
     if (data.sizeKnown || pswp.isDestroying || isError || !(img instanceof view.HTMLImageElement)) return
     // @@@thumb-is-not-the-size - a thumbnail's pixels are smaller than its original: laid out by them, the picture opened
     // at thumbnail size and stayed there once the original came. With an original to come and no recorded size, the
@@ -389,10 +410,15 @@ function ViewerButton({ label, testId, className, side, onClick, children }: {
 
 function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mobile: boolean; onEdit: () => void }) {
   const { t } = useTranslation('main')
+  const { t: fileText } = useTranslation('messaging')
   const { toast } = useToast()
   const [copying, setCopying] = useState(false)
   const { pswp, items, index } = viewer
   const current = items[index]
+  const slide = pswp.currSlide
+  const data = slide?.data as ViewerSlide | undefined
+  const reading = data?.item === current && current.preview && !slide?.content.isError()
+    && (slide?.content.state !== 'loaded' || (current.full && data.src !== data.original))
   const { copied, confirm } = useCopyConfirmation(current)
 
   const handleDownload = useCallback(async () => {
@@ -445,6 +471,12 @@ function ImageViewerChrome({ viewer, mobile, onEdit }: { viewer: OpenViewer; mob
         </ViewerButton>
         {mobile ? null : close}
       </div>
+      {data?.retry || reading ? <div key={index} className="gg-image-viewer__read" data-preview={data?.msrc && !data.fraction && !data.retry ? true : undefined} role="status">
+        {data?.retry ? <Button size="sm" onClick={data.retry}>{fileText('chatArea.filePreview.readAgain')}</Button> : <>
+          {fileText(data?.stalled ? 'chatArea.filePreview.stalled' : 'chatArea.filePreview.loading')}
+          {data?.fraction !== undefined ? <progress className="gg-progress" max={1} value={data.fraction} /> : null}
+        </>}
+      </div> : null}
       {!mobile && index > 0 ? (
         <ViewerButton label={t('shell.imagePreview.previous')} testId={AUTOMATION_TEST_IDS.imagePreviewPrev} className="gg-image-viewer__arrow" side="prev" onClick={() => pswp.prev()}>
           <ChevronLeft />
@@ -496,11 +528,13 @@ export function ImagePreviewProvider({ children }: { children: ReactNode }) {
           const { t: translate, mobile: isMobile } = latest.current
           const pswp = new PhotoSwipeCtor(viewerOptions(request, view, isMobile, translate('shell.imagePreview.loadFailed')))
           if (usesPhoneFlight(isMobile, request.items[request.index])) wirePhoneFlight(pswp, request.items, request.index)
-          wireViewer(pswp, view, translate('shell.imagePreview.dialog'), (item, error) => {
+          wireViewer(pswp, view, translate('shell.imagePreview.dialog'), () => {
+            setViewer(open => open?.pswp === pswp ? { ...open } : open)
+          }, (item, error) => {
             const target = item.resource?.target
             void (async () => {
               const offline = target?.kind === 'file' ? await offlineHolder(target.itemId, target.version) : null
-              if (pswp.isDestroying || !pswp.isOpen) return
+              if (pswp.isDestroying || !pswp.isOpen || request.items[pswp.currIndex] !== item) return
               const { t, toast } = latest.current
               toast(offline ? holderOfflineText(offline) : t('shell.imagePreview.loadFailed'), 'error', offline ? undefined : messageForUser(error))
             })()

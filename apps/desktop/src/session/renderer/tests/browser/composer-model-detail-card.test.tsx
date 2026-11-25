@@ -1,8 +1,10 @@
+import { useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { page } from 'vitest/browser'
+import { page, userEvent } from 'vitest/browser'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { ChatComposer, MessageProvider } from '@gugu/session-ui/react/components'
+import { contextThresholdMinimum } from '@gugu/session-core/models/context-threshold'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import { enUSMessages } from '@renderer/localization/messages'
 // 主题层与同目录 composer-disabled-options 同一套。
@@ -141,18 +143,14 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     }
   })
 
-  it('keeps the thinking section to a reading line plus a slim slider', () => {
-    // owner 2026-10-10:「思考那一块显得特别大,不够精致」。档名后面跟着这一档的说明,同一行。
-    const row = panel()!.querySelector<HTMLElement>('[data-slot="composer-effort-row"]')!
-    const value = row.querySelector<HTMLElement>('[data-slot="composer-effort-value"]')!
-    const hint = row.querySelector<HTMLElement>('[data-slot="composer-effort-hint"]')!
-    expect(value.textContent).toBe('高')
-    expect(hint.textContent).toBe('想得更久,适合难题')
-    const mid = (el: HTMLElement) => { const b = el.getBoundingClientRect(); return b.top + b.height / 2 }
-    expect(Math.abs(mid(hint) - mid(value)), '说明掉到了下一行').toBeLessThan(2)
-    // 整段不比两行模型高:读数一行 + 滑杆一条。
-    const modelRow = rowByName('GLM 5.3 Flash')
-    expect(row.offsetHeight).toBeLessThanOrEqual(modelRow.offsetHeight * 2)
+  it('opens an explicit thinking submenu from the selected model detail', async () => {
+    await page.elementLocator(rowByName('GLM 5.3 Flash')).hover()
+    await until('detail card opens', () => detail() !== null)
+    const thinking = detail()!.querySelector<HTMLButtonElement>('button')!
+    await page.elementLocator(thinking).hover()
+    await expect.element(page.getByRole('button', { name: '低', exact: true })).toBeVisible()
+    await expect.element(page.getByRole('button', { name: '高', exact: true })).toHaveAttribute('aria-pressed', 'true')
+    expect(page.getByRole('button', { name: 'Default', exact: true }).query()).toBeNull()
   })
 
   it('shows a detail card for the hovered model: who it belongs to, what it is, context and thinking levels', async () => {
@@ -248,4 +246,60 @@ describe('#7123 英文界面:底部「Upgrade to unlock more models」整句都�
     expect(box.right, '按钮伸出了底栏的内容区').toBeLessThanOrEqual(contentRight + 0.5)
     expect(upgrade.scrollWidth, '字在按钮里被截断了').toBeLessThanOrEqual(upgrade.clientWidth)
   })
+})
+
+it.each([
+  { id: 'codex', name: 'Codex', invalid: '7k', range: '8k–200k' },
+  { id: 'claude', name: 'Claude Code', invalid: '64k', range: '100k–200k' },
+])('uses the same $name threshold and minimum in the ring and the model detail', async ({ id, name, invalid, range }) => {
+  const mount = document.createElement('div')
+  mount.style.cssText = 'position:fixed;right:24px;bottom:24px;width:640px'
+  document.body.appendChild(mount)
+  const composer = createRoot(mount)
+  function Fixture() {
+    const [value, setValue] = useState<number | null>(null)
+    return (
+      <SessionLocalizationProvider>
+        <ChatComposer modelOptions={MODELS} selectedModel="platform:glm-5.3-flash"
+          agentOptions={[{ id, name }]} selectedAgent={id} agentLocked
+          onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}}
+          contextUsage={{ used: 40_000, size: 200_000, costSource: 'platform' }}
+          contextThresholds={(_id, maximum) => maximum ? {
+            minimum: contextThresholdMinimum(id), maximum, value, set: async (next) => setValue(next),
+          } : undefined} />
+      </SessionLocalizationProvider>
+    )
+  }
+  try {
+    composer.render(<Fixture />)
+    const ring = page.getByRole('button', { name: new RegExp(`${name}.*Context window`) })
+    await ring.click()
+    await expect.element(page.getByText('Context usage', { exact: true })).toBeVisible()
+    await expect.element(page.getByText('20.0%', { exact: true })).toBeVisible()
+    const footer = page.getByRole('button', { name: /200.* context/ })
+    await expect.element(footer).not.toHaveTextContent('Default')
+    await footer.click()
+    const input = page.getByRole('textbox', { name: 'Context window', exact: true })
+    await input.fill(invalid)
+    await userEvent.keyboard('{Enter}')
+    await expect.element(input).toHaveAttribute('aria-invalid', 'true')
+    await expect.element(page.getByRole('alert')).toHaveTextContent(`Enter ${range} tokens.`)
+    await expect.element(page.getByText('20.0%', { exact: true })).toBeVisible()
+    await input.fill('100k')
+    await userEvent.keyboard('{Enter}')
+    await expect.element(page.getByText('40.0%', { exact: true })).toBeVisible()
+    await ring.click()
+    await page.getByTestId('composer-model-trigger').click()
+    await page.elementLocator(rowByName('GLM 5.3 Flash')).hover()
+    const threshold = page.getByRole('button', { name: /Context window.*100K/ })
+    await expect.element(threshold).toBeVisible()
+    await threshold.hover()
+    await expect.element(input).toBeVisible()
+    await input.fill(invalid)
+    await userEvent.keyboard('{Enter}')
+    await expect.element(page.getByRole('alert')).toHaveTextContent(`Enter ${range} tokens.`)
+  } finally {
+    composer.unmount()
+    mount.remove()
+  }
 })

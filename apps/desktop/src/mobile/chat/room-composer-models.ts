@@ -1,7 +1,14 @@
 import type { ChatItem, TopicSummary } from '@gugu/core/shared/types/chat'
-import { chatAttention, compareByRecentActivity } from '@gugu/core/shared/ui/chatModels'
+import { chatAttention, compareByRecentActivity, comparePinnedFirst } from '@gugu/core/shared/ui/chatModels'
 import { chatLineNews } from '@/lib/chatLineUnread'
 import type { MemberProfileCardModel } from '@/components/MemberProfileCard'
+
+export function phoneTopicsWithPins(topics: readonly TopicSummary[], chatsById: ReadonlyMap<string, ChatItem>) {
+  return topics.map(topic => {
+    const chat = chatsById.get(topic.chat_id)
+    return { ...topic, is_pinned: topic.is_participant && chat ? Boolean(chat.is_pinned) : undefined }
+  }).sort(comparePinnedFirst)
+}
 
 /** Each row's mark follows the chat-list rule: calls you (red @N, chatAttention.callsYou), else news (grey dot). */
 export function roomTopicChoices(chatId: string, topics: readonly TopicSummary[], chats: readonly ChatItem[]) {
@@ -13,7 +20,7 @@ export function roomTopicChoices(chatId: string, topics: readonly TopicSummary[]
     return { calls, news: !!chat && chatLineNews(chat, calls) }
   }
   const main = mark(chatId)
-  const rows = [...topics].sort((a, b) => Number(asking(b.chat_id) > 0) - Number(asking(a.chat_id) > 0))
+  const rows = phoneTopicsWithPins(topics, byId).sort((a, b) => Number(asking(b.chat_id) > 0) - Number(asking(a.chat_id) > 0))
     .map(topic => ({ ...topic, ...mark(topic.chat_id) }))
   const all = [main, ...rows]
   return {

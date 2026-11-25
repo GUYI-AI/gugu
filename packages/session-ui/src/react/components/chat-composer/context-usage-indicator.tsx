@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react';
+import { ContextThresholdMenu, type ContextThreshold } from './context-threshold';
 import { Button } from '@session-ui/react/primitives/button';
 import { Popover } from '@session-ui/react/primitives/popover';
 import { cx } from '@session-ui/styles/utilities/cx';
@@ -41,25 +43,24 @@ function formatCost(cost: { amount: number; currency: string }, locale: string):
   }
 }
 
-// ── Indicator ─────────────────────────────────────────────────────────────────
-//
-// @@@no context ring (2026-09-22,按 design.md 统一) —— 这里原来是一枚百分比圆环
-// (`<circle strokeDasharray={pct} 100 />`)。design.md 的 Reject 列表逐字点名:
-// 「The stock chat idiom inside our chat: … a percentage context ring」。
-// 触发器换成**一行读数**:同一份数字,不需要把一段弧长换算回「还剩多少」。
-// 弹层里那条线性条留着 —— 圆环在时它俩画的是同一个分数,现在只剩一个图形表达。
-
 export function ContextUsageIndicator({
   usage,
+  threshold,
+  harness,
   disabled,
 }: {
-  usage: ContextUsage;
+  usage?: ContextUsage | null;
+  threshold?: ContextThreshold;
+  harness?: { name: string; icon?: ReactNode };
   disabled?: boolean;
 }) {
   const { locale, translate } = useMessages();
-  const fraction = Math.min(1, Math.max(0, usage.used / usage.size));
-  const pct = Math.round(fraction * 100);
-  const providerCost = providerCostForRoute(usage);
+  const size = threshold?.value ?? usage?.size ?? threshold?.maximum ?? 0;
+  const fraction = usage && size > 0 ? Math.min(1, Math.max(0, usage.used / size)) : 0;
+  const pct = Math.round(fraction * 1000) / 10;
+  const providerCost = usage && providerCostForRoute(usage);
+  const title = usage ? translate('composer.contextWindowUsed', { percent: pct }) : translate('composer.contextUsage');
+  const triggerLabel = harness ? `${harness.name} · ${title}` : title;
 
   return (
     <Popover.Root>
@@ -70,23 +71,31 @@ export function ContextUsageIndicator({
             size="sm"
             className={styles.usageTrigger}
             disabled={disabled}
-            aria-label={translate('composer.contextWindowUsed', { percent: pct })}
+            aria-label={triggerLabel}
+            title={triggerLabel}
           >
-            <span className={cx(styles.usageReading, fraction >= 0.9 && styles.usageReadingWarn)}>
-              {formatTokens(usage.used)}/{formatTokens(usage.size)}
-            </span>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true"
+              className={cx(styles.usageRing, fraction >= 0.9 && styles.usageRingWarn)}>
+              <circle className={styles.usageRingTrack} cx="9" cy="9" r="7" strokeWidth="2" />
+              {fraction > 0 && <circle cx="9" cy="9" r="7" pathLength="100" stroke="currentColor"
+                strokeWidth="2" strokeLinecap="round" strokeDasharray={`${fraction * 100} 100`}
+                transform="rotate(-90 9 9)" />}
+            </svg>
           </Button>
         }
       />
       <Popover.Content align="end" side="top">
-        <Popover.Header>
+        <div className={styles.usageHeader}>
           <Popover.Title>{translate('composer.contextUsage')}</Popover.Title>
-        </Popover.Header>
+          {harness && <span className={styles.usageHarness}>{harness.icon}{harness.name}</span>}
+        </div>
         <div className={styles.usagePopoverBody}>
           <div className={styles.usageStatsRow}>
-            <span className={styles.usagePercent}>{pct}%</span>
+            <span className={styles.usagePercent}>{usage ? `${pct.toFixed(1)}%` : '—'}</span>
             <span className={styles.usageTokenCount}>
-              {formatTokens(usage.used)} / {formatTokens(usage.size)} {translate('composer.tokens')}
+              {usage
+                ? translate('composer.contextTokensUsed', { used: formatTokens(usage.used), size: formatTokens(size) })
+                : formatTokens(size)}
             </span>
           </div>
           <div className={styles.usageBarTrack} aria-hidden="true">
@@ -100,6 +109,13 @@ export function ContextUsageIndicator({
               {translate('composer.cost', { cost: formatCost(providerCost, locale) })}
             </div>
           ) : null}
+          {size > 0 && <div className={styles.contextUsageFooter}>
+            {threshold?.set ? <ContextThresholdMenu threshold={threshold}
+              label={translate('composer.contextThresholdValue', { size: formatTokens(threshold.value ?? threshold.maximum) })} />
+              : <span title={threshold?.unsupported ? translate('composer.contextThresholdUnsupported') : undefined}>
+                {translate('composer.contextThresholdValue', { size: formatTokens(size) })}
+              </span>}
+          </div>}
         </div>
       </Popover.Content>
     </Popover.Root>

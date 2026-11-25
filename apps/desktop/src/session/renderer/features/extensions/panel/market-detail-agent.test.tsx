@@ -45,7 +45,7 @@ afterEach(async () => {
 });
 
 // A failed install used to drop the dialog back to a bare 'Install' with only a toast, gone before anyone read it.
-it('says why the install failed, in the dialog, next to the Install button it returns to', async () => {
+it('says why the install failed and lets the person retry from the dialog', async () => {
   f.install.mockResolvedValue({ success: false, error: { type: 'command-failed', message: 'Managed installation failed.',
     output: 'error sending request for url (https://registry.npmmirror.com/@openai/codex): connection reset', stage: 'download' } });
   await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
@@ -61,5 +61,8 @@ it('says why the install failed, in the dialog, next to the Install button it re
   expect(f.install).toHaveBeenCalledExactlyOnceWith('codex', 'mise', undefined);
   expect(alert.textContent).toContain(translateSessionMessage('agentsPage.failureNetwork', { operation: translateSessionMessage('agentsPage.installation') }));
   expect(alert.querySelector('pre')?.textContent).toContain('connection reset');
-  expect(button()).toBeDefined();
+  const retry = [...document.querySelectorAll('button')].find(b => b.textContent === translateSessionMessage('extensions.retry'));
+  expect(retry).toBeDefined();
+  await act(async () => retry!.click());
+  await until('retry runs the same installation', () => f.install.mock.calls.length === 2);
 });

@@ -1137,6 +1137,7 @@ export interface SessionModelCapability {
   /** Selected custom record, plus the stable provider catalog for Pi's shared configuration. */
   customModels?: {
     connectionId: string;
+    routeId?: string;
     entries: readonly CustomModelEntry[];
     piProviders?: readonly PiCustomModelProvider[];
   }

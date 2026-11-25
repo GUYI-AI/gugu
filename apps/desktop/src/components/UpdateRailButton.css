@@ -1,22 +1,18 @@
-.gg-sidebar-item.gg-update-rail {
-  width: 40px;
-  height: 40px;
-  gap: 2px;
-  align-content: center;
-}
-
-.gg-update-rail-icon {
-  display: grid;
-  place-items: center;
-  width: 28px;
+/* Sits in the sidebar's foot row beside 已安排 / 会话历史 / the bell: their 28px ghost button, the glyph in the accent. */
+.gg-icon-btn.gg-update-rail {
+  width: auto;
+  min-width: 28px;
   height: 28px;
-  border-radius: var(--radius-capsule);
-  background: var(--primary);
-  color: var(--primary-fg);
+  padding-inline: 4px;
+  grid-auto-flow: column;
+  gap: 2px;
 }
 
-.gg-update-rail[data-failed] .gg-update-rail-icon {
-  background: var(--danger-tint);
+.gg-update-rail > svg {
+  color: var(--primary);
+}
+
+.gg-update-rail[data-failed] > svg {
   color: var(--danger-fg);
 }
 
@@ -27,17 +23,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-.gg-update-rail[data-downloading] .gg-update-rail-icon {
-  width: 24px;
-  height: 24px;
-}
-
 .gg-update-rail[aria-busy] {
   cursor: default;
 }
 
-.gg-update-rail[aria-busy] .gg-update-rail-icon {
-  background: var(--live-soft);
+.gg-update-rail[aria-busy] > svg {
   color: var(--live);
 }
 

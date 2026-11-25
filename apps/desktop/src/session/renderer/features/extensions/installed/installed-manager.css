@@ -57,6 +57,8 @@
   min-height: 60px;
   border-bottom: 1px solid var(--border);
 }
+.gg-installed-item[data-grid] .gg-installed-actions { justify-content: center; }
+.gg-installed-error { color: var(--danger); font-size: var(--font-caption); }
 .gg-installed-icon {
   position: relative;
   display: inline-flex;

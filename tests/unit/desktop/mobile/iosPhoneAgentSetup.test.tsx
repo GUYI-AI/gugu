@@ -36,6 +36,7 @@ vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneInstallation', as
 })
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime', () => ({
   usePhoneDevice: native.androidHost, stopPhoneAgentHost: native.androidHost, restartPhoneAgentHost: native.androidHost,
+  enablePhoneAgentHost: native.androidHost,
 }))
 vi.mock('../../../../apps/desktop/src/components/ui/Sheet', () => ({
   Sheet: ({ children, testId }: { children: ReactNode; testId?: string }) => createElement('section', { role: 'dialog', 'data-testid': testId }, children),

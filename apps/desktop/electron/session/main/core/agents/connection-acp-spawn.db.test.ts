@@ -144,7 +144,9 @@ it('a Gugu platform model still wins over the selected key: its provider only, i
   state.fixture!.sqlite.prepare('INSERT INTO sessions (id,project_id,provider,runtime,config) VALUES (?,?,?,?,?)').run('session-1', 'project', 'codex', 'acp', JSON.stringify({ version: '1', type: 'acp', model: customModelOptionId({ connectionId: key.id, modelId: 'model-two' }) }));
   const spawn = await acpSpawn('codex', PLATFORM);
   expect(providerArgs(spawn.args)).toEqual(['model_provider=gugu_platform']);
-  expect(JSON.stringify(spawn.args)).not.toContain('gugu_connection');
+  const platformUrl = spawn.args.find((arg) => arg.startsWith('model_providers.gugu_platform.base_url='));
+  expect(platformUrl).toBeDefined();
+  expect(spawn.args).toContain(platformUrl!.replace('gugu_platform', 'gugu_connection'));
   expect(spawn.env?.OPENAI_API_KEY).toBe('platform-token');
 });
 

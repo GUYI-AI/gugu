@@ -16,6 +16,8 @@ import { REMOTE_PROTOCOL_VERSION } from '@gugu/core/cloud/serverMachineHealth'
 
 const toast = vi.hoisted(() => vi.fn())
 vi.mock('../../../../apps/desktop/src/session/renderer/lib/hooks/use-toast', () => ({ toast }))
+const notices = vi.hoisted(() => ({ show: vi.fn(), dismiss: vi.fn() }))
+vi.mock('../../../../apps/desktop/src/lib/notices', () => ({ notify: notices.show, dismissNotice: notices.dismiss }))
 const scope = vi.hoisted(() => ({ owner: 'account-a', platform: 'electron', phones: [] as Array<{ device_id: string; is_online: boolean; capabilities: { host_kind: string; remote_protocol?: number } }>, devices: [{ device_id: 'host-a', is_online: false, capabilities: {} }], received: new Map<string, string>(), send: vi.fn(), machines: [] as (string | null)[] }))
 vi.mock('../../../../apps/desktop/src/lib/sessionPublication', () => ({ getRendererSession: () => ({ user: { id: scope.owner } }), observeRendererSession: () => () => {} }))
 vi.mock('../../../../apps/desktop/src/store/devicesContext', () => ({ useDevicesStore: () => ({ devices: scope.devices, phones: scope.phones }) }))
@@ -44,10 +46,30 @@ const signIn = (owner: string) => { core?.dispose(); scope.owner = owner; core =
 const rows = () => state().rows
 /** What used to be a flush: a host or the network came back, everything waiting goes now. */
 const kick = async () => { await retrySessionInputs(); await settle() }
-beforeEach(() => { toast.mockClear(); harness = createReactHarness(); signIn('account-a') })
+beforeEach(() => { toast.mockClear(); notices.show.mockClear(); notices.dismiss.mockClear(); harness = createReactHarness(); signIn('account-a') })
 afterEach(() => { harness.cleanup(); core?.dispose(); core = undefined; scope.owner = 'account-a'; scope.platform = 'electron'; scope.phones = []; scope.devices = [{ device_id: 'host-a', is_online: false, capabilities: {} }]; scope.received.clear(); scope.send.mockReset(); scope.machines = [] })
 
 describe('native input shell lifecycle', () => {
+  it('shows a native device failure once and retries the same saved input from the notice', async () => {
+    const message = 'Native personal-message device is unavailable'
+    scope.send.mockResolvedValue({ ok: false, error: { code: 'send_failed', message, admission: 'uncertain' } })
+    await harness.render(<SessionInputOutboxHost accountId={scope.owner} />)
+    const input = await enqueueSessionInput({ deviceId: null, sessionId: 'personal-task', text: 'keep this input' })
+    await vi.waitFor(() => expect(core!.outbox.get(input.id)?.state).toBe('waiting'))
+    for (let count = 0; count < 3; count += 1) await act(kick)
+    expect(notices.show).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+      description: message, tier: 'error', action: expect.objectContaining({ onClick: expect.any(Function) }),
+    }))
+    await act(kick)
+    expect(notices.show).toHaveBeenCalledTimes(1)
+    scope.send.mockResolvedValue({ ok: true, value: { clientMessageId: input.id } })
+    const notice = notices.show.mock.calls[0]![0]
+    await act(async () => { notice.action.onClick(); await settle() })
+    expect(core!.outbox.get(input.id)).toBeUndefined()
+    expect(scope.send.mock.lastCall?.[0]).toMatchObject({ clientMessageId: input.id, text: 'keep this input' })
+    expect(notices.dismiss).toHaveBeenCalledWith(notice.key)
+  })
+
   it('publishes the durable queue before enqueue resolves', async () => {
     signIn('durable-first-frame-owner')
     await harness.render(<SessionInputOutboxHost accountId={scope.owner} />)

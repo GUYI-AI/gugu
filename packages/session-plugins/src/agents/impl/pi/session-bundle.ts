@@ -1,3 +1,4 @@
+import { contextCompactionSettings } from '@gugu/session-core/models/context-threshold';
 import { harnessPlatform, piProviderApi, piProviderCompat } from './platform';
 import { join } from 'node:path';
 import { customModelAcceptsImages, customModelThinks } from '@gugu/session-core/models/custom-model';
@@ -73,8 +74,12 @@ export const PI_PLATFORM_PROVIDER_ID = 'gugu-platform';
  * **id**,不是 `name`(1.5.2 实测:models.json 的 `name` 写成连接名,`--list-models` 的 provider 列仍是 id;
  * `/model` 选单的 `[provider]`、底栏的 `(provider)` 也都取 id)。`/` 换掉:pi-acp 按第一个 `/` 拆 `provider/model`。
  */
+function piCustomProviderId({ connectionId, routeId }: { connectionId: string; routeId?: string }): string {
+  return routeId ? `gugu-${connectionId}-${routeId}` : `gugu-${connectionId}`;
+}
+
 function piProviderId(model: Pick<SessionModelCapability, 'providerName' | 'customModels'>): string {
-  if (model.customModels) return `gugu-${model.customModels.connectionId}`;
+  if (model.customModels) return piCustomProviderId(model.customModels);
   return model.providerName ? model.providerName.replaceAll('/', '-') : PI_PLATFORM_PROVIDER_ID;
 }
 
@@ -370,7 +375,7 @@ function modelArtifact(
   if (customProviders) {
     const providers = Object.fromEntries(customProviders.map((provider) => {
       const api = piProviderApi(provider.protocol);
-      return [`gugu-${provider.connectionId}`, {
+      return [piCustomProviderId(provider), {
         name: provider.name,
         api,
         ...piProviderCompat(api),
@@ -498,14 +503,16 @@ function acpAgentDir(bundle: Pick<SessionCapabilityBundle, 'env'>): string {
  *    咕咕自己的事件模块走**全局** extensions 目录,本来就不需要 project trust。
  */
 function acpSettingsArtifact(
-  bundle: Pick<SessionCapabilityBundle, 'model'>,
+  bundle: Pick<SessionCapabilityBundle, 'env' | 'model'>,
   agentDir: string
 ): SessionMaterialization['artifacts'][number] {
   const model = bundle.model;
   const selected = model?.model?.trim();
+  const threshold = contextCompactionSettings(bundle.env, model?.contextWindow);
   const settings: Record<string, unknown> = {
     // ACP 适配器不合成启动清单(#5557);真实启动失败照常上报。
     quietStartup: true,
+    ...(threshold ? { compaction: { reserveTokens: threshold.reserve } } : {}),
   };
   if (model && selected) {
     if (model.dialect !== 'pi-models-json' || !model.platformProvider) {

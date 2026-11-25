@@ -1,3 +1,4 @@
+import { useContextThresholds } from '../session-config/use-context-thresholds';
 import { usePermissionMenu } from '@renderer/features/sessions/session-config/use-permission-menu';
 import { withAutoReviewHint } from './auto-review-permission-hint';
 import { customModelAcceptsImages, customModelOptionId, customModelThinks, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
@@ -760,6 +761,8 @@ const ComposerForStore = observer(function ComposerForStore({
   const providerId =
     sessionRegistry.get(store.sessionId)?.sessions.get(store.sessionId)?.data
       .providerId ?? null;
+  const contextThresholds = useContextThresholds(providerId, machineRegistry.machineOf(store.projectId));
+
 
   const providerCapabilities = agents?.find((agent) => agent.id === providerId)?.capabilities;
 
@@ -1004,6 +1007,7 @@ const ComposerForStore = observer(function ComposerForStore({
       options[recorded] ??= {
         name: runningCustomModel.modelId ?? translate('customModels.noModel'),
         disabled: true,
+        hiddenFromPicker: true,
         disabledReason: translate('composer.modelNotInCatalog'),
       };
     }
@@ -1530,6 +1534,7 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedAgent={providerId ?? undefined}
         agentLocked
         onAgentChange={() => {}}
+        contextThresholds={contextThresholds}
         contextUsage={
           store.usage
             ? {

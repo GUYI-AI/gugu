@@ -528,6 +528,35 @@ it('resizes and previews each collapse before release, and restores the split on
   expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
 });
 
+it('restores the conversation width after dragging it into a tab and closing every tool tab', async () => {
+  const { inside, mode, width, chat, workspace } = await mountWorkspace();
+  const conversation = chat();
+  await act(() => {
+    for (let index = 0; index < 3; index += 1) workspace.open('tool', { id: `file-${index}` }, { from: null, intent: 'newTab' });
+  });
+  await mode('split');
+  await untilStable('the split divider comes to rest', () => inside('[data-chat-tool-divider]')!.getBoundingClientRect().left);
+  const divider = inside('[data-chat-tool-divider]')!.getBoundingClientRect();
+  const x = divider.left + divider.width / 2;
+  const y = divider.top + 96;
+  await mouse('mouseMoved', x, y);
+  await mouse('mousePressed', x, y, true);
+  await mouse('mouseMoved', 91, y, true);
+  await until('the conversation collapse is armed', () => !!inside('[data-chat-tool-collapse-ready]'));
+  await mouse('mouseReleased', 91, y);
+  await mode('full');
+  await until('the conversation has collapsed into its tab', () => width(chat()), (size) => size === 0);
+
+  for (let remaining = 2; remaining >= 0; remaining -= 1) {
+    await userEvent.click(page.getByRole('button', { name: /^(?:关闭工具页签标签|Close 工具页签 tab)$/ }).first());
+    await until('the closed tool leaves the strip', () => workspace.stripTabIds.length, (count) => count === remaining + 1);
+  }
+  await mode('empty');
+  await untilStable('the remaining conversation settles', () => width(chat()));
+  expect(chat(), 'the conversation is retained through the role change').toBe(conversation);
+  expect(width(chat()), 'the sole conversation fills its block').toBe(800);
+});
+
 it('puts the view toggle on the header in the frame the tools are hidden, while they are still going off', async () => {
   const { inside, mode, workspace } = await mountWorkspace();
   await mode('empty');

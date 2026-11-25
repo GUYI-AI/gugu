@@ -13,6 +13,10 @@ const mocks = vi.hoisted(() => ({
   check: vi.fn(), request: vi.fn(), settings: vi.fn(), foreground: [] as Array<() => void>, os: null as PhoneOsState | null, osError: null as Error | null, refresh: vi.fn(),
 }))
 vi.mock('../../../../apps/desktop/src/lib/myAssistant', () => ({ useMyAssistant: () => ({ state: 'value', value: { agentId: null, provisionDeviceId: null }, stale: false, error: null }) }))
+vi.mock('../../../../apps/desktop/src/lib/sessionPublication', async original => ({
+  ...await original<typeof import('../../../../apps/desktop/src/lib/sessionPublication')>(),
+  getRendererSession: () => ({ user: { id: mocks.owner } }),
+}))
 vi.mock('../../../../apps/desktop/src/mobile/local-agent/nativeAgent', () => ({ phoneAgentAvailable: () => mocks.available }))
 vi.mock('../../../../apps/desktop/src/mobile/phone-device/nativePhoneActions', () => ({
   HEALTH_TYPES: ['steps', 'sleep'], nativePhoneActions: { deviceInfo: async () => ({ install_key: mocks.installKey, registration_id: `registration-${mocks.installKey}` }), requestPermissions: mocks.runtimeRequest, healthRequest: mocks.healthRequest, openSettings: mocks.nativeSettings },
@@ -27,6 +31,10 @@ vi.mock('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceRuntime', a
   return {
     usePhoneDevice: () => ({ host: mocks.host, link: { state: 'off' } }), readPhoneOsState: async () => mocks.os, phoneOsState,
     refreshPhoneDevice: async () => { mocks.refresh(); await phoneOsState.refresh() }, stopPhoneAgentHost: vi.fn(), restartPhoneAgentHost: mocks.restartHost,
+    enablePhoneAgentHost: async (owner: string) => {
+      const { setPhoneAgentHostEnabled } = await import('../../../../apps/desktop/src/mobile/phone-device/phoneDeviceSettings')
+      setPhoneAgentHostEnabled(owner, true)
+    },
   }
 })
 vi.mock('../../../../apps/desktop/src/platform', () => ({ platform: {

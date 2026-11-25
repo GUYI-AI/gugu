@@ -442,6 +442,19 @@ describe('#980 打开一条没在跑的会话', () => {
     store.dispose();
   });
 
+  it('releasing the transcript drops what was parsed from it', async () => {
+    const { store } = storeFor();
+    store.bootstrap();
+    await parked(store);
+    const parse = store.chatState.parseCaches;
+    const blocks = parse.parseBlocks('s0-m', 'a **parsed** reply');
+    expect(parse.parseBlocks('s0-m', 'a **parsed** reply'), 'kept while the transcript is').toBe(blocks);
+    store.releaseTranscript();
+    expect(committedIds(store)).toEqual([]);
+    expect(parse.parseBlocks('s0-m', 'a **parsed** reply'), 'parsed again: the old blocks were let go').not.toBe(blocks);
+    store.dispose();
+  });
+
   it.each([false, true])('a failed history read stays visible and retries without starting the agent (released=%s)', async (released) => {
     const { store } = storeFor();
     if (released) {

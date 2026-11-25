@@ -2,6 +2,17 @@ import type { PlatformCallableRoutes } from '@gugu/session-core/agents/plugins';
 import { PLATFORM_STANDALONE_SEARCH_ROUTE, platformStandaloneSearchGranted } from '@gugu/session-core/agents/plugins';
 import { CODEX_WIRE_API } from './platform';
 
+// Fresh gateway threads share one native provider. Existing custom threads can still
+// resume under their stored provider key, with the same active endpoint and credentials.
+export const CODEX_PLATFORM_PROVIDER_ID = 'gugu_platform';
+export const CODEX_LEGACY_CONNECTION_PROVIDER_ID = 'gugu_connection';
+
+export function withCodexLegacyConnectionProvider(args: string[]): string[] {
+  const current = `model_providers.${CODEX_PLATFORM_PROVIDER_ID}.`;
+  const legacy = `model_providers.${CODEX_LEGACY_CONNECTION_PROVIDER_ID}.`;
+  return [...args, ...args.filter((arg) => arg.startsWith(current)).flatMap((arg) => ['-c', legacy + arg.slice(current.length)])];
+}
+
 /**
  * 「这条 codex 会话花的是咕咕额度」这件事在 argv 上的**唯一**写法。
  *
@@ -93,7 +104,7 @@ export function codexPlatformProviderConfigArgs(input: {
   model?: string;
 }): string[] {
   const id = input.providerId;
-  return [
+  const args = [
     '-c', `model_provider=${id}`,
     '-c', `model_providers.${id}.name=${JSON.stringify(input.providerName)}`,
     '-c', `model_providers.${id}.base_url=${JSON.stringify(input.baseUrl)}`,
@@ -110,4 +121,5 @@ export function codexPlatformProviderConfigArgs(input: {
     ] : []),
     ...CODEX_PLATFORM_DISABLE_APPS_ARGS,
   ];
+  return id === CODEX_PLATFORM_PROVIDER_ID ? withCodexLegacyConnectionProvider(args) : args;
 }

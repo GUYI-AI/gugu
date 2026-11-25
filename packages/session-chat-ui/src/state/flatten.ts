@@ -193,6 +193,11 @@ function withoutSentRepliesOfAgentSends(turn: TranscriptTurn): TranscriptTurn {
   return turn.items.some(drawnAsSend) ? { ...turn, items: turn.items.filter((item) => !drawnAsSend(item)) } : turn;
 }
 
+// The live line defaults open and reads its toggle in reverse.
+function processToggleId(id: string, live: boolean): string {
+  return live ? `${id}:live` : id;
+}
+
 export function flattenTier(
   turns: readonly TranscriptTurn[],
   ctx: SegmentCtx,
@@ -532,10 +537,10 @@ export function flattenTier(
         };
         if (!output.reply && activityEvent && ops.length === 0) { emitArtifacts(); activityEvent = undefined; inlineCompletion = true; continue; }
         const idleMs = (block.live ? 0 : block.idleMs) + block.resumedIdleMs;
-        const process = { id: block.id, ...(block.live ? { live: true } : {}), ...(block.toggleId ? { toggleId: block.toggleId } : {}),
+        const toggle = block.toggleId ?? processToggleId(block.id, block.live);
+        const process = { id: block.id, toggleId: toggle, ...(block.live ? { live: true } : {}),
           startedAt: block.startedAt, endedAt: block.endedAt, ...(idleMs ? { idleMs } : {}), ...(block.live && ctx.pendingStarting?.() ? { starting: ctx.pendingStarting?.() } : {}), steps: output.steps.length,
           ...(ops.length ? {} : { empty: true }) };
-        const toggle = block.toggleId ?? block.id;
         const expanded = ctx.revealAllFolds || turnProcessExpanded(block.live, ctx.isTurnProcessExpanded?.(toggle) ?? false);
         const steps = () => {
           if (!expanded) return;
@@ -549,9 +554,12 @@ export function flattenTier(
             const gapBefore = units[0].gapBefore;
             units[0] = { ...units[0], gapBefore: 0 };
             const id = `${block.id}:steps`;
+            // The viewport is one row of the exchange its steps belong to: without their activity it would split the A2A fold
+            // in two and stay open between the halves.
             out.push({ id, itemId: id, groupId: id, groupRole: 'solo', gapBefore,
               kind: 'conversation-process-steps', data: { id, live: block.live, units },
-              children: units, conversationProcessOwner: conversationOwner, conversationUtterance: conversationOwner });
+              children: units, conversationProcessOwner: conversationOwner, conversationUtterance: conversationOwner,
+              ...(units[0].activityEvent ? { activityEvent: units[0].activityEvent } : {}) });
             lastKind = 'conversation-process-steps';
           }
         };
@@ -599,10 +607,12 @@ export function flattenTier(
           }
           emitOps(ops, turn.id);
         } else {
-          const expanded = ctx.revealAllFolds || turnProcessExpanded(header.live, ctx.isTurnProcessExpanded?.(header.id) ?? false);
+          const toggle = processToggleId(header.id, header.live);
+          const expanded = ctx.revealAllFolds || turnProcessExpanded(header.live, ctx.isTurnProcessExpanded?.(toggle) ?? false);
           processItem({
             kind: 'turn-process',
             id: header.id,
+            toggleId: toggle,
             turnId: turn.id,
             ...(header.live ? { live: true as const } : {}),
             // 收起来时下面什么都看不见,头又是这一轮唯一的动静(#124 review)
@@ -613,7 +623,7 @@ export function flattenTier(
           // 头里面照样按语义折成「跑了 N 条命令」,跑着时自己摊开的、跑完后人点开的都一样(owner 2026-10-16,
           // 推翻 10-02「点开就逐条摆」:跑着时「执行、执行、执行、执行」一直平铺)。只在头里摊平的话,同一轮里还会
           // 自相矛盾:最后一句话之前的平铺、之后的(尾巴,头外面)折着,agent 一开口,折好的那几行就摊开。
-          if (expanded) emitOps(ops, turn.id, [{ id: header.id, stored: !header.live }]);
+          if (expanded) emitOps(ops, turn.id, [{ id: toggle, stored: !header.live }]);
         }
         emitOps(planRows(outsideProcess(segment.tail)), turn.id);
       }

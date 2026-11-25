@@ -48,12 +48,23 @@ export const customModelEntrySchema = z.object({
   maxOutput: z.number().int().positive().optional(),
 });
 
+export const customModelRouteSchema = z.object({
+  id: z.string().uuid(),
+  incoming: z.union([z.literal('any'), modelProtocolSchema]),
+  outgoing: modelProtocolSchema,
+  modelId: z.string().trim().min(1).max(200).optional(),
+  baseUrl: modelEndpointSchema.shape.baseUrl.optional(),
+});
+export type CustomModelRoute = z.infer<typeof customModelRouteSchema>;
+
 export const customModelMetaSchema = z.object({
   preset: z.string().nullable(),
   endpoints: z.array(modelEndpointSchema).min(1).max(4)
     .refine((entries) => new Set(entries.map(({ protocol }) => protocol)).size === entries.length, 'Use one address per protocol'),
   models: z.array(customModelEntrySchema).max(200)
     .refine((entries) => new Set(entries.map(({ id }) => id)).size === entries.length, 'Model IDs must be unique'),
+  routes: z.array(customModelRouteSchema).max(100)
+    .refine((routes) => new Set(routes.map(({ id }) => id)).size === routes.length, 'Route IDs must be unique').optional(),
   /** The protocol the person picked for a harness (harness id → protocol); a harness not named here takes `matchCustomModel`'s order. */
   harnessProtocols: z.record(z.string(), modelProtocolSchema).optional(),
   removed: z.boolean().optional(),
@@ -108,6 +119,7 @@ export function chatModel(entry: { id: string; supportedGenerationMethods?: unkn
 
 export type PiCustomModelProvider = {
   connectionId: string;
+  routeId?: string;
   name: string;
   baseUrl: string;
   protocol: 'openai-responses' | 'openai-chat-completions';
@@ -174,19 +186,35 @@ export function matchCustomModel(input: {
   convertFrom?: readonly HarnessWireProtocol[];
   allowDefaultModel?: boolean;
   hasModel?: boolean;
-  connection: Pick<CustomModelConnection, 'endpoints' | 'keySaved' | 'harnessProtocols'>;
-}): { endpoint: CustomModelMeta['endpoints'][number]; converted?: true; reason?: never } | { endpoint?: never; converted?: never; reason: CustomModelUnavailableReason } {
+  modelId?: string;
+  connection: Pick<CustomModelConnection, 'endpoints' | 'keySaved' | 'harnessProtocols' | 'routes'>;
+}): { endpoint: CustomModelMeta['endpoints'][number]; routeId?: string; converted?: true; reason?: never } | { endpoint?: never; routeId?: never; converted?: never; reason: CustomModelUnavailableReason } {
   if (!input.nativeProtocol) return { reason: 'unsupported' };
   const direct = [input.nativeProtocol, ...(input.protocols ?? [])];
   const convertible = input.convertFrom ?? [];
   const find = (protocols: readonly HarnessWireProtocol[]) =>
     protocols.map((protocol) => input.connection.endpoints.find((item) => item.protocol === protocol)).find(Boolean);
-  const chosen = input.harness ? input.connection.harnessProtocols?.[input.harness] : undefined;
-  const endpoint = (chosen && [...direct, ...convertible].includes(chosen) ? find([chosen]) : undefined) ?? find(direct) ?? find(convertible);
+  const routes = input.connection.routes;
+  const route = routes?.find(({ incoming, modelId }) =>
+    (incoming === 'any' || incoming === input.nativeProtocol) && (modelId === undefined || modelId === input.modelId));
+  let endpoint: CustomModelMeta['endpoints'][number] | undefined;
+  if (routes?.length) {
+    if (route && [...direct, ...convertible].includes(route.outgoing)) {
+      endpoint = route.baseUrl ? { protocol: route.outgoing, baseUrl: route.baseUrl } : find([route.outgoing]);
+    }
+  } else {
+    const chosen = input.harness ? input.connection.harnessProtocols?.[input.harness] : undefined;
+    endpoint = (chosen && [...direct, ...convertible].includes(chosen) ? find([chosen]) : undefined)
+      ?? find(direct) ?? find(convertible);
+  }
   if (!endpoint) return { reason: 'protocol' };
   if (!input.connection.keySaved) return { reason: 'missing-key' };
   if (input.hasModel === false && !input.allowDefaultModel) return { reason: 'no-model' };
-  return direct.includes(endpoint.protocol) ? { endpoint } : { endpoint, converted: true };
+  return {
+    endpoint,
+    ...(route ? { routeId: route.id } : {}),
+    ...(direct.includes(endpoint.protocol) ? {} : { converted: true }),
+  };
 }
 
 /** Resolve only within the provider addressing reported by this running custom session. */

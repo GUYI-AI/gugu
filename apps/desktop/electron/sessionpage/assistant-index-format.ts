@@ -7,6 +7,7 @@ const compare = (a: unknown, b: unknown) => order(a) < order(b) ? -1 : order(a) 
 type Row = Record<string, unknown>
 
 export function boundedAssistantIndex(lines: string[], details?: string): string {
+  const routingSource = (row: Row) => row.source === 'integrations' || row.source === 'chat_channels'
   const rows = lines.map(line => line.startsWith('{') ? JSON.parse(line) as Row : line)
   for (const row of rows) {
     if (typeof row === 'string') continue
@@ -35,13 +36,13 @@ export function boundedAssistantIndex(lines: string[], details?: string): string
   while (result.length > ASSISTANT_INDEX_LIMIT) {
     trimmed = true
     // Trim collections before dropping any device: routing takes precedence over catalog detail.
-    const collection = rows.filter((row): row is Row => typeof row !== 'string' && row.source !== 'integrations' && Array.isArray(row.items) && row.items.length > 0)
+    const collection = rows.filter((row): row is Row => typeof row !== 'string' && !routingSource(row) && Array.isArray(row.items) && row.items.length > 0)
       .sort((a, b) => json(b.items).length - json(a.items).length)[0]
     if (collection) {
       (collection.items as unknown[]).pop()
       collection.omitted_items = Number(collection.omitted_items ?? 0) + 1
     } else {
-      const candidates = rows.filter((row): row is Row => typeof row !== 'string' && !row.account && row.source !== 'integrations' && row.source !== 'resource_version')
+      const candidates = rows.filter((row): row is Row => typeof row !== 'string' && !row.account && !routingSource(row) && row.source !== 'resource_version')
       const candidate = candidates.find(row => !row.device_id) ?? candidates.at(-1)
       if (!candidate) {
         const applications = rows.find((row): row is Row => typeof row !== 'string' && row.source === 'integrations'

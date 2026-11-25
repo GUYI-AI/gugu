@@ -6,12 +6,13 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const host = vi.hoisted(() => ({
-  byPath: vi.fn(), attached: vi.fn(), create: vi.fn(), open: vi.fn(),
+  byPath: vi.fn(), attached: vi.fn(), create: vi.fn(), open: vi.fn(), group: vi.fn(),
 }));
 vi.mock('../projects/operations/getProjects', () => ({ getLocalProjectByPath: host.byPath }));
 vi.mock('../projects/operations/project-folders', () => ({ getProjectOwningAttachedFolder: host.attached }));
 vi.mock('../projects/operations/create-local-project', () => ({ createLocalProject: host.create }));
 vi.mock('../projects/operations/openProject', () => ({ openProject: host.open }));
+vi.mock('../projects/operations/project-groups', () => ({ ensureRegisteredProjectGroup: host.group }));
 import { importCodexProjects, scanCodexProjects } from './projects';
 
 let root: string;
@@ -180,6 +181,8 @@ describe('Codex project import', () => {
       reuseExisting: true, automatic: true, createDirectory: false, initGitRepository: false,
     });
     expect(host.open).toHaveBeenCalledWith(result.target?.projectId);
+    // The sidebar knows a project by its group, as when the person opens the folder.
+    expect(host.group).toHaveBeenCalledWith(expect.objectContaining({ id: result.target?.projectId }));
     expect(await readFile(join(directory, 'README.md'), 'utf8')).toBe('original');
     expect(await digest(join(sourceRoot, 'state_5.sqlite'))).toBe(before);
   });

@@ -68,3 +68,33 @@ it.each(['floating', 'enlarged'] as const)('paints the %s desktop window above a
   if (import.meta.env.VITE_OWNER_CAPTURE_PHASE) await page.screenshot({ element: host,
     path: `__screenshots__/live-window-3081-${mode}-${import.meta.env.VITE_OWNER_CAPTURE_PHASE}.png` });
 });
+
+it.each(['browser', 'computer'] as const)('enlarges the %s preview without changing message width or covering the composer', async kind => {
+  await page.viewport(1280, 960);
+  state.model = new LiveWindowModel('desktop');
+  const context = { conversationId: 'task', deviceId: 'local', sessionId: 'task', agentId: 'agent', privateAgentChat: true, shown: true };
+  state.model.activate(context);
+  state.model.observe(context, [{ ...context, id: 'screen', kind, title: 'Screen', status: 'operating', size: { width: 650, height: 600 } }]);
+  host = document.body.appendChild(document.createElement('div'));
+  host.className = 'gugu-skin emlight'; host.style.cssText = 'position:relative;width:800px;height:500px';
+  root = createRoot(host);
+  await act(async () => root!.render(<DesktopLiveWindowConversation kind="acp-chat">
+    <div data-test-message-list style={{ height: 350 }}>Conversation</div>
+    <textarea data-region="composer" aria-label="Test composer" />
+  </DesktopLiveWindowConversation>));
+  const box = (selector: string) => host!.querySelector<HTMLElement>(selector)!.getBoundingClientRect();
+  await vi.waitFor(() => expect(host!.querySelector('[data-live-window="floating"]')).not.toBeNull());
+  const before = box('[data-test-message-list]');
+  const small = box('[data-live-window="floating"]');
+  await act(async () => state.model.dispatch({ type: 'enlarge' }));
+  await vi.waitFor(() => expect(host!.querySelector('[data-live-window="enlarged"]')).not.toBeNull());
+  const after = box('[data-test-message-list]');
+  const enlarged = box('[data-live-window="enlarged"]');
+  expect(after.width).toBe(before.width);
+  expect(after.left).toBe(before.left);
+  expect(enlarged.width).toBeGreaterThan(small.width);
+  expect(enlarged.right).toBeLessThanOrEqual(after.right);
+  expect(enlarged.bottom).toBeLessThan(box('[data-region="composer"]').top);
+  await page.getByRole('textbox', { name: 'Test composer' }).click();
+  await vi.waitFor(() => expect(host!.querySelector('[data-live-window="floating"]')).not.toBeNull());
+});

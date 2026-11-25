@@ -338,6 +338,9 @@ export default {
       "setListenModeFailed": "Could not change the listen mode. The setting is unchanged."
     },
     "groupAction": {
+      "channelOwner": "Channel owner",
+      "supervisorRoleMigrated": "Migrated the previous supervisor role",
+      "topicJoined": "Joined the topic",
       "joined": "Joined the group chat",
       "roleUpdated": "Group role updated"
     },
@@ -968,9 +971,7 @@ export default {
     "leave": "Leave topic",
     "leaveHint": "You can still read it, but will not get notifications from this topic",
     "removeHint": "They can still read it, but will not get notifications from this topic",
-    "pins": {
-      "pin": "Pin {{name}}",
-      "unpin": "Unpin {{name}}",
+    "menu": {
       "emptyHint": "Choose “Open topic” on any message."
     },
     "anchor": {

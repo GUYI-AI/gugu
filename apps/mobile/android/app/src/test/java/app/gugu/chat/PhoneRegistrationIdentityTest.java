@@ -33,6 +33,16 @@ public class PhoneRegistrationIdentityTest {
         assertEquals(current, PhoneRegistrationIdentity.open(root, KEY, () -> { fail("must not consult another origin's cache"); return OTHER; }, ATOMIC));
         assertEquals(current, PhoneRegistrationIdentity.open(root, KEY, () -> null, ATOMIC));
     }
+    @Test public void signedOutRecoveryReadsOnlyAnExistingMarkerWithoutCreatingOrMigrating() throws Exception {
+        File root = temporary.newFolder();
+        assertNull(PhoneRegistrationIdentity.readExisting(root, KEY)); assertFalse(marker(root).exists());
+        PhoneRegistrationIdentity.open(root, KEY, () -> CURRENT, ATOMIC);
+        byte[] original = Files.readAllBytes(marker(root).toPath());
+        assertEquals(CURRENT, PhoneRegistrationIdentity.readExisting(root, KEY));
+        assertArrayEquals(original, Files.readAllBytes(marker(root).toPath()));
+        failure(() -> PhoneRegistrationIdentity.readExisting(root, OTHER));
+        assertArrayEquals(original, Files.readAllBytes(marker(root).toPath()));
+    }
 
     @Test public void aFreshPackageOrReinstallationUsesItsOwnNativeKeyAndAccountsHaveSeparateDeviceIds() throws Exception {
         assertEquals(KEY, PhoneRegistrationIdentity.open(temporary.newFolder(), KEY, () -> null, ATOMIC));

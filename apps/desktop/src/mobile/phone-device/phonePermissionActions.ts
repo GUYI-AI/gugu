@@ -3,6 +3,7 @@ import { nativePhoneActions, type PhoneRuntimePermission, type PhoneSettingsTarg
 import { missingRequirements, type PhoneActionGroup, type PhoneOsState, type PhoneRequirement } from './phoneActionCatalog'
 import { nativePhoneData, phoneDataAllowed } from './phoneDataActions'
 import { connectPhoneActionGroupChoice, setPhoneActionGroup } from './phoneDeviceSettings'
+import { resumePhoneAfterAccountClosure } from './phoneAccountClosureResume'
 
 const RUNTIME: readonly PhoneRuntimePermission[] = ['calendar', 'contacts', 'location']
 const isRuntime = (requirement: PhoneRequirement): requirement is PhoneRuntimePermission =>
@@ -35,8 +36,10 @@ export async function connectPhoneActionGroup(
   options: { enableDevice?: boolean } = {},
 ): Promise<void> {
   if (!os) throw new Error(mobileWorkspaceText('phoneDevice.permissionsNotRead'))
-  if (options.enableDevice) connectPhoneActionGroupChoice(ownerId, group)
-  else setPhoneActionGroup(ownerId, group, true)
+  await resumePhoneAfterAccountClosure(ownerId, () => {
+    if (options.enableDevice) connectPhoneActionGroupChoice(ownerId, group)
+    else setPhoneActionGroup(ownerId, group, true)
+  })
   const missing = missingRequirements(group, os)
   for (const requirement of missing.filter(isRuntime)) await requestPhoneRequirement(requirement, os)
   const special = missing.find((requirement) => !isRuntime(requirement))

@@ -6,6 +6,7 @@ import { createEffect, createRoot } from 'solid-js';
 import { parseSentAttachmentLink } from '@gugu/session-core/session-record/send-receipt';
 import { parseGroupFileLink } from '@gugu/core/shared/ui/guguLink';
 import { sentFileCopy } from '@/lib/sentFileCopies';
+import { keptDataUrl } from './kept-data-urls';
 
 export function originalMessagePresentation(message: MessageItem): DeliveryMessagePresentation | null {
   if (message.content_type !== 'attachment' || message.retracted_at) return null;
@@ -47,16 +48,9 @@ export function connectDeliveredMessagePresentation(state: ChatState, load: (id:
   return () => { live = false; stop(); };
 }
 
-// A message's file and a folder version never change: read once per run, so a row drawn again (its turn committing) has
-// its picture in its first frame instead of reading it anew.
-const deliveredReads = new Map<string, Promise<string | null>>();
+// A message's file and a folder version never change: one read is kept for every row that draws it (`keptDataUrl`).
 export function resolveDeliveredAttachment(id: string): Promise<string | null> {
-  const known = deliveredReads.get(id);
-  if (known) return known;
-  const read = readDeliveredAttachment(id).catch((error: unknown) => { deliveredReads.delete(id); throw error; });
-  deliveredReads.set(id, read);
-  void read.then(url => { if (!url) deliveredReads.delete(id); }, () => {});
-  return read;
+  return keptDataUrl(id, () => readDeliveredAttachment(id));
 }
 
 async function readDeliveredAttachment(id: string): Promise<string | null> {

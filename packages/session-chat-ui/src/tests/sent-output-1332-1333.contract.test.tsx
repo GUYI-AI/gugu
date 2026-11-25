@@ -29,8 +29,10 @@ async function mount(agentConversation: boolean, items: TranscriptItem[], active
   const turn: TranscriptTurn = { id: 'sent-output', seq: 0, initiator: 'user', startedAt: 1000,
     ...(!active ? { endedAt: 4000, outcome: { kind: 'done' as const } } : {}), items };
   if (active) state.transcript.activeTurn.set(turn);
-  else state.transcript.history.seed([turn]);
-  state.viewState.setCollapsed('sent-output:process', true);
+  else {
+    state.transcript.history.seed([turn]);
+    state.viewState.setCollapsed('sent-output:process', true);
+  }
   return { host, open, resolve };
 }
 it.each([false, true])('draws two scoped images as one card group with clickable previews (conversation=%s)', async conversation => {
@@ -74,9 +76,12 @@ for (const active of [true, false]) {
         rawOutput: JSON.stringify([{ type: 'text', text: outputText }]), outputText };
       const { host } = await mount(true, [relay], active);
       if (failed && active) {
-        const disclosure = () => host.querySelector<HTMLButtonElement>('[data-conversation-process][aria-expanded="false"]');
-        await expect.poll(disclosure).not.toBeNull();
-        disclosure()!.click();
+        const disclosure = (expanded: boolean) =>
+          host.querySelector<HTMLButtonElement>(`[data-conversation-process][aria-expanded="${expanded}"]`);
+        await expect.poll(() => disclosure(true)).not.toBeNull();
+        disclosure(true)!.click();
+        await expect.poll(() => disclosure(false)).not.toBeNull();
+        disclosure(false)!.click();
       }
       await expect.poll(() => host.textContent).toContain(failed ? 'MCP' : 'Native relay words');
       await expect.poll(() => host.querySelectorAll('[data-slot="sent-to"]').length).toBe(failed ? 0 : 1);

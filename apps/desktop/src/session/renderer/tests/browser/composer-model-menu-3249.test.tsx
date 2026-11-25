@@ -134,6 +134,7 @@ describe('#3249 composer 模型下拉', () => {
           modelOptions={MODELS}
           selectedModel={selectedModel}
           onModelChange={onModelChange}
+          phoneActions
           effortOptions={effortOptions}
           selectedEffort={effort.selected}
           onEffortChange={onEffortChange}
@@ -379,7 +380,7 @@ describe('#3249 composer 模型下拉', () => {
       input.getAttribute('aria-valuetext'),
       'aria-valuetext 是空的 —— 读屏器会退回去念 0,听成"最低档"'
       // ⚠️ 这个文件把语言**钉死**成 en-US(见 beforeEach 那段),所以断言照英文那份走。
-    ).toBe('Default')
+    ).toBe('No level selected')
 
     // 说明行要能被读屏器取到:它挂在外层 div 的 title 上,读屏器取不到;
     // 锁住时 input 还是 disabled,更取不到。所以显式 aria-describedby 指过去。
@@ -388,7 +389,7 @@ describe('#3249 composer 模型下拉', () => {
     expect(
       document.getElementById(describedBy!)?.textContent,
       'aria-describedby 指向了一个不存在的节点'
-    ).toBe('Default')
+    ).toBe('No level selected')
   })
 
   it('「减少动态效果」真的关得掉 —— ❌ 不许被高权重选择器架空', async () => {
@@ -465,7 +466,7 @@ describe('#3249 composer 模型下拉', () => {
     expect(thumbInput.max).toBe('5')
   })
 
-  it('刻点与圆钮圆心逐档对齐,且七档也只占一行', async () => {
+  it('刻点与圆钮圆心逐档对齐,更换档位后仍占一行', async () => {
     await openPanel()
 
     // ── ① 刻点等距,且首尾各让出半个圆钮 ────────────────────────────────────────
@@ -516,7 +517,8 @@ describe('#3249 composer 模型下拉', () => {
     // 重渲染是同一个组件实例:面板**仍然开着**,直接等它换上七档。❌ 再 openPanel() —— 那一下点的是
     // 开关,会把它关掉(#6301:旧写法正是在关闭动画那几帧里量到的)。
     renderComposer('platform:glm-5.2', { selected: 'ultracode' }, LONG_EFFORTS)
-    await until('slider re-renders with seven ticks', () => effortTicks().length === 7)
+    await until('slider re-renders with explicit levels', () => effortReadout() === 'UltraCode')
+    expect(effortTicks().length).toBe(6)
     expect(openMenuParts(), '重渲染后面板应仍开着').toBe(1)
     expect(effortReadout()).toBe('UltraCode')
     expect(effortRow().scrollWidth).toBeLessThanOrEqual(effortRow().clientWidth)
@@ -580,16 +582,12 @@ describe('#3249 composer 模型下拉', () => {
     await until('model panel closed', () => openMenuParts() === 0)
   })
 
-  it('复位钮使用目录提供的 default 项,回到该项后隐藏', async () => {
+  it('omits the synthetic Default effort from the phone Work controls', async () => {
     renderComposer('platform:glm-5.2', { selected: 'low' }, LONG_EFFORTS)
     await openPanel()
-    await page.getByTestId('composer-effort-reset').click()
-    expect(onEffortChange.mock.calls).toEqual([['default']])
-    await until('model panel closed', () => openMenuParts() === 0)
-
-    renderComposer('platform:glm-5.2', { selected: 'default' }, LONG_EFFORTS)
-    await openPanel()
     expect(document.querySelector('[data-testid="composer-effort-reset"]')).toBeNull()
+    expect(effortTicks().some(tick => tick.getAttribute('data-effort-id') === 'default')).toBe(false)
+    expect(onEffortChange).not.toHaveBeenCalled()
   })
 
   it.each([undefined, 'missing'])('没有合法默认项时不显示复位钮(default=%s)', async (defaultId) => {
@@ -626,16 +624,11 @@ describe('#3249 composer 模型下拉', () => {
     expect(visibleOptions()).toEqual(['GLM 5.2', 'GPT-5.6 Sol'])
   })
 
-  it('一级是「谁的」,厂商不分组 —— 厂商只在药丸和行内 logo 上', async () => {
+  it('咕咕模型优先，列表没有来源分组，厂商图标和筛选仍可用', async () => {
     await openPanel()
 
-    // owner 2026-09-06:「你的和咕咕的这个分类是一级分类,二标签是筛选」「你这个分类层次反了」。
-    // ⇒ 组头只有两段(两档),即使里面混着 OpenAI 与智谱两家。
-    // ⚠️ 这条同时是**回归守卫**:我第一版把厂商当组头,那时这里会读出三段。
-    expect(visibleGroups()).toEqual([
-      '你的 Codex 模型',
-      'Gugu models are billed in credits'
-    ])
+    expect(visibleGroups()).toEqual([])
+    expect(visibleOptions().slice(0, 2)).toEqual(['GLM 5.2', 'GPT-5.6 Sol'])
     // 组头里既然没有厂商,行内那枚 logo 就是认厂商的唯一线索。
     // 图标**位**每行都有(5 行),真图标只有认得出厂商的那 4 行 —— 认不出的那条留白,不占位地收掉。
     const slots = document.querySelectorAll(
@@ -650,7 +643,7 @@ describe('#3249 composer 模型下拉', () => {
       [...document.querySelectorAll('[data-testid^="composer-model-provider-"]')].map((el) =>
         el.textContent?.trim()
       )
-    ).toEqual(['OpenAI', '智谱'])
+    ).toEqual(['智谱', 'OpenAI'])
   })
 
   it('认不出厂商的那一行,名字仍与其它行左对齐', async () => {
@@ -692,13 +685,10 @@ describe('#3249 composer 模型下拉', () => {
     // 筛的是**厂商**,而厂商横切在两档之上 ⇒ 两档里的 OpenAI 条目都留下,两个组头也都还在。
     // 三条:你自己的 codex 与 Sol,加上咕咕代付的那条 Sol —— 同名不同档,两条都得在。
     await until('provider pill filters to OpenAI', () =>
-      sameList(visibleOptions(), ['gpt-5.6-codex', 'GPT-5.6 Sol', 'GPT-5.6 Sol'])
+      sameList(visibleOptions(), ['GPT-5.6 Sol', 'gpt-5.6-codex', 'GPT-5.6 Sol'])
     )
-    expect(visibleOptions()).toEqual(['gpt-5.6-codex', 'GPT-5.6 Sol', 'GPT-5.6 Sol'])
-    expect(visibleGroups()).toEqual([
-      '你的 Codex 模型',
-      'Gugu models are billed in credits'
-    ])
+    expect(visibleOptions()).toEqual(['GPT-5.6 Sol', 'gpt-5.6-codex', 'GPT-5.6 Sol'])
+    expect(visibleGroups()).toEqual([])
 
     // 再点一次取消 ⇒ 回到「一个都没选」= 不过滤(上游原话:An empty filter means no filtering)。
     await page.getByTestId('composer-model-provider-OpenAI').click()

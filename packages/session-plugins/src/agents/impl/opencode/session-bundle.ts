@@ -75,7 +75,8 @@ export const opencodeSessionBundleDescriptor = {
       recovery: 'reopen',
       inferenceOwner: 'serve-process-descendants',
       reopenEntry: 'host-session-reload',
-      sourceChangeSession: 'replace',
+      // ACP loads the native history, then applyInitialModel sets the recorded model from the selected channel.
+      sourceChangeSession: 'preserve',
     },
     'tui': {
       delivery: 'credential-proxy',

@@ -50,7 +50,11 @@ export function HtmlPreviewSurface({ fileName, url, onLink, scrollPosition, anch
       if (!source || !frame) return;
       const data = event.data as { type?: string; href?: string; x?: number; y?: number; deltaY?: number; command?: unknown } | null;
       if (data?.type === PREVIEW_RESTORED_MESSAGE_TYPE || data?.type === PREVIEW_SCROLL_MESSAGE_TYPE || data?.type === PREVIEW_ZOOM_MESSAGE_TYPE) scripted.current.add(frame);
-      if (data?.type === PREVIEW_LINK_MESSAGE_TYPE && source === visible && typeof data.href === 'string') onLink(data.href);
+      // @@@link-gesture - the page is anyone's HTML and can post this itself; only a person's input in it opens a link.
+      // The browser tells this window of input in its frames, so a click or key inside counts and a script on its own does
+      // not. Input anywhere else in the window counts too, so the input must also have left focus in this frame.
+      if (data?.type === PREVIEW_LINK_MESSAGE_TYPE && source === visible && typeof data.href === 'string'
+        && navigator.userActivation?.isActive && document.activeElement === frame) onLink(data.href);
       if (data?.type === PREVIEW_ZOOM_MESSAGE_TYPE && source === visible) {
         if (typeof data.deltaY === 'number' && Number.isFinite(data.deltaY)) setZoom(value => pinchZoom(value, data.deltaY!, DOCUMENT_MIN_ZOOM, DOCUMENT_MAX_ZOOM));
         else if (isFileZoomCommand(data.command)) {

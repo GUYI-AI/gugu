@@ -24,6 +24,8 @@ import {
 import { ASSISTANT_HOME_CHANNELS, type AssistantEngine } from './assistantHomeIpc'
 import { assistantSetupRules } from './assistantSetupRules'
 import { prepareLocalAssistantSetup } from './assistantSetupPreparation'
+import { fetchAgentHarnessModels } from './agentModelSelection'
+import { canUseOwnCreateModels, defaultCreateModel } from './createModelDefault'
 import { provisionCloudComputer } from './cloudComputer'
 import { contactsService } from './contacts'
 import { getCurrentAuthUserId } from './supabase'
@@ -95,12 +97,22 @@ export function completedAssistantSetup(result: Awaited<ReturnType<typeof provis
   return completedSingleProvisionSession(result)
 }
 
-async function startDeps(engine: AssistantEngine, rules: AssistantProductRules): Promise<SingleProvisionDeps> {
+function startDeps(engine: AssistantEngine, rules: AssistantProductRules, model: string | null = null): SingleProvisionDeps {
   return {
     resumeStore: assistantResumeStore,
-    model: null,
+    model,
     assistant: { childHarness: engine === 'codex' ? 'codex' : rules.defaults.childHarness, firstTask: rules.texts['first-task'] },
   }
+}
+
+/** Resolve on the actual host before preparing a fresh home or allocating an identity. */
+async function localAssistantModel(deviceId: string, engine: AssistantEngine): Promise<string | null> {
+  const catalog = await fetchAgentHarnessModels(deviceId, engine, true)
+  // Keep the existing native default when this computer can actually use its own credentials.
+  if (canUseOwnCreateModels(catalog)) return null
+  const model = defaultCreateModel(catalog)
+  if (model) return model
+  throw new AssistantSetupError('failed', catalog.guguReason ?? catalog.harnessReason ?? 'No usable model is available for the assistant')
 }
 
 // 同一时刻只推这台电脑上的一次开通:开通页还在等它起来时,它的身份就已经有了,咕咕那一格(壳)也会想接着做 ——
@@ -128,6 +140,7 @@ async function setUpHere(draft: AssistantSetupDraft, localDeviceId: string, opti
   const rules = await assistantSetupRules()
   const clean = cleanAssistantSetupDraft(draft, rules)
   const engine = options.engine ?? 'claude'
+  const model = await localAssistantModel(localDeviceId, engine)
   // 开通的是全新的一位:上一位留在这台电脑上的家先清掉(#7350,别处删掉的 / 关到一半的),❌ 带着上一位的记忆和性格。
   const home = await prepareLocalAssistantSetup(ipc, { ownerProfile: clean.ownerProfile, fresh: true, ...(engine === 'codex' ? { engine } : {}) }, options)
   const result = await provisionSingleAgent(
@@ -141,7 +154,7 @@ async function setUpHere(draft: AssistantSetupDraft, localDeviceId: string, opti
       inheritMemory: false,
       historyImportRequired: false,
     },
-    await startDeps(engine, rules),
+    startDeps(engine, rules, model),
   )
   return completedAssistantSetup(result)
 }
@@ -183,7 +196,7 @@ export function resumeLocalAssistant(record: ProvisionResumeRecord): Promise<Cre
     }
     const engine = record.blueprint?.members[0]?.agent_type === 'codex' ? 'codex' : 'claude'
     await ipc.invoke(ASSISTANT_HOME_CHANNELS.prepare, engine === 'codex' ? { engine } : {})
-    return completedAssistantSetup(await resumeSingleAgent(record, await startDeps(engine, await assistantSetupRules())))
+    return completedAssistantSetup(await resumeSingleAgent(record, startDeps(engine, await assistantSetupRules())))
   })
 }
 

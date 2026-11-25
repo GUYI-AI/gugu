@@ -487,6 +487,7 @@ export const enUSCapabilityMessages = {
   'agentsPage.failureDisk': 'There is not enough disk space. {operation} did not finish.',
   'agentsPage.failureExists': 'The installation location is already in use. {operation} did not finish.',
   'agentsPage.failureIncomplete': '{operation} did not finish.',
+  'agentsPage.failureDependencies': '{operation} stopped while resolving package dependencies.',
   'agentsPage.failureCancelled': '{operation} cancelled.',
 
   'agentsPage.installOptions': 'Installation options',
@@ -1480,6 +1481,7 @@ export const zhCNCapabilityMessages: Record<CapabilityMessageKey, string> = {
   'agentsPage.failureDisk': '磁盘空间不足，未完成{operation}',
   'agentsPage.failureExists': '安装位置已被占用，未完成{operation}',
   'agentsPage.failureIncomplete': '{operation}未完成',
+  'agentsPage.failureDependencies': '未能解析软件包依赖，{operation}未完成。',
   'agentsPage.failureCancelled': '已取消{operation}',
 
   'agentsPage.installOptions': '安装选项',
