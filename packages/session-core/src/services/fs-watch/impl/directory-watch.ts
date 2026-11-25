@@ -34,7 +34,9 @@ export class DirectoryWatch implements IDisposable {
     root: string,
     deliver: (events: WatchEvent[]) => void,
     resync: () => void,
-    onError: (context: string, error: unknown) => void
+    onError: (context: string, error: unknown) => void,
+    /** Record streams fail at a real watch failure; they must never fall back to a retry clock. */
+    private readonly recover = true
   ) {
     this.root = root;
     this.deliver = deliver;
@@ -72,7 +74,8 @@ export class DirectoryWatch implements IDisposable {
   private attach(): void {
     const watcher = fsWatch(this.root, { recursive: false, persistent: false });
     watcher.on('change', (eventType, filename) => {
-      if (this.disposed || filename === null || filename === undefined) return;
+      if (this.disposed) return;
+      if (filename === null || filename === undefined) { if (!this.recover) this.resync(); return; }
       const name = typeof filename === 'string' ? filename : filename.toString();
       if (!name) return;
       const absPath = path.join(this.root, name);
@@ -85,7 +88,13 @@ export class DirectoryWatch implements IDisposable {
       if (this.disposed) return;
       this.onError(`watch ${this.root}`, error);
       this.closeWatcher();
-      this.scheduleReattach();
+      if (this.recover) this.scheduleReattach();
+    });
+    watcher.on('close', () => {
+      if (this.recover || this.disposed || this.watcher !== watcher) return;
+      this.watcher = null;
+      this.onError(`watch ${this.root}`, new Error(`Directory watch closed: ${this.root}`));
+      if (this.recover) this.scheduleReattach();
     });
     this.watcher = watcher;
     this.retryAttempts = 0;

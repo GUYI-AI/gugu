@@ -73,6 +73,37 @@ it('presents a compact queue above a fully rounded composer with separate steer/
   expect(getComputedStyle(host!.querySelector('[data-slot="composer-bar"]')!).borderTopLeftRadius).toBe('24px');
 });
 
+// UX 复审 B5-F05: a queued row read alone (原文 + 现在插入) looked already sent; it now says 待发送 before the text.
+// Only where the word cannot fit beside the text and the actions (a band of 19.5em of its own text or less) does it give
+// way to the glyph, kept as the slot's title; either way the text never runs under the actions and the list never
+// scrolls sideways. (en at 194px overflowed before the word too: its actions alone are wider than that row.)
+it.each([
+  { locale: 'zh-CN', label: '待发送', send: '现在插入第 1 条排队消息', widths: [194, 240, 272, 300, 320, 640] },
+  { locale: 'en-US', label: 'Queued', send: 'Insert queued message 1 now', widths: [240, 272, 300, 320, 640] },
+])('says in words that each queued row is waiting, down to a narrow pane ($locale)', async ({ locale, label, send, widths }) => {
+  for (const width of widths) {
+    const h = await mount(PROMPTS, width, locale);
+    const at = `${width}px`;
+    const band = host!.querySelector<HTMLElement>('[data-slot="composer-queued-prompts"]')!;
+    const narrow = band.getBoundingClientRect().width <= 19.5 * parseFloat(getComputedStyle(band).fontSize);
+    const slot = h.row('q1').querySelector<HTMLElement>(`[title="${label}"]`)!;
+    expect(slot, at).not.toBeNull();
+    const word = [...slot.querySelectorAll<HTMLElement>('span')].find((el) => el.textContent === label)!;
+    const glyph = slot.querySelector('svg')!;
+    const shown = (el: Element) => el.getBoundingClientRect().width > 0;
+    expect([shown(word), shown(glyph)], at).toEqual(narrow ? [false, true] : [true, false]);
+    const text = h.row('q1').querySelector<HTMLElement>('button:not([draggable])')!.getBoundingClientRect();
+    expect(slot.getBoundingClientRect().right, at).toBeLessThanOrEqual(text.left);
+    const action = page.getByRole('button', { name: send, exact: true }).query()!.getBoundingClientRect();
+    expect(text.right, at).toBeLessThanOrEqual(action.left);
+    const list = host!.querySelector<HTMLElement>('[role="list"]')!;
+    expect(list.scrollWidth, at).toBe(list.clientWidth);
+    root?.unmount(); host?.remove(); root = undefined; host = undefined;
+  }
+  // The word is what the row shows at an ordinary width.
+  expect(widths.at(-1)).toBe(640);
+});
+
 it('edits from the real menu, saving the original message without changing queue order', async () => {
   const h = await mount();
   await page.getByRole('button', { name: '第 1 条排队消息的操作' }).click();

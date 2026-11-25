@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { log } from '@main/lib/logger';
-import { ConversionRouterPool, ccSwitchCandidates, harnessBaseUrl, isConversionHarness } from './conversion-router';
+import { ConversionRouterPool, ConversionRouterStartError, ccSwitchCandidates, harnessBaseUrl, isConversionHarness } from './conversion-router';
 
 // Routers stay up while the app runs: sessions hold their base URL for their whole life, and a pool entry is keyed by
 // (harness, record), so a second session on the same record reuses it. They stop when the app quits.
@@ -38,8 +38,16 @@ function routerPool(): Promise<ConversionRouterPool> {
 /** Base URL the harness uses for a custom model whose protocol the bundled router converts. */
 export async function convertedBaseUrl(providerId: string, connectionId: string, upstream: string, relayKey: string): Promise<string> {
   if (!isConversionHarness(providerId)) throw new Error(`${providerId} cannot use a converted custom model`);
-  const { router } = await (await routerPool()).acquire(providerId, connectionId, upstream, relayKey);
-  return harnessBaseUrl(providerId, router);
+  try {
+    const { router } = await (await routerPool()).acquire(providerId, connectionId, upstream, relayKey);
+    return harnessBaseUrl(providerId, router);
+  } catch (error) {
+    if (error instanceof ConversionRouterStartError && error.phase === 'listen') {
+      const { reason, phase, elapsedMs, exitCode } = error;
+      log.warn('Local model protocol converter startup failed', { providerId, reason, phase, elapsedMs, exitCode });
+    }
+    throw error;
+  }
 }
 
 export function releaseConversionRouters(): void {

@@ -1,14 +1,21 @@
+import { EventEmitter } from 'node:events';
+import type { ChildProcess } from 'node:child_process';
 import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as childProcess from '@gugu/core/local/childProcess';
+import { guguReasonInText } from '@gugu/session-core/session-record/contract';
+import { log } from '@main/lib/logger';
 import { ConversionRouterPool, ccSwitchCandidates, harnessBaseUrl, isConversionHarness, launchConversionRouter } from './conversion-router';
+
+vi.mock('@main/lib/logger', () => ({ log: { warn: vi.fn() } }));
 
 const roots: string[] = [];
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))); });
 
 // A stand-in for cc-switch-cli: `provider` records its arguments, `proxy serve` prints the bound address and waits.
-async function fakeBinary(): Promise<{ executable: string; scratchRoot: string; log: string; settings: string }> {
+async function fakeBinary(providerAddExit = 0): Promise<{ executable: string; scratchRoot: string; log: string; settings: string }> {
   const root = await mkdtemp(join(tmpdir(), 'gugu-router-test-'));
   roots.push(root);
   const log = join(root, 'calls.log');
@@ -19,6 +26,7 @@ printf '%s\\n' "HOME=$HOME CFG=$CC_SWITCH_CONFIG_DIR $*" >> '${log}'
 prev=; for arg; do [ "$prev" = --config-file ] && cat "$arg" >> '${settings}'; prev=$arg; done
 case "$*" in
   *"proxy serve"*) echo "Listening on http://127.0.0.1:43219"; trap 'exit 0' TERM; while :; do sleep 1; done ;;
+  *"provider add"*) exit ${providerAddExit} ;;
   *) exit 0 ;;
 esac
 `);
@@ -27,6 +35,62 @@ esac
 }
 
 describe.skipIf(process.platform === 'win32')('conversion router', () => {
+  it('reports an actionable startup reason when the converter cannot add its provider', async () => {
+    const { executable, scratchRoot } = await fakeBinary(7);
+    const error = await launchConversionRouter({
+      executable, scratchRoot, harness: 'codex', upstream: 'http://127.0.0.1:5000/r/a/openai-chat-completions',
+      relayKey: 'private-relay-key',
+    }).then(() => null, (reason: Error) => reason);
+
+    expect(guguReasonInText(error?.message)).toBe('conversion-start-failed');
+    expect(error).toMatchObject({ phase: 'add-provider', exitCode: 7 });
+    expect(error?.message).not.toContain('private-relay-key');
+    expect(await readdir(scratchRoot)).toEqual([]);
+  });
+
+  it('allows a Windows provider add over ten seconds and reports the phase that exhausts the shared deadline', async () => {
+    const { executable, scratchRoot } = await fakeBinary();
+    const platform = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    const stageLog = vi.mocked(log.warn).mockClear();
+    const addStarted = Promise.withResolvers<void>();
+    const switchStarted = Promise.withResolvers<void>();
+    const delayedExit = (delay: number, started: () => void) => () => {
+      const child = new EventEmitter() as ChildProcess;
+      setTimeout(() => child.emit('close', 0), delay);
+      started();
+      return child;
+    };
+    vi.spyOn(childProcess, 'spawn')
+      .mockImplementationOnce(delayedExit(12_000, addStarted.resolve))
+      .mockImplementationOnce(delayedExit(19_000, switchStarted.resolve));
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+    Object.defineProperty(process, 'platform', { ...platform, value: 'win32' });
+    try {
+      const startup = launchConversionRouter({
+        executable, scratchRoot, harness: 'codex', upstream: 'http://127.0.0.1:5000/r/a/openai-chat-completions',
+        relayKey: 'private-relay-key',
+      });
+      const failure = startup.then(() => null, (reason: Error) => reason);
+      await addStarted.promise;
+      Object.defineProperty(process, 'platform', platform);
+      await vi.advanceTimersByTimeAsync(12_000);
+      // The settings file is removed between steps. Race to fail quickly if the add budget wasn't honored.
+      const progressed = await Promise.race([switchStarted.promise.then(() => true), failure.then(() => false)]);
+      expect(progressed).toBe(true);
+      await vi.advanceTimersByTimeAsync(19_000);
+      const error = await failure;
+      expect(guguReasonInText(error?.message)).toBe('conversion-switch-provider-timeout');
+      expect(stageLog.mock.calls).toEqual([
+        ['Local model protocol converter provider setup', expect.objectContaining({ phase: 'add-provider', elapsedMs: 12_000, outcome: 'finished' })],
+        ['Local model protocol converter provider setup', expect.objectContaining({ phase: 'switch-provider', elapsedMs: 18_000, outcome: 'timeout' })],
+      ]);
+    } finally {
+      Object.defineProperty(process, 'platform', platform);
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+  });
+
   it('configures the provider with the relay token in a private directory and removes it on stop', async () => {
     const { executable, scratchRoot, log, settings } = await fakeBinary();
     const router = await launchConversionRouter({ executable, scratchRoot, harness: 'claude', upstream: 'http://127.0.0.1:5000/r/a/openai-chat-completions', relayKey: 'sk-gugu-relay' });

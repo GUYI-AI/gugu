@@ -209,6 +209,9 @@ export function fetchSnapshot(deviceId: string, sessionId: string, limit?: numbe
   return value(rpc(deviceId).sessionTimeline.sessionSnapshot({ conversationId: sessionId, limit, trim: true, lean }))
 }
 
+// A phone can reconcile its cached cursor via a separate request while the window subscribes.
+export const reconcileOnSubscribe = !desktopIpc()
+
 /** 补齐:一问一答,不等窗口(见 `once`)。 */
 export function fetchAfter(deviceId: string, sessionId: string, cursor: RecordCursor, lean?: LeanPage): Promise<TimelineAfterResult> {
   return value(once(deviceId).sessionTimeline.sessionAfter({ conversationId: sessionId, cursor, trim: true, terminalPatch: true, lean }))

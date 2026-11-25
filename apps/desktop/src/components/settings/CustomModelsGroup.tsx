@@ -90,7 +90,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
         if (!result.success) throw new Error(errorText(result.error));
         report(result.data.kind === 'listed' ? translate('customModels.connected', { count: result.data.models.length })
           : result.data.kind === 'connected' ? translate('customModels.connectedNoList')
-          : translate(connectionProbeMessageKey(result.data.reason)));
+          : translate(connectionProbeMessageKey(result.data.reason, providerPresets.some(preset => preset.id === connection.preset))));
       }
     } catch (error) { report(errorText(error)); }
     finally { setBusy(null); }

@@ -25,7 +25,7 @@ import { tuiResumesExactly } from './tui-resume-exactness';
 import { mapSessionRowToSession } from './utils';
 import { sessionLife } from './session-life';
 
-function acpAtRest(summary: SessionSummary | undefined): boolean {
+export function acpAtRest(summary: SessionSummary | undefined): boolean {
   return summary !== undefined && summary.lifecycle === 'ready'
     && !summary.closing
     && !summary.isGenerating

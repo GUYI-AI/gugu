@@ -30,6 +30,7 @@ import { Unknown } from '@/components/ui/Unknown';
 import { AppIcon } from '@renderer/lib/components/app-icon';
 import { Check, ChevronDownIcon, Eye, EyeOff, Sparkles, X } from '@/lib/icons';
 import { IconButton } from '@/components/ui/IconButton';
+import { confirmDanger } from '@/lib/confirmDanger';
 import { SettingsNote } from './SettingsPrimitives';
 import './ModelSettings.css';
 
@@ -214,14 +215,14 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
         if (!probe.success) throw new Error(errorText(probe.error));
         const reading = probeModelList(probe.data);
         setTest(probe.data.models.length || probe.data.endpoints.length ? { kind: 'ok' }
-          : { kind: 'failed', message: translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable')) });
+          : { kind: 'failed', message: translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable', Boolean(preset))) });
         return;
       }
       const result = await client.testCustomModel({ ...keySource, endpoints: normalized, ...named });
       if (!result.success) throw new Error(errorText(result.error));
       setTest(result.data.kind !== 'unlisted' ? { kind: 'ok' } : {
         kind: 'failed',
-        message: translate(!typedKey && result.data.reason === 'unauthorized' ? 'customModels.heldKeyRefused' : connectionProbeMessageKey(result.data.reason)),
+        message: translate(!typedKey && result.data.reason === 'unauthorized' ? 'customModels.heldKeyRefused' : connectionProbeMessageKey(result.data.reason, Boolean(preset))),
       });
     } catch (error) { setTest({ kind: 'failed', message: errorText(error) }); }
   };
@@ -236,6 +237,10 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     setFailure('');
     if (!normalized) { setFailure(addressProblem); return; }
     if (!model) { setFailure(translate('subscriptions.connections.modelsRequired')); return; }
+    // Saving with Custom protocol unchecked removes the routes this connection already has: that is asked, not done quietly.
+    const dropping = advanced.customProtocol ? 0 : connection?.routes?.length ?? 0;
+    if (dropping > 0 && !await confirmDanger({ title: translate('customModels.dropRoutes', { count: dropping }),
+      description: translate('customModels.dropRoutesBody'), confirmLabel: translate('customModels.dropRoutesConfirm') })) return;
     setBusy('save');
     try {
       const client = await getAgentConfigRuntimeClient(machine);
@@ -249,11 +254,11 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
           saved = probe.data.endpoints;
           if (!saved.length) {
             const reading = probeModelList(probe.data);
-            throw new Error(translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable')));
+            throw new Error(translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable', Boolean(preset))));
           }
         }
       }
-      // Unchecking the custom protocol only hides the routes; saving while it is unchecked removes them.
+      // Unchecking the custom protocol only hides the routes; saving while it is unchecked removes them (asked above).
       const savedRoutes = (advanced.customProtocol ? routes : []).map((route) => customModelRouteSchema.parse({
         ...route,
         baseUrl: route.baseUrl?.trim() || undefined,

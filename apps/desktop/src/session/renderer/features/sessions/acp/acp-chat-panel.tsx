@@ -1368,6 +1368,9 @@ const ComposerForStore = observer(function ComposerForStore({
       const commands = filterSlashCommands(store.commands, normalized)
         .map((command) => ({
           ...command,
+          // Codex's `/compact` is implemented by gugu's own bridge (codex-app-server-acp.mjs), so its line follows the UI
+          // language like `/mcp`; commands the agent itself reports keep the agent's own wording.
+          ...(providerId === 'codex' && command.name === 'compact' ? { description: translate('chat.commandCompactDescription') } : {}),
           section: translate('chat.commands'),
         }));
       // 提示词:我的一组,各 App 各一组(prompt-slash-items.ts,聊天输入框用的是同一份)。
@@ -1391,7 +1394,7 @@ const ComposerForStore = observer(function ComposerForStore({
         : [];
       return [...clientCommands, ...commands, ...prompts];
     },
-    [store, promptLibrary, promptOverrides, translate]
+    [store, promptLibrary, promptOverrides, translate, providerId]
   );
 
   const a = store.affordances;
