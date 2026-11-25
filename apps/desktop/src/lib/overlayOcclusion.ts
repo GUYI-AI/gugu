@@ -45,7 +45,8 @@ export function findOcclusion(popup: HTMLElement, owner: string): Occlusion | nu
   if (!popup.isConnected) return null
   const doc = popup.ownerDocument
   const view = doc.defaultView
-  if (!view) return null
+  // A DOM without layout (unit tests' jsdom) cannot hit-test: nothing to judge.
+  if (!view || typeof doc.elementFromPoint !== 'function') return null
   const style = view.getComputedStyle(popup)
   if (style.pointerEvents === 'none' || style.display === 'none') return null
   const rect = popup.getBoundingClientRect()
@@ -67,7 +68,8 @@ const settled = async (el: HTMLElement) => {
   // Base UI drops data-starting-style on the next frame; the transition starts only then.
   await frame(); await frame()
   // The popup's own enter animation only (a spinner inside it never finishes); capped so a stuck one cannot hang the probe.
-  const finite = el.getAnimations().filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+  const animations = typeof el.getAnimations === 'function' ? el.getAnimations() : []
+  const finite = animations.filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
   await Promise.race([
     Promise.allSettled(finite.map((animation) => animation.finished)),
     new Promise((resolve) => setTimeout(resolve, 1000)),
@@ -93,10 +95,18 @@ export function reportOcclusion(found: Occlusion): void {
 
 /** Checks `popup` once it has settled after opening. */
 export async function probeOverlay(popup: HTMLElement, owner: string): Promise<void> {
-  await settled(popup)
-  // Closed (or closing) while settling: nothing to judge.
-  if (!popup.isConnected || popup.hasAttribute('data-closed') || popup.hasAttribute('data-ending-style')) return
-  const found = findOcclusion(popup, owner)
+  let found: Occlusion | null = null
+  try {
+    await settled(popup)
+    // Closed (or closing) while settling: nothing to judge.
+    if (!popup.isConnected || popup.hasAttribute('data-closed') || popup.hasAttribute('data-ending-style')) return
+    found = findOcclusion(popup, owner)
+  } catch (error) {
+    // The probe itself failing is never the overlay's fault and never reaches the user: one local line, no throw.
+    rendererLogger('overlay/occlusion').warn({ owner, error: String(error) }, 'overlay probe could not measure')
+    return
+  }
+  // Only an overlay that really opened underneath throws (development and tests).
   if (found) reportOcclusion(found)
 }
 
