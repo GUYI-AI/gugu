@@ -100,7 +100,7 @@ describe('a Codex record not written yet', () => {
   it('keeps the ended runtime turn while its record is not written at all, and for as long', async () => {
     directoryDelivery.enabled = false;
     const s = await setup();
-    const { timeline, published, shows } = await awaitingTimeline(s, 'codex-end-first');
+    const { timeline, published } = await awaitingTimeline(s, 'codex-end-first');
     timeline.syncActiveTurn(live('S:turn:1', 'Reply.', 1, 'Done.'));
     timeline.syncActiveTurn(null);
     // Read to now, and there is still no record: the turn the person saw stays.
