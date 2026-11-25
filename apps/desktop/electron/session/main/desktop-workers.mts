@@ -3,6 +3,7 @@
 // `file` landed in dist-electron. `entry` is relative to apps/desktop/electron/session/. An .mts with no
 // imports, so node build scripts load it as ESM too.
 export const desktopWorkers = {
+  'database-maintenance': { entry: 'main/db/maintenance-worker.ts', file: 'database-maintenance.js' },
   'codex-task-scan': { entry: 'main/core/session-import/codex-task-worker.ts', file: 'codex-task-scan.js' },
   'cursor-import': { entry: 'main/core/session-import/cursor-worker.ts', file: 'cursor-import.js' },
   'local-session-preview': { entry: '../sessionpage/local-session-preview-worker.ts', file: 'local-session-preview.js' },
