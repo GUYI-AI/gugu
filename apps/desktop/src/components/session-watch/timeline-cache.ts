@@ -32,6 +32,9 @@ import { onAccountChange } from '@/lib/replica'
 
 /** 存几条会话。手机上真正会来回切的远不止 5 条，按字节封顶就够，条数只挡住无限增长。 */
 const MAX_ENTRIES = 50
+
+// Older clients could persist turn content rolled back by an old batch under a newer cursor.
+const RESUMABLE_CACHE_VERSION = 1
 /**
  * 单条会话的字节上限。
  *
@@ -47,6 +50,7 @@ export type TimelineCacheKey = { deviceId: string; sessionId: string }
 
 type CachedEntry = {
   key: string
+  version?: number
   savedAt: number
   cursor: RecordCursor
   turns: TranscriptTurn[]
@@ -67,7 +71,7 @@ const memory = new Map<string, CachedEntry>()
 function toTimeline(entry: CachedEntry): AgentWatchTimeline {
   return {
     ...emptyAgentWatchTimeline(),
-    cursor: entry.cursor,
+    cursor: entry.version === RESUMABLE_CACHE_VERSION ? entry.cursor : null,
     turns: entry.turns,
     hasOlder: entry.hasOlder,
     settlements: entry.settlements,
@@ -81,9 +85,9 @@ function asEntry(row: LocalRow | null): CachedEntry | null {
   const e = row as Partial<CachedEntry>
   // 没有结算的是旧版存的行:它的游标盖不住结算,拿它对账正是卡片丢失的那条路 ⇒ 当没有,整份拉。
   if (typeof e.key !== 'string' || !Array.isArray(e.turns) || !e.cursor || !e.settlements) return null
-  if (e.turns.length === 0) return null
   return {
     key: e.key,
+    version: e.version,
     savedAt: typeof e.savedAt === 'number' ? e.savedAt : 0,
     cursor: e.cursor,
     turns: e.turns,
@@ -116,7 +120,8 @@ export async function hydrateCachedTimeline(key: TimelineCacheKey): Promise<Agen
   if (cached) return toTimeline(cached)
   try {
     const store = await getAgentWatchStore()
-    const entry = asEntry(await store.read('timeline', id))
+    const stored = await store.read('timeline', id)
+    const entry = memory.get(id) ?? asEntry(stored)
     if (!entry) return null
     memory.set(id, entry)
     return toTimeline(entry)
@@ -133,8 +138,8 @@ export async function hydrateCachedTimeline(key: TimelineCacheKey): Promise<Agen
  * 各轮大小只量一次:每丢一轮就整份 `JSON.stringify` 一次,超限时一次写要 40 多 ms。
  */
 export function writeCachedTimeline(key: TimelineCacheKey, timeline: AgentWatchTimeline): void {
-  if (!timeline.cursor || timeline.turns.length === 0) return
   const id = keyOf(key)
+  if (!timeline.cursor || (timeline.turns.length === 0 && !memory.has(id))) return
   const turns = [...timeline.turns] as TranscriptTurn[]
   const sizes = turns.map(sizeOf)
   // 从第 start 轮起整份的 JSON 长度 = 两个括号 + 各轮 + 轮间逗号。
@@ -145,6 +150,7 @@ export function writeCachedTimeline(key: TimelineCacheKey, timeline: AgentWatchT
   const trimmed = start > 0
   const entry: CachedEntry = {
     key: id,
+    version: RESUMABLE_CACHE_VERSION,
     savedAt: Date.now(),
     cursor: timeline.cursor,
     turns: trimmed ? turns.slice(start) : turns,
@@ -285,8 +291,8 @@ export const sessionStreams: Readable<Readonly<Record<string, SessionStreamState
 export const sessionStreamKey = (key: TimelineCacheKey) => `${key.deviceId}\u0000${key.sessionId}`
 
 export function initialSessionStream(key: TimelineCacheKey | null): SessionStreamState {
-  const timeline = (key ? readCachedTimeline(key) : null) ?? emptyAgentWatchTimeline()
-  return { timeline, phase: timeline.cursor ? 'ready' : 'loading', link: 'connecting', error: null, errorCode: null, waitingForRecord: false }
+  const cached = key ? readCachedTimeline(key) : null
+  return { timeline: cached ?? emptyAgentWatchTimeline(), phase: cached ? 'ready' : 'loading', link: 'connecting', error: null, errorCode: null, waitingForRecord: false }
 }
 
 /** The fields one step of a stream changes, written together (one notify); fields that did not change write nothing. */
