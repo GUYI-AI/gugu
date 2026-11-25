@@ -338,6 +338,9 @@ export default {
       "setListenModeFailed": "Could not change the listen mode. The setting is unchanged."
     },
     "groupAction": {
+      "channelOwner": "Channel owner",
+      "supervisorRoleMigrated": "Migrated the previous supervisor role",
+      "topicJoined": "Joined the topic",
       "joined": "Joined the group chat",
       "roleUpdated": "Group role updated"
     },
