@@ -13,7 +13,7 @@ import { applyAssistantPanelService } from './assistant-panel-service'
 import { localAgentForSession } from './sessionpage-session-agent'
 import { createAssistantPanelApplication, type AssistantPanelHome } from './assistant-panel-application'
 import { applyAssistantPanelPending, prepareAssistantPanelAdmission, type PanelPreparedAdmission } from './assistant-panel-admission'
-import { prepareAssistantProfileReview } from './assistant-profile-review'
+import { prepareAssistantProfileReview, takeFreshAssistantProfile, type FreshAssistantProfile } from './assistant-profile-review'
 import { assistantResourceChanges } from './assistant-resource-changes'
 import { invalidateAssistantIndex, stopAssistantIndexRefresh } from './assistant-index-cache'
 import { collectAssistantPanelFiles, publishAssistantPanelCollection, type PanelObservation } from './assistant-panel-publisher'
@@ -342,10 +342,11 @@ export function createAssistantPanelRuntime(deps: {
     }
     observeFiles()
     schedulePublication()
-    return { assistantId: binding.assistantId,application,dispose,
-      prepare: (text: string) => serial(async () => {
+    const memoryDir = assistantHomePaths(binding.home,binding.cwd,binding.kind).memoryDir
+    return { assistantId: binding.assistantId,application,dispose,memoryDir,
+      prepare: (text: string, fresh: FreshAssistantProfile | undefined) => serial(async () => {
         const prepared = await prepareAssistantProfileReview(await prepare(text),
-          assistantHomePaths(binding.home,binding.cwd,binding.kind).memoryDir)
+          memoryDir,fresh)
         const changes = await resources.prepare().catch(() => {
           deps.failed('resources')
           return { text: '', accepted: async () => {}, rejected: async () => {} }
@@ -384,8 +385,10 @@ export function createAssistantPanelRuntime(deps: {
       return entry.application.statePath
     },
     async prepare(sessionId: string, text: string): Promise<PanelPreparedAdmission & { assistantPanel?: true }> {
+      const binding = bindings.get(sessionId)
+      const fresh = binding ? takeFreshAssistantProfile(assistantHomePaths(binding.home,binding.cwd,binding.kind).memoryDir) : undefined
       const entry = await current(sessionId)
-      return entry ? { ...await entry.prepare(text),assistantPanel: true as const } : { text,accepted: async () => {} }
+      return entry ? { ...await entry.prepare(text,binding ? fresh : takeFreshAssistantProfile(entry.memoryDir)),assistantPanel: true as const } : { text,accepted: async () => {} }
     },
     async publish(sessionId: string) { await (await current(sessionId))?.publish() },
     /** Stop before the removal RPC; an uncertain failure must prove liveness before resuming. */

@@ -1,10 +1,12 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeAll, expect, it, vi } from 'vitest'
 import { installAssistantRulesResolver } from '../../apps/desktop/electron/assistant-rules-resolver'
 import { fixedAssistantRules } from './desktop/assistantRules/fixtureApp'
 import { NEUTRAL_ASSISTANT_RULES } from './desktop/assistantRules/neutralRules'
+import { prepareLocalAssistantHome } from '../../apps/desktop/electron/assistant-home-prepare'
+import { assistantHomePaths } from '@gugu/core/shared/assistantPolicy'
 import { createAssistantPanelRuntime } from '../../apps/desktop/electron/sessionpage/assistant-panel-runtime'
 
 // Drive the explicit schedule/integration callbacks without fixture filesystem events starting an unrelated full publication.
@@ -12,11 +14,11 @@ vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof imp
   watch: () => ({ on() { return this }, close() {} }),
 }))
 
-const calls = vi.hoisted(() => ({ signals: [] as AbortSignal[],domains:[] as string[],assistants:[] as string[],rpcNames:[] as string[],holdRpc:null as string|null,commitPublication:false,live:true,readable:false,stalled:true,collectIntegrations: false,blockedDomain:null as string|null,hold: null as Promise<void> | null }))
+const calls = vi.hoisted(() => ({ signals: [] as AbortSignal[],domains:[] as string[],assistants:[] as string[],rpcNames:[] as string[],prepareFailure:null as Error|null,holdRpc:null as string|null,commitPublication:false,live:true,readable:false,stalled:true,collectIntegrations: false,blockedDomain:null as string|null,hold: null as Promise<void> | null }))
 vi.mock('../../apps/desktop/electron/sessionpage/assistant-panel-admission',async importOriginal=>{
   const original=await importOriginal<typeof import('../../apps/desktop/electron/sessionpage/assistant-panel-admission')>()
   return {...original,
-    prepareAssistantPanelAdmission:(input:Parameters<typeof original.prepareAssistantPanelAdmission>[0])=>calls.stalled ? original.prepareAssistantPanelAdmission(input) : Promise.resolve({text:'',accepted:async()=>{}}),
+    prepareAssistantPanelAdmission:(input:Parameters<typeof original.prepareAssistantPanelAdmission>[0])=>calls.prepareFailure ? Promise.reject(calls.prepareFailure) : calls.stalled ? original.prepareAssistantPanelAdmission(input) : Promise.resolve({text:'',accepted:async()=>{}}),
     applyAssistantPanelPending:(input:Parameters<typeof original.applyAssistantPanelPending>[0])=>calls.readable ? original.applyAssistantPanelPending(input) : Promise.resolve({revision:'0',settledFailure:false,superseded:false}),
   }
 })
@@ -51,7 +53,7 @@ vi.mock('@gugu/core/cloud/supabase',() => ({ createGuguSupabaseClient: () => ({
 // Each turn's profile review is rendered from the assistant App's rules (#1931): fixed rules here, at the version the
 // index lines below name.
 beforeAll(() => installAssistantRulesResolver(fixedAssistantRules({ ...NEUTRAL_ASSISTANT_RULES, defaults: { ...NEUTRAL_ASSISTANT_RULES.defaults, profileRulesVersion: 6 } })))
-afterEach(() => { vi.useRealTimers(); calls.signals.length = 0; calls.domains.length=0; calls.assistants.length=0; calls.rpcNames.length=0; calls.holdRpc=null; calls.commitPublication=false; calls.live=true; calls.readable=false; calls.stalled=true; calls.collectIntegrations=false; calls.blockedDomain=null; calls.hold=null })
+afterEach(() => { vi.useRealTimers(); calls.signals.length = 0; calls.domains.length=0; calls.assistants.length=0; calls.rpcNames.length=0; calls.prepareFailure=null; calls.holdRpc=null; calls.commitPublication=false; calls.live=true; calls.readable=false; calls.stalled=true; calls.collectIntegrations=false; calls.blockedDomain=null; calls.hold=null })
 
 it('stops only the removed assistant timers and listeners and never recreates its cached binding',async()=>{
   vi.useFakeTimers();calls.stalled=false;calls.readable=true
@@ -258,4 +260,75 @@ it('publishes again when a second schedule change arrives during the first publi
     held.resolve();await vi.advanceTimersByTimeAsync(300)
     expect(calls.domains).toEqual(['schedules','schedules'])
   }finally{held.resolve();await f.cleanup()}
+})
+
+
+async function freshlyPreparedProfile() {
+  calls.stalled=false
+  const root=await mkdtemp(join(tmpdir(),'panel-fresh-profile-')), home=join(root,'home'),guguHome=join(root,'gugu')
+  const prepared=await prepareLocalAssistantHome({fresh:true,engine:'codex',ownerProfile:'Fresh introduction'}, {home,guguHome})
+  const paths=assistantHomePaths(home,prepared.workdir,'computer')
+  const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
+    local:{} as never,guguHome,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'en-US'})
+  await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd:prepared.workdir})
+  return {runtime,paths,root,async cleanup(){runtime.dispose();await rm(root,{recursive:true,force:true})}}
+}
+
+it('#1457 skips review only on the first unchanged freshly prepared profile and never stamps a review receipt',async()=>{
+  const f=await freshlyPreparedProfile()
+  try {
+    const before=await readFile(f.paths.memoryIndex,'utf8')
+    const first=await f.runtime.prepare('session','first task')
+    expect(first.beforeText??'').not.toContain('<gugu_profile_review>')
+    await first.rejected?.()
+    expect((await f.runtime.prepare('session','second task')).beforeText).toContain('<gugu_profile_review>')
+    expect(await readFile(f.paths.memoryIndex,'utf8')).toBe(before)
+    expect(before).not.toContain('profile_rules:')
+  }finally{await f.cleanup()}
+})
+
+it.each(['profile','index','rules','app rules'] as const)('#1457 reviews a fresh profile when its %s fingerprint changes',async(part)=>{
+  const f=await freshlyPreparedProfile()
+  try {
+    if(part==='profile')await writeFile(join(f.paths.memoryDir,'owner-profile.md'),(await readFile(join(f.paths.memoryDir,'owner-profile.md'))).subarray(0,-1))
+    if(part==='index')await writeFile(f.paths.memoryIndex,(await readFile(f.paths.memoryIndex,'utf8'))+' ')
+    if(part==='rules')installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:7}}))
+    if(part==='app rules')installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,rulesVersion:'99.0.0',defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:6}}))
+    expect((await f.runtime.prepare('session','first task')).beforeText).toContain('<gugu_profile_review>')
+  }finally{installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:6}}));await f.cleanup()}
+})
+
+it.each(['PANEL_CLOUD_TIMEOUT','PANEL_IDENTITY_REMOVED'])('#1457 consumes the fresh proof before failed admission: %s',async(code)=>{
+  const f=await freshlyPreparedProfile()
+  try {
+    calls.prepareFailure=new Error(code)
+    await expect(f.runtime.prepare('session','first task')).rejects.toThrow(code)
+    calls.prepareFailure=null
+    expect((await f.runtime.prepare('session','next task')).beforeText).toContain('<gugu_profile_review>')
+  }finally{await f.cleanup()}
+})
+
+it('#1457 reviews an old identical profile without a preparation proof',async()=>{
+  const f=await freshlyPreparedProfile(),cwd=join(f.root,'old-identical'),memory=join(cwd,'.claude','memory')
+  try {
+    await mkdir(memory,{recursive:true})
+    for(const name of ['owner-profile.md','MEMORY.md'])await writeFile(join(memory,name),await readFile(join(f.paths.memoryDir,name)))
+    await f.runtime.bind({sessionId:'old',assistantId:'assistant',ownerId:'owner',cwd})
+    expect((await f.runtime.prepare('old','task')).beforeText).toContain('<gugu_profile_review>')
+  }finally{await f.cleanup()}
+})
+
+
+it('#1457 does not restore a fresh proof when the host modules restart',async()=>{
+  const f=await freshlyPreparedProfile()
+  try {
+    vi.resetModules()
+    const resolver=await import('../../apps/desktop/electron/assistant-rules-resolver')
+    resolver.installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:6}}))
+    const review=await import('../../apps/desktop/electron/sessionpage/assistant-profile-review')
+    const proof=review.takeFreshAssistantProfile(f.paths.memoryDir)
+    expect(proof).toBeUndefined()
+    const prepared=await review.prepareAssistantProfileReview({text:'task',accepted:async()=>{}},f.paths.memoryDir,proof)
+    expect(prepared.beforeText).toContain('<gugu_profile_review>')
+  }finally{await f.cleanup()}
 })
