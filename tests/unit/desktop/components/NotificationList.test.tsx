@@ -81,6 +81,8 @@ async function mount(mobile = false, hidden = false) {
 }
 const toggle = () => document.querySelector<HTMLButtonElement>('[data-testid="notification-toggle"]')
 const list = () => document.querySelector<HTMLElement>('[data-testid="notification-list"]')
+// The phone's bell is a toggle (aria-pressed); the desktop's opens a popover (aria-expanded).
+const opened = () => toggle()?.getAttribute(state.mobile ? 'aria-pressed' : 'aria-expanded')
 const rows = () => [...(list()?.querySelectorAll<HTMLElement>('[data-session-line]') ?? [])]
 async function open() { expect(toggle(), 'the real list header owns a bell').not.toBeNull(); await act(async () => toggle()!.click()) }
 async function see(id: string, ratio = 1) {
@@ -101,24 +103,24 @@ it.each([false, true])('the actual list header toggles global notifications and 
   expect(toggle()?.dataset.tone).toBe(mobile ? undefined : 'strong')
   expect(list()).toBeNull()
   await open()
-  expect(toggle()?.getAttribute('aria-pressed')).toBe('true')
+  expect(opened()).toBe('true')
   expect(rows().map(row => row.dataset.sessionLine)).toEqual(['agent-a', 'agent-b'])
   expect(document.querySelector('[data-testid="needs-you-sheet"]')).toBeNull()
   await act(async () => toggle()!.click())
-  expect(toggle()?.getAttribute('aria-pressed')).toBe('false')
+  expect(opened()).toBe('false')
   expect(list()).toBeNull()
 })
-it('desktop toggling retains the original list nodes and scroll', async () => {
+it('the desktop list pops over the sidebar, which stays as it was, and Esc closes it', async () => {
   await mount()
-  const scroller = workspace.container.querySelector<HTMLElement>('[data-region="sidebar-scroll"]')!
-  scroller.scrollTop = 87
   const original = workspace.container.querySelector('[data-original-list]')
   expect(original, 'the one list is mounted').not.toBeNull()
   await open()
+  expect(list()?.closest('[data-testid="notification-popover"]'), 'the list is in the popover').not.toBeNull()
+  expect(workspace.container.contains(list())).toBe(false)
   expect(workspace.container.querySelector('[data-original-list]')).toBe(original)
-  expect(original?.closest('[data-notification-original-list]')?.getAttribute('style')).toContain('content-visibility: hidden')
-  await act(async () => toggle()!.click())
-  expect(scroller.scrollTop).toBe(87)
+  expect(workspace.container.querySelector('[style*="content-visibility"]'), 'nothing in the sidebar is hidden').toBeNull()
+  await act(async () => { list()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+  expect(opened()).toBe('false')
 })
 it('the old composer has no floating Needs you entrance', async () => {
   await renderWithAppProviders(shell, <><ChatBottomDock reserve={false}><textarea /></ChatBottomDock><NeedsYouHost /></>)
@@ -163,8 +165,10 @@ it.each([false, true])('clicking an error acknowledges its host before opening t
   await act(async () => rows()[0].click())
   expect(markSeen).toHaveBeenCalledExactlyOnceWith('failed')
   expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'failed', deviceId: 'server' })
+  expect(opened(), 'the desktop popover closes as a menu does; the phone list stays').toBe(mobile ? 'true' : 'false')
   state.sessions = [task('failed', 'error', false)]
   await mount(mobile)
+  if (!mobile) await open()
   expect(rows().map(row => row.dataset.sessionLine), 'a read failure stays listed').toEqual(['failed'])
   expect(document.querySelector('[data-testid="notification-count"]')).toBeNull()
 })
@@ -204,6 +208,7 @@ it.each([false, true])('clicking the assistant\'s own row opens its chat and rea
     expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'chat', chatId: 'assistant-dm' })
     expect(markSeen.mock.calls.map(([id]) => id)).toEqual(['agent-a'])
     followLink.mockClear(); markSeen.mockClear()
+    if (!mobile) await open()
     await act(async () => rows()[1].click())
     expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'agent-b', deviceId: 'server' })
     expect(markSeen).not.toHaveBeenCalled()
@@ -211,6 +216,7 @@ it.each([false, true])('clicking the assistant\'s own row opens its chat and rea
     followLink.mockClear()
     publishAssistantShell({ cloudAvailable: false, canHostHere: true, cloud: null, loadError: null, assistant: { id: 'agent-a', display_name: '咕咕', avatar: null, created_at: null },
       assistantState: 'loading', ownerName: 'U', ownerId: 'user-1', chatId: null, home: null, setup: null, member: false, preparing: false })
+    if (!mobile) await open()
     await act(async () => rows()[0].click())
     expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'agent-a', deviceId: 'server' })
   } finally {

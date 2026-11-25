@@ -8,6 +8,7 @@ import { readCodexRecord, type CodexRecord, type CodexRecordItem } from '@gugu/c
 
 import type { RecordEntry, SessionRecordLocator, SessionRecordSource } from '../contract';
 import { createJsonlTailSource } from './jsonl-tail-source';
+import { CodexRecordEvents } from './codex-record-events';
 import { RECORD_START } from './record-tree';
 import { openWindowByteSource } from '../window-cache/file-source';
 import { childState, withSubagentSources } from './subagent-sources';
@@ -47,11 +48,12 @@ const initialOrdinals = (): Ordinals => ({ turn: 0, item: -1, userSeen: false, c
 export function createCodexJsonlSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions, nativeChild = false, ancestors: ReadonlySet<string> = new Set()): SessionRecordSource {
   const lineage = new Set(ancestors);
   lineage.add(locator.providerSessionId);
-  const root = createJsonlTailSource<Ordinals>(locator, options, {
+  const root = createJsonlTailSource<Ordinals>(locator, { ...options, tailDriver: 'external' }, {
     name: 'codex',
     // 11: a fork reads its parent's prefix (history_base in a plainly named rollout); state saved before that never did.
     resumeVersion: 11,
     resolve: () => resolveRolloutFile(locator, options?.readMode === 'snapshot'),
+    watch: (failed) => new CodexRecordEvents(locator, failed),
     continuesElsewhere: true,
     prefixes: (path) => rolloutPrefixes(locator, path),
     initial: () => initialOrdinals(),

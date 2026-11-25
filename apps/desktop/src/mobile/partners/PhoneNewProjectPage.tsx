@@ -176,7 +176,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
                 <span className="gg-partners-navrow-icon"><Monitor size={20} /></span>
                 <span className="gg-partners-navrow-label">{t('partners.newProject.machine')}</span>
                 <span className="gg-partners-row-value">{device ? machineLabel(device) : t('partners.newProject.noMachine')}</span>
-                <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
+                {machines.length ? <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" /> : null}
               </Button>
             } />
             <DropdownMenu.Content className="min-w-[160px]">
@@ -194,7 +194,7 @@ export function PhoneNewProjectPage({ active, onBack, onCreated }: {
             <span className="gg-partners-navrow-icon">{folderPath ? <Folder size={20} /> : <FolderPlus size={20} />}</span>
             <span className="gg-partners-navrow-label">{t('partners.newProject.folder')}</span>
             <span className="gg-partners-row-value" title={folderPath ?? undefined}>{folderValue}</span>
-            <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" />
+            {device ? <ChevronRight size={16} aria-hidden className="gg-partners-navrow-chevron" /> : null}
           </Button>
           <PhoneComposerSheet open={folderMenu && !!device} onClose={() => setFolderMenu(false)}
             title={t('partners.newProject.folder')} testId="phone-new-project-folder-sheet">

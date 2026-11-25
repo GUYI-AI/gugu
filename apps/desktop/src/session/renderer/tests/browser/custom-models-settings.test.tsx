@@ -436,6 +436,23 @@ it.each(failures)('the saved connection’s Test connection action preserves %s'
   await expect.element(page.getByRole('status')).toHaveTextContent(text);
 });
 const found = (): CustomModelConnection => ({ ...record(), id: 'found', name: 'OpenAI', preset: 'openai', keySaved: true, endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' }], discovered: { source: 'shell-env', keyLast4: 'abcd' } });
+// A platform preset has no address field: 「check this address」 sends the person to a field that is not there (B7-F03).
+for (const [locale, text] of [['en-US', 'Could not read the model list. Check the API key or try again later.'], ['zh-CN', '模型列表获取失败，请检查 API Key 或稍后重试。']] as const) {
+  it(`${locale} says a preset's unread model list as what is known, not as an address to check`, async () => {
+    setLocalePreference(locale);
+    state.testResult = { kind: 'unlisted', reason: 'unreachable' };
+    render(<CustomModelDialog machine={null} group="api" connection={found()} onClose={() => {}} />);
+    await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent(text);
+    expect(document.querySelector('[data-testid=custom-model-address-0]')).toBeNull();
+  });
+}
+it('the saved preset connection’s Test connection action says the unread list the same way', async () => {
+  state.rows = [{ ...record(), id: 'preset', name: 'OpenAI', preset: 'openai', keySaved: true, models: [{ id: 'model' }] }];
+  state.testResult = { kind: 'unlisted', reason: 'dns' };
+  render(<Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet>);
+  await userEvent.click(page.getByRole('button', { name: 'Test connection', exact: true }));
+  await expect.element(page.getByRole('status')).toHaveTextContent('Could not read the model list. Check the API key or try again later.');
+});
 const keyField = () => document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')!;
 it('shows the key this computer holds when the eye is pressed, and reads with it until a new one is typed', async () => {
   const invoke = vi.fn(async (channel: string, id: unknown) => { if (channel !== CUSTOM_MODEL_KEY_CHANNEL || id !== 'found') throw new Error(channel); return 'sk-found-0000abcd'; });

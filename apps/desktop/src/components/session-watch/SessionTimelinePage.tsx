@@ -59,7 +59,7 @@ import { runNativeInputAction } from '@/lib/nativeInputFailureNotice'
 function useSessionApps(): Reading<Array<{ kind: string; name: string }>> {
   const installed = useInstalledApps(HERE_HOST)
   return useMemo(() => installed.state === 'value'
-    ? { ...installed, value: installed.value.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: entry.title || entry.extensionName })) }
+    ? { ...installed, value: installed.value.enabledTabContributions.map((entry) => ({ kind: entry.kind, name: installed.value.tabTitle(entry.kind) || entry.title || entry.extensionName })) }
     : installed, [installed])
 }
 
@@ -157,7 +157,8 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
 
   // 提醒**不在这一页**发:它挂在看管入口的根上(useAgentWatchAlerts),这样在机器列表、
   // 会话列表、乃至刚切走时都叫得住人。这里再发一份的话,正开着这条会话时同一件事会响两次。
-  const attention = deriveAttention(conversation)
+  const timelineUnavailable = phase === 'error'
+  const attention = timelineUnavailable ? 'idle' : deriveAttention(conversation)
   const foregroundWorking = attention === 'running' || attention === 'waiting' || recovery.pendingPrompt !== null
   const queueReady = answering && phase === 'ready' && link === 'ok'
   const queuedInput = foregroundWorking || queuedInputs.length > 0
@@ -325,6 +326,7 @@ export const SessionTimelinePage = observer(function SessionTimelinePage({
           startupPrompt={recovery.pendingPrompt}
           sending={sending}
           agentWorking={foregroundWorking}
+          timelineUnavailable={timelineUnavailable}
           onStop={cancel}
           stopping={cancelling}
           footerNotice={<>{agentUserId ? <AgentFailureSlot agentUserId={agentUserId} /> : null}<SessionInputQueue sessionId={session.conversationId} waitingForConnection={!answering} inTranscript={drawnInputIds} />{actionErrorNotice}</>}

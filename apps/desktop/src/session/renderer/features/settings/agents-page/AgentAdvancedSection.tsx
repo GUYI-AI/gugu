@@ -30,6 +30,8 @@ export interface AgentAdvancedSectionProps {
   agentId: string;
   children?: React.ReactNode;
   compact?: boolean;
+  /** Always open, as one group of label | control rows: the agent details dialog's 高级设置 view. */
+  panel?: boolean;
   /** 各下载源(含版本读数)。空数组 = 这一家只有一个下载点,那一项就不摆。 */
   registries: RegistryRow[];
   /** 用户手动指定的下载源;undefined = 自动(主进程按测速选源)。 */
@@ -65,6 +67,7 @@ export const AgentAdvancedSection = observer(function AgentAdvancedSection({
   agentId,
   children,
   compact = false,
+  panel = false,
   registries,
   registry,
   onRegistryChange
@@ -119,6 +122,189 @@ export const AgentAdvancedSection = observer(function AgentAdvancedSection({
     });
   }, [form, reset]);
 
+  const resetButton = isOverridden && (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      className={cn('shrink-0 gap-1.5 text-xs', !panel && 'mr-6')}
+      onClick={handleResetToDefaults}
+    >
+      <RotateCcw className="size-3.5" />
+      {translate('agentsPage.resetToDefaults')}
+    </Button>
+  );
+  // The details dialog (panel) shows the same rows as label | control columns, without hints or tooltips.
+  const row = ({ label, info, hint, control, children: below, stack }: {
+    label: React.ReactNode; info?: string; hint: string; control: React.ReactNode; children?: React.ReactNode; stack?: boolean;
+  }) => panel ? (
+    <SettingsRow
+      className="!grid-cols-[auto_minmax(0,1fr)] ![grid-template-areas:'lead_body']"
+      leading={<span className="w-20 text-sm text-foreground">{label}</span>}
+    >
+      <div className="flex">{control}</div>
+      {below}
+    </SettingsRow>
+  ) : (
+    <SettingsRow
+      title={info ? <>{label}<InfoTooltip label={translate('agentsPage.moreInformation')} content={info} /></> : label}
+      description={hint}
+      stack={stack}
+      control={control}
+    >
+      {below}
+    </SettingsRow>
+  );
+
+  const registryRow = registries.length > 0 && row({
+    label: translate('agentsPage.manualRegistry'),
+    hint: translate('agentsPage.registryHint'),
+    control: (
+      <Select
+        value={registry ?? ''}
+        onValueChange={(value) =>
+          onRegistryChange(value === '' ? undefined : String(value))
+        }
+      >
+        <SelectTrigger
+          className={panel ? 'w-auto' : 'w-[156px]'}
+          aria-label={translate('agentsPage.manualRegistry')}
+          data-testid="registry-trigger"
+        >
+          <SelectValue>
+            {registries.find((r) => r.registry === registry)?.label ??
+              translate('agentsPage.sourceAuto')}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent align={panel ? 'start' : 'end'}>
+          <SelectItem value="">{translate('agentsPage.sourceAuto')}</SelectItem>
+          {registries.map((r) => (
+            <SelectItem key={r.registry} value={r.registry} disabled={r.unusable}>
+              <span>{r.label}</span>
+              <span className="font-mono text-xs text-foreground-muted">
+                {r.unusable
+                  ? translate('agentsPage.sourceMissingPlatformBuild')
+                  : r.loading
+                    ? translate('agentsPage.sourceVersionChecking')
+                    : r.version
+                      ? `v${r.version}`
+                      : translate('agentsPage.sourceVersionUnknown')}
+              </span>
+              {r.outdated && <OutdatedSourceBadge />}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    ),
+  });
+  const argsRow = (
+    <form.Field name="extraArgs">
+      {(field) => row({
+        label: <label htmlFor="agent-extraArgs">{translate('agentsPage.additionalParameters')}</label>,
+        info: translate('agentsPage.extraArgsTooltip'),
+        hint: translate('agentsPage.extraArgsHint'),
+        stack: true,
+        control: (
+          <Input
+            id="agent-extraArgs"
+            className={cn('font-mono text-sm', panel ? 'w-full' : 'w-[184px]')}
+            value={field.state.value}
+            onChange={(e) => field.handleChange(e.target.value)}
+            onBlur={commit}
+            placeholder={translate('agentsPage.additionalParametersPlaceholder')}
+          />
+        ),
+      })}
+    </form.Field>
+  );
+  const envRow = (
+    <form.Field name="envEntries">
+      {(field) => row({
+        label: translate('agentsPage.environmentVariables'),
+        info: translate('agentsPage.environmentVariablesTooltip'),
+        hint: translate('agentsPage.envHint'),
+        control: (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              field.handleChange([...field.state.value, { key: '', value: '' }])
+            }
+          >
+            <Plus className="size-3.5" />
+            {translate('agentsPage.addVariable')}
+          </Button>
+        ),
+        children: field.state.value.map((entry, i) => (
+          <div key={i} className="mt-2 flex min-w-0 items-center gap-2">
+            <Input
+              aria-label={translate('agentsPage.envKeyPlaceholder')}
+              value={entry.key}
+              placeholder={translate('agentsPage.envKeyPlaceholder')}
+              className="min-w-0 flex-1 font-mono text-sm"
+              onChange={(e) =>
+                field.handleChange(
+                  field.state.value.map((v, n) =>
+                    n === i ? { ...v, key: e.target.value } : v
+                  )
+                )
+              }
+              onBlur={commit}
+              onPaste={(e) => {
+                const pasted = parseEnvAssignmentPaste(e.clipboardData.getData('text'));
+                if (!pasted.length) return;
+                e.preventDefault();
+                field.handleChange(replaceEnvEntryWithPaste(field.state.value, i, pasted));
+              }}
+            />
+            <Input
+              aria-label={translate('agentsPage.envValuePlaceholder')}
+              value={entry.value}
+              placeholder={translate('agentsPage.envValuePlaceholder')}
+              className="min-w-0 flex-1 font-mono text-sm"
+              onChange={(e) =>
+                field.handleChange(
+                  field.state.value.map((v, n) =>
+                    n === i ? { ...v, value: e.target.value } : v
+                  )
+                )
+              }
+              onBlur={commit}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-8 shrink-0"
+              aria-label={translate('agentsPage.removeEnvEntry')}
+              onClick={() => {
+                field.handleChange(field.state.value.filter((_, n) => n !== i));
+                commit();
+              }}
+            >
+              <Trash2 className="size-3.5" />
+            </Button>
+          </div>
+        )),
+      })}
+    </form.Field>
+  );
+
+  if (panel) {
+    return (
+      <div className="space-y-2" data-testid="agent-advanced-panel">
+        {children}
+        <RefreshFailed error={settingsError} onRetry={retrySettings} />
+        <SettingsGroup>
+          {argsRow}
+          {envRow}
+          {registryRow}
+        </SettingsGroup>
+        {resetButton && <div className="flex justify-end">{resetButton}</div>}
+      </div>
+    );
+  }
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <div className="relative flex items-center justify-between gap-3">
@@ -130,176 +316,15 @@ export const AgentAdvancedSection = observer(function AgentAdvancedSection({
           {translate(compact ? 'agentsPage.advanced' : 'agentsPage.advancedSettings')}
           <ChevronRight className={cn('absolute right-0 size-3.5 transition-transform', open && 'rotate-90')} />
         </CollapsibleTrigger>
-        {isOverridden && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="mr-6 shrink-0 gap-1.5 text-xs"
-            onClick={handleResetToDefaults}
-          >
-            <RotateCcw className="size-3.5" />
-            {translate('agentsPage.resetToDefaults')}
-          </Button>
-        )}
+        {resetButton}
       </div>
       <CollapsibleContent className="pt-2">
         {children}
         <RefreshFailed error={settingsError} onRetry={retrySettings} />
         <SettingsGroup>
-          {registries.length > 0 && (
-            <SettingsRow
-              title={translate('agentsPage.manualRegistry')}
-              description={translate('agentsPage.registryHint')}
-              control={
-                <Select
-                  value={registry ?? ''}
-                  onValueChange={(value) =>
-                    onRegistryChange(value === '' ? undefined : String(value))
-                  }
-                >
-                  <SelectTrigger
-                    className="w-[156px]"
-                    aria-label={translate('agentsPage.manualRegistry')}
-                    data-testid="registry-trigger"
-                  >
-                    <SelectValue>
-                      {registries.find((r) => r.registry === registry)?.label ??
-                        translate('agentsPage.sourceAuto')}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent align="end">
-                    <SelectItem value="">{translate('agentsPage.sourceAuto')}</SelectItem>
-                    {registries.map((r) => (
-                      <SelectItem key={r.registry} value={r.registry} disabled={r.unusable}>
-                        <span>{r.label}</span>
-                        <span className="font-mono text-xs text-foreground-muted">
-                          {r.unusable
-                            ? translate('agentsPage.sourceMissingPlatformBuild')
-                            : r.loading
-                              ? translate('agentsPage.sourceVersionChecking')
-                              : r.version
-                                ? `v${r.version}`
-                                : translate('agentsPage.sourceVersionUnknown')}
-                        </span>
-                        {r.outdated && <OutdatedSourceBadge />}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              }
-            />
-          )}
-          <form.Field name="extraArgs">
-            {(field) => (
-              <SettingsRow
-                title={
-                  <>
-                    <label htmlFor="agent-extraArgs">
-                      {translate('agentsPage.additionalParameters')}
-                    </label>
-                    <InfoTooltip
-                      label={translate('agentsPage.moreInformation')}
-                      content={translate('agentsPage.extraArgsTooltip')}
-                    />
-                  </>
-                }
-                description={translate('agentsPage.extraArgsHint')}
-                stack
-                control={
-                  <Input
-                    id="agent-extraArgs"
-                    className="w-[184px] font-mono text-sm"
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={commit}
-                    placeholder={translate('agentsPage.additionalParametersPlaceholder')}
-                  />
-                }
-              />
-            )}
-          </form.Field>
-          <form.Field name="envEntries">
-            {(field) => (
-              <SettingsRow
-                title={
-                  <>
-                    {translate('agentsPage.environmentVariables')}
-                    <InfoTooltip
-                      label={translate('agentsPage.moreInformation')}
-                      content={translate('agentsPage.environmentVariablesTooltip')}
-                    />
-                  </>
-                }
-                description={translate('agentsPage.envHint')}
-                control={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      field.handleChange([...field.state.value, { key: '', value: '' }])
-                    }
-                  >
-                    <Plus className="size-3.5" />
-                    {translate('agentsPage.addVariable')}
-                  </Button>
-                }
-              >
-                {field.state.value.map((entry, i) => (
-                  <div key={i} className="mt-2 flex min-w-0 items-center gap-2">
-                    <Input
-                      aria-label={translate('agentsPage.envKeyPlaceholder')}
-                      value={entry.key}
-                      placeholder={translate('agentsPage.envKeyPlaceholder')}
-                      className="min-w-0 flex-1 font-mono text-sm"
-                      onChange={(e) =>
-                        field.handleChange(
-                          field.state.value.map((v, n) =>
-                            n === i ? { ...v, key: e.target.value } : v
-                          )
-                        )
-                      }
-                      onBlur={commit}
-                      onPaste={(e) => {
-                        const pasted = parseEnvAssignmentPaste(e.clipboardData.getData('text'));
-                        if (!pasted.length) return;
-                        e.preventDefault();
-                        field.handleChange(replaceEnvEntryWithPaste(field.state.value, i, pasted));
-                      }}
-                    />
-                    <Input
-                      aria-label={translate('agentsPage.envValuePlaceholder')}
-                      value={entry.value}
-                      placeholder={translate('agentsPage.envValuePlaceholder')}
-                      className="min-w-0 flex-1 font-mono text-sm"
-                      onChange={(e) =>
-                        field.handleChange(
-                          field.state.value.map((v, n) =>
-                            n === i ? { ...v, value: e.target.value } : v
-                          )
-                        )
-                      }
-                      onBlur={commit}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="size-8 shrink-0"
-                      aria-label={translate('agentsPage.removeEnvEntry')}
-                      onClick={() => {
-                        field.handleChange(field.state.value.filter((_, n) => n !== i));
-                        commit();
-                      }}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  </div>
-                ))}
-              </SettingsRow>
-            )}
-          </form.Field>
+          {registryRow}
+          {argsRow}
+          {envRow}
         </SettingsGroup>
       </CollapsibleContent>
     </Collapsible>

@@ -215,14 +215,14 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
         if (!probe.success) throw new Error(errorText(probe.error));
         const reading = probeModelList(probe.data);
         setTest(probe.data.models.length || probe.data.endpoints.length ? { kind: 'ok' }
-          : { kind: 'failed', message: translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable')) });
+          : { kind: 'failed', message: translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable', Boolean(preset))) });
         return;
       }
       const result = await client.testCustomModel({ ...keySource, endpoints: normalized, ...named });
       if (!result.success) throw new Error(errorText(result.error));
       setTest(result.data.kind !== 'unlisted' ? { kind: 'ok' } : {
         kind: 'failed',
-        message: translate(!typedKey && result.data.reason === 'unauthorized' ? 'customModels.heldKeyRefused' : connectionProbeMessageKey(result.data.reason)),
+        message: translate(!typedKey && result.data.reason === 'unauthorized' ? 'customModels.heldKeyRefused' : connectionProbeMessageKey(result.data.reason, Boolean(preset))),
       });
     } catch (error) { setTest({ kind: 'failed', message: errorText(error) }); }
   };
@@ -254,7 +254,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
           saved = probe.data.endpoints;
           if (!saved.length) {
             const reading = probeModelList(probe.data);
-            throw new Error(translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable')));
+            throw new Error(translate(connectionProbeMessageKey(reading.kind === 'unlisted' ? reading.reason : 'unreachable', Boolean(preset))));
           }
         }
       }

@@ -239,7 +239,7 @@ export class TailReader {
   }
 
   start(): void {
-    if (this.stopped) return;
+    if (this.stopped || this.pollIntervalMs === 0) return;
     this.timer = setInterval(() => void this.pump(), this.pollIntervalMs);
     this.timer.unref?.();
     this.rewatch();
@@ -292,6 +292,7 @@ export class TailReader {
         this.events.onLines(lines, offsets);
       }
     } catch (error) {
+      if (this.pollIntervalMs === 0) throw error; // The external event owner reports this failure.
       // 读一次失败不等于这份记录没了（EMFILE、临时 EACCES 都会这样）：报出来，下个节拍再试。
       this.warn('尾读失败，将在下个轮询节拍重试', {
         path: this.path,
