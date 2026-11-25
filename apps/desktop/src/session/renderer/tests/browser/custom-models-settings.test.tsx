@@ -148,8 +148,6 @@ it('shows the routes under Custom protocol, and says under the box that unchecki
   // The note sits right under its box, its text starting where the box's label text starts, in the warning colour.
   const textBox = (element: Element) => { const range = document.createRange(); range.selectNodeContents([...element.childNodes].find(child => child.nodeType === Node.TEXT_NODE && child.textContent!.trim())!); return range.getBoundingClientRect(); };
   const label = textBox(page.getByTestId('custom-model-custom-protocol').element()), hint = textBox(note.element());
-  const rect = ({ left, top, right, bottom }: DOMRect) => ({ left, top, right, bottom });
-  console.log(JSON.stringify({ alignment: { labelText: rect(label), hintText: rect(hint), dialog: rect(page.getByTestId('custom-model-dialog').element().getBoundingClientRect()) } }));
   expect(Math.abs(hint.left - label.left)).toBeLessThan(0.5);
   expect(hint.top - label.bottom).toBeGreaterThanOrEqual(0);
   expect(hint.top - label.bottom).toBeLessThan(8);
