@@ -1,5 +1,5 @@
 import type { AgentCapabilities } from '@shared/core/agents/agent-payload';
-import { FAST_PROTOCOLS, matchCustomModel, type CustomModelConnection } from '@gugu/session-core/models/custom-model';
+import { CUSTOM_FAST_TOKEN_MULTIPLIER, FAST_PROTOCOLS, matchCustomModel, type CustomModelConnection } from '@gugu/session-core/models/custom-model';
 import type { SessionOptionGroup } from '@gugu/session-core/session-record/contract';
 
 /** A host-filtered native on/off group is a capability fact, not a model-name guess. */
@@ -7,6 +7,11 @@ export function fastModeValue(group: SessionOptionGroup | null | undefined): boo
   if (!group || !group.available.some(option => option.id === 'on') || !group.available.some(option => option.id === 'off')) return undefined;
   if (group.selected === null || group.selected === 'off') return false;
   return group.selected === 'on' ? true : undefined;
+}
+
+/** Fast's token multiple as declared: the custom model forwarder's own, else the provider's; undefined = none published. */
+export function fastTokenMultiplier(capabilities: Pick<AgentCapabilities, 'acp'> | null | undefined, custom: boolean): number | undefined {
+  return custom ? CUSTOM_FAST_TOKEN_MULTIPLIER : capabilities?.acp.liveSettings?.fast?.tokenMultiplier;
 }
 
 /** Static provider opt-in and native per-model facts must both agree. */

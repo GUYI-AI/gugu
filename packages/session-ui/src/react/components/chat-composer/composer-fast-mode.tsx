@@ -50,11 +50,13 @@ export function ComposerFastMode({
       </span>}
     </button>
   );
-  const control = renderHint ? renderHint(button) : button;
-  return detailRow ? (
+  if (!detailRow) return renderHint ? renderHint(button) : button;
+  // In the model details the hint belongs to the whole row, not only its switch.
+  const row = (
     <div className={styles.contextThresholdTrigger} data-slot="composer-model-fast">
       <span>{label}</span>
-      {control}
+      {button}
     </div>
-  ) : control;
+  );
+  return renderHint ? renderHint(row) : row;
 }

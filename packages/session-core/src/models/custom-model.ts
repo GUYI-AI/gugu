@@ -148,6 +148,9 @@ export function customModelDefaultEffort(
 /** The protocols whose requests can carry `service_tier`. */
 export const FAST_PROTOCOLS: readonly ModelProtocol[] = ['openai-chat-completions', 'openai-responses'];
 
+/** A custom model's Fast uses twice the tokens (owner 2026-11-25), the same as Codex. */
+export const CUSTOM_FAST_TOKEN_MULTIPLIER = 2;
+
 /** The catalog's levels the dialog can check. */
 export function customModelCatalogLevels(result: CustomModelEffortResult | undefined): CustomModelEffortLevel[] {
   if (result?.kind !== 'found') return [];

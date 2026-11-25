@@ -85,8 +85,8 @@ import {
 } from './harness-model-field';
 import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelOptions } from './use-harness-model-options';
-import { agentOffersFastMode, customModelFastSupported, draftFastMode } from './fast-mode';
-import { renderFastModeHint } from './fast-mode-hint';
+import { agentOffersFastMode, customModelFastSupported, draftFastMode, fastTokenMultiplier } from './fast-mode';
+import { fastModeHint } from './fast-mode-hint';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { useTargetModelCatalog } from '@renderer/lib/stores/use-target-model-catalog';
@@ -1304,6 +1304,7 @@ export function useInitialSessionState(
     autoReviewCostSource,
     fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, customSupported: customFastSupported, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
+    fastTokenMultiplier: fastTokenMultiplier(capabilities, customFastSupported !== undefined),
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
       if (!effortKey) return;
@@ -1801,7 +1802,7 @@ export function InitialSessionField({
           onEffortChange={(effortId) => state.setEffort(effortId || null)}
           fastMode={state.fastMode}
           onFastModeChange={state.setFastMode}
-          renderFastModeHint={renderFastModeHint}
+          renderFastModeHint={fastModeHint(state.fastTokenMultiplier)}
           defaultEffort={state.defaultEffort ?? undefined}
           permissionModeOptions={withAutoReviewHint(permissionModeOptions, state.provider, state.autoReviewCostSource ?? 'unknown')}
           selectedPermissionMode={permissionModeOptions ? state.permissionMode : undefined}

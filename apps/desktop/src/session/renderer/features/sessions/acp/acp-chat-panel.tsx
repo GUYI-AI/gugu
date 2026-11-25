@@ -192,8 +192,8 @@ import {
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
 import { classifyProviderPermissionMode, type TurnAnnotation } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { customModelFastSupported, sessionFastMode } from '../session-config/fast-mode';
-import { renderFastModeHint } from '../session-config/fast-mode-hint';
+import { customModelFastSupported, fastTokenMultiplier, sessionFastMode } from '../session-config/fast-mode';
+import { fastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignIn } from './use-last-turn-sign-in';
@@ -1523,7 +1523,7 @@ const ComposerForStore = observer(function ComposerForStore({
         fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup,
           ...(runningCustomModel ? { customSupported: customFast, recorded: hostSession?.data.fastMode } : {}) })}
         onFastModeChange={(enabled) => { void (runningCustomModel ? store.setCustomFastMode(enabled) : store.setFastMode(enabled)); }}
-        renderFastModeHint={renderFastModeHint}
+        renderFastModeHint={fastModeHint(fastTokenMultiplier(providerCapabilities, !!runningCustomModel))}
         permissionModeOptions={withAutoReviewHint(localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,
