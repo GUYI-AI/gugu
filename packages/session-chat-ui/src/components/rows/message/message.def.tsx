@@ -193,7 +193,7 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
     return { blocks, settledCount };
   });
 
-  const streamAnimation = createStreamAnimation(() => props.data.streaming === true, () => parsed().settledCount);
+  const streamAnimation = createStreamAnimation(() => props.data.text, () => props.data.streaming === true, () => parsed().settledCount);
 
   const stack = createMemo<Measured<StackLayout> | null>(() => {
     const ctx = mCtx();

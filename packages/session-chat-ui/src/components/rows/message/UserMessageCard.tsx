@@ -103,7 +103,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
 
   // An agent reply drawn in this card streams as it does in AssistantRender: its new text fades in, its code highlights
   // as each block settles. Read once at mount, as there: a row mounted for a committed message never animates.
-  const streamAnimation = createStreamAnimation(() => props.data.streaming === true, () => mCtx()?.caches.settledBlockCount(props.data.id) ?? 0);
+  const streamAnimation = createStreamAnimation(() => props.data.text, () => props.data.streaming === true, () => mCtx()?.caches.settledBlockCount(props.data.id) ?? 0);
 
   /** What the agent sent to people is drawn by the host's MessageBody in slots (`SentMessageBodies`), not as text here. */
   const sent = createMemo(() => {

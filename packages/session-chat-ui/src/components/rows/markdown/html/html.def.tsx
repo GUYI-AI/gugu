@@ -143,7 +143,9 @@ function HtmlBlockView(props: { node: Measured<HtmlLeafLayout> }) {
         highlightNestedCode(root, caches);
         if (stream) {
           const now = performance.now();
-          stream.frontier.set(id, fadeFreshText(root, stream.frontier.get(id) ?? 0, now - lastPaint));
+          // A block first painted before the reply grew was already there when its row mounted: none of it fades.
+          const from = stream.frontier.get(id) ?? (stream.grewSinceMount() ? 0 : Infinity);
+          stream.frontier.set(id, fadeFreshText(root, from, now - lastPaint));
           lastPaint = now;
         }
       },

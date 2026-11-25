@@ -10,6 +10,11 @@
  * previous render. An html block fades only the text past it, not text that was
  * already visible.
  *
+ * Only text that arrives while the row is on screen fades. What the reply already
+ * says when its row mounts (a reply switched back to mid-stream, or the first
+ * chunk) is drawn as it is: a block first painted before the reply grew starts
+ * its frontier at its whole length.
+ *
  * The Map is shared by reference — the html block writes into it each time it
  * paints, so the next streaming tick finds the correct frontier without any
  * extra reactivity.
@@ -21,7 +26,7 @@
  * is necessary because Solid context values are not reactive when swapped.
  */
 
-import { createContext, useContext } from 'solid-js';
+import { createContext, untrack, useContext } from 'solid-js';
 import type { Accessor } from 'solid-js';
 
 export type StreamAnimation = {
@@ -40,6 +45,8 @@ export type StreamAnimation = {
    * waiting for the whole message to commit.
    */
   settledCount: Accessor<number>;
+  /** True once the reply's text differs from what it was when the row mounted. */
+  grewSinceMount: Accessor<boolean>;
 };
 
 export const StreamContext = createContext<StreamAnimation | null>(null);
@@ -51,6 +58,7 @@ export const useStreamAnimation = (): StreamAnimation | null => useContext(Strea
  * One row's StreamAnimation, made once per mounted row: its frontier persists across streaming chunks because the
  * row stays mounted while its message grows.
  */
-export function createStreamAnimation(streaming: Accessor<boolean>, settledCount: Accessor<number>): StreamAnimation {
-  return { frontier: new Map(), streaming, settledCount };
+export function createStreamAnimation(text: Accessor<string>, streaming: Accessor<boolean>, settledCount: Accessor<number>): StreamAnimation {
+  const mounted = untrack(text);
+  return { frontier: new Map(), streaming, settledCount, grewSinceMount: () => text() !== mounted };
 }

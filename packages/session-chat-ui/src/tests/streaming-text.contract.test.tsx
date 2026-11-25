@@ -25,11 +25,12 @@
  * grows if the text wraps differently.
  *
  * ① also needs a positive control or it is not a reading: if the streaming
- * render wrapped nothing, "both modes agree" would be trivially true. The faded
- * text length is asserted equal to the whole run's text on the streaming side
- * (the frontier starts empty, so on a first render all of it is new) and 0 on
- * the committed side — one instrument read present and absent on two renders
- * that differ only by the `streaming` flag.
+ * render wrapped nothing, "both modes agree" would be trivially true. Only text
+ * that arrives after a row mounts fades, so the streaming row mounts with the
+ * run's first words and then grows to the whole run, as a live reply does. The
+ * faded text is asserted to be all of what arrived (the whole run but the words
+ * it mounted with) on the streaming side and 0 on the committed side — one
+ * instrument read present and absent on two renders that end on the same text.
  *
  * ② needs a control on the *instrument*: `Emulation.setEmulatedMedia` failing
  * silently and the media query genuinely not matching read the same downstream.
@@ -56,10 +57,13 @@ const TEXT =
 
 const REDUCE_QUERY = '(prefers-reduced-motion: reduce)'
 
-function message(id: string, streaming: boolean): ChatMessage {
+/** What the streaming row mounts with before the rest of TEXT arrives; the space after it is not a word and does not fade. */
+const MOUNTED = 'Streaming text reveals '
+
+function message(id: string, streaming: boolean, text = TEXT): ChatMessage {
   // Distinct ids: the streaming and committed parses are cached per message id,
   // and sharing one id would let the first parse answer for the second.
-  return { kind: 'message', id, role: 'assistant', text: TEXT, streaming }
+  return { kind: 'message', id, role: 'assistant', text, streaming }
 }
 
 /**
@@ -136,7 +140,7 @@ async function emulateReducedMotion(value: 'reduce' | 'no-preference'): Promise<
 }
 
 function readStreaming(id: string): Promise<HeightContractReading> {
-  return renderAndMeasureUnit(messageUnitDef, message(id, true), makeContractCtx({ width: WIDTH }), inspectRun)
+  return renderAndMeasureUnit(messageUnitDef, message(id, true, MOUNTED), makeContractCtx({ width: WIDTH }), inspectRun, {}, message(id, true))
 }
 
 afterEach(async () => {
@@ -156,7 +160,7 @@ describe('streaming fade', () => {
     // ① The fade actually wrapped the text — and only while streaming. Without
     //    this, everything below is a statement about two identical renders.
     expect(streaming.inspected.runText).toBeGreaterThan(0)
-    expect(streaming.inspected.freshText).toBe(streaming.inspected.runText)
+    expect(streaming.inspected.freshText).toBe(streaming.inspected.runText - MOUNTED.length)
     expect(committed.inspected.freshSpans).toBe(0)
 
     // ② The proof: every character sits where it sat without the spans, at the
