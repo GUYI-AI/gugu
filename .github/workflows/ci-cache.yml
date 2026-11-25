@@ -91,6 +91,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
+      GUGU_SUPABASE_URL: https://community-build.invalid
+      VITE_SUPABASE_URL: https://community-build.invalid
+      GUGU_SUPABASE_ANON_KEY: header.eyJyb2xlIjoiYW5vbiJ9.signature
+      VITE_SUPABASE_ANON_KEY: header.eyJyb2xlIjoiYW5vbiJ9.signature
       GUGU_CLOUD_COMPUTER_ENABLED: 'false'
       VITE_GUGU_CLOUD_COMPUTER_ENABLED: 'false'
       GUGU_PLATFORM_MODELS_ENABLED: 'false'
