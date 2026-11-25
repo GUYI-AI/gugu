@@ -17,7 +17,7 @@ import {
   clearLocalSessionMentions,
   registerLocalSessionMentions,
 } from '@renderer/lib/chat/chat-mention-provider'
-import { renderMentionTokens } from '@renderer/lib/chat/render-mention-tokens'
+import { queuedPromptView } from '@renderer/features/sessions/acp/use-session-prompt-editor'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
 import '@/styles/tokens.css'
 import '@renderer/index.css'
@@ -51,7 +51,7 @@ function mount(text: string) {
     <SessionLocalizationProvider>
       <QueuedPromptsBand
         prompts={[{ id: 'q1', text, origin: 'typed' }]}
-        renderPromptText={(value) => renderMentionTokens(value, URI)}
+        renderPromptText={(value) => queuedPromptView(value, URI)}
         onEdit={(_id, value) => { editedText = value }}
         onDelete={() => {}}
         onReorder={() => {}}
@@ -90,4 +90,16 @@ test('改名之前发出去的老写法(裸 @user:<id>)照样显示成名字', a
   await until('你联系一下他 is in the document', () => page.getByText('你联系一下他', { exact: false }).query() != null)
   expect(host!.innerText).toContain('@Claude 1')
   expect(host!.innerText).not.toContain(LEGACY_ADDRESS)
+})
+
+test('words with pictures placed in them show each picture as its chip, not its file link', async () => {
+  const text = 'First: ![Image 1](gugu-file://44d49788-aaaa?v=1) then: ![Image 2](gugu-file://5b0c1d2e-bbbb?v=2) ok'
+  mount(text)
+  await until('the chips are in the document', () => host!.querySelectorAll('[data-label]').length === 2)
+
+  expect(host!.innerText).not.toContain('gugu-file')
+  expect(host!.innerText).toContain('First:')
+  expect(host!.innerText).toContain('then:')
+  await userEvent.click(page.getByText('First:', { exact: false }))
+  expect(editedText).toBe(text)
 })

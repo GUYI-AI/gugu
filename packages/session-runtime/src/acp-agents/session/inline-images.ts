@@ -6,7 +6,7 @@
  * has something to point at. A marker whose picture is not sent as an image (a model that takes none) is left as written.
  */
 
-const FILE_IMAGE = /!\[([^\]]*)\]\(gugu-file:\/\/([^?#)\s]+)[^)\s]*\)/g;
+import { fileImageLinks } from '@gugu/session-core/acp/inline-file-images';
 
 export type InlinePromptPart = { text: string } | { image: number };
 
@@ -16,14 +16,14 @@ export function inlinePromptParts(text: string, imageOf: (itemId: string) => num
   const used = new Set<number>();
   let pending = '';
   let cursor = 0;
-  for (const match of text.matchAll(FILE_IMAGE)) {
-    const image = imageOf(match[2]);
+  for (const link of fileImageLinks(text)) {
+    const image = imageOf(link.itemId);
     if (image === null || used.has(image)) continue;
     used.add(image);
-    pending += text.slice(cursor, match.index) + `[${match[1]}]`;
+    pending += text.slice(cursor, link.index) + `[${link.label}]`;
     parts.push({ text: pending }, { image });
     pending = '';
-    cursor = match.index + match[0].length;
+    cursor = link.index + link.length;
   }
   if (used.size === 0) return null;
   pending += text.slice(cursor);

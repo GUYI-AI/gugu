@@ -1,5 +1,6 @@
 /** @jsxImportSource solid-js */
 import { attachmentKind } from '@gugu/core/shared/ui/attachmentType';
+import { fileImageLinks } from '@gugu/session-core/acp/inline-file-images';
 import { safeDeliveredBody, type DeliveryMessagePresentation } from '@session-chat/state/delivery-presentation';
 import { rowTranslator } from '../readable-label';
 import { ConversationMessage, conversationMessageHeight, isConversationMessage } from './ConversationMessage';
@@ -105,7 +106,7 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
   // 不论路径是不是绝对的,都留在正文里画成胶囊 —— 引用不是「我附了它」。
   if (normalized.role !== 'user') return normalized;
   // A picture placed in the words (`![Image 1](gugu-file://<id>…)`) is drawn there as a chip; the strip leaves it out.
-  const placedIds = placedImageIds(normalized.text);
+  const placedIds = new Set(fileImageLinks(normalized.text).map(link => link.itemId));
   const placed = (item.files ?? []).filter(file => placedIds.has(file.itemId));
   if (placed.length) normalized.attachments = normalized.attachments?.filter(file => (file.kind ?? 'image') !== 'image' || !placed.some(each => each.name === file.name));
   const imageNames = new Set(normalized.attachments?.map(file => file.name) ?? []);
@@ -118,11 +119,6 @@ export function normalizeMessage(item: ChatMessage, deliveredMessage?: (id: stri
     name: `${annotation.number} · ${annotationTargetName(annotation.target)}`, title: annotation.target, detail: annotation.comment }));
   if (files.length || annotations.length) normalized.attachments = [...(normalized.attachments ?? []), ...files, ...annotations];
   return normalized;
-}
-
-const PLACED_IMAGE = /!\[[^\]]*\]\(gugu-file:\/\/([^?#)\s]+)/g;
-function placedImageIds(text: string): Set<string> {
-  return new Set(Array.from(text.matchAll(PLACED_IMAGE), match => match[1]));
 }
 
 export function messageFromItem(item: ChatMessage, ctx: SegmentCtx): ChatMessage {

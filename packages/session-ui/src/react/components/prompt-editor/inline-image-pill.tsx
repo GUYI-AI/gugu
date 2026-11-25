@@ -10,14 +10,26 @@
 
 import { cx } from '@session-ui/styles/utilities/cx';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
-import { useState } from 'react';
+import { useState, type HTMLAttributes } from 'react';
 import { useMessages } from '../../localization/message-provider';
 import * as styles from './inline-image-pill.css';
 
 export type InlineImageOptions = { onView?: (id: string) => void };
 
-export function InlineImagePill({ node, selected, extension }: NodeViewProps) {
+/**
+ * The chip itself, wherever words that hold a picture are shown: the composer's node, and the queued-prompt band. Its
+ * label is "Image N", N counted by the CSS counter `inline-image` of the box that holds the words.
+ */
+export function InlineImageChip({ src, className, ...props }: { src?: string | null } & HTMLAttributes<HTMLSpanElement>) {
   const { translate } = useMessages();
+  return (
+    <span contentEditable={false} data-label={translate('composer.inlineImage')} {...props} className={cx(styles.pill, className)}>
+      {src ? <img src={src} alt="" draggable={false} className={styles.thumb} /> : <span className={styles.thumb} />}
+    </span>
+  );
+}
+
+export function InlineImagePill({ node, selected, extension }: NodeViewProps) {
   const id = node.attrs.id as string;
   const src = node.attrs.src as string | null;
   const name = (node.attrs.name as string | null) ?? '';
@@ -26,12 +38,11 @@ export function InlineImagePill({ node, selected, extension }: NodeViewProps) {
   const onView = (extension.options as InlineImageOptions).onView;
   return (
     <NodeViewWrapper as="span" className={styles.wrapper}>
-      <span
-        contentEditable={false}
+      <InlineImageChip
+        src={src}
         data-inline-image-id={id}
-        data-label={translate('composer.inlineImage')}
         title={name || undefined}
-        className={cx(styles.pill, selected && styles.pillSelected)}
+        className={cx(selected && styles.pillSelected)}
         onMouseEnter={(event) => {
           if (!src) return;
           const rect = event.currentTarget.getBoundingClientRect();
@@ -40,9 +51,7 @@ export function InlineImagePill({ node, selected, extension }: NodeViewProps) {
         onMouseLeave={() => setPreview(null)}
         onMouseDown={(event) => { if (onView) event.preventDefault(); }}
         onClick={() => { setPreview(null); onView?.(id); }}
-      >
-        {src ? <img src={src} alt="" draggable={false} className={styles.thumb} /> : <span className={styles.thumb} />}
-      </span>
+      />
       {preview && src && (
         <span className={styles.preview} style={{ left: preview.left, bottom: preview.bottom }} aria-hidden="true">
           <img src={src} alt="" draggable={false} className={styles.previewImage} />
