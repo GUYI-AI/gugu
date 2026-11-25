@@ -119,13 +119,16 @@ window.addEventListener('message', forge);
       if (event.data?.params?.url === 'https://example.org/forged') forged += 1;
     };
     window.addEventListener('message', onMessage);
+    // The block is absolutely positioned, as in a block stack: give it its own box so the button below sits outside it.
     root = document.createElement('div');
+    const view = document.createElement('div');
+    view.style.position = 'relative';
+    view.style.height = `${measured.height}px`;
+    root.appendChild(view);
     const elsewhere = document.createElement('button');
     elsewhere.textContent = 'elsewhere';
     root.appendChild(elsewhere);
     document.body.appendChild(root);
-    const view = document.createElement('div');
-    root.appendChild(view);
     const Render = htmlRenderBlockDef.Render;
     const unmount = render(() => (
       <ThemeContext.Provider value={() => ctx.theme}>
@@ -148,6 +151,7 @@ window.addEventListener('message', forge);
     // Right after a real click elsewhere in the app: the window is activated, but the frame does not have focus.
     await page.getByText('elsewhere').click();
     expect(navigator.userActivation.isActive).toBe(true);
+    expect(document.activeElement).toBe(elsewhere);
     view.querySelector('iframe')!.contentWindow!.postMessage('forge', '*');
     await until('the page forges after the click elsewhere', () => forged === 2);
     expect(opened).toEqual([]);
