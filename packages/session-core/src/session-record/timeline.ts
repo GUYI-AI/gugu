@@ -1,4 +1,4 @@
-import { endedTurnIds, withRuntimeTurn } from './runtime-turn';
+import { endedTurnIds, recordHolds, withDrawnTurns, type DrawnTurn } from './runtime-turn';
 import { withJournalTurns } from './journal-turns';
 import { HostPrompts, type HostPromptReceipts } from './host-prompts';
 import type { TerminalState } from '../acp/models/terminals';
@@ -251,6 +251,11 @@ class RecordTimeline implements SessionTimeline {
   private runtimeTurn: TranscriptTurn | null = null;
   /** The turns that had ended when the runtime's turn started: none of them is a copy of it (`withoutCopiesOf`). */
   private endedBeforeRuntime: ReadonlySet<string> = new Set();
+  /**
+   * The runtime's turns that ended before the record held them (`recordHolds`), oldest first: each is shown until the
+   * record does, so a turn never leaves the timeline between its runtime letting go and its record being read.
+   */
+  private heldTurns: Array<DrawnTurn & { readToNow: boolean }> = [];
   /** The journal's turns by key, in journal order; read again with the journal, never archived. */
   private journalTurns = new Map<string, { turn: TranscriptTurn; recorded: boolean }>();
   private liveReplyDirty = false;
@@ -678,11 +683,30 @@ class RecordTimeline implements SessionTimeline {
 
   syncActiveTurn(turn: TranscriptTurn | null): void {
     if (this.disposed) return;
-    if (this.runtimeTurn === turn) return;
-    if (turn && turn.id !== this.runtimeTurn?.id) this.endedBeforeRuntime = endedTurnIds(this.recordedTurns().turns);
+    const prior = this.runtimeTurn;
+    if (prior === turn) return;
+    const moved = turn?.id !== prior?.id;
+    if (moved && prior) this.heldTurns.push({ turn: prior, before: this.endedBeforeRuntime, readToNow: false });
+    if (turn && moved) this.endedBeforeRuntime = endedTurnIds(this.recordedTurns().turns);
     this.runtimeTurn = turn;
     this.sent.learn(turn);
+    // @@@runtime-wakes-record - a turn starting, ending or getting a new item is when its record changes: the first
+    // file of a record not written yet (`awaiting`), another file it goes on in, a child's. The runtime says so itself,
+    // so finding those never rests on a directory notification alone.
+    if (moved || turn?.items.length !== prior?.items.length) this.readToNow(this.source.awaiting?.() === true);
     this.publish();
+  }
+
+  /** Reads the record as written by now; the turns held until then are then compared with all of it (`recordHolds`). */
+  private readToNow(awaiting: boolean): void {
+    const held = [...this.heldTurns];
+    void this.catchUp().then(() => {
+      for (const one of held) one.readToNow = true;
+      if (held.length > 0) this.publish();
+    }, (error: unknown) => {
+      // A record found and not readable is a failure of this timeline; a tail read that failed is read again by its source.
+      if (awaiting && !this.disposed) this.deps.onError?.(error);
+    });
   }
 
   syncLiveReply(reply: SessionLiveReply | null): void {
@@ -972,7 +996,10 @@ class RecordTimeline implements SessionTimeline {
 
   private currentTurns(): TranscriptTurn[] {
     const { turns, base } = this.recordedTurns();
-    return this.inPlace(withRuntimeTurn(turns, this.runtimeTurn, this.endedBeforeRuntime), base);
+    const runtime = this.runtimeTurn;
+    // Runtime turn ids start again with the runtime: a held turn the running one took the id of is that turn no more.
+    if (this.heldTurns.length > 0) this.heldTurns = this.heldTurns.filter((held) => held.turn.id !== runtime?.id && !recordHolds(turns, held, held.readToNow));
+    return this.inPlace(withDrawnTurns(turns, [...this.heldTurns, ...(runtime ? [{ turn: runtime, before: this.endedBeforeRuntime }] : [])]), base);
   }
 
   /** The record's turns with the journal's, before the runtime's turn in progress takes its place; `base`: the first record seq. */

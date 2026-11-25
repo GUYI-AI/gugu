@@ -1,10 +1,9 @@
 import { watch as watchFile, type FSWatcher } from 'node:fs';
-import { open, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { DirectoryWatch } from '../../services/fs-watch/impl/directory-watch';
 import type { WatchEvent } from '../../services/fs-watch/api';
 import type { SessionRecordLocator } from '../contract';
-import { SessionRecordNotFoundError } from './shared';
 
 type Handle = { ready(): Promise<void>; dispose(): Promise<void> };
 export type RecordDirectoryWatch = (path: string, changed: (events?: readonly WatchEvent[]) => void, failed: (error: unknown) => void) => Handle;
@@ -159,73 +158,5 @@ export class CodexRecordEvents {
       await handle.dispose();
     }
     await this.reconcileRollout();
-  }
-}
-
-/** Waiting ends on a file event or an explicit lifecycle cancellation. There is deliberately no clock. */
-export async function waitForCodexRecord(locator: SessionRecordLocator, locate: () => Promise<string>, signal: AbortSignal,
-  watch?: RecordDirectoryWatch, waiting?: () => void, ready?: (elapsedMs: number) => void): Promise<void> {
-  return new Promise<void>((accept, reject) => {
-    let settled = false;
-    const finish = (error?: unknown) => {
-      if (settled) return;
-      settled = true;
-      events.stop();
-      signal.removeEventListener('abort', aborted);
-      if (error !== undefined) reject(error); else accept();
-    };
-    const aborted = () => finish(signal.reason ?? new Error('Codex record subscription closed'));
-    const events = new CodexRecordEvents(locator, finish, watch);
-    const check = async () => {
-      let file: string;
-      try { file = await locate(); }
-      catch (error) { if (error instanceof SessionRecordNotFoundError) { waiting?.(); return; } throw error; }
-      await events.includeFile(file);
-      // Creation can precede the first write. Read only a complete metadata line belonging to this thread.
-      const handle = await open(file, 'r');
-      try {
-        const bytes = Buffer.alloc(Math.min((await handle.stat()).size, 1024 * 1024));
-        const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
-        const end = bytes.subarray(0, bytesRead).indexOf(10);
-        if (end < 0) {
-          if (bytesRead === 1024 * 1024) throw new Error('Oversized Codex session_meta');
-          waiting?.();
-          return;
-        }
-        const meta = JSON.parse(bytes.subarray(0, end).toString('utf8'));
-        if (meta.type !== 'session_meta' || meta.payload?.id !== locator.providerSessionId) {
-          throw new Error(`Codex session_meta does not match thread ${locator.providerSessionId}`);
-        }
-        finish();
-      } finally { await handle.close(); }
-    };
-    signal.addEventListener('abort', aborted, { once: true });
-    if (signal.aborted) { aborted(); return; }
-    const started = performance.now();
-    void events.ready().then(async () => {
-      if (settled) return;
-      ready?.(performance.now() - started);
-      await check();
-      if (!settled) events.activate(check);
-    }).catch(finish);
-  });
-}
-
-/** One failure deadline from the first submitted input. Expiry never reads or retries the record. */
-export class CodexRecordDeadline {
-  private timer: ReturnType<typeof setTimeout> | null = null;
-  private armed = false;
-  private stopped = false;
-  constructor(private readonly expired: () => void) {}
-  start(firstSentAt: number | null): void {
-    if (this.stopped || this.armed || firstSentAt === null || !Number.isFinite(firstSentAt)) return;
-    this.armed = true;
-    this.timer = setTimeout(() => { this.timer = null; this.stopped = true; this.expired(); }, Math.max(0, firstSentAt + 30_000 - Date.now()));
-    this.timer.unref?.();
-  }
-  stop(): void {
-    this.stopped = true;
-    if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
   }
 }

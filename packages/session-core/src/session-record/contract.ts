@@ -246,6 +246,8 @@ export interface SessionRecordSource {
   resumePoint?(budget?: RecordArchiveBudget): Promise<SessionRecordResume | null>;
   /** 立刻把尾读追到文件尾,读完(行已交给 onEntries)才返回。不支持的源没有这个口。 */
   catchUp?(): Promise<void>;
+  /** The record is not written yet: the source gave no entries and reads it once `catchUp` finds it. */
+  awaiting?(): boolean;
   getLineage?(): readonly RecordLineageNode[] | null;
   stop(): void;
   /**
@@ -1262,7 +1264,7 @@ export type SessionpageOpenedFileChunk = { size: number; etag: string; data: str
 export const OPENED_FILE_MAX_BYTES = 20 * 1024 * 1024;
 
 export type SessionpageSessionSubscribeRequest = {
-  /** Local Codex reader: establish the file-event barrier before its initial snapshot. */
+  /** The first push is the whole snapshot: the reader subscribes without reading one first. */
   recordEvents?: true;
   conversationId: string;
   subscriptionId: string;
@@ -1349,10 +1351,11 @@ export type SessionpageSessionEvent = {
   result: TimelineAfterResult;
 };
 
-/** Control events for the local Codex record readiness subscription. */
+/** A subscription's record can no longer be followed: the subscription is over, with why. */
 export type SessionpageRecordStatusEvent = {
   subscriptionId: string;
-} & ({ waiting: true; error?: never } | { waiting?: never; error: { code: string; message: string } });
+  error: { code: string; message: string };
+};
 
 /**
  * 整台机器的会话列表推送(事件 `session-list:push`,topic = subscriptionId)。

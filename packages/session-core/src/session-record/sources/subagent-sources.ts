@@ -120,7 +120,16 @@ export function withSubagentSources(
         for (const id of order) { const rest = waiting.get(id)!.slice(sent.get(id)); if (rest.length && !stopped) sink?.onEntries(rest); }
       }
     },
-    async catchUp() { if (replacement) return replacement.catchUp?.(); await root.catchUp?.(); await Promise.all(starting.values()); await Promise.all([...children.values()].map((child) => child.catchUp?.())); },
+    async catchUp() {
+      if (replacement) return replacement.catchUp?.();
+      await root.catchUp?.();
+      // A child whose record was not there when its launch was read is looked for again: its file appearing writes
+      // nothing in the root record, so no line of the root would start it.
+      if (!initializing) await Promise.all([...childIds].map((id) => ensureChild(id).catch(() => undefined)));
+      await Promise.all(starting.values());
+      await Promise.all([...children.values()].map((child) => child.catchUp?.()));
+    },
+    ...(root.awaiting ? { awaiting: () => !replacement && root.awaiting!() } : {}),
     ...(root.getLineage ? { getLineage: () => root.getLineage!() } : {}),
     // resume-tail: the root record decides where a fill from the tail starts; children are read whole as they appear.
     // A read from a turn inside the record also reads, whole, the children its decoder state already knows, as a read
