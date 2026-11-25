@@ -5,7 +5,6 @@ import { htmlBlockDef } from './html/html.def';
 import { mathBlockDef } from './math/math.def';
 import { mermaidBlockDef } from './mermaid/mermaid.def';
 import { svgBlockDef } from './svg/svg.def';
-import { htmlRenderBlockDef } from './html-render/html-render.def';
 
 // registry boundary
 export const BLOCK_REGISTRY: Record<Block['kind'], BlockDef<any, any>> = {
@@ -13,6 +12,5 @@ export const BLOCK_REGISTRY: Record<Block['kind'], BlockDef<any, any>> = {
   code: codeBlockDef,
   mermaid: mermaidBlockDef,
   svg: svgBlockDef,
-  'html-render': htmlRenderBlockDef,
   math: mathBlockDef,
 };

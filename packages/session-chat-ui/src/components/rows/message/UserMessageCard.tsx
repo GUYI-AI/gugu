@@ -1,6 +1,5 @@
 /** @jsxImportSource solid-js */
 import { useCommands } from '@session-chat/components/contexts/CommandsContext';
-import { StreamContext, createStreamAnimation } from '@session-chat/components/contexts/StreamContext';
 import { useTurnState } from '@session-chat/components/contexts/TurnStateContext';
 import { BlockStackView } from '@session-chat/components/primitives/BlockStackView';
 import { clipTrackedHeight, isCardAnimating } from '@session-chat/components/primitives/card-clip';
@@ -100,10 +99,6 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
   // One parse path for layout and copy text: a full parse drops the streaming record, so every
   // chunk would re-parse the reply and remount its settled blocks (and lose a selection in them).
   const parse = (ctx: MeasureCtx) => (props.data.streaming ? ctx.caches.parseBlocksStreaming : ctx.caches.parseBlocks)(props.data.id, props.data.text);
-
-  // An agent reply drawn in this card streams as it does in AssistantRender: its new text fades in, its code highlights
-  // as each block settles. Read once at mount, as there: a row mounted for a committed message never animates.
-  const streamAnimation = createStreamAnimation(() => props.data.text, () => props.data.streaming === true, () => mCtx()?.caches.settledBlockCount(props.data.id) ?? 0);
 
   /** What the agent sent to people is drawn by the host's MessageBody in slots (`SentMessageBodies`), not as text here. */
   const sent = createMemo(() => {
@@ -247,9 +242,7 @@ export function UserMessageCard(props: { data: ChatMessage; ctx: RenderCtx; vars
       <div class={srOnly} role="note" aria-label={plainText()} />
       <div ref={setTextRoot} data-conversation-text={props.conversation ? props.data.id : undefined}
         style={destination() ? { height: `${Math.max(0, cardH() - 2 * vars().userCardPadY - 2 * vars().cardBorder)}px`, overflow: 'hidden' } : undefined}>
-        <StreamContext.Provider value={props.data.streaming ? streamAnimation : null}>
-          <Show when={stack()}>{(s) => <BlockStackView node={s()} />}</Show>
-        </StreamContext.Provider>
+        <Show when={stack()}>{(s) => <BlockStackView node={s()} />}</Show>
         <Show when={props.data.sentMessages?.length && sent() ? props.data.sentMessages : null}>{messages =>
           <SentMessageBodies messages={messages()} ctx={mCtx} width={innerWidth()} />}</Show>
       </div>

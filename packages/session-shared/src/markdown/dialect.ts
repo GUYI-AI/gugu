@@ -31,8 +31,6 @@ import { unified, type Pluggable, type PluggableList } from 'unified';
 import { normalizeWindowsMarkdownFileLinks } from './mention-grammar';
 import { remarkPandocDollarMath } from './pandoc-dollar-math';
 
-export { hookLinkIconFallback, rehypeLinkIcons } from './link-icons';
-
 export type MarkdownTrust = 'chat' | 'document';
 
 export type MarkdownDialectOptions = {

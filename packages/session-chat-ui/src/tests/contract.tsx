@@ -34,7 +34,7 @@ import type { ChatTheme } from '@session-chat/core/theme';
 import { DEFAULT_THEME } from '@session-chat/core/theme';
 import type { UnitDef } from '@session-chat/core/units';
 import { vars } from '@session-chat/styles/theme.css';
-import { createSignal, type JSX } from 'solid-js';
+import { type JSX } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach } from 'vitest';
 
@@ -115,12 +115,7 @@ export async function renderAndMeasureUnit<D, V extends Record<string, number>>(
    * control without a callback must also measure the same either way, and
    * leaving this out is how that half of the contract gets read.
    */
-  commands: ChatCommands = {},
-  /**
-   * The data the row ends up with: mounted with `data`, the row keeps its place while its data turns into this after
-   * the first paint, as a transcript row does while its message grows. Measured and read on this one.
-   */
-  grownTo?: D
+  commands: ChatCommands = {}
 ): Promise<HeightContractReading> {
   // Mirror the native UnitRow path: expanded(id) = isCollapsed(id).
   const measureCtx: MeasureCtx = {
@@ -129,8 +124,7 @@ export async function renderAndMeasureUnit<D, V extends Record<string, number>>(
     expanded: ctx.isCollapsed,
   };
   const defVars = (def.vars ?? {}) as V;
-  const computed = def.measure(grownTo ?? data, measureCtx, defVars);
-  const [current, setCurrent] = createSignal(data);
+  const computed = def.measure(data, measureCtx, defVars);
   const renderCaches = createChatCaches(undefined, mentionProviders.get(ctx.caches));
   const renderMeasureCtx: MeasureCtx = { ...measureCtx, caches: renderCaches };
   const renderCtx: RenderCtx = {
@@ -152,7 +146,7 @@ export async function renderAndMeasureUnit<D, V extends Record<string, number>>(
           <CachesContext.Provider value={renderCaches}>
             <ChatTranslationProvider value={{ translate: ctx.translate ?? defaultChatTranslator, locale: () => 'en-US' }}>
               <CommandsContext.Provider value={() => commands}>
-                <Comp data={current()} ctx={renderCtx} vars={defVars} />
+                <Comp data={data} ctx={renderCtx} vars={defVars} />
               </CommandsContext.Provider>
             </ChatTranslationProvider>
           </CachesContext.Provider>
@@ -162,10 +156,6 @@ export async function renderAndMeasureUnit<D, V extends Record<string, number>>(
     );
 
     await nextPaint();
-    if (grownTo !== undefined) {
-      setCurrent(() => grownTo);
-      await nextPaint();
-    }
 
     const child = host.firstElementChild as HTMLElement | null;
     return {

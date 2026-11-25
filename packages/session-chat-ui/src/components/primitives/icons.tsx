@@ -6,7 +6,6 @@ export { IconComment } from './icons/IconComment';
 export { IconCopy } from './icons/IconCopy';
 export { IconEdit } from './icons/IconEdit';
 export { IconError } from './icons/IconError';
-export { IconMaximize } from './icons/IconMaximize';
 export { IconRestorePrompt } from './icons/IconRestorePrompt';
 export { IconShieldAlert } from './icons/IconShieldAlert';
 export { IconStop } from './icons/IconStop';

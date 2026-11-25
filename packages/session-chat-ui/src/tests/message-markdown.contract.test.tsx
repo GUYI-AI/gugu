@@ -15,7 +15,6 @@ import { htmlBlockDef } from '@session-chat/components/rows/markdown/html/html.d
 import { mathBlockDef } from '@session-chat/components/rows/markdown/math/math.def'
 import { mermaidBlockDef } from '@session-chat/components/rows/markdown/mermaid/mermaid.def'
 import { svgBlockDef } from '@session-chat/components/rows/markdown/svg/svg.def'
-import { htmlRenderBlockDef } from '@session-chat/components/rows/markdown/html-render/html-render.def'
 import { messageUnitDef } from '@session-chat/components/rows/message/message.def'
 import { pinSummary } from '@session-chat/components/rows/message/PinnedUserSummary'
 import type { MessageVars } from '@session-chat/components/rows/message/metrics'
@@ -530,9 +529,6 @@ describe('markdown BlockFrames hold their real-rendered leaf geometry', () => {
         break
       case 'svg':
         reading = await renderAndMeasureBlock(svgBlockDef, block, ctx, inspect)
-        break
-      case 'html-render':
-        reading = await renderAndMeasureBlock(htmlRenderBlockDef, block, ctx, inspect)
         break
       case 'math':
         reading = await renderAndMeasureBlock(mathBlockDef, block, ctx, inspect)

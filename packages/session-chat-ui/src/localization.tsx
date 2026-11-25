@@ -75,9 +75,6 @@ const fallbackMessages = {
   'transcript.showFullText': 'Show all',
   'transcript.collapseFullText': 'Collapse',
   'transcript.copied': 'Copied',
-  'transcript.htmlRenderTitle': 'Rendered page',
-  'transcript.htmlRenderExpand': 'Expand',
-  'transcript.htmlRenderClose': 'Close',
   // 附件卡(#7193):agent 打开给人看的文件 / 网页。`{name}` 是文件名或网址,原样数据。
   'transcript.outputDocument': 'Document',
   'transcript.outputImage': 'Image',

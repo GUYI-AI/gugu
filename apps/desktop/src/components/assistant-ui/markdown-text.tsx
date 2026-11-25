@@ -1,6 +1,5 @@
 import { useMessagePartText } from '@assistant-ui/react'
 import { Markdown } from '@/components/markdown/Markdown'
-import { MarkdownStreamingContext } from '@/components/markdown/markdownStreaming'
 
 /**
  * 文本片段的渲染件。
@@ -14,11 +13,8 @@ import { MarkdownStreamingContext } from '@/components/markdown/markdownStreamin
  * 这也是唯一一处我们没照抄官方实现的片段渲染件，其余（工具卡、思考、建议、操作条）都是原件。
  */
 export function MarkdownText() {
-  const { text, status } = useMessagePartText()
+  const { text } = useMessagePartText()
   // 与桌面会话页转录同一种读法(`packages/session-chat-ui/src/core/markdown/to-html.ts` 的 TRANSCRIPT_DIALECT):
   // 段落里的单个换行就是换行。不开的话,agent 一行一句写的诗/清单在手机上并成一整段(2026-10-02 真机)。
-  // 正在写的这一段:字落下时逐字淡入(Markdown 的流式动效);写完的段落再画一次不动。
-  return <MarkdownStreamingContext.Provider value={status.type === 'running'}>
-    <Markdown trust="chat" codeCopy hardBreaks content={text} />
-  </MarkdownStreamingContext.Provider>
+  return <Markdown trust="chat" codeCopy hardBreaks content={text} />
 }

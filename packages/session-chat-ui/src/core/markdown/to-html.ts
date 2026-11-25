@@ -16,8 +16,7 @@
  * head and front matter as properties — `rehypeDocumentBlocks`):
  *  - mention chips, carrying the attributes hover and click read;
  *  - images as link chips: a picture's box is unknown until it loads, and a row's
- *    height has to be known before it paints (a transcript link's site icon is a fixed box, so it may load: the shared
- *    `rehypeLinkIcons`; a whole document fetches nothing);
+ *    height has to be known before it paints; nothing is fetched on render;
  *  - a scroll box around each table, so a wide table scrolls instead of being
  *    clipped at the row's edge.
  *
@@ -28,7 +27,6 @@ import {
   createMarkdownParser,
   markdownRehypePlugins,
   normalizeMarkdownSourceWithLines,
-  rehypeLinkIcons,
   type MarkdownDialectOptions,
 } from '@gugu/session-shared/markdown/dialect';
 import { fileLabelParts } from '@gugu/session-shared/markdown';
@@ -37,7 +35,6 @@ import { toHtml } from 'hast-util-to-html';
 import type { Nodes, Root, RootContent } from 'mdast';
 import { toHast, type State } from 'mdast-util-to-hast';
 import { unified } from 'unified';
-import { fenceClosed, HTML_RENDER_LANGUAGE } from '../html-render/page';
 import type { Block, BlockId, HtmlBlock } from './document';
 import type { MdastMention } from './mdast-mention';
 
@@ -131,17 +128,12 @@ function rehypeChips(mentions: readonly MdastMention[], imageSlots = false) {
   };
 }
 
-function artifactBlock(node: RootContent, id: BlockId, source: string | undefined): Block {
+function artifactBlock(node: RootContent, id: BlockId): Block {
   if (node.type === 'math') return { kind: 'math', id, tex: node.value };
   if (node.type !== 'code') throw new Error(`not an artifact node: ${node.type}`);
   const lang = node.lang?.toLowerCase();
   if (lang === 'mermaid' || lang === 'mmd') return { kind: 'mermaid', id, source: node.value };
   if (lang === 'svg') return { kind: 'svg', id, source: node.value };
-  if (lang === HTML_RENDER_LANGUAGE) {
-    const raw = source?.slice(node.position?.start.offset ?? 0, node.position?.end.offset ?? 0) ?? '';
-    // While the fence streams it is the code it is so far: the page loads once, when it is whole.
-    return fenceClosed(raw) ? { kind: 'html-render', id, source: node.value } : { kind: 'code', id, code: node.value, lang: 'html' };
-  }
   return { kind: 'code', id, code: node.value, lang: node.lang ?? undefined };
 }
 
@@ -185,8 +177,7 @@ function hasPendingStrong(nodes: readonly Nodes[]): boolean {
 }
 
 /** Split a parsed message into blocks; `nextId` hands out ids in document order. */
-/** `markdown` is the text `tree` was parsed from: it says whether a fence has closed yet. */
-export function treeToBlocks(tree: Root, nextId: () => BlockId, markdown?: string): Block[] {
+export function treeToBlocks(tree: Root, nextId: () => BlockId): Block[] {
   const artifacts: RootContent[] = [];
   const mentions: MdastMention[] = [];
   const children = tree.children.map((child): RootContent => {
@@ -208,7 +199,7 @@ export function treeToBlocks(tree: Root, nextId: () => BlockId, markdown?: strin
       },
     } as never,
   }) as HastRoot;
-  const rehype = unified().use(markdownRehypePlugins(TRANSCRIPT_DIALECT, [rehypeChips(mentions), rehypeLinkIcons])).freeze();
+  const rehype = unified().use(markdownRehypePlugins(TRANSCRIPT_DIALECT, [rehypeChips(mentions)])).freeze();
 
   // Which markdown nodes each html run came from (by source offset): their text feeds find and screen readers.
   const byOffset = new Map<number, RootContent>();
@@ -222,7 +213,7 @@ export function treeToBlocks(tree: Root, nextId: () => BlockId, markdown?: strin
   for (const node of hast.children as ElementContent[]) {
     if (node.type === 'element' && node.tagName === ARTIFACT_TAG) {
       open = null;
-      blocks.push(artifactBlock(artifacts[Number(node.properties.dataIndex)]!, '', markdown));
+      blocks.push(artifactBlock(artifacts[Number(node.properties.dataIndex)]!, ''));
       continue;
     }
     if (node.type === 'text' && !node.value.trim()) {
