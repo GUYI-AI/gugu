@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { CUSTOM_MODEL_KEY_CHANNEL, customModelAcceptsImages, customModelRouteSchema, modelProtocolSchema, normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEffortResult, type CustomModelEntry, type CustomModelMeta, type CustomModelRoute, type ModelProtocol } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { vendorName } from '@/i18n/vendorName';
@@ -16,9 +16,9 @@ import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { ConnectionModelPicker, useConnectionModelList, probeModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
 import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';
-import { customModels } from '@renderer/features/sessions/session-config/custom-models';
+import { customModelEffortCatalog, customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { useAgents } from '@renderer/lib/stores/use-agents';
-import { retryOf, valueOf } from '@/lib/replica';
+import { retryOf, useReplica, valueOf } from '@/lib/replica';
 import { SubscriptionConnections } from '@renderer/features/settings/subscriptions/SubscriptionConnections';
 import { Unknown } from '@/components/ui/Unknown';
 import { AppIcon } from '@renderer/lib/components/app-icon';
@@ -91,21 +91,12 @@ export function CustomModelDialog({ machine, connection, group = providerPresets
     current.map(route => route.id === id ? { ...route, ...patch } : route));
   const models = picked ?? (list.kind === 'listed' ? list.models : []);
   const catalogChoice = (id: string) => catalogChoices.has(id) ? catalogChoices.get(id) : connection?.models.find(model => model.id === id)?.modelsDevId;
-  const catalogRequest = JSON.stringify(accountProvider ? [] : [...new Set(models.flatMap(id => {
+  const catalogIds = [...new Set(models.slice(0, 200).flatMap(id => {
     const choice = catalogChoice(id);
     return choice ? [id, choice] : [id];
-  }))]);
-  const [catalogRead, setCatalogRead] = useState<{ request: string; machine: string | null; facts: Map<string, CustomModelEffortResult> }>();
-  useEffect(() => {
-    const ids: string[] = JSON.parse(catalogRequest);
-    if (!ids.length) return;
-    let canceled = false;
-    void readEffortCatalog(machine, ids).then(facts => {
-      if (!canceled) setCatalogRead({ request: catalogRequest, machine, facts });
-    });
-    return () => { canceled = true; };
-  }, [catalogRequest, machine]);
-  const catalogFacts = catalogRead?.request === catalogRequest && catalogRead.machine === machine ? catalogRead.facts : undefined;
+  }))];
+  const catalogRead = useReplica(customModelEffortCatalog, !accountProvider && catalogIds.length ? [machine, catalogIds] : null);
+  const catalogFacts = catalogRead.state === 'unknown' ? undefined : new Map(valueOf(catalogRead)?.map(({ id, result }) => [id, result] as const));
   const keyProblem = list.kind !== 'unlisted' || list.reason === 'no-list' ? ''
     : connection?.keySaved && !typedKey && list.reason === 'unauthorized' ? translate('customModels.heldKeyRefused')
       : translate(connectionProbeMessageKey(list.reason));
@@ -227,7 +218,7 @@ export function CustomModelDialog({ machine, connection, group = providerPresets
             disabled={!source || list.kind === 'reading' || !!busy} onClick={() => setModelListRefresh(current => current + 1)}>
             {translate('customModels.readModels')}
           </Button>}
-          {catalogFacts && models.map(id => <CustomModelEffortStatus key={id} id={id} machine={machine}
+          {catalogFacts && models.slice(0, 200).map(id => <CustomModelEffortStatus key={id} id={id} machine={machine}
             direct={catalogFacts.get(id)} choice={catalogChoice(id)} resolved={catalogFacts.get(catalogChoice(id) ?? '')}
             onChoice={choice => setCatalogChoices(current => new Map(current).set(id, choice))} />)}
           <fieldset className="flex min-w-0 flex-col gap-2">
@@ -294,35 +285,26 @@ export function CustomModelDialog({ machine, connection, group = providerPresets
   </Dialog>;
 }
 
-async function readEffortCatalog(machine: string | null, ids: string[]): Promise<Map<string, CustomModelEffortResult>> {
-  try {
-    const client = await getAgentConfigRuntimeClient(machine);
-    const reading = await client.lookupCustomModelEfforts({ ids });
-    if (reading.success) return new Map(reading.data.map(({ id, result }) => [id, result]));
-  } catch {
-    // An older or disconnected device cannot look up models.dev yet.
-  }
-  return new Map();
-}
-
 function CustomModelEffortStatus({ id, machine, direct, choice, resolved, onChoice }: {
   id: string; machine: string | null; direct?: CustomModelEffortResult; choice?: string;
   resolved?: CustomModelEffortResult; onChoice: (id?: string) => void;
 }) {
   const { translate } = useSessionMessages();
   const [entry, setEntry] = useState('');
-  const [checked, setChecked] = useState<{ id: string; result: CustomModelEffortResult }>();
+  const [requested, setRequested] = useState('');
+  const wanted = entry.trim();
+  const checking = requested !== '' && requested === wanted;
+  const reading = useReplica(customModelEffortCatalog, checking ? [machine, [requested]] : null);
+  const checkResult = checking && reading.state !== 'unknown' ? valueOf(reading)?.find(item => item.id === wanted)?.result ?? { kind: 'unavailable' as const } : undefined;
   if (direct?.kind === 'found') return null;
   const result = resolved ?? direct;
   if (result?.kind === 'found') return <div className="flex items-center justify-between gap-2 text-sm">
     <span className="min-w-0 break-words">{id} → {result.catalogId}</span>
     <Button type="button" variant="ghost" size="sm" onClick={() => onChoice()}>{translate('customModels.clearCatalogMatch')}</Button>
   </div>;
-  const wanted = entry.trim();
   const choices = direct?.kind === 'ambiguous' ? direct.candidates : [];
-  const checkResult = checked?.id === wanted ? checked.result : undefined;
   const status = result?.kind === 'not-found' ? 'customModels.catalogMissing' : result?.kind === 'ambiguous' ? 'customModels.catalogChoose' : 'customModels.catalogUnavailable';
-  return <div className="flex min-w-0 flex-col gap-1 rounded-md border p-2 text-sm" data-testid="custom-model-effort-status">
+  return <div className="flex min-w-0 flex-col gap-1 text-sm" data-testid="custom-model-effort-status">
     <p className="break-words"><span className="font-medium">{id}</span> <span className="text-foreground-muted">{translate(status)}</span></p>
     {choices.length > 0 && <div className="flex flex-wrap gap-1">
       {choices.map(({ catalogId }) => <Button key={catalogId} type="button" size="sm" variant="outline" onClick={() => onChoice(catalogId)}>{catalogId}</Button>)}
@@ -331,9 +313,9 @@ function CustomModelEffortStatus({ id, machine, direct, choice, resolved, onChoi
       <Input aria-label={translate('customModels.catalogId')} placeholder="provider/model" value={entry} maxLength={200} onChange={event => setEntry(event.target.value)} />
       {checkResult?.kind === 'found'
         ? <Button type="button" size="sm" variant="outline" onClick={() => { onChoice(checkResult.catalogId); setEntry(''); }}>{translate('customModels.useCatalogMatch', { id: checkResult.catalogId })}</Button>
-        : <Button type="button" size="sm" variant="outline" disabled={!wanted.includes('/')} onClick={async () => {
-          const result = (await readEffortCatalog(machine, [wanted])).get(wanted) ?? { kind: 'unavailable' as const };
-          setChecked({ id: wanted, result });
+        : <Button type="button" size="sm" variant="outline" disabled={!wanted.includes('/') || checking && reading.state === 'unknown'} onClick={() => {
+          if (checking) void customModelEffortCatalog.refresh(machine, [wanted]);
+          else setRequested(wanted);
         }}>{translate('customModels.lookupCatalogId')}</Button>}
     </div>}
     {checkResult && checkResult.kind !== 'found' && <p className="text-foreground-muted">{translate(checkResult.kind === 'unavailable' ? 'customModels.catalogUnavailable' : 'customModels.catalogMissing')}</p>}

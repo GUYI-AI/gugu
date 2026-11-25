@@ -76,6 +76,7 @@ export async function lookupCustomModelEfforts(ids: readonly string[]) {
 }
 
 async function enrichModelEntries(entries: readonly CustomModelEntry[]): Promise<CustomModelEntry[]> {
+  if (!getCustomModelEffortResolver()) return [...entries];
   const facts = await modelEffortFacts(entries.flatMap(({ id, modelsDevId }) => modelsDevId ? [id, modelsDevId] : [id]));
   return entries.map((entry) => {
     const direct = facts.get(entry.id) ?? unavailable;
@@ -438,9 +439,7 @@ export async function selectedCustomModelEndpoint(providerId: string, ref: Custo
   return (await readSelectedCustomModel(providerId, ref, 'new')).endpoint.baseUrl;
 }
 
-export async function customModelArmedEffort(providerId: string, ref: CustomModelRef | undefined, effort: string | undefined) {
-  if (!effort) return undefined;
-  if (!ref) return effort;
+export async function customModelArmedEffort(providerId: string, ref: CustomModelRef, effort: string) {
   if (!ref.modelId) return undefined;
   const row = await registry.getAccount(namespace, ref.connectionId);
   const entry = row?.meta?.customModel?.models.find(({ id }) => id === ref.modelId) ?? { id: ref.modelId };
