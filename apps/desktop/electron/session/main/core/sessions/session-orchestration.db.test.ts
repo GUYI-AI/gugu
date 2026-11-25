@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => ({
   stopSession: vi.fn(),
   /** session-life (owner of ACP sessions): stops and archives are interrupts carrying a reason; restore hands it back. */
   lifeInterrupt: vi.fn(async (_sessionId: string, _event: { k: 'interrupt'; reason: string }): Promise<void> => undefined),
-  lifeRestore: vi.fn((_sessionId: string): void => undefined),
+  lifeRestore: vi.fn(async (_sessionId: string, commit: (commitLife: () => void) => void) => commit(() => {})),
   /** Creation turns are admitted as pending rows (enqueue); an empty creation queue is an explicit start. */
   lifeEnqueue: vi.fn((_input: { sessionId: string; messageId: string; text: string; kind: string; turn?: unknown }) => ({ seq: 1, state: 'queued' })),
   lifeStart: vi.fn((_sessionId: string, _origin?: string): void => undefined),
@@ -265,6 +265,7 @@ describe('session orchestration', () => {
     mocks.lifeInterrupt.mockReset();
     mocks.lifeInterrupt.mockResolvedValue(undefined);
     mocks.lifeRestore.mockReset();
+    mocks.lifeRestore.mockImplementation(async (_id, commit) => commit(() => {}));
     mocks.lifeEnqueue.mockClear();
     // The real durable queue: what a start would deliver, one row per message id.
     mocks.lifeEnqueue.mockImplementation((input) => enqueuePending(input as Parameters<typeof enqueuePending>[0]));
@@ -408,7 +409,7 @@ describe('session orchestration', () => {
     // The compensation archives through session-life (never a direct runtime stop) and Restore hands it back dormant.
     expect(mocks.stopSession).not.toHaveBeenCalled();
     expect(interruptedFor('archive')).toEqual([sessionId]);
-    expect(mocks.lifeRestore).toHaveBeenCalledExactlyOnceWith(sessionId);
+    expect(mocks.lifeRestore).toHaveBeenCalledExactlyOnceWith(sessionId, expect.any(Function));
     // A child cancelled before its start never had its creation turn admitted, and Restore does not start it.
     expect(mocks.lifeEnqueue).not.toHaveBeenCalled();
     expect(mocks.lifeStart).not.toHaveBeenCalled();
