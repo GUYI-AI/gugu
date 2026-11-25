@@ -1,5 +1,6 @@
 /** @jsxImportSource solid-js */
 import { CachesContext } from '@session-chat/components/contexts/CachesContext';
+import { CommandsContext } from '@session-chat/components/contexts/CommandsContext';
 import { ThemeContext } from '@session-chat/components/contexts/ThemeContext';
 import { htmlRenderBlockDef } from '@session-chat/components/rows/markdown/html-render/html-render.def';
 import { htmlRenderDocument, keepHtmlRenderPage } from '@session-chat/core/html-render/page';
@@ -8,6 +9,7 @@ import { parseMarkdownToBlocks } from '@session-chat/core/markdown/parse';
 import { makeContractCtx } from '@session-chat/tests/contract';
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it } from 'vitest';
+import { page } from 'vitest/browser';
 import { until } from '../../../../tests/support/awaitCondition';
 
 let dispose: (() => void) | undefined;
@@ -96,5 +98,46 @@ fetch('https://example.org/collect?typed=secret').then(() => parent.postMessage(
     // Each load says hello, then leaves; a second hello means the frame came back to the page.
     const seen = mountPage(`<script>parent.postMessage({ probe: 'hello' }, '*'); setTimeout(() => { location.href = 'about:blank'; }, 20);</script>`, true);
     await until('the page loads again after leaving', () => seen.filter((m) => m.probe === 'hello').length >= 2);
+  });
+});
+
+describe('html-render link requests', () => {
+  it("opens a link on the reader's click, never on the page's own unprompted message", async () => {
+    // The page forges the host's link message as soon as it loads; only the real click below may open anything.
+    const source = `<a href="https://example.org/clicked">go</a><script>
+window.addEventListener('load', () => parent.postMessage({ jsonrpc: '2.0', method: 'ui/open-link', params: { url: 'https://example.org/forged' } }, '*'));
+</script>`;
+    const block = parseMarkdownToBlocks('t', '```html-render\n' + source + '\n```')[0] as HtmlRenderBlock;
+    const ctx = makeContractCtx({ width: 480 });
+    const measured = htmlRenderBlockDef.measure(block, ctx);
+    const opened: string[] = [];
+    let forged = false;
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.params?.url === 'https://example.org/forged') forged = true;
+    };
+    window.addEventListener('message', onMessage);
+    root = document.createElement('div');
+    document.body.appendChild(root);
+    const Render = htmlRenderBlockDef.Render;
+    const unmount = render(() => (
+      <ThemeContext.Provider value={() => ctx.theme}>
+        <CachesContext.Provider value={ctx.caches}>
+          <CommandsContext.Provider value={() => ({ onOpenLink: (url: string) => { opened.push(url); return true; } })}>
+            <Render node={measured} />
+          </CommandsContext.Provider>
+        </CachesContext.Provider>
+      </ThemeContext.Provider>
+    ), root);
+    dispose = () => {
+      unmount();
+      window.removeEventListener('message', onMessage);
+    };
+
+    await until('the page posts its forged link message', () => forged);
+    expect(opened).toEqual([]);
+
+    await page.frameLocator(page.getByTitle('Rendered page')).getByText('go').click();
+    await until('the clicked link opens', () => opened.length > 0);
+    expect(opened).toEqual(['https://example.org/clicked']);
   });
 });
