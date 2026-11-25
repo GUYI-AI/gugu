@@ -17,6 +17,8 @@ import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 const mocks = vi.hoisted(() => ({
   db: undefined as AppDb | undefined,
   emit: vi.fn(),
+  /** `sessionPlatformModel`: null = own billing route, undefined = unknown, a row = platform. */
+  platform: null as { modelId: string } | null | undefined,
 }));
 
 vi.mock('@main/db/client', () => ({
@@ -26,7 +28,7 @@ vi.mock('@main/db/client', () => ({
   },
 }));
 vi.mock('@main/lib/events', () => ({ events: { emit: mocks.emit } }));
-vi.mock('./platform-model-selection', () => ({ sessionPlatformModel: async () => null }));
+vi.mock('./platform-model-selection', () => ({ sessionPlatformModel: async () => mocks.platform }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 const { recordLiveSessionSetting } = await import('./record-live-session-setting');
@@ -43,6 +45,7 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
     fixture = await openFixture('empty');
     mocks.db = fixture.db;
     mocks.emit.mockReset();
+    mocks.platform = null;
     fixture.sqlite.exec(`
       INSERT INTO projects (id, name, path) VALUES ('project-1', 'Project', '/repo');
       INSERT INTO sessions (id, project_id, provider, runtime, config)
@@ -113,6 +116,26 @@ describe('活会话设置落库:改完 → 记录 → 重开读到新值', () =>
       recordLiveSessionSetting(CONV, { dimension: 'effort', value: 'low' }),
     ]);
     expect(await reopened()).toMatchObject({ fastMode: true, effort: 'low', model: 'opus' });
+    await recordLiveSessionSetting(CONV, { dimension: 'fast', value: false });
+    expect((await reopened()).fastMode).toBe(false);
+  });
+
+  // #3841 a platform tier rides on the access ticket: the live record never flips it in place, the reload does.
+  it('refuses a live Fast change on a platform session in both directions and records nothing', async () => {
+    mocks.platform = { modelId: 'gpt-6-luna' };
+    for (const value of [true, false]) {
+      await expect(recordLiveSessionSetting(CONV, { dimension: 'fast', value }))
+        .rejects.toThrow(/new access ticket/);
+    }
+    expect((await reopened()).fastMode).toBeUndefined();
+    expect(mocks.emit).not.toHaveBeenCalled();
+  });
+
+  it('refuses enabling Fast while the billing route is unknown, but still records turning it off', async () => {
+    mocks.platform = undefined;
+    await expect(recordLiveSessionSetting(CONV, { dimension: 'fast', value: true }))
+      .rejects.toThrow(/known session billing route/);
+    expect((await reopened()).fastMode).toBeUndefined();
     await recordLiveSessionSetting(CONV, { dimension: 'fast', value: false });
     expect((await reopened()).fastMode).toBe(false);
   });
