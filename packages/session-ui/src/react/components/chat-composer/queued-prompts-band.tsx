@@ -1,7 +1,7 @@
 import { Button } from '@session-ui/react/primitives/button';
 import { DropdownMenu } from '@session-ui/react/primitives/dropdown-menu';
 import { cx } from '@session-ui/styles/utilities/cx';
-import { ArrowRight, Ellipsis, ListTree, Pencil, X } from '../../../icons'
+import { ArrowRight, Ellipsis, Pencil, X } from '../../../icons'
 import { GripVertical } from '../../../icons'
 import * as React from 'react';
 import * as styles from './queued-prompts-band.css';
@@ -119,8 +119,9 @@ export function QueuedPromptsBand({
               }
               onDrop={(event) => handleDrop(event, prompt.id)}
             >
+              {/* The row says it is waiting in words, not with a list glyph: read alone, 原文 + 现在插入 looks sent (UX 复审 B5-F05). */}
               <span className={styles.leadingSlot}>
-                <ListTree className={styles.queueIcon} aria-hidden />
+                <span className={styles.queueLabel}>{translate('composer.queuedLabel')}</span>
                 {!isEditing && !prompt.locked && ids.length > 1 && (
                   <button
                     type="button"

@@ -27,7 +27,7 @@ export const list = style({
 
 export const row = style({
   display: 'grid',
-  gridTemplateColumns: '1rem minmax(0, 1fr) auto',
+  gridTemplateColumns: 'auto minmax(0, 1fr) auto',
   alignItems: 'center',
   gap: '0.5rem',
   minHeight: '2rem',
@@ -41,9 +41,10 @@ export const row = style({
   },
 });
 
-export const leadingSlot = style({ position: 'relative', width: '1rem', height: '1rem' });
-export const queueIcon = style({
-  width: '1rem', height: '1rem', color: vars.foregroundMuted,
+// The status word 待发送 / Queued; with more than one entry the drag grip covers it on hover, as it covered the glyph.
+export const leadingSlot = style({ position: 'relative', display: 'flex', alignItems: 'center', height: '1.25rem' });
+export const queueLabel = style({
+  color: vars.foregroundMuted, whiteSpace: 'nowrap', lineHeight: '1.25rem',
 });
 
 export const dragHandle = style({

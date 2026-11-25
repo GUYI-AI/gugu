@@ -73,6 +73,25 @@ it('presents a compact queue above a fully rounded composer with separate steer/
   expect(getComputedStyle(host!.querySelector('[data-slot="composer-bar"]')!).borderTopLeftRadius).toBe('24px');
 });
 
+// UX 复审 B5-F05: a queued row read alone (原文 + 现在插入) looked already sent; it now says 待发送 before the text.
+it.each([
+  { locale: 'zh-CN', label: '待发送' },
+  { locale: 'en-US', label: 'Queued' },
+])('says in words that each queued row is waiting, wide and narrow ($locale)', async ({ locale, label }) => {
+  for (const width of [640, 320]) {
+    const h = await mount(PROMPTS, width, locale);
+    for (const id of ['q1', 'q2']) {
+      const word = [...h.row(id).querySelectorAll<HTMLElement>('span')].find((el) => el.textContent === label);
+      expect(word, `${id} at ${width}px`).toBeDefined();
+      const box = word!.getBoundingClientRect();
+      const text = h.row(id).querySelector<HTMLElement>('button:not([draggable])')!.getBoundingClientRect();
+      expect(box.width, `${id} at ${width}px`).toBeGreaterThan(0);
+      expect(box.right, `${id} at ${width}px`).toBeLessThanOrEqual(text.left);
+    }
+    root?.unmount(); host?.remove(); root = undefined; host = undefined;
+  }
+});
+
 it('edits from the real menu, saving the original message without changing queue order', async () => {
   const h = await mount();
   await page.getByRole('button', { name: '第 1 条排队消息的操作' }).click();
