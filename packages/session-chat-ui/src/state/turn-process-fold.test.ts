@@ -21,6 +21,7 @@ const SEGMENTERS: Record<string, ItemSegmenter> = Object.fromEntries(
     'thinking',
     'execute',
     'execute-tool-call',
+    'mcp-tool-call',
     'subagent-done-tool-call',
     'turn-outcome',
     'turn-process',
@@ -1005,6 +1006,20 @@ describe('agent conversation segment process', () => {
       { stepCount: 1, label: 'Ran 1 shell command' }, { stepCount: 1, label: 'Ran 1 shell command' },
     ]);
     expect(ids(units).filter(id => ['p1', 'mid', 'p2', 'final'].includes(id))).toEqual(['p1', 'mid', 'p2', 'final']);
+  });
+  it.each([true, false])('folds MCP with commands and thinking in a single summary (live: %s)', active => {
+    const details = (id: string, name: string): ChatItem => ({
+      kind: 'mcp-tool-call', id, seq: 0, toolCallId: id, status: 'done',
+      title: name, server: 'gugu', tool: name,
+    });
+    const record = turn('mcp-run', [
+      user('u'), bash('first'), details('session', 'session_get'), thinking('thought'),
+      details('catalog', 'catalog_list'), bash('last'), ...(active ? [] : [reply('answer')]),
+    ], active ? undefined : DONE);
+    const runs = conversation(record, active, !active).filter(unit => unit.kind === 'tool-run');
+    expect(runs.map(unit => unit.data)).toMatchObject([
+      { stepCount: 5, label: 'Thought 1 time, ran 2 shell commands, called 2 MCP tools' },
+    ]);
   });
   it('keeps the failure outcome visible beside the same readable reply/process structure', () => {
     const record = completed(); record.outcome = { kind: 'error', reason: 'prompt_failed' };
