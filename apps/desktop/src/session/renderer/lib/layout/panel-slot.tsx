@@ -34,7 +34,7 @@ export function PanelSlot({
     // Became the fill or stopped being it: what the other role's track wrote goes, the new track writes its own.
     if (role.current !== fill && place && window && content) {
       role.current = fill;
-      for (const { style } of [place, window, content]) style.width = style.height = style.left = style.top = style.opacity = style.maskImage = '';
+      for (const { style } of [place, window, content]) style.width = style.height = style.left = style.top = style.opacity = style.maskImage = style.transform = '';
       window.inert = false;
     }
     if (fill) track.attachFill(place ?? null, content ?? null);
