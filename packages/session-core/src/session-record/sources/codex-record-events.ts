@@ -1,3 +1,4 @@
+import { watch as watchFile, type FSWatcher } from 'node:fs';
 import { open, stat } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { DirectoryWatch } from '../../services/fs-watch/impl/directory-watch';
@@ -10,7 +11,7 @@ export type RecordDirectoryWatch = (path: string, changed: (events?: readonly Wa
 const watchDirectory: RecordDirectoryWatch = (path, changed, failed) =>
   new DirectoryWatch(path, changed, () => changed(), (_context, error) => failed(error), false);
 
-/** A bounded set of shallow watches, never a recursive watch of an agent home or a polling fallback. */
+/** Shallow discovery watches and one watch on the active rollout. */
 export class CodexRecordEvents {
   private readonly handles = new Map<string, { ino: number; handle: Handle }>();
   private readonly targets = new Set<string>();
@@ -19,6 +20,7 @@ export class CodexRecordEvents {
   private running: Promise<void> | null = null;
   private consume: ((locateAgain: boolean) => Promise<void>) | null = null;
   private file: string | null = null;
+  private rollout: { path: string; dev: number; ino: number; watcher: FSWatcher } | null = null;
   private locateAgain = false;
 
   constructor(private readonly locator: SessionRecordLocator, private readonly failed: (error: unknown) => void,
@@ -57,16 +59,21 @@ export class CodexRecordEvents {
     this.stopped = true;
     for (const { handle } of this.handles.values()) void handle.dispose();
     this.handles.clear();
+    this.closeRollout();
   }
 
   private changed = (events?: readonly WatchEvent[]): void => {
     const relevant = events?.filter(event => event.path.includes(this.locator.providerSessionId)
       || [...this.targets].some(target => target === event.path || target.startsWith(event.path + sep)));
     if (relevant && !relevant.length) return;
-    if (!relevant || relevant.some(event => event.kind !== 'update' || event.path !== this.file)) this.locateAgain = true;
+    this.enqueue(!relevant || relevant.some(event => event.kind !== 'update' || event.path !== this.file));
+  };
+
+  private enqueue(locateAgain: boolean): void {
+    this.locateAgain ||= locateAgain;
     this.dirty = true;
     this.drain();
-  };
+  }
 
   private drain(): void {
     if (this.stopped || !this.consume || this.running || !this.dirty) return;
@@ -81,6 +88,43 @@ export class CodexRecordEvents {
     })().catch(error => { if (!this.stopped) { this.stop(); this.failed(error); } })
       .finally(() => { if (this.running === run) this.running = null; this.drain(); });
     this.running = run;
+  }
+
+  private closeRollout(): void {
+    const rollout = this.rollout;
+    this.rollout = null;
+    rollout?.watcher.close();
+  }
+
+  private async reconcileRollout(): Promise<void> {
+    const path = this.file;
+    if (this.stopped || path === null) return;
+    try {
+      const { dev, ino } = await stat(path);
+      if (this.stopped || this.file !== path) return;
+      const current = this.rollout;
+      if (current?.path === path && current.dev === dev && current.ino === ino) return;
+
+      // macOS directory notifications can defer changes until the writer closes its file.
+      const watcher = watchFile(path, { persistent: false }, (event) => {
+        if (this.rollout?.watcher === watcher) this.enqueue(event === 'rename');
+      });
+      this.closeRollout();
+      this.rollout = { path, dev, ino, watcher };
+      watcher.on('error', (error) => {
+        if (this.rollout?.watcher !== watcher) return;
+        this.stop();
+        this.failed(error);
+      });
+      watcher.on('close', () => {
+        if (this.rollout?.watcher !== watcher) return;
+        this.rollout = null;
+        this.enqueue(true);
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      if (this.file === path) this.closeRollout(); // The directory watches still follow a replacement.
+    }
   }
 
   private async reconcile(): Promise<void> {
@@ -114,6 +158,7 @@ export class CodexRecordEvents {
       this.handles.delete(path);
       await handle.dispose();
     }
+    await this.reconcileRollout();
   }
 }
 
