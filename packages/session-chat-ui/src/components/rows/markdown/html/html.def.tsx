@@ -22,6 +22,7 @@ import { paintHighlight } from '@session-chat/core/highlight/highlighter';
 import type { Measured, MeasureCtx } from '@session-chat/core/define';
 import type { HtmlLeafLayout } from '@session-chat/core/layout/layout-types';
 import type { HtmlBlock } from '@session-chat/core/markdown/document';
+import { hookLinkIconFallback } from '@gugu/session-shared/markdown/dialect';
 import { createEffect, createMemo, on, onCleanup, untrack } from 'solid-js';
 import { render } from 'solid-js/web';
 import { applyBodyType, htmlBlockClass, measureHtml } from './layout';
@@ -48,8 +49,31 @@ function hydrateMentionIcons(root: HTMLElement): () => void {
   return () => disposers.forEach((dispose) => dispose());
 }
 
-/** Wraps the text past `from` characters in a fading span; returns the block's character count. */
-function fadeFreshText(root: HTMLElement, from: number): number {
+// ArcMD's answer stream (itself LobeHub Streamdown's char animation): each new letter is born a pace after the one
+// before it, the pace spreading a paint's letters over the time since the last paint, so the text keeps gliding in.
+// Faded a word at a time, each word born at its first letter's time: a span per letter breaks kerning at its edges and
+// moves glyphs by fractions of a pixel, while text is never shaped across a space.
+const FADE_MS = 180;
+const LETTER_PACE_MS = 18;
+const words = typeof Intl !== 'undefined' && 'Segmenter' in Intl ? new Intl.Segmenter(undefined, { granularity: 'word' }) : null;
+
+/** The text cut into words, each with the spaces and punctuation after it (only the first piece may lack a word). */
+function splitWords(text: string): string[] {
+  const pieces = words ? Array.from(words.segment(text), ({ segment, isWordLike }) => ({ segment, isWordLike: !!isWordLike })) : text.split(/(\s+)/).map((segment) => ({ segment, isWordLike: !!segment.trim() }));
+  const out: string[] = [];
+  for (const { segment, isWordLike } of pieces) {
+    if (!segment) continue;
+    if (out.length && !isWordLike) out[out.length - 1] += segment;
+    else out.push(segment);
+  }
+  return out;
+}
+
+/**
+ * Wraps each word past `from` characters in a fading span, each a pace per letter later than the one before (`gapMs`: the time
+ * since this block last painted); returns the block's character count. Opacity and delay only: no box moves.
+ */
+function fadeFreshText(root: HTMLElement, from: number, gapMs: number): number {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) =>
       node.parentElement?.closest('.katex, .gg-md-mention') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
@@ -60,14 +84,27 @@ function fadeFreshText(root: HTMLElement, from: number): number {
     texts.push({ node, start: offset });
     offset += node.data.length;
   }
-  for (const { node, start } of texts) {
-    if (start + node.data.length <= from) continue;
+  const freshTexts = texts.filter(({ node, start }) => start + node.data.length > from);
+  const freshCount = freshTexts.reduce((sum, { node, start }) => sum + node.data.length - Math.max(0, from - start), 0);
+  const gap = Math.min(160, Math.max(16, gapMs));
+  const pace = Math.min(LETTER_PACE_MS, Math.max(2, gap / Math.max(1, freshCount)));
+  let born = 0;
+  for (const { node, start } of freshTexts) {
     const fresh = from > start ? node.splitText(from - start) : node;
-    if (!fresh.data.trim()) continue;
-    const span = document.createElement('span');
-    span.className = 'gg-md-fresh';
-    fresh.replaceWith(span);
-    span.appendChild(fresh);
+    if (!fresh.data.trim()) {
+      born += fresh.data.length;
+      continue;
+    }
+    const spans = document.createDocumentFragment();
+    for (const word of splitWords(fresh.data)) {
+      const span = document.createElement('span');
+      span.className = 'gg-md-fresh';
+      span.style.setProperty('--gg-md-fresh-delay', `${Math.round(Math.min(born * pace, FADE_MS + gap))}ms`);
+      span.textContent = word;
+      spans.append(span);
+      born += word.length;
+    }
+    fresh.replaceWith(spans);
   }
   return offset;
 }
@@ -88,6 +125,8 @@ function HtmlBlockView(props: { node: Measured<HtmlLeafLayout> }) {
   const stream = useStreamAnimation();
   const theme = useTheme();
   let root!: HTMLDivElement;
+  let lastPaint = -Infinity;
+  hookLinkIconFallback();
 
   // The block stays mounted across re-measures of the same source block (domFromContentOnly): a width change only
   // moves and resizes its frame. What is painted follows the html (a collapsed block's is empty) and the theme's type.
@@ -102,7 +141,13 @@ function HtmlBlockView(props: { node: Measured<HtmlLeafLayout> }) {
         root.innerHTML = html;
         onCleanup(hydrateMentionIcons(root));
         highlightNestedCode(root, caches);
-        if (stream) stream.frontier.set(id, fadeFreshText(root, stream.frontier.get(id) ?? 0));
+        if (stream) {
+          const now = performance.now();
+          // A block first painted before the reply grew was already there when its row mounted: none of it fades.
+          const from = stream.frontier.get(id) ?? (stream.grewSinceMount() ? 0 : Infinity);
+          stream.frontier.set(id, fadeFreshText(root, from, now - lastPaint));
+          lastPaint = now;
+        }
       },
     ),
   );
