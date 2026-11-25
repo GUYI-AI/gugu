@@ -11,19 +11,22 @@ import { until } from '../../../../../../../../tests/support/awaitCondition';
 import { MarketDetailDialog } from './market-detail-dialog';
 import { MarketAgentDetail } from './market-detail-agent';
 
-const f = vi.hoisted(() => ({ install: vi.fn() }));
+const f = vi.hoisted(() => ({ install: vi.fn(), installed: false }));
 const codex = { id: 'codex', name: 'Codex', status: 'missing', reading: 'not-detected', command: 'codex',
   installOptions: [{ method: 'mise', command: 'mise install http:gugu-codex', target: { kind: 'mise' } }],
   capabilities: { hostDependency: { updates: { kind: 'none' }, uninstall: { kind: 'none' } } },
 } as unknown as AgentPayload;
+const installState = () => f.installed ? { status: 'available', reading: 'installed' } : { status: 'missing', reading: 'not-detected' };
+const current = () => ({ ...codex, ...installState() });
 
 // Only transport replies are fixtures; the dialog, InstallSection and the install store are real.
 vi.mock('@renderer/lib/ipc', async original => {
   const actual = await original<typeof import('@renderer/lib/ipc')>();
   const agents = {
-    listManagement: async () => [codex],
-    getManagement: async () => codex,
-    listAgentInstallationStatus: async () => [{ id: 'codex', status: 'missing', reading: 'not-detected', used: { kind: 'auto' }, installations: [] } as unknown as AgentInstallationStatus],
+    listManagement: async () => [current()],
+    getManagement: async () => current(),
+    listAgentInstallationStatus: async () => [{ id: 'codex', ...installState(), used: { kind: 'auto' }, installations: [] } as unknown as AgentInstallationStatus],
+    getSettings: async () => ({ value: { extraArgs: '--search' }, defaults: {}, overrides: {} }),
     getInstallSourceVersions: async () => ({ sources: [] }),
     install: f.install,
   };
@@ -36,6 +39,7 @@ let host: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   queryClient.clear();
+  f.installed = false;
   followRendererSession('SIGNED_IN', 'market-agent-fixture');
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
@@ -65,4 +69,17 @@ it('says why the install failed and lets the person retry from the dialog', asyn
   expect(retry).toBeDefined();
   await act(async () => retry!.click());
   await until('retry runs the same installation', () => f.install.mock.calls.length === 2);
+});
+
+// #3287 moved installed agents into this dialog and left 高级 behind: extra arguments and env could no longer be edited.
+it('keeps the extra arguments reachable for an installed agent', async () => {
+  f.installed = true;
+  await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
+    <MarketDetailDialog onClose={() => {}}><MarketAgentDetail agentId='codex' onCreate={() => {}} /></MarketDetailDialog>
+  </SessionLocalizationProvider></QueryClientProvider>));
+  const trigger = () => document.querySelector<HTMLButtonElement>('[data-testid=agent-advanced-trigger]');
+  await until('the 高级 section is offered', () => !!trigger());
+  await act(async () => trigger()!.click());
+  await until('the extra arguments field opens', () => !!document.querySelector('#agent-extraArgs'));
+  expect(document.querySelector<HTMLInputElement>('#agent-extraArgs')!.value).toBe('--search');
 });

@@ -123,6 +123,7 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
           {terminalConfiguration && <AgentHomeRow providerId={agent.id} machine={host.remote?.deviceId ?? null} disabled={readOnly || busy} />}
           {installation.managedVersions}
         </SettingsGroup>}
+        {installed && installation.advanced}
       </MarketDetailCard>
       {confirmation}
     </>
