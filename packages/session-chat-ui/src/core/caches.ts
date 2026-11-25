@@ -215,9 +215,7 @@ export type ParseCaches = {
    * exists (not streaming / not yet parsed).
    */
   settledBlockCount(id: string): number;
-  /** Drop the cached blocks for one message (call after text is frozen). */
-  evictBlocks(id: string): void;
-  /** Drop all parse caches. Call when the ChatState disposes. */
+  /** Drop all parse caches. Call when the ChatState disposes or its transcript is released. */
   clearAll(): void;
 };
 
@@ -417,11 +415,6 @@ export function createParseCaches(
 
     settledBlockCount(id) {
       return streamCache.get(id)?.counter ?? 0;
-    },
-
-    evictBlocks(id) {
-      blockCache.delete(id);
-      streamCache.delete(id);
     },
 
     clearAll() {

@@ -1226,6 +1226,8 @@ export class AcpChatStore {
     this._history?.close();
     const activeTurn = this.chatState.transcript.state.activeTurnSnapshot;
     this.chatState.transcript.history.seed([]);
+    // What was parsed from the transcript goes with it: kept, it held every opened session's parsed page until deletion.
+    this.chatState.parseCaches.clearAll();
     // seed 按约定会清掉 activeTurn;还在跑的那一轮留着 —— 它提交时旁听口要读它。
     if (activeTurn) this.chatState.transcript.activeTurn.set(activeTurn);
     // 回来时先是「加载中」,❌ 空会话的占位页。
