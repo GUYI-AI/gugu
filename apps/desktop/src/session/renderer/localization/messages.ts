@@ -13,6 +13,7 @@ import { enUSAgentStatusMessages, zhCNAgentStatusMessages } from './messages-age
 import { enUSResourceKindMessages, zhCNResourceKindMessages } from './messages-resource-kinds';
 import { enUSAppSettingsMessages, zhCNAppSettingsMessages } from './messages-app-settings';
 import { enUSThemeMessages, zhCNThemeMessages } from './messages-themes';
+import { enUSCommandMessages, zhCNCommandMessages } from './messages-commands';
 
 export const zhCNMarketAgentDescriptions: Readonly<Partial<Record<string, string>>> = {
   claude: '在终端中使用 Claude 修改、解释和重构代码',
@@ -2722,6 +2723,7 @@ export const enUSMessages = {
   ...enUSAppSettingsMessages,
   ...enUSSessionScheduleMessages,
   ...enUSThemeMessages,
+  ...enUSCommandMessages,
 } as const;
 
 export type SessionMessageKey = keyof typeof enUSMessages;
@@ -2749,4 +2751,5 @@ export const zhCNMessages: Record<SessionMessageKey, string> = {
   ...zhCNAppSettingsMessages,
   ...zhCNSessionScheduleMessages,
   ...zhCNThemeMessages,
+  ...zhCNCommandMessages,
 };
