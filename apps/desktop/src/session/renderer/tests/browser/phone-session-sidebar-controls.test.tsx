@@ -23,7 +23,7 @@ import { installOwnedAgentEntry } from '@/lib/ownedAgentConversation'
 import { APP_SHOW_SESSION_EVENT } from '@/session/shared/extensions/app-runtime-protocol'
 import { OPEN_LINK_TARGET, type LinkNavigation } from '@/lib/guguLinks'
 import type { SessionpageSessionSummary } from '@gugu/session-core/session-record/contract'
-import type { TopicSummary } from '@gugu/core/shared/types/chat'
+import type { ChatItem, TopicSummary } from '@gugu/core/shared/types/chat'
 import { chat, device, createReactHarness, renderWithAppProviders } from '../../../../../../../tests/support/testHarness'
 import { until } from '../../../../../../../tests/support/awaitCondition'
 import { revealPhoneControl } from '../../../../../../../tests/support/phoneControlTargets'
@@ -31,7 +31,7 @@ import '@/styles/tokens.css'
 import '@/mobile/phone-shell.css'
 import '@/mobile/phone-look.css'
 
-const actions = vi.hoisted(() => ({ pickModel: vi.fn(), send: vi.fn(), reloadTopics: vi.fn(), topics: null as TopicSummary[] | null, topicError: null as string | null }))
+const actions = vi.hoisted(() => ({ pickModel: vi.fn(), send: vi.fn(), reloadTopics: vi.fn(), pinChat: vi.fn<(chatId: string, pinned: boolean) => Promise<void>>().mockResolvedValue(undefined), topics: null as TopicSummary[] | null, topicError: null as string | null }))
 vi.mock('@/hooks/useTopics', async original => ({ ...(await original<object>()), useTopicsOfChat: () => ({ topics: actions.topics, loading: actions.topics === null && actions.topicError === null, error: actions.topicError, reload: actions.reloadTopics }) }))
 vi.mock('@/components/chat/useConversationOptions', () => ({ useConversationOptions: () => ({ props: {
   modelOptions: { glm: { name: '咕咕 GLM-5.3' }, luna: { name: '咕咕 GPT-6 Luna' } }, selectedModel: 'glm', onModelChange: actions.pickModel,
@@ -60,17 +60,17 @@ const Conversation = observer((props: {sessionId: string; entry: string | null})
   composerControls={(modelControl, model, skillDraft) => <PhoneSessionSidebarControls sidebar={sidebar} modelControl={modelControl} model={model} skillDraft={skillDraft} />}
  /></AgentWatchScreen>
 })
-async function mount(sessionId:string,entry:string|null,full=false,width=390,theme:'light'|'dark'='dark'){
+async function mount(sessionId:string,entry:string|null,full=false,width=390,theme:'light'|'dark'='dark', topicMemberships: ChatItem[] = []){
  followRendererSession('SIGNED_IN', 'owner')
  await page.viewport(width,844);document.documentElement.dataset.theme=theme;document.documentElement.setAttribute('data-phone-shell','');setLocalePreference('zh-CN')
- const chats=[chat({id:'room',kind:'group',name:'手机验收群'}),chat({id:'solo-chat',kind:'dm',peer_user_id:'solo-agent',name:'独立智能体'})]
+ const chats=[chat({id:'room',kind:'group',name:'手机验收群'}),chat({id:'solo-chat',kind:'dm',peer_user_id:'solo-agent',name:'独立智能体'}), ...topicMemberships]
  publishChatSummaries(chats);dispose=installOwnedAgentEntry({open:()=>false,owns:()=>true})
  publishDirectoryDevices([device('qa-device',[],{is_online:true})]);updateDeviceSessions('qa-device',{projects:[{id:'workspace',name:'Tasks',path:'',kind:'workspace'}],sessions,cached:false,loading:false,error:null})
  // The production full screen already supplies its body inset; only isolated controls need a fixture inset.
  harness=createReactHarness();Object.assign(harness.container.style,{position:'fixed',inset:'0',display:'flex',flexDirection:'column',justifyContent:'flex-end',padding:full?'0':'16px'})
- await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats},contacts:{contacts:[]}})
+ await renderWithAppProviders(harness,<LocalizationProvider><SessionUiTheme theme={theme}><>{full ? <Conversation sessionId={sessionId} entry={entry}/> : <><Controls sessionId={sessionId} entry={entry}/><PhoneComposerControlRow><span>输入消息</span></PhoneComposerControlRow></>}</></SessionUiTheme></LocalizationProvider>,{auth:{id:'owner'},chat:{chats,pinChat:actions.pinChat},contacts:{contacts:[]}})
 }
-afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.topics=null;actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
+afterEach(()=>{actions.pickModel.mockClear();actions.send.mockClear();actions.reloadTopics.mockClear();actions.pinChat.mockClear();actions.topics=null;actions.topicError=null;harness?.cleanup();dispose?.();removeDeviceSessions('qa-device');publishDirectoryDevices([]);document.documentElement.removeAttribute('data-phone-shell')})
 async function expectNavigationBottomSheet() {
  const panel=document.querySelector<HTMLElement>('[data-testid="phone-room-controls-sheet"]')!
  await Promise.all(panel.getAnimations().map(animation=>animation.finished))
@@ -97,7 +97,7 @@ it('a standalone Agent offers only its children and no Topics button',async()=>{
 it('an existing room task opens the Topics bottom sheet and dispatches the actual topic id',async()=>{
  const topic:TopicSummary={chat_id:'long-room-topic',name:'这是一个必须在菜单里完整显示而不是铺到输入框菜单栏里的话题名称',source_message_id:'topic-anchor',creator_user_id:'owner',last_message_at:null,message_count:3,participant_count:2,is_participant:true}
  actions.topics=[topic]
- await mount('room-task','chat:room',true)
+ await mount('room-task','chat:room',true,390,'dark',[chat({id:topic.chat_id,kind:'topic',source_chat_id:'room',name:topic.name,is_pinned:true})])
  await vi.waitFor(()=>{
   const button=harness!.container.querySelector<HTMLElement>('[data-testid="phone-room-topics"]')
   expect(button,harness!.container.innerHTML).not.toBeNull()
@@ -133,6 +133,9 @@ it('an existing room task opens the Topics bottom sheet and dispatches the actua
   await search.fill('没有这个话题')
   await expect.element(page.getByText('没有匹配结果', { exact:true })).toBeVisible()
   await search.fill('菜单里')
+  await page.getByRole('button',{name:`取消置顶话题 ${topic.name}`,exact:true}).click()
+  expect(actions.pinChat.mock.calls).toEqual([[topic.chat_id,false]])
+  expect(opened).toEqual([])
   await page.getByRole('button',{name:topic.name,exact:true}).click()
   await vi.waitFor(()=>expect(opened).toEqual([{kind:'chat',chatId:topic.chat_id}]),{timeout:10000})
   await until('topic navigation closes the panel',()=>document.querySelector('[data-testid="phone-room-controls-sheet"]')===null)
