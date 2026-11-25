@@ -11,7 +11,7 @@ const local = vi.hoisted(() => ({
   listAutomations: vi.fn(async () => [{ id: 'local-a' }]),
   createAutomation: vi.fn(),
   runAutomation: vi.fn(),
-  getLatestRun: vi.fn(async () => null),
+  listRunHeads: vi.fn(async () => ({})),
   listSessionSchedules: vi.fn(async () => [] as unknown[]),
 }));
 type Listener = { machine: string | null; name: string; cb: (data: unknown) => void };
@@ -23,7 +23,7 @@ const d22 = vi.hoisted(() => ({
   updateAutomationSettings: vi.fn(async () => ({ id: 'saved' })),
   runAutomation: vi.fn(async () => ({ id: 'saved' })),
   deleteAutomation: vi.fn(async () => ({ id: 'saved' })),
-  getLatestRun: vi.fn(async () => ({ id: 'r1', status: 'done' })),
+  listRunHeads: vi.fn(async () => ({ a1: { latest: { id: 'r1', status: 'done' }, next: null } })),
 }));
 
 vi.mock('@renderer/lib/ipc', () => ({
@@ -140,7 +140,7 @@ describe('已安排的读数:一台机器一份 replica,跟着页头选的那台
   it('d22 离线:一问都不发,读数是「不知道」(❌ 空列表)', async () => {
     await mount(createMachineAutomationsHost({ ...device, online: false }));
     expect(d22.listAutomations).not.toHaveBeenCalled();
-    expect(d22.getLatestRun).not.toHaveBeenCalled();
+    expect(d22.listRunHeads).not.toHaveBeenCalled();
     expect(seen.list).toEqual({ state: 'unknown' });
   });
 
@@ -162,13 +162,13 @@ describe('已安排的读数:一台机器一份 replica,跟着页头选的那台
 
   it('推来的运行直接放进「最近一次」,❌ 再问一遍;automation:changed 让列表重读', async () => {
     await mount(null);
-    const latestReads = local.getLatestRun.mock.calls.length;
+    const headReads = local.listRunHeads.mock.calls.length;
     await act(async () => {
       emit(null, 'automation:run-changed', { automationId: 'a1', run: { id: 'r9', status: 'starting_agent' } });
     });
     await settle();
     expect(seen.latest).toMatchObject({ state: 'value', value: { id: 'r9' } });
-    expect(local.getLatestRun.mock.calls.length).toBe(latestReads);
+    expect(local.listRunHeads.mock.calls.length).toBe(headReads);
     local.listAutomations.mockResolvedValueOnce([{ id: 'local-a' }, { id: 'local-b' }]);
     await act(async () => {
       emit(null, 'automation:changed', { automationId: 'local-b' });
