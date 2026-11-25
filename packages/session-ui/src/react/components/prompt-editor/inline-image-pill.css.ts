@@ -47,7 +47,7 @@ export const preview = style({
   borderRadius: '12px',
   border: `1px solid ${vars.border}`,
   backgroundColor: vars.surfaceElevated,
-  boxShadow: '0 8px 24px rgb(0 0 0 / 0.16)',
+  boxShadow: `0 8px 24px color-mix(in srgb, ${vars.foreground} 16%, transparent)`,
   pointerEvents: 'none',
 });
 
