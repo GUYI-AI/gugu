@@ -4,8 +4,9 @@ import { readShellSlots } from '@/lib/shellSlots'
 export const NOTIFICATION_TOGGLE_SLOT_PREFIX = 'notification-toggle:'
 export const NOTIFICATION_LIST_SLOT_PREFIX = 'notification-list:'
 
-/** The account shell renders the same global notifications into desktop and phone list slots. `tone` is the bell's: the
- * desktop sidebar's head draws it like the collapse and 会话历史 buttons beside it (#2548); the phone's stays beside its 「+」. */
+/** The account shell renders the bell into toggle slots and the global notifications beside it: in a popover on the desktop,
+ * into the phone's list slot. `tone` is the bell's: the desktop sidebar's foot draws it like the 会话历史 button beside it
+ * (#2548); the phone's stays beside its 「+」. */
 export function NotificationSlot({ part, active = true, tone }: { part: 'toggle' | 'list'; active?: boolean; tone?: 'strong' }) {
   const id = useId()
   const key = `${part === 'toggle' ? NOTIFICATION_TOGGLE_SLOT_PREFIX : NOTIFICATION_LIST_SLOT_PREFIX}${id}`
