@@ -502,7 +502,15 @@ export class SessionLife {
     this.reconciling.set(sessionId, operation);
   }
 
-  restore(sessionId: string): void { this.send(sessionId, { k: 'restore' }); }
+  /** Validate before the host unarchives; publish only after its transaction commits. */
+  async restore(sessionId: string, commit: (commitLife: () => void) => void = commitLife => commitLife()): Promise<void> {
+    const entry = this.entry(sessionId);
+    await this.drain(entry);
+    if (this.entries.get(sessionId) !== entry) throw new Error('Session lifecycle changed before restore');
+    this.apply(sessionId, entry, { k: 'restore' }, effects => {
+      commit(() => this.ports.store(sessionId).commit(sessionId, effects));
+    });
+  }
   turn(sessionId: string, busy: boolean): void {
     const entry = this.entries.get(sessionId);
     if (entry?.life.kind !== 'ready' || entry.life.have.channel.timing !== 'idle-only') return;
@@ -565,7 +573,8 @@ export class SessionLife {
     entry.events.send(event);
   }
 
-  private apply(sessionId: string, entry: Entry, event: Event): void {
+  private apply(sessionId: string, entry: Entry, event: Event,
+    persist: (effects: readonly Effect[]) => void = effects => this.ports.store(sessionId).commit(sessionId, effects)): void {
     const previous = entry.life;
     const oldRun = entry.run;
     const next: Gen = { auth: this.epoch as AuthEpoch, attempt: (entry.attempt + 1) as Attempt };
@@ -573,7 +582,7 @@ export class SessionLife {
     const committed = [...effects, ...effects.flatMap((effect): Effect[] => effect.e === 'dispatch'
       ? [{ e: 'write-receipt', seq: effect.seq, receipt: { state: 'dispatching', attempt: effect.gen.attempt } }] : [])];
     try {
-      this.ports.store(sessionId).commit(sessionId, committed);
+      persist(committed);
     } catch (error) {
       if (isSqliteBusy(error)) throw new UncommittedLifeEvent(error);
       throw error;
