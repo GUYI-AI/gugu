@@ -290,12 +290,14 @@ describe('a custom model on Pi: "Default" sends no thinking level', () => {
   });
 });
 
-describe('a custom model on OpenCode: "Default" declares no levels', () => {
-  const custom = (reasoningEffort?: string): SessionModelCapability => ({
+describe('custom model reasoning on OpenCode', () => {
+  const custom = (reasoningEffort?: string, efforts = ['high']): SessionModelCapability => ({
     dialect: 'opencode-config-content',
     model: 'deepseek-v4',
     platformProvider: { baseUrl: 'https://relay.example/v1', apiKey: 'sk-user' },
-    customModels: { connectionId: 'c1', entries: [{ id: 'deepseek-v4' }] },
+    customModels: { connectionId: 'c1', entries: [{
+      id: 'deepseek-v4', effortCatalog: { kind: 'found', catalogId: 'deepseek/deepseek-v4', name: 'DeepSeek V4', efforts },
+    }] },
     ...(reasoningEffort ? { reasoningEffort } : {}),
   } as SessionModelCapability);
   const entry = (model: SessionModelCapability) => {
@@ -306,6 +308,9 @@ describe('a custom model on OpenCode: "Default" declares no levels', () => {
 
   it('writes variants only once a level is chosen, since opencode would otherwise arm the first one', () => {
     expect(entry(custom()).models['deepseek-v4']).not.toHaveProperty('variants');
-    expect(entry(custom('high')).models['deepseek-v4']).toMatchObject({ options: { reasoningEffort: 'high' } });
+    expect(entry(custom('high')).models['deepseek-v4']).toEqual({
+      options: { reasoningEffort: 'high' }, variants: { high: { reasoningEffort: 'high' } },
+    });
+    expect(entry(custom('high', [])).models['deepseek-v4']).not.toHaveProperty('variants');
   });
 });
