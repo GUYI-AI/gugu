@@ -278,7 +278,7 @@ const ComposerForStore = observer(function ComposerForStore({
   /** 这条会话正在用的咕咕模型要开会员了(#7056):报给面板,由它挂那一行条件。null = 没有。 */
   onMembershipLockChange: (lock: { modelName: string } | null) => void;
   /** 点开一枚附件 chip 看里面是什么(#5269)。图片看图,文本看内容。 */
-  onViewAttachment: (att: ComposerAttachment) => void;
+  onViewAttachment: (att: ComposerAttachment, cell: HTMLElement) => void;
   /** Keep a newly sent prompt or stop result visible in the transcript. */
   onScrollToBottom?: () => void;
 }) {
@@ -2047,8 +2047,8 @@ export const AcpChatPanel = observer(function AcpChatPanel({
   }, []);
 
   /** 输入框里点开一枚 chip:图片进看图查看器,文本给 `text` —— 由 chip 手上有什么决定(#5269)。 */
-  const handleAttachmentView = useCallback((att: ComposerAttachment) => {
-    if (openComposerImage(att)) return;
+  const handleAttachmentView = useCallback((att: ComposerAttachment, cell: HTMLElement) => {
+    if (openComposerImage(att, cell)) return;
     setViewer({
       alt: att.name,
       text: att.previewText,

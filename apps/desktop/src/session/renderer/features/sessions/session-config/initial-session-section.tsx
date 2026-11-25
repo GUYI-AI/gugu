@@ -1812,8 +1812,8 @@ export function InitialSessionField({
           onDataDropped={onDataDropped}
           attachments={state.attachments}
           onAttachmentsChange={enableAttachments ? state.setAttachments : undefined}
-          onViewAttachment={(att) => {
-            if (!openComposerImage(att)) setAttachmentViewer(att);
+          onViewAttachment={(att, cell) => {
+            if (!openComposerImage(att, cell)) setAttachmentViewer(att);
           }}
           toolbarExtra={toolbarExtra}
           className={textareaClassName}

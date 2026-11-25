@@ -362,7 +362,7 @@ export interface ChatComposerProps {
    * 用户点了附件条上的一枚 chip —— 宿主拿它开预览对话框(#5269)。
    * 只有手上真有可看内容的 chip 才点得开(`attachmentPreviewKind`),所以宿主这里不必再判类型。
    */
-  onViewAttachment?: (att: ComposerAttachment) => void;
+  onViewAttachment?: (att: ComposerAttachment, cell: HTMLElement) => void;
   /** 点了失败 chip 上的「重试」(只对 `retryable` 的 chip 出现)。 */
   onRetryAttachment?: (id: string) => void;
 
