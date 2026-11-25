@@ -345,7 +345,12 @@ function AttachmentChip(props: { attachment: ChatAttachment; itemId: string }) {
       )}
       onClick={(e) => {
         e.stopPropagation();
-        if (props.attachment.href) { commands().onOpenLink?.(props.attachment.href); return; }
+        if (props.attachment.href) {
+          const picture = isImage() ? e.currentTarget.querySelector('img') : null;
+          if (picture) commands().onDrawnPictureLink?.(props.attachment.href, picture);
+          commands().onOpenLink?.(props.attachment.href);
+          return;
+        }
         commands().onViewAttachment?.({
           attachment: { ...props.attachment, ...(dataUrl() ? { dataUrl: dataUrl() } : {}) },
           itemId: props.itemId,

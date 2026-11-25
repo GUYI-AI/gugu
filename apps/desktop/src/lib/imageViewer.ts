@@ -55,6 +55,31 @@ export function registerFullImage(thumb: HTMLImageElement, load: () => Promise<s
   }
 }
 
+/**
+ * The picture a click already drew, by the file it shows (a task message's thumbnail, whose click follows the file's link):
+ * that file's next opening starts from it as a chat message's thumbnail does (`openImageFromThumb`) — its pixels and box
+ * now, the original after — instead of reading the bytes again with nothing to open from. A sent file's link names its
+ * message; the message names the file (`drawnPictureIsOf`).
+ */
+type DrawnOf = { itemId: string; version?: number } | { messageId: string }
+type Drawn = { picture: HTMLImageElement; size?: Promise<Size | null> }
+let drawnPicture: { of: DrawnOf } & Drawn | null = null
+/** `size`: the file record's, asked for as the click is made, so the opening does not wait for it after the link. */
+export function noteDrawnPicture(of: DrawnOf, picture: HTMLImageElement, size?: Promise<Size | null>): void {
+  drawnPicture = { of, picture, ...(size ? { size } : {}) }
+}
+export function drawnPictureIsOf(messageId: string, itemId: string, version: number): void {
+  if (drawnPicture && 'messageId' in drawnPicture.of && drawnPicture.of.messageId === messageId) drawnPicture.of = { itemId, version }
+}
+export function takeDrawnPicture(itemId: string, version: number | undefined): Drawn | null {
+  const noted = drawnPicture
+  if (!noted || 'messageId' in noted.of || noted.of.itemId !== itemId) return null
+  if (noted.of.version !== undefined && version !== undefined && noted.of.version !== version) return null
+  drawnPicture = null
+  const { picture, size } = noted
+  return picture.isConnected && picture.complete && picture.naturalWidth > 0 ? { picture, ...(size ? { size } : {}) } : null
+}
+
 export interface Size {
   width: number
   height: number

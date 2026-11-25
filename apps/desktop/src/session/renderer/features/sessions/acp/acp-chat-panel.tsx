@@ -32,7 +32,7 @@ import { useSessionMessageQuotes } from './use-session-message-quotes';
 import { useSessionPromptEditor } from './use-session-prompt-editor';
 import { continueSessionTurn } from './continue-session-turn';
 import type { TurnFileRef } from '@gugu/session-core/session-record/contract';
-import { followConversationLink } from '@/lib/followConversationLink';
+import { followConversationLink, noteDrawnPictureLink } from '@/lib/followConversationLink';
 import { openMessageSender } from '@/lib/openMessageSender';
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink';
 import {
@@ -2108,6 +2108,7 @@ export const AcpChatPanel = observer(function AcpChatPanel({
       onOpenSender: openMessageSender,
       classifyLink: classifyFileLink,
       onOpenLink: followConversationLink,
+      onDrawnPictureLink: noteDrawnPictureLink,
       // transcript 自己那颗停止按钮（用户消息卡右下角）一直**没有**接过宿主 ——
       // `commands().onStop?.()` 在 `?.` 上整条短路，按下去一个字节都不发（#3498 查出来的，
       // 与 #3500 同形）。composer 上那颗是另一条路，它一直是通的，于是这颗死按钮
