@@ -275,7 +275,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
   onInlineImagesRemovedRef.current = onInlineImagesRemoved;
   const onViewInlineImageRef = useRef(onViewInlineImage);
   onViewInlineImageRef.current = onViewInlineImage;
-  const inlineImage = useMemo(() => InlineImage.configure({ onView: (id: string) => onViewInlineImageRef.current?.(id) }), []);
+  const inlineImage = useMemo(() => InlineImage.configure({ onView: (id: string, cell: HTMLElement) => onViewInlineImageRef.current?.(id, cell) }), []);
   const mentionProviderRef = useRef(mentionProvider);
   mentionProviderRef.current = mentionProvider;
   const openMention = useRef<OpenSuggestion>({ props: null, apply: null });

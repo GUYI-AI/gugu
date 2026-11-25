@@ -238,7 +238,7 @@ export interface PromptEditorProps {
    */
   getPromptHistory?: () => readonly string[];
   /** A click on an inline image chip (its attachment id). */
-  onViewInlineImage?: (id: string) => void;
+  onViewInlineImage?: (id: string, cell: HTMLElement) => void;
   /** The person removed inline images from the text (their attachment ids); the host drops those attachments. */
   onInlineImagesRemoved?: (ids: string[]) => void;
   className?: string;

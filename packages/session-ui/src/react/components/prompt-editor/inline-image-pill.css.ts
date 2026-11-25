@@ -44,7 +44,7 @@ export const thumbIcon = style({ display: 'block', width: '16px', height: '16px'
 
 export const preview = style({
   position: 'fixed',
-  zIndex: 60,
+  zIndex: 'var(--z-popover, 50)',
   padding: '6px',
   borderRadius: '12px',
   border: `1px solid ${vars.border}`,

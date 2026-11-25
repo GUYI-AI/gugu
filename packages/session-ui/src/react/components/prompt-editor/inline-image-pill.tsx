@@ -15,7 +15,8 @@ import { useMessages } from '../../localization/message-provider';
 import { ImageIcon } from '../../../icons';
 import * as styles from './inline-image-pill.css';
 
-export type InlineImageOptions = { onView?: (id: string) => void };
+/** `cell`: the chip clicked, so the picture opens out of the thumbnail it already shows. */
+export type InlineImageOptions = { onView?: (id: string, cell: HTMLElement) => void };
 
 /**
  * The chip itself, wherever words that hold a picture are shown: the composer's node, and the queued-prompt band. Its
@@ -52,7 +53,7 @@ export function InlineImagePill({ node, selected, extension }: NodeViewProps) {
         }}
         onMouseLeave={() => setPreview(null)}
         onMouseDown={(event) => { if (onView) event.preventDefault(); }}
-        onClick={() => { setPreview(null); onView?.(id); }}
+        onClick={(event) => { setPreview(null); onView?.(id, event.currentTarget); }}
       />
       {preview && src && (
         <span className={styles.preview} style={{ left: preview.left, bottom: preview.bottom }} aria-hidden="true">

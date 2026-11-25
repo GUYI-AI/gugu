@@ -623,9 +623,9 @@ export function ChatComposer({
     for (const att of removed) if (att.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(att.previewUrl);
     onAttachmentsChange?.(attachments.filter((att) => !ids.includes(att.id)));
   };
-  const viewInlineImage = (id: string) => {
+  const viewInlineImage = (id: string, cell: HTMLElement) => {
     const att = attachments.find((item) => item.id === id);
-    if (att) onViewAttachment?.(att);
+    if (att) onViewAttachment?.(att, cell);
   };
   // A failed upload keeps its chip on the strip too: that is where its reason and Retry are.
   const stripAttachments = inlineImages ? attachments.filter((att) => att.kind !== 'image' || att.state === 'error') : attachments;
