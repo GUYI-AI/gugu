@@ -36,7 +36,7 @@ afterEach(async () => {
   if (dir) rmSync(dir, { recursive: true, force: true })
 })
 
-it('hot-switches approval policy with each builtin profile while preserving native custom profiles', async () => {
+async function startBridge(threshold?: string) {
   dir = realpathSync(mkdtempSync(join(tmpdir(), 'codex-permission-mode-')))
   const fake = join(dir, 'fake-codex.cjs')
   const record = join(dir, 'requests.jsonl')
@@ -45,7 +45,7 @@ it('hot-switches approval policy with each builtin profile while preserving nati
   writeFileSync(record, '')
   const child = spawn(process.execPath, [ADAPTER], {
     cwd: dir,
-    env: { ...process.env, GUGU_CODEX_BIN: fake, FIXTURE_RECORD: record },
+    env: { ...process.env, GUGU_CODEX_BIN: fake, FIXTURE_RECORD: record, GUGU_MODEL_CONTEXT_THRESHOLD: threshold },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   adapter = child
@@ -60,15 +60,31 @@ it('hot-switches approval policy with each builtin profile while preserving nati
     child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n')
     return awaitFact(method, () => responses.get(id), { producer: child })
   }
-  const settings = () => readFileSync(record, 'utf8').trim().split('\n')
+  const requests = () => readFileSync(record, 'utf8').trim().split('\n')
     .map((line) => JSON.parse(line) as { method: string; params: Record<string, unknown> })
-    .filter((m) => m.method === 'thread/settings/update').map((m) => m.params)
-
   expect((await call('initialize', { protocolVersion: 2, clientCapabilities: {} })).error).toBeUndefined()
+  return { call, requests }
+}
+
+it('delivers the session compaction threshold in the native thread/start JSON-RPC request', async () => {
+  const { call, requests } = await startBridge('8000')
+  expect((await call('session/new', { cwd: dir, mcpServers: [] })).error).toBeUndefined()
+  expect(requests()).toContainEqual(expect.objectContaining({
+    method: 'thread/start',
+    params: expect.objectContaining({
+      config: expect.objectContaining({ model_auto_compact_token_limit: 8_000 }),
+    }),
+  }))
+})
+
+it('hot-switches approval policy with each builtin profile while preserving native custom profiles', async () => {
+  const { call, requests } = await startBridge()
+  const settings = () => requests().filter((m) => m.method === 'thread/settings/update').map((m) => m.params)
   expect((await call('session/new', {
     cwd: dir, mcpServers: [],
     _meta: { guguCodex: { permissionProfile: ':danger-full-access', threadStart: { approvalPolicy: 'never', sandbox: 'danger-full-access' } } },
   })).error).toBeUndefined()
+  expect(requests().find((m) => m.method === 'thread/start')?.params.config).not.toHaveProperty('model_auto_compact_token_limit')
   for (const [profile, approvalPolicy] of [
     ['auto-review', 'on-request'],
     [':workspace', 'on-request'],

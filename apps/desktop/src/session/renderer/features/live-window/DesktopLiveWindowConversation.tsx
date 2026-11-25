@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useContext, useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
 import { observer } from 'mobx-react-lite';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { usePaneContext } from '../tabs/pane-context';
@@ -18,20 +18,19 @@ export const DesktopLiveWindowConversation = observer(function DesktopLiveWindow
   kind: 'acp-chat' | 'session'; children: ReactNode;
 }) {
   const { pane } = usePaneContext();
-  const [reserved, setReserved] = useState(0);
   const surface = useRef<HTMLDivElement>(null);
   const context = pane.ctx as SessionTabContext;
   const entries = [...pane.entries.values()].filter(entry => entry.kind === kind);
   return <div ref={surface} className="relative isolate h-full min-h-0" data-live-window-conversation>
-    <div className="isolate h-full min-w-0" style={{ marginRight: reserved }}>{children}</div>
+    <div className="isolate h-full min-w-0">{children}</div>
     {entries.map(entry => <BoundWindow key={entry.tabId} chatTabId={entry.tabId}
       sessionId={(entry.state as { sessionId: string }).sessionId} projectId={context.projectId}
-      shown={pane.resolvedTabs.some(tab => tab.tabId === entry.tabId && tab.isActive)} onWidth={setReserved} surface={surface} />)}
+      shown={pane.resolvedTabs.some(tab => tab.tabId === entry.tabId && tab.isActive)} surface={surface} />)}
   </div>;
 });
 
-const BoundWindow = observer(function BoundWindow({ chatTabId, sessionId, projectId, shown, onWidth, surface }: {
-  chatTabId: string; sessionId: string; projectId: string; shown: boolean; onWidth(width: number): void; surface: RefObject<HTMLDivElement | null>;
+const BoundWindow = observer(function BoundWindow({ chatTabId, sessionId, projectId, shown, surface }: {
+  chatTabId: string; sessionId: string; projectId: string; shown: boolean; surface: RefObject<HTMLDivElement | null>;
 }) {
   const { pane } = usePaneContext(), layout = usePaneLayoutContext();
   const pageShown = useContext(SurfaceShownContext);
@@ -75,6 +74,6 @@ const BoundWindow = observer(function BoundWindow({ chatTabId, sessionId, projec
   }, [surface, shown, live.conversation]);
   return <div data-live-window-chat={chatTabId} className="contents">
     {live.visible && live.source && live.presentation && mode !== 'tabbed' && <DesktopLiveWindow
-      source={live.sources.find(source => source.id === live.source?.id)!} sources={live.sources} state={live.presentation} connected={live.connected} dispatch={live.dispatch} onWidth={onWidth} />}
+      source={live.sources.find(source => source.id === live.source?.id)!} sources={live.sources} state={live.presentation} connected={live.connected} dispatch={live.dispatch} />}
   </div>;
 });

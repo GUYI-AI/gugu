@@ -38,7 +38,12 @@ export const agentRunContextSchema = z.object({
   /** Selected device credentials. Provider/platform overrides remain authoritative. */
   credentialEnv: z.record(z.string(), z.string()).optional(),
   /** The session's chosen custom model, delivered through the host's credential forwarder. */
-  customModel: z.object({ endpoint: z.string().optional(), model: z.string().optional() }).optional(),
+  customModel: z.object({
+    endpoint: z.string().optional(),
+    model: z.string().optional(),
+    // Exact ACP option for providers whose model ID is qualified by the connection.
+    runtimeOption: z.string().optional(),
+  }).optional(),
   vendorKeyAccount: z.boolean().optional(),
   /** Host admission can disable native review for an unresolved custom main model. */
   autoReviewAllowed: z.boolean().optional(),

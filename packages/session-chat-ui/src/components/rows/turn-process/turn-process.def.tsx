@@ -104,7 +104,8 @@ export const turnProcessUnitDef = defineUnit<TurnProcessItem, { extraH: number }
           <div class={turnProcessLine} data-slot="tool-timeline-line">
             <div class={turnProcessHeaderSlot}>
               <CollapseHeader
-                id={props.data.id}
+                id={props.data.toggleId ?? props.data.id}
+                anchorId={props.data.id}
                 collapsible={!props.data.placeholder && !props.data.empty}
                 expanded={expanded()}
                 active={props.data.live && !props.data.withBody}

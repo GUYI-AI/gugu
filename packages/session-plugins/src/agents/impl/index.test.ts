@@ -1026,6 +1026,12 @@ describe('pluginRegistry', () => {
     });
   });
 
+  it('resumes the OpenCode chat session when its billing source changes', () => {
+    const descriptor = pluginRegistry.get('opencode')!.capabilities.sessionBundle;
+    expect(descriptor.credentialLifecycle?.acp?.sourceChangeSession).toBe('preserve');
+    expect(descriptor.credentialLifecycle?.tui?.sourceChangeSession).toBe('replace');
+  });
+
   it('declares MiMo Code as an OpenCode-family serve/attach adapter without workspace plugin delivery', () => {
     const provider = pluginRegistry.get('mimocode')!;
     const { sessionpage, extension } = provider.capabilities.sessionBundle;

@@ -1,8 +1,19 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@main/db/client';
 import { sessions } from '@main/db/schema';
+import { events } from '@main/lib/events';
+import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import { recordSessionPlatformModel } from './platform-model-selection';
 import { armSwitchedModelMemory } from './switched-model-memory';
+
+/**
+ * 记录里的模型变了,告诉已经挂着这条会话的界面。它们手里的 `customModel` 只从这一格来:不播,
+ * 界面就一直拿着会话打开时那一份,换到自定义模型后标签落回运行时的原始 id(或「Model」占位)。
+ * `null` = 删了键(JSON 传输会丢掉 undefined 的键,见 sessionChangedChannel 的抬头)。
+ */
+export function announceSessionModel(sessionId: string, projectId: string, model: string | undefined): void {
+  events.emit(sessionChangedChannel, { sessionId, projectId, changes: { model: model ?? null } });
+}
 
 /**
  * 会话中途**当场**换成了一个模型(活会话已确认 `applied`)之后,会话记录跟上。
@@ -27,7 +38,7 @@ export async function recordLiveModelSwitch(input: {
   const modelId = input.modelId.trim();
   if (!modelId) throw new Error(`live model switch for ${input.sessionId} has no model id`);
   const rows = await db
-    .select({ config: sessions.config })
+    .select({ config: sessions.config, projectId: sessions.projectId })
     .from(sessions)
     .where(eq(sessions.id, input.sessionId));
   const current = rows[0]?.config;
@@ -48,6 +59,7 @@ export async function recordLiveModelSwitch(input: {
     await db.update(sessions).set({ config: current }).where(eq(sessions.id, input.sessionId));
     throw error;
   }
+  announceSessionModel(input.sessionId, rows[0]!.projectId, typeof next.model === 'string' ? next.model : undefined);
   // #3293 Its first successful reply makes it the new-session memory's last-used model.
   armSwitchedModelMemory(input.sessionId);
 }

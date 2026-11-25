@@ -78,6 +78,7 @@ export function platformOptionRowDescription(model: PlatformModelRow): string | 
 
 function platformComposerOption(model: PlatformModelRow): ComposerModelOption {
   const description = platformOptionRowDescription(model);
+  const creditRate = description && model.creditMultiplier !== null ? `${model.creditMultiplier.toFixed(2)}x` : undefined;
   const efforts = model.reasoningEfforts ? effortNamesLine(model.reasoningEfforts, translateSessionMessage) : null;
   return {
     name: platformOptionRowLabel(model),
@@ -94,8 +95,8 @@ function platformComposerOption(model: PlatformModelRow): ComposerModelOption {
     shortName: translateSessionMessage('composer.platformModelShortName', {
       model: model.displayName,
     }),
-    // 倍率只在悬浮详情卡里说一次(#7056)。行尾曾经也写过,owner 2026-10-10:「卡片里已经展示过了,右侧就不要再展示了」。
     ...(description ? { description } : {}),
+    ...(creditRate ? { creditRate } : {}),
     ...(efforts ? { facts: [{ label: translateSessionMessage('composer.effort'), value: efforts }] } : {}),
   };
 }
@@ -191,7 +192,7 @@ export interface ComposerModelDecor {
  * ❌ 别再把厂商升成组头:厂商横切在两档之上(同一家可以既有你自己的、又有咕咕代付的),
  * 拿它分组会把「谁的」这条更要紧的界线切碎。
  *
- * 顺序:用户自己那档在**前**,咕咕提供的在后(owner 2026-09-05)。插入序即渲染序
+ * 顺序:咕咕模型在前,然后是用户自己的模型。插入序即渲染序
  * (`buildComposerModelGroups` 按相邻同组头切段,不重排)。❌ 不按厂商重排:厂商既然不分组,
  * 重排只会把宿主给的顺序无故打乱。
  */
@@ -214,15 +215,15 @@ export function composerModelOptions(
 
   return {
     ...Object.fromEntries(
-      Object.entries(harness ?? {}).map(([id, option]) => [
-        id,
-        decorate(option, id, decor?.ownTierLabel, decor?.icon, decor?.providerName),
-      ])
-    ),
-    ...Object.fromEntries(
       platformModels.map((model) => [
         platformOptionId(model.id),
         decorate(platformComposerOption(model), model.id, null, decor?.icon, decor?.providerName),
+      ])
+    ),
+    ...Object.fromEntries(
+      Object.entries(harness ?? {}).map(([id, option]) => [
+        id,
+        decorate(option, id, decor?.ownTierLabel, decor?.icon, decor?.providerName),
       ])
     ),
   };

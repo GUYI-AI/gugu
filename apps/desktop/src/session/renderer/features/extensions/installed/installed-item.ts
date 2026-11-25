@@ -9,7 +9,10 @@ export type InstalledItem = {
   open?: () => void
   enabled?: boolean
   setEnabled?: (value: boolean) => void | Promise<void>
-  update?: () => void | Promise<void>
+  update?: () => void | Promise<void | boolean>
   remove?: () => void | Promise<void>
+  updateVersion?: string
+  updateError?: string
+  busyLabel?: string
   busy?: boolean
 }

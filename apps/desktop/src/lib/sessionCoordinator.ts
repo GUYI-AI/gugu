@@ -7,7 +7,7 @@ import { abortAuthSessionBoundary, keepAuthSessionBoundary, resetAuthSessionBoun
 import { publishRendererSession } from './sessionPublication'
 import { refreshSshMachines } from './sshLinkChannel'
 import { MAIN_AUTH_STORAGE_KEY, mainAuthSessionStorage, supabase } from './supabase'
-import { phoneHostAuthAvailable, phoneHostGetSession, phoneHostRefreshSession, phoneHostRestoreSession, phoneHostSignOut, setPhoneHostAuthHandoffBarrier } from './phoneHostAuth'
+import { phoneHostAuthAvailable, phoneHostGetSession, phoneHostRefreshSession, phoneHostRestoreSession, phoneHostSignOut, setPhoneHostAuthHandoffBarrier, forgetClosedPhoneHostSession } from './phoneHostAuth'
 import { platform } from '../platform'
 import type { AuthUser } from '../store/auth'
 import { ingestMessages } from './messageIngest'
@@ -31,6 +31,8 @@ export interface SessionCoordinatorDeps {
   getPersistedSessionState: () => { bootCandidate: Session | null; warning: Error | null }
   commitPersistedSession: (session: Session, signal: AbortSignal) => Promise<void>
   clearPersistedSession: (session: Session, signal: AbortSignal) => Promise<void>
+  clearClosedAccountCache?: (ownerId: string) => Promise<void>
+  clearClosedOwnerMemory?: (ownerId: string) => void
   subscribeAppForeground: (listener: () => void, onError: (error: unknown) => void) => () => void
 }
 
@@ -205,6 +207,46 @@ export class SessionCoordinator {
   logout(): Promise<{ success: boolean }> {
     const release = this.beginAuthHandoff()
     return this.performLogout().finally(release)
+  }
+  /** Called only after native V2 reports original-owner local-complete.
+   * Native already retired Auth and its mirror. This clears renderer custody
+   * without another live-auth sign-out, native preparation or generic mirror clear.
+   */
+  async finalizeClosedOwner(ownerId: string): Promise<void> {
+    const fail = () => Object.assign(new Error('Account changed during account closure cleanup'), { code: 'wrong_local_owner' })
+    const sameOwner = () => {
+      const owner = this.snapshot.session?.user.id
+      if (owner && owner !== ownerId) throw fail()
+    }
+    sameOwner()
+    const release = this.beginAuthHandoff()
+    try {
+      await this.deps.loadPersistedSession()
+      sameOwner()
+      const persisted = this.deps.getPersistedSessionState().bootCandidate
+      if (persisted && persisted.user.id !== ownerId) throw fail()
+      const original = this.snapshot.session ?? persisted
+      this.interactiveAttempt += 1
+      const generation = this.nextGeneration()
+      const requireCurrent = () => { sameOwner(); if (!this.generationIsCurrent(generation)) throw fail() }
+      // Cancel queued old-owner publication. A later login owns a new generation.
+      this.mirrorVersion += 1
+      abortAuthSessionBoundary()
+      this.deps.clearClosedOwnerMemory?.(ownerId)
+      await this.mirrorTail.catch(() => undefined)
+      requireCurrent()
+      await this.deps.clearClosedAccountCache?.(ownerId)
+      requireCurrent()
+      if (original) await this.deps.clearPersistedSession(original, this.generationAbort.signal)
+      requireCurrent()
+      await ingestMessages(ownerId, 'clear')
+      requireCurrent()
+      const warning = this.deps.getPersistedSessionState().warning
+      if (warning) throw Object.assign(new Error('Account closure storage cleanup is pending', { cause: warning }), { code: 'closure_storage_unavailable' })
+      abortAuthSessionBoundary()
+      this.deps.publishSession('ACCOUNT_CLOSED', null)
+      this.setSnapshot({ status: 'anonymous', session: null, user: null, error: null })
+    } finally { release() }
   }
   private async performLogout(): Promise<{ success: boolean }> {
     const session = this.snapshot.session
@@ -645,6 +687,15 @@ export const sessionCoordinator = new SessionCoordinator({
   getPersistedSessionState: () => mainAuthSessionStorage.getState(),
   commitPersistedSession: (session, signal) => mainAuthSessionStorage.commit(session, signal),
   clearPersistedSession: (session, signal) => mainAuthSessionStorage.remove(session, signal),
+  clearClosedAccountCache: async ownerId => {
+    if (platform.kind === 'capacitor') {
+      const { quiesceClosedPhoneOwner } = await import('../mobile/phone-device/phoneDeviceRuntime')
+      await quiesceClosedPhoneOwner(ownerId)
+    }
+    const { eraseClosedImAccount } = await import('./imRepository')
+    await eraseClosedImAccount(ownerId)
+  },
+  clearClosedOwnerMemory: forgetClosedPhoneHostSession,
   subscribeAppForeground: (listener, onError) => platform.subscribeAppForeground(listener, onError),
 })
 setRejectedAccessTokenRecovery((rejected) => sessionCoordinator.recoverRejectedAccessToken(rejected))

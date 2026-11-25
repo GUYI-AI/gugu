@@ -4,7 +4,7 @@ import { action, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { AppErrorDetails, AppErrorMark } from '@/components/appSlot/AppErrorMark';
 import { WINDOW_CONTROL_BAR_HEIGHT_PX } from '@/lib/window-chrome';
-import { useContext, type ReactElement, type ReactNode } from 'react';
+import { useContext, useState, type ReactElement, type ReactNode } from 'react';
 import type { ViewDefinition } from '@renderer/app/view-registry';
 import { SquareArrowOutUpRight, Settings } from '@/lib/icons';
 import { followLink } from '@/lib/guguLinks';
@@ -27,8 +27,9 @@ import { useNavigate, useParams } from '@renderer/lib/layout/navigation-provider
 import { appState } from '@renderer/lib/stores/app-state';
 import { navigateBack } from '@renderer/lib/components/nav-buttons';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
+import { createExtensionOperations, ExtensionOperationsContext } from '@renderer/features/extensions/panel/extension-pending';
 import { InstalledManager } from '@renderer/features/extensions/installed/InstalledManager';
-import { appsLocation, moveAppsLocation, type AppsLocation } from './apps-location';
+import { appsLocation, currentAppsLocation, moveAppsLocation, previousAppsLocation, type AppsLocation } from './apps-location';
 import { AgentAppDetailDialog } from './agent-app-detail-dialog';
 import { restoreAgentDetailComposer } from './agent-app-detail-navigation';
 import { Button } from '@renderer/lib/ui/button';
@@ -41,6 +42,7 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
   const location = appsLocation(params);
   const marketHost = location.deviceId ? deviceDetailHost(location.deviceId) : LOCAL_LIBRARY_HOST;
   const installed = location.installed;
+  const [operations] = useState(createExtensionOperations);
 
   const closeAgentDetail = () => {
     if (agentDetailFrom !== 'apps' && appState.history.canGoBack) {
@@ -56,19 +58,21 @@ const AppsMainPanel = observer(function AppsMainPanel(): ReactElement {
       <div className="contents">
         <PageLayout wide>
           <PageContent className="max-w-none px-0">
-            <LibraryHostProvider value={marketHost} key={marketHost.key}>
-              <ExtensionsLibraryPage
-                onOpenAgentDetail={(agentId) => setParams({
-                  agentDetail: { kind: 'agent-app-detail', agentId, ...(marketHost.remote && { deviceId: marketHost.remote.deviceId }) },
-                  agentDetailFrom: 'apps',
-                })}
-                installedPage={installed && <InstalledManager place={installed}
-                  section={location.tab === 'market' ? 'apps' : location.tab}
-                  onPlace={(next) => moveAppsLocation((here) => ({ ...here, installed: next }))}
-                  onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
-                  onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
-              />
-            </LibraryHostProvider>
+            <ExtensionOperationsContext.Provider value={operations}>
+              <LibraryHostProvider value={marketHost} key={marketHost.key}>
+                <ExtensionsLibraryPage
+                  onOpenAgentDetail={(agentId) => setParams({
+                    agentDetail: { kind: 'agent-app-detail', agentId, ...(marketHost.remote && { deviceId: marketHost.remote.deviceId }) },
+                    agentDetailFrom: 'apps',
+                  })}
+                  installedPage={installed && <InstalledManager place={installed}
+                    section={location.tab === 'market' ? 'apps' : location.tab}
+                    onPlace={(next) => moveAppsLocation((here) => ({ ...here, installed: next }))}
+                    onOpenAgent={(agentId, deviceId) => { void followLink({ kind: 'agent-app-detail', agentId, deviceId }); }}
+                    onOpenApp={(extensionId, deviceId) => { void followLink({ kind: 'app-detail', extensionId, deviceId }); }} />}
+                />
+              </LibraryHostProvider>
+            </ExtensionOperationsContext.Provider>
           </PageContent>
         </PageLayout>
       </div>
@@ -121,6 +125,14 @@ export const appsView = {
   TitlebarSlot: ShellTitlebar,
   MainPanel: AppsMainPanel,
   modal: true,
+  onModalEscape: () => {
+    const location = currentAppsLocation();
+    if (!location.detail) return false;
+    if (previousAppsLocation()) navigateBack(true);
+    else if (location.installed) moveAppsLocation((here) => ({ ...here, detail: undefined }));
+    else return false;
+    return true;
+  },
 } satisfies ViewDefinition<AppsViewParams>;
 
 type AppViewParams = { appId?: string; tab?: string };

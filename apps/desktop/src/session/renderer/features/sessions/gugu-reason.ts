@@ -116,6 +116,7 @@ export function safeFailureLine(message: string): string {
   const said = message
     .replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
     .replace(/^Error:\s*/, '');
+  if (said.startsWith('[session] host bridge unavailable:')) return translateSessionMessage('taskError.hostUnavailable');
   // A structured payload (a ZodError's issues JSON) opens with a bare `[`: say its first issue, not the bracket.
   const firstLine = errorSentence(said)
     .split(/\r?\n/, 1)[0]!

@@ -2,6 +2,7 @@
 import { tagCodexStartupFailure } from '../../../../packages/core/src/local/codex-startup-failure.mjs'
 import { initializeNativeCodexSession, nativeCodexSessionArgs } from '../../../../packages/core/src/local/codex-native-auth.mjs'
 import { isUserFacingModelId } from '../../../../packages/session-core/src/acp/models/model-visibility.ts'
+import { CONTEXT_THRESHOLD_ENV } from '../../../../packages/session-core/src/models/context-threshold.ts'
 import { codexTerminalUpdate } from './codex-terminals.mjs'
 import { codexFastConfigOptions, codexFastTier, codexTierForTurn } from './codex-fast-mode.mjs'
 
@@ -815,6 +816,10 @@ async function startAppAttempt(servers) {
   const mcp = mcpConfig(servers)
   appServerThreadConfig = mcp.config
   appServerThreadConfig['tools.update_plan.enabled'] = true
+  const threshold = Number(process.env[CONTEXT_THRESHOLD_ENV])
+  if (Number.isSafeInteger(threshold) && threshold > 0) {
+    appServerThreadConfig.model_auto_compact_token_limit = threshold
+  }
   const reasoningSummary = process.env.GUGU_CODEX_REASONING_SUMMARY?.trim()
   if (reasoningSummary) {
     // Codex ACP is a thin bridge: argv belongs to the adapter process, while
@@ -2433,17 +2438,9 @@ async function handleAcpRequest(message) {
     await startApp(params.mcpServers)
     await requireCodexAccount()
     const requestedPermission = codexThreadPermissionFrom(params)
-    // @@@resume-provider — 一条 codex 线程绑死在**创建它的那个 model provider** 上。
-    //
-    // codex 把线程创建时的 `model_provider` 写进 rollout,`thread/resume` 只肯在同一个 provider 下接回:
-    // 0.166 起(openai/codex#57840,0.168 #59503 收紧)provider 不同就拒,两个方向都拒(用户自己的 `openai` ↔
-    // 咕咕代付的 `gugu_platform`);`thread/resume` 的 `modelProvider` 参数也改不了它(0.169 实测:带不带都拒)。
-    // 这座桥不按报错文字判断 —— 各版本说法不同,而是否换了计费路是宿主早就知道的事。
-    //
-    // ⇒ 换计费路由宿主决定:codex descriptor 声明 `sourceChangeSession: 'fork'`,宿主重开时不 resume 原线程,
-    // 而是让新路的这个进程 `session/fork` 它(`_meta.gugu.forkKeepsAgent`):在新路上开新线程、注入去掉封存内容的
-    // 历史(见 @@@route-switch-history;0.169 实测两个方向都通、新线程里有之前的对话、之后在这条路上 resume 正常)。
-    // 所以到这里的 resume 永远是同一条路,用 rollout 里那个 provider 就对,❌ 不再带 `modelProvider` 覆盖。
+    // Codex resumes with the provider key saved in the rollout. Managed routes configure
+    // the shared key (and the old custom key) with the active endpoint and credentials.
+    // The host sends a history-preserving fork for switches that cannot resume safely.
     const resumed = await appRequest('thread/resume', {
       excludeTurns: true,
       serviceTier: 'default',

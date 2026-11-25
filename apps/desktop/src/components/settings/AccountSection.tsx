@@ -22,6 +22,7 @@ import { officialServicesEnabled } from '@gugu/core/cloud/optionalServices'
 import { GuguSubscriptionRow } from '../../session/renderer/features/settings/subscriptions/GuguSubscriptionRow'
 import { AccountLoginMethods } from './AccountLoginMethods'
 import { PasswordRecoveryGroup } from '../password/PasswordRecovery'
+import { AccountDeletionSettings } from './accountDeletion/AccountDeletionSettings'
 
 import { ReferralAccountPreview } from '../referralPreview/ReferralPreview'
 import { TeamAccountMembership, TeamAccountMethods } from '@/features/team/TeamAccount'
@@ -301,6 +302,7 @@ export function AccountSection({ user, updateUser, logout, mobile = false }: Acc
         />
         <SettingsRow title={tTeam('accountSwitch')} description={tTeam('accountSwitchNote')}
           control={<Button variant="ghost" size="sm" onClick={() => { void handleLogout() }} disabled={loggingOut}>{tTeam('accountSwitch')}</Button>} />
+        {user && <AccountDeletionSettings key={user.id} ownerId={user.id} />}
       </SettingsGroup>
     </SettingsPage>
   )

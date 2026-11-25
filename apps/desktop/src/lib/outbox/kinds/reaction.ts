@@ -2,7 +2,7 @@ import type { MessageItem, ReactionGroup } from '@gugu/core/shared/types/chat'
 import { dbPayload } from '@gugu/core/cloud/supabase'
 import { chatDb } from '../../supabase'
 import { outbox, type OutboxKind } from '..'
-import { invalidateReactions } from '../../chatMessageRevalidation'
+import { invalidateReactions, persistMessagePatches } from '../../chatMessageRevalidation'
 
 /** What the person wants their reaction to be, not a toggle: a double tap merges into one write of the last wish. */
 export type ReactionWish = { chatId: string; messageId: string; userId: string; emoji: string; on: boolean }
@@ -28,7 +28,13 @@ export function reactionOutboxKind(onAck: (wish: ReactionWish) => void): OutboxK
   }
 }
 
-export function enqueueReaction(wish: ReactionWish): Promise<unknown> {
+/**
+ * The wish becomes the stored row's reactions: every window is published from the store, so any write to the chat
+ * would otherwise show the old ones again until the confirmation. Reads begun before the tap no longer speak for them.
+ */
+export async function enqueueReaction(wish: ReactionWish, reactions: ReactionGroup[] | undefined): Promise<unknown> {
+  invalidateReactions([wish.messageId])
+  if (reactions) await persistMessagePatches(wish.userId, [{ chatId: wish.chatId, id: wish.messageId, fields: { reactions } }])
   return outbox().enqueue(REACTION, wish, { id: `reaction:${wish.messageId}:${wish.emoji}` })
 }
 
@@ -49,8 +55,9 @@ export function wishedReactions(groups: readonly ReactionGroup[], emoji: string,
 }
 
 /** The toggle the person tapped, read from the message as shown: the wish, and how the rows show it until confirmed. */
-export function wishReaction(messageId: string, emoji: string, ...shown: (readonly MessageItem[])[]): { on: boolean; apply: (row: MessageItem) => MessageItem } {
+export function wishReaction(messageId: string, emoji: string, ...shown: (readonly MessageItem[])[]): { on: boolean; reactions: ReactionGroup[] | undefined; apply: (row: MessageItem) => MessageItem } {
   const message = shown.flat().find((row) => row.id === messageId)
   const on = !message?.reactions?.some((group) => group.emoji === emoji && group.my_reaction)
-  return { on, apply: (row) => row.id === messageId ? { ...row, reactions: wishedReactions(row.reactions ?? [], emoji, on) } : row }
+  const apply = (row: MessageItem) => row.id === messageId ? { ...row, reactions: wishedReactions(row.reactions ?? [], emoji, on) } : row
+  return { on, reactions: message && apply(message).reactions, apply }
 }

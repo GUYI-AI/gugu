@@ -75,6 +75,25 @@
   right: 16px;
 }
 
+.gg-image-viewer__read {
+  position: absolute;
+  inset-inline-start: 50%;
+  bottom: calc(env(safe-area-inset-bottom) + 54px);
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: var(--radius-control);
+  color: var(--color-white);
+  background: var(--gg-viewer-control-bg);
+  font-size: var(--font-body);
+  animation: gg-image-read-appear 0s 150ms backwards;
+}
+.gg-image-viewer__read[data-preview] { animation-delay: 650ms; }
+.gg-image-viewer__read button { pointer-events: auto; }
+@keyframes gg-image-read-appear { from { opacity: 0; } }
+
 .gg-image-viewer__counter {
   position: absolute;
   left: 50%;

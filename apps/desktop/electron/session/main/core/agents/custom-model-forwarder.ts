@@ -4,13 +4,13 @@ import { modelProtocolSchema, type ModelProtocol } from '@gugu/session-core/mode
 import { proxyPlatformCredentialRequest } from '../../../../sessionpage/platform-credential-proxy';
 
 type Target = { endpoint: string; apiKey: string };
-type TargetResolver = (connectionId: string, protocol: ModelProtocol) => Promise<Target | null>;
+type TargetResolver = (connectionId: string, protocol: ModelProtocol, routeId?: string) => Promise<Target | null>;
 type Forwarder = { server: Server; endpoint: string; apiKey: string };
 let pending: Promise<Forwarder> | undefined;
 
 /** One address per stored endpoint for the life of this app process. */
-export function customModelRoute(root: string, connectionId: string, protocol: ModelProtocol): string {
-  return `${root}/r/${connectionId}/${protocol}`;
+export function customModelRoute(root: string, connectionId: string, protocol: ModelProtocol, routeId?: string): string {
+  return `${root}/r/${connectionId}/${protocol}${routeId ? `~${routeId}` : ''}`;
 }
 
 export async function customModelForwarder(resolveTarget: TargetResolver): Promise<{ endpoint: string; apiKey: string }> {
@@ -44,7 +44,8 @@ async function start(resolveTarget: TargetResolver): Promise<Forwarder> {
 async function forward(request: IncomingMessage, response: ServerResponse, token: string, resolveTarget: TargetResolver): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://127.0.0.1');
   const route = url.pathname.match(/^\/r\/([^/]+)\/([^/]+)(.*)$/);
-  const protocol = modelProtocolSchema.safeParse(route?.[2]);
+  const [protocolName, routeId, ...unexpected] = (route?.[2] ?? '').split('~');
+  const protocol = modelProtocolSchema.safeParse(protocolName);
   const gemini = protocol.success && protocol.data === 'gemini-generate-content';
   const auth = request.headers.authorization ?? request.headers['x-api-key'] ?? request.headers['x-goog-api-key']
     ?? (gemini ? url.searchParams.get('key') : undefined);
@@ -54,8 +55,8 @@ async function forward(request: IncomingMessage, response: ServerResponse, token
     response.writeHead(401).end();
     return;
   }
-  if (!route || !protocol.success) { response.writeHead(404).end(); return; }
-  const target = await resolveTarget(route[1]!, protocol.data);
+  if (!route || !protocol.success || unexpected.length || (routeId !== undefined && !/^[0-9a-f-]{36}$/i.test(routeId))) { response.writeHead(404).end(); return; }
+  const target = await resolveTarget(route[1]!, protocol.data, routeId);
   if (!target) { response.writeHead(404).end(); return; }
 
   url.searchParams.delete('key');

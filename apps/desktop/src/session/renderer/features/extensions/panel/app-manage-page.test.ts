@@ -198,6 +198,25 @@ describe('App 设置页', () => {
     });
   });
 
+  it('keeps opening the installed app independent of accepting its update', async () => {
+    const update = vi.fn();
+    const open = vi.fn();
+    await render({
+      lifecycle: { kind: 'update', version: '1.1.0' }, onLifecycle: update, onOpen: open,
+      notice: { kind: 'update', version: '1.1.0', releaseNotes: 'Faster' }, onInstallVersion: vi.fn(),
+    }, async (document) => {
+      const primary = document.querySelector('[data-testid="app-manage-action"]')!;
+      expect(primary.textContent).toContain('extensions.updateTo(1.1.0)');
+      expect(document.querySelector('[data-testid="app-manage-notice"] .xp-link')).toBeNull();
+      await click(document, '[data-testid="app-manage-action"]');
+      expect(update).toHaveBeenCalledOnce();
+      expect(open).not.toHaveBeenCalled();
+      await click(document, '[data-testid="app-manage-open"]');
+      expect(open).toHaveBeenCalledOnce();
+      expect(update).toHaveBeenCalledOnce();
+    });
+  });
+
   it('says what the market says of this copy, and does not need the market to draw the rest', async () => {
     const install = vi.fn();
     const text = await render({ notice: { kind: 'update', version: '1.1.0', releaseNotes: 'Faster' }, onInstallVersion: install }, async (document) => {

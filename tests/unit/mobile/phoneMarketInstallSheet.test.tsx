@@ -2,6 +2,8 @@
 import { act } from 'react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PhoneMarketInstallSheet } from '../../../apps/desktop/src/mobile/market/PhoneMarketInstallSheet'
+import { runPhoneAgentInstall } from '../../../apps/desktop/src/mobile/market/phoneAgentInstall'
+import { i18n } from '../../../apps/desktop/src/i18n/runtime'
 import { clickElement, createReactHarness, deferred, waitForCondition } from '../../support/testHarness'
 
 let harness: ReturnType<typeof createReactHarness>
@@ -42,4 +44,41 @@ it('installs on only the computers selected in the sheet and retries only failed
   expect(installB).toHaveBeenCalledTimes(2)
   expect(untouched).not.toHaveBeenCalled()
   expect(close).toHaveBeenCalledTimes(1)
+})
+
+it('keeps the remote update cause and records the stage the host reached', async () => {
+  const stop = vi.fn()
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    const update = vi.fn()
+      .mockResolvedValueOnce({ success: false, error: {
+        type: 'command-failed', message: 'Managed installation failed.', output: 'EACCES writing the package',
+        stage: 'download', lastProgress: { phase: 'installing', elapsedMs: 50 },
+      } })
+      .mockResolvedValueOnce({ success: true })
+    const close = vi.fn()
+    await harness.render(<PhoneMarketInstallSheet onClose={close} rows={[{
+      id: 'test-host', name: 'Test host', status: 'update',
+      install: () => runPhoneAgentInstall({ install: vi.fn(), update, onInstallProgress: listener => {
+        listener({ providerId: 'dsh', phase: 'installing', elapsedMs: 50 })
+        return stop
+      } }, 'test-host', 'dsh', { kind: 'update', method: 'mise' }),
+    }]} />)
+    await clickElement(button('phone-market-install-device-test-host'))
+    await clickElement(button('phone-market-install-confirm'))
+    await waitForCondition(() => !!document.querySelector('[role="alert"]'), 'Host failure is visible')
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain('EACCES writing the package')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Host did not complete agent operation'), expect.objectContaining({
+      agentId: 'dsh', operation: 'update', stage: 'host', hostStage: 'download', phase: 'installing',
+      lastProgress: { phase: 'installing', elapsedMs: 50 },
+    }))
+    expect(close).not.toHaveBeenCalled()
+    expect(button('phone-market-install-confirm').textContent).toBe(i18n.t('phoneMarket.retry', { ns: 'main' }))
+    await clickElement(button('phone-market-install-confirm'))
+    expect(update).toHaveBeenCalledTimes(2)
+    expect(stop).toHaveBeenCalledTimes(2)
+    expect(close).toHaveBeenCalledTimes(1)
+  } finally {
+    warn.mockRestore()
+  }
 })

@@ -62,26 +62,30 @@ export function GroupNameInlineEdit({
     )
   }
 
-  if (canEdit && editing) {
-    return (
-      <InlineNameInput name={name} onCommit={onCommit} onClose={() => setEditing(false)}
-        placeholder={labels?.placeholder ?? t('group.namePlaceholder')} />
-    )
-  }
+  const editor = canEdit && editing ? (
+    <InlineNameInput name={name} onCommit={onCommit} onClose={() => setEditing(false)}
+      placeholder={labels?.placeholder ?? t('group.namePlaceholder')}
+      className={hero ? 'col-start-1 row-start-1 min-w-0 justify-self-stretch text-center leading-[22px]' : undefined} />
+  ) : null
   const startEditing = () => setEditing(true)
+  const canStartEditing = canEdit && !editor
   if (hero) return (
     <div className="flex min-w-0 items-center justify-center">
-      <div data-testid="group-name-display" role={canEdit ? 'button' : undefined} tabIndex={canEdit ? 0 : undefined}
-        onClick={canEdit ? startEditing : undefined}
-        onKeyDown={canEdit ? (event) => { if (event.key === 'Enter') startEditing() } : undefined}
-        className={`flex min-w-0 items-center [overflow-wrap:anywhere] gap-[6px] rounded-[var(--radius-document)] px-1 text-center text-[length:var(--font-heading)] leading-[22px] font-semibold ${canEdit ? 'cursor-text hover:bg-row-hover' : ''}`}>
-        {/* #6791 群设置页里群名显示全名:换行,不截断。 */}
-        <span className="min-w-0">{resolveOrLoud(name, 'group details title')}</span>
+      <div data-testid={editor ? undefined : 'group-name-display'} role={canStartEditing ? 'button' : undefined} tabIndex={canStartEditing ? 0 : undefined}
+        onClick={canStartEditing ? startEditing : undefined}
+        onKeyDown={canStartEditing ? (event) => { if (event.key === 'Enter') startEditing() } : undefined}
+        className={`flex min-w-0 items-center [overflow-wrap:anywhere] gap-[6px] rounded-[var(--radius-document)] px-1 text-center text-[length:var(--font-heading)] leading-[22px] font-semibold ${canStartEditing ? 'cursor-text hover:bg-row-hover' : ''}`}>
+        <div className="grid min-w-0">
+          {/* Keep the wrapped name and pencil in the layout so the editor shares the same text center. */}
+          <span className={`col-start-1 row-start-1 min-w-0 ${editor ? 'invisible' : ''}`}>{resolveOrLoud(name, 'group details title')}</span>
+          {editor}
+        </div>
         {canEdit ? <ButtonPrimitive data-testid="group-name-edit" aria-label={labels?.editHint ?? t('group.editName')}
-          onClick={(event) => { event.stopPropagation(); startEditing() }} className="flex shrink-0 text-[var(--faint-fg)]"><Pencil size={13} /></ButtonPrimitive> : null}
+          onClick={(event) => { event.stopPropagation(); startEditing() }} className={`flex shrink-0 text-[var(--faint-fg)] ${editor ? 'invisible' : ''}`}><Pencil size={13} /></ButtonPrimitive> : null}
       </div>
     </div>
   )
+  if (editor) return editor
   return (
     <div className="flex min-w-0 items-center gap-1">
       <div

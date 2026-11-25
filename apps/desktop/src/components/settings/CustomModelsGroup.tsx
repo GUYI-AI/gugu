@@ -1,4 +1,5 @@
 import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';
+import { platform } from '@/platform';
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator';
 import { Unknown } from '@/components/ui/Unknown';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
@@ -37,7 +38,13 @@ const groupOf = (connection: CustomModelConnection): ModelGroup => providerPrese
 
 type AddRequest = { addRequested?: boolean; onAddClose?: () => void };
 
-export const CustomModelsGroup = observer(function CustomModelsGroup({ addRequested, onAddClose }: AddRequest) {
+export function CustomModelsGroup(props: AddRequest) {
+  const { translate } = useSessionMessages();
+  if (!platform.capabilities.modelSettings) return <SettingsNote data-testid="settings-models-desktop-only">{translate('customModels.desktopOnly')}</SettingsNote>;
+  return <AvailableCustomModelsGroup {...props} />;
+}
+
+const AvailableCustomModelsGroup = observer(function AvailableCustomModelsGroup({ addRequested, onAddClose }: AddRequest) {
   const { theme } = useTheme();
   const selected = useSelectedRemoteDevice(settingsDeviceStore);
   const machine = selected?.deviceId ?? null;
@@ -96,8 +103,10 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
               title={model.label || model.id}
               description={!connection.keySaved ? translate('customModels.keyMissing') : group === 'coding-plan' ? undefined : preset?.name ?? endpointHost(connection)}
               control={<div className="flex items-center gap-1">
-                {!model.id && group !== 'coding-plan' ? <Button size="sm" variant="outline" onClick={() => setEditing(connection)}>{translate('customModels.selectModel')}</Button> : null}
-                <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.edit')} onClick={() => setEditing(connection)}><Pencil className="size-4" /></Button>
+                {!connection.keySaved ? <Button size="sm" variant="outline" onClick={() => setEditing(connection)}>{translate('customModels.enterKeyHere')}</Button> : <>
+                  {!model.id && group !== 'coding-plan' ? <Button size="sm" variant="outline" onClick={() => setEditing(connection)}>{translate('customModels.selectModel')}</Button> : null}
+                  <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.edit')} onClick={() => setEditing(connection)}><Pencil className="size-4" /></Button>
+                </>}
                 {group !== 'coding-plan' && <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.test')} disabled={busy === connection.id} onClick={() => { void action(connection, false, model.id || undefined); }}><Link className="size-4" /></Button>}
                 <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.remove')} disabled={busy === connection.id} onClick={() => { void action(connection, true); }}><Trash2 className="size-4" /></Button>
               </div>}
