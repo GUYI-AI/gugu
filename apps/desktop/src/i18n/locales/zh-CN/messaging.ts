@@ -490,7 +490,6 @@ export default {
     "mentionMembers": "@ 提及成员",
     "mentionNoMatch": "没有匹配的成员",
     "mentionRoleHuman": "人",
-    "mentionRoleAgent": "智能体",
     "placeholder": "发送消息…",
     "mobilePlaceholder": "输入消息",
     "projectGroupPlaceholder": "发消息给 {{name}}… @ 提及智能体",
