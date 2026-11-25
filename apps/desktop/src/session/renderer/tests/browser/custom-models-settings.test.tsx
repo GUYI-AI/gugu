@@ -17,6 +17,10 @@ import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } f
 import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
 import { composerModelFooter, composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
 import { until } from '../../../../../../../tests/support/awaitCondition';
+import '@gugu/session-ui/styles/global';
+import '@gugu/session-ui/theme/theme.css';
+import '@gugu/session-ui/theme/semantic.css';
+import '@gugu/session-ui/styles/base.css';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null, agents: [] as unknown[] }));
@@ -127,6 +131,7 @@ it('edits the protocol and model in one row and saves the optional address from 
 });
 
 it('repairs a missing model route from its disabled row and returns to the picker after save', async () => {
+  await page.viewport(1400, 800);
   const fallback = { id: 'd5bd45f0-f968-4df8-bf00-e7d303cab020', incoming: 'openai-responses', outgoing: 'openai-chat-completions' } as const;
   const connection: CustomModelConnection = {
     ...record(), keySaved: true, models: [{ id: 'repair-target' }, { id: 'other-model' }],
@@ -138,11 +143,15 @@ it('repairs a missing model route from its disabled row and returns to the picke
   state.probe = { endpoints: connection.endpoints, models: connection.models.map(({ id }) => id), failures: [] };
   const options = customComposerOptions([connection], agent, translateSessionMessage, null);
   const onModelChange = vi.fn();
-  render(<><div style={{ position: 'fixed', left: 100, bottom: 24, width: 740 }}>
-    <ChatComposer modelOptions={options} onModelChange={onModelChange} onSubmit={() => {}} onStop={() => {}} />
+  render(<><div style={{ position: 'fixed', right: 24, bottom: 24, width: 640 }}>
+    <ChatComposer modelOptions={{ 'platform:available-model': { name: 'Available model' }, ...options }}
+      selectedModel="platform:available-model" onModelChange={onModelChange} onSubmit={() => {}} onStop={() => {}} />
   </div><CustomModelRouteRepairHost /></>);
 
-  await userEvent.click(page.getByTestId('composer-model-trigger'));
+  const panel = () => document.querySelector<HTMLElement>('[data-slot="combobox-content"]');
+  await until('the model trigger mounts', () => !!document.querySelector('[data-testid="composer-model-trigger"]'));
+  document.querySelector<HTMLButtonElement>('[data-testid="composer-model-trigger"]')!.click();
+  await until('the model menu finishes opening', () => !!panel() && panel()!.getAnimations().every(({ playState }) => playState === 'finished'));
   const row = page.getByRole('option', { name: /repair-target/ });
   await expect.element(row).toHaveAttribute('aria-disabled', 'true');
   await row.hover();
