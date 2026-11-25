@@ -65,7 +65,7 @@ function HtmlRenderDocument({ srcDoc, scheme, title, height, onContentHeight }: 
     }
   }, [])
   // An opaque sandbox: scripts run, but the page reaches neither this window, its storage, popups nor top navigation.
-  return <iframe ref={frame} title={title} srcDoc={srcDoc} sandbox="allow-scripts" height={height} className="block w-full border-0 bg-transparent" style={{ colorScheme: scheme }} />
+  return <iframe ref={frame} title={title} srcDoc={srcDoc} sandbox="allow-scripts" height={height} className={`block w-full border-0 bg-transparent ${scheme === 'dark' ? '[color-scheme:dark]' : '[color-scheme:light]'}`} />
 }
 
 export function HtmlRenderFrame({ code }: { code: string }) {
