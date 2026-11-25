@@ -1,4 +1,3 @@
-import type { QuoteSelection } from './messageQuoteContent'
 import type { ReadReceiptHandle } from '@/hooks/useReadReceiptPanel'
 import { createContext, memo, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createSelectStore, sameShallow, useSelect, type SelectStore } from '@/lib/selectStore'
@@ -107,7 +106,7 @@ export interface MessageListRowProps {
   // @@@1345 已读圆环是父层「谁已读/谁未读」名单的 Trigger(稳定 handle，避免 reader 列表作对象 prop 破 memo)。
   readReceiptHandle: ReadReceiptHandle | undefined
   onShowMessage?: (id: string) => void
-  onQuote: (msg: MessageItem, selection?: QuoteSelection) => void
+  onQuote: (msg: MessageItem) => void
   /** A send of several files is forwarded whole (#2581). */
   onForward: (msg: MessageItem | readonly MessageItem[]) => void
   onDelete: (messageId: string) => void

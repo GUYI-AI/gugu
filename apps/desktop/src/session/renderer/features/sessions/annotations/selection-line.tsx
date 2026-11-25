@@ -1,8 +1,10 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { createPortal } from 'react-dom';
+import type { AnnotationConversation } from '@shared/browser-annotation';
 import { notify } from '@/lib/notices';
 import { useSendSelection } from '@renderer/lib/editor/cite-into-conversation';
 import { AnnotationEditor } from './annotation-editor';
+import { sessionAnnotations, type MessageAnnotationSelection } from './session-annotations';
 
 /**
  * The small box at a selection: the host's one input beside selected words — a message's, a file's — where the person
@@ -23,6 +25,13 @@ const failed = (error: unknown) => notify({ tier: 'error', title: error instance
 /** The line at `at` (this window's px), kept inside `within`; one per element. */
 export function openSelectionLine(line: Omit<Line, 'id'>): void {
   changed([...lines.filter((current) => current.within !== line.within), { ...line, id: crypto.randomUUID() }]);
+}
+
+/** A comment on part of a message: numbered as the draft's next, it joins the draft when saved and goes with the next send. */
+export function openCommentLine(conversation: AnnotationConversation, at: DOMRect, within: HTMLElement,
+  selection: Omit<MessageAnnotationSelection, 'annotation'>): void {
+  const draft = sessionAnnotations.forConversation(conversation);
+  openSelectionLine({ at, within, container: null, number: draft.nextAnnotationNumber, save: (text) => { if (text) draft.add({ ...selection, annotation: text }); } });
 }
 
 function close(line: Line): void {
