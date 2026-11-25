@@ -192,8 +192,8 @@ import {
 import { GUGU_CLIENT_COMMAND_MCP, isGuguClientCommand } from '@gugu/session-core/acp/commands';
 import { classifyProviderPermissionMode, type TurnAnnotation } from '@gugu/session-core/acp/client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { sessionFastMode } from '../session-config/fast-mode';
-import { renderFastModeHint } from '../session-config/fast-mode-hint';
+import { customModelFastSupported, fastTokenMultiplier, sessionFastMode } from '../session-config/fast-mode';
+import { fastModeHint } from '../session-config/fast-mode-hint';
 import { useBoundChatView } from './use-bound-chat-view';
 import { useSessionHeroCopy } from './use-session-hero-copy';
 import { useLastTurnSignIn } from './use-last-turn-sign-in';
@@ -764,6 +764,9 @@ const ComposerForStore = observer(function ComposerForStore({
 
 
   const providerCapabilities = agents?.find((agent) => agent.id === providerId)?.capabilities;
+  const customFast = runningCustomModel && customReading.state === 'value'
+    ? customModelFastSupported(customReading.value.find(({ id }) => id === runningCustomModel.connectionId), runningCustomModel.modelId, agents?.find((agent) => agent.id === providerId))
+    : false;
 
   // 排队提示的「立即发送」:这家能插话就插进在跑的那一轮,插不了才取消再发(#6574)。
   const sendNowSteers = agentSteersActiveAcpTurn(providerCapabilities);
@@ -1517,9 +1520,10 @@ const ComposerForStore = observer(function ComposerForStore({
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
         onEffortChange={handleEffortChange}
-        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup })}
-        onFastModeChange={(enabled) => { void store.setFastMode(enabled); }}
-        renderFastModeHint={renderFastModeHint}
+        fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup,
+          ...(runningCustomModel ? { customSupported: customFast, recorded: hostSession?.data.fastMode } : {}) })}
+        onFastModeChange={(enabled) => { void (runningCustomModel ? store.setCustomFastMode(enabled) : store.setFastMode(enabled)); }}
+        renderFastModeHint={fastModeHint(fastTokenMultiplier(providerCapabilities, !!runningCustomModel))}
         permissionModeOptions={withAutoReviewHint(localizePermissionModeOptions(
           sessionPermissionOptions,
           translate,

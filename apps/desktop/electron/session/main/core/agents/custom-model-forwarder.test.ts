@@ -1,6 +1,6 @@
 import { createServer, type Server, type RequestListener } from 'node:http';
 import { afterEach, expect, it } from 'vitest';
-import { customModelForwarder, customModelRoute, releaseCustomModelForwarders } from './custom-model-forwarder';
+import { customModelForwarder, customModelRoute, customModelSessionKey, releaseCustomModelForwarders, withPriorityTier } from './custom-model-forwarder';
 const upstreams: Server[] = [];
 afterEach(async () => { releaseCustomModelForwarders(); await Promise.all(upstreams.splice(0).map((server) => new Promise<void>((resolve) => { server.closeAllConnections(); server.close(() => resolve()); }))); });
 async function upstream(handler: RequestListener) {
@@ -51,4 +51,31 @@ it('accepts a Gemini local query key and joins a versioned endpoint once', async
   const route = customModelRoute(local.endpoint, 'record', 'gemini-generate-content');
   const response = await fetch(route + '/v1beta/models/m:streamGenerateContent?alt=sse&key=' + local.apiKey);
   expect(await response.json()).toEqual({ path: '/prefix/v1beta/models/m:streamGenerateContent?alt=sse', key: 'provider-key' });
+});
+it('a session key names its session to the resolver, and a priority target overwrites the tier the harness sent', async () => {
+  const bodies: string[] = [];
+  const endpoint = await upstream(async (request, response) => {
+    let body = ''; for await (const chunk of request) body += chunk;
+    bodies.push(body); response.end('{}');
+  });
+  const asked: (string | undefined)[] = [];
+  const resolve = async (_id: string, _protocol: string, _route?: string, sessionId?: string) => {
+    asked.push(sessionId);
+    return { endpoint, apiKey: 'provider-key', ...(sessionId === 'fast' ? { priority: true } : {}) };
+  };
+  const local = await customModelForwarder(resolve);
+  const fast = await customModelSessionKey(resolve, 'fast');
+  const plain = await customModelSessionKey(resolve, 'plain');
+  expect(await customModelSessionKey(resolve, 'fast')).toBe(fast);
+  expect(new Set([local.apiKey, fast, plain]).size).toBe(3);
+  const route = customModelRoute(local.endpoint, 'record', 'openai-responses') + '/responses';
+  const send = (key: string) => fetch(route, { method: 'POST', headers: { authorization: `Bearer ${key}` }, body: '{"model":"m","service_tier":"default"}' });
+  for (const key of [fast, plain, local.apiKey]) expect((await send(key)).status).toBe(200);
+  expect(asked).toEqual(['fast', 'plain', undefined]);
+  expect(bodies.map((body) => JSON.parse(body).service_tier)).toEqual(['priority', 'default', 'default']);
+  expect(JSON.parse(bodies[0]!).model).toBe('m');
+});
+it('leaves a body that is not a JSON object as it was', () => {
+  for (const raw of ['not json', '[1,2]', 'null', '']) expect(withPriorityTier(Buffer.from(raw)).toString()).toBe(raw);
+  expect(JSON.parse(withPriorityTier(Buffer.from('{"input":"hi"}')).toString())).toEqual({ input: 'hi', service_tier: 'priority' });
 });

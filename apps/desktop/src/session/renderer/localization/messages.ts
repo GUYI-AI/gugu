@@ -866,7 +866,8 @@ const enUSCoreMessages = {
   'composer.effort': 'Thinking',
   'composer.effortReset': 'Reset to the model default',
   'composer.effortUnset': 'No level selected',
-  'composer.fastModeHint': 'Faster, uses more quota',
+  'composer.fastModeHintTokens': 'Faster responses, uses {multiplier}× tokens',
+  'composer.fastModeHintPrice': 'Faster responses, billed at a higher price',
   'composer.fastModeLabel': 'Fast',
   'composer.effortLocked': 'This task cannot change the thinking level right now.',
   // @@@session-options-disabled —— 置灰的那一条必须说明为什么
@@ -2184,7 +2185,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'composer.effort': '思考',
   'composer.effortReset': '恢复到模型默认档',
   'composer.effortUnset': '未选档位',
-  'composer.fastModeHint': '更快，消耗更多额度',
+  'composer.fastModeHintTokens': '更快响应，消耗 {multiplier} 倍 token',
+  'composer.fastModeHintPrice': '更快响应，按更高单价计费',
   'composer.fastModeLabel': '快速模式',
   'composer.effortLocked': '此会话当前无法更改思考档位。',
   'composer.modelNotInCatalog':

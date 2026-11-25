@@ -1,9 +1,9 @@
-import { customModelForwarder, customModelRoute } from './custom-model-forwarder';
+import { customModelForwarder, customModelRoute, customModelSessionKey } from './custom-model-forwarder';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import {
-  customModelEfforts, customModelRefFromOption, detectModelProtocol, matchCustomModel, normalizeModelBaseUrl,
+  FAST_PROTOCOLS, customModelEfforts, customModelRefFromOption, detectModelProtocol, matchCustomModel, normalizeModelBaseUrl,
   type CustomModelConnection, type CustomModelEffortResult, type CustomModelEntry, type CustomModelMeta, type CustomModelRef, type ModelProtocol, type PiCustomModelProvider,
 } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, DetectCustomModelProtocols, SaveCustomModel, TestCustomModel } from '@gugu/session-core/workspace-server/agent-config';
@@ -340,7 +340,7 @@ export type ResolvedCustomModel = {
   effort?: string;
 };
 
-async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol, routeId?: string) {
+async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol, routeId?: string, sessionId?: string) {
   const row = await registry.getAccount(namespace, connectionId);
   const meta = row?.meta?.customModel;
   const route = meta?.routes?.find(({ id, outgoing }) => id === routeId && outgoing === protocol);
@@ -348,7 +348,19 @@ async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol,
   const endpoint = route?.baseUrl ?? meta?.endpoints.find((entry) => entry.protocol === protocol)?.baseUrl;
   if (!endpoint) return null;
   const apiKey = await registry.resolveSecret(namespace, connectionId);
-  return apiKey ? { endpoint, apiKey } : null;
+  if (!apiKey) return null;
+  return { endpoint, apiKey, ...(sessionId && meta && FAST_PROTOCOLS.includes(protocol) && sessionAsksFast(sessionId, connectionId, meta) ? { priority: true } : {}) };
+}
+
+/**
+ * Read on every request, so turning Fast off (or switching to a model that does not declare it) applies to the next one.
+ * The session's Fast choice counts only while its current model is on this connection and declares Fast.
+ */
+function sessionAsksFast(sessionId: string, connectionId: string, meta: CustomModelMeta): boolean {
+  const config = db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).get()?.config;
+  if (config?.fastMode !== true) return false;
+  const ref = customModelRefFromOption(config.model);
+  return ref?.connectionId === connectionId && meta.models.some(({ id, fast }) => id === ref.modelId && fast === true);
 }
 
 function matchForHarness(providerId: string, connection: CustomModelMeta & { keySaved: boolean }, modelId?: string) {
@@ -447,6 +459,12 @@ export async function customModelArmedEffort(providerId: string, ref: CustomMode
   return customModelEfforts(entryWithCatalog, pluginRegistry.get(providerId)?.capabilities.effort)?.includes(effort) ? effort : undefined;
 }
 
+/** Whether a new session on this custom model may start with Fast: the same rule the composer offers it by. */
+export async function customModelFastAllowed(providerId: string, ref: CustomModelRef): Promise<boolean> {
+  const selected = await readSelectedCustomModel(providerId, ref, 'new');
+  return selected.model?.fast === true && !selected.harnessProtocol && FAST_PROTOCOLS.includes(selected.endpoint.protocol);
+}
+
 export async function resolveCustomModel(providerId: string, sessionId: string, sourceSessionId?: string): Promise<ResolvedCustomModel | null> {
   migrateCustomModelConnections();
   const config = db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sourceSessionId ?? sessionId)).get()?.config;
@@ -469,9 +487,11 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
   const endpoint = selected.harnessProtocol
     ? await (await import('./conversion-routers')).convertedBaseUrl(providerId, `${ref.connectionId}-${routeId ?? protocol}`, route, local.apiKey)
     : route;
+  // A session's own key lets the forwarder find its Fast choice; a converted route is pooled per record and keeps the shared key.
+  const apiKey = selected.harnessProtocol ? local.apiKey : await customModelSessionKey(resolveCustomRoute, sessionId);
   return {
     connectionId: ref.connectionId, name,
-    apiKey: local.apiKey, endpoint,
+    apiKey, endpoint,
     models, protocol: selected.harnessProtocol ?? protocol, capabilities: selectedEntry, entries, routeId,
     upstreamEndpoint: upstream.baseUrl, removed: meta.removed,
     ...(config?.effort && customModelEfforts(selectedEntry, pluginRegistry.get(providerId)?.capabilities.effort)?.includes(config.effort) ? { effort: config.effort } : {}),
