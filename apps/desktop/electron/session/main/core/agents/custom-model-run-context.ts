@@ -1,7 +1,7 @@
 import { customClaudeReviewSource, type ClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
-import { antigravityCustomModelLaunch, claudeAcpPlatformSessionMeta, codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV, pluginRegistry } from '@gugu/session-plugins/agents';
+import { antigravityCustomModelLaunch, claudeAcpPlatformSessionMeta, codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV, OPENCODE_FAMILY_CONNECTION_PROVIDER_ID, pluginRegistry } from '@gugu/session-plugins/agents';
 import { chatModel, customModelEfforts } from '@gugu/session-core/models/custom-model';
 import { writeSessionSettingsFile } from '../../../../sessionpage/session-settings-file';
 import { resolveCustomModel, type ResolvedCustomModel } from './custom-models';
@@ -78,7 +78,13 @@ export async function resolveCustomModelRunContext(providerId: string, sessionId
     });
     const selected = custom.entries.find(({ id }) => id === model);
     const catalog: Record<string, string> = model && selected ? { [GUGU_PLATFORM_MODELS_ENV]: codexPlatformModelFacts({ model, contextWindow: selected.contextWindow, reasoningEfforts: facts(selected).reasoningEfforts, models: custom.entries.filter(chatModel).map(facts) }) } : {};
-    return { ...marker, credentialEnv: { OPENAI_API_KEY: custom.apiKey, ...catalog }, unsetEnv: [...CODEX_CONNECTION_UNSET_ENV], extraArgs: codexApiKeyConnectionArgs(custom.name, custom.endpoint, model) };
+    return { ...marker, credentialEnv: { OPENAI_API_KEY: custom.apiKey, ...catalog }, unsetEnv: [...CODEX_CONNECTION_UNSET_ENV], extraArgs: codexApiKeyConnectionArgs(custom.name, custom.endpoint, custom.upstreamEndpoint, model) };
+  }
+  if (providerId === 'opencode' && acp && model) {
+    return {
+      ...marker,
+      customModel: { ...marker.customModel, runtimeOption: `${OPENCODE_FAMILY_CONNECTION_PROVIDER_ID}/${model}` },
+    };
   }
   if (providerId === 'antigravity') {
     const launch = antigravityCustomModelLaunch({ apiKey: custom.apiKey, endpoint: custom.endpoint, model });

@@ -6,13 +6,9 @@ import {
   type SessionModelCapability,
 } from '@gugu/session-core/agents/plugins';
 import { CODEX_WIRE_API, harnessPlatform } from './platform';
-import { CODEX_PLATFORM_RETRY_CONFIG, codexPlatformProviderConfigArgs } from './platform-provider-args';
+import { CODEX_PLATFORM_PROVIDER_ID, CODEX_PLATFORM_RETRY_CONFIG, codexPlatformProviderConfigArgs } from './platform-provider-args';
 
-/**
- * Codex addresses providers by a bare config key, so its platform provider gets an id
- * without the dash that opencode's `provider/model` syntax tolerates.
- */
-export const CODEX_PLATFORM_PROVIDER_ID = 'gugu_platform';
+export { CODEX_PLATFORM_PROVIDER_ID } from './platform-provider-args';
 
 /**
  * 「咕咕平台额度」这个 codex provider 的**声明本身**,与它被写成什么形态无关。

@@ -6,24 +6,29 @@ import type { LiveWindowAction, LiveWindowPresentation, LiveWindowSource } from 
 import { useLiveWindowLabels } from './desktop-labels';
 import { LiveWindowDisconnected } from './LiveWindowHeaderIcon';
 
-export function DesktopLiveWindow({ source, sources = [source], state, connected = true, dispatch, children, onWidth }: {
+export function DesktopLiveWindow({ source, sources = [source], state, connected = true, dispatch, children }: {
   source: LiveWindowSource & { picture: ReactNode }; state: LiveWindowPresentation;
   sources?: readonly LiveWindowSource[];
   connected?: boolean;
-  dispatch(action: LiveWindowAction): void; children?: ReactNode; onWidth?(width: number): void;
+  dispatch(action: LiveWindowAction): void; children?: ReactNode;
 }) {
   const t = useLiveWindowLabels(), root = useRef<HTMLDivElement>(null);
-  const [bounds, setBounds] = useState({ width: 0, height: 0, composerTop: 0 });
+  const [bounds, setBounds] = useState({ width: 0, composerTop: 0 });
   const drag = useRef<{ x: number; y: number; left: number; top: number; moved: boolean } | null>(null);
   const enlarged = state.mode === 'enlarged';
   const switchSources = sources.some(item => item.kind === 'browser') && sources.some(item => item.kind === 'computer');
-  const footerHeight = switchSources ? 32 : 0;
-  const fit = fitLiveWindow(source.size, { width: enlarged ? Math.min(640, bounds.width * .55) : Math.min(240, bounds.width - 32), height: enlarged ? bounds.height - 80 - footerHeight : bounds.composerTop - 32 - footerHeight });
+  const sourceTabsHeight = switchSources ? 32 : 0;
+  const toolbarHeight = enlarged ? 40 : 0;
+  // Keep the composer reachable while the enlarged picture overlaps the transcript.
+  const fit = fitLiveWindow(source.size, {
+    width: enlarged ? Math.min(640, bounds.width * .55) : Math.min(240, bounds.width - 32),
+    height: bounds.composerTop - 32 - toolbarHeight - sourceTabsHeight,
+  });
   const width = fit?.width ?? 0, height = fit?.height ?? 0;
   const left = enlarged ? bounds.width - width - 16 : state.small.x === undefined
     ? bounds.width - width - 16 : state.small.x * Math.max(0, bounds.width - width - 32) + 16;
   const top = enlarged ? 16 : state.small.y === undefined
-    ? Math.max(16, bounds.composerTop - height - footerHeight - 16) : state.small.y * Math.max(0, bounds.composerTop - height - footerHeight - 32) + 16;
+    ? Math.max(16, bounds.composerTop - height - sourceTabsHeight - 16) : state.small.y * Math.max(0, bounds.composerTop - height - sourceTabsHeight - 32) + 16;
   useLayoutEffect(() => {
     const element = root.current; if (!element) return;
     const body = element.closest('[data-live-window-conversation]');
@@ -35,14 +40,13 @@ export function DesktopLiveWindow({ source, sources = [source], state, connected
       if (next !== composer) { if (composer) observer.unobserve(composer); composer = next; if (composer) observer.observe(composer); }
       const box = element.getBoundingClientRect();
       const composerTop = composer ? Math.max(0, Math.min(box.height, composer.getBoundingClientRect().top - box.top)) : Math.max(0, box.height - 128);
-      setBounds(current => current.width === box.width && current.height === box.height && current.composerTop === composerTop ? current
-        : { width: box.width, height: box.height, composerTop });
+      setBounds(current => current.width === box.width && current.composerTop === composerTop ? current
+        : { width: box.width, composerTop });
     };
     const observer = new ResizeObserver(measure); observer.observe(element);
     const discover = new MutationObserver(measure); if (body) discover.observe(body, { childList: true, subtree: true });
     measure(); return () => { observer.disconnect(); discover.disconnect(); };
   }, []);
-  useLayoutEffect(() => { onWidth?.(enlarged ? width + 32 : 0); return () => onWidth?.(0); }, [enlarged, width, onWidth]);
   const move = (event: PointerEvent<HTMLElement>) => {
     const start = drag.current; if (!start || !fit) return;
     const dx = event.clientX - start.x, dy = event.clientY - start.y;
@@ -50,13 +54,13 @@ export function DesktopLiveWindow({ source, sources = [source], state, connected
     start.moved = true;
     dispatch({ type: 'position', small: { corner: 'bottom-right',
       x: (start.left + dx - 16) / Math.max(1, bounds.width - width - 32),
-      y: (start.top + dy - 16) / Math.max(1, bounds.composerTop - height - footerHeight - 32) } });
+      y: (start.top + dy - 16) / Math.max(1, bounds.composerTop - height - sourceTabsHeight - 32) } });
   };
   return <div ref={root} className="pointer-events-none absolute inset-0 z-10" data-live-window-layer>
     {children}
     {fit && <section data-live-window={state.mode} data-source-kind={source.kind}
       className="group pointer-events-auto absolute overflow-hidden rounded-xl border border-border bg-background-1 shadow-lg"
-      style={{ left, top, width, height: height + (enlarged ? 40 : 0) + footerHeight, touchAction: enlarged ? undefined : 'none' }}
+      style={{ left, top, width, height: height + toolbarHeight + sourceTabsHeight, touchAction: enlarged ? undefined : 'none' }}
       onPointerDown={event => {
         if (enlarged || (event.target as HTMLElement).closest('button')) return;
         drag.current = { x: event.clientX, y: event.clientY, left, top, moved: false }; event.currentTarget.setPointerCapture(event.pointerId);

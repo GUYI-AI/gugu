@@ -24,6 +24,7 @@ import { events } from '@main/lib/events';
 import {
   sessionpageSessionListChannel,
   sessionpageSessionTimelineChannel,
+  sessionpageRecordStatusChannel,
 } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { createRPCController, withSender } from '@shared/lib/ipc/rpc';
 import * as create from './create-session';
@@ -121,7 +122,7 @@ export const sessionTimelineController = createRPCController({
         sessionpageSessionTimelineChannel,
         input.trim ? { ...event, result: trimAfterResultForTransport(event.result, undefined, input.lean) } : event,
         input.subscriptionId
-      )
+      ), status => events.emit(sessionpageRecordStatusChannel, status, input.subscriptionId)
     ))),
   // 只拆自己开的:订阅号对别的线是不透明的,但「不该做得到」不靠「猜不中」(一问一答的 taskhost.call 也算别的线)。
   sessionUnsubscribe: withSender(async (sender: number, input: SessionpageSessionUnsubscribeRequest) => {

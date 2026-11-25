@@ -11,6 +11,8 @@ import { chatLayoutOf, closeChatTab, panelTabsOf } from '@renderer/features/chat
 import { installSessionTabViews } from '@renderer/features/sessions/session-tab-views';
 import { BrowserWorkspaceStartContent } from '@renderer/features/browser/browser-workspace-start-page';
 import { recentToolPanel, type RecentTool } from '@renderer/features/browser/workspace-recent-tools';
+import { TabKindMark } from '@renderer/features/extensions/extension-mark';
+import { WORKSPACE_APP_KIND } from '@renderer/features/chats/chat-tabs/chat-panel-item';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { appState } from '@renderer/lib/stores/app-state';
 import '@renderer/index.css';
@@ -131,6 +133,32 @@ it('shows the context tools, opens recent resources, and removes them only from 
   await expect.element(page.getByText('暂无最近打开的项目')).toBeVisible();
   await render(group);
   await expect.element(page.getByRole('button', { name: '公告', exact: true })).toBeVisible();
+});
+
+it('draws Recent at the tile size, and Recent Files with the Files tile\'s own mark', async () => {
+  await i18n.changeLanguage('zh-CN');
+  await page.viewport(1024, 720);
+  const view = harness = createReactHarness();
+  view.container.className = 'emlight gugu-skin';
+  view.container.style.cssText = 'width:760px;height:540px';
+  writeViewState(recentToolPanel(group), { items: [
+    { kind: 'folder', id: 'folder', title: '' },
+    { kind: 'chat-file', id: 'chat-file:clip', itemId: 'clip', title: 'clip.mp4' },
+    { kind: 'web', id: 'web:news', url: 'https://example.com/news', title: '公告' },
+  ] satisfies RecentTool[] });
+  await act(() => view.render(<BrowserWorkspaceStartContent config={{ ctx: group, openRecent: () => {} }} onOpenUrl={() => {}}
+    actions={[{ id: 'files', label: '文件', icon: <TabKindMark kind={WORKSPACE_APP_KIND} />, onClick: () => {} }]} />));
+  const recent = page.getByRole('region', { name: '最近' });
+  await expect.element(recent).toBeVisible();
+  const iconOf = (button: HTMLElement) => button.querySelector('svg')!;
+  const filesTile = iconOf(page.getByRole('button', { name: '文件', exact: true }).first().element() as HTMLElement);
+  const tiles = recent.getByRole('button').elements().filter((button) => !button.getAttribute('aria-label')) as HTMLElement[];
+  expect(tiles).toHaveLength(3);
+  for (const tile of [filesTile, ...tiles.map(iconOf)]) {
+    const box = tile.getBoundingClientRect();
+    expect([box.width, box.height]).toEqual([28, 28]);
+  }
+  expect(iconOf(tiles[0]!).outerHTML).toBe(filesTile.outerHTML);
 });
 
 it('opens the actual group tab from the header and reveals explicitly requested new tabs', async () => {

@@ -4,6 +4,11 @@ import { Button } from '@/components/ui/Button'
 import { Sheet } from '@/components/ui/Sheet'
 import { PhoneSheetHandle } from '../PhoneSheetHandle'
 import { Check } from '@/lib/icons'
+import { messageForUser } from '@/lib/userFacingError'
+import { rendererLogger } from '@/lib/log'
+
+const log = rendererLogger('phone-market/install')
+type InstallResult = { state: 'installed' } | { state: 'failed'; reason?: string }
 
 export type PhoneMarketInstallRow = {
   id: string
@@ -32,10 +37,11 @@ export function PhoneMarketInstallSheet({ rows, onClose }: {
   const titleId = useId()
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
   const [running, setRunning] = useState<string | null>(null)
-  const [results, setResults] = useState<Record<string, 'installed' | 'failed'>>({})
+  const [results, setResults] = useState<Record<string, InstallResult>>({})
   const busy = useRef(false)
   const ordered = [...rows].sort((a, b) => Number(!!b.install) - Number(!!a.install) || Number(b.status === 'installed') - Number(a.status === 'installed'))
   const chosen = rows.filter(row => row.install && selected.has(row.id))
+  const retry = chosen.some(row => results[row.id]?.state === 'failed')
   const close = () => { if (!busy.current) onClose() }
   const toggle = (id: string) => setSelected(previous => {
     const next = new Set(previous)
@@ -50,10 +56,16 @@ export function PhoneMarketInstallSheet({ rows, onClose }: {
     try {
       for (const row of chosen) {
         setRunning(row.id)
-        let ok = false
-        try { ok = await row.install?.() === true } catch { /* The device remains selected for retry. */ }
-        setResults(current => ({ ...current, [row.id]: ok ? 'installed' : 'failed' }))
-        if (ok) setSelected(current => new Set([...current].filter(id => id !== row.id)))
+        let result: InstallResult
+        try {
+          result = await row.install?.() === true ? { state: 'installed' } : { state: 'failed' }
+        } catch (error) {
+          const reason = messageForUser(error)
+          log.warn({ deviceId: row.id, error: reason }, 'Device installation did not complete')
+          result = { state: 'failed', reason }
+        }
+        setResults(current => ({ ...current, [row.id]: result }))
+        if (result.state === 'installed') setSelected(current => new Set([...current].filter(id => id !== row.id)))
         else complete = false
       }
     } finally {
@@ -68,24 +80,29 @@ export function PhoneMarketInstallSheet({ rows, onClose }: {
       <h2 id={titleId}>{t('phoneMarket.chooseComputers')}</h2>
       <div className="phone-market-install-devices" role="group" aria-labelledby={titleId}>
         {ordered.map(row => {
-          const installed = row.status === 'installed' || results[row.id] === 'installed'
+          const result = results[row.id]
+          const installed = row.status === 'installed' || result?.state === 'installed'
           const checked = installed || selected.has(row.id)
-          const state = running === row.id ? 'installing' : results[row.id] ?? row.status
-          return <Button key={row.id} role="checkbox" aria-checked={checked} variant="ghost"
-            className="phone-market-install-device" disabled={!!running || !row.install || installed}
-            data-testid={`phone-market-install-device-${row.id}`} onClick={() => toggle(row.id)}>
-            <span className="phone-market-check" data-checked={checked || undefined} aria-hidden>
-              {checked && <Check size={14} />}
-            </span>
-            <span className="phone-market-install-name">{row.name}</span>
-            {state && <span className="phone-market-status">{t(`phoneMarket.deviceState.${state}`)}</span>}
-          </Button>
+          const state = running === row.id ? 'installing' : result?.state ?? row.status
+          return <div key={row.id}>
+            <Button role="checkbox" aria-checked={checked} variant="ghost"
+              className="phone-market-install-device" disabled={!!running || !row.install || installed}
+              data-testid={`phone-market-install-device-${row.id}`} onClick={() => toggle(row.id)}>
+              <span className="phone-market-check" data-checked={checked || undefined} aria-hidden>
+                {checked && <Check size={14} />}
+              </span>
+              <span className="phone-market-install-name">{row.name}</span>
+              {state && <span className="phone-market-status">{t(`phoneMarket.deviceState.${state}`)}</span>}
+            </Button>
+            {state === 'failed' && result?.state === 'failed' && result.reason &&
+              <p className="phone-market-install-error" role="alert">{result.reason}</p>}
+          </div>
         })}
         {!rows.length && <p className="phone-market-status">{t('phoneMarket.noComputers')}</p>}
       </div>
       <Button variant="primary" className="phone-market-install-submit" onClick={() => void install()}
         disabled={!chosen.length || !!running} data-testid="phone-market-install-confirm">
-        {t('phoneMarket.install')}
+        {t(retry ? 'phoneMarket.retry' : 'phoneMarket.install')}
       </Button>
     </div>
   </Sheet>

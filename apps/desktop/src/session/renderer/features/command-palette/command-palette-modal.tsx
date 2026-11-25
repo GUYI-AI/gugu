@@ -2,9 +2,9 @@ import { Command } from 'cmdk';
 import { FolderOpen, MessageSquare, Search } from '@/lib/icons';
 import { useObserver } from 'mobx-react-lite';
 import { useState } from 'react';
-import { i18n } from '@/i18n';
 import { getSessionPageStore } from '@renderer/features/sessions/stores/session-selectors';
 import { commandRegistry } from '@renderer/lib/commands/registry';
+import { commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
 import { useDebounce } from '@renderer/lib/hooks/useDebounce';
 import { getEffectiveHotkey, isHostCommandId, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { rpc } from '@renderer/lib/ipc';
@@ -12,7 +12,6 @@ import { useNavigate } from '@renderer/lib/layout/navigation-provider';
 import type { BaseModalProps } from '@renderer/lib/modal/modal-provider';
 import { Shortcut } from '@renderer/lib/ui/shortcut';
 import { COMMANDS } from '@shared/commands';
-import type { SessionMessageKey } from '@renderer/localization/messages';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { getCommandIcon } from './command-icons';
 import { PALETTE_ITEM_CLASS } from './palette-item-styles';
@@ -77,12 +76,10 @@ export function CommandPaletteModal({ initialQuery = '', onSuccess }: CommandPal
     .map((command) => {
       const hostId = isHostCommandId(command.id) ? command.id : undefined;
       const def = hostId ? COMMANDS[hostId] : undefined;
-      const title = def?.labelKey
-        ? def.labelKey.startsWith('main:')
-          ? i18n.t(def.labelKey.slice(5), { ns: 'main' })
-          : translate(def.labelKey as SessionMessageKey)
-        : command.label ?? def?.label ?? command.id;
-      return { command, title, description: command.description ?? def?.description ?? '',
+      // The catalog's words, in the app's language — unless the provider says this one itself (置顶 / 取消置顶, Push / Publish).
+      const title = hostId && def && command.label === def.label ? commandLabel(hostId) : command.label ?? command.id;
+      const description = hostId && def && command.description === def.description ? commandDescription(hostId) : command.description ?? '';
+      return { command, title, description,
         icon: def ? getCommandIcon(def.iconKey) : undefined, hotkey: hostId ? getEffectiveHotkey(hostId, keyboard) : null };
     })
     , search, ({ title, description }) => [title, description]));

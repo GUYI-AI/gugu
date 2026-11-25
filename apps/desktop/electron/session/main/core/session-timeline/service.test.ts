@@ -1182,6 +1182,35 @@ describe('session timeline service', () => {
     expect(opened.get('sess-2')!.timeline.listenerCount()).toBe(0);
   });
 
+  it('a subscriber of a session not started yet gets its timeline the moment the session gets its agent session, with no record wait', async () => {
+    const opened = new Map<string, ReturnType<typeof makeTimeline>>();
+    service.setSessionTimelineFactory(async ({ locator }) => {
+      const fake = makeTimeline();
+      opened.set(locator!.providerSessionId, fake);
+      return fake.timeline;
+    });
+    state.rows = [row({ provider: 'codex', providerSessionId: null, config: { type: 'acp', firstUtterance: 'hi' } })];
+    const events: Array<{ result: TimelineAfterResult }> = [];
+    const statuses: unknown[] = [];
+    expect(await service.subscribe({ conversationId: 'conv-1', subscriptionId: 'sub-1', cursor: null, recordEvents: true },
+      (event) => events.push(event as never), (status) => statuses.push(status))).toMatchObject({ ok: true });
+    // Subscribed at once, to the stand-in: the first push is its snapshot, the first message.
+    expect(events).toHaveLength(1);
+    expect(events[0]!.result).toMatchObject({ ok: false, snapshot: { turns: [{ items: [{ role: 'user', text: 'hi' }] }] } });
+    expect(opened.size).toBe(0);
+
+    const { sessionChangedChannel } = await import('@shared/core/sessions/sessionEvents');
+    state.rows = [row({ provider: 'codex', providerSessionId: 'thread-1', config: { type: 'acp', firstUtterance: 'hi' } })];
+    broadcast(sessionChangedChannel.name, { sessionId: 'conv-1', changes: { providerSessionId: 'thread-1' } });
+    await awaitFact('the real timeline attached', () => opened.get('thread-1')?.timeline.listenerCount() === 1 || undefined);
+    // No clock ran and nothing was reported as failed or waiting in between.
+    expect(statuses).toEqual([]);
+    opened.get('thread-1')!.emit({ ok: true, batch: { from: 0, cursor: { epoch: 'e1', seq: 1 }, turns: [], removedTurnIds: [], settlements: [] } });
+    expect(events.at(-1)?.result).toMatchObject({ ok: true });
+    service.unsubscribe('sub-1');
+    expect(opened.get('thread-1')!.timeline.listenerCount()).toBe(0);
+  });
+
   it('send 把写侧的失败 code 原样带出来', async () => {
     state.deliverText = vi.fn(async () => {
       throw new SessionWriteError('session_not_live', '这条终端会话此刻没有活着的 PTY');

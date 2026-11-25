@@ -227,10 +227,9 @@ it('the rail flips in the frame the list\'s layer takes the rail\'s width, both 
   observer.disconnect();
 });
 
-// The bell is in the foot in both states (界面减法 #46): one bell, on the avatars' axis on the rail, above my avatar. The rail
-// has no room for its list: collapsing closes the list, and opening it from the rail expands the sidebar into it.
-it('collapsed, the bell is in the rail\'s foot above my avatar, and opening it expands the sidebar', async () => {
-  const { setSidebarNotificationsOpen } = await import('@/lib/sidebarChatsBridge');
+// The bell is in the foot in both states (界面减法 #46): one bell, on the avatars' axis on the rail, above my avatar. Its list
+// pops beside it (NeedsYouHost), so the rail needs no room for it.
+it('collapsed, the bell is in the rail\'s foot above my avatar', async () => {
   await page.viewport(1000, 700);
   document.documentElement.dataset.theme = 'light';
   harness = createReactHarness();
@@ -252,18 +251,12 @@ it('collapsed, the bell is in the rail\'s foot above my avatar, and opening it e
   expect(bells()).toHaveLength(1);
   expect(foot.contains(bells()[0])).toBe(true);
 
-  setSidebarNotificationsOpen(true);
   fold.click();
   await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(68);
   expect(bells()).toHaveLength(1);
-  expect(document.querySelector('[data-notification-slot="list"]:not([hidden])')).toBeNull();
   const panel = aside.getBoundingClientRect();
   await expect.poll(() => foot.querySelector<HTMLElement>('[data-me-slot]')!.dataset.meSlot).toBe('rail');
   expect(bells()[0].getBoundingClientRect().bottom).toBeLessThanOrEqual(foot.querySelector<HTMLElement>('[data-me-slot]')!.getBoundingClientRect().top);
   await expect.poll(() => Math.round(bells()[0].getBoundingClientRect().left + bells()[0].getBoundingClientRect().width / 2 - panel.left)).toBe(34);
 
-  setSidebarNotificationsOpen(true);
-  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBeGreaterThan(200);
-  await expect.poll(() => document.querySelector('[data-notification-slot="list"]:not([hidden])')).not.toBeNull();
-  setSidebarNotificationsOpen(false);
 });

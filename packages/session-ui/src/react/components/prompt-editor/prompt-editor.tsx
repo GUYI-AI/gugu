@@ -79,7 +79,7 @@ function mentionToPopupItem(item: MentionItem, renderMentionIcon?: RenderMention
       ? isStackedAgent
         ? `${name}: agent`
         : undefined
-      : item.role ?? item.description ?? (item.name && item.label !== item.name ? item.label : undefined),
+      : item.description ?? item.role ?? (item.name && item.label !== item.name ? item.label : undefined),
     stacked: isStackedAgent || isFile,
     descriptionMono: isStackedAgent || isFile,
   };

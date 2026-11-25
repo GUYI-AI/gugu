@@ -1,9 +1,10 @@
+import { resolveInitialEffort } from '@shared/core/agents/create-efforts';
 import { usePermissionMenu } from './use-permission-menu';
 import { localizePermissionModeOptions } from '../acp/permission-mode-options';
 import { classifyProviderPermissionMode, type ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import type { SessionOptionGroup } from '@gugu/session-core/session-record/contract';
 import { withAutoReviewHint, type ReviewCostSource } from '../acp/auto-review-permission-hint';
-import { customModelAcceptsImages, customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelDefaultEffort, customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
 import { customModels } from './custom-models';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
@@ -18,7 +19,7 @@ import {
   strictestDeclaredPermissionMode,
   type GuguPermissionMode,
 } from '@gugu/session-core/acp/client';
-import { providerTakesMessageStartupInPty, type ResolvedModelEfforts } from '@gugu/session-core/agents/plugins';
+import { providerTakesMessageStartupInPty } from '@gugu/session-core/agents/plugins';
 import type { AgentProviderId } from '@gugu/session-plugins/agents';
 import { nativeComposerAppearance } from '@renderer/lib/chat/native-chat-appearance.css';
 import {
@@ -84,8 +85,8 @@ import {
 } from './harness-model-field';
 import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelOptions } from './use-harness-model-options';
-import { agentOffersFastMode, draftFastMode } from './fast-mode';
-import { renderFastModeHint } from './fast-mode-hint';
+import { agentOffersFastMode, customModelFastSupported, draftFastMode, fastTokenMultiplier } from './fast-mode';
+import { fastModeHint } from './fast-mode-hint';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { useTargetModelCatalog } from '@renderer/lib/stores/use-target-model-catalog';
@@ -262,6 +263,8 @@ export type InitialSessionState = {
   autoReviewCostSource?: ReviewCostSource;
   fastMode?: boolean;
   setFastMode?: (enabled: boolean) => void;
+  /** Fast's published token multiple for this draft (`fastTokenMultiplier`); undefined = billed higher, no multiple. */
+  fastTokenMultiplier?: number;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
   defaultEffort: string | null;
   /** Persist the complete launch configuration only after a session has actually been created. */
@@ -461,29 +464,10 @@ export function resolvePlatformModel(
   return null;
 }
 
-/**
- * Pick the effort level for a model, given what the user last picked for it.
- *
- * Effort is resolved per (provider, model) rather than per provider: the tiers differ by
- * model — codex gpt-5.6-sol reaches `ultra` while gpt-5.5 stops at `xhigh` — so a level
- * armed on one model is not necessarily offered by the next, and carrying it over would
- * send the CLI a value it rejects. An override the new model doesn't list is dropped.
- *
- * Nothing is armed by default. The plugin's `defaultEffortId` describes what the CLI would
- * pick on its own; arming it here would make every task pass an explicit level and thereby
- * override a user's own `model_reasoning_effort` in ~/.codex/config.toml with a value they
- * never chose. Null = send no flag and let the CLI resolve it — the level is shown as
- * 「默认」 in the picker instead.
- */
 import { localizeEffortOptions } from './effort-options';
+import { useContextThresholds } from './use-context-thresholds';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-export function resolveInitialEffort(
-  efforts: ResolvedModelEfforts | null,
-  override: string | null | undefined
-): string | null {
-  if (!efforts) return null;
-  return override && efforts.options[override] ? override : null;
-}
+export { resolveInitialEffort } from '@shared/core/agents/create-efforts';
 
 /**
  * 平台模型没有 harness model id,但它同样要记住用户选过的档 —— 用平台模型 id 当 key。
@@ -1138,6 +1122,8 @@ export function useInitialSessionState(
   const selectedCustom = customModelRefFromOption(customSelection);
   const customConnection = selectedCustom && customReading.state === 'value' ? customReading.value.find(record => record.id === selectedCustom.connectionId) : undefined;
   const customFeatures = customConnection?.models.find(({ id }) => id === selectedCustom?.modelId);
+  const customFastSupported = selectedCustom
+    ? customModelFastSupported(customConnection, selectedCustom.modelId ?? undefined, agents?.find((agent) => agent.id === providerId)) : undefined;
   const runtimeModel = runtimeModelId(model) ?? null;
   const targetFastCatalog = useTargetModelCatalog(
     !selectedCustom && !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
@@ -1156,8 +1142,11 @@ export function useInitialSessionState(
     leg: sessionpageSurface,
   });
   const effortKey = effortKeyOf(providerId, model, platformModel);
+  // A custom model whose levels the person set starts on the default they chose; "Automatic" starts on none.
+  const customDefaultEffort = selectedCustom && customFeatures?.efforts
+    ? customModelDefaultEffort(customFeatures, customEfforts) ?? null : undefined;
   const effort = resolveInitialEffort(
-    modelEfforts,
+    selectedCustom || platformModel || runtimeModel ? modelEfforts : null,
     effortKey
       ? (effortOverrides[effortKey] !== undefined ? effortOverrides[effortKey] :
         // 上次启动的档位只在**同一个模型**上继承。平台模型时 harness `model` 两边都空,只比它
@@ -1168,8 +1157,8 @@ export function useInitialSessionState(
         (lastStartedConfiguration.model ?? null) === model &&
         (lastStartedConfiguration.platformModel ?? null) === platformModel
           ? lastStartedConfiguration.effort
-          : undefined))
-      : undefined
+          : customDefaultEffort))
+      : customDefaultEffort
   );
   const { auth: reviewAuth } = useAgentAuthStatus(!platformModel && !selectedCustom ? providerId : null, undefined, { machine });
   const autoReviewCostSource: ReviewCostSource = platformModel ? 'platform' : selectedCustom ? 'api-key'
@@ -1315,8 +1304,9 @@ export function useInitialSessionState(
     permissionOptions,
     permissionModeMap,
     autoReviewCostSource,
-    fastMode: unattended || selectedCustom ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
+    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, customSupported: customFastSupported, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
+    fastTokenMultiplier: fastTokenMultiplier(capabilities, customFastSupported !== undefined),
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
       if (!effortKey) return;
@@ -1647,6 +1637,7 @@ export function InitialSessionField({
   // 掉进 composer 的文件都变成**附件 chip**(#5269,owner 2026-09-08:「你应该把他当作附件处理」)。
   // ❌ 不往正文里插一条路径 pill —— 那是把传输方式摆到用户脸上。
   const remoteMachine = state.machine;
+  const contextThresholds = useContextThresholds(state.provider, remoteMachine);
   const handleFiles = useCallback((files: File[]) => {
     const accepted = state.acceptsImageAttachments === false ? files.filter((file) => !file.type.startsWith('image/')) : files;
     if (accepted.length < files.length) toast({ title: translate('customModels.imagesUnsupported'), variant: 'destructive' });
@@ -1807,12 +1798,13 @@ export function InitialSessionField({
           onModelUnlock={state.harnessSignIn ?? undefined}
           // 底部「管理模型 / 升级解锁更多模型」(#7056),三个模型菜单同一份。
           {...composerModelFooter(state.platformModels)}
+          contextThresholds={contextThresholds}
           effortOptions={state.effortOptions}
           selectedEffort={state.effort ?? undefined}
           onEffortChange={(effortId) => state.setEffort(effortId || null)}
           fastMode={state.fastMode}
           onFastModeChange={state.setFastMode}
-          renderFastModeHint={renderFastModeHint}
+          renderFastModeHint={fastModeHint(state.fastTokenMultiplier)}
           defaultEffort={state.defaultEffort ?? undefined}
           permissionModeOptions={withAutoReviewHint(permissionModeOptions, state.provider, state.autoReviewCostSource ?? 'unknown')}
           selectedPermissionMode={permissionModeOptions ? state.permissionMode : undefined}
@@ -1828,8 +1820,8 @@ export function InitialSessionField({
           onDataDropped={onDataDropped}
           attachments={state.attachments}
           onAttachmentsChange={enableAttachments ? state.setAttachments : undefined}
-          onViewAttachment={(att) => {
-            if (!openComposerImage(att)) setAttachmentViewer(att);
+          onViewAttachment={(att, cell) => {
+            if (!openComposerImage(att, cell)) setAttachmentViewer(att);
           }}
           toolbarExtra={toolbarExtra}
           className={textareaClassName}

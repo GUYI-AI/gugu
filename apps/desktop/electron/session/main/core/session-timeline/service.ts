@@ -147,6 +147,7 @@ function fail<T>(code: string, message: string): SessionTimelineResult<T> {
  * 显式置 null = fail loud（`timeline_unavailable`），❌ 不返回空时间线冒充「这条会话没内容」。
  */
 export type SessionTimelineFactory = (input: {
+  onError?: (error: unknown) => void;
   /** The agent's record; null = it has none gugu reads, and the journal is all there is. */
   locator: SessionRecordLocator | null;
   /** Gugu's journal of the session (`session-journal.ts`), read beside the record. */
@@ -163,7 +164,7 @@ export type SessionTimelineFactory = (input: {
  * 会让每一个只想测服务层记账的用例都替记录源交税（也会把原生模块拖进不需要它的进程）。
  * 真开一份时间线的那一刻才加载。
  */
-const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal, conversationId: sessionId, answerableQuestions, readMode, parentLineage }) => {
+const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal, conversationId: sessionId, answerableQuestions, readMode, parentLineage, onError }) => {
   const { createSessionRecordSource, createSessionTimeline, emptyRecordSource } = await import(
     '@gugu/session-core/session-record'
   );
@@ -175,6 +176,7 @@ const defaultTimelineFactory: SessionTimelineFactory = async ({ locator, journal
   const pty = row && row.runtime !== 'acp';
   const source = locator ? createSessionRecordSource(locator, { readMode, parentLineage }) : emptyRecordSource(own);
   const timeline = await createSessionTimeline(source, {
+    onError,
     sessionId,
     ...(pty && locator ? { hostTurnEnds: ptyTurnEnds(sessionId, locator.providerSessionId) } : {}),
     archive,
@@ -262,9 +264,17 @@ let resetGeneration = 0;
 type ActiveSubscription = {
   conversationId: string;
   stop: () => void;
+  fail?: (error: { code: string; message: string }) => void;
 };
 
 const subscriptions = new Map<string, ActiveSubscription>();
+
+function recordSourceFailed(conversationId: string, error: unknown): void {
+  const failure = { code: 'record_watch_failed', message: (error as Error)?.message ?? String(error) };
+  for (const subscription of [...subscriptions.values()]) if (subscription.conversationId === conversationId) subscription.fail?.(failure);
+  const entry = entries.get(conversationId);
+  if (entry) evict(entry);
+}
 
 // ─── 会话行 ────────────────────────────────────────────────────────────────
 
@@ -591,7 +601,8 @@ async function acquire(conversationId: string): Promise<SessionTimelineResult<Ti
   const generation = resetGeneration;
   // 审批只有 ACP 腿有可结算的请求 id；TUI 腿的审批画在终端里，没有通道
   // （`write-bridge` 对它 fail loud）。所以这条订阅只对 ACP 腿开。
-  const promise = factory({ locator: location.supported ? location.locator : null, journal, conversationId, answerableQuestions: remoteAnswerFor(row) }).then((timeline) => {
+  const promise = factory({ locator: location.supported ? location.locator : null, journal, conversationId, answerableQuestions: remoteAnswerFor(row),
+    onError: error => recordSourceFailed(conversationId, error) }).then((timeline) => {
     if (generation !== resetGeneration) {
       timeline.dispose();
       throw new Error('会话时间线服务在这份记录打开的过程中被重置了');
@@ -657,6 +668,12 @@ function journalOnly(row: SessionRow): boolean {
   return summaryRuntime(row.runtime) === 'acp' && sessionRecordHarnessForProvider(row.provider) === null && journalHasTurns(row.id);
 }
 
+/** The session has a record to read by now: a stand-in for it gives way to the timeline of that record. */
+function recordReadable(conversationId: string): boolean {
+  const row = readSessionRow(conversationId);
+  return row !== null && (locateRow(row).supported || journalOnly(row));
+}
+
 function standInEntry(row: SessionRow): TimelineEntry {
   return {
     conversationId: row.id,
@@ -664,10 +681,7 @@ function standInEntry(row: SessionRow): TimelineEntry {
       sessionId: row.id,
       firstMessage: firstMessageOf(row),
       createdAt: rowCreatedAt(row),
-      recordAvailable: () => {
-        const current = readSessionRow(row.id);
-        return current !== null && (locateRow(current).supported || journalOnly(current));
-      },
+      recordAvailable: () => recordReadable(row.id),
     }),
     refs: 1,
     idleTimer: null,
@@ -1288,7 +1302,8 @@ export async function subscribePreview(
 /** 订阅正文；同一个 subscriptionId 重连会替换前一条。预览使用上面的独立入口。 */
 export async function subscribe(
   input: SessionpageSessionSubscribeRequest,
-  emit: (event: SessionpageSessionEvent) => void
+  emit: (event: SessionpageSessionEvent) => void,
+  status?: (event: import('@gugu/session-core/session-record/contract').SessionpageRecordStatusEvent) => void
 ): Promise<SessionTimelineResult<{ subscriptionId: string }>> {
   const subscriptionId = input.subscriptionId?.trim();
   if (!subscriptionId) return fail('invalid_subscription', 'subscriptionId 是必填的');
@@ -1307,6 +1322,12 @@ export async function subscribe(
       stopFollow();
       teardown?.();
     },
+    fail: (error: { code: string; message: string }) => {
+      if (stopped) return;
+      status?.({ subscriptionId, error });
+      mine.stop();
+      forget();
+    },
   };
   subscriptions.set(subscriptionId, mine);
   const forget = () => { if (subscriptions.get(subscriptionId) === mine) subscriptions.delete(subscriptionId); };
@@ -1321,7 +1342,7 @@ export async function subscribe(
     }
     let unsubscribeTimeline: () => void;
     try {
-      unsubscribeTimeline = entry.timeline.subscribe(cursor, (result) => {
+      unsubscribeTimeline = entry.timeline.subscribe(cursor ?? (input.recordEvents ? { epoch: 'initial-record', seq: 0 } : null), (result) => {
         if (stopped) return;
         emit({ subscriptionId, result });
       }, { terminalPatch: input.terminalPatch === true });
@@ -1342,15 +1363,21 @@ export async function subscribe(
     return { ok: true, value: null };
   };
 
-  // The row moved to another agent record (see @@@record-moved): follow it. A cursor from no epoch of the new
-  // timeline makes it answer with a reset and a whole snapshot, which the viewer swaps in for what it holds.
+  // The row moved to another agent record (see @@@record-moved), or got its first one while a stand-in was read:
+  // follow it. A cursor from no epoch of the new timeline makes it answer with a reset and a whole snapshot, which the
+  // viewer swaps in for what it holds.
   stopFollow = tapMainEvents((channel, data) => {
-    if (channel !== sessionChangedChannel.name) return;
+    if (channel !== sessionChangedChannel.name || !attached) return;
     const { sessionId, changes } = data as { sessionId?: string; changes?: { providerSessionId?: unknown } };
+    if (sessionId !== input.conversationId) return;
     const next = changes?.providerSessionId;
-    if (sessionId !== input.conversationId || typeof next !== 'string' || !attached?.providerSessionId || next === attached.providerSessionId) return;
+    const moved = attached.standIn
+      ? recordReadable(input.conversationId)
+      : typeof next === 'string' && !!attached.providerSessionId && next !== attached.providerSessionId;
+    if (!moved) return;
     void attach({ epoch: 'record-moved', seq: 0 }).then((result) => {
-      if (!result.ok && result.error.code !== 'unsubscribed') {
+      // A record that is not there yet keeps its stand-in, which goes on asking (`recordAvailable`).
+      if (!result.ok && result.error.code !== 'unsubscribed' && result.error.code !== 'record_not_found') {
         log.warn('sessionTimeline: following the moved record failed', { conversationId: input.conversationId, error: result.error });
       }
     });

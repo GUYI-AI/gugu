@@ -515,13 +515,15 @@ describe('global search panel', () => {
     expect(options().map((option) => option.textContent)).toEqual([expect.stringContaining('已经把回滚开关打开了')])
   })
 
-  it('a group header narrows to that conversation, asking the cloud for that chat only and not the tasks', async () => {
+  it('a group header narrows to that conversation, asking the cloud for that chat only and listing no task', async () => {
     await render('回滚')
     remote.turns.mockClear()
     await act(async () => [...host.querySelectorAll<HTMLElement>('[role=listbox] [data-search-scope]')][0]!.click())
     await settle()
     expect(remote.messages).toHaveBeenCalledWith('message_search_as', { p_chat_id: GROUP, p_query: '回滚', p_limit: 100 })
+    // The same words' task answer is the one already read (it counts toward the line below the list): ❌ asked again.
     expect(remote.turns).not.toHaveBeenCalled()
+    expect(options().map((option) => option.textContent)).not.toContainEqual(expect.stringContaining('已经把回滚开关打开了'))
   })
 
   it('typed in: resolves to a conversation by name; an unknown one finds nothing instead of searching everywhere', async () => {
@@ -550,12 +552,39 @@ describe('global search panel', () => {
     await render('回滚')
     expect(remote.messages).toHaveBeenCalledWith('message_search_as', { p_chat_id: GROUP, p_query: '回滚', p_limit: 100 })
     expect(remote.messages).toHaveBeenCalledWith('message_search_as', { p_chat_id: null, p_query: '回滚', p_limit: 100 })
+    // What the chip hides is everything dropping it adds: 设计组's message and the task turn (❌ the messages alone).
     const elsewhere = host.querySelector<HTMLElement>('[data-testid=global-search-elsewhere]')!
-    expect(elsewhere.textContent).toBe('globalSearch.elsewhere {"count":"1"}')
+    expect(elsewhere.textContent).toBe('globalSearch.elsewhere {"count":"2"}')
     await act(async () => elsewhere.click())
     await settle()
     expect(host.querySelector('[data-testid=global-search-elsewhere]')).toBeNull()
     expect(headers()).toEqual(['搜索测试群甲', '发布排查 globalSearch.task', '设计组'])
+    expect(options()).toHaveLength(1 + 2)
+  })
+
+  it('in a facet, the line counts only what dropping the chip lists in that facet', async () => {
+    await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }], facet: 'message' }))
+    await render('回滚')
+    const elsewhere = host.querySelector<HTMLElement>('[data-testid=global-search-elsewhere]')!
+    expect(elsewhere.textContent).toBe('globalSearch.elsewhere {"count":"1"}')
+    await act(async () => elsewhere.click())
+    await settle()
+    expect(options()).toHaveLength(1 + 1)
+  })
+
+  it('says no count from the previous words while these words\' answers are on their way', async () => {
+    await act(async () => updateSearchSession({ chips: [{ kind: 'in', chatId: GROUP }] }))
+    await render('回滚')
+    expect(host.querySelector('[data-testid=global-search-elsewhere]')?.textContent).toBe('globalSearch.elsewhere {"count":"2"}')
+    const answers: (() => void)[] = []
+    remote.messages.mockImplementation(() => new Promise((resolve) => { answers.push(() => resolve({ data: [rows[0]], error: null })) }))
+    await act(async () => updateSearchSession({ text: '回滚脚本' }))
+    await settle()
+    expect(host.querySelector('[data-testid=global-search-elsewhere]')).toBeNull()
+    await act(async () => { for (const answer of answers) answer() })
+    await settle()
+    // Only this conversation's message now: what the chip hides is the task turn alone.
+    expect(host.querySelector('[data-testid=global-search-elsewhere]')?.textContent).toBe('globalSearch.elsewhere {"count":"1"}')
   })
 
   it('with nothing typed in one conversation it offers the quick filters; a kind of message is a search with no words', async () => {

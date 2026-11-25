@@ -50,7 +50,7 @@ export const SessionEditedFiles = observer(function SessionEditedFiles() {
       />
       {expanded && <>
         <div className="text-foreground-muted px-4 pb-2 text-xs">
-          {notRepository}{!!files?.length && ` ${translate('changes.sessionEditedFiles')}`}
+          {notRepository} {translate('changes.reviewInGitProject')}{!!files?.length && ` ${translate('changes.sessionEditedFiles')}`}
           {store?.canLoadOlderHistory && ` ${translate('changes.olderTurnsNotLoaded')}`}
         </div>
         {files?.length === 0 && <EmptyState label={translate('changes.noSessionEdits')} />}

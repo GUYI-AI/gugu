@@ -2,8 +2,10 @@ import { useHotkeyRecorder, type Hotkey } from '@tanstack/react-hotkeys';
 import { RotateCcw, X } from '@/lib/icons'
 import React, { useEffect, useState } from 'react';
 import { commandRegistry } from '@renderer/lib/commands/registry';
+import { commandCategoryLabel, commandDescription, commandLabel } from '@renderer/lib/commands/command-copy';
 import { useAppSettingsKey, type AppSettingsKeyApi } from '@renderer/features/settings/use-app-settings-key';
 import type { AppSettings } from '@shared/core/app-settings';
+import type { CommandCategory } from '@shared/commands';
 import { SettingValue } from './SettingControls';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import {
@@ -27,14 +29,11 @@ const CONFIGURABLE_SHORTCUTS = (
   ][]
 ).filter(([, def]) => !def.hideFromSettings);
 
-const SHORTCUTS_BY_CATEGORY = CONFIGURABLE_SHORTCUTS.reduce<
-  Record<string, [CommandId, (typeof COMMANDS)[CommandId]][]>
->((acc, entry) => {
+const SHORTCUTS_BY_CATEGORY = CONFIGURABLE_SHORTCUTS.reduce((acc, entry) => {
   const category = entry[1].category;
-  if (!acc[category]) acc[category] = [];
-  acc[category].push(entry);
+  acc.set(category, [...(acc.get(category) ?? []), entry]);
   return acc;
-}, {});
+}, new Map<CommandCategory, [CommandId, (typeof COMMANDS)[CommandId]][]>());
 
 /** 只对终端起作用的快捷键:「终端」开关关着时不列(终端整个不出现,它们也就无事可做)。 */
 const TERMINAL_SHORTCUTS: ReadonlySet<CommandId> = new Set<CommandId>(['session.newTerminal', 'session.viewTerminals']);
@@ -68,8 +67,8 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
       });
 
       if (conflict) {
-        const [, def] = conflict;
-        const msg = translate('keyboard.conflictDescription', { label: def.label });
+        const [conflictKey] = conflict;
+        const msg = translate('keyboard.conflictDescription', { label: commandLabel(conflictKey) });
         toast({
           title: translate('keyboard.conflictTitle'),
           description: msg,
@@ -84,7 +83,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
       toast({
         title: translate('keyboard.updatedTitle'),
         description: translate('keyboard.updatedDescription', {
-          label: COMMANDS[editingKey].label,
+          label: commandLabel(editingKey),
           hotkey: describeHotkey(hotkey),
         }),
       });
@@ -107,7 +106,7 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
     resetField(key);
     toast({
       title: translate('keyboard.resetTitle'),
-      description: translate('keyboard.resetDescription', { label: COMMANDS[key].label }),
+      description: translate('keyboard.resetDescription', { label: commandLabel(key) }),
     });
   };
 
@@ -115,20 +114,20 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
     update({ [key]: null });
     toast({
       title: translate('keyboard.removedTitle'),
-      description: translate('keyboard.removedDescription', { label: COMMANDS[key].label }),
+      description: translate('keyboard.removedDescription', { label: commandLabel(key) }),
     });
   };
 
   return (
     <div className="gg-settings-surface p-4">
       <div className="space-y-6">
-        {Object.entries(SHORTCUTS_BY_CATEGORY)
+        {[...SHORTCUTS_BY_CATEGORY]
           .map(([category, shortcuts]) => [category, shortcuts.filter(([key]) => terminalEnabled || !TERMINAL_SHORTCUTS.has(key))] as const)
           .filter(([, shortcuts]) => shortcuts.length > 0)
           .map(([category, shortcuts]) => (
           <div key={category}>
             <div className="text-foreground-muted mb-3 text-xs font-medium tracking-wide uppercase">
-              {category}
+              {commandCategoryLabel(category)}
             </div>
             <div className="space-y-3">
               {shortcuts.map(([key, def]) => {
@@ -147,9 +146,9 @@ const KeyboardSettingsForm: React.FC<{ keyboard: AppSettings['keyboard']; api: A
                     className="group/shortcut flex min-w-0 flex-wrap items-start justify-between gap-x-2 gap-y-2"
                   >
                     <div className="min-w-0 flex-1 basis-64 space-y-1">
-                      <div className="text-sm break-words">{def.label}</div>
+                      <div className="text-sm break-words">{commandLabel(key)}</div>
                       <div className="text-foreground-muted text-xs break-words">
-                        {def.description}
+                        {commandDescription(key)}
                       </div>
                     </div>
                     <div className="ml-auto flex shrink-0 items-center gap-2">

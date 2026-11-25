@@ -4,7 +4,7 @@ import { fileImageLinks } from '@gugu/session-core/acp/inline-file-images';
 import { safeDeliveredBody, type DeliveryMessagePresentation } from '@session-chat/state/delivery-presentation';
 import { rowTranslator } from '../readable-label';
 import { ConversationMessage, conversationMessageHeight, isConversationMessage } from './ConversationMessage';
-import { StreamContext, type StreamAnimation } from '@session-chat/components/contexts/StreamContext';
+import { StreamContext, createStreamAnimation } from '@session-chat/components/contexts/StreamContext';
 import { BlockStackView } from '@session-chat/components/primitives/BlockStackView';
 import { CopyButton } from '@session-chat/components/primitives/CopyButton';
 import { proseLinesHeight } from '@session-chat/components/rows/markdown/html/layout';
@@ -198,11 +198,7 @@ function AssistantRender(props: { data: ChatMessage; ctx: RenderCtx; vars: Messa
     return { blocks, settledCount };
   });
 
-  const streamAnimation: StreamAnimation = {
-    frontier: new Map(),
-    streaming: () => props.data.streaming === true,
-    settledCount: () => parsed().settledCount,
-  };
+  const streamAnimation = createStreamAnimation(() => props.data.text, () => props.data.streaming === true, () => parsed().settledCount);
 
   const stack = createMemo<Measured<StackLayout> | null>(() => {
     const ctx = mCtx();
