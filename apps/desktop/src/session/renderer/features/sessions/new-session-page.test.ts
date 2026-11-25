@@ -617,8 +617,8 @@ describe('NewSessionPage', () => {
   it('keeps an editable, projectless composer when no project exists', async () => {
     await renderPage();
 
-    // The page is named after the entry that opens it (「创建智能体」 in the sidebar); still never 「新建会话」 (#563).
-    expect(container.textContent).toContain('创建智能体');
+    // Owner-approved task naming (#563), already synchronized by #573.
+    expect(container.textContent).toContain('新建任务');
     expect(container.textContent).not.toContain('新建会话');
     expect(container.textContent).toContain('未选择项目');
     expect(container.querySelector('[data-testid="active-task-composer"]')).not.toBeNull();

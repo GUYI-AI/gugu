@@ -173,7 +173,7 @@ export const enUSSessionWorkflowMessages = {
   'sessionHistory.importOffer': 'Used {tools} before?',
   'sessionHistory.importOfferAction': 'Import earlier sessions ›',
 
-  'task.newTask': 'Create agent',
+  'task.newTask': 'New task',
   'task.newTaskHint': 'Describe what you want done. Pick the project and machine below.',
   'task.starterExplain': 'Explain this project',
   'task.starterExplainPrompt': 'Explain how this project is organized: its main parts, how they fit together, and where to start reading.',
@@ -920,7 +920,7 @@ export const zhCNSessionWorkflowMessages: Record<keyof typeof enUSSessionWorkflo
   'sessionHistory.importOffer': '使用过 {tools}？',
   'sessionHistory.importOfferAction': '导入历史会话 ›',
 
-  'task.newTask': '创建智能体',
+  'task.newTask': '新建任务',
   'task.newTaskHint': '说说你想做的事，项目和机器在下面选。',
   'task.starterExplain': '讲讲这个项目',
   'task.starterExplainPrompt': '讲讲这个项目是怎么组织的：主要有哪几块、它们怎么配合、从哪里开始读。',

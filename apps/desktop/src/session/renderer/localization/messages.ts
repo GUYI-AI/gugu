@@ -1393,7 +1393,6 @@ const enUSCoreMessages = {
   'composer.platformCatalogTimeout': 'The Gugu model list timed out',
   'composer.unknownError': 'Unknown error',
   'newAgent.title': 'Create agent',
-  'newAgent.placeholder': 'What should this agent do?',
   'newAgent.workspaceFailed': 'Could not prepare the default task workspace. Try again in a moment.',
   'newAgent.contextUnavailable':
     'The create context (device / project defaults) could not be read. Reopen the draft; if it keeps happening, the host has not loaded the create-context bridge.',
@@ -2693,7 +2692,6 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'composer.platformCatalogTimeout': '平台模型目录响应超时',
   'composer.unknownError': '未知错误',
   'newAgent.title': '创建智能体',
-  'newAgent.placeholder': '这个智能体要做什么？',
   'newAgent.workspaceFailed': '无法准备默认项目工作区，请稍后重试',
   'newAgent.contextUnavailable':
     '无法读取创建上下文（设备/项目默认值）。请重新打开创建草稿；若持续出现，说明宿主未加载创建上下文桥。',
