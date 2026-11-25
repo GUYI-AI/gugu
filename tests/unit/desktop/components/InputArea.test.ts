@@ -206,7 +206,7 @@ describe('ChatMessageComposer', () => {
       await Promise.resolve()
     })
     await flush()
-    expect(onSendAttachments).toHaveBeenCalledWith([file], { toUserIds: [], isWhisper: false, runs: [{ size: 1 }] })
+    expect(onSendAttachments).toHaveBeenCalledWith([file], { toUserIds: [], isWhisper: false })
     expect(container.querySelectorAll('[data-inline-image-id]')).toHaveLength(1)
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:gugu-preview')
@@ -226,7 +226,8 @@ describe('ChatMessageComposer', () => {
     if (mobile) await typeInComposer('你看看')
     else { await act(async () => { appendToComposer(container.querySelector('[contenteditable]'), '你看看') }); await flush() }
     await clickSend()
-    expect(onSendAttachments).toHaveBeenCalledExactlyOnceWith(files, expect.objectContaining(mobile ? { caption: '你看看' } : { runs: [{ size: 4, caption: '你看看' }] }))
+    // One message as typed: the pictures as its files, the words (without the pictures' places) as its caption.
+    expect(onSendAttachments).toHaveBeenCalledExactlyOnceWith(files, expect.objectContaining({ caption: '你看看' }))
     expect(onSend, 'no separate text message').not.toHaveBeenCalled()
     expect(readComposer(container.querySelector('[contenteditable]'))).toBe('')
     expect(container.querySelectorAll('[data-slot="composer-attachment"]')).toHaveLength(0)

@@ -80,8 +80,6 @@ type BatchArgs = {
   threadRootId?: string | null
   isThreadRoot?: boolean
   caption?: string
-  /** Consecutive runs of `files`, each its own send with its own caption; absent = one run of all of them. */
-  runs?: { size: number; caption?: string }[]
   annotations?: TurnAnnotation[]
   outbox: Pick<OutboxWiring, 'stageAttachment' | 'commitAttachment' | 'failAttachmentUpload'> & { outbox: Pick<OutboxWiring['outbox'], 'discard'> }
   appendMessage: (message: MessageItem) => void
@@ -101,20 +99,6 @@ function sendGroupsOf(count: number): (SendGroup | undefined)[] {
   return groups
 }
 
-/** Per file: its send, and the words that file carries (a run's caption on its last file; the comments on the very last). */
-function wordsAndGroupsOf(args: BatchArgs): { words: (Words | undefined)[]; groups: (SendGroup | undefined)[] } {
-  const runs = args.runs ?? [{ size: args.files.length, caption: args.caption }]
-  const words: (Words | undefined)[] = []
-  const groups: (SendGroup | undefined)[] = []
-  for (const [index, run] of runs.entries()) {
-    const last = index === runs.length - 1
-    const said: Words = { caption: run.caption, ...(last && args.annotations?.length ? { annotations: args.annotations } : {}) }
-    words.push(...Array<Words | undefined>(run.size - 1).fill(undefined), run.caption || last ? said : undefined)
-    groups.push(...sendGroupsOf(run.size))
-  }
-  return { words, groups }
-}
-
 /**
  * Puts one row per file on screen, owned by the outbox, and returns the last row's id once they are there. Several files
  * are one send (#2581), up to SEND_GROUP_MAX_FILES of them, then the next send: their rows share a group and the text rides on the
@@ -126,11 +110,13 @@ export async function sendAttachmentBatch(args: BatchArgs): Promise<string | und
   if (args.threadRootId != null || args.isThreadRoot === true) await requireThreadCapableChat(args.chatId, 'sendAttachmentBatch')
   await Promise.all(args.files.map(sniffFileMimeType))
   // The text is the message's, written under all of it: it rides on the last file, whatever kind it is.
-  const { words: wordsOf, groups: sendGroups } = wordsAndGroupsOf(args)
+  const captionIndex = args.files.length - 1
+  const words: Words = { caption: args.caption, ...(args.annotations?.length ? { annotations: args.annotations } : {}) }
+  const sendGroups = sendGroupsOf(args.files.length)
   const rows: StagedRow[] = []
   try {
     for (const [fileIndex, file] of args.files.entries()) {
-      const row = await placeholderRow(file, wordsOf[fileIndex], args, sendGroups[fileIndex])
+      const row = await placeholderRow(file, fileIndex === captionIndex ? words : undefined, args, sendGroups[fileIndex])
       rows.push(row)
       // Durable ownership precedes visibility; uploading does not block the lane.
       await args.outbox.stageAttachment(row.message)
@@ -151,7 +137,7 @@ export async function sendAttachmentBatch(args: BatchArgs): Promise<string | und
   void (async () => {
     // Commits keep the files' order: a later file never reaches the conversation before an earlier one that is ready.
     for (const [index, row] of rows.entries()) {
-      await commitWhenPrepared(args, args.files[index], row, prepared[index], timings[index], wordsOf[index], sendGroups[index])
+      await commitWhenPrepared(args, args.files[index], row, prepared[index], timings[index], index === captionIndex ? words : undefined, sendGroups[index])
     }
   })().catch((error) => rendererLogger('chat/send').error({ chatId: args.chatId, error: String(error) }, 'attachment failure not recorded'))
   return rows.at(-1)?.message.id

@@ -39,6 +39,14 @@ export function inlineImageMarker(id: string): string {
 
 const INLINE_IMAGE_MARKER = /!\[image\]\(gugu-attachment:([^)\s]+)\)/g;
 
+/** The words alone: each inline image taken out, with the space around it (a chat sends its pictures beside the words). */
+export function withoutInlineImages(text: string): string {
+  return text.replace(/[ \t]*!\[image\]\(gugu-attachment:[^)\s]+\)[ \t]*/g, (marker, offset: number, whole: string) => {
+    const before = whole[offset - 1], after = whole[offset + marker.length];
+    return before === undefined || before === '\n' || after === undefined || after === '\n' ? '' : ' ';
+  });
+}
+
 /** The text cut at its inline images, in order: what a conversation sends as words and pictures in place. */
 export function inlineImageParts(text: string): Array<{ text: string } | { imageId: string }> {
   const parts: Array<{ text: string } | { imageId: string }> = [];

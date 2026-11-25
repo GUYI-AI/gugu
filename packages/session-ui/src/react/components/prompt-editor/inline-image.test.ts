@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inlineImageMarker, inlineImageParts, plainTextDoc } from './serialize';
+import { inlineImageMarker, inlineImageParts, plainTextDoc, withoutInlineImages } from './serialize';
 
 describe('inline image markers', () => {
   it('cut the text at each picture, in order', () => {
@@ -14,5 +14,11 @@ describe('inline image markers', () => {
     expect(doc.content[0].content).toEqual([
       { type: 'text', text: 'x ' }, { type: 'inlineImage', attrs: { id: 'a' } }, { type: 'text', text: ' y' },
     ]);
+  });
+
+  it('leave the words alone when the pictures go beside them', () => {
+    const m = inlineImageMarker;
+    expect(withoutInlineImages(`Compare ${m('a')} with ${m('b')} please`)).toBe('Compare with please');
+    expect(withoutInlineImages(`${m('a')} ${m('b')}\nsee  this ${m('c')}`)).toBe('\nsee  this');
   });
 });

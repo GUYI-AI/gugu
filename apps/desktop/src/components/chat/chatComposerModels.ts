@@ -16,7 +16,7 @@ export interface ChatMessageComposerProps {
   /** 发送前置(agent 私聊的会话就绪)。文字消息把它交给 onSend 的 beforeDeliver,在投递前跑,❌ 挡在上屏之前(C1)。 */
   beforeSend?: () => Promise<void>
   /** Resolves with the last file's message once they are on screen (a text sent with them waits for it); throws if none were kept. */
-  onSendAttachments?: (files: File[], opts?: { toUserIds?: string[] | null; replyToMessageId?: string | null; isWhisper?: boolean; caption?: string; runs?: import('./inlineImageSend').InlineImageRun[]; annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[] }) => Promise<string | undefined | void>
+  onSendAttachments?: (files: File[], opts?: { toUserIds?: string[] | null; replyToMessageId?: string | null; isWhisper?: boolean; caption?: string; annotations?: import('@gugu/session-core/acp/client').TurnAnnotation[] }) => Promise<string | undefined | void>
   quoteContent?: { messageId?: string; senderName: string; content: string; originalContent?: string | null; source?: ReplySource; attachment?: ParsedAttachment } | null
   onQuoteConsumed?: () => void
   mentionToInsert?: { id: string; name: string } | null
