@@ -92,17 +92,14 @@ describe('whether the assistant here waits for its rules', () => {
     expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
   });
 
-  it('waits, and puts the App in, while the account signed in has an assistant elsewhere: the App is its page here', async () => {
+  // The assistant is not promoted (assistant-entry.ts ASSISTANT_PROMOTED): its App is an ordinary App, put in by the person.
+  it('does not put the App in for an assistant living elsewhere: nothing to wait for, nothing put in', async () => {
     state.signedIn = 'owner-1';
     state.assistants = { 'owner-1': 'assistant-1' };
-    const { assistantRulesState, ensureAssistantApp, waitForNotification } = await root();
-    // Not known before main asked: a window found the assistant, the App is not in.
-    void ensureAssistantApp('assistant').catch(() => undefined);
-    await waitForNotification({ pending: true, stuck: false });
-    expect(await assistantRulesState()).toEqual({ pending: true, stuck: false });
-    // Another account signed in now: what was read about the first one is not about it.
-    state.signedIn = 'owner-2';
+    const { assistantRulesState, ensureAssistantApp } = await root();
+    expect(await ensureAssistantApp('assistant')).toBe('not-needed');
     expect(await assistantRulesState()).toEqual({ pending: false, stuck: false });
+    expect(marketInstalls).toEqual([]);
   });
 
   it('leaves a person with no assistant anywhere alone: nothing to wait for, nothing put in', async () => {

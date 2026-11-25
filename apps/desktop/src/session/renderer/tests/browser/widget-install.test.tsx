@@ -17,7 +17,7 @@ vi.mock('@/components/appSlot/appsHere', () => ({ appsHere: { ...state, runs: ()
 vi.mock('@/lib/widgetRegistry', async original => {
   const { parseWidgetMessage } = await import('@gugu/core/shared/ui/widgetModels');
   return { ...(await original<object>()), widgetForOriginal: async (message: import('@/lib/widgetRegistry').WidgetOriginMessage) => ({
-    id: message.id, widget: parseWidgetMessage(message.content), senderId: message.sender_user_id,
+    id: message.id, widget: parseWidgetMessage(message.content), senderId: 'agent',
   }) };
 });
 vi.mock('@/components/extensionBundle/sharedPackages', async original => ({

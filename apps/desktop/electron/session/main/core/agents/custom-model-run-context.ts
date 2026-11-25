@@ -1,7 +1,8 @@
 import { customClaudeReviewSource, type ClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
 import { appSettingsService } from '@main/core/settings/settings-service';
 import type { AgentRunContext } from '@gugu/session-core/agents/agent-run-context';
-import { antigravityCustomModelLaunch, claudeAcpPlatformSessionMeta } from '@gugu/session-plugins/agents';
+import { antigravityCustomModelLaunch, claudeAcpPlatformSessionMeta, codexPlatformModelFacts, GUGU_PLATFORM_MODELS_ENV, pluginRegistry } from '@gugu/session-plugins/agents';
+import { chatModel, customModelEfforts } from '@gugu/session-core/models/custom-model';
 import { writeSessionSettingsFile } from '../../../../sessionpage/session-settings-file';
 import { resolveCustomModel, type ResolvedCustomModel } from './custom-models';
 import { CLAUDE_CONNECTION_UNSET_ENV, CODEX_CONNECTION_UNSET_ENV, claudeApiKeyEnv, codexApiKeyConnectionArgs } from './harness-connection-launch';
@@ -69,7 +70,15 @@ export async function resolveCustomModelRunContext(providerId: string, sessionId
     };
   }
   if (providerId === 'codex') {
-    return { ...marker, credentialEnv: { OPENAI_API_KEY: custom.apiKey }, unsetEnv: [...CODEX_CONNECTION_UNSET_ENV], extraArgs: codexApiKeyConnectionArgs(custom.name, custom.endpoint, model) };
+    // Codex runs a model it does not know on a fallback with no levels. The facts a platform model hands it
+    // (its window and levels, rendered into Codex's model catalog) carry this connection's models the same way.
+    const facts = (entry: ResolvedCustomModel['entries'][number]) => ({
+      id: entry.id, displayName: entry.label || entry.id, contextWindow: entry.contextWindow ?? null,
+      reasoningEfforts: customModelEfforts(entry, pluginRegistry.get('codex')?.capabilities.effort),
+    });
+    const selected = custom.entries.find(({ id }) => id === model);
+    const catalog: Record<string, string> = model && selected ? { [GUGU_PLATFORM_MODELS_ENV]: codexPlatformModelFacts({ model, contextWindow: selected.contextWindow, reasoningEfforts: facts(selected).reasoningEfforts, models: custom.entries.filter(chatModel).map(facts) }) } : {};
+    return { ...marker, credentialEnv: { OPENAI_API_KEY: custom.apiKey, ...catalog }, unsetEnv: [...CODEX_CONNECTION_UNSET_ENV], extraArgs: codexApiKeyConnectionArgs(custom.name, custom.endpoint, model) };
   }
   if (providerId === 'antigravity') {
     const launch = antigravityCustomModelLaunch({ apiKey: custom.apiKey, endpoint: custom.endpoint, model });

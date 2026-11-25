@@ -91,6 +91,7 @@ export const electronPlatform: AppPlatform = {
     backgroundWatch: false,
     barcodeScan: false,
     sessionHost: true,
+    modelSettings: true,
     externalFileOpen: true,
     logTail: true,
     appRelaunch: true,

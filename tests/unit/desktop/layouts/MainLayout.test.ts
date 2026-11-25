@@ -968,36 +968,6 @@ describe('MainLayout', () => {
     expect(harness.container.querySelector('nav')).not.toBeNull()
     expect(pages.filter((page) => !page.hasAttribute('inert')).map((page) => page.dataset.mobileTabPage)).toEqual(['chats'])
   })
-  // #7199 咕咕不单占一格(owner 10-26「成为会话首个」):它是「消息」置顶第一行,点开整屏推进来、没有底栏,返回回到「消息」。
-  it('pins 咕咕 as the first row of 消息 and pushes it full screen without the tab bar', async () => {
-    platformMock.kind = 'capacitor'
-    platformMock.capabilities.sessionHost = false
-    phoneAssistantMock.state.available = true
-    phoneAssistantMock.state.assistant = { id: 'agent-1', display_name: '小咕', avatar: null, created_at: null }
-    await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
-    const pages = [...harness.container.querySelectorAll<HTMLElement>('[data-mobile-tab-pager] > [data-mobile-tab-page]')]
-    expect(pages.map((page) => page.dataset.mobileTabPage)).toEqual(MOBILE_TABS)
-    expect([...harness.container.querySelectorAll<HTMLElement>('nav button')].map((button) => button.dataset.testid)).toEqual([
-      AUTOMATION_TEST_IDS.mobileMessagesNav,
-      AUTOMATION_TEST_IDS.mobileContactsNav,
-      'phone-list-search',
-    ])
-    const row = harness.container.querySelector<HTMLElement>(`[data-mobile-tab-page="chats"] [data-testid="${AUTOMATION_TEST_IDS.mobileAssistantNav}"]`)!
-    expect(row, 'the first row of 消息').toBeTruthy()
-    expect(row.textContent, 'its row carries its own name').toContain('小咕')
-    expect(pages.filter((page) => !page.hasAttribute('inert')).map((page) => page.dataset.mobileTabPage)).toEqual(['chats'])
-    const request = () => Number((harness.container.querySelector('[data-testid="mock-assistant-tab"]') as HTMLElement).dataset.chatRequest)
-    const before = request()
-    await clickElement(row)
-    expect(layerOpen('mobile-assistant-layer')).toBe(true)
-    expect((harness.container.querySelector('[data-testid="mock-assistant-tab"]') as HTMLElement).dataset.visible).toBe('true')
-    expect(request(), 'lands on its chat segment').toBeGreaterThan(before)
-    expect(harness.container.querySelector('nav'), 'no tab bar on a pushed page').toBeNull()
-    await nativeBack()
-    expect(layerOpen('mobile-assistant-layer')).toBe(false)
-    expect(harness.container.querySelector('nav')).not.toBeNull()
-    expect(pages.filter((page) => !page.hasAttribute('inert')).map((page) => page.dataset.mobileTabPage)).toEqual(['chats'])
-  })
   it('opens the phone Marketplace connectors for the legacy assistant event', async () => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
@@ -1072,32 +1042,15 @@ describe('MainLayout', () => {
     expect(layerOpen('mobile-settings-layer')).toBe(true)
     expect(harness.container.querySelector(`[data-testid="mock-settings-panel"][data-section="${section}"]`)).not.toBeNull()
   })
-  // owner 10-16「得考虑最开始没有创建咕咕的新用户」:没有它,那一行照样在,头像是淡一点的默认咕咕 + 小「+」,点进去是安家引导。
-  it('keeps the 咕咕 row first for a new user with no assistant, and marks it as the place to set one up', async () => {
+  // The assistant is not promoted (assistant-entry.ts ASSISTANT_PROMOTED): no pinned row in 消息, even for an account that has
+  // one — its private chat is a chat in the list like any other.
+  it('pins no 咕咕 row in 消息, even with an assistant', async () => {
     platformMock.kind = 'capacitor'
     platformMock.capabilities.sessionHost = false
     phoneAssistantMock.state.available = true
-    phoneAssistantMock.state.assistant = null
-    phoneAssistantMock.state.stage = { stage: 'onboarding' }
+    phoneAssistantMock.state.assistant = { id: 'agent-1', display_name: '小咕', avatar: null, created_at: null }
     await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
-    const row = harness.container.querySelector<HTMLElement>(`[data-testid="${AUTOMATION_TEST_IDS.mobileAssistantNav}"]`)!
-    expect(row.textContent).toContain('咕咕')
-    const icon = row.querySelector<HTMLElement>('[data-testid="mobile-assistant-nav-default"]')
-    expect(icon, 'the default 咕咕 icon').toBeTruthy()
-    expect(icon!.hasAttribute('data-fresh'), 'a small + while there is no assistant yet').toBe(true)
-    await clickElement(row)
-    expect(layerOpen('mobile-assistant-layer')).toBe(true)
-  })
-  it('shows the plain default 咕咕 (no +) while it is still being read', async () => {
-    platformMock.kind = 'capacitor'
-    platformMock.capabilities.sessionHost = false
-    phoneAssistantMock.state.available = true
-    phoneAssistantMock.state.assistant = null
-    phoneAssistantMock.state.stage = { stage: 'identity' }
-    await harness.render(createNode(MainLayout, { user: { id: 'user-1', email: 'user@example.com', nickname: 'User' } }))
-    const icon = harness.container.querySelector<HTMLElement>(`[data-testid="${AUTOMATION_TEST_IDS.mobileAssistantNav}"] [data-testid="mobile-assistant-nav-default"]`)
-    expect(icon).toBeTruthy()
-    expect(icon!.hasAttribute('data-fresh'), '❌ say "set it up" before knowing there is none').toBe(false)
+    expect(harness.container.querySelector(`[data-testid="${AUTOMATION_TEST_IDS.mobileAssistantNav}"]`)).toBeNull()
   })
   it('has no 咕咕 row where the assistant cannot be opened', async () => {
     platformMock.kind = 'capacitor'

@@ -54,6 +54,8 @@ export const customModelMetaSchema = z.object({
     .refine((entries) => new Set(entries.map(({ protocol }) => protocol)).size === entries.length, 'Use one address per protocol'),
   models: z.array(customModelEntrySchema).max(200)
     .refine((entries) => new Set(entries.map(({ id }) => id)).size === entries.length, 'Model IDs must be unique'),
+  /** The protocol the person picked for a harness (harness id → protocol); a harness not named here takes `matchCustomModel`'s order. */
+  harnessProtocols: z.record(z.string(), modelProtocolSchema).optional(),
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
@@ -65,6 +67,43 @@ export type CustomModelEntry = z.infer<typeof customModelEntrySchema>;
  */
 export function customModelAcceptsImages(entry: Pick<CustomModelEntry, 'image'> | undefined): boolean {
   return entry?.image !== false;
+}
+
+/**
+ * Whether a custom model the person has not switched either way gets thinking levels. The one place the default lives.
+ * On: a relay rarely says, and its first level, "Default", sends no level at all, so a model without one is not refused.
+ */
+export const CUSTOM_MODEL_THINKING_DEFAULT = true;
+
+export function customModelThinks(entry: Pick<CustomModelEntry, 'thinking'> | undefined): boolean {
+  return entry?.thinking ?? CUSTOM_MODEL_THINKING_DEFAULT;
+}
+
+/**
+ * A thinking custom model's own levels. No model list we read (OpenAI's or Gemini's shape) declares any, so it offers
+ * the harness's declared ladder; the picker shows and the launch arms this same list.
+ */
+export function customModelEfforts(
+  entry: Pick<CustomModelEntry, 'thinking'> | undefined,
+  harnessEffort: { kind: string; effortOptions?: Record<string, unknown> } | undefined,
+): string[] | null {
+  return customModelThinks(entry) && harnessEffort?.kind === 'selectable' && harnessEffort.effortOptions
+    ? Object.keys(harnessEffort.effortOptions) : null;
+}
+
+const NON_CHAT_MODEL = /embed|rerank|moderation|whisper|tts|speech|transcri|audio|realtime|dall-e|image|seedream|seedance|video|sora|veo|kling|hailuo/i;
+const CHAT_ENDPOINT_TYPES = new Set(['openai', 'openai-response', 'anthropic', 'gemini']);
+
+/**
+ * Whether a relay's model is one a harness can chat with. Metadata the entry carries wins (Gemini's
+ * `supportedGenerationMethods`, a relay's `supported_endpoint_types`); otherwise the id names a known non-chat family.
+ */
+export function chatModel(entry: { id: string; supportedGenerationMethods?: unknown; supported_endpoint_types?: unknown }): boolean {
+  const methods = entry.supportedGenerationMethods;
+  if (Array.isArray(methods) && !methods.includes('generateContent')) return false;
+  const types = entry.supported_endpoint_types;
+  if (Array.isArray(types) && types.length > 0 && !types.some((type) => CHAT_ENDPOINT_TYPES.has(type))) return false;
+  return !NON_CHAT_MODEL.test(entry.id);
 }
 
 export type PiCustomModelProvider = {
@@ -124,26 +163,30 @@ export function runtimeModelId(value: string | undefined | null): string | undef
 export type CustomModelUnavailableReason = 'protocol' | 'missing-key' | 'unsupported' | 'no-model';
 
 /**
- * Native protocol wins, then the writer's other explicitly supported protocols, then a protocol the harness declares the
- * bundled local router can convert (`converted: true`).
+ * The protocol the person picked for this harness wins when the harness can use it; otherwise native protocol, then the
+ * writer's other explicitly supported protocols, then a protocol the harness declares the bundled local router can
+ * convert (`converted: true`).
  */
 export function matchCustomModel(input: {
+  harness?: string;
   nativeProtocol?: HarnessWireProtocol;
   protocols?: readonly HarnessWireProtocol[];
   convertFrom?: readonly HarnessWireProtocol[];
   allowDefaultModel?: boolean;
   hasModel?: boolean;
-  connection: Pick<CustomModelConnection, 'endpoints' | 'keySaved'>;
+  connection: Pick<CustomModelConnection, 'endpoints' | 'keySaved' | 'harnessProtocols'>;
 }): { endpoint: CustomModelMeta['endpoints'][number]; converted?: true; reason?: never } | { endpoint?: never; converted?: never; reason: CustomModelUnavailableReason } {
   if (!input.nativeProtocol) return { reason: 'unsupported' };
+  const direct = [input.nativeProtocol, ...(input.protocols ?? [])];
+  const convertible = input.convertFrom ?? [];
   const find = (protocols: readonly HarnessWireProtocol[]) =>
     protocols.map((protocol) => input.connection.endpoints.find((item) => item.protocol === protocol)).find(Boolean);
-  const direct = find([input.nativeProtocol, ...(input.protocols ?? [])]);
-  const endpoint = direct ?? find(input.convertFrom ?? []);
+  const chosen = input.harness ? input.connection.harnessProtocols?.[input.harness] : undefined;
+  const endpoint = (chosen && [...direct, ...convertible].includes(chosen) ? find([chosen]) : undefined) ?? find(direct) ?? find(convertible);
   if (!endpoint) return { reason: 'protocol' };
   if (!input.connection.keySaved) return { reason: 'missing-key' };
   if (input.hasModel === false && !input.allowDefaultModel) return { reason: 'no-model' };
-  return direct ? { endpoint } : { endpoint, converted: true };
+  return direct.includes(endpoint.protocol) ? { endpoint } : { endpoint, converted: true };
 }
 
 /** Resolve only within the provider addressing reported by this running custom session. */

@@ -2,7 +2,7 @@ import { openFixture } from '@tooling/utils/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AppDb } from '@main/db/client';
 
-const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined }));
+const mocks = vi.hoisted(() => ({ db: undefined as AppDb | undefined, emit: vi.fn() }));
 
 vi.mock('@main/db/client', () => ({
   get db() {
@@ -10,9 +10,11 @@ vi.mock('@main/db/client', () => ({
     return mocks.db;
   },
 }));
+vi.mock('@main/lib/events', () => ({ events: { emit: mocks.emit } }));
 vi.mock('@main/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
 const { recordLiveModelSwitch } = await import('./live-model-switch');
+const { sessionChangedChannel } = await import('@shared/core/sessions/sessionEvents');
 const { sessionPlatformModel } = await import('./platform-model-selection');
 
 /**
@@ -38,6 +40,7 @@ describe('recordLiveModelSwitch', () => {
   });
 
   afterEach(() => {
+    mocks.emit.mockReset();
     fixture.close();
     mocks.db = undefined;
   });
@@ -54,6 +57,17 @@ describe('recordLiveModelSwitch', () => {
 
     await expect(sessionPlatformModel('conv-1')).resolves.toBeNull();
     expect(config()).toEqual({ version: '1', type: 'acp', model: 'provider-model', permissionMode: 'full-access' });
+  });
+
+  it('tells open views the recorded model, so a switch to a custom model is labelled by it', async () => {
+    const relay = 'custom:6a3d1f20-0000-4000-8000-000000000001:deepseek-v4';
+    await recordLiveModelSwitch({ sessionId: 'conv-1', modelId: relay, source: 'own' });
+    await recordLiveModelSwitch({ sessionId: 'conv-1', modelId: 'glm-5.3-flash', source: 'platform' });
+
+    expect(mocks.emit.mock.calls).toEqual([
+      [sessionChangedChannel, { sessionId: 'conv-1', projectId: 'project-1', changes: { model: relay } }],
+      [sessionChangedChannel, { sessionId: 'conv-1', projectId: 'project-1', changes: { model: null } }],
+    ]);
   });
 
   it('fails loudly for a conversation that has no record', async () => {

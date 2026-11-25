@@ -1,6 +1,6 @@
 import { buildSessionPermissionOptions } from '@shared/session-permission-options';
 import { customClaudeReviewSource } from '@gugu/session-core/models/auto-review-source';
-import { customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { createFailureLogFields } from './create-failure-log-fields';
 import { catalogAllowsAutoReview } from '@gugu/session-core/acp/client';
 import { randomUUID } from 'node:crypto';
@@ -309,12 +309,13 @@ export async function createModels(
       ? customClaudeReviewSource({ connectionId: customRef.connectionId, endpoint: reviewEndpoint.baseUrl, selectedModel: customRef.modelId, models: reviewConnection.models,
         preference: await (await import('@main/core/settings/settings-service')).appSettingsService.get('autoReviewModel') }) : null;
     const customEntry = customRef && customRecords.find(({ id }) => id === customRef.connectionId)?.models.find(({ id }) => id === customRef.modelId);
-    const resolvedEfforts = customRef && customEntry?.thinking !== true ? null : resolveCreateEfforts({
+    const customEfforts = customRef ? customModelEfforts(customEntry ?? undefined, agent.capabilities?.effort) : null;
+    const resolvedEfforts = customRef && !customEfforts ? null : resolveCreateEfforts({
       state,
       effortCapability: agent.capabilities?.effort,
       staticModelsCapability: agent.capabilities?.models,
       model: platformModel ? null : (runtimeModelId(requestedModel) ?? catalog.selected),
-      platformModel: platformEffortFacts(
+      platformModel: customEfforts ? { reasoningEfforts: customEfforts } : platformEffortFacts(
         platformModel ? requestedModel : null,
         catalog.models.map((m) => ({ id: m.id, reasoningEfforts: m.reasoning_efforts ?? null })),
       ),

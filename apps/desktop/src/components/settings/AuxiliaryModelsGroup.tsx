@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { platform } from '@/platform';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { useReplica } from '@/lib/replica';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
@@ -15,6 +16,10 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { SettingsGroup, SettingsNote, SettingsRow } from './SettingsPrimitives';
 
 export function AuxiliaryModelsGroup() {
+  return platform.capabilities.modelSettings ? <AvailableAuxiliaryModelsGroup /> : null;
+}
+
+function AvailableAuxiliaryModelsGroup() {
   const { translate } = useSessionMessages();
   const [failure, setFailure] = useState('');
   const models = useReplica(customModels, [null]);

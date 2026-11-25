@@ -33,6 +33,7 @@ export const zhCNMarketAgentDescriptions: Readonly<Partial<Record<string, string
 
 const enUSCoreMessages = {
   'taskError.connectionLost': 'The connection to the machine was lost. Try again when it reconnects.',
+  'taskError.hostUnavailable': 'Cannot connect to this device right now. Reopen the app and try again.',
   'terminal.createFailed': 'Could not open terminal',
   'externalLink.openFailed': 'Could not open link',
   'terminal.fileCopyFailed': 'Could not save a copy of “{name}”, so it was not added',
@@ -450,6 +451,8 @@ const enUSCoreMessages = {
   'marketDetail.disconnectFailed': 'Could not disconnect {name}',
   'extensions.installedMark': 'Installed',
   'extensions.updateTo': 'Update to v{version}',
+  'extensions.upToDate': 'Up to date',
+  'extensions.updatedTo': 'Updated to v{version}',
   'extensions.useVersion': 'Use v{version} instead',
   // Market Apps update by themselves (owner 10-19); an older version picked stays (VS Code's pinned).
   'extensions.autoUpdate': 'Auto update',
@@ -798,10 +801,10 @@ const enUSCoreMessages = {
     'The agent reported that {dimension} ({target}) only applies to a newly started task, '
     + 'and this build cannot restart the task in place for it. Start a new task with the setting you want.',
   'chat.reloadConfirmBody':
-    'Any reply in progress is interrupted, then this task continues.',
-  'chat.reloadConfirmActionSwitch': 'Interrupt and switch',
-  'chat.reloadConfirmActionApply': 'Interrupt and apply',
-  'chat.reloadConfirmActionRestart': 'Interrupt and restart',
+    'The task restarts, then continues. A reply in progress, if any, is interrupted.',
+  'chat.reloadConfirmActionSwitch': 'Switch',
+  'chat.reloadConfirmActionApply': 'Apply',
+  'chat.reloadConfirmActionRestart': 'Restart',
   'chat.reloadInProgress': 'Reconnecting\u2026',
   'chat.modelUnavailableNewSession': 'New task',
   'chat.sideChatForkFailed': 'Side chat could not be opened.',
@@ -1403,6 +1406,7 @@ type CoreSessionMessageKey = keyof typeof enUSCoreMessages;
 
 const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'taskError.connectionLost': '与机器的连接已断开，请在重新连接后重试。',
+  'taskError.hostUnavailable': '暂时无法连接这台设备，请重新打开应用后再试。',
   'terminal.createFailed': '无法打开终端',
   'externalLink.openFailed': '无法打开链接',
   'terminal.fileCopyFailed': '无法保存「{name}」的副本，未添加',
@@ -1780,6 +1784,8 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'marketDetail.disconnectFailed': '未能断开 {name}',
   'extensions.installedMark': '已安装',
   'extensions.updateTo': '更新到 v{version}',
+  'extensions.upToDate': '已是最新版本',
+  'extensions.updatedTo': '已更新到 v{version}',
   'extensions.useVersion': '改用 v{version}',
   'extensions.autoUpdate': '自动更新',
   'extensions.rowGone': '市场中已没有此应用，不再提供更新',
@@ -2107,10 +2113,10 @@ const zhCNCoreMessages: Record<CoreSessionMessageKey, string> = {
   'chat.settingRestartUnwiredBody':
     'agent 报告 {dimension}({target})仅对新会话生效,当前版本无法为其就地重启会话。'
     + '请使用所需设置新建会话。',
-  'chat.reloadConfirmBody': '正在进行的回复会被中断,之后继续此会话。',
-  'chat.reloadConfirmActionSwitch': '中断并切换',
-  'chat.reloadConfirmActionApply': '中断并应用',
-  'chat.reloadConfirmActionRestart': '中断并重启',
+  'chat.reloadConfirmBody': '会话会重启,之后继续此会话;如果有回复正在进行,它会被中断。',
+  'chat.reloadConfirmActionSwitch': '切换',
+  'chat.reloadConfirmActionApply': '应用',
+  'chat.reloadConfirmActionRestart': '重启',
   'chat.reloadInProgress': '正在重新连接…',
   'chat.modelUnavailableNewSession': '新建任务',
   'chat.sideChatForkFailed': '无法打开侧边聊天。',

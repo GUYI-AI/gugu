@@ -87,7 +87,7 @@ describe('switched model memory', () => {
     await turn('done');
 
     expect((await memory()).lastStarted).toEqual(started);
-    expect(mocks.emit).not.toHaveBeenCalled();
+    expect(mocks.emit).not.toHaveBeenCalledWith(newSessionMemoryChangedChannel, expect.anything());
   });
 
   it('a stopped reply keeps waiting for the next one; replies without a switch change nothing', async () => {

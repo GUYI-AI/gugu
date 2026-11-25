@@ -16,7 +16,7 @@ import { sessionRegistry } from './stores/session-registry';
 
 /**
  * My agent's card (第 16 版): its name (click to rename, ❌ the harness mark before it, #39), 重启会话 — the tab's own
- * restart command, which asks 「中断并重启」 first (#41) — and 「详情 ›」 beside the conversation.
+ * restart command, which asks 「重启」 first (#41) — and 「详情 ›」 beside the conversation.
  */
 export const SessionConversationCard = observer(function SessionConversationCard({ page, sessionId, surface, live, commands, onClose }: {
   /** A live chat's own model and effort (its store), as its composer shows them. */

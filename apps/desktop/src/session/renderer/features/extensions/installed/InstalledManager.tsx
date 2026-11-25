@@ -29,10 +29,10 @@ export const InstalledManager = observer(function InstalledManager({
 }) {
   const { t } = useTranslation('main')
   const itemsRef = useRef<HTMLDivElement>(null)
-  const { layout = 'grid' } = place
+  const layout = place.layout ?? (section === 'apps' ? 'list' : 'grid')
   const selected = place.deviceId ?? LOCAL_IMPORT_DEVICE
   const setLayout = (next: InventoryView) => onPlace({ ...place, layout: next })
-  const setSelected = (id: string) => onPlace({ ...place, deviceId: id === LOCAL_IMPORT_DEVICE ? undefined : id, scroll: undefined })
+  const setSelected = (id: string) => onPlace({ ...place, deviceId: id === LOCAL_IMPORT_DEVICE ? undefined : id, scroll: undefined, focusId: undefined, query: undefined })
   const choices = orderMachines(importDeviceChoices(t('installedManager.thisComputer'),
     [...remoteHostsStore.hosts.values()].map(({ device }) => device).filter((device) => !device.isCurrentMachine)))
   useEffect(() => { remoteHostsStore.start() }, [])
@@ -54,12 +54,13 @@ export const InstalledManager = observer(function InstalledManager({
   const renderItems = (items: readonly InstalledItem[], state?: { loading?: boolean; error?: boolean }) => (
     <InstalledItems key={`${machine.id}:${section}`} items={items} {...state} offline={host.remote?.online === false}
       section={section} layout={layout} setLayout={setLayout}
-      remoteLabel={deviceId ? machine.label : undefined} itemsRef={itemsRef} scroll={place.scroll} />
+      remoteLabel={deviceId ? machine.label : undefined} itemsRef={itemsRef} scroll={place.scroll} focusId={place.focusId}
+      query={place.query ?? ''} setQuery={(query) => onPlace({ ...place, query, focusId: undefined })} />
   )
   // Opening one is a step away from this page: it keeps how far down the list was, for coming back.
-  const leave = () => onPlace({ ...place, scroll: pageScroller(itemsRef.current)?.scrollTop ?? 0 })
-  const openApp = (id: string) => { leave(); onOpenApp(id, deviceId) }
-  const openAgent = (id: string) => { leave(); onOpenAgent(id, deviceId) }
+  const leave = (focusId: string) => onPlace({ ...place, focusId, scroll: pageScroller(itemsRef.current)?.scrollTop ?? 0 })
+  const openApp = (id: string) => { leave(id); onOpenApp(id, deviceId) }
+  const openAgent = (id: string) => { leave(id); onOpenAgent(id, deviceId) }
 
   return (
     <div className="gg-installed-body" data-testid="installed-manager">
