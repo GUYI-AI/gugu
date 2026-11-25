@@ -77,6 +77,36 @@ describe('ordinary sending stays in the transcript', () => {
     expect(samples).toEqual(samples.map(sample => ({ phase: sample.phase, count: 1, sameNode: true, key })))
   })
 
+  it('draws the input once in every frame when its turn reaches history before the live turn attaches', async () => {
+    const { state, host } = mount('double', { agentConversation: true })
+    const clientId = 'session:creation:0'
+    const sentAt = Date.now()
+    // A new session's first input is a host queue row: only its own live turn takes it over.
+    state.session.setPendingPrompt({ id: clientId, text: FIRST, sentAt, held: true })
+    await until('the submitted bubble and its running header are visible', () => host.querySelectorAll('[data-user-card]').length === 1 && header(host)?.getAttribute('data-live') === 'true')
+    const frames: { bubbles: number; live: boolean }[] = []
+    let sampling = true
+    const sample = () => {
+      frames.push({ bubbles: host.querySelectorAll('[data-user-card]').length, live: header(host)?.getAttribute('data-live') === 'true' })
+      if (sampling) requestAnimationFrame(sample)
+    }
+    requestAnimationFrame(sample)
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+    const turn: TranscriptTurn = { id: 'session:turn:0', seq: 0, initiator: 'user', startedAt: sentAt,
+      items: [{ kind: 'message', role: 'user', id: clientId, seq: 0, text: FIRST, _meta: { guguClientMessageId: clientId } }] }
+    // A history read can carry the running turn before its live snapshot is attached.
+    state.transcript.history.seed([turn])
+    await frame()
+    state.transcript.history.seed([])
+    state.transcript.activeTurn.set(turn)
+    await frame()
+    await frame()
+    sampling = false
+    expect(frames.length).toBeGreaterThanOrEqual(4)
+    expect(frames).toEqual(frames.map(() => ({ bubbles: 1, live: true })))
+    expect(state.session.state.pendingPrompt).toBeNull()
+  })
+
   it('keeps the last bubble stationary when a long conversation enters host startup', async () => {
     const { state, host, view } = mount('double', { agentConversation: true })
     state.transcript.history.seed(Array.from({ length: 12 }, (_, seq) => ({
