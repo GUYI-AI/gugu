@@ -5,7 +5,7 @@ import { refreshTag } from '@/lib/replica';
 import { useAgentAuthStatuses } from '@renderer/lib/stores/use-agent-auth-status';
 import { forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { harnessModelCredential, refreshAgentReadings } from '@renderer/lib/stores/agent-replicas';
-import { useShowModal } from '@renderer/lib/modal/modal-provider';
+import { useSurfaceModal } from '@renderer/lib/modal/modal-surface';
 import { agentAccountForm, type AgentPayload } from '@shared/core/agents/agent-payload';
 import { accountRowOf, mergeAccountRows, resolveAccountTargets, type MergedAccountRow } from './agent-account';
 
@@ -38,7 +38,7 @@ export function useAgentSignIn(
     { machine: remote?.deviceId ?? null, ...(options.probe === false ? { probe: false } : {}) }
   );
   const refreshAuth = local.refresh;
-  const showSignIn = useShowModal('agentSignInModal');
+  const showSignIn = useSurfaceModal('agentSignInModal');
   const row = mergeAccountRows(targets.map((target, index) => accountRowOf(target, local.auths[index])));
   const machine = remote?.deviceId ?? null;
   /**

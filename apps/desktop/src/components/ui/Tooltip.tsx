@@ -5,6 +5,7 @@ import type { CSSProperties, ReactElement } from 'react'
 import { cn } from '@/lib/cn'
 import { useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives'
 import { TOOLTIP_CLOSE_DELAY_MS, TOOLTIP_OPEN_DELAY_MS } from '@/styles/motion'
+import { useProbedRef } from '@/lib/overlayOcclusion'
 
 type ClassNameProp = { className?: string }
 
@@ -94,6 +95,7 @@ function Positioner({
 function Popup({
   className,
   style,
+  ref,
   ...props
 }: Omit<TooltipPrimitive.Popup.Props, 'className' | 'style'> &
   ClassNameProp & {
@@ -101,6 +103,7 @@ function Popup({
   }) {
   return (
     <TooltipPrimitive.Popup
+      ref={useProbedRef('app-tooltip', ref)}
       data-slot="tooltip-popup"
       className={cn(tooltipPopup, className)}
       style={{ ...(style?.padding == null ? { padding: '6px 8px' } : {}), ...style }}

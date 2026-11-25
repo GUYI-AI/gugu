@@ -42,7 +42,7 @@ export function RowHoverCard({
       }}
     >
       <PreviewCardPrimitive.Portal container={useUiPortalContainer()}>
-        <PreviewCardPrimitive.Positioner anchor={anchor} side={side} align={align} collisionPadding={8} className="isolate z-50" style={zIndex ? { zIndex } : undefined}>
+        <PreviewCardPrimitive.Positioner anchor={anchor} side={side} align={align} collisionPadding={8} className="isolate z-[var(--z-popover)]" style={zIndex ? { zIndex } : undefined}>
           {/* Flush against the row (no sideOffset): the visible 8px gap is the popup's transparent padding on the row's side.
               It is the card's, so the pointer walks from row to card without a pixel that is neither. */}
           <PreviewCardPrimitive.Popup
@@ -53,7 +53,7 @@ export function RowHoverCard({
             aria-label={label}
             onPointerLeave={(event) => card.leave(rowKey, event.relatedTarget)}
             className={cn(
-              'z-50 origin-(--transform-origin) outline-hidden',
+              'origin-(--transform-origin) outline-hidden',
               'data-[side=right]:pl-2 data-[side=left]:pr-2 data-[side=top]:pb-2 data-[side=bottom]:pt-2',
               'duration-[var(--dur-fast)] data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95',
               'data-[side=right]:slide-in-from-left-2 data-[side=left]:slide-in-from-right-2 data-[side=top]:slide-in-from-bottom-2 data-[side=bottom]:slide-in-from-top-2',

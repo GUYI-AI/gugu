@@ -2,30 +2,15 @@ import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  modalRegistry,
-  type ModalPosition,
-  type ModalRegistryEntry,
-  type ModalSize,
-} from '@renderer/app/modal-registry';
-import { useUiPortalContainer } from '@gugu/session-ui/react/primitives';
+import { modalRegistry, type ModalRegistryEntry } from '@renderer/app/modal-registry';
+import { UiPortalContainerProvider, useUiPortalContainer } from '@gugu/session-ui/react/primitives';
 import { Dialog, DialogOverlay, DialogPortal } from '@renderer/lib/ui/dialog';
 import { cn } from '@renderer/utils/utils';
 import { modalStore } from './modal-store';
 import { noteOverlayRequest } from '@/lib/localRendererDiagnostics';
-
-const SIZE_CLASSES: Record<ModalSize, string> = {
-  xs: 'sm:max-w-xs',
-  sm: 'sm:max-w-sm',
-  md: 'sm:max-w-lg',
-  lg: 'sm:max-w-2xl',
-  xl: 'sm:max-w-4xl',
-};
-
-const POSITION_CLASSES: Record<ModalPosition, string> = {
-  center: 'top-1/2 -translate-y-1/2',
-  top: 'top-[15%] translate-y-0',
-};
+import { useOverlayOcclusionProbe } from '@/lib/overlayOcclusion';
+import { DIALOG_SCROLL_BODY, MODAL_POPUP_CLASS, MODAL_POSITION_CLASSES, MODAL_SIZE_CLASSES } from './modal-chrome';
+import { ModalSurfaceProvider } from './modal-surface';
 
 export const ModalRenderer = observer(function ModalRenderer() {
   const pageLayer = useUiPortalContainer();
@@ -105,6 +90,8 @@ export const ModalRenderer = observer(function ModalRenderer() {
   };
 
   const popupRef = useRef<HTMLDivElement>(null);
+  const probe = useOverlayOcclusionProbe('session-modal');
+  const popupProbeRef = useCallback((el: HTMLDivElement | null) => { popupRef.current = el; probe(el); }, [probe]);
 
   // Restore focus to the element captured by modalStore.setModal when the modal closes.
   useEffect(
@@ -138,7 +125,7 @@ export const ModalRenderer = observer(function ModalRenderer() {
       <DialogPortal container={portalContainer}>
         <DialogOverlay />
         <DialogPrimitive.Popup
-          ref={popupRef}
+          ref={popupProbeRef}
           finalFocus={false}
           initialFocus={initialFocus}
           data-slot="dialog-content"
@@ -153,12 +140,18 @@ export const ModalRenderer = observer(function ModalRenderer() {
             }
           }}
           className={cn(
-            'fixed left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-full max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col overflow-hidden rounded-xl bg-background-quaternary text-sm shadow-lift duration-[var(--dur-med,180ms)] data-closed:duration-[var(--dur-fast,120ms)] outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
-            POSITION_CLASSES[displayEntry?.position ?? 'center'],
-            SIZE_CLASSES[displayEntry?.size ?? 'md']
+            MODAL_POPUP_CLASS,
+            DIALOG_SCROLL_BODY,
+            MODAL_POSITION_CLASSES[displayEntry?.position ?? 'center'],
+            MODAL_SIZE_CLASSES[displayEntry?.size ?? 'md']
           )}
         >
-          {DisplayComponent && displayArgs ? <DisplayComponent key={lastRequestRef.current} {...displayArgs} /> : null}
+          {/* @@@modal-surface: a modal this one asks for opens nested in it, above it. */}
+          <UiPortalContainerProvider zIndex="var(--z-modal)">
+            <ModalSurfaceProvider>
+              {DisplayComponent && displayArgs ? <DisplayComponent key={lastRequestRef.current} {...displayArgs} /> : null}
+            </ModalSurfaceProvider>
+          </UiPortalContainerProvider>
         </DialogPrimitive.Popup>
       </DialogPortal>
     </Dialog>
