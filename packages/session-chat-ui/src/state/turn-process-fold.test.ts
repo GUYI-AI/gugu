@@ -1010,7 +1010,7 @@ describe('agent conversation segment process', () => {
   it.each([true, false])('folds MCP with commands and thinking in a single summary (live: %s)', active => {
     const details = (id: string, name: string): ChatItem => ({
       kind: 'mcp-tool-call', id, seq: 0, toolCallId: id, status: 'done',
-      title: name, server: 'gugu', tool: name, parentToolCallId: null,
+      title: name, server: 'gugu', tool: name,
     });
     const record = turn('mcp-run', [
       user('u'), bash('first'), details('session', 'session_get'), thinking('thought'),
