@@ -1385,11 +1385,18 @@ export async function subscribe(
     // The RPC acknowledges ownership now. A not-yet-persisted first turn stays subscribed, rather than holding
     // a transport request open until its timeout or repeatedly requesting a snapshot.
     void (async () => {
-      const { waitForCodexRecord, resolveRolloutFile, CodexRecordDeadline } = await import('@gugu/session-core/session-record');
+      const { waitForCodexRecord, resolveRolloutFile, CodexRecordDeadline, codexRecordWaitStats } = await import('@gugu/session-core/session-record');
       if (stopped) return;
       let locator = location?.supported ? location.locator : null;
-      const deadline = new CodexRecordDeadline(() => readiness.abort(Object.assign(
-        new Error(`记录没出现：30 秒内未收到 Codex rollout 就绪事件（threadId=${locator?.providerSessionId ?? 'pending'}）`), { code: 'record_not_found' })));
+      const waitStats = codexRecordWaitStats();
+      const deadline = new CodexRecordDeadline(() => {
+        // The only record of why this wait failed: the session process logs at warn, so nothing below it survives.
+        log.warn('codex-record: deadline expired before the record was ready', {
+          conversationId: input.conversationId, threadId: locator?.providerSessionId ?? null, roots: locator?.roots ?? [], ...waitStats,
+        });
+        readiness.abort(Object.assign(
+          new Error(`记录没出现：30 秒内未收到 Codex rollout 就绪事件（threadId=${locator?.providerSessionId ?? 'pending'}）`), { code: 'record_not_found' }));
+      });
       let waiting = false;
       const firstSentAt = () => {
         const first = db.select({ at: sessionPending.enqueuedAt }).from(sessionPending)
@@ -1437,7 +1444,8 @@ export async function subscribe(
         }
         const record = locator;
         await waitForCodexRecord(record, () => resolveRolloutFile(record, false), readiness.signal, undefined, onWaiting,
-          readyMs => log.info('codex-record: watch ready', { conversationId: input.conversationId, threadId: record.providerSessionId, readyMs, at: Date.now() }));
+          readyMs => log.info('codex-record: watch ready', { conversationId: input.conversationId, threadId: record.providerSessionId, readyMs, at: Date.now() }),
+          waitStats);
         stopDeadline();
         if (stopped) return;
         const result = await attach(input.cursor);

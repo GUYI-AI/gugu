@@ -11,6 +11,27 @@ export type RecordDirectoryWatch = (path: string, changed: (events?: readonly Wa
 const watchDirectory: RecordDirectoryWatch = (path, changed, failed) =>
   new DirectoryWatch(path, changed, () => changed(), (_context, error) => failed(error), false);
 
+/**
+ * What one wait observed, kept only so an expired deadline can say why. Nothing here decides readiness.
+ * `directoryEvents` counts every directory delivery (resyncs included) before the relevance filter.
+ */
+export type CodexRecordWaitStats = {
+  readyMs: number | null;
+  locateAttempts: number;
+  lastLocate: 'not-found' | 'found' | 'incomplete-meta' | null;
+  directoryEvents: number;
+  ignoredEvents: number;
+  ignoredSample: string[];
+  watchedDirectories: number;
+  rolloutWatched: boolean;
+};
+
+export function codexRecordWaitStats(): CodexRecordWaitStats {
+  return { readyMs: null, locateAttempts: 0, lastLocate: null, directoryEvents: 0, ignoredEvents: 0, ignoredSample: [],
+    watchedDirectories: 0, rolloutWatched: false };
+}
+const IGNORED_SAMPLE = 3;
+
 /** Shallow discovery watches and one watch on the active rollout. */
 export class CodexRecordEvents {
   private readonly handles = new Map<string, { ino: number; handle: Handle }>();
@@ -24,7 +45,7 @@ export class CodexRecordEvents {
   private locateAgain = false;
 
   constructor(private readonly locator: SessionRecordLocator, private readonly failed: (error: unknown) => void,
-    private readonly watch: RecordDirectoryWatch = watchDirectory) {
+    private readonly watch: RecordDirectoryWatch = watchDirectory, private readonly stats?: CodexRecordWaitStats) {
     // UUIDv7's date is a hint, not proof of persistence. Include adjacent UTC dates for local timezones and
     // today's date for resumed threads. Once located, the actual parent directory is watched as well.
     const stamp = /^[0-9a-f]{8}-[0-9a-f]{4}-7/i.test(locator.providerSessionId)
@@ -65,6 +86,13 @@ export class CodexRecordEvents {
   private changed = (events?: readonly WatchEvent[]): void => {
     const relevant = events?.filter(event => event.path.includes(this.locator.providerSessionId)
       || [...this.targets].some(target => target === event.path || target.startsWith(event.path + sep)));
+    if (this.stats) {
+      this.stats.directoryEvents += events?.length ?? 1;
+      for (const event of events ?? []) if (!relevant?.includes(event)) {
+        this.stats.ignoredEvents++;
+        if (this.stats.ignoredSample.length < IGNORED_SAMPLE) this.stats.ignoredSample.push(`${event.kind}:${event.path}`);
+      }
+    }
     if (relevant && !relevant.length) return;
     this.enqueue(!relevant || relevant.some(event => event.kind !== 'update' || event.path !== this.file));
   };
@@ -111,6 +139,7 @@ export class CodexRecordEvents {
       });
       this.closeRollout();
       this.rollout = { path, dev, ino, watcher };
+      if (this.stats) this.stats.rolloutWatched = true;
       watcher.on('error', (error) => {
         if (this.rollout?.watcher !== watcher) return;
         this.stop();
@@ -158,13 +187,18 @@ export class CodexRecordEvents {
       this.handles.delete(path);
       await handle.dispose();
     }
+    if (this.stats) this.stats.watchedDirectories = this.handles.size;
     await this.reconcileRollout();
   }
 }
 
-/** Waiting ends on a file event or an explicit lifecycle cancellation. There is deliberately no clock. */
+/**
+ * Waiting ends on a file event or an explicit lifecycle cancellation. There is deliberately no clock.
+ * `stats`, when given, is filled in as the wait goes; the caller reads it only to explain an expired deadline.
+ */
 export async function waitForCodexRecord(locator: SessionRecordLocator, locate: () => Promise<string>, signal: AbortSignal,
-  watch?: RecordDirectoryWatch, waiting?: () => void, ready?: (elapsedMs: number) => void): Promise<void> {
+  watch?: RecordDirectoryWatch, waiting?: () => void, ready?: (elapsedMs: number) => void,
+  stats?: CodexRecordWaitStats): Promise<void> {
   return new Promise<void>((accept, reject) => {
     let settled = false;
     const finish = (error?: unknown) => {
@@ -175,11 +209,16 @@ export async function waitForCodexRecord(locator: SessionRecordLocator, locate: 
       if (error !== undefined) reject(error); else accept();
     };
     const aborted = () => finish(signal.reason ?? new Error('Codex record subscription closed'));
-    const events = new CodexRecordEvents(locator, finish, watch);
+    const events = new CodexRecordEvents(locator, finish, watch, stats);
     const check = async () => {
       let file: string;
+      if (stats) stats.locateAttempts++;
       try { file = await locate(); }
-      catch (error) { if (error instanceof SessionRecordNotFoundError) { waiting?.(); return; } throw error; }
+      catch (error) {
+        if (error instanceof SessionRecordNotFoundError) { if (stats) stats.lastLocate = 'not-found'; waiting?.(); return; }
+        throw error;
+      }
+      if (stats) stats.lastLocate = 'found';
       await events.includeFile(file);
       // Creation can precede the first write. Read only a complete metadata line belonging to this thread.
       const handle = await open(file, 'r');
@@ -189,6 +228,7 @@ export async function waitForCodexRecord(locator: SessionRecordLocator, locate: 
         const end = bytes.subarray(0, bytesRead).indexOf(10);
         if (end < 0) {
           if (bytesRead === 1024 * 1024) throw new Error('Oversized Codex session_meta');
+          if (stats) stats.lastLocate = 'incomplete-meta';
           waiting?.();
           return;
         }
@@ -204,6 +244,7 @@ export async function waitForCodexRecord(locator: SessionRecordLocator, locate: 
     const started = performance.now();
     void events.ready().then(async () => {
       if (settled) return;
+      if (stats) stats.readyMs = Math.round(performance.now() - started);
       ready?.(performance.now() - started);
       await check();
       if (!settled) events.activate(check);

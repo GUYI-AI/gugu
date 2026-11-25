@@ -1,9 +1,10 @@
 import { appendFile, mkdir, mkdtemp, open, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { awaitFact, awaitPending } from '../../../../../tests/support/awaitFact';
-import { CodexRecordDeadline, waitForCodexRecord, type RecordDirectoryWatch } from './codex-record-events';
+import type { WatchEvent } from '../../services/fs-watch/api';
+import { CodexRecordDeadline, codexRecordWaitStats, waitForCodexRecord, type RecordDirectoryWatch } from './codex-record-events';
 import { SessionRecordNotFoundError } from './shared';
 import { createCodexJsonlSource } from './codex-jsonl';
 import { createSessionTimeline } from '../timeline';
@@ -244,4 +245,55 @@ describe('Codex record readiness barrier', () => {
     expect(vi.getTimerCount()).toBe(0);
     expect(s.handles.every(h => h.disposed)).toBe(true);
   });
+});
+
+// macOS can drop a directory's notification outright: every fs.watch directory handle in a process shares one
+// FSEvents stream, rebuilt whenever a handle opens or closes, and a rebuild starts from "now". The fake watch here
+// delivers nothing unless a case fires it, which is that loss.
+describe('Codex record wait when directory notifications are lost', () => {
+  it('fails at the deadline although the file exists, and its stats say what the wait saw', async () => {
+    const s = await setup();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const stats = codexRecordWaitStats();
+    const deadline = new CodexRecordDeadline(() => s.abort.abort(new Error('记录没出现')));
+    let waiting!: () => void;
+    const absent = new Promise<void>(resolve => { waiting = resolve; });
+    const opening = waitForCodexRecord(s.locator, s.locate, s.abort.signal, s.watch, () => { deadline.start(Date.now()); waiting(); },
+      undefined, stats).finally(() => deadline.stop());
+    const failed = expect(opening).rejects.toThrow('记录没出现');
+    await absent;
+    await s.create(); // Written after the first lookup; its notification never arrives.
+    await vi.advanceTimersByTimeAsync(30_000);
+    await failed;
+    expect(stats).toEqual(expect.objectContaining({
+      locateAttempts: 1, lastLocate: 'not-found', directoryEvents: 0, ignoredEvents: 0, rolloutWatched: false,
+    }));
+    expect(stats.readyMs).not.toBeNull();
+    expect(stats.watchedDirectories).toBeGreaterThan(0);
+  });
+
+  it('counts a notification naming the watched directory itself, which the relevance filter drops', async () => {
+    const s = await setup();
+    const stats = codexRecordWaitStats();
+    let waiting!: () => void;
+    const absent = new Promise<void>(resolve => { waiting = resolve; });
+    const opening = waitForCodexRecord(s.locator, s.locate, s.abort.signal, s.watch, waiting, undefined, stats);
+    await absent;
+    await s.create();
+    // libuv reports an event on the watched directory with that directory's own name; DirectoryWatch joins it
+    // onto the root, so the path names a child that does not exist.
+    const watched = s.handles.find(h => h.path === s.root && !h.disposed)!;
+    (watched.changed as (events?: readonly WatchEvent[]) => void)([{ kind: 'delete', path: join(s.root, basename(s.root)) }]);
+    await new Promise<void>(resolve => setImmediate(resolve));
+    expect(s.locate).toHaveBeenCalledOnce();
+    expect(stats).toEqual(expect.objectContaining({ directoryEvents: 1, ignoredEvents: 1 }));
+    expect(stats.ignoredSample).toEqual([`delete:${join(s.root, basename(s.root))}`]);
+    s.fire();
+    await opening;
+    expect(stats).toEqual(expect.objectContaining({ lastLocate: 'found', rolloutWatched: true }));
+    expect(stats.locateAttempts).toBeGreaterThanOrEqual(2);
+  });
+
+  // The requirement any fix has to meet; which signal closes the gap is still being decided.
+  it.todo('becomes ready when the file appears and every directory notification is lost');
 });
