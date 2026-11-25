@@ -6036,11 +6036,30 @@ app.whenReady().then(async () => {
           timed('assistant-role', isPersonalAssistant({ authProvider, env: process.env }, provisioned.guguAgentUserId)),
         ])
         injectMark('platform-model+mcp-list+identity-block')
+        const assistantChannelDiscovery = assistantRole && assistantResourceOwner
+          ? await import('./sessionpage/assistant-chat-channel-index') : undefined
+        const assistantChannelItems = assistantChannelDiscovery && assistantResourceOwner
+          ? assistantChannelDiscovery.createAssistantChatChannelReader({
+            accountId: async () => (await getSessionpageAuth())?.userId ?? null,
+            expectedOwner: assistantResourceOwner, assistantAgentId: provisioned.guguAgentUserId,
+            list: async signal => {
+              const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(),
+                override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
+              if (!baseUrl) throw new Error('Chat channel metadata source is unavailable')
+              const client = createChatChannelsClient({ baseUrl, anonKey: getSupabaseAnonKey(), requestTimeoutMs: assistantChannelDiscovery.ASSISTANT_CHAT_CHANNEL_TIMEOUT_MS,
+                accessToken: async () => {
+                  const current = await getSessionpageAuth()
+                  if (!current || current.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
+                  return current.accessToken
+                } })
+              return client.list(signal)
+            },
+          }) : undefined
         const readAssistantResources = assistantRole ? async () => {
           if (!assistantResourceOwner || (await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           const { assistantLocalIndex } = await import('./sessionpage/assistant-local-index')
           const resources = await assistantLocalIndex(info.cwd, assistantHomeKind(process.env), undefined,
-            () => emdash.assistantPanelLocal.integrationIndex())
+            () => emdash.assistantPanelLocal.integrationIndex(), assistantChannelItems)
           if ((await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           return resources
         } : undefined
