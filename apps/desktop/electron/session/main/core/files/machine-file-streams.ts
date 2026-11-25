@@ -5,7 +5,7 @@
  * workspace's file (`workspace.files.readStreamed`: preview, open, a `gugu-preview://` page).
  *
  * A read from the start names no version: the machine says which one it streams before the first byte (the stream's
- * head, protocol 21), and that version comes back with every range. A reader going on names it (or a version it learned
+ * head), and that version comes back with every range. A reader going on names it (or a version it learned
  * otherwise) and asks ranges in order; a range that does not follow on starts the stream again there, of that version. A
  * file that changed on its machine is said so (`changed`), never mixed. Whether a machine streams is decided once, from its
  * mapping (`linked`, main.ts `linkReaches`): a linked machine streams or fails loudly; one no device link reaches (only

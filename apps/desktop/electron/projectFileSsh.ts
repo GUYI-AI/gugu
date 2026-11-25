@@ -102,7 +102,7 @@ async function openLink(links: Pick<HeldFileSshLinks, 'open'>, deviceId: string)
 
 /**
  * @@@file-stream - a held version as one stream of raw bytes over the device link (`file.stream`, protocol 19); the
- * stream's head says its etag (protocol 21), and a file of another size than the held one is refused. The stream itself
+ * stream's head says its etag (a server without the head refuses a request with no etag), and a file of another size than the held one is refused. The stream itself
  * is `openLinkStream`.
  */
 export async function openProjectFileStream(revision: FileRevision, line: StreamLine, progress?: FileContext['progress']): Promise<FileBytes> {
@@ -116,7 +116,7 @@ export type StreamVersion = { size: number; etag: string }
 export type LinkStream = FileBytes & { etag: string }
 
 /**
- * What a server below protocol 21 answers a stream request that names no version (its streamers required an etag):
+ * What a server from before the stream head answers a stream request that names no version (its streamers required an etag):
  * read from that answer, not from the version number the link reports, so the read fails on what the machine said.
  */
 const OLD_SERVER_REFUSAL = /^Invalid (working copy |file )?stream request$/

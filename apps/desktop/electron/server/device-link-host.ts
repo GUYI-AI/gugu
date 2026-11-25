@@ -54,7 +54,7 @@ export type DeviceLinkSession = { handle(message: unknown): void; dispose(): voi
 /**
  * A request answered with a stream of bytes (only a device link can carry them: `D` frames beside its messages). It names its
  * stream in `payload.stream`; each `write` resolves when the line takes more. Before its first piece the handler says which
- * version it streams (`head`: `{ type: '<type>.head', stream, size, etag }`, protocol 21), so a reader needs no call of its
+ * version it streams (`head`: `{ type: '<type>.head', stream, size, etag }`), so a reader needs no call of its
  * own to learn it. Its reply follows its last piece on the same ordered line, so a reader holding the reply holds every
  * byte. `<type>.cancel` with `{ stream }` (or the link closing) stops it.
  *

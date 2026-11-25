@@ -1,5 +1,5 @@
 /**
- * A held file over its owner's SSH link as one stream of raw bytes (`file.stream`, remote protocol 19; its head, 21): the
+ * A held file over its owner's SSH link as one stream of raw bytes (`file.stream`, remote protocol 19, with its head): the
  * frame, the head, the server's credit window, the reader's acknowledgements and resume, and the link a read holds. No real ssh.
  */
 import { describe, expect, it, vi } from 'vitest'
@@ -54,7 +54,7 @@ describe('the server keeps no more than the reader\'s window on the line', () =>
     expect(JSON.stringify(messages.at(-1))).toContain('"size"')
   })
 
-  it('says the version a stream is of as a message of its own, before its pieces (protocol 21)', async () => {
+  it('says the version a stream is of as a message of its own, before its pieces', async () => {
     const { messages, ask } = host({ 'file.stream': async (_payload, context) => { context.head({ size: 3, etag: 'e1' }); await context.write(0, new Uint8Array(3)); return { size: 3 } } })
     ask('file.stream', { stream: 'a', offset: 0 }, 'r1')
     await flush(); await flush()
