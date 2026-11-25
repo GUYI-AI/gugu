@@ -9,8 +9,9 @@ import { createMemoryLocalSyncDb } from '../../../../apps/desktop/src/lib/localS
 import { queryClient } from '../../../../apps/desktop/src/lib/replica'
 import { captureOpenedChats } from '../../../support/openedChats'
 
-const { getImRepositoryMock, TOPICS } = vi.hoisted(() => ({
+const { getImRepositoryMock, pinChat, TOPICS } = vi.hoisted(() => ({
   getImRepositoryMock: vi.fn(),
+  pinChat: vi.fn<(chatId: string, pinned: boolean) => Promise<void>>().mockResolvedValue(undefined),
   TOPICS: [
     { chat_id: 't1', name: '把登录页的报错改成中文并补上测试', source_message_id: 'm1', creator_user_id: 'user-1', last_message_at: null, message_count: 3, participant_count: 2, is_participant: true },
     { chat_id: 't2', name: '周报', source_message_id: 'm2', creator_user_id: 'user-1', last_message_at: null, message_count: 1, participant_count: 2, is_participant: true },
@@ -58,6 +59,7 @@ beforeEach(async () => {
   harness = createReactHarness()
   opened = captureOpenedChats()
   repository = await openImRepository('user-1', { adapter: createMemoryLocalSyncDb() })
+  pinChat.mockClear()
   getImRepositoryMock.mockReset()
   getImRepositoryMock.mockResolvedValue(repository)
 })
@@ -74,6 +76,7 @@ async function render(chatId: string, mobile = true, kind: 'group' | 'dm' | 'top
   await renderWithAppProviders(harness, createNode(ChatAreaPanel, { activeTab: 'chats', mobile, hidden: false, openNonce: 0 }), {
     chat: {
       getImRepository: getImRepositoryMock,
+      pinChat,
       activeChatId: chatId,
       activeChat: chat({ id: chatId, kind, name: '登录改版', ...(kind === 'topic' ? { source_chat_id: 'g1' } : {}) }),
       chats: TOPICS.map((topic) => chat({ id: topic.chat_id, kind: 'topic', source_chat_id: 'g1', name: topic.name, ...topicRows[topic.chat_id] })),
@@ -118,6 +121,24 @@ describe('shared group topic navigation (#446, #837, #2797)', () => {
       expect(choice('t1')?.querySelector('.gg-chip[data-shape="dot"]')).not.toBeNull()
       expect(choice('t1')?.textContent).not.toContain('9')
       expect([...document.querySelectorAll<HTMLElement>('[data-testid="phone-room-topic"]')].map(node => node.dataset.topicId)).toEqual(['t2', 't1'])
+    } finally { topicRows = {} }
+  })
+
+  it('reads and writes the shared topic pin in the phone topic list', async () => {
+    topicRows = { t2: { is_pinned: true } }
+    try {
+      await render('g1')
+      await openTopics()
+      const rows = [...document.querySelectorAll<HTMLElement>('[data-testid="phone-room-topic"]')]
+      expect(rows.map(row => row.dataset.topicId)).toEqual(['t2', 't1'])
+      const action = (row: HTMLElement) => row.parentElement!.querySelector<HTMLButtonElement>('[data-slot="icon-button"]')!
+      expect(action(rows[0]!).hasAttribute('data-on')).toBe(true)
+      expect(action(rows[1]!).hasAttribute('data-on')).toBe(false)
+      await act(async () => { action(rows[0]!).click() })
+      await act(async () => { action(rows[1]!).click() })
+      expect(pinChat.mock.calls).toEqual([['t2', false], ['t1', true]])
+      expect(mainChoice()).not.toBeNull()
+      expect(opened.chatIds).toEqual([])
     } finally { topicRows = {} }
   })
 
