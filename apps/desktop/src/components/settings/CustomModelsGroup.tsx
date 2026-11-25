@@ -155,7 +155,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
           <Plus aria-hidden="true" className="size-4" />
         </Button>
       </span>
-    </span>} footer={feedback?.group === group ? <SettingsNote role="status">{feedback.text}</SettingsNote> : undefined}>
+    </span>} note={group === 'coding-plan' ? translate('customModels.planDescription') : undefined} footer={feedback?.group === group ? <SettingsNote role="status">{feedback.text}</SettingsNote> : undefined}>
       {group === 'coding-plan' && accountAgents.sort((a, b) => Number(a.id === 'claude') - Number(b.id === 'claude')).map(agent => (
         <SubscriptionConnections key={agent.id} agent={agent} machine={machine} modelRows />
       ))}
@@ -181,8 +181,8 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
               onRemove: () => void removeConnection(connection),
             });
             if (connections.length === 1) {
-              const connection = connections[0]!;
-              return <ModelConnectionGroup key={connection.id} connection={connection} showAddress={reading.value.some(other => other.id !== connection.id && endpointHost(other) === endpointHost(connection))} {...actions(connection)} />;
+              const singleConnection = connections[0]!;
+              return <ModelConnectionGroup key={singleConnection.id} connection={singleConnection} showAddress={reading.value.some(other => other.id !== singleConnection.id && endpointHost(other) === endpointHost(singleConnection))} {...actions(singleConnection)} />;
             }
             return <AddressConflict key={apiUrl} apiUrl={apiUrl} connections={connections} busy={busy !== null} onKeepKey={connection => void keepKey(connection)} />;
           })}
