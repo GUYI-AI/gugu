@@ -326,6 +326,7 @@ export interface ChatComposerProps {
   /**
    * Images are placed in the text where they were pasted, dropped or attached (a chip with a thumbnail), not on the
    * attachment strip. The text then carries each one's place as a marker (`inlineImageParts`): only for hosts that send it.
+   * Not on the phone capsule: its photo tiles are where a photo is edited and its quality chosen.
    */
   inlineImages?: boolean;
   onAttachmentQualityChange?: (id: string) => void;
@@ -483,7 +484,7 @@ export function ChatComposer({
   attachmentExtra,
   onAttachmentsChange,
   onImageFilesDropped,
-  inlineImages = false,
+  inlineImages: inlineImagesWanted = false,
   onAttachmentQualityChange,
   attachmentQualityLocked,
   onFilesDropped,
@@ -522,6 +523,7 @@ export function ChatComposer({
   const rootRef = useRef<HTMLDivElement>(null);
   const phoneCapsule = mobile && phoneActions;
   const phoneEditor = usePhoneComposer(phoneCapsule, rootRef);
+  const inlineImages = inlineImagesWanted && !phoneCapsule;
   // @@@phone-has-attachment - whether the capsule holds a paperclip (ours via onAttach, or a host's in toolbarExtra that
   // carries data-phone-attachment). phone-composer.css reads this attribute instead of :has(), which WebView < 105 drops.
   // Written on the element, not through state: no render follows (React does not own this attribute).
