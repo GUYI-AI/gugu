@@ -163,7 +163,6 @@ export function wideInvalidation(selector) {
 export const HAS_OFF_SUBJECT_KNOWN = {
   'apps/desktop/preinstalled-apps/workspace/style.css': 4,
   'apps/desktop/src/components/chat/messageBubbleChrome.css': 1,
-  'apps/desktop/src/components/chat/pinned-topics.css': 3,
   'apps/desktop/src/session/app-runtime/ui/ui.css': 1,
   'apps/desktop/src/session/renderer/index.css': 3,
   'apps/desktop/src/session/renderer/lib/ui/assistant-ui/thread-scroll-to-bottom.css.ts': 1,

@@ -971,9 +971,7 @@ export default {
     "leave": "Leave topic",
     "leaveHint": "You can still read it, but will not get notifications from this topic",
     "removeHint": "They can still read it, but will not get notifications from this topic",
-    "pins": {
-      "pin": "Pin {{name}}",
-      "unpin": "Unpin {{name}}",
+    "menu": {
       "emptyHint": "Choose “Open topic” on any message."
     },
     "anchor": {

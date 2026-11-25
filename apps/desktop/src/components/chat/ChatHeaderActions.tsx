@@ -13,8 +13,8 @@ import { ChatHeaderMenu } from './ChatHeaderMenu'
 import { AppsButton, ChatAppsPicker } from './ChatAppsPicker'
 import { openApp } from '../appSlot/useOpenApp'
 import { GroupTopicsRows, TopicCallChip, TopicUnreadChip } from './GroupTopicsRows'
-import { useChatTopicPins } from './useChatTopicPins'
-import { topicCallTotal, topicUnreadTotal } from './topicPinsModel'
+import { useGroupTopics } from './useGroupTopics'
+import { topicCallTotal, topicUnreadTotal } from './groupTopicsModel'
 import { useChatWorkspaceHeaderDensity } from '@renderer/features/tabs/use-chat-workspace-header-density'
 import { useStripNarrow } from '../../session/renderer/features/tabs/tab-strip-narrow'
 import { useInnerSidebarPresent } from '../../lib/innerSidebarBridge'
@@ -54,7 +54,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
   const narrow = useHeaderNarrow(moreButtonRef, Boolean(mobile))
   const density = useChatWorkspaceHeaderDensity(moreButtonRef)
   const groupId = isGroupChat ? activeChatId : null
-  const topics = useChatTopicPins(mobile ? null : groupId)
+  const topics = useGroupTopics(mobile ? null : groupId)
   const appsButton = useRef<HTMLButtonElement>(null)
   const [popup, setPopup] = useState<{ chatId: string | null; kind: 'apps' | null }>({ chatId: activeChatId, kind: null })
   if (popup.chatId !== activeChatId) setPopup({ chatId: activeChatId, kind: null })
@@ -90,7 +90,7 @@ export const ChatHeaderActions = observer(function ChatHeaderActions({
     {groupId && <>
       {showTopics && !folded && <DropdownMenu.Root key={groupId} modal={false} onOpenChange={(open) => { if (open) { onCloseHeaderMenu(); closePopup() } }}>
         <DropdownMenu.Trigger data-testid={AUTOMATION_TEST_IDS.groupMenuTopics} aria-label={t('history.tabs.topics')}
-          render={<Button variant="ghost" size={actionSize} title={t('history.tabs.topics')}><MessageSquare />{labeled && t('history.tabs.topics')}{topicCallTotal(topics.topics) > 0 ? <TopicCallChip count={topicCallTotal(topics.topics)} at /> : <TopicUnreadChip count={topicUnreadTotal(topics.topics)} />}</Button>} />
+          render={<Button variant="ghost" size={actionSize} title={t('history.tabs.topics')}><MessageSquare />{labeled && t('history.tabs.topics')}{topicCallTotal(topics) > 0 ? <TopicCallChip count={topicCallTotal(topics)} at /> : <TopicUnreadChip count={topicUnreadTotal(topics)} />}</Button>} />
         <DropdownMenu.Content data-testid={AUTOMATION_TEST_IDS.groupTopicsPopup} style={{ width: 320, maxWidth: 'min(320px, var(--available-width))' }} align="end">
           <GroupTopicsRows chatId={groupId} />
         </DropdownMenu.Content>

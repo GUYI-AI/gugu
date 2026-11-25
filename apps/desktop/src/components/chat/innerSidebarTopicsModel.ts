@@ -8,11 +8,11 @@ import { chatAttention, compareChatsByActivityDesc, comparePinnedFirst } from '@
 /** 第一级最多露几条。 */
 export const INNER_SIDEBAR_TOPIC_LIMIT = 12
 
-/** 这个对话的话题,置顶的在前、再按最近活动(同会话列表);归档的不算。群页头的话题菜单用的也是这一份(useChatTopicPins)。 */
-export function topicsOfChat(chats: readonly ChatItem[], chatId: string): ChatItem[] {
+/** 这个对话的话题,置顶的在前、再按最近活动(同会话列表);归档的不算。群页头菜单只按活动时间排序。 */
+export function topicsOfChat(chats: readonly ChatItem[], chatId: string, { pinnedFirst = true } = {}): ChatItem[] {
   return chats
     .filter((chat) => chat.kind === 'topic' && chat.source_chat_id === chatId && chat.status !== 'archived')
-    .sort((a, b) => comparePinnedFirst(a, b) || compareChatsByActivityDesc(a, b))
+    .sort((a, b) => (pinnedFirst ? comparePinnedFirst(a, b) : 0) || compareChatsByActivityDesc(a, b))
 }
 
 export type InnerSidebarTopicRows = {
