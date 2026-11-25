@@ -271,7 +271,7 @@ async function freshlyPreparedProfile() {
   const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
     local:{} as never,guguHome,kind:'computer',env:{},failed:vi.fn(),locale:()=> 'en-US'})
   await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd:prepared.workdir})
-  return {runtime,paths,root,async cleanup(){runtime.dispose();await rm(root,{recursive:true,force:true})}}
+  return {runtime,paths,root,refresh:()=>prepareLocalAssistantHome({engine:'codex'},{home,guguHome}),home,guguHome,async cleanup(){runtime.dispose();await rm(root,{recursive:true,force:true})}}
 }
 
 it('#1457 skips review only on the first unchanged freshly prepared profile and never stamps a review receipt',async()=>{
@@ -287,6 +287,40 @@ it('#1457 skips review only on the first unchanged freshly prepared profile and 
   }finally{await f.cleanup()}
 })
 
+it.each(['instructions', 'identical profile'] as const)('#1457 preserves the first-admission proof through an App refresh of %s', async kind => {
+  const f = await freshlyPreparedProfile()
+  try {
+    const profilePath = join(f.paths.memoryDir, 'owner-profile.md')
+    const profile = await readFile(profilePath, 'utf8')
+    const index = await readFile(f.paths.memoryIndex, 'utf8')
+    // The App entry refreshes the home after fresh setup and before the first task is admitted.
+    await prepareLocalAssistantHome({ engine: 'codex', ...(kind === 'identical profile' ? { ownerProfile: 'Fresh introduction' } : {}) }, { home: f.home, guguHome: f.guguHome })
+    expect(await readFile(profilePath, 'utf8')).toBe(profile)
+    expect(await readFile(f.paths.memoryIndex, 'utf8')).toBe(index)
+    const first = await f.runtime.prepare('session', 'first system task')
+    expect(first.beforeText ?? '').not.toContain('<gugu_profile_review>')
+    expect(await readFile(f.paths.memoryIndex, 'utf8')).toBe(index)
+    expect(index).not.toContain('profile_rules:')
+    await first.rejected?.()
+    await f.refresh()
+    expect((await f.runtime.prepare('session', 'second task')).beforeText).toContain('<gugu_profile_review>')
+  } finally { await f.cleanup() }
+})
+
+it('#1457 invalidates a pending proof before home preparation replaces profile bytes', async () => {
+  const f = await freshlyPreparedProfile()
+  try {
+    const profilePath = join(f.paths.memoryDir, 'owner-profile.md')
+    const profile = await readFile(profilePath, 'utf8')
+    const index = await readFile(f.paths.memoryIndex, 'utf8')
+    await prepareLocalAssistantHome({ engine: 'codex', ownerProfile: 'Changed introduction' }, { home: f.home, guguHome: f.guguHome })
+    // Restoring old bytes must not resurrect a proof revoked by a real replacement.
+    await writeFile(profilePath, profile)
+    await writeFile(f.paths.memoryIndex, index)
+    expect((await f.runtime.prepare('session', 'first task')).beforeText).toContain('<gugu_profile_review>')
+  } finally { await f.cleanup() }
+})
+
 it.each(['profile','missing profile','index','index receipt','rules','app rules'] as const)('#1457 reviews a fresh profile when its %s fingerprint changes',async(part)=>{
   const f=await freshlyPreparedProfile()
   try {
@@ -296,6 +330,7 @@ it.each(['profile','missing profile','index','index receipt','rules','app rules'
     if(part==='index')await writeFile(f.paths.memoryIndex,(await readFile(f.paths.memoryIndex,'utf8'))+' ')
     if(part==='rules')installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:7}}))
     if(part==='app rules')installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,rulesVersion:'99.0.0',defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:6}}))
+    await f.refresh()
     expect((await f.runtime.prepare('session','first task')).beforeText).toContain('<gugu_profile_review>')
   }finally{installAssistantRulesResolver(fixedAssistantRules({...NEUTRAL_ASSISTANT_RULES,defaults:{...NEUTRAL_ASSISTANT_RULES.defaults,profileRulesVersion:6}}));await f.cleanup()}
 })
@@ -303,9 +338,11 @@ it.each(['profile','missing profile','index','index receipt','rules','app rules'
 it.each(['PANEL_CLOUD_TIMEOUT','PANEL_IDENTITY_REMOVED'])('#1457 consumes the fresh proof before failed admission: %s',async(code)=>{
   const f=await freshlyPreparedProfile()
   try {
+    await f.refresh()
     calls.prepareFailure=new Error(code)
     await expect(f.runtime.prepare('session','first task')).rejects.toThrow(code)
     calls.prepareFailure=null
+    await f.refresh()
     expect((await f.runtime.prepare('session','next task')).beforeText).toContain('<gugu_profile_review>')
   }finally{await f.cleanup()}
 })
