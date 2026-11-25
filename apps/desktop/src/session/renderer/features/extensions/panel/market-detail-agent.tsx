@@ -81,16 +81,15 @@ function AgentCard({ agent, installation, onCreate, notice, readOnly }: {
   ) : installed ? (
     <>
       <Button disabled={busy || !runnable} onClick={onCreate}>{translate('sidebar.createAgent')}</Button>
-      {update && <Button variant="outline" disabled={busy} onClick={update}>{translate('extensions.updateAction')}</Button>}
+      {update && <Button variant="outline" disabled={busy} onClick={update}>{translate(failure ? 'extensions.retry' : 'extensions.updateAction')}</Button>}
     </>
   ) : update || install ? (
-    <Button disabled={busy} onClick={update ?? install}>{translate(update ? 'extensions.updateAction' : 'extensions.installAction')}</Button>
+    <Button disabled={busy} onClick={update ?? install}>{translate(failure ? 'extensions.retry' : update ? 'extensions.updateAction' : 'extensions.installAction')}</Button>
   ) : agent.installDocs ? (
     <Button variant="outline" onClick={() => { if (agent.installDocs) confirmOpenExternalLink(agent.installDocs); }}>
       {translate('agentsPage.installDocsLink')}
     </Button>
   ) : undefined;
-  // The button above goes back to "Install" after a failure; this line says why it did.
   const failureNote = failure && !busy && (
     <div role="alert" className="text-sm text-foreground-destructive">
       {failure.message}

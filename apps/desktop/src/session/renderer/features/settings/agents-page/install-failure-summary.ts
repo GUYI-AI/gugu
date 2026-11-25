@@ -24,7 +24,9 @@ export function installFailureSummary(
                 facts
               )
             ? 'agentsPage.failureNetwork'
-            : 'agentsPage.failureIncomplete'
+            : /failed to resolve dependencies|peer-context fixed-point/.test(facts)
+              ? 'agentsPage.failureDependencies'
+              : 'agentsPage.failureIncomplete'
   return { message: translate(key, { operation }), diagnostic }
 }
 
