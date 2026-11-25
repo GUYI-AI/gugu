@@ -1,8 +1,10 @@
 /**
  * StreamContext — per-message streaming animation state.
  *
- * Provided by AssistantRender while a message is streaming; null for committed
- * messages so there is zero animation overhead in the non-streaming case.
+ * Provided by every row that draws a reply's blocks (AssistantRender, and the
+ * conversation bubble the agent-conversation layout draws replies in) while the
+ * message is streaming; null for committed messages so there is zero animation
+ * overhead in the non-streaming case.
  *
  * `frontier` maps blockId → number of characters already painted on the
  * previous render. An html block fades only the text past it, not text that was
@@ -44,3 +46,11 @@ export const StreamContext = createContext<StreamAnimation | null>(null);
 
 /** Returns the current StreamAnimation, or null outside a streaming row. */
 export const useStreamAnimation = (): StreamAnimation | null => useContext(StreamContext);
+
+/**
+ * One row's StreamAnimation, made once per mounted row: its frontier persists across streaming chunks because the
+ * row stays mounted while its message grows.
+ */
+export function createStreamAnimation(streaming: Accessor<boolean>, settledCount: Accessor<number>): StreamAnimation {
+  return { frontier: new Map(), streaming, settledCount };
+}
