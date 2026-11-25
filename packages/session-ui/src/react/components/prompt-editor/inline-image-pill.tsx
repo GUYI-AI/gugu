@@ -11,6 +11,8 @@
 import { cx } from '@session-ui/styles/utilities/cx';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { useState, type HTMLAttributes } from 'react';
+import { createPortal } from 'react-dom';
+import { useUiPopupZIndex, useUiPortalContainerOrBody } from '@session-ui/react/lib/portal-container';
 import { useMessages } from '../../localization/message-provider';
 import { ImageIcon } from '../../../icons';
 import * as styles from './inline-image-pill.css';
@@ -36,8 +38,11 @@ export function InlineImagePill({ node, selected, extension }: NodeViewProps) {
   const id = node.attrs.id as string;
   const src = node.attrs.src as string | null;
   const name = (node.attrs.name as string | null) ?? '';
-  // Fixed, so the editor's own scroll box cannot clip the preview.
+  // Portaled like every popup (portal-container.ts), so neither the editor's scroll box nor a stacking context around the
+  // composer can clip or bury it; it then layers with the composer's menus by the one popup rule.
   const [preview, setPreview] = useState<{ left: number; bottom: number } | null>(null);
+  const portal = useUiPortalContainerOrBody();
+  const zIndex = useUiPopupZIndex('var(--z-popover)');
   const onView = (extension.options as InlineImageOptions).onView;
   return (
     <NodeViewWrapper as="span" className={styles.wrapper}>
@@ -55,10 +60,11 @@ export function InlineImagePill({ node, selected, extension }: NodeViewProps) {
         onMouseDown={(event) => { if (onView) event.preventDefault(); }}
         onClick={(event) => { setPreview(null); onView?.(id, event.currentTarget); }}
       />
-      {preview && src && (
-        <span className={styles.preview} style={{ left: preview.left, bottom: preview.bottom }} aria-hidden="true">
+      {preview && src && createPortal(
+        <span className={styles.preview} style={{ left: preview.left, bottom: preview.bottom, zIndex }} aria-hidden="true">
           <img src={src} alt="" draggable={false} className={styles.previewImage} />
-        </span>
+        </span>,
+        portal,
       )}
     </NodeViewWrapper>
   );
