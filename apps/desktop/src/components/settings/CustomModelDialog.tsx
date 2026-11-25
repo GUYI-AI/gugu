@@ -134,6 +134,11 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   const keySource = typedKey ? { apiKey: typedKey } : connection?.keySaved ? { connectionId: connection.id } : null;
   const source: ConnectionModelSource | null = !keySource || !normalized ? null : address ? { ...keySource, baseUrl: address } : { ...keySource, endpoints: normalized };
   const list = useConnectionModelList(machine, source);
+  // What the background read found wrong with the key or address, until the person's own test replaces it. A preset has no
+  // address field, so an address reason is said as what is known rather than "check this address" (B7-F03).
+  const keyProblem = list.kind !== 'unlisted' || list.reason === 'no-list' ? ''
+    : connection?.keySaved && !typedKey && list.reason === 'unauthorized' ? translate('customModels.heldKeyRefused')
+      : translate(connectionProbeMessageKey(list.reason, Boolean(preset)));
   const probed = address ? (list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : []) : normalized ?? [];
   const routeEndpoints = probed.length ? probed : normalized ?? [];
   // The address column appears for a route that has its own upstream address or needs one: its outgoing protocol is not
@@ -360,6 +365,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
             </div>
             {test.kind === 'ok' && <p className="gg-model-test-ok" role="status" data-testid="custom-model-test-result"><Check aria-hidden className="size-3" />{translate('customModels.testOk')}</p>}
             {test.kind === 'failed' && <p className="subscription-error" role="alert" data-testid="custom-model-test-result">{test.message}</p>}
+            {test.kind === 'idle' && keyProblem && <p className="subscription-error" role="alert" data-testid="custom-model-key-problem">{keyProblem}</p>}
           </div>
           <label className="gg-model-field gg-model-field-spaced"><span className="gg-model-field-label">{translate('customModels.modelName')}</span>
             <Input data-testid="custom-model-name" required spellCheck={false} maxLength={200} placeholder={translate('customModels.modelNamePlaceholder')} value={modelName} onChange={(event) => { setModelName(event.target.value); setTest({ kind: 'idle' }); }} />
