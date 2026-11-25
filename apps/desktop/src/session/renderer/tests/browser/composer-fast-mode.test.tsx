@@ -116,8 +116,14 @@ describe('Fast in the real thinking menu', () => {
     const tip = page.getByText('Faster responses, uses 2× tokens', { exact: true })
     await expect.element(tip).toBeVisible()
     const tipBox = tip.element().getBoundingClientRect()
-    expect(tipBox.bottom).toBeLessThanOrEqual(rowBox.top)
-    expect(tipBox.top).toBeGreaterThanOrEqual(0)
+    // Away from the model list (below when the window has no room there, as the effort menu): it covers neither the card,
+    // with its title and the Thinking row, nor any model in the list.
+    const overlaps = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+    expect(overlaps(tipBox, row.closest('[data-hover-card]')!.getBoundingClientRect())).toBe(false)
+    for (const option of document.querySelectorAll('[data-model-option-id]')) expect(overlaps(tipBox, option.getBoundingClientRect())).toBe(false)
+    expect(tipBox.left).toBeGreaterThanOrEqual(0)
+    expect(tipBox.right).toBeLessThanOrEqual(window.innerWidth)
+    expect(tipBox.bottom).toBeLessThanOrEqual(window.innerHeight)
     expect(document.elementFromPoint(tipBox.left + tipBox.width / 2, tipBox.top + tipBox.height / 2)?.closest('[role="tooltip"], [data-side]')).not.toBeNull()
   })
 

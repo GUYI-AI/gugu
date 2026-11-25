@@ -20,6 +20,7 @@ import { useMessages } from '../../localization/message-provider';
 import * as styles from './chat-composer.css';
 // 圆钮直径的**唯一真源** —— 填充末端要落在圆心上,这里跟着它算,❌ 别再写一遍字面量。
 import { ComposerFastMode, type RenderFastModeHint } from './composer-fast-mode';
+import { sideAwayFromPicker } from './detail-card-side';
 import { ComposerThinking } from './composer-thinking';
 import { Popover } from '@session-ui/react/primitives/popover';
 import { ContextThresholdMenu, type ComposerContextThresholds } from './context-threshold';
@@ -232,14 +233,8 @@ function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffor
       {canEditEffort && (
         <Popover.Root open={effortMenuOpen} onOpenChange={open => {
           if (open) {
-            const card = effortTrigger.current?.closest('[data-hover-card]')?.getBoundingClientRect();
-            const panel = picker?.getBoundingClientRect();
-            if (card && panel && picker) {
-              const left = card.left < panel.left;
-              const windowWidth = picker.ownerDocument.documentElement.clientWidth;
-              const free = left ? card.left : windowWidth - card.right;
-              setEffortMenuSide(free >= 192 ? (left ? 'left' : 'right') : 'bottom');
-            }
+            const side = sideAwayFromPicker(effortTrigger.current, picker, 192);
+            if (side) setEffortMenuSide(side);
           }
           setEffortMenuOpen(open);
         }}>
@@ -778,7 +773,7 @@ export function ComposerModelMenu({
               <ModelDetail key={detailItem.id} item={detailItem} picker={panelEl} contextThresholds={contextThresholds}
                 efforts={detailItem.id === selectedModel ? effortItems : undefined} effort={effectiveEffortItem}
                 fastControl={detailItem.id === selectedModel && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
-                  ? <ComposerFastMode detailRow enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
+                  ? <ComposerFastMode detailRow picker={panelEl} enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
                   : undefined}
                 onDisabledAction={() => {
                   detailCard.close();

@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react';
+import type { FastModeHintPlacement } from '@gugu/session-ui/react/components';
 import { Hint } from '@/components/ui/Tooltip';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 
@@ -10,5 +11,5 @@ export function fastModeHint(tokenMultiplier: number | undefined) {
   const label = tokenMultiplier
     ? translateSessionMessage('composer.fastModeHintTokens', { multiplier: tokenMultiplier })
     : translateSessionMessage('composer.fastModeHintPrice');
-  return (trigger: ReactElement) => <Hint label={label} side="top">{trigger}</Hint>;
+  return (trigger: ReactElement, { side, sideOffset }: FastModeHintPlacement) => <Hint label={label} side={side} sideOffset={sideOffset}>{trigger}</Hint>;
 }

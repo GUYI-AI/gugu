@@ -263,6 +263,8 @@ export type InitialSessionState = {
   autoReviewCostSource?: ReviewCostSource;
   fastMode?: boolean;
   setFastMode?: (enabled: boolean) => void;
+  /** Fast's published token multiple for this draft (`fastTokenMultiplier`); undefined = billed higher, no multiple. */
+  fastTokenMultiplier?: number;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
   defaultEffort: string | null;
   /** Persist the complete launch configuration only after a session has actually been created. */
