@@ -283,7 +283,7 @@ export default {
     "avatarUploading": "正在上传…",
     "nameLabel": "称呼",
     "namePlaceholder": "你的称呼",
-    "occupationLabel": "职业",
+    "occupationLabel": "职业（必选）",
     "occupation": {
       "student": "学生",
       "research": "科研",
@@ -1090,7 +1090,7 @@ export default {
       "existingFolder": "已有文件夹",
       "pickFolder": "选文件夹",
       "offline": "离线",
-      "noMachine": "没有在线的电脑",
+      "noMachine": "请先在电脑端登录并保持在线",
       "noDefaultDirectory": "此电脑未设置默认项目目录",
       "invalidName": "项目名不能包含 / \\ : * ? \" < > |",
       "pathTaken": "此文件夹已被「{{name}}」使用",
