@@ -21,6 +21,8 @@ interface PlatformCapabilities {
   localHumanAuthSession: boolean
   barcodeScan: boolean
   sessionHost: boolean
+  /** Local model connections and auxiliary settings via the agent-config host. */
+  modelSettings?: boolean
   externalFileOpen: boolean
   appRelaunch: boolean
   /** 有本地日志文件可读 —— 只有 Electron 有。web / 移动壳上「附带日志」不该出现在界面上。 */

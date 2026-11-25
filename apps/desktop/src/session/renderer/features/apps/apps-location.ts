@@ -18,7 +18,7 @@ export type AppsLocation = {
    * The Installed page in place of the market: what the tab names, installed on one device. `direct`: opened straight
    * onto connector management (the shell's "manage connectors"), which shows its management controls at once.
    */
-  installed?: { deviceId?: string; layout?: InventoryView; scroll?: number; direct?: boolean };
+  installed?: { deviceId?: string; layout?: InventoryView; scroll?: number; focusId?: string; query?: string; direct?: boolean };
   /**
    * An App's page: its settings (`manage`) or its market page. Without `page` (a link) the page decides by whether it
    * is installed. `fromApp`: opened from that App's own tab, so its back button is named after the App.

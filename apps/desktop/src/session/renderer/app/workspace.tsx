@@ -15,7 +15,7 @@ import { WorkspaceContentLayout, WorkspaceLayout } from '@renderer/lib/layout/wo
 import { NoticeHost } from '@/components/NoticeHost';
 import { SshKeyInstallToasts } from '@renderer/features/remote-hosts/ssh-key-install-toasts';
 import { observer } from 'mobx-react-lite';
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ComponentType, type CSSProperties, type ReactNode } from 'react';
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType, type CSSProperties, type ReactNode } from 'react';
 import { appState } from '@renderer/lib/stores/app-state';
 import { registeredViews } from '@renderer/lib/layout/registered-views';
 import type { ViewDefinition, ViewId } from './view-registry';
@@ -36,6 +36,7 @@ import { RETAINED_SURFACE_HIDDEN_STYLE, SurfaceShown } from '@/lib/retainedSurfa
 import { sessionView } from '@renderer/features/sessions/view';
 import { runInAction } from 'mobx';
 import { pageModalOpen } from './page-modal';
+import { modalStore } from '@renderer/lib/modal/modal-store';
 import { ensureMachineSessionWiring } from '@renderer/features/remote-hosts/workspace/machine-session-wiring';
 import { ensureMachineWorkspaceBackend } from '@renderer/features/remote-hosts/workspace/machine-workspace-backend';
 import { isEmbedVisible, subscribeEmbedVisibility } from '@renderer/lib/portal-container';
@@ -247,12 +248,23 @@ const PageArea = observer(function PageArea({ page }: { page: string }) {
   );
 });
 
+/** Fixed and zero-size, on the modal layer within the frame: a dialog in it is above the page (its sticky header too) and not clipped by its scroll area. */
+const DIALOG_LAYER: CSSProperties = { position: 'fixed', top: 0, left: 0, width: 0, height: 0, zIndex: 'var(--z-modal)' };
+
 /** A modal view (@@@page-modal), in the same modal frame as Settings (@@@page-modal-frame). */
 const PageModal = observer(function PageModal({ viewId, onClose }: { viewId: string; onClose: () => void }) {
   useLayoutEffect(() => {
     runInAction(() => pageModalOpen.set(true));
     return () => runInAction(() => pageModalOpen.set(false));
   }, []);
+  // A dialog this page asks for (modalStore, e.g. Add connector's form) lands inside the frame, as from Settings
+  // (SessionSettingsContent). On the modal layer it opened under the frame, which rises above it (--z-settings).
+  const [dialogLayer, setDialogLayer] = useState<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (!dialogLayer) return;
+    modalStore.setPortalContainer(dialogLayer);
+    return () => modalStore.setPortalContainer(null);
+  }, [dialogLayer]);
   const def = viewOf(viewId);
   const Wrap = (def.WrapView ?? Fragment) as ComponentType<{ children: ReactNode } & Record<string, unknown>>;
   const Titlebar = def.TitlebarSlot ?? NoTitlebar;
@@ -260,7 +272,7 @@ const PageModal = observer(function PageModal({ viewId, onClose }: { viewId: str
   return (
     // In the session page's mount (its skin, and the layer an App's live page is drawn in); the frame rises above the
     // shell while it is open (MainLayout, pageModalOpen).
-    <Sheet onClose={onClose} {...PAGE_MODAL_FRAME} testId="page-modal" ariaLabel={viewId}>
+    <Sheet onClose={onClose} onEscape={def.onModalEscape} {...PAGE_MODAL_FRAME} testId="page-modal" ariaLabel={viewId}>
       <div className="flex min-h-0 flex-1 flex-col" data-page-modal={viewId}>
         <PageModalClose.Provider value={onClose}>
           <Wrap {...paramsOf(viewId)}>
@@ -268,6 +280,7 @@ const PageModal = observer(function PageModal({ viewId, onClose }: { viewId: str
           </Wrap>
         </PageModalClose.Provider>
       </div>
+      <div ref={setDialogLayer} style={DIALOG_LAYER} />
     </Sheet>
   );
 });

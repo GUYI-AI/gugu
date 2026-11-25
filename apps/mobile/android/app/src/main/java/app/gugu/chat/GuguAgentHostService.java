@@ -238,6 +238,14 @@ public class GuguAgentHostService extends Service {
             finally { releaseReservation(owner); }
         });
     }
+    static CompletableFuture<Void> stopOwnerRuntimeAndWaitForClosure(AccountClosureOperationV2.SideEffects admission) throws Exception {
+        admission.check();
+        // Auth owner/SID replacement stays fenced until dispatch returns. No Auth
+        // monitor is held while taking LOCK or invoking a captured run's stop.
+        // Grants were revoked once under the proof; do not clear them again here.
+        releaseReservation(admission.ownerId);
+        return OWNED_RUNS.stopAndAwait(admission.ownerId);
+    }
 
     static void stopOwner(Context context, String owner, boolean clearCredentials) throws Exception {
         GuguAgentHostPolicy.owner(owner);

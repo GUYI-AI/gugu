@@ -117,6 +117,7 @@ const STRINGS = {
     tooLarge: '这个文件有 {size}，打开可能很慢。',
     grewTooLarge: '这个文件在外面变大了（{size}），这里没有读进来；现在保存会盖掉外面的内容。',
     openAnyway: '仍然打开',
+    openingFile: '正在打开…',
     openingLong: '正在打开 {name}（{size}）…',
     openingProgress: '正在打开 {name}：{done} / {total}',
     retry: '重试',
@@ -367,6 +368,7 @@ const STRINGS = {
     tooLarge: 'This file is {size}: opening it may be slow.',
     grewTooLarge: 'This file grew to {size} outside and was not read in. Saving now writes over what is there.',
     openAnyway: 'Open anyway',
+    openingFile: 'Opening…',
     openingLong: 'Opening {name} ({size})…',
     openingProgress: 'Opening {name}: {done} of {total}',
     retry: 'Retry',
@@ -559,6 +561,7 @@ const state = {
   dragging: null, // the entry being dragged onto a folder (desktop)
   mode: 'preview', // 阅读 first (owner 10-30, folder-docs)
   current: null, // { entry, file, view, unbind, offs: [] }
+  openingImage: null,
   opening: null,
   cm: null,
   md: null,
@@ -2455,11 +2458,21 @@ async function copyLink(entry, at) {
 // `ask`: "Open with another App" — the host's picker, every App that opens this file, this one included.
 async function openInHost(entry, ask = false, intent = 'navigate') {
   if (fileUnavailable(entry)) return showBanner(unavailableReason(entry), 'info')
+  const image = !ask && intent === 'navigate' && /^image\//i.test(entry.contentType || '')
+  if (image && state.openingImage?.id === entry.id) return
+  const attempt = image ? { id: entry.id } : undefined
+  state.openingImage = attempt
+  for (const li of $('file-list').querySelectorAll('li[data-id]')) markOpened(li)
   try {
     const viewState = { root: state.root, folder: state.folder, filter: state.filter, kind: state.kind, sort: state.sort, filters: state.filters, picked: [...state.picked], selecting: state.selecting, pickFrom: state.pickFrom, scrollTop: $('file-list').scrollTop }
     await gugu.files.openWith(entry, { intent, viewState, ...(ask ? { ask: true } : {}), ...(ask ? {} : viewedWith(entry)) })
   } catch (error) {
-    showBanner(failureText(error), 'error')
+    if (!attempt || state.openingImage === attempt) showBanner(failureText(error), 'error')
+  } finally {
+    if (attempt && state.openingImage === attempt) {
+      state.openingImage = undefined
+      for (const li of $('file-list').querySelectorAll('[data-opening]')) markOpened(li)
+    }
   }
 }
 
@@ -4276,6 +4289,13 @@ function opened(entry) {
 }
 
 function markOpened(li) {
+  if (state.openingImage?.id === li.dataset.id) {
+    li.setAttribute('aria-busy', 'true')
+    li.dataset.opening = state.t.openingFile
+  } else {
+    li.removeAttribute('aria-busy')
+    delete li.dataset.opening
+  }
   if (state.opened === li.dataset.id) li.setAttribute('aria-current', 'true')
   else li.removeAttribute('aria-current')
 }

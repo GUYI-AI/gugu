@@ -13,6 +13,7 @@
 // 那就是第二个属主在原地 —— #3271 的病只治了增量那一半。
 
 import type { ChatItem, ChatUnreadLocator, GroupMemberRole, NotificationLevel } from '@gugu/core/shared/types/chat'
+import { mergeConversationVisibility } from '@gugu/core/shared/ui/chatModels'
 import { isPendingDelivery, parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import {
   assemble,
@@ -617,11 +618,25 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
 
   const owner: ChatProjection = {
     async confirmPersonalHiding(receipt, signal = new AbortController().signal) {
+      signal.throwIfAborted()
       assertRevision(receipt.account_revision, 'hide receipt')
       const key = entityKey('membership', membershipId(receipt.chat_id, viewerId))
       const current = cache.get(key)
-      // A clear receipt revokes retained bytes before any further IO. Hide and Undo
-      // reconcile through the same bounded family reader after the RPC commits.
+      if (!receipt.cleared_at) {
+        const index = rows.findIndex(row => row.id === receipt.chat_id)
+        if (index !== -1) {
+          const row = rows[index]!
+          // The committed receipt covers personal visibility. The journal still owns the rest of the membership row.
+          const newer = current?.value && compareStamp(current.stamp, receipt.account_revision) >= 0
+          const confirmed = mergeConversationVisibility(row, {
+            conversation_hidden_at: newer ? (current.value as MembershipValue).conversation_hidden_at ?? null : receipt.hidden_at,
+            conversation_visibility_revision: newer ? current.stamp : receipt.account_revision,
+          })
+          if (confirmed !== row) rows = rows.map(item => item === row ? confirmed : item)
+          return rows
+        }
+      }
+      // A clear receipt revokes retained bytes before any further IO.
       if (current?.value && receipt.cleared_at) {
         merge([[key, { stamp: receipt.account_revision,
           value: { ...current.value, conversation_hidden_at: receipt.hidden_at, ...(receipt.cleared_at ? { conversation_cleared_at: receipt.cleared_at } : {}) } }]])
