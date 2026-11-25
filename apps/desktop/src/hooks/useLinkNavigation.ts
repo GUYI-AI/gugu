@@ -75,12 +75,13 @@ export function useLinkNavigation(input: {
           const row = rowOf(id)
           return row ? (row.kind === 'topic' ? row.source_chat_id ?? null : row.id) : null
         }
-        const desktopTopic = (id: string | null | undefined) => !readMobileShell() && rowOf(id)?.kind === 'topic' ? id : undefined
+        // A file opened from a topic (its message, or an App page beside it) opens in that topic, on the desktop and the phone.
+        const openingTopic = (id: string | null | undefined) => rowOf(id)?.kind === 'topic' ? id : undefined
         // Asked in a chat (a message's, or an App page's beside it): the file's waiting page there at once — not an image's,
         // which opens over the chat in the image viewer (useChatOpener), the page left as it is.
         const { from, intent } = request
         const messageChat = request.message?.chat_id
-        const here = from?.chatId ?? desktopTopic(messageChat) ?? panelChat(messageChat)
+        const here = from?.chatId ?? openingTopic(messageChat) ?? panelChat(messageChat)
         const wait = here && !(request.fileName && opensInImageViewer(request.fileName, null, intent)) ? beginWait(here, { itemId: target.itemId, ...(request.fileName ? { fileName: request.fileName } : {}), ...(request.message ? { message: request.message } : {}), ...(from ? { from: from.tabId } : {}), ...(intent ? { intent } : {}) }) : null
         const mark = asksSoFar()
         try {
@@ -92,8 +93,8 @@ export function useLinkNavigation(input: {
           if (!found.success || !found.data) throw Object.assign(new Error(found.error || 'File reference is unavailable'), 'code' in found && found.code ? { code: found.code } : {})
           const resourceChat = panelChat(found.data.chatId)
           if (!resourceChat) throw new Error('File reference is unavailable')
-          // Resolve access against the file's own chat. An open from its desktop topic can show it in that topic's tool group.
-          const topic = desktopTopic(here)
+          // Resolve access against the file's own chat. An open from its topic shows it in that topic's tool group.
+          const topic = openingTopic(here)
           const chatId = topic && panelChat(topic) === resourceChat ? topic : resourceChat
           // Something else was asked of that chat while the host answered (a file from an App's list, another link): it is
           // the one the chat opens.
