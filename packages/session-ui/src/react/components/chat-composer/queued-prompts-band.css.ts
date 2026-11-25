@@ -1,11 +1,14 @@
-import { style } from '@vanilla-extract/css';
+import { createContainer, style } from '@vanilla-extract/css';
 import { vars } from '@session-ui/theme/core/contract/contract.css';
 import { tokenVars } from '@session-ui/theme/tokens.css';
 import { durFast } from '@session-ui/styles/effects/animations.css';
 
 // The queue is a compact card above the composer. The composer stack has no backing of its own
 // (messages scroll past behind it), so the card carries the composer's surface itself.
+const bandContainer = createContainer();
 export const band = style({
+  containerName: bandContainer,
+  containerType: 'inline-size',
   minWidth: 0,
   padding: '0.25rem 0.5rem',
   marginBottom: '0.5rem',
@@ -27,7 +30,7 @@ export const list = style({
 
 export const row = style({
   display: 'grid',
-  gridTemplateColumns: '1rem minmax(0, 1fr) auto',
+  gridTemplateColumns: 'auto minmax(0, 1fr) auto',
   alignItems: 'center',
   gap: '0.5rem',
   minHeight: '2rem',
@@ -41,9 +44,20 @@ export const row = style({
   },
 });
 
-export const leadingSlot = style({ position: 'relative', width: '1rem', height: '1rem' });
+// The status word 待发送 / Queued; with more than one entry the drag grip covers it on hover, as it covered the glyph.
+// Too narrow for the word beside the text and the actions (a pane split down to its floor), the word gives way to the
+// queue glyph and stays as the slot's title, as the composer's own labels give way to icons
+// (@@@composer-toolbar-disclosure). In em of the band's own text (a container query's em is the container's), so it
+// scales with the words it makes room for: 19.5em (≈272px at 14px) still leaves the widest actions (en) a few glyphs.
+const NARROW_BAND = `${bandContainer} (max-width: 19.5em)`;
+export const leadingSlot = style({ position: 'relative', display: 'flex', alignItems: 'center', height: '1.25rem' });
+export const queueLabel = style({
+  color: vars.foregroundMuted, whiteSpace: 'nowrap', lineHeight: '1.25rem',
+  '@container': { [NARROW_BAND]: { display: 'none' } },
+});
 export const queueIcon = style({
-  width: '1rem', height: '1rem', color: vars.foregroundMuted,
+  display: 'none', width: '1rem', height: '1rem', color: vars.foregroundMuted,
+  '@container': { [NARROW_BAND]: { display: 'block' } },
 });
 
 export const dragHandle = style({

@@ -201,7 +201,7 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(tool()).toBe(firstTool);
   await until('the chat under the full view is out of reach', () => !!chat()?.closest('[inert]'));
   expect(neighbour().getBoundingClientRect().toJSON()).toEqual(neighbourBefore);
-  await userEvent.click(page.getByRole('button', { name: '退出全屏' }));
+  await userEvent.click(page.getByRole('button', { name: '退出完整视图' }));
   await mode('split');
   await until('leaving the full view restores its split', () => width(chat()), (size) => size === chatWidth);
   await userEvent.click(page.getByRole('button', { name: '进入完整视图' }));
@@ -510,7 +510,7 @@ it('resizes and previews each collapse before release, and restores the split on
   await mouse('mouseReleased', 91, y);
   await mode('full');
   expect(workspace.paneSizes[0]).toBeCloseTo(324 / 799 * 100);
-  await userEvent.click(page.getByRole('button', { name: '退出全屏' }));
+  await userEvent.click(page.getByRole('button', { name: '退出完整视图' }));
   await mode('split');
   // Side by side the conversation is a card that gives its half of the 10px gutter (5px) out of its share.
   await until('restoring yields the last usable chat width', () => width(chat()), (w) => Math.abs(w - (324 - 5)) < 2);

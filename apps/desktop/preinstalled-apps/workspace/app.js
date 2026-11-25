@@ -2054,7 +2054,6 @@ function listItem(entry, now = new Date(Date.now())) {
   li.dataset.id = entry.id
   li.setAttribute('role', 'option')
   li.setAttribute('aria-selected', String(state.current?.entry.id === entry.id))
-  markOpened(li)
   if (entry.gitStatus) li.dataset.git = entry.gitStatus
   const open = document.createElement('button')
   open.type = 'button'
@@ -2093,6 +2092,7 @@ function listItem(entry, now = new Date(Date.now())) {
   const where = state.filter.trim() && entry.parentId ? pathOf(entry).split('/').slice(0, -1).join('/') : ''
   if (where) meta.prepend(Object.assign(document.createElement('span'), { className: 'file-path', textContent: where }))
   open.append(meta)
+  markOpened(li)
   open.onclick = (event) => (folder ? enterFolder(entry.id) : pressFile(entry, event))
   open.onauxclick = (event) => { if (!folder && event.button === 1) { event.preventDefault(); pressFile(entry, event) } }
   if (!folder) pickable(li, entry)
@@ -2471,7 +2471,7 @@ async function openInHost(entry, ask = false, intent = 'navigate') {
   } finally {
     if (attempt && state.openingImage === attempt) {
       state.openingImage = undefined
-      for (const li of $('file-list').querySelectorAll('[data-opening]')) markOpened(li)
+      for (const li of $('file-list').querySelectorAll('li[data-opening]')) markOpened(li)
     }
   }
 }
@@ -4288,14 +4288,15 @@ function opened(entry) {
   return entry
 }
 
+// An opening image says so in its time slot, the time stepping aside; a row or grid cell without one wears it over its end.
 function markOpened(li) {
-  if (state.openingImage?.id === li.dataset.id) {
-    li.setAttribute('aria-busy', 'true')
-    li.dataset.opening = state.t.openingFile
-  } else {
-    li.removeAttribute('aria-busy')
-    delete li.dataset.opening
+  const opening = state.openingImage?.id === li.dataset.id
+  for (const at of [li, li.querySelector('.file-cell[data-cell="when"]')].filter(Boolean)) {
+    if (opening) at.dataset.opening = state.t.openingFile
+    else delete at.dataset.opening
   }
+  if (opening) li.setAttribute('aria-busy', 'true')
+  else li.removeAttribute('aria-busy')
   if (state.opened === li.dataset.id) li.setAttribute('aria-current', 'true')
   else li.removeAttribute('aria-current')
 }

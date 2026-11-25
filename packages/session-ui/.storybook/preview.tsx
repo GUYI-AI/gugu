@@ -61,6 +61,7 @@ const STORY_MESSAGES: Record<string, string> = {
   'composer.permissions': 'Permissions…',
   'composer.queuePosition': '({current} of {total})',
   'composer.queuedPrompts': 'Queued prompts',
+  'composer.queuedLabel': 'Queued',
   'composer.removeAttachment': 'Remove {name}',
   'composer.cancelAttachment': 'Stop sending {name}',
   'composer.retryAttachment': 'Retry',

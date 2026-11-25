@@ -3,7 +3,7 @@ import { chatActor } from '@renderer/lib/chat/actor-identity'
 import { chatDisplayName } from '@renderer/lib/chat/chat-name'
 import { readChatSummary, resolveChatId } from '@/lib/chatSummariesBridge'
 import { translateSessionMessage } from '../../localization/locale-store'
-import { refreshFailure, replica, useReplica, valueOf } from '@/lib/replica'
+import { refreshFailure, replica, useReplica, valueOf, type Reading } from '@/lib/replica'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useChatSummaries } from '@/lib/chatSummariesBridge'
 import { readIdentityDirectoryBridge } from '@/lib/identityDirectoryBridge'
@@ -175,13 +175,16 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
   const clears = JSON.stringify(boundaries)
 
   const messagesApply = runnable && !inTask
-  const turnsApply = runnable && !!query && tasks && !inChat && !from && kinds.length === 0
+  // Task turns answer words alone (no sender, no kind of message). An in: chip leaves them out of the list, but they
+  // are still read: dropping the chip lists them, so the line counting what the chip hides counts them too.
+  const turnsAnswer = runnable && !!query && tasks && !from && kinds.length === 0
+  const turnsApply = turnsAnswer && !inChat
   const cloud = useReplica(messageSearch, messagesApply && !localScope ? [query, inChat ? inChat.chatId : null, clears] : null, { keepPrevious: true })
   const stored = useReplica(storedMessageSearch, messagesApply && localScope ? [query, inChat.chatId, from ? from.userId : null, clears] : null, { keepPrevious: true })
   const messages = localScope ? stored : cloud
   // The same words everywhere, for the line that says how many more the in: chip is hiding (the unscoped search).
-  const everywhere = useReplica(messageSearch, runnable && query && inChat ? [query, null, clears] : null, { keepPrevious: true })
-  const turns = useReplica(taskTurnSearch, turnsApply ? [query, clears] : null, { keepPrevious: true })
+  const everywhere = useReplica(messageSearch, messagesApply && query && inChat ? [query, null, clears] : null, { keepPrevious: true })
+  const turns = useReplica(taskTurnSearch, turnsAnswer ? [query, clears] : null, { keepPrevious: true })
   const storedRows = stored.state === 'value' ? stored.value : null
   useEffect(() => {
     if (!storedRows) return
@@ -223,17 +226,27 @@ export function useGlobalSearch(text: string, chips: readonly SearchChip[], face
     task: taskHits.length,
     file: messageHits.filter((hit) => hit.kind === 'message' && hit.file).length,
   }
-  const shown = facet === 'all' ? all : all.filter((hit) => facet === 'task' ? hit.kind === 'task' : hit.kind === 'message' && (facet === 'message' || hit.file))
+  const inFacet = (kind: SearchHit['kind'], file: boolean) => facet === 'all' || (facet === 'task' ? kind === 'task' : kind === 'message' && (facet === 'message' || file))
+  const shown = facet === 'all' ? all : all.filter((hit) => inFacet(hit.kind, hit.kind === 'message' && hit.file))
   // Only results with rows are held: an empty one held would say 「nothing found」 for words not searched yet.
   const known = !runnable || (!pending && !(stale && all.length === 0))
+  // What the in: chip hides is what dropping it adds, in the facet that stays: the other conversations' messages and the
+  // task turns. Counted from these words' own answers only (❌ the previous words' while these are on their way).
+  const answered = <V>(reading: Reading<V>) => reading.state === 'value' && !reading.previous ? reading.value : null
+  const everywhereRows = messagesApply ? answered(everywhere) : []
+  const everywhereTurns = turnsAnswer && inFacet('task', false) ? answered(turns)?.hits ?? null : []
+  const hidden = everywhereRows && everywhereTurns ? [
+    ...everywhereRows.filter((row) => row.chat_id !== inChat?.chatId && shownRow(row) && inFacet('message', row.file_item_id !== null)),
+    ...everywhereTurns.filter((hit) => !inTask || hit.sessionId === inTask.taskId),
+  ] : null
   return {
     query, scopes, unresolved,
     hits: !runnable ? [] : known ? shown : null,
     counts: !runnable ? { all: 0, message: 0, task: 0, file: 0 } : known ? counts : null,
     capped: messageRows.length >= SEARCH_LIMIT || turnHits.length >= SEARCH_LIMIT,
-    elsewhere: runnable && query && inChat && everywhere.state === 'value' ? {
-      count: everywhere.value.filter((row) => row.chat_id !== inChat.chatId && shownRow(row)).length,
-      capped: everywhere.value.length >= SEARCH_LIMIT,
+    elsewhere: runnable && query && inChat && hidden ? {
+      count: hidden.length,
+      capped: everywhereRows!.length >= SEARCH_LIMIT || everywhereTurns!.length >= SEARCH_LIMIT,
     } : null,
     loading: (runnable && (pending || stale)) || text !== typed,
     error: unasked ? new Error(translateSessionMessage(unasked)) : (messagesApply ? refreshFailure(messages) : null) ?? refreshFailure(everywhere) ?? (turnsApply ? refreshFailure(turns) : null),

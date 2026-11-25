@@ -15,6 +15,8 @@ import '@/mobile/phone-shell.css'
 
 const state = vi.hoisted(() => ({ mobile: false }))
 const markSeen = vi.hoisted(() => vi.fn(async () => {}))
+const followLink = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/guguLinks', async original => ({ ...await original<object>(), followLink }))
 vi.mock('@gugu/core/cloud/config', async original => ({ ...await original<object>(), getSupabaseUrl: () => 'http://supabase.test.local', getSupabaseAnonKey: () => 'test-anon-key' }))
 vi.mock('@/platform', async original => {
   const module = await original<typeof import('@/platform')>()
@@ -47,13 +49,13 @@ beforeEach(async () => {
 })
 afterEach(() => { harness.cleanup() })
 
-it.each([false, true])('the real list header keeps its bell/badge inside the pane and retains chat scroll (phone=%s)', async mobile => {
-  state.mobile = mobile
-  const width = mobile ? 320 : 390
+it('the phone\'s list header keeps its bell/badge inside the pane and retains chat scroll', async () => {
+  state.mobile = true
+  const width = 320
   await page.viewport(width, 844)
   harness.container.style.cssText = `width:${width}px;height:700px;display:flex`
-  if (mobile) harness.container.setAttribute('data-phone-shell', '')
-  await renderWithAppProviders(harness, <><ChatListPanel mobile={mobile} /><NeedsYouHost /></>, {
+  harness.container.setAttribute('data-phone-shell', '')
+  await renderWithAppProviders(harness, <><ChatListPanel mobile /><NeedsYouHost /></>, {
     chat: { chats: Array.from({ length: 40 }, (_, index) => chat({ id: `chat-${index}`, kind: 'group', name: `Group ${index}` })) },
   })
   const bell = harness.container.querySelector<HTMLButtonElement>('[data-testid="notification-toggle"]')!
@@ -97,4 +99,40 @@ it('the desktop sidebar\'s foot keeps the bell badge inside the window', async (
   expect(box.left).toBeGreaterThanOrEqual(0)
   expect(box.top).toBeGreaterThanOrEqual(0)
   expect(box.right).toBeLessThanOrEqual(1000)
+})
+
+it('the desktop bell pops its list beside itself, a menu\'s way: a row acts and closes it, so do Esc, a click outside and the bell', async () => {
+  state.mobile = false
+  await page.viewport(1000, 800)
+  harness.container.style.cssText = 'position:relative;width:1000px;height:700px;display:flex;align-items:flex-end'
+  await renderWithAppProviders(harness, <><div className="gugu-skin" style={{ width: 280 }} data-testid="sidebar-stand-in"><SidebarOneListFoot /></div><div data-testid="outside" style={{ marginLeft: 'auto', width: 200, height: 200 }} /><NeedsYouHost /></>)
+  const bell = harness.container.querySelector<HTMLButtonElement>('[data-testid="notification-toggle"]')!
+  await until('the bell is laid out', () => bell?.getBoundingClientRect().width > 0)
+  const popover = () => document.querySelector<HTMLElement>('[data-testid="notification-popover"]')
+  const shown = () => !!popover() && !popover()!.hasAttribute('data-ending-style')
+  await userEvent.click(bell)
+  await until('the list pops up', () => shown() && popover()!.getBoundingClientRect().height > 0)
+  // Beside the bell, its foot on the bell's row; the sidebar is not taken over.
+  const box = popover()!.getBoundingClientRect(), at = bell.getBoundingClientRect()
+  expect(box.left).toBeGreaterThanOrEqual(at.right)
+  expect(Math.abs(box.bottom - at.bottom)).toBeLessThanOrEqual(8)
+  expect(box.bottom).toBeLessThanOrEqual(800)
+  expect(harness.container.querySelector('[data-testid="sidebar-stand-in"]')!.contains(popover())).toBe(false)
+  expect(popover()!.querySelectorAll('[data-session-line]')).toHaveLength(100)
+  await userEvent.click(popover()!.querySelectorAll<HTMLElement>('[data-session-line]')[1])
+  expect(followLink).toHaveBeenCalledExactlyOnceWith({ kind: 'session', sessionId: 'task-1', deviceId: 'host' })
+  await until('opening a task closes the list', () => !shown())
+  await userEvent.click(bell)
+  await until('it opens again', () => shown())
+  await userEvent.keyboard('{Escape}')
+  await until('Esc closes it', () => !shown())
+  await userEvent.click(bell)
+  await until('and again', () => shown())
+  // Outside: an element of the page's own, right of where the popover reaches (280 + 8 + 360).
+  await userEvent.click(harness.container.querySelector<HTMLElement>('[data-testid="outside"]')!)
+  await until('a click outside closes it', () => !shown())
+  await userEvent.click(bell)
+  await until('once more', () => shown())
+  await userEvent.click(bell)
+  await until('the bell closes it', () => !shown())
 })

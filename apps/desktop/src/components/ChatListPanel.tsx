@@ -122,7 +122,7 @@ const SIDEBAR_LIST_STYLE: React.CSSProperties = { padding: '0 0 8px' }
 const SIDEBAR_ENTRY_ESTIMATE = 58
 
 /** A mounted sidebar line, placed by the line window. */
-const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%' })
+const lineStyle = (top: number): React.CSSProperties => ({ position: 'absolute', top, left: 0, width: '100%', transitionProperty: 'none' })
 /** The chat a sidebar line stands for: a conversation's own, a project line's group chat (#2548). */
 const chatIdOf = (chat: ChatItem) => chat.id
 const lineChatId = (row: ChatItem | OneListProjectLine) => (isOneListProjectLine(row) ? row.projectChatId : row.id)
@@ -825,7 +825,9 @@ export function ChatListPanel({
     scrollMargin: windowMargin,
     enabled: inSidebar,
   })
-  const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative' }
+  // Reduced-motion CSS supplies a duration even to elements with no declared transition. Keep the spacer height
+  // and row offsets in the same paint so a newly inserted row cannot overlap an old row or the sidebar tail.
+  const windowStyle: React.CSSProperties = { height: lineWindow.getTotalSize(), position: 'relative', transitionProperty: 'none' }
   // A project line (OneListProjectSlot) is measured once the task page has drawn its row, before that frame is painted.
   const measureDrawnLine = useStableHandler((slot: HTMLElement) => {
     flushSync(() => lineWindow.measureElement(slot.parentElement))

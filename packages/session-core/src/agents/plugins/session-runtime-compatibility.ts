@@ -4,7 +4,7 @@ import type { IExecutionContext } from '../../exec';
 // ⚠️ 直接从无 `node:` 导入的那个模块取,❌ 走 `../../exec` 的 barrel:本文件在 web 构建里(#6390)。
 import {
   resolvePosixNodeScriptEntry,
-  resolveWindowsNodeScriptEntry,
+  resolveWindowsNodeScriptLaunch,
   type WindowsShimReader,
 } from '../../exec/windows-node-entry';
 import {
@@ -23,6 +23,7 @@ export type SessionRuntimeCompatibilityErrorCode =
   | 'runtime-version-unparseable'
   | 'runtime-version-unsupported'
   | 'runtime-compatibility-missing'
+  | 'runtime-node-not-found'
   | 'runtime-entry-unresolved';
 
 /** 探针到底做了什么、得到了什么 —— 版本读不出来时,答案只能从这里来。 */
@@ -125,6 +126,8 @@ export class SessionRuntimeCompatibilityError extends Error {
       ? `${input.providerId} does not declare session surface '${input.surface}'; refusing to execute.`
       : input.code === 'runtime-compatibility-missing'
         ? `${input.providerId} ${input.surface} has no runtime compatibility declaration; refusing to execute.`
+      : input.code === 'runtime-node-not-found'
+        ? `Node.js was not found on PATH. Install a supported Node.js version (${requirement}), add it to PATH, then restart Gugu and retry.`
       : input.code === 'runtime-entry-unresolved'
         ? `${input.providerId} ${input.surface} runs through Node, but ${input.executable ?? 'the harness executable'}`
           + ' is a Windows shell script whose JavaScript entry could not be read from it; refusing to hand it to node.'
@@ -366,42 +369,39 @@ export async function resolveSessionRuntimeCompatible(input: {
   // 只在本机执行上下文做:SSH 宿主的平台与文件系统都不是这一边的。
   const platform = input.platform ?? process.platform;
   const readsShim = requirement.runtime === 'node' && input.executionContext.supportsLocalSpawn;
-  // POSIX 的启动器还钉着咕咕那份 node(没装 node 的机器上只有它能跑这一家):宿主没指定解释器时就用它。
-  const posixLauncher = readsShim && platform !== 'win32' && input.windowsShimReader
-    ? resolvePosixNodeScriptEntry(input.executable, input.windowsShimReader)
-    : undefined;
-
-  const runtimeExecutable = requirement.runtime === 'node'
-    ? input.runtimeExecutable ?? posixLauncher?.node ?? await resolveCommandPath('node', input.executionContext)
-    : input.executable;
-  if (!runtimeExecutable) {
-    throw new SessionRuntimeCompatibilityError({
-      code: 'runtime-version-probe-failed', providerId: input.providerId, surface: input.surface,
-      installedVersion: null,
-      supportedFloor: requirement.kind === 'semver-supported-floor' ? requirement.supportedFloor : null,
-      supportedRanges: requirement.kind === 'semver-supported-ranges' ? requirement.supportedRanges : null,
-      runtime: requirement.runtime,
-      cause: new Error(
-        requirement.runtime === 'node'
-          ? 'Could not resolve Node. Install a supported Node or set GUGU_NODE_BIN.'
-          : 'Could not resolve the declared runtime executable.'
-      ),
-    });
-  }
-
-  const executable = !readsShim
-    ? input.executable
-    : platform !== 'win32'
-      ? posixLauncher === undefined ? input.executable : posixLauncher?.entry ?? null
-      : input.windowsShimReader
-        ? resolveWindowsNodeScriptEntry(input.executable, { platform, reader: input.windowsShimReader })
-        : null;
+  // Both managed launchers can pin the Node they were installed with. Probe the same interpreter that the launcher uses.
+  const launcher = readsShim && platform === 'win32'
+    ? input.windowsShimReader
+      ? resolveWindowsNodeScriptLaunch(input.executable, { platform, reader: input.windowsShimReader })
+      : null
+    : readsShim && input.windowsShimReader
+      ? resolvePosixNodeScriptEntry(input.executable, input.windowsShimReader)
+      : undefined;
+  const executable = launcher === undefined ? input.executable : launcher?.entry;
   if (!executable) {
     throw new SessionRuntimeCompatibilityError({
       code: 'runtime-entry-unresolved', providerId: input.providerId, surface: input.surface,
       installedVersion: null,
       runtime: requirement.runtime,
       executable: input.executable,
+    });
+  }
+
+  const launcherNode = launcher?.node;
+  const pinnedNode = launcherNode && !/^node(?:\.exe)?$/i.test(launcherNode) ? launcherNode : undefined;
+  const runtimeExecutable = requirement.runtime === 'node'
+    ? input.runtimeExecutable ?? pinnedNode ?? await resolveCommandPath(
+      launcherNode ?? 'node', input.executionContext, platform === 'win32' ? 'windows' : undefined, input.env
+    )
+    : input.executable;
+  if (!runtimeExecutable) {
+    throw new SessionRuntimeCompatibilityError({
+      code: requirement.runtime === 'node' ? 'runtime-node-not-found' : 'runtime-version-probe-failed',
+      providerId: input.providerId, surface: input.surface,
+      installedVersion: null,
+      supportedFloor: requirement.kind === 'semver-supported-floor' ? requirement.supportedFloor : null,
+      supportedRanges: requirement.kind === 'semver-supported-ranges' ? requirement.supportedRanges : null,
+      runtime: requirement.runtime,
     });
   }
 

@@ -88,7 +88,7 @@ export function CustomModelDialog({ machine, connection, group = providerPresets
   const models = picked ?? (list.kind === 'listed' ? list.models : []);
   const keyProblem = list.kind !== 'unlisted' || list.reason === 'no-list' ? ''
     : connection?.keySaved && !typedKey && list.reason === 'unauthorized' ? translate('customModels.heldKeyRefused')
-      : translate(connectionProbeMessageKey(list.reason));
+      : translate(connectionProbeMessageKey(list.reason, Boolean(preset)));
   const toggleKey = async () => {
     if (!keyShown && !apiKey && connection?.keySaved) {
       try {
