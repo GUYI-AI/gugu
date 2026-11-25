@@ -900,6 +900,11 @@ export default {
       }
     },
     "showQuoted": "跳到被引用的消息",
+    "htmlRender": {
+      "close": "关闭",
+      "expand": "展开",
+      "title": "渲染的页面"
+    },
     "svgFigure": {
       "invalid": "这段 SVG 无法显示：不是格式正确的 SVG 文档",
       "noViewbox": "这段 SVG 无法显示：根元素缺少 viewBox",

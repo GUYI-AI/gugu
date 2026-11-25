@@ -903,6 +903,11 @@ export default {
       }
     },
     "showQuoted": "Go to the quoted message",
+    "htmlRender": {
+      "close": "Close",
+      "expand": "Expand",
+      "title": "Rendered page"
+    },
     "svgFigure": {
       "invalid": "This SVG could not be drawn: it is not a well-formed SVG document",
       "noViewbox": "This SVG could not be drawn: its root needs a viewBox",
