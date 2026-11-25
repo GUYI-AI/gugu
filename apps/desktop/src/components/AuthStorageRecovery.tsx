@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from './ui/Button'
+import { publicAssetPath } from '@gugu/core/shared/ui/publicAssets'
+import '../pages/login/login.css'
 import { authStorageRecoveryAction, authStorageRecoveryCopy, type AuthStorageRecoveryAction } from '../lib/authStorageFailure'
 import { nativeAuthRecoveryState } from '../lib/nativeAuthRecoveryState'
 import { useReplica } from '../lib/replica'
@@ -32,13 +34,24 @@ export function AuthStorageRecovery({ action }: { action: AuthStorageRecoveryAct
     } catch (error) { setFailure(authStorageRecoveryAction(error) ?? 'retry') }
     finally { flight.current = false; setBusy(false) }
   }
+  const title = current === 'relogin' ? 'shell.authStorage.titleUnreadable' : current === 'closure-pending'
+    ? 'shell.authStorage.titleClosure' : 'shell.authStorage.titleUnavailable'
   return (
-    <main className="grid min-h-screen place-items-center bg-[var(--bg-primary)] p-6 text-[length:var(--font-body)] text-[var(--text-primary)]">
-      <section className="flex w-full max-w-sm flex-col items-start gap-4" aria-busy={busy}>
-        <p role="alert">{t(authStorageRecoveryCopy(current))}</p>
-        <Button size="lg" variant="primary" disabled={busy || (current === 'relogin' && !revision)} onClick={() => { void run() }}>
-          {t(current === 'relogin' ? 'shell.authStorage.relogin' : 'shell.authStorage.retry')}
-        </Button>
+    <main className="gugu-auth-page">
+      <section className="gugu-auth-shell gugu-auth-recovery-shell" aria-labelledby="gugu-auth-recovery-title" aria-busy={busy}>
+        <div className="gugu-auth-pane">
+          <div className="gugu-auth-login">
+            <header className="gugu-auth-heading">
+              <img className="gugu-auth-logo" src={publicAssetPath('/assets/app/gugu-icon-512.png')} alt={t('brand.name')} draggable={false} />
+              <h1 id="gugu-auth-recovery-title">{t(title)}</h1>
+              <p role="alert">{t(authStorageRecoveryCopy(current))}</p>
+            </header>
+            <Button size="xl" variant="primary" className="gugu-auth-submit" disabled={busy || (current === 'relogin' && !revision)} onClick={() => { void run() }}>
+              {t(current === 'relogin' ? 'shell.authStorage.relogin' : 'shell.authStorage.retry')}
+            </Button>
+            {current === 'relogin' && <p className="gugu-auth-legal">{t('shell.authStorage.localOnly')}</p>}
+          </div>
+        </div>
       </section>
     </main>
   )

@@ -995,9 +995,13 @@ export default {
     "authStorage": {
       "unreadable": "登录信息无法读取，需要重新登录。",
       "unavailable": "暂时无法读取登录信息，请重试。",
-      "closurePending": "账号注销记录尚未确认完成，暂时不能清除登录信息。请重试恢复注销进度。",
+      "closurePending": "还不能确认账号是否已注销，请点重试继续。",
       "relogin": "重新登录",
-      "retry": "重试"
+      "retry": "重试",
+      "titleUnreadable": "需要重新登录",
+      "titleUnavailable": "登录暂时遇到问题",
+      "titleClosure": "注销还未确认",
+      "localOnly": "只清除这台手机上的登录信息，你的会话和数据都在云端，不会丢"
     },
     "sessionExpired": {
       "description": "正在自动重试。恢复连接前，无法发送消息或新建 agent。",

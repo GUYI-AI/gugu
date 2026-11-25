@@ -1015,9 +1015,13 @@ export default {
     "authStorage": {
       "unreadable": "Your login information cannot be read. Please sign in again.",
       "unavailable": "Your login information is temporarily unavailable. Please try again.",
-      "closurePending": "Account deletion records are still retained. Login information cannot be cleared until recovery is complete. Please retry.",
+      "closurePending": "We cannot yet confirm whether account deletion has finished. Select Retry to continue.",
       "relogin": "Sign in again",
-      "retry": "Retry"
+      "retry": "Retry",
+      "titleUnreadable": "Sign in again",
+      "titleUnavailable": "Unable to restore your login",
+      "titleClosure": "Account deletion is not yet confirmed",
+      "localOnly": "Only this phone’s login information is cleared. Your conversations and cloud data will not be deleted."
     },
     "sessionExpired": {
       "description": "Retrying automatically. Messages cannot be sent and agents cannot be created until the connection is restored.",

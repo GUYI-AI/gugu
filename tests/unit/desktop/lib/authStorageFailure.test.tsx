@@ -68,7 +68,7 @@ describe('native auth storage recovery actions', () => {
     const control = button('重新登录')!
     await waitFor(() => expect(control.disabled).toBe(false)); await click(control)
     await waitFor(() => expect(recovery.reset).toHaveBeenCalledWith('a'.repeat(64)))
-    await waitFor(() => expect(alert().textContent).toContain('账号注销记录'))
+    await waitFor(() => expect(alert().textContent).toContain('账号是否已注销'))
     expect(host.textContent).not.toContain('PRIVATE_CANARY')
   })
   it('keeps unrelated errors on their existing paths', () => {

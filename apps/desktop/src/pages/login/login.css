@@ -38,3 +38,6 @@
 
 .gugu-auth-placeholder { width: 300px; max-width: 100%; height: 320px; border-radius: var(--radius-control); background: var(--muted); opacity: .35; }
 .gugu-auth-error a{color:inherit;text-decoration:underline;text-underline-offset:3px}
+
+/* Storage recovery shares the existing login layout, without the desktop marketing pane. */
+.gugu-auth-recovery-shell { grid-template-columns: minmax(0, 1fr); }
