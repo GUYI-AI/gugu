@@ -143,9 +143,11 @@ it('repairs a missing model route from its disabled row and returns to the picke
   state.probe = { endpoints: connection.endpoints, models: connection.models.map(({ id }) => id), failures: [] };
   const options = customComposerOptions([connection], agent, translateSessionMessage, null);
   const onModelChange = vi.fn();
-  render(<><div style={{ position: 'fixed', right: 24, bottom: 24, width: 640 }}>
-    <ChatComposer modelOptions={{ 'platform:available-model': { name: 'Available model' }, ...options }}
-      selectedModel="platform:available-model" onModelChange={onModelChange} onSubmit={() => {}} onStop={() => {}} />
+  render(<><div style={{ position: 'fixed', inset: 0, zIndex: 5 }}>
+    <div style={{ position: 'absolute', right: 24, bottom: 24, width: 640 }}>
+      <ChatComposer modelOptions={{ 'platform:available-model': { name: 'Available model' }, ...options }}
+        selectedModel="platform:available-model" onModelChange={onModelChange} onSubmit={() => {}} onStop={() => {}} />
+    </div>
   </div><CustomModelRouteRepairHost /></>);
 
   const panel = () => document.querySelector<HTMLElement>('[data-slot="combobox-content"]');

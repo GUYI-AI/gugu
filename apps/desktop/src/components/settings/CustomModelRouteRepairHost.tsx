@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { SessionModalLayer } from '@/components/SessionModalLayer';
 import { SessionUiTheme } from '@/components/sessionpage/SessionUiTheme';
 import { UI_EVENTS } from '@/lib/uiEvents';
 import { useTheme } from '@/store/theme';
@@ -15,8 +16,8 @@ export function CustomModelRouteRepairHost() {
   }, []);
 
   if (!request) return null;
-  return <SessionUiTheme theme={theme} skin>
+  return <SessionModalLayer><SessionUiTheme theme={theme} skin>
     <CustomModelDialog machine={request.machine} connection={request.connection} initialRoute={request.route}
       onClose={() => { setRequest(null); request.onClose(); }} />
-  </SessionUiTheme>;
+  </SessionUiTheme></SessionModalLayer>;
 }
