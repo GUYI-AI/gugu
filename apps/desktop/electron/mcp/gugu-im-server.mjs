@@ -2629,7 +2629,7 @@ async function ownerNotificationFile(args, deps) {
   }
   name ??= basename(filePath)
   mime ??= resolveAttachmentMimeType(name, undefined)
-  return { path: filePath, name, mime_type: mime }
+  return { path: filePath, name, mime_type: mime, ...pageSizeOf(args) }
 }
 
 /**

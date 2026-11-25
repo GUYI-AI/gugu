@@ -23,6 +23,8 @@ export const transcriptMessageSchema = z.object({
     files: z.array(z.object({
       path: z.string(), name: z.string(), mimeType: z.string(),
       sizeBytes: z.number().int().nonnegative(), sha256: z.string(),
+      /** The size an .html page is drawn at, as the agent sent it (page_size). */
+      width: z.number().int().positive().optional(), height: z.number().int().positive().optional(),
     })).optional(),
   }).optional(),
   /** Native provider boundary; never a display index or a text match. */

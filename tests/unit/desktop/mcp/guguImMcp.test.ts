@@ -2181,6 +2181,18 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     expect(h.calls.inserts, 'a refused page sends no message').toHaveLength(2)
   })
 
+  test('message_send page_size to the owner of a session they read: the owner notification carries the page size', async () => {
+    const actions: Array<Record<string, unknown>> = []
+    const context = { ...TEST_CONTEXT, ownerReads: 'session' as const, runHostAction: async (action: Record<string, unknown>) => {
+      actions.push(action)
+      return { status: 'sent', message_id: action.request_id, session_id: 'session-1' }
+    } }
+    await callToolImpl(context, 'message_send', { chat_id: 'user:owner-1', file_path: fixtureFile('chart.html', Buffer.from('<p>chart</p>')), page_size: { width: 640, height: 360 } })
+    expect(actions[0]).toMatchObject({ action: 'owner-notify', file: { name: 'chart.html', mime_type: 'text/html', width: 640, height: 360 } })
+    await callToolImpl(context, 'message_send', { chat_id: 'user:owner-1', file_path: fixtureFile('plain.html', Buffer.from('<p>x</p>')) })
+    expect(actions[1]!.file, 'without page_size an .html is a file like any other').not.toHaveProperty('width')
+  })
+
   test('message_send_file:回答丢了 ⇒ 同一次上传、同一个消息 id 重放,只出一条消息;服务端明确拒的(4xx)不重放', async () => {
     const h = harness(['agent-1'])
     h.loseCommitAnswers(1)

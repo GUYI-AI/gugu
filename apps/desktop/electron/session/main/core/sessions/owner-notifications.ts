@@ -16,7 +16,8 @@ import { appendJournalTurn, journalTurns } from './session-journal';
 
 export type OwnerNotificationInput = {
   request_id: string; agent_user_id: string; text: string;
-  file?: { path: string; name: string; mime_type: string };
+  /** `width`/`height`: the size an .html page is drawn at (`message_send` page_size). */
+  file?: { path: string; name: string; mime_type: string; width?: number; height?: number };
 };
 type Context = { sessionId: string; projectId: string; workspaceId: string };
 const uploads = createAttachmentUploads();
@@ -41,7 +42,8 @@ async function snapshotFile(root: string, input: OwnerNotificationInput): Promis
     await uploads.write(root, { ...spec, offset, data: chunk.toString('base64'), chunkSha256: hash(chunk) });
   }
   const saved = await uploads.commit(root, spec);
-  return [{ path: join(root, saved.workspacePath), name: input.file.name, mimeType: input.file.mime_type, sizeBytes: bytes.length, sha256: spec.sha256 }];
+  const page = input.file.width && input.file.height ? { width: input.file.width, height: input.file.height } : {};
+  return [{ path: join(root, saved.workspacePath), name: input.file.name, mimeType: input.file.mime_type, sizeBytes: bytes.length, sha256: spec.sha256, ...page }];
 }
 
 // One session's notifications commit one after another: the retry of a request finds the first one written.
@@ -73,7 +75,8 @@ export async function commitOwnerNotification(context: Context, input: OwnerNoti
   const workspace = input.file ? await resolveWorkspace(context.projectId, context.workspaceId) : null;
   if (input.file && !workspace) throw new Error('The sending session workspace is not mounted');
   const sourceId = `owner-notify:${input.request_id}`;
-  const requestHash = hash(Buffer.from(JSON.stringify([input.agent_user_id, input.text, input.file?.path, input.file?.name, input.file?.mime_type])));
+  const requestHash = hash(Buffer.from(JSON.stringify([input.agent_user_id, input.text, input.file?.path, input.file?.name, input.file?.mime_type,
+    ...input.file?.width ? [input.file.width, input.file.height] : []])));
   const receipt = (files: NonNullable<TranscriptMessage['ownerNotification']>['files']) =>
     ({ status: 'sent' as const, message_id: input.request_id, session_id: context.sessionId, ...(files?.[0] ? { file_name: files[0].name } : {}) });
   return serially(context.sessionId, async () => {

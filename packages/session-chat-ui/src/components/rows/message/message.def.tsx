@@ -32,7 +32,10 @@ function ownerNotificationMessages(item: ChatMessage): MessageItem[] | undefined
   const note = item.ownerNotification;
   if (!note || passwordRequest(item)) return undefined;
   const files = (note.files ?? []).map((file, index) => sentChatMessage({ id: `${note.requestId}:file:${index}`, chat_id: '', at: item.at,
-    content: attachmentEnvelope(file.name, file.sizeBytes, file.mimeType), content_type: 'attachment', session_file: { path: file.path, sha256: file.sha256 } }));
+    content: attachmentEnvelope(file.name, file.sizeBytes, file.mimeType), content_type: 'attachment', session_file: { path: file.path, sha256: file.sha256 },
+    // A page's size goes where a chat message keeps it (its file's width/height), so the host draws it in place.
+    ...file.width && file.height ? { file_metadata: { status: 'ready', revision: { source: 'local', file_name: file.name, content_type: file.mimeType,
+      size_bytes: file.sizeBytes, sha256: file.sha256, width: file.width, height: file.height } } } : {} }));
   const text = item.text.trim() && item.text !== note.files?.[0]?.name
     ? [sentChatMessage({ id: note.requestId, chat_id: '', at: item.at, content: item.text, content_type: 'text' })] : [];
   return [...text, ...files];

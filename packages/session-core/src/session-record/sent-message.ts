@@ -9,7 +9,7 @@ import { sentMessageId } from './reply-process';
 import { sendReceipt } from './send-receipt';
 
 type SentFields = Pick<MessageItem, 'id' | 'chat_id' | 'content' | 'content_type'>
-  & Partial<Pick<MessageItem, 'file_item_id' | 'file_version' | 'file_blob_id' | 'session_file'>> & { at?: number };
+  & Partial<Pick<MessageItem, 'file_item_id' | 'file_version' | 'file_blob_id' | 'session_file' | 'file_metadata'>> & { at?: number };
 
 /**
  * One message an agent said to people, in the chat's own message shape, so the task timeline draws it with the chat's
