@@ -85,7 +85,7 @@ import {
 } from './harness-model-field';
 import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelOptions } from './use-harness-model-options';
-import { agentOffersFastMode, draftFastMode } from './fast-mode';
+import { agentOffersFastMode, customModelFastSupported, draftFastMode } from './fast-mode';
 import { renderFastModeHint } from './fast-mode-hint';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
@@ -1120,6 +1120,8 @@ export function useInitialSessionState(
   const selectedCustom = customModelRefFromOption(customSelection);
   const customConnection = selectedCustom && customReading.state === 'value' ? customReading.value.find(record => record.id === selectedCustom.connectionId) : undefined;
   const customFeatures = customConnection?.models.find(({ id }) => id === selectedCustom?.modelId);
+  const customFastSupported = selectedCustom
+    ? customModelFastSupported(customConnection, selectedCustom.modelId ?? undefined, agents?.find((agent) => agent.id === providerId)) : undefined;
   const runtimeModel = runtimeModelId(model) ?? null;
   const targetFastCatalog = useTargetModelCatalog(
     !selectedCustom && !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
@@ -1300,7 +1302,7 @@ export function useInitialSessionState(
     permissionOptions,
     permissionModeMap,
     autoReviewCostSource,
-    fastMode: unattended || selectedCustom ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
+    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, customSupported: customFastSupported, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
