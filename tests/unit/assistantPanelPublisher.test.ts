@@ -9,11 +9,12 @@ import { uploadAssistantPanelBody } from '@gugu/core/cloud/assistantPanelBodies'
 import { assistantHomePaths } from '@gugu/core/shared/assistantPolicy'
 import { collectAssistantPanelFiles, publishAssistantPanelCollection, type PanelObservation } from '../../apps/desktop/electron/sessionpage/assistant-panel-publisher'
 import { createAssistantPanelBodyFailures } from '../../apps/desktop/electron/sessionpage/assistant-panel-body-failures'
+import { createAssistantPanelApplication } from '../../apps/desktop/electron/sessionpage/assistant-panel-application'
 
 const roots: string[] = []
 const cacheLog = vi.hoisted(() => ({ warn: vi.fn() }))
 vi.mock('../../apps/desktop/electron/lib/logger',() => ({ createLogger: () => cacheLog }))
-afterEach(async () => { vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllEnvs(); await Promise.all(roots.splice(0).map(root => rm(root,{ recursive: true,force: true }))) })
+afterEach(async () => { vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllEnvs(); vi.useRealTimers(); await Promise.all(roots.splice(0).map(root => rm(root,{ recursive: true,force: true }))) })
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(),'panel-publisher-')); roots.push(root)
   const binding = { ownerId: 'owner',assistantId: 'assistant',home: root,cwd: join(root,'assistant'),kind: 'computer' as const }
@@ -45,6 +46,7 @@ function transport() {
       rows.set(key,{ assistant_user_id: 'assistant',owner_user_id: 'owner',domain: change.domain,resource_key: change.key,
         revision: receipt.revision,device_id: change.deviceId ?? null,data: change.data ?? {},body_item_id: change.body?.itemId ?? null,
         body_sha256: change.body?.sha256 ?? null,deleted_at: change.operation === 'remove' ? '2026-10-26' : null,observed_at: null,updated_at: '2026-10-26',
+        ...{ deletion_source: change.operation === 'remove' ? 'runtime' : null, deletion_runtime_instance_id: change.operation === 'remove' ? change.runtimeInstanceId : null },
       })
       receipts.set(change.operationId,receipt)
       if (lose) { lose = false; throw new Error('response lost') }
@@ -62,7 +64,7 @@ function transport() {
     },
     collect: vi.fn<(previous?: AssistantPanelItem[]) => Promise<PanelObservation[]>>(async () => [{ key: 'note',data: { relativePath: 'note.md' },bytes: new TextEncoder().encode('private note') }]),
     upload: vi.fn(async (row: PanelObservation) => ({ itemId: 'body',sha256: createHash('sha256').update(row.bytes!).digest('hex') })),
-    discard: vi.fn(async () => {}),revoke: vi.fn(async () => {}),
+    discard: vi.fn(async () => {}),revoke: vi.fn<(item: AssistantPanelItem, observation: PanelObservation) => Promise<void>>(async () => {}),
   }
   return { rows,calls,input,failures,loseNextResponse: () => { lose = true },deleteWhileUploading: () => { removeBeforeCommit = true } }
 }
@@ -362,4 +364,39 @@ it('reconciles an observed local value after an owner edit has terminally failed
   await publishAssistantPanelCollection(f.input)
   expect(f.rows.get('memory:note')?.data.title).toBe('actual local value')
   expect(f.rows.get('memory:__collection__')?.data.state).toBe('ready')
+})
+
+
+it('#1456 preserves a replacement note and its index after a 4.7-second delete/add gap',async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const deletedAt = Date.parse('2026-11-25T04:23:56.393Z')
+  vi.setSystemTime(deletedAt)
+  const { root,binding,paths } = await fixture(), f = transport()
+  await mkdir(paths.memoryDir,{ recursive: true })
+  const note = join(paths.memoryDir,'owner-profile.md')
+  const index = '- [Owner profile](owner-profile.md) — Basic information\n- [Other](other.md)\n'
+  await writeFile(note,'Original profile\n'); await writeFile(paths.memoryIndex,index)
+  const application = createAssistantPanelApplication(binding,{ assertCurrent: async () => {},
+    readBody: async () => { throw new Error('A local replacement must not be overwritten') },
+    applyService: async () => {},invalidate: async () => {} })
+  f.input.bodyFailures = createAssistantPanelBodyFailures(root,binding.ownerId,binding.assistantId)
+  f.input.collect = vi.fn(() => collectAssistantPanelFiles(binding,'memory',application.identify))
+  f.input.revoke = vi.fn(async (item,row) => application.apply({ operation_id: 'revocation',revision: item.revision,
+    assistant_user_id: binding.assistantId,owner_user_id: binding.ownerId,domain: 'memory',resource_key: row.key,
+    device_id: 'device',operation: 'remove',payload: { before: row.data },status: 'applied',error_code: null }))
+  await publishAssistantPanelCollection(f.input)
+  const savedRevision = f.rows.get('memory:owner-profile.md')!.revision
+  await rm(note)
+  vi.setSystemTime(deletedAt+250)
+  await publishAssistantPanelCollection(f.input)
+  const deletedRevision = f.rows.get('memory:owner-profile.md')!.revision
+  vi.setSystemTime(deletedAt+4697)
+  await writeFile(note,'Replacement profile\n')
+  await publishAssistantPanelCollection(f.input)
+  expect(await readFile(note,'utf8')).toBe('Replacement profile\n')
+  expect(await readFile(paths.memoryIndex,'utf8')).toBe(index)
+  expect(f.input.revoke).not.toHaveBeenCalled()
+  const noteCalls = f.calls.filter(call => call.key === 'owner-profile.md')
+  expect(noteCalls.map(call => call.operation)).toEqual(['save','remove','save'])
+  expect(noteCalls.at(-1)?.expectedRevision).toBe(deletedRevision)
 })
