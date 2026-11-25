@@ -105,7 +105,7 @@ it('the desktop bell pops its list beside itself, a menu\'s way: a row acts and 
   state.mobile = false
   await page.viewport(1000, 800)
   harness.container.style.cssText = 'position:relative;width:1000px;height:700px;display:flex;align-items:flex-end'
-  await renderWithAppProviders(harness, <><div className="gugu-skin" style={{ width: 280 }} data-testid="sidebar-stand-in"><SidebarOneListFoot /></div><NeedsYouHost /></>)
+  await renderWithAppProviders(harness, <><div className="gugu-skin" style={{ width: 280 }} data-testid="sidebar-stand-in"><SidebarOneListFoot /></div><div data-testid="outside" style={{ marginLeft: 'auto', width: 200, height: 200 }} /><NeedsYouHost /></>)
   const bell = harness.container.querySelector<HTMLButtonElement>('[data-testid="notification-toggle"]')!
   await until('the bell is laid out', () => bell?.getBoundingClientRect().width > 0)
   const popover = () => document.querySelector<HTMLElement>('[data-testid="notification-popover"]')
@@ -128,7 +128,8 @@ it('the desktop bell pops its list beside itself, a menu\'s way: a row acts and 
   await until('Esc closes it', () => !shown())
   await userEvent.click(bell)
   await until('and again', () => shown())
-  await userEvent.click(document.body, { position: { x: 900, y: 20 } })
+  // Outside: an element of the page's own, right of where the popover reaches (280 + 8 + 360).
+  await userEvent.click(harness.container.querySelector<HTMLElement>('[data-testid="outside"]')!)
   await until('a click outside closes it', () => !shown())
   await userEvent.click(bell)
   await until('once more', () => shown())
