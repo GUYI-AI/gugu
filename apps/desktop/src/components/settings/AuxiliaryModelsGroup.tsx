@@ -59,6 +59,7 @@ function AvailableAuxiliaryModelsGroup() {
         if (!connections || !options) return <Unknown className="h-8 w-[355px]" />;
         const selected = value && options.find(option => option.connectionId === value.connectionId && option.modelId === value.modelId);
         // As the composer shows its default alias as the concrete model: unset checks the row it resolves to, if any.
+        // Unset is a real value ("same as the chat model"), not a placeholder, so the trigger keeps the normal text color.
         const checked = selected || unsetReviewerOption(connections, options);
         const checkedId = checked ? customModelOptionId(checked) : null;
         return <Select value={checkedId} disabled={reviewer.isSaving}
@@ -71,7 +72,7 @@ function AvailableAuxiliaryModelsGroup() {
             setFailure('');
             void reviewer.updateAsync(ref ? { ...ref, modelId: ref.modelId! } : null).catch(error => setFailure(errorText(error)));
           }}>
-          <SelectTrigger className="gg-auxiliary-model-select" data-testid="auto-review-model"><SelectValue>{checked?.label ?? translate('customModels.reviewerSameAsChat')}</SelectValue></SelectTrigger>
+          <SelectTrigger className="gg-auxiliary-model-select data-placeholder:text-inherit" data-testid="auto-review-model"><SelectValue>{checked?.label ?? translate('customModels.reviewerSameAsChat')}</SelectValue></SelectTrigger>
           <SelectContent align="end">
             {options.map(option => <SelectItem key={customModelOptionId(option)} value={customModelOptionId(option)}>
               <span className="flex flex-col"><span>{option.label}</span><span className="text-xs text-muted-foreground">{option.source}</span></span>

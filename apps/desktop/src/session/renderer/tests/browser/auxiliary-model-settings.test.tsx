@@ -109,6 +109,9 @@ it('shows "Same as the chat model" and checks nothing when a third-party connect
   state.rows = [official, record(idA, 'Reviewer A')];
   renderCard();
   await expect.element(page.getByTestId('auto-review-model')).toHaveTextContent('Same as the chat model');
+  // It is the actual value, not a placeholder: same text color as a chosen model (the trigger's own inherited color).
+  const trigger = page.getByTestId('auto-review-model').element() as HTMLElement;
+  expect(getComputedStyle(trigger).color).toBe(getComputedStyle(trigger.parentElement!).color);
   await open();
   expect(await checkedRows()).toEqual([]);
 });
