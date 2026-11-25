@@ -176,7 +176,7 @@ function mergeTurnPatch(existing: TranscriptTurn | undefined, patch: TurnPatch):
  *   (stand-in-timeline)在真记录出现时推的那一批就是这种,推完再不说话(#3588)。
  * - 断层:这一批声明自己从 `from` 接上,而手里的游标还没走到那儿 ⇒ 中间有一批没到。
  *   推送是「发出去不管有没有到」的广播,丢批不会报错,只会安静地少一段。
- * `from < 游标` 是重放旧批,无害(按条目替换 + 游标只前进),照常合并。还没有游标 = 还没读过,什么都接得上。
+ * A batch can start before the current cursor if it also covers newer changes.
  */
 export function batchDiscontinuity(cursor: RecordCursor | null, batch: TimelineBatch): 'epoch_changed' | 'gap' | null {
   if (!cursor) return null
@@ -194,6 +194,7 @@ export function batchDiscontinuity(cursor: RecordCursor | null, batch: TimelineB
 export function applyBatch(state: AgentWatchTimeline, batch: TimelineBatch): AgentWatchTimeline {
   const broken = batchDiscontinuity(state.cursor, batch)
   if (broken) return { ...state, needsSnapshot: broken }
+  if (state.cursor && batch.cursor.seq < state.cursor.seq) return state
 
   const byId = new Map<string, TranscriptTurn>()
   for (const turn of state.turns) byId.set(turn.id, turn)
@@ -211,25 +212,22 @@ export function applyBatch(state: AgentWatchTimeline, batch: TimelineBatch): Age
     return { ...state, needsSnapshot: 'gap' }
   }
 
-  const cursor = state.cursor && state.cursor.seq > batch.cursor.seq ? state.cursor : batch.cursor
-  // 队列每批都带全集:只认不比手里旧的那一批,❌ 让重放的旧批把已经被接走的那句又排回去。
-  const current = !state.cursor || batch.cursor.seq >= state.cursor.seq
-  const terminals = current ? terminalsOf(state.terminals, batch) : state.terminals
+  const terminals = terminalsOf(state.terminals, batch)
   // A terminal the batch names but neither carries nor finds held: a batch in between was lost, as with turns.
   if (terminals === null) return { ...state, needsSnapshot: 'gap' }
   const turns = sortTurns([...byId.values()])
 
   return {
-    cursor,
+    cursor: batch.cursor,
     turns,
     settlements: mergeSettlements(state.settlements, batch.settlements, !state.cursor || batch.cursor.seq > state.cursor.seq),
     hasOlder: state.hasOlder,
     recentActions: batch.recentActions !== undefined ? batch.recentActions : state.recentActions,
     lastActionAt: batch.lastActionAt !== undefined ? batch.lastActionAt : state.lastActionAt,
-    queuedPrompts: batch.queuedPrompts !== undefined && current ? batch.queuedPrompts : state.queuedPrompts,
-    liveReply: current && batch.liveReply !== undefined ? batch.liveReply : state.liveReply,
+    queuedPrompts: batch.queuedPrompts ?? state.queuedPrompts,
+    liveReply: batch.liveReply !== undefined ? batch.liveReply : state.liveReply,
     terminals,
-    subagents: current && batch.subagents !== undefined ? mergeSubagents(state.subagents, batch.subagents) : state.subagents,
+    subagents: batch.subagents !== undefined ? mergeSubagents(state.subagents, batch.subagents) : state.subagents,
     // 一条正常增量到了 = 重载后的那份已经接上了,「时间线已整份重载」的横幅到此为止。
     // 以前这里原样保留 ⇒ 横幅一旦出现就挂到离开这一页(#3566 审计)。
     lastReset: null,
