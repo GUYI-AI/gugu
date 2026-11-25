@@ -208,20 +208,25 @@ it('through a fold the names\' mask edge moves with the rows, so no name shows l
   const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
   const scroll = document.querySelector<HTMLElement>('[data-region="sidebar-scroll"]')!;
   const rows = scroll.firstElementChild as HTMLElement;
-  // Each frame as painted: where the mask turns to the names' opacity, and how far the rows are moved left.
+  const sidebar = document.querySelector<HTMLElement>('[data-region="left-sidebar"]')!;
+  // Each frame as painted: where the mask turns to the names' opacity, and how far the rows are moved left. The elements
+  // are this render's; the next frame is cancelled before the test returns, so no sample runs after the sidebar unmounts.
   const frames: { edge: number; shift: number; rail: boolean }[] = [];
-  let watching = true;
+  let pending = 0;
   const sample = () => {
     const edge = /^linear-gradient\(to right, black ([\d.]+)px/.exec(scroll.style.maskImage)?.[1];
     const shift = /translate\((-?[\d.]+)px/.exec(rows.style.transform)?.[1];
-    if (edge !== undefined) frames.push({ edge: Number(edge), shift: -Number(shift ?? 0), rail: document.querySelector('[data-region="left-sidebar"]')!.hasAttribute('data-sidebar-rail') });
-    if (watching) requestAnimationFrame(sample);
+    if (edge !== undefined) frames.push({ edge: Number(edge), shift: -Number(shift ?? 0), rail: sidebar.hasAttribute('data-sidebar-rail') });
+    pending = requestAnimationFrame(sample);
   };
-  requestAnimationFrame(sample);
-  document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
-  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(68);
-  await expect.poll(() => frames.some((frame) => frame.rail), { timeout: 1000 }).toBe(true);
-  watching = false;
+  pending = requestAnimationFrame(sample);
+  try {
+    document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+    await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(68);
+    await expect.poll(() => frames.some((sampled) => sampled.rail), { timeout: 1000 }).toBe(true);
+  } finally {
+    cancelAnimationFrame(pending);
+  }
   const moving = frames.filter((frame) => !frame.rail && frame.shift > 0.5);
   expect(moving.length, 'frames with the rows moved left').toBeGreaterThan(2);
   // The names start 70px in (gutter 14 + padding 6 + avatar 40 + gap 10), moved left by the rows' shift.
