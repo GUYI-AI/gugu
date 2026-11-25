@@ -193,6 +193,42 @@ it('a fold writes no custom property and swaps no class: the names fade as one m
   await expect.poll(() => scroll.style.maskImage, { timeout: 3000 }).toBe('');
 });
 
+// The rows move left through the fold (the gutter 14 → 8). The names' mask edge moves with them: had it stayed at the open
+// layout's 70, the first pixels of every name sat left of it, at full opacity, beside the avatars until the rail landed.
+it('through a fold the names\' mask edge moves with the rows, so no name shows left of it', async () => {
+  await page.viewport(1000, 700);
+  harness = createReactHarness();
+  await harness.render(
+    <SessionLocalizationProvider>
+      <WorkspaceLayoutContextProvider>
+        <WorkspaceLayout leftSidebar={<LeftSidebar />} mainContent={<div className="h-full">history</div>} />
+      </WorkspaceLayoutContextProvider>
+    </SessionLocalizationProvider>
+  );
+  const aside = document.querySelector<HTMLElement>('[data-workspace-left-panel]')!;
+  const scroll = document.querySelector<HTMLElement>('[data-region="sidebar-scroll"]')!;
+  const rows = scroll.firstElementChild as HTMLElement;
+  // Each frame as painted: where the mask turns to the names' opacity, and how far the rows are moved left.
+  const frames: { edge: number; shift: number; rail: boolean }[] = [];
+  let watching = true;
+  const sample = () => {
+    const edge = /^linear-gradient\(to right, black ([\d.]+)px/.exec(scroll.style.maskImage)?.[1];
+    const shift = /translate\((-?[\d.]+)px/.exec(rows.style.transform)?.[1];
+    if (edge !== undefined) frames.push({ edge: Number(edge), shift: -Number(shift ?? 0), rail: document.querySelector('[data-region="left-sidebar"]')!.hasAttribute('data-sidebar-rail') });
+    if (watching) requestAnimationFrame(sample);
+  };
+  requestAnimationFrame(sample);
+  document.querySelector<HTMLElement>('[data-testid="sidebar-fold"]')!.click();
+  await expect.poll(() => aside.getBoundingClientRect().width, { timeout: 3000 }).toBe(68);
+  await expect.poll(() => frames.some((frame) => frame.rail), { timeout: 1000 }).toBe(true);
+  watching = false;
+  const moving = frames.filter((frame) => !frame.rail && frame.shift > 0.5);
+  expect(moving.length, 'frames with the rows moved left').toBeGreaterThan(2);
+  // The names start 70px in (gutter 14 + padding 6 + avatar 40 + gap 10), moved left by the rows' shift.
+  for (const frame of moving) expect(frame.edge).toBeCloseTo(70 - frame.shift, 1);
+  for (const frame of frames.filter((frame) => frame.rail)) expect(frame.edge).toBe(64);
+});
+
 it('the rail flips in the frame the list\'s layer takes the rail\'s width, both ways: one paint, ❌ a re-render after it', async () => {
   await page.viewport(1000, 700);
   harness = createReactHarness();
