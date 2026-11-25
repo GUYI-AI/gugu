@@ -161,7 +161,7 @@ export function reconcileModel(
   const chosen = models.models.find((m) => m.id === selection.model && offeredInCreateMenu(m))
   const custom = customModelRefFromOption(selection.model)
   const connection = models.customModels?.find((record) => record.id === custom?.connectionId)
-  const customAvailable = custom?.modelId && connection && !matchCustomModel({ connection, harness: models.harness, nativeProtocol: models.modelProtocols?.[0], protocols: models.modelProtocols, convertFrom: models.customModel?.convertFrom }).reason
+  const customAvailable = custom?.modelId && connection && !matchCustomModel({ connection, modelId: custom.modelId, harness: models.harness, nativeProtocol: models.modelProtocols?.[0], protocols: models.modelProtocols, convertFrom: models.customModel?.convertFrom }).reason
   const keepModel = customAvailable || chosen && (modelTouched || chosen.source === 'gugu' || canUseOwnCreateModels(models))
   const model = keepModel || (explicitDefault && selection.model === null) ? selection.model : defaultCreateModel(models)
   const effort =

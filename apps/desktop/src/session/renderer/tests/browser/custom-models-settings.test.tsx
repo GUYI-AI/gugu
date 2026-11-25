@@ -7,6 +7,7 @@ import { UI_EVENTS } from '@/lib/uiEvents';
 import { setLocalePreference } from '@/i18n';
 import { CustomModelsGroup } from '@/components/settings/CustomModelsGroup';
 import { CustomModelDialog } from '@/components/settings/CustomModelDialog';
+import { CustomModelRouteRepairHost } from '@/components/settings/CustomModelRouteRepairHost';
 import { Sheet } from '@/components/ui/Sheet';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -16,6 +17,10 @@ import type { ConnectionModelList, CustomModelProtocolProbe, SaveCustomModel } f
 import { customComposerOptions } from '@renderer/features/sessions/session-config/custom-model-options';
 import { composerModelFooter, composerSelectedOptionId } from '@renderer/features/sessions/session-config/use-composer-model-options';
 import { until } from '../../../../../../../tests/support/awaitCondition';
+import '@gugu/session-ui/styles/global';
+import '@gugu/session-ui/theme/theme.css';
+import '@gugu/session-ui/theme/semantic.css';
+import '@gugu/session-ui/styles/base.css';
 import '@/styles/tokens.css';
 import '@renderer/index.css';
 const state = vi.hoisted(() => ({ rows: [] as CustomModelConnection[], saved: null as SaveCustomModel | null, reads: [] as unknown[], probe: null as CustomModelProtocolProbe | null, probes: [] as unknown[], testResult: null as ConnectionModelList | null, agents: [] as unknown[] }));
@@ -54,8 +59,9 @@ it('shows migrated records with no model or key and a repair entrypoint', async 
   await until('the device record renders inside Settings', () => !!row());
   expect(row()?.textContent).toContain('This custom provider has no model selected yet');
   expect(row()?.textContent).toContain('No key saved on this device');
-  await userEvent.click(page.getByRole('button', { name: 'Select models', exact: true }));
+  await userEvent.click(page.getByRole('button', { name: 'Enter key on this computer', exact: true }));
   await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
+  await expect.element(page.getByTestId('custom-model-key')).toHaveFocus();
   expect(document.querySelector('[data-testid=custom-model-provider]')).toBeNull();
   expect(document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')?.value).toBe('');
 });
@@ -90,6 +96,9 @@ it('edits an address with the saved key and saves multiple manual models without
   const closed = vi.fn(); render(<CustomModelDialog machine={null} connection={existing} onClose={closed} />);
   await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://edited.test/v1/responses');
   await until('manual fallback is available', () => !!document.querySelector('input[name=models]'));
+  const probes = state.probes.length;
+  await userEvent.click(page.getByTestId('custom-model-read-list'));
+  await until('the explicit read refreshes the model list with the saved key', () => state.probes.length > probes && !!document.querySelector('input[name=models]'));
   await userEvent.fill(page.getByRole('textbox', { name: 'Models', exact: true }), 'model:a, provider/model:b');
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
@@ -97,24 +106,79 @@ it('edits an address with the saved key and saves multiple manual models without
   expect(state.saved).not.toHaveProperty('apiKey'); expect(closed).toHaveBeenCalledOnce();
   expect(state.probes).toContainEqual({ connectionId: existing.id, baseUrl: 'https://edited.test/v1' });
 });
-it('advanced shows what a saved address answers and keeps the protocol picked for a harness', async () => {
-  state.agents = [
-    { id: 'claude', name: 'Claude Code', capabilities: { modelProtocols: ['anthropic-messages'], customModel: { convertFrom: ['openai-chat-completions'] } } },
-    { id: 'codex', name: 'Codex', capabilities: { modelProtocols: ['openai-responses'], customModel: { convertFrom: ['openai-chat-completions'] } } },
-  ];
+it('edits the protocol and model in one row and saves the optional address from Advanced', async () => {
   state.probe = { endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://provider.test' }, { protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], models: ['m'], failures: [] };
   render(<CustomModelDialog machine={null} connection={{ ...record(), keySaved: true, models: [{ id: 'm' }] }} onClose={() => {}} />);
+  await userEvent.click(page.getByRole('button', { name: 'Add route' }));
+  await userEvent.click(page.getByTestId('custom-model-route-incoming-0'));
+  await userEvent.click(page.getByRole('option', { name: 'Anthropic API' }));
+  await userEvent.click(page.getByTestId('custom-model-route-outgoing-0'));
+  await userEvent.click(page.getByRole('option', { name: 'OpenAI Chat' }));
+  await userEvent.click(page.getByTestId('custom-model-route-model-0'));
+  await userEvent.click(page.getByRole('option', { name: 'm', exact: true }));
+  expect(page.getByTestId('custom-model-route-address-0').query()).toBeNull();
   await userEvent.click(page.getByRole('button', { name: /Advanced/ }));
   await expect.element(page.getByTestId('custom-model-protocols')).toHaveTextContent('This address answers: Anthropic API / OpenAI Chat');
-  expect(state.probes).toContainEqual({ connectionId: record().id, baseUrl: 'https://provider.test/v1' });
-  // Codex could only use the converted chat address: nothing to choose.
-  expect(page.getByTestId('custom-model-protocol-codex').query()).toBeNull();
-  await expect.element(page.getByTestId('custom-model-protocol-claude')).toHaveTextContent('Automatic (Anthropic API)');
-  await userEvent.click(page.getByTestId('custom-model-protocol-claude'));
-  await userEvent.click(page.getByRole('option', { name: 'OpenAI Chat, converted locally' }));
+  expect(document.querySelector('[data-testid=custom-model-route-address-0]')?.closest('.grid')).toBe(
+    document.querySelector('[data-testid=custom-model-route-model-0]')?.closest('.grid'),
+  );
+  await userEvent.fill(page.getByTestId('custom-model-route-address-0'), 'https://provider.test/compat/v1');
   await userEvent.click(page.getByTestId('custom-model-save'));
   await until('the form saved', () => state.saved !== null);
-  expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, harnessProtocols: { claude: 'openai-chat-completions' } });
+  expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, routes: [{
+    incoming: 'anthropic-messages', outgoing: 'openai-chat-completions', modelId: 'm', baseUrl: 'https://provider.test/compat/v1',
+  }] });
+});
+
+it('repairs a missing model route from its disabled row and returns to the picker after save', async () => {
+  await page.viewport(1400, 800);
+  const fallback = { id: 'd5bd45f0-f968-4df8-bf00-e7d303cab020', incoming: 'openai-responses', outgoing: 'openai-chat-completions' } as const;
+  const connection: CustomModelConnection = {
+    ...record(), keySaved: true, models: [{ id: 'repair-target' }, { id: 'other-model' }],
+    endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], routes: [fallback],
+  };
+  const agent = { id: 'claude', name: 'Claude', capabilities: {
+    modelProtocols: ['anthropic-messages' as const], customModel: { convertFrom: ['openai-chat-completions' as const] },
+  } };
+  state.probe = { endpoints: connection.endpoints, models: connection.models.map(({ id }) => id), failures: [] };
+  const options = customComposerOptions([connection], agent, translateSessionMessage, null);
+  const onModelChange = vi.fn();
+  render(<><div style={{ position: 'fixed', inset: 0, zIndex: 5 }}>
+    <div style={{ position: 'absolute', right: 24, bottom: 24, width: 640 }}>
+      <ChatComposer modelOptions={{ 'platform:available-model': { name: 'Available model' }, ...options }}
+        selectedModel="platform:available-model" onModelChange={onModelChange} onSubmit={() => {}} onStop={() => {}} />
+    </div>
+  </div><CustomModelRouteRepairHost /></>);
+
+  const panel = () => document.querySelector<HTMLElement>('[data-slot="combobox-content"]');
+  await until('the model trigger mounts', () => !!document.querySelector('[data-testid="composer-model-trigger"]'));
+  document.querySelector<HTMLButtonElement>('[data-testid="composer-model-trigger"]')!.click();
+  await until('the model menu finishes opening', () => !!panel() && panel()!.getAnimations().every(({ playState }) => playState === 'finished'));
+  const row = page.getByRole('option', { name: /repair-target/ });
+  await expect.element(row).toHaveAttribute('aria-disabled', 'true');
+  await row.hover();
+  await page.getByRole('button', { name: 'Add route for this model', exact: true }).click();
+  await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
+  await expect.element(page.getByTestId('custom-model-route-incoming-0')).toHaveTextContent('Anthropic API');
+  await expect.element(page.getByTestId('custom-model-route-outgoing-0')).toHaveTextContent('OpenAI Chat');
+  await expect.element(page.getByTestId('custom-model-route-model-0')).toHaveTextContent('repair-target');
+  expect(state.saved).toBeNull();
+  await until('the route repair dialog finishes opening with Save above the composer', () => {
+    const dialog = document.querySelector('[data-testid="custom-model-dialog"]');
+    const save = dialog?.querySelector<HTMLButtonElement>('[data-testid="custom-model-save"]');
+    if (!dialog || !save || dialog.getAnimations().some(animation => animation.playState !== 'finished')) return false;
+    const { x, y, width, height } = save.getBoundingClientRect();
+    return save.contains(document.elementFromPoint(x + width / 2, y + height / 2));
+  });
+  await page.screenshot({ path: '../../../../../../../test-results/custom-route-repair-save.png' });
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await expect.element(page.getByTestId('composer-model-search')).toBeVisible();
+  await expect.element(row).toHaveAttribute('data-route-repair-target', 'true');
+  const routes = state.saved?.routes;
+  expect(routes).toMatchObject([{ incoming: 'anthropic-messages', outgoing: 'openai-chat-completions', modelId: 'repair-target' }, fallback]);
+  const updated = Object.values(customComposerOptions([{ ...connection, routes }], agent, translateSessionMessage));
+  expect(updated.map(({ name, disabled }) => [name, disabled])).toEqual([['repair-target', undefined], ['other-model', true]]);
+  expect(onModelChange).not.toHaveBeenCalled();
 });
 
 it('names only the bound model when reopening a migrated Pi task', async () => {
@@ -122,7 +186,7 @@ it('names only the bound model when reopening a migrated Pi task', async () => {
   const duplicate = { ...existing, id: '48937c18-1219-460e-9f40-e08d70de94a5', name: 'Other provider' };
   const models = customComposerOptions([duplicate, existing], {
     id: 'pi', name: 'Pi', capabilities: { modelProtocols: ['openai-responses'], customModel: undefined },
-  }, 'This device', translateSessionMessage);
+  }, translateSessionMessage);
   const selectedModel = composerSelectedOptionId({
     model: 'gugu-' + existing.id + '/glm-5.3-flash',
     customModel: { kind: 'custom', connectionId: existing.id, modelId: 'glm-5.3-flash' },
@@ -221,7 +285,8 @@ it('a converted third-party model is selectable and tagged with its vendor; an I
     chat('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0001', 'https://api.deepseek.com/v1', 'deepseek-v4-flash'),
     chat('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0002', 'https://open.bigmodel.cn/api/paas/v4', 'glm-5.3'),
     chat('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0003', 'http://10.0.0.8:8000/v1', 'local-model'),
-  ], { id: 'claude', name: 'Claude', capabilities: { modelProtocols: ['anthropic-messages'], customModel: { convertFrom: ['openai-chat-completions'] } } }, 'This device', translateSessionMessage);
+    { ...chat('e7d4a5a8-6f1e-4b52-9a51-0d4d1d0d0004', 'https://no-key.example/v1', 'hidden-model'), keySaved: false },
+  ], { id: 'claude', name: 'Claude', capabilities: { modelProtocols: ['anthropic-messages'], customModel: { convertFrom: ['openai-chat-completions'] } } }, translateSessionMessage);
   expect(Object.values(models).map(({ tag, disabled }) => [tag, disabled])).toEqual([['deepseek', undefined], ['bigmodel', undefined], [undefined, undefined]]);
   render(<ChatComposer modelOptions={models} selectedModel={Object.keys(models)[0]} onModelChange={() => {}} onSubmit={() => {}} onStop={() => {}} />);
   await userEvent.click(page.getByTestId('composer-model-trigger'));

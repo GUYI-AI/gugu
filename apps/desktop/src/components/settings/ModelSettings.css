@@ -62,6 +62,12 @@
 .gg-model-dialog [data-slot='dialog-title'] { font-size: 16px; font-weight: 500; }
 .gg-model-dialog .subscription-connection-form { gap: 20px; }
 .gg-model-dialog label { font-size: 14px; line-height: 24px; color: var(--text-secondary); gap: 12px; }
+.gg-model-dialog .subscription-connection-form .gg-custom-model-feature {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+}
 .gg-model-dialog input,
 .gg-model-dialog [data-testid='custom-model-provider'],
 .gg-model-dialog [data-slot='select-trigger'] { min-height: 32px; height: 32px; }

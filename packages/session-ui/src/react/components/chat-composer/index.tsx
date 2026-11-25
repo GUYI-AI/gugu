@@ -109,6 +109,7 @@ import type {
   PromptEditorRef,
   RenderMentionIcon,
 } from '../prompt-editor/types';
+import type { ComposerContextThresholds } from './context-threshold';
 import { ContextUsageIndicator } from './context-usage-indicator';
 import type { ContextUsage } from './context-usage-indicator';
 import { PermissionBand } from './permission-band';
@@ -306,6 +307,7 @@ export interface ChatComposerProps {
   onAttach?: () => void;
   /** Context-window usage data for the toolbar donut indicator. Hidden when null/undefined. */
   contextUsage?: ContextUsage | null;
+  contextThresholds?: ComposerContextThresholds;
 
   /**
    * Host-controlled attachment list. By default the composer creates image
@@ -473,6 +475,7 @@ export function ChatComposer({
   onStop,
   onAttach,
   contextUsage,
+  contextThresholds,
   attachments = [],
   attachmentStatus,
   attachmentExtra,
@@ -787,6 +790,11 @@ export function ChatComposer({
       : (placeholder ?? translate('composer.messagePlaceholder'));
 
   const renderHeader = mobile ? renderPhoneHeader : undefined;
+  const findContextThreshold: ComposerContextThresholds = (model, window) =>
+    contextThresholds?.(model, window ?? (model === selectedModel ? contextUsage?.size : undefined));
+  const currentContextThreshold = selectedModel && !modelUnknown
+    ? findContextThreshold(selectedModel, modelOptions?.[selectedModel]?.modelFeatures?.contextWindowSize)
+    : undefined;
   const modelControl = (
               <ComposerModelMenu
                 panel={modelPanel}
@@ -805,6 +813,7 @@ export function ChatComposer({
                 onManageModels={onManageModels}
                 modelUpgrade={modelUpgrade}
                 onModelUpgrade={onModelUpgrade}
+                contextThresholds={findContextThreshold}
                 effortItems={effortItems}
                 selectedEffort={selectedEffort}
                 onEffortChange={onEffortChange}
@@ -1036,9 +1045,6 @@ export function ChatComposer({
 
             {/* Right: usage donut + harness + model + send/stop */}
             <div data-slot="composer-actions-end" className={styles.toolbarRight}>
-              {contextUsage && contextUsage.size > 0 && (
-                <ContextUsageIndicator usage={contextUsage} disabled={disabled} />
-              )}
               {/* Harness (agent) selector first, then model — owner-specified order: gugu wants
                   the Harness picked explicitly first rather than folded into the model trigger's icon. */}
               {agentOptionsLoading && (
@@ -1065,6 +1071,10 @@ export function ChatComposer({
                   「模型」和「推理强度」结构对称,各自显示当前值并向右飞出二级。
                   解剖与那批注释随组件一起搬去了 `composer-model-menu.tsx`(#4981 A1),
                   渲染出来的 DOM 一个字节都没变。 */}
+              {((contextUsage?.size ?? 0) > 0 || currentContextThreshold) && (
+                <ContextUsageIndicator usage={contextUsage} threshold={currentContextThreshold}
+                  harness={selectedAgentItem ?? undefined} disabled={disabled} />
+              )}
               {!renderHeader && modelControl}
 
               {queueEdit ? (

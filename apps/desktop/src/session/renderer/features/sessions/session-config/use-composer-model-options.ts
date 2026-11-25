@@ -2,7 +2,7 @@ import { useReplica } from '@/lib/replica';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { customModels } from './custom-models';
 import { customComposerOptions } from './custom-model-options';
-import { customModelOptionId, type CustomModelConnection, type CustomModelRef } from '@gugu/session-core/models/custom-model';
+import { customModelOptionId, type CustomModelRef } from '@gugu/session-core/models/custom-model';
 import { useMemo } from 'react';
 import { vendorName } from '@/i18n/vendorName';
 import type { ComposerModelOption } from '@gugu/session-ui/react/components';
@@ -18,6 +18,7 @@ import { modelProviderIcon } from './model-provider-icon';
 import { billingLinksAvailable, openBillingPage } from '@/lib/appLinks';
 import type { ComposerModelUpgrade } from '@gugu/session-ui/react/components';
 import { openShellSettings } from '@renderer/lib/open-shell-settings';
+import { platform } from '@/platform';
 
 /**
  * @@@composer-model-assembly —— **模型下拉的装配只有这一份**。
@@ -55,13 +56,10 @@ export function useComposerModelOptions(
   // The heading names the agent: unknown until the list is read, ❌ the raw id renamed when it lands.
   const agentName = agents.state === 'unknown' ? null : composerOwnTierAgentName(agentList, providerId);
   const remote = useLibraryHost().remote;
-  const custom = useReplica(customModels, [remote?.deviceId ?? null]);
-  // Records live on the machine that saved them. Another machine still lists this one's, as unusable there (no key).
-  const own = useReplica(customModels, [null]);
-  const records = custom.state !== 'value' ? undefined
-    : !remote ? custom.value
-      : own.state === 'value' ? withOwnRecords(custom.value, own.value) : undefined;
-  const error = (custom.state === 'unknown' ? null : custom.error) ?? (remote && own.state !== 'unknown' ? own.error : null) ?? null;
+  const machine = remote?.deviceId ?? null;
+  const custom = useReplica(customModels, [machine]);
+  const records = custom.state === 'value' ? custom.value : undefined;
+  const error = custom.state === 'unknown' ? null : custom.error;
   const agent = agentList?.find((entry) => entry.id === providerId);
 
   return useMemo(
@@ -69,7 +67,7 @@ export function useComposerModelOptions(
       if (agentName === null) return undefined;
       const base = assembleComposerModelOptions(harnessOptions, platformModels, agentName, translate, currentPlatformModelId);
       if (!providerId) return base;
-      const options = records && customComposerOptions(records, agent, remote?.deviceLabel ?? translate('customModels.device'), translate);
+      const options = records && customComposerOptions(records, agent, translate, platform.capabilities.modelSettings ? machine : undefined);
       if (!records || error) {
         return { ...base, ...options, 'custom-models-status': {
           name: translate(error ? 'customModels.listFailed' : 'customModels.loading'),
@@ -79,15 +77,8 @@ export function useComposerModelOptions(
       }
       return base || Object.keys(options ?? {}).length ? { ...base, ...options } : null;
     },
-    [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, records, error, agent, providerId, remote?.deviceLabel]
+    [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, records, error, agent, providerId, machine]
   );
-}
-
-/** The task machine's records, then this machine's that it lacks (same address = it has it), without their key there. */
-export function withOwnRecords(machine: readonly CustomModelConnection[], own: readonly CustomModelConnection[]): CustomModelConnection[] {
-  const addresses = new Set(machine.flatMap((record) => record.endpoints.map((endpoint) => endpoint.baseUrl)));
-  return [...machine, ...own.filter((record) => !record.endpoints.some((endpoint) => addresses.has(endpoint.baseUrl)))
-    .map((record) => ({ ...record, keySaved: false }))];
 }
 
 type Translate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;

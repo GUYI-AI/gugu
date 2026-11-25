@@ -12,22 +12,26 @@ export function ComposerFastMode({
   onChange,
   renderHint,
   phoneActions = false,
+  detailRow = false,
 }: {
   enabled: boolean;
   disabled?: boolean;
   onChange?: (enabled: boolean) => void;
   renderHint?: RenderFastModeHint;
   phoneActions?: boolean;
+  detailRow?: boolean;
 }) {
   const { translate } = useMessages();
   const label = translate('composer.fastModeLabel');
   const button = (
     <button
       type="button"
-      className={styles.modelFastMode}
+      className={detailRow ? styles.modelDetailFastSwitch : styles.modelFastMode}
       aria-label={label}
       data-fast-mode-toggle=""
-      aria-pressed={enabled}
+      role={detailRow ? 'switch' : undefined}
+      aria-checked={detailRow ? enabled : undefined}
+      aria-pressed={detailRow ? undefined : enabled}
       data-phone-fast={phoneActions || undefined}
       disabled={disabled || !onChange}
       onPointerDown={(event) => {
@@ -40,11 +44,17 @@ export function ComposerFastMode({
         onChange?.(!enabled);
       }}
     >
-      <span className={styles.modelFastModePill}>
+      {detailRow ? <span className={styles.modelDetailFastThumb} aria-hidden /> : <span className={styles.modelFastModePill}>
         <FastZap size={phoneActions ? 14 : 12} aria-hidden fill={enabled ? 'currentColor' : 'none'} />
         <span>{label}</span>
-      </span>
+      </span>}
     </button>
   );
-  return renderHint ? renderHint(button) : button;
+  const control = renderHint ? renderHint(button) : button;
+  return detailRow ? (
+    <div className={styles.contextThresholdTrigger} data-slot="composer-model-fast">
+      <span>{label}</span>
+      {control}
+    </div>
+  ) : control;
 }
