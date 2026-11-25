@@ -3,6 +3,7 @@ import type { SessionpageRecordStatusEvent, SessionpageSessionEvent, TimelineAft
 import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline, prependOlder, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
 import { sessionpageRecordStatusChannel, sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
+import { recordWaitDelay } from '@/components/session-watch/record-wait';
 
 export async function value<T>(result: Promise<{ ok: true; value: T } | { ok: false; error: { code: string; message: string } }>): Promise<T> {
   const next = await result;
@@ -75,8 +76,8 @@ export class AcpTimelineFeed implements TimelineFeed {
         if (generation === this.generation && this.opened) this.apply(applyTimelineResult(this.state, event.result));
       });
       this.subscription = { id, stop: stopEvents };
-      const snapshot = await value(this.host.sessionSnapshot({ conversationId, limit: FIRST_PAGE }));
-      if (generation !== this.generation) return;
+      const snapshot = await this.firstSnapshot(generation);
+      if (!snapshot || generation !== this.generation) return;
       this.state = applySnapshot(this.state, snapshot);
       this.changed();
       await value(this.host.sessionSubscribe({ conversationId, subscriptionId: id, cursor: snapshot.cursor, terminalPatch: true }));
@@ -109,6 +110,23 @@ export class AcpTimelineFeed implements TimelineFeed {
       if (generation === this.generation) { this.restart(); throw error; }
     } finally { if (generation === this.generation) this.abandon = null; }
   }
+
+  /** Other providers retain their existing bounded missing-record wait. Codex never enters this method. */
+  private async firstSnapshot(generation: number) {
+    const started = Date.now();
+    for (;;) {
+      try {
+        return await value(this.host.sessionSnapshot({ conversationId: this.sessionId, limit: FIRST_PAGE }));
+      } catch (error) {
+        if (generation !== this.generation) return null;
+        const delay = recordWaitDelay((error as { code?: string }).code ?? null, Date.now() - started);
+        if (delay === null) throw error;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (generation !== this.generation) return null;
+      }
+    }
+  }
+
 
   /** Asks for what came after the cursor now, instead of waiting for the next push. */
   async catchUp(): Promise<void> {

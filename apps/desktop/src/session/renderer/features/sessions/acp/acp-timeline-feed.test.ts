@@ -72,6 +72,21 @@ describe('local Codex event-driven history', () => {
     expect(host.listeners.size).toBe(0);
     expect(host.unsubscribe).toHaveBeenCalledWith({ subscriptionId: id });
   });
+  it('retains the existing bounded record_not_found wait for non-Codex providers', async () => {
+    host.snapshot.mockResolvedValueOnce({ ok: false, error: { code: 'record_not_found', message: 'not written' } })
+      .mockResolvedValueOnce({ ok: false, error: { code: 'record_not_found', message: 'not written' } })
+      .mockResolvedValueOnce({ ok: true, value: snapshot });
+    const feed = new AcpTimelineFeed('S', vi.fn(), vi.fn());
+    const opening = feed.open();
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(host.subscribe).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await opening;
+    expect(feed.opened).toBe(true);
+    expect(host.snapshot).toHaveBeenCalledTimes(3);
+    expect(host.subscribe.mock.calls[0][0].recordEvents).toBeUndefined();
+    feed.close();
+  });
   it('keeps the ordinary snapshot path for other providers', async () => {
     host.snapshot.mockResolvedValue({ ok: true, value: snapshot });
     const feed = new AcpTimelineFeed('S', vi.fn(), vi.fn());
