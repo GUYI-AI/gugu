@@ -1,7 +1,13 @@
 import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { once } from 'node:events';
+import { Worker } from 'node:worker_threads';
+import { setImmediate } from 'node:timers/promises';
+import { beginDatabaseMaintenance, withDatabaseActivity } from './maintenance-activity';
+import type { HostIpc, HostIpcInvokeEvent, HostIpcMain } from '../lib/host-ipc';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { openPhysicalDatabase, physicalDatabaseBinding } from './physical-connection';
 import { applyMigrations, initializeDatabase } from './initialize';
@@ -133,4 +139,54 @@ it('does not open or create targets after cancellation and rejects a replaced da
   expect(await maintainDatabases({ targets: [{ path, identity: 'missing' }], cancellation })).toMatchObject([{ error: expect.any(String) }]);
   const connection = populated();
   expect(await maintainDatabases({ targets: [{ path: connection.name, identity: 'replaced' }], cancellation })).toMatchObject([{ error: expect.stringContaining('identity changed') }]);
+});
+
+it('keeps the main loop responsive and defers request SQLite writes until a real worker releases its write lock', async () => {
+  const connection = track(openPhysicalDatabase(join(directory, 'admission.sqlite')));
+  connection.pragma('journal_mode = WAL');
+  connection.pragma('busy_timeout = 5000');
+  connection.exec('CREATE TABLE kept (value TEXT)');
+  const binding = createRequire(import.meta.url).resolve(resolve('apps/desktop/session-tooling/node-deps/node_modules/better-sqlite3'));
+  const control = beginDatabaseMaintenance();
+  // Hold the native writer lock across a controlled boundary. This represents
+  // the one maintenance statement already in flight when a request arrives.
+  const worker = new Worker(`
+    const { parentPort, workerData } = require('node:worker_threads');
+    const Database = require(workerData.binding);
+    const db = new Database(workerData.path);
+    db.exec('BEGIN IMMEDIATE');
+    parentPort.postMessage('locked');
+    parentPort.once('message', () => {
+      if (Atomics.load(new Int32Array(workerData.cancellation), 0) !== 1) throw Error('Cancellation was not immediate');
+      db.exec('ROLLBACK'); db.close(); parentPort.postMessage('closed'); parentPort.close();
+    });
+  `, { eval: true, execArgv: [], workerData: { path: connection.name, binding, cancellation: control.buffer } });
+  try {
+    expect(await once(worker, 'message')).toEqual(['locked']);
+    let handler!: Parameters<HostIpcMain['handle']>[1];
+    const host: HostIpc = {
+      ipcMain: { handle: (_channel, listener) => { handler = listener; }, removeHandler() {}, on() {}, removeListener() {} },
+      broadcast() {}, createMessageChannel: vi.fn(),
+    };
+    const admitted = vi.fn(() => connection.prepare('INSERT INTO kept VALUES (?)').run('request'));
+    withDatabaseActivity(host).ipcMain.handle('write', admitted);
+    const response = handler({} as HostIpcInvokeEvent);
+    expect(Atomics.load(new Int32Array(control.buffer), 0)).toBe(1);
+    expect(admitted).not.toHaveBeenCalled();
+    // The request is pending while the writer still holds its lock, and the
+    // main event loop can continue. Calling its synchronous write now would
+    // block here for busy_timeout, then fail before the test could release it.
+    await setImmediate();
+    expect(admitted).not.toHaveBeenCalled();
+    const closed = once(worker, 'message');
+    worker.postMessage('release');
+    expect(await closed).toEqual(['closed']);
+    control.release();
+    await response;
+    expect(admitted).toHaveBeenCalledOnce();
+    expect(connection.prepare('SELECT * FROM kept').get()).toEqual({ value: 'request' });
+  } finally {
+    control.release();
+    await worker.terminate();
+  }
 });

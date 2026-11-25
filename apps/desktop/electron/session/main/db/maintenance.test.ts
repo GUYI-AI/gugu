@@ -29,7 +29,7 @@ it('arms no maintenance work on boot, waits for quiet, and skips an occupied hos
   expect(run).toHaveBeenCalledOnce();
 });
 
-it('cancels a running worker before admitting a request or event and retains listener removal', () => {
+it('cancels synchronously, drains before request/event admission, and retains listener removal', async () => {
   const handlers = new Map<string, Parameters<HostIpcMain['handle']>[1]>();
   const listeners = new Map<string, Parameters<HostIpcMain['on']>[1]>();
   const host: HostIpc = {
@@ -45,15 +45,23 @@ it('cancels a running worker before admitting a request or event and retains lis
   const flag = new Int32Array(control.buffer);
   const listener = vi.fn(() => { expect(Atomics.load(flag, 0)).toBe(1); return 'admitted'; });
   wrapped.ipcMain.handle('request', listener);
-  expect(handlers.get('request')!({} as HostIpcInvokeEvent)).toBe('admitted');
-  Atomics.store(flag, 0, 0);
+  const response = handlers.get('request')!({} as HostIpcInvokeEvent);
+  expect(Atomics.load(flag, 0)).toBe(1);
+  expect(listener).not.toHaveBeenCalled();
+  control.release();
+  await expect(response).resolves.toBe('admitted');
+  const second = beginDatabaseMaintenance();
   wrapped.ipcMain.on('event', listener);
   listeners.get('event')!({} as HostIpcInvokeEvent);
+  expect(Atomics.load(new Int32Array(second.buffer), 0)).toBe(1);
+  expect(listener).toHaveBeenCalledOnce();
+  second.release();
+  await new Promise<void>(resolve => queueMicrotask(resolve));
+  expect(listener).toHaveBeenCalledTimes(2);
   wrapped.ipcMain.removeListener('event', listener);
   expect(listeners.size).toBe(0);
   wrapped.ipcMain.removeHandler('request');
   expect(handlers.size).toBe(0);
-  control.release();
 });
 
 it('stop cancels and drains an in-flight worker before database teardown', async () => {
