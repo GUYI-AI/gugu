@@ -7,6 +7,7 @@ import { SessionAppFrame } from '../components/appSlot/SessionAppFrame'
 import { peekInstalledApps } from '../session/renderer/features/extensions/installed-extensions'
 import { LISTED_HOST } from '../components/appSlot/hereHost'
 import { ResourceMonitorHost } from '@/session/renderer/features/settings/components/resource-monitor-host'
+import { CustomModelRouteRepairHost } from '@/components/settings/CustomModelRouteRepairHost'
 import { reopenGlobalSearch } from '@/session/renderer/features/global-search/search-session'
 import { reaction } from 'mobx'
 import { useCallback, useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore, type ComponentProps } from 'react'
@@ -1226,6 +1227,7 @@ function InnerLayout({
       </div>
 
       <ResourceMonitorHost />
+      <CustomModelRouteRepairHost />
       {contactsModal && (
         <Sheet onClose={() => selectTab(pageUnderContacts.current)} {...PAGE_MODAL_FRAME} testId="contacts-modal" ariaLabel={t('shell.contacts')}>
           {/* The ✕ takes the modal's top-right corner (--pane-corner-reserve): headers at the edge and the drawer's close leave

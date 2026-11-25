@@ -175,7 +175,7 @@ export function modelTitle(item: ComposerModelItem, locale = 'en-US'): string | 
  * 事实里上下文、速度、智能来自 `modelFeatures`(插件 / 目录真声明过的),其余由宿主翻好递进来(`facts`)。
  * 什么都没有的那几格就不画 —— ❌ 写「未知」占位。
  */
-function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffortChange, fastControl }: {
+function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffortChange, fastControl, onDisabledAction }: {
   item: ComposerModelItem;
   picker: HTMLElement | null;
   contextThresholds?: ComposerContextThresholds;
@@ -183,6 +183,7 @@ function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffor
   effort?: ComposerEffortItem;
   onEffortChange?: (id: string) => void;
   fastControl?: React.ReactNode;
+  onDisabledAction?: () => void;
 }) {
   const { translate } = useMessages();
   const f = item.modelFeatures;
@@ -272,6 +273,11 @@ function ModelDetail({ item, picker, contextThresholds, efforts, effort, onEffor
       } />}
       {item.disabled && item.disabledReason && (
         <p className={styles.modelDetailSummary}>{item.disabledReason}</p>
+      )}
+      {item.disabled && item.disabledAction && onDisabledAction && (
+        <button type="button" className={styles.modelPanelFooterAction} onClick={onDisabledAction}>
+          {item.disabledAction.label}
+        </button>
       )}
     </div>
   );
@@ -385,6 +391,11 @@ export function ComposerModelMenu({
   const [detailAnchor, setDetailAnchor] = useState<HTMLElement | null>(null);
   const focusDetail = useRef(false);
   const [panelEl, setPanelEl] = useState<HTMLElement | null>(null);
+  const [repairTarget, setRepairTarget] = useState<string | null>(null);
+  useEffect(() => {
+    if (!panelEl || !modelPanelOpen || !repairTarget) return;
+    panelEl.querySelector(`[data-model-option-id="${CSS.escape(repairTarget)}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [panelEl, modelPanelOpen, repairTarget]);
 
   if (panel.kind !== 'shown') return null;
 
@@ -461,6 +472,7 @@ export function ComposerModelMenu({
         onValueChange={(item: ComposerModelItem | null) => {
           if (!item) return;
           detailCard.close();
+          setRepairTarget(null);
           onModelChange?.(item.id);
           setModelPanelOpen(false);
         }}
@@ -471,7 +483,7 @@ export function ComposerModelMenu({
             details.cancel();
             return;
           }
-          if (!next) detailCard.close();
+          if (!next) { detailCard.close(); setRepairTarget(null); }
           if (next) openModelPanel();
           else setModelPanelOpen(false);
         }}
@@ -658,6 +670,7 @@ export function ComposerModelMenu({
                           value={m}
                           showCheck={false}
                           data-model-option-id={m.id}
+                          data-route-repair-target={m.id === repairTarget || undefined}
                           // 置灰时 title 挂**原因** —— 那一刻用户要问的是「为什么不能选」
                           // (owner 2026-08-21:选不了的那一头要说明原因)。能选的行不挂 title:
                           // 规格在悬浮详情卡里,原生提示再弹一遍就是同一件事说两次。
@@ -767,6 +780,14 @@ export function ComposerModelMenu({
                 fastControl={detailItem.id === selectedModel && panel.modelRow === 'list' && !phoneActions && fastMode !== undefined
                   ? <ComposerFastMode detailRow enabled={fastMode} disabled={disabled} onChange={onFastModeChange} renderHint={renderFastModeHint} />
                   : undefined}
+                onDisabledAction={() => {
+                  detailCard.close();
+                  setModelPanelOpen(false);
+                  detailItem.disabledAction?.open(() => {
+                    setRepairTarget(detailItem.id);
+                    openModelPanel();
+                  });
+                }}
                 onEffortChange={onEffortChange} />
             ) : modelUpgrade ? (
               <div data-slot="composer-model-detail" style={{ display: 'contents' }}>

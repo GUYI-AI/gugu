@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { CUSTOM_MODEL_KEY_CHANNEL, customModelAcceptsImages, customModelThinks, customModelRouteSchema, modelProtocolSchema, normalizeModelBaseUrl, type CustomModelConnection, type CustomModelEntry, type CustomModelMeta, type CustomModelRoute, type ModelProtocol } from '@gugu/session-core/models/custom-model';
 import { providerPresets } from '@gugu/session-core/models/provider-presets';
 import { vendorName } from '@/i18n/vendorName';
@@ -26,9 +26,10 @@ import { ChevronDownIcon, Eye, EyeOff } from '@/lib/icons';
 import { IconButton } from '@/components/ui/IconButton';
 import { SettingsNote, Toggle } from './SettingsPrimitives';
 
-export function CustomModelDialog({ machine, connection, group = 'custom', initialAccount, onClose }: {
+export function CustomModelDialog({ machine, connection, group = providerPresets.find(preset => preset.id === connection?.preset)?.group ?? 'custom',
+  initialAccount, initialRoute, onClose }: {
   machine: string | null; connection?: CustomModelConnection; group?: 'coding-plan' | 'api' | 'custom';
-  initialAccount?: 'claude' | 'codex'; onClose: () => void;
+  initialAccount?: 'claude' | 'codex'; initialRoute?: Omit<CustomModelRoute, 'id'>; onClose: () => void;
 }) {
   const { translate } = useSessionMessages();
   const initialPreset = providerPresets.find(preset => preset.group === group);
@@ -44,6 +45,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const providerLabel = (id: string) => <span className="flex items-center gap-2">{id === 'claude-subscription' || id === 'chatgpt-subscription' ? <AppIcon id={id === 'claude-subscription' ? 'claude' : 'codex'} size={16} /> : null}{labelOf(id)}</span>;
   const [endpoints, setEndpoints] = useState<CustomModelMeta['endpoints']>(connection?.endpoints ?? initialPreset?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
   const [apiKey, setApiKey] = useState('');
+  const keyInput = useRef<HTMLInputElement>(null);
   // A key this computer holds is read into the field only when the eye is pressed, and only in its own window; the key
   // of a connection on another device never leaves it. The field still holding that key is not a new key.
   const [heldKey, setHeldKey] = useState('');
@@ -52,11 +54,15 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
   const typedKey = apiKey !== heldKey ? apiKey : '';
   // null = the person has not chosen: every model the address lists is selected.
   const [picked, setPicked] = useState<string[] | null>(connection ? connection.models.map(({ id }) => id) : null);
-  const [advanced, setAdvanced] = useState(false);
+  const [advanced, setAdvanced] = useState(Boolean(initialRoute && (initialRoute.baseUrl ||
+    !connection?.endpoints.some(endpoint => endpoint.protocol === initialRoute.outgoing))));
   const [modelListRefresh, setModelListRefresh] = useState(0);
   const [features, setFeatures] = useState<Omit<CustomModelEntry, 'id' | 'label'>>((() => { const model = connection?.models[0]; return { image: model?.image, thinking: model?.thinking, contextWindow: model?.contextWindow, maxOutput: model?.maxOutput }; }));
   const [featuresChanged, setFeaturesChanged] = useState(false);
-  const [routes, setRoutes] = useState<CustomModelRoute[]>(connection?.routes ?? []);
+  const [routes, setRoutes] = useState<CustomModelRoute[]>(() => {
+    const existing = connection?.routes ?? [];
+    return initialRoute && existing.length < 100 ? [{ ...initialRoute, id: crypto.randomUUID() }, ...existing] : existing;
+  });
   const [busy, setBusy] = useState<'save' | null>(null);
   const [accountCreating, setAccountCreating] = useState(false);
   const [failure, setFailure] = useState('');
@@ -143,7 +149,8 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
     finally { setBusy(null); }
   };
   return <Dialog open onOpenChange={(open) => { if (!open && !busy && !accountCreating) onClose(); }}>
-    <DialogContent className="gg-model-dialog sm:max-w-[640px]" data-testid="custom-model-dialog">
+    <DialogContent className="gg-model-dialog sm:max-w-[640px]" data-testid="custom-model-dialog"
+      initialFocus={connection && !connection.keySaved ? keyInput : undefined}>
       <DialogHeader>
         <DialogTitle>{translate(connection ? 'customModels.edit' : group === 'coding-plan' ? 'customModels.addPlan' : group === 'api' ? 'customModels.addApi' : 'customModels.add')}</DialogTitle>
         {group === 'custom' && <DialogDescription>{translate('customModels.formDescription')}</DialogDescription>}
@@ -189,7 +196,7 @@ export function CustomModelDialog({ machine, connection, group = 'custom', initi
           </label>}
           {accountProvider ? accountAgent ? <SubscriptionConnections key={accountProvider} agent={accountAgent} machine={machine} modelAccount={{ onClose, onBusyChange: setAccountCreating }} /> : agentsError ? <SettingsNote tone="danger" role="alert">{errorText(agentsError)} <Button size="sm" variant="outline" onClick={retryOf(agentsReading)}>{translate('common.retry')}</Button></SettingsNote> : agents ? <SettingsNote tone="danger">{translate('customModels.accountUnavailable')}</SettingsNote> : <Unknown className="h-9 w-full" /> : <form className="subscription-connection-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           {!preset && <label>{translate('customModels.address')}<Input data-testid="custom-model-address-0" type="url" required value={endpoints[0]?.baseUrl ?? ''} onChange={(event) => setAddress(event.target.value)} /></label>}
-          <label>API Key<span className="relative flex items-center"><Input data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyReadable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={keyProblem ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : undefined} onChange={(event) => setApiKey(event.target.value)} />
+          <label>API Key<span className="relative flex items-center"><Input ref={keyInput} data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyReadable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={keyProblem ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : undefined} onChange={(event) => setApiKey(event.target.value)} />
             {keyReadable && (apiKey || connection?.keySaved) && <IconButton size="sm" className="absolute right-1 top-1/2 -translate-y-1/2" aria-label={translate(keyShown ? 'customModels.hideKey' : 'customModels.showKey')} aria-pressed={keyShown} onClick={() => { void toggleKey(); }}>{keyShown ? <EyeOff aria-hidden className="size-4" /> : <Eye aria-hidden className="size-4" />}</IconButton>}</span></label>
           {keyProblem && <p className="subscription-error" role="alert" data-testid="custom-model-key-problem">{keyProblem}</p>}
           <ConnectionModelPicker list={list} value={models} onChange={(next) => {

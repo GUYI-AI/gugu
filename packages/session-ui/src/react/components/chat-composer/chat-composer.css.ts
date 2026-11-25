@@ -1739,6 +1739,7 @@ export const modelPanelItemCompact = style({
   selectors: {
     '&[data-disabled][role="option"]': { pointerEvents: 'auto' },
     '&[data-selected]': { fontWeight: 600 },
+    '&[data-route-repair-target]': { backgroundColor: vars.surfaceHover },
   },
 });
 

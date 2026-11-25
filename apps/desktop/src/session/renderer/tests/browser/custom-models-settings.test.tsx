@@ -7,6 +7,7 @@ import { UI_EVENTS } from '@/lib/uiEvents';
 import { setLocalePreference } from '@/i18n';
 import { CustomModelsGroup } from '@/components/settings/CustomModelsGroup';
 import { CustomModelDialog } from '@/components/settings/CustomModelDialog';
+import { CustomModelRouteRepairHost } from '@/components/settings/CustomModelRouteRepairHost';
 import { Sheet } from '@/components/ui/Sheet';
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider';
 import { translateSessionMessage } from '@renderer/localization/locale-store';
@@ -54,8 +55,9 @@ it('shows migrated records with no model or key and a repair entrypoint', async 
   await until('the device record renders inside Settings', () => !!row());
   expect(row()?.textContent).toContain('This custom provider has no model selected yet');
   expect(row()?.textContent).toContain('No key saved on this device');
-  await userEvent.click(page.getByRole('button', { name: 'Select models', exact: true }));
+  await userEvent.click(page.getByRole('button', { name: 'Enter key on this computer', exact: true }));
   await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
+  await expect.element(page.getByTestId('custom-model-key')).toHaveFocus();
   expect(document.querySelector('[data-testid=custom-model-provider]')).toBeNull();
   expect(document.querySelector<HTMLInputElement>('[data-testid=custom-model-key]')?.value).toBe('');
 });
@@ -122,6 +124,42 @@ it('edits the protocol and model in one row and saves the optional address from 
   expect(state.saved).toMatchObject({ endpoints: state.probe.endpoints, routes: [{
     incoming: 'anthropic-messages', outgoing: 'openai-chat-completions', modelId: 'm', baseUrl: 'https://provider.test/compat/v1',
   }] });
+});
+
+it('repairs a missing model route from its disabled row and returns to the picker after save', async () => {
+  const fallback = { id: 'd5bd45f0-f968-4df8-bf00-e7d303cab020', incoming: 'openai-responses', outgoing: 'openai-chat-completions' } as const;
+  const connection: CustomModelConnection = {
+    ...record(), keySaved: true, models: [{ id: 'repair-target' }, { id: 'other-model' }],
+    endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://provider.test/v1' }], routes: [fallback],
+  };
+  const agent = { id: 'claude', name: 'Claude', capabilities: {
+    modelProtocols: ['anthropic-messages' as const], customModel: { convertFrom: ['openai-chat-completions' as const] },
+  } };
+  state.probe = { endpoints: connection.endpoints, models: connection.models.map(({ id }) => id), failures: [] };
+  const options = customComposerOptions([connection], agent, translateSessionMessage, null);
+  const onModelChange = vi.fn();
+  render(<><div style={{ position: 'fixed', left: 100, bottom: 24, width: 740 }}>
+    <ChatComposer modelOptions={options} onModelChange={onModelChange} onSubmit={() => {}} onStop={() => {}} />
+  </div><CustomModelRouteRepairHost /></>);
+
+  await userEvent.click(page.getByTestId('composer-model-trigger'));
+  const row = page.getByRole('option', { name: /repair-target/ });
+  await expect.element(row).toHaveAttribute('aria-disabled', 'true');
+  await row.hover();
+  await page.getByRole('button', { name: 'Add route for this model', exact: true }).click();
+  await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
+  await expect.element(page.getByTestId('custom-model-route-incoming-0')).toHaveTextContent('Anthropic API');
+  await expect.element(page.getByTestId('custom-model-route-outgoing-0')).toHaveTextContent('OpenAI Chat');
+  await expect.element(page.getByTestId('custom-model-route-model-0')).toHaveTextContent('repair-target');
+  expect(state.saved).toBeNull();
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await expect.element(page.getByTestId('composer-model-search')).toBeVisible();
+  await expect.element(row).toHaveAttribute('data-route-repair-target', 'true');
+  const routes = state.saved?.routes;
+  expect(routes).toMatchObject([{ incoming: 'anthropic-messages', outgoing: 'openai-chat-completions', modelId: 'repair-target' }, fallback]);
+  const updated = Object.values(customComposerOptions([{ ...connection, routes }], agent, translateSessionMessage));
+  expect(updated.map(({ name, disabled }) => [name, disabled])).toEqual([['repair-target', undefined], ['other-model', true]]);
+  expect(onModelChange).not.toHaveBeenCalled();
 });
 
 it('names only the bound model when reopening a migrated Pi task', async () => {

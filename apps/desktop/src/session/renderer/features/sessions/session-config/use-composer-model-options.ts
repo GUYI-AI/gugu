@@ -18,6 +18,7 @@ import { modelProviderIcon } from './model-provider-icon';
 import { billingLinksAvailable, openBillingPage } from '@/lib/appLinks';
 import type { ComposerModelUpgrade } from '@gugu/session-ui/react/components';
 import { openShellSettings } from '@renderer/lib/open-shell-settings';
+import { platform } from '@/platform';
 
 /**
  * @@@composer-model-assembly —— **模型下拉的装配只有这一份**。
@@ -55,7 +56,8 @@ export function useComposerModelOptions(
   // The heading names the agent: unknown until the list is read, ❌ the raw id renamed when it lands.
   const agentName = agents.state === 'unknown' ? null : composerOwnTierAgentName(agentList, providerId);
   const remote = useLibraryHost().remote;
-  const custom = useReplica(customModels, [remote?.deviceId ?? null]);
+  const machine = remote?.deviceId ?? null;
+  const custom = useReplica(customModels, [machine]);
   const records = custom.state === 'value' ? custom.value : undefined;
   const error = custom.state === 'unknown' ? null : custom.error;
   const agent = agentList?.find((entry) => entry.id === providerId);
@@ -65,7 +67,7 @@ export function useComposerModelOptions(
       if (agentName === null) return undefined;
       const base = assembleComposerModelOptions(harnessOptions, platformModels, agentName, translate, currentPlatformModelId);
       if (!providerId) return base;
-      const options = records && customComposerOptions(records, agent, translate);
+      const options = records && customComposerOptions(records, agent, translate, platform.capabilities.modelSettings ? machine : undefined);
       if (!records || error) {
         return { ...base, ...options, 'custom-models-status': {
           name: translate(error ? 'customModels.listFailed' : 'customModels.loading'),
@@ -75,7 +77,7 @@ export function useComposerModelOptions(
       }
       return base || Object.keys(options ?? {}).length ? { ...base, ...options } : null;
     },
-    [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, records, error, agent, providerId]
+    [harnessOptions, platformModels, translate, agentName, currentPlatformModelId, records, error, agent, providerId, machine]
   );
 }
 

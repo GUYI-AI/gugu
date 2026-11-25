@@ -139,6 +139,8 @@ export interface ComposerModelOption {
    */
   disabled?: boolean;
   disabledReason?: string;
+  /** Opens the host's repair form and returns to the picker when it closes. */
+  disabledAction?: { label: string; open: (onClose: () => void) => void };
   /** Keep the identity of a bound model in the trigger when it cannot be offered on the current device. */
   hiddenFromPicker?: boolean;
 }
@@ -211,6 +213,7 @@ export interface ComposerModelItem {
   /** 见 `ComposerModelOption` 上同名字段。 */
   disabled?: boolean;
   disabledReason?: string;
+  disabledAction?: ComposerModelOption['disabledAction'];
   /** Keep the identity of a bound model in the trigger when it cannot be offered on the current device. */
   hiddenFromPicker?: boolean;
 }
