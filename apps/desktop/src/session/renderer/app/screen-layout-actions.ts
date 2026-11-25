@@ -116,12 +116,15 @@ function pruneGoneApps(): void {
   );
 }
 
+/** 这屏上和收起来的组里的对话。 */
+function chatsInLayout(): string[] {
+  return [...screenLayout.blocks.values(), ...screenLayout.parkedContents].flatMap((block) => (block.kind === 'chat' ? [block.chatId] : []));
+}
+
 /**
  * 只按权威的删除/退出事实收块。首帧、刷新和卸载都可能发布不完整摘要,缺席不改用户保存的摆法。
  */
 function pruneGoneChats(): void {
-  const chatsInLayout = () =>
-    [...screenLayout.blocks.values(), ...screenLayout.parkedContents].flatMap((block) => (block.kind === 'chat' ? [block.chatId] : []));
   let restored = chatsInLayout();
   onViewStateAccount(() => { restored = chatsInLayout(); });
   subscribeChatRemovals(chatsInLayout, forgetChatOnScreen, () => restored);
@@ -208,10 +211,46 @@ function showUnderEntry(content: ScreenBlockContent): void {
 function entryFor(content: ScreenBlockContent): string | null {
   if (content.kind === 'session') return livesInEntryRoom(content.sessionId) ? screenLayout.currentEntry : null;
   if (content.kind !== 'chat') return null;
-  const room = chatViewOf(content.chatId, readChatSummaries() ?? new Map()).roomChatId;
+  const room = topicRoomOf(content.chatId);
   if (!room) return null;
   const projectId = projectGroupsStore.rowProjectOfChat(room);
   return contentKey(projectId ? { kind: 'project', projectId } : { kind: 'chat', chatId: room });
+}
+
+/** 话题开在哪个群(它的来源线);不是话题 = null。 */
+function topicRoomOf(chatId: string): string | null {
+  return chatViewOf(chatId, readChatSummaries() ?? new Map()).roomChatId ?? null;
+}
+
+/**
+ * 手机的会话页 = 只摆一块的这一屏:同一个 screenLayout、同一条入口规则(话题算在它的群下),❌ 另记一份「群 → 上次话题」。
+ * 手机没有项目块,项目群那一行就是它自己。返回会话页该画的那条对话。
+ * · `fromRow`:从列表点的一行。列表盖着会话页,点的正是这屏的入口 = 回到这屏(它名下的话题),
+ *   ❌ 当成桌面上「在屏里再点一次那一行 = 回群本身」;别的入口照桌面摆出来(群名下记着话题 = 回到话题)。
+ * · 不是 `fromRow`:会话页已经在画 `chatId`(选了话题条的「群聊」、链接、通知、返回栈):这屏跟着它;
+ *   摆出来的不是它(群名下记着别的话题)= 回到这一行本身,同桌面的群标题(showRoot)。
+ */
+export function showChatOnPhone(chatId: string, fromRow = false): string {
+  const content = { kind: 'chat', chatId } as const;
+  if (!fromRow || screenLayout.currentEntry !== contentKey(content)) {
+    const room = topicRoomOf(chatId);
+    screenLayout.openUnder(room ? contentKey({ kind: 'chat', chatId: room }) : null, () => screenLayout.show(content));
+  }
+  const focused = screenLayout.focusedBlockId ? screenLayout.blocks.get(screenLayout.focusedBlockId) : undefined;
+  const shown = focused?.kind === 'chat' ? focused.chatId : null;
+  if (fromRow) return shown ?? chatId;
+  if (shown !== chatId) screenLayout.showRoot(content);
+  return chatId;
+}
+
+/**
+ * 手机上这屏的收尾,同桌面那份事实:对话没了(删、退、归档)那块收掉;换了账号从空屏开始。手机这屏不落盘
+ * (窄窗口的网页也有会话页时,换账号由 ensureScreenLayoutSync 读回那个账号存的屏)。
+ */
+export function installPhoneScreen(): () => void {
+  const offAccount = onViewStateAccount(() => { if (!syncing) screenLayout.replaceWith(null); });
+  const offRemovals = subscribeChatRemovals(chatsInLayout, (chatId) => screenLayout.forgetContent({ kind: 'chat', chatId }));
+  return () => { offAccount(); offRemovals(); };
 }
 
 /**
