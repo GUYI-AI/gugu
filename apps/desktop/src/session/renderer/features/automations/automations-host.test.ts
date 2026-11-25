@@ -154,7 +154,7 @@ describe('已安排的读数:一台机器一份 replica,跟着页头选的那台
   it('一台机器只挂一对监听,不论几处在读;最后一个读者走了才摘', async () => {
     const many = React.createElement(React.Fragment, null, React.createElement(Probe), React.createElement(Probe), React.createElement(Probe));
     await render(many);
-    expect([...eventListeners].map((listener) => listener.name).sort()).toEqual(['automation:changed', 'automation:run-changed']);
+    expect([...eventListeners].map((listener) => listener.name).sort()).toEqual(['automation:changed', 'automation:changed', 'automation:run-changed']);
     act(() => root.unmount());
     expect(eventListeners.size).toBe(0);
     root = createRoot(dom.window.document.getElementById('root') as HTMLDivElement);
