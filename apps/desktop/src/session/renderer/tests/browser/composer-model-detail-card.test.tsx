@@ -153,6 +153,9 @@ describe('模型面板:单行清单 · 悬浮详情卡 · 底部去路', () => {
     // 与模型行同宽:读起来是清单的一行,不是一条底栏。
     const option = rowByName('Opus 5.5').getBoundingClientRect()
     expect(Math.abs(manage.getBoundingClientRect().width - option.width), '「配置模型」和模型行不一样宽').toBeLessThan(1)
+    // owner 11-25 22:45:「那个分隔线没必要」—— 模型和这两条去路之间不画横线。
+    const footer = panel()!.querySelector<HTMLElement>('[data-slot="composer-model-footer"]')!
+    for (const el of [footer, upgrade, manage]) expect(getComputedStyle(el).borderTopWidth, '模型和底部去路之间画了分隔线').toBe('0px')
   })
 
   it('opens an explicit thinking submenu from the selected model detail', async () => {

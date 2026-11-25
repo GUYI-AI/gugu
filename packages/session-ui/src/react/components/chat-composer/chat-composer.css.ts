@@ -1811,14 +1811,13 @@ export const modelDetailFactValue = style({
 
 /**
  * 清单末尾的两条去路(「升级解锁更多模型」、最后一行「配置模型」):在清单的滚动区里、跟着清单滚
- * (owner 11-25:「配置模型」不是钉死的一栏)。一条细线把它们和模型隔开 —— 它们是去路,不是取值。
+ * (owner 11-25:「配置模型」不是钉死的一栏)。和模型之间不画分隔线(owner 11-25 22:45:「那个分隔线没必要」)。
  */
 export const modelPanelActions = style({
   display: 'flex',
   flexDirection: 'column',
   marginTop: '0.25rem',
   paddingTop: '0.25rem',
-  borderTop: `1px solid ${vars.border}`,
 });
 
 /** 详情卡里那枚动作(「添加路由」):纯文字按钮,悬停给底色,与菜单项同一种手感。 */
