@@ -18,8 +18,6 @@ export type TailRestartReason = 'source_replaced' | 'source_unreadable';
 export type LineSink = (lines: string[], offsets: number[]) => void;
 
 export type TailReaderEvents = {
-  /** Strict event-driven readers report a failed read instead of retrying on a timer. */
-  onError?(error: unknown): void;
   /** 新读到的**完整**行（不含结尾换行；末尾半行留在缓冲里等下一轮）。 */
   onLines(lines: string[], offsets: number[]): void;
   /** 文件被截断 / 换了 inode / 读不到了 —— 已读到的东西全部作废。 */
@@ -241,7 +239,7 @@ export class TailReader {
   }
 
   start(): void {
-    if (this.stopped) return;
+    if (this.stopped || this.pollIntervalMs === 0) return;
     this.timer = setInterval(() => void this.pump(), this.pollIntervalMs);
     this.timer.unref?.();
     this.rewatch();
@@ -294,7 +292,7 @@ export class TailReader {
         this.events.onLines(lines, offsets);
       }
     } catch (error) {
-      if (this.events.onError) { this.events.onError(error); return; }
+      if (this.pollIntervalMs === 0) throw error; // The external event owner reports this failure.
       // 读一次失败不等于这份记录没了（EMFILE、临时 EACCES 都会这样）：报出来，下个节拍再试。
       this.warn('尾读失败，将在下个轮询节拍重试', {
         path: this.path,

@@ -48,7 +48,7 @@ const initialOrdinals = (): Ordinals => ({ turn: 0, item: -1, userSeen: false, c
 export function createCodexJsonlSource(locator: SessionRecordLocator, options?: SessionRecordSourceOptions, nativeChild = false, ancestors: ReadonlySet<string> = new Set()): SessionRecordSource {
   const lineage = new Set(ancestors);
   lineage.add(locator.providerSessionId);
-  const root = createJsonlTailSource<Ordinals>(locator, options, {
+  const root = createJsonlTailSource<Ordinals>(locator, { ...options, tailDriver: 'external' }, {
     name: 'codex',
     // 11: a fork reads its parent's prefix (history_base in a plainly named rollout); state saved before that never did.
     resumeVersion: 11,

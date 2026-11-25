@@ -22,6 +22,8 @@ import { RECORD_KEY_BOUNDARY_SUFFIX, type RecordBoundary, type RecordEntry, type
 export type RecordSourceWarn = (message: string, detail?: Record<string, unknown>) => void;
 
 export type SessionRecordSourceOptions = {
+  /** The record source owns an event driver; TailReader must not start a watcher or polling timer. */
+  tailDriver?: 'external';
   /** A bounded historical read; compressed archives are never followed as live files. */
   readMode?: 'snapshot';
   /**
@@ -80,6 +82,7 @@ export async function deliverInSlices(entries: readonly RecordEntry[], deliver: 
 }
 
 export function pollInterval(options: SessionRecordSourceOptions | undefined): number {
+  if (options?.tailDriver === 'external') return 0;
   const value = options?.pollIntervalMs;
   return typeof value === 'number' && value > 0 ? value : DEFAULT_POLL_INTERVAL_MS;
 }

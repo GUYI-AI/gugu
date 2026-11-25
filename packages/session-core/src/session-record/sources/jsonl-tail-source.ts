@@ -133,14 +133,7 @@ export function createJsonlTailSource<S>(
     locator,
     async start(events, resume) {
       sink = events;
-      recordEvents?.stop();
-      recordEvents = options?.readMode === 'snapshot' ? null : adapter.watch?.(failed) ?? null;
-      let found: string;
-      try {
-        await recordEvents?.ready();
-        found = await format.resolve();
-        await recordEvents?.includeFile(found);
-      } catch (error) { recordEvents?.stop(); throw error; }
+      const found = await format.resolve();
       if (stopped) return; // 找文件的工夫里已经被拆了
       path = found;
       reader = new TailReader(
@@ -148,7 +141,6 @@ export function createJsonlTailSource<S>(
         pollInterval(options),
         {
           onLines: emit,
-          ...(adapter.watch ? { onError: failed } : {}),
           onRestart: (reason) => {
             state = format.initial();
             events.onReset(reason);
@@ -179,12 +171,7 @@ export function createJsonlTailSource<S>(
         if (format.prefixes) await streamPrefixes(found);
         await reader.readFromStart(emit);
       }
-      if (failure !== undefined) throw failure;
-      if (recordEvents) recordEvents.activate(async (locateAgain) => {
-        if (locateAgain) await source.catchUp?.();
-        else { await reader?.catchUp(); await again; }
-      });
-      else reader.start();
+      reader.start();
     },
     catchUp: async () => {
       if (options?.readMode === 'snapshot') return;
@@ -241,10 +228,24 @@ export function createJsonlTailSource<S>(
   };
   // A whole read (initial, snapshot or resume) ends first; only then is the record read again, at most once more.
   const start = source.start.bind(source);
+  // Keep the legacy decoding/read unit unchanged: only the live Codex source owns this event barrier/driver.
   source.start = (events, resume) => whole(async () => {
+    recordEvents?.stop();
+    recordEvents = options?.readMode === 'snapshot' ? null : adapter.watch?.(failed) ?? null;
     try {
+      await recordEvents?.ready();
       await start(events, resume);
+      if (recordEvents && path) {
+        await recordEvents.includeFile(path);
+        // A legacy file may be outside the UUID/date hints. Close that subscription gap once, after ready.
+        await reader?.catchUp();
+      }
       await readAgain(events);
+      if (failure !== undefined) throw failure;
+      recordEvents?.activate(async (locateAgain) => {
+        if (locateAgain) await source.catchUp?.();
+        else { await reader?.catchUp(); await again; }
+      });
     } catch (error) { recordEvents?.stop(); reader?.stop(); throw error; }
   });
   return source;

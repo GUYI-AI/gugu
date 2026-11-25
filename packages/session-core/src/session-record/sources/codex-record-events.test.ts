@@ -6,7 +6,6 @@ import { awaitFact } from '../../../../../tests/support/awaitFact';
 import { CodexRecordDeadline, waitForCodexRecord, type RecordDirectoryWatch } from './codex-record-events';
 import { SessionRecordNotFoundError } from './shared';
 import { createCodexJsonlSource } from './codex-jsonl';
-import { TailReader } from './tail-reader';
 
 const THREAD = '01a20e21-ffaf-7ff0-ac0b-9cda461fa5b3';
 const meta = JSON.stringify({ type: 'session_meta', payload: { id: THREAD } }) + '\n';
@@ -127,7 +126,7 @@ describe('Codex record readiness barrier', () => {
 
     const source = createCodexJsonlSource(s.locator);
     cleanups.push(() => source.stop());
-    const poll = vi.spyOn(TailReader.prototype, 'start');
+    const poll = vi.spyOn(globalThis, 'setInterval');
     cleanups.push(() => poll.mockRestore());
     let received!: () => void;
     const reply = new Promise<void>(resolve => { received = resolve; });
