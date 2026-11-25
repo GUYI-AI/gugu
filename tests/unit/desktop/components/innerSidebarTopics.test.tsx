@@ -49,18 +49,18 @@ describe('which topics the inner sidebar shows', () => {
     expect(ids(topicsOfChat(topics, 'group'))).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11', 't12', 'news', 'calls-me'])
   })
 
-  it('level one: the first 12 of the chat-list order; unread does not lift an old topic (yangchichi msg:616413ff, msg:b3d2bd56)', () => {
+  it('level one: the first 6 of the chat-list order; unread does not lift an old topic (yangchichi msg:616413ff; owner msg:247795d5)', () => {
     const level = innerSidebarTopicRows(topicsOfChat(topics, 'group'), { all: false })
-    expect(INNER_SIDEBAR_TOPIC_LIMIT).toBe(12)
-    expect(ids(level.shown)).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11'])
-    expect(level).toMatchObject({ hidden: 3, calling: 1 })
+    expect(INNER_SIDEBAR_TOPIC_LIMIT).toBe(6)
+    expect(ids(level.shown)).toEqual(['t0', 't1', 't2', 't3', 't4', 't5'])
+    expect(level).toMatchObject({ hidden: 9, calling: 1 })
   })
 
   it('unread topics never break the limit (a project whose topics were never opened showed them all)', () => {
     const many = Array.from({ length: 14 }, (_, index) => topic(`call-${index}`, index, unread(1, 1)))
     const level = innerSidebarTopicRows([...many, topic('quiet', 8)], { all: false })
     expect(ids(level.shown)).toEqual(ids(many.slice(0, INNER_SIDEBAR_TOPIC_LIMIT)))
-    expect(level).toMatchObject({ hidden: 3, calling: 14 })
+    expect(level).toMatchObject({ hidden: 9, calling: 14 })
   })
 
   it('All = every topic, newest activity first, the same order as the chat list', () => {
@@ -82,7 +82,7 @@ describe('which topics the inner sidebar shows', () => {
   it('a pinned topic goes above every unpinned one, however old, and back to its place when unpinned', () => {
     const pinned = topics.map((row) => (row.id === 't6' || row.id === 'calls-me' ? { ...row, is_pinned: true } : row))
     expect(ids(topicsOfChat(pinned, 'group'))).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 't3', 't4', 't5', 't7', 't8', 't9', 't10', 't11', 't12', 'news'])
-    expect(ids(innerSidebarTopicRows(topicsOfChat(pinned, 'group'), { all: false }).shown)).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 't3', 't4', 't5', 't7', 't8', 't9', 't10'])
+    expect(ids(innerSidebarTopicRows(topicsOfChat(pinned, 'group'), { all: false }).shown)).toEqual(['t6', 'calls-me', 't0', 't1', 't2', 't3'])
     const unpinned = pinned.map((row) => ({ ...row, is_pinned: false }))
     expect(ids(topicsOfChat(unpinned, 'group'))).toEqual(['t0', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't10', 't11', 't12', 'news', 'calls-me'])
   })
@@ -115,7 +115,7 @@ describe('the inner sidebar topics slot', () => {
     await renderWithAppProviders(harness, createNode(ChatListSlotHost, {}), { chat: { chats: [source, ...recent] }, contacts: {} })
     const slot = document.body.appendChild(document.createElement('div'))
     await act(async () => readShellSlots()!.setSlot(innerSidebarTopicsSlotKey('group'), slot))
-    expect(rows()).toEqual(['t0', 'news', 'calls-me', 't1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9'])
+    expect(rows()).toEqual(['t0', 'news', 'calls-me', 't1', 't2', 't3'])
     // #2548 a topic that calls me (3 unread, 1 addressed) says 「@1」 in red; one with news that does not call me (2 unread,
     // 0 addressed) only wears the grey dot, without a number; one with nothing new wears nothing.
     const mark = (id: string) => {
