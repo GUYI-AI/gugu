@@ -252,44 +252,11 @@ export function agentSupportsPermissionMode(
   return !!entry && (!leg || !entry.legs || entry.legs.includes(leg));
 }
 
-/**
- * Edit 档摆不摆(#6221):只有档位表**完整**的家才按表决定 —— qwen、cursor 的表里没有 edit,
- * 摆出来就是一句引擎兑现不了的承诺(qwen 落进 auto、cursor 落进全权 agent 模式,都比 Edit 更松)。
- * 其余家保持现状(恒摆,#6231 逐家实测后再收)。
- */
-export function agentOffersEditMode(
-  capabilities: AgentCapabilities | undefined | null,
-  leg?: 'acp' | 'tui',
-): boolean {
-  return !capabilities?.autoApprove.modesExhaustive || agentSupportsPermissionMode(capabilities, 'edit', leg);
-}
-
 export function agentSupportsReadOnlyMode(
   capabilities: AgentCapabilities | undefined | null,
   leg?: 'acp' | 'tui',
 ): boolean {
   return agentSupportsPermissionMode(capabilities, 'read-only', leg);
-}
-
-export function agentSupportsPlanMode(
-  capabilities: AgentCapabilities | undefined | null,
-  leg?: 'acp' | 'tui',
-): boolean {
-  return agentSupportsPermissionMode(capabilities, 'plan', leg);
-}
-
-/**
- * Can this provider start an empty fresh PTY session? Codex says no: its PTY is diverted onto an
- * app-server thread whose rollout only exists once a real turn has run. This capability only gates
- * empty creation; ordinary user text always uses the message transport.
- *
- * ACP is not covered; an ACP conversation created empty is a legitimately idle chat and bootstrap
- * payloads remain system-owned (spec session-initial-status).
- */
-export function agentRequiresFreshPtyPrompt(
-  capabilities: AgentCapabilities | undefined | null,
-): boolean {
-  return capabilities?.sessions.freshPtyPrompt === 'required';
 }
 
 // ---------------------------------------------------------------------------

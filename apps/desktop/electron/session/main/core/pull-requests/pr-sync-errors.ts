@@ -22,12 +22,6 @@ export type PrSyncCancelledError = {
   message: string;
 };
 
-export type PrSyncNotFoundOrNoAccessError = {
-  type: 'not_found_or_no_access';
-  host: string;
-  message: string;
-};
-
 export type PrSyncEngineError =
   | RepositoryRefParseError
   | GitHubApiAuthError

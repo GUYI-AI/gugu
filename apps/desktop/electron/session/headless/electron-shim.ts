@@ -414,6 +414,4 @@ const shim = {
   ClipboardItem
 }
 
-export type HeadlessElectronShim = typeof shim
-
 export default shim

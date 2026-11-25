@@ -125,10 +125,3 @@ export function getDiffTabManager(workspaceId: string): DiffTabManager {
   }
   return manager;
 }
-
-export function releaseDiffTabManager(workspaceId: string): void {
-  const manager = _registry.get(workspaceId);
-  if (!manager) return;
-  manager.dispose();
-  _registry.delete(workspaceId);
-}

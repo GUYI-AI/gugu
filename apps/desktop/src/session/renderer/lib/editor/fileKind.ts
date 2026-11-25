@@ -115,19 +115,8 @@ export function isOfficeKind(kind: ManagedFileKind): kind is 'docx' | 'pptx' | '
   return kind === 'docx' || kind === 'pptx' || kind === 'xlsx';
 }
 
-/** True for files backed by text models for source editing and saving. */
-export function isTextModelKind(kind: ManagedFileKind): boolean {
-  return kind === 'text' || isPreviewableKind(kind);
-}
-
 /** True for files the diff viewer must not load as text. */
 export function isBinaryForDiff(filePath: string): boolean {
   const kind = getFileKind(filePath);
   return kind === 'binary' || kind === 'image' || kind === 'svg' || isSelfLoadingKind(kind);
-}
-
-/** True for files the diff viewer renders as an `<img>` preview instead of text. */
-export function isImageForDiff(filePath: string): boolean {
-  const kind = getFileKind(filePath);
-  return kind === 'image' || kind === 'svg';
 }

@@ -1067,26 +1067,6 @@ export function claudeTuiBaseSettingsFile(): Promise<string> {
 }
 
 /**
- * claude TUI 会话 argv 上「为禁掉 agent view 而追加」的那一段 —— 单一出口(#3323)。
- *
- * 三种输入三种答案,每一条都有单测钉着:
- * - 平台会话:[]。禁用键已合进它的会话 settings 文档(claude 只认一个 `--settings`,追加第二个
- *   就是两份文档抢一个槽位)。
- * - 会话 argv 里已有用户自己的 `--settings`(会话页 Extra args 显式配置):[]。claude 对重复
- *   `--settings` 是 last-wins,追加我们的会把用户整份 settings 静默顶掉 —— 显式接管 settings 层
- *   的用户保住他的配置,代价是他的 agent view 维持他自己的设置。
- * - 其余(BYOK):挂进程级静态文档。
- */
-export async function claudeTuiSettingsArgs(
-  platform: Pick<SessionpagePlatformModel, 'settingsDocumentPath'>,
-  sessionArgs: readonly string[],
-): Promise<string[]> {
-  if (platform.settingsDocumentPath) return []
-  if (sessionArgs.includes('--settings')) return []
-  return ['--settings', await claudeTuiBaseSettingsFile()]
-}
-
-/**
  * 开机收尸:删掉上一次没能走到 release 就死掉的进程留下的覆盖文件。
  *
  * 文件里有那次会话的中转令牌。令牌本身在网关侧带硬过期(续期靠活着的进程驱动,进程死了就不再续),

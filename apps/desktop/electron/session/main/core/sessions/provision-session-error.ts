@@ -18,12 +18,6 @@ export function toTeardownError(e: unknown): TeardownSessionError {
   return { type: 'error', message: e instanceof Error ? e.message : String(e) };
 }
 
-export function isProvisionSessionError(e: unknown): e is ProvisionSessionError {
-  if (!e || typeof e !== 'object' || !('type' in e)) return false;
-  const type = (e as { type?: string }).type;
-  return type === 'timeout' || type === 'error';
-}
-
 export function formatTeardownSessionError(error: TeardownSessionError): string {
   return match(error)
     .with(P.union({ type: 'timeout' }, { type: 'error' }), (e) => e.message)

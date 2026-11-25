@@ -238,17 +238,6 @@ async function pruneIfDue(store: AgentWatchLocalStore): Promise<void> {
   }
 }
 
-/** 测试与收尾用：内存与库一起清。 */
-export async function clearTimelineCache(): Promise<void> {
-  forgetInMemoryTimelines()
-  lastPruneAt = 0
-  try {
-    await (await getAgentWatchStore()).clear()
-  } catch {
-    /* 清不掉不是错误。 */
-  }
-}
-
 /**
  * 只丢掉进程内那一层，库里那份留着 —— **冷启动就是这个形状**。账号换了(或登出)也走这里:内存里那几份是上一个人的。
  *

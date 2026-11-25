@@ -63,22 +63,3 @@ export type BrowserWebviewAdapter = {
   setZoomFactor(factor: number): void;
   focus(): void;
 };
-
-export function createBrowserWebviewAdapter(webview: BrowserWebviewElement): BrowserWebviewAdapter {
-  return {
-    canGoBack: () => webview.canGoBack(),
-    canGoForward: () => webview.canGoForward(),
-    currentUrl: () => webview.getURL(),
-    title: () => webview.getTitle(),
-    goBack: () => webview.goBack(),
-    goForward: () => webview.goForward(),
-    reload: () => webview.reload(),
-    reloadIgnoringCache: () => webview.reloadIgnoringCache(),
-    stop: () => webview.stop(),
-    loadUrl: async (url: string) => {
-      await webview.loadURL(url);
-    },
-    setZoomFactor: (factor: number) => webview.setZoomFactor(factor),
-    focus: () => webview.focus(),
-  };
-}

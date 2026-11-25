@@ -18,7 +18,7 @@ export const AGENT_STATUS_FEED_EVENT = 'agent-status-feed'
 export const AGENT_STATUS_FEED_SNAPSHOT = 'agent-status-feed:snapshot'
 
 /** 每个 agent 已经写进表的那一句的版本。它存在只为了认出乱序到达的旧话。 */
-let applied = new Map<string, number>()
+const applied = new Map<string, number>()
 let installed = false
 
 /** 宿主的版本。缺它 = 这一句没法与已知的比新旧 ⇒ 协议被破坏,响亮地停。 */
@@ -126,10 +126,4 @@ export function installAgentStatusFeedBridge(): void {
     )
   })
   void reconcile(api)
-}
-
-/** 测试用清场:把这个单例退回从未 install 过的状态。 */
-export function resetAgentStatusFeedBridgeForTest(): void {
-  applied = new Map()
-  installed = false
 }

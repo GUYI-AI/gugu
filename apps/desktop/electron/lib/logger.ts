@@ -580,14 +580,3 @@ export function writeRendererLog(payload: unknown, source: { rendererPid?: numbe
     }
   }
 }
-
-/** 单测用:丢掉当前根 logger(下次 initLogging 重建)。 */
-export function resetLoggingForTests(): void {
-  logBaseDir = null
-  logMaxBytes = undefined
-  sink?.closeFile()
-  root = null
-  sink = null
-  logFilePath = null
-  loggerByScope.clear()
-}

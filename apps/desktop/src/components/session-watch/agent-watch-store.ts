@@ -270,25 +270,6 @@ export function pendingSettlements(state: AgentWatchTimeline): Settlement[] {
 }
 
 /**
- * 钉在时间线末尾(最后一条消息之后、在流里跟着滚)的:**还等着人答、流里又没有它那一行的**。
- * (❌ 钉进贴底的输入框带:那一带没有高度上限,一张比视口高的提问卡会把整个视口盖住 —— 见 ThreadTailExtras。)
- *
- * 一个看不见的待审批 = 卡死的会话,所以它总得有个地方。流里有那一行的(问用户的那次工具调用)卡就画在那一行上,
- * 后面的消息排在它下面;没有那一行的才钉在这里:ACP 审批(按随机 requestId 记,对不上任何工具调用)、
- * 宿主替 agent 问的(D-31)、问出它的那一轮还没翻出来的。
- *
- * 有了结局就不钉。❌ 按「这次打开期间见过它在等」留一张回执钉在末尾:那份记忆只在内存里,刷新就空了 ——
- * 活着时卡压在每条新消息下面,刷新后卡又没了,只剩那条回答消息(owner 10-12 真机)。结局在流里那张卡上看。
- */
-export function pinnedSettlements(
-  settlements: Readonly<Record<string, Settlement>>,
-  /** 已经画在流里的那些卡(按 provider toolCallId)。 */
-  inlineIds: ReadonlySet<string>,
-): Settlement[] {
-  return Object.values(settlements).filter((settlement) => settlement.state === 'pending' && !inlineIds.has(settlement.itemId))
-}
-
-/**
  * 这条会话现在要不要打扰人。
  *   waiting = 有等着答的审批/提问(「在等你」)
  *   done    = 最后一轮已经结算、且没人在等(「做完了」)

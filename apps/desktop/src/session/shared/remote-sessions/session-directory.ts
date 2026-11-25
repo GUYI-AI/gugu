@@ -56,13 +56,6 @@ export function registerDeviceSessionsRetry(ownerId: string, deviceId: string, r
   return () => { if (retries.get(deviceId) === entry) retries.delete(deviceId) }
 }
 
-/** A stale page from another account or a stopped device cannot reconnect that device. */
-export async function retryDeviceSessions(ownerId: string, deviceId: string): Promise<void> {
-  const entry = directoryState().retries.get(deviceId)
-  if (!ownerId || !entry || entry.ownerId !== ownerId) throw new Error('The current account has no retryable connection for this device.')
-  await entry.run()
-}
-
 function publish(next: Readonly<Record<string, DeviceSessions>>): void {
   const state = directoryState()
   state.live = next

@@ -12,17 +12,3 @@
  * x=4 将原先偏右 1px 的控件组左移,不改按钮大小、间距或纵坐标。
  */
 export const TRAFFIC_LIGHT_POSITION = { x: 4, y: 14 } as const;
-
-/**
- * @@@822 无边框统一标题栏:mac 保留原生交通灯(`hiddenInset`),Windows/Linux 完全无边框、
- * 由 renderer 自绘 min/max/close。
- *
- * ⚠️ `titleBarStyle: 'hiddenInset'` **只在 mac 生效**;无条件设它 = Windows/Linux 回落原生边框,
- * 那正是 #822 的根因。❌ 别再在某个窗口上单独写一份 —— 新开窗口从这里取。
- */
-export function nativeWindowChrome(platform: NodeJS.Platform): Record<string, unknown> {
-  if (platform === 'darwin') {
-    return { titleBarStyle: 'hiddenInset', trafficLightPosition: TRAFFIC_LIGHT_POSITION };
-  }
-  return { frame: false };
-}

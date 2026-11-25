@@ -5,8 +5,6 @@
 import { createContext, useContext } from 'react';
 import { LOCAL_SETTINGS_HOST_KEY } from './app-settings-client';
 
-export type RemoteSettingsKey = 'project' | 'localProject';
-
 export type SettingsRemoteDevice = {
   deviceId: string;
   deviceLabel: string;

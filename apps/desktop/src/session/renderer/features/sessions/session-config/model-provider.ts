@@ -102,5 +102,3 @@ export function resolveModelProvider(modelId: string, displayName?: string): Mod
 export const MODEL_PROVIDERS: readonly ModelProvider[] = PROVIDER_RULES.map(
   ({ match: _match, ...provider }) => provider,
 );
-
-export const MODEL_PROVIDER_IDS: readonly string[] = MODEL_PROVIDERS.map((p) => p.id);

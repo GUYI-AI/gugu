@@ -42,17 +42,3 @@ export async function entryUploadItems(entry: DropEntry): Promise<UploadItem[]> 
   await collect(entry, [], items);
   return items;
 }
-
-/** 拖进来的东西(含文件夹,按层展开)。拖的不是文件(文字、页内拖动)= 空。 */
-export async function dropUploadItems(dataTransfer: Pick<DataTransfer, 'items' | 'files'>): Promise<UploadItem[]> {
-  const entries: DropEntry[] = [];
-  for (const item of Array.from(dataTransfer.items ?? [])) {
-    if (item.kind !== 'file') continue;
-    const entry = (item as DataTransferItem & { webkitGetAsEntry?: () => unknown }).webkitGetAsEntry?.() as DropEntry | null | undefined;
-    if (entry) entries.push(entry);
-  }
-  if (entries.length === 0) return Array.from(dataTransfer.files ?? []).map((file) => fileUploadItem(file));
-  const out: UploadItem[] = [];
-  for (const entry of entries) await collect(entry, [], out);
-  return out;
-}

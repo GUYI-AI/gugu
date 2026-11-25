@@ -24,16 +24,8 @@ export const terminalContextMenuActionChannel = defineEvent<{
 
 // Menu events (main → renderer, no payload)
 export const menuOpenSettingsChannel = defineEvent<void>('menu:open-settings');
-export const menuUndoChannel = defineEvent<void>('menu:undo');
-export const menuRedoChannel = defineEvent<void>('menu:redo');
-export const menuCloseTabChannel = defineEvent<void>('menu:close-tab');
 export const menuQuitRequestedChannel = defineEvent<void>('menu:quit-requested');
 export const menuGiveFeedbackChannel = defineEvent<void>('menu:give-feedback');
-
-/** Emitted by main process when the window maximize state changes (Linux custom controls). */
-export const windowMaximizeChangedChannel = defineEvent<{ maximized: boolean }>(
-  'window:maximize-changed'
-);
 
 export const externalLinkOpenRequestedChannel = defineEvent<{ url: string }>(
   'external-link:open-requested'
@@ -216,21 +208,6 @@ export const ptyExitChannel = defineEvent<{
   exitCode: number;
   signal?: number;
 }>('pty:exit');
-
-/** Emitted by main process when a PTY is definitively killed (e.g. on deleteTask/deleteConversation). */
-export const ptyKilledChannel = defineEvent<{ id: string }>('pty:killed');
-
-/** Emitted by main process when a lifecycle/dev-server shell session is created.
- *  These sessions are standalone PTYs — they are NOT backed by a DB conversation record.
- *  The renderer uses sessionId (not conversationId) to connect to the PTY terminal.
- */
-export const shellSessionStartedChannel = defineEvent<{
-  sessionId: string;
-  /** Opaque UUID identifying this PTY session — not a DB conversationId. */
-  ptySessionId: string;
-  ptyId: string;
-  title: string;
-}>('shell:session-started');
 
 /** Emitted when an agent installation status changes (probe, install, update, or selection change). */
 export const agentInstallationStatusUpdatedChannel = defineEvent<AgentInstallationStatus>(

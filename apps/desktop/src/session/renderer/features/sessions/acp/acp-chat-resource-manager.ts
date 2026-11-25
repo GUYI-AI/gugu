@@ -227,10 +227,3 @@ export function getAcpChatResourceManager(
   _registry.set(sessionId, manager);
   return manager;
 }
-
-export function releaseAcpChatResourceManager(sessionId: string): void {
-  const manager = _registry.get(sessionId);
-  if (!manager) return;
-  manager.dispose();
-  _registry.delete(sessionId);
-}

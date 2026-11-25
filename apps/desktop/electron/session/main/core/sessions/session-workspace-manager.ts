@@ -9,7 +9,6 @@ import { HookCore, type Hookable } from '@main/lib/hookable';
 import { log } from '@main/lib/logger';
 import { makePtySessionId } from '@shared/core/pty/ptySessionId';
 import type { SessionBootstrapStatus } from '@shared/core/sessions/create-session';
-import type { WorkspaceType as SharedWorkspaceType } from '@shared/core/workspaces/workspaces';
 import type {
   ProvisionResult,
   SessionMount,
@@ -23,12 +22,6 @@ import {
   type ProvisionSessionError,
   type TeardownSessionError,
 } from './provision-session-error';
-
-export type WorkspaceHint = {
-  id: string;
-  type: SharedWorkspaceType;
-  path?: string;
-};
 
 type StoredSession = ProvisionResult & { projectId: string; ctx: IExecutionContext };
 

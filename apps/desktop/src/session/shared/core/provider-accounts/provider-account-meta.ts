@@ -91,12 +91,5 @@ export const REJECTED_KEY_SOURCE = 'platform-rejected-key';
  */
 export const providerAccountMeta = defineVersionedSchema().initial('1', v1Schema).build();
 
-// ---------------------------------------------------------------------------
-// Exports
-// ---------------------------------------------------------------------------
-
-/** The Zod schema for the latest provider account meta shape. */
-export const providerAccountMetaSchema = providerAccountMeta.schema;
-
 /** The TypeScript type for provider account metadata. */
 export type ProviderAccountMeta = typeof providerAccountMeta.Type;

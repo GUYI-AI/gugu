@@ -53,13 +53,6 @@ export function assistantAppClient(machine: AssistantAppMachine | null | undefin
   return { ...api, deliver: (event: ExtensionHostEvent) => hub.deliver(event) };
 }
 
-export async function assistantAppProgram<T>(machine: AssistantAppMachine | null | undefined, name: string, args?: Record<string, unknown>, expectedOwnerId = machine?.panel?.ownerId ?? assistantPanelAccountId() ?? cachedDevicesAccount()): Promise<T> {
-  const result = await assistantAppClient(machine, expectedOwnerId).callProgram(name, args);
-  if (result.isError) throw new Error(result.content.filter(block => block.type === 'text').map(block => block.text).join('\n'), { cause: result });
-  if (!result.structuredContent || !('result' in result.structuredContent)) throw new Error('Assistant App program did not return a result');
-  return result.structuredContent.result as T;
-}
-
 export async function publishAssistantAppChange(
   machine: AssistantAppMachine | null | undefined,
   change: Omit<AssistantAppChange, 'operationId'> & { operationId?: string },

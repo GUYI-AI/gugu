@@ -313,11 +313,6 @@ export type ArchiveOutcome = { archived: ArchivedSessionRef[]; unreached: Unreac
  */
 export const SESSION_PARENT_CYCLE = 'that makes a cycle';
 
-export type RenameSessionParams = {
-  sessionId: string;
-  newTitle: string;
-};
-
 /**
  * ❌ 这里**不再有** CreateConversationParams。
  * 「往已有任务里再放一个 agent」的载荷类型跟着它的函数一起留在主进程内部

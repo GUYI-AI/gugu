@@ -58,11 +58,6 @@ function singleEarlierInput(messages: readonly Line[], before: number): boolean 
   return inputs === 1
 }
 
-export function awaitingReplySince(messages: readonly Line[]): number | null {
-  const message = awaitingReplyMessage(messages)
-  return message ? Date.parse(message.created_at) : null
-}
-
 export function agentReplyPending(input: {
   /** 那张 agent 状态表里它的展示态。 */
   status: AgentDisplayStatus

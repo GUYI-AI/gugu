@@ -43,13 +43,6 @@ export const workspaceConfig = defineVersionedSchema()
   .version('2', v2Schema, () => null)
   .build();
 
-// ---------------------------------------------------------------------------
-// Exports
-// ---------------------------------------------------------------------------
-
-/** The Zod schema for the latest (v2) workspace config. */
-export const workspaceConfigSchema = workspaceConfig.schema;
-
 /** The TypeScript type for the latest (v2) workspace config. */
 export type WorkspaceConfig = typeof workspaceConfig.Type;
 

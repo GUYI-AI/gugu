@@ -787,35 +787,6 @@ export function buildTeamBlueprint(input: {
   }
 }
 
-/**
- * 团队意图的**精确语义指纹** —— 用来回答「重进的这次预览，与某条已存 durable 记录是不是同一个团队意图」。
- *
- * ❌ 生成 id 不是身份:operation id / provision_id / member_key(=预览侧 tempId) / group_chat_id 每次都新铸,
- * 拿它们比必然认不出;服务端派生的 memory_content_hash 也不属于客户端意图。
- * ✅ 精确比:team_name / group_prompt / concurrency_limit,以及每个成员的**完整语义元组**
- * (display_name / agent_type / special_focus / inherit_memory / history_import_required / memory_sources /
- * listen_mode / project_path / avatar)。成员按**顺序无关**比较(序列化后排序 = 多重集合)。
- *
- * 任何语义分歧都必须走首建:接回旧 operation 等于拿旧意图冒充新意图 —— 用户换了引擎/改了 persona/改了章程/
- * 加减了成员却被静默套用旧配置,是本节点「冲突 payload 一律 fail loud」纪律直接禁止的。
- */
-export function teamBlueprintIntentFingerprint(bp: TeamAgentProvisionBlueprint): string {
-  const members = bp.members
-    .map((m) => JSON.stringify([
-      m.display_name,
-      m.agent_type,
-      m.special_focus ?? null,
-      m.inherit_memory,
-      m.history_import_required,
-      m.memory_sources ? [...m.memory_sources].sort() : null,
-      m.listen_mode ?? null,
-      m.project_path ?? null,
-      m.avatar ?? null,
-    ]))
-    .sort()
-  return JSON.stringify([bp.team_name, bp.group_prompt, bp.concurrency_limit, members])
-}
-
 export function newProvisionId(): string {
   return crypto.randomUUID()
 }

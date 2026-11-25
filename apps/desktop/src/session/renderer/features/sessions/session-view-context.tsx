@@ -6,8 +6,6 @@ import {
   getSessionPageStore,
   getTerminalsForSession,
   getWorkspaceForSession,
-  sessionViewKind,
-  type SessionViewKind,
 } from '@renderer/features/sessions/stores/session-selectors';
 import type { WorkspaceStore } from '@renderer/features/sessions/stores/workspace';
 import type { WorkspaceViewModel } from '@renderer/features/sessions/stores/workspace-view-model';
@@ -72,11 +70,6 @@ export function useSessionViewContext(): SessionViewContext {
     throw new Error('useSessionViewContext must be used within a SessionViewContextProvider');
   }
   return context;
-}
-
-export function useSessionViewKind(): SessionViewKind {
-  const { projectId, sessionId } = useSessionViewContext();
-  return sessionViewKind(getSessionPageStore(projectId, sessionId), projectId);
 }
 
 /** Returns the active workspace (path + git). Throws if the task is not provisioned. */

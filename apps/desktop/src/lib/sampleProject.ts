@@ -33,11 +33,6 @@ export async function readSampleProject(userId: string): Promise<SampleProjectSt
   return parseSampleProject(await readOwnSettings(userId, 'user'))
 }
 
-export async function readSampleProjectShown(userId: string): Promise<boolean> {
-  const state = await readSampleProject(userId)
-  return state !== null && !state.dismissed
-}
-
 /** The main window is already mounted under the intro, so whoever shows the sample re-reads on change. */
 export function subscribeSampleProject(listener: (userId: string) => void): () => void {
   listeners.add(listener)

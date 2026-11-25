@@ -141,11 +141,6 @@ export function planModelSwitch(input: ModelSwitchInputs): ModelSwitchPlan {
   return { kind: 'reload', modelId, displayName, source: 'harness' };
 }
 
-/** 这条会话此刻**当场换得成**的那些(用于给下拉分档)。清单就是真值,不另算。 */
-export function hotSwitchableIds(advertised: readonly string[]): ReadonlySet<string> {
-  return new Set(advertised);
-}
-
 // ⚠️ 这里**不**碰 option id 的拼法与解法 —— 编解码只有装配那一处
 // (`use-composer-model-options.ts` 的 `composerModelSelection` / `composerSelectedOptionId`),
 // 抄第二份的那天两份就会漂,而漂的症状是「选中的那一条与实际下发的不是同一个模型」。

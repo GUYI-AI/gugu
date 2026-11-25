@@ -1,4 +1,4 @@
-import type { DiffMode, GitChange, GitObjectRef, GitRemote } from '@gugu/session-core/git';
+import type { DiffMode, GitObjectRef, GitRemote } from '@gugu/session-core/git';
 
 export interface ImageBlob {
   dataUrl: string;
@@ -18,22 +18,6 @@ export type ImageReadResult =
   | { kind: 'image'; image: ImageBlob }
   | { kind: 'missing' }
   | { kind: 'unavailable'; reason: ImageUnavailableReason };
-
-export interface FullGitStatus {
-  staged: GitChange[];
-  unstaged: GitChange[];
-  currentBranch: string | null;
-  headKind: 'branch' | 'detached' | 'unborn';
-  shortHash: string | null;
-  totalAdded: number;
-  totalDeleted: number;
-}
-
-export interface GitInfo {
-  isGitRepo: boolean;
-  baseRef: string;
-  rootPath: string;
-}
 
 export const DEFAULT_REMOTE_NAME = 'origin';
 

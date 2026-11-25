@@ -39,13 +39,6 @@ export const SESSION_HISTORY_STATUSES: readonly SessionHistoryStatus[] = [
  */
 export type SessionHistorySort = 'updated' | 'lastPrompt' | 'title' | 'added';
 
-export const SESSION_HISTORY_SORTS: readonly SessionHistorySort[] = [
-  'updated',
-  'lastPrompt',
-  'title',
-  'added',
-];
-
 export type SessionHistoryParams = {
   source?: SessionHistorySource;
   status?: SessionHistoryStatus;

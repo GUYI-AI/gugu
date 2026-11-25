@@ -52,7 +52,6 @@ const subscribeTo = (event: string) => (listener: () => void) => {
 const subscribeTopicsAll = subscribeTo(TOPICS_ALL_EVENT)
 const subscribeTopicsView = subscribeTo(TOPICS_VIEW_EVENT)
 const subscribeColumn = subscribeTo(COLUMN_EVENT)
-const subscribeAgentRows = subscribeTo(AGENT_ROWS_EVENT)
 
 /** 这个对话的话题在内层侧栏里全部摊开(「全部 ›」:搜索框 + 全部话题,原地展开);null = 收回第一级。没变不通知。 */
 export function setInnerSidebarTopicsAll(chatId: string | null): void {
@@ -133,9 +132,4 @@ export function usePublishOneListAgentRows(rows: OneListAgentRows | null): void 
   }, [key])
   const on = rows !== null
   useEffect(() => (on ? () => publishOneListAgentRows(null) : undefined), [on])
-}
-
-/** 会话页:一个列表画成自己一行的我的智能体;一个列表还没说过 = null。 */
-export function useOneListAgentRows(): OneListAgentRows | null {
-  return useSyncExternalStore(subscribeAgentRows, () => read<OneListAgentRows>(AGENT_ROWS_KEY), () => null)
 }

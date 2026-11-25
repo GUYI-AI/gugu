@@ -207,15 +207,6 @@ function FieldError({
   );
 }
 
-export function FieldSetHeader({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <FieldLabel className="text-lg text-foreground">{title}</FieldLabel>
-      <FieldDescription className="text-sm text-foreground-muted">{description}</FieldDescription>
-    </div>
-  );
-}
-
 export {
   Field,
   FieldLabel,

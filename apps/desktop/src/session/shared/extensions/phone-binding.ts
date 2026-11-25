@@ -48,15 +48,3 @@ export const PHONE_ASSISTANT_SCREENS = {
   projects: { section: 'profile', page: 'library:workspace' },
 } as const satisfies Record<AssistantScreen, { section: PhoneSurfaceSection; page: string } | { confirm: 'close' } | { connectors: true } | null>;
 export type PhoneAssistantScreen = Exclude<(typeof PHONE_ASSISTANT_SCREENS)[AssistantScreen], null>;
-
-/** Which calls have no phone meaning, said once: the authoring guide and the phone host read this. */
-export const PHONE_UNSUPPORTED = {
-  /** `bindings.setPanel(name, { collapsed })`: no panel beside the conversation; `{ section }` moves the layer instead. */
-  setPanelCollapsed: true,
-  /** `assistant.open(name, "move")`: a phone is never the assistant's home. */
-  openMove: true,
-  /** `assistant.advanceSetup`: the steps after the home (connect → ready) are drawn on a computer. */
-  advanceSetup: true,
-  /** `contributes.unreadSource`: the phone has no App rail; the conversation's own row in 消息 carries its unread. */
-  unreadSource: true,
-} as const;

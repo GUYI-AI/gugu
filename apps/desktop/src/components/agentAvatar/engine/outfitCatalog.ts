@@ -513,10 +513,6 @@ export function putOn(worn: readonly WearItem[], id: string, cw = 0): { wear: We
   return { wear: [...kept, { id, cw }], removed }
 }
 
-export function takeOff(worn: readonly WearItem[], id: string): WearItem[] {
-  return worn.filter((w) => w.id !== id)
-}
-
 export function recolor(worn: readonly WearItem[], id: string, cw: number): WearItem[] {
   return worn.map((w) => (w.id === id ? { id, cw } : w))
 }

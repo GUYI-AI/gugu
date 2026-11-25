@@ -2331,10 +2331,6 @@ export class CodexAppServerSession {
   }
 }
 
-export function trackedCodexAppServerRunCount(): number {
-  return trackedCodexAppServerSessions.size
-}
-
 export function resumeAllCodexAppServerTurnWaiters(): void {
   for (const session of trackedCodexAppServerSessions) session.resumeAfterHostWake()
 }

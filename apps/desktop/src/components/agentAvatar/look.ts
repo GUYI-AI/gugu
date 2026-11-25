@@ -99,11 +99,6 @@ export function parseAgentLook(avatar: string | null | undefined): AgentLook | n
   return wear === null ? { color, rest } : { color, rest, wear: parseWear(wear) }
 }
 
-/** 这个头像地址是不是一张「形象」(而不是照片)。 */
-export function isLookAvatar(avatar: string | null | undefined): boolean {
-  return parseAgentLook(avatar) !== null
-}
-
 /** 小鸟该长什么样:存了形象就是形象,否则按 id 推。(传了照片的 agent 头像位画照片,不走这里。) */
 export function resolveAgentLook(id: string | null | undefined, avatar: string | null | undefined): AgentLook {
   return parseAgentLook(avatar) ?? agentIdentity(id)

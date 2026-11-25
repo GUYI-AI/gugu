@@ -38,7 +38,6 @@ export function assistantLayerPage(request: AssistantPageRequest, found: boolean
 
 /** Whether a host page can be drawn for the assistant as it is: the setup guide only while there is none, the rest only once there is one. */
 export const assistantLayerPageShown = (page: AppHostLayerPage, found: boolean): boolean => (page === 'assistant-setup') !== found;
-export type AppHostLayerKind = (typeof APP_HOST_LAYER_KINDS)[number];
 
 /** A layer open over an App's panel as main keeps it: which page, the account it was opened for, and a task's ids (`work`). */
 export type AppHostLayer = { kind: 'work'; ownerId: string; workId: string; sessionId: string } | { kind: AppHostLayerPage; ownerId: string };

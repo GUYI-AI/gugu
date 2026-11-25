@@ -44,8 +44,3 @@ export type SidebarRowVariant = keyof typeof SIDEBAR_ROW_BASE_INSET_PX;
 export function sidebarRowInsetPx(variant: SidebarRowVariant, depth = 0): number {
   return SIDEBAR_ROW_BASE_INSET_PX[variant] + depth * SIDEBAR_ROW_DEPTH_STEP_PX;
 }
-
-/** 行内容(身份图标 / 标题)的左缘 —— 组头要对齐的是这一列,不是行的左内距。 */
-export function sidebarRowContentInsetPx(variant: SidebarRowVariant, depth = 0): number {
-  return sidebarRowInsetPx(variant, depth) + SIDEBAR_TWISTY_LANE_PX;
-}

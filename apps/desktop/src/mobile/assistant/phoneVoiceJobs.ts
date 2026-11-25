@@ -414,5 +414,3 @@ export function createPhoneVoiceJobs(ports: VoiceJobPorts) {
     restore,
   }
 }
-
-export type PhoneVoiceJobs = ReturnType<typeof createPhoneVoiceJobs>

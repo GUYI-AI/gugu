@@ -19,7 +19,3 @@ export function attachmentChangeCount(messageId: string | undefined): number {
 export function useAttachmentChange(messageId: string | undefined): number {
   return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener) } }, () => attachmentChangeCount(messageId))
 }
-
-export function forgetAttachmentChanges(): void {
-  changes.clear()
-}

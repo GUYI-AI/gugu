@@ -14,25 +14,3 @@ export function registerCodeEditorHistory(editor: CodeEditorHistory, subscribe: 
     if (activeEditor === editor) activeEditor = null;
   };
 }
-
-export function performActiveEditorUndo(): boolean {
-  const editor = activeEditor;
-  if (!editor?.hasFocus()) return false;
-  try {
-    editor.undo();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function performActiveEditorRedo(): boolean {
-  const editor = activeEditor;
-  if (!editor?.hasFocus()) return false;
-  try {
-    editor.redo();
-    return true;
-  } catch {
-    return false;
-  }
-}

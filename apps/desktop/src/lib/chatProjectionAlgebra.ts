@@ -171,20 +171,6 @@ export function joinCell(current: Cell | undefined, incoming: Cell): Cell {
   return compareStamp(incoming.stamp, current.stamp) > 0 ? incoming : current
 }
 
-/** 把一批取数结果 join 进缓存。与到达顺序无关(spec I3)。 */
-export function mergeCells(
-  cache: ProjectionCache,
-  incoming: Iterable<readonly [EntityKey, Cell]>,
-): ProjectionCache {
-  const next = new Map(cache)
-  for (const [key, cell] of incoming) {
-    splitKey(key)
-    assertRevision(cell.stamp, `cell stamp for ${key}`)
-    next.set(key, joinCell(next.get(key), cell))
-  }
-  return next
-}
-
 /** 该键是否已新鲜到足以覆盖 revision r —— 已新鲜就**一发都不打**(spec I3 的「重放免费」)。 */
 export function isFresh(cache: ProjectionCache, key: EntityKey, revision: string): boolean {
   const cell = cache.get(key)

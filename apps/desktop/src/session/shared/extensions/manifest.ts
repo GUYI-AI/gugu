@@ -214,7 +214,6 @@ export const opensFilesSchema = z
   .refine((claims) => claims.session !== undefined || claims.chat !== undefined, {
     message: 'declare the files of at least one context: "session" or "chat"',
   });
-export type ExtensionOpensFiles = z.infer<typeof opensFilesSchema>;
 
 const tabContributionSchema = z.strictObject({
   /** Stable machine name; combined with the extension id into the tab kind. */

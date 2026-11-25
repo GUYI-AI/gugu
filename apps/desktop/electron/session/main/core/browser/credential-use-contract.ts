@@ -76,11 +76,6 @@ export interface CredentialUseAuthority {
   cleanup(useId: string): Promise<CredentialUseCleanup>;
 }
 
-export type CredentialAuditWrite =
-  | Readonly<{ status: 'recorded'; recordId: string }>
-  | Readonly<{ status: 'unavailable' }>
-  | Readonly<{ status: 'uncertain' }>;
-
 /** `filled`: the values went into the page's inputs and nothing was submitted (the Agent goes on by itself). */
 export type CredentialLoginOutcome = 'submitted_unconfirmed' | 'login_confirmed' | 'person_interaction_required' | 'failed' | 'uncertain' | 'filled';
 export type CredentialHandoffState = 'isolated_login_active' | 'person_interaction_required' | 'handed_back' | 'isolated_login_retained';

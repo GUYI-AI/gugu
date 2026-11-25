@@ -72,7 +72,6 @@ const hookEvents = z.array(z.enum(HOOK_EVENTS));
  * ❌ 不许为了装 hook 去写用户 HOME 下的任何配置。
  */
 const HOOK_SESSION_CHANNELS = ['session-env', 'session-argv'] as const satisfies readonly HarnessSessionChannelKind[];
-export type HookSessionChannel = (typeof HOOK_SESSION_CHANNELS)[number];
 
 /**
  * hooksDescriptor is used to describe the hooks that an agent supports.

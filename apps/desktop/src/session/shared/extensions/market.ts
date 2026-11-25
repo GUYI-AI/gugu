@@ -134,7 +134,6 @@ const marketPath = z.string().regex(/^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._/-]*$/);
 
 /** A version's signed release on the download site (`market/releases/<id>/<version>-<sha>/`), as the index names it. */
 const marketReleaseRefSchema = z.object({ keyId: z.string(), manifest: marketPath, signature: marketPath });
-export type MarketReleaseRef = z.infer<typeof marketReleaseRefSchema>;
 
 /**
  * 下载站上的 `market/index.json`:市场的全部内容,一个文件(App 市场 10-08,owner:市场不放数据库)。

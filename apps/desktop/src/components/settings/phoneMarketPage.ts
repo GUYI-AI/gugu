@@ -44,10 +44,6 @@ export function phoneMarketRows(entries: Awaited<ReturnType<typeof phoneApps.mar
   )
 }
 
-export function phoneSearchRows(items: readonly MarketListItem[], query: string): MarketListItem[] {
-  return phoneMarketRows(items.map(({ manifest, cloud }) => ({ manifest, ...cloud }) as CloudMarketEntry), query)
-}
-
 function marketItem({ manifest, ...cloud }: CloudMarketEntry): MarketListItem {
   return { manifest, cloud, ref: { extensionId: manifest.id, version: cloud.version } }
 }

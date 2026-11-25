@@ -5,9 +5,7 @@
 import { ownerProfileMarkdown, type OwnerProfileInput } from '@gugu/core/shared/assistantPolicy'
 import type { AssistantProductRules } from '@gugu/core/shared/assistantRulesFormat'
 import type { CreateAgentOnDeviceResult } from '@gugu/core/shared/types/chat'
-import { REST_FACES } from '../components/agentAvatar/engine/identity'
 import type { AgentLook } from '../components/agentAvatar/look'
-import type { ExpressionId } from '../components/agentAvatar/engine/spec'
 import { desktopIpc } from '../platform/desktopIpc'
 import { getLocaleSnapshot } from '../i18n/runtime'
 import {
@@ -37,17 +35,10 @@ export const ASSISTANT_NAME_MAX = 30
 export const OWNER_NAME_MAX = 80
 export const OWNER_ABOUT_MAX = 1000
 
-/** 「随便取一个」的候选名。 */
-export const ASSISTANT_NAME_IDEAS: readonly string[] = ['松果', '栗子', '糯米', '团子', 'Milo', 'Mochi', 'Kiwi', 'Coco']
-
 /** 引导里攒下的那一份:它叫什么、长什么颜色、主人怎么称呼和几句介绍。 */
 export type AssistantSetupDraft = AgentLook & {
   name: string
   owner: OwnerProfileInput
-}
-
-export function randomRestFace(rng: () => number = Math.random): ExpressionId {
-  return REST_FACES[Math.min(REST_FACES.length - 1, Math.floor(rng() * REST_FACES.length))]
 }
 
 /** 头像字段那个形象地址(本套环境存储里那个颜色的定格图 + 休息表情)。 */

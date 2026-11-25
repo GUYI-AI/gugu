@@ -30,8 +30,6 @@ export const defaultBranchSettingSchema = z.union([
   z.object({ name: z.string(), remote: z.literal(true) }),
 ]);
 
-export type DefaultBranchSetting = z.infer<typeof defaultBranchSettingSchema>;
-
 const preservePatternsSchema = z
   .array(z.string())
   .transform((patterns) => patterns.filter((pattern) => pattern !== PROJECT_CONFIG_FILE));

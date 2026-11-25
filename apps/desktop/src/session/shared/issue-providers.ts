@@ -21,8 +21,6 @@ export type ConnectionStatus = {
   capabilities: IssueProviderCapabilities;
 };
 
-export type ConnectionStatusMap = Record<IssueProviderType, ConnectionStatus>;
-
 export type IssueAccountError =
   | { type: 'no_account_selected'; message: string }
   | { type: 'account_disabled'; message: string }

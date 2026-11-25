@@ -53,9 +53,6 @@ export class DeviceScopeStore {
     return isKnown(this.selected) ? this.selected : LOCAL_DEVICE_SCOPE;
   }
 }
-
-/** 资源库(提示词、智能体、集成、扩展一起跟着它)。 */
-export const libraryDeviceStore = new DeviceScopeStore('gugu.library.device');
 /** 设置(通用 → 默认 tmux、仓库):左栏列头下一个选择,整个设置一起跟;界面、浏览器两页跟着这个窗口。 */
 export const settingsDeviceStore = new DeviceScopeStore('gugu.settings.device');
 

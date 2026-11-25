@@ -1,6 +1,5 @@
 import {
   SHAREABLE_PROJECT_SETTINGS_WRITE_FIELDS,
-  type ProjectSettings,
   type ShareableProjectSettings,
   type ShareableProjectSettingsWriteField,
 } from './project-settings';
@@ -97,23 +96,6 @@ export const SHAREABLE_FIELD_ACCESSORS = {
     displayValue: (settings) => displayText(settings.scripts?.teardown),
   },
 } satisfies Record<ShareableProjectSettingsWriteField, ShareableFieldAccessor>;
-
-export function clearShareableProjectSettingsFields<T extends ProjectSettings>(
-  settings: T,
-  fields: ShareableProjectSettingsWriteField[]
-): T {
-  const next: ProjectSettings = {
-    ...settings,
-    preservePatterns: settings.preservePatterns ? [...settings.preservePatterns] : undefined,
-    scripts: settings.scripts ? { ...settings.scripts } : undefined,
-  };
-
-  for (const field of fields) {
-    SHAREABLE_FIELD_ACCESSORS[field].clear(next);
-  }
-
-  return next as T;
-}
 
 export function mergeShareableProjectSettings(
   ...sources: ShareableProjectSettings[]

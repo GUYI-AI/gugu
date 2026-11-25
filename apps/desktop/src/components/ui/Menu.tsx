@@ -19,7 +19,6 @@ import { popupMotion } from './variants'
 import { useBackLayer } from './sheetStack'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { useUiPortalContainer, useUiPopupZIndex, OpenLayer } from '@gugu/session-ui/react/primitives'
-import { Switch } from './Switch'
 import { useProbedRef } from '@/lib/overlayOcclusion'
 
 // @@@menu-variants - 菜单样式的唯一真相。`gg-menu*` 类名保留但不再承载样式:
@@ -246,24 +245,6 @@ export function MenuItem({ icon, danger, disabled, title, className, style, 'dat
       {submenu && <ChevronRight size={14} aria-hidden className="shrink-0 text-[var(--menu-icon)]" />}
     </MenuPrimitive.Item>
   )
-}
-
-/** Checkbox menu semantics own input; the inert Switch reuses the existing visual only. */
-export function MenuSwitchItem({ icon, label, checked, onCheckedChange, disabled, 'data-testid': testId }: {
-  /** The 20px icon slot, so the label starts where the icon rows' labels do. */
-  icon?: ReactNode
-  label: string
-  checked: boolean
-  onCheckedChange: (checked: boolean) => void
-  disabled?: boolean
-  'data-testid'?: string
-}) {
-  return <MenuPrimitive.CheckboxItem checked={checked} onCheckedChange={onCheckedChange} disabled={disabled} closeOnClick={false}
-    className={cn('group/menu-item', menuItem)} style={{ padding: menuRowPadding }} data-testid={testId}>
-    {icon != null && <span className={menuItemIcon}>{icon}</span>}
-    <span className={menuItemLabel}>{label}</span>
-    <Switch checked={checked} onCheckedChange={() => undefined} disabled={disabled} aria-hidden inert tabIndex={-1} className="pointer-events-none" />
-  </MenuPrimitive.CheckboxItem>
 }
 
 const submenuRowStyle: CSSProperties = { padding: menuRowPadding }

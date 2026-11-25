@@ -33,11 +33,6 @@ export function deviceDaysOffline(device: Device, now = Date.now()): number | nu
   return Math.floor(elapsed / (24 * 60 * 60 * 1000))
 }
 
-/** selector 门控：仅在线设备可选（离线可见但置灰不可选，见设计决策 Q5）；#7199 休眠中的云电脑照常可选，选了先叫醒。 */
-export function isDeviceSelectable(device: Device): boolean {
-  return deviceAcceptsWork(device)
-}
-
 /**
  * #7199 助理 App「能力 · 设备」的顺序:本机 → 接活的 → 离线,组内按名字。它住的那台云端宿主不在这一页
  * (owner 10-15「云电脑对用户完全不可见」,调用方先滤掉)。只给这一页用 —— 「在哪跑」等机器选择照旧 sortDevices(本机在前)。

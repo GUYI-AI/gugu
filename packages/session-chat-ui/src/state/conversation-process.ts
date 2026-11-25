@@ -1,15 +1,6 @@
 import { isGuguSilence } from '@gugu/core/local/agent/silenceMarker';
 import { parseHookNotice, processHookNotice } from '@session-chat/lib/hook-notice';
 import type { ChatItem, ChatMessage } from '@session-chat/model';
-import type { TurnProcessHeader } from './turn-fold';
-
-/** Bind a process segment to its reply; notices retain their own status row. */
-export function conversationProcessReply(header: TurnProcessHeader | null, tail: readonly ChatItem[]): ChatMessage | null {
-  const reply = tail[0];
-  if (!header || reply?.kind !== 'message' || reply.role !== 'assistant'
-    || !reply.text.trim() || isGuguSilence(reply.text) || parseHookNotice(reply.text)) return null;
-  return { ...reply, conversationProcess: { id: header.id, ...(header.live ? { live: true } : {}), startedAt: header.startedAt, endedAt: header.endedAt } };
-}
 
 /** An assistant text the agent said itself (not a message_send projection, a delivery, silence or a hook notice). */
 function isSpoken(item: ChatItem): item is ChatMessage {

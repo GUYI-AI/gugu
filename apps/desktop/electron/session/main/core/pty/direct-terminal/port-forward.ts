@@ -476,5 +476,3 @@ export function createPortForwards(deps: PortForwardDeps) {
     },
   };
 }
-
-export type PortForwards = ReturnType<typeof createPortForwards>;

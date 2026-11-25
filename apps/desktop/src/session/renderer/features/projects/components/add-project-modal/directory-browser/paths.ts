@@ -6,10 +6,6 @@ export function normalizePath(path: string | undefined) {
   return absolutePath === '/' ? absolutePath : absolutePath.replace(/\/+$/, '');
 }
 
-export function initialBrowsePath(path: string) {
-  return path.trim().length > 0 ? normalizePath(path) : '/';
-}
-
 export function parentPath(path: string) {
   if (path === '/') return '/';
   return path.split('/').slice(0, -1).join('/') || '/';

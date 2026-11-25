@@ -42,4 +42,3 @@ export function useChatConversation(chatId: string | null, access: ChatConversat
     loadingOlder: messageWindow.loading === 'older', loadingMessages: state.loading,
     messagesError: access.errorOf(chatId), activeThreadRootId, threadMessages, loadingThread, threadScope }
 }
-export type ChatConversation = ReturnType<typeof useChatConversation>

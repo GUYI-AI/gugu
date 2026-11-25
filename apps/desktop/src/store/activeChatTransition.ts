@@ -4,11 +4,6 @@ export type ActiveChatWillChangeListener = (previousChatId: string, nextChatId: 
 
 const activeChatWillChangeListeners = new Set<ActiveChatWillChangeListener>()
 
-export function subscribeActiveChatWillChange(listener: ActiveChatWillChangeListener): () => void {
-  activeChatWillChangeListeners.add(listener)
-  return () => activeChatWillChangeListeners.delete(listener)
-}
-
 export function publishActiveChatWillChange(previousChatId: string, nextChatId: string | null): void {
   activeChatWillChangeListeners.forEach((listener) => listener(previousChatId, nextChatId))
 }

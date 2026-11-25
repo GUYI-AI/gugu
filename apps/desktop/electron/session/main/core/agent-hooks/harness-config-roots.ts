@@ -58,10 +58,3 @@ export function harnessConfigRootOf(sessionId: string): string | undefined {
 export function knownHarnessConfigRoots(providerId: string | null | undefined): string[] {
   return providerId ? [...(byProvider.get(providerId) ?? [])] : [];
 }
-
-/** TEST-ONLY */
-export function resetHarnessConfigRootsForTests(): void {
-  bySession.clear();
-  byProvider.clear();
-  loaded = null;
-}

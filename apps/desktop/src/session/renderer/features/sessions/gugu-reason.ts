@@ -1,6 +1,6 @@
 import { translateSessionMessage } from '@renderer/localization/locale-store';
 // All user-facing failures share the reason catalog and redacted first-line exit below.
-import { guguReasonInText, guguReasonOf, type GuguCatalogReason } from '@gugu/session-core/session-record/contract';
+import { guguReasonInText, type GuguCatalogReason } from '@gugu/session-core/session-record/contract';
 import type { SessionMessageKey } from '@renderer/localization/messages';
 import { assistantFileFailure, type AssistantFileOperation } from '@gugu/core/shared/assistantFileError';
 import { billingLinksAvailable } from '@/lib/appLinks';
@@ -67,11 +67,6 @@ export function guguReasonText(kind: GuguCatalogReason, translate: Translate, mo
   return entry.named && modelName
     ? translate(entry.named, { model: translate('composer.platformModelShortName', { model: modelName }) })
     : translate(entry.copy);
-}
-
-/** 「回合失败」那一行带的原因(`outcome.guguReason`)→ 那一句。 */
-export function refusalText(guguReason: string, translate: Translate, modelName?: string | null): string {
-  return guguReasonText(guguReasonOf(guguReason), translate, modelName);
 }
 
 /** 各个界面手上真接得上的动作;没给的就不摆那颗按钮(控件要么真生效,要么不渲染)。 */

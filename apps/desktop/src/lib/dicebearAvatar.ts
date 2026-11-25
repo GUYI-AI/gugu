@@ -37,9 +37,6 @@ function dicebearAvatar(seed: string, theme: AvatarTheme): { uri: string; mainCo
 
 export function dicebearAvatarDataUri(seed: string, theme: AvatarTheme = readAvatarTheme()): string { return dicebearAvatar(seed, theme).uri }
 
-/** The background selected by the same DiceBear generation used for the visible default avatar. */
-export function dicebearAvatarMainColor(seed: string, theme: AvatarTheme = readAvatarTheme()): string { return dicebearAvatar(seed, theme).mainColor }
-
 // @@@2470 头像投影的单一口径，供不走 React `Avatar` 的消费者用（分享海报 canvas 等）。
 // 与 Avatar 组件同源，所以同一身份各 surface 逐字同一张脸。三条分支与组件严格一致：
 //   ① 自定义头像（上传/显式设置）→ 原样返回，就是身份本身。

@@ -958,14 +958,6 @@ const MANAGE_VERBS = ['bindingsUpload', 'bindingsCreateFolder', 'bindingsRename'
 /** The voice-note recorder's verbs (47): answered `unsupported` on a phone. */
 const VOICE_NOTE_VERBS = ['voiceNoteStart', 'voiceNotePause', 'voiceNoteResume', 'voiceNoteStop', 'voiceNoteRetry', 'voiceNoteOpenMicSettings', 'voiceNoteStatus', 'voiceNoteWatch'] as const
 
-/** The verbs the binding host answers on a phone (the rest of phoneAppHost's switch is not this). */
-export const PHONE_BINDING_VERBS = [
-  'bindingsGet', 'bindingsList', 'bindingsRead', 'bindingsSurface', 'bindingsSurfacePanel',
-  'bindingsResources', 'bindingsResource', 'bindingsWatch', 'bindingsSave', 'bindingsRemove',
-  'bindingsSchedules', 'bindingsSchedulesWatch', 'bindingsScheduleControl', 'bindingsWork', 'bindingsOpenWork', 'bindingsCloseWork',
-  'assistantStatus', 'assistantOpen', 'assistantAdvanceSetup', 'assistantRename', 'assistantFigure', 'assistantConnect', ...VOICE_NOTE_VERBS, ...MANAGE_VERBS,
-] as const
-
 /** One call of those, answered; `hear` carries a resource watch's events to the page. */
 export function answerPhoneBinding(
   bindings: PhoneBindings,

@@ -2,20 +2,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cloudComputerFailureKind, cloudComputerSnapshotFailureKind, type CloudComputerFailureKind, type CloudComputerSnapshot } from '@gugu/core/cloud/cloudComputer'
 import type { Device } from '@gugu/core/shared/types/chat'
-import { Check, Circle, Plus, X } from '@/lib/icons'
+import { Check, Circle, X } from '@/lib/icons'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { cn } from '../../lib/cn'
 import { rendererLogger } from '../../lib/log'
 import {
   destroyCloudComputer,
   provisionCloudComputer,
-  readCloudSnapshotNow,
   wakeCloudComputer,
 } from '../../lib/cloudComputer'
-import type { BoundAgentsState } from '../../lib/deviceRowModel'
 import { cloudComputerProvisionSteps, type CloudComputerStepStatus } from '../../lib/cloudComputer'
-import { Button } from '../ui/Button'
-import { Sheet } from '../ui/Sheet'
 import { InlineAction } from './addServer/InlineAction'
 import { calloutClassName } from './addServer/callout'
 import { billingLinksAvailable } from '../../lib/appLinks'
@@ -83,42 +79,6 @@ export function CloudComputerRefusal({
         )}
       </div>
     </div>
-  )
-}
-
-/** 页头那颗「开一台云电脑」:只在问到「还没有」时出现(一人一台,没问到就不知道能不能开)。 */
-export function OpenCloudComputerButton({
-  primary,
-  onFailure,
-}: {
-  primary?: boolean
-  onFailure: (failure: ActionFailure | null) => void
-}) {
-  const { t } = useTranslation('settings')
-  const [opening, setOpening] = useState(false)
-  const open = useCallback(async () => {
-    setOpening(true)
-    onFailure(null)
-    try {
-      await provisionCloudComputer()
-    } catch (error) {
-      onFailure(failureOf(error, 'provision'))
-    } finally {
-      setOpening(false)
-    }
-  }, [onFailure])
-  return (
-    <Button
-      size="sm"
-      variant={primary ? 'primary' : 'secondary'}
-      className="shrink-0"
-      disabled={opening}
-      onClick={() => void open()}
-      data-testid="settings-open-cloud-computer"
-    >
-      {opening ? <LoadingIndicator size="inline" /> : <Plus aria-hidden className="size-4" />}
-      {opening ? t('devices.cloud.opening') : t('devices.cloud.open')}
-    </Button>
   )
 }
 
@@ -299,94 +259,5 @@ export function CloudComputerDot({ device }: { device: Device }) {
         presence === 'awake' || device.is_online ? 'bg-live' : 'bg-[var(--faint-fg)]',
       )}
     />
-  )
-}
-
-/**
- * 「关掉云电脑」的确认页:写清上面的会话、文件、智能体一起删掉、不能恢复,列出上面的智能体。
- * 管家删干净(设备行、智能体、沙盒、存的数据)才回成功;回来后刷新列表,那一行要是还在,照「移除这台机器(连同智能体)」补删一遍。
- */
-export function CloudComputerCloseDialog({
-  device,
-  agents,
-  onClose,
-  onClosed,
-}: {
-  device: Device
-  agents: BoundAgentsState
-  onClose: () => void
-  /** 管家删完之后:刷新列表、行还在就补删。 */
-  onClosed: () => Promise<void>
-}) {
-  const { t } = useTranslation('settings')
-  const { t: tc } = useTranslation('common')
-  const [closing, setClosing] = useState(false)
-  /** 没关掉(那一类原因)/ 关掉了但行没删掉。 */
-  const [failure, setFailure] = useState<ActionFailure | 'listed' | null>(null)
-  const confirm = useCallback(async () => {
-    setClosing(true)
-    setFailure(null)
-    try {
-      // DELETE / 删的是管家此刻那一台:先核对还是这一行(❌ 别处关掉又开了一台新的,这里一点就把新的删了)。
-      const current = await readCloudSnapshotNow()
-      if (current?.deviceId !== device.device_id) {
-        log.warn({ deviceId: device.device_id, current: current?.deviceId ?? null }, 'close dialog is stale; not destroying')
-        setFailure({ kind: 'gone' })
-        setClosing(false)
-        return
-      }
-      await destroyCloudComputer()
-    } catch (error) {
-      setFailure(failureOf(error, 'destroy'))
-      setClosing(false)
-      return
-    }
-    try {
-      await onClosed()
-      onClose()
-    } catch (error) {
-      log.error({ err: String((error as Error)?.message ?? error), deviceId: device.device_id }, 'remove closed cloud computer row failed')
-      setFailure('listed')
-      setClosing(false)
-    }
-  }, [device.device_id, onClose, onClosed])
-
-  return (
-    <Sheet
-      onClose={closing ? () => undefined : onClose}
-      desktopWidth="400px"
-      desktopMaxHeight="80vh"
-      mobileFitContent
-      ariaLabel={t('devices.cloud.close.label', { name: device.label })}
-      testId="settings-cloud-computer-close-dialog"
-      zIndex="var(--z-settings-modal)"
-    >
-      <div className="flex flex-col gap-3 overflow-y-auto p-[18px]">
-        <div className="text-[length:var(--font-title)] font-semibold text-[var(--fg)]">{t('devices.cloud.close.title', { name: device.label })}</div>
-        <div className={cn(text, 'text-[var(--muted-fg)]')}>{t('devices.cloud.close.body')}</div>
-        {agents.loading && <div className={cn(text, 'text-[var(--muted-fg)]')}>{t('devices.checkingAgents')}</div>}
-        {!agents.loading && agents.agents.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <div className={cn(text, 'text-[var(--muted-fg)]')}>{t('devices.cloud.close.agents', { count: agents.agents.length })}</div>
-            <div className="flex max-h-40 flex-col gap-[5px] overflow-y-auto rounded-[var(--radius-document)] bg-foreground/[0.025] px-[10px] py-2 dark:bg-foreground/[0.04]">
-              {agents.agents.map((agent) => (
-                <div key={agent.id} className={cn(text, 'truncate text-[var(--fg)]')}>{agent.display_name}</div>
-              ))}
-            </div>
-          </div>
-        )}
-        {failure && (
-          <div className={cn(text, 'text-[var(--danger-fg)]')} role="alert">
-            {failure === 'listed' ? t('devices.cloud.close.closedButListed') : <>{t('devices.cloud.close.failed')}{tc(`cloudComputer.reason.${failure.kind}`)}</>}
-          </div>
-        )}
-        <div className="flex justify-end gap-2">
-          <Button size="sm" onClick={onClose} disabled={closing}>{t('devices.cancel')}</Button>
-          <Button size="sm" variant="danger" disabled={closing || agents.loading} onClick={() => void confirm()} data-testid="settings-cloud-computer-close-confirm">
-            {closing ? t('devices.cloud.close.closing') : t('devices.cloud.close.confirm')}
-          </Button>
-        </div>
-      </div>
-    </Sheet>
   )
 }

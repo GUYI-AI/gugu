@@ -206,18 +206,3 @@ export function readStatusLog(s: AgentStatusLogState): Omit<AgentStatusLogReadin
     finished: s.finished,
   };
 }
-
-export function reduceAgentStatus(sessionId: string, events: readonly AgentStatusEvent[]): AgentStatusLogReading {
-  const s = emptyStatusLogState();
-  const anomalies: string[] = [];
-  for (const e of events) {
-    if (e.sessionId !== sessionId) {
-      s.finished = false;
-      anomalies.push(`${e.kind} from session ${e.sessionId} in the log of ${sessionId}`);
-      continue;
-    }
-    stepStatusLog(s, e, (what) => anomalies.push(what));
-  }
-  return { ...readStatusLog(s), anomalies };
-}
-

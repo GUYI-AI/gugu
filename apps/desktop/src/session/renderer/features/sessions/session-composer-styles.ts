@@ -1,6 +1,3 @@
-// The new-session page caps its centered composer at 48rem (768px), including on wide screens.
-export const sessionComposerWidthClassName = 'w-full max-w-3xl';
-
 // 新建会话页、项目首页和对话页创建的输入框贴在底部,与会话页聊天的输入框同一个位置、同样宽(owner 2026-10-17:
 // 「和正常 chatui 界面的输入框一样的位置……质感上也统一了」),从首页进到会话里输入框不跳。
 // 数值同 packages/session-chat-ui:宽度档 = layout-geometry.ts 的 CHAT_CONTENT_*(48rem,≥80rem 时 56rem),

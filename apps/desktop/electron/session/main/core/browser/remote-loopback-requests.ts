@@ -96,9 +96,6 @@ function rewrite(url: string, localPort: number): string {
   return rewritten.toString();
 }
 
-/** 回环地址(match pattern 不看端口,所以每个端口都进来)。 */
-export const LOOPBACK_URL_PATTERNS = ['*://localhost/*', '*://127.0.0.1/*', '*://0.0.0.0/*', '*://[::1]/*'];
-
 type Forwarding = Pick<LoopbackDeps, 'remoteForLocal' | 'open' | 'status'>;
 let forwarding: Forwarding | null = null;
 

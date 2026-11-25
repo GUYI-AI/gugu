@@ -16,18 +16,3 @@ export function joinMachinePath(basePath: string, ...segments: string[]): string
   }
   return current;
 }
-
-export function dirnameMachinePath(value: string): string {
-  if (path.win32.isAbsolute(value)) return path.win32.dirname(value).replace(/\\/g, '/');
-  return path.posix.dirname(value.replace(/\\/g, '/'));
-}
-
-export function basenameMachinePath(value: string): string {
-  if (path.win32.isAbsolute(value)) return path.win32.basename(value);
-  return path.posix.basename(value.replace(/\\/g, '/'));
-}
-
-export function displayPathInDirectory(parentPath: string, childPath: string): string {
-  const rel = path.posix.relative(parentPath.replace(/\\/g, '/'), childPath.replace(/\\/g, '/'));
-  return rel === '.' ? '' : rel;
-}

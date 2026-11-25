@@ -24,11 +24,6 @@ export function sidebarSessionFacts(projectId: string, sessionId: string) {
   return { isPinnedToSidebar: listed?.isPinnedToSidebar === true, archivedAt: null, lastInteractedAt: listed?.lastInteractedAt ?? null };
 }
 
-/** Is this sidebar session pinned to the sidebar (固定到左侧栏). The inner column's agent rows read it for their mark. */
-export function sessionPinnedToSidebar(projectId: string, sessionId: string): boolean {
-  return sidebarSessionFacts(projectId, sessionId).isPinnedToSidebar;
-}
-
 /**
  * The project of the session a pinned row stands for. The rows are published from an effect, so the shell can draw one a
  * moment after the sidebar let its session go (archived elsewhere, its machine's list gone): null, and that is said.

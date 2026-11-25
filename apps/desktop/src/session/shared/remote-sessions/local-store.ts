@@ -121,8 +121,3 @@ export function getAgentWatchStore(factory?: IDBFactory): Promise<AgentWatchLoca
     : Promise.resolve(createMemoryStore())
   return opening
 }
-
-/** 测试与收尾用：丢掉当前连接，下次重新开。 */
-export function resetAgentWatchStore(): void {
-  opening = null
-}

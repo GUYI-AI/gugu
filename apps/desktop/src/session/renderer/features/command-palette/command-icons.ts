@@ -42,8 +42,6 @@ export const COMMAND_ICONS = {
   clock: Clock,
 } satisfies Record<string, IconComponent>;
 
-export type CommandIconKey = keyof typeof COMMAND_ICONS;
-
 export function getCommandIcon(iconKey: string | undefined): IconComponent | undefined {
   if (!iconKey) return undefined;
   return (COMMAND_ICONS as Record<string, IconComponent>)[iconKey];

@@ -23,16 +23,6 @@ export type OpenArgsOf<R extends TabRegistry, K extends KindOf<R>> =
     : unknown;
 
 /**
- * Extract the resource type (T) for a given kind from a typed registry.
- */
-export type ResourceOf<R extends TabRegistry, K extends KindOf<R>> =
-  R extends TypedTabRegistry<infer P>
-    ? Extract<P[number], { kind: K }> extends TabProvider<K, infer _S, infer T, infer _A>
-      ? T
-      : TabResource
-    : TabResource;
-
-/**
  * Strongly-typed discriminated union of all open-arg shapes in a registry.
  * Used by the public layout-level open() entry point.
  *

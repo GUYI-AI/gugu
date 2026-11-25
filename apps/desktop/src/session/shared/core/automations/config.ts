@@ -66,6 +66,4 @@ const storedAutomationSessionConfigV1Schema = z.object({
 export const storedAutomationSessionConfig = defineVersionedSchema()
   .initial('1', storedAutomationSessionConfigV1Schema)
   .build();
-
-export const storedAutomationSessionConfigSchema = storedAutomationSessionConfig.schema;
 export type StoredAutomationSessionConfig = typeof storedAutomationSessionConfig.Type;

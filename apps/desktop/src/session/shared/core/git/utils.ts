@@ -56,10 +56,6 @@ export function remoteRef(remote: GitRemote | string, branch: string): GitObject
   return { kind: 'branch', branch: { type: 'remote', branch, remote: value } };
 }
 
-export function localRef(branch: string): GitObjectRef {
-  return { kind: 'branch', branch: { type: 'local', branch } };
-}
-
 export function commitRef(sha: string): GitObjectRef {
   return { kind: 'commit', sha };
 }
