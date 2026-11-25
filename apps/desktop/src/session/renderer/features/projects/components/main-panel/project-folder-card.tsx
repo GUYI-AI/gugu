@@ -601,7 +601,9 @@ export const ProjectFolderCard = observer(function ProjectFolderCard({
             ? <span className="gg-loading-line">{translate('projects.folders.loading')}</span>
             : open
               ? translate(floating ? (touch ? 'projects.folders.hintFloatingTouch' : 'projects.folders.hintFloating') : 'projects.folders.hintOpen')
-              : translate('projects.folders.hintClosed', { count: folders.length })}
+              // 只有一个文件夹:它就是新任务的工作目录,输入框上面已经选好了 ⇒ ❌ 再叫人展开卡片去选(UX 复审 B8-F05)。
+              // 这一行仍占着(min-height),展开 / 收起时卡片不跳。
+              : folders.length > 1 ? translate('projects.folders.hintClosed', { count: folders.length }) : null}
         </p>
       ) : null}
     </div>

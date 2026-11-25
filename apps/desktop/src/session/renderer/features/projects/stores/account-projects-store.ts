@@ -25,6 +25,9 @@ export type LocalProjects = {
 /** 账号 revision 的订阅口(聊天那一层给,见 store/chatContext)。 */
 export type SubscribeAccountRevision = (event: AccountRevisionEvent, listener: AccountRevisionListener) => () => void;
 
+/** 网络恢复的订阅口(窗口的 online 事件,由持有窗口的一方给,见 store/devices)。返回退订。 */
+export type SubscribeNetworkBack = (listener: () => void) => () => void;
+
 const bindingKey = (deviceId: string, localProjectId: string) => `${deviceId}\u0000${localProjectId}`;
 
 /** For MobX: a tick each time the replica `thisDeviceId` changes (no copy of the id is held here). */
@@ -84,10 +87,11 @@ export class AccountProjectsStore {
    * 认出登录的是谁:换了账号先清掉上一个的,铺上这个账号上次那份,读一次;之后这几样变了再读 ——
    * 某台机器的项目记上账号 / 某台被移除(device_changed,别的电脑、手机记的经这里到);这台电脑的项目记上账号
    * (建了项目、绑了群之后那次发布,断网时是重连后那次:它们在那一刻才进 list_my_projects);这台电脑在账号里认出了自己
-   * (之前那次读分不出哪些绑定是这台的);一个项目的群改了名或状态(chat_meta_changed:解散 = 归档、改名,项目的名字与状态就是群的)。
+   * (之前那次读分不出哪些绑定是这台的);一个项目的群改了名或状态(chat_meta_changed:解散 = 归档、改名,项目的名字与状态就是群的);
+   * 上次没读到、网回来了(见下)。
    * 返回的 stop 只退订、不清:界面不活跃、令牌刷新时登录的人会短暂读成空,❌ 当成登出;登出走 {@link clear}。
    */
-  start(accountId: string, subscribeRevision: SubscribeAccountRevision): () => void {
+  start(accountId: string, subscribeRevision: SubscribeAccountRevision, subscribeNetworkBack: SubscribeNetworkBack): () => void {
     if (this.accountId !== null && this.accountId !== accountId) this.clear();
     this.restore(accountId);
     void this.refresh();
@@ -110,6 +114,11 @@ export class AccountProjectsStore {
       }),
       events.on(deviceProjectsPublishedChannel, () => void this.refresh()),
       platform.subscribeLocalDeviceIdentified?.(() => void this.refresh()) ?? (() => {}),
+      // 断网时有一次读没读到(status 'error',侧栏挂着「读取失败 · 重试」),网回来时若没有项目要记上账号,上面这几样
+      // 一样都不会来 ⇒ 那一行一直挂到有人按重试(UX 复审 B8-F06)。没读到的才在网回来时再读;读到了的 ❌ 因联网多读一次。
+      subscribeNetworkBack(() => {
+        if (this.status === 'error') void this.refresh();
+      }),
     ];
     return () => offs.forEach((off) => off());
   }

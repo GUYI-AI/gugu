@@ -42,6 +42,12 @@ import {
 // (注册/心跳状态翻转/改名/删除都重拉) + rename/remove 动作。面板与 selector 共用这一份状态。
 const devicesLog = rendererLogger('devices')
 
+/** 账号上的项目要知道网回来了(上次没读到的那份再读一次,见 accountProjectsStore.start)。 */
+const subscribeNetworkBack = (listener: () => void) => {
+  window.addEventListener('online', listener)
+  return () => window.removeEventListener('online', listener)
+}
+
 export function DevicesProvider({ children, active = true }: { children: React.ReactNode; active?: boolean }) {
   const { user: authenticatedUser, loading: authLoading } = useAuth()
   const { subscribeAccountRevision } = useChatStore('subscribeAccountRevision')
@@ -101,7 +107,7 @@ export function DevicesProvider({ children, active = true }: { children: React.R
       return
     }
     if (!userId) return
-    return accountProjectsStore.start(userId, subscribeAccountRevision)
+    return accountProjectsStore.start(userId, subscribeAccountRevision, subscribeNetworkBack)
   }, [userId, signedOut, subscribeAccountRevision])
 
   // gugu_devices 任何增删改都落账号 revision journal。初始拉取 + durable cursor 覆盖订阅建立前与离线期间的变更。

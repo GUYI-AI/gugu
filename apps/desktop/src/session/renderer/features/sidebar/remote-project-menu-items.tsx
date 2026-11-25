@@ -22,6 +22,7 @@ import { log } from '@renderer/utils/logger'
 // 挑文件夹的窗口里自带「新建文件夹」,所以「新建空白项目」在别的机器上也是这一步。
 // 挑好 → 在那台机器上把它加成项目、打开项目页(与本机「打开文件夹」同一步,一套工作台)。
 // 离线的机器照样列着、灰掉写「离线 · X 前」,❌ 从菜单里消失。
+// 名下还没有别的机器时,子菜单里只会剩「添加一台机器…」一项 ⇒ 这一项直接写成「添加远程机器…」,❌ 第三层才看到唯一的选择(UX 复审 B8-F04)。
 export const RemoteProjectMenuItems = observer(function RemoteProjectMenuItems() {
   const { translate } = useSessionMessages()
   const { navigate } = useNavigate()
@@ -48,7 +49,15 @@ export const RemoteProjectMenuItems = observer(function RemoteProjectMenuItems()
       .catch((error: unknown) => log.error('[sidebar] 在那台机器上加项目失败', error))
   }
 
-  if (machines.length === 0 && !remoteHostsStore.canAddMachine) return null
+  if (machines.length === 0) {
+    if (!remoteHostsStore.canAddMachine) return null
+    return (
+      <DropdownMenuItem onClick={() => remoteHostsStore.openAddMachine()} data-testid="sidebar-add-machine">
+        <Server className="size-3.5" />
+        <span>{translate('sidebar.remoteFolderAddMachine')}</span>
+      </DropdownMenuItem>
+    )
+  }
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger data-testid="sidebar-remote-folder">
@@ -56,28 +65,26 @@ export const RemoteProjectMenuItems = observer(function RemoteProjectMenuItems()
         <span>{translate('sidebar.remoteFolder')}</span>
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent className="min-w-60">
-        {machines.length > 0 ? (
-          <div className="max-h-60 overflow-y-auto">
-            {machines.map((machine) => {
-              const offline = !machineAcceptsWork(machine)
-              return (
-                <DropdownMenuItem
-                  key={machine.id}
-                  data-device-id={machine.id}
-                  disabled={offline}
-                  className="gap-3 py-1"
-                  onClick={() => openOn(machine.id, machine.cloudComputer !== undefined)}
-                >
-                  <MachineTile machine={machine} solid={false} />
-                  <MachineLines label={machine.label} meta={machineMeta(machine, translate, { withLink: true })} muted={offline} />
-                </DropdownMenuItem>
-              )
-            })}
-          </div>
-        ) : null}
+        <div className="max-h-60 overflow-y-auto">
+          {machines.map((machine) => {
+            const offline = !machineAcceptsWork(machine)
+            return (
+              <DropdownMenuItem
+                key={machine.id}
+                data-device-id={machine.id}
+                disabled={offline}
+                className="gap-3 py-1"
+                onClick={() => openOn(machine.id, machine.cloudComputer !== undefined)}
+              >
+                <MachineTile machine={machine} solid={false} />
+                <MachineLines label={machine.label} meta={machineMeta(machine, translate, { withLink: true })} muted={offline} />
+              </DropdownMenuItem>
+            )
+          })}
+        </div>
         {remoteHostsStore.canAddMachine ? (
           <>
-            {machines.length > 0 ? <DropdownMenuSeparator /> : null}
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => remoteHostsStore.openAddMachine()} data-testid="sidebar-add-machine">
               <Plus className="size-3.5" />
               <span>{translate('task.deviceAdd')}</span>
