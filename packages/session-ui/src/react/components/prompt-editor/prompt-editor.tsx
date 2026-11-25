@@ -17,7 +17,7 @@ import { useUiPortalContainerOrBody } from '@session-ui/react/lib/portal-contain
 import { CONTENT_MENU_EVENT, type ContentMenuRequest } from '@gugu/session-shared/content-menu';
 import { cx } from '@session-ui/styles/utilities/cx';
 import { EditorContent, useEditor, type Editor } from '@tiptap/react';
-import { Slice } from '@tiptap/pm/model';
+import { Slice, type Node as ProseMirrorNode } from '@tiptap/pm/model';
 import type { EditorProps } from '@tiptap/pm/view';
 import { StarterKit } from '@tiptap/starter-kit';
 import type { SuggestionKeyDownProps, SuggestionProps } from '@tiptap/suggestion';
@@ -43,6 +43,7 @@ import { buildMentionExtension } from './extensions/mention';
 import { buildSlashCommandExtension } from './extensions/slash-command';
 import { buildSubmitKeymap } from './extensions/submit-keymap';
 import { buildPromptHistoryKeymap } from './extensions/prompt-history-keymap';
+import { InlineImage, INLINE_IMAGE_NODE } from './extensions/inline-image';
 import { compactMentionPath } from './mention-pill-helpers';
 import { isEmptyPromptDocument, mentionInsertContent, plainTextDoc, serializeDoc, serializeNode } from './serialize';
 import type {
@@ -78,7 +79,7 @@ function mentionToPopupItem(item: MentionItem, renderMentionIcon?: RenderMention
       ? isStackedAgent
         ? `${name}: agent`
         : undefined
-      : item.role ?? item.description ?? (item.name && item.label !== item.name ? item.label : undefined),
+      : item.description ?? item.role ?? (item.name && item.label !== item.name ? item.label : undefined),
     stacked: isStackedAgent || isFile,
     descriptionMono: isStackedAgent || isFile,
   };
@@ -215,6 +216,15 @@ function makeSuggestionRender<T>(
   };
 }
 
+/** A transaction the host made (clear, setText, image sync), as opposed to the person's own editing. */
+const HOST_EDIT = 'guguHostEdit';
+
+function inlineImageIdsOf(doc: ProseMirrorNode): string[] {
+  const ids: string[] = [];
+  doc.descendants((node) => { if (node.type.name === INLINE_IMAGE_NODE) ids.push(node.attrs.id as string); });
+  return ids;
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(function PromptEditor(
@@ -238,6 +248,8 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
     queryCommands,
     onCommand,
     getPromptHistory,
+    onViewInlineImage,
+    onInlineImagesRemoved,
     className,
   },
   ref
@@ -259,6 +271,11 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
   onMentionInsertRef.current = onMentionInsert;
   const onCommandRef = useRef(onCommand);
   onCommandRef.current = onCommand;
+  const onInlineImagesRemovedRef = useRef(onInlineImagesRemoved);
+  onInlineImagesRemovedRef.current = onInlineImagesRemoved;
+  const onViewInlineImageRef = useRef(onViewInlineImage);
+  onViewInlineImageRef.current = onViewInlineImage;
+  const inlineImage = useMemo(() => InlineImage.configure({ onView: (id: string, cell: HTMLElement) => onViewInlineImageRef.current?.(id, cell) }), []);
   const mentionProviderRef = useRef(mentionProvider);
   mentionProviderRef.current = mentionProvider;
   const openMention = useRef<OpenSuggestion>({ props: null, apply: null });
@@ -306,7 +323,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
     if (isEmptyPromptDocument(ed.state.doc)) onDocumentClearRef.current?.();
   }, []);
   const clearDocument = useCallback((ed: Editor) => {
-    ed.commands.clearContent(true);
+    ed.chain().setMeta(HOST_EDIT, true).clearContent(true).run();
     notifyDocumentClear(ed);
   }, [notifyDocumentClear]);
 
@@ -409,7 +426,8 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
       // default 100. `priority: 90` below makes that explicit instead of inherited from a
       // third-party default that could change under us.
       historyKeymap,
-    ], [mentionExtension, slashExtension, submitKeymap, historyKeymap]);
+      inlineImage,
+    ], [mentionExtension, slashExtension, submitKeymap, historyKeymap, inlineImage]);
   const editorProps = useMemo<EditorProps>(() => ({
       // Leave composition keys to the IME's native default action and skip submit keymaps.
       handleDOMEvents: { keydown: (_view, event) => event.isComposing || event.keyCode === 229 },
@@ -457,8 +475,16 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
     editorProps,
     onCreate({ editor: e }) { setEditorDom(e.view.dom); },
     onUnmount: onEditorUnmount,
-    onUpdate({ editor: e }) {
+    onUpdate({ editor: e, transaction }) {
       setIsEmpty(isEmptyPromptDocument(e.state.doc));
+      // The person took a picture out of the words (Backspace, cut, select-all + type): the host lets go of it too.
+      // The host's own edits (clear after send, restoring a draft, dropping a picture it no longer holds) are not that.
+      if (!transaction.getMeta(HOST_EDIT) && onInlineImagesRemovedRef.current) {
+        const before = inlineImageIdsOf(transaction.before);
+        const after = new Set(inlineImageIdsOf(e.state.doc));
+        const removed = before.filter((id) => !after.has(id));
+        if (removed.length) onInlineImagesRemovedRef.current(removed);
+      }
       const text = serializeDoc(e.state.doc);
       onChange?.(text);
     },
@@ -499,7 +525,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
     setText(text) {
       if (!editor) return;
       const next = editor.schema.nodeFromJSON(plainTextDoc(text, mentionProviderRef.current?.resolve));
-      if (!editor.state.doc.eq(next)) editor.commands.setContent(next, { emitUpdate: true });
+      if (!editor.state.doc.eq(next)) editor.chain().setMeta(HOST_EDIT, true).setContent(next, { emitUpdate: true }).run();
       if (text === '') notifyDocumentClear(editor);
     },
     insertText(text, position) {
@@ -542,6 +568,38 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
         tr.delete(range.from, range.to);
       }
       editor.view.dispatch(tr);
+    },
+    inlineImageIds() {
+      return editor ? inlineImageIdsOf(editor.state.doc) : [];
+    },
+    insertInlineImages(images, at) {
+      if (!editor || images.length === 0) return;
+      // A drop lands where the pointer is (t3code: the caret is captured before inserting); paste and 「+」 at the caret.
+      const dropped = at ? editor.view.posAtCoords(at)?.pos : undefined;
+      const from = dropped ?? editor.state.selection.from;
+      const before = from > 0 ? editor.state.doc.textBetween(Math.max(0, from - 1), from, '\n', '\ufffc') : '';
+      // A space before the chip only when it touches a character; always one after.
+      const content = [
+        ...(before && !/\s/.test(before) ? [{ type: 'text', text: ' ' }] : []),
+        ...images.flatMap((image) => [{ type: INLINE_IMAGE_NODE, attrs: { id: image.id, src: image.src ?? null, name: image.name ?? null } }, { type: 'text', text: ' ' }]),
+      ];
+      editor.chain().focus().insertContentAt(dropped ?? editor.state.selection, content).run();
+    },
+    updateInlineImages(images) {
+      if (!editor) return;
+      const byId = new Map(images.map((image) => [image.id, image]));
+      const tr = editor.state.tr;
+      const gone: Array<{ from: number; to: number }> = [];
+      editor.state.doc.descendants((node, pos) => {
+        if (node.type.name !== INLINE_IMAGE_NODE) return;
+        const image = byId.get(node.attrs.id as string);
+        if (!image) { gone.push({ from: pos, to: pos + node.nodeSize }); return; }
+        if (node.attrs.src !== (image.src ?? null) || node.attrs.name !== (image.name ?? null)) {
+          tr.setNodeMarkup(pos, undefined, { ...node.attrs, src: image.src ?? null, name: image.name ?? null });
+        }
+      });
+      for (const range of gone.reverse()) tr.delete(range.from, range.to);
+      if (tr.docChanged) editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(HOST_EDIT, true));
     },
     setMentionPending(id, pending) {
       if (!editor) return;

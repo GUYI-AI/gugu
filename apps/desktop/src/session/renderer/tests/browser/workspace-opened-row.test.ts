@@ -12,7 +12,7 @@ import { until, untilStable } from '../../../../../../../tests/support/awaitCond
 // hover fill that fades out under the opening picture and only comes back when the pointer moves.
 const base = { chat: 'group', type: 'binary', contentType: 'image/png', size: 1000, parentId: null, path: '', systemRole: null, version: 1, createdAt: null, updatedAt: null, createdBy: null, sourceMessageIds: [], keep: null, availability: 'available' };
 const entries = [
-  { ...base, id: 'one', name: 'photo-1.png', displayName: 'photo-1.png' },
+  { ...base, id: 'one', name: 'photo-1.png', displayName: 'photo-1.png', updatedAt: new Date().toISOString() },
   { ...base, id: 'two', name: 'photo-2.png', displayName: 'photo-2.png' },
 ];
 const openWith = vi.fn(async () => {});
@@ -85,4 +85,30 @@ it('the row an image was opened from keeps the selected fill under the viewer an
   await page.elementLocator(row('two').querySelector('.file-open')!).click();
   expect(row('two').getAttribute('aria-current')).toBe('true');
   expect(row('one').hasAttribute('aria-current')).toBe(false);
+});
+
+it('shows which image is opening until its own host request finishes', async () => {
+  const first = Promise.withResolvers<void>();
+  const next = Promise.withResolvers<void>();
+  openWith.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => next.promise);
+  const click = (id: string) => page.elementLocator(row(id).querySelector('.file-open')!).click();
+  // One thing at the row's end: a row with a time says it there in the time's place, one without wears it over its end.
+  const drawn = (el: Element | null) => getComputedStyle(el!, '::after').content;
+  const time = (id: string) => row(id).querySelector('.file-cell[data-cell="when"]');
+  await click('one');
+  expect(row('one').getAttribute('aria-busy')).toBe('true');
+  expect(drawn(time('one'))).toBe('"正在打开…"');
+  const clock = document.createRange();
+  clock.selectNodeContents(time('one')!);
+  expect(clock.getBoundingClientRect().width).toBe(0);
+  expect(drawn(row('one'))).toBe('none');
+  await click('two');
+  first.resolve();
+  expect(row('one').hasAttribute('aria-busy')).toBe(false);
+  expect(drawn(time('one'))).toBe('none');
+  expect(row('two').getAttribute('aria-busy')).toBe('true');
+  expect(time('two')).toBeNull();
+  expect(drawn(row('two'))).toBe('"正在打开…"');
+  next.resolve();
+  await until('opening is complete', () => !row('two').hasAttribute('aria-busy'));
 });

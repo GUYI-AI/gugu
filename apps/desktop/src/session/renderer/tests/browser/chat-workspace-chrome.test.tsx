@@ -201,7 +201,7 @@ it('opens the first tool into a split, hides/restores it and expands only its ow
   expect(tool()).toBe(firstTool);
   await until('the chat under the full view is out of reach', () => !!chat()?.closest('[inert]'));
   expect(neighbour().getBoundingClientRect().toJSON()).toEqual(neighbourBefore);
-  await userEvent.click(page.getByRole('button', { name: '退出全屏' }));
+  await userEvent.click(page.getByRole('button', { name: '退出完整视图' }));
   await mode('split');
   await until('leaving the full view restores its split', () => width(chat()), (size) => size === chatWidth);
   await userEvent.click(page.getByRole('button', { name: '进入完整视图' }));
@@ -510,7 +510,7 @@ it('resizes and previews each collapse before release, and restores the split on
   await mouse('mouseReleased', 91, y);
   await mode('full');
   expect(workspace.paneSizes[0]).toBeCloseTo(324 / 799 * 100);
-  await userEvent.click(page.getByRole('button', { name: '退出全屏' }));
+  await userEvent.click(page.getByRole('button', { name: '退出完整视图' }));
   await mode('split');
   // Side by side the conversation is a card that gives its half of the 10px gutter (5px) out of its share.
   await until('restoring yields the last usable chat width', () => width(chat()), (w) => Math.abs(w - (324 - 5)) < 2);
@@ -526,6 +526,35 @@ it('resizes and previews each collapse before release, and restores the split on
   // (The conversation card is 5px inside its share: half the 10px gutter.)
   await until('restoring yields the last usable tool width', () => width(chat()), (w) => Math.abs(w - (475 - 5)) < 2);
   expect(document.documentElement.hasAttribute('data-gugu-dragging')).toBe(false);
+});
+
+it('restores the conversation width after dragging it into a tab and closing every tool tab', async () => {
+  const { inside, mode, width, chat, workspace } = await mountWorkspace();
+  const conversation = chat();
+  await act(() => {
+    for (let index = 0; index < 3; index += 1) workspace.open('tool', { id: `file-${index}` }, { from: null, intent: 'newTab' });
+  });
+  await mode('split');
+  await untilStable('the split divider comes to rest', () => inside('[data-chat-tool-divider]')!.getBoundingClientRect().left);
+  const divider = inside('[data-chat-tool-divider]')!.getBoundingClientRect();
+  const x = divider.left + divider.width / 2;
+  const y = divider.top + 96;
+  await mouse('mouseMoved', x, y);
+  await mouse('mousePressed', x, y, true);
+  await mouse('mouseMoved', 91, y, true);
+  await until('the conversation collapse is armed', () => !!inside('[data-chat-tool-collapse-ready]'));
+  await mouse('mouseReleased', 91, y);
+  await mode('full');
+  await until('the conversation has collapsed into its tab', () => width(chat()), (size) => size === 0);
+
+  for (let remaining = 2; remaining >= 0; remaining -= 1) {
+    await userEvent.click(page.getByRole('button', { name: /^(?:关闭工具页签标签|Close 工具页签 tab)$/ }).first());
+    await until('the closed tool leaves the strip', () => workspace.stripTabIds.length, (count) => count === remaining + 1);
+  }
+  await mode('empty');
+  await untilStable('the remaining conversation settles', () => width(chat()));
+  expect(chat(), 'the conversation is retained through the role change').toBe(conversation);
+  expect(width(chat()), 'the sole conversation fills its block').toBe(800);
 });
 
 it('puts the view toggle on the header in the frame the tools are hidden, while they are still going off', async () => {

@@ -362,7 +362,7 @@ import {
   readLocalSessionInjectionAuditForTest,
   readLocalSessionDeliveryFailuresForTest,
 } from './sessionpage/local-session-delivery'
-import { assertAgentModelSelectionOpen, listPlatformModels, settleResidualPlatformModelAccess } from './model-access'
+import { assertAgentModelSelectionOpen, listCustomModelEffortFacts, listPlatformModels, settleResidualPlatformModelAccess } from './model-access'
 import {
   findInjectionContract,
   hasCredentialSink,
@@ -434,6 +434,7 @@ import {
   setSessionWebSearchBridge,
   setSessionExtensionBridge,
   setSessionLibraryMcpBridge,
+  setSessionContextThresholdReader,
 } from './capability-bundle'
 import { mcpService } from './session/main/core/mcp/services/McpService'
 import { toolsRuntimePath } from './session/main/core/extensions/app-runtime-dir'
@@ -6036,11 +6037,30 @@ app.whenReady().then(async () => {
           timed('assistant-role', isPersonalAssistant({ authProvider, env: process.env }, provisioned.guguAgentUserId)),
         ])
         injectMark('platform-model+mcp-list+identity-block')
+        const assistantChannelDiscovery = assistantRole && assistantResourceOwner
+          ? await import('./sessionpage/assistant-chat-channel-index') : undefined
+        const assistantChannelItems = assistantChannelDiscovery && assistantResourceOwner
+          ? assistantChannelDiscovery.createAssistantChatChannelReader({
+            accountId: async () => (await getSessionpageAuth())?.userId ?? null,
+            expectedOwner: assistantResourceOwner, assistantAgentId: provisioned.guguAgentUserId,
+            list: async signal => {
+              const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(),
+                override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
+              if (!baseUrl) throw new Error('Chat channel metadata source is unavailable')
+              const client = createChatChannelsClient({ baseUrl, anonKey: getSupabaseAnonKey(), requestTimeoutMs: assistantChannelDiscovery.ASSISTANT_CHAT_CHANNEL_TIMEOUT_MS,
+                accessToken: async () => {
+                  const current = await getSessionpageAuth()
+                  if (!current || current.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
+                  return current.accessToken
+                } })
+              return client.list(signal)
+            },
+          }) : undefined
         const readAssistantResources = assistantRole ? async () => {
           if (!assistantResourceOwner || (await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           const { assistantLocalIndex } = await import('./sessionpage/assistant-local-index')
           const resources = await assistantLocalIndex(info.cwd, assistantHomeKind(process.env), undefined,
-            () => emdash.assistantPanelLocal.integrationIndex())
+            () => emdash.assistantPanelLocal.integrationIndex(), assistantChannelItems)
           if ((await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           return resources
         } : undefined
@@ -6173,6 +6193,7 @@ app.whenReady().then(async () => {
     // 于是「agent 用 session_list_models 查到的」与「用户在下拉里看到的」不可能分岔。
     // ❌ 别在这里另加过滤或另算一份可用性:那就是第二份判据,它一定会漂。
     emdash.setPlatformModelCatalogResolver((query) => sessionpagePlatformHooks.listModels(query))
+    emdash.setCustomModelEffortResolver((ids) => listCustomModelEffortFacts(desktopAuthProvider(), ids))
     // 同一道门的答案随 `agents.modelCatalog` 回给 composer;账号口与上面那条 IPC 同一个(现取,❌ 早到的一问落成 null)。
     emdash.setPlatformModelGate((query) => sessionpagePlatformGate({ ...query, authProvider: desktopAuthProvider() }))
 
@@ -6712,6 +6733,10 @@ app.whenReady().then(async () => {
               })
           extensionCatalog.listedNatively(session.grantKey, gateway.origins.map((origin) => origin.extensionId))
           return { ...gateway, skills, apps }
+        })
+        setSessionContextThresholdReader(async (id) => {
+          const { sessionContextThreshold } = await import('./session/main/core/agents/context-threshold')
+          return sessionContextThreshold(id)
         })
         // 资源库 → MCP:这条任务带上的那几台,经能力包送进去。包建好以后连同留在外面的(让给这一家自己的、
         // 这条腿收不到的、和咕咕自己的撞了的、资源库里已删的)记成这一次的事实,任务的 `/mcp` 面板读它。

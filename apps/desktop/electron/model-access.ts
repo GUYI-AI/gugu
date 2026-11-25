@@ -1,4 +1,5 @@
 import { isUserFacingModelId } from '@gugu/session-core/acp/client'
+import { customModelEffortResultSchema, type CustomModelEffortResult } from '@gugu/session-core/models/custom-model'
 import { egress } from '@gugu/core/shared/egress'
 import { execFile, windowsSystemProgram } from '@gugu/core/local/childProcess'
 import { mkdir, readdir, readFile, rm } from 'node:fs/promises'
@@ -273,6 +274,21 @@ export async function listPlatformModels(authProvider: RuntimeAuthProvider): Pro
       }]
       : []
   })
+}
+
+export async function listCustomModelEffortFacts(
+  authProvider: RuntimeAuthProvider,
+  ids: readonly string[],
+): Promise<Map<string, CustomModelEffortResult>> {
+  const requested = new Set(ids)
+  const payload = await invokeModelAccess(authProvider, { action: 'model_efforts', model_ids: ids }, 'model effort catalog')
+  const facts = new Map<string, CustomModelEffortResult>()
+  for (const raw of Array.isArray(payload.models) ? payload.models : []) {
+    if (!raw || typeof raw.id !== 'string' || !requested.has(raw.id)) continue
+    const parsed = customModelEffortResultSchema.safeParse(raw)
+    if (parsed.success) facts.set(raw.id, parsed.data)
+  }
+  return facts
 }
 
 /** 目录/签发里的上下文窗口:只认正整数,其余(缺省、0、负、非数)一律 null → 注入侧不注入该键。 */

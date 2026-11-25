@@ -11,6 +11,14 @@ body:not(.show-doc):not(.no-list) .doc { display: none; }
 .select-files { display: none; }
 .file-list { margin: 0; padding: 0 var(--em-spacing-sm) var(--em-spacing-sm); gap: 0; overflow: auto; flex: 1; min-height: 0; }
 .file { position: relative; min-height: 30px; padding: 0 var(--em-spacing-sm); border-radius: 6px; }
+.file[data-opening] { cursor: progress; }
+.file-cell[data-opening] { font-size: 0; }
+.file-cell[data-opening]::after { content: attr(data-opening); font-size: var(--em-font-caption); }
+.file[data-opening]:not(:has(.file-cell[data-cell='when']))::after {
+  content: attr(data-opening); position: absolute; inset-inline-end: var(--em-spacing-sm); top: 50%; transform: translateY(-50%);
+  border-radius: var(--em-radius-control); padding: 2px var(--em-spacing-sm); background: var(--em-selected); color: var(--em-foreground);
+  font-size: var(--em-font-caption); pointer-events: none;
+}
 .file-open {
   flex: 1; min-width: 0; min-height: 30px; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: var(--em-spacing-sm);
   align-items: center; padding: 0; border: 0; background: none; text-align: start; font-weight: 400;

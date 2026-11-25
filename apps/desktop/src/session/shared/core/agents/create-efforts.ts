@@ -30,6 +30,17 @@ import {
  *
  * 新建页(`resolveCreateEfforts`)与会话内(acp-chat-panel)都经这里,❌ 两处各算一遍、❌ 按 harness 特判。
  */
+export const DEFAULT_INITIAL_EFFORT = 'medium';
+
+export function resolveInitialEffort(
+  efforts: ResolvedModelEfforts | null,
+  override: string | null | undefined
+): string | null {
+  if (!efforts || override === null || override?.toLowerCase() === 'default') return null;
+  const desired = override ?? DEFAULT_INITIAL_EFFORT;
+  return efforts.options[desired] ? desired : null;
+}
+
 export function resolveEffortCatalog(
   declared: ResolvedModelEfforts | null,
   live: ResolvedModelEfforts | null,

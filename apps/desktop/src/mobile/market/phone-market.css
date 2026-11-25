@@ -156,6 +156,13 @@
   text-overflow: ellipsis;
 }
 
+.phone-market-install-error {
+  margin: 0 2px 8px 30px;
+  color: var(--danger-fg);
+  font-size: var(--font-caption);
+  overflow-wrap: anywhere;
+}
+
 .phone-market-check {
   display: grid;
   width: 18px;

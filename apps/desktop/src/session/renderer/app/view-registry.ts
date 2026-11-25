@@ -61,6 +61,8 @@ export type ViewDefinition<TParams extends object = Record<never, never>> = {
    * and the screen stay as they were under it, and closing it returns there.
    */
   modal?: true;
+  /** Handle Escape inside a nested page before its modal closes. */
+  onModalEscape?: () => boolean;
 };
 
 type Views = typeof views;

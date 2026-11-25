@@ -271,9 +271,9 @@ export default {
     "clearHistory": "清空聊天记录",
     "clearHistoryTitle": "清空「{{name}}」的聊天记录？",
     "clearHistoryConfirm": "清空",
-    "hiddenNotice": "「{{name}}」已不显示",
+    "hiddenNotice": "「{{name}}」已从列表隐藏",
     "undoHide": "撤销",
-    "undoHideFailed": "无法撤销不显示",
+    "undoHideFailed": "无法撤销隐藏",
     "unpinFromSidebar": "取消固定到左侧栏",
     "hiddenRefreshFailed": "已从列表删除，但列表刷新失败，请重试",
     "agentDeleted": "智能体已删除",
@@ -281,7 +281,7 @@ export default {
     "removeFromList": "从列表删除",
     "hideFailed": "无法隐藏这条对话",
     "deleteHistoryDescription": "仅清空你的聊天记录，其他成员不受影响。",
-    "hide": "不显示",
+    "hide": "从列表隐藏",
     "createAgent": "创建智能体",
     "addContact": "添加联系人",
     "clearSearch": "清除搜索",
@@ -337,6 +337,9 @@ export default {
       "setListenModeFailed": "无法更改收听模式，设置未变更"
     },
     "groupAction": {
+      "channelOwner": "频道群主",
+      "supervisorRoleMigrated": "迁移旧督导成员角色",
+      "topicJoined": "已加入话题",
       "joined": "已加入群聊",
       "roleUpdated": "群角色已更新"
     },
@@ -486,9 +489,10 @@ export default {
     "mentionAll": "所有人",
     "mentionMembers": "@ 提及成员",
     "mentionNoMatch": "没有匹配的成员",
+    "mentionRoleHuman": "人",
     "placeholder": "发送消息…",
     "mobilePlaceholder": "输入消息",
-    "projectGroupPlaceholder": "发消息给 {{name}}… @ 提及 agent",
+    "projectGroupPlaceholder": "发消息给 {{name}}… @ 提及智能体",
     "removeAttachment": "移除 {{fileName}}",
     "sendFailed": "消息发送失败：{{guidance}}",
     "failedFileLabel": "{{kind}} {{name}}",
@@ -826,7 +830,7 @@ export default {
     "removedIdentityTag": "已移除",
     "agentOwnerUnavailableTag": "主人信息不可用",
     "agentOwnerTag": "{{owner}} 的 agent",
-    "agentOwnerSuffix": "（{{owner}} 的 agent）",
+    "agentOwnerSuffix": "（{{owner}} 的智能体）",
     "actions": {
       "keepTemporary": "设为临时",
       "keepPermanent": "持续保存",
@@ -965,9 +969,7 @@ export default {
     "leave": "退出话题",
     "leaveHint": "你仍可阅读，只是不再收到这个话题的通知",
     "removeHint": "对方仍可阅读，只是不再收到这个话题的通知",
-    "pins": {
-      "pin": "置顶“{{name}}”",
-      "unpin": "取消置顶“{{name}}”",
+    "menu": {
       "emptyHint": "在任意消息上选择“开话题”。"
     },
     "anchor": {

@@ -12,10 +12,11 @@ import type {
 } from '@gugu/core/shared/types/chat'
 import { displayIdentityFromRow, type DisplayIdentity } from './displayIdentity'
 import { recordImTransaction } from './perfCounters'
+import { clearMessageWindows } from './messageWindows'
 import { assertIdentityClosure } from './identityClosure'
 import { resolveListenModeDefault } from '@gugu/core/cloud/listenMode'
 import { rendererLogger } from './log'
-import { initializeMessages, ingestMessages } from './messageIngest'
+import { initializeMessages, ingestMessages, retireClosedMessageAccount } from './messageIngest'
 import { messageWindow } from './messageWindows'
 import { compareChatsByActivityDesc } from '@gugu/core/shared/ui/chatModels'
 import { captureMessagePosition } from '@gugu/core/shared/ui/messageTimeline'
@@ -23,6 +24,7 @@ import {
   IM_STORE_NAMES,
   migrateLegacyChatList,
   openLocalSyncDb,
+  clearClosedLegacyChatList,
   type ImStoreName,
   type LocalImDbAdapter,
   type LocalImDbOperation,
@@ -30,6 +32,8 @@ import {
 } from './localSyncDb'
 
 type EntityValue = Record<string, unknown>
+/** Select identities in the serialized commit, after any earlier queued identity writes. */
+export type IdentityPublication = readonly unknown[] | (() => readonly unknown[])
 const repositoryLog = rendererLogger('im/repository')
 
 export type IdentityRow = LocalImRow & { id: string; value: DisplayIdentity }
@@ -153,6 +157,27 @@ type OpenedSlot = {
   failed: boolean
 }
 const openedRepositories = new Map<string, OpenedSlot>()
+const closedAccounts = new Set<string>()
+const openingAccounts = new Map<string, Set<Promise<void>>>()
+const accountDrains = new Map<string, Set<() => Promise<void>>>()
+
+/** Native V2 has already confirmed deletion. Fence future opens/writes, drain
+ * existing original-owner commits, then clear only its IndexedDB key ranges.
+ */
+export async function eraseClosedImAccount(accountId: string, suppliedAdapter?: LocalImDbAdapter): Promise<void> {
+  assertId(accountId, 'accountId'); closedAccounts.add(accountId)
+  await Promise.all([...(openingAccounts.get(accountId) ?? [])])
+  await Promise.all([...(accountDrains.get(accountId) ?? [])].map(drain => drain()))
+  const adapter = suppliedAdapter ?? await openLocalSyncDb()
+  try {
+    if (!adapter.retireAccount) throw new Error('Local account retirement is unavailable')
+    await retireClosedMessageAccount(accountId)
+    await adapter.retireAccount(accountId)
+    if (typeof window !== 'undefined') clearClosedLegacyChatList(accountId)
+    clearMessageWindows(accountId)
+  }
+  finally { if (!suppliedAdapter) adapter.close() }
+}
 
 function openedSlot(accountId: string): OpenedSlot {
   let slot = openedRepositories.get(accountId)
@@ -194,9 +219,16 @@ export async function openImRepository(
   } = {},
 ): Promise<AccountImRepository> {
   assertId(accountId, 'accountId')
+  if (closedAccounts.has(accountId)) throw new Error('Closed account repository cannot be opened')
+  let finishOpening!: () => void
+  const opening = new Promise<void>(resolve => { finishOpening = resolve })
+  const openings = openingAccounts.get(accountId) ?? new Set<Promise<void>>()
+  openings.add(opening); openingAccounts.set(accountId, openings)
   const startedAt = performance.now()
-  const adapter = options.adapter ?? await openLocalSyncDb()
+  let adapter: LocalImDbAdapter | undefined
   try {
+    adapter = options.adapter ?? await openLocalSyncDb()
+    if (closedAccounts.has(accountId)) throw new Error('Closed account repository cannot be opened')
     const openedAt = performance.now()
     initializeMessages(accountId)
     if (!options.initialize) {
@@ -205,23 +237,26 @@ export async function openImRepository(
     }
     const preparedAt = performance.now()
     const rows = await adapter.loadAccount(accountId)
+    if (closedAccounts.has(accountId)) throw new Error('Closed account repository cannot be opened')
     // What a start spends on the local store before the first frame can draw: stage times and row counts, nothing else.
     repositoryLog.info({
       openMs: Math.round(openedAt - startedAt), prepareMs: Math.round(preparedAt - openedAt), loadMs: Math.round(performance.now() - preparedAt),
       chats: rows.chat.length, identities: rows.identity.length, memberships: rows.membership.length,
     }, 'local account rows read')
     const repository = createAccountRepository(accountId, adapter, rows, options.adapter === undefined)
+    finishOpening()
     options.loaded?.(repository)
     await options.initialize?.(repository)
+    if (closedAccounts.has(accountId)) { repository.close(); throw new Error('Closed account repository cannot be opened') }
     publishOpened(repository)
     return repository
   } catch (error) {
-    if (options.adapter === undefined) adapter.close()
+    if (options.adapter === undefined) adapter?.close()
     // Readers waiting for this account's repository learn that it did not open (a later open replaces this answer).
     const slot = openedSlot(accountId)
     if (!slot.repository) { slot.failed = true; slot.reject(error) }
     throw error
-  }
+  } finally { finishOpening(); openings.delete(opening); if (!openings.size) openingAccounts.delete(accountId) }
 }
 
 function createAccountRepository(
@@ -240,7 +275,7 @@ function createAccountRepository(
   const subscriptions = new Set<Subscription>()
 
   const ensureOpen = () => {
-    if (closed) throw new Error(`IM repository scope ${accountId} is closed`)
+    if (closed || closedAccounts.has(accountId)) throw new Error(`IM repository scope ${accountId} is closed`)
   }
   // @@@selected-change — a subscriber hears about a commit only when what it selected changed (Object.is), not on every write
   // to any table: a React setter fed the same identities map on every message write parks each call on the hook's queue
@@ -305,9 +340,16 @@ function createAccountRepository(
       closed = true
       subscriptions.clear()
       if (openedRepositories.get(accountId)?.repository === repository) openedRepositories.delete(accountId)
-      if (ownsAdapter) void writeChain.finally(() => adapter.close())
+      void writeChain.finally(() => {
+        const drains = accountDrains.get(accountId); drains?.delete(closeAndDrain)
+        if (!drains?.size) accountDrains.delete(accountId)
+        if (ownsAdapter) adapter.close()
+      })
     },
   }
+  const closeAndDrain = () => { repository.close(); return writeChain }
+  const drains = accountDrains.get(accountId) ?? new Set<() => Promise<void>>()
+  drains.add(closeAndDrain); accountDrains.set(accountId, drains)
   return repository
 }
 
@@ -440,19 +482,20 @@ export async function pruneUnreferencedIdentities(repository: AccountImRepositor
 export async function replaceChatRowsAndIdentities(
   repository: AccountImRepository,
   chats: readonly ChatItem[] | (() => readonly ChatItem[]),
-  identities: readonly unknown[],
+  identities: IdentityPublication,
   isConversationDeleted?: (id: string) => boolean,
 ): Promise<void> {
   await repository.transaction((transaction) => {
+    const people = typeof identities === 'function' ? identities() : identities
     // Evaluate inside the serialized write: an older queued snapshot cannot undo a confirmed deletion.
     const changes = diffChatRows(imSelectors.chatRowsById(repository.snapshot()),
       (typeof chats === 'function' ? chats() : chats).filter(chat => !isConversationDeleted?.(chat.id)))
     for (const chat of changes.changed) {
-      assertIdentityClosure('conversation list', chat.member_user_ids ?? [], identities)
-      if (chat.peer_user_id) assertIdentityClosure('conversation list', [chat.peer_user_id], identities)
+      assertIdentityClosure('conversation list', chat.member_user_ids ?? [], people)
+      if (chat.peer_user_id) assertIdentityClosure('conversation list', [chat.peer_user_id], people)
     }
     writeChatRowChanges(repository, transaction, changes)
-    for (const identity of identities) transaction.putIdentity(identity)
+    for (const identity of people) transaction.putIdentity(identity)
   })
 }
 

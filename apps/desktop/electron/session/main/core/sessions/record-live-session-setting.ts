@@ -12,6 +12,7 @@ import { log } from '@main/lib/logger';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
 import type { Session } from '@shared/core/sessions/sessions';
 import { sessionPlatformModel } from './platform-model-selection';
+import { customModelRefFromOption } from '@gugu/session-core/models/custom-model';
 
 /**
  * 会话**中途**改的一项设置,且 provider **已经确认生效**(`LiveSettingResult.status === 'applied'`)。
@@ -71,7 +72,9 @@ export async function recordLiveSessionSetting(
       .limit(1)
       .get();
     if (!row) throw new Error(`Session not found: ${sessionId}`);
-    if (setting.dimension === 'fast' && setting.value && row.provider !== 'claude' && row.provider !== 'codex') {
+    // A custom model's Fast is this record itself (the model forwarder reads it per request), on any harness.
+    if (setting.dimension === 'fast' && setting.value && row.provider !== 'claude' && row.provider !== 'codex'
+      && !customModelRefFromOption((row.config as { model?: string } | null)?.model)) {
       throw new Error('Fast is unavailable for this harness');
     }
     const current = row.config;

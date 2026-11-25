@@ -1,10 +1,10 @@
-import { customModelForwarder, customModelRoute } from './custom-model-forwarder';
+import { customModelForwarder, customModelRoute, customModelSessionKey } from './custom-model-forwarder';
 import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { pluginRegistry } from '@gugu/session-plugins/agents';
 import {
-  customModelApiUrl, customModelMetaSchema, customModelRefFromOption, detectModelProtocol, matchCustomModel, normalizeModelBaseUrl,
-  type CustomModelConnection, type CustomModelMeta, type CustomModelRef, type ModelProtocol, type PiCustomModelProvider,
+  FAST_PROTOCOLS, customModelApiUrl, customModelMetaSchema, customModelEfforts, customModelRefFromOption, detectModelProtocol, matchCustomModel, normalizeModelBaseUrl,
+  type CustomModelConnection, type CustomModelEffortResult, type CustomModelEntry, type CustomModelMeta, type CustomModelRef, type ModelProtocol, type PiCustomModelProvider,
 } from '@gugu/session-core/models/custom-model';
 import type { ConnectionModelList, CustomModelProtocolProbe, DetectCustomModelProtocols, SaveCustomModel, TestCustomModel } from '@gugu/session-core/workspace-server/agent-config';
 import { providerAccountRegistry as registry } from '@main/core/provider-accounts/provider-account-registry-instance';
@@ -17,6 +17,7 @@ import { describeDiscoveryIssues, discoverLocalConnections, discoveredSecret, di
 import { nativeConfigRoot } from './native-config-root';
 import { connectionProbeEnv } from './connection-endpoint-env';
 import { listEndpointModels, probeEndpointProtocols, verifyEndpointModel } from './connection-endpoint-probe';
+import { getCustomModelEffortResolver } from './platform-model-catalog-hook';
 
 const namespace = 'models:custom';
 const migratedDatabases = new WeakSet<object>();
@@ -35,6 +36,54 @@ export function migrateCustomModelConnections(): void {
 }
 
 type StoredRow = NonNullable<Awaited<ReturnType<typeof registry.getAccount>>>;
+const unavailable: CustomModelEffortResult = { kind: 'unavailable' };
+const effortFactsCache = new Map<string, { until: number; value: CustomModelEffortResult }>();
+
+async function modelEffortFacts(ids: readonly string[]): Promise<Map<string, CustomModelEffortResult>> {
+  const resolve = getCustomModelEffortResolver();
+  const now = Date.now();
+  const unique = [...new Set(ids)];
+  const facts = new Map<string, CustomModelEffortResult>();
+  const missing = unique.filter((id) => {
+    const cached = effortFactsCache.get(id);
+    if (!cached || cached.until <= now) return true;
+    facts.set(id, cached.value);
+    return false;
+  });
+  if (resolve) {
+    for (let from = 0; from < missing.length; from += 200) {
+      const batch = missing.slice(from, from + 200);
+      const results = await resolve(batch).catch(() => new Map<string, CustomModelEffortResult>());
+      for (const id of batch) {
+        const value = results.get(id) ?? unavailable;
+        facts.set(id, value);
+        effortFactsCache.set(id, { value, until: Date.now() + (value.kind === 'unavailable' ? 5_000 : 30_000) });
+      }
+    }
+  }
+  if (effortFactsCache.size > 2000) {
+    for (const id of effortFactsCache.keys()) {
+      if (effortFactsCache.size <= 2000) break;
+      effortFactsCache.delete(id);
+    }
+  }
+  return facts;
+}
+
+export async function lookupCustomModelEfforts(ids: readonly string[]) {
+  const facts = await modelEffortFacts(ids);
+  return [...new Set(ids)].map(id => ({ id, result: facts.get(id) ?? unavailable }));
+}
+
+async function enrichModelEntries(entries: readonly CustomModelEntry[]): Promise<CustomModelEntry[]> {
+  if (!getCustomModelEffortResolver()) return [...entries];
+  const facts = await modelEffortFacts(entries.flatMap(({ id, modelsDevId }) => modelsDevId ? [id, modelsDevId] : [id]));
+  return entries.map((entry) => {
+    const direct = facts.get(entry.id) ?? unavailable;
+    const chosen = entry.modelsDevId ? facts.get(entry.modelsDevId) : undefined;
+    return { ...entry, effortCatalog: direct.kind === 'found' ? direct : chosen ?? direct };
+  });
+}
 
 /** What a renderer may read of a stored connection: never the key, never the discovery identity. */
 function viewRow(row: StoredRow, key: string | null): CustomModelConnection {
@@ -49,7 +98,8 @@ function viewRow(row: StoredRow, key: string | null): CustomModelConnection {
 async function view(id: string): Promise<CustomModelConnection> {
   const row = await registry.getAccount(namespace, id);
   if (!row?.meta?.customModel) throw new Error('The custom model no longer exists');
-  return viewRow(row, await registry.resolveSecret(namespace, id));
+  const connection = viewRow(row, await registry.resolveSecret(namespace, id));
+  return { ...connection, models: await enrichModelEntries(connection.models) };
 }
 
 let loggedDiscoveryIssues = '';
@@ -159,6 +209,7 @@ async function mergeConnections(winner: StoredRow, duplicates: StoredRow[], pres
   const meta = winner.meta!.customModel!;
   const endpoints = new Map(meta.endpoints.map(endpoint => [endpoint.protocol, endpoint]));
   const suppresses = new Set(meta.suppresses);
+  const routes = new Map((meta.routes ?? []).map(route => [route.id, route]));
   let models = meta.models;
   let disabledModels = meta.disabledModels ?? [];
   for (const duplicate of duplicates) {
@@ -166,6 +217,7 @@ async function mergeConnections(winner: StoredRow, duplicates: StoredRow[], pres
     models = combineModels(models, other.models);
     disabledModels = combineModels(disabledModels, other.disabledModels ?? []);
     if (preserveRoutes) {
+      for (const route of other.routes ?? []) if (!routes.has(route.id)) routes.set(route.id, route);
       for (const endpoint of other.endpoints) if (!endpoints.has(endpoint.protocol)) endpoints.set(endpoint.protocol, endpoint);
     }
     if (other.discovery) suppresses.add(other.discovery.identity);
@@ -175,7 +227,7 @@ async function mergeConnections(winner: StoredRow, duplicates: StoredRow[], pres
     suppresses.add(candidate.identity);
     models = combineModels(models, candidate.models.filter(model => !disabledModels.some(disabled => disabled.id === model.id)));
   }
-  const combined = { ...meta, ...customModelMetaSchema.parse({ ...meta, apiUrl: customModelApiUrl(meta), models, disabledModels: disabledModels.filter(entry => !models.some(model => model.id === entry.id)), endpoints: [...endpoints.values()] }),
+  const combined = { ...meta, ...customModelMetaSchema.parse({ ...meta, apiUrl: customModelApiUrl(meta), models, ...(routes.size ? { routes: [...routes.values()] } : {}), disabledModels: disabledModels.filter(entry => !models.some(model => model.id === entry.id)), endpoints: [...endpoints.values()] }),
     suppresses: [...suppresses].slice(0, 16) };
   await registry.upsertAccount({ providerId: namespace, accountId: winner.accountId, meta: { ...winner.meta, customModel: combined } });
   for (const duplicate of duplicates) {
@@ -301,13 +353,13 @@ export async function listCustomModels(): Promise<CustomModelConnection[]> {
       const url = customModelApiUrl(connection);
       counts.set(url, (counts.get(url) ?? 0) + 1);
     }
-    return connections.map(connection => {
+    return Promise.all(connections.map(async connection => {
       const url = customModelApiUrl(connection);
       const managedNativeHarnesses = nativeHarnesses.filter((harness): harness is "claude" | "codex" => harness !== null && candidates.some(candidate =>
         candidate.nativeHarnesses?.includes(harness) && customModelApiUrl(candidate) === url));
-      return { ...connection, ...(managedNativeHarnesses.length ? { managedNativeHarnesses } : {}),
+      return { ...connection, models: await enrichModelEntries(connection.models), ...(managedNativeHarnesses.length ? { managedNativeHarnesses } : {}),
         ...(counts.get(url)! > 1 ? { keyConflict: true } : {}) };
-    });
+    }));
   });
 }
 
@@ -371,7 +423,9 @@ export function saveCustomModel(input: SaveCustomModel): Promise<CustomModelConn
     const disabledModels = append ? combineModels(prior?.disabledModels ?? [], input.disabledModels ?? []) : input.disabledModels ?? prior?.disabledModels;
     const meta = customModelMetaSchema.parse({ apiUrl, preset: append && prior ? prior.preset : input.preset,
       endpoints: append && prior ? prior.endpoints : input.endpoints,
-      models, harnessProtocols: input.harnessProtocols ?? prior?.harnessProtocols,
+      models, routes: append && prior
+        ? [...new Map([...(prior.routes ?? []), ...(input.routes ?? [])].map(route => [route.id, route])).values()]
+        : input.routes ?? prior?.routes, harnessProtocols: input.harnessProtocols ?? prior?.harnessProtocols,
       disabledModels: disabledModels?.filter(entry => !models.some(model => model.id === entry.id)) });
     const discovery = prior?.discovery;
     await registry.upsertAccount({ providerId: namespace, accountId: id, ...(key ? { secret: key } : {}), meta: {
@@ -474,20 +528,50 @@ export type ResolvedCustomModel = {
   apiKey: string;
   models: string[];
   protocol: ModelProtocol;
-  capabilities?: CustomModelMeta['models'][number];
-  entries: CustomModelMeta['models'];
+  capabilities?: CustomModelEntry;
+  entries: CustomModelEntry[];
   upstreamEndpoint: string;
+  routeId?: string;
   removed?: boolean;
   /** The session's recorded reasoning level. */
   effort?: string;
 };
 
-async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol) {
+async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol, routeId?: string, sessionId?: string) {
   const row = await registry.getAccount(namespace, connectionId);
-  const endpoint = row?.meta?.customModel?.endpoints.find((entry) => entry.protocol === protocol);
+  const meta = row?.meta?.customModel;
+  const route = meta?.routes?.find(({ id, outgoing }) => id === routeId && outgoing === protocol);
+  if (routeId && !route) return null;
+  const endpoint = route?.baseUrl ?? meta?.endpoints.find((entry) => entry.protocol === protocol)?.baseUrl;
   if (!endpoint) return null;
   const apiKey = await readConnectionSecret(connectionId);
-  return apiKey ? { endpoint: endpoint.baseUrl, apiKey } : null;
+  if (!apiKey) return null;
+  return { endpoint, apiKey, ...(sessionId && meta && FAST_PROTOCOLS.includes(protocol) && sessionAsksFast(sessionId, connectionId, meta) ? { priority: true } : {}) };
+}
+
+/**
+ * Read on every request, so turning Fast off (or switching to a model that does not declare it) applies to the next one.
+ * The session's Fast choice counts only while its current model is on this connection and declares Fast.
+ */
+function sessionAsksFast(sessionId: string, connectionId: string, meta: CustomModelMeta): boolean {
+  const config = db.select({ config: sessions.config }).from(sessions).where(eq(sessions.id, sessionId)).get()?.config;
+  if (config?.fastMode !== true) return false;
+  const ref = customModelRefFromOption(config.model);
+  return ref?.connectionId === connectionId && meta.models.some(({ id, fast }) => id === ref.modelId && fast === true);
+}
+
+function matchForHarness(providerId: string, connection: CustomModelMeta & { keySaved: boolean }, modelId?: string) {
+  const descriptor = pluginRegistry.get(providerId)?.capabilities.sessionBundle;
+  const platform = descriptor?.platform;
+  const nativeProtocol = providerId === 'antigravity' ? 'gemini-generate-content' : platform?.kind === 'supported' ? platform.wireProtocol : undefined;
+  return {
+    nativeProtocol,
+    matched: matchCustomModel({
+      harness: providerId, nativeProtocol, protocols: platform?.kind === 'supported' ? platform.protocols : undefined,
+      convertFrom: descriptor?.customModel?.convertFrom,
+      connection, modelId, hasModel: Boolean(modelId), allowDefaultModel: descriptor?.customModel?.modelOptional,
+    }),
+  };
 }
 
 /** Pi reads one models.json per surface. Its providers describe shared records, independent of the starting session. */
@@ -506,20 +590,29 @@ async function listPiCustomModelProviders(): Promise<PiCustomModelProvider[]> {
   for (const row of [...records].sort((a, b) => a.accountId.localeCompare(b.accountId))) {
     const meta = row.meta?.customModel;
     const bound = boundModels.get(row.accountId);
-    if (!meta || ((meta.removed || meta.mergedInto) && !bound)) continue;
-    const endpoint = [meta.harnessProtocols?.pi, 'openai-responses', 'openai-chat-completions']
-      .map((wanted) => meta.endpoints.find(({ protocol }) => protocol === wanted)).find(Boolean);
-    if (!endpoint || (endpoint.protocol !== 'openai-responses' && endpoint.protocol !== 'openai-chat-completions')) continue;
+    if (!meta || ((meta.removed || meta.mergedInto) && !bound) || !await readConnectionSecret(row.accountId)) continue;
     const models = new Map(meta.models.map((model) => [model.id, model]));
     for (const id of bound ?? []) {
       if (!models.has(id)) models.set(id, { id });
     }
-    if (models.size === 0) continue;
-    providers.push({
-      connectionId: row.accountId, name: row.meta?.displayName || row.accountId,
-      baseUrl: customModelRoute(root, row.accountId, endpoint.protocol),
-      protocol: endpoint.protocol, models: [...models.values()],
-    });
+    const byRoute = new Map<string, PiCustomModelProvider & { models: CustomModelEntry[] }>();
+    for (const model of models.values()) {
+      const { matched } = matchForHarness('pi', { ...meta, keySaved: true }, model.id);
+      const protocol = matched.endpoint?.protocol;
+      if (protocol !== 'openai-responses' && protocol !== 'openai-chat-completions') continue;
+      const key = matched.routeId ?? protocol;
+      let provider = byRoute.get(key);
+      if (!provider) {
+        provider = {
+          connectionId: row.accountId, routeId: matched.routeId, name: row.meta?.displayName || row.accountId,
+          baseUrl: customModelRoute(root, row.accountId, protocol, matched.routeId),
+          protocol, models: [],
+        };
+        byRoute.set(key, provider);
+      }
+      provider.models.push(model);
+    }
+    providers.push(...byRoute.values());
   }
   return providers;
 }
@@ -547,18 +640,10 @@ async function readSelectedCustomModel(providerId: string, ref: CustomModelRef, 
     throw new Error('Select a model currently listed by this provider');
   }
   const apiKey = await readConnectionSecret(ref.connectionId);
-  const descriptor = pluginRegistry.get(providerId)?.capabilities.sessionBundle;
-  const platform = descriptor?.platform;
-  const nativeProtocol = providerId === 'antigravity' ? 'gemini-generate-content' : platform?.kind === 'supported' ? platform.wireProtocol : undefined;
-  const matched = matchCustomModel({
-    harness: providerId, nativeProtocol, protocols: platform?.kind === 'supported' ? platform.protocols : undefined,
-    convertFrom: descriptor?.customModel?.convertFrom,
-    connection: { endpoints: meta.endpoints, harnessProtocols: meta.harnessProtocols, keySaved: Boolean(apiKey) },
-    hasModel: Boolean(ref.modelId), allowDefaultModel: descriptor?.customModel?.modelOptional,
-  });
+  const { matched, nativeProtocol } = matchForHarness(providerId, { ...meta, keySaved: Boolean(apiKey) }, ref.modelId);
   if (matched.reason) throw new Error(`Custom model unavailable: ${matched.reason}`);
   return {
-    meta, name: row?.meta?.displayName || ref.connectionId, model, protocol: matched.endpoint.protocol,
+    meta, name: row?.meta?.displayName || ref.connectionId, model, endpoint: matched.endpoint, routeId: matched.routeId,
     // A converted record reaches the harness in its own wire protocol, through the bundled router.
     harnessProtocol: matched.converted ? nativeProtocol : undefined,
   };
@@ -567,7 +652,27 @@ async function readSelectedCustomModel(providerId: string, ref: CustomModelRef, 
 /** Credential resolution runs only on the machine that will run this session. */
 export async function validateCustomModelSelection(providerId: string, ref: CustomModelRef) {
   migrateCustomModelConnections();
-  return (await readSelectedCustomModel(providerId, ref, 'new')).model;
+  const { model } = await readSelectedCustomModel(providerId, ref, 'new');
+  return model && (await enrichModelEntries([model]))[0];
+}
+
+export async function selectedCustomModelEndpoint(providerId: string, ref: CustomModelRef): Promise<string> {
+  migrateCustomModelConnections();
+  return (await readSelectedCustomModel(providerId, ref, 'new')).endpoint.baseUrl;
+}
+
+export async function customModelArmedEffort(providerId: string, ref: CustomModelRef, effort: string) {
+  if (!ref.modelId) return undefined;
+  const row = await registry.getAccount(namespace, ref.connectionId);
+  const entry = row?.meta?.customModel?.models.find(({ id }) => id === ref.modelId) ?? { id: ref.modelId };
+  const [entryWithCatalog] = await enrichModelEntries([entry]);
+  return customModelEfforts(entryWithCatalog, pluginRegistry.get(providerId)?.capabilities.effort)?.includes(effort) ? effort : undefined;
+}
+
+/** Whether a new session on this custom model may start with Fast: the same rule the composer offers it by. */
+export async function customModelFastAllowed(providerId: string, ref: CustomModelRef): Promise<boolean> {
+  const selected = await readSelectedCustomModel(providerId, ref, 'new');
+  return selected.model?.fast === true && !selected.harnessProtocol && FAST_PROTOCOLS.includes(selected.endpoint.protocol);
 }
 
 export async function resolveCustomModel(providerId: string, sessionId: string, sourceSessionId?: string): Promise<ResolvedCustomModel | null> {
@@ -576,20 +681,30 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
   const ref = customModelRefFromOption(config?.model);
   if (!ref) return null;
   const selected = await readSelectedCustomModel(providerId, ref, 'bound');
-  const { meta, name, model, protocol } = selected;
-  const models = ref.modelId ? [ref.modelId, ...meta.models.map(({ id }) => id).filter((id) => id !== ref.modelId)] : [];
+  const { meta, name, model, endpoint: upstream, routeId } = selected;
+  const { protocol } = upstream;
+  const routedEntries = meta.models.filter(({ id }) => {
+    const { matched } = matchForHarness(providerId, { ...meta, keySaved: true }, id);
+    return matched.endpoint?.protocol === protocol && matched.routeId === routeId;
+  });
+  const entries = await enrichModelEntries(model || !ref.modelId || routedEntries.some(({ id }) => id === ref.modelId)
+    ? routedEntries : [{ id: ref.modelId }, ...routedEntries]);
+  const selectedEntry = entries.find(({ id }) => id === ref.modelId);
+  const models = ref.modelId ? [ref.modelId, ...entries.map(({ id }) => id).filter((id) => id !== ref.modelId)] : [];
   const local = await customModelForwarder(resolveCustomRoute);
-  const route = customModelRoute(local.endpoint, ref.connectionId, protocol);
+  const route = customModelRoute(local.endpoint, ref.connectionId, protocol, routeId);
   // The router speaks the harness's protocol on loopback and calls the forwarder route in the record's protocol.
   const endpoint = selected.harnessProtocol
-    ? await (await import('./conversion-routers')).convertedBaseUrl(providerId, ref.connectionId, route, local.apiKey)
+    ? await (await import('./conversion-routers')).convertedBaseUrl(providerId, `${ref.connectionId}-${routeId ?? protocol}`, route, local.apiKey)
     : route;
+  // A session's own key lets the forwarder find its Fast choice; a converted route is pooled per record and keeps the shared key.
+  const apiKey = selected.harnessProtocol ? local.apiKey : await customModelSessionKey(resolveCustomRoute, sessionId);
   return {
     connectionId: ref.connectionId, name,
-    apiKey: local.apiKey, endpoint,
-    models, protocol: selected.harnessProtocol ?? protocol, capabilities: model, entries: meta.models,
-    upstreamEndpoint: meta.endpoints.find(entry => entry.protocol === protocol)!.baseUrl, removed: meta.removed,
-    ...(config?.effort ? { effort: config.effort } : {}),
+    apiKey, endpoint,
+    models, protocol: selected.harnessProtocol ?? protocol, capabilities: selectedEntry, entries, routeId,
+    upstreamEndpoint: upstream.baseUrl, removed: meta.removed,
+    ...(config?.effort && customModelEfforts(selectedEntry, pluginRegistry.get(providerId)?.capabilities.effort)?.includes(config.effort) ? { effort: config.effort } : {}),
   };
 }
 

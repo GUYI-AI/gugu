@@ -17,13 +17,17 @@ const unavailable = () => Object.assign(new Error('The projection database gatew
 export function openPhysicalDatabase(path: string): Database.Database {
   try { closeSync(openSync(path, 'ax')); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-  const actual = realpathSync(path), before = identity(actual);
+  const actual = realpathSync(path), file = statSync(actual, { bigint: true });
+  const before = `${file.dev}:${file.ino}`, empty = file.size === 0n;
   let connection: Database.Database | undefined;
   try {
     connection = new Database(actual, { fileMustExist: true });
     let after: string;
     try { after = identity(actual); } catch (error) { throw Object.assign(unavailable(), { cause: error }); }
     if (after !== before) throw unavailable();
+    // Pointer-map pages must exist before the first schema is created. Never
+    // rebuild or change the mode of an existing nonempty database on open.
+    if (empty) connection.pragma('auto_vacuum = INCREMENTAL');
     bindings.set(connection, { path: actual, identity: before });
     return connection;
   } catch (error) { connection?.close(); throw error; }

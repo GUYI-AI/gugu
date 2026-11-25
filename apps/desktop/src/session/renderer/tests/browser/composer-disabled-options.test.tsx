@@ -181,11 +181,13 @@ describe('会话里暂时改不了的选项:看得见 · 选不了 · 看得出 
 
   /** 换一份档位表重渲染 —— 这颗 composer 是受控的,锁不锁只能由外面换。 */
   function renderComposer(
-    effortOptions: Record<string, { name: string; disabled?: boolean; disabledReason?: string }> | null
+    effortOptions: Record<string, { name: string; disabled?: boolean; disabledReason?: string }> | null,
+    phoneActions = false,
   ) {
     root!.render(
       <SessionLocalizationProvider>
         <ChatComposer
+          phoneActions={phoneActions}
           modelOptions={MODELS}
           selectedModel="claude-haiku"
           onModelChange={onModelChange}
@@ -260,9 +262,9 @@ describe('会话里暂时改不了的选项:看得见 · 选不了 · 看得出 
     expect(onModelChange.mock.calls.length).toBe(1)
   })
 
-  it('置灰的思考档:在、点不动、看得出、带原因', async () => {
+  it('手机滑杆置灰时仍可见、不能选、显示原因', async () => {
     // ── 阳性:整条轴锁住 ────────────────────────────────────────────────────────
-    renderComposer(LOCKED_EFFORTS)
+    renderComposer(LOCKED_EFFORTS, true)
     await openPanel()
 
     const row = panel()!.querySelector('[data-slot="composer-effort-row"]')
@@ -307,7 +309,7 @@ describe('会话里暂时改不了的选项:看得见 · 选不了 · 看得出 
     await userEvent.keyboard('{Escape}')
     await until('model panel closes', () => panel() === null)
     onEffortChange.mockReset()
-    renderComposer(EFFORTS)
+    renderComposer(EFFORTS, true)
     await openPanel()
 
     const open = sliderControl()!
@@ -331,5 +333,37 @@ describe('会话里暂时改不了的选项:看得见 · 选不了 · 看得出 
     // 阴控必须真的发得出去 —— 否则上面那条"没发"是平凡真(面板整体坏掉也会"没发")。
     await clickTrackAt(0.95)
     await until('the unlocked slider emits an effort change', () => onEffortChange.mock.calls.length > 0)
+  })
+
+  it('桌面详情的思考菜单保留置灰档和原因', async () => {
+    async function openThinking() {
+      await openPanel()
+      await page.elementLocator(rowByName('Haiku')!).hover()
+      const trigger = page.getByRole('button', { name: /^(Thinking|思考)/ })
+      await expect.element(trigger).toBeVisible()
+      await trigger.hover()
+      const high = page.getByRole('button', { name: '高', exact: true })
+      await expect.element(high).toBeVisible()
+      return high.element() as HTMLButtonElement
+    }
+
+    renderComposer(LOCKED_EFFORTS)
+    const disabled = await openThinking()
+    expect(disabled.disabled).toBe(true)
+    expect(disabled.getAttribute('title')).toBe(EFFORT_LOCK_REASON)
+    expect(document.getElementById(disabled.getAttribute('aria-describedby')!)?.textContent).toBe(EFFORT_LOCK_REASON)
+    const opacity = Number(getComputedStyle(disabled).opacity)
+    await clickAndSettle(disabled)
+    expect(onEffortChange).not.toHaveBeenCalled()
+
+    await userEvent.keyboard('{Escape}')
+    await userEvent.keyboard('{Escape}')
+    await until('model panel closes', () => panel() === null)
+    renderComposer(EFFORTS)
+    const enabled = await openThinking()
+    expect(enabled.disabled).toBe(false)
+    expect(opacity).toBeLessThan(Number(getComputedStyle(enabled).opacity))
+    await clickAndSettle(enabled)
+    expect(onEffortChange).toHaveBeenCalledExactlyOnceWith('high')
   })
 })

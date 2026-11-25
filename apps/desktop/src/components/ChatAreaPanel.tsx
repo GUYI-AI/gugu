@@ -435,7 +435,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
       memberProfiles={drawerMemberProfiles}
       currentUserId={user?.id ?? null}
       onOpenUserChat={onOpenUserChat}
-      onWhisper={isGroupChat ? (target) => setWhisperTarget({ userId: target.id, displayName: target.displayName }) : undefined}
+      onWhisper={isRoomChatSurface ? (target) => setWhisperTarget({ userId: target.id, displayName: target.displayName }) : undefined}
       groupCollabSnapshot={groupCollabSnapshot}
       groupSettings={groupSettings}
       groupCollabError={groupCollabError}
@@ -541,7 +541,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
 
       {/* #7199 没读出来 ≠ 没聊过:读失败时说读不到 + 重试,❌ 往下落进首次对话欢迎页 / 「暂无消息」。 */}
       {messagesError && !(loadingMessages && chatListRows.length === 0) && (
-        <MessageLoadFailure error={messagesError} inline={chatListRows.length > 0} onRetry={() => refreshMessages(activeChatId ?? undefined)} />
+        <MessageLoadFailure error={messagesError} inline={chatListRows.length > 0} newestId={messages.at(-1)?.id} onRetry={() => refreshMessages(activeChatId ?? undefined)} />
       )}
 
       {chatListRows.length === 0 && (loadingMessages || !messagesError) && (
@@ -660,7 +660,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
         authorityRevision={authorityRevision}
         chatId={activeChatId}
         currentUserId={user?.id ?? null}
-        isGroupChat={isGroupChat}
+        isRoomChat={isRoomChatSurface}
         groupEditControlsFor={messageListenEditControlsFor}
         onOpenUserChat={onOpenUserChat}
         onWhisper={(target) => setWhisperTarget({ userId: target.id, displayName: target.displayName })}

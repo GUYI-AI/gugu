@@ -29,6 +29,10 @@ vi.mock('@renderer/lib/modal/modal-provider', async (original) => ({
   ...(await original<typeof import('@renderer/lib/modal/modal-provider')>()),
   useShowModal: () => mocks.login
 }))
+vi.mock('@renderer/lib/modal/modal-surface', async (original) => ({
+  ...(await original<typeof import('@renderer/lib/modal/modal-surface')>()),
+  useSurfaceModal: () => mocks.login
+}))
 // The CLI's own sign-in, read: not signed in (the status line waits for this reading before it is written).
 const notSignedIn = vi.hoisted(() => ({ status: { kind: 'unauthenticated' }, login: null }));
 vi.mock('@renderer/lib/stores/use-agent-auth-status', () => ({

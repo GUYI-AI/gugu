@@ -9,7 +9,7 @@ import { type AgentPayload } from '@shared/core/agents/agent-payload'
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client'
 import { onMachineEvent } from '@renderer/lib/ipc'
 import { subscriptionSwitchProgressChannel } from '@shared/core/sessions/subscriptionSwitchEvents'
-import { useShowModal } from '@renderer/lib/modal/modal-provider'
+import { useSurfaceModal } from '@renderer/lib/modal/modal-surface'
 import { Button } from '@renderer/lib/ui/button'
 import { SelectItem } from '@renderer/lib/ui/select'
 import { AgentHomeRow } from './AgentHomeRow'
@@ -128,7 +128,7 @@ export function SubscriptionConnections({
   )
   const [adding, setAdding] = useState(false)
   const [modelAccountId, setModelAccountId] = useState<string>()
-  const showSignIn = useShowModal('agentSignInModal')
+  const showSignIn = useSurfaceModal('agentSignInModal')
   const host = useLibraryHost()
   // A failed read says so at once on every surface (a value already read stays, with the failure next to it).
   const { listed, connections, native, form, cliSignIn } = useListedConnections(machine, agent)

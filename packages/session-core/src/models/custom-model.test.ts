@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chatModel, customModelAcceptsImages, customModelEfforts, customModelMetaSchema, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
+import { chatModel, customModelAcceptsImages, customModelCatalogLevels, customModelDefaultEffort, customModelEfforts, customModelEntrySchema, customModelMetaSchema, proposedDefaultEffort, customModelOptionId, customModelRefFromOption, customModelRuntimeOption, detectModelProtocol, matchCustomModel, modelEndpointSchema, normalizeModelBaseUrl, runtimeModelId, sessionModelSelectionSchema } from './custom-model';
 import { providerPresets } from './provider-presets';
 
 const connectionId = '481825a8-60b9-4c83-8d1b-f104e3db0269';
@@ -42,6 +42,23 @@ describe('custom model identity and metadata', () => {
 });
 
 describe('custom model protocol matching', () => {
+  it('uses the first rule matching both model and incoming protocol, including its separate address', () => {
+    const anthropic = { protocol: 'anthropic-messages', baseUrl: 'https://relay.test' } as const;
+    const chat = { protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' } as const;
+    const override = { id: '004e3794-4df0-4598-b438-4967e139ea12', incoming: 'anthropic-messages',
+      outgoing: chat.protocol, modelId: 'special', baseUrl: 'https://relay.test/compatible' } as const;
+    const fallback = { id: '31ba430b-ad77-4405-9d62-9202fe6adb4a', incoming: 'any', outgoing: anthropic.protocol } as const;
+    const input = {
+      nativeProtocol: anthropic.protocol, convertFrom: [chat.protocol], modelId: 'special',
+      connection: { endpoints: [anthropic, chat], keySaved: true, routes: [override, fallback] },
+    };
+    expect(matchCustomModel(input)).toEqual({ routeId: override.id, converted: true,
+      endpoint: { protocol: chat.protocol, baseUrl: override.baseUrl } });
+    expect(matchCustomModel({ ...input, modelId: 'other' })).toEqual({ routeId: fallback.id, endpoint: anthropic });
+    expect(matchCustomModel({ ...input, connection: { ...input.connection, routes: [fallback, override] } }))
+      .toEqual({ routeId: fallback.id, endpoint: anthropic });
+    expect(matchCustomModel({ ...input, nativeProtocol: chat.protocol }).reason).toBe('protocol');
+  });
   it('prefers native protocol regardless of endpoint order', () => {
     const endpoints = [{ protocol: 'openai-chat-completions' as const, baseUrl: 'https://chat.test' }, { protocol: 'openai-responses' as const, baseUrl: 'https://responses.test' }];
     expect(matchCustomModel({ nativeProtocol: 'openai-responses', protocols: ['openai-chat-completions'], connection: { endpoints, keySaved: true } }).endpoint).toEqual(endpoints[1]);
@@ -126,11 +143,43 @@ describe('relay model lists', () => {
 });
 
 describe('custom model thinking levels', () => {
-  const harness = { kind: 'selectable', effortOptions: { low: {}, medium: {}, high: {} } };
-  it('offers the harness ladder unless the person turned thinking off', () => {
-    expect(customModelEfforts({}, harness)).toEqual(['low', 'medium', 'high']);
-    expect(customModelEfforts({ thinking: true }, harness)).toEqual(['low', 'medium', 'high']);
-    expect(customModelEfforts({ thinking: false }, harness)).toBeNull();
-    expect(customModelEfforts({ thinking: true }, { kind: 'none' })).toBeNull();
+  const harness = { kind: 'selectable', effortOptions: { default: {}, low: {}, medium: {}, high: {} } };
+  const effortCatalog = { kind: 'found' as const, catalogId: 'example/thinking', name: 'Thinking', efforts: ['default', 'high', 'max'] };
+  it('offers only explicit levels supported by the matched model and the harness', () => {
+    expect(customModelEfforts({ effortCatalog }, harness)).toEqual(['high']);
+    expect(customModelEfforts({ effortCatalog }, { kind: 'none' })).toBeNull();
+  });
+  it('does not guess levels for an unknown or non-thinking model', () => {
+    expect(customModelEfforts({}, harness)).toBeNull();
+    expect(customModelEfforts({ effortCatalog: { kind: 'not-found' } }, harness)).toBeNull();
+    expect(customModelEfforts({ effortCatalog: { kind: 'unavailable' } }, harness)).toBeNull();
+    expect(customModelEfforts({ effortCatalog: { ...effortCatalog, efforts: [] } }, harness)).toBeNull();
+  });
+  it('takes the levels the person checked over the catalog, and none while thinking is off', () => {
+    expect(customModelEfforts({ effortCatalog, efforts: ['low', 'medium', 'xhigh'] }, harness)).toEqual(['low', 'medium']);
+    expect(customModelEfforts({ effortCatalog, efforts: [] }, harness)).toBeNull();
+    expect(customModelEfforts({ effortCatalog, thinking: false }, harness)).toBeNull();
+    expect(customModelEfforts({ efforts: ['high'], thinking: false }, harness)).toBeNull();
+  });
+  it('starts a session on the chosen default only when the harness offers it', () => {
+    expect(customModelDefaultEffort({ defaultEffort: 'high' }, ['low', 'high'])).toBe('high');
+    expect(customModelDefaultEffort({ defaultEffort: 'max' }, ['low', 'high'])).toBeUndefined();
+    expect(customModelDefaultEffort({}, ['low', 'high'])).toBeUndefined();
+    expect(customModelDefaultEffort({ defaultEffort: 'high' }, null)).toBeUndefined();
+  });
+  it('checks the catalog levels the dialog lists and proposes High, else the highest checked', () => {
+    expect(customModelCatalogLevels(effortCatalog)).toEqual(['high', 'max']);
+    expect(customModelCatalogLevels({ kind: 'not-found' })).toEqual([]);
+    expect(customModelCatalogLevels(undefined)).toEqual([]);
+    expect(proposedDefaultEffort(['low', 'medium', 'high', 'max'])).toBe('high');
+    expect(proposedDefaultEffort(['low', 'medium'])).toBe('medium');
+    expect(proposedDefaultEffort(['xhigh', 'low'])).toBe('xhigh');
+    expect(proposedDefaultEffort([])).toBeUndefined();
+  });
+  it('stores the declared capabilities and rejects a level the dialog does not offer', () => {
+    const declared = { id: 'm', toolCall: false, thinkingOnly: true, thinkingOptional: false, fast: true, efforts: ['low', 'high'], defaultEffort: 'high' };
+    expect(customModelEntrySchema.parse(declared)).toEqual(declared);
+    expect(customModelEntrySchema.safeParse({ id: 'm', efforts: ['ultra'] }).success).toBe(false);
+    expect(customModelEntrySchema.safeParse({ id: 'm', defaultEffort: 'default' }).success).toBe(false);
   });
 });

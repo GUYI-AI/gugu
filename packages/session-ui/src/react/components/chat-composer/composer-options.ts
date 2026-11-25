@@ -85,6 +85,8 @@ export interface ComposerModelOption {
   shortName?: string;
   /** 一句话说明。桌面清单的行里不画,进悬浮详情卡;手机清单(没有悬停)画在第二行。 */
   description?: string;
+  /** Formatted credit multiplier supplied by the model catalog. */
+  creditRate?: string;
   /** 悬浮详情卡里的事实行(宿主翻好的「标签 → 值」,如 推理档 → 低 · 高),排在上下文窗口之后。 */
   facts?: readonly ComposerModelFact[];
   /** Optional capability metadata shown in the hover card detail. */
@@ -98,14 +100,31 @@ export interface ComposerModelOption {
    * 这个包够不到 app 的图片资源,与 `ComposerAgentOption.icon` 同一条路:宿主给成品节点。
    */
   icon?: ReactNode;
-  /** Displayed access-source heading. */
+  /**
+   * **一级分类 = 这条是谁的**(「你的 Codex 模型」/「咕咕提供的模型 · 按积分计费」)。
+   * 相邻且同名的条目归到一个小标题下。
+   *
+   * owner 2026-09-06 定的层次:一级是「谁的」,厂商是二级。理由在产品上:用户先要决定的是
+   * **这次调用记在谁账上**(花不花积分、凭据归谁管),厂商是在那之后才挑的。
+   * ⚠️ 第一版把两者做反了(厂商当组头、来源当副标题),owner 原话「你这个分类层次反了」。
+   *
+   * 不设 = 这条不属于任何分组,平铺在列表里。宿主自己决定怎么分组,composer 不从 id 猜。
+   */
   groupLabel?: string;
-  /** Stable access-source identity. Two connections can share a display name. */
-  groupId?: string;
-  /** Optional billing or connection information shown in the detail card. */
-  groupDetail?: string;
-  /** Model vendor or address alias, also searchable. */
+  /**
+   * **二级 = 厂商**(OpenAI / Anthropic / 智谱 …)。它**不做分组**,只做两件事:
+   * 行内那枚 logo 的可读名,也是搜索框匹配的厂商名(顶上那排筛选块 owner 11-25 撤了)。
+   *
+   * ⚠️ ❌ 别把它升成组头 —— 厂商横切在两档之上(同一家可以既有你自己的、又有咕咕代付的),
+   * 把它做成分组会把「谁的」这条更要紧的界线切碎。
+   */
   providerLabel?: string;
+  /**
+   * Small grey tag after the name in the desktop list: which vendor a person's own address belongs to (its registrable domain without
+   * the public suffix, e.g. `deepseek`), so same-named models from two addresses stay apart. The trigger names only the model.
+   * Gugu's own models have none.
+   */
+  tag?: string;
   /**
    * 这一条**看得见但选不了**,以及为什么。
    *
@@ -120,6 +139,12 @@ export interface ComposerModelOption {
    */
   disabled?: boolean;
   disabledReason?: string;
+  /** Opens the host's repair form and returns to the picker when it closes. */
+  disabledAction?: { label: string; open: (onClose: () => void) => void };
+  /** Keep the identity of a bound model in the trigger when it cannot be offered on the current device. */
+  hiddenFromPicker?: boolean;
+  /** A hidden alias of the listed model with this id (a harness `default`): that row carries the check while it is selected. */
+  aliasOf?: string;
 }
 
 /**
@@ -159,25 +184,50 @@ export interface ComposerModelFact {
   value: string;
 }
 
+/**
+ * 清单底部那一条「升级解锁更多模型」(#7056,免费档才有)。
+ * 这一档用不了的模型**不进清单**(列出来点了才说要会员「像是埋雷」,owner 2026-10-10);
+ * 它们只在这里露一次面:悬停这一条看得到是哪几个,点它去开会员。
+ */
+export interface ComposerModelUpgrade {
+  /** 那一条的文案,如「升级解锁更多模型」。 */
+  label: string;
+  /** 悬浮卡的标题,如「开通会员后可用」。 */
+  title: string;
+  /** 开会员后能用的模型名。 */
+  models: readonly string[];
+}
+
 /** 内部条目：`modelOptions` 那张表摊平成数组后的一行。 */
 export interface ComposerModelItem {
   id: string;
   name: string;
   shortName?: string;
   description?: string;
+  creditRate?: string;
   facts?: readonly ComposerModelFact[];
   icon?: ReactNode;
   modelFeatures?: ComposerModelOption['modelFeatures'];
   groupLabel?: string;
-  groupId?: string;
-  groupDetail?: string;
   providerLabel?: string;
+  /** 见 `ComposerModelOption` 上同名字段。 */
+  tag?: string;
   /** 见 `ComposerModelOption` 上同名字段。 */
   disabled?: boolean;
   disabledReason?: string;
+  disabledAction?: ComposerModelOption['disabledAction'];
+  /** Keep the identity of a bound model in the trigger when it cannot be offered on the current device. */
+  hiddenFromPicker?: boolean;
+  /** 见 `ComposerModelOption` 上同名字段。 */
+  aliasOf?: string;
 }
 
-/** A consecutive section of the menu. */
+/**
+ * 模型列表里的一段。`label` 是**一级分类**(这条是谁的),空串 = 不属于任何分组、平铺渲染。
+ *
+ * ⚠️ 厂商**不参与切段**:它横切在两档之上(同一家可以两档都有),做成分组会把「谁的」
+ * 这条更要紧的界线切碎。厂商只出现在行内 logo 上(并能被搜索)。
+ */
 export interface ComposerModelGroup {
   label: string;
   items: ComposerModelItem[];

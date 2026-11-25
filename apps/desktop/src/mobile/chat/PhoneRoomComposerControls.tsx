@@ -18,6 +18,7 @@ import { PhoneComposerControl, PhoneComposerControlRow, PhoneComposerSheet } fro
 import { preserveComposerFocus } from '../composer/composer-focus'
 import { roomAgentEntry, roomAgentsByRecentActivity, roomTopicChoices } from './room-composer-models'
 import { PhoneNavigationPicker } from './PhoneNavigationPicker'
+import { PhoneTopicPinRow } from './PhoneTopicPinRow'
 import '../../components/session-watch/create-controls-catalog'
 import './room-composer-catalog'
 import './phone-room-composer.css'
@@ -64,8 +65,10 @@ function RoomComposerControls({ chatId, topics, topicsReady, current, onPick, me
     <PhoneComposerSheet open={view !== null} onClose={() => setView(null)} title={t(view ?? 'topics')} titleCount={titleCount} testId="phone-room-controls-sheet" className="gg-phone-room-sheet" anchor={view === 'topics' ? topicsButton : undefined}>
       {view === 'topics' ? <PhoneNavigationPicker key="topics" kind="topics" items={[null, ...choices.topics]} nameOf={topic => topic?.name ?? t('main')}>
         {shown => <div role="radiogroup" aria-label={t('topics')}>
-          {shown.map(topic => topic ? <TopicChoice key={topic.chat_id} name={topic.name} calls={topic.calls} news={topic.news}
-            selected={topic.chat_id === current?.chatId} id={topic.chat_id} onClick={() => choose(topic)} />
+          {shown.map(topic => topic ? <PhoneTopicPinRow key={topic.chat_id} topic={topic}>
+            <TopicChoice name={topic.name} calls={topic.calls} news={topic.news}
+              selected={topic.chat_id === current?.chatId} id={topic.chat_id} onClick={() => choose(topic)} />
+          </PhoneTopicPinRow>
             : <TopicChoice key="main" name={t('main')} {...choices.main} selected={!current} main onClick={() => choose(null)} />)}
         </div>}
       </PhoneNavigationPicker> : view === 'agents' ? <PhoneNavigationPicker key="agents" kind="agents" items={agents} nameOf={profile => profile.displayName}

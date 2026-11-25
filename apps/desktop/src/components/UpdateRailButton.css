@@ -1,43 +1,46 @@
-.gg-sidebar-item.gg-update-rail {
-  width: 40px;
-  height: 40px;
-  gap: 2px;
-  align-content: center;
-}
-
-.gg-update-rail-icon {
-  display: grid;
-  place-items: center;
+/* Sits in the sidebar's foot row beside 已安排 / 会话历史 / the bell: their 28px ghost button, the glyph in the accent. */
+.gg-icon-btn.gg-update-rail {
   width: 28px;
   height: 28px;
-  border-radius: var(--radius-capsule);
-  background: var(--primary);
-  color: var(--primary-fg);
 }
 
-.gg-update-rail[data-failed] .gg-update-rail-icon {
-  background: var(--danger-tint);
+.gg-update-rail > svg {
+  color: var(--primary);
+}
+
+.gg-update-rail[data-failed] > svg {
   color: var(--danger-fg);
 }
 
-.gg-update-rail-progress {
-  color: var(--muted-fg);
-  font-size: var(--font-caption);
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
+/* The ring shares the glyph's cell; the glyph shrinks inside it. */
+.gg-update-rail > svg,
+.gg-icon-btn.gg-update-rail > .gg-update-rail-progress {
+  grid-area: 1 / 1;
 }
 
-.gg-update-rail[data-downloading] .gg-update-rail-icon {
-  width: 24px;
-  height: 24px;
+.gg-icon-btn.gg-update-rail > .gg-update-rail-progress {
+  width: 28px;
+  height: 28px;
+}
+
+.gg-icon-btn.gg-update-rail[data-progress] > svg:first-child {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+
+.gg-update-rail-progress circle:last-child {
+  transition: stroke-dashoffset var(--dur-fast) linear;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gg-update-rail-progress circle:last-child { transition: none; }
 }
 
 .gg-update-rail[aria-busy] {
   cursor: default;
 }
 
-.gg-update-rail[aria-busy] .gg-update-rail-icon {
-  background: var(--live-soft);
+.gg-update-rail[aria-busy] > svg {
   color: var(--live);
 }
 

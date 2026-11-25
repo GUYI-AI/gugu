@@ -13,6 +13,7 @@
 // 那就是第二个属主在原地 —— #3271 的病只治了增量那一半。
 
 import type { ChatItem, ChatUnreadLocator, GroupMemberRole, NotificationLevel } from '@gugu/core/shared/types/chat'
+import { mergeConversationVisibility } from '@gugu/core/shared/ui/chatModels'
 import { isPendingDelivery, parseSystemNotice } from '@gugu/core/shared/ui/systemNotice'
 import {
   assemble,
@@ -210,6 +211,9 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
   const chatsByUser = new Map<string, Set<string>>()
   const unpublished = new Set<EntityKey>()
   const identitiesById = new Map<string, DisplayIdentity>()
+  // A projection read may replace only the identity it started from. Other readers
+  // (contacts, lifecycle) publish to the same repository while this owner keeps its cells.
+  const identityReads = new Map<string, { before: DisplayIdentity | undefined; value: DisplayIdentity }>()
   let identities: DisplayIdentity[] | undefined
   const merge = (cells: Iterable<readonly [EntityKey, Cell]>): void => {
     const merged = [...cells]
@@ -225,7 +229,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       const { family, id } = splitKey(key)
       if (family === 'identity') {
         if (cell.value) identitiesById.set(id, cell.value as unknown as DisplayIdentity)
-        else identitiesById.delete(id)
+        else { identitiesById.delete(id); identityReads.delete(id) }
         identities = undefined
       }
       if (family !== 'membership') continue
@@ -331,10 +335,13 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
     identity: async (ids, signal) => {
       // 身份格里存**完整** DisplayIdentity —— applyFetchedChatList 与各处 identity selector
       // 消费的是那整行;只存 {id,name} 会让「有身份」与「能显示」错开(#4314 的 name='' 陷阱)。
+      const before = new Map(ids.map(id => [id, held?.identity(id)]))
       const found = await readDisplayIdentities([...ids], signal)
       const byId = new Map<string, unknown>()
       for (const identity of found) {
-        byId.set(identity.id, shareObject(held?.identity(identity.id), identity))
+        const value = shareObject(held?.identity(identity.id), identity)
+        identityReads.set(identity.id, { before: before.get(identity.id), value })
+        byId.set(identity.id, value)
       }
       return indexExact(ids, byId)
     },
@@ -401,7 +408,19 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
     },
   }
 
-  const identitySnapshot = (): DisplayIdentity[] => identities ??= Object.freeze([...identitiesById.values()]) as DisplayIdentity[]
+  const identitySnapshot = (): DisplayIdentity[] => {
+    const next = [...identitiesById.values()].map(cached => {
+      const current = held?.identity(cached.id)
+      const read = identityReads.get(cached.id)
+      // Stored/unchanged cells have no publication authority over the shared owner.
+      // A fresh read loses that authority if another identity arrived during its GET
+      // or while its list publication waited for the repository transaction.
+      return current && (!read || read.value !== cached || (current !== read.before && current !== read.value))
+        ? current : cached
+    })
+    if (identities && identities.length === next.length && next.every((value, index) => value === identities![index])) return identities
+    return identities = Object.freeze(next) as DisplayIdentity[]
+  }
 
   const record = (entry: ChatProjectionLedgerEntry): void => {
     ledger.push(entry)
@@ -617,11 +636,25 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
 
   const owner: ChatProjection = {
     async confirmPersonalHiding(receipt, signal = new AbortController().signal) {
+      signal.throwIfAborted()
       assertRevision(receipt.account_revision, 'hide receipt')
       const key = entityKey('membership', membershipId(receipt.chat_id, viewerId))
       const current = cache.get(key)
-      // A clear receipt revokes retained bytes before any further IO. Hide and Undo
-      // reconcile through the same bounded family reader after the RPC commits.
+      if (!receipt.cleared_at) {
+        const index = rows.findIndex(row => row.id === receipt.chat_id)
+        if (index !== -1) {
+          const row = rows[index]!
+          // The committed receipt covers personal visibility. The journal still owns the rest of the membership row.
+          const newer = current?.value && compareStamp(current.stamp, receipt.account_revision) >= 0
+          const confirmed = mergeConversationVisibility(row, {
+            conversation_hidden_at: newer ? (current.value as MembershipValue).conversation_hidden_at ?? null : receipt.hidden_at,
+            conversation_visibility_revision: newer ? current.stamp : receipt.account_revision,
+          })
+          if (confirmed !== row) rows = rows.map(item => item === row ? confirmed : item)
+          return rows
+        }
+      }
+      // A clear receipt revokes retained bytes before any further IO.
       if (current?.value && receipt.cleared_at) {
         merge([[key, { stamp: receipt.account_revision,
           value: { ...current.value, conversation_hidden_at: receipt.hidden_at, ...(receipt.cleared_at ? { conversation_cleared_at: receipt.cleared_at } : {}) } }]])
@@ -746,6 +779,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       chatsByUser.clear()
       unpublished.clear()
       identitiesById.clear()
+      identityReads.clear()
       identities = undefined
       planner = EMPTY_PLANNER
       rows = []

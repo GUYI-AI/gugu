@@ -7,8 +7,7 @@ import { composerTierLabel } from '@renderer/features/sessions/session-config/us
 import { PLATFORM_RATE_KEY } from '@/session/shared/platform-model-labels'
 import { createModelName, createModelOptions, sessionModelView } from '@/components/session-watch/session-model-menu'
 
-// #6845 手机模型选择与桌面同一份装配:组头分出「你的 Codex 模型」与「咕咕提供的模型」,咕咕条目用咕咕目录的名字与倍率,
-// 收起时写「咕咕 X」;换法(当场换 / 重开换计费路)与桌面 planModelSwitch 同一个判定。
+// 手机与桌面都用咕咕模型在前的单列表。咕咕条目使用目录名称和倍率，切换仍共用 planModelSwitch。
 
 const codexModelSetting: LiveSettingCapability = {
   channel: 'provider-thread-settings',
@@ -25,7 +24,6 @@ const platformModels = [
 
 const ownTerra = { id: 'gpt-5.6-terra', name: 'GPT-5.6-Terra', description: 'Older balanced model for straightforward work.' }
 
-const guguSource = () => translateSessionMessage('composer.platformModelSource')
 const rate = (multiplier: string) => translateSessionMessage(PLATFORM_RATE_KEY, { multiplier })
 const gugu = (model: string) => translateSessionMessage('composer.platformModelShortName', { model })
 
@@ -44,19 +42,18 @@ describe('#6845 手机会话胶囊的模型那一档 = 桌面会话菜单', () =
     liveSetting: codexModelSetting,
   }
 
-  it('平台会话:两档组头都在;咕咕那档用咕咕目录的名字与倍率,自家那档来自自家目录而不是被票裁过的活清单', () => {
+  it('平台会话:单列表里先列咕咕目录的模型和倍率，再列自家目录', () => {
     const view = sessionModelView(platformMenu, platformLive)
-    expect(view.groups.map((group) => group.label)).toEqual([
-      guguSource(),
-      composerTierLabel('own', 'Codex'),
-    ])
-    expect(view.groups[1].items.map((item) => [item.id, item.name])).toEqual([['gpt-5.6-terra', 'GPT-5.6-Terra']])
-    expect(view.groups[0].items.map((item) => [item.id, item.name, item.description])).toEqual([
+    expect(view.groups.map((group) => group.label)).toEqual([''])
+    const items = view.groups[0].items
+    expect(items.slice(0, 2).map((item) => [item.id, item.name, item.description])).toEqual([
       ['platform:gpt-5.6-terra', 'GPT-5.6 Terra', rate('×0.5')],
       ['platform:glm-5.3', 'GLM-5.3', rate('×0.35')],
     ])
+    expect(items.slice(2).map((item) => [item.id, item.name])).toEqual([['gpt-5.6-terra', 'GPT-5.6-Terra']])
     expect(view.selectedId).toBe('platform:gpt-5.6-terra')
-    expect(view.groups[0].items[0].shortName).toBe(gugu('GPT-5.6 Terra'))
+    expect(items[0].shortName).toBe(gugu('GPT-5.6 Terra'))
+    expect(items.map((item) => item.creditRate)).toEqual(['0.50x', '0.35x', undefined])
   })
 
   it('平台会话 + 自家登录已失效:自家那档与桌面菜单一样经 withAuthExpiry 落空,只剩咕咕那档', () => {
@@ -64,7 +61,8 @@ describe('#6845 手机会话胶囊的模型那一档 = 桌面会话菜单', () =
       { ...platformMenu, ownAuth: { status: { kind: 'unauthenticated', reason: 'expired' }, login: null } },
       platformLive
     )
-    expect(view.groups.map((group) => group.label)).toEqual([guguSource()])
+    expect(view.groups.map((group) => group.label)).toEqual([''])
+    expect(view.groups[0].items.map((item) => item.id)).toEqual(['platform:gpt-5.6-terra', 'platform:glm-5.3'])
   })
 
   it('平台会话:同一档当场换(下发活清单里的那个值),换到自己的模型要重开换计费路', () => {
@@ -78,7 +76,9 @@ describe('#6845 手机会话胶囊的模型那一档 = 桌面会话菜单', () =
       { conversationSelection: null, agentName: 'Codex', platformModels, ownCatalog: null, ownAuth: null, liveSetting: codexModelSetting },
       { selected: 'gpt-5.6-terra', available: [{ ...ownTerra }, { id: 'gpt-6-astra', name: 'GPT-6-Astra' }] }
     )
-    expect(view.groups[1].items.map((item) => item.id)).toEqual(['gpt-5.6-terra', 'gpt-6-astra'])
+    expect(view.groups[0].items.map((item) => item.id)).toEqual([
+      'platform:gpt-5.6-terra', 'platform:glm-5.3', 'gpt-5.6-terra', 'gpt-6-astra',
+    ])
     expect(view.selectedId).toBe('gpt-5.6-terra')
     expect(view.plan('gpt-6-astra')).toEqual({ kind: 'hot', modelId: 'gpt-6-astra', wireValue: 'gpt-6-astra' })
     expect(view.plan('platform:gpt-5.6-terra')).toMatchObject({ kind: 'reload', modelId: 'gpt-5.6-terra', source: 'platform' })
@@ -88,7 +88,7 @@ describe('#6845 手机会话胶囊的模型那一档 = 桌面会话菜单', () =
 
 describe('#6845 新建面(手机新建会话、无宿主 web 新建 Agent)与桌面同一份装配', () => {
   const models: SessionpageSessionCreateModels = {
-    harness: 'claude',
+    harness: 'codex',
     transport: 'acp',
     models: [
       { ...ownTerra, source: 'harness' },
@@ -103,21 +103,16 @@ describe('#6845 新建面(手机新建会话、无宿主 web 新建 Agent)与桌
   }
 
   it('两条同名只差一个连字符的模型:行的第二行与收起时的名字分得开', () => {
-    const options = createModelOptions(models, 'Claude')
-    expect(options['gpt-5.6-terra']).toMatchObject({ name: 'GPT-5.6-Terra', groupLabel: composerTierLabel('own', 'Claude') })
+    const options = createModelOptions(models, 'Codex')
+    expect(options['gpt-5.6-terra']).toMatchObject({ name: 'GPT-5.6-Terra', groupLabel: composerTierLabel('own', 'Codex') })
     expect(options['platform:gpt-5.6-terra']).toMatchObject({
       name: 'GPT-5.6 Terra',
       description: rate('×0.5'),
-      groupLabel: guguSource(),
+      groupLabel: composerTierLabel('platform', 'Codex'),
     })
     expect(createModelName(models, 'gpt-5.6-terra')).toBe('GPT-5.6-Terra')
     expect(createModelName(models, 'platform:gpt-5.6-terra')).toBe(gugu('GPT-5.6 Terra'))
     expect(createModelName(models, 'gone')).toBeNull()
-  })
-
-  it('uses only settings-managed models for personal Codex connections', () => {
-    const options = createModelOptions({ ...models, harness: 'codex' }, 'Codex')
-    expect(Object.keys(options)).toEqual(['platform:gpt-5.6-terra'])
   })
 
   // #7056 手机新建面与桌面同一份装配:要会员的、他在设置「模型」页关掉的都不进下拉。
@@ -129,8 +124,8 @@ describe('#6845 新建面(手机新建会话、无宿主 web 新建 Agent)与桌
         { id: 'platform:glm-5.3', name: 'GLM 5.3', source: 'gugu', credit_multiplier: 0.35, requires_membership: true },
         { id: 'platform:grok-4.5', name: 'Grok 4.5', source: 'gugu', hidden: true },
       ],
-    }, 'Claude')
-    expect(Object.keys(options)).toEqual(['gpt-5.6-terra', 'platform:gpt-5.6-terra'])
+    }, 'Codex')
+    expect(Object.keys(options)).toEqual(['platform:gpt-5.6-terra', 'gpt-5.6-terra'])
   })
 })
 

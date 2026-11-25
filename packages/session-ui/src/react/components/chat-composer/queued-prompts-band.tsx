@@ -119,7 +119,9 @@ export function QueuedPromptsBand({
               }
               onDrop={(event) => handleDrop(event, prompt.id)}
             >
-              <span className={styles.leadingSlot}>
+              {/* The row says it is waiting in words, not with a list glyph: read alone, 原文 + 现在插入 looks sent (UX 复审 B5-F05). */}
+              <span className={styles.leadingSlot} title={translate('composer.queuedLabel')}>
+                <span className={styles.queueLabel}>{translate('composer.queuedLabel')}</span>
                 <ListTree className={styles.queueIcon} aria-hidden />
                 {!isEditing && !prompt.locked && ids.length > 1 && (
                   <button

@@ -69,7 +69,7 @@ vi.mock('@renderer/lib/agent-config/runtime-client', () => ({
       if (machine === state.failMachine) throw new Error('Fixture machine unavailable');
       return { success: true, data: [record(machine)] };
     },
-    detectCustomModelProtocols: async () => ({ success: true, data: { endpoints: record(machine).endpoints, models: [record(machine).models[0]!.id], failures: [] } }),
+    detectCustomModelProtocols: async (input: unknown) => { state.calls.push({ machine, action: "detect", input }); return { success: true, data: { endpoints: record(machine).endpoints, models: [record(machine).models[0]!.id], failures: [] } }; },
     testCustomModel: async (input: unknown) => { state.calls.push({ machine, action: 'test', input }); return { success: true, data: { kind: 'connected' } }; },
     saveCustomModel: async (input: SaveCustomModel) => { state.calls.push({ machine, action: 'save', input }); return { success: true, data: { ...record(machine), ...input } }; },
     removeCustomModel: async (input: unknown) => { state.calls.push({ machine, action: 'remove', input }); return { success: true, data: undefined }; },
@@ -127,8 +127,9 @@ it('routes testing, editing and deleting to the selected device and drops an ope
   await choose('开发机 A');
   await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('远端 A 模型');
   await click(page.getByRole('button', { name: '管理模型', exact: true }).nth(1));
-  await click(page.getByRole('button', { name: '测试连接', exact: true }));
-  expect(state.calls).toContainEqual({ machine: 'remote-a', action: 'test', input: { connectionId: 'remote-a', modelId: 'remote-a' } });
+  await click(page.getByRole('button', { name: '编辑 remote-a', exact: true }));
+  await click(page.getByTestId('custom-model-test'));
+  expect(state.calls).toContainEqual({ machine: 'remote-a', action: 'detect', input: { connectionId: 'remote-a', baseUrl: 'https://provider.test/v1', modelId: 'remote-a' } });
   await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();
   await act(async () => settingsDeviceStore.select('remote-b'));
   await expect.element(page.getByTestId('custom-model-dialog')).not.toBeInTheDocument();

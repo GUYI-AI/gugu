@@ -13,7 +13,11 @@ import { migrateCustomModels } from './custom-model-migration';
 const state = vi.hoisted(() => ({ fixture: null as RegistryFixture | null }));
 vi.mock('@main/db/client', () => ({ get db() { return state.fixture!.db; } }));
 vi.mock('@main/core/provider-accounts/provider-account-registry-instance', () => ({ get providerAccountRegistry() { return state.fixture!.registry; } }));
-const { saveCustomModel, listCustomModels, resolveCustomModel, testCustomModel, removeCustomModel, validateCustomModelSelection } = await import('./custom-models');
+// Recording a live setting broadcasts the changed row to windows; there are none here.
+vi.mock('@main/lib/events', () => ({ events: { emit: vi.fn() } }));
+const { saveCustomModel, listCustomModels, resolveCustomModel, testCustomModel, removeCustomModel, validateCustomModelSelection, customModelFastAllowed } = await import('./custom-models');
+const { recordLiveSessionSetting } = await import('@main/core/sessions/record-live-session-setting');
+const { recordSessionPlatformModel } = await import('@main/core/sessions/platform-model-selection');
 const { resolveCustomModelRunContext } = await import('./custom-model-run-context');
 const endpoints = [{ protocol: 'openai-responses' as const, baseUrl: 'https://provider.test/v1' }, { protocol: 'anthropic-messages' as const, baseUrl: 'https://provider.test/anthropic' }];
 beforeEach(async () => {
@@ -52,6 +56,59 @@ it('saves one encrypted provider record, lists no secret, keeps existing session
   expect(await listCustomModels()).toEqual([]);
   expect(state.fixture!.secretStore.secrets.size).toBe(0);
   await expect(resolveCustomModel('codex', 'a')).rejects.toThrow('Custom model unavailable');
+});
+it('keeps what the model dialog declares through the IPC contract and the stored record', async () => {
+  const declared = { id: 'model:a', toolCall: false, image: true, thinking: true, thinkingOnly: true, thinkingOptional: false, fast: true, efforts: ['low', 'high'], defaultEffort: 'high', contextWindow: 131072, maxOutput: 16384 };
+  const off = { id: 'model/b', thinking: false, efforts: [] };
+  const input = saveCustomModelSchema.parse({ name: 'Provider', apiKey: 'fixture-secret', preset: null, endpoints, models: [declared, off] });
+  const { id } = await saveCustomModel(input);
+  const [listed] = await listCustomModels();
+  expect(listed?.id).toBe(id);
+  expect(listed?.models).toMatchObject([declared, off]);
+});
+it('Fast reaches the upstream as the priority tier only for the session that turned it on, and stops on the next request', async () => {
+  // A real upstream on loopback: what it receives is what the provider would see on the wire.
+  const tiers: unknown[] = [];
+  const upstream = createServer(async (request, response) => {
+    let body = ''; for await (const chunk of request) body += chunk;
+    tiers.push(JSON.parse(body).service_tier); response.end('{}');
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+  try {
+    const baseUrl = `http://127.0.0.1:${(upstream.address() as { port: number }).port}/v1`;
+    const record = await saveCustomModel({ name: 'Provider', apiKey: 'fixture-secret', preset: null, endpoints: [{ protocol: 'openai-responses', baseUrl }], models: [{ id: 'fast-model', fast: true }, { id: 'plain-model' }] });
+    const option = (modelId: string) => customModelOptionId({ connectionId: record.id, modelId });
+    // Started from the composer on the person's own model: the billing route is recorded as their own.
+    for (const id of ['a', 'b']) { session(id, 'codex', option('fast-model')); await recordSessionPlatformModel(id, null); }
+    const a = (await resolveCustomModel('codex', 'a'))!;
+    const b = (await resolveCustomModel('codex', 'b'))!;
+    expect(a.apiKey).not.toBe(b.apiKey);
+    // Codex sends `default` itself when its own Fast is off; the forwarder decides from the session record.
+    const send = async ({ endpoint, apiKey }: { endpoint: string; apiKey: string }) => {
+      const response = await fetch(`${endpoint}/responses`, { method: 'POST', headers: { authorization: `Bearer ${apiKey}` }, body: '{"model":"fast-model","service_tier":"default"}' });
+      expect(`${response.status} ${await response.text()}`).toBe('200 {}');
+    };
+    await recordLiveSessionSetting('a', { dimension: 'fast', value: true });
+    await send(a); await send(b);
+    await recordLiveSessionSetting('a', { dimension: 'fast', value: false });
+    await send(a);
+    await recordLiveSessionSetting('a', { dimension: 'fast', value: true });
+    const row = state.fixture!.db.select().from(sessions).where(eq(sessions.id, 'a')).get()!;
+    state.fixture!.db.update(sessions).set({ config: { ...row.config, model: option('plain-model') } as typeof row.config }).where(eq(sessions.id, 'a')).run();
+    await send(a);
+    expect(tiers).toEqual(['priority', 'default', 'default', 'default']);
+    await expect(customModelFastAllowed('codex', { kind: 'custom', connectionId: record.id, modelId: 'fast-model' })).resolves.toBe(true);
+    await expect(customModelFastAllowed('codex', { kind: 'custom', connectionId: record.id, modelId: 'plain-model' })).resolves.toBe(false);
+  } finally { upstream.closeAllConnections(); upstream.close(); }
+});
+it('records Fast for a custom model on any harness, and still refuses it for a harness model that has none', async () => {
+  const record = await saveCustomModel({ name: 'Provider', apiKey: 'fixture-secret', preset: null, endpoints, models: [{ id: 'm', fast: true }] });
+  session('custom', 'opencode', customModelOptionId({ connectionId: record.id, modelId: 'm' }));
+  session('native', 'opencode', 'some-model');
+  for (const id of ['custom', 'native']) await recordSessionPlatformModel(id, null);
+  await recordLiveSessionSetting('custom', { dimension: 'fast', value: true });
+  expect(state.fixture!.db.select().from(sessions).where(eq(sessions.id, 'custom')).get()!.config).toMatchObject({ fastMode: true });
+  await expect(recordLiveSessionSetting('native', { dimension: 'fast', value: true })).rejects.toThrow('Fast is unavailable for this harness');
 });
 it('migration reuses credential references, restores the original official endpoint, preserves models and is idempotent after downgrade strips the marker', async () => {
   const old = await legacy('dsh');

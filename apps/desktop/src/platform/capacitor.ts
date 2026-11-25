@@ -1,5 +1,6 @@
 import { androidPushConfirmed, suppressAndroidLocalPushNotification } from '../mobile/android-push/androidPushState'
 import { nativeAndroidAccountClosure } from './androidAccountClosure'
+import { nativeAndroidAccountClosureV2 } from './androidAccountClosureV2'
 import { nativePhoneAgentHostAvailable } from './phoneAgentHostCapability'
 import { schedulePhoneNotification } from './phoneNotificationOutlet'
 import { conversationNotificationsAvailable, showConversationNotification, subscribeConversationNotificationTaps } from './capacitorChatNotifications'
@@ -194,6 +195,7 @@ function ensureNotificationChannels(): Promise<string> {
 export const capacitorPlatform: AppPlatform = {
   ...base,
   accountClosure: nativeAndroidAccountClosure,
+  accountClosureV2: nativeAndroidAccountClosureV2,
   textSelection: nativeTextSelection,
   accountOAuthBrowser: {
     openBrowser,

@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- compound component namespace is intentional. */
 
+import type { HTMLAttributes } from 'react'
 import { Field as FieldPrimitive } from '@base-ui/react/field'
 import { Input as InputPrimitive } from '@base-ui/react/input'
 import { cn } from '@/lib/cn'
@@ -20,10 +21,12 @@ const fieldLabel = cn(
   'data-[visually-hidden=true]:[clip-path:inset(50%)]',
 )
 
+const fieldControlFrame = 'rounded-[var(--radius-control)] border border-[var(--border-strong)]'
+
 const fieldControl = cn(
   // @@@ui-ruler 控件高 = --control-h-lg(36),与 SearchField 同高;py 由 min-h 撑,不再 34 与 36 错 2px。
   'box-border w-full min-h-[var(--control-h-lg)] px-2.5 py-[7px] max-[719px]:min-h-[var(--control-h-touch)]',
-  'rounded-[var(--radius-control)] border border-[var(--border-strong)] bg-transparent',
+  fieldControlFrame, 'bg-transparent',
   'font-[inherit] text-[length:var(--font-body)] text-[var(--text-primary)]',
   'outline-none transition-[border-color,box-shadow] duration-[var(--dur-fast)] ease-out motion-reduce:transition-none',
   'hover:border-[color-mix(in_srgb,var(--primary)_45%,var(--border-strong))]',
@@ -51,6 +54,11 @@ const fieldControlBare = cn(
 
 const fieldDescription = 'text-[length:var(--font-caption)] text-[var(--faint-fg)]'
 const fieldError = 'text-[length:var(--font-body)] text-[var(--danger-fg)]'
+
+/** A shared input frame; the caller keeps the compound control's existing layout. */
+function InputGroup({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return <div {...props} data-slot="field-input-group" className={cn(fieldControlFrame, className)} />
+}
 
 function Root({ className, ...props }: Omit<FieldPrimitive.Root.Props, 'className'> & ClassNameProp) {
   return (
@@ -121,6 +129,7 @@ export const Field = {
   Root,
   Label,
   Input,
+  InputGroup,
   Textarea,
   Description,
   Error: ErrorMessage,

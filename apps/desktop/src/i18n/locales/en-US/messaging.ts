@@ -282,7 +282,7 @@ export default {
     "removeFromList": "Remove from list",
     "hideFailed": "Could not remove this conversation from the list",
     "deleteHistoryDescription": "Clear your chat history. Other members are not affected.",
-    "hide": "Hide",
+    "hide": "Hide from list",
     "createAgent": "Create agent",
     "addContact": "Add contact",
     "clearSearch": "Clear search",
@@ -338,6 +338,9 @@ export default {
       "setListenModeFailed": "Could not change the listen mode. The setting is unchanged."
     },
     "groupAction": {
+      "channelOwner": "Channel owner",
+      "supervisorRoleMigrated": "Migrated the previous supervisor role",
+      "topicJoined": "Joined the topic",
       "joined": "Joined the group chat",
       "roleUpdated": "Group role updated"
     },
@@ -487,6 +490,7 @@ export default {
     "mentionAll": "Everyone",
     "mentionMembers": "Mention a member",
     "mentionNoMatch": "No matching members",
+    "mentionRoleHuman": "Person",
     "placeholder": "Write a message…",
     "mobilePlaceholder": "Write a message…",
     "projectGroupPlaceholder": "Message {{name}}… @ to mention an agent",
@@ -968,9 +972,7 @@ export default {
     "leave": "Leave topic",
     "leaveHint": "You can still read it, but will not get notifications from this topic",
     "removeHint": "They can still read it, but will not get notifications from this topic",
-    "pins": {
-      "pin": "Pin {{name}}",
-      "unpin": "Unpin {{name}}",
+    "menu": {
       "emptyHint": "Choose “Open topic” on any message."
     },
     "anchor": {

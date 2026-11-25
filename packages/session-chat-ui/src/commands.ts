@@ -236,6 +236,12 @@ export type ChatCommands = {
   onOpenLink?: (href: string) => boolean;
 
   /**
+   * The picture an attachment's link shows is already drawn here (its thumbnail): told just before that link is followed,
+   * so the file opens out of it, as a chat message's picture does, rather than from nothing.
+   */
+  onDrawnPictureLink?: (href: string, picture: HTMLImageElement) => void;
+
+  /**
    * 点了一张附件卡(#7193):agent 用 `session_open_in_tab` 打开过的那份文件 / 网页。宿主重新打开它 ——
    * 桌面与对话顶部「输出」里点那一条同一个动作。不接 = 卡片只看不点。
    */

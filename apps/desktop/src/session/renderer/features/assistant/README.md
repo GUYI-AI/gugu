@@ -3,6 +3,7 @@
 个人助理(人级别的 agent,不住项目区)。**桌面上它的页就是装好的受信助理 App `gugu-assistant`**(API 41 的 App 页 + 旁边那条会话):
 最左栏顶格、通知、链接、任务卡、快速聊天的「打开」都经同一个决定 `decideAssistantEntry`(`lib/assistantEntry.ts`)——
 App 可用 → 它的页(没有助理时是 App 自己的开通页);App 不可用(还在装 / 被关掉)→ 和它的私聊当普通聊天开,没有助理就去设置「咕咕」开通。内置的会话页视图 `assistant` 已删。
+**眼下不推广它**(`ASSISTANT_PROMOTED = false`,`session/shared/extensions/assistant-entry.ts`):它的 App 是一个普通 App —— 「我的」里不单独占第一格、agent 市场(桌面 / 手机)不置顶它、手机「消息」不置顶它那一行、没有它的人不被引去开通(`setup` 不出现,快速聊天不开)、两端都不自己装它的 App、App 列表里照普通 App 列它。已经有它的人:它和它的 App 照旧能用。
 产品预期见 product spec。这个目录剩下的是壳仍在画的(设置页、开通流程、设备页、语音笔记录音与转写、给 App 的宿主接口要读的数据)和手机仍共用的几块。
 
 **设置不在 App 里**(owner 10-16「只有一个设置,咕咕的设置是全局设置里的一组;齿轮直接开到那一组,❌ 再有第二个设置页」):

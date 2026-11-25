@@ -26,6 +26,10 @@ const GUGU_REASONS: Record<GuguCatalogReason, GuguReasonCopy> = {
   'none-for-agent': { copy: 'guguCatalog.reason.none-for-agent', action: null },
   'signed-out': { copy: 'guguCatalog.reason.signed-out', action: 'sign-in' },
   'service-unavailable': { copy: 'guguCatalog.reason.service-unavailable', action: 'retry' },
+  'conversion-add-provider-timeout': { copy: 'guguCatalog.reason.conversion-add-provider-timeout', action: 'retry' },
+  'conversion-switch-provider-timeout': { copy: 'guguCatalog.reason.conversion-switch-provider-timeout', action: 'retry' },
+  'conversion-listen-timeout': { copy: 'guguCatalog.reason.conversion-listen-timeout', action: 'retry' },
+  'conversion-start-failed': { copy: 'guguCatalog.reason.conversion-start-failed', action: 'retry' },
   'unreachable': { copy: 'guguCatalog.reason.unreachable', action: 'retry' },
   'membership-required': {
     copy: 'guguCatalog.reason.membership-required',
@@ -116,6 +120,7 @@ export function safeFailureLine(message: string): string {
   const said = message
     .replace(/^Error invoking remote method '[^']+':\s*(?:Error:\s*)?/, '')
     .replace(/^Error:\s*/, '');
+  if (said.startsWith('[session] host bridge unavailable:')) return translateSessionMessage('taskError.hostUnavailable');
   // A structured payload (a ZodError's issues JSON) opens with a bare `[`: say its first issue, not the bracket.
   const firstLine = errorSentence(said)
     .split(/\r?\n/, 1)[0]!

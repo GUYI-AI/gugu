@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AlignJustify, ArrowUp, Check, LayoutGrid, X } from '@/lib/icons'
+import { messageForUser } from '@/lib/userFacingError'
 import { notify } from '@/lib/notices'
 import { LoadingIndicator } from '@/lib/loading/LoadingIndicator'
 import { Button } from '@/components/ui/Button'
@@ -24,29 +25,48 @@ function ItemTile({ item, layout, selected, managing, onSelect }: {
 }) {
   const { t } = useTranslation('main')
   const grid = layout === 'grid'
+  const entry = useRef<HTMLButtonElement>(null)
+  const updateHadFocus = useRef(false)
+  useLayoutEffect(() => {
+    const button = entry.current
+    if (!item.update && !item.busy && updateHadFocus.current && button && button.ownerDocument.activeElement === button.ownerDocument.body) {
+      button.focus({ preventScroll: true })
+    }
+    if (!item.update && !item.busy) updateHadFocus.current = false
+  }, [item.update, item.busy])
   return (
     <div className="gg-installed-item" data-grid={grid || undefined} data-managing={managing || undefined}>
-      <Button className="gg-installed-entry" variant="ghost" disabled={item.busy || (!managing && !item.open)}
+      <Button ref={entry} data-installed-id={item.id} className="gg-installed-entry" variant="ghost" disabled={(!item.updateVersion && item.busy) || (!managing && !item.open)}
         aria-pressed={managing ? selected : undefined} onClick={managing ? onSelect : item.open}>
         <span className="gg-installed-icon">
           {item.icon(grid ? 62 : 36)}
           {grid && managing ? (
             <span className="gg-installed-selection" data-selected={selected || undefined} aria-hidden>{selected && <Check size={12} />}</span>
-          ) : grid && item.update ? (
+          ) : grid && item.update && !item.updateVersion ? (
             <span className="gg-installed-update-indicator" aria-label={t('installedManager.updateAvailable')}><ArrowUp size={12} /></span>
           ) : null}
         </span>
         <span className="gg-installed-item-text">
           <span className="gg-installed-item-name" title={item.name}>{item.name}</span>
-          {!grid && !!item.version && <span className="gg-installed-version">{item.version}</span>}
+          {(!grid || item.updateVersion) && !!item.version && <span className="gg-installed-version">
+            {item.updateVersion ? `v${item.version} → v${item.updateVersion}` : item.version}
+          </span>}
+          {item.updateError && <span className="gg-installed-error">{item.updateError}</span>}
         </span>
         {!grid && managing && <span className="gg-installed-selection" data-selected={selected || undefined} aria-hidden>{selected && <Check size={12} />}</span>}
       </Button>
-      {!grid && !managing && (
+      {!managing && (!grid || item.updateVersion || item.busyLabel) && (
         <div className="gg-installed-actions">
-          {item.busy && <LoadingIndicator size="inline" />}
-          {item.update && <Button size="sm" variant="secondary" disabled={item.busy} onClick={() => { void item.update?.() }}>{t('installedManager.update')}</Button>}
-          {item.setEnabled && (
+          {item.busy && !item.busyLabel && <LoadingIndicator size="inline" />}
+          {(item.update || item.busyLabel) && <Button size="sm" variant="secondary" aria-disabled={item.busy || undefined}
+            onFocus={() => { updateHadFocus.current = true }} onBlur={() => { updateHadFocus.current = false }}
+            onClick={() => {
+              if (item.busy) return
+              void Promise.resolve(item.update?.()).catch((error: unknown) => notify({ tier: 'error', title: messageForUser(error) }))
+            }}>
+            {item.busyLabel ?? (item.updateError ? t('staleRead.retry', { ns: 'common' }) : t('installedManager.update'))}
+          </Button>}
+          {!grid && item.setEnabled && (
             <Switch checked={item.enabled === true} aria-label={item.name} disabled={item.busy}
               onCheckedChange={(value) => { void item.setEnabled?.(value) }} />
           )}
@@ -56,7 +76,7 @@ function ItemTile({ item, layout, selected, managing, onSelect }: {
   )
 }
 
-export function InstalledItems({ items, loading, error, offline, section, layout, setLayout, remoteLabel, itemsRef, scroll }: {
+export function InstalledItems({ items, loading, error, offline, section, layout, setLayout, remoteLabel, itemsRef, scroll, focusId, query, setQuery }: {
   items: readonly InstalledItem[]
   loading?: boolean
   error?: boolean
@@ -68,9 +88,11 @@ export function InstalledItems({ items, loading, error, offline, section, layout
   itemsRef?: RefObject<HTMLDivElement | null>
   /** How far down the list was when it was left; restored once the items are there. */
   scroll?: number
+  focusId?: string
+  query: string
+  setQuery: (query: string) => void
 }) {
   const { t } = useTranslation('main')
-  const [query, setQuery] = useState('')
   const [managing, setManaging] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -80,10 +102,11 @@ export function InstalledItems({ items, loading, error, offline, section, layout
   const restored = useRef(false)
   useLayoutEffect(() => {
     const page = pageScroller(itemsRef?.current)
-    if (restored.current || !scroll || shown.length === 0 || !page) return
+    if (restored.current || shown.length === 0 || !page) return
     restored.current = true
-    page.scrollTop = scroll
-  }, [scroll, shown.length, itemsRef])
+    if (scroll) page.scrollTop = scroll
+    if (focusId) itemsRef?.current?.querySelector<HTMLButtonElement>(`[data-installed-id="${CSS.escape(focusId)}"]`)?.focus({ preventScroll: true })
+  }, [scroll, focusId, shown.length, itemsRef])
   const picked = shown.filter(({ id }) => selected.has(id))
   const updateable = picked.filter((item) => item.update && !item.busy)
   const removable = picked.filter((item) => item.remove && !item.busy)
@@ -108,8 +131,7 @@ export function InstalledItems({ items, loading, error, offline, section, layout
     try {
       for (const item of targets) {
         try {
-          await item[action]?.()
-          completed.push(item.id)
+          if (await item[action]?.() !== false) completed.push(item.id)
         } catch { /* Preserve the selection for operations that need another try. */ }
       }
       setSelected((current) => new Set([...current].filter((id) => !completed.includes(id))))

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { platform } from '@/platform';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { useReplica } from '@/lib/replica';
 import { RefreshFailed } from '@/components/ui/RefreshFailed';
@@ -15,6 +16,10 @@ import { useSessionMessages } from '@renderer/localization/use-session-messages'
 import { SettingsGroup, SettingsNote, SettingsRow } from './SettingsPrimitives';
 
 export function AuxiliaryModelsGroup() {
+  return platform.capabilities.modelSettings ? <AvailableAuxiliaryModelsGroup /> : null;
+}
+
+function AvailableAuxiliaryModelsGroup() {
   const { translate } = useSessionMessages();
   const [failure, setFailure] = useState('');
   const models = useReplica(customModels, [null]);
@@ -22,7 +27,7 @@ export function AuxiliaryModelsGroup() {
   const options = models.state === 'value' ? autoReviewModelOptions(models.value) : null;
   const preference = reviewer.settings.state === 'value' ? reviewer.settings.value.value : null;
   return <SettingsGroup className="gg-auxiliary-models" data-testid="settings-auxiliary-models"
-    title={translate('customModels.auxiliaryTitle')}>
+    title={translate('customModels.auxiliaryTitle')} note={translate('customModels.auxiliaryDescription')}>
     <SessionTitleModelRow auxiliary />
     <SettingsRow title={<span className="flex items-center gap-2">{translate('customModels.reviewerModel')}
       <InfoTooltip label={translate('customModels.reviewerModel')} content={translate('customModels.auxiliaryFallback')} />

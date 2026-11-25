@@ -37,7 +37,8 @@ export interface ComposerAttachmentChipProps {
    * 点开预览。宿主接了它,**并且**这枚 chip 手上有可看的内容(`attachmentPreviewKind`)时,
    * 整块 chip 才变成触发器;两者缺一就渲染成不可点的静态 chip。
    */
-  onView?: (att: ComposerAttachment) => void;
+  /** `cell`: the chip itself, so an image opens out of the picture it already shows. */
+  onView?: (att: ComposerAttachment, cell: HTMLElement) => void;
   /** 给了才有 ×;不给的 done 态显 ✓(上游语义:没人在听移除,就没有可移除的东西)。 */
   onRemove?: (id: string) => void;
   /** 给了、且这枚 chip `retryable`,error 态的 meta 后面跟一段「重试」强调色文字。 */
@@ -72,7 +73,7 @@ export function ComposerAttachmentChip({ attachment: att, onView, onRemove, onRe
       aria-label={previewKind ? translate('composer.viewAttachment', { name: att.name }) : undefined}
       aria-description={att.meta}
       title={[att.name, att.meta].filter(Boolean).join(metadataSeparator(locale))}
-      onClick={previewKind ? () => onView?.(att) : undefined}
+      onClick={previewKind ? (event) => onView?.(att, event.currentTarget) : undefined}
       // 键盘照上游:Enter 立刻触发,Space 按下时吃掉默认滚动、抬起时才触发。
       onKeyDown={
         previewKind
@@ -80,14 +81,14 @@ export function ComposerAttachmentChip({ attachment: att, onView, onRemove, onRe
               if (event.target !== event.currentTarget) return;
               if (event.key === 'Enter') {
                 event.preventDefault();
-                onView?.(att);
+                onView?.(att, event.currentTarget);
               } else if (event.key === ' ') {
                 event.preventDefault();
               }
             }
           : undefined
       }
-      onKeyUp={previewKind ? (event) => { if (event.target === event.currentTarget && event.key === ' ') onView?.(att); } : undefined}
+      onKeyUp={previewKind ? (event) => { if (event.target === event.currentTarget && event.key === ' ') onView?.(att, event.currentTarget); } : undefined}
       className={styles.attachmentChip}
     >
       <span className={styles.attachmentIconCell}>{cell}</span>

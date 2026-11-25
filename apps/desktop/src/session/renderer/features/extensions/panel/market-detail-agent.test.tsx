@@ -11,19 +11,24 @@ import { until } from '../../../../../../../../tests/support/awaitCondition';
 import { MarketDetailDialog } from './market-detail-dialog';
 import { MarketAgentDetail } from './market-detail-agent';
 
-const f = vi.hoisted(() => ({ install: vi.fn() }));
+const f = vi.hoisted(() => ({ install: vi.fn(), installed: false }));
 const codex = { id: 'codex', name: 'Codex', status: 'missing', reading: 'not-detected', command: 'codex',
   installOptions: [{ method: 'mise', command: 'mise install http:gugu-codex', target: { kind: 'mise' } }],
   capabilities: { hostDependency: { updates: { kind: 'none' }, uninstall: { kind: 'none' } } },
 } as unknown as AgentPayload;
+const installState = () => f.installed ? { status: 'available', reading: 'installed' } : { status: 'missing', reading: 'not-detected' };
+const current = () => ({ ...codex, ...installState() });
 
 // Only transport replies are fixtures; the dialog, InstallSection and the install store are real.
 vi.mock('@renderer/lib/ipc', async original => {
   const actual = await original<typeof import('@renderer/lib/ipc')>();
   const agents = {
-    listManagement: async () => [codex],
-    getManagement: async () => codex,
-    listAgentInstallationStatus: async () => [{ id: 'codex', status: 'missing', reading: 'not-detected', used: { kind: 'auto' }, installations: [] } as unknown as AgentInstallationStatus],
+    listManagement: async () => [current()],
+    getManagement: async () => current(),
+    list: async () => [current()],
+    listIcons: async () => ({}),
+    listAgentInstallationStatus: async () => [{ id: 'codex', ...installState(), used: { kind: 'auto' }, installations: [] } as unknown as AgentInstallationStatus],
+    getSettings: async () => ({ value: { extraArgs: '--search' }, defaults: {}, overrides: {} }),
     getInstallSourceVersions: async () => ({ sources: [] }),
     install: f.install,
   };
@@ -36,6 +41,7 @@ let host: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   queryClient.clear();
+  f.installed = false;
   followRendererSession('SIGNED_IN', 'market-agent-fixture');
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
@@ -45,7 +51,7 @@ afterEach(async () => {
 });
 
 // A failed install used to drop the dialog back to a bare 'Install' with only a toast, gone before anyone read it.
-it('says why the install failed, in the dialog, next to the Install button it returns to', async () => {
+it('says why the install failed and lets the person retry from the dialog', async () => {
   f.install.mockResolvedValue({ success: false, error: { type: 'command-failed', message: 'Managed installation failed.',
     output: 'error sending request for url (https://registry.npmmirror.com/@openai/codex): connection reset', stage: 'download' } });
   await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
@@ -61,5 +67,43 @@ it('says why the install failed, in the dialog, next to the Install button it re
   expect(f.install).toHaveBeenCalledExactlyOnceWith('codex', 'mise', undefined);
   expect(alert.textContent).toContain(translateSessionMessage('agentsPage.failureNetwork', { operation: translateSessionMessage('agentsPage.installation') }));
   expect(alert.querySelector('pre')?.textContent).toContain('connection reset');
-  expect(button()).toBeDefined();
+  const retry = [...document.querySelectorAll('button')].find(b => b.textContent === translateSessionMessage('extensions.retry'));
+  expect(retry).toBeDefined();
+  await act(async () => retry!.click());
+  await until('retry runs the same installation', () => f.install.mock.calls.length === 2);
+});
+
+// #3287 moved installed agents into this dialog and left 高级 behind: extra arguments and env could no longer be edited.
+it('opens 高级设置 in place of the details for an installed agent, and goes back', async () => {
+  f.installed = true;
+  await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
+    <MarketDetailDialog onClose={() => {}}><MarketAgentDetail agentId='codex' onCreate={() => {}} /></MarketDetailDialog>
+  </SessionLocalizationProvider></QueryClientProvider>));
+  const toggle = () => document.querySelector<HTMLButtonElement>('[data-testid=agent-advanced-settings]');
+  const panel = () => document.querySelector<HTMLElement>('[data-testid=agent-advanced-panel]')!.parentElement!;
+  const details = () => panel().previousElementSibling as HTMLElement;
+  await until('the 高级设置 button is offered', () => !!toggle());
+  expect(toggle()!.textContent).toBe(translateSessionMessage('agentsPage.advancedSettings'));
+  expect(toggle()!.getAttribute('aria-pressed')).toBe('false');
+  expect(panel().hasAttribute('inert')).toBe(true);
+  expect(details().hasAttribute('inert')).toBe(false);
+
+  await act(async () => toggle()!.click());
+  expect(toggle()!.getAttribute('aria-pressed')).toBe('true');
+  expect(panel().hasAttribute('inert')).toBe(false);
+  expect(details().hasAttribute('inert')).toBe(true);
+  await until('the stored extra arguments are shown', () => document.querySelector<HTMLInputElement>('#agent-extraArgs')?.value === '--search');
+
+  await act(async () => toggle()!.click());
+  expect(toggle()!.getAttribute('aria-pressed')).toBe('false');
+  expect(panel().hasAttribute('inert')).toBe(true);
+});
+
+it('offers no 高级设置 before the agent is installed', async () => {
+  await act(async () => root.render(<QueryClientProvider client={queryClient}><SessionLocalizationProvider>
+    <MarketDetailDialog onClose={() => {}}><MarketAgentDetail agentId='codex' onCreate={() => {}} /></MarketDetailDialog>
+  </SessionLocalizationProvider></QueryClientProvider>));
+  await until('the Install button is offered', () => [...document.querySelectorAll('button')].some(b => b.textContent === translateSessionMessage('extensions.installAction')));
+  expect(document.querySelector('[data-testid=agent-advanced-settings]')).toBeNull();
+  expect(document.querySelector('[data-testid=agent-advanced-panel]')).toBeNull();
 });

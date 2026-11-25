@@ -103,8 +103,10 @@ export function Avatar({
     reportInvalidAvatarUrl(avatarUrl, `main avatar "${name || 'unknown'}"`)
   }, [avatarUrl, name])
 
-  const base: React.CSSProperties = {
+  // The frame anchors the corner mark and leaves it room to paint. The portrait below owns any circular crop.
+  const frameStyle: React.CSSProperties = {
     position: 'relative',
+    overflow: 'visible',
     width: px,
     height: px,
     flexShrink: 0,
@@ -167,7 +169,7 @@ export function Avatar({
   // 脸(上传图 / 默认脸 / 空态)一律不挂原生 title:头像常被放进别人的悬停浮层(账号 Hint、
   // 运行中 agent 的预览卡),名字由外层自己说,挂了就是两个浮层叠在一起。读屏的名字在 alt / aria-label。
   return (
-    <div style={base} data-agent={agent ? '' : undefined}>
+    <div style={frameStyle} data-agent={agent ? '' : undefined}>
       {showImg ? (
         imageMatteColor ? (
           <span data-avatar-matte style={matteStyle}>

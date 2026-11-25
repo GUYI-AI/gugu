@@ -317,6 +317,7 @@ const startOpencodeServeAttach: HostStart = async (ctx, info, platformPromise, {
   const bundle = await buildSessionTuiSessionBundle({
     bootstrap: {
       runtime,
+      sessionKey: info.sessionId,
       // The session's recorded tier crosses this boundary unchanged. OpenCode's provider materializer
       // is the only place that interprets the exact tier into its permission rules.
       autonomy: { permissionMode: resolveSessionPermissionMode(info) },
@@ -467,6 +468,7 @@ const startProviderSessionBundle: HostStart = async (ctx, info, platformPromise)
   const platformForBundle = await platformPromise
   const bootstrap = {
     runtime,
+    sessionKey: info.sessionId,
     // session-TUI 腿:档不经会话包(同上)。
     autonomy: null,
     additionalEnv: { ...platformForBundle.env, ...platformForBundle.spawnEnv },

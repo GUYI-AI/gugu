@@ -1,6 +1,7 @@
 // 全 app 唯一的看图查看器(PhotoSwipe,宿主是 components/ImagePreviewProvider)的入口与纯函数。
 // 入口是模块函数而不是 React context:会话页是另一棵 React 树,context 伸不过去。
 
+import type { FileProgress } from '@gugu/core/shared/fileResolver'
 import type { ResourceContext } from '@/session/shared/resource-actions'
 import type { TabOpenIntent } from '@/session/shared/view-state'
 import { savedFileName } from '@/session/shared/extensions/app-runtime-protocol'
@@ -21,7 +22,7 @@ export interface ImageViewerItem {
   resource?: ResourceContext
   url: string
   /** A file can open before its display-only thumbnail arrives. */
-  preview?: () => Promise<string>
+  preview?: (progress?: FileProgress) => Promise<string>
   /** URLs owned by this request, released when the viewer closes. */
   release?: () => void
   alt: string
@@ -35,7 +36,7 @@ export interface ImageViewerItem {
    */
   thumbRect?: { x: number; y: number; width: number; height: number }
   /** 气泡里画的是缩略图时:取原图(object URL)。查看器先用 url 打开,翻到这一张再换成原图。 */
-  full?: () => Promise<string>
+  full?: (progress?: FileProgress) => Promise<string>
   /** 原图的像素尺寸,取自文件记录。查看器从打开到关闭都按它排版:缩略图、原图只是画进同一个框的像素。 */
   size?: Size
   /** File previews keep their existing citation producer when opening the shared image viewer. */
@@ -52,6 +53,31 @@ export function registerFullImage(thumb: HTMLImageElement, load: () => Promise<s
   return () => {
     if (fullImageLoaders.get(thumb) === entry) fullImageLoaders.delete(thumb)
   }
+}
+
+/**
+ * The picture a click already drew, by the file it shows (a task message's thumbnail, whose click follows the file's link):
+ * that file's next opening starts from it as a chat message's thumbnail does (`openImageFromThumb`) — its pixels and box
+ * now, the original after — instead of reading the bytes again with nothing to open from. A sent file's link names its
+ * message; the message names the file (`drawnPictureIsOf`).
+ */
+type DrawnOf = { itemId: string; version?: number } | { messageId: string }
+type Drawn = { picture: HTMLImageElement; size?: Promise<Size | null> }
+let drawnPicture: { of: DrawnOf } & Drawn | null = null
+/** `size`: the file record's, asked for as the click is made, so the opening does not wait for it after the link. */
+export function noteDrawnPicture(of: DrawnOf, picture: HTMLImageElement, size?: Promise<Size | null>): void {
+  drawnPicture = { of, picture, ...(size ? { size } : {}) }
+}
+export function drawnPictureIsOf(messageId: string, itemId: string, version: number): void {
+  if (drawnPicture && 'messageId' in drawnPicture.of && drawnPicture.of.messageId === messageId) drawnPicture.of = { itemId, version }
+}
+export function takeDrawnPicture(itemId: string, version: number | undefined): Drawn | null {
+  const noted = drawnPicture
+  if (!noted || 'messageId' in noted.of || noted.of.itemId !== itemId) return null
+  if (noted.of.version !== undefined && version !== undefined && noted.of.version !== version) return null
+  drawnPicture = null
+  const { picture, size } = noted
+  return picture.isConnected && picture.complete && picture.naturalWidth > 0 ? { picture, ...(size ? { size } : {}) } : null
 }
 
 export interface Size {
@@ -170,9 +196,13 @@ export function openImageFromThumb(thumb: HTMLImageElement): void {
   openImageViewer(items, index)
 }
 
-/** 输入框里的附件 chip:图片进查看器并返回 true;文本附件返回 false,交回宿主的附件对话框。 */
-export function openComposerImage(attachment: { kind: 'image' | 'file'; name: string; previewUrl?: string; mimeType?: string }): boolean {
+/**
+ * 输入框里的附件 chip:图片进查看器并返回 true;文本附件返回 false,交回宿主的附件对话框。
+ * The chip is a thumbnail as a message's is (`openImageFromThumb`): it opens out of the `cell` with the pixels the chip
+ * already drew, never by reading the bytes again after the opening animation.
+ */
+export function openComposerImage(attachment: { kind: 'image' | 'file'; name: string; previewUrl?: string; mimeType?: string }, cell?: HTMLElement, replace?: ImageViewerItem['replace']): boolean {
   if (attachment.kind !== 'image' || !attachment.previewUrl) return false
-  openImageViewer([{ url: attachment.previewUrl, alt: attachment.name, file: { name: attachment.name, contentType: attachment.mimeType } }])
+  openImageViewer([{ url: attachment.previewUrl, alt: attachment.name, file: { name: attachment.name, contentType: attachment.mimeType }, thumb: cell, ...(replace ? { replace } : {}) }])
   return true
 }

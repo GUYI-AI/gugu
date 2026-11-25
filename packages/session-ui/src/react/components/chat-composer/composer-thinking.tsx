@@ -17,12 +17,15 @@ export interface ComposerThinkingProps {
   renderFastModeHint?: RenderFastModeHint;
   disabled?: boolean;
   phoneActions?: boolean;
+  /** The owning menu decides whether a committed pointer choice dismisses it. */
+  onCommit?: () => void;
 }
 
 /** The same native thinking axis is used in the model picker and the phone Work panel. */
-export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, defaultEffort,
-  fastMode, onFastModeChange, renderFastModeHint, disabled, phoneActions }: ComposerThinkingProps) {
+export function ComposerThinking({ effortItems: allEffortItems, selectedEffort, onEffortChange, defaultEffort,
+  fastMode, onFastModeChange, renderFastModeHint, disabled, phoneActions, onCommit }: ComposerThinkingProps) {
   const { translate } = useMessages();
+  const effortItems = allEffortItems.filter(({ id }) => id.toLowerCase() !== 'default');
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const effortHintId = `${useId()}-effort-hint`;
   const selectedEffortItem = selectedEffort
@@ -31,7 +34,7 @@ export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, 
   const defaultEffortItem = defaultEffort
     ? (effortItems.find((e) => e.id === defaultEffort) ?? null)
     : null;
-  const resetEffortItem = defaultEffortItem ?? effortItems.find((e) => e.id === 'default');
+  const resetEffortItem = defaultEffortItem;
   // The trigger and the Thinking row must describe the same effective level. A model default is
   // not an explicit user override, but it is still the level currently in effect when no override
   // exists; leaving it out of the radio value makes the trigger say one level while the panel says
@@ -93,20 +96,6 @@ export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, 
     !effortLocked && !!onEffortChange && !!selectedEffortItem && !!resetEffortItem &&
     selectedEffort !== resetEffortItem.id;
 
-  const hasSlider = effortItems.length > 1;
-  const resetButton = canResetEffort && resetEffortItem && (
-    <button
-      type="button"
-      className={styles.modelEffortReset}
-      data-testid="composer-effort-reset"
-      title={translate('composer.effortReset')}
-      aria-label={translate('composer.effortReset')}
-      onClick={() => onEffortChange?.(resetEffortItem.id)}
-    >
-      <RotateCcw size={12} aria-hidden />
-    </button>
-  );
-
   return effortItems.length > 0 ? (
             <div
               className={styles.modelEffortRow}
@@ -141,7 +130,7 @@ export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, 
                 e.stopPropagation();
               }}
             >
-              <div className={hasSlider ? undefined : styles.modelEffortHeader} hidden={hasSlider}>
+              <div className={styles.modelEffortHeader}>
                 <span className={styles.modelEffortLabel}>{translate('composer.effort')}</span>
                 <span
                   className={styles.modelEffortValue}
@@ -153,7 +142,7 @@ export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, 
                   data-armed={shownEffortItem ? 'true' : 'false'}
                   style={{ opacity: shownIsUserPick || !shownEffortItem ? 1 : 0.6 }}
                 >
-                  {shownEffortItem?.name ?? translate('composer.default')}
+                  {shownEffortItem?.name ?? '—'}
                 </span>
                 {/* 当前这一档是干什么的 —— 跟在档名后面同一行(owner 2026-10-10:「思考那块显得特别大」,
                     原来它独占一行)。见 modelEffortHint 抬头:目录里只要有一档带说明就恒占这一格(空的也占)。
@@ -167,7 +156,22 @@ export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, 
                 >
                   {effortHasHints && !effortLocked ? effortHintText : null}
                 </span>
-                {!hasSlider && resetButton}
+                {canResetEffort && resetEffortItem && (
+                  <button
+                    type="button"
+                    className={styles.modelEffortReset}
+                    data-testid="composer-effort-reset"
+                    title={translate('composer.effortReset')}
+                    aria-label={translate('composer.effortReset')}
+                    onClick={() => {
+                      // ACP select options accept advertised value IDs, including a provider's default row.
+                      onEffortChange?.(resetEffortItem.id);
+                      onCommit?.();
+                    }}
+                  >
+                    <RotateCcw size={12} aria-hidden />
+                  </button>
+                )}
               </div>
               {/* 锁住时那句是**操作指引**(「创建任务时可以选」),挤在档名后面会被省略号吃掉后半句 ——
                   单独一行、最多两行写全。这一态整条会话不变,多一行不会让面板跳。 */}
@@ -185,7 +189,7 @@ export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, 
               {/* ⚠️ **恰好一档时不画滑杆**:量程会被撑成 0→1,右半条轨道拖得动却永远弹回,
                   唯一那个刻点还压在圆钮底下 —— 一条拖不动的死轨道。Smashing 与 Microsoft
                   的指南都说选项太少时滑杆不如别的控件,这里取最保守的一刀:只留读数。 */}
-              {hasSlider && (
+              {effortItems.length > 1 && (
               <>
               {/* 离散滑杆:一档一格。`thumbAlignment="edge"` 让最小档时圆钮**左缘**贴住轨道左缘
                   (而不是圆心贴左缘),那正是上游那个控件的样子;刻点层跟着缩进半个圆钮,
@@ -221,18 +225,30 @@ export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, 
                   onEffortChange?.(picked.id);
                 }}
                 onValueCommitted={(_next: number | number[], details: { reason: string }) => {
-                  // Keyboard changes are already published by onValueChange.
+                  // ⚠️ **键盘那条路不关面板**。Base UI 的方向键每按一下都会 commit,
+                  // 跟着关的话键盘用户一次只调得动一格,六档从最低调到最高要开五次面板 ——
+                  // 药丸那版一次按键 = 一个决定,滑杆的心智模型是"滑到想要的位置",
+                  // 这是换控件带进来的新毛病(2026-09-17 找茬审查实测:按一下 ArrowRight
+                  // 面板当场关闭)。键盘用 Esc / Enter 自己收。
+                  // ⚠️ 键盘那条路**在这里什么都不做**:`onValueChange` 已经当场把它交出去了。
+                  // 在这儿再发一次会**重复调用** —— 而那道「和当前档相同就跳过」的守卫拦不住它:
+                  // 同一拍里 prop 还没回传,`effectiveEffortItem` 仍是旧值(自审 2026-09-18)。
                   if (details.reason === 'keyboard') return;
                   // 指针那条路相反:拖动全程只动本地,松手(或点轨道)才把最终那一档交给宿主。
                   const committed = Array.isArray(_next) ? _next[0] : _next;
                   const picked = effortItems[committed];
                   setDraggingIndex(null);
                   if (picked && picked.id !== effectiveEffortItem?.id) onEffortChange?.(picked.id);
+                  // ⚠️ **这一句是刻意偏离上游的**:上游那个面板选完档位不关。但 #3249 是 owner
+                  // 亲自报的、且明写「推理强度那组同样收起(与模型同一个毛病,别只修一半)」。
+                  // 收在 committed 而不是 change 上:拖动过程中每跨一格都关一次面板,手还没松
+                  // 控件就没了。键盘按一下也会 commit,所以键盘路径同样会收。
+                  onCommit?.();
                 }}
               >
                 <Slider.Control
                   className={styles.modelEffortControl}
-                  title={effortLockedReason}
+                  title={effortLocked ? effortLockedReason : undefined}
                 >
                   <Slider.Track className={styles.modelEffortTrack}>
                     <span
@@ -292,7 +308,6 @@ export function ComposerThinking({ effortItems, selectedEffort, onEffortChange, 
                   </Slider.Track>
                 </Slider.Control>
               </Slider.Root>
-              {resetButton}
               {fastMode !== undefined && (
                 <ComposerFastMode enabled={fastMode} disabled={disabled} phoneActions={phoneActions}
                   onChange={onFastModeChange} renderHint={renderFastModeHint} />

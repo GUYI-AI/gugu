@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { ReadingSlot } from '@/components/ui/ReadingSlot'
 import { ExtensionMonogram } from '@renderer/features/extensions/panel/extension-monogram'
 import { useSessionMessages } from '@renderer/localization/use-session-messages'
-import { ASSISTANT_APP_ID } from '@shared/extensions/assistant-entry'
+import { isPromotedAssistantApp } from '@shared/extensions/assistant-entry'
 import { localizedManifestText } from '@shared/extensions/catalog'
 import { PhoneMarketRow } from './PhoneMarketList'
 import { marketDeviceHost } from './marketDeviceHost'
@@ -33,7 +33,7 @@ export function PhoneMarketRemoteApps({ device, devices, assistant = false }: {
         <Button size="sm" onClick={retry}>{translate('extensions.retry')}</Button>
       </SettingsNote>}>
       {(installed) => {
-        const apps = installed.manifests.filter(app => !installed.isPreinstalled(app.id) && (app.id === ASSISTANT_APP_ID) === assistant)
+        const apps = installed.manifests.filter(app => !installed.isPreinstalled(app.id) && isPromotedAssistantApp(app.id) === assistant)
         return <>
           {apps.map(app => {
             const name = localizedManifestText(app, locale).name

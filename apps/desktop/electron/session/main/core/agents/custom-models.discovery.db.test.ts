@@ -258,3 +258,28 @@ it('imports a directly configured Claude API key and explicit model', async () =
   expect(await listCustomModels()).toEqual([expect.objectContaining({ name: 'claude-relay.example.test',
     managedNativeHarnesses: ['claude'], models: [{ id: 'claude-model' }], keySaved: true })]);
 });
+
+
+it('adding a model to an existing address preserves its routes and declared Fast capability', async () => {
+  const route = { id: '10000000-0000-4000-8000-000000000010', incoming: 'anthropic-messages', outgoing: 'openai-responses' } as const;
+  const first = await saveCustomModel({ ...atAcme, apiKey: KEY, routes: [route], models: [{ id: 'a', fast: true }] });
+  const added = await saveCustomModel({ ...atAcme, routes: [], models: [{ id: 'b' }] });
+  expect(added).toMatchObject({ id: first.id, routes: [route], models: [{ id: 'a', fast: true }, { id: 'b' }] });
+  const edited = await saveCustomModel({ ...atAcme, id: first.id, routes: [], models: added.models });
+  expect(edited.routes).toEqual([]);
+});
+
+it('merging legacy connections with the same key retains both protocol routes', async () => {
+  const routeA = { id: '10000000-0000-4000-8000-000000000011', incoming: 'anthropic-messages', outgoing: 'openai-responses', modelId: 'a' } as const;
+  const routeB = { id: '10000000-0000-4000-8000-000000000012', incoming: 'gemini-generate-content', outgoing: 'openai-responses', modelId: 'b' } as const;
+  for (const [id, model, route] of [
+    ['10000000-0000-4000-8000-000000000001', 'a', routeA],
+    ['10000000-0000-4000-8000-000000000002', 'b', routeB],
+  ] as const) {
+    await state.fixture!.registry.upsertAccount({ providerId: 'models:custom', accountId: id, secret: KEY,
+      meta: { displayName: 'Acme', customModel: { preset: null, endpoints: atAcme.endpoints, models: [{ id: model }], routes: [route] } } });
+  }
+  const listed = await listCustomModels();
+  expect(listed).toHaveLength(1);
+  expect(listed[0]!.routes).toEqual(expect.arrayContaining([routeA, routeB]));
+});

@@ -1,18 +1,18 @@
 // #2548 内层侧栏「话题」:一个群 / 项目群自己的话题。
 //   次序和会话列表同一条:置顶的在前,再按最近活动。未读只挂角标,不挪位置 —— 点开读完,它还在原处。
-//   · 第一级:这个次序的前 12 条(yangchichi msg:b3d2bd56,原 5 条太少);有未读也不突破(msg:616413ff、msg:900d2e39「不超出」)。
+//   · 第一级:这个次序的前 6 条(owner msg:247795d5「默认显示的有点多了,收缩一点」,原 12 条;yangchichi msg:b3d2bd56 嫌 5 条太少);有未读也不突破(msg:616413ff、msg:900d2e39「不超出」)。
 //   · 第二级(「全部 ›」):全部,同一个次序。
 import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { chatAttention, compareChatsByActivityDesc, comparePinnedFirst } from '@gugu/core/shared/ui/chatModels'
 
 /** 第一级最多露几条。 */
-export const INNER_SIDEBAR_TOPIC_LIMIT = 12
+export const INNER_SIDEBAR_TOPIC_LIMIT = 6
 
-/** 这个对话的话题,置顶的在前、再按最近活动(同会话列表);归档的不算。群页头的话题菜单用的也是这一份(useChatTopicPins)。 */
-export function topicsOfChat(chats: readonly ChatItem[], chatId: string): ChatItem[] {
+/** 这个对话的话题,置顶的在前、再按最近活动(同会话列表);归档的不算。群页头菜单只按活动时间排序。 */
+export function topicsOfChat(chats: readonly ChatItem[], chatId: string, { pinnedFirst = true } = {}): ChatItem[] {
   return chats
     .filter((chat) => chat.kind === 'topic' && chat.source_chat_id === chatId && chat.status !== 'archived')
-    .sort((a, b) => comparePinnedFirst(a, b) || compareChatsByActivityDesc(a, b))
+    .sort((a, b) => (pinnedFirst ? comparePinnedFirst(a, b) : 0) || compareChatsByActivityDesc(a, b))
 }
 
 export type InnerSidebarTopicRows = {

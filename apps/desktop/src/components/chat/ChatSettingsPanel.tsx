@@ -35,7 +35,7 @@ export function ChatSettingsPanel({ mobile = false, ...body }: ChatSettingsPanel
   // A topic is a main conversation of its own: its info page is its members (from its source line's roster).
   if (activeChat.kind === 'topic' && activeChat.source_chat_id) {
     const sourceChatId = activeChat.source_chat_id
-    const members = (back: () => void) => <TopicMembers key={activeChat.id} topic={{ topicChatId: activeChat.id, name: activeChat.name ?? '' }} sourceChatId={sourceChatId} onClose={back} mobile={mobile} />
+    const members = (back: () => void) => <TopicMembers key={activeChat.id} topic={{ topicChatId: activeChat.id, name: activeChat.name ?? '' }} sourceChatId={sourceChatId} onClose={back} mobile={mobile} onWhisper={body.onWhisper} />
     // 第 16 版:桌面上是话题的「详情」(成员页从它的成员块进);手机照旧直接是成员页。
     if (mobile) return members(onClose)
     return <TopicDetailsMain key={activeChat.id} chat={activeChat} currentUserId={body.currentUserId} onClose={onClose}
@@ -56,14 +56,14 @@ export function ChatSettingsPanel({ mobile = false, ...body }: ChatSettingsPanel
   )
 }
 
-export function TopicMembers({ topic, sourceChatId, onClose, mobile }: { topic: ChatTopicState; sourceChatId: string; onClose: () => void; mobile: boolean }) {
+export function TopicMembers({ topic, sourceChatId, onClose, mobile, onWhisper }: { topic: ChatTopicState; sourceChatId: string; onClose: () => void; mobile: boolean; onWhisper?: ChatRightPanelBodyProps['onWhisper'] }) {
   const { t } = useTranslation('messaging')
   const closeTopic = useCloseTopic()
   const { snapshot, error, reload, authorityRevision } = useRoomCollab(topic.topicChatId, 'topic', sourceChatId)
   const settings = useGroupChatSettings(topic.topicChatId, snapshot ? groupRoleRevision(snapshot) : undefined, authorityRevision)
   return <div data-testid="chat-settings-panel" className="flex min-h-0 flex-1 flex-col overflow-y-auto">
     <MemberListPanel chatId={topic.topicChatId} chatKind="topic" chatName={topic.name}
-      snapshot={snapshot} error={error} onReload={reload} settingsState={settings}
+      snapshot={snapshot} error={error} onReload={reload} settingsState={settings} onWhisper={onWhisper}
       head={(title, action) => <SettingsPageHead title={title} action={action} mobile={mobile} onClose={mobile ? onClose : undefined} />} />
     {settings.settings?.can_archive_topic ? <div className="px-3 pb-4"><div role="button" data-testid="topic-settings-delete" style={settingsDangerRowStyle} onClick={() => closeTopic(topic.topicChatId, topic.name, onClose)}>{t('chatList.deleteTopic')}</div></div> : null}
   </div>

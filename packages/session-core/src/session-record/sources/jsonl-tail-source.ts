@@ -7,9 +7,10 @@ import type {
 } from '../contract';
 import { jsonlCheckAt, locateImages } from './record-images';
 import { initialTree, keepNode, markTurn, type RecordNode, type TreeState } from './record-tree';
-import { emitJsonLines, pollInterval, warnOf, type SessionRecordSourceOptions } from './shared';
+import { emitJsonLines, pollInterval, SessionRecordNotWrittenError, warnOf, type SessionRecordSourceOptions } from './shared';
 import { TailReader, type TailResume } from './tail-reader';
 import { stat } from 'node:fs/promises';
+import type { CodexRecordEvents } from './codex-record-events';
 
 /**
  * 一份只追加的 JSONL 文件的尾读源(codex、copilot):找到文件 → 整份读或接着续读点读 → 尾读。
@@ -23,11 +24,18 @@ export type JsonlTailFormat<S> = {
   /** 续读点里这份数据的版本。形状或读法变了就升，老存档一律作废重读。 */
   resumeVersion: number;
   resolve(): Promise<string>;
+  /** Native event owner for formats that must never start TailReader's polling driver. */
+  watch?(failed: (error: unknown) => void): CodexRecordEvents;
   /**
    * The record can go on in another file (a Codex revert writes a new segment): catching up looks for it again, and a
    * record found elsewhere is read anew from there.
    */
   continuesElsewhere?: true;
+  /**
+   * A live read of a record its agent has not written yet (`resolve` or a prefix read throws
+   * `SessionRecordNotWrittenError`) starts with no entries and reads the record once catching up finds it.
+   */
+  awaitsRecord?: true;
   /** Immutable ancestors, each cut at its child's file-local byte boundary; only the resolved file is tail-followed. */
   prefixes?(path: string): Promise<ReadonlyArray<{ path: string; endByteOffset: number }>>;
   /** 从头读时的状态。文件被换掉、整份重读时回到它。 */
@@ -69,6 +77,16 @@ export function createJsonlTailSource<S>(
   let reading = false;
   /** A read again that a tailed fork started; `catchUp` waits for it. */
   let again: Promise<void> | null = null;
+  let recordEvents: CodexRecordEvents | null = null;
+  let failure: unknown;
+  /** The record is not written yet (`awaitsRecord`): catching up looks for it. */
+  let awaiting = false;
+  const failed = (error: unknown) => {
+    failure = error;
+    recordEvents?.stop();
+    reader?.stop();
+    sink?.onError?.(error);
+  };
 
   const emit = (lines: string[], offsets: number[], file = path, seekable = true) => {
     if (stopped || !sink) return;
@@ -76,7 +94,10 @@ export function createJsonlTailSource<S>(
     emitJsonLines(lines, format.name, warn, (entries) => events.onEntries(entries), options?.fill ? decodeNoting : (record) => format.decode(record, state),
       file ? (entries, index) => locateImages(entries, lines[index], offsets[index], file) : undefined, seekable ? offsets : undefined);
     if (!reading && format.again(state)) {
-      again = whole(() => readAgain(events)).catch((error: unknown) => warn('重读失败', { path, error: (error as Error).message }));
+      again = whole(() => readAgain(events)).catch((error: unknown) => {
+        if (adapter.watch) failed(error);
+        else warn('重读失败', { path, error: (error as Error).message });
+      });
     }
   };
 
@@ -161,12 +182,14 @@ export function createJsonlTailSource<S>(
     },
     catchUp: async () => {
       if (options?.readMode === 'snapshot') return;
-      if (adapter.continuesElsewhere && sink && path && !reading) {
+      if (adapter.continuesElsewhere && sink && (path || awaiting) && !reading) {
         const events = sink;
         const found = await format.resolve().catch(() => null);
-        if (found && found !== path && !stopped) {
+        // `reading`, asked again: another catch-up may have started that read while this one looked.
+        if (found && found !== path && !stopped && !reading) {
           reader?.stop();
-          events.onReset('source_replaced');
+          // A record awaited until now gave no entries: there is nothing to replace.
+          if (path) events.onReset('source_replaced');
           await source.start(events);
           return;
         }
@@ -184,6 +207,7 @@ export function createJsonlTailSource<S>(
       const data: ResumeData<S> = { version: format.resumeVersion, path: found, tail, state: at === undefined ? format.initial() : at as Tracked<S> };
       return { data, fingerprint: `${format.name}:${found}:${tail.ino}:${tail.size}:${tail.mtimeMs}` } satisfies SessionRecordResume;
     },
+    ...(adapter.awaitsRecord ? { awaiting: () => awaiting } : {}),
     recordPath: () => format.resolve().catch(() => null),
     checkAt: async (position) => { const found = await format.resolve().catch(() => null); return found ? jsonlCheckAt(found, position) : null; },
     ...(format.childIds ? { childIdsAt: (at: unknown) => format.childIds!(at as Tracked<S>) } : {}),
@@ -206,6 +230,7 @@ export function createJsonlTailSource<S>(
     },
     stop() {
       stopped = true;
+      recordEvents?.stop();
       reader?.stop();
       reader = null;
       sink = null;
@@ -213,9 +238,36 @@ export function createJsonlTailSource<S>(
   };
   // A whole read (initial, snapshot or resume) ends first; only then is the record read again, at most once more.
   const start = source.start.bind(source);
+  // Keep the legacy decoding/read unit unchanged: only the live Codex source owns this event barrier/driver.
   source.start = (events, resume) => whole(async () => {
-    await start(events, resume);
-    await readAgain(events);
+    recordEvents?.stop();
+    recordEvents = options?.readMode === 'snapshot' ? null : adapter.watch?.(failed) ?? null;
+    try {
+      await recordEvents?.ready();
+      try {
+        await start(events, resume);
+        awaiting = false;
+      } catch (error) {
+        // A resume says the record was read before: one that is gone now is a failure, as it always was.
+        if (!adapter.awaitsRecord || !recordEvents || resume || !(error instanceof SessionRecordNotWrittenError)) throw error;
+        // Found with its first line still being written: nothing was read from it, so it is looked for again whole.
+        reader?.stop();
+        reader = null;
+        path = null;
+        awaiting = true;
+      }
+      if (recordEvents && path) {
+        await recordEvents.includeFile(path);
+        // A legacy file may be outside the UUID/date hints. Close that subscription gap once, after ready.
+        await reader?.catchUp();
+      }
+      await readAgain(events);
+      if (failure !== undefined) throw failure;
+      recordEvents?.activate(async (locateAgain) => {
+        if (locateAgain) await source.catchUp?.();
+        else { await reader?.catchUp(); await again; }
+      });
+    } catch (error) { recordEvents?.stop(); reader?.stop(); throw error; }
   });
   return source;
 }

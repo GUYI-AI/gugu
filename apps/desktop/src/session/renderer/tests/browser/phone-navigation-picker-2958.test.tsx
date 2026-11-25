@@ -21,17 +21,17 @@ const agents: MemberProfileCardModel[] = ['agent-a', 'agent-b'].map(id => ({ id,
   type: 'agent', ownerUserId: 'another-owner', role: 'member', membership: 'current', profileScope: 'group', agentStatus: 'offline' }))
 let harness: ReturnType<typeof createReactHarness> | null = null
 const picked = vi.fn(), opened = vi.fn()
-function Fixture() {
+function Fixture({ members }: { members: MemberProfileCardModel[] }) {
   const [handle] = useState(() => Popover.createHandle<ActiveMemberProfile>())
-  return <><PhoneRoomComposerControls chatId="source-room" topics={topics} topicsReady current={null} onPick={picked} members={agents}
+  return <><PhoneRoomComposerControls chatId="source-room" topics={topics} topicsReady current={null} onPick={picked} members={members}
     roster={{ ready: true, failed: false, retry: () => {} }} userId="owner" profileOpener={{ handle }} onOpenAgent={opened} />
     <MemberProfileRoot handle={handle}>{profile => <MemberProfilePopover profile={profile} onClose={() => handle.close()} />}</MemberProfileRoot></>
 }
-async function mount() {
+async function mount(members: MemberProfileCardModel[] = agents) {
   await page.viewport(390, 844); setLocalePreference('zh-CN'); document.documentElement.setAttribute('data-phone-shell', '')
   harness = createReactHarness()
   Object.assign(harness.container.style, { position: 'fixed', inset: '0', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' })
-  await renderWithAppProviders(harness, <LocalizationProvider><Fixture /></LocalizationProvider>, {
+  await renderWithAppProviders(harness, <LocalizationProvider><Fixture members={members} /></LocalizationProvider>, {
     auth: { id: 'owner' }, chat: { chats: [chat({ id: 'source-room', kind: 'group' })] }, contacts: { contacts: [] },
   })
 }
@@ -64,4 +64,11 @@ it('searches the actual Agent roster and opens the chosen profile without creati
   await page.elementLocator(document.querySelector<HTMLElement>('[data-agent-id="agent-b"]')!).click()
   await until('profile B opened by ID', () => !!document.querySelector('[data-profile-member-id="agent-b"]'))
   expect(opened).not.toHaveBeenCalled()
+})
+
+it('shows no agent search box in a room with no agents, only the empty state', async () => {
+  await mount([]); await page.getByTestId('phone-room-agents').click()
+  await expect.element(page.getByText('群里暂无智能体', { exact: true })).toBeVisible()
+  expect(document.querySelector('[data-testid="phone-agents-search"]')).toBeNull()
+  expect(document.querySelector('.gg-phone-navigation-search')).toBeNull()
 })

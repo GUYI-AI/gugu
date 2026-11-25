@@ -44,14 +44,14 @@ const OPTIONS = {
   lastUsed: null,
 } as unknown as Parameters<typeof CreateOptionsPill>[0]['options'];
 const MODELS = {
-  harness: 'claude', transport: 'acp', selected: null, selectedEffort: null, harnessState: 'ready', harnessReason: null, guguReason: null,
+  harness: 'codex', transport: 'acp', selected: null, selectedEffort: null, harnessState: 'ready', harnessReason: null, guguReason: null,
   models: [{ id: 'm1', name: 'Model 1', source: 'harness' }, { id: 'm2', name: 'Model 2', source: 'harness' }],
   efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }],
 } as unknown as Parameters<typeof CreateOptionsPill>[0]['models'];
 
 /** 新建页那一层:选择留在页面状态里,胶囊只回报。 */
 function CreatePage() {
-  const [selection, setSelection] = useState<CreateSelection>({ harness: 'claude', model: null, permissionMode: null, effort: null });
+  const [selection, setSelection] = useState<CreateSelection>({ harness: 'codex', model: null, permissionMode: null, effort: null });
   return <CreateOptionsPill options={OPTIONS} selection={selection} onChange={setSelection} busy={false} models={MODELS} modelsState="ready" />;
 }
 
@@ -81,9 +81,9 @@ it('create options: picking a model, then a thinking level keeps the sheet open;
 
   // 换 harness 会把模型、推理档重置成那一家的:回顶层后摘要读到的是重置后的值。
   await click(`${sheet} [data-testid="agent-watch-create-options-drill"][data-dimension="harness"]`);
-  await click(`${sheet} [data-testid="agent-watch-create-choice"][data-dimension="harness"][data-option-id="codex"]`);
+  await click(`${sheet} [data-testid="agent-watch-create-choice"][data-dimension="harness"][data-option-id="claude"]`);
   await until('back on the root page after switching harness', atRoot);
-  expect(summary('harness')).toBe('Codex');
+  expect(summary('harness')).toBe('Claude');
   expect(summary('model'), 'the model went back to the default with the harness').toBe(defaultModel);
 
   await click('[data-testid="agent-watch-create-options-nav"]');
@@ -106,7 +106,9 @@ it('localizes the phone model list while preserving the native selection ID', as
     mount(<ModelChoices models={models} state="ready" harnessName="Claude Code"
       selection={{ harness: 'claude', model: 'default', permissionMode: null, effort: null }}
       onPick={onPick} onLeave={() => {}} />);
-    await expect.element(page.getByRole('radio', { name: '默认（推荐） Sonnet 5.5', exact: true })).toHaveAttribute('aria-checked', 'true');
+    // owner 11-25: no 「默认」 placeholder — the default row is named after the model it runs (and keeps the native ID).
+    await expect.element(page.getByRole('radio', { name: /^Sonnet 5\.5/ })).toHaveAttribute('aria-checked', 'true');
+    expect([...document.querySelectorAll('[role="radio"]')].map((radio) => radio.textContent ?? '').join(' | ')).not.toMatch(/默认|Default/);
     await expect.element(page.getByRole('radio', { name: 'New model', exact: true })).toBeVisible();
     await page.getByRole('radio', { name: 'Haiku 5.5 响应速度快，适合简短问答' }).click();
     expect(onPick).toHaveBeenCalledExactlyOnceWith('haiku');
