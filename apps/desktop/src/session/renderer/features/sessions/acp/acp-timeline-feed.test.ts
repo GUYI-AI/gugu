@@ -2,15 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const host = vi.hoisted(() => ({
   snapshot: vi.fn(),
+  listen: vi.fn<(listener: (event: { result: unknown }) => void) => () => void>(() => () => undefined),
   subscribe: vi.fn(async () => ({ ok: true, value: { subscriptionId: 'sub' } })),
 }));
 vi.mock('@renderer/lib/ipc', () => ({
   rpcOn: () => ({ sessionTimeline: { sessionSnapshot: host.snapshot, sessionSubscribe: host.subscribe, sessionUnsubscribe: async () => ({ ok: true, value: null }) } }),
-  onMachineEvent: () => () => undefined,
+  onMachineEvent: (_machine: unknown, _channel: unknown, listener: (event: { result: unknown }) => void) => host.listen(listener),
 }));
 
 const { AcpTimelineFeed } = await import('./acp-timeline-feed');
-const { RECORD_WAIT_RETRY_MS, RECORD_WAIT_WINDOW_MS } = await import('@/components/session-watch/record-wait');
+const { LOAD_RETRY_DELAYS_MS, RECORD_WAIT_RETRY_MS, RECORD_WAIT_WINDOW_MS } = await import('@/components/session-watch/record-wait');
 
 const notYet = { ok: false, error: { code: 'record_not_found', message: '找不到 codex rollout 记录' } };
 const written = { ok: true, value: { cursor: { epoch: 'e1', seq: 1 }, turns: [], settlements: [], hasOlder: false } };
@@ -20,6 +21,7 @@ describe('AcpTimelineFeed.open', () => {
     vi.useFakeTimers();
     host.snapshot.mockReset();
     host.subscribe.mockClear();
+    host.listen.mockClear();
   });
   afterEach(() => vi.useRealTimers());
 
@@ -46,6 +48,24 @@ describe('AcpTimelineFeed.open', () => {
     host.snapshot.mockResolvedValue({ ok: false, error: { code: 'session_not_found', message: 'gone' } });
     await expect(feed.open()).rejects.toMatchObject({ code: 'session_not_found' });
     expect(host.snapshot).toHaveBeenCalledOnce();
+  });
+
+  it('recovers and resubscribes when the replacement snapshot fails once', async () => {
+    const replacement = { ...written, value: { ...written.value, cursor: { epoch: 'native', seq: 2 } } };
+    const snapshotFault = { ok: false, error: { code: 'record_unreadable', message: 'temporary read failure' } };
+    host.snapshot.mockResolvedValueOnce(written).mockResolvedValueOnce(snapshotFault).mockResolvedValueOnce(replacement);
+    const failed = vi.fn();
+    const feed = new AcpTimelineFeed('conv-1', () => undefined, failed);
+    await feed.open();
+
+    const push = host.listen.mock.calls[0]![0];
+    push({ result: { ok: true, batch: { from: 0, cursor: { epoch: 'replaced', seq: 0 } } } });
+    await vi.advanceTimersByTimeAsync(LOAD_RETRY_DELAYS_MS[0]!);
+
+    expect(feed.state.cursor).toEqual(replacement.value.cursor);
+    expect(host.snapshot).toHaveBeenCalledTimes(3);
+    expect(host.subscribe).toHaveBeenCalledTimes(2);
+    expect(failed).not.toHaveBeenCalled();
   });
 
   it('stops waiting when the page closes', async () => {

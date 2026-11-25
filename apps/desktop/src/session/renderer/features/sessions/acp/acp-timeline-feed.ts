@@ -1,7 +1,7 @@
 import type { TranscriptTurn } from '@gugu/session-core/acp/client';
 import type { SessionpageSessionEvent, TimelineAfterResult } from '@gugu/session-core/session-record/contract';
 import { applySnapshot, applyTimelineResult, emptyAgentWatchTimeline, prependOlder, type AgentWatchTimeline } from '@/components/session-watch/agent-watch-store';
-import { recordWaitDelay } from '@/components/session-watch/record-wait';
+import { loadRetryDelay, recordWaitDelay } from '@/components/session-watch/record-wait';
 import { sessionpageSessionTimelineChannel } from '@shared/core/session-timeline/sessionTimelineEvents';
 import { onMachineEvent, rpcOn } from '@renderer/lib/ipc';
 
@@ -66,6 +66,10 @@ export class AcpTimelineFeed implements TimelineFeed {
 
   /** Reads the snapshot and follows the session from it. A failed read rejects; what was shown stays. */
   async open(): Promise<void> {
+    return this.follow(false);
+  }
+
+  private async follow(recovering: boolean): Promise<void> {
     const generation = this.restart();
     const id = globalThis.crypto.randomUUID();
     const conversationId = this.sessionId;
@@ -74,7 +78,7 @@ export class AcpTimelineFeed implements TimelineFeed {
       if (generation === this.generation && this.opened) this.apply(applyTimelineResult(this.state, event.result));
     });
     this.subscription = { id, stop: stopEvents };
-    const snapshot = await this.firstSnapshot(generation);
+    const snapshot = await this.firstSnapshot(generation, recovering);
     if (!snapshot || generation !== this.generation) return;
     this.state = applySnapshot(this.state, snapshot);
     this.changed();
@@ -83,16 +87,20 @@ export class AcpTimelineFeed implements TimelineFeed {
 
   /**
    * A new session's record exists only once its agent writes the first line, so `record_not_found` is a wait for a
-   * while, as for every reader of a timeline (`record-wait.ts`). null = a newer open took over.
+   * while, as for every reader of a timeline (`record-wait.ts`). A failed replacement read can leave an open task
+   * without a subscription, so recover from transient failures here too. null = a newer open took over.
    */
-  private async firstSnapshot(generation: number) {
+  private async firstSnapshot(generation: number, recovering: boolean) {
     const started = Date.now();
+    let attempt = 0;
     for (;;) {
       try {
         return await value(this.host.sessionSnapshot({ conversationId: this.sessionId, limit: FIRST_PAGE }));
       } catch (error) {
         if (generation !== this.generation) return null;
-        const delay = recordWaitDelay((error as { code?: string }).code ?? null, Date.now() - started);
+        const code = (error as { code?: string }).code ?? null;
+        const elapsedMs = Date.now() - started;
+        const delay = recovering ? loadRetryDelay({ code, attempt: ++attempt, elapsedMs }) : recordWaitDelay(code, elapsedMs);
         if (delay === null) throw error;
         await new Promise((resolve) => setTimeout(resolve, delay));
         if (generation !== this.generation) return null;
@@ -142,7 +150,7 @@ export class AcpTimelineFeed implements TimelineFeed {
   private apply(next: AgentWatchTimeline): void {
     // A batch of another generation, or one after a gap: what is held cannot be continued, read the snapshot again.
     if (next.needsSnapshot) {
-      void this.open().catch(this.failed);
+      void this.follow(true).catch(this.failed);
       return;
     }
     this.state = next;

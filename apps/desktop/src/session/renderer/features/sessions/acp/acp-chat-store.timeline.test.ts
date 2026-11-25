@@ -80,6 +80,28 @@ it('leaves the running turn to the live session and keeps a committed one until 
   expect(committedIds(store)).toEqual(['a', 's:node-7']);
 });
 
+it('keeps the first completed turn while the host timeline still has no copy of it', async () => {
+  const prompt = turn('runtime-first', 0, 'first question');
+  const first: TranscriptTurn = {
+    ...prompt,
+    items: [...prompt.items, { kind: 'message', id: 'reply', seq: 1, role: 'assistant', text: 'first answer', at: 10 }],
+  };
+  const { store, internal } = await opened([]);
+  internal.session = { activeTurn: replica<TranscriptTurn | null>(first) };
+  host.show([]);
+  expect(store.chatState.transcript.state.activeTurnSnapshot?.items).toEqual(first.items);
+
+  internal.session.activeTurn.push(null);
+  internal._committedFrame = first;
+  host.show([]);
+  expect(store.chatState.transcript.state.activeTurnSnapshot?.items).toEqual(first.items);
+
+  const recorded = { ...first, id: 'recorded-first', endedAt: 20, outcome: { kind: 'done' as const } };
+  host.show([recorded]);
+  expect(committedIds(store)).toEqual(['recorded-first']);
+  expect(store.chatState.transcript.state.activeTurnSnapshot).toBeNull();
+});
+
 it('keeps a committed turn where it was while the next one starts, until the record holds it ended', async () => {
   const first = turn('runtime-1', 1, 'go');
   const { store, internal } = await opened([turn('a', 0, 'one'), first]);
