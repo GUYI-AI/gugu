@@ -12,7 +12,7 @@ import { turnAnnotationSchema } from '@gugu/session-core/acp/client'
 // #7290 file_item_id / file_version：附件消息指向群文件夹的哪个条目、哪一版（gugu-supabase #123;字节经 attachments/urls 现签）;
 //       file_blob_id：悄悄话的附件不进文件夹,消息直接指字节（能读这条消息的人才签得到）。
 // #2581 send_group_id / send_group_size：一次发出的几个文件各占一行,同一个组号 + 这次一共几个(gugu-supabase 20261112170000)。
-// annotations：话旁边的批注(gugu-supabase 20261124090000)。
+// annotations：话旁边的评论(gugu-supabase 20261124090000)。
 export const MESSAGES_VIEW_SELECT =
   'id, chat_id, sender_user_id, to_user_ids, seq, content, content_type, reply_to_message_id, reply_to_sender_user_id, reply_to_content, retracted_at, created_at, forwarded_from_message_id, thread_root_id, edited_at, is_whisper, is_thread_root, client_message_id, via_app, sent_by_agent, agent_sender, file_item_id, file_version, file_blob_id, file_metadata, send_group_id, send_group_size, annotations'
 

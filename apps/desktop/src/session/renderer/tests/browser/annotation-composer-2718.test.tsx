@@ -25,9 +25,9 @@ it('offers deletion without editing for saved diff comments', async () => {
   harness = createReactHarness();
   await harness.render(<SessionLocalizationProvider><AnnotationTray conversation={{ kind: 'session', sessionId: id }} onSend={() => {}} enabled /></SessionLocalizationProvider>);
   await act(async () => { await userEvent.click(harness!.container.querySelector('[data-composer-annotations] button')!); });
-  const buttons = () => document.querySelectorAll('button[aria-label="Delete annotation"],button[aria-label="删除批注"]');
+  const buttons = () => document.querySelectorAll('button[aria-label="Delete comment"],button[aria-label="删除评论"]');
   await until('both diff comments are listed', () => buttons().length === 2);
-  expect(document.querySelector('button[aria-label="Edit annotation"],button[aria-label="修改批注"]')).toBeNull();
+  expect(document.querySelector('button[aria-label="Edit comment"],button[aria-label="修改评论"]')).toBeNull();
   expect(document.querySelector('[data-annotation-editor]')).toBeNull();
   await act(async () => { await userEvent.click(buttons()[0]!); });
   expect(draft.items.some(item => item.id === first.id)).toBe(false);
@@ -63,13 +63,13 @@ it('places one annotation attachment above the phone input with edit and delete 
   expect(attachment.textContent).not.toMatch(/[{}]/);
   await act(async () => {
     await userEvent.click(attachment.querySelector('button')!);
-    await until('the annotation list is open', () => document.querySelectorAll('button[aria-label="Edit annotation"],button[aria-label="修改批注"]').length === 2);
+    await until('the annotation list is open', () => document.querySelectorAll('button[aria-label="Edit comment"],button[aria-label="修改评论"]').length === 2);
   });
   const thumbnails = document.querySelectorAll('canvas');
   expect(thumbnails).toHaveLength(2);
   await until('the screenshot crop is drawn', () => thumbnails[0]!.getContext('2d')!.getImageData(48, 36, 1, 1).data[0] === 255);
   expect(document.body.textContent).toContain('<p>');
-  expect(document.querySelectorAll('button[aria-label="Delete annotation"],button[aria-label="删除批注"]')).toHaveLength(2);
+  expect(document.querySelectorAll('button[aria-label="Delete comment"],button[aria-label="删除评论"]')).toHaveLength(2);
   const ids = draft.items.map(item => item.id);
   await act(async () => {
     await userEvent.keyboard('{Escape}');
