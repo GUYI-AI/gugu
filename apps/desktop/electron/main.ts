@@ -6040,7 +6040,19 @@ app.whenReady().then(async () => {
           if (!assistantResourceOwner || (await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           const { assistantLocalIndex } = await import('./sessionpage/assistant-local-index')
           const resources = await assistantLocalIndex(info.cwd, assistantHomeKind(process.env), undefined,
-            () => emdash.assistantPanelLocal.integrationIndex())
+            () => emdash.assistantPanelLocal.integrationIndex(), async () => {
+              const baseUrl = cloudComputerBaseUrl({ enabled: cloudComputerEnabled(),
+                override: process.env.GUGU_CLOUD_COMPUTER_URL ?? null, supabaseUrl: getSupabaseUrl() })
+              if (!baseUrl) throw new Error('Chat channel metadata source is unavailable')
+              const { assistantChatChannelItems } = await import('./sessionpage/assistant-chat-channel-index')
+              const client = createChatChannelsClient({ baseUrl, anonKey: getSupabaseAnonKey(), requestTimeoutMs: 4_000,
+                accessToken: async () => {
+                  const current = await getSessionpageAuth()
+                  if (!current || current.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
+                  return current.accessToken
+                } })
+              return assistantChatChannelItems(() => client.list(), provisioned.guguAgentUserId)
+            })
           if ((await getSessionpageAuth())?.userId !== assistantResourceOwner) throw new Error('Assistant resource owner changed')
           return resources
         } : undefined
