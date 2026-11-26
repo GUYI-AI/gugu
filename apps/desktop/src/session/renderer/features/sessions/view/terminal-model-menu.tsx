@@ -217,9 +217,11 @@ export function TerminalModelMenu({
   );
 
   const handleModelChange = useCallback(
-    (optionId: string, effortId?: string) => {
+    (optionId: string, effortId?: string, effortPicked?: boolean) => {
       const targetEfforts = effortsFor(optionId)?.options;
       if (effortId !== undefined && !targetEfforts?.[effortId]) return;
+      // gugu-dev#1579 A level picked on the model being switched to is the person's: it follows later switches.
+      if (effortPicked && effortId) rememberPickedEffort(sessionId, effortId);
       const plan = planTerminalModelSwitch({
         optionId,
         selectedOptionId,
@@ -235,7 +237,7 @@ export function TerminalModelMenu({
         label: plan.label,
       });
     },
-    [currentEffort, effortsFor, options, selectedOptionId, propose]
+    [currentEffort, effortsFor, options, selectedOptionId, propose, sessionId]
   );
 
   const handleEffortChange = useCallback(

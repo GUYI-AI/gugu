@@ -313,7 +313,8 @@ export interface ComposerModelMenuProps {
    * (@@@unknown-slot), ❌ the literal "Model", ❌ `selectedModel` (a guess until then).
    */
   modelUnknown?: boolean;
-  onModelChange?: (modelId: string, effortId?: string) => void;
+  /** `effortPicked`: the person picked `effortId` themselves while switching (gugu-dev#1579), not carried over. */
+  onModelChange?: (modelId: string, effortId?: string, effortPicked?: boolean) => void;
   effortOptionsForModel?: (modelId: string) => Record<string, ComposerEffortOption> | null;
   /**
    * 宿主要把模型面板打开(例如「这个模型要会员」那一行上的「换模型」,#7056)。每变一次开一次;0 / 缺省 = 不开。
@@ -718,7 +719,7 @@ export function ComposerModelMenu({
                 onEffortChange={detailIsSelected && !onEffortChange ? undefined : effortId => {
                   closeAfterSelection();
                   if (detailIsSelected) onEffortChange?.(effortId);
-                  else onModelChange?.(detailItem.id, effortId);
+                  else onModelChange?.(detailItem.id, effortId, true);
                 }} />
           </HoverCard>
         )}

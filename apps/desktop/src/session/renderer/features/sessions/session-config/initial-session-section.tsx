@@ -195,7 +195,7 @@ export type InitialSessionState = {
    */
   model: string | null;
   acceptsImageAttachments?: boolean;
-  setModel: (model: string | null, effort?: string) => void;
+  setModel: (model: string | null, effort?: string, effortPicked?: boolean) => void;
   /**
    * 「咕咕提供的模型」目录;取不到就是空数组 —— 分组缺席而 harness 模型照常。
    * Chat UI 开关与这份目录无关:两种会话类型都能选平台模型。
@@ -249,7 +249,7 @@ export type InitialSessionState = {
    * 配了平台模型也一样。
    */
   platformModel: string | null;
-  setPlatformModel: (modelId: string | null, effort?: string) => void;
+  setPlatformModel: (modelId: string | null, effort?: string, effortPicked?: boolean) => void;
   /**
    * Reasoning-effort levels the *selected model* accepts, or null when it takes none
    * (codex gpt-5.3-codex-spark, Claude Code haiku) — the composer then hides the control
@@ -1293,12 +1293,13 @@ export function useInitialSessionState(
     issueContextEditorOpen,
     setIssueContextEditorOpen,
     model,
-    setModel: (nextModel, nextEffort) => {
+    setModel: (nextModel, nextEffort, effortPicked) => {
       setFastModeDraft(false);
       if (!providerId) return;
       // 选 harness 模型同时就是「这条会话不上平台」的表态,agent 级默认值不再回来顶掉它。
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: null }));
       if (nextEffort !== undefined) writeEffort(nextModel, null, nextEffort);
+      if (effortPicked && nextEffort) setPickedEffortOverride(nextEffort);
       setModelOverrides((current) => {
         if (!nextModel) {
           const next = { ...current };
@@ -1333,11 +1334,12 @@ export function useInitialSessionState(
     harnessSignIn,
     connectionPanel: connections.panel,
     harnessModelUnlock,
-    setPlatformModel: (nextModel, nextEffort) => {
+    setPlatformModel: (nextModel, nextEffort, effortPicked) => {
       setFastModeDraft(false);
       if (!providerId) return;
       setPlatformModelOverrides((current) => ({ ...current, [providerId]: nextModel }));
       if (nextEffort !== undefined) writeEffort(null, nextModel, nextEffort);
+      if (effortPicked && nextEffort) setPickedEffortOverride(nextEffort);
     },
     // 档名走词表 —— 插件那份是硬编码中文,原样摆出来英文壳里就漏中文(见 effort-options.ts)。
     effortOptions: localizeEffortOptions(modelEfforts?.options ?? null, translate),
@@ -1842,10 +1844,10 @@ export function InitialSessionField({
           // **本页自己的**两套 state。❌ 别把 state 也合过去:那两套决定 spawn 走哪条路,
           // 会话页只有一个活会话,合起来只能靠 surface flag 在里面分叉。
           selectedModel={composerSelectedOptionId(state)}
-          onModelChange={(optionId, effortId) => {
+          onModelChange={(optionId, effortId, effortPicked) => {
             const selection = composerModelSelection(optionId);
-            if (selection.source === 'platform') state.setPlatformModel(selection.modelId, effortId);
-            else state.setModel(selection.modelId || null, effortId);
+            if (selection.source === 'platform') state.setPlatformModel(selection.modelId, effortId, effortPicked);
+            else state.setModel(selection.modelId || null, effortId, effortPicked);
           }}
           effortOptionsForModel={state.effortOptionsForModel}
           // 一个模型都拿不到时,「模型」那一行改放一枚「登录解锁 X」的标签,点了开登录终端。

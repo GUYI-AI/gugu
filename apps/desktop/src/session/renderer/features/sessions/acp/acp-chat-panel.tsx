@@ -862,11 +862,13 @@ const ComposerForStore = observer(function ComposerForStore({
   }, [store, translate, applyReload]);
 
   const handleModelChange = useCallback(
-    (optionId: string, effort?: string) => {
+    (optionId: string, effort?: string, effortPicked?: boolean) => {
       if (writingModel.current) {
         toast({ title: translate('composer.modelBusy') });
         return;
       }
+      // gugu-dev#1579 A level picked on the model being switched to is the person's: it follows later switches.
+      if (effortPicked && effort) rememberPickedEffort(store.sessionId, effort);
       // 与 `sessionModelOptions` 同一个前提:能力声明没到,菜单本来就没摆出来。
       if (!providerCapabilities) return;
       if (

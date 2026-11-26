@@ -1215,6 +1215,14 @@ describe('useInitialSessionState', () => {
     expect(latestState?.pickedEffort, 'after a restart the level is still the person\'s').toBe('high');
   });
 
+  it('a level picked on the model being switched to (the model card) is a pick; one carried by the switch is not', async () => {
+    await renderProbe('project-1');
+    await act(async () => { latestState?.setModel('claude-sonnet-5', 'low'); });
+    expect(latestState?.pickedEffort, 'carried or armed by the menu').toBeUndefined();
+    await act(async () => { latestState?.setModel('claude-opus-4-8', 'high', true); });
+    expect(latestState?.pickedEffort).toBe('high');
+  });
+
   it('a level the app filled in is not remembered as picked, and a reset takes the pick back', async () => {
     remember({ provider: 'claude', model: 'claude-opus-4-8', effort: 'low' });
     await renderProbe('project-1');

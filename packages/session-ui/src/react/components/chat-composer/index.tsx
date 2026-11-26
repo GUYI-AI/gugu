@@ -248,7 +248,8 @@ export interface ChatComposerProps {
   selectedModel?: string;
   /** The model options are not read yet: the model trigger holds the name's place (see ComposerModelMenu). */
   modelUnknown?: boolean;
-  onModelChange?: (modelId: string, effortId?: string) => void;
+  /** `effortPicked`: the person picked `effortId` themselves while switching (gugu-dev#1579), not carried over. */
+  onModelChange?: (modelId: string, effortId?: string, effortPicked?: boolean) => void;
   effortOptionsForModel?: (modelId: string) => Record<string, ComposerEffortOption> | null;
   /** 宿主要把模型面板打开:每变一次开一次(见 `ComposerModelMenu.openRequest`)。 */
   modelMenuOpenRequest?: number;
