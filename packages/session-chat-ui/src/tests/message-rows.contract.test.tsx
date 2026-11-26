@@ -219,6 +219,13 @@ const userMessageOverflowing: ChatMessage = {
   text: Array.from({ length: 14 }, (_, index) => `Line ${index} of a long request.`).join('\n\n')
 }
 
+const userMessageWithFormula: ChatMessage = {
+  kind: 'message',
+  id: 'msg-user-formula',
+  role: 'user',
+  text: 'Check this:\n\n$$E = mc^2$$'
+}
+
 const expandedCtx = (id: string, width = WIDTH): ContractCtx =>
   makeContractCtx({ width, isCollapsed: (candidate) => candidate === id })
 
@@ -554,4 +561,36 @@ describe('thinking row: the gist gives way before the label', () => {
     // scrollWidth rounds it away (desktop 2026-10-16, 「短暂思…」). See `labelShortfall`.
     expect(labelShort, `label ${labelShort}px short of its own width while the gist still had room to give`).toBeLessThanOrEqual(0.01)
   })
+})
+
+describe('user bubble: a display formula is drawn in the bubble\'s own text colour', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    it(`${theme}: the formula contrasts with the inverted bubble the desktop host paints`, async () => {
+      const reading = await renderAndMeasureUnit(
+        messageUnitDef,
+        userMessageWithFormula,
+        makeContractCtx({ width: WIDTH }),
+        (host) => {
+          if (theme === 'dark') host.classList.add('emdark')
+          // The desktop host inverts the card (native-chat-appearance.css.ts): its fill is the page ink, its text the page ground.
+          const page = getComputedStyle(host)
+          host.style.setProperty('--chat-user-card-bg', page.getPropertyValue('--chat-fg'))
+          host.style.setProperty('--chat-bubble-user-fg', page.getPropertyValue('--chat-bg'))
+          const formula = host.querySelector<HTMLElement>('.katex-display .katex')
+          let card = formula?.parentElement ?? null
+          while (card && card !== host && getComputedStyle(card).backgroundColor === 'rgba(0, 0, 0, 0)') card = card.parentElement
+          if (!formula || !card || card === host) return { found: 0, sameAsText: 0, sameAsFill: 1 }
+          const ink = getComputedStyle(formula).color
+          return {
+            found: 1,
+            sameAsText: ink === getComputedStyle(card).color ? 1 : 0,
+            sameAsFill: ink === getComputedStyle(card).backgroundColor ? 1 : 0,
+          }
+        }
+      )
+      expect(reading.inspected.found, 'no typeset display formula inside a filled user card').toBe(1)
+      expect(reading.inspected.sameAsFill, 'the formula is painted in the bubble\'s own fill colour').toBe(0)
+      expect(reading.inspected.sameAsText, 'the formula does not follow the bubble\'s text colour').toBe(1)
+    })
+  }
 })

@@ -29,7 +29,8 @@ export const mathBlock = style({
   overflowX: 'auto',
   overflowY: 'hidden',
   lineHeight: 'normal',
-  color: vars.fg,
+  // No colour of its own: the formula takes the text colour of the surface it sits on, as the text around it does
+  // (a user bubble the host inverts included; pinning the page ink drew it in the bubble's fill).
 });
 
 /**
