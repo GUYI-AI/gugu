@@ -176,8 +176,8 @@ export function layoutFor(paneIds: readonly string[], saved: PaneLayoutSnapshotN
   return { type: 'split', id: splitId(), orientation: 'horizontal', children: paneIds.map(paneLeaf), sizes };
 }
 
-function restoreNode(node: PaneLayoutSnapshotNode, ids: ReadonlySet<string>): PaneLayoutNode | null {
-  if ('pane' in node) return ids.has(node.pane) ? paneLeaf(node.pane) : null;
+function restoreNode(node: PaneLayoutSnapshotNode, ids: Set<string>): PaneLayoutNode | null {
+  if ('pane' in node) return ids.delete(node.pane) ? paneLeaf(node.pane) : null;
   const kept: { child: PaneLayoutNode; size: number }[] = [];
   node.children.forEach((child, index) => {
     const restored = restoreNode(child, ids);

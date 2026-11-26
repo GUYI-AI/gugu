@@ -884,7 +884,7 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     const closing = this.groups[index];
     const pair = this.pair;
     if (pair && (closing.pane.entries.has(pair.pinned) || closing.pane.entries.has(pair.side))) this._pair = null;
-    if (this.sidePaneId === paneId) this.sidePaneId = null;
+    if (this.sidePaneId === paneId || this.groups.length === 2) this.sidePaneId = null; // the one pane left is no side (❌ main and side at once)
     for (const entry of closing.pane.entries.values()) this._rememberPlacement(entry, 'beside');
     // Focus goes to the pane that takes its place in the walk order: the next one, or the previous at the end.
     const adjacentId =
@@ -1237,24 +1237,26 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     }
     this.groups.splice(0, this.groups.length);
 
-    for (const g of snapshot.groups) {
+    const kept = snapshot.groups.filter((g) => g.tabManager.tabs.length > 0); // a pane saved without tabs does not come back
+    const groups = kept.length > 0 ? kept : snapshot.groups.slice(0, 1);
+    for (const g of groups) {
       const pane = this._createPaneStore(g.groupId);
       pane.restoreSnapshot(g.tabManager);
       this.groups.push({ paneId: g.groupId, pane });
       this._registerAutoClose(g.groupId, pane);
     }
 
-    this.activePaneId = snapshot.groups.some((g) => g.groupId === snapshot.activeGroupId)
+    this.activePaneId = groups.some((g) => g.groupId === snapshot.activeGroupId)
       ? snapshot.activeGroupId
-      : (snapshot.groups[0]?.groupId ?? this.activePaneId);
+      : (groups[0]?.groupId ?? this.activePaneId);
     this._lastPersistentActivePaneId = this.activePaneId;
     this._lastPersistentActiveTabIds.clear();
-    for (const group of snapshot.groups) {
+    for (const group of groups) {
       this._lastPersistentActiveTabIds.set(group.groupId, group.tabManager.activeTabId);
     }
 
     this.layout = layoutFor(
-      snapshot.groups.map((g) => g.groupId),
+      groups.map((g) => g.groupId),
       snapshot.layout,
       snapshot.paneSizes
     );
@@ -1262,7 +1264,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     this._restorePair(snapshot.sideGroupId);
     if (snapshot.pair !== undefined) {
       const pair = snapshot.pair;
-      this._pair = pair && pair.pinnedTabId !== pair.sideTabId && this._groupOf(pair.pinnedTabId) && this._groupOf(pair.sideTabId) ? pair : null;
+      const pinnedIn = pair && this._groupOf(pair.pinnedTabId);
+      // A pair naming a closed page, or its pinned page on the side (roles swapped), gives way to the pair just seated.
+      if (!pair || (pair.pinnedTabId !== pair.sideTabId && pinnedIn && pinnedIn !== this.sideGroup && this._groupOf(pair.sideTabId))) this._pair = pair;
     }
     const open = new Set(this.groups.flatMap(({ pane }) => pane.tabOrder));
     this._displaced.replace(Object.entries(snapshot.displaced ?? {}).filter(([tabId, record]) => open.has(tabId) && open.has(record.tabId)));
@@ -1273,7 +1277,8 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
   }
 
   /**
-   * A saved layout of several panes (every v3 save, any pane tree) comes back as one strip. A saved pair names its side;
+   * A saved layout of several panes (every v3 save, any pane tree) comes back as one strip. The pane holding the primary
+   * chat is the main one (a save with the chat on the side had its roles swapped); else a saved pair names its side;
    * else the pane holding the conversation (else the first) is the main one and the focused other pane's page in front
    * is the side. Every other tab joins the main strip. Left/right and the shares are kept (spec 「以前分好几栏的」).
    */
@@ -1283,7 +1288,9 @@ export class PaneLayoutStore<R extends TabRegistry = TabRegistry> {
     if (this.groups.length < 2) return;
     const order = paneOrder(this.layout);
     const savedSizes = this.layout.type === 'split' && this.layout.orientation === 'horizontal' && this.layout.children.length === 2 ? this.layout.sizes : null;
-    const main = (savedSide !== undefined ? this.groups.find((g) => g.paneId !== savedSide) : undefined)
+    const primary = this.primaryChatTabId;
+    const main = (primary ? this._groupOf(primary) : undefined)
+      ?? (savedSide !== undefined ? this.groups.find((g) => g.paneId !== savedSide) : undefined)
       ?? this.groups.find(({ pane }) => [...pane.entries.values()].some((entry) => this._registry.has(entry.kind) && this._registry.get(entry.kind).conversation))
       ?? this.groups[0];
     const side = this.groups.find((g) => g !== main && g.paneId === this.activePaneId && g.pane.tabOrder.length > 0) ?? this.groups.find((g) => g !== main && g.pane.tabOrder.length > 0);
