@@ -24,6 +24,10 @@ export const terminalContextMenuActionChannel = defineEvent<{
 
 // Menu events (main → renderer, no payload)
 export const menuOpenSettingsChannel = defineEvent<void>('menu:open-settings');
+/** 应用菜单的「关闭」(⌘W):交给渲染层按同一份登记处理 —— 有页签先关页签,没有才关窗。 */
+export const menuCloseChannel = defineEvent<void>('menu:close');
+/** 渲染层向主进程认领(true)或放下(false)「关闭」:没人认领时主进程自己关窗。 */
+export const menuCloseHandlerChannel = defineEvent<boolean>('menu:close-handler');
 export const menuUndoChannel = defineEvent<void>('menu:undo');
 export const menuRedoChannel = defineEvent<void>('menu:redo');
 export const menuCloseTabChannel = defineEvent<void>('menu:close-tab');

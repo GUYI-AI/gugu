@@ -28,6 +28,8 @@ import { useRowContextMenu } from '../../hooks/useRowContextMenu'
 import { followLink } from '../../lib/guguLinks'
 import { Hint } from '../ui/Tooltip'
 import { useTranslation } from 'react-i18next'
+import { getEffectiveHotkey, useShortcutOverrides, type CommandId } from '@renderer/lib/hooks/useKeyboardShortcuts'
+import { formatHotkeyText } from '@renderer/lib/ui/shortcut-format'
 import { useToast } from '../toastContext'
 import { useAuth } from '../../store/auth'
 import { formatCredits, useSpendingPower } from '../../lib/billing'
@@ -252,6 +254,9 @@ const MeButton = observer(function MeButton({ rail, onTabChange, pendingContacts
   const { user } = useAuth()
   const spending = useSpendingPower(user)
   const [open, setOpen] = useState(false)
+  // Key hints read the registry (the user's own binding, or none while it is being read) — never a literal.
+  const keyboard = useShortcutOverrides()
+  const hotkeyText = (id: CommandId) => { const hotkey = getEffectiveHotkey(id, keyboard); return hotkey ? formatHotkeyText(hotkey) : undefined }
   const updates = useReplica(marketUpdates, [LOCAL_HOST])
   const installed = useInstalledApps(LOCAL_HOST)
   const apps = installed.state === 'value' ? installed.value : null
@@ -288,13 +293,13 @@ const MeButton = observer(function MeButton({ rail, onTabChange, pendingContacts
             </Button>
           </div>
           <div className="gg-me-blk">
-            <MeRow icon={<UserRound size={19} />} label={t('shell.contactsMenu')} keyHint="⌘2" badge={pendingContactsCount}
+            <MeRow icon={<UserRound size={19} />} label={t('shell.contactsMenu')} keyHint={hotkeyText('app.goContacts')} badge={pendingContactsCount}
               testId={AUTOMATION_TEST_IDS.sidebarContactsNav} onClick={() => { close(); onTabChange('contacts') }} />
             <MeRow icon={<AppsIcon />} label={t('shell.apps')} keyHint={<ChevronRight size={14} />} badge={updateCount}
               testId={AUTOMATION_TEST_IDS.sidebarAppsNav} onClick={() => { close(); showSessions(); appState.navigation.navigate('apps') }} />
             <MeApps showSessions={showSessions} close={close} />
             <div className="gg-me-sep" />
-            <MeRow icon={<Settings size={19} />} label={t('shell.settings')} keyHint="⌘,"
+            <MeRow icon={<Settings size={19} />} label={t('shell.settings')} keyHint={hotkeyText('app.settings')}
               testId={AUTOMATION_TEST_IDS.sidebarSettingsNav} onClick={() => { close(); onTabChange('settings') }} />
           </div>
         </Popover.Popup>

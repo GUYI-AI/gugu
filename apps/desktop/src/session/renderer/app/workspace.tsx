@@ -3,10 +3,9 @@ import { InnerSidebar, InnerSidebarRestore } from '@renderer/features/sidebar/in
 import { PinnedSidebarAgentsPublisher } from '@renderer/features/sidebar/sidebar-pinned-agents';
 import { SessionKeyboardNavListener } from '@renderer/features/sidebar/session-keyboard-nav-listener';
 import { SESSION_NAV_FOCUS_REGION } from '@renderer/features/sidebar/session-keyboard-nav';
-import { CommandShortcutBinder } from '@renderer/lib/commands/command-shortcut-binder';
+import { KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher';
 import { AppKeyboardShortcuts } from '@renderer/lib/components/app-keyboard-shortcuts';
 import { BrowserAppShortcutEvents } from '@renderer/lib/components/browser-app-shortcut-events';
-import { CodeEditorKeyboardBridge } from '@renderer/lib/components/code-editor-keyboard-bridge';
 import { useTheme } from '@renderer/lib/hooks/useTheme';
 import { useWorkspaceSlots } from '@renderer/lib/layout/navigation-provider';
 import { PageModalClose } from '@renderer/lib/components/titlebar/shell-titlebar';
@@ -49,8 +48,8 @@ export function Workspace() {
   const page = pageView ?? (screenLayout.layout ? 'screen' : 'home');
   // 看哪条会话 → 这屏怎么摆:要赶在下面任何一个会话页渲染之前(同上面两件的理由)。
   ensureScreenLayoutSync();
-  // gugu-embedded: while the frame is display-hidden (user on another gugu tab) the document-level
-  // hotkey binders must detach — ⌘K etc. would otherwise open invisible modals and steal focus.
+  // gugu-embedded: while the frame is display-hidden (user on another gugu tab) the session keyboard navigation must
+  // detach — arrows aimed at the chat tab must not move the hidden sidebar. Shortcuts stay: see KeyboardDispatcher.
   // Standalone: always true.
   const embedVisible = useSyncExternalStore(subscribeEmbedVisibility, isEmbedVisible);
   // #6264 别的机器上的项目:工作区后端(预览、传输、浏览器转发)与「看着那条会话」才有的那几件事。
@@ -60,9 +59,10 @@ export function Workspace() {
 
   return (
     <>
-      {embedVisible && <AppKeyboardShortcuts />}
+      {/* Always mounted: the registry decides which commands answer while the task page is hidden (whenSessionPageHidden). */}
+      <AppKeyboardShortcuts />
       <BrowserAppShortcutEvents />
-      {embedVisible && <CommandShortcutBinder />}
+      <KeyboardDispatcher />
       {/* behavior session-page「键盘导航」: same visibility gate as the other document-level binders —
           a hidden task frame must not answer arrow keys aimed at the chat tab. */}
       {embedVisible && <SessionKeyboardNavListener />}
@@ -70,7 +70,6 @@ export function Workspace() {
           may have no DOM node at all. Always mounted: inserted under the page root on each show, it re-matched the root's
           :has() rules and restyled the whole page (~130 ms at 1000 chat rows). */}
       <div data-region={SESSION_NAV_FOCUS_REGION} tabIndex={-1} aria-hidden="true" style={{ position: 'fixed', width: 0, height: 0, opacity: 0, outline: 'none' }} />
-      <CodeEditorKeyboardBridge />
       {/* #2548 my agents pinned to the one list (固定到左侧栏), for the shell that draws that list. Draws nothing. */}
       <PinnedSidebarAgentsPublisher />
       <WorkspaceLayout

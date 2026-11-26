@@ -17,7 +17,7 @@ export function PhoneMessageSearch() {
   const { t } = useTranslation('messaging')
   const { theme } = useTheme()
   const [open, setOpen] = useState(false)
-  useCommandProvider({ scopeId: 'app', getCommands: () => [{ id: 'app.globalSearch', hideFromPalette: true, execute: () => setOpen(true) }] })
+  useCommandProvider({ scopeId: 'app', surface: 'shell', getCommands: () => [{ id: 'app.globalSearch', hideFromPalette: true, execute: () => setOpen(true) }] })
   const close = () => setOpen(false)
   const shellTab = useShellTabStore()
   // A result opens its conversation over this panel: back from there reopens it as it was left (@@@phone-chat-trail).

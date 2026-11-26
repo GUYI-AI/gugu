@@ -133,7 +133,9 @@ import {
 import { useOpenedOutputMenu } from './opened-output-menu';
 import { liveSettingOptions } from '../session-config/live-setting-options';
 import type { AcpChatTabResource } from './acp-chat-tab-resource';
-import { chatViewCommandForShortcut, executeChatViewCommand } from './acp-chat-view-commands';
+import { executeChatViewCommand, isEditableElement } from './acp-chat-view-commands';
+import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
+import { deepActiveElement } from '@renderer/features/sidebar/session-navigation-focus';
 import {
   effortSourceFor,
   localizeEffortOptions,
@@ -1723,25 +1725,16 @@ export const AcpChatPanel = observer(function AcpChatPanel({
 
   useMarkSeenWhenShown(sessionStore, visibility.shown && !store?.isTransient, store?.sessionId);
 
-  useEffect(() => {
-    if (!store) return;
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const root = rootRef.current;
-      if (!root || !eventComposedPathContains(event, root)) return;
-
-      const commandId = chatViewCommandForShortcut(event);
-      if (!commandId) return;
-      if (!executeChatViewCommand(viewRef.current, commandId)) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-    };
-
-    window.addEventListener('keydown', handleKeyDown, { capture: true });
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown, { capture: true });
-    };
-  }, [store]);
+  // ⌘↑ / ⌘↓ in a focused transcript scroll it to the top / the latest message. From a text field the key is not the
+  // transcript's: the command declines and the same chord walks the conversation list (session.previous / next).
+  useCommandProvider({
+    scopeId: 'session-sub',
+    isActive: (element) => !!store && !!element && !!rootRef.current?.contains(element),
+    getCommands: () => (['chat.scrollToTop', 'chat.scrollToBottom'] as const).map((id) => ({
+      id,
+      execute: () => !isEditableElement(deepActiveElement()) && executeChatViewCommand(viewRef.current, id),
+    })),
+  });
 
   const handleViewerOpen = useCallback((src?: string, alt?: string) => {
     setViewer({ src, alt });
@@ -2067,8 +2060,3 @@ export const AcpChatPanel = observer(function AcpChatPanel({
     </div>
   );
 });
-
-function eventComposedPathContains(event: Event, element: HTMLElement): boolean {
-  if (event.composedPath().includes(element)) return true;
-  return event.target instanceof Node && element.contains(event.target);
-}

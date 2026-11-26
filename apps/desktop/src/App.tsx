@@ -52,6 +52,7 @@ import { isAccountClosureV2ErrorCode } from './platform/accountClosureV2'
 
 import { platform } from './platform'
 import { type RendererRpcHandlers, useRendererRpcHandlers } from './rpc-renderer/rendererRpc'
+import { KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher'
 
 if (typeof window !== 'undefined') { installAssistantPanelHost(); installConnectionHost() }
 
@@ -87,6 +88,7 @@ function AuthenticatedProduct({ user }: { user: AuthUser }) {
             onShellCommitted={onShellCommitted}
           />
         </ShellErrorBoundary>
+        <KeyboardDispatcher />
         <AgentPresencePrewarm />
         <AgentStatusFeedBridge />
         {/* 续建记录由壳持有；未完成创建的继续/删除入口在任务侧栏。 */}

@@ -961,7 +961,7 @@ export default {
     "accountMenu": "账户菜单",
     "back": "返回",
     "chats": "对话",
-    "contacts": "联系人 (⌘2)",
+    "contacts": "联系人",
     "messagesMobile": "消息",
     "partnersMobile": "伙伴",
     "errors": {
@@ -989,7 +989,7 @@ export default {
     },
     "logout": "退出登录",
     "mainNavigation": "主导航",
-    "messages": "消息 (⌘1)",
+    "messages": "消息",
     "my": "我的",
     "newAgent": "创建智能体",
     "newTask": "新建任务",

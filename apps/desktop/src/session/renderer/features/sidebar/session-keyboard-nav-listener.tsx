@@ -1,9 +1,11 @@
+import { registerKeyLayer } from '@renderer/lib/commands/keyboard-dispatcher';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { detectPlatform } from '@tanstack/react-hotkeys';
 import { useEffect, useMemo } from 'react';
 import { getEffectiveHotkey, useShortcutOverrides } from '@renderer/lib/hooks/useKeyboardShortcuts';
 import { modalStore } from '@renderer/lib/modal/modal-store';
+import { hasOpenModalDialog } from '@renderer/lib/modal/modal-open';
 import { setTerminalKeyboardExitHandler } from '@renderer/lib/pty/terminal-keyboard-exit';
 import { caretAtStartOf } from './caret-at-start';
 import { focusSessionComposer, sessionKeyboardNav } from './session-keyboard-nav';
@@ -54,18 +56,7 @@ function hasKeyboardOwningOverlay(event: KeyboardEvent): boolean {
   );
 }
 
-/**
- * A modal dialog open anywhere in the document owns the keyboard, wherever focus happens to be.
- * `hasKeyboardOwningOverlay` only sees the event's own path, and `modalStore` only knows the task
- * page's own modals — the gugu shell's modals (the settings Sheet, the image preview) live outside
- * both. When focus falls to <body> behind such a modal (e.g. a menu inside it closes and its trigger
- * is gone), the path carries no dialog, so a printable key used to count as "nav" and was handed to
- * the composer behind the modal: 2026-09-24 an `ssh …` typed into settings → 设备 started a real
- * session. The shell marks every modal with aria-modal (ui/Sheet, ImagePreviewProvider).
- */
-export function hasOpenModalDialog(doc: Document = document): boolean {
-  return doc.querySelector('[aria-modal="true"]') !== null;
-}
+export { hasOpenModalDialog } from '@renderer/lib/modal/modal-open';
 
 /**
  * Which of the three rule sets applies to this event, or null for "not ours".
@@ -137,7 +128,7 @@ function runShortcut(key: SessionNavShortcutKey): boolean {
 }
 
 /**
- * behavior session-page「键盘导航」. One bubble-phase listener rather than per-composer wiring: by the
+ * behavior session-page「键盘导航」. A key layer of the one dispatcher rather than per-composer wiring: by the
  * time the event reaches it, TipTap's suggestion plugin has already claimed ↑↓ if a mention or
  * slash popup is open (ProseMirror calls preventDefault when a plugin handles a key), so
  * `defaultPrevented` is a "someone else owns this key" signal and no popup sniffing or
@@ -226,10 +217,10 @@ export function SessionKeyboardNavListener() {
       event.stopPropagation();
     };
     document.addEventListener('focusin', onFocusIn);
-    document.addEventListener('keydown', onKeyDown);
+    const stopLayer = registerKeyLayer(onKeyDown);
     return () => {
       document.removeEventListener('focusin', onFocusIn);
-      document.removeEventListener('keydown', onKeyDown);
+      stopLayer();
     };
   }, [hotkeys]);
 
