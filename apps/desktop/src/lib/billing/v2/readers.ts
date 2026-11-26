@@ -100,9 +100,12 @@ export function createCreditV2Reader(client: Pick<SupabaseClient, 'schema'>, cur
       if (page === 0 || pageSize === 0) throw new CreditReadContractError('pagination')
       const offset = (page - 1) * pageSize
       if (!Number.isSafeInteger(offset + pageSize)) throw new CreditReadContractError('pagination')
+      // Name the owner, as referralRewards does: the view's own row filter cannot use the (user_id, created_at)
+      // index, so without it every page and the count walk all accounts' rows in the range and time out.
+      const uid = text(await currentUserId(), 'current user')
       let query = client.schema('billing').from('usage_events')
         .select('id,model,agent_user_id,credits_charged,input_tokens,output_tokens,cache_read_tokens,cache_creation_tokens,created_at,credit_unit_version', { count: 'exact' })
-        .setHeader(VERSION_HEADER, '2')
+        .eq('user_id', uid).setHeader(VERSION_HEADER, '2')
         .gte('created_at', instant(options.from, 'from')).lt('created_at', instant(options.to, 'to'))
         .order('created_at', { ascending: false }).order('id', { ascending: false })
         .range(offset, offset + pageSize - 1)

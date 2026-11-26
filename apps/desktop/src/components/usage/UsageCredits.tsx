@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { replica, useReplica } from '../../lib/replica'
+import { replica, retryOf, useReplica } from '../../lib/replica'
 import { useTranslation } from 'react-i18next'
 import type { CreditUsageDay } from '@gugu/core/shared/usage/dailyUsage'
 import { formatNumber } from '@/i18n'
@@ -92,12 +92,13 @@ function LedgerRows({ range, creditVersion }: { range: DayRange; creditVersion: 
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const reading = useReplica(ledgerPage, [page, pageSize, model, range.from, range.to, creditVersion])
   // 翻页时上一页先留在表里(半透明),新的一页到了再换,❌ 每翻一页闪一次骨架。
+  // 这一页读失败:❌ 把上一页的行挂在新页码下冒充这一页;页码器留着(总数照旧),好翻回去或重试。
   const [shown, setShown] = useState<{ rows: LedgerRow[]; total: number } | null>(null)
   const result = reading.state === 'value' ? reading.value : null
   if (result && result !== shown) setShown(result)
-  const rows = (result ?? shown)?.rows ?? null
-  const total = (result ?? shown)?.total ?? 0
   const error = reading.state === 'error' ? message(reading.error) : null
+  const rows = error === null ? (result ?? shown)?.rows ?? null : null
+  const total = (result ?? shown)?.total ?? 0
   const busy = reading.state === 'unknown'
   // 翻到了已经不存在的页(别处刚删过数据、或换了每页行数)→ 退到最后一页。
   if (result && page > Math.max(1, Math.ceil(result.total / pageSize))) setPage(Math.max(1, Math.ceil(result.total / pageSize)))
@@ -115,7 +116,10 @@ function LedgerRows({ range, creditVersion }: { range: DayRange; creditVersion: 
         <Button type="submit" variant="primary" size="md" data-testid="usage-ledger-search">{t('usage.na.search')}</Button>
       </form>
       {error !== null && (
-        <span data-testid="usage-ledger-error" className="gg-usage-muted" title={error}>{t('credits.activityError', { error })}</span>
+        <span data-testid="usage-ledger-error" className="gg-usage-muted" title={error}>
+          {t('credits.activityError', { error })}{' '}
+          <Button variant="secondary" size="sm" onClick={retryOf(reading)} data-testid="usage-ledger-retry">{t('staleRead.retry', { ns: 'common' })}</Button>
+        </span>
       )}
       <div className="na-table-wrap gg-settings-surface" data-busy={busy && rows !== null ? '' : undefined}>
         <table className="na-table na-table--ledger" data-testid="usage-ledger-rows">
@@ -158,7 +162,7 @@ function LedgerRows({ range, creditVersion }: { range: DayRange; creditVersion: 
         </table>
         {rows !== null && rows.length === 0 && error === null && <EmptyRows title={t('usage.na.empty')} hint={model ? t('usage.na.emptyHint') : undefined} />}
       </div>
-      {rows !== null && total > 0 && (
+      {(rows !== null || error !== null) && total > 0 && (
         <Pagination page={page} pageSize={pageSize} total={total} onPage={setPage}
           onPageSize={(size) => { setPageSize(size); setPage(1) }} />
       )}

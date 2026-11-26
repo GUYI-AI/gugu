@@ -192,6 +192,34 @@ describe('#2503 用量与订阅积分的诚实性', () => {
     }
   })
 
+  it('翻到的那一页读失败 → 不把上一页的行挂在新页码下,说取不到并可重试', async () => {
+    const row = (id: string, model: string): LedgerRow => ({ id, model, agent_user_id: null, credits_charged: 1,
+      input_tokens: 1, output_tokens: 1, cache_read_tokens: 0, cache_creation_tokens: 0, created_at: new Date().toISOString() })
+    vi.mocked(fetchLedgerPage).mockImplementation(async ({ page }) => {
+      if (page === 1) return { rows: [row('p1', 'page-one-model')], total: 80 }
+      throw new Error('canceling statement due to statement timeout')
+    })
+    const harness = await render()
+    try {
+      expect(document.body.textContent).toContain('page-one-model')
+      const pageButton = (n: string) => [...document.querySelectorAll('[data-testid="usage-pager"] button')].find(button => button.textContent === n) as HTMLButtonElement
+      await act(async () => pageButton('3').click())
+      await flush()
+      expect(document.querySelector('[data-testid="usage-ledger-error"]')?.textContent).toContain('statement timeout')
+      // 修复前:第 3 页的页码下仍是第 1 页的行。
+      expect(document.body.textContent).not.toContain('page-one-model')
+      expect(document.querySelector('[data-testid="usage-pager"]'), '页码器还在,好翻回去').not.toBeNull()
+      vi.mocked(fetchLedgerPage).mockResolvedValue({ rows: [row('p3', 'page-three-model')], total: 80 })
+      await act(async () => (document.querySelector('[data-testid="usage-ledger-retry"]') as HTMLButtonElement).click())
+      await flush()
+      expect(fetchLedgerPage).toHaveBeenLastCalledWith(expect.objectContaining({ page: 3 }))
+      expect(document.body.textContent).toContain('page-three-model')
+      expect(document.querySelector('[data-testid="usage-ledger-error"]')).toBeNull()
+    } finally {
+      harness.cleanup()
+    }
+  })
+
   it('确实没有记录 → 才说「未找到日志」', async () => {
     const harness = await render()
     try {
