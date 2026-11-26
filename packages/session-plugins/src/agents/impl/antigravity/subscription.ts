@@ -26,7 +26,7 @@ import { readAgyAcpTier, readCachedAgyTier } from './acp-tier';
  * agy 1.1.11 更新日志写明「不起对话、不花额度」;本机 1.2.11 实测 10 秒、`num_turns:0`,
  * `command.data.groups[].buckets[]` 每格 `{window: '5h'|'weekly', remaining_fraction, reset_time}`。
  * ⚠️ 没登录时 `agy -p` 会自己起 Google 登录流程并在约 60 秒后打开浏览器(2026-10-13 调研时实撞)⇒
- *    只在 `agy models` 已经答「登着」之后才问，而且 30 秒必停 —— 赶在它可能弹浏览器之前。
+ *    只在本地凭据状态答「登着」之后才问，而且 30 秒必停 —— 赶在它可能弹浏览器之前。
  *
  * 套餐:优先读同一登录的 `agy acp` 的 `session/new._meta.antigravity.tier.name`(ACP 1.4+官方扩展),
  * 只握手、不开推理、不触发登录。旧 CLI 不提供此字段时，Antigravity 桌面版(IDE)的旧缓存仍作后备:
@@ -60,7 +60,7 @@ export async function readAntigravityPlan(ctx: AgentAuthContext): Promise<Subscr
   if (tier?.kind === 'tier') return { payer: 'subscription', plan: tier.name, ...(tier.asOf !== undefined ? { planAsOf: tier.asOf } : {}) };
 
   // On Linux the IDE cache cannot establish identity with the CLI's current keyring account either.
-  const cached = process.platform === 'darwin' ? await readIdeTier(ctx) : null;
+  const cached = process.platform === 'darwin' && !ctx.env.SSH_CONNECTION?.trim() ? await readIdeTier(ctx) : null;
   if (!cached) return { payer: 'subscription', plan: 'Google AI', tierUnknown: true };
   return {
     payer: 'subscription',

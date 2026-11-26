@@ -76,23 +76,24 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   machine: string | null; connection?: CustomModelConnection; group?: 'coding-plan' | 'api' | 'custom';
   /** The model of `connection` this dialog edits; its other models are kept as they are. */
   modelId?: string;
-  initialAccount?: 'claude' | 'codex'; initialRoute?: Omit<CustomModelRoute, 'id'>; onClose: () => void;
+  initialAccount?: 'claude' | 'codex' | 'antigravity'; initialRoute?: Omit<CustomModelRoute, 'id'>; onClose: () => void;
 }) {
   const { translate } = useSessionMessages();
   const initialPreset = group === 'custom' ? undefined : providerPresets.find(preset => preset.group === group);
-  const accountPreset = initialAccount === 'codex' ? 'chatgpt-subscription' : 'claude-subscription';
+  const accountPreset = initialAccount === 'antigravity' ? 'antigravity-subscription' : initialAccount === 'codex' ? 'chatgpt-subscription' : 'claude-subscription';
   const [presetId, setPresetId] = useState(connection ? connection.preset ?? CUSTOM_PROVIDER : group === 'coding-plan' ? accountPreset : initialPreset?.id ?? CUSTOM_PROVIDER);
   const preset = providerPresets.find(({ id }) => id === presetId);
-  const accountProvider = presetId === 'claude-subscription' ? 'claude' : presetId === 'chatgpt-subscription' ? 'codex' : null;
+  const accountProvider = presetId === 'antigravity-subscription' ? 'antigravity' : presetId === 'claude-subscription' ? 'claude' : presetId === 'chatgpt-subscription' ? 'codex' : null;
   const agentsReading = useAgents();
   const agents = valueOf(agentsReading);
   const agentsError = agentsReading.state === 'error' ? agentsReading.error : null;
   const accountAgent = agents?.find(agent => agent.id === accountProvider);
   const providerIds = group === 'coding-plan'
-    ? ['claude-subscription', 'chatgpt-subscription', ...providerPresets.filter(item => item.group === group).map(item => item.id)]
+    ? ['claude-subscription', 'chatgpt-subscription', 'antigravity-subscription', ...providerPresets.filter(item => item.group === group).map(item => item.id)]
     : [...providerPresets.filter(item => item.group === 'api').map(item => item.id), CUSTOM_PROVIDER];
-  const labelOf = (id: string) => id === 'claude-subscription' ? translate('customModels.claudeAccount') : id === 'chatgpt-subscription' ? translate('customModels.codexAccount') : (name => name ? vendorName(name) : translate('customModels.custom'))(providerPresets.find(item => item.id === id)?.name);
+  const labelOf = (id: string) => id === 'antigravity-subscription' ? 'Antigravity' : id === 'claude-subscription' ? translate('customModels.claudeAccount') : id === 'chatgpt-subscription' ? translate('customModels.codexAccount') : (name => name ? vendorName(name) : translate('customModels.custom'))(providerPresets.find(item => item.id === id)?.name);
   const iconOf = (id: string) => {
+    if (id === 'antigravity-subscription') return <AppIcon id="antigravity" size={16} />;
     if (id === 'claude-subscription' || id === 'chatgpt-subscription') return <AppIcon id={id === 'claude-subscription' ? 'claude' : 'codex'} size={16} />;
     const item = providerPresets.find(entry => entry.id === id);
     if (!item) return <Sparkles aria-hidden className="size-4 shrink-0" />;
@@ -237,7 +238,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     setAdvanced(advancedReset());
     effortsChosen.current = false;
     const next = providerPresets.find((item) => item.id === id);
-    if (id !== 'claude-subscription' && id !== 'chatgpt-subscription') setEndpoints(next?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
+    if (id !== 'claude-subscription' && id !== 'chatgpt-subscription' && id !== 'antigravity-subscription') setEndpoints(next?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
   };
   const save = async () => {
     setFailure('');
@@ -328,7 +329,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       </DialogHeader>
       <DialogContentArea className="gg-model-dialog-body">
         <div className="gg-model-field">
-          <span className="gg-model-field-label flex items-center justify-between">{translate(group === 'coding-plan' ? 'customModels.plan' : 'customModels.provider')}{(preset || accountProvider) && <Button type="button" size="sm" variant="link" className="gg-model-provider-link" onClick={() => openExternalLinkInBrowser(accountProvider === 'claude' ? 'https://claude.ai/upgrade' : accountProvider === 'codex' ? 'https://chatgpt.com/pricing' : preset!.docsUrl)}>{translate(accountProvider ? 'customModels.purchasePlan' : 'customModels.docs')} ↗</Button>}</span>
+          <span className="gg-model-field-label flex items-center justify-between">{translate(group === 'coding-plan' ? 'customModels.plan' : 'customModels.provider')}{(preset || accountProvider) && <Button type="button" size="sm" variant="link" className="gg-model-provider-link" onClick={() => openExternalLinkInBrowser(accountProvider === 'antigravity' ? 'https://antigravity.google/docs/plans' : accountProvider === 'claude' ? 'https://claude.ai/upgrade' : accountProvider === 'codex' ? 'https://chatgpt.com/pricing' : preset!.docsUrl)}>{translate(accountProvider ? 'customModels.purchasePlan' : 'customModels.docs')} ↗</Button>}</span>
           <Combobox
             value={presetId}
             disabled={accountCreating || !!busy}

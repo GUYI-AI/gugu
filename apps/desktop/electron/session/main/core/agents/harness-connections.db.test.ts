@@ -104,6 +104,38 @@ it('uses only the committed default even when SQLite rejects a switch', async ()
   await expect(stat(join(state.codexRoot, 'auth.json'))).rejects.toMatchObject({ code: 'ENOENT' });
 });
 
+it('isolates Antigravity sign-ins while preserving managed history and native credentials', async () => {
+  const first = await createHarnessConnection({ providerId: 'antigravity', kind: 'account', name: 'Google A' });
+  const second = await createHarnessConnection({ providerId: 'antigravity', kind: 'account', name: 'Google B' });
+  const a = await resolveHarnessConnection('antigravity', { connectionId: first.id, forLogin: true });
+  const b = await resolveHarnessConnection('antigravity', { connectionId: second.id, forLogin: true });
+  expect(a.configRootEnv!.GEMINI_HOME).not.toBe(b.configRootEnv!.GEMINI_HOME);
+  expect(a.credentialEnv).toEqual({ SSH_CONNECTION: '127.0.0.1 1 127.0.0.1 2' });
+  await expect(assertHarnessConnectionSelectable('antigravity', second.id)).rejects.toThrow('no saved sign-in');
+  const token = (root: string, name: string) => writeFile(join(root, 'antigravity-cli/antigravity-oauth-token'), JSON.stringify({ token: { refresh_token: name } }), { mode: 0o600 });
+  await token(a.configRootEnv!.GEMINI_HOME, 'account-a');
+  await token(b.configRootEnv!.GEMINI_HOME, 'account-b');
+  await assertHarnessConnectionSelectable('antigravity', second.id);
+  await selectHarnessConnection('antigravity', second.id);
+  expect((await resolveHarnessConnection('antigravity')).configRootEnv).toEqual(b.configRootEnv);
+  expect((await resolveHarnessConnection('antigravity', { sessionId: 'an-existing-session', connectionId: first.id })).connectionId).toBe(second.id);
+  const history = join(a.configRootEnv!.GEMINI_HOME, 'antigravity-cli/conversations/history.db');
+  await writeFile(history, 'shared managed history');
+  expect(await readFile(join(b.configRootEnv!.GEMINI_HOME, 'antigravity-cli/conversations/history.db'), 'utf8')).toBe('shared managed history');
+  await removeHarnessConnection('antigravity', second.id);
+  expect((await resolveHarnessConnection('antigravity')).connectionId).toBe('native');
+  expect(await readFile(join(a.configRootEnv!.GEMINI_HOME, 'antigravity-cli/antigravity-oauth-token'), 'utf8')).toContain('account-a');
+  await removeHarnessConnection('antigravity', 'native');
+  await expect(resolveHarnessConnection('antigravity', { connectionId: 'native', forLogin: true })).rejects.toThrow('unavailable');
+  expect((await listHarnessConnections('antigravity')).map(c => c.id)).toEqual([first.id]);
+  const disconnected = await resolveHarnessConnection('antigravity');
+  expect(disconnected.credentialEnv).toEqual(a.credentialEnv);
+  expect(disconnected.configRootEnv!.GEMINI_HOME).not.toBe(a.configRootEnv!.GEMINI_HOME);
+  await selectHarnessConnection('antigravity', first.id);
+  await removeHarnessConnection('antigravity', first.id);
+  expect(await listHarnessConnections('antigravity')).toEqual([]);
+});
+
 it('references the terminal account and keeps the former native vault as an independent account without writing the terminal', async () => {
   const work = await createHarnessConnection({ providerId: 'codex', kind: 'account' });
   const stateDir = join(state.home, 'harness-connections', 'codex');
