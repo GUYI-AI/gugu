@@ -194,7 +194,7 @@ class AcpAgentStatusBridge {
     });
   }
 
-  /** 一轮落定时把最后那份上下文读数记进会话记录,换了模型就作废 —— 判据在 `contextUsageChange`。 */
+  /** 一轮落定时把最后那份上下文读数记进会话记录(换了模型不作废,新模型报了读数再覆盖)—— 判据在 `contextUsageChange`。 */
   private applyContextUsage(summary: SessionSummary): void {
     try {
       const { sessionId } = summary;
