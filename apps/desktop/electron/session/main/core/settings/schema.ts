@@ -107,6 +107,8 @@ export const newSessionMemorySchema = z
         provider: z.custom<AgentProviderId>(isValidProviderId),
         model: z.string().optional(),
         effort: z.string().optional(),
+        /** The level the person picked by hand (gugu-dev#1579): only it follows a model switch. Absent = the app's level. */
+        pickedEffort: z.string().optional(),
         platformModel: z.string().optional(),
         permissionMode: z.custom<GuguPermissionMode>(isGuguPermissionMode).optional(),
         providerChosenByUser: z.boolean(),

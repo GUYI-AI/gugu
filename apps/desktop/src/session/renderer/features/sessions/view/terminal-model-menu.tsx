@@ -10,6 +10,7 @@ import { platformModelIdFromOption } from '@/session/shared/platform-model-id';
 import { useReplica } from '@/lib/replica';
 import { machineRegistry } from '@renderer/lib/machine-routing';
 import { customModels } from '../session-config/custom-models';
+import { pickedEffort, rememberPickedEffort } from '../session-config/last-live-effort';
 import { requestSessionReload } from '@renderer/features/sessions/request-session-reload';
 import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload-confirm';
 import { useShowModal } from '@renderer/lib/modal/modal-provider';
@@ -189,6 +190,8 @@ export function TerminalModelMenu({
           });
           return false;
         }
+        // gugu-dev#1579 A level switched to on its own was picked by hand: it follows later model switches.
+        if (!target.model && target.effort !== undefined) rememberPickedEffort(sessionId, target.effort);
         setApplied((current) => ({
           optionId: target.model?.optionId ?? current.optionId,
           effort: target.effort !== undefined ? target.effort : current.effort,
@@ -278,6 +281,7 @@ export function TerminalModelMenu({
         selectedEffort={currentEffort && effortOptions?.[currentEffort] ? currentEffort : undefined}
         onEffortChange={handleEffortChange}
         defaultEffort={efforts?.defaultId ?? undefined}
+        pickedEffort={pickedEffort(sessionId)}
       />
       <SessionReloadConfirm
         open={pending !== null}

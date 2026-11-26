@@ -165,7 +165,7 @@ import { sessionBillingRoute, runningPlatformModelId, unavailablePlatformModelId
 import { planModelSwitch } from '@renderer/features/sessions/session-config/model-switch-plan';
 import { findSessionHostBridge } from '@renderer/lib/electron-api';
 import { SessionReloadConfirm } from '@renderer/features/sessions/session-reload-confirm';
-import { lastLiveEffort, rememberLiveEffort } from '@renderer/features/sessions/session-config/last-live-effort';
+import { lastLiveEffort, pickedEffort, rememberLiveEffort, rememberPickedEffort } from '@renderer/features/sessions/session-config/last-live-effort';
 import { requestSendQueuedPromptNow } from './send-queued-prompt-now-flow';
 import { requestSessionReload } from '@renderer/features/sessions/request-session-reload';
 import {
@@ -1222,11 +1222,14 @@ const ComposerForStore = observer(function ComposerForStore({
         effortOptions={localizeEffortOptions(sessionEffortOptions, translate)}
         selectedEffort={store.effort ?? undefined}
         defaultEffort={detachedDefaultEffort}
+        pickedEffort={pickedEffort(store.sessionId)}
         onEffortChange={effortId => {
           if (writingModel.current) {
             toast({ title: translate('composer.modelBusy') });
             return;
           }
+          // gugu-dev#1579 Picked by hand: this level follows a model switch ('' = reset to the app's level).
+          rememberPickedEffort(store.sessionId, effortId || null);
           void handleEffortChange(effortId);
         }}
         fastMode={sessionFastMode({ capabilities: providerCapabilities, route, group: store.fastModeGroup,

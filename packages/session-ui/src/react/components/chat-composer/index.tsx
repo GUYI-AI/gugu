@@ -278,6 +278,8 @@ export interface ChatComposerProps {
    * unset state still says what will happen, rather than leaving the user to guess.
    */
   defaultEffort?: string;
+  /** The level the person picked by hand; only it follows a model switch (see `ComposerModelMenu`). */
+  pickedEffort?: string;
   /** Undefined hides Fast; supported hosts own the accepted per-session value. */
   fastMode?: boolean;
   onFastModeChange?: (enabled: boolean) => void;
@@ -467,6 +469,7 @@ export function ChatComposer({
   selectedEffort,
   onEffortChange,
   defaultEffort,
+  pickedEffort,
   fastMode,
   onFastModeChange,
   renderFastModeHint,
@@ -859,6 +862,7 @@ export function ChatComposer({
                 selectedEffort={selectedEffort}
                 onEffortChange={onEffortChange}
                 defaultEffort={defaultEffort}
+                pickedEffort={pickedEffort}
                 fastMode={fastMode}
                 onFastModeChange={onFastModeChange}
                 renderFastModeHint={phoneActions ? undefined : renderFastModeHint}

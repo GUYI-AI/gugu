@@ -1193,6 +1193,42 @@ describe('useInitialSessionState', () => {
     expect(remembered()?.lastStarted).not.toHaveProperty('effort');
   });
 
+  // gugu-dev#1579 (owner 2026-11-27 「B」) Only a level the person picked follows a model switch. The box says which one
+  // it is (`pickedEffort`, handed to the model menu), keeps it in the start memory across a restart and gives it to the
+  // session it starts; a level the app filled in is not one.
+  it('a level picked by hand is the picked level, kept across a restart and given to the session it starts', async () => {
+    // The last start ran at low, but nobody picked it.
+    remember({ provider: 'claude', model: 'claude-opus-4-8', effort: 'low' });
+    await renderProbe('project-1');
+    expect(latestState?.effort).toBe('low');
+    expect(latestState?.pickedEffort, 'a level remembered from a start is not a pick').toBeUndefined();
+    await act(async () => { latestState?.setEffort('high'); });
+    expect(latestState?.pickedEffort).toBe('high');
+    await latestState?.rememberStartedConfiguration('session-picked-1579');
+    expect(remembered()?.lastStarted).toMatchObject({ effort: 'high', pickedEffort: 'high' });
+    const { pickedEffort } = await import('./last-live-effort');
+    expect(pickedEffort('session-picked-1579')).toBe('high');
+
+    await act(async () => root.unmount());
+    root = createRoot(container);
+    await renderProbe('project-2');
+    expect(latestState?.pickedEffort, 'after a restart the level is still the person\'s').toBe('high');
+  });
+
+  it('a level the app filled in is not remembered as picked, and a reset takes the pick back', async () => {
+    remember({ provider: 'claude', model: 'claude-opus-4-8', effort: 'low' });
+    await renderProbe('project-1');
+    expect(latestState?.effort).toBe('low');
+    await latestState?.rememberStartedConfiguration('session-filled-1579');
+    expect(remembered()?.lastStarted).not.toHaveProperty('pickedEffort');
+    const { pickedEffort } = await import('./last-live-effort');
+    expect(pickedEffort('session-filled-1579')).toBeUndefined();
+
+    await act(async () => { latestState?.setEffort('high'); });
+    await act(async () => { latestState?.setEffort(null); });
+    expect(latestState?.pickedEffort).toBeUndefined();
+  });
+
   // #5973 —— 出厂偏好猜出来的那家不许当「上次用过的」:替身的答案顺序是
   // `initialOverride ?? rememberedProviderId ?? 'claude'`,所以「记忆有没有被传下去」看得出来。
   it('does not carry over a provider the user never chose', async () => {

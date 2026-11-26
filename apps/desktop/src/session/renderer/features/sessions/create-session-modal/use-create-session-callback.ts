@@ -305,7 +305,7 @@ export function useCreateSessionCallback({
       // box closed even when this computer cannot save what was picked — said in the log and in a light notice. Written
       // once the session exists, not awaited: a first line that fails still leaves a started session to remember, so its
       // retry needs no second write.
-      void input.rememberStartedConfiguration().catch((error: unknown) => {
+      void input.rememberStartedConfiguration(sessionId).catch((error: unknown) => {
         log.error('remember the started configuration failed', { error: error instanceof Error ? error.message : String(error) });
         toast({ title: translateSessionMessage('task.newSessionMemoryNotSaved'), description: messageForUser(error), tier: 'warning' });
       });

@@ -336,6 +336,11 @@ export interface ComposerModelMenuProps {
   selectedEffort?: string;
   onEffortChange?: (effortId: string) => void;
   defaultEffort?: string;
+  /**
+   * The level the person picked by hand (gugu-dev#1579), absent when the shown level was filled in by the app. Only this
+   * one follows a model switch; otherwise the new model starts at its own default.
+   */
+  pickedEffort?: string;
   /** Undefined means the current model/route does not offer Fast. */
   fastMode?: boolean;
   onFastModeChange?: (enabled: boolean) => void;
@@ -371,6 +376,7 @@ export function ComposerModelMenu({
   selectedEffort,
   onEffortChange,
   defaultEffort,
+  pickedEffort,
   fastMode,
   onFastModeChange,
   renderFastModeHint,
@@ -433,14 +439,16 @@ export function ComposerModelMenu({
   const effectiveEffortItem = selectedEffortItem ?? defaultEffortItem;
   const triggerEffort = selectedModelItem && !settingNotice && effortItems.length > 1 ? effectiveEffortItem : undefined;
 
+  // gugu-dev#1579 (owner 2026-11-27 「B」): only a level the person picked follows the switch. A level the app filled in
+  // (a model's default, the fixed medium) stays with its model: the new model starts at its own default.
   const effortForModelSwitch = (item: ComposerModelItem) => {
     if (item.id === (selectedModelItem?.aliasOf ?? selectedModelItem?.id)) return undefined;
     const options = effortOptionsForModel?.(item.id);
     if (!options) return undefined;
-    const current = effectiveEffortItem?.id;
-    if (current && options[current] && !options[current].disabled) return current;
+    const offered = (id: string | undefined): id is string => !!id && !!options[id] && !options[id].disabled;
+    if (offered(pickedEffort)) return pickedEffort;
     const fallback = item.modelFeatures?.defaultEffortId;
-    return fallback && options[fallback] && !options[fallback].disabled ? fallback : undefined;
+    return offered(fallback) ? fallback : undefined;
   };
   const selectModel = (item: ComposerModelItem) => {
     const effort = effortForModelSwitch(item);

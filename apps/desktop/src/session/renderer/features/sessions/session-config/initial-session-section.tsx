@@ -1,4 +1,5 @@
 import { resolveInitialEffort } from '@shared/core/agents/create-efforts';
+import { rememberPickedEffort } from './last-live-effort';
 import { usePermissionMenu } from './use-permission-menu';
 import { localizePermissionModeOptions } from '../acp/permission-mode-options';
 import { classifyProviderPermissionMode, type ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
@@ -271,9 +272,11 @@ export type InitialSessionState = {
   fastTokenMultiplier?: number;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
   defaultEffort: string | null;
+  /** The level the person picked by hand (gugu-dev#1579); only it follows a model switch. Absent = the app's level. */
+  pickedEffort?: string;
   /** Persist the complete launch configuration only after a session has actually been created. */
   /** Saves what was started into the new-session memory; rejects when it cannot be saved (fail loud). */
-  rememberStartedConfiguration: () => Promise<void>;
+  rememberStartedConfiguration: (sessionId?: string) => Promise<void>;
   /**
    * 这条会话以哪一种**展示**开:`'code'` 编程视角(harness 自己的原生 TUI 跑在终端里),
    * `'general'` 通用视角(咕咕渲染的结构化聊天面板)。这是**生效值**:用户的持久偏好经这一家的
@@ -562,6 +565,8 @@ export function useInitialSessionState(
     const key = handed ? effortKeyOf(handed.provider, handed.model, handed.platformModel) : null;
     return key ? { [key]: handed!.effort } : {};
   });
+  // gugu-dev#1579 The level picked by hand on this box: undefined = not touched here (the start memory speaks), null = reset.
+  const [pickedEffortOverride, setPickedEffortOverride] = useState<string | null | undefined>(undefined);
   const [issueMentionContexts, setIssueMentionContexts] = useState<Record<string, string>>({});
   // #4325 —— 待发队列(两条通道共用)。composer 是这些文件的唯一保管者:一件真的送达了才
   // 把它移走,所以「屏幕上还剩什么」逐字等于「重试还要发什么」,不需要第二份快照。
@@ -691,6 +696,7 @@ export function useInitialSessionState(
       setModelOverrides({});
       setPlatformModelOverrides({});
       setEffortOverrides({});
+      setPickedEffortOverride(undefined);
     }
     setIssueContext(null);
     setPermissionModeOverride(null);
@@ -1176,6 +1182,11 @@ export function useInitialSessionState(
       : customDefaultEffort,
     platformModel ? modelEfforts?.defaultId : undefined,
   );
+  // gugu-dev#1579 (owner 2026-11-27 「B」) Only a level the person picked follows a model switch; the start memory keeps it
+  // across restarts, as `providerChosenByUser` keeps whether the engine was theirs.
+  const pickedEffort = pickedEffortOverride !== undefined
+    ? pickedEffortOverride ?? undefined
+    : lastStartedConfiguration?.provider === providerId ? lastStartedConfiguration.pickedEffort : undefined;
   const { auth: reviewAuth } = useAgentAuthStatus(!platformModel && !selectedCustom ? providerId : null, undefined, { machine });
   const autoReviewCostSource: ReviewCostSource = platformModel ? 'platform' : selectedCustom ? 'api-key'
     : reviewAuth?.status.kind === 'authenticated' ? reviewAuth.status.credentialKind ?? 'unknown' : 'unknown';
@@ -1345,8 +1356,13 @@ export function useInitialSessionState(
     setFastMode: setFastModeDraft,
     fastTokenMultiplier: fastTokenMultiplier(capabilities, customFastSupported !== undefined),
     defaultEffort: modelEfforts?.defaultId ?? null,
-    setEffort: nextEffort => writeEffort(model, platformModel, nextEffort),
-    rememberStartedConfiguration: async () => {
+    pickedEffort,
+    setEffort: nextEffort => {
+      setPickedEffortOverride(nextEffort || null);
+      writeEffort(model, platformModel, nextEffort);
+    },
+    rememberStartedConfiguration: async (sessionId) => {
+      if (sessionId && pickedEffort) rememberPickedEffort(sessionId, pickedEffort);
       if (!providerId) return;
       // 真启动过的那一家同样算「用户选的」(除非它是出厂偏好猜出来的),同步进上面那一格,
       // 两份记忆就不会一新一旧地分叉。
@@ -1356,6 +1372,7 @@ export function useInitialSessionState(
           provider: providerId,
           ...(model && { model }),
           ...(effort && { effort }),
+          ...(pickedEffort && { pickedEffort }),
           ...(platformModel && { platformModel }),
           providerChosenByUser,
           permissionMode,
@@ -1846,6 +1863,7 @@ export function InitialSessionField({
           onFastModeChange={state.setFastMode}
           renderFastModeHint={fastModeHint(state.fastTokenMultiplier)}
           defaultEffort={state.defaultEffort ?? undefined}
+          pickedEffort={state.pickedEffort}
           permissionModeOptions={withAutoReviewHint(permissionModeOptions, state.provider, state.autoReviewCostSource ?? 'unknown')}
           selectedPermissionMode={permissionModeOptions ? state.permissionMode : undefined}
           onPermissionModeChange={(modeId) => {
