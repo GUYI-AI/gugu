@@ -8,7 +8,7 @@ import { activityEvents, activitySessionProjects, kv, projects, sessionModelSour
 import { events } from '@main/lib/events';
 import { log } from '@main/lib/logger';
 import { sessionChangedChannel } from '@shared/core/sessions/sessionEvents';
-import type { ArchivedSessionRef, PermanentDeleteOutcome } from '@shared/core/sessions/sessions';
+import type { ArchivedSessionRef, PermanentDeleteFailure, PermanentDeleteOutcome } from '@shared/core/sessions/sessions';
 import { managedAgentHome } from '../agents/agent-homes';
 import { publishProjectVisibility } from '../projects/operations/project-visibility';
 import { dropTimelineArchive } from '../session-timeline/archive-store';
@@ -19,7 +19,7 @@ import { forgetSessionPlatformModel } from './platform-model-selection';
 import { serializeSessionArchival, sessionArchivalState } from './session-archival';
 import { sessionEvents } from './session-events';
 import { familyOf } from './session-family';
-import { sessionIdentityHost } from './session-identity-host';
+import { sessionIdentityHost, type SessionIdentityHost } from './session-identity-host';
 import { dropJournal } from './session-journal';
 import { forgetSessionOutputs } from './session-outputs';
 
@@ -27,6 +27,7 @@ import { forgetSessionOutputs } from './session-outputs';
 export const PERMANENT_DELETE_BATCH = 50;
 
 type Row = ArchivedSessionRef & { identities: string[] };
+type Problem = { ref: ArchivedSessionRef; reason: PermanentDeleteFailure; error?: unknown };
 
 /**
  * owner 2026-11-26「已归档 → 永久删除」:只删**已归档**的行,先云端、后本机。
@@ -40,7 +41,7 @@ type Row = ArchivedSessionRef & { identities: string[] };
  * - 本机:会话行(外键带走终端、输入、待发、搜索索引)、活动、模型来源、归档区间与拒投记录、模型选择、产出、页签状态、
  *   咕咕日志、时间线缓存、咕咕托管配置根里的引擎记录(用户自己的 ~/.claude ~/.codex ❌ 碰)、它给自己排的定时、
  *   只剩它在用的工作区行(目录 ❌ 删)。用量时长保留(那天跑过的时长仍是事实,见 schema)。
- * - 一条没删成写进 `failed`,不拦别的;输入不对才抛。
+ * - 一条没删成写进 `failed`(闭集原因),不拦别的;异常原文连同会话和机器只进这台机器的日志。输入不对才抛。
  */
 export async function permanentlyDeleteSessions(
   targets: ArchivedSessionRef[],
@@ -54,8 +55,10 @@ export async function permanentlyDeleteSessions(
   if (options.withChildren !== undefined && typeof options.withChildren !== 'boolean') throw new Error('withChildren must be a boolean');
 
   const outcome: PermanentDeleteOutcome = { deleted: [], unreached: [], failed: [] };
-  const fail = (ref: ArchivedSessionRef, error: unknown) => {
-    outcome.failed.push({ projectId: ref.projectId, sessionId: ref.sessionId, reason: error instanceof Error ? error.message : String(error) });
+  const problems: Problem[] = [];
+  const fail = (ref: ArchivedSessionRef, reason: PermanentDeleteFailure, error?: unknown) => {
+    outcome.failed.push({ projectId: ref.projectId, sessionId: ref.sessionId, reason });
+    problems.push({ ref, reason, error });
   };
 
   // 1. 要删哪些行:点名的,加上(勾了时)它们名下已归档的子会话,叶子先;重复的只算一次。
@@ -69,10 +72,10 @@ export async function permanentlyDeleteSessions(
       if (sessionWasPermanentlyDeleted(target.sessionId) && !seen.has(target.sessionId)) {
         seen.add(target.sessionId);
         outcome.deleted.push({ projectId: target.projectId, sessionId: target.sessionId });
-      } else if (!seen.has(target.sessionId)) fail(target, new Error('Session not found on this machine'));
+      } else if (!seen.has(target.sessionId)) fail(target, 'not_found');
       continue;
     }
-    if (!row.archivedAt) { fail(target, new Error('Only archived sessions can be permanently deleted')); continue; }
+    if (!row.archivedAt) { fail(target, 'not_archived'); continue; }
     if (options.withChildren) {
       const { members, unreached } = await familyOf(target.sessionId, { includeArchived: true });
       outcome.unreached.push(...unreached);
@@ -90,11 +93,12 @@ export async function permanentlyDeleteSessions(
   }
 
   // 2. 云端,第一步:每条的身份都已移出,并记下要删私聊历史的全部身份。
-  let host: ReturnType<typeof sessionIdentityHost>;
+  let host: SessionIdentityHost;
   try {
     host = sessionIdentityHost();
   } catch (error) {
-    for (const ref of order) fail(ref, error);
+    for (const ref of order) fail(ref, 'cloud_unconfirmed', error);
+    await logProblems(problems, null);
     return outcome;
   }
   const ready: Row[] = [];
@@ -109,7 +113,7 @@ export async function permanentlyDeleteSessions(
       });
       ready.push({ ...ref, identities });
     } catch (error) {
-      fail(ref, error);
+      fail(ref, 'cloud_unconfirmed', error);
     }
     await yieldToLoop();
   }
@@ -132,17 +136,32 @@ export async function permanentlyDeleteSessions(
   // 4. 本机:云端都确认了的行,一条一个小事务,条与条之间让出事件循环。
   for (const row of ready) {
     const missing = row.identities.find((id) => !purged.has(id));
-    if (missing) { fail(row, failedIds.get(missing) ?? new Error('The cloud did not confirm deleting this task\'s history')); continue; }
+    if (missing) { fail(row, 'cloud_unconfirmed', failedIds.get(missing)); continue; }
     try {
       const result = await serializeSessionArchival(row.sessionId, () => deleteLocalSession(row));
       if (result !== 'restored') outcome.deleted.push({ projectId: row.projectId, sessionId: row.sessionId });
-      else fail(row, new Error('The session was restored before it could be deleted'));
+      else fail(row, 'restored');
     } catch (error) {
-      fail(row, error);
+      fail(row, 'failed', error);
     }
     await yieldToLoop();
   }
+  await logProblems(problems, host);
   return outcome;
+}
+
+/** The receipt carries only the closed reason; the raw error goes to this machine's log, with the session and the machine. */
+async function logProblems(problems: Problem[], host: SessionIdentityHost | null): Promise<void> {
+  if (!problems.length) return;
+  const deviceId = host?.attachmentCreationContext
+    ? await host.attachmentCreationContext().then((context) => context.deviceId, () => null)
+    : null;
+  for (const { ref, reason, error } of problems) {
+    log.warn('permanentlyDeleteSessions: a session was not deleted', {
+      sessionId: ref.sessionId, projectId: ref.projectId, deviceId, reason,
+      ...(error === undefined ? {} : { error: String(error) }),
+    });
+  }
 }
 
 /** Caller holds serializeSessionArchival. 'restored' = restored since the cloud step; 'gone' = a concurrent call deleted it. */

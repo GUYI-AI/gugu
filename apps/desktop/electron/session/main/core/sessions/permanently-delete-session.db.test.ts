@@ -61,6 +61,7 @@ const { permanentlyDeleteSessions } = await import('./permanently-delete-session
 const { setSessionIdentityHost } = await import('./session-identity-host');
 const { setOtherMachines } = await import('./session-family');
 const { sessionEvents } = await import('./session-events');
+const { log } = await import('@main/lib/logger');
 
 const identityHost = {
   archive: vi.fn(async (_sessionId: string): Promise<RemovedSessionIdentity | null> => null),
@@ -70,6 +71,7 @@ const identityHost = {
   historyIdentities: vi.fn(async (sessionId: string, current: RemovedSessionIdentity | null) =>
     [...new Set([...(current ? [current.userId] : []), ...(identityHost.history[sessionId] ?? [])])]),
   purgeHistory: vi.fn(async (ids: string[]) => ids),
+  attachmentCreationContext: vi.fn(async () => ({ ownerId: 'owner-1', deviceId: 'device-here' })),
 };
 
 let fixture: Awaited<ReturnType<typeof openFixture>>;
@@ -100,6 +102,7 @@ beforeEach(async () => {
   identityHost.archive.mockImplementation(async () => null);
   identityHost.purgeHistory.mockImplementation(async (ids: string[]) => ids);
   vi.mocked(sessionEvents._emit).mockClear();
+  vi.mocked(log.warn).mockClear();
   setSessionIdentityHost(identityHost);
   setOtherMachines(null);
 });
@@ -119,8 +122,8 @@ describe('permanentlyDeleteSessions', () => {
     const outcome = await permanentlyDeleteSessions([{ projectId: 'p1', sessionId: 'active' }, { projectId: 'p1', sessionId: 'nowhere' }]);
     expect(outcome.deleted).toEqual([]);
     expect(outcome.failed.map((row) => [row.sessionId, row.reason])).toEqual([
-      ['active', 'Only archived sessions can be permanently deleted'],
-      ['nowhere', 'Session not found on this machine'],
+      ['active', 'not_archived'],
+      ['nowhere', 'not_found'],
     ]);
     expect(exists('active')).toBe(true);
     expect(identityHost.purgeHistory).not.toHaveBeenCalled();
@@ -169,7 +172,12 @@ describe('permanentlyDeleteSessions', () => {
     identityHost.purgeHistory.mockRejectedValueOnce(new Error('Removing the history needs a connection'));
     const outcome = await permanentlyDeleteSessions([{ projectId: 'p1', sessionId: 'stays' }]);
     expect(outcome.deleted).toEqual([]);
-    expect(outcome.failed).toEqual([{ projectId: 'p1', sessionId: 'stays', reason: 'Removing the history needs a connection' }]);
+    // The receipt carries a closed reason only; the raw error goes to this machine's log with the session and the machine.
+    expect(outcome.failed).toEqual([{ projectId: 'p1', sessionId: 'stays', reason: 'cloud_unconfirmed' }]);
+    expect(log.warn).toHaveBeenCalledWith('permanentlyDeleteSessions: a session was not deleted', {
+      sessionId: 'stays', projectId: 'p1', deviceId: 'device-here', reason: 'cloud_unconfirmed',
+      error: 'Error: Removing the history needs a connection',
+    });
     expect(exists('stays')).toBe(true);
     expect(existsSync(journal)).toBe(true);
     expect(sessionEvents._emit).not.toHaveBeenCalledWith('session:deleted', 'stays');
@@ -244,11 +252,22 @@ describe('permanentlyDeleteSessions', () => {
     expect(exists('many')).toBe(false);
   });
 
+  it('reports restored, and keeps the row, when the session is restored between the cloud purge and the local delete', async () => {
+    insertSession('back', { removed: 'agent-back' });
+    identityHost.purgeHistory.mockImplementationOnce(async (ids: string[]) => {
+      fixture.sqlite.prepare(`UPDATE sessions SET archived_at = NULL WHERE id = 'back'`).run();
+      return ids;
+    });
+    const outcome = await permanentlyDeleteSessions([{ projectId: 'p1', sessionId: 'back' }]);
+    expect(outcome).toEqual({ deleted: [], unreached: [], failed: [{ projectId: 'p1', sessionId: 'back', reason: 'restored' }] });
+    expect(exists('back')).toBe(true);
+  });
+
   it('puts every row into failed (no throw) when no identity host is connected', async () => {
     insertSession('lonely', { removed: 'a' });
     setSessionIdentityHost(null);
     const outcome = await permanentlyDeleteSessions([{ projectId: 'p1', sessionId: 'lonely' }]);
-    expect(outcome.failed.map((row) => row.sessionId)).toEqual(['lonely']);
+    expect(outcome.failed).toEqual([{ projectId: 'p1', sessionId: 'lonely', reason: 'cloud_unconfirmed' }]);
     expect(exists('lonely')).toBe(true);
   });
 });
