@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // gugu-dev#181 任务卡在群里的样子:卡头带时刻,「交给」带头像,我自己这台电脑上的卡不写在哪个项目,不挂已读环;
-// agent 回群引用那张卡时,引用块是卡头「新任务」+ 原话,不是「发卡的人 / 新任务：原话」。
+// agent 回群引用那张卡时,引用块是卡头「新建智能体」+ 原话,不是「发卡的人 / 新建智能体：原话」。
 import { act } from 'react'
 import { ComposerCardView } from '../../../../apps/desktop/src/components/chat/ComposerCardView'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -143,7 +143,7 @@ describe('task card in a chat (gugu-dev#181)', () => {
       id: 'card-1', is_mine: true, content_type: 'card', content: serializeComposerCard(CARD), created_at: '2026-10-22T15:26:00.000Z',
     })))
     const card = harness.container.querySelector('[data-testid="composer-card"]')!
-    expect(card.textContent).toContain('新任务')
+    expect(card.textContent).toContain('新建智能体')
     expect(card.textContent).toMatch(/\d{1,2}:\d{2}/)
     expect(card.textContent).toContain('Codex 1')
     expect(card.querySelector('[data-agent-harness]'), 'the card head is the agent engine mark').not.toBeNull()
@@ -195,9 +195,9 @@ describe('task card in a chat (gugu-dev#181)', () => {
     }), true))
     await act(async () => { harness.container.querySelector<HTMLButtonElement>('.gg-chat-reply-jump')!.click() })
     const quote = document.querySelector('.gg-chat-reply-preview > [title="跳到被引用的消息"]')!
-    expect(quote.textContent).toContain('新任务')
+    expect(quote.textContent).toContain('新建智能体')
     expect(quote.textContent).toContain('用一句话介绍你自己')
-    expect(quote.textContent).not.toContain('新任务：')
+    expect(quote.textContent).not.toContain('新建智能体：')
   })
 })
 

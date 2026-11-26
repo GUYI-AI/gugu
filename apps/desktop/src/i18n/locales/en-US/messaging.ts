@@ -445,20 +445,20 @@ export default {
     "phoneTask": {
       "attachFolder": "Attach folder",
       "attachFailed": "Could not attach the folder. Try again.",
-      "action": "New task",
-      "chip": "New task with {{agent}}",
+      "action": "New agent",
+      "chip": "New agent with {{agent}}",
       "pickAgent": "Choose agent",
-      "placeholder": "Describe the task for {{agent}}",
+      "placeholder": "Describe what {{agent}} should do",
       "pickFolder": "Tap a folder to start",
       "where": "In {{folder}} on {{machine}}",
       "offline": "{{machine}} is offline. Pick another folder.",
       "optionsFailed": "Could not read the agents on {{machine}}. Check it is online, then pick the folder again.",
       "noAgent": "No available agents on {{machine}}",
       "loading": "Reading the agents on {{machine}}",
-      "cancel": "Cancel task",
+      "cancel": "Cancel creation",
       "failed": {
-        "host_outdated": "Gugu on {{machine}} is too old. Update it, then send the task again.",
-        "start_failed": "The task failed to start. See the task card for details."
+        "host_outdated": "Gugu on {{machine}} is too old. Update it, then create the agent again.",
+        "start_failed": "The agent failed to start. See the card for details."
       }
     },
     "notInGroup": "Not in this group",
@@ -911,15 +911,15 @@ export default {
       "tooLarge": "This SVG could not be drawn: it is larger than 64 KB"
     },
     "taskCard": {
-      "task": "New task",
+      "task": "New agent",
       "schedule": "Scheduled",
       "handedTo": "Assigned to",
       "onMachine": "on {{machine}}",
-      "onColleagueComputer": "Cannot view {{name}}’s task",
+      "onColleagueComputer": "Cannot view {{name}}’s agent session",
       "awaitingApproval": "Waiting for group owner approval",
       "rejected": "The group owner did not approve it. See its session for the result",
       "open": "Open this session",
-      "line": "New task: {{text}}",
+      "line": "New agent: {{text}}",
       "scheduleLine": "Scheduled: {{text}}",
       "question": "Your input",
       "questionLine": "Your input: {{text}}",

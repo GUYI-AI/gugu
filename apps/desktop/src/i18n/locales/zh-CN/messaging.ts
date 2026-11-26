@@ -444,20 +444,20 @@ export default {
     "phoneTask": {
       "attachFolder": "附加文件夹",
       "attachFailed": "无法附加文件夹，请重试",
-      "action": "新任务",
-      "chip": "用 {{agent}} 新建任务",
+      "action": "新建智能体",
+      "chip": "用 {{agent}} 新建智能体",
       "pickAgent": "选择 agent",
-      "placeholder": "描述要 {{agent}} 完成的任务",
+      "placeholder": "描述要 {{agent}} 做什么",
       "pickFolder": "点击文件夹以开始",
       "where": "在 {{machine}} 的 {{folder}} 中",
       "offline": "{{machine}} 已离线，请选择其他文件夹",
       "optionsFailed": "无法读取 {{machine}} 上的 agent。请确认该设备在线后重新选择文件夹",
       "noAgent": "{{machine}} 上暂无可用的 agent",
       "loading": "正在读取 {{machine}} 上的 agent",
-      "cancel": "取消任务",
+      "cancel": "取消创建",
       "failed": {
-        "host_outdated": "{{machine}} 上的咕咕版本过旧，请更新后重新派发任务",
-        "start_failed": "任务启动失败，请在任务卡上查看原因"
+        "host_outdated": "{{machine}} 上的咕咕版本过旧，请更新后重新创建智能体",
+        "start_failed": "智能体启动失败，请在卡片上查看原因"
       }
     },
     "notInGroup": "不在本群",
@@ -908,15 +908,15 @@ export default {
       "tooLarge": "这段 SVG 无法显示：超过 64 KB"
     },
     "taskCard": {
-      "task": "新任务",
+      "task": "新建智能体",
       "schedule": "已安排",
       "handedTo": "交给",
       "onMachine": "在 {{machine}} 上",
-      "onColleagueComputer": "无法查看 {{name}} 的任务",
+      "onColleagueComputer": "无法查看 {{name}} 的智能体会话",
       "awaitingApproval": "等待群主同意其入群",
       "rejected": "群主未同意其入群，结果见其会话",
       "open": "打开这个会话",
-      "line": "新任务：{{text}}",
+      "line": "新建智能体：{{text}}",
       "scheduleLine": "已安排：{{text}}",
       "question": "需要你确认",
       "questionLine": "需要你确认：{{text}}",
