@@ -53,7 +53,7 @@ export const HOST_CALLS = {
   navigationClaimBack: { verb: 'navigationClaimBack', pack: (claimed: boolean) => ({ claimed }) },
   showContextMenu: { verb: 'showContextMenu' },
   getAppState: { verb: 'getAppState' },
-  openBrowserTab: { verb: 'openBrowserTab', pack: (url: string) => ({ url }) },
+  openBrowserTab: { verb: 'openBrowserTab', pack: (url: string, options?: { external?: boolean }) => ({ url, ...(options?.external === true ? { external: true } : {}) }) },
   /** `level: 'hint'` (摩擦单 F62): a note for the App's author, recorded, no red dot. */
   reportError: { verb: 'reportError', pack: (message: string, options?: { level?: 'error' | 'hint' }) => ({ message, ...(options?.level === 'hint' ? { level: 'hint' } : {}) }) },
   /** How wide the answer is was settled at install, never at the call: no scope argument (behavior tab-extensions). */

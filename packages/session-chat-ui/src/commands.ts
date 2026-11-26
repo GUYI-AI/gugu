@@ -235,6 +235,9 @@ export type ChatCommands = {
   /** A product link or file pill, handed to the host's common link opener before local paths. */
   onOpenLink?: (href: string) => boolean;
 
+  /** A web link's click, after product links and workspace files have had their own openers. */
+  onOpenWebLink?: (href: string, click: Pick<MouseEvent, 'metaKey' | 'ctrlKey'>) => boolean;
+
   /**
    * The picture an attachment's link shows is already drawn here (its thumbnail): told just before that link is followed,
    * so the file opens out of it, as a chat message's picture does, rather than from nothing.

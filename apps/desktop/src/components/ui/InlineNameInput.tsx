@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { rendererLogger } from '@/lib/log'
 import { messageForUser } from '@/lib/userFacingError'
 import { readMobileShell } from '@/hooks/useMobileShell'
+import { isImeComposing } from '@/lib/ime'
 
 /** The shared edit phase for group/topic names and personal aliases. */
 export function InlineNameInput({ name, onCommit, onClose, placeholder, allowEmpty = false, maxLength, testId, className = 'w-full' }: {
@@ -41,9 +42,9 @@ export function InlineNameInput({ name, onCommit, onClose, placeholder, allowEmp
     maxLength={maxLength}
     onChange={(event) => setDraft(event.target.value)}
     onKeyDown={(event) => {
+      if (isImeComposing(event)) return
       if (event.key === 'Enter') {
         const phone = readMobileShell()
-        if (phone && (event.nativeEvent.isComposing || event.keyCode === 229)) return
         event.preventDefault()
         if (phone) event.currentTarget.blur() // onBlur owns this save, including a failed attempt.
         else void commit()

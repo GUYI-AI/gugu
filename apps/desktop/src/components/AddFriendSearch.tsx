@@ -22,6 +22,7 @@ import { useBackLayer } from './ui/sheetStack'
 import { InviteFriendsPreview, PersonalSharePreview } from './referralPreview/ReferralPreview'
 import { Check, QrCode } from '@/lib/icons'
 import { cn } from '@/lib/cn'
+import { isImeComposing } from '@/lib/ime'
 
 // @@@add-friend-unify (#加人链路统一) AddFriendSearch 是「搜索用户 → 发好友申请」的唯一实现，
 // 同时被 ContactsPanel 的「添加联系人」路由（面板态，showHeader）与 ChatListPanel 的「+ 添加联系人」
@@ -145,7 +146,7 @@ function ResultRow({
             placeholder={t('friendSearch.notePlaceholder')}
             onChange={(event) => onNote(event.target.value)}
             onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing || event.keyCode === 229) return
+              if (isImeComposing(event)) return
               if (event.key === 'Escape') { event.preventDefault(); onCancel() }
               else if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); onSend() }
             }}
@@ -290,7 +291,7 @@ export function AddFriendSearch({
   }
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (composing || event.nativeEvent.isComposing || event.keyCode === 229) return
+    if (composing || isImeComposing(event)) return
     if (event.key === 'Escape' && query) { event.preventDefault(); clearSearch(); return }
     if (event.key === 'Enter') {
       event.preventDefault()

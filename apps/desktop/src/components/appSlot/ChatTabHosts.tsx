@@ -9,7 +9,7 @@ import { makesPaneCurrent } from '@renderer/features/tabs/pane-activation'
 const EMPTY: ReadonlyMap<string, HTMLElement> = new Map()
 
 /** Input belongs to the React tree that draws it, including content portaled into a pane's empty DOM slot. */
-export function ChatPaneContent({ chatId, tabId, ...props }: ComponentProps<'div'> & { chatId: string; tabId?: string }) {
+export const ChatPaneContent = observer(function ChatPaneContent({ chatId, tabId, inPane = false, ...props }: ComponentProps<'div'> & { chatId: string; tabId?: string; inPane?: boolean }) {
   const focus = (event: { target: EventTarget }) => {
     if (!makesPaneCurrent(event.target)) return
     const layout = chatLayoutOf(chatId)
@@ -17,8 +17,15 @@ export function ChatPaneContent({ chatId, tabId, ...props }: ComponentProps<'div
     if (layout.focusedPane.resolvedActiveTabId === id) return
     if (id) chatPaneOf(chatId, id)?.setActiveTab(id)
   }
-  return <div {...props} onPointerDownCapture={focus} onFocusCapture={focus} />
-}
+  const content = <div {...props} onPointerDownCapture={focus} onFocusCapture={focus} />
+  if (!inPane) return content
+  // The conversation is portaled from the shell too: its Markdown needs the pane of that conversation,
+  // just as the file/App panels below do. The DOM slot around it cannot pass React context through a portal.
+  const layout = chatLayoutOf(chatId)
+  const id = tabId ?? chatTabOf(layout)
+  const owner = [...layout.groups, ...layout.windowPanes.values()].find(({ pane }) => id && pane.entries.has(id))
+  return owner ? <PaneContext.Provider value={{ pane: owner.pane, paneId: owner.paneId, isFocusedPane: layout.activePaneId === owner.paneId }}>{content}</PaneContext.Provider> : content
+})
 
 
 /**

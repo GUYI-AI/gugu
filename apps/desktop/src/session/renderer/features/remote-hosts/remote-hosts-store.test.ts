@@ -124,7 +124,8 @@ describe('侧栏那颗点:设备状况 + 到它任务页宿主的线(#6264 一�
     // 会话页宿主说太旧(SessionHostTooOldError),同时正在替它升级:说更具体的那个
     expect(machineConnectionState({ device: device({ sshLink: 'updating' }), link: 'tooOld', synced: false })).toBe('updating');
     // 升级没成
-    expect(machineConnectionState({ device: device({ sshLink: 'outdated' }), link: 'closed', synced: true })).toBe('update-failed');
+    expect(machineConnectionState({ device: device({ sshLink: 'updateFailed' }), link: 'closed', synced: true })).toBe('update-failed');
+    expect(machineConnectionState({ device: device({ sshLink: 'outdated' }), link: 'closed', synced: true })).toBe('outdated');
     // 远程隧道的机器太旧:照旧「版本太旧,空闲时自动更新」
     expect(machineConnectionState({ device: device({ directTerminal: false }), link: 'tooOld', synced: false })).toBe('outdated');
   });

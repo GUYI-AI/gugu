@@ -241,6 +241,13 @@ export const uninstallStrategySchema = z.discriminatedUnion('kind', [
 ]);
 export type UninstallStrategy = z.output<typeof uninstallStrategySchema>;
 
+const windowsRegisteredPathSchema = z.object({
+  registryKey: z.string().min(1),
+  relativePath: z.string().min(1),
+});
+export type WindowsRegisteredPath = z.output<typeof windowsRegisteredPathSchema>;
+
+const knownPathList = z.array(z.string().min(1));
 const hostDependencyBaseSchema = z.object({
   /**
    * Binary names to try in order; first success wins.
@@ -263,12 +270,12 @@ const hostDependencyBaseSchema = z.object({
   /** Skip executing the CLI after resolving its path.
    *  Use for CLIs whose version command has project-local side effects. */
   skipVersionProbe: z.boolean().optional(),
-  /**
-   * 厂商的**固定安装位置**,PATH 上的 `binaryNames` 都找不到时按平台依次找(`resolveKnownPaths`)。
-   * 给「CLI 随桌面 app 发、不上 PATH」的家用。只写厂商安装包实际落盘的位置,并在声明处写出处;
-   * 可用 `~/`(POSIX)与 `%VAR%`(Windows)。手动指定路径照旧优先于它。
-   */
-  knownPaths: z.partialRecord(z.enum(PLATFORMS), z.array(z.string().min(1))).optional(),
+  /** Vendor locations tried after PATH. Windows installers can declare an InstallLocation key under Software. */
+  knownPaths: z.object({
+    macos: knownPathList.optional(),
+    linux: knownPathList.optional(),
+    windows: z.array(z.union([z.string().min(1), windowsRegisteredPathSchema])).optional(),
+  }).optional(),
   installCommands: z.partialRecord(z.enum(PLATFORMS), z.array(installOptionSchema)),
   /** Optional link to installation documentation, shown in the dependency detail view. */
   installDocs: z.string().optional(),

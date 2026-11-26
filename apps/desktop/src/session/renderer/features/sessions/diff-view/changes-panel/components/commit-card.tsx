@@ -20,6 +20,7 @@ import { Textarea } from '@renderer/lib/ui/textarea';
 import { formatPushErrorDetail } from '../../../utils';
 import { vcsFailureText } from '../../../vcs-failure';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
+import { isImeComposing } from '@/lib/ime';
 
 type CommitPhase =
   | 'idle'
@@ -305,7 +306,7 @@ function GitIdentityForm({
         value={draft.email}
         onChange={(e) => onChange({ ...draft, email: e.target.value, error: null })}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') onSave();
+          if (e.key === 'Enter' && !isImeComposing(e)) onSave();
         }}
         disabled={busy}
       />

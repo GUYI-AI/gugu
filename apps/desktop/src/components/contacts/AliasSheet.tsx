@@ -5,6 +5,7 @@ import { Sheet } from '../ui/Sheet'
 import { Button } from '../ui/Button'
 import { messageForUser } from '../../lib/userFacingError'
 import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
+import { isImeComposing } from '@/lib/ime'
 
 // The same editor serves private contact and group display overrides on every shell.
 export function AliasSheet({ name, alias, avatarUrl, seed, group = false, onSave, onClose }: {
@@ -53,7 +54,7 @@ export function AliasSheet({ name, alias, avatarUrl, seed, group = false, onSave
           className="box-border h-[var(--control-h-xl)] w-full rounded-[var(--radius-control)] border border-[var(--border)] bg-transparent px-3 py-0 text-[length:var(--font-body)] leading-[var(--lh-body)] text-[var(--text-primary)] outline-none [font-family:inherit] placeholder:text-[var(--muted-fg)] focus:border-[var(--border-strong)] max-[719px]:h-[var(--control-h-touch)]"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void save() }}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !isImeComposing(e)) void save() }}
           placeholder={t('profile.notSet')}
           aria-label={t('profile.alias')}
           maxLength={80}

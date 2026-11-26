@@ -43,7 +43,7 @@ export const SSH_LINK_CHANNELS = {
  *  · signInRequired:要人回答(密码、口令、新主机指纹)才连得上 —— 点「登录」;
  *  · hostKeyChanged:那台机器的指纹变了(ssh 拒绝连接);
  *  · outdated:那台机器上的咕咕 server 太旧 —— 只由明确的版本信号得出(老版本不认 link 命令、账号进程说协议对不上、
- *    报的协议号低于这台桌面要求的);这台桌面够得着它,当场替它升级,升不成才停在这里。
+ *    报的协议号低于这台桌面要求的);这台桌面够得着它,当场替它升级,具体结果另由升级事件报告。
  *    owner 2026-09-25:「升级只能是因为版本问题,而不是因为连不上」—— 连不上 / 被拒绝 / 超时一律 ❌ 归到这里;
  *  · refused:那台机器上的咕咕 server 拒绝了设备连接(原因任意,照实说,❌ 当太旧去升级);
  *  · updating:太旧,正在替它升级(升完自动连上,照 VS Code Remote-SSH 连上发现 server 对不上就装一份对得上的);
@@ -57,10 +57,12 @@ export type SshLinkFailure =
   | 'signInRequired'
   | 'hostKeyChanged'
   | 'outdated'
+  | 'updateFailed'
   | 'refused'
   | 'updating'
   /** 版本对不上,那台机器在等 agent 空闲再换(见 SshUpgradeEvent.waitingIdle)。 */
   | 'waitingIdle'
+  | 'confirmationRequired'
   | 'notRunning'
   | 'notSignedIn'
   | 'notInstalled'
@@ -74,7 +76,7 @@ export function sshPathFailed(reason: SshLinkFailure): boolean {
 }
 
 /** 界面上一台远程 SSH 机器的设备连接状况(设备行、侧栏、新建页同一个说法;缺席 / null = 连着)。 */
-export type SshLinkState = 'signInRequired' | 'unreachable' | 'outdated' | 'updating'
+export type SshLinkState = 'signInRequired' | 'unreachable' | 'outdated' | 'updateFailed' | 'updating' | 'waitingIdle' | 'confirmationRequired'
 
 /**
  * via = 'tunnel':这条设备连接开在远程隧道上(这台电脑没有它的 SSH 映射)。连不上的原因由远程隧道自己报
@@ -87,13 +89,13 @@ export type SshLinkClosedEvent = { deviceId: string; reason: SshLinkFailure; via
 export type SshLinkPromptEvent = { deviceId: string; prompt: SshPrompt | null }
 export type SshLinkAnswer = { deviceId: string; promptId: string; value: string | null; installKey?: boolean }
 /**
- * 替它升级:updating(percent = 下载/上传进度,不知道为 null)→ done(自动重连)/ failed(停在 outdated)/
+ * 替它升级:updating(percent = 下载/上传进度,不知道为 null)→ done(自动重连)/ failed(记为 updateFailed)/
  * desktopTooOld(#6264 那边已经是同账号另一台更新的桌面要的那一版:什么也不换,这台电脑显示「请更新这台电脑上的咕咕」)。
  */
 export type SshUpgradeEvent = {
   deviceId: string
   /** waitingIdle:那台机器上这个账号有 agent 在跑,装好了、等它空闲再换(人可以点「现在重启更新」)。 */
-  phase: 'updating' | 'done' | 'failed' | 'desktopTooOld' | 'waitingIdle' | 'unconfirmed'
+  phase: 'updating' | 'done' | 'failed' | 'desktopTooOld' | 'waitingIdle' | 'confirmationRequired' | 'unconfirmed'
   percent?: number | null
   /** 没升成,因为那台机器上的 server 老到没法自动更新:请人在那台机器上跑的安装命令。 */
   reinstall?: string
@@ -110,9 +112,11 @@ export const SSH_LINK_ERROR_CODE: Record<SshLinkFailure, string> = {
   signInRequired: 'ssh_sign_in_required',
   hostKeyChanged: 'ssh_host_key_changed',
   outdated: 'server_outdated',
+  updateFailed: 'server_outdated',
   refused: 'ssh_link_refused',
   updating: 'server_updating',
   waitingIdle: 'server_outdated',
+  confirmationRequired: 'server_outdated',
   notRunning: 'device_offline',
   notSignedIn: 'ssh_not_signed_in',
   notInstalled: 'ssh_not_installed',

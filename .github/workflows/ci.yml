@@ -121,27 +121,19 @@ jobs:
       - name: Check permanent removal call sites
         run: node scripts/checks/check-permanent-removal.mts
       - name: Check frozen source file growth
-        if: github.event_name == 'pull_request'
-        # Compare against the base this merge commit was built on (its first parent), not the
-        # branch tip at fetch time: the base branch can move between checkout and fetch.
+        # Counted in statements and JSX elements against scripts/checks/frozen-file-statements-baseline.json,
+        # so squeezing lines cannot hide growth and splitting a line for readability is not growth. On a pull
+        # request the baseline is also compared with the one on the base this merge commit was built on (its
+        # first parent), so a PR cannot raise its own limit.
         run: |
-          git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
-          failed=0
-          for file in \
-            apps/desktop/src/components/ContactsPanel.tsx \
-            apps/desktop/src/components/ChatAreaPanel.tsx \
-            apps/desktop/src/lib/chat.ts \
-            apps/desktop/src/store/chat.tsx \
-            apps/desktop/src/components/chat/GroupMembersSection.tsx \
-            apps/desktop/src/components/chat/MessageBubble.tsx; do
-            base_lines=$(git show "HEAD^1:$file" | wc -l | tr -d ' ')
-            head_lines=$(wc -l < "$file" | tr -d ' ')
-            if [ "$head_lines" -gt "$base_lines" ]; then
-              echo "::error file=$file::Frozen source grew: $base_lines -> $head_lines"
-              failed=1
+          args=()
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            git fetch --no-tags --depth=2 origin "$GITHUB_SHA"
+            if git show "HEAD^1:scripts/checks/frozen-file-statements-baseline.json" > "$RUNNER_TEMP/frozen-base.json" 2>/dev/null; then
+              args=(--base-baseline "$RUNNER_TEMP/frozen-base.json")
             fi
-          done
-          exit "$failed"
+          fi
+          node scripts/checks/frozen-file-statements.mts "${args[@]}"
       - run: node scripts/checks/ui-state-debt-check.mjs --root apps/desktop/src
       - run: pnpm typecheck
       - run: pnpm lint:source

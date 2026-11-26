@@ -14,6 +14,7 @@ import { Input } from '@renderer/lib/ui/input';
 import { MAX_SESSION_TITLE_LENGTH } from '@shared/core/sessions/sessions';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { sessionRegistry } from './stores/session-registry';
+import { isImeComposing } from '@/lib/ime';
 
 type RenameSessionModalArgs = {
   sessionId: string;
@@ -82,7 +83,7 @@ export const RenameSessionModal = observer(function RenameSessionModal({
                 setError(null);
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleSubmit();
+                if (e.key === 'Enter' && !isImeComposing(e)) void handleSubmit();
               }}
               maxLength={MAX_SESSION_TITLE_LENGTH}
               data-autofocus

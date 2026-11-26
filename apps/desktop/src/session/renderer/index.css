@@ -1507,10 +1507,20 @@ html[data-gugu-dragging] :is(webview, iframe) {
   opacity: 0;
   transition: opacity var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
 }
-.session-tab-bar[data-grip-shown] .screen-block-grip,
+[data-grip-shown] .screen-block-grip,
 .session-tab-bar:focus-within .screen-block-grip,
 .screen-block-grip:active {
   opacity: 1;
+}
+@media (hover: hover) {
+  .screen-block-close {
+    opacity: 0;
+  }
+  :is(.session-tab-bar, [data-chat-workspace-header]):hover .screen-block-close,
+  [data-grip-shown] .screen-block-close,
+  .screen-block-close:focus-visible:not([data-pointer-focus]) {
+    opacity: 1;
+  }
 }
 .screen-block-grip > i {
   width: 6px;

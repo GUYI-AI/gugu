@@ -41,6 +41,7 @@ import {
   type BrowsingDataKind,
 } from '@shared/browser';
 import { SettingsGroup, SettingsRow } from '@/components/settings/SettingsPrimitives';
+import { isImeComposing } from '@/lib/ime';
 
 type Translate = ReturnType<typeof useSessionMessages>['translate'];
 
@@ -236,6 +237,7 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
                     className="h-7 min-w-0 flex-1"
                     onFocus={(event) => event.currentTarget.select()}
                     onKeyDown={(event) => {
+                      if (isImeComposing(event)) return;
                       if (event.key === 'Enter')
                         renameProfile(profile.id, event.currentTarget.value);
                       if (event.key === 'Escape') setEditingProfileId(null);
@@ -332,6 +334,7 @@ function BrowserSettingsForm({ browserSettings, api }: { browserSettings: AppSet
                 aria-label={translate('browserSettings.newProfileLabel')}
                 className="h-7 min-w-0 flex-1"
                 onKeyDown={(event) => {
+                  if (isImeComposing(event)) return;
                   if (event.key === 'Enter') addProfile(event.currentTarget.value);
                   if (event.key === 'Escape') setIsAdding(false);
                 }}
