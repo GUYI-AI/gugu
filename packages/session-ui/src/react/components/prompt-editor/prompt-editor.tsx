@@ -316,6 +316,8 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
   const [mentionActiveOptionId, setMentionActiveOptionId] = useState<string | null>(null);
   const [commandActiveOptionId, setCommandActiveOptionId] = useState<string | null>(null);
   const portalContainer = useUiPortalContainerOrBody();
+  // The host hides the composer (a phone chat page it left stays mounted): the portaled menus go with it.
+  const [menusHidden, setMenusHidden] = useState(false);
 
   // We capture the editor in a stable ref so the submit handler can read the doc.
   const editorRef = useRef<ReturnType<typeof useEditor> | null>(null);
@@ -601,6 +603,9 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
       for (const range of gone.reverse()) tr.delete(range.from, range.to);
       if (tr.docChanged) editor.view.dispatch(tr.setMeta('addToHistory', false).setMeta(HOST_EDIT, true));
     },
+    setMenusHidden(hidden) {
+      setMenusHidden(hidden);
+    },
     setMentionPending(id, pending) {
       if (!editor) return;
       let changed = false;
@@ -681,7 +686,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
           </span>
         )}
       </div>
-      {mentionActive &&
+      {mentionActive && !menusHidden &&
         createPortal(
           <ComboboxPopup
             ref={mentionPopupRef}
@@ -701,7 +706,7 @@ export const PromptEditor = forwardRef<PromptEditorRef, PromptEditorProps>(funct
           />,
           portalContainer
         )}
-      {commandActive &&
+      {commandActive && !menusHidden &&
         createPortal(
           <ComboboxPopup
             ref={commandPopupRef}
