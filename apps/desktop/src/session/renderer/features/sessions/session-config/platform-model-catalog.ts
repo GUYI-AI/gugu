@@ -13,6 +13,7 @@ import { onMachineReconnected } from '@renderer/lib/machine-clients';
 import {
   offeredInModelPicker,
   parsePlatformReasoningEfforts,
+  platformDefaultReasoningEffort,
   PLATFORM_MODELS_CHANGED_EVENT,
   SESSIONPAGE_PLATFORM_CATALOG_CHANNEL,
   type PlatformModelOption,
@@ -130,6 +131,7 @@ function parseModel(value: unknown): PlatformModelOption | null {
         : null,
     // 同一条纪律,但「坏值」与「空」要分开:`[]` 是目录的答案(没有这根轴),坏值是「不知道」⇒ null。
     reasoningEfforts: parsePlatformReasoningEfforts(raw.reasoningEfforts),
+    ...platformDefaultReasoningEffort(raw.defaultReasoningEffort, parsePlatformReasoningEfforts(raw.reasoningEfforts)),
     ...modelContextLengths(raw.contextLengths, raw.defaultContextLength,
       typeof raw.contextWindow === "number" ? raw.contextWindow : null),
     // 只认 true:缺省(旧主进程)与坏值都按「不用会员」—— 门槛在网关,这一格判错只会标错、不会放行(#7056)。
@@ -227,6 +229,7 @@ function platformModelsFor(providerId: string, catalog: readonly PlatformCatalog
       contextLengths: model.contextLengths,
       defaultContextLength: model.defaultContextLength,
       reasoningEfforts: model.reasoningEfforts ?? null,
+      ...platformDefaultReasoningEffort(model.defaultReasoningEffort, model.reasoningEfforts),
       requiresMembership: model.requiresMembership,
       hidden: model.hidden,
     }));

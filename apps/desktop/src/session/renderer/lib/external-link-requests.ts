@@ -1,9 +1,9 @@
 import { externalLinkOpenRequestedChannel } from '@shared/events/appEvents';
 import { events } from './ipc';
-import { confirmOpenExternalLink } from './open-external-link';
+import { openWebLink } from './open-web-link';
 
 export function wireExternalLinkRequests() {
   return events.on(externalLinkOpenRequestedChannel, ({ url }) => {
-    confirmOpenExternalLink(url);
+    openWebLink(url, 'app');
   });
 }

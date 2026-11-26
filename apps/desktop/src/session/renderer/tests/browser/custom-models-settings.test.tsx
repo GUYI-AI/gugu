@@ -525,6 +525,19 @@ it('preserves a connection failure that first occurs during the save-time named-
   await expect.element(page.getByRole('alert')).toHaveTextContent('Cannot resolve this address. Check the hostname and DNS settings.');
   expect(state.saved).toBeNull();
 });
+it('an address the background check could not resolve is said once, also after Save probes it again', async () => {
+  state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'dns' }] };
+  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+  await userEvent.fill(page.getByTestId('custom-model-address-0'), 'https://relay.test/v1');
+  await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-test');
+  await userEvent.fill(page.getByTestId('custom-model-name'), 'my-model');
+  await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('Cannot resolve this address.');
+  await userEvent.click(page.getByTestId('custom-model-save'));
+  await until('the save-time probe answered', () => state.probes.some(probe => (probe as { modelId?: string }).modelId === 'my-model')
+    && !page.getByTestId('custom-model-save').element().hasAttribute('disabled'));
+  expect([...document.querySelectorAll('[role=alert]')].map(alert => alert.textContent)).toEqual(['Cannot resolve this address. Check the hostname and DNS settings.']);
+  expect(state.saved).toBeNull();
+});
 it('a converted third-party model is selectable and tagged with its vendor; an IP address gets no tag', async () => {
   const chat = (id: string, baseUrl: string, model: string): CustomModelConnection => ({ ...record(), id, name: id, keySaved: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl }], models: [{ id: model }] });
   const models = customComposerOptions([
@@ -603,7 +616,7 @@ for (const reason of ['timeout', 'unreachable'] as const) {
     render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
     await fillRefused();
     await userEvent.click(page.getByTestId('custom-model-save'));
-    await expect.element(page.getByRole('alert').last()).toHaveTextContent(reason === 'timeout' ? 'The connection timed out.' : 'Cannot reach this address.');
+    await expect.element(page.getByRole('alert')).toHaveTextContent(reason === 'timeout' ? 'The connection timed out.' : 'Cannot reach this address.');
     expect(state.saved).toBeNull();
   });
 }

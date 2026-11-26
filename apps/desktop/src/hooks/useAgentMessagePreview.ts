@@ -58,11 +58,13 @@ function isPayloadFor(value: unknown, chatId: string, agentId: string): value is
 type Op = 'subscribe' | 'keepalive' | 'unsubscribe'
 
 async function relay(op: Op, chatId: string, agentId: string, subscriptionId: string): Promise<string | null> {
-  const { error } = await dataClient.schema('chat').rpc(`message_preview_${op}`, {
-    p_chat_id: chatId,
-    p_agent_id: agentId,
-    p_subscription_id: subscriptionId,
-  })
+  const chat = dataClient.schema('chat')
+  // Literal names and argument objects: the release gate reads each function and its arguments (gugu-dev#1565).
+  const { error } = op === 'subscribe'
+    ? await chat.rpc('message_preview_subscribe', { p_chat_id: chatId, p_agent_id: agentId, p_subscription_id: subscriptionId })
+    : op === 'keepalive'
+      ? await chat.rpc('message_preview_keepalive', { p_chat_id: chatId, p_agent_id: agentId, p_subscription_id: subscriptionId })
+      : await chat.rpc('message_preview_unsubscribe', { p_chat_id: chatId, p_agent_id: agentId, p_subscription_id: subscriptionId })
   return error ? error.message : null
 }
 

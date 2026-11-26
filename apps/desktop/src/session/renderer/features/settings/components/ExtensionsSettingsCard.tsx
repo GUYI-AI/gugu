@@ -1,4 +1,5 @@
 import { AppIcon } from '@renderer/lib/components/app-icon';
+import { openWebLink } from '@renderer/lib/open-web-link';
 import type { InstalledItem } from '@renderer/features/extensions/installed/installed-item';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
 import { useAppDetailRequest } from '@renderer/features/apps/use-app-detail-request';
@@ -58,7 +59,6 @@ import type { AppLifecycle } from '@renderer/features/extensions/panel/app-lifec
 import { AppManagePage } from '@renderer/features/extensions/panel/app-manage-page';
 import { AppProductPage, type ExtensionDetailSubject } from '@renderer/features/extensions/panel/app-product-page';
 import { AppPromptsSection } from '@renderer/features/library/prompts/prompt-library-view';
-import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
 import type { InstalledRowNotice } from '@renderer/features/extensions/panel/installed-extension-row';
 import { createExtensionOperations, ExtensionOperationsContext, pendingLabel, type ExtensionPendingAction } from '@renderer/features/extensions/panel/extension-pending';
 import { ExtensionMonogram } from '@renderer/features/extensions/panel/extension-monogram';
@@ -1203,7 +1203,7 @@ export const ExtensionsSettingsCard = observer(function ExtensionsSettingsCard({
           onBrowseReplacement={browseReplacement}
           onClearData={builtIn ? undefined : () => clearData(managed)}
           onViewInMarket={inMarket ? () => void viewInMarket(managed) : undefined}
-          onOpenExternal={confirmOpenExternalLink}
+          onOpenExternal={(url) => { openWebLink(url, 'app'); }}
           onUninstall={menu.onUninstall}
         />
       </div>

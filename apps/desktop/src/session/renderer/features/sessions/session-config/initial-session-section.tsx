@@ -1173,7 +1173,8 @@ export function useInitialSessionState(
         (lastStartedConfiguration.platformModel ?? null) === platformModel
           ? lastStartedConfiguration.effort
           : customDefaultEffort))
-      : customDefaultEffort
+      : customDefaultEffort,
+    platformModel ? modelEfforts?.defaultId : undefined,
   );
   const { auth: reviewAuth } = useAgentAuthStatus(!platformModel && !selectedCustom ? providerId : null, undefined, { machine });
   const autoReviewCostSource: ReviewCostSource = platformModel ? 'platform' : selectedCustom ? 'api-key'

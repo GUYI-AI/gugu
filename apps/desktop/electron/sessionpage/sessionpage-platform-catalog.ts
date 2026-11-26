@@ -181,6 +181,7 @@ export async function sessionpagePlatformCatalog(input: {
         defaultContextLength: model.defaultContextLength,
         // 推理档同理:目录逐模型下发(#6447),composer 拿它与 harness 的清单取交集。
         reasoningEfforts: model.reasoningEfforts,
+        ...(model.defaultReasoningEffort ? { defaultReasoningEffort: model.defaultReasoningEffort } : {}),
         requiresMembership: model.requiresMembership,
         hidden: model.hidden,
       }))

@@ -17,7 +17,7 @@ import {
 } from '@renderer/lib/ui/combobox';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
+import { openExternalLinkInBrowser } from '@renderer/lib/open-web-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { useConnectionModelList, probeModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
 import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';
@@ -262,8 +262,9 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
             const reason = reading.kind === 'unlisted' ? reading.reason : 'unreachable';
             // The person typed this key; a refusal does not stop the save or drop the key (owner 2026-11-26). The format is not
             // asked: the first path that answered 401/403 exists, so it is that one, else OpenAI Chat at the address as typed.
-            // The connection stays unverified until a save the address answers. An address that cannot be reached still stops here.
-            if (reason !== 'unauthorized') throw new Error(translate(connectionProbeMessageKey(reason, Boolean(preset))));
+            // The connection stays unverified until a save the address answers. An address that cannot be reached still stops here,
+            // said once, where a test of the connection says it: it replaces the background reading of the same address.
+            if (reason !== 'unauthorized') { setTest({ kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) }); return; }
             saved = [probe.data.refused?.[0] ?? { protocol: 'openai-chat-completions', baseUrl: address }];
             unverified = true;
           }

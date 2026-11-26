@@ -49,6 +49,7 @@ import { canSourceTopic } from './topicAnchorModels' // @@@5856 与顶栏那颗�
 import { SystemMessageNotice } from './SystemMessageNotice'
 import { BubbleSender, BubbleTime, ReadReceiptRing } from './MessageBubbleChrome'
 import { fmtMsgTime } from './messageRowTime'
+import { messageLinkActions, selectLinkForMenu } from './messageLink'
 // Sending/failed state and its retry/discard menu live in MessageSendStatus.
 
 interface BubbleProps {
@@ -175,7 +176,7 @@ export const MessageBubble = memo(function MessageBubble({
     ...(hasWords ? selectionActions(menuSelection, menuSelectionAt.current, () => onQuote({ ...msg, content: menuSelection }, { originalContent: msg.content }), commentOn, close) : {}),
     onCopy: (content = menuSelection || undefined) => { void handleCopyText(content); close() },
     onSelectText: compactMobile && hasWords && phone.source ? () => { phone.setSelecting(true); close() } : undefined,
-    onCopyLink: menuLink ? () => { void handleCopyText(menuLink.href); close() } : undefined, onOpenLink: menuLink ? () => { menuLink.click(); close() } : undefined,
+    ...messageLinkActions(menuLink, (text) => void handleCopyText(text), close),
     onForward: () => { onForward(msg); close() }, onKeep: keepAction({ id: msg.id, mine: msg.is_mine, live: !!mediaAttachment && mediaAttachment.source.kind !== 'gone' }, close, toast, t),
     onDownload: mediaAttachment && mediaAttachment.source.kind !== 'gone' ? () => { void (album ? downloadSendFiles(album) : downloadAttachment(mediaAttachment.source, mediaAttachment.fileName)).catch((error) => toast(t('chatArea.downloadFailed'), 'error', safeFailureLine(String((error as Error)?.message ?? error)))); close() } : undefined,
     onDelete: () => { onDelete(msg.id); close() },
@@ -190,6 +191,7 @@ export const MessageBubble = memo(function MessageBubble({
   }
 
   const openMenuAt = (x: number, y: number) => {
+    if (!compactMobile) selectLinkForMenu(menuLink)
     captureMenuSelection()
     if (compactMobile) phone.captureAt(bubbleRef.current, x, y)
     document.dispatchEvent(new CustomEvent(UI_EVENTS.closeContextMenus))
