@@ -19,8 +19,8 @@ export function usePermissionMenu(input: {
   machine: string | null; leg: 'acp' | 'tui'; connectionKnown?: boolean;
 }) {
   const { provider, model, modeMap, machine, leg, connectionKnown = true } = input;
-  // A changed reviewer preference invalidates the read; only the host qualifies it.
-  const preference = useReplica(appSettingsModel, customModelRefFromOption(model)
+  // A changed reviewer preference invalidates the read (a connection or a Gugu model session); only the host qualifies it.
+  const preference = useReplica(appSettingsModel, customModelRefFromOption(model) || model?.startsWith('platform:')
     ? ['autoReviewModel', machine ?? LOCAL_SETTINGS_HOST_KEY] : null);
   const preferenceRevision = preference.state === 'value' ? preference.value.value : null;
   const reading = useReplica(permissionMenu, connectionKnown && provider ? [machine, provider, leg, model, preferenceRevision] : null);

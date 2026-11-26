@@ -29,6 +29,7 @@ import { phoneModelDescription, phoneModelName } from './phone-model-copy'
 import { composerModelSelection, composerTierLabel } from '@renderer/features/sessions/session-config/use-composer-model-options'
 import { guguReasonText } from '@renderer/features/sessions/gugu-reason'
 import { translateSessionMessage } from '@renderer/localization/locale-store'
+import { autoReviewReason } from '@renderer/features/sessions/acp/auto-review-permission-hint'
 import './task-flow-catalog'
 import './create-controls-catalog'
 import './agent-watch.css'
@@ -130,7 +131,7 @@ export function CreateOptionsPill({
                 choices={(harnessOption?.permissionModes ?? []).map((m) => ({
                   id: m,
                   name: t(`agentWatch.create.permission.${m}.name`),
-                  desc: m === 'ai-review' && models?.autoReview?.disabled ? translateSessionMessage('taskConfig.reviewUnavailable') : t(`agentWatch.create.permission.${m}.desc`),
+                  desc: m === 'ai-review' && models?.autoReview?.disabled ? translateSessionMessage(autoReviewReason(models.autoReview.reason)) : t(`agentWatch.create.permission.${m}.desc`),
                   disabled: m === 'ai-review' && models?.autoReview?.disabled,
                 }))}
                 selected={selection.permissionMode}

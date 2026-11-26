@@ -344,6 +344,10 @@ export interface AcpStorageForkContext {
   homeDir: string;
 }
 
+/** The host's launch-time Auto mode verdict for one connection (see the claude adapter's ClaudeReviewVerdict). */
+export type AcpReviewContext = { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean;
+  autoReviewer?: { label: string; kind: 'platform' | 'connection' }; autoReviewReason?: string };
+
 export interface IAcpBehavior {
   /**
    * Called once when a stored conversation opens: names the host-resolved program (`AgentRunContext.programs`) that
@@ -553,8 +557,8 @@ export interface IAcpBehavior {
    * Wrap an app-owned process's stdio into an ACP client connection.
    * The plugin owns adapter/SDK wiring; the app owns the process lifecycle.
    */
-  filterPermissionConfig?(options: readonly SessionConfigOption[], context: { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean }): SessionConfigOption[];
-  connect(io: AcpProcessIo, toClient: AcpClientFactory, context?: { cliVersion?: string; autoReviewAllowed?: boolean; autoReviewUnavailable?: boolean; autoReviewByHaiku?: boolean }): AcpAgentApi;
+  filterPermissionConfig?(options: readonly SessionConfigOption[], context: AcpReviewContext): SessionConfigOption[];
+  connect(io: AcpProcessIo, toClient: AcpClientFactory, context?: AcpReviewContext): AcpAgentApi;
 
 }
 

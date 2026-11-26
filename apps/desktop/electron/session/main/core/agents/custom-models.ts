@@ -418,6 +418,8 @@ export type ResolvedCustomModel = {
   upstreamEndpoint: string;
   routeId?: string;
   removed?: boolean;
+  /** The harness speaks another protocol and reaches this connection through a format converter. */
+  converted?: boolean;
   /** The session's recorded reasoning level. */
   effort?: string;
 };
@@ -432,6 +434,19 @@ async function resolveCustomRoute(connectionId: string, protocol: ModelProtocol,
   const apiKey = await readConnectionSecret(connectionId);
   if (!apiKey) return null;
   return { endpoint, apiKey, ...(sessionId && meta && FAST_PROTOCOLS.includes(protocol) && sessionAsksFast(sessionId, connectionId, meta) ? { priority: true } : {}) };
+}
+
+/** One saved connection as the renderer sees it, without the discovery scan `listCustomModels` runs (launch paths read this). */
+export async function storedCustomModel(connectionId: string): Promise<CustomModelConnection | null> {
+  migrateCustomModelConnections();
+  const row = await registry.getAccount(namespace, connectionId);
+  return row && isActive(row) ? viewRow(row, await readConnectionSecret(connectionId)) : null;
+}
+
+/** An Auto mode reviewer on this connection, read per request like the forwarder's own routes (review-routes.ts). */
+export async function customReviewTarget(connectionId: string): Promise<{ endpoint: string; apiKey: string } | null> {
+  const target = await resolveCustomRoute(connectionId, 'anthropic-messages');
+  return target ? { endpoint: target.endpoint, apiKey: target.apiKey } : null;
 }
 
 /**
@@ -456,6 +471,16 @@ function matchForHarness(providerId: string, connection: CustomModelMeta & { key
       convertFrom: descriptor?.customModel?.convertFrom,
       connection, modelId, hasModel: Boolean(modelId), allowDefaultModel: descriptor?.customModel?.modelOptional,
     }),
+  };
+}
+
+/** What the Auto mode review rule reads about a Claude session on this saved connection, before the session exists. */
+export function claudeReviewSessionFacts(record: CustomModelConnection, modelId: string | undefined) {
+  const { matched } = matchForHarness('claude', record, modelId);
+  if (matched.reason) return undefined;
+  return {
+    connectionId: record.id, endpoint: matched.endpoint.baseUrl, models: record.models,
+    ...(record.removed ? { removed: true } : {}), ...(matched.converted ? { converted: true } : {}),
   };
 }
 
@@ -576,7 +601,7 @@ export async function resolveCustomModel(providerId: string, sessionId: string, 
     connectionId: ref.connectionId, name,
     apiKey, endpoint,
     models, protocol: selected.harnessProtocol ?? protocol, capabilities: selectedEntry, entries, routeId,
-    upstreamEndpoint: upstream.baseUrl, removed: meta.removed,
+    upstreamEndpoint: upstream.baseUrl, removed: meta.removed, ...(selected.harnessProtocol ? { converted: true } : {}),
     ...(config?.effort && customModelEfforts(selectedEntry, pluginRegistry.get(providerId)?.capabilities.effort)?.includes(config.effort) ? { effort: config.effort } : {}),
   };
 }
