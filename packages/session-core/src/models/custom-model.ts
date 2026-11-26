@@ -39,14 +39,45 @@ export const modelEndpointSchema = z.object({
   }),
 });
 
+/** The thinking levels a person can declare for a custom model, lowest first. */
+export const CUSTOM_MODEL_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+export const customModelEffortLevelSchema = z.enum(CUSTOM_MODEL_EFFORT_LEVELS);
+export type CustomModelEffortLevel = z.infer<typeof customModelEffortLevelSchema>;
+
 export const customModelEntrySchema = z.object({
   id: z.string().trim().min(1).max(200),
   label: z.string().trim().max(200).optional(),
   image: z.boolean().optional(),
+  /** Thinking mode. Off: the model is offered no thinking levels. */
   thinking: z.boolean().optional(),
+  /**
+   * What the person declared about tool calling and whether thinking can be switched off. Stored and shown again;
+   * no harness reads them yet.
+   */
+  toolCall: z.boolean().optional(),
+  thinkingOnly: z.boolean().optional(),
+  thinkingOptional: z.boolean().optional(),
+  /** The provider takes `service_tier: "priority"`; only an OpenAI Chat or Responses address can. */
+  fast: z.boolean().optional(),
+  /** The levels the person checked. Present (even empty) wins over the models.dev catalog. */
+  efforts: z.array(customModelEffortLevelSchema).max(CUSTOM_MODEL_EFFORT_LEVELS.length).optional(),
+  /** The level a new session starts on; absent = the request carries none. */
+  defaultEffort: customModelEffortLevelSchema.optional(),
+  /** An explicitly selected models.dev ID for a relay ID that cannot be resolved directly. */
+  modelsDevId: z.string().trim().min(1).max(200).optional(),
   contextWindow: z.number().int().positive().optional(),
   maxOutput: z.number().int().positive().optional(),
 });
+
+const modelsDevChoiceSchema = z.object({ catalogId: z.string(), name: z.string() });
+export const customModelEffortResultSchema = z.discriminatedUnion('kind', [
+  modelsDevChoiceSchema.extend({ kind: z.literal('found'), efforts: z.array(z.string()) }),
+  z.object({ kind: z.literal('ambiguous'), candidates: z.array(modelsDevChoiceSchema) }),
+  z.object({ kind: z.literal('not-found') }),
+  z.object({ kind: z.literal('unavailable') }),
+]);
+export type CustomModelEffortResult = z.infer<typeof customModelEffortResultSchema>;
+const customModelViewSchema = customModelEntrySchema.extend({ effortCatalog: customModelEffortResultSchema.optional() });
 
 export const customModelRouteSchema = z.object({
   id: z.string().uuid(),
@@ -70,7 +101,7 @@ export const customModelMetaSchema = z.object({
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;
-export type CustomModelEntry = z.infer<typeof customModelEntrySchema>;
+export type CustomModelEntry = z.infer<typeof customModelViewSchema>;
 
 /**
  * Whether a custom model takes image input. Only the person can say a model doesn't: no model list or Codex config
@@ -91,15 +122,45 @@ export function customModelThinks(entry: Pick<CustomModelEntry, 'thinking'> | un
 }
 
 /**
- * A thinking custom model's own levels. No model list we read (OpenAI's or Gemini's shape) declares any, so it offers
- * the harness's declared ladder; the picker shows and the launch arms this same list.
+ * The levels a session on this model can choose: the ones the person checked, else the matched catalog entry's, kept
+ * to those the harness can send. None while thinking is off.
  */
 export function customModelEfforts(
-  entry: Pick<CustomModelEntry, 'thinking'> | undefined,
+  entry: Pick<CustomModelEntry, 'effortCatalog' | 'efforts' | 'thinking'> | undefined,
   harnessEffort: { kind: string; effortOptions?: Record<string, unknown> } | undefined,
 ): string[] | null {
-  return customModelThinks(entry) && harnessEffort?.kind === 'selectable' && harnessEffort.effortOptions
-    ? Object.keys(harnessEffort.effortOptions) : null;
+  const catalog = entry?.effortCatalog;
+  const options = harnessEffort?.kind === 'selectable' ? harnessEffort.effortOptions : undefined;
+  if (!options || !customModelThinks(entry)) return null;
+  const declared = entry?.efforts ?? (catalog?.kind === 'found' ? catalog.efforts : null);
+  const levels = declared?.filter((id) => id.toLowerCase() !== 'default' && Object.hasOwn(options, id)) ?? [];
+  return levels.length ? levels : null;
+}
+
+/** The level a new session on this model starts on, when the person chose one this harness offers. */
+export function customModelDefaultEffort(
+  entry: Pick<CustomModelEntry, 'defaultEffort'> | undefined,
+  levels: readonly string[] | null,
+): string | undefined {
+  return entry?.defaultEffort && levels?.includes(entry.defaultEffort) ? entry.defaultEffort : undefined;
+}
+
+/** The protocols whose requests can carry `service_tier`. */
+export const FAST_PROTOCOLS: readonly ModelProtocol[] = ['openai-chat-completions', 'openai-responses'];
+
+/** A custom model's Fast uses twice the tokens (owner 2026-11-25), the same as Codex. */
+export const CUSTOM_FAST_TOKEN_MULTIPLIER = 2;
+
+/** The catalog's levels the dialog can check. */
+export function customModelCatalogLevels(result: CustomModelEffortResult | undefined): CustomModelEffortLevel[] {
+  if (result?.kind !== 'found') return [];
+  return CUSTOM_MODEL_EFFORT_LEVELS.filter((level) => result.efforts.includes(level));
+}
+
+/** The default a set of checked levels proposes: High when checked, else the highest one; none = automatic. */
+export function proposedDefaultEffort(levels: readonly CustomModelEffortLevel[]): CustomModelEffortLevel | undefined {
+  if (levels.includes('high')) return 'high';
+  return [...CUSTOM_MODEL_EFFORT_LEVELS].reverse().find((level) => levels.includes(level));
 }
 
 const NON_CHAT_MODEL = /embed|rerank|moderation|whisper|tts|speech|transcri|audio|realtime|dall-e|image|seedream|seedance|video|sora|veo|kling|hailuo/i;
@@ -145,6 +206,7 @@ export const customModelConnectionSchema = z.object({
   credentialRef: z.string(),
   keySaved: z.boolean(),
   ...customModelMetaSchema.shape,
+  models: z.array(customModelViewSchema),
   /**
    * Present when this machine already had the connection configured; `keyLast4` is all the wire carries of the key.
    * Only this computer's own window reads the whole key, through `CUSTOM_MODEL_KEY_CHANNEL`.

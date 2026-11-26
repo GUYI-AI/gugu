@@ -211,6 +211,9 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
   const chatsByUser = new Map<string, Set<string>>()
   const unpublished = new Set<EntityKey>()
   const identitiesById = new Map<string, DisplayIdentity>()
+  // A projection read may replace only the identity it started from. Other readers
+  // (contacts, lifecycle) publish to the same repository while this owner keeps its cells.
+  const identityReads = new Map<string, { before: DisplayIdentity | undefined; value: DisplayIdentity }>()
   let identities: DisplayIdentity[] | undefined
   const merge = (cells: Iterable<readonly [EntityKey, Cell]>): void => {
     const merged = [...cells]
@@ -226,7 +229,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       const { family, id } = splitKey(key)
       if (family === 'identity') {
         if (cell.value) identitiesById.set(id, cell.value as unknown as DisplayIdentity)
-        else identitiesById.delete(id)
+        else { identitiesById.delete(id); identityReads.delete(id) }
         identities = undefined
       }
       if (family !== 'membership') continue
@@ -332,10 +335,13 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
     identity: async (ids, signal) => {
       // 身份格里存**完整** DisplayIdentity —— applyFetchedChatList 与各处 identity selector
       // 消费的是那整行;只存 {id,name} 会让「有身份」与「能显示」错开(#4314 的 name='' 陷阱)。
+      const before = new Map(ids.map(id => [id, held?.identity(id)]))
       const found = await readDisplayIdentities([...ids], signal)
       const byId = new Map<string, unknown>()
       for (const identity of found) {
-        byId.set(identity.id, shareObject(held?.identity(identity.id), identity))
+        const value = shareObject(held?.identity(identity.id), identity)
+        identityReads.set(identity.id, { before: before.get(identity.id), value })
+        byId.set(identity.id, value)
       }
       return indexExact(ids, byId)
     },
@@ -402,7 +408,19 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
     },
   }
 
-  const identitySnapshot = (): DisplayIdentity[] => identities ??= Object.freeze([...identitiesById.values()]) as DisplayIdentity[]
+  const identitySnapshot = (): DisplayIdentity[] => {
+    const next = [...identitiesById.values()].map(cached => {
+      const current = held?.identity(cached.id)
+      const read = identityReads.get(cached.id)
+      // Stored/unchanged cells have no publication authority over the shared owner.
+      // A fresh read loses that authority if another identity arrived during its GET
+      // or while its list publication waited for the repository transaction.
+      return current && (!read || read.value !== cached || (current !== read.before && current !== read.value))
+        ? current : cached
+    })
+    if (identities && identities.length === next.length && next.every((value, index) => value === identities![index])) return identities
+    return identities = Object.freeze(next) as DisplayIdentity[]
+  }
 
   const record = (entry: ChatProjectionLedgerEntry): void => {
     ledger.push(entry)
@@ -761,6 +779,7 @@ export function createChatProjection(viewerId: string, held?: HeldObjects): Chat
       chatsByUser.clear()
       unpublished.clear()
       identitiesById.clear()
+      identityReads.clear()
       identities = undefined
       planner = EMPTY_PLANNER
       rows = []

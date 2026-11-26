@@ -6,7 +6,7 @@ import { messageForUser } from '@/lib/userFacingError';
 import { rendererLogger } from '@/lib/log';
 import { useLibraryHost } from '@renderer/features/library/library-host';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { useShowModal } from '@renderer/lib/modal/modal-provider';
+import { useConfirm } from '@renderer/lib/modal/modal-surface';
 import { toast } from '@renderer/lib/hooks/use-toast';
 import { Button } from '@renderer/lib/ui/button';
 import { Checkbox } from '@renderer/lib/ui/checkbox';
@@ -36,7 +36,7 @@ function KnownManagedVersionsRow({ agentId, name, disabled, data, readFailed, re
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const chosen = selected.filter(version => old.includes(version));
-  const confirm = useShowModal('confirmActionModal');
+  const confirm = useConfirm();
   const clean = () => {
     const owner = replicaAccount().id;
     const versions = [...chosen];

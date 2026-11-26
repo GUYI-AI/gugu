@@ -20,6 +20,7 @@ import { useBackLayer } from './sheetStack'
 import { useMobileShell } from '../../hooks/useMobileShell'
 import { useUiPortalContainer, useUiPopupZIndex, OpenLayer } from '@gugu/session-ui/react/primitives'
 import { Switch } from './Switch'
+import { useProbedRef } from '@/lib/overlayOcclusion'
 
 // @@@menu-variants - 菜单样式的唯一真相。`gg-menu*` 类名保留但不再承载样式:
 // Sidebar.css 的 `.gg-sidebar-profile-actions .gg-menu-item-icon > svg` 按这些名字定位,
@@ -125,6 +126,7 @@ export function Menu({
 }: MenuProps) {
   const portalContainer = useUiPortalContainer()
   const layered = useUiPopupZIndex('var(--z-menu)')
+  const probe = useProbedRef<HTMLDivElement>('app-menu')
   const zIndex = zIndexProp ?? layered
   const pointAnchor = useMemo(() => (
     elementAnchor || x === undefined || y === undefined
@@ -169,6 +171,7 @@ export function Menu({
         >
           <OpenLayer />
           <MenuPrimitive.Popup
+            ref={probe}
             finalFocus={finalFocus}
             className={popupClassName ?? menuPopup}
             data-occludes-browser-page

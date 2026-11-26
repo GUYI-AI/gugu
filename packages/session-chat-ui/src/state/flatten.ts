@@ -342,13 +342,6 @@ export function flattenTier(
     };
     for (const row of rows) {
       if (isSubagentChild(row)) continue;
-      // A conversation MCP row names the server/tool even before disclosure. Wrapping it in a count-only run
-      // would hide that identity and add another fold before its request/result panel.
-      if (ctx.agentConversation && row.kind === 'mcp-tool-call') {
-        flush();
-        ops.push({ kind: 'row', item: row });
-        continue;
-      }
       if (toolRunCategory(row, ctx.agentConversation)) {
         run.push(row);
         continue;

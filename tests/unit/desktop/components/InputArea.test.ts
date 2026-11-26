@@ -9,7 +9,7 @@ import { chat, chatStore, contactsStore, createReactHarness, message } from '../
 import { publishProjectGroupChats } from '../../../../apps/desktop/src/session/renderer/features/projects/stores/project-group-chats-bridge'
 import { ContactsContext } from '../../../../apps/desktop/src/store/contactsContext'
 import { AUTOMATION_TEST_IDS } from '../../../../apps/desktop/src/lib/automationDom'
-import { readComposer, writeComposer, selectComposer } from '../../../support/composerEditor'
+import { appendToComposer, readComposer, writeComposer, selectComposer } from '../../../support/composerEditor'
 import type { GroupRosterCandidate } from '../../../../apps/desktop/src/lib/mention'
 // Opt-in contract for the follow-up rollout; production defaults are covered separately.
 vi.mock('../../../../apps/desktop/src/lib/messageQuoteRollout', () => ({ SELECTED_MESSAGE_QUOTES_ENABLED: true }))
@@ -197,7 +197,8 @@ describe('ChatMessageComposer', () => {
       input?.dispatchEvent(new Event('change', { bubbles: true }))
     })
     await flush()
-    expect(container.querySelectorAll('[data-slot="composer-attachment"]')).toHaveLength(1)
+    // A picture sits in the words (an inline chip), not on the strip.
+    expect(container.querySelectorAll('[data-inline-image-id]')).toHaveLength(1)
     const sendButton = Array.from(container.querySelectorAll('button')).find((button) => button.getAttribute('aria-label') === '发送消息')
     expect(sendButton).toBeDefined()
     await act(async () => {
@@ -206,7 +207,7 @@ describe('ChatMessageComposer', () => {
     })
     await flush()
     expect(onSendAttachments).toHaveBeenCalledWith([file], { toUserIds: [], isWhisper: false })
-    expect(container.querySelectorAll('[data-slot="composer-attachment"]')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-inline-image-id]')).toHaveLength(1)
     expect(URL.createObjectURL).toHaveBeenCalledTimes(2)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:gugu-preview')
     expect(noticeMock).toHaveBeenCalledWith(expect.objectContaining({ title: '图片 avatar.png 发送失败：发送未完成，请稍后重新发送', tier: 'error', key: expect.any(String) }))
@@ -221,8 +222,11 @@ describe('ChatMessageComposer', () => {
     const input = container.querySelector('input[type="file"]') as HTMLInputElement
     Object.defineProperty(input, 'files', { configurable: true, value: files })
     await act(async () => { input.dispatchEvent(new Event('change', { bubbles: true })) })
-    await typeInComposer('你看看')
+    // The phone keeps its photo tiles; on desktop the pictures are in the words, so the text goes after them.
+    if (mobile) await typeInComposer('你看看')
+    else { await act(async () => { appendToComposer(container.querySelector('[contenteditable]'), '你看看') }); await flush() }
     await clickSend()
+    // One message as typed: the pictures as its files, the words (without the pictures' places) as its caption.
     expect(onSendAttachments).toHaveBeenCalledExactlyOnceWith(files, expect.objectContaining({ caption: '你看看' }))
     expect(onSend, 'no separate text message').not.toHaveBeenCalled()
     expect(readComposer(container.querySelector('[contenteditable]'))).toBe('')

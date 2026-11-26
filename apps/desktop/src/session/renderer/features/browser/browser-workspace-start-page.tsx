@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import { Globe, Plus, X } from '@/lib/icons';
-import { FileMark, FolderMark } from '@gugu/session-ui/file-mark';
+import { FileMark } from '@gugu/session-ui/file-mark';
+import { TabKindMark } from '../extensions/extension-mark';
+import { WORKSPACE_APP_KIND } from '../chats/chat-tabs/chat-panel-item';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import type { TabViewContext } from '../tabs/core/tab-provider';
@@ -38,7 +40,7 @@ export function BrowserWorkspaceStartPage({ actions, recent }: {
             {recent.slice(0, 4).map((item) => {
               const remove = translate('browser.workspaceRemoveRecent', { label: item.title });
               return <StartTile key={item.id} label={item.title} title={item.title} onClick={item.open}
-                icon={item.kind === 'web' ? <Globe className="size-7" /> : item.kind === 'folder' ? <FolderMark size={28} /> : <FileMark name={item.title} size={28} />}
+                icon={item.kind === 'web' ? <Globe className="size-7" /> : item.kind === 'folder' ? <TabKindMark kind={WORKSPACE_APP_KIND} /> : <FileMark name={item.title} className="size-7" />}
                 corner={<Button size="icon-xs" variant="ghost" aria-label={remove} title={remove} onClick={item.remove}><X className="size-3" /></Button>} />;
             })}
           </div> : <p className="text-sm text-foreground-muted">{translate('browser.workspaceRecentEmpty')}</p>}
@@ -62,7 +64,8 @@ export function StartTile({ icon, label, title, disabled, onClick, corner }: {
   return <div className="group/tile relative min-w-0 rounded-md hover:bg-row-hover focus-within:bg-row-hover">
     <Button variant="ghost" className="h-22 w-full flex-col gap-2 px-2 text-foreground hover:bg-transparent"
       title={title} disabled={disabled} onClick={onClick}>
-      {/* Action icons arrive sized for a row (size-3.5); the tile draws every one at the Recent size. */}
+      {/* Action icons arrive sized for a row (size-3.5); the tile draws every one at the Recent size. An svg with no
+          size class is the Button's (size-4, the more specific rule): an icon drawn here says its size. */}
       <span className="flex size-7 items-center justify-center [&_:is(svg,img,span)]:size-7">{icon}</span>
       <span className="w-full truncate text-center text-xs">{label}</span>
     </Button>

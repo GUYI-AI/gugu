@@ -10,6 +10,7 @@ import { chatSendFailureNotice } from './chatSendFailureNotice'
 import { useToast } from '../toastContext'
 import { revokeAttachmentPreviewUrls, withPreviewUrl, type ChatDraft, type MentionTarget } from './useChatDraft'
 import { contentWithQuote } from './messageQuoteContent'
+import { withoutInlineImages } from '@gugu/session-ui/react/components'
 import type { ChatMessageComposerProps } from './chatComposerModels'
 import { useChatStore } from '../../store/chatContext'
 import { messageFailureNotice } from '@/lib/messageFailureNotice'
@@ -50,8 +51,10 @@ export function useChatMessageSend(props: ChatMessageComposerProps, draft: ChatD
       return
     }
     // The words stay the words; the comments travel beside them (cards for people, their promptText for agents).
-    const { annotations } = annotatedSend(typed, annotated, resolvedLocale)
-    const content = contentWithQuote(typed, quoteContent)
+    // Pictures placed in the words go out as this message's files, the words as its text: one message, as typed.
+    const words = withoutInlineImages(typed).trim()
+    const { annotations } = annotatedSend(words, annotated, resolvedLocale)
+    const content = contentWithQuote(words, quoteContent)
     // @@@whisper (#820) — 悄悄话模式下覆盖 toUserIds + 附加 isWhisper flag；禁用 @提及。
     const replyToMessageId = quoteContent?.messageId ?? null
     const explicitRecipientIds = resolveMentionUserIds(

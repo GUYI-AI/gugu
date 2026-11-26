@@ -14,8 +14,9 @@ import { AgentConversationComposer } from '@renderer/lib/chat/agent-conversation
 import { messageForUser } from '@/lib/userFacingError'
 import { rendererLogger } from '@/lib/log'
 import { refreshFailure, replica, useReplica } from '@/lib/replica'
-import { fastModeValue } from '@renderer/features/sessions/session-config/fast-mode'
-import { renderFastModeHint } from '@renderer/features/sessions/session-config/fast-mode-hint'
+import { fastModeValue, fastTokenMultiplier } from '@renderer/features/sessions/session-config/fast-mode'
+import { fastModeHint } from '@renderer/features/sessions/session-config/fast-mode-hint'
+import { useAgent } from '@renderer/lib/stores/use-agents'
 
 const log = rendererLogger('chat/conversation-options')
 
@@ -91,6 +92,8 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
       }
     }
   }
+  // Fast's cost comes from the running provider's declaration (the host already filtered Fast to what it offers).
+  const provider = useAgent(options?.fast ? options.modelMenu?.providerId : null)
   const model = options?.modelMenu && options.model ? sessionModelView(options.modelMenu, options.model) : null
   const permissions = options?.mode ? Object.fromEntries(options.mode.available.map(item => [item.id, { name: item.name, description: item.description, disabled: item.disabled, reviewByHaiku: item.reviewByHaiku }])) : null
   const reviewCostSource = reviewCostSourceOf(options?.modelMenu)
@@ -114,7 +117,7 @@ export function useConversationOptions(target: ConversationTarget | null, agentN
     // The host filters this group by the current model's acknowledged native capability.
     fastMode: fastModeValue(options?.fast),
     onFastModeChange: enabled => { void pick('fast', enabled ? 'on' : 'off') },
-    renderFastModeHint,
+    renderFastModeHint: fastModeHint(fastTokenMultiplier(provider.state === 'value' ? provider.value?.capabilities : null, false)),
     permissionModeOptions: withAutoReviewHint(localizePermissionModeOptions(permissions, translateSessionMessage, options?.permissionAgentName ?? options?.modelMenu?.agentName ?? agentName, options?.modeMap,
       mobile ? tier => t(`agentWatch.create.permission.${tier}.name`) : undefined), options?.modelMenu?.providerId, reviewCostSource, options?.modeMap),
     selectedPermissionMode: selectedPermissionModeId(options?.mode?.selected ?? undefined, permissions, options?.modeMap),

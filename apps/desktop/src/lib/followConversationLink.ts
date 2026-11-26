@@ -1,4 +1,6 @@
 import { followLink, openLinkTarget, OpenSuperseded } from './guguLinks'
+import { parseGuguLink } from '@gugu/core/shared/ui/guguLink'
+import { drawnPictureIsOf, noteDrawnPicture } from './imageViewer'
 import { chatService } from './chat'
 import { getCurrentAuthUserId } from './supabase'
 import { parseAttachmentContent } from '@gugu/core/shared/ui/attachmentModels'
@@ -14,6 +16,17 @@ export function followConversationLink(href: string): boolean {
   return true
 }
 
+/** The file a link names, by its folder version or its sent message: the picture already drawn for it opens it (`noteDrawnPicture`). */
+export function noteDrawnPictureLink(href: string, picture: HTMLImageElement): void {
+  const sent = parseSentAttachmentLink(href)
+  const file = sent ? null : parseGuguLink(href)
+  if (sent) noteDrawnPicture({ messageId: sent.messageId }, picture)
+  else if (file?.kind === 'file') {
+    const size = import('./attachmentBytes').then(({ recordedSize }) => recordedSize(file.itemId, file.version)).catch(() => null)
+    noteDrawnPicture({ itemId: file.itemId, version: file.version }, picture, size)
+  }
+}
+
 export async function openMessageAttachment(messageId: string, chatId?: string): Promise<void> {
   const userId = await getCurrentAuthUserId()
   const message = userId ? await chatService.getMessageById(messageId, userId) : null
@@ -21,6 +34,7 @@ export async function openMessageAttachment(messageId: string, chatId?: string):
   if (!message || !file || message.retracted_at || (chatId && message.chat_id !== chatId)) throw new Error('File reference is unavailable')
   if (file.kind === 'image') {
     const { openAttachmentImage } = await import('./attachmentBytes')
+    if (file.source.kind === 'item') drawnPictureIsOf(messageId, file.source.itemId, file.source.version)
     openAttachmentImage(file.source, file.fileName)
   } else if (file.source.kind === 'item') {
     await openLinkTarget({ kind: 'file', itemId: file.source.itemId, version: file.source.version }, { message, fileName: file.fileName })

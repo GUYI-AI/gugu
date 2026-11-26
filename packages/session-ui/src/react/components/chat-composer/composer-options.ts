@@ -113,7 +113,7 @@ export interface ComposerModelOption {
   groupLabel?: string;
   /**
    * **二级 = 厂商**(OpenAI / Anthropic / 智谱 …)。它**不做分组**,只做两件事:
-   * 面板顶部那排**筛选**药丸,以及行内那枚 logo 的可读名。
+   * 行内那枚 logo 的可读名,也是搜索框匹配的厂商名(顶上那排筛选块 owner 11-25 撤了)。
    *
    * ⚠️ ❌ 别把它升成组头 —— 厂商横切在两档之上(同一家可以既有你自己的、又有咕咕代付的),
    * 把它做成分组会把「谁的」这条更要紧的界线切碎。
@@ -143,6 +143,8 @@ export interface ComposerModelOption {
   disabledAction?: { label: string; open: (onClose: () => void) => void };
   /** Keep the identity of a bound model in the trigger when it cannot be offered on the current device. */
   hiddenFromPicker?: boolean;
+  /** A hidden alias of the listed model with this id (a harness `default`): that row carries the check while it is selected. */
+  aliasOf?: string;
 }
 
 /**
@@ -216,13 +218,15 @@ export interface ComposerModelItem {
   disabledAction?: ComposerModelOption['disabledAction'];
   /** Keep the identity of a bound model in the trigger when it cannot be offered on the current device. */
   hiddenFromPicker?: boolean;
+  /** 见 `ComposerModelOption` 上同名字段。 */
+  aliasOf?: string;
 }
 
 /**
  * 模型列表里的一段。`label` 是**一级分类**(这条是谁的),空串 = 不属于任何分组、平铺渲染。
  *
  * ⚠️ 厂商**不参与切段**:它横切在两档之上(同一家可以两档都有),做成分组会把「谁的」
- * 这条更要紧的界线切碎。厂商只出现在筛选药丸和行内 logo 上。
+ * 这条更要紧的界线切碎。厂商只出现在行内 logo 上(并能被搜索)。
  */
 export interface ComposerModelGroup {
   label: string;

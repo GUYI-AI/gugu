@@ -47,7 +47,7 @@ import { useOpenedOutputOpener } from './opened-output-opener'
 import { sessionWorkingCopyReader } from '@/components/appSlot/phone-working-copy-file'
 import { dismissSubagent } from '@renderer/features/sessions/view/subagent-dismissals'
 import { usePhoneBackgroundTasks } from './background-tasks'
-import { followConversationLink } from '@/lib/followConversationLink'
+import { followConversationLink, noteDrawnPictureLink } from '@/lib/followConversationLink'
 import { openMessageSender } from '@/lib/openMessageSender'
 import { classifyFileLink } from '@gugu/core/shared/ui/guguLink'
 import { ComposerAttachButton } from '@/components/chat/ComposerAttachButton'
@@ -368,7 +368,7 @@ export function SessionConversation({ timeline, deviceId, sessionId, agentName, 
       void runNativeInputAction(sessionId, id, local ? null : deviceId, () => machineRpc(deviceId, local).sessions.lifeDiscard(sessionId, id))
     },
     ...(nativeRecord && !phoneHost ? userAttachments : { onViewAttachment: userAttachments.onViewAttachment }),
-    classifyLink: classifyFileLink, onOpenLink: followConversationLink, onOpenSender: openMessageSender,
+    classifyLink: classifyFileLink, onOpenLink: followConversationLink, onDrawnPictureLink: noteDrawnPictureLink, onOpenSender: openMessageSender,
     onOpenFile: ({ path, source }) => openFile(path, source),
     conversationAgentSession: () => sessionId, conversationAgentUserId: () => agentUserId ?? null, readConversationFile: input => readConversationFile(local, deviceId, input),
     ...quotes.commands,
