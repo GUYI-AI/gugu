@@ -16,3 +16,8 @@ it('rejects superscript COM and LPT device names', () => {
   expect(safePathSegment('LPT².txt')).toBe('project')
   expect(safePathSegment('COM³')).toBe('project')
 })
+
+it('does not return a portable folder name ending in periods', () => {
+  expect(safePathSegment('report...')).toBe('report')
+  expect(safePathSegment('...')).toBe('project')
+})
