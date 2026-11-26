@@ -20,6 +20,7 @@ import { AUTOMATION_TEST_IDS } from '../../lib/automationDom'
 import type { AgentRequestState } from './agentContactRequest'
 import { nameClampClass, profileCardStyles as styles } from './contactsPanelStyles'
 import { ProfileCardAction } from './ProfileCardAction'
+import { isImeComposing } from '@/lib/ime'
 export type { AgentRequestState } from './agentContactRequest'
 
 
@@ -169,6 +170,7 @@ export function PersonAliasField({ contact }: { contact: ContactUser }) {
           onChange={(event) => setDraft(event.target.value)}
           onBlur={save}
           onKeyDown={(event) => {
+            if (isImeComposing(event)) return
             if (event.key === 'Enter') event.currentTarget.blur()
             if (event.key === 'Escape') setDraft(saved)
           }}

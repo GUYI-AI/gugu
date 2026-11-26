@@ -28,6 +28,7 @@ import { useAgentSession } from '@/lib/projectGroupChatsBridge'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { useAgentSessionRow } from '@/components/session-watch/useAgentSessionRow'
 import type { AgentSession } from '@/session/renderer/features/projects/stores/project-group-chats-bridge'
+import { isImeComposing } from '@/lib/ime'
 
 // @@@float-one-edge (Refs #6104) — 名片是浮层:圆角 xl(12) + 一层 lift,❌ 不再叠描边。
 const profileCardClass = 'gg-pop w-[284px] overflow-hidden rounded-xl bg-[var(--bg-elevated)] text-[var(--text-primary)] shadow-[var(--shadow-lift)]'
@@ -171,6 +172,7 @@ function AliasField({ controls }: { controls: MemberProfileAliasControls }) {
         onChange={(event) => setDraft(event.target.value)}
         onBlur={save}
         onKeyDown={(event) => {
+          if (isImeComposing(event)) return
           if (event.key === 'Enter') event.currentTarget.blur()
           if (event.key === 'Escape') setDraft(saved)
         }}

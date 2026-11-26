@@ -61,6 +61,7 @@ import { confirmOwnedAgentArchive } from '../lib/archiveOwnedAgent'
 import { confirmConversationAction } from '../lib/confirmDanger'
 import { ContactDetail, GroupChatRow, PaneBackButton } from './contacts/ContactDetail'
 import { ct, profileBodyClass, groupChatListCountLabel, groupChatListTitle, groupChatSummaryLabel, inlineInputClass } from './contacts/contactsPanelStyles'
+import { isImeComposing } from '@/lib/ime'
 // #855 契约：GroupJoinConfirmDialog 曾从本模块导出，实现搬走后仍从这里透出，外部 import 不受影响。
 export { GroupJoinConfirmDialog } from './contacts/GroupInvite'
 interface ContactsPanelProps {
@@ -155,10 +156,7 @@ function GroupNameEditor({
         autoFocus
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') save()
-          if (event.key === 'Escape') onCancel()
-        }}
+        onKeyDown={(event) => { if (isImeComposing(event)) return; if (event.key === 'Enter') save(); if (event.key === 'Escape') onCancel() }}
         placeholder={placeholder}
         className={inlineInputClass}
       />
