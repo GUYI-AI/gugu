@@ -3,6 +3,7 @@
 import { PreviewCard as PreviewCardPrimitive } from '@base-ui/react/preview-card';
 import { useUiPopupZIndex, useUiPortalContainer } from '@gugu/session-ui/react/primitives';
 import { cn } from '@renderer/utils/utils';
+import { useProbedRef } from '@/lib/overlayOcclusion';
 
 /**
  * Hover preview (Base UI `PreviewCard`, 1.6.0): a card that opens while the
@@ -23,6 +24,7 @@ function PreviewCardContent({
   align = 'center',
   side = 'right',
   sideOffset = 8,
+  ref,
   ...props
 }: PreviewCardPrimitive.Popup.Props &
   Pick<PreviewCardPrimitive.Positioner.Props, 'align' | 'side' | 'sideOffset'>) {
@@ -33,12 +35,13 @@ function PreviewCardContent({
         align={align}
         side={side}
         sideOffset={sideOffset}
-        className="isolate z-50"
+        className="isolate z-[var(--z-popover)]"
       >
         <PreviewCardPrimitive.Popup
+          ref={useProbedRef('session-preview-card', ref)}
           data-slot="preview-card-content"
           className={cn(
-            'z-50 flex origin-(--transform-origin) flex-col gap-1 overflow-hidden rounded-surface bg-background-quaternary p-3 text-sm text-foreground shadow-lift outline-hidden duration-[var(--dur-fast)] data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
+            'flex origin-(--transform-origin) flex-col gap-1 overflow-hidden rounded-surface bg-background-quaternary p-3 text-sm text-foreground shadow-lift outline-hidden duration-[var(--dur-fast)] data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
             className
           )}
           {...props}

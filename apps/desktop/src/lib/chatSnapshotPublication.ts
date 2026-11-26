@@ -3,7 +3,7 @@ import type { ChatItem } from '@gugu/core/shared/types/chat'
 import { subscribeIdentities } from './chatMessageWindowPublication'
 import type { IdentityDirectorySnapshot } from './identityDirectoryBridge'
 import type { DisplayIdentity } from './displayIdentity'
-import { imSelectors, readChatRows, replaceChatRowsAndIdentities, type AccountImRepository } from './imRepository'
+import { imSelectors, readChatRows, replaceChatRowsAndIdentities, type IdentityPublication, type AccountImRepository } from './imRepository'
 import { rendererLogger } from './log'
 
 const publicationLog = rendererLogger('im/first-frame')
@@ -68,7 +68,7 @@ export function publishLocalFirstFrame(
 export function publishChatSnapshot(
   repository: AccountImRepository,
   chats: readonly ChatItem[] | (() => readonly ChatItem[]),
-  identities: readonly unknown[],
+  identities: IdentityPublication,
   isConversationDeleted?: (id: string) => boolean,
 ): Promise<void> {
   return replaceChatRowsAndIdentities(repository, chats, identities, isConversationDeleted)

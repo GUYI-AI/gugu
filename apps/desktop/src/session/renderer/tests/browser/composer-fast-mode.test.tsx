@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { ChatComposer } from '@gugu/session-ui/react/components'
 import { SessionLocalizationProvider } from '@renderer/localization/localization-provider'
-import { renderFastModeHint } from '@renderer/features/sessions/session-config/fast-mode-hint'
+import { fastModeHint } from '@renderer/features/sessions/session-config/fast-mode-hint'
 import { Tooltip } from '@/components/ui/Tooltip'
 import { i18n } from '@/i18n'
 import { until } from '../../../../../../../tests/support/awaitCondition'
@@ -24,8 +24,8 @@ const modelChanged = vi.fn()
 const fast = () => document.querySelector<HTMLElement>('[data-fast-mode-toggle]')
 const detailSwitch = () => page.getByRole('switch', { name: 'Fast', exact: true })
 
-function Fixture({ supported = true, mobile = false, initial = false, phoneActions = mobile }: {
-  supported?: boolean; mobile?: boolean; initial?: boolean; phoneActions?: boolean
+function Fixture({ supported = true, mobile = false, initial = false, phoneActions = mobile, tokenMultiplier = 2 }: {
+  supported?: boolean; mobile?: boolean; initial?: boolean; phoneActions?: boolean; tokenMultiplier?: number | null
 }) {
   const [enabled, setEnabled] = useState(initial)
   return <Tooltip.Provider><SessionLocalizationProvider><ChatComposer
@@ -36,7 +36,7 @@ function Fixture({ supported = true, mobile = false, initial = false, phoneActio
     selectedEffort="medium" onEffortChange={effortChanged}
     fastMode={supported ? enabled : undefined}
     onFastModeChange={value => { changed(value); setEnabled(value) }}
-    renderFastModeHint={renderFastModeHint}
+    renderFastModeHint={fastModeHint(tokenMultiplier ?? undefined)}
     onSubmit={() => {}} onStop={() => {}}
   /></SessionLocalizationProvider></Tooltip.Provider>
 }
@@ -111,8 +111,26 @@ describe('Fast in the real thinking menu', () => {
     expect(row.firstElementChild!.getBoundingClientRect().x).toBe(thinking.firstElementChild!.getBoundingClientRect().x)
     expect(switchBox.right).toBe(thinking.lastElementChild!.getBoundingClientRect().right)
     expect(Math.abs(rowBox.y + rowBox.height / 2 - switchBox.y - switchBox.height / 2)).toBeLessThan(1)
-    await detailSwitch().hover()
-    await expect.element(page.getByText('Faster, uses more quota', { exact: true })).toBeVisible()
+    // The hint belongs to the whole row: pointing at its label, not only the switch, says what Fast costs.
+    await page.elementLocator(row.firstElementChild!).hover()
+    const tip = page.getByText('Faster responses, uses 2× tokens', { exact: true })
+    await expect.element(tip).toBeVisible()
+    const tipBox = tip.element().getBoundingClientRect()
+    // Away from the model list (below when the window has no room there, as the effort menu): it covers neither the card,
+    // with its title and the Thinking row, nor any model in the list.
+    const overlaps = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+    expect(overlaps(tipBox, row.closest('[data-hover-card]')!.getBoundingClientRect())).toBe(false)
+    for (const option of document.querySelectorAll('[data-model-option-id]')) expect(overlaps(tipBox, option.getBoundingClientRect())).toBe(false)
+    expect(tipBox.left).toBeGreaterThanOrEqual(0)
+    expect(tipBox.right).toBeLessThanOrEqual(window.innerWidth)
+    expect(tipBox.bottom).toBeLessThanOrEqual(window.innerHeight)
+    expect(document.elementFromPoint(tipBox.left + tipBox.width / 2, tipBox.top + tipBox.height / 2)?.closest('[role="tooltip"], [data-side]')).not.toBeNull()
+  })
+
+  it('says only that Fast is billed higher when the provider publishes no token multiple', async () => {
+    await renderMenu({ tokenMultiplier: null })
+    await page.elementLocator(document.querySelector('[data-slot="composer-model-fast"]')!.firstElementChild!).hover()
+    await expect.element(page.getByText('Faster responses, billed at a higher price', { exact: true })).toBeVisible()
   })
 
   it('keeps the same phone toggle without tooltip text', async () => {
@@ -131,12 +149,12 @@ describe('Fast in the real thinking menu', () => {
     await until('phone Fast accepted', () => fast()?.getAttribute('aria-pressed') === 'true')
     expect(document.activeElement).toBe(focused)
     expect(changed).toHaveBeenCalledExactlyOnceWith(true)
-    expect(document.body.textContent).not.toContain('Faster, uses more quota')
+    expect(document.body.textContent).not.toContain('Faster responses')
   })
 
   it('keeps the tooltip in a compact desktop conversation', async () => {
     await renderMenu({ mobile: true, phoneActions: false })
     await detailSwitch().hover()
-    await expect.element(page.getByText('Faster, uses more quota', { exact: true })).toBeVisible()
+    await expect.element(page.getByText('Faster responses, uses 2× tokens', { exact: true })).toBeVisible()
   })
 })

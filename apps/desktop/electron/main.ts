@@ -362,7 +362,7 @@ import {
   readLocalSessionInjectionAuditForTest,
   readLocalSessionDeliveryFailuresForTest,
 } from './sessionpage/local-session-delivery'
-import { assertAgentModelSelectionOpen, listPlatformModels, settleResidualPlatformModelAccess } from './model-access'
+import { assertAgentModelSelectionOpen, listCustomModelEffortFacts, listPlatformModels, settleResidualPlatformModelAccess } from './model-access'
 import {
   findInjectionContract,
   hasCredentialSink,
@@ -6191,6 +6191,7 @@ app.whenReady().then(async () => {
     // 于是「agent 用 session_list_models 查到的」与「用户在下拉里看到的」不可能分岔。
     // ❌ 别在这里另加过滤或另算一份可用性:那就是第二份判据,它一定会漂。
     emdash.setPlatformModelCatalogResolver((query) => sessionpagePlatformHooks.listModels(query))
+    emdash.setCustomModelEffortResolver((ids) => listCustomModelEffortFacts(desktopAuthProvider(), ids))
     // 同一道门的答案随 `agents.modelCatalog` 回给 composer;账号口与上面那条 IPC 同一个(现取,❌ 早到的一问落成 null)。
     emdash.setPlatformModelGate((query) => sessionpagePlatformGate({ ...query, authProvider: desktopAuthProvider() }))
 

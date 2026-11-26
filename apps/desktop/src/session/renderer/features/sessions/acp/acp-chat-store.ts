@@ -1639,6 +1639,17 @@ export class AcpChatStore {
     }
   }
 
+  /** A custom model's Fast is the session record itself: the model forwarder reads it on the next request, no harness round-trip. */
+  async setCustomFastMode(enabled: boolean): Promise<LiveSettingOutcome> {
+    try {
+      await rpc.sessions.recordLiveSessionSetting(this.sessionId, { dimension: 'fast', value: enabled });
+      return { kind: 'applied', effectiveValue: enabled ? 'on' : 'off' };
+    } catch (error: unknown) {
+      this._toastError('acpFailure.changeSetting', error);
+      return null;
+    }
+  }
+
   async setFastMode(enabled: boolean): Promise<LiveSettingOutcome> {
     const session = this._requireSession('acpFailure.changeSetting');
     if (!session) return null;

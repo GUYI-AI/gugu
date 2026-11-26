@@ -58,7 +58,7 @@ export async function turnFileText(sessionId: string, files: readonly TurnFileRe
     prepared.push({ ...file, promptText });
     const inline = attachmentMimeTypeSchema.safeParse(file.mimeType);
     if (inlineImages && local && inline.success && !replayImages.some(image => image.name === file.name)) {
-      images.push({ type: 'local-file', originalPath: local.localPath, mimeType: inline.data, name: file.name });
+      images.push({ type: 'local-file', originalPath: local.localPath, mimeType: inline.data, name: file.name, fileItemId: file.itemId });
     }
   }
   return { text: parts.join('\n\n'), images, files: prepared };

@@ -32,6 +32,8 @@ import {
 } from './localSyncDb'
 
 type EntityValue = Record<string, unknown>
+/** Select identities in the serialized commit, after any earlier queued identity writes. */
+export type IdentityPublication = readonly unknown[] | (() => readonly unknown[])
 const repositoryLog = rendererLogger('im/repository')
 
 export type IdentityRow = LocalImRow & { id: string; value: DisplayIdentity }
@@ -480,19 +482,20 @@ export async function pruneUnreferencedIdentities(repository: AccountImRepositor
 export async function replaceChatRowsAndIdentities(
   repository: AccountImRepository,
   chats: readonly ChatItem[] | (() => readonly ChatItem[]),
-  identities: readonly unknown[],
+  identities: IdentityPublication,
   isConversationDeleted?: (id: string) => boolean,
 ): Promise<void> {
   await repository.transaction((transaction) => {
+    const people = typeof identities === 'function' ? identities() : identities
     // Evaluate inside the serialized write: an older queued snapshot cannot undo a confirmed deletion.
     const changes = diffChatRows(imSelectors.chatRowsById(repository.snapshot()),
       (typeof chats === 'function' ? chats() : chats).filter(chat => !isConversationDeleted?.(chat.id)))
     for (const chat of changes.changed) {
-      assertIdentityClosure('conversation list', chat.member_user_ids ?? [], identities)
-      if (chat.peer_user_id) assertIdentityClosure('conversation list', [chat.peer_user_id], identities)
+      assertIdentityClosure('conversation list', chat.member_user_ids ?? [], people)
+      if (chat.peer_user_id) assertIdentityClosure('conversation list', [chat.peer_user_id], people)
     }
     writeChatRowChanges(repository, transaction, changes)
-    for (const identity of identities) transaction.putIdentity(identity)
+    for (const identity of people) transaction.putIdentity(identity)
   })
 }
 

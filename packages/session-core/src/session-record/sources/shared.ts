@@ -203,6 +203,9 @@ export class SessionRecordNotFoundError extends Error {
   }
 }
 
+/** The record is not written yet: its file is nowhere, or there with its first line still being written. */
+export class SessionRecordNotWrittenError extends SessionRecordNotFoundError {}
+
 export class SessionRecordForkDivergedError extends Error {
   constructor() {
     super('Fork history has no provable common UUID prefix');

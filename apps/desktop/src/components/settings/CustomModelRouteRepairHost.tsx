@@ -17,7 +17,7 @@ export function CustomModelRouteRepairHost() {
 
   if (!request) return null;
   return <SessionModalLayer><SessionUiTheme theme={theme} skin>
-    <CustomModelDialog machine={request.machine} connection={request.connection} initialRoute={request.route}
+    <CustomModelDialog machine={request.machine} connection={request.connection} initialRoute={request.route} modelId={request.route.modelId}
       onClose={() => { setRequest(null); request.onClose(); }} />
   </SessionUiTheme></SessionModalLayer>;
 }

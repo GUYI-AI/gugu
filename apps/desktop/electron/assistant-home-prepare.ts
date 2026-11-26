@@ -84,7 +84,8 @@ export async function prepareLocalAssistantHome(
   if (input.dryRun) return { workdir, home }
   // Setup looks at the assistant App again (#1931); the handbook and the profile memory come from this one snapshot. With
   // none here yet the setup waits for them (the ensure step is putting the App in; the entry shows it is preparing).
-  forgetFreshAssistantProfile(paths.memoryDir)
+  // An instruction-only App refresh must not revoke the unconsumed fresh-profile proof.
+  // Final admission still checks profile/index bytes and both rule versions before accepting it.
   const { rules } = await refreshedAssistantRules()
   if (input.fresh) await wipeLocalAssistantHome(env)
   await mkdir(workdir, { recursive: true })
@@ -95,8 +96,13 @@ export async function prepareLocalAssistantHome(
   const profile = input.ownerProfile?.trim()
   if (profile) {
     const profileText = ownerProfileMemoryFile(profile, rules)
-    const indexText = withOwnerProfileIndex(await readAssistantFile(paths.memoryIndex), rules)
-    await writeAssistantFile(join(paths.memoryDir, OWNER_PROFILE_MEMORY_FILE), profileText)
+    const profilePath = join(paths.memoryDir, OWNER_PROFILE_MEMORY_FILE)
+    const previousIndex = await readAssistantFile(paths.memoryIndex)
+    const indexText = withOwnerProfileIndex(previousIndex, rules)
+    if (await readAssistantFile(profilePath) !== profileText || previousIndex !== indexText) {
+      forgetFreshAssistantProfile(paths.memoryDir)
+    }
+    await writeAssistantFile(profilePath, profileText)
     await writeAssistantFile(paths.memoryIndex, indexText)
     if (input.fresh) rememberFreshAssistantProfile(paths.memoryDir, profileText, indexText, rules)
   }

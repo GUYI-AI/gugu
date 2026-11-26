@@ -46,7 +46,7 @@ const STORY_MESSAGES: Record<string, string> = {
   'composer.dragToReorder': 'Drag to reorder',
   'composer.editQueuedPrompt': 'Edit queued prompt {index}',
   'composer.effort': 'Thinking',
-  'composer.manageModels': 'Manage models',
+  'composer.manageModels': 'Configure custom models',
   'composer.modelDetailContext': 'Context',
   'composer.modelDetailSpeed': 'Speed',
   'composer.modelDetailIntelligence': 'Intelligence',

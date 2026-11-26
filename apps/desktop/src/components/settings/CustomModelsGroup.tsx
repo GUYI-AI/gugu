@@ -59,6 +59,9 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
   const reading = useReplica(customModels, [machine]);
   const agents = valueOf(useAgents());
   const [userEdit, setEditing] = useState<CustomModelConnection | NewModel | null>(null);
+  // The row whose model the dialog edits; a connection keeps its other models.
+  const [editingModel, setEditingModel] = useState<string | undefined>(undefined);
+  const editModel = (connection: CustomModelConnection, modelId: string) => { setEditingModel(modelId || undefined); setEditing(connection); };
   const editing: CustomModelConnection | NewModel | null = addRequested ? { group: 'custom' } : userEdit;
   const [refreshing, setRefreshing] = useState(false);
   const refreshPlans = async () => {
@@ -103,9 +106,9 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
               title={model.label || model.id}
               description={!connection.keySaved ? translate('customModels.keyMissing') : group === 'coding-plan' ? undefined : preset?.name ?? endpointHost(connection)}
               control={<div className="flex items-center gap-1">
-                {!connection.keySaved ? <Button size="sm" variant="outline" onClick={() => setEditing(connection)}>{translate('customModels.enterKeyHere')}</Button> : <>
-                  {!model.id && group !== 'coding-plan' ? <Button size="sm" variant="outline" onClick={() => setEditing(connection)}>{translate('customModels.selectModel')}</Button> : null}
-                  <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.edit')} onClick={() => setEditing(connection)}><Pencil className="size-4" /></Button>
+                {!connection.keySaved ? <Button size="sm" variant="outline" onClick={() => editModel(connection, model.id)}>{translate('customModels.enterKeyHere')}</Button> : <>
+                  {!model.id && group !== 'coding-plan' ? <Button size="sm" variant="outline" onClick={() => editModel(connection, model.id)}>{translate('customModels.selectModel')}</Button> : null}
+                  <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.edit')} onClick={() => editModel(connection, model.id)}><Pencil className="size-4" /></Button>
                 </>}
                 {group !== 'coding-plan' && <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.test')} disabled={busy === connection.id} onClick={() => { void action(connection, false, model.id || undefined); }}><Link className="size-4" /></Button>}
                 <Button className="gg-model-icon-button" size="icon" variant="ghost" aria-label={translate('customModels.remove')} disabled={busy === connection.id} onClick={() => { void action(connection, true); }}><Trash2 className="size-4" /></Button>
@@ -144,6 +147,7 @@ const CustomModels = observer(function CustomModels({ machine, addRequested, onA
       group={'group' in editing ? editing.group : groupOf(editing)}
       initialAccount={'group' in editing ? editing.account : undefined}
       connection={'group' in editing ? undefined : editing}
+      modelId={'group' in editing ? undefined : editingModel}
       onClose={() => { setEditing(null); onAddClose?.(); }}
     />}
   </>;

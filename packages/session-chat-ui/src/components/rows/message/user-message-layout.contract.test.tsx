@@ -251,6 +251,16 @@ describe('a cite stays in the words; the strip draws attachments only', () => {
     }
   });
 
+  it('a picture placed in the words is drawn there only, not again on the strip', () => {
+    const file = (itemId: string, name: string) => ({ itemId, version: 1, name, mimeType: 'image/png', sizeBytes: 1 });
+    const item = normalizeMessage({ kind: 'message', id: 'u-inline', role: 'user',
+      text: 'First: ![Image 1](gugu-file://red?v=1) then: ![Image 2](gugu-file://blue?v=1)',
+      files: [file('red', 'red.png'), file('blue', 'blue.png'), file('kept', 'kept.png')],
+      // The agent's echo carries the same pictures as images, by the file's name.
+      attachments: [{ id: 'acp-0', name: 'red.png', dataUrl: 'data:image/png;base64,iVBORw0KGgo=' }, { id: 'acp-1', name: 'blue.png' }] });
+    expect(item.attachments?.map(file => file.name)).toEqual(['kept.png']);
+  });
+
   it('draws each comment sent beside the words as a row naming its place and comment; measure === offsetHeight', async () => {
     const annotations = [{ number: 1, target: 'docs/index.html', comment: 'Make it red', promptText: 'SELECTOR #hero VIEWPORT 800x600' },
       { number: 2, target: 'https://example.org/', comment: 'Shorter', promptText: 'PAGE URL https://example.org/' }];

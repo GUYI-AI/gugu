@@ -4,7 +4,7 @@ import { localizePermissionModeOptions } from '../acp/permission-mode-options';
 import { classifyProviderPermissionMode, type ProviderPermissionModeMap } from '@gugu/session-core/acp/client';
 import type { SessionOptionGroup } from '@gugu/session-core/session-record/contract';
 import { withAutoReviewHint, type ReviewCostSource } from '../acp/auto-review-permission-hint';
-import { customModelAcceptsImages, customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
+import { customModelAcceptsImages, customModelDefaultEffort, customModelEfforts, customModelRefFromOption, runtimeModelId } from '@gugu/session-core/models/custom-model';
 import { useReplica } from '@/lib/replica';
 import { customModels } from './custom-models';
 import { useAttachmentFileSelection } from '@/hooks/useAttachmentFileSelection';
@@ -85,8 +85,8 @@ import {
 } from './harness-model-field';
 import { useCodexPreparationNotice } from '@renderer/lib/stores/use-codex-preparation-notice';
 import { useHarnessModelOptions } from './use-harness-model-options';
-import { agentOffersFastMode, draftFastMode } from './fast-mode';
-import { renderFastModeHint } from './fast-mode-hint';
+import { agentOffersFastMode, customModelFastSupported, draftFastMode, fastTokenMultiplier } from './fast-mode';
+import { fastModeHint } from './fast-mode-hint';
 import { platformEffortFacts, resolveCreateEfforts } from '@shared/core/agents/create-efforts';
 import { useHarnessModelCatalog, forceRefreshHarnessModelCatalog } from '@renderer/lib/stores/use-harness-model-catalog';
 import { useTargetModelCatalog } from '@renderer/lib/stores/use-target-model-catalog';
@@ -263,6 +263,8 @@ export type InitialSessionState = {
   autoReviewCostSource?: ReviewCostSource;
   fastMode?: boolean;
   setFastMode?: (enabled: boolean) => void;
+  /** Fast's published token multiple for this draft (`fastTokenMultiplier`); undefined = billed higher, no multiple. */
+  fastTokenMultiplier?: number;
   /** What the CLI would pick on its own for this model — shown in the 「默认」 row. */
   defaultEffort: string | null;
   /** Persist the complete launch configuration only after a session has actually been created. */
@@ -1120,6 +1122,8 @@ export function useInitialSessionState(
   const selectedCustom = customModelRefFromOption(customSelection);
   const customConnection = selectedCustom && customReading.state === 'value' ? customReading.value.find(record => record.id === selectedCustom.connectionId) : undefined;
   const customFeatures = customConnection?.models.find(({ id }) => id === selectedCustom?.modelId);
+  const customFastSupported = selectedCustom
+    ? customModelFastSupported(customConnection, selectedCustom.modelId ?? undefined, agents?.find((agent) => agent.id === providerId)) : undefined;
   const runtimeModel = runtimeModelId(model) ?? null;
   const targetFastCatalog = useTargetModelCatalog(
     !selectedCustom && !unattended && !platformModel && agentOffersFastMode(capabilities) ? providerId : null,
@@ -1138,6 +1142,9 @@ export function useInitialSessionState(
     leg: sessionpageSurface,
   });
   const effortKey = effortKeyOf(providerId, model, platformModel);
+  // A custom model whose levels the person set starts on the default they chose; "Automatic" starts on none.
+  const customDefaultEffort = selectedCustom && customFeatures?.efforts
+    ? customModelDefaultEffort(customFeatures, customEfforts) ?? null : undefined;
   const effort = resolveInitialEffort(
     selectedCustom || platformModel || runtimeModel ? modelEfforts : null,
     effortKey
@@ -1150,8 +1157,8 @@ export function useInitialSessionState(
         (lastStartedConfiguration.model ?? null) === model &&
         (lastStartedConfiguration.platformModel ?? null) === platformModel
           ? lastStartedConfiguration.effort
-          : undefined))
-      : undefined
+          : customDefaultEffort))
+      : customDefaultEffort
   );
   const { auth: reviewAuth } = useAgentAuthStatus(!platformModel && !selectedCustom ? providerId : null, undefined, { machine });
   const autoReviewCostSource: ReviewCostSource = platformModel ? 'platform' : selectedCustom ? 'api-key'
@@ -1297,8 +1304,9 @@ export function useInitialSessionState(
     permissionOptions,
     permissionModeMap,
     autoReviewCostSource,
-    fastMode: unattended || selectedCustom ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, catalog: targetFastCatalog ?? harnessCatalogState }),
+    fastMode: unattended ? undefined : draftFastMode({ enabled: fastModeDraft, capabilities, modelId: model, platformModel, customSupported: customFastSupported, catalog: targetFastCatalog ?? harnessCatalogState }),
     setFastMode: setFastModeDraft,
+    fastTokenMultiplier: fastTokenMultiplier(capabilities, customFastSupported !== undefined),
     defaultEffort: modelEfforts?.defaultId ?? null,
     setEffort: (nextEffort) => {
       if (!effortKey) return;
@@ -1436,10 +1444,9 @@ export function InitialSessionField({
   // owner:平台额度这件事在 UI 上的核心标志,就是 composer 的模型下拉里多出咕咕提供的模型。
   // 它们与用户自己那档并列在同一个下拉里(不是另开一个选择器),每条自带积分标注。
   //
-  // 分类两级(owner 2026-09-05,照 assistant-ui 那版):**一级是厂商**(组头 / 过滤药丸 /
-  // 行内 logo 都按它),**二级**才是「你的 {厂商} 模型」/「咕咕提供的模型 · 按积分计费」,
-  // 挂在组头厂商名后面。二级那句由这里翻好再递进去 —— `platform-model-options` 自己不碰 i18n
-  // (它同时被黑盒 e2e 引用);图标同理由这里给成品节点,那个模块也够不到 React。
+  // 一张平的清单(owner 11-25):咕咕的模型不带标签,用户自己配的行带标签(Coding Plan 写家名、按量 key 写域名)。
+  // 翻译与图标由装配那边给成品 —— `platform-model-options` 自己不碰 i18n(它同时被黑盒 e2e 引用),
+  // 也够不到 React。
   // 装配在 `useComposerModelOptions` 里(@@@composer-model-assembly),两个入口共用一份。
   const modelOptions = useComposerModelOptions(
     harnessModelOptions,
@@ -1796,7 +1803,7 @@ export function InitialSessionField({
           onEffortChange={(effortId) => state.setEffort(effortId || null)}
           fastMode={state.fastMode}
           onFastModeChange={state.setFastMode}
-          renderFastModeHint={renderFastModeHint}
+          renderFastModeHint={fastModeHint(state.fastTokenMultiplier)}
           defaultEffort={state.defaultEffort ?? undefined}
           permissionModeOptions={withAutoReviewHint(permissionModeOptions, state.provider, state.autoReviewCostSource ?? 'unknown')}
           selectedPermissionMode={permissionModeOptions ? state.permissionMode : undefined}
@@ -1812,8 +1819,8 @@ export function InitialSessionField({
           onDataDropped={onDataDropped}
           attachments={state.attachments}
           onAttachmentsChange={enableAttachments ? state.setAttachments : undefined}
-          onViewAttachment={(att) => {
-            if (!openComposerImage(att)) setAttachmentViewer(att);
+          onViewAttachment={(att, cell) => {
+            if (!openComposerImage(att, cell)) setAttachmentViewer(att);
           }}
           toolbarExtra={toolbarExtra}
           className={textareaClassName}

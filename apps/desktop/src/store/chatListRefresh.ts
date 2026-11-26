@@ -24,7 +24,7 @@ export function useChatListRefresh(
       // Same projection owner for cold snapshots and revision views (I7).
       const data = await chatProjection.hydrate(userId)
       if (data.length > 0 || chatsRef.current.length === 0 || options.acceptEmpty === true || chatProjection.hasDeletedConversation(userId, chatsRef.current)) {
-        await chatProjection.publish(data, chatProjection.identities(userId), {
+        await chatProjection.publish(data, chatProjection.identityPublication(userId), {
           requestSeq, notify: !isFirstLoad, preserveMissingActive: options.preserveMissingActive,
         })
       }

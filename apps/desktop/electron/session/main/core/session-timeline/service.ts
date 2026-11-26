@@ -19,7 +19,7 @@ import { followSessionIndex, indexedTurnCount, indexSessionRecord, prepareSessio
 import type { IndexSource } from '../session-index/worker';
 import { nativeConversationListActivity } from '../sessions/session-conversation-live';
 import { deliverAgentQuestionAnswer, restoredAgentQuestion } from '../sessions/agent-question-delivery';
-import { asc, and, desc, eq, inArray, isNull, notInArray, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, notInArray, type SQL } from 'drizzle-orm';
 import { readProjects } from '@main/core/projects/operations/getProjects';
 import { isImplicitSessionHomeProjectId } from '@shared/core/projects/session-home-project';
 import { resolveAgentHome } from '@gugu/session-core/agents/plugins/helpers';
@@ -63,7 +63,7 @@ import { sessionBornInChatId } from '@shared/core/sessions/sessions';
 import { taskName } from '@main/core/sessions/task-name';
 import { agentIdsBySession, sessionAgents } from '@main/core/sessionpage/sessionpage-session-agent';
 import { db } from '@main/db/client';
-import { sessions, projects, sessionPending, type SessionRow } from '@main/db/schema';
+import { sessions, projects, type SessionRow } from '@main/db/schema';
 import { persistedWorkspacePath } from '@main/core/projects/utils';
 import { events, tapMainEvents } from '@main/lib/events';
 import { onNativeMessagePreviewChanged } from './native-preview-events';
@@ -86,7 +86,6 @@ import {
 import {
   sessionChangedChannel,
   sessionCreatedChannel,
-  sessionLifeViewChannel,
   type AgentStatusChange,
 } from '@shared/core/sessions/sessionEvents';
 import {
@@ -669,6 +668,12 @@ function journalOnly(row: SessionRow): boolean {
   return summaryRuntime(row.runtime) === 'acp' && sessionRecordHarnessForProvider(row.provider) === null && journalHasTurns(row.id);
 }
 
+/** The session has a record to read by now: a stand-in for it gives way to the timeline of that record. */
+function recordReadable(conversationId: string): boolean {
+  const row = readSessionRow(conversationId);
+  return row !== null && (locateRow(row).supported || journalOnly(row));
+}
+
 function standInEntry(row: SessionRow): TimelineEntry {
   return {
     conversationId: row.id,
@@ -676,10 +681,7 @@ function standInEntry(row: SessionRow): TimelineEntry {
       sessionId: row.id,
       firstMessage: firstMessageOf(row),
       createdAt: rowCreatedAt(row),
-      recordAvailable: () => {
-        const current = readSessionRow(row.id);
-        return current !== null && (locateRow(current).supported || journalOnly(current));
-      },
+      recordAvailable: () => recordReadable(row.id),
     }),
     refs: 1,
     idleTimer: null,
@@ -1312,15 +1314,11 @@ export async function subscribe(
   let teardown: (() => void) | null = null;
   let attached: TimelineEntry | null = null;
   let stopFollow = () => {};
-  const readiness = new AbortController();
-  let stopDeadline = () => {};
   const mine = {
     conversationId: input.conversationId,
     stop: () => {
       if (stopped) return;
       stopped = true;
-      stopDeadline();
-      readiness.abort(new Error('Codex record subscription closed'));
       stopFollow();
       teardown?.();
     },
@@ -1365,90 +1363,25 @@ export async function subscribe(
     return { ok: true, value: null };
   };
 
-  // The row moved to another agent record (see @@@record-moved): follow it. A cursor from no epoch of the new
-  // timeline makes it answer with a reset and a whole snapshot, which the viewer swaps in for what it holds.
+  // The row moved to another agent record (see @@@record-moved), or got its first one while a stand-in was read:
+  // follow it. A cursor from no epoch of the new timeline makes it answer with a reset and a whole snapshot, which the
+  // viewer swaps in for what it holds.
   stopFollow = tapMainEvents((channel, data) => {
-    if (channel !== sessionChangedChannel.name) return;
+    if (channel !== sessionChangedChannel.name || !attached) return;
     const { sessionId, changes } = data as { sessionId?: string; changes?: { providerSessionId?: unknown } };
+    if (sessionId !== input.conversationId) return;
     const next = changes?.providerSessionId;
-    if (sessionId !== input.conversationId || typeof next !== 'string' || !attached?.providerSessionId || next === attached.providerSessionId) return;
+    const moved = attached.standIn
+      ? recordReadable(input.conversationId)
+      : typeof next === 'string' && !!attached.providerSessionId && next !== attached.providerSessionId;
+    if (!moved) return;
     void attach({ epoch: 'record-moved', seq: 0 }).then((result) => {
-      if (!result.ok && result.error.code !== 'unsubscribed') {
+      // A record that is not there yet keeps its stand-in, which goes on asking (`recordAvailable`).
+      if (!result.ok && result.error.code !== 'unsubscribed' && result.error.code !== 'record_not_found') {
         log.warn('sessionTimeline: following the moved record failed', { conversationId: input.conversationId, error: result.error });
       }
     });
   });
-
-  const row = readSessionRow(input.conversationId);
-  const location = row && locateRow(row);
-  if (input.recordEvents && row?.provider === 'codex') {
-    // The RPC acknowledges ownership now. A not-yet-persisted first turn stays subscribed, rather than holding
-    // a transport request open until its timeout or repeatedly requesting a snapshot.
-    void (async () => {
-      const { waitForCodexRecord, resolveRolloutFile, CodexRecordDeadline } = await import('@gugu/session-core/session-record');
-      if (stopped) return;
-      let locator = location?.supported ? location.locator : null;
-      const deadline = new CodexRecordDeadline(() => readiness.abort(Object.assign(
-        new Error(`记录没出现：30 秒内未收到 Codex rollout 就绪事件（threadId=${locator?.providerSessionId ?? 'pending'}）`), { code: 'record_not_found' })));
-      let waiting = false;
-      const firstSentAt = () => {
-        const first = db.select({ at: sessionPending.enqueuedAt }).from(sessionPending)
-          .where(eq(sessionPending.sessionId, input.conversationId)).orderBy(asc(sessionPending.seq)).get();
-        return first ? Date.parse(first.at.includes('T') ? first.at : `${first.at.replace(' ', 'T')}Z`) : null;
-      };
-      const stopLife = tapMainEvents((channel, data) => {
-        if (channel !== sessionLifeViewChannel.name) return;
-        const life = data as import('@shared/core/sessions/session-life').LifeView;
-        if (life.sessionId !== input.conversationId) return;
-        if (life.processExited || life.kind === 'failed' || life.kind === 'archived') {
-          readiness.abort(Object.assign(new Error(life.failure?.message ?? 'Codex producer exited before its record became ready'), { code: 'record_producer_exited' }));
-        } else if (waiting) deadline.start(firstSentAt());
-      });
-      let stopLocator = () => {};
-      stopDeadline = () => { deadline.stop(); stopLife(); stopLocator(); };
-      const onWaiting = () => {
-        if (waiting || stopped) return;
-        waiting = true;
-        status?.({ subscriptionId, waiting: true });
-        deadline.start(firstSentAt());
-        const life = sessionLife().read(input.conversationId);
-        if (life.processExited || life.kind === 'failed' || life.kind === 'archived') {
-          readiness.abort(Object.assign(new Error(life.failure?.message ?? 'Codex producer exited before its record became ready'), { code: 'record_producer_exited' }));
-        }
-      };
-      try {
-        if (!locator) {
-          if (row.providerSessionId) throw new Error(location && !location.supported ? location.reason : 'Codex record locator unavailable');
-          onWaiting();
-          locator = await new Promise<SessionRecordLocator>((accept, reject) => {
-            const aborted = () => { stopLocator(); reject(readiness.signal.reason); };
-            const check = () => {
-              const current = readSessionRow(input.conversationId);
-              const found = current && locateRow(current);
-              if (found?.supported) { stopLocator(); accept(found.locator); }
-            };
-            const off = tapMainEvents((channel, data) => {
-              if (channel === sessionChangedChannel.name && (data as { sessionId?: string }).sessionId === input.conversationId) check();
-            });
-            stopLocator = () => { off(); readiness.signal.removeEventListener('abort', aborted); };
-            readiness.signal.addEventListener('abort', aborted, { once: true });
-            if (readiness.signal.aborted) aborted(); else check();
-          });
-        }
-        const record = locator;
-        await waitForCodexRecord(record, () => resolveRolloutFile(record, false), readiness.signal, undefined, onWaiting,
-          readyMs => log.info('codex-record: watch ready', { conversationId: input.conversationId, threadId: record.providerSessionId, readyMs, at: Date.now() }));
-        stopDeadline();
-        if (stopped) return;
-        const result = await attach(input.cursor);
-        if (!result.ok && result.error.code !== 'unsubscribed') mine.fail(result.error);
-      } catch (error) {
-        stopDeadline();
-        if (!stopped) mine.fail({ code: (error as { code?: string }).code ?? 'record_watch_failed', message: (error as Error)?.message ?? String(error) });
-      }
-    })().catch(error => { if (!stopped) mine.fail({ code: 'record_watch_failed', message: String(error) }); });
-    return { ok: true, value: { subscriptionId } };
-  }
 
   const first = await attach(input.cursor);
   if (!first.ok) {
