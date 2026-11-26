@@ -17,7 +17,7 @@ vi.mock('@renderer/lib/ipc', () => ({
   rpc: { pty: { resize }, appSettings: { getWithMeta: async () => ({ value: {}, defaults: {}, overrides: {} }) } },
   events: { on: eventOn },
 }));
-vi.mock('@renderer/lib/hotkeys/dispatch-matching-hotkeys', () => ({ dispatchMatchingHotkeys: () => false }));
+vi.mock('@renderer/lib/commands/keyboard-dispatcher', () => ({ dispatchKey: () => false }));
 vi.mock('@renderer/utils/logger', () => ({ log: { warn: vi.fn() } }));
 vi.mock('./pty', () => ({ getFrontendPty: () => undefined, TERMINAL_PADDING_PX: 0 }));
 

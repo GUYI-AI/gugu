@@ -1,4 +1,4 @@
-import { dispatchMatchingHotkeys } from '@renderer/lib/hotkeys/dispatch-matching-hotkeys';
+import { dispatchKey } from '@renderer/lib/commands/keyboard-dispatcher';
 import { isAnimationWindowVisible } from '@gugu/session-shared/animation-visibility';
 
 /**
@@ -65,27 +65,13 @@ export function mirrorDocument(from: Document, to: Document): () => void {
   };
 }
 
-/** 正在往一个输入框里打字:不带 ⌘ / Ctrl / Alt 的快捷键让给它(同 @tanstack/hotkeys 的 ignoreInputs)。 */
-function isTyping(target: EventTarget | null): boolean {
-  const element = target as { closest?: (selector: string) => unknown } | null;
-  return typeof element?.closest === 'function' && element.closest('input, textarea, select, [contenteditable="true"]') !== null;
-}
-
 /**
- * 快捷键在子窗口里也照常用:子窗的按键到不了主窗文档上的那套监听(它们挂在主窗的 document 上,而且跨窗口的
- * `instanceof` 判断会失败),所以在子窗文档上接住、交给同一张快捷键登记表。登记表里谁此刻生效由各自的
- * `enabled` 决定 —— 子窗里的页签快捷键只在这扇窗有焦点时生效(app/screen-block-context)。
+ * 快捷键在子窗口里也照常用:子窗的按键到不了主窗文档上的那个监听,所以在子窗文档上接住、交给同一个分发器。
+ * 谁此刻生效、在输入框里让不让,都由分发器按同一套规则决定。
  */
 export function bridgeHotkeys(doc: Document): () => void {
   const onKeyDown = (event: KeyboardEvent) => {
-    if (event.defaultPrevented) return;
-    const typing = isTyping(event.target);
-    dispatchMatchingHotkeys(event, {
-      filter: (registration) => {
-        const hotkey = registration.parsedHotkey;
-        return !typing || hotkey.meta || hotkey.ctrl || hotkey.alt;
-      },
-    });
+    if (!event.defaultPrevented) dispatchKey(event, 'aux');
   };
   doc.addEventListener('keydown', onKeyDown);
   return () => doc.removeEventListener('keydown', onKeyDown);

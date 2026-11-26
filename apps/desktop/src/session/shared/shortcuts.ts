@@ -32,11 +32,6 @@ export function sessionActionDefault(
 
 export type TabNavigationDirection = 'next' | 'previous';
 
-export const TAB_NAVIGATION_HOTKEYS = {
-  next: 'Control+Tab',
-  previous: 'Control+Shift+Tab',
-} as const;
-
 export interface DomTabNavigationInput {
   type: string;
   key: string;

@@ -1,6 +1,4 @@
-import { useHotkey } from '@tanstack/react-hotkeys';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
-import { TAB_NAVIGATION_HOTKEYS } from '@shared/shortcuts';
 
 /**
  * Minimal interface required for tab navigation shortcuts.
@@ -41,6 +39,4 @@ export function useTabShortcuts(store: TabNavigationProvider | undefined, option
       })),
     ],
   });
-  useHotkey(TAB_NAVIGATION_HOTKEYS.next, () => store?.setNextTabActive(), { enabled, conflictBehavior: 'allow' });
-  useHotkey(TAB_NAVIGATION_HOTKEYS.previous, () => store?.setPreviousTabActive(), { enabled, conflictBehavior: 'allow' });
 }

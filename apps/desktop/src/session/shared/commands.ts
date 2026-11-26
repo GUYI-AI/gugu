@@ -14,6 +14,8 @@ export interface CommandDef {
   iconKey?: string;
   category: CommandCategory;
   defaultHotkey?: string | ((platform: ShortcutPlatform) => string);
+  /** Further fixed chords for the same command (browser-style Ctrl+Tab next to the configurable one). Not rebindable. */
+  aliases?: readonly string[];
   hideFromSettings?: boolean;
   ignoreInputs?: boolean;
   /** Capture before terminal widgets and modal roots consume global entry keys. */
@@ -21,6 +23,12 @@ export interface CommandDef {
   conflictBehavior?: 'prevent' | 'allow';
   ignoreWhenCodeEditorFocused?: boolean;
   ignoreWhenBrowserFocused?: boolean;
+  /**
+   * While the shell shows another tab the task page stays mounted but hidden, and its commands stand down. A command
+   * that is still the user's intent from there says so: 'run' = it acts on the shell itself; 'reveal' = bring the
+   * task page forward, then run it there. Unset = it only means something on the task page.
+   */
+  whenSessionPageHidden?: 'run' | 'reveal';
 }
 
 /** Whether a command is named by a menu's own words (`labelKey`) is kept in its type, so the copy catalog can tell. */
@@ -34,6 +42,7 @@ function defineCommands<const T extends Record<string, Omit<CommandDef, 'id'>>>(
 
 export const COMMANDS = defineCommands({
   'app.settings': {
+    whenSessionPageHidden: 'run',
     label: 'Open Settings',
     labelKey: 'appSettings.settings',
     description: 'Open application settings',
@@ -43,6 +52,7 @@ export const COMMANDS = defineCommands({
   },
   // Preserve existing custom bindings for the shortcut to this area.
   'app.library': {
+    whenSessionPageHidden: 'reveal',
     label: 'Open Marketplace',
     labelKey: 'extensions.tabMarket',
     description: 'Open the Marketplace',
@@ -51,6 +61,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.newProject': {
+    whenSessionPageHidden: 'reveal',
     label: 'New Project',
     labelKey: 'sidebar.addProject',
     description: 'Add a new local or SSH project',
@@ -59,6 +70,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.newSession': {
+    whenSessionPageHidden: 'reveal',
     label: 'New Task',
     labelKey: 'sidebar.newTask',
     description: 'Create a new task in this project',
@@ -67,6 +79,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.sessionHistory': {
+    whenSessionPageHidden: 'reveal',
     label: 'Task history',
     labelKey: 'sidebar.sessionHistory',
     description: 'View Gugu tasks and local Claude Code / Codex sessions in one list: open them, restore archived ones, or import ones not yet imported',
@@ -74,6 +87,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.newGroupChat': {
+    whenSessionPageHidden: 'run',
     label: 'New group chat',
     labelKey: 'sidebar.newGroupChat',
     description: 'Create a group chat',
@@ -81,6 +95,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.addContact': {
+    whenSessionPageHidden: 'run',
     label: 'Add contact',
     labelKey: 'sidebar.addContact',
     description: 'Add a contact',
@@ -88,6 +103,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.scheduled': {
+    whenSessionPageHidden: 'reveal',
     label: 'Scheduled',
     labelKey: 'sidebar.scheduled',
     description: 'Open the scheduled tasks',
@@ -95,6 +111,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.giveFeedback': {
+    whenSessionPageHidden: 'run',
     label: 'Give Feedback',
     labelKey: 'main:shell.feedback',
     description: 'Send feedback to the Gugu team',
@@ -102,6 +119,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.toggleTheme': {
+    whenSessionPageHidden: 'run',
     label: 'Toggle Theme',
     description: 'Switch between light and dark themes',
     iconKey: 'palette',
@@ -122,6 +140,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.showKeyboardShortcuts': {
+    whenSessionPageHidden: 'reveal',
     label: 'Keyboard Shortcuts',
     description: 'Show the keyboard shortcuts cheat sheet',
     iconKey: 'keyboard',
@@ -294,6 +313,7 @@ export const COMMANDS = defineCommands({
     ignoreWhenBrowserFocused: true,
   },
   'app.commandPalette': {
+    whenSessionPageHidden: 'reveal',
     capture: true,
     defaultHotkey: 'Mod+P',
     label: 'Command Palette',
@@ -301,6 +321,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.quickSwitcher': {
+    whenSessionPageHidden: 'reveal',
     capture: true,
     defaultHotkey: 'Mod+O',
     label: 'Quick Switcher',
@@ -308,6 +329,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.globalSearch': {
+    whenSessionPageHidden: 'reveal',
     capture: true,
     defaultHotkey: 'Mod+Shift+F',
     label: 'Search Messages',
@@ -342,12 +364,14 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'session.tabNext': {
+    aliases: ['Control+Tab'],
     defaultHotkey: 'Mod+Alt+ArrowRight',
     label: 'Next Tab',
     description: 'Switch to the next tab',
     category: 'Tab Navigation',
   },
   'session.tabPrev': {
+    aliases: ['Control+Shift+Tab'],
     defaultHotkey: 'Mod+Alt+ArrowLeft',
     label: 'Previous Tab',
     description: 'Switch to the previous tab',
@@ -501,6 +525,7 @@ export const COMMANDS = defineCommands({
     category: 'Navigation',
   },
   'app.resourceMonitor': {
+    whenSessionPageHidden: 'run',
     label: 'Resource Monitor',
     labelKey: 'palette.resourceMonitor',
     description: 'View application resource usage',

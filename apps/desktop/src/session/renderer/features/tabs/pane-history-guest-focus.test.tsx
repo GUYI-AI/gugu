@@ -11,7 +11,7 @@ import { PaneLayoutStore } from './pane-layout-store';
 import { ExtensionSharedSlot } from '../extensions/extension-shared-slot';
 import { ExtensionPage } from '../extensions/extension-view-layer';
 import { extensionViewStore } from '../extensions/extension-view-store';
-import { CommandShortcutBinder } from '@renderer/lib/commands/command-shortcut-binder';
+import { KeyboardDispatcher } from '@renderer/lib/commands/keyboard-dispatcher';
 import { commandRegistry } from '@renderer/lib/commands/registry';
 import { rpc } from '@renderer/lib/ipc';
 
@@ -84,7 +84,7 @@ afterEach(() => {
 async function settle() { await act(async () => { for (const frame of frames.splice(0)) frame(0); }); }
 async function render() {
   const group = layout.groups[0];
-  await act(async () => root.render(<><CommandShortcutBinder /><PaneContext.Provider value={{ paneId: group.paneId, pane: group.pane, isFocusedPane: true }}><PaneContent hideTabBar /></PaneContext.Provider><Guests /></>));
+  await act(async () => root.render(<><KeyboardDispatcher /><PaneContext.Provider value={{ paneId: group.paneId, pane: group.pane, isFocusedPane: true }}><PaneContent hideTabBar /></PaneContext.Provider><Guests /></>));
   await settle();
 }
 async function readyGuest() {
@@ -159,7 +159,7 @@ it('ignores a retained unfocused pane even when the command context still points
   layout.open('file', { id: 'current-b' }, { from: id, intent: 'navigate' });
   const previous = old.groups[0], current = layout.groups[0];
   try {
-    await act(async () => root.render(<><CommandShortcutBinder />
+    await act(async () => root.render(<><KeyboardDispatcher />
       <div data-retained-old=""><PaneContext.Provider value={{ paneId: previous.paneId, pane: previous.pane, isFocusedPane: false }}><PaneContent hideTabBar /></PaneContext.Provider></div>
       <PaneContext.Provider value={{ paneId: current.paneId, pane: current.pane, isFocusedPane: true }}><PaneContent hideTabBar /></PaneContext.Provider></>));
     const stale = mount.querySelector<HTMLElement>('[data-retained-old] [data-file-page]')!;
