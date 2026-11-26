@@ -119,6 +119,7 @@
 .gg-model-limit-presets > button[aria-pressed='true'] { background: var(--selected); }
 .gg-model-dialog-footer { display: flex; flex: none; justify-content: flex-end; gap: 12px; padding: 20px 24px 24px; }
 .gg-model-dialog-footer > button { min-width: 68px; height: 32px; font-weight: 600; }
+.gg-model-dialog-footer > .gg-model-dialog-failure { flex: 1 1 auto; min-width: 0; margin: 0; align-self: center; }
 @container gg-settings (max-width: 440px) {
   .gg-auxiliary-model-select { width: min(355px, 100%); }
 }
