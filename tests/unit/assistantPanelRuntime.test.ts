@@ -37,7 +37,7 @@ vi.mock('@gugu/core/cloud/supabase',() => ({ createGuguSupabaseClient: () => ({
   from: () => { const query = { select: () => query,eq: () => query,abortSignal: () => query,maybeSingle: async () => ({error:null,data:calls.live ? {id:'assistant'} : null}) }; return query },
   rpc(name: string, args: Record<string, unknown>) {
     calls.rpcNames.push(name)
-    if (name === 'workspace_move_as') { calls.moves.push(args); return { abortSignal: async () => ({ data: {}, error: calls.moveError }) } }
+    if (name === 'workspace_move_as') { calls.moves.push(args); return { abortSignal: async () => { if (calls.moveError?.name === 'TimeoutError') throw calls.moveError; return { data: {}, error: calls.moveError } } } }
     if (name === 'open_dm') return { abortSignal: async () => ({ data: 'private-dm', error: null }) }
     if (name === calls.holdRpc) return {abortSignal(signal:AbortSignal) {
       calls.signals.push(signal)
@@ -417,17 +417,23 @@ it('labels unconfigured catalog files without changing saved connections or stab
   } finally {runtime.dispose();await rm(cwd,{recursive:true,force:true})}
 })
 
-it('does not record a catalog label upgrade when renaming its existing file fails', async () => {
-  calls.stalled=false; calls.collectIntegrations=true; calls.moveError=new Error('denied')
+it.each(['denied','timeout'])('keeps publishing saved connections when a catalog rename fails: %s', async reason => {
+  calls.stalled=false; calls.collectIntegrations=true; calls.moveError=reason === 'timeout' ? new DOMException('rename timed out','TimeoutError') : new Error('denied'); calls.uploadIntegrations=true
   calls.previousIntegrations=[catalogItem()]
   const cwd=await mkdtemp(join(tmpdir(),'panel-catalog-denied-')),failed=vi.fn()
   const runtime=createAssistantPanelRuntime({getAuth:async()=>({accessToken:'fixture',userId:'owner'}),instanceId:()=> 'runtime',deviceId:async()=> 'device',
-    local:{integrationCatalog:()=>[{id:'gitlab',en:{name:'GitLab'},zh:{name:'GitLab'}}],integrations:async()=>[]} as never,guguHome:cwd,kind:'computer',env:{},failed,locale:()=> 'en-US'})
+    local:{integrationCatalog:()=>[{id:'gitlab',en:{name:'GitLab'},zh:{name:'GitLab'}}],integrations:async()=>[{providerId:'gitlab',accountId:'account',configured:true,publicMetadata:{updatedAt:1}}]} as never,guguHome:cwd,kind:'computer',env:{},failed,locale:()=> 'en-US'})
   try {
     await runtime.bind({sessionId:'session',assistantId:'assistant',ownerId:'owner',cwd})
     await runtime.publish('session')
-    expect(failed).toHaveBeenCalledWith('integrations')
-    expect(calls.integrationRows).toEqual([])
-    expect(uploads).not.toHaveBeenCalled()
+    expect(failed).not.toHaveBeenCalled()
+    expect(calls.integrationRows.map(row=>row.key)).toEqual(['catalog:gitlab',JSON.stringify(['gitlab','account'])])
+    expect(calls.integrationRows[0].data).not.toHaveProperty('catalogBodyLabel')
+    expect(calls.integrationRows[1].data.configured).toBe(true)
+    expect(uploads.mock.calls.map(([input])=>(input as {label:string}).label)).toEqual(['catalog:gitlab',JSON.stringify(['gitlab','account'])])
+    expect(calls.moves).toHaveLength(1)
+    await runtime.publish('session')
+    expect(calls.moves).toHaveLength(2)
+    expect(failed).not.toHaveBeenCalled()
   }finally{runtime.dispose();await rm(cwd,{recursive:true,force:true})}
 })

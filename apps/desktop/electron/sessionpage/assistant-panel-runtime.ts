@@ -188,20 +188,24 @@ export function createAssistantPanelRuntime(deps: {
       }
       if (domain === 'integrations') return [
         ...await Promise.all(deps.local.integrationCatalog().map(async row => {
-          const key = `catalog:${row.id}`, catalogBodyLabel = `${key} (configurable, not connected)`
+          const key = `catalog:${row.id}`, desiredLabel = `${key} (configurable, not connected)`
+          let catalogBodyLabel: string | undefined = desiredLabel
           const existing = previous.find(item => item.resource_key === key && !item.deleted_at)
           // A catalog describes a possible setup, not a saved connection. Upgrade the existing file in place:
           // unchanged body hashes are reused by the publisher, and uploading another file would leave the old name behind.
-          if (existing?.body_item_id && existing.data.catalogBodyLabel !== catalogBodyLabel) {
+          if (existing?.body_item_id && existing.data.catalogBodyLabel !== desiredLabel) {
             const current = await auth()
             const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
-            const { error } = await client.rpc('workspace_move_as',{ p_item_id: existing.body_item_id,p_as_user_id: binding.ownerId,
-              p_folder: null,p_name: panelBodyFileName(catalogBodyLabel),
-            }).abortSignal(anySignal([AbortSignal.timeout(2000),lifetime.signal]))
+            try {
+              const { error } = await client.rpc('workspace_move_as',{ p_item_id: existing.body_item_id,p_as_user_id: binding.ownerId,
+                p_folder: null,p_name: panelBodyFileName(desiredLabel),
+              }).abortSignal(anySignal([AbortSignal.timeout(2000),lifetime.signal]))
+              if (error) catalogBodyLabel = undefined
+            } catch { catalogBodyLabel = undefined }
             await auth()
-            if (error) throw new Error('PANEL_CATALOG_LABEL_UPGRADE_FAILED')
+            // Keep publishing saved connections; no receipt means this catalog is retried at the next observation.
           }
-          return { key,data: { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog,catalogBodyLabel },
+          return { key,data: { providerId: row.id,configured: false,displayName: row.en.name,catalog: row.en.catalog,...(catalogBodyLabel ? { catalogBodyLabel } : {}) },
             bytes: new TextEncoder().encode(JSON.stringify({ version: 1,en: row.en,'zh-CN': row.zh })),
           }
         })),
@@ -302,8 +306,8 @@ export function createAssistantPanelRuntime(deps: {
             baseline: baseline ?? await cloud.snapshot(binding.assistantId),
             bodyFailures: failures,
             collect: previous => observations(domain,previous),
-            upload: async row => uploadAssistantPanelBody({ ...await access(),label: domain === 'integrations' && row.key.startsWith('catalog:')
-              ? String(row.data.catalogBodyLabel) : row.key.split('/').pop() ?? domain,bytes: row.bytes! }),
+            upload: async row => uploadAssistantPanelBody({ ...await access(),label: domain === 'integrations' && row.key.startsWith('catalog:') && typeof row.data.catalogBodyLabel === 'string'
+              ? row.data.catalogBodyLabel : row.key.split('/').pop() ?? domain,bytes: row.bytes! }),
             discard: async itemId => {
               const current = await auth()
               const client = createGuguSupabaseClient({ schema: 'chat',headers: { Authorization: `Bearer ${current.accessToken}` } })
