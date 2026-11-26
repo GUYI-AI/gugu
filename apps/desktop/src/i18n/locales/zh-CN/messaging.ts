@@ -398,7 +398,7 @@ export default {
 
     "fileUnavailable": "文件暂时无法打开",
     "fileIntegrity": "文件校验没通过：内容和它的校验值对不上，没有打开",
-    "fileServerOutdated": "这台机器的 server 版本太旧，更新后才能打开文件",
+    "fileServerOutdated": "这台机器上的咕咕版本太旧，更新后才能打开文件",
     "fileNoAccess": "你已无权访问这个文件",
     "fileUpdated": "文件已更新，请重新打开",
     "holderOffline": "{{machine}} 离线，上线后才能打开这个文件。",
