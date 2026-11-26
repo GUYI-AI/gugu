@@ -184,6 +184,7 @@ export class TextModelRegistry {
 
   /** Debounce timers for crash-recovery buffer autosave, keyed by buffer URI. */
   private bufferAutosaveTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private bufferPersistence = new Map<string, Promise<void>>();
 
   /** model.onDidChange unsubscribers for each registered buffer, keyed by buffer URI. */
   private bufferContentDisposables = new Map<string, () => void>();
@@ -507,25 +508,46 @@ export class TextModelRegistry {
         else this.dirtyUris.delete(uri);
         this.bufferVersions.set(uri, (this.bufferVersions.get(uri) ?? 0) + 1);
       });
-      // Debounced crash-recovery save — persists unsaved edits across app restarts.
-      const existingTimer = this.bufferAutosaveTimers.get(uri);
-      if (existingTimer) clearTimeout(existingTimer);
-      this.bufferAutosaveTimers.set(
-        uri,
-        setTimeout(() => {
-          this.bufferAutosaveTimers.delete(uri);
-          const currentEntry = this.modelMap.get(uri);
-          if (!currentEntry || currentEntry.type !== 'buffer') return;
-          if (!this.isDirty(uri)) return;
-          void workspaceRpc(currentEntry.projectId).editor.saveBuffer(
-            currentEntry.projectId,
-            currentEntry.workspaceId,
-            currentEntry.filePath,
-            currentEntry.model.getValue()
-          );
-        }, BUFFER_DEBOUNCE_MS)
-      );
+      this.scheduleBufferPersistence(uri);
     }));
+  }
+
+  private scheduleBufferPersistence(uri: string): void {
+    const previous = this.bufferAutosaveTimers.get(uri);
+    if (previous !== undefined) clearTimeout(previous);
+    this.bufferAutosaveTimers.set(uri, setTimeout(() => {
+      this.bufferAutosaveTimers.delete(uri);
+      const entry = this.modelMap.get(uri);
+      if (entry?.type === 'buffer') this.keepBuffer(uri, entry);
+    }, BUFFER_DEBOUNCE_MS));
+  }
+
+  private keepBuffer(uri: string, entry: BufferModelEntry): void {
+    void this.persistBuffer(uri, entry).catch(error => {
+      log.error('Failed to persist editor recovery buffer', { path: entry.filePath, error });
+    });
+  }
+
+  /** 恢复副本的写入和清除按文件保序；等待期间的新编辑也必须留下。 */
+  private persistBuffer(uri: string, entry: BufferModelEntry): Promise<void> {
+    const timer = this.bufferAutosaveTimers.get(uri);
+    if (timer !== undefined) clearTimeout(timer);
+    this.bufferAutosaveTimers.delete(uri);
+    const previous = this.bufferPersistence.get(uri) ?? Promise.resolve();
+    const result = previous.then(async () => {
+      while (this.modelMap.get(uri) === entry) {
+        const content = entry.model.getValue();
+        const dirty = this.isDirty(uri);
+        const editor = workspaceRpc(entry.projectId).editor;
+        if (dirty) await editor.saveBuffer(entry.projectId, entry.workspaceId, entry.filePath, content);
+        else await editor.clearBuffer(entry.projectId, entry.workspaceId, entry.filePath);
+        if (entry.model.getValue() === content && this.isDirty(uri) === dirty) break;
+      }
+    });
+    const done = result.then(() => undefined, () => undefined);
+    this.bufferPersistence.set(uri, done);
+    void done.then(() => { if (this.bufferPersistence.get(uri) === done) this.bufferPersistence.delete(uri); });
+    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -593,9 +615,9 @@ export class TextModelRegistry {
     }, 60_000);
     this.evictionTimers.set(uri, t);
 
-    // Eagerly clean up buffer-specific in-memory state immediately (content disposables,
-    // autosave timers) so that edits made in a closing tab don't fire after close.
+    // 最后一个视图关闭前保存恢复副本，再取消监听和延迟任务。
     if (entry.type === 'buffer') {
+      this.keepBuffer(uri, entry);
       this.bufferContentDisposables.get(uri)?.();
       this.bufferContentDisposables.delete(uri);
       const autosaveTimer = this.bufferAutosaveTimers.get(uri);
@@ -783,7 +805,7 @@ export class TextModelRegistry {
 
       this.markSaved(uri, content);
       runInAction(() => this.deletedOnDisk.delete(uri));
-      if (!this.isDirty(uri)) void workspaceRpc(buf.projectId).editor.clearBuffer(buf.projectId, buf.workspaceId, buf.filePath);
+      await this.persistBuffer(uri, buf);
       return content;
     } catch (error) {
       log.error('Failed to save file', { path: buf.filePath, error });
@@ -994,6 +1016,7 @@ export class TextModelRegistry {
       // 预览(HTML / markdown / SVG / CSV)只认它,不加就停在旧正文上。
       if (next !== mine) this.bufferVersions.set(bufferUri, (this.bufferVersions.get(bufferUri) ?? 0) + 1);
     });
+    this.scheduleBufferPersistence(bufferUri);
   }
 }
 
