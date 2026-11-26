@@ -47,6 +47,8 @@ export function createAgentRuntimeStatePublisher(options: {
     const next = { activityStatus: state.activityStatus,
       reading: state.agentStatus ? { status: state.agentStatus, detail: state.agentStatusDetail ?? null } : null,
       lastInteractedAt: state.lastInteractedAt ?? null,
+      // null says nothing and the cloud keeps its value, so what was published stays what the cloud holds.
+      modelName: state.modelName ?? previous?.modelName ?? null,
       runtimeKind: state.runtimeKind ?? null, runtimeLabel: state.runtimeLabel ?? null }
     const edge = !samePublishedStatus(previous, next)
       || previous?.runtimeKind !== next.runtimeKind || previous?.runtimeLabel !== next.runtimeLabel
@@ -105,13 +107,24 @@ export interface PublishedAgentStatus {
   reading: Pick<AgentStatusReading, 'status' | 'detail'> | null
   /** ISO;null = 本机说不出(老宿主、没有会话),云端 COALESCE 保留原值。 */
   lastInteractedAt: string | null
+  /**
+   * The model the agent runs, as its host's model list names it (#3938). '' = the host knows there is no concrete
+   * model to name (the cloud clears its value); null = this host says nothing (not live, a terminal session): the
+   * cloud keeps its value.
+   */
+  modelName: string | null
 }
 
-export function publishedStatusOf(reading: AgentStatusReading | null, lastInteractedAt: string | null = null): PublishedAgentStatus {
+export function publishedStatusOf(
+  reading: AgentStatusReading | null,
+  lastInteractedAt: string | null = null,
+  modelName: string | null = null,
+): PublishedAgentStatus {
   return {
     activityStatus: isAgentActive(reading) ? 'running' : 'idle',
     reading: reading ? { status: reading.status, detail: reading.detail } : null,
     lastInteractedAt,
+    modelName,
   }
 }
 
@@ -121,6 +134,8 @@ export function samePublishedStatus(a: PublishedAgentStatus | undefined, b: Publ
     && (a.reading?.status ?? null) === (b.reading?.status ?? null)
     && (a.reading?.detail ?? null) === (b.reading?.detail ?? null)
     && sameInstant(a.lastInteractedAt, b.lastInteractedAt)
+    // A next value that says nothing about the model changes nothing the cloud holds.
+    && (b.modelName === null || a.modelName === b.modelName)
 }
 
 // The cloud spells an instant as `…+00:00`, the host as `…Z`: the same moment is the same published value.
@@ -146,6 +161,8 @@ export interface AgentStatusTransitionDeps {
   statusOf?: (agentUserId: string) => AgentStatusReading | null
   /** 这个 agent 绑的会话最后一次有动静的时刻(ISO);null = 本机说不出。 */
   lastInteractedAtOf?: (agentUserId: string) => string | null
+  /** 这个 agent 此刻跑的模型(见 PublishedAgentStatus.modelName);null = 本机说不出。 */
+  modelNameOf?: (agentUserId: string) => string | null
   report: (agentUserId: string, published: PublishedAgentStatus) => Promise<boolean | void>
   /** Optional second fact stream that may require a report while the status is unchanged. */
   shouldPublish?: (agentUserId: string) => boolean
@@ -162,12 +179,16 @@ export async function publishAgentStatusTransitions(deps: AgentStatusTransitionD
   }
   for (const agentUserId of agentUserIds) {
     if (shouldBail()) return
-    const next = publishedStatusOf(statusOf?.(agentUserId) ?? null, deps.lastInteractedAtOf?.(agentUserId) ?? null)
+    const next = publishedStatusOf(statusOf?.(agentUserId) ?? null, deps.lastInteractedAtOf?.(agentUserId) ?? null,
+      deps.modelNameOf?.(agentUserId) ?? null)
     if (samePublishedStatus(published.get(agentUserId), next) && !deps.shouldPublish?.(agentUserId)) continue
     try {
       const previous = published.get(agentUserId)
       const written = await report(agentUserId, next)
-      if (written !== false && published.get(agentUserId) === previous) published.set(agentUserId, next)
+      // A write that says nothing about the model leaves the cloud's value, so the memory keeps it too.
+      if (written !== false && published.get(agentUserId) === previous) {
+        published.set(agentUserId, { ...next, modelName: next.modelName ?? previous?.modelName ?? null })
+      }
     } catch (error) {
       // 不记入已发布 ⇒ 下一轮 tick 自动重试。gone 的写已在 reporter 层 drop+swallow,到不了这里。
       warn?.(`[device-runtime] activity publish failed for ${agentUserId}: ${errMsg(error)}`)

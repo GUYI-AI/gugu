@@ -124,4 +124,14 @@ describe('#6448 agent status reading on the presence row', () => {
     await report({ agentUserId: agent, activityStatus: 'idle', runtimeKind: 'gugu', runtimeLabel: 'h' })
     expect(Date.parse((await readPresence(agent)).lastInteractedAt ?? ''), 'an offline write says nothing about it').toBe(Date.parse(at))
   }))
+
+  it('#3938 the model name travels with the write; a write that does not carry it keeps it; an empty one clears it', async () => rollback(async ({ owner, agent }) => {
+    const report = createAgentRuntimeStateReporter(ownerRpcClient(owner))
+    await report({ agentUserId: agent, activityStatus: 'running', agentStatus: 'working', agentStatusDetail: 'running', runtimeKind: 'gugu', runtimeLabel: 'h', modelName: 'Opus 5.5' })
+    expect((await readPresence(agent)).modelName).toBe('Opus 5.5')
+    await report({ agentUserId: agent, activityStatus: 'idle', runtimeKind: 'gugu', runtimeLabel: 'h' })
+    expect((await readPresence(agent)).modelName, 'a write that says nothing about it keeps it').toBe('Opus 5.5')
+    await report({ agentUserId: agent, activityStatus: 'idle', runtimeKind: 'gugu', runtimeLabel: 'h', modelName: '' })
+    expect((await readPresence(agent)).modelName, 'the host knows there is no concrete model to name').toBeNull()
+  }))
 })

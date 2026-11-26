@@ -7,6 +7,7 @@ import { learnHarnessConfigRoot } from '@main/core/agent-hooks/harness-config-ro
 import { agentStatusWriter } from '@main/core/agent-status/agent-status-writer';
 import { log } from '@main/lib/logger';
 import { applyHarnessTitle } from '../sessions/renameSession';
+import { announceSessionModelChanged } from '../sessions/session-model-events';
 import { SessionActivityObserver } from '../activity/session-observation';
 import {
   applyContextUsageChange,
@@ -152,6 +153,8 @@ class AcpAgentStatusBridge {
       }
       this.applyContextUsage(summary);
       this.summaries.set(summary.sessionId, summary);
+      // #3938 A session the runtime now holds has options to name its model from; a harness may also switch on its own.
+      if (!previous || (summary.modelId ?? null) !== (previous.modelId ?? null)) announceSessionModelChanged(summary.sessionId);
       if (summary !== previous) this.notify(summary.sessionId, summary);
     }
 
