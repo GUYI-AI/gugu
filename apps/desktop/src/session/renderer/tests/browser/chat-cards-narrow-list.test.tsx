@@ -1,7 +1,7 @@
 import { act } from 'react';
 /**
  * 分屏再开成员栏,群的消息列只剩两三百宽(10-28 实测:窗口 800,消息列 247px):
- * - 任务卡「交给 · Codex 3 ✓」那一行冲出卡边,行尾的 ✓ 压到发送者头像上;卡头「新任务」在 24px 高的行里折成两行。
+ * - 任务卡「交给 · Codex 3 ✓」那一行冲出卡边,行尾的 ✓ 压到发送者头像上;卡头「新建智能体」在 24px 高的行里折成两行。
  * - 回复气泡里的引用条写死 180px,比气泡还宽,被引那一行冲出气泡右边。
  * 渲染的是真 MessageBubble(共享 testHarness 的 providers),按 getBoundingClientRect 比边。
  */
@@ -84,7 +84,7 @@ describe('cards and quotes in a narrow group message list', () => {
       await until('the status mark drawn', () => card.querySelector('[role="img"]') !== null);
       const spill = worstSpill(card);
       expect(spill.by, `spills past the card: ${spill.what}`).toBeLessThanOrEqual(0.5);
-      const title = [...card.querySelectorAll<HTMLElement>('span')].find((el) => el.textContent === 'New task')!;
+      const title = [...card.querySelectorAll<HTMLElement>('span')].find((el) => el.textContent === 'New agent')!;
       expect(title.getBoundingClientRect().height, 'the head stays one line').toBeLessThanOrEqual(24);
     });
 
