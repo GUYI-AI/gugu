@@ -24,6 +24,8 @@ const h = vi.hoisted(() => ({
   piWrites: vi.fn(async (_id: string) => {}),
   /** The session's queue as the channel stage reads it when it is admitted. */
   pending: { queued: [] as number[], dispatching: [] as number[] },
+  platformInjection: vi.fn(async (command: unknown): Promise<{ command: unknown; injected: boolean; autoReview?: unknown }> => ({ command, injected: false })),
+  resolvedCli: vi.fn(async (command: { input: object }, _review?: unknown) => ({ ...command, input: { ...command.input, runContext: {} } })),
 }));
 
 vi.mock('./agent-status-bridge', () => ({
@@ -38,6 +40,8 @@ vi.mock('./runtime-process/host', () => ({
   stopAcpSessionAndSettle: h.stopAndSettle,
   readSessionInjectionFacts: async () => ({ agentDisplayName: undefined, platformModel: h.platformModel }),
   provisionStartIdentity: async (input: { cwd: string }) => { h.identityCwd = input.cwd; return h.identity; },
+  withEmdashPlatformInjection: h.platformInjection,
+  withHostResolvedCli: h.resolvedCli,
   withEmdashMcpInjection: async (command: { input: { sessionId: string } }, _lifecycle: unknown, _facts: unknown, _identity: unknown, _text: unknown, _files: unknown, apply?: (write: () => Promise<void>) => Promise<void>) => {
     if (apply) {
       h.piPrepared(command.input.sessionId);
@@ -195,6 +199,17 @@ describe('session-life ACP leg', () => {
     expect(h.preparePlatform).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 's', projectId: 'p', providerId: 'claude', cwd: '/repo', platformModel: h.platformModel,
     }));
+  });
+
+  it("carries the launch's Auto mode verdict from the platform stage to the run context the menu reads", async () => {
+    const verdict = { autoReviewAllowed: false, autoReviewUnavailable: true, autoReviewReason: 'taskConfig.reviewNoReviewer' };
+    const command = { input: { sessionId: 's', providerId: 'claude' } };
+    h.platformInjection.mockResolvedValueOnce({ command, injected: true, autoReview: verdict });
+    const adapter = await boundAdapter();
+    const platform = await adapter.run('platform', { capabilities: { injection: { command }, facts: {} } } as never, ctx());
+    expect(platform).toMatchObject({ injected: true, autoReview: verdict });
+    await adapter.run('cli', { platform } as never, ctx());
+    expect(h.resolvedCli).toHaveBeenCalledWith(command, verdict);
   });
 
   it('carries an early platform refusal into the existing startup failure path', async () => {

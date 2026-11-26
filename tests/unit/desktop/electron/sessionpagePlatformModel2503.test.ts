@@ -1952,14 +1952,17 @@ describe('Auto mode reviewer on a Claude platform session', () => {
     reviewPreference.value = null
   })
   afterEach(async () => { await releasePlatformModelForSession(SESSION) })
-  async function launch(model: string, models = catalog): Promise<ReviewSettings> {
+  /** What the last launch told the menu about Auto mode. */
+  let lastReview: unknown
+  async function launch(model: string, models = catalog, env: NodeJS.ProcessEnv = CLAUDE_TEST_ENV): Promise<ReviewSettings> {
     // Ticket rows: the stable id Settings store, and the gateway alias the CLI must send (different on purpose).
     platformLaunch(`gw-${model}`, 60_000, 200_000, models.map(entry => ({ ...entry, id: entry.alias, alias: `gw-${entry.alias}` })))
     const issued = await resolveAgentModelLaunch() as { access: { modelId: string } }
     issued.access.modelId = model
     resolveAgentModelLaunch.mockResolvedValue(issued)
-    const platform = await platformModelForSession({ surface: 'cui', sessionId: SESSION, providerId: 'claude', authProvider, env: CLAUDE_TEST_ENV })
+    const platform = await platformModelForSession({ surface: 'cui', sessionId: SESSION, providerId: 'claude', authProvider, env })
     expect(platform.settingsDocumentPath).not.toBeNull()
+    lastReview = platform.autoReview
     return JSON.parse(await readFile(platform.settingsDocumentPath!, 'utf8')) as ReviewSettings
   }
   /** The one shape the CLI cannot silently swap: a named reviewer is an allowed model, or Auto mode is gone. */
@@ -2008,6 +2011,37 @@ describe('Auto mode reviewer on a Claude platform session', () => {
     const settings = await launch('claude-opus-4-6')
     expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined()
     expectNoSilentSwap(settings)
+  })
+  it('tells the menu what it armed: the ticket reviewer, or Auto mode off and why', async () => {
+    await launch('claude-opus-4-6')
+    expect(lastReview).toEqual({ autoReviewAllowed: true, autoReviewer: { label: 'Claude Haiku 5.5', kind: 'platform' } })
+    // Haiku in the account catalog but not on this ticket: the launch removes Auto mode, and the menu must not say Haiku reviews.
+    const settings = await launch('claude-opus-4-6', catalog.filter(entry => entry.alias !== 'claude-haiku-5-5'))
+    expect(settings.permissions?.disableAutoMode).toBe('disable')
+    expect(lastReview).toEqual({ autoReviewAllowed: false, autoReviewUnavailable: true, autoReviewReason: 'taskConfig.reviewNoReviewer' })
+  })
+  it('turns Auto mode off, and says so, when an old edge function sends no switchable models', async () => {
+    const settings = await launch('claude-opus-4-6', [])
+    expect(settings.env.CLAUDE_CODE_AUTO_MODE_MODEL).toBeUndefined()
+    expect(settings.permissions?.disableAutoMode).toBe('disable')
+    expect(lastReview).toEqual({ autoReviewAllowed: false, autoReviewUnavailable: true, autoReviewReason: 'taskConfig.reviewNoReviewer' })
+  })
+  it('matches the user allowlist on the alias the CLI is given, not the catalog id', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'gugu-review-allowlist-'))
+    const configDir = join(home, '.claude')
+    const env = { ...CLAUDE_TEST_ENV, HOME: home, CLAUDE_CONFIG_DIR: configDir }
+    try {
+      await mkdir(configDir, { recursive: true })
+      await writeFile(join(configDir, 'settings.json'), JSON.stringify({ availableModels: ['gw-claude-opus-4-6', 'gw-claude-haiku-5-5'] }))
+      expect((await launch('claude-opus-4-6', catalog, env)).env.CLAUDE_CODE_AUTO_MODE_MODEL).toBe('gw-claude-haiku-5-5')
+      // Only the catalog id listed: the CLI, given the alias, would drop the reviewer and review with the main model.
+      await writeFile(join(configDir, 'settings.json'), JSON.stringify({ availableModels: ['gw-claude-opus-4-6', 'claude-haiku-5-5'] }))
+      const excluded = await launch('claude-opus-4-6', catalog, env)
+      expect(excluded.permissions?.disableAutoMode).toBe('disable')
+      expect(lastReview).toMatchObject({ autoReviewAllowed: false, autoReviewReason: 'taskConfig.reviewReviewerExcluded' })
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
   })
   it('says Claude 4.5 cannot run Auto mode by removing it, whatever was picked', async () => {
     reviewPreference.value = { kind: 'platform', modelId: 'claude-haiku-5-5' }
