@@ -17,6 +17,9 @@ import { openForward } from '@/components/chat/forwardToChats';
 import type { TranscriptTurn } from '@gugu/session-chat-ui';
 import { bindMessageQuoteTouchMenu } from './message-quote-touch-menu';
 import { openCommentLine } from '../annotations/selection-line';
+import { selectLinkForMenu } from '@/lib/selectLinkForMenu';
+import { isWebLink } from '@shared/link-menu';
+import { openWebLink } from '@renderer/lib/open-web-link';
 
 type Target = Parameters<NonNullable<ChatCommands['onMessageTextMount']>>[0];
 const log = rendererLogger('session/message-actions');
@@ -66,7 +69,10 @@ export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' |
     const open = (event: MouseEvent) => {
       const current = latest.current.store;
       if (!current) return;
-      const before = pressed;
+      // A link right-clicked with nothing selected before the press is selected first (@@@link-menu).
+      const linkSelected = !latest.current.actions.phone && pressed?.selection === undefined
+        && selectLinkForMenu(event.target instanceof Element ? event.target.closest('a[href]') : null);
+      const before = linkSelected ? null : pressed;
       pressed = null;
       const selection = before ? before.selection : selectedMessageText(target.root, target.root.ownerDocument.getSelection());
       const at = before ? before.at : selectionAt();
@@ -122,6 +128,7 @@ export function useSessionMessageQuotes(store: (Pick<AcpChatStore, 'sessionId' |
           onCopyLink: usable(() => copy(link)),
           // The link's own click: a reference, a group file, a working-folder file and a web link each open their own way.
           onOpenLink: usable(() => anchor?.click()),
+          ...(isWebLink(link) ? { onOpenLinkSystem: usable(() => { openWebLink(link, 'system'); }) } : {}),
         } : {}),
         ...(file && carried && !unavailable ? { onOpenFile: usable(() => openSentFile(file, carried, commands)) } : {}),
         ...(message.role === 'user' && !message.guguDelivery && acts.canEdit?.(target.itemId) ? { onEditMessage: usable(() => acts.onEdit?.(target.itemId)) } : {}),

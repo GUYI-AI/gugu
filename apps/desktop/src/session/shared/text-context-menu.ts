@@ -2,9 +2,9 @@ import type { Hotkey } from '@tanstack/hotkeys';
 import type { ContentMenuEntry } from './content-context-menu';
 import type { EditorMenuHistory } from '@gugu/session-shared/content-menu';
 
-const LABELS = { undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', copyLink: 'Copy Link', paste: 'Paste', selectAll: 'Select All', clear: 'Clear' };
+const LABELS = { undo: 'Undo', redo: 'Redo', cut: 'Cut', copy: 'Copy', paste: 'Paste', selectAll: 'Select All', clear: 'Clear' };
 type Action = keyof typeof LABELS;
-export type TextEditAction = Exclude<Action, 'copyLink' | 'clear'>;
+export type TextEditAction = Exclude<Action, 'clear'>;
 export interface TextContextMenu {
   selectionText: string;
   labels?: Partial<typeof LABELS>;
@@ -28,7 +28,7 @@ export function textContextMenuItems(options: TextContextMenu, extra: ContentMen
   return [
     ...item('undo', 'Mod+Z'), ...item('redo', 'Mod+Shift+Z'),
     ...(options.editorHistory || options.actions.undo || options.actions.redo ? [{ type: 'separator' as const }] : []),
-    ...item('cut', 'Mod+X', selected), ...item('copy', 'Mod+C', selected), ...item('copyLink'),
+    ...item('cut', 'Mod+X', selected), ...item('copy', 'Mod+C', selected),
     ...item('paste', 'Mod+V'),
     { type: 'separator' },
     ...item('selectAll', 'Mod+A', options.canSelectAll !== false), ...item('clear'),

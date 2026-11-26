@@ -17,7 +17,7 @@ import {
 } from '@renderer/lib/ui/combobox';
 import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-client';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
-import { openExternalLinkInBrowser } from '@renderer/lib/open-external-link';
+import { openExternalLinkInBrowser } from '@renderer/lib/open-web-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
 import { useConnectionModelList, probeModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
 import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';

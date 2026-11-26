@@ -4,7 +4,6 @@ import { refreshFailure, useReplica } from '@/lib/replica';
 import { Unknown } from '@/components/ui/Unknown';
 import { workspaceImage } from '@renderer/features/sessions/workspace-backend/workspace-image';
 import { Markdown, type MarkdownDensity } from '@/components/markdown/Markdown';
-import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
 import { ExpandableImage } from './expandable-image';
 
 /**
@@ -59,15 +58,6 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
   onOpenLink,
 }) => {
   const compact = density === 'compact';
-  const openLink = useCallback(
-    (href: string) => {
-      if (onOpenLink?.(href)) return true;
-      if (!/^https?:\/\//i.test(href)) return false;
-      confirmOpenExternalLink(href);
-      return true;
-    },
-    [onOpenLink]
-  );
   const renderImage = useCallback(
     ({ src, alt }: { src?: string; alt: string }) => {
       if (src && workspaceImages && !/^https?:\/\//i.test(src)) {
@@ -91,7 +81,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({
       density={density}
       frontmatter={frontmatter}
       content={content}
-      onOpenLink={openLink}
+      onOpenLink={onOpenLink ? (href) => !!onOpenLink(href) : undefined}
       renderImage={renderImage}
       className={className}
     />

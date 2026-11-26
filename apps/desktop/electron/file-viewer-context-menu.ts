@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { BrowserWindow, clipboard, type App, type ContextMenuParams, type WebContents } from 'electron';
+import { BrowserWindow, clipboard, shell, type App, type ContextMenuParams, type WebContents } from 'electron';
 import { showContentContextMenu } from './content-context-menu';
+import { isWebLink, linkMenuEntries } from '../src/session/shared/link-menu';
+import { hostCopy } from './host-locale-store';
 import { captureEditableContext, editingEnabled, showEditableContextMenu } from './editable-context-menu';
 import { FILE_VIEWER_ATTRIBUTE, FILE_VIEWER_MENU_EVENT, type FileViewerMenuAction, type FileViewerMenuRequest, type FileViewerMenuLabels, fileViewerMenuItems } from '../src/session/shared/preview/file-viewer-menu';
 
@@ -26,6 +28,16 @@ export function viewerActionScript(context: Context, action: FileViewerMenuActio
   })()`;
 }
 
+/** The link under the pointer in one of the app's own pages: select it (so the menu is visibly about it), or click it. */
+export function viewerLinkScript(params: Pick<ContextMenuParams, 'x' | 'y'>, offset: { x: number; y: number }, act: 'select' | 'click'): string {
+  return `(() => {
+    const link=document.elementFromPoint(${params.x - offset.x},${params.y - offset.y})?.closest('a[href]');
+    if (!link) return null;
+    ${act === 'click' ? 'link.click();' : 'const range=document.createRange();range.selectNodeContents(link);const s=getSelection();s.removeAllRanges();s.addRange(range);'}
+    return link.textContent;
+  })()`;
+}
+
 export function registerFileViewerMenus(app: App, labels: () => FileViewerMenuLabels, report: (error: unknown) => void, acceptsHost: (host: WebContents) => boolean): void {
   app.on('web-contents-created', (_event, contents) => {
     contents.on('context-menu', (_menuEvent, params) => {
@@ -47,11 +59,26 @@ async function showFileViewerMenu(contents: WebContents, params: ContextMenuPara
     ? await contents.hostWebContents.mainFrame.executeJavaScript(`(() => { const view=[...document.querySelectorAll('webview')].find(view=>view.getWebContentsId()===${contents.id});return view?.getBoundingClientRect().toJSON(); })()`) as { x: number; y: number } | undefined
     : { x: 0, y: 0 };
   if (!offset) return;
+  const link = isWebLink(params.linkURL) ? params.linkURL : null;
+  const linkItems = link ? linkMenuEntries(hostCopy().sessionHost.linkMenu, (action) => {
+    if (contents.isDestroyed()) return;
+    if (action === 'copy-link') return clipboard.writeText(link);
+    if (action === 'open-link-system') return shell.openExternal(link);
+    // Gugu's browser: the link's own click, which opens it where that page opens its links.
+    return contents.mainFrame.executeJavaScript(viewerLinkScript(params, offset, 'click')).then(() => undefined, report);
+  }) : [];
   const context = await contents.mainFrame.executeJavaScript(viewerContextScript(params, randomUUID(), { text: params.selectionText }, offset)) as Context | null;
+  // @@@link-menu: a right-clicked link in a file or an App page is selected first, so the menu reads as being about it.
+  const selectLink = async () => {
+    const text = link && !params.selectionText ? await contents.mainFrame.executeJavaScript(viewerLinkScript(params, offset, 'select')) as string | null : null;
+    if (text && context) context.selection = { text };
+  };
   if (!context) {
     if (params.isEditable) await showEditableContextMenu(contents, params, position, report, labels);
+    else if (linkItems.length && contents.hostWebContents) { await selectLink(); showContentContextMenu(linkItems, position); }
     return;
   }
+  await selectLink();
   const editing = params.isEditable ? await captureEditableContext(contents, frame, report) : null;
   const run = (action: FileViewerMenuAction | 'copy') => {
     if (contents.isDestroyed()) return;
@@ -74,5 +101,5 @@ async function showFileViewerMenu(contents: WebContents, params: ContextMenuPara
     };
     return perform().catch(report);
   };
-  showContentContextMenu(fileViewerMenuItems(context, labels, run, editing?.editorHistory), position, editing?.close);
+  showContentContextMenu([...linkItems, ...(linkItems.length ? [{ type: 'separator' as const }] : []), ...fileViewerMenuItems(context, labels, run, editing?.editorHistory)], position, editing?.close);
 }

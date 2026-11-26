@@ -31,6 +31,7 @@ import {
 } from './pty-keybindings';
 import { sendTerminalInput } from './send-terminal-input';
 import { getTerminalContextLink } from './terminal-context-link';
+import { openWebLink } from '@renderer/lib/open-web-link';
 import { handleTerminalKeyboardExit } from './terminal-keyboard-exit';
 import { buildTerminalFontFamily, flushTerminalWidthCache } from './terminal-font';
 import { getCellMetrics } from './xterm-cell-metrics';
@@ -531,6 +532,7 @@ export function usePty(
       });
 
       // ── Native context menu ────────────────────────────────────────────────
+      let contextMenuLink: string | null = null;
       const handleContextMenuMouseDown = (event: MouseEvent) => {
         if (event.button !== 2) return;
         event.preventDefault();
@@ -545,6 +547,7 @@ export function usePty(
         const selectionText =
           terminal.getSelection() || getRecentSelection(lastSelectionRef.current);
         const linkText = getTerminalContextLink(terminal, event);
+        contextMenuLink = linkText;
         void rpc.app.showTerminalContextMenu({
           requestId,
           selectionText,
@@ -569,7 +572,9 @@ export function usePty(
           }
           if (payload.action === 'clear') {
             frontendPty.clear();
+            return;
           }
+          if (payload.action === 'open-link' && contextMenuLink) openWebLink(contextMenuLink, 'app');
         }
       );
       frontendPty.ownedContainer.addEventListener('mousedown', handleContextMenuMouseDown, true);

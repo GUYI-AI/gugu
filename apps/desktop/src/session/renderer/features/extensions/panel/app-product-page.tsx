@@ -24,7 +24,7 @@ import { MarkdownRenderer } from '@renderer/lib/ui/markdown-renderer';
 import { ExpandableImage } from '@renderer/lib/ui/expandable-image';
 import { ToggleGroup, ToggleGroupItem } from '@renderer/lib/ui/toggle-group';
 import { rpc } from '@renderer/lib/ipc';
-import { confirmOpenExternalLink } from '@renderer/lib/open-external-link';
+import { openWebLink } from '@renderer/lib/open-web-link';
 import { cn } from '@renderer/utils/utils';
 import { givesAgentTools } from '@shared/extensions/app-places';
 import {
@@ -98,7 +98,7 @@ export function AppProductPage({
   onManage,
   onForward,
   onAsk,
-  onOpenExternal = confirmOpenExternalLink,
+  onOpenExternal = (url) => { openWebLink(url, 'app'); },
   backgroundSupported = true,
   phoneAgentCapabilities = [],
   resource,
