@@ -588,7 +588,11 @@ export default {
       "removed": "{{actor}} 将 {{target}} 移出了群聊",
       "revokedAdmin": "{{actor}} 撤销了 {{target}} 的管理员身份",
       "transferredOwner": "{{actor}} 将群主转让给 {{target}}",
-      "topicOpened": "{{actor}} 创建了话题："
+      "topicOpened": "{{actor}} 创建了话题：",
+      "webhookAdded": "{{actor}} 添加了 Webhook「{{name}}」",
+      "webhookDisabled": "{{actor}} 停用了 Webhook「{{name}}」",
+      "webhookEnabled": "{{actor}} 重新启用了 Webhook「{{name}}」",
+      "webhookDeleted": "{{actor}} 删除了 Webhook「{{name}}」"
     },
     "memberList": {
       "agentLeave": "使 Agent 退出群聊",

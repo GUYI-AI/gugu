@@ -590,7 +590,11 @@ export default {
       "removed": "{{actor}} removed {{target}} from the group",
       "revokedAdmin": "{{actor}} removed {{target}} as an admin",
       "transferredOwner": "{{actor}} transferred group ownership to {{target}}",
-      "topicOpened": "{{actor}} opened a topic: "
+      "topicOpened": "{{actor}} opened a topic: ",
+      "webhookAdded": "{{actor}} added the webhook “{{name}}”",
+      "webhookDisabled": "{{actor}} disabled the webhook “{{name}}”",
+      "webhookEnabled": "{{actor}} enabled the webhook “{{name}}” again",
+      "webhookDeleted": "{{actor}} deleted the webhook “{{name}}”"
     },
     "memberList": {
       "agentLeave": "Remove the Agent from this group",
