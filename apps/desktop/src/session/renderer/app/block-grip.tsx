@@ -13,7 +13,7 @@ export const CloseSplitBlock = observer(function CloseSplitBlock({ blockId }: { 
   const { translate } = useSessionMessages();
   if (screenLayout.order.length < 2) return null;
   const label = translate('screen.leaveSplit');
-  return <IconButton size="sm" aria-label={label} title={label} onClick={() => closeScreenBlock(blockId)}><X /></IconButton>;
+  return <IconButton className="screen-block-close" size="sm" aria-label={label} title={label} onClick={() => closeScreenBlock(blockId)}><X /></IconButton>;
 });
 
 /**
