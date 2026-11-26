@@ -1,76 +1,51 @@
 import { playSpring } from './panel-clock';
 
 /**
- * @@@panel-track — the one place a panel's size moves on screen. A track is a row (or column) of slots before a `fill` that
- * takes the rest; callers say where slots go (`to` on the spring, `jump` at once) and never animate.
+ * @@@panel-track — the one place a panel's size moves on screen. A track is a row (or column) of slots before a `fill`
+ * that takes the rest; callers say where slots go (`to` moves there, `jump` is there at once) and never animate.
  *
- *  · The size is the state: every frame each slot is laid out at the size it is drawn at (❌ transforms over a layout that
- *    already landed), and the fill, in the flow, takes what is left — what is beside a moving panel re-lays out with it.
- *  · A slot or the fill going to or from nothing keeps its content at its open size and moves with its edge, as a sheet
- *    pulled out (a slot's far edge on its drawn edge, the fill's near edge), fading behind a soft edge (owner 11-21). A slot
- *    that stays and holds its content (the list through a fold) keeps it where it is laid out, clipped at the drawn edge:
- *    its avatars do not move, a rail fades its own text. Any other slot's content is its drawn size.
+ *  · The layout is the state. A slot's size is its box's size: `jump` writes it, `to` writes it and has the platform move
+ *    the box there (an animation of the size itself, ❌ a transform over a layout that already landed), so every frame is
+ *    laid out at the size it is drawn at and what is beside a moving panel re-lays out with it. Nothing here keeps where a
+ *    box is drawn: who needs it measures the box. A move's only own state is how far the spring has come, stepped in
+ *    frames (@@@frame-clock) and handed to the platform's animations as their time.
+ *  · A slot or the fill going to or from nothing keeps its content at its open size, on the edge that moves (a slot's far
+ *    edge, the fill's near edge), as a sheet pulled out, fading behind a soft edge (owner 11-21). At nothing the content
+ *    stays laid out at that size — the one thing the layout would not otherwise remember — out of the window and inert.
+ *  · Between two open sizes content is its drawn size in every frame; one that does not reflow keeps the wider until it lands.
  */
 
-/** Every edge this close to where it goes ends the move: the spring's sub-pixel tail would hold the landing layout back. */
+/** A size this close to nothing is nothing. */
 export const PANEL_LANDED_PX = 0.5;
 
 /** A fading slot's soft edge: transparent at its drawn edge, opaque this far in. */
 export const PANEL_SOFT_EDGE_PX = 24;
-const SOFT_EDGE = { x: `linear-gradient(to left, transparent 0, black ${PANEL_SOFT_EDGE_PX}px)`, y: `linear-gradient(to top, transparent 0, black ${PANEL_SOFT_EDGE_PX}px)` };
+const softEdge = (toward: string) => `linear-gradient(to ${toward}, transparent 0, black ${PANEL_SOFT_EDGE_PX}px)`;
+/** The edge that moves: a slot's far end, the fill's near end. */
+const SOFT_EDGE = { x: { slot: softEdge('left'), fill: softEdge('right') }, y: { slot: softEdge('top'), fill: softEdge('bottom') } };
+
+/** Where a box at nothing is drawn: out of any window, at its own size (inert does not take back the app-region rects its
+ *  content hands the window). ❌ visibility (it restyles the whole subtree), ❌ scale(0) (what measures the box reads nothing). */
+const OUT_OF_WINDOW = 'translate(-100000px, -100000px)';
+
+/** A move as the platform's animation, linear over a nominal time: the spring's progress is set as its time. */
+const MOVE = { duration: 1000, fill: 'both' } as const;
 
 export function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-/** Where a slot goes: the size it takes on screen, and the size its content is laid out at there (default: the same). */
+/** Where a slot goes: the size it takes on screen. */
 export interface SlotTarget {
   size: number;
+  /** The size its content is laid out at whatever the slot's (default: the slot's, and at nothing the size it was open at). */
   content?: number;
-  /** Narrowing, its content takes the new size at the move's start; what it gives up is drawn over by the slot after it. */
+  /** Between two open sizes its content is laid out at the drawn size in every frame (default: the wider, until it lands). */
   reflows?: boolean;
 }
 
-/** Where a slot is drawn now, and the size its content is laid out at. */
-export interface SlotGeometry {
-  drawn: number;
-  content: number;
-}
-
-/** One frame of a slot: its content's offset from the slot's start (px, ≤ 0), opacity, soft edge, out of reach. */
-export interface SlotPaint {
-  offset: number;
-  opacity: number;
-  soft: boolean;
-  /**
-   * Drawn at nothing: inert, and scaled to nothing (❌ visibility, which would restyle its whole subtree). Its content is
-   * still laid out at its open size, off to the side under its neighbour, and inert does not take back the window
-   * app-region rects it hands the window (a folded inner sidebar's drag band swallowed the click on the rail's 「»」 under
-   * it); scale(0) collapses them, as a retained page does (MainLayout).
-   */
-  hidden: boolean;
-}
-
-/** The content size for a frame of a move from `from` to `target`, drawn at `drawn`: held at the open end to or from nothing. */
-export function contentAt(drawn: number, from: { size: number; content: number }, target: Required<SlotTarget>): number {
-  if (Math.min(from.size, target.size) < PANEL_LANDED_PX) return Math.max(from.content, target.content);
-  return target.reflows ? drawn : Math.max(from.content, target.content);
-}
-
-/** A slot's content is clipped at its drawn edge; `faded`, a move to or from nothing, also slides it with the edge. */
-export function paintSlot(slot: SlotGeometry, faded: boolean): SlotPaint {
-  const clip = Math.max(0, slot.content - slot.drawn);
-  const soft = faded && clip > PANEL_LANDED_PX;
-  return {
-    offset: faded ? -clip || 0 : 0,
-    opacity: soft ? clamp01(slot.drawn / slot.content) : 1,
-    soft,
-    hidden: slot.drawn < PANEL_LANDED_PX,
-  };
-}
-
 export interface PanelSlotNodes {
-  /** In the flow: the slot's place in the layout, laid out at its drawn size. */
+  /** In the flow: the slot's place, laid out at its drawn size. Through a move `data-panel-rest` on it is the size its content will rest at, and how much wider than now that is. */
   place: HTMLElement;
   /** Fills `place` and clips the content (overflow clip, ❌ hidden: a hidden box can be scrolled, and focus coming into a
    *  page still off the edge scrolls it, moving everything beside it). */
@@ -82,140 +57,183 @@ export interface PanelSlotNodes {
 interface Slot {
   id: string;
   nodes: PanelSlotNodes | null;
-  geometry: SlotGeometry;
-  from: { size: number; content: number };
-  target: Required<SlotTarget>;
+  /** What the caller last said: written when the nodes come, and what the next `to` is compared with. */
+  target: SlotTarget;
 }
 
-export type PanelTrackListener = (drawn: ReadonlyMap<string, number>, landed: boolean) => void;
-
-/** Slots (in order) and a fill, attached by PanelSlot; geometry is kept, and written when nodes come. */
+/** Slots (in order) and a fill, attached by PanelSlot. */
 export class PanelTrack {
   private readonly slots: Slot[];
-  private fill: { place: HTMLElement; content: HTMLElement } | null = null;
-  /** The track's length (px), when its owner measures it: what the fill's two ends are. */
-  private extent = 0;
-  private fillFrom = 0;
-  private running: { stop: () => void } | null = null;
-  private readonly listeners = new Set<PanelTrackListener>();
+  private fill: PanelSlotNodes | null = null;
+  /** The move under way: the platform's animations of it, and the clock that steps them. */
+  private move: Animation[] = [];
+  private clock: { stop(): void } | null = null;
+  private readonly landings = new Set<() => void>();
 
-  /** `axis`: a row (x, sizes are widths) or a column (y, heights). `extent`: the track's length, if known. */
+  /** `axis`: a row (x, widths) or a column (y, heights). `extent`: the track's length as its owner measures it: the fill has this less the slots, so placing writes and never reads the layout back. */
   constructor(
     slots: readonly { id: string; at: SlotTarget }[],
     private readonly axis: 'x' | 'y' = 'x',
-    extent = 0
+    private extent = 0
   ) {
-    this.slots = slots.map(({ id, at }) => {
-      const target = full(at);
-      return { id, nodes: null, from: { size: target.size, content: target.content }, target, geometry: { drawn: target.size, content: target.content } };
-    });
-    this.extent = extent;
-    this.fillFrom = this.fillAt('drawn');
+    this.slots = slots.map(({ id, at }) => ({ id, nodes: null, target: at }));
   }
 
-  attach(id: string, nodes: PanelSlotNodes | null): void {
-    this.slot(id).nodes = nodes;
-    if (nodes) this.write();
-  }
-
-  attachFill(place: HTMLElement | null, content: HTMLElement | null = place): void {
-    this.fill = place && content ? { place, content } : null;
-    if (this.fill) this.write();
-  }
-
-  /** The track's length changed (its owner measured it); slots are placed by the next `jump` or `to`. */
   measure(extent: number): void {
     this.extent = extent;
   }
 
-  /** Where a slot is drawn now (px). */
-  drawn(id: string): number {
-    return this.slot(id).geometry.drawn;
-  }
-
-  /** Where a slot's move started and where it goes (both its target at rest). */
-  ends(id: string): { from: number; to: number } {
+  attach(id: string, nodes: PanelSlotNodes | null): void {
     const slot = this.slot(id);
-    return { from: this.running ? slot.from.size : slot.target.size, to: slot.target.size };
+    slot.nodes = nodes;
+    if (nodes && !this.moving) this.rest(nodes, slot.target, 'slot', this.extent);
   }
 
-  /** The size a slot's content is laid out at now. */
+  attachFill(nodes: PanelSlotNodes | null): void {
+    this.fill = nodes;
+    if (!this.moving) this.restFill();
+  }
+
+  /** Whether a move is under way. */
+  get moving(): boolean {
+    return this.move.length > 0;
+  }
+
+  /** Where a slot is drawn now (px): its box, measured (its target before it has one). */
+  drawn(id: string): number {
+    const slot = this.slot(id);
+    return slot.nodes ? this.sizeOf(slot.nodes.place) : slot.target.size;
+  }
+
+  /** The size a slot's content is laid out at now (px). */
   content(id: string): number {
-    return this.slot(id).geometry.content;
+    const slot = this.slot(id);
+    return slot.nodes ? this.sizeOf(slot.nodes.content) : (slot.target.content ?? slot.target.size);
   }
 
-  /** Called after every write: each slot's drawn size, and whether the track is at rest. */
-  subscribe(listener: PanelTrackListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+  /** Called when a move ends: it landed, or a jump took it over. */
+  onLanded(listener: () => void): () => void {
+    this.landings.add(listener);
+    return () => this.landings.delete(listener);
   }
 
   /** Puts the slots there now (a drag, a resize, a place without motion). */
-  jump(targets: Readonly<Record<string, SlotTarget>>): void {
+  jump(targets: Readonly<Record<string, SlotTarget>>, landing = this.moving): void {
     this.stop();
     for (const slot of this.slots) {
-      const target = targets[slot.id] ? full(targets[slot.id]) : slot.target;
-      slot.target = target;
-      slot.from = { size: target.size, content: target.content };
-      slot.geometry = { drawn: target.size, content: target.content };
+      const open = slot.target.size || this.extent;
+      slot.target = targets[slot.id] ?? slot.target;
+      if (slot.nodes) this.rest(slot.nodes, slot.target, 'slot', open);
     }
-    this.fillFrom = this.fillAt('drawn');
-    this.write();
+    this.restFill();
+    if (landing) for (const listener of this.landings) listener();
   }
 
-  /** Moves the slots there on the spring from where they are drawn now (a move under way is taken over). */
+  private restFill(): void {
+    const fill = this.fillBox();
+    if (fill) this.rest(fill, { size: this.left((slot) => slot.target.size) }, 'fill', this.extent);
+    else if (this.fill?.place.dataset.panelRest) delete this.fill.place.dataset.panelRest;
+  }
+
+  private fillBox(): PanelSlotNodes | null {
+    return this.fill && this.fill.content !== this.fill.place && this.extent > 0 ? this.fill : null;
+  }
+
+  private left(size: (slot: Slot) => number): number {
+    return Math.max(0, this.extent - this.slots.reduce((sum, slot) => sum + size(slot), 0));
+  }
+
+  /** Moves the slots there from where they are drawn now (a move under way is taken over). */
   to(targets: Readonly<Record<string, SlotTarget>>): void {
     // Reduced motion is the track's to honour, ❌ each caller's.
-    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return this.jump(targets);
-    const next = this.slots.map((slot) => (targets[slot.id] ? full(targets[slot.id]) : slot.target));
-    if (this.slots.every((slot, at) => same(slot.target, next[at]))) return;
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return this.jump(targets, true);
+    if (this.slots.every((slot) => !targets[slot.id] || same(slot.target, targets[slot.id]))) return;
+    const [size] = this.sides;
+    // Where each is drawn now: mid-move measured, at rest where it was put.
+    const from = new Map(this.slots.map((slot) => [slot.id, this.moving ? this.drawn(slot.id) : slot.target.size]));
+    const fillFrom = this.left((slot) => from.get(slot.id)!);
     this.stop();
-    this.fillFrom = this.fillAt('drawn');
-    this.slots.forEach((slot, at) => {
-      slot.target = next[at];
-      slot.from = { ...slot.geometry, size: slot.geometry.drawn };
-    });
-    // Ours before frame 0 (not landed) and before the spring starts: its first frame or its end may come before `animate` returns.
-    const move = { stop: () => {} };
-    this.running = move;
-    this.frame(0);
-    const controls = playSpring((progress) => {
-      if (this.running !== move) return;
-      if (this.slots.every((slot) => Math.abs(slot.from.size + progress * (slot.target.size - slot.from.size) - slot.target.size) < PANEL_LANDED_PX)) this.land();
-      else this.frame(progress);
-    }, () => {
-      if (this.running === move) this.land();
-    });
-    if (this.running === move) move.stop = () => controls.stop();
-    else controls.stop();
+    const move: Animation[] = [];
+    let distance = 0;
+    for (const slot of this.slots) {
+      slot.target = targets[slot.id] ?? slot.target;
+      const nodes = slot.nodes;
+      const start = from.get(slot.id)!;
+      const end = slot.target.size;
+      distance = Math.max(distance, Math.abs(start - end));
+      if (!nodes) continue;
+      this.sheet(nodes, start, slot.target, 'slot', move);
+      nodes.place.style[size] = `${end}px`;
+      if (Math.abs(start - end) >= PANEL_LANDED_PX) move.push(nodes.place.animate({ [size]: [`${start}px`, `${end}px`] }, MOVE));
+    }
+    // The fill takes what the slots leave; in the flow, it needs no size of its own.
+    const fill = this.fillBox();
+    const fillTo = this.left((slot) => slot.target.size);
+    if (fill) this.sheet(fill, fillFrom, { size: fillTo, reflows: true }, 'fill', move);
+    else if (this.fill && this.extent > 0) this.fill.place.dataset.panelRest = `${fillTo} ${fillTo - fillFrom}`;
+    if (move.length === 0) return this.jump(targets, true); // nothing to move on screen: it has landed all the same
+    for (const animation of move) animation.pause();
+    this.move = move;
+    this.clock = playSpring((progress) => {
+      // There when every edge is within half a pixel: the spring's sub-pixel tail would hold the landing layout back.
+      if (Math.abs(progress - 1) * distance < PANEL_LANDED_PX) return this.jump({});
+      for (const animation of move) animation.currentTime = progress * MOVE.duration;
+    }, () => { if (this.move === move) this.jump({}); });
   }
 
   stop(): void {
-    const running = this.running;
-    this.running = null;
-    running?.stop();
+    const move = this.move;
+    this.move = [];
+    this.clock?.stop();
+    this.clock = null;
+    for (const animation of move) animation.cancel();
   }
 
-  private frame(progress: number): void {
-    for (const slot of this.slots) {
-      const drawn = slot.from.size + progress * (slot.target.size - slot.from.size);
-      slot.geometry = { drawn, content: contentAt(drawn, slot.from, slot.target) };
-    }
-    this.write();
+  /**
+   * A box for the length of a move from `start` to `target`. To or from nothing it is a sheet: its content at its open
+   * size on the edge that moves, the window fading with the share of it that is drawn.
+   */
+  private sheet(nodes: PanelSlotNodes, start: number, target: SlotTarget, role: 'slot' | 'fill', move: Animation[]): void {
+    const [size, near, far] = this.sides;
+    const end = target.size;
+    const faded = Math.min(start, end) < PANEL_LANDED_PX || !!nodes.window.style.maskImage; // or turned round part-way: still a sheet
+    const now = heldPx(nodes.content, size) || start;
+    // A sheet is its open size (opening: where it goes; closing: what it is). Else it reflows, or keeps the wider end.
+    const held = faded ? (target.content ?? (end >= PANEL_LANDED_PX ? end : now)) : target.reflows && target.content === undefined ? null : Math.max(now, target.content ?? end);
+    nodes.content.style[size] = held === null ? '100%' : `${held}px`;
+    const rest = faded ? held! : (target.content ?? end);
+    nodes.place.dataset.panelRest = `${rest} ${rest - (held ?? start)}`;
+    nodes.content.style[near] = faded && role === 'slot' ? 'auto' : '';
+    nodes.content.style[far] = faded && role === 'slot' ? '0' : '';
+    nodes.window.style.maskImage = faded ? SOFT_EDGE[this.axis][role] : '';
+    nodes.window.style.transform = '';
+    nodes.window.inert = false;
+    if (faded && held) move.push(nodes.window.animate({ opacity: [clamp01(start / held), clamp01(end / held)] }, MOVE));
   }
 
-  private land(): void {
-    if (!this.running) return;
-    this.stop();
-    for (const slot of this.slots) slot.geometry = { drawn: slot.target.size, content: slot.target.content };
-    this.fillFrom = this.fillAt('drawn');
-    this.write();
+  /** A box at rest at `target`. */
+  private rest(nodes: PanelSlotNodes, target: SlotTarget, role: 'slot' | 'fill', open: number): void {
+    const [size, near, far] = this.sides;
+    const gone = target.size < PANEL_LANDED_PX;
+    const kept = gone && target.content === undefined ? heldPx(nodes.content, size) || open : 0; // at nothing: the size it was open at
+    if (role === 'slot') nodes.place.style[size] = `${target.size}px`;
+    if (nodes.place.dataset.panelRest) delete nodes.place.dataset.panelRest;
+    if (target.content !== undefined) nodes.content.style[size] = `${target.content}px`;
+    else if (!gone) nodes.content.style[size] = role === 'slot' ? '100%' : '';
+    else if (kept > 0) nodes.content.style[size] = `${kept}px`;
+    nodes.content.style[near] = nodes.content.style[far] = '';
+    nodes.window.style.maskImage = '';
+    nodes.window.style.transform = gone ? OUT_OF_WINDOW : '';
+    nodes.window.inert = gone;
   }
 
-  /** The fill's size with the slots where they are drawn, or where they go (0 when the track is not measured). */
-  private fillAt(end: 'drawn' | 'target'): number {
-    if (this.extent <= 0) return 0;
-    return Math.max(0, this.extent - this.slots.reduce((sum, slot) => sum + (end === 'drawn' ? slot.geometry.drawn : slot.target.size), 0));
+  private get sides() {
+    return this.axis === 'x' ? (['width', 'left', 'right'] as const) : (['height', 'top', 'bottom'] as const);
+  }
+
+  /** A box's size as it is laid out now, mid-move too (❌ its rect: a retained page hidden around it is scaled to nothing). */
+  private sizeOf(element: HTMLElement): number {
+    return parseFloat(element.ownerDocument.defaultView!.getComputedStyle(element)[this.sides[0]]) || 0;
   }
 
   private slot(id: string): Slot {
@@ -223,39 +241,13 @@ export class PanelTrack {
     if (!slot) throw new Error(`panel track has no slot ${id}`);
     return slot;
   }
-
-  private write(): void {
-    const size = this.axis === 'x' ? 'width' : 'height';
-    const start = this.axis === 'x' ? 'left' : 'top';
-    const px = (value: number) => (value ? `${value}px` : '');
-    this.slots.forEach((slot) => {
-      const nodes = slot.nodes;
-      if (!nodes) return;
-      const p = paintSlot(slot.geometry, Math.min(slot.from.size, slot.target.size) < PANEL_LANDED_PX);
-      nodes.place.style[size] = `${slot.geometry.drawn}px`;
-      nodes.content.style[size] = `${slot.geometry.content}px`;
-      nodes.content.style[start] = px(p.offset);
-      nodes.window.style.opacity = p.opacity < 1 ? String(p.opacity) : '';
-      nodes.window.style.maskImage = p.soft ? SOFT_EDGE[this.axis] : '';
-      nodes.window.inert = p.hidden;
-      nodes.window.style.transform = p.hidden ? 'scale(0)' : '';
-    });
-    if (this.fill) {
-      // A fill coming from or going to nothing keeps its open size, its near edge on the last slot's edge.
-      const ends = [this.fillFrom, this.fillAt('target')];
-      const held = this.running && this.extent > 0 && Math.min(...ends) < PANEL_LANDED_PX ? Math.max(...ends) : 0;
-      this.fill.content.style[size] = held ? `${held}px` : '';
-    }
-    const drawn = new Map(this.slots.map((slot) => [slot.id, slot.geometry.drawn]));
-    const landed = !this.running;
-    for (const listener of this.listeners) listener(drawn, landed);
-  }
 }
 
-function full(target: SlotTarget): Required<SlotTarget> {
-  return { size: target.size, content: target.content ?? target.size, reflows: target.reflows ?? false };
+/** The size a content box is held at by its own style (0: it follows its box). */
+function heldPx(content: HTMLElement, size: 'width' | 'height'): number {
+  return content.style[size].endsWith('px') ? parseFloat(content.style[size]) : 0;
 }
 
-function same(a: Required<SlotTarget>, b: Required<SlotTarget>): boolean {
-  return a.size === b.size && a.content === b.content && a.reflows === b.reflows;
+function same(a: SlotTarget, b: SlotTarget): boolean {
+  return a.size === b.size && a.content === b.content && (a.reflows ?? false) === (b.reflows ?? false);
 }

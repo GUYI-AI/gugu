@@ -64,7 +64,7 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
     observer.observe(root);
     return () => observer.disconnect();
   }, [workspaceRootRef, setWorkspaceWidth]);
-  const fillRef = useCallback((element: HTMLDivElement | null) => track.attachFill(element), [track]);
+  const fillRef = useCallback((element: HTMLDivElement | null) => track.attachFill(element && { place: element, window: element, content: element }), [track]);
 
   const maxSidebarWidth = () => {
     const rootWidth = workspaceRootRef.current?.clientWidth ?? 0;
@@ -84,21 +84,10 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
           fold each is laid out at the size it is drawn at, and the page takes the rest. The list keeps its width through the
           fold and is clipped at its drawn edge (its text fades, left-sidebar); it lands on the rail's width with the rows'
           rail layout. */}
-      <PanelSlot track={track} id="list" className="z-40">
-        <div
-          data-workspace-left-panel=""
-          className={cn(
-            'absolute inset-0 bg-background-tertiary',
-            // 拖分隔条时别让指针顺手把侧栏里的文字选中 —— 与工作区面板同一处方。
-            isResizing && 'select-none'
-          )}
-        >
-          {leftSidebar}
-        </div>
-      </PanelSlot>
-      {/* #2548 a sidebar that collapses to a rail keeps its edge: dragging the rail's edge opens it. */}
-      <PanelResizeHandle
-          offset={leftAnimatedWidth}
+      {/* #2548 a sidebar that collapses to a rail keeps its edge: dragging the rail's edge opens it. The handle is the
+          slot's edge: where the list is drawn in every frame. */}
+      <PanelSlot track={track} id="list" className="z-40" edge={
+        <PanelResizeHandle
           ariaLabel={translate('task.resizeSidebar')}
           // #2548 the sidebar as one list draws no line on its edge: hovering it only shows the resize cursor.
           className="hover:bg-transparent"
@@ -113,11 +102,24 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
           // (mock v18 拖边缘), ❌ the half-the-minimum threshold that collapsed it mid-drag.
           follow={{ onMove: (raw) => dragLeftEdge(raw, maxSidebarWidth()), onRelease: releaseLeftEdge }}
         />
-      {/* #2642 内层栏右边缘的分隔条,规矩同上面那一根(悬停才出线、拖动跟手、松手存、左右键步进),只是拖不收:这一列有自己的
-          收起钮,拖到最窄就停住。排在这一列**前面**:它和正文之间 ❌ 夹东西。 */}
-      {innerSidebarShown ? (
+      }>
+        <div
+          data-workspace-left-panel=""
+          className={cn(
+            'absolute inset-0 bg-background-tertiary',
+            // 拖分隔条时别让指针顺手把侧栏里的文字选中 —— 与工作区面板同一处方。
+            isResizing && 'select-none'
+          )}
+        >
+          {leftSidebar}
+        </div>
+      </PanelSlot>
+      {/* 固定占这一格(没有内层侧栏时宽 0):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
+          #2548 有内层栏时它归列表那一层,紧挨着正文那张卡片(desktop-shell.css)。
+          #2642 它右边缘的分隔条规矩同上面那一根(悬停才出线、拖动跟手、松手存、左右键步进),只是拖不收:这一列有自己的
+          收起钮,拖到最窄就停住。 */}
+      <PanelSlot track={track} id="inner" edge={innerSidebarShown ? (
         <PanelResizeHandle
-          offset={innerEdge}
           ariaLabel={translate('task.resizeInnerSidebar')}
           // 从该画的宽起拖:窗口窄时它可能正被夹着,从存着的宽起拖会先空拖一截。
           getSize={innerShownWidth}
@@ -134,13 +136,10 @@ export function WorkspaceLayout({ leftSidebar, mainContent, innerSidebar = null,
             setInnerWidth(size, { persist: true });
           }}
         />
-      ) : null}
-      {/* 固定占这一格(没有内层侧栏时宽 0):正文那一格的位置不因它出现 / 收起而变,正文 ❌ 重挂。
-          #2548 有内层栏时它归列表那一层,紧挨着正文那张卡片(desktop-shell.css)。 */}
-      <PanelSlot track={track} id="inner">
+      ) : null}>
         {innerSidebar}
       </PanelSlot>
-      <div ref={fillRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="">
+      <div ref={fillRef} className="relative flex min-h-0 min-w-0 flex-1 flex-col" data-workspace-content-surface="" data-panel-fill="">
         {mainContent}
         {innerSidebarRestore}
       </div>

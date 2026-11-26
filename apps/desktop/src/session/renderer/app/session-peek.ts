@@ -1,6 +1,8 @@
 import { action, makeObservable, observable } from 'mobx';
 import type { CSSProperties } from 'react';
 import type { SessionParams } from './recent-session-pages';
+import { followBox } from '@renderer/lib/layout/follow-box';
+import { clippedElementBox } from '@/lib/elementVisibility';
 
 /**
  * A session shown beside an App (`gugu.showSession(id, { peek: true })`): its own retained session page — the same page,
@@ -36,27 +38,23 @@ export const PEEKED_PAGE_STYLE: CSSProperties = {
 
 /**
  * @@@follow-the-box - the page is laid over the peek's box by measuring it, as the App pages' layer lays a page over its
- * slot, and again whenever the box or anything above it changes size. Not CSS anchoring: a fixed element only takes an
- * anchor whose containing blocks come before it in the DOM, and the peek's box (in the App's slot, rendered after the
- * retained session pages) does not — the page fell to 0,0 (mac1 10-19; a probe box fixed at the top of <body> did anchor).
- * Placed by the box's viewport rect, then corrected by where it actually landed, so a transformed ancestor cannot skew it.
+ * slot, and follows it the same way (followBox). It cannot be put in the box: the box is in the shell's document tree and
+ * this page's styles are in the session frame's. Placed by the box's viewport rect, then corrected by where it actually
+ * landed, so a transformed ancestor cannot skew it; drawn at the opacity the box is (a peek coming or going on its track).
  */
-export function followBox(page: HTMLElement, box: HTMLElement): () => void {
+export function layOver(page: HTMLElement, box: HTMLElement): () => void {
   const place = () => {
-    const want = box.getBoundingClientRect();
-    const set = (left: number, top: number) => Object.assign(page.style, { left: `${left}px`, top: `${top}px`, width: `${want.width}px`, height: `${want.height}px` });
+    const { full: want, opacity } = clippedElementBox(box, { left: 0, top: 0, width: innerWidth, height: innerHeight });
+    const set = (left: number, top: number) => Object.assign(page.style, { left: `${left}px`, top: `${top}px`, width: `${want.width}px`, height: `${want.height}px`, opacity: opacity < 1 ? String(opacity) : '' });
     set(want.left, want.top);
     const got = page.getBoundingClientRect();
     if (got.left !== want.left || got.top !== want.top) set(2 * want.left - got.left, 2 * want.top - got.top);
   };
   place();
-  const observer = new ResizeObserver(place);
-  for (let node: HTMLElement | null = box; node; node = node.parentElement) observer.observe(node);
-  window.addEventListener('resize', place);
+  const stop = followBox(box, place);
   return () => {
-    observer.disconnect();
-    window.removeEventListener('resize', place);
-    // Its place back to the style it goes to (a block's anchors, or hidden in its own box): that style sets the edges.
-    Object.assign(page.style, { width: '', height: '' });
+    stop();
+    // Its place back to the style it goes to (in a block, or hidden in its own box): that style sets the edges.
+    Object.assign(page.style, { width: '', height: '', opacity: '' });
   };
 }

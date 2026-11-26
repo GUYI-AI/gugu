@@ -1,6 +1,7 @@
 import { action, makeObservable, observable } from 'mobx';
 import { SurfaceShownContext } from '@/lib/retainedSurface';
 import { createContext, useContext, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { ancestorsOf } from '@renderer/lib/layout/follow-box';
 
 // ── Sink ──────────────────────────────────────────────────────────────────────
 
@@ -49,9 +50,12 @@ export function usePaneDimensions(): PaneDimensionsValue | null {
 
 export function PaneDimensionProvider({
   sink,
+  atRest = false,
   children,
 }: {
   sink: PaneDimensionSink;
+  /** Through a move of a panel around it the width is the one it lands at (PanelTrack's data-panel-rest): narrow or not is decided once. */
+  atRest?: boolean;
   children: ReactNode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -73,18 +77,19 @@ export function PaneDimensionProvider({
       sink.setDimensions(width, height);
     };
 
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (!entry) return;
-      const { width, height } = entry.contentRect;
-      commitMeasurement(width, height);
-    });
-    observer.observe(el);
-
+    const places = atRest ? ancestorsOf(el).filter((node): node is HTMLElement => node instanceof HTMLElement && node.matches('[data-panel-slot], [data-panel-fill]')) : [];
+    const toCome = () => { // how much wider the rows moving around it will leave it when they land (null: none is moving)
+      const moving = places.filter((place) => place.dataset.panelRest && getComputedStyle(place.parentElement!).flexDirection !== 'column');
+      return moving.length ? moving.reduce((sum, place) => sum + Number(place.dataset.panelRest!.split(' ')[1]), 0) : null;
+    };
     const measure = () => {
       const { width, height } = el.getBoundingClientRect();
-      commitMeasurement(width, height);
+      commitMeasurement(width + (toCome() ?? 0), height);
     };
+    const observer = new ResizeObserver(() => { if (toCome() === null) measure(); });
+    observer.observe(el);
+    const told = places.length ? new MutationObserver(measure) : undefined;
+    for (const place of places) told!.observe(place, { attributeFilter: ['data-panel-rest'] });
 
     // 初次测量发生在子组件 passive effect 之前；额外等待两帧，覆盖 provider 挂载后
     // 父级 layout effect 才为固定任务帧设置最终尺寸的情况。
@@ -102,9 +107,10 @@ export function PaneDimensionProvider({
 
     return () => {
       observer.disconnect();
+      told?.disconnect();
       if (settleFrame !== null) cancelAnimationFrame(settleFrame);
     };
-  }, [sink, shown]);
+  }, [sink, shown, atRest]);
 
   return (
     <PaneDimensionContext.Provider value={{ containerRef, sink }}>

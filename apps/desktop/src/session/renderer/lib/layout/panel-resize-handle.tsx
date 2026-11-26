@@ -20,8 +20,6 @@ function stripStyle(offset: MotionValue<number>) {
 }
 
 interface PanelResizeHandleProps {
-  /** 面板此刻的**占位**宽 —— 把手骑在这条边界上,所以它和面板是一起动的。 */
-  offset: MotionValue<number>;
   /** 面板当前的目标宽(px)。拖拽以它为基准,而不是读 DOM —— 读 DOM 会读到动画中的中间值。 */
   getSize: () => number;
   minSize: number;
@@ -46,14 +44,13 @@ interface PanelResizeHandleProps {
  *
  * 分隔条只负责把指针位移翻译成宽度;宽度在屏上怎么走归 PanelTrack(panel-track.ts)。
  *
- * **它是脱离文档流的**(绝对定位骑在边界上),这一点是动效的一部分而不是写法偏好:留在流里的话,
- * 面板一开始收起它就整条消失,主区会先横跳一个把手宽再开始滑 —— 那一下正是"发虚"。
- * 写法是 `group absolute … cursor-col-resize`,可见的线只在 hover 时才出现。
+ * 它画在面板那一格的远端边上(PanelSlot 的 `edge`):格子每一帧画多宽,它就在那条边上,不用另外摆位。
+ * **不占流内位置**(绝对定位骑在边界上):占位的话面板一开始收起它就整条消失,主区会先横跳一个把手宽再开始滑。
+ * 可见的线只在 hover 时才出现。
  *
  * 收起成一列(#2548,`follow`)的面板:拖的时候整块跟手,松手才由调用方吸到近的那一态。
  */
 export function PanelResizeHandle({
-  offset,
   getSize,
   minSize,
   maxSize,
@@ -88,7 +85,7 @@ export function PanelResizeHandle({
   };
 
   return (
-    <motion.div
+    <div
       role="separator"
       aria-orientation="vertical"
       aria-label={ariaLabel}
@@ -100,7 +97,7 @@ export function PanelResizeHandle({
         'absolute inset-y-0 z-40 cursor-col-resize outline-none transition-colors hover:bg-border/60',
         className
       )}
-      style={stripStyle(offset)}
+      style={{ width: HIT_STRIP_PX, right: -HIT_STRIP_PX / 2 }}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.preventDefault();

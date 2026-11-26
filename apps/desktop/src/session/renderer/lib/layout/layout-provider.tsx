@@ -202,6 +202,26 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const targets = () => ({ list: listTarget(), inner: innerTarget() });
 
   const [track] = useState(() => new PanelTrack([{ id: 'list', at: listTarget() }, { id: 'inner', at: { size: 0 } }]));
+  const leftAnimatedWidth = useMotionValue(track.drawn('list'));
+  const leftProgress = useMotionValue(listProgress(track.drawn('list'), leftWidth.get()));
+  const innerEdge = useMotionValue(track.drawn('list') + track.drawn('inner'));
+  const leftRailLayout = useMotionValue(sidebarRailLayout(track.content('list')));
+  const [read] = useState(() => () => { // what follows the list's edge reads the layout: when the track is told to go, as the slots resize, when it lands
+    const list = track.drawn('list');
+    // The edge first: a follower of the progress reads it (useSidebarProgressFollow) in the same frame.
+    leftRailLayout.set(sidebarRailLayout(track.content('list')));
+    leftAnimatedWidth.set(list);
+    innerEdge.set(list + track.drawn('inner'));
+    leftProgress.set(listProgress(list, leftWidth.get()));
+  });
+  useLayoutEffect(() => {
+    const places = [...(workspaceRootRef.current?.querySelectorAll<HTMLElement>(':scope > [data-panel-slot]') ?? [])];
+    const resized = places.length ? new ResizeObserver(read) : undefined;
+    for (const place of places) resized!.observe(place);
+    const offLanded = track.onLanded(read);
+    return () => { resized?.disconnect(); offLanded(); };
+  }, [track, read]);
+
   const innerCrowded = useMotionValue(false);
   const crowded = () => {
     const card = innerCardWidth();
@@ -210,28 +230,13 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const move = useCallback(() => {
     innerCrowded.set(crowded());
     track.to(targets());
-  }, [track, innerCrowded]);
+    read();
+  }, [track, innerCrowded, read]);
   const jump = useCallback(() => {
     innerCrowded.set(crowded());
     track.jump(targets());
-  }, [track, innerCrowded]);
-
-  const leftAnimatedWidth = useMotionValue(track.drawn('list'));
-  const leftProgress = useMotionValue(listProgress(track.drawn('list'), leftWidth.get()));
-  const innerEdge = useMotionValue(track.drawn('list') + track.drawn('inner'));
-  const leftRailLayout = useMotionValue(sidebarRailLayout(track.content('list')));
-  useLayoutEffect(
-    () =>
-      // The edge first: a follower of the progress reads it (useSidebarProgressFollow) in the same frame.
-      track.subscribe((drawn) => {
-        const list = drawn.get('list')!;
-        leftRailLayout.set(sidebarRailLayout(track.content('list')));
-        leftAnimatedWidth.set(list);
-        innerEdge.set(list + drawn.get('inner')!);
-        leftProgress.set(listProgress(list, leftWidth.get()));
-      }),
-    [track, leftRailLayout, leftAnimatedWidth, innerEdge, leftProgress, leftWidth]
-  );
+    read();
+  }, [track, innerCrowded, read]);
 
   /** An edge drag under way (rail only): the width it started from. */
   const edgeDragRef = useRef<{ startWidth: number } | null>(null);
@@ -265,6 +270,7 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
   const setWorkspaceWidth = useCallback((width: number) => {
     if (state.current.rootWidth === width) return;
     state.current.rootWidth = width;
+    track.measure(width);
     jump();
   }, [jump]);
 
@@ -316,8 +322,9 @@ export function useWorkspaceLayoutService(): WorkspaceLayoutContextValue {
       leftWidth.set(next.width);
       // Below the minimum the list keeps the minimum's layout and is drawn as wide as the pointer says.
       track.jump({ list: { size: sidebarOccupiedWidth(next.progress, next.width, SIDEBAR_RAIL_PX), content: next.width }, inner: innerTarget() });
+      read();
     },
-    [leftWidth, track]
+    [leftWidth, track, read]
   );
 
   const releaseLeftEdge = useCallback(() => {

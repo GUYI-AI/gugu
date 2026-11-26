@@ -1,6 +1,10 @@
 import { tabFullscreen, WORKSPACE_ANCHOR } from '@renderer/features/tabs/tab-fullscreen';
 import { observer } from 'mobx-react-lite';
-import { type CSSProperties, type DragEvent } from 'react';
+import { useContext, type CSSProperties, type DragEvent } from 'react';
+import { SurfaceShownContext } from '@/lib/retainedSurface';
+import { sessionPeek } from './session-peek';
+import { screenPark, sessionPageHost } from './screen-block-boxes';
+import { SurfaceBox } from '@renderer/lib/layout/place-in';
 import { Settings } from '@/lib/icons';
 import { groupParticipantPanes } from '@renderer/features/chats/group-participant-panes';
 import { participantSplitSizes } from '@renderer/features/chats/group-participant-width';
@@ -70,20 +74,6 @@ const soleBlock = (pane: Extract<PaneLayoutNode, { type: 'pane' }>): Extract<Pan
   sizes: [100],
 });
 
-/** 一块的占位贴到哪个锚点名上:会话页按这个名字找到自己那块。 */
-export const blockAnchorName = (blockId: string) => `--${blockId}`;
-
-/** 一个会话页贴到它那块上:四条边对齐那块的四条边(CSS 锚点定位,跟着分界逐帧走,不用量)。 */
-export const anchoredToBlock = (blockId: string): CSSProperties =>
-  ({
-    position: 'absolute',
-    positionAnchor: blockAnchorName(blockId),
-    top: 'anchor(top)',
-    bottom: 'anchor(bottom)',
-    left: 'anchor(left)',
-    right: 'anchor(right)',
-  }) as CSSProperties;
-
 /** 一块(或一刀下的几块)最少多宽 / 多高:每块按它里面的格子算(blockMinExtent),顺着排的加起来,横着叠的取最大。 */
 function blockTreeMin(node: PaneLayoutNode, axis: 'width' | 'height'): number {
   if (node.type === 'pane') return blockMinExtent(node.paneId, axis);
@@ -130,16 +120,19 @@ const BlockCut = observer(function BlockCut({ node }: { node: Extract<PaneLayout
   );
 });
 
-/** 一块的占位。会话块是空的(会话页贴在它上面);App 块、项目块在这里画它那条页签条和它的页。 */
+/** 一块的占位。会话块是空的(会话页放进它里面,screen-block-boxes);App 块、项目块在这里画它那条页签条和它的页。 */
 const BlockSlot = observer(function BlockSlot({ blockId }: { blockId: string }) {
   const block = screenLayout.blocks.get(blockId);
+  // A session's block shows that session's page, unless the screen is not drawn and the page is beside an App instead.
+  const shown = useContext(SurfaceShownContext);
+  const page = block?.kind === 'session' && (shown || sessionPeek.current?.sessionId !== block.sessionId) ? sessionPageHost(block.sessionId) : null;
   return (
     <div
       className="relative flex h-full w-full min-h-0 min-w-0 flex-1 flex-col bg-[var(--screen-ground,var(--color-background))]"
-      style={{ anchorName: blockAnchorName(blockId) } as CSSProperties}
       data-screen-block={blockId}
       onPointerDownCapture={() => focusScreenBlock(blockId)}
     >
+      <SurfaceBox host={page} park={screenPark} className="contents" />
       {block?.kind === 'app' ? <AppBlock blockId={blockId} tabKind={block.tabKind} /> : null}
       {block?.kind === 'project' ? (
         <ProjectBlock blockId={blockId} projectId={block.projectId} />

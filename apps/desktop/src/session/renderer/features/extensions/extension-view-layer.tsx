@@ -118,16 +118,16 @@ interface Surface {
  * fixed 全屏格是裁剪边界:格外原分栏的 overflow 不再裁它,格内与根层的裁剪仍然有效。
  * 两边都按视口量,再换算到本层坐标,祖先有 transform 也不歪。
  */
-function boxOf(element: HTMLElement, layer: HTMLElement): { full: Box; clip: Box } {
+function boxOf(element: HTMLElement, layer: HTMLElement): { full: Box; clip: Box; opacity: number } {
   const l = elementBox(layer);
-  const { full, clip } = clippedElementBox(element, l);
+  const { full, clip, opacity } = clippedElementBox(element, l);
   const toLayer = (b: Box): Box => ({
     left: Math.round(b.left - l.left),
     top: Math.round(b.top - l.top),
     width: Math.round(b.width),
     height: Math.round(b.height),
   });
-  return { full: toLayer(full), clip: toLayer(clip) };
+  return { full: toLayer(full), clip: toLayer(clip), opacity };
 }
 
 
@@ -480,7 +480,7 @@ export const ExtensionPage = observer(function ExtensionPage({
           // sampled again — a hit test right after the motion's writes lays out the whole page in that frame.
           const place = (following = false) => {
             if (following) followedAt = performance.now();
-            const { full, clip } = boxOf(claim.element, layer);
+            const { full, clip, opacity } = boxOf(claim.element, layer);
             const shown =
               clip.width > 0 &&
               clip.height > 0 &&
@@ -501,7 +501,8 @@ export const ExtensionPage = observer(function ExtensionPage({
               : ancestors.some((element) => element.hasAttribute('data-tab-fullscreen'))
                 ? 'var(--z-pane-fullscreen-resident)'
                 : 'var(--z-pane-resident)';
-            if (managed) box.style.opacity = shown ? '1' : '0';
+            // Drawn as its slot is, fading with its panel. Hidden, only a managed page is made clear (a guest under opacity 0 stops drawing).
+            box.style.opacity = managed && !shown ? '0' : opacity < 1 ? String(opacity) : managed ? '1' : '';
             box.inert = !shown;
             const inner = innerRef.current;
             if (inner) {

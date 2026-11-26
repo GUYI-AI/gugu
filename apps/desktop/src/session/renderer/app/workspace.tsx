@@ -20,14 +20,17 @@ import { registeredViews } from '@renderer/lib/layout/registered-views';
 import type { ViewDefinition, ViewId } from './view-registry';
 import { useRecentSessions, type SessionParams } from './recent-session-pages';
 import { ScreenBlockContext } from './screen-block-context';
-import { anchoredToBlock, ScreenFrame, screenDropHandlers } from './screen-frame';
+import { ScreenFrame, screenDropHandlers } from './screen-frame';
+import { screenPark, sessionPageHost, sessionPageHosts } from './screen-block-boxes';
+import { FILLS_BOX, placeIn } from '@renderer/lib/layout/place-in';
+import { createPortal } from 'react-dom';
 import { DropHighlightLayer, hideDropHighlight } from '@renderer/lib/drop-highlight';
 import { hasDraggedScreenContent } from '@renderer/lib/drag-screen-content';
 import { shieldNativeDrags } from '@renderer/lib/drag-shield';
 import { screenLayout } from './screen-layout';
 import { ensureScreenLayoutSync, focusScreenBlock, isScreenView, putBackFromWindow, setBlockDropPreview } from './screen-layout-actions';
 import { auxWindows } from './aux-windows';
-import { followBox, PEEKED_PAGE_STYLE, sessionPeek } from './session-peek';
+import { layOver, PEEKED_PAGE_STYLE, sessionPeek } from './session-peek';
 import { sessionRegistry } from '@renderer/features/sessions/stores/session-registry';
 import { Button } from '@renderer/lib/ui/button';
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
@@ -131,7 +134,7 @@ const ScreenArea = observer(function ScreenArea({
     []
   );
   return (
-    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...handlers}>
+    <div ref={(park) => { screenPark.current = park; }} className="relative flex min-h-0 min-w-0 flex-1 flex-col" {...handlers}>
       {/* @@@retained-screen — the screen stays mounted under Library & the other places: going back flips it visible,
           its chat blocks keep their live message windows (no remount, no refetch, no restyle of the whole list). */}
       <div style={onSessionView ? SHOWN_IN_PLACE : RETAINED_SURFACE_HIDDEN_STYLE}>
@@ -201,13 +204,17 @@ const RetainedSessionPage = memo(function RetainedSessionPage({
   const embedVisible = useSyncExternalStore(subscribeEmbedVisibility, isEmbedVisible);
   const shown = (blockId !== null && embedVisible) || peekBox !== null;
   const pageRef = useRef<HTMLDivElement | null>(null);
-  useLayoutEffect(() => (pageRef.current && peekBox ? followBox(pageRef.current, peekBox) : undefined), [peekBox]);
+  useLayoutEffect(() => (pageRef.current && peekBox ? layOver(pageRef.current, peekBox) : undefined), [peekBox]);
+  // Rendered once, into its host (@@@placed-surface): its block puts the host in its box; on no block it is in the screen's.
+  const host = sessionPageHost(sessionId);
+  useLayoutEffect(() => { if (!host.isConnected) placeIn(host, screenPark.current); });
+  useLayoutEffect(() => () => { host.remove(); sessionPageHosts.delete(sessionId); }, [host, sessionId]);
   const place = useMemo(() => ({ blockId, focused, topLeft, multi }), [blockId, focused, topLeft, multi]);
-  return (
+  return createPortal(
     <div
       className="flex min-h-0 min-w-0 flex-col"
       ref={pageRef}
-      style={blockId ? anchoredToBlock(blockId) : peekBox ? PEEKED_PAGE_STYLE : RETAINED_SURFACE_HIDDEN_STYLE}
+      style={blockId ? FILLS_BOX : peekBox ? PEEKED_PAGE_STYLE : RETAINED_SURFACE_HIDDEN_STYLE}
       data-screen-page={blockId ?? undefined}
       // 在一块里按下 = 看这一块(导航跟到它的会话);已经是正看着的就什么都不做。
       onPointerDownCapture={blockId && !focused ? () => focusScreenBlock(blockId) : undefined}
@@ -219,7 +226,8 @@ const RetainedSessionPage = memo(function RetainedSessionPage({
           </sessionView.WrapView>
         </ScreenBlockContext.Provider>
       </SurfaceShown>
-    </div>
+    </div>,
+    host
   );
 });
 

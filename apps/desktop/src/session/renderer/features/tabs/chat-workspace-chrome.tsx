@@ -1,9 +1,10 @@
 import { useDndContext } from '@dnd-kit/core';
 import { observer } from 'mobx-react-lite';
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { createPortal } from 'react-dom';
+import { SurfaceBox } from '@renderer/lib/layout/place-in';
 import { Maximize2, Minimize2, PanelRight } from '@/lib/icons';
 import { Button } from '@renderer/lib/ui/button';
-import { cn } from '@renderer/utils/utils';
 import { openPanelItem } from '../chats/chat-tabs/chat-layouts';
 import { folderItem } from '../chats/chat-tabs/chat-panel-item';
 import { useCommandProvider } from '@renderer/lib/commands/use-command-provider';
@@ -17,8 +18,6 @@ import type { PaneLayoutStore } from './pane-layout-store';
 import { TabBar, TabStripShell } from './tab-bar';
 import { CHAT_TOOL_COMPACT_HEADER_MAX_WIDTH_PX } from './chat-tool-geometry';
 import { ChatWorkspaceTabContext } from './chat-workspace-context';
-import type { CutEdge, CutEdgeRelay } from './chat-workspace-edge';
-import { PANEL_LANDED_PX } from '@renderer/lib/layout/panel-track';
 
 export type ChatWorkspaceChromeProps = {
   actions: ReactNode;
@@ -33,14 +32,21 @@ export type ChatWorkspaceChromeProps = {
 const CAPSULE_BAR_STYLE = { '--tab-strip-height': '56px', '--tab-strip-inset-start': '0px', '--tab-strip-inset-end': '0px', '--tab-strip': 'var(--bg)', '--color-tab-strip': 'var(--bg)' } as CSSProperties;
 
 export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
-  layout, edge, actions, addTab, leading, reserveShellRestoreLane, leadingReservePx, embedded = false,
-}: ChatWorkspaceChromeProps & { layout: PaneLayoutStore; edge?: CutEdgeRelay }) {
+  layout, heads, inCells, park, anchor, actions, addTab, leading, reserveShellRestoreLane, leadingReservePx, embedded = false,
+}: ChatWorkspaceChromeProps & {
+  layout: PaneLayoutStore;
+  /** The strip's two columns' hosts (@@@placed-surface), and whether pane-tree-view shows them at the heads of their panes' cells. */
+  heads: { chat: HTMLElement; tools: HTMLElement };
+  inCells: boolean;
+  park: RefObject<Element | null>;
+  anchor: string; // the workspace's box, as a CSS anchor
+}) {
   const { translate } = useSessionMessages();
   const panes = layout.chatWorkspacePanes;
   const mode = layout.chatWorkspaceMode;
   const { focused } = useScreenBlock();
   const dragging = useDndContext().active !== null;
-  const header = useRef<HTMLDivElement>(null);
+  const header = park; // where the strip's hosts wait while no box shows them: also what the hooks below find the workspace from
   useCommandProvider({
     scopeId: 'session-sub',
     isActive: (element) => {
@@ -80,74 +86,49 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
     return () => ownerDocument.removeEventListener('keydown', keyDown, true);
   }, [dragging, embedded, focused, layout, mode]);
   const chatColumn = useRef<HTMLDivElement>(null);
-  const toolColumn = useRef<HTMLDivElement>(null);
-  // Divided, the conversation strip's width at rest: its look (narrow or not) follows it, ❌ the width drawn mid-move.
+  // Through a move the conversation strip keeps one look (narrow or not): that of the narrower end, ❌ the width drawn.
   const [chatRest, setChatRest] = useState<number>();
   const tools = panes?.tools;
   // The tools on their way off (hidden): their tabs leave with their page (@@@leaving-panes), ❌ before it.
   const leaving = mode === 'hidden' && !!tools && !layout.narrow && layout.isPaneShown(tools.paneId);
   const divided = (mode === 'split' || leaving) && !!tools && !layout.narrow;
   const toolsFirst = divided && layout.groups[0] === tools;
-  // Side by side with the tools on the right, the conversation and the tools are two cards (index.css): each card gives half
-  // the gutter out of its slot, and the conversation's slot ends in the divider's pixel.
+  // Side by side with the tools on the right, the conversation and the tools are two cards (index.css): each gives half
+  // the gutter out of its cell.
   const toolCard = !!layout.chatToolCardPaneId;
-  // @@@strip-on-track: divided, the strip's columns are placed on the root cut's first edge as it is drawn. The tools' tabs
-  // are laid out as their page beneath is (PanelTrack's slots and fill): coming from or going to nothing, at their open
-  // width on the moving edge, clipped by the strip; between two open widths, at the width drawn, so the strip is its card's
-  // in every frame (❌ the wider end's: its far end, the + and the row's buttons, would sit past the card until it lands).
-  // The conversation column ends on the edge, its look (narrow or not) that of its width at rest.
+  const full = mode === 'full';
+  const sharedStrip = full || mode === 'split' && layout.narrow;
+  // @@@strip-in-cells — the strip's columns are rendered once each, into hosts: side by side each is the head of its pane's
+  // cell, laid out, clipped and faded with the page beneath it; in full view and narrow they are in the row above the pages.
   useLayoutEffect(() => {
-    const chatNode = chatColumn.current;
-    const toolNode = toolColumn.current;
+    const cell = chatColumn.current?.closest<HTMLElement>('[data-panel-slot], [data-panel-fill]');
+    if (!cell || !divided) return setChatRest(undefined);
+    const read = () => setChatRest(cell.dataset.panelRest ? Math.min(parseFloat(cell.dataset.panelRest), cell.offsetWidth) : undefined);
+    read();
+    const told = new MutationObserver(read);
+    told.observe(cell, { attributeFilter: ['data-panel-rest'] });
+    return () => told.disconnect();
+  }, [divided, inCells]);
+  // @@@card-gap — the conversation's half of the gutter closes with the last pixels of the tools' cell. Written on the two
+  // boxes (❌ an inherited variable on the workspace: it restyled the whole conversation, owner 11-26「刚弹出来一点点的那一瞬间卡顿」).
+  useLayoutEffect(() => {
+    const cell = heads.tools.closest<HTMLElement>('[data-panel-slot], [data-panel-fill]');
     const workspace = header.current?.closest<HTMLElement>('[data-chat-tool-workspace]');
-    const halfGap = workspace ? parseFloat(getComputedStyle(workspace).getPropertyValue('--chat-card-half-gap')) || 0 : 0;
-    // The conversation's card body (pane-tree-view's [data-chat-card]) closes its right gap with its head.
-    const chatCard = workspace ? [...workspace.querySelectorAll<HTMLElement>('[data-chat-card]')].find((card) => card.closest('[data-chat-tool-workspace]') === workspace) : undefined;
-    const place = ({ drawn, from, to, extent }: CutEdge) => {
-      // The tools on the right start where the edge is drawn; held open, where it is when they are widest.
-      const toolsStart = Math.max(from, to) > extent - PANEL_LANDED_PX ? Math.min(from, to) : drawn;
-      if (toolsFirst) {
-        const open = Math.min(from, to) < PANEL_LANDED_PX ? Math.max(from, to) : drawn;
-        if (toolNode) Object.assign(toolNode.style, { left: `${drawn - open}px`, width: `${open}px` });
-        if (chatNode) chatNode.style.marginInlineStart = `${drawn}px`;
-        setChatRest(extent - open);
-      } else if (toolCard) {
-        // @@@card-head-width - the cards' heads ride the same edge as their bodies, in the same frame (the edge is written as
-        // the track draws the slots): the conversation's head ends where its card does (its slot less the divider's pixel —
-        // none is drawn while the tools leave — and its right gap), the tools' strip starts where their card does.
-        // The conversation's right gap is half the gutter, ❌ more than the tools have left: as they come on or go off the
-        // track it closes with them, so the card meets the one-card surface without a jump.
-        // Written on the two cards themselves, ❌ as an inherited variable on the workspace: that restyled every element of
-        // the conversation in the first frames of the slide, while the gap opens (owner 11-26「刚弹出来一点点的那一瞬间卡顿」).
-        const divider = leaving ? 0 : 1;
-        const gap = Math.max(0, Math.min(halfGap, extent - drawn - divider));
-        for (const card of [chatNode, chatCard]) if (card) card.style.marginRight = `${gap}px`;
-        if (chatNode) chatNode.style.flex = `0 0 ${drawn - divider - gap}px`;
-        if (toolNode) Object.assign(toolNode.style, { left: `${drawn - 1}px`, width: `calc(100% - ${toolsStart}px - var(--chat-card-half-gap))` });
-        setChatRest(Math.min(from, to));
-      } else {
-        if (chatNode) chatNode.style.flex = `0 1 ${drawn}px`;
-        if (toolNode) Object.assign(toolNode.style, { left: `${drawn}px`, width: `calc(100% - ${toolsStart}px)` });
-        setChatRest(Math.min(from, to));
-      }
-    };
-    // The gap goes with this run (the next one writes its own): the card may have lost [data-chat-card] by then.
-    if (divided && edge) {
-      const detach = edge.attach(place);
-      return () => { detach(); for (const card of [chatNode, chatCard]) card?.style.removeProperty('margin-right'); };
-    }
-    if (chatNode) Object.assign(chatNode.style, { flex: '', marginInlineStart: '' });
-    if (toolNode) Object.assign(toolNode.style, { left: '', width: '' });
-    setChatRest(undefined);
-    return undefined;
-  });
+    if (!toolCard || !cell || !workspace) return undefined;
+    const halfGap = parseFloat(getComputedStyle(workspace).getPropertyValue('--chat-card-half-gap')) || 0;
+    const cards = () => [chatColumn.current, [...workspace.querySelectorAll<HTMLElement>('[data-chat-card]')].find((card) => card.closest('[data-chat-tool-workspace]') === workspace)];
+    const close = new ResizeObserver(([entry]) => {
+      const gap = Math.max(0, Math.min(halfGap, entry.contentRect.width - (leaving ? 0 : 1)));
+      for (const card of cards()) if (card) card.style.marginRight = gap < halfGap ? `${gap}px` : '';
+    });
+    close.observe(cell);
+    return () => { close.disconnect(); for (const card of cards()) card?.style.removeProperty('margin-right'); };
+  }, [toolCard, heads, leaving, inCells]);
   if (!panes || !mode) return null;
   const { chat } = panes;
   const tab = chat.pane.resolvedTabs.find(({ tabId }) => tabId === layout.primaryChatTabId);
   const Title = tab && chat.pane.registry.has(tab.kind) ? chat.pane.registry.get(tab.kind).TabBarItem : null;
-  const full = mode === 'full';
   const toolsShown = full || mode === 'split' || leaving;
-  const sharedStrip = full || mode === 'split' && layout.narrow;
   const chatActive = layout.activePaneId === chat.paneId;
   const leadingProps = { leadingSlot: leading, reserveShellRestoreLane, leadingReservePx };
   // The capsule row (no tools shown beside it, also while they go off; nothing merged): every button floats at its top right,
@@ -159,20 +140,6 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       <Title tab={{ ...tab, pairRole: undefined, isActive: sharedStrip ? chatActive : tab.isActive }} host={chat.pane} ctx={chat.pane.ctx} />
     </ChatWorkspaceTabContext.Provider>
   </PaneProvider> : null;
-  const chatTitle = !sharedStrip && (
-    // 第 16 版 #8:对话自己的那条页签条只剩一颗浮动胶囊(设计稿 .capbar 56 高 / .capsule 居中);在工具旁边它仍是这颗胶囊,❌ 页签。
-    // Beside the tools as a card its width is placed on the cut's edge (place, above); else it fills the row.
-    <div ref={chatColumn} data-chat-workspace-chat-header="" data-chat-card-head={toolCard ? '' : undefined}
-      className={toolCard ? 'min-w-0 flex-none' : 'min-w-0 flex-1'} style={CAPSULE_BAR_STYLE}>
-      <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
-        <ChatWorkspaceTabContext.Provider value={{ role: 'capsule', layout }}>
-          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={floating ? undefined : actions} restWidth={divided ? chatRest : undefined}>
-            {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
-          </TabStripShell>
-        </ChatWorkspaceTabContext.Provider>
-      </PaneProvider>
-    </div>
-  );
   const show = translate('tabs.showToolTabs');
   const hide = translate('tabs.hideToolTabs');
   const tabsVisible = mode === 'split';
@@ -202,8 +169,30 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
       )}
     </TabBarActionRow>
   );
+  const chatTitle = !sharedStrip && (
+    // 第 16 版 #8:对话自己的那条页签条只剩一颗浮动胶囊(设计稿 .capbar 56 高 / .capsule 居中);在工具旁边它仍是这颗胶囊,❌ 页签。
+    <div ref={chatColumn} data-chat-workspace-chat-header="" data-chat-card-head={toolCard ? '' : undefined}
+      className="flex min-w-0 flex-1" style={CAPSULE_BAR_STYLE}>
+      <div className="min-w-0 flex-1">
+      <PaneProvider group={chat} passive isFocusedPane={layout.activePaneId === chat.paneId}>
+        <ChatWorkspaceTabContext.Provider value={{ role: 'capsule', layout }}>
+          <TabStripShell {...(!toolsFirst ? leadingProps : {})} actionsSlot={floating ? undefined : actions} restWidth={divided ? chatRest : undefined}>
+            {tab && Title ? <Title tab={tab} host={chat.pane} ctx={chat.pane.ctx} /> : null}
+          </TabStripShell>
+        </ChatWorkspaceTabContext.Provider>
+      </PaneProvider>
+      </div>
+      {/* The row's buttons close the last column: the tools' strip, or with the tools on the left this one. */}
+      {toolsFirst && mode === 'split' && actionRow}
+      {/* The capsule row's buttons float and take no width, so the capsule centres on the whole card. Pinned to the workspace's
+          corner, ❌ this cell's: they are there from the frame the tools are hidden, ❌ after the tools land. */}
+      {floating && <div ref={measureFloatingActions} className="z-10 flex" style={{ position: 'fixed', positionAnchor: anchor, top: 'anchor(top)', right: 'anchor(right)', height: 'var(--tab-strip-height)' } as CSSProperties} data-chat-capsule-actions="">
+        <div className="flex [--tabbar-actions-edge-gap:0px]">{actions}</div>{actionRow}
+      </div>}
+    </div>
+  );
   const toolTabs = toolsShown && tools && (
-    <div ref={toolColumn} className={divided ? 'absolute inset-y-0 flex' : 'flex min-w-0 flex-1'} data-chat-tool-strip={divided ? '' : undefined}>
+    <div className="flex min-w-0 flex-1" data-chat-tool-strip={divided ? '' : undefined}>
       <div className="min-w-0 flex-1">
         <PaneProvider group={tools} passive isFocusedPane={!sharedStrip || !chatActive}>
           <ChatWorkspaceTabContext.Provider value={{ role: 'tool', layout }}>
@@ -215,26 +204,19 @@ export const ChatWorkspaceChrome = observer(function ChatWorkspaceChrome({
         </PaneProvider>
       </div>
       {/* Only while the tools are shown: hidden, they are on their way off and the buttons are already the header's. */}
-      {toolCard && mode === 'split' && actionRow}
+      {divided && !toolsFirst && mode === 'split' && actionRow}
     </div>
   );
   return (
-    <div ref={header} className={sharedStrip ? 'flex min-w-0 shrink-0 bg-tab-strip' : 'relative flex min-w-0 shrink-0'} data-chat-workspace-header={mode}
-      data-chat-tool-cards={toolCard ? '' : undefined} data-chat-tool-shared={toolsShown && sharedStrip ? '' : undefined}>
-      {/* Clipped (the tools' tabs ride their page in from the edge); the cards' half-pixel rings may show past it. */}
-      <div className={cn('flex min-w-0 flex-1', divided && 'relative overflow-clip', toolCard && '[overflow-clip-margin:1px]')}>
-        {toolsFirst && toolTabs}
-        {chatTitle}
-        {!toolsFirst && toolTabs}
-      </div>
-      {/* The conversation's own head (no tools beside it) is the capsule row: its buttons — the block's, then the view's —
-          float at the top right as one row and take no width, so the capsule centres on the whole card. Beside tools or
-          merged into one strip they share the row. The tools going off (hidden, still on the track) take their strip with them
-          but not these buttons: they are the header's from the frame the tools are hidden, ❌ after they land. */}
-      {floating ? <div ref={measureFloatingActions} className="absolute inset-y-0 right-0 flex" data-chat-capsule-actions="">
-        <div className="flex [--tabbar-actions-edge-gap:0px]">{actions}</div>{actionRow}
-      </div> : !toolCard && actionRow}
-    </div>
+    <>
+      {!inCells && <div className={sharedStrip ? 'flex min-w-0 shrink-0 bg-tab-strip' : 'relative flex min-w-0 shrink-0'} data-chat-workspace-header={mode} data-chat-tool-shared={toolsShown && sharedStrip ? '' : undefined}>
+        <SurfaceBox host={heads.chat} park={park} className="contents" />
+        <SurfaceBox host={heads.tools} park={park} className="contents" />
+        {sharedStrip && actionRow}
+      </div>}
+      {chatTitle ? createPortal(chatTitle, heads.chat) : null}
+      {toolTabs ? createPortal(toolTabs, heads.tools) : null}
+    </>
   );
 });
 

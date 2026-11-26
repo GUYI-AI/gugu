@@ -80,13 +80,13 @@ it('a cut given other shares moves its divider over frames, and lays its panes o
   while (performance.now() - start < 900) {
     await new Promise(requestAnimationFrame);
     edges.push(Math.round(divider.getBoundingClientRect().left));
-    places.add(place.style.width);
+    places.add(getComputedStyle(place).width);
   }
   expect(new Set(edges).size, JSON.stringify(edges)).toBeGreaterThan(5);
   // the place is laid out at the drawn width in every frame
   expect(places.size, [...places].join(' ')).toBeGreaterThan(5);
   // lands on 30% of the cut (less its one divider pixel)
-  const cut = divider.parentElement!.getBoundingClientRect();
+  const cut = divider.closest('[data-track-cut]')!.getBoundingClientRect();
   expect(Math.abs(edges.at(-1)! - cut.left - 0.3 * (cut.width - 1))).toBeLessThan(1.5);
 });
 
@@ -262,6 +262,9 @@ it('splitting and closing a pane keep the pane that stays mounted, its page the 
   await until('the kept pane fills the tree again', () => harness.container.querySelector(`iframe[title="${kept}"]`)?.getBoundingClientRect().width ?? 0, (width) => width === 1000);
   expect(harness.container.querySelector(`iframe[title="${kept}"]`)).toBe(page0);
   expect(mounts).toEqual(['mount kept', 'mount other', 'unmount other']);
+  // The closed pane leaves nothing behind over the page that stays: a click anywhere in it lands on it.
+  expect(harness.container.querySelectorAll('[data-pane-tree-pages] > :not([data-track-cut])').length).toBe(0);
+  expect(document.elementFromPoint(750, 300)).toBe(page0);
 });
 
 it('a page of the pair in full screen keeps the one strip over it, and nothing under it moves', async () => {

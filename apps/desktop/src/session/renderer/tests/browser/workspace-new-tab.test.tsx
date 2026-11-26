@@ -173,7 +173,8 @@ it('opens the actual group tab from the header and reveals explicitly requested 
     <ChatPanes chatId={group.place.chatId} actionsSlot={null} body={<div>群聊正文</div>}
       chip={({ tab, host }) => <ChatTabChip tab={tab} host={host} label="示例群聊" menu={null} focused />} />,
   ));
-  const header = (mode: string) => view.container.querySelector(`[data-chat-workspace-header="${mode}"]`);
+  // Side by side each pane's cell has its head; the tools' strip is in theirs.
+  const header = (mode: string) => view.container.querySelector(`[data-chat-workspace-header="${mode}"]:has([data-chat-tool-strip])`) ?? view.container.querySelector(`[data-chat-workspace-header="${mode}"]`);
   try {
     await expect.poll(() => header('empty')).not.toBeNull();
     await act(() => userEvent.click(page.getByRole('button', { name: '显示标签页' })));

@@ -563,12 +563,11 @@ it('puts the view toggle on the header in the frame the tools are hidden, while 
   workspace.open('tool', { id: 'file' }, { from: null, intent: 'newTab' });
   await mode('split');
   await untilStable('the tools have landed', () => inside('[data-chat-tool-strip]')?.getBoundingClientRect().left);
+  // The capsule row's buttons float at the workspace's top right, over the heads of its cells.
   const onHeader = () => {
-    const header = inside('[data-chat-workspace-header]')!.getBoundingClientRect();
-    return [...inside('[data-chat-workspace-header]')!.querySelectorAll('button[aria-pressed]')].some((button) => {
-      const box = button.getBoundingClientRect();
-      return !button.closest('[data-chat-tool-strip]') && box.width > 0 && box.right <= header.right + 0.5;
-    });
+    const workspace = inside('[data-chat-tool-workspace]')!.getBoundingClientRect();
+    const box = inside('[data-chat-capsule-actions] button[aria-pressed]')?.getBoundingClientRect();
+    return !!box && box.width > 0 && box.right <= workspace.right + 0.5 && box.top < workspace.top + 56;
   };
   workspace.setChatToolLayout('hidden');
   // The first animation frame after hiding, before the tools' track lands: no gap without the toggle.
@@ -584,7 +583,7 @@ it('keeps the view toggle where it lands from the first frame the tools are hidd
   await untilStable('the tools have landed', () => inside('[data-chat-tool-strip]')?.getBoundingClientRect().left);
   const header = inside('[data-chat-workspace-header]')!;
   const toggle = () => {
-    const box = header.querySelector('button[aria-pressed]')!.getBoundingClientRect();
+    const box = inside('[data-chat-capsule-actions] button[aria-pressed]')!.getBoundingClientRect();
     return `${box.x},${box.y}`;
   };
   workspace.setChatToolLayout('hidden');
