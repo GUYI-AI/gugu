@@ -46,17 +46,17 @@ it('reports hook rejection as its existing specific error category', () => {
   expect(classifyPushError(new Error('! [rejected] dev -> dev (non-fast-forward)')).type).toBe('rejected')
 })
 
-it('reports proxy DNS errors during push as network failures', () => {
-  const message = 'fatal: Could not resolve proxy: proxy.test'
-  expect(classifyPushError(new Error(message))).toEqual({ type: 'network_error', message })
-})
-
-it('reports proxy DNS errors during pull as network failures', () => {
-  const message = 'fatal: Could not resolve proxy: proxy.test'
-  expect(classifyPullError(new Error(message))).toEqual({ type: 'network_error', message })
-})
-
-it('reports proxy DNS errors during fetch as network failures', () => {
-  const message = "fatal: unable to access 'https://example.test/repo.git/': Could not resolve proxy: proxy.test"
-  expect(classifyFetchError(new Error(message), 'origin')).toEqual({ type: 'network_error', message })
+it('reports every unreachable-remote failure as a network error for push, pull and fetch alike', () => {
+  const messages = [
+    "fatal: unable to access 'https://example.test/repo.git/': Could not resolve proxy: proxy.test",
+    "fatal: unable to access 'https://example.test/repo.git/': Could not resolve host: example.test",
+    'ssh: connect to host example.test port 22: Connection timed out',
+    'ssh: Could not resolve hostname example.test: Temporary failure in name resolution',
+    "fatal: unable to access 'https://example.test/repo.git/': Failed to connect to example.test port 443: No route to host",
+  ]
+  for (const message of messages) {
+    expect(classifyPushError(new Error(message))).toEqual({ type: 'network_error', message })
+    expect(classifyPullError(new Error(message))).toEqual({ type: 'network_error', message })
+    expect(classifyFetchError(new Error(message), 'origin')).toEqual({ type: 'network_error', message })
+  }
 })
