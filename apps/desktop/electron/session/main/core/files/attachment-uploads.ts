@@ -48,7 +48,18 @@ async function directory(root: string, relative: string) {
 }
 async function readSaved(file: string): Promise<Saved> {
   const handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try { return JSON.parse(await handle.readFile('utf8')) as Saved; }
+  try {
+    let saved: Saved;
+    try { saved = JSON.parse(await handle.readFile('utf8')) as Saved; }
+    catch (error) { if (error instanceof SyntaxError) fail('invalid_payload', 'Upload metadata is not valid JSON'); throw error; }
+    if (!saved || typeof saved !== 'object' || !saved.spec || typeof saved.spec !== 'object') {
+      fail('invalid_payload', 'Upload metadata is not an upload record');
+    }
+    validate(saved.spec);
+    if (!Number.isSafeInteger(saved.received) || saved.received < 0 || saved.received > saved.spec.size
+      || !['uploading', 'committed'].includes(saved.state) || !Number.isFinite(saved.expires)) fail('invalid_payload', 'Upload metadata is invalid');
+    return saved;
+  }
   finally { await handle.close(); }
 }
 async function save(file: string, saved: Saved) {
@@ -93,7 +104,10 @@ export function createAttachmentUploads({ now = Date.now, maxAgeMs = MAX_AGE_MS 
       try {
         const saved = await readSaved(path.join(dir, 'upload.json'));
         if (Number.isFinite(saved.expires) && saved.expires < now()) await rm(dir, { recursive: true, force: true });
-      } catch (error) { if (!missing(error)) throw error; }
+      } catch (error) {
+        // 兄弟上传的坏回执不应阻止新上传；保留原文件，由该上传自己的读取报告错误。
+        if (!missing(error) && !(error instanceof WorkspaceTransferError && error.code === 'invalid_payload')) throw error;
+      }
     }
   }
   async function load(p: Awaited<ReturnType<typeof paths>>, spec: AttachmentUploadSpec): Promise<Saved> {
@@ -102,7 +116,6 @@ export function createAttachmentUploads({ now = Date.now, maxAgeMs = MAX_AGE_MS 
     catch (error) { if (missing(error)) return fail('upload_lost', 'This upload has no retained partial data'); throw error; }
     if (!same(saved.spec, spec) || !Number.isSafeInteger(saved.received) || saved.received < 0 || saved.received > spec.size
       || !['uploading', 'committed'].includes(saved.state) || !Number.isFinite(saved.expires)) fail('invalid_payload', 'Upload identity does not match this file');
-    if (saved.expires < now()) fail('upload_expired', 'The retained upload expired; upload this file again');
     // A crash or lost reply after publication must not cause another upload.
     try {
       const info = await lstat(p.target);
@@ -114,6 +127,7 @@ export function createAttachmentUploads({ now = Date.now, maxAgeMs = MAX_AGE_MS 
         await save(p.meta, saved);
       }
     } catch (error) { if (!missing(error)) throw error; else if (saved.state === 'committed') fail('upload_lost', 'The committed attachment is no longer available'); }
+    if (saved.state !== 'committed' && saved.expires < now()) fail('upload_expired', 'The retained upload expired; upload this file again');
     return saved;
   }
   return {
