@@ -127,7 +127,7 @@ it('routes testing, editing and deleting to the selected device and drops an ope
   await choose('开发机 A');
   await expect.element(page.getByTestId('settings-custom-models')).toHaveTextContent('远端 A 模型');
   await click(page.getByRole('button', { name: '管理模型', exact: true }).nth(1));
-  await click(page.getByRole('button', { name: '编辑 remote-a', exact: true }));
+  await expect.element(page.getByTestId('custom-model-picker')).toBeVisible();
   await click(page.getByTestId('custom-model-test'));
   expect(state.calls).toContainEqual({ machine: 'remote-a', action: 'detect', input: { connectionId: 'remote-a', baseUrl: 'https://provider.test/v1', modelId: 'remote-a' } });
   await expect.element(page.getByTestId('custom-model-dialog')).toBeVisible();

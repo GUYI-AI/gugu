@@ -24,7 +24,7 @@ import { modelProviderIcon } from '@renderer/features/sessions/session-config/mo
 import { useSelectedRemoteDevice } from '@renderer/features/remote-hosts/device-scope-picker';
 import { settingsDeviceStore } from '@renderer/features/remote-hosts/device-scope-store';
 import { Collapse } from '@/components/ui/Collapse';
-import { SettingsGroup, SettingsNote, SettingsRow, Toggle } from './SettingsPrimitives';
+import { SettingsGroup, SettingsNote, SettingsRow } from './SettingsPrimitives';
 import { CustomModelDialog } from './CustomModelDialog';
 import { CodingPlanGroup } from './CodingPlanGroup';
 import { planLabel } from '@renderer/features/settings/subscriptions/subscription-view';
