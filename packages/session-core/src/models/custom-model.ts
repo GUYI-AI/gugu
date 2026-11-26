@@ -117,6 +117,12 @@ export const customModelMetaSchema = z.object({
    * inferred from the refusal. The first real request tells whether the key works; a later save that the address answers clears it.
    */
   unverified: z.boolean().optional(),
+  /** What the check that left it unverified found, kept for diagnosis and not shown (owner 2026-11-27); absent on older records. */
+  unverifiedReason: z.object({
+    reason: z.enum(['model-not-found', 'answered', 'unchecked', 'unauthorized', 'unreachable', 'dns', 'timeout', 'certificate', 'connection-refused', 'redirect', 'proxy']),
+    /** The model the check asked about. */
+    modelId: z.string().max(200).optional(),
+  }).optional(),
   removed: z.boolean().optional(),
 });
 export type CustomModelMeta = z.infer<typeof customModelMetaSchema>;

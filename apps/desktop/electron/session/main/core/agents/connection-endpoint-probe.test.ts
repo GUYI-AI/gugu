@@ -238,3 +238,42 @@ it('asks every generating probe for at least the 16 output tokens OpenAI Respons
   expect(new Set(limits.map(([path]) => String(path).replace(/^\/v1(beta)?/, '')))).toEqual(new Set(['/chat/completions', '/responses', '/messages', '/models/model:generateContent']));
   expect(limits.every(([, limit]) => limit === PROBE_OUTPUT_TOKENS)).toBe(true);
 });
+
+// owner 2026-11-27: api.777358.xyz listed gemini-4-neon, then answered every protocol 404 model_not_found; the save reported
+// "cannot reach this address" after about ten seconds of probing. The relay's own word is kept, and the other protocols not asked.
+it.each([
+  ['OpenAI relay', 404, '{"error":{"message":"Model \\"m\\" is not supported by any configured account in this group","type":"model_not_found"}}'],
+  ['OpenAI', 404, '{"error":{"message":"The model `m` does not exist or you do not have access to it.","code":"model_not_found"}}'],
+  ['Anthropic', 404, '{"type":"error","error":{"type":"not_found_error","message":"model: m"}}'],
+  ['Gemini', 404, '{"error":{"code":404,"message":"models/m is not found for API version v1beta","status":"NOT_FOUND"}}'],
+] as const)('%s saying it does not offer the model is recorded where it said so, and probing stops there', async (_name, status, body) => {
+  const paths: string[] = [];
+  const relay: typeof fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+    paths.push(`${init?.method ?? 'GET'} ${url.pathname}`);
+    if (url.pathname === '/v1/models') return new Response(JSON.stringify({ object: 'list', data: [{ id: 'other' }, { id: 'm' }] }), { status: 200 });
+    return new Response(body, { status });
+  });
+  const result = await probeEndpointProtocols({ baseUrl: 'https://relay.test', apiKey: 'dummy-key', env: {}, modelId: 'm' }, relay);
+  expect(customModelProtocolProbeSchema.parse(result)).toEqual(result);
+  expect(result).toMatchObject({ endpoints: [], models: ['m', 'other'], unserved: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }] });
+  expect(result.failures).toEqual([{ step: 'openai-chat-completions', reason: 'model-not-found' }]);
+  expect(paths).toEqual(['GET /v1/models', 'POST /v1/chat/completions']);
+  expect(JSON.stringify(result)).not.toMatch(/configured account|does not exist|not_found_error|API version/);
+});
+it('a 404 that does not name the model is still a refused path, and probing goes on', async () => {
+  const result = await probeEndpointProtocols({ baseUrl: 'https://relay.test/v1', apiKey: 'dummy-key', env: {}, modelId: 'm' },
+    vi.fn(async () => new Response('{"error":"Not Found"}', { status: 404 })));
+  expect(result.unserved).toBeUndefined();
+  expect(result.failures.filter(({ step }) => step !== 'models').map(({ reason }) => reason)).toEqual(['refused', 'refused', 'refused', 'refused']);
+});
+it('a model one protocol carries is not hidden by another protocol saying it does not offer it', async () => {
+  const later = await probeEndpointProtocols({ baseUrl: 'https://relay.test/v1', apiKey: 'dummy-key', env: {}, modelId: 'm' }, vi.fn(async (input: string | URL | Request) => {
+    const path = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url).pathname;
+    return path === '/v1/chat/completions' ? new Response('{}', { status: 200 })
+      : new Response('{"error":{"type":"model_not_found","message":"no"}}', { status: 404 });
+  }));
+  expect(later.endpoints).toEqual([{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }]);
+  expect(later.unserved?.map(({ protocol }) => protocol)).toEqual(['anthropic-messages', 'openai-responses', 'gemini-generate-content']);
+  expect(later.failures.map(({ step }) => step)).toEqual(['models', 'anthropic-messages', 'openai-responses', 'gemini-generate-content']);
+});

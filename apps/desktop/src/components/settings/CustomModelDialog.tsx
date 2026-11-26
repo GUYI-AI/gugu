@@ -19,7 +19,9 @@ import { getAgentConfigRuntimeClient } from '@renderer/lib/agent-config/runtime-
 import { useSessionMessages } from '@renderer/localization/use-session-messages';
 import { openExternalLinkInBrowser } from '@renderer/lib/open-web-link';
 import { errorText } from '@renderer/features/settings/subscriptions/subscription-queries';
-import { useConnectionModelList, probeModelList, type ConnectionModelSource } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
+import { useConnectionModelList, probeModelList, type ConnectionModelSource, type ModelList } from '@renderer/features/settings/subscriptions/ConnectionModelPicker';
+import type { CustomModelProtocolProbe } from '@gugu/session-core/workspace-server/agent-config';
+import type { SessionMessageLookupKey } from '@renderer/localization/messages';
 import { connectionProbeMessageKey } from '@renderer/features/settings/subscriptions/connection-probe-messages';
 import { customModelEffortCatalog, customModels } from '@renderer/features/sessions/session-config/custom-models';
 import { modelProviderIcon } from '@renderer/features/sessions/session-config/model-provider-icon';
@@ -70,6 +72,40 @@ const OUTPUT_LIMITS = [['8K', 8_192], ['16K', 16_384], ['32K', 32_768], ['64K', 
 const CUSTOM_PROVIDER = 'custom';
 
 type ConnectionTest = { kind: 'idle' } | { kind: 'testing' } | { kind: 'ok' } | { kind: 'failed'; message: string };
+
+/** How long saving waits for its own check of the address; past it the connection is saved unverified (owner 2026-11-27). */
+const SAVE_CHECK_MS = 6_000;
+/** How long saving waits for the settings process to answer at all before saying it did not, instead of turning forever. */
+const SAVE_ANSWER_MS = 20_000;
+const LATE = Symbol('late');
+function within<T>(work: Promise<T>, ms: number): Promise<T | typeof LATE> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<typeof LATE>((resolve) => { timer = setTimeout(() => resolve(LATE), ms); });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
+
+type UnlistedReason = Extract<ModelList, { kind: 'unlisted' }>['reason'];
+/** Why a check that found no protocol carrying the model came back empty: the address's own word first. */
+function uncheckedReason(probe: CustomModelProtocolProbe): 'model-not-found' | 'answered' | Exclude<UnlistedReason, 'no-list'> {
+  if (probe.unserved?.length) return 'model-not-found';
+  if (probe.refused?.length || probe.failures.some(({ reason }) => reason === 'unauthorized')) return 'unauthorized';
+  const reading = probeModelList(probe);
+  // It answered (listed its models, or answered without a list) and still refused every request for this model.
+  return reading.kind === 'unlisted' && reading.reason !== 'no-list' ? reading.reason : 'answered';
+}
+
+/** The settings process's own (English) refusals a save can meet, each with the copy that says what to do next. */
+const SAVE_REFUSALS: readonly (readonly [string, SessionMessageLookupKey])[] = [
+  ['This API address already has a key', 'customModels.saveRefused.keyHeld'],
+  ['This API address has multiple saved keys', 'customModels.saveRefused.manyKeys'],
+  ['Choose a saved API key for this address', 'customModels.saveRefused.manyKeys'],
+  ['Choose which key to keep', 'customModels.saveRefused.manyKeys'],
+  ['This API address is already configured', 'customModels.saveRefused.configured'],
+  ['Add a new connection to change this API address', 'customModels.saveRefused.addressInUse'],
+  ['The custom model no longer exists', 'customModels.saveRefused.gone'],
+  ['An API key is required on this device', 'customModels.saveRefused.keyMissing'],
+  ['API key is unavailable on this device', 'customModels.saveRefused.keyMissing'],
+];
 
 export function CustomModelDialog({ machine, connection, modelId, group = providerPresets.find(preset => preset.id === connection?.preset)?.group ?? 'custom',
   initialAccount, initialRoute, onClose }: {
@@ -129,7 +165,8 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   let normalized: CustomModelMeta['endpoints'] | null = null;
   let addressProblem = '';
   try { normalized = endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })); }
-  catch (error) { addressProblem = errorText(error); }
+  // The address's own rule is worded in English by the shared parser; said here in the person's language.
+  catch { addressProblem = translate('customModels.addressInvalid'); }
   // A custom address, whether its key is typed here or held by the connection: the host recognizes which protocols it
   // speaks while it reads the models, and saving keeps what it found.
   const address = !preset && normalized?.[0] ? normalized[0].baseUrl : null;
@@ -222,8 +259,9 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
         if (!probe.success) throw new Error(errorText(probe.error));
         const reading = probeModelList(probe.data);
         const reason = reading.kind === 'unlisted' ? reading.reason : 'unreachable';
-        setTest(probe.data.models.length || probe.data.endpoints.length ? { kind: 'ok' }
-          : { kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) });
+        setTest(model && !probe.data.endpoints.length && probe.data.unserved?.length ? { kind: 'failed', message: translate('customModels.modelNotServed', { model }) }
+          : probe.data.models.length || probe.data.endpoints.length ? { kind: 'ok' }
+            : { kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) });
         return;
       }
       const result = await client.testCustomModel({ ...keySource, endpoints: normalized, ...named });
@@ -232,7 +270,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
         kind: 'failed',
         message: translate(!typedKey && result.data.reason === 'unauthorized' ? 'customModels.heldKeyRefused' : connectionProbeMessageKey(result.data.reason, Boolean(preset))),
       });
-    } catch (error) { setTest({ kind: 'failed', message: errorText(error) }); }
+    } catch (error) { setTest({ kind: 'failed', message: refusalText(errorText(error)) ?? errorText(error) }); }
   };
   const chooseProvider = (id: string) => {
     setPresetId(id); setRoutes([]); setTest({ kind: 'idle' });
@@ -247,26 +285,28 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     if (!model) { setFailure(translate('subscriptions.connections.modelsRequired')); return; }
     setBusy('save');
     try {
-      const client = await getAgentConfigRuntimeClient(machine);
+      const client = await within(getAgentConfigRuntimeClient(machine), SAVE_ANSWER_MS);
+      if (client === LATE) throw new Error(translate('customModels.saveNoAnswer'));
       let saved = normalized;
       let unverified: boolean | undefined;
+      /** Why the connection is saved unverified: kept with it for diagnosis, never shown (owner 2026-11-27: a chat that fails says so). */
+      let unverifiedReason: NonNullable<CustomModelMeta['unverifiedReason']> | undefined;
       if (address && keySource) {
         // What the background check found; an address with no model list is checked again with the model named here.
         saved = list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : [];
         if (!saved.length) {
-          const probe = await client.detectCustomModelProtocols({ ...keySource, baseUrl: address, modelId: model });
-          if (!probe.success) throw new Error(errorText(probe.error));
-          saved = probe.data.endpoints;
+          // Whatever this check finds, the connection is saved and the dialog closes as on any save, with nothing marked or prompted
+          // (owner 2026-11-27: "an error means something is wrong, but it must not stop the person saving"; "can't it just not mark
+          // it?"): a chat with a model that does not work says so itself. A check slower than SAVE_CHECK_MS is not waited for. The format is not asked:
+          // the first path that answered, refusing the key (401/403) or the model, exists, so it is that one, else OpenAI Chat at
+          // the address as typed. The connection stays unverified until a save the address answers.
+          const probe = await within(client.detectCustomModelProtocols({ ...keySource, baseUrl: address, modelId: model }), SAVE_CHECK_MS).catch(() => null);
+          const found = probe && probe !== LATE && probe.success ? probe.data : null;
+          saved = found?.endpoints ?? [];
           if (!saved.length) {
-            const reading = probeModelList(probe.data);
-            const reason = reading.kind === 'unlisted' ? reading.reason : 'unreachable';
-            // The person typed this key; a refusal does not stop the save or drop the key (owner 2026-11-26). The format is not
-            // asked: the first path that answered 401/403 exists, so it is that one, else OpenAI Chat at the address as typed.
-            // The connection stays unverified until a save the address answers. An address that cannot be reached still stops here,
-            // said once, where a test of the connection says it: it replaces the background reading of the same address.
-            if (reason !== 'unauthorized') { setTest({ kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) }); return; }
-            saved = [probe.data.refused?.[0] ?? { protocol: 'openai-chat-completions', baseUrl: address }];
+            saved = [found?.unserved?.[0] ?? found?.refused?.[0] ?? { protocol: 'openai-chat-completions', baseUrl: address }];
             unverified = true;
+            unverifiedReason = { reason: found ? uncheckedReason(found) : 'unchecked', modelId: model };
           }
         }
         unverified ??= false;
@@ -297,22 +337,31 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       };
       // The edited model keeps its place; the connection's other models are saved as they are.
       const models = (connection?.models ?? []).flatMap(item => item.id === editedModel?.id ? [entry] : item.id === model ? [] : [stored(item)]);
-      const result = await client.saveCustomModel({
+      const result = await within(client.saveCustomModel({
         ...(connection ? { id: connection.id } : {}),
         name: connection?.name || preset?.name || new URL(saved[0]!.baseUrl).host,
         preset: preset?.id ?? null, endpoints: saved,
         routes: savedRoutes,
         harnessProtocols: connection?.harnessProtocols,
         ...(unverified === undefined ? {} : { unverified }),
+        ...(unverifiedReason ? { unverifiedReason } : {}),
         ...(typedKey ? { apiKey: typedKey } : {}),
         models: editedModel ? models : [entry, ...models],
-      });
-      if (!result.success) throw new Error(errorText(result.error));
-      await customModels.refresh(machine);
+      }), SAVE_ANSWER_MS);
+      if (result === LATE) throw new Error(translate('customModels.saveNoAnswer'));
+      if (!result.success) throw new Error(saveRefusal(errorText(result.error)));
+      // Saved: a list that is slow to reread does not hold the dialog open (it rereads on its own).
+      await within(customModels.refresh(machine), SAVE_ANSWER_MS).catch(() => undefined);
       onClose();
     } catch (error) { setFailure(errorText(error)); }
     finally { setBusy(null); }
   };
+  /** The settings process words its refusals in English: each one this dialog can meet is said here with what to do next. */
+  const refusalText = (text: string) => {
+    const key = SAVE_REFUSALS.find(([english]) => text.includes(english))?.[1];
+    return key ? translate(key) : null;
+  };
+  const saveRefusal = (text: string) => refusalText(text) ?? translate('customModels.saveFailed', { detail: text });
   const limitField = (key: 'contextWindow' | 'maxOutput', presets: typeof INPUT_LIMITS | typeof OUTPUT_LIMITS) => {
     const label = translate(key === 'contextWindow' ? 'customModels.inputLimit' : 'customModels.outputLimit');
     return <label className="gg-model-field">
@@ -479,10 +528,11 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
               </label>
             </div>
           </div>
-          {failure && <p className="subscription-error" role="alert">{failure}</p>}
         </form>}
       </DialogContentArea>
       {!accountProvider && <div className="gg-model-dialog-footer">
+        {/* Beside the button that was pressed: a long form (thinking levels, context lengths) puts its bottom out of view. */}
+        {failure && <p className="subscription-error gg-model-dialog-failure" role="alert" data-testid="custom-model-save-failure">{failure}</p>}
         <Button type="button" variant="outline" disabled={!!busy} onClick={onClose}>{translate('common.cancel')}</Button>
         <Button type="submit" form={formId} disabled={!!busy} data-testid="custom-model-save">{translate(busy === 'save' ? 'subscriptions.connections.saving' : 'common.save')}</Button>
       </div>}

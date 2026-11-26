@@ -107,9 +107,22 @@ async function sendMinimal(fetchImpl: Fetch | undefined, input: Endpoint, modelI
   if (!probe) return 'refused';
   const result = await requestEndpoint<'connected' | ProbeReason>(fetchImpl, root + probe.path, { method: 'POST', headers, body: JSON.stringify(probe.payload) }, input.env, async (response) => {
     if (response.ok) return 'connected';
-    return response.status === 401 || response.status === 403 ? 'unauthorized' : 'refused';
+    if (response.status === 401 || response.status === 403) return 'unauthorized';
+    return await saysModelNotServed(response) ? 'model-not-found' : 'refused';
   });
   return result.ok ? result.value : result.reason;
+}
+
+const MODEL_NOT_SERVED = /model_not_found|not_found_error[^}]{0,200}\bmodel\b|\bmodels?\b[^"\n]{0,160}\b(?:not found|does not exist|not supported)\b/i;
+
+/**
+ * The address's own word that it does not offer the model: OpenAI and the relays shaped like it answer `model_not_found`,
+ * Anthropic a `not_found_error` naming the model, Gemini a 404 saying the model is not found. Only that word is read
+ * (as a yes/no), never passed on.
+ */
+async function saysModelNotServed(response: Response): Promise<boolean> {
+  if (response.status !== 400 && response.status !== 404) return false;
+  return MODEL_NOT_SERVED.test((await response.text().catch(() => '')).slice(0, 4096));
 }
 
 /**
@@ -149,6 +162,7 @@ export async function probeEndpointProtocols(
   }
   const endpoints: ProtocolProbe['endpoints'] = [];
   const refused: ProtocolProbe['endpoints'] = [];
+  const unserved: ProtocolProbe['endpoints'] = [];
   for (const protocol of order) {
     let last: ProbeReason = 'unreachable';
     for (const endpoint of basesFor(protocol)) {
@@ -157,8 +171,12 @@ export async function probeEndpointProtocols(
       // 401/403: this path exists and only the key was refused. A later base's 404 for the same protocol does not take that back.
       if (result === 'unauthorized' && !refused.some((entry) => entry.protocol === protocol)) refused.push({ protocol, baseUrl: endpoint });
       if (last !== 'unauthorized') last = result;
+      if (result === 'model-not-found') { unserved.push({ protocol, baseUrl: endpoint }); break; }
     }
     if (!endpoints.some((entry) => entry.protocol === protocol)) failures.push({ step: protocol, reason: last });
+    // The address said it does not offer this model before any protocol carried it. Its other protocols are other doors to
+    // the same accounts (a relay answers per key group, not per protocol), so asking each again only makes the person wait.
+    if (unserved.length && !endpoints.length) break;
   }
-  return { endpoints, models, failures, ...(refused.length ? { refused } : {}) };
+  return { endpoints, models, failures, ...(refused.length ? { refused } : {}), ...(unserved.length ? { unserved } : {}) };
 }
