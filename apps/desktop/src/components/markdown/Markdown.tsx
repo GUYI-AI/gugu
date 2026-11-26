@@ -50,6 +50,7 @@ import { followLink } from '../../lib/guguLinks'
 import type { MessageItem } from '@gugu/core/shared/types/chat'
 import { rehypeSourceLines } from './sourceLines'
 import type { PluggableList } from 'unified'
+import { useOpenWebLink, type WebLinkClick } from '@/hooks/useOpenWebLink'
 
 export type MarkdownDensity = 'compact' | 'comfortable'
 
@@ -66,8 +67,8 @@ export interface MarkdownProps {
   mentionMarker?: string
   /** Drawn on an accent-coloured surface (your own bubble): links take the text colour. */
   onAccent?: boolean
-  /** Return true when the click was handled here; otherwise the link opens in the system browser. */
-  onOpenLink?: (href: string) => boolean
+  /** Claim a link before the default web-link policy (pane, or system browser with Cmd/Ctrl). */
+  onOpenLink?: (href: string, click: WebLinkClick) => boolean
   /** The message it is drawn in: a file link opens its waiting tab in that message's chat. */
   message?: MessageItem
   /** `document` trust: draws an image (a workspace-relative source must be resolved by the host). */
@@ -189,6 +190,9 @@ export const Markdown = memo(function Markdown({
   // that changes the element mapping is part of the key below.
   const openLinkRef = useRef(onOpenLink)
   openLinkRef.current = onOpenLink
+  const openWebLink = useOpenWebLink()
+  const openWebLinkRef = useRef(openWebLink)
+  openWebLinkRef.current = openWebLink
   const messageRef = useRef(message)
   messageRef.current = message
   const renderImageRef = useRef(renderImage)
@@ -231,9 +235,9 @@ export const Markdown = memo(function Markdown({
             </a>
           )
         }
-        const onClick = (event: { preventDefault(): void }) => {
+        const onClick = (event: WebLinkClick & { preventDefault(): void }) => {
           // A link the host did not claim goes to the system browser only if it is a web, mail or phone link.
-          if ((href && ((messageRef.current ? followLink(href, { message: messageRef.current }) : followLink(href)) || openLinkRef.current?.(href))) || !EXTERNAL_LINK.test(href ?? '')) event.preventDefault()
+          if ((href && ((messageRef.current ? followLink(href, { message: messageRef.current }) : followLink(href)) || openLinkRef.current?.(href, event) || openWebLinkRef.current(href, event))) || !EXTERNAL_LINK.test(href ?? '')) event.preventDefault()
         }
         const groupFile = href ? parseGroupFileLink(href) : null
         const classes = typeof rest.className === 'string' ? rest.className.split(/\s+/) : []

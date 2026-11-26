@@ -506,7 +506,7 @@ function ChatAreaSurface({ viewportKey = 'chats', imPage = false, navigationTarg
           position: 'relative',
         }}
       >
-        {filePreview.beside(<ChatPaneContent chatId={activeChat.id} data-testid="session-chat-panel" className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col">
+        {filePreview.beside(<ChatPaneContent chatId={activeChat.id} inPane={inBlock && !mobile} data-testid="session-chat-panel" className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col">
         {opener.overlay}
         {emptyProject ? <ChatPartSlot chatId={activeChat.id} part="empty" className="flex min-h-0 min-w-0 flex-1 flex-col" /> : <div
           style={{
