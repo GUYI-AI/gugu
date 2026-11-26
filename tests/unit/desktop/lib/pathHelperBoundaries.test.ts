@@ -27,3 +27,8 @@ it('abbreviates Windows home paths with forward and mixed slashes', () => {
   expect(shortHome('C:\\Users/me\\code')).toBe('~\\code')
   expect(shortHome('C:/Users/me')).toBe('~')
 })
+
+it('compares equivalent Windows slash spellings without folding case', () => {
+  expect(sameFolder('C:\\work\\repo', 'C:/work/repo/')).toBe(true)
+  expect(sameFolder('/Work', '/work')).toBe(false)
+})
