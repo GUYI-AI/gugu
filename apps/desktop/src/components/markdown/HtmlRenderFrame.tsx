@@ -15,13 +15,15 @@ import { Maximize2, X } from '@/lib/icons'
 import { Dialog } from '@/components/ui/Dialog'
 import { IconButton } from '@/components/ui/IconButton'
 import { followLink } from '../../lib/guguLinks'
+import { useNearViewport } from '../chat/useNearViewport'
 import {
-  clampHtmlRenderHeight,
   htmlRenderDocument,
+  htmlRenderOpeningHeight,
   htmlRenderRootCss,
   htmlRenderSurface,
   keepHtmlRenderPage,
   HTML_RENDER_MIN_HEIGHT,
+  HTML_RENDER_NEAR_MARGIN,
   readHtmlRenderContentHeight,
   readHtmlRenderLinkRequest,
 } from '@gugu/session-chat-ui/html-render'
@@ -81,7 +83,12 @@ function HtmlRenderDocument({ code, hostTheme, title, height, onContentHeight }:
   return <iframe ref={frame} title={title} srcDoc={srcDoc} sandbox="allow-scripts" height={height} className={`block w-full border-0 bg-transparent ${surface?.scheme === 'dark' ? '[color-scheme:dark]' : '[color-scheme:light]'}`} />
 }
 
-export function HtmlRenderFrame({ code }: { code: string }) {
+/**
+ * `declaredHeight` is the fence header's `height=` (html_preview's measure). The box opens at the height this page last
+ * reported, else that, else the minimum; the frame is mounted only while the box is near the viewport (it unloads once
+ * scrolled past), and the box keeps its height while it is not.
+ */
+export function HtmlRenderFrame({ code, declaredHeight }: { code: string; declaredHeight?: number }) {
   const { t } = useTranslation('messaging')
   // Subscribed so a light/dark flip re-renders: each frame re-reads its surface as the theme is now.
   const hostTheme = useSyncExternalStore(subscribeToHostTheme, readEffectiveHostTheme, () => 'light' as const)
@@ -89,18 +96,23 @@ export function HtmlRenderFrame({ code }: { code: string }) {
   const [expanded, setExpanded] = useState(false)
   const [expandedHeight, setExpandedHeight] = useState<number>()
   const title = t('message.htmlRender.title')
+  const box = useRef<HTMLDivElement>(null)
+  const near = useNearViewport(box, true, HTML_RENDER_NEAR_MARGIN, true)
+  const height = htmlRenderOpeningHeight(contentHeight, declaredHeight)
   return (
-    <div className="gg-md-html-render">
-      <HtmlRenderDocument
-        code={code}
-        hostTheme={hostTheme}
-        title={title}
-        height={contentHeight === undefined ? HTML_RENDER_MIN_HEIGHT : clampHtmlRenderHeight(contentHeight)}
-        onContentHeight={(height) => {
-          rememberContentHeight(code, height)
-          setContentHeight(height)
-        }}
-      />
+    <div ref={box} className="gg-md-html-render" style={{ minHeight: height }}>
+      {near && (
+        <HtmlRenderDocument
+          code={code}
+          hostTheme={hostTheme}
+          title={title}
+          height={height}
+          onContentHeight={(reported) => {
+            rememberContentHeight(code, reported)
+            setContentHeight(reported)
+          }}
+        />
+      )}
       <IconButton size="sm" className="gg-md-html-render__expand" aria-label={t('message.htmlRender.expand')} title={t('message.htmlRender.expand')} onClick={() => setExpanded(true)}>
         <Maximize2 size={14} />
       </IconButton>

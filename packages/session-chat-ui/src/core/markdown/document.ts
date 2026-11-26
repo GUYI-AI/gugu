@@ -70,6 +70,8 @@ export type HtmlRenderBlock = {
   id: BlockId;
   /** Raw HTML source text. */
   source: string;
+  /** The height its header declares (```html-render height=320), clamped; the frame opens at it before the page reports. */
+  height?: number;
 };
 
 /**

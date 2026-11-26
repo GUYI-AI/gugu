@@ -50,6 +50,25 @@ export function clampHtmlRenderHeight(height: number): number {
 }
 
 /**
+ * The height the fence's header declares (```html-render height=320), the page's height as html_preview measured it
+ * before it was sent; undefined when the header names none. The first frame opens at it, so nothing jumps when the
+ * page loads.
+ */
+export function readHtmlRenderDeclaredHeight(meta: string | null | undefined): number | undefined {
+  const declared = /(?:^|\s)height=(\d+)(?:\s|$)/.exec(meta ?? '')?.[1]
+  return declared === undefined ? undefined : clampHtmlRenderHeight(Number(declared))
+}
+
+/** The box a page opens at before it reports: what it last reported here, else its declared height, else the minimum. */
+export function htmlRenderOpeningHeight(reported: number | undefined, declared: number | undefined): number {
+  if (reported !== undefined) return clampHtmlRenderHeight(reported)
+  return declared ?? HTML_RENDER_MIN_HEIGHT
+}
+
+/** How far outside the viewport a page's frame is mounted: it loads just before it scrolls in, and unloads past it. */
+export const HTML_RENDER_NEAR_MARGIN = '400px 0px'
+
+/**
  * Keeps the frame on its own page. A sandboxed page can still navigate its own frame, and so swap itself for a remote
  * page; a second load of the same `srcdoc` means it did, so the frame is put back on the page. Returns the unhook.
  */
@@ -112,16 +131,18 @@ export function htmlRenderSurface(element: Element, hostPalette: Record<string, 
     ?? /^color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/.exec(fg)?.slice(1).map(Number)
   if (!rgb) throw new Error(`html-render: cannot read the surface's text colour ${JSON.stringify(fg)}`)
   const [r, g, b] = rgb as [number, number, number]
+  return { palette: htmlRenderPalette(fg, hostPalette), scheme: 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5 ? 'dark' : 'light' }
+}
+
+/** The page's palette on a surface whose text is `fg`: the host's, with the text tokens mixed from `fg` (see above). */
+export function htmlRenderPalette(fg: string, hostPalette: Record<string, string>): Record<string, string> {
   return {
-    palette: {
-      ...hostPalette,
-      fg,
-      muted: `color-mix(in oklab, ${fg} 68%, transparent)`,
-      accent: fg,
-      border: `color-mix(in oklab, ${fg} 10%, transparent)`,
-      surface: `color-mix(in oklab, ${fg} 6%, transparent)`,
-    },
-    scheme: 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5 ? 'dark' : 'light',
+    ...hostPalette,
+    fg,
+    muted: `color-mix(in oklab, ${fg} 68%, transparent)`,
+    accent: fg,
+    border: `color-mix(in oklab, ${fg} 10%, transparent)`,
+    surface: `color-mix(in oklab, ${fg} 6%, transparent)`,
   }
 }
 
@@ -137,8 +158,11 @@ export function htmlRenderRootCss(palette: Record<string, string>, fonts: { sans
   return `:root{color-scheme:${scheme};${declarations}--font-sans:${font(fonts.sans)};--font-mono:${font(fonts.mono)};--radius:0.625rem}`
 }
 
+/** The page's own height, as a script expression: what the bootstrap reports, and what html_preview measures. */
+export const HTML_RENDER_HEIGHT_EXPRESSION = 'Math.ceil(document.documentElement.scrollHeight>document.documentElement.clientHeight?document.documentElement.scrollHeight:document.documentElement.getBoundingClientRect().height)'
+
 // Reports the page's height whenever it changes, and hands http(s) link clicks to the host (the frame cannot navigate).
-const BOOTSTRAP_SCRIPT = `(function(){if(window.parent===window)return;var n=0,h;document.addEventListener("click",function(e){var l=e.isTrusted?e.composedPath().find(function(t){return t&&t.matches&&t.matches("a[href]");}):null,u;if(!l)return;try{u=new URL(l.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol))return;e.preventDefault();window.parent.postMessage({jsonrpc:"2.0",id:"gg-link-"+(++n),method:${JSON.stringify(OPEN_LINK_METHOD)},params:{url:u.href}},"*");},true);var z=function(){var r=document.documentElement,v=Math.ceil(r.scrollHeight>r.clientHeight?r.scrollHeight:r.getBoundingClientRect().height);if(v===h)return;h=v;window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(SIZE_CHANGED_METHOD)},params:{height:v}},"*");};var o=window.ResizeObserver?new ResizeObserver(z):null;if(o)o.observe(document.documentElement);document.addEventListener("DOMContentLoaded",function(){if(o&&document.body)o.observe(document.body);z();});window.addEventListener("load",z);})();`
+const BOOTSTRAP_SCRIPT = `(function(){if(window.parent===window)return;var n=0,h;document.addEventListener("click",function(e){var l=e.isTrusted?e.composedPath().find(function(t){return t&&t.matches&&t.matches("a[href]");}):null,u;if(!l)return;try{u=new URL(l.getAttribute("href"),document.baseURI);}catch(x){return;}if(!/^https?:$/.test(u.protocol))return;e.preventDefault();window.parent.postMessage({jsonrpc:"2.0",id:"gg-link-"+(++n),method:${JSON.stringify(OPEN_LINK_METHOD)},params:{url:u.href}},"*");},true);var z=function(){var v=${HTML_RENDER_HEIGHT_EXPRESSION};if(v===h)return;h=v;window.parent.postMessage({jsonrpc:"2.0",method:${JSON.stringify(SIZE_CHANGED_METHOD)},params:{height:v}},"*");};var o=window.ResizeObserver?new ResizeObserver(z):null;if(o)o.observe(document.documentElement);document.addEventListener("DOMContentLoaded",function(){if(o&&document.body)o.observe(document.body);z();});window.addEventListener("load",z);})();`
 
 function bootstrapMarkup(scan: string, rootCss: string): string {
   return [

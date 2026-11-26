@@ -1,22 +1,22 @@
 /** @jsxImportSource solid-js */
 import { defineBlock } from '@session-chat/components/rows/markdown/block-def';
 import type { Measured, MeasureCtx } from '@session-chat/core/define';
-import { clampHtmlRenderHeight, HTML_RENDER_MIN_HEIGHT } from '@session-chat/core/html-render/page';
+import { htmlRenderOpeningHeight } from '@session-chat/core/html-render/page';
 import type { HtmlRenderLeafLayout } from '@session-chat/core/layout/layout-types';
 import type { HtmlRenderBlock } from '@session-chat/core/markdown/document';
 import { HtmlRenderView } from './HtmlRenderView';
 
 /**
  * A ```html-render page: the row's width, as tall as the page last reported (`caches.htmlRenderHeight`, a reactive
- * read, so the row re-measures when its page reports). Before the page has run once it keeps the minimum height.
+ * read, so the row re-measures when its page reports). Before the page has run once it is the height its header
+ * declares (html_preview's measure), else the minimum.
  */
 export const htmlRenderBlockDef = defineBlock<HtmlRenderBlock, HtmlRenderLeafLayout>({
   kind: 'html-render',
   margin: () => ({ top: 8, bottom: 8 }),
 
   measure(block: HtmlRenderBlock, ctx: MeasureCtx): Measured<HtmlRenderLeafLayout> {
-    const reported = ctx.caches.htmlRenderHeight(block.source);
-    const height = reported === undefined ? HTML_RENDER_MIN_HEIGHT : clampHtmlRenderHeight(reported);
+    const height = htmlRenderOpeningHeight(ctx.caches.htmlRenderHeight(block.source), block.height);
     const layout: HtmlRenderLeafLayout = { kind: 'html-render', id: block.id, top: 0, height, contentWidth: ctx.width, raw: block };
     return { height, width: ctx.width, layout };
   },

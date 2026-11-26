@@ -14,6 +14,7 @@ import {
   htmlRenderDocument,
   htmlRenderRootCss,
   htmlRenderSurface,
+  HTML_RENDER_NEAR_MARGIN,
   keepHtmlRenderPage,
   readHtmlRenderContentHeight,
   readHtmlRenderLinkRequest,
@@ -65,6 +66,14 @@ export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
   // Themed with the same tokens a ```svg figure reads, as the page is now; a light/dark flip reloads it.
   onCleanup(subscribeHostTheme(() => setThemeFlips((n) => n + 1)));
   let expand!: HTMLButtonElement;
+  // The frame is mounted only while the box is near the viewport: a page loads just before it scrolls in and unloads
+  // once it is past, so a long chat runs no page it is not showing. The box keeps its measured height either way.
+  const [near, setNear] = createSignal(false);
+  const observeNear = (box: HTMLElement) => {
+    const observer = new IntersectionObserver((entries) => setNear(entries[entries.length - 1]!.isIntersecting), { rootMargin: HTML_RENDER_NEAR_MARGIN });
+    observer.observe(box);
+    onCleanup(() => observer.disconnect());
+  };
   const close = () => setExpanded(false);
   const onKey = (event: KeyboardEvent) => {
     if (event.key === 'Escape' && expanded()) close();
@@ -72,15 +81,17 @@ export function HtmlRenderView(props: { block: HtmlRenderLeafLayout }) {
   window.addEventListener('keydown', onKey);
   onCleanup(() => window.removeEventListener('keydown', onKey));
   return (
-    <BlockFrame layout={props.block} class={codeGroup}>
-      <PageFrame
-        source={props.block.raw.source}
-        themeFlips={themeFlips}
-        title={translate('transcript.htmlRenderTitle')}
-        width={props.block.contentWidth}
-        height={props.block.height}
-        onHeight={(height) => caches.setHtmlRenderHeight(props.block.raw.source, height)}
-      />
+    <BlockFrame layout={props.block} class={codeGroup} ref={observeNear}>
+      <Show when={near()}>
+        <PageFrame
+          source={props.block.raw.source}
+          themeFlips={themeFlips}
+          title={translate('transcript.htmlRenderTitle')}
+          width={props.block.contentWidth}
+          height={props.block.height}
+          onHeight={(height) => caches.setHtmlRenderHeight(props.block.raw.source, height)}
+        />
+      </Show>
       <button ref={expand} type="button" class={copyButtonOverlay} aria-label={translate('transcript.htmlRenderExpand')} onClick={() => setExpanded(true)}>
         <IconMaximize />
       </button>

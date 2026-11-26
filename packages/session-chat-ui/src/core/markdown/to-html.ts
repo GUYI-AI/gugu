@@ -37,7 +37,7 @@ import { toHtml } from 'hast-util-to-html';
 import type { Nodes, Root, RootContent } from 'mdast';
 import { toHast, type State } from 'mdast-util-to-hast';
 import { unified } from 'unified';
-import { fenceClosed, HTML_RENDER_LANGUAGE } from '../html-render/page';
+import { fenceClosed, HTML_RENDER_LANGUAGE, readHtmlRenderDeclaredHeight } from '../html-render/page';
 import type { Block, BlockId, HtmlBlock } from './document';
 import type { MdastMention } from './mdast-mention';
 
@@ -140,7 +140,9 @@ function artifactBlock(node: RootContent, id: BlockId, source: string | undefine
   if (lang === HTML_RENDER_LANGUAGE) {
     const raw = source?.slice(node.position?.start.offset ?? 0, node.position?.end.offset ?? 0) ?? '';
     // While the fence streams it is the code it is so far: the page loads once, when it is whole.
-    return fenceClosed(raw) ? { kind: 'html-render', id, source: node.value } : { kind: 'code', id, code: node.value, lang: 'html' };
+    if (!fenceClosed(raw)) return { kind: 'code', id, code: node.value, lang: 'html' };
+    const height = readHtmlRenderDeclaredHeight(node.meta);
+    return { kind: 'html-render', id, source: node.value, ...(height === undefined ? {} : { height }) };
   }
   return { kind: 'code', id, code: node.value, lang: node.lang ?? undefined };
 }

@@ -8,9 +8,27 @@ import { MarkdownStreamingContext } from '../../../../apps/desktop/src/component
 vi.mock('@/platform', () => ({ platform: { kind: 'web' } }))
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+// jsdom lays nothing out: each observed element is told it is near (or not) by the test, as the browser would.
+const observed: { observer: object; notify: (near: boolean) => void }[] = []
+class FakeIntersectionObserver {
+  constructor(private readonly callback: IntersectionObserverCallback) {}
+  observe(element: Element) {
+    observed.push({ observer: this, notify: (near) => this.callback([{ isIntersecting: near, target: element } as IntersectionObserverEntry], this as unknown as IntersectionObserver) })
+  }
+  disconnect() {
+    observed.splice(0, observed.length, ...observed.filter((entry) => entry.observer !== this))
+  }
+}
+vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver)
+
+async function bringNear(near: boolean) {
+  await act(async () => { for (const entry of [...observed]) entry.notify(near) })
+}
+
 let container: HTMLDivElement
 let root: Root
 beforeEach(() => {
+  observed.length = 0
   container = document.createElement('div')
   container.style.color = 'rgb(1, 2, 3)'
   document.body.appendChild(container)
@@ -31,12 +49,27 @@ async function draw(content: string, streaming = false) {
 describe('chat markdown rich rendering', () => {
   it('draws a complete ```html-render fence as a sandboxed, themed page', async () => {
     await draw('```html-render\n<div id="chart">bars</div>\n```')
+    await bringNear(true)
     const frame = container.querySelector('iframe')
     expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
     const doc = frame?.getAttribute('srcdoc') ?? ''
     expect(doc).toContain('Content-Security-Policy')
     expect(doc).toContain('--fg:rgb(1, 2, 3)')
     expect(doc).toContain('<div id="chart">bars</div>')
+  })
+
+  it('mounts the page only near the viewport, and keeps the box at its declared height while it is away', async () => {
+    await draw('before\n\n```html-render height=320\n<div>bars</div>\n```\n\nafter')
+    const box = container.querySelector<HTMLElement>('.gg-md-html-render')
+    expect(box?.style.minHeight).toBe('320px')
+    expect(container.querySelector('iframe')).toBeNull()
+    await bringNear(true)
+    expect(container.querySelector('iframe')?.getAttribute('height')).toBe('320')
+    await bringNear(false)
+    expect(container.querySelector('iframe')).toBeNull()
+    expect(box?.style.minHeight).toBe('320px')
+    expect(container.textContent).toContain('before')
+    expect(container.textContent).toContain('after')
   })
 
   it('keeps an ```html fence as code', async () => {

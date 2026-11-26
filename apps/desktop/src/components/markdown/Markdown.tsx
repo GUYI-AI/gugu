@@ -13,7 +13,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CodeBlock, defaultComponents, Streamdown, type CustomRendererProps, type PluginConfig } from 'streamdown'
+import { CodeBlock, defaultComponents, defaultRemarkPlugins, Streamdown, type CustomRendererProps, type PluginConfig } from 'streamdown'
 import 'katex/dist/katex.min.css'
 import '@gugu/session-shared/markdown.css'
 import {
@@ -36,7 +36,7 @@ import { PlatformCodeBlock } from './PlatformCodeBlock'
 import { PlatformCopyButton } from './PlatformCopyButton'
 import { PlatformTable } from './PlatformTable'
 import { HtmlRenderFrame } from './HtmlRenderFrame'
-import { HTML_RENDER_LANGUAGE, HTML_RENDER_MAX_BYTES } from '@gugu/session-chat-ui/html-render'
+import { HTML_RENDER_LANGUAGE, HTML_RENDER_MAX_BYTES, readHtmlRenderDeclaredHeight } from '@gugu/session-chat-ui/html-render'
 import { MarkdownStreamingContext } from './markdownStreaming'
 import { useMobileShell } from '@/hooks/useMobileShell'
 import { FILE_PILL_CLASS, hookFilePillCopy, rehypeGroupFilePills } from './filePills'
@@ -126,8 +126,8 @@ function SvgRenderer({ code, isIncomplete }: CustomRendererProps) {
 }
 
 /** A ```html-render fence: the agent's page in a sandboxed frame (HtmlRenderFrame); while it streams, its source. */
-function HtmlRenderRenderer({ code, isIncomplete }: CustomRendererProps) {
-  if (!isIncomplete && new Blob([code]).size <= HTML_RENDER_MAX_BYTES) return <HtmlRenderFrame code={code} />
+function HtmlRenderRenderer({ code, isIncomplete, meta }: CustomRendererProps) {
+  if (!isIncomplete && new Blob([code]).size <= HTML_RENDER_MAX_BYTES) return <HtmlRenderFrame code={code} declaredHeight={readHtmlRenderDeclaredHeight(meta)} />
   return (
     <CodeBlock code={code} language="html" isIncomplete={isIncomplete} lineNumbers={false}>
       <PlatformCopyButton key={code} text={code} kind="code" />
@@ -157,7 +157,8 @@ function pluginsFor(options: MarkdownDialectOptions) {
   let entry = pluginCache.get(key)
   if (!entry) {
     // Link pills are a chat bubble's: documents and previews keep their links as written.
-    entry = { remark: markdownRemarkPlugins(options), rehype: markdownRehypePlugins(options, options.trust === 'chat' ? [rehypeGroupFilePills, rehypeLinkPills, rehypeLinkIcons] : [rehypeGroupFilePills]) }
+    // codeMeta hands a fence's header to its renderer (`meta`): ```html-render height=320.
+    entry = { remark: [...markdownRemarkPlugins(options), defaultRemarkPlugins.codeMeta!], rehype: markdownRehypePlugins(options, options.trust === 'chat' ? [rehypeGroupFilePills, rehypeLinkPills, rehypeLinkIcons] : [rehypeGroupFilePills]) }
     pluginCache.set(key, entry)
   }
   return entry

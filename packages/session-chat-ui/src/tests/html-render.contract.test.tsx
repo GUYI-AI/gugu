@@ -7,6 +7,7 @@ import { htmlRenderDocument, keepHtmlRenderPage } from '@session-chat/core/html-
 import type { HtmlRenderBlock } from '@session-chat/core/markdown/document';
 import { parseMarkdownToBlocks } from '@session-chat/core/markdown/parse';
 import { makeContractCtx } from '@session-chat/tests/contract';
+import { createSignal } from 'solid-js';
 import { render } from 'solid-js/web';
 import { afterEach, describe, expect, it } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
@@ -17,7 +18,7 @@ let root: HTMLDivElement | undefined;
 afterEach(() => { dispose?.(); root?.remove(); });
 
 describe('html-render page expand', () => {
-  it('opens the page over the window inside the chat root, and closes on Escape and on the close button', () => {
+  it('opens the page over the window inside the chat root, and closes on Escape and on the close button', async () => {
     const block = parseMarkdownToBlocks('t', '```html-render\n<div>bars</div>\n```')[0] as HtmlRenderBlock;
     const ctx = makeContractCtx({ width: 480 });
     const measured = htmlRenderBlockDef.measure(block, ctx);
@@ -35,7 +36,7 @@ describe('html-render page expand', () => {
     ), root);
 
     const dialog = () => root!.querySelector('[role="dialog"]');
-    expect(root.querySelectorAll('iframe')).toHaveLength(1);
+    await until('the page mounts in view', () => root!.querySelectorAll('iframe').length === 1);
     expect(dialog()).toBeNull();
 
     root.querySelector<HTMLButtonElement>('button[aria-label="Expand"]')!.click();
@@ -83,9 +84,8 @@ describe('html-render page scheme', () => {
       if (theme === undefined) delete host.dataset.theme;
       else host.dataset.theme = theme;
     };
-    const frame = root.querySelector('iframe')!;
-
     await until('the page reports its scheme', () => schemes.length === 1);
+    const frame = root.querySelector('iframe')!;
     expect(schemes).toEqual(['dark']);
     expect(getComputedStyle(frame).colorScheme).toBe('dark');
 
@@ -94,6 +94,51 @@ describe('html-render page scheme', () => {
     await until('the page reloads on a light flip', () => schemes.length === 2);
     expect(schemes).toEqual(['dark', 'light']);
     expect(getComputedStyle(frame).colorScheme).toBe('light');
+  });
+});
+
+describe('html-render page near the viewport', () => {
+  it('mounts the frame only near the viewport, keeps the box height while away, and remounts at the reported height', async () => {
+    const source = '```html-render\n<div style="height:300px">bars</div>\n```\n\nafter';
+    const blocks = parseMarkdownToBlocks('t', 'before\n\n' + source);
+    expect(blocks.map((block) => block.kind)).toEqual(['html', 'html-render', 'html']);
+    const block = blocks[1] as HtmlRenderBlock;
+    const ctx = makeContractCtx({ width: 480 });
+    root = document.createElement('div');
+    root.style.cssText = 'position:fixed;top:0;left:0;width:480px;height:400px;overflow:auto';
+    const stack = root.appendChild(document.createElement('div'));
+    stack.style.cssText = 'position:relative;height:8000px';
+    document.body.appendChild(root);
+    const Render = htmlRenderBlockDef.Render;
+    const [node, setNode] = createSignal(htmlRenderBlockDef.measure(block, ctx));
+    dispose = render(() => (
+      <ThemeContext.Provider value={() => ctx.theme}>
+        <CachesContext.Provider value={ctx.caches}>
+          <Render node={node()} />
+        </CachesContext.Provider>
+      </ThemeContext.Provider>
+    ), stack);
+    const frame = () => stack.querySelector('iframe');
+    await until('the page reports its height', () => ctx.caches.htmlRenderHeight(block.source) === 316);
+    // The row re-measures from the report, as a transcript row does.
+    setNode(htmlRenderBlockDef.measure(block, ctx));
+    const box = stack.querySelector<HTMLElement>('[data-block-id]')!;
+    expect(box.offsetHeight).toBe(316);
+
+    root.scrollTop = 5000;
+    await until('the frame unmounts once scrolled away', () => frame() === null);
+    expect(box.offsetHeight).toBe(316);
+
+    root.scrollTop = 0;
+    await until('the frame mounts again', () => frame() !== null);
+    expect(frame()!.getAttribute('height')).toBe('316');
+    expect(box.offsetHeight).toBe(316);
+  });
+
+  it('opens at the height the fence header declares before the page has reported', () => {
+    const block = parseMarkdownToBlocks('t', '```html-render height=420\n<div>bars</div>\n```')[0] as HtmlRenderBlock;
+    expect(block.height).toBe(420);
+    expect(htmlRenderBlockDef.measure(block, makeContractCtx({ width: 480 })).height).toBe(420);
   });
 });
 
