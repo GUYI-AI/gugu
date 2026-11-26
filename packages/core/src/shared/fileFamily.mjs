@@ -12,7 +12,7 @@ const FAMILIES = [
   ['video', /^(mp4|mov|webm|mkv|avi|m4v)$/, /^video\//],
   ['audio', /^(mp3|wav|m4a|aac|flac|ogg|opus)$/, /^audio\//],
   ['code', /^(js|mjs|cjs|ts|mts|cts|tsx|jsx|py|go|rs|java|c|cc|cpp|h|hpp|cs|sh|bash|zsh|rb|php|swift|kt|sql|css|scss|sass|less|vue|svelte)$/, /javascript|typescript|x-python|x-sh|x-shellscript/],
-  ['text', /^(md|txt|json|ya?ml|xml|html?|log)$/, /^text\/|json/],
+  ['text', /^(md|markdown|txt|json|ya?ml|xml|html?|log|toml|ini|conf)$/, /^text\/|json/],
 ]
 
 /** `report.pdf` → `'pdf'`; a name without a known suffix goes by its mime; nothing known → `'other'`. */

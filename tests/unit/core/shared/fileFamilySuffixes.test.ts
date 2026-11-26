@@ -24,3 +24,9 @@ it("keeps bash and zsh source files in the code family", () => {
     expect(fileFamily(name, mime)).toBe(family)
   }
 })
+
+it("classifies configuration suffixes known to MIME inference as text", () => {
+  for (const [name, mime, family] of [["config.toml", "", "text"], ["settings.ini", "", "text"], ["service.conf", "", "text"], ["notes.markdown", "", "text"]]) {
+    expect(fileFamily(name, mime)).toBe(family)
+  }
+})
