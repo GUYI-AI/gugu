@@ -121,6 +121,14 @@ export const INTENTIONALLY_SHARED_CHORDS: ReadonlyArray<{
     why: 'Disjoint by focus layer: a keypress is either in the composer or in the nav layer.',
   },
   {
+    keys: ['chat.scrollToTop', 'session.previous'],
+    why: 'A focused transcript scrolls; from a text field or the list the same key walks the list.',
+  },
+  {
+    keys: ['chat.scrollToBottom', 'session.next'],
+    why: 'A focused transcript scrolls; from a text field or the list the same key walks the list.',
+  },
+  {
     keys: ['session.tabClose', 'app.closeWindow'],
     why: 'The focused pane closes its tab first; the window closes only when no pane with tabs has the focus.',
   },

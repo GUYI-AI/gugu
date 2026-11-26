@@ -179,4 +179,8 @@ export const zhCNCommandMessages: Record<CommandCopyKey, string> = {
   'commandHelp.chat.select9': '打开列表里第 9 个对话',
   'command.app.closeWindow': '关闭窗口',
   'commandHelp.app.closeWindow': '没有页签拿着焦点时，关闭这个窗口',
+  'command.chat.scrollToTop': '滚到最上面',
+  'command.chat.scrollToBottom': '跳到最新',
+  'commandHelp.chat.scrollToTop': '把当前对话滚到第一条消息',
+  'commandHelp.chat.scrollToBottom': '把当前对话滚到最新一条消息',
 };

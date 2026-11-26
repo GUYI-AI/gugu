@@ -583,6 +583,18 @@ export const COMMANDS = defineCommands({
     category: 'Tab Navigation',
     defaultHotkey: 'Mod+9',
   },
+  'chat.scrollToTop': {
+    defaultHotkey: 'Mod+ArrowUp',
+    label: 'Scroll to Top',
+    description: 'Scroll the focused conversation to its first message',
+    category: 'Task View',
+  },
+  'chat.scrollToBottom': {
+    defaultHotkey: 'Mod+ArrowDown',
+    label: 'Jump to Latest',
+    description: 'Scroll the focused conversation to its latest message',
+    category: 'Task View',
+  },
   'app.closeWindow': {
     defaultHotkey: 'Mod+W',
     label: 'Close Window',
