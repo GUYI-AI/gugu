@@ -12,6 +12,7 @@ vi.mock('@gugu/core/cloud/config', async (original) => ({ ...(await original<obj
 vi.mock('@/hooks/useAgentHarnessIdentity', () => ({ useAgentHarnessIdentity: () => 'codex' }))
 const { MessageBubble } = await import('@/components/chat/MessageBubble')
 const { MessageQuote } = await import('@/components/chat/MessageQuote')
+const { ChatComposerContextBands } = await import('@/components/chat/ChatComposerContextBands')
 let harness: ReturnType<typeof createReactHarness>
 afterEach(() => { harness?.cleanup(); setLocalePreference('system') })
 
@@ -45,6 +46,16 @@ it.each([
   expect(name, 'the sender row says it at rest').toBe(shown)
   expect(chip, 'no hover-only chip repeats it').toBeNull()
   expect(quote, 'the quote head names it the same way').toContain(shown)
+})
+
+it('the reply band above the composer marks a removed sender, and the draft keeps the bare name', async () => {
+  setLocalePreference('zh-CN')
+  harness = createReactHarness()
+  const quote = { messageId: 'said', senderName: 'Codex 1', content: 'done', source: { sender_user_id: 'peer', to_user_ids: [], is_whisper: false } }
+  const identity = { id: 'peer', type: 'agent', display_name: 'Codex 1', avatar: null, gugu_number: null, bio: null, owner_user_id: 'owner', agent_public: null, desired_status: null, removed_at: '2026-11-27T01:00:00Z', device_id: null, category: null, is_official: null, local_path: null, created_at: null, updated_at: null } as const
+  await renderWithAppProviders(harness, <ChatComposerContextBands chatId="group" quoteContent={quote} onQuoteConsumed={() => {}} onSend={async () => {}} />, { chat: { identitiesById: { peer: identity } } })
+  expect(harness.container.textContent).toContain('Codex 1（已移除）')
+  expect(quote.senderName, 'an excerpt quote sends the draft name as text, so it stays the bare name').toBe('Codex 1')
 })
 
 it('a live agent keeps its bare name and its hover owner chip', async () => {
