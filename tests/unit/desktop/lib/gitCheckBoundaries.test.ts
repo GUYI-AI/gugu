@@ -45,3 +45,8 @@ it('reports hook rejection as its existing specific error category', () => {
   expect(classifyPushError(new Error(message))).toEqual({ type: 'hook_rejected', message })
   expect(classifyPushError(new Error('! [rejected] dev -> dev (non-fast-forward)')).type).toBe('rejected')
 })
+
+it('reports proxy DNS errors during push as network failures', () => {
+  const message = 'fatal: Could not resolve proxy: proxy.test'
+  expect(classifyPushError(new Error(message))).toEqual({ type: 'network_error', message })
+})
