@@ -11,6 +11,7 @@ import { Button } from './ui/Button'
 import { IconButton } from './ui/IconButton'
 import './notice-host.css'
 import { useNoticeComposerAnchor } from './notice-host-position'
+import { StripHover } from './notice-strip-hover'
 
 const CHANGED = 'gugu:notice-host-changed'
 let hostSeq = 0
@@ -80,18 +81,22 @@ export function NoticeHost({ closeLabel, embedded = false }: { closeLabel?: stri
   const offset = anchor && { bottom: anchor.bottom }
   return (
     <>
-      <Toaster
-        className={anchor ? 'gugu-notices gugu-notices-above-composer' : 'gugu-notices'}
-        style={anchor && ({ '--gugu-notice-center': `${anchor.center}px` } as React.CSSProperties)}
-        position="bottom-center"
-        visibleToasts={1}
-        offset={offset}
-        mobileOffset={offset}
-        theme={theme}
-        toastOptions={toastOptions}
-      />
+      <StripHover toasterId={undefined}>
+        <Toaster
+          className={anchor ? 'gugu-notices gugu-notices-above-composer' : 'gugu-notices'}
+          style={anchor && ({ '--gugu-notice-center': `${anchor.center}px` } as React.CSSProperties)}
+          position="bottom-center"
+          visibleToasts={1}
+          offset={offset}
+          mobileOffset={offset}
+          theme={theme}
+          toastOptions={toastOptions}
+        />
+      </StripHover>
       {popOuts.map(({ layer, toasterId }) => createPortal(
-        <Toaster id={toasterId} className="gugu-notices" position="bottom-center" visibleToasts={1} theme={theme} toastOptions={toastOptions} />, layer, toasterId))}
+        <StripHover toasterId={toasterId}>
+          <Toaster id={toasterId} className="gugu-notices" position="bottom-center" visibleToasts={1} theme={theme} toastOptions={toastOptions} />
+        </StripHover>, layer, toasterId))}
       <NoticeDeck />
     </>
   )

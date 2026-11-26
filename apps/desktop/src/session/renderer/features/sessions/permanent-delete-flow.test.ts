@@ -273,6 +273,23 @@ describe('PermanentDeleteRun', () => {
     expect(end).toMatchObject({ deletedCount: 51, failed: [] });
   });
 
+  it('the first batch waits for beforeDelete (the undo notice leaving); undo is refused from the deadline on', async () => {
+    const { clock, advance } = fakeClock();
+    const { calls, deleteOn } = fakeMachines();
+    let noticeGone!: () => void;
+    const beforeDelete = () => new Promise<void>((resolve) => (noticeGone = resolve));
+    const run = new PermanentDeleteRun({ targets: targets(3), withChildren: false, deleteOn, clock, beforeDelete });
+    run.start();
+    advance(PERMANENT_DELETE_UNDO_MS);
+    expect(run.snapshot().phase).toBe('deleting');
+    expect(run.undo()).toBe(false);
+    await flush();
+    expect(calls).toHaveLength(0);
+    noticeGone();
+    await run.finished;
+    expect(calls).toHaveLength(1);
+  });
+
   it('commitNow skips the rest of the window (a newer delete takes over the undo)', async () => {
     const { clock, advance, pending } = fakeClock();
     const { calls, deleteOn } = fakeMachines();

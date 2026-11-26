@@ -13,7 +13,7 @@ import {
 import { restoreArchivedSession } from '@renderer/features/sessions/restore-session-flow';
 import { remoteHostsStore } from '@renderer/features/remote-hosts/remote-hosts-store';
 import { LOCAL_IMPORT_DEVICE } from '@renderer/features/session-import/import-source';
-import { dismissNotice, toast } from '@renderer/lib/hooks/use-toast';
+import { toast } from '@renderer/lib/hooks/use-toast';
 import { rpcOn } from '@renderer/lib/ipc';
 import { showModal } from '@renderer/lib/modal/modal-provider';
 import type { SessionMessageLookupKey } from '@renderer/localization/messages';
@@ -35,6 +35,7 @@ import {
   type SelectedSession,
 } from './history-selection';
 import { UndoCountdownNotice, type UndoCountdownControl } from './undo-countdown-notice';
+import { undoNoticeClock } from './undo-notice-clock';
 
 type Translate = (key: SessionMessageLookupKey, values?: SessionMessageValues) => string;
 
@@ -71,7 +72,7 @@ const logActionFailure = (error: unknown): string => {
 };
 
 const UNDO_NOTICE_KEY = 'session-history-permanent-delete';
-/** 撤销提示不按 sonner 自己的停留走(窗口由删除引擎说了算,到点由这里收):给一个远大于窗口的停留,也就不长关闭钮。 */
+/** 撤销提示的停留远长于撤销窗口(窗口说了算,到点由 beforeDelete 收;两头怎么同步见 undo-notice-clock),也就不长关闭钮。 */
 const UNDO_NOTICE_DWELL_MS = 10 * 60 * 1000;
 /** 「撤销」要留够看见并点到的时间(与归档的撤销同一档)。 */
 const UNDO_DWELL_MS = 8000;
@@ -206,7 +207,6 @@ export function useHistoryBulk(deps: {
       busy = true;
       markBusy([...byKey.keys()], true);
       if (pendingDelete.current === run) pendingDelete.current = null;
-      dismissNotice(UNDO_NOTICE_KEY);
       if (many) jobId = startJob('delete', rows.length, () => run.stop());
     };
     const onChange = (snapshot: PermanentDeleteSnapshot) => {
@@ -219,6 +219,7 @@ export function useHistoryBulk(deps: {
         if (jobId !== null) updateJob(jobId, { processed: snapshot.processed, stopping: snapshot.phase === 'stopping' });
       }
     };
+    const noticeClock = undoNoticeClock(UNDO_NOTICE_KEY, () => run);
     const run = new PermanentDeleteRun({
       targets: rows.map(toTarget),
       withChildren: false,
@@ -228,6 +229,8 @@ export function useHistoryBulk(deps: {
       onCallFailed: (machine, error) =>
         log.warn('session history permanent delete: a batch call failed', { machine, error: String(error) }),
       onChange,
+      // 窗口过了先收干净带「撤销」的提示,离开屏幕后才发第一批(重试没有提示,不用等)。
+      beforeDelete: mode === 'first' ? noticeClock.beforeDelete : undefined,
     });
     if (mode === 'first') {
       pendingDelete.current = run;
@@ -256,6 +259,7 @@ export function useHistoryBulk(deps: {
           control,
         }),
         duration: UNDO_NOTICE_DWELL_MS,
+        ...noticeClock.notice,
         action: {
           label: t('sessionHistory.undo'),
           onClick: () => {

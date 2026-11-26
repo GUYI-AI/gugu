@@ -198,6 +198,11 @@ export type PermanentDeleteRunOptions = {
   /** 状态变了(进入删除、每批之后、结束)。 */
   onChange?: (snapshot: PermanentDeleteSnapshot) => void;
   /**
+   * 窗口一过、第一批之前等它:调用方在这里把带「撤销」的提示收干净(它离开屏幕才兑现)。从窗口过的那一刻起撤销就不算数了
+   * (phase 已是 deleting);这一步只保证删除开始时屏幕上已经没有一个按了不管用的「撤销」。
+   */
+  beforeDelete?: () => Promise<void>;
+  /**
    * 每批回来一次:调用方在一次状态更新里收掉这一批(deletedKeys 的行 + alsoDeleted 的子会话行)。
    * 紧跟着同步调 onChange,两者在同一个回合里,React 合成一次渲染。
    */
@@ -306,6 +311,7 @@ export class PermanentDeleteRun {
     if (this.phase !== 'undo') return;
     this.phase = 'deleting';
     this.emit();
+    if (this.options.beforeDelete) await this.options.beforeDelete().catch(() => undefined);
     const batches = planDeleteBatches(this.targets, this.options.batchSize);
     let next = 0;
     for (; next < batches.length; next++) {
