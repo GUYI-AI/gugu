@@ -1,4 +1,4 @@
-export { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantPick, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
+export { ASSISTANT_APP_ID, ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC, ASSISTANT_PROVISION_SELECT, pickAssistant, type AssistantPick, type AssistantProvisionRow } from '@gugu/core/shared/assistantProvision'
 
 /**
  * #7199 谁是这个人的「个人助理」(owner:「它是一个个人级别的 agent……只有一个身份」):

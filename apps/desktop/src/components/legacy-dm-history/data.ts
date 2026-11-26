@@ -1,6 +1,6 @@
 import { messageItemFromRow, MESSAGES_VIEW_SELECT, type RawMessageRow } from '@gugu/core/cloud/messageItem';
 import type { MessageItem } from '@gugu/core/shared/types/chat';
-import { ASSISTANT_BINDING_ARGS, ASSISTANT_BINDING_RPC } from '@gugu/core/shared/assistantProvision';
+import { ASSISTANT_APP_ID } from '@gugu/core/shared/assistantProvision';
 import { chatDb, identityDb } from '@/lib/supabase';
 import { getRendererSession } from '@/lib/sessionPublication';
 import { currentAuthSessionSignal } from '@/lib/authSessionLoss';
@@ -32,7 +32,7 @@ async function identify(rows: readonly DmRow[], scope: LegacyDmScope): Promise<L
   const peerIds = rows.flatMap(row => row.members.map(member => member.user_id)).filter(id => id !== scope.ownerUserId);
   const [identities, markers] = await Promise.all([
     readDisplayIdentities(peerIds, signal),
-    identityDb.rpc(ASSISTANT_BINDING_RPC, ASSISTANT_BINDING_ARGS).abortSignal(signal),
+    identityDb.rpc('my_app_agent', { p_app_id: ASSISTANT_APP_ID }).abortSignal(signal),
   ]);
   if (markers.error) throw new Error(markers.error.message);
   ownerSignal(scope.ownerUserId);
