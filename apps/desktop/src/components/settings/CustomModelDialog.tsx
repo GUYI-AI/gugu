@@ -69,8 +69,7 @@ const INPUT_LIMITS = [['32K', 32_768], ['64K', 65_536], ['128K', 131_072], ['256
 const OUTPUT_LIMITS = [['8K', 8_192], ['16K', 16_384], ['32K', 32_768], ['64K', 65_536]] as const;
 const CUSTOM_PROVIDER = 'custom';
 
-/** `refusedAt`: the address refused the key; the paths that answered 401/403, in the order the probe tried them. */
-type ConnectionTest = { kind: 'idle' } | { kind: 'testing' } | { kind: 'ok' } | { kind: 'failed'; message: string; refusedAt?: CustomModelMeta['endpoints'] };
+type ConnectionTest = { kind: 'idle' } | { kind: 'testing' } | { kind: 'ok' } | { kind: 'failed'; message: string };
 
 export function CustomModelDialog({ machine, connection, modelId, group = providerPresets.find(preset => preset.id === connection?.preset)?.group ?? 'custom',
   initialAccount, initialRoute, onClose }: {
@@ -127,9 +126,6 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
   const [busy, setBusy] = useState<'save' | null>(null);
   const [accountCreating, setAccountCreating] = useState(false);
   const [failure, setFailure] = useState('');
-  // The address refused the key when saving (the paths that answered 401/403): "Add anyway" appears under the key and is brought into view.
-  const [saveRefused, setSaveRefused] = useState<CustomModelMeta['endpoints'] | null>(null);
-  const anywayButton = useRef<HTMLButtonElement>(null);
   let normalized: CustomModelMeta['endpoints'] | null = null;
   let addressProblem = '';
   try { normalized = endpoints.map((endpoint) => ({ ...endpoint, baseUrl: normalizeModelBaseUrl(endpoint.baseUrl) })); }
@@ -146,15 +142,6 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     : connection?.keySaved && !typedKey && list.reason === 'unauthorized' ? translate('customModels.heldKeyRefused')
       : translate(connectionProbeMessageKey(list.reason, Boolean(preset)));
   const probed = address ? (list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : []) : normalized ?? [];
-  // Only a refused key opens "Add anyway"; an address that cannot be reached or times out still blocks saving.
-  const refusedAt = !address || !keySource ? undefined : test.kind === 'failed' ? test.refusedAt : test.kind !== 'idle' ? undefined
-    : saveRefused ?? (list.kind === 'unlisted' && list.reason === 'unauthorized' && !probed.length ? list.refused ?? [] : undefined);
-  const keyRefused = refusedAt !== undefined;
-  useEffect(() => {
-    if (!saveRefused || busy) return;
-    anywayButton.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    anywayButton.current?.focus({ preventScroll: true });
-  }, [saveRefused, busy]);
   const routeEndpoints = probed.length ? probed : normalized ?? [];
   // The address column appears for a route that has its own upstream address or needs one: its outgoing protocol is not
   // one the main address answers.
@@ -220,7 +207,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     setKeyShown(!keyShown);
   };
   const setAddress = (baseUrl: string) => {
-    setTest({ kind: 'idle' }); setSaveRefused(null);
+    setTest({ kind: 'idle' });
     setEndpoints((current) => current.map((endpoint, i) => i === 0 ? { ...endpoint, baseUrl } : endpoint));
   };
   const testConnection = async () => {
@@ -236,7 +223,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
         const reading = probeModelList(probe.data);
         const reason = reading.kind === 'unlisted' ? reading.reason : 'unreachable';
         setTest(probe.data.models.length || probe.data.endpoints.length ? { kind: 'ok' }
-          : { kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))), ...(reason === 'unauthorized' ? { refusedAt: probe.data.refused ?? [] } : {}) });
+          : { kind: 'failed', message: translate(connectionProbeMessageKey(reason, Boolean(preset))) });
         return;
       }
       const result = await client.testCustomModel({ ...keySource, endpoints: normalized, ...named });
@@ -254,11 +241,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
     const next = providerPresets.find((item) => item.id === id);
     if (id !== 'claude-subscription' && id !== 'chatgpt-subscription' && id !== 'antigravity-subscription') setEndpoints(next?.endpoints ?? [{ protocol: 'openai-chat-completions', baseUrl: '' }]);
   };
-  /**
-   * `anyway`: the address refused the key and the person adds it all the same, unverified. The format is not asked: the
-   * first path that answered 401/403 exists, so it is that one; when none did, OpenAI Chat at the address as typed.
-   */
-  const save = async (anyway = false) => {
+  const save = async () => {
     setFailure('');
     if (!normalized) { setFailure(addressProblem); return; }
     if (!model) { setFailure(translate('subscriptions.connections.modelsRequired')); return; }
@@ -267,10 +250,7 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
       const client = await getAgentConfigRuntimeClient(machine);
       let saved = normalized;
       let unverified: boolean | undefined;
-      if (address && keySource && anyway) {
-        saved = [refusedAt?.[0] ?? { protocol: 'openai-chat-completions', baseUrl: address }];
-        unverified = true;
-      } else if (address && keySource) {
+      if (address && keySource) {
         // What the background check found; an address with no model list is checked again with the model named here.
         saved = list.kind === 'listed' || list.kind === 'unlisted' ? list.endpoints ?? [] : [];
         if (!saved.length) {
@@ -280,11 +260,15 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
           if (!saved.length) {
             const reading = probeModelList(probe.data);
             const reason = reading.kind === 'unlisted' ? reading.reason : 'unreachable';
-            setSaveRefused(reason === 'unauthorized' ? probe.data.refused ?? [] : null);
-            throw new Error(translate(connectionProbeMessageKey(reason, Boolean(preset))));
+            // The person typed this key; a refusal does not stop the save or drop the key (owner 2026-11-26). The format is not
+            // asked: the first path that answered 401/403 exists, so it is that one, else OpenAI Chat at the address as typed.
+            // The connection stays unverified until a save the address answers. An address that cannot be reached still stops here.
+            if (reason !== 'unauthorized') throw new Error(translate(connectionProbeMessageKey(reason, Boolean(preset))));
+            saved = [probe.data.refused?.[0] ?? { protocol: 'openai-chat-completions', baseUrl: address }];
+            unverified = true;
           }
         }
-        unverified = false;
+        unverified ??= false;
       }
       // Unchecking the custom protocol only hides the routes; saving while it is unchecked removes them (asked above).
       const savedRoutes = (advanced.customProtocol ? routes : []).map((route) => customModelRouteSchema.parse({
@@ -389,20 +373,15 @@ export function CustomModelDialog({ machine, connection, modelId, group = provid
           <div className="gg-model-field">
             <label className="gg-model-field-label" htmlFor="custom-model-key">API Key</label>
             <div className="gg-model-key-row">
-              <span className="relative flex min-w-0 flex-1 items-center"><Input id="custom-model-key" ref={keyInput} data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyRevealable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={test.kind === 'failed' ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : translate('customModels.keyPlaceholder')} onChange={(event) => { setApiKey(event.target.value); setTest({ kind: 'idle' }); setSaveRefused(null); }} />
+              <span className="relative flex min-w-0 flex-1 items-center"><Input id="custom-model-key" ref={keyInput} data-testid="custom-model-key" type={keyShown ? 'text' : 'password'} className={keyRevealable ? 'pr-9' : undefined} required={!connection?.keySaved} autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={test.kind === 'failed' ? true : undefined} placeholder={connection?.keySaved ? `••••••••${connection.discovered?.keyLast4 ?? ''}` : translate('customModels.keyPlaceholder')} onChange={(event) => { setApiKey(event.target.value); setTest({ kind: 'idle' }); }} />
                 {keyRevealable && <IconButton size="sm" className="absolute right-1 top-1/2 -translate-y-1/2" aria-label={translate(keyShown ? 'customModels.hideKey' : 'customModels.showKey')} aria-pressed={keyShown} onClick={() => { void toggleKey(); }}>{keyShown ? <Eye aria-hidden className="size-4" /> : <EyeOff aria-hidden className="size-4" />}</IconButton>}</span>
               <Button type="button" variant="outline" data-testid="custom-model-test" disabled={!source || test.kind === 'testing' || !!busy} onClick={() => { void testConnection(); }}>
                 {translate(test.kind === 'testing' ? 'customModels.testing' : 'customModels.test')}
               </Button>
             </div>
             {test.kind === 'ok' && <p className="gg-model-test-ok" role="status" data-testid="custom-model-test-result"><Check aria-hidden className="size-3" />{translate('customModels.testOk')}</p>}
-            {(test.kind === 'failed' || (test.kind === 'idle' && (keyProblem || saveRefused))) && <div className="gg-model-key-message">
-              {test.kind === 'failed' ? <p className="subscription-error" role="alert" data-testid="custom-model-test-result">{test.message}</p>
-                : <p className="subscription-error" role="alert" data-testid="custom-model-key-problem">{keyProblem || translate('customModels.refused')}</p>}
-              {keyRefused && <Button ref={anywayButton} type="button" size="sm" variant="outline" disabled={!!busy} data-testid="custom-model-add-anyway" onClick={() => { void save(true); }}>
-                {translate(connection ? 'customModels.saveAnyway' : 'customModels.addAnyway')}
-              </Button>}
-            </div>}
+            {test.kind === 'failed' && <p className="subscription-error" role="alert" data-testid="custom-model-test-result">{test.message}</p>}
+            {test.kind === 'idle' && keyProblem && <p className="subscription-error" role="alert" data-testid="custom-model-key-problem">{keyProblem}</p>}
           </div>
           <label className="gg-model-field gg-model-field-spaced"><span className="gg-model-field-label">{translate('customModels.modelName')}</span>
             <Input data-testid="custom-model-name" required spellCheck={false} maxLength={200} placeholder={translate('customModels.modelNamePlaceholder')} value={modelName} onChange={(event) => { setModelName(event.target.value); setTest({ kind: 'idle' }); }} />

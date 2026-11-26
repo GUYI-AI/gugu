@@ -567,8 +567,9 @@ it('owner 11-24: own models say the plan as sold, the vendor while the tier is u
   expect(ownModelTag('claude', { plan: { payer: 'custom-endpoint', endpoint: 'relay.example.com' } })).toBe('example');
   expect(ownModelTag('pi', { credentialKind: 'subscription' })).toBeUndefined();
 });
-// owner 2026-11-26 20:12/20:32: an address that refuses the key can still be added, without asking its format: the first path
-// that answered 401/403 exists, so it is that one; none did ⇒ OpenAI Chat at the address as typed. The first session checks the key.
+// owner 2026-11-26 20:12/20:32/20:46: the person typed this key, so a refusal does not stop the save or drop the key, and no
+// format is asked: the first path that answered 401/403 exists, so it is that one; none did ⇒ OpenAI Chat at the address as
+// typed. The connection is marked unverified; the red line stays as a note. Unreachable or timed-out addresses still stop the save.
 const refusedProbe = (refused?: CustomModelProtocolProbe['refused']): CustomModelProtocolProbe => ({
   endpoints: [], models: [], failures: [{ step: 'models', reason: 'unauthorized' }], ...(refused ? { refused } : {}),
 });
@@ -577,52 +578,36 @@ async function fillRefused() {
   await userEvent.fill(page.getByTestId('custom-model-key'), 'sk-refused');
   await userEvent.fill(page.getByTestId('custom-model-name'), 'relay/model');
 }
-it('a refused key is added anyway as the path that answered 401, saved as unverified, with no format asked', async () => {
+it('a refused key does not stop the save: it keeps the key, saves the path that answered 401 and marks it unverified', async () => {
   setLocalePreference('zh-CN');
   state.probe = refusedProbe([{ protocol: 'anthropic-messages', baseUrl: 'https://relay.test' }]);
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
   await fillRefused();
   await expect.element(page.getByTestId('custom-model-key-problem')).toHaveTextContent('该地址拒绝了此 Key。');
-  await expect.element(page.getByTestId('custom-model-add-anyway')).toHaveTextContent('仍然添加');
-  expect(document.querySelectorAll('[data-testid="custom-model-dialog"] [role=combobox]')).toHaveLength(2); // provider, default effort: no format picker
-  // Save is still refused; the dialog brings the way out into view instead of leaving the error at the bottom.
+  expect(page.getByRole('button', { name: /仍然/ }).query()).toBeNull();
   await userEvent.click(page.getByTestId('custom-model-save'));
-  await until('the add-anyway button takes focus', () => document.activeElement === page.getByTestId('custom-model-add-anyway').element());
-  expect(state.saved).toBeNull();
-  await userEvent.click(page.getByTestId('custom-model-add-anyway'));
   await until('the form saved', () => state.saved !== null);
   expect(state.saved).toMatchObject({ endpoints: [{ protocol: 'anthropic-messages', baseUrl: 'https://relay.test' }], unverified: true, apiKey: 'sk-refused', models: [{ id: 'relay/model' }] });
 });
-it('a refusal that tells no path apart is added anyway as OpenAI Chat at the address as typed', async () => {
+it('a refusal that tells no path apart is saved as OpenAI Chat at the address as typed', async () => {
   state.probe = refusedProbe();
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
   await fillRefused();
-  await userEvent.click(page.getByTestId('custom-model-add-anyway'));
-  await until('the form saved', () => state.saved !== null);
-  expect(state.saved).toMatchObject({ endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], unverified: true });
-});
-it('Test connection that the address refuses offers adding anyway; other failures do not', async () => {
-  state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason: 'timeout' }] };
-  render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
-  await fillRefused();
-  await userEvent.click(page.getByTestId('custom-model-test'));
-  await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('The connection timed out.');
-  expect(page.getByTestId('custom-model-add-anyway').query()).toBeNull();
   await userEvent.click(page.getByTestId('custom-model-save'));
-  await expect.element(page.getByRole('alert').last()).toHaveTextContent('The connection timed out.');
-  expect(page.getByTestId('custom-model-add-anyway').query()).toBeNull();
-  state.probe = refusedProbe([{ protocol: 'openai-responses', baseUrl: 'https://relay.test/v1' }]);
-  await userEvent.click(page.getByTestId('custom-model-test'));
-  await expect.element(page.getByTestId('custom-model-test-result')).toHaveTextContent('This address refused the key.');
-  await userEvent.click(page.getByTestId('custom-model-add-anyway'));
   await until('the form saved', () => state.saved !== null);
-  expect(state.saved).toMatchObject({ endpoints: [{ protocol: 'openai-responses', baseUrl: 'https://relay.test/v1' }], unverified: true });
+  expect(state.saved).toMatchObject({ endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], unverified: true, apiKey: 'sk-refused' });
 });
-it('editing says Save anyway; a save the address answers clears the mark, and the list says which keys are unverified', async () => {
-  state.probe = refusedProbe();
-  render(<CustomModelDialog machine={null} group="custom" connection={{ ...record(), keySaved: true, unverified: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], models: [{ id: 'relay/model' }] }} onClose={() => {}} />);
-  await expect.element(page.getByTestId('custom-model-add-anyway')).toHaveTextContent('Save anyway');
-  root.unmount(); root = createRoot(host);
+for (const reason of ['timeout', 'unreachable'] as const) {
+  it(`an address that answers with ${reason} still stops the save`, async () => {
+    state.probe = { endpoints: [], models: [], failures: [{ step: 'models', reason }] };
+    render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
+    await fillRefused();
+    await userEvent.click(page.getByTestId('custom-model-save'));
+    await expect.element(page.getByRole('alert').last()).toHaveTextContent(reason === 'timeout' ? 'The connection timed out.' : 'Cannot reach this address.');
+    expect(state.saved).toBeNull();
+  });
+}
+it('a save the address answers clears the unverified mark, and the list says which keys are unverified', async () => {
   state.probe = { endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], models: [], failures: [] };
   render(<CustomModelDialog machine={null} group="custom" onClose={() => {}} />);
   await fillRefused();
@@ -636,7 +621,7 @@ it('editing says Save anyway; a save the address answers clears the mark, and th
   await expect.element(page.getByText('Key not verified')).toBeVisible();
 });
 for (const theme of ['light', 'dark'] as const) {
-  it(`captures adding a refused key anyway in the ${theme} theme`, async () => {
+  it(`captures a refused key that still saves in the ${theme} theme`, async () => {
     await page.viewport(1100, 860);
     setLocalePreference('zh-CN');
     document.documentElement.dataset.theme = theme;
@@ -646,8 +631,13 @@ for (const theme of ['light', 'dark'] as const) {
       document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
       render(<UiPortalContainerProvider value={host}><CustomModelDialog machine={null} group="custom" onClose={() => {}} /></UiPortalContainerProvider>);
       await fillRefused();
-      await expect.element(page.getByTestId('custom-model-add-anyway')).toBeVisible();
-      await shot(`${theme}-add-anyway`);
+      await expect.element(page.getByTestId('custom-model-key-problem')).toBeVisible();
+      await shot(`${theme}-key-refused`);
+      state.rows = [{ ...record(), name: 'relay.test', keySaved: true, unverified: true, endpoints: [{ protocol: 'openai-chat-completions', baseUrl: 'https://relay.test/v1' }], models: [{ id: 'relay/model' }] }];
+      root.unmount(); root = createRoot(host);
+      render(<UiPortalContainerProvider value={host}><Sheet ariaLabel="Settings" zIndex="var(--z-settings)" onClose={() => {}}><CustomModelsGroup /></Sheet></UiPortalContainerProvider>);
+      await expect.element(page.getByText('Key 未验证')).toBeVisible();
+      await page.screenshot({ path: `../../../../../../../test-results/custom-model-${theme}-unverified-row.png` });
     } finally { document.documentElement.dataset.theme = 'light'; }
   });
 }
