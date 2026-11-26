@@ -193,15 +193,15 @@ export const list = {
 
 export const create = {
   description:
-    'Put a new text file in a chat\'s folder: content makes it (markdown; JSON when the content is a JSON object); a file from this computer goes there with message_send\'s file_path. folder puts it in that subfolder (made when it is not there), and folder alone makes the subfolder. A name already in that folder gets " (2)", " (3)": the answer says the name it got. Its link, in a message, opens it. A file made from a topic is in its source group or private chat\'s shared folder.',
+    'Put a new text file in a chat\'s folder: title names it and its format (周报.md, data.json), content is its text; a file from this computer goes there with message_send\'s file_path. folder puts it in that subfolder (made when it is not there), and folder alone makes the subfolder. A name already in that folder gets " (2)", " (3)": the answer says the name it got. Its link, in a message, opens it. A file made from a topic is in its source group or private chat\'s shared folder.',
   inputSchema: {
     type: 'object',
     required: ['chat_id'],
     properties: {
       chat_id: CHAT,
       folder: FOLDER,
-      title: { type: 'string', description: 'The file\'s name; needed with content.' },
-      content: { type: 'string', description: 'The text of a new text file (up to 1 MiB): markdown, or a JSON object.' },
+      title: { type: 'string', description: 'The file\'s name with its type, needed with content: 周报.md, notes.txt, data.json (a JSON object), table.csv, page.html.' },
+      content: { type: 'string', description: 'The text of a new text file (up to 1 MiB), in the format its title names.' },
       source_message_ids: { type: 'array', items: { type: 'string' }, description: 'The messages it came from, by id: shown under the file.' },
     },
   },
@@ -217,17 +217,9 @@ export const create = {
     if (content === undefined) throw new Error('create takes content (a new text file), or folder alone to make that folder; a file from this computer goes with message_send\'s file_path')
     if (typeof title !== 'string' || !title.trim()) throw new Error('create with content needs a title')
     if (bytesOf(content) > TEXT_MAX_BYTES) throw new Error('content is over the 1 MiB of a text file: write it to a file and send it with message_send\'s file_path')
-    let json = false
-    try {
-      const parsed = JSON.parse(content)
-      json = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
-    } catch {}
-    if (!json && /\.json$/i.test(title)) throw new Error(`${title} is a .json file: its content must be a JSON object at the top`)
-    // A title without a type of its own is markdown, as a new text file always was; one that says .html or .csv keeps it.
-    const type = json ? 'application/json' : /\.[A-Za-z0-9]+$/.test(title.trim()) ? '' : 'text/markdown'
-    const file = new File([content], title.trim(), { type })
+    // The title is the file's name and its format: the folder refuses one without a text suffix (.md, .json…), saying so.
     const sourceMessageIds = (source_message_ids ?? []).map((id) => String(id).replace(/^msg:/, ''))
-    const [entry] = await gugu.files.upload(folder === undefined ? { chat: chat_id } : { chat: chat_id, folder }, file, { sourceMessageIds })
+    const entry = await gugu.files.create({ chat: chat_id, name: title.trim(), ...(folder === undefined ? {} : { folder }) }, content, { sourceMessageIds })
     return {
       created: { id: entry.id, name: entry.name, path: entry.path, type: entry.type, size: entry.size },
       link: await linkOf(entry),

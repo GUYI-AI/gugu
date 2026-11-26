@@ -2009,7 +2009,7 @@ describe('gugu 原子工具 MCP server（#1060 SDK 迁移 → #4191 原子化）
     const h = harness()
     const made = await groupDataFileOf(TEST_CONTEXT, { chatId: '00000000-0000-4000-8000-000000000001', name: 'friday.vote.json', content: { question: 'Friday?', votes: {} } }, h.deps)
     const body = h.calls.rpcs.find(([name]) => name === 'workspace_create_document_as')?.[1] as Record<string, unknown>
-    expect(body).toMatchObject({ p_chat_id: '00000000-0000-4000-8000-000000000001', p_title: 'friday.vote.json', p_content_type: 'application/json', p_as_user_id: 'agent-1' })
+    expect(body).toMatchObject({ p_chat_id: '00000000-0000-4000-8000-000000000001', p_title: 'friday.vote.json', p_as_user_id: 'agent-1' })
     expect(JSON.parse(String(body.p_content))).toEqual({ question: 'Friday?', votes: {} })
     expect(made).toMatchObject({ item: { id: W_NEW }, link: `[friday.vote.json](gugu-file://${W_NEW})`, reused: false })
     // A reinstall after a fix: brief.md is already there under that name — kept, nothing made.

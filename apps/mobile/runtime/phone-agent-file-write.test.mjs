@@ -240,6 +240,8 @@ test('invalid names, arbitrary paths, binary format claims and oversized/non-UTF
     }
     await assert.rejects(tool.execute('caller-path', { file_name: 'report.txt', text: 'body', file_path: '/tmp/outside' }), { code: 'invalid_args' })
     await assert.rejects(tool.execute('pdf', { file_name: 'fake.pdf', text: 'not really a PDF' }), { code: 'unsupported' })
+    // Its name is its format: a name without a text type is refused, never taken as plain text.
+    await assert.rejects(tool.execute('bare', { file_name: '周报', text: '# 周报' }), { code: 'unsupported' })
     await assert.rejects(tool.execute('binary', { file_name: 'report.txt', text: 'before\0after' }), { code: 'invalid_args' })
     await assert.rejects(tool.execute('surrogate', { file_name: 'report.txt', text: '\ud800' }), { code: 'invalid_args' })
     await assert.rejects(tool.execute('size', { file_name: 'large.txt', text: 'x'.repeat(PHONE_TEXT_OUTPUT_MAX_BYTES + 1) }), { code: 'too_large' })

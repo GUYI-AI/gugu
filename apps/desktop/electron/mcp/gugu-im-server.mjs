@@ -928,7 +928,6 @@ export async function groupDataFileOf(context, { chatId, name, content, itemId }
     p_chat_id: chat,
     p_title: name,
     p_content: kind.text,
-    p_content_type: kind.contentType,
     p_source_message_ids: [],
   }, 'app_install')
   return { item: summarizeWorkspaceItem(item), link: workspaceFileLink(item), reused: false }

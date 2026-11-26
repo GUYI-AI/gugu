@@ -58,6 +58,11 @@ const MIME_BY_EXT = {
   toml: 'text/toml',
   ini: 'text/plain',
   conf: 'text/plain',
+  tsv: 'text/tab-separated-values',
+  // One JSON value per line, not a JSON object: a text file, as .log and .ini are.
+  jsonl: 'text/plain',
+  log: 'text/plain',
+  ics: 'text/calendar',
   pdf: 'application/pdf',
   zip: 'application/zip',
   mp3: 'audio/mpeg',

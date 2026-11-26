@@ -144,7 +144,7 @@ export function createGugu(
     /** Across every chat the reader is in, needing `files:read`: by a piece of the path, newest first; what this person opened last. */
     search: (options?: unknown) => loadFiles().then((m) => m.searchEntries(host, options)),
     recent: (options?: unknown) => loadFiles().then((m) => m.recentEntries(host, options)),
-    create: (target: unknown, content: string | object, options?: { contentType?: string; sourceMessageIds?: string[]; ifExists?: 'use' }) =>
+    create: (target: unknown, content: string | object, options?: { sourceMessageIds?: string[]; ifExists?: 'use' }) =>
       loadFiles().then((m) => m.createFile(host, target, content, options)),
     remove: (file: unknown) => loadFiles().then((m) => m.removeFile(host, file)),
     rename: (file: unknown, name: string) => loadFiles().then((m) => m.renameFile(host, file, name)),

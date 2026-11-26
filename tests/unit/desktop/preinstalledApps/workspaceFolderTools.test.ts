@@ -74,6 +74,14 @@ beforeEach(() => {
         const binary = file.name.endsWith('.bin')
         return [entry('0d000000-0000-4000-8000-00000000000a', file.name, binary ? 'binary' : 'text', binary ? { contentType: 'application/octet-stream' } : {})]
       },
+      // The folder decides a text file's format by its name, and refuses a name without a text suffix (gugu-supabase
+      // workspace_document_type): here only that refusal, in its words, so the tool is seen handing it on.
+      create: async (place: unknown, content: unknown, options: unknown) => {
+        const { name, ...where } = place as { name: string }
+        calls.push(['create', where, name, content, options])
+        if (!/\.(md|json|html)$/.test(name)) throw coded('invalid', `「${name}」没有文本文件的后缀:文档的名字以它的类型结尾,如 .md、.txt、.json、.csv、.html`)
+        return entry('0d000000-0000-4000-8000-00000000000a', name, name.endsWith('.json') ? 'json' : 'text')
+      },
       rename: async (ref: unknown, name: string) => (calls.push(['rename', ref, name]), entry(DOC, name, 'text')),
       // The folder's own version check (app-files-core, #7174), its functions not a copy of them; the fake only knows
       // which version the file is at. In the order files.replace asks: a version first, then the kind of file.
@@ -149,7 +157,7 @@ describe('the folder\'s tools as tools.js gives them', () => {
     // Text reaches the folder as given.
     await list!.run({ chat_id: '211178' })
     await create!.run({ chat_id: CHAT, title: 'n.md', content: 'x' })
-    expect(calls.map((call) => call.slice(0, 2))).toEqual([['list', { chat: '211178' }], ['upload', { chat: CHAT }]])
+    expect(calls.map((call) => call.slice(0, 2))).toEqual([['list', { chat: '211178' }], ['create', { chat: CHAT }]])
     // Not text — a number the gateway did not hand included — refused before the folder is asked.
     const refused = /^chat_id is a chat's id or the number people see \(its 咕咕号\), not /
     for (const bad of [211178, 1.5, -3, 0, Number.NaN, '', null, undefined, true, { chat: CHAT }]) {
@@ -160,16 +168,15 @@ describe('the folder\'s tools as tools.js gives them', () => {
     expect(calls).toHaveLength(2)
   })
 
-  test('create with content: a text file — markdown unless it says otherwise, JSON when it is an object; its source messages', async () => {
+  test('create with content: a text file named with its format, made by the folder as it is named; its source messages', async () => {
     const { create } = await tools()
-    const made = await create!.run({ chat_id: CHAT, title: '周报', content: '# 周报', source_message_ids: [`msg:${MESSAGE}`] })
-    expect(calls.at(-1)).toEqual(['upload', { chat: CHAT }, '周报', 'text/markdown', '# 周报', { sourceMessageIds: [MESSAGE] }])
-    expect(made).toMatchObject({ created: { name: '周报', type: 'text' }, stored_as: expect.stringMatching(/^a text file/) })
+    const made = await create!.run({ chat_id: CHAT, title: '周报.md', content: '# 周报', source_message_ids: [`msg:${MESSAGE}`] })
+    expect(calls.at(-1)).toEqual(['create', { chat: CHAT }, '周报.md', '# 周报', { sourceMessageIds: [MESSAGE] }])
+    expect(made).toMatchObject({ created: { name: '周报.md', type: 'text' }, stored_as: expect.stringMatching(/^a text file/) })
     await create!.run({ chat_id: CHAT, title: 'state.json', content: '{"votes":{}}' })
-    expect(calls.at(-1)?.slice(0, 4)).toEqual(['upload', { chat: CHAT }, 'state.json', 'application/json'])
-    await create!.run({ chat_id: CHAT, title: 'report.html', content: '<p>hi</p>' })
-    expect(calls.at(-1)?.slice(0, 4)).toEqual(['upload', { chat: CHAT }, 'report.html', ''])
-    await expect(create!.run({ chat_id: CHAT, title: 'bad.json', content: '[1]' })).rejects.toThrow(/must be a JSON object at the top/)
+    expect(calls.at(-1)?.slice(0, 4)).toEqual(['create', { chat: CHAT }, 'state.json', '{"votes":{}}'])
+    // Never guessed: a title without its type is the folder's refusal, said as the folder said it.
+    await expect(create!.run({ chat_id: CHAT, title: '周报', content: '# 周报' })).rejects.toThrow('「周报」没有文本文件的后缀')
     await expect(create!.run({ chat_id: CHAT, content: 'x' })).rejects.toThrow(/needs a title/)
     await expect(create!.run({ chat_id: CHAT, title: 'big.md', content: 'y'.repeat(1024 * 1024 + 1) })).rejects.toThrow(/over the 1 MiB/)
   })
@@ -276,8 +283,7 @@ describe('the tools and subfolders', () => {
   test('create puts a file in a folder; folder alone makes the folder; folder alone with a title is refused', async () => {
     const { create } = await tools()
     await create.run({ chat_id: CHAT, folder: '合同/2026', title: 'plan.md', content: 'x' })
-    // A title with a suffix of its own keeps it: the File carries no type (as before).
-    expect(calls.at(-1)).toEqual(['upload', { chat: CHAT, folder: '合同/2026' }, 'plan.md', '', 'x', { sourceMessageIds: [] }])
+    expect(calls.at(-1)).toEqual(['create', { chat: CHAT, folder: '合同/2026' }, 'plan.md', 'x', { sourceMessageIds: [] }])
     expect(await create.run({ chat_id: CHAT, folder: '合同/2026' })).toEqual({ created: { id: BOX, name: '2026', path: '合同/2026', type: 'folder' } })
     expect(calls.at(-1)).toEqual(['mkdir', { chat: CHAT, path: '合同/2026' }])
     await expect(create.run({ chat_id: CHAT, folder: '合同/2026', title: 'plan.md' })).rejects.toThrow(/folder alone makes that folder/)

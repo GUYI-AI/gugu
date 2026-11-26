@@ -823,8 +823,10 @@ function ownSuffix(name: string): string {
 
 /**
  * What kind of file this is, as a suffix — the one answer for who opens it and how it shows (摩擦单 F41): its content
- * type's, when the type names one — the type is also what the file is served as (`fileTypeOf`), and a document's name is
- * a title (`栖页 2.0 发布页` has no suffix `.0 发布页`). Only a type that names none (stored bytes) goes by the name's.
+ * type's, when the type names one — the type is also what the file is served as (`fileTypeOf`). A document's type comes
+ * from its name (the folder refuses a name without a text suffix), so the two agree; one made before that may still have
+ * a bare title (`栖页 2.0 发布页` has no suffix `.0 发布页`), and its type answers for it. Only a type that names none
+ * (stored bytes) goes by the name's.
  * The file is never renamed: names are people's and agents'.
  */
 export function fileSuffixOf(file: { name: string; contentType?: string | null }): string {

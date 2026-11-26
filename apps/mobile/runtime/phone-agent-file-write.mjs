@@ -1,12 +1,12 @@
 import { constants } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { copyFile, lstat, mkdir, open, realpath, rm } from 'node:fs/promises'
-import { extname, join } from 'node:path'
+import { join } from 'node:path'
+import { mimeTypeFromName } from '../../../packages/core/src/shared/imageMime.mjs'
 import { stableId, uuid } from './phone-agent-store.mjs'
 
 export const PHONE_TEXT_OUTPUT_MAX_BYTES = 1024 * 1024
 const fail = (code, message) => Object.assign(new Error(message), { code })
-const mimeTypes = { '.txt': 'text/plain', '.md': 'text/markdown', '.csv': 'text/csv', '.tsv': 'text/tab-separated-values', '.json': 'application/json', '.jsonl': 'application/x-ndjson', '.html': 'text/html', '.htm': 'text/html', '.xml': 'application/xml', '.yaml': 'application/yaml', '.yml': 'application/yaml', '.toml': 'application/toml', '.ini': 'text/plain', '.log': 'text/plain', '.ics': 'text/calendar' }
 const uniqueProofs = (...sources) => [...new Map(sources.flatMap((source) => source ?? []).map((proof) => [JSON.stringify(proof), structuredClone(proof)])).values()]
 const invalidFilenameCharacter = (character) => {
   const code = character.charCodeAt(0)
@@ -18,9 +18,9 @@ function contentOf(args) {
   if (!args || typeof args !== 'object' || Array.isArray(args) || Object.keys(args).some((name) => name !== 'file_name' && name !== 'text')) throw fail('invalid_args', 'Only file_name and text are accepted; a path or overwrite mode cannot be specified')
   const name = args?.file_name
   if (typeof name !== 'string' || !name || name !== name.trim() || Buffer.byteLength(name, 'utf8') > 120 || name.startsWith('.') || Array.from(name).some(invalidFilenameCharacter) || !name.isWellFormed()) throw fail('invalid_args', 'file_name must be a single plain file name of at most 120 bytes, without a path, a hidden file name or control characters')
-  const extension = extname(name).toLowerCase()
-  const mime = extension ? mimeTypes[extension] : 'text/plain'
-  if (!mime) throw fail('unsupported', 'Only UTF-8 text reports can be generated, such as .md, .txt, .csv, .json, .html; PDF, Office and other binary formats are not generated')
+  // Its name is its format, read from the one table every door uses (a chat's folder decides a document's type by it).
+  const mime = mimeTypeFromName(name)
+  if (mime !== 'application/json' && !mime?.startsWith('text/')) throw fail('unsupported', 'Only UTF-8 text reports named with their type can be generated, such as .md, .txt, .csv, .json, .html; PDF, Office and other binary formats are not generated')
   if (typeof args.text !== 'string' || !args.text.isWellFormed() || args.text.includes('\0')) throw fail('invalid_args', 'text must be valid UTF-8 text without null bytes')
   if (Buffer.byteLength(args.text, 'utf8') > PHONE_TEXT_OUTPUT_MAX_BYTES) throw fail('too_large', 'A single phone text output is at most 1 MiB; shorten the report and save again')
   const bytes = Buffer.from(args.text, 'utf8')

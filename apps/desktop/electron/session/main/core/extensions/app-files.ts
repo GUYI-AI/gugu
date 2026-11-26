@@ -710,10 +710,10 @@ function noSourceMessagesInWorkingCopy(sourceMessageIds: unknown): void {
 
 export async function createAppFile(
   page: DesktopFilePage,
-  args: { place?: unknown; name: string; content: string; contentType?: string; sourceMessageIds?: unknown; folder?: unknown; ifExists?: unknown },
+  args: { place?: unknown; name: string; content: string; sourceMessageIds?: unknown; folder?: unknown; ifExists?: unknown },
 ): Promise<AppFileEntry> {
   const place = placeOf(args.place);
-  const file = { name: args.name, content: args.content, ...(args.contentType ? { contentType: args.contentType } : {}) };
+  const file = { name: args.name, content: args.content };
   if ('chat' in place) return files.create(place.chat, { ...file, sourceMessageIds: args.sourceMessageIds, folder: args.folder, ifExists: args.ifExists }, { asAgent: page.asAgent ?? null, extensionId: page.extensionId });
   noSourceMessagesInWorkingCopy(args.sourceMessageIds);
   if (args.ifExists !== undefined) throw new AppFileError('invalid', "ifExists is for a chat's files: a working copy's name already there is name-taken");
