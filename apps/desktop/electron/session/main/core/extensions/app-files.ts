@@ -404,7 +404,7 @@ export async function readAppFile(page: DesktopFilePage, args: { ref?: unknown; 
  * reader asks for come front to back (whole-file reads, `f.read` in order); one that jumps starts the stream again there,
  * of the same version. A new read still asks `filesRead` of no bytes first: that call carries the App's gate on its machine
  * (manifest, working as an agent), which the stream itself does not repeat; its version pins the stream.
- * null = a machine no device link reaches (or a server below 19): the caller reads its pieces the way its channel goes.
+ * null = a machine no device link reaches: the caller reads its pieces the way its channel goes.
  * A linked machine never comes back null for how its link is doing: a link that will not open, or a stream that cannot
  * go on, fails the read loudly (the stream itself resumes over the link first, `openLinkStream`).
  */

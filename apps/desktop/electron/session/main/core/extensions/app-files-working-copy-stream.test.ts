@@ -154,8 +154,8 @@ it('whether a machine streams comes from its mapping; a linked machine streams o
   expect(await remoteFileStreams(() => unlinked, account, async () => false).linked('device-b')).toBe(false);
   expect((unlinked as { open: ReturnType<typeof vi.fn> }).open).not.toHaveBeenCalled();
   expect(await remoteFileStreams(() => links({ ok: true }, 19), account, async () => true).linked('device-b')).toBe(true);
-  // An older server still reads by pieces, over the same link.
-  expect(await remoteFileStreams(() => links({ ok: false, reason: 'outdated', controlOnly: true }, 18), account, async () => true).linked('device-b')).toBe(false);
+  // An older server is linked too: its stream is refused as outdated (and the server upgraded), not read by pieces.
+  expect(await remoteFileStreams(() => links({ ok: false, reason: 'outdated', controlOnly: true }, 18), account, async () => true).linked('device-b')).toBe(true);
   await expect(remoteFileStreams(() => links({ ok: false, reason: 'unreachable' }, null), account, async () => true).linked('device-b')).rejects.toThrow(/unreachable/);
   await expect(remoteFileStreams(() => links({ ok: true }, null), account, async () => true).linked('device-b')).rejects.toThrow(/closed/);
   await expect(remoteFileStreams(() => null, account, async () => true).linked('device-b')).rejects.toThrow(/not available/);

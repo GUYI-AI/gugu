@@ -8,7 +8,7 @@ import { createFileSink } from './fileSnapshot'
 import { nextPartBytes, SMALLEST_PART_BYTES } from '@shared/extensions/working-copy-upload'
 
 export const PROJECT_FILE_READ = 'file.read'
-/** Remote protocol 19 and later (`FILE_STREAM_PROTOCOL`): a held version read as one stream of raw bytes. */
+/** Remote protocol 19 and later: a held version read as one stream of raw bytes. */
 export const PROJECT_FILE_STREAM = 'file.stream'
 const LINE_BUDGET_MS = 2_500
 type ReadRequest = { ref: FileRef; offset: number; length: number; etag?: string }
